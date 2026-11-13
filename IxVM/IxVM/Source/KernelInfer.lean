@@ -193,11 +193,13 @@ def peel_params_subst := aiur_fn⟦
     }
 ⟧
 
+  -- Whether the structure is a proposition at every level: its declared type, at its own level
+  -- parameters (never instantiated), ends in `Sort 0` after its parameters and indices. A 0
+  -- answer carries a valuation at which the sort is not zero, so the answer is exact.
+
 def is_inductive_prop := aiur_fn⟦
-  fn is_inductive_prop(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>, n_skip: Field,
-                              types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let ind_ty_inst = KernelLevels::expr_inst_levels(ind_ty, lvls);
-      let result = peel_n_alls_whnf(rc, ind_ty_inst, n_skip, types);
+  fn is_inductive_prop(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, n_skip: Field) -> Field {
+      let result = peel_n_alls_whnf(rc, ind_ty, n_skip, (&(Lists::Node::Nil)));
 
       match (*(result)) {
         KernelTypes::KExprNode::Srt(l) => {
@@ -262,56 +264,80 @@ def peel_n_alls_whnf := aiur_fn⟦
     }
 ⟧
 
-def check_prop_field_if_prop := aiur_fn⟦
-  fn check_prop_field_if_prop(rc: KernelRoles::RoleCtx, is_prop: Field, dom: KernelTypes::KExpr,
-                                     types: Lists::List<KernelTypes::KExpr>) -> () {
-      match is_prop {
-        0 => {  () } ,
-        _ => {
-          let lvl = k_ensure_sort(rc, dom, types);
-          assert_eq!(KernelLevels::level_equal(lvl, (&(KernelTypes::KLevelNode::Zero))), 1,
-            "projection on a Prop structure: field is not a Prop");
-          () } ,
-      }
-    }
-⟧
-
-def check_no_dep_data_field_if_prop := aiur_fn⟦
-  fn check_no_dep_data_field_if_prop(rc: KernelRoles::RoleCtx, is_prop: Field, dom: KernelTypes::KExpr, body: KernelTypes::KExpr,
-                                            types: Lists::List<KernelTypes::KExpr>) -> () {
-      match is_prop {
-        0 => {  () } ,
-        _ => {
-          let lvl = k_ensure_sort(rc, dom, types);
-          match KernelLevels::level_equal(lvl, (&(KernelTypes::KLevelNode::Zero))) {
-            1 => {  () } ,
-            _ => {
-
-              assert_eq!(KernelSubst::expr_lbr(body), 0,
-                "projection on a Prop structure: later fields depend on a data field");
-              () } ,
-          } } ,
-      }
-    }
-⟧
+  -- The field's type after the earlier fields, each replaced by its projection out of `val`.
 
 def peel_field_loop := aiur_fn⟦
-  fn peel_field_loop(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, target: Field, current: Field,
-                           struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr, is_prop: Field,
-                           types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+  fn peel_field_loop(ty: KernelTypes::KExpr, target: Field, current: Field,
+                     struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr) -> KernelTypes::KExpr {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
           match target - current {
-            0 => {
-              check_prop_field_if_prop(rc, is_prop, dom, types);
-              dom } ,
+            0 => {  dom } ,
             _ => {
-              check_no_dep_data_field_if_prop(rc, is_prop, dom, body, types);
               let proj_expr = (&(KernelTypes::KExprNode::Proj(struct_addr, current, val)));
               let body_substed = KernelSubst::expr_inst1(body, proj_expr, 0);
-              peel_field_loop(rc, body_substed, target, current + 1,
-                                   struct_addr, val, is_prop, types) } ,
+              peel_field_loop(body_substed, target, current + 1, struct_addr, val) } ,
           } } ,
+      }
+    }
+⟧
+
+  -- The stored guard of field `fidx` of the structure at member `idx` of `block` (the kernel's
+  -- `structProjGuards` entry), at the constructor's own level parameters: the sort of the
+  -- field's type joined, in field order, with the sort of every earlier field a later binder
+  -- mentions. Each sort is `k_ensure_sort` of the field's domain in the constructor's
+  -- telescope, its parameters and earlier fields opened. A function of its arguments: one
+  -- computation per structure and field.
+
+def proj_guard := aiur_fn⟦
+  fn proj_guard(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, fidx: Field) -> KernelTypes::KLevel {
+      let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, _, _) = (*(Ingress::get_ci_cprj(block, idx, 0)));
+      let (after, ctx) = KernelCheck::peel_n_foralls_with_types(cty, np, (&(Lists::Node::Nil)));
+      proj_guard_walk(rc, after, ctx, fidx, (&(Lists::Node::Nil)))
+    }
+⟧
+
+  -- `deps`: the sorts of the earlier fields a later binder mentions, in field order.
+
+def proj_guard_walk := aiur_fn⟦
+  fn proj_guard_walk(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, ctx: Lists::List<KernelTypes::KExpr>,
+                     k: Field, deps: Lists::List<KernelTypes::KLevel>) -> KernelTypes::KLevel {
+      let KernelTypes::KExprNode::Forall(dom, body, _) = (*(ty));
+      let s = k_ensure_sort(rc, dom, ctx);
+      match k {
+        0 => {  proj_guard_fold(s, deps) } ,
+        _ => {
+          let deps2 = match KernelSubst::expr_has_bvar_at(body, 0) {
+            1 => {  Lists::snoc(deps, s) } ,
+            _ => {  deps } ,
+          };
+          proj_guard_walk(rc, body, (&(Lists::Node::Cons(dom, ctx))), k - 1, deps2) } ,
+      }
+    }
+⟧
+
+def proj_guard_fold := aiur_fn⟦
+  fn proj_guard_fold(acc: KernelTypes::KLevel, deps: Lists::List<KernelTypes::KLevel>) -> KernelTypes::KLevel {
+      match (*(deps)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(d, rest) => {
+          proj_guard_fold((&(KernelTypes::KLevelNode::Max(acc, d))), rest) } ,
+      }
+    }
+⟧
+
+  -- The use: when the structure is a proposition at every level, the field's stored guard at
+  -- the use's levels is zero.
+
+def prop_guard_ok := aiur_fn⟦
+  fn prop_guard_ok(guard: KernelTypes::KLevel, lvls: Lists::List<KernelTypes::KLevel>, is_prop: Field) -> () {
+      match is_prop {
+        0 => {  () } ,
+        _ => {
+          assert_eq!(KernelLevels::level_equal(KernelLevels::level_inst_params(guard, lvls),
+                       (&(KernelTypes::KLevelNode::Zero))), 1,
+            "projection on a Prop structure: the field's guard is not zero");
+          () } ,
       }
     }
 ⟧
@@ -342,11 +368,10 @@ def k_infer_proj := aiur_fn⟦
                         "projection's constructor universe count differs from its inductive's");
                       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                       let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
-
-                      let is_prop = is_inductive_prop(rc, ind_ty, lvls,
-                                      n_params + n_indices, types);
-                      peel_field_loop(rc, after_params, fidx, 0,
-                                           struct_addr, e1, is_prop, types) } ,
+                      let field_ty = peel_field_loop(after_params, fidx, 0, struct_addr, e1);
+                      prop_guard_ok(proj_guard(rc, block_addr, ind_idx, fidx), lvls,
+                                    is_inductive_prop(rc, ind_ty, n_params + n_indices));
+                      field_ty } ,
                   } } ,
               } } ,
           } } ,

@@ -129,8 +129,10 @@ def k_infer_only_core := aiur_fn⟦
                             "projection's constructor universe count differs from its inductive's");
                           let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                           let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
-                          KernelInfer::peel_field_loop(rc, after_params, fidx, 0, struct_addr, e1,
-                            KernelInfer::is_inductive_prop(rc, ind_ty, lvls, n_params, types), types) } ,
+                          let field_ty = KernelInfer::peel_field_loop(after_params, fidx, 0, struct_addr, e1);
+                          KernelInfer::prop_guard_ok(KernelInfer::proj_guard(rc, block_addr, ind_idx, fidx), lvls,
+                            KernelInfer::is_inductive_prop(rc, ind_ty, n_params));
+                          field_ty } ,
                       } } ,
                   } } ,
               } } ,
@@ -198,23 +200,6 @@ def ensure_sort_only := aiur_fn⟦
     }
 ⟧
 
-  -- Infer.proj's `FireSem` premise at the io grade: at a `Prop`
-  -- structure the projected field's type is a proposition. (Full inference runs the
-  -- same guard in `k_infer_proj`; the io grade used to rely on that earlier run.)
-
-def io_prop_field_guard := aiur_fn⟦
-  fn io_prop_field_guard(rc: KernelRoles::RoleCtx, is_prop: Field, field_ty: KernelTypes::KExpr,
-                         types: Lists::List<KernelTypes::KExpr>) -> () {
-      match is_prop {
-        0 => {  () } ,
-        _ => {
-          assert_eq!(KernelLevels::level_equal(ensure_sort_only(rc, field_ty, types), (&(KernelTypes::KLevelNode::Zero))), 1,
-            "projection on a Prop structure: field is not a Prop");
-          () } ,
-      }
-    }
-⟧
-
 def io_peel_params_subst := aiur_fn⟦
   fn io_peel_params_subst(ty: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>, n_params: Field) -> KernelTypes::KExpr {
       match n_params {
@@ -227,23 +212,6 @@ def io_peel_params_subst := aiur_fn⟦
                   let body_substed = KernelSubst::expr_inst1(body, arg, 0);
                   io_peel_params_subst(body_substed, rest, n_params - 1) } ,
               } } ,
-          } } ,
-      }
-    }
-⟧
-
-def io_peel_field_loop := aiur_fn⟦
-  fn io_peel_field_loop(ty: KernelTypes::KExpr, target: Field, current: Field,
-                              struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr) -> KernelTypes::KExpr {
-      match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body, _) => {
-          match target - current {
-            0 => {  dom } ,
-            _ => {
-              let proj_expr = (&(KernelTypes::KExprNode::Proj(struct_addr, current, val)));
-              let body_substed = KernelSubst::expr_inst1(body, proj_expr, 0);
-              io_peel_field_loop(body_substed, target, current + 1,
-                                      struct_addr, val) } ,
           } } ,
       }
     }
