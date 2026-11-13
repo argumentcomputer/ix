@@ -152,10 +152,10 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 -- The 64-bit term hash (`Expr.hashW`) takes 1 compiled function, `Cached.defeqStepR._closed_2`
 -- (`IxCK/Kernel/Audit/Roots.lean`).
--- The input limits add 61 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`).
+-- The input limits add 63 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6995 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ixon.Projection.checkBytes]: 6997 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
