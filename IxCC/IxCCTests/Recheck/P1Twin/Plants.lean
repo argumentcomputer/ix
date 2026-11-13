@@ -413,8 +413,12 @@ def f3Record (a : Assert) : IO Unit := do
   -- rule 0: its λs, one more for `h`, the body the minor applied to the fields and `h`
   let total := np + nmot + nmin + knf + 1
   let minorVar := total - 1 - (np + nmot)
-  let body := Term.mkApps (.var minorVar) ((List.range (knf + 1)).map fun i => (.var (knf - i), .strict, .rel))
-  let rhs := keepLams (np + nmot + nmin + knf) rule0.rhs (.lam { rel := .rel } natT body)
+  let lbs := lamBinders rule0.rhs
+  let fieldRel := fun (i : Nat) => ((lbs[np + nmot + nmin + i]?).map (·.rel)).getD .rel
+  let body := Term.mkApps (.var minorVar) ((List.range (knf + 1)).map fun i =>
+    (.var (knf - i), .strict, if i < knf then fieldRel i else .rel))
+  let lastPw := ((lbs[np + nmot + nmin + knf - 1]?).map (·.propWhen)).getD .never
+  let rhs := keepLams (np + nmot + nmin + knf) rule0.rhs (.lam { rel := .rel, propWhen := lastPw } natT body)
   let P1 := ((Pt.setDecl k (.ctor ks kl ki kj knp (knf + 1) kty')).setDecl r
     (.recr sf kk lv np nmot nmin ni ind (rules.set 0 { rule0 with fields := knf + 1, rhs }) rty'))
   let P1 := { P1 with table := { table with recKind := table.recKind.insert r (.subsingleton w (srcs ++ [.proof])) } }
