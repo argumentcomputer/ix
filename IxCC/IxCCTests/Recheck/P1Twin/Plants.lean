@@ -353,10 +353,21 @@ def caseCsimp (a : Assert) : IO Unit := do
       | .ok art => IO.println s!"PLANT (v) case key (b): Recheck.run ACCEPTS; object {repr (objMain art)}"
 
 
+/-- Route 12 (`tests-recheck`'s `Shape.subRecord`): Form B, `T : Prop` with large elimination over two
+fields written erased, `mk` unreached and without a constructor record; refused by `subRecords` alone. -/
+def subRecord (a : Assert) : IO Unit := do
+  let (h, rId, tId, mkId, main, _, _) ← IxCCTests.Recheck.Shape.subProg
+  let (Pi, ann) ← IxCCTests.Recheck.Shape.formB h rId tId mkId main
+  let v ← verdicts "route 12, Form B (T : Prop with large elimination, mk without a record)" h.cfg Pi
+    h.cert.table ann main
+  expect a (refusedBy v "a subsingleton eliminator's rule 0 is for a constructor without a constructor record")
+    s!"plant route 12: not refused by subRecords alone: {v}"
+
 def run (a : Assert) : IO Unit := do
   for (n, act) in [("rules", rulesSwap), ("sort", sortMain), ("env", env), ("ctorUnique", ctorUniq),
       ("ctorUniqueCount", ctorUniqCount), ("liveCon", liveCon), ("recTableEntry", recTableEntry a),
-      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a)] do
+      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a),
+      ("subRecord", subRecord a)] do
     try act catch e => do
       IO.println s!"PLANT {n}: ERROR {e}"
       expect a false s!"plant {n}: {e}"

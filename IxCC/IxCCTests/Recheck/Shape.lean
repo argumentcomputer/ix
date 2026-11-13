@@ -406,6 +406,21 @@ def subProg : IO (Honest × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId 
   return (h, ← lookup P t.recursor "T.rec", ← lookup P t.ind "T", ← lookup P t.ctors[0]! "T.mk",
     ← lookup P main "main", ← lookup P en.ind "E", ← lookup P en.ctors[1]! "c₁")
 
+/-- Route 12's Form B from `subProg`'s honest program, below the kernel: `T : Prop`, `mk`'s fields written
+erased, `main`'s major tagged a proof, the records of `T`, `mk` and `T.rec` canonical, `mk` without a
+constructor record (it is unreached). The installed program and the annotation. -/
+def formB (h : Honest) (rId tId mkId main : Src.CId) : IO (Src.Program × Src.Relevance.Ann) := do
+  let Pi ← installed h
+  let some (.induct s lv np ni _ ks) := Pi.decl? tId | throw (IO.userError "route 12: T")
+  let Pi := Pi.setDecl tId (.induct s lv np ni (.sort .zero) ks)
+  let some (.ctor a1 a2 a3 a4 knp knf mkTy) := Pi.decl? mkId | throw (IO.userError "route 12: mk")
+  let Pi := Pi.setDecl mkId (.ctor a1 a2 a3 a4 knp knf (eraseParam (knp + 1) (eraseParam knp mkTy)))
+  let some (.defn dk ds dl mty mval) := Pi.decl? main | throw (IO.userError "route 12: main")
+  let mval := mapArg rId 2 (fun (x, m, _) => (x, m, Src.Rel.prf)) mval
+  let Pi := Pi.setDecl main (.defn dk ds dl mty mval)
+  let ann := withConst (withConst (withConst h.cert.relevance Pi tId) Pi mkId) Pi rId
+  return (Pi, withNode { ann with ctors := ann.ctors.erase mkId } (.value main) mval.tagOrder)
+
 /-- Route 12 (engineer PJ's run of engineer PF's reading, `plans/resource-cert/P1.md`). Below the
 kernel, `subProg` with `T : Prop` and `mk`'s fields written erased (`mk (0 h 0 g : E)`): `T.rec`
 keeps its large elimination, which the kernel refuses for a proposition with a field that is
@@ -424,16 +439,7 @@ def subRecord (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array Str
   let (h, rId, tId, mkId, main, eId, c1Id) ← subProg
   expect a (objMain h.art == some c₁ && srcMain h.art main == some c₁)
     s!"route 12: the honest program (T : Type) returns {repr (objMain h.art)}, SrcEval {repr (srcMain h.art main)}"
-  let Pi ← installed h
-  let some (.induct s lv np ni _ ks) := Pi.decl? tId | throw (IO.userError "route 12: T")
-  let Pi := Pi.setDecl tId (.induct s lv np ni (.sort .zero) ks)
-  let some (.ctor a1 a2 a3 a4 knp knf mkTy) := Pi.decl? mkId | throw (IO.userError "route 12: mk")
-  let Pi := Pi.setDecl mkId (.ctor a1 a2 a3 a4 knp knf (eraseParam (knp + 1) (eraseParam knp mkTy)))
-  let some (.defn dk ds dl mty mval) := Pi.decl? main | throw (IO.userError "route 12: main")
-  let mval := mapArg rId 2 (fun (x, m, _) => (x, m, Src.Rel.prf)) mval
-  let Pi := Pi.setDecl main (.defn dk ds dl mty mval)
-  let ann := withConst (withConst (withConst h.cert.relevance Pi tId) Pi mkId) Pi rId
-  let ann := withNode { ann with ctors := ann.ctors.erase mkId } (.value main) mval.tagOrder
+  let (Pi, ann) ← formB h rId tId mkId main
   let table ← match Src.Table.ofCert h.cfg.table Pi h.cert.table with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"route 12: the table refused it: {m}")
