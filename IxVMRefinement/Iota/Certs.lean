@@ -263,7 +263,7 @@ theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     have hdeI := ih.get (.defEq .de_args) (by lt_calls) ev449 rc v451 v452 types rfl
       (good.sub fun z hz => by simp [hz]) (RCRep.mono H490 hrc) d Γ (types_mono H490 htypes)
       (RA.drop (ZMod.val np)) (MDA.drop (ZMod.val np)) (tml_mono (e472.trans e500) hdropRA)
-      hdropMDA hr0
+      (tml_mono e500 hdropMDA) hr0
     refine ⟨_, c.κ (ixAddr ma0), mus, hpi, by rw [getAppFn_mkAppN]; rfl, hlveq, ?_,
       fun _ => ⟨_, hres, ?_⟩⟩
     · rw [getAppArgs_mkAppN]; exact hdeP

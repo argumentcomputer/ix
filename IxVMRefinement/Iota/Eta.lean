@@ -71,14 +71,14 @@ private theorem defEqList_refl {env : Ix.Kernel.Env .anon} {d : Nat} :
   | _ :: xs => .cons .refl (defEqList_refl xs)
 
 private theorem infer_io_of_certs {env : Ix.Kernel.Env .anon} {d : Nat} {lic : Bool} :
-    ∀ {f T : KExpr} {As : List KExpr},
+    ∀ (f T : KExpr) (As : List KExpr),
       Infer env .io d f T → Certs env d lic T As →
       ∃ R, Infer env .io d (Ix.Kernel.Expr.mkAppN f As) R
   | _, T, [], hf, .nil => ⟨T, hf⟩
-  | f, _, _ :: _, hf, .skip _ hnev hrest =>
-    infer_io_of_certs (.appSkip hf .refl hnev) hrest
-  | f, _, _ :: _, hf, .cert ha hdef hrest =>
-    infer_io_of_certs (.app hf .refl ha hdef) hrest
+  | f, _, a :: rest, hf, .skip _ hnev hrest =>
+    infer_io_of_certs (.app f a) _ rest (.appSkip hf .refl hnev) hrest
+  | f, _, a :: rest, hf, .cert ha hdef hrest =>
+    infer_io_of_certs (.app f a) _ rest (.app hf .refl ha hdef) hrest
 
 private theorem isProjFnShape_keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
     Ix.Kernel.Key.isProjFnShape (keyOf t a) = false := by
@@ -153,16 +153,13 @@ private theorem apply_n_projs_head :
       cases n with
       | zero => simp at hle
       | succ n' =>
-        have ext1 : Heap.Extends h (h ++ [.construct kexprEnum "Proj" [par, idx, maj]]) :=
-          Heap.Extends.snoc _ _
-        have ext2 : Heap.Extends (h ++ [.construct kexprEnum "Proj" [par, idx, maj]])
-            ((h ++ [.construct kexprEnum "Proj" [par, idx, maj]]) ++
-              [.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]]) :=
-          Heap.Extends.snoc _ _
-        have hcell : ((h ++ [.construct kexprEnum "Proj" [par, idx, maj]]) ++
-            [.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]])[
-              (h ++ [.construct kexprEnum "Proj" [par, idx, maj]]).length]? =
-            some (Value.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]) := by simp
+        let m1 : Heap F := h ++ [.construct kexprEnum "Proj" [par, idx, maj]]
+        let m2 : Heap F := m1 ++ [.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]]
+        have ext1 : Heap.Extends h m1 := Heap.Extends.snoc _ _
+        have ext2 : Heap.Extends m1 m2 := Heap.Extends.snoc _ _
+        have hcell : m2[m1.length]? =
+            some (.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]) := by
+          simp [m1, m2]
         have hs' := SpineHead.app (loadValue_enum_cell hcell) (hs.mono (ext1.trans ext2))
         exact apply_n_projs_head n' (by simp at hle; omega) ev76 hs'
 
@@ -362,7 +359,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     have hy146 := WhnfAux.ite01 (right_ne_zero_of_mul_eq_one hmul)
     have hx153 := WhnfAux.ite01 (left_ne_zero_of_mul hmul12)
     have hy154 := WhnfAux.ite01 (right_ne_zero_of_mul hmul12)
-    subst hx153
+    subst taddr
     have hTAlen : TA.length = nPT :=
       (NatAux.natCast_inj (by omega) (by omega)).mp (sub_eq_zero.mp hy154)
     have hlslen : ls.length = cvT.levelParams.length :=
@@ -397,12 +394,12 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     have hcertT0 : Certs c.env d false (cvT.type.instantiateLevelParams cvT.levelParams ust) TA :=
       Specs.Whnf.CertsR.toCerts hcertTR
         (Specs.Whnf.stripPis_isSome_instantiateLevelParams _ _ _ _
-          (by rw [← hetaP, hnP_eq, ← hTAlen] at harityT; exact harityT))
+          (by rw [hetaP, hnP_eq, ← hTAlen] at harityT; exact harityT))
     have hcertT : Certs c.env d true (cvT.type.instantiateLevelParams cvT.levelParams ust) TA :=
       certs_lic_true hcertT0
     -- constructor load & projection address
     obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev405
-      blk (.field i) (.field 0) b rfl (good.sub fun z hz => by simp [hz])
+      blk i 0 b rfl (good.sub fun z hz => by simp [hz])
       (Bytes.repAddressRef_heapMono₂ addrTy X303 hb)
     rw [ZMod.val_zero, ← hctor, hcj] at hfindC
     injection hfindC with hciC_eq
@@ -410,8 +407,8 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     rw [ld399] at hldC
     injection hldC with hvC
     subst hvC
-    obtain ⟨cvC', nPC', nFC', hctor_inj, ⟨hcnl, -, -, hcty⟩, rfl, rfl, -, hnFC_lt, -, _, _, _, -,
-      -, -, -⟩ := WhnfAux.ctor_inv hciC
+    obtain ⟨cvC', nPC', nFC', hctor_inj, ⟨hcnl, -, -, hcty⟩, rfl, rfl, -, hnFC_lt, -⟩ :=
+      WhnfAux.ctor_inv hciC
     obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hctor_inj
     obtain ⟨cpa, hcpa, hcpaa⟩ := ih.get (.callees .projection_addr_ctor) (by lt_calls) ev494
       i 0 blk b rfl (good.sub fun z hz => by simp [hz])
@@ -503,7 +500,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
         (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr p)) ust) TA).getAppArgs M caps.etaFields =
         FAs := by
       rw [hargsTW, Ix.Kernel.etaFabArgsE, Ix.Kernel.etaProjs, if_pos htower, hetaF, hFAs_eq]
-    obtain ⟨tf, hinfFAB⟩ := infer_io_of_certs
+    obtain ⟨tf, hinfFAB⟩ := infer_io_of_certs _ _ _
       (Infer.const (ci := .ctorInfo cvj cnP m) hcj rfl hustlenC) hcertFAB
     have hredFAB := hc.env.etaType (c.κ (ixAddr p)) rl.ctor cvT cvj caps cnP m
       hfindI heta hetaCtor hcj d ust FAs tf hFAslen hinfFAB
@@ -663,7 +660,8 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       (.field (nCT : F)) w310 x_block (.field i) ev295 (good.sub fun z hz => by simp [hz]) hp ld289
     injection hidx0 with hi0
     subst hi0
-    obtain rfl := addr_det hb0 hb
+    have hb0_eq := addr_det hb0 hb
+    subst b0
     obtain ⟨-, hfire, hkeys⟩ := hc.env.recRules k cv mI rP [rl] hfind
     have hrl : rl ∈ [rl] := List.mem_singleton_self rl
     obtain ⟨-, cvj, cnF, hcj⟩ := hfire rl hrl
@@ -701,7 +699,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       (t := .ptr (.named "KernelTypes::KExprNode" [])) (R := TmE c.κ d Γ)
       (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev448)
       (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono X409 hAs)
-    rw [hmIv] at hAs_idx hAs_get
+    rw [hmIv] at hAs_idx
     -- unpack ev577 (eta_iota_fab) to extract type_sort_never = 1
     have ev577_keep := ev577
     have hgood575 : Good c cs575 := good.sub fun z hz => by simp [hz]
