@@ -943,6 +943,17 @@ def caseS : CaseInfo := { ind := S, arity := 2, major := 0, alts := #[{ alt := 1
 def mkSBDef : Ref × RunDef := (mkSB, body [par] (app (.const sboxR .val) [v 0]))
 def projSB : Term := .proj S 0 (app (.const mkSB .val) [v 0]) .val
 def matchSB : Term := .case caseS (app (.const mkSB .val) [v 0]) #[lam par (v 0) .shared .val] #[] .val
+-- Repair U: `mkSBU (x : List Nat) : @unique SBox := SBox.mk x`; `isSB (b : SBox) : E := e0`;
+-- `leakU (@borrowed xs : List Nat) : E := isSB (mkSBU xs)` (its run ends in borrowEscape at mkSBU's
+-- unique return); the control has `xs` plain
+def mkSBU := mem 431
+def isSB := mem 441
+def leakU := mem 456
+def leakUp := mem 476
+def uDefs : List (Ref × RunDef) := [(E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 #[]), (e1R, .ctor E2 1 0 #[]),
+  (mkSBU, body [par] (app (.const sboxR .val) [v 0]) .unique),
+  (isSB, body [par] (.const e0R .imm) .shared .imm)]
+def isSBmk : Term := app (.const isSB .val) [app (.const mkSBU .val) [v 0]] .imm
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1092,7 +1103,12 @@ def findingCases : List Case := [
   runCase "finding 18: the same field matched"
     [mkSBDef, (leak18m, body [par .borrowed] matchSB)] leak18m oneList (some .borrowEscape) false [leak18m, mkSB],
   runCase "finding 18, control: the list not borrowed"
-    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB]
+    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB],
+  runCase "a borrowed list retained by a call whose result is unique"
+    (uDefs ++ [(leakU, body [par .borrowed] isSBmk .shared .imm)]) leakU oneList (some .borrowEscape) false
+    [leakU, mkSBU, isSB],
+  runCase "the same, the list not borrowed"
+    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB]
 ]
 
 -- END COPY
@@ -2023,7 +2039,7 @@ def pPr : Prog := prog ([
 
 /-- After this repair: the borrowed version's verdict (`none`: open, accepted). -/
 def pExpect : Nat → Option String
-  | 13 => none    -- OPEN: the run is borrowEscape inside mkSBU's unique return
+  | 13 => some "retained by a call whose result is unique"  -- repair U (accepted before)
   | _ => some "borrowEscape"
 
 def pCases : List Case := pRoutes.flatMap fun i =>
@@ -2035,10 +2051,40 @@ def pCases : List Case := pRoutes.flatMap fun i =>
      toCheck := pP i :: helpers, verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 
+/-! ### Finding 19 (MU): `mkL (n : Nat) : @unique List Nat := [n]`, `c19 (@borrowed n : Nat) : List Nat :=
+mkL n`. The cell mkL builds holds the borrowed number, confined, and its unique return escapes. Closed
+by U (the number is retained by a call whose result is unique) and, at c19's return, by O (the unique
+result carries the argument's regions); accepted on the landed code [run: MU-f19-*]. -/
+
+def mkL := mem 480
+def c19 := mem 481
+def mkLs := mem 482
+def c19s := mem 483
+def c19p := mem 484
+
+def listOfN : Term := app (.const consR .val) [.irr, v 0 .leaf, app (.const nilR .val) [.irr] .imm]
+
+def p19 : Prog := prog [
+  (mkL, body [par .many .leaf] listOfN .unique .val),
+  (c19, body [par .borrowed .leaf] (app (.const mkL .val) [v 0 .leaf]) .shared .val),
+  (mkLs, body [par .many .leaf] listOfN .shared .val),
+  (c19s, body [par .borrowed .leaf] (app (.const mkLs .val) [v 0 .leaf]) .shared .val),
+  (c19p, body [par .many .leaf] (app (.const mkL .val) [v 0 .leaf]) .shared .val)]
+
+def f19Cases : List Case := [
+  { label := "F19 c19 := mkL n, n borrowed, mkL's result unique", P := p19, seed := c19, inp := oneNat,
+    toCheck := [c19, mkL], verdict := .refuse "borrowEscape",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] },
+  { label := "F19 control: mkL's result shared", P := p19, seed := c19s, inp := oneNat, toCheck := [c19s, mkLs],
+    verdict := .refuse "borrowEscape", run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] },
+  { label := "F19 control: n not borrowed", P := p19, seed := c19p, inp := oneNat, toCheck := [c19p, mkL],
+    verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
+
+
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
     f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases ++
-    oCases ++ pCases
+    oCases ++ pCases ++ f19Cases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

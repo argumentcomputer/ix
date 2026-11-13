@@ -661,6 +661,17 @@ def caseS : CaseInfo := { ind := S, arity := 2, major := 0, alts := #[{ alt := 1
 def mkSBDef : Ref × RunDef := (mkSB, body [par] (app (.const sboxR .val) [v 0]))
 def projSB : Term := .proj S 0 (app (.const mkSB .val) [v 0]) .val
 def matchSB : Term := .case caseS (app (.const mkSB .val) [v 0]) #[lam par (v 0) .shared .val] #[] .val
+-- Repair U: `mkSBU (x : List Nat) : @unique SBox := SBox.mk x`; `isSB (b : SBox) : E := e0`;
+-- `leakU (@borrowed xs : List Nat) : E := isSB (mkSBU xs)` (its run ends in borrowEscape at mkSBU's
+-- unique return); the control has `xs` plain
+def mkSBU := mem 431
+def isSB := mem 441
+def leakU := mem 456
+def leakUp := mem 476
+def uDefs : List (Ref × RunDef) := [(E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 #[]), (e1R, .ctor E2 1 0 #[]),
+  (mkSBU, body [par] (app (.const sboxR .val) [v 0]) .unique),
+  (isSB, body [par] (.const e0R .imm) .shared .imm)]
+def isSBmk : Term := app (.const isSB .val) [app (.const mkSBU .val) [v 0]] .imm
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -824,7 +835,12 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 18: the same field matched"
     [mkSBDef, (leak18m, body [par .borrowed] matchSB)] leak18m oneList (some .borrowEscape) false [leak18m, mkSB],
   runCase "finding 18, control: the list not borrowed"
-    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB]
+    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB],
+  runCase "a borrowed list retained by a call whose result is unique"
+    (uDefs ++ [(leakU, body [par .borrowed] isSBmk .shared .imm)]) leakU oneList (some .borrowEscape) false
+    [leakU, mkSBU, isSB],
+  runCase "the same, the list not borrowed"
+    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB]
 ]
 
 /-! ### Must-reject cases from records -/

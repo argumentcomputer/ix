@@ -235,6 +235,14 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
     | some (some a) =>
       let d := destOf p lendPlain
       flowTo d p.skel a w
+      -- a unique result is transferred at the callee's return, which fails on a confined value it
+      -- holds, and a plain parameter's confinement is not visible to the callee (a `@shared` field
+      -- of a fresh cell, say): a retained argument must be unconfined (repair U)
+      if ifc.res == .unique && ifc.resCls == .val && !a.regs.isEmpty then
+        match d with
+        | .share | .once =>
+          refuseM s!"borrowEscape: a borrowed value retained by a call whose result is unique: {w}"
+        | _ => pure ()
       if a.cls == .val then deps := natUnion deps a.deps
       regs := natUnion regs a.regs
       match d with
