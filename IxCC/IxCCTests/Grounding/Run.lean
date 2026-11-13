@@ -788,11 +788,13 @@ def run : IO Bool := do
       sites refused)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
     -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
-    -- telescope's width costs no fuel), the kernel agreeing
+    -- telescope's width costs no fuel), the kernel agreeing; since step C the walk also visits
+    -- the 405 sites under its `let`s (`Nat.toDigitsCore`, `String.utf8EncodeChar`) and refuses
+    -- them all (the direct route is not extended through a `let`)
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a (pt.accepted == 762 && pt.sites == 762 + 0)
-      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 762"
+    expect a ((pt.sites, pt.accepted) == (1167, 762))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 1167"
     let pm := mutateStringOfList pa
     let npm := (refusedSites pm).length
     expect a (npm > (refusedSites pa).length)
