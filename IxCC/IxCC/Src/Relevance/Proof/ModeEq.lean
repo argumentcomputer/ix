@@ -1180,10 +1180,324 @@ theorem classifyTelescope_me (hme : Program.ModeEq p₀ p) :
     · have hp' : ¬ ∃ b r d body, u = .pi b r d body := fun he => hp ((me_pi_iff h).2 he)
       rw [classifyTelescope_nonpi _ _ _ hp, classifyTelescope_nonpi _ _ _ hp', classifyDomain_me hme hc {} h]
 
+/-! ### `checkTermBinders` -/
+
+/-- Term lists equal up to modes, pointwise. -/
+inductive TermsME : List Term → List Term → Prop
+  | nil : TermsME [] []
+  | cons {a b : Term} {xs ys : List Term} : ME a b → TermsME xs ys → TermsME (a :: xs) (b :: ys)
+
+theorem TermsME.refl : ∀ xs : List Term, TermsME xs xs
+  | [] => .nil
+  | a :: xs => .cons (Term.ModeEq.refl a) (TermsME.refl xs)
+
+theorem TermsME.append {xs ys xs' ys' : List Term} (h : TermsME xs ys) (h' : TermsME xs' ys') :
+    TermsME (xs ++ xs') (ys ++ ys') := by
+  induction h with
+  | nil => simpa using h'
+  | cons hab _ ih => exact .cons hab ih
+
+theorem ArgsME.terms {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+    TermsME (xs.map (·.1)) (ys.map (·.1)) := by
+  induction h with
+  | nil => exact .nil
+  | cons hab _ ih => exact .cons hab ih
+
+theorem OptME.refl : ∀ o : Option Term, OptME o o
+  | some t => Term.ModeEq.refl t
+  | none => trivial
+
+theorem OptME.ite {c : Prop} [Decidable c] {a b a' b' : Option Term} (h₁ : c → OptME a a')
+    (h₂ : ¬c → OptME b b') : OptME (if c then a else b) (if c then a' else b') := by
+  by_cases hc : c
+  · rw [if_pos hc, if_pos hc]; exact h₁ hc
+  · rw [if_neg hc, if_neg hc]; exact h₂ hc
+
+theorem argsRelevant_me {xs ys : List Term.Arg} (h : ArgsME xs ys) : argsRelevant xs = argsRelevant ys := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih =>
+    simp only [argsRelevant, List.all_cons] at ih ⊢
+    rw [ih]
+
+theorem checkSpineArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+    (hc : CtxME ctx₀ ctx) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+    ∀ (cov : Nat) {f g : Term}, ME f g → checkSpineArgs p₀ ctx₀ cov f xs = checkSpineArgs p ctx cov g ys := by
+  induction hx with
+  | nil => intro cov f g _; rfl
+  | cons hab _ ih =>
+    intro cov f g hfg
+    simp only [checkSpineArgs]
+    have hw := whnfType_me hme 8 hfg
+    generalize whnfType p₀ 8 f = w₀ at hw ⊢
+    generalize whnfType p 8 g = w at hw ⊢
+    cases hw with
+    | pi bd res hd hb =>
+      dsimp only
+      rw [classifyDomain_me hme hc _ hd, ih _ (substTerm_me hab hb 0)]
+    | _ => dsimp only; rw [ih _ hfg]
+
+theorem peelSubstPis_me (hme : Program.ModeEq p₀ p) {as bs : List Term} (h : TermsME as bs) :
+    ∀ {t u : Term}, ME t u → OptME (peelSubstPis p₀ as t) (peelSubstPis p bs u) := by
+  induction h with
+  | nil =>
+    intro t u htu
+    simp only [peelSubstPis]
+    have hw := whnfType_me hme 8 htu
+    generalize whnfType p₀ 8 t = w₀ at hw ⊢
+    generalize whnfType p 8 u = w at hw ⊢
+    cases hw with
+    | pi bd res hd hb => exact hd
+    | _ => trivial
+  | cons hab _ ih =>
+    intro t u htu
+    simp only [peelSubstPis]
+    have hw := whnfType_me hme 8 htu
+    generalize whnfType p₀ 8 t = w₀ at hw ⊢
+    generalize whnfType p 8 u = w at hw ⊢
+    cases hw with
+    | pi bd res hd hb => exact ih (substTerm_me hab hb 0)
+    | _ => trivial
+
+theorem applyTypeArgs_me (hme : Program.ModeEq p₀ p) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+    ∀ {t u : Term}, ME t u → OptME (applyTypeArgs p₀ t xs) (applyTypeArgs p u ys) := by
+  induction h with
+  | nil => intro t u htu; simp only [applyTypeArgs]; exact htu
+  | cons hab _ ih =>
+    intro t u htu
+    simp only [applyTypeArgs]
+    have hw := whnfType_me hme 8 htu
+    generalize whnfType p₀ 8 t = w₀ at hw ⊢
+    generalize whnfType p 8 u = w at hw ⊢
+    cases hw with
+    | pi bd res hd hb => exact ih (substTerm_me hab hb 0)
+    | _ => trivial
+
+/-- `inferSimpleType`'s head type at fuel `fuel + 1` (a copy of its `headTy?`;
+`inferSimpleType_succ` checks it by `rfl`). -/
+def simpleHeadTy (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (head : Term) :
+    Option Term :=
+  match head with
+  | .var idx => ctx[idx]?.map fun (varTy, _) => liftTerm (idx + 1) 0 varTy
+  | .const c us => (q.decl? c).map fun d => instUnivsTerm us d.type
+  | .proj s i e => do
+    let k ← onlyCtor? q s
+    let .ctor _ lvls _ _ np nf ctorTy ← q.decl? k | none
+    if i ≥ nf then none else
+    let flds := (List.range i).map (Term.proj s · e)
+    match inferSimpleType q ctx fuel e with
+    | some eTy =>
+      let (sHead, sArgs) := (whnfType q 8 eTy).spine
+      match sHead with
+      | .const s' us =>
+        if s' == s && sArgs.length ≥ np then
+          peelSubstPis q ((sArgs.take np).map (·.1) ++ flds) (instUnivsTerm us ctorTy)
+        else if lvls == 0 then
+          peelSubstPis q (List.replicate np (.natLit 0) ++ flds) ctorTy
+        else none
+      | _ =>
+        if lvls == 0 then peelSubstPis q (List.replicate np (.natLit 0) ++ flds) ctorTy
+        else none
+    | none =>
+      if lvls == 0 then peelSubstPis q (List.replicate np (.natLit 0) ++ flds) ctorTy
+      else none
+  | _ => none
+
+theorem inferSimpleType_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
+    (h : ¬ ∃ c r ty v b, t = .letE c r ty v b) :
+    inferSimpleType q ctx (fuel + 1) t =
+      match simpleHeadTy q ctx fuel t.spine.1 with
+      | some hTy => applyTypeArgs q hTy t.spine.2
+      | none => none := by
+  cases t with
+  | letE c r ty v b => exact absurd ⟨c, r, ty, v, b, rfl⟩ h
+  | _ => rfl
+
+theorem flds_me (s : Nat) {e e' : Term} (he : ME e e') :
+    ∀ i : Nat, TermsME ((List.range i).map (Term.proj s · e)) ((List.range i).map (Term.proj s · e'))
+  | 0 => by simpa using TermsME.nil
+  | i + 1 => by
+    simp only [List.range_succ, List.map_append, List.map_cons, List.map_nil]
+    exact (flds_me s he i).append (.cons (.proj s i he) .nil)
+
+theorem simpleHeadTy_me (hme : Program.ModeEq p₀ p) {n : Nat} {ctx₀ ctx : List (Term × Option Univ)}
+    (IH : ∀ {t u : Term}, ME t u → OptME (inferSimpleType p₀ ctx₀ n t) (inferSimpleType p ctx n u))
+    (hc : CtxME ctx₀ ctx) {h₀ h₁ : Term} (hh : ME h₀ h₁) :
+    OptME (simpleHeadTy p₀ ctx₀ n h₀) (simpleHeadTy p ctx n h₁) := by
+  cases hh with
+  | var i =>
+    simp only [simpleHeadTy]
+    rcases hc.getElem? i with ⟨e₀, e₁⟩ | ⟨a, b, s, e₀, e₁, hab⟩
+    · rw [e₀, e₁]; trivial
+    · rw [e₀, e₁]; exact liftTerm_me hab _ _
+  | const c us =>
+    simp only [simpleHeadTy]
+    decl_me p₀ p hme c <;> exact OptME.refl _
+  | @proj s i e e' he =>
+    simp only [simpleHeadTy, onlyCtor?_eq hme]
+    cases onlyCtor? p s with
+    | none => trivial
+    | some k =>
+      simp only [Option.bind_eq_bind, Option.bind_some]
+      decl_me! p₀ p hme k <;> try exact OptME.refl _
+      rename_i sf lv ind cidx np nf ty
+      simp only [Option.bind_some]
+      refine OptME.ite (fun _ => trivial) (fun _ => ?_)
+      have hf := flds_me s he i
+      have he' := IH he
+      generalize inferSimpleType p₀ ctx₀ n e = o₀ at he' ⊢
+      generalize inferSimpleType p ctx n e' = o at he' ⊢
+      have hrep := peelSubstPis_me hme (TermsME.append (TermsME.refl (List.replicate np (.natLit 0))) hf)
+        (Term.ModeEq.refl ty)
+      cases o₀ <;> cases o
+      · exact OptME.ite (fun _ => hrep) (fun _ => trivial)
+      · exact he'.elim
+      · exact he'.elim
+      · rename_i eTy₀ eTy
+        obtain ⟨hsh, hsa⟩ := spine_me (whnfType_me hme 8 he')
+        dsimp only
+        generalize (whnfType p₀ 8 eTy₀).spine = sp₀ at hsh hsa ⊢
+        generalize (whnfType p 8 eTy).spine = sp at hsh hsa ⊢
+        obtain ⟨sh₀, sa₀⟩ := sp₀
+        obtain ⟨sh, sa⟩ := sp
+        dsimp only at hsh hsa ⊢
+        cases hsh with
+        | const s' us =>
+          dsimp only
+          rw [hsa.length_eq]
+          exact OptME.ite
+            (fun _ => peelSubstPis_me hme (TermsME.append (hsa.take np).terms hf) (Term.ModeEq.refl _))
+            (fun _ => OptME.ite (fun _ => hrep) (fun _ => trivial))
+        | _ => dsimp only; exact OptME.ite (fun _ => hrep) (fun _ => trivial)
+  | _ => trivial
+
+theorem inferSimpleType_me (hme : Program.ModeEq p₀ p) :
+    ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
+      OptME (inferSimpleType p₀ ctx₀ n t) (inferSimpleType p ctx n u)
+  | 0, _, _, _, _, _, _ => trivial
+  | n + 1, ctx₀, ctx, hc, t, u, h => by
+    by_cases hl : ∃ c r ty v b, t = .letE c r ty v b
+    · obtain ⟨c, r, ty, v, b, rfl⟩ := hl
+      cases h with
+      | letE _ _ _ hv hb => exact inferSimpleType_me hme n hc (substTerm_me hv hb 0)
+    have hl' : ¬ ∃ c r ty v b, u = .letE c r ty v b := fun he => hl ((me_letE_iff h).2 he)
+    rw [inferSimpleType_succ _ _ _ hl, inferSimpleType_succ _ _ _ hl']
+    obtain ⟨hh, ha⟩ := spine_me h
+    have hH := simpleHeadTy_me hme (inferSimpleType_me hme n hc) hc hh
+    generalize simpleHeadTy p₀ ctx₀ n t.spine.1 = o₀ at hH ⊢
+    generalize simpleHeadTy p ctx n u.spine.1 = o at hH ⊢
+    cases o₀ <;> cases o
+    · trivial
+    · exact hH.elim
+    · exact hH.elim
+    · exact applyTypeArgs_me hme ha hH
+
+theorem checkBetaArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+    (hc : CtxME ctx₀ ctx) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+    ∀ {t u : Term}, ME t u → checkBetaArgs p₀ ctx₀ t xs = checkBetaArgs p ctx u ys := by
+  induction hx with
+  | nil => intro t u _; first | rfl | simp only [checkBetaArgs]
+  | cons hab _ ih =>
+    intro t u h
+    cases h with
+    | lam bd hd hb =>
+      simp only [checkBetaArgs]
+      rw [classifyDomain_me hme hc bd hd, ih (substTerm_me hab hb 0)]
+    | _ => rfl
+
+theorem checkReducedSpine_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+    (hc : CtxME ctx₀ ctx) {t u : Term} (h : ME t u) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+    checkReducedSpine p₀ ctx₀ t xs = checkReducedSpine p ctx u ys := by
+  unfold checkReducedSpine
+  rw [hx.isEmpty_eq]
+  obtain ⟨hh, ha⟩ := spine_me h
+  generalize t.spine = s₀ at hh ha ⊢
+  generalize u.spine = s₁ at hh ha ⊢
+  obtain ⟨h₀, a₀⟩ := s₀
+  obtain ⟨h₁, a₁⟩ := s₁
+  dsimp only at hh ha ⊢
+  have happ := ha.append hx
+  cases hh with
+  | const c us =>
+    dsimp only
+    rw [ha.length_eq]
+    decl_me p₀ p hme c
+    · rfl
+    all_goals exact congrArg (fun z => ys.isEmpty || z) (checkSpineArgs_me hme hc happ _ (Term.ModeEq.refl _))
+  | var i =>
+    dsimp only
+    rcases hc.getElem? i with ⟨e₀, e₁⟩ | ⟨a, b, s, e₀, e₁, hab⟩
+    · rw [e₀, e₁]
+    · rw [e₀, e₁]
+      dsimp only
+      rw [ha.length_eq, checkSpineArgs_me hme hc happ _ (liftTerm_me hab _ _)]
+  | @proj s i e e' he =>
+    dsimp only
+    have hS := inferSimpleType_me hme 8 hc (.proj s i he)
+    generalize inferSimpleType p₀ ctx₀ 8 (.proj s i e) = o₀ at hS ⊢
+    generalize inferSimpleType p ctx 8 (.proj s i e') = o at hS ⊢
+    cases o₀ <;> cases o
+    · dsimp only; rw [argsRelevant_me hx]
+    · exact hS.elim
+    · exact hS.elim
+    · dsimp only; rw [ha.length_eq, checkSpineArgs_me hme hc happ _ hS]
+  | _ => dsimp only; rw [argsRelevant_me hx]
+
 theorem checkTermBinders_me (hme : Program.ModeEq p₀ p) (ann : Ann) :
     ∀ {t u : Term} {ctx₀ ctx : List (Term × Option Univ)} {xs ys : List Term.Arg}, ME t u →
-      CtxME ctx₀ ctx → ArgsME xs ys → checkTermBinders p₀ ann ctx₀ t xs = checkTermBinders p ann ctx u ys :=
-  sorry
+      CtxME ctx₀ ctx → ArgsME xs ys → checkTermBinders p₀ ann ctx₀ t xs = checkTermBinders p ann ctx u ys := by
+  intro t u ctx₀ ctx xs ys h
+  induction h generalizing ctx₀ ctx xs ys with
+  | app m m' r hf ha ihf iha =>
+    intro hc hx
+    simp only [checkTermBinders]
+    rw [iha hc .nil, ihf hc (.cons ha hx)]
+  | @lam bd d d' b b' hd hb ihd ihb =>
+    intro hc hx
+    simp only [checkTermBinders]
+    have hl := lamRels_me (Term.ModeEq.lam bd hd hb)
+    rw [hl, checkBetaArgs_me hme hc (hx.take _) (.lam bd hd hb),
+      checkReducedSpine_me hme hc (betaApps_me (hx.take _) (.lam bd hd hb)) (hx.drop _),
+      classifyDomain_me hme hc bd hd]
+    have hS := pis_snd_me (whnfType_me hme 8 hd)
+    generalize (whnfType p₀ 8 d).pis.2 = S₀ at hS ⊢
+    generalize (whnfType p 8 d').pis.2 = S₁ at hS ⊢
+    cases hS <;> dsimp only <;> rw [ihb (.cons hd hc) .nil]
+  | @letE c r ty ty' v v' b b' h₁ h₂ h₃ ih₁ ih₂ ih₃ =>
+    intro hc hx
+    simp only [checkTermBinders]
+    rw [argsRelevant_me hx, classifyDomain_me hme hc _ h₁, ih₂ hc .nil]
+    have hS := pis_snd_me (whnfType_me hme 8 h₁)
+    generalize (whnfType p₀ 8 ty).pis.2 = S₀ at hS ⊢
+    generalize (whnfType p 8 ty').pis.2 = S₁ at hS ⊢
+    cases hS <;> dsimp only <;> rw [ih₃ (.cons h₁ hc) .nil]
+  | const c us =>
+    intro hc hx
+    simp only [checkTermBinders]
+    decl_me p₀ p hme c
+    · rfl
+    all_goals exact checkSpineArgs_me hme hc hx _ (Term.ModeEq.refl _)
+  | var i =>
+    intro hc hx
+    simp only [checkTermBinders]
+    rcases hc.getElem? i with ⟨e₀, e₁⟩ | ⟨a, b, s, e₀, e₁, hab⟩
+    · rw [e₀, e₁]
+    · rw [e₀, e₁]
+      exact checkSpineArgs_me hme hc hx _ (liftTerm_me hab _ _)
+  | @proj s i e e' he ih =>
+    intro hc hx
+    simp only [checkTermBinders]
+    rw [hx.isEmpty_eq, ih hc .nil]
+    have hS := inferSimpleType_me hme 8 hc (.proj s i he)
+    generalize inferSimpleType p₀ ctx₀ 8 (.proj s i e) = o₀ at hS ⊢
+    generalize inferSimpleType p ctx 8 (.proj s i e') = o at hS ⊢
+    cases o₀ <;> cases o
+    · dsimp only; rw [argsRelevant_me hx]
+    · exact hS.elim
+    · exact hS.elim
+    · dsimp only; rw [checkSpineArgs_me hme hc hx _ hS]
+  | sort | natLit | strLit => intro hc hx; simp only [checkTermBinders]; rw [argsRelevant_me hx]
+  | pi bd res _ _ _ _ => intro hc hx; simp only [checkTermBinders]; rw [argsRelevant_me hx]
 
 /-! ## `check` -/
 
