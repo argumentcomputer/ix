@@ -259,6 +259,13 @@ theorem runPair_graded (M : Model V env) (hgr : GradedLaw M.cval env) {p : Progr
       simp only [Expr.mkAppN, List.foldl, GradedBy] at h
       exact h.2.1) d.Ds d.ms ρ hlen h1
 
+theorem exists_snoc {α : Type _} : ∀ (l : List α), l ≠ [] → ∃ xs x, l = xs ++ [x]
+  | [], h => absurd rfl h
+  | [x], _ => ⟨[], x, rfl⟩
+  | x :: y :: l, _ => by
+    obtain ⟨xs, z, h⟩ := exists_snoc (y :: l) (by simp)
+    exact ⟨x :: xs, z, by rw [h]; rfl⟩
+
 /-- **Along a spine over a stored constant, the function lies in the product its stored type gives**
 at the head's assignment, while the type's binders up to there are not propositions (`graded` at each
 node puts the argument in the type's domain). -/
@@ -286,8 +293,9 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
     exact ⟨ρ, T, hT, hFe ▸ hm⟩
   | succ n ih =>
     have hne : args ≠ [] := by rintro rfl; simp at hn
-    have hxs : args.dropLast.length = n := by simp [List.length_dropLast, hn]
-    rw [← List.dropLast_append_getLast hne]
+    obtain ⟨xs, x, rfl⟩ := exists_snoc args hne
+    have hxs : xs.length = n := by simpa using hn
+
     intro F hF hgr hH
     rw [mkAppN_append] at hF hgr
     obtain ⟨F', X, hF', hX, rfl⟩ := den_app.mp hF
@@ -295,7 +303,7 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
     obtain ⟨hgf, -, r, A, F'', X', B, hF'', hX', hmem, hXA, -⟩ := hgr
     rw [Denotes_functional hF'' hF'] at hmem
     rw [Denotes_functional hX' hX] at hXA
-    obtain ⟨σ, TT, hTT, hFT⟩ := ih args.dropLast hxs F' hF' hgf (fun j hj => hH j (by omega))
+    obtain ⟨σ, TT, hTT, hFT⟩ := ih xs hxs F' hF' hgf (fun j hj => hH j (by omega))
     obtain ⟨m, hm, hpw⟩ := hH n (by omega)
     obtain ⟨d, b, hpb⟩ := piBody_of_nthMeta _ _ hm
     rw [hpb] at hTT
