@@ -254,7 +254,7 @@ theorem caseFires_of_agree (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv 
             rcases hOkv with hnil | hOk'
             · rw [← hlpsS, List.eq_nil_iff_forall_not_mem] at hnil
               exact absurd hq (hnil q)
-            · obtain ⟨-, hval⟩ := hagr ls φ hOkc hlvc c' ls' sf' lvls' cidx np' nf' ty' hd' hOk'
+            · obtain ⟨-, hval⟩ := hagr ls φ hOkc hlvc c' ls' _ _ _ _ _ _ hd' hOk'
               have h1 := hval k _ hl
               have h2 := hlvψ k q (by rw [← hlpsS]; exact hq')
               rw [h2, List.getD_eq_getElem?_getD, h1, Option.getD_some]
@@ -291,7 +291,7 @@ def ruleBodies (p : Program) (c : CId) : List Term :=
 /-- **`Ok`, restricted to an instance set.** -/
 def OkIn (p : Program) (ann : IxCC.Src.Relevance.Ann) (Inst : List (CId × Levels)) (c : CId)
     (ls : Levels) : Prop :=
-  Ok p ann c ls ∧ (c, ls) ∈ Inst
+  IxCC.Grounding.Ok p ann c ls ∧ (c, ls) ∈ Inst
 
 /-- **The instance set is closed**: every constant SrcEval may evaluate in a run term or a rule
 body of an instance of `Inst` (`evalConsts`, exactly what `Runs.const` asks `Ok` of), at the levels
