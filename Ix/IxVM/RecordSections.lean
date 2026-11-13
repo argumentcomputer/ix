@@ -67,7 +67,7 @@ def sectionsOfWithStats (records support : Array (Address × Ixon.Constant))
   let mut out : Std.HashMap Address (Array Ixon.BinderBlock) := {}
   for (a, blocks) in tables do
     let some c := store[a]? | continue
-    if unsafeOrPartial c then out := out.insert a (Ix.CompileM.undecidedSection c)
+    if unsafeOrPartial c then out := out.insert a (← Ix.Compile.BinderData.stripSection c)
     else out := out.insert a (← Ix.Compile.BinderData.sectionOf c blocks)
   return (out, stats)
 
@@ -103,7 +103,8 @@ def chosenOf (env : Ixon.Env) :
 reference). The record's address changes with its section. -/
 def withSection (env : Ixon.Env) (c : Ixon.Constant) (taint : Bool := false) :
     Except String Ixon.Constant := do
-  let c := { c with binders := #[] }
+  let stripped ← Ix.Compile.BinderData.stripSection c
+  let c := { c with binders := stripped }
   let addr := Address.blake3 (Ixon.ser c)
   let support : Array (Address × Ixon.Constant) := env.consts.fold (init := #[]) fun out a lc =>
     if a == addr then out else match lc.get? with

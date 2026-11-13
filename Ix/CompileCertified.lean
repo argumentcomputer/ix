@@ -184,7 +184,7 @@ current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true) (binderData : Bool := false) (keepAnnotator : Bool := false)
-    (modeCheck : ModeChecker := noModeChecker) :
+    (modeCheck : ModeChecker := noModeChecker) (deferModeCheck : Bool := false) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -203,6 +203,8 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
       let task ← Ix.Compile.KernelAnnotate.installTask env pre workers abandon
       install? := some task
       env := { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env task) }
+  else if annotated then
+    env := { env with binderAnnotator? := some (Ix.Compile.BinderData.modeOnlyAnnotator env) }
   let t1 ← IO.monoMsNow
   let report ← try
     (·.1) <$> Ix.Compile.ReadyCompile.reportIO { workers, lookahead := 8192 } env
@@ -246,9 +248,10 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   if annotated then
     unless failures.isEmpty do
       return .error "mode checking requires the complete requested closure"
-    match modeCheck ixe with
-    | .ok msg => log msg
-    | .error e => return .error e
+    unless deferModeCheck do
+      match modeCheck ixe with
+      | .ok msg => log msg
+      | .error e => return .error e
   let undecided := if binderData then
       (Ix.Compile.KernelAnnotate.undecidedSafe ixe workers).map toString
     else #[]
@@ -260,11 +263,11 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`), with
 the binder data from IxC's pass over the input (`Ix.Compile.KernelAnnotate`), unless
 `binderData` is off: then every record with a binder carries the undecided
-section. -/
+section (preserving any source modes). -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true) (binderData : Bool := true) (keepAnnotator : Bool := false)
-    (modeCheck : ModeChecker := noModeChecker) :
+    (modeCheck : ModeChecker := noModeChecker) (deferModeCheck : Bool := false) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -272,7 +275,8 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log defaultRoles binderData keepAnnotator modeCheck
+  compileCertifiedPrepared prepared annotated workers log defaultRoles binderData keepAnnotator
+    modeCheck deferModeCheck
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
@@ -391,7 +395,7 @@ def compileAndFinalize (source : Lean.Environment)
     else pure none
   let run : IO (Except String (CertifiedOut × Finalization)) := do
     let out ← match ← compileCertified source constants workers log defaultRoles (binderData := inline)
-        (modeCheck := modeCheck) with
+        (modeCheck := modeCheck) (deferModeCheck := !inline || !defaultRoles) with
       | .ok out => pure out
       | .error e => return .error e
     log s!"rss after the compile: {← Ix.Cli.residentSetSize}"

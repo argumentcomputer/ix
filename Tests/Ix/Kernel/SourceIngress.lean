@@ -202,10 +202,9 @@ def refusedWith (message : String) : Except ExprError (List KExpr) → Bool
   | .error (.contract m) => m.startsWith message
   | _ => false
 
-/-- Contract frames: kernel terms carry no modes; an ordinary frame lowers to
-the binder it wraps, as the
-compiler lowers it; an annotated frame is refused, as the compiler refuses it;
-a frame not directly around a binder of its kind, or a malformed one, is
+/-- Contract frames: kernel terms carry no modes; a valid frame lowers to
+the binder it wraps, as the compiler lowers it; an unsupported contract mode,
+a frame not directly around a binder of its kind, or a malformed frame is
 refused. -/
 def contractFrames : TestSeq :=
   let nat := Ix.Expr.mkConst (nm "Nat") #[]
@@ -221,10 +220,12 @@ def contractFrames : TestSeq :=
   let allC : Ix.SemanticContract.Contract :=
     { kind := .all, binder := .erased, result := .localUnique }
   let letC : Ix.SemanticContract.Contract := { kind := .letE, binder := .affine }
-  let annotated := "annotated source is refused"
+  let badMode : Ix.SemanticContract.Contract :=
+    { kind := .lam, binder := ⟨.erased, .localShared⟩ }
+  let unsupported := "unsupported semantic contract mode"
   let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
-  let dag := Ix.Expr.mkApp (framed allO pi) (plain (framed lamO lam))
+  let dag := Ix.Expr.mkApp (framed allC pi) (plain (framed lamC lam))
   test "a plain binder carries the never datum"
     (binderOf (conv lam) == some { pw := .never }) ++
   test "an ordinary lam frame lowers to the plain binder"
@@ -237,10 +238,13 @@ def contractFrames : TestSeq :=
     (letOf (conv (framed letO letE)) == some { nonDep := false }) ++
   test "plain metadata around an ordinary frame is erased"
     (binderOf (conv (plain (framed lamO lam))) == some { pw := .never }) ++
-  test "an annotated lam, all or let frame is refused"
-    (refusedWith annotated (conv (framed lamC lam)) && refusedWith annotated (conv (framed allC pi)) &&
-      refusedWith annotated (conv (framed letC letE)) &&
-      refusedWith annotated (conv (plain (framed lamC lam)))) ++
+  test "a valid annotated lam, all or let frame lowers to the kernel binder or let"
+    (binderOf (conv (framed lamC lam)) == some { pw := .never } &&
+      binderOf (conv (framed allC pi)) == some { pw := .never } &&
+      letOf (conv (framed letC letE)) == some { nonDep := false } &&
+      binderOf (conv (plain (framed lamC lam))) == some { pw := .never }) ++
+  test "an unsupported semantic contract mode is refused"
+    (refusedWith unsupported (conv (framed badMode lam))) ++
   test "a frame not directly around a binder of its kind is refused"
     (refusedWith misplaced (conv (framed lamO (plain lam))) &&
       refusedWith misplaced (conv (framed lamC pi)) && refusedWith misplaced (conv (framed allC nat))) ++

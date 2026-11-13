@@ -6,6 +6,8 @@ public import Ix.CompileCertified
 public import Ix.Typing
 public import Ix.EnvScope
 public import Ix.Meta
+import Ix.ModeCheck
+import Tests.Ix.SourceContract.SyntaxFixture
 
 /-! # The resource-mode model and checker on small run programs (`resource-modes`)
 
@@ -618,8 +620,499 @@ def recordCasesTest : LSpec.TestSeq :=
           failed := failed.push line
       return (allOk, 0, 0, if allOk then none else some ("; ".intercalate failed.toList))) .done
 
+/-! ### Annotated Lean source compile, closure completeness, `DefAsserts`, and `0x04` diagnostics -/
+
+private def hasSubstr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+private def collectLamSites (root : Ix.Compile.SourceRoot) (path : List Ix.Compile.SourceStep) :
+    Lean.Expr → Array Ix.Compile.BinderSite
+  | .app f a =>
+    collectLamSites root (path ++ [.appFn]) f ++ collectLamSites root (path ++ [.appArg]) a
+  | .lam _ t b _ =>
+    #[{ root, path }] ++ collectLamSites root (path ++ [.binderType]) t ++
+      collectLamSites root (path ++ [.binderBody]) b
+  | .forallE _ t b _ =>
+    collectLamSites root (path ++ [.binderType]) t ++ collectLamSites root (path ++ [.binderBody]) b
+  | .letE _ t v b _ =>
+    collectLamSites root (path ++ [.letType]) t ++ collectLamSites root (path ++ [.letValue]) v ++
+      collectLamSites root (path ++ [.letBody]) b
+  | .mdata _ e => collectLamSites root (path ++ [.metadata]) e
+  | .proj _ _ e => collectLamSites root (path ++ [.projection]) e
+  | _ => #[]
+
+private def collectLetSites (root : Ix.Compile.SourceRoot) (path : List Ix.Compile.SourceStep) :
+    Lean.Expr → Array Ix.Compile.BinderSite
+  | .app f a =>
+    collectLetSites root (path ++ [.appFn]) f ++ collectLetSites root (path ++ [.appArg]) a
+  | .lam _ t b _ | .forallE _ t b _ =>
+    collectLetSites root (path ++ [.binderType]) t ++ collectLetSites root (path ++ [.binderBody]) b
+  | .letE _ t v b _ =>
+    #[{ root, path }] ++ collectLetSites root (path ++ [.letType]) t ++
+      collectLetSites root (path ++ [.letValue]) v ++ collectLetSites root (path ++ [.letBody]) b
+  | .mdata _ e => collectLetSites root (path ++ [.metadata]) e
+  | .proj _ _ e => collectLetSites root (path ++ [.projection]) e
+  | _ => #[]
+
+private def compileWithContracts (consts : List (Lean.Name × Lean.ConstantInfo))
+    (contracts : Array Ix.Compile.SourceContract) : IO (Except String Ix.CompileM.CertifiedOut) := do
+  let input : Ix.Compile.CompileInput := { constants := consts, contracts }
+  match input.prepare >>= fun p => (Ix.CompileM.checkPreparedSource p).map (p, ·) with
+  | .error e => return .error e
+  | .ok (prepared, annotated) =>
+    Ix.CompileM.compileCertifiedPrepared prepared annotated 1 (binderData := true)
+      (modeCheck := Ix.ModeCheck.checkArtifact)
+
+private def ownerConst? (ixe : Ixon.Env) (n : Lean.Name) : Option Ixon.Constant := do
+  let nd ← ixe.named.get? (Ix.Name.fromLeanName n)
+  let c ← ixe.getConst? nd.addr
+  let owner := Ixon.CheckOrder.owner nd.addr c
+  ixe.getConst? owner
+
+private def envOfSingleConst (c : Ixon.Constant) : Address × Ixon.Env :=
+  let bytes := Ixon.serConstant c
+  let a := Address.admissionHash bytes
+  let lc : Ixon.LazyConstant := { buf := bytes, len := bytes.size, cache := some c }
+  (a, { consts := ({} : Std.HashMap Address Ixon.LazyConstant).insert a lc })
+
+def runAnnotatedCompileSuite : IO (Array String) := do
+  let mut errs : Array String := #[]
+  -- 1. Surface-annotated Lean declarations from `SyntaxFixture`: positive, post-binder-data, and strip/apply
+  let senv ← getCompileEnv #[`Tests.Ix.SourceContract.SyntaxFixture]
+  let posNames : List Lean.Name := [
+    ``Tests.Ix.SourceContract.SyntaxFixture.linear,
+    ``Tests.Ix.SourceContract.SyntaxFixture.unique,
+    ``Tests.Ix.SourceContract.SyntaxFixture.erased,
+    ``Tests.Ix.SourceContract.SyntaxFixture.localResult,
+    ``Tests.Ix.SourceContract.SyntaxFixture.localUniqueResult]
+  let posConsts := Ix.EnvScope.collectSelectedDeps senv posNames
+  match ← Ix.CompileM.compileCertified senv posConsts 2 with
+  | .ok _ => errs := errs.push "surface contracts: compileCertified without ModeChecker accepted"
+  | .error e =>
+    unless hasSubstr e "annotated source is refused" do
+      errs := errs.push s!"surface contracts: unexpected noModeChecker message: {e}"
+  match ← Ix.CompileM.compileCertified senv posConsts 2 (modeCheck := Ix.ModeCheck.checkArtifact) with
+  | .error e => errs := errs.push s!"surface contracts (positive): compileCertified failed: {e}"
+  | .ok out =>
+    unless out.annotated do errs := errs.push "surface contracts: annotated flag was false"
+    for n in posNames do
+      match ownerConst? out.env n with
+      | none => errs := errs.push s!"surface contracts: missing record for {n}"
+      | some c =>
+        unless Ix.Compile.BinderData.hasModes c && c.bindersComplete && c.modesCanonical do
+          errs := errs.push s!"surface contracts: invalid mode/binder invariants on {n}"
+  match ← Ix.CompileM.compileAndFinalize senv posConsts 2 false
+      (binderData := .post) (modeCheck := Ix.ModeCheck.checkArtifact) with
+  | .error e => errs := errs.push s!"surface contracts (.post): compileAndFinalize failed: {e}"
+  | .ok (_, .done postEnv postBytes) =>
+    match Ix.Compile.BinderData.strip postEnv with
+    | .error e => errs := errs.push s!"surface contracts: BinderData.strip failed: {e}"
+    | .ok stripped =>
+      for n in posNames do
+        match ownerConst? stripped n with
+        | none => errs := errs.push s!"surface contracts: stripped env missing {n}"
+        | some c =>
+          unless Ix.Compile.BinderData.hasModes c && c.bindersComplete do
+            errs := errs.push s!"surface contracts: strip lost modes or completeness on {n}"
+      match Ix.Compile.BinderData.apply stripped with
+      | .error e => errs := errs.push s!"surface contracts: BinderData.apply failed: {e}"
+      | .ok (restored, _) =>
+        match Ixon.serEnv restored with
+        | .error e => errs := errs.push s!"surface contracts: serEnv restored failed: {e}"
+        | .ok restoredBytes =>
+          unless restoredBytes == postBytes do
+            errs := errs.push "surface contracts: strip/apply roundtrip changed serialized bytes"
+  | .ok _ => errs := errs.push "surface contracts (.post): finalization did not complete"
+
+  -- 2. Must-reject surface-annotated declarations (`borrowEscape` on return and on `let borrow`)
+  for bad in [``Tests.Ix.SourceContract.SyntaxFixture.localShared,
+              ``Tests.Ix.SourceContract.SyntaxFixture.sharedLoan] do
+    let badConsts := Ix.EnvScope.collectSelectedDeps senv [bad]
+    match ← Ix.CompileM.compileCertified senv badConsts 2 (modeCheck := Ix.ModeCheck.checkArtifact) with
+    | .ok _ => errs := errs.push s!"surface must-reject {bad}: accepted"
+    | .error e =>
+      unless hasSubstr e "borrowEscape" do
+        errs := errs.push s!"surface must-reject {bad}: expected borrowEscape, got: {e}"
+
+  -- 3. `ModeFixture` source contracts: `let borrow`, 2-variant shared `lam`, tier retry, and must-rejects
+  let fenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  -- 3a. Valid `let borrow` + borrowed parameter on heap cell `BoxE`
+  let borrowConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.letBorrowBox]
+  match fenv.find? `ModeFixture.inspectBox, fenv.find? `ModeFixture.letBorrowBox with
+  | some inspectCi, some lbCi =>
+    let some lbBody := Ix.Compile.sourceBody? lbCi
+      | errs := errs.push "letBorrowBox: missing source body"
+    let letSites := collectLetSites .body [] lbBody
+    match Ix.Compile.SourceContract.ofTelescope inspectCi
+        #[{ binder := .position 0, uses := .many, value := .localShared }],
+      Ix.Compile.SourceContract.ofTelescope lbCi
+        #[{ binder := .position 0, uses := .many, value := .unique }],
+      letSites[0]? with
+    | .ok cInspect, .ok cLbOuter, some letSite =>
+      let cLb : Ix.Compile.SourceContract := {
+        source := lbCi
+        binders := cLbOuter.binders.push
+          { site := letSite, uses := .many, value := .localShared, letKind := .borrowShared } }
+      match ← compileWithContracts borrowConsts #[cInspect, cLb] with
+      | .error e => errs := errs.push s!"letBorrowBox: failed: {e}"
+      | .ok out =>
+        match ownerConst? out.env `ModeFixture.letBorrowBox with
+        | none => errs := errs.push "letBorrowBox: missing compiled record"
+        | some c =>
+          let hasLetMode := c.info.binderRoots.any Ix.Compile.BinderData.exprHasLetModes ||
+            c.sharing.any Ix.Compile.BinderData.exprHasLetModes
+          unless hasLetMode && c.bindersComplete do
+            errs := errs.push "letBorrowBox: compiled record lacks LetMode or complete binders"
+    | _, _, _ => errs := errs.push "letBorrowBox: contract setup failed"
+  | _, _ => errs := errs.push "letBorrowBox: missing fixture declarations"
+
+  -- 3b. Shared `lam` subexpression with two distinct `ix.contract` binder modes (`once` vs `borrowed`)
+  let sharedConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.sharedLams]
+  match fenv.find? `ModeFixture.sharedLams with
+  | none => errs := errs.push "sharedLams: missing fixture declaration"
+  | some slCi =>
+    let some slBody := Ix.Compile.sourceBody? slCi
+      | errs := errs.push "sharedLams: missing source body"
+    let lamSites := collectLamSites .body [] slBody
+    if lamSites.size < 2 then
+      errs := errs.push s!"sharedLams: expected 2 lam sites, found {lamSites.size}"
+    else
+      let cSl : Ix.Compile.SourceContract := {
+        source := slCi
+        binders := #[
+          { site := lamSites[0]!, uses := .linear, value := .shared },
+          { site := lamSites[1]!, uses := .many, value := .localShared }] }
+      match ← compileWithContracts sharedConsts #[cSl] with
+      | .error e => errs := errs.push s!"sharedLams: failed: {e}"
+      | .ok out =>
+        match ownerConst? out.env `ModeFixture.sharedLams with
+        | none => errs := errs.push "sharedLams: missing compiled record"
+        | some c =>
+          let sharedBlocks := c.binders.filter (·.shared)
+          let hasTwoVariants := (List.range c.sharing.size).any fun idx =>
+            let vs := sharedBlocks.filter (·.index == idx.toUInt64)
+            vs.size == 2 &&
+              vs.any (fun b => b.variant == 0 && b.nodes.any (·.mode? == some { input := .once, result := .shared })) &&
+              vs.any (fun b => b.variant == 1 && b.nodes.any (·.mode? == some { input := .borrowed, result := .shared }))
+          unless c.sharing.size ≥ 1 && hasTwoVariants && c.bindersComplete && c.modesCanonical do
+            errs := errs.push s!"sharedLams: expected 2 sharing variants (once/borrowed), got {repr c.binders}"
+      -- Also test `BinderData.strip` + `BinderData.apply` on finalized 2-variant `sharedLams`
+      let slEnv := Ix.Compile.sourceContractExtension.addEntry fenv cSl
+      match ← Ix.CompileM.compileAndFinalize slEnv sharedConsts 2 false
+          (modeCheck := Ix.ModeCheck.checkArtifact) with
+      | .error e => errs := errs.push s!"sharedLams finalize: failed: {e}"
+      | .ok (_, .done slArt slBytes) =>
+        match Ix.Compile.BinderData.strip slArt with
+        | .error e => errs := errs.push s!"sharedLams strip: failed: {e}"
+        | .ok slStripped =>
+          match ownerConst? slStripped `ModeFixture.sharedLams with
+          | none => errs := errs.push "sharedLams strip: missing owner record"
+          | some sc =>
+            let sVariants := sc.binders.filter (·.shared)
+            unless sVariants.size ≥ 2 && sc.bindersComplete &&
+                sVariants.all (·.nodes.all (·.isUndecided)) do
+              errs := errs.push s!"sharedLams strip: did not keep 2 undecided variants: {repr sc.binders}"
+          match Ix.Compile.BinderData.apply slStripped >>= fun (r, _) => Ixon.serEnv r with
+          | .error e => errs := errs.push s!"sharedLams apply: failed: {e}"
+          | .ok rBytes =>
+            unless rBytes == slBytes do
+              errs := errs.push "sharedLams strip/apply: bytes differed after roundtrip"
+      | .ok _ => errs := errs.push "sharedLams finalize: incomplete"
+
+  -- 3c. Tier-owner retry (`isTier == true` + `partial def`) in `ModeCheck.checkArtifact`
+  let tierConsts := Ix.EnvScope.collectSelectedDeps fenv
+    [`ModeFixture.tierUse, `ModeFixture.spinE, `ModeFixture.inspectBox]
+  match fenv.find? `ModeFixture.inspectBox with
+  | none => errs := errs.push "tier retry: missing inspectBox"
+  | some inspectCi =>
+    match Ix.Compile.SourceContract.ofTelescope inspectCi
+        #[{ binder := .position 0, uses := .many, value := .localShared }] with
+    | .error e => errs := errs.push s!"tier retry: telescope failed: {e}"
+    | .ok cInspect =>
+      match ← compileWithContracts tierConsts #[cInspect] with
+      | .error e => errs := errs.push s!"tier retry: ModeCheck failed on tier module: {e}"
+      | .ok out =>
+        match Ix.Typing.typingInput out.env with
+        | .error e => errs := errs.push s!"tier retry: typingInput failed: {e}"
+        | .ok tInput =>
+          match Ix.Typing.checkCertified tInput (Ix.Typing.splitOf tInput) with
+          | .error (_, true) => pure ()
+          | other =>
+            errs := errs.push s!"tier retry: expected initial checkCertified to trigger isTier=true, got {repr (other.map (fun _ => ()))}"
+
+  -- 3d. Must-reject `once` called twice (`callTwice`), `unique` transferred twice (`useBoxTwice`), and `erased` read (`readErased`)
+  match fenv.find? `ModeFixture.callTwice with
+  | none => errs := errs.push "callTwice: missing"
+  | some ctCi =>
+    let ctConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.callTwice]
+    match Ix.Compile.SourceContract.ofTelescope ctCi #[{ binder := .position 0, uses := .linear }] with
+    | .error e => errs := errs.push s!"callTwice contract: {e}"
+    | .ok cCt =>
+      match ← compileWithContracts ctConsts #[cCt] with
+      | .ok _ => errs := errs.push "callTwice (once called twice): accepted"
+      | .error e =>
+        unless hasSubstr e "onceReentry" do
+          errs := errs.push s!"callTwice: expected onceReentry, got: {e}"
+  match fenv.find? `ModeFixture.dropBox, fenv.find? `ModeFixture.useBoxTwice with
+  | some dbCi, some ubtCi =>
+    let ubtConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.useBoxTwice]
+    match Ix.Compile.SourceContract.ofTelescope dbCi
+            #[{ binder := .position 0, uses := .many, value := .unique }],
+          Ix.Compile.SourceContract.ofTelescope ubtCi
+            #[{ binder := .position 0, uses := .many, value := .unique }] with
+    | .ok cDb, .ok cUbt =>
+      match ← compileWithContracts ubtConsts #[cDb, cUbt] with
+      | .ok _ => errs := errs.push "useBoxTwice (unique transferred twice): accepted"
+      | .error e =>
+        unless hasSubstr e "revokedUse" do
+          errs := errs.push s!"useBoxTwice: expected revokedUse, got: {e}"
+    | e1, e2 => errs := errs.push s!"useBoxTwice contracts: {repr e1} / {repr e2}"
+  | _, _ => errs := errs.push "dropBox/useBoxTwice: missing"
+  match fenv.find? `ModeFixture.readErased with
+  | none => errs := errs.push "readErased: missing"
+  | some reCi =>
+    let reConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.readErased]
+    match Ix.Compile.SourceContract.ofTelescope reCi #[{ binder := .position 0, uses := .erased }] with
+    | .error e => errs := errs.push s!"readErased contract: {e}"
+    | .ok cRe =>
+      match ← compileWithContracts reConsts #[cRe] with
+      | .ok _ => errs := errs.push "readErased (erased parameter read): accepted"
+      | .error e =>
+        unless hasSubstr e "erasedRead" do
+          errs := errs.push s!"readErased: expected erasedRead, got: {e}"
+  return errs
+
+def annotatedCompileCasesTest : LSpec.TestSeq :=
+  .individualIO "annotated Lean source compile: positive modes, 2-variant shared λ, strip/apply, tier retry, must-rejects"
+    none (do
+      let errs ← runAnnotatedCompileSuite
+      return (errs.isEmpty, 0, 0,
+        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+
+def runCompletenessAndAssertsSuite : IO (Array String) := do
+  let mut errs : Array String := #[]
+  let b ← match ← buildFixture with
+    | .ok b => pure b
+    | .error e => return #[s!"buildFixture: {e}"]
+  let some mainAddr := b.named `ModeFixture.main | return #["missing ModeFixture.main"]
+  let some callFAddr := b.named `ModeFixture.callF | return #["missing ModeFixture.callF"]
+  let some kAddr := b.named `ModeFixture.k | return #["missing ModeFixture.k"]
+  let some kRef := Ix.Kernel.Reader.resolve b.store kAddr | return #["ModeFixture.k did not resolve"]
+  let some kRec := b.store kRef.block | return #["missing ModeFixture.k record"]
+
+  -- 1. Closure record with empty binder section (`c.binders = #[]`, all-default modes) must fail `Reads` & `ModeCheck`
+  let kEmpty := { kRec with binders := #[] }
+  if kEmpty.bindersComplete then
+    errs := errs.push "kEmpty unexpectedly satisfied bindersComplete"
+  let sEmpty : Subject := {
+    table := b.table
+    store := fun x => if x == kRef.block then some kEmpty else b.store x
+    blob := b.blob
+    seeds := [callFAddr] }
+  let cl := oracleClassifier b.env (ctorShapes (Reading.make sEmpty)) {}
+  match readProg sEmpty cl with
+  | .ok _ => errs := errs.push "empty binder section: readProg accepted"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"empty binder section: readProg unexpected error: {e}"
+  match Ix.ModeCheck.checkSubject sEmpty with
+  | .ok _ => errs := errs.push "empty binder section: ModeCheck.checkSubject accepted"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"empty binder section: checkSubject unexpected error: {e}"
+  -- Truncated `0x04` undecided section inside the closure (`kTrunc`) must also fail `Reads` & `ModeCheck`
+  let kTrunc := {
+    kRec with
+    binders := #[{ shared := false, index := 0, variant := 0, nodes := #[.undecided {}] }] }
+  let sTrunc : Subject := {
+    table := b.table
+    store := fun x => if x == kRef.block then some kTrunc else b.store x
+    blob := b.blob
+    seeds := [callFAddr] }
+  match readProg sTrunc cl with
+  | .ok _ => errs := errs.push "truncated 0x04 in closure: readProg accepted"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"truncated 0x04 in closure: readProg unexpected error: {e}"
+  match Ix.ModeCheck.checkSubject sTrunc with
+  | .ok _ => errs := errs.push "truncated 0x04 in closure: checkSubject accepted"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"truncated 0x04 in closure: checkSubject unexpected error: {e}"
+  -- Standalone binderful record with `binders = #[]` must also be rejected by `ModeCheck.checkArtifact`
+  let standalone : Ixon.Constant := {
+    info := .defn {
+      kind := .defn, safety := .safe, lvls := 0
+      typ := .all (.sort 0) (.var 0)
+      value := .lam (.sort 0) (.var 0) }
+    sharing := #[], refs := #[]
+    univs := #[.zero]
+    binders := #[] }
+  let (_, incEnv) := envOfSingleConst standalone
+  match Ix.ModeCheck.checkArtifact incEnv with
+  | .ok msg => errs := errs.push s!"checkArtifact fast-path bypass on empty binders: {msg}"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"checkArtifact on empty binders unexpected error: {e}"
+  -- Truncated `0x04` undecided section (`nodes` missing a binder) must also be rejected
+  let standaloneTrunc : Ixon.Constant := {
+    standalone with
+    binders := #[{ shared := false, index := 0, variant := 0, nodes := #[.undecided {}] }] }
+  let (_, truncEnv) := envOfSingleConst standaloneTrunc
+  match Ix.ModeCheck.checkArtifact truncEnv with
+  | .ok msg => errs := errs.push s!"checkArtifact accepted truncated 0x04 section: {msg}"
+  | .error e =>
+    unless hasSubstr e "binder-data section is incomplete" do
+      errs := errs.push s!"checkArtifact on truncated 0x04 unexpected error: {e}"
+
+  -- 2. Theorem carrying non-default `DefAsserts` fails `modesCanonical` (`checkSubject`) and wire decoding (`checkArtifact`)
+  let thmBad : Ixon.Constant := {
+    info := .defn {
+      kind := .thm, safety := .safe, lvls := 0
+      typ := .all (.sort 0) (.var 0)
+      value := .lam (.sort 0) (.var 0)
+      asserts := { alloc := .noAlloc } }
+    sharing := #[], refs := #[]
+    univs := #[.zero]
+    binders := #[
+      { shared := false, index := 0, variant := 0, nodes := #[.never {}] },
+      { shared := false, index := 1, variant := 0, nodes := #[.never {}] }] }
+  let sThm : Subject := {
+    table := { b.table with bound := #[] }
+    store := fun x => if x == addr 210 then some thmBad else none
+    blob := fun _ => none
+    seeds := [addr 210] }
+  match Ix.ModeCheck.checkSubject sThm with
+  | .ok _ => errs := errs.push "theorem with DefAsserts: checkSubject accepted"
+  | .error e =>
+    unless hasSubstr e "theorem carries definition assertions" do
+      errs := errs.push s!"theorem with DefAsserts checkSubject unexpected error: {e}"
+  let (_, thmEnv) := envOfSingleConst thmBad
+  match Ix.ModeCheck.checkArtifact thmEnv with
+  | .ok msg => errs := errs.push s!"theorem with DefAsserts accepted: {msg}"
+  | .error e =>
+    unless hasSubstr e "theorem with assertions" || hasSubstr e "theorem carries definition assertions" do
+      errs := errs.push s!"theorem with DefAsserts unexpected error: {e}"
+
+  -- 3. Role-bound record carrying `DefAsserts` is refused
+  match kRec.info with
+  | .defn d =>
+    let kAsserts : Ixon.Constant := {
+      kRec with info := .defn { d with asserts := { alloc := .noRc } } }
+    let tableRole : Ix.Kernel.RoleTable := {
+      b.table with bound := b.table.bound.map fun (role, x) =>
+        if role == .natAdd then (role, kAddr) else (role, x) }
+    let sRole : Subject := {
+      table := tableRole
+      store := fun x => if x == kRef.block then some kAsserts else b.store x
+      blob := b.blob
+      seeds := [mainAddr, kRef.block] }
+    match Ix.ModeCheck.checkSubject sRole with
+    | .ok _ => errs := errs.push "role-bound DefAsserts: accepted"
+    | .error e =>
+      unless hasSubstr e "a constant the role table binds sits in a record that carries modes" do
+        errs := errs.push s!"role-bound DefAsserts unexpected error: {e}"
+
+    -- 4. Opaque constant with `DefAsserts` outside `externs` refused; inside `externs` skips fast path
+    let kOpaq : Ixon.Constant := {
+      kRec with info := .defn { d with kind := .opaq, asserts := { boundedStack := true } } }
+    let sOpaqOut : Subject := {
+      table := b.table
+      store := fun x => if x == kRef.block then some kOpaq else b.store x
+      blob := b.blob
+      seeds := [kRef.block] }
+    match Ix.ModeCheck.checkSubject sOpaqOut with
+    | .ok _ => errs := errs.push "opaque DefAsserts outside externs: accepted"
+    | .error e =>
+      unless hasSubstr e "not in the extern set" do
+        errs := errs.push s!"opaque DefAsserts outside externs unexpected error: {e}"
+    let sOpaqExt : Subject := { sOpaqOut with externs := [kRef.block] }
+    match Ix.ModeCheck.checkSubject sOpaqExt with
+    | .ok false => pure ()
+    | other => errs := errs.push s!"opaque DefAsserts in externs expected .ok false, got {repr other}"
+
+    -- 5. Safe runnable definition with `DefAsserts` skips untyped fast path (`.ok false`) and passes check
+    let kSafeAsserts : Ixon.Constant := {
+      kRec with info := .defn { d with asserts := { alloc := .noAlloc, boundedStack := true } } }
+    let sSafe : Subject := {
+      table := b.table
+      store := fun x => if x == kRef.block then some kSafeAsserts else b.store x
+      blob := b.blob
+      seeds := [callFAddr] }
+    match Ix.ModeCheck.checkSubject sSafe with
+    | .ok false =>
+      unless (check {} b.env sSafe).isAccept do
+        errs := errs.push s!"safe DefAsserts check refused: {verdictName (check {} b.env sSafe)}"
+    | other => errs := errs.push s!"safe DefAsserts checkSubject expected .ok false, got {repr other}"
+  | _ => errs := errs.push "ModeFixture.k was not a standalone .defn"
+  return errs
+
+def completenessAndAssertsTest : LSpec.TestSeq :=
+  .individualIO "closure completeness (`bindersComplete`, `modesCanonical`) and `DefAsserts` placement"
+    none (do
+      let errs ← runCompletenessAndAssertsSuite
+      return (errs.isEmpty, 0, 0,
+        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+
+def runUndecidedRoleDiagnosticSuite : IO (Array String) := do
+  let mut errs : Array String := #[]
+  let fenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  let consts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.callAdd]
+  -- Compile with `binderData := false, defaultRoles := false`: safe records carry `0x04` undecided sections
+  match ← Ix.CompileM.compileCertified fenv consts 2 (defaultRoles := false) (binderData := false) with
+  | .error e => errs := errs.push s!"compileCertified (binderData := false) failed: {e}"
+  | .ok out =>
+    unless Ix.Typing.envHasUndecidedSafe out.env do
+      errs := errs.push "expected envHasUndecidedSafe on binderData := false output"
+    match Ix.Typing.typeCheck out.env with
+    | .ok () => errs := errs.push "typeCheck accepted 0x04 undecided records against default role table"
+    | .error e =>
+      unless hasSubstr e "role " && hasSubstr e "undecided (0x04) binder sections" do
+        errs := errs.push s!"typeCheck 0x04 diagnostic missing role or 0x04 note: {e}"
+    -- Also attach a non-default mode record so `ModeCheck.checkArtifact` enters typing and reports the 0x04 note
+    let modedRec : Ixon.Constant := {
+      info := .defn {
+        kind := .defn, safety := .safe, lvls := 0
+        typ := .all (.sort 0) (.var 0)
+        value := .lam (.sort 0) (.var 0) }
+      sharing := #[], refs := #[]
+      univs := #[.zero]
+      binders := #[
+        { shared := false, index := 0, variant := 0, nodes := #[.never { input := .once }] },
+        { shared := false, index := 1, variant := 0, nodes := #[.never { input := .once }] }] }
+    let (ma, single) := envOfSingleConst modedRec
+    let envWithMode : Ixon.Env := {
+      out.env with consts := out.env.consts.insert ma (single.consts[ma]!) }
+    match Ix.ModeCheck.checkArtifact envWithMode with
+    | .ok msg => errs := errs.push s!"ModeCheck.checkArtifact accepted 0x04 against default table: {msg}"
+    | .error e =>
+      unless hasSubstr e "undecided (0x04) binder sections" do
+        errs := errs.push s!"ModeCheck.checkArtifact missing 0x04 note: {e}"
+  -- Also check bound artifact whose records are replaced by 0x04 stripped records without updating its binding
+  match ← Ix.CompileM.compileAndFinalize fenv consts 2 false with
+  | .ok (_, .done boundEnv _) =>
+    match Ix.Compile.BinderData.strip boundEnv with
+    | .error e => errs := errs.push s!"strip boundEnv failed: {e}"
+    | .ok strippedEnv =>
+      let staleBound : Ixon.Env := { strippedEnv with roleBinding := boundEnv.roleBinding }
+      match Ix.Typing.typeCheck staleBound with
+      | .ok () => errs := errs.push "typeCheck accepted stale role binding over 0x04 stripped records"
+      | .error e =>
+        unless hasSubstr e "undecided (0x04) binder sections" do
+          errs := errs.push s!"stale role binding over 0x04 missing diagnostic note: {e}"
+  | _ => errs := errs.push "compileAndFinalize for bound diagnostic fixture failed"
+  return errs
+
+def undecidedRoleDiagnosticTest : LSpec.TestSeq :=
+  .individualIO "diagnostic when unannotated (`0x04`) records meet the role table (`Ix.Typing`, `Ix.ModeCheck`)"
+    none (do
+      let errs ← runUndecidedRoleDiagnosticSuite
+      return (errs.isEmpty, 0, 0,
+        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+
 public def suite : List LSpec.TestSeq :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
-    alternativeCases ++ [limitCase, fastPathCase, recordCasesTest]
+    alternativeCases ++ [limitCase, fastPathCase, recordCasesTest,
+      annotatedCompileCasesTest, completenessAndAssertsTest, undecidedRoleDiagnosticTest]
 
 end Tests.ResourceModes

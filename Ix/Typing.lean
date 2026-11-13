@@ -127,6 +127,52 @@ def TypingInput.preludeFor (input : TypingInput) (table : Ix.Kernel.RoleTable) :
     throw "typing: admitted table differs from prepared binding"
   return input.pre
 
+/-- Whether a decoded safe record carries an undecided (`0x04`) binder node. -/
+def isUndecidedSafeRecord (c : Ixon.Constant) : Bool :=
+  !c.info.uncheckedSafety && c.binders.any (·.nodes.any (·.isUndecided))
+
+/-- Whether `env` holds any safe record whose committed bytes decode with an
+undecided (`0x04`) binder node. -/
+def envHasUndecidedSafe (env : Ixon.Env) : Bool :=
+  env.consts.toArray.any fun (_, lazy) =>
+    match Ixon.runGetExact (Ixon.Serialize.get : Ixon.GetM Ixon.Constant) lazy.rawBytes with
+    | .ok c => isUndecidedSafeRecord c
+    | .error _ => false
+
+/-- Note explaining why undecided (`0x04`) binder sections fail against a role
+table that binds decided records. -/
+def undecidedRoleNote (defaultTable : Bool) : String :=
+  if defaultTable then
+    "; note: input records carry undecided (0x04) binder sections, whereas the default role table binds records with decided binder data"
+  else
+    "; note: input records carry undecided (0x04) binder sections, which changes record addresses relative to the role binding"
+
+/-- Check that every published role name in `env.named` sits at `table`'s bound
+address for that role, naming any mismatched or unbound role and noting when
+input records carry undecided (`0x04`) binder sections. -/
+def checkPublishedRolesDefault (env : Ixon.Env) (table : Ix.Kernel.RoleTable)
+    (constants : List (Address × Ixon.Constant)) : Except String Unit := do
+  if env.named.isEmpty then return
+  let bound : Std.HashMap Ix.Kernel.Role Address :=
+    table.bound.foldl (fun m (r, a) => if m.contains r then m else m.insert r a) {}
+  let entries := env.named.toArray.qsort fun a b => Ix.Name.leanCmp a.1 b.1 == .lt
+  for (n, entry) in entries do
+    if let some r := Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) then
+      match bound[r]? with
+      | some expected =>
+        unless expected == entry.addr do
+          let note := if constants.any (isUndecidedSafeRecord ∘ Prod.snd) then
+              undecidedRoleNote true
+            else ""
+          throw s!"role check failed: published role {n.pretty} ({repr r}) is at {entry.addr}, \
+            not its bound address {expected} in the default role table{note}"
+      | none =>
+        let note := if constants.any (isUndecidedSafeRecord ∘ Prod.snd) then
+            undecidedRoleNote true
+          else ""
+        throw s!"role check failed: published role {n.pretty} ({repr r}) at {entry.addr} \
+          is unbound in the default role table{note}"
+
 /-- The typing half's input. Every record is decoded from its committed
 bytes (`lazy.rawBytes`: Lean's public `LazyConstant` record permits a
 conflicting materialized cache, which neither validator may trust in place of
@@ -134,7 +180,15 @@ the committed bytes) by the entry's own canonical decoder; the entry decodes
 the same bytes again itself. -/
 def typingInput (env : Ixon.Env) : Except String TypingInput := do
   if env.roleBinding.isSome then
-    let input ← (Ix.RoleBinding.Artifact.prepareRecords env typingLimits).mapError toString
+    let input ← match Ix.RoleBinding.Artifact.prepareRecords env typingLimits with
+      | .ok r => pure r
+      | .error err =>
+        let base := toString err
+        let note := match err with
+          | .coverage _ | .prelude _ =>
+            if envHasUndecidedSafe env then undecidedRoleNote false else ""
+          | _ => ""
+        throw (base ++ note)
     let p := input.prepared
     let bytes : Std.HashMap Address ByteArray := p.records.foldl (fun m (a, b) => m.insert a b) {}
     let ordered ← input.constants.toArray.mapM fun (a, c) => do
@@ -153,6 +207,7 @@ def typingInput (env : Ixon.Env) : Except String TypingInput := do
     (env.consts.toArray.map fun (a, lazy) => (a, lazy.rawBytes)).qsort fun x y => x.1.cmpBytes y.1 == .lt
   let constants ← (Ix.Kernel.Admission.decodeRecords typingLimits committed.toList).mapError
     (toString ∘ Ix.Kernel.Admission.Error.ofBytes)
+  checkPublishedRolesDefault env table constants
   let bytes : Std.HashMap Address ByteArray := committed.foldl (fun m (a, b) => m.insert a b) {}
   let decoded : Std.HashMap Address Ixon.Constant := constants.foldl (fun m (a, c) => m.insert a c) {}
   let ordered := (Ixon.CheckOrder.wholeEnv table pre constants.toArray).filterMap fun a => do
@@ -536,14 +591,17 @@ with IxC's error and, where it has one, the failing
 record; an uncertified part's failure says so. -/
 def typeCheck (env : Ixon.Env) : Except String Unit := do
   let input ← (typingInput env).mapError (s!"typing failed: {·}")
+  let note := if !input.bound && input.ordered.any (fun (_, c, _) => isUndecidedSafeRecord c) then
+      undecidedRoleNote true
+    else ""
   let unc := splitOf input
   match checkCertified input unc with
-  | .ok env₀ => unless unc.isEmpty do typeUncertified input unc env₀
+  | .ok env₀ => unless unc.isEmpty do (typeUncertified input unc env₀).mapError (· ++ note)
   | .error (e, isTier) =>
-    unless isTier do throw e
+    unless isTier do throw (e ++ note)
     let unc := (tierOwnersOf input).fold (·.insert ·) unc
-    let env₀ ← (checkCertified input unc).mapError (·.1)
-    typeUncertified input unc env₀
+    let env₀ ← (checkCertified input unc).mapError (·.1 ++ note)
+    (typeUncertified input unc env₀).mapError (· ++ note)
 
 end Ix.Typing
 

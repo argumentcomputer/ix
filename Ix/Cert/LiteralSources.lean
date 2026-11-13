@@ -232,13 +232,19 @@ theorem decompose_lits : ∀ (expr : Ix.Expr) (args : Array Ix.Expr) (whole : Ix
     intro args whole nat str hargs
     exact ⟨⟨nat, str⟩, fun x hx => hargs x (Array.mem_reverse.mp hx)⟩
 
-/-- A lowered semantic contract leaves the compiled binder as it is. -/
+/-- A lowered semantic contract preserves the compiled binder's literal kinds. -/
 theorem lower_lits {contract : Ix.SemanticContract.Contract} {source : Ix.Expr} {compiled value : Ixon.Expr}
     (h : contract.lower source compiled = .ok value) : ixLits value = ixLits compiled := by
   unfold Ix.SemanticContract.Contract.lower at h
   split at h
-  · cases h; rfl
-  · split at h <;> cases h
+  · cases h
+  · cases hk : contract.kind <;> rw [hk] at h <;> dsimp only at h
+    · split at h <;> cases h; rfl
+    · split at h <;> cases h; rfl
+    · cases hm : contract.toLetMode? <;> rw [hm] at h <;> dsimp only at h
+      · cases h
+      · split at h <;> cases h
+        simp only [ixLits_letE]
 
 /-- **One step returns its source's literals**, given the same of the recursive compile on
 every strict subterm, under the cache invariant. -/

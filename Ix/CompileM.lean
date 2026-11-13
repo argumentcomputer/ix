@@ -1638,7 +1638,7 @@ carries its binder data. The annotator runs once. -/
     (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
   match sectionChoose c (annotatorSection annotator? names c) with
   | .ok s =>
-    if annotator?.isSome && !unsafeOrPartial c && hasUndecided s then
+    if (annotator?.map (·.requireDecided)).getD false && !unsafeOrPartial c && hasUndecided s then
       .error (.binderData "a safe record with an undecided binder")
     else .ok s
   | .error e => .error e

@@ -742,10 +742,26 @@ theorem lowerContract_read (contract : Ix.SemanticContract.Contract) (source : I
       (reader state).read lowered = .ok result := by
   unfold Ix.SemanticContract.Contract.lower at success
   split at success
-  · rename_i admits
-    cases success
-    exact ⟨target, by rw [withContract, ite_eq_left admits], read⟩
-  · split at success <;> cases success
+  · cases success
+  · rename_i notUnattached
+    have attached : contract.attachedTo source = true := by simpa using notUnattached
+    cases hk : contract.kind <;> rw [hk] at success <;> dsimp only at success
+    · split at success <;> cases success
+      rename_i hm
+      have hadmits : contract.admits source = true := by
+        simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
+      exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
+    · split at success <;> cases success
+      rename_i hm
+      have hadmits : contract.admits source = true := by
+        simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
+      exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
+    · cases hm : contract.toLetMode? <;> rw [hm] at success <;> dsimp only at success
+      · cases success
+      · split at success <;> cases success
+        have hadmits : contract.admits source = true := by
+          simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
+        exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
 
 theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
     (data : Array (Ix.Name × Ix.DataValue)) (source : Ix.Expr) (hash : Address)
