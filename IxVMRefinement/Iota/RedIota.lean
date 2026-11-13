@@ -300,7 +300,7 @@ theorem iota_fire (c : Ctx) (hc : CoreFacts c) {d : Nat} {k : KKey}
       As.take rP ++ MA.drop rl.ctorParams := by
     rw [heA, hMA', List.take_take, Nat.min_eq_left (show rP ≤ mI + 1 by omega)]
   by_cases hmr : mI = rP
-  · have h := Red.iota (env := c.env) (d := d)
+  · have h := Ix.Kernel.Rules.Red.iota (env := c.env) (d := d)
       (e := Ix.Kernel.Expr.mkAppN (.const k us) (As.take (mI + 1))) (c := k) (us := us)
       (cv := cv) (mI := mI) (rP := rP) (rules := rls)
       (major := Ix.Kernel.Expr.mkAppN (.const rl.ctor usj) MA) (cj := rl.ctor) (usj := usj)
@@ -314,7 +314,7 @@ theorem iota_fire (c : Ctx) (hc : CoreFacts c) {d : Nat} {k : KKey}
     exact h
   · obtain ⟨RES, hRES, hRESd⟩ := hidx hmr
     rw [hMDargs, List.drop_left' hP0'] at hRESd
-    have h := Red.iota (env := c.env) (d := d)
+    have h := Ix.Kernel.Rules.Red.iota (env := c.env) (d := d)
       (e := Ix.Kernel.Expr.mkAppN (.const k us) (As.take (mI + 1))) (c := k) (us := us)
       (cv := cv) (mI := mI) (rP := rP) (rules := rls)
       (major := Ix.Kernel.Expr.mkAppN (.const rl.ctor usj) MA) (cj := rl.ctor) (usj := usj)
