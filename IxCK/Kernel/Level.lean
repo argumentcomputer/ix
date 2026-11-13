@@ -737,6 +737,402 @@ theorem leqCoreGo_spec : ∀ (fuel : Nat) (l r : Level) (diff : Int) (m : LeqMem
 def leqCoreMemo (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
   (leqCoreGo fuel l r diff {}).1
 
+/-! ### `leqCore` with a budget
+
+The memo makes the families above polynomial, but the comparison is
+coNP-hard (`docs/kernel.md`, "Running time"), so a small hostile level can
+still make `leqCore` solve exponentially many distinct subproblems
+(`imaxswap` and `cnfChain` in `Tests/Ix/Kernel/LevelSharing.lean`), and
+`Geran.leq` decomposes a level into sublevels whose number can be
+exponential in the level's size. `leqCoreB budget` is the memoised walk
+`leqCoreGo` with a count of its work beside the memo, which gives up
+(`none`) when the count would pass `budget`. The memo is the same map with
+the same entries as `leqCoreGo`'s (the count is a separate number), so a
+run that does not give up is `leqCoreGo`'s run step for step, and its
+answer is `leqCore`'s (`leqCoreB_eq`; `none` from `leqCore` itself, when
+the depth fuel runs out, stays `some none`).
+
+What it counts, in one number `n` threaded through the walk:
+* each subproblem the walk solves anew (a memo miss: one new memo entry
+  while the memo is below `leqMemoCap`). At a miss the walk gives up if `n`
+  has reached `budget`, so a run makes at most `budget` of them;
+* at each call of `Geran.leq l r diff` (the `(param, max)` case when both
+  branches fail), the sublevels of its operands (`geranSubs`, a bound on
+  the lengths of `Geran.decomposeAux`'s lists, `decomposeAux_length_le`),
+  added to `n`; past `budget` it gives up.
+
+And each Géran call has a cap of its own, `budget / 16`: its operands'
+trees must have fewer than `budget / 16` nodes together (`sizeLeft`, which
+visits at most that many) and at most `budget / 16` sublevels
+(`geranCost`), or the walk gives up. The tree bound comes first because
+`geranSubs` is a tree recursion and a shared level's tree can be
+exponentially larger than its DAG.
+
+The count starts from a given value and is returned (`leqCoreBFrom`), so
+the two directions of one equivalence test can share one budget;
+`leqCoreB` is one direction from zero. -/
+
+/-- Géran's sublevels of `l` and its condition sets: `(geranSubs l).1`
+bounds the number of sublevels `Geran.decomposeAux` adds for `l`, at any
+condition set and offset (`decomposeAux_length_le`), and `(geranSubs l).2`
+is the number of `l`'s condition sets (`geranSubs_nzConds`). A tree
+recursion: `geranCost` bounds the tree first. -/
+def geranSubs : Level → Nat × Nat
+  | .zero => (1, 0)
+  | .succ a => ((geranSubs a).1, 1)
+  | .max a b =>
+    let p := geranSubs a
+    let q := geranSubs b
+    (p.1 + q.1, p.2 + q.2)
+  | .imax a b =>
+    let p := geranSubs a
+    let q := geranSubs b
+    (q.1 + q.2 * p.1, q.2)
+  | .param _ => (2, 1)
+
+theorem geranSubs_nzConds : ∀ l : Level, (Geran.nzConds l).length = (geranSubs l).2
+  | .zero => rfl
+  | .succ _ => rfl
+  | .max a b => by
+    simp only [Geran.nzConds, geranSubs, List.length_append, geranSubs_nzConds a,
+      geranSubs_nzConds b]
+  | .imax _ b => by simp only [Geran.nzConds, geranSubs, geranSubs_nzConds b]
+  | .param _ => rfl
+
+theorem decomposeAux_length_le : ∀ (l : Level) (path : List LevelParam) (k : Nat)
+    (acc : List Geran.Sub),
+    (Geran.decomposeAux path k l acc).length ≤ (geranSubs l).1 + acc.length
+  | .zero, _, _, _ => by simp only [Geran.decomposeAux, geranSubs, List.length_cons] <;> omega
+  | .succ u, path, k, acc => by
+    simpa only [Geran.decomposeAux, geranSubs] using decomposeAux_length_le u path (k + 1) acc
+  | .max u v, path, k, acc => by
+    have h₁ := decomposeAux_length_le u path k acc
+    have h₂ := decomposeAux_length_le v path k (Geran.decomposeAux path k u acc)
+    simp only [Geran.decomposeAux, geranSubs] <;> omega
+  | .imax u v, path, k, acc => by
+    have hfold : ∀ (cs : List (List LevelParam)) (a : List Geran.Sub),
+        (cs.foldl (fun acc c => Geran.decomposeAux (c ++ path) k u acc) a).length ≤
+          cs.length * (geranSubs u).1 + a.length := by
+      intro cs
+      induction cs with
+      | nil => intro a; simp
+      | cons c cs ih =>
+        intro a
+        have h₁ := decomposeAux_length_le u (c ++ path) k a
+        have h₂ := ih (Geran.decomposeAux (c ++ path) k u a)
+        simp only [List.foldl_cons, List.length_cons, Nat.add_mul, Nat.one_mul] <;> omega
+    have h₁ := decomposeAux_length_le v path k acc
+    have h₂ := hfold (Geran.nzConds v) (Geran.decomposeAux path k v acc)
+    rw [geranSubs_nzConds] at h₂
+    simp only [Geran.decomposeAux, geranSubs] <;> omega
+  | .param _, _, _, _ => by
+    simp only [Geran.decomposeAux, geranSubs]
+    split <;> simp only [List.length_cons] <;> omega
+
+/-- What one call `Geran.leq l r diff` adds to the count: the sublevels of
+its operands, when the call is within the per-call cap `cap` (its operands'
+trees have fewer than `cap` nodes together, and at most `cap` sublevels);
+`none` past the cap. Its time is bounded by `cap`: the tree is measured by
+`sizeLeft`, which stops after `cap` nodes, before `geranSubs` walks it. -/
+def geranCost (cap : Nat) (l r : Level) : Option Nat :=
+  if sizeLeft (sizeLeft cap l) r == 0 then none
+  else
+    let c := (geranSubs l).1 + (geranSubs r).1
+    if c ≤ cap then some c else none
+
+/-- A call of `Geran.leq` in the counted walk (`restBGo`): its cost added
+to the count `n`, giving up past the cap `budget / 16` or the budget. -/
+def geranStepB (budget : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
+    Option (Option Bool × LeqMemo × Nat) :=
+  (geranCost (budget / 16) l r).bind fun c =>
+    if budget < n + c then none else some (some (Geran.leq l r diff), m, n + c)
+
+mutual
+
+/-- `leqCoreGo` with a budget: `n` is the count so far (above); `none` when
+the walk gives up, else `leqCoreGo`'s result and the count after. -/
+def leqCoreBGo (budget fuel : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
+    Option (Option Bool × LeqMemo × Nat) :=
+  match fuel with
+  | 0 => some (none, m, n)
+  | fuel + 1 =>
+    if l = .zero ∧ diff ≥ 0 then some (some true, m, n)
+    else if r = .zero ∧ diff < 0 then some (some false, m, n)
+    else
+      match m[(⟨fuel, l, r, diff⟩ : LeqKey)]? with
+      | some v => some (v, m, n)
+      | none =>
+        if budget ≤ n then none
+        else (restBGo budget fuel l r diff m (n + 1)).map fun p =>
+          (p.1, if p.2.1.size < leqMemoCap then p.2.1.insert ⟨fuel, l, r, diff⟩ p.1 else p.2.1,
+            p.2.2)
+
+/-- `restGo` with a budget. -/
+def restBGo (budget fuel : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
+    Option (Option Bool × LeqMemo × Nat) :=
+  match l, r with
+  | .param a, .param x => some (some (a = x && diff ≥ 0), m, n)
+  | .param _, .zero => some (some false, m, n)
+  | .zero, .param _ => some (some (diff ≥ 0), m, n)
+  | .succ s, _ => leqCoreBGo budget fuel s r (diff - 1) m n
+  | _, .succ s => leqCoreBGo budget fuel l s (diff + 1) m n
+  | .max a b, _ =>
+    (leqCoreBGo budget fuel a r diff m n).bind fun p =>
+      match p.1 with
+      | some true => leqCoreBGo budget fuel b r diff p.2.1 p.2.2
+      | v => some (v, p.2.1, p.2.2)
+  | .param _, .max x y =>
+    (leqCoreBGo budget fuel l x diff m n).bind fun p =>
+      match p.1 with
+      | some false =>
+        (leqCoreBGo budget fuel l y diff p.2.1 p.2.2).bind fun q =>
+          match q.1 with
+          | some false => geranStepB budget l r diff q.2.1 q.2.2
+          | v => some (v, q.2.1, q.2.2)
+      | v => some (v, p.2.1, p.2.2)
+  | .zero, .max x y =>
+    (leqCoreBGo budget fuel l x diff m n).bind fun p =>
+      match p.1 with
+      | some false => leqCoreBGo budget fuel l y diff p.2.1 p.2.2
+      | v => some (v, p.2.1, p.2.2)
+  | _, _ =>
+    match l, r with
+    | .imax a b, .imax x y =>
+      if a == x && b == y && diff ≥ 0 then some (some true, m, n)
+      else imaxRulesBGo budget fuel l r diff m n
+    | _, _ => imaxRulesBGo budget fuel l r diff m n
+
+/-- `imaxRulesGo` with a budget. -/
+def imaxRulesBGo (budget fuel : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
+    Option (Option Bool × LeqMemo × Nat) :=
+  match l, r with
+  | .imax _ (.param p), _ => byCasesBGo budget fuel p l r diff m n
+  | _, .imax _ (.param p) => byCasesBGo budget fuel p l r diff m n
+  | .imax a (.imax x y), _ => leqCoreBGo budget fuel (.max (.imax a y) (.imax x y)) r diff m n
+  | .imax a (.max x y), _ =>
+    leqCoreBGo budget fuel (simplify (.max (.imax a x) (.imax a y))) r diff m n
+  | _, .imax x (.imax j k) => leqCoreBGo budget fuel l (.max (.imax x k) (.imax j k)) diff m n
+  | _, .imax x (.max j k) =>
+    leqCoreBGo budget fuel l (simplify (.max (.imax x j) (.imax x k))) diff m n
+  | _, _ => some (none, m, n)
+
+/-- `byCasesGo` with a budget. -/
+def byCasesBGo (budget fuel : Nat) (p : LevelParam) (l r : Level) (diff : Int) (m : LeqMemo)
+    (n : Nat) : Option (Option Bool × LeqMemo × Nat) :=
+  let l0 := simplify (substMemo [p] [.zero] l)
+  let r0 := simplify (substMemo [p] [.zero] r)
+  (leqCoreBGo budget fuel l0 r0 diff m n).bind fun q =>
+    match q.1 with
+    | some true =>
+      let ls := simplify (substMemo [p] [.succ (.param p)] l)
+      let rs := simplify (substMemo [p] [.succ (.param p)] r)
+      leqCoreBGo budget fuel ls rs diff q.2.1 q.2.2
+    | v => some (v, q.2.1, q.2.2)
+
+end
+
+/-- What `leqCoreBGo_agrees` proves of a step of the counted walk: it gave
+up, or it is the memoised walk's step `g` (answer and memo) with some count. -/
+def LeqBAgrees (gb : Option (Option Bool × LeqMemo × Nat)) (g : Option Bool × LeqMemo) : Prop :=
+  gb = none ∨ ∃ k, gb = some (g.1, g.2, k)
+
+/-- `max` on the left (and the case split): the second call runs on `some true`. -/
+private theorem bagree_and {gb₁ : Option (Option Bool × LeqMemo × Nat)}
+    {g₁ : Option Bool × LeqMemo}
+    {gb₂ : LeqMemo → Nat → Option (Option Bool × LeqMemo × Nat)}
+    {g₂ : LeqMemo → Option Bool × LeqMemo}
+    (h₁ : LeqBAgrees gb₁ g₁) (h₂ : ∀ m k, LeqBAgrees (gb₂ m k) (g₂ m)) :
+    LeqBAgrees
+      (gb₁.bind fun p =>
+        match p.1 with
+        | some true => gb₂ p.2.1 p.2.2
+        | v => some (v, p.2.1, p.2.2))
+      (match g₁.1 with
+        | some true => g₂ g₁.2
+        | v => (v, g₁.2)) := by
+  rcases h₁ with h | ⟨k, h⟩
+  · exact Or.inl (by rw [h]; rfl)
+  · rw [h]
+    obtain ⟨v, m⟩ := g₁
+    rcases v with _ | ⟨_ | _⟩
+    · exact Or.inr ⟨k, rfl⟩
+    · exact Or.inr ⟨k, rfl⟩
+    · exact h₂ m k
+
+/-- `zero` against a `max`: the second call runs on `some false`. -/
+private theorem bagree_orElse {gb₁ : Option (Option Bool × LeqMemo × Nat)}
+    {g₁ : Option Bool × LeqMemo}
+    {gb₂ : LeqMemo → Nat → Option (Option Bool × LeqMemo × Nat)}
+    {g₂ : LeqMemo → Option Bool × LeqMemo}
+    (h₁ : LeqBAgrees gb₁ g₁) (h₂ : ∀ m k, LeqBAgrees (gb₂ m k) (g₂ m)) :
+    LeqBAgrees
+      (gb₁.bind fun p =>
+        match p.1 with
+        | some false => gb₂ p.2.1 p.2.2
+        | v => some (v, p.2.1, p.2.2))
+      (match g₁.1 with
+        | some false => g₂ g₁.2
+        | v => (v, g₁.2)) := by
+  rcases h₁ with h | ⟨k, h⟩
+  · exact Or.inl (by rw [h]; rfl)
+  · rw [h]
+    obtain ⟨v, m⟩ := g₁
+    rcases v with _ | ⟨_ | _⟩
+    · exact Or.inr ⟨k, rfl⟩
+    · exact h₂ m k
+    · exact Or.inr ⟨k, rfl⟩
+
+/-- A parameter against a `max`: both branches, then Géran on two `some false`. -/
+private theorem bagree_or {gb₁ : Option (Option Bool × LeqMemo × Nat)}
+    {g₁ : Option Bool × LeqMemo}
+    {gb₂ : LeqMemo → Nat → Option (Option Bool × LeqMemo × Nat)}
+    {g₂ : LeqMemo → Option Bool × LeqMemo}
+    {gb₃ : LeqMemo → Nat → Option (Option Bool × LeqMemo × Nat)} {G : Bool}
+    (h₁ : LeqBAgrees gb₁ g₁) (h₂ : ∀ m k, LeqBAgrees (gb₂ m k) (g₂ m))
+    (h₃ : ∀ m k, LeqBAgrees (gb₃ m k) (some G, m)) :
+    LeqBAgrees
+      (gb₁.bind fun p =>
+        match p.1 with
+        | some false =>
+          (gb₂ p.2.1 p.2.2).bind fun q =>
+            match q.1 with
+            | some false => gb₃ q.2.1 q.2.2
+            | v => some (v, q.2.1, q.2.2)
+        | v => some (v, p.2.1, p.2.2))
+      (match g₁.1 with
+        | some false =>
+          match (g₂ g₁.2).1 with
+          | some false => (some G, (g₂ g₁.2).2)
+          | v => (v, (g₂ g₁.2).2)
+        | v => (v, g₁.2)) := by
+  rcases h₁ with h | ⟨k, h⟩
+  · exact Or.inl (by rw [h]; rfl)
+  · rw [h]
+    obtain ⟨v, m⟩ := g₁
+    rcases v with _ | ⟨_ | _⟩
+    · exact Or.inr ⟨k, rfl⟩
+    · exact bagree_orElse (gb₂ := gb₃) (g₂ := fun m => (some G, m)) (h₂ m k) h₃
+    · exact Or.inr ⟨k, rfl⟩
+
+/-- Two `imax` with equal arguments: the same test in both walks. -/
+private theorem bagree_imaxEq {a b x y : Level} {diff : Int} {m : LeqMemo} {n : Nat}
+    {gb : Option (Option Bool × LeqMemo × Nat)} {g : Option Bool × LeqMemo}
+    (h : LeqBAgrees gb g) :
+    LeqBAgrees
+      (if (a == x && b == y && decide (diff ≥ 0)) = true then some (some true, m, n) else gb)
+      (if (a == x && b == y && decide (diff ≥ 0)) = true then (some true, m) else g) := by
+  by_cases hc : (a == x && b == y && decide (diff ≥ 0)) = true
+  · rw [if_pos hc, if_pos hc]; exact Or.inr ⟨n, rfl⟩
+  · rw [if_neg hc, if_neg hc]; exact h
+
+/-- Géran's step: it gives up, or it is the memoised walk's Géran answer. -/
+private theorem bagree_geran (budget : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
+    LeqBAgrees (geranStepB budget l r diff m n) (some (Geran.leq l r diff), m) := by
+  unfold geranStepB
+  cases geranCost (budget / 16) l r with
+  | none => exact Or.inl rfl
+  | some c =>
+    show LeqBAgrees (if budget < n + c then none else some (some (Geran.leq l r diff), m, n + c)) _
+    by_cases hb : budget < n + c
+    · rw [if_pos hb]; exact Or.inl rfl
+    · rw [if_neg hb]; exact Or.inr ⟨n + c, rfl⟩
+
+/-- **The counted walk is the memoised walk until it gives up.** -/
+theorem leqCoreBGo_agrees (budget : Nat) : ∀ (fuel : Nat) (l r : Level) (diff : Int)
+    (m : LeqMemo) (n : Nat),
+    LeqBAgrees (leqCoreBGo budget fuel l r diff m n) (leqCoreGo fuel l r diff m) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro l r diff m n
+    rw [leqCoreBGo, leqCoreGo]; exact Or.inr ⟨n, rfl⟩
+  | succ fuel ih =>
+    have hbc : ∀ p l r diff (m : LeqMemo) n,
+        LeqBAgrees (byCasesBGo budget fuel p l r diff m n) (byCasesGo fuel p l r diff m) := by
+      intro p l r diff m n
+      rw [byCasesBGo, byCasesGo]
+      dsimp only
+      exact bagree_and (gb₂ := leqCoreBGo budget fuel _ _ _) (g₂ := leqCoreGo fuel _ _ _)
+        (ih _ _ _ _ _) (fun m k => ih _ _ _ _ _)
+    have him : ∀ l r diff (m : LeqMemo) n,
+        LeqBAgrees (imaxRulesBGo budget fuel l r diff m n) (imaxRulesGo fuel l r diff m) := by
+      intro l r diff m n
+      rcases l with _ | _ | _ | ⟨_, _ | _ | _ | _ | _⟩ | _ <;>
+        rcases r with _ | _ | _ | ⟨_, _ | _ | _ | _ | _⟩ | _ <;>
+        (unfold imaxRulesBGo imaxRulesGo; try dsimp only) <;>
+        first
+        | exact Or.inr ⟨n, rfl⟩
+        | exact hbc _ _ _ _ _ _
+        | exact ih _ _ _ _ _
+    have hrest : ∀ l r diff (m : LeqMemo) n,
+        LeqBAgrees (restBGo budget fuel l r diff m n) (restGo fuel l r diff m) := by
+      intro l r diff m n
+      rcases l with _ | _ | _ | _ | _ <;> rcases r with _ | _ | _ | _ | _ <;>
+        (unfold restBGo restGo; try dsimp only) <;>
+        first
+        | exact Or.inr ⟨n, rfl⟩
+        | exact ih _ _ _ _ _
+        | exact bagree_and (gb₂ := leqCoreBGo budget fuel _ _ _) (g₂ := leqCoreGo fuel _ _ _)
+            (ih _ _ _ _ _) (fun m k => ih _ _ _ _ _)
+        | exact bagree_orElse (gb₂ := leqCoreBGo budget fuel _ _ _) (g₂ := leqCoreGo fuel _ _ _)
+            (ih _ _ _ _ _) (fun m k => ih _ _ _ _ _)
+        | exact bagree_or (gb₂ := leqCoreBGo budget fuel _ _ _) (g₂ := leqCoreGo fuel _ _ _)
+            (gb₃ := geranStepB budget _ _ _) (ih _ _ _ _ _) (fun m k => ih _ _ _ _ _)
+            (fun m k => bagree_geran budget _ _ _ m k)
+        | exact bagree_imaxEq (him _ _ _ _ _)
+        | exact him _ _ _ _ _
+    intro l r diff m n
+    rw [leqCoreBGo, leqCoreGo]
+    by_cases h₁ : l = .zero ∧ diff ≥ 0
+    · rw [if_pos h₁, if_pos h₁]; exact Or.inr ⟨n, rfl⟩
+    · rw [if_neg h₁, if_neg h₁]
+      by_cases h₂ : r = .zero ∧ diff < 0
+      · rw [if_pos h₂, if_pos h₂]; exact Or.inr ⟨n, rfl⟩
+      · rw [if_neg h₂, if_neg h₂]
+        cases m[(⟨fuel, l, r, diff⟩ : LeqKey)]? with
+        | some _ => exact Or.inr ⟨n, rfl⟩
+        | none =>
+          dsimp only
+          by_cases hb : budget ≤ n
+          · rw [if_pos hb]; exact Or.inl rfl
+          · rw [if_neg hb]
+            rcases hrest l r diff m (n + 1) with h | ⟨k, h⟩
+            · exact Or.inl (by rw [h]; rfl)
+            · exact Or.inr ⟨k, by rw [h]; rfl⟩
+
+/-- `leqCore fuel l r diff` with a budget, from the count `n` already spent:
+`none` when the count would pass `budget` (`leqCoreB` above), else
+`leqCore`'s answer and the count after. With it the two directions of one
+equivalence test share one budget: the second starts from the first's count. -/
+def leqCoreBFrom (budget fuel : Nat) (l r : Level) (diff : Int) (n : Nat) :
+    Option (Option Bool × Nat) :=
+  (leqCoreBGo budget fuel l r diff {} n).map fun p => (p.1, p.2.2)
+
+/-- `leqCore fuel l r diff` with a budget (above): `none` when the walk
+gives up, which happens when its count of new memo entries and Géran
+sublevels would pass `budget` or a Géran call passes its cap `budget / 16`;
+otherwise `some` of `leqCore`'s answer (`leqCoreB_eq`). -/
+def leqCoreB (budget fuel : Nat) (l r : Level) (diff : Int) : Option (Option Bool) :=
+  (leqCoreBFrom budget fuel l r diff 0).map (·.1)
+
+theorem leqCoreBFrom_eq (budget fuel : Nat) (l r : Level) (diff : Int) (n : Nat) :
+    leqCoreBFrom budget fuel l r diff n = none ∨
+      ∃ n', leqCoreBFrom budget fuel l r diff n = some (leqCore fuel l r diff, n') := by
+  unfold leqCoreBFrom
+  rcases leqCoreBGo_agrees budget fuel l r diff {} n with h | ⟨k, h⟩
+  · exact Or.inl (by rw [h]; rfl)
+  · refine Or.inr ⟨k, ?_⟩
+    rw [h, ← (leqCoreGo_spec fuel l r diff {} LeqMemo.Inv.empty).1]
+    rfl
+
+/-- **A budgeted comparison gives up or answers as `leqCore`.** -/
+theorem leqCoreB_eq (b fuel : Nat) (l r : Level) (d : Int) :
+    leqCoreB b fuel l r d = none ∨ leqCoreB b fuel l r d = some (leqCore fuel l r d) := by
+  unfold leqCoreB
+  rcases leqCoreBFrom_eq b fuel l r d 0 with h | ⟨k, h⟩
+  · exact Or.inl (by rw [h]; rfl)
+  · exact Or.inr (by rw [h]; rfl)
+
 mutual
 
 /-- `leqCore` itself under another name (the recursion on small operands). -/
