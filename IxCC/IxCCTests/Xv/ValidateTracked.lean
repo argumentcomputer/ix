@@ -68,6 +68,11 @@ structure Tally where
   programsRefused : Nat := 0
   /-- walks in which a `forget` found its register listed -/
   scans : Nat := 0
+  /-- the layout the scan needs, on the programs given (not the edits): blocks after the entry
+  with no predecessor earlier in the order, and registers defined more than once -/
+  laterPredOnly : Nat := 0
+  redefined : Nat := 0
+  programBlocks : Nat := 0
   failures : List String := []
 
 def Tally.fail (t : Tally) (msg : String) : Tally := { t with failures := t.failures ++ [msg] }
@@ -103,6 +108,29 @@ def same {ε : Type} [DecidableEq ε] (r r' : Except ε Unit) : Bool :=
   | .ok (), .ok () => true
   | .error e, .error e' => decide (e = e')
   | _, _ => false
+
+/-- Blocks after the entry none of whose predecessors comes earlier, and registers defined more
+than once (function and block parameters, instruction definitions). -/
+def layoutCounts (p : VProgram) : Nat × Nat × Nat := Id.run do
+  let mut late := 0
+  let mut redef := 0
+  let mut blocks := 0
+  for f in p.funcs.toList do
+    let bs := f.blocks.toList
+    blocks := blocks + bs.length
+    let mut early : Validate.NatMap Unit := .leaf
+    for (b, l) in bs.zipIdx do
+      for e in b.term.edges do
+        if l < e.target then early := early.insert e.target ()
+    for l in (List.range bs.length).drop 1 do
+      if (early.find? l).isNone then late := late + 1
+    let mut seen : Validate.NatMap Unit := .leaf
+    let defsOf (b : Block VReg) : List VReg :=
+      b.params ++ (b.body.toList.flatMap fun i => (i.operands.filter (·.kind == .define)).map (·.v)) ++
+        (b.term.operands.filter (·.kind == .define)).map (·.v)
+    for v in f.params ++ bs.flatMap defsOf do
+      if (seen.find? v).isSome then redef := redef + 1 else seen := seen.insert v ()
+  return (late, redef, blocks)
 
 /-- The checks `func` makes before it walks the blocks. -/
 def preOk (f : Func VReg) (o : Output) : Bool :=
@@ -188,6 +216,9 @@ def checkRoot (t : Tally) (label : String) (names : List String) (env : Xl.Env) 
         match Alloc.runProducer env xv with
         | .error e => t.fail s!"{label} ({route}): alloc: {e}"
         | .ok a =>
+          let (late, redef, nb) := layoutCounts xv
+          let t := { t with laterPredOnly := t.laterPredOnly + late, redefined := t.redefined + redef,
+                            programBlocks := t.programBlocks + nb }
           let t := checkAlloc t s!"{label} ({route})" env xv a.outs
           checkEdited t s!"{label} ({route})" env xv a.outs cap) t
 
@@ -207,6 +238,9 @@ def synthetic (count cap : Nat) : Tally := Id.run do
       match Alloc.runProducer {} xv with
       | .error _ => continue
       | .ok a =>
+        let (late, redef, nb) := layoutCounts xv
+        t := { t with laterPredOnly := t.laterPredOnly + late, redefined := t.redefined + redef,
+                      programBlocks := t.programBlocks + nb }
         t := checkAlloc t s!"synthetic {i}" {} xv a.outs
         t := checkEdited t s!"synthetic {i}" {} xv a.outs cap
   return t
@@ -214,6 +248,8 @@ def synthetic (count cap : Nat) : Tally := Id.run do
 def report (label : String) (t : Tally) : List String × List String :=
   ([s!"validator walk ({label}): {t.programs} allocations ({t.edited} edited), {t.blocks} blocks (checkBlock accepted \
       {t.accepted}, refused {t.refused}), programs refused {t.programsRefused}; walks with a forget of a \
-      listed register: {t.scans}; {t.failures.length} failures"], t.failures)
+      listed register: {t.scans}; layout: of {t.programBlocks} blocks of the programs given, \
+      {t.laterPredOnly} with no earlier predecessor, {t.redefined} registers defined twice; \
+      {t.failures.length} failures"], t.failures)
 
 end IxCCTests.Xv.ValidateTracked
