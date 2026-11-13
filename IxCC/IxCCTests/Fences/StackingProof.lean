@@ -76,7 +76,7 @@ verbatim. -/
 /-- info: 'IxCC.Xv.Stacking.Proof.resultsOf_eq_list' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.resultsOf_eq_list
 
-/-- info: 'IxCC.Xv.Stacking.Proof.tailResults_eq_list' depends on axioms: [propext] -/
+/-- info: 'IxCC.Xv.Stacking.Proof.tailResults_eq_list' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.tailResults_eq_list
 
 /-- info: 'IxCC.Xv.Stacking.Proof.foldl_cons_rev' depends on axioms: [propext] -/
