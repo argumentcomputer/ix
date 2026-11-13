@@ -50,11 +50,8 @@ def piDomInst : KExpr → List KExpr → Nat → Option KExpr
   | .forallE _ b _, a :: zs, n + 1 => piDomInst (b.instantiate1 a) zs n
   | _, _, _ => none
 
-/-- The sort a `∀`-telescope ends in after exactly `n` binders. -/
-def piSortAt : Nat → KExpr → Option KLevel
-  | 0, .sort l => some l
-  | n + 1, .forallE _ b _ => piSortAt n b
-  | _, _ => none
+/-- The sort a `∀`-telescope ends in after exactly `n` binders (`Core.piSortAt`). -/
+abbrev piSortAt : Nat → KExpr → Option KLevel := IxVM.Refinement.Core.piSortAt
 
 /-- The body under exactly `n` leading `λ`s. -/
 def stripLams : Nat → KExpr → Option KExpr
@@ -242,6 +239,7 @@ def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
     ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
       c.tmc h (posOf cv.levelParams V) value →
       cv.levelParams.Perm (List.range cv.levelParams.length) →
+      cv.levelParams.length < 4294967296 →
       nl = .field (cv.levelParams.length : F) → LvListRep h us lvls → c.tml d Γ h As sp →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E
