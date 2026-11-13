@@ -10,8 +10,8 @@
   theorem is in the environment and its dependencies (matchers, splitters, the
   definitions its statement mentions) join the selected closure.
 
-  With `--word-equations` it also adds, as seeds, the stored equations of the fixed-width word
-  operations the closure reaches (`Ix.Compile.WordEquations`), which a consumer
+  It also adds (unless `--no-word-equations`), as seeds, the stored equations of the fixed-width
+  word operations the roots reach outside types and theorems (`Ix.Compile.WordEquations`), which a consumer
   that evaluates them as primitives takes their meaning from, and names each in
   the output's `theorems` list with its operation (`theorems`, `toJson`): nothing
   in a program refers to such a theorem, so a consumer that reads only what a
@@ -65,15 +65,18 @@ def realize (env : Lean.Environment) (names : List Lean.Name) :
 closure `ix compile --consts` compiles) and over the unfolding theorems of every
 recursive definition it reaches, until no new theorem appears. The theorems'
 own dependencies join the closure, and the recursive definitions among them
-are processed in turn. With `words` (`ix compile --word-equations`), every
-fixed-width word operation reached adds its stored equation
-(`Ix.Compile.WordEquations`) as a seed; without it, none does. Opt-in because a
-closure reaches word operations through proofs alone (an `omega` termination
-proof does), so adding them by default would change every such closure while
-no consumer uses them (IxCC's word primitives are behind a switch that is off).
+are processed in turn. With `words` (`ix compile`'s default with equations), every
+fixed-width word operation reached from `roots` outside theorems
+(`WordEquations.reachedOutsideTheorems`: a dependency walk over the values of definitions and
+opaques and the rules of recursors that enters no declaration type, no theorem and no word
+operation, so an operation reached only through a proof, as an `omega` termination proof reaches
+some, or only through a type, adds none)
+adds its stored equation and the bridges it mentions (`WordEquations.neededFor`) as seeds.
+`roots` are what the compile selected (`seeds` by default).
 Returns the environment with the realized theorems, the closed constant list,
 the associations and the failures, each definition visited once. -/
-partial def close (env : Lean.Environment) (seeds : List Lean.Name) (words : Bool := false) :
+partial def close (env : Lean.Environment) (seeds : List Lean.Name) (words : Bool := false)
+    (roots : List Lean.Name := seeds) :
     IO (Lean.Environment × List (Lean.Name × Lean.ConstantInfo) × Array Association ×
       Array (Lean.Name × String)) :=
   loop env seeds {} #[] #[]
@@ -83,9 +86,11 @@ where
       IO (Lean.Environment × List (Lean.Name × Lean.ConstantInfo) × Array Association ×
         Array (Lean.Name × String)) := do
     let closed := Ix.EnvScope.collectSelectedDeps env seeds
-    -- With `words`, the stored equations of the fixed-width word operations the closure
-    -- reaches (`Ix.Compile.WordEquations`), added once each, as seeds.
-    let wordEqns := if words then Ix.Compile.WordEquations.needed env (closed.map (·.1)) else []
+    -- With `words`, the stored equations of the fixed-width word operations reached from `roots`
+    -- outside theorems (`Ix.Compile.WordEquations`), added once each, as seeds.
+    let wordEqns := if words then
+        Ix.Compile.WordEquations.neededFor env (Ix.Compile.WordEquations.reachedOutsideTheorems env roots)
+      else []
     if !wordEqns.isEmpty then
       let env ← Ix.Compile.WordEquations.add env wordEqns
       return ← loop env (seeds ++ wordEqns.map (·.theoremName)) visited found failed

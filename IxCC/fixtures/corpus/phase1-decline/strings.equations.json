@@ -381,5 +381,49 @@
       "equation_address": "afee664e2007a761f788c71ab209cf63a82f8cfbbd65b8664cce68d7dc41570f"
     }
   ],
+  "theorems": [
+    {
+      "kind": "word",
+      "subject": "UInt32.lor",
+      "subject_address": "5d9eae6e8ebb660d11244e97a693913c03897caa4b0647be62587a5e532ab488",
+      "theorem": "IxWordEquations.UInt32_lor",
+      "theorem_address": "7fe863fbee93adc2bce8c1c49fb55168883d6423565fc3b50bf0e0e851912ea8"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.ofNat",
+      "subject_address": "a3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07",
+      "theorem": "IxWordEquations.UInt32_ofNat",
+      "theorem_address": "261106e3334d2c3278ed0a2dbc2c86752a0780b682e268267ad9da98490e15b0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.shiftLeft",
+      "subject_address": "4274fabf5e96ffdcf418545d58acde7b8733df4268b73758825c2e281f853c89",
+      "theorem": "IxWordEquations.UInt32_shiftLeft",
+      "theorem_address": "95be93f70ceb88474797e5d78c9155f4d7432328baa01a3894bf593ee593dcd6"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.land",
+      "subject_address": "6f7dd9c646effd8d4321f14fbeb8350862e8ce818caeb98c771d935b4ca9b88d",
+      "theorem": "IxWordEquations.UInt8_land",
+      "theorem_address": "fa4f055b99296aa5cb5994fa6afc50d5de92ec1c1692b3d9cb5018516f27e4e0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.ofNat",
+      "subject_address": "b75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee",
+      "theorem": "IxWordEquations.UInt8_ofNat",
+      "theorem_address": "c599a5c7467baec84e2709253279322427cb0ae75f3cca11fb8682628abae65e"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.toUInt32",
+      "subject_address": "458d21951d68df8d39a5892e05ec2bd39d4e6a5856813a70e63b87c6da6f1f2b",
+      "theorem": "IxWordEquations.UInt8_toUInt32",
+      "theorem_address": "f1ac8ca9c29352cf2fbdc6a31ab539a5bc80607b6f75a2731b98f5202b13df3c"
+    }
+  ],
   "failures": []
 }
