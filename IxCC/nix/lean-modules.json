@@ -3600,6 +3600,9 @@
     "IxCC.Src.Relevance.Proof.P1.Basic",
     "IxCC.Src.Relevance.Proof.P1.Cases",
     "IxCC.Src.Relevance.Proof.P1.Recr",
+    "IxCC.Src.Relevance.Proof.P1.Ctor",
+    "IxCC.Src.Relevance.Proof.P1.Delta",
+    "IxCC.Src.Relevance.Proof.P1.Plumbing",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Defun":
@@ -5209,6 +5212,12 @@
    ["IxCC.Src.Relevance.Proof.P1.Defs",
     "IxCC.Src.Proof.Spine",
     "IxCC.Src.Proof.Lazify"]},
+  "IxCC.Src.Relevance.Proof.P1.Plumbing":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Plumbing.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Cases",
+    "IxCC.Src.Relevance.Proof.P1.Basic",
+    "IxCC.Src.Relevance.Proof.P1.Prefix"]},
   "IxCC.Src.Relevance.Proof.P1.Measure":
   {"path": "IxCC/Src/Relevance/Proof/P1/Measure.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
@@ -5216,12 +5225,22 @@
   {"path": "IxCC/Src/Relevance/Proof/P1/Facts.lean",
    "imports":
    ["IxCC.Src.Relevance.Proof.P1.Defs", "IxCC.Src.Relevance.Proof.ModeEq"]},
+  "IxCC.Src.Relevance.Proof.P1.Delta":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Delta.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Cases",
+    "IxCC.Src.Relevance.Proof.P1.Basic",
+    "IxCC.Src.Relevance.Proof.P1.Prefix"]},
   "IxCC.Src.Relevance.Proof.P1.Defs":
   {"path": "IxCC/Src/Relevance/Proof/P1/Defs.lean",
    "imports":
    ["IxCC.Src.Relevance.Proof.Canonical",
     "IxCC.Lam.Erase.Proof.Rel",
     "IxCC.Src.Semantics"]},
+  "IxCC.Src.Relevance.Proof.P1.Ctor":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Ctor.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Cases", "IxCC.Src.Relevance.Proof.P1.Basic"]},
   "IxCC.Src.Relevance.Proof.P1.Cases":
   {"path": "IxCC/Src/Relevance/Proof/P1/Cases.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Measure"]},
