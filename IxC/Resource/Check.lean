@@ -395,6 +395,8 @@ def anCtor (nP : Nat) (fields : Array Field) (avs : Array (Option AVal)) (c : Cl
         unless v.regs.isEmpty do refuseM "borrowEscape: a borrowed value stored in a @shared field"
         flowTo .share v.skel v "a shared field"
       else if v.cls == .val then
+        -- a once binding stored in a cell can be read out and called again (repair Q)
+        notOnceSrc v "a constructor field"
         unless ← isUniq v do own := .shared
         -- two inherited fields aliasing one binding: the cell holds a value twice, so it is no
         -- tree and its transfer reaches that value twice (finding 8)

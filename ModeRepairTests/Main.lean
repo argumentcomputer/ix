@@ -878,6 +878,14 @@ def in16 : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, k) := b.alloc (.pap kk16 #[])
   (b.heap, [k, xs, .imm (.con e0R)])
+-- Found after repair E (repair Q): `useBox (b : Box (Nat → Nat)) : Nat := b.1 0 + b.1 1`;
+-- `bad11b (@once f : Nat → Nat) : Nat := useBox ⟨f⟩`; the control `ok11b` has `f` plain
+def useBox := mem 360
+def bad11b := mem 361
+def ok11b := mem 380
+def useBoxDef : Ref × RunDef :=
+  (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
+    .shared .leaf)
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -980,7 +988,13 @@ def findingCases : List Case := [
   runCase "finding 16, control: the extra arguments a plain list and a number"
     (p16Defs ++ [(use16p, body [par .many .val sk16, par .many, par .many .imm]
       (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, .natLit 1] .leaf) .shared .leaf)])
-    use16p in16 none true [use16p, kk16]
+    use16p in16 none true [use16p, kk16],
+  runCase "a once parameter stored in a cell, the cell lent to a body that calls the field twice"
+    [useBoxDef, (bad11b, body [par .once .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
+      .shared .leaf)] bad11b oneFun (some .onceReentry) false [bad11b, useBox],
+  runCase "the same, the parameter plain"
+    [useBoxDef, (ok11b, body [par .many .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
+      .shared .leaf)] ok11b oneFun none true [ok11b, useBox]
 ]
 
 -- END COPY
@@ -1462,12 +1476,7 @@ def f11Cases : List Case := [
   { label := "F11 control: their `once: called twice`", P := p10, seed := twiceCall11, inp := oneFun,
     toCheck := [twiceCall11], verdict := .refuse "onceReentry", run := [(0, .oof), (20, .vio .onceReentry)] },
   { label := "F11 control: the once binding passed to a once parameter", P := p10, seed := ok11, inp := oneFun,
-    toCheck := [ok11, callOnce], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] },
-  -- a probe beyond r4 (which looks at the value's own binding only): the once binding stored in a
-  -- cell, the cell lent to a body that calls the field twice
-  { label := "F11 probe: a once binding stored in a cell, the cell lent to useBox", P := p10, seed := bad11b,
-    inp := oneFun, toCheck := [bad11b, useBox], verdict := .accept,
-    run := [(0, .vioOrOof .onceReentry), (100000, .vio .onceReentry)], open_ := true }]
+    toCheck := [ok11, callOnce], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 /-! ### Finding 12: a primitive's partial application -/
 
@@ -1637,6 +1646,136 @@ def f16Cases : List Case := [
   { label := "F16 control: the case applied to a plain list and a number", P := p16, seed := use16p, inp := in16,
     toCheck := [use16p, kk16], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
+/-! ### The routes of a once binding and of a once-only value (repair Q and after)
+
+Every way a value read from a `@once` binding `f` can be stored, duplicated or passed on, each
+beside the same program with `f` plain (the control, accepted, runs clean), and the routes of a
+once-only closure `g := fun _ => consume xs` where its rules differ. `bad11b` (route 1) is the
+counterexample found after E. -/
+
+def useSBox := mem 365
+def apply2 := mem 366
+def retF := mem 367
+def retP := mem 368
+def ext9 := mem 369
+def retG := mem 400
+
+/-- The once-only closure `fun _ => consume xs`, under `n` binders above `xs`. -/
+def gClo (n : Nat) : Term := lam (par .many .leaf) (app (.const consumeR .val) [v (n + 1)] .leaf) .shared .leaf
+
+def callBoth (t : Term) : Term := add (app t [.natLit 0] .leaf) (app t [.natLit 1] .leaf)
+
+/-- Route `i`'s body over a parameter `f` (and, for the case routes, `b : E` after it). -/
+def routeBody : Nat → Term
+  | 1 => app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf
+  | 2 => app (.const useSBox .val) [app (.const sboxR .val) [v 0]] .leaf
+  | 3 => .letE (.value .many) .val (app (.const apply2 .val) [v 0] .val) (app (v 0) [.natLit 0] .leaf)
+  | 4 => app (.const callTwice .val) [lam (par .many .leaf) (app (v 1) [v 0 .leaf] .leaf) .shared .leaf] .leaf
+  | 5 => .letE (.value .many) .val (v 0) (callBoth (v 0))
+  | 6 => .case caseE (v 0 .imm) #[.const callTwice .val, .const callTwice .val] #[v 1] .leaf
+  | 7 => app (.const callTwice .val) [.case caseE (v 0 .imm) #[v 1, v 1] #[] .val] .leaf
+  | 8 => .letE (.value .many) .val (app (.const retF .val) [v 0] .val) (callBoth (v 0))
+  | 9 => app (.const ext9 .val) [v 0] .leaf
+  | _ => add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf)
+
+def routeBodyPlain (i : Nat) : Term :=
+  if i == 8 then .letE (.value .many) .val (app (.const retP .val) [v 0] .val) (callBoth (v 0)) else routeBody i
+
+def routeName : Nat → String
+  | 1 => "an inherited constructor field (useBox ⟨f⟩)"
+  | 2 => "a @shared constructor field (useSBox ⟨f⟩)"
+  | 3 => "a partial application's argument (let p := apply2 f; p 0)"
+  | 4 => "a closure's capture (callTwice (fun n => f n))"
+  | 5 => "a plain let (let h := f; h 0 + h 1)"
+  | 6 => "a case's extra argument ((match b with | _ => callTwice) f)"
+  | 7 => "a case alternative's result (callTwice (match b with | _ => f))"
+  | 8 => "the function's own result (let h := retF f; h 0 + h 1)"
+  | 9 => "an extern's argument (ext9 f)"
+  | _ => "two once positions (callOnce f + callOnce f)"
+
+def routeOnce (i : Nat) : Ref := mem (369 + i)
+def routePlain (i : Nat) : Ref := mem (379 + i)
+def isCaseRoute (i : Nat) : Bool := i == 6 || i == 7
+
+def routeParams (m : BinderMode) (i : Nat) : List Param :=
+  if isCaseRoute i then [par m .val arrowSk, par .many .imm] else [par m .val arrowSk]
+
+/-- The once-only closure's routes: in a cell, a case alternative's result, the function's own
+result, two once positions. -/
+def gBody : Nat → Term
+  | 1 => .letE (.value .many) .val (gClo 0) (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
+  | 7 => .letE (.value .many) .val (gClo 1)
+      (app (.const callTwice .val) [.case caseE (v 1 .imm) #[v 0, v 0] #[] .val] .leaf)
+  | 8 => .letE (.value .many) .val (app (.const retG .val) [v 0] .val) (callBoth (v 0))
+  | _ => .letE (.value .many) .val (gClo 0)
+      (add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf))
+
+def routeG (i : Nat) : Ref := mem (389 + i)
+
+def pQ : Prog := { p10 with defs := p10.defs ++ #[
+  (E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 #[]), (e1R, .ctor E2 1 0 #[]),
+  -- `useSBox (b : SBox (Nat → Nat)) : Nat := b.1 0 + b.1 1`
+  (useSBox, body [par] (callBoth (.proj S 0 (v 0) .val)) .shared .leaf),
+  -- `apply2 (k : Nat → Nat) (n : Nat) : Nat := k n + k n`
+  (apply2, body [par .many .val arrowSk, par .many .leaf]
+    (add (app (v 1) [v 0 .leaf] .leaf) (app (v 1) [v 0 .leaf] .leaf)) .shared .leaf),
+  -- `retF (@once f : Nat → Nat) : Nat → Nat := f`; `retP` the same with `f` plain
+  (retF, body [par .once .val arrowSk] (v 0) .shared .val arrowSk),
+  (retP, body [par .many .val arrowSk] (v 0) .shared .val arrowSk),
+  (ext9, .extern #[par .many .val arrowSk] .shared .leaf .data),
+  -- `retG (@unique xs : List Nat) : Nat → Nat := fun _ => consume xs`
+  (retG, body [par .unique] (gClo 0) .shared .val arrowSk)] ++
+  ((List.range 10).map (· + 1)).toArray.flatMap (fun i => #[
+    (routeOnce i, body (routeParams .once i) (routeBody i) .shared .leaf),
+    (routePlain i, body (routeParams .many i) (routeBodyPlain i) .shared .leaf)]) ++
+  #[(routeG 1, body [par .unique] (gBody 1) .shared .leaf),
+    (routeG 7, body [par .unique, par .many .imm] (gBody 7) .shared .leaf),
+    (routeG 8, body [par .unique] (gBody 8) .shared .leaf),
+    (routeG 10, body [par .unique] (gBody 10) .shared .leaf)] }
+
+def funAndE0 : Heap × List Val :=
+  let (b, f) := ({} : HB).alloc (.pap incR #[])
+  (b.heap, [f, .imm (.con e0R)])
+
+def listAndE0 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  (b.heap, [xs, .imm (.con e0R)])
+
+/-- What each route's once version does after this repair: the verdict (`none` an open
+finding, accepted), its run. -/
+def routeExpect : Nat → Option String × OExp
+  | 1 => (some "onceReentry", .vio .onceReentry)          -- repair Q
+  | 2 => (some "onceReentry", .vio .onceReentry)          -- E (flowTo .share)
+  | 3 => (some "onceReentry", .vio .onceReentry)          -- E (papVal's flowTo .share)
+  | 4 => (some "onceReentry", .vio .onceReentry)          -- E (anLam's flowTo .share)
+  | 5 => (some "onceReentry", .vio .onceReentry)          -- E (bindInner)
+  | 6 => (some "onceReentry", .vio .onceReentry)          -- E and G (applyValue's callResult)
+  | 7 => (none, .vio .onceReentry)                         -- OPEN: the join drops `src`
+  | 8 => (none, .vio .onceReentry)                         -- OPEN: retCheck looks at onceOnly only
+  | 9 => (some "onceReentry", .stuck)                      -- E (callResult); no extern oracle
+  | _ => (none, .vio .onceReentry)                         -- OPEN: `.once` does not test `spent`
+
+def routeCases : List Case := ((List.range 10).map (· + 1)).flatMap fun i =>
+  let inp := if isCaseRoute i then funAndE0 else oneFun
+  let toCheck := if i == 8 then [routeOnce i, retF] else [routeOnce i]
+  let toCheckP := if i == 8 then [routePlain i, retP] else [routePlain i]
+  let (vx, ox) := routeExpect i
+  let tbl (o : OExp) : Table := match o with
+    | .vio k => [(0, .vioOrOof k), (100000, .vio k)]
+    | .stuck => [(0, .stuck)]
+    | o => [(0, o)]
+  [{ label := s!"route {i}, once f: {routeName i}", P := pQ, seed := routeOnce i, inp, toCheck,
+     verdict := (match vx with | some w => .refuse w | none => .accept), run := tbl ox, open_ := vx.isNone },
+   { label := s!"route {i}, control, f plain: {routeName i}", P := pQ, seed := routePlain i, inp,
+     toCheck := toCheckP, verdict := .accept,
+     run := if i == 9 then [(0, .stuck)] else [(0, .valOrOof), (100000, .value)] }]
+
+def routeGCases : List Case := [1, 7, 8, 10].map fun i =>
+  { label := s!"route {i}, the once-only closure g: {routeName i}", P := pQ, seed := routeG i,
+    inp := if i == 7 then listAndE0 else oneList,
+    toCheck := if i == 8 then [routeG i, retG] else [routeG i],
+    verdict := .refuse, run := [(0, .vioOrOof .revokedUse), (100000, .vio .revokedUse)] }
+
 /-! ### Repair N: a spine longer than the checker's depth left at it (found by reading; run)
 
 `termSpine n` cut a spine at the checker's remaining depth, so `S6.mk 1 2 3 4 5 xs` checked at
@@ -1682,7 +1821,7 @@ def nCases : List Case := [
 
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
-    f11Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
+    f11Cases ++ routeCases ++ routeGCases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

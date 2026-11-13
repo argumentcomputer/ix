@@ -596,6 +596,14 @@ def in16 : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, k) := b.alloc (.pap kk16 #[])
   (b.heap, [k, xs, .imm (.con e0R)])
+-- Found after repair E (repair Q): `useBox (b : Box (Nat → Nat)) : Nat := b.1 0 + b.1 1`;
+-- `bad11b (@once f : Nat → Nat) : Nat := useBox ⟨f⟩`; the control `ok11b` has `f` plain
+def useBox := mem 360
+def bad11b := mem 361
+def ok11b := mem 380
+def useBoxDef : Ref × RunDef :=
+  (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
+    .shared .leaf)
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -712,7 +720,13 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 16, control: the extra arguments a plain list and a number"
     (p16Defs ++ [(use16p, body [par .many .val sk16, par .many, par .many .imm]
       (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, .natLit 1] .leaf) .shared .leaf)])
-    use16p in16 none true [use16p, kk16]
+    use16p in16 none true [use16p, kk16],
+  runCase "a once parameter stored in a cell, the cell lent to a body that calls the field twice"
+    [useBoxDef, (bad11b, body [par .once .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
+      .shared .leaf)] bad11b oneFun (some .onceReentry) false [bad11b, useBox],
+  runCase "the same, the parameter plain"
+    [useBoxDef, (ok11b, body [par .many .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
+      .shared .leaf)] ok11b oneFun none true [ok11b, useBox]
 ]
 
 /-! ### Must-reject cases from records -/
