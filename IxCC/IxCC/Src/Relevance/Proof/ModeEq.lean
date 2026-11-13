@@ -5,17 +5,22 @@ import IxCC.Src.Relevance.Check
 /-! # The relevance checks do not read application modes
 
 `Src.Lazify` changes only the modes of application nodes (`Program.ModeEq`), after the checks have
-run on the installed program. This module proves that the checks would have given the same verdict
-on any program equal to it up to modes: `check_modeEq` (`check p₀ ann = check p ann`) and
-`checkCanonical_modeEq`, for `Program.ModeEq p₀ p`. With L1 (`check_soundC`,
-`checkCanonical_sound`) on `p`, the facts the checks establish hold of the program SrcEval runs.
+run on the installed program. This module proves, for `Program.ModeEq p₀ p`, that `check` gives the
+same result on both (`check_modeEq`, unconditional) and that the facts `checkCanonical` establishes
+transport (`canonical_modeEq : Canonical p₀ ann ch → Canonical p ann ch`, field by field).
+`checkCanonical p₀ = checkCanonical p` itself is false for some such pairs: its `dense` clause reads
+the maps' `toList`, which also lists a value stored at a zero-child's root that no lookup reads and
+`Program.ModeEq` does not constrain (no program ingress builds has one). With L1 (`check_soundC`,
+`checkCanonical_sound`) this gives L1's facts on the program SrcEval runs (`P1.facts_modeEq`).
 
 Every function the checks call on the program is shown to give the same answer, or a term equal
-up to modes, on `p₀` and `p` and on arguments equal up to modes. One comparison reads modes:
-`applyPis`'s loop test `whnfType p 4 ty == ty`. On the two programs the tests can disagree only when
-a four-step reduction returns its input up to modes (a cycle through a definition that unfolds to
-itself), and then neither side ever reaches a sort or a Π: `applyPis_cycle`, by induction on the
-fuel. -/
+up to modes, on `p₀` and `p` and on arguments equal up to modes (`term_me` for C0-C7 and S1-S2,
+`checkTermBinders_me` for the tags, `whnfType_me`, `applyPis_me` and `classifyTelescope_me` for the
+classifier). One comparison reads modes: `applyPis`'s loop test `whnfType p 4 ty == ty`. On the two
+programs the tests can disagree only when a four-step reduction returns its input up to modes (a
+cycle through a definition that unfolds to itself), and then neither side ever reaches a sort or a
+Π (`applyPis_cycle`, by induction on the fuel). `IxCCTests.Src.Relevance.ModeFlip` plants that
+cycle. The other lemmas are private. -/
 
 set_option autoImplicit false
 
@@ -29,7 +34,7 @@ open IxCC.Ixon (Univ)
 
 abbrev ME := Term.ModeEq
 
-theorem ME.symm {t u : Term} (h : ME t u) : ME u t := by
+private theorem ME.symm {t u : Term} (h : ME t u) : ME u t := by
   induction h with
   | var i => exact .var i
   | sort u => exact .sort u
@@ -42,7 +47,7 @@ theorem ME.symm {t u : Term} (h : ME t u) : ME u t := by
   | natLit n => exact .natLit n
   | strLit s => exact .strLit s
 
-theorem liftTerm_me {t u : Term} (h : ME t u) : ∀ (n k : Nat), ME (liftTerm n k t) (liftTerm n k u) := by
+private theorem liftTerm_me {t u : Term} (h : ME t u) : ∀ (n k : Nat), ME (liftTerm n k t) (liftTerm n k u) := by
   induction h with
   | app m m' r _ _ ihf iha => intro n k; exact .app m m' r (ihf n k) (iha n k)
   | lam bd _ _ ihd iht => intro n k; exact .lam bd (ihd n k) (iht n (k + 1))
@@ -51,7 +56,7 @@ theorem liftTerm_me {t u : Term} (h : ME t u) : ∀ (n k : Nat), ME (liftTerm n 
   | proj s i _ ih => intro n k; exact .proj s i (ih n k)
   | var | sort | const | natLit | strLit => intro n k; exact Term.ModeEq.refl _
 
-theorem substTerm_me {a b : Term} (hab : ME a b) {t u : Term} (h : ME t u) :
+private theorem substTerm_me {a b : Term} (hab : ME a b) {t u : Term} (h : ME t u) :
     ∀ k : Nat, ME (substTerm a k t) (substTerm b k u) := by
   induction h with
   | var i =>
@@ -67,7 +72,7 @@ theorem substTerm_me {a b : Term} (hab : ME a b) {t u : Term} (h : ME t u) :
   | proj s i _ ih => intro k; exact .proj s i (ih k)
   | sort | const | natLit | strLit => intro k; exact Term.ModeEq.refl _
 
-theorem instUnivsTerm_me (us : List Univ) {t u : Term} (h : ME t u) :
+private theorem instUnivsTerm_me (us : List Univ) {t u : Term} (h : ME t u) :
     ME (instUnivsTerm us t) (instUnivsTerm us u) := by
   induction h with
   | app m m' r _ _ ihf iha => exact .app m m' r ihf iha
@@ -83,30 +88,30 @@ inductive ArgsME : List Term.Arg → List Term.Arg → Prop
   | cons {a b : Term} {m m' : Mode} {r : Rel} {xs ys : List Term.Arg} :
       ME a b → ArgsME xs ys → ArgsME ((a, m, r) :: xs) ((b, m', r) :: ys)
 
-theorem ArgsME.refl : ∀ xs : List Term.Arg, ArgsME xs xs
+private theorem ArgsME.refl : ∀ xs : List Term.Arg, ArgsME xs xs
   | [] => .nil
   | (a, _, _) :: xs => .cons (Term.ModeEq.refl a) (ArgsME.refl xs)
 
-theorem ArgsME.symm {xs ys : List Term.Arg} (h : ArgsME xs ys) : ArgsME ys xs := by
+private theorem ArgsME.symm {xs ys : List Term.Arg} (h : ArgsME xs ys) : ArgsME ys xs := by
   induction h with
   | nil => exact .nil
   | cons hab _ ih => exact .cons (ME.symm hab) ih
 
-theorem ArgsME.length_eq {xs ys : List Term.Arg} (h : ArgsME xs ys) : xs.length = ys.length := by
+private theorem ArgsME.length_eq {xs ys : List Term.Arg} (h : ArgsME xs ys) : xs.length = ys.length := by
   induction h with
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
-theorem ArgsME.isEmpty_eq {xs ys : List Term.Arg} (h : ArgsME xs ys) : xs.isEmpty = ys.isEmpty := by
+private theorem ArgsME.isEmpty_eq {xs ys : List Term.Arg} (h : ArgsME xs ys) : xs.isEmpty = ys.isEmpty := by
   cases h <;> rfl
 
-theorem ArgsME.rels {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem ArgsME.rels {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     xs.map (·.2.2) = ys.map (·.2.2) := by
   induction h with
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
-theorem ArgsME.getElem? {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ i : Nat,
+private theorem ArgsME.getElem? {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ i : Nat,
     (xs[i]? = none ∧ ys[i]? = none) ∨
     ∃ a b m m' r, xs[i]? = some (a, m, r) ∧ ys[i]? = some (b, m', r) ∧ ME a b := by
   induction h with
@@ -117,7 +122,7 @@ theorem ArgsME.getElem? {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ i : Nat
     | zero => right; exact ⟨_, _, _, _, _, rfl, rfl, hab⟩
     | succ i => simpa using ih i
 
-theorem ArgsME.drop {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
+private theorem ArgsME.drop {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
     ArgsME (xs.drop n) (ys.drop n) := by
   induction h with
   | nil => intro n; simpa using ArgsME.nil
@@ -127,7 +132,7 @@ theorem ArgsME.drop {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
     | zero => exact .cons hab hr
     | succ n => simpa using ih n
 
-theorem ArgsME.take {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
+private theorem ArgsME.take {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
     ArgsME (xs.take n) (ys.take n) := by
   induction h with
   | nil => intro n; simpa using ArgsME.nil
@@ -137,13 +142,13 @@ theorem ArgsME.take {xs ys : List Term.Arg} (h : ArgsME xs ys) : ∀ n : Nat,
     | zero => simpa using ArgsME.nil
     | succ n => simpa using ArgsME.cons hab (ih n)
 
-theorem ArgsME.append {xs ys xs' ys' : List Term.Arg} (h : ArgsME xs ys) (h' : ArgsME xs' ys') :
+private theorem ArgsME.append {xs ys xs' ys' : List Term.Arg} (h : ArgsME xs ys) (h' : ArgsME xs' ys') :
     ArgsME (xs ++ xs') (ys ++ ys') := by
   induction h with
   | nil => simpa using h'
   | cons hab _ ih => exact .cons hab ih
 
-theorem mkApps_me {h h' : Term} (hh : ME h h') {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+private theorem mkApps_me {h h' : Term} (hh : ME h h') {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     ME (Term.mkApps h xs) (Term.mkApps h' ys) := by
   induction hx generalizing h h' with
   | nil => exact hh
@@ -151,7 +156,7 @@ theorem mkApps_me {h h' : Term} (hh : ME h h') {xs ys : List Term.Arg} (hx : Arg
     simp only [Term.mkApps, List.foldl_cons]
     exact ih (.app _ _ _ hh hab)
 
-theorem spine_go_me {t u : Term} (h : ME t u) : ∀ {acc acc' : List Term.Arg}, ArgsME acc acc' →
+private theorem spine_go_me {t u : Term} (h : ME t u) : ∀ {acc acc' : List Term.Arg}, ArgsME acc acc' →
     ME (Term.spine.go t acc).1 (Term.spine.go u acc').1 ∧
       ArgsME (Term.spine.go t acc).2 (Term.spine.go u acc').2 := by
   induction h with
@@ -166,22 +171,22 @@ theorem spine_go_me {t u : Term} (h : ME t u) : ∀ {acc acc' : List Term.Arg}, 
   | natLit n => intro acc acc' hacc; exact ⟨.natLit n, hacc⟩
   | strLit s => intro acc acc' hacc; exact ⟨.strLit s, hacc⟩
 
-theorem spine_me {t u : Term} (h : ME t u) :
+private theorem spine_me {t u : Term} (h : ME t u) :
     ME t.spine.1 u.spine.1 ∧ ArgsME t.spine.2 u.spine.2 :=
   spine_go_me h .nil
 
-theorem betaApps_nil (t : Term) : betaApps t [] = t := by cases t <;> rfl
+private theorem betaApps_nil (t : Term) : betaApps t [] = t := by cases t <;> rfl
 
-theorem betaApps_cons_nonlam {t : Term} (x : Term.Arg) (xs : List Term.Arg)
+private theorem betaApps_cons_nonlam {t : Term} (x : Term.Arg) (xs : List Term.Arg)
     (ht : ∀ b d body, t ≠ .lam b d body) : betaApps t (x :: xs) = Term.mkApps t (x :: xs) := by
   cases t with
   | lam b d body => exact absurd rfl (ht b d body)
   | _ => rfl
 
-theorem me_lam_iff {t u : Term} (h : ME t u) : (∃ b d body, t = .lam b d body) ↔ ∃ b d body, u = .lam b d body := by
+private theorem me_lam_iff {t u : Term} (h : ME t u) : (∃ b d body, t = .lam b d body) ↔ ∃ b d body, u = .lam b d body := by
   cases h <;> simp
 
-theorem betaApps_me {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+private theorem betaApps_me {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     ∀ {t u : Term}, ME t u → ME (betaApps t xs) (betaApps u ys) := by
   induction hx with
   | nil => intro t u h; rw [betaApps_nil, betaApps_nil]; exact h
@@ -196,12 +201,12 @@ theorem betaApps_me {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
         betaApps_cons_nonlam _ _ fun b d body he => hu ⟨b, d, body, he⟩]
       exact mkApps_me h (.cons hab hr)
 
-theorem lamRels_me {t u : Term} (h : ME t u) : lamRels t = lamRels u := by
+private theorem lamRels_me {t u : Term} (h : ME t u) : lamRels t = lamRels u := by
   induction h with
   | lam bd _ _ _ iht => simp [lamRels, iht]
   | _ => rfl
 
-theorem mentionsVar_me {t u : Term} (h : ME t u) : ∀ k : Nat, mentionsVar k t = mentionsVar k u := by
+private theorem mentionsVar_me {t u : Term} (h : ME t u) : ∀ k : Nat, mentionsVar k t = mentionsVar k u := by
   induction h with
   | app m m' r _ _ ihf iha => intro k; simp [mentionsVar, ihf, iha]
   | lam bd _ _ ihd iht => intro k; simp [mentionsVar, ihd, iht]
@@ -210,7 +215,7 @@ theorem mentionsVar_me {t u : Term} (h : ME t u) : ∀ k : Nat, mentionsVar k t 
   | proj s i _ ih => intro k; simp [mentionsVar, ih]
   | _ => intro k; rfl
 
-theorem relevantRefs_me {t u : Term} (h : ME t u) :
+private theorem relevantRefs_me {t u : Term} (h : ME t u) :
     ∀ (prof : Profile) (acc : List Inst), t.relevantRefs prof acc = u.relevantRefs prof acc := by
   induction h with
   | app m m' r _ _ ihf iha => intro prof acc; simp [Term.relevantRefs, ihf, iha]
@@ -220,30 +225,30 @@ theorem relevantRefs_me {t u : Term} (h : ME t u) :
   | _ => intro prof acc; rfl
 
 /-- Equal up to modes, under an option. -/
-def OptME : Option Term → Option Term → Prop
+private def OptME : Option Term → Option Term → Prop
   | some t, some u => ME t u
   | none, none => True
   | _, _ => False
 
-theorem peelLamsN_me : ∀ (n : Nat) {t u : Term}, ME t u → OptME (peelLamsN n t) (peelLamsN n u)
+private theorem peelLamsN_me : ∀ (n : Nat) {t u : Term}, ME t u → OptME (peelLamsN n t) (peelLamsN n u)
   | 0, _, _, h => h
   | n + 1, _, _, h => by
     cases h with
     | lam bd _ hb => exact peelLamsN_me n hb
     | _ => trivial
 
-theorem me_sort_iff {t u : Term} (h : ME t u) (s : Univ) : t = .sort s ↔ u = .sort s := by
+private theorem me_sort_iff {t u : Term} (h : ME t u) (s : Univ) : t = .sort s ↔ u = .sort s := by
   cases h <;> simp
 
-theorem me_pi_iff {t u : Term} (h : ME t u) : (∃ b r d body, t = .pi b r d body) ↔ ∃ b r d body, u = .pi b r d body := by
+private theorem me_pi_iff {t u : Term} (h : ME t u) : (∃ b r d body, t = .pi b r d body) ↔ ∃ b r d body, u = .pi b r d body := by
   cases h <;> simp
 
-theorem me_letE_iff {t u : Term} (h : ME t u) :
+private theorem me_letE_iff {t u : Term} (h : ME t u) :
     (∃ c r ty v b, t = .letE c r ty v b) ↔ ∃ c r ty v b, u = .letE c r ty v b := by
   cases h <;> simp
 
 /-- `.pis.2` of terms equal up to modes is a sort on both sides or on neither. -/
-theorem pis_snd_me {t u : Term} (h : ME t u) : ME t.pis.2 u.pis.2 := by
+private theorem pis_snd_me {t u : Term} (h : ME t u) : ME t.pis.2 u.pis.2 := by
   induction h with
   | pi bd res _ _ _ iht => exact iht
   | var i => exact .var i
@@ -257,12 +262,12 @@ theorem pis_snd_me {t u : Term} (h : ME t u) : ME t.pis.2 u.pis.2 := by
   | strLit s => exact .strLit s
 
 /-- The sort a term's conclusion is, as the classifier reads it (`dSort`). -/
-def sortOf (t : Term) : Option Univ :=
+private def sortOf (t : Term) : Option Univ :=
   match t.pis.2 with
   | .sort u => some u
   | _ => none
 
-theorem sortOf_me {t u : Term} (h : ME t u) : sortOf t = sortOf u := by
+private theorem sortOf_me {t u : Term} (h : ME t u) : sortOf t = sortOf u := by
   have hp := pis_snd_me h
   simp only [sortOf]
   generalize t.pis.2 = a at hp
@@ -274,7 +279,7 @@ theorem sortOf_me {t u : Term} (h : ME t u) : sortOf t = sortOf u := by
 variable {p₀ p : Program}
 
 /-- What `Program.ModeEq` says of one declaration, by cases. -/
-theorem decl?_cases (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem decl?_cases (hme : Program.ModeEq p₀ p) (c : CId) :
     p₀.decl? c = p.decl? c ∨
     (∃ k s l ty v v', p₀.decl? c = some (.defn k s l ty v) ∧ p.decl? c = some (.defn k s l ty v') ∧
       ME v v') ∨
@@ -303,7 +308,7 @@ theorem decl?_cases (hme : Program.ModeEq p₀ p) (c : CId) :
       | recr sf kk l np nmot nmin ni ind ty hr =>
         right; right; exact ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, rfl, hr⟩
 
-theorem decl?_type (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem decl?_type (hme : Program.ModeEq p₀ p) (c : CId) :
     (p₀.decl? c).map Decl.type = (p.decl? c).map Decl.type := by
   rcases decl?_cases hme c with h | ⟨k, s, l, ty, v, v', h₀, h, -⟩ |
       ⟨sf, kk, l, np, nmot, nmin, ni, ind, rs, rs', ty, h₀, h, -⟩
@@ -311,7 +316,7 @@ theorem decl?_type (hme : Program.ModeEq p₀ p) (c : CId) :
   · rw [h₀, h]; rfl
   · rw [h₀, h]; rfl
 
-theorem decl?_lvls (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem decl?_lvls (hme : Program.ModeEq p₀ p) (c : CId) :
     (p₀.decl? c).map Decl.lvls = (p.decl? c).map Decl.lvls := by
   rcases decl?_cases hme c with h | ⟨k, s, l, ty, v, v', h₀, h, -⟩ |
       ⟨sf, kk, l, np, nmot, nmin, ni, ind, rs, rs', ty, h₀, h, -⟩
@@ -319,14 +324,14 @@ theorem decl?_lvls (hme : Program.ModeEq p₀ p) (c : CId) :
   · rw [h₀, h]; rfl
   · rw [h₀, h]; rfl
 
-theorem recKindOf_eq (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem recKindOf_eq (hme : Program.ModeEq p₀ p) (c : CId) :
     p₀.table.recKindOf c = p.table.recKindOf c := by
   simp only [Table.recKindOf, hme.recKind]
 
 /-! ## The classifier: `whnfType`, `isTypeFormerP`, `applyPis` -/
 
 /-- `whnfType`'s step at a term that is not a `let`. -/
-def whnfBody (q : Program) (fuel : Nat) (t : Term) : Term :=
+private def whnfBody (q : Program) (fuel : Nat) (t : Term) : Term :=
   match t.spine with
   | (head, args) =>
     match head with
@@ -337,7 +342,7 @@ def whnfBody (q : Program) (fuel : Nat) (t : Term) : Term :=
       | _ => t
     | _ => t
 
-theorem whnfType_succ (q : Program) (fuel : Nat) {t : Term}
+private theorem whnfType_succ (q : Program) (fuel : Nat) {t : Term}
     (ht : ¬ ∃ c r ty v b, t = .letE c r ty v b) : whnfType q (fuel + 1) t = whnfBody q fuel t := by
   cases t with
   | letE c r ty v b => exact absurd ⟨c, r, ty, v, b, rfl⟩ ht
@@ -383,7 +388,7 @@ theorem whnfType_me (hme : Program.ModeEq p₀ p) :
           exact h
       | _ => exact h
 
-theorem whnfType_me_refl (q : Program) (n : Nat) {t u : Term} (h : ME t u) :
+private theorem whnfType_me_refl (q : Program) (n : Nat) {t u : Term} (h : ME t u) :
     ME (whnfType q n t) (whnfType q n u) :=
   whnfType_me (Program.ModeEq.refl q) n h
 
@@ -393,11 +398,11 @@ inductive CtxME : List (Term × Option Univ) → List (Term × Option Univ) → 
   | cons {a b : Term} {s : Option Univ} {xs ys : List (Term × Option Univ)} :
       ME a b → CtxME xs ys → CtxME ((a, s) :: xs) ((b, s) :: ys)
 
-theorem CtxME.refl : ∀ xs : List (Term × Option Univ), CtxME xs xs
+private theorem CtxME.refl : ∀ xs : List (Term × Option Univ), CtxME xs xs
   | [] => .nil
   | (a, _) :: xs => .cons (Term.ModeEq.refl a) (CtxME.refl xs)
 
-theorem CtxME.getElem? {xs ys : List (Term × Option Univ)} (h : CtxME xs ys) : ∀ i : Nat,
+private theorem CtxME.getElem? {xs ys : List (Term × Option Univ)} (h : CtxME xs ys) : ∀ i : Nat,
     (xs[i]? = none ∧ ys[i]? = none) ∨
     ∃ a b s, xs[i]? = some (a, s) ∧ ys[i]? = some (b, s) ∧ ME a b := by
   induction h with
@@ -408,7 +413,7 @@ theorem CtxME.getElem? {xs ys : List (Term × Option Univ)} (h : CtxME xs ys) : 
     | zero => right; exact ⟨_, _, _, rfl, rfl, hab⟩
     | succ i => simpa using ih i
 
-theorem isTypeFormerP_me (hme : Program.ModeEq p₀ p) :
+private theorem isTypeFormerP_me (hme : Program.ModeEq p₀ p) :
     ∀ (n : Nat) (ctx₀ ctx : List (Term × Option Univ)) {t u : Term}, ME t u →
       isTypeFormerP p₀ ctx₀ n t = isTypeFormerP p ctx n u
   | 0, _, _, _, _, _ => rfl
@@ -424,10 +429,10 @@ theorem isTypeFormerP_me (hme : Program.ModeEq p₀ p) :
 /-! ### `applyPis`: the loop test compares modes -/
 
 /-- `applyPis`'s last case: neither a sort with no argument left nor a Π with one. -/
-abbrev Plain (ty : Term) (rest : List Term.Arg) : Prop :=
+private abbrev Plain (ty : Term) (rest : List Term.Arg) : Prop :=
   (∀ s, ty = .sort s → rest ≠ []) ∧ (∀ b r d body, ty = .pi b r d body → rest = [])
 
-theorem applyPis_plain (q : Program) (k : Nat) {ty : Term} {rest : List Term.Arg} (h : Plain ty rest) :
+private theorem applyPis_plain (q : Program) (k : Nat) {ty : Term} {rest : List Term.Arg} (h : Plain ty rest) :
     applyPis q (k + 1) ty rest =
       if whnfType q 4 ty == ty then none else applyPis q k (whnfType q 4 ty) rest := by
   obtain ⟨h₁, h₂⟩ := h
@@ -437,7 +442,7 @@ theorem applyPis_plain (q : Program) (k : Nat) {ty : Term} {rest : List Term.Arg
     | exact absurd rfl (h₁ _ rfl)
     | exact absurd (h₂ _ _ _ _ rfl) (List.cons_ne_nil _ _)
 
-theorem Plain.of_me {t u : Term} (h : ME t u) {rest rest' : List Term.Arg} (hr : ArgsME rest rest')
+private theorem Plain.of_me {t u : Term} (h : ME t u) {rest rest' : List Term.Arg} (hr : ArgsME rest rest')
     (hp : Plain u rest') : Plain t rest := by
   obtain ⟨h₁, h₂⟩ := hp
   refine ⟨fun s hs => ?_, fun b r d body hb => ?_⟩
@@ -451,7 +456,7 @@ theorem Plain.of_me {t u : Term} (h : ME t u) {rest rest' : List Term.Arg} (hr :
 /-- **The cycle.** If a four-step reduction returns `v` up to modes, `applyPis` from any term
 equal to `v` up to modes never reaches a sort or a Π: every iteration returns a term equal to `v`
 up to modes, so the loop ends by its test or its fuel. -/
-theorem applyPis_cycle (q : Program) {v : Term} {rest : List Term.Arg} (hv : Plain v rest)
+private theorem applyPis_cycle (q : Program) {v : Term} {rest : List Term.Arg} (hv : Plain v rest)
     (hw : ME (whnfType q 4 v) v) : ∀ (k : Nat) {u : Term}, ME u v → applyPis q k u rest = none
   | 0, _, _ => rfl
   | k + 1, u, hu => by
@@ -500,7 +505,7 @@ theorem applyPis_me (hme : Program.ModeEq p₀ p) :
       | _ => exact absurd ⟨fun _ he => (by cases he), fun _ _ _ _ he => (by cases he)⟩ hp
 
 
-theorem resolveOf_cases (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem resolveOf_cases (hme : Program.ModeEq p₀ p) (c : CId) :
     p₀.table.resolveOf c = p.table.resolveOf c ∨
     ∃ thm b b', p₀.table.resolveOf c = some (.eqn thm b) ∧ p.table.resolveOf c = some (.eqn thm b') ∧
       ME b b' := by
@@ -511,12 +516,12 @@ theorem resolveOf_cases (hme : Program.ModeEq p₀ p) (c : CId) :
   | refl => left; rfl
   | eqn thm hb => right; exact ⟨_, _, _, rfl, rfl, hb⟩
 
-theorem RulesModeEq.symm' {rs rs' : List Rule} (h : RulesModeEq rs rs') : RulesModeEq rs' rs :=
+private theorem RulesModeEq.symm' {rs rs' : List Rule} (h : RulesModeEq rs rs') : RulesModeEq rs' rs :=
   ⟨h.1.symm, fun j r r' h₁ h₂ => by
     obtain ⟨hc, hf, hm⟩ := h.2 j r' r h₂ h₁
     exact ⟨hc.symm, hf.symm, ME.symm hm⟩⟩
 
-theorem Program.ModeEq.symm' {q q' : Program} (h : Program.ModeEq q q') : Program.ModeEq q' q := by
+theorem _root_.IxCC.Src.Program.ModeEq.symm {q q' : Program} (h : Program.ModeEq q q') : Program.ModeEq q' q := by
   refine ⟨h.size.symm, h.roots.symm, h.known.symm, h.resource.symm, h.recKind.symm, h.lazy.symm,
     h.inline.symm, h.opaqueByValue.symm, fun c => ?_, fun c => ?_⟩
   · have hr := h.resolve c
@@ -545,16 +550,16 @@ theorem Program.ModeEq.symm' {q q' : Program} (h : Program.ModeEq q q') : Progra
 /-! ### Rules, declarations and table entries, by how they relate -/
 
 /-- Rule lists equal up to the modes of their right-hand sides (`RulesModeEq`, as a list relation). -/
-inductive RulesME : List Rule → List Rule → Prop
+private inductive RulesME : List Rule → List Rule → Prop
   | nil : RulesME [] []
   | cons {r r' : Rule} {rs rs' : List Rule} : r.ctor = r'.ctor → r.fields = r'.fields →
       ME r.rhs r'.rhs → RulesME rs rs' → RulesME (r :: rs) (r' :: rs')
 
-theorem RulesME.refl : ∀ rs : List Rule, RulesME rs rs
+private theorem RulesME.refl : ∀ rs : List Rule, RulesME rs rs
   | [] => .nil
   | r :: rs => .cons rfl rfl (Term.ModeEq.refl r.rhs) (RulesME.refl rs)
 
-theorem RulesME.of : ∀ {rs rs' : List Rule}, RulesModeEq rs rs' → RulesME rs rs'
+private theorem RulesME.of : ∀ {rs rs' : List Rule}, RulesModeEq rs rs' → RulesME rs rs'
   | [], [], _ => .nil
   | [], _ :: _, h => absurd h.1 (by simp)
   | _ :: _, [], h => absurd h.1 (by simp)
@@ -563,12 +568,12 @@ theorem RulesME.of : ∀ {rs rs' : List Rule}, RulesModeEq rs rs' → RulesME rs
     exact .cons hc hf hm (RulesME.of ⟨by simpa using h.1,
       fun j a b ha hb => h.2 (j + 1) a b (by simpa using ha) (by simpa using hb)⟩)
 
-theorem RulesME.length_eq {rs rs' : List Rule} (h : RulesME rs rs') : rs.length = rs'.length := by
+private theorem RulesME.length_eq {rs rs' : List Rule} (h : RulesME rs rs') : rs.length = rs'.length := by
   induction h with
   | nil => rfl
   | cons _ _ _ _ ih => simp [ih]
 
-theorem RulesME.getElem? {rs rs' : List Rule} (h : RulesME rs rs') : ∀ j : Nat,
+private theorem RulesME.getElem? {rs rs' : List Rule} (h : RulesME rs rs') : ∀ j : Nat,
     (rs[j]? = none ∧ rs'[j]? = none) ∨
     ∃ r r', rs[j]? = some r ∧ rs'[j]? = some r' ∧ r.ctor = r'.ctor ∧ r.fields = r'.fields ∧
       ME r.rhs r'.rhs := by
@@ -581,22 +586,22 @@ theorem RulesME.getElem? {rs rs' : List Rule} (h : RulesME rs rs') : ∀ j : Nat
     | succ j => simpa using ih j
 
 /-- The per-rule premise of the list lemmas: `F₀` and `F` agree on related rules. -/
-abbrev RulesAgree {β : Type} (F₀ F : Rule → β) : Prop :=
+private abbrev RulesAgree {β : Type} (F₀ F : Rule → β) : Prop :=
   ∀ r r', r.ctor = r'.ctor → r.fields = r'.fields → ME r.rhs r'.rhs → F₀ r = F r'
 
-theorem RulesME.map {β : Type} {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → β}
+private theorem RulesME.map {β : Type} {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → β}
     (hF : RulesAgree F₀ F) : rs.map F₀ = rs'.map F := by
   induction h with
   | nil => rfl
   | cons hc hf hm _ ih => simp only [List.map_cons, hF _ _ hc hf hm, ih]
 
-theorem RulesME.any {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → Bool}
+private theorem RulesME.any {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → Bool}
     (hF : RulesAgree F₀ F) : rs.any F₀ = rs'.any F := by
   induction h with
   | nil => rfl
   | cons hc hf hm _ ih => simp only [List.any_cons, hF _ _ hc hf hm, ih]
 
-theorem RulesME.zipIdx_filterMap {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
+private theorem RulesME.zipIdx_filterMap {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
     {F₀ F : Rule × Nat → Option β} (hF : ∀ k, RulesAgree (fun r => F₀ (r, k)) (fun r => F (r, k))) :
     ∀ n : Nat, (rs.zipIdx n).filterMap F₀ = (rs'.zipIdx n).filterMap F := by
   induction h with
@@ -606,7 +611,7 @@ theorem RulesME.zipIdx_filterMap {β : Type} {rs rs' : List Rule} (h : RulesME r
     simp only [List.zipIdx_cons, List.filterMap_cons, ih (n + 1)]
     rw [show F₀ (_, n) = F (_, n) from hF n _ _ hc hf hm]
 
-theorem RulesME.zipIdx_findSome? {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
+private theorem RulesME.zipIdx_findSome? {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
     {F₀ F : Rule × Nat → Option β} (hF : ∀ k, RulesAgree (fun r => F₀ (r, k)) (fun r => F (r, k))) :
     ∀ n : Nat, (rs.zipIdx n).findSome? F₀ = (rs'.zipIdx n).findSome? F := by
   induction h with
@@ -617,7 +622,7 @@ theorem RulesME.zipIdx_findSome? {β : Type} {rs rs' : List Rule} (h : RulesME r
     rw [show F₀ (_, n) = F (_, n) from hF n _ _ hc hf hm]
 
 /-- How the declarations of a constant on two programs equal up to modes relate. -/
-inductive DeclME : Option Decl → Option Decl → Prop
+private inductive DeclME : Option Decl → Option Decl → Prop
   | none : DeclME none none
   | same (d : Decl) : DeclME (some d) (some d)
   | defn (k : Ixon.DefKind) (s : Ixon.DefinitionSafety) (l : Nat) (ty : Term) {v v' : Term} :
@@ -626,7 +631,7 @@ inductive DeclME : Option Decl → Option Decl → Prop
       RulesME rs rs' →
       DeclME (some (.recr sf kk l np nmot nmin ni ind rs ty)) (some (.recr sf kk l np nmot nmin ni ind rs' ty))
 
-theorem decl?_me (hme : Program.ModeEq p₀ p) (c : CId) : DeclME (p₀.decl? c) (p.decl? c) := by
+private theorem decl?_me (hme : Program.ModeEq p₀ p) (c : CId) : DeclME (p₀.decl? c) (p.decl? c) := by
   rcases decl?_cases hme c with h | ⟨k, s, l, ty, v, v', h₀, h, hv⟩ |
       ⟨sf, kk, l, np, nmot, nmin, ni, ind, rs, rs', ty, h₀, h, hr⟩
   · rw [h]
@@ -637,50 +642,50 @@ theorem decl?_me (hme : Program.ModeEq p₀ p) (c : CId) : DeclME (p₀.decl? c)
   · rw [h₀, h]; exact .recr sf kk l np nmot nmin ni ind ty (RulesME.of hr)
 
 /-- Split on how `p₀.decl? c` and `p.decl? c` relate, generalizing both. -/
-macro "decl_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+local macro "decl_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
   `(tactic| (have hd := decl?_me $hme $c
              generalize Program.decl? $p₀ $c = d₀ at hd ⊢
              generalize Program.decl? $p $c = d at hd ⊢
              cases hd))
 
 /-- `decl_me`, and the same declaration split by its kind. -/
-macro "decl_me! " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+local macro "decl_me! " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
   `(tactic| (have hd := decl?_me $hme $c
              generalize Program.decl? $p₀ $c = d₀ at hd ⊢
              generalize Program.decl? $p $c = d at hd ⊢
              rcases hd with _ | ⟨_ | _ | _ | _ | _ | _⟩ | _ | _))
 
 /-- Split on how `p₀.table.resolveOf c` and `p.table.resolveOf c` relate, generalizing both. -/
-macro "res_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+local macro "res_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
   `(tactic| (have hr := Program.ModeEq.resolve $hme $c
              generalize Table.resolveOf (Program.table $p₀) $c = r₀ at hr ⊢
              generalize Table.resolveOf (Program.table $p) $c = r at hr ⊢
              cases hr))
 
-theorem ctorFieldsIs_eq (hme : Program.ModeEq p₀ p) (c n : Nat) :
+private theorem ctorFieldsIs_eq (hme : Program.ModeEq p₀ p) (c n : Nat) :
     ctorFieldsIs p₀ c n = ctorFieldsIs p c n := by
   unfold ctorFieldsIs
   decl_me p₀ p hme c <;> rfl
 
-theorem onlyCtor?_eq (hme : Program.ModeEq p₀ p) (s : CId) : onlyCtor? p₀ s = onlyCtor? p s := by
+private theorem onlyCtor?_eq (hme : Program.ModeEq p₀ p) (s : CId) : onlyCtor? p₀ s = onlyCtor? p s := by
   unfold onlyCtor?
   decl_me p₀ p hme s <;> rfl
 
-theorem fieldWrittenErased_eq (hme : Program.ModeEq p₀ p) (k i : Nat) :
+private theorem fieldWrittenErased_eq (hme : Program.ModeEq p₀ p) (k i : Nat) :
     fieldWrittenErased p₀ k i = fieldWrittenErased p k i := by
   unfold fieldWrittenErased
   decl_me p₀ p hme k <;> rfl
 
-theorem ctorProfile_eq (hme : Program.ModeEq p₀ p) (r : CId) (q : Profile) :
+private theorem ctorProfile_eq (hme : Program.ModeEq p₀ p) (r : CId) (q : Profile) :
     ctorProfile p₀ r q = ctorProfile p r q := by
   simp only [ctorProfile, Program.majorUnivs]
   decl_me p₀ p hme r <;> rfl
 
-theorem specialHead?_eq (hme : Program.ModeEq p₀ p) (c : CId) : specialHead? p₀ c = specialHead? p c := by
+private theorem specialHead?_eq (hme : Program.ModeEq p₀ p) (c : CId) : specialHead? p₀ c = specialHead? p c := by
   unfold specialHead?
   decl_me p₀ p hme c <;> res_me p₀ p hme c <;> rfl
 
-theorem appliedAt_eq (hme : Program.ModeEq p₀ p) (c pos : Nat) : appliedAt p₀ c pos = appliedAt p c pos := by
+private theorem appliedAt_eq (hme : Program.ModeEq p₀ p) (c pos : Nat) : appliedAt p₀ c pos = appliedAt p c pos := by
   unfold appliedAt
   rw [specialHead?_eq hme]
   res_me p₀ p hme c
@@ -690,7 +695,7 @@ theorem appliedAt_eq (hme : Program.ModeEq p₀ p) (c pos : Nat) : appliedAt p�
     decl_me p₀ p hme r <;> rfl
   · rfl
 
-theorem headArityOf_eq' (hme : Program.ModeEq p₀ p) (h : Head) : headArityOf p₀ h = headArityOf p h := by
+private theorem headArityOf_eq' (hme : Program.ModeEq p₀ p) (h : Head) : headArityOf p₀ h = headArityOf p h := by
   cases h with
   | ctor c => simp only [headArityOf]; decl_me p₀ p hme c <;> rfl
   | recr r => simp only [headArityOf]; decl_me p₀ p hme r <;> rfl
@@ -704,7 +709,7 @@ theorem headArityOf_eq' (hme : Program.ModeEq p₀ p) (h : Head) : headArityOf p
     · rfl
   | _ => rfl
 
-theorem headReadsWith_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
+private theorem headReadsWith_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
     headReadsWith p₀.decl? p₀.table.resolveOf h i = headReadsWith p.decl? p.table.resolveOf h i := by
   cases h with
   | ctor c => simp only [headReadsWith]; decl_me p₀ p hme c <;> rfl
@@ -718,25 +723,25 @@ theorem headReadsWith_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
     · rfl
   | _ => rfl
 
-theorem readsAt_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) (i : Nat) :
+private theorem readsAt_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) (i : Nat) :
     readsAt p₀ ann c h i = readsAt p ann c h i := by
   unfold readsAt
   rw [headArityOf_eq' hme, headReadsWith_eq hme, hme.known]
   cases h <;> decl_me p₀ p hme c <;> rfl
 
-theorem readsAt_fun_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) :
+private theorem readsAt_fun_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) :
     readsAt p₀ ann c h = readsAt p ann c h := funext (readsAt_eq hme ann c h)
 
-theorem readerName_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
+private theorem readerName_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
     readerName p₀ h i = readerName p h i := by
   simp only [readerName, headArityOf_eq' hme]
 
-theorem readsErased?_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) :
+private theorem readsErased?_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) :
     readsErased? p₀ ann c = readsErased? p ann c := by
   simp only [readsErased?, specialHead?_eq hme, readsAt_fun_eq hme, readerName_eq hme]
   decl_me p₀ p hme c <;> rfl
 
-theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.short c := by
+private theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.short c := by
   have he := hme.entry c
   simp only [Program.short, Program.addr]
   generalize p₀.entry? c = e₀ at he ⊢
@@ -749,7 +754,7 @@ theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.shor
     simp only [Option.map_some, ha]
 
 /-- `ruleDispatch`'s body at a recursor's counts (a copy; `ruleDispatch_def` checks it by `rfl`). -/
-def dispatchOf (np nmot nmin fields : Nat) (rhs : Term) : Option Nat :=
+private def dispatchOf (np nmot nmin fields : Nat) (rhs : Term) : Option Nat :=
   let total := np + nmot + nmin + fields
   match peelLamsN total rhs with
   | some body =>
@@ -761,12 +766,12 @@ def dispatchOf (np nmot nmin fields : Nat) (rhs : Term) : Option Nat :=
     | _ => none
   | none => none
 
-theorem ruleDispatch_def (q : Program) (r : CId) (rule : Rule) :
+private theorem ruleDispatch_def (q : Program) (r : CId) (rule : Rule) :
     ruleDispatch q r rule = match q.decl? r with
       | some (.recr _ _ _ np nmot nmin _ _ _ _) => dispatchOf np nmot nmin rule.fields rule.rhs
       | _ => none := rfl
 
-theorem dispatchOf_me (np nmot nmin f : Nat) {t u : Term} (h : ME t u) :
+private theorem dispatchOf_me (np nmot nmin f : Nat) {t u : Term} (h : ME t u) :
     dispatchOf np nmot nmin f t = dispatchOf np nmot nmin f u := by
   dsimp only [dispatchOf]
   have hp := peelLamsN_me (np + nmot + nmin + f) h
@@ -783,13 +788,13 @@ theorem dispatchOf_me (np nmot nmin f : Nat) {t u : Term} (h : ME t u) :
     generalize b.spineL.1 = h₁ at hh ⊢
     cases hh <;> rfl
 
-theorem ruleDispatch_me (hme : Program.ModeEq p₀ p) (r : CId) {rule rule' : Rule}
+private theorem ruleDispatch_me (hme : Program.ModeEq p₀ p) (r : CId) {rule rule' : Rule}
     (hf : rule.fields = rule'.fields) (hm : ME rule.rhs rule'.rhs) :
     ruleDispatch p₀ r rule = ruleDispatch p r rule' := by
   rw [ruleDispatch_def, ruleDispatch_def, hf]
   decl_me! p₀ p hme r <;> first | rfl | exact dispatchOf_me _ _ _ _ hm
 
-theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ c = elimShape? p c := by
+private theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ c = elimShape? p c := by
   unfold elimShape?
   res_me p₀ p hme c
   · rename_i ro
@@ -806,7 +811,7 @@ theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ 
       decl_me p₀ p hme r <;> rfl
   · rfl
 
-theorem ruleCtorFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r j : Nat) :
+private theorem ruleCtorFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r j : Nat) :
     ruleCtorFields p₀ ann r j = ruleCtorFields p ann r j := by
   unfold ruleCtorFields
   decl_me p₀ p hme r <;> try rfl
@@ -815,7 +820,7 @@ theorem ruleCtorFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r j : Nat) 
   · simp [h₁, h₂]
   · simp [h₁, h₂, hc]
 
-theorem erasedMinors_eq (hme : Program.ModeEq p₀ p) (shape : ElimShape) :
+private theorem erasedMinors_eq (hme : Program.ModeEq p₀ p) (shape : ElimShape) :
     erasedMinors p₀ shape = erasedMinors p shape := by
   unfold erasedMinors
   simp only [fieldWrittenErased_eq hme]
@@ -832,7 +837,7 @@ theorem erasedMinors_eq (hme : Program.ModeEq p₀ p) (shape : ElimShape) :
   decl_me! p₀ p hme shape.recr <;> try rfl
   · exact (RulesME.refl _).any hF
   · rename_i hr; exact hr.any hF
-theorem termOf_me (hme : Program.ModeEq p₀ p) (key : TermKey) : OptME (p₀.termOf key) (p.termOf key) := by
+private theorem termOf_me (hme : Program.ModeEq p₀ p) (key : TermKey) : OptME (p₀.termOf key) (p.termOf key) := by
   cases h₀ : p₀.termOf key with
   | some t =>
     obtain ⟨t', h, hm⟩ := hme.termOf h₀
@@ -841,20 +846,20 @@ theorem termOf_me (hme : Program.ModeEq p₀ p) (key : TermKey) : OptME (p₀.te
     cases h : p.termOf key with
     | none => trivial
     | some t =>
-      obtain ⟨t', h', _⟩ := (Program.ModeEq.symm' hme).termOf h
+      obtain ⟨t', h', _⟩ := hme.symm.termOf h
       rw [h₀] at h'; cases h'
 
 /-- Run bodies with the same keys and terms equal up to modes. -/
-inductive BodiesME : List (TermKey × Term) → List (TermKey × Term) → Prop
+private inductive BodiesME : List (TermKey × Term) → List (TermKey × Term) → Prop
   | nil : BodiesME [] []
   | cons {k : TermKey} {t u : Term} {xs ys : List (TermKey × Term)} :
       ME t u → BodiesME xs ys → BodiesME ((k, t) :: xs) ((k, u) :: ys)
 
-theorem BodiesME.refl : ∀ xs : List (TermKey × Term), BodiesME xs xs
+private theorem BodiesME.refl : ∀ xs : List (TermKey × Term), BodiesME xs xs
   | [] => .nil
   | (_, t) :: xs => .cons (Term.ModeEq.refl t) (BodiesME.refl xs)
 
-theorem runBodies_me (hme : Program.ModeEq p₀ p) (c : CId) : BodiesME (runBodies p₀ c) (runBodies p c) := by
+private theorem runBodies_me (hme : Program.ModeEq p₀ p) (c : CId) : BodiesME (runBodies p₀ c) (runBodies p c) := by
   simp only [runBodies, Table.isOpaqueByValue, hme.opaqueByValue]
   res_me p₀ p hme c
   · rename_i ro
@@ -872,14 +877,14 @@ theorem runBodies_me (hme : Program.ModeEq p₀ p) (c : CId) : BodiesME (runBodi
     · exact BodiesME.refl _
   · rename_i hb; exact .cons hb .nil
 
-theorem isEvaluatedBody_eq (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem isEvaluatedBody_eq (hme : Program.ModeEq p₀ p) (c : CId) :
     p₀.isEvaluatedBody c = p.isEvaluatedBody c := by
   simp only [Program.isEvaluatedBody, Table.isOpaqueByValue, hme.opaqueByValue]
   decl_me p₀ p hme c <;> try rfl
   rename_i k s _ _ _ _ _
   cases k <;> cases s <;> rfl
 
-theorem runtimeKeys_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeKeys c = p.runtimeKeys c := by
+private theorem runtimeKeys_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeKeys c = p.runtimeKeys c := by
   simp only [Program.runtimeKeys, isEvaluatedBody_eq hme]
   res_me p₀ p hme c
   · rename_i ro
@@ -890,15 +895,15 @@ theorem runtimeKeys_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeKey
     simp only [hr.length_eq]
   · rfl
 
-theorem instOf_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
+private theorem instOf_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
     p₀.instOf c prof = p.instOf c prof := by
   simp only [Program.instOf, decl?_lvls hme]
 
-theorem runtimeRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeRefs c = p.runtimeRefs c := by
+private theorem runtimeRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeRefs c = p.runtimeRefs c := by
   simp only [Program.runtimeRefs, hme.known, decl?_lvls hme]
   res_me p₀ p hme c <;> rfl
 
-theorem termsFold_eq (hme : Program.ModeEq p₀ p) (prof : Profile) :
+private theorem termsFold_eq (hme : Program.ModeEq p₀ p) (prof : Profile) :
     ∀ (keys : List TermKey) (acc : List Inst),
       List.foldl (fun acc t => t.relevantRefs prof acc) acc (keys.filterMap p₀.termOf) =
         List.foldl (fun acc t => t.relevantRefs prof acc) acc (keys.filterMap p.termOf)
@@ -916,11 +921,11 @@ theorem termsFold_eq (hme : Program.ModeEq p₀ p) (prof : Profile) :
       rw [relevantRefs_me hk]
       exact termsFold_eq hme prof ks _
 
-theorem instRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
+private theorem instRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
     p₀.instRefs c prof = p.instRefs c prof := by
   simp only [Program.instRefs, runtimeKeys_eq hme, runtimeRefs_eq hme, termsFold_eq hme]
 
-theorem subsingletonFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r : CId) (q : Profile)
+private theorem subsingletonFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r : CId) (q : Profile)
     (errs : List RelError) : subsingletonFields p₀ ann r q errs = subsingletonFields p ann r q errs := by
   simp only [subsingletonFields, recKindOf_eq hme, ctorProfile_eq hme]
   generalize Option.map (fun k => RecKind.atProfile q k) (p.table.recKindOf r) = rk
@@ -933,13 +938,13 @@ theorem subsingletonFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r : CId
     | none => rfl
     | some k => cases k <;> simp only [List.head?_cons, hc]
 
-theorem records_eq (hme : Program.ModeEq p₀ p) (ann : Ann) : records p₀ ann = records p ann := by
+private theorem records_eq (hme : Program.ModeEq p₀ p) (ann : Ann) : records p₀ ann = records p ann := by
   simp only [records, hme.size]
   congr 1
   funext errs c
   decl_me p₀ p hme c <;> rfl
 
-theorem subsingletonSrcs?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
+private theorem subsingletonSrcs?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
     subsingletonSrcs? p₀ r = subsingletonSrcs? p r := by
   simp only [subsingletonSrcs?, recKindOf_eq hme]
   generalize p.table.recKindOf r = rk
@@ -966,7 +971,7 @@ theorem subsingletonSrcs?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
         rw [hc, hf]
         decl_me p₀ p hme b.ctor <;> rfl
 
-theorem rulesShape?_eq (hme : Program.ModeEq p₀ p) (r : CId) : rulesShape? p₀ r = rulesShape? p r := by
+private theorem rulesShape?_eq (hme : Program.ModeEq p₀ p) (r : CId) : rulesShape? p₀ r = rulesShape? p r := by
   unfold rulesShape?
   decl_me! p₀ p hme r <;> try rfl
   all_goals first
@@ -977,7 +982,7 @@ theorem rulesShape?_eq (hme : Program.ModeEq p₀ p) (r : CId) : rulesShape? p�
     simp only [hc, hf, short_eq hme]
     decl_me p₀ p hme b.ctor <;> rfl
 
-theorem univsOk_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) : univsOk p₀ t = univsOk p u := by
+private theorem univsOk_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) : univsOk p₀ t = univsOk p u := by
   induction h with
   | const c us => simp only [univsOk, decl?_lvls hme]
   | app m m' r _ _ ihf iha => simp only [univsOk, ihf, iha]
@@ -986,10 +991,10 @@ theorem univsOk_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) : uni
   | proj s i _ ih => simp only [univsOk, ih]
   | _ => rfl
 
-theorem univsOk_eq (hme : Program.ModeEq p₀ p) (t : Term) : univsOk p₀ t = univsOk p t :=
+private theorem univsOk_eq (hme : Program.ModeEq p₀ p) (t : Term) : univsOk p₀ t = univsOk p t :=
   univsOk_me hme (Term.ModeEq.refl t)
 
-theorem univsErrs_eq (hme : Program.ModeEq p₀ p) (c : CId) : univsErrs p₀ c = univsErrs p c := by
+private theorem univsErrs_eq (hme : Program.ModeEq p₀ p) (c : CId) : univsErrs p₀ c = univsErrs p c := by
   simp only [univsErrs, runtimeKeys_eq hme, univsOk_eq hme, short_eq hme]
   congr 1
   · congr 1
@@ -1005,14 +1010,14 @@ theorem univsErrs_eq (hme : Program.ModeEq p₀ p) (c : CId) : univsErrs p₀ c 
       rw [univsOk_me (Program.ModeEq.refl p) hk]
   · res_me p₀ p hme c <;> rfl
 
-theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
+private theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
     redirectsErased? p₀ c = redirectsErased? p c := by
   simp only [redirectsErased?, elimShape?_eq hme, erasedMinors_eq hme, short_eq hme]
   res_me p₀ p hme c <;> rfl
 
 /-! ### The rest of the classifier -/
 
-theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
+private theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
     projFieldSort? p₀ s i n = projFieldSort? p s i n := by
   unfold projFieldSort?
   rw [onlyCtor?_eq hme]
@@ -1024,7 +1029,7 @@ theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
 
 /-- `inferTypeSort`'s step at a constant's declaration, over the argument count `len` and the
 recursive call `R` on the unfolded value. -/
-def inferDeclG (d : Decl) (us : List Univ) (len : Nat) (R : Term → Option Univ) : Option Univ :=
+private def inferDeclG (d : Decl) (us : List Univ) (len : Nat) (R : Term → Option Univ) : Option Univ :=
   let (pis, concl) := d.type.pis
   match concl with
   | .sort u =>
@@ -1039,7 +1044,7 @@ def inferDeclG (d : Decl) (us : List Univ) (len : Nat) (R : Term → Option Univ
     | _ => none
 
 /-- `inferTypeSort`'s step at a term that is not a sort, a Π or a `let`. -/
-def inferBody (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (t : Term) : Option Univ :=
+private def inferBody (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (t : Term) : Option Univ :=
   let (head, args) := t.spine
   match head with
   | .var idx =>
@@ -1056,7 +1061,7 @@ def inferBody (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (t :
   | .proj s i _ => projFieldSort? q s i args.length
   | _ => none
 
-theorem inferTypeSort_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
+private theorem inferTypeSort_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
     (h₁ : ¬ ∃ s, t = .sort s) (h₂ : ¬ ∃ b r d body, t = .pi b r d body)
     (h₃ : ¬ ∃ c r ty v b, t = .letE c r ty v b) :
     inferTypeSort q ctx (fuel + 1) t = inferBody q ctx fuel t := by
@@ -1066,7 +1071,7 @@ theorem inferTypeSort_succ (q : Program) (ctx : List (Term × Option Univ)) (fue
   | letE c r ty v b => exact absurd ⟨c, r, ty, v, b, rfl⟩ h₃
   | _ => rfl
 
-theorem inferDeclG_me {d d' : Decl} (hd : DeclME (some d) (some d')) (us : List Univ) (len : Nat)
+private theorem inferDeclG_me {d d' : Decl} (hd : DeclME (some d) (some d')) (us : List Univ) (len : Nat)
     {R R' : Term → Option Univ} (hR : ∀ {v v' : Term}, ME v v' → R v = R' v') :
     inferDeclG d us len R = inferDeclG d' us len R' := by
   cases hd with
@@ -1078,7 +1083,7 @@ theorem inferDeclG_me {d d' : Decl} (hd : DeclME (some d) (some d')) (us : List 
     cases k <;> cases s <;> first | rfl | (simp only [hR hv, Decl.type] <;> rfl)
   | recr => rfl
 
-theorem inferBody_me (hme : Program.ModeEq p₀ p) {n : Nat}
+private theorem inferBody_me (hme : Program.ModeEq p₀ p) {n : Nat}
     (IH : ∀ {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
       inferTypeSort p₀ ctx₀ n t = inferTypeSort p ctx n u)
     {ctx₀ ctx : List (Term × Option Univ)} (hc : CtxME ctx₀ ctx) {t u : Term} (h : ME t u) :
@@ -1119,7 +1124,7 @@ theorem inferBody_me (hme : Program.ModeEq p₀ p) {n : Nat}
   | proj s i he => dsimp only; rw [projFieldSort?_eq hme, ha.length_eq]
   | _ => rfl
 
-theorem inferTypeSort_me (hme : Program.ModeEq p₀ p) :
+private theorem inferTypeSort_me (hme : Program.ModeEq p₀ p) :
     ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
       inferTypeSort p₀ ctx₀ n t = inferTypeSort p ctx n u
   | 0, _, _, _, _, _, _ => rfl
@@ -1149,12 +1154,12 @@ theorem inferTypeSort_me (hme : Program.ModeEq p₀ p) :
     rw [inferTypeSort_succ _ _ _ hs hp hl, inferTypeSort_succ _ _ _ hs' hp' hl']
     exact inferBody_me hme (inferTypeSort_me hme n) hc h
 
-theorem classifyDomain_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+private theorem classifyDomain_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
     (hc : CtxME ctx₀ ctx) (b : Binder) {t u : Term} (h : ME t u) :
     classifyDomain p₀ ctx₀ b t = classifyDomain p ctx b u := by
   simp only [classifyDomain, inferTypeSort_me hme 16 hc h, isTypeFormerP_me hme 16 ctx₀ ctx h]
 
-theorem classifyTelescope_nonpi (q : Program) (ctx : List (Term × Option Univ)) (n : Nat) {t : Term}
+private theorem classifyTelescope_nonpi (q : Program) (ctx : List (Term × Option Univ)) (n : Nat) {t : Term}
     (ht : ¬ ∃ b r d body, t = .pi b r d body) :
     classifyTelescope q ctx (n + 1) t = ([], classifyDomain q ctx {} t) := by
   cases t with
@@ -1183,44 +1188,44 @@ theorem classifyTelescope_me (hme : Program.ModeEq p₀ p) :
 /-! ### `checkTermBinders` -/
 
 /-- Term lists equal up to modes, pointwise. -/
-inductive TermsME : List Term → List Term → Prop
+private inductive TermsME : List Term → List Term → Prop
   | nil : TermsME [] []
   | cons {a b : Term} {xs ys : List Term} : ME a b → TermsME xs ys → TermsME (a :: xs) (b :: ys)
 
-theorem TermsME.refl : ∀ xs : List Term, TermsME xs xs
+private theorem TermsME.refl : ∀ xs : List Term, TermsME xs xs
   | [] => .nil
   | a :: xs => .cons (Term.ModeEq.refl a) (TermsME.refl xs)
 
-theorem TermsME.append {xs ys xs' ys' : List Term} (h : TermsME xs ys) (h' : TermsME xs' ys') :
+private theorem TermsME.append {xs ys xs' ys' : List Term} (h : TermsME xs ys) (h' : TermsME xs' ys') :
     TermsME (xs ++ xs') (ys ++ ys') := by
   induction h with
   | nil => simpa using h'
   | cons hab _ ih => exact .cons hab ih
 
-theorem ArgsME.terms {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem ArgsME.terms {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     TermsME (xs.map (·.1)) (ys.map (·.1)) := by
   induction h with
   | nil => exact .nil
   | cons hab _ ih => exact .cons hab ih
 
-theorem OptME.refl : ∀ o : Option Term, OptME o o
+private theorem OptME.refl : ∀ o : Option Term, OptME o o
   | some t => Term.ModeEq.refl t
   | none => trivial
 
-theorem OptME.ite {c : Prop} [Decidable c] {a b a' b' : Option Term} (h₁ : c → OptME a a')
+private theorem OptME.ite {c : Prop} [Decidable c] {a b a' b' : Option Term} (h₁ : c → OptME a a')
     (h₂ : ¬c → OptME b b') : OptME (if c then a else b) (if c then a' else b') := by
   by_cases hc : c
-  · rw [if_pos hc, if_pos hc]; exact h₁ hc
-  · rw [if_neg hc, if_neg hc]; exact h₂ hc
+  · rw [ite_eq_left hc, ite_eq_left hc]; exact h₁ hc
+  · rw [ite_eq_right hc, ite_eq_right hc]; exact h₂ hc
 
-theorem argsRelevant_me {xs ys : List Term.Arg} (h : ArgsME xs ys) : argsRelevant xs = argsRelevant ys := by
+private theorem argsRelevant_me {xs ys : List Term.Arg} (h : ArgsME xs ys) : argsRelevant xs = argsRelevant ys := by
   induction h with
   | nil => rfl
   | cons _ _ ih =>
     simp only [argsRelevant, List.all_cons] at ih ⊢
     rw [ih]
 
-theorem checkSpineArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+private theorem checkSpineArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
     (hc : CtxME ctx₀ ctx) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     ∀ (cov : Nat) {f g : Term}, ME f g → checkSpineArgs p₀ ctx₀ cov f xs = checkSpineArgs p ctx cov g ys := by
   induction hx with
@@ -1237,7 +1242,7 @@ theorem checkSpineArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term
       rw [classifyDomain_me hme hc _ hd, ih _ (substTerm_me hab hb 0)]
     | _ => dsimp only; rw [ih _ hfg]
 
-theorem peelSubstPis_me (hme : Program.ModeEq p₀ p) {as bs : List Term} (h : TermsME as bs) :
+private theorem peelSubstPis_me (hme : Program.ModeEq p₀ p) {as bs : List Term} (h : TermsME as bs) :
     ∀ {t u : Term}, ME t u → OptME (peelSubstPis p₀ as t) (peelSubstPis p bs u) := by
   induction h with
   | nil =>
@@ -1259,7 +1264,7 @@ theorem peelSubstPis_me (hme : Program.ModeEq p₀ p) {as bs : List Term} (h : T
     | pi bd res hd hb => exact ih (substTerm_me hab hb 0)
     | _ => trivial
 
-theorem applyTypeArgs_me (hme : Program.ModeEq p₀ p) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem applyTypeArgs_me (hme : Program.ModeEq p₀ p) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     ∀ {t u : Term}, ME t u → OptME (applyTypeArgs p₀ t xs) (applyTypeArgs p u ys) := by
   induction h with
   | nil => intro t u htu; simp only [applyTypeArgs]; exact htu
@@ -1275,7 +1280,7 @@ theorem applyTypeArgs_me (hme : Program.ModeEq p₀ p) {xs ys : List Term.Arg} (
 
 /-- `inferSimpleType`'s head type at fuel `fuel + 1` (a copy of its `headTy?`;
 `inferSimpleType_succ` checks it by `rfl`). -/
-def simpleHeadTy (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (head : Term) :
+private def simpleHeadTy (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (head : Term) :
     Option Term :=
   match head with
   | .var idx => ctx[idx]?.map fun (varTy, _) => liftTerm (idx + 1) 0 varTy
@@ -1303,7 +1308,7 @@ def simpleHeadTy (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (
       else none
   | _ => none
 
-theorem inferSimpleType_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
+private theorem inferSimpleType_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
     (h : ¬ ∃ c r ty v b, t = .letE c r ty v b) :
     inferSimpleType q ctx (fuel + 1) t =
       match simpleHeadTy q ctx fuel t.spine.1 with
@@ -1313,14 +1318,14 @@ theorem inferSimpleType_succ (q : Program) (ctx : List (Term × Option Univ)) (f
   | letE c r ty v b => exact absurd ⟨c, r, ty, v, b, rfl⟩ h
   | _ => rfl
 
-theorem flds_me (s : Nat) {e e' : Term} (he : ME e e') :
+private theorem flds_me (s : Nat) {e e' : Term} (he : ME e e') :
     ∀ i : Nat, TermsME ((List.range i).map (Term.proj s · e)) ((List.range i).map (Term.proj s · e'))
   | 0 => by simpa using TermsME.nil
   | i + 1 => by
     simp only [List.range_succ, List.map_append, List.map_cons, List.map_nil]
     exact (flds_me s he i).append (.cons (.proj s i he) .nil)
 
-theorem simpleHeadTy_me (hme : Program.ModeEq p₀ p) {n : Nat} {ctx₀ ctx : List (Term × Option Univ)}
+private theorem simpleHeadTy_me (hme : Program.ModeEq p₀ p) {n : Nat} {ctx₀ ctx : List (Term × Option Univ)}
     (IH : ∀ {t u : Term}, ME t u → OptME (inferSimpleType p₀ ctx₀ n t) (inferSimpleType p ctx n u))
     (hc : CtxME ctx₀ ctx) {h₀ h₁ : Term} (hh : ME h₀ h₁) :
     OptME (simpleHeadTy p₀ ctx₀ n h₀) (simpleHeadTy p ctx n h₁) := by
@@ -1371,7 +1376,7 @@ theorem simpleHeadTy_me (hme : Program.ModeEq p₀ p) {n : Nat} {ctx₀ ctx : Li
         | _ => dsimp only; exact OptME.ite (fun _ => hrep) (fun _ => trivial)
   | _ => trivial
 
-theorem inferSimpleType_me (hme : Program.ModeEq p₀ p) :
+private theorem inferSimpleType_me (hme : Program.ModeEq p₀ p) :
     ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
       OptME (inferSimpleType p₀ ctx₀ n t) (inferSimpleType p ctx n u)
   | 0, _, _, _, _, _, _ => trivial
@@ -1392,7 +1397,7 @@ theorem inferSimpleType_me (hme : Program.ModeEq p₀ p) :
     · exact hH.elim
     · exact applyTypeArgs_me hme ha hH
 
-theorem checkBetaArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+private theorem checkBetaArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
     (hc : CtxME ctx₀ ctx) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     ∀ {t u : Term}, ME t u → checkBetaArgs p₀ ctx₀ t xs = checkBetaArgs p ctx u ys := by
   induction hx with
@@ -1405,7 +1410,7 @@ theorem checkBetaArgs_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term 
       rw [classifyDomain_me hme hc bd hd, ih (substTerm_me hab hb 0)]
     | _ => rfl
 
-theorem checkReducedSpine_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+private theorem checkReducedSpine_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
     (hc : CtxME ctx₀ ctx) {t u : Term} (h : ME t u) {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     checkReducedSpine p₀ ctx₀ t xs = checkReducedSpine p ctx u ys := by
   unfold checkReducedSpine
@@ -1507,7 +1512,7 @@ section rules
 
 variable {ann : Ann} {key : TermKey} {lvls : Nat} {prof : Profile}
 
-theorem paramArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem paramArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     ∀ (c : CId) (qq : Profile) (params : List Rel) (errs : List RelError),
       paramArgs ⟨q₀, ann, key, lvls, prof⟩ c qq xs params errs =
         paramArgs ⟨q, ann, key, lvls, prof⟩ c qq ys params errs := by
@@ -1519,7 +1524,7 @@ theorem paramArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs y
     | nil => rfl
     | cons r params => simp only [paramArgs, err]; rw [ih]
 
-theorem fieldArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem fieldArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     ∀ (c : CId) (qq : Profile) (j : Nat) (fields : List FieldClass) (errs : List RelError),
       fieldArgs ⟨q₀, ann, key, lvls, prof⟩ c qq j xs fields errs =
         fieldArgs ⟨q, ann, key, lvls, prof⟩ c qq j ys fields errs := by
@@ -1531,13 +1536,13 @@ theorem fieldArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs y
     | nil => rfl
     | cons cls fields => simp only [fieldArgs, err]; rw [ih]
 
-theorem fieldArgs_drop_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+private theorem fieldArgs_drop_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
     ∀ (n : Nat) (c : CId) (qq : Profile) (j : Nat) (fields : List FieldClass) (errs : List RelError),
       fieldArgs ⟨q₀, ann, key, lvls, prof⟩ c qq j (xs.drop n) fields errs =
         fieldArgs ⟨q, ann, key, lvls, prof⟩ c qq j (ys.drop n) fields errs :=
   fun n => fieldArgs_me q₀ q (h.drop n)
 
-theorem minorBinders_me (hme : Program.ModeEq p₀ p) (k : CId) (j : Nat) (qc : Profile) :
+private theorem minorBinders_me (hme : Program.ModeEq p₀ p) (k : CId) (j : Nat) (qc : Profile) :
     ∀ (fields : List FieldClass) (i : Nat) (bs : List Rel) (errs : List RelError),
       minorBinders ⟨p₀, ann, key, lvls, prof⟩ k j qc i bs fields errs =
         minorBinders ⟨p, ann, key, lvls, prof⟩ k j qc i bs fields errs
@@ -1547,7 +1552,7 @@ theorem minorBinders_me (hme : Program.ModeEq p₀ p) (k : CId) (j : Nat) (qc : 
   | cls :: fields, i, b :: bs, errs => by
     simp only [minorBinders, err, minorBinders_me hme k j qc fields]
 
-theorem lamHead_me (q₀ q : Program) (errs : List RelError) {h h' : Term} (hh : lamRels h = lamRels h')
+private theorem lamHead_me (q₀ q : Program) (errs : List RelError) {h h' : Term} (hh : lamRels h = lamRels h')
     {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     lamHead ⟨q₀, ann, key, lvls, prof⟩ errs h xs = lamHead ⟨q, ann, key, lvls, prof⟩ errs h' ys := by
   simp only [lamHead, err, hh]
@@ -1559,7 +1564,7 @@ theorem lamHead_me (q₀ q : Program) (errs : List RelError) {h h' : Term} (hh :
     | nil => rfl
     | cons b bs => simp only [List.zip_cons_cons, List.foldl_cons]; exact ih _ _
 
-theorem knownHead_me (hme : Program.ModeEq p₀ p) (errs : List RelError) (c : CId) (us : List Univ)
+private theorem knownHead_me (hme : Program.ModeEq p₀ p) (errs : List RelError) (c : CId) (us : List Univ)
     {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
     knownHead ⟨p₀, ann, key, lvls, prof⟩ errs c us xs = knownHead ⟨p, ann, key, lvls, prof⟩ errs c us ys := by
   simp only [knownHead, err, partialElim, elimShape?_eq hme, recKindOf_eq hme, ctorProfile_eq hme,
@@ -1585,9 +1590,9 @@ theorem knownHead_me (hme : Program.ModeEq p₀ p) (errs : List RelError) (c : C
           cases ruleCtorFields p ann shape.recr rule <;>
           first | rfl | (dsimp only; rw [lamRels_me hab'])
 
-theorem appRule_me (hme : Program.ModeEq p₀ p) (errs : List RelError) {t u : Term} (h : ME t u) (r : Rel) :
+private theorem appRule_me (hme : Program.ModeEq p₀ p) (errs : List RelError) {t u : Term} (h : ME t u) (r : Rel) :
     appRule ⟨p₀, ann, key, lvls, prof⟩ errs t r = appRule ⟨p, ann, key, lvls, prof⟩ errs u r := by
-  simp only [appRule, argRule, err, Term.spineL]
+  simp only [appRule, argRule, err]
   obtain ⟨hh, ha⟩ := spine_me h
   generalize t.spine = s₀ at hh ha ⊢
   generalize u.spine = s₁ at hh ha ⊢
@@ -1657,7 +1662,7 @@ theorem term_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) :
     · simp only [Check.term, projRule, err, onlyCtor?_eq hme, ih1]
     · simp only [Check.rest, projRule, err, onlyCtor?_eq hme, ih1]
 
-theorem visitKey_eq (hme : Program.ModeEq p₀ p) (marked : List TermKey) (first : Bool) :
+private theorem visitKey_eq (hme : Program.ModeEq p₀ p) (marked : List TermKey) (first : Bool) :
     visitKey p₀ ann marked prof lvls first = visitKey p ann marked prof lvls first := by
   funext s key
   unfold visitKey
@@ -1671,13 +1676,13 @@ theorem visitKey_eq (hme : Program.ModeEq p₀ p) (marked : List TermKey) (first
   · rename_i t₀ t
     simp only [(term_me ann key lvls prof hme hk [] _).1]
 
-theorem visit_eq (hme : Program.ModeEq p₀ p) (annotated : NatMap (List TermKey)) (c : CId)
+private theorem visit_eq (hme : Program.ModeEq p₀ p) (annotated : NatMap (List TermKey)) (c : CId)
     (first : Bool) (s : St) :
     visit p₀ ann annotated c prof lvls first s = visit p ann annotated c prof lvls first s := by
   simp only [visit, runtimeKeys_eq hme, visitKey_eq ann lvls prof hme, subsingletonFields_eq hme,
     instRefs_eq hme]
 
-theorem loop_eq (hme : Program.ModeEq p₀ p) (annotated : NatMap (List TermKey)) :
+private theorem loop_eq (hme : Program.ModeEq p₀ p) (annotated : NatMap (List TermKey)) :
     ∀ (n : Nat) (s : St) (front back : List Inst),
       loop p₀ ann annotated n s front back = loop p ann annotated n s front back
   | 0, _, _, _ => rfl
@@ -1691,7 +1696,7 @@ theorem check_modeEq (hme : Program.ModeEq p₀ p) (ann : Ann) : check p₀ ann 
   simp only [check, hme.roots, instOf_eq hme, loop_eq ann hme, records_eq hme]
 
 /-- `check`'s reached constants are its instances' constants. -/
-theorem foldl_keeps {f : List CId → Inst → List CId}
+private theorem foldl_keeps {f : List CId → Inst → List CId}
     (hf : ∀ acc x, (∀ c ∈ acc, c ∈ f acc x) ∧ x.1 ∈ f acc x) :
     ∀ (l : List Inst) (acc : List CId), (∀ c ∈ acc, c ∈ l.foldl f acc) ∧ ∀ x ∈ l, x.1 ∈ l.foldl f acc
   | [], _ => ⟨fun _ h => h, fun _ h => by cases h⟩
@@ -1718,7 +1723,7 @@ theorem check_reached {q : Program} {ann : Ann} {ch : Checked} (h : check q ann 
 
 /-! ## `Canonical`, field by field -/
 
-theorem decl?_back (hme : Program.ModeEq p₀ p) {c : CId} {d : Decl} (h : p.decl? c = some d) :
+private theorem decl?_back (hme : Program.ModeEq p₀ p) {c : CId} {d : Decl} (h : p.decl? c = some d) :
     ∃ d₀, p₀.decl? c = some d₀ ∧ d₀.type = d.type ∧ DeclME (some d₀) (some d) := by
   have hd := decl?_me hme c
   rw [h] at hd
@@ -1728,14 +1733,14 @@ theorem decl?_back (hme : Program.ModeEq p₀ p) {c : CId} {d : Decl} (h : p.dec
   | defn k s l ty hv => exact ⟨_, rfl, rfl, .defn k s l ty hv⟩
   | recr sf kk l np nmot nmin ni ind ty hr => exact ⟨_, rfl, rfl, .recr sf kk l np nmot nmin ni ind ty hr⟩
 
-theorem ctor_back (hme : Program.ModeEq p₀ p) {c : CId} {sf : Bool} {lv : Nat} {ind : CId}
+private theorem ctor_back (hme : Program.ModeEq p₀ p) {c : CId} {sf : Bool} {lv : Nat} {ind : CId}
     {j np nf : Nat} {ty : Term} (h : p.decl? c = some (.ctor sf lv ind j np nf ty)) :
     p₀.decl? c = some (.ctor sf lv ind j np nf ty) := by
   obtain ⟨d₀, h₀, -, hd⟩ := decl?_back hme h
   cases hd
   exact h₀
 
-theorem resolve_back (hme : Program.ModeEq p₀ p) {c : CId} {r : Resolve} (h : p.table.resolveOf c = some r)
+private theorem resolve_back (hme : Program.ModeEq p₀ p) {c : CId} {r : Resolve} (h : p.table.resolveOf c = some r)
     (hr : ∀ thm b, r ≠ .eqn thm b) : p₀.table.resolveOf c = some r := by
   have hm := hme.resolve c
   rw [h] at hm
@@ -1744,7 +1749,7 @@ theorem resolve_back (hme : Program.ModeEq p₀ p) {c : CId} {r : Resolve} (h : 
   | refl => rfl
   | eqn thm hb => exact absurd rfl (hr thm _)
 
-theorem recr_back (hme : Program.ModeEq p₀ p) {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
+private theorem recr_back (hme : Program.ModeEq p₀ p) {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
     {rules : List Rule} {ty : Term} (h : p.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty)) :
     ∃ rules₀, p₀.decl? r = some (.recr sf k lv np nmot nmin ni ind rules₀ ty) ∧ RulesME rules₀ rules := by
   have hd := decl?_me hme r
@@ -1754,7 +1759,7 @@ theorem recr_back (hme : Program.ModeEq p₀ p) {r : CId} {sf k : Bool} {lv np n
   | same d => exact ⟨rules, rfl, RulesME.refl _⟩
   | recr _ _ _ _ _ _ _ _ _ hr => exact ⟨_, rfl, hr⟩
 
-theorem RulesME.mem_back {rs rs' : List Rule} (h : RulesME rs rs') {r' : Rule} (hm : r' ∈ rs') :
+private theorem RulesME.mem_back {rs rs' : List Rule} (h : RulesME rs rs') {r' : Rule} (hm : r' ∈ rs') :
     ∃ r ∈ rs, ME r.rhs r'.rhs := by
   induction h with
   | nil => cases hm
@@ -1764,7 +1769,7 @@ theorem RulesME.mem_back {rs rs' : List Rule} (h : RulesME rs rs') {r' : Rule} (
     · obtain ⟨r, hr, h⟩ := ih hm
       exact ⟨r, List.mem_cons.2 (Or.inr hr), h⟩
 
-theorem BodiesME.mem_back {xs ys : List (TermKey × Term)} (h : BodiesME xs ys) {key : TermKey} {t : Term}
+private theorem BodiesME.mem_back {xs ys : List (TermKey × Term)} (h : BodiesME xs ys) {key : TermKey} {t : Term}
     (hm : (key, t) ∈ ys) : ∃ t₀, (key, t₀) ∈ xs ∧ ME t₀ t := by
   induction h with
   | nil => cases hm
@@ -1775,20 +1780,20 @@ theorem BodiesME.mem_back {xs ys : List (TermKey × Term)} (h : BodiesME xs ys) 
     · obtain ⟨t₀, h₀, h⟩ := ih hm
       exact ⟨t₀, List.mem_cons.2 (Or.inr h₀), h⟩
 
-theorem ctorFields_me (hme : Program.ModeEq p₀ p) {rule rule' : Rule} (hc : rule.ctor = rule'.ctor)
+private theorem ctorFields_me (hme : Program.ModeEq p₀ p) {rule rule' : Rule} (hc : rule.ctor = rule'.ctor)
     (hf : rule.fields = rule'.fields) : ctorFields p₀ rule = ctorFields p rule' := by
   unfold ctorFields
   rw [hc, hf]
   decl_me p₀ p hme rule'.ctor <;> rfl
 
-theorem me_var {v : Nat} {b : Term} (h : ME (.var v) b) : b = .var v := by
+private theorem me_var {v : Nat} {b : Term} (h : ME (.var v) b) : b = .var v := by
   cases h; rfl
 
 /-- **`Canonical` transports along `Program.ModeEq`.** (`checkCanonical` itself does not: its `dense`
 clause reads the maps' `toList`, which `Program.ModeEq` does not constrain.) -/
 theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked}
     (h : Canonical p₀ ann ch) : Canonical p ann ch := by
-  have hme' := Program.ModeEq.symm' hme
+  have hme' := hme.symm
   refine ⟨?consts, ?ctors, ?bodies, ?csimp, ?reads, ?forwards, ?redirects, h.reachedRecord, ?tags,
     ?dense, ?rules, ?univs, ?ctorRecords, ?subsingletonFields, ?finProof, ?minorsRead⟩
   case dense =>
