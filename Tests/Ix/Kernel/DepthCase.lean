@@ -283,6 +283,12 @@ def runOne (name : String) (n : Nat) : IO String := do
   | "wide" => timed do
     let rs := wide n
     IO.lazyPure fun _ => entryVerdict (_root_.Ixon.Authenticated.checkBytes binding limits rs [] hint)
+  | "wide-w0" | "wide-w1" | "wide-w4" => timed do
+    -- phase B on at most 0 (the calling thread), 1 or 4 tasks: the verdict of `wide`
+    let w := ((toString (name.drop 6)).toNat?).getD 0
+    let rs := wide n
+    IO.lazyPure fun _ =>
+      entryVerdict (_root_.Ixon.Authenticated.checkBytes binding { limits with workers := some w } rs [] hint)
   | "step" | "step-pool" => timed do
     let cfg : RunConfig := if name == "step" then {} else { workers := some 1 }
     let report ← runRecords (stepSource n) [] (fun _ => #[])

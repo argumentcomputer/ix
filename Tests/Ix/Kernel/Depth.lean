@@ -26,6 +26,8 @@ the entry points that reach it; before the change each aborted with
   `whnfCoreLoopI` took the same stack per step);
 * `wide` (`n` one-line records, no unfolding) at 200,000, accepted by the
   certified entry (aborted at 28,000 on 2 MiB, 112,000 on 8 MiB: `unitsGo`);
+* `wide-w0`, `wide-w1`, `wide-w4`: 20,000 of the same records with phase B on at most 0 (the
+  calling thread), 1 and 4 tasks (`Limits.workers`): accepted, as without the bound;
 * `step` (`n` one-line declarations and a failing last one) at 200,000,
   through the record-by-record check `ix check-lean` and `kernel-check-ixe`
   run (`Run.runRecords`, serially and on the pool): every declaration
@@ -55,6 +57,9 @@ def cases : List (String × Nat × String) :=
    ("delta", 150000, "declined"),
    ("iota", 100000, "accepted"),
    ("wide", 200000, "accepted"),
+   ("wide-w0", 20000, "accepted"),
+   ("wide-w1", 20000, "accepted"),
+   ("wide-w4", 20000, "accepted"),
    ("step", 200000, "200000 accepted, last reject, 200001 rows"),
    ("step-pool", 200000, "200000 accepted, last reject, 200001 rows")]
 
