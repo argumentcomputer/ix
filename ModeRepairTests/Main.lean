@@ -1300,13 +1300,26 @@ def f4Cases : List Case := [
 def former (k : Nat) : Ix.Kernel.Expr .anon :=
   (List.range k).foldl (fun acc _ => .forallE (.sort (.succ .zero)) acc default) (.sort (.succ .zero))
 
-/-- The oracle's depth (information only until repair L). -/
-def finding4oracle : IO Unit := do
+/-- The oracle at its depth limit (repair L): a k-ary type former needs depth k + 1 to be found
+`irr`; below that the oracle declines (as landed it answered `val`, finding 4). `expect`: `none` a
+decline, `some c` the class. -/
+def finding4oracle (t : IO.Ref Tally) : IO Unit := do
   let sh : Ix.Kernel.Key .anon → Option (List CtorShape) := fun _ => none
-  for (k, d) in [(1, 1), (1, 2), (16, 16), (17, 17)] do
+  for (k, d, expect) in [(1, 1, none), (1, 2, some Cls.irr), (16, 16, none), (16, 17, some Cls.irr),
+      (17, 17, none)] do
     let c := oTypeClass Ix.Kernel.Env.empty sh {} d 0 (former k)
+    let ok := match c, expect with
+      | .error e, none => e.startsWith "decline:"
+      | .ok x, some y => x == y
+      | _, _ => false
     let cs := match c with | .ok x => s!"ok {repr x}" | .error e => s!"error {e}"
-    IO.println s!"info [F4 oracle] oTypeClass, empty env, depth {d}, a {k}-ary former: {cs}"
+    check1 t s!"F4 oracle: oTypeClass at depth {d} of a {k}-ary former" ok cs
+  -- the default limits (depth 16): the classifier the checker uses
+  let cl := oracleClassifier Ix.Kernel.Env.empty sh {}
+  let c := cl.type 0 (former 16)
+  check1 t "F4 oracle: the checker's classifier at its default depth, a 16-ary former"
+    (match c with | .error e => e.startsWith "decline:" | .ok _ => false)
+    (match c with | .ok x => s!"ok {repr x}" | .error e => s!"error {e}")
 
 /-! ### Finding 5: an extern stores a confined argument in a `@shared` field -/
 
@@ -2158,7 +2171,7 @@ def run : IO UInt32 := do
   try finding1b t false catch e => check1 t "F1b" false s!"error: {e}"
   try finding6 t true catch e => check1 t "F6" false s!"error: {e}"
   finding14ext t
-  finding4oracle
+  finding4oracle t
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"
