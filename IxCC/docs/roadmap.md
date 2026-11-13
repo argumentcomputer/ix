@@ -1246,7 +1246,8 @@ erasure alone, where it erased): `checkCanonical` now decides each
 constructor per inductive and index stays a hypothesis, discharged by
 `erase_progWF` under `Recheck.run`'s acceptance.
 [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
-has the class and the six facts. P1's statements on these checks come next.
+has the class and the six facts (a seventh, `subRecords`, came with the twelfth
+route, below). P1's statements on these checks come next.
 
 **The eleventh route: a special head over-applied (2026-11-13).** Stating P1's
 E7 case at a position written erased (the function value must ignore the
@@ -1275,6 +1276,23 @@ program SrcEval runs. The relevance checks do not read application modes
 comparison of modes, `applyPis`'s loop test, can disagree only at a definition
 whose unfolding cycles; `tests-relevance` plants one. Engineers PE and PG did
 this work.
+
+**The twelfth route: a subsingleton eliminator without its constructor's
+record (2026-11-13).** P1's F3 case read false where a reached subsingleton
+recursor's rule-0 constructor has no constructor record, and a run reproduced
+it as a wrong-value route: below the kernel, a `Prop` inductive with large
+elimination over a field that is neither a proof nor an index (Lean's
+criterion, which only the kernel enforces) gets a subsingleton kind taking that
+field for a proof; F3 binds the marker for it, and with no record neither C3
+nor S4 reads the field, so a field written erased reached a relevant minor
+binder; `Recheck.run` accepted it, its object returned `c₀` where the program
+means `c₁`, and SrcEval the marker (engineers PF, by reading, and PJ, by run).
+`checkCanonical` now refuses a reached subsingleton eliminator whose rule-0
+constructor has no record (L1's `Canonical.subRecords`), which F3's and F5's
+proofs read; `tests-recheck`'s `Shape` asserts the route, the clause alone
+refusing it, and the kernel-faithful recursor refused by C6 or C1.
+[Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the route.
 
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor

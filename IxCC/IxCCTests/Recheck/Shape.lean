@@ -28,11 +28,11 @@ namespace IxCCTests.Recheck.Shape
 
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Src (Assert expect)
-open IxCCTests.Recheck.Hostile (defn driver ofErr)
+open IxCCTests.Recheck.Hostile (defn driver ofErr mkCert)
 open IxCCTests.IxonV3.Builder (store)
-open IxCCTests.Support.Bound (loadBase addEnum)
+open IxCCTests.Support.Bound (loadBase addEnum addSimple)
 open IxCCTests.Recheck.Erased (E Honest objMain srcMain lookup ingest ctorRoots withNode withConst
-  withCtor fProg)
+  withCtor fProg installed eraseParam mapArg)
 
 abbrev X := IxCC.Ixon.V3.Expr
 
@@ -359,6 +359,144 @@ def subsingleton (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : Str
     eliminators, each with its derived sources one per field; the honest root runs alike in the \
     object and SrcEval"]
 
+/-! ## Route 12: a subsingleton eliminator whose rule-0 constructor has no record -/
+
+/-- `Recheck.run` with `Relevance.checkCanonical` left out of its front end (`Recheck.front` with
+`annotationNoCanonical`, every later stage as `Recheck.runLir`, `runTyped` and `run` make it): what
+the recheck path did before a clause of that check existed. -/
+def runNoCanonical (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert) :
+    Except Recheck.Err Recheck.Artifact := do
+  Recheck.checkMidCert c.mid
+  let table ← (Src.Table.ofCert cfg.table P c.table).mapError fun msg =>
+    ({ stage := .table, code := "table.entry", message := msg } : Recheck.Err)
+  Recheck.checkRelevanceKeys P c.relevance
+  let (src, checked) ← match IxCCTests.Src.annotationNoCanonical { P with table } c.relevance with
+    | .ok r => pure r
+    | .error _ => throw ({ stage := .relevance, code := "relevance", message := "tiers S and C refused it" } :
+        Recheck.Err)
+  let (lam, _) ← (Lam.erase src checked).mapError Recheck.Err.ofErase
+  let (anf, fir, own, C) ← Recheck.middle c src lam
+  Recheck.checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
+  (Rt.checkSwitches C).mapError Recheck.Err.ofSwitch
+  let lowered ← (Rt.lower { names := cfg.names } C).mapError Recheck.Err.ofRt
+  let root := (src.roots.head?.map (·.1)).getD default
+  let (xv, xl, stacked, program, exports) ← Recheck.backTyped cfg lowered root c
+  let rows := (List.range src.roots.length).zip (src.roots.zip (C.exports.zip lowered.roots))
+  let roots := Recheck.rootsOf cfg src C lowered rows
+  Recheck.checkSymbols stacked.exports
+  let backend ← (Backend.finish xl.main stacked program exports
+    (cfg.provenance.getD (Recheck.defaultProvenance root))).mapError Recheck.Err.ofBackend
+  pure { src, checked, lam, anf, fir, own, cfg := C, lowered, xv, xl, backend, roots }
+
+/-- `T | mk (h g : E) : Type` with Lean's large recursor `T.rec.{u}`, and
+`main := T.rec.{1} (λ _ : T. E) (λ h g. h) (mk c₁ c₂)` (`c₁`). Returns the program, `T.rec`, `T`,
+`mk`, `main`, `E` and `c₁`. -/
+def subProg : IO (Honest × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId) := do
+  let (e, en) := addEnum (← loadBase) 3
+  let (e, t) := addSimple e #[#[.ext en.ind, .ext en.ind]]
+  let motive : X := .lam .many (.ref 2 #[]) (.ref 0 #[])
+  let minor : X := .lam .many (.ref 0 #[]) (.lam .many (.ref 0 #[]) (.var 1))
+  let major : X := .app (.app (.ref 3 #[]) (.ref 4 #[])) (.ref 5 #[])
+  let body : X := .app (.app (.app (.ref 1 #[0]) motive) minor) major
+  let (e, main) := store e ⟨defn E body, #[],
+    #[en.ind, t.recursor, t.ind, t.ctors[0]!, en.ctors[1]!, en.ctors[2]!], #[.succ .zero]⟩
+  let (e, rs) := ctorRoots e en.ind en.ctors
+  let h ← ingest "route 12, the honest program (T : Type)" e ([("main", main)] ++ rs)
+  let P := h.inp.program
+  return (h, ← lookup P t.recursor "T.rec", ← lookup P t.ind "T", ← lookup P t.ctors[0]! "T.mk",
+    ← lookup P main "main", ← lookup P en.ind "E", ← lookup P en.ctors[1]! "c₁")
+
+/-- Route 12's Form B from `subProg`'s honest program, below the kernel: `T : Prop`, `mk`'s fields written
+erased, `main`'s major tagged a proof, the records of `T`, `mk` and `T.rec` canonical, `mk` without a
+constructor record (it is unreached). The installed program and the annotation. -/
+def formB (h : Honest) (rId tId mkId main : Src.CId) : IO (Src.Program × Src.Relevance.Ann) := do
+  let Pi ← installed h
+  let some (.induct s lv np ni _ ks) := Pi.decl? tId | throw (IO.userError "route 12: T")
+  let Pi := Pi.setDecl tId (.induct s lv np ni (.sort .zero) ks)
+  let some (.ctor a1 a2 a3 a4 knp knf mkTy) := Pi.decl? mkId | throw (IO.userError "route 12: mk")
+  let Pi := Pi.setDecl mkId (.ctor a1 a2 a3 a4 knp knf (eraseParam (knp + 1) (eraseParam knp mkTy)))
+  let some (.defn dk ds dl mty mval) := Pi.decl? main | throw (IO.userError "route 12: main")
+  let mval := mapArg rId 2 (fun (x, m, _) => (x, m, Src.Rel.prf)) mval
+  let Pi := Pi.setDecl main (.defn dk ds dl mty mval)
+  let ann := withConst (withConst (withConst h.cert.relevance Pi tId) Pi mkId) Pi rId
+  return (Pi, withNode { ann with ctors := ann.ctors.erase mkId } (.value main) mval.tagOrder)
+
+/-- Route 12 (engineer PJ's run of engineer PF's reading, `plans/resource-cert/P1.md`). Below the
+kernel, `subProg` with `T : Prop` and `mk`'s fields written erased (`mk (0 h 0 g : E)`): `T.rec`
+keeps its large elimination, which the kernel refuses for a proposition with a field that is
+neither a proof nor an index, and which no check of the recheck path decides (it does not run the
+kernel). The table derives `T.rec`'s kind `subsingleton always [proof, proof]` (`deriveRecKind`: a
+field not an index is taken for a proof); `main`'s major is a proof, so `mk` is unreached and has
+no constructor record, so `MinorsIgnore` and C3 read nothing and the forwarding clause exempts the
+fields written erased. F3 binds the field markers under the rule's relevant λs, and the minor
+`λ h g. h` returns one: before the clause, tiers S and C and every other canonical clause accepted
+it, the recheck path compiled it, its object returned constructor 0 and SrcEval the marker. The
+clause (`Canonical.subRecords`) refuses it alone; with `mk`'s record, C3 refuses the minor. The
+kernel-faithful recursor (motive into `Prop`, made a root, since C5 refuses a relevant reference to
+it) is refused by C6 or C1: its minors are proofs. -/
+def subRecord (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
+  let c₁ : Sem.Obs := .ctor 1 []
+  let (h, rId, tId, mkId, main, eId, c1Id) ← subProg
+  expect a (objMain h.art == some c₁ && srcMain h.art main == some c₁)
+    s!"route 12: the honest program (T : Type) returns {repr (objMain h.art)}, SrcEval {repr (srcMain h.art main)}"
+  let (Pi, ann) ← formB h rId tId mkId main
+  let table ← match Src.Table.ofCert h.cfg.table Pi h.cert.table with
+    | .ok t => pure t
+    | .error m => throw (IO.userError s!"route 12: the table refused it: {m}")
+  let Pt := { Pi with table }
+  expect a (table.recKindOf rId == some (.subsingleton .always [.proof, .proof]))
+    s!"route 12: T.rec's derived kind {repr (table.recKindOf rId)}"
+  -- before the clause: the recheck path without `checkCanonical`, whose other clauses accept it
+  -- (`annotationOnly` below: every error is the new clause's)
+  let cert ← ofErr "route 12: certificate" (mkCert h.cfg Pi h.cert.table ann)
+  let ls : Src.Levels := [1]
+  let idE : Src.Value := .clo {} (.const eId []) (.lam {} (.const eId []) (.var 1)) [] ls
+  let marker : Sem.Result Src.Value → Bool := fun r => match r with
+    | .ok (.irr ..) => true
+    | _ => false
+  match runNoCanonical h.cfg Pi cert with
+  | .error e => expect a false s!"route 12, before the clause: the recheck path refused it: {e.render}"
+  | .ok art =>
+    expect a (objMain art == some (.ctor 0 []))
+      s!"route 12, before the clause: the object returns {repr (objMain art)}, not constructor 0"
+    expect a (marker (Src.run art.src 100000 main [])) "route 12, before the clause: SrcEval returns no marker"
+    expect a (marker (Src.fire art.src 1000 (.recr rId) ls [Src.Slot.irrNone ls, .val idE, Src.Slot.irrNone ls]))
+      "route 12, before the clause: F3 on [irr, λ h g. h, irr] returns no marker"
+  let needles := [s!"({Pt.short mkId})",
+    "a subsingleton eliminator's rule 0 is for a constructor without a constructor record"]
+  let line ← refusedOnly a hk "route 12, T.rec's rule-0 constructor without a record" h.cfg h.cert Pi
+    h.cert.table ann needles
+  -- with `mk`'s canonical constructor record: C3 refuses the minor
+  let withRec ← annotationOnly a hk "route 12, mk with its record" Pt (withCtor ann Pt mkId)
+    ["[relevance C3]", s!"({Pt.short mkId})", "binds dropped field"]
+  -- the kernel-faithful recursor, `T.rec : (motive : T → Prop) → …`, as a root
+  let mut out := #["route 12: the honest program (T : Type) returns c₁ (object and SrcEval)",
+    "route 12, before the clause: the recheck path compiles it, the object returns constructor 0, \
+      SrcEval the marker (F3 at main's spine)", line, s!"route 12, mk with its record: {withRec}"]
+  for (pw, what, ns) in [(Src.PropWhen.always, "propWhen always", ["[relevance C6]", "is a proof at this instance"]),
+      (Src.PropWhen.never, "propWhen never", ["[relevance C1]", "relevant use of a proof"])] do
+    let some (.recr sf kk _ rnp nmot nmin rni ind rules rty) := Pt.decl? rId | throw (IO.userError "T.rec")
+    let rules := rules.map fun r =>
+      { r with rhs := retagLams [none, some Src.Rel.prf] pw 0 (Src.Relevance.Check.Canonical.instUnivsTerm [.zero] r.rhs) }
+    let PA := Pt.setDecl rId (.recr sf kk 0 rnp nmot nmin rni ind rules
+      (Src.Relevance.Check.Canonical.instUnivsTerm [.zero] rty))
+    let PA := { withValue PA main (.const c1Id []) with roots := Pt.roots ++ [(Pt.addr rId, rId)] }
+    let annA := withNode (withNode (withConst ann PA rId) (.value main) []) (.rule rId 0)
+      ((rules[0]?.map (·.rhs.tagOrder)).getD [])
+    let tableA ← match Src.Table.ofCert h.cfg.table PA h.cert.table with
+      | .ok t => pure t
+      | .error m => throw (IO.userError s!"route 12, kernel-faithful: the table refused it: {m}")
+    let shown ← annotationOnly a hk s!"route 12, kernel-faithful T.rec as a root, {what}" { PA with table := tableA }
+      annA ns
+    out := out.push s!"route 12, the kernel-faithful T.rec (motive into Prop) as a root, {what}: {shown}"
+  return out
+where
+  /-- A rule's leading λs: binder `i` given class `rels[i]` where named, every λ `propWhen := pw`. -/
+  retagLams (rels : List (Option Src.Rel)) (pw : Src.PropWhen) : Nat → Src.Term → Src.Term
+    | i, .lam b d t =>
+      .lam { b with rel := ((rels[i]?).bind id).getD b.rel, propWhen := pw } d (retagLams rels pw (i + 1) t)
+    | _, t => t
+
 /-- `E.casesOn` (a `case` key) reached as a `csimp` target at the profile where its minors are proofs:
 `main := E.casesOn.{1} (λ _. E) c₁ c₀ c₂ c₁` (`Erased.casesEnv`, whose constructors have no fields),
 and the root `r₁ := c₁` given the entry `r₁ ↦ E.casesOn.{0}` in the table `Src.Recheck.annotation`
@@ -397,6 +535,6 @@ def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array Str
   let words ← fixture "Words.u8" (wordsDir / "words.ixe") (wordsDir / "words.equations.json") ["Words.u8"]
   return (← sorts a hk) ++ (← rules a hk) ++ (← univsDenseRecords a hk) ++
     (← subsingleton a hk "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a hk words) ++
-    (← caseRoot a hk) ++ (← caseCsimp a hk)
+    (← caseRoot a hk) ++ (← caseCsimp a hk) ++ (← subRecord a hk)
 
 end IxCCTests.Recheck.Shape

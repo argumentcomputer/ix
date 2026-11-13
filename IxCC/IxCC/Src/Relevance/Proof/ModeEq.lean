@@ -1796,7 +1796,7 @@ theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked
     (h : Canonical p₀ ann ch) : Canonical p ann ch := by
   have hme' := hme.symm
   refine ⟨?consts, ?ctors, ?bodies, ?csimp, ?reads, ?forwards, ?redirects, h.reachedRecord, ?tags,
-    ?dense, ?rules, ?univs, ?ctorRecords, ?subsingletonFields, ?finProof, ?minorsRead⟩
+    ?dense, ?rules, ?univs, ?ctorRecords, ?subsingletonFields, ?finProof, ?minorsRead, ?subRecords⟩
   case dense =>
     intro c hc
     obtain ⟨h1, h2⟩ := h.dense c (by rw [hme.size]; exact hc)
@@ -1899,6 +1899,16 @@ theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked
       exact h1 key hk t₀ ht₀
     · rw [← univsOk_eq hme]
       exact h2 g us thm (resolve_back hme hres fun _ _ he => by cases he)
+  case subRecords =>
+    intro c hc shape hs w srcs sf k lv np nmot nmin ni ind rules ty rule hk hd hr
+    obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd
+    rcases hrs.getElem? 0 with ⟨h1, h2⟩ | ⟨rule₀, rule', h1, h2, hc', -, -⟩
+    · rw [h2] at hr; cases hr
+    · have hrr : rule' = rule := Option.some.inj (h2.symm.trans hr)
+      rw [hrr] at hc'
+      rw [← hc']
+      exact h.subRecords c hc shape ((elimShape?_eq hme c).trans hs) w srcs sf k lv np nmot nmin ni ind
+        rules₀ ty rule₀ ((recKindOf_eq hme _).trans hk) hd₀ h1
   case subsingletonFields =>
     intro c hc shape hs sf k lv np nmot nmin ni ind rules ty w srcs rule hd hk hr
     obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd

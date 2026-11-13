@@ -47,7 +47,7 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5 and C7, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags, and since a later landing of 2026-11-13 the structure the kernel ensures: density, rule `j` for constructor `j`, universe-argument counts, constructor records, F3's field count, `Fin.mk`'s proof field), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`) and a special head's parameter written erased below its arity (`erased_lt_arity`, since the eleventh route's landing); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5 and C7, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags, and since a later landing of 2026-11-13 the structure the kernel ensures: density, rule `j` for constructor `j`, universe-argument counts, constructor records, F3's field count, `Fin.mk`'s proof field, and since the twelfth route's landing a record for the rule-0 constructor of a reached subsingleton eliminator), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`) and a special head's parameter written erased below its arity (`erased_lt_arity`, since the eleventh route's landing); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -116,10 +116,10 @@ Three facts follow, each a reason for the plan's order.
 A program may write a parameter or a constructor field erased (`0`). IxCC then drops the argument
 (the annotator's `KernelFront.erasedAt`, C2) or the field (`checkCanonical` on the constructor's
 record), and is right only if the run behaviour that receives the position never reads it (the
-invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Eleven routes have been
+invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Twelve routes have been
 found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
 returned the irrelevance marker (the tenth writes no position erased: a type at a data position,
-below). Each is now refused by a check that `Recheck.run` runs, **none by a theorem**. Since 2026-11-13 what each check decides is a proposition proved from its acceptance
+below; the twelfth needs a recursor only the kernel refuses). Each is now refused by a check that `Recheck.run` runs, **none by a theorem**. Since 2026-11-13 what each check decides is a proposition proved from its acceptance
 (L1, `Relevance.Proof.check_soundC` and `checkCanonical_sound`, last column), but no theorem yet
 derives from those facts that an accepted program never reads a dropped value (P1, below).
 
@@ -136,6 +136,7 @@ derives from those facts that an accepted program never reads a dropped value (P
 | 9 | the same minor passed to a `csimp` subject whose redirect targets a `case` key (a target the table admits; a raw recursor it does not): the subject is no eliminator to C3 and the redirect is no walked term | 2026-11-13, below the kernel | `checkCanonical`: no `csimp` redirect targets such an eliminator (`Check.Canonical.redirectsErased?`) | `Canonical.redirects` |
 | 10 | a sort or a Π at a data position (no position written erased; [below](#erased-positions-the-routes-found-and-what-closes-each)) | 2026-11-13, below the kernel | C7 (`Check.sortRule`) | `TermC` (no case for a sort or a Π) |
 | 11 | `Quot.lift` over-applied, its stored type writing a Π past its sixth erased: `Quot.lift` fires to its function's result, which receives the marker for that argument; `readsErased?` compared the positions written erased with those the head reads, not with its arity | 2026-11-13, below the kernel | `readsErased?`: a position at or past a special head's arity is read (`Check.Canonical.readsAt`, `headArityOf`) | `Canonical.reads` with `erased_lt_arity` |
+| 12 | a subsingleton eliminator whose rule-0 constructor has no constructor record: a `Prop` inductive with large elimination over a field that is neither a proof nor an index, which only the kernel refuses; the table derives a subsingleton kind taking that field for a proof, F3 binds the marker for it, and with no record neither C3 nor S4 reads the field, so a field written erased reached a relevant minor binder | 2026-11-13, below the kernel | `checkCanonical`: a reached subsingleton eliminator's (a raw recursor's, a `case` key's) rule-0 constructor has a constructor record (`subRecordErrs`); with the record C3 refuses the minor | `Canonical.subRecords` |
 
 Also refused, where the source was stuck or a later stage refused: `Quot.lift`'s function, the
 pinned `Nat.succ`'s field and a primitive's parameter (`readsErased?`, `okPrim`); and a recursive
@@ -212,6 +213,27 @@ constructor and `Quot.mk` fire to a constructor value, on which SrcEval is stuck
 already); a `case` key reads from `np + 1` on (its motive written erased is accepted and runs; its
 major and a position past its arity are refused). No committed closure changes verdict ([ci](ci.md)).
 
+**A subsingleton eliminator's rule-0 constructor without a record: route 12 (2026-11-13).** F3
+(subsingleton ι) binds rule 0's fields without a constructor value: from index slots, and the
+marker for a field the table's derivation takes for a proof (`deriveRecKind`: a field that is not
+exactly an index). Lean's large-elimination criterion makes such a field a proof wherever the
+recursor eliminates into a relevant motive, but that criterion is the kernel's, and the recheck
+path runs no kernel. Below the kernel, `T : Prop | mk (0 h 0 g : E)` with the large recursor
+`T.rec.{u}` the kernel generates for `T : Type` passed every check: `main := T.rec.{1} (λ _. E)
+(λ h g. h) (mk c₁ c₂)` means `c₁`; the major is a proof, so `mk` is unreached and has no
+constructor record, so C3 compares the minor with no fields and S4 the sources with none, and the
+forwarding clause exempts the fields written erased; `Recheck.run` accepted it, its object returned
+`c₀` and SrcEval the marker (engineer PF's reading of P1's F3 case, run by engineer PJ, run
+PJ-f3e). `checkCanonical` now refuses a reached subsingleton eliminator (a raw recursor's, a `case`
+key's, whose F5 binds the same fields) whose rule-0 constructor has no constructor record
+(`subRecordErrs`, L1's `Canonical.subRecords`): with the record, the existing checks decide the
+fields (C3 refuses the minor that binds a dropped field relevantly; S4 refuses a kept field not
+read from an index). The kernel-faithful recursor of that `Prop` (motive into `Prop`) is refused
+already, wherever it is reached: C5 refuses a relevant reference to it, and made a root, C6 or C1
+refuses its rule (its minors are proofs). `tests-recheck`'s `Shape` asserts all of this, the
+behaviour before the clause on the recheck path without `checkCanonical`, and the P1 twin plants Form B (`tests-p1-twin`). No committed closure is
+refused by the new clause ([ci](ci.md)).
+
 **Structure the kernel ensures, now decided by `checkCanonical` (2026-11-13).** Relevance
 preservation reads six facts about the program's structure that no relevance check decided. Each
 is now a `checkCanonical` clause with its own message and a field of `Canonical`, so P1 rests on
@@ -225,6 +247,7 @@ the relevance checks and its sort hypothesis, not on erasure's success:
 | `ctorRecords` | every reached constructor has a constructor record (without one every field reads as kept) | the annotator, S1 at a constructor spine's head, and erasure (`erase-record`) where it built one |
 | `subsingletonFields` (`subsingletonSrcs?`) | F3's field sources are as many as the fields of the rule's constructor | the table's derivation (`deriveRecKind`, `recKindOfCert`); not plantable through `Recheck.run` |
 | `finProof` | where a word entry is reached, the pinned `Fin.mk` drops its proof field at the empty profile (F6w builds a word's tower with the marker there) | erasure only (`wordUnboxAtB`), where it erased a word operation |
+| `subRecords` (since route 12, above) | at a reached subsingleton eliminator (a raw recursor's, a `case` key's), rule 0's constructor has a constructor record, so C3 and S4 decide the fields F3 and F5 bind without a constructor value | the kernel only (its large-elimination criterion); nothing on the recheck path |
 
 `univs` is deliberately decided at the positions relevant at some profile, not at every position:
 an argument or a `let` irrelevant at every profile (a type, a proof), a λ's domain, a Π and a
@@ -234,6 +257,7 @@ refused by any of the six (the verdicts are unchanged, [ci](ci.md)); `tests-rech
 plants a violation of each, refused by that check alone (`finProof` with `Fin.mk`'s proof field
 given a non-proposition type and the canonical record for it; `subsingletonFields` at
 `Src.Recheck.annotation`, since the table certificate's derivation rules it out on `Recheck.run`).
+The seventh, `subRecords`, came later with route 12 and is planted the same way (above).
 One structural fact stays a hypothesis of P1: one constructor per inductive and index, which
 `Erase.Proof.erase_progWF` (`ProgWF.ctorIn`) discharges under `Recheck.run`'s acceptance, since
 `Recheck.run` erases the program SrcEval runs.
@@ -344,11 +368,13 @@ that move values without reading them
 stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
 `Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
 lemmas the cases share; those the three later modules mark for it are still in their modules. F3
-as stated is false where a reached subsingleton recursor's rule-0 constructor has no constructor
+as stated was false where a reached subsingleton recursor's rule-0 constructor has no constructor
 record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field,
-built below the kernel, which only the kernel refuses); it is also a wrong-value route on the
-recheck path. The check that closes it (`checkCanonical`: such a constructor has a record) is
-approved and lands next, before `case_F3`.
+built below the kernel, which only the kernel refuses), and by reading F5 likewise at a `case` key
+over such a recursor; it was also a wrong-value route on the recheck path, the twelfth
+([above](#erased-positions-the-routes-found-and-what-closes-each)). `checkCanonical` now refuses it
+(`Canonical.subRecords`: such a constructor has a record), so F3's and F5's statements are
+unchanged and their proofs read the record; neither is proved yet.
 
 **P1 tested by running it (`tests-p1-twin`, 2026-11-13; engineers RN, RO, PD).** The definitions above are
 made executable clause by clause (`IxCCTests/Recheck/P1Twin/Exec.lean`: exact where decidable, `Live`

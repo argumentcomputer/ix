@@ -789,6 +789,14 @@ structure Canonical (p : Program) (ann : Ann) (ch : Checked) : Prop where
   there would be applied, or returned by F5 on a constructor with no fields. -/
   minorsRead : ∀ inst ∈ ch.instances, ∀ cr, ann.constRel? inst.1 = some cr →
     ∀ pos r, appliedAt p inst.1 pos = true → cr.params[pos]? = some r → r.irrP inst.2 = false
+  /-- At a reached subsingleton eliminator (a raw recursor's, a `case` key's), rule 0's
+  constructor has a constructor record: F3 binds its fields with no constructor value, and C3 (the
+  minors) and S4 (the sources) read that record. -/
+  subRecords : ∀ c ∈ ch.reached, ∀ shape, elimShape? p c = some shape →
+    ∀ w srcs sf k lv np nmot nmin ni ind rules ty rule,
+      p.table.recKindOf shape.recr = some (.subsingleton w srcs) →
+      p.decl? shape.recr = some (.recr sf k lv np nmot nmin ni ind rules ty) → rules[0]? = some rule →
+      (ann.ctorRel? rule.ctor).isSome = true
 
 
 /-! ### Helpers for `checkCanonical_sound` -/
@@ -907,8 +915,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
   unfold checkCanonical at h
   dsimp only at h
   simp only [List.append_eq_nil_iff] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hdenseE⟩, hruleE⟩, hunivE⟩, hrecE⟩, hsrcsE⟩, hfinE⟩,
-    happE⟩, hokE⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hdenseE⟩, hruleE⟩, hunivE⟩, hrecE⟩, hsrcsE⟩, hfinE⟩,
+    happE⟩, hsubE⟩, hokE⟩ := h
   split at hokE
   · rename_i hall
     simp only [Bool.and_eq_true, List.all_eq_true] at hall
@@ -923,7 +931,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
     have hsrcsE' := List.filterMap_eq_nil_iff.1 hsrcsE
     have hfinE' := List.filterMap_eq_nil_iff.1 hfinE
     have happE' := List.filterMap_eq_nil_iff.1 happE
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    have hsubE' := List.filterMap_eq_nil_iff.1 hsubE
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- the constant records
     · intro c cr hcr
       have hx := hconsts (c, cr) (NatMap.mem_toList hcr)
@@ -1209,6 +1218,18 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
       have h2 := hn (r, pos) ((mem_zipIdx_iff cr.params 0 pos r).2 ⟨Nat.zero_le _, by simpa using hr⟩)
       simp only [hap, Bool.true_and] at h2
       simpa using h2
+    -- a reached subsingleton eliminator's rule-0 constructor has a record
+    · intro c hc shape hs w srcs sf k lv np nmot nmin ni ind rules ty rule hk hd hr0
+      have h1 := hsubE' c hc
+      rw [hs] at h1
+      dsimp only at h1
+      rw [hk, hd] at h1
+      dsimp only at h1
+      rw [hr0] at h1
+      dsimp only at h1
+      cases hkr : ann.ctorRel? rule.ctor with
+      | none => rw [hkr] at h1; simp at h1
+      | some _ => rfl
   · cases hokE
 
 /-! ## The erased facts P1 consumes, from the canonical records -/
