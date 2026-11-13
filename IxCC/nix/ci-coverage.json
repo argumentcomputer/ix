@@ -1814,9 +1814,9 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "b56fca308571db48931a89e108c5eb5c61d20e53fc2eafd8e22e6b0073c95d72",
- "grounding_axiom_count": 314,
- "baseline": "step C closure-capture shape of a deep let (GR19)",
+ "e29f4e089d71a91553698e1dc461478a2c210f279993167324408cc87fff5384",
+ "grounding_axiom_count": 323,
+ "baseline": "witness shape of a deep let (GR20)",
  "axiom_sha256":
  "e006ef662d55519a73262c509f18d0da6ea4eccec30d26bc9b1a3126770577ff",
  "axiom_count": 6888}
