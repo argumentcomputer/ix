@@ -224,6 +224,13 @@ recheck path's statistics-free selection against `Select.run`. -/
 lean_exe «tests-recheck» where
   root := `IxCCTests.Recheck.Main
 
+/- P1, relevance preservation, tested by running it (`IxCCTests.Recheck.P1Twin`): SrcEval's twin with
+the executable invariants and a mutant pass, on the 12 corpus manifests, the five erased-position parts'
+programs and planted ones. Its own target, not a required check (about 10 minutes on the build box;
+`docs/ci.md`). -/
+lean_exe «tests-p1-twin» where
+  root := `IxCCTests.Recheck.P1TwinMain
+
 /- Every certificate `ixcc compile` writes is one `check-cert` accepts: every committed root under
 `--rc off`, `on` and `auto`, and the certificate-depth input `fixtures/rc/deep` through the command
 line. -/

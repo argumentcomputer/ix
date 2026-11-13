@@ -350,6 +350,19 @@ built below the kernel, which only the kernel refuses); it is also a wrong-value
 recheck path. The check that closes it (`checkCanonical`: such a constructor has a record) is
 approved and lands next, before `case_F3`.
 
+**P1 tested by running it (`tests-p1-twin`, 2026-11-13; engineers RN, RO, PD).** The definitions above are
+made executable clause by clause (`IxCCTests/Recheck/P1Twin/Exec.lean`: exact where decidable, `Live`
+cut at a stated depth) and run in a twin of SrcEval that checks the sort events of `SortAgree`, on
+every registered run (the 12 corpus manifests, `phase1-boundary` without the 23 cases whose exponent
+or shift argument exceeds 2^32 − 1, at which compiled `Nat.pow` aborts) and on the erased-position
+test parts' programs, with a mutant pass at sampled calls: a mutant `Pre` accepts and `SortAgree`
+allows that fails `Post`, a child's `Pre` or `Reads` would contradict `preserve`, `pre_step` or
+`reads_live`. The pass found the reproductions of the five statements repaired above and one more
+state of the first kind (a special head of another kind fired for a reached constant, closed by the
+same repair); after the repairs it finds none. `SortAgree` is tested on the registered runs there, not
+proved; and the pass mutates values, never declarations, records or table entries, so a state that
+only an adversarial program has is tested only where a plant builds it ([CI](ci.md)).
+
 ## Target statements
 
 Notation: `kenv` is IxCK's environment read from the claim's bytes under the

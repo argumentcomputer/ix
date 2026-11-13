@@ -48,8 +48,9 @@ def verdict (cfg : Recheck.Config) (P : Src.Program) (tc : Src.Table.TableCert)
 
 /-- `Src.Recheck.annotation` refuses `Pt` with `ann` at the relevance checks, and every error names
 every needle: no other check fires. -/
-def annotationOnly (a : Assert) (label : String) (Pt : Src.Program) (ann : Src.Relevance.Ann)
-    (needles : List String) : IO String :=
+def annotationOnly (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (Pt : Src.Program) (ann : Src.Relevance.Ann)
+    (needles : List String) : IO String := do
+  hk.refused label Pt ann
   match Src.Recheck.annotation Pt ann with
   | .ok _ => do expect a false s!"{label}: accepted by Src.Recheck.annotation"; return ""
   | .error (.relevance errs) => do
@@ -61,13 +62,13 @@ def annotationOnly (a : Assert) (label : String) (Pt : Src.Program) (ann : Src.R
 
 /-- Refused by name with no other error (`annotationOnly`), and by `Recheck.run` at the relevance
 stage on the honest certificate `cert` given the planted table certificate and annotation. -/
-def refusedOnly (a : Assert) (label : String) (cfg : Recheck.Config) (cert : Recheck.Cert)
+def refusedOnly (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (cfg : Recheck.Config) (cert : Recheck.Cert)
     (P : Src.Program) (tc : Src.Table.TableCert) (ann : Src.Relevance.Ann) (needles : List String) :
     IO String := do
   let table ← match Src.Table.ofCert cfg.table P tc with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"{label}: the table refused it: {m}")
-  let shown ← annotationOnly a label { P with table } ann needles
+  let shown ← annotationOnly a hk label { P with table } ann needles
   match Recheck.run cfg P { cert with table := tc, relevance := ann } with
   | .ok _ => expect a false s!"{label}: Recheck.run accepted it"
   | .error e =>
@@ -77,7 +78,7 @@ def refusedOnly (a : Assert) (label : String) (cfg : Recheck.Config) (cert : Rec
 
 /-- What erasure did with the planted program before the check: tiers S and C accept it
 (`annotationNoCanonical`), and erasure declines it with `code`. -/
-def erasureDeclined (a : Assert) (label : String) (cfg : Recheck.Config) (P : Src.Program)
+def erasureDeclined (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (cfg : Recheck.Config) (P : Src.Program)
     (tc : Src.Table.TableCert) (ann : Src.Relevance.Ann) (code : String) : IO Unit := do
   let table ← match Src.Table.ofCert cfg.table P tc with
     | .ok t => pure t
@@ -118,7 +119,7 @@ def withValue (P : Src.Program) (main : Src.CId) (v : Src.Term) : Src.Program :=
 
 /-- `fProg`'s `main := f c₁ c₂` (`c₂`) with its value made a sort, a Π, and a spine headed by a
 sort. -/
-def sorts (a : Assert) : IO (Array String) := do
+def sorts (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let c₂ : Sem.Obs := .ctor 2 []
   let (h, _, _, main) ← fProg "C7" {}
   expect a (objMain h.art == some c₂ && srcMain h.art main == some c₂) "C7: the honest program is not c₂"
@@ -133,7 +134,7 @@ def sorts (a : Assert) : IO (Array String) := do
      ("main : E := (Sort 0) c₁, a sort at a spine's head",
        Src.Term.app (.sort .zero) c₁ .strict .rel, [Src.Relevance.Tag.arg .rel])]
   for (what, v, tags) in cases do
-    out := out.push (← refusedOnly a s!"C7, {what}" h.cfg h.cert (withValue P main v) h.cert.table
+    out := out.push (← refusedOnly a hk s!"C7, {what}" h.cfg h.cert (withValue P main v) h.cert.table
       (withNode h.cert.relevance (.value main) tags) ns)
   return out.push "C7: the honest main compiles to c₂ (object and SrcEval)"
 
@@ -153,7 +154,7 @@ def recProg (label : String) : IO (Honest × Src.CId × Src.CId) := do
   let P := h.inp.program
   return (h, ← lookup P en.recursor "E.rec", ← lookup P main "main")
 
-def rules (a : Assert) : IO (Array String) := do
+def rules (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let c₂ : Sem.Obs := .ctor 2 []
   let (h, recId, main) ← recProg "rules"
   expect a (objMain h.art == some c₂ && srcMain h.art main == some c₂)
@@ -164,16 +165,16 @@ def rules (a : Assert) : IO (Array String) := do
   -- rules 0 and 1 swapped: on the major `c₀` SrcEval runs rule 0, now `c₁`'s, which returns minor 1
   let Ps := P.setDecl recId (.recr sf k lv np nmot nmin ni ind [r1, r0, r2] ty)
   let ns := [s!"({P.short recId})", "rule 0 of the recursor is not for constructor 0"]
-  erasureDeclined a "rules, rules 0 and 1 of E.rec swapped" h.cfg Ps h.cert.table h.cert.relevance
+  erasureDeclined a hk "rules, rules 0 and 1 of E.rec swapped" h.cfg Ps h.cert.table h.cert.relevance
     "erase-recursor"
-  let shown ← refusedOnly a "rules, rules 0 and 1 of E.rec swapped" h.cfg h.cert Ps h.cert.table
+  let shown ← refusedOnly a hk "rules, rules 0 and 1 of E.rec swapped" h.cfg h.cert Ps h.cert.table
     h.cert.relevance ns
   return #[shown, "rules: the honest main compiles to c₂ (object and SrcEval); the swapped program \
     passed tiers S and C before and erasure declined it (erase-recursor)"]
 
 /-! ## `univs`, `dense`, `ctorRecords` on `fProg`'s `main := f c₁ c₂` -/
 
-def univsDenseRecords (a : Assert) : IO (Array String) := do
+def univsDenseRecords (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let (h, f, _, main) ← fProg "univs, dense, ctorRecords" {}
   let P := h.inp.program
   let (_, hd, args) ← mainSpine P main
@@ -181,9 +182,9 @@ def univsDenseRecords (a : Assert) : IO (Array String) := do
   expect a (fId == f && us.isEmpty) "main's head is not f"
   -- `f.{0} c₁ c₂`: `f` has no universe parameter
   let Pu := withValue P main (Src.Term.mkApps (.const f [.zero]) args)
-  erasureDeclined a "univs, f given a universe argument" h.cfg Pu h.cert.table h.cert.relevance
+  erasureDeclined a hk "univs, f given a universe argument" h.cfg Pu h.cert.table h.cert.relevance
     "erase-univs"
-  let univ ← refusedOnly a "univs, f given a universe argument" h.cfg h.cert Pu h.cert.table
+  let univ ← refusedOnly a hk "univs, f given a universe argument" h.cfg h.cert Pu h.cert.table
     h.cert.relevance [s!"in the value of {P.short main}", "more universe arguments than its declaration"]
   -- a copy of `f` at `P.size`, outside the program's size, called by `main` with its record: the
   -- closure walk skips it, SrcEval would run it. At `Src.Recheck.annotation` only `dense` refuses
@@ -197,7 +198,7 @@ def univsDenseRecords (a : Assert) : IO (Array String) := do
   let tableD ← match Src.Table.ofCert h.cfg.table Pd h.cert.table with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"dense: the table refused it: {m}")
-  let dense ← annotationOnly a "dense, main calls a constant at the program's size" { Pd with table := tableD }
+  let dense ← annotationOnly a hk "dense, main calls a constant at the program's size" { Pd with table := tableD }
     annD ["at or above the program's size"]
   match Recheck.run h.cfg Pd { h.cert with relevance := annD } with
   | .ok _ => expect a false "dense: Recheck.run accepted it"
@@ -212,7 +213,7 @@ def univsDenseRecords (a : Assert) : IO (Array String) := do
   -- `c₂`'s constructor record removed: `c₂` is reached as `f`'s argument, not at a spine head
   let some (Src.Term.const c₂ _, _, _) := args[1]? | throw (IO.userError "c₂")
   let annR := { h.cert.relevance with ctors := h.cert.relevance.ctors.erase c₂ }
-  let record ← refusedOnly a "ctorRecords, c₂'s record removed" h.cfg h.cert P h.cert.table annR
+  let record ← refusedOnly a hk "ctorRecords, c₂'s record removed" h.cfg h.cert P h.cert.table annR
     [s!"({P.short c₂})", "a reached constructor without a constructor record"]
   return #[univ, s!"dense, main calls a constant at the program's size: {dense}; Recheck.run \
     refuses it at its annotation keys, and S1 without its record", record,
@@ -260,7 +261,7 @@ def wordsDir : System.FilePath := "fixtures/ixon-v4/src-words"
 /-- `Words.u8` (a word entry reached, so the towers' constructors are): `Fin.mk`'s proof field
 given type `Nat` below the kernel, with the canonical record for that type (the field kept), so
 that only `finProof` refuses it; and `Fin.mk`'s record removed, which S1 refuses first at a projection. -/
-def finProof (a : Assert) (fx : Fixture) : IO (Array String) := do
+def finProof (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (fx : Fixture) : IO (Array String) := do
   let (obj, src) := runBoth fx.art 0 fx.main [0, 3, 4]
   expect a (obj == some (.nat 7) && src == some (.nat 7))
     s!"finProof: Words.u8 0 3 4 is not 7 (object {repr obj}, SrcEval {repr src})"
@@ -268,7 +269,7 @@ def finProof (a : Assert) (fx : Fixture) : IO (Array String) := do
   let some natId := fx.P.known.nat | throw (IO.userError "no pinned Nat")
   let some (.ctor x1 x2 x3 x4 np nf ty) := fx.P.decl? fin | throw (IO.userError "Fin.mk")
   let Pf := fx.P.setDecl fin (.ctor x1 x2 x3 x4 np nf (setDom (np + 1) (.const natId []) ty))
-  let kept ← refusedOnly a "finProof, Fin.mk's proof field of type Nat (kept)" fx.cfg fx.cert Pf fx.tc
+  let kept ← refusedOnly a hk "finProof, Fin.mk's proof field of type Nat (kept)" fx.cfg fx.cert Pf fx.tc
     (withCtor fx.ann Pf fin) [s!"({fx.P.short fin})", "Fin.mk's proof field"]
   let annR := { fx.ann with ctors := fx.ann.ctors.erase fin }
   let table ← match Src.Table.ofCert fx.cfg.table fx.P fx.tc with
@@ -287,7 +288,7 @@ def finProof (a : Assert) (fx : Fixture) : IO (Array String) := do
   -- `Fin.mk` declared with a third field (of type `Nat`, kept): F6w still builds its value with
   -- two fields, so F2 over it would bind the rule's field λs short (P1's `MarkersPlaced.count`)
   let Pc := fx.P.setDecl fin (.ctor x1 x2 x3 x4 np (nf + 1) (addLastField (.const natId []) ty))
-  let count ← refusedOnly a "finProof, Fin.mk declared with three fields" fx.cfg fx.cert Pc fx.tc
+  let count ← refusedOnly a hk "finProof, Fin.mk declared with three fields" fx.cfg fx.cert Pc fx.tc
     (withCtor fx.ann Pc fin) [s!"({fx.P.short fin})", "not a constructor of two fields"]
   return #[kept, both, count, "finProof: Words.u8 0 3 4 = 7 (object and SrcEval)"]
 
@@ -296,7 +297,7 @@ minors are proofs (F5 would force a minor that is a marker there). Made a root, 
 first: the key reaches `Key.rec` at its own levels, whose rules' minor λs are proofs there (C6).
 Its instance alone, given to `checkCanonical` beside the honest program's check output, is refused
 by `appliedAt` alone. -/
-def caseRoot (a : Assert) : IO (Array String) := do
+def caseRoot (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let (h, cId, _, _, _, _) ← IxCCTests.Recheck.Erased.keyProg "appliedAt, a case key" true
   let P := h.inp.program
   let table ← match Src.Table.ofCert h.cfg.table P h.cert.table with
@@ -332,7 +333,7 @@ its sources given one more (a proof). Through `Recheck.run` the table certificat
 column is derived from the declarations (`Table.recKindOfCert`, `deriveRecKind`: one source per
 field of rule 0's constructor), which this part asserts of the honest table, so the violation is
 planted in the table `Src.Recheck.annotation` reads, the step `Recheck.run` calls. -/
-def subsingleton (a : Assert) (label : String) (fx : Fixture) (xs : List Nat) :
+def subsingleton (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (fx : Fixture) (xs : List Nat) :
     IO (Array String) := do
   let (obj, src) := runBoth fx.art 0 fx.main xs
   expect a (obj.isSome && obj == src) s!"{label}: object {repr obj}, SrcEval {repr src}"
@@ -352,16 +353,50 @@ def subsingleton (a : Assert) (label : String) (fx : Fixture) (xs : List Nat) :
   expect a (found.all fun (_, _, srcs, nf) => srcs.length == nf)
     s!"{label}: a derived kind has a source count other than its constructor's field count"
   let Pp := { Pt with table := { table with recKind := table.recKind.insert r (.subsingleton w (srcs ++ [.proof])) } }
-  let shown ← annotationOnly a s!"{label}, one more source" Pp fx.ann
+  let shown ← annotationOnly a hk s!"{label}, one more source" Pp fx.ann
     [s!"({Pt.short r})", s!"takes {srcs.length + 1} field sources", s!"has {nf} fields"]
   return #[s!"{label}, one more source: {shown}", s!"{label}: {found.length} reached subsingleton \
     eliminators, each with its derived sources one per field; the honest root runs alike in the \
     object and SrcEval"]
 
-def run (a : Assert) : IO (Array String) := do
+/-- `E.casesOn` (a `case` key) reached as a `csimp` target at the profile where its minors are proofs:
+`main := E.casesOn.{1} (λ _. E) c₁ c₀ c₂ c₁` (`Erased.casesEnv`, whose constructors have no fields),
+and the root `r₁ := c₁` given the entry `r₁ ↦ E.casesOn.{0}` in the table `Src.Recheck.annotation`
+reads. With only that entry, tier S refuses it first: the key reaches `E.rec` at its own levels, whose
+rules' λs are proofs there (C6). With `E.rec` given a table entry too (`E.rec ↦ r₀`), no check walks
+`E.rec`'s rules, tiers S and C accept, and `appliedAt` alone refuses: F5 there would force a minor
+that is a marker and apply it to the selected constructor's (no) fields, returning the marker
+(found by the P1 twin's mutant pass before `appliedAt` existed). -/
+def caseCsimp (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
+  let (e, co, roots) ← IxCCTests.Recheck.Erased.casesEnv .many
+  let h ← ingest "appliedAt, a case key as a csimp target" e roots
+  let P := h.inp.program
+  let coId ← lookup P co "E.casesOn"
+  let some (_, r0) := P.roots[1]? | throw (IO.userError "appliedAt, csimp: no r₀")
+  let some (_, r1) := P.roots[2]? | throw (IO.userError "appliedAt, csimp: no r₁")
+  let table ← match Src.Table.ofCert h.cfg.table P h.cert.table with
+    | .ok t => pure t
+    | .error m => throw (IO.userError s!"appliedAt, csimp: the table refused it: {m}")
+  let some (.case recId) := table.resolveOf coId | throw (IO.userError "appliedAt, csimp: no case entry")
+  let t1 := { table with resolve := table.resolve.insert r1 (.csimp coId [.zero] r1) }
+  let Pa := { P with table := t1 }
+  let first ← match Src.Recheck.annotation Pa h.cert.relevance with
+    | .error (.relevance errs) => do
+      let ms := errs.toList.map (·.render Pa)
+      expect a (ms.any (·.contains "[relevance C6]")) s!"appliedAt, r₁ ↦ E.casesOn.\{0}: not refused by C6: {ms}"
+      pure s!"appliedAt, r₁ ↦ E.casesOn.\{0}: refused first by C6 at E.rec's rules ({ms.length} errors)"
+    | _ => do
+      expect a false "appliedAt, r₁ ↦ E.casesOn.{0}: not refused at relevance"
+      pure ""
+  let t2 := { t1 with resolve := t1.resolve.insert recId (.csimp r0 [] recId) }
+  let shown ← annotationOnly a hk "appliedAt, r₁ ↦ E.casesOn.{0} and E.rec ↦ r₀" { P with table := t2 }
+    h.cert.relevance [s!"({P.short coId})", "is forced and applied"]
+  return #[first, s!"appliedAt, r₁ ↦ E.casesOn.\{0} and E.rec ↦ r₀: {shown}"]
+
+def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array String) := do
   let words ← fixture "Words.u8" (wordsDir / "words.ixe") (wordsDir / "words.equations.json") ["Words.u8"]
-  return (← sorts a) ++ (← rules a) ++ (← univsDenseRecords a) ++
-    (← subsingleton a "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a words) ++
-    (← caseRoot a)
+  return (← sorts a hk) ++ (← rules a hk) ++ (← univsDenseRecords a hk) ++
+    (← subsingleton a hk "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a hk words) ++
+    (← caseRoot a hk) ++ (← caseCsimp a hk)
 
 end IxCCTests.Recheck.Shape

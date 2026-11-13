@@ -61,8 +61,9 @@ def isStuck : Sem.Result Src.Value → Bool
 
 /-- `Src.Recheck.annotation` on `Pt` (its table built) refuses it at the relevance checks, one
 error naming every needle (others may fire too). -/
-def annotationNamed (a : Assert) (label : String) (Pt : Src.Program) (ann : Src.Relevance.Ann)
-    (needles : List String) : IO String :=
+def annotationNamed (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (Pt : Src.Program) (ann : Src.Relevance.Ann)
+    (needles : List String) : IO String := do
+  hk.refused label Pt ann
   match Src.Recheck.annotation Pt ann with
   | .ok _ => do expect a false s!"{label}: accepted by Src.Recheck.annotation"; return ""
   | .error (.relevance errs) => do
@@ -136,7 +137,7 @@ def setQuotType (P : Src.Program) (c : Src.CId) (f : Src.Term → Src.Term) : Sr
   | some (.quot qk l ty) => P.setDecl c (.quot qk l (f ty))
   | _ => P
 
-def quot (a : Assert) : IO (Array String) := do
+def quot (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let q ← quotProg
   let one : IxCC.Ixon.Univ := .succ .zero
   let mkV := Src.Term.mkApps (.const q.mkId [one])
@@ -147,12 +148,12 @@ def quot (a : Assert) : IO (Array String) := do
      (.const q.gId [], .strict, .rel), (.sort .zero, .strict, Src.Rel.prf), (mkV, .strict, .rel),
      (.const q.c2 [], .strict, last)]
   let (P0, ann0) := quotWith q q.Pi (lift .rel)
-  accepted a "Quot.lift over-applied, g c₁ c₂" q.h.cfg P0 q.h.cert.table ann0 q.mainId (.ctor 2 [])
+  accepted a hk "Quot.lift over-applied, g c₁ c₂" q.h.cfg P0 q.h.cert.table ann0 q.mainId (.ctor 2 [])
   -- the stored type of `Quot.lift` with a seventh Π `(x :⁰ E)`, the program's argument for it `prf`
   let (P1, ann1) := quotWith q (setQuotType q.Pi q.liftId (appendErasedPi q.eT 6)) (lift Src.Rel.prf)
   let r1 ← srcNoCanonical q.h.cfg P1 q.h.cert.table ann1 q.mainId
   expect a (isMarker r1) "Quot.lift with a seventh Π written erased: SrcEval does not return the marker"
-  let lift7 ← refusedOnly a "Quot.lift over-applied at a seventh Π written erased" q.h.cfg q.h.cert P1
+  let lift7 ← refusedOnly a hk "Quot.lift over-applied at a seventh Π written erased" q.h.cfg q.h.cert P1
     q.h.cert.table ann1 [s!"({q.Pi.short q.liftId})", "parameter 6 is written erased",
       "the value Quot.lift fires to", "at or past the arity 6"]
   -- `Quot.mk E (Eq E) c₁ c₂` with a fourth Π `(x :⁰ E)` on `Quot.mk`: SrcEval was stuck applying
@@ -161,7 +162,7 @@ def quot (a : Assert) : IO (Array String) := do
   let (P2, ann2) := quotWith q (setQuotType q.Pi q.mkId (appendErasedPi q.eT 3)) mk4
   let r2 ← srcNoCanonical q.h.cfg P2 q.h.cert.table ann2 q.mainId
   expect a (isStuck r2) "Quot.mk over-applied: SrcEval is not stuck"
-  let mk ← refused a "Quot.mk over-applied at a fourth Π written erased" q.h.cfg P2 q.h.cert.table ann2
+  let mk ← refused a hk "Quot.mk over-applied at a fourth Π written erased" q.h.cfg P2 q.h.cert.table ann2
     [s!"({q.Pi.short q.mkId})", "parameter 3 is written erased", "the value Quot.mk fires to",
       "at or past the arity 3"]
   -- a constructor of `E` (arity 0) with a Π `(x :⁰ E)`, applied: SrcEval was stuck
@@ -173,7 +174,7 @@ def quot (a : Assert) : IO (Array String) := do
   let ann3 := withConst ann3 P3 q.c0
   let r3 ← srcNoCanonical q.h.cfg P3 q.h.cert.table ann3 q.mainId
   expect a (isStuck r3) "a constructor over-applied: SrcEval is not stuck"
-  let ctor ← refused a "a constructor of arity 0 over-applied at a Π written erased" q.h.cfg P3
+  let ctor ← refused a hk "a constructor of arity 0 over-applied at a Π written erased" q.h.cfg P3
     q.h.cert.table ann3 [s!"({q.Pi.short q.c0})", "parameter 0 is written erased",
       "the value the constructor fires to", "at or past the arity 0"]
   return #["Quot.lift over-applied (g c₁ c₂): accepted, c₂ (object and SrcEval)",
@@ -183,19 +184,19 @@ def quot (a : Assert) : IO (Array String) := do
 /-! ## A recursor, a primitive, a word operation: every position read -/
 
 /-- `E.rec` (arity 5) with a sixth Π written erased. -/
-def recursor (a : Assert) : IO String := do
+def recursor (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO String := do
   let (h, recId, _) ← recProg "arity, recursor"
   let Pi ← installed h
   let some (.recr sf k lv np nmot nmin ni ind rs ty) := Pi.decl? recId | throw (IO.userError "E.rec")
   let some (.pi _ _ dom _) := some ty | throw (IO.userError "E.rec's type")
   let Pr := Pi.setDecl recId (.recr sf k lv np nmot nmin ni ind rs (appendErasedPi dom 5 ty))
-  refused a "a recursor with a Π written erased past its arity" h.cfg Pr h.cert.table
+  refused a hk "a recursor with a Π written erased past its arity" h.cfg Pr h.cert.table
     (withConst h.cert.relevance Pr recId)
     [s!"({Pi.short recId})", "parameter 5 is written erased", "the value the recursor",
       "at or past the arity 5"]
 
 /-- `Nat.add` (a `prim` entry, arity 2) with a third Π written erased; `main := Nat.add 2 3`. -/
-def primitive (a : Assert) : IO String := do
+def primitive (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO String := do
   let (e, en) := addEnum (← loadBase) 3
   let (e, main) := store e ⟨defn E (.ref 1 #[]), #[], #[en.ind, en.ctors[1]!], #[]⟩
   let (e, rs) := ctorRoots e en.ind en.ctors
@@ -219,12 +220,12 @@ def primitive (a : Assert) : IO String := do
     | some (.defn dk ds dl ty dv) => Q.setDecl addId (.defn dk ds dl (appendErasedPi natT 2 ty) dv)
     | _ => Q
   let ann := withNode (withConst h.cert.relevance Q addId) (.value mainId) v.tagOrder
-  annotationNamed a "the primitive Nat.add with a Π written erased past its arity" { Q with table } ann
+  annotationNamed a hk "the primitive Nat.add with a Π written erased past its arity" { Q with table } ann
     [s!"({P.short addId})", "parameter 2 is written erased", "the value the primitive Nat.add fires to",
       "at or past the arity 2"]
 
 /-- A reached word entry of `Words.u8` with a Π written erased past its operation's arity. -/
-def word (a : Assert) : IO String := do
+def word (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO String := do
   let fx ← fixture "Words.u8" (wordsDir / "words.ixe") (wordsDir / "words.equations.json") ["Words.u8"]
   let table ← match Src.Table.ofCert fx.cfg.table fx.P fx.tc with
     | .ok t => pure t
@@ -243,7 +244,7 @@ def word (a : Assert) : IO String := do
     | .defn dk ds dl ty dv => .defn dk ds dl (appendErasedPi dom op.arity ty) dv
     | d => d
   let Q := Pt.setDecl c d'
-  annotationNamed a "a word operation with a Π written erased past its arity" Q (withConst fx.ann Q c)
+  annotationNamed a hk "a word operation with a Π written erased past its arity" Q (withConst fx.ann Q c)
     [s!"({Pt.short c})", s!"parameter {op.arity} is written erased", "the value the word operation",
       s!"at or past the arity {op.arity}"]
 
@@ -252,7 +253,7 @@ def word (a : Assert) : IO String := do
 /-- `E.casesOn` (`np = 0`, arity 5) of `Erased.casesEnv`: the motive (parameter 0) written erased is
 accepted and runs; the major (parameter 1 = `np + 1`) and a Π past the arity written erased are
 refused. -/
-def caseKey (a : Assert) : IO (Array String) := do
+def caseKey (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let (e, co, roots) ← casesEnv .many
   let h ← ingest "arity, casesOn" e roots
   let P := h.inp.program
@@ -265,24 +266,24 @@ def caseKey (a : Assert) : IO (Array String) := do
     let Q := (Pi.setDecl coId (.defn dk ds dl ty' dv)).setDecl main (.defn mk ms ml mty v)
     (Q, withNode (withConst h.cert.relevance Q coId) (.value main) v.tagOrder)
   let (P0, ann0) := withTy (eraseParam 0 ty) mval
-  accepted a "casesOn with its motive written erased" h.cfg P0 h.cert.table ann0 main (.ctor 2 [])
+  accepted a hk "casesOn with its motive written erased" h.cfg P0 h.cert.table ann0 main (.ctor 2 [])
   -- `main := E.casesOn (λ _. E)`: a saturated call would pass an irrelevant major, which C4 refuses
   -- first; partially applied (no constructor of `E` has a field) the key is still reached
   let (hd, args) := mval.spine
   let v1 := Src.Term.mkApps hd (args.take 1)
   let (P1, ann1) := withTy (eraseParam 1 ty) v1
-  let major ← refused a "casesOn with its major written erased" h.cfg P1 h.cert.table ann1
+  let major ← refused a hk "casesOn with its major written erased" h.cfg P1 h.cert.table ann1
     [s!"({P.short coId})", "parameter 1 is written erased", "its case entry"]
   let dom := match ty with
     | .pi _ _ _ (.pi _ _ dom _) => dom
     | t => t
   let (P5, ann5) := withTy (appendErasedPi dom 5 ty) mval
-  let past ← refused a "casesOn with a Π written erased past its arity" h.cfg P5 h.cert.table ann5
+  let past ← refused a hk "casesOn with a Π written erased past its arity" h.cfg P5 h.cert.table ann5
     [s!"({P.short coId})", "parameter 5 is written erased", "at or past the arity 5"]
   return #["casesOn with its motive (parameter 0 = np) written erased: accepted, c₂ (object and SrcEval)",
     major, past]
 
-def run (a : Assert) : IO (Array String) := do
-  return (← quot a) ++ #[← recursor a, ← primitive a, ← word a] ++ (← caseKey a)
+def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array String) := do
+  return (← quot a hk) ++ #[← recursor a hk, ← primitive a hk, ← word a hk] ++ (← caseKey a hk)
 
 end IxCCTests.Recheck.ErasedArity

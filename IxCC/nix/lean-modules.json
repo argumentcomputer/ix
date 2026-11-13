@@ -17,6 +17,8 @@
   "tests-pipeline-rc":
   {"roots": ["IxCCTests.Pipeline.Rc.Main"], "kind": "lean_exe"},
   "tests-pipeline": {"roots": ["IxCCTests.Pipeline.Main"], "kind": "lean_exe"},
+  "tests-p1-twin":
+  {"roots": ["IxCCTests.Recheck.P1TwinMain"], "kind": "lean_exe"},
   "tests-own-plain":
   {"roots": ["IxCCTests.Own.Plain.Main"], "kind": "lean_exe"},
   "tests-own-owned":
@@ -649,6 +651,30 @@
   "IxCCTests.Recheck.Perf":
   {"path": "IxCCTests/Recheck/Perf.lean",
    "imports": ["IxCCTests.Recheck.Deep"]},
+  "IxCCTests.Recheck.P1TwinMain":
+  {"path": "IxCCTests/Recheck/P1TwinMain.lean",
+   "imports": ["IxCCTests.Recheck.P1Twin.Run"]},
+  "IxCCTests.Recheck.P1Twin.Twin":
+  {"path": "IxCCTests/Recheck/P1Twin/Twin.lean",
+   "imports": ["IxCCTests.Recheck.P1Twin.Exec"]},
+  "IxCCTests.Recheck.P1Twin.Run":
+  {"path": "IxCCTests/Recheck/P1Twin/Run.lean",
+   "imports":
+   ["IxCCTests.Recheck.ErasedPartial", "IxCCTests.Recheck.P1Twin.Plants"]},
+  "IxCCTests.Recheck.P1Twin.Plants":
+  {"path": "IxCCTests/Recheck/P1Twin/Plants.lean",
+   "imports":
+   ["IxCCTests.Recheck.ErasedArity", "IxCCTests.Recheck.P1Twin.Pass"]},
+  "IxCCTests.Recheck.P1Twin.Pass":
+  {"path": "IxCCTests/Recheck/P1Twin/Pass.lean",
+   "imports": ["IxCCTests.Recheck.P1Twin.Twin"]},
+  "IxCCTests.Recheck.P1Twin.Exec":
+  {"path": "IxCCTests/Recheck/P1Twin/Exec.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Check",
+    "IxCC.Src.Semantics",
+    "Std.Data.HashMap",
+    "Std.Data.HashSet"]},
   "IxCCTests.Recheck.Main":
   {"path": "IxCCTests/Recheck/Main.lean", "imports": ["IxCCTests.Recheck.Run"]},
   "IxCCTests.Recheck.KernelSlow":
@@ -4181,6 +4207,7 @@
     "IxCCTests.Own.Plain.Suite",
     "IxCCTests.Pipeline.ShrinkSuite",
     "IxCCTests.Recheck.Run",
+    "IxCCTests.Recheck.P1Twin.Run",
     "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
   "IxCCGrounding.Tele":
