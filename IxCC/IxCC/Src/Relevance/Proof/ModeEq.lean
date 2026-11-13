@@ -771,17 +771,64 @@ theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.shor
   · obtain ⟨-, ha, -⟩ := he
     simp only [Option.map_some, ha]
 
+/-- `ruleDispatch`'s body at a recursor's counts (a copy; `ruleDispatch_def` checks it by `rfl`). -/
+def dispatchOf (np nmot nmin fields : Nat) (rhs : Term) : Option Nat :=
+  let total := np + nmot + nmin + fields
+  match peelLamsN total rhs with
+  | some body =>
+    match body.spineL.1 with
+    | .var i =>
+      if i < total && np + nmot ≤ total - 1 - i && total - 1 - i < np + nmot + nmin then
+        some (total - 1 - i - (np + nmot))
+      else none
+    | _ => none
+  | none => none
+
+theorem ruleDispatch_def (q : Program) (r : CId) (rule : Rule) :
+    ruleDispatch q r rule = match q.decl? r with
+      | some (.recr _ _ _ np nmot nmin _ _ _ _) => dispatchOf np nmot nmin rule.fields rule.rhs
+      | _ => none := rfl
+
+theorem dispatchOf_me (np nmot nmin f : Nat) {t u : Term} (h : ME t u) :
+    dispatchOf np nmot nmin f t = dispatchOf np nmot nmin f u := by
+  dsimp only [dispatchOf]
+  have hp := peelLamsN_me (np + nmot + nmin + f) h
+  generalize peelLamsN (np + nmot + nmin + f) t = o₀ at hp ⊢
+  generalize peelLamsN (np + nmot + nmin + f) u = o at hp ⊢
+  cases o₀ <;> cases o
+  · rfl
+  · exact hp.elim
+  · exact hp.elim
+  · rename_i b₀ b
+    dsimp only
+    have hh := (spine_me hp).1
+    generalize b₀.spineL.1 = h₀ at hh ⊢
+    generalize b.spineL.1 = h₁ at hh ⊢
+    cases hh <;> rfl
+
 theorem ruleDispatch_me (hme : Program.ModeEq p₀ p) (r : CId) {rule rule' : Rule}
     (hf : rule.fields = rule'.fields) (hm : ME rule.rhs rule'.rhs) :
     ruleDispatch p₀ r rule = ruleDispatch p r rule' := by
-  unfold ruleDispatch
-  rw [hf]
-  decl_me! p₀ p hme r <;> try rfl
-  all_goals
-    rename_i np nmot nmin _ _ _ _
-    sorry
+  rw [ruleDispatch_def, ruleDispatch_def, hf]
+  decl_me! p₀ p hme r <;> first | rfl | exact dispatchOf_me _ _ _ _ hm
 
-theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ c = elimShape? p c := sorry
+theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ c = elimShape? p c := by
+  unfold elimShape?
+  res_me p₀ p hme c
+  · rename_i ro
+    rcases ro with _ | ⟨_ | _ | _ | r | _⟩ <;> try rfl
+    · dsimp only
+      decl_me! p₀ p hme c <;> try rfl
+      all_goals
+        simp only [Option.some.injEq, ElimShape.mk.injEq, true_and, and_true]
+      · exact (RulesME.refl _).zipIdx_filterMap
+          (fun k a b _ hf hm => by simp only [ruleDispatch_me hme c hf hm]) 0
+      · rename_i hr
+        exact hr.zipIdx_filterMap (fun k a b _ hf hm => by simp only [ruleDispatch_me hme c hf hm]) 0
+    · dsimp only
+      decl_me p₀ p hme r <;> rfl
+  · rfl
+
 theorem ruleCtorFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r j : Nat) :
     ruleCtorFields p₀ ann r j = ruleCtorFields p ann r j := by
   unfold ruleCtorFields
@@ -808,23 +855,6 @@ theorem erasedMinors_eq (hme : Program.ModeEq p₀ p) (shape : ElimShape) :
   decl_me! p₀ p hme shape.recr <;> try rfl
   · exact (RulesME.refl _).any hF
   · rename_i hr; exact hr.any hF
-theorem forwardsErased?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
-    forwardsErased? p₀ r = forwardsErased? p r := sorry
-theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
-    redirectsErased? p₀ c = redirectsErased? p c := sorry
-theorem rulesShape?_eq (hme : Program.ModeEq p₀ p) (r : CId) : rulesShape? p₀ r = rulesShape? p r := sorry
-theorem univsErrs_eq (hme : Program.ModeEq p₀ p) (c : CId) : univsErrs p₀ c = univsErrs p c := sorry
-theorem subsingletonSrcs?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
-    subsingletonSrcs? p₀ r = subsingletonSrcs? p r := sorry
-theorem runtimeKeys_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeKeys c = p.runtimeKeys c := sorry
-theorem instOf_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
-    p₀.instOf c prof = p.instOf c prof := sorry
-theorem instRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
-    p₀.instRefs c prof = p.instRefs c prof := sorry
-theorem subsingletonFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r : CId) (q : Profile)
-    (errs : List RelError) : subsingletonFields p₀ ann r q errs = subsingletonFields p ann r q errs := sorry
-theorem records_eq (hme : Program.ModeEq p₀ p) (ann : Ann) : records p₀ ann = records p ann := sorry
-
 theorem termOf_me (hme : Program.ModeEq p₀ p) (key : TermKey) : OptME (p₀.termOf key) (p.termOf key) := by
   cases h₀ : p₀.termOf key with
   | some t =>
@@ -843,8 +873,168 @@ inductive BodiesME : List (TermKey × Term) → List (TermKey × Term) → Prop
   | cons {k : TermKey} {t u : Term} {xs ys : List (TermKey × Term)} :
       ME t u → BodiesME xs ys → BodiesME ((k, t) :: xs) ((k, u) :: ys)
 
-theorem runBodies_me (hme : Program.ModeEq p₀ p) (c : CId) : BodiesME (runBodies p₀ c) (runBodies p c) :=
-  sorry
+theorem BodiesME.refl : ∀ xs : List (TermKey × Term), BodiesME xs xs
+  | [] => .nil
+  | (_, t) :: xs => .cons (Term.ModeEq.refl t) (BodiesME.refl xs)
+
+theorem runBodies_me (hme : Program.ModeEq p₀ p) (c : CId) : BodiesME (runBodies p₀ c) (runBodies p c) := by
+  simp only [runBodies, Table.isOpaqueByValue, hme.opaqueByValue]
+  res_me p₀ p hme c
+  · rename_i ro
+    rcases ro with _ | ⟨_ | _ | ⟨thm, b⟩ | _ | _⟩ <;> try exact .nil
+    · dsimp only
+      decl_me! p₀ p hme c <;> try exact BodiesME.refl _
+      rename_i k s _ _ _ _ hv
+      cases k <;> cases s <;> try exact .nil
+      all_goals first
+        | exact .cons hv .nil
+        | (dsimp only
+           by_cases hb : NatMap.contains p.table.opaqueByValue c = true <;>
+             simp only [hb, ↓reduceIte, Bool.false_eq_true] <;>
+             first | exact .nil | exact .cons hv .nil)
+    · exact BodiesME.refl _
+  · rename_i hb; exact .cons hb .nil
+
+theorem isEvaluatedBody_eq (hme : Program.ModeEq p₀ p) (c : CId) :
+    p₀.isEvaluatedBody c = p.isEvaluatedBody c := by
+  simp only [Program.isEvaluatedBody, Table.isOpaqueByValue, hme.opaqueByValue]
+  decl_me p₀ p hme c <;> try rfl
+  rename_i k s _ _ _ _ _
+  cases k <;> cases s <;> rfl
+
+theorem runtimeKeys_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeKeys c = p.runtimeKeys c := by
+  simp only [Program.runtimeKeys, isEvaluatedBody_eq hme]
+  res_me p₀ p hme c
+  · rename_i ro
+    rcases ro with _ | ⟨_ | _ | _ | _ | _⟩ <;> try rfl
+    dsimp only
+    decl_me! p₀ p hme c <;> try rfl
+    rename_i hr
+    simp only [hr.length_eq]
+  · rfl
+
+theorem instOf_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
+    p₀.instOf c prof = p.instOf c prof := by
+  simp only [Program.instOf, decl?_lvls hme]
+
+theorem runtimeRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.runtimeRefs c = p.runtimeRefs c := by
+  simp only [Program.runtimeRefs, hme.known, decl?_lvls hme]
+  res_me p₀ p hme c <;> rfl
+
+theorem termsFold_eq (hme : Program.ModeEq p₀ p) (prof : Profile) :
+    ∀ (keys : List TermKey) (acc : List Inst),
+      List.foldl (fun acc t => t.relevantRefs prof acc) acc (keys.filterMap p₀.termOf) =
+        List.foldl (fun acc t => t.relevantRefs prof acc) acc (keys.filterMap p.termOf)
+  | [], _ => rfl
+  | k :: ks, acc => by
+    have hk := termOf_me hme k
+    simp only [List.filterMap_cons]
+    generalize p₀.termOf k = o₀ at hk ⊢
+    generalize p.termOf k = o at hk ⊢
+    cases o₀ <;> cases o
+    · exact termsFold_eq hme prof ks acc
+    · exact hk.elim
+    · exact hk.elim
+    · simp only [List.foldl_cons]
+      rw [relevantRefs_me hk]
+      exact termsFold_eq hme prof ks _
+
+theorem instRefs_eq (hme : Program.ModeEq p₀ p) (c : CId) (prof : Profile) :
+    p₀.instRefs c prof = p.instRefs c prof := by
+  simp only [Program.instRefs, runtimeKeys_eq hme, runtimeRefs_eq hme, termsFold_eq hme]
+
+theorem subsingletonFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r : CId) (q : Profile)
+    (errs : List RelError) : subsingletonFields p₀ ann r q errs = subsingletonFields p ann r q errs := by
+  simp only [subsingletonFields, recKindOf_eq hme, ctorProfile_eq hme]
+  generalize Option.map (fun k => RecKind.atProfile q k) (p.table.recKindOf r) = rk
+  decl_me! p₀ p hme r <;> try rfl
+  rename_i hr
+  cases hr with
+  | nil => rfl
+  | cons hc _ _ _ =>
+    cases rk with
+    | none => rfl
+    | some k => cases k <;> simp only [List.head?_cons, hc]
+
+theorem records_eq (hme : Program.ModeEq p₀ p) (ann : Ann) : records p₀ ann = records p ann := by
+  simp only [records, hme.size]
+  congr 1
+  funext errs c
+  decl_me p₀ p hme c <;> rfl
+
+theorem subsingletonSrcs?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
+    subsingletonSrcs? p₀ r = subsingletonSrcs? p r := by
+  simp only [subsingletonSrcs?, recKindOf_eq hme]
+  generalize p.table.recKindOf r = rk
+  decl_me! p₀ p hme r <;> try rfl
+  · rename_i rules _
+    cases rk with
+    | none => rfl
+    | some k =>
+      cases k <;> try rfl
+      dsimp only
+      cases rules[0]? with
+      | none => rfl
+      | some rule => dsimp only; decl_me p₀ p hme rule.ctor <;> rfl
+  · rename_i hr
+    cases rk with
+    | none => rfl
+    | some k =>
+      cases k <;> try rfl
+      dsimp only
+      rcases hr.getElem? 0 with ⟨h₁, h₂⟩ | ⟨a, b, h₁, h₂, hc, hf, -⟩
+      · rw [h₁, h₂]
+      · rw [h₁, h₂]
+        dsimp only
+        rw [hc, hf]
+        decl_me p₀ p hme b.ctor <;> rfl
+
+theorem rulesShape?_eq (hme : Program.ModeEq p₀ p) (r : CId) : rulesShape? p₀ r = rulesShape? p r := by
+  unfold rulesShape?
+  decl_me! p₀ p hme r <;> try rfl
+  all_goals first
+    | refine (RulesME.refl _).zipIdx_findSome? ?_ 0
+    | (rename_i hr; refine hr.zipIdx_findSome? ?_ 0)
+  all_goals
+    intro k a b hc hf _
+    simp only [hc, hf, short_eq hme]
+    decl_me p₀ p hme b.ctor <;> rfl
+
+theorem univsOk_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) : univsOk p₀ t = univsOk p u := by
+  induction h with
+  | const c us => simp only [univsOk, decl?_lvls hme]
+  | app m m' r _ _ ihf iha => simp only [univsOk, ihf, iha]
+  | lam bd _ _ _ iht => simp only [univsOk, iht]
+  | letE c r _ _ _ _ ih₂ ih₃ => simp only [univsOk, ih₂, ih₃]
+  | proj s i _ ih => simp only [univsOk, ih]
+  | _ => rfl
+
+theorem univsOk_eq (hme : Program.ModeEq p₀ p) (t : Term) : univsOk p₀ t = univsOk p t :=
+  univsOk_me hme (Term.ModeEq.refl t)
+
+theorem univsErrs_eq (hme : Program.ModeEq p₀ p) (c : CId) : univsErrs p₀ c = univsErrs p c := by
+  simp only [univsErrs, runtimeKeys_eq hme, univsOk_eq hme, short_eq hme]
+  congr 1
+  · congr 1
+    funext key
+    have hk := termOf_me hme key
+    generalize p₀.termOf key = o₀ at hk ⊢
+    generalize p.termOf key = o at hk ⊢
+    cases o₀ <;> cases o
+    · rfl
+    · exact hk.elim
+    · exact hk.elim
+    · dsimp only
+      rw [univsOk_me (Program.ModeEq.refl p) hk]
+  · res_me p₀ p hme c <;> rfl
+
+theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
+    redirectsErased? p₀ c = redirectsErased? p c := by
+  simp only [redirectsErased?, elimShape?_eq hme, erasedMinors_eq hme, short_eq hme]
+  res_me p₀ p hme c <;> rfl
+
+theorem forwardsErased?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
+    forwardsErased? p₀ r = forwardsErased? p r := sorry
 
 /-! ## `check` -/
 
