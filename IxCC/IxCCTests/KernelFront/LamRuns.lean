@@ -117,8 +117,8 @@ def compareBytes (label : String) (bytes : ByteArray) (json : Lean.Json) (t : Ta
   match Recheck.ingress bytes json [] with
   | .ok inp => compareInput label inp t
   | .error _ =>
-    let names := match Src.Hints.ofK1Json json with
-      | .ok h => h.roots.toList.filterMap (·.2)
+    let names : List String := match Src.Hints.ofK1Json json with
+      | .ok h => h.roots.toList.filterMap fun (r : IxCC.Ixon.Address × Option String) => r.2
       | .error _ => []
     let mut t := t
     for n in names do
@@ -168,7 +168,7 @@ def adversarialEnv : IO (IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))
   let (e, etaShort) := store e ⟨dfn 0 (arrow E (arrow E (arrow E E))) (lambda E (lambda E (.ref 1 #[]))),
     #[], #[en.ind, idc], #[]⟩
   -- a run interrupted by a let: λ x, let z := x; λ y, z
-  let (e, letRun) := store e ⟨dfn 0 (arrow E (arrow E E)) (lambda E (.letE {} E (.var 0) (lambda E (.var 1)))),
+  let (e, letRun) := store e ⟨dfn 0 (arrow E (arrow E E)) (lambda E (.letE (.lean false) E (.var 0) (lambda E (.var 1)))),
     #[], #[en.ind], #[]⟩
   -- a run whose body is a β-redex of another run: λ x, (λ y w, y) x
   let (e, betaBody) := store e ⟨dfn 0 (arrow E (arrow E E))
