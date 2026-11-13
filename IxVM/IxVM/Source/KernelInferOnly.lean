@@ -129,9 +129,8 @@ def k_infer_only_core := aiur_fn⟦
                             "projection's constructor universe count differs from its inductive's");
                           let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                           let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
-                          let field_ty = io_peel_field_loop(after_params, fidx, 0, struct_addr, e1);
-                          io_prop_field_guard(rc, KernelInfer::is_inductive_prop(rc, ind_ty, lvls, n_params, types), field_ty, types);
-                          field_ty } ,
+                          KernelInfer::peel_field_loop(rc, after_params, fidx, 0, struct_addr, e1,
+                            KernelInfer::is_inductive_prop(rc, ind_ty, lvls, n_params, types), types) } ,
                       } } ,
                   } } ,
               } } ,
