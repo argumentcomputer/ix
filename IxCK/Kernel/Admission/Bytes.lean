@@ -246,7 +246,7 @@ theorem scanDepths_eq_all (limits : Limits) : ∀ records : Records,
   | [] => rfl
   | (_, b) :: rest => by
     rw [scanDepths, scanDepths_eq_all limits rest]
-    by_cases h : scanFails limits b <;> simp [h]
+    cases h : scanFails limits b <;> simp [h]
 
 /-- The expanded check as one test over the records (`expandedFails`). -/
 theorem expandedDepths_eq_all (limits : Limits) : ∀ constants : Ingress.Constants,
@@ -255,7 +255,7 @@ theorem expandedDepths_eq_all (limits : Limits) : ∀ constants : Ingress.Consta
   | [] => rfl
   | (_, c) :: rest => by
     rw [expandedDepths, expandedDepths_eq_all limits rest]
-    by_cases h : expandedFails limits c <;> simp [h]
+    cases h : expandedFails limits c <;> simp [h]
 
 /-- **Decoding within the depth limit**: the stored-nesting scan, canonical
 decoding (`decodeRecords`, its per-record limits reported as such: `ByteError.asLimit`), the
