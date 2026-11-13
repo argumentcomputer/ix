@@ -548,6 +548,15 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
   | 0, _, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, r, args, c => do
     let d? := P.find? r
+    -- a case definition is entered only as a `Term.case`, which `readTerm` builds at a full
+    -- application; called here it is under-applied (note 12 §2 item 3, B.18): `runR` is stuck at
+    -- it, and a native run would form a partial application whose alternatives, supplied later at
+    -- a variable head, nothing compares with the case rule (as landed: an unknown call). A
+    -- saturated call here comes only from a program built by hand, and is refused the same.
+    if let some (.caseDef k) := d? then
+      refuseM (if args.size < k.arity then
+        s!"an under-applied case definition ({args.size} of {k.arity} arguments)"
+        else "a case definition called other than as a case")
     let mut avs : Array (Option AVal) := #[]
     for (a, i) in args.zipIdx do
       let skip := match d? with

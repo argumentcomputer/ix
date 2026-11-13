@@ -2412,14 +2412,15 @@ def Pre.subj (p : Pre) (extra : List (Address × Ixon.Constant)) (seed : Address
 
 /-- `frag` empty: the subject reads and is accepted; else neither: the reading fails and `check`
 refuses, each with `frag` in its witness. Without `viaCheck` only the reading is asserted (and
-`check`'s verdict shown). -/
-def readCheck (t : IO.Ref Tally) (label : String) (s : Subject) (frag : String) (viaCheck := true) :
+`check`'s verdict shown); with `byChecker` the refusal may be the checker's, the subject reading. -/
+def readCheck (t : IO.Ref Tally) (label : String) (s : Subject) (frag : String) (viaCheck := true)
+    (byChecker := false) :
     IO Unit := do
   let rp := readProg s noClasses
   let v := check {} Ix.Kernel.Env.empty s
   let has (w : String) := (w.splitOn frag).length > 1
   let ok := if frag.isEmpty then (match rp with | .ok _ => true | .error _ => false) && (v.isAccept || !viaCheck)
-    else (match rp with | .error e => has e | .ok _ => false) &&
+    else (match rp with | .error e => has e | .ok _ => byChecker) &&
       (!viaCheck || match v with | .refuse _ w => has w | _ => false)
   check1 t label ok s!"readProg: {readName rp}; check: {verdictLong v}"
 
@@ -2780,6 +2781,72 @@ def v1FollowUp (t : IO.Ref Tally) : IO Unit := do
   readCheck t "V1 follow-up: B.rec called, A.rec (reached only through B.rec's rule) not erasing x: refused"
     (p.subj (abcRecords natA false) (addr 357)) "the rules of a raw recursor"
 
+/-! ### V3 (note 12 §2.3, B.18, the lead's ruling): eliminators applied in part
+
+A case definition is entered only as a `Term.case`, which `readTerm` builds at a full
+application; called otherwise it is under-applied, and `runR` is stuck at it (`callWith` has no
+case for it), while a native run would form a partial application whose alternatives arrive
+later at a variable head (REPLY-2 §3.1). As landed `anCall` took it as an unknown call. A raw
+recursor over an inductive with an erased constructor field is likewise refused unless its spine
+is saturated. No run violates: `runR` is stuck at both. -/
+
+def cLd := mem 500
+def gUnder := mem 501
+
+def pV3 : Prog := prog [(cLd, .caseDef caseL), (gUnder, body [par] (app (.const cLd .val) [v 0]))]
+
+def v3Cases : List Case := [
+  -- REPAIR V3: accepted before (an unknown call)
+  { label := "V3 a case definition on lists applied to its major premise only (gUnder)", P := pV3,
+    seed := gUnder, inp := oneList, toCheck := [gUnder], verdict := .refuse "an under-applied case definition",
+    run := [(0, .stuck)] }]
+
+/-- `kCases.{u} (motive : K → Sort u) (t : K) (m : (a b c : Nat) → motive (K.mk a b c)) : motive t :=
+K.rec.{u} motive m t` (342; a case shape: its minor premise forwarded, of arity 3, major 1),
+`useKC (k : K) : ((a b c : Nat) → Nat) → Nat := kCases.{1} (fun _ => Nat) k` (343, under-applied)
+and `useKS (k : K) : Nat := kCases.{1} (fun _ => Nat) k (fun a b c => a)` (344, a full
+application); `useKP (n : Nat) : K → Nat := K.rec.{1} (fun _ => Nat) (fun a b c => n)` (346, the
+raw recursor at two of its three arguments, its minor premise's `b` erased as `K.rec`'s). -/
+def v3Records (natA : Address) : List (Address × Ixon.Constant) :=
+  let nat := xRef 0
+  let mDom := Ixon.Expr.all nat (.all nat (.all nat (.app (xVar 4) (xApp (xRef 2) [xVar 2, xVar 1, xVar 0]))))
+  let motive := Ixon.Expr.all (xRef 1) (.sort 0)
+  let kcDef : Ixon.Definition :=
+    { safeDef (.all motive (.all (xRef 1) (.all mDom (.app (xVar 2) (xVar 1)))))
+        (.lam motive (.lam (xRef 1) (.lam mDom (xApp (xRef 3 #[0]) [xVar 2, xVar 0, xVar 1]))))
+      with lvls := 1 }
+  let kCases : Ixon.Constant := withSection
+    { info := .defn kcDef,
+      sharing := #[], refs := #[natA, addr 271, addr 272, addr 273], univs := #[.var 0] }
+    (modeAt [(0, 5, erasedM), (1, 5, erasedM)])
+  let three := Ixon.Expr.all nat (.all nat (.all nat nat))
+  let useKC : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 1) (.all three nat)) (.lam (xRef 1) (xApp (xRef 2 #[0]) [.lam (xRef 1) nat, xVar 0]))),
+      sharing := #[], refs := #[natA, addr 271, addr 342], univs := #[.succ .zero] }
+  let useKS : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 1) nat) (.lam (xRef 1) (xApp (xRef 2 #[0])
+        [.lam (xRef 1) nat, xVar 0, .lam nat (.lam nat (.lam nat (xVar 2)))]))),
+      sharing := #[], refs := #[natA, addr 271, addr 342], univs := #[.succ .zero] }
+  let useKP : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all nat (.all (xRef 1) nat)) (.lam nat (xApp (xRef 3 #[0])
+        [.lam (xRef 1) nat, .lam nat (.lam nat (.lam nat (xVar 3)))]))),
+      sharing := #[], refs := #[natA, addr 271, addr 272, addr 273], univs := #[.succ .zero] }
+    (modeAt [(1, 3, erasedM)])
+  [(addr 342, kCases), (addr 343, useKC), (addr 344, useKS), (addr 346, useKP)]
+
+def v3Eliminators (t : IO.Ref Tally) : IO Unit := do
+  let p ← loadPre
+  let natA ← p.role .nat
+  let ks := kRecords natA false true ++ v3Records natA
+  readCheck t "V3 kCases (a case shape over K) applied in full (useKS): accept" (p.subj ks (addr 344)) ""
+  -- REPAIR V3: the three refusals below were accepted before
+  readCheck t "V3 kCases applied to its motive and major premise only (useKC): refused"
+    (p.subj ks (addr 343)) "an under-applied case definition (2 of 3 arguments)" (byChecker := true)
+  readCheck t "V3 K.rec (b erased in its constructor and its minor premise) at two of three arguments (useKP): refused"
+    (p.subj ks (addr 346)) "applied to 2 of its 3 arguments"
+  readCheck t "V3 K.rec passed unapplied as an argument, its rule erasing b (useKA): refused"
+    (p.subj (useKARecord natA true :: ks) (addr 345)) "applied to 0 of its 3 arguments"
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2803,6 +2870,8 @@ def run : IO UInt32 := do
   try v1Recursors t catch e => check1 t "V1" false s!"error: {e}"
   try v2Telescopes t catch e => check1 t "V2" false s!"error: {e}"
   try v1FollowUp t catch e => check1 t "V1 follow-up" false s!"error: {e}"
+  for c in v3Cases do runCase t c
+  try v3Eliminators t catch e => check1 t "V3" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

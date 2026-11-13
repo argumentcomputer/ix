@@ -37,7 +37,7 @@ the kernel's own judgements; the checker reads with a fueled one.
 * **Raw recursors.** A recursor a run term calls (not through a case shape)
   has rules that pass each field its constructor erases only to a binder of the
   dispatched minor premise that erases it (`Reading.recRules`), as do the recursors
-  its rules call.
+  its rules call; one over an inductive with an erased field is called saturated.
 
 **No supplied behaviour reads what an interface erases.** A case rule, a
 primitive, a constructor and an extern run in place of a body, so their modes
@@ -1232,10 +1232,14 @@ def constHeads : Nat → Term → Except String (List (Ref × Nat))
       pure out
     | .irr | .var .. | .natLit _ | .strLit _ => pure []
 
-/-- **The raw recursors the run bodies call** meet `Reading.recRules` (V1). Every occurrence of
-a recursor in a run body is one (`constHeads`: at a spine's head or standing alone, as an
-argument too), and so is every recursor a checked recursor's rules call (`recOccs`),
-transitively: a rule fired natively fires those. `runR` is stuck at a recursor. -/
+/-- **The raw recursors the run bodies call** meet `Reading.recRules` (V1), and one whose
+inductive has a constructor with an erased field is called saturated, its spine supplying all of
+`params + motives + minors + indices + 1` arguments (V3, note 12 §2 item 3, B.18, by the lead's
+ruling): a partial application receives its minor premises later, at a variable head, where
+nothing compares them with the constructors (REPLY-2 §3.1). Every occurrence of a recursor in a
+run body is one (`constHeads`: at a spine's head or standing alone, as an argument too), and so
+is every recursor a checked recursor's rules call (`recOccs`), transitively: a rule fired
+natively fires those. `runR` is stuck at a recursor. -/
 def Reading.rawRecursors (rd : Reading) (cl : Classifier) (defs : Array (Ref × RunDef)) :
     Except String Unit := do
   -- the work list: each occurrence, with the recursor whose rules it is in (`none`: a run body)
@@ -1249,17 +1253,24 @@ def Reading.rawRecursors (rd : Reading) (cl : Classifier) (defs : Array (Ref × 
   for _ in [0:readFuel] do
     let some (r, nargs, via) := todo[i]? | break
     i := i + 1
-    let some _ := recursorAt? rd.s r | continue
+    let some (_, rr) := recursorAt? rd.s r | continue
     let at_ := match via with
       | none => s!"a raw recursor a run body calls ({(repr r).pretty})"
       | some v => s!"a recursor ({(repr r).pretty}) the rules of a raw recursor ({(repr v).pretty}) call"
-    let _ := nargs
-    if (seen.find? (·.1 == r)).isNone then
+    let mut erasedField := false
+    match seen.find? (·.1 == r) with
+    | some (_, e) => erasedField := e
+    | none =>
       match rd.recRules cl r with
       | .ok (e, calls) =>
+        erasedField := e
         seen := seen.push (r, e)
         for (r', n') in calls do todo := todo.push (r', n', some r)
       | .error e => throw s!"{at_}: {e}"
+    let arity := rr.params.toNat + rr.motives.toNat + rr.minors.toNat + rr.indices.toNat + 1
+    if erasedField && nargs < arity then
+      throw s!"{at_}: over an inductive with an erased constructor field, applied to {nargs} of its \
+        {arity} arguments"
   if i < todo.size then throw "too many raw recursor calls"
 
 /-! ## The run program -/
@@ -1278,7 +1289,8 @@ def refsOf (a : Address) (c : Ixon.Constant) : Array Ref :=
   | _ => #[]
 
 /-- **The run program of a subject**, read with the class oracle `cl`; every raw recursor its run
-bodies call meets `Reading.recRules` (V1), and so do the recursors their rules call. -/
+bodies call meets `Reading.recRules` (V1), and so do the recursors their rules call; one over an
+inductive with an erased constructor field is called saturated (V3). -/
 def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
   let rd := Reading.make s
   rd.complete
