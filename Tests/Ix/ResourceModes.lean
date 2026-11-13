@@ -296,10 +296,10 @@ def shf := mem 133
 def borrowCases : List LSpec.TestSeq := [
   runCase "borrow: a borrowed parameter returned" [(esc, body [par .borrowed] (v 0))] esc oneList
     (some .borrowEscape) false,
-  -- refused since the leaf-result refinement was dropped (findings 1 to 3): `len`'s `shared`
-  -- leaf result carries its argument's regions. The run returns a fresh number.
+  -- refused after repair A (the leaf-result refinement dropped, findings 1 to 3); accepted again
+  -- under the leaf ruling L1 (a number is never confined): `len`'s leaf result carries no region.
   runCase "borrow: a borrowed parameter read" [(peek, body [par .borrowed] (lenOf (v 0)) .shared .leaf)]
-    peek oneList none false,
+    peek oneList none true,
   runCase "borrow: a borrowed parameter returned borrowed" [(same, body [par .borrowed] (v 0) .borrowed)]
     same oneList none true,
   -- `stash (@borrowed b : List) : List := [b]`
@@ -310,11 +310,13 @@ def borrowCases : List LSpec.TestSeq := [
     (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
   runCase "borrow: a let's loan returned" [(letEsc, body [par] (.letE .borrow .val (v 0) (v 0)))]
     letEsc oneList (some .borrowEscape) false,
-  -- refused since the leaf-result refinement was dropped: `len x` carries the let's region.
+  -- refused after repair A, accepted again under L1: `len x` carries no region of the let's.
   runCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
-    .shared .leaf)] letOk oneList none false,
+    .shared .leaf)] letOk oneList none true,
+  -- under L1 a borrowed number is not confined: the run returns it and the checker accepts
+  -- (before L1, borrowEscape and a refusal)
   runCase "borrow: a borrowed leaf returned" [(escN, body [par .borrowed .leaf] (v 0 .leaf) .shared .leaf)]
-    escN oneNat (some .borrowEscape) false,
+    escN oneNat none true,
   runCase "borrow: arithmetic on a borrowed leaf" [(addN, body [par .borrowed .leaf]
     (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] addN oneNat none true,
   -- `headN (@borrowed xs : List Nat) : Nat := match xs with | [] => 0 | h :: _ => h`
@@ -458,7 +460,9 @@ def alternativeCases : List LSpec.TestSeq := [
 Each program the checker accepted while its run violated, now refused, beside
 the nearest program it refuses or accepts as it should. The same cases, with
 the run at every fuel tried, are in `ModeRepairTests/Main.lean`, which runs on
-the kernel package alone. -/
+the kernel package alone. Under the owner's provisional leaf ruling (L1: a
+number is never confined), the programs of findings 1, 2, 3, 12 and 17 run a
+value and are accepted (marked `L1`). -/
 
 -- Finding 1: `idN (n : Nat) : Nat := n`; `g4 (@borrowed n : Nat) : Nat := idN n`
 def idN := mem 300
@@ -732,21 +736,21 @@ def fuelCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input
 def findingCases : List LSpec.TestSeq := [
   runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
     [idNDef true, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
-    g4 oneNat (some .borrowEscape) false,
+    g4 oneNat none true,  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 1, control: the parameter not read as no-leaf"
     [idNDef false, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
-    g4 oneNat (some .borrowEscape) false,
+    g4 oneNat none true,  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 1, control: the result returned borrowed"
     [idNDef true, (g4b, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .borrowed .leaf)]
     g4b oneNat none true,
   runCase "finding 2: a borrowed number captured by a closure passed at a function type"
     [app1Def true, (g3, body [par .borrowed .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
-    g3 oneNat (some .borrowEscape) false [g3, app1],
+    g3 oneNat none true [g3, app1],  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 2, control: the parameter not read as no-leaf"
     [app1Def false, (g3, body [par .borrowed .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
-    g3 oneNat (some .borrowEscape) false [g3, app1],
+    g3 oneNat none true [g3, app1],  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 2, control: the captured number not borrowed"
     [app1Def true, (g3p, body [par .many .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
@@ -754,7 +758,7 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
     (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
       (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
-    g2 in3 (some .borrowEscape) false [g2, bad3],
+    g2 in3 none true [g2, bad3],  -- L1 W1: borrowEscape before  -- L1: accepted
   fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
     p7Defs gV in7 fuels0to12 true [gV, fV],
   fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV],
@@ -817,7 +821,7 @@ def findingCases : List LSpec.TestSeq := [
     ok11 oneFun none true [ok11, callOnce],
   runCase "finding 12: a primitive's partial application holding a borrowed number, returned"
     [(addB, body [par .borrowed .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
-    addB oneNat (some .borrowEscape) false,
+    addB oneNat none true,  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 12, control: the number not borrowed"
     [(addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
     addP oneNat none true,
@@ -855,15 +859,15 @@ def findingCases : List LSpec.TestSeq := [
   runCase "the same, the parameter plain"
     (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
     twiceOnceP oneFun none true [twiceOnceP, callOnce],
-  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat (some .borrowEscape) false,
+  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat none true,  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 17, control: the number not borrowed" oDefs u17ap oneNat none true,
   runCase "finding 17: a borrowed number through a unique result of class leaf" oDefs u17b oneNat
-    (some .borrowEscape) false [u17b, idU],
+    none true [u17b, idU],  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 17: a borrowed number through a polymorphic unique result" oDefs u17c oneNat
-    (some .borrowEscape) false [u17c, idUP],
+    none true [u17c, idUP],  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
   runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
-    (some .borrowEscape) false,
+    none true,  -- L1 W1: borrowEscape before  -- L1: accepted
   runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true,
   runCase "finding 18: a borrowed list stored in a @shared field by a callee, projected"
     [mkSBDef, (leak18, body [par .borrowed] projSB)] leak18 oneList (some .borrowEscape) false [leak18, mkSB],
