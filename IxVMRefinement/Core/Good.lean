@@ -143,8 +143,8 @@ structure LoadFacts (c : Ctx) : Prop where
   block and loads member `idx`'s constructor) means the inductive at the member's key `S` is
   stored with its table. For every stored constructor of the member (at any index `j`; there is
   one), the table names that constructor at its counts and level parameters, its parameter count
-  being the member's in the block record (which `indRecord` makes the loaded inductive's); every entry below
-  the field count is found and has its head data (`TowerHead`: the constructor and the structure
+  being the member's in the block record (which `indRecord` makes the loaded inductive's);
+  every entry below the field count is found and has its head data (`TowerHead`: the constructor and the structure
   stored at the entry's counts and level parameters, the structure's type after its parameters
   the sort `structSort`); the bodies are `structProjBodies`' at the constructor's type (so
   `entry.typeAt` is the field type IxVM computes) and the guards `structProjGuards`' at some
@@ -163,6 +163,34 @@ structure LoadFacts (c : Ctx) : Prop where
       (b : Bytes.Address) (i : F),
     ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
+    ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      ∃ tbl : Ix.Kernel.ProjTable .anon,
+        c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
+          some (.projInfo tbl) ∧
+        tbl.structName = c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ∧
+        tbl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) ∧ tbl.numParams = nP ∧
+        tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+        (∀ cb xs ind, Ix.Cert.recordAt c.E (ixAddr b) = some cb → cb.info = .muts xs →
+          xs[ZMod.val i]? = some (.indc ind) → nP = ind.params.toNat) ∧
+        (∀ f, f < nF → c.env.findProj? tbl.structName f = some (tbl.entry f) ∧
+          Ix.Kernel.TowerHead c.env (tbl.entry f)) ∧
+        Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
+        (∃ sorts : List Ix.Kernel.Level, sorts.length = nF ∧
+          tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
+        ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
+          ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
+  /-- **`projTables` at the route test `red_proj` makes**: the same conclusions, keyed on a good
+  derivation of `KernelModeled::block_is_modeled(block)` answering `0`, for a member `i` whose
+  record is a one-constructor inductive with no index (`red_proj` tests the block and loads the
+  constructor itself; `k_infer_proj` and the io projection arm go through `proj_ctor`). Owed as
+  `projTables`. -/
+  projTablesAt : ∀ (bp : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address)
+      (i : F) (cb0 : Ixon.Constant) (xs0 : Array Ixon.MutConst) (ind0 : Ixon.Inductive),
+    ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h b bp →
+    Ix.Cert.recordAt c.E (ixAddr b) = some cb0 → cb0.info = .muts xs0 →
+    xs0[ZMod.val i]? = some (.indc ind0) → ind0.ctors.size = 1 → ind0.indices = 0 →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
