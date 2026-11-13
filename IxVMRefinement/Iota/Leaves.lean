@@ -92,7 +92,7 @@ theorem leaves_abstract1 (D : Nat) : ∀ (e : KExpr) (k : Nat) (l : Nat × KExpr
       simp only [fvarLeaves, List.mem_cons] at hl ⊢
       rcases hl with rfl | hl
       · exact ⟨.inl rfl, .inl hne⟩
-      · exact ⟨.inr hl, .inr ⟨idx, ty, by simp [fvarLeaves], hne, hl⟩⟩
+      · exact ⟨.inr hl, .inr ⟨idx, ty, by simp, hne, hl⟩⟩
   | app f a ihf iha =>
     intro k l hl
     simp only [Ix.Kernel.Expr.abstract1, fvarLeaves, List.mem_append] at hl ⊢

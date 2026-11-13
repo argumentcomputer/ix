@@ -7,7 +7,7 @@ import IxVMRefinement.Iota.Basic
 (`certs_all`, an unlicensed walk, which is also a licensed one).
 
 `slots_never` is told the walk's length as a field element, and on that path the argument list
-is not an argument of any call, so its length is not bounded by the derivation: the lemma here
+is not an argument of any call, so its length is not bounded by the derivation: the spec
 takes the bound (`< 2^39`) as a hypothesis. The caller (`red_iota`) passes both lists to
 `iota_certs`, so the bound follows from its own calls (`RomBound.bounded_length_lt`). -/
 
@@ -55,19 +55,6 @@ theorem CertsR.lic_true {env : Ix.Kernel.Env .anon} {d : Nat} {T : KExpr} {As : 
   | cert hi hd _ ih => exact .cert hi hd ih
   | red hr _ ih => exact .red hr ih
 
-/-- **`iota_certs`' spec, with the walks' lengths bounded.** -/
-def iotaCertsBounded : SpecFn := fun c args h r h' calls =>
-  ∀ rc rt ra nr cty clvls ma nc types,
-    args = [rc, rt, ra, nr, cty, clvls, ma, nc, types] → Good c calls → c.rc h rc →
-    ∀ d Γ, c.types Γ h d types →
-      ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
-        c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
-        nc = .field (MA.length : F) → RA.length < 2 ^ 39 → MA.length < 2 ^ 39 →
-        r ≠ .field 0 →
-          Specs.Whnf.CertsR c.env d true RT RA ∧
-            Specs.Whnf.CertsR c.env d true (CT.instantiateLevelParams (List.range cus.length) cus)
-              MA
-
 /-- The first walk of `iota_certs` (the recursor's), from its `let`-bound segment. -/
 theorem iota_certs_seg {c : Ctx} {calls cs99 : List (Call F)} (ih : IH c calls)
     (good : Good c calls) (hsub : ∀ z ∈ cs99, z ∈ calls) (hle : cs99.length ≤ calls.length)
@@ -98,11 +85,11 @@ theorem iota_certs_seg {c : Ctx} {calls cs99 : List (Call F)} (ih : IH c calls)
     rw [Ix.Kernel.Expr.instantiateList_nil] at hcr
     exact ⟨CertsR.lic_true hcr, ext.trans (ObsFn.heap_extends ev48)⟩
 
-/-- **`KernelWhnf::iota_certs`**, with the walks' lengths bounded (`iotaCertsBounded`). -/
-theorem iota_certs_bounded (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+/-- **`KernelWhnf::iota_certs`**: the recursor's walk, then the constructor's, each all skips at `never` slots or certified. -/
+theorem iota_certs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::iota_certs" args h r h' calls) (ih : IH c calls) :
-    iotaCertsBounded c args h r h' calls := by
+    Specs.Whnf.iota_certs c args h r h' calls := by
   intro rc rt ra nr cty clvls ma nc types hargs good hrc d Γ htypes RT RA CT cus MA hRT hRA hnr
     hCT hcus hMA hnc hRAb hMAb hr0
   subst hargs hnr hnc

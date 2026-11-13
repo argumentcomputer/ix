@@ -36,7 +36,7 @@ theorem CIRep.recr_fields {κ : _root_.Address → KKey} {h : Heap F}
     SourceValue F) = v at r
   generalize hc : (Ix.Kernel.ConstantInfo.recInfo cv mI rP rls) = ci at r
   cases r
-  case recr hvr hnp hni hnm hnmi hrP hmI hcounts hrules hkey =>
+  case recr hvr hnp hni hnm hnmi hrP hmI hcounts hrules hk hkey =>
     injection hv with _ _ hl
     simp only [List.cons.injEq, and_true] at hl
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hl
