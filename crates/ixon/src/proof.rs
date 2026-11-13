@@ -15,7 +15,8 @@
 //! the validator byte of a claim's scope, in this tree and in the IxCC and
 //! frontend trees, with this tree's allocation. Under `0xE` and `0xF` a
 //! value below 8 is the one byte `E0`–`E7` (`F0`–`F7`); from 8 on the TagN
-//! header is two bytes (`E8 00` is 8).
+//! header is two bytes (`E8 00` is 8). A claim's scope is two bytes: the
+//! object format's version (`Env::OBJECT_FORMAT`) first, then the validator byte.
 //!
 //! | Space | Value (bytes) | Allocation |
 //! |---|---|---|
@@ -42,6 +43,7 @@
 //! | validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
 //! | validator | 7 | reserved: IxCC compile-v2: refused |
 //! | validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
+//! | validator | 9 | reserved: IxCC compile-v3 (its next compile-claim version): refused |
 //!
 //! `E9` is not a tag value: under TagN `E9` opens a two-byte header.
 
