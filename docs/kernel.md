@@ -1592,7 +1592,10 @@ rows print a failure with its terms and Lean's names
   a watchdog ends the run with exit code 3 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway` (with `--jobs`, every
-  worker's check is watched). The resident size includes what the driver
+  worker's check is watched). A run whose check raises an error (an artifact the
+  loader refuses, a decline of the artifact's admission) ends with that error and exit
+  code 1; until the watchdog was stopped on every way out, such a run hung with no CPU
+  and nothing printed. The resident size includes what the driver
   holds of the environment. Measured peaks: Init+Std 1.5 GB streaming and
   3.6 GB with `--load eager`; Mathlib 14.7 GB streaming (15.7 GB with
   `--jobs 32`) and 34.2 GB with `--load eager`

@@ -185,7 +185,8 @@ def markInputs (s : Setup) (names : Std.HashMap Address (Array String)) : IO Uni
 /-- Counts of a run: outcomes and first causes. -/
 abbrev Counts := Std.HashMap String Nat × Std.HashMap String Nat
 
-def run (args : List String) : IO UInt32 := do
+/-- The check, with the watchdog's `running` flag owned by `run`. -/
+def runWith (running : IO.Ref Bool) (args : List String) : IO UInt32 := do
   let some options := parseArgs args
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
@@ -223,7 +224,6 @@ def run (args : List String) : IO UInt32 := do
   let others : Array CheckIxePool.Slot ←
     (Array.range (options.jobs.getD 1 - 1)).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
   let slots := #[slot0] ++ others
-  let running ← IO.mkRef true
   let handle ← IO.FS.Handle.mk options.output .write
   let emitBuf ← IO.mkRef ("", 0)
   let flushEmit : IO Unit := do
@@ -365,5 +365,15 @@ def run (args : List String) : IO UInt32 := do
     for (address, names) in admitted do
       IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
   return 0
+
+/-- `kernel-check-ixe`'s environment check (`runWith`). The watchdog, a dedicated task, runs
+until `running` is false; `run` clears it on every way out, an exception's included: a task
+still running when `main` returns keeps the process from exiting (the runtime waits for its
+tasks before it reports an uncaught error), so a check that raised after the watchdog started
+hung silently, with no CPU and nothing printed. -/
+def run (args : List String) : IO UInt32 := do
+  let running ← IO.mkRef true
+  try runWith running args
+  finally running.set false
 
 end Benchmarks.Kernel.CheckIxe

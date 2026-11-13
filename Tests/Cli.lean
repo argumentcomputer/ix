@@ -378,6 +378,51 @@ private def Tests.Cli.testCompileEquations : IO Unit := do
       for the anonymous and named compiles; no word equation for an omega proof; the --no- forms \
       turn them off; contradictory flags refused"
 
+/-- `kernel-check-ixe` ends when its check raises after the watchdog started. It used to hang
+there, with no CPU and nothing printed: the watchdog, a dedicated task, ran until a flag that
+only the normal path cleared, and the runtime waits for its tasks before it reports an
+uncaught error. Two such errors, each under a 60 s bound: a record nested 20,000 levels, which
+the artifact's admission declines by the depth limit (`Binding.context`, `.limit .depth`), and
+an artifact cut in half, which the loader refuses. -/
+private def Tests.Cli.testCheckIxeExits : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let kci ← IO.FS.realPath ".lake/build/bin/kernel-check-ixe"
+  let dir ← IO.FS.createTempDir
+  try
+    -- a theorem whose proof is `@id True (@id True (… True.intro))`, built by a loop and added
+    -- without Lean's kernel check, so nothing on Lean's side recurses on its depth
+    let source := dir / "KjDeep.lean"
+    IO.FS.writeFile source
+      "import Lean\nopen Lean\n\
+       def kjNest (n : Nat) : Expr := Id.run do\n\
+       \x20 let mut e : Expr := .const ``True.intro []\n\
+       \x20 for _ in [0:n] do\n\
+       \x20   e := mkApp2 (.const ``id [Level.zero]) (.const ``True []) e\n\
+       \x20 return e\n\
+       set_option debug.skipKernelTC true\n\
+       run_cmd Lean.Elab.Command.liftCoreM do\n\
+       \x20 addDecl (.thmDecl { name := `kjDeep, levelParams := [], type := .const ``True [], value := kjNest 20000 })\n"
+    let deep := dir / "deep.ixe"
+    let built ← IO.Process.output {
+      cmd := ix.toString, env := Tests.Cli.spawnEnv
+      args := #["compile", source.toString, "--no-build", "--consts", "kjDeep", "--out", deep.toString] }
+    unless built.exitCode == 0 do
+      throw <| IO.userError s!"compile of the 20,000-level record failed:\n{built.stdout}\n{built.stderr}"
+    let truncated := dir / "truncated.ixe"
+    let bytes ← IO.FS.readBinFile deep
+    IO.FS.writeBinFile truncated (bytes.extract 0 (bytes.size / 2))
+    for (label, input, needle) in [("deep", deep, "Resource.depth"), ("truncated", truncated, "")] do
+      let out ← IO.Process.output {
+        cmd := "timeout", env := Tests.Cli.spawnEnv
+        args := #["--kill-after=5", "60", kci.toString, input.toString, (dir / s!"{label}.jsonl").toString] }
+      if out.exitCode == 124 || out.exitCode == 137 then
+        throw <| IO.userError s!"kernel-check-ixe on the {label} artifact ran past 60 s"
+      unless out.exitCode == 1 && (needle.isEmpty || (out.stderr.splitOn needle).length > 1) do
+        throw <| IO.userError s!"kernel-check-ixe on the {label} artifact: exit {out.exitCode}, \
+expected 1 with '{needle}'\n{out.stdout}\n{out.stderr}"
+  finally
+    IO.FS.removeDirAll dir
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
@@ -388,6 +433,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testPublishedEnvelopeVersion
   Tests.Cli.testCompileExportForeignRoles
   Tests.Cli.testCompileEquations
+  Tests.Cli.testCheckIxeExits
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0
