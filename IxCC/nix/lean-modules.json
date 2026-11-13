@@ -3479,7 +3479,8 @@
    "imports":
    ["IxCC.Src.Relevance.Proof.P1.Prefix",
     "IxCC.Recheck.Proof.FrontAccepted",
-    "IxCC.Src.Relevance.Proof.P1.Facts"]},
+    "IxCC.Src.Relevance.Proof.P1.Facts",
+    "IxCC.Recheck.Proof.Live"]},
   "IxCCTests.Fences.OwnRc":
   {"path": "IxCCTests/Fences/OwnRc.lean",
    "imports":
@@ -5229,6 +5230,9 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.P1.RunLive":
+  {"path": "IxCC/Src/Relevance/Proof/P1/RunLive.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
   "IxCC.Src.Relevance.Proof.P1.Recr":
   {"path": "IxCC/Src/Relevance/Proof/P1/Recr.lean",
    "imports":
@@ -6802,6 +6806,15 @@
   "IxCC.Recheck.Proof.LiveDefs":
   {"path": "IxCC/Recheck/Proof/LiveDefs.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Defs", "IxCC.Recheck.Proof.Sound"]},
+  "IxCC.Recheck.Proof.Live":
+  {"path": "IxCC/Recheck/Proof/Live.lean",
+   "imports":
+   ["IxCC.Recheck.Proof.LiveDefs",
+    "IxCC.Recheck.Proof.FrontAccepted",
+    "IxCC.Recheck.Proof.Soundness",
+    "IxCC.Src.Relevance.Proof.P1.Prefix",
+    "IxCC.Src.Relevance.Proof.P1.Facts",
+    "IxCC.Src.Relevance.Proof.P1.RunLive"]},
   "IxCC.Recheck.Proof.FrontAccepted":
   {"path": "IxCC/Recheck/Proof/FrontAccepted.lean",
    "imports":
