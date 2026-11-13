@@ -1142,13 +1142,15 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     exact ⟨X, hX, hforce s v X hrun hrel⟩
   | @letRel σ Γ c r ty v b e v' hr _ _ _ ihv ihb =>
     intro ρ ρk w hcs hlv henv hctx hrun
-    rw [IxCC.Src.eval_letE, if_neg (by simp [hr])] at hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    simp only [hr, Bool.false_eq_true, ↓reduceIte] at hrun
     obtain ⟨x, hx, hb⟩ := Result.bind_eq_ok_iff.mp hrun
     obtain ⟨Y, hY, hrelY⟩ := ihv ρ ρk x (mentions_let_val hcs) hlv henv hctx hx
     exact ihb (.val x :: ρ) ρk w (mentions_let_body hcs) hlv (.some (.val hrelY) hY henv) hctx hb
   | @letIrr σ Γ c r ty v b e v' hr _ htc hdv _ ihb =>
     intro ρ ρk w hcs hlv henv hctx hrun
-    rw [IxCC.Src.eval_letE, if_pos hr] at hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    simp only [hr, ↓reduceIte] at hrun
     obtain ⟨Y, hY⟩ := hdv ρk hctx
     exact ihb _ ρk w (mentions_let_body hcs) hlv (.some (.val (.irr hlv henv htc hY)) hY henv)
       hctx hrun
