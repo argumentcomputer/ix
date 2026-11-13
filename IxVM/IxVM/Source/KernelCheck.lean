@@ -2377,44 +2377,48 @@ def nat_rec_check := aiur_fn⟦
   -- ## `WrapRel`: the generated term with type-annotation wrappers consumed at binder domains
   --
   -- Structural equality, binder data included, except that at a binder's domain the generated
-  -- side may lose wrappers at its head (`wrap_dom`), and a `let` of the stored side is expanded.
+  -- side may lose wrappers at its head (`wrap_dom`), and a `let` on either side is expanded,
+  -- as `Annot` expands it.
   -- A wrapper is a constant stored as a definition whose value is `λ x₁ … xₖ, x₁`, every λ
   -- carrying the datum `never`, applied to exactly `k` arguments; consuming it leaves its first
   -- argument.
 
 def wrap_rel := aiur_fn⟦
   fn wrap_rel(g: KernelTypes::KExpr, d: KernelTypes::KExpr) -> Field {
-      match (*(d)) {
-        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_rel(g, KernelSubst::expr_inst1(b, v, 0)) } ,
+      match (*(g)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_rel(KernelSubst::expr_inst1(b, v, 0), d) } ,
         _ => {
-          match (*(g)) {
-            KernelTypes::KExprNode::App(f, a) => {
-              match (*(d)) {
-                KernelTypes::KExprNode::App(f2, a2) => {
-                  match wrap_rel(f, f2) { 1 => {  wrap_rel(a, a2) } , _ => {  0 } , } } ,
-                _ => {  0 } ,
-              } } ,
-            KernelTypes::KExprNode::Lam(t, b, m) => {
-              match (*(d)) {
-                KernelTypes::KExprNode::Lam(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
-                _ => {  0 } ,
-              } } ,
-            KernelTypes::KExprNode::Forall(t, b, m) => {
-              match (*(d)) {
-                KernelTypes::KExprNode::Forall(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
-                _ => {  0 } ,
-              } } ,
-            KernelTypes::KExprNode::Proj(s, i, e) => {
-              match (*(d)) {
-                KernelTypes::KExprNode::Proj(s2, i2, e2) => {
-                  match Bytes::address_eq(s, s2) * Fields::is_zero(i - i2) {
-                    1 => {  wrap_rel(e, e2) } ,
+          match (*(d)) {
+            KernelTypes::KExprNode::Let(_, v2, b2) => {  wrap_rel(g, KernelSubst::expr_inst1(b2, v2, 0)) } ,
+            _ => {
+              match (*(g)) {
+                KernelTypes::KExprNode::App(f, a) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::App(f2, a2) => {
+                      match wrap_rel(f, f2) { 1 => {  wrap_rel(a, a2) } , _ => {  0 } , } } ,
                     _ => {  0 } ,
                   } } ,
-                _ => {  0 } ,
+                KernelTypes::KExprNode::Lam(t, b, m) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Lam(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    _ => {  0 } ,
+                  } } ,
+                KernelTypes::KExprNode::Forall(t, b, m) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Forall(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    _ => {  0 } ,
+                  } } ,
+                KernelTypes::KExprNode::Proj(s, i, e) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Proj(s2, i2, e2) => {
+                      match Bytes::address_eq(s, s2) * Fields::is_zero(i - i2) {
+                        1 => {  wrap_rel(e, e2) } ,
+                        _ => {  0 } ,
+                      } } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  kexpr_struct_eq(g, d) } ,
               } } ,
-            KernelTypes::KExprNode::Let(_, _, _) => {  0 } ,
-            _ => {  kexpr_struct_eq(g, d) } ,
           } } ,
       }
     }
@@ -2436,12 +2440,16 @@ def wrap_binder := aiur_fn⟦
 
 def wrap_dom := aiur_fn⟦
   fn wrap_dom(t: KernelTypes::KExpr, t2: KernelTypes::KExpr) -> Field {
-      match wrap_rel(t, t2) {
-        1 => {  1 } ,
+      match (*(t)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_dom(KernelSubst::expr_inst1(b, v, 0), t2) } ,
         _ => {
-          match consume_wrapper(t) {
-            (1, a) => {  wrap_dom(a, t2) } ,
-            _ => {  0 } ,
+          match wrap_rel(t, t2) {
+            1 => {  1 } ,
+            _ => {
+              match consume_wrapper(t) {
+                (1, a) => {  wrap_dom(a, t2) } ,
+                _ => {  0 } ,
+              } } ,
           } } ,
       }
     }
