@@ -47,7 +47,7 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); `checkCanonical` has no theorem; the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5, C3 with the dispatch pairing, `elimShape_recr_minors`) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, canonical tags), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -118,19 +118,20 @@ A program may write a parameter or a constructor field erased (`0`). IxCC then d
 record), and is right only if the run behaviour that receives the position never reads it (the
 invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Seven routes have been
 found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
-returned the irrelevance marker. Each is now refused by a check that `Recheck.run` runs; **none by
-a theorem**: the relevance proof (`Relevance.Proof.check_sound`) says nothing about this invariant,
-and `checkCanonical`, with the checks in it, has no theorem.
+returned the irrelevance marker. Each is now refused by a check that `Recheck.run` runs, **none by
+a theorem**. Since 2026-11-13 what each check decides is a proposition proved from its acceptance
+(L1, `Relevance.Proof.check_soundC` and `checkCanonical_sound`, last column), but no theorem yet
+derives from those facts that an accepted program never reads a dropped value (P1, below).
 
-| # | Route | Reproduced | Refused by |
-| --- | --- | --- | --- |
-| 1 | a definition's own value with fewer λs than its erased parameters | 2026-11-12, below the kernel | `headerAgreement` |
-| 2 | a `csimp` redirect to a target that reads the parameter | 2026-11-12, below the kernel | the `csimp` refusal (`headerAgreement`) |
-| 3 | a `case` entry whose type writes a minor erased | 2026-11-12, **through the certified kernel** | `readsErased?` |
-| 4 | a recursor whose type writes a minor erased | 2026-11-12, below the kernel | `readsErased?` |
-| 5 | an η-short minor over a constructor field written erased | 2026-11-12, below the kernel | C3 (`Check.minorBinders`) |
-| 6 | `Quot.mk` with its element erased | 2026-11-12, below the kernel | `readsErased?` |
-| 7 | the minor for a constructor of a mutual block's second inductive, at that inductive's recursor: C3 paired minor `j` with rule `j`, and such a recursor takes the minors of every constructor of the block, so C3 checked the wrong minors there and its own not at all | 2026-11-13, below the kernel | C3 with each rule paired with the minor it dispatches (`Check.ruleDispatch`) |
+| # | Route | Reproduced | Refused by | The check's fact (L1) |
+| --- | --- | --- | --- | --- |
+| 1 | a definition's own value with fewer λs than its erased parameters | 2026-11-12, below the kernel | `headerAgreement` | `Canonical.bodies` (`HeaderOk`) |
+| 2 | a `csimp` redirect to a target that reads the parameter | 2026-11-12, below the kernel | the `csimp` refusal (`headerAgreement`) | `Canonical.csimp` |
+| 3 | a `case` entry whose type writes a minor erased | 2026-11-12, **through the certified kernel** | `readsErased?` | `Canonical.reads` (`ReadsOk`) |
+| 4 | a recursor whose type writes a minor erased | 2026-11-12, below the kernel | `readsErased?` | `Canonical.reads` |
+| 5 | an η-short minor over a constructor field written erased | 2026-11-12, below the kernel | C3 (`Check.minorBinders`) | `TermC.app` (`ElimC`, `MinorC`) |
+| 6 | `Quot.mk` with its element erased | 2026-11-12, below the kernel | `readsErased?` | `Canonical.reads` |
+| 7 | the minor for a constructor of a mutual block's second inductive, at that inductive's recursor: C3 paired minor `j` with rule `j`, and such a recursor takes the minors of every constructor of the block, so C3 checked the wrong minors there and its own not at all | 2026-11-13, below the kernel | C3 with each rule paired with the minor it dispatches (`Check.ruleDispatch`) | `ElimC` with `elimShape_recr_minors` |
 
 Also refused, where the source was stuck or a later stage refused: `Quot.lift`'s function, the
 pinned `Nat.succ`'s field and a primitive's parameter (`readsErased?`, `okPrim`); and a recursive
@@ -138,7 +139,8 @@ field written erased, which a recursor's rule passes as the major of an inductio
 (SrcEval is stuck there). Under a single inductive that was refused before 2026-11-13 by C3's
 η-short clause at the hypothesis call (whose minors are the rule's own variables) and now also by
 name by the forwarding clause (`Check.Canonical.forwardsErased?`: a rule uses a field written
-erased only as that field's argument to the minor it dispatches). Where the hypothesis is another
+erased only as that field's argument to the minor it dispatches; its fact is `Canonical.forwards`,
+`ForwardOk`, stated on the rule term as stored). Where the hypothesis is another
 member's recursor (`mutual A2 | a1 (0 b : B2); B2 | …`) only the forwarding clause refuses it:
 before it no check did, and only erasure's decline of a rule that calls a sibling recursor (a
 capability gap) kept that program from an object. A nested block (stored as a mutual block with
@@ -151,7 +153,13 @@ conversion compares binder contracts (and its modeller of mutual blocks refuses 
 erased at the constructor), which ends with the Ixon format change that moves modes out of the
 term bytes. The table records routes found by testing, one at a time; that there is no other is
 not established. What would establish it is a theorem that an accepted program's evaluation never
-yields the marker at a position that is read; it is not proved.
+yields the marker at a position that is read (relevance preservation, P1); it is not proved. Its
+premises are now propositions (L1, above); the proof is the next step ([roadmap](roadmap.md#resource-soundness)),
+and two things it must handle are known: inside a recursor rule's body a dropped field's slot
+holds the marker under a λ whose class is relevant, so the invariant on environments is per
+recursor activation, not per binder class; and IxCC does not check that a stored rule has the
+kernel's generated shape, so the proof may use only what the forwarding clause decides of the
+rule as stored.
 
 ## Target statements
 
