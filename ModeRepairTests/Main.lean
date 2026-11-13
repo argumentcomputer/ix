@@ -2212,6 +2212,68 @@ def v5oracle (t : IO.Ref Tally) : IO Unit := do
   check1 t "V5 oracle: a type variable of sort u, u ≤ 0 out of fuel (n = 6000): a decline"
     (match c with | .error e => e.startsWith "decline:" | _ => false) (show_ c)
 
+/-! ### V5 Gap A: what an extern may obtain from a closure argument
+
+`extA (f : Nat → Nat) : List Nat`, an extern. `leakA (@borrowed xs : List Nat) : List Nat :=
+extA (fun n => n)`: the closure is formed where `xs` is bound but does not capture it, so to the
+checker it holds nothing and the call's result carries no region. `runR`'s closure cell keeps its
+whole environment (`formClosure` captures and confines only the `fvs`), and as landed
+`Cell.vals` of a closure was that whole environment, so `ExternOk`'s "a value held by an argument
+at a plain parameter" let the extern return `xs`, confined to `leakA`'s region. The controls
+capture `xs`: borrowed (`capA`, refused) and plain (`capAp`, accepted). The oracle `extAOra`
+returns the first binding of the closure's environment, restricted (`admissibleOnly`) to answers
+`ExternVal` admits, decided with the statement's own `Cell.vals`: an answer it does not admit is
+no answer (a stuck run). -/
+
+def extA := mem 490
+def leakA := mem 491
+def capA := mem 492
+def capAp := mem 493
+
+def heldByB (h : Heap) (a v : Val) : Bool :=
+  v == a || (reachSet h walkFuel a).any fun l =>
+    match objAt h l with
+    | some o => o.cell.vals.contains v
+    | none => false
+
+/-- `ora` restricted to the answers `ExternVal`'s third disjunct admits: a value held by an
+argument at a parameter that neither lends nor transfers. -/
+def admissibleOnly (ps : Array Param) (ora : ExternOracle) : ExternOracle := fun r args h =>
+  match ora r args h with
+  | some (h', v) =>
+    if (ps.toList.zip args).any (fun (p, a) => !p.mode.isBorrowed && !p.mode.isUnique && heldByB h a v)
+    then some (h', v) else none
+  | none => none
+
+def extAParams : Array Param := #[par .many .val arrowSk]
+
+def extAOra : ExternOracle := admissibleOnly extAParams fun r args h =>
+  if r == extA then
+    match args with
+    | [.ref loc _ _] => match h.objs[loc]? with
+      | some ⟨.clo (b :: _) .., _⟩ => some (h, b.val)
+      | _ => none
+    | _ => none
+  else none
+
+def pA : Prog := prog [
+  (extA, .extern extAParams .shared .val .data),
+  (leakA, body [par .borrowed] (app (.const extA .val) [lam (par .many .leaf) (v 0 .leaf) .shared .leaf])),
+  (capA, body [par .borrowed] (app (.const extA .val) [lam (par .many .leaf) (lenOf (v 1)) .shared .leaf])),
+  (capAp, body [par] (app (.const extA .val) [lam (par .many .leaf) (lenOf (v 1)) .shared .leaf]))]
+
+def gapACases : List Case := [
+  -- REPAIR V5 (Gap A): accepted, and the run ended in borrowEscape, with an oracle `ExternOk`
+  -- admitted; now the oracle's answer is not admitted (the closure holds only its captures)
+  { label := "V5 Gap A: leakA, an uncaptured borrowed list returned by an extern from a closure's environment",
+    P := pA, ext := extAOra, seed := leakA, inp := oneList, toCheck := [leakA], verdict := .accept,
+    run := [(0, .stuck)] },
+  { label := "V5 Gap A, control: the closure captures the borrowed list (capA)", P := pA, ext := extAOra,
+    seed := capA, inp := oneList, toCheck := [capA], verdict := .refuse "borrowEscape",
+    run := [(0, .vio .borrowEscape)] },
+  { label := "V5 Gap A, control: the closure captures a plain list (capAp)", P := pA, ext := extAOra,
+    seed := capAp, inp := oneList, toCheck := [capAp], verdict := .accept, run := [(0, .value)] }]
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2228,6 +2290,7 @@ def run : IO UInt32 := do
   finding4oracle t
   IO.println "== Part 3: V5, the places that failed open"
   v5oracle t
+  for c in gapACases do runCase t c
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

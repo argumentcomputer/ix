@@ -153,11 +153,15 @@ def Reads (lim : OracleLimits) (env : Env .anon) (s : Subject) (P : Prog) : Prop
 
 /-! ## Heaps meeting declared modes -/
 
-/-- The values a cell holds. -/
+/-- The values a cell holds. A closure holds its captures (the bindings of its
+environment at `fvs`), not the rest of the environment it was formed in: those
+are neither read nor confined by `formClosure`, nor seen by the checker (V5,
+Gap A: as landed a closure held its whole environment, so `ExternOk` let an
+extern given a closure return a borrowed binding the closure never captured). -/
 def Cell.vals : Cell → List Val
   | .ctor _ fs => fs.toList
   | .num _ | .str _ => []
-  | .clo env _ _ _ _ _ => env.map (·.val)
+  | .clo env _ _ _ fvs _ => fvs.toList.filterMap fun i => env[i]?.map (·.val)
   | .pap _ as => as.toList
   | .once t _ => [t]
 
