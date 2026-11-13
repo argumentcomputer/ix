@@ -426,27 +426,27 @@ soon as it passes one of these fixed budgets
 
 | Budget | Bounds | Value | Largest committed value | Headroom |
 | --- | --- | --- | --- | --- |
-| `Src.maxTermDepth` | the depth of a source term: per expression at ingress (`Ingress.depthBudget`, share expansions included and a reused share's height checked against the depth left, `Ingress.convH`), and erasure's nesting (`Lam.Erase.termFuel`) | 2,048 | 299 | 6.8× |
-| `Recheck.maxSrcVisits` | with `Src.maxTermDepth`, `Recheck.checkSrc`'s check of a program built without ingress: its term nodes counted as trees (a shared term at each use) | 268,435,456 | 33,211,435 | 8.0× |
-| `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 1,145 | 14× |
+| `Src.maxTermDepth` | the depth of a source term: per expression at ingress (`Ingress.depthBudget`, share expansions included and a reused share's height checked against the depth left, `Ingress.convH`), and erasure's nesting (`Lam.Erase.termFuel`) | 2,048 | 256 | 8.0× |
+| `Recheck.maxSrcVisits` | with `Src.maxTermDepth`, `Recheck.checkSrc`'s check of a program built without ingress: its term nodes counted as trees (a shared term at each use) | 268,435,456 | 31,645,115 | 8.4× |
+| `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 2,256 | 7.2× |
 | `Anf.maxLamDepth` | each Lam global's depth, before P1 | 2,048 | 134 | 15× |
-| `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 9,083 | 1.8× |
+| `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 8,858 | 1.8× |
 | `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 1,543 | 1.3× |
-| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 25,749 | 41× |
-| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 158,498,608 | 1.7× |
+| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 25,365 | 41× |
+| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 154,195,240 | 1.7× |
 | `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives (but the first selection of each alternative of a pending join point, a move) and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
 | `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,571 | 1.9× |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 801 | 10× |
-| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 3,706,721 | 2.6× |
-| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,843,161 | 1.5× |
+| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 3,692,411 | 2.7× |
+| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,693,905 | 1.5× |
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
-| `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
-| `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 54,727,677 bytes, since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
+| `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,193 | 328× |
+| `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 51,379,451 bytes (54,727,677 before 2026-11-13's `succBle` rule), since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
 | `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`, no pass over the whole state at a call since 2026-11-13; its parameters' distinctness check and the per-edge binding stay superlinear), the layout's function-count term (`Backend.lay`, linear in the functions and call sites since 2026-11-13) or the RC policy selection (linear in the function count since 2026-11-13); each is measured in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
-(172 measured, 2026-11-11), which also checks every walk against the visit
-bound of the copy count (`steps ≤ nodes + copied`: 5,409 walks). None of these
+(182 measured, 2026-11-13), which also checks every walk against the visit
+bound of the copy count (`steps ≤ nodes + copied`: 5,832 walks). None of these
 budgets is settable at invocation yet (a mechanism to raise each as `IXCC_<LIMIT>` is being built
 elsewhere).
 
@@ -457,9 +457,9 @@ survey prints, beside each maximum, the first program that reaches it:
 | --- | --- | --- | --- | --- |
 | `Walk.maxCopy`, in an inline walk | 8,192 | 6,955 | 1.18× | `phase1-machines`, `Machines.fibMain` |
 | `Anf.maxDepth` | 2,048 | 1,543 | 1.33× | `phase1-machines`, `Natural.fibMain` |
-| `Anf.maxStepWork` | 45,000,000 | 28,843,161 | 1.56× | `phase1-machines`, `Natural.fibMain` |
-| `Anf.maxBackWork` | 268,435,456 | 158,498,608 | 1.69× | `phase1-machines`, `Machines.fibMainHO` |
-| `Anf.maxGlobalNodes` | 16,384 | 9,083 | 1.80× | `phase1-machines`, `Machines.fibMain` |
+| `Anf.maxStepWork` | 45,000,000 | 28,693,905 | 1.57× | `phase1-machines`, `Natural.fibMain` |
+| `Anf.maxBackWork` | 268,435,456 | 154,195,240 | 1.74× | `phase1-machines`, `Machines.fibMainHO` |
+| `Anf.maxGlobalNodes` | 16,384 | 8,858 | 1.85× | `phase1-machines`, `Machines.fibMain` |
 | `Walk.maxWalkDepth` | 3,072 | 1,571 | 1.96× | `phase1-machines`, `Natural.fibMain` |
 
 All six are reached by the numeric state-machine family, the largest
@@ -520,7 +520,7 @@ comparison of the landing, not `tests-corpus`'s survey):
 
 | Limit | Bounds | Value | Largest committed value | Reached by the producer |
 | --- | --- | --- | --- | --- |
-| `Src.Hints.maxJsonTextBytes` | the text's size | 67,108,864 bytes (64 MiB) | 54,727,677 (`fanUnder`, `fixtures/rc/budget`, plain RC); on the manifests 1,056,740 (`Closures.stateLoop`, plain RC), 380,245 under `--rc off` | yes, in every mode: probes of 56 of `fixtures/rc/budget`'s fan functions under one root (a zero-RC certificate of 68,888,457 bytes, under `--rc off` and the `auto` fallback) and of 80 functions of 101 parameters each, a chain of 100 tests whose `k`-th leaf returns parameter `k` (a plain-RC certificate of 73,006,286 bytes) |
+| `Src.Hints.maxJsonTextBytes` | the text's size | 67,108,864 bytes (64 MiB) | 51,379,451 (`fanUnder`, `fixtures/rc/budget`, plain RC; 54,727,677 before 2026-11-13's `succBle` rule); on the manifests 1,056,740 (`Closures.stateLoop`, plain RC), 380,245 under `--rc off` | yes, in every mode: probes of 56 of `fixtures/rc/budget`'s fan functions under one root (a zero-RC certificate of 68,888,457 bytes, under `--rc off` and the `auto` fallback) and of 80 functions of 101 parameters each, a chain of 100 tests whose `k`-th leaf returns parameter `k` (a plain-RC certificate of 73,006,286 bytes) |
 | `Src.Hints.maxJsonDepth` | the nesting of `[` and `{` outside strings | 512 | 410 (`fanUnder`, plain RC); on the manifests 121 (`Natural.fibMain`, plain RC); every zero-RC certificate 8 | under plain RC only: its ownership code nests one level per binding, action and join and two per `case`, so a function whose canonical code nests past about 510 levels (a chain of 169 tests, `fixtures/rc/deep`'s `deep240` at 726; one `inc` per extra copy of a variable passed, so about 500 copies at one point) is past it; the zero-RC encoding nests at most 8 by its shapes |
 | `Src.Hints.maxJsonDigits` | a number token's digits, outside strings; no exponent or fraction | 32 | 5 (26,836, `fixtures/rc/budget`); 4 on the manifests | not found: the numbers are indices, counts, offsets and bounds below the program-size budgets (at most 7 digits), and no source literal reaches the certificate (numerals of 40 to 60 digits tried) |
 | `CertJson.maxAllocSlots` | one allocation's frame slots | 4,096 | 240 (`Limits.fields254`, plain RC); 3 under `--rc off` | not found: linear scan reuses slots, so its count is the values spilled at once, bounded by the values in scope (Anf depth 2,048 and the parameters, which `ix`'s output holds to about 230); the all-slots fallback (a slot per value) ran for no function of the corpus or the probes |
@@ -617,7 +617,7 @@ values are measured by `tests-corpus`, which fails if any reaches its cap.
 | frame layouts | one per function; cells 8-aligned, inside a frame of at most 2^20 bytes, in strictly increasing order (a single pass; it implies they are distinct) | exact | `Stacking.run`, `FrameLayout.check` |
 | block order | one group per layout group; each block at most once, in its group | exact | `Order.check`, one pass over the list |
 | plain-RC ownership code | first, the program's parameter total (functions' and join points') at most `Anf.maxParamTotal`; decoded against the source's control tree, at most 4,096 deep; its captured work at most `Anf.maxCapturedWork`; accepted by the ownership checker (`Own.Plain.checkOwned`), any placement of `inc` and `dec` | exact | `Own.Plain.Certificate.admit` |
-| the whole certificate | 64 MiB of JSON nested at most 512 deep, number tokens of at most 32 digits (the producer reads its own certificate back through the same check: "Certificate text and decode limits" above) | 54,727,677 bytes, nesting 410, 5 digits | `checkJsonText` |
+| the whole certificate | 64 MiB of JSON nested at most 512 deep, number tokens of at most 32 digits (the producer reads its own certificate back through the same check: "Certificate text and decode limits" above) | 51,379,451 bytes, nesting 410, 5 digits | `checkJsonText` |
 
 Native `ixcc check-cert` on the allocation's two former outliers, in `tree 9`'s
 first function, at 2 MiB, 8 MiB and the default stack alike: 100,000

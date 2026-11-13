@@ -360,7 +360,7 @@ program, within the limit. The limit is not settable at invocation yet (a
 mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
 Its twin within the limit, `fanUnder` (1,044,352 tokens), compiles under plain
 RC with a certificate within the certificate text's limits (nesting 410 of 512,
-54,727,677 bytes of 64 MiB), since its roots call the fan functions in parts of
+51,379,451 bytes of 64 MiB), since its roots call the fan functions in parts of
 two; in parts of ten or eleven the callers' `inc`s of the shared argument
 nested its certificate 2,208 deep, which `check-cert` refused and which the
 compiler, reading its certificates back since 2026-11-12, would decline

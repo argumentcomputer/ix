@@ -7,7 +7,7 @@ on the program, configuration and certificate of
 
 * `Recheck.runTyped` to the laid-out typed x86 program the native run
   computes (21 blocks, 165 instructions), and
-* the whole `Recheck.run` to the object's 2,040 bytes the native run
+* the whole `Recheck.run` to the object's 2,032 bytes the native run
   writes: selection through stacking and layout, `Program.checkK`, E1
   (`Encode.encodeK`), E2's stream check (`Stream.checkK`) and the ELF
   writer with its validator (`ELF.writeCheckedK`).
