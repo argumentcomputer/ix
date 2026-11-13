@@ -1501,6 +1501,106 @@ theorem checkTermBinders_me (hme : Program.ModeEq p₀ p) (ann : Ann) :
 
 /-! ## `check` -/
 
+/-! ### The rules at a term: only the argument tags and the minors' binders are read -/
+
+section rules
+
+variable {ann : Ann} {key : TermKey} {lvls : Nat} {prof : Profile}
+
+theorem paramArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+    ∀ (c : CId) (qq : Profile) (params : List Rel) (errs : List RelError),
+      paramArgs ⟨q₀, ann, key, lvls, prof⟩ c qq xs params errs =
+        paramArgs ⟨q, ann, key, lvls, prof⟩ c qq ys params errs := by
+  induction h with
+  | nil => intro c qq params errs; cases params <;> rfl
+  | cons hab _ ih =>
+    intro c qq params errs
+    cases params with
+    | nil => rfl
+    | cons r params => simp only [paramArgs, err]; rw [ih]
+
+theorem fieldArgs_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+    ∀ (c : CId) (qq : Profile) (j : Nat) (fields : List FieldClass) (errs : List RelError),
+      fieldArgs ⟨q₀, ann, key, lvls, prof⟩ c qq j xs fields errs =
+        fieldArgs ⟨q, ann, key, lvls, prof⟩ c qq j ys fields errs := by
+  induction h with
+  | nil => intro c qq j fields errs; cases fields <;> rfl
+  | cons hab _ ih =>
+    intro c qq j fields errs
+    cases fields with
+    | nil => rfl
+    | cons cls fields => simp only [fieldArgs, err]; rw [ih]
+
+theorem fieldArgs_drop_me (q₀ q : Program) {xs ys : List Term.Arg} (h : ArgsME xs ys) :
+    ∀ (n : Nat) (c : CId) (qq : Profile) (j : Nat) (fields : List FieldClass) (errs : List RelError),
+      fieldArgs ⟨q₀, ann, key, lvls, prof⟩ c qq j (xs.drop n) fields errs =
+        fieldArgs ⟨q, ann, key, lvls, prof⟩ c qq j (ys.drop n) fields errs :=
+  fun n => fieldArgs_me q₀ q (h.drop n)
+
+theorem minorBinders_me (hme : Program.ModeEq p₀ p) (k : CId) (j : Nat) (qc : Profile) :
+    ∀ (fields : List FieldClass) (i : Nat) (bs : List Rel) (errs : List RelError),
+      minorBinders ⟨p₀, ann, key, lvls, prof⟩ k j qc i bs fields errs =
+        minorBinders ⟨p, ann, key, lvls, prof⟩ k j qc i bs fields errs
+  | [], i, bs, errs => by cases bs <;> rfl
+  | cls :: fields, i, [], errs => by
+    simp only [minorBinders, err, fieldWrittenErased_eq hme, minorBinders_me hme k j qc fields]
+  | cls :: fields, i, b :: bs, errs => by
+    simp only [minorBinders, err, minorBinders_me hme k j qc fields]
+
+theorem lamHead_me (q₀ q : Program) (errs : List RelError) {h h' : Term} (hh : lamRels h = lamRels h')
+    {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+    lamHead ⟨q₀, ann, key, lvls, prof⟩ errs h xs = lamHead ⟨q, ann, key, lvls, prof⟩ errs h' ys := by
+  simp only [lamHead, err, hh]
+  generalize lamRels h' = bs
+  induction hx generalizing bs errs with
+  | nil => rfl
+  | cons hab _ ih =>
+    cases bs with
+    | nil => rfl
+    | cons b bs => simp only [List.zip_cons_cons, List.foldl_cons]; exact ih _ _
+
+theorem knownHead_me (hme : Program.ModeEq p₀ p) (errs : List RelError) (c : CId) (us : List Univ)
+    {xs ys : List Term.Arg} (hx : ArgsME xs ys) :
+    knownHead ⟨p₀, ann, key, lvls, prof⟩ errs c us xs = knownHead ⟨p, ann, key, lvls, prof⟩ errs c us ys := by
+  simp only [knownHead, err, partialElim, elimShape?_eq hme, recKindOf_eq hme, ctorProfile_eq hme,
+    ruleCtorFields_eq hme, erasedMinors_eq hme, paramArgs_me p₀ p hx, fieldArgs_drop_me p₀ p hx,
+    minorBinders_me hme, hx.length_eq]
+  decl_me! p₀ p hme c <;> try dsimp only
+  all_goals
+    cases elimShape? p c with
+    | none => rfl
+    | some shape =>
+      dsimp only
+      by_cases hlt : ys.length < shape.arity
+      · simp only [hlt, ↓reduceIte]
+      · simp only [hlt, ↓reduceIte]
+        rcases hx.getElem? shape.major with ⟨h1, h2⟩ | ⟨a, b, m, m', r, h1, h2, hab⟩ <;>
+          simp only [h1, h2] <;>
+          congr 1 <;>
+          funext errs x <;>
+          obtain ⟨pos, j, rule⟩ := x <;>
+          dsimp only <;>
+          rcases hx.getElem? pos with ⟨g1, g2⟩ | ⟨a', b', n, n', r', g1, g2, hab'⟩ <;>
+          simp only [g1, g2] <;>
+          cases ruleCtorFields p ann shape.recr rule <;>
+          first | rfl | (dsimp only; rw [lamRels_me hab'])
+
+theorem appRule_me (hme : Program.ModeEq p₀ p) (errs : List RelError) {t u : Term} (h : ME t u) (r : Rel) :
+    appRule ⟨p₀, ann, key, lvls, prof⟩ errs t r = appRule ⟨p, ann, key, lvls, prof⟩ errs u r := by
+  simp only [appRule, argRule, err, Term.spineL]
+  obtain ⟨hh, ha⟩ := spine_me h
+  generalize t.spine = s₀ at hh ha ⊢
+  generalize u.spine = s₁ at hh ha ⊢
+  obtain ⟨h₀, a₀⟩ := s₀
+  obtain ⟨h₁, a₁⟩ := s₁
+  dsimp only at hh ha ⊢
+  cases hh with
+  | const c us => dsimp only; rw [knownHead_me hme errs c us ha]
+  | lam bd hd hb => dsimp only; rw [lamHead_me p₀ p errs (lamRels_me (.lam bd hd hb)) ha]
+  | _ => rfl
+
+end rules
+
 section check
 
 variable (ann : Ann) (key : TermKey) (lvls : Nat) (prof : Profile)
@@ -1508,8 +1608,54 @@ variable (ann : Ann) (key : TermKey) (lvls : Nat) (prof : Profile)
 theorem term_me (hme : Program.ModeEq p₀ p) {t u : Term} (h : ME t u) :
     ∀ (bs : List Rel) (errs : List RelError),
       Check.term ⟨p₀, ann, key, lvls, prof⟩ bs errs t = Check.term ⟨p, ann, key, lvls, prof⟩ bs errs u ∧
-      Check.rest ⟨p₀, ann, key, lvls, prof⟩ bs errs t = Check.rest ⟨p, ann, key, lvls, prof⟩ bs errs u :=
-  sorry
+      Check.rest ⟨p₀, ann, key, lvls, prof⟩ bs errs t = Check.rest ⟨p, ann, key, lvls, prof⟩ bs errs u := by
+  induction h with
+  | var i => intro bs errs; exact ⟨rfl, rfl⟩
+  | sort s => intro bs errs; exact ⟨rfl, rfl⟩
+  | natLit n => intro bs errs; exact ⟨rfl, rfl⟩
+  | strLit s => intro bs errs; exact ⟨rfl, rfl⟩
+  | pi bd res _ _ _ _ => intro bs errs; exact ⟨rfl, rfl⟩
+  | const c us =>
+    intro bs errs
+    refine ⟨?_, rfl⟩
+    simp only [Check.term, bareHead, constHead, partialElim, err, elimShape?_eq hme, erasedMinors_eq hme]
+  | app m m' r hf ha ihf iha =>
+    intro bs errs
+    have ihf2 := fun bs errs => (ihf bs errs).2
+    have iha1 := fun bs errs => (iha bs errs).1
+    constructor
+    · simp only [Check.term, appRule_me hme errs (.app m m' r hf ha) r, ihf2, iha1]
+    · simp only [Check.rest, argRule, err, ihf2, iha1]
+  | lam bd hd ht ihd iht =>
+    intro bs errs
+    have iht1 := fun bs errs => (iht bs errs).1
+    have hl : lamRule ⟨p₀, ann, key, lvls, prof⟩ errs bd = lamRule ⟨p, ann, key, lvls, prof⟩ errs bd := rfl
+    constructor
+    · simp only [Check.term]
+      rw [hl]
+      generalize lamRule ⟨p, ann, key, lvls, prof⟩ errs bd = lr
+      obtain ⟨e, b⟩ := lr
+      dsimp only
+      rw [iht1]
+    · simp only [Check.rest]
+      rw [hl]
+      generalize lamRule ⟨p, ann, key, lvls, prof⟩ errs bd = lr
+      obtain ⟨e, b⟩ := lr
+      dsimp only
+      rw [iht1]
+  | letE c r h₁ h₂ h₃ ih₁ ih₂ ih₃ =>
+    intro bs errs
+    have ih₂1 := fun bs errs => (ih₂ bs errs).1
+    have ih₃1 := fun bs errs => (ih₃ bs errs).1
+    constructor
+    · simp only [Check.term, letRule, err, ih₂1, ih₃1]
+    · simp only [Check.rest, letRule, err, ih₂1, ih₃1]
+  | proj s i he ih =>
+    intro bs errs
+    have ih1 := fun bs errs => (ih bs errs).1
+    constructor
+    · simp only [Check.term, projRule, err, onlyCtor?_eq hme, ih1]
+    · simp only [Check.rest, projRule, err, onlyCtor?_eq hme, ih1]
 
 theorem visitKey_eq (hme : Program.ModeEq p₀ p) (marked : List TermKey) (first : Bool) :
     visitKey p₀ ann marked prof lvls first = visitKey p ann marked prof lvls first := by
