@@ -3,6 +3,7 @@ import IxVMRefinement.Core.Certs
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.WordHints
+import IxVMRefinement.Obs.Blake3
 import IxC.Kernel.Verify.InstLevels
 import IxC.Kernel.Verify.PropWhen
 
@@ -240,6 +241,18 @@ private theorem bytes_mk_toList (x : ByteArray) :
   cases x
   simp
 
+/-- **A run of `bytes_to_addr` hashed its input** (its `Blake3::hash` call on the byte
+stream). -/
+private theorem hashed_of_bytes_to_addr {calls cs : List (Call F)} {bp r : SourceValue F}
+    {h h' : Heap F} {bytes : List UInt8}
+    (ev : ObsFn W "Blake3::bytes_to_addr" [bp] h r h' cs) (hsub : ∀ x ∈ cs, x ∈ calls)
+    (hb : RepBytes h bytes bp) : Hashed calls ⟨bytes.toArray⟩ := by
+  obtain ⟨v1, m2, cs12, v23, m24, cs31, ev14, he27, hm26, ev33, hc42⟩ :=
+    Obs.«Blake3::bytes_to_addr».obs ev
+  subst hc42
+  refine ⟨⟨"Blake3::hash", [bp], h⟩, hsub _ (by simp), rfl, bp, rfl, ?_⟩
+  simpa using hb
+
 end IxVM.Refinement.Core.DefEqAux
 
 /-! ## Positional levels
@@ -375,6 +388,12 @@ structure RescueFacts (c : Ctx) : Prop where
   /-- Every stored type mentions only its constant's level parameters (`ConstWF`). -/
   typeLevels : ∀ k ci, c.env.find? k = some ci →
     ci.toConstantVal.type.allLevelParamsDefined ci.toConstantVal.levelParams = true
+  /-- **A stored record whose bytes are a projection record's canonical encoding decodes to that
+  record** (the claim's canonical store, `Ix.Cert.Stream.StoredCanonical`, and the injectivity
+  of the encoding on wire-valid constants). -/
+  canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
+    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+      ∀ cm, lc.get? = some cm → cm.info = info
   /-- **Unit-likeness**: an inductive that `get_ci` loads with no index and one constructor
   (whose stored constructor, at the first constructor record of its member, has no field), at a
   block with at most one inductive, is unit-like at its loaded parameter count; at a reserved
@@ -609,9 +628,11 @@ theorem de_rescue_tier_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelDefEq::compute_iprj_addr`: the inductive-projection record built from the index's
 bytes (`UInt64::from_field`) and the block address, with empty tables, serialized
-(`put_constant`) and hashed (`bytes_to_addr`): its address is `iprjAddr`. -/
-theorem compute_iprj_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
+(`put_constant`) and hashed (`bytes_to_addr`): its address is `iprjAddr`. The run hashed those
+bytes, so a record of `c.E` there has them as its bytes (`load_escape`, under `Good`), and
+decodes to that record (`RescueFacts.canonical`). -/
+theorem compute_iprj_addr_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceValue F)}
+    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compute_iprj_addr" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compute_iprj_addr c args h r h' calls := by
   intro bp ip hargs good b i hb hip
@@ -657,9 +678,21 @@ theorem compute_iprj_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
         RepLinkedList.nil c3⟩)
     (RepLinkedList.nil c4)
   obtain ⟨a, ha, haddr⟩ := ih.get (.callees .bytes_to_addr) (by lt_calls) ev162 v121 _ rfl hbytes
-  refine ⟨a, ha, ?_⟩
-  rw [haddr, bytes_mk_toList]
-  rfl
+  refine ⟨a, ha, ?_, ?_⟩
+  · rw [haddr, bytes_mk_toList]
+    rfl
+  · -- the run hashed the record's bytes
+    intro cm hcm
+    unfold Ix.Cert.recordAt at hcm
+    cases hlc : c.E.consts.get? (ixAddr a) with
+    | none => simp [hlc] at hcm
+    | some lc =>
+      rw [hlc] at hcm
+      change lc.get? = some cm at hcm
+      have hraw := load_escape hlc good.1 _
+        (hashed_of_bytes_to_addr ev162 (fun x hx => by simp [hx]) hbytes) haddr.symm
+      rw [bytes_mk_toList] at hraw
+      exact rf.canonical _ lc _ hlc hraw.symm cm hcm
 
 /-! ## A family's parameters -/
 
@@ -1050,7 +1083,7 @@ theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceV
       hy388
     rw [hcnPv] at hpi
     -- the structure's projection record
-    obtain ⟨sa, hsa, hsaddr⟩ := ih.get (.defEq .compute_iprj_addr) (by lt_calls) ev481
+    obtain ⟨sa, hsa, hsaddr, -⟩ := ih.get (.defEq .compute_iprj_addr) (by lt_calls) ev481
       x_ind_block_addr _ rfl (good.sub fun x hx => by simp [hx]) b i
       (Bytes.repAddressRef_heapMono₂ addrTy E165_293 hb165) rfl
     -- the parameters
