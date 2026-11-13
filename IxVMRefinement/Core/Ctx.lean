@@ -308,6 +308,13 @@ structure EnvFacts (c : Ctx) : Prop where
   level parameters, and the recursor is no projection function). -/
   recEta : ∀ k cv mI rP rl, c.env.find? k = some (.recInfo cv mI rP [rl]) →
     rl.eta = Ix.Kernel.recRuleEtaOf c.env.find? k rl.ctor
+  /-- (L5) **An η-capable family's sort datum is its sort's zero-ness**: `caps.sortZ` is the
+  zero-ness of the stored type's sort after its `etaParams` parameters (`nativeCapsAt` sets
+  `sortZ := zeronessOf p.resSort`, `nativeCaps_sortZ`), so `capsNeverZero` at the use's levels is
+  the never-zero test IxVM makes on that sort. -/
+  etaSort : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) → caps.eta = true →
+    ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
+      caps.sortZ = Ix.Kernel.Level.zeronessOf l
   /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
   premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
   `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the
