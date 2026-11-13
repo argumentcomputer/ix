@@ -233,20 +233,25 @@ file buffer, and the decoder's state holds the buffer it reads: decoded in
 place by the parallel workers, every step of every worker updates that one
 buffer's thread-shared reference count, and the chunks spend about 50 times
 the work of decoding the same records one at a time from copies. -/
-def decodeOwn (lazy : Ixon.LazyConstant) : Except String Ixon.Constant :=
+def decodeOwn (maxDepth : Nat) (address : Address) (lazy : Ixon.LazyConstant) :
+    Except String Ixon.Constant :=
   match lazy.cache with
   | some c => .ok c
-  | none => Ixon.deConstantAt lazy.rawBytes 0 lazy.len
+  | none =>
+    let raw := lazy.rawBytes
+    -- the depth scan first (`Ixon.depthLimitError`): the decoder recurses once per level
+    if Ix.Kernel.Admission.Depth.within maxDepth raw then Ixon.deConstantAt raw 0 lazy.len
+    else .error (Ixon.depthLimitError maxDepth address)
 
 /-- Decode a slice `[lo, hi)` of lazy constants together with their skeletons
 and literal-kind flags. -/
-def decodeChunk (entries : Array (Address × Ixon.LazyConstant))
+def decodeChunk (maxDepth : Nat) (entries : Array (Address × Ixon.LazyConstant))
     (lo hi : Nat) : Except String (Array (Address × Ixon.Constant × Ixon.Constant × (Bool × Bool))) := Id.run do
   let mut out := Array.mkEmpty (hi - lo)
   for idx in [lo:hi] do
     if h : idx < entries.size then
       let (address, lazy) := entries[idx]
-      match decodeOwn lazy with
+      match decodeOwn maxDepth address lazy with
       | .ok c => out := out.push (address, c, skeleton c, literalKinds c)
       | .error e => return .error e
   return .ok out
@@ -262,7 +267,7 @@ counting, and the setup is never freed. A caller that keeps the setup to the
 end of its process sets it (`kernel-check-ixe`); without it, the setup is
 freed as usual once its last reference is dropped. -/
 def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
-    (persistent : Bool := false) : IO Loaded := do
+    (persistent : Bool := false) (maxDepth : Nat := Ixon.loadMaxDepth) : IO Loaded := do
   -- Input theorem records shadow fallback evidence at the same address.
   -- Preserve their real values, including a projected theorem's owner.
   let mut proofRecords : Std.HashSet Address := {}
@@ -271,7 +276,7 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
       if let .proof address := entry then
         proofRecords := proofRecords.insert address
         if let some lazy := env.consts[address]? then
-          let record ← IO.ofExcept lazy.get
+          let record ← IO.ofExcept (lazy.getWithin maxDepth address)
           proofRecords := proofRecords.insert (Ixon.CheckOrder.owner address record)
   let entries := env.consts.toArray
   let env := { env with consts := {} }
@@ -280,7 +285,7 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
   let tasks := (Array.range numChunks).map fun i =>
     let lo := i * chunkSize
     let hi := Nat.min entries.size (lo + chunkSize)
-    Task.spawn fun () => decodeChunk entries lo hi
+    Task.spawn fun () => decodeChunk maxDepth entries lo hi
   let mut chunks : Array (Array (Address × Ixon.Constant × Ixon.Constant × (Bool × Bool))) :=
     Array.mkEmpty numChunks
   let mut store : RecordStore := Std.HashMap.emptyWithCapacity entries.size
@@ -321,9 +326,9 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
 for its skeleton, literal kinds, and streaming read state, and build the setup
 over the skeletons (`loadEnv`, with `persistent`). -/
 def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
-    (persistent : Bool := false) : IO Loaded := do
+    (persistent : Bool := false) (maxDepth : Nat := Ixon.loadMaxDepth) : IO Loaded := do
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
-  loadEnv env table pre persistent
+  loadEnv env table pre persistent maxDepth
 
 /-! ## Reading -/
 

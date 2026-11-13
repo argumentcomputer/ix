@@ -55,6 +55,16 @@ lean_lib IxCK.Ixon where
   roots := #[`IxCK.Address.Core, `IxCK.Ixon]
   globs := #[.one `IxCK.Address.Core, .submodules `IxCK.Ixon]
 
+/-- The hosts' side of the kernel's limits: each field of
+`Admission.Limits` as a flag and an `IX_KERNEL_*` variable, the decline
+message and the exit codes (`IxCK.Host.Limits`). Outside the certified
+closure: no `IxCK.Kernel` module imports it. -/
+@[default_target]
+lean_lib IxCK.Host where
+  srcDir := ".."
+  roots := #[`IxCK.Host.Limits]
+  globs := #[.submodules `IxCK.Host]
+
 /-- Certified fixtures that also build without the host package's
 dependencies: the Ixon record fixtures, the codec, and the certified entry's
 byte admission. The root test library imports them. -/
