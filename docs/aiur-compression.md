@@ -213,16 +213,21 @@ bounded layer count.
 ### 3.3 The final PLONK proof
 
 The final stage proves, in PLONK over BN254, that one `CompressBN`
-proof verifies and that its accumulator's pairing equation holds. Its
-relation is written as an Aiur program too, `CompressFinal`, instead of the
-hand-written gnark circuit (`tools/gnark/circuit.go`):
+proof verifies and that its accumulator's pairing equation holds. The
+verification and folding logic is written as `CompressFinal` in Aiur. Its
+pairing operation is lowered to gnark's existing constrained `PairingCheck`
+gadget, reusing the optimized implementation in the handwritten path:
 
 ```
-fn compress_final(statement: Statement) {
+fn verify_accumulator(statement: Statement) -> Accumulator {
   let (proof, acc) = read_compress_bn_proof();
   let pending = CompressBN::verify_to_opening(proof, statement, acc);
-  Pairing::check(fold(pending, acc));   -- emulated BN254 pairing over Fq
+  fold(pending, acc)
 }
+
+-- Final backend contract:
+let acc = constrain_aiur_execution(verify_accumulator, statement);
+gnark.PairingCheck(acc, authorized_setup_anchors);
 ```
 
 As with the FRI and KZG verifier programs, Aiur expresses the relation and
@@ -233,7 +238,7 @@ would not itself make Aiur executions produce PLONK proofs.
 ```text
 CompressFinal (Aiur source)
   → compiled Aiur constraints and execution witness
-  → generic PLONK constraint and witness lowering
+  → PLONK lowering with proof-bound private outputs and gnark PairingCheck
   → stock gnark prover with Ignition
   → PLONK proof and gnark-exported Solidity verifier
 ```
@@ -263,16 +268,24 @@ An existing file with only `2^26` powers still supports at most a `2^25`
 PLONK domain and is rejected for a larger request. With at least `2^26 + 3`
 retained powers, the parameter path can serve a `2^26` domain without a new
 ceremony. The pure `pipeline::plonk_limits` helper checks retained length and
-the independently admitted degree before allocation. Aiur's frontend limit
-remains conservative until its measured circuit is shown to fit.
+the independently admitted degree before allocation. The frontend permits the
+ceremony's `2^26` domain ceiling, but the performance target is `2^24`, matching
+the recorded handwritten path. The complete-source regression compiles to
+62,413,327 constraints and a `2^26` domain; it is a sizing baseline, and larger
+key preparation is deferred while the final relation is reduced.
 
 `CompressFinal` reuses `CompressBN`'s KZG verification logic and accumulator
-fold, then checks the folded pairing. A fully Aiur implementation needs a
-constrained BN254 pairing library, including extension-field arithmetic and
-a Miller loop with a final-exponentiation check or a sound equivalent.
-Arkworks can compute hints; it does not supply the Aiur constraints that
-validate them. This is additional work beyond the Fq/G1 operations used by
-`CompressBN`.
+fold. The native pairing gadget must consume the same private output cells
+bound by that Aiur execution, with independently authenticated fixed anchors.
+The public statement remains two 128-bit digest limbs. An unchecked host hint
+cannot discharge the pairing. Infinity handling, coordinate encoding and
+rejection of a valid Aiur execution with an invalid accumulator are explicit
+acceptance tests for this lowering.
+
+The fully Aiur pairing library remains a reference implementation. Reusing
+gnark's constrained gadget is the selected initial implementation boundary;
+its semantics and binding belong to the trusted compiler lowering and need
+their own correctness argument for formal coverage.
 
 The target discharges the pairing inside the final relation, so on-chain
 verification consumes only a PLONK proof. Exposing the final folded
@@ -299,8 +312,8 @@ permit that construction. Measure commitment count, public input size and
 verification gas alongside constraints, proving time and peak memory.
 
 The Aiur compiler theorems apply to the source-to-circuit part. The new
-PLONK lowering and the correctness of the verifier and pairing programs
-remain separate obligations (§5). Retire the hand-written final circuit
+PLONK lowering, the correctness of the verifier program, and the pairing
+gadget's semantics and binding remain separate obligations (§5). Retire the hand-written final circuit
 only after correctness checks and a matched PLONK performance comparison;
 the existing Groth16 R1CS count is not a PLONK cost estimate.
 
@@ -1137,4 +1150,7 @@ Native acceptance verifies the outer proof and the carried pairing under
 those assets. A [real small FRI root](measurements/aiur-chain-host.json) passes GL and one BN stage, independent
 verifier reloading, and rejection of altered root statements, stages,
 accumulators and trailing bytes. This validates host composition with
-development parameters, not the final PLONK stage or Init performance.
+development parameters, a frozen pre-prefix BN artifact
+(`kzg-source-before-prefix.ixa`) and the earlier lookup policy. It does not
+validate the current artifact/backend combination, the final PLONK stage or
+Init performance; those require fresh pipeline runs.

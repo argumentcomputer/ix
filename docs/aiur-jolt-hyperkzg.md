@@ -22,6 +22,13 @@ thousands of column commitments in the current lowering. The fused curve
 arithmetic follows this direction already. Adopting Jolt's full sumcheck
 machinery would be a larger backend change.
 
+Aiur already preserves field addition, subtraction and multiplication as
+expressions in [its circuit compiler](../Aiur/Aiur/Circuit/Compile.lean).
+It does not allocate a new witness column for every arithmetic operation.
+Calls, hints, division inverses, memory operations and branch results can
+introduce columns. Further gains must address those actual sources of width;
+generic arithmetic expression elimination is already part of the baseline.
+
 Eliminating a commitment still requires enforcing the value's defining
 relation. Compiler substitution must respect the existing constraint-degree
 budget and every use of the value; Jolt's sumcheck-based virtualization is
@@ -40,6 +47,15 @@ transforms evaluations into polynomial coefficients, which generally become
 full-sized field elements. Small input values therefore do not automatically
 make its commitment MSM cheaper. Compact storage, streaming, and commitment
 arithmetic need separate measurements.
+
+An alternative within the existing KZG protocol is to commit row values using
+a precomputed Lagrange-basis SRS for their domain. If the row values are `v_j`
+and their interpolation polynomial has coefficients `c_i`, the two MSMs
+`sum_j v_j [L_j(tau)]G` and `sum_i c_i [tau^i]G` produce the same commitment.
+This preserves transcript and proof bytes while exposing small row values
+and padding zeros to specialized MSM algorithms. Coefficients are still needed
+for quotient and opening work. Basis preparation, cache storage per domain,
+and CPU/GPU MSM costs need measurement before adoption.
 
 ## 3. HyperKZG opens a large table through repeated folding
 
@@ -95,10 +111,23 @@ trace population without adopting those arguments.
 
 ## Initial implementation priorities
 
-Prioritize fewer intermediate columns, better trace layouts, compact storage,
-and streaming. Evaluate changes against matched inputs, including the actual
-Init workload, measuring padded cells, commitments, proving resources, and
-recursive verification cost separately.
+The KZG adapter can group existing LogUp lookups using the same quotient-degree
+criterion as the Goldilocks backend: examine group sizes up to eight and retain
+only those that preserve each circuit's actual quotient degree. Goldilocks
+chooses the largest eligible group; KZG minimizes auxiliary width and uses the
+smallest group on ties. The global quotient allowance
+is insufficient for that test. A circuit currently using quotient degree one
+would incur a larger FFT if grouping raised it to two. Group feasibility can
+also be nonmonotonic, so every candidate size must be checked.
+
+Streaming lookup and quotient construction are already enabled by the shared
+Aiur KZG capacity configuration. Further memory work includes compact witness
+representations and avoiding duplicate logical and physical trace matrices.
+
+Prioritize measured lookup grouping and better trace layouts, then evaluate
+Lagrange-basis commitments and compact storage. Use matched inputs including
+the actual Init workload, measuring padded cells, commitments, proving
+resources, and recursive verification cost separately.
 
 HyperKZG with sumcheck and the Twist/Shout arguments are candidates for a
 separate backend investigation. They are not prerequisites for finishing the
