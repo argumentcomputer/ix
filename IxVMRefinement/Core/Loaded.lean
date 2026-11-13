@@ -66,12 +66,21 @@ def posOf (ps : List Ix.Kernel.LevelParam) (e : KExpr) : KExpr :=
 /-! ## The relation -/
 
 /-- **A constant's level count and type**: `nl` is the number of its level parameters, below
-`2^32` (the decoders' bound on level counts), the parameters are distinct, and `ty` represents its
-closed type with the parameters renamed to positions (`posOf`). -/
+`2^32` (the decoders' bound on level counts), the parameters are the positions `0, …, nl - 1` in
+some order (the reader numbers them `List.range nl`, or `nl - 1 :: List.range (nl - 1)` for a
+large eliminator, whose motive universe comes first in the record), and `ty` represents its
+closed type with the parameters renamed to positions (`posOf`). Instantiating `posOf ps T` at
+the positions is then instantiating `T` at `ps`, whatever level parameters `T` mentions. -/
 def ValRep (κ : _root_.Address → KKey) (h : Heap F) (nl ty : SourceValue F)
     (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
   nl = .field (cv.levelParams.length : F) ∧ cv.levelParams.length < 4294967296 ∧
-    cv.levelParams.Nodup ∧ TmC κ h (posOf cv.levelParams cv.type) ty
+    cv.levelParams.Perm (List.range cv.levelParams.length) ∧
+    TmC κ h (posOf cv.levelParams cv.type) ty
+
+/-- The level parameters of a represented constant are distinct. -/
+theorem ValRep.nodup {κ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
+    {cv : Ix.Kernel.ConstantVal .anon} (r : ValRep κ h nl ty cv) : cv.levelParams.Nodup :=
+  r.2.2.1.nodup_iff.mpr (List.nodup_range _)
 
 /-- **A recursor rule** (`KernelTypes::KRecRule::Mk(cidx, nfields, rhs)`, the `j`-th of its
 list): its constructor index is its position, its field count and closed right-hand side are

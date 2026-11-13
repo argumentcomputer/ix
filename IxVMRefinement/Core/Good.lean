@@ -103,7 +103,8 @@ structure LoadFacts (c : Ctx) : Prop where
       loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, .field (ind.params.toNat : F),
         .field (ind.indices.toNat : F), .field (ind.ctors.size : F), u, blk,
         .field (p.idx.toNat : F)]) ∧
-      Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block
+      Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block ∧
+      p.idx.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
 
 /-! ## Specs -/
 

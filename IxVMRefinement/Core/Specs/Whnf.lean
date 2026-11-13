@@ -232,14 +232,16 @@ def lams_never : SpecFn := fun c args h r h' calls =>
       r ≠ .field 0 → lamsNeverAt (List.range us.length) us (ZMod.val m) V
 
 /-- `try_reduce_projection_definition(value, nl, lvls, spine)`: the projection-function
-shortcut. For the definition stored at `k` with this value (its level parameters renamed to
-positions, `posOf`, as the loaded constant holds it) and level count, tag `1` is `Red` of the
+shortcut. For the definition stored at `k` with this value (its level parameters, a permutation
+of the positions as `ValRep` records, renamed to positions, `posOf`, as the loaded constant holds
+it) and level count, tag `1` is `Red` of the
 applied constant (`Red.delta`, then `Red.betaGate` at each of the value's `λ`s, whose
 data are `never` at the use's levels) to the result. Tag `0`: no claim. -/
 def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
   ∀ value nl lvls sp, args = [value, nl, lvls, sp] → Good c calls →
     ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
-      c.tmc h (posOf cv.levelParams V) value → cv.levelParams.Nodup →
+      c.tmc h (posOf cv.levelParams V) value →
+      cv.levelParams.Perm (List.range cv.levelParams.length) →
       nl = .field (cv.levelParams.length : F) → LvListRep h us lvls → c.tml d Γ h As sp →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E
@@ -325,7 +327,7 @@ def iota_certs : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types →
       ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
         c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
-        nc = .field (MA.length : F) → r ≠ .field 0 →
+        nc = .field (MA.length : F) → RA.length < 2 ^ 39 → MA.length < 2 ^ 39 → r ≠ .field 0 →
           CertsR c.env d true RT RA ∧
             CertsR c.env d true (CT.instantiateLevelParams (List.range cus.length) cus) MA
 
@@ -335,7 +337,9 @@ recursor's (level-instantiated) type instantiated by the arguments before the ma
 constructor's levels equal `MD`'s head's levels, the constructor's parameters are pairwise
 definitionally equal to `MD`'s, and for an indexed family the residual indices of the
 constructor's type at the major's arguments are pairwise definitionally equal to `MD`'s
-indices. Answer `0`: no claim. -/
+indices. Answer `0`: no claim. Stated for the circuit after the fold-in regeneration, which
+compares the indices only when the residual's heap head is a constant (so its arguments are the
+image's); its path lemmas change at the pin. -/
 def iota_cmp : SpecFn := fun c args h r h' calls =>
   ∀ rc rt pre mi cty clvls cnp ma ni types,
     args = [rc, rt, pre, mi, cty, clvls, cnp, ma, ni, types] → Good c calls → c.rc h rc →
@@ -802,6 +806,7 @@ def se_mentions : SpecFn := fun c args h r h' calls =>
 at another node); nothing is allocated. -/
 def se_peel_tol : SpecFn := fun c args h r h' calls =>
   ∀ ty n, args = [ty, n] → Good c calls → ∀ m : F, n = .field m →
+    (∃ d Γ k T, c.tmk d Γ k h T ty) →
     h' = h ∧ ∃ ds, ForallChain h ty ds r ∧ ds.length ≤ ZMod.val m ∧
       (ds.length < ZMod.val m → NotForallNode h r)
 
@@ -821,8 +826,8 @@ inductive member's among them, when it is a block, and `[parent]` otherwise. -/
 def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
   ∀ par blk, args = [par, blk] → Good c calls →
     ∀ (p b : Bytes.Address), RepAddr h p par → RepAddr h b blk →
-      ∃ xs, RepList addrListEnum RepAddr h' xs r ∧
-        ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
+      ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
+        ∃ xs, RepList addrListEnum RepAddr h' xs r ∧
           (∀ ms, cb.info = .muts ms → ∀ i ind, ms[i]? = some (.indc ind) →
             ∃ a ∈ xs, ixAddr a = iprjAddr (ixAddr b) i) ∧
           ((∀ ms, cb.info ≠ .muts ms) → xs = [p])
