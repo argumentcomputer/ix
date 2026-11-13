@@ -75,13 +75,11 @@ theorem levels_length {us : List KLevel} {l r : SourceValue F} {h h' : Heap F}
     (xs := ls)
     (by rw [Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol]; exact ev)
     (by
-      first
-        | (rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]
-           have e : Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» =
-               IxVM.Refinement.KernelLevels.klevelListEnum := klevelListEnum_eq
-           rw [e]
-           exact rls)
-        | exact rls)
+      rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]
+      have e : Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» =
+          IxVM.Refinement.KernelLevels.klevelListEnum := klevelListEnum_eq
+      rw [e]
+      exact rls)
 
 /-! ### Levels read off a loaded cell -/
 
@@ -127,22 +125,19 @@ theorem lv_imax_of_load {h : Heap F} {l : KLevel} {p x y : SourceValue F} (rep :
 
 theorem eval_succ_ne_zero (φ : Nat → Nat) (a : KLevel) :
     Ix.Kernel.Level.eval φ (.succ a) ≠ 0 := by
-  have h1 : Ix.Kernel.Level.eval φ (.succ a) = Ix.Kernel.Level.eval φ a + 1 := by
-    first | rfl | simp only [Ix.Kernel.Level.eval]
+  have h1 : Ix.Kernel.Level.eval φ (.succ a) = Ix.Kernel.Level.eval φ a + 1 := rfl
   omega
 
 theorem not_all_zero_param (n : Nat) :
     ¬ ∀ φ : Nat → Nat, Ix.Kernel.Level.eval φ (.param n) = 0 := by
   intro hall
   have h2 : Ix.Kernel.Level.eval (fun _ => 1) (.param n) = 0 := hall _
-  have h1 : Ix.Kernel.Level.eval (fun _ => 1) (.param n) = 1 := by
-    first | rfl | simp [Ix.Kernel.Level.eval]
+  have h1 : Ix.Kernel.Level.eval (fun _ => 1) (.param n) = 1 := rfl
   exact Nat.one_ne_zero (h1.symm.trans h2)
 
 theorem eval_max_eq (φ : Nat → Nat) (a b : KLevel) :
     Ix.Kernel.Level.eval φ (.max a b) =
-      Max.max (Ix.Kernel.Level.eval φ a) (Ix.Kernel.Level.eval φ b) := by
-  first | rfl | simp only [Ix.Kernel.Level.eval]
+      Max.max (Ix.Kernel.Level.eval φ a) (Ix.Kernel.Level.eval φ b) := rfl
 
 theorem eval_max_ne_zero_left {φ : Nat → Nat} {a b : KLevel}
     (ha : Ix.Kernel.Level.eval φ a ≠ 0) : Ix.Kernel.Level.eval φ (.max a b) ≠ 0 := by
@@ -161,8 +156,7 @@ theorem eval_imax_ne_zero {φ : Nat → Nat} {a b : KLevel}
     (hb : Ix.Kernel.Level.eval φ b ≠ 0) : Ix.Kernel.Level.eval φ (.imax a b) ≠ 0 := by
   have e : Ix.Kernel.Level.eval φ (.imax a b) =
       if Ix.Kernel.Level.eval φ b = 0 then 0
-      else Max.max (Ix.Kernel.Level.eval φ a) (Ix.Kernel.Level.eval φ b) := by
-    first | rfl | simp only [Ix.Kernel.Level.eval]
+      else Max.max (Ix.Kernel.Level.eval φ a) (Ix.Kernel.Level.eval φ b) := rfl
   have hb' : ¬ (Ix.Kernel.Level.eval φ b = 0) := hb
   have h1 : Ix.Kernel.Level.eval φ (.imax a b) =
       Max.max (Ix.Kernel.Level.eval φ a) (Ix.Kernel.Level.eval φ b) := by
@@ -183,8 +177,7 @@ theorem eval_zero_of_answer {u l : KLevel} (hul : LvEq u l)
   intro φ
   have h1 := hul φ
   have h2 := IxVM.Refinement.KernelLevels.levelEqual_eq_true_sound hle φ
-  have h3 : Ix.Kernel.Level.eval φ Ix.Kernel.Level.zero = 0 := by
-    first | rfl | simp [Ix.Kernel.Level.eval]
+  have h3 : Ix.Kernel.Level.eval φ Ix.Kernel.Level.zero = 0 := rfl
   exact h1.trans (h2.trans h3)
 
 /-- **`level_equal(p, Zero) = 1` at a freshly stored `Zero` cell**: the level `p` represents is
@@ -237,7 +230,7 @@ theorem peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
   · -- no parameter left
     have hn0 : n = 0 := NatAux.field_inj hv14
     subst hn0 he16 he17
-    exact ⟨T, hT, by first | rfl | simp [Specs.Infer.instPis]⟩
+    exact ⟨T, hT, rfl⟩
   · -- one binder instantiated by the first parameter
     subst hc163
     obtain ⟨T0, B, ℓ, rfl, -, hB, -⟩ := hT.forallE_of_load ld34
@@ -255,9 +248,7 @@ theorem peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     have hval : ZMod.val n = ZMod.val (n - 1) + 1 := by omega
     refine ⟨T', hT', ?_⟩
     rw [hval]
-    first
-      | exact hpi
-      | simpa only [Specs.Infer.instPis] using hpi
+    exact hpi
 
 /-- `KernelInferOnly::io_peel_params_subst`: as `peel_params_subst`. -/
 theorem io_peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -272,7 +263,7 @@ theorem io_peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' 
       op161, ev130, hc163⟩
   · have hn0 : n = 0 := NatAux.field_inj hv14
     subst hn0 he16 he17
-    exact ⟨T, hT, by first | rfl | simp [Specs.Infer.instPis]⟩
+    exact ⟨T, hT, rfl⟩
   · subst hc163
     obtain ⟨T0, B, ℓ, rfl, -, hB, -⟩ := hT.forallE_of_load ld34
     obtain ⟨A, As', rfl, hA, hAs'⟩ := RepList.cons_of_load hAs ld70
@@ -289,9 +280,7 @@ theorem io_peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' 
     have hval : ZMod.val n = ZMod.val (n - 1) + 1 := by omega
     refine ⟨T', hT', ?_⟩
     rw [hval]
-    first
-      | exact hpi
-      | simpa only [Specs.Infer.instPis] using hpi
+    exact hpi
 
 /-! ## `proj_shape_ok` -/
 
@@ -561,14 +550,9 @@ theorem peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
     obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
     have htc : t0 = c0 := ProjAux.counter_eq op52
     subst htc
-    refine ⟨0, D, by omega, Tm.mono (ObsFn.heap_extends ev72) hD,
-      by first | rfl | simp [Specs.Infer.fieldTypeAt], fun hip => ?_⟩
-    have hg : Specs.Infer.SortZero c.env .full d D :=
-      ih.get (.infer .check_prop_field_if_prop) (by lt_calls) ev72 _ _ _ _ rfl
-        (good.sub fun x hx => by simp [hx]) hrc hip d Γ htypes D hD
-    first
-      | exact hg
-      | (simp only [Specs.Infer.PropGuards]; exact hg)
+    refine ⟨0, D, by omega, Tm.mono (ObsFn.heap_extends ev72) hD, rfl, fun hip => ?_⟩
+    exact ih.get (.infer .check_prop_field_if_prop) (by lt_calls) ev72 _ _ _ _ rfl
+      (good.sub fun x hx => by simp [hx]) hrc hip d Γ htypes D hD
   · -- a field passed: guard it, instantiate it by its projection, go on
     subst hc321 hm178
     obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
@@ -595,15 +579,11 @@ theorem peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
       (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hPE)
     rw [hc1] at hfield hguards
     refine ⟨n + 1, FT, by omega, hFT, ?_, fun hip => ?_⟩
-    · first
-        | exact hfield
-        | simpa only [Specs.Infer.fieldTypeAt] using hfield
+    · exact hfield
     · have hg : Specs.Infer.SortZero c.env .full d D ∨ B.looseBVarsBounded 0 = true :=
         ih.get (.infer .check_no_dep_data_field_if_prop) (by lt_calls) ev126 _ _ _ _ _ rfl
           (good.sub fun x hx => by simp [hx]) hrc hip d Γ htypes D B hD (by simpa using hB)
-      first
-        | exact And.intro hg (hguards hip)
-        | (simp only [Specs.Infer.PropGuards]; exact ⟨hg, hguards hip⟩)
+      exact And.intro hg (hguards hip)
 
 /-- `KernelInferOnly::io_peel_field_loop`: the projected field's type, without guards. -/
 theorem io_peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -621,7 +601,7 @@ theorem io_peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
     have htc : t0 = c0 := ProjAux.counter_eq op52
     subst htc
-    exact ⟨0, D, by omega, hD, by first | rfl | simp [Specs.Infer.fieldTypeAt]⟩
+    exact ⟨0, D, by omega, hD, rfl⟩
   · -- a field passed: instantiate it by its projection, go on
     subst hc197 hm78
     obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
@@ -645,8 +625,6 @@ theorem io_peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
       PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hPE)
     rw [hc1] at hfield
     refine ⟨n + 1, FT, by omega, hFT, ?_⟩
-    first
-      | exact hfield
-      | simpa only [Specs.Infer.fieldTypeAt] using hfield
+    exact hfield
 
 end IxVM.Refinement.Core
