@@ -29,7 +29,13 @@ side, or an equation's body) of each constant the roots reach, the annotator
    * a **type** when its type reduces to a Π-telescope ending in a sort;
    * **relevant** otherwise;
 
-   and gives each λ the zero condition of the sort of its body's type;
+   and gives each λ the zero condition of the sort of its body's type, asked
+   once per maximal run of λs, of the run's innermost body: by the Π rule
+   (`Π x : A, B` has sort `imax` of the two sorts, zero exactly when `B`'s is)
+   every λ of a run has that condition. Until 2026-11-13 the kernel was asked
+   at every λ, which cost each the work of the rest of its run; the two were
+   tested equal on the registered programs, not proved equal
+   (`IxCCTests/KernelFront/LamRuns.lean`);
 3. records the constants the term reaches in relevant positions, which joins
    them to the queue.
 
@@ -51,9 +57,12 @@ parameters (`Reading.backOf`); every condition is read back to IxCC's
 numbering before it is recorded.
 
 The kernel calls are the executed cached core (`Ix.Kernel.Cached.coreKnotI
-.verified`), threaded through one memo state; each call is bounded by the
-kernel's own fuel (`Ix.Kernel.checkFuel`). Every walk is bounded by a depth
-and a node budget. -/
+.verified`), threaded through one memo state (emptied when a sort question
+fails, `Ctx.sortCond`); each call is bounded by the kernel's own fuel
+(`Ix.Kernel.checkFuel`). Every walk is bounded by a depth and a node budget.
+Since the memo carries answers from call to call, an answer can depend on it
+where the fuel decides: the annotation is a function of the program, but it is
+not proved independent of the order in which the kernel is asked. -/
 
 namespace IxCC.Src.KernelFront
 
@@ -108,15 +117,19 @@ def Ctx.annotate (k : Ctx) (d : Nat) (e : KTerm) : AM KTerm :=
 
 /-- When a term whose (annotated) type is `ty` is a proof: the zero condition
 of `ty`'s sort. Only `ty`'s type is inferred and reduced to a sort; a failure
-counts as `never`, as before. -/
+counts as `never`, as before, and the walk continues with the empty memo (the
+state is only the kernel's memo). Keeping the state from before the call for
+that branch would make it shared during the call, and the kernel's memo would
+then copy its whole table at its first insertion: one copy per new type, of a
+memo that grows with the program. -/
 def Ctx.sortCond (k : Ctx) (d : Nat) (ty : KTerm) : AM PropWhen := fun s =>
   match k.core.infer d ty s with
-  | .error _ => .ok (.never, s)
+  | .error _ => .ok (.never, {})
   | .ok (t, s₁) =>
     match k.core.whnf d t s₁ with
     | .ok (.sort u, s₂) => .ok (condOfLevel k.back u, s₂)
     | .ok (_, s₂) => .ok (.never, s₂)
-    | .error _ => .ok (.never, s₁)
+    | .error _ => .ok (.never, {})
 
 /-- Whether an (annotated) type reduces to a Π-telescope ending in a sort. -/
 def Ctx.endsInSort (k : Ctx) : Nat → Nat → KTerm → AM Bool
@@ -156,7 +169,8 @@ def Ctx.classifyTerm (k : Ctx) (d : Nat) (e : KTerm) : AM Rel := fun s =>
     | .ok (t, s₂) => k.classifyAnnotated d t s₂
 
 /-- A λ's `propWhen` from its opened body (a read term at depth `d`): the λ's
-type is a proof exactly when the sort of the body's type is zero. -/
+type is a proof exactly when the sort of the body's type is zero. `walk` asks
+it once per run of λs, of the run's innermost body (`openLams`). -/
 def Ctx.propWhenOf (k : Ctx) (d : Nat) (body : KTerm) : AM PropWhen := do
   let b' ← k.annotate d body
   let bty ← kcall "inference" (k.core.infer d b')
@@ -189,12 +203,31 @@ structure Acc where
   projs : Array CId := #[]
   nodes : Nat := 0
 
+/-- The innermost body of the run of λs at the head of `e` (a read term at depth
+`d`) and its depth, each binder opened as `walk` opens it (a free variable at
+its depth whose type is the binder's annotated domain); `e` itself when it is
+not a λ. -/
+def Ctx.openLams (k : Ctx) : Nat → Nat → KTerm → AM (Nat × KTerm)
+  | 0, _, _ => throw "relevance annotator: depth budget exhausted"
+  | fuel + 1, d, e =>
+    match e with
+    | .lam kty kbody _ => do
+      let kty' ← k.annotate d kty
+      k.openLams fuel (d + 1) (kbody.instantiate1 (.fvar d kty'))
+    | _ => pure (d, e)
+
 /-- Walk the positions of a Src term that are relevant at some instance, with
 the kernel's reading of the term at depth `d` (outer λ binders opened as free
-variables, outer lets substituted). -/
-def walk (p : Program) (k : Ctx) : Nat → Nat → Term → KTerm → Acc → AM Acc
-  | 0, _, _, _, _ => throw "relevance annotator: depth budget exhausted"
-  | fuel + 1, d, t, e, acc => do
+variables, outer lets substituted). `run` is the `propWhen` of the run of λs
+the term continues (`some` only in the body of a λ): each λ of a run gets the
+one zero condition its innermost body's type gives (`propWhenOf`, asked once
+per run). A λ is a proof exactly when its body is, so by the Π rule (the sort of
+`Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is) every λ of a
+run has the innermost λ's condition; asking at every λ instead cost each the
+work of the rest of its run. -/
+def walk (p : Program) (k : Ctx) : Nat → Nat → Term → KTerm → Option PropWhen → Acc → AM Acc
+  | 0, _, _, _, _, _ => throw "relevance annotator: depth budget exhausted"
+  | fuel + 1, d, t, e, run, acc => do
     let acc := { acc with nodes := acc.nodes + 1 }
     if acc.nodes > nodeBudget then throw "relevance annotator: node budget exhausted"
     match t, e with
@@ -202,22 +235,26 @@ def walk (p : Program) (k : Ctx) : Nat → Nat → Term → KTerm → Acc → AM
       let r := honourErased b.contract (← k.classifyType d kty)
       let kty' ← k.annotate d kty
       let kb := kbody.instantiate1 (.fvar d kty')
-      let pw ← k.propWhenOf (d + 1) kb
-      walk p k fuel (d + 1) body kb { acc with tags := acc.tags.push (.lam r pw) }
+      let pw ← match run with
+        | some pw => pure pw
+        | none => do
+          let (d', inner) ← k.openLams fuel (d + 1) kb
+          k.propWhenOf d' inner
+      walk p k fuel (d + 1) body kb (some pw) { acc with tags := acc.tags.push (.lam r pw) }
     | .app f a _ _, .app kf ka => do
-      let acc ← walk p k fuel d f kf acc
+      let acc ← walk p k fuel d f kf none acc
       let r ← k.classifyTerm d ka
       let (head, args) := Term.spine t
       let r := if erasedAt p head (args.length - 1) then honourErased .erased r else r
       let acc := { acc with tags := acc.tags.push (.arg r) }
-      if r.alwaysIrr then pure acc else walk p k fuel d a ka acc
+      if r.alwaysIrr then pure acc else walk p k fuel d a ka none acc
     | .letE c _ _ v body, .letE kty kv kbody _ => do
       let r := honourErased c.binder (← k.classifyType d kty)
       let acc := { acc with tags := acc.tags.push (.letE r) }
-      let acc ← if r.alwaysIrr then pure acc else walk p k fuel d v kv acc
+      let acc ← if r.alwaysIrr then pure acc else walk p k fuel d v kv none acc
       -- the kernel's annotation pass reduces a `let` by substituting its value
-      walk p k fuel d body (kbody.instantiate1 kv) acc
-    | .proj s _ e', .proj _ _ kv => walk p k fuel d e' kv { acc with projs := acc.projs.push s }
+      walk p k fuel d body (kbody.instantiate1 kv) none acc
+    | .proj s _ e', .proj _ _ kv => walk p k fuel d e' kv none { acc with projs := acc.projs.push s }
     | .const c _, .const .. => pure { acc with refs := acc.refs.push c }
     -- a λ-bound variable is a free variable; a let-bound one is the let's value
     | .var _, _ => pure acc
@@ -343,7 +380,7 @@ def annotateRun (p : Program) (rd : Reading) (core : Ix.Kernel.Cached.CoreFnsI .
     for key in p.runtimeKeys c do
       let some t := p.termOf key | throw "relevance annotator: missing runtime term"
       let (e, lps) ← (kernelTermOf p rd key t : Except String _)
-      let acc ← walk p { core, back := backOf lps } depthBudget 0 t e {}
+      let acc ← walk p { core, back := backOf lps } depthBudget 0 t e none {}
       nodes := nodes.push (key, acc.tags)
       queue := queue ++ acc.refs
       for s in acc.projs do ctorQueue := ctorQueue ++ ctorsOf p s

@@ -803,20 +803,45 @@ ownership checker's own, which the captured-work budget bounds
   grows 1.4 to 2.2 times when the program doubles, from 524,277 parameters (2,398 functions) to
   1,048,549 (4,793): together about 4 s at half the limit and 7 s at it; so the limit is checked
   where the parameter total is first known and after linear work only. What it does not bound is
-  listed in the next four items.
-- Open: the relevance check against the canonical annotator (Stage A,
+  listed in the next items (the first of them fixed since).
+- The relevance check against the canonical annotator (Stage A,
   `Recheck.checkCanonicalRelevance`: `Src.KernelFront.Kernel.annotateChecked`, the kernel
-  annotator and `checkReachedTypes`, rerun on the certificate's table and compared) is
+  annotator and `checkReachedTypes`, rerun on the certificate's table and compared) was
   superlinear in the reached source. It runs on the source program, before any Fir program
   exists, on every `ixcc compile` and `check-cert` input (`Cli.checkText`, `check-cert`'s verifier,
   which `compile` runs on the text it writes since the producer's read-back landed) and in the
   claim verifiers (`CompileClaim.checkCertCanonicalRelevance`, Ring0), on both routes; the producer
-  runs the same annotator, so on such inputs a compile pays it twice. On the generated inputs (P parameters per function, F
-  functions reached): 11.0 s at (P, F) = (110, 2,398), 33.4 s at (220, 2,398), 35.5 s at
-  (110, 4,793), 102.8 s at (220, 4,793), a factor of three when either doubles; a sum
-  α·F·P² + β·F²·P fits within the box's noise. The parameter limit cannot bound it (it runs
-  first, on another program); only ingress's object table (16,384 entries) and the term depth do.
-  Its cause is not yet located.
+  runs the same annotator, so on such inputs a compile paid it twice. On the generated inputs (P
+  parameters per function, F functions reached): 11.0 s at (P, F) = (110, 2,398), 33.4 s at
+  (220, 2,398), 35.5 s at (110, 4,793), 102.8 s at (220, 4,793). Fixed (2026-11-13). The cause
+  (profiled, then confirmed by copies of the annotator with one change each): at every λ the
+  annotator asked the kernel about the rest of the λ's run (annotation, two inferences and a
+  reduction of the telescope of the remaining binders: F·P²), which also filled the
+  program-wide memo with the telescope's suffixes; and `Ctx.sortCond` kept the state from before
+  each of its calls for its failure branch, so the kernel copied that whole memo at its first
+  insertion (about one new type per function: F²·P). The annotator now asks once per maximal
+  run of λs, of the run's innermost body, and gives every λ of the run that condition (the Π
+  rule: the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), and
+  `sortCond` continues with the empty memo after a failed question. Tested equal to the former
+  definition, not proved equal: on every committed closure the kernel accepts (59 programs,
+  40,005 λ tags, 19,298 with a condition other than `never`), on adversarial runs (η-short
+  bodies, runs broken by a `let` or a β-redex, universe-polymorphic runs at `Sort u`,
+  `Sort (max u v)` both ways round and `imax`, an always-proof body, a λ inside a type, a run of
+  102 binders, a large eliminator's rules), on the erased-parameter programs and on the four
+  generated inputs: the same annotation everywhere (`IxCCTests/KernelFront/LamRuns.lean`).
+  Measured in one process each on the build box, on the kernel's telescope fix (which alone took
+  the first cell from 11.4 s to 9.9 s), the former definition against the new one: 9.9 s → 0.56 s
+  at (110, 2,398), 28.6 s → 1.02 s at (220, 2,398), 29.6 s → 1.08 s at (110, 4,793), 113.5 s →
+  2.18 s at (220, 4,793); what remains grows about as F·P (×1.8 when P doubles, ×1.9 when F
+  doubles, ×3.9 when both do). `check-cert` end to end on the last cell's zero-RC certificate:
+  16.5 s and 1.9 GB (104 s and 12.1 GB before). Over the committed closures the annotator takes
+  0.94 s against 2.99 s.
+- Open: the annotator's λ conditions rest on a fact about the kernel core's inference (the Π
+  rule's zero condition, above) that IxCC does not prove; the progress proof can discharge it on
+  the model's side. Recorded as the direction once binder data enters the record format with the
+  #678 ingest: reading each λ's condition from the datum the kernel's own annotation pass writes
+  and its inference validates (`BinderMeta.pw`, the zero condition of the binder's codomain) in
+  place of asking the kernel's inference.
 - Open: `RcReplay`'s plain-RC back end after admission has a per-function quadratic term:
   `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
   (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map

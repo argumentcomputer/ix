@@ -349,10 +349,26 @@ the position:
   sort;
 - **relevant**: otherwise;
 
-and gives each λ the zero condition of the sort of its body's type. The
-kernel's binder datum (`BinderMeta.pw`) is the zero condition of a binder's
-*codomain*, so the annotator asks about domains and arguments instead of
-reading it. A binder written erased stays irrelevant whatever its type, as
+and gives each λ the zero condition of the sort of its body's type. It asks
+that once per maximal run of λs, of the run's innermost body, and gives every
+λ of the run that condition: the sort of `Π x : A, B` is `imax` of the two
+sorts, which is zero exactly when `B`'s is, so each λ of a run has its
+innermost λ's condition. Until 2026-11-13 it asked at every λ, which cost each
+the work of the rest of its run (quadratic in a function's parameters) and
+filled the program-wide memo with the telescope's suffixes. The two
+definitions are tested equal (`IxCCTests/KernelFront/LamRuns.lean`, against the
+former one kept as a test-only reference), not proved equal: the Π-rule fact
+is about the kernel core's inference and is not proved in IxCC. The memo
+state threads through every kernel call of the walk; `sortCond`, whose
+failure counts as `never`, continues with the empty memo after a failed
+question (until 2026-11-13 it kept the state from before the call, which made
+the kernel copy its whole memo at its next insertion). The kernel's binder
+datum (`BinderMeta.pw`) is the zero condition of a binder's *codomain*, which
+is what a λ's condition is; the annotator asks the kernel's inference instead
+of reading it, since the datum the reader gives is the producer's. Reading the
+datum the kernel's own annotation pass writes (and its inference validates) is
+the recorded direction once binder data enters the record format with the
+#678 ingest ([roadmap](roadmap.md#hardening)). A binder written erased stays irrelevant whatever its type, as
 before. Constant and constructor classes come from the kernel reader's types
 the same way.
 

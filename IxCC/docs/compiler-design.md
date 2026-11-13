@@ -428,7 +428,7 @@ soon as it passes one of these fixed budgets
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
 | `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 54,727,677 bytes, since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
-| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection; each is measured and open in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
+| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection; each is measured in the roadmap, the last three open | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
 (172 measured, 2026-11-11), which also checks every walk against the visit
@@ -784,6 +784,27 @@ constant is marked relevant, proof or type.
 - Only two facts are soundness premises: every node is tagged, and every
   dropped constructor field is built from an irrelevant argument. The
   other checks give early, precise rejection.
+
+**What the annotator computes.** The annotation is the kernel annotator's
+(`Src.KernelFront.annotate`, [kernel front end](kernel-front-end-design.md#the-annotation)):
+each binder, argument and let classified from the kernel core's inference at
+its position, and each λ given the zero condition of the sort of its body's
+type. Since 2026-11-13 that condition is asked once per maximal run of λs, of
+the run's innermost body, and given to every λ of the run; until then it was
+asked at every λ, at the cost of the rest of the run each time. The change
+rests on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero
+exactly when `B`'s is): it was tested equal to the former definition on every
+committed closure, the erased-parameter programs and adversarial runs
+(`IxCCTests/KernelFront/LamRuns.lean`), not proved equal. It alters only the λ
+tags' conditions (`Binder.propWhen`, read by `Relevance.check`'s S1 and C6,
+`checkCanonical`'s skip of a proof λ's body, `Src.Runtime`, `Src.Semantics` and
+`Src.Admit`); every other class is computed as before. Unproved about the
+annotator in general: that its classes are the kernel's typing judgements
+(each class is proved to be the kernel core's answer at its position,
+`KernelFront.Ctx.classify*_proof`, not composed into the judgements); that its
+output does not depend on the order in which it asks (the kernel's memo carries
+answers between calls, and where the kernel's fuel decides an answer the order
+could); and the Π-rule fact above.
 
 **Why a wrong annotation is safe.** Marking a position irrelevant only makes
 evaluation lazier, and the structural checks prevent erased code from

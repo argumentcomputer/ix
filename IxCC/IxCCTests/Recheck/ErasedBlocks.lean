@@ -30,7 +30,10 @@ stored rule's binder data); the mutual and nested ones are the committed closure
 `fixtures/ixon-v4/erased-blocks` (`ix compile`), with the field written erased below the kernel,
 as a kernel that sees no mode accepts it (today's kernel refuses a field written erased in a
 mutual block, at the constructor). Outcomes before the checks: `plans/resource-cert/L1.md` (the
-lead's tree, engineer RL). -/
+lead's tree, engineer RL).
+
+Every program ingested here is also annotated by the annotator's per-λ reference and must get the
+same annotation as from the kernel annotator (`KernelFront.LamRuns.agree`). -/
 
 namespace IxCCTests.Recheck.ErasedBlocks
 
@@ -177,6 +180,7 @@ def tProg (fc rfc : BinderContract) : IO TProg := do
 def kernelThenRefused (a : Assert) (label : String) (pr : TProg) (needles : Src.Program → Src.CId → List String) :
     IO (Src.Program × Src.CId × String) := do
   let inp ← ofErr s!"{label}: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write pr.env) (sidecar pr.roots) [])
+  IxCCTests.KernelFront.LamRuns.agree label inp
   let P := inp.program
   let rId ← lookup P pr.tRec "T.rec"
   let ns := needles P rId
@@ -265,6 +269,7 @@ def load (name : String) : IO Loaded := do
   let sc ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (blocksDir / "blocks.equations.json")))
   let chosen := [s!"ErasedBlocks.{name}", "ErasedBlocks.r0", "ErasedBlocks.r1", "ErasedBlocks.r2"]
   let inp ← ofErr s!"{name}: ingress" (Recheck.ingress raw sc chosen)
+  IxCCTests.KernelFront.LamRuns.agree name inp
   let cfg := Recheck.Config.forInput {} inp
   let P := inp.program
   let some (_, main) := P.roots.head? | throw (IO.userError s!"{name}: no root")
