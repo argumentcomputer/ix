@@ -61,7 +61,11 @@ only when `ix` named one, `theorems`: a theorem named with its subject and a kin
 fixed-width word operation and its stored equation (stage W1 of
 [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)), which nothing in a program
 refers to, so a reader that reads only what a program reaches finds it here; `csimp` theorems
-are to use the same list. `ix` writes word theorems only with `--word-equations`, which no family uses yet (the words fixture, `pin-src-tables --words`, does); the rebuild copies the list from `ix compile --equations`'s output
+are to use the same list. `ix compile` writes word theorems by default with its equations, for
+the word operations the roots reach outside types and theorems (data-and-roots-design.md, DR2,
+"Which word operations get equations"): among the registered families only `phase1-decline`'s
+`panic` and `strings` list some (their string code runs `Char` and UTF-8 operations); the words
+fixture, `pin-src-tables --words`, has 68; the rebuild copies the list from `ix compile --equations`'s output
 (`ix/compile-equations/2`: `equations`, `theorems` with `kind`, `subject`, `theorem`, and
 `failures`, by name).
 

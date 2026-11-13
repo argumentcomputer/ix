@@ -219,9 +219,12 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
   return ({ resolve, recKind, lazy, inline, opaqueByValue }, diags, stats)
 
 /-- How a program gets its word entries, named once for every word hint (`wordHints`,
-`wordHintLine`) and the tests: `ix compile`'s flags as they are today. -/
+`wordHintLine`) and the tests: `ix compile` adds the word equations by default for a selected
+closure. -/
 def wordEquationsAdvice : String :=
-  "compile the closure with `ix compile --equations --word-equations`"
+  "recompile the closure with `ix compile`, which adds the word equations by default for a \
+  selected closure (not with `--no-equations` or `--no-word-equations`; a whole environment needs \
+  `--equations`)"
 
 /-- **The word hints** (stage W1), after admission: a `hint` for each pinned primitive word
 operation the admitted program reaches in a runtime term (`reached`, `Admitted.reached`) without a
