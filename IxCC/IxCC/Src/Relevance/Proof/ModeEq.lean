@@ -534,19 +534,280 @@ theorem resolveOf_cases (hme : Program.ModeEq p₀ p) (c : CId) :
   | refl => left; rfl
   | eqn thm hb => right; exact ⟨_, _, _, rfl, rfl, hb⟩
 
-theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.short c := sorry
+theorem RulesModeEq.symm' {rs rs' : List Rule} (h : RulesModeEq rs rs') : RulesModeEq rs' rs :=
+  ⟨h.1.symm, fun j r r' h₁ h₂ => by
+    obtain ⟨hc, hf, hm⟩ := h.2 j r' r h₂ h₁
+    exact ⟨hc.symm, hf.symm, ME.symm hm⟩⟩
+
+theorem Program.ModeEq.symm' {q q' : Program} (h : Program.ModeEq q q') : Program.ModeEq q' q := by
+  refine ⟨h.size.symm, h.roots.symm, h.known.symm, h.resource.symm, h.recKind.symm, h.lazy.symm,
+    h.inline.symm, h.opaqueByValue.symm, fun c => ?_, fun c => ?_⟩
+  · have hr := h.resolve c
+    generalize q.table.resolveOf c = r₀ at hr ⊢
+    generalize q'.table.resolveOf c = r at hr ⊢
+    cases hr with
+    | refl => exact .refl _
+    | eqn thm hb => exact .eqn thm (ME.symm hb)
+  · have he := h.entry c
+    generalize q.entry? c = e₀ at he ⊢
+    generalize q'.entry? c = e at he ⊢
+    cases e₀ <;> cases e
+    · trivial
+    · exact he.elim
+    · exact he.elim
+    · obtain ⟨hr, ha, hd⟩ := he
+      refine ⟨hr.symm, ha.symm, ?_⟩
+      rename_i a b
+      generalize a.decl = d₀ at hd ⊢
+      generalize b.decl = d at hd ⊢
+      cases hd with
+      | refl => exact .refl _
+      | defn k s l ty hv => exact .defn k s l ty (ME.symm hv)
+      | recr sf kk l np nmot nmin ni ind ty hr' => exact .recr sf kk l np nmot nmin ni ind ty (RulesModeEq.symm' hr')
+
+/-! ### Rules, declarations and table entries, by how they relate -/
+
+/-- Rule lists equal up to the modes of their right-hand sides (`RulesModeEq`, as a list relation). -/
+inductive RulesME : List Rule → List Rule → Prop
+  | nil : RulesME [] []
+  | cons {r r' : Rule} {rs rs' : List Rule} : r.ctor = r'.ctor → r.fields = r'.fields →
+      ME r.rhs r'.rhs → RulesME rs rs' → RulesME (r :: rs) (r' :: rs')
+
+theorem RulesME.refl : ∀ rs : List Rule, RulesME rs rs
+  | [] => .nil
+  | r :: rs => .cons rfl rfl (Term.ModeEq.refl r.rhs) (RulesME.refl rs)
+
+theorem RulesME.of : ∀ {rs rs' : List Rule}, RulesModeEq rs rs' → RulesME rs rs'
+  | [], [], _ => .nil
+  | [], _ :: _, h => absurd h.1 (by simp)
+  | _ :: _, [], h => absurd h.1 (by simp)
+  | r :: rs, r' :: rs', h => by
+    obtain ⟨hc, hf, hm⟩ := h.2 0 r r' rfl rfl
+    exact .cons hc hf hm (RulesME.of ⟨by simpa using h.1,
+      fun j a b ha hb => h.2 (j + 1) a b (by simpa using ha) (by simpa using hb)⟩)
+
+theorem RulesME.length_eq {rs rs' : List Rule} (h : RulesME rs rs') : rs.length = rs'.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ _ _ ih => simp [ih]
+
+theorem RulesME.getElem? {rs rs' : List Rule} (h : RulesME rs rs') : ∀ j : Nat,
+    (rs[j]? = none ∧ rs'[j]? = none) ∨
+    ∃ r r', rs[j]? = some r ∧ rs'[j]? = some r' ∧ r.ctor = r'.ctor ∧ r.fields = r'.fields ∧
+      ME r.rhs r'.rhs := by
+  induction h with
+  | nil => intro j; left; simp
+  | cons hc hf hm _ ih =>
+    intro j
+    cases j with
+    | zero => right; exact ⟨_, _, rfl, rfl, hc, hf, hm⟩
+    | succ j => simpa using ih j
+
+/-- The per-rule premise of the list lemmas: `F₀` and `F` agree on related rules. -/
+abbrev RulesAgree {β : Type} (F₀ F : Rule → β) : Prop :=
+  ∀ r r', r.ctor = r'.ctor → r.fields = r'.fields → ME r.rhs r'.rhs → F₀ r = F r'
+
+theorem RulesME.map {β : Type} {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → β}
+    (hF : RulesAgree F₀ F) : rs.map F₀ = rs'.map F := by
+  induction h with
+  | nil => rfl
+  | cons hc hf hm _ ih => simp only [List.map_cons, hF _ _ hc hf hm, ih]
+
+theorem RulesME.any {rs rs' : List Rule} (h : RulesME rs rs') {F₀ F : Rule → Bool}
+    (hF : RulesAgree F₀ F) : rs.any F₀ = rs'.any F := by
+  induction h with
+  | nil => rfl
+  | cons hc hf hm _ ih => simp only [List.any_cons, hF _ _ hc hf hm, ih]
+
+theorem RulesME.zipIdx_filterMap {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
+    {F₀ F : Rule × Nat → Option β} (hF : ∀ k, RulesAgree (fun r => F₀ (r, k)) (fun r => F (r, k))) :
+    ∀ n : Nat, (rs.zipIdx n).filterMap F₀ = (rs'.zipIdx n).filterMap F := by
+  induction h with
+  | nil => intro n; rfl
+  | cons hc hf hm _ ih =>
+    intro n
+    simp only [List.zipIdx_cons, List.filterMap_cons, ih (n + 1)]
+    rw [show F₀ (_, n) = F (_, n) from hF n _ _ hc hf hm]
+
+theorem RulesME.zipIdx_findSome? {β : Type} {rs rs' : List Rule} (h : RulesME rs rs')
+    {F₀ F : Rule × Nat → Option β} (hF : ∀ k, RulesAgree (fun r => F₀ (r, k)) (fun r => F (r, k))) :
+    ∀ n : Nat, (rs.zipIdx n).findSome? F₀ = (rs'.zipIdx n).findSome? F := by
+  induction h with
+  | nil => intro n; rfl
+  | cons hc hf hm _ ih =>
+    intro n
+    simp only [List.zipIdx_cons, List.findSome?_cons, ih (n + 1)]
+    rw [show F₀ (_, n) = F (_, n) from hF n _ _ hc hf hm]
+
+/-- How the declarations of a constant on two programs equal up to modes relate. -/
+inductive DeclME : Option Decl → Option Decl → Prop
+  | none : DeclME none none
+  | same (d : Decl) : DeclME (some d) (some d)
+  | defn (k : Ixon.DefKind) (s : Ixon.DefinitionSafety) (l : Nat) (ty : Term) {v v' : Term} :
+      ME v v' → DeclME (some (.defn k s l ty v)) (some (.defn k s l ty v'))
+  | recr (sf kk : Bool) (l np nmot nmin ni : Nat) (ind : CId) (ty : Term) {rs rs' : List Rule} :
+      RulesME rs rs' →
+      DeclME (some (.recr sf kk l np nmot nmin ni ind rs ty)) (some (.recr sf kk l np nmot nmin ni ind rs' ty))
+
+theorem decl?_me (hme : Program.ModeEq p₀ p) (c : CId) : DeclME (p₀.decl? c) (p.decl? c) := by
+  rcases decl?_cases hme c with h | ⟨k, s, l, ty, v, v', h₀, h, hv⟩ |
+      ⟨sf, kk, l, np, nmot, nmin, ni, ind, rs, rs', ty, h₀, h, hr⟩
+  · rw [h]
+    cases p.decl? c with
+    | none => exact .none
+    | some d => exact .same d
+  · rw [h₀, h]; exact .defn k s l ty hv
+  · rw [h₀, h]; exact .recr sf kk l np nmot nmin ni ind ty (RulesME.of hr)
+
+/-- Split on how `p₀.decl? c` and `p.decl? c` relate, generalizing both. -/
+macro "decl_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+  `(tactic| (have hd := decl?_me $hme $c
+             generalize Program.decl? $p₀ $c = d₀ at hd ⊢
+             generalize Program.decl? $p $c = d at hd ⊢
+             cases hd))
+
+/-- `decl_me`, and the same declaration split by its kind. -/
+macro "decl_me! " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+  `(tactic| (have hd := decl?_me $hme $c
+             generalize Program.decl? $p₀ $c = d₀ at hd ⊢
+             generalize Program.decl? $p $c = d at hd ⊢
+             rcases hd with _ | ⟨_ | _ | _ | _ | _ | _⟩ | _ | _))
+
+/-- Split on how `p₀.table.resolveOf c` and `p.table.resolveOf c` relate, generalizing both. -/
+macro "res_me " p₀:term:max p:term:max hme:term:max c:term:max : tactic =>
+  `(tactic| (have hr := Program.ModeEq.resolve $hme $c
+             generalize Table.resolveOf (Program.table $p₀) $c = r₀ at hr ⊢
+             generalize Table.resolveOf (Program.table $p) $c = r at hr ⊢
+             cases hr))
+
+theorem ctorFieldsIs_eq (hme : Program.ModeEq p₀ p) (c n : Nat) :
+    ctorFieldsIs p₀ c n = ctorFieldsIs p c n := by
+  unfold ctorFieldsIs
+  decl_me p₀ p hme c <;> rfl
+
+theorem onlyCtor?_eq (hme : Program.ModeEq p₀ p) (s : CId) : onlyCtor? p₀ s = onlyCtor? p s := by
+  unfold onlyCtor?
+  decl_me p₀ p hme s <;> rfl
+
+theorem fieldWrittenErased_eq (hme : Program.ModeEq p₀ p) (k i : Nat) :
+    fieldWrittenErased p₀ k i = fieldWrittenErased p k i := by
+  unfold fieldWrittenErased
+  decl_me p₀ p hme k <;> rfl
+
+theorem ctorProfile_eq (hme : Program.ModeEq p₀ p) (r : CId) (q : Profile) :
+    ctorProfile p₀ r q = ctorProfile p r q := by
+  simp only [ctorProfile, Program.majorUnivs]
+  decl_me p₀ p hme r <;> rfl
+
+theorem specialHead?_eq (hme : Program.ModeEq p₀ p) (c : CId) : specialHead? p₀ c = specialHead? p c := by
+  unfold specialHead?
+  decl_me p₀ p hme c <;> res_me p₀ p hme c <;> rfl
+
+theorem appliedAt_eq (hme : Program.ModeEq p₀ p) (c pos : Nat) : appliedAt p₀ c pos = appliedAt p c pos := by
+  unfold appliedAt
+  rw [specialHead?_eq hme]
+  res_me p₀ p hme c
+  · rename_i ro
+    rcases ro with _ | ⟨_ | _ | _ | r | _⟩ <;> try rfl
+    dsimp only
+    decl_me p₀ p hme r <;> rfl
+  · rfl
+
+theorem headArityOf_eq' (hme : Program.ModeEq p₀ p) (h : Head) : headArityOf p₀ h = headArityOf p h := by
+  cases h with
+  | ctor c => simp only [headArityOf]; decl_me p₀ p hme c <;> rfl
+  | recr r => simp only [headArityOf]; decl_me p₀ p hme r <;> rfl
+  | cases c =>
+    simp only [headArityOf]
+    res_me p₀ p hme c
+    · rename_i ro
+      rcases ro with _ | ⟨_ | _ | _ | r | _⟩ <;> try rfl
+      dsimp only
+      decl_me p₀ p hme r <;> rfl
+    · rfl
+  | _ => rfl
+
+theorem headReadsWith_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
+    headReadsWith p₀.decl? p₀.table.resolveOf h i = headReadsWith p.decl? p.table.resolveOf h i := by
+  cases h with
+  | ctor c => simp only [headReadsWith]; decl_me p₀ p hme c <;> rfl
+  | cases c =>
+    simp only [headReadsWith]
+    res_me p₀ p hme c
+    · rename_i ro
+      rcases ro with _ | ⟨_ | _ | _ | r | _⟩ <;> try rfl
+      dsimp only
+      decl_me p₀ p hme r <;> rfl
+    · rfl
+  | _ => rfl
+
+theorem readsAt_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) (i : Nat) :
+    readsAt p₀ ann c h i = readsAt p ann c h i := by
+  unfold readsAt
+  rw [headArityOf_eq' hme, headReadsWith_eq hme, hme.known]
+  cases h <;> decl_me p₀ p hme c <;> rfl
+
+theorem readsAt_fun_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) (h : Head) :
+    readsAt p₀ ann c h = readsAt p ann c h := funext (readsAt_eq hme ann c h)
+
+theorem readerName_eq (hme : Program.ModeEq p₀ p) (h : Head) (i : Nat) :
+    readerName p₀ h i = readerName p h i := by
+  simp only [readerName, headArityOf_eq' hme]
+
+theorem readsErased?_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) :
+    readsErased? p₀ ann c = readsErased? p ann c := by
+  simp only [readsErased?, specialHead?_eq hme, readsAt_fun_eq hme, readerName_eq hme]
+  decl_me p₀ p hme c <;> rfl
+
+theorem short_eq (hme : Program.ModeEq p₀ p) (c : CId) : p₀.short c = p.short c := by
+  have he := hme.entry c
+  simp only [Program.short, Program.addr]
+  generalize p₀.entry? c = e₀ at he ⊢
+  generalize p.entry? c = e at he ⊢
+  cases e₀ <;> cases e
+  · rfl
+  · exact he.elim
+  · exact he.elim
+  · obtain ⟨-, ha, -⟩ := he
+    simp only [Option.map_some, ha]
+
+theorem ruleDispatch_me (hme : Program.ModeEq p₀ p) (r : CId) {rule rule' : Rule}
+    (hf : rule.fields = rule'.fields) (hm : ME rule.rhs rule'.rhs) :
+    ruleDispatch p₀ r rule = ruleDispatch p r rule' := by
+  unfold ruleDispatch
+  rw [hf]
+  decl_me! p₀ p hme r <;> try rfl
+  all_goals
+    rename_i np nmot nmin _ _ _ _
+    sorry
+
 theorem elimShape?_eq (hme : Program.ModeEq p₀ p) (c : CId) : elimShape? p₀ c = elimShape? p c := sorry
 theorem ruleCtorFields_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (r j : Nat) :
-    ruleCtorFields p₀ ann r j = ruleCtorFields p ann r j := sorry
-theorem ctorProfile_eq (hme : Program.ModeEq p₀ p) (r : CId) (q : Profile) :
-    ctorProfile p₀ r q = ctorProfile p r q := sorry
-theorem onlyCtor?_eq (hme : Program.ModeEq p₀ p) (s : CId) : onlyCtor? p₀ s = onlyCtor? p s := sorry
-theorem fieldWrittenErased_eq (hme : Program.ModeEq p₀ p) (k i : Nat) :
-    fieldWrittenErased p₀ k i = fieldWrittenErased p k i := sorry
+    ruleCtorFields p₀ ann r j = ruleCtorFields p ann r j := by
+  unfold ruleCtorFields
+  decl_me p₀ p hme r <;> try rfl
+  rename_i hr
+  rcases hr.getElem? j with ⟨h₁, h₂⟩ | ⟨a, b, h₁, h₂, hc, -, -⟩
+  · simp [h₁, h₂]
+  · simp [h₁, h₂, hc]
+
 theorem erasedMinors_eq (hme : Program.ModeEq p₀ p) (shape : ElimShape) :
-    erasedMinors p₀ shape = erasedMinors p shape := sorry
-theorem readsErased?_eq (hme : Program.ModeEq p₀ p) (ann : Ann) (c : CId) :
-    readsErased? p₀ ann c = readsErased? p ann c := sorry
+    erasedMinors p₀ shape = erasedMinors p shape := by
+  unfold erasedMinors
+  simp only [fieldWrittenErased_eq hme]
+  have hF : RulesAgree
+      (fun rule => match p₀.decl? rule.ctor with
+        | some (.ctor _ _ _ _ _ nf _) => (List.range nf).any (fieldWrittenErased p rule.ctor ·)
+        | _ => false)
+      (fun rule => match p.decl? rule.ctor with
+        | some (.ctor _ _ _ _ _ nf _) => (List.range nf).any (fieldWrittenErased p rule.ctor ·)
+        | _ => false) := by
+    intro a b hc _ _
+    simp only [hc]
+    decl_me p₀ p hme b.ctor <;> rfl
+  decl_me! p₀ p hme shape.recr <;> try rfl
+  · exact (RulesME.refl _).any hF
+  · rename_i hr; exact hr.any hF
 theorem forwardsErased?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
     forwardsErased? p₀ r = forwardsErased? p r := sorry
 theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
@@ -742,11 +1003,23 @@ def finErrs (p : Program) (ch : Checked) : List RelError :=
   ch.reached.filterMap fun c =>
     match p.table.resolveOf c, p.known.finMk with
     | some (.word ..), some fin =>
-      if ch.keepsP fin [] 1 then
+      if !Check.Canonical.ctorFieldsIs p fin 2 then
+        some (RelError.of "S1" "a word operation builds Fin.mk's value with two fields, but the \
+          pinned Fin.mk is not a constructor of two fields" (some fin))
+      else if ch.keepsP fin [] 1 then
         some (RelError.of "S1" "a word operation builds its tower with `irr` as Fin.mk's proof \
           field, which the pinned Fin.mk's record keeps at the empty profile" (some fin))
       else none
     | _, _ => none
+
+def appliedErrs (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
+  ch.instances.filterMap fun (c, q) =>
+    match ann.constRel? c with
+    | some cr =>
+      (cr.params.zipIdx.find? fun (r, pos) => appliedAt p c pos && r.irrP q).map fun (r, pos) =>
+        RelError.of "S1" s!"argument {pos} is forced and applied (a case key's minor, Quot.lift's \
+          function), but its class ({relName r}) is irrelevant at a reached instance" (some c)
+    | none => none
 
 end CC
 
@@ -754,7 +1027,7 @@ theorem checkCanonical_split (q : Program) (ann : Ann) (ch : Checked) :
     checkCanonical q ann ch =
       CC.readErrs q ann ch ++ CC.forwardErrs q ch ++ CC.redirectErrs q ch ++ CC.headerErrs q ann ch ++
         CC.denseErrs q ++ CC.ruleErrs q ch ++ CC.univErrs q ch ++ CC.recordErrs q ann ch ++
-        CC.srcsErrs q ch ++ CC.finErrs q ch ++
+        CC.srcsErrs q ch ++ CC.finErrs q ch ++ CC.appliedErrs q ann ch ++
         if CC.okConsts q ann && CC.okCtors q ann && CC.okReached q ann ch then []
         else [RelError.of "S1" "non-canonical relevance annotation"] := rfl
 
@@ -774,11 +1047,19 @@ theorem CC.denseErrs_eq : CC.denseErrs p₀ = CC.denseErrs p := sorry
 theorem CC.ruleErrs_eq : CC.ruleErrs p₀ ch = CC.ruleErrs p ch := by
   simp only [CC.ruleErrs, elimShape?_eq hme, rulesShape?_eq hme]
 theorem CC.univErrs_eq : CC.univErrs p₀ ch = CC.univErrs p ch := by
-  simp only [CC.univErrs, univsErrs_eq hme]
+  simp only [CC.univErrs]
+  rw [show univsErrs p₀ = univsErrs p from funext (univsErrs_eq hme)]
 theorem CC.recordErrs_eq : CC.recordErrs p₀ ann ch = CC.recordErrs p ann ch := sorry
 theorem CC.srcsErrs_eq : CC.srcsErrs p₀ ch = CC.srcsErrs p ch := by
   simp only [CC.srcsErrs, elimShape?_eq hme, subsingletonSrcs?_eq hme]
-theorem CC.finErrs_eq : CC.finErrs p₀ ch = CC.finErrs p ch := sorry
+theorem CC.finErrs_eq : CC.finErrs p₀ ch = CC.finErrs p ch := by
+  simp only [CC.finErrs]
+  congr 1; funext c
+  rcases resolveOf_cases hme c with h | ⟨thm, b, b', h₀, h, -⟩
+  · rw [h, hme.known]; simp only [ctorFieldsIs_eq hme]
+  · rw [h₀, h, hme.known]
+theorem CC.appliedErrs_eq : CC.appliedErrs p₀ ann ch = CC.appliedErrs p ann ch := by
+  simp only [CC.appliedErrs, appliedAt_eq hme]
 theorem CC.okConsts_eq : CC.okConsts p₀ ann = CC.okConsts p ann := sorry
 theorem CC.okCtors_eq : CC.okCtors p₀ ann = CC.okCtors p ann := sorry
 theorem CC.okReached_eq : CC.okReached p₀ ann ch = CC.okReached p ann ch := sorry
@@ -790,7 +1071,7 @@ theorem checkCanonical_modeEq (hme : Program.ModeEq p₀ p) (ann : Ann) (ch : Ch
     checkCanonical p₀ ann ch = checkCanonical p ann ch := by
   rw [checkCanonical_split, checkCanonical_split, CC.readErrs_eq hme, CC.forwardErrs_eq hme,
     CC.redirectErrs_eq hme, CC.headerErrs_eq hme, CC.denseErrs_eq hme, CC.ruleErrs_eq hme,
-    CC.univErrs_eq hme, CC.recordErrs_eq hme, CC.srcsErrs_eq hme, CC.finErrs_eq hme,
+    CC.univErrs_eq hme, CC.recordErrs_eq hme, CC.srcsErrs_eq hme, CC.finErrs_eq hme, CC.appliedErrs_eq hme,
     CC.okConsts_eq hme, CC.okCtors_eq hme, CC.okReached_eq hme]
 
 end IxCC.Src.Relevance.Proof.ModeEq
