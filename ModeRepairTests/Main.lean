@@ -883,6 +883,14 @@ def in16 : Heap × List Val :=
 def useBox := mem 360
 def bad11b := mem 361
 def ok11b := mem 380
+-- Repair R: `retAlt (@once f : Nat → Nat) (b : E) : Nat := callTwice (match b with | e0 => f | e1 => f)`;
+-- the control `retAltP` has `f` plain
+def retAlt := mem 377
+def retAltP := mem 387
+def funAndE0 : Heap × List Val :=
+  let (b, f) := ({} : HB).alloc (.pap incR #[])
+  (b.heap, [f, .imm (.con e0R)])
+def retAltBody : Term := app (.const callTwice .val) [.case caseE (v 0 .imm) #[v 1, v 1] #[] .val] .leaf
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -994,7 +1002,13 @@ def findingCases : List Case := [
       .shared .leaf)] bad11b oneFun (some .onceReentry) false [bad11b, useBox],
   runCase "the same, the parameter plain"
     [useBoxDef, (ok11b, body [par .many .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
-      .shared .leaf)] ok11b oneFun none true [ok11b, useBox]
+      .shared .leaf)] ok11b oneFun none true [ok11b, useBox],
+  runCase "a once parameter returned by a case alternative, the case's value lent to a body that calls it twice"
+    (onceDefs ++ p16Defs ++ [(retAlt, body [par .once .val arrowSk, par .many .imm] retAltBody .shared .leaf)])
+    retAlt funAndE0 (some .onceReentry) false,
+  runCase "the same, the parameter plain"
+    (onceDefs ++ p16Defs ++ [(retAltP, body [par .many .val arrowSk, par .many .imm] retAltBody .shared .leaf)])
+    retAltP funAndE0 none true
 ]
 
 -- END COPY
@@ -1750,7 +1764,7 @@ def routeExpect : Nat → Option String × OExp
   | 4 => (some "onceReentry", .vio .onceReentry)          -- E (anLam's flowTo .share)
   | 5 => (some "onceReentry", .vio .onceReentry)          -- E (bindInner)
   | 6 => (some "onceReentry", .vio .onceReentry)          -- E and G (applyValue's callResult)
-  | 7 => (none, .vio .onceReentry)                         -- OPEN: the join drops `src`
+  | 7 => (some "a case alternative's result", .vio .onceReentry)  -- repair R (accepted before)
   | 8 => (none, .vio .onceReentry)                         -- OPEN: retCheck looks at onceOnly only
   | 9 => (some "onceReentry", .stuck)                      -- E (callResult); no extern oracle
   | _ => (none, .vio .onceReentry)                         -- OPEN: `.once` does not test `spent`
@@ -1775,6 +1789,32 @@ def routeGCases : List Case := [1, 7, 8, 10].map fun i =>
     inp := if i == 7 then listAndE0 else oneList,
     toCheck := if i == 8 then [routeG i, retG] else [routeG i],
     verdict := .refuse, run := [(0, .vioOrOof .revokedUse), (100000, .vio .revokedUse)] }
+
+/-! Route 7 with the once binding made inside the alternative:
+`callTwice (match b with | _ => let (@once h) := k; h)` with `k` plain; the control binds `h`
+plainly. As landed the join reset the state to before the case, so `h`'s once flag was gone
+by the time the joined result flowed anywhere. -/
+
+def r7in := mem 401
+def r7inP := mem 402
+
+def letOnceAlt (m : LetMode) : Term := .letE m .val (v 1) (v 0)
+
+def pR : Prog := { pQ with defs := pQ.defs ++ #[
+  (r7in, body [par .many .val arrowSk, par .many .imm]
+    (app (.const callTwice .val) [.case caseE (v 0 .imm) #[letOnceAlt (.value .once), letOnceAlt (.value .once)]
+      #[] .val] .leaf) .shared .leaf),
+  (r7inP, body [par .many .val arrowSk, par .many .imm]
+    (app (.const callTwice .val) [.case caseE (v 0 .imm) #[letOnceAlt (.value .many), letOnceAlt (.value .many)]
+      #[] .val] .leaf) .shared .leaf)] }
+
+def r7Cases : List Case := [
+  -- REPAIR R: accepted before
+  { label := "route 7, a once binding made inside the alternative", P := pR, seed := r7in, inp := funAndE0,
+    toCheck := [r7in], verdict := .refuse "a case alternative's result",
+    run := [(0, .vioOrOof .onceReentry), (100000, .vio .onceReentry)] },
+  { label := "route 7, control: the alternative's let plain", P := pR, seed := r7inP, inp := funAndE0,
+    toCheck := [r7inP], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 /-! ### Repair N: a spine longer than the checker's depth left at it (found by reading; run)
 
@@ -1821,7 +1861,7 @@ def nCases : List Case := [
 
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
-    f11Cases ++ routeCases ++ routeGCases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
+    f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

@@ -605,6 +605,9 @@ def anCase (P : Prog) :
         | .unit => (({ cls := .imm } : AVal), false, false)
       let some alt := alts[j]? | continue
       let r ← anAlt P n env alt args
+      -- the join drops the binding a result was read from, so a once binding cannot leave an
+      -- alternative (repair R; judged here, where a once binding made inside it is still known)
+      notOnceSrc r "a case alternative's result"
       results := results.push { r with deps := r.deps.filter (· < pre.st.size) }
       let post ← get
       posts := posts.push post

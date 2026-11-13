@@ -601,6 +601,14 @@ def in16 : Heap × List Val :=
 def useBox := mem 360
 def bad11b := mem 361
 def ok11b := mem 380
+-- Repair R: `retAlt (@once f : Nat → Nat) (b : E) : Nat := callTwice (match b with | e0 => f | e1 => f)`;
+-- the control `retAltP` has `f` plain
+def retAlt := mem 377
+def retAltP := mem 387
+def funAndE0 : Heap × List Val :=
+  let (b, f) := ({} : HB).alloc (.pap incR #[])
+  (b.heap, [f, .imm (.con e0R)])
+def retAltBody : Term := app (.const callTwice .val) [.case caseE (v 0 .imm) #[v 1, v 1] #[] .val] .leaf
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -726,7 +734,13 @@ def findingCases : List LSpec.TestSeq := [
       .shared .leaf)] bad11b oneFun (some .onceReentry) false [bad11b, useBox],
   runCase "the same, the parameter plain"
     [useBoxDef, (ok11b, body [par .many .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf)
-      .shared .leaf)] ok11b oneFun none true [ok11b, useBox]
+      .shared .leaf)] ok11b oneFun none true [ok11b, useBox],
+  runCase "a once parameter returned by a case alternative, the case's value lent to a body that calls it twice"
+    (onceDefs ++ p16Defs ++ [(retAlt, body [par .once .val arrowSk, par .many .imm] retAltBody .shared .leaf)])
+    retAlt funAndE0 (some .onceReentry) false,
+  runCase "the same, the parameter plain"
+    (onceDefs ++ p16Defs ++ [(retAltP, body [par .many .val arrowSk, par .many .imm] retAltBody .shared .leaf)])
+    retAltP funAndE0 none true
 ]
 
 /-! ### Must-reject cases from records -/
