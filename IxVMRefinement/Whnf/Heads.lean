@@ -35,7 +35,7 @@ theorem recr_full {κ : _root_.Address → KKey} {h : Heap F}
   generalize hv : (Value.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx] :
     SourceValue F) = v at r
   cases r
-  case recr hv' hnp hni hnm hnmi hrP hmI hcounts hrules hkey =>
+  case recr hv' hnp hni hnm hnmi hrP hmI hcounts hrules hk hkey =>
     injection hv with _ _ hl
     simp only [List.cons.injEq, and_true] at hl
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hl
