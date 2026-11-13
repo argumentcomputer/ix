@@ -352,10 +352,84 @@ def caseCsimp (a : Assert) : IO Unit := do
       | .error e => IO.println s!"PLANT (v) case key (b): Recheck.run refuses: {(e.render.take 300).toString}"
       | .ok art => IO.println s!"PLANT (v) case key (b): Recheck.run ACCEPTS; object {repr (objMain art)}"
 
+
+/-- What `preserve`/`pre_step` say of one state `c` of `p`: the exact `Pre` (with the clauses that break it
+alone), `SortAgree` from `c` (the twin's sub-run), and `Post`, the children's `Pre` and `Reads`. -/
+def stateCheck (label : String) (p : Program) (ann : Relevance.Ann) (ch : Relevance.Checked) (c : Call) :
+    IO (Bool × List String × Outcome) := do
+  let ex := ECx.make p ann ch true
+  let (ok, cutp) := runEM (preM ex [] c)
+  let o := outcomes ex [] c
+  let counts ← IO.mkRef []
+  let notes ← IO.mkRef []
+  let sub : TCx := { p := p, ann := ann, ch := ch, counts := counts, notes := notes, sortOnly := true }
+  let _ ← tCall sub [] c
+  let sv := ((← sub.counts.get).filter (·.1.startsWith "VIOLATION (")).map (·.1)
+  IO.println s!"STATE {label}: {callShort c}"
+  IO.println s!"  Pre {if ok && !cutp then "holds" else if ok then "undecided (cut)" else s!"fails, alone: {(soleClauses ex [] c).map Cl.name}"}; SortAgree violations {sv}; {o.render}"
+  for d in childDetail ex [] c do IO.println s!"  child: {d}"
+  return (ok && !cutp, sv, o)
+
+/-- F3 (engineer PF's reading): a reached subsingleton recursor whose rule-0 constructor has no
+constructor record. `main := Eq.rec.{1,1} E c₁ (λ b h. E) c₂ c₁ □` on the quotient program (which reads
+`Eq`), with `Eq.refl` given a field `(0 h : Nat)` written erased (unreached, so no record), `Eq.rec`'s
+rule 0 `λ α a motive refl h. refl h` (it forwards `h` to the minor it dispatches) and its table kind
+`.subsingleton w [.proof]`. The state `fire (.recr Eq.rec) [1,1] [□, c₁, □, clo (λ x. x), c₁, □]`:
+`MinorsIgnore` is vacuous without the record, (d) exempts the field written erased, F3 binds the proof
+marker under `h`'s relevant λ, and the minor returns it. -/
+def f3Record (a : Assert) : IO Unit := do
+  let q ← IxCCTests.Recheck.ErasedArity.quotProg
+  let P := q.Pi
+  let some eqId := P.known.eq | throw (IO.userError "F3: no Eq")
+  let some eqRec := (List.range P.size).find? fun c =>
+    match P.decl? c with | some (.recr _ _ _ _ _ _ _ ind _ _) => ind == eqId | _ => false
+    | throw (IO.userError "F3: no Eq.rec")
+  let some refl := (List.range P.size).find? fun c =>
+    match P.decl? c with | some (.ctor _ _ ind _ _ _ _) => ind == eqId | _ => false
+    | throw (IO.userError "F3: no Eq.refl")
+  let some (.ctor rs rl ri rj rnp _ rty) := P.decl? refl | throw (IO.userError "F3: Eq.refl")
+  let some (.recr sf kk lv np nmot nmin ni ind rules ty) := P.decl? eqRec | throw (IO.userError "F3: Eq.rec")
+  let some rule0 := rules[0]? | throw (IO.userError "F3: rule 0")
+  let natT : Term := q.eT  -- a relevant data type for `h` (the reading has `Nat`)
+  -- `Eq.refl : ∀ {α} (a : α) (0 h : Nat), Eq a a`
+  let (bs, concl) := rty.pis
+  let reflTy := (bs.take rnp).foldr (fun (b, d) acc => .pi b {} d acc)
+    (.pi { contract := .erased } {} natT (Src.Relevance.Check.Canonical.liftTerm 1 0 concl))
+  -- rule 0 `λ α a motive refl h. refl h`: the original λs, one more for `h` (relevant), the minor applied to it
+  let hB : Binder := { rel := .rel }
+  let body : Term := .app (.var 1) (.var 0) .strict .rel
+  let rhs := keepLams (np + nmot + nmin) rule0.rhs (.lam hB natT body)
+  let P1 := (P.setDecl refl (.ctor rs rl ri rj rnp 1 reflTy)).setDecl eqRec
+    (.recr sf kk lv np nmot nmin ni ind (rules.set 0 { rule0 with fields := 1, rhs }) ty)
+  let one : IxCC.Ixon.Univ := .succ .zero
+  let v := Term.mkApps (.const eqRec [one, one]) [(q.eT, .strict, .type), (.const q.c1 [], .strict, .rel),
+    (.sort .zero, .strict, .type), (.const q.c2 [], .strict, .rel), (.const q.c1 [], .strict, .rel),
+    (.sort .zero, .strict, Rel.prf)]
+  let (Q, ann) := IxCCTests.Recheck.ErasedArity.quotWith q P1 v
+  let ann := withNode ann (.rule eqRec 0) (tagsOf rhs)
+  match Src.Table.ofCert q.h.cfg.table P q.h.cert.table with
+  | .error m => throw (IO.userError s!"F3: the table refuses the honest program: {m}")
+  | .ok table =>
+    let w := match table.recKindOf eqRec with
+      | some (.subsingleton w _) => w
+      | _ => .always
+    let tbl := { table with recKind := table.recKind.insert eqRec (.subsingleton w [.proof]) }
+    let Qt := { Q with table := tbl }
+    let verdict ← direct "F3: Eq.refl with a field written erased and no record, Eq.rec subsingleton" Qt ann q.mainId
+    match Src.Recheck.annotation Qt ann with
+    | .ok (src, ch) =>
+      let idN : Value := .clo {} natT (.var 0) [] [1, 1]
+      let c : Call := .fire kRun (.recr eqRec) [1, 1] [.val (.irr none [] [1, 1]), .val (.con q.c1 [] [] []),
+        .val (.irr none [] [1, 1]), .val idN, .val (.con q.c1 [] [] []), .val (.irr none [] [1, 1])]
+      let (pre, sv, o) ← stateCheck "F3 (PF)" src ann ch c
+      IO.println s!"F3 (PF): annotation accepts; Pre {pre}, SortAgree {sv.isEmpty}, Post {o.post}, child Pre fails at {o.steps}"
+    | .error _ =>
+      IO.println s!"F3 (PF): refused: {verdict}"
+
 def run (a : Assert) : IO Unit := do
   for (n, act) in [("rules", rulesSwap), ("sort", sortMain), ("env", env), ("ctorUnique", ctorUniq),
       ("ctorUniqueCount", ctorUniqCount), ("liveCon", liveCon), ("recTableEntry", recTableEntry a),
-      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a)] do
+      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a), ("f3Record", f3Record a)] do
     try act catch e => do
       IO.println s!"PLANT {n}: ERROR {e}"
       expect a false s!"plant {n}: {e}"

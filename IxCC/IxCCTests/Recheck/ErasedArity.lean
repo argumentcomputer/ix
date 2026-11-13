@@ -284,6 +284,6 @@ def caseKey (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array Strin
     major, past]
 
 def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array String) := do
-  return (← quot a hk hk) ++ #[← recursor a hk hk, ← primitive a hk, ← word a hk] ++ (← caseKey a hk)
+  return (← quot a hk) ++ #[← recursor a hk, ← primitive a hk, ← word a hk] ++ (← caseKey a hk)
 
 end IxCCTests.Recheck.ErasedArity
