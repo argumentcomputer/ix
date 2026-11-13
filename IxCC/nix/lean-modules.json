@@ -1203,6 +1203,12 @@
    ["IxCCTests.Grounding.Run",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Src.Relevance.Check"]},
+  "IxCCTests.Grounding.Words":
+  {"path": "IxCCTests/Grounding/Words.lean",
+   "imports":
+   ["IxCCTests.Grounding.GradedHead",
+    "IxCCTests.Grounding.LetWit",
+    "IxCCGrounding.WordRoot"]},
   "IxCCTests.Grounding.Run":
   {"path": "IxCCTests/Grounding/Run.lean",
    "imports":
@@ -1234,7 +1240,8 @@
     "IxCCTests.Grounding.GradedHead",
     "IxCCTests.Grounding.CaseEmpty",
     "IxCCTests.Grounding.LetClo",
-    "IxCCTests.Grounding.LetWit"]},
+    "IxCCTests.Grounding.LetWit",
+    "IxCCTests.Grounding.Words"]},
   "IxCCTests.Grounding.LetWit":
   {"path": "IxCCTests/Grounding/LetWit.lean",
    "imports": ["IxCCTests.Grounding.LetClo"]},
@@ -1246,7 +1253,8 @@
    "imports":
    ["IxCCTests.Grounding.NoCanon",
     "IxCCTests.Grounding.Zeta",
-    "IxCCGrounding.SelRetype"]},
+    "IxCCGrounding.SelRetype",
+    "IxCCGrounding.WordRoot"]},
   "IxCCTests.Grounding.CaseEmpty":
   {"path": "IxCCTests/Grounding/CaseEmpty.lean",
    "imports": ["IxCCTests.Grounding.GradedHead"]},
@@ -4230,6 +4238,38 @@
     "IxCCTests.Recheck.P1Twin.Run",
     "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
+  "IxCCGrounding.WordRoot":
+  {"path": "IxCCGrounding/WordRoot.lean",
+   "imports": ["IxCCGrounding.WordCheck", "IxCCGrounding.SelRetype"]},
+  "IxCCGrounding.WordLe":
+  {"path": "IxCCGrounding/WordLe.lean",
+   "imports": ["IxCCGrounding.Apply", "IxCCGrounding.Lits"]},
+  "IxCCGrounding.WordForm":
+  {"path": "IxCCGrounding/WordForm.lean",
+   "imports": ["IxCCGrounding.Lits", "IxCC.Src.Word"]},
+  "IxCCGrounding.WordFits":
+  {"path": "IxCCGrounding/WordFits.lean",
+   "imports": ["IxCCGrounding.GradedHead"]},
+  "IxCCGrounding.WordFire":
+  {"path": "IxCCGrounding/WordFire.lean",
+   "imports": ["IxCCGrounding.WordAccel", "IxCCGrounding.Hyps"]},
+  "IxCCGrounding.WordCheck":
+  {"path": "IxCCGrounding/WordCheck.lean",
+   "imports":
+   ["IxCCGrounding.WordFire", "IxCCGrounding.Check", "IxCC.Src.Table.Word"]},
+  "IxCCGrounding.WordCanon":
+  {"path": "IxCCGrounding/WordCanon.lean",
+   "imports": ["IxCCGrounding.WordBridge", "IxCCGrounding.Support"]},
+  "IxCCGrounding.WordBridge":
+  {"path": "IxCCGrounding/WordBridge.lean",
+   "imports":
+   ["IxCCGrounding.WordLe",
+    "IxCCGrounding.WordFits",
+    "IxCCGrounding.WordForm",
+    "IxCCGrounding.Eqn"]},
+  "IxCCGrounding.WordAccel":
+  {"path": "IxCCGrounding/WordAccel.lean",
+   "imports": ["IxCCGrounding.WordCanon"]},
   "IxCCGrounding.Tele":
   {"path": "IxCCGrounding/Tele.lean",
    "imports": ["IxCCGrounding.Subst", "IxCCGrounding.Support"]},
@@ -4323,7 +4363,8 @@
     "IxCCGrounding.RootInst",
     "IxCCGrounding.Graded",
     "IxCCGrounding.GradedHead",
-    "IxCCGrounding.SelRetype"]},
+    "IxCCGrounding.SelRetype",
+    "IxCCGrounding.WordRoot"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4426,6 +4467,15 @@
     "IxCCGrounding.Graded",
     "IxCCGrounding.GradedHead",
     "IxCCGrounding.SelRetype",
+    "IxCCGrounding.WordLe",
+    "IxCCGrounding.WordFits",
+    "IxCCGrounding.WordForm",
+    "IxCCGrounding.WordBridge",
+    "IxCCGrounding.WordCanon",
+    "IxCCGrounding.WordAccel",
+    "IxCCGrounding.WordFire",
+    "IxCCGrounding.WordCheck",
+    "IxCCGrounding.WordRoot",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",

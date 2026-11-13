@@ -159,6 +159,7 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
         simpa [Program.headArity, hd, IxCC.Src.Decl.recArity] using har
       | _ => simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
   | prim _ _ har => exact har
+  | word _ _ _ _ har => simpa [Program.headArity] using har
 
 /-- `As` related to literal values are the literals' sets. -/
 theorem relVs_lits (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat) :
@@ -989,6 +990,11 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             exact RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
               .nil (.inl hl0)
+  | @word c w op thm _ _ ci hSc hres _ _ _ =>
+    -- F6w: the arguments forced, then `WordFires` (step W)
+    rw [IxCC.Src.fire_word] at hrun
+    obtain ⟨vs, hvs, hwv⟩ := Result.bind_eq_ok_iff.mp hrun
+    exact (H.words c w op thm hSc hres).2 φ vs As v (hfa _ _ _ hvs hargs) hwv
 
 theorem headValue_step {k : Nat} (hfire : FireP M p κ lpsOf S Ok k) :
     HeadValueP M p κ lpsOf S Ok k := by
@@ -1084,7 +1090,9 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       rw [hk]
       exact hhv _ _ _ φ _ _ hrun (.prim hf' hlp' har')
     | csimp g us thm => exact absurd hres (H.faith.noCsimp c g us thm hSc)
-    | word w op thm => exact absurd hres (H.faith.noWord c w op thm hSc)
+    | word w op thm =>
+      obtain ⟨⟨ci', hf', hlp', har'⟩, -⟩ := H.words c w op thm hSc hres
+      exact hhv _ _ _ φ _ _ hrun (.word hSc hres hf' hlp' har')
     | eqn thm body =>
       obtain ⟨e, hcomp, hrunsE⟩ := H.eqn c thm body hSc hres
       cases k with

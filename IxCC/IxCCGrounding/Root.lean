@@ -90,8 +90,9 @@ section Args
 variable {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann}
   {Sl : List CId}
 
-/-- An enumeration's listed constructor relates to its image, which lies in the enumeration. -/
-theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
+/-- `enum_arg` over any word clause (step W). -/
+theorem enum_argW {Ok' : CId → Levels → Prop} {Wd : Prop} (hF : FaithW Wd p env κ lpsOf (· ∈ Sl))
+    {D c : CId} {i : Nat}
     (hE : EnumStored p env κ (· ∈ Sl) D) {safe : Bool} {cs : List CId} {ty : Term}
     (hd : p.decl? D = some (.induct safe 0 0 0 ty cs)) (hc : cs[i]? = some c)
     (φ : LevelParam → Nat) :
@@ -119,6 +120,16 @@ theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· 
     simp only [ConstantInfo.toConstantVal, htc] at hT
     rwa [Denotes_functional hT hX] at hm
 
+/-- An enumeration's listed constructor relates to its image, which lies in the enumeration. -/
+theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
+    (hE : EnumStored p env κ (· ∈ Sl) D) {safe : Bool} {cs : List CId} {ty : Term}
+    (hd : p.decl? D = some (.induct safe 0 0 0 ty cs)) (hc : cs[i]? = some c)
+    (φ : LevelParam → Nat) :
+    RelV M p κ lpsOf (· ∈ Sl) Ok' (.con c [] [] []) (M.cval (κ c) φ) ∧
+      (∀ ρ X, Denotes M.cval env φ ρ (.const (κ c) []) X ↔ X = M.cval (κ c) φ) ∧
+      (∀ ρ X, Denotes M.cval env φ ρ (.const (κ D) []) X → M.cval (κ c) φ ∈ˢ X) :=
+  enum_argW hF hE hd hc φ
+
 end Args
 
 /-- **The fundamental lemma from the checked facts** (the form the root theorem uses). -/
@@ -130,12 +141,11 @@ theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : C
     obtain ⟨sh, hst, hpr⟩ := hC c r hc hr hk
     exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr)
 
-/-- **Soundness at a root, from the fundamental lemma**: the part of `rootSound` after the
-fundamental lemma, over the laws other than canonicity (both families call it). -/
-theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
+/-- `rootSound_core` over any word clause (step W: the word family calls it). -/
+theorem rootSound_coreW (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
-    {args : List FoTy} {res : FoTy}
-    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl))
+    {args : List FoTy} {res : FoTy} {Wd : Prop}
+    (hG : GroundFactsW Wd p env κ lpsOf ann (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
     {Ok' : CId → Levels → Prop} (hAllK : ∀ k, AllP M p κ lpsOf (· ∈ Sl) Ok' k)
     (hOkR : Ok' root [])
@@ -183,7 +193,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
             rw [(hF0.natD ρ' Z).mp hZ]; exact lit_mem M hF0 n⟩
         | @enum D c i safe cs ty hd hc =>
           have hE := hR.enums D (Or.inl (hsub D (List.mem_cons_self ..)))
-          obtain ⟨hrel, hden, hmem⟩ := enum_arg (M := M) (Ok' := Ok') hG.faith hE hd hc φ
+          obtain ⟨hrel, hden, hmem⟩ := enum_argW (M := M) (Ok' := Ok') hG.faith hE hd hc φ
           rw [(hden ρ Y).mp hY]
           exact ⟨hrel, fun ρ' Z hZ => hmem ρ' Z hZ⟩
       refine ⟨.cons (.val hYrel.1) ih1, fun E => ?_⟩
@@ -218,7 +228,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   | @enum D c i safe cs ty hd hc =>
     obtain ⟨c'', ls, ps, rfl, htag⟩ := readback_ctor hrb
     have hE := hR.enums D (Or.inr rfl)
-    obtain ⟨_, hden, _⟩ := enum_arg (M := M) (Ok' := Ok') hG.faith hE hd hc φ
+    obtain ⟨_, hden, _⟩ := enum_argW (M := M) (Ok' := Ok') hG.faith hE hd hc φ
     obtain ⟨_, _, _, hd', _, hcs, _⟩ := hE
     rw [hd] at hd'
     injection hd' with hd''
@@ -239,6 +249,23 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     rw [List.nil_append, List.foldl_nil, hkey,
       hL.cval_params _ _ hfc ψ φ (by simp [ConstantInfo.toConstantVal, hlc])]
     exact (hden ρ _).mpr rfl
+
+/-- **Soundness at a root, from the fundamental lemma**: the part of `rootSound` after the
+fundamental lemma, over the laws other than canonicity (both families call it). -/
+theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    {Ok' : CId → Levels → Prop} (hAllK : ∀ k, AllP M p κ lpsOf (· ∈ Sl) Ok' k)
+    (hOkR : Ok' root [])
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_coreW hL hG hR hAllK hOkR hA hrun hrb hRT hO φ ρ X hX
 
 /-- **Soundness at a root.** -/
 theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}

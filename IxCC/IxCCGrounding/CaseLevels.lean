@@ -122,9 +122,9 @@ agreement (its `ψ` gives the constructor's level parameters what `indLevels` gi
 `case`'s `φ`: `RelV.con`'s `LvAt` and its `Ok`, the `case` head's `Ok`, `CaseLevelAgree`) and then
 `caseIotaG` at the constructor's own parameters. Laws: `DefnValue`, `IotaLawG`, `CvalParams` (and
 `Model.mem`); not `ctor_canon`. -/
-theorem caseFires_of_agree (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
-    {p : Program} {c r : CId} {sh : CaseShape}
-    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
+theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {c r : CId} {sh : CaseShape} {Wd : Prop}
+    (hF : FaithW Wd p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
     (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStored env (κ c) (κ r) sh)
     (hpr : CaseProg p κ S r sh) (hB : CaseRulesBlind env (κ r))
     (hag : ∀ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
@@ -434,18 +434,25 @@ theorem CaseFactsRead.facts {p : Program} {env : KEnv} {κ : CId → KKey} {S : 
   obtain ⟨sh, -, hst, hpr⟩ := h c r hc hr hk
   exact ⟨sh, hst, hpr⟩
 
-theorem caseFactsRead_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
+theorem caseFactsRead_of_sans {p : Program} {env : KEnv} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
-    (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFactsRead p env κ (· ∈ Sl) := by
+    (h : CheckSans p env κ lpsOf ann Sl) : CaseFactsRead p env κ (· ∈ Sl) := by
   intro c r hc hr hk
-  have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts, checkPartsWith])) c hc
-  have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts, checkPartsWith])) c hc
+  have h1 := List.all_eq_true.mp (h "caseShape" (Sl.all (caseShapeB p env κ))
+    (by simp [checkParts, checkPartsWith]) (by decide)) c hc
+  have h2 := List.all_eq_true.mp (h "caseProg" (Sl.all (caseProgOkB p env κ Sl))
+    (by simp [checkParts, checkPartsWith]) (by decide)) c hc
   simp only [caseShapeB, caseProgOkB, hr, hk] at h1 h2
   split at h1
   · rename_i sh hsh
     rw [hsh] at h2
     exact ⟨sh, hsh, caseStored_of_check h1, caseProg_of_check h2⟩
   · exact absurd h1 (by simp)
+
+theorem caseFactsRead_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFactsRead p env κ (· ∈ Sl) :=
+  caseFactsRead_of_sans (sans_of_check h)
 
 /-- **`NoCanon` without the level condition at `case` entries**: their stored rules do not compare
 parameters (`CaseRulesBlind`); `flat`/`noParams` recursors as in `NoCanon`. -/
@@ -518,15 +525,37 @@ theorem noCanonA_of_check {p : Program} {env : KEnv} {κ : CId → KKey} {Sl : L
 
 /-- **F5 at every `case` entry of `Sl` at `OkIn`**: from the shapes the check reads, `NoCanonA`
 and uniformity. -/
-theorem caseFires_of_inst (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
-    {p : Program} {ann : IxCC.Src.Relevance.Ann} {Inst : List (CId × Levels)}
-    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFactsRead p env κ S)
+theorem caseFires_of_instW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {ann : IxCC.Src.Relevance.Ann} {Inst : List (CId × Levels)} {Wd : Prop}
+    (hF : FaithW Wd p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFactsRead p env κ S)
     (hNC : NoCanonA p env κ S) (hU : InstUniform p env κ lpsOf Inst) :
     ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
       CaseFires M p κ lpsOf S (OkIn p ann Inst) c := by
   intro c r hc hr hk
   obtain ⟨sh, hsh, hst, hpr⟩ := hC c r hc hr hk
-  exact caseFires_of_agree hδ hι hcv hF hN hc hr hst hpr (hNC.cases c r hc hr)
+  exact caseFires_of_agreeW hδ hι hcv hF hN hc hr hst hpr (hNC.cases c r hc hr)
     (fun _ _ _ _ _ _ _ _ _ _ hd => caseLevelAgree_of_inst hU hr hsh hd)
+
+/-- **F5 at a `case` entry under agreement** (`caseFires_of_agreeW` at the landed word clause). -/
+theorem caseFires_of_agree (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {c r : CId} {sh : CaseShape}
+    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
+    (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStored env (κ c) (κ r) sh)
+    (hpr : CaseProg p κ S r sh) (hB : CaseRulesBlind env (κ r))
+    (hag : ∀ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
+      (ty : Term), p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      CaseLevelAgree p lpsOf Ok c sh ind) :
+    CaseFires M p κ lpsOf S Ok c :=
+  caseFires_of_agreeW hδ hι hcv hF hN _hSc hres hst hpr hB hag
+
+/-- **F5 at every `case` entry of `Sl` at `OkIn`**: from the shapes the check reads, `NoCanonA`
+and uniformity. -/
+theorem caseFires_of_inst (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {ann : IxCC.Src.Relevance.Ann} {Inst : List (CId × Levels)}
+    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFactsRead p env κ S)
+    (hNC : NoCanonA p env κ S) (hU : InstUniform p env κ lpsOf Inst) :
+    ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
+      CaseFires M p κ lpsOf S (OkIn p ann Inst) c :=
+  caseFires_of_instW hδ hι hcv hF hN hC hNC hU
 
 end IxCC.Grounding

@@ -311,8 +311,9 @@ hosted-CI or cold-store timing is claimed.
   whole-environment compile; and when string literals are admitted, `phase1-decline`'s
   `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
   operations) become the first registered roots that run word primitives. A
-  program with a word entry is outside the grounded fragment (`noWord`) until the
-  grounding's word case is proved. One limit stays after W1, by design: a `UInt64` is
+  program with a word entry is outside the landed grounded families (`noWord`); the
+  grounding's word case (step W) admits it in the word family
+  (`rootSound_678AGpW_of_check`), which holds on `grounding/words` and `src-words`. One limit stays after W1, by design: a `UInt64` is
   native only below 2^63. A word is a tagged immediate, so a width-64 result at or
   above 2^63 fails with `natOverflow`, as a `Nat` does. Stage W2 is planned to lift it
   with raw unboxed words (direction chosen 2026-11-13): raw 64-bit words in registers

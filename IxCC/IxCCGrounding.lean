@@ -37,4 +37,13 @@ import IxCCGrounding.RootInst
 import IxCCGrounding.Graded
 import IxCCGrounding.GradedHead
 import IxCCGrounding.SelRetype
+import IxCCGrounding.WordLe
+import IxCCGrounding.WordFits
+import IxCCGrounding.WordForm
+import IxCCGrounding.WordBridge
+import IxCCGrounding.WordCanon
+import IxCCGrounding.WordAccel
+import IxCCGrounding.WordFire
+import IxCCGrounding.WordCheck
+import IxCCGrounding.WordRoot
 import IxCCGrounding.Fence

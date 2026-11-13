@@ -282,7 +282,8 @@ theorem fundHyps_of_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   laws := hL
   canon := hcanon
   natBasis := hG.natBasis
-  faith := hG.faith
+  faith := hG.faith.monoW fun _ => trivial
+  words := wordFires_of_noWord hG.faith.words
   cases := hcases
   eqn := fun c thm body hS hr => by
     obtain ⟨⟨d, hsh⟩, _⟩ := hG.eqns c thm body hS hr

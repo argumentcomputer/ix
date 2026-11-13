@@ -204,15 +204,26 @@ theorem recFacts_of_flatOnly {p : Program} {env : KEnv} {κ : CId → KKey}
     cases hk'
     simp at hm
 
-/-- **The faithfulness clauses**, with the recursors of `S` checked (`RecFacts`). -/
+/-- **The faithfulness clauses**, with the recursors of `S` checked (`RecFacts`) and no word entry
+(`NoWord`). -/
 abbrev Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) : Prop :=
-  FaithWith (RecFacts p env κ lpsOf S) p env κ lpsOf S
+  FaithWith (RecFacts p env κ lpsOf S) (NoWord p S) p env κ lpsOf S
 
-/-- **The checked facts**, the recursors of `S` checked (`RecFacts`). -/
+/-- **The faithfulness clauses over a word clause `Wd`** (step W; `Faith` is it at `NoWord`). -/
+abbrev FaithW (Wd : Prop) (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (S : CId → Prop) : Prop :=
+  FaithWith (RecFacts p env κ lpsOf S) Wd p env κ lpsOf S
+
+/-- **The checked facts**, the recursors of `S` checked (`RecFacts`), no word entry (`NoWord`). -/
 abbrev GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
-  GroundFactsWith (RecFacts p env κ lpsOf S) p env κ lpsOf ann S
+  GroundFactsWith (RecFacts p env κ lpsOf S) (NoWord p S) p env κ lpsOf ann S
+
+/-- **The checked facts over a word clause `Wd`** (step W; `GroundFacts` is it at `NoWord`). -/
+abbrev GroundFactsW (Wd : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
+  GroundFactsWith (RecFacts p env κ lpsOf S) Wd p env κ lpsOf ann S
 
 /-- **Every landed `GroundFacts` is a `GroundFacts`**: so each theorem taking `GroundFacts`
 implies its landed form (`rootSound_noRecr` and the others in `IxCCGrounding.Root`). -/
