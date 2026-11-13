@@ -311,8 +311,8 @@ theorem red_proj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     have hl' := WhnfAux.piSortAt_ilp_of_strip cvS.levelParams (posLevels cvS.levelParams) nP
       cvS.type bsT tbl.structSort hsT'
     rw [show cvS.type.instantiateLevelParams cvS.levelParams (posLevels cvS.levelParams) =
-      posOf cvS.levelParams cvS.type from rfl, hl] at hl'
-    obtain rfl := Option.some.inj hl'
+      posOf cvS.levelParams cvS.type from rfl] at hl'
+    obtain rfl := Option.some.inj (hl.symm.trans hl')
     have hcusS : cus.length = cvS.levelParams.length := by rw [hlpS]; exact hcusLen
     rw [WhnfAux.subst_posOf_level hsperm hcusS] at hlnz
     -- the reduct
