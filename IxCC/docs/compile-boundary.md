@@ -27,8 +27,8 @@ make another definition's arguments by name. So is which constants run as
 fixed-width word primitives (SrcEval's rule F6w, stage W1 of
 [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)): a
 certificate's `word` entry is accepted only when the configuration enables
-words, which no compile or recheck path does yet (`Table.Config.words` is off
-until the native lowering exists), and then only at the operation's pinned
+words (`Table.Config.words`, on by default since erasure emits the word primitive),
+and then only at the operation's pinned
 address with a stored theorem whose statement is the operation's equation
 (`Table.checkWord`).
 

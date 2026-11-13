@@ -114,6 +114,8 @@ structure Produced where
   /-- Anf's stages as the producer computed them. -/
   stages : List (String × Anf.Program)
   alloc : List Xv.Alloc.Outcome
+  /-- The word hints after admission (`Src.Table.wordHints`, stage W1). -/
+  wordHints : Array Src.Diag := #[]
 
 /-- Untrusted names from the sidecar, for diagnostics. -/
 def sidecarName (h : Src.Hints) (a : Ixon.Address) : Option String :=
@@ -132,6 +134,8 @@ structure ProducedSource where
   ann : Src.Relevance.Ann
   src : Src.Program
   checked : Src.Relevance.Checked
+  /-- The word hints after admission (`Src.Table.wordHints`, stage W1). -/
+  wordHints : Array Src.Diag := #[]
 
 /-- The producer's front half: the table built from the sidecar's proposals
 and validated, the relevance oracle, the annotation installed and checked
@@ -152,16 +156,17 @@ def produceSource (cfg : Config) (inp : Input) : Except Err ProducedSource := do
       throw { stage := .relevance, code := s!"relevance-{(errs[0]?.map (·.rule)).getD "S1"}"
               message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p0)) }
     | .error (.table m) => throw { stage := .table, code := "table.entry", message := m }
-  match Src.admit src (sidecarName inp.hints) cfg.admit with
-  | .ok _ => pure ()
-  | .error diags =>
-    let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
-    throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
-  pure { table, tableDiags, tableStats, ann, src, checked }
+  let adm ← match Src.admit src (sidecarName inp.hints) cfg.admit with
+    | .ok adm => pure adm
+    | .error diags =>
+      let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
+      throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
+  pure { table, tableDiags, tableStats, ann, src, checked
+         wordHints := Src.Table.wordHints src adm.reached }
 
 /-- The producer: every oracle, run natively (see the module note). -/
 def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
-  let ⟨table, tableDiags, tableStats, ann, src, checked⟩ ← produceSource cfg inp
+  let ⟨table, tableDiags, tableStats, ann, src, checked, wordHints⟩ ← produceSource cfg inp
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
@@ -178,7 +183,7 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
   pure { cert := { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert
                    alloc := r.outs, frames := layouts, order }
-         tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes }
+         tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes, wordHints }
 
 /-- **Stage A**: `rel` is exactly the annotation the relevance annotator over
 the kernel (`Src.KernelFront.Kernel.annotateChecked`) gives on the

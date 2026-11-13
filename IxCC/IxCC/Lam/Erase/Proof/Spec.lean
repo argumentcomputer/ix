@@ -56,6 +56,18 @@ def RuleAltR (r : CId) (q : Profile) (base : Nat) (ind : CId) (j : Nat) (rule : 
 /-- The universe profile of a reference to `c` under `cx`. -/
 abbrev qOf (cx : Cx) (c : CId) (us : List Ixon.Univ) : Profile := I.profileOf c cx.prof us
 
+/-- Constructor `c` has `nf` fields and its inductive unboxes at field 0 (stage W1). -/
+def UnboxesAt0 (c : CId) (nf : Nat) : Prop :=
+  ∃ sf lv ind cidx np ty, I.decl? c = some (.ctor sf lv ind cidx np nf ty) ∧ I.unbox? ind [] = some 0
+
+/-- **The unboxing fact at one width** (stage W1; erasure decides it, `Input.wordUnboxAtB`): the
+pinned `UIntN.ofBitVec` of `w`, `BitVec.ofFin` and `Fin.mk` exist and unbox at field 0, with 1, 1
+and 2 fields, so a tower of `w` erases to its number. -/
+def WordUnboxAt (w : Src.Width) : Prop :=
+  (∃ c, I.known.wordCtors.lookup w = some c ∧ UnboxesAt0 I c 1) ∧
+  (∃ c, I.known.bitVecOfFin = some c ∧ UnboxesAt0 I c 1) ∧
+  (∃ c, I.known.finMk = some c ∧ UnboxesAt0 I c 2)
+
 /-- A wrapper's argument class for position `i` (`wrapperBody`). -/
 def wrapClass (h : Head) (c : CId) (i : Nat) : Src.Rel :=
   if headReads I h i then .rel else (I.params c).getD i .rel
@@ -184,6 +196,12 @@ inductive SatR : Cx → Head → Profile → List Src.Term.Arg → Term → Prop
   | prim {cx : Cx} {op : Src.PrimOp} {q : Profile} {args : List Src.Term.Arg}
       {args' : List (Term × Mode)} :
       ArgsR cx args args' → SatR cx (.prim op) q args (.prim (Prim.ofSrc op) (args'.map (·.1)))
+  /-- A word primitive (stage W1), where the towers of its width and of its result width erase to
+  their number. -/
+  | word {cx : Cx} {w : Src.Width} {op : Src.WordOp} {q : Profile} {args : List Src.Term.Arg}
+      {args' : List (Term × Mode)} :
+      WordUnboxAt I w → WordUnboxAt I (op.resultWidth w) →
+      ArgsR cx args args' → SatR cx (.word w op) q args (.prim (.word w op) (args'.map (·.1)))
   | natZero {cx : Cx} {c : CId} {q : Profile} {args : List Src.Term.Arg}
       {sf : Bool} {lv : Nat} {ind : CId} {cidx np nf : Nat} {ty : Src.Term} :
       I.decl? c = some (.ctor sf lv ind cidx np nf ty) → I.known.natZero = some c →
@@ -455,6 +473,13 @@ inductive WrapR (h : Head) (q : Profile) : Term → Prop
       h = .prim op →
       WrapR h q (Term.lams (List.replicate (headArity I h) .strict)
         (.prim (Prim.ofSrc op) ((List.range (headArity I h)).map fun i =>
+          (wrapCx q (headArity I h)).lvl i)))
+  /-- A word primitive's wrapper (stage W1), with the unboxing facts at its width and result
+  width. -/
+  | word {w : Src.Width} {op : Src.WordOp} :
+      h = .word w op → WordUnboxAt I w → WordUnboxAt I (op.resultWidth w) →
+      WrapR h q (Term.lams (List.replicate (headArity I h) .strict)
+        (.prim (.word w op) ((List.range (headArity I h)).map fun i =>
           (wrapCx q (headArity I h)).lvl i)))
   | other {c : CId} {body : Term} :
       (h = .ctor c ∨ h = .quotMk c ∨ h = .quotLift c ∨ h = .recr c ∨ h = .cases c) →

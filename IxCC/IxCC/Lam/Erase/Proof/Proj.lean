@@ -28,6 +28,7 @@ theorem _root_.IxCC.Lam.Erase.Proof.WrapR.lams {I : Input}
     ∃ inner, body = Term.lams (List.replicate (headArity I h) .strict) inner := by
   cases hw with
   | prim _ => exact ⟨_, rfl⟩
+  | word _ _ _ => exact ⟨_, rfl⟩
   | other _ _ _ => exact ⟨_, rfl⟩
 
 theorem glob_of {key : Key.GKey} {g : GlobalId} (hg : S.G key g) :

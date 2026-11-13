@@ -1,4 +1,5 @@
 import IxCC.Lam.Erase.Proof.Proj
+import IxCC.Lam.Erase.Proof.Word
 
 /-! # The erasure simulation on terms
 
@@ -354,6 +355,13 @@ theorem sat_sim : ∀ {cx : Cx} {h : Head} {q : Profile} {args : List Src.Term.A
       (fun k => by
         rw [Sem.Result.bind_assoc]
         exact Sem.Result.bind_congr _ fun ss => Src.fire_prim S.p k ls' op ss)
+      (fun k => Lam.eval_prim S.L k ρ' _ _)
+  | _, _, _, _, _, .word (w := w) (op := op) hu hu' hargs, _, _, _, ρ, ρ', ls, ls', he, hag, _ =>
+    (SimUpTo.bind (Lam.evalList_mono S.L _ _) (fun _ => ClockMono.const _)
+      (argVals_sim hargs he hag) fun _ _ hxs => word_value_sim S hu hu' hxs).congr
+      (fun k => by
+        rw [Sem.Result.bind_assoc]
+        exact Sem.Result.bind_congr _ fun ss => Src.fire_word S.p k ls' w op ss)
       (fun k => Lam.eval_prim S.L k ρ' _ _)
   | _, _, _, _, _, .natZero (c := c) (args := args) hd hz, _, _, hlen, ρ, ρ', ls, ls', _, _,
       _ => by

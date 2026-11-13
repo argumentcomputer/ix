@@ -105,7 +105,7 @@ theorem evalConst_head {c : CId} {h : Head} (hh : (Input.ofProgram p ch).headOf 
     | case _ => simp only [Option.some.injEq] at hh; subst hh; rfl
     | csimp _ _ _ => simp at hh
     | eqn _ _ => simp at hh
-    | word _ _ _ => simp at hh
+    | word _ _ _ => simp only [Option.some.injEq] at hh; subst hh; rfl
   | none =>
     rw [hr] at hh
     dsimp only at hh ⊢
