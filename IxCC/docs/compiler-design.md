@@ -64,7 +64,8 @@ them.
   class for every binder, argument, let, constructor field and constant; the
   annotation travels in the certificate beside the bytes, and the recheck
   path decides it with `Relevance.check` (proved in
-  `Relevance.Proof.check_sound`) and `Relevance.checkCanonical`
+  `Relevance.Proof.check_sound`, tier C in `check_soundC`) and
+  `Relevance.checkCanonical` (its facts: `checkCanonical_sound`)
   ([Relevance and erasure](#relevance-and-erasure)).
 - **D10. Own runtime.** Allocation, reference counting, the `Nat`
   procedures and the entry wrappers are Lir code, lowered and proved with
@@ -428,7 +429,7 @@ soon as it passes one of these fixed budgets
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
 | `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 54,727,677 bytes, since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
-| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection; each is measured in the roadmap, the last three open | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
+| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection (linear in the function count since 2026-11-13); each is measured in the roadmap, the middle two open | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
 (172 measured, 2026-11-11), which also checks every walk against the visit
@@ -852,10 +853,13 @@ minor's (SrcEval applies the minor to every field slot of the constructor
 value; erasure passes every field, □ where the constructor's record drops
 it: `minorApp` for a case, the rule body for a recursor), so the minor
 receives the value and does not use it (C1); `tests-recheck` runs both such
-minors to the right value. These are checks with tests: the relevance proof
+minors to the right value. These are checks with tests. The relevance proof
 (`Relevance.Proof.check_sound`) gives the tier-S facts erasure needs relative
-to SrcEval and says nothing about this invariant, and `checkCanonical` has no
-theorem. A violation makes SrcEval return an irrelevant value or get stuck,
+to SrcEval; since 2026-11-13 what the other checks decide is a proposition too
+(`Relevance.Proof.check_soundC` for tier C, `checkCanonical_sound` for
+`checkCanonical`, in `Src/Relevance/Proof/Canonical.lean`), but no theorem yet
+derives the invariant from them (relevance preservation, P1 in the
+[roadmap](roadmap.md#resource-soundness)). A violation makes SrcEval return an irrelevant value or get stuck,
 which the correctness statement counts as the source going wrong
 (`Front.GoesWrong`) and so does not bound. The certified kernel refused most
 of these programs only because its conversion compares binder contracts

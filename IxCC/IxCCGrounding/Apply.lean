@@ -1,4 +1,5 @@
 import IxCCGrounding.Relation
+import IxCCGrounding.Lift
 
 /-!
 # The application lemma (`IxCCGrounding.Apply`), step (e) of the spike
@@ -112,6 +113,31 @@ theorem relSlots_snoc : ∀ {ss : List Slot} {Xs : List V} {s : Slot} {X : V},
     cases h with
     | cons h1 h' => exact .cons h1 (relSlots_snoc h' hs)
 
+/-! ## The environment under a binder -/
+
+omit [Ix.Kernel.SetTheory V] in
+theorem skipEnv_push_one (Y : V) (ρk : BVarIdx → V) : skipEnv (push Y ρk) 1 0 = ρk :=
+  funext fun i => by simp [skipEnv, push]
+
+/-- Lifting every term of the substitution past a new binder keeps the environment related. -/
+theorem relEnv_liftAll {φ : LevelParam → Nat} {ρk : BVarIdx → V} (Y : V) :
+    ∀ {ρ : IxCC.Src.Env} {σ : Sig}, RelEnv M κ lpsOf S Ok φ ρ σ ρk →
+      RelEnv M κ lpsOf S Ok φ ρ (σ.map (·.map (Expr.liftLooseBVars 1 0))) (push Y ρk)
+  | [], _, h => by cases h; exact .nil
+  | _ :: _, _, h => by
+    cases h with
+    | some hs hd h' =>
+      exact .some hs ((den_lift 1 _ 0 (push Y ρk) _).mpr (by rw [skipEnv_push_one]; exact hd))
+        (relEnv_liftAll Y h')
+    | none h' => exact .none (relEnv_liftAll Y h')
+
+/-- **Under a new binder** (closure application): the bound slot related to the bound set, the
+substitution lifted (`liftσ`), the environment pushed. -/
+theorem relEnv_lift {φ : LevelParam → Nat} {ρ : IxCC.Src.Env} {σ : Sig} {ρk : BVarIdx → V}
+    {s : Slot} {Y : V} (hs : RelSlot M κ lpsOf S Ok s Y) (h : RelEnv M κ lpsOf S Ok φ ρ σ ρk) :
+    RelEnv M κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) :=
+  .some hs .bvar (relEnv_liftAll Y h)
+
 /-! ## The application lemma -/
 
 /-- **A1: applying a closure** at a graph-regime site. -/
@@ -119,13 +145,13 @@ theorem apply_clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {l
     {X Y : V} {s : Slot}
     (hv : RelV M κ lpsOf S Ok (.clo b dom body ρ ls) X) (hs : RelSlot M κ lpsOf S Ok s Y)
     {v : Nat} {A : V} {B : V → V} (hvz : v ≠ 0) (hX : X ∈ˢ piR v A B) (hY : Y ∈ˢ A) :
-    ∃ (φ : LevelParam → Nat) (lps : List Nat) (Γ : List KExpr) (ρk : BVarIdx → V)
+    ∃ (φ : LevelParam → Nat) (lps : List Nat) (Γ : List KExpr) (σ : Sig) (ρk : BVarIdx → V)
       (Ak Bk : KExpr) (Z : V),
-      LvAt φ lps ls ∧ RelEnv M κ lpsOf S Ok (s :: ρ) (push Y ρk) ∧
-      CtxSat M φ (Ak :: Γ) (push Y ρk) ∧ Runs M κ Ok lps ls φ (Ak :: Γ) body Bk ∧
+      LvAt φ lps ls ∧ RelEnv M κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) ∧
+      CtxSat M φ (Ak :: Γ) (push Y ρk) ∧ Runs M κ Ok lps ls φ (liftσ σ) (Ak :: Γ) body Bk ∧
       ConstsIn S body ∧ Denotes M.cval env φ (push Y ρk) Bk Z ∧ app X Y = Z := by
   cases hv with
-  | @clo _ _ _ _ _ φ lps Γ ρk Ak Bk m _ hlv henv hctx hruns hcs hden =>
+  | @clo _ _ _ _ _ φ lps Γ σ ρk Ak Bk m _ hlv henv hctx hruns hcs hden =>
     cases hruns with
     | lam _ hbody _ =>
       obtain ⟨Ad, G, hAd, hG, _, hXe⟩ := den_lam.mp hden
@@ -135,8 +161,8 @@ theorem apply_clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {l
         rw [h0, lamR_zero] at hX
         exact not_pt_mem_piR_pos hvz hX
       have hYd : Y ∈ˢ Ad := lamR_dom_eq hr hvz hX ▸ hY
-      refine ⟨φ, lps, Γ, ρk, Ak, Bk, G Y, hlv, ?_, ?_, hbody, ?_, hG Y hYd, app_lamR_pos hr hYd⟩
-      · exact .cons hs (by rw [push_tail]; exact henv)
+      refine ⟨φ, lps, Γ, σ, ρk, Ak, Bk, G Y, hlv, relEnv_lift hs henv, ?_, hbody, ?_, hG Y hYd,
+        app_lamR_pos hr hYd⟩
       · exact .cons (by rw [push_tail]; exact hctx) (by rw [push_tail]; exact hAd) hYd
       · intro c hc
         exact hcs c (by simp [Term.mentions, hc])

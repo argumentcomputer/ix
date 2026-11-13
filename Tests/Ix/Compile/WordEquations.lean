@@ -4,14 +4,15 @@ import LSpec
 
 /-!
   The stored equations of the fixed-width word operations that
-  `ix compile --equations --word-equations` adds (`Ix.Compile.WordEquations`).
+  `ix compile` adds by default with the equations (`Ix.Compile.WordEquations`).
 
   Every equation of every width elaborates, as a theorem checked by Lean's
   kernel, in the environment of a file that imports nothing but Lean's
   library; and on a source whose root adds two `UInt64`s and converts the sum
   to a `UInt8`, `close` adds exactly the theorems of the operations the
-  closure reaches (with `UInt64`'s and `UInt8`'s `ofNat`, whose theorem is the bridge),
-  each to the closure, and none of a width or an operation it does not reach,
+  root reaches outside theorems (with `UInt64`'s and `UInt8`'s `ofNat`, whose theorem is
+  the bridge), each to the closure, and none of a width or an operation it does not reach
+  (not `UInt64.toNat`, which the closure holds only inside `UInt64.toUInt8`'s own body),
   and the output's `theorems` list (`ix/compile-equations/2`) names each with
   its operation. A source without words gets none.
 -/
@@ -59,11 +60,12 @@ def suite : IO (List LSpec.TestSeq) := do
     let names : NameSet := closed.foldl (fun s (n, _) => s.insert n) {}
     let expected : List Name :=
       [`IxWordEquations.UInt64_add, `IxWordEquations.UInt64_toUInt8,
-       `IxWordEquations.UInt64_toNat, `IxWordEquations.UInt64_ofNat,
-       `IxWordEquations.UInt8_toNat, `IxWordEquations.UInt8_ofNat]
-    -- At the fixed point an equation is in the closure exactly when its operation is.
-    let exact := Ix.Compile.WordEquations.all.all fun e =>
-      names.contains e.theoremName == names.contains e.operation
+       `IxWordEquations.UInt64_ofNat, `IxWordEquations.UInt8_toNat, `IxWordEquations.UInt8_ofNat]
+    -- The walk: the operations the root reaches outside theorems, not entering an operation.
+    let reached := Ix.Compile.WordEquations.reachedOutsideTheorems env [`WordFixture.entry]
+    let reachedOps : List Name := [`UInt64.add, `UInt64.ofNat, `UInt64.toUInt8, `UInt8.toNat]
+    let exact := reachedOps.all reached.contains && reached.toList.length == reachedOps.length &&
+      names.contains `UInt64.toNat
     -- The output names every word equation of the closure with its operation, kind `word`.
     let proposals := Ix.Compile.Equations.theorems (closed.map (·.1))
     let json := Ix.Compile.Equations.toJson #[] proposals #[]
@@ -85,14 +87,16 @@ def suite : IO (List LSpec.TestSeq) := do
       test "a closure without words gets no equation"
         (wordTheorems (plainClosed.map (·.1))).isEmpty,
       test "no unfolding-theorem failure on the word source" failed.isEmpty,
-      test s!"the word source's closure holds the theorems of its operations: {added}"
-        (expected.all added.contains),
-      test "an equation is in the closure exactly when its operation is" exact,
+      test s!"the word source's closure holds the theorems of its operations and bridges, and only \
+          those: {added}"
+        (expected.all added.contains && added.length == expected.length),
+      test s!"the walk reaches four operations outside theorems, not UInt64.toNat (in the closure, \
+          inside UInt64.toUInt8's body): {reached.toList}" exact,
       test s!"the output's theorems name each equation of the closure with its operation: {listed}"
         (listed.length == added.length && named.all fun e =>
           listed.contains ("word", e.operation.toString, e.theoremName.toString)),
       test "the output's theorems are sorted by subject" sorted,
-      test "without words (the default, no --word-equations) the word source gets no equation"
+      test "with words off (`ix compile --no-word-equations`) the word source gets no equation"
         (wordTheorems (closedOff.map (·.1))).isEmpty,
       test "a closure without words gets no theorem proposal"
         (Ix.Compile.Equations.theorems (plainClosed.map (·.1))).isEmpty]
