@@ -1,4 +1,5 @@
 import IxCC.Anf.Pipeline
+import IxCC.Anf.Print
 import IxCCTests.Src.Support
 
 /-! The shrink walk's bound on literal folding (`Anf.Walk.foldable`, `foldBits` = 1024). Unbounded,
