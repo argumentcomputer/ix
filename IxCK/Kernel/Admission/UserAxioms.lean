@@ -124,6 +124,7 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
     Prod.fst <$> checkBytesUnder .strict hash binding pre limits records blobs hint =
       checkBytesWith hash binding pre limits records blobs hint := by
   unfold checkBytesUnder checkBytesWith prepareWith
+  simp only [checkConstantsUnder_cfg (cfg := limits.fold), Ix.Kernel.Cached.checkDecls_cfg (cfg := limits.fold)]
   cases preflight limits records blobs with
   | error e => rfl
   | ok _ =>
@@ -155,6 +156,8 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
     checkBytesWith hash binding pre limits records blobs hint = .ok env := by
   unfold checkBytesWith prepareWith
   unfold checkBytesUnder at h
+  simp only [Ix.Kernel.Cached.checkDecls_cfg (cfg := limits.fold)]
+  simp only [checkConstantsUnder_cfg (cfg := limits.fold)] at h
   cases h1 : preflight limits records blobs with
   | error e => simp [h1, bind, Except.bind, Except.mapError] at h
   | ok _ =>
@@ -281,6 +284,7 @@ theorem checkBytesTieredUsingUnder_strict (prelude : Ix.Kernel.RoleTable → Exc
     Prod.fst <$> checkBytesTieredUsingUnder .strict prelude hash binding limits records blobs hint =
       checkBytesTieredUsing prelude hash binding limits records blobs hint := by
   unfold checkBytesTieredUsingUnder checkBytesTieredUsing
+  simp only [checkConstantsTieredUnder_cfg (cfg := limits.fold), checkConstantsTiered_cfg (cfg := limits.fold)]
   refine map_bind_eq _ _ fun _ => ?_
   refine map_bind_eq _ _ fun _ => ?_
   refine map_bind_eq _ _ fun _ => ?_
@@ -301,6 +305,8 @@ theorem checkBytesTieredUsingUnder_strict_of_nil {policy : Ix.Kernel.Cached.Axio
     checkBytesTieredUsing prelude hash binding limits records blobs hint = .ok r := by
   unfold checkBytesTieredUsingUnder at h
   unfold checkBytesTieredUsing
+  simp only [checkConstantsTiered_cfg (cfg := limits.fold)]
+  simp only [checkConstantsTieredUnder_cfg (cfg := limits.fold)] at h
   obtain ⟨_, h1, h⟩ := bind_ok h
   obtain ⟨_, h2, h⟩ := bind_ok h
   obtain ⟨_, h3, h⟩ := bind_ok h

@@ -102,6 +102,7 @@ theorem checkBytesTieredUsing_ok {prelude : Ix.Kernel.RoleTable → Except Strin
       decodeRecords limits records = .ok constants ∧
       checkConstantsTiered hash t pre constants blobs hint = .ok (env, ts) := by
   unfold checkBytesTieredUsing at h
+  simp only [checkConstantsTiered_cfg (cfg := limits.fold)] at h
   cases h1 : preflight limits records blobs with
   | error e => simp [h1, bind, Except.bind, Except.mapError] at h
   | ok u1 =>

@@ -139,6 +139,7 @@ theorem checkBytesWith_checkDecls {hash : ByteArray → Address} {binding : Bind
     ∃ ev decls, prepareWith hash binding pre limits records blobs hint = .ok (ev, decls) ∧
       Ix.Kernel.Cached.checkDecls .verified ev decls = .ok env := by
   unfold checkBytesWith at h
+  simp only [Ix.Kernel.Cached.checkDecls_cfg (cfg := limits.fold)] at h
   cases hp : prepareWith hash binding pre limits records blobs hint with
   | error e => simp [hp, bind, Except.bind] at h
   | ok p =>
@@ -220,6 +221,7 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
       let constants ← (decodeWithin limits records).mapError Error.ofBytes
       checkConstantsWith hash t pre constants blobs hint) := by
   unfold checkBytesWith prepareWith checkConstantsWith
+  simp only [Ix.Kernel.Cached.checkDecls_cfg (cfg := limits.fold)]
   cases preflight limits records blobs with
   | error e => rfl
   | ok u =>

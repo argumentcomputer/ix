@@ -362,7 +362,8 @@ theorem checkBytesUsing_ok {prelude : Ix.Kernel.RoleTable → Except String (Pre
     (checked : Ix.Kernel.Cached.checkDecls .verified ev ds = .ok envA) :
     Ix.Kernel.Admission.checkBytesUsing prelude hash binding limits records blobs hint = .ok envA := by
   unfold Ix.Kernel.Admission.checkBytesUsing Ix.Kernel.Admission.checkBytesWith
-  simp only [admitted, hq, prepared, checked, Except.mapError, bind, Except.bind]
+  simp only [admitted, hq, prepared, Ix.Kernel.Cached.checkDecls_cfg (cfg := limits.fold), checked,
+    Except.mapError, bind, Except.bind]
 
 /-- **With the fold's acceptance, that is `IxonAccepts`**: under the
 committed prelude for the admitted table, if the verified fold accepts the
