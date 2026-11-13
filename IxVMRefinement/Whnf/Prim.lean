@@ -54,7 +54,7 @@ theorem nativeOp_lt (ro : Ix.Kernel.Role) :
 theorem natPrimOp_of_natOpOf {k : Nat} {ro : Ix.Kernel.Role}
     (h : Specs.Whnf.natOpOf k = some ro) : Specs.Nat.natPrimOp ro = some k := by
   unfold Specs.Whnf.natOpOf at h
-  split at h <;> first | (cases h; rfl) | cases h | simp_all [Specs.Nat.natPrimOp]
+  split at h <;> first | (cases h; rfl) | cases h
 
 /-- **A spine of reducts**: an application's arguments reduce pointwise (`Red.appArg` under
 `Red.appFn`). -/
@@ -63,7 +63,10 @@ theorem red_mkAppN_args {env : Ix.Kernel.Env .anon} {d : Nat} {As Bs : List KExp
     ∀ f : KExpr, Red env d (Ix.Kernel.Expr.mkAppN f As) (Ix.Kernel.Expr.mkAppN f Bs) := by
   induction hab with
   | nil => intro f; exact .refl
-  | cons hab _ ih => intro f; exact .trans (red_mkAppN _ (.appArg hab)) (ih _)
+  | @cons a b l₁ l₂ hab _ ih =>
+    intro f
+    show Red env d (Ix.Kernel.Expr.mkAppN (.app f a) l₁) (Ix.Kernel.Expr.mkAppN (.app f b) l₂)
+    exact .trans (red_mkAppN l₁ (.appArg hab)) (ih _)
 
 /-- A level list whose cell loads as `Nil` is empty. -/
 theorem lvListRep_nil {h : Heap F} {us : List KLevel} {lp : SourceValue F} (hus : LvListRep h us lp)
