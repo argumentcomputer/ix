@@ -1,0 +1,381 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Words.lean",
+  "roots": [
+    {
+      "name": "Grounding.Words.add64",
+      "address": "2a5a61788ad4a32c949558a5e9cd0b121fd76a485aae42fc894dbaa888813b6b"
+    },
+    {
+      "name": "Grounding.Words.mulAdd32",
+      "address": "17ea9f1f98e52cb748e3ed3b08de7d3aaf5cba2a39bf310103d9df14e90ee0e2"
+    },
+    {
+      "name": "Grounding.Words.mix8",
+      "address": "26ca65992ca8d70bccf613b38b098c7d51fe8e0ae8342cb78ac50bc5384be697"
+    },
+    {
+      "name": "Grounding.Words.neg16",
+      "address": "1f8532556f8908db0768dc58343bd61b0170f5f4f55b2fc4ac11428a6e89433d"
+    },
+    {
+      "name": "Grounding.Words.divMod32",
+      "address": "87f63bc6c6d9053f52e67f2d77955d452e73a20d2656c881d998c953a62308e2"
+    },
+    {
+      "name": "Grounding.Words.convert",
+      "address": "ee1ce9368811427e6998d8c7b8a7299f19f5c74ba81cb57b168aee7e452455fd"
+    },
+    {
+      "name": "Grounding.Words.shift64",
+      "address": "4d648ec89f5ab4f42c1e7020a5948d0c30acc48603068b1514fe913a9b7f545c"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "List.append",
+      "definition_address": "bb94d9f9475ba141a037dddbc665e907506b87bfc7267d9e0f7ec173a21709df",
+      "equation": "List.append.eq_def",
+      "equation_address": "7f57f446c5e78764228f1e42cd3fa17f1742f246eb78d8e6ff9323879cecf6d1"
+    },
+    {
+      "definition": "List.reverseAux",
+      "definition_address": "b2cb0a27e0aa3a957900d7a6242c312e852c586f0668d06ab5fd8bc83e8ce37f",
+      "equation": "List.reverseAux.eq_def",
+      "equation_address": "5148f95371dd4309ff667037a61d8ffcb03cc460fedf87119cb4bbb8109f6ad8"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Expr.denote",
+      "definition_address": "7143221e0f0c781cab2840b67c3bf48a43942d652d081f403ae7c585bf4b635a",
+      "equation": "Nat.Internal.Linear.Expr.denote.eq_def",
+      "equation_address": "dee4af0915552a74ddcdd12e95965ac268e80caf1e6be7fa484ca6494dd5ba18"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Expr.toPoly.go",
+      "definition_address": "ae7354686a04821fad096a90b66199f61f89d04fc6bd10e0860182f5870ddaee",
+      "equation": "Nat.Internal.Linear.Expr.toPoly.go.eq_def",
+      "equation_address": "6438bdcea4c802c8a35c7c17a6d9ccf3fcd064702726d26c632d617340970245"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.cancelAux",
+      "definition_address": "be0fe15cb51c5cb51f5347b5cb4d7f651665d29757324e77803e83912d0a6b19",
+      "equation": "Nat.Internal.Linear.Poly.cancelAux.eq_def",
+      "equation_address": "394c76c7c4e80c580540f33c71a027e4a1f6e3e2c7ef7dea92c715aeebc45e47"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.denote",
+      "definition_address": "9b11926ae123710e491631c8e46ac5efa47a5bc05794f72c39044c3e1c31606b",
+      "equation": "Nat.Internal.Linear.Poly.denote.eq_def",
+      "equation_address": "ba79a593f2946930e787528e7db2a7c8876169b49103e165b7fd975f93082010"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.insert",
+      "definition_address": "f6e0ea6f1b2c02c48a6fe38400b97cb5270fe858dd255835065ad207e766e043",
+      "equation": "Nat.Internal.Linear.Poly.insert.eq_def",
+      "equation_address": "c1bc10e53805f39750c10de1bb841b523b6114458a6db064c5ef75062c6632ac"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.norm.go",
+      "definition_address": "2f426fb82bc7a57656af00d6e2ee8b0b816f763e4ddf025a79e58d645447462a",
+      "equation": "Nat.Internal.Linear.Poly.norm.go.eq_def",
+      "equation_address": "8e26fbe5529cbb244b9482d83d28f17113e04ecb9dfc225f96d85917b38ea79b"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "9ac282a4ad68bf13a9138fbdc44c7cb161307ddba94ea3a73e86652682092134"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "adaf32f49aa6fee4ac8b0742563494b381e0742d9ea685fe2456eb71b25fec08",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "4556e5eb40bab810041ef740101ad4a5c682f808129ae225358aba784f7fd87c"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "7aacf525b619c56858a4d2ce878a81f517c93b7388ccc3eb6bfb98cdc6e2868f",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "1da3c270576c70b5869bf553a3ff5d3509469035158799636a502b388155c05f"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "8bddd43d36af159f8f1c7edf477d9f0a06a26bfbecf5a198c0e9ec4ac370f6e6",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "bac3ccdefe551ee2cfbcd41d660bf053f7746acbcfa484a072d2ff4e68e28986"
+    },
+    {
+      "definition": "Nat.div.inductionOn",
+      "definition_address": "d4f15deffb75126d869db61e1c2e6d8eab256ee069cf40c626ee613cc52e0768",
+      "equation": "Nat.div.inductionOn.eq_def",
+      "equation_address": "13ac67b821fbeee4357bac890296357f70b0aab819199a8ed398415d0bb42a55"
+    },
+    {
+      "definition": "Nat.div.inductionOn._unary",
+      "definition_address": "7ef3dfdc28fe225f1b39766322edd5b9482754ae14b41823b6bd85bd69e54f4c",
+      "equation": "Nat.div.inductionOn._unary.eq_def",
+      "equation_address": "5acfaa475b8d77a09b87bdb0c4cbfa9d10f057035af5b5d2f3c650c7cc2aad3e"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "23036bf2103e4d2edd76b759cdceb07c059b7b78c6c8a6600b070590dc54a000",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "4f4c23821fab10c2d3020c5805163a8efbd1d317be0dddffc7884ccc1ecb0d18"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "dce69be8519f213784eb176a14d2c28730641a8832378fe5b123dc782d4b5b7a"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "c32dc1f78e978e09fbb614f99ddd392a7f1aff1571028e8a21d9b74c137242db"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "832765d5edead81a6ce670de18784cdd6f9f58da57651b8a9c0da4b4977747b4"
+    }
+  ],
+  "theorems": [
+    {
+      "kind": "word",
+      "subject": "UInt16.complement",
+      "subject_address": "d1549abbf1fe5285e1d86c23b9246f35041143ef535c79b444363bbab943ad1b",
+      "theorem": "IxWordEquations.UInt16_complement",
+      "theorem_address": "a77876aa1e03903c7b1afc320ed5dc4bd7936b82df23ee372e3d7e76785c64ab"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.land",
+      "subject_address": "1c638f93cd5ea9c69cbd08c0c3a249f0c3bfc4d4dd8c473e8faf514b885ef29d",
+      "theorem": "IxWordEquations.UInt16_land",
+      "theorem_address": "d8b63f1d1dbd2f821120c51445c1267efda42f3cee3077815a7f3cb50d757bab"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.neg",
+      "subject_address": "11a7ab2ae2be81cd5e854557dfd0da29e69a10e8a8b25ad3e046d05a1f0b1d9f",
+      "theorem": "IxWordEquations.UInt16_neg",
+      "theorem_address": "c03d1696c7ad9d5b2b8e7901ab0dd08f307c30bb32d624d69f0b6792ecc2a4e8"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.ofNat",
+      "subject_address": "3584c8d254f8af46d15544b79656ec5fa605ef2e456e9c5361b672cca56a0537",
+      "theorem": "IxWordEquations.UInt16_ofNat",
+      "theorem_address": "f8dcb0d3b13cedd184797995f8f9462a91fe7d8e33e340e11e0276662ee5837f"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.sub",
+      "subject_address": "84ad8ab16179024cd2502886f5b05f6ed481f6b6f7bee53d14dcd56db395d440",
+      "theorem": "IxWordEquations.UInt16_sub",
+      "theorem_address": "4b0243109b80dce317a7f21dc59286f2d2331e3c7f1f4aea070a581ab7de6faf"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.toNat",
+      "subject_address": "01521667d2d5da64f88c9d5bb03ae1af9d50ee1f67489d94c85404b8738a98b6",
+      "theorem": "IxWordEquations.UInt16_toNat",
+      "theorem_address": "8ee96e56704e0cca24c9907e7d5d64e223252d77fd95f4a54cf9d3ce2d86dfa3"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.toUInt32",
+      "subject_address": "36fe72aa0f295fe627eef379cf4495c933093b7797712b62c8174d0561462241",
+      "theorem": "IxWordEquations.UInt16_toUInt32",
+      "theorem_address": "c3779e2635d457802b5926ea310fac8e543c253ab8040334e27526e0c44ad815"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt16.toUInt64",
+      "subject_address": "1e1ebca5d269152e4638e9ac4e6a33896fcce78b3c8803ef5642662d70016ccc",
+      "theorem": "IxWordEquations.UInt16_toUInt64",
+      "theorem_address": "fa1e27445f118d326c1f19c8aba1b0f6dacc6c4af4e1f0039699119e7e91903c"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.add",
+      "subject_address": "cb990e9d2754b991d92c58ca7b146536547a408a0aed8c8aace5516617b1ca2b",
+      "theorem": "IxWordEquations.UInt32_add",
+      "theorem_address": "b4ec81238d63067978d7c86d9991ea52b8f2efd2d9131438712442a75ac8f52f"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.div",
+      "subject_address": "591870d2f660c861b872e5e3fde9edb81fa39c1302255f47226891e7410b356a",
+      "theorem": "IxWordEquations.UInt32_div",
+      "theorem_address": "1a8278071be96021b8d3af773c4d66579b2b32868dbff31f9d736bf155e31b23"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.mod",
+      "subject_address": "905a5f42245d0f27847bc4cfd2c535199cfaaff8a0e5925538dfef061158b072",
+      "theorem": "IxWordEquations.UInt32_mod",
+      "theorem_address": "b2c39b8696179f8ad2be6746f0039342b2b32cd4e3034beca59d4acb322ee04b"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.mul",
+      "subject_address": "25aecdaf3d7959f92783083aa201c6212b2ed10410fa4f3a8e6a4348978b9ec9",
+      "theorem": "IxWordEquations.UInt32_mul",
+      "theorem_address": "71d92fbc47c1789ab028b5e65dd04490c125a4e0c3d210657ed677ee1797b964"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.ofNat",
+      "subject_address": "a3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07",
+      "theorem": "IxWordEquations.UInt32_ofNat",
+      "theorem_address": "261106e3334d2c3278ed0a2dbc2c86752a0780b682e268267ad9da98490e15b0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.toNat",
+      "subject_address": "39e2b134273ce4ba230b50e6ab1fa434965198707788279dd271dbbe13c046a4",
+      "theorem": "IxWordEquations.UInt32_toNat",
+      "theorem_address": "364f56c035aa69f7b6440a18a0a75b3d2f6415c69ec8e2496c049bf13cd43eeb"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.toUInt16",
+      "subject_address": "6d3395f5534d4840e5059bd82ae28ee298ebdcf14df5a6b89b42203a5fb5b41c",
+      "theorem": "IxWordEquations.UInt32_toUInt16",
+      "theorem_address": "66b5e94d5a7a3fa933f16df93f1391eba719eb89cb28e49c964f419a66e2905c"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.add",
+      "subject_address": "c7fcffb6565f3c08960bcd52f0f47f62bc293bc6608af56f09d79a99bc374f8b",
+      "theorem": "IxWordEquations.UInt64_add",
+      "theorem_address": "ffe91e8ea0da76dc89f524528f8bc7346ffa5247002d3a93685f88317c49135d"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.ofNat",
+      "subject_address": "1528f3db357a69db747482babd2a0253f9c2eb59aed8ac4bf1ca9f6b732df779",
+      "theorem": "IxWordEquations.UInt64_ofNat",
+      "theorem_address": "66ccadc27db4066a2757eda680f110c8364d8ab945fb20b366ceef2287680ac6"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.shiftLeft",
+      "subject_address": "9c7fcdcf233eda35dd92dd9bf885f58741ade0410433b0b943a942a80fecfb0d",
+      "theorem": "IxWordEquations.UInt64_shiftLeft",
+      "theorem_address": "0b79b53001cbfe3b1626d1d3f4919a27c9e2b87f6c80fa035fce8408f0355cd8"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.shiftRight",
+      "subject_address": "e70dc990e850e1cf7f8a939f3e5b75bf9c227ba8feffd3c25af35fc6db597675",
+      "theorem": "IxWordEquations.UInt64_shiftRight",
+      "theorem_address": "ac8d96340c5da862551d79e4ac4a09fe5186a3eaa6b14114d8a4c64593b8025d"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.sub",
+      "subject_address": "ad5dfc44fd3c4198f7e5720cc3779d87e0a22c2ed851675728c433376c8c3464",
+      "theorem": "IxWordEquations.UInt64_sub",
+      "theorem_address": "cb808de4a82ca792a6254673c0232a3a2f84baec9bc5dd9b8df9fbd74e18917e"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.toNat",
+      "subject_address": "16c69034212fa247f551a9508827b21651ae686ab9e3021b2a4dc81ac2176e46",
+      "theorem": "IxWordEquations.UInt64_toNat",
+      "theorem_address": "9278c2ca9c2864aa8a44a8a3612521bbcd917672d74b83e860b586e364576804"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.toUInt32",
+      "subject_address": "d0909059dd930a1b057cb4af11bd8c63c30948308d683cf7961238f56a968a85",
+      "theorem": "IxWordEquations.UInt64_toUInt32",
+      "theorem_address": "52aae318824fa8a55e7d032542c3922a0646f7845906511886583c7b747aee09"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt64.toUInt8",
+      "subject_address": "7299c0fec972cc77295b52475032139f3d98bbfef2018c0fdd31145358ad3f32",
+      "theorem": "IxWordEquations.UInt64_toUInt8",
+      "theorem_address": "8c75e10a62207d0d9c84e7e3d324e741232abbaa27ae6f74ea63a8208d343622"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.lor",
+      "subject_address": "b98e0cdf92233c59a9442afe7ed8798271a4940d9909e125f97d3ae8b423efe5",
+      "theorem": "IxWordEquations.UInt8_lor",
+      "theorem_address": "a36a83b0eea5cada506613b7635da6075f291d830bcb08f3b7cd9d7d1c7ba784"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.ofNat",
+      "subject_address": "b75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee",
+      "theorem": "IxWordEquations.UInt8_ofNat",
+      "theorem_address": "c599a5c7467baec84e2709253279322427cb0ae75f3cca11fb8682628abae65e"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.shiftLeft",
+      "subject_address": "7a934932aff49725fcfee9bf5c24b0db12157f062112222bfbdc2c32d5f0392a",
+      "theorem": "IxWordEquations.UInt8_shiftLeft",
+      "theorem_address": "99bb46c765910487a418cf579a6b4627d688fa46fd521afacbe2cef821b3cb9f"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.shiftRight",
+      "subject_address": "7cad2cfe37d3be267a14abe3ac42162edcb142b42261bd21263bce8dcc9b29c6",
+      "theorem": "IxWordEquations.UInt8_shiftRight",
+      "theorem_address": "05ed89d2537de748b5513dbb0025cf2d346aa73c44f2add33ecfefafee19d6fe"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.toNat",
+      "subject_address": "bd08efcda40ec22666e466fd8f721243f612ffa6ffd10dc2e6d37ac9339b38c8",
+      "theorem": "IxWordEquations.UInt8_toNat",
+      "theorem_address": "1f19de0a2d63e919e697dd404da6931bebaea539bc4aa8d6bbd8bb8f6137fa0b"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.toUInt32",
+      "subject_address": "458d21951d68df8d39a5892e05ec2bd39d4e6a5856813a70e63b87c6da6f1f2b",
+      "theorem": "IxWordEquations.UInt8_toUInt32",
+      "theorem_address": "f1ac8ca9c29352cf2fbdc6a31ab539a5bc80607b6f75a2731b98f5202b13df3c"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.xor",
+      "subject_address": "e5e30dacda5133de3017eaf80750339191a346607fd6649a2c6a88138f514937",
+      "theorem": "IxWordEquations.UInt8_xor",
+      "theorem_address": "951eaf3f6aa415670ade29da10d94a5d7c6d3150a104323cd87b668948cd5686"
+    }
+  ],
+  "failures": []
+}

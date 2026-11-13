@@ -1,7 +1,7 @@
 {
   "format": "ixcc/corpus/1",
   "family": "grounding",
-  "description": "The subjects of the grounding suite (tests-grounding) that no other family holds: decide (fib 10 = 55), the evaluation-axiom shape, in the role-bound envelope ix compile writes by default.",
+  "description": "The subjects of the grounding suite (tests-grounding) that no other family holds: decide (fib 10 = 55), the evaluation-axiom shape; and fixed-width word arithmetic (stage W1 primitives) with no decision, string or let; in the role-bound envelope ix compile writes by default.",
   "tier": "required",
   "phase": 1,
   "directory": "fixtures/corpus/grounding",
@@ -109,6 +109,357 @@
               "args": [],
               "value": "true",
               "machine": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "words",
+      "source": {
+        "path": "Words.lean",
+        "sha256": "2dc6e543f42795f237e3dca4b37c8cc49d2063f0e0b8d900473f05066f4440f4",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Grounding.Words.add64",
+        "Grounding.Words.mulAdd32",
+        "Grounding.Words.mix8",
+        "Grounding.Words.neg16",
+        "Grounding.Words.divMod32",
+        "Grounding.Words.convert",
+        "Grounding.Words.shift64"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "words.ixe",
+        "sha256": "7279500198f7f061d32aa86f853a59de4d57329a82061b20aad2c667a90ef791",
+        "bytes": 1025138
+      },
+      "equations": {
+        "path": "words.equations.json",
+        "sha256": "cbc0ad202b8063643bea86ae2124a54f1df42fe22dd7c5795bda393bb3f63bbe",
+        "equations": 22,
+        "failures": 0
+      },
+      "named_env_sha256": "84a5d08029afc057cd1089f186980333edd302398ad9654395a9603a4b4002c6",
+      "census": {
+        "path": "words.census.json",
+        "sha256": "c10c2ae7280e6d310b38cb772e98d9a455cfa78508468a906560f5213cb2fb34"
+      },
+      "roots": [
+        {
+          "name": "Grounding.Words.add64",
+          "address": "2a5a61788ad4a32c949558a5e9cd0b121fd76a485aae42fc894dbaa888813b6b",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                4611686018427387903
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775808",
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the UInt64 sum 2^63 has no tagged word (DR2: a UInt64 is native only below 2^63)"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.mulAdd32",
+          "address": "17ea9f1f98e52cb748e3ed3b08de7d3aaf5cba2a39bf310103d9df14e90ee0e2",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4,
+                5
+              ],
+              "value": "17",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                65536,
+                5
+              ],
+              "value": "5"
+            },
+            {
+              "args": [
+                4294967295,
+                4294967295,
+                0
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4294967296,
+                7,
+                9
+              ],
+              "value": "9"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.mix8",
+          "address": "26ca65992ca8d70bccf613b38b098c7d51fe8e0ae8342cb78ac50bc5384be697",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                200,
+                17
+              ],
+              "value": "206",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                255,
+                255
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                256,
+                1
+              ],
+              "value": "8"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.neg16",
+          "address": "1f8532556f8908db0768dc58343bd61b0170f5f4f55b2fc4ac11428a6e89433d",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1,
+                0
+              ],
+              "value": "65534",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "65535"
+            },
+            {
+              "args": [
+                65537,
+                65535
+              ],
+              "value": "65535"
+            },
+            {
+              "args": [
+                12345,
+                54321
+              ],
+              "value": "3013"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.divMod32",
+          "address": "87f63bc6c6d9053f52e67f2d77955d452e73a20d2656c881d998c953a62308e2",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                7,
+                2
+              ],
+              "value": "4",
+              "machine": true
+            },
+            {
+              "args": [
+                7,
+                0
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                4294967295,
+                1
+              ],
+              "value": "4294967295"
+            },
+            {
+              "args": [
+                10,
+                4294967296
+              ],
+              "value": "10"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.convert",
+          "address": "ee1ce9368811427e6998d8c7b8a7299f19f5c74ba81cb57b168aee7e452455fd",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                300
+              ],
+              "value": "644",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                70000
+              ],
+              "value": "9040"
+            },
+            {
+              "args": [
+                4294967297
+              ],
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "name": "Grounding.Words.shift64",
+          "address": "4d648ec89f5ab4f42c1e7020a5948d0c30acc48603068b1514fe913a9b7f545c",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1,
+                3
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                64
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                256,
+                4
+              ],
+              "value": "4080"
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "3"
+            },
+            {
+              "args": [
+                1,
+                63
+              ],
+              "value": "9223372036854775808",
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the UInt64 shift 2^63 has no tagged word (DR2: a UInt64 is native only below 2^63)"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                2
+              ],
+              "value": "17293822569102704640",
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the UInt64 difference 2^64 - 2^60 has no tagged word (DR2: a UInt64 is native only below 2^63)"
             }
           ]
         }

@@ -5,7 +5,7 @@ import IxCCGrounding.SelRetype
 
 `headRegimeSB` (`IxCCGrounding.GradedHead`, the per-spine decision the root theorem
 `rootSound_678AG_of_check` reads) on every committed closure the grounding measurements load (the
-ten corpus families, 35 closures, and the fifteen extra ones: 50):
+ten corpus families, 36 closures, and the fifteen extra ones: 51):
 
 * true on the 37 closures the check accepts, by name (since step C: `fields254`, `machines`,
   `natural` added), so the family without a typing hypothesis holds on all 37: on `natural`,
@@ -28,15 +28,20 @@ a proposition everywhere (3 plants on each of the 25 closures with a δ site: 75
 with a bound-variable head whose context type is a `∀`, its λ domains' `∀` data made propositions
 everywhere (32 closures).
 
-Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 50: `selEnv` retypes exactly the
+Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 51: `selEnv` retypes exactly the
 `for`-loop function of the six `for`-loop closures and moves only their `eqnShape` conjunct (false
-to true), nothing on the other 44; on each of the six, three planted controls are refused by
+to true), nothing on the other 45; on each of the six, three planted controls are refused by
 `eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
 proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
 (`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 44: the 37 the check
 accepted when step Ap landed, the six (`resource` since step E0, which admits its `Empty.casesOn`
 entry, of kind `empty`: `IxCCTests.Grounding.CaseEmpty`) and `arity` (since step C's closure-capture
-case: `IxCCTests.Grounding.LetClo`). -/
+case: `IxCCTests.Grounding.LetClo`).
+
+The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
+refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
+every other part is true, also with the word entries' runtime references (the tower's six
+constructors, which no run term names) added to its closure. -/
 
 namespace IxCCTests.Grounding.GradedHead
 
@@ -110,12 +115,23 @@ def addedByC : List String :=
 
 /-- The three corpus fixtures refused before the check (the annotation of
 `typeFormerPolymorphism`; the decoder's consumer budget at `fields255` and `tags126`): not
-loaded, so not counted among the 50. -/
+loaded, so not counted among the 51. -/
 def notLoaded : List String :=
   ["phase1-scalar/typeFormerPolymorphism", "phase1-boundary/fields255", "phase1-boundary/tags126"]
 
 def sB (i : Input) : Bool := headRegimeSB i.src i.env i.κ i.lpsOf i.ann i.Sl
 def gB (i : Input) : Bool := headRegimeGB i.src i.env i.κ i.lpsOf i.ann i.Sl
+
+/-- The word subject (fixed-width word arithmetic, stage W1; `fixtures/corpus/grounding/words`). -/
+def wordsLabel : String := "grounding/words"
+
+/-- `Sl` with each word entry's runtime references (`Program.runtimeRefs`: the tower's
+constructors, which no run term names) added. -/
+def wordClosure (i : Input) : List CId :=
+  let refs := (i.Sl.flatMap fun c => match i.src.table.resolveOf c with
+    | some (.word ..) => (i.src.runtimeRefs c).map (·.1)
+    | _ => []).eraseDups
+  i.Sl ++ refs.filter (!i.Sl.contains ·)
 
 /-- The sites 1a's reading as written refuses at some `Ok` profile (constants within
 `maxDirectParams` level parameters, at their `Ok` profiles). -/
@@ -210,7 +226,7 @@ def run : IO Bool := do
         catch _ => pure false
       expect a (!r) s!"graded1b: {label} loads; it was refused before the check"
     let js := js0.filter (!notLoaded.contains ·.1)
-    expect a (js.length == 50) s!"graded1b: {js.length} closures found, expected 50"
+    expect a (js.length == 51) s!"graded1b: {js.length} closures found, expected 51"
     let mut nAcc := 0
     let mut sFalse : List String := []
     let mut gap := 0
@@ -226,6 +242,7 @@ def run : IO Bool := do
     let mut nAp := 0
     let mut nApPlants := 0
     let mut famAGp : List String := []
+    let mut nWords := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -321,6 +338,23 @@ def run : IO Bool := do
       if (failing j').isEmpty && noCanonAB i.src env' i.κ i.Sl && litDefsB env' && NoCanon.instOk j' &&
           sB j' then
         famAGp := famAGp ++ [label]
+      -- the word subject (stage W1): the family over six fields refuses it by `noWord` alone, every
+      -- other conjunct and part true on `selEnv`; so also with the word entries' runtime references
+      -- (the tower's constructors, which no run term names) added to the closure
+      if label == wordsLabel then
+        let nW := (i.Sl.filter fun c => match i.src.table.resolveOf c with
+          | some (.word ..) => true
+          | _ => false).length
+        let slP := wordClosure i
+        let jP := { i with env := selEnv i.src i.env i.κ slP, Sl := slP }
+        let partsOk := fun (j : Input) => failing j == ["noWord"] && noCanonAB j.src j.env j.κ j.Sl &&
+          litDefsB j.env && NoCanon.instOk j && sB j
+        expect a (nW == 30 && partsOk j' && slP.length == i.Sl.length + 6 && partsOk jP)
+          s!"words: {nW} word entries; on selEnv false {failing j'}, noCanonAB \
+            {noCanonAB i.src env' i.κ i.Sl}, litDefsB {litDefsB env'}, instOk {NoCanon.instOk j'}, \
+            headRegimeSB {sB j'}; with the runtime references {slP.length - i.Sl.length} more \
+            constants, false {failing jP}"
+        nWords := nWords + 1
       if label == "phase1-machines/natural" then
         natRes := some (headRegimeResB i.src i.env i.κ i.lpsOf i.ann i.Sl)
         natS := some s
@@ -329,11 +363,11 @@ def run : IO Bool := do
         expect a ((refusedSites i).length == 1 && s)
           s!"graded1b: OS02-plain: {(refusedSites i).length} sites the direct route refuses, headRegimeSB {s}"
     IO.println s!"graded1b: headRegimeSB true on {nAcc} of the {accepted.length} accepted closures, \
-      false on {sFalse}; per-spine and per-site verdicts equal on all 50 and on every plant; 1a's \
+      false on {sFalse}; per-spine and per-site verdicts equal on all 51 and on every plant; 1a's \
       reading as written refuses {gap} sites of the accepted closures, all decided; natural (whose \
       sites under `let`s 1a refuses): headRegimeResB {natRes}, headRegimeSB {natS}; OS02-plain's \
       direct-refused site decided; {nDelta} δ plants ({nDeltaClosures} closures) and {nBv} \
-      bound-variable plants refused; all 50: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
+      bound-variable plants refused; all 51: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
       site; {lines}"
     expect a (nAcc == accepted.length && accepted.length == 37)
       s!"graded1b: headRegimeSB true on {nAcc} of {accepted.length} accepted closures, expected 37 of 37"
@@ -356,6 +390,10 @@ def run : IO Bool := do
     expect a (famAGp.length == 44 && accepted.all famAGp.contains &&
         famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
+    expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
+    IO.println s!"words: {wordsLabel} (30 word entries) is refused by the family over six fields on \
+      selEnv by noWord alone, every other conjunct and part true, also with the tower's constructors \
+      (the word entries' runtime references, 6 constants) added to its closure"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true
   catch error =>
