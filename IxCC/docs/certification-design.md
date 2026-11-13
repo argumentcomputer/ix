@@ -245,6 +245,20 @@ rests on them but `live_not_irr` (a marker is never `Live`), and P1's statements
 `pre_step`, `reads_live`, `run_live`, and the narrowing `Front.goesWrong_live`, `sound_live`)
 join the library only as they are proved.
 
+Reading the statements against SrcEval case by case before the proof (engineer PA) found them false
+in five places, all where a call whose precondition holds starts from values no run makes: P1
+quantifies over any such call. Three are closed in the definitions: a special head is the one δ
+makes for its constant (a recursor with a table entry, fired as a recursor, ran rules no check
+reads), a constructor value holds a marker at a field written erased only with its constructor's
+field count (F2 binds a rule's fields by the value's count, and with fewer the forwarded field is no
+longer shielded), and a `Quot.mk` value holds a marker element only from a `Quot.mk` that reads it.
+Two are closed by checks, since they are facts of the program: where a word entry is reached the
+pinned `Fin.mk` is a constructor of two fields (F6w builds two; `Canonical.finProof`), and at every
+reached instance of a `case` key its minors, and of `Quot.lift` its function, are relevant
+(`Check.Canonical.appliedAt`, `Canonical.minorsRead`: F5 and F8 force those and apply them, and a
+marker there, irrelevant by its sort, was returned or applied). No committed closure is refused by
+either check ([ci](ci.md)).
+
 ## Target statements
 
 Notation: `kenv` is IxCK's environment read from the claim's bytes under the

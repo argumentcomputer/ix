@@ -23,8 +23,10 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   over a field written erased, and canonical tags on every reached
   runtime term; the structure the kernel ensures (no constant at or above the program's size,
   rule `j` of a reached eliminator's recursor for constructor `j`, universe-argument counts, a
-  record for every reached constructor, F3's field count, `Fin.mk`'s proof field dropped where a
-  word entry is reached); then the three facts about positions written erased that relevance
+  record for every reached constructor, F3's field count, `Fin.mk` a constructor of two fields with
+  its proof field dropped where a word entry is reached); a `case` key's minors and `Quot.lift`'s
+  function relevant at every reached instance (`minorsRead`); then the three facts about positions
+  written erased that relevance
   preservation consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
 
 Not here, and not yet a theorem: that the evaluator never yields the irrelevance marker at a
