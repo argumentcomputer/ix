@@ -182,8 +182,11 @@ theorem foldl_st {f : St → TermKey → St} {P : TermKey → Prop}
     obtain ⟨h₆, h₇⟩ := hf s x h₄
     exact ⟨h₆, fun k hk => (List.mem_cons.1 hk).elim (fun e => e ▸ h₇) (h₅ k)⟩
 
-theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (c : CId)
-    (prof : Profile) (lvls : Nat) (first : Bool) (s : St) :
+/-- One visit, for any fact `Q` that an empty error list after a term's walk gives (`term_nil`'s
+tier-S facts; `term_nilC`'s tier-C facts in `Proof.Canonical`). -/
+theorem visit_specQ (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (c : CId)
+    (prof : Profile) (lvls : Nat) (first : Bool) (s : St) (Q : Term → Prop)
+    (hQ : ∀ key errs t, term { p, ann, key, lvls, prof } [] errs t = [] → errs = [] ∧ Q t) :
     (visit p ann annotated c prof lvls first s).1.seen = s.seen ∧
       (visit p ann annotated c prof lvls first s).1.order = s.order ∧
       (visit p ann annotated c prof lvls first s).2 = p.instRefs c prof ∧
@@ -191,7 +194,7 @@ theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey))
         (first = true → (ann.constRel? c).isSome = true ∧
           ∀ key ∈ p.runtimeKeys c, ((annotated.get? c).getD []).contains key = true) ∧
         (∀ key ∈ p.runtimeKeys c, ((annotated.get? c).getD []).contains key = true →
-          ∀ t, p.termOf key = some t → TermS p ann lvls prof [] t) ∧
+          ∀ t, p.termOf key = some t → Q t) ∧
         SubS p ann c prof) := by
   unfold visit
   dsimp only
@@ -215,7 +218,7 @@ theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey))
     (P := fun key =>
       (first = true → ((annotated.get? c).getD []).contains key = true) ∧
       (((annotated.get? c).getD []).contains key = true →
-        ∀ t, p.termOf key = some t → TermS p ann lvls prof [] t))
+        ∀ t, p.termOf key = some t → Q t))
     (fun s k => by
       unfold visitKey
       split
@@ -236,10 +239,10 @@ theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey))
           | some t' =>
             rw [ht'] at e
             dsimp only at e
-            cases first <;> exact (term_nil _ _ _ _ e).1
+            cases first <;> exact (hQ _ _ _ e).1
         · rw [ht] at e
           dsimp only at e
-          cases first <;> exact (term_nil _ _ _ _ e).2
+          cases first <;> exact (hQ _ _ _ e).2
       · have hm' : ((annotated.get? c).getD []).contains k = false := by simpa using hm
         simp only [hm', Bool.not_false, ↓reduceIte] at e
         cases first with
@@ -250,6 +253,20 @@ theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey))
   obtain ⟨h₆, h₇⟩ := h₃ h₄
   obtain ⟨h₈, h₉⟩ := hs₁errs h₆
   exact ⟨h₈, fun hf => ⟨h₉ hf, fun k hk => (h₇ k hk).1 hf⟩, fun k hk hm => (h₇ k hk).2 hm, h₅⟩
+
+theorem visit_spec (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (c : CId)
+    (prof : Profile) (lvls : Nat) (first : Bool) (s : St) :
+    (visit p ann annotated c prof lvls first s).1.seen = s.seen ∧
+      (visit p ann annotated c prof lvls first s).1.order = s.order ∧
+      (visit p ann annotated c prof lvls first s).2 = p.instRefs c prof ∧
+      ((visit p ann annotated c prof lvls first s).1.errs = [] → s.errs = [] ∧
+        (first = true → (ann.constRel? c).isSome = true ∧
+          ∀ key ∈ p.runtimeKeys c, ((annotated.get? c).getD []).contains key = true) ∧
+        (∀ key ∈ p.runtimeKeys c, ((annotated.get? c).getD []).contains key = true →
+          ∀ t, p.termOf key = some t → TermS p ann lvls prof [] t) ∧
+        SubS p ann c prof) :=
+  visit_specQ p ann annotated c prof lvls first s (TermS p ann lvls prof [])
+    (fun key errs t e => term_nil { p, ann, key, lvls, prof } [] errs t e)
 
 /-! ## The records -/
 
@@ -374,6 +391,50 @@ structure LoopInv (p : Program) (ann : Ann) (annotated : NatMap (List TermKey))
   roots : ∀ r ∈ roots, Pending p s.order front back r
   facts : s.errs = [] → ∀ inst ∈ s.order, Visited p ann annotated inst.1 inst.2
 
+/-- `Visited`, for any fact `Q c prof` of the instance's runtime terms. -/
+structure VisitedQ (Q : CId → Profile → Term → Prop) (p : Program) (ann : Ann)
+    (annotated : NatMap (List TermKey)) (c : CId) (prof : Profile) : Prop where
+  record : (ann.constRel? c).isSome = true
+  marked : ∀ key ∈ p.runtimeKeys c, ((annotated.get? c).getD []).contains key = true
+  terms : ∀ key ∈ p.runtimeKeys c, ∀ t, p.termOf key = some t → Q c prof t
+  sub : SubS p ann c prof
+
+/-- `LoopInv`, for any fact `Q`. -/
+structure LoopInvQ (Q : CId → Profile → Term → Prop) (p : Program) (ann : Ann)
+    (annotated : NatMap (List TermKey)) (roots : List Inst) (s : St) (front back : List Inst) :
+    Prop where
+  seen : ∀ c prof, prof ∈ (s.seen.get? c).getD [] ↔ (c, prof) ∈ s.order
+  closed : ∀ inst ∈ s.order, ∀ r ∈ p.instRefs inst.1 inst.2, Pending p s.order front back r
+  roots : ∀ r ∈ roots, Pending p s.order front back r
+  facts : s.errs = [] → ∀ inst ∈ s.order, VisitedQ Q p ann annotated inst.1 inst.2
+
+/-- `Q` is a fact an empty error list after a runtime term's walk gives, at every instance. -/
+def WalkGives (p : Program) (ann : Ann) (Q : CId → Profile → Term → Prop) : Prop :=
+  ∀ c prof key errs t, term { p, ann, key, lvls := lvlsOf p c, prof } [] errs t = [] →
+    errs = [] ∧ Q c prof t
+
+private theorem walkGives_termS (p : Program) (ann : Ann) :
+    WalkGives p ann fun c prof t => TermS p ann (lvlsOf p c) prof [] t :=
+  fun c prof key errs t e => term_nil { p, ann, key, lvls := lvlsOf p c, prof } [] errs t e
+
+private theorem LoopInv.toQ {p : Program} {ann : Ann} {annotated : NatMap (List TermKey)}
+    {roots : List Inst} {s : St} {front back : List Inst}
+    (h : LoopInv p ann annotated roots s front back) :
+    LoopInvQ (fun c prof t => TermS p ann (lvlsOf p c) prof [] t) p ann annotated roots s front
+      back :=
+  ⟨h.seen, h.closed, h.roots, fun e i hi =>
+    have v := h.facts e i hi
+    ⟨v.record, v.marked, v.terms, v.sub⟩⟩
+
+private theorem LoopInvQ.toS {p : Program} {ann : Ann} {annotated : NatMap (List TermKey)}
+    {roots : List Inst} {s : St} {front back : List Inst}
+    (h : LoopInvQ (fun c prof t => TermS p ann (lvlsOf p c) prof [] t) p ann annotated roots s
+      front back) :
+    LoopInv p ann annotated roots s front back :=
+  ⟨h.seen, h.closed, h.roots, fun e i hi =>
+    have v := h.facts e i hi
+    ⟨v.record, v.marked, v.terms, v.sub⟩⟩
+
 section Loop
 
 variable (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (roots : List Inst)
@@ -384,10 +445,18 @@ theorem LoopInv.transfer {s : St} {front back front' back' : List Inst}
     LoopInv p ann annotated roots s front' back' :=
   ⟨h.seen, fun i hi r hr => hq r (h.closed i hi r hr), fun r hr => hq r (h.roots r hr), h.facts⟩
 
-theorem loop_visit (s : St) (c : CId) (prof0 : Profile) (front back : List Inst)
+theorem LoopInvQ.transfer {Q : CId → Profile → Term → Prop} {s : St}
+    {front back front' back' : List Inst}
+    (h : LoopInvQ Q p ann annotated roots s front back)
+    (hq : ∀ r, Pending p s.order front back r → Pending p s.order front' back' r) :
+    LoopInvQ Q p ann annotated roots s front' back' :=
+  ⟨h.seen, fun i hi r hr => hq r (h.closed i hi r hr), fun r hr => hq r (h.roots r hr), h.facts⟩
+
+theorem loop_visitQ (Q : CId → Profile → Term → Prop) (hQ : WalkGives p ann Q) (s : St) (c : CId)
+    (prof0 : Profile) (front back : List Inst)
     (hc : c < p.size) (hn : ((s.seen.get? c).getD []).contains (prof0.normalize (lvlsOf p c)) = false)
-    (h : LoopInv p ann annotated roots s ((c, prof0) :: front) back) :
-    LoopInv p ann annotated roots
+    (h : LoopInvQ Q p ann annotated roots s ((c, prof0) :: front) back) :
+    LoopInvQ Q p ann annotated roots
       (visit p ann annotated c (prof0.normalize (lvlsOf p c)) (lvlsOf p c)
         ((s.seen.get? c).getD []).isEmpty
         { s with seen := s.seen.insert c (prof0.normalize (lvlsOf p c) :: (s.seen.get? c).getD []),
@@ -397,10 +466,11 @@ theorem loop_visit (s : St) (c : CId) (prof0 : Profile) (front back : List Inst)
         ((s.seen.get? c).getD []).isEmpty
         { s with seen := s.seen.insert c (prof0.normalize (lvlsOf p c) :: (s.seen.get? c).getD []),
                  order := (c, prof0.normalize (lvlsOf p c)) :: s.order }).2.reverse ++ back) := by
-  obtain ⟨hv₁, hv₂, hv₃, hv₄⟩ := visit_spec p ann annotated c (prof0.normalize (lvlsOf p c))
+  obtain ⟨hv₁, hv₂, hv₃, hv₄⟩ := visit_specQ p ann annotated c (prof0.normalize (lvlsOf p c))
     (lvlsOf p c) ((s.seen.get? c).getD []).isEmpty
     { s with seen := s.seen.insert c (prof0.normalize (lvlsOf p c) :: (s.seen.get? c).getD []),
              order := (c, prof0.normalize (lvlsOf p c)) :: s.order }
+    (Q c (prof0.normalize (lvlsOf p c))) (fun key errs t e => hQ c _ key errs t e)
   rw [hv₃]
   generalize visit p ann annotated c (prof0.normalize (lvlsOf p c)) (lvlsOf p c)
     ((s.seen.get? c).getD []).isEmpty
@@ -448,9 +518,10 @@ theorem loop_visit (s : St) (c : CId) (prof0 : Profile) (front back : List Inst)
       exact ⟨hrm.1, hrm.2, fun key hk t ht => hterms key hk (hrm.2 key hk) t ht, hsub⟩
     · exact h.facts e₀ i hi
 
-theorem loop_spec : ∀ (n : Nat) (s : St) (front back : List Inst),
-    LoopInv p ann annotated roots s front back → (loop p ann annotated n s front back).errs = [] →
-    LoopInv p ann annotated roots (loop p ann annotated n s front back) [] []
+theorem loop_specQ (Q : CId → Profile → Term → Prop) (hQ : WalkGives p ann Q) :
+    ∀ (n : Nat) (s : St) (front back : List Inst),
+    LoopInvQ Q p ann annotated roots s front back → (loop p ann annotated n s front back).errs = [] →
+    LoopInvQ Q p ann annotated roots (loop p ann annotated n s front back) [] []
   | 0, s, front, back, _, e => by
     simp only [loop] at e
     cases e
@@ -459,7 +530,7 @@ theorem loop_spec : ∀ (n : Nat) (s : St) (front back : List Inst),
     exact h
   | n + 1, s, [], b :: bs, h, e => by
     simp only [loop] at e ⊢
-    refine loop_spec n s _ [] (h.transfer p ann annotated roots fun r hr => ?_) e
+    refine loop_specQ Q hQ n s _ [] (h.transfer p ann annotated roots fun r hr => ?_) e
     rcases hr with hr | hr | hr
     · exact Or.inl hr
     · cases hr
@@ -469,7 +540,7 @@ theorem loop_spec : ∀ (n : Nat) (s : St) (front back : List Inst),
     split
     · next hskip =>
       simp only [hskip, ↓reduceIte] at e
-      refine loop_spec n s front back (h.transfer p ann annotated roots fun r hr => ?_) e
+      refine loop_specQ Q hQ n s front back (h.transfer p ann annotated roots fun r hr => ?_) e
       have hh : Handled p s.order (c, prof0) := by
         rcases Bool.or_eq_true_iff.1 hskip with hs | hs
         · exact Or.inl (of_decide_eq_true hs)
@@ -484,8 +555,30 @@ theorem loop_spec : ∀ (n : Nat) (s : St) (front back : List Inst),
       simp only [hskip, Bool.false_eq_true, ↓reduceIte] at e
       have hs' := hskip
       simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Nat.not_le] at hs'
-      exact loop_spec n _ front _ (loop_visit p ann annotated roots s c prof0 front back hs'.1
-        (by simpa using hs'.2) h) e
+      exact loop_specQ Q hQ n _ front _ (loop_visitQ p ann annotated roots Q hQ s c prof0 front back
+        hs'.1 (by simpa using hs'.2) h) e
+
+theorem loop_visit (s : St) (c : CId) (prof0 : Profile) (front back : List Inst)
+    (hc : c < p.size) (hn : ((s.seen.get? c).getD []).contains (prof0.normalize (lvlsOf p c)) = false)
+    (h : LoopInv p ann annotated roots s ((c, prof0) :: front) back) :
+    LoopInv p ann annotated roots
+      (visit p ann annotated c (prof0.normalize (lvlsOf p c)) (lvlsOf p c)
+        ((s.seen.get? c).getD []).isEmpty
+        { s with seen := s.seen.insert c (prof0.normalize (lvlsOf p c) :: (s.seen.get? c).getD []),
+                 order := (c, prof0.normalize (lvlsOf p c)) :: s.order }).1
+      front
+      ((visit p ann annotated c (prof0.normalize (lvlsOf p c)) (lvlsOf p c)
+        ((s.seen.get? c).getD []).isEmpty
+        { s with seen := s.seen.insert c (prof0.normalize (lvlsOf p c) :: (s.seen.get? c).getD []),
+                 order := (c, prof0.normalize (lvlsOf p c)) :: s.order }).2.reverse ++ back) :=
+  (loop_visitQ p ann annotated roots _ (walkGives_termS p ann) s c prof0 front back hc hn
+    h.toQ).toS
+
+theorem loop_spec : ∀ (n : Nat) (s : St) (front back : List Inst),
+    LoopInv p ann annotated roots s front back → (loop p ann annotated n s front back).errs = [] →
+    LoopInv p ann annotated roots (loop p ann annotated n s front back) [] [] :=
+  fun n s front back h e =>
+    (loop_specQ p ann annotated roots _ (walkGives_termS p ann) n s front back h.toQ e).toS
 
 end Loop
 
@@ -546,5 +639,33 @@ theorem check_sound {p : Program} {ann : Ann} {c : Checked} (h : check p ann = .
     · intro r hr
       obtain ⟨a, b⟩ := r
       exact List.mem_map.2 ⟨(a, b), hr, rfl⟩
+
+/-! ## Any fact the walk gives, at every reached instance -/
+
+theorem instsQ_of_loop {p : Program} {ann : Ann} {annotated : NatMap (List TermKey)}
+    {roots : List Inst} (Q : CId → Profile → Term → Prop) (hQ : WalkGives p ann Q)
+    (e : (loop p ann annotated fuel {} roots []).errs = []) :
+    ∀ inst ∈ (loop p ann annotated fuel {} roots []).order,
+      VisitedQ Q p ann annotated inst.1 inst.2 := by
+  have h0 : LoopInvQ Q p ann annotated roots {} roots [] :=
+    ⟨fun c prof => (by simp [NatMap.get?]), fun _ h => (nomatch h),
+      fun r hr => Or.inr (Or.inl hr), fun _ _ h => (nomatch h)⟩
+  exact (loop_specQ p ann annotated roots Q hQ fuel {} roots [] h0 e).facts e
+
+/-- An accepted annotation has, at every runtime term of every reached instance, any fact `Q` an
+empty error list after the term's walk gives (tier C: `Canonical.check_soundC`). -/
+theorem check_instsQ {p : Program} {ann : Ann} {c : Checked} (Q : CId → Profile → Term → Prop)
+    (hQ : WalkGives p ann Q) (h : check p ann = .ok c) :
+    ∀ inst ∈ c.instances, ∀ key ∈ p.runtimeKeys inst.1, ∀ t, p.termOf key = some t →
+      Q inst.1 inst.2 t := by
+  unfold check at h
+  dsimp only at h
+  split at h
+  · cases h
+  · next he =>
+    injection h with h
+    subst h
+    obtain ⟨e₁, -⟩ := errs_nil he
+    exact fun i hi => (instsQ_of_loop Q hQ e₁ i (List.mem_reverse.1 hi)).terms
 
 end IxCC.Src.Relevance.Proof

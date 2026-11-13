@@ -1945,8 +1945,8 @@
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
       "nix/build.nix": "46388020f117a06b447ce84229d08a077c3a57ceccf90eb3c91ad2eb0751c2f9",
       "nix/checks.nix": "e057166c3f31b05c0ef44fd88e9c680c91d6f6fe36cdc121a83810bbba22b56b",
-      "nix/ci-coverage.json": "59d32595de054bb0d803876b22086ef161392b8b031d420d159fbd3f0eac46e2",
-      "nix/lean-modules.json": "710daae24026fb32742b0ec975b604af1076e1ead0191c070593c8382bdffca5",
+      "nix/ci-coverage.json": "e181b8607146f4741be0e6f1bcde350a034850a235f3dcd1f132642997620d18",
+      "nix/lean-modules.json": "f9d473aaa89ee32ee6f9f872b388b5fa466a019e0c63b30c849c0e3deeb4e8b1",
       "nix/sources.nix": "68ac9be48afc58308053746c2c556bfcab92a5c28a68d663890b1ee84e0fe553",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "012ce5230a7976558b2e087b6077861101fed19887a24fbba15a86f38c086196",
@@ -2270,7 +2270,7 @@
       "IxCC/Src/Readback.lean": "a4ebcad9c5122bb6de97de8dd57a0a44eb6898a281d2b17b70d9844ac5f9e998",
       "IxCC/Src/Recheck.lean": "de7e520226efe7f56e5b7b80c8c90b333a51d248e6431666a626db6b42ac4001",
       "IxCC/Src/Relevance/Check.lean": "ec913427778c4edfbba498524c58b3158758d816ba1c81ee88c24c7cca232749",
-      "IxCC/Src/Relevance/Proof/Sound.lean": "b6598b8a2ff4b3bd4f76d1e8e2e6c52da0effd5a20fdde620d4131767dae50d8",
+      "IxCC/Src/Relevance/Proof/Sound.lean": "c9296e1f6eb010e76a3218928cbe347eec7a1766e507ba1c6f2c17c280d9d820",
       "IxCC/Src/Relevance/Proof/Terms.lean": "339a2d3ccbdbf5fb2ef45f3b243beb2a796b16a5e8ec1a634a810030726794fd",
       "IxCC/Src/Relevance/Syntax.lean": "9c13bf22ce8763938b53cb0de4aa76d0af145935060c278109e07302231677f4",
       "IxCC/Src/Resource/Check.lean": "001b2469ec1606a63e6be34534ab1bfc978539a41484666ef4249068d3a0bccc",
@@ -2539,7 +2539,7 @@
       "IxCCTests/Fences/BackendEnds.lean": "7ca850d2581578c7a349e1300198f33b28a0dd8e2147b0e4774c663c338d35f4",
       "IxCCTests/Fences/BackendProof.lean": "bbd38af31fa1fd504593c7a29d90dd709332a6de68a0f31fdbcb0b17efafad79",
       "IxCCTests/Fences/CfgProof.lean": "5a4e2ec422848a29a65097e179b3a7fb4730ff013c5e46a3cd77fa61bd347235",
-      "IxCCTests/Fences/Erase.lean": "4a5fa23582b1103b66d9ebfe054a388d0cfa2dc594f592418eef04a1df2183ec",
+      "IxCCTests/Fences/Erase.lean": "100a5229c07ed02984b80765f5786b0558f97f7d427547fb3243055d34c35856",
       "IxCCTests/Fences/LayoutProof.lean": "8f9c43309dc1e968962206c4728513cbd1a96f3f3649c20841765105aeb1db3b",
       "IxCCTests/Fences/Lir.lean": "8783c202ba70256f3d5dca252d5c112e00bd1dd735967cc42456476d13964b71",
       "IxCCTests/Fences/LirProof.lean": "9a670ead73c8cb493f8b377b7efe249d5b505c752c99a834fb86f5a3e5a5004f",
@@ -3193,7 +3193,8 @@
       "IxCCTests/KernelFront/LamRuns.lean": "689f0dece0a30cf4edb08d73f9b1c7cd382800f80d204c355eeb8dfd64f85828",
       "IxCCTests/Own/Owned/KeyIndex.lean": "df6b98cf1c6f5555f1231256f3f687e26485fc9d9664b710e86f0a71ba8734d1",
       "IxCCTests/Fences/RcPolicy.lean": "10d48630227c8d9e0c79bb40cfcb748794b684887278d3522c4ac2659a6a6853",
-      "IxCC/Recheck/Rc/Proof/KeyIndex.lean": "9b8f148c4980c27e893163939975bedc35e322e15a3121132aac53b08c09e75e"
+      "IxCC/Recheck/Rc/Proof/KeyIndex.lean": "9b8f148c4980c27e893163939975bedc35e322e15a3121132aac53b08c09e75e",
+      "IxCC/Src/Relevance/Proof/Canonical.lean": "786a71d81c8bc8b04bc46e5a6104a8c762b3841987c35627a88e9ab1b0751342"
     },
     "repository_files": {
       ".github/workflows/ixcc.yml": "457a376b2e4b245f54245af44a29dc91bd08f4b4cf33937aaf51c09a903aaa80"
