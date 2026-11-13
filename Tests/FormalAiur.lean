@@ -1,6 +1,7 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Ix.AiurInvocation
+import Ix.IxVM.RecordSections
 
 /-! Real claim fixtures, plus independently specified evaluation inputs.
 Run through the Rust host. -/
@@ -16,8 +17,9 @@ private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let beta : Ixon.Expr := .app (.leanLam ty (.var 0)) value
   let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, ty, v⟩, #[], #[], #[.zero], #[]⟩
-  let input := constant beta
-  let output := constant value
+  -- hand-built records carry the binder data a compile would write (IxC's pass)
+  let input ← IxVM.RecordSections.withSection {} (constant beta)
+  let output ← IxVM.RecordSections.withSection {} (constant value)
   let ia := Address.blake3 (Ixon.ser input)
   let oa := Address.blake3 (Ixon.ser output)
   let env := ({} : Ixon.Env).storeConst ia input |>.storeConst oa output
@@ -44,6 +46,7 @@ private def controllerEnv : Except String Ixon.Env := do
       else .app (.leanLam ty (.var 0)) (.ref 0 #[])
     let c : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, ty, body⟩,
       #[], prior.toArray, #[.zero], #[]⟩
+    let c ← IxVM.RecordSections.withSection env c
     let addr := Address.blake3 (Ixon.ser c)
     env := env.storeConst addr c
     env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
