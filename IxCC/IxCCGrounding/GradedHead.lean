@@ -19,6 +19,12 @@ read (`TyRead`) one `∀` per argument, then one more `∀` (the site's own); wh
   domain comes from `graded` at the type's own application nodes: the λ's datum not holding, it is
   a graph, whose domain is any product's it lies in, `piR_dom_unique`); the walk continues on
   `body`;
+* an application `D b₁ … bₙ` of a stored definition **with no level parameter** whose value has
+  fewer λs than `n` (an η-reduced abbreviation, `M := StateT Nat Id` applied to `α`) unfolds the same
+  way at the `j < n` λs it has (**η-short**, `TyRead.deltaShort`), and the walk continues on the
+  body applied to the arguments left (`b_{j+1} … bₙ`, lifted past the `j` λs, `den_lift`), read at
+  the same chain of level instantiations: the arguments left are terms at the caller's chain, so
+  a definition with level parameters, whose own parameters would capture theirs, is refused;
 * an application of a bound variable that stands for an argument of the site (a type variable the
   reading consumed at a `∀`) reads that argument the same way, at the site's own assignment.
 
@@ -34,8 +40,8 @@ the root theorems stay per site. The per-site reading (`headRegimeGB`, quadratic
 is kept as the reference the suite compares the per-spine verdicts with.
 
 **Fail closed** (completeness limits, each refused): a type headed by a bound variable that stands
-for no site argument; a definition applied to more arguments than its value has λs; projection
-heads; a β-redex inside a type; more than `headFuel` (16) δ, bound-variable and λ steps per spine;
+for no site argument; a definition with level parameters applied to more arguments than its value
+has λs; projection heads; a β-redex inside a type; more than `headFuel` (16) δ, bound-variable and λ steps per spine;
 a constant with more than `maxDirectParams` (8) level parameters.
 
 **Scope.** The recursor rule-body sites (`RecSites`, inside the check's `recShape` conjunct) stay with
@@ -75,6 +81,18 @@ theorem holds_pwChain (φ : LevelParam → Nat) :
     simp only [pwChain, chainFn]
     rw [holds_pwChain φ ch, holds_substPW]
 
+/-- No level parameter instantiated: the assignment is unchanged (the η-short step's chain). -/
+theorem substFn_nil_params (ψ : LevelParam → Nat) (vs : List Level) :
+    Level.substFn ψ [] vs = ψ := by
+  funext n
+  cases vs <;> rfl
+
+/-- An application spine over appended arguments. -/
+theorem mkAppN_append_list : ∀ (xs ys : List KExpr) (f : KExpr),
+    Expr.mkAppN f (xs ++ ys) = Expr.mkAppN (Expr.mkAppN f xs) ys
+  | [], _, _ => rfl
+  | x :: xs, ys, f => mkAppN_append_list xs ys (.app f x)
+
 /-! ## Reading a type, and a value spine, through δ and β -/
 
 /-- Peel `k` λs, with their data. -/
@@ -83,6 +101,12 @@ def lamPeel : Nat → KExpr → Option (List PropWhen × KExpr)
   | k + 1, .lam _ b m => (lamPeel k b).map fun r => (m.pw :: r.1, r.2)
   | _ + 1, _ => none
 
+/-- Peel at most `k` λs: their data, the body, and how many were peeled (the η-short step). -/
+def lamPeelMax : Nat → KExpr → List PropWhen × KExpr × Nat
+  | 0, e => ([], e, 0)
+  | k + 1, .lam _ b m => let r := lamPeelMax k b; (m.pw :: r.1, r.2.1, r.2.2 + 1)
+  | _ + 1, e => ([], e, 0)
+
 /-- What a type's bound variables stand for, innermost first: an argument of the site (a term of
 the site's context) the reading consumed at a `∀`, or nothing known (`none`, or past the end). -/
 abbrev Bnd := List (Option KExpr)
@@ -90,7 +114,8 @@ abbrev Bnd := List (Option KExpr)
 /-- **Reading a type through δ and β against the site's arguments** `as` (terms of the site's
 context, one consumed per `∀`), then one more `∀` (the site's own); `ds` the data read (each `∀`'s,
 each consumed λ's), through the chain. Where the type is not a `∀`: an application of a stored
-definition unfolds (δ, β with its λs); an application of a bound variable that stands for an
+definition unfolds (δ, β with its λs; η-short, `deltaShort`, when a definition with no level
+parameter has fewer λs than arguments); an application of a bound variable that stands for an
 argument of the site reads that argument (a λ-telescope, β, at the site's own assignment). -/
 inductive TyRead (env : KEnv) : List KExpr → LChain → Bnd → KExpr → List PropWhen → Prop
   | last {ch : LChain} {bnd : Bnd} {d b : KExpr} {m : BinderMeta} :
@@ -107,6 +132,18 @@ inductive TyRead (env : KEnv) : List KExpr → LChain → Bnd → KExpr → List
       lamPeel T.getAppArgs.length val = some (lds, body) →
       TyRead env as ((cv.levelParams, vs) :: ch) [] body ds →
       TyRead env as ch bnd T (lds.map (pwChain ((cv.levelParams, vs) :: ch)) ++ ds)
+  /-- **η-short**: a definition with no level parameter whose value has `j` λs, fewer than the
+  arguments: the λs consumed by the first `j` arguments, the body applied to the rest (lifted past
+  the λs), read at the same chain. -/
+  | deltaShort {as : List KExpr} {ch : LChain} {bnd : Bnd} {T : KExpr} {D : KKey}
+      {vs : List Level} {cv : ConstantVal .anon} {val : KExpr} {hint : ReducibilityHint} {j : Nat}
+      {lds : List PropWhen} {body : KExpr} {ds : List PropWhen} :
+      T.getAppFn = .const D vs → env.find? D = some (.defnInfo cv val hint) →
+      vs.length = cv.levelParams.length → cv.levelParams = [] →
+      j < T.getAppArgs.length → lamPeel j val = some (lds, body) →
+      TyRead env as ch []
+        (Expr.mkAppN body ((T.getAppArgs.drop j).map (·.liftLooseBVars j 0))) ds →
+      TyRead env as ch bnd T (lds.map (pwChain ch) ++ ds)
   | bvar {as : List KExpr} {ch : LChain} {bnd : Bnd} {T : KExpr} {i : Nat} {a : KExpr}
       {lds : List PropWhen} {body : KExpr} {ds : List PropWhen} :
       T.getAppFn = .bvar i → bnd[i]? = some (some a) →
@@ -163,7 +200,15 @@ def tyReadB (tab : KTab) : Nat → List KExpr → LChain → Bnd → KExpr → O
           | some (lds, body) =>
             (tyReadB tab fuel as ((cv.levelParams, vs) :: ch) [] body).map
               (lds.map (pwChain ((cv.levelParams, vs) :: ch)) ++ ·)
-          | none => none
+          | none =>
+            -- η-short (`deltaShort`): fewer λs than arguments, a definition with no level parameter
+            if cv.levelParams = [] then
+              (tyReadB tab fuel as ch []
+                (Expr.mkAppN (lamPeelMax T.getAppArgs.length val).2.1
+                  ((T.getAppArgs.drop (lamPeelMax T.getAppArgs.length val).2.2).map
+                    (·.liftLooseBVars (lamPeelMax T.getAppArgs.length val).2.2 0)))).map
+                ((lamPeelMax T.getAppArgs.length val).1.map (pwChain ch) ++ ·)
+            else none
         else none
       | _ => none
     | .bvar i =>
@@ -306,6 +351,30 @@ def headRegimeSB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId →
 
 /-! ## The decision's soundness -/
 
+/-- `lamPeelMax` peels exactly as `lamPeel` does at the count it returns. -/
+theorem lamPeel_lamPeelMax : ∀ (k : Nat) (e : KExpr),
+    lamPeel (lamPeelMax k e).2.2 e = some ((lamPeelMax k e).1, (lamPeelMax k e).2.1)
+  | 0, _ => rfl
+  | k + 1, e => by
+    cases e with
+    | lam d b m =>
+      have ih := lamPeel_lamPeelMax k b
+      simp only [lamPeelMax, lamPeel, ih, Option.map_some]
+    | _ => rfl
+
+/-- Where `lamPeel k` fails (fewer than `k` λs), `lamPeelMax k` peels fewer than `k`. -/
+theorem lamPeelMax_lt : ∀ (k : Nat) (e : KExpr), lamPeel k e = none → (lamPeelMax k e).2.2 < k
+  | 0, _, h => by simp [lamPeel] at h
+  | k + 1, e, h => by
+    cases e with
+    | lam d b m =>
+      have h' : lamPeel k b = none := by
+        simpa only [lamPeel, Option.map_eq_none_iff] using h
+      have := lamPeelMax_lt k b h'
+      simp only [lamPeelMax]
+      omega
+    | _ => exact Nat.succ_pos k
+
 theorem tyRead_of_check {env : KEnv} :
     ∀ (fuel : Nat) (as : List KExpr) (ch : LChain) (bnd : Bnd) (T : KExpr) {ds : List PropWhen},
       tyReadB (KTab.of env) fuel as ch bnd T = some ds → TyRead env as ch bnd T ds := by
@@ -321,7 +390,12 @@ theorem tyRead_of_check {env : KEnv} :
     obtain ⟨ds', h', rfl⟩ := Option.map_eq_some_iff.mp h
     rw [KTab.get_of] at hD
     exact .delta hfn hD hl hp (ih h')
-  case case8 hfn _ hbi _ _ hp ih =>
+  case case5 hfn _ _ _ hD hl hpn hlp ih =>
+    intro ds h
+    obtain ⟨ds', h', rfl⟩ := Option.map_eq_some_iff.mp h
+    rw [KTab.get_of] at hD
+    exact .deltaShort hfn hD hl hlp (lamPeelMax_lt _ _ hpn) (lamPeel_lamPeelMax _ _) (ih h')
+  case case9 hfn _ hbi _ _ hp ih =>
     intro ds h
     obtain ⟨ds', h', rfl⟩ := Option.map_eq_some_iff.mp h
     exact .bvar hfn hbi hp (ih h')
@@ -376,6 +450,10 @@ theorem tyRead_prefix {env : KEnv} :
     intro xs ys h
     obtain ⟨ds', hr', t, rfl⟩ := ih xs ys h
     exact ⟨_, .delta hfn hfind hlen hpeel hr', t, by simp⟩
+  | deltaShort hfn hfind hlen hlp hj hpeel _ ih =>
+    intro xs ys h
+    obtain ⟨ds', hr', t, rfl⟩ := ih xs ys h
+    exact ⟨_, .deltaShort hfn hfind hlen hlp hj hpeel hr', t, by simp⟩
   | bvar hfn hbi hpeel _ ih =>
     intro xs ys h
     obtain ⟨ds', hr', t, rfl⟩ := ih xs ys h
@@ -936,6 +1014,67 @@ theorem denotesList_lift1 {cval : KKey → (LevelParam → Nat) → V} {φ : Lev
       rw [den_lift, skipEnv_push_one]
       exact ha
 
+omit [Ix.Kernel.SetTheory V] in
+/-- Skipping a whole bound block reads the environment below it. -/
+theorem skipEnv_pushAll_block (Ys : List V) (ρ : BVarIdx → V) :
+    skipEnv (pushAll Ys ρ) Ys.length 0 = ρ := by
+  funext i
+  simp only [skipEnv, Nat.not_lt_zero, ↓reduceIte]
+  exact pushAll_offset Ys ρ i
+
+/-- Lifting past a bound block keeps the denotations (from `den_lift`). -/
+theorem denotesList_liftBlock {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
+    {ρ : BVarIdx → V} (Ys : List V) :
+    ∀ {as : List KExpr} {Xs : List V}, DenotesList cval env φ ρ as Xs →
+      DenotesList cval env φ (pushAll Ys ρ) (as.map (·.liftLooseBVars Ys.length 0)) Xs
+  | [], _, h => by cases h; exact .nil
+  | _ :: _, _, h => by
+    cases h with
+    | cons ha hs =>
+      refine .cons ?_ (denotesList_liftBlock Ys hs)
+      rw [den_lift, skipEnv_pushAll_block]
+      exact ha
+
+/-- A spine's memberships along a prefix of its arguments. -/
+theorem spineMem_append_left {F : V} {Xs Ys : List V} (h : SpineMem F (Xs ++ Ys)) :
+    SpineMem F Xs := by
+  intro j hj
+  obtain ⟨r, A, B, h1, h2⟩ := h j (by simp only [List.length_append]; omega)
+  refine ⟨r, A, B, ?_, ?_⟩
+  · rwa [List.take_append_of_le_length (Nat.le_of_lt hj)] at h1
+  · simpa [List.getElem_append_left hj] using h2
+
+/-- **A graded application spine stays graded with its head and its arguments replaced by terms of
+the same values** (read in another environment): each application node's product and membership
+are the original node's (`Denotes_functional`). -/
+theorem gradedBy_mkAppN_swap (M : Model V env) {ψ : LevelParam → Nat} {ρ ρ' : BVarIdx → V} :
+    ∀ (as : List KExpr) {as' : List KExpr} {h h' : KExpr} {H : V} {Xs : List V},
+      GradedBy (Denotes M.cval env ψ) ρ (Expr.mkAppN h as) →
+      Denotes M.cval env ψ ρ h H → Denotes M.cval env ψ ρ' h' H →
+      GradedBy (Denotes M.cval env ψ) ρ' h' →
+      DenotesList M.cval env ψ ρ as Xs → DenotesList M.cval env ψ ρ' as' Xs →
+      (∀ a ∈ as', GradedBy (Denotes M.cval env ψ) ρ' a) →
+      GradedBy (Denotes M.cval env ψ) ρ' (Expr.mkAppN h' as')
+  | [], _, _, _, _, _, _, _, _, hg', hXs, hXs', _ => by
+    cases hXs
+    cases hXs'
+    exact hg'
+  | a :: as, _, h, h', H, _, hg, hH, hH', hg', hXs, hXs', hga' => by
+    cases hXs with
+    | @cons _ _ X Xs0 hX hXs0 =>
+      cases hXs' with
+      | @cons a' as'' _ _ hX' hXs0' =>
+        have hgh := (gradedBy_mkAppN as (h := .app h a) hg).1
+        simp only [GradedBy] at hgh
+        obtain ⟨-, -, r, A, F, X0, B, hF, hX0, hmem, hXA, hr0⟩ := hgh
+        rw [Denotes_functional hF hH] at hmem
+        rw [Denotes_functional hX0 hX] at hXA
+        have hgapp : GradedBy (Denotes M.cval env ψ) ρ' (.app h' a') := by
+          simp only [GradedBy]
+          exact ⟨hg', hga' a' (by simp), r, A, H, X, B, hH', hX', hmem, hXA, hr0⟩
+        exact gradedBy_mkAppN_swap M as (h := .app h a) (h' := .app h' a') hg (.app hH hX)
+          (.app hH' hX') hgapp hXs0 hXs0' (fun b hb => hga' b (by simp [hb]))
+
 /-- **A type read through δ and β puts the spine in a positive-regime product** (laws:
 `defn_value` at each δ step, `graded` of each unfolded value). The site's arguments `as` denote `Xs`
 at the site's environment `ρs` (assignment `φ`) and are graded there; each type variable `bnd`
@@ -1021,6 +1160,58 @@ theorem tyRead_pos (M : Model V env) (hδ : DefnValue M) (hgr : GradedLaw M.cval
       (by rw [hG0e]; exact hval) hgval hSY
     exact ih hds' (pushAll Ys σ) (Ys.foldl app G0) F Xs hXs hga (fun i a h => by simp at h)
       hbody hgbody hF hS
+  | @deltaShort as ch bnd T D vs cv val hint j lds body ds hfn hfind hlen hlp hj hpeel _ ih =>
+    intro hds σ TT F Xs hXs hga _ hT hgT hF hS
+    have hlds : ∀ pw ∈ lds, pw.holds (chainFn φ ch) = false := by
+      intro pw hpw
+      rw [← holds_pwChain]
+      exact hds _ (List.mem_append_left _ (List.mem_map_of_mem hpw))
+    have hds' : ∀ pw ∈ ds, pw.holds φ = false := fun pw hpw => hds pw (List.mem_append_right _ hpw)
+    have hTe : Expr.mkAppN (.const D vs) T.getAppArgs = T := by
+      rw [← hfn]; exact mkAppN_getApp T
+    rw [← hTe] at hT hgT
+    obtain ⟨G0, Ys, hG0, hYs, rfl⟩ := (den_mkAppN _).mp hT
+    -- the definition has no level parameter: its value at the chain's own assignment
+    have hG0e : G0 = M.cval D (chainFn φ ch) := by
+      cases hG0 with
+      | const hf _ =>
+        rw [hfind] at hf
+        cases hf
+        simp only [ConstantInfo.toConstantVal, hlp, substFn_nil_params]
+    have hname : cv.name = D := find_name hfind
+    have hval := hδ cv val hint (find_mem hfind) (chainFn φ ch) σ
+    rw [hname] at hval
+    have hgval := (hgr _ (find_mem hfind) (chainFn φ ch) σ).2 cv val hint rfl
+    have hgargs := (gradedBy_mkAppN _ hgT).2
+    have hSY : SpineMem G0 Ys := spineMem_of_graded M _ hgT hG0 hYs
+    -- the arguments split at `j`: the first `j` consumed by the λs, the rest spliced
+    rw [← List.take_append_drop j T.getAppArgs] at hYs hgT
+    obtain ⟨Ys1, Ys2, rfl, hY1, hY2⟩ := denotesList_append_inv hYs
+    have hl1 : Ys1.length = j := by
+      rw [denotesList_length hY1, List.length_take]
+      omega
+    obtain ⟨hbody, hgbody⟩ := beta_peel M j val body lds σ G0 Ys1 hpeel hlds hl1
+      (by rw [hG0e]; exact hval) hgval (spineMem_append_left hSY)
+    subst hl1
+    have hrest := denotesList_liftBlock (env := env) Ys1 hY2
+    have hden : Denotes M.cval env (chainFn φ ch) (pushAll Ys1 σ)
+        (Expr.mkAppN body ((T.getAppArgs.drop Ys1.length).map (·.liftLooseBVars Ys1.length 0)))
+        ((Ys1 ++ Ys2).foldl app G0) := by
+      rw [List.foldl_append]
+      exact (den_mkAppN _).mpr ⟨_, Ys2, hbody, hrest, rfl⟩
+    have hgrest : ∀ a ∈ (T.getAppArgs.drop Ys1.length).map (·.liftLooseBVars Ys1.length 0),
+        GradedBy (Denotes M.cval env (chainFn φ ch)) (pushAll Ys1 σ) a := by
+      intro a ha
+      obtain ⟨a0, ha0, rfl⟩ := List.mem_map.mp ha
+      rw [gradedBy_lift M Ys1.length a0 0 (pushAll Ys1 σ), skipEnv_pushAll_block]
+      exact hgargs a0 (List.mem_of_mem_drop ha0)
+    have hgsp : GradedBy (Denotes M.cval env (chainFn φ ch)) (pushAll Ys1 σ)
+        (Expr.mkAppN body ((T.getAppArgs.drop Ys1.length).map (·.liftLooseBVars Ys1.length 0))) :=
+      gradedBy_mkAppN_swap M (T.getAppArgs.drop Ys1.length)
+        (h := Expr.mkAppN (.const D vs) (T.getAppArgs.take Ys1.length))
+        (by rw [← mkAppN_append_list]; exact hgT) ((den_mkAppN _).mpr ⟨G0, Ys1, hG0, hY1, rfl⟩)
+        hbody hgbody hY2 hrest hgrest
+    exact ih hds' (pushAll Ys1 σ) _ F Xs hXs hga (fun i a h => by simp at h) hden hgsp hF hS
   | @bvar as ch bnd T i a lds body ds hfn hbi hpeel _ ih =>
     intro hds σ TT F Xs hXs hga hbnd hT hgT hF hS
     have hlds : ∀ pw ∈ lds, pw.holds φ = false := fun pw h => hds pw (List.mem_append_left _ h)

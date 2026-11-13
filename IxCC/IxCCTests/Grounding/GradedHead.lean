@@ -2,6 +2,7 @@ import IxCCTests.Grounding.NoCanon
 import IxCCTests.Grounding.Zeta
 import IxCCGrounding.SelRetype
 import IxCCGrounding.WordRoot
+import IxCCTests.Grounding.EtaShort
 
 /-! # `tests-grounding`: step 1b, every run-term site typed from `graded`, and step Ap
 
@@ -13,9 +14,12 @@ ten corpus families, 36 closures, and the fifteen extra ones: 51):
   `natural` added), so the family without a typing hypothesis holds on all 37: on `natural`,
   `headRegimeResB` (1a) is false (74 site-profile instances under its `let`s whose heads it reads as
   written) and `headRegimeSB` true;
-* false on exactly `phase2-closures/closures` (a bound-variable head whose context type is a
-  definition applied to more arguments than its value has λs) and `src-diag/diag` (projection
-  heads), both refused by the check as well;
+* false on exactly `src-diag/diag` (projection heads), refused by the check as well; until the
+  η-short step (GR21) also on `phase2-closures/closures` (a bound-variable head whose context type is
+  a definition applied to more arguments than its value has λs), now true there
+  (`IxCCTests.Grounding.EtaShort`: against the landed reader, frozen, on every spine of the 51,
+  the planted controls on `closures`, the synthetic readings), its family unchanged (the check
+  still refuses it);
 * equal to the per-site reading `headRegimeGB` on every closure (and on every planted control);
 * on the accepted closures, the sites 1a's reading as written (`headRegimeB`: constant heads only,
   the stored type not unfolded) refuses at some `Ok` profile: 436 on the 37, of which 322 on the
@@ -28,7 +32,12 @@ sites (`#7e081ef3d58e`, `DecidableEq`-like) with its first `∀` datum made a pr
 (`ifAllZero []`), its unfolding made endless (`λ x. D x`: fuel, fail closed), its first λ datum made
 a proposition everywhere (3 plants on each of the 25 closures with a δ site: 75); and a constant
 with a bound-variable head whose context type is a `∀`, its λ domains' `∀` data made propositions
-everywhere (32 closures).
+everywhere (32 closures; for an `eqn` entry in its equation theorem's type, where `runPairsB` reads
+its run term). The bound-variable plant is attributed (GR21): on each closure the run term the
+decision reads changes, and the refusal counts as a pass only where the unplanted reading is true per
+spine and per site (31; on `diag`, refused unplanted, it is reported as not attributable). Until
+GR21 the plant at `closures` went into the stored value of the `eqn` entry c139, which `runPairsB`
+does not read, and passed only because `closures` was refused unplanted.
 
 Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 51: `selEnv` retypes exactly the
 `for`-loop function of the six `for`-loop closures and moves only their `eqnShape` conjunct (false
@@ -90,8 +99,15 @@ def allJobs : IO (List (String × String × List String)) := do
 
 def accepted : List String := NoCanon.acceptedFamily ++ NoCanon.acceptedExtra
 
-/-- The two closures the per-spine decision refuses. -/
-def refused : List String := ["phase2-closures/closures", "diag"]
+/-- The closures the per-spine decision refuses (moved with the η-short step, GR21: was
+`["phase2-closures/closures", "diag"]`; `closures`' ten spines at c38 meet an η-reduced definition
+and are now read and accepted). -/
+def refused : List String := ["diag"]
+
+/-- The closure whose spines the η-short step reads, the constant they are at, and how many. -/
+def etaLabel : String := "phase2-closures/closures"
+def etaConst : CId := 38
+def etaSpines : Nat := 10
 
 /-- The sites 1a's reading as written refuses on the accepted closures, at some `Ok` profile (322 on
 the 34 accepted before step C, whose run terms hold no `let`; since C, 436 on the 37: those 322 and
@@ -103,6 +119,11 @@ def deltaClosuresExpected : Nat := 25
 
 /-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
 def bvExpected : Nat := 32
+
+/-- Of those, the closures whose unplanted reading is false (per spine or per site), where the
+plant's refusal is not attributable to it, so not counted as a pass of the control (GR21: the
+attribution made explicit; `diag`, refused for its projection heads). -/
+def bvUnattributedExpected : List String := ["diag"]
 
 /-- In a type's binder domains, the selector `D`'s first argument (the one `autoParam` and
 `optParam` select) replaced by `Nat`. -/
@@ -211,6 +232,12 @@ def setLamDoms (pw : PropWhen) : KExpr → KExpr
   | .app f a => .app (setLamDoms pw f) (setLamDoms pw a)
   | e => e
 
+/-- `setLamDoms` under a `∀` telescope: an equation theorem's type `∀ xs, f xs = body`, whose body
+is an `eqn` entry's run term (`runPairsB` reads it there, not in the stored value). -/
+def setLamDomsT (pw : PropWhen) : KExpr → KExpr
+  | .forallE d b m => .forallE d (setLamDomsT pw b) m
+  | e => setLamDoms pw e
+
 /-- `λ x₁ … xₖ. D.{ps} x₁ … xₖ`: a value whose unfolding never ends. -/
 def selfLoop (D : KKey) (cv : ConstantVal .anon) (v : KExpr) : KExpr :=
   go 0 v
@@ -246,6 +273,7 @@ def run : IO Bool := do
     let mut nDelta := 0
     let mut nDeltaClosures := 0
     let mut nBv := 0
+    let mut bvUnattr : List String := []
     let mut tS := 0
     let mut tG := 0
     let mut lines : List String := []
@@ -258,8 +286,50 @@ def run : IO Bool := do
     let mut nWords := 0
     let mut nWit := 0
     let mut wcAll : List (String × List CId) := []
+    let mut etaSp := 0
+    let mut etaSame := 0
+    let mut etaDiffer : List (String × List CId) := []
+    let mut etaMore : List (String × List CId) := []
+    let mut etaAcc := 0
+    let mut etaPlants := 0
+    let mut etaSynth := 0
+    let mut etaHeads : List String := []
+    let mut tEta := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
+      -- the η-short step (GR21): every spine against the landed reader, frozen
+      let te0 ← IO.monoNanosNow
+      let cmp ← IO.lazyPure fun _ => EtaShort.compare i
+      let te1 ← IO.monoNanosNow
+      tEta := tEta + (te1 - te0)
+      etaSp := etaSp + cmp.spines
+      etaSame := etaSame + cmp.same
+      if !cmp.differ.isEmpty then etaDiffer := etaDiffer ++ [(label, cmp.differ)]
+      if !cmp.more.isEmpty then etaMore := etaMore ++ [(label, cmp.more.map (·.1))]
+      etaAcc := etaAcc + cmp.moreAccepted
+      if label == etaLabel then
+        let hs := EtaShort.shortHeads i cmp.more
+        etaHeads := hs.map toString
+        let some D := hs.head? | throw (IO.userError "eta: no η-short definition at closures")
+        let rec_ := EtaShort.defnOf i.env D
+        expect a (hs.length == 1 && (rec_.map (·.1)) == some [] &&
+            (rec_.map fun r => (lamPeel 1 r.2).isNone && (lamPeel 0 r.2).isSome) == some true)
+          s!"eta: {label}: η-short definitions met {hs}, the first's stored level parameters \
+            {rec_.map (·.1)}, expected one, with none and a value with no λ"
+        for (nm, e) in EtaShort.plants i.env D do
+          let j := { i with env := e }
+          let (r10, bs, bg) := (EtaShort.allRefused i e cmp.more, sB j, gB j)
+          expect a (r10 && !bs && !bg)
+            s!"eta: {label}: plant ({nm}): the ten spines all refused {r10}, per-spine {bs}, per-site {bg}"
+          etaPlants := etaPlants + 1
+        -- the synthetic readings, over `D` and another definition with no level parameter
+        let E? := i.env.consts.findSome? fun ci => match ci with
+          | .defnInfo cv _ _ => if cv.levelParams.isEmpty && ci.name != D then some ci.name else none
+          | _ => none
+        let some E := E? | throw (IO.userError "eta: no second level-free definition at closures")
+        for (nm, ok, what) in EtaShort.synthetic i.env D E do
+          expect a ok s!"eta: synthetic: {nm}: {what}"
+          etaSynth := etaSynth + 1
       let t0 ← IO.monoNanosNow
       let s ← IO.lazyPure fun _ => sB i
       let t1 ← IO.monoNanosNow
@@ -300,14 +370,33 @@ def run : IO Bool := do
       -- the bound-variable plant
       match bvarHeadConst i with
       | some c =>
-        let e4 := mapConst i.env (i.κ c) fun
-          | .defnInfo cv v h => .defnInfo cv (setLamDoms (.ifAllZero []) v) h
-          | ci => ci
+        -- planted where the run pair is read: an `eqn` entry's run term is its equation theorem's
+        -- body, so the plant goes into that theorem's type (GR21: at `closures`, c139 is an `eqn`
+        -- entry; planted into its stored value the control changed nothing the decision reads, and
+        -- was refused only while `closures`' η-short spines made `headRegimeSB` false)
+        let e4 := match i.src.table.resolveOf c with
+          | some (.eqn thm _) => mapConst i.env (i.κ thm) fun
+            | .thmInfo cv v => .thmInfo { cv with type := setLamDomsT (.ifAllZero []) cv.type } v
+            | ci => ci
+          | _ => mapConst i.env (i.κ c) fun
+            | .defnInfo cv v h => .defnInfo cv (setLamDoms (.ifAllZero []) v) h
+            | ci => ci
         let j := { i with env := e4 }
         let (bs, bg) := (sB j, gB j)
-        expect a (!bs && !bg)
-          s!"graded1b: {label}: c{c}'s λ domains' ∀ data made propositions: per-spine {bs}, per-site {bg}"
-        nBv := nBv + 1
+        -- attribution: the plant changed the term the decision reads (the run pair's kernel term:
+        -- the stored value, or the `eqn` entry's equation body), and the unplanted reading is true
+        -- per spine and per site, so the refusal is the plant's
+        let changed := (runPairsB i.src i.env i.κ c).map (·.2) != (runPairsB j.src j.env j.κ c).map (·.2)
+        expect a (changed && !bs && !bg)
+          s!"graded1b: {label}: c{c}'s λ domains' ∀ data made propositions: the run term the \
+            decision reads changed {changed}; planted per-spine {bs}, per-site {bg}; unplanted \
+            per-spine {s}, per-site {g}"
+        if s && g then nBv := nBv + 1
+        else
+          -- refused unplanted as well: the refusal is not attributable to the plant (not a pass)
+          bvUnattr := bvUnattr ++ [label]
+          IO.println s!"graded1b: {label}: the bound-variable plant at c{c} is not attributable: the \
+            unplanted reading is already false (per-spine {s}, per-site {g}); not counted"
       | none => pure ()
       -- Ap: the check on `selEnv` retypes exactly the `for`-loop function of the six closures and
       -- moves nothing but its `eqnShape`; the family over six fields on `selEnv`
@@ -399,12 +488,28 @@ def run : IO Bool := do
       false on {sFalse}; per-spine and per-site verdicts equal on all 51 and on every plant; 1a's \
       reading as written refuses {gap} sites of the accepted closures, all decided; natural (whose \
       sites under `let`s 1a refuses): headRegimeResB {natRes}, headRegimeSB {natS}; OS02-plain's \
-      direct-refused site decided; {nDelta} δ plants ({nDeltaClosures} closures) and {nBv} \
-      bound-variable plants refused; all 51: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
+      direct-refused site decided; {nDelta} δ plants ({nDeltaClosures} closures) refused, and {nBv} \
+      bound-variable plants refused and attributed (the unplanted reading true, the run term changed; \
+      not attributable, the unplanted reading false: {bvUnattr}); all 51: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
       site; {lines}"
     expect a (nAcc == accepted.length && accepted.length == 37)
       s!"graded1b: headRegimeSB true on {nAcc} of {accepted.length} accepted closures, expected 37 of 37"
     expect a (sFalse == refused) s!"graded1b: headRegimeSB false on {sFalse}, expected {refused}"
+    -- the η-short step: nothing the landed reader read changes; it reads exactly the ten spines of
+    -- `closures` at c38 more, and accepts them; the controls
+    expect a (etaDiffer.isEmpty) s!"eta: spines the landed reader reads and the reader reads otherwise: {etaDiffer}"
+    expect a (etaMore == [(etaLabel, List.replicate etaSpines etaConst)] && etaAcc == etaSpines)
+      s!"eta: spines read beyond the landed reader {etaMore}, accepted {etaAcc}; expected \
+        {etaSpines} at {etaLabel} c{etaConst}, all accepted"
+    expect a (etaPlants == 3 && etaSynth == 4)
+      s!"eta: {etaPlants} plants and {etaSynth} synthetic readings checked, expected 3 and 4"
+    IO.println s!"eta: on all {js.length}: {etaSp} spines, {etaSame} read by the landed reader \
+      (frozen at 27006d16b) and read identically, none read otherwise; read beyond it: {etaMore} \
+      ({etaAcc} accepted), through the η-short definition {etaHeads} (no level parameter, no λ, \
+      one argument); headRegimeSB now true on {etaLabel}, false on {sFalse}; {etaPlants} plants \
+      on {etaLabel} each refusing the ten spines and the closure; {etaSynth} synthetic readings \
+      (j = 1 splicing, a datum made a proposition, a level parameter refused as the completeness \
+      limit (not an error), more λs than arguments as landed); {tEta / 1000000} ms for both readers"
     expect a (natRes == some false && natS == some true)
       s!"graded1b: natural: headRegimeResB {natRes}, headRegimeSB {natS}"
     expect a (gap34 == 322)
@@ -413,7 +518,10 @@ def run : IO Bool := do
       s!"graded1b: 1a's reading as written refuses {gap} sites on the accepted closures, expected {gapExpected}"
     expect a (nDelta == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected)
       s!"graded1b: {nDelta} δ plants on {nDeltaClosures} closures, expected 3 on each of {deltaClosuresExpected}"
-    expect a (nBv == bvExpected) s!"graded1b: {nBv} bound-variable plants, expected {bvExpected}"
+    expect a (nBv + bvUnattr.length == bvExpected && bvUnattr == bvUnattributedExpected)
+      s!"graded1b: {nBv} bound-variable plants attributed (the unplanted reading true, the run term \
+        changed, the planted refused) and {bvUnattr} not attributable (the unplanted reading false), \
+        expected {bvExpected} in all, {bvUnattributedExpected} not attributable"
     IO.println s!"Ap: selEnv retypes the for-loop function of each of the {nAp} for-loop closures and \
       moves only its eqnShape (false to true), nothing on the other {js.length - nAp}; {nApPlants} \
       planted controls refused; the family over six fields on selEnv holds on {famAGp.length}: \

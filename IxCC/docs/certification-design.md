@@ -1039,7 +1039,13 @@ its λ's domain by `graded` at the type's own application nodes, a graph-regime 
 any product it lies in, `piR_dom_unique`: `beta_peel`), and an application of a type variable that
 stands for one of the site's arguments reads that argument the same way, at the site's assignment
 (the shape `(λ b. K motive m₁ m₂ b) x y`, with `K`'s type ending in `motive t`, eight sites of the
-corpus). Every datum read, each `∀`'s and each consumed λ's, is read through the chain of level
+corpus). **η-short** (`TyRead.deltaShort`, since GR21): an application of a stored definition with
+no level parameter whose value has `j` λs, fewer than its arguments (an η-reduced abbreviation,
+`M := StateT Nat Id` applied to `α`), unfolds at the `j` λs it has, and the reading continues on the
+body applied to the arguments left, lifted past the `j` λs (`den_lift`), at the same chain of level
+instantiations; `graded` at the type's own nodes carries over to the new spine
+(`gradedBy_mkAppN_swap`). The decision takes it only where δ as before fails for want of λs, so every
+reading it made before is unchanged. Every datum read, each `∀`'s and each consumed λ's, is read through the chain of level
 instantiations down to the enclosing constant's parameters (`pwChain`) and must not hold, **at the
 constant's `Ok` profiles**: read at every profile, 2,124 of the 16,404 run-term sites of the 50
 loaded closures (765 of the accepted ones) would be refused, universe-polymorphic code read at
@@ -1068,16 +1074,43 @@ of the site-profile instances at the `Ok` profiles that 1a's reading as written 
 `diag` 30), 1b refuses none but 4 of `diag`'s (projection heads), and the kernel types the site in the
 graph regime at all 124 others. So the family without a typing hypothesis holds on all 37 closures
 the check accepts (`natural` included, where `headRegimeResB` is false). In `tests-grounding`:
-`headRegimeSB` true on the 37 by name and false on exactly `phase2-closures/closures` and `diag` (both
-refused by the check), equal to `headRegimeGB` on all 50 and on every planted control; on `natural`,
+`headRegimeSB` true on the 37 by name and false on exactly `diag` (refused by the check; until the
+η-short step also on `phase2-closures/closures`, whose family is unchanged: the check refuses it at
+`caseRec` and `caseShape`), equal to `headRegimeGB` on all 50 and on every planted control; on `natural`,
 `headRegimeResB` false and `headRegimeSB` true; the 436 sites of the 37 (322 of the 34 accepted
 before step C) that 1a's reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s
 direct-refused site decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
 first `∀` datum made a proposition, its unfolding made endless, its first λ datum made a proposition:
 75, on the 25 closures with a δ site; a constant with a bound-variable head, its λ domains' `∀` data
-made propositions: 32). *Completeness limits* (each refused, fail closed): a type headed by a bound
-variable that stands for no argument of the site; a definition applied to more arguments than its
-value has λs (the 10 sites of `phase2-closures/closures`, which the kernel types); projection heads
+made propositions: 32; for an `eqn` entry the plant goes into its equation theorem's type, where its
+run term is read, and each plant is attributed: the unplanted reading true per spine and per site,
+the planted run term differing from the unplanted one; at `closures` the plant into the stored value
+of the `eqn` entry c139 changed nothing the decision reads, and was refused only while the η-short
+spines made `headRegimeSB` false). **The η-short step, measured and controlled**
+(`IxCCTests/Grounding/EtaShort.lean`, in the same pass; `GR21-p1`, `GR21-s2`): against the landed
+reader, frozen in the test tree at `27006d16b`, on all 8,305 spines of the 51 closures, the 8,293 it
+read are read identically and exactly 10 more are read, all at `phase2-closures/closures` c38, whose
+context types meet the one η-short definition of the corpus (`#d706c4869d04`: no level parameter in
+its stored record, a value with no λ applied to one argument), and accepted, so `headRegimeSB` holds on
+`closures`; refused, each planted on `closures` (every one of the ten spines and the closure): the
+definition's value made `Type` (the unfolding is not a `∀`), made the definition itself (the unfolding
+never ends: fuel), the applied definition's first λ datum made a proposition; and in synthetic
+readings, a value with one λ applied to three arguments reads its datum and then exactly what the
+definition it applies reads (two arguments spliced), that datum made a proposition is refused, a
+definition with a level parameter is refused (the completeness limit below), and a value with more λs
+than arguments takes δ as landed, with the landed answer. *Completeness limits* (each refused, fail
+closed): a type headed by a bound variable that stands for no argument of the site; a definition
+**with level parameters** applied to more arguments than its value has λs (none in the corpus: the 10
+sites of `phase2-closures/closures`, which the kernel types, meet only a level-free definition, and are
+read since the η-short step). The arguments spliced are terms at the caller's chain of level
+instantiations and the body is at the definition's; parameters are numbered, so the definition's own
+would capture the arguments', and reading both at one chain would need `cval_params`, which
+`tyRead_pos` does not take. To lift it: instantiate the body's level parameters by the definition's
+levels `vs` before splicing and read at the caller's chain; `den_inst_exact_cv`
+(`IxCCGrounding/Subst.lean`, over `CvalParams`) gives the denotation (the kernel model has the same
+crossing for its own reading function, `denoteMeta_instLevels`, `IxCK/Kernel/Model/Levels.lean`); a
+`GradedBy` analogue (`gradedBy_inst`) would be new, none was found; and `CvalParams` would be a
+hypothesis of a new theorem beside `tyRead_pos`, whose text stays. Projection heads
 (2 in `diag`); a β-redex inside a type; more than `headFuel` (16) δ, bound-variable and λ steps on a
 spine; a constant with more than `maxDirectParams` (8) level parameters. *Not covered*: recursor
 rule bodies' sites (`RecSites`, inside the check's `recShape` conjunct, which every root theorem
@@ -1407,7 +1440,7 @@ decision). **Not established**: the decisions (`decEq`, `decLt`, `decLe`) are no
 W1 and have no model fact; `USize` is not a width; the landed families still refuse every word entry.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 400 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 408 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
