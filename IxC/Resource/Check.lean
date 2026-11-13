@@ -224,11 +224,14 @@ def destOf (p : Param) (lendPlain : Bool) : Dest :=
   else if lendPlain then .lend else .share
 
 /-- **A call's result**, the arguments bound at the parameters in order. A
-`shared` result of class `leaf` may be any argument's leaf, or a leaf a closure
-or a cell among the arguments holds with the confinement it was stored with, so
-it carries every argument's regions. (As landed, an argument at a parameter
-whose type no leaf inhabits, `Param.noLeaf`, gave it none: unsound for `Nat`
-itself, for function types and under an absurd hypothesis, findings 1 to 3.) -/
+result of class `leaf` carries no region: `ret` conforms it to a number, and a
+number is never confined (L1, the owner's provisional ruling of 2026-11-13; W3).
+Repair A had a `shared` leaf result carry every argument's regions, since it
+could be any argument's leaf, or a leaf a closure or a cell among the arguments
+held, with the confinement it was stored with. (As landed, an argument at a
+parameter whose type no leaf inhabits, `Param.noLeaf`, gave it none: unsound for
+`Nat` itself, for function types and under an absurd hypothesis, findings 1 to 3.
+Under L1 that refinement is moot, and `Param.noLeaf` stays unread.) -/
 def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal := do
   let lendPlain := ifc.resCls != .val
   let mut deps : List Nat := []
@@ -255,6 +258,8 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
     | _ => pure ()
   let base : AVal := { cls := ifc.resCls, skel := ifc.resSkel }
   if ifc.resCls == .irr || ifc.resCls == .imm then return base
+  if ifc.resCls == .leaf then
+    return if ifc.res == .unique || ifc.res == .uniqueBorrowed then { base with own := .uniq } else base
   let inner ← innermost
   match ifc.res with
   -- a unique result keeps the arguments' regions: `runR`'s transfer of a leaf is a no-op that
