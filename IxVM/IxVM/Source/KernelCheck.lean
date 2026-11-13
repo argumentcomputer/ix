@@ -2282,11 +2282,11 @@ def nat_ih_apps := aiur_fn⟦
         Lists::Node::Cons(i, is) => {
           let (tele, idx) = nat_field_tele(cty, np, i);
           let m = Lists::length(tele);
-          let prefix = Lists::concat(
+          let pfx = Lists::concat(
             Lists::snoc(nat_ps_at(((m + nf) + n) + 1, np), (&(KernelTypes::KExprNode::BVar((m + nf) + n)))),
             nat_ps_at(m + nf, n));
           let fld = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf - 1) - i) + m))), nat_ps_at(0, m));
-          let args = Lists::snoc(Lists::concat(prefix, nat_map_idx_at(nf, n + 1, i, 0, m, idx)), fld);
+          let args = Lists::snoc(Lists::concat(pfx, nat_map_idx_at(nf, n + 1, i, 0, m, idx)), fld);
           let ih = nat_mk_binders(nat_tele_at(nf, n + 1, i, 0, pw, tele, 0),
             nat_app_n((&(KernelTypes::KExprNode::Const(rec, rlvls))), args), 1);
           (&(Lists::Node::Cons(ih, nat_ih_apps(rec, rlvls, pw, np, n, nf, is, cty)))) } ,
@@ -2368,9 +2368,9 @@ def nat_rec_check := aiur_fn⟦
       let gen_ty = nat_replace_pis(pw, n_p, tty, (&(KernelTypes::KExprNode::Forall(motive_ty, minors, pw))), 0);
       assert_eq!(wrap_rel(gen_ty, ty), 1,
         "native recursor: the stored type is not the generated one up to consumed wrappers");
-      let rec = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
+      let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
       nat_check_rules(rc, rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
-        motive_ty, rec, build_rec_lvls_list(nlvls, 0), 0)
+        motive_ty, rec_c, build_rec_lvls_list(nlvls, 0), 0)
     }
 ⟧
 
