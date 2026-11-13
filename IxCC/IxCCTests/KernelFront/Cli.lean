@@ -76,14 +76,18 @@ def environHas (pid : Nat) (entry : String) : IO Bool := do
   | .ok b => return ((String.fromUTF8! b).splitOn "\x00").contains entry
   | .error _ => return false
 
+/-- A held run: `ixcc` started with its standard streams piped. -/
+abbrev HeldChild := IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped }
+
 /-- A run held on a FIFO given as the closure, started in a session of its own
 (`SpawnArgs.setsid`: the child's pid is the first `ixcc` process, the leader of a process group
 of its own; the `setsid` command, used at first, forked here, so the pid read was not `ixcc`'s),
 after its tree has settled. It is started through `env --default-signal=INT` (which execs
 `ixcc` in place): a job started in the background by a non-interactive shell inherits SIGINT
-ignored, and the interrupt case then hung the suite (KK-gates1). -/
-def held (dir : FilePath) (env : Array (String × Option String)) :
-    IO (IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped } × FilePath) := do
+ignored, and the interrupt case then hung the suite (KK-gates1). Recorded in `spawned`, which
+the caller kills and reaps on every way out. -/
+def held (spawned : IO.Ref (Array HeldChild)) (dir : FilePath) (env : Array (String × Option String)) :
+    IO (HeldChild × FilePath) := do
   let fifo := dir / s!"hold-{← IO.monoNanosNow}"
   let made ← IO.Process.output { cmd := "mkfifo", args := #[fifo.toString] }
   check (made.exitCode == 0) "mkfifo"
@@ -93,12 +97,13 @@ def held (dir : FilePath) (env : Array (String × Option String)) :
     args := #["--default-signal=INT", app, "compile", fifo.toString, "--equations",
       (fx / "fib.equations.json").toString,
       "-o", (dir / "held.o").toString] }
+  spawned.modify (·.push child)
   IO.sleep 1500
   return (child, fifo)
 
 /-- Wait for a held run at most `secs` seconds; past that, kill its process group and fail, so
 that a run which outlives a signal fails the suite instead of hanging it. -/
-def waitAtMost (child : IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped })
+def waitAtMost (child : HeldChild)
     (secs : Nat) : IO UInt32 := do
   for _ in [0:secs * 10] do
     if let some code ← child.tryWait then return code
@@ -108,7 +113,7 @@ def waitAtMost (child : IO.Process.Child { stdin := .null, stdout := .piped, std
 
 /-- Feed the FIFO (so a held run can finish), ignoring a reader that is gone. -/
 def feed (fifo : FilePath) : IO Unit := do
-  let _ ← sh s!"timeout 10 cp {fx / "fib.ixe"} {fifo} 2>/dev/null; true"
+  let _ ← sh s!"timeout 5 cp {fx / "fib.ixe"} {fifo} 2>/dev/null; true"
 
 /-- A record of at most `size` bytes nested as deep as it fits: a definition whose value is
 `var 0` applied to itself, `app (var 0) (app (var 0) (…))`. -/
@@ -125,7 +130,83 @@ def deepRecord (size : Nat) : ByteArray := Id.run do
   while (mk n).size > size do n := n - 1000
   return mk n
 
-def suite (dir : FilePath) : IO Nat := do
+/-- The signals this process ignores (`SigIgn` of `/proc/self/status`, hexadecimal). A job
+that a non-interactive shell starts in the background (`cmd &`: `run.sh`'s jobs, the `suites`
+check's `launch`) inherits SIGINT and SIGQUIT ignored, and an exec keeps that. -/
+def sigIgn : IO String := do
+  let text ← match ← (IO.FS.readFile "/proc/self/status").toBaseIO with
+    | .ok t => pure t | .error _ => return "unknown"
+  let some line := (text.splitOn "\n").find? (·.startsWith "SigIgn:") | return "unknown"
+  return (line.drop "SigIgn:".length).toString.trimAscii.toString
+
+/-- Whether `/proc` lists a thread's children here (`CONFIG_PROC_CHILDREN`). -/
+def childrenListed : IO Bool := do
+  let pid ← IO.Process.getPID
+  System.FilePath.pathExists s!"/proc/{pid}/task/{pid}/children"
+
+/-- Kill a held run's process group and reap it, within 2 s (a run already reaped is left). -/
+def reap (child : HeldChild) : IO Unit := do
+  let _ ← sh s!"kill -KILL -{child.pid} 2>/dev/null; true"
+  for _ in [0:20] do
+    match ← (child.tryWait).toBaseIO with
+    | .ok (some _) | .error _ => return
+    | .ok none => IO.sleep 100
+
+/-- **The held runs** (the second process, held on a FIFO given as the closure; signals). Every
+wait is bounded (`waitAtMost`, 12 s; the FIFO fed within 5 s) and every run started is killed and
+reaped on every way out (`finally`), so the part ends within about 90 s: five runs, each 1.5 s to
+settle and at most 12 s of wait, two of them fed (at most 5 s each), 4 s of sleeps, at most 2 s
+of reaping each. Returns the assertions and the skips: where `/proc` lists no children the part
+is skipped by name (the plain gate still runs it). -/
+def heldPart (dir : FilePath) : IO (Nat × Nat) := do
+  IO.println s!"ixcc at the command line: held runs; signals this process ignores (SigIgn) {← sigIgn}"
+  unless ← childrenListed do
+    IO.println "SKIP: ixcc at the command line: held runs (no /proc children lists here)"
+    return (0, 1)
+  let spawned ← IO.mkRef (#[] : Array HeldChild)
+  let n ← IO.mkRef 0
+  try
+    for (env, expected) in [(plain, 1), (direct, 0)] do
+      let (child, fifo) ← held spawned dir env
+      let kids ← children child.pid.toNat
+      check (kids.length == expected) s!"{kids.length} second processes, expected {expected}"
+      if let some k := kids.head? then
+        check (← environHas k "IXCC_REEXECED=1") "the second process lacks IXCC_REEXECED=1"
+      feed fifo
+      let code ← waitAtMost child 12
+      check (code == 0) s!"held run: exit {code}"
+      n.modify (· + 1)
+    -- the second process killed: the first exits 128 + 9
+    let (child, _) ← held spawned dir plain
+    let some kid := (← children child.pid.toNat).head? | throw (IO.userError "no second process")
+    let _ ← sh s!"kill -KILL {kid}"
+    let code ← waitAtMost child 12
+    check (code == 137) s!"the parent exited {code} when its child was killed, expected 137"
+    n.modify (· + 1)
+    -- the first process terminated: the second stops within 2.5 s
+    let (child, _) ← held spawned dir plain
+    let top := child.pid.toNat
+    let some kid := (← children top).head? | throw (IO.userError "no second process")
+    let _ ← sh s!"kill -TERM {top}"
+    let _ ← waitAtMost child 12
+    IO.sleep 2500
+    check (!(← alive kid)) "the second process outlived its parent by 2.5 s"
+    n.modify (· + 1)
+    -- an interrupt to the group (both processes run with SIGINT at its default: `held`)
+    let (child, _) ← held spawned dir plain
+    let top := child.pid.toNat
+    let some kid := (← children top).head? | throw (IO.userError "no second process")
+    let _ ← sh s!"kill -INT -{top}"
+    let code ← waitAtMost child 12
+    IO.sleep 1500
+    check (code == 130 && !(← alive kid))
+      s!"an interrupt to the group: the parent exited {code}, the child alive {← alive kid}"
+    n.modify (· + 1)
+  finally
+    for c in ← spawned.get do reap c
+  return (← n.get, 0)
+
+def suite (dir : FilePath) : IO (Nat × Nat) := do
   check (← ixccPath.pathExists) s!"{ixccPath} is not built"
   let eq := (fx / "fib.equations.json").toString
   let ixe := (fx / "fib.ixe").toString
@@ -172,42 +253,8 @@ def suite (dir : FilePath) : IO Nat := do
   check (viaStdin.exitCode == 0) s!"the closure on standard input: {viaStdin.exitCode}\n{viaStdin.stderr}"
   check ((← IO.FS.readBinFile (dir / "stdin.o")) == object) "standard input: a different object"
   n := n + 1
-  -- the second process, held on a FIFO
-  for (env, expected) in [(plain, 1), (direct, 0)] do
-    let (child, fifo) ← held dir env
-    let top := child.pid.toNat
-    let kids ← children top
-    check (kids.length == expected) s!"{kids.length} second processes, expected {expected}"
-    if let some k := kids.head? then
-      check (← environHas k "IXCC_REEXECED=1") "the second process lacks IXCC_REEXECED=1"
-    feed fifo
-    let code ← waitAtMost child 30
-    check (code == 0) s!"held run: exit {code}"
-    n := n + 1
-  -- signals
-  let (child, _) ← held dir plain
-  let top := child.pid.toNat
-  let some kid := (← children top).head? | throw (IO.userError "no second process")
-  let _ ← sh s!"kill -KILL {kid}"
-  let code ← waitAtMost child 30
-  check (code == 137) s!"the parent exited {code} when its child was killed, expected 137"
-  n := n + 1
-  let (child, _) ← held dir plain
-  let top := child.pid.toNat
-  let some kid := (← children top).head? | throw (IO.userError "no second process")
-  let _ ← sh s!"kill -TERM {top}"
-  let _ ← waitAtMost child 30
-  IO.sleep 2500
-  check (!(← alive kid)) "the second process outlived its parent by 2.5 s"
-  n := n + 1
-  let (child, _) ← held dir plain
-  let top := child.pid.toNat
-  let some kid := (← children top).head? | throw (IO.userError "no second process")
-  let _ ← sh s!"kill -INT -{top}"
-  let code ← waitAtMost child 30
-  IO.sleep 1500
-  check (code == 130 && !(← alive kid)) s!"an interrupt to the group: the parent exited {code}, the child alive {← alive kid}"
-  n := n + 1
+  let (h, skips) ← heldPart dir
+  n := n + h
   -- a record of 1 MiB nested as deep as it fits, added to the closure
   let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv (← IO.FS.readBinFile (fx / "fib.ixe")))
   let record := deepRecord (1024 * 1024)
@@ -221,6 +268,6 @@ def suite (dir : FilePath) : IO Nat := do
   let b ← run deepArgs #[("IXCC_REEXEC", some "0"), ("IXCC_REEXECED", none), ("LEAN_STACK_SIZE_KB", some "8192")]
   check (b.exitCode > 128) s!"the deep record on 8 MiB without the re-execution: {b.exitCode}, expected a death by signal"
   n := n + 2
-  return n
+  return (n, skips)
 
 end IxCCTests.KernelFront.Cli

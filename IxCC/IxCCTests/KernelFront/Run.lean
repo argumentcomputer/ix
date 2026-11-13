@@ -302,9 +302,9 @@ def run : IO Bool := do
     -- `ixcc` at the command line (`Cli.suite`): limits, re-execution, signals, a deep record
     let dir ← IO.FS.createTempDir
     try
-      let k ← Cli.suite dir
+      let (k, s) ← Cli.suite dir
       a.modify (· + k)
-      IO.println s!"ixcc at the command line: {k} assertions"
+      IO.println s!"ixcc at the command line: {k} assertions, {s} skipped"
     finally IO.FS.removeDirAll dir
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
