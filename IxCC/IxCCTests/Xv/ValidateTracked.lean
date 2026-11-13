@@ -97,6 +97,13 @@ def bodyScans (c : Ctx) : Nat → Tracked → List (Inst VReg) → List (List Lo
       | .ok a' => bodyScans c (n + k) a' insts lss later (i + 1)
   | n, _, _, _, _, _ => n
 
+/-- Two results agree: both accepted, or both refused with the same error. -/
+def same {ε : Type} [DecidableEq ε] (r r' : Except ε Unit) : Bool :=
+  match r, r' with
+  | .ok (), .ok () => true
+  | .error e, .error e' => decide (e = e')
+  | _, _ => false
+
 /-- The checks `func` makes before it walks the blocks. -/
 def preOk (f : Func VReg) (o : Output) : Bool :=
   sizeOk f o && f.blocks.toList.length == o.blocks.length && nodup f.params &&
@@ -117,14 +124,14 @@ def checkAlloc (t : Tally) (label : String) (env : Xl.Env) (p : VProgram) (outs 
     for ((b, bo), l) in (blocks.zip o.blocks).zipIdx do
       t := { t with blocks := t.blocks + 1 }
       let r := checkBlock c info b bo
-      unless r == checkBlockList c info b bo do t := t.fail s!"{label}: function {fi} block {l}: checkBlock"
+      unless same r (checkBlockList c info b bo) do t := t.fail s!"{label}: function {fi} block {l}: checkBlock"
       if walking && editsOrdered b.body.size bo.edits 0 then
         t := { t with scans := t.scans + bodyScans c 0 (Tracked.ofList bo.cert) b.body.toList bo.locs bo.edits 0 }
       match r with
       | .ok () => t := { t with accepted := t.accepted + 1 }
       | .error _ => t := { t with refused := t.refused + 1 }; walking := false
   let r := Validate.program env p outs
-  unless r == programList env p outs do t := t.fail s!"{label}: program"
+  unless same r (programList env p outs) do t := t.fail s!"{label}: program"
   if r.toBool == false then t := { t with programsRefused := t.programsRefused + 1 }
   return t
 
