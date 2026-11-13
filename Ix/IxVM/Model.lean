@@ -762,6 +762,71 @@ def withEmptyPayloads (env : Ixon.Env) : Ixon.Env := Id.run do
           env := { env with models := env.models.insert a ByteArray.empty }
   return env
 
+/-- Whether a generated one-type inductive block has a constructor field domain that
+mentions the family other than as the head of a direct or reflexive recursive field:
+`fieldErase` (`IxC/Kernel/Frontend/InModel/Nested.lean`) leaves such an occurrence under
+a redex that positivity's WHNF (`normPosDom`) reduces away when generating the recursor,
+so the generated recursor record must carry the normalized domain too. -/
+def indNeedsRecNorm (block : List (ConstantInfo .anon)) (nP : Nat) : Bool :=
+  let tys := block.filterMap fun ci => match ci with | .indInfo cv _ => some cv | _ => none
+  match tys with
+  | [cvT] =>
+    let T := cvT.name
+    let tHead : Expr .anon := .const T (cvT.levelParams.map .param)
+    let rec piDomMentions : Expr .anon → Bool
+      | .forallE ty b _ => ty.mentionsConst T || piDomMentions b
+      | _ => false
+    block.any fun ci => match ci with
+      | .ctorInfo cv _ cF =>
+        match cv.type.stripPis (nP + cF) with
+        | some (bs, _) =>
+          (bs.drop nP).any fun (d, _) =>
+            d.mentionsConst T &&
+              (d.piResult.getAppFn != tHead || piDomMentions d ||
+                (d.piResult.getAppArgs.drop nP).any (·.mentionsConst T))
+        | none => false
+      | _ => false
+  | _ => false
+
+/-- Replace the recursor of any generated `.indDecl` that `indNeedsRecNorm` flags with
+the recursor IxC's native install computes over the normalized constructors (`cvRa` and
+`sumRules`), installing `d` first if `k.fe` does not already hold it, so the advice
+record matches `KernelCheck`'s `nat_rec_check` under `wrap_rel`. -/
+def normGeneratedRecs (gen : List (Declaration .anon)) (k : IxVM.PwHints.KernelEnv) :
+    List (Declaration .anon) := Id.run do
+  let mut fe := k.fe
+  let mut pos := 0
+  let mut out : Array (Declaration .anon) := #[]
+  for d in gen do
+    match d with
+    | .indDecl block nP =>
+      if indNeedsRecNorm block nP then
+        if block.any (fun | .recInfo cvR _ _ _ => (fe.find? cvR.name).isNone | _ => false) then
+          let (fe', pos', _) := IxVM.PwHints.installDecl k.setup.evidence fe pos d
+          fe := fe'
+          pos := pos'
+        let block' := block.map fun ci => match ci with
+          | .recInfo cvR _ _ _ =>
+            match fe.find? cvR.name with
+            | some (.recInfo cvRa mI rP rules) => .recInfo cvRa mI rP rules
+            | _ => ci
+          | _ => ci
+        out := out.push (.indDecl block' nP)
+      else
+        if block.any (fun ci => (fe.find? ci.name).isNone) then
+          let (fe', pos', _) := IxVM.PwHints.installDecl k.setup.evidence fe pos d
+          fe := fe'
+          pos := pos'
+        out := out.push d
+    | .defnDecl cv _ _ | .thmDecl cv _ | .axiomDecl cv | .opaqueDecl cv _ | .quotDecl _ cv =>
+      if (fe.find? cv.name).isNone then
+        let (fe', pos', _) := IxVM.PwHints.installDecl k.setup.evidence fe pos d
+        fe := fe'
+        pos := pos'
+      out := out.push d
+    | .basisDecl _ => out := out.push d
+  return out.toList
+
 /-- What the attach step did, per block: the advice's record count and outside
 references by witness kind, or why the block has no model. -/
 structure Report where
@@ -809,6 +874,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
   let mut st := pre.state
   let mut env := env
   let mut report : Report := {}
+  let mut kEnv? : Option (Option IxVM.PwHints.KernelEnv) := none
   for a in ordered do
     let some c := store[a]? | continue
     match Ix.Kernel.Reader.readRecord cx st a c with
@@ -821,7 +887,17 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         report := { report with blocks := report.blocks.push (a, .error "the reader generated no model")}
         continue
       let some shape := cx.index.blocks[a]? | continue
-      let advice := blockAdvice table look cx a c shape (r.decls.toList.take r.generated) tweak
+      let gen0 := r.decls.toList.take r.generated
+      let needNorm := gen0.any fun | .indDecl b nP => indNeedsRecNorm b nP | _ => false
+      if needNorm && kEnv?.isNone then
+        let view : IxVM.PwHints.View :=
+          { records := sub, support := records, blobs := env.blobs,
+            hints := env.anonHints, table := some table.toBytes }
+        kEnv? := some (IxVM.PwHints.KernelEnv.ofView view (prelude? := some (table, pre))).toOption
+      let gen := if needNorm then
+          match kEnv?.join with | some k => normGeneratedRecs gen0 k | none => gen0
+        else gen0
+      let advice := blockAdvice table look cx a c shape gen tweak
         >>= (·.withSections records env.blobs env.anonHints (table, pre))
       match advice with
       | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
