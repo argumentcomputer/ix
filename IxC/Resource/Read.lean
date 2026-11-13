@@ -243,24 +243,13 @@ def RCx.isInd (x : RCx) (e : Ixon.Expr) : Bool :=
     | none => false
   | _ => false
 
-/-- Whether no value of type `ty` is a leaf, read from the record: a function
-type, a sort, or an inductive type with other than one constructor (a leaf is
-`Nat` or a one-constructor wrapper of it). -/
-def RCx.noLeafType (x : RCx) (ty : Ixon.Expr) : Bool :=
-  let ty := Ix.Kernel.Reader.unshare x.c ty
-  match view ty with
-  | .ok (.all ..) | .ok .sort => true
-  | _ =>
-    match ixSpine 4096 ty with
-    | .ok (h, _) =>
-      let r? : Option Ref := match view (Ix.Kernel.Reader.unshare x.c h) with
-        | .ok (.ref i) => (x.refAt i).toOption
-        | .ok (.recur i) => x.recur i
-        | _ => none
-      match r?.bind (inductiveAt? x.s) with
-      | some ind => ind.ctors.size != 1
-      | none => false
-    | .error _ => false
+/-- Whether the reading claims that no value of type `ty` is a leaf: never. The
+claim (a function type, a sort, an inductive with other than one constructor)
+was true of `Nat` itself, which has two, and false in the sense the checker used
+it at function types, at data holding closures and under an absurd hypothesis
+(findings 1 to 3); the checker no longer reads `Param.noLeaf`. Enforcing such a
+claim in `runR`, as a stuck run, can come back as a widening. -/
+def RCx.noLeafType (_x : RCx) (_ty : Ixon.Expr) : Bool := false
 
 /-! ## Skeletons -/
 

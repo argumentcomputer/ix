@@ -546,8 +546,11 @@ def shf := mem 133
 def borrowCases : List Case := [
   suiteCase "borrow: a borrowed parameter returned" [(esc, body [par .borrowed] (v 0))] esc oneList
     (some .borrowEscape) false,
+  -- REPAIR A: accepted as landed; refused now. `len`'s result is a `shared` leaf, which now
+  -- carries its argument's regions (its parameter's `noLeaf` is no longer read), and it is
+  -- returned at `shared`. The run returns a fresh number: the checker is incomplete here.
   suiteCase "borrow: a borrowed parameter read" [(peek, body [par .borrowed] (lenOf (v 0)) .shared .leaf)]
-    peek oneList none true,
+    peek oneList none false,
   suiteCase "borrow: a borrowed parameter returned borrowed" [(same, body [par .borrowed] (v 0) .borrowed)]
     same oneList none true,
   -- `stash (@borrowed b : List) : List := [b]`
@@ -558,8 +561,10 @@ def borrowCases : List Case := [
     (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
   suiteCase "borrow: a let's loan returned" [(letEsc, body [par] (.letE .borrow .val (v 0) (v 0)))]
     letEsc oneList (some .borrowEscape) false,
+  -- REPAIR A: accepted as landed; refused now, for the same reason: `len x` carries the let's
+  -- region, so the let's value outlives the loan to the checker.
   suiteCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
-    .shared .leaf)] letOk oneList none true,
+    .shared .leaf)] letOk oneList none false,
   suiteCase "borrow: a borrowed leaf returned" [(escN, body [par .borrowed .leaf] (v 0 .leaf) .shared .leaf)]
     escN oneNat (some .borrowEscape) false,
   suiteCase "borrow: arithmetic on a borrowed leaf" [(addN, body [par .borrowed .leaf]
@@ -691,22 +696,97 @@ def fastPathCase (t : IO.Ref Tally) : IO Unit := do
 def suiteCases : List Case :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++ alternativeCases
 
+/-! ## Part 1b: the finding cases added to Tests/Ix/ResourceModes.lean, COPIED verbatim from
+its section "Findings of the mode study" (so that text elaborates and runs here), with `runCase`
+the driver's `suiteCase`. Part 2 runs the same programs at every fuel. -/
+
+namespace SuiteFindings
+
+def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
+    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
+  suiteCase label defs entry input run accept toCheck
+
+-- BEGIN COPY of Tests/Ix/ResourceModes.lean, "Findings of the mode study"
+
+-- Finding 1: `idN (n : Nat) : Nat := n`; `g4 (@borrowed n : Nat) : Nat := idN n`
+def idN := mem 300
+def g4 := mem 301
+def g4b := mem 341
+-- Finding 2: `app1 (f : Unit → Nat) : Nat := f ()`; `g3 (@borrowed n : Nat) : Nat := app1 (fun _ => n)`
+def app1 := mem 302
+def g3 := mem 303
+def g3p := mem 342
+-- Finding 3: `bad (h : List Nat = Nat) (xs : List Nat) : Nat := cast h (id xs)`;
+-- `g2 (h : Nat = List Nat) (h' : List Nat = Nat) (@borrowed n : Nat) : Nat := bad h' (cast h n)`
+def EqI := mem 6
+def reflR := ctr 6 0
+def caseEq : CaseInfo := { ind := EqI, arity := 4, major := 2, alts := #[{ alt := 3, args := #[] }] }
+def idR := mem 308
+def bad3 := mem 309
+def g2 := mem 310
+
+def idNDef (noLeaf : Bool) : Ref × RunDef := (idN, body [par .many .leaf .data noLeaf] (v 0 .leaf) .shared .leaf)
+def app1Def (noLeaf : Bool) : Ref × RunDef :=
+  (app1, body [par .many .val arrowSk noLeaf] (app (v 0) [.natLit 0] .leaf) .shared .leaf)
+def eqDefs : List (Ref × RunDef) := [(EqI, .ind #[reflR]), (reflR, .ctor EqI 0 2 #[]),
+  (idR, body [par .many .irr, par] (v 0)),
+  (bad3, body [par .many .irr, parL] (.case caseEq .irr #[app (.const idR .val) [.irr, v 0]] #[] .leaf) .shared .leaf)]
+def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, .imm .irr, n])
+
+def findingCases : List Case := [
+  runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
+    [idNDef true, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
+    g4 oneNat (some .borrowEscape) false,
+  runCase "finding 1, control: the parameter not read as no-leaf"
+    [idNDef false, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
+    g4 oneNat (some .borrowEscape) false,
+  runCase "finding 1, control: the result returned borrowed"
+    [idNDef true, (g4b, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .borrowed .leaf)]
+    g4b oneNat none true,
+  runCase "finding 2: a borrowed number captured by a closure passed at a function type"
+    [app1Def true, (g3, body [par .borrowed .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3 oneNat (some .borrowEscape) false [g3, app1],
+  runCase "finding 2, control: the parameter not read as no-leaf"
+    [app1Def false, (g3, body [par .borrowed .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3 oneNat (some .borrowEscape) false [g3, app1],
+  runCase "finding 2, control: the captured number not borrowed"
+    [app1Def true, (g3p, body [par .many .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3p oneNat none true [g3p, app1],
+  runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
+    (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
+      (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
+    g2 in3 (some .borrowEscape) false [g2, bad3]
+]
+
+-- END COPY
+
+end SuiteFindings
+
 /-! ## Part 2: the findings (MT's encodings, `Findings.lean` at 3c673bc38) -/
 
 /-! ### Finding 1: `noLeaf` true for `Nat` -/
 
 def idN := mem 300
 def g4 := mem 301
+def g4b := mem 341
 
 def p1 (noLeafIdN : Bool) : Prog := prog [
   (idN, body [par .many .leaf .data noLeafIdN] (v 0 .leaf) .shared .leaf),
-  (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
+  (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf),
+  -- `g4b (@borrowed n : Nat) : @borrowed Nat := idN n`
+  (g4b, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .borrowed .leaf)]
 
 def f1Cases : List Case := [
+  -- REPAIR A: accepted as landed
   { label := "F1 g4, idN's parameter noLeaf := true", P := p1 true, seed := g4, inp := oneNat, toCheck := [g4],
-    verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
   { label := "F1 control: noLeaf := false", P := p1 false, seed := g4, inp := oneNat, toCheck := [g4],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+  { label := "F1 control: the result returned borrowed", P := p1 true, seed := g4b, inp := oneNat, toCheck := [g4b],
+    verdict := .accept, run := [(0, .value)] }]
 
 def must {α : Type} (what : String) : Except String α → IO α
   | .ok a => pure a
@@ -761,17 +841,24 @@ def finding1b (t : IO.Ref Tally) (expectNoLeaf : Bool) : IO Unit := do
 
 def app1 := mem 302
 def g3 := mem 303
+def g3p := mem 342
 
 def p2 (noLeafApp1 : Bool) : Prog := prog [
   (app1, body [par .many .val arrowSk noLeafApp1] (app (v 0) [.natLit 0] .leaf) .shared .leaf),
   (g3, body [par .borrowed .leaf] (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf)
+    .shared .leaf),
+  -- `g3p (n : Nat) : Nat := app1 (fun _ => n)`
+  (g3p, body [par .many .leaf] (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf)
     .shared .leaf)]
 
 def f2Cases : List Case := [
+  -- REPAIR A: accepted as landed
   { label := "F2 g3, app1's parameter noLeaf := true", P := p2 true, seed := g3, inp := oneNat,
-    toCheck := [g3, app1], verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    toCheck := [g3, app1], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
   { label := "F2 control: noLeaf := false", P := p2 false, seed := g3, inp := oneNat, toCheck := [g3, app1],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+  { label := "F2 control: the captured number not borrowed", P := p2 true, seed := g3p, inp := oneNat,
+    toCheck := [g3p, app1], verdict := .accept, run := [(0, .value)] }]
 
 /-! ### Finding 3: an absurd hypothesis -/
 
@@ -792,8 +879,9 @@ def p3 : Prog := prog [
 def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, .imm .irr, n])
 
 def f3Cases : List Case := [
+  -- REPAIR A: accepted as landed
   { label := "F3 g2 (a cast under an absurd hypothesis)", P := p3, seed := g2, inp := in3, toCheck := [g2, bad3],
-    verdict := .accept, run := [(0, .oof), (20, .vio .borrowEscape)], open_ := true },
+    verdict := .refuse "borrowEscape", run := [(0, .oof), (20, .vio .borrowEscape)] },
   { label := "F3 control: bad on a real list", P := p3, seed := bad3, inp := irrAndList, toCheck := [bad3],
     verdict := .accept, run := [(0, .stuck)] }]
 
@@ -1058,7 +1146,10 @@ def use13c := mem 329
 def kk0 := mem 334
 
 def p13 : Prog := prog [
-  (kk, body [par .borrowed, par .many .leaf] (lenOf (v 1)) .shared .leaf),
+  -- `kk (@borrowed a : List Nat) (n : Nat) : Nat := match a with | [] => 0 | _ => 1` (MT's `kk`
+  -- read `len a`, which the checker refuses since repair A, a borrowed list's length being a
+  -- leaf carrying its region; that hid the finding, so `kk` reads `a` by a match instead)
+  (kk, body [par .borrowed, par .many .leaf] (onList (v 1) (.natLit 0) (.natLit 1) .val .leaf) .shared .leaf),
   (kk0, body [par .borrowed, par .many .leaf] (.natLit 0) .shared .leaf),
   (use13, body [par .many .val sk13, par .unique]
     (app (v 1) [v 0, app (.const consumeR .val) [v 0] .leaf] .leaf) .shared .leaf),
@@ -1071,7 +1162,7 @@ def in13 (k : Ref) : Heap × List Val :=
 
 def f13Cases : List Case := [
   { label := "F13 use13: k y (consume y)", P := p13, seed := use13, inp := in13 kk, toCheck := [use13, kk],
-    verdict := .accept, run := [(0, .oof), (20, .vio .revokedUse)], open_ := true },
+    verdict := .accept, run := [(0, .vio .revokedUse)], open_ := true },
   { label := "F13 control: the saturated call kk y (consume y)", P := p13, seed := use13c, inp := oneList,
     toCheck := [use13c, kk], verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] },
   { label := "F13 localiser: a k that never reads its first argument", P := p13, seed := use13, inp := in13 kk0,
@@ -1183,9 +1274,11 @@ def run : IO UInt32 := do
   for c in suiteCases do runCase t c
   limitCase t
   fastPathCase t
+  IO.println "== Part 1b: the finding cases as added to the suite"
+  for c in SuiteFindings.findingCases do runCase t c
   IO.println "== Part 2: the findings"
   for c in findingCases do runCase t c
-  try finding1b t true catch e => check1 t "F1b" false s!"error: {e}"
+  try finding1b t false catch e => check1 t "F1b" false s!"error: {e}"
   try finding6 t true catch e => check1 t "F6" false s!"error: {e}"
   finding4oracle
   let s ← t.get

@@ -282,8 +282,10 @@ def shf := mem 133
 def borrowCases : List LSpec.TestSeq := [
   runCase "borrow: a borrowed parameter returned" [(esc, body [par .borrowed] (v 0))] esc oneList
     (some .borrowEscape) false,
+  -- refused since the leaf-result refinement was dropped (findings 1 to 3): `len`'s `shared`
+  -- leaf result carries its argument's regions. The run returns a fresh number.
   runCase "borrow: a borrowed parameter read" [(peek, body [par .borrowed] (lenOf (v 0)) .shared .leaf)]
-    peek oneList none true,
+    peek oneList none false,
   runCase "borrow: a borrowed parameter returned borrowed" [(same, body [par .borrowed] (v 0) .borrowed)]
     same oneList none true,
   -- `stash (@borrowed b : List) : List := [b]`
@@ -294,8 +296,9 @@ def borrowCases : List LSpec.TestSeq := [
     (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
   runCase "borrow: a let's loan returned" [(letEsc, body [par] (.letE .borrow .val (v 0) (v 0)))]
     letEsc oneList (some .borrowEscape) false,
+  -- refused since the leaf-result refinement was dropped: `len x` carries the let's region.
   runCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
-    .shared .leaf)] letOk oneList none true,
+    .shared .leaf)] letOk oneList none false,
   runCase "borrow: a borrowed leaf returned" [(escN, body [par .borrowed .leaf] (v 0 .leaf) .shared .leaf)]
     escN oneNat (some .borrowEscape) false,
   runCase "borrow: arithmetic on a borrowed leaf" [(addN, body [par .borrowed .leaf]
@@ -434,6 +437,66 @@ def alternativeCases : List LSpec.TestSeq := [
     (altLam, body [par] (.case caseK (v 0) #[lam (par .erased) (.const secondOf .val) .shared .leaf] #[]
       .leaf) .shared .leaf)]
     altLam oneKey none true
+]
+
+/-! ### Findings of the mode study (REPLY-2-TO-IXVM.md §4), with their controls
+
+Each program the checker accepted while its run violated, now refused, beside
+the nearest program it refuses or accepts as it should. The same cases, with
+the run at every fuel tried, are in `ModeRepairTests/Main.lean`, which runs on
+the kernel package alone. -/
+
+-- Finding 1: `idN (n : Nat) : Nat := n`; `g4 (@borrowed n : Nat) : Nat := idN n`
+def idN := mem 300
+def g4 := mem 301
+def g4b := mem 341
+-- Finding 2: `app1 (f : Unit → Nat) : Nat := f ()`; `g3 (@borrowed n : Nat) : Nat := app1 (fun _ => n)`
+def app1 := mem 302
+def g3 := mem 303
+def g3p := mem 342
+-- Finding 3: `bad (h : List Nat = Nat) (xs : List Nat) : Nat := cast h (id xs)`;
+-- `g2 (h : Nat = List Nat) (h' : List Nat = Nat) (@borrowed n : Nat) : Nat := bad h' (cast h n)`
+def EqI := mem 6
+def reflR := ctr 6 0
+def caseEq : CaseInfo := { ind := EqI, arity := 4, major := 2, alts := #[{ alt := 3, args := #[] }] }
+def idR := mem 308
+def bad3 := mem 309
+def g2 := mem 310
+
+def idNDef (noLeaf : Bool) : Ref × RunDef := (idN, body [par .many .leaf .data noLeaf] (v 0 .leaf) .shared .leaf)
+def app1Def (noLeaf : Bool) : Ref × RunDef :=
+  (app1, body [par .many .val arrowSk noLeaf] (app (v 0) [.natLit 0] .leaf) .shared .leaf)
+def eqDefs : List (Ref × RunDef) := [(EqI, .ind #[reflR]), (reflR, .ctor EqI 0 2 #[]),
+  (idR, body [par .many .irr, par] (v 0)),
+  (bad3, body [par .many .irr, parL] (.case caseEq .irr #[app (.const idR .val) [.irr, v 0]] #[] .leaf) .shared .leaf)]
+def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, .imm .irr, n])
+
+def findingCases : List LSpec.TestSeq := [
+  runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
+    [idNDef true, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
+    g4 oneNat (some .borrowEscape) false,
+  runCase "finding 1, control: the parameter not read as no-leaf"
+    [idNDef false, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
+    g4 oneNat (some .borrowEscape) false,
+  runCase "finding 1, control: the result returned borrowed"
+    [idNDef true, (g4b, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .borrowed .leaf)]
+    g4b oneNat none true,
+  runCase "finding 2: a borrowed number captured by a closure passed at a function type"
+    [app1Def true, (g3, body [par .borrowed .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3 oneNat (some .borrowEscape) false [g3, app1],
+  runCase "finding 2, control: the parameter not read as no-leaf"
+    [app1Def false, (g3, body [par .borrowed .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3 oneNat (some .borrowEscape) false [g3, app1],
+  runCase "finding 2, control: the captured number not borrowed"
+    [app1Def true, (g3p, body [par .many .leaf]
+      (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
+    g3p oneNat none true [g3p, app1],
+  runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
+    (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
+      (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
+    g2 in3 (some .borrowEscape) false [g2, bad3]
 ]
 
 /-! ### Must-reject cases from records -/
@@ -620,6 +683,6 @@ def recordCasesTest : LSpec.TestSeq :=
 
 public def suite : List LSpec.TestSeq :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
-    alternativeCases ++ [limitCase, fastPathCase, recordCasesTest]
+    alternativeCases ++ findingCases ++ [limitCase, fastPathCase, recordCasesTest]
 
 end Tests.ResourceModes
