@@ -41,7 +41,7 @@ def CaseFires (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId �
     p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
     ∀ (ls : Levels) (φ : LevelParam → Nat) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr)
       (As : List V),
-      HeadAt M κ lpsOf S (.cases c) ls φ (κ c) T → Fits M.cval env φ ρ T As σ R →
+      HeadAt M κ lpsOf S Ok (.cases c) ls φ (κ c) T → Fits M.cval env φ ρ T As σ R →
       As.length = np + 1 + ni + 1 + nmin → LastSiteOk (M.cval (κ c) φ) As →
       ∀ (Tm : V) (mv : Value) (j : Nat) (fields : List Slot),
         As[np + 1 + ni]? = some Tm → RelV M κ lpsOf S Ok mv Tm →

@@ -261,22 +261,45 @@ section LevelEffects
 
 variable {s₀ : CState md}
 
-/-- The inlined `simplify`-with-memo step of `isEquivLM` (the clone's
-counterpart of the interned `simplifyLIGo` call). -/
+/-- The `simplify`-with-memo step of `isEquivLM` (`simplifyMemoC`): the
+result is the specification, and the memo keeps its invariant (the
+seeded walk is `simplifyGo`, whose invariant is the same). -/
+theorem simplifyMemoC_spec {mp : Std.HashMap Level Level}
+    (hmp : ∀ u v, mp[u]? = some v → v = Level.simplify u) (u : Level) :
+    (simplifyMemoC mp u).1 = Level.simplify u ∧
+      ∀ a b, (simplifyMemoC mp u).2[a]? = some b → b = Level.simplify a := by
+  unfold simplifyMemoC
+  cases hc : mp[u]? with
+  | some x => exact ⟨hmp u x hc, hmp⟩
+  | none =>
+    dsimp only
+    split
+    · exact ⟨rfl, lsimpInv_insert hmp u⟩
+    · exact Level.simplifyGo_spec u mp hmp
+
+/-- The name the cascade's proof below uses. -/
 private def simplifyMemo (mp : Std.HashMap Level Level) (u : Level) :
     Level × Std.HashMap Level Level :=
-  match mp[u]? with
-  | some x => (x, mp)
-  | none => let x := Level.simplify u; (x, mp.insert u x)
+  simplifyMemoC mp u
 
 private theorem simplifyMemo_spec {mp : Std.HashMap Level Level}
     (hmp : ∀ u v, mp[u]? = some v → v = Level.simplify u) (u : Level) :
     (simplifyMemo mp u).1 = Level.simplify u ∧
-      ∀ a b, (simplifyMemo mp u).2[a]? = some b → b = Level.simplify a := by
-  unfold simplifyMemo
-  cases hc : mp[u]? with
-  | some x => exact ⟨hmp u x hc, hmp⟩
-  | none => exact ⟨rfl, lsimpInv_insert hmp u⟩
+      ∀ a b, (simplifyMemo mp u).2[a]? = some b → b = Level.simplify a :=
+  simplifyMemoC_spec hmp u
+
+/-- The telescope loops' peel fuel reads the state and returns it
+unchanged; its value is irrelevant to the loop simulations, which hold
+for every peel fuel. -/
+theorem peelFuelToM_eff (hs : CSOK mode env s₀) (pi : Bool)
+    (sel : CState md → Std.HashMap (Expr md) (Expr md)) (t : Expr md) :
+    CEff mode env s₀ (fun _ => True) (peelFuelToM pi sel t) := by
+  intro v' s' hrun
+  have h : peelFuelToM pi sel t s₀ = .ok (peelFuelTo pi (sel s₀) peelFuel t 0, s₀) := rfl
+  rw [h] at hrun
+  injection hrun with h1
+  obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+  exact ⟨hs, trivial⟩
 
 /-- The task-#176 P2 head test: syntactically equal levels answer
 without touching the state or the cache. -/

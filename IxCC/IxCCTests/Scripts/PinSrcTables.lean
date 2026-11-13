@@ -26,7 +26,8 @@ lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
 
 `--diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
 fixtures/ixon-v4/src-sortpoly`, `--words fixtures/ixon-v4/src-words` and
-`--kernel-hints fixtures/ixon-v4/kernel-hints` instead compile a roots-only
+`--kernel-hints fixtures/ixon-v4/kernel-hints` and `--erased-blocks
+fixtures/ixon-v4/erased-blocks` instead compile a roots-only
 fixture from the Lean source in that directory (the words fixture with
 `--equations`, so that the word operations' stored equations join its closure;
 the kernel-hints fixture with seeds beside its root, which the sidecar does not
@@ -131,6 +132,15 @@ def kernelHintsFixture : RootsFixture where
   roots := [`KernelHints.root]
   seeds := [`KernelHints.allOnesXor, `KernelHints.complement16, `KernelHints.complement32,
     `KernelHints.complement64, `KernelHints.ping, `KernelHints.pong]
+
+/-- The erased-blocks fixture `fixtures/ixon-v4/erased-blocks/`: mutual and nested inductive blocks
+whose recursors take the minors of every constructor of the block, as roots through each
+(`IxCCTests.Recheck.ErasedBlocks`). -/
+def erasedBlocksFixture : RootsFixture where
+  source := "Blocks.lean"
+  stem := "blocks"
+  roots := [`ErasedBlocks.mainB, `ErasedBlocks.mainM2, `ErasedBlocks.mainN, `ErasedBlocks.mainN1,
+    `ErasedBlocks.mainR, `ErasedBlocks.r0, `ErasedBlocks.r1, `ErasedBlocks.r2]
 
 /-- Resolve `name` against the named twin `named` (`ix addr-of`). -/
 def addrOf (ix : String) (named : System.FilePath) (name : String) : IO String := do
@@ -263,15 +273,16 @@ def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : Syst
 
 def main (args : List String) : IO Unit := do
   let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names",
-    "--diagnostics", "--sortpoly", "--words", "--kernel-hints", "--repin", "--old-primitives",
-    "--old-tables"] args)
+    "--diagnostics", "--sortpoly", "--words", "--kernel-hints", "--erased-blocks", "--repin",
+    "--old-primitives", "--old-tables"] args)
   if let some file := optional options "--repin" then
     let some oldPrims := optional options "--old-primitives" | throw (IO.userError "missing --old-primitives")
     let some oldTables := optional options "--old-tables" | throw (IO.userError "missing --old-tables")
     repin file oldPrims oldTables "fixtures/ixon-v4/primitives.tsv" "fixtures/ixon-v4/src-tables.tsv"
     return
   for (flag, fxs) in [("--diagnostics", diagFixtures), ("--sortpoly", [sortPolyFixture]),
-      ("--words", [wordsFixture]), ("--kernel-hints", [kernelHintsFixture])] do
+      ("--words", [wordsFixture]), ("--kernel-hints", [kernelHintsFixture]),
+      ("--erased-blocks", [erasedBlocksFixture])] do
     if let some dir := optional options flag then
       let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
       for fx in fxs do
