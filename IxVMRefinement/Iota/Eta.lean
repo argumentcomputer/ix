@@ -501,7 +501,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     have hetaFab : Ix.Kernel.etaFabArgsE c.env (c.κ (ixAddr p)) ust
         (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr p)) ust) TA).getAppArgs M caps.etaFields =
         FAs := by
-      rw [hargsTW, Ix.Kernel.etaFabArgsE, Ix.Kernel.etaProjs, if_pos htower, hetaF, hFAs_eq]
+      rw [hargsTW, Ix.Kernel.etaFabArgsE, Ix.Kernel.etaProjs, ite_eq_left htower, hetaF, hFAs_eq]
     obtain ⟨tf, hinfFAB⟩ := infer_io_of_certs _ _ _
       (Infer.const (ci := .ctorInfo cvj cnP m) hcj rfl hustlenC) hcertFAB
     have hredFAB := hc.env.etaType (c.κ (ixAddr p)) rl.ctor cvT cvj caps cnP m
