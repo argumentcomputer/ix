@@ -647,7 +647,7 @@ denotation to lie in its domain, which only premise (ii)'s derivations give.
 | E8 δ, a definition | a stored definition denotes its value, at the levels its use induces | δ (`defn_value`) | a field, proved, on a follow-up branch (not on the pull request's head) | no | **blocks** until the claim fixes values |
 | E8, level instantiation | a constant depends on the level assignment only through its own parameters | level-parameter irrelevance | a theorem of the internal-backed model, not public | no | **blocks** (every level assignment) |
 | E8, `prim` entry; F6 | the operation on literals denotes the literal of its value, for all literals (no `pow` cap) | the `Nat` accelerations | to build | no | **blocks**, unless derived from δ, ι and the role specifications (2–4k lines on IxCC's side) |
-| E8, `word` entry; F6w (stage W1; a program with a word entry is outside the grounded fragment, `noWord`, until this case is proved) | a pinned word operation on words in range denotes the tower (or literal) of `WordOp.eval`'s result | none: derived from the operation's stored equation theorem, which the entry names (`mem`, `eq_equality`), `nat_accel` on the `Nat` formula, and the width's stored bridge from `UIntN.ofNat` to the tower; holds for whatever the pins name, since the theorems say what the constants compute | not yet derived (`wordAccel_of_eqns`, planned: its corrected premise, the reducing bridge, tested on instances in `IxCCTests/Src/Words.lean`); the fundamental lemma's case also needs the result tower typed in the model (its constructors' stored types mention `OfNat.ofNat Nat 64 _`, `2 ^ w` and `LT.lt Nat instLTNat`), which no stored equation gives: the direct route's conversion (`convD`, sound from δ, `proj_ctor` and `nat_accel`) decides those types on the words closure, so no further law or stored theorem is expected; the grounding check refuses a word entry (`noWord`, temporary) until both are | no | no (later fragment) |
+| E8, `word` entry; F6w (stage W1; the landed families refuse a word entry, `noWord`; the word family admits it, step W) | a pinned word operation on words in range denotes the tower (or literal) of `WordOp.eval`'s result | none: derived from the operation's stored equation theorem, which the entry names (`mem`, `eq_equality`), `nat_accel` on the `Nat` formula, and the width's stored bridge from `UIntN.ofNat` to the tower; holds for whatever the pins name, since the theorems say what the constants compute | derived (step W): `wordAccel_of_eqns`; the result tower's arguments fit the constructors' stored types by `graded` on the stored bridge (`tow_fits`), and a value read as a word is related only to the bridge's tower whatever its parameter slots (`tower_canon`: `proj_law`'s η, δ and `mem` of `BitVec.toFin`, `graded` on `Fin.mk`'s type for the proof field); every stored shape read is decided by the word check (`wordB`) | no | yes, in the word family (`rootSound_678AGpW_of_check`) |
 | E8, `eqn f thm` | `⟦f xs⟧ = ⟦rhs xs⟧` for arguments in the binders' domains | none: derived from `mem` of the stored theorem and of `Eq`, and `eq_equality` (an inhabited `@Eq A a b` forces `a`, `b` into the domains, since a graph read off its domain is empty, and then equal) | `mem`, `eq_equality` fields everywhere; the derivation is IxCC's lemma | yes (the arguments) | yes, with the theorem a seed |
 | E8, `csimp f g thm` | `⟦@f⟧ = ⟦@g⟧` | as `eqn` | as `eqn` | no | yes, with the theorem a seed |
 | E8, `case` entry; F5 | `T.casesOn` on a constructor is the selected minor on its fields | δ (`casesOn`'s value) and ι | δ and ι fields, proved | yes | yes |
@@ -1092,6 +1092,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 | `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
 | `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
 | `rootSound_678AGp_of_check` | six: `Laws678` and `graded`, every check read on `selEnv` (step Ap, below); `autoParam`/`optParam` binders in an `eqn` function's type admitted, which needs `graded`, so the five-field families and 1a's keep refusing those `eqn` entries |
+| `rootSound_678ASW`, `rootSound_678AGW`, `rootSound_678AGW_of_check`, `rootSound_678AGpW_of_check` | six: `Laws678` and `graded`, as `rootSound_678AGp_of_check`; the word family (step W, below): the check `groundCheckW` has the decided word conjunct `word` for `noWord`, so fixed-width word entries are admitted (`graded` and `proj_law` also type the word towers) |
 
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
@@ -1181,7 +1182,8 @@ out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the o
 "678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`), 43 since step E0 (below:
 `resource`; `GR19-p6`, every other verdict unchanged); since step C's closure-capture case (below)
 `arity` in every family: `groundCheck` 38, "678" 36, "678A" 38, "678G" 37, "678AG" 38, "678AGp" 44
-(`GR19-p7`, every other verdict unchanged). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+(`GR19-p7`, every other verdict unchanged); the witness shape (below) moves no closure between
+families (`GR20-y2`). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
@@ -1300,8 +1302,112 @@ the table. Statements that mention the relations changed text by the parameter o
 `const_of_check_678` and the fence's `example`s that pin them); no root theorem's text and no axiom
 set changes.
 
+**The minor-premise shape of a deep `let` (the witness shape, since 2026-11-13).** A `let` whose copy
+is not at depth 0 and not of the closure-capture shape, reached from the `let`'s kernel term through
+applications, projections and λs whose domains are closed level-free constants: a `match`'s minor
+premises `λ (_ : Unit). … x …` (`src-words`' `let x := a.toUInt8; …; match op with …`, two per
+function) and `λ (_ : Nat) (_ : Nat). … x …` (`closures`' `coreKnot`). The copy need not denote in the
+`let`'s context (a λ's domain may be empty), but **where every domain on the path has a witness** (a
+stored constant whose stored type is exactly that domain, a member of its denotation by the model's
+`mem`), every environment of the `let`'s context extends to one of the λs' context that agrees with
+it past them (`ctxExt_of_wits`); there the value runs against the copy lifted past the λs (the
+fundamental lemma's own hypothesis on the value's `Runs`, `relEnv_liftN`), and `den_lift` brings the
+denotation back, so the variable's slot is related unconditionally, as a live `let`'s. **No change to
+`RelV` or `RelEnv`.** `TermCorrS` and `Runs` gain a constructor each (`letWit`: the path the search
+finds, `witSite?`, its specification `UnderLams`; the value corresponding, and running where the
+`let` is relevant, in the λs' context against the lifted copy; `Runs.letWit`'s witness premise is
+that every environment satisfying the `let`'s context extends, so `Runs` names no stored constant);
+`corrSB` tries the shape only after the live case and the closure-capture case fail (their shapes
+decide which case applies, so nothing accepted or refused before changes); `evalSites` and its mirrors
+(`evalSitesP`, `allSites`, `evalSitesPs`, `spinesPs`) list the value's sites in the λs' context at the
+lifted copy. **`groundCheck` gains a conjunct, `letWit` (26)**: on each run pair, every domain on the
+path of a `let` of this shape (`witDoms`) is exactly the stored type of a stored level-free
+constructor or definition (`witnessB`); `GroundFacts` gains the field `wits`, and `runs_of_corr` one
+hypothesis, threaded down its induction. Wherever the check held before, `letWit` holds: `witDoms`
+collects domains only at `let`s of this shape, which `corrSB` refused. No root theorem's text or
+axiom set changes; nine lemmas are new (fence 323). **What `SitesOkRes` now asks on a program of this
+shape**: typing at the value's sites in the λs' context, where the kernel typed them (the direct route
+refuses every site under a `let`); on every program the check accepted before, the new branch never
+fires, so `SitesOk` and `SitesOkRes` are unchanged there; 1a's and 1b's families decide the new sites
+themselves. Measured (`GR20-y2`, 52 closures with `src-words`): 1a and 1b decide every new site
+(`closures` c19: 1 site, 1 spine; `src-words`: 8 and 8; none refused); no closure changes family
+(totals unchanged); `closures` loses `eqnCorr` (still `caseRec`, `caseShape` at `PUnit.casesOn`, and 1b's
+η-short sites), its root `knot` passes every decided hypothesis of `rootSound_678AGp_of_check`;
+`src-words` loses `valueCorr` and is refused by `noWord` alone, on the closure and at each of its four
+roots. In `tests-grounding` (`IxCCTests/Grounding/LetWit.lean`, and in the 1b part's pass over the
+51): `letWit` true on all 52, nothing accepted with step C refused, the witness case alone accepting
+exactly `closures` c19 and `src-words` c619, c229, c803, c520; at `knot` SrcEval reads back the
+manifest's five values; on `fib`'s root the shape at depths 1 and 2 accepted (SrcEval `55`), a
+non-constant domain (`Nat → Nat`) and a copy under a `∀` refused at `valueCorr` alone, a closed
+constant domain with no stored constant of its type refused at `letWit` alone, and the live and
+closure-capture plants never reach the witness case; on `src-words` the witness `Unit.unit` with its
+stored type replaced by its domain's unfolding (`PUnit.{1}`) refused at `letWit` alone. Recorded
+expectations moved: `closures`' refused run pairs (c19 → none) and false conjuncts (`eqnCorr`
+gone, in `LetClo` and `Zeta`); `Zeta`'s `closures` row (5 accepted, c19 refused as deep → 6, none)
+and total (55 → 56).
+
+**The word case (step W, since 2026-11-13).** A word entry `c ↦ word w op thm` (stage W1) makes `c`
+a special head of SrcEval (F6w: the arguments forced, each read as a word below its width's size,
+`asWord?`, or at `ofNat` as a literal; the result the tower `mkWord?` builds of `WordOp.eval`'s
+number, or at `toNat` the literal). Its meaning is the stored theorem the entry names: `∀ x y : Nat,
+op (ofNat x) (ofNat y) = ofNat' (F x y)` (`Table.wordEqnType`; one binder for a unary operation, at
+`toNat` the `Nat` formula itself, at `ofNat` the reducing bridge `ofNat x = ofBitVec (ofFin W
+(Fin.mk S (x % S) h))` under `h : Nat.le (Nat.succ (x % S)) S`). **Proved, from the laws the
+six-field family already assumes and nothing else** (`Laws678` and `graded`; no new law, no stored
+theorem beyond the entries' own): the model fact `wordAccel_of_eqns` (at words below the size, the
+operation's set applied to the bridge's towers of its arguments is the bridge's tower of
+`WordOp.eval`'s word, or the literal: `mem` of the stored theorem at literals and `eq_of_inhabited`,
+the formula by `nat_accel` (`form_den`) and equal to `WordOp.eval`'s number (`spec_val`), the towers
+by the bridge at the operation's width and its result's (`ofNat_tow`; the bridge's binder inhabited
+by `Nat.le.refl` and `step`, `natLe_mem`)); the result tower related to the bridge's (`relV_mkWord`:
+its arguments fit the constructors' stored types by `graded` on the stored bridge, `tow_fits`); a
+value read as a word related only to the bridge's tower of its number, whatever its parameter slots
+and proof field (`tower_canon`: run terms build towers whose parameters are arbitrary terms; at each
+level structure η (`proj_law`) rebuilds the image at the family's own parameter, `BitVec`'s field typed
+through the stored projection function `BitVec.toFin` (δ and `mem`), `Fin`'s fields read back by the
+projection law and its proof field the proof point because `LT.lt` ends in `Sort 0` (`graded` on
+`Fin.mk`'s type)); F6w's meaning `WordFires` from them (`wordFires_of_facts`), a field of the
+fundamental lemma's hypotheses, whose word cases (`head_tele`, `head_mem`, F6w in `fire_step`, E8 in
+`evalConst_step`) read it through a new head `HeadAt.word` (the table names the constant). **The
+plumbing**: `FaithWith` and `GroundFactsWith` take a word clause (field `words`, where `noWord` was);
+`Faith` and `GroundFacts` take `NoWord`, so every landed family means what it meant;
+`FundHyps.faith` is taken at the clause `True`, the word entries' facts reaching the lemma through
+the field `words`. The consumers of the AGp chain have word-generic versions (`rootSound_coreW`,
+`fundHyps_of_instW`, `runs_of_sitesInW`, `caseFires_of_agreeW`, `caseFires_of_instW`, `enum_argW`)
+and versions over every conjunct of the check but `noWord` (`CheckSans`: `groundFactsW_of_sans`,
+`caseFactsRead_of_sans`, `runPair_mem_of_sans`, `headRegimeS_of_sans`); each landed statement keeps
+its text and axiom set as a wrapper. **The check `groundCheckW`** is `checkParts` with `noWord`
+replaced by the decided conjunct `word` (`wordB`, sound: `wordFacts_of_check`), fail-closed: per
+width (decided once), the program's tower pins with their keys, the bridge theorem of the width's
+`ofNat` entry with exactly `bridgeK`'s statement over the role key of `Nat.mod`, `Nat.le` and its two
+constructors exactly, the tower's stored shapes (`BitVec`, `Fin` never propositions with projection
+tables of the tower's constructors, the constructors closed and level-free with graph-regime binders,
+`LT.lt` four graph-regime binders ending in `Sort 0`, `BitVec.toFin` the projection function), and
+the tower's constructors in the closure (they are runtime references no run term names, so the
+closure is taken with them: `wordClosure`); per entry, the head stored with a binder per argument,
+the `Eq` basis, both widths' facts, and the theorem's stored statement exactly `wordStmtK` (binder data
+read off the stored term, every comparison `decide` of an equality); an entry whose operation is a
+decision (no formula) is refused. **`rootSound_678AGpW_of_check`**: `rootSound_678AGp_of_check`'s
+statement with `groundCheckW` for `groundCheck` (pinned in the fence). **Adequacy has no boundary at
+`2^63`** or at any width's size: the model fact holds at every word below its width's size (`asWord?`
+reads no other), whatever the width; the boundary at `2^63` is the object's, whose word representation
+returns no value at or above it (a resource failure, never a wrong value), and the source evaluator
+never builds a tower out of range (`WordOp.eval_word_lt`). **Measured** (`GX-s2`, `tests-grounding`,
+`IxCCTests/Grounding/Words.lean` and the 1b part's pass over the 51): the word family holds on 45, the
+44 of the six-field family and `grounding/words` (30 word entries), whose six-field verdict is
+unchanged (refused by `noWord` alone); on `grounding/words` every decided hypothesis holds on the
+closure with its six runtime references and at each of its seven roots, and on `src-words` (68 word
+entries) on the closure with its one and at each of its four roots, so **`src-words` is in the proved
+fragment**; twelve planted controls on `grounding/words` (at `UInt64.add`) are each refused by `word`
+alone: `ofFin`'s first binder datum a proposition, `Fin`'s projection table removed, `LT.lt`'s result
+`Sort 1`, `BitVec.toFin`'s projection field 1, `Fin.mk` out of the closure, the bridge's `x % size`
+replaced by `5`, `Nat.le.step`'s result `Nat.le #2 #1`, the theorem's `Nat.mod` made `Nat.div`, its
+sides swapped, the head with no binder, the entry relabelled `neg` (the wrong arity) and `decLt` (a
+decision). **Not established**: the decisions (`decEq`, `decLt`, `decLe`) are not primitives in stage
+W1 and have no model fact; `USize` is not a width; the landed families still refuse every word entry.
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 400 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -1994,7 +2100,8 @@ ordered by how many closures each blocks (a closure can have several):
    literal* is (`valueCorr`, `eqnCorr`), 4 closures: the deep `let`s of `arity`
    (its only false conjunct) and `closures`, the string literals of `strings` and
    `panic`; since step C's closure-capture case, 3 closures: the minor-premise
-   `let` of `closures` (c19), the string literals (`arity` admitted).
+   `let` of `closures` (c19), the string literals (`arity` admitted); since the
+   witness shape, 2 closures: the string literals (`closures` c19 admitted).
 2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
    renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
    that can be propositions or are indexed; no longer the `casesOn` of a
@@ -2053,8 +2160,10 @@ gives.
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
 - the fragment: deep `let`s (a `let` whose variable meets its copy only under a binder; step C
-  admits the others, and since its closure-capture case a `let` whose body is a λ holding the copy
-  directly), recursors fired directly outside the admitted classes
+  admits the others, since its closure-capture case a `let` whose body is a λ holding the copy
+  directly, and since the witness shape a copy under λs over closed constant domains each with a
+  stored witness: refused remain a path through a `∀`, a non-constant or witness-less domain, a
+  closure-capture `let` whose value is not its copy), recursors fired directly outside the admitted classes
   (today all but `False.rec`'s, `Eq.rec`'s, the field-less ones without
   parameters, `Bool.rec`'s, and the other ones without parameters whose rule
   bodies name no constant, `T16.rec`'s: so no recursion, no parameters), `Quot`, `csimp`, strings, and `case` constants

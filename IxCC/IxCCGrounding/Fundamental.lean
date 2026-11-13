@@ -159,6 +159,7 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
         simpa [Program.headArity, hd, IxCC.Src.Decl.recArity] using har
       | _ => simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
   | prim _ _ har => exact har
+  | word _ _ _ _ har => simpa [Program.headArity] using har
 
 /-- `As` related to literal values are the literals' sets. -/
 theorem relVs_lits (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat) :
@@ -387,11 +388,11 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     have hden : DenotesIn M φ [] krl.rhs := fun ρ' _ => ⟨Hs, den_closed (hclosed krl hkm) hH⟩
     have hsites := ruleSites_ok H.laws hN hlv hrels hpwd hreg hden (hrefs j rl krl hrl hkrl)
     have hruns : Runs M κ Ok (lpsOf r) ls φ (idσ 0) [] rl.rhs krl.rhs :=
-      runs_of_corr (termCorrS_of_termCorr hcorr (hclosed krl hkm)) hden hsites fun d us hdu => by
+      runs_of_corr (termCorrS_of_termCorr hcorr (hclosed krl hkm)) hden hsites (fun d us hdu => by
         rw [evalConsts_peel ls _ rl.rhs t' ht'] at hdu
         have hm := evalConsts_mentions ls t' hdu
         rw [hnoc d] at hm
-        cases hm
+        cases hm) (fun A h => by rw [witDoms_of_termCorr hcorr] at h; cases h)
     rw [hrhs] at hruns
     have hpeel : IxCC.Src.peelLams bs.length rl.rhs = some t' := by
       rw [show bs.length = 0 + nmot + nmin + rl.fields by omega]; exact ht'
@@ -989,6 +990,11 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             exact RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
               .nil (.inl hl0)
+  | @word c w op thm _ _ ci hSc hres _ _ _ =>
+    -- F6w: the arguments forced, then `WordFires` (step W)
+    rw [IxCC.Src.fire_word] at hrun
+    obtain ⟨vs, hvs, hwv⟩ := Result.bind_eq_ok_iff.mp hrun
+    exact (H.words c w op thm hSc hres).2 φ vs As v (hfa _ _ _ hvs hargs) hwv
 
 theorem headValue_step {k : Nat} (hfire : FireP M p κ lpsOf S Ok k) :
     HeadValueP M p κ lpsOf S Ok k := by
@@ -1084,7 +1090,9 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       rw [hk]
       exact hhv _ _ _ φ _ _ hrun (.prim hf' hlp' har')
     | csimp g us thm => exact absurd hres (H.faith.noCsimp c g us thm hSc)
-    | word w op thm => exact absurd hres (H.faith.noWord c w op thm hSc)
+    | word w op thm =>
+      obtain ⟨⟨ci', hf', hlp', har'⟩, -⟩ := H.words c w op thm hSc hres
+      exact hhv _ _ _ φ _ _ hrun (.word hSc hres hf' hlp' har')
     | eqn thm body =>
       obtain ⟨e, hcomp, hrunsE⟩ := H.eqn c thm body hSc hres
       cases k with
@@ -1203,6 +1211,31 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       refine ⟨X, hX, .clo hlv (fun XA x hA hx => ?_) hctx hlam hcs' hX⟩
       obtain ⟨Y, hY⟩ := denotesIn_of_subAt0 hsub (denotesIn_lam_body hden) _ (hctx' XA x hA hx)
       exact .some (.val (.irr hlv (relEnv_liftAll x henv) (hiv hr) hY)) (hdown x Y hY) henv
+  | @letWit σ Γ c r ty v b e v' Δ _ hext _ hiv _ ihv ihb =>
+    -- the witness shape: the environment extended past the path's λs (their domains inhabited);
+    -- there the value's run is related against the lifted copy, whose denotation is the copy's
+    intro ρ ρk w hcs hlv henv hctx hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    obtain ⟨ρ', hctx', hk⟩ := hext ρk hctx
+    have henv' := relEnv_liftN hk henv
+    have hdown : ∀ Y, Denotes M.cval env φ ρ' (v'.liftLooseBVars Δ.length 0) Y →
+        Denotes M.cval env φ ρk v' Y := fun Y h => by
+      have hsk : skipEnv ρ' Δ.length 0 = ρk := funext fun i => by simp [skipEnv, hk]
+      rw [den_lift Δ.length v' 0 ρ' Y, hsk] at h
+      exact h
+    cases hr : r.irrAt ls with
+    | false =>
+      simp only [hr, Bool.false_eq_true, ↓reduceIte] at hrun
+      obtain ⟨x, hx, hb⟩ := Result.bind_eq_ok_iff.mp hrun
+      obtain ⟨Y, hY, hrelY⟩ := ihv hr ρ ρ' x (mentions_let_val hcs) hlv henv' hctx' hx
+      exact ihb (.val x :: ρ) ρk w (mentions_let_body hcs) hlv
+        (.some (.val hrelY) (hdown Y hY) henv) hctx hb
+    | true =>
+      simp only [hr, ↓reduceIte] at hrun
+      obtain ⟨htc, hdv⟩ := hiv hr
+      obtain ⟨Y, hY⟩ := hdv ρ' hctx'
+      exact ihb _ ρk w (mentions_let_body hcs) hlv
+        (.some (.val (.irr hlv henv' htc hY)) (hdown Y hY) henv) hctx hrun
   | @sort σ Γ u l hu =>
     intro ρ ρk v _ hlv henv _ hrun
     rw [IxCC.Src.eval_sort] at hrun

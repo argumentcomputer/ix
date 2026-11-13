@@ -1,5 +1,7 @@
 import IxCCTests.Grounding.NoCanon
+import IxCCTests.Grounding.Zeta
 import IxCCGrounding.SelRetype
+import IxCCGrounding.WordRoot
 
 /-! # `tests-grounding`: step 1b, every run-term site typed from `graded`, and step Ap
 
@@ -41,7 +43,17 @@ case: `IxCCTests.Grounding.LetClo`).
 The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
 refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
 every other part is true, also with the word entries' runtime references (the tower's six
-constructors, which no run term names) added to its closure. -/
+constructors, which no run term names) added to its closure.
+
+The word family (step W: `groundCheckW`, `noWord` replaced by the decided word conjunct, and the other
+decided hypotheses of `rootSound_678AGpW_of_check`, on `selEnv` of the closure with the word
+entries' runtime references) holds on 45: exactly the 44 of the family over six fields and
+`grounding/words` (`IxCCTests.Grounding.Words`: its roots, `src-words`, the planted controls).
+
+The witness shape (`IxCCTests.Grounding.LetWit`), in the same pass over the 51: the conjunct
+`letWit` holds on every closure, no run pair the decider as landed with step C accepted
+(`Zeta.corrSBClo`) is refused, and the decider accepts more exactly at `closures` c19
+(`Zeta.witExpected`). -/
 
 namespace IxCCTests.Grounding.GradedHead
 
@@ -242,7 +254,10 @@ def run : IO Bool := do
     let mut nAp := 0
     let mut nApPlants := 0
     let mut famAGp : List String := []
+    let mut famW : List String := []
     let mut nWords := 0
+    let mut nWit := 0
+    let mut wcAll : List (String × List CId) := []
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -334,10 +349,28 @@ def run : IO Bool := do
       else
         expect a (retyped.isEmpty && moved.isEmpty)
           s!"Ap: {label}: {retyped.length} constants retyped, conjuncts moved {moved}"
+      -- the witness shape: `letWit` true, nothing accepted with step C refused, the witness case
+      -- alone accepting exactly the recorded constants
+      let lostW := Zeta.lostConsts i
+      let wcW := Zeta.witConsts i
+      let expW := (Zeta.witExpected.lookup label).getD []
+      expect a (parts.lookup "letWit" == some true && lostW.isEmpty && wcW == expW)
+        s!"letWit: {label}: letWit {parts.lookup "letWit"}, accepted with step C and refused now \
+          {lostW}, accepted by the witness case alone {wcW} (expected {expW})"
+      nWit := nWit + 1
+      if !wcW.isEmpty then wcAll := wcAll ++ [(label, wcW)]
       let j' := { i with env := env' }
       if (failing j').isEmpty && noCanonAB i.src env' i.κ i.Sl && litDefsB env' && NoCanon.instOk j' &&
           sB j' then
         famAGp := famAGp ++ [label]
+      -- the word family (step W): `groundCheckW` and the other decided hypotheses of
+      -- `rootSound_678AGpW_of_check`, on `selEnv` of the closure with the word entries' runtime
+      -- references
+      let slW := wordClosure i
+      let jW := { i with env := selEnv i.src i.env i.κ slW, Sl := slW }
+      if groundCheckW jW.src jW.env jW.κ jW.lpsOf jW.ann jW.Sl && noCanonAB jW.src jW.env jW.κ jW.Sl &&
+          litDefsB jW.env && NoCanon.instOk jW && sB jW then
+        famW := famW ++ [label]
       -- the word subject (stage W1): the family over six fields refuses it by `noWord` alone, every
       -- other conjunct and part true on `selEnv`; so also with the word entries' runtime references
       -- (the tower's constructors, which no run term names) added to the closure
@@ -391,9 +424,18 @@ def run : IO Bool := do
         famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
+    expect a (famW.length == famAGp.length + 1 && famAGp.all famW.contains &&
+        famW.filter (!famAGp.contains ·) == [wordsLabel])
+      s!"words: the word family holds on {famW}, expected the family over six fields' and {wordsLabel}"
     IO.println s!"words: {wordsLabel} (30 word entries) is refused by the family over six fields on \
       selEnv by noWord alone, every other conjunct and part true, also with the tower's constructors \
       (the word entries' runtime references, 6 constants) added to its closure"
+    IO.println s!"words: the word family (step W: groundCheckW and the other decided hypotheses of \
+      rootSound_678AGpW_of_check, on selEnv with the word entries' runtime references) holds on \
+      {famW.length}: the {famAGp.length} of the family over six fields and {wordsLabel}"
+    expect a (nWit == 51) s!"letWit: {nWit} closures checked, expected 51"
+    IO.println s!"letWit: on all {nWit}: the conjunct letWit true, nothing accepted with step C \
+      refused, the witness case alone accepting {wcAll}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true
   catch error =>

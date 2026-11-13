@@ -61,6 +61,7 @@ theorem head_mem (M : Model V env) {p : Program} {κ : CId → KKey} {lpsOf : CI
   | cases _ _ hf => exact mem_key M hf φ ρ
   | recr _ _ hf => exact mem_key M hf φ ρ
   | prim hf _ _ => exact mem_key M hf φ ρ
+  | word _ _ hf _ _ => exact mem_key M hf φ ρ
 
 /-- Arguments that fit a telescope, applied to a member of its denotation, land in the remainder's. -/
 theorem fits_app_mem {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
@@ -130,6 +131,21 @@ theorem relEnv_liftAll {φ : LevelParam → Nat} {ρk : BVarIdx → V} (Y : V) :
       exact .some hs ((den_lift 1 _ 0 (push Y ρk) _).mpr (by rw [skipEnv_push_one]; exact hd))
         (relEnv_liftAll Y h')
     | none h' => exact .none (relEnv_liftAll Y h')
+
+/-- **Past several new binders** (the witness shape): lifting every term of the substitution by `k`
+keeps the environment related at any environment that agrees with the old one past its first
+`k` entries. -/
+theorem relEnv_liftN {φ : LevelParam → Nat} {ρk ρ' : BVarIdx → V} {k : Nat}
+    (hk : ∀ i, ρ' (i + k) = ρk i) :
+    ∀ {ρ : IxCC.Src.Env} {σ : Sig}, RelEnv M p κ lpsOf S Ok φ ρ σ ρk →
+      RelEnv M p κ lpsOf S Ok φ ρ (σ.map (·.map (Expr.liftLooseBVars k 0))) ρ'
+  | [], _, h => by cases h; exact .nil
+  | _ :: _, _, h => by
+    have hsk : skipEnv ρ' k 0 = ρk := funext fun i => by simp [skipEnv, hk]
+    cases h with
+    | some hs hd h' =>
+      exact .some hs ((den_lift k _ 0 ρ' _).mpr (by rw [hsk]; exact hd)) (relEnv_liftN hk h')
+    | none h' => exact .none (relEnv_liftN hk h')
 
 /-- **Under a new binder** (closure application): the bound slot related to the bound set, the
 substitution lifted (`liftσ`), the environment pushed. -/

@@ -123,13 +123,30 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
         TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)) →
       Runs M κ Ok lps ls φ (some v' :: σ) Γ (.lam bz d body) (.lam A b' mb) →
       Runs M κ Ok lps ls φ σ Γ (.letE c r ty v (.lam bz d body)) (.lam A b' mb)
+  /-- a `let` of the witness shape (the minor-premise shape of a deep `let`): its copy `v'` occurs,
+  lifted, under λs whose domains `Δ` are inhabited, so every environment satisfying `Γ` extends to
+  one satisfying the λs' context; where relevant at `ls`, its value runs in that context against the
+  lifted copy; where irrelevant, it corresponds there to the lifted copy, which denotes there; the
+  body runs with the variable standing for the copy -/
+  | letWit {σ : Sig} {Γ : List KExpr} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel}
+      {ty v b : Term} {e v' : KExpr} {Δ : List KExpr} :
+      zcopy b e = some v' →
+      (∀ ρ, CtxSat M φ Γ ρ →
+        ∃ ρ', CtxSat M φ (Δ.reverse ++ Γ) ρ' ∧ ∀ i, ρ' (i + Δ.length) = ρ i) →
+      (r.irrAt ls = false →
+        Runs M κ Ok lps ls φ (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) (Δ.reverse ++ Γ) v
+          (v'.liftLooseBVars Δ.length 0)) →
+      (r.irrAt ls = true →
+        TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) v
+          (v'.liftLooseBVars Δ.length 0) ∧
+        DenotesIn M φ (Δ.reverse ++ Γ) (v'.liftLooseBVars Δ.length 0)) →
+      Runs M κ Ok lps ls φ (some v' :: σ) Γ b e → Runs M κ Ok lps ls φ σ Γ (.letE c r ty v b) e
 
 /-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
 the first fragment): the key's set at the assignment, its stored type the telescope a partial
 application's arguments fit. The head and the value relation take the program SrcEval runs
-(`p`), which no constructor reads yet: a special head means what the program's table says
-(`.cases c` names its constant; a word head `.word w op` names none, so its case, stage W, reads
-the table). -/
+(`p`): a special head means what the program's table says (`.cases c` names its constant; a word
+head `.word w op` names none, so its case, stage W, reads the table). -/
 inductive HeadAt (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) (Ok : CId → Levels → Prop) :
     IxCC.Src.Head → Levels → (LevelParam → Nat) → KKey → KExpr → Prop
@@ -146,6 +163,13 @@ inductive HeadAt (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CI
       env.find? (primKey op) = some ci → ci.toConstantVal.levelParams = [] →
       op.arity ≤ kPis ci.toConstantVal.type →
       HeadAt M p κ lpsOf S Ok (.prim op) ls φ (primKey op) ci.toConstantVal.type
+  /-- a word head (stage W1): it names no constant, so the table says which constant `c` it is the
+  head of; its key is `κ c` -/
+  | word {c : CId} {w : IxCC.Src.Width} {op : IxCC.Src.WordOp} {thm : CId} {ls : Levels}
+      {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
+      S c → p.table.resolveOf c = some (.word w op thm) → env.find? (κ c) = some ci →
+      ci.toConstantVal.levelParams = [] → op.arity ≤ kPis ci.toConstantVal.type →
+      HeadAt M p κ lpsOf S Ok (.word w op) ls φ (κ c) ci.toConstantVal.type
 
 
 mutual
