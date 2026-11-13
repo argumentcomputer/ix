@@ -143,17 +143,27 @@ theorem lastSiteOk_snoc {H : V} {As : List V} {y : V} {v : Nat} {A : V} {B : V �
 variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
   {Ok : CId → Levels → Prop}
 
-theorem relEnv_get : ∀ {ρ : IxCC.Src.Env} {ρk : BVarIdx → V} {i : Nat} {s : Slot},
-    RelEnv M κ lpsOf S Ok ρ ρk → ρ[i]? = some s → RelSlot M κ lpsOf S Ok s (ρk i)
-  | [], _, _, _, _, h => by simp at h
-  | _ :: _, _, 0, _, he, h => by
+/-- **A variable that stands for a kernel term** is a slot related to that term's denotation. -/
+theorem relEnv_get {φ : LevelParam → Nat} :
+    ∀ {ρ : IxCC.Src.Env} {σ : Sig} {ρk : BVarIdx → V} {i : Nat} {e : KExpr},
+      RelEnv M κ lpsOf S Ok φ ρ σ ρk → σ[i]? = some (some e) →
+      ∃ s X, ρ[i]? = some s ∧ Denotes M.cval env φ ρk e X ∧ RelSlot M κ lpsOf S Ok s X
+  | [], _, _, _, _, he, h => by cases he; simp at h
+  | _ :: _, _, _, 0, _, he, h => by
     cases he with
-    | cons hs _ => simp only [List.getElem?_cons_zero, Option.some.injEq] at h; subst h; exact hs
-  | _ :: _, ρk, i + 1, _, he, h => by
+    | some hs hd _ =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+      subst h
+      exact ⟨_, _, by simp, hd, hs⟩
+    | none _ => simp at h
+  | _ :: _, _, _, i + 1, _, he, h => by
     cases he with
-    | cons _ hrest =>
-      simp only [List.getElem?_cons_succ] at h
-      exact relEnv_get (ρk := fun j => ρk (j + 1)) hrest h
+    | some _ _ hrest =>
+      simp only [List.getElem?_cons_succ] at h ⊢
+      exact relEnv_get hrest h
+    | none hrest =>
+      simp only [List.getElem?_cons_succ] at h ⊢
+      exact relEnv_get hrest h
 
 theorem relSlots_get : ∀ {ss : List Slot} {Xs : List V} {i : Nat} {s : Slot},
     RelSlots M κ lpsOf S Ok ss Xs → ss[i]? = some s → ∃ X, Xs[i]? = some X ∧ RelSlot M κ lpsOf S Ok s X
@@ -299,6 +309,14 @@ theorem mentions_app_right {f a : Term} {m : IxCC.Src.Mode} {r : IxCC.Src.Rel} {
 theorem mentions_proj {s i : Nat} {e : Term} {S : CId → Prop} (h : ConstsIn S (.proj s i e)) :
     S s ∧ ConstsIn S e :=
   ⟨h s (by simp [Term.mentions]), fun c hc => h c (by simp [Term.mentions, hc])⟩
+
+theorem mentions_let_val {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
+    {S : CId → Prop} (h : ConstsIn S (.letE c r ty v b)) : ConstsIn S v :=
+  fun d hd => h d (by simp [Term.mentions, hd])
+
+theorem mentions_let_body {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
+    {S : CId → Prop} (h : ConstsIn S (.letE c r ty v b)) : ConstsIn S b :=
+  fun d hd => h d (by simp [Term.mentions, hd])
 
 theorem mentions_const {c : CId} {us : List IxCC.Ixon.Univ} {S : CId → Prop}
     (h : ConstsIn S (.const c us)) : S c :=
