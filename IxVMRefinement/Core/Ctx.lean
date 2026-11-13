@@ -8,6 +8,7 @@ import Ix.IxVM.Refinement.Claim
 import Ix.SpecDigest.Schedule
 import IxC.Kernel.Model.Open.StoredFacts
 import IxC.Kernel.BasisA
+import IxC.Kernel.Model.StoreCompanions
 
 /-! # The context seam: the role context, the context list, and the environment the core reads
 
@@ -285,6 +286,28 @@ structure EnvFacts (c : Ctx) : Prop where
   installed by the basis route). -/
   quotBasis : c.inForce .quot → ∀ ci ∈ Ix.Kernel.BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
+  /-- (L5) **An η-capable stored family has a projection table entry at each of its `etaFields`
+  slots**: `Ix.Kernel.Model.EtaTowers` (`IxC/Kernel/Model/StoreCompanions.lean`), which
+  `etaTowers_declsRunJ` keeps along every accepted declaration. -/
+  etaTowers : Ix.Kernel.Model.EtaTowers c.env
+  /-- (L5) **The type of a full application of an η-constructor**: its io-inferred type reduces to
+  the structure at the same levels applied to the parameters (the stored constructor's type is
+  the telescope of the parameters and fields ending in the structure at the constructor's level
+  parameters applied to the parameter variables). Owed by the declaration layer as stated; it
+  could instead be derived from the stored constructor's shape and an inversion of io `Infer`
+  along the spine. -/
+  etaType : ∀ (T kc : KKey) (cvT cvc : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
+    c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
+    c.env.find? kc = some (.ctorInfo cvc nP nF) →
+    ∀ (d : Nat) (us : List KLevel) (Ss : List KExpr) (ta : KExpr), Ss.length = nP + nF →
+      Infer c.env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) Ss) ta →
+      Red c.env d ta (Ix.Kernel.Expr.mkAppN (.const T us) (Ss.take nP))
+  /-- (L5) **A one-rule recursor's η bit is the install's** (`recRuleBits`): `rl.eta` is
+  `recRuleEtaOf` (the constructor is the η constructor of a stored η-capable inductive at its
+  level parameters, and the recursor is no projection function). -/
+  recEta : ∀ k cv mI rP rl, c.env.find? k = some (.recInfo cv mI rP [rl]) →
+    rl.eta = Ix.Kernel.recRuleEtaOf c.env.find? k rl.ctor
   /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
   premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
   `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the
