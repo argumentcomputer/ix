@@ -1,4 +1,4 @@
-import IxCC.Xv.Stacking.Run
+import IxCC.Xv.Stacking.Proof.Linear
 
 /-!
 # The shape of a stacked program
@@ -85,7 +85,8 @@ theorem placeExports_eq (exports : List (FunId × String × List ArgRep × Func 
           ({ fn := e.1, symbol := e.2.1, reps := e.2.2.1, start := n } : PlacedExport))
         (fun e => wrapperBlocks e.2.2.1) exports exitBlocks,
        exitBlocks + (exports.map fun e => wrapperBlocks e.2.2.1).sum) := by
-  unfold placeExports
+  rw [placeExports_eq_list]
+  unfold placeExportsList
   exact foldl_place _ _ exports [] exitBlocks
 
 theorem placeFuncs_eq (fns : List (Func Loc × FunId × FrameLayout × Facts)) (next : Nat) :
@@ -94,7 +95,8 @@ theorem placeFuncs_eq (fns : List (Func Loc × FunId × FrameLayout × Facts)) (
           ({ func := e.1, fn := e.2.1, layout := e.2.2.1, facts := e.2.2.2, start := n } : Placed))
         (fun e => funcBlocks e.1 e.2.2.1 e.2.2.2) fns next,
        next + (fns.map fun e => funcBlocks e.1 e.2.2.1 e.2.2.2).sum) := by
-  unfold placeFuncs
+  rw [placeFuncs_eq_list]
+  unfold placeFuncsList
   exact foldl_place _ _ fns [] next
 
 /-! ## Functions with their layouts -/

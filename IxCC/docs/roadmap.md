@@ -851,15 +851,34 @@ ownership checker's own, which the captured-work budget bounds
   `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
   (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
   drops each unused parameter at the return, so a function of P parameters has P `dec`
-  statements that no Anf node counts (`maxBackWork` sees one node), and the allocation
-  certificate's per-block facts grow with the values live there. Within the parameter limit the
+  statements that no Anf node counts (`maxBackWork` sees one node), each a call made while up
+  to P values are live. Located (2026-11-13, gdb samples of `check-cert` and counts on the
+  generated inputs): at every call the validator runs two passes over its whole abstract state,
+  `AState.clearOutArgs` (forget the outgoing cells) and, through `define`, `AState.forget` of
+  the call's result; at (110, 2,398) that is 264,551 calls over 29.9 million state entries and
+  271,763 definitions over 30.7 million. On the immortal route the same passes run about once
+  per function, so there the stage is linear in the program. Within the parameter limit the
   sum of the squares can still reach about 2³¹ when one function has about 2,048 parameters
   (only a hand-written artifact gets there; `ix`'s output stays near 230).
-- Open: the back end's layout (`Backend.lay`: stacking and block layout) grows with the
-  function count faster than linearly, about F^1.6: 0.36 s and 1.15 s on the immortal route at
-  2,398 and 4,793 functions (whatever their parameters), 16.7 s and 29.8 s on the plain-RC
-  route with 529,000 `dec` statements in both. Not located; the function count is bounded by the
-  node budget and, from an artifact, by ingress's object table.
+- The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
+  the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
+  16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
+  `Stacking.run` read a callee's declared result count by converting the whole function array
+  to a list at every call (`resultsOf`, through the arity check) and every tail call
+  (`tailResults`, through the clobber check), O(F) per site, and placed functions and wrappers
+  by appending each to the list built so far (O(F²)). Fixed (2026-11-13): the array is read at
+  the callee's index and each placement is one pass, the first forms kept as
+  `resultsOfList`, `tailResultsList`, `placeExportsList` and `placeFuncsList` and proved equal
+  to the definitions (`Xv/Stacking/Proof/Linear.lean`), and tested against them on every
+  corpus root on both routes and on synthetic programs (`tests-own-owned`). On the build box,
+  the probe's `Backend.lay` on the verifier's own inputs, before and after: immortal route
+  309 → 48 ms at (P, F) = (110, 2,398), 289 → 46 ms at (220, 2,398), 857 → 92 ms at
+  (110, 4,793), 876 → 109 ms at (220, 4,793); plain-RC route 8.5 → 0.70 s at (110, 2,398),
+  16.3 → 1.37 s at (220, 2,398), 59.5 → 1.45 s at (110, 4,793). What remains grows about ×2
+  when F or P doubles, linearly in the functions and call sites: on the plain-RC route mostly
+  the clobber check's callee lists (`mayChange`, 0.3–0.6 s), the typed program's
+  well-formedness check (0.2–0.4 s) and emission (0.1–0.25 s); tunnelling and block layout
+  take under 20 ms in every cell.
 - The RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through `enrichFirContracts`:
   `progKeyContracts` and `progKeyResult` rebuilt `funList` and searched it once per function)
   was quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at 4,096, 48.8 s at

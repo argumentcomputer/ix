@@ -1150,6 +1150,7 @@
   "IxCC.Xv.Stacking.Proof.Ends",
   "IxCC.Xv.Stacking.Proof.Exit",
   "IxCC.Xv.Stacking.Proof.InstXl",
+  "IxCC.Xv.Stacking.Proof.Linear",
   "IxCC.Xv.Stacking.Proof.Machine",
   "IxCC.Xv.Stacking.Proof.Match",
   "IxCC.Xv.Stacking.Proof.RetFacts",
@@ -1792,8 +1793,7 @@
  "grounding_axiom_sha256":
  "18151a1db67336782e87ed765ac6d798a90d1ecb61eb3278537539324c73b6cc",
  "grounding_axiom_count": 285,
- "baseline":
- "step 1b: every run-term site typed from graded, merged with step C (GR18)",
+ "baseline": "b65b80708: stacking linear, merged 706840ad8",
  "axiom_sha256":
- "d5ee8982fda0480605322cb8a3bd2d7fdb0b5af6d8e83d922a23580055f049a7",
- "axiom_count": 6667}
+ "b0161908f16556dc46c3ff8af517b52c77c8a5a2726f3f5a5b61b897b4507d79",
+ "axiom_count": 6672}

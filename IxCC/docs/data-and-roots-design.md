@@ -409,9 +409,10 @@ annotator (Stage A), which runs on the source first (linear in the source's
 parameters since 2026-11-13), the plain-RC back end's per-function term
 (`Xv.Validate`, about the sum of the squares of the functions' sizes, which the
 canonical map's `dec` per parameter makes grow with the parameters), the
-layout's function-count term (`Backend.lay`), or the RC policy selection (linear
-in the function count since 2026-11-13); all four are measured in the
-[roadmap](roadmap.md#hardening), the middle two open, with the check run three times
+layout's function-count term (`Backend.lay`, linear in the functions and call
+sites since 2026-11-13), or the RC policy selection (linear in the function
+count since 2026-11-13); all four are measured in the
+[roadmap](roadmap.md#hardening), the second open, with the check run three times
 per certificate and the certificate text's JSON depth (512, which a function's
 canonical ownership code passes at about 510 levels of nesting).
 

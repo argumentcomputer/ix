@@ -18,8 +18,10 @@ functions                    per function: the stack check (if any), then one bl
 The program starts at `main`'s wrapper, which must exist. Besides the
 program, `run` returns its layout shape (a group per function, wrapper and
 the exit group, with the blocks to place last) and the exported symbols.
-Kernel-evaluable style: lists, folds, and a persistent map from function
-to entry block.
+Kernel-evaluable style: lists, folds, reads of the function array at an
+index, and a persistent map from function to entry block. Every pass is
+linear in the functions and their call sites (`Proof/Linear.lean`: the
+first forms, which read a list and appended, are kept as specifications).
 
 **Clobber sets**. The allocation validator trusts `Xl.Env.clobbers`:
 after a call it keeps the caller's values in every register outside the
@@ -135,13 +137,30 @@ def allowedChanges (env : Xl.Env) (fn : FunId) (f : Func Loc) : List X86.GPR :=
 def withLayouts (p : LProgram) (layouts : List FrameLayout) : List (Func Loc × FunId × FrameLayout × Facts) :=
   (p.funcs.toList.zipIdx.zip layouts).map fun ((f, fn), l) => (f, fn, l, f.facts)
 
+/-- A function's declared result count, read from the list of functions:
+the definition as first written, kept as the specification of `resultsOf`
+(`Proof.resultsOf_eq_list`). It converted the array to a list at every call
+site, which made `run`'s arity check quadratic in the function count. -/
+def resultsOfList (p : LProgram) (g : FunId) : Option Nat := (p.funcs.toList[g]?).map (·.results)
+
+/-- A function's declared result count: the array read at `g`. -/
+def resultsOf (p : LProgram) (g : FunId) : Option Nat := (p.funcs[g]?).map (·.results)
+
+/-- `tailResults` as first written, reading each tail callee from the list of
+functions: the specification of `tailResults` (`Proof.tailResults_eq_list`). -/
+def tailResultsList (p : LProgram) (f : Func Loc) : List X86.GPR :=
+  f.blocks.toList.flatMap fun b =>
+    match b.term with
+    | .tail g _ => Lir.Conv.resultRegs.take ((p.funcs.toList[g]?.map (·.results)).getD 0)
+    | _ => []
+
 /-- The result registers of the functions a function tail-calls: a tail call
 returns to the caller's caller, so its callee's results are changes the
 caller must allow. -/
 def tailResults (p : LProgram) (f : Func Loc) : List X86.GPR :=
   f.blocks.toList.flatMap fun b =>
     match b.term with
-    | .tail g _ => Lir.Conv.resultRegs.take ((p.funcs.toList[g]?.map (·.results)).getD 0)
+    | .tail g _ => Lir.Conv.resultRegs.take ((resultsOf p g).getD 0)
     | _ => []
 
 /-- The registers a function may change beyond what its callers allow
@@ -152,9 +171,6 @@ def extraChanges (p : LProgram) (env : Xl.Env) (f : Func Loc) (fn : FunId) (l : 
     List X86.GPR :=
   (mayChange env f a l ++ tailResults p f).filter (!(allowedChanges env fn f).contains ·) ++
     (env.clobbers fn).filter (fun r => !X86.SysV.callerSaved.toList.contains r)
-
-/-- A function's declared result count. -/
-def resultsOf (p : LProgram) (g : FunId) : Option Nat := (p.funcs.toList[g]?).map (·.results)
 
 /-- Every call binds, every return returns, and every tail callee declares,
 as many results as expected: `allowedChanges` counts a callee's result
@@ -175,15 +191,37 @@ def exportsOf (reps : FunId → Option (List ArgRep)) (fns : List (Func Loc × F
     | .sysvExport s => some (fn, s, exportReps reps fn f, f)
     | .internal => none
 
-/-- The wrappers' first blocks, after the exit group, and the next free block. -/
-def placeExports (exports : List (FunId × String × List ArgRep × Func Loc)) : List PlacedExport × Nat :=
+/-- `placeExports` as first written, appending each wrapper to the list built
+so far (quadratic in the export count): the specification of `placeExports`
+(`Proof.placeExports_eq_list`). -/
+def placeExportsList (exports : List (FunId × String × List ArgRep × Func Loc)) : List PlacedExport × Nat :=
   exports.foldl (init := ([], exitBlocks)) fun (acc, n) (fn, symbol, rs, _) =>
     (acc ++ [({ fn, symbol, reps := rs, start := n } : PlacedExport)], n + wrapperBlocks rs)
 
-/-- The functions' first blocks, from block `next`, and the block count. -/
-def placeFuncs (fns : List (Func Loc × FunId × FrameLayout × Facts)) (next : Nat) : List Placed × Nat :=
+/-- The wrappers' first blocks, after the exit group, and the next free block:
+one pass that puts each wrapper in front of those placed so far, then one
+reversal. -/
+def placeExports (exports : List (FunId × String × List ArgRep × Func Loc)) : List PlacedExport × Nat :=
+  let r := exports.foldl (init := (([] : List PlacedExport), exitBlocks)) fun p e =>
+    (({ fn := e.1, symbol := e.2.1, reps := e.2.2.1, start := p.2 } : PlacedExport) :: p.1,
+     p.2 + wrapperBlocks e.2.2.1)
+  (r.1.reverse, r.2)
+
+/-- `placeFuncs` as first written, appending each function to the list built
+so far (quadratic in the function count): the specification of `placeFuncs`
+(`Proof.placeFuncs_eq_list`). -/
+def placeFuncsList (fns : List (Func Loc × FunId × FrameLayout × Facts)) (next : Nat) : List Placed × Nat :=
   fns.foldl (init := ([], next)) fun (acc, n) (func, fn, layout, facts) =>
     (acc ++ [({ func, fn, layout, facts, start := n } : Placed)], n + funcBlocks func layout facts)
+
+/-- The functions' first blocks, from block `next`, and the block count: one
+pass that puts each function in front of those placed so far, then one
+reversal. -/
+def placeFuncs (fns : List (Func Loc × FunId × FrameLayout × Facts)) (next : Nat) : List Placed × Nat :=
+  let r := fns.foldl (init := (([] : List Placed), next)) fun p e =>
+    (({ func := e.1, fn := e.2.1, layout := e.2.2.1, facts := e.2.2.2, start := p.2 } : Placed) :: p.1,
+     p.2 + funcBlocks e.1 e.2.2.1 e.2.2.2)
+  (r.1.reverse, r.2)
 
 /-- Each function's entry block and parameter count. -/
 def entriesOf (placed : List Placed) : NatMap (Nat × Nat) :=
