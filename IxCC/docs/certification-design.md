@@ -231,7 +231,7 @@ fields (C3 refuses the minor that binds a dropped field relevantly; S4 refuses a
 read from an index). The kernel-faithful recursor of that `Prop` (motive into `Prop`) is refused
 already, wherever it is reached: C5 refuses a relevant reference to it, and made a root, C6 or C1
 refuses its rule (its minors are proofs). `tests-recheck`'s `Shape` asserts all of this, the
-behaviour before the clause on the recheck path without `checkCanonical`. No committed closure is
+behaviour before the clause on the recheck path without `checkCanonical`, and the P1 twin plants Form B (`tests-p1-twin`). No committed closure is
 refused by the new clause ([ci](ci.md)).
 
 **Structure the kernel ensures, now decided by `checkCanonical` (2026-11-13).** Relevance
