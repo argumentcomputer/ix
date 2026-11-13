@@ -289,18 +289,24 @@ def InputsOk (P : Prog) (h : Heap) (params : Array Param) (args : List Val) : Pr
 def HeldBy (h : Heap) (a v : Val) : Prop :=
   v = a ∨ ∃ l o, Reach h a l ∧ h.objs[l]? = some o ∧ v ∈ o.cell.vals
 
-/-- A value an extern may produce: an immediate; a fresh, unconfined reference;
-or a value held by an argument at a parameter that neither lends nor transfers. -/
-def ExternVal (ps : Array Param) (args : List Val) (h : Heap) (v : Val) : Prop :=
-  (∃ i, v = .imm i) ∨ (∃ loc cap, v = .ref loc cap [] ∧ h.objs.size ≤ loc) ∨
+/-- A value an extern may produce, from the heap `h` it was given into the heap
+`h'` it returns: an immediate; a fresh, unconfined reference to a cell of `h'`
+carrying that cell's capability (as landed any capability was allowed, so an
+extern meeting `ExternOk` could return a dead reference in an all-default
+program and `DefaultOk` was false, finding 14); or a value held by an argument
+at a parameter that neither lends nor transfers. -/
+def ExternVal (ps : Array Param) (args : List Val) (h h' : Heap) (v : Val) : Prop :=
+  (∃ i, v = .imm i) ∨
+  (∃ loc cap o, v = .ref loc cap [] ∧ h.objs.size ≤ loc ∧ h'.objs[loc]? = some o ∧ o.cap = cap) ∨
   ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧ p.mode.isBorrowed = false ∧
     p.mode.isUnique = false ∧ HeldBy h a v
 
 /-- **Externs behave as their declared modes allow**: an extern changes no cell
 it was given, except that it may kill the cells it received at a unique
-parameter; it builds only input cells of values it may produce; its result is
-such a value, of its class, and fresh and unshared at a unique result; it calls
-no closure (higher-order externs are not covered). -/
+parameter; it builds only input cells of values it may produce, with
+capabilities below its new counter; its result is such a value, of its class,
+and fresh and unshared at a unique result; it calls no closure (higher-order
+externs are not covered). -/
 def ExternOk (P : Prog) (ext : ExternOracle) : Prop :=
   ∀ (r : Ref) (ps : Array Param) (res : ResultMode) (rc : Cls) (rs : Skel) (args : List Val)
     (h h' : Heap) (v : Val), P.find? r = some (.extern ps res rc rs) →
@@ -311,8 +317,8 @@ def ExternOk (P : Prog) (ext : ExternOracle) : Prop :=
         h.nextCap ≤ o'.cap ∧ ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧
           p.mode.isUnique = true ∧ OwnReach P h a l)) ∧
     (∀ (l : Nat) (o : Obj), h.objs.size ≤ l → h'.objs[l]? = some o →
-      InputCell P o.cell ∧ ∀ w ∈ o.cell.vals, ExternVal ps args h w) ∧
-    ExternVal ps args h v ∧
+      InputCell P o.cell ∧ o.cap < h'.nextCap ∧ ∀ w ∈ o.cell.vals, ExternVal ps args h h' w) ∧
+    ExternVal ps args h h' v ∧
     (rc = .irr → v = .imm .irr) ∧ (rc = .imm → ∃ i, v = .imm i) ∧
     (rc = .leaf → ∃ loc cap o n, v = .ref loc cap [] ∧ h'.objs[loc]? = some o ∧ o.cell = .num n) ∧
     (res.isUnique = true → rc = .val → ∃ loc cap, v = .ref loc cap [] ∧ h.objs.size ≤ loc ∧
