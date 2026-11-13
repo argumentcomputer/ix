@@ -158,7 +158,7 @@ abbrev ScanM := EStateM Stop GetState
 
 /-- A codec reader in the scan; its failure is an unreadable stop. -/
 @[inline] def lift {α : Type} (r : GetM α) : ScanM α := fun s =>
-  match r s with
+  match EStateM.run r s with
   | .ok a s => .ok a s
   | .error _ s => .error .unreadable s
 
@@ -186,11 +186,11 @@ def definition (limit : Nat) : ScanM Nat := do
 def recursor (limit : Nat) : ScanM Nat := do
   let _ ← lift getU8
   for _ in [0:5] do
-    let _ ← lift (getTagN 0)
+    discard <| lift (getTagN 0)
   let mut deepest ← expr limit
   let rules := (← lift (getTagN 0)).value.toNat
   for _ in [0:rules] do
-    let _ ← lift (getTagN 0)
+    discard <| lift (getTagN 0)
     deepest := max deepest (← expr limit)
   return deepest
 
@@ -198,14 +198,14 @@ def recursor (limit : Nat) : ScanM Nat := do
 def ctor (limit : Nat) : ScanM Nat := do
   let _ ← lift (Serialize.get (α := Bool))
   for _ in [0:4] do
-    let _ ← lift (getTagN 0)
+    discard <| lift (getTagN 0)
   expr limit
 
 /-- `Ixon.getInductive`. -/
 def inductive_ (limit : Nat) : ScanM Nat := do
   let _ ← lift (Serialize.get (α := Bool))
   for _ in [0:3] do
-    let _ ← lift (getTagN 0)
+    discard <| lift (getTagN 0)
   let mut deepest ← expr limit
   let ctors := (← lift (getTagN 0)).value.toNat
   for _ in [0:ctors] do
@@ -256,7 +256,7 @@ def constant (limit : Nat) : ScanM Nat := do
     deepest := max deepest (← expr limit)
   let refs := (← lift (getTagN 0)).value.toNat
   for _ in [0:refs] do
-    let _ ← lift (Serialize.get (α := Address))
+    discard <| lift (Serialize.get (α := Address))
   let univs := (← lift (getTagN 0)).value.toNat
   for _ in [0:univs] do
     deepest := max deepest (← univ limit)
