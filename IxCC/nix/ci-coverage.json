@@ -1262,6 +1262,7 @@
   "IxCCTests.Fences.Own",
   "IxCCTests.Fences.OwnOwned",
   "IxCCTests.Fences.OwnOwnedSwitch",
+  "IxCCTests.Fences.OwnParams",
   "IxCCTests.Fences.OwnPlain",
   "IxCCTests.Fences.OwnProof",
   "IxCCTests.Fences.OwnRc",
@@ -1784,7 +1785,7 @@
  "dcfe005edf93d0cc7428fec97d65fcc6499e28e067f4dc8438c4947445dee77b",
  "grounding_axiom_count": 209,
  "baseline":
- "stage W1 landing B: erasure emits the word primitive; the switch on (15 exact axiom assertions in Fences/Erase.lean)",
+ "the parameter total (Anf.maxParamTotal) and the zero-RC route's check (10 exact axiom assertions in Fences/OwnParams.lean)",
  "axiom_sha256":
- "3057719df17725482873ce916c36b59765634b4f36a957aac2c6bd634c8277d3",
- "axiom_count": 6634}
+ "ed9352875d578e70771a5a265fe9e59a47b8beb8f5ec22a9eeb14d054b8d8b53",
+ "axiom_count": 6644}

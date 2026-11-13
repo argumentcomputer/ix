@@ -761,31 +761,74 @@ ownership checker's own, which the captured-work budget bounds
   from Fir (admission, `checkScopedProgram` and the lowering, each of which
   runs the check) on 4,096 such functions whose bodies are `trap`, with a
   certificate of no action, 267 s before and 33 s after (2.1 GB).
-- Open: nothing bounds a Fir program's total parameter count directly.
-  Parameters cost no Anf node, so the node budgets (`Anf.maxGlobalNodes`,
-  `maxProgramNodes`, `maxBackWork`) do not bound them. A function's
-  parameters are the λ-binders of one source term, so `Src.maxTermDepth` and
-  `Anf.maxLamDepth` (2,048) hold one function to about 2,048 (from `ix`'s
-  output of a Lean source the consumer's expression depth, 256, holds it to
-  about 230; an artifact written by hand can nest deeper through shares),
-  and `Anf.Defun` holds a global used as a closure value to 255 parameters
-  and captured values together. With one-node functions (a body `trap`) the
-  node budget allows 2²⁰ functions, about 2³¹ parameters in all: some
-  27 minutes for one run of `programDomain` at 0.75 µs each, three runs per
-  verification, for a program of about 100 GB in memory. The registered
-  corpus reaches 240 parameters in one program (`Closures.stateLoop`: 78
-  functions, 11,536 Anf nodes, 0.021 per node; 8 at most in one function)
-  and 876 over its 194 roots against 52,742 Anf nodes (0.017); the benchmark
-  closures 386 (`const_fold`, 0.039 per node; 18 at most in one function,
-  `rbmap`) and 966 in all against 35,353 nodes (0.027); no program of 100
-  nodes or more passes 0.14 parameters per node (`Arity.main8p`). Whether the
-  front end can be made to emit a program near that total from an artifact
-  within its own budgets is not established: the producer's schedule prunes
-  unreachable globals, a direct call pays its arguments in Anf nodes and a
-  closure value is held to 255, but a certificate may omit the prune step
-  (`Recheck.checkMidCert` does not require it), and how many functions a
-  closure's reached constants can yield has not been worked out. A budget
-  on the parameter work is a decision still to take.
+- The total parameter count, closed (2026-11-12): `Anf.maxParamTotal` = 2²⁰ = 1,048,576
+  bounds the parameters of a program's functions and of the join points their bodies declare
+  (`Own.Plain.Certificate.paramTotal`). Parameters cost no Anf node, so the node budgets
+  (`Anf.maxGlobalNodes`, `maxProgramNodes`, `maxBackWork`) do not bound them: a function's
+  parameters are the λ-binders of one source term, held to about 2,048 by `Src.maxTermDepth` and
+  `Anf.maxLamDepth` (to about 230 in `ix`'s output of a Lean source, by the consumer's expression
+  depth of 256; an artifact written by hand can nest deeper through shares), and with one-node
+  functions the node budget allowed about 2³¹ in all, some 27 minutes for one run of
+  `programDomain`. Plain-RC admission (`Own.Plain.Certificate.admit`, `admitContract`) refuses
+  past the limit first, before it decodes the certificate, with `own.cert.params` (the total and
+  the limit); `Recheck.runWithContracts` refuses the same before its domain check, and
+  `CompileClaim.produce`'s zero-RC branch before it writes a claim. Acceptance is monotone in the
+  limit (`admit_params_mono`), and every run of the domain check in `RcReplay.runFront` judges a
+  program within it (`runFront_paramTotal`; `runWithContracts_paramTotal`). At the limit, on the build
+  box: one run of the domain check 0.76 s (512 functions of 2,048 parameters) to 0.93 s (64
+  functions each declaring 8 joins of 2,048), the plain-RC verifier's steps from Fir 3.9 s and
+  4.6 s; the count itself 1.4 ms. The registered corpus reaches 240 (`Closures.stateLoop`: 78
+  functions, 11,536 Anf nodes; no join with more than one parameter anywhere), the benchmark
+  closures 386 (`const_fold`): 4,369× and 2,716× below the limit. The producer is not expected to
+  reach the limit from an artifact, by an argument from the code, not a proof: after its
+  schedule's last `prune` every function but a root is reached by a call that passes exactly its
+  parameters, a call costs its arguments plus two Anf nodes, every join point the passes make
+  has one parameter (`Anf/Convert.lean`, `Anf/Walk.lean`; the other passes keep a join's arity),
+  so the total is at most the program's Anf nodes plus the roots' own parameters; and the
+  producer's own admission (`Src.admit`, 2²² runtime nodes) refuses larger sources first. Only a
+  certificate made by hand that omits `prune` (`Recheck.checkMidCert` does not require it)
+  reaches it. Measured end to end on such inputs (box evidence, not a test; the generator and
+  its scripts are kept with the heap stage 2 notes): a generated source of functions with 220
+  `Nat` parameters, each the value of an unused `let`, frozen to a 5.7 MB closure, and
+  certificates whose middle end is P1 and one shrink step. Every stage between ingress and
+  admission (the certificate's text, the front end, erasure, the middle end, P8, `Fir.lower`)
+  grows 1.4 to 2.2 times when the program doubles, from 524,277 parameters (2,398 functions) to
+  1,048,549 (4,793): together about 4 s at half the limit and 7 s at it; so the limit is checked
+  where the parameter total is first known and after linear work only. What it does not bound is
+  listed in the next four items.
+- Open: the relevance check against the canonical annotator (Stage A,
+  `Recheck.checkCanonicalRelevance`: `Src.KernelFront.Kernel.annotateChecked`, the kernel
+  annotator and `checkReachedTypes`, rerun on the certificate's table and compared) is
+  superlinear in the reached source. It runs on the source program, before any Fir program
+  exists, on every `ixcc compile --cert` and `check-cert` input (the CLI's certificate read) and
+  in the claim verifiers (`CompileClaim.checkCertCanonicalRelevance`, Ring0), on both routes; the
+  producer runs the same annotator. On the generated inputs (P parameters per function, F
+  functions reached): 11.0 s at (P, F) = (110, 2,398), 33.4 s at (220, 2,398), 35.5 s at
+  (110, 4,793), 102.8 s at (220, 4,793), a factor of three when either doubles; a sum
+  α·F·P² + β·F²·P fits within the box's noise. The parameter limit cannot bound it (it runs
+  first, on another program); only ingress's object table (16,384 entries) and the term depth do.
+  Its cause is not yet located.
+- Open: `RcReplay`'s plain-RC back end after admission has a per-function quadratic term:
+  `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
+  (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
+  drops each unused parameter at the return, so a function of P parameters has P `dec`
+  statements that no Anf node counts (`maxBackWork` sees one node), and the allocation
+  certificate's per-block facts grow with the values live there. Within the parameter limit the
+  sum of the squares can still reach about 2³¹ when one function has about 2,048 parameters
+  (only a hand-written artifact gets there; `ix`'s output stays near 230).
+- Open: the back end's layout (`Backend.lay`: stacking and block layout) grows with the
+  function count faster than linearly, about F^1.6: 0.36 s and 1.15 s on the immortal route at
+  2,398 and 4,793 functions (whatever their parameters), 16.7 s and 29.8 s on the plain-RC
+  route with 529,000 `dec` statements in both. Not located; the function count is bounded by the
+  node budget and, from an artifact, by ingress's object table.
+- Open: the RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through
+  `enrichFirContracts`: `progKeyContracts` and `progKeyResult` rebuild `funList` and search it
+  once per function) is quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at
+  4,096, 48.8 s at 16,384 and over 600 s at 65,536 on synthetic programs (the parameters do not
+  matter: 4,096 functions of 256 parameters, 2.5 s), 2.7 s to 12 s on the generated inputs'
+  2,398 and 4,793. It runs in `--rc auto`'s producer and in the zero-RC claim verifiers
+  (`CompileClaim.verifyProgram`, Ring0) after `runWithContracts`. A lookup structure in place of
+  the rebuilt list is the planned fix.
 - Known limit, not a cost: the certificate text is refused past 512 levels
   of JSON nesting (`Src.Hints.maxJsonDepth`, `checkJsonText`), and a plain-RC
   certificate's ownership code nests one level per binding, action and join

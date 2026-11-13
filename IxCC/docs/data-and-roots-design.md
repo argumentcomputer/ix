@@ -84,7 +84,8 @@ that closures (P8), arrays and bignums need.
   from which `checked_program_refines`, `checked_contract_program_refines`
   and `checked_program_reclaims` are re-derived with their statements
   unchanged. The plain-RC verifier admits ownership certificates with it,
-  behind a work budget (`Anf.maxCapturedWork`), and `Recheck.RcReplay.sound`
+  behind a work budget (`Anf.maxCapturedWork`) and a parameter total
+  (`Anf.maxParamTotal`), and `Recheck.RcReplay.sound`
   keeps its statement; the producer still writes the canonical placement, so
   every compiled object is unchanged ([below](#the-ownership-checker)).
 - *Not implemented.* Scalar fields in compiled programs (the runtime above
@@ -365,16 +366,51 @@ keeps the scope as a `Src.NatSet` and reads a callee's arity through
 proved equal to the former list forms (`programDomain_eq_list`); the list
 forms cost about the square of a function's parameters (85.4 s on 4,096
 functions of 2,049 parameters, 6.6 s with the sets; the verifier's steps from
-Fir on such a program 267 s and 33 s). Parameters cost no Anf node, so no
-budget yet bounds a program's total parameter count; that, the check run
-three times per certificate and the certificate text's JSON depth (512, which
-a function's canonical ownership code passes at about 510 levels of nesting)
-are listed in the [roadmap](roadmap.md#hardening).
+Fir on such a program 267 s and 33 s).
 The verifier is not slower for the change: over every root of the 12 registered manifests under
 `--rc on` (202 certificates, the CLI's `run` time, eight at once on the shared build box), 4.15 s in
 all and 1.33 s for the slowest (`Closures.stateLoop`), against 4.31 s and 1.50 s with the canonical
 comparison (an earlier pair of runs: 4.06 s and 1.32 s against 4.96 s and 1.99 s; the difference is
 within the box's noise).
+
+**The parameter total.** Parameters, a function's and a join point's, cost no
+Anf node (a join counts one node whatever its arity), so the node budgets do
+not bound them, while the domain check and the checker walk every one, three
+times per certificate. Admission therefore counts them first
+(`Own.Plain.Certificate.paramTotal`, over the numbered functions and the join
+points their bodies declare; a linear walk, 1.4 ms at the limit) and refuses a
+program past `Anf.maxParamTotal` = 2²⁰ = 1,048,576 with `own.cert.params`, the
+total and the limit, before it decodes the certificate; acceptance is monotone
+in the limit (`admit_params_mono`), and `RcReplay.runFront_paramTotal` states that
+every run of the check judges a program within it. The zero-RC route's check
+(`Recheck.runWithContracts`, after `Recheck.run`) refuses the same first. At the
+limit one run of the domain check takes 0.76 s (512 functions of 2,048
+parameters) to 0.93 s (64 functions each declaring 8 joins of 2,048), and the
+verifier's steps from Fir 3.9 s and 4.6 s. The registered corpus reaches 240
+(`Closures.stateLoop`; every join point the passes make has one parameter), the
+benchmark closures 386 (`const_fold`). The producer is not expected to reach
+the limit from an artifact (an argument from the code, not a proof: after its
+last `prune` every parameter but a root's is matched by an argument at a call,
+which costs Anf nodes; [roadmap, "Hardening"](roadmap.md#hardening)); under
+`--rc on` a program past it would be declined with no object, under `--rc auto`
+compiled under the immortal policy with the reason printed. The limit bounds
+the domain check, the checker's entries and the plain-RC lowering's work per
+parameter; it does not bound the relevance check against the canonical
+annotator (Stage A), which runs on the source first, the plain-RC back end's
+per-function term (`Xv.Validate`, about the sum of the squares of the
+functions' sizes, which the canonical map's `dec` per parameter makes grow with
+the parameters), the layout's function-count term (`Backend.lay`), or the RC
+policy selection (quadratic in the function count); all four are measured and
+listed in the [roadmap](roadmap.md#hardening), with the check run three times
+per certificate and the certificate text's JSON depth (512, which a function's
+canonical ownership code passes at about 510 levels of nesting).
+
+**The zero-RC route's check.** `Recheck.Artifact.checkContractOwn` checks the
+contract-aware domain and the Boolean pins (`contractProgramDomain`,
+`checkBoolPins`). It used to build the canonical map and compare it with
+itself, which always holds (`Own.Plain.checkContractPlainMap_canonical`), so the
+same verdict now comes without the map, whose construction is quadratic in a
+join's captured list; `Artifact.checkContractOwn_iff` keeps its statement.
 
 **Statics.** Closed constructor trees (and, after P8, field-less closure
 constructors) become immortal cells in the object's read-only data instead

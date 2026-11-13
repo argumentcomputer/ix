@@ -7,114 +7,154 @@ namespace IxCC.Own.Plain.Certificate
 open Lean (Json toJson)
 open IxCC.Recheck.CertJson (arr nat str nats getArr)
 
-/-- What an accepted admission consists of: the decoded map, within the captured-work budget,
-accepted by the ownership checker. -/
-theorem admit_ok {F : Fir.Program} {j : Json} {budget : Nat} {P : Program}
-    (accepted : admit F j budget = .ok P) :
-    ∃ bodies, decode F j = .ok bodies ∧ capturedWork bodies ≤ budget ∧
+/-- What an accepted admission consists of: the program within the parameter total, and the
+decoded map within the captured-work budget and accepted by the ownership checker. -/
+theorem admit_ok {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+    (accepted : admit F j budget params = .ok P) :
+    ∃ bodies, paramTotal F ≤ params ∧ decode F j = .ok bodies ∧ capturedWork bodies ≤ budget ∧
       checkOwned F bodies = true ∧ P = { source := F, bodies } := by
   unfold admit at accepted
-  cases hd : decode F j with
-  | error e => simp only [hd, bind, Except.bind] at accepted; cases accepted
-  | ok bodies =>
-    simp only [hd, bind, Except.bind] at accepted
-    cases hb : checkBudget budget bodies with
-    | error e => simp only [hb] at accepted; cases accepted
-    | ok u =>
-      simp only [hb] at accepted
-      split at accepted
-      · next checked =>
-        cases accepted
-        exact ⟨bodies, rfl, checkBudget_ok.mp hb, checked, rfl⟩
-      · cases accepted
+  cases hp : checkParamTotal params F with
+  | error e => simp only [hp, bind, Except.bind] at accepted; cases accepted
+  | ok u =>
+    simp only [hp, bind, Except.bind] at accepted
+    cases hd : decode F j with
+    | error e => simp only [hd] at accepted; cases accepted
+    | ok bodies =>
+      simp only [hd] at accepted
+      cases hb : checkBudget budget bodies with
+      | error e => simp only [hb] at accepted; cases accepted
+      | ok u' =>
+        simp only [hb] at accepted
+        split at accepted
+        · next checked =>
+          cases accepted
+          exact ⟨bodies, checkParamTotal_ok.mp hp, rfl, checkBudget_ok.mp hb, checked, rfl⟩
+        · cases accepted
 
-theorem admit_of {F : Fir.Program} {j : Json} {budget : Nat} {bodies : Src.NatMap Code}
-    (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
-    (hc : checkOwned F bodies = true) : admit F j budget = .ok { source := F, bodies } := by
+theorem admit_of {F : Fir.Program} {j : Json} {budget params : Nat} {bodies : Src.NatMap Code}
+    (hp : paramTotal F ≤ params) (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
+    (hc : checkOwned F bodies = true) : admit F j budget params = .ok { source := F, bodies } := by
+  have hq : checkParamTotal params F = .ok () := checkParamTotal_ok.mpr hp
   have hb : checkBudget budget bodies = .ok () := checkBudget_ok.mpr hw
-  simp [admit, hd, hb, hc, bind, Except.bind, pure, Except.pure]
+  simp [admit, hq, hd, hb, hc, bind, Except.bind, pure, Except.pure]
 
 /-- **Acceptance is monotone in the budget**: a refusal for the budget is policy, not soundness;
 any certificate admitted under a budget is admitted, as the same program, under a larger one. -/
-theorem admit_mono {F : Fir.Program} {j : Json} {budget budget' : Nat} {P : Program}
-    (le : budget ≤ budget') (accepted : admit F j budget = .ok P) : admit F j budget' = .ok P := by
-  obtain ⟨bodies, hd, hw, hc, rfl⟩ := admit_ok accepted
-  exact admit_of hd (Nat.le_trans hw le) hc
+theorem admit_mono {F : Fir.Program} {j : Json} {budget budget' params : Nat} {P : Program}
+    (le : budget ≤ budget') (accepted : admit F j budget params = .ok P) :
+    admit F j budget' params = .ok P := by
+  obtain ⟨bodies, hp, hd, hw, hc, rfl⟩ := admit_ok accepted
+  exact admit_of hp hd (Nat.le_trans hw le) hc
+
+/-- **Acceptance is monotone in the parameter limit**: any certificate admitted under a limit is
+admitted, as the same program, under a larger one. -/
+theorem admit_params_mono {F : Fir.Program} {j : Json} {budget params params' : Nat} {P : Program}
+    (le : params ≤ params') (accepted : admit F j budget params = .ok P) :
+    admit F j budget params' = .ok P := by
+  obtain ⟨bodies, hp, hd, hw, hc, rfl⟩ := admit_ok accepted
+  exact admit_of (Nat.le_trans hp le) hd hw hc
 
 /-- An admitted map is within the budget it was admitted under. -/
-theorem admit_budget {F : Fir.Program} {j : Json} {budget : Nat} {P : Program}
-    (accepted : admit F j budget = .ok P) : capturedWork P.bodies ≤ budget := by
-  obtain ⟨bodies, _, hw, _, rfl⟩ := admit_ok accepted
+theorem admit_budget {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+    (accepted : admit F j budget params = .ok P) : capturedWork P.bodies ≤ budget := by
+  obtain ⟨bodies, _, _, hw, _, rfl⟩ := admit_ok accepted
   exact hw
 
-theorem admitContract_ok {F : Fir.Program} {j : Json} {budget : Nat} {P : Program}
-    (accepted : admitContract F j budget = .ok P) :
-    ∃ bodies, decode F j = .ok bodies ∧ capturedWork bodies ≤ budget ∧
+/-- An admitted program is within the parameter limit it was admitted under. -/
+theorem admit_paramTotal {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+    (accepted : admit F j budget params = .ok P) : paramTotal F ≤ params := by
+  obtain ⟨_, hp, _⟩ := admit_ok accepted
+  exact hp
+
+theorem admitContract_ok {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+    (accepted : admitContract F j budget params = .ok P) :
+    ∃ bodies, paramTotal F ≤ params ∧ decode F j = .ok bodies ∧ capturedWork bodies ≤ budget ∧
       checkContractOwned F bodies = true ∧ P = { source := F, bodies } := by
   unfold admitContract at accepted
-  cases hd : decode F j with
-  | error e => simp only [hd, bind, Except.bind] at accepted; cases accepted
-  | ok bodies =>
-    simp only [hd, bind, Except.bind] at accepted
-    cases hb : checkBudget budget bodies with
-    | error e => simp only [hb] at accepted; cases accepted
-    | ok u =>
-      simp only [hb] at accepted
-      split at accepted
-      · next checked =>
-        cases accepted
-        exact ⟨bodies, rfl, checkBudget_ok.mp hb, checked, rfl⟩
-      · cases accepted
+  cases hp : checkParamTotal params F with
+  | error e => simp only [hp, bind, Except.bind] at accepted; cases accepted
+  | ok u =>
+    simp only [hp, bind, Except.bind] at accepted
+    cases hd : decode F j with
+    | error e => simp only [hd] at accepted; cases accepted
+    | ok bodies =>
+      simp only [hd] at accepted
+      cases hb : checkBudget budget bodies with
+      | error e => simp only [hb] at accepted; cases accepted
+      | ok u' =>
+        simp only [hb] at accepted
+        split at accepted
+        · next checked =>
+          cases accepted
+          exact ⟨bodies, checkParamTotal_ok.mp hp, rfl, checkBudget_ok.mp hb, checked, rfl⟩
+        · cases accepted
 
-theorem admitContract_of {F : Fir.Program} {j : Json} {budget : Nat} {bodies : Src.NatMap Code}
-    (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
-    (hc : checkContractOwned F bodies = true) :
-    admitContract F j budget = .ok { source := F, bodies } := by
+theorem admitContract_of {F : Fir.Program} {j : Json} {budget params : Nat}
+    {bodies : Src.NatMap Code} (hp : paramTotal F ≤ params) (hd : decode F j = .ok bodies)
+    (hw : capturedWork bodies ≤ budget) (hc : checkContractOwned F bodies = true) :
+    admitContract F j budget params = .ok { source := F, bodies } := by
+  have hq : checkParamTotal params F = .ok () := checkParamTotal_ok.mpr hp
   have hb : checkBudget budget bodies = .ok () := checkBudget_ok.mpr hw
-  simp [admitContract, hd, hb, hc, bind, Except.bind, pure, Except.pure]
+  simp [admitContract, hq, hd, hb, hc, bind, Except.bind, pure, Except.pure]
 
 /-- **Acceptance is monotone in the budget** (contract-aware admission). -/
-theorem admitContract_mono {F : Fir.Program} {j : Json} {budget budget' : Nat} {P : Program}
-    (le : budget ≤ budget') (accepted : admitContract F j budget = .ok P) :
-    admitContract F j budget' = .ok P := by
-  obtain ⟨bodies, hd, hw, hc, rfl⟩ := admitContract_ok accepted
-  exact admitContract_of hd (Nat.le_trans hw le) hc
+theorem admitContract_mono {F : Fir.Program} {j : Json} {budget budget' params : Nat} {P : Program}
+    (le : budget ≤ budget') (accepted : admitContract F j budget params = .ok P) :
+    admitContract F j budget' params = .ok P := by
+  obtain ⟨bodies, hp, hd, hw, hc, rfl⟩ := admitContract_ok accepted
+  exact admitContract_of hp hd (Nat.le_trans hw le) hc
 
-/-- **Nothing admitted before heap stage 2 is refused now, within the budget.** Admission used to
+/-- **Acceptance is monotone in the parameter limit** (contract-aware admission). -/
+theorem admitContract_params_mono {F : Fir.Program} {j : Json} {budget params params' : Nat}
+    {P : Program} (le : params ≤ params') (accepted : admitContract F j budget params = .ok P) :
+    admitContract F j budget params' = .ok P := by
+  obtain ⟨bodies, hp, hd, hw, hc, rfl⟩ := admitContract_ok accepted
+  exact admitContract_of (Nat.le_trans hp le) hd hw hc
+
+/-- An admitted program is within the parameter limit it was admitted under (contract-aware
+admission). -/
+theorem admitContract_paramTotal {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+    (accepted : admitContract F j budget params = .ok P) : paramTotal F ≤ params := by
+  obtain ⟨_, hp, _⟩ := admitContract_ok accepted
+  exact hp
+
+/-- **Nothing admitted before heap stage 2 is refused now, within the limits.** Admission used to
 accept a decoded map exactly when `checkPlainMap` did (the canonical placement, recomputed and
-compared); every such map within the captured-work budget is admitted now, as the same program
-(`checkPlainMap_checkOwned`). -/
-theorem admit_of_checkPlainMap {F : Fir.Program} {j : Json} {budget : Nat}
-    {bodies : Src.NatMap Code} (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
-    (hp : checkPlainMap F bodies = true) : admit F j budget = .ok { source := F, bodies } :=
-  admit_of hd hw (checkPlainMap_checkOwned hp)
+compared); every such map within the parameter limit and the captured-work budget is admitted
+now, as the same program (`checkPlainMap_checkOwned`). -/
+theorem admit_of_checkPlainMap {F : Fir.Program} {j : Json} {budget params : Nat}
+    {bodies : Src.NatMap Code} (hp : paramTotal F ≤ params) (hd : decode F j = .ok bodies)
+    (hw : capturedWork bodies ≤ budget) (hc : checkPlainMap F bodies = true) :
+    admit F j budget params = .ok { source := F, bodies } :=
+  admit_of hp hd hw (checkPlainMap_checkOwned hc)
 
 /-- The same for contract-aware admission (`checkContractPlainMap_checkContractOwned`). -/
-theorem admitContract_of_checkContractPlainMap {F : Fir.Program} {j : Json} {budget : Nat}
-    {bodies : Src.NatMap Code} (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
-    (hp : checkContractPlainMap F bodies = true) :
-    admitContract F j budget = .ok { source := F, bodies } :=
-  admitContract_of hd hw (checkContractPlainMap_checkContractOwned hp)
+theorem admitContract_of_checkContractPlainMap {F : Fir.Program} {j : Json} {budget params : Nat}
+    {bodies : Src.NatMap Code} (hp : paramTotal F ≤ params) (hd : decode F j = .ok bodies)
+    (hw : capturedWork bodies ≤ budget) (hc : checkContractPlainMap F bodies = true) :
+    admitContract F j budget params = .ok { source := F, bodies } :=
+  admitContract_of hp hd hw (checkContractPlainMap_checkContractOwned hc)
 
 /-- The only authority of decoded data is the ownership checker. -/
 theorem admit_parts {F : Fir.Program} {j : Json} {P : Program}
     (accepted : admit F j = .ok P) :
     P.source = F ∧ checkOwned F P.bodies = true := by
-  obtain ⟨bodies, _, _, hc, rfl⟩ := admit_ok accepted
+  obtain ⟨bodies, _, _, _, hc, rfl⟩ := admit_ok accepted
   exact ⟨rfl, hc⟩
 
 /-- The only authority of contract-aware decoded data is `checkContractOwned`. -/
 theorem admitContract_parts {F : Fir.Program} {j : Json} {P : Program}
     (accepted : admitContract F j = .ok P) :
     P.source = F ∧ checkContractOwned F P.bodies = true := by
-  obtain ⟨bodies, _, _, hc, rfl⟩ := admitContract_ok accepted
+  obtain ⟨bodies, _, _, _, hc, rfl⟩ := admitContract_ok accepted
   exact ⟨rfl, hc⟩
 
 theorem admit_implies_admitContract {F : Fir.Program} {j : Json} {P : Program}
     (accepted : admit F j = .ok P) :
     admitContract F j = .ok P := by
-  obtain ⟨bodies, hd, hw, checked, rfl⟩ := admit_ok accepted
-  exact admitContract_of hd hw (checkOwned_contract checked)
+  obtain ⟨bodies, hp, hd, hw, checked, rfl⟩ := admit_ok accepted
+  exact admitContract_of hp hd hw (checkOwned_contract checked)
 
 theorem admit_parts_contract {F : Fir.Program} {j : Json} {P : Program}
     (accepted : admit F j = .ok P) :

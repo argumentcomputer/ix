@@ -485,6 +485,9 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
   | .auto =>
     match ← Compiler.produceAuto cfg inp with
     | .zeroRc cert a _ =>
+      -- the claim's verifier (`Recheck.runWithContracts`) refuses past the parameter limit
+      (Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal a.fir).mapError fun message =>
+        ({ stage := .cert, code := "own.plain", message } : Recheck.Err)
       unless a.checkContractOwn do
         throw { stage := .cert, code := "own.plain", message := "contract ownership domain check failed" }
       let some root := a.roots.head?

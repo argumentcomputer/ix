@@ -290,6 +290,14 @@ theorem checkContractPlainMap_parts {F : Fir.Program} {candidate : Src.NatMap Co
   rw [← hs.2.2]
   rfl
 
+/-- `checkContractPlainMap` of the canonical map is the domain and the pins alone: the comparison
+of the canonical map with itself always holds, so a caller that checks the canonical map (the
+zero-RC route, `Recheck.Artifact.checkContractOwn`) need not compute it. -/
+theorem checkContractPlainMap_canonical (F : Fir.Program) :
+    checkContractPlainMap F (Program.canonical F).bodies =
+      (contractProgramDomain F && checkBoolPins F) := by
+  rw [checkContractPlainMap, (bodyMapEq_iff _ _).mpr rfl, Bool.and_true]
+
 /-- Ownership / RC compilation policy: `.zeroRc` (no refcount actions needed)
 vs `.plainRc` (canonical reference-counted lowering). -/
 inductive RcPolicy where

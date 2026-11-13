@@ -245,6 +245,20 @@ placement, `Machines.fibMain`; 145 with a liveness placement): 545× headroom. A
 monotone in the limit (`Own.Plain.Certificate.admit_mono`); see `docs/data-and-roots-design.md`,
 "The ownership checker". -/
 def maxCapturedWork : Nat := 1 <<< 20
+
+/-- Parameters a program may have in all, over its functions and the join points their bodies
+declare (`Own.Plain.Certificate.paramTotal`). Parameters cost no node in the budgets above (a join
+counts one node whatever its arity), so without this the node budget allows about 2³¹ (2²⁰
+one-node functions of about 2,048 parameters each), while the source-domain check
+(`Own.Plain.programDomain`) and the ownership checker walk every one, about 0.75 to 0.9 µs a
+parameter per run on the build box. At this limit one run of the check takes under a second and
+the plain-RC verifier's steps from Fir about 4.7 s. `Own.Plain.Certificate.admit` refuses past it
+first, before it decodes the certificate, and `Recheck.runWithContracts` before its domain check.
+The largest registered program has 240 (`Closures.stateLoop`), the benchmark closures 386
+(`const_fold`): 2,716× headroom. Acceptance is monotone in the limit
+(`Own.Plain.Certificate.admit_params_mono`); see `docs/data-and-roots-design.md`, "The ownership
+checker". -/
+def maxParamTotal : Nat := 1 <<< 20
 /-- `xs.mapM f`, refusing with `msg` as soon as `used` plus the sizes of the
 results so far passes `budget` in either of two measures (nodes made and work
 done, say), so a pass stops before it does or allocates much past its budget. -/

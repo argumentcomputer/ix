@@ -83,19 +83,29 @@ theorem checkZeroRcContracts_parts {F : Fir.Program} (h : checkZeroRcContracts F
 def Artifact.rcPolicy (a : Artifact) : Own.Plain.RcPolicy :=
   Own.Plain.selectRcPolicy a.fir
 
-/-- Contract-aware `Own.Plain` canonical check on a rechecked artifact's lowered `Fir.Program`. -/
+/-- Contract-aware `Own.Plain` check on a rechecked artifact's lowered `Fir.Program`: the
+contract-aware source domain and the Boolean pins. That is `checkContractPlainMap` of the
+canonical map (`Artifact.checkContractOwn_iff`), whose comparison of the canonical map with itself
+always holds (`Own.Plain.checkContractPlainMap_canonical`), so the map is not computed. -/
 def Artifact.checkContractOwn (a : Artifact) : Bool :=
-  Own.Plain.Program.checkWithContracts a.fir (Own.Plain.Program.canonical a.fir).bodies
+  Own.Plain.contractProgramDomain a.fir && Own.Plain.checkBoolPins a.fir
 
 theorem Artifact.checkContractOwn_iff (a : Artifact) :
     a.checkContractOwn = true ↔
-      Own.Plain.checkContractPlainMap a.fir (Own.Plain.Program.canonical a.fir).bodies = true :=
-  Iff.rfl
+      Own.Plain.checkContractPlainMap a.fir (Own.Plain.Program.canonical a.fir).bodies = true := by
+  rw [Own.Plain.checkContractPlainMap_canonical]
+  exact Iff.rfl
 
 /-- Run `Recheck.run` and additionally verify that the lowered `Fir.Program`
-passes contract-aware `Own.Plain` canonical verification (`Artifact.checkContractOwn`). -/
-def runWithContracts (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Artifact := do
+passes contract-aware `Own.Plain` canonical verification (`Artifact.checkContractOwn`), after
+refusing a program past the parameter limit `params` (`Anf.maxParamTotal` by default;
+`Own.Plain.Certificate.checkParamTotal`, `own.cert.params`), since the domain check walks every
+parameter of every function and join point. -/
+def runWithContracts (cfg : Config) (P : Src.Program) (c : Cert)
+    (params : Nat := Anf.maxParamTotal) : Except Err Artifact := do
   let a ← run cfg P c
+  (Own.Plain.Certificate.checkParamTotal params a.fir).mapError fun message =>
+    { stage := .cert, code := "own.plain", message }
   if a.checkContractOwn then
     pure a
   else
