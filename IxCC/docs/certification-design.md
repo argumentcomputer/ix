@@ -759,16 +759,28 @@ listed spine at the same profiles (`spinesPs_cover`), and `headRegimeS_of_check`
 `HeadRegime`, so the decision is linear in the run terms times the `Ok` profiles. The per-site
 reading (`headRegimeGB`, with its own soundness `headRegime_of_check`) re-reads each site's head from
 the start, quadratic in a spine's length; it is kept as the reference the suite compares with
-(compiled, `tests-grounding`, one run: `fields254` 3.8 ms per spine against 96 ms per site, `tags125`
-9.0 against 135, the 50 loaded closures 0.98 s against 2.5 s). Measured before proving (GR16's
+(compiled, `tests-grounding`, one run: `fields254` 0.8 ms per spine against 11.3 ms per site,
+`tags125` 9.7 against 13.2). Both decisions read the enclosing constant's level parameters once per
+constant (`headRegimeSB1`, `headRegimeGB1`): read once per datum checked, as first written, an `lpsOf`
+that searches the reading (the suite's does, `Env.find?` over 3,545 to 4,645 constants on the
+`for`-loop, `strings` and `diag` closures) dominated the check, which is what made it 2 to 6.5 times
+the direct route's cost on the closures with `let`s (not the `let`s: `sum-loop` 82 ms, 74.5 of them in
+831 datum checks; 21.7 ms once hoisted, of which 14.6 the one `lpsOf` per constant and most of the rest
+`runPairsB`; the spines, readings and checks themselves about 1 ms). Measured before proving (GR16's
 probes, with the kernel as oracle): the reading decides 16,392 of the 16,404 sites, every site of
-the 34 accepted closures; at each of the 447 sites it decides and 1a or the direct route does not,
-the kernel's typing core infers the function's type, reduces it to a `∀` whose domain is the
-argument's type, and the datum does not hold there. In `tests-grounding`: `headRegimeSB` true on
-the 34 by name and false on exactly `phase2-closures/closures` and `diag` (both refused by the check),
-equal to `headRegimeGB` on all 50 and on every planted control; the 322 sites of the 34 that 1a's
-reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s direct-refused site
-decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
+the 34 then accepted; at each of the 447 sites it decides and 1a or the direct route does not, the
+kernel's typing core infers the function's type, reduces it to a `∀` whose domain is the argument's
+type, and the datum does not hold there. **At the sites under a `let`** (after step C; `GR-3n-p1`):
+of the site-profile instances at the `Ok` profiles that 1a's reading as written refuses there
+(`natural` 74, `scalar` 12, `phase2-closures/closures` 6, `prime-count` 2, `panic` 2, `strings` 2,
+`diag` 30), 1b refuses none but 4 of `diag`'s (projection heads), and the kernel types the site in the
+graph regime at all 124 others. So the family without a typing hypothesis holds on all 37 closures
+the check accepts (`natural` included, where `headRegimeResB` is false). In `tests-grounding`:
+`headRegimeSB` true on the 37 by name and false on exactly `phase2-closures/closures` and `diag` (both
+refused by the check), equal to `headRegimeGB` on all 50 and on every planted control; on `natural`,
+`headRegimeResB` false and `headRegimeSB` true; the 436 sites of the 37 (322 of the 34 accepted
+before step C) that 1a's reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s
+direct-refused site decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
 first `∀` datum made a proposition, its unfolding made endless, its first λ datum made a proposition:
 75, on the 25 closures with a δ site; a constant with a bound-variable head, its λ domains' `∀` data
 made propositions: 32). *Completeness limits* (each refused, fail closed): a type headed by a bound
@@ -825,14 +837,14 @@ which one of its 25 roots reaches; `closures` is also refused for other reasons.
 is not extended through a `let`**: it refuses every site `evalSites` lists under one
 (`termRefused`'s `let` case, `evalSitesP`; 405 of the 1,103 sites of `panic`'s `withPanic`), so for a program with
 `let`s those sites are in `SitesOkRes`, a hypothesis of the families that take it, or must be
-accepted by `headRegimeResB` in the family without a typing hypothesis. That family has a gap until
-item 1b lands: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
+accepted by `headRegimeResB` in 1a's family without a typing hypothesis (`rootSound_678G`). That
+family has a gap, which 1b's (`rootSound_678AG`, above) closes: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
 5,437 site-profile instances (`natural` 74, `scalar` 12, `closures` 6, `prime-count` 2, `panic` 2;
 measured before step C, `GR-3k-oA`), each one with a constant head whose stored type is a `∀` only
 after unfolding a definition (the `DecidableEq Bool` instance among them); 1b (a head's type read
-through δ and β) closes it. So with step C alone `fields254` and `machines` pass every family;
+through δ and β) decides all 96 after the merge, the kernel typing each in the graph regime. So with step C alone `fields254` and `machines` pass every family;
 `natural` passes `groundCheck` and the families that take `SitesOkRes` as a hypothesis, and not
-`rootSound_678G_of_check` until 1b lands. `groundCheck` accepts 37 of the 50 closures (`fields254`,
+`rootSound_678G_of_check`; with 1b it passes `rootSound_678AG_of_check`. `groundCheck` accepts 37 of the 50 closures (`fields254`,
 `machines`, `natural` added); per closure, see **The corpus after step C** below. In
 `tests-grounding`: the 61 constants by closure, and the 6 refused by name with the reason; the
 false conjuncts of the eleven closures still refused that hold them; the three newly accepted
@@ -847,15 +859,16 @@ every conjunct of the check and refused by `instCheckB`.
 check, `instWalk`/`instCheckB`, `noCanonB`, `noCanonAB`, `litDefsB`, `headRegimeResB` and
 `sitesDirectB` on each of the 50 closures that load, all non-declined roots at once). The 14 that
 hold a `let` in a run term of their checked set; "678" is `groundCheck ∧ noCanonB ∧ litDefsB`,
-"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis); "sites" are those
+"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis), "678AG" adds 1b's
+`headRegimeSB` instead (no typing hypothesis, every run-term site typed from `graded`); "sites" are those
 the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'s 16), which are
 `SitesOkRes` for the Laws, 678 and 678A families:
 
 | Closure | `corrSB []` (of the constants the let-free check refused) | False conjuncts | Families | `headRegimeResB` refused instances (sites) |
 | --- | --- | --- | --- | --- |
-| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G | 0 (13) |
-| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G | 0 (724) |
-| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A | 74 (1,191) |
+| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G, 678AG | 0 (13) |
+| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G, 678AG | 0 (724) |
+| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A, 678AG | 74 (1,191) |
 | bench-k1/sum-loop | 3 of 3 | `eqnShape` | — | 0 (95) |
 | bench-k1/collatz | 3 of 3 | `eqnShape` | — | 0 (96) |
 | bench-k1/prime-count | 3 of 3 | `eqnShape` | — | 2 (129) |
@@ -871,7 +884,7 @@ the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'
 The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
 `OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
-out until 1b). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
