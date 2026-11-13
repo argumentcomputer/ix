@@ -497,6 +497,62 @@ previous value (`lamlet` in the test), where `Level.zeronessOf` walks the
 ∀ rule's level of each step's type (3.6 s at 8,000 steps, 18.8 s at
 16,000).
 
+Every memo of the cached core is a `Std.HashMap` keyed by terms, and the
+term's hash is a field computed at construction. That hash was the low 32
+bits of a `mixHash` recurrence over the node's fields, kept in the packed
+word beside the variable ranges. A chain of nodes built by one repeated
+step (`E_k = (λx. E_(k-1)) P L`, each head normalisation nesting once)
+makes the hashes of successive levels iterate one function on 2^32 values,
+which enters a cycle: at `P = Prop` level 8,323 repeats level 5,987. Past
+the cycle every memo probe meets entries of equal hash and descends them
+structurally, so the run is cubic past the entry: 32,000 levels took 83 s.
+The hash is now 64 bits in a word of its own (`Expr.hashW`; equality's
+fast reject tests both words), and the same chains first repeat beyond
+1,000,000 levels (the `kernel-depth` test checks it and bounds the chain
+at 32,000 levels, 35 to 49 ms). What it costs: the second word, +17 to
++20 % peak memory on Init+Std (2.79 to 2.83 GB against 2.33 to 2.40);
+time within that run's noise (five rounds, ±7 % per round on a loaded
+machine; an earlier, quieter paired run gave +10.5 to +11.9 %). The packed
+word's freed bits 63 to 31 are reserved, for the cached depth the depth
+limit may need. Measured alternative, rejected: a 48-bit hash in the
+existing word, which narrows the range fields to 8 and 7 bits; their
+saturated fallback (an exact walk per cutoff test) then costs seconds on
+honest inputs (a 255-field structure of IxCC's fixtures, 90 ms before, 4.4
+s or 10.4 s by the split) and a 16,384-binder telescope 26 to 36 s.
+
+What the wider hash closes and what it does not. The cycle of a chain is
+an accident of the function a step iterates; an adversary can also search
+for a step whose cycle starts early and is short. Treating each truncated
+node as a random function, which a simulation of the recurrence confirms
+at 24, 32, 40 and 48 bits (it reproduces the measured 32-bit cycles
+exactly), a step cycles with entry at most `a` and period at most `p` with
+probability about `a p / 2^b`, and the run it buys costs about
+`(n - a)^3 / (3 p)` comparison steps at depth `n`. At 32 bits such chains
+are free; at 48 bits about 2^40 hash evaluations buy tens of seconds per
+chain and about 2^49 a fixed point (`p = 1`, hours); at 64 bits the same
+need about 2^56 and 2^65 (each candidate step costs about 2^13 to 2^14
+evaluations to test). Not closed: (1) a
+collision bought between two different terms (about 2^32 evaluations at 64
+bits) makes each lookup of one descend the other: quadratic in their
+depth, bounded by a depth limit (planned). (2) **Bucket flooding,
+independent of the hash's width**: a map's bucket is the low bits of
+`scrambleHash` of the hash, and the hash is not keyed, so an input can
+carry R distinct terms that share a bucket of one memo (finding them costs
+about 1.3 R² hash evaluations); each insertion then scans the others,
+Θ(R²) comparisons in one map, bounded by the batch's size, not by depth.
+R literals in one bucket of an `Expr`-keyed map insert in 8, 32, 145 and
+619 ms at R = 2,048, 4,096, 8,192 and 16,384 (consecutive literals: 1 ms);
+extrapolated, 10^5 terms take about 25 s. With equal full hashes
+(multicollisions: k birthday searches give 2^k terms) each comparison also
+descends. Two remedies, neither made: a keyed hash (a per-process random
+key mixed into the node hash, or only into the maps' bucket index, which
+stops the cheap flood but not full-hash multicollisions): an opaque
+constant whose executed value is drawn at start, one new trust-surface
+entry, no theorem changes, and hash values that differ between runs; or a
+cap on bucket scans or structural comparisons per declaration, declining
+when exceeded: no trust surface, but every memo lemma of the cached
+simulation gains the decline case.
+
 What remains is the comparison itself. `Level.leqCore` decides
 `eval l ≤ eval r + diff` at every assignment by nanoda's case analysis:
 splitting on a parameter being zero or not (`byCases`), distributing `imax`
@@ -1321,6 +1377,7 @@ files carry further changes:
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |
 | `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/FEnv.lean`, `IxCK/Kernel/Units.lean` | the executed `whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` are loops over a twin of the step that returns its tail call of the continuation (`whnfCoreLoopFast`, `whnfLoopFast`, `defeqLoopFast`), and the executed `mkFEnvGo` and `unitsGo` a fold and an accumulator loop (`mkFEnvGoFast`, `unitsGoFast`), each swapped in by a `@[csimp]` theorem proving it equal to the unchanged function | the loops called their continuation through a closure, which kept native frames per reduction step, and the two recursions one per constant ("Native stack") |
+| `IxCK/Kernel/Expr.lean` | the node hash is 64 bits in a computed field of its own (`Expr.hashW`, the untruncated `mixHash` recurrence); the packed word keeps the ranges and the flag, its upper 33 bits reserved; equality's fast reject tests both words (`beqMemo_eq` unchanged in statement) | a chain built by one step cycled through the 32-bit hash, and memo probes then descended equal-hash terms ("Running time") |
 | `IxCK/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxCK/Kernel/` are `Admission.lean` and the `Admission`

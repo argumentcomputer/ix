@@ -49,7 +49,8 @@ enumerated here by hand and this list is the pin.  It has ONE row.
 
 1. **The `@[computed_field]` machinery**.  The per-node derived
    data (`hash`, `bvarB`, `fvarB`, `hasLP` — since task #167 one
-   packed `UInt64`, `Expr.data`; since task #176 P3 also
+   packed `UInt64`, `Expr.data`, and since 2026-11 the 64-bit hash in a
+   second word, `Expr.hashW`; since task #176 P3 also
    `Name.hashData` and `Level.hashData`, the cached hashes
    `Lean.Name`/`Lean.Level` and the C++ kernel keep too, and
    `Level.hasParamData`, the has-parameter bit they keep beside the

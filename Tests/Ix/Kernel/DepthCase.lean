@@ -126,6 +126,37 @@ def entryVerdict (r : Except _root_.Ix.Kernel.Admission.Error (_root_.Ix.Kernel.
   | .ok env => s!"accepted ({env.consts.length} constants)"
   | .error e => s!"{if e.outcome == .declined then "declined" else "rejected"}: {(toString e).take 200}"
 
+/-- KD's chain: `E_0 = L = λy. y`, `E_k = (λx. E_{k-1}) P L` with `P = Sort p`
+(binders `pw := .never`, `x` unused). Returns `(λx. E_{n-1}, E_n)`. Every level is
+built by the same step, so with a hash of `w` bits the hashes of `E_k` iterate one
+function and, at 32 bits, cycle after a few thousand levels (`docs/kernel.md`,
+"Running time"). -/
+def nestedChain (p n : Nat) : _root_.Ix.Kernel.Expr .anon × _root_.Ix.Kernel.Expr .anon := Id.run do
+  let never : _root_.Ix.Kernel.BinderMeta := { pw := .never }
+  let pe : _root_.Ix.Kernel.Expr .anon := .sort ((List.range p).foldl (fun u _ => .succ u) .zero)
+  let l : _root_.Ix.Kernel.Expr .anon := .lam pe (.bvar 0) never
+  let mut lam := l
+  let mut e := l
+  for _ in [0:n] do
+    lam := .lam pe e never
+    e := .app (.app lam pe) l
+  return (lam, e)
+
+/-- The hashes of the λ heads and of `E_1 … E_n` of `nestedChain p n`. -/
+def nestedHashes (p n : Nat) : Array UInt64 × Array UInt64 := Id.run do
+  let never : _root_.Ix.Kernel.BinderMeta := { pw := .never }
+  let pe : _root_.Ix.Kernel.Expr .anon := .sort ((List.range p).foldl (fun u _ => .succ u) .zero)
+  let l : _root_.Ix.Kernel.Expr .anon := .lam pe (.bvar 0) never
+  let mut e := l
+  let mut lams : Array UInt64 := #[]
+  let mut es : Array UInt64 := #[]
+  for _ in [0:n] do
+    let lam : _root_.Ix.Kernel.Expr .anon := .lam pe e never
+    e := .app (.app lam pe) l
+    lams := lams.push lam.hash
+    es := es.push e.hash
+  return (lams, es)
+
 /-- Run one case; the line it prints starts with the verdict. -/
 def runOne (name : String) (n : Nat) : IO String := do
   let binding ← IO.ofExcept _root_.Ix.Kernel.Admission.defaultBinding
@@ -154,6 +185,27 @@ def runOne (name : String) (n : Nat) : IO String := do
     let accepts := report.rows.filter (·.outcome == "accept") |>.size
     let last := (report.rows.back?.map (·.outcome)).getD "none"
     return s!"{accepts} accepted, last {last}, {report.rows.size} rows"
+  | "nested0" | "nested3" => timed do
+    -- KD's chain at `P = Sort 0` / `Sort 3`: head normalisation of `E_n` nests once per level
+    let (_, e) := nestedChain (if name == "nested0" then 0 else 3) n
+    let core := _root_.Ix.Kernel.Cached.coreKnotI .verified
+      (_root_.Ix.Kernel.mkFEnv (⟨[]⟩ : _root_.Ix.Kernel.Env .anon)) _root_.Ix.Kernel.checkFuel
+    IO.lazyPure fun _ => match StateT.run (core.whnfCore 0 e) {} with
+      | .ok (.lam .., st) => s!"returned the λ, whnfCoreC {st.whnfCoreC.size}"
+      | .ok _ => "returned another term"
+      | .error err => let (o, reason) := checkOutcome err; s!"error {o}: {reason.take 120}"
+  | "hash0" | "hash3" => do
+    -- the hashes of `E_1 … E_n` and of their λ heads: the first repeat, if any
+    let (lams, es) := nestedHashes (if name == "hash0" then 0 else 3) n
+    let firstRepeat (hs : Array UInt64) : Option (Nat × Nat) := Id.run do
+      let mut seen : Std.HashMap UInt64 Nat := {}
+      for i in [0:hs.size] do
+        if let some j := seen[hs[i]!]? then return some (j + 1, i + 1)
+        seen := seen.insert hs[i]! i
+      return none
+    return match firstRepeat es, firstRepeat lams with
+      | none, none => s!"no repeat in {n} levels"
+      | re, rl => s!"repeat: E_k at {re}, λ heads at {rl}"
   | _ => throw (IO.userError s!"kernel-depth: unknown case {name}")
 
 /-- `kernel-depth-case NAME N`: run the case on a dedicated thread of

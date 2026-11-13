@@ -746,9 +746,17 @@ notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
   in `kernel-level-sharing`): 0.7 s at 4,000 steps, 3.6 s at 8,000, 18.8 s at 16,000 (4.7 s at
   4,000 before the stop), in `Level.zeronessOf` walking the ∀ rule's level of each step's type
   with a per-call memo;
-- open: nested head normalisation (`E_k = (λx. E_{k-1}) P L`) is cubic past about 8,000 levels
-  (99 s at 32,000) because `Expr`'s 32-bit hash cycles along such a chain; a wider hash is the
-  planned fix.
+- fixed (2026-11-13): nested head normalisation (`E_k = (λx. E_{k-1}) P L`) was cubic past about
+  8,000 levels (83 to 99 s at 32,000) because `Expr`'s 32-bit hash cycled along such a chain; the hash
+  is 64 bits in a word of its own (+17 to +20 % peak memory on Init+Std), and 32,000 levels take 35
+  to 49 ms (`kernel-depth` bounds them). A 48-bit hash in the packed word was rejected: its narrower
+  range fields cost seconds on our 254- and 255-field fixtures;
+- open: a bought collision between two different terms (about 2^32 hash evaluations) makes lookups
+  descend one into the other, quadratic in their depth, bounded only once the depth limit lands;
+- open: bucket flooding of the kernel's memo maps, independent of the hash's width: R crafted terms
+  in one bucket cost Θ(R²) comparisons (16,384 literals in one bucket: 0.6 s against 1 ms; about
+  25 s at 10^5, extrapolated); remedies (a keyed hash, or a cap on bucket scans that declines) in
+  `docs/kernel.md`, "Running time"; none made.
 
 Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
 ownership checker's own, which the captured-work budget bounds

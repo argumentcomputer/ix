@@ -56,26 +56,49 @@ def cases : List (String × Nat × String) :=
    ("step", 200000, "200000 accepted, last reject, 200001 rows"),
    ("step-pool", 200000, "200000 accepted, last reject, 200001 rows")]
 
+/-- KD's chain (`nestedChain`), whose 32-bit hashes cycled, on a 64 MiB stack (a
+level takes about 780 bytes; the chain nests once per level): `(name, n, what the
+verdict must start with, its bound in ms)`. With the 32-bit hash `nested0` took
+83 s at 32,000 levels and `nested3` 57 s at 16,000; with the 64-bit hash 35 and
+49 ms at 32,000 on the loaded build box, so the bound is 20 times that. The
+`hash` cases check that neither chain's hashes repeat in 1,000,000 levels (at
+32 bits they repeated after 8,323 and 3,961). -/
+def chainCases : List (String × Nat × String × Nat) :=
+  [("nested0", 32000, "returned the λ", 1000),
+   ("nested3", 32000, "returned the λ", 1000),
+   ("hash0", 1000000, "no repeat", 0),
+   ("hash3", 1000000, "no repeat", 0)]
+
+/-- The chain cases' stack, in KiB. -/
+def chainStackKb : Nat := 65536
+
+/-- The milliseconds a verdict line reports (`… in N ms`), if any. -/
+def reportedMs (verdict : String) : Option Nat :=
+  ((verdict.splitOn " in ").getLast?.bind fun t => (t.splitOn " ms").head?.bind String.toNat?)
+
 def run : IO UInt32 := do
   IO.println s!"kernel-depth: reduction steps and record counts on a {stackKb} KiB stack"
   let exe ← IO.FS.realPath caseExe
   let mut failed := 0
-  for (name, n, want) in cases do
+  let all := cases.map (fun (c, n, w) => (c, n, w, stackKb, 0)) ++
+    chainCases.map (fun (c, n, w, b) => (c, n, w, chainStackKb, b))
+  for (name, n, want, kb, bound) in all do
     -- no core file for the control's abort
     let out ← IO.Process.output {
       cmd := "sh", args := #["-c", "ulimit -c 0; exec \"$0\" \"$@\"", exe.toString, name, toString n],
-      env := #[("LEAN_STACK_SIZE_KB", some (toString stackKb))] }
+      env := #[("LEAN_STACK_SIZE_KB", some (toString kb))] }
     let line := (out.stdout.splitOn "\n").find? (·.startsWith s!"{name} {n}: ") |>.getD ""
     let verdict := toString (line.drop (s!"{name} {n}: ").length)
     let ok :=
       if want.isEmpty then out.exitCode != 0 && out.stderr.contains "Stack overflow"
       else out.exitCode == 0 && verdict.startsWith want &&
-        (name != "delta" || n < 100000 || verdict.contains "fuel exhausted: defeq loop")
+        (name != "delta" || n < 100000 || verdict.contains "fuel exhausted: defeq loop") &&
+        (bound == 0 || (reportedMs verdict).any (· ≤ bound))
     let shown := if want.isEmpty then
         s!"aborted (exit {out.exitCode}){if out.stderr.contains "Stack overflow" then ", stack overflow" else ""}"
       else if line.isEmpty then s!"no verdict (exit {out.exitCode}): {(toString (out.stderr.takeEnd 300)).replace "\n" " "}"
       else verdict
-    IO.println s!"  {name} {n}: {shown}{if ok then "" else "  FAILED"}"
+    IO.println s!"  {name} {n}: {shown}{if bound == 0 then "" else s!" (bound {bound} ms)"}{if ok then "" else "  FAILED"}"
     unless ok do failed := failed + 1
   (← IO.getStdout).flush
   if failed == 0 then

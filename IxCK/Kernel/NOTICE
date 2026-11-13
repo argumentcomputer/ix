@@ -109,6 +109,13 @@ Modifications
     simplifyMemoC, Level.simplifyGo seeded with the declaration's memo
     (simplifyMemoC_spec). A chain T (j+1) = T j → T j re-peeled the whole
     telescope below each step, and annotation rebuilt it as fresh nodes.
+  * A 64-bit term hash (2026-11): Expr.lean computes the node hash as a
+    field of its own (Expr.hashW, the original mixHash recurrence without
+    truncation) instead of the low 32 bits kept in the packed word, whose
+    upper bits are now reserved; Expr.beqMemo tests both words before
+    descending. A chain of nodes built by one step made the 32-bit hashes
+    iterate one function and cycle, and memo probes then descended terms
+    of equal hash.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import
