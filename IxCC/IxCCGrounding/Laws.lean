@@ -480,6 +480,17 @@ def NatLitLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
       Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
       Denotes cval env φ ρ (.const (if f a b then boolTrueName else boolFalseName) []) X
 
+/-- **Stored terms are graded** (#678, verbatim: `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`; the
+field `Model.graded`, `:697-699` there, built in `Model.ofEnvModelM`, `Model/Iota.lean:1354`). **Not a
+field of `Laws678`**: the theorems that use it (`IxCCGrounding.Graded`) take it as a separate
+hypothesis beside `Laws678`, so the five-field family keeps exactly what it assumed. At the ingest it
+is to be compared again and then replaced by #678's own, `M.graded` inhabiting it. -/
+def GradedLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ c ∈ env.consts, ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+    GradedBy (Denotes cval env φ) ρ c.toConstantVal.type ∧
+    ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+      c = .defnInfo cv value hint → GradedBy (Denotes cval env φ) ρ value
+
 /-- **The fields of #678's public `Model` the canonicity-free family uses**, verbatim and in #678's
 order (`structure Model`, `d4c079de2`, `IxC/Kernel/Denotes.lean:640`; `cval` written `M.cval`):
 `defn_value` `:673-676`, `iota_rule` `:682`, `proj_law` `:687`, `lit_ops` `:694`, `cval_params`

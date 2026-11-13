@@ -1765,6 +1765,7 @@
   "IxCCGrounding.Facts",
   "IxCCGrounding.Fence",
   "IxCCGrounding.Fundamental",
+  "IxCCGrounding.Graded",
   "IxCCGrounding.Ground",
   "IxCCGrounding.Heads",
   "IxCCGrounding.Hyps",
@@ -1784,9 +1785,9 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "c55b83d154a6e52d48115044c8a0596e0a6cbbdcc9c7a5046cb6bad84d734e93",
- "grounding_axiom_count": 225,
- "baseline": "relevance: C3 dispatch pairing and the forwarding clause (RL)",
+ "fb3e3c7322651965747b6aa155da305925366883ea7afc6347c4918d3c2347fd",
+ "grounding_axiom_count": 238,
+ "baseline": "item 1a: no typing hypothesis from the graded field (GR14)",
  "axiom_sha256":
  "7d1f3a1406cbce9da1ba8b713c42c89758d476e89952c5a4a1a4675931de61c9",
  "axiom_count": 6647}
