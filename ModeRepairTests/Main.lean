@@ -2902,6 +2902,58 @@ def v4WellFormed (t : IO.Ref Tally) : IO Unit := do
     ((match d4 with | .ok true => true | _ => false) && (match v4 with | .accept 0 true => true | _ => false))
     s!"allDefault {boolOrErr d4}; check {verdictLong v4}"
 
+/-! ### V6 (note 12 §4, B.15): a static's result mode is shared
+
+A run body with no parameter is a static: `runR` runs it once (`static`), in whatever region its
+first caller has open, with no region of its own and no return rule, and shares its value; a
+caller's `anCall` takes its result unconfined. `anDef` read its result mode as for any body, so
+a static with a `@borrowed` result could return a value confined to the region it was analysed
+in. `idBor (@borrowed x : List) : @borrowed List := x`; `stB : @borrowed List := idBor [1]`;
+`useStB (n : Nat) : List := stB`: `idBor`'s return renames its region to the one enclosing the
+call, which in the run is `useStB`'s, so `useStB`'s shared return finds its result confined.
+The test note 12 suggests, `stX : @borrowed List := extP [1]` with `extP (x : List) : List` an
+extern returning its argument, and `useStX`: an extern cannot return a confined value at a
+borrowed result (`ExternVal`), so that run does not violate. Never from records: `readBody`
+gives a body without λs the result mode `shared`. -/
+
+def idBor := mem 502
+def stB := mem 503
+def useStB := mem 504
+def extP := mem 506
+def stX := mem 507
+def useStX := mem 508
+def stBs := mem 509
+
+def oneCons : Term := app (.const consR .val) [.irr, .natLit 1, app (.const nilR .val) [.irr] .imm]
+
+def extPOra : ExternOracle := admissibleOnly #[par] fun r args h =>
+  if r == extP then match args with
+    | [a] => some (h, a)
+    | _ => none
+  else none
+
+def pV6 : Prog := prog [
+  (idBor, body [par .borrowed] (v 0) .borrowed),
+  (stB, body [] (app (.const idBor .val) [oneCons]) .borrowed),
+  (useStB, body [par .many .leaf] (.const stB .val)),
+  (stBs, body [] (app (.const idBor .val) [oneCons]) .shared),
+  (extP, .extern #[par] .shared .val .data),
+  (stX, body [] (app (.const extP .val) [oneCons]) .borrowed),
+  (useStX, body [par .many .leaf] (.const stX .val))]
+
+def v6Cases : List Case := [
+  -- REPAIR V6: accepted, and the run ended in borrowEscape
+  { label := "V6 a static with a borrowed result returning a call's borrowed result (stB, useStB)", P := pV6,
+    seed := useStB, inp := oneNat, toCheck := [idBor, stB, useStB], verdict := .refuse "a static",
+    run := [(0, .vioOrOof .borrowEscape)] },
+  { label := "V6 control: the same static at a shared result (stBs): refused at its return", P := pV6,
+    seed := useStB, inp := oneNat, toCheck := [stBs], verdict := .refuse "borrowEscape",
+    run := [(0, .vioOrOof .borrowEscape)] },
+  -- REPAIR V6: accepted before; no run violates (an extern returns no confined value)
+  { label := "V6 note 12's test: an extern called in a static with a borrowed result (stX, useStX)", P := pV6,
+    ext := extPOra, seed := useStX, inp := oneNat, toCheck := [stX, useStX], verdict := .refuse "a static",
+    run := [(0, .valOrOof)] }]
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2928,6 +2980,7 @@ def run : IO UInt32 := do
   for c in v3Cases do runCase t c
   try v3Eliminators t catch e => check1 t "V3" false s!"error: {e}"
   try v4WellFormed t catch e => check1 t "V4" false s!"error: {e}"
+  for c in v6Cases do runCase t c
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

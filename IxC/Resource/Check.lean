@@ -732,9 +732,19 @@ def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool
 
 end
 
-/-- **One run body**, from its parameters as `InputsOk` gives them. -/
+/-- **One run body**, from its parameters as `InputsOk` gives them. A body with
+no parameter is a static: `runR` runs it once (`static`), in whatever region its
+first caller has open, with no region and no return rule of its own, and shares
+its value, which a caller's `anCall` takes as unconfined. So its result mode is
+`shared` (note 12 §4, B.15, V6): then the return rule below, at its region with
+no parameter, leaves its value confined to no region. As landed any result mode
+was read: a static with a `@borrowed` result could return a value its run
+confines to its first caller's region. `readBody` gives a body without λs the
+result mode `shared`, so this refuses only programs built otherwise. -/
 def anDef (P : Prog) (fuel : Nat) (params : Array Param) (res : ResultMode) (rc : Cls) (rs : Skel)
     (body : Term) : CM Unit := do
+  unless params.size > 0 || res == .shared do
+    refuseM "a static (a run body with no parameter) whose result mode is not shared"
   let s ← openReg
   let mut env : List ABnd := []
   for p in params do
