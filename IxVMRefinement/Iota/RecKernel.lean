@@ -294,4 +294,58 @@ theorem find_ctor_of_nodup {rls : List (Ix.Kernel.RecRule .anon)}
       rw [List.find?_cons_of_neg (by simpa using hne)]
       exact ih hnd.2 hrl
 
+/-! ## The never-zero sort guard -/
+
+/-- **`capsNeverZero` at a level's zero-ness** is that level's never-zero test at the
+instantiation (`zeronessOf` commutes with substitution). -/
+theorem capsNeverZero_of_sortZ {lps : List LevelParam} {us : List Level}
+    {caps : Ix.Kernel.IndCaps .anon} {l : Level} (hz : caps.sortZ = Level.zeronessOf l) :
+    Ix.Kernel.capsNeverZero lps us caps = (Level.subst lps us l).isNeverZero := by
+  unfold Ix.Kernel.capsNeverZero
+  rw [hz, ← Level.zeronessOf_subst, Level.isNeverZero_eq_isNever]
+
+/-- **The sort after `n` binders, renamed to positions**: where the stored type strips to the sort
+`l` after `n` binders, the sort the loaded type (`posOf`) ends in, instantiated at the positions,
+is `l` instantiated at the parameters. -/
+theorem piSortAt_posOf {lps : List LevelParam} {us : List Level} (hl : us.length = lps.length) :
+    ∀ (n : Nat) (T : KExpr) (bs : List (KExpr × Ix.Kernel.BinderMeta)) (l l' : Level),
+      T.allLevelParamsDefined lps = true → T.stripPis n = some (bs, .sort l) →
+      piSortAt n (posOf lps T) = some l' →
+      Level.subst (List.range lps.length) us l' = Level.subst lps us l
+  | 0, T, bs, l, l', hd, hs, hp => by
+    simp only [Ix.Kernel.Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨-, rfl⟩ := hs
+    simp only [posOf, Ix.Kernel.Expr.instantiateLevelParams, piSortAt, Option.some.injEq] at hp
+    subst hp
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hd
+    rw [Level.subst_subst (by simp [posLevels]) hd, posLevels_subst us lps hl]
+  | n + 1, T, bs, l, l', hd, hs, hp => by
+    cases T with
+    | forallE ty b m =>
+      simp only [Ix.Kernel.Expr.stripPis] at hs
+      cases hb : b.stripPis n with
+      | none => rw [hb] at hs; simp at hs
+      | some p =>
+        obtain ⟨bs', e⟩ := p
+        rw [hb] at hs
+        simp at hs
+        obtain ⟨-, rfl⟩ := hs
+        simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
+        simp only [posOf, Ix.Kernel.Expr.instantiateLevelParams, piSortAt] at hp
+        exact piSortAt_posOf hl n b bs' l l' hd.1.2 hb hp
+    | _ => simp [Ix.Kernel.Expr.stripPis] at hs
+
+/-- **The η rescue's sort guard from IxVM's test**: IxVM tests the loaded type's sort after the
+parameters (`type_sort_never`, positional levels); the store's datum is that sort's zero-ness
+(`EnvFacts.etaSort`), so the test is `capsNeverZero` at the use's levels. -/
+theorem capsNeverZero_of_test {lps : List LevelParam} {us : List Level} (hl : us.length = lps.length)
+    {caps : Ix.Kernel.IndCaps .anon} {n : Nat} {T : KExpr}
+    {bs : List (KExpr × Ix.Kernel.BinderMeta)} {l l' : Level}
+    (hd : T.allLevelParamsDefined lps = true) (hs : T.stripPis n = some (bs, .sort l))
+    (hz : caps.sortZ = Level.zeronessOf l) (hp : piSortAt n (posOf lps T) = some l')
+    (hnz : (Level.subst (List.range us.length) us l').isNeverZero = true) :
+    Ix.Kernel.capsNeverZero lps us caps = true := by
+  rw [capsNeverZero_of_sortZ hz, ← piSortAt_posOf hl n T bs l l' hd hs hp, ← hl]
+  exact hnz
+
 end IxVM.Refinement.Core

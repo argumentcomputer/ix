@@ -12,8 +12,8 @@ the constructor's levels and the unlicensed certificates of its parameters (`inf
 leaves are the major's (`infer_leaves`, `red_leaves`), and proof irrelevance equates it with the
 major (`is_prop_type` on both types).
 
-IxVM takes the parameters by the recursor's parameter count, `Red.rescueK` by the constructor's
-(`KParams` states that the two agree at a K recursor). -/
+IxVM takes the parameters by the recursor's parameter count, `Red.rescueK` by the constructor's;
+the loaded K recursor's record says the two agree (`CIRep.recr_k`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -115,21 +115,15 @@ theorem infer_spine {env : Ix.Kernel.Env .anon} {d : Nat} {n : KKey} {us : List 
 
 /-! ## The K rescue's fabrication -/
 
-/-- **A K recursor's rule has the loaded recursor's parameter count**: IxVM takes the
-fabrication's parameters by the recursor record's count, the model's rescue by the rule's
-constructor's. -/
-def KParams (c : Ctx) : Prop :=
-  ∀ (h : Heap F) (nl ty np ni nm nmi rules u blk idx : SourceValue F)
-    (cv : Ix.Kernel.ConstantVal .anon) (mI rP : Nat) (rl : Ix.Kernel.RecRule .anon) (p : F),
-    c.ci h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, .field 1, u, blk, idx])
-      (.recInfo cv mI rP [rl]) → np = .field p → rl.ctorParams = ZMod.val p
-
+/-- **A loaded K recursor's one rule**, with the K bit and the record's parameter count (IxVM takes
+the fabrication's parameters by the record's count, `Red.rescueK` by the rule's constructor's). -/
 theorem CIRep.recr_k {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
     (r : CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx])
       (.recInfo cv mI rP rls)) :
-    k = .field 1 → ∃ rl, rls = [rl] ∧ rl.k = true := by
+    k = .field 1 → ∃ (rl : Ix.Kernel.RecRule .anon) (p : F), rls = [rl] ∧ rl.k = true ∧
+      np = .field p ∧ rl.ctorParams = ZMod.val p := by
   generalize hv : (Value.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx] :
     SourceValue F) = v at r
   generalize hc : (Ix.Kernel.ConstantInfo.recInfo cv mI rP rls) = ci at r
@@ -140,14 +134,15 @@ theorem CIRep.recr_k {κ : _root_.Address → KKey} {h : Heap F}
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hl
     injection hc with h1 h2 h3 h4
     subst h1 h2 h3 h4
-    exact hk
+    intro hk1
+    obtain ⟨rl, h5, h6, h7⟩ := hk hk1
+    exact ⟨rl, _, h5, h6, hnp, h7⟩
   all_goals (injection hv with _ hc' _; exact absurd hc' (by decide))
 
-/-- **`KernelWhnf::k_synth_fab`**, given `KParams`: the major's io type head-normalizes to its
-inductive (the major premise's head), the rule's constructor applied to the type's parameters is
-fabricated, and its type and the major's are propositions definitionally equal to each other:
-`Red.rescueK`. -/
-theorem k_synth_fab_of (c : Ctx) (hc : CoreFacts c) (hkp : KParams c)
+/-- **`KernelWhnf::k_synth_fab`**: the major's io type head-normalizes to its inductive (the major
+premise's head), the rule's constructor applied to the type's parameters is fabricated, and its
+type and the major's are propositions definitionally equal to each other: `Red.rescueK`. -/
+theorem k_synth_fab_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::k_synth_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.k_synth_fab c args h r h' calls := by
@@ -164,9 +159,9 @@ theorem k_synth_fab_of (c : Ctx) (hc : CoreFacts c) (hkp : KParams c)
   · subst he549 hc550
     obtain ⟨hv503, rfl⟩ := tuple2_inj (hr.symm.trans he505)
     obtain ⟨hfind, u0, blk0, idx0, hci⟩ := hrec
-    obtain ⟨p', i', m', mi', -, hnp, -, -, -, -, -, -, -, -⟩ := CIRep.recr_fields hci
-    have hnP := hkp h nl rt np ni nm nmi rules u0 blk0 idx0 cv mI rP rl p' hci hnp
-    subst hnp
+    obtain ⟨rl', p', hrl1, -, hnp, hnP⟩ := CIRep.recr_k hci rfl
+    simp only [List.cons.injEq, and_true] at hrl1
+    subst hrl1 hnp
     have hrl : rl ∈ [rl] := List.mem_singleton_self rl
     have e14 := ObsFn.heap_extends ev14
     have e52 := ObsFn.heap_extends ev52
@@ -302,7 +297,7 @@ theorem try_k_synth_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   · exact (tag_zero_ne_one (he150.symm.trans hr)).elim
   · subst hc396
     obtain ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩ := hrr
-    obtain ⟨rl, rfl, hrlk⟩ := CIRep.recr_k hci rfl
+    obtain ⟨rl, _, rfl, hrlk, _, _⟩ := CIRep.recr_k hci rfl
     obtain ⟨p', i', m', mi', -, hnp, hni, hnm, hnmi, -, hmI, -, hmIb, hrules⟩ :=
       CIRep.recr_fields hci
     obtain ⟨rl', rls', hrl', ⟨rhs', hv, -, -⟩, -⟩ := RulesRep.cons_of_load hrules ld12
