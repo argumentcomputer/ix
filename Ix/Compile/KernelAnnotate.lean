@@ -511,6 +511,9 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut groupKey : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
   let mut tiers : Array (Nat × Ix.Kernel.Tier.TierDecl .source) := #[]
   let mut failures : Array (String × String) := #[]
+  -- the safe declarations the install leaves out: their ingest fails, or they name a
+  -- constant the install lacks (an incomplete input); a compile error
+  let mut safeRefused : Array (String × String) := #[]
   for (gi, c) in sched do
     if let some t := tierConv[gi]! then
       match t with
@@ -525,7 +528,9 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         if let some k := d.names.head? then
           levelOf := levelOf.insert k glevel[gi]!
           groupKey := groupKey.insert k gi
-    | .error e => failures := failures.push (groupName gi, readErrorString e)
+    | .error e =>
+      failures := failures.push (groupName gi, readErrorString e)
+      safeRefused := safeRefused.push (groupName gi, readErrorString e)
   let t2 ← IO.monoMsNow
   if ← stop then return .error abandoned
   let some canon ← parMap threads stop canonDecl lowered (grain := 16) | return .error abandoned
@@ -575,6 +580,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     if ← stop then return .error abandoned
     if !resolves fe d then
       failures := failures.push (declName d, "names a constant that is not installed")
+      safeRefused := safeRefused.push (declName d, "names a constant that is not installed")
       pos := pos + 1
       continue
     -- a separable declaration's step is its annotation and push (`separable`): made
@@ -602,6 +608,14 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
       if let some fe' := lenient mode fe d then
         fe := fe'
         lenientCount := lenientCount + 1
+  -- a safe declaration left out leaves the binders that read it undecided: the install
+  -- fails. One whose check fails (a compiler-trust axiom, or a role whose evidence is
+  -- another toolchain's) enters leniently above, and the records reading it are annotated.
+  let refused := safeRefused
+  unless refused.isEmpty do
+    let shown := (refused.extract 0 5).toList.map fun (n, why) =>
+      s!"{n} ({toString ((why.replace "\n" " ").take 160)})"
+    return .error s!"binder data: the install left out {refused.size} safe declaration(s): {shown}"
   -- projection tables for the structures left without one
   let (feT, tablesAdded, tablesProp) := addTables env fe
   fe := feT
@@ -1016,20 +1030,9 @@ def walkStored : Nat → Cx → List Nat → Ixon.Expr → KExpr → EM Unit
 
 /-! ## A record's sources -/
 
-/-- Whether a member of `c` is unsafe or partial. -/
+/-- Whether a member of `c` is unsafe or partial (`Ix.CompileM.unsafeOrPartial`). -/
 def unsafeOrPartial (c : Ixon.Constant) : Bool :=
-  let defn (d : Ixon.Definition) : Bool := match d.safety with
-    | .safe => false
-    | _ => true
-  match c.info with
-  | .defn d => defn d
-  | .recr r => r.isUnsafe
-  | .axio a => a.isUnsafe
-  | .muts ms => ms.any fun
-    | .defn d => defn d
-    | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
-    | .recr r => r.isUnsafe
-  | _ => false
+  Ix.CompileM.unsafeOrPartial c
 
 /-- For each root of `c` (`IxVM.PwHints.roots`' order), whether it is a
 theorem's value. -/

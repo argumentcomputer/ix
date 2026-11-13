@@ -171,8 +171,11 @@ canonical environment carries the annotator over its input and that task
 data from it (`Ix.CompileM.withBinderSection`), only a record the reading leaves
 waits for the install, and the certified result is the compile of that
 environment. Once no record can read the install (after the compile, unless the
-annotator is kept), an unfinished install is abandoned. Without `binderData`, every record
-with a binder carries the undecided section. The default role table binds records carrying
+annotator is kept), an unfinished install is abandoned. With `binderData`, binder data are
+always present on safe records: a safe record with an undecided binder does not compile
+(`Ix.CompileM.sectionFor`), and an install that left a safe declaration out (its ingest
+failed, or it names a constant the install lacks: an incomplete input) refuses the compile. Without `binderData`, every record with a binder
+carries the undecided section. The default role table binds records carrying
 their binder data, so its check is made only with `binderData`, and only while that table is
 current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
@@ -192,9 +195,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let mut install? : Option (Task (Except String Ix.Compile.KernelAnnotate.Installed)) := none
   if binderData then
     match Ix.Compile.KernelAnnotate.prelude? with
-    | .error e =>
-      log s!"binder data: IxC's environment is not installed ({e}): every record with a binder \
-        carries the undecided section"
+    | .error e => return .error s!"binder data: IxC's prelude is not installed: {e}"
     | .ok pre =>
       let task ← Ix.Compile.KernelAnnotate.installTask env pre workers abandon
       install? := some task
@@ -220,8 +221,9 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
         for (name, why) in installed.failures.extract 0 20 do
           log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
       | .error e =>
-        log s!"binder data: IxC's environment is not installed ({e}): the records the reading \
-          leaves carry the undecided section"
+        -- abandoned after the compile, no record read it; any other error refuses the compile
+        unless e == Ix.Compile.KernelAnnotate.abandoned do
+          return .error s!"binder data: IxC's environment is not installed: {e}"
     else
       log "binder data: no record was left to the walk; the install was not waited for"
   let (ixe, failures) ← match report.val with
@@ -362,10 +364,9 @@ record is built, and `finalize`'s generated theorem records get theirs from
 IxC's pass over the records before they are addressed. `post` finalizes
 without data, then gives every record its section
 (`Ix.Compile.BinderData.apply`, the artifact re-addressed) before
-`validateFinalized`; `onBinders` receives the report and the artifact. A binder
-whose datum the annotator cannot decide carries the undecided node, and each
-safe record with one is reported; with `strictBinderData` it fails the compile
-instead.
+`validateFinalized`; `onBinders` receives the report and the artifact. A safe
+record with an undecided binder (one whose datum the annotator cannot decide) fails
+the compile; an unsafe or partial record keeps the undecided node.
 
 With `defaultRoles`, `inline` and a current default table, a finalized artifact
 whose table binds every role (a compile of the whole toolchain library) must be
@@ -377,7 +378,6 @@ def compileAndFinalize (source : Lean.Environment)
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
     (prefetch : Bool := false) (binderData : BinderDataMode := .inline)
-    (strictBinderData : Bool := false)
     (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ())
     (modeCheck : ModeChecker := noModeChecker) :
     IO (Except String (CertifiedOut × Finalization)) := do
@@ -406,9 +406,10 @@ def compileAndFinalize (source : Lean.Environment)
           log s!"binder data: {(← IO.monoMsNow) - tb}ms, rss {← Ix.Cli.residentSetSize}; \
             {binders.summary}"
           onBinders binders artifact
-          if strictBinderData && !binders.undecided.isEmpty then
-            throw (IO.userError s!"binder data: {binders.undecided.size} undecided binder(s) \
-              (--strict-binder-data)")
+          let undecided := Ix.Compile.KernelAnnotate.undecidedSafe artifact workers
+          unless undecided.isEmpty do
+            throw (IO.userError s!"binder data: {undecided.size} safe record(s) with an undecided \
+              binder")
           pure artifact
         | .inline =>
           -- the records `finalize` added (support, certificates, evidence) too
@@ -431,9 +432,9 @@ def compileAndFinalize (source : Lean.Environment)
           log s!"binder data: {undecided.size} safe record(s) with an undecided binder"
           for names in undecided.extract 0 20 do
             log s!"binder data: undecided binder in safe {names}"
-          if strictBinderData && !undecided.isEmpty then
+          unless undecided.isEmpty do
             throw (IO.userError s!"binder data: {undecided.size} safe record(s) with an undecided \
-              binder (--strict-binder-data)")
+              binder")
           pure artifact
         | .off => pure artifact
       IO.ofExcept (validateFinalized out.annotated modeCheck artifact)

@@ -34,10 +34,12 @@ def target : Name := ``Src.double
 def closure (env : Environment) (drop : Name → Bool) : List (Name × ConstantInfo) :=
   (Ix.EnvScope.collectDeps env [target]).filter fun (n, _) => !drop n
 
-/-- The Lean IO pipeline's failures `(name, reason)`, sorted by name. -/
+/-- The Lean IO pipeline's failures `(name, reason)`, sorted by name. Without binder data:
+    the closures here are the raw ones, without recursors, on which the annotator's install
+    (which needs every inductive's recursor) refuses the compile; grounding is the subject. -/
 def leanFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Array (String × String)) := do
-  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs 1)
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs 1 (binderData := false))
   let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
   return failures.qsort fun a b => a.1 < b.1
 
@@ -45,7 +47,7 @@ def leanFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     sorted by name. -/
 def rustFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Array (String × String)) := do
-  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs)
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs (binderData := false))
   let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
   return failures.qsort fun a b => a.1 < b.1
 
