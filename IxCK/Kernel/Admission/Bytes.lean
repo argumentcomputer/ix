@@ -1,7 +1,6 @@
 module
 
 public import IxCK.Ixon.Canonical
-public import IxCK.Ixon.Bounded.Size
 public import IxCK.Kernel.Admission.Depth
 public import IxCK.Kernel.Ingress.Records
 public import Std.Data.HashSet.Basic
@@ -215,15 +214,20 @@ def scanDepths (limits : Limits) : Records → Except ByteError Unit
       .error (.limit .depth)
     else scanDepths limits rest
 
+/-- A bound on how deep any record within the byte limit can nest with its shares expanded:
+two decoded nodes per byte at most (an application or binder telescope of `n` steps is written
+with `n + 1` expressions), and an acyclic path meets each node once. -/
+def expandedDepthBound (limits : Limits) : Nat := 2 * limits.maxRecordBytes + 2
+
 /-- **The expanded-depth check**: every decoded record's expressions within
 `limits.maxDepth` with their shares expanded, as the reader builds them
-(`Depth.expandedWithin`). A record with no more stored nodes than the limit (`Ixon.Constant.resourceSize`)
-cannot be deeper than it with its shares expanded (a path through the shares meets each stored
-node at most once) and is not walked. -/
+(`Depth.expandedWithin`). Not walked when the limit is at least twice the record byte limit and
+two (`expandedDepthBound`): a decoded record has at most two nodes per byte that wrote it, and a
+path through its shares meets each stored node at most once, so none is that deep. -/
 def expandedDepths (limits : Limits) : Ingress.Constants → Except ByteError Unit
   | [] => .ok ()
   | (_, constant) :: rest =>
-    if constant.resourceSize < limits.maxDepth ||
+    if expandedDepthBound limits ≤ limits.maxDepth ||
         Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant then
       expandedDepths limits rest
     else .error (.limit .depth)

@@ -295,18 +295,16 @@ theorem closure_decodes (ixe : Ixon.Env) {order : List Address} (canonical : Sto
       maxTotalBytes := Ix.Kernel.Admission.payloadBytes records + Ix.Kernel.Admission.payloadBytes blobs
       maxRecordBytes := Ix.Kernel.Admission.payloadBytes records
       maxRecordUnivNodes := nodesOf (decodedOf ixe order)
-      maxDepth := Ix.Kernel.Admission.payloadBytes records + nodesOf (decodedOf ixe order) +
-        Ix.Kernel.Admission.resourceUnits (decodedOf ixe order) + 1 }
+      maxDepth := 3 * Ix.Kernel.Admission.payloadBytes records + nodesOf (decodedOf ixe order) + 2 }
   refine ⟨limits, ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩,
     closure_reads ixe limits order canonical (fun _ h => size_le_payload h) (fun _ h => nodes_le h), ?_⟩
-  refine Ix.Kernel.Admission.DepthsWithin.of_bound (fun e h => ?_) (fun e h => ?_)
+  refine Ix.Kernel.Admission.DepthsWithin.of_bound (fun e h => ?_) ?_
   · have := size_le_payload h
-    show e.2.size + nodesOf (decodedOf ixe order) + 1 ≤ Ix.Kernel.Admission.payloadBytes records +
-      nodesOf (decodedOf ixe order) + Ix.Kernel.Admission.resourceUnits (decodedOf ixe order) + 1
+    show e.2.size + nodesOf (decodedOf ixe order) + 1 ≤
+      3 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + nodesOf (decodedOf ixe order) + 2
     omega
-  · have := Ix.Kernel.Admission.resourceSize_le_resourceUnits h
-    show e.2.resourceSize < Ix.Kernel.Admission.payloadBytes records + nodesOf (decodedOf ixe order) +
-      Ix.Kernel.Admission.resourceUnits (decodedOf ixe order) + 1
+  · show 2 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + 2 ≤
+      3 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + nodesOf (decodedOf ixe order) + 2
     omega
 
 /-! ## The preparation succeeds -/

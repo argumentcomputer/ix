@@ -659,9 +659,9 @@ universe nested past the limit, shares counted as leaves; after decoding,
 expanded, as the reader builds them (memoised per sharing entry; a share that
 reaches itself is past every limit). A record that cannot reach the limit is not
 walked: an expression's levels grow by at most one per byte that writes it and a
-universe's by at most the decoder's node budget (`storedDepthBound`), and an
-expansion meets each stored node at most once (`Ixon.Constant.resourceSize`); the
-statements about a compiled closure choose a limit above both
+universe's by at most the decoder's node budget (`storedDepthBound`), and a record
+within the byte limit has at most two decoded nodes per byte, which an acyclic expansion meets
+once each (`expandedDepthBound`); the statements about a compiled closure choose a limit above both
 (`Ix.Cert.Stream.closure_decodes`). Levels count as the kernel's terms nest:
 an application of `n` arguments has its head `n` levels down, a telescope of `n`
 binders its body `n` levels down, `succ^k u` has `u` `k` levels down. The
