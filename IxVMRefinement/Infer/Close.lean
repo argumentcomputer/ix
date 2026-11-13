@@ -278,6 +278,95 @@ theorem posOf_instantiateLevelParams {ps : List Ix.Kernel.LevelParam} {us : List
   unfold posOf
   rw [instantiateLevelParams_comp hl hdef, posLevels_map_subst hlen]
 
+/-- `Level.subst.go` leaves a parameter outside the list as it is. -/
+theorem subst_go_of_not_mem :
+    ∀ {ks : List Ix.Kernel.LevelParam} {vs : List KLevel} {p : Ix.Kernel.LevelParam}, p ∉ ks →
+      Ix.Kernel.Level.subst.go ks vs p = .param p
+  | [], _, _, _ => rfl
+  | _ :: _, [], _, _ => rfl
+  | k :: ks, v :: vs, p, h => by
+    show (if k = p then v else Ix.Kernel.Level.subst.go ks vs p) = _
+    rw [ite_eq_right (fun e => h (List.mem_cons.mpr (Or.inl e.symm)))]
+    exact subst_go_of_not_mem (fun hm => h (List.mem_cons.mpr (Or.inr hm)))
+
+/-- **The positional renaming, undone positionally, on a level**, for parameters that are a
+permutation of the positions: a parameter of `ps` at index `i` becomes `param i`, then `us[i]`;
+any other parameter is not a position and is left alone by both sides. -/
+theorem subst_posLevels_perm {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
+    (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
+    ∀ l : KLevel, Ix.Kernel.Level.subst (List.range us.length) us
+      (Ix.Kernel.Level.subst ps (posLevels ps) l) = Ix.Kernel.Level.subst ps us l := by
+  intro l
+  induction l with
+  | zero => rfl
+  | succ l ih => simp only [Ix.Kernel.Level.subst, ih]
+  | max l r ihl ihr => simp only [Ix.Kernel.Level.subst, ihl, ihr]
+  | imax l r ihl ihr => simp only [Ix.Kernel.Level.subst, ihl, ihr]
+  | param p =>
+    show Ix.Kernel.Level.subst (List.range us.length) us
+        (Ix.Kernel.Level.subst.go ps (posLevels ps) p) = Ix.Kernel.Level.subst.go ps us p
+    by_cases hp : p ∈ ps
+    · have hl : (posLevels ps).length = ps.length := by
+        rw [posLevels, List.length_map, List.length_range]
+      have h := Ix.Kernel.Level.subst_go_map
+        (Ix.Kernel.Level.subst (List.range us.length) us) ps (posLevels ps) p hp hl
+      rw [posLevels_map_subst hlen] at h
+      exact h.symm
+    · have hp' : p ∉ List.range us.length := by
+        rw [hlen]
+        exact fun hm => hp (hperm.mem_iff.mpr hm)
+      rw [subst_go_of_not_mem (vs := posLevels ps) hp, subst_go_of_not_mem (vs := us) hp]
+      exact subst_go_of_not_mem hp'
+
+/-- **The positional renaming, undone positionally, on a binder datum** (`subst_posLevels_perm`
+read through the datum's semantics). -/
+theorem substPW_posLevels_perm {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
+    (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length)
+    (pw : Ix.Kernel.PropWhen) :
+    Ix.Kernel.Level.substPW (List.range us.length) us
+      (Ix.Kernel.Level.substPW ps (posLevels ps) pw) = Ix.Kernel.Level.substPW ps us pw := by
+  apply Ix.Kernel.PropWhen.eq_of_holds
+  intro φ
+  rw [Ix.Kernel.Level.holds_substPW, Ix.Kernel.Level.holds_substPW,
+    Ix.Kernel.Level.holds_substPW]
+  congr 1
+  funext p
+  rw [← Ix.Kernel.Level.eval_subst_go, ← Ix.Kernel.Level.eval_subst_go,
+    ← Ix.Kernel.Level.eval_subst]
+  exact congrArg (Ix.Kernel.Level.eval φ) (subst_posLevels_perm hperm hlen (.param p))
+
+/-- The positional renaming, undone positionally, on a term (permuted positions). -/
+theorem instantiateLevelParams_posLevels_perm {ps : List Ix.Kernel.LevelParam}
+    {us : List KLevel} (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
+    ∀ e : KExpr, (e.instantiateLevelParams ps (posLevels ps)).instantiateLevelParams
+      (List.range us.length) us = e.instantiateLevelParams ps us := by
+  intro e
+  induction e with
+  | bvar _ | lit _ => rfl
+  | fvar idx ty ih => simp only [Expr.instantiateLevelParams, ih]
+  | sort u => simp only [Expr.instantiateLevelParams, subst_posLevels_perm hperm hlen u]
+  | const n ls =>
+    simp only [Expr.instantiateLevelParams, List.map_map]
+    congr 1
+    exact List.map_congr_left fun u _ => subst_posLevels_perm hperm hlen u
+  | app f a ihf iha => simp only [Expr.instantiateLevelParams, ihf, iha]
+  | lam ty body m iht ihb =>
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_posLevels_perm hperm hlen m.pw]
+  | forallE ty body m iht ihb =>
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_posLevels_perm hperm hlen m.pw]
+  | letE ty val body l iht ihv ihb => simp only [Expr.instantiateLevelParams, iht, ihv, ihb]
+  | proj s i e ih => simp only [Expr.instantiateLevelParams, ih]
+
+/-- **Instantiating a positional term positionally, for permuted positions**: when the
+parameters `ps` are a permutation of `List.range ps.length`, the positional form of `T`
+instantiated at `List.range n` by `us` is `T` instantiated at `ps` by `us`, with no hypothesis on
+the parameters of `T`. -/
+theorem posOf_instantiateLevelParams_perm {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
+    {T : KExpr} (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
+    (posOf ps T).instantiateLevelParams (List.range us.length) us =
+      T.instantiateLevelParams ps us :=
+  instantiateLevelParams_posLevels_perm hperm hlen T
+
 end IxVM.Refinement.Core.InferAux
 
 namespace IxVM.Refinement.Core
