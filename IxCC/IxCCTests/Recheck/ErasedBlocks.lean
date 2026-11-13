@@ -97,10 +97,10 @@ partial def retagCtor (k : Src.CId) (pos : Nat) : Src.Term → Src.Term
   | t => t
 
 /-- `refused`, returning every message of the front end's refusal. -/
-def refusedAll (a : Assert) (label : String) (cfg : Recheck.Config) (P : Src.Program)
+def refusedAll (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (cfg : Recheck.Config) (P : Src.Program)
     (tc : Src.Table.TableCert) (ann : Src.Relevance.Ann) (needles : List String) :
     IO (String × List String) := do
-  let line ← refused a label cfg P tc ann needles
+  let line ← refused a hk label cfg P tc ann needles
   let table ← match Src.Table.ofCert cfg.table P tc with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"{label}: the table refused it: {m}")
@@ -177,7 +177,7 @@ def tProg (fc rfc : BinderContract) : IO TProg := do
   return { env := e, roots := [("main", main)] ++ rs, tRec := tr, mkC := mk, main }
 
 /-- Through the certified kernel: it accepts, and the producer refuses with every needle. -/
-def kernelThenRefused (a : Assert) (label : String) (pr : TProg) (needles : Src.Program → Src.CId → List String) :
+def kernelThenRefused (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (pr : TProg) (needles : Src.Program → Src.CId → List String) :
     IO (Src.Program × Src.CId × String) := do
   let inp ← ofErr s!"{label}: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write pr.env) (sidecar pr.roots) [])
   IxCCTests.KernelFront.LamRuns.agree label inp
@@ -193,7 +193,7 @@ def kernelThenRefused (a : Assert) (label : String) (pr : TProg) (needles : Src.
       s!"{label}: produce refused it otherwise: {err.render}"
     return (P, rId, s!"{label}: {err.render}")
 
-def single (a : Assert) : IO (Array String) := do
+def single (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let c₂ : Sem.Obs := .ctor 2 []
   -- the control: no mark
   let pr ← tProg .many .many
@@ -206,7 +206,7 @@ def single (a : Assert) : IO (Array String) := do
   expect a (pairsOf P rId == [(1, 0, 0), (2, 1, 1)]) s!"T.rec's pairing: {pairsOf P rId}"
   let mut out := #["T.rec (λ_.E) c₀ (λ t ih. next ih) (mk (mk leaf)): accepted, c₂ (object and SrcEval); C3 pairs rule j with minor j"]
   -- K1: `mk`'s field written erased; the kernel accepts (it compares no field's contract here)
-  let (P1, r1, line) ← kernelThenRefused a "T, mk's field written erased (kernel-accepted)" (← tProg .erased .many)
+  let (P1, r1, line) ← kernelThenRefused a hk "T, mk's field written erased (kernel-accepted)" (← tProg .erased .many)
     fun P r => [s!"in rule 1 of {P.short r}", "minor 1 does not bind field 0, which is written erased"]
   out := out.push line
   match forwards P1 r1 with
@@ -216,9 +216,9 @@ def single (a : Assert) : IO (Array String) := do
     out := out.push s!"T, mk's field written erased: the forwarding clause: {m}"
   | none => expect a false "T, mk's field written erased: the forwarding clause accepts T.rec"
   -- K7, K6: rule 1's field λ written erased (the kernel does not compare a rule's binder data)
-  out := out.push (← kernelThenRefused a "T, rule 1's field λ written erased (kernel-accepted)" (← tProg .many .erased)
+  out := out.push (← kernelThenRefused a hk "T, rule 1's field λ written erased (kernel-accepted)" (← tProg .many .erased)
     fun P r => [s!"in rule 1 of {P.short r}", "[relevance C1]"]).2.2
-  out := out.push (← kernelThenRefused a "T, mk's field and rule 1's λ written erased (kernel-accepted)"
+  out := out.push (← kernelThenRefused a hk "T, mk's field and rule 1's λ written erased (kernel-accepted)"
     (← tProg .erased .erased) fun P r => [s!"in rule 1 of {P.short r}", "[relevance C1]",
       "minor 1 does not bind field 0, which is written erased"]).2.2
   -- below the kernel: `mk`'s field written erased and `main`'s minor binding it erased
@@ -230,7 +230,7 @@ def single (a : Assert) : IO (Array String) := do
   let mval := retagCtor mkId 0 (mapArg rId 2 (fun (x, m, r) => (setLam erasedPrf 0 x, m, r)) mval)
   let Pe := Pe.setDecl mainId (.defn dk ds dl mty mval)
   let annE := withNode annE (.value mainId) mval.tagOrder
-  out := out.push (← refused a "T, mk's field written erased, main's minor binding it erased" h.cfg Pe
+  out := out.push (← refused a hk "T, mk's field written erased, main's minor binding it erased" h.cfg Pe
     h.cert.table annE [s!"in rule 1 of {P.short rId}", "minor 1 does not bind field 0, which is written erased"])
   -- rules of a shape the kernel would not generate (IxCC does not check the shape)
   let some (.recr s k l rnp nmot nmin ni ind rules rty) := Pe.decl? rId | throw (IO.userError "T.rec")
@@ -245,7 +245,7 @@ def single (a : Assert) : IO (Array String) := do
     let rhs := setBody body 4 rule1.rhs
     let Pr := Pe.setDecl rId (.recr s k l rnp nmot nmin ni ind (rules.set 1 { rule1 with rhs }) rty)
     let annR := withNode annE (.rule rId 1) rhs.tagOrder
-    out := out.push (← refused a s!"T, mk's field written erased, rule 1 replaced by {what}" h.cfg Pr
+    out := out.push (← refused a hk s!"T, mk's field written erased, rule 1 replaced by {what}" h.cfg Pr
       h.cert.table annR [s!"({P.short rId})", needle])
   return out
 
@@ -311,7 +311,7 @@ def recOf (P : Src.Program) (k : Src.CId) : Option Src.CId :=
     | some (.recr _ _ _ _ nmot _ _ _ rules _) => decide (1 < nmot) && rules.any (·.ctor == k)
     | _ => false
 
-def blocks (a : Assert) : IO (Array String) := do
+def blocks (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let mut out := #[]
   -- the minors of a block's second recursor: `B.rec` takes the minors of a0 a1 b0 b1
   let l ← load "mainB"
@@ -322,14 +322,14 @@ def blocks (a : Assert) : IO (Array String) := do
   let (Q, ann, b1, bRec) ← plant l [6] 0 []
   expect a (pairsOf Q bRec == [(4, 2, 0), (5, 3, 1)]) s!"B.rec's pairing: {pairsOf Q bRec}"
   out := out.push "mainB := B.rec … useE (b1 c₁): accepted, c₁ (object and SrcEval); C3 pairs B.rec's rules 0, 1 with minors 2, 3"
-  out := out.push (← refused a "B.rec's minor for b1, η-short over b1's field written erased" l.cfg Q l.tc ann
+  out := out.push (← refused a hk "B.rec's minor for b1, η-short over b1's field written erased" l.cfg Q l.tc ann
     [s!"in the value of {Q.short l.main}", s!"({Q.short b1})", "minor 3 does not bind field 0, which is written erased"])
   -- a field of one member whose type is another member: the hypothesis is `B2.rec`'s
   let l ← load "mainM2"
   expect a (srcHonest l == some (.ctor 2 [])) s!"mainM2 control: SrcEval {repr (srcHonest l)}"
   let (Q, ann, a1, aRec) ← plant l [5] 0 [(2, 0)]
   out := out.push "mainM2 := A2.rec … (λ b ih. ih) c₁ c₂ (a1 b1): SrcEval c₂ (erasure declines the honest program)"
-  out := out.push (← refused a "a1's field written erased, the hypothesis B2.rec … b" l.cfg Q l.tc ann
+  out := out.push (← refused a hk "a1's field written erased, the hypothesis B2.rec … b" l.cfg Q l.tc ann
     [s!"({Q.short aRec})", s!"rule 0 of the recursor uses field 0 of {Q.short a1}",
      "other than as that field's argument to the minor premise it dispatches"])
   -- nested blocks: the auxiliary recursor over `O Tree` (`L Rose`) takes the four minors
@@ -340,14 +340,14 @@ def blocks (a : Assert) : IO (Array String) := do
     expect a (pairsOf Q aux == [(4, 2, 0), (5, 3, 1)]) s!"{name}: the auxiliary recursor's pairing: {pairsOf Q aux}"
     expect a ((forwards Q aux).any (·.contains s!"uses field 0 of {Q.short k}"))
       s!"{name}: the forwarding clause on the auxiliary recursor: {forwards Q aux}"
-    let (line, ms) ← refusedAll a s!"{name}: the container's field written erased, its minor binding it erased"
+    let (line, ms) ← refusedAll a hk s!"{name}: the container's field written erased, its minor binding it erased"
       l.cfg Q l.tc ann [s!"({Q.short k})", "minor 3 does not bind field 0, which is written erased"]
     expect a (ms.all fun m => !m.contains s!"in the value of {Q.short l.main}")
       s!"{name}: a refusal at the user's call: {ms}"
     out := out.push line
   return out
 
-def run (a : Assert) : IO (Array String) := do
-  return (← single a) ++ (← blocks a)
+def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array String) := do
+  return (← single a hk) ++ (← blocks a hk)
 
 end IxCCTests.Recheck.ErasedBlocks
