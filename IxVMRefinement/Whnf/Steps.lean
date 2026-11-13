@@ -11,7 +11,7 @@ import IxVMRefinement.Core.Whnf
 induction hypothesis at its derivation's calls. The step lemmas are the slice's
 (`Core/Whnf.lean`, `Core/Steps/Whnf.lean`) and this package's (`Whnf/{Norm,Scans,Beta,Prim,Heads,
 Delta}.lean`). The steps of the functions in `whnfPending` are a hypothesis (`hrest`): the ι, K,
-structure-η and quotient functions, and `red_proj` and `try_reduce_projection_definition`. -/
+structure-η and quotient functions, and `red_proj`. -/
 
 namespace IxVM.Refinement.Core
 
@@ -23,7 +23,7 @@ def whnfPending : List Specs.Whnf.Fn :=
     .pi_residual, .k_synth_fab, .try_k_synth_iota, .eta_iota_fab, .try_struct_eta_iota,
     .struct_is_rec, .struct_scan_members, .struct_block_member_addrs, .struct_scan_ctors,
     .se_parent_addr, .se_peel_tol, .se_scan_fields, .se_mentions, .se_addr_in, .red_quot,
-    .quot_certs, .try_quot_iota, .red_rec, .red_proj, .try_reduce_projection_definition]
+    .quot_certs, .try_quot_iota, .red_rec, .red_proj]
 
 /-- **One step per function of the `Whnf` family**, given the steps of the functions in
 `whnfPending`. -/
@@ -96,6 +96,6 @@ theorem whnf_family_step (c : Ctx) (hc : CoreFacts c)
   | .red_rec, _, _, _, _, _, ev, ih => hrest .red_rec (by decide) _ _ _ _ _ ev ih
   | .red_proj, _, _, _, _, _, ev, ih => hrest .red_proj (by decide) _ _ _ _ _ ev ih
   | .try_reduce_projection_definition, _, _, _, _, _, ev, ih =>
-    hrest .try_reduce_projection_definition (by decide) _ _ _ _ _ ev ih
+    try_reduce_projection_definition_step c ev ih
 
 end IxVM.Refinement.Core

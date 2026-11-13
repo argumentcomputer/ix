@@ -625,4 +625,13 @@ theorem try_reduce_core (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · exact absurd (WhnfAux.tag_eq (hr.symm.trans he392)).1 one_ne_zero
   · exact absurd (WhnfAux.tag_eq (hr.symm.trans he428)).1 one_ne_zero
 
+/-- `KernelWhnf::try_reduce_projection_definition`: the projection-function shortcut
+(`try_reduce_core`). -/
+theorem try_reduce_projection_definition_step (c : Ctx) {args : List (SourceValue F)}
+    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::try_reduce_projection_definition" args h r h' calls)
+    (ih : IH c calls) :
+    Specs.Whnf.try_reduce_projection_definition c args h r h' calls :=
+  try_reduce_core c ev ih
+
 end IxVM.Refinement.Core

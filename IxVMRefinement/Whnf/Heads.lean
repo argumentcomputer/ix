@@ -284,11 +284,11 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     rw [ld391] at hld
     injection hld with hv
     subst hv
-    obtain ⟨cv, V, hn, rfl, ⟨hnl, -, hnd, -⟩, hV⟩ := CIRep.defn_inv hci
+    obtain ⟨cv, V, hn, rfl, ⟨hnl, hlt, hnd, -⟩, hV⟩ := CIRep.defn_inv hci
     have ext2 := ext.trans (ObsFn.heap_extends ev397)
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .try_reduce_projection_definition) (by lt_calls) ev463
       x_value x_nl lvls sp rfl (good.sub fun x hx => by simp [hx]) d Γ _ cv V hn us As hfind hV
-      hnd hnl (LvListRep.mono ext2 hus) (tml_mono ext2 hAs) x_reduced rfl
+      hnd hlt hnl (LvListRep.mono ext2 hus) (tml_mono ext2 hAs) x_reduced rfl
     have ext3 := ext2.trans (ObsFn.heap_extends ev463)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_nd) (by lt_calls) ev529 rc x_reduced types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext3 hrc) d Γ (types_mono ext3 htypes) E hE
