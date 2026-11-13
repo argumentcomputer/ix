@@ -250,7 +250,13 @@ def papVal (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal := d
 
 /-- Applying a function value to one argument: by its skeleton's arrow (an
 unknown skeleton is a mode-free arrow, since only mode-free values flow there).
-A once binding called twice is refused; a once-only closure is consumed. -/
+A once binding called twice is refused; a once-only closure is consumed. The
+result may hold what the function value holds (a closure's captures, a partial
+application's arguments) with the confinement they were stored with, so it
+carries the function value's regions; at class `val` it may alias what the
+function value aliases, and the argument whatever its destination (a partial
+application retains even a lent argument). As landed the result was built
+from the argument alone (finding 9). -/
 def applyValue (f a : AVal) (c : Cls) (w : String) : CM AVal := do
   valid f w
   for x in f.deps do
@@ -265,7 +271,9 @@ def applyValue (f a : AVal) (c : Cls) (w : String) : CM AVal := do
   let p : Param := { mode := m, cls := a.cls, skel := dom }
   let ifc : Iface := { params := #[p], res := res, resCls := c, resSkel := cod }
   let r ← callResult ifc #[some a] w
-  pure { r with cls := c }
+  let regs := if c == .val || c == .leaf then natUnion r.regs f.regs else r.regs
+  let deps := if c == .val then natUnion (natUnion r.deps f.deps) a.deps else r.deps
+  pure { r with cls := c, regs, deps }
 
 /-- A call of something the program does not define: arguments retained. -/
 def unknownCall (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
