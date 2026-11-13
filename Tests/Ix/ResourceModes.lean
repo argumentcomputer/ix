@@ -457,7 +457,7 @@ def buildFixture : IO (Except String Built) := do
       (Ix.CompileM.checkPreparedSource p).map (p, ·) with
     | .ok p => pure p
     | .error e => return .error s!"preparing: {e}"
-  let out ← match ← Ix.CompileM.compileCertifiedPrepared prepared annotated 1 with
+  let out ← match ← Ix.CompileM.compileCertifiedPrepared prepared annotated 1 (binderData := true) with
     | .ok o => pure o
     | .error e => return .error s!"compiling: {e}"
   unless out.failures.isEmpty do return .error "compiling: some constants failed"
