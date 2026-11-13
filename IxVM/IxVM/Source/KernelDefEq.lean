@@ -792,7 +792,10 @@ def try_proof_irrel_slow := aiur_fn⟦
 ⟧
 
   -- The sort of `a`'s type read off `a`'s head and the stored binder data (the kernel's
-  -- `proofPW`): 1 zero at every valuation (a proof), 0 known and not, 2 unknown.
+  -- `proofPW`): 1 zero at every valuation (a proof), 0 known and not, 2 unknown. A constant
+  -- head reads its stored type's data, then takes them at the head's levels (the kernel's
+  -- `substPW`): the type is never instantiated, so no binder is peeled that the stored data
+  -- do not peel.
 
 def proof_class := aiur_fn⟦
   fn proof_class(a: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
@@ -805,13 +808,11 @@ def proof_class := aiur_fn⟦
             KernelTypes::KExprNode::Const(c, us) => {
               let ci = (*(Ingress::get_ci(c)));
               match Lists::length(us) - KernelInfer::const_num_lvls(ci) {
-                0 => {
-                  type_sort_class(KernelLevels::expr_inst_levels(KernelInfer::const_type_of(ci), us),
-                                  types) } ,
+                0 => {  type_sort_class(KernelInfer::const_type_of(ci), types, 1, us) } ,
                 _ => {  2 } ,
               } } ,
             KernelTypes::KExprNode::BVar(i) => {
-              type_sort_class(KernelInfer::types_lookup(types, i), types) } ,
+              type_sort_class(KernelInfer::types_lookup(types, i), types, 0, (&(Lists::Node::Nil))) } ,
             KernelTypes::KExprNode::Srt(_) => {  0 } ,
             KernelTypes::KExprNode::Forall(_, _, _) => {  0 } ,
             KernelTypes::KExprNode::Lit(_) => {  0 } ,
@@ -821,30 +822,37 @@ def proof_class := aiur_fn⟦
     }
 ⟧
 
-  -- The sort of the type `t`, read off its head (the kernel's `typeSortPW`).
+  -- The sort of the type `t`, read off its head (the kernel's `typeSortPW`). With `inst` set,
+  -- `t` is a stored type and every datum it reads is taken at the levels `us`.
 
 def type_sort_class := aiur_fn⟦
-  fn type_sort_class(t: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+  fn type_sort_class(t: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>, inst: Field,
+                     us: Lists::List<KernelTypes::KLevel>) -> Field {
       match (*(t)) {
-        KernelTypes::KExprNode::Forall(_, _, bl) => {
-          KernelLevels::level_equal(bl, (&(KernelTypes::KLevelNode::Zero))) } ,
+        KernelTypes::KExprNode::Forall(_, _, bl) => {  level_zero_at(bl, inst, us) } ,
         KernelTypes::KExprNode::Srt(_) => {  0 } ,
         _ => {
           let (head, args) = KernelTypes::collect_spine(t);
           match (*(head)) {
-            KernelTypes::KExprNode::Const(c, us) => {
+            KernelTypes::KExprNode::Const(c, cus) => {
               let ci = (*(Ingress::get_ci(c)));
-              match Lists::length(us) - KernelInfer::const_num_lvls(ci) {
+              match Lists::length(cus) - KernelInfer::const_num_lvls(ci) {
                 0 => {
-                  let (ok, r) = peel_never_pis(
-                    KernelLevels::expr_inst_levels(KernelInfer::const_type_of(ci), us),
-                    Lists::length(args));
-                  residual_class(ok, r) } ,
+                  let cus_at = match inst {
+                    0 => {  cus } ,
+                    _ => {  KernelLevels::level_list_inst(cus, us) } ,
+                  };
+                  let (ok, r) = peel_never_pis(KernelInfer::const_type_of(ci), Lists::length(args));
+                  residual_class(ok, r, 1, cus_at) } ,
                 _ => {  2 } ,
               } } ,
             KernelTypes::KExprNode::BVar(i) => {
-              let (ok, r) = peel_never_pis(KernelInfer::types_lookup(types, i), Lists::length(args));
-              residual_class(ok, r) } ,
+              match inst {
+                0 => {
+                  let (ok, r) = peel_never_pis(KernelInfer::types_lookup(types, i), Lists::length(args));
+                  residual_class(ok, r, 0, (&(Lists::Node::Nil))) } ,
+                _ => {  2 } ,
+              } } ,
             _ => {  2 } ,
           } } ,
       }
@@ -852,15 +860,26 @@ def type_sort_class := aiur_fn⟦
 ⟧
 
 def residual_class := aiur_fn⟦
-  fn residual_class(ok: Field, e: KernelTypes::KExpr) -> Field {
+  fn residual_class(ok: Field, e: KernelTypes::KExpr, inst: Field, us: Lists::List<KernelTypes::KLevel>) -> Field {
       match ok {
         1 => {
           match (*(e)) {
-            KernelTypes::KExprNode::Srt(u) => {
-              KernelLevels::level_equal(u, (&(KernelTypes::KLevelNode::Zero))) } ,
+            KernelTypes::KExprNode::Srt(u) => {  level_zero_at(u, inst, us) } ,
             _ => {  2 } ,
           } } ,
         _ => {  2 } ,
+      }
+    }
+⟧
+
+  -- Whether the level `l` is zero, taken at the levels `us` when `inst` is set.
+
+def level_zero_at := aiur_fn⟦
+  fn level_zero_at(l: KernelTypes::KLevel, inst: Field, us: Lists::List<KernelTypes::KLevel>) -> Field {
+      match inst {
+        0 => {  KernelLevels::level_equal(l, (&(KernelTypes::KLevelNode::Zero))) } ,
+        _ => {
+          KernelLevels::level_equal(KernelLevels::level_inst_params(l, us), (&(KernelTypes::KLevelNode::Zero))) } ,
       }
     }
 ⟧
