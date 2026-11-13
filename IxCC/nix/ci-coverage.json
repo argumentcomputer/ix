@@ -1814,9 +1814,9 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
- "grounding_axiom_count": 312,
- "baseline": "step E0: a case entry whose recursor is of kind empty (GR19)",
+ "b56fca308571db48931a89e108c5eb5c61d20e53fc2eafd8e22e6b0073c95d72",
+ "grounding_axiom_count": 314,
+ "baseline": "step C closure-capture shape of a deep let (GR19)",
  "axiom_sha256":
  "e006ef662d55519a73262c509f18d0da6ea4eccec30d26bc9b1a3126770577ff",
  "axiom_count": 6888}
