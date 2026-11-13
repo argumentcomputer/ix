@@ -2823,7 +2823,7 @@
       "fixtures/corpus/grounding/decide.census.json": "63a29eafc27e807d8754d2044cdf446662ecf28d4317ccf13dd45dd801a651ea",
       "fixtures/corpus/grounding/corpus.json": "e60d3698c4c92c730612a7b039e9d4148e22505126cc3cff46568921a5858117",
       "fixtures/corpus/grounding/README.md": "0c245198d53ee9f309b9938245e28d6687bfce4bf92b8d0aafb94c3df87a4499",
-      "IxCCTests/Grounding/Run.lean": "2f8ecca21bbc83c9f2fdea4547361ca35e3ea1894978cbe361c1b6c4ced2b369",
+      "IxCCTests/Grounding/Run.lean": "dfe46fb8c7740bb6b42efc98205cdf20aff5e74759741e31e9ce1f2790182d63",
       "IxCCTests/Grounding/Main.lean": "8ed652f2c343095dd2c9883c015d9a411d524bb9805ba0bffbdd09bada8d6d1e",
       "IxCCGrounding/Syntax.lean": "7ee9f5cf3815f4ce2cccbf671a9b7c62a8617d2f5f8f52111fd0a0d4c7ddfcad",
       "IxCCGrounding/Support.lean": "b17a38605a149e94dd9b215a8a39c061bd921e93006f73bdf1769e79d40a494f",

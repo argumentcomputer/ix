@@ -788,11 +788,16 @@ def run : IO Bool := do
       sites refused)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
     -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
-    -- telescope's width costs no fuel), the kernel agreeing
+    -- telescope's width costs no fuel), the kernel agreeing. 698 sites since the closure carries
+    -- the word equations `ix compile` adds by default (2026-11-13): `UInt32.toNat` and
+    -- `UInt8.ofNat` are word entries, so their reference bodies are no run terms (7 sites each)
+    -- and the constants reached only through them leave `Sl` (`BitVec.ofNat` 20 sites,
+    -- `BitVec.toNat` 19, `Fin.Internal.ofNat` 11, nine with none): 64 sites fewer, all accepted
+    -- before, and every remaining site still accepted
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a ((pt.sites, pt.accepted) == (762, 762))
-      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 762"
+    expect a ((pt.sites, pt.accepted) == (698, 698))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 698 of 698"
     let pm := mutateStringOfList pa
     let npm := (refusedSites pm).length
     expect a (npm > (refusedSites pa).length)

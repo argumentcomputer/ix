@@ -1447,6 +1447,15 @@ ordered by how many closures each blocks (a closure can have several):
    definition the kernel's reading does not hold (`stored`, 1: `admit`); an
    opaque definition (`notOpaque`, 1: `diag`).
 
+Since `ix compile` adds the word equations by default (2026-11-13), `panic` and `strings` carry
+word entries (`panic`: `UInt32.ofNat`, `UInt32.toNat`, `UInt8.ofNat`; `strings`: `UInt32.lor`,
+`UInt32.ofNat`, `UInt32.shiftLeft`, `UInt8.land`, `UInt8.ofNat`, `UInt8.toUInt32`), so the
+check's `noWord` conjunct refuses them as well, beside the conjuncts above. Both were refused
+before, so the 34 accepted closures do not change. Their word entries' reference bodies are no longer run terms, so their site counts
+fall: `panic` from 762 to 698 (`UInt32.toNat`'s and `UInt8.ofNat`'s bodies, 7 sites each, and
+`BitVec.ofNat`, `BitVec.toNat`, `Fin.Internal.ofNat`, reached only through them, 50), all accepted
+before and after; `strings` from 1,279 to 1,041, its 4 refused sites unchanged.
+
 The most level parameters of a constant in any closure's `Sl` is 4, in any
 closure's reading 7; the largest level, 18 nodes (measured before ingress
 read only what the seeds reach; not re-measured since).
