@@ -26,10 +26,12 @@ statement is about every authentic view that covers the claim; there is no
 existential form (the statement module says why).
 
 Acceptance in a view (`AcceptsIn`) uses only the view's records and blobs,
-except that it may supply recursor records the view lacks (`Draws`): IxC
-declines an inductive block without its recursors
-(`Ix.Kernel.Reader.readInductive`), IxVM reads only referenced records, and a
-recursor is checked against its block, so supplying one adds no content.
+except that it may supply recursor records the view lacks (`Draws`): IxC's
+reader reads a block of one inductive that no recursor of the input eliminates
+as an `indDecl` without a recursor, and declines a block of several types
+without its recursors (`Ix.Kernel.Reader.readInductive`, `blockShapeOf`), IxVM
+reads only referenced records, and a recursor is checked against its block, so
+supplying one adds no content.
 Reducibility hints are free: they are not content addressed, and IxVM reads
 them as unauthenticated advice.
 

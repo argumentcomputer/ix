@@ -66,12 +66,21 @@ def posOf (ps : List Ix.Kernel.LevelParam) (e : KExpr) : KExpr :=
 /-! ## The relation -/
 
 /-- **A constant's level count and type**: `nl` is the number of its level parameters, below
-`2^32` (the decoders' bound on level counts), the parameters are distinct, and `ty` represents its
-closed type with the parameters renamed to positions (`posOf`). -/
+`2^32` (the decoders' bound on level counts), the parameters are the positions `0, …, nl - 1` in
+some order (the reader numbers them `List.range nl`, or `nl - 1 :: List.range (nl - 1)` for a
+large eliminator, whose motive universe comes first in the record), and `ty` represents its
+closed type with the parameters renamed to positions (`posOf`). Instantiating `posOf ps T` at
+the positions is then instantiating `T` at `ps`, whatever level parameters `T` mentions. -/
 def ValRep (κ : _root_.Address → KKey) (h : Heap F) (nl ty : SourceValue F)
     (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
   nl = .field (cv.levelParams.length : F) ∧ cv.levelParams.length < 4294967296 ∧
-    cv.levelParams.Nodup ∧ TmC κ h (posOf cv.levelParams cv.type) ty
+    cv.levelParams.Perm (List.range cv.levelParams.length) ∧
+    TmC κ h (posOf cv.levelParams cv.type) ty
+
+/-- The level parameters of a represented constant are distinct. -/
+theorem ValRep.nodup {κ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
+    {cv : Ix.Kernel.ConstantVal .anon} (r : ValRep κ h nl ty cv) : cv.levelParams.Nodup :=
+  r.2.2.1.nodup_iff.mpr (by simp [List.nodup_range])
 
 /-- **A recursor rule** (`KernelTypes::KRecRule::Mk(cidx, nfields, rhs)`, the `j`-th of its
 list): its constructor index is its position, its field count and closed right-hand side are
@@ -142,6 +151,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       (hnmi : nmi = .field mi) (hrP : (rP : F) = p + m + mi) (hmI : (mI : F) = p + m + mi + i)
       (hcounts : rP ≤ mI ∧ mI < 288230376151711744)
       (hrules : RulesRep κ h cv.levelParams 0 rules rls)
+      (hk : k = .field 1 → ∃ rl, rls = [rl] ∧ rl.k = true)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         (cv.name = κ (ixAddr b) ∨ cv.name = κ (rprjAddr (ixAddr b) (ZMod.val i)))) :
       CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx])
@@ -184,9 +194,9 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
   | ctor hv hnp hnf hcounts hkey =>
     obtain ⟨b, i, j, hb, hi, hj, hn⟩ := hkey
     exact .ctor (hv.mono ext) hnp hnf hcounts ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩
-  | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules hkey =>
+  | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules hk hkey =>
     obtain ⟨b, i, hb, hi, hn⟩ := hkey
-    exact .recr (hv.mono ext) hnp hni hnm hnmi hrP hmI hcounts (hrules.mono ext)
+    exact .recr (hv.mono ext) hnp hni hnm hnmi hrP hmI hcounts (hrules.mono ext) hk
       ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
 
 theorem CIPtrRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {p : SourceValue F}

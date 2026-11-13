@@ -128,7 +128,8 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard (checkAt separated.records).isOk
 #guard !(checkAt separatedInput 0).isOk
--- A family stored without its recursor declines at the reader; the request
+-- A family stored without its recursor declines (one type: the reader reads it and
+-- the checker declines it); the request
 -- bound and the batch limits apply first.
 #guard match check [(address 3, family)] with
   | .error e@(.checker _) => e.outcome == .declined

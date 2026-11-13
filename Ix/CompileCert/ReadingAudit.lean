@@ -375,8 +375,8 @@ def inductiveReadRoots : Array Lean.Name :=
     `headers_transfer, `family_headers, `familyInfo_headers, `erase_family, `piTeleLen_of_piTypes,
     `arity_of_related, `rootsRead_split, `ctorFacts_of, `ctorReads_source, `forall₂_map_left, `rootsRead_cons,
     `noCtorIn_iff, `familyCtx_lookup, `scope_of_noCtor, `inductive_reads,
-    `inductive_reads_indexed,
-    `inductive_declines_unindexed].map (`Ix.CompileCert.InductiveReading ++ ·)
+    `inductive_reads_indexed, `readRecord_singleton_at, `readRecord_singleton_unindexed,
+    `inductive_unindexed_shape].map (`Ix.CompileCert.InductiveReading ++ ·)
 
 /-- The shared loop lemmas (`Ix.CompileCert.Loop`): folds in `Id`, loops
 that push or exit, invariants of fallible loops, and `List.mapM`. -/
@@ -540,7 +540,7 @@ def indexRuntime : Array Lean.Name :=
 reading proofs unfold and state. -/
 def inductiveReadRuntime : Array Lean.Name :=
   #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.lowerInductive, ``Ix.Kernel.Reader.piTeleLen,
-    ``Ix.Kernel.Reader.inductiveAt]
+    ``Ix.Kernel.Reader.inductiveAt, ``Ix.Kernel.Reader.blockShapeOf, ``Ix.Kernel.Reader.unindexedShape]
 
 /-- Source mode's inductive group and conversion, and the compiler's
 constructor resolution, which the Source admission proofs unfold. -/

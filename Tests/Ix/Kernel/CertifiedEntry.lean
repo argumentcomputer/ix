@@ -61,7 +61,8 @@ A record the reader finds malformed, non-canonical bytes and a key that is
 not the hash of its bytes reject; every checker verdict declines (a false
 equation is `invalid` to the checker, a failed conversion search, which is
 not independent evidence of a wrong input); a block whose recursor is
-missing declines at the reader; batch limits decline. -/
+missing declines (a one-type block at the checker, a block of several types at
+the reader); batch limits decline. -/
 
 -- a false equation
 #guard outcomeOf [(address 10, idNat), (address 11, twoDef),

@@ -344,9 +344,10 @@ def twoFixture : List (Address × Ixon.Constant) :=
     (apps (ref 0 [0]) [ref 1, apps (ref 2 [0]) [lam (ref 6) (ref 1), ref 3, sz, ref 5], ref 3])
     (apps (ref 7 [0]) [ref 1, ref 3])
     [eq, nat, address 24, natZero, natSucc, address 23, address 21, eqRefl] [one])])
--- a block without its recursor declines at the reader
+-- a one-type block without its recursor reads, and the checker declines it
+-- (no route of the executable checker installs a block without a recursor)
 #guard match run (twoFixture.take 4) with
-  | .error (.read _ (.declined _)) => true
+  | .error (.kernel _ _) => true
   | _ => false
 
 /-! ## A structure with a projection function
@@ -919,15 +920,16 @@ def natCopy (withRec : Bool) : List (Address × Ixon.Constant) :=
   | .ok _ => true
   | .error _ => false
 -- without it, the prelude's recursor, which the analysis files under the copied block, is left out of
--- the index (`fallbackIndexed`): the copied block declines instead of reading with the prelude's
--- recursor
+-- the index (`fallbackIndexed`): the copied block does not read with the prelude's recursor; it
+-- reads without one (`unindexedShape`), which is not what the prelude read, so the copy declines
+-- (`preludeCopy`)
 #guard
   let cx := contextOf (md := .anon) builtinTable (natCopy false).toArray [] builtinPre.records
   match boundRef .nat with
   | some r => (buildIndex cx.store builtinPre.records).blocks.contains r.block && !cx.index.blocks.contains r.block
   | none => false
 #guard match readStream hash builtinTable builtinPre (natCopy false) [] with
-  | .error (.read _ (.declined _)) => true
+  | .error .preludeCopy => true
   | _ => false
 
 /-! ## A recursor of a block only the fallback supplies
