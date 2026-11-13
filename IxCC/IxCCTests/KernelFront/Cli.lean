@@ -55,7 +55,14 @@ def children (pid : Nat) : IO (List Nat) := do
     | .ok t => pure t | .error _ => return []
   return (text.splitOn " ").filterMap (·.trimAscii.toString.toNat?)
 
-def alive (pid : Nat) : IO Bool := System.FilePath.pathExists s!"/proc/{pid}"
+/-- A process exists and has not ended (a zombie, not yet reaped by its new parent, counts as
+ended). -/
+def alive (pid : Nat) : IO Bool := do
+  match ← (IO.FS.readFile s!"/proc/{pid}/stat").toBaseIO with
+  | .error _ => return false
+  | .ok text =>
+    let some rest := (text.splitOn ")").getLast? | return false
+    return ((rest.splitOn " ").filter (· ≠ "")).head? != some "Z"
 
 def environHas (pid : Nat) (entry : String) : IO Bool := do
   match ← (IO.FS.readBinFile s!"/proc/{pid}/environ").toBaseIO with
