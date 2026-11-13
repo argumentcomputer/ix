@@ -617,6 +617,11 @@ def useRet := mem 378
 def useRetP := mem 388
 def useRetBody (r : Ref) : Term := .letE (.value .many) .val (app (.const r .val) [v 0] .val)
   (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
+-- Repair T: `twiceOnce (@once f : Nat → Nat) : Nat := callOnce f + callOnce f`; the control
+-- `twiceOnceP` has `f` plain
+def twiceOnce := mem 379
+def twiceOnceP := mem 389
+def twiceOnceBody : Term := add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf)
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -756,7 +761,13 @@ def findingCases : List LSpec.TestSeq := [
   runCase "the same, the parameter plain"
     [(retP, body [par .many .val arrowSk] (v 0) .shared .val arrowSk),
      (useRetP, body [par .many .val arrowSk] (useRetBody retP) .shared .leaf)]
-    useRetP oneFun none true [useRetP, retP]
+    useRetP oneFun none true [useRetP, retP],
+  runCase "a once parameter passed to two once parameters"
+    (onceDefs ++ [(twiceOnce, body [par .once .val arrowSk] twiceOnceBody .shared .leaf)])
+    twiceOnce oneFun (some .onceReentry) false [twiceOnce, callOnce],
+  runCase "the same, the parameter plain"
+    (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
+    twiceOnceP oneFun none true [twiceOnceP, callOnce]
 ]
 
 /-! ### Must-reject cases from records -/

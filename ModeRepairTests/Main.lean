@@ -899,6 +899,11 @@ def useRet := mem 378
 def useRetP := mem 388
 def useRetBody (r : Ref) : Term := .letE (.value .many) .val (app (.const r .val) [v 0] .val)
   (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
+-- Repair T: `twiceOnce (@once f : Nat → Nat) : Nat := callOnce f + callOnce f`; the control
+-- `twiceOnceP` has `f` plain
+def twiceOnce := mem 379
+def twiceOnceP := mem 389
+def twiceOnceBody : Term := add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf)
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1024,7 +1029,13 @@ def findingCases : List Case := [
   runCase "the same, the parameter plain"
     [(retP, body [par .many .val arrowSk] (v 0) .shared .val arrowSk),
      (useRetP, body [par .many .val arrowSk] (useRetBody retP) .shared .leaf)]
-    useRetP oneFun none true [useRetP, retP]
+    useRetP oneFun none true [useRetP, retP],
+  runCase "a once parameter passed to two once parameters"
+    (onceDefs ++ [(twiceOnce, body [par .once .val arrowSk] twiceOnceBody .shared .leaf)])
+    twiceOnce oneFun (some .onceReentry) false [twiceOnce, callOnce],
+  runCase "the same, the parameter plain"
+    (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
+    twiceOnceP oneFun none true [twiceOnceP, callOnce]
 ]
 
 -- END COPY
@@ -1783,7 +1794,7 @@ def routeExpect : Nat → Option String × OExp
   | 7 => (some "a case alternative's result", .vio .onceReentry)  -- repair R (accepted before)
   | 8 => (some "a once binding where it may be called again: the result", .vio .onceReentry)  -- repair S
   | 9 => (some "onceReentry", .stuck)                      -- E (callResult); no extern oracle
-  | _ => (none, .vio .onceReentry)                         -- OPEN: `.once` does not test `spent`
+  | _ => (some "a once binding passed on after it was called or passed on", .vio .onceReentry)  -- repair T
 
 def routeCases : List Case := ((List.range 10).map (· + 1)).flatMap fun i =>
   let inp := if isCaseRoute i then funAndE0 else oneFun
