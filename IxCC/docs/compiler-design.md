@@ -419,6 +419,7 @@ soon as it passes one of these fixed budgets
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
 | `Src.Hints.maxJsonDepth` | the nesting of a JSON text the verifier reads (a certificate, a sidecar), checked before parsing (`checkJsonText`). Known limit: a plain-RC certificate's ownership code nests one level per binding, action and join and two per `case`, below `Anf.maxDepth`, so a function whose canonical code nests past about 510 levels gets a certificate its own text path refuses (`cert.parse`), while `--rc on` and `auto` still compile it (the producer admits the certificate as a JSON value; [roadmap, "Hardening"](roadmap.md#hardening)) | 512 | 121 (`Natural.fibMain` under `--rc on`; the registered corpus's certificates under `--rc off`, `on` and `auto`, not `tests-corpus`'s survey) | 4.2× |
 | `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted), `fanOver` 1,049,600 (refused) | 545× |
+| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection; each is measured and open in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
 (172 measured, 2026-11-11), which also checks every walk against the visit
@@ -565,7 +566,7 @@ values are measured by `tests-corpus`, which fails if any reaches its cap.
 | frame slots | the function's register mentions plus 16, and 4,096 | the mentions plus 0 | `sizeOk`; the decoder (`maxAllocSlots`) |
 | frame layouts | one per function; cells 8-aligned, inside a frame of at most 2^20 bytes, in strictly increasing order (a single pass; it implies they are distinct) | exact | `Stacking.run`, `FrameLayout.check` |
 | block order | one group per layout group; each block at most once, in its group | exact | `Order.check`, one pass over the list |
-| plain-RC ownership code | decoded against the source's control tree, at most 4,096 deep; its captured work at most `Anf.maxCapturedWork`; accepted by the ownership checker (`Own.Plain.checkOwned`), any placement of `inc` and `dec` | exact | `Own.Plain.Certificate.admit` |
+| plain-RC ownership code | first, the program's parameter total (functions' and join points') at most `Anf.maxParamTotal`; decoded against the source's control tree, at most 4,096 deep; its captured work at most `Anf.maxCapturedWork`; accepted by the ownership checker (`Own.Plain.checkOwned`), any placement of `inc` and `dec` | exact | `Own.Plain.Certificate.admit` |
 | the whole certificate | 64 MiB of JSON nested at most 512 deep | | `checkJsonText` |
 
 Native `ixcc check-cert` on the allocation's two former outliers, in `tree 9`'s
@@ -854,11 +855,16 @@ carries the refusal): the zero-RC-format certificate on the immortal backend,
 rechecked by `Recheck.run`. `--rc auto` prints the policy it compiled under, and,
 for the immortal fallback, the refusal's stage, code and message
 (`immortal (plain RC refused: cert: own.plain: own.cert.budget: …)` names the
-measured captured work and the limit); `CompileClaim.produce`/`makeClaim` bind
+measured captured work and the limit, `own.cert.params: …` the parameter total and its limit);
+`CompileClaim.produce`/`makeClaim` bind
 the policy in the claim. `--rc on` has no fallback.
 
 On the plain-RC route, certificate admission (`Own.Plain.Certificate.admit`;
-`admitContract` with the contract-aware domain) first sums the work the
+`admitContract` with the contract-aware domain) first counts the program's
+parameters, of its functions and of the join points their bodies declare
+(`paramTotal`, a linear walk; parameters cost no Anf node, while the domain
+check and the checker walk each one), and refuses past `Anf.maxParamTotal`
+(`own.cert.params`) before it decodes the certificate; then sums the work the
 ownership code would make the checker do (`capturedWork`, a linear walk) and
 refuses past `Anf.maxCapturedWork` (`own.cert.budget`), then runs the
 ownership checker `Own.Plain.checkOwned` (`checkContractOwned`), which judges
@@ -866,15 +872,23 @@ any placement of `inc` and `dec` against the Fir body and refuses with its
 first reason (`own.cert.check: ownership proposal refused: <reason>`); the
 program gate `Cfg.Rc.checkProgram` runs the same checker
 ([data and roots, DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)).
+Both limits are arguments with these defaults, and acceptance is monotone in each
+(`admit_mono`, `admit_params_mono`).
 The source domain is unchanged: all numbered callees, lexical scopes, arities,
 ordinary shared contracts, scanned constructor fields and field-less resolved
 Boolean pins (`programDomain`, `checkBoolPins`); a proposal outside it is
 declined. The producer still writes the canonical placement
 (`Program.canonicalForSrc`); a liveness placement is the next landing. The
 zero-RC route does not admit an ownership certificate: `Recheck.runWithContracts`
-checks, after `Recheck.run`, that `checkContractPlainMap` accepts the canonical
-map of the zero-RC Fir program, a domain check that still compares with the
-canonical map and is not switched to the checker. The contract side of this
+checks, after `Recheck.run`, that the program is within `Anf.maxParamTotal`
+(`own.cert.params`) and then, with `Artifact.checkContractOwn`, that it is in the
+contract-aware source domain with sound Boolean pins (`contractProgramDomain`,
+`checkBoolPins`). That is `checkContractPlainMap` of the program's canonical map
+(`Artifact.checkContractOwn_iff`), whose comparison of the canonical map with
+itself always holds (`Own.Plain.checkContractPlainMap_canonical`), so the map,
+quadratic to build in a join's captured list, is no longer computed there.
+`CompileClaim.produce`'s zero-RC branch runs the same two checks before it writes a
+claim. The contract side of this
 code (`checkContractOwned`, Fir's contract list, `zeroRcBinder`'s linear and
 affine cases) is expected to be reworked when pull request #678 brings the
 owner's new annotation design (modes stored in records and read by position,
