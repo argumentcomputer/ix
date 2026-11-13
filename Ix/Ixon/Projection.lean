@@ -136,6 +136,6 @@ def checkBytes (hash : ByteArray → Address) (binding : Admission.Binding) (max
   let constants ← (Admission.decodeWithin limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct hash maxProjections constants).mapError .reconstruction
-  (Admission.checkConstantsAt hash binding expanded blobs hint).mapError .checker
+  (Admission.checkConstantsAt hash binding expanded blobs hint limits.fold).mapError .checker
 
 end Ixon.Projection

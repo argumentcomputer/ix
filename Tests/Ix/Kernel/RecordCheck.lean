@@ -261,14 +261,15 @@ def checks (count : Nat) : Except String Nat := do
   let oversized := rawRecord (ByteArray.mk (Array.replicate 65 0))
   let manyUniverses :=
     rawRecord (Ixon.serConstant { fixtureConstant (count + 2) with univs := Array.replicate 64 .zero })
-  for (label, tight, excessive) in [
-      ("bytes", { storeLimits with maxRecordBytes := 64 }, oversized),
-      ("universe nodes", { storeLimits with maxRecordUnivNodes := 8 }, manyUniverses)] do
+  for (label, tight, excessive, limit) in [
+      ("bytes", { storeLimits with maxRecordBytes := 64 }, oversized, ByteError.limit .recordBytes),
+      ("universe nodes", { storeLimits with maxRecordUnivNodes := 8 }, manyUniverses,
+        ByteError.limit .recordUnivNodes)] do
     need s!"the canonical records fit the tighter {label} bound"
       (_root_.Ix.RoleBinding.recordStore tight canonical).isOk
     let env := orphanEnv (input.push excessive)
-    refuses s!"an orphan over the per-record {label} bound" tight env
-      (.decode (addressPosition env excessive.1) excessive.1 (← decodeReason tight excessive.2))
+    -- declined by the limit (`ByteError.asLimit`), not rejected as malformed
+    refuses s!"an orphan over the per-record {label} bound" tight env limit
     cases := cases + 1
   -- phase precedence: the batch limits, then authentication (records, then blobs), then decoding
   let bad := orphanEnv #[malformed]

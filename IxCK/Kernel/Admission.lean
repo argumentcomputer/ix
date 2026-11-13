@@ -256,18 +256,20 @@ theorem checkConstantsWith_cfg (hash : ByteArray → Address) (t : Ix.Kernel.Rol
 def checkConstantsUsing (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
     (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) := do
   let pre ← (prelude t).mapError Error.prelude
-  checkConstantsWith hash t pre constants blobs hint
+  checkConstantsWith hash t pre constants blobs hint cfg
 
 /-- `checkConstantsWith` under a role table, behind the committed prelude read
 under it. -/
 def checkConstants (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) :=
-  checkConstantsUsing preludeFor hash t constants blobs hint
+  checkConstantsUsing preludeFor hash t constants blobs hint cfg
 
 /-- `checkConstants` under a role table's section: the table admitted
 (`admitBinding`: authentic under `hash`, canonical, well formed), then
@@ -275,10 +277,19 @@ def checkConstants (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (con
 (`Ixon.Projection`) ends in it. -/
 def checkConstantsAt (hash : ByteArray → Address) (binding : Binding)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) := do
   let t ← (admitBinding hash binding).mapError .binding
-  checkConstants hash t constants blobs hint
+  checkConstants hash t constants blobs hint cfg
+
+/-- The fold's settings change no verdict of `checkConstantsAt` (`checkConstantsWith_cfg`). -/
+theorem checkConstantsAt_cfg (hash : ByteArray → Address) (binding : Binding)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
+    checkConstantsAt hash binding constants blobs hint cfg = checkConstantsAt hash binding constants blobs hint := by
+  unfold checkConstantsAt checkConstants checkConstantsUsing
+  simp only [checkConstantsWith_cfg (cfg := cfg)]
 
 /-- The default role table's section, under the address the generator
 committed it at (`RoleData.tableAddress`, BLAKE3 of its bytes). For tests and

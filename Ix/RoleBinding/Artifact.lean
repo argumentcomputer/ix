@@ -207,11 +207,12 @@ theorem decodeRecordsPar_eq (limits : Limits) (records : Records) :
   simp only [decodeRecordsPar, decodeRecords, joinDecodes_spawnDecodes]
 
 /-- `Ix.Kernel.Admission.decodeWithin` with the decoding in parallel
-(`decodeRecordsPar`): the depth scan, the decoding, the expanded-depth check. -/
+(`decodeRecordsPar`): the depth scan, the decoding (its per-record limits as declines), the
+expanded-depth check. -/
 def decodeWithinPar (limits : Limits) (records : Records) :
     Except ByteError Ix.Kernel.Ingress.Constants := do
   Ix.Kernel.Admission.scanDepths limits records
-  let constants ← decodeRecordsPar limits records
+  let constants ← (decodeRecordsPar limits records).mapError Ix.Kernel.Admission.ByteError.asLimit
   Ix.Kernel.Admission.expandedDepths limits constants
   pure constants
 

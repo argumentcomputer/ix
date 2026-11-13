@@ -297,12 +297,12 @@ theorem decodeWithin_decodeRecords {limits : Limits} {records : Records}
   | error e => simp [hs, bind, Except.bind] at h
   | ok u =>
     cases hd : decodeRecords limits records with
-    | error e => simp [hs, hd, bind, Except.bind] at h
+    | error e => simp [hs, hd, bind, Except.bind, Except.mapError] at h
     | ok cs =>
       cases he : expandedDepths limits cs with
-      | error e => simp [hs, hd, he, bind, Except.bind] at h
+      | error e => simp [hs, hd, he, bind, Except.bind, Except.mapError] at h
       | ok v =>
-        simp only [hs, hd, he, bind, Except.bind, pure, Except.pure] at h
+        simp only [hs, hd, he, bind, Except.bind, pure, Except.pure, Except.mapError] at h
         rw [h]
 
 /-- A failing scan is the depth decline. -/
@@ -326,12 +326,26 @@ theorem expandedDepths_error {limits : Limits} :
     · exact expandedDepths_error h
     · cases h; rfl
 
-/-- **The depth limit only declines**: `decodeWithin` fails with
-`decodeRecords`'s error or with `.limit .depth`, which the entries report as
-a decline (`Ix.Kernel.Admission.Error.outcome`). -/
+/-- `asLimit` changes a decode error into a per-record limit's decline, or nothing. -/
+theorem ByteError.asLimit_cases (e : ByteError) :
+    e.asLimit = e ∨ e.asLimit = .limit .recordBytes ∨ e.asLimit = .limit .recordUnivNodes := by
+  cases e with
+  | decode p a r =>
+    unfold ByteError.asLimit
+    split
+    · exact .inr (.inl rfl)
+    · split
+      · exact .inr (.inr rfl)
+      · exact .inl rfl
+  | _ => exact .inl rfl
+
+/-- **The limits only decline**: `decodeWithin` fails with `.limit .depth`, or with
+`decodeRecords`'s error read by `ByteError.asLimit` (the error itself, or the decline of a
+per-record limit, `ByteError.asLimit_cases`); every `.limit` is a decline
+(`Ix.Kernel.Admission.Error.outcome`). -/
 theorem decodeWithin_error {limits : Limits} {records : Records} {e : ByteError}
     (h : decodeWithin limits records = .error e) :
-    e = .limit .depth ∨ decodeRecords limits records = .error e := by
+    e = .limit .depth ∨ ∃ e', decodeRecords limits records = .error e' ∧ e = e'.asLimit := by
   unfold decodeWithin at h
   cases hs : scanDepths limits records with
   | error e' =>
@@ -341,16 +355,16 @@ theorem decodeWithin_error {limits : Limits} {records : Records} {e : ByteError}
   | ok u =>
     cases hd : decodeRecords limits records with
     | error e' =>
-      simp only [hs, hd, bind, Except.bind] at h
+      simp only [hs, hd, bind, Except.bind, Except.mapError] at h
       cases h
-      exact .inr rfl
+      exact .inr ⟨e', rfl, rfl⟩
     | ok cs =>
       cases he : expandedDepths limits cs with
       | error e' =>
-        simp only [hs, hd, he, bind, Except.bind] at h
+        simp only [hs, hd, he, bind, Except.bind, Except.mapError] at h
         cases h
         exact .inl (expandedDepths_error he)
-      | ok v => simp [hs, hd, he, bind, Except.bind, pure, Except.pure] at h
+      | ok v => simp [hs, hd, he, bind, Except.bind, pure, Except.pure, Except.mapError] at h
 
 /-- **Within the depth limit**: the stored-nesting scan of `records` and the
 expanded-depth check of their reading `constants` pass. -/
@@ -373,15 +387,15 @@ theorem decodeWithin_ok_iff (limits : Limits) (records : Records) (constants : I
       | ok u => cases u; rfl
       | error e =>
         unfold decodeWithin at h
-        simp [hs, bind, Except.bind] at h
+        simp [hs, bind, Except.bind, Except.mapError] at h
     · cases he : expandedDepths limits constants with
       | ok u => cases u; rfl
       | error e =>
         unfold decodeWithin at h
-        cases hs : scanDepths limits records <;> simp [hs, hd, he, bind, Except.bind] at h
+        cases hs : scanDepths limits records <;> simp [hs, hd, he, bind, Except.bind, Except.mapError] at h
   · rintro ⟨hd, hw⟩
     obtain ⟨hs, he⟩ := hw
     unfold decodeWithin
-    simp [hs, hd, he, bind, Except.bind, pure, Except.pure]
+    simp [hs, hd, he, bind, Except.bind, pure, Except.pure, Except.mapError]
 
 end Ix.Kernel.Admission

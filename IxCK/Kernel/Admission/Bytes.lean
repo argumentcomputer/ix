@@ -37,14 +37,16 @@ are bounded across each record's entire universe table; the batch bound is
 therefore at most `maxRecords * maxRecordUnivNodes`. These are input/expansion
 limits, not heap or wall-clock bounds for the remaining readers or checker.
 
-The last three fields have defaults. `maxDepth` bounds how deep a record's
-expressions and universes nest, as stored (`scanDepth`, before decoding) and
-with their shares expanded (`expandedDepth`, after decoding), and sets the
-typing core's recursion fuel (`Limits.knotFuel`). `levelBudget` is reserved
-for the level comparison's work budget and is not read yet. `workers` bounds
-the tasks phase B runs on (`Cached.checkPendingTasks`): `none` is one task
-per 64 records, `some 0` the walk on the calling thread, `some w` at most `w`
-tasks; it cannot change a verdict (`Cached.checkDecls_workers`). A limit only
+A record over `maxRecordBytes`, or whose universe table expands past
+`maxRecordUnivNodes`, is declined (`.limit .recordBytes`, `.limit .recordUnivNodes`;
+`ByteError.asLimit`), as the batch limits are.
+
+The last two fields have defaults. `maxDepth` bounds how deep a record's
+expressions and universes nest, as stored (`scanDepths`, before decoding) and
+with their shares expanded (`expandedDepths`, after decoding). `workers`
+bounds the tasks phase B runs on (`Cached.checkPendingTasks`): `none` is one
+task per 64 records, `some 0` the walk on the calling thread, `some w` at most
+`w` tasks; it cannot change a verdict (`Cached.checkDecls_cfg`). A limit only
 turns an answer into a decline, so an input accepted under some limits is
 accepted under larger ones (`docs/kernel.md`, "Limits"). -/
 structure Limits where
@@ -54,7 +56,6 @@ structure Limits where
   maxRecordBytes : Nat
   maxRecordUnivNodes : Nat
   maxDepth : Nat := 16384
-  levelBudget : Nat := 65536
   workers : Option Nat := none
   deriving Repr
 
@@ -68,6 +69,10 @@ inductive Resource where
   | records
   | blobs
   | totalBytes
+  /-- A record's payload over `maxRecordBytes` (the decoder's byte budget). -/
+  | recordBytes
+  /-- A record's universe table expands past `maxRecordUnivNodes` nodes. -/
+  | recordUnivNodes
   /-- A record's expressions or universes nest deeper than `maxDepth`, as
   stored or with their shares expanded. -/
   | depth
@@ -172,6 +177,22 @@ preflight is part of `checkBytes`, not this independently useful operation. -/
 def decodeRecords (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
   decodeLoop limits 0 records []
 
+/-- The decoder's messages for the two per-record limits (`Ixon.Bounded.deConstant`,
+`Ixon.Bounded.getUnivFromTag`). -/
+def recordBytesExhausted : String := "getConstantBounded: byte budget exhausted"
+def univNodesExhausted : String := "getUnivBounded: expanded-node budget exhausted"
+
+/-- **The per-record limits as declines**: `decodeRecords` reports a record over
+`maxRecordBytes`, or a universe table that expands past `maxRecordUnivNodes`, as a decode error
+carrying the decoder's message; `asLimit` reads those two messages as the limits they are
+(`.limit .recordBytes`, `.limit .recordUnivNodes`) and leaves every other error as it is. -/
+def ByteError.asLimit : ByteError → ByteError
+  | .decode p a r =>
+    if r == recordBytesExhausted then .limit .recordBytes
+    else if r == univNodesExhausted then .limit .recordUnivNodes
+    else .decode p a r
+  | e => e
+
 /-- **The stored-nesting scan**: every record's expressions (shares as leaves)
 and universes within `limits.maxDepth` (`Depth.within`), read from the bytes
 before anything decodes them, so that the decoder's recursion is bounded. A
@@ -194,12 +215,13 @@ def expandedDepths (limits : Limits) : Ingress.Constants → Except ByteError Un
     else .error (.limit .depth)
 
 /-- **Decoding within the depth limit**: the stored-nesting scan, canonical
-decoding (`decodeRecords`), the expanded-depth check. The entries decode with
-it; its result is `decodeRecords`'s (`decodeWithin_decodeRecords`), and its
-only other failure is the decline `.limit .depth`. -/
+decoding (`decodeRecords`, its per-record limits reported as such: `ByteError.asLimit`), the
+expanded-depth check. The entries decode with
+it; its result is `decodeRecords`'s (`decodeWithin_decodeRecords`), and it fails where
+`decodeRecords` fails or with `.limit .depth` (`decodeWithin_error`). -/
 def decodeWithin (limits : Limits) (records : Records) : Except ByteError Ingress.Constants := do
   scanDepths limits records
-  let constants ← decodeRecords limits records
+  let constants ← (decodeRecords limits records).mapError ByteError.asLimit
   expandedDepths limits constants
   pure constants
 
