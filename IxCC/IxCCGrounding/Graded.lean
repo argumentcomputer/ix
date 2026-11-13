@@ -171,6 +171,15 @@ section Walk
 
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 
+/-- `GradedBy` passes to a copy with no binder between (a live `let`'s value's sites are read at
+its copy, `SubAt0`). -/
+theorem gradedBy_of_subAt0 {D : (BVarIdx → V) → KExpr → V → Prop} {ρ : BVarIdx → V} {v : KExpr} :
+    ∀ {e : KExpr}, SubAt0 v e → GradedBy D ρ e → GradedBy D ρ v
+  | _, .refl, h => h
+  | _, .appL hs, h => gradedBy_of_subAt0 hs (by simp only [GradedBy] at h; exact h.1)
+  | _, .appR hs, h => gradedBy_of_subAt0 hs (by simp only [GradedBy] at h; exact h.2.1)
+  | _, .proj hs, h => gradedBy_of_subAt0 hs (by simpa only [GradedBy] using h)
+
 /-- **A graded reading reaches every evaluated site** (no law): below a term whose reading is
 graded in every environment satisfying `Γ`, the application node of every site `evalSites` lists is
 graded in every environment satisfying the site's context (`GradedBy`'s λ clause is `CtxSat`'s cons
@@ -225,6 +234,21 @@ theorem graded_sites (M : Model V env) {φ : LevelParam → Nat} {ls : Levels} :
         simp only [GradedBy] at h1
         exact h1) s hs
     | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro Γ e hg s hs
+    simp only [evalSites, List.mem_append] at hs
+    rcases hs with hs | hs
+    · cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs
+        cases hsub : subAt0B v' e
+        · simp [hsub] at hs
+        · simp only [hsub, Bool.not_true, Bool.or_false] at hs
+          split at hs
+          · simp at hs
+          · exact ihv Γ v' (fun ρ hρ => gradedBy_of_subAt0 (subAt0_of_check hsub) (hg ρ hρ)) s hs
+    · exact ihb Γ e hg s hs
   | _ => intro Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 /-- `GradedBy` of a `∀`-telescope gives `GradedBy` of the `λ`-telescope over the same domains (the

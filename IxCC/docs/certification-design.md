@@ -675,23 +675,21 @@ entry is `caseFires_of_agree` (over `DefnValue`, `IotaLawG`, `CvalParams`). The 
 keep their text and their axiom sets; the internal statements that changed are listed in
 [`ci.md`](ci.md)'s change record.
 
-*Where a `let` goes.* The walk and `InstClosed` read `evalConsts`, which reads no `let`, so on a
-program whose run terms hold one the instance set is incomplete. No theorem uses that set there:
-`Runs.const` asks `Ok` exactly at `evalConsts`, and the check asks `TermCorr`, which has no `let`, of
-every term SrcEval runs (`valueCorr`, `eqnCorr`; `RecStored` at recursor rules), so such a program
-fails `groundCheck`, a hypothesis of `rootSound_678A_of_check`. The exclusion is that hypothesis,
-not `instCheckB` (which can be true there); `tests-grounding` shows it: a constructor at a
-disagreeing level bound by a `let` in `OS16-plain`'s root is not walked, and the check refuses the
-program at `valueCorr`. It stays so until `let` is in the fragment (step C), which must extend the
-walk with it.
+*Where a `let` goes.* The walk and `InstClosed` read `evalConsts`, which since step C reads a `let`'s
+value wherever the `let` is relevant, dead or not, and its body: a superset of what `Runs.const`
+asks `Ok` of (nothing is asked of a dead `let`'s value), so the walk and the verified closure read
+every position SrcEval evaluates, and stay fail-closed. Until step C the walk read no `let` and the
+exclusion was `groundCheck`'s `valueCorr`; `tests-grounding` now shows the other side: a constructor
+at a disagreeing level as the value of a dead `let` in `OS16-plain`'s root is accepted by every
+conjunct of the check and refused by `instCheckB`.
 
 *What the restriction refuses.* Not every kernel-typed program passes it, by reasoning (not tested
 on a real program): the kernel's typing makes a `case` and the constructor values that reach it
 agree on the family's levels, but uniformity asks every constructor instance of a family to agree
 with every `case` instance over it, so a well-typed program that uses `List` at two level
 instantiations in unrelated places is refused. What is established: on the corpus every closure
-passes it (50 of 50 that load; complete on the 34 the check accepts, whose run terms have no
-`let`), so the family holds on 34 of the 34 (`erase` and `OS16-plain` added); the kernel refuses to
+passes it (50 of 50 that load, the walk reading `let`s since step C), so the family holds on all
+the check accepts (34 of 34 before step C, `erase` and `OS16-plain` added; 37 of 37 since); the kernel refuses to
 type a constructor at a disagreeing level in every one of the 34 constructor instances tried at
 the corpus's 19 such `case` entries, and its ι never fires there; a level change planted in one
 value (reading and program alike) leaves the check true and makes `instCheckB` false. So the check
@@ -723,21 +721,175 @@ the fundamental lemma reads the body at the argument, which `Denotes.lam` gives 
 the λ's own domain, and a regime-0 product (`{pt}`-valued) carries no domain to supply it; the gap
 is closed on the head. Measured on the 34 accepted closures: `headRegimeResB` holds on all 34 (the
 only refused site is `OS02-plain`'s, where the kernel types the site in the graph regime). The
-syntactic reading is narrower than the direct route at 70 accepted sites (the head's type a `∀`
-only after δ, e.g. `DecidableEq Nat`; GR.md lists them by closure), which is why it is used at the
-refused sites only and the direct route keeps the rest. Not covered: recursor rule bodies'
+syntactic reading is narrower than the direct route at 322 accepted sites (as landed: constant
+heads only, the stored type as written, so a bound-variable head, a λ head, and a head whose type
+is a `∀` only after δ, e.g. `DecidableEq Nat`, are not read; the "70 sites" first reported were
+counted by a probe that also read a bound-variable head's context type as written), which is why
+it is used at the refused sites only and the direct route keeps the rest; 1b (below) reads all of
+them. Not covered: recursor rule bodies'
 sites (`RecSites`), which `graded` does not speak of (a rule is neither a stored type nor a value)
 and which stay with the check. In `tests-grounding`: `headRegimeResB` on the 34 by name;
 `OS02-plain`'s refused site accepted, refused once its head's binder datum is made a proposition,
 and refused once it reads a level parameter the constant does not have.
 
+**Every run-term site typed from `graded` (step 1b, since 2026-11-13).** `rootSound_678AG` and
+`rootSound_678AG_of_check` (`IxCCGrounding/GradedHead.lean`) conclude word for word what
+`rootSound_678A` does (pinned in the fence), over the same six fields as `rootSound_678G`, with the
+decided fact `HeadRegime` (`headRegimeSB`) for `HeadRegimeRes`, and **without the direct route at
+run-term sites**: `SitesOk` at every site SrcEval may evaluate in a run term comes from `graded` and
+`defn_value` (`sitesOk_of_headRegime`), not from `sitesOk_of_res`; they compose through
+`rootSound_678AS` (`rootSound_678A` with `SitesOk` for `SitesOkRes`). What types a site now: its
+function is a spine whose head is read (`SpineRead`) as a constant (its stored type at its levels),
+a bound variable (its context type; binder data are level-only, so no lifting), or a λ (its own
+datum, then, applied, its body's spine, the outer arguments lifted past it); a type is read
+(`TyRead`) one `∀` per argument and one more for the site. Where it is not a `∀`, an application of a
+stored definition **unfolds by δ** (`defn_value`) **and β** (its λs consumed; each argument lies in
+its λ's domain by `graded` at the type's own application nodes, a graph-regime λ having the domain of
+any product it lies in, `piR_dom_unique`: `beta_peel`), and an application of a type variable that
+stands for one of the site's arguments reads that argument the same way, at the site's assignment
+(the shape `(λ b. K motive m₁ m₂ b) x y`, with `K`'s type ending in `motive t`, eight sites of the
+corpus). Every datum read, each `∀`'s and each consumed λ's, is read through the chain of level
+instantiations down to the enclosing constant's parameters (`pwChain`) and must not hold, **at the
+constant's `Ok` profiles**: read at every profile, 2,124 of the 16,404 run-term sites of the 50
+loaded closures (765 of the accepted ones) would be refused, universe-polymorphic code read at
+`u = 0`, where the annotation classifies the constant as a proof or a type and SrcEval never runs it.
+**The decision is per maximal spine** (`headRegimeSB`): a site's data are a prefix of the longest
+site's on its spine (the reading is monotone, `spineRead_prefix`), every evaluated site lies on a
+listed spine at the same profiles (`spinesPs_cover`), and `headRegimeS_of_check` gives the per-site
+`HeadRegime`, so the decision is linear in the run terms times the `Ok` profiles. The per-site
+reading (`headRegimeGB`, with its own soundness `headRegime_of_check`) re-reads each site's head from
+the start, quadratic in a spine's length; it is kept as the reference the suite compares with
+(compiled, `tests-grounding`, one run: `fields254` 0.8 ms per spine against 11.3 ms per site,
+`tags125` 9.7 against 13.2). Both decisions read the enclosing constant's level parameters once per
+constant (`headRegimeSB1`, `headRegimeGB1`): read once per datum checked, as first written, an `lpsOf`
+that searches the reading (the suite's does, `Env.find?` over 3,545 to 4,645 constants on the
+`for`-loop, `strings` and `diag` closures) dominated the check, which is what made it 2 to 6.5 times
+the direct route's cost on the closures with `let`s (not the `let`s: `sum-loop` 82 ms, 74.5 of them in
+831 datum checks; 21.7 ms once hoisted, of which 14.6 the one `lpsOf` per constant and most of the rest
+`runPairsB`; the spines, readings and checks themselves about 1 ms). Measured before proving (GR16's
+probes, with the kernel as oracle): the reading decides 16,392 of the 16,404 sites, every site of
+the 34 then accepted; at each of the 447 sites it decides and 1a or the direct route does not, the
+kernel's typing core infers the function's type, reduces it to a `∀` whose domain is the argument's
+type, and the datum does not hold there. **At the sites under a `let`** (after step C; `GR-3n-p1`):
+of the site-profile instances at the `Ok` profiles that 1a's reading as written refuses there
+(`natural` 74, `scalar` 12, `phase2-closures/closures` 6, `prime-count` 2, `panic` 2, `strings` 2,
+`diag` 30), 1b refuses none but 4 of `diag`'s (projection heads), and the kernel types the site in the
+graph regime at all 124 others. So the family without a typing hypothesis holds on all 37 closures
+the check accepts (`natural` included, where `headRegimeResB` is false). In `tests-grounding`:
+`headRegimeSB` true on the 37 by name and false on exactly `phase2-closures/closures` and `diag` (both
+refused by the check), equal to `headRegimeGB` on all 50 and on every planted control; on `natural`,
+`headRegimeResB` false and `headRegimeSB` true; the 436 sites of the 37 (322 of the 34 accepted
+before step C) that 1a's reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s
+direct-refused site decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
+first `∀` datum made a proposition, its unfolding made endless, its first λ datum made a proposition:
+75, on the 25 closures with a δ site; a constant with a bound-variable head, its λ domains' `∀` data
+made propositions: 32). *Completeness limits* (each refused, fail closed): a type headed by a bound
+variable that stands for no argument of the site; a definition applied to more arguments than its
+value has λs (the 10 sites of `phase2-closures/closures`, which the kernel types); projection heads
+(2 in `diag`); a β-redex inside a type; more than `headFuel` (16) δ, bound-variable and λ steps on a
+spine; a constant with more than `maxDirectParams` (8) level parameters. *Not covered*: recursor
+rule bodies' sites (`RecSites`, inside the check's `recShape` conjunct, which every root theorem
+consumes) stay with the direct route, as do the five-field families; `Direct/*` stays in the tree
+for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwAt`, `okProfiles`,
+`runPairsB`, `maxDirectParams`).
+
 | Theorems | #678's fields they assume |
 | --- | --- |
 | `rootSound_678`, `fibRoot_678`, `decideRoot_678`, `allP_of_check_678`, `const_of_check_678`, `rootSound_678A`, `rootSound_678A_of_check` | five (`Laws678`: `defn_value`, `iota_rule`, `proj_law`, `lit_ops`, `cval_params`), and `SitesOkRes` as a hypothesis (discharged by the direct route where it refuses nothing) |
-| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis |
+| `rootSound_678AS` | five (`Laws678`), and `SitesOk` (every run-term site) as a hypothesis |
+| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
+| `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
+
+**A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
+annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
+`IxCK/Kernel/Denotes.lean`, has no `letE` rule; #678's says so at `d4c079de2`,
+`IxC/Kernel/Denotes.lean:635`: a stored term has no `let`). So a `let` in a Src run term corresponds
+to the stored term through a substitution `σ` from Src variables to kernel terms (`TermCorrS`,
+`IxCCGrounding/Syntax.lean`; decided by `corrSB`, which `valueCorr` and `eqnCorr` now evaluate at
+`σ = []` in place of `termCorrB`): a λ-bound variable stands for its kernel variable; a **live**
+`let`'s variable for its value's copy `v'` (the kernel term the variable first meets in the stored
+term, `zcopy`), which must occur in the stored term with no binder between (through applications
+and projections, `SubAt0`), the value corresponding to `v'` and the body to the stored term with
+the variable standing for `v'`; a **dead** `let`'s variable (one that meets no kernel term) stands
+for nothing (`none`). `Runs` and the environment relation carry `σ` (`RelEnv φ ρ σ ρk`: a slot whose
+variable stands for `e` is related to `e`'s denotation, a dead `let`'s slot to nothing), and the
+fundamental lemma has three `let` cases: relevant (the value runs against its copy, which denotes
+because the stored term does and no binder is between), irrelevant (SrcEval binds `irr`, related to
+the copy's denotation), and dead. **Why a dead `let` costs nothing**: adequacy speaks only of
+returned values. A dead `let`'s value is never run by the proof and nothing is asked of it (no
+correspondence, no site, no denotation): if SrcEval's evaluation of it is stuck or diverges, the run
+returns nothing and there is nothing to prove; if it returns, the value is bound to a slot that no
+variable of the stored term reads. On the corpus all 7 dead `let`s are irrelevant, so SrcEval binds
+the placeholder and evaluates none of them (correcting an earlier note that said SrcEval evaluates
+them). The instance walk is not relaxed by this: `evalConsts` (and so `instWalk`, `InstClosed`,
+`instCheckB`, `okClosedB`) reads a `let`'s value wherever the `let` is relevant, dead or not, so the
+restriction stays fail-closed. The landed root theorems keep their text and axiom sets (the fence
+re-asserts them); their meaning widens only for programs with `let`s, through `groundCheck`,
+`evalSites` and `evalConsts`, and `corrSB_of_termCorrB` proves that a let-free closed run term the
+old correspondence accepted is still accepted. **Refused**: a *deep* `let`, whose variable meets
+its copy only under a binder (there the copy denotes only for members of the binder's domain, which
+may be empty), and string literals (step S). What that costs on the corpus: of the 67 constants the
+let-free correspondence refused, `corrSB []` accepts 61; 3 are string literals (`strings` c262,
+`panic` c363, c322; numbered at today's loads) and 3 hold a deep `let` (`arity` c597, `closures` c272 and c19), of two shapes:
+the closure a function returns (`λx. let y := …x…; λz. …y…z`: c597, c272) and the minor premises of
+a `match` (`let r := f n; match … with | … => …r…`: c19). `arity` is refused at `valueCorr` by c597,
+which one of its 25 roots reaches; `closures` is also refused for other reasons. **The direct route
+is not extended through a `let`**: it refuses every site `evalSites` lists under one
+(`termRefused`'s `let` case, `evalSitesP`; 405 of the 1,103 sites of `panic`'s `withPanic`), so for a program with
+`let`s those sites are in `SitesOkRes`, a hypothesis of the families that take it, or must be
+accepted by `headRegimeResB` in 1a's family without a typing hypothesis (`rootSound_678G`). That
+family has a gap, which 1b's (`rootSound_678AG`, above) closes: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
+5,437 site-profile instances (`natural` 74, `scalar` 12, `closures` 6, `prime-count` 2, `panic` 2;
+measured before step C, `GR-3k-oA`), each one with a constant head whose stored type is a `∀` only
+after unfolding a definition (the `DecidableEq Bool` instance among them); 1b (a head's type read
+through δ and β) decides all 96 after the merge, the kernel typing each in the graph regime. So with step C alone `fields254` and `machines` pass every family;
+`natural` passes `groundCheck` and the families that take `SitesOkRes` as a hypothesis, and not
+`rootSound_678G_of_check`; with 1b it passes `rootSound_678AG_of_check`. `groundCheck` accepts 37 of the 50 closures (`fields254`,
+`machines`, `natural` added); per closure, see **The corpus after step C** below. In
+`tests-grounding`: the 61 constants by closure, and the 6 refused by name with the reason; the
+false conjuncts of the eleven closures still refused that hold them; the three newly accepted
+closures among the accepted ones (`noCanonB`, `noCanonAB`, `instCheckB`, `litDefsB` true;
+`headRegimeResB` true on 36 of the 37, false on `natural`); on `fib`'s root, a live `let` around
+its value and a dead one before it accepted (SrcEval still reads back `55`), the live one's value
+not its copy refused at `valueCorr` alone, a `let` used only under a λ refused at `valueCorr` alone
+(deep); on `OS16-plain`, a constructor at a disagreeing level as a dead `let`'s value accepted by
+every conjunct of the check and refused by `instCheckB`.
+
+**The corpus after step C** (`GR-3m-cA2`, `cB2`, at the merge of `a387aa3b8`: the library's own
+check, `instWalk`/`instCheckB`, `noCanonB`, `noCanonAB`, `litDefsB`, `headRegimeResB` and
+`sitesDirectB` on each of the 50 closures that load, all non-declined roots at once). The 14 that
+hold a `let` in a run term of their checked set; "678" is `groundCheck ∧ noCanonB ∧ litDefsB`,
+"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis), "678AG" adds 1b's
+`headRegimeSB` instead (no typing hypothesis, every run-term site typed from `graded`); "sites" are those
+the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'s 16), which are
+`SitesOkRes` for the Laws, 678 and 678A families:
+
+| Closure | `corrSB []` (of the constants the let-free check refused) | False conjuncts | Families | `headRegimeResB` refused instances (sites) |
+| --- | --- | --- | --- | --- |
+| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G, 678AG | 0 (13) |
+| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G, 678AG | 0 (724) |
+| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A, 678AG | 74 (1,191) |
+| bench-k1/sum-loop | 3 of 3 | `eqnShape` | — | 0 (95) |
+| bench-k1/collatz | 3 of 3 | `eqnShape` | — | 0 (96) |
+| bench-k1/prime-count | 3 of 3 | `eqnShape` | — | 2 (129) |
+| phase1-scalar/scalar | 12 of 12 | `eqnShape` | — | 12 (1,260) |
+| phase1-decline/loops | 4 of 4 | `eqnShape` | — | 0 (213) |
+| phase1-resource/resource | 4 of 4 | `caseRec`, `eqnShape`, `caseShape` | — | 0 (214) |
+| phase1-decline/strings | 7 of 8 (c262: a string literal) | `noWord`, `caseRec`, `proj`, `valueCorr`, `caseShape`, `caseProg` | — | 10 (388) |
+| phase1-decline/panic | 2 of 4 (c363, c322: string literals) | `noWord`, `proj`, `valueCorr` | — | 2 (405) |
+| phase2-closures/closures | 4 of 6 (c272, c19: deep `let`s) | `caseRec`, `eqnCorr`, `valueCorr`, `caseShape` | — | 6 (201) |
+| phase2-arity/arity | 0 of 1 (c597: a deep `let`) | `valueCorr` | — | 0 (8) |
+| src-diag/diag | 11 of 11 | `declOk`, `recShape`, `notOpaque`, `proj`, `caseShape`, `caseProg` | — | 38 (588) |
+
+The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
+`OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
+Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
+out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
+`diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 238 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 285 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -1407,7 +1559,9 @@ member is its constructor's image, from which that follows). This shape is how
 Lean compiles structural recursion, so it is not a corner of one closure: it
 will meet the widening as soon as recursors enter the checked set.
 
-**What the fragment does not yet cover.** `groundCheck` is false on 16 of the 50
+**What the fragment does not yet cover.** `groundCheck` is false on 13 of the 50
+closures that load since step C (2026-11-13, `GR-3m-cA2`, `cB2`: `fields254`, `machines` and
+`natural` added); before it, on 16 of the 50
 closures that load (measured after ingress was changed to read only the records
 its seeds reach, 2026-11-12, `GR-3g-cA2`, `cB2`; the same 16 on the reading
 before that change, `GR-3g-cA`, `cB`, where `fields49` stood for `fields254`;
@@ -1419,12 +1573,15 @@ before part D admitted the field-less ones, which made `strictAndOr` and
 renaming-tolerant `case` shape: `erase` and `OS16-plain` passed then); the gaps,
 ordered by how many closures each blocks (a closure can have several):
 
-1. *A `let` in a run term, or a string literal* (`valueCorr`, `eqnCorr`,
-   `eqnShape`), 14 closures: the body of every `for` loop
-   (`Std.Legacy.Range.forIn'.loop`), values such as `Scalar.powMod`'s, and the
-   string literals of `strings` and `panic`; these are the only false conjuncts
-   on nine (`sum-loop`, `collatz`, `prime-count`, `scalar`, `loops`,
-   `fields254`, `machines`, `natural`, `arity`).
+1. *An `eqn` entry whose function has an `autoParam` binder its equation theorem
+   does not* (`eqnShape`, step Ap), 6 closures: every `for` loop
+   (`Std.Legacy.Range.forIn'.loop`); the only false conjunct on five (`sum-loop`,
+   `collatz`, `prime-count`, `scalar`, `loops`). Before step C a `let` in a run
+   term (`valueCorr`, `eqnCorr`) was refused too, in 14 closures (the `for` loops'
+   bodies, values such as `Scalar.powMod`'s); since, a *deep* `let` or a *string
+   literal* is (`valueCorr`, `eqnCorr`), 4 closures: the deep `let`s of `arity`
+   (its only false conjunct) and `closures`, the string literals of `strings` and
+   `panic`.
 2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
    renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
    that can be propositions or are indexed; no longer the `casesOn` of a
@@ -1482,7 +1639,8 @@ gives.
   still refuses 21 sites in three closures) and the laws,
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
-- the fragment: `let`, recursors fired directly outside the admitted classes
+- the fragment: deep `let`s (a `let` whose variable meets its copy only under a binder; step C
+  admits the others), recursors fired directly outside the admitted classes
   (today all but `False.rec`'s, `Eq.rec`'s, the field-less ones without
   parameters, `Bool.rec`'s, and the other ones without parameters whose rule
   bodies name no constant, `T16.rec`'s: so no recursion, no parameters), `Quot`, `csimp`, strings, and `case` constants
