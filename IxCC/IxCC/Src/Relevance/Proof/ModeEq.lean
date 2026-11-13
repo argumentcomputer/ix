@@ -1010,9 +1010,6 @@ theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
   simp only [redirectsErased?, elimShape?_eq hme, erasedMinors_eq hme, short_eq hme]
   res_me p₀ p hme c <;> rfl
 
-theorem forwardsErased?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
-    forwardsErased? p₀ r = forwardsErased? p r := sorry
-
 /-! ### The rest of the classifier -/
 
 theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
@@ -1259,183 +1256,83 @@ theorem check_reached {q : Program} {ann : Ann} {ch : Checked} (h : check q ann 
     dsimp only
     split <;> simp_all
 
-/-! ## `checkCanonical` -/
+/-! ## `Canonical`, field by field -/
 
-namespace CC
+theorem decl?_back (hme : Program.ModeEq p₀ p) {c : CId} {d : Decl} (h : p.decl? c = some d) :
+    ∃ d₀, p₀.decl? c = some d₀ ∧ d₀.type = d.type ∧ DeclME (some d₀) (some d) := by
+  have hd := decl?_me hme c
+  rw [h] at hd
+  generalize p₀.decl? c = o at hd ⊢
+  cases hd with
+  | same d => exact ⟨d, rfl, rfl, .same d⟩
+  | defn k s l ty hv => exact ⟨_, rfl, rfl, .defn k s l ty hv⟩
+  | recr sf kk l np nmot nmin ni ind ty hr => exact ⟨_, rfl, rfl, .recr sf kk l np nmot nmin ni ind ty hr⟩
 
-/-! `checkCanonical`'s clauses, copied (`checkCanonical_split` checks the copies by `rfl`). -/
+theorem ctor_back (hme : Program.ModeEq p₀ p) {c : CId} {sf : Bool} {lv : Nat} {ind : CId}
+    {j np nf : Nat} {ty : Term} (h : p.decl? c = some (.ctor sf lv ind j np nf ty)) :
+    p₀.decl? c = some (.ctor sf lv ind j np nf ty) := by
+  obtain ⟨d₀, h₀, -, hd⟩ := decl?_back hme h
+  cases hd
+  exact h₀
 
-def okConsts (p : Program) (ann : Ann) : Bool :=
-  ann.consts.toList.all fun (c, cr) =>
-    match p.decl? c with
-    | some d =>
-      let (ps, res) := classifyTelescope p [] (d.type.piCount + 1) d.type
-      let okPrim := match p.table.resolveOf c with
-        | some (.prim op) => cr.result == .rel && cr.params == List.replicate op.arity .rel
-        | some (.word _ op _) => cr.result == .rel && cr.params == List.replicate op.arity .rel
-        | _ => true
-      okPrim &&
-      cr.params.length == ps.length &&
-      (cr.params.zip ps).all (fun (actual, (b, exp)) =>
-        tagOk b exp false actual) &&
-      (match res with | some e => cr.result == e | none => cr.result == .rel)
-    | none => false
+theorem resolve_back (hme : Program.ModeEq p₀ p) {c : CId} {r : Resolve} (h : p.table.resolveOf c = some r)
+    (hr : ∀ thm b, r ≠ .eqn thm b) : p₀.table.resolveOf c = some r := by
+  have hm := hme.resolve c
+  rw [h] at hm
+  generalize p₀.table.resolveOf c = o at hm ⊢
+  cases hm with
+  | refl => rfl
+  | eqn thm hb => exact absurd rfl (hr thm _)
 
-def okCtors (p : Program) (ann : Ann) : Bool :=
-  ann.ctors.toList.all fun (c, kr) =>
-    match p.decl? c with
-    | some (.ctor _ _ _ _ np nf ty) =>
-      let (ps, _) := classifyTelescope p [] (ty.piCount + 1) ty
-      let flds := ps.drop np
-      let okWithConst := match ann.constRel? c with
-        | some cr => (cr.params.drop np).map FieldClass.ofRel == kr.fields
-        | none => true
-      okWithConst &&
-      kr.fields.length == nf &&
-      flds.length == nf &&
-      (kr.fields.zip flds).all (fun (actual, (b, exp)) =>
-        actual != .proof .never &&
-          if b.contract.uses == .erased then actual.alwaysDropped
-          else match exp with | some e => actual == FieldClass.ofRel e | none => actual == .keep)
-    | _ => false
+/-- **`Canonical` transports along `Program.ModeEq`.** (`checkCanonical` itself does not: its `dense`
+clause reads the maps' `toList`, which `Program.ModeEq` does not constrain.) -/
+theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked}
+    (h : Canonical p₀ ann ch) : Canonical p ann ch := by
+  have hme' := Program.ModeEq.symm' hme
+  refine ⟨?consts, ?ctors, ?bodies, ?csimp, ?reads, ?forwards, ?redirects, h.reachedRecord, ?tags,
+    ?dense, ?rules, ?univs, ?ctorRecords, ?subsingletonFields, ?finProof, ?minorsRead⟩
+  case dense =>
+    intro c hc
+    obtain ⟨h1, h2⟩ := h.dense c (by rw [hme.size]; exact hc)
+    refine ⟨?_, ?_⟩
+    · have he := hme.entry c
+      rw [h1] at he
+      cases hq : p.entry? c with
+      | none => rfl
+      | some _ => rw [hq] at he; exact he.elim
+    · have hr := hme.resolve c
+      rw [h2] at hr
+      generalize p.table.resolveOf c = r at hr ⊢
+      cases hr
+      rfl
+  case ctorRecords =>
+    intro c hc sf lv ind j np nf ty hd
+    exact h.ctorRecords c hc sf lv ind j np nf ty (ctor_back hme hd)
+  case minorsRead =>
+    intro inst hi cr hcr pos r hap hr
+    exact h.minorsRead inst hi cr hcr pos r (by rw [appliedAt_eq hme]; exact hap) hr
+  case csimp =>
+    intro c hc cr d g us thm hcr hd hres
+    obtain ⟨d₀, hd₀, hty, -⟩ := decl?_back hme hd
+    rw [← hty]
+    exact h.csimp c hc cr d₀ g us thm hcr hd₀ (resolve_back hme hres fun _ _ he => by cases he)
+  case redirects =>
+    intro c hc g us thm hres shape hs
+    rw [← erasedMinors_eq hme]
+    exact h.redirects c hc g us thm (resolve_back hme hres fun _ _ he => by cases he) shape
+      (by rw [elimShape?_eq hme]; exact hs)
+  case finProof =>
+    intro c hc w op thm hres fin hfin
+    obtain ⟨⟨sf, lv, ind, cidx, np, ty, hd⟩, hk⟩ :=
+      h.finProof c hc w op thm (resolve_back hme hres fun _ _ he => by cases he) fin
+        (by rw [hme.known]; exact hfin)
+    exact ⟨⟨sf, lv, ind, cidx, np, ty, ctor_back hme' hd⟩, hk⟩
+  case reads =>
+    intro c hc hh d hsh hd i hi
+    obtain ⟨d₀, hd₀, hty, -⟩ := decl?_back hme hd
+    rw [← readsAt_eq hme]
+    exact h.reads c hc hh d₀ (by rw [specialHead?_eq hme]; exact hsh) hd₀ i (by rw [hty]; exact hi)
+  all_goals sorry
 
-def headerErrs (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
-  ch.reached.flatMap fun c =>
-    match ann.constRel? c, p.decl? c with
-    | some cr, some d =>
-      let redirect := match p.table.resolveOf c with
-        | some (.csimp g us _) =>
-          (headerAgreement d.type (.const g us) cr.params s!"the csimp redirect to {p.short g}").toList.map
-            fun msg => RelError.of "S1" msg (some c)
-        | _ => []
-      redirect ++ (runBodies p c).filterMap fun (key, t) =>
-        (headerAgreement d.type t cr.params).map fun msg => RelError.of "S1" msg none (some key)
-    | _, _ => []
-
-def readErrs (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    (readsErased? p ann c).map fun msg => RelError.of "S1" msg (some c)
-
-def forwardErrs (p : Program) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    (forwardsErased? p c).map fun msg => RelError.of "S1" msg (some c)
-
-def redirectErrs (p : Program) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    (redirectsErased? p c).map fun msg => RelError.of "C3" msg (some c)
-
-def okReached (p : Program) (ann : Ann) (ch : Checked) : Bool :=
-  ch.reached.all fun c =>
-    match ann.constRel? c with
-    | none => false
-    | some _ =>
-      let ruleTerms : List Term :=
-        match p.decl? c with
-        | some (.recr _ _ _ _ _ _ _ _ rules _) => rules.map (·.rhs)
-        | _ => []
-      ((runBodies p c).all fun (_, t) => checkTermBinders p ann [] t []) &&
-      (ruleTerms.all fun t => checkTermBinders p ann [] t [])
-
-def denseErrs (p : Program) : List RelError :=
-  if p.consts.toList.all (·.1 < p.size) && p.table.resolve.toList.all (·.1 < p.size) then []
-  else [RelError.of "S1" "a constant or table entry at or above the program's size: the \
-    closure walk skips it, and SrcEval would run it unchecked"]
-
-def ruleErrs (p : Program) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    match elimShape? p c with
-    | some shape => (rulesShape? p shape.recr).map fun msg => RelError.of "S1" msg (some shape.recr)
-    | none => none
-
-def univErrs (p : Program) (ch : Checked) : List RelError := ch.reached.flatMap (univsErrs p)
-
-def recordErrs (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    match p.decl? c, ann.ctorRel? c with
-    | some (.ctor ..), none =>
-      some (RelError.of "S1" "a reached constructor without a constructor record" (some c))
-    | _, _ => none
-
-def srcsErrs (p : Program) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    match elimShape? p c with
-    | some shape =>
-      (subsingletonSrcs? p shape.recr).map fun msg => RelError.of "S1" msg (some shape.recr)
-    | none => none
-
-def finErrs (p : Program) (ch : Checked) : List RelError :=
-  ch.reached.filterMap fun c =>
-    match p.table.resolveOf c, p.known.finMk with
-    | some (.word ..), some fin =>
-      if !Check.Canonical.ctorFieldsIs p fin 2 then
-        some (RelError.of "S1" "a word operation builds Fin.mk's value with two fields, but the \
-          pinned Fin.mk is not a constructor of two fields" (some fin))
-      else if ch.keepsP fin [] 1 then
-        some (RelError.of "S1" "a word operation builds its tower with `irr` as Fin.mk's proof \
-          field, which the pinned Fin.mk's record keeps at the empty profile" (some fin))
-      else none
-    | _, _ => none
-
-def appliedErrs (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
-  ch.instances.filterMap fun (c, q) =>
-    match ann.constRel? c with
-    | some cr =>
-      (cr.params.zipIdx.find? fun (r, pos) => appliedAt p c pos && r.irrP q).map fun (r, pos) =>
-        RelError.of "S1" s!"argument {pos} is forced and applied (a case key's minor, Quot.lift's \
-          function), but its class ({relName r}) is irrelevant at a reached instance" (some c)
-    | none => none
-
-end CC
-
-theorem checkCanonical_split (q : Program) (ann : Ann) (ch : Checked) :
-    checkCanonical q ann ch =
-      CC.readErrs q ann ch ++ CC.forwardErrs q ch ++ CC.redirectErrs q ch ++ CC.headerErrs q ann ch ++
-        CC.denseErrs q ++ CC.ruleErrs q ch ++ CC.univErrs q ch ++ CC.recordErrs q ann ch ++
-        CC.srcsErrs q ch ++ CC.finErrs q ch ++ CC.appliedErrs q ann ch ++
-        if CC.okConsts q ann && CC.okCtors q ann && CC.okReached q ann ch then []
-        else [RelError.of "S1" "non-canonical relevance annotation"] := rfl
-
-section clauses
-
-variable (hme : Program.ModeEq p₀ p) (ann : Ann) (ch : Checked)
-include hme
-
-theorem CC.readErrs_eq : CC.readErrs p₀ ann ch = CC.readErrs p ann ch := by
-  simp only [CC.readErrs, readsErased?_eq hme]
-theorem CC.forwardErrs_eq : CC.forwardErrs p₀ ch = CC.forwardErrs p ch := by
-  simp only [CC.forwardErrs, forwardsErased?_eq hme]
-theorem CC.redirectErrs_eq : CC.redirectErrs p₀ ch = CC.redirectErrs p ch := by
-  simp only [CC.redirectErrs, redirectsErased?_eq hme]
-theorem CC.headerErrs_eq : CC.headerErrs p₀ ann ch = CC.headerErrs p ann ch := sorry
-theorem CC.denseErrs_eq : CC.denseErrs p₀ = CC.denseErrs p := sorry
-theorem CC.ruleErrs_eq : CC.ruleErrs p₀ ch = CC.ruleErrs p ch := by
-  simp only [CC.ruleErrs, elimShape?_eq hme, rulesShape?_eq hme]
-theorem CC.univErrs_eq : CC.univErrs p₀ ch = CC.univErrs p ch := by
-  simp only [CC.univErrs]
-  rw [show univsErrs p₀ = univsErrs p from funext (univsErrs_eq hme)]
-theorem CC.recordErrs_eq : CC.recordErrs p₀ ann ch = CC.recordErrs p ann ch := sorry
-theorem CC.srcsErrs_eq : CC.srcsErrs p₀ ch = CC.srcsErrs p ch := by
-  simp only [CC.srcsErrs, elimShape?_eq hme, subsingletonSrcs?_eq hme]
-theorem CC.finErrs_eq : CC.finErrs p₀ ch = CC.finErrs p ch := by
-  simp only [CC.finErrs]
-  congr 1; funext c
-  rcases resolveOf_cases hme c with h | ⟨thm, b, b', h₀, h, -⟩
-  · rw [h, hme.known]; simp only [ctorFieldsIs_eq hme]
-  · rw [h₀, h, hme.known]
-theorem CC.appliedErrs_eq : CC.appliedErrs p₀ ann ch = CC.appliedErrs p ann ch := by
-  simp only [CC.appliedErrs, appliedAt_eq hme]
-theorem CC.okConsts_eq : CC.okConsts p₀ ann = CC.okConsts p ann := sorry
-theorem CC.okCtors_eq : CC.okCtors p₀ ann = CC.okCtors p ann := sorry
-theorem CC.okReached_eq : CC.okReached p₀ ann ch = CC.okReached p ann ch := sorry
-
-end clauses
-
-/-- **`checkCanonical` does not read modes.** -/
-theorem checkCanonical_modeEq (hme : Program.ModeEq p₀ p) (ann : Ann) (ch : Checked) :
-    checkCanonical p₀ ann ch = checkCanonical p ann ch := by
-  rw [checkCanonical_split, checkCanonical_split, CC.readErrs_eq hme, CC.forwardErrs_eq hme,
-    CC.redirectErrs_eq hme, CC.headerErrs_eq hme, CC.denseErrs_eq hme, CC.ruleErrs_eq hme,
-    CC.univErrs_eq hme, CC.recordErrs_eq hme, CC.srcsErrs_eq hme, CC.finErrs_eq hme, CC.appliedErrs_eq hme,
-    CC.okConsts_eq hme, CC.okCtors_eq hme, CC.okReached_eq hme]
 
 end IxCC.Src.Relevance.Proof.ModeEq
