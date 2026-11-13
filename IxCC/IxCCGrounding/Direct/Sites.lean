@@ -89,7 +89,27 @@ theorem evalSites_mem_P (ls : Levels) :
             simp only [hne, Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
             exact ihv _ Γ v' hP' s hs
         · simp [hr] at hs
-    · exact Or.inr (ihb P Γ e hP s hs)
+    · rcases hs with hs | hs
+      · -- the closure-capture shape (step C): the value's sites in the λ's context
+        right; left
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs ⊢
+          cases hr : r.irrAt ls
+          · simp only [hr, Bool.false_eq_true, ↓reduceIte] at hs
+            have hP' : IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) := by
+              rw [irrAt_profile] at hr
+              simp [hP, hr]
+            have hne : (P.filter (fun prof => !r.irrP prof)).isEmpty = false := by
+              cases hq : P.filter (fun prof => !r.irrP prof) with
+              | nil => rw [hq] at hP'; simp at hP'
+              | cons _ _ => rfl
+            simp only [hne, Bool.false_eq_true, ↓reduceIte]
+            exact ihv _ (A :: Γ) cp hP' s hs
+          · simp [hr] at hs
+      · exact Or.inr (Or.inr (ihb P Γ e hP s hs))
   | _ => intro P Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 section Sem
@@ -295,7 +315,17 @@ theorem evalSites_sub_allSites (ls : Levels) :
         split at hs
         · simp at hs
         · exact ihv Γ v' s hs
-    · exact Or.inr (ihb Γ e s hs)
+    · rcases hs with hs | hs
+      · right; left
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs ⊢
+          split at hs
+          · simp at hs
+          · exact ihv (A :: Γ) cp s hs
+      · exact Or.inr (Or.inr (ihb Γ e s hs))
   | _ => intro Γ e s hs; simp [evalSites] at hs
 
 /-- **A run pair is one the check enumerates**, on a closure the check passes. -/

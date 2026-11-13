@@ -33,9 +33,10 @@ Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 51: `selEnv` rety
 to true), nothing on the other 45; on each of the six, three planted controls are refused by
 `eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
 proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
-(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 43: the 37 the check
-accepts and the six (`resource` since step E0, which admits its `Empty.casesOn` entry, of kind
-`empty`: `IxCCTests.Grounding.CaseEmpty`).
+(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 44: the 37 the check
+accepted when step Ap landed, the six (`resource` since step E0, which admits its `Empty.casesOn`
+entry, of kind `empty`: `IxCCTests.Grounding.CaseEmpty`) and `arity` (since step C's closure-capture
+case: `IxCCTests.Grounding.LetClo`).
 
 The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
 refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
@@ -386,8 +387,8 @@ def run : IO Bool := do
       {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
     expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
       s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
-    expect a (famAGp.length == 43 && accepted.all famAGp.contains &&
-        famAGp.filter (!accepted.contains ·) == forLoops)
+    expect a (famAGp.length == 44 && accepted.all famAGp.contains &&
+        famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
     IO.println s!"words: {wordsLabel} (30 word entries) is refused by the family over six fields on \

@@ -209,7 +209,12 @@ def evalSitesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr →
         if !subAt0B v' e then [] else
           let P' := P.filter fun prof => !r.irrP prof
           if P'.isEmpty then [] else evalSitesPs P' Γ v v'
-      | none => []) ++ evalSitesPs P Γ b e
+      | none => []) ++
+    ((match cloSite? b e with
+      | some (A, cp) =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty then [] else evalSitesPs P' (A :: Γ) v cp
+      | none => []) ++ evalSitesPs P Γ b e)
   | _, _, _, _ => []
 
 /-- `headRegimeGB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
@@ -262,7 +267,12 @@ def spinesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr → List 
         if !subAt0B v' e then [] else
           let P' := P.filter fun prof => !r.irrP prof
           if P'.isEmpty then [] else spinesPs P' Γ v v' []
-      | none => []) ++ spinesPs P Γ b e acc
+      | none => []) ++
+    ((match cloSite? b e with
+      | some (A, cp) =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty then [] else spinesPs P' (A :: Γ) v cp []
+      | none => []) ++ spinesPs P Γ b e acc)
   | P, Γ, _, e, acc => spineHere P Γ e acc
 
 /-- `headRegimeSB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
@@ -473,10 +483,25 @@ theorem mem_evalSitesPs {ls : Levels} :
             simp only [evalSitesPs, List.mem_append, hz, hsub, Bool.not_true, Bool.false_eq_true,
               ↓reduceIte, hne]
             exact Or.inl h1
-    · obtain ⟨Ps, h1, h2⟩ := ihb P Γ e s hP hs
-      refine ⟨Ps, ?_, h2⟩
-      simp only [evalSitesPs, List.mem_append]
-      exact Or.inr h1
+    · rcases hs with hs | hs
+      · -- the closure-capture shape (step C)
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs
+          split at hs
+          · simp at hs
+          · rename_i hirr
+            obtain ⟨hP', hne⟩ := mem_filter_irr hP hirr
+            obtain ⟨Ps, h1, h2⟩ := ihv _ (A :: Γ) cp s hP' hs
+            refine ⟨Ps, ?_, h2⟩
+            simp only [evalSitesPs, List.mem_append, hc, Bool.false_eq_true, ↓reduceIte, hne]
+            exact Or.inr (Or.inl h1)
+      · obtain ⟨Ps, h1, h2⟩ := ihb P Γ e s hP hs
+        refine ⟨Ps, ?_, h2⟩
+        simp only [evalSitesPs, List.mem_append]
+        exact Or.inr (Or.inr h1)
   | _ => intro P Γ e s _ hs; cases e <;> simp [evalSites] at hs
 
 /-- An `Ok` instance's profile is among the `Ok` profiles. -/
@@ -559,7 +584,7 @@ theorem spinesPs_tail : ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KE
   | letE c r ty v b _ _ ihb =>
     intro P Γ e acc hacc
     obtain ⟨sp, hsp, h⟩ := ihb P Γ e acc hacc
-    exact ⟨sp, by simp only [spinesPs, List.mem_append]; exact Or.inr hsp, h⟩
+    exact ⟨sp, by simp only [spinesPs, List.mem_append]; exact Or.inr (Or.inr hsp), h⟩
   | _ =>
     intro P Γ e acc hacc
     obtain ⟨sp, hsp, h⟩ := here P Γ e acc hacc
@@ -642,10 +667,25 @@ theorem spinesPs_cover {ls : Levels} : ∀ (t : Term) (P : List IxCC.Src.Profile
             simp only [spinesPs, List.mem_append, hz, hsub, Bool.not_true, Bool.false_eq_true,
               ↓reduceIte, hne]
             exact Or.inl hsp
-    · obtain ⟨sp, hsp, h⟩ := ihb P Γ e acc hP s hs
-      refine ⟨sp, ?_, h⟩
-      simp only [spinesPs, List.mem_append]
-      exact Or.inr hsp
+    · rcases hs with hs | hs
+      · -- the closure-capture shape (step C)
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs
+          split at hs
+          · simp at hs
+          · rename_i hirr
+            obtain ⟨hP', hne⟩ := mem_filter_irr hP hirr
+            obtain ⟨sp, hsp, h⟩ := ihv _ (A :: Γ) cp [] hP' s hs
+            refine ⟨sp, ?_, h⟩
+            simp only [spinesPs, List.mem_append, hc, Bool.false_eq_true, ↓reduceIte, hne]
+            exact Or.inr (Or.inl hsp)
+      · obtain ⟨sp, hsp, h⟩ := ihb P Γ e acc hP s hs
+        refine ⟨sp, ?_, h⟩
+        simp only [spinesPs, List.mem_append]
+        exact Or.inr (Or.inr hsp)
   | _ => intro P Γ e acc _ s hs; cases e <;> simp [evalSites] at hs
 
 theorem take_dropLast {α : Type _} {l : List α} {j : Nat} (h : j < l.length) :
@@ -1042,7 +1082,28 @@ theorem graded_sites_ctx (M : Model V env) {φ : LevelParam → Nat} {ls : Level
           · simp at hs
           · exact ihv Γ v' (fun ρ hρ => ⟨(hg ρ hρ).1,
               gradedBy_of_subAt0 (subAt0_of_check hsub) (hg ρ hρ).2⟩) s hs
-    · exact ihb Γ e hg s hs
+    · rcases hs with hs | hs
+      · -- the closure-capture shape (step C): as at a λ, then through the copy
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs
+          split at hs
+          · simp at hs
+          · obtain ⟨b', m, rfl, hsub⟩ := cloSite?_spec hc
+            refine ihv (A :: Γ) cp (fun ρ hρ => ?_) s hs
+            cases hρ with
+            | cons hΓ hX hmem =>
+              obtain ⟨h0, h1⟩ := hg _ hΓ
+              simp only [GradedBy] at h1
+              have h2 := h1.2 _ hX _ hmem
+              have hpush : push (ρ 0) (fun i => ρ (i + 1)) = ρ := by funext i; cases i <;> rfl
+              rw [hpush] at h2
+              refine ⟨?_, gradedBy_of_subAt0 hsub h2⟩
+              simp only [GradedCtx]
+              exact ⟨h1.1, h0⟩
+      · exact ihb Γ e hg s hs
   | _ => intro Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 /-- **A value spine read through δ and β lies in a positive-regime product** (a constant by `mem`,

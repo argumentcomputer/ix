@@ -1232,7 +1232,11 @@
     "IxCCTests.Grounding.NoCanon",
     "IxCCTests.Grounding.Zeta",
     "IxCCTests.Grounding.GradedHead",
-    "IxCCTests.Grounding.CaseEmpty"]},
+    "IxCCTests.Grounding.CaseEmpty",
+    "IxCCTests.Grounding.LetClo"]},
+  "IxCCTests.Grounding.LetClo":
+  {"path": "IxCCTests/Grounding/LetClo.lean",
+   "imports": ["IxCCTests.Grounding.CaseEmpty", "IxCCTests.Grounding.Zeta"]},
   "IxCCTests.Grounding.GradedHead":
   {"path": "IxCCTests/Grounding/GradedHead.lean",
    "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.SelRetype"]},
