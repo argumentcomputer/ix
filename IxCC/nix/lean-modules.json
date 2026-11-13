@@ -541,7 +541,8 @@
     "IxCCTests.Recheck.Producer",
     "IxCCTests.Recheck.RootShape",
     "IxCCTests.Recheck.Bound",
-    "IxCCTests.Recheck.Erased"]},
+    "IxCCTests.Recheck.Erased",
+    "IxCCTests.Recheck.ErasedBlocks"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":
@@ -690,6 +691,9 @@
     "IxCC.Anf.Semantics",
     "IxCCTests.Support.Bound",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Recheck.ErasedBlocks":
+  {"path": "IxCCTests/Recheck/ErasedBlocks.lean",
+   "imports": ["IxCCTests.Recheck.Erased"]},
   "IxCCTests.Recheck.Erased":
   {"path": "IxCCTests/Recheck/Erased.lean",
    "imports": ["IxCCTests.Recheck.Hostile"]},

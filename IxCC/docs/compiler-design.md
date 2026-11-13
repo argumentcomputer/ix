@@ -811,11 +811,11 @@ route its run behaviour reaches the compiler:
 | A `csimp` redirect | refused when the subject writes a parameter erased: the redirect, the target, binds no λ (`headerAgreement`). This is the strict form of "the subject's and the target's interfaces agree on every mode", which needs modes read from records | `tests-recheck` (refused; a target that erases a parameter the subject does not: accepted, correct) |
 | A `case` entry (`T.casesOn`) | the dispatch reads the major, the indices and the minors (`Lam.Erase.headReads`): none may be written erased (`Check.Canonical.readsErased?`) | `tests-recheck` (a kernel-accepted artifact refused; its control) |
 | Lazy rows | a row changes only how the constant's own body takes its relevant parameters (by name or strict); an irrelevant one is passed □ strictly (`Lam.Erase.lazyModes`), so the body is held by the first row; the table admits pinned rows and sparse casesOn only | `tests-recheck` (a row for another definition refused) |
-| A recursor | its rules receive every argument (`headReads`): none may be written erased (`readsErased?`) | `tests-recheck` |
+| A recursor | its rules receive every argument (`headReads`): none may be written erased (`readsErased?`). Its rules, run by SrcEval itself (F2), receive the constructor's fields as slots, `irr` at a field written erased: a rule may use such a field only as that field's argument to the minor premise it dispatches (`Check.Canonical.forwardsErased?`, decided on the stored rule term by the occurrences of the field's variable, since IxCC does not check that a rule has the kernel's generated shape; a rule that dispatches no minor fails closed). This refuses a recursive field written erased: the rule passes it as the major of an induction hypothesis | `tests-recheck` (erased parameters; constructor fields under recursors: a single inductive, through the kernel and below it, rules of shapes the kernel would not generate, and a mutual block whose hypothesis is another member's recursor) |
 | `Quot.mk`, `Quot.lift` | the element; the function and the quotient (`headReads`): none written erased (`readsErased?`). `Quot.ind` never runs (C5 refuses a relevant reference to it) | `tests-recheck` |
 | A constructor | a field written erased is dropped at every instance (`checkCanonical` on its record), and a constructor stores only kept fields, except the pinned `Nat.succ`, which reads its field and so may not erase it (`readsErased?`) | `tests-recheck` |
 | A primitive or word entry | reads every argument: none written erased (`okPrim`, `readsErased?`) | `tests-relevance` (special heads); `tests-recheck` |
-| A minor premise applied by a case or a recursor | the dispatch passes □ for a field written erased (dropped); the minor's leading λs cover every field written erased, and a dropped field's λ is irrelevant (C3, `Check.minorBinders`) | `tests-recheck` (an η-short minor refused; its twins) |
+| A minor premise applied by a case or a recursor | the dispatch passes □ for a field written erased (dropped); the minor's leading λs cover every field written erased, and a dropped field's λ is irrelevant (C3, `Check.minorBinders`). Each minor is checked against the constructor whose fields it receives: at a `case` entry minor `j` against constructor `j` (F5); at a recursor each rule against the minor it dispatches (`Check.ruleDispatch`, erasure's `Lam.Erase.ruleShape` reading), since a recursor of a mutual block, or of a nested one (stored as a mutual block with auxiliary types), takes the minors of every constructor of the block and has rules only for its own inductive's | `tests-recheck` (an η-short minor refused; its twins; the minor of a mutual block's second recursor and of a nested block's auxiliary one refused, with a compiling control) |
 
 `headReads` is erasure's; `checkCanonical` uses a copy
 (`Check.Canonical.headReadsWith`), and `tests-relevance` does not build if
@@ -840,6 +840,32 @@ which the correctness statement counts as the source going wrong
 of these programs only because its conversion compares binder contracts
 (the `case` route not even then); the checks do not rely on that, which the
 format change (modes leave the term bytes) requires.
+
+**Fields written erased under a recursor (2026-11-13).** Three cases, each
+reproduced on the box before its check, and what refuses each now:
+- *A recursive field of a single inductive* (`T | leaf | mk (0 t : T)`,
+  `T.rec`): rule `mk` passes `t` as the major of its induction hypothesis, where
+  SrcEval is stuck. Refused by name by the forwarding clause, and still by C3's
+  η-short clause at that hypothesis call, whose minors are the rule's own
+  variables and so bind no field. The certified kernel accepts the field
+  written erased and does not compare a stored rule's binder data.
+- *The minors of a mutual block's second recursor* (`mutual A … ; B | b0 | b1
+  (0 y : E)`, `B.rec … useE (b1 c₁)`): C3 used to pair minor `j` with rule `j`,
+  so at `B.rec` it checked `A`'s minors against `B`'s constructors and `B`'s
+  minors not at all, and an η-short minor reading the dropped field compiled to
+  an object returning constructor 0 where the meaning is `c₁` (below the
+  kernel: today's kernel refuses a field written erased in a mutual block, at
+  the constructor). Refused by C3 with the dispatch pairing.
+- *A field of one member whose type is another member* (`mutual A2 | a1 (0 b :
+  B2); B2 …`): rule `a1` passes `b` as the major of a hypothesis that is
+  `B2.rec`, whose C3 check concerns `B2`'s constructors. Refused by name by the
+  forwarding clause. Before it no check refused this program; only erasure's
+  decline of a rule that calls a sibling recursor (`erase-modes`; the honest
+  program `erase-unbox-elim`), a capability gap, kept it from an object.
+
+Nested blocks (`Tree | node (O Tree)`) are stored as mutual blocks with
+auxiliary types and are refused on the same checks (C3 at a rule's hypothesis
+call, the forwarding clause on the auxiliary recursor).
 
 **Erasure** then:
 - replaces irrelevant arguments with □ but keeps every binder slot

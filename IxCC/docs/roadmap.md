@@ -960,6 +960,65 @@ in the [certification design](certification-design.md)); and the correctness
 statement does not bound a source that goes wrong (`Front.GoesWrong`, which
 includes a value no view reads), which is what each violation produced.
 
+**Constructor fields written erased under recursors, and the minors of mutual
+blocks (2026-11-13).** A seventh route: at the recursor of a mutual block's
+second inductive, C3 paired minor `j` with rule `j`, but such a recursor takes
+the minors of every constructor of the block and has rules only for its own
+inductive's, so C3 checked the wrong minors and not its own; an η-short minor
+over a field written erased compiled to an object returning constructor 0
+where the meaning is `c₁`, SrcEval returning the irrelevance marker (built
+below the kernel; today's kernel refuses a field written erased in a mutual
+block, at the constructor). C3 now pairs each rule with the minor it
+dispatches (`Check.ruleDispatch`, erasure's reading). A recursive field written
+erased, which a rule passes as the major of an induction hypothesis (SrcEval
+stuck there), is now refused by name by a forwarding clause in
+`checkCanonical` (`forwardsErased?`: a rule uses such a field only as its
+argument to the minor it dispatches, decided on the stored rule term). Under a
+single inductive C3's η-short clause at the hypothesis call already refused it;
+where the hypothesis is another member's recursor nothing did, and only
+erasure's decline of the sibling-calling rule kept the program from an object.
+Which check refuses which case: [compiler
+design](compiler-design.md#relevance-and-erasure); the seven routes:
+[certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each).
+The tests are in `tests-recheck` (`ErasedBlocks`, on the new fixture
+`fixtures/ixon-v4/erased-blocks`). Open, from this work:
+- *The η-short side effect (conservative, kept).* C3's η-short clause also
+  applies at an induction-hypothesis call inside a rule, whose minors are the
+  rule's variables: so a reached recursor of an inductive with a recursive
+  constructor and with any constructor field written erased, recursive or not,
+  is refused (where its minors are relevant). The forwarding clause makes one
+  part of it redundant (a field written erased forwarded to a hypothesis is
+  refused by name) but not the rest: at a mutual block the user's call pairs
+  only the minors the called recursor's own rules dispatch, and the minors it
+  forwards to a sibling's hypothesis call (for the sibling's constructors) are
+  checked only at that call, by this clause, conservatively (whatever the user
+  passed). So it is not removable as it stands; removing it needs C3 at the
+  user's call to pair every minor with the block's constructor it is for (from
+  every recursor of the block), and the per-activation argument written down
+  (lemma P1's recursor case). The refusal of a non-recursive field written
+  erased in another constructor is by reading only.
+- *Rule shape.* IxCC never checks that a stored rule has the kernel's generated
+  shape; only the kernel does (`nativeRulesOk`), and it compares a rule's body
+  and its binders' types, not its binders' data. The forwarding clause is
+  decided on the rule as stored, so it does not depend on the shape; a proof
+  about rule bodies (P1) will need either a shape check of our own or the
+  kernel's check as a theorem.
+- *Capability gaps, not checks* (reproducers in `fixtures/ixon-v4/erased-blocks`):
+  honest nested recursors (`mainN`, `mainN1`, `mainR`) are stuck in SrcEval and
+  declined by erasure (`erase-minor`, "forwards a binder with another dispatch
+  (S25)"); the honest cross-member program (`mainM2`) is declined
+  (`erase-unbox-elim`, its first member a one-field structure), and a rule
+  that calls a sibling recursor was declined (`erase-modes`) in both programs
+  tried; a mutual `casesOn` gets no `case` entry ("mutual casesOn stays on δ").
+- *Not established.* Nested blocks with a field written erased through the
+  kernel (the byte-level plant was declined by the reader, "recursor whose
+  inductive block is not in the input", which the probe's own address remapping
+  may have caused); whether erasure declines every rule that calls a sibling
+  recursor (two programs); why honest nested runs are stuck in SrcEval (by
+  reading: `selectRule` requires the major's parameter count to equal the
+  recursor's, and an auxiliary recursor's major, a value of the container
+  type, has the container's parameter).
+
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
 resource context in the equations sidecar (the profile and the checked
