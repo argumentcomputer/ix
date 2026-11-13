@@ -124,6 +124,7 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
     Prod.fst <$> checkBytesUnder .strict hash binding pre limits records blobs hint =
       checkBytesWith hash binding pre limits records blobs hint := by
   unfold checkBytesUnder checkBytesWith prepareWith
+  simp only [checkConstantsUnder_cfg _ _ _ _ _ _ _ limits.fold, Ix.Kernel.Cached.checkDecls_cfg _ _ _ limits.fold]
   cases preflight limits records blobs with
   | error e => rfl
   | ok _ =>
@@ -136,7 +137,7 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
         cases admitBinding hash binding with
         | error e => rfl
         | ok t =>
-          cases decodeRecords limits records with
+          cases decodeWithin limits records with
           | error e => rfl
           | ok constants =>
             refine (checkConstantsUnder_strict hash t pre constants blobs hint).trans ?_
@@ -155,6 +156,8 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
     checkBytesWith hash binding pre limits records blobs hint = .ok env := by
   unfold checkBytesWith prepareWith
   unfold checkBytesUnder at h
+  simp only [Ix.Kernel.Cached.checkDecls_cfg _ _ _ limits.fold]
+  simp only [checkConstantsUnder_cfg _ _ _ _ _ _ _ limits.fold] at h
   cases h1 : preflight limits records blobs with
   | error e => simp [h1, bind, Except.bind, Except.mapError] at h
   | ok _ =>
@@ -167,7 +170,7 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
         cases h4 : admitBinding hash binding with
         | error e => simp [h1, h2, h3, h4, bind, Except.bind, Except.mapError] at h
         | ok t =>
-          cases h5 : decodeRecords limits records with
+          cases h5 : decodeWithin limits records with
           | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
           | ok constants =>
             simp only [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
@@ -281,6 +284,7 @@ theorem checkBytesTieredUsingUnder_strict (prelude : Ix.Kernel.RoleTable → Exc
     Prod.fst <$> checkBytesTieredUsingUnder .strict prelude hash binding limits records blobs hint =
       checkBytesTieredUsing prelude hash binding limits records blobs hint := by
   unfold checkBytesTieredUsingUnder checkBytesTieredUsing
+  simp only [checkConstantsTieredUnder_cfg _ _ _ _ _ _ _ limits.fold, checkConstantsTiered_cfg _ _ _ _ _ _ limits.fold]
   refine map_bind_eq _ _ fun _ => ?_
   refine map_bind_eq _ _ fun _ => ?_
   refine map_bind_eq _ _ fun _ => ?_
@@ -301,6 +305,8 @@ theorem checkBytesTieredUsingUnder_strict_of_nil {policy : Ix.Kernel.Cached.Axio
     checkBytesTieredUsing prelude hash binding limits records blobs hint = .ok r := by
   unfold checkBytesTieredUsingUnder at h
   unfold checkBytesTieredUsing
+  simp only [checkConstantsTiered_cfg _ _ _ _ _ _ limits.fold]
+  simp only [checkConstantsTieredUnder_cfg _ _ _ _ _ _ _ limits.fold] at h
   obtain ⟨_, h1, h⟩ := bind_ok h
   obtain ⟨_, h2, h⟩ := bind_ok h
   obtain ⟨_, h3, h⟩ := bind_ok h

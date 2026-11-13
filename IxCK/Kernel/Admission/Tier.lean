@@ -202,16 +202,28 @@ def readTier (cx : Ctx md) (tier : Array (Nat × Address × Ixon.Constant)) :
 tier fold at the accepted environment's index. -/
 def checkConstantsTiered (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) := do
   let (logical, tier) := partitionTier constants
   if let some (a, r) := fenceOf logical tier then throw (.fence a r)
-  let env ← (checkConstantsWith hash t pre logical blobs hint).mapError .entry
+  let env ← (checkConstantsWith hash t pre logical blobs hint cfg).mapError .entry
   let tds ← (readTier (streamContext hash t pre constants blobs hint) tier).mapError
     fun (i, e) => .read i e
   match Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
   | .ok (_, ts) => pure (env, ts)
   | .error (e, k) => throw (.tier e ((tds[k]?.map (·.1)).getD k))
+
+/-- The fold's settings change no verdict of `checkConstantsTiered` (`checkConstantsWith_cfg`). -/
+theorem checkConstantsTiered_cfg (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable)
+    (pre : Prelude .anon) (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
+    checkConstantsTiered hash t pre constants blobs hint cfg =
+      checkConstantsTiered hash t pre constants blobs hint := by
+  unfold checkConstantsTiered
+  first
+  | rw [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
+  | simp only [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
 
 /-- **The tiered Ixon entry**: the byte stage over every record (batch
 limits, key uniqueness, authentication), the role table's admission, the
@@ -229,8 +241,8 @@ def checkBytesTieredUsing (prelude : Ix.Kernel.RoleTable → Except String (Prel
   (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
   let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
   let pre ← (prelude t).mapError (.entry ∘ .prelude)
-  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
-  checkConstantsTiered hash t pre constants blobs hint
+  let constants ← (decodeWithin limits records).mapError (.entry ∘ Error.ofBytes)
+  checkConstantsTiered hash t pre constants blobs hint limits.fold
 
 /-- **The tiered Ixon entry** behind the committed prelude read under the
 admitted table (`checkBytesTieredUsing preludeFor`; the theorems are stated
@@ -249,17 +261,30 @@ tier record, not a user axiom). -/
 def checkConstantsTieredUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
     (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except TierError ((Ix.Kernel.Env .anon × List (TierConst .anon)) ×
       List (Ix.Kernel.ConstantVal .anon)) := do
   let (logical, tier) := partitionTier constants
   if let some (a, r) := fenceOf logical tier then throw (.fence a r)
-  let (env, axs) ← (checkConstantsUnder policy hash t pre logical blobs hint).mapError .entry
+  let (env, axs) ← (checkConstantsUnder policy hash t pre logical blobs hint cfg).mapError .entry
   let tds ← (readTier (streamContext hash t pre constants blobs hint) tier).mapError
     fun (i, e) => .read i e
   match Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
   | .ok (_, ts) => pure ((env, ts), axs)
   | .error (e, k) => throw (.tier e ((tds[k]?.map (·.1)).getD k))
+
+/-- The fold's settings change no verdict of `checkConstantsTieredUnder` (`checkConstantsUnder_cfg`). -/
+theorem checkConstantsTieredUnder_cfg (policy : Ix.Kernel.Cached.AxiomPolicy)
+    (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
+    checkConstantsTieredUnder policy hash t pre constants blobs hint cfg =
+      checkConstantsTieredUnder policy hash t pre constants blobs hint := by
+  unfold checkConstantsTieredUnder
+  first
+  | rw [checkConstantsUnder_cfg _ _ _ _ _ _ _ cfg]
+  | simp only [checkConstantsUnder_cfg _ _ _ _ _ _ _ cfg]
 
 /-- **The tiered Ixon entry under an axiom policy**: `checkBytesTieredUsing`'s
 byte stage, the role table's admission, the prelude and canonical decoding,
@@ -276,8 +301,8 @@ def checkBytesTieredUsingUnder (policy : Ix.Kernel.Cached.AxiomPolicy)
   (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
   let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
   let pre ← (prelude t).mapError (.entry ∘ .prelude)
-  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
-  checkConstantsTieredUnder policy hash t pre constants blobs hint
+  let constants ← (decodeWithin limits records).mapError (.entry ∘ Error.ofBytes)
+  checkConstantsTieredUnder policy hash t pre constants blobs hint limits.fold
 
 /-- `checkConstantsTiered` with user axioms admitted on the logical part: the
 result of `checkConstantsTieredUnder .allowUser`, without its list of user

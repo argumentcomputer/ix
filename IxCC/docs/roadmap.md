@@ -728,9 +728,11 @@ within the 1 MiB record budget aborts `ixcc compile` and `ixcc check-cert`
 with a stack overflow, at about 30,000 levels on a 2 MiB stack and 100,000 on
 8 MiB (measured with `LEAN_STACK_SIZE_KB`; on this branch and on the tip
 before it alike), whether or not any root reaches the record. The kernel's
-own byte entry decodes the same way. The fix belongs to the kernel package
-(a depth limit inside its decoder) or to the envelope (a scan of the bytes
-for nesting depth before decoding); neither is made yet. The envelope's depth
+own byte entry decoded the same way; since 2026-11-13 it scans each record's
+bytes for nesting before decoding and declines past its depth limit
+(`Ix.Kernel.Admission.decodeWithin`, `Limits.maxDepth`, 16,384), as do the
+root hosts' own record decoders. The envelope does not run that scan yet
+(open: with `ixcc`'s limits and its sized stack). The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
@@ -780,9 +782,24 @@ notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
   in `kernel-level-sharing`): 0.7 s at 4,000 steps, 3.6 s at 8,000, 18.8 s at 16,000 (4.7 s at
   4,000 before the stop), in `Level.zeronessOf` walking the ∀ rule's level of each step's type
   with a per-call memo;
-- open: nested head normalisation (`E_k = (λx. E_{k-1}) P L`) is cubic past about 8,000 levels
-  (99 s at 32,000) because `Expr`'s 32-bit hash cycles along such a chain; a wider hash is the
-  planned fix.
+- fixed (2026-11-13): nested head normalisation (`E_k = (λx. E_{k-1}) P L`) was cubic past about
+  8,000 levels (83 to 99 s at 32,000) because `Expr`'s 32-bit hash cycled along such a chain; the hash
+  is 64 bits in a word of its own (+17 to +20 % peak memory on Init+Std), and 32,000 levels take 35
+  to 49 ms (`kernel-depth` bounds them). A 48-bit hash in the packed word was rejected: its narrower
+  range fields cost seconds on our 254- and 255-field fixtures;
+- open: a bought collision between two different terms (about 2^32 hash evaluations) makes lookups
+  descend one into the other, quadratic in their depth: the depth limit (16,384) bounds the input's
+  terms, the typing core's fixed fuel (`checkFuel`) the terms it builds;
+- fixed (2026-11-13): the kernel's phase B spawned one task per 64 records, so the threads a run
+  could start grew with the input and a run under an address-space limit aborted creating one; the
+  tasks are bounded by a setting (`Limits.workers`), which no verdict depends on;
+- open: the depth stages skip a record whose bytes cannot reach the limit by two bounds that are
+  argued and tested (`kernel-depth` `bounds`), not proved; prove them, or remove the skip by
+  proving depth ≤ size where `Ix.Cert.Stream.closure_decodes` needs it;
+- open: bucket flooding of the kernel's memo maps, independent of the hash's width: R crafted terms
+  in one bucket cost Θ(R²) comparisons (16,384 literals in one bucket: 0.6 s against 1 ms; about
+  25 s at 10^5, extrapolated); remedies (a keyed hash, or a cap on bucket scans that declines) in
+  `docs/kernel.md`, "Running time"; none made.
 
 Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
 ownership checker's own, which the captured-work budget bounds

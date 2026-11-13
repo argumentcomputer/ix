@@ -97,7 +97,7 @@ theorem prepareWith_stages {hash : ByteArray → Address} {binding : Admission.B
         cases hb : Admission.admitBinding hash binding with
         | error e => simp [hf, hu, ha, hb, Except.mapError, bind, Except.bind] at h
         | ok t =>
-          cases hd : Admission.decodeRecords limits records with
+          cases hd : Admission.decodeWithin limits records with
           | error e => simp [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
           | ok constants =>
             cases hs : Admission.readStream hash t pre constants blobs hint with
@@ -108,7 +108,8 @@ theorem prepareWith_stages {hash : ByteArray → Address} {binding : Admission.B
                 Except.ok.injEq, Prod.mk.injEq] at h
               obtain ⟨rfl, rfl⟩ := h
               exact ⟨t, constants, decls, (Admission.uniqueKeys_ok_iff _ _).mp hu,
-                (Admission.authenticate_ok_iff _ _ _).mp ha, rfl, rfl, hs, rfl⟩
+                (Admission.authenticate_ok_iff _ _ _).mp ha, rfl, Admission.decodeWithin_decodeRecords hd, hs,
+                rfl⟩
 
 /-! ## The store -/
 

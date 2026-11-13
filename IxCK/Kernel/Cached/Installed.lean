@@ -514,12 +514,29 @@ def awaitInOrder {ε : Type} : List (Task (Except ε Unit)) → Except ε Unit
     | .ok () => awaitInOrder ts
     | .error e => .error e
 
+/-- Records per phase-B task under a bound of `w + 1` tasks: enough that `n`
+records make at most `w + 1` chunks, and never fewer than `phaseBChunk`. -/
+def phaseBChunkFor (w n : Nat) : Nat := max phaseBChunk ((n + w) / (w + 1))
+
+/-- The chunk length of phase B's tasks under `workers` (`Admission.Limits.workers`):
+`phaseBChunk` with no bound (one task per 64 records), `phaseBChunkFor` under a bound. -/
+def phaseBChunkLen (workers : Option Nat) (n : Nat) : Nat :=
+  match workers with
+  | some (w + 1) => phaseBChunkFor w n
+  | _ => phaseBChunk
+
 /-- **Phase B on tasks**: the records in chunks, each chunk's walk on a
-task of its own, the verdicts read back in record order. -/
-def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md)) :
-    Except (CheckError md × Nat) Unit :=
-  awaitInOrder ((chunksOf (phaseBChunk - 1) pend.toList).map fun l =>
-    Task.spawn fun _ => checkPendingList mode fe l)
+task of its own, the verdicts read back in record order. `workers` bounds the
+tasks: `none`, one per 64 records; `some 0`, none (the walk runs on the calling
+thread); `some w`, at most `w`. The bound is a setting, not a function of the
+input, so a host can fit the threads it may cause into its address space. -/
+def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md))
+    (workers : Option Nat := none) : Except (CheckError md × Nat) Unit :=
+  match workers with
+  | some 0 => checkPendingList mode fe pend.toList
+  | _ =>
+    awaitInOrder ((chunksOf (phaseBChunkLen workers pend.size - 1) pend.toList).map fun l =>
+      Task.spawn fun _ => checkPendingList mode fe l)
 
 /-- A spawned task's value is the function's (`Task.spawn` is `⟨fn ()⟩`). -/
 theorem task_get_spawn {α : Type} (fn : Unit → α) (prio : Task.Priority) :
@@ -555,10 +572,20 @@ theorem awaitInOrder_walks (fe : FEnv md) : ∀ (ls : List (List (PendingCheck m
 
 /-- **Phase B on tasks is the walk**: the same verdict, the same first
 failure. -/
-theorem checkPendingTasks_eq (fe : FEnv md) (pend : Array (PendingCheck md)) :
-    checkPendingTasks mode fe pend = checkPendingList mode fe pend.toList := by
+theorem checkPendingTasks_eq (fe : FEnv md) (pend : Array (PendingCheck md))
+    (workers : Option Nat) :
+    checkPendingTasks mode fe pend workers = checkPendingList mode fe pend.toList := by
   unfold checkPendingTasks
-  rw [awaitInOrder_walks, chunksOf_flatten]
+  split
+  · rfl
+  · rw [awaitInOrder_walks, chunksOf_flatten]
+
+/-- **The fold's settings**, set by an entry from its limits
+(`Admission.Limits.fold`): `workers` bounds the tasks phase B runs on
+(`checkPendingTasks`). No setting changes a verdict (`checkDecls_cfg`). -/
+structure FoldConfig where
+  workers : Option Nat := none
+  deriving Repr, Inhabited
 
 /-- **The declaration fold**: install every record (phase A), check
 every recorded declaration (phase B, on tasks), return the environment.
@@ -574,12 +601,20 @@ which is where `InstallRun` and every lemma above it live; the
 position in the fold, in the frontend's half of the same error type
 the input's LINE number (`IxCK/Kernel/Frontend/Export.lean`). -/
 def checkDecls (mode : CheckMode) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingTasks mode p.2.1 p.2.2
+  checkPendingTasks mode p.2.1 p.2.2 cfg.workers
   checkUnits ds
   pure p.2.1.env
+
+/-- **The fold's settings change no verdict**: the same result under every
+`FoldConfig` (phase B's task bound changes only how the walk runs,
+`checkPendingTasks_eq`). -/
+theorem checkDecls_cfg (ev : Evidences md) (ds : Array (Declaration md)) (cfg : FoldConfig) :
+    checkDecls mode ev ds cfg = checkDecls mode ev ds := by
+  unfold checkDecls
+  simp only [checkPendingTasks_eq]
 
 /-- An accepting run is an accepting `foldlM`. -/
 theorem InstallRun.foldlM {ev : Evidences md} {ds : List (Declaration md)}

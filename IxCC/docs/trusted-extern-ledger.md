@@ -231,7 +231,7 @@ git diff docs/trusted-externs.json   # review every changed pin against the diff
 Then edit by hand what the audit still names (a seed version, a new action
 repository, a closure hash of a pure dependency, a csimp theorem), set `last_reviewed`, and
 commit the ledger with the change. `--record` leaves the pure dependencies'
-closure hashes (`lean_dependencies[].closure`: the 98 files of the kernel's
+closure hashes (`lean_dependencies[].closure`: the 99 files of the kernel's
 closure and the two of Blake3's) alone: a change to them is a dependency
 review, edited by hand, not a routine update.
 

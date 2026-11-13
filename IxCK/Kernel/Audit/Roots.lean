@@ -763,7 +763,21 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.UserAxioms.Mod
 -- through the declaration's memo (`Cached.simplifyMemoC`, which reaches `Level.simplifyGo`)
 -- add 4 compiled functions to every closure below but the reader's; externs, implemented_by,
 -- unsafe, csimp and every ruling count are unchanged.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3737 compiled functions; inherited externs 68, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 35 -/
+-- The 64-bit term hash in a word of its own (`Expr.hashW`) takes 1 compiled function from every
+-- closure below but the reader's: `Cached.defeqStepR._closed_2`, the constant `DefeqStep.done true`
+-- the compiler had floated out of `defeqStepR`, is built in place, and nothing enters (the closure
+-- listed by name before and after); which edit moved the compiler's choice is not established.
+-- The input limits (closures listed by name before and after, nothing leaves): phase B's task
+-- bound (`Cached.phaseBChunkFor`, `phaseBChunkLen`) adds 2 compiled functions to every closure
+-- below but the reader's; the depth limit (`Admission.Depth`'s byte scan and expanded post-order with
+-- their closed terms and the specialisations of `List.foldl`, the `Array` folds and `Range.forIn'`
+-- at them; `decodeWithin`, `scanDepths`, `expandedDepths`, `storedDepthBound`, `expandedDepthBound`)
+-- and the per-record limits as declines (`ByteError.asLimit` and the two messages it reads) add 59
+-- more to each entry's closure below; externs, implemented_by, unsafe, csimp and every ruling count
+-- are unchanged.
+-- The two predicates the depth stages and their parallel twins share (`Admission.scanFails`,
+-- `Admission.expandedFails`) add 2 more to each entry's closure below (63 in all).
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3738 compiled functions; inherited externs 68, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 35 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -806,10 +820,19 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- leave. Exact extern/unsafe/replacement/partial entry sets are unchanged.
 -- The reduction loops, the index build and the units check as loops add the fold's 3 compiled
 -- functions net and five ruled csimps (see the fold's record); every other count is unchanged.
+-- Cheaper depth stages (KI; closures listed by name before and after): the scan runs each record's
+-- sharing and universe tables in one loop and skips the reference table (`Depth.exprs`,
+-- `Depth.univs`, `Depth.skip` enter; `Depth.univ` with its two closed terms, `Depth.expr._closed_1`
+-- and three `Range.forIn'` specialisations at `Depth.constant` leave), and the expanded check runs
+-- the sharing entries in order (`Depth.walk`, `Depth.expandedInOrder` with a closed term and seven
+-- `Array.forIn'` specialisations and closed terms enter) with the post-order kept for forward
+-- references (`Depth.expandedPost` and two closed terms enter, `expandedWithin`'s two leave; three
+-- specialisations move from `expandedWithin` to `expandedPost`): 16 enter, 9 leave, +7 to each
+-- entry's closure below. Externs, implemented_by, unsafe, csimp and every ruling count are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6913 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkConstants]: 6982 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -861,8 +884,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- logical entry above, with exactly the same execution-trust entries.
 -- The reduction loops, the index build and the units check as loops add the fold's 3 compiled
 -- functions net and five ruled csimps (see the fold's record); every other count is unchanged.
+-- The cheaper depth stages add 7 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`,
+-- listed by name there).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7023 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 7092 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -880,6 +905,8 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
 -- same rulings admit it with the same unsafe, csimp and ruled counts.
 -- The reduction loops, the index build and the units check as loops add the fold's 3 compiled
 -- functions net and five ruled csimps (see the fold's record); every other count is unchanged.
+-- The cheaper depth stages add 7 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`,
+-- listed by name there).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
  Ix.Kernel.Admission.checkConstantsWithUserAxioms,
  Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
@@ -889,7 +916,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6736 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6805 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

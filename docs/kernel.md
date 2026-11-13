@@ -178,7 +178,9 @@ The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
-| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
+| the depth limit, as stored: every record's expressions (shares as leaves) and universes nest at most `limits.maxDepth` levels, read from the bytes before decoding | `Admission.scanDepths` | `.limit .depth` |
+| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason`; a record over `maxRecordBytes`, or a universe table past `maxRecordUnivNodes`: `.limit .recordBytes`, `.limit .recordUnivNodes` (`ByteError.asLimit`) |
+| the depth limit, shares expanded: every decoded record's expressions nest at most `limits.maxDepth` levels as the reader builds them | `Admission.expandedDepths` | `.limit .depth` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
@@ -497,6 +499,62 @@ previous value (`lamlet` in the test), where `Level.zeronessOf` walks the
 ∀ rule's level of each step's type (3.6 s at 8,000 steps, 18.8 s at
 16,000).
 
+Every memo of the cached core is a `Std.HashMap` keyed by terms, and the
+term's hash is a field computed at construction. That hash was the low 32
+bits of a `mixHash` recurrence over the node's fields, kept in the packed
+word beside the variable ranges. A chain of nodes built by one repeated
+step (`E_k = (λx. E_(k-1)) P L`, each head normalisation nesting once)
+makes the hashes of successive levels iterate one function on 2^32 values,
+which enters a cycle: at `P = Prop` level 8,323 repeats level 5,987. Past
+the cycle every memo probe meets entries of equal hash and descends them
+structurally, so the run is cubic past the entry: 32,000 levels took 83 s.
+The hash is now 64 bits in a word of its own (`Expr.hashW`; equality's
+fast reject tests both words), and the same chains first repeat beyond
+1,000,000 levels (the `kernel-depth` test checks it and bounds the chain
+at 32,000 levels, 35 to 49 ms). What it costs: the second word, +17 to
++20 % peak memory on Init+Std (2.79 to 2.83 GB against 2.33 to 2.40);
+time within that run's noise (five rounds, ±7 % per round on a loaded
+machine; an earlier, quieter paired run gave +10.5 to +11.9 %). The packed
+word's freed bits 63 to 31 are reserved, for the cached depth the depth
+limit may need. Measured alternative, rejected: a 48-bit hash in the
+existing word, which narrows the range fields to 8 and 7 bits; their
+saturated fallback (an exact walk per cutoff test) then costs seconds on
+honest inputs (a 255-field structure of IxCC's fixtures, 90 ms before, 4.4
+s or 10.4 s by the split) and a 16,384-binder telescope 26 to 36 s.
+
+What the wider hash closes and what it does not. The cycle of a chain is
+an accident of the function a step iterates; an adversary can also search
+for a step whose cycle starts early and is short. Treating each truncated
+node as a random function, which a simulation of the recurrence confirms
+at 24, 32, 40 and 48 bits (it reproduces the measured 32-bit cycles
+exactly), a step cycles with entry at most `a` and period at most `p` with
+probability about `a p / 2^b`, and the run it buys costs about
+`(n - a)^3 / (3 p)` comparison steps at depth `n`. At 32 bits such chains
+are free; at 48 bits about 2^40 hash evaluations buy tens of seconds per
+chain and about 2^49 a fixed point (`p = 1`, hours); at 64 bits the same
+need about 2^56 and 2^65 (each candidate step costs about 2^13 to 2^14
+evaluations to test). Not closed: (1) a
+collision bought between two different terms (about 2^32 evaluations at 64
+bits) makes each lookup of one descend the other: quadratic in their
+depth, bounded by a depth limit (planned). (2) **Bucket flooding,
+independent of the hash's width**: a map's bucket is the low bits of
+`scrambleHash` of the hash, and the hash is not keyed, so an input can
+carry R distinct terms that share a bucket of one memo (finding them costs
+about 1.3 R² hash evaluations); each insertion then scans the others,
+Θ(R²) comparisons in one map, bounded by the batch's size, not by depth.
+R literals in one bucket of an `Expr`-keyed map insert in 8, 32, 145 and
+619 ms at R = 2,048, 4,096, 8,192 and 16,384 (consecutive literals: 1 ms);
+extrapolated, 10^5 terms take about 25 s. With equal full hashes
+(multicollisions: k birthday searches give 2^k terms) each comparison also
+descends. Two remedies, neither made: a keyed hash (a per-process random
+key mixed into the node hash, or only into the maps' bucket index, which
+stops the cheap flood but not full-hash multicollisions): an opaque
+constant whose executed value is drawn at start, one new trust-surface
+entry, no theorem changes, and hash values that differ between runs; or a
+cap on bucket scans or structural comparisons per declaration, declining
+when exceeded: no trust surface, but every memo lemma of the cached
+simulation gains the decline case.
+
 What remains is the comparison itself. `Level.leqCore` decides
 `eval l ≤ eval r + diff` at every assignment by nanoda's case analysis:
 splitting on a parameter being zero or not (`byCases`), distributing `imax`
@@ -584,23 +642,132 @@ settled. Init+Std still needs more than 2 MiB (it aborts on 2 MiB, 1 MiB and
 512 KiB, in the typing core's nesting through `iotaRecI`, `prepareMajorI` and
 `whnf`); see the next paragraph.
 
-What still takes native stack is nesting, and nothing in the kernel bounds
-it yet: the canonical decoder on a record nested without shares (about 30,000
-levels overflow a 2 MiB stack, 100,000 an 8 MiB one), the reader and the
-install walks on the nesting of the terms they read, the typing core on the
-nesting of the terms it infers and compares (its recursion is bounded only by
-`checkFuel`, 100,000 nested calls), and the level functions on a level's
-depth. The core's nesting is not only the input's: the conversion that
-unfolding across records builds nests as deep as the records together
-(10,000 levels from five records overflow 2 MiB, 40,000 from twenty 8 MiB),
-and so does a long string literal met as a constructor, one level per
-character. Init+Std itself needs more than 2 MiB for this (it checks on
-8 MiB). `ix check-lean` and `ix verify-host` run the entry on a 256 MiB
-thread. IxCC's envelope bounds the depth of each stored record, shares
-expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`): that bounds the
-records as stored, after the decoder, and not the terms the kernel builds
-while typing them. A depth limit in the kernel, the entry's thread sized from
-it, and a decline past it are planned.
+What still takes native stack is nesting: the canonical decoder on a record
+nested without shares (about 30,000 levels overflow a 2 MiB stack, 100,000 an
+8 MiB one), the reader and the install walks on the nesting of the terms they
+read, the typing core on the nesting of the terms it infers and compares, and
+the level functions on a level's depth. **The depth limit** bounds the input's
+part of it. `Limits.maxDepth` (default 16,384: 13 times the deepest record
+found in Mathlib, 1,221 with shares expanded; Init+Std's deepest is 325, IxCC's
+committed closures' 775) is checked twice in the byte stage
+(`Admission.decodeWithin`, which every byte entry and the hosts' own record
+decoders run in place of `decodeRecords`): before decoding, `scanDepths` reads
+each record's bytes in the codec's grammar without building anything, with a
+stack of its own (words in an array: no native stack and no allocation per
+level; integer headers of one and two bytes read in place, proved equal to the
+codec's reader, `Depth.tagAt_eq` and `Depth.u8At_eq`, wider ones by the reader
+itself), and declines (`.limit .depth`) at the first expression or
+universe nested past the limit, shares counted as leaves; after decoding,
+`expandedDepths` measures each record's expressions with their shares
+expanded, as the reader builds them: the sharing entries in order, each against
+the depths of the entries before it (the only references the reader admits),
+then the payload. That walk recurses on the native stack, one frame per stored
+level and never past one level beyond the limit, so its depth is bounded by the
+stored nesting the scan has just admitted under the same limit, at every value
+of the limit. Its frame is about 80 bytes; the codec's is 110 (λ telescopes) to
+206 bytes (argument nests, `let`s) per level, measured on 8 MiB
+(`kernel-depth-case frame-walk-*`, `frame-decode-*`); a spine is the one shape
+the codec reads without nesting and the walk nests on, so a stack sized for the
+limit must cover the larger of the two per level, which `Limits.stackFor`'s
+16 KiB per level does. A table in which an entry refers to itself or to a later
+entry (which the reader refuses) is measured instead by an explicit post-order
+(`Depth.expandedPost`: each entry memoised, a share that reaches itself past
+every limit), linear in the record: the same spine of 65,536 levels behind a
+forward reference takes 4 ms, a cyclic table 2 ms (`kernel-depth` `post-spine`,
+`post-cycle`; the post-order as first written copied its value array at every
+node, 2.4 s at 65,536 levels). `kernel-depth` `differential` checks the scan
+against its first form and the walk against the post-order on generated
+records, mutated bytes included. A known cost of the byte entries themselves: they run the
+two stages one record after another, about 1.5 s on Init+Std's 115 MB while the fold's phase B
+runs on every core, so Init+Std through `checkBytesWithUserAxioms` takes 18.5 → 20.3 s best of
+three (+9.6 %) against the entry without the depth limit, while the committed closures take +1.7 %
+through the tiered entry and +1.2 % through IxCC's front end, and the hosts, which run the stages in
+parallel (`RoleBinding.RecordDecoding.scanDepthsParallel`, `expandedDepthsParallel`, proved equal
+to the sequential stages), stay within about 1 % on Init+Std. The remedy, not taken: the same
+parallel stages inside the entry, bounded by `Limits.workers`, with the entry proofs rewritten
+through their equality (about 60-100 lines). A record that cannot reach the limit is not
+walked: an expression's levels grow by at most one per byte that writes it and a
+universe's by at most the decoder's node budget (`storedDepthBound`), and a record
+within the byte limit has at most two decoded nodes per byte, which an acyclic expansion meets
+once each (`expandedDepthBound`); the statements about a compiled closure choose a limit above both
+(`Ix.Cert.Stream.closure_decodes`). Both bounds are unproved assumptions of the skip: if
+one were wrong, a record deeper than the limit could pass the stage meant to stop it. The
+argument: a stored expression's levels grow by one per child, and every child is written with
+at least one tag byte of its own (a spine or telescope of `n` steps is written with `n` more
+expressions); a universe's levels are its nodes, which the decoder's budget counts before it
+builds them; a decoded record has at most two nodes per byte (the spine and telescope nodes
+add one per written expression), and an acyclic path meets each once. `kernel-depth`'s `bounds`
+case checks both on the shapes that nest most per byte. Open: prove the two bounds, or remove
+the skip by proving depth ≤ size where `closure_decodes` needs it. Levels count as the kernel's terms nest:
+an application of `n` arguments has its head `n` levels down, a telescope of `n`
+binders its body `n` levels down, `succ^k u` has `u` `k` levels down. The
+checks are coverage bounds: nothing is proved about what they compute, and
+`decodeWithin_error` shows they add no failure but the decline; what an
+accepted input decodes to is `decodeRecords`'s (`decodeWithin_ok_iff`). A host
+runs the entry on a thread of `Limits.stackFor` bytes (16 KiB per level of
+`maxDepth`, at least 256 MiB: 256 MiB at the default).
+
+The core's nesting is not only the input's: the conversion that unfolding
+across records builds nests as deep as the records together (10,000 levels from
+five records overflow 2 MiB, 40,000 from twenty 8 MiB), and so does a long
+string literal met as a constructor, one level per character. That nesting is
+bounded by the typing core's recursion fuel (`checkFuel`, 100,000 nested
+calls, under 1 KiB of stack each as measured, which the 256 MiB thread holds),
+not by the depth limit. Init+Std itself needs more than 2 MiB for this (it
+checks on 8 MiB). IxCC's envelope also bounds the depth of each stored record,
+shares expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`), after its own
+decoder.
+
+**Limits.** Every bound the entry applies to its input is a field of
+`Admission.Limits`, which each entry takes and every host sets:
+
+| field | bounds | past it | default at the command line |
+| --- | --- | --- | --- |
+| `maxRecords`, `maxBlobs` | the batch's record and blob counts | `.limit .records`, `.limit .blobs` | 2^22 each |
+| `maxTotalBytes` | the payload bytes of records and blobs together | `.limit .totalBytes` | 2^34 |
+| `maxRecordBytes` | one record's payload | `.limit .recordBytes` | 2^28 |
+| `maxRecordUnivNodes` | one record's universe table, expanded | `.limit .recordUnivNodes` | 2^26 |
+| `maxDepth` | how deep a record's expressions and universes nest, as stored and with shares expanded | `.limit .depth` | 16,384 (the field's default) |
+| `workers` | the tasks phase B of the fold runs on | nothing: no verdict changes | `none`, one task per 64 records (the field's default) |
+
+A limit only turns an answer into a decline: `.limit` is a decline
+(`Error.outcome`), and an input accepted under some limits is accepted under
+any larger ones. For the batch limits this is their definition (`preflight`
+compares counts and sums with them, `preflight_ok_iff`); for `maxRecordBytes`
+and `maxRecordUnivNodes`, the decoder's byte check and node budget succeed
+under a larger value on what they accept under a smaller one, with the same
+result (its budget is only charged, never read otherwise); the decoder reports
+both as decode errors with fixed messages, which `decodeWithin` reads as the
+limits they are (`ByteError.asLimit`), and `decodeWithin_error` states that it
+adds no failure but these declines and `.limit .depth`; for `maxDepth`, both
+checks compare levels with the limit and read the same input whatever its value
+(argued, not proved); `workers` changes how phase B runs, not what it returns
+(`Cached.checkDecls_cfg`, `checkConstantsWith_cfg`, `checkConstantsAt_cfg` and
+their tiered and policy twins, all from `checkPendingTasks_eq`). A verifier run
+under smaller limits than the producer's may decline what the producer
+accepted; the decline names the limit. Statements whose text the depth limit changed:
+`Admission.checkBytesWith_eq` (its right side decodes with `decodeWithin`),
+`Ixon.Projection.checkBytes_run_iff` and `checkBytes_ok_iff` (a `DepthsWithin`
+conjunct), `Ixon.Projection.checkBytes_of_expansion` and `Ix.Cert.Stream.prepareWith_ok` (a
+`DepthsWithin` hypothesis), `Ix.Cert.Stream.closure_decodes` (a `DepthsWithin` conjunct, under a
+limit no record of the closure reaches); the public theorems about `checkBytes` are unchanged.
+
+Five bounds are fixed: no setting raises them, because the cached core must
+return what the reference core returns and these are constants of the
+reference core or of the fold's use of it. Each exhausts as a decline
+(`.internal "fuel exhausted: …"`): the head-normalisation loop's 1,000,000
+steps (`whnfCoreLoopFuel`), the `whnf` and conversion loops' 100,000 each
+(`whnfLoopFuel`, `defeqLoopFuel`), the level comparison's depth fuel of 10,000
+(`Level.defaultFuel`, which `Level.isEquiv` uses), and the typing core's
+recursion fuel of 100,000 nested calls (`checkFuel`, the knot's fuel in the
+fold and in the typing tier). Raising `maxDepth` therefore has effect only up to
+where `checkFuel` declines first. Measured with `maxDepth` raised to 1,000,000 on a stack of
+16 KiB per level (`kernel-depth-case limit1000000-…`): an argument nest, a spine and a `let`
+nest are accepted at 98,304 levels and declined at 114,688 with "fuel exhausted: annotate"; λ
+and ∀ telescopes are accepted at 196,608 (their loops do not nest the knot). So a `maxDepth`
+above about 100,000 admits nothing more of those shapes, and their decline names the fuel, which
+no setting raises (a request to make it a parameter of the reference core is with the upstream
+workstream).
 
 ## The typing tier
 
@@ -1321,6 +1488,8 @@ files carry further changes:
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |
 | `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/FEnv.lean`, `IxCK/Kernel/Units.lean` | the executed `whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` are loops over a twin of the step that returns its tail call of the continuation (`whnfCoreLoopFast`, `whnfLoopFast`, `defeqLoopFast`), and the executed `mkFEnvGo` and `unitsGo` a fold and an accumulator loop (`mkFEnvGoFast`, `unitsGoFast`), each swapped in by a `@[csimp]` theorem proving it equal to the unchanged function | the loops called their continuation through a closure, which kept native frames per reduction step, and the two recursions one per constant ("Native stack") |
+| `IxCK/Kernel/Expr.lean` | the node hash is 64 bits in a computed field of its own (`Expr.hashW`, the untruncated `mixHash` recurrence); the packed word keeps the ranges and the flag, its upper 33 bits reserved; equality's fast reject tests both words (`beqMemo_eq` unchanged in statement) | a chain built by one step cycled through the 32-bit hash, and memo probes then descended equal-hash terms ("Running time") |
+| `IxCK/Kernel/Cached/{Installed,Policy}.lean` | `checkPendingTasks` takes a bound on its tasks (`workers`: `none` keeps one task per 64 records, `some 0` walks on the calling thread, `some w` cuts the walk into at most `w` contiguous chunks, `phaseBChunkFor`), and `checkDecls`, `checkDeclsUnder` and `checkDeclsWithUserAxioms` take the fold's settings (`FoldConfig`, defaulted) that carry it; `checkPendingTasks_eq` now holds for every bound, and `checkDecls_cfg`, `checkDeclsUnder_cfg` state that the settings change no result | phase B spawned one task per 64 records, so the threads a run could start (each reserving its stack) grew with the input, and a run under an address-space limit aborted creating one ("Limits") |
 | `IxCK/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxCK/Kernel/` are `Admission.lean` and the `Admission`

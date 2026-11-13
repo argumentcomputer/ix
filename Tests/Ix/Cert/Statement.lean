@@ -863,7 +863,9 @@ def closureOrderProblems (ixe : Ixon.Env) (seeds : Array Address) (order : Array
 
 /-- Bounds wide enough for a whole compiled library
 (`Benchmarks.Kernel.CheckIxeEntry.limits`). -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- The statements' hypotheses and conclusion on the closure of the accepted
 fixtures: errors, and lines for the report. -/

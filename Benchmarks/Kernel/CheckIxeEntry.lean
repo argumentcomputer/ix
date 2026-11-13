@@ -30,7 +30,9 @@ open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- Bounds wide enough for a whole compiled library. -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 
@@ -41,16 +43,22 @@ def unauthenticated (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) := do
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
   (Ix.Kernel.Admission.uniqueKeys records blobs).mapError .ofBytes
-  let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
-  Ix.Kernel.Admission.checkConstantsWith Address.blake3 table pre constants blobs hint
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits records).mapError .ofBytes
+  Ix.Kernel.Admission.checkConstantsWith Address.blake3 table pre constants blobs hint limits.fold
 
 def verdict : Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"
   | .error e => s!"{repr e.outcome}: {e}"
 
+/-- `limits` with phase B's task bound from `IX_KERNEL_WORKERS`, if set (a measurement knob of
+this harness; the hosts' setting mechanism is `docs/kernel.md`'s). -/
+def limitsFromEnv : IO Ix.Kernel.Admission.Limits := do
+  return { limits with workers := (← IO.getEnv "IX_KERNEL_WORKERS").bind (·.trimAscii.toString.toNat?) }
+
 def run (args : List String) : IO UInt32 := do
   let [mode, input] := args
-    | IO.eprintln "usage: kernel-check-ixe --entry authenticated|unauthenticated|hash <input.ixe>"; return 2
+    | IO.eprintln "usage: kernel-check-ixe --entry authenticated|unauthenticated|user|hash|depth <input.ixe>"; return 2
+  let limits ← limitsFromEnv
   let started ← IO.monoMsNow
   let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input))
   let mut store : RecordStore := {}
@@ -83,6 +91,36 @@ def run (args : List String) : IO UInt32 := do
     IO.eprintln s!"entry: authenticate at the admission hash (Rust BLAKE3): {word ffi.isOk} in {millis t0 t1} ms"
     IO.eprintln s!"entry: authenticate at pure BLAKE3: {word spec.isOk} in {millis t1 t2} ms"
     return if ffi.isOk && spec.isOk then 0 else 1
+  | "depth" =>
+    -- the depth limit's two stages beside the decoding they surround, each timed alone
+    let t0 ← IO.monoNanosNow
+    let scan ← IO.lazyPure fun _ => Ix.Kernel.Admission.scanDepths limits records
+    let t1 ← IO.monoNanosNow
+    let decoded ← IO.lazyPure fun _ => Ix.Kernel.Admission.decodeRecords limits records
+    let t2 ← IO.monoNanosNow
+    let expanded ← IO.lazyPure fun _ => match decoded with
+      | .ok constants => Ix.Kernel.Admission.expandedDepths limits constants
+      | .error e => .error e
+    let t3 ← IO.monoNanosNow
+    let deepest ← IO.lazyPure fun _ => records.foldl (fun m (_, bytes) =>
+      max m (((Ix.Kernel.Admission.Depth.record limits.maxDepth bytes).toOption).getD 0)) 0
+    let word (r : Except Ix.Kernel.Admission.ByteError Unit) : String :=
+      match r with | .ok () => "within" | .error e => s!"{repr e}"
+    IO.eprintln s!"entry: depth scan {word scan} in {millis t0 t1} ms; decodeRecords 
+      {if decoded.isOk then "ok" else "failed"} in {millis t1 t2} ms; expanded depths {word expanded} in 
+      {millis t2 t3} ms; deepest stored nesting {deepest} (maxDepth {limits.maxDepth}); 
+      {records.length} records, workers {repr limits.workers}"
+    return if scan.isOk && expanded.isOk then 0 else 1
+  | "user" =>
+    -- the entry with user axioms admitted (`checkBytesWithUserAxioms`): phase B runs over every
+    -- record even when the input holds an axiom the strict entry declines
+    let t0 ← IO.monoNanosNow
+    let result ← IO.lazyPure fun _ =>
+      Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash binding pre limits records blobs
+        hints.lookup
+    let t1 ← IO.monoNanosNow
+    IO.eprintln s!"entry: user: {verdict result} in {millis t0 t1} ms; peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+    return if result.isOk then 0 else 1
   | "authenticated" | "unauthenticated" =>
     let t0 ← IO.monoNanosNow
     let result ← IO.lazyPure fun _ =>
