@@ -14,8 +14,10 @@ from which `sitesOk_of_res` (`IxCCGrounding.Direct.Sites`) derives `SitesOk`.
 Everything else the fundamental lemma asks of a run term (`Runs`) is derived here
 (`runs_of_sites`):
 
-* the node-for-node correspondence with the kernel term, and its closedness, are checked
-  (`GroundFacts.values`, `GroundFacts.eqns`, `GroundFacts.closed`);
+* the correspondence with the stored kernel term (its ζ-reduct: a `let`'s variable stands for its
+  value's copy, `TermCorrS` at `σ = []`) is checked (`GroundFacts.values`, `GroundFacts.eqns`);
+  a live `let`'s copy occurs with no binder between, so it denotes wherever the stored term does
+  (`denotesIn_of_subAt0`);
 * `Ok` at every constant node SrcEval may unfold is `Ok`'s closure, checked
   (`GroundFacts.okClosed`);
 * every position SrcEval skips (an irrelevant argument, a type, a λ, a constant) denotes: the
@@ -86,46 +88,71 @@ theorem denotesIn_lam_body {φ : LevelParam → Nat} {Γ : List KExpr} {d b : KE
     rw [push_head_tail] at hb
     exact ⟨_, hb⟩
 
+/-- **A copy with no binder between denotes** wherever the term holding it does. -/
+theorem denotesIn_of_subAt0 {φ : LevelParam → Nat} {Γ : List KExpr} {v : KExpr} :
+    ∀ {e : KExpr}, SubAt0 v e → DenotesIn M φ Γ e → DenotesIn M φ Γ v := by
+  intro e h hd
+  induction h with
+  | refl => exact hd
+  | appL _ ih => exact ih (denotesIn_app_left hd)
+  | appR _ ih => exact ih (denotesIn_app_right hd)
+  | proj _ ih => exact ih (denotesIn_proj hd)
+
 /-! ## The construction of `Runs` -/
 
-/-- **A corresponding, closed term that denotes runs**, at every site `SiteOk`, every constant
-node `Ok'`. -/
+/-- **A corresponding term that denotes runs**, at every site `SiteOk`, every constant node `Ok'`:
+no closedness premise (the substitution gives every variable its kernel term); at a live `let` the
+copy denotes because it occurs with no binder between (`denotesIn_of_subAt0`), and the value's
+sites and constants are among the walks' (`evalSites`, `evalConsts`). -/
 theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : LevelParam → Nat}
-    {Ok' : CId → Levels → Prop} {t : Term} {e : KExpr} (hc : TermCorr κ lps t e) :
-    ∀ {Γ : List KExpr}, bvarsLt Γ.length e = true → DenotesIn M φ Γ e →
+    {Ok' : CId → Levels → Prop} {σ : Sig} {t : Term} {e : KExpr} (hc : TermCorrS κ lps σ t e) :
+    ∀ {Γ : List KExpr}, DenotesIn M φ Γ e →
       (∀ s ∈ evalSites ls Γ t e, SiteOk M φ s.1 s.2.1 s.2.2) →
       (∀ d us, (d, us) ∈ evalConsts ls t → Ok' d (us.map (IxCC.Src.evalUniv ls))) →
-      Runs M κ Ok' lps ls φ Γ t e := by
+      Runs M κ Ok' lps ls φ σ Γ t e := by
   induction hc with
-  | var => intro Γ hb _ _ _; exact .var (by simpa [bvarsLt] using hb)
-  | sort hu => intro Γ _ _ _ _; exact .sort hu
+  | var h => intro Γ _ _ _; exact .var h
+  | sort hu => intro Γ _ _ _; exact .sort hu
   | const hlen hu =>
-    intro Γ _ hd _ hok
+    intro Γ hd _ hok
     exact .const (.const hlen hu) (hok _ _ (by simp [evalConsts])) hd
-  | @app f a m r f' a' hf ha ihf iha =>
-    intro Γ hb hd hs hok
-    simp only [bvarsLt, Bool.and_eq_true] at hb
-    refine .app (ihf hb.1 (denotesIn_app_left hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
-      (fun hr => iha hb.2 (denotesIn_app_right hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
+  | @app σ f a m r f' a' hf ha ihf iha =>
+    intro Γ hd hs hok
+    refine .app (ihf (denotesIn_app_left hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
+      (fun hr => iha (denotesIn_app_right hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
       (fun _ => ⟨ha, denotesIn_app_right hd⟩) (hs (Γ, f', a') ?_)
     · simp [evalSites, h]
     · simp [evalConsts, h]
     · simp [evalSites, hr, h]
     · simp [evalConsts, hr, h]
     · simp [evalSites]
-  | @lam b d body d' body' mb hd' _ _ ihb =>
-    intro Γ hb hd hs hok
-    simp only [bvarsLt, Bool.and_eq_true] at hb
-    exact .lam hd' (ihb (by simpa using hb.2) (denotesIn_lam_body hd)
+  | @lam σ b d body d' body' mb hd' _ _ ihb =>
+    intro Γ hd hs hok
+    exact .lam hd' (ihb (denotesIn_lam_body hd)
       (fun s h => hs s (by simpa [evalSites] using h))
       (fun d us h => hok d us (by simpa [evalConsts] using h))) hd
-  | pi hd' hc' => intro Γ _ hd _ _; exact .pi (.pi hd' hc') hd
-  | @proj s i e e' _ ih =>
-    intro Γ hb hd hs hok
-    exact .proj (ih (by simpa [bvarsLt] using hb) (denotesIn_proj hd)
+  | pi hd' hc' => intro Γ hd _ _; exact .pi (.pi hd' hc') hd
+  | @proj σ s i e e' _ ih =>
+    intro Γ hd hs hok
+    exact .proj (ih (denotesIn_proj hd)
       (fun s h => hs s (by simpa [evalSites] using h))
       (fun d us h => hok d us (by simpa [evalConsts] using h))) hd
-  | natLit => intro Γ _ hd _ _; exact .natLit hd
+  | natLit => intro Γ hd _ _; exact .natLit hd
+  | @letLive σ c r ty v b e v' hz hsub hv _ ihv ihb =>
+    intro Γ hd hs hok
+    have hdv : DenotesIn M φ Γ v' := denotesIn_of_subAt0 (subAt0_of_check hsub) hd
+    have hrb := ihb hd (fun s h => hs s (by simp [evalSites, h]))
+      (fun d us h => hok d us (by simp [evalConsts, h]))
+    cases hr : r.irrAt ls with
+    | false =>
+      refine .letRel hr hz (ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_)) hrb
+      · simp [evalSites, hz, hr, hsub, h]
+      · simp [evalConsts, hr, h]
+    | true => exact .letIrr hr hz hv hdv hrb
+  | letDead hz _ ihb =>
+    intro Γ hd hs hok
+    exact .letDead hz (ihb hd (fun s h => hs s (by simp [evalSites, hz, h]))
+      (fun d us h => hok d us (by simp [evalConsts, h])))
 
 /-- **The run terms run**: every constant of `S` SrcEval unfolds, at every `Ok` instance, runs
 its value (or its equation body), from the laws, the checked facts and `SitesOk`. -/
@@ -133,8 +160,8 @@ theorem runs_of_sites (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf
     {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
     (hT : SitesOk M p κ lpsOf ann S) {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c)
     (hOk : Ok p ann c ls) (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat}
-    (hlv : LvAt φ (lpsOf c) ls) : Runs M κ (Ok p ann) (lpsOf c) ls φ [] t e := by
-  have hcorr : TermCorr κ (lpsOf c) t e := by
+    (hlv : LvAt φ (lpsOf c) ls) : Runs M κ (Ok p ann) (lpsOf c) ls φ [] [] t e := by
+  have hcorr : TermCorrS κ (lpsOf c) [] t e := by
     cases hrp with
     | value hr hd hf => exact hG.values c _ _ _ _ _ _ hS hr hd hf
     | eqn hr hsh => exact (hG.eqns c _ _ hS hr).2 _ hsh
@@ -147,7 +174,7 @@ theorem runs_of_sites (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf
     cases hrp with
     | value hr hd _ => simp [runTerms, hr, hd]
     | eqn hr _ => simp [runTerms, hr]
-  exact runs_of_corr hcorr (hG.closed c t e hS hrp) hden (hT c ls t e hS hOk hrp φ hlv)
+  exact runs_of_corr hcorr hden (hT c ls t e hS hOk hrp φ hlv)
     (fun d us h => hG.okClosed c ls hS hOk t hterm d us h)
 
 /-- **The fundamental lemma's hypotheses, from the laws other than canonicity**, the recursors'

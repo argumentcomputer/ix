@@ -843,7 +843,10 @@
    "imports": ["IxCCTests.Pipeline.Rc.Run"]},
   "IxCCTests.Pipeline.Rc.Levels":
   {"path": "IxCCTests/Pipeline/Rc/Levels.lean",
-   "imports": ["IxCCTests.Pipeline.Rc.Support", "IxCCTests.Rt.Native"]},
+   "imports":
+   ["IxCCTests.Pipeline.Rc.Support",
+    "IxCCTests.Rt.Native",
+    "IxCC.Recheck.Rc.Proof.KeyIndex"]},
   "IxCCTests.Pipeline.Rc.Counters":
   {"path": "IxCCTests/Pipeline/Rc/Counters.lean",
    "imports": ["IxCCTests.Pipeline.Rc.Support"]},
@@ -940,6 +943,7 @@
    ["IxCCTests.Own.Owned.Live",
     "IxCCTests.Own.Owned.Sites",
     "IxCCTests.Own.Owned.ScopeSet",
+    "IxCCTests.Own.Owned.KeyIndex",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Own.Plain.Certificate",
     "IxCC.Recheck.Rc.Produce",
@@ -947,6 +951,9 @@
   "IxCCTests.Own.Owned.Live":
   {"path": "IxCCTests/Own/Owned/Live.lean",
    "imports": ["IxCC.Own.Plain.Program"]},
+  "IxCCTests.Own.Owned.KeyIndex":
+  {"path": "IxCCTests/Own/Owned/KeyIndex.lean",
+   "imports": ["IxCC.Recheck.Rc.Produce"]},
   "IxCCTests.Own.Owned.Interp":
   {"path": "IxCCTests/Own/Owned/Interp.lean",
    "imports": ["IxCC.Own.Plain.Semantics"]},
@@ -1131,6 +1138,12 @@
     "IxCC.Src.Table.Check",
     "IxCC.Recheck.Produce",
     "IxCCTests.Support.Envelope"]},
+  "IxCCTests.Grounding.Zeta":
+  {"path": "IxCCTests/Grounding/Zeta.lean",
+   "imports":
+   ["IxCCTests.Grounding.Run",
+    "IxCCTests.Corpus.Manifest",
+    "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Run":
   {"path": "IxCCTests/Grounding/Run.lean",
    "imports":
@@ -1148,13 +1161,21 @@
   {"path": "IxCCTests/Grounding/NoCanon.lean",
    "imports":
    ["IxCCTests.Grounding.Run",
+    "IxCCTests.Grounding.Zeta",
     "IxCCTests.Corpus.Manifest",
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.Graded",
     "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
-   "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Grounding.NoCanon"]},
+   "imports":
+   ["IxCCTests.Grounding.Run",
+    "IxCCTests.Grounding.NoCanon",
+    "IxCCTests.Grounding.Zeta",
+    "IxCCTests.Grounding.GradedHead"]},
+  "IxCCTests.Grounding.GradedHead":
+  {"path": "IxCCTests/Grounding/GradedHead.lean",
+   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.GradedHead"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -3391,6 +3412,9 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_AllocTotal",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_ProcsArithmetic",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_RecycleInvariant"]},
+  "IxCCTests.Fences.RcPolicy":
+  {"path": "IxCCTests/Fences/RcPolicy.lean",
+   "imports": ["IxCC.Recheck.Rc.Proof.KeyIndex"]},
   "IxCCTests.Fences.OwnRc":
   {"path": "IxCCTests/Fences/OwnRc.lean",
    "imports":
@@ -3529,6 +3553,7 @@
     "IxCC.Lam.Proof.Mono",
     "IxCC.Lam.Erase.Proof.Correct",
     "IxCC.Src.Relevance.Proof.Sound",
+    "IxCC.Src.Relevance.Proof.Canonical",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Defun":
@@ -3678,6 +3703,7 @@
     "IxCCTests.Fences.OwnOwned",
     "IxCCTests.Fences.OwnOwnedSwitch",
     "IxCCTests.Fences.OwnParams",
+    "IxCCTests.Fences.RcPolicy",
     "IxCCTests.Fences.OwnRc",
     "IxCCTests.Fences.Rt",
     "IxCCTests.Fences.RtRc",
@@ -4113,7 +4139,8 @@
     "IxCC.Src.Proof.Unfold",
     "IxCC.Sem.Bind"]},
   "IxCCGrounding.Subst":
-  {"path": "IxCCGrounding/Subst.lean", "imports": ["IxCCGrounding.Eqn"]},
+  {"path": "IxCCGrounding/Subst.lean",
+   "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Lift"]},
   "IxCCGrounding.Runs":
   {"path": "IxCCGrounding/Runs.lean",
    "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Hyps", "IxCCGrounding.Ok"]},
@@ -4138,6 +4165,8 @@
   {"path": "IxCCGrounding/Model.lean", "imports": ["IxCCGrounding.Laws"]},
   "IxCCGrounding.Lits":
   {"path": "IxCCGrounding/Lits.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.Lift":
+  {"path": "IxCCGrounding/Lift.lean", "imports": ["IxCCGrounding.Model"]},
   "IxCCGrounding.Laws":
   {"path": "IxCCGrounding/Laws.lean",
    "imports": ["IxCK.Kernel.Denotes", "IxCCGrounding.Syntax"]},
@@ -4157,6 +4186,9 @@
     "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.CaseBlind",
     "IxCCGrounding.Adapt678"]},
+  "IxCCGrounding.GradedHead":
+  {"path": "IxCCGrounding/GradedHead.lean",
+   "imports": ["IxCCGrounding.Graded"]},
   "IxCCGrounding.Graded":
   {"path": "IxCCGrounding/Graded.lean", "imports": ["IxCCGrounding.RootInst"]},
   "IxCCGrounding.Fundamental":
@@ -4177,7 +4209,8 @@
     "IxCCGrounding.Adapt678",
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
-    "IxCCGrounding.Graded"]},
+    "IxCCGrounding.Graded",
+    "IxCCGrounding.GradedHead"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4233,7 +4266,8 @@
   {"path": "IxCCGrounding/Case.lean",
    "imports": ["IxCCGrounding.Tele", "IxCCGrounding.Heads"]},
   "IxCCGrounding.Apply":
-  {"path": "IxCCGrounding/Apply.lean", "imports": ["IxCCGrounding.Relation"]},
+  {"path": "IxCCGrounding/Apply.lean",
+   "imports": ["IxCCGrounding.Relation", "IxCCGrounding.Lift"]},
   "IxCCGrounding.Adapt678":
   {"path": "IxCCGrounding/Adapt678.lean",
    "imports": ["IxCCGrounding.Subst", "IxCCGrounding.Facts"]},
@@ -4255,6 +4289,7 @@
     "IxCCGrounding.Fundamental",
     "IxCCGrounding.Ok",
     "IxCCGrounding.Eqn",
+    "IxCCGrounding.Lift",
     "IxCCGrounding.Subst",
     "IxCCGrounding.Tele",
     "IxCCGrounding.Case",
@@ -4276,6 +4311,7 @@
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
     "IxCCGrounding.Graded",
+    "IxCCGrounding.GradedHead",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
@@ -5092,6 +5128,9 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.Canonical":
+  {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.Sound"]},
   "IxCC.Src.Relevance.Check":
   {"path": "IxCC/Src/Relevance/Check.lean",
    "imports":
@@ -6537,6 +6576,9 @@
     "IxCC.Cfg.Rc.Proof.Physical.PublicEntry",
     "IxCC.Cfg.Rc.Proof.Physical.NumericEntry",
     "IxCC.Recheck.Rc.Proof.FrontParts"]},
+  "IxCC.Recheck.Rc.Proof.KeyIndex":
+  {"path": "IxCC/Recheck/Rc/Proof/KeyIndex.lean",
+   "imports": ["IxCC.Recheck.Rc.Produce"]},
   "IxCC.Recheck.Rc.Proof.FrontParts":
   {"path": "IxCC/Recheck/Rc/Proof/FrontParts.lean",
    "imports": ["IxCC.Recheck.Rc.Replay"]},

@@ -215,19 +215,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "strings.ixe",
-        "sha256": "0d8df603bf155febfb2ccac94e700a1da2dee7f8f58fc7aeb9a0d92c4fd5ea09",
-        "bytes": 4466497
+        "sha256": "4a48d8c097b242def17eb93e7ea7bec2341ecdc80ae86526949f909216d509f2",
+        "bytes": 4473149
       },
       "equations": {
         "path": "strings.equations.json",
-        "sha256": "8d46f770adced1de0681ca6028fb89bfaf3ea4294735ebfb328a1a493890ed5e",
+        "sha256": "bb0e322c15171bd6e693ce7b9a6fe8725ef40c2089e5760516d84bf81c5f731f",
         "equations": 62,
         "failures": 0
       },
-      "named_env_sha256": "9651cfeb8502f0a89cf0aa46ab0fd7c525557d574cd0ef5da9904dbaea89b188",
+      "named_env_sha256": "14a2ce58a8b97ff94d8bc3c8a87965f339e603a9ff3cbce87bf74e262126e278",
       "census": {
         "path": "strings.census.json",
-        "sha256": "ffc351e9ac540a70fbe46ed40d8d40982887d3ebc656964e99e10e11c95a1e13"
+        "sha256": "4218c8031f754020854842db5ad654e7fd9502ebcf415556d3e15bfd754340a7"
       },
       "roots": [
         {
@@ -262,19 +262,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "panic.ixe",
-        "sha256": "bfdea479071434af2097c99e7eff7e6538ec6f403fd1047c9ae39a36d690384f",
-        "bytes": 372846
+        "sha256": "2eb6f5e8bf426bea2a590460e21b7c7f3c37953122158a223267f74c5948293f",
+        "bytes": 375105
       },
       "equations": {
         "path": "panic.equations.json",
-        "sha256": "a275d7169c284d8b600a6f0d0f2075ae3b7d2f7bc7ad2d0d261931d784f6a6b6",
+        "sha256": "e952b30b7a5e4fdfdd39a83de0e671700207e4cfc3abb4725082489e9f7a244b",
         "equations": 16,
         "failures": 0
       },
-      "named_env_sha256": "22cc21e973a57f40bad702207d68396ac548f535cd89c57a4d6d304616e6338f",
+      "named_env_sha256": "d2dc306ea3e2a9cf9bc0569c2166ae3ae0e2f27ddc7b3c0d1e46bb83a8199946",
       "census": {
         "path": "panic.census.json",
-        "sha256": "312906f97aed6824e81c962c558b91328f2067cdc4fa4aeb2ae1b90ee701b554"
+        "sha256": "bc105b7af15d00a1b983341fbfc55a8cfd8ce9a6b27d89ad2808ad94da5bb613"
       },
       "roots": [
         {

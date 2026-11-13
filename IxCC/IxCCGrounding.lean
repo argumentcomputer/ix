@@ -13,6 +13,7 @@ import IxCCGrounding.Hyps
 import IxCCGrounding.Fundamental
 import IxCCGrounding.Ok
 import IxCCGrounding.Eqn
+import IxCCGrounding.Lift
 import IxCCGrounding.Subst
 import IxCCGrounding.Tele
 import IxCCGrounding.Case
@@ -34,4 +35,5 @@ import IxCCGrounding.Direct.Sites
 import IxCCGrounding.CaseLevels
 import IxCCGrounding.RootInst
 import IxCCGrounding.Graded
+import IxCCGrounding.GradedHead
 import IxCCGrounding.Fence

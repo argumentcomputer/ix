@@ -11,6 +11,6 @@
   "sortpoly.equations.json":
   "8e3f72dc2424a12c7aeddacd46f45d9114e10d2df2672f87de21938d96261a1d"},
  "commands":
- ["ix compile --no-build --consts <roots> --anon --out sortpoly.ixe SortPoly.lean",
-  "ix compile --no-build --consts <roots> --out sortpoly.named.ixe SortPoly.lean",
+ ["ix compile --no-build --consts <roots> --no-equations --anon --out sortpoly.ixe SortPoly.lean",
+  "ix compile --no-build --consts <roots> --no-equations --out sortpoly.named.ixe SortPoly.lean",
   "ix addr-of --ixe sortpoly.named.ixe NAME, for every root"]}
