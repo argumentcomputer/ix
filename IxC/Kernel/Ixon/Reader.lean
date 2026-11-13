@@ -102,7 +102,9 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   from the block itself), in motive order. Rule constructors are the major
   carrier's constructors in `cidx` order (a nested auxiliary recursor's
   rules are its container's constructors). The block's records emit at the
-  block's position; recursor records emit nothing.
+  block's position; recursor records emit nothing. A block of one inductive
+  that no recursor of the input eliminates becomes an `indDecl` without a
+  recursor (`unindexedShape`); a block of several declines.
 * A definition `muts` block becomes one declaration per member (a
   `defnDecl`, `thmDecl` or `opaqueDecl` each, checked like a singleton),
   ordered so that every member follows the members it names by `recur`.
@@ -151,8 +153,8 @@ abbrev CVal (md : Mode) := Ix.Kernel.ConstantVal md
 
 /-- A record the reader cannot turn into declarations: `malformed` is a
 reject (the bytes describe no declaration), `declined` an unsupported
-feature (an unsafe declaration, a block without its recursor, a block the
-modeller declines). -/
+feature (an unsafe declaration, a block of several types without its
+recursors, a block the modeller declines). -/
 inductive ReadError where
   | malformed (reason : String)
   | declined (reason : String)
@@ -1023,11 +1025,32 @@ def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
     declined s!"inductive block {(rb.types[0]?.map (toString ·.1.name)).getD "[anonymous]"} declares {k} twice"
   pure r
 
+/-- **The shape of a block no recursor of the input eliminates**
+(`buildIndex` filed none under it): a block of exactly one inductive reads
+with that member and no recursor, and lowers to an `indDecl` of the type
+former and its constructors. The declaration-level native route without a
+recursor record installs it with no recursor stage, so no ι rule exists for
+the family; IxC's executable checker declines it. A block of several types
+has no such shape: its modeller needs every recursor of the family. -/
+def unindexedShape (ms : Array Ixon.MutConst) : Option BlockShape :=
+  match ms.toList with
+  | [.indc _] => some ⟨#[0], #[]⟩
+  | _ => none
+
+/-- **The shape a block at `owner` reads at**: the one the index files for it,
+otherwise `unindexedShape`. -/
+def blockShapeOf (index : RecIndex) (owner : Address) (ms : Array Ixon.MutConst) :
+    Option BlockShape :=
+  match index.blocks[owner]? with
+  | some shape => some shape
+  | none => unindexedShape ms
+
 /-- An inductive block with its recursors, read from its records and lowered
-by `lowerInductive`. -/
+by `lowerInductive`; a block of one inductive that no recursor of the input
+eliminates, without one (`blockShapeOf`). -/
 def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant)
     (ms : Array Ixon.MutConst) : ReadM (Read md) := do
-  let some shape := cx.index.blocks[owner]?
+  let some shape := blockShapeOf cx.index owner ms
     | declined "inductive block without a recursor in the input"
   let self : Nat → Option (ReadM (CName md)) := fun i =>
     if i < ms.size then some (cx.memberKey (.member owner i)) else none
