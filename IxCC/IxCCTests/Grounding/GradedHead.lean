@@ -77,6 +77,17 @@ def deltaClosuresExpected : Nat := 25
 /-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
 def bvExpected : Nat := 32
 
+/-- In a type's binder domains, the selector `D`'s first argument (the one `autoParam` and
+`optParam` select) replaced by `Nat`. -/
+def swapSelArg (D : KKey) (T : KExpr) : KExpr :=
+  let swap : KExpr → KExpr := fun f =>
+    match f.getAppFn with
+    | .const D' vs =>
+      if D' == D then Expr.mkAppN (.const D' vs) (f.getAppArgs.set 0 (.const Ix.Kernel.natName []))
+      else f
+    | _ => f
+  piTele ((splitAll T).1.map fun p => (swap p.1, p.2)) (splitAll T).2
+
 /-- The six closures whose `for`-loop function (`Std.Legacy.Range.forIn'.loop`) has an `autoParam`
 binder where its equation theorem binds the bare proposition (step Ap). -/
 def forLoops : List String :=
@@ -286,14 +297,8 @@ def run : IO Bool := do
           | .defnInfo cv (.lam d b _) h => .defnInfo cv (.lam d b { pw := .ifAllZero [] }) h
           | ci => ci
         -- the selected argument made `Nat` in the function's type
-        let swap : KExpr → KExpr := fun f =>
-          match f.getAppFn with
-          | .const D' vs => if D' == D then
-              Expr.mkAppN (.const D' vs) (f.getAppArgs.set 0 (.const Ix.Kernel.natName [])) else f
-          | _ => f
         let ePl3 := mapConst i.env fx.name fun
-          | .defnInfo cv v h => .defnInfo { cv with type := piTele ((splitAll cv.type).1.map
-              fun p => (swap p.1, p.2)) (splitAll cv.type).2 } v h
+          | .defnInfo cv v h => .defnInfo { cv with type := swapSelArg D cv.type } v h
           | ci => ci
         let (r1, r2, r3) := (eqnOn ePl1, eqnOn ePl2, eqnOn ePl3)
         expect a (eqnOn i.env && !r1 && !r2 && !r3)

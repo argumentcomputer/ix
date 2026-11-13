@@ -1230,7 +1230,7 @@ end ConclusionsAG
 #guard_msgs in #print axioms IxCC.Grounding.denotes_selRetype
 
 /-- info: 'IxCC.Grounding.denotes_selRetype'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Grounding.denotes_selRetype
+#guard_msgs in #print axioms IxCC.Grounding.denotes_selRetype'
 
 /-- info: 'IxCC.Grounding.fits_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.fits_selRetype
