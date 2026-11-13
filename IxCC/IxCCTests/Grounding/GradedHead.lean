@@ -1,4 +1,5 @@
 import IxCCTests.Grounding.NoCanon
+import IxCCTests.Grounding.Zeta
 import IxCCGrounding.SelRetype
 
 /-! # `tests-grounding`: step 1b, every run-term site typed from `graded`, and step Ap
@@ -41,7 +42,12 @@ case: `IxCCTests.Grounding.LetClo`).
 The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
 refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
 every other part is true, also with the word entries' runtime references (the tower's six
-constructors, which no run term names) added to its closure. -/
+constructors, which no run term names) added to its closure.
+
+The witness shape (`IxCCTests.Grounding.LetWit`), in the same pass over the 51: the conjunct
+`letWit` holds on every closure, no run pair the decider as landed with step C accepted
+(`Zeta.corrSBClo`) is refused, and the decider accepts more exactly at `closures` c19
+(`Zeta.witExpected`). -/
 
 namespace IxCCTests.Grounding.GradedHead
 
@@ -243,6 +249,8 @@ def run : IO Bool := do
     let mut nApPlants := 0
     let mut famAGp : List String := []
     let mut nWords := 0
+    let mut nWit := 0
+    let mut wcAll : List (String × List CId) := []
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -334,6 +342,16 @@ def run : IO Bool := do
       else
         expect a (retyped.isEmpty && moved.isEmpty)
           s!"Ap: {label}: {retyped.length} constants retyped, conjuncts moved {moved}"
+      -- the witness shape: `letWit` true, nothing accepted with step C refused, the witness case
+      -- alone accepting exactly the recorded constants
+      let lostW := Zeta.lostConsts i
+      let wcW := Zeta.witConsts i
+      let expW := (Zeta.witExpected.lookup label).getD []
+      expect a (parts.lookup "letWit" == some true && lostW.isEmpty && wcW == expW)
+        s!"letWit: {label}: letWit {parts.lookup "letWit"}, accepted with step C and refused now \
+          {lostW}, accepted by the witness case alone {wcW} (expected {expW})"
+      nWit := nWit + 1
+      if !wcW.isEmpty then wcAll := wcAll ++ [(label, wcW)]
       let j' := { i with env := env' }
       if (failing j').isEmpty && noCanonAB i.src env' i.κ i.Sl && litDefsB env' && NoCanon.instOk j' &&
           sB j' then
@@ -394,6 +412,9 @@ def run : IO Bool := do
     IO.println s!"words: {wordsLabel} (30 word entries) is refused by the family over six fields on \
       selEnv by noWord alone, every other conjunct and part true, also with the tower's constructors \
       (the word entries' runtime references, 6 constants) added to its closure"
+    expect a (nWit == 51) s!"letWit: {nWit} closures checked, expected 51"
+    IO.println s!"letWit: on all {nWit}: the conjunct letWit true, nothing accepted with step C \
+      refused, the witness case alone accepting {wcAll}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true
   catch error =>

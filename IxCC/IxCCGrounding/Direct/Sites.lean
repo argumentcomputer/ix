@@ -109,7 +109,27 @@ theorem evalSites_mem_P (ls : Levels) :
             simp only [hne, Bool.false_eq_true, ↓reduceIte]
             exact ihv _ (A :: Γ) cp hP' s hs
           · simp [hr] at hs
-      · exact Or.inr (Or.inr (ihb P Γ e hP s hs))
+      · rcases hs with hs | hs
+        · -- the witness shape: the value's sites in the context of the path's λs
+          right; right; left
+          cases hw : witSite? b e with
+          | none => simp [hw] at hs
+          | some p =>
+            obtain ⟨Δ, cp⟩ := p
+            simp only [hw] at hs ⊢
+            cases hr : r.irrAt ls
+            · simp only [hr, Bool.false_eq_true, ↓reduceIte] at hs
+              have hP' : IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) := by
+                rw [irrAt_profile] at hr
+                simp [hP, hr]
+              have hne : (P.filter (fun prof => !r.irrP prof)).isEmpty = false := by
+                cases hq : P.filter (fun prof => !r.irrP prof) with
+                | nil => rw [hq] at hP'; simp at hP'
+                | cons _ _ => rfl
+              simp only [hne, Bool.false_eq_true, ↓reduceIte]
+              exact ihv _ (Δ.reverse ++ Γ) cp hP' s hs
+            · simp [hr] at hs
+        · exact Or.inr (Or.inr (Or.inr (ihb P Γ e hP s hs)))
   | _ => intro P Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 section Sem
@@ -325,7 +345,17 @@ theorem evalSites_sub_allSites (ls : Levels) :
           split at hs
           · simp at hs
           · exact ihv (A :: Γ) cp s hs
-      · exact Or.inr (Or.inr (ihb Γ e s hs))
+      · rcases hs with hs | hs
+        · right; right; left
+          cases hw : witSite? b e with
+          | none => simp [hw] at hs
+          | some p =>
+            obtain ⟨Δ, cp⟩ := p
+            simp only [hw] at hs ⊢
+            split at hs
+            · simp at hs
+            · exact ihv (Δ.reverse ++ Γ) cp s hs
+        · exact Or.inr (Or.inr (Or.inr (ihb Γ e s hs)))
   | _ => intro Γ e s hs; simp [evalSites] at hs
 
 /-- **A run pair is one the check enumerates**, on a closure the check passes. -/

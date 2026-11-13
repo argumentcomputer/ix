@@ -108,11 +108,17 @@ theorem evalSites_congr {n : Nat} {ls ls' : Levels} (hag : ∀ i < n, ls.getD i 
       | none => rfl
       | some v' => simp only [evalSites_congr hag v Γ v' hv]
     · congr 1
-      cases cloSite? b e with
-      | none => rfl
-      | some p =>
-        obtain ⟨A, cp⟩ := p
-        simp only [evalSites_congr hag v (A :: Γ) cp hv]
+      · cases cloSite? b e with
+        | none => rfl
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [evalSites_congr hag v (A :: Γ) cp hv]
+      · congr 1
+        cases witSite? b e with
+        | none => rfl
+        | some p =>
+          obtain ⟨Δ, cp⟩ := p
+          simp only [evalSites_congr hag v (Δ.reverse ++ Γ) cp hv]
   | .var _, _, _, _ => rfl
   | .sort _, _, _, _ => rfl
   | .const _ _, _, _, _ => rfl
