@@ -548,9 +548,9 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
   intro par blk hargs good p b hp hb cb hcb
   subst hargs
   rcases Obs.«KernelWhnf::struct_block_member_addrs».obs ev with
-    ⟨m2, cs12, w39, w40, w41, x_members, cs86, ev14, ev88, hc105⟩ |
-    ⟨m2, cs12, x_info, w39, w40, w41, m128, ev14, hne106, he114, hm113, hm136, hc140⟩
-  · subst hc105
+    ⟨m2, cs12, w39, w40, w41, w42, x_members, cs92, ev14, ev94, hc111⟩ |
+    ⟨m2, cs12, x_info, w39, w40, w41, w42, m134, ev14, hne112, he120, hm119, hm142, hc146⟩
+  · subst hc111
     have e1 := ObsFn.heap_extends ev14
     obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
       (good.sub fun z hz => by simp [hz]) hb
@@ -559,7 +559,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
     injection hv with hi _
     subst hi
     obtain ⟨ms, hms, hmr⟩ := infoShape_muts hinfo
-    obtain ⟨as, has, hmap⟩ := ih.get (.callees .build_recur_addrs) (by lt_calls) ev88 x_members
+    obtain ⟨as, has, hmap⟩ := ih.get (.callees .build_recur_addrs) (by lt_calls) ev94 x_members
       blk ms.toList b rfl (good.sub fun z hz => by simp [hz]) hmr (se_addrRep_mono e1 hb)
     refine ⟨as, has, ?_, fun hn => absurd hms (hn ms)⟩
     intro ms' hms' i ind hi
@@ -578,7 +578,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
     | some a =>
       rw [ha] at h2
       exact ⟨a, List.mem_of_getElem? ha, Option.some.inj h2⟩
-  · subst hc140 hm136 hm113 he114
+  · subst hc146 hm142 hm119 he120
     have e1 := ObsFn.heap_extends ev14
     obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
       (good.sub fun z hz => by simp [hz]) hb
@@ -592,7 +592,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
     intro ms hms i ind hi
     rw [hms] at hinfo
     obtain ⟨lp, hv', -⟩ := hinfo
-    exact (hne106 _ (by rfl) hv').elim
+    exact (hne112 _ (by rfl) hv').elim
 
 /-! ## `struct_is_rec` -/
 

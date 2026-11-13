@@ -102,7 +102,7 @@ theorem defEq_lam_left {env : Ix.Kernel.Env .anon} {d : Nat} {TA BA TB BB : KExp
     (hB : DefEq env (d + 1) (BA.instantiate1 (.fvar d TA)) (BB.instantiate1 (.fvar d TA)))
     (hz : ℓa.zeronessOf = ℓb.zeronessOf) :
     DefEq env d (.lam TA BA (bmeta ℓa)) (.lam TB BB (bmeta ℓb)) :=
-  .symm (.lam (.symm hT) (.symm hB) (by unfold bmeta; exact hz.symm) rfl)
+  .symm (.lam (.symm hT) (.symm hB) (by unfold bmeta; exact hz.symm))
 
 /-- **∀-congruence from bodies opened under the left domain** (`DefEq.forallE` by symmetry). -/
 theorem defEq_forallE_left {env : Ix.Kernel.Env .anon} {d : Nat} {TA BA TB BB : KExpr}
@@ -110,7 +110,7 @@ theorem defEq_forallE_left {env : Ix.Kernel.Env .anon} {d : Nat} {TA BA TB BB : 
     (hB : DefEq env (d + 1) (BA.instantiate1 (.fvar d TA)) (BB.instantiate1 (.fvar d TA)))
     (hz : ℓa.zeronessOf = ℓb.zeronessOf) :
     DefEq env d (.forallE TA BA (bmeta ℓa)) (.forallE TB BB (bmeta ℓb)) :=
-  .symm (.forallE (.symm hT) (.symm hB) (by unfold bmeta; exact hz.symm) rfl)
+  .symm (.forallE (.symm hT) (.symm hB) (by unfold bmeta; exact hz.symm))
 
 /-! ## The images two comparisons equate -/
 
