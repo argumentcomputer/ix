@@ -69,6 +69,24 @@ theorem load_escape {E : Ixon.Env} {calls : List (Call F)} {x : _root_.Address}
 
 /-! ## The loads -/
 
+/-- An inductive block member. -/
+def isIndc : Ixon.MutConst → Bool
+  | .indc _ => true
+  | _ => false
+
+/-- **The record at `a` in `c.E` is no block of two or more inductives** (what
+`block_is_multi`'s and `block_is_modeled`'s answer `0` establish; the latter's nested-occurrence
+scan is not read). -/
+def FewInductives (c : Ctx) (a : _root_.Address) : Prop :=
+  ∀ cst ms, Ix.Cert.recordAt c.E a = some cst → cst.info = .muts ms →
+    (ms.toList.filter isIndc).length ≤ 1
+
+/-- The sort a `∀`-telescope ends in after exactly `n` binders. -/
+def piSortAt : Nat → KExpr → Option KLevel
+  | 0, .sort l => some l
+  | n + 1, .forallE _ b _ => piSortAt n b
+  | _, _ => none
+
 /-- **The loads read the environment** (module docstring): every good derivation of
 `Ingress::get_ci` at an address `a` returns a constant representing `env`'s constant at
 `κ a`; and so do the projection loaders the core calls directly, `get_ci_cprj(block, i, j)` and
@@ -158,6 +176,65 @@ structure LoadFacts (c : Ctx) : Prop where
           tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
         ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
           ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
+  /-- (L5) **Unit-likeness**: an inductive that `get_ci` loads with no index and one constructor
+  (whose stored constructor, at the first constructor record of its member, has no field), at a
+  block with at most one inductive, is unit-like at its loaded parameter count; at a reserved
+  basis key it is the pinned `PUnit` (no parameter, `isUnitLikeTy`). Owed by the declaration
+  layer: the native install's capabilities (`nativeCapsAt`: `unitlike`, `unitParams`) and the
+  pinned basis. -/
+  unitLike : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
+      (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
+      (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon)
+      (cvC : Ix.Kernel.ConstantVal .anon) (nPc : Nat),
+    ObsFn W "Ingress::get_ci" [ap] h ptr h' cs → Good c cs → Bytes.RepAddressRef addrTy h a ap →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct"
+      [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h' b blk →
+    c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) →
+    FewInductives c (ixAddr b) →
+    c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc 0) →
+    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
+      (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
+        (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
+  /-- (L5, L7) **Structure η**: the inductive member `i` of the block `b`, as `get_ci_iprj` loads
+  it with no index and one constructor, whose block `block_is_modeled` answers `0`, whose sort
+  after the constructor's parameters is never zero at some levels, and whose projection record
+  `struct_is_rec` does not find recursive, is η-capable through the constructor `c.κ ac` (a
+  stored constructor of that member with at least one field), with that constructor's field and
+  parameter counts, and the constructor is stored at the inductive's level parameters. Owed by the
+  declaration layer (`nativeCapsAt`: `eta`, `etaCtor`, `etaFields`, `etaParams`) and, for the level
+  parameters, by the reader (a block's members share its level parameters). With `EnvFacts.recEta`
+  this gives the η rescue's `rl.eta = true` at the recursor IxVM fires. -/
+  eta : ∀ (ac b sa : Bytes.Address) (i : F) (j : Nat) (cvc cvT : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat) (us : List KLevel) (l : KLevel)
+      (bp ptr nl ty np u blk idx : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F)),
+    c.env.find? (c.κ (ixAddr ac)) = some (.ctorInfo cvc cnP cnF) →
+    cvc.name = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) → 0 < cnF →
+    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h1 ptr h2 cs1 → Good c cs1 →
+    Bytes.RepAddressRef addrTy h1 b bp →
+    loadValue h2 ptr =
+      .ok (.construct kciEnum "Induct" [nl, ty, np, .field 0, .field 1, u, blk, idx]) →
+    c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some (.indInfo cvT caps) →
+    (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
+      ObsFn W "KernelModeled::block_is_modeled" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
+        Bytes.RepAddressRef addrTy h3 b bq) →
+    piSortAt cnP (posOf cvT.levelParams cvT.type) = some l →
+    (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true →
+    (∃ (sp v : SourceValue F) (h5 h6 : Heap F) (cs5 : List (Call F)),
+      ObsFn W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5 ∧ v ≠ .field 1 ∧ Good c cs5 ∧
+        Bytes.RepAddressRef addrTy h5 sa sp) →
+    ixAddr sa = iprjAddr (ixAddr b) (ZMod.val i) →
+    caps.eta = true ∧ caps.etaCtor = some (c.κ (ixAddr ac)) ∧ caps.etaFields = cnF ∧
+      caps.etaParams = cnP ∧ cvc.levelParams = cvT.levelParams
+  /-- (L1) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
+  whose raw bytes are the serialization of a constant with empty tables (any kind) reads as
+  that constant's payload. `Good` gives only the raw bytes (a held record at an address the run
+  hashed has the hashed bytes, `load_escape`); `LazyConstant.get?` reads the cache and its byte
+  window, which the loader layer builds by decoding those bytes: the claim's canonical store
+  (`Ix.Cert.Stream.StoredCanonical`) and `serConstant`'s injectivity on wire-valid constants. -/
+  canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
+    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+      ∀ cm, lc.get? = some cm → cm.info = info
 
 /-! ## Specs -/
 

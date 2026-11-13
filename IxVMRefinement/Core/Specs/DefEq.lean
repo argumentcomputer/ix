@@ -368,8 +368,8 @@ def compare_struct_fields : SpecFn := fun c args h r _ calls =>
 /-- `compute_iprj_addr(block_addr, idx)`: **the address of the inductive-projection record of
 member `idx` of the block** (`iprjAddr`), computed by serializing the record and hashing it
 (`IxonSerialize::put_constant`, `Blake3::bytes_to_addr`); and a record of `c.E` at that address is
-that inductive projection (the run hashed its bytes, so another record there would be a hashed
-collision, which `Good` excludes). -/
+that inductive projection: the run hashed its serialization, so a held record there has those raw
+bytes (`Good`, `load_escape`), and its decoding is then that record (`LoadFacts.canonical`). -/
 def compute_iprj_addr : SpecFn := fun c args h r h' calls =>
   ∀ bp ip, args = [bp, ip] → Good c calls → ∀ (b : Bytes.Address) (i : F), RepAddr h b bp →
     ip = .field i → ∃ a, RepAddr h' a r ∧ ixAddr a = iprjAddr (ixAddr b) (ZMod.val i) ∧

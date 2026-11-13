@@ -72,17 +72,12 @@ def InfoShape (h : Heap F) : Ixon.ConstantInfo → SourceValue F → Prop
 def ConstShapeRep (h : Heap F) (cst : Ixon.Constant) (v : SourceValue F) : Prop :=
   ∃ info sh rf un, v = .construct ixConstEnum "Mk" [info, sh, rf, un] ∧ InfoShape h cst.info info
 
-/-- An inductive block member. -/
-def isIndc : Ixon.MutConst → Bool
-  | .indc _ => true
-  | _ => false
+/-- An inductive block member (`Core.isIndc`). -/
+abbrev isIndc : Ixon.MutConst → Bool := IxVM.Refinement.Core.isIndc
 
-/-- **The record at `a` in `c.E` is no block of two or more inductives** (what
-`block_is_multi`'s and `block_is_modeled`'s answer `0` establish; the latter's nested-occurrence
-scan is not read). -/
-def FewInductives (c : Ctx) (a : _root_.Address) : Prop :=
-  ∀ cst ms, Ix.Cert.recordAt c.E a = some cst → cst.info = .muts ms →
-    (ms.toList.filter isIndc).length ≤ 1
+/-- **The record at `a` in `c.E` is no block of two or more inductives** (`Core.FewInductives`,
+which the load facts also read). -/
+abbrev FewInductives (c : Ctx) (a : _root_.Address) : Prop := IxVM.Refinement.Core.FewInductives c a
 
 /-- The projection record of member `i` (of the given kind) of the block `b`. -/
 def memberProjInfo (b : _root_.Address) (i : Nat) : Ixon.MutConst → Ixon.ConstantInfo
