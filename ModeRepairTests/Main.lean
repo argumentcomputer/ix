@@ -11,6 +11,8 @@ IxC.Kernel.Ixon.Prelude`. Every expectation is asserted; the process exits 1 if 
 * Part 2: the sixteen findings (REPLY-2-TO-IXVM.md §4) with their controls, from engineer MT's
   `Findings.lean` (branch `jcb/ixcc-mode-findings` at 3c673bc38), each with the checker's expected
   verdict and `runR`'s expected outcome at every fuel tried.
+* Part 3 (engineer MW): V5, the places where the checker or its oracle failed open, each with an
+  accepting and a refusing (or declining) case.
 
 Every case also asserts what soundness gives on its inputs: if the checker accepts and the
 inputs meet `InputsOk` (decided by `inputsOkB`), no fuel tried ends in a violation. A finding
@@ -2176,6 +2178,40 @@ def findingCases : List Case :=
     f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases ++
     oCases ++ pCases ++ f19Cases ++ mCases
 
+/-! ## Part 3: V5, the places that failed open (engineer MV's coverage table, engineer MW)
+
+Each with an accepting (or answering) case and a refusing (or declining) one. -/
+
+/-! ### V5 oracle: a level comparison out of fuel is a decline -/
+
+/-- `imax q (imax p₁ (imax p₂ … (imax pₙ₋₁ pₙ)))`: deciding `u ≤ 0` descends two units of
+`Level.defaultFuel` (10,000) per `imax` before it finds `q ≤ 0` false at the bottom, so
+`Level.isEquiv u 0` is `some false` at n = 4,990 and `none` at n = 5,010 (probe MW-lvprobe). -/
+def deepLevel (n : Nat) : Ix.Kernel.Level :=
+  let tail := (List.range n).foldr (fun i acc => Ix.Kernel.Level.imax (.param (i + 1)) acc) (.param (n + 1))
+  .imax (.param 0) tail
+
+/-- A type variable of sort `u`, at depth 1: the oracle asks whether `u` is zero (a proposition). -/
+def sortVar (u : Ix.Kernel.Level) : Ix.Kernel.Expr .anon := .fvar 0 (.sort u)
+
+def v5oracle (t : IO.Ref Tally) : IO Unit := do
+  let sh : Ix.Kernel.Key .anon → Option (List CtorShape) := fun _ => none
+  let cl := oracleClassifier Ix.Kernel.Env.empty sh {}
+  let show_ (c : Except String Cls) : String := match c with
+    | .ok x => s!"ok {repr x}" | .error e => s!"error {e}"
+  check1 t "V5 oracle: Level.isEquiv u 0 out of fuel at n = 6000 (none)"
+    (Ix.Kernel.Level.isEquiv (deepLevel 6000) .zero == none) (repr (Ix.Kernel.Level.isEquiv (deepLevel 6000) .zero)).pretty
+  -- answering: the comparison decides, the type variable is not a proposition's type, so `val`
+  let c := cl.type 1 (sortVar (deepLevel 4990))
+  check1 t "V5 oracle: a type variable of sort u, u ≤ 0 decided false (n = 4990): val"
+    (match c with | .ok .val => true | _ => false) (show_ c)
+  let c := cl.type 1 (sortVar .zero)
+  check1 t "V5 oracle: a type variable of sort 0: irr" (match c with | .ok .irr => true | _ => false) (show_ c)
+  -- REPAIR V5: `val` as landed (the comparison's `none` taken as "not zero")
+  let c := cl.type 1 (sortVar (deepLevel 6000))
+  check1 t "V5 oracle: a type variable of sort u, u ≤ 0 out of fuel (n = 6000): a decline"
+    (match c with | .error e => e.startsWith "decline:" | _ => false) (show_ c)
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2190,6 +2226,8 @@ def run : IO UInt32 := do
   try finding6 t false catch e => check1 t "F6" false s!"error: {e}"  -- REPAIR M: true as landed
   finding14ext t
   finding4oracle t
+  IO.println "== Part 3: V5, the places that failed open"
+  v5oracle t
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

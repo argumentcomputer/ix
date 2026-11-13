@@ -77,12 +77,17 @@ def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (l
     | .forallE A B _ =>
       if (← oTypeClass env sh lim n (d + 1) (B.instantiate1 (.fvar d A))) == .irr then return .irr
     | _ => pure ()
-    -- a proposition
+    -- a proposition; a level comparison out of fuel (`Level.isEquiv` answers `none` past
+    -- `Level.defaultFuel`) is a decline, not "not a proposition" (V5: as landed `none` was taken
+    -- as false, and a type of a sort that may be `Prop` went on to be classed `val` or by shape)
     let tyOfW ← oInfer env lim d W
     if let some S := tyOfW then
       let sortOfW ← oWhnf env lim d S
       if let some (.sort u) := sortOfW then
-        if Ix.Kernel.Level.isEquiv u .zero == some true then return .irr
+        match Ix.Kernel.Level.isEquiv u .zero with
+        | some true => return .irr
+        | some false => pure ()
+        | none => throw "decline: the level comparison ran out of fuel"
     -- an immediate or a leaf
     match W.getAppFn with
     | .const (.role .nat) _ => return natClass
