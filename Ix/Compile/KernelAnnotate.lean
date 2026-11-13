@@ -473,7 +473,11 @@ def prelude? : Except String (Ix.Kernel.Reader.Prelude .source) :=
 /-- **Install the compile's input** in Source mode over the prelude `pre`,
 phase A only, and mark the environment and IxC's core over it persistent; its
 parallel work on `2 * workers` threads of its own (`parMap`, `phaseAWorkers`).
-`abandoned` once `stop` holds. -/
+`abandoned` once `stop` holds. A safe declaration the install leaves out (its ingest fails, or it
+names a constant the install lacks) fails the install: the binders that read it would be
+undecided. One whose check fails enters leniently (`lenient`: a compiler-trust axiom, a
+role whose evidence is another toolchain's, a deliberately ill-typed test case), and the
+records reading it are annotated, so it leaves no datum missing. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (pre : Ix.Kernel.Reader.Prelude .source) (workers : Nat := 32) (stop : IO Bool := pure false) :
     IO (Except String Installed) := do
