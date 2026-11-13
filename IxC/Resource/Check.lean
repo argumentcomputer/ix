@@ -327,8 +327,8 @@ def unknownCall (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
 
 /-- Binding a value at an inner binder (a `let`, a case field's binder) in
 region `s`, as `bindAt` does, before the once rules of `bindInner`. A plain
-binder aliases. -/
-def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+binder aliases. (`bindInnerBase` is this, with no region at class `leaf`.) -/
+def bindInnerRegs (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
   match m with
   | .erased => pure { cls := .irr }
   | .unique | .uniqueBorrowed => do
@@ -345,6 +345,13 @@ def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String)
     pure { v with cls, regs := natUnion v.regs [s], src := none }
   | .many => do valid v w; pure { v with cls, src := none }
 
+/-- Binding a value at an inner binder (`bindInnerRegs`). A binding of class
+`leaf` has no region: `bindAt` conforms it to a number, and a number is never
+confined (L1, the owner's provisional ruling of 2026-11-13; `runR`'s side is W1). -/
+def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+  let r ← bindInnerRegs m cls v s w
+  pure (if cls == .leaf then { r with regs := [] } else r)
+
 /-- Binding a value at an inner binder (`bindInnerBase`), with the once rules: a
 value read from a once binding is bound only at a `once` binder (finding 11),
 and a once-only value read from a binding moves out of it (finding 10: as
@@ -357,13 +364,15 @@ def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : C
   pure r
 
 /-- A parameter as its body sees it, in the call's region `s` (region 1 stands
-for the caller's regions, which a lent argument may also be confined to). -/
+for the caller's regions, which a lent argument may also be confined to). A
+parameter of class `leaf` is a number, never confined (L1, W2). -/
 def paramVal (p : Param) (s : Nat) : AVal :=
+  let lent : List Nat := if p.cls == .leaf then [] else [s, 1]
   match p.mode with
   | .erased => { cls := .irr }
   | .unique => { cls := p.cls, own := .uniq, skel := p.skel }
-  | .uniqueBorrowed => { cls := p.cls, own := .uniq, regs := [s, 1], skel := p.skel }
-  | .borrowed | .onceBorrowed => { cls := p.cls, regs := [s, 1], skel := p.skel }
+  | .uniqueBorrowed => { cls := p.cls, own := .uniq, regs := lent, skel := p.skel }
+  | .borrowed | .onceBorrowed => { cls := p.cls, regs := lent, skel := p.skel }
   | .many | .once => { cls := p.cls, skel := p.skel }
 
 /-- **The return rule** from region `s` at result mode `res`, as `ret`. -/
