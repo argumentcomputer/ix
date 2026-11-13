@@ -24,7 +24,9 @@ use ark_ec::{AffineRepr, pairing::Pairing};
 use ark_ff::Zero;
 use ark_serialize::CanonicalDeserialize;
 use multi_stark::{
-  config::ProofConfig, lookup::logup_max_degree, system::extension_params,
+  config::ProofConfig,
+  lookup::{logup_max_degree, stage2_width},
+  system::extension_params,
 };
 use serde::Serialize;
 use std::{num::NonZeroU32, sync::Arc, time::Instant};
@@ -554,8 +556,11 @@ impl Wrapper {
         .ok_or("quotient degree overflow")?;
       let fixed_width =
         input.preprocessed.as_ref().map_or(0, |matrix| matrix.width);
-      let lookup_width =
-        input.lookups.len().div_ceil(input.lookup_group_size) * params.degree;
+      let lookup_width = stage2_width(
+        input.lookups.len(),
+        input.lookup_group_size,
+        params.degree,
+      );
       let concrete_lookup_width =
         graph.lookups.iter().try_fold(0usize, |sum, lookup| {
           sum.checked_add(lookup.args.len() + 1).ok_or("lookup width overflow")

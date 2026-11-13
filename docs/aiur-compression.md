@@ -1154,3 +1154,24 @@ development parameters, a frozen pre-prefix BN artifact
 (`kzg-source-before-prefix.ixa`) and the earlier lookup policy. It does not
 validate the current artifact/backend combination, the final PLONK stage or
 Init performance; those require fresh pipeline runs.
+
+## 25. Automatic KZG lookup grouping
+
+The [lookup-grouping measurement](measurements/aiur-kzg-lookup-grouping.json)
+selects a group size up to eight for each physical circuit while preserving
+its actual quotient degree. Every candidate is examined because degree cost
+can be nonmonotonic across chunk boundaries; ties in auxiliary width choose
+the smaller group. Selection happens before the system and key are bound.
+
+On the current-prefix Init execution, lookup cells fall from 260,336,206 to
+195,896,619, saving 2,062,066,784 bytes of field storage. Active lookup columns
+fall from 2,459 to 2,109. Main and quotient cells and all quotient domains are
+unchanged. `range80` stays ungrouped: its degree-one quotient would become
+degree two for pairs, despite the larger global allowance. The savings come
+from other circuits, including BLAKE3 and curve operations.
+
+Fourteen focused tests pass, including a grouped key/proof round trip through
+the Aiur verifier and rejection of a forged opening. The existing KZG protocol
+already supports these groups. GL and BN key digests change, so fresh key and
+policy preparation is required. These counts establish the storage reduction;
+large proving-time measurements follow separately.

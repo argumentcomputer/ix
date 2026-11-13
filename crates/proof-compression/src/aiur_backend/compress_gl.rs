@@ -19,7 +19,10 @@ use aiur::{
   field::FieldBackend,
   trace::{TracePlan, stark::planning},
 };
-use multi_stark::{lookup::logup_max_degree, system::extension_params};
+use multi_stark::{
+  lookup::{logup_max_degree, stage2_width},
+  system::extension_params,
+};
 use serde::Serialize;
 use stark_verifier::compress_wrap::{Input, STATEMENT_BYTES, Statement};
 use std::{sync::Arc, time::Instant};
@@ -303,8 +306,11 @@ impl Wrapper {
         .ok_or("quotient degree overflow")?;
       let fixed_width =
         input.preprocessed.as_ref().map_or(0, |matrix| matrix.width);
-      let lookup_width =
-        input.lookups.len().div_ceil(input.lookup_group_size) * params.degree;
+      let lookup_width = stage2_width(
+        input.lookups.len(),
+        input.lookup_group_size,
+        params.degree,
+      );
       let concrete_lookup_width =
         graph.lookups.iter().map(|lookup| lookup.args.len() + 1).sum();
       add_cells(&mut main_cells, height, input.main_width)?;

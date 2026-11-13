@@ -3,7 +3,12 @@ use aiur::{
   field::FieldBackend,
   trace::{FunctionCircuit, Polynomial},
 };
-use multi_stark::{expr::Expr, lookup::Lookup, traits::Algebra};
+use multi_stark::{
+  expr::Expr,
+  graph::ConstraintGraph,
+  lookup::{Lookup, MAX_LOOKUP_GROUP, stage2_width},
+  traits::Algebra,
+};
 use p3_matrix::dense::RowMajorMatrix;
 
 const CALL: u64 = 1;
@@ -29,6 +34,31 @@ fn constant(value: u64) -> Expr<Scalar> {
 
 fn main_var(column: usize) -> Expr<Scalar> {
   Expr::main(u32::try_from(column).expect("validated compiler column"))
+}
+
+fn quotient_degree(
+  graph: &ConstraintGraph<Scalar>,
+  group_size: usize,
+) -> Result<usize, String> {
+  let degree = graph
+    .max_constraint_degree
+    .max(logup_max_degree(graph, group_size)) as usize;
+  (degree.max(2) - 1)
+    .checked_next_power_of_two()
+    .ok_or_else(|| "quotient degree overflow".into())
+}
+
+fn lookup_group_size(graph: &ConstraintGraph<Scalar>) -> Result<usize, String> {
+  let budget = quotient_degree(graph, 1)?;
+  let mut best = (stage2_width(graph.lookups.len(), 1, 1), 1);
+  // Chunk boundaries can make a larger group cheaper in degree than a smaller
+  // one. Every supported size must be checked against the circuit's own budget.
+  for size in 2..=MAX_LOOKUP_GROUP {
+    if quotient_degree(graph, size)? == budget {
+      best = best.min((stage2_width(graph.lookups.len(), size, 1), size));
+    }
+  }
+  Ok(best.1)
 }
 
 fn lower(polynomial: &Polynomial<FieldWord>) -> Expr<Scalar> {
@@ -189,6 +219,13 @@ pub(super) fn build(plan: &TracePlan<'_, Bn254>) -> Result<Lowered, String> {
     });
     names.push(format!("<ROM:{payload}>"));
   }
+  let params = extension_params::<KzgConfig>();
+  for (input, name) in inputs.iter_mut().zip(&names) {
+    let graph = input.compile_graph(&params).map_err(|error| {
+      format!("{name}: invalid compiler circuit: {error:?}")
+    })?;
+    input.lookup_group_size = lookup_group_size(&graph)?;
+  }
   Ok(Lowered {
     inputs,
     names,
@@ -314,4 +351,51 @@ fn fixed_tables(
     tables.push(FixedTable { maps, height });
   }
   Ok(tables)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn graph(degrees: &[usize]) -> ConstraintGraph<Scalar> {
+    let input = CircuitInputs {
+      main_width: 1,
+      lookups: degrees
+        .iter()
+        .map(|&degree| {
+          let argument =
+            (0..degree).fold(constant(1), |value, _| value * main_var(0));
+          Lookup::pull(constant(1), vec![argument])
+        })
+        .collect(),
+      ..Default::default()
+    };
+    input.compile_graph(&extension_params::<KzgConfig>()).unwrap()
+  }
+
+  #[test]
+  fn lookup_selection_preserves_actual_degree_and_finds_nonmonotonic_choice() {
+    let graph = graph(&[0, 0, 0, 0, 2, 2, 0, 0, 0, 0]);
+    assert_eq!(quotient_degree(&graph, 1).unwrap(), 2);
+    for size in 2..=4 {
+      assert_eq!(quotient_degree(&graph, size).unwrap(), 4);
+    }
+    assert_eq!(quotient_degree(&graph, 5).unwrap(), 2);
+    assert_eq!(lookup_group_size(&graph).unwrap(), 5);
+  }
+
+  #[test]
+  fn linear_lookup_circuit_cannot_spend_a_larger_global_budget() {
+    let graph = graph(&[1; 6]);
+    assert_eq!(quotient_degree(&graph, 1).unwrap(), 1);
+    assert_eq!(quotient_degree(&graph, 2).unwrap(), 2);
+    assert_eq!(lookup_group_size(&graph).unwrap(), 1);
+  }
+
+  #[test]
+  fn equal_width_choices_use_the_smallest_group() {
+    let graph = graph(&[0; 6]);
+    assert_eq!(lookup_group_size(&graph).unwrap(), 6);
+    assert_eq!(lookup_group_size(&self::graph(&[])).unwrap(), 1);
+  }
 }
