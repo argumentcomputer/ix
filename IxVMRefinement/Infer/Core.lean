@@ -295,9 +295,9 @@ the projection arm (`hproj`: at a term whose node is a projection, the spec hold
 theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls)
-    (hproj : ∀ rc e types sa fi e1,
+    (hproj : ∀ rc e types sa fi e1, args = [rc, e, types] →
       loadValue h e = .ok (.construct kexprEnum "Proj" [sa, fi, e1]) →
-        Specs.Infer.k_infer_only_core c [rc, e, types] h r h' calls) :
+        Specs.Infer.k_infer_only_core c args h r h' calls) :
     Specs.Infer.k_infer_only_core c args h r h' calls := by
   intro rc e types hargs good hrc d Γ htypes E hE
   subst hargs
@@ -475,6 +475,6 @@ theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c) (htl : TypeL
       exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
   case Proj x_struct_addr x_fidx x_e1
       _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-    exact hproj rc e types x_struct_addr x_fidx x_e1 ld12 rc e types rfl good hrc d Γ htypes E hE
+    exact hproj rc e types x_struct_addr x_fidx x_e1 rfl ld12 rc e types rfl good hrc d Γ htypes E hE
 
 end IxVM.Refinement.Core
