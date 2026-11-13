@@ -11,13 +11,15 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   instance), C2 (at a constant head against the callee's parameter classes at the callee's
   profile, at a β-redex against the λ binders), C3 (each minor of a saturated eliminator against
   the constructor whose fields it receives, paired as `Check.elimShape?` pairs them: at a recursor
-  each rule with the minor it dispatches, `elimShape_recr_minors`; a projection reads no field
+  each rule with the minor it dispatches, `elimShape_recr_minors`; an eliminator with a rule for a
+  constructor that writes a field erased occurs only at a saturated spine; a projection reads no field
   dropped at every instance), C4 (an irrelevant major only at a subsingleton or empty eliminator)
   and C5 (a constant at a relevant position has a relevant result). `WellAnnotatedC` adds them at
   every reached instance to `WellAnnotated`.
 * **(b) `checkCanonical_sound`**: from `checkCanonical p ann ch = []`, the canonical constant and
   constructor records, the header agreement of every run body and `csimp` redirect, the special
-  heads' reads, the forwarding clause on recursor rules, and canonical tags on every reached
+  heads' reads, the forwarding clause on recursor rules, no `csimp` redirect to an eliminator
+  over a field written erased, and canonical tags on every reached
   runtime term; then the three facts about positions written erased that relevance preservation
   consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
 
