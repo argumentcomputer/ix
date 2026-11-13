@@ -204,7 +204,8 @@ def limitOfTier : TierError → Option Resource
 /-- The limit a failure's text names, for a host whose kernel failures reach it as text: the
 entry's own rendering of a decline (`Admission.Error`'s `limit: <resource>`). -/
 def limitOfText (text : String) : Option Resource :=
-  [Resource.records, .blobs, .totalBytes, .recordBytes, .recordUnivNodes, .depth].find? fun r =>
+  [Resource.records, Resource.blobs, Resource.totalBytes, Resource.recordBytes,
+    Resource.recordUnivNodes, Resource.depth].find? fun r =>
     (text.splitOn s!"limit: {repr r}").length > 1
 
 /-- The native stack, in KiB, a host gives the threads that run the kernel

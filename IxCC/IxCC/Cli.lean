@@ -469,7 +469,9 @@ def settingsOf (o : Options) : IO (Except String Ix.Kernel.Host.Resolved) :=
 
 /-- The limit an error is a decline by (`Recheck.kernelLimitCode`). -/
 def limitOfCode (code : String) : Option Ix.Kernel.Admission.Resource :=
-  [Ix.Kernel.Admission.Resource.records, .blobs, .totalBytes, .recordBytes, .recordUnivNodes, .depth].find?
+  [Ix.Kernel.Admission.Resource.records, Ix.Kernel.Admission.Resource.blobs,
+    Ix.Kernel.Admission.Resource.totalBytes, Ix.Kernel.Admission.Resource.recordBytes,
+    Ix.Kernel.Admission.Resource.recordUnivNodes, Ix.Kernel.Admission.Resource.depth].find?
     (kernelLimitCode · == code)
 
 /-- The command line; the exit code: 0, 1 a decline or rejection, 2 a usage error, 6 a decline

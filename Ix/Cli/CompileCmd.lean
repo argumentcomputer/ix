@@ -248,14 +248,16 @@ def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt3
       allowPartial log (strip := strip) (prefetch := wholeEnv) (limits := settings.limits) with
     | .ok r => pure r
     | .error e =>
-      if let some code ← decline e then return code
-      throw (IO.userError s!"compile refused: {e}")
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
   let status ← match finalization with
     | .refused => pure status
     | .failed e =>
-      if let some code ← decline e then return code
-      throw (IO.userError e)
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError e)
     | .done artifact bytes =>
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
       pure { status with

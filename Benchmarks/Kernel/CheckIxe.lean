@@ -384,7 +384,8 @@ def run (args : List String) : IO UInt32 := do
   try runWith settings running args
   catch e =>
     let text := toString e
-    let limit := if Ixon.isDepthLimitError text then some .depth else Ix.Kernel.Host.limitOfText text
+    let limit : Option Ix.Kernel.Admission.Resource :=
+      if Ixon.isDepthLimitError text then some .depth else Ix.Kernel.Host.limitOfText text
     match limit with
     | some r =>
       IO.eprintln s!"check-ixe: {Ix.Kernel.Host.declineMessage settings r}"
