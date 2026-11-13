@@ -239,6 +239,7 @@ def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
     ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
       c.tmc h (posOf cv.levelParams V) value →
       cv.levelParams.Perm (List.range cv.levelParams.length) →
+      cv.levelParams.length < 4294967296 →
       nl = .field (cv.levelParams.length : F) → LvListRep h us lvls → c.tml d Γ h As sp →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E

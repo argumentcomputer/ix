@@ -142,8 +142,9 @@ structure LoadFacts (c : Ctx) : Prop where
   derivation of `KernelModeled::proj_ctor(block, idx)` (which asserts that IxVM does not model the
   block and loads member `idx`'s constructor) means the inductive at the member's key `S` is
   stored with its table. For every stored constructor of the member (at any index `j`; there is
-  one), the table names that constructor at its counts and level parameters; every entry below
-  the field count is found and has its head data (`TowerHead`: the constructor and the structure
+  one), the table names that constructor at its counts and level parameters, its parameter count
+  being the member's in the block record (which `indRecord` makes the loaded inductive's);
+  every entry below the field count is found and has its head data (`TowerHead`: the constructor and the structure
   stored at the entry's counts and level parameters, the structure's type after its parameters
   the sort `structSort`); the bodies are `structProjBodies`' at the constructor's type (so
   `entry.typeAt` is the field type IxVM computes) and the guards `structProjGuards`' at some
@@ -151,7 +152,8 @@ structure LoadFacts (c : Ctx) : Prop where
   arguments' `Certs` are `never` skips where the sort is never zero).
 
   Owed: the table's existence where IxVM's route is native, and the constructor's binder data,
-  by the declaration layer (it installs natively exactly where IxVM checked the block natively;
+  by the declaration layer (it installs natively exactly where IxVM checked the block natively,
+  and its shape check ties the constructor's parameter count to the inductive's;
   `block_is_modeled` is a function of the record); the head data by the store invariant
   (`EnvFacts.store`, `ProjOkT.towerHead`); the bodies and guards by
   `Ix.Kernel.Model.TableBodies` (`IxC/Kernel/Model/StoreCompanions.lean`,
@@ -169,6 +171,39 @@ structure LoadFacts (c : Ctx) : Prop where
         tbl.structName = c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ∧
         tbl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) ∧ tbl.numParams = nP ∧
         tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+        (∀ cb xs ind, Ix.Cert.recordAt c.E (ixAddr b) = some cb → cb.info = .muts xs →
+          xs[ZMod.val i]? = some (.indc ind) → nP = ind.params.toNat) ∧
+        (∀ f, f < nF → c.env.findProj? tbl.structName f = some (tbl.entry f) ∧
+          Ix.Kernel.TowerHead c.env (tbl.entry f)) ∧
+        Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
+        (∃ sorts : List Ix.Kernel.Level, sorts.length = nF ∧
+          tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
+        ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
+          ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
+  /-- **`projTables` at the route test `red_proj` makes**: the same conclusions, keyed on a good
+  derivation of `KernelModeled::block_is_modeled(block)` answering `0` and a good `get_ci` loading
+  an inductive of member `i` of that block with no index and one constructor, as the loaded
+  counts read (`red_proj` tests the block and loads the constructor itself; `k_infer_proj` and the io projection arm go through `proj_ctor`). Owed as
+  `projTables`. -/
+  projTablesAt : ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
+      (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
+    ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h b bp →
+    ObsFn W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Good c cs1 →
+    Bytes.RepAddressRef addrTy h1 s sap →
+    loadValue h2 ptr =
+      .ok (.construct kciEnum "Induct" [nl, ty, np, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h2 b blk →
+    ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      ∃ tbl : Ix.Kernel.ProjTable .anon,
+        c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
+          some (.projInfo tbl) ∧
+        tbl.structName = c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ∧
+        tbl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) ∧ tbl.numParams = nP ∧
+        tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+        (∀ cb xs ind, Ix.Cert.recordAt c.E (ixAddr b) = some cb → cb.info = .muts xs →
+          xs[ZMod.val i]? = some (.indc ind) → nP = ind.params.toNat) ∧
         (∀ f, f < nF → c.env.findProj? tbl.structName f = some (tbl.entry f) ∧
           Ix.Kernel.TowerHead c.env (tbl.entry f)) ∧
         Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
@@ -226,6 +261,38 @@ structure LoadFacts (c : Ctx) : Prop where
     ixAddr sa = iprjAddr (ixAddr b) (ZMod.val i) →
     caps.eta = true ∧ caps.etaCtor = some (c.κ (ixAddr ac)) ∧ caps.etaFields = cnF ∧
       caps.etaParams = cnP ∧ cvc.levelParams = cvT.levelParams
+  /-- (L5, L7) **Structure η at the observations ι's η route makes** (`try_struct_eta_iota`,
+  `eta_iota_fab`): an inductive `get_ci` loads at `pa` with no index and one constructor, in a
+  block with at most one inductive (`block_is_multi` answering `0`), not found recursive by
+  `struct_is_rec`, whose sort after its loaded parameter count is never zero at some levels, and
+  whose first constructor is stored, is η-capable through that constructor, with its field and
+  parameter counts, the constructor at the inductive's level parameters. The store's η bit
+  (`nativeCapsAt`: no index, not a proposition, no recursive field) asks nothing of the field
+  count, so no field is required. The two tests imply the native route: with no member mentioned
+  by any field there is no nested occurrence either. Owed by the declaration layer, and by the
+  loader for the loaded parameter count being the record's (`cnP = ZMod.val m`, which needs the
+  record's count below the field's size). -/
+  etaIota : ∀ (pp ptr nl ty u blk : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F))
+      (pa b : Bytes.Address) (i m : F) (cvT cvc : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat) (us : List KLevel) (l : KLevel),
+    ObsFn W "Ingress::get_ci" [pp] h1 ptr h2 cs1 → Good c cs1 →
+    Bytes.RepAddressRef addrTy h1 pa pp →
+    loadValue h2 ptr = .ok (.construct kciEnum "Induct"
+      [nl, ty, .field m, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h2 b blk →
+    c.env.find? (c.κ (ixAddr pa)) = some (.indInfo cvT caps) →
+    c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvc cnP cnF) →
+    (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
+      ObsFn W "KernelModeled::block_is_multi" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
+        Bytes.RepAddressRef addrTy h3 b bq) →
+    (∃ (sp v : SourceValue F) (h5 h6 : Heap F) (cs5 : List (Call F)),
+      ObsFn W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5 ∧ v ≠ .field 1 ∧ Good c cs5 ∧
+        Bytes.RepAddressRef addrTy h5 pa sp) →
+    piSortAt (ZMod.val m) (posOf cvT.levelParams cvT.type) = some l →
+    (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true →
+    caps.eta = true ∧
+      caps.etaCtor = some (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) ∧ caps.etaFields = cnF ∧
+      caps.etaParams = cnP ∧ cnP = ZMod.val m ∧ cvc.levelParams = cvT.levelParams
   /-- (L1) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
   whose raw bytes are the serialization of a constant with empty tables (any kind) reads as
   that constant's payload. `Good` gives only the raw bytes (a held record at an address the run

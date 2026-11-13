@@ -151,7 +151,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       (hnmi : nmi = .field mi) (hrP : (rP : F) = p + m + mi) (hmI : (mI : F) = p + m + mi + i)
       (hcounts : rP ≤ mI ∧ mI < 288230376151711744)
       (hrules : RulesRep κ h cv.levelParams 0 rules rls)
-      (hk : k = .field 1 → ∃ rl, rls = [rl] ∧ rl.k = true)
+      (hk : k = .field 1 → ∃ rl, rls = [rl] ∧ rl.k = true ∧ rl.ctorParams = ZMod.val p)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         (cv.name = κ (ixAddr b) ∨ cv.name = κ (rprjAddr (ixAddr b) (ZMod.val i)))) :
       CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx])
