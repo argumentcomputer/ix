@@ -29,8 +29,9 @@ set_option linter.unusedVariables false
 
 /-- The positional parameter list, at its positions, is any list of its length. -/
 theorem subst_go_range' (us : List Level) :
-    ∀ (n s i : Nat), us.length = n → s ≤ i → i < s + n →
-      Level.subst.go (List.range' s n) us i = us[i - s]'(by omega)
+    ∀ (n s i : Nat) (hl : us.length = n) (h1 : s ≤ i) (h2 : i < s + n),
+      Level.subst.go (List.range' s n) us i =
+        us[i - s]'(by have := Nat.sub_lt_left_of_lt_add h1 h2; omega)
   | 0, s, i, _, h1, h2 => by omega
   | n + 1, s, i, hl, h1, h2 => by
     cases us with
@@ -134,7 +135,8 @@ theorem instList_mkAppN (vs : List KExpr) (d : Nat) :
   | a :: as, f => by
     show (Ix.Kernel.Expr.mkAppN (.app f a) as).instantiateList vs d = _
     rw [instList_mkAppN vs d as (.app f a)]
-    simp only [instantiateList, List.map_cons] <;> rfl
+    simp only [instantiateList, List.map_cons]
+    rfl
 
 /-- **A constant-headed spine, instantiated**: the head stays, the arguments are instantiated. -/
 theorem instList_constHead {e : KExpr} {n : KKey} {ls : List KLevel}
@@ -240,9 +242,8 @@ theorem instList_lift_append {xs zs : List KExpr}
           hcl _ d (List.mem_append_right _ (List.getElem_mem _))]
         simp only [List.getElem_append_right (show xs.length ≤ i + xs.length - d by omega),
           show i + xs.length - d - xs.length = i - d by omega]
-      · have h1 : ¬ (i + xs.length - d < (xs ++ zs).length) := by
-          simp only [List.length_append]; omega
-        simp only [h1, hin, ↓reduceDIte, List.length_append, Ix.Kernel.Expr.bvar.injEq]
+      · have h1 : ¬ (i + xs.length - d < xs.length + zs.length) := by omega
+        simp only [List.length_append, h1, hin, ↓reduceDIte, Ix.Kernel.Expr.bvar.injEq]
         omega
     · simp only [liftLooseBVars, show ¬ (i ≥ d) by omega, ↓reduceIte, instantiateList,
         show i < d by omega]
