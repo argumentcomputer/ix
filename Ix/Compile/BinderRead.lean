@@ -752,7 +752,8 @@ def sectionWhy (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
       out := out.push ⟨0, i, 0, nodes⟩
     return out
   let (blocks, st) ← act.run {}
-  Ix.Compile.BinderData.sectionOf c (blocks ++ st.blocks)
+  let cWithModes := { c with binders := Ix.Compile.BinderData.sourceModeSection find names c }
+  Ix.Compile.BinderData.sectionOf cWithModes (blocks ++ st.blocks)
 
 /-- `sectionWhy` without its reason. -/
 def section? (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :

@@ -109,22 +109,73 @@ def Contract.attachedTo (contract : Contract) (source : Ix.Expr) : Bool :=
   | .letE, .letE .. => true
   | _, _ => false
 
-/-- Whether the compiler lowers the frame: an ordinary contract on a binder of
+/-- Convert a surface value contract to an Ixon v5 result mode. -/
+def toResultMode (v : Ixon.ValueContract) : Ixon.ResultMode :=
+  match v.owned, v.locality with
+  | .shared, .unrestricted => .shared
+  | .shared, .local => .borrowed
+  | .unique, .unrestricted => .unique
+  | .unique, .local => .uniqueBorrowed
+
+/-- Convert a surface binder contract to an Ixon v5 binder mode, if representable.
+Erased binders carry no ownership or local lifetime in v5. -/
+def toBinderMode? (b : Ixon.BinderContract) : Option Ixon.BinderMode :=
+  if b.uses == .erased then
+    if b.value == .shared then some .erased else none
+  else
+    match b.value.owned, b.value.locality, b.uses with
+    | .unique, .unrestricted, _ => some .unique
+    | .unique, .local, _ => some .uniqueBorrowed
+    | .shared, .unrestricted, .many => some .many
+    | .shared, .local, .many => some .borrowed
+    | .shared, .unrestricted, .linear | .shared, .unrestricted, .affine => some .once
+    | .shared, .local, .linear | .shared, .local, .affine => some .onceBorrowed
+    | _, _, _ => none
+
+/-- The Ixon v5 binder-and-result mode of a `lam` or `all` contract frame, if valid. -/
+def Contract.toAllMode? (contract : Contract) : Option Ixon.AllMode := do
+  return { input := ← toBinderMode? contract.binder, result := toResultMode contract.result }
+
+/-- The Ixon v5 let mode of a `letE` contract frame, if valid. -/
+def Contract.toLetMode? (contract : Contract) : Option Ixon.LetMode :=
+  if contract.letKind == .borrowShared then
+    if contract.binder.uses != .erased && contract.binder.value == .localShared then
+      some .borrow
+    else none
+  else
+    Ixon.LetMode.value <$> toBinderMode? contract.binder
+
+/-- Whether the contract frame represents a valid Ixon v5 mode for its binder kind. -/
+def Contract.validMode (contract : Contract) : Bool :=
+  match contract.kind with
+  | .lam | .all => contract.toAllMode?.isSome
+  | .letE => contract.toLetMode?.isSome
+
+/-- Whether the compiler lowers the frame: a valid v5 contract on a binder of
 its kind. -/
 def Contract.admits (contract : Contract) (source : Ix.Expr) : Bool :=
-  contract.isOrdinary && contract.attachedTo source
+  contract.validMode && contract.attachedTo source
 
-/-- Lower a contract frame onto the binder it annotates. An Ixon record holds
-its binders' modes in its binder-data section, which the compiler writes
-with the default mode for every binder, so only the ordinary contract lowers
-(to the compiled binder itself); annotated source is refused until source
-modes reach the section. -/
+/-- Lower a contract frame onto the binder it annotates. A `lam` or `all` frame
+leaves the compiled binder term unchanged (its `AllMode` is written into the
+record's binder-data section); a `letE` frame writes its `LetMode` onto the
+compiled `Ixon.Expr.letE`. -/
 def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Expr) :
     Except String Ixon.Expr :=
-  if contract.admits source then .ok compiled
-  else if contract.attachedTo source then
-    .error "annotated source is refused until a mode checker lands"
-  else .error "semantic contract is not attached to its original binder"
+  if !contract.attachedTo source then
+    .error "semantic contract is not attached to its original binder"
+  else
+    match contract.kind with
+    | .lam | .all =>
+      if contract.toAllMode?.isSome then .ok compiled
+      else .error "unsupported semantic contract mode"
+    | .letE =>
+      match contract.toLetMode? with
+      | none => .error "unsupported semantic contract mode"
+      | some mode =>
+        match compiled with
+        | .letE nonDep _ ty val body => .ok (.letE nonDep mode ty val body)
+        | _ => .error "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do
@@ -149,6 +200,7 @@ def inspect (top : Ix.Expr) : Except String Bool := do
           | .lam, .lam .. | .all, .forallE .. | .letE, .letE .. => true
           | _, _ => false
         unless valid do throw "semantic contract is not attached to its original binder"
+        unless contract.validMode do throw "unsupported semantic contract mode"
         annotated := true
       stack := stack.push inner
     | _ => pure ()

@@ -154,12 +154,13 @@ instance : BEq Numbering where
 
 /-- The conversion `x` of the term `e` under a contract frame `c`, as the
 compiler's `Contract.lower` treats it (`Ix.SemanticContract`): `x` itself for
-an ordinary frame on a binder of its kind, a refusal for an annotated one. -/
+a valid v5 contract frame on a binder of its kind (kernel terms erase resource
+modes), a refusal otherwise. -/
 @[expose] def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
     Except ExprError KExpr :=
   if c.admits e then pure x
   else if c.attachedTo e then
-    throw (.contract "annotated source is refused until a mode checker lands")
+    throw (.contract "unsupported semantic contract mode")
   else throw (.contract "semantic contract is not attached to its original binder")
 
 /-- An `mdata` node with data `d` over the term `e`, whose conversion is `x`:

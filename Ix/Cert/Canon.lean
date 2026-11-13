@@ -268,9 +268,9 @@ def attachedToLean (c : Ix.SemanticContract.Contract) (e : Lean.Expr) : Bool :=
 /-- `Ix.LeanIngress.withContract`, on a Lean binder. -/
 def withContractLean (c : Ix.SemanticContract.Contract) (e : Lean.Expr) (x : KExpr) :
     Except ExprError KExpr :=
-  if c.isOrdinary && attachedToLean c e then pure x
+  if c.validMode && attachedToLean c e then pure x
   else if attachedToLean c e then
-    throw (.contract "annotated source is refused until a mode checker lands")
+    throw (.contract "unsupported semantic contract mode")
   else throw (.contract "semantic contract is not attached to its original binder")
 
 def leanMData (d : Lean.MData) (e : Lean.Expr) (x : Except ExprError KExpr) :

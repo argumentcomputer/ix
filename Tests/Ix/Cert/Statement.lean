@@ -999,15 +999,9 @@ def contractSeeds : Array Lean.Name := #[`linear, `unique, `erased, `dependent, 
   `localResult, `localUniqueResult, `curriedResult, `dependentArrow, `anonymousArrow,
   `quantified, `nestedLambda, `lambdaDefinition, `localLet, `sharedLoan].map (syntaxModule ++ ·)
 
-/-- The stable prefix of the refusal of annotated source, by the compiler and by
-Source mode. -/
-def annotatedRefusal : String := "annotated source is refused"
-
-def mentionsRefusal (message : String) : Bool :=
-  (message.splitOn annotatedRefusal).length > 1
-
-/-- The resolved syntax fixtures in Source mode and through `Ix.Cert.compile`:
-both refuse every annotated declaration. Errors, and lines for the report. -/
+/-- The resolved syntax fixtures in Source mode and through `Ix.Cert.compileChecked`:
+both accept every valid annotated declaration, and each compiled declaration
+carries its lowered resource modes. Errors, and lines for the report. -/
 def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
@@ -1015,27 +1009,42 @@ def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
   let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
   match Ix.LeanIngress.checkSource env (Ix.Cert.blocksOf env) with
-  | .ok _ => errors := errors.push "Source mode accepts the annotated fixtures"
+  | .ok envS =>
+    lines := lines.push s!"contracts: Source mode accepts the {env.consts.size} resolved constants \
+      ({envS.consts.length} kernel constants)"
   | .error e =>
-    unless mentionsRefusal (toString e) do
-      errors := errors.push s!"Source mode refuses the annotated fixtures for another reason: {e}"
-  let (ixe, failures) ← match Ix.Cert.compileReport env with
+    errors := errors.push s!"Source mode refuses the resolved syntax fixtures: {e}"
+  let envA ← Tests.Ix.Cert.ExecutedChecks.annotated env
+  let .ok t := Ix.Kernel.Reader.defaultTable
+    | return (errors.push "the default role table does not read", lines)
+  let (ixe, failures) ← match Ix.Cert.compileChecked t envA with
     | .ok out => pure out
-    | .error e => return (#[s!"Ix.Cert.compileReport failed on the resolved fixtures: {e}"], lines)
+    | .error e => return (errors.push s!"Ix.Cert.compileChecked failed on the resolved fixtures: {e}", lines)
   let failed := failures.toMap
-  let mut refused := 0
+  let mut published := 0
   for n in contractSeeds do
     let key := Ix.Name.fromLeanName n
-    if (ixe.named.get? key).isSome then
-      errors := errors.push s!"{n}: published by Ix.Cert.compile"
-    match failed.get? key with
-    | some why =>
-      if mentionsRefusal why then refused := refused + 1
-      else errors := errors.push s!"{n}: failed for another reason: {why}"
-    | none => errors := errors.push s!"{n}: not in the compile's failures"
-  lines := lines.push s!"contracts: {env.consts.size} resolved constants; Source mode refuses \
-    them, and Ix.Cert.compile refuses each of the {contractSeeds.size} annotated declarations \
-    ({refused} with the annotated-source refusal)"
+    if let some why := failed.get? key then
+      errors := errors.push s!"{n}: failed in compileChecked: {why}"
+    match ixe.named.get? key with
+    | none => errors := errors.push s!"{n}: not published by compileChecked"
+    | some nd =>
+      published := published + 1
+      let owner := match ixe.getConst? nd.addr with
+        | some c => Ixon.CheckOrder.owner nd.addr c
+        | none => nd.addr
+      match ixe.getConst? owner with
+      | none => errors := errors.push s!"{n}: missing owner record {owner}"
+      | some c =>
+        unless Ix.Compile.BinderData.hasModes c do
+          errors := errors.push s!"{n}: compiled record carries no resource modes"
+  match Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t envA (Ix.Cert.blocksOf envA) with
+  | .ok envQ =>
+    lines := lines.push s!"contracts: compileChecked publishes all {published}/{contractSeeds.size} \
+      annotated declarations with resource modes, and quotient Source accepts at the artifact \
+      ({envQ.consts.length} kernel constants)"
+  | .error e =>
+    errors := errors.push s!"quotient Source refuses the compiled syntax fixtures at the artifact: {e}"
   return (errors, lines)
 
 /-- Route A, B6b: `Ix.Cert.RoleClosure.RoleEvidenceChecks` on the committed RoleData, through

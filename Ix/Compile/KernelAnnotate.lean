@@ -1154,9 +1154,12 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   let rs := IxVM.PwHints.roots c
   if rs.isEmpty then #[] else
-  if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
+  let find : Ix.Name → Option Ix.ConstantInfo := fun n =>
+    ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => k.env.consts.get? n
+  let modeSec := Ix.Compile.BinderData.sourceModeSection find names c
+  if unsafeOrPartial c then modeSec else
   match sourceRoots k.env extra names c with
-  | none => Ix.CompileM.undecidedSection c
+  | none => modeSec
   | some items =>
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
                       bounds := IxVM.PwHints.bounds c.sharing }
@@ -1199,30 +1202,30 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
       return out
     match (act.run {}).run {} with
     | .ok ((roots, st), _) =>
-      match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
+      match Ix.Compile.BinderData.sectionOf { c with binders := modeSec } (roots ++ st.blocks) with
       | .ok s => s
-      | .error _ => Ix.CompileM.undecidedSection c
-    | .error _ => Ix.CompileM.undecidedSection c
+      | .error _ => modeSec
+    | .error _ => modeSec
 
 /-- **The section of a block record**: read off its members' sources (from
 `extra`, then the compile's input `env`) where every binder shows its datum
 (`Ix.Compile.BinderRead`), else IxC's pass over each root beside its source
 (`annotateWalk`) against the installed input, which only such a record waits
 for (`installed`, `installTask`). Where the install failed, such a record
-carries the undecided section. -/
+carries the undecided section with any source modes preserved. -/
 def annotate (env : Ix.Environment) (installed : Task (Except String Installed))
     (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   if (IxVM.PwHints.roots c).isEmpty then #[] else
-  if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
   let find : Ix.Compile.BinderRead.Find := fun n =>
     ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => env.consts.get? n
+  if unsafeOrPartial c then Ix.Compile.BinderData.sourceModeSection find names c else
   match Ix.Compile.BinderRead.section? find names c with
   | some s => s
   | none =>
     match installed.get with
     | .ok k => annotateWalk k extra names c
-    | .error _ => Ix.CompileM.undecidedSection c
+    | .error _ => Ix.Compile.BinderData.sourceModeSection find names c
 
 /-- **The annotator of a compile** over its input `env` and the install of it
 (`installTask`). -/

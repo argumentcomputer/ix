@@ -2,6 +2,7 @@ module
 
 public import Ix.IxVM.PwHints
 public import Ix.RoleBinding.Publication
+public import Ix.CompileM
 
 public section
 
@@ -63,43 +64,458 @@ def canonicalParams (ps : Array Nat) : Array UInt64 :=
   (sorted.foldl (fun out p => if out.back? == some p then out else out.push p) #[]).map
     (·.toUInt64)
 
-/-- A node in the section's spelling: "always zero" is `.zero`. Every binder
-gets the default mode: Lean source has no other. -/
-def nodeOf : Node → Ixon.BinderNode
-  | .binder none => .never {}
+/-- A node in the section's spelling, carrying `mode`. "Always zero" is `.zero`. -/
+def nodeOfMode (mode : Ixon.AllMode) : Node → Ixon.BinderNode
+  | .binder none => .never mode
   | .binder (some ps) =>
     let params := canonicalParams ps
-    if params.isEmpty then .zero {} else .ifAllZero params {}
+    if params.isEmpty then .zero mode else .ifAllZero params mode
   | .share v => .share v.toUInt64
-  | .undecided => .undecided {}
+  | .undecided => .undecided mode
+
+/-- A node in the section's spelling with the default mode. -/
+def nodeOf : Node → Ixon.BinderNode := nodeOfMode {}
+
+/-- Whether `c.binders` gives any binder a mode other than the default. -/
+def hasBinderModes (c : Ixon.Constant) : Bool :=
+  c.binders.any (·.nodes.any fun node => (node.mode?.getD {}) != {})
+
+/-- Whether `e` has any `letE` node with a non-default `LetMode`. -/
+def exprHasLetModes : Ixon.Expr → Bool
+  | .lam t b | .all t b | .app t b => exprHasLetModes t || exprHasLetModes b
+  | .letE _ m t v b =>
+    m != .value .many || exprHasLetModes t || exprHasLetModes v || exprHasLetModes b
+  | .prj _ _ v => exprHasLetModes v
+  | _ => false
+
+/-- Whether `c` carries any non-default mode across all four mode places:
+binder `AllMode`s in `c.binders`, `LetMode`s on `letE`, constructor
+`fieldModes`, or definition `asserts`. -/
+def hasModes (c : Ixon.Constant) : Bool :=
+  hasBinderModes c ||
+  c.sharing.any exprHasLetModes ||
+  c.info.binderRoots.any exprHasLetModes ||
+  match c.info with
+  | .defn d => d.asserts != {}
+  | .muts ms => ms.any fun
+    | .defn d => d.asserts != {}
+    | .indc ind => ind.ctors.any (!·.fieldModes.isInherited)
+    | .recr _ => false
+  | _ => false
+
+private structure CombineSt where
+  variants : Array (Array (Array Ixon.BinderNode))
+  memo : Std.HashMap (Nat × Nat × Nat) Nat := {}
+
+private def combineNodes (full : Array Bool) (sharing : Array Ixon.Expr)
+    (modeMap : Std.HashMap (Bool × Nat × Nat) (Array Ixon.BinderNode))
+    (pwMap : Std.HashMap (Bool × Nat × Nat) (Array Node)) :
+    Nat → Array (Option Nat) → Array Ixon.BinderNode → Array Node →
+    StateT CombineSt (Except String) (Array Ixon.BinderNode)
+  | 0, _, _, _ => throw "binder data: sharing depth exceeded"
+  | fuel + 1, shape, mNodes, pNodes => do
+    unless shape.size == mNodes.size && shape.size == pNodes.size do
+      throw "binder data: mode and datum block sizes differ"
+    let mut out : Array Ixon.BinderNode := #[]
+    for h : i in [:shape.size] do
+      let k := shape[i]
+      let some mNode := mNodes[i]? | throw "binder data: missing mode node"
+      let some pNode := pNodes[i]? | throw "binder data: missing datum node"
+      match k, mNode, pNode with
+      | none, .share _, _ => throw "binder data: a share mode node at a binder"
+      | none, _, .share _ => throw "binder data: a share datum at a binder"
+      | none, mNode, pNode =>
+        out := out.push (nodeOfMode (mNode.mode?.getD {}) pNode)
+      | some subIdx, .share subMVar, .share subPVar =>
+        let key := (subIdx, subMVar.toNat, subPVar)
+        let v ← match (← get).memo[key]? with
+          | some hit => pure hit
+          | none => do
+            let some entry := sharing[subIdx]?
+              | throw s!"binder data: missing sharing entry {subIdx}"
+            let some subMNodes := modeMap[(true, subIdx, subMVar.toNat)]?
+              | throw s!"binder data: missing mode variant ({subIdx}, {subMVar})"
+            let some subPNodes := pwMap[(true, subIdx, subPVar)]?
+              | throw s!"binder data: missing datum variant ({subIdx}, {subPVar})"
+            let subOut ← combineNodes full sharing modeMap pwMap fuel
+              (entry.numberedNodes full #[]) subMNodes subPNodes
+            let st ← get
+            let cur := st.variants[subIdx]?.getD #[]
+            let v := match cur.findIdx? (· == subOut) with
+              | some existing => existing
+              | none => cur.size
+            let cur' := if v < cur.size then cur else cur.push subOut
+            set ({ variants := st.variants.set! subIdx cur', memo := st.memo.insert key v } : CombineSt)
+            pure v
+        out := out.push (.share v.toUInt64)
+      | some _, _, _ => throw "binder data: a binder node at a share"
+    return out
 
 /-- The section of record `c` from the annotator's blocks: the share nodes of
 entries without a binder dropped, the blocks of those entries and the roots
-without a numbered node left out, the rest sorted. -/
+without a numbered node left out, the rest sorted. When `c.binders` already
+carries non-default `AllMode`s, those modes are preserved positionally and
+sharing variants are deduplicated over whole `(datum, mode)` node lists. -/
 def sectionOf (c : Ixon.Constant) (blocks : Array Block) : Except String (Array Ixon.BinderBlock) := do
   let full := binderful c.sharing
   let rs := roots c
-  let mut out : Array Ixon.BinderBlock := #[]
-  for b in blocks do
-    let shared := b.ekind == 1
-    if shared && !(full[b.eidx]?.getD false) then continue
-    let some tree := (if shared then c.sharing[b.eidx]? else rs[b.eidx]?)
-      | throw s!"binder data: no expression ({b.ekind}, {b.eidx})"
-    let ks := kinds #[] tree
-    unless ks.size == b.nodes.size do
-      throw s!"binder data: expression ({b.ekind}, {b.eidx}) has {ks.size} numbered nodes, \
-        the annotator {b.nodes.size}"
-    let mut nodes : Array Ixon.BinderNode := #[]
-    for (node, k) in b.nodes.zip ks do
-      match k, node with
-      | none, .share _ => throw s!"binder data: a share datum at a binder of ({b.ekind}, {b.eidx})"
-      | some _, .binder _ | some _, .undecided =>
-        throw s!"binder data: a binder datum at a share of ({b.ekind}, {b.eidx})"
-      | none, _ => nodes := nodes.push (nodeOf node)
-      | some n, _ => if full[n]?.getD false then nodes := nodes.push (nodeOf node)
-    if nodes.isEmpty then continue
-    out := out.push { shared, index := b.eidx.toUInt64, variant := b.variant.toUInt64, nodes }
-  return out.qsort (fun x y => x.keyLt y)
+  if !hasBinderModes c then
+    let mut out : Array Ixon.BinderBlock := #[]
+    for b in blocks do
+      let shared := b.ekind == 1
+      if shared && !(full[b.eidx]?.getD false) then continue
+      let some tree := (if shared then c.sharing[b.eidx]? else rs[b.eidx]?)
+        | throw s!"binder data: no expression ({b.ekind}, {b.eidx})"
+      let ks := kinds #[] tree
+      unless ks.size == b.nodes.size do
+        throw s!"binder data: expression ({b.ekind}, {b.eidx}) has {ks.size} numbered nodes, \
+          the annotator {b.nodes.size}"
+      let mut nodes : Array Ixon.BinderNode := #[]
+      for (node, k) in b.nodes.zip ks do
+        match k, node with
+        | none, .share _ => throw s!"binder data: a share datum at a binder of ({b.ekind}, {b.eidx})"
+        | some _, .binder _ | some _, .undecided =>
+          throw s!"binder data: a binder datum at a share of ({b.ekind}, {b.eidx})"
+        | none, _ => nodes := nodes.push (nodeOf node)
+        | some n, _ => if full[n]?.getD false then nodes := nodes.push (nodeOf node)
+      if nodes.isEmpty then continue
+      out := out.push { shared, index := b.eidx.toUInt64, variant := b.variant.toUInt64, nodes }
+    return out.qsort (fun x y => x.keyLt y)
+  else
+    let mut pwMap : Std.HashMap (Bool × Nat × Nat) (Array Node) := {}
+    for b in blocks do
+      let shared := b.ekind == 1
+      if shared && !(full[b.eidx]?.getD false) then continue
+      let some tree := (if shared then c.sharing[b.eidx]? else rs[b.eidx]?)
+        | throw s!"binder data: no expression ({b.ekind}, {b.eidx})"
+      let ks := kinds #[] tree
+      unless ks.size == b.nodes.size do
+        throw s!"binder data: expression ({b.ekind}, {b.eidx}) has {ks.size} numbered nodes, \
+          the annotator {b.nodes.size}"
+      let mut kept : Array Node := #[]
+      for (node, k) in b.nodes.zip ks do
+        match k, node with
+        | none, .share _ => throw s!"binder data: a share datum at a binder of ({b.ekind}, {b.eidx})"
+        | some _, .binder _ | some _, .undecided =>
+          throw s!"binder data: a binder datum at a share of ({b.ekind}, {b.eidx})"
+        | none, _ => kept := kept.push node
+        | some n, _ => if full[n]?.getD false then kept := kept.push node
+      if kept.isEmpty then continue
+      pwMap := pwMap.insert (shared, b.eidx, b.variant) kept
+    let modeMap : Std.HashMap (Bool × Nat × Nat) (Array Ixon.BinderNode) :=
+      c.binders.foldl (fun m b => m.insert (b.shared, b.index.toNat, b.variant.toNat) b.nodes) {}
+    let initSt : CombineSt := { variants := Array.replicate c.sharing.size #[] }
+    let act : StateT CombineSt (Except String) (Array Ixon.BinderBlock) := do
+      let mut rootBlocks : Array Ixon.BinderBlock := #[]
+      for h : r in [:rs.size] do
+        let shape := rs[r].numberedNodes full #[]
+        if shape.isEmpty then continue
+        let some mNodes := modeMap[(false, r, 0)]?
+          | throw s!"binder data: missing mode block for root {r}"
+        let some pNodes := pwMap[(false, r, 0)]?
+          | throw s!"binder data: missing datum block for root {r}"
+        let nodes ← combineNodes full c.sharing modeMap pwMap (c.sharing.size + 2) shape mNodes pNodes
+        rootBlocks := rootBlocks.push { shared := false, index := r.toUInt64, variant := 0, nodes }
+      let st ← get
+      let mut out := rootBlocks
+      for h : n in [:st.variants.size] do
+        let vs := st.variants[n]
+        for hv : v in [:vs.size] do
+          out := out.push { shared := true, index := n.toUInt64, variant := v.toUInt64, nodes := vs[v] }
+      return out.qsort (fun x y => x.keyLt y)
+    let (out, _) ← act.run initSt
+    return out
+
+private structure StripSt where
+  variants : Array (Array (Array Ixon.BinderNode))
+  memo : Std.HashMap (Nat × Nat) Nat := {}
+
+private def stripNodes (full : Array Bool) (sharing : Array Ixon.Expr)
+    (modeMap : Std.HashMap (Bool × Nat × Nat) (Array Ixon.BinderNode)) :
+    Nat → Array (Option Nat) → Array Ixon.BinderNode →
+    StateT StripSt (Except String) (Array Ixon.BinderNode)
+  | 0, _, _ => throw "binder data: sharing depth exceeded"
+  | fuel + 1, shape, mNodes => do
+    unless shape.size == mNodes.size do
+      throw "binder data: block size differs from expression"
+    let mut out : Array Ixon.BinderNode := #[]
+    for (k, mNode) in shape.zip mNodes do
+      match k, mNode with
+      | none, .share _ => throw "binder data: a share node at a binder"
+      | none, mNode => out := out.push (.undecided (mNode.mode?.getD {}))
+      | some subIdx, .share subMVar =>
+        let key := (subIdx, subMVar.toNat)
+        let v ← match (← get).memo[key]? with
+          | some hit => pure hit
+          | none => do
+            let some entry := sharing[subIdx]?
+              | throw s!"binder data: missing sharing entry {subIdx}"
+            let some subMNodes := modeMap[(true, subIdx, subMVar.toNat)]?
+              | throw s!"binder data: missing variant ({subIdx}, {subMVar})"
+            let subOut ← stripNodes full sharing modeMap fuel
+              (entry.numberedNodes full #[]) subMNodes
+            let st ← get
+            let cur := st.variants[subIdx]?.getD #[]
+            let v := match cur.findIdx? (· == subOut) with
+              | some existing => existing
+              | none => cur.size
+            let cur' := if v < cur.size then cur else cur.push subOut
+            set ({ variants := st.variants.set! subIdx cur', memo := st.memo.insert key v } : StripSt)
+            pure v
+        out := out.push (.share v.toUInt64)
+      | some _, _ => throw "binder data: a binder node at a share"
+    return out
+
+/-- The undecided (`0x04`) section of `c`, preserving any non-default `AllMode`s
+already in `c.binders` and re-deduplicating sharing variants by whole node lists. -/
+def stripSection (c : Ixon.Constant) : Except String (Array Ixon.BinderBlock) := do
+  if !hasBinderModes c then
+    return Ix.CompileM.undecidedSection c
+  let full := Ixon.binderfulEntries c.sharing
+  let rs := c.info.binderRoots
+  let modeMap : Std.HashMap (Bool × Nat × Nat) (Array Ixon.BinderNode) :=
+    c.binders.foldl (fun m b => m.insert (b.shared, b.index.toNat, b.variant.toNat) b.nodes) {}
+  let initSt : StripSt := { variants := Array.replicate c.sharing.size #[] }
+  let act : StateT StripSt (Except String) (Array Ixon.BinderBlock) := do
+    let mut rootBlocks : Array Ixon.BinderBlock := #[]
+    for h : r in [:rs.size] do
+      let shape := rs[r].numberedNodes full #[]
+      if shape.isEmpty then continue
+      let some mNodes := modeMap[(false, r, 0)]?
+        | throw s!"binder data: missing block for root {r}"
+      let nodes ← stripNodes full c.sharing modeMap (c.sharing.size + 2) shape mNodes
+      rootBlocks := rootBlocks.push { shared := false, index := r.toUInt64, variant := 0, nodes }
+    let st ← get
+    let mut out := rootBlocks
+    for h : n in [:st.variants.size] do
+      let vs := st.variants[n]
+      for hv : v in [:vs.size] do
+        out := out.push { shared := true, index := n.toUInt64, variant := v.toUInt64, nodes := vs[v] }
+    return out.qsort (fun x y => x.keyLt y)
+  let (out, _) ← act.run initSt
+  return out
+
+/-! ## Source modes onto undecided sections -/
+
+/-- Peel metadata frames around a source expression, keeping the outermost
+semantic contract frame (if any) and the underlying expression. -/
+def peelSource : Ix.Expr → Option Ix.SemanticContract.Contract × Ix.Expr
+  | .mdata d inner _ =>
+    if Ix.SemanticContract.hasMetadata d then
+      let c? := (Ix.SemanticContract.read d).toOption
+      let (innerC?, core) := peelSource inner
+      (c?.orElse (fun _ => innerC?), core)
+    else
+      peelSource inner
+  | e => (none, e)
+
+/-- The result modes of a type's leading `forallE` telescope, in binder order. -/
+def leadingAllResults : Ix.Expr → Option Ix.SemanticContract.Contract → List Ixon.ResultMode
+  | .mdata d inner _, outer? =>
+    if Ix.SemanticContract.hasMetadata d then
+      leadingAllResults inner ((Ix.SemanticContract.read d).toOption.orElse fun _ => outer?)
+    else
+      leadingAllResults inner outer?
+  | .forallE _ _ body _ _, c? =>
+    let r := match c? >>= (·.toAllMode?) with
+      | some m => m.result
+      | none => .shared
+    r :: leadingAllResults body none
+  | _, _ => []
+
+private def exprHasContractM (e : Ix.Expr) :
+    StateM (Std.HashSet Ix.Compile.ExactKey.ExprKey) Bool := do
+  let key : Ix.Compile.ExactKey.ExprKey := ⟨e⟩
+  if (← get).contains key then return false
+  modify (·.insert key)
+  match e with
+  | .app f a _ =>
+    let hf ← exprHasContractM f
+    if hf then return true
+    exprHasContractM a
+  | .lam _ t b _ _ | .forallE _ t b _ _ =>
+    let ht ← exprHasContractM t
+    if ht then return true
+    exprHasContractM b
+  | .letE _ t v b _ _ =>
+    let ht ← exprHasContractM t
+    if ht then return true
+    let hv ← exprHasContractM v
+    if hv then return true
+    exprHasContractM b
+  | .proj _ _ v _ => exprHasContractM v
+  | .mdata d inner _ =>
+    if Ix.SemanticContract.hasMetadata d then return true
+    else exprHasContractM inner
+  | _ => return false
+
+private structure MemberRoot where
+  expr : Ix.Expr
+  teleResults : List Ixon.ResultMode
+  isTheorem : Bool
+
+private def memberSourceRoots (find : Ix.Name → Option Ix.ConstantInfo) (ci : Ix.ConstantInfo) :
+    Ixon.MutConst ⊕ Ixon.ConstantInfo → Option (Array MemberRoot)
+  | .inl (.defn _) | .inr (.defn _) =>
+    match ci with
+    | .defnInfo d =>
+      some #[⟨d.cnst.type, [], false⟩,
+             ⟨d.value, leadingAllResults d.cnst.type none, false⟩]
+    | .thmInfo t =>
+      some #[⟨t.cnst.type, [], true⟩, ⟨t.value, [], true⟩]
+    | .opaqueInfo o =>
+      some #[⟨o.cnst.type, [], false⟩,
+             ⟨o.value, leadingAllResults o.cnst.type none, false⟩]
+    | _ => none
+  | .inr (.axio _) =>
+    match ci with
+    | .axiomInfo a => some #[⟨a.cnst.type, [], false⟩]
+    | _ => none
+  | .inr (.quot _) =>
+    match ci with
+    | .quotInfo q => some #[⟨q.cnst.type, [], false⟩]
+    | _ => none
+  | .inl (.recr r) | .inr (.recr r) =>
+    match ci with
+    | .recInfo v =>
+      if v.rules.size == r.rules.size then
+        some (#[⟨v.cnst.type, [], false⟩] ++ v.rules.map fun rule => ⟨rule.rhs, [], false⟩)
+      else none
+    | _ => none
+  | .inl (.indc i) =>
+    match ci with
+    | .inductInfo v => do
+      let ctors ← v.ctors.mapM fun n =>
+        match find n with
+        | some (.ctorInfo k) => some (⟨k.cnst.type, [], false⟩ : MemberRoot)
+        | _ => none
+      guard (ctors.size == i.ctors.size)
+      some (#[⟨v.cnst.type, [], false⟩] ++ ctors)
+    | _ => none
+  | _ => none
+
+private structure SourceModeSt where
+  variants : Array (Array (Array Ixon.BinderNode))
+  memo : Std.HashMap (Nat × List Ixon.ResultMode × Ix.Compile.ExactKey.ExprKey) Nat := {}
+
+private def walkModeExpr (full : Array Bool) (sharing : Array Ixon.Expr) :
+    Nat → Ixon.Expr → Ix.Expr → List Ixon.ResultMode → Bool → Array Ixon.BinderNode →
+    StateT SourceModeSt Option (Array Ixon.BinderNode)
+  | 0, _, _, _, _, _ => failure
+  | fuel + 1, .share n, src, tele, isThm, out => do
+    let idx := n.toNat
+    if !(full[idx]?.getD false) then return out
+    let key := (idx, tele, (⟨src⟩ : Ix.Compile.ExactKey.ExprKey))
+    let v ← match (← get).memo[key]? with
+      | some hit => pure hit
+      | none => do
+        let entry ← sharing[idx]?
+        let subNodes ← walkModeExpr full sharing fuel entry src tele isThm #[]
+        let st ← get
+        let cur := st.variants[idx]?.getD #[]
+        let v := match cur.findIdx? (· == subNodes) with
+          | some existing => existing
+          | none => cur.size
+        let cur' := if v < cur.size then cur else cur.push subNodes
+        set ({ variants := st.variants.set! idx cur', memo := st.memo.insert key v } : SourceModeSt)
+        pure v
+    return out.push (.share v.toUInt64)
+  | fuel + 1, .lam ixTy ixBody, src, tele, isThm, out => do
+    let (c?, core) := peelSource src
+    let .lam _ srcTy srcBody _ _ := core | failure
+    let base : Ixon.AllMode := if isThm then {} else (c? >>= (·.toAllMode?)).getD {}
+    let (m, nextTele) := match tele with
+      | r :: rest =>
+        ({ base with
+           result := if isThm then .shared else if base.result == .shared then r else base.result },
+         rest)
+      | [] => (base, [])
+    let out := out.push (.undecided m)
+    let out ← walkModeExpr full sharing (fuel + 1) ixTy srcTy [] isThm out
+    walkModeExpr full sharing (fuel + 1) ixBody srcBody nextTele isThm out
+  | fuel + 1, .all ixTy ixBody, src, _, isThm, out => do
+    let (c?, core) := peelSource src
+    let .forallE _ srcTy srcBody _ _ := core | failure
+    let m : Ixon.AllMode := if isThm then {} else (c? >>= (·.toAllMode?)).getD {}
+    let out := out.push (.undecided m)
+    let out ← walkModeExpr full sharing (fuel + 1) ixTy srcTy [] isThm out
+    walkModeExpr full sharing (fuel + 1) ixBody srcBody [] isThm out
+  | fuel + 1, .app ixFn ixArg, src, _, isThm, out => do
+    let (_, core) := peelSource src
+    let .app srcFn srcArg _ := core | failure
+    let out ← walkModeExpr full sharing (fuel + 1) ixFn srcFn [] isThm out
+    walkModeExpr full sharing (fuel + 1) ixArg srcArg [] isThm out
+  | fuel + 1, .letE _ _ ixTy ixVal ixBody, src, _, isThm, out => do
+    let (_, core) := peelSource src
+    let .letE _ srcTy srcVal srcBody _ _ := core | failure
+    let out ← walkModeExpr full sharing (fuel + 1) ixTy srcTy [] isThm out
+    let out ← walkModeExpr full sharing (fuel + 1) ixVal srcVal [] isThm out
+    walkModeExpr full sharing (fuel + 1) ixBody srcBody [] isThm out
+  | fuel + 1, .prj _ _ ixVal, src, _, isThm, out => do
+    let (_, core) := peelSource src
+    let .proj _ _ srcVal _ := core | failure
+    walkModeExpr full sharing (fuel + 1) ixVal srcVal [] isThm out
+  | _ + 1, _, _, _, _, out => return out
+termination_by fuel ix => (fuel, sizeOf ix)
+
+/-- Extract source `AllMode`s onto an undecided (`0x04`) binder-data section for
+block record `c` from its member sources `names`, deduplicating sharing-entry
+variants by whole `BinderNode` lists. Falls back to `undecidedSection c` when no
+member carries `ix.contract` metadata. -/
+def sourceModeSection (find : Ix.Name → Option Ix.ConstantInfo) (names : Array Ix.Name)
+    (c : Ixon.Constant) : Array Ixon.BinderBlock := Id.run do
+  let rs := c.info.binderRoots
+  if rs.isEmpty then return #[]
+  let ms : Array (Ixon.MutConst ⊕ Ixon.ConstantInfo) := match c.info with
+    | .muts ms => ms.map .inl
+    | info => #[.inr info]
+  if ms.size != names.size then return Ix.CompileM.undecidedSection c
+  let mut srcRoots : Array MemberRoot := #[]
+  for (m, n) in ms.zip names do
+    let some ci := find n | return Ix.CompileM.undecidedSection c
+    let some items := memberSourceRoots find ci m | return Ix.CompileM.undecidedSection c
+    srcRoots := srcRoots ++ items
+  if srcRoots.size != rs.size then return Ix.CompileM.undecidedSection c
+  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExprKey := {}
+  let mut hasAny := false
+  for sr in srcRoots do
+    if !sr.isTheorem && !hasAny then
+      let (found, seen') := (exprHasContractM sr.expr).run seen
+      seen := seen'
+      if found then hasAny := true
+  if !hasAny then return Ix.CompileM.undecidedSection c
+  let full := Ixon.binderfulEntries c.sharing
+  let initSt : SourceModeSt := { variants := Array.replicate c.sharing.size #[] }
+  let act : StateT SourceModeSt Option (Array Ixon.BinderBlock) := do
+    let mut rootBlocks : Array Ixon.BinderBlock := #[]
+    for h : r in [:rs.size] do
+      let shape := rs[r].numberedNodes full #[]
+      if shape.isEmpty then continue
+      let sr ← srcRoots[r]?
+      let nodes ← walkModeExpr full c.sharing (c.sharing.size + 2)
+        rs[r] sr.expr sr.teleResults sr.isTheorem #[]
+      rootBlocks := rootBlocks.push { shared := false, index := r.toUInt64, variant := 0, nodes }
+    let st ← get
+    let mut out := rootBlocks
+    for h : n in [:st.variants.size] do
+      let vs := st.variants[n]
+      for hv : v in [:vs.size] do
+        out := out.push { shared := true, index := n.toUInt64, variant := v.toUInt64, nodes := vs[v] }
+    return out.qsort (fun x y => x.keyLt y)
+  match act.run initSt with
+  | some (sec, _) =>
+    if Ix.CompileM.sectionAdmissible c sec then sec else Ix.CompileM.undecidedSection c
+  | none => Ix.CompileM.undecidedSection c
+
+/-- A mode-only annotator (`requireDecided := false`) that writes source
+`AllMode`s onto `0x04` undecided binder nodes when compiling without `pw`
+binder-data computation. -/
+def modeOnlyAnnotator (env : Ix.Environment) : Ix.BinderAnnotator :=
+  { run := fun extra names c =>
+      let find (n : Ix.Name) : Option Ix.ConstantInfo :=
+        ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => env.consts.get? n
+      sourceModeSection find names c
+    requireDecided := false }
 
 /-- An undecided binder: the record (its address before re-addressing), the
 block and the node's position in the block. -/
@@ -173,7 +589,7 @@ def annotate (env : Ixon.Env) (records : Array (Address × Ixon.Constant)) :
   let mut report : Report := { stats, refused := k.failures }
   for (a, blocks) in tables do
     let some c := store[a]? | continue
-    let sec ← sectionOf c blocks
+    let sec ← if Ix.CompileM.unsafeOrPartial c then stripSection c else sectionOf c blocks
     if sec.isEmpty then continue
     sections := sections.insert a sec
     report := { report with
@@ -306,22 +722,21 @@ def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
     refused := report.refused.map fun (a, why) => (rename a, why) }
   return (env', report)
 
-/-- Whether a record's section gives a binder a mode other than the default. -/
-def hasModes (c : Ixon.Constant) : Bool :=
-  c.binders.any (·.nodes.any fun node => (node.mode?.getD {}) != {})
-
-/-- `env` with every section removed, re-addressed: its records as the compiler
-emits them. An environment with no section is returned as it is. A section
-holds its binders' modes as well as their data, and the modes are authored,
-not recomputable: a record whose section gives a binder a mode other than the
-default is refused rather than stripped of it (the compiler writes only the
-default mode, so no compiled record has one). -/
+/-- `env` with every decided `pw` datum replaced by undecided (`0x04`),
+preserving all authored resource modes (`AllMode`s in `c.binders`, `LetMode`s,
+`fieldModes`, `asserts`), re-deduplicating sharing variants by whole node lists,
+and re-addressing bottom-up. An environment whose records already carry their
+stripped sections is returned unchanged. -/
 def strip (env : Ixon.Env) : Except String Ixon.Env := do
   let records ← recordsOf env
-  if records.all (·.2.binders.isEmpty) then return env
-  if let some (a, _) := records.find? (hasModes ·.2) then
-    throw s!"binder data: record {a} gives a binder a mode, which stripping would lose"
-  return (← readdress env records {}).1
+  let mut sections : Std.HashMap Address (Array Ixon.BinderBlock) := {}
+  let mut unchanged := true
+  for (a, c) in records do
+    let sec ← stripSection c
+    if c.binders != sec then unchanged := false
+    unless sec.isEmpty do sections := sections.insert a sec
+  if unchanged then return env
+  return (← readdress env records sections).1
 
 /-- `apply` after `strip`: an environment some of whose records carry their
 sections already (a compiled closure beside role support records that carry

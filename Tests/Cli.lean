@@ -85,8 +85,9 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
-/-- `ix compile` refuses annotated source, in every output mode and for a
-contract registered in an imported module, and writes no artifact. -/
+/-- `ix compile` lowers valid annotated source and checks it with `ModeCheck`,
+while refusing ill-moded annotated definitions and annotated opaque constants
+outside the extern set without writing an artifact. -/
 private def Tests.Cli.testCompileContracts : IO Unit := do
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   let dir ← IO.FS.createTempDir
@@ -102,16 +103,27 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
       cmd := ix.toString
       args := #["compile", source.toString, "--no-build", "--consts", name,
         "--out", output.toString] ++ flags }
-    for name in ["cliLocal", "cliEscape", "Tests.Ix.SourceContract.Imported.opaqueIdentity"] do
+    for flags in [#[], #["--anon"], #["--allow-partial"]] do
+      let result ← compile "cliLocal" flags
+      unless result.exitCode == 0 && (← output.pathExists) do
+        throw <| IO.userError s!"CLI failed on valid annotated source cliLocal {flags}:\n{result.stderr}\n{result.stdout}"
+      let said := result.stderr ++ result.stdout
+      unless (said.splitOn "mode checking: accepted by IxC.Resource.check").length > 1 do
+        throw <| IO.userError s!"CLI did not report uncertified mode-check acceptance for cliLocal {flags}"
+      let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile output))
+      unless env.roleBinding.isSome do
+        throw <| IO.userError s!"CLI wrote no role binding for cliLocal {flags}"
+      IO.FS.removeFile output
+    for (name, expected) in [("cliEscape", "borrowEscape"),
+        ("Tests.Ix.SourceContract.Imported.opaqueIdentity", "not in the extern set")] do
       for flags in [#[], #["--anon"], #["--allow-partial"]] do
         let result ← compile name flags
         if result.exitCode == 0 || (← output.pathExists) then
-          throw <| IO.userError s!"CLI emitted an artifact for annotated source: {name} {flags}"
+          throw <| IO.userError s!"CLI emitted an artifact for rejected annotated source: {name} {flags}"
         let said := result.stderr ++ result.stdout
-        unless (said.splitOn "annotated source is refused").length > 1 ||
-            (said.splitOn "mode checking requires the complete requested closure").length > 1 do
-          throw <| IO.userError s!"CLI refused {name} {flags} for another reason:\n{result.stderr}\n{result.stdout}"
-    IO.println "CLI: annotated source, local and imported, refused in every output mode"
+        unless (said.splitOn expected).length > 1 do
+          throw <| IO.userError s!"CLI refused {name} {flags} without '{expected}':\n{result.stderr}\n{result.stdout}"
+    IO.println "CLI: valid annotated source compiles and passes ModeCheck; escaping and opaque contracts are refused"
   finally
     IO.FS.removeDirAll dir
 

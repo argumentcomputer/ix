@@ -33,18 +33,16 @@ private def constants (source : ConstantInfo) := [(source.name, source)]
 private def ioTest (description : String) (check : IO Bool) : TestSeq :=
   .individualIO description none (do return (← check, 0, 0, none)) .done
 
-/-- An IO test that reports what the compile said when it did not refuse
- annotated source. -/
+/-- An IO test that reports what the compile said when mode checking did not
+refuse an annotated constant with no run body. -/
 private def refusalTest (description : String) (result : IO (Except String Ix.CompileM.CertifiedOut)) :
     TestSeq :=
   .individualIO description none (do
     match ← result with
     | .ok _ => return (false, 0, 0, some "compiled")
     | .error message =>
-      -- the IO driver records the refused constant as a failure and then refuses
-      -- the incomplete closure
-      let ok := (message.splitOn "annotated source is refused").length > 1 ||
-        message == "mode checking requires the complete requested closure"
+      let ok := (message.splitOn "not in the extern set").length > 1 ||
+        (message.splitOn "annotated source is refused").length > 1
       return (ok, 0, 0, if ok then none else some message)) .done
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
@@ -52,14 +50,16 @@ private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
   match prepareSourceConstants consts >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
   | .ok (prepared, annotated) =>
-    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
+    compileCertifiedPrepared prepared annotated 1 (binderData := true)
+      (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def compileInput (input : CompileInput) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
   match input.prepare >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
   | .ok (prepared, annotated) =>
-    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
+    compileCertifiedPrepared prepared annotated 1 (binderData := true)
+      (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def placement : IO Bool := do
   let env ← getFileEnv "Tests/Ix/SourceContract/PlacementFixture.lean"
@@ -149,7 +149,22 @@ def suite : List TestSeq := [
   ioTest "prepared-source preflight rejects unresolved source binder contracts" do
     match checkPreparedSource (constants markedSource) with
     | .error message => return (message.splitOn "unresolved source binder contracts").length > 1
-    | .ok _ => return false
+    | .ok _ => return false,
+  ioTest "explicit Lean input compiles and mode-checks a valid annotated definition" do
+    let tyA : ConstantInfo := .axiomInfo {
+      name := `SourceContractDriver.TyA, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
+    let defId : ConstantInfo := .defnInfo {
+      name := `SourceContractDriver.idOnce, levelParams := []
+      type := .forallE `x (.const tyA.name []) (.const tyA.name []) .default
+      value := .lam `x (.const tyA.name []) (.bvar 0) .default
+      hints := .abbrev, safety := .safe, all := [`SourceContractDriver.idOnce] }
+    let .ok contract := SourceContract.ofTelescope defId #[{ binder := .position 0, uses := .linear }]
+      | return false
+    let .ok out ← compileInput { constants := [(tyA.name, tyA), (defId.name, defId)], contracts := #[contract] }
+      | return false
+    let some nd := out.env.named.get? (_root_.Ix.Name.fromLeanName defId.name) | return false
+    let some c := out.env.getConst? nd.addr | return false
+    return out.annotated && _root_.Ix.Compile.BinderData.hasModes c
 ]
 
 end Tests.Ix.SourceContract.Driver

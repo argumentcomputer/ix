@@ -675,6 +675,10 @@ which the compile adds here itself). -/
 structure BinderAnnotator where
   run : Array (Name × ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
   extra : Array (Name × ConstantInfo) := #[]
+  /-- Whether safe records must carry decided (`pw`) binder data rather than
+  `0x04` undecided nodes (`true` for full binder-data annotation, `false` for
+  a mode-only annotator used when `binderData` is off). -/
+  requireDecided : Bool := true
 
 /-- `a` with the source constant `ci` of `n` added, replacing an earlier source of
 `n` (successive anonymous definitions share the name). -/
