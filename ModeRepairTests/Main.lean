@@ -369,6 +369,7 @@ structure Case where
   run : Table
   inputs : Option Bool := some true
   open_ : Bool := false
+  lim : Limits := {}
 
 structure Tally where
   pass : Nat := 0
@@ -380,7 +381,7 @@ def note (t : IO.Ref Tally) (label : String) (ok : Bool) : IO Unit := do
   else t.modify fun s => { s with fail := s.fail + 1, failed := s.failed.push label }
 
 def runCase (t : IO.Ref Tally) (c : Case) : IO Unit := do
-  let verdict := checkBodies {} c.P c.toCheck
+  let verdict := checkBodies c.lim c.P c.toCheck
   let vOk := c.verdict.ok verdict
   let inOk := match c.P.find? c.seed with
     | some (.body ps ..) => inputsOkB c.P c.inp.1 ps c.inp.2
@@ -463,10 +464,10 @@ COPIED from Tests/Ix/ResourceModes.lean:191-410 at 6db9089a7, with their `runCas
 marked `-- REPAIR <letter>:` with the reason. -/
 
 def suiteCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
-    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
+    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) (lim : Limits := {}) : Case :=
   { label := s!"suite: {label}", P := prog defs, seed := entry, inp := input, toCheck,
     verdict := if accept then .accept else .refuse, fuels := [100000],
-    run := [(0, match run with | some k => .vio k | none => .value)], inputs := none }
+    run := [(0, match run with | some k => .vio k | none => .value)], inputs := none, lim }
 
 -- `useErased (@erased n : Nat) : Nat := n + 1`
 def useErased := mem 100
@@ -715,8 +716,8 @@ the driver's `suiteCase`. Part 2 runs the same programs at every fuel. -/
 namespace SuiteFindings
 
 def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
-    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
-  suiteCase label defs entry input run accept toCheck
+    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) (lim : Limits := {}) : Case :=
+  suiteCase label defs entry input run accept toCheck lim
 
 /-- The suite's `fuelCase` (not copied: it is harness): out of fuel, then a value, at the given
 ascending fuels (with `runCase`'s fuel monotonicity, as the suite's version asserts). -/
@@ -825,6 +826,20 @@ def in13 : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, f) := b.alloc (.pap kk #[])
   (b.heap, [f, xs])
+-- Found with repair N: a spine longer than the checker's depth left at it. `S6` is a structure of
+-- five `Nat` fields and a `@shared` `List Nat` field; `g6 (@borrowed xs : List Nat) : List Nat :=
+-- (S6.mk 1 2 3 4 5 xs).sh`, checked at depth 6 (its spine of six arguments is cut at 4 as landed)
+-- and at the default depth; the control `g6p` has `xs` plain
+def S6 := mem 354
+def s6mk := ctr 354 0
+def g6 := mem 355
+def g6p := mem 356
+def s6Defs : List (Ref × RunDef) := [(S6, .ind #[s6mk]),
+  (s6mk, .ctor S6 0 0 #[fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .val .shared]),
+  (g6, body [par .borrowed] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val)),
+  (g6p, body [par] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val))]
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -893,7 +908,11 @@ def findingCases : List Case := [
   runCase "a once-only partial application applied to all its remaining arguments (refused, runs clean)"
     (kcDefs ++ [(d2h, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
       (app (v 0) [.natLit 1, .natLit 2] .leaf)) .shared .leaf)])
-    d2h oneList none false
+    d2h oneList none false,
+  runCase "a spine longer than the checker's depth left at it: a borrowed list stored in a @shared field"
+    s6Defs g6 oneList (some .borrowEscape) false [g6] { depth := 6 },
+  runCase "the same at the default depth" s6Defs g6 oneList (some .borrowEscape) false,
+  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 }
 ]
 
 -- END COPY
@@ -1500,9 +1519,52 @@ def f16Cases : List Case := [
   { label := "F16 control: the case at class val", P := p16, seed := use16v, inp := in16, toCheck := [use16v, kk16],
     verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] }]
 
+/-! ### Repair N: a spine longer than the checker's depth left at it (found by reading; run)
+
+`termSpine n` cut a spine at the checker's remaining depth, so `S6.mk 1 2 3 4 5 xs` checked at
+depth 6 (spine cut at 4) was judged as a partial application of `S6.mk` to two arguments followed
+by four applications of a function value: `anCtor`'s partial branch does not apply the `@shared`
+field's region test, and `anProj` gives a `@shared` field no region. -/
+
+def S6 := mem 354
+def s6mk := ctr 354 0
+def g6 := mem 355
+def g6p := mem 356
+
+def p6 : Prog := prog [(S6, .ind #[s6mk]),
+  (s6mk, .ctor S6 0 0 #[fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .val .shared]),
+  (g6, body [par .borrowed] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val)),
+  (g6p, body [par] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val))]
+
+def nCases : List Case := [
+  -- REPAIR N: accepted as landed (at this depth)
+  { label := "N g6 = (S6.mk 1 2 3 4 5 xs).sh, xs borrowed, at checker depth 6", P := p6, seed := g6, inp := oneList,
+    toCheck := [g6], verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 6 } },
+  { label := "N control: the same at the default depth", P := p6, seed := g6, inp := oneList, toCheck := [g6],
+    verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] },
+  { label := "N control: xs not borrowed, at checker depth 6", P := p6, seed := g6p, inp := oneList,
+    toCheck := [g6p], verdict := .accept, run := [(0, .valOrOof), (100000, .value)], lim := { depth := 6 } },
+  -- the borrowed one at other depths: now a refusal from depth 4 (what the whole call needs),
+  -- a decline below it
+  { label := "N g6 at checker depth 3", P := p6, seed := g6, inp := oneList, toCheck := [g6], verdict := .decline,
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 3 } },
+  { label := "N g6 at checker depth 5", P := p6, seed := g6, inp := oneList, toCheck := [g6],
+    verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 5 } },
+  { label := "N g6 at checker depth 7", P := p6, seed := g6, inp := oneList, toCheck := [g6],
+    verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 7 } },
+  { label := "N g6 at checker depth 8", P := p6, seed := g6, inp := oneList, toCheck := [g6],
+    verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
+    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 8 } }]
+
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
-    f11Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases
+    f11Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

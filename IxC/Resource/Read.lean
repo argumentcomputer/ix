@@ -146,13 +146,17 @@ def ixSpine : Nat → Ixon.Expr → Except String (Ixon.Expr × Array Ixon.Expr)
       pure (h, as.push a)
     | _ => pure (e, #[])
 
-/-- The head and arguments of a run term. -/
-def termSpine : Nat → Term → Term × Array Term
-  | 0, t => (t, #[])
-  | n + 1, .app f a _ =>
-    let (h, as) := termSpine n f
+/-- The head and arguments of a run term, whole: by structural recursion, not
+cut by a fuel. (As landed it took the caller's fuel, and the checker passed its
+remaining depth, so a spine longer than that depth was judged as a shorter call
+followed by applications of a function value: the checker-side shape of
+finding 7. A bound that exists for termination must not change what a spine
+means.) -/
+def termSpine : Term → Term × Array Term
+  | .app f a _ =>
+    let (h, as) := termSpine f
     (h, as.push a)
-  | _, t => (t, #[])
+  | t => (t, #[])
 
 /-- The relevant free variables of a run term, under `d` binders, as indices
 outside them. -/
@@ -326,7 +330,7 @@ def readTerm (x : RCx) (caseOf : Ref → Option CaseInfo) :
       let (ht, _) ← readTerm x caseOf n ctx h
       let mut ats : Array Term := #[]
       for a in args do ats := ats.push (← readTerm x caseOf n ctx a).1
-      let (h', pre) := termSpine n ht
+      let (h', pre) := termSpine ht
       let all := pre ++ ats
       match h' with
       | .const r _ =>

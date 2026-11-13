@@ -429,7 +429,7 @@ def anTerm (P : Prog) : Nat → List ABnd → Term → CM AVal
     | .strLit _ => pure { cls := .val, skel := .data }
     | .const r c => anCall P n env r #[] c
     | .app _ _ c => do
-      let (h, args) := termSpine n t
+      let (h, args) := termSpine t
       match h with
       | .const r _ => anCall P n env r args c
       | _ => do

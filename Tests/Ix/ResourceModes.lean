@@ -169,7 +169,8 @@ def verdictName : Verdict → String
 /-- Run `entry` on `input` and check `toCheck`: the run ends as `run` says (a
 value, or the violation), and the checker accepts exactly when `accept`. -/
 def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
-    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : LSpec.TestSeq :=
+    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) (lim : Limits := {}) :
+    LSpec.TestSeq :=
   .individualIO label none (do
     let P := prog defs
     let o := runR P noExtern 100000 entry input.1 input.2
@@ -177,7 +178,7 @@ def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input 
       | .value .., none => true
       | .violation k, some k' => k == k'
       | _, _ => false
-    let verdict := checkBodies {} P toCheck
+    let verdict := checkBodies lim P toCheck
     let checkOk := verdict.isAccept == accept
     -- what soundness gives on these inputs: accepted runs do not violate
     let consistent := !verdict.isAccept || match o with
@@ -543,6 +544,20 @@ def in13 : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, f) := b.alloc (.pap kk #[])
   (b.heap, [f, xs])
+-- Found with repair N: a spine longer than the checker's depth left at it. `S6` is a structure of
+-- five `Nat` fields and a `@shared` `List Nat` field; `g6 (@borrowed xs : List Nat) : List Nat :=
+-- (S6.mk 1 2 3 4 5 xs).sh`, checked at depth 6 (its spine of six arguments is cut at 4 as landed)
+-- and at the default depth; the control `g6p` has `xs` plain
+def S6 := mem 354
+def s6mk := ctr 354 0
+def g6 := mem 355
+def g6p := mem 356
+def s6Defs : List (Ref × RunDef) := [(S6, .ind #[s6mk]),
+  (s6mk, .ctor S6 0 0 #[fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .leaf, fld .val .shared]),
+  (g6, body [par .borrowed] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val)),
+  (g6p, body [par] (.proj S6 5 (app (.const s6mk .val)
+    [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val))]
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -625,7 +640,11 @@ def findingCases : List LSpec.TestSeq := [
   runCase "a once-only partial application applied to all its remaining arguments (refused, runs clean)"
     (kcDefs ++ [(d2h, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
       (app (v 0) [.natLit 1, .natLit 2] .leaf)) .shared .leaf)])
-    d2h oneList none false
+    d2h oneList none false,
+  runCase "a spine longer than the checker's depth left at it: a borrowed list stored in a @shared field"
+    s6Defs g6 oneList (some .borrowEscape) false [g6] { depth := 6 },
+  runCase "the same at the default depth" s6Defs g6 oneList (some .borrowEscape) false,
+  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 }
 ]
 
 /-! ### Must-reject cases from records -/
