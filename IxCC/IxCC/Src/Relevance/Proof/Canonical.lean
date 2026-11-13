@@ -24,11 +24,12 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   over a field written erased, and canonical tags on every reached
   runtime term; the structure the kernel ensures (no constant at or above the program's size,
   rule `j` of a reached eliminator's recursor for constructor `j`, universe-argument counts, a
-  record for every reached constructor, F3's field count, `Fin.mk`'s proof field dropped where a
-  word entry is reached); then the facts about positions written erased that relevance
-  preservation consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`, and
-  `erased_lt_arity`: a special head's parameter written erased lies below its arity, so the
-  argument reaches the head, never the value it fires to).
+  record for every reached constructor, F3's field count, `Fin.mk` a constructor of two fields with
+  its proof field dropped where a word entry is reached); a `case` key's minors and `Quot.lift`'s
+  function relevant at every reached instance (`minorsRead`); then the facts about positions
+  written erased that relevance preservation consumes (`param_erased_irr`, `field_erased_dropped`,
+  `arg_erased_irr`, and `erased_lt_arity`: a special head's parameter written erased lies below its
+  arity, so the argument reaches the head, never the value it fires to).
 
 Not here, and not yet a theorem: that the evaluator never yields the irrelevance marker at a
 position that is read (relevance preservation, P1). These are the checks' facts only.
@@ -776,10 +777,18 @@ structure Canonical (p : Program) (ann : Ann) (ch : Checked) : Prop where
       p.decl? shape.recr = some (.recr sf k lv np nmot nmin ni ind rules ty) →
       p.table.recKindOf shape.recr = some (.subsingleton w srcs) → rules[0]? = some rule →
       srcs.length = ctorFields p rule
-  /-- Where a word entry is reached, the pinned `Fin.mk` drops its proof field at the empty
-  profile (F6w builds a word's tower with `irr` there, `Program.mkWord?`). -/
+  /-- Where a word entry is reached, the pinned `Fin.mk` is a constructor of two fields and drops
+  its proof field at the empty profile (F6w builds a word's tower with two fields for it and
+  `irr` as the proof, `Program.mkWord?`). -/
   finProof : ∀ c ∈ ch.reached, ∀ w op thm, p.table.resolveOf c = some (.word w op thm) →
-    ∀ fin, p.known.finMk = some fin → ch.keepsP fin [] 1 = false
+    ∀ fin, p.known.finMk = some fin →
+      (∃ sf lv ind cidx np ty, p.decl? fin = some (.ctor sf lv ind cidx np 2 ty)) ∧
+        ch.keepsP fin [] 1 = false
+  /-- At every reached instance of a special head that forces and applies an argument (a `case`
+  key's minor, `Quot.lift`'s function: `appliedAt`), that argument's class is relevant: a marker
+  there would be applied, or returned by F5 on a constructor with no fields. -/
+  minorsRead : ∀ inst ∈ ch.instances, ∀ cr, ann.constRel? inst.1 = some cr →
+    ∀ pos r, appliedAt p inst.1 pos = true → cr.params[pos]? = some r → r.irrP inst.2 = false
 
 
 /-! ### Helpers for `checkCanonical_sound` -/
@@ -898,8 +907,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
   unfold checkCanonical at h
   dsimp only at h
   simp only [List.append_eq_nil_iff] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hdenseE⟩, hruleE⟩, hunivE⟩, hrecE⟩, hsrcsE⟩, hfinE⟩,
-    hokE⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hdenseE⟩, hruleE⟩, hunivE⟩, hrecE⟩, hsrcsE⟩, hfinE⟩,
+    happE⟩, hokE⟩ := h
   split at hokE
   · rename_i hall
     simp only [Bool.and_eq_true, List.all_eq_true] at hall
@@ -913,7 +922,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
     have hrecE' := List.filterMap_eq_nil_iff.1 hrecE
     have hsrcsE' := List.filterMap_eq_nil_iff.1 hsrcsE
     have hfinE' := List.filterMap_eq_nil_iff.1 hfinE
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    have happE' := List.filterMap_eq_nil_iff.1 happE
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- the constant records
     · intro c cr hcr
       have hx := hconsts (c, cr) (NatMap.mem_toList hcr)
@@ -1168,9 +1178,37 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
       have h1 := hfinE' c hc
       rw [hres, hfin] at h1
       dsimp only at h1
-      cases hk : ch.keepsP fin [] 1 with
-      | false => rfl
-      | true => rw [hk] at h1; simp at h1
+      cases hn : ctorFieldsIs p fin 2 with
+      | false => rw [hn] at h1; simp at h1
+      | true =>
+        rw [hn] at h1
+        refine ⟨?_, ?_⟩
+        · unfold ctorFieldsIs at hn
+          cases hD : p.decl? fin with
+          | none => rw [hD] at hn; cases hn
+          | some d =>
+            rw [hD] at hn
+            cases d with
+            | ctor sf lv ind cidx np nf ty =>
+              have : nf = 2 := beq_iff_eq.1 hn
+              subst this
+              exact ⟨sf, lv, ind, cidx, np, ty, rfl⟩
+            | _ => cases hn
+        · cases hk : ch.keepsP fin [] 1 with
+          | false => rfl
+          | true => rw [hk] at h1; simp at h1
+    -- the arguments a special head forces and applies are relevant at its instances
+    · intro inst hi cr hcr pos r hap hr
+      obtain ⟨c, q⟩ := inst
+      have h1 := happE' (c, q) hi
+      dsimp only at h1 hcr hap ⊢
+      rw [hcr] at h1
+      dsimp only at h1
+      have hn := Option.map_eq_none_iff.1 h1
+      rw [List.find?_eq_none] at hn
+      have h2 := hn (r, pos) ((mem_zipIdx_iff cr.params 0 pos r).2 ⟨Nat.zero_le _, by simpa using hr⟩)
+      simp only [hap, Bool.true_and] at h2
+      simpa using h2
   · cases hokE
 
 /-! ## The erased facts P1 consumes, from the canonical records -/
