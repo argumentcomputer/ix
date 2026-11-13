@@ -174,7 +174,10 @@ environment. Once no record can read the install (after the compile, unless the
 annotator is kept), an unfinished install is abandoned. With `binderData`, binder data are
 always present on safe records: a safe record with an undecided binder does not compile
 (`Ix.CompileM.sectionFor`), and an install that left a safe declaration out (its ingest
-failed, or it names a constant the install lacks: an incomplete input) refuses the compile. Without `binderData`, every record with a binder
+failed, or it names a constant the install lacks: an incomplete input) refuses the compile.
+A safe declaration whose check fails but which still enters leniently (a compiler-trust
+axiom, a role whose evidence is another toolchain's, a deliberately ill-typed test case)
+leaves no datum missing and does not. Without `binderData`, every record with a binder
 carries the undecided section. The default role table binds records carrying
 their binder data, so its check is made only with `binderData`, and only while that table is
 current (`defaultRoleTableCurrent`). -/
