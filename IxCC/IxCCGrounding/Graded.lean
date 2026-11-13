@@ -273,8 +273,10 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
         Denotes M.cval env (Level.substFn φ ci.toConstantVal.levelParams us) σ
           (piBody args.length ci.toConstantVal.type) TT ∧ F ∈ˢ TT := by
   intro args
-  induction args using List.reverseRecOn with
-  | nil =>
+  generalize hn : args.length = n
+  induction n generalizing args with
+  | zero =>
+    obtain rfl := List.eq_nil_of_length_eq_zero hn
     intro F hF _ _
     have h0 : Denotes M.cval env φ ρ (.const k us)
         (M.cval k (Level.substFn φ ci.toConstantVal.levelParams us)) := Denotes.const hci hlen
@@ -282,7 +284,10 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
       Denotes_functional hF h0
     obtain ⟨T, hT, hm⟩ := mem_key M hci (Level.substFn φ ci.toConstantVal.levelParams us) ρ
     exact ⟨ρ, T, hT, hFe ▸ hm⟩
-  | append_singleton xs x ih =>
+  | succ n ih =>
+    have hne : args ≠ [] := by rintro rfl; simp at hn
+    have hxs : args.dropLast.length = n := by simp [List.length_dropLast, hn]
+    rw [← List.dropLast_append_getLast hne]
     intro F hF hgr hH
     rw [mkAppN_append] at hF hgr
     obtain ⟨F', X, hF', hX, rfl⟩ := den_app.mp hF
@@ -290,8 +295,8 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
     obtain ⟨hgf, -, r, A, F'', X', B, hF'', hX', hmem, hXA, -⟩ := hgr
     rw [Denotes_functional hF'' hF'] at hmem
     rw [Denotes_functional hX' hX] at hXA
-    obtain ⟨σ, TT, hTT, hFT⟩ := ih F' hF' hgf (fun j hj => hH j (by simp; omega))
-    obtain ⟨m, hm, hpw⟩ := hH xs.length (by simp)
+    obtain ⟨σ, TT, hTT, hFT⟩ := ih args.dropLast hxs F' hF' hgf (fun j hj => hH j (by omega))
+    obtain ⟨m, hm, hpw⟩ := hH n (by omega)
     obtain ⟨d, b, hpb⟩ := piBody_of_nthMeta _ _ hm
     rw [hpb] at hTT
     obtain ⟨Ad, Bf, -, hBf, -, rfl⟩ := den_pi.mp hTT
@@ -303,7 +308,7 @@ theorem spine_mem (M : Model V env) {φ : LevelParam → Nat} {ρ : BVarIdx → 
     have hA : A = Ad := piR_dom_unique hr hv hmem hFT
     rw [hA] at hXA
     refine ⟨push X σ, Bf X, ?_, app_mem_piR_pos hv hFT hXA⟩
-    rw [List.length_append, List.length_singleton, piBody_succ _ _ _ _ _ hpb]
+    rw [piBody_succ _ _ _ _ _ hpb]
     exact hBf X hXA
 
 /-- **The head's regime puts the function in a positive-regime product.** -/
