@@ -259,7 +259,8 @@ inductive SpaceCheck where
   /-- the run certainly cannot: a usage error (exit 2) -/
   | refuse (why : String)
 
-private def mib (n : Nat) : Nat := n / (1024 * 1024)
+/-- Bytes as whole MiB. -/
+def mib (n : Nat) : Nat := n / (1024 * 1024)
 
 /-- **The address-space check** of a host whose threads have `stack` bytes of
 stack. The Lean runtime aborts the process when it cannot create a thread,
