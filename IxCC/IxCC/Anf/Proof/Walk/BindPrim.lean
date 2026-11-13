@@ -71,7 +71,7 @@ private theorem knownPrim_sound {facts : Src.NatMap Fact} {ρ' : List Val}
       | ctor _ _ | glob _ | pap _ _ => exact knownPrim_sound hf hws h
 
 /-- `succBle`'s `natBlt` has the result of the `natBle` it replaces (`y + 1 ≤ m ↔ y < m`). -/
-private theorem succBle_sound {facts : Src.NatMap Fact} {ρ' : List Val}
+theorem succBle_sound {facts : Src.NatMap Fact} {ρ' : List Val}
     (hf : FactsOk Q Valid facts ρ') {p : Lam.Prim} {os os' : List Opd} {ws : List Val}
     (hws : os.mapM (·.val ρ') = some ws) (h : Walk.succBle facts p os = some os') :
     ∃ ws', os'.mapM (·.val ρ') = some ws' ∧
