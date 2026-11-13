@@ -16,7 +16,19 @@ import IxC.Kernel.Verify.PropWhen
   `Proj` cell) against the argument of the constructor's spine at `nparams + j`
   (`Lists::lookup`); the counter stays below the field count, so `i + 1` does not wrap.
 * `de_rescue_tier`: the tiers' answers (proof irrelevance, unit-like types, structure η both
-  ways, the second by `DefEq.symm`, then the `Nat` offsets' pair). -/
+  ways, the second by `DefEq.symm`, then the `Nat` offsets' pair).
+* `compute_iprj_addr`: the serialized and hashed projection record; the record of `c.E` at its
+  address is that record (`load_escape`, `LoadFacts.canonical`).
+* `family_params`: the counts, then the licensed telescope certificate of the parameters
+  (`Certs.skip` at `never` slots, or `certs_all` read by `CertsR.toCerts`).
+* `is_unit_like_type`, `try_unit_like`: `DefEq.unitLikeTy`, with the capabilities from
+  `LoadFacts.unitLike`.
+* `try_eta_struct`: `DefEq.structEtaTy`, with the capabilities from `LoadFacts.eta`, the tables
+  from `EnvFacts.etaTowers` and the constructor application's type from `EnvFacts.etaType`.
+
+A family's type is read at the positional levels the loaded constant holds (`posOf`); its level
+parameters permute the positions (`ValRep`), so instantiating the positional form positionally is
+instantiating the type at its own parameters. -/
 
 namespace IxVM.Refinement.Core.DefEqAux
 
@@ -261,8 +273,8 @@ end IxVM.Refinement.Core.DefEqAux
 
 /-! ## Positional levels
 
-The composition of level instantiations at a positional term (as in the inference package's
-`InferAux.posOf_instantiateLevelParams`). -/
+Instantiating a positional term positionally, for level parameters that permute the positions
+(as in the inference package's `InferAux.posOf_instantiateLevelParams_perm`). -/
 
 namespace IxVM.Refinement.Core.DefEqAux
 
@@ -274,54 +286,6 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
-
-private theorem instantiateLevelParams_comp' {ks : List Ix.Kernel.LevelParam} {us : List KLevel}
-    {ps : List Ix.Kernel.LevelParam} {vs : List KLevel} (hl : vs.length = ps.length) :
-    ∀ {e : KExpr}, e.allLevelParamsDefined ps = true →
-      (e.instantiateLevelParams ps vs).instantiateLevelParams ks us =
-        e.instantiateLevelParams ps (vs.map (Ix.Kernel.Level.subst ks us)) := by
-  intro e
-  induction e with
-  | bvar _ => intro _; rfl
-  | fvar idx ty ih =>
-    intro h
-    simp only [Expr.allLevelParamsDefined] at h
-    simp only [Expr.instantiateLevelParams, ih h]
-  | sort u =>
-    intro h
-    simp only [Expr.allLevelParamsDefined] at h
-    simp only [Expr.instantiateLevelParams,
-      Ix.Kernel.Level.subst_subst (ks := ks) (us := us) hl h]
-  | const n ls =>
-    intro h
-    simp only [Expr.allLevelParamsDefined, List.all_eq_true] at h
-    simp only [Expr.instantiateLevelParams, List.map_map]
-    congr 1
-    exact List.map_congr_left fun u hu =>
-      Ix.Kernel.Level.subst_subst (ks := ks) (us := us) hl (h u hu)
-  | app f a ihf iha =>
-    intro h
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.instantiateLevelParams, ihf h.1, iha h.2]
-  | lam ty body m iht ihb =>
-    intro h
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.instantiateLevelParams, iht h.1.1, ihb h.1.2,
-      Ix.Kernel.Level.substPW_comp (ks := ks) (us := us) hl h.2]
-  | forallE ty body m iht ihb =>
-    intro h
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.instantiateLevelParams, iht h.1.1, ihb h.1.2,
-      Ix.Kernel.Level.substPW_comp (ks := ks) (us := us) hl h.2]
-  | letE ty val body l iht ihv ihb =>
-    intro h
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.instantiateLevelParams, iht h.1.1, ihv h.1.2, ihb h.2]
-  | lit _ => intro _; rfl
-  | proj s i e ih =>
-    intro h
-    simp only [Expr.allLevelParamsDefined] at h
-    simp only [Expr.instantiateLevelParams, ih h]
 
 private theorem getElem?_subst_go_range'' :
     ∀ (s : Nat) (us : List KLevel) (i : Nat), s ≤ i → i < s + us.length →
@@ -360,102 +324,92 @@ private theorem posLevels_map_subst' {ps : List Ix.Kernel.LevelParam} {us : List
     have h2 : us[i]? = none := List.getElem?_eq_none_iff.mpr (by omega)
     rw [h1, h2]; rfl
 
-/-- **Instantiating a positional term positionally** is instantiating the term at its own
-parameters. -/
+/-- `Level.subst.go` leaves a parameter outside the list as it is. -/
+private theorem subst_go_of_not_mem' :
+    ∀ {ks : List Ix.Kernel.LevelParam} {vs : List KLevel} {p : Ix.Kernel.LevelParam}, p ∉ ks →
+      Ix.Kernel.Level.subst.go ks vs p = .param p
+  | [], _, _, _ => rfl
+  | _ :: _, [], _, _ => rfl
+  | k :: ks, v :: vs, p, h => by
+    show (if k = p then v else Ix.Kernel.Level.subst.go ks vs p) = _
+    rw [ite_eq_right (fun e => h (List.mem_cons.mpr (Or.inl e.symm)))]
+    exact subst_go_of_not_mem' (fun hm => h (List.mem_cons.mpr (Or.inr hm)))
+
+/-- The positional renaming, undone positionally, on a level, for parameters that permute the
+positions: a parameter of `ps` at index `i` becomes `param i`, then `us[i]`; any other parameter
+is not a position and neither side changes it. -/
+private theorem subst_posLevels_perm' {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
+    (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
+    ∀ l : KLevel, Ix.Kernel.Level.subst (List.range us.length) us
+      (Ix.Kernel.Level.subst ps (posLevels ps) l) = Ix.Kernel.Level.subst ps us l := by
+  intro l
+  induction l with
+  | zero => rfl
+  | succ l ih => simp only [Ix.Kernel.Level.subst, ih]
+  | max l r ihl ihr => simp only [Ix.Kernel.Level.subst, ihl, ihr]
+  | imax l r ihl ihr => simp only [Ix.Kernel.Level.subst, ihl, ihr]
+  | param p =>
+    show Ix.Kernel.Level.subst (List.range us.length) us
+        (Ix.Kernel.Level.subst.go ps (posLevels ps) p) = Ix.Kernel.Level.subst.go ps us p
+    by_cases hp : p ∈ ps
+    · have hl : (posLevels ps).length = ps.length := by
+        rw [posLevels, List.length_map, List.length_range]
+      have h := Ix.Kernel.Level.subst_go_map
+        (Ix.Kernel.Level.subst (List.range us.length) us) ps (posLevels ps) p hp hl
+      rw [posLevels_map_subst' hlen] at h
+      exact h.symm
+    · have hp' : p ∉ List.range us.length := by
+        rw [hlen]
+        exact fun hm => hp (hperm.mem_iff.mpr hm)
+      rw [subst_go_of_not_mem' (vs := posLevels ps) hp, subst_go_of_not_mem' (vs := us) hp]
+      exact subst_go_of_not_mem' hp'
+
+/-- The positional renaming, undone positionally, on a binder datum. -/
+private theorem substPW_posLevels_perm' {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
+    (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length)
+    (pw : Ix.Kernel.PropWhen) :
+    Ix.Kernel.Level.substPW (List.range us.length) us
+      (Ix.Kernel.Level.substPW ps (posLevels ps) pw) = Ix.Kernel.Level.substPW ps us pw := by
+  apply Ix.Kernel.PropWhen.eq_of_holds
+  intro φ
+  rw [Ix.Kernel.Level.holds_substPW, Ix.Kernel.Level.holds_substPW,
+    Ix.Kernel.Level.holds_substPW]
+  congr 1
+  funext p
+  rw [← Ix.Kernel.Level.eval_subst_go, ← Ix.Kernel.Level.eval_subst_go,
+    ← Ix.Kernel.Level.eval_subst]
+  exact congrArg (Ix.Kernel.Level.eval φ) (subst_posLevels_perm' hperm hlen (.param p))
+
+/-- The positional renaming, undone positionally, on a term (permuted positions). -/
+private theorem instantiateLevelParams_posLevels_perm' {ps : List Ix.Kernel.LevelParam}
+    {us : List KLevel} (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
+    ∀ e : KExpr, (e.instantiateLevelParams ps (posLevels ps)).instantiateLevelParams
+      (List.range us.length) us = e.instantiateLevelParams ps us := by
+  intro e
+  induction e with
+  | bvar _ | lit _ => rfl
+  | fvar idx ty ih => simp only [Expr.instantiateLevelParams, ih]
+  | sort u => simp only [Expr.instantiateLevelParams, subst_posLevels_perm' hperm hlen u]
+  | const n ls =>
+    simp only [Expr.instantiateLevelParams, List.map_map]
+    congr 1
+    exact List.map_congr_left fun u _ => subst_posLevels_perm' hperm hlen u
+  | app f a ihf iha => simp only [Expr.instantiateLevelParams, ihf, iha]
+  | lam ty body m iht ihb =>
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_posLevels_perm' hperm hlen m.pw]
+  | forallE ty body m iht ihb =>
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_posLevels_perm' hperm hlen m.pw]
+  | letE ty val body l iht ihv ihb => simp only [Expr.instantiateLevelParams, iht, ihv, ihb]
+  | proj s i e ih => simp only [Expr.instantiateLevelParams, ih]
+
+/-- **Instantiating a positional term positionally, for permuted positions**: `posOf ps T`
+instantiated at `List.range n` by `us` is `T` instantiated at `ps` by `us`. -/
 private theorem posOf_instantiateLevelParams' {ps : List Ix.Kernel.LevelParam}
-    {us : List KLevel} {T : KExpr} (hlen : us.length = ps.length)
-    (hdef : T.allLevelParamsDefined ps = true) :
+    {us : List KLevel} {T : KExpr} (hperm : ps.Perm (List.range ps.length))
+    (hlen : us.length = ps.length) :
     (posOf ps T).instantiateLevelParams (List.range us.length) us =
-      T.instantiateLevelParams ps us := by
-  have hl : (posLevels ps).length = ps.length := by
-    rw [posLevels, List.length_map, List.length_range]
-  unfold posOf
-  rw [instantiateLevelParams_comp' hl hdef, posLevels_map_subst' hlen]
-
-end IxVM.Refinement.Core.DefEqAux
-
-/-! ## The install facts the rescue tier reads -/
-
-namespace IxVM.Refinement.Core.DefEqAux
-
-open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open Aiur.Library Aiur.Library.List
-open Ix.Kernel.Rules (Red Infer)
-
-/-- **What the unit-like and structure-η tests need from the environment**, stated over what
-the circuit observes: the kernel environment, the records `c.E`, and an observed load with the
-value it loads (as `LoadFacts.indRecord` states one). The capability record and the
-projection tables are the kernel's install computation (`nativeCapsAt` and the native tables,
-`IxC/Kernel/Inductives/NativeInstall.lean`; the pinned `PUnit`), which the declarations layer
-relates to the records the loads decode. -/
-structure RescueFacts (c : Ctx) : Prop where
-  /-- Every stored type mentions only its constant's level parameters (`ConstWF`). -/
-  typeLevels : ∀ k ci, c.env.find? k = some ci →
-    ci.toConstantVal.type.allLevelParamsDefined ci.toConstantVal.levelParams = true
-  /-- **A stored record whose bytes are a projection record's canonical encoding decodes to that
-  record** (the claim's canonical store, `Ix.Cert.Stream.StoredCanonical`, and the injectivity
-  of the encoding on wire-valid constants). -/
-  canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
-    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
-      ∀ cm, lc.get? = some cm → cm.info = info
-  /-- **Unit-likeness**: an inductive that `get_ci` loads with no index and one constructor
-  (whose stored constructor, at the first constructor record of its member, has no field), at a
-  block with at most one inductive, is unit-like at its loaded parameter count; at a reserved
-  basis key it is the pinned `PUnit` (no parameter, `isUnitLikeTy`). -/
-  unitLike : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
-      (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
-      (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon)
-      (cvC : Ix.Kernel.ConstantVal .anon) (nPc : Nat),
-    ObsFn W "Ingress::get_ci" [ap] h ptr h' cs → Good c cs → RepAddr h a ap →
-    loadValue h' ptr = .ok (.construct kciEnum "Induct"
-      [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
-    RepAddr h' b blk →
-    c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) →
-    Specs.Callees.FewInductives c (ixAddr b) →
-    c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc 0) →
-    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
-      (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
-        (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
-  /-- **Structure η**: the inductive member `i` of the block `b`, as `get_ci_iprj` loads it with
-  no index and one constructor, whose block `block_is_modeled` answers `0`, whose sort after the
-  constructor's parameters is never zero at some levels, and whose projection record
-  `struct_is_rec` does not find recursive, is η-capable through the constructor `c.κ ac` (a
-  stored constructor of that member with at least one field), with that constructor's field
-  count (`nativeCapsAt`: `eta`, `etaCtor`, `etaFields`). -/
-  eta : ∀ (ac b sa : Bytes.Address) (i : F) (j : Nat) (cvc cvT : Ix.Kernel.ConstantVal .anon)
-      (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat) (us : List KLevel) (l : KLevel)
-      (bp ptr nl ty np u blk idx : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F)),
-    c.env.find? (c.κ (ixAddr ac)) = some (.ctorInfo cvc cnP cnF) →
-    cvc.name = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) → 0 < cnF →
-    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h1 ptr h2 cs1 → Good c cs1 → RepAddr h1 b bp →
-    loadValue h2 ptr =
-      .ok (.construct kciEnum "Induct" [nl, ty, np, .field 0, .field 1, u, blk, idx]) →
-    c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some (.indInfo cvT caps) →
-    (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
-      ObsFn W "KernelModeled::block_is_modeled" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
-        RepAddr h3 b bq) →
-    Specs.Whnf.piSortAt cnP (posOf cvT.levelParams cvT.type) = some l →
-    (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true →
-    (∃ (sp v : SourceValue F) (h5 h6 : Heap F) (cs5 : List (Call F)),
-      ObsFn W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5 ∧ v ≠ .field 1 ∧ Good c cs5 ∧
-        RepAddr h5 sa sp) →
-    ixAddr sa = iprjAddr (ixAddr b) (ZMod.val i) →
-    caps.eta = true ∧ caps.etaCtor = some (c.κ (ixAddr ac)) ∧ caps.etaFields = cnF
-  /-- **An η-capable stored family has a projection table entry at each of its `etaFields`
-  slots** (`EtaTowers`, `IxC/Kernel/Model/StoreCompanions.lean`). -/
-  etaTowers : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) → caps.eta = true →
-    Ix.Kernel.towerSlotsAll c.env T caps.etaFields = true
-  /-- **The type of a full application of an η-constructor**: its io-inferred type reduces to the
-  structure at the same levels applied to the parameters (the stored constructor's type is the
-  telescope of the parameters and fields ending in the structure at the constructor's level
-  parameters applied to the parameter variables). -/
-  etaType : ∀ (T kc : KKey) (cvT cvc : Ix.Kernel.ConstantVal .anon)
-      (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
-    c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
-    c.env.find? kc = some (.ctorInfo cvc nP nF) →
-    ∀ (d : Nat) (us : List KLevel) (Ss : List KExpr) (ta : KExpr), Ss.length = nP + nF →
-      Infer c.env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) Ss) ta →
-      Red c.env d ta (Ix.Kernel.Expr.mkAppN (.const T us) (Ss.take nP))
+      T.instantiateLevelParams ps us :=
+  instantiateLevelParams_posLevels_perm' hperm hlen T
 
 end IxVM.Refinement.Core.DefEqAux
 
@@ -634,8 +588,8 @@ theorem de_rescue_tier_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 bytes (`UInt64::from_field`) and the block address, with empty tables, serialized
 (`put_constant`) and hashed (`bytes_to_addr`): its address is `iprjAddr`. The run hashed those
 bytes, so a record of `c.E` there has them as its bytes (`load_escape`, under `Good`), and
-decodes to that record (`RescueFacts.canonical`). -/
-theorem compute_iprj_addr_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceValue F)}
+decodes to that record (`LoadFacts.canonical`). -/
+theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compute_iprj_addr" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compute_iprj_addr c args h r h' calls := by
@@ -697,7 +651,7 @@ theorem compute_iprj_addr_step (c : Ctx) (rf : RescueFacts c) {args : List (Sour
     have hraw := load_escape hlc good.1 _
       (hashed_of_bytes_to_addr ev162 (fun x hx => by simp [hx]) hbytes) haddr.symm
     rw [bytes_mk_toList] at hraw
-    exact rf.canonical _ lc _ hlc hraw.symm cm hget
+    exact hc.loads.canonical _ lc _ hlc hraw.symm cm hget
 
 /-! ## A family's parameters -/
 
@@ -807,9 +761,9 @@ theorem family_params_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 loaded constant is an inductive (`get_ci`) with no index, at a block with at most one inductive
 (`block_is_multi`), with one constructor (its first constructor record, `get_ci_cprj`, has no
 field) and not recursive (`struct_is_rec`); its parameters are certified (`family_params`). The
-capabilities are the install's (`RescueFacts.unitLike`); the family's telescope at the
-positional levels is its type at its own parameters (`RescueFacts.typeLevels`). -/
-theorem is_unit_like_type_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceValue F)}
+capabilities are the install's (`LoadFacts.unitLike`); the family's telescope at the
+positional levels is its type at its own parameters, which permute the positions (`ValRep`). -/
+theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_unit_like_type" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_unit_like_type c args h r h' calls := by
@@ -820,8 +774,8 @@ theorem is_unit_like_type_step (c : Ctx) (rf : RescueFacts c) {args : List (Sour
   case Const_Induct_n0_n0_Ctor_n0_n0 m2 cs13 x_head x_args x_addr x_lvls m70 p77 cs83 x_ind_nl
       x_ind_ty x_ind_np x_n_indices x_num_ctors w110 x_block x_idx m152 y161 cs172 m210 p217 cs223
       w265 w266 w267 w268 w269 w270 w271 m327 cs338 cs356 ev15 ld51 ev85 ld79 ev174 op167 op203
-      ev225 ld219 ev340 ev358 hc =>
-    subst hc
+      ev225 ld219 ev340 ev358 hcalls =>
+    subst hcalls
     have e15 := ObsFn.heap_extends ev15
     have e85 := ObsFn.heap_extends ev85
     have e174 := ObsFn.heap_extends ev174
@@ -888,11 +842,10 @@ theorem is_unit_like_type_step (c : Ctx) (rf : RescueFacts c) {args : List (Sour
       (TmC.mono E327 hty) (LvListRep.mono E2 hus) (tml_mono E2 hAs) hr
     rw [val_natCast_small (m := nP) (by omega)] at hlA
     rw [val_natCast_small (m := cvT.levelParams.length) (by omega)] at hlU
-    have htl : cvT.type.allLevelParamsDefined cvT.levelParams = true := rf.typeLevels _ _ hfind
-    rw [posOf_instantiateLevelParams' hlU htl] at hcerts
+    rw [posOf_instantiateLevelParams' hnd hlU] at hcerts
     -- the capabilities
     rw [Nat.cast_zero, Nat.cast_one] at ld79
-    obtain ⟨hul, hup, hbasis⟩ := rf.unitLike x_addr p77 m2 m70 cs83 a _ x_ind_ty w110 x_block
+    obtain ⟨hul, hup, hbasis⟩ := hc.loads.unitLike x_addr p77 m2 m70 cs83 a _ x_ind_ty w110 x_block
       (nP : F) i b cvT caps cvC nPc ev85 (good.sub fun x hx => by simp [hx]) ha ld79 hb hfind
       hfew hfindC
     rw [val_natCast_small (m := nP) (by omega)] at hup hbasis
@@ -957,8 +910,9 @@ for, with at least one field and a never-zero sort (`type_sort_never`), not recu
 (`struct_is_rec` at its projection record, `compute_iprj_addr`); the parameters are certified
 (`family_params` on `Lists::take`), the io-inferred types compare (`k_is_def_eq`), and every
 field compares with its projection of `t` (`compare_struct_fields`). The capabilities, the
-projection table and the constructor application's type are the install's (`RescueFacts`). -/
-theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceValue F)}
+projection table and the constructor application's type are the install's (`LoadFacts.eta`,
+`EnvFacts.etaTowers`, `EnvFacts.etaType`). -/
+theorem try_eta_struct_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_eta_struct" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_eta_struct c args h r h' calls := by
@@ -1101,8 +1055,7 @@ theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceV
       (TmC.mono (E200_293.trans (e481.trans (e512.trans e600))) htyT)
       (LvListRep.mono (e85.trans (E70_499.trans e600)) hus) hTake hne631
     rw [val_natCast_small (m := cvT.levelParams.length) (by omega)] at hlenU
-    have htl : cvT.type.allLevelParamsDefined cvT.levelParams = true := rf.typeLevels _ _ hfindT
-    rw [hcnPv, posOf_instantiateLevelParams' hlenU htl] at hcerts
+    rw [hcnPv, posOf_instantiateLevelParams' hndT hlenU] at hcerts
     -- the io-inferred types
     obtain ⟨TT, hTT, hinfT⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev648 rc t types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono E533 hrc) d Γ (types_mono E533 htypes) T
@@ -1122,7 +1075,8 @@ theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceV
       rfl rfl rfl (by simp) d Γ (types_mono E712 htypes) T Ss (Tm.mono E712 hT)
       (tml_mono E70_712 hSs70) hr
     -- the install facts
-    obtain ⟨heta, hctor, hetaF⟩ := rf.eta ac b sa i (ZMod.val j) cvc cvT caps cnP cnF us l
+    obtain ⟨heta, hctor, hetaF, -, -⟩ := hc.loads.eta ac b sa i (ZMod.val j) cvc cvT caps cnP cnF
+      us l
       x_ind_block_addr p207 _ _ _ _ _ _ m165 m200 cs213 hfindC hcname hnf0 ev215
       (good.sub fun x hx => by simp [hx]) hb165 ld209 hfindT
       ⟨x_ind_block_addr, m310, m368, cs376, ev378, good.sub fun x hx => by simp [hx],
@@ -1130,9 +1084,9 @@ theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceV
       hpi hnz
       ⟨v468, v498, m469, m499, cs510, ev512, hne528, good.sub fun x hx => by simp [hx], hsa⟩
       hsaddr
-    have htower := rf.etaTowers _ cvT caps hfindT heta
+    have htower := hc.env.etaTowers _ cvT caps hfindT heta
     rw [hetaF] at htower
-    have hred := rf.etaType _ _ cvT cvc caps cnP cnF hfindT heta hctor hfindC d us Ss TS hSlen
+    have hred := hc.env.etaType _ _ cvT cvc caps cnP cnF hfindT heta hctor hfindC d us Ss TS hSlen
       hinfS
     -- the rule
     have hargs' : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr ac)) us) Ss).getAppArgs = Ss := by

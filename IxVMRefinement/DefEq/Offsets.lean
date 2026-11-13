@@ -1,7 +1,7 @@
 import IxVMRefinement.DefEq.Basic
 import IxVMRefinement.Core.Roles
 
-/-! # Step lemmas of `KernelDefEq`: string literals and η-expansion
+/-! # Step lemmas of `KernelDefEq`: literals, `Nat` offsets and η-expansion
 
 * **String literals** (`try_string_lit_one`): a string literal reduces to its constructor form
   (`Red.strLit`, under the guard `str_lit_to_ctor` establishes), and one δ step on
@@ -12,7 +12,12 @@ import IxVMRefinement.Core.Roles
   stored `BVar 0`. One depth further in, under the ghost context extended by the left domain,
   the lifted `b` reads as `b` and the `BVar 0` as the new opened variable, so the stored
   application reads as `b` applied to it. `try_eta_swap` puts the `λ` on the left
-  (`DefEq.symm` when it is on the right). -/
+  (`DefEq.symm` when it is on the right).
+* **`Nat` zero readings and offsets** (`is_nat_zero`, `try_def_eq_nat`): two zero readings
+  compare by `DefEq.refl`/`DefEq.natZero`; two splits at one offset (`nat_offset_of`'s spec,
+  `klimbs_eq`) with definitionally equal bases reduce to successor towers over their bases
+  (`Red.natLit`, `Red.natAddSucc`, `Red.natAddZero` under `Red.appArg`), which compare by
+  congruence, carried back by `DefEq.redBoth`; the guards come from the roles in force. -/
 
 namespace IxVM.Refinement.Core.DefEqAux
 
