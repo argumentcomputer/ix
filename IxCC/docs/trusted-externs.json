@@ -3530,7 +3530,7 @@
         "IxCK/Kernel/Egress/Projection.lean": "edfab4890cd982a64b9b2fc020428a6c1ff3a06f9466c3ffc52b153ef2b93adf",
         "IxCK/Kernel/Env.lean": "be61e110250283346411bc06027fc88da80d91e0b33d7d862e896f0b23b1caad",
         "IxCK/Kernel/Exclusive.lean": "a1510e8af60cc1cd65eb838930fbb875da8c312465791f40b30f1f8e6eb6a806",
-        "IxCK/Kernel/Expr.lean": "1f6eac300c4ccf7a5709bc689c234e3fae23738075b6f207b8beedb90f78b0f8",
+        "IxCK/Kernel/Expr.lean": "96347254531fa47d7157998bd39bbe0378732adb28c1738961fd964fe6e4a598",
         "IxCK/Kernel/ExprOps.lean": "efca8903517d58660b2b27d1c0b11f9423cd90bc62f693bb73c206e1b144fe4f",
         "IxCK/Kernel/FEnv.lean": "b7e881e480c514f4e3d469d021e2dbbfa133851026009931a896767925170326",
         "IxCK/Kernel/Frontend/InModel.lean": "5025bb65a9f38422d25cc4c6e527809d45a1a80549de2d76bd5d04b1440acd00",
