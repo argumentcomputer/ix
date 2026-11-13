@@ -78,9 +78,9 @@ def exprRefIdxs : Ixon.Expr → List Nat
   | .ref i _ => [i.toNat]
   | .prj i _ e => i.toNat :: exprRefIdxs e
   | .app f a => exprRefIdxs f ++ exprRefIdxs a
-  | .lam _ t b => exprRefIdxs t ++ exprRefIdxs b
-  | .all _ _ t b => exprRefIdxs t ++ exprRefIdxs b
-  | .letE _ t v b => exprRefIdxs t ++ exprRefIdxs v ++ exprRefIdxs b
+  | .lam t b => exprRefIdxs t ++ exprRefIdxs b
+  | .all t b => exprRefIdxs t ++ exprRefIdxs b
+  | .letE _ _ t v b => exprRefIdxs t ++ exprRefIdxs v ++ exprRefIdxs b
   | _ => []
 
 /-- The reference-table indices a block member names (`KernelClaim::const_idxs_muts`). -/

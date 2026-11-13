@@ -1041,9 +1041,9 @@ def family_refs_ok := aiur_fn⟦
       let rcst = Ingress::load_verified_constant(rec_block);
       let bc = Ingress::load_verified_constant(block);
       match rcst {
-        Ixon::Constant::Mk(_, _, refs, _) => {
+        Ixon::Constant::Mk(_, _, refs, _, _) => {
           match bc {
-            Ixon::Constant::Mk(_, _, irefs, _) => {
+            Ixon::Constant::Mk(_, _, irefs, _, _) => {
               family_refs_go(refs, KernelClaim::const_idxs_of(rcst), 0, block, irefs,
                              KernelClaim::const_idxs_of(bc), wset) } ,
           } } ,
