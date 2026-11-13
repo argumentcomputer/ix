@@ -331,13 +331,12 @@ theorem ByteError.asLimit_cases (e : ByteError) :
     e.asLimit = e ∨ e.asLimit = .limit .recordBytes ∨ e.asLimit = .limit .recordUnivNodes := by
   cases e with
   | decode p a r =>
-    unfold ByteError.asLimit
-    split
-    · exact .inr (.inl rfl)
-    · split
-      · exact .inr (.inr rfl)
-      · exact .inl rfl
-  | _ => exact .inl rfl
+    by_cases h₁ : (r == recordBytesExhausted) = true
+    · simp [ByteError.asLimit, h₁]
+    · by_cases h₂ : (r == univNodesExhausted) = true
+      · simp [ByteError.asLimit, h₁, h₂]
+      · simp [ByteError.asLimit, h₁, h₂]
+  | _ => simp [ByteError.asLimit]
 
 /-- **The limits only decline**: `decodeWithin` fails with `.limit .depth`, or with
 `decodeRecords`'s error read by `ByteError.asLimit` (the error itself, or the decline of a
@@ -387,7 +386,7 @@ theorem decodeWithin_ok_iff (limits : Limits) (records : Records) (constants : I
       | ok u => cases u; rfl
       | error e =>
         unfold decodeWithin at h
-        simp [hs, bind, Except.bind, Except.mapError] at h
+        simp [hs, bind, Except.bind] at h
     · cases he : expandedDepths limits constants with
       | ok u => cases u; rfl
       | error e =>

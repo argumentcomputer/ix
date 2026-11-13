@@ -296,11 +296,10 @@ theorem checkConstantsAt_cfg (hash : ByteArray → Address) (binding : Binding)
   cases admitBinding hash binding with
   | error e => rfl
   | ok t =>
+    simp only [bind, Except.bind, Except.mapError]
     cases preludeFor t with
     | error e => rfl
-    | ok pre =>
-      simp only [bind, Except.bind]
-      rw [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
+    | ok pre => rw [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
 
 /-- The default role table's section, under the address the generator
 committed it at (`RoleData.tableAddress`, BLAKE3 of its bytes). For tests and
