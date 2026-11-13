@@ -181,16 +181,19 @@ structure LoadFacts (c : Ctx) : Prop where
         ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
           ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
   /-- **`projTables` at the route test `red_proj` makes**: the same conclusions, keyed on a good
-  derivation of `KernelModeled::block_is_modeled(block)` answering `0`, for a member `i` whose
-  record is a one-constructor inductive with no index (`red_proj` tests the block and loads the
-  constructor itself; `k_infer_proj` and the io projection arm go through `proj_ctor`). Owed as
+  derivation of `KernelModeled::block_is_modeled(block)` answering `0` and a good `get_ci` loading
+  an inductive of member `i` of that block with no index and one constructor, as the loaded
+  counts read (`red_proj` tests the block and loads the constructor itself; `k_infer_proj` and the io projection arm go through `proj_ctor`). Owed as
   `projTables`. -/
-  projTablesAt : ∀ (bp : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address)
-      (i : F) (cb0 : Ixon.Constant) (xs0 : Array Ixon.MutConst) (ind0 : Ixon.Inductive),
+  projTablesAt : ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
+      (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
     ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp →
-    Ix.Cert.recordAt c.E (ixAddr b) = some cb0 → cb0.info = .muts xs0 →
-    xs0[ZMod.val i]? = some (.indc ind0) → ind0.ctors.size = 1 → ind0.indices = 0 →
+    ObsFn W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Good c cs1 →
+    Bytes.RepAddressRef addrTy h1 s sap →
+    loadValue h2 ptr =
+      .ok (.construct kciEnum "Induct" [nl, ty, np, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h2 b blk →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
