@@ -1,5 +1,6 @@
 import IxVMRefinement.Iota.Major
 import IxVMRefinement.Iota.RecKernel
+import IxVMRefinement.Core.RomBound
 
 /-! # `red_iota`: `Red.iota` on a prepared major
 
@@ -255,7 +256,8 @@ theorem iota_fire (c : Ctx) (hc : CoreFacts c) {d : Nat} {k : KKey}
         (As.take mI).reverse 0) ++ (As.take mI).drop rP := by
     rw [hargs, Ix.Kernel.Expr.getAppArgs_instantiateLevelParams, hDargs,
       ← indices_inst hAc hrm (by omega)]
-    simp only [List.map_append, List.map_map] <;> rfl
+    simp only [List.map_append, List.map_map]
+    rfl
   have hP0' : (P0.map (fun a => (a.instantiateLevelParams cv.levelParams us).instantiateList
       (As.take mI).reverse 0)).length = rl.ctorParams := by simp [hP0]
   rw [hMDargs, List.take_left' hP0'] at hpar
