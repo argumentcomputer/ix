@@ -77,9 +77,11 @@ def held (dir : FilePath) (env : Array (String × Option String)) :
   let fifo := dir / s!"hold-{← IO.monoNanosNow}"
   let made ← IO.Process.output { cmd := "mkfifo", args := #[fifo.toString] }
   check (made.exitCode == 0) "mkfifo"
-  let child ← IO.Process.spawn { cmd := "setsid", stdin := .null, stdout := .piped, stderr := .piped, env,
-    args := #[(← IO.FS.realPath ixccPath).toString, "compile", fifo.toString, "--equations",
-      (fx / "fib.equations.json").toString, "-o", (dir / "held.o").toString] }
+  let app := (← IO.FS.realPath ixccPath).toString
+  let child ← IO.Process.spawn {
+    cmd := "setsid", stdin := .null, stdout := .piped, stderr := .piped, env
+    args := #[app, "compile", fifo.toString, "--equations", (fx / "fib.equations.json").toString,
+      "-o", (dir / "held.o").toString] }
   IO.sleep 1500
   return (child, fifo)
 
