@@ -322,17 +322,33 @@ and `pre_step`, as approved, from a hypothesis `Cases`: one statement per evalua
 with one signature (L1's facts, the structure, the call's precondition and sort events, and the
 statement at every call its evaluation makes). The induction is well founded on SrcEval's own
 termination measure, which every `Step` decreases
-([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Six of the 25 are proved: E2 at a
-sort and at a Π, where C7 leaves no precondition; E3 at both literals; F4; and F2, an ordinary
-recursor fired ([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor
-writes erased holds the marker under a rule λ whose class may be relevant, and is shielded there,
-passed only to the minor the rule dispatches, which ignores it). The other nineteen are stated,
-not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take `Cases`
-as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the lemmas the
-cases share. Reading F3 (subsingleton ι) against the statements found it false where a reached
-subsingleton recursor's rule-0 constructor has no constructor record, which the relevance checks
-allow when nothing reaches the constructor: then C3 checks no minor against it and S4 none of its
-sources; a check closing it is approved, not yet written.
+([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Twenty-two of the 25 are
+proved. In `Cases.lean`: E2 at a sort and at a Π, where C7 leaves no precondition; E3 at both
+literals; F4. F2, an ordinary recursor fired
+([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor writes erased
+holds the marker under a rule λ whose class may be relevant, and is shielded there, passed only to
+the minor the rule dispatches, which ignores it). The constructor
+values ([`Ctor.lean`](../IxCC/Src/Relevance/Proof/P1/Ctor.lean)): E6, a projection's field `Live`
+where it is read (a marker there would be at a field written erased, which C3 refuses at the
+projection); F1, a constructor's fields, each `Live` unless a marker at a position the constructor
+ignores, where the field is dropped at the value's levels; F7, `Quot.mk`'s element; F8,
+`Quot.lift`'s function, which `checkCanonical` decides is read, and its element. δ and what it
+makes ([`Delta.lean`](../IxCC/Src/Relevance/Proof/P1/Delta.lean)): E8, a constant's instance
+handled; δ itself, stuck out of the program, at a reached instance a run body with tier C, a
+`csimp` target that is no eliminator over a field written erased, every special head the one
+`specialHead?` gives the constant; `headValue`; F6, a primitive, which ignores no argument; F6w, a
+word operation, whose result's one marker is the proof field the pinned `Fin.mk` drops. The cases
+that move values without reading them
+([`Plumbing.lean`](../IxCC/Src/Relevance/Proof/P1/Plumbing.lean)): E1, E4, E5, A1–A3, `applyAll`,
+`force`, `forceAll`. The other three, E7 (application), F3 (subsingleton ι) and F5 (`case`), are
+stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
+`Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
+lemmas the cases share; those the three later modules mark for it are still in their modules. F3
+as stated is false where a reached subsingleton recursor's rule-0 constructor has no constructor
+record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field,
+built below the kernel, which only the kernel refuses); it is also a wrong-value route on the
+recheck path. The check that closes it (`checkCanonical`: such a constructor has a record) is
+approved and lands next, before `case_F3`.
 
 ## Target statements
 
