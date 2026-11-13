@@ -19,6 +19,8 @@ open Ix.Kernel.Rules (Red)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 
 set_option linter.unusedVariables false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 namespace WhnfAux
 
@@ -26,7 +28,8 @@ namespace WhnfAux
 theorem recr_full {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F} {ci : Ix.Kernel.ConstantInfo .anon}
     (r : CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx]) ci) :
-    ∃ cv mI rP rls (p i m mi : F), ci = .recInfo cv mI rP rls ∧ ValRep κ h nl ty cv ∧
+    ∃ (cv : Ix.Kernel.ConstantVal .anon) (mI rP : Nat) (rls : List (Ix.Kernel.RecRule .anon))
+      (p i m mi : F), ci = .recInfo cv mI rP rls ∧ ValRep κ h nl ty cv ∧
       np = .field p ∧ ni = .field i ∧ nm = .field m ∧ nmi = .field mi ∧
       (mI : F) = p + m + mi + i ∧ mI < 288230376151711744 := by
   generalize hv : (Value.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx] :
@@ -88,6 +91,28 @@ theorem majorHead_of_pos {c : Ctx} {cv : Ix.Kernel.ConstantVal .anon} {mI : Nat}
   rw [Ix.Kernel.Expr.getAppFn_instantiateLevelParams] at hfn'
   obtain ⟨us0, hus0⟩ := const_of_ilp _ _ hfn'
   exact ⟨us0, by rw [hd0]; simp [hus0]⟩
+
+/-- The projections `j, j + 1, …, j + m` of a major: the first, then those from `j + 1`. -/
+theorem projs_succ (k : KKey) (M : KExpr) (j : F) (m : Nat) :
+    ((List.range (m + 1)).map fun t =>
+        (Ix.Kernel.Expr.proj k (ZMod.val (j + (t : F))) M : KExpr)) =
+      (Ix.Kernel.Expr.proj k (ZMod.val j) M : KExpr) ::
+        ((List.range m).map fun t =>
+          (Ix.Kernel.Expr.proj k (ZMod.val (j + 1 + (t : F))) M : KExpr)) := by
+  first
+    | (simp only [bind_pure_comp, List.map_eq_map, List.map_map, List.range_succ_eq_map,
+        List.map_cons, Function.comp_def, Nat.cast_zero, add_zero, Nat.cast_succ,
+        List.cons.injEq, true_and]
+       apply List.map_congr_left
+       intro t _
+       congr 2
+       ring)
+    | (simp [List.range_succ_eq_map, Function.comp_def, add_assoc, add_comm]; done)
+    | (simp [List.range_succ_eq_map, Function.comp_def]
+       apply List.map_congr_left
+       intro t _
+       congr 2
+       ring)
 
 /-! ## `whnf_nd_const_head`'s native segment -/
 
@@ -404,23 +429,8 @@ theorem apply_n_projs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     obtain ⟨m', hm', hrep⟩ := ih.get (.whnf .apply_n_projs) (by lt_calls) ev76 _ par major _ _ rfl
       (good.sub fun x hx => by simp [hx]) d Γ _ p M n (j + 1) happ
       (Bytes.repAddressRef_heapMono₂ addrTy ext hp) (Tm.mono ext hM) rfl rfl
-    have key : Specs.Whnf.mkAppN H ((List.range (m' + 1)).map fun t =>
-          (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val (j + (t : F))) M : KExpr)) =
-        Specs.Whnf.mkAppN (.app H (.proj (c.κ (ixAddr p)) (ZMod.val j) M))
-          ((List.range m').map fun t =>
-            (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val (j + 1 + (t : F))) M : KExpr)) := by
-      rw [List.range_succ_eq_map, List.map_cons, List.map_map]
-      show Ix.Kernel.Expr.mkAppN (.app H _) _ = Ix.Kernel.Expr.mkAppN (.app H _) _
-      congr 1
-      · simp
-      · apply List.map_congr_left
-        intro t _
-        simp only [Function.comp_apply]
-        congr 2
-        push_cast
-        ring
     refine ⟨m' + 1, by rw [← hm']; push_cast; ring, ?_⟩
-    rw [← key] at hrep
+    rw [WhnfAux.projs_succ]
     exact hrep
 
 end IxVM.Refinement.Core
