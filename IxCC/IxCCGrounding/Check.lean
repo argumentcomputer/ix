@@ -228,16 +228,6 @@ theorem termCorrS_of_check {κ : CId → KKey} {lps : List Nat} :
     | _ => simp [corrSB] at h
   | strLit => intro e h; cases e <;> simp [corrSB] at h
 
-theorem liftσ_idσ (n : Nat) : liftσ (idσ n) = idσ (n + 1) := by
-  simp only [liftσ, idσ, List.range_succ_eq_map, List.map_cons, List.map_map]
-  congr 1
-  apply List.map_congr_left
-  intro i _
-  simp [Expr.liftLooseBVars]
-
-theorem idσ_get {n i : Nat} (h : i < n) : (idσ n)[i]? = some (some (.bvar i)) := by
-  simp [idσ, h]
-
 /-- **On a let-free run term the substitution check is the landed one**: what `termCorrB` accepts
 on a closed kernel term, `corrSB []` accepts (so no verdict of a let-free program moves). -/
 theorem corrSB_idσ_of_termCorrB {κ : CId → KKey} {lps : List Nat} :

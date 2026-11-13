@@ -177,6 +177,14 @@ def liftσ (σ : Sig) : Sig := some (.bvar 0) :: σ.map (·.map (Expr.liftLooseB
 /-- The identity substitution of `n` bound variables: `[some #0, …, some #(n-1)]`. -/
 def idσ (n : Nat) : Sig := (List.range n).map fun i => some (.bvar i)
 
+theorem idσ_zero : idσ 0 = [] := rfl
+
+theorem liftσ_idσ (n : Nat) : liftσ (idσ n) = idσ (n + 1) := by
+  simp only [liftσ, idσ, List.range_succ_eq_map, List.map_cons, List.map_map]
+
+theorem idσ_get {n i : Nat} (h : i < n) : (idσ n)[i]? = some (some (.bvar i)) := by
+  simp [idσ, h]
+
 /-- `e` with its loose variables at or above `c + d` lowered by `d`; `none` when one in `[c, c + d)`
 occurs. -/
 def lowerK (d : Nat) : Nat → KExpr → Option KExpr
