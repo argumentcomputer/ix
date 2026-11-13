@@ -232,15 +232,18 @@ def threadReserve : Nat := 64 * 1024 * 1024
 executable, its libraries and the start of the heap. -/
 def processReserve : Nat := 1024 * 1024 * 1024
 
-/-- **Whether `threads` threads of `stack` bytes fit the address-space limit**:
-`none` if they do (or there is no limit), else the reason, which the host prints
+/-- **Whether `threads` threads of `stack` bytes fit the address-space limit**
+(with none, a 64-bit process's 128 TiB, which a depth limit in the billions overruns):
+`none` if they do, else the reason, which the host prints
 as a usage error (exit 2) naming the settings that lower it. -/
 def addressSpaceCheck (threads stack : Nat) : IO (Option String) := do
-  let some cap ← addressSpaceLimit | return none
+  -- with no limit, the 128 TiB of a 64-bit process's user address space
+  let cap := (← addressSpaceLimit).getD (2 ^ 47)
   let need := threads * (stack + threadReserve) + processReserve
   if need ≤ cap then return none
   return some s!"{threads} threads on {stack / 1024} KiB stacks need about {need / (1024 * 1024)} MiB \
-of address space, over this process's limit of {cap / (1024 * 1024)} MiB (ulimit -v); lower --workers \
+of address space, over the {cap / (1024 * 1024)} MiB this process may use (its `ulimit -v`, else \
+the 128 TiB of a 64-bit address space); lower --workers \
 or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var} (the stack is 16 KiB per level, at \
 least 256 MiB), or raise the limit"
 

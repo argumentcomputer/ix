@@ -478,10 +478,12 @@ private def Tests.Cli.testKernelLimits : IO Unit := do
       Tests.Cli.expect s!"{var}={n}" (← checkLean #[] #[(var, some (toString n))]) 6
         [s!"declined by the {word} limit ({n}, {var})"]
       -- raised past the default, by the flag and by the variable: accepted, the source printed
-      Tests.Cli.expect s!"--{flag} raised" (← checkLean #[s!"--{flag}", "1099511627776"] #[]) 0
-        [s!"{flag} 1099511627776 (--{flag})"]
-      Tests.Cli.expect s!"{var} raised" (← checkLean #[] #[(var, some "1099511627776")]) 0
-        [s!"{flag} 1099511627776 ({var})"]
+      -- (the depth limit sizes the threads' stacks, 16 KiB a level: raised to 100,000, not 2^40)
+      let up := if flag == "max-depth" then "100000" else "1099511627776"
+      Tests.Cli.expect s!"--{flag} raised" (← checkLean #[s!"--{flag}", up] #[]) 0
+        [s!"{flag} {up} (--{flag})"]
+      Tests.Cli.expect s!"{var} raised" (← checkLean #[] #[(var, some up)]) 0
+        [s!"{flag} {up} ({var})"]
     -- the flag wins over the variable
     Tests.Cli.expect "flag over variable" (← checkLean #["--max-depth", "2"]
       #[("IX_KERNEL_MAX_DEPTH", some "100000")]) 6 ["(2, --max-depth)"]
