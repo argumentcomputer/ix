@@ -1175,3 +1175,32 @@ the Aiur verifier and rejection of a forged opening. The existing KZG protocol
 already supports these groups. GL and BN key digests change, so fresh key and
 policy preparation is required. These counts establish the storage reduction;
 large proving-time measurements follow separately.
+
+## 26. Fresh Init through the pinned GL-to-BN CLI
+
+The [fresh Init benchmark](measurements/aiur-compression-fresh-init-bn.json)
+passes through `ix bench run --env-compression aiur-bn`, using a separately
+pinned portable chain manifest, current formal artifacts and their matching
+native executors. Proving passes `--fresh --no-cache --no-index`. Other builds
+and proofs were idle during the measurement.
+
+| Work | Seconds |
+|---|---:|
+| Fresh Init proving | 591.31 |
+| Root/environment verification | 101.77 |
+| Aiur GL and BN compression together | 207.43 |
+| Compressed proof/environment verification | 100.00 |
+| End to end | 1,000.53 |
+
+Both the final KZG proof and its carried pairing verify under Ignition. Peak
+compression RSS is 107.85 GB; total peak RSS is 131.52 GB. The stored output is
+466,303 bytes. The internal GL proof is 375,962 bytes and the BN envelope is
+466,166 bytes, so the BN step still grows that intermediate proof. This is a
+validated intermediate chain; terminal PLONK and Mathlib remain unfinished.
+
+The [CLI](aiur-chain-cli.md) requires `--aiur-chain-blake3` and hashes the exact
+manifest bytes before parsing them. Prepared artifacts and keys use fixed
+relative filenames, producing identical bundles across output directories.
+Fresh runs clear only their known stage files. A dedicated regression verifies
+that a valid outer BN proof carrying an invalid pairing is rejected; stage
+and canonical-point changes also reach and fail proof binding.
