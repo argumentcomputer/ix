@@ -1,6 +1,7 @@
 import IxCCTests.KernelFront.Report
 import IxCCTests.KernelFront.Bound
 import IxCCTests.KernelFront.Hints
+import IxCCTests.KernelFront.LamRuns
 import IxCCTests.Src.Support
 import IxCCTests.Support.Envelope
 
@@ -43,6 +44,11 @@ in exponential time without them accepted within a bound, the hint function
 the statements name read a second way, and hostile and missing hints through
 the front end, each ending in the honest object and certificate or a clean
 decline.
+
+Then the annotator's λ-runs (`LamRuns`): on every committed closure with a
+sidecar that the kernel accepts and ingress reads, and on adversarial programs,
+the kernel annotator (one kernel question per run of λs) gives exactly the
+annotation of its per-λ reference (`Reference`, the definition it replaced).
 
 The same report on other role-bound closures, written into scratch by the
 tree's `ix`, is `tests-kernel-front report …` (`Main`). -/
@@ -280,6 +286,18 @@ def run : IO Bool := do
     -- the role-bound test builder, and the hostile enumeration case ported to it
     for line in ← Bound.run a do IO.println line
     IxCCTests.KernelFront.Hints.run a
+    -- the annotator's λ-runs against the per-λ reference, on every committed closure the
+    -- kernel accepts and ingress reads, and on the adversarial programs (`LamRuns`)
+    let mut pairs := #[]
+    for path in ← committedClosures do
+      let label := path.toString
+      unless kernelDeclined.any (label.endsWith ·) || reachRefused.any (label.endsWith ·) do
+        -- the k1 family's sidecar is `equations.json` beside its closure
+        let plain := path.withFileName "equations.json"
+        match ← sidecarOf path with
+        | some sidecar => pairs := pairs.push (path, sidecar)
+        | none => if ← plain.pathExists then pairs := pairs.push (path, plain)
+    for line in ← LamRuns.run a pairs do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
   catch error =>
