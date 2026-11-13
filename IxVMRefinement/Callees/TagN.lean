@@ -13,6 +13,7 @@ namespace IxVM.Refinement.Core.ProjAddrAux
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 
+set_option Elab.async false
 set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
@@ -149,13 +150,16 @@ theorem u64Value_shift8 {d : Nat} (hd : d < 18446744073709551616) :
       .field ((d / 281474976710656 % 256 : Nat) : F),
       .field ((d / 72057594037927936 % 256 : Nat) : F),
       .field 0] : SourceValue F) = TagN.u64Value (d / 256) := by
-  have f1 : d / 256 / 256 % 256 = d / 65536 % 256 := by omega
-  have f2 : d / 256 / 65536 % 256 = d / 16777216 % 256 := by omega
-  have f3 : d / 256 / 16777216 % 256 = d / 4294967296 % 256 := by omega
-  have f4 : d / 256 / 4294967296 % 256 = d / 1099511627776 % 256 := by omega
-  have f5 : d / 256 / 1099511627776 % 256 = d / 281474976710656 % 256 := by omega
-  have f6 : d / 256 / 281474976710656 % 256 = d / 72057594037927936 % 256 := by omega
-  have f7 : d / 256 / 72057594037927936 % 256 = 0 := by omega
+  have f1 : d / 256 / 256 % 256 = d / 65536 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f2 : d / 256 / 65536 % 256 = d / 16777216 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f3 : d / 256 / 16777216 % 256 = d / 4294967296 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f4 : d / 256 / 4294967296 % 256 = d / 1099511627776 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f5 : d / 256 / 1099511627776 % 256 = d / 281474976710656 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f6 : d / 256 / 281474976710656 % 256 = d / 72057594037927936 % 256 := by rw [Nat.div_div_eq_div_mul]
+  have f7 : d / 256 / 72057594037927936 % 256 = 0 := by
+    rw [Nat.div_div_eq_div_mul]
+    change d / 18446744073709551616 % 256 = 0
+    rw [Nat.div_eq_of_lt hd]
   simp only [TagN.u64Value, f1, f2, f3, f4, f5, f6, f7, Nat.cast_zero]
 
 /-! ## Pure byte-slice models of `Ixon.putU64TrimmedLEAux` and `Ixon.putTagN` -/
@@ -337,7 +341,8 @@ theorem put_tagn_wide_c3 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hle := put_u64_le_spec 8 (by omega) hd ev1121 hrest
     have hb : (.field 195 : SourceValue F) = .field ((195 : UInt8).toNat : F) := by
       simp only [show (195 : UInt8).toNat = 195 from rfl, Nat.cast_ofNat]
-    simpa using repBytes_cons hb hle hm1075 he1076
+    rw [List.cons_append]
+    exact repBytes_cons hb hle hm1075 he1076
 
 theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -393,7 +398,8 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hle := put_u64_le_spec 4 (by omega) hd ev899 hrest
     have hb : (.field 194 : SourceValue F) = .field ((194 : UInt8).toNat : F) := by
       simp only [show (194 : UInt8).toNat = 194 from rfl, Nat.cast_ofNat]
-    simpa using repBytes_cons hb hle hm853 he854
+    rw [List.cons_append]
+    exact repBytes_cons hb hle hm853 he854
   | n2_other _ _ _ _ x_d4 x_d5 x_d6 x_d7 v757 m758 x766 y767 m768 x774 y775 m776 x782 y783 m784
       _ _ _ _ m929 _ x_next w1018 _ hv11 _ _ _ ev795 ev809 op789 ev823 op781 ev837 op773 hne924
       ev941 ev1034 _ =>
@@ -497,7 +503,8 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hle := put_u64_le_spec 3 (by omega) hd ev584 hrest
     have hb : (.field 193 : SourceValue F) = .field ((193 : UInt8).toNat : F) := by
       simp only [show (193 : UInt8).toNat = 193 from rfl, Nat.cast_ofNat]
-    simpa using repBytes_cons hb hle hm538 he539
+    rw [List.cons_append]
+    exact repBytes_cons hb hle hm538 he539
   | n1_other _ _ _ x_d3 x_d4 x_d5 x_d6 x_d7 v420 m421 x429 y430 m431 x437 y438 m439 x445 y446
       m447 x453 y454 m455 _ _ _ _ _ m614 _ x_next w703 _ hv11 _ _ ev466 ev480 op460 ev494 op452
       ev508 op444 ev522 op436 hne609 ev626 ev719 _ =>
@@ -605,7 +612,8 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hle := put_u64_le_spec 2 (by omega) hd ev247 hrest
     have hb : (.field 192 : SourceValue F) = .field ((192 : UInt8).toNat : F) := by
       simp only [show (192 : UInt8).toNat = 192 from rfl, Nat.cast_ofNat]
-    simpa using repBytes_cons hb hle hm209 he210
+    rw [List.cons_append]
+    exact repBytes_cons hb hle hm209 he210
   | n0_other _ _ x_d2 x_d3 x_d4 x_d5 x_d6 x_d7 v69 m70 x78 y79 m80 x86 y87 m88 x94 y95 m96
       x102 y103 m104 x110 y111 m112 _ _ _ _ _ _ m277 _ x_next w366 _ hv11 _ ev123 ev137 op117
       ev151 op109 ev165 op101 ev179 op93 ev193 op85 hne272 ev289 ev382 _ =>
@@ -749,8 +757,17 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     have hstep2 := repBytes_cons hhi_b hstep1 hm313 he314
     have he1 : Ixon.tagNEnd1 0 = 128 := rfl
     have he2 : Ixon.tagNEnd2 0 = 16512 := rfl
-    simpa [tag0Bytes, tagNBytes, he1, he2, hw128, hw_r2]
-      using hstep2
+    have hbytes : (tag0Bytes w).data.toList =
+        Ixon.tagNHeader 0 0 (128 + (w.toNat - 128) / 256) ::
+          [((w.toNat - 128) % 256).toUInt8] := by
+      unfold tag0Bytes tagNBytes
+      dsimp only []
+      rw [he1, if_neg hw128, he2, if_pos hw_r2]
+      have hp2 : 2 ^ (8 - 0 - 1) = 128 := rfl
+      rw [hp2, data_toList_append, data_toList_singleton, data_toList_singleton]
+      rfl
+    rw [hbytes, List.cons_append, List.singleton_append]
+    exact hstep2
   | n1 m2 _ v32 v33 m41 _ v52 y60 m77 _ v88 x_d x_at_least_r2 m154 _ _ v407 y418 op74 op66 ev51
       op102 ev87 ev14 ev167 op433 op424 ev406 _ =>
     have hy60 : y60 = .field 128 := by rw [mul_field_inv op74]; congr 1; decide
@@ -795,28 +812,45 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     have hh1 : Ixon.tagNHeader 0 0 (2 ^ (8 - 0 - 1) + 2 ^ (8 - 0 - 2) + 1) = (193 : UInt8) := rfl
     have hh2 : Ixon.tagNHeader 0 0 (2 ^ (8 - 0 - 1) + 2 ^ (8 - 0 - 2) + 2) = (194 : UInt8) := rfl
     have hh3 : Ixon.tagNHeader 0 0 (2 ^ (8 - 0 - 1) + 2 ^ (8 - 0 - 2) + 3) = (195 : UInt8) := rfl
-    by_cases h3 : w.toNat < 82048
-    · have hd3 : w.toNat - 16512 < 65536 := by omega
-      simpa [tag0Bytes, tagNBytes,
-        he1, he2, he3, hw128, hw_ge2, h3, hd3, hh0] using hwide
-    · have hd3 : ¬ w.toNat - 16512 < 65536 := by omega
-      have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 := by omega
-      by_cases h4 : w.toNat < 16859264
-      · have hd4 : w.toNat - 82048 < 16777216 := by omega
-        simpa [tag0Bytes, tagNBytes,
-          he1, he2, he3, he4, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hh1] using hwide
-      · have hd4 : ¬ w.toNat - 82048 < 16777216 := by omega
-        have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 := by omega
-        by_cases h5 : w.toNat < 4311826560
-        · have hd5 : w.toNat - 16859264 < 4294967296 := by omega
-          simpa [tag0Bytes, tagNBytes,
-            he1, he2, he3, he4, he5, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hs4, h5, hd5, hh2]
-            using hwide
-        · have hd5 : ¬ w.toNat - 16859264 < 4294967296 := by omega
-          have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 := by omega
-          simpa [tag0Bytes, tagNBytes,
-            he1, he2, he3, he4, he5, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hs4, h5, hd5, hs5, hh3]
-            using hwide
+    have hbytes : (tag0Bytes w).data.toList =
+        (if w.toNat - 16512 < 65536 then
+          (192 : UInt8) :: (trimmedBytes (w.toNat - 16512).toUInt64 2).data.toList
+        else if w.toNat - 16512 - 65536 < 16777216 then
+          (193 : UInt8) :: (trimmedBytes (w.toNat - 16512 - 65536).toUInt64 3).data.toList
+        else if w.toNat - 16512 - 65536 - 16777216 < 4294967296 then
+          (194 : UInt8) ::
+            (trimmedBytes (w.toNat - 16512 - 65536 - 16777216).toUInt64 4).data.toList
+        else
+          (195 : UInt8) ::
+            (trimmedBytes
+              (w.toNat - 16512 - 65536 - 16777216 - 4294967296).toUInt64 8).data.toList) := by
+      unfold tag0Bytes tagNBytes
+      dsimp only []
+      rw [he1, if_neg hw128, he2, if_neg hw_ge2, he3, he4, he5, hh0, hh1, hh2, hh3]
+      by_cases h3 : w.toNat < 82048
+      · have hd3 : w.toNat - 16512 < 65536 := by omega
+        rw [if_pos h3, if_pos hd3, data_toList_append, data_toList_singleton]
+        rfl
+      · have hd3 : ¬ w.toNat - 16512 < 65536 := by omega
+        have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 := by omega
+        rw [if_neg h3, if_neg hd3, hs3]
+        by_cases h4 : w.toNat < 16859264
+        · have hd4 : w.toNat - 82048 < 16777216 := by omega
+          rw [if_pos h4, if_pos hd4, data_toList_append, data_toList_singleton]
+          rfl
+        · have hd4 : ¬ w.toNat - 82048 < 16777216 := by omega
+          have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 := by omega
+          rw [if_neg h4, if_neg hd4, hs4]
+          by_cases h5 : w.toNat < 4311826560
+          · have hd5 : w.toNat - 16859264 < 4294967296 := by omega
+            rw [if_pos h5, if_pos hd5, data_toList_append, data_toList_singleton]
+            rfl
+          · have hd5 : ¬ w.toNat - 16859264 < 4294967296 := by omega
+            have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 := by omega
+            rw [if_neg h5, if_neg hd5, hs5, data_toList_append, data_toList_singleton]
+            rfl
+    rw [hbytes]
+    exact hwide
 
 theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -876,7 +910,12 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [hw_toUInt8]
       simp [Ixon.tagNHeader, Nat.toUInt8, UInt8.toNat_ofNat', Nat.mod_eq_of_lt hw256]
     have hcons := repBytes_cons hv0_rep hrest hm249 he250
-    simpa [tag0Bytes, tagNBytes, he1, hw128, hhdr] using hcons
+    have hbytes : (tag0Bytes w).data.toList = [w.toUInt8] := by
+      unfold tag0Bytes tagNBytes
+      dsimp only []
+      rw [he1, if_pos hw128, hhdr, data_toList_singleton]
+    rw [hbytes, List.singleton_append]
+    exact hcons
   | n0_n0 x_v0 x_v1 x_v2 x_v3 x_v4 x_v5 x_v6 x_v7 m54 x62 y63 m64 x70 y71 m72 x78 y79 m80 x86 y87
       m88 x94 y95 m96 x102 y103 m104 _ _ _ _ _ _ _ m213 _ _ hv11 ev115 ev129 op109 ev143 op101
       ev157 op93 ev171 op85 ev185 op77 ev199 op69 ev226 ev281 _ =>
@@ -1034,6 +1073,12 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
       push_cast
       ring
     have hcons := repBytes_cons hhdr hrest hm249 he250
-    simpa [tag4Bytes, tagNBytes, hk_u64, he1, hk] using hcons
+    have hbytes : (tag4Bytes Ixon.Constant.FLAG k.toUInt64).data.toList =
+        [Ixon.tagNHeader 4 Ixon.Constant.FLAG k] := by
+      unfold tag4Bytes tagNBytes
+      dsimp only []
+      rw [hk_u64, he1, if_pos hk, data_toList_singleton]
+    rw [hbytes, List.singleton_append]
+    exact hcons
 
 end IxVM.Refinement.Core.ProjAddrAux
