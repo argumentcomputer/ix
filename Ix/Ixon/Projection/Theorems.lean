@@ -332,16 +332,16 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
     | ok value =>
       cases value
       cases authentic : Admission.authenticate hash records blobs with
-      | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, Except.mapError, bind, Except.bind]
+      | error reason => simp [checkBytes, flight, unique, authentic, Except.mapError, bind, Except.bind]
       | ok value =>
         cases value
         cases decoded : Admission.decodeWithin limits records with
         | error reason =>
-          simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
+          simp [checkBytes, flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
         | ok input =>
           cases expanded : reconstruct hash maxProjections input with
           | error reason =>
-            simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
+            simp [checkBytes, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
               Except.bind]
           | ok output =>
             cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
