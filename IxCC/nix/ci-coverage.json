@@ -607,6 +607,7 @@
   "IxCC.Recheck.Proof.Back",
   "IxCC.Recheck.Proof.Compile",
   "IxCC.Recheck.Proof.Front",
+  "IxCC.Recheck.Proof.FrontAccepted",
   "IxCC.Recheck.Proof.LiveDefs",
   "IxCC.Recheck.Proof.Middle",
   "IxCC.Recheck.Proof.Object",
@@ -967,6 +968,8 @@
   "IxCC.Src.Relevance.Proof.P1.Cases",
   "IxCC.Src.Relevance.Proof.P1.Defs",
   "IxCC.Src.Relevance.Proof.P1.Measure",
+  "IxCC.Src.Relevance.Proof.P1.Prefix",
+  "IxCC.Src.Relevance.Proof.P1.Recr",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1275,6 +1278,7 @@
   "IxCCTests.Fences.OwnPlain",
   "IxCCTests.Fences.OwnProof",
   "IxCCTests.Fences.OwnRc",
+  "IxCCTests.Fences.P1",
   "IxCCTests.Fences.RcPolicy",
   "IxCCTests.Fences.RcPromotion",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Bounds",
@@ -1800,7 +1804,7 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "P1 core: Cases, Measure, Basic",
+ "baseline": "P1 core: Cases, Measure, Basic, Recr (F2)",
  "axiom_sha256":
- "7420d4ebad6357e682d49432d5ea21cb1bd1425be144fcee02a598b5094a705e",
- "axiom_count": 6748}
+ "ae3c5f56e3e9435032c8bb155f5858da4110c513d082e6f35fd4f07bcbae2257",
+ "axiom_count": 6781}

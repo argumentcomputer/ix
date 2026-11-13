@@ -8,6 +8,7 @@ import IxCC.Src.Relevance.Proof.Canonical
 import IxCC.Src.Relevance.Proof.P1.Defs
 import IxCC.Src.Relevance.Proof.P1.Basic
 import IxCC.Src.Relevance.Proof.P1.Cases
+import IxCC.Src.Relevance.Proof.P1.Recr
 import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
@@ -276,6 +277,53 @@ lemmas, the induction's measure, the five cases proved so far, and `preserve` an
 
 /-- info: 'IxCC.Src.Relevance.Proof.P1.pre_step_of_cases' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pre_step_of_cases
+
+/-! P1's core, F2 (`Relevance.Proof.P1.Recr`) and the lemmas it adds to `Basic`. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.peelLams_eq_peelLamsN' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.peelLams_eq_peelLamsN
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.lamRels_length_of_peel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.lamRels_length_of_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.univsOk_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.univsOk_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.relevantRefs_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.relevantRefs_append
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mem_foldl_relevantRefs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mem_foldl_relevantRefs
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.refsHandled_runtime' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.refsHandled_runtime
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.refs_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.refs_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.rev_get' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.rev_get
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mentionsVar_go' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mentionsVar_go
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mentionsVar_arg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mentionsVar_arg
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ruleDispatch_some' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ruleDispatch_some
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.headArity_recr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.headArity_recr
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fire_recr_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fire_recr_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_F2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_F2
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_F2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_F2
 
 namespace IxCC.Src.Relevance.Proof.L1Repair
 

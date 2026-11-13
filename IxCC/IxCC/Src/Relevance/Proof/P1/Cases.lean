@@ -15,7 +15,8 @@ statement at every call the evaluation makes (`Below`, the induction hypothesis,
 give P1's approved statements from it.
 
 **P1 is not proved.** `Cases` is a hypothesis: of its 25 fields, five are proved here (E2 at a
-sort and at a Π, E3 at both literals, F4). The others are stated, not proved. -/
+sort and at a Π, E3 at both literals, F4) and one in `IxCC.Src.Relevance.Proof.P1.Recr` (F2). The
+others are stated, not proved. -/
 
 set_option autoImplicit false
 
