@@ -42,6 +42,12 @@ the ones before the rebase onto f2b985847.
 | + O (f48376098) | 3,413 | MU-dt-O |
 | + P U (6a5880069) | 3,388 (all F14) | MU-dt-r4 |
 | + I J K L M M2 (800f47e4b; a61f89834 identical; accepts 188,860) | 0 (and 0 ill-typed-stream hits) | MU-dt-r6, MU-dt-r5 |
+| the same, rebased onto f2b985847 (Ixon v5; tester at 52da1811d, kernel tree of 1804e2662) | 0 (and 0 ill-typed-stream hits) | MV-dt-head |
+
+At the rebased head (MV-dt-head): accept 188,860, refuse 611,140, decline 0; admitted by K
+163,205; stuck at the top fuel 6,859, all at an absurd cast; self-test 0 disagreements; 9.8 min
+wall for the eight seeds in parallel, 5.8 s per thousand programs. Each of these totals equals
+MU-dt-r6's.
 
 From I on, the tester's statement has I and K, so F14's stale-capability extern is outside
 `ExternOk`. No tree accepts a program its predecessor refused (`MU-dt-cmp2-*`, `MU-dt-cmp-O-R4`,
