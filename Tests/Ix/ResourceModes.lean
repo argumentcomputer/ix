@@ -472,15 +472,18 @@ def buildFixture : IO (Except String Built) := do
   let blobs : Std.HashMap Address ByteArray :=
     (input.blobs ++ input.pre.blobs).foldl (fun m (a, b) => m.insert a b) {}
   let named := out.env.named
-  return .ok { env, table := input.table, store := fun a => records[a]? <|> prelude[a]?,
-    blob := fun a => blobs[a]?, named := fun n => (named.get? (Ix.Name.fromLeanName n)).map (·.addr) }
+  let store : Ix.Kernel.Reader.Store := fun a => records[a]? <|> prelude[a]?
+  let blob : Address → Option ByteArray := fun a => blobs[a]?
+  let addrOf : Lean.Name → Option Address := fun n => (named.get? (Ix.Name.fromLeanName n)).map (·.addr)
+  let built : Built := { env := env, table := input.table, store := store, blob := blob, named := addrOf }
+  return .ok built
 
 /-- Set the contract of the `i`-th leading binder of `e` (λs with `lam`, else ∀s). -/
 def setBinder (lam : Bool) (bc : Ixon.BinderContract) : Nat → Ixon.Expr → Option Ixon.Expr
-  | 0, .lam _ t b => if lam then some (.lam bc t b) else none
-  | 0, .all _ r t b => if lam then none else some (.all bc r t b)
-  | i + 1, .lam c t b => if lam then (setBinder lam bc i b).map (.lam c t ·) else none
-  | i + 1, .all c r t b => if lam then none else (setBinder lam bc i b).map (.all c r t ·)
+  | 0, .lam _ t b => if lam then some (Ixon.Expr.lam bc t b) else none
+  | 0, .all _ r t b => if lam then none else some (Ixon.Expr.all bc r t b)
+  | i + 1, .lam c t b => if lam then (setBinder lam bc i b).map (Ixon.Expr.lam c t ·) else none
+  | i + 1, .all c r t b => if lam then none else (setBinder lam bc i b).map (Ixon.Expr.all c r t ·)
   | _, _ => none
 
 def erasedBC : Ixon.BinderContract := { uses := .erased }
@@ -491,7 +494,7 @@ def eraseParam (c : Ixon.Constant) (r : Ref) (i : Nat) (inValue : Bool) : Option
   let onDef (d : Ixon.Definition) : Option Ixon.Definition := do
     let typ ← setBinder false erasedBC i d.typ
     let value ← if inValue then setBinder true erasedBC i d.value else pure d.value
-    pure { d with typ, value }
+    pure { d with typ := typ, value := value }
   match r, c.info with
   | .member _ 0, .defn d => do pure { c with info := .defn (← onDef d) }
   | .member _ 0, .recr rr => do
