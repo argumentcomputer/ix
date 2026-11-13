@@ -34,6 +34,23 @@ theorem compileInput_parts {cfg : Config} {inp : Input} {cert : Cert} {artifact 
       obtain ⟨rfl, rfl⟩ := accepted
       exact ⟨rfl, replayed⟩
 
+/-- **The producer's text is what was verified.** A successful `compileInput` produced a
+certificate file text (`produceWith`'s `text`) that the verifier's reader (`Cert.ofText`, the
+reader of `ixcc check-cert` and `compile --cert`) reads as exactly the certificate `run`
+accepted, with the artifact returned. -/
+theorem compileInput_text {cfg : Config} {inp : Input} {cert : Cert} {artifact : Artifact}
+    (accepted : compileInput cfg inp = .ok (cert, artifact)) :
+    ∃ p, produceWith (cfg.forInput inp) inp = .ok p ∧ p.cert = cert ∧
+      Cert.ofText p.text = .ok cert ∧ run (cfg.forInput inp) inp.program cert = .ok artifact := by
+  obtain ⟨produced, replayed⟩ := compileInput_parts accepted
+  unfold produce at produced
+  cases hp : produceWith (cfg.forInput inp) inp with
+  | error e => simp [hp, Functor.map, Except.map] at produced
+  | ok p =>
+    simp only [hp, Functor.map, Except.map, Except.ok.injEq] at produced
+    subst produced
+    exact ⟨p, rfl, rfl, p.read, replayed⟩
+
 theorem compile_parts {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {cert : Cert} {artifact : Artifact}
     (accepted : compile cfg bytes equations roots = .ok (cert, artifact)) :

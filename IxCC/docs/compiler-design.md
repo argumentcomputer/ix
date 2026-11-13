@@ -95,6 +95,16 @@ them.
   - *style V*: a proved validator checks the producer's output, and a
     rejection is an error unless a checked fallback exists.
 
+  The certificate a producer hands on is the one its text reads back to:
+  every producer finishes by writing its certificate's file text and reading
+  it back through the verifier's reader (`Cert.readBack`, with every text and
+  decode limit of `Cert.ofText`), the verifier runs on the decoded
+  certificate, and `ixcc compile` writes exactly that text after running
+  `check-cert`'s verifier on it (`Cli.checkText`), so a certificate the
+  compiler writes is one `check-cert` accepts (`compileInput_text`,
+  `producePlain_text`, `produceImmortal_text`; table below, "Certificate text
+  and decode limits").
+
   Lemmas used only inside the soundness proofs are *never evaluated*.
   Everything `Recheck.run` calls is written so that Lean's kernel can
   evaluate it (the `KernelEval` test modules run it with `decide +kernel`):
@@ -417,8 +427,7 @@ soon as it passes one of these fixed budgets
 | `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,843,161 | 1.5× |
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
-| `Src.Hints.maxJsonDepth` | the nesting of a JSON text the verifier reads (a certificate, a sidecar), checked before parsing (`checkJsonText`). Known limit: a plain-RC certificate's ownership code nests one level per binding, action and join and two per `case`, below `Anf.maxDepth`, so a function whose canonical code nests past about 510 levels gets a certificate its own text path refuses (`cert.parse`), while `--rc on` and `auto` still compile it (the producer admits the certificate as a JSON value; [roadmap, "Hardening"](roadmap.md#hardening)) | 512 | 121 (`Natural.fibMain` under `--rc on`; the registered corpus's certificates under `--rc off`, `on` and `auto`, not `tests-corpus`'s survey) | 4.2× |
-| `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted), `fanOver` 1,049,600 (refused) | 545× |
+| `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 54,727,677 bytes, since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
 | `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first), the plain-RC back end's per-function term (`Xv.Validate`), the layout's function-count term (`Backend.lay`) or the RC policy selection; each is measured and open in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
@@ -476,6 +485,33 @@ global, 64 callees per inlining caller, 64 specialisation decisions with masks o
 most 64 parameters, case-of-case and small-join thresholds of at most 512 and
 64, and JSON nested at most 512 deep. A specialisation site counts its value
 trees only up to `Specialize.maxTreeWork` (8,192) before charging them.
+
+**Certificate text and decode limits.** The verifier reads a certificate from
+its text (`Cert.ofText`, `RcReplay.Cert.ofText`), and some limits exist only
+there: `Src.Hints.checkJsonText` before parsing, and the decoders of
+`Recheck.CertJson`. Since 2026-11-12 every producer reads its own certificate
+back through that reader before the verifier runs on it (`Cert.readBack`), and
+`ixcc compile` runs `check-cert`'s verifier on the text it writes, so these
+limits apply to what the compiler writes exactly as to what it is given. A
+refusal names its limit and the value measured on the whole text. At any of
+them, under each mode: `--rc off` and `--rc on` decline the compile with the
+limit's reason (`ixcc: cert: cert.parse: JSON nesting depth 726 exceeds
+maximum 512`) and write no object and no certificate; `--rc auto` treats a
+plain-RC refusal as any other, compiling under the immortal policy and printing
+`rc policy: immortal (plain RC refused: cert: cert.parse: …)`, and declines
+when the immortal certificate is past a limit too. The largest values are those
+of every root of the twelve committed corpus manifests and of `fixtures/rc`'s
+`budget` and `deep` under `--rc off`, `on` and `auto` (2026-11-12, the
+comparison of the landing, not `tests-corpus`'s survey):
+
+| Limit | Bounds | Value | Largest committed value | Reached by the producer |
+| --- | --- | --- | --- | --- |
+| `Src.Hints.maxJsonTextBytes` | the text's size | 67,108,864 bytes (64 MiB) | 54,727,677 (`fanUnder`, `fixtures/rc/budget`, plain RC); on the manifests 1,056,740 (`Closures.stateLoop`, plain RC), 380,245 under `--rc off` | yes, in every mode: probes of 56 of `fixtures/rc/budget`'s fan functions under one root (a zero-RC certificate of 68,888,457 bytes, under `--rc off` and the `auto` fallback) and of 80 functions of 101 parameters each, a chain of 100 tests whose `k`-th leaf returns parameter `k` (a plain-RC certificate of 73,006,286 bytes) |
+| `Src.Hints.maxJsonDepth` | the nesting of `[` and `{` outside strings | 512 | 410 (`fanUnder`, plain RC); on the manifests 121 (`Natural.fibMain`, plain RC); every zero-RC certificate 8 | under plain RC only: its ownership code nests one level per binding, action and join and two per `case`, so a function whose canonical code nests past about 510 levels (a chain of 169 tests, `fixtures/rc/deep`'s `deep240` at 726; one `inc` per extra copy of a variable passed, so about 500 copies at one point) is past it; the zero-RC encoding nests at most 8 by its shapes |
+| `Src.Hints.maxJsonDigits` | a number token's digits, outside strings; no exponent or fraction | 32 | 5 (26,836, `fixtures/rc/budget`); 4 on the manifests | not found: the numbers are indices, counts, offsets and bounds below the program-size budgets (at most 7 digits), and no source literal reaches the certificate (numerals of 40 to 60 digits tried) |
+| `CertJson.maxAllocSlots` | one allocation's frame slots | 4,096 | 240 (`Limits.fields254`, plain RC); 3 under `--rc off` | not found: linear scan reuses slots, so its count is the values spilled at once, bounded by the values in scope (Anf depth 2,048 and the parameters, which `ix`'s output holds to about 230); the all-slots fallback (a slot per value) ran for no function of the corpus or the probes |
+| `CertJson.maxNatMapKey` | a constant's or a global's id in the table, the annotation and the P3 and P4 steps | 1,000,000 | 1,540 (`Scalar.collatz`) | not found: ids are dense, so it takes a program of more than a million reached constants or Anf globals |
+| `CertJson.maxMidSteps` | middle-end steps (with the P2, P3, P4 and shrink bounds above) | 64 | 17 (`Closures.stateLoop`) | no: the producer's schedule stays within them, and the value path checks the same (`checkMidCert`) |
 
 The counts stop early and walk explicit worklists (`Exp.nodesUpTo`,
 `Exp.depthUpTo`, `lamNodesUpTo`, `lamDepthUpTo`, `Recheck.srcWithin`; a walk's
@@ -567,7 +603,7 @@ values are measured by `tests-corpus`, which fails if any reaches its cap.
 | frame layouts | one per function; cells 8-aligned, inside a frame of at most 2^20 bytes, in strictly increasing order (a single pass; it implies they are distinct) | exact | `Stacking.run`, `FrameLayout.check` |
 | block order | one group per layout group; each block at most once, in its group | exact | `Order.check`, one pass over the list |
 | plain-RC ownership code | first, the program's parameter total (functions' and join points') at most `Anf.maxParamTotal`; decoded against the source's control tree, at most 4,096 deep; its captured work at most `Anf.maxCapturedWork`; accepted by the ownership checker (`Own.Plain.checkOwned`), any placement of `inc` and `dec` | exact | `Own.Plain.Certificate.admit` |
-| the whole certificate | 64 MiB of JSON nested at most 512 deep | | `checkJsonText` |
+| the whole certificate | 64 MiB of JSON nested at most 512 deep, number tokens of at most 32 digits (the producer reads its own certificate back through the same check: "Certificate text and decode limits" above) | 54,727,677 bytes, nesting 410, 5 digits | `checkJsonText` |
 
 Native `ixcc check-cert` on the allocation's two former outliers, in `tree 9`'s
 first function, at 2 MiB, 8 MiB and the default stack alike: 100,000

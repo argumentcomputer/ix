@@ -224,6 +224,12 @@ recheck path's statistics-free selection against `Select.run`. -/
 lean_exe «tests-recheck» where
   root := `IxCCTests.Recheck.Main
 
+/- Every certificate `ixcc compile` writes is one `check-cert` accepts: every committed root under
+`--rc off`, `on` and `auto`, and the certificate-depth input `fixtures/rc/deep` through the command
+line. -/
+lean_exe «tests-cert-text» where
+  root := `IxCCTests.Recheck.CertTextMain
+
 /- Ground first-order readback discovery: source instances, emitted layouts,
 independent signature validation and malformed candidate rejection. -/
 lean_exe «tests-recheck-readback» where

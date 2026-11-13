@@ -301,8 +301,9 @@ runs, in this order:
    `k1`, `ownership` and `phase2-arity`; a new family needs no change),
    `corpus rebuild` each; then ix's verdicts on the annotated ownership
    sources (`tests-own verdicts`), the RC real-source input (`refreeze-ixon
-   rc-real-source`) and the captured-work budget input (`refreeze-ixon rc-budget`,
-   `fixtures/rc/budget`), and the roots-only fixtures (`pin-src-tables
+   rc-real-source`), the captured-work budget input (`refreeze-ixon rc-budget`,
+   `fixtures/rc/budget`) and the certificate-depth input (`refreeze-ixon
+   rc-deep`, `fixtures/rc/deep`), and the roots-only fixtures (`pin-src-tables
    --diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
    fixtures/ixon-v4/src-sortpoly`);
 3. the generated modules: `gen-src-artifacts` (with the K1 kernel tests'
