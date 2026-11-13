@@ -87,7 +87,9 @@ structure PreparedInput where
 
 /-- Explicit coverage limits for the complete artifact entry, shared by both
 display modes. These are the host's whole-library byte/expansion bounds. -/
-def artifactLimits : Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def artifactLimits : Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- Authenticate first; retain raw windows and reader skeletons. No metadata
 field is rebuilt through an incomplete Env literal. A bound artifact's binding

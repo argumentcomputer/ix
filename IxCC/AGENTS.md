@@ -54,7 +54,7 @@ tree still contains monolithic test and proof modules that need migration.
   is updated and reviewed in the same change: every IxCC file its integrity
   rule covers (Lake files, `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
   `tools/` and a few named specifications; not the rest of `docs/`, the
-  READMEs, this file or `benchmarks/`), the 98 files of the `IxCK` closure
+  READMEs, this file or `benchmarks/`), the 99 files of the `IxCK` closure
   IxCC imports (the codec, the role vocabulary, the admission entry and the
   typing core, with the kernel's `implemented_by` rulings enumerated), the
   two files IxCC takes from the Blake3 package and its revision (against

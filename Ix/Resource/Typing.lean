@@ -84,7 +84,9 @@ variable {md : Ix.Kernel.Mode}
 
 /-- Bounds wide enough for a whole compiled library (as `kernel-check-ixe
 --entry` sets them). They are coverage bounds: an input past one declines. -/
-def typingLimits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def typingLimits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- A shipped reducibility hint as the kernel's (`Ix.Cert.hintOf`, copied). -/
 def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint

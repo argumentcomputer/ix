@@ -320,7 +320,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
       Admission.preflight limits records blobs = .ok () ∧
       Admission.uniqueKeys records blobs = .ok () ∧
       Admission.authenticate hash records blobs = .ok () ∧ ∃ input output,
-        Admission.decodeRecords limits records = .ok input ∧
+        Admission.decodeWithin limits records = .ok input ∧
         reconstruct hash maxProjections input = .ok output ∧
         Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
@@ -335,7 +335,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
       | error reason => simp [checkBytes, flight, unique, authentic, Except.mapError, bind, Except.bind]
       | ok value =>
         cases value
-        cases decoded : Admission.decodeRecords limits records with
+        cases decoded : Admission.decodeWithin limits records with
         | error reason =>
           simp [checkBytes, flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
         | ok input =>
@@ -345,7 +345,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
               Except.bind]
           | ok output =>
             cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
-              simp [checkBytes, flight, unique, authentic, decoded, expanded, checked, Except.mapError,
+              simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, expanded, checked, Except.mapError,
                 bind, Except.bind]
 
 /-- Exact byte reading, authentication, bounded projection extension, and
@@ -356,10 +356,11 @@ theorem checkBytes_ok_iff (hash : ByteArray → Address) (binding : Admission.Bi
     checkBytes hash binding maxProjections limits records blobs hint = .ok env ↔
       Admission.WithinBatch limits records blobs ∧
       Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧ ∃ input output,
-        Admission.RecordsRead limits records input ∧ Expanded hash maxProjections input output ∧
+        Admission.RecordsRead limits records input ∧ Admission.DepthsWithin limits records input ∧
+        Expanded hash maxProjections input output ∧
         Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   simp only [checkBytes_run_iff, Admission.preflight_ok_iff, Admission.uniqueKeys_ok_iff,
-    Admission.authenticate_ok_iff, Admission.decodeRecords_ok_iff, reconstruct_ok_iff]
+    Admission.authenticate_ok_iff, Admission.decodeWithin_ok_iff, reconstruct_ok_iff, and_assoc]
 
 /-- Every checker outcome is preserved after a bounded, authenticated
 canonical reading and projection extension. -/
@@ -372,15 +373,16 @@ theorem checkBytes_of_expansion {hash : ByteArray → Address} {binding : Admiss
     (keys : Admission.UniqueKeys records blobs)
     (authentic : Admission.Authentic hash records blobs)
     (reading : Admission.RecordsRead limits records input)
+    (depth : Admission.DepthsWithin limits records input)
     (expanded : Expanded hash maxProjections input output) :
     checkBytes hash binding maxProjections limits records blobs hint =
       (Admission.checkConstantsAt hash binding output blobs hint).mapError .checker := by
   have flight := (Admission.preflight_ok_iff _ _ _).mpr within
   have unique := (Admission.uniqueKeys_ok_iff _ _).mpr keys
   have hashed := (Admission.authenticate_ok_iff _ _ _).mpr authentic
-  have decoded := (Admission.decodeRecords_ok_iff _ _ _).mpr reading
+  have decoded := (Admission.decodeWithin_ok_iff _ _ _).mpr ⟨reading, depth⟩
   have reconstructed := (reconstruct_ok_iff _ _ _ _).mpr expanded
-  simp [checkBytes, flight, unique, hashed, decoded, reconstructed, Except.mapError, bind, Except.bind]
+  simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, hashed, decoded, reconstructed, Except.mapError, bind, Except.bind]
 
 /-- **Fidelity**: the supplied records and blobs use each address once and
 are stored under `hash` of their bytes, the records read exactly, their
@@ -398,7 +400,7 @@ theorem checkBytes_reading {hash : ByteArray → Address} {binding : Admission.B
       Expanded hash maxProjections input output ∧ Admission.Hashed hash output ∧
       ∃ t pre, Admission.BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
         Admission.Installed hash t pre output blobs hint env := by
-  obtain ⟨_, keys, authentic, input, output, reading, expanded, checked⟩ :=
+  obtain ⟨_, keys, authentic, input, output, reading, _, expanded, checked⟩ :=
     (checkBytes_ok_iff _ _ _ _ _ _ _ _).mp h
   obtain ⟨t, pre, hb, hq, hw⟩ := Admission.checkConstantsAt_with checked
   exact ⟨keys, authentic, input, output, reading, expanded,
@@ -417,7 +419,7 @@ theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Admission
     (h : checkBytes hash binding maxProjections limits records blobs hint = .ok env) :
     Admission.Authentic hash records blobs ∧ ∃ output, Admission.Hashed hash output ∧
       Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
-  obtain ⟨_, _, authentic, input, output, reading, expanded, checked⟩ :=
+  obtain ⟨_, _, authentic, input, output, reading, _, expanded, checked⟩ :=
     (checkBytes_ok_iff _ _ _ _ _ _ _ _).mp h
   exact ⟨authentic, output, expanded.hashed (reading.hashed authentic.1), checked⟩
 

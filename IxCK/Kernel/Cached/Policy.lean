@@ -174,10 +174,10 @@ def annotDeclStepUnder (policy : AxiomPolicy) (ev : Evidences md)
 on tasks, check units, return the environment). At `strict` it is
 `checkDecls` (`checkDeclsUnder_strict`). -/
 def checkDeclsUnder (mode : CheckMode) (policy : AxiomPolicy) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStepUnder mode policy ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingTasks mode p.2.1 p.2.2
+  checkPendingTasks mode p.2.1 p.2.2 cfg.workers
   checkUnits ds
   pure p.2.1.env
 
@@ -192,9 +192,16 @@ def annotDeclStepWithUserAxioms (ev : Evidences md)
 `allowUser`. An accept is conditional on `userAxiomsOfDecls ds.toList`; with
 none it is `checkDecls`'s (`checkDeclsWithUserAxioms_eq_checkDecls`). -/
 def checkDeclsWithUserAxioms (mode : CheckMode) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) :=
-  checkDeclsUnder mode .allowUser ev ds
+  checkDeclsUnder mode .allowUser ev ds cfg
+
+/-- The fold under a policy: its settings change no verdict (`checkDecls_cfg`). -/
+theorem checkDeclsUnder_cfg (policy : AxiomPolicy) (ev : Evidences md)
+    (ds : Array (Declaration md)) (cfg : FoldConfig) :
+    checkDeclsUnder mode policy ev ds cfg = checkDeclsUnder mode policy ev ds := by
+  unfold checkDeclsUnder
+  simp only [checkPendingTasks_eq]
 
 /-! ## `strict` is the certified fold -/
 

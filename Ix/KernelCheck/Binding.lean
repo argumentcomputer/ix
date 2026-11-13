@@ -9,7 +9,9 @@ Preparation does not certify selected, filtered or per-record results. -/
 
 namespace Ix.KernelCheck.Binding
 
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- The role table and prelude a harness reads an artifact under. A bound
 artifact is admitted by `check-lean`'s preparation (`prepareRecords`), run

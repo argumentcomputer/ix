@@ -74,7 +74,9 @@ def iPrj (block : Address) (i : Nat := 0) : Ixon.Constant := const (.iPrj ⟨i.t
 def cPrj (block : Address) (c : Nat) (i : Nat := 0) : Ixon.Constant :=
   const (.cPrj ⟨i.toUInt64, c.toUInt64, block⟩) [] []
 
-def limits : Ix.Kernel.Admission.Limits := ⟨1024, 1024, 1 <<< 24, 1 <<< 20, 1 <<< 16⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1024, maxBlobs := 1024, maxTotalBytes := 1 <<< 24,
+    maxRecordBytes := 1 <<< 20, maxRecordUnivNodes := 1 <<< 16 }
 
 def encode (cs : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Records :=
   cs.map fun (a, c) => (a, Ixon.serConstant c)

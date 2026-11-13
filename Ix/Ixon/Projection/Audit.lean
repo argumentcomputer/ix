@@ -150,9 +150,14 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- count is unchanged.
 -- Withdrawing the ∀ rule's fold and hash-consing its levels instead (`Cached.internLM`) adds 3
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- The 64-bit term hash (`Expr.hashW`) takes 1 compiled function, `Cached.defeqStepR._closed_2`
+-- (`IxCK/Kernel/Audit/Roots.lean`).
+-- The input limits add 63 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`).
+-- The cheaper depth stages add 7 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`,
+-- listed by name there).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6935 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ixon.Projection.checkBytes]: 7004 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -256,6 +261,7 @@ fun hash record => hash (Ixon.serConstant record) -/
         Ix.Kernel.Admission.Authentic hash records blobs ∧
           ∃ input output,
             Ix.Kernel.Admission.RecordsRead limits records input ∧
+              Ix.Kernel.Admission.DepthsWithin limits records input ∧
               Ixon.Projection.Expanded hash maxProjections input output ∧
                 Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
@@ -269,6 +275,7 @@ fun hash record => hash (Ixon.serConstant record) -/
     Ix.Kernel.Admission.UniqueKeys records blobs →
       Ix.Kernel.Admission.Authentic hash records blobs →
         Ix.Kernel.Admission.RecordsRead limits records input →
+          Ix.Kernel.Admission.DepthsWithin limits records input →
           Ixon.Projection.Expanded hash maxProjections input output →
             Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint =
               Except.mapError Ixon.Projection.CheckError.checker

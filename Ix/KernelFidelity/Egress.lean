@@ -250,7 +250,9 @@ def EntryReport.summary (r : EntryReport) : String :=
     {r.constants} installed constants, {r.projectionsInstalled} projections installed; \
     {r.problems.size} problems" ++ String.join (r.problems.toList.take 20 |>.map ("\n  " ++ ·))
 
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 16, 1 <<< 16, 1 <<< 28, 1 <<< 22, 1 <<< 20⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 16, maxBlobs := 1 <<< 16, maxTotalBytes := 1 <<< 28,
+    maxRecordBytes := 1 <<< 22, maxRecordUnivNodes := 1 <<< 20 }
 
 /-- The re-reading and installed-environment checks over the primary
 records `primaries` (in a dependency order the checker accepts), with all
