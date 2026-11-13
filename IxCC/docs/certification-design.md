@@ -1178,7 +1178,8 @@ The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `
 `OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
 out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals),
-"678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+"678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`), 43 since step E0 (below:
+`resource`; `GR19-p6`, every other verdict unchanged). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
@@ -1217,7 +1218,35 @@ domains definitionally equal at all six. In `tests-grounding`: `selEnv` retypes 
 closures; on each of the six, three planted controls are refused (the selector's value made
 `λ α s. α → α`, its first λ's datum made a proposition, the selected argument made `Nat`); the family
 over six fields on `selEnv` holds on 42 closures: the 37 the check accepts and `sum-loop`,
-`collatz`, `prime-count`, `scalar`, `loops` (`resource` still refused at `caseRec`, `caseShape`).
+`collatz`, `prime-count`, `scalar`, `loops` (`resource` then still refused at `caseRec`, `caseShape`;
+admitted since step E0, below: 43).
+
+**A `case` entry whose recursor is of kind `empty` (step E0, since 2026-11-13).** SrcEval fires a
+`case` head by its recursor's kind, and at kind `empty` it traps (F4 at `.cases`, as at a raw
+recursor of class `empty`): a run that reaches such an entry returns no value, so the fundamental
+lemma never asks F5 there and no shape need be read. The check's `caseRec` admits the kind `empty`
+beside `ordinary` (its arity condition unchanged), and `caseShape` and `caseProg` hold at such an
+entry without reading a shape (the corpus's one, `Empty.casesOn`, has no constructor, so its shape
+fails `CaseStored`'s `0 < nM`). `Faith.caseRec` says "ordinary or empty"; `CaseFacts`,
+`CaseFactsRead` and `FundHyps.cases` (F5's meaning) are asked only at entries of kind `ordinary`, and
+the fundamental lemma's F5 case discharges `empty` by the trap. No root theorem's text or axiom set
+changes (fence unchanged, 312); the definitions they read (`groundCheck`, `Faith`, `CaseFacts`,
+`CaseFactsRead`) are satisfied by more programs, so each root theorem holds of more programs with
+its conclusion unchanged. **Of a run that traps, adequacy says nothing**: every root theorem assumes
+that SrcEval returns a value (`run p k root xs = .ok v`), and its conclusion is about the value read
+back; a trap is SrcEval's `.trap`, which the object reports as failure status 4 (`Recheck.sound`'s
+part, not grounding's). Measured: the one such entry on the corpus is `Empty.casesOn` in
+`phase1-resource/resource` (root `Resource.trapEmpty`, `nomatch` on `Empty`); on both of the
+manifest's arguments every level from SrcEval to ByteEval traps and the native test executable exits
+with status 4 (`GR19-t1`); the six-field family on `selEnv` holds on 43 of the 50 (`resource` added,
+every other closure's verdicts unchanged; `GR19-p6`). In `tests-grounding`
+(`IxCCTests/Grounding/CaseEmpty.lean`): the entry is `resource`'s only one of kind `empty`, its
+recursor stores no rule, `caseRec`, `caseShape` and `caseProg` hold at it; the check's false
+conjuncts are `eqnShape` alone on the reading and none on `selEnv`; at the root every decided
+hypothesis of `rootSound_678AGp_of_check` holds (with the root as `instCheckB`'s seed) and SrcEval
+traps on `0` and `7`; three controls on the entry are refused (its recursor's kind made `ordinary`:
+`caseShape`; made `subsingleton`: `caseRec`, `caseShape`; the stored `casesOn` given the type
+`Sort 0`: `caseRec`).
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
 fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**

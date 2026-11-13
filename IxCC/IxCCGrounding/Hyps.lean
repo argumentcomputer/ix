@@ -66,8 +66,10 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
   natBasis : NatBasis env
   /-- the stored-shape and program facts -/
   faith : Faith p env κ lpsOf S
-  /-- F5's meaning at every `case` constant of `S` -/
-  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseFires M p κ lpsOf S Ok c
+  /-- F5's meaning at every `case` constant of `S` whose recursor is of kind `ordinary` (at kind
+  `empty` SrcEval traps, so F5 is never asked: step E0) -/
+  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
+    CaseFires M p κ lpsOf S Ok c
   /-- an `eqn` entry's function denotes the kernel term `e` its body corresponds to (the `eqn`
   lemma), and its body runs (typing) -/
   eqn : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) → ∃ e : KExpr,

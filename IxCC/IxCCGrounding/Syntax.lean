@@ -1115,8 +1115,10 @@ structure FaithWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
   ctor : ∀ c, S c → ∀ sf lvls ind cidx np nf ty,
     p.decl? c = some (.ctor sf lvls ind cidx np nf ty) →
     ∃ cv, env.find? (κ c) = some (.ctorInfo cv np nf) ∧ np + nf ≤ kPis cv.type
+  /-- a `case` entry's recursor is of kind `ordinary` (SrcEval forces the major and fires F5) or
+  `empty` (SrcEval traps: step E0), and the stored constant has a binder for every argument -/
   caseRec : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-    p.table.recKindOf r = some .ordinary ∧
+    (p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty) ∧
     ∃ ci, env.find? (κ c) = some ci ∧ p.headArity (.cases c) ≤ kPis ci.toConstantVal.type
   defn : ∀ c, S c → p.table.resolveOf c = none → ∀ lvls ty v,
     p.decl? c = some (.defn .defn .safe lvls ty v) →
@@ -1157,9 +1159,11 @@ structure NatBasis (env : KEnv) : Prop where
     cv.type = .forallE (.const natName []) (.const natName []) { pw := PropWhen.never } ∧
     cv.levelParams = []
 
-/-- **The checked shapes of the `case` entries** of `S` (consumed by the generic `case` lemma). -/
+/-- **The checked shapes of the `case` entries** of `S` whose recursor is of kind `ordinary`
+(consumed by the generic `case` lemma). At an entry of kind `empty` SrcEval traps and F5 is never
+asked (step E0), so no shape is read there. -/
 def CaseFacts (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop :=
-  ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+  ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
     ∃ sh, CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
 
 /-- **Every decidable fact the root theorem consumes** about the program, the kernel's reading

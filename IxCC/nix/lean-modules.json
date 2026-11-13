@@ -1231,10 +1231,14 @@
    ["IxCCTests.Grounding.Run",
     "IxCCTests.Grounding.NoCanon",
     "IxCCTests.Grounding.Zeta",
-    "IxCCTests.Grounding.GradedHead"]},
+    "IxCCTests.Grounding.GradedHead",
+    "IxCCTests.Grounding.CaseEmpty"]},
   "IxCCTests.Grounding.GradedHead":
   {"path": "IxCCTests/Grounding/GradedHead.lean",
    "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.SelRetype"]},
+  "IxCCTests.Grounding.CaseEmpty":
+  {"path": "IxCCTests/Grounding/CaseEmpty.lean",
+   "imports": ["IxCCTests.Grounding.GradedHead"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":

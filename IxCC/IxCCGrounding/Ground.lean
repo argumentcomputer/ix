@@ -35,11 +35,11 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 theorem caseFires_of_check (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (hchk : groundCheck p env κ lpsOf ann Sl = true) :
-    ∀ c r, c ∈ Sl → p.table.resolveOf c = some (.case r) →
+    ∀ c r, c ∈ Sl → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
       CaseFires M p κ lpsOf (· ∈ Sl) (Ok p ann) c := by
-  intro c r hc hr
+  intro c r hc hr hk
   have hG := groundFacts_of_check hchk
-  obtain ⟨sh, hst, hpr⟩ := caseFacts_of_check hchk c r hc hr
+  obtain ⟨sh, hst, hpr⟩ := caseFacts_of_check hchk c r hc hr hk
   exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr
 
 /-- **The fundamental lemma, from the check**, under typing at the sites the direct route refuses

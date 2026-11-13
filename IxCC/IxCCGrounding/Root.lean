@@ -126,8 +126,8 @@ theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : C
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
     (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
-  allP (fundHyps_of hL hG (sitesOk_of_res (lawsCore_of_laws hL) hG hT) fun c r hc hr => by
-    obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
+  allP (fundHyps_of hL hG (sitesOk_of_res (lawsCore_of_laws hL) hG hT) fun c r hc hr hk => by
+    obtain ⟨sh, hst, hpr⟩ := hC c r hc hr hk
     exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr)
 
 /-- **Soundness at a root, from the fundamental lemma**: the part of `rootSound` after the

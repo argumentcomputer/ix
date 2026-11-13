@@ -61,7 +61,7 @@ theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
         RecNoLevels env (κ r))
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-      CaseFires M p κ lpsOf S (OkIn p ann Inst) c) :
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (OkIn p ann Inst) c) :
     FundHyps M p κ lpsOf S (OkIn p ann Inst) where
   laws := hL
   canon := hcanon

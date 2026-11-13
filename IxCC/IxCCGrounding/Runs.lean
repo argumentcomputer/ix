@@ -187,7 +187,7 @@ theorem fundHyps_of_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
         RecNoLevels env (κ r))
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-      CaseFires M p κ lpsOf S (Ok p ann) c) :
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) where
   laws := hL
   canon := hcanon
@@ -207,7 +207,7 @@ theorem fundHyps_of (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId
     {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
     (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-      CaseFires M p κ lpsOf S (Ok p ann) c) :
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) :=
   fundHyps_of_core (lawsCore_of_laws hL) (.inl hL.ctor_canon) hG hT hcases
 

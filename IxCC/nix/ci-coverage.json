@@ -1816,8 +1816,7 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline":
- "P1 proved: preserve, pre_step, reads_live, run_live; the narrowing with run_live given (goesWrong_live_closed, sound_live_closed)",
+ "baseline": "step E0: a case entry whose recursor is of kind empty (GR19)",
  "axiom_sha256":
  "e006ef662d55519a73262c509f18d0da6ea4eccec30d26bc9b1a3126770577ff",
  "axiom_count": 6888}

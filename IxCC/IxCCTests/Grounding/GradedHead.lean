@@ -33,8 +33,9 @@ Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 50: `selEnv` rety
 to true), nothing on the other 44; on each of the six, three planted controls are refused by
 `eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
 proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
-(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 42: the 37 the check
-accepts and five of the six (`resource` is still refused at `caseRec` and `caseShape`). -/
+(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 43: the 37 the check
+accepts and the six (`resource` since step E0, which admits its `Empty.casesOn` entry, of kind
+`empty`: `IxCCTests.Grounding.CaseEmpty`). -/
 
 namespace IxCCTests.Grounding.GradedHead
 
@@ -351,8 +352,8 @@ def run : IO Bool := do
       {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
     expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
       s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
-    expect a (famAGp.length == 42 && accepted.all famAGp.contains &&
-        famAGp.filter (!accepted.contains ·) == forLoops.filter (· != "phase1-resource/resource"))
+    expect a (famAGp.length == 43 && accepted.all famAGp.contains &&
+        famAGp.filter (!accepted.contains ·) == forLoops)
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true

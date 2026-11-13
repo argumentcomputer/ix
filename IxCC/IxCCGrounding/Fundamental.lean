@@ -633,12 +633,18 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
         cases res with
         | case r =>
           rw [hres] at hrun
-          obtain ⟨hkind, -⟩ := H.faith.caseRec c r hSc hres
+          obtain ⟨hkind', -⟩ := H.faith.caseRec c r hSc hres
           cases hd : p.decl? r with
           | none => simp [hd] at hrun
           | some d =>
             cases d with
             | recr sf kk lvls np nmot nmin ni ind rules ty =>
+              -- E0: at kind `empty` SrcEval traps, so the run returns no value
+              have hkind : p.table.recKindOf r = some .ordinary := by
+                rcases hkind' with hkind | hkind
+                · exact hkind
+                · simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind]
+                    at hrun
               simp only [hd, hkind, Option.map_some, atLevels_ordinary, IxCC.Src.recChosen] at hrun
               obtain ⟨⟨j, fields⟩, hsel, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
               obtain ⟨major, hmaj, hsel'⟩ := Result.bind_eq_ok_iff.mp hsel
@@ -655,8 +661,8 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               have hmajR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmaj hrelM
               -- F5's meaning
               obtain ⟨Mn, Ys, hMn, hYs, heq, hchain⟩ :=
-                H.cases c r hSc hres r sf kk lvls np nmot nmin ni ind rules ty hres hd ls φ _ ρ σ R
-                  As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
+                H.cases c r hSc hres hkind r sf kk lvls np nmot nmin ni ind rules ty hres hd ls φ _
+                  ρ σ R As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
                   (ofOption_eq_ok.mp hsel')
               -- the minor
               obtain ⟨sm, hsm, hrelm⟩ := relSlots_get' hargs hMn

@@ -622,11 +622,14 @@ def ctorB (c : CId) : Bool :=
     | _ => false
   | _ => true
 
+/-- A `case` entry's recursor is of kind `ordinary` or `empty` (step E0: SrcEval traps there), and
+the stored constant has a binder for every argument. -/
 def caseRecB (c : CId) : Bool :=
   match p.table.resolveOf c with
   | some (.case r) =>
     (match p.table.recKindOf r with
       | some .ordinary => true
+      | some .empty => true
       | _ => false) &&
     (match env.find? (κ c) with
       | some ci => decide (p.headArity (.cases c) ≤ kPis ci.toConstantVal.type)
@@ -733,22 +736,30 @@ def valueClosedB (c : CId) : Bool :=
   | none, some (.defn .defn .safe _ _ _), some (.defnInfo _ val _) => bvarsLt 0 val
   | _, _, _ => true
 
-/-- A `case` entry's stored shape. -/
+/-- A `case` entry's stored shape (none is read at an entry whose recursor is of kind `empty`, where
+SrcEval traps: step E0). -/
 def caseShapeB (c : CId) : Bool :=
   match p.table.resolveOf c with
   | some (.case r) =>
-    match caseShape? env (κ c) (κ r) with
-    | some sh => caseStoredB env (κ c) (κ r) sh
-    | none => false
+    match p.table.recKindOf r with
+    | some .empty => true
+    | _ =>
+      match caseShape? env (κ c) (κ r) with
+      | some sh => caseStoredB env (κ c) (κ r) sh
+      | none => false
   | _ => true
 
-/-- A `case` entry's program side (true when no shape is read: `caseShape` reports that). -/
+/-- A `case` entry's program side (true when no shape is read: `caseShape` reports that; true at an
+entry whose recursor is of kind `empty`, as `caseShape`). -/
 def caseProgOkB (c : CId) : Bool :=
   match p.table.resolveOf c with
   | some (.case r) =>
-    match caseShape? env (κ c) (κ r) with
-    | some sh => caseProgB p κ Sl r sh
-    | none => true
+    match p.table.recKindOf r with
+    | some .empty => true
+    | _ =>
+      match caseShape? env (κ c) (κ r) with
+      | some sh => caseProgB p κ Sl r sh
+      | none => true
   | _ => true
 
 end Checks
@@ -1143,14 +1154,15 @@ theorem ctor_of {c : CId} (h : ctorB p env κ c = true) :
 
 theorem caseRec_of {c : CId} (h : caseRecB p env κ c = true) :
     ∀ r, p.table.resolveOf c = some (.case r) →
-      p.table.recKindOf r = some .ordinary ∧
+      (p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty) ∧
         ∃ ci, env.find? (κ c) = some ci ∧ p.headArity (.cases c) ≤ kPis ci.toConstantVal.type := by
   intro r hr
   simp only [caseRecB, hr, Bool.and_eq_true] at h
   obtain ⟨h1, h2⟩ := h
   refine ⟨?_, ?_⟩
   · split at h1
-    · rename_i hk; exact hk
+    · rename_i hk; exact .inl hk
+    · rename_i hk; exact .inr hk
     · exact absurd h1 (by simp)
   · split at h2
     · rename_i ci hf; exact ⟨ci, hf, of_decide_eq_true h2⟩
@@ -1327,10 +1339,10 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
 /-- **The check is sound for the `case` entries**: it establishes `CaseFacts`. -/
 theorem caseFacts_of_check {ann : IxCC.Src.Relevance.Ann}
     (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFacts p env κ (· ∈ Sl) := by
-  intro c r hc hr
+  intro c r hc hr hk
   have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts, checkPartsWith])) c hc
   have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts, checkPartsWith])) c hc
-  simp only [caseShapeB, caseProgOkB, hr] at h1 h2
+  simp only [caseShapeB, caseProgOkB, hr, hk] at h1 h2
   split at h1
   · rename_i sh hsh
     rw [hsh] at h2

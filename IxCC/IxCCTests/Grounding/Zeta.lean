@@ -93,7 +93,7 @@ def expectCorr (a : Assert) (label : String) (i : Input) : IO Nat := do
 def refusedTable : List (String × List String) :=
   [("bench-k1/sum-loop", ["eqnShape"]), ("bench-k1/collatz", ["eqnShape"]),
    ("bench-k1/prime-count", ["eqnShape"]), ("phase1-scalar/scalar", ["eqnShape"]),
-   ("phase1-resource/resource", ["caseRec", "eqnShape", "caseShape"]),
+   ("phase1-resource/resource", ["eqnShape"]),
    ("phase1-decline/loops", ["eqnShape"]),
    ("phase1-decline/strings", ["noWord", "caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
    ("phase1-decline/panic", ["noWord", "proj", "valueCorr"]),
