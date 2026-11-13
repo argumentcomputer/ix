@@ -24,10 +24,12 @@ those wrappers.
   part or in full (`WrapDom.consume`). Consumption is never forced: a domain may also keep its
   wrapper (`WrapDom.keep`). Nowhere else: not inside an application's arguments, not in a body.
 * **Wrappers, by shape.** A wrapper is a constant stored as a definition whose value is
-  `λ x₁ … xₖ, x₁` (`wrapperArity`), applied to exactly `k` arguments; consuming it leaves its first
-  argument (`consumeWrapper`). No name is read.
-* **Everything else is equal**, up to what the statement's `Annotates` ignores: binder and `let`
-  metadata, and a `let` of the declared term, which is expanded (`WrapRel.zeta`).
+  `λ x₁ … xₖ, x₁` with every λ's zero-ness datum `never` (`wrapperArity`), applied to exactly `k`
+  arguments; consuming it leaves its first argument (`consumeWrapper`). No name is read. The datum
+  makes each λ a function in the model, so its application to an argument in its domain reduces.
+* **Everything else is equal**: every binder's zero-ness datum (`pw`, which the model reads) is
+  equal; the rest of the binder and `let` metadata is free, and a `let` of the declared term is
+  expanded (`WrapRel.zeta`), as the statement's `Annotates` expands it.
 
 `wrapRelOk` decides it, with a budget no derivation needs to exceed (`wrapRelOk_sound`).
 -/
@@ -36,9 +38,10 @@ namespace Ix.Kernel.Semantics
 
 open Ix.Kernel (Key Expr Level ConstantInfo Literal)
 
-/-- The arity of a value `λ x₁ … xₖ, x₁` (`k ≥ 1`), after `n` binders already passed. -/
+/-- The arity of a value `λ x₁ … xₖ, x₁` (`k ≥ 1`) whose binders' zero-ness data are all `never`
+(the λs are functions, never proofs), after `n` binders already passed. -/
 def lamFirstArity : Expr md → Nat → Option Nat
-  | .lam _ b _, n => lamFirstArity b (n + 1)
+  | .lam _ b m, n => if m.pw.isNever then lamFirstArity b (n + 1) else none
   | .bvar i, n => if 0 < n && i == n - 1 then some n else none
   | _, _ => none
 
@@ -66,9 +69,11 @@ inductive WrapRel (find? : Key md → Option (ConstantInfo md)) : Expr md → Ex
   | app {f a f' a' : Expr md} :
       WrapRel find? f f' → WrapRel find? a a' → WrapRel find? (.app f a) (.app f' a')
   | lam {t b t' b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
-      WrapDom find? t t' → WrapRel find? b b' → WrapRel find? (.lam t b m) (.lam t' b' m')
+      m.pw = m'.pw → WrapDom find? t t' → WrapRel find? b b' →
+      WrapRel find? (.lam t b m) (.lam t' b' m')
   | forallE {t b t' b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
-      WrapDom find? t t' → WrapRel find? b b' → WrapRel find? (.forallE t b m) (.forallE t' b' m')
+      m.pw = m'.pw → WrapDom find? t t' → WrapRel find? b b' →
+      WrapRel find? (.forallE t b m) (.forallE t' b' m')
   | letE {t v b t' v' b' : Expr md} {l l' : Ix.Kernel.LetMeta} :
       WrapRel find? t t' → WrapRel find? v v' → WrapRel find? b b' →
       WrapRel find? (.letE t v b l) (.letE t' v' b' l')
@@ -95,8 +100,8 @@ theorem WrapRel.refl (find? : Key md → Option (ConstantInfo md)) :
   | .const n us => .const n us
   | .lit l => .lit l
   | .app f a => .app (WrapRel.refl find? f) (WrapRel.refl find? a)
-  | .lam t b _ => .lam (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
-  | .forallE t b _ => .forallE (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
+  | .lam t b _ => .lam rfl (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
+  | .forallE t b _ => .forallE rfl (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
   | .letE t v b _ => .letE (WrapRel.refl find? t) (WrapRel.refl find? v) (WrapRel.refl find? b)
   | .proj _ _ e => .proj (WrapRel.refl find? e)
 
@@ -133,8 +138,10 @@ def wrapRelB (find? : Key md → Option (ConstantInfo md)) : Nat → Expr md →
     | .const n us, .const n' us' => n == n' && us == us'
     | .lit l, .lit l' => l == l'
     | .app f a, .app f' a' => wrapRelB find? fuel f f' && wrapRelB find? fuel a a'
-    | .lam t b _, .lam t' b' _ => wrapDomB find? fuel t t' && wrapRelB find? fuel b b'
-    | .forallE t b _, .forallE t' b' _ => wrapDomB find? fuel t t' && wrapRelB find? fuel b b'
+    | .lam t b m, .lam t' b' m' =>
+      m.pw == m'.pw && wrapDomB find? fuel t t' && wrapRelB find? fuel b b'
+    | .forallE t b m, .forallE t' b' m' =>
+      m.pw == m'.pw && wrapDomB find? fuel t t' && wrapRelB find? fuel b b'
     | .proj s i e, .proj s' i' e' => s == s' && i == i' && wrapRelB find? fuel e e'
     | _, _ => false
 
@@ -174,8 +181,9 @@ theorem wrapRelB_sound (find? : Key md → Option (ConstantInfo md)) :
       | (obtain ⟨rfl, h⟩ := h; exact .fvar (wrapRelB_sound find? fuel _ _ h))
       | (obtain ⟨rfl, rfl⟩ := h; exact .const _ _)
       | exact .app (wrapRelB_sound find? fuel _ _ h.1) (wrapRelB_sound find? fuel _ _ h.2)
-      | exact .lam (wrapDomB_sound find? fuel _ _ h.1) (wrapRelB_sound find? fuel _ _ h.2)
-      | exact .forallE (wrapDomB_sound find? fuel _ _ h.1) (wrapRelB_sound find? fuel _ _ h.2)
+      | exact .lam h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2) (wrapRelB_sound find? fuel _ _ h.2)
+      | exact .forallE h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2)
+          (wrapRelB_sound find? fuel _ _ h.2)
       | (obtain ⟨⟨rfl, rfl⟩, h⟩ := h; exact .proj (wrapRelB_sound find? fuel _ _ h))
 
 theorem wrapDomB_sound (find? : Key md → Option (ConstantInfo md)) :
