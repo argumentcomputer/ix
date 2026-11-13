@@ -560,10 +560,39 @@ private def Tests.Cli.testKernelLimits : IO Unit := do
         (#[], #[("IX_KERNEL_MAX_DEPTH", some "-1")], "IX_KERNEL_MAX_DEPTH takes a positive whole number"),
         (#[], #[("IX_KERNEL_WORKERS", some "x")], "IX_KERNEL_WORKERS takes a positive whole number")] do
       Tests.Cli.expect s!"malformed {flags} {vars.map (·.1)}" (← checkLean flags vars) 2 [needle]
-    -- the address-space refusal: 64 workers on 256 MiB stacks do not fit 4 GiB
-    let capped := fun (workers : String) => Tests.Cli.runEnv "bash" #["-c",
-      s!"ulimit -v 4194304; exec {ix} check-lean {art} --workers {workers}"]
-    Tests.Cli.expect "address space, 64 workers" (← capped "64") 2 ["--workers", "IX_KERNEL_MAX_DEPTH"]
+    -- the address-space check (`Ix.Kernel.Host.spaceCheck`), each run under `ulimit -v` and a
+    -- 120 s bound: exit 2 only when the run certainly cannot fit; a warning line when the
+    -- estimate (twice the runtime's pool plus 8 threads) does not fit, and the run goes on
+    let capped := fun (cap : Nat) (vars cmd : String) => do
+      let out ← Tests.Cli.runEnv "bash" #["-c",
+        s!"ulimit -v {cap * 1024 * 1024}; exec env {vars} timeout --kill-after=5 120 {cmd}"]
+      if out.exitCode == 124 || out.exitCode == 137 then
+        throw <| IO.userError s!"under a {cap} GiB cap, '{cmd}' ran past 120 s"
+      pure out
+    let warning := "may fail to create a thread under the address-space limit"
+    -- one stack (16 KiB a level: 15.3 GiB at a depth of 1,000,000) over an 8 GiB cap
+    Tests.Cli.expect "one stack over the cap" (← capped 8 "-u LEAN_STACK_SIZE_KB"
+      s!"{ix} check-lean {art} --max-depth 1000000") 2 ["one thread stack", "--max-depth"]
+    -- 64 workers' 256 MiB stacks over an 8 GiB cap
+    Tests.Cli.expect "64 workers over the cap" (← capped 8 "-u LEAN_STACK_SIZE_KB"
+      s!"{ix} check-lean {art} --workers 64") 2 ["64 worker threads", "--workers"]
+    -- the estimate over the cap (a pool of 64: 136 threads of 320 MiB), the run within it
+    let warned ← capped 32 "LEAN_NUM_THREADS=64" s!"{ix} check-lean {art}"
+    Tests.Cli.expect "the estimate over a 32 GiB cap" warned 0 [warning, "LEAN_NUM_THREADS"]
+    -- a pool of 2 and two workers under 8 GiB: no line
+    let small ← capped 8 "LEAN_NUM_THREADS=2" s!"{ix} check-lean {art} --workers 2"
+    Tests.Cli.expect "a pool of 2 under 8 GiB" small 0
+    if (small.stderr.splitOn warning).length > 1 then
+      throw <| IO.userError s!"a pool of 2 under 8 GiB: a warning\n{small.stderr}"
+    -- kernel-check-ixe keeps the caller's stack: 16 workers on 1 GiB stacks over 8 GiB; 8 MiB
+    -- stacks with a pool of 2 fit
+    Tests.Cli.expect "kernel-check-ixe, 16 workers over the cap" (← capped 8
+      "LEAN_STACK_SIZE_KB=1048576 IX_KERNEL_WORKERS=16" s!"{kci} {art} {dir / "capped.jsonl"}") 2
+      ["16 worker threads", "LEAN_STACK_SIZE_KB"]
+    let kciSmall ← capped 8 "LEAN_STACK_SIZE_KB=8192 LEAN_NUM_THREADS=2" s!"{kci} {art} {dir / "capped.jsonl"}"
+    Tests.Cli.expect "kernel-check-ixe, 8 MiB stacks and a pool of 2 under 8 GiB" kciSmall 0
+    if (kciSmall.stderr.splitOn warning).length > 1 then
+      throw <| IO.userError s!"kernel-check-ixe under 8 GiB: a warning\n{kciSmall.stderr}"
     -- verify-host: a statement issued at the defaults, replayed under each setting
     let stmt := dir / "limits.stmt"
     let issued ← checkLean #["--host-out", stmt.toString] #[]

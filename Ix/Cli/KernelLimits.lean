@@ -49,32 +49,22 @@ def hostLimitOf : Ix.HostAdmission.Error → Option Resource
   | .tiered e => artifactTierLimitOf e
   | _ => none
 
-/-- The task pool's size: `LEAN_NUM_THREADS`, else the processor count, else 8. -/
-def poolSize : IO Nat := do
-  if let some n := (← IO.getEnv "LEAN_NUM_THREADS").bind (·.trimAscii.toString.toNat?) then
-    return max 1 n
-  match ← (IO.Process.output { cmd := "nproc" }).toBaseIO with
-  | .ok out =>
-    if out.exitCode != 0 then return 8
-    return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
-  | .error _ => return 8
-
-/-- Threads a host runs besides the pool's workers: the thread the run is on,
-the progress reporter and the main thread, with one to spare. -/
-def extraThreads : Nat := 4
-
 /-- **Size the kernel's threads, before any task starts**: every thread started
 afterwards (the run's own, the pool's workers) gets `Limits.stackFor` bytes of
-stack; then the threads the run may start (`workers` if given, else the pool's
-size, plus `extraThreads`) are checked against the address-space limit. `some`
-is the refusal a host prints as a usage error (exit 2). -/
+stack; then the address-space check (`Ix.Kernel.Host.spaceCheck`): `some` is a
+refusal the host prints as a usage error (exit 2), given only when the run
+certainly cannot fit; a run that may not fit gets a warning line on standard
+error and proceeds. -/
 def prepareThreads (r : Resolved) : IO (Option String) := do
   let stack := r.limits.stackFor
   Ix.Runtime.setLeanThreadStackSize (USize.ofNat stack)
-  let workers ← match r.limits.workers with
-    | some w => pure w
-    | none => poolSize
-  addressSpaceCheck (workers + extraThreads) stack
+  let certain := s!"--workers or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var} \
+(the stack is 16 KiB per level, at least 256 MiB)"
+  let reduce := s!"--workers or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var}"
+  match ← spaceCheck stack r.limits.workers (← poolSize) certain reduce with
+  | .refuse why => return some why
+  | .warn line => IO.eprintln line; return none
+  | .fits => return none
 
 /-- Run `act` on a dedicated thread (sized by `prepareThreads`). -/
 def onKernelThread {α : Type} (act : IO α) : IO α := do

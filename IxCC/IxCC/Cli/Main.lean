@@ -16,9 +16,13 @@ arguments, standard input, output and error, and environment, plus
 `LEAN_STACK_SIZE_KB`, `LEAN_NUM_THREADS` (the `--workers` setting, only if the
 variable is unset) and `IXCC_REEXECED=1`, which stops it from running itself
 again. `IXCC_REEXEC=0` turns this off, for a caller that sizes the stack
-itself. Before starting it the first process checks that its threads fit the
-address-space limit (`ulimit -v`), and refuses with exit 2 if not, or if it
-cannot start the second process.
+itself. Before starting it the first process runs the address-space check
+(`Ix.Kernel.Host.spaceCheck`, against `ulimit -v`): exit 2 when the second
+process certainly cannot fit (one stack, or `--workers` stacks, over the
+limit), a warning line when it may not, and exit 2 if it cannot start the
+second process. `LEAN_NUM_THREADS` sizes the runtime's pool, which the check
+counts; the first process sets it to the `--workers` setting when it is unset,
+so that a run under a cap can be bounded by `--workers` alone.
 
 Signals: a terminal's interrupt reaches both processes (they share the process
 group); a signal sent to the first process alone does not reach the second,
@@ -52,16 +56,6 @@ def watchParent : IO Unit := do
         IO.Process.exit 1
   return
 
-/-- The task pool's size: `LEAN_NUM_THREADS`, else the processor count, else 8. -/
-def poolSize : IO Nat := do
-  if let some n := (← IO.getEnv "LEAN_NUM_THREADS").bind (·.trimAscii.toString.toNat?) then
-    return max 1 n
-  match ← (IO.Process.output { cmd := "nproc" }).toBaseIO with
-  | .ok out =>
-    if out.exitCode != 0 then return 8
-    return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
-  | .error _ => return 8
-
 /-- `ixcc`: for `compile` and `check-cert`, run again on the stack the kernel's limits
 need (the module's comment), else `IxCC.Cli.main` here. -/
 def run (args : List String) : IO UInt32 := do
@@ -81,10 +75,19 @@ def run (args : List String) : IO UInt32 := do
   let kb := Ix.Kernel.Host.stackKiB settings.limits
   let given := (← IO.getEnv "LEAN_STACK_SIZE_KB").bind (·.trimAscii.toString.toNat?)
   if given.any (kb ≤ ·) then return ← IxCC.Cli.main args
-  let threads := settings.limits.workers.getD (← poolSize) + 4
-  if let some why ← Ix.Kernel.Host.addressSpaceCheck threads settings.limits.stackFor then
-    IO.eprintln s!"ixcc: {why}"
-    return 2
+  -- the second process's pool: `--workers` when `LEAN_NUM_THREADS` is unset (it is given to it)
+  let threadsUnset := (← IO.getEnv "LEAN_NUM_THREADS").isNone
+  let pool ← match settings.limits.workers with
+    | some w => if threadsUnset then pure w else Ix.Kernel.Host.poolSize
+    | none => Ix.Kernel.Host.poolSize
+  let D := Ix.Kernel.Host.Setting.maxDepth.var
+  let W := Ix.Kernel.Host.Setting.workers.var
+  match ← Ix.Kernel.Host.spaceCheck settings.limits.stackFor settings.limits.workers pool
+      s!"--workers or {W}, or --max-depth or {D} (the stack is 16 KiB per level, at least 256 MiB)"
+      s!"--workers or {W}, or --max-depth or {D}" with
+  | .refuse why => IO.eprintln s!"ixcc: {why}"; return 2
+  | .warn line => IO.eprintln s!"ixcc: {line}"
+  | .fits => pure ()
   let fail (why : String) : IO UInt32 := do
     IO.eprintln s!"ixcc: cannot re-run itself on a {kb} KiB stack ({why}); \
 set LEAN_STACK_SIZE_KB={kb} (and IXCC_REEXEC=0) and run again"
@@ -92,7 +95,6 @@ set LEAN_STACK_SIZE_KB={kb} (and IXCC_REEXEC=0) and run again"
   let app ← match ← IO.appPath.toBaseIO with
     | .ok p => pure p
     | .error e => return ← fail (toString e)
-  let threadsUnset := (← IO.getEnv "LEAN_NUM_THREADS").isNone
   let threadsVar : Array (String × Option String) :=
     match settings.limits.workers with
     | some w => if threadsUnset then #[("LEAN_NUM_THREADS", some (toString w))] else #[]

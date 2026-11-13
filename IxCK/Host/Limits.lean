@@ -232,19 +232,79 @@ def threadReserve : Nat := 64 * 1024 * 1024
 executable, its libraries and the start of the heap. -/
 def processReserve : Nat := 1024 * 1024 * 1024
 
-/-- **Whether `threads` threads of `stack` bytes fit the address-space limit**
-(with none, a 64-bit process's 128 TiB, which a depth limit in the billions overruns):
-`none` if they do, else the reason, which the host prints
-as a usage error (exit 2) naming the settings that lower it. -/
-def addressSpaceCheck (threads stack : Nat) : IO (Option String) := do
+/-- The runtime's task pool: `LEAN_NUM_THREADS`, else the processor count
+(`nproc`), else 8. -/
+def poolSize : IO Nat := do
+  if let some n := (← IO.getEnv "LEAN_NUM_THREADS").bind (·.trimAscii.toString.toNat?) then
+    return max 1 n
+  match ← (IO.Process.output { cmd := "nproc" }).toBaseIO with
+  | .ok out =>
+    if out.exitCode != 0 then return 8
+    return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
+  | .error _ => return 8
+
+/-- **The threads a run may have, as estimated**: twice the runtime's pool
+(it starts another worker when one blocks on a task) plus 8 (the main thread,
+the run's own, the reporter, the runtime's I/O threads). An estimate, not a
+bound: on a 64-processor machine `ix check-lean` ran 38-39 threads and
+`kernel-check-ixe` 91-133 (`docs/kernel.md`, "Threads"). -/
+def estimatedThreads (pool : Nat) : Nat := 2 * pool + 8
+
+/-- The address-space check's answer. -/
+inductive SpaceCheck where
+  /-- no limit, or the estimate fits under it -/
+  | fits
+  /-- the run may fail to create a thread: a line the host prints before it runs -/
+  | warn (line : String)
+  /-- the run certainly cannot: a usage error (exit 2) -/
+  | refuse (why : String)
+
+private def mib (n : Nat) : Nat := n / (1024 * 1024)
+
+/-- **The address-space check** of a host whose threads have `stack` bytes of
+stack. The Lean runtime aborts the process when it cannot create a thread,
+which no host can intercept, and the number of threads is the runtime's, so a
+refusal is given only when failure is certain: one such stack, or (when the
+caller gave `workers`) `workers` such stacks, exceed the soft address-space
+limit (with none, a 64-bit process's 128 TiB, which a depth limit in the
+billions overruns). Otherwise, when the estimate (`estimatedThreads` of the
+pool (`pool`: the host's `poolSize`, or what it gives its child), each with its
+stack and a 64 MiB malloc arena, plus 1 GiB for the
+process) does not fit, a warning to print, naming `reduce`, the settings that
+lower it in the host's words; `reduceCertain` names those for a refusal. -/
+def spaceCheck (stack : Nat) (workers : Option Nat) (pool : Nat) (reduceCertain reduce : String) :
+    IO SpaceCheck := do
+  let limited ← addressSpaceLimit
   -- with no limit, the 128 TiB of a 64-bit process's user address space
-  let cap := (← addressSpaceLimit).getD (2 ^ 47)
-  let need := threads * (stack + threadReserve) + processReserve
-  if need ≤ cap then return none
-  return some s!"{threads} threads on {stack / 1024} KiB stacks need about {need / (1024 * 1024)} MiB \
-of address space, over the {cap / (1024 * 1024)} MiB this process may use (its `ulimit -v`, else \
-the 128 TiB of a 64-bit address space); lower --workers \
-or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var} (the stack is 16 KiB per level, at \
-least 256 MiB), or raise the limit"
+  let cap := limited.getD (2 ^ 47)
+  let capText := s!"the {mib cap} MiB this process may use (its `ulimit -v`, else the 128 TiB of \
+a 64-bit address space)"
+  if stack > cap then
+    return .refuse s!"one thread stack of {stack / 1024} KiB exceeds {capText}; lower {reduceCertain}, \
+or raise the limit"
+  if let some w := workers then
+    if w * stack > cap then
+      return .refuse s!"{w} worker threads on {stack / 1024} KiB stacks need {mib (w * stack)} MiB, \
+over {capText}; lower {reduceCertain}, or raise the limit"
+  let some _ := limited | return .fits
+  let n := estimatedThreads pool
+  let need := n * (stack + threadReserve) + processReserve
+  if need ≤ cap then return .fits
+  return .warn s!"warning: this run may fail to create a thread under the address-space limit \
+({mib cap} MiB), and the runtime then aborts it: about {n} threads (twice the runtime's pool of \
+{pool}, plus 8) on {stack / 1024} KiB stacks need about {mib need} MiB; to lower it set \
+LEAN_NUM_THREADS, then {reduce}"
+
+/-- The stack the Lean runtime gives a thread when `LEAN_STACK_SIZE_KB` is unset
+and the host did not resize its threads: 1 GiB (measured on Lean 4.34.1:
+`kernel-check-ixe`'s thread stacks are mappings of 1,048,576 KiB, and of 8,320
+KiB with `LEAN_STACK_SIZE_KB=8192`; `docs/kernel.md`, "Threads"). -/
+def runtimeDefaultStack : Nat := 1024 * 1024 * 1024
+
+/-- The stack of a host that does not resize its threads (`kernel-check-ixe`):
+`LEAN_STACK_SIZE_KB`, else the runtime's default. -/
+def callerStack : IO Nat := do
+  return ((← IO.getEnv "LEAN_STACK_SIZE_KB").bind (·.trimAscii.toString.toNat?)).map (· * 1024)
+    |>.getD runtimeDefaultStack
 
 end Ix.Kernel.Host

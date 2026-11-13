@@ -1593,7 +1593,7 @@ below refer to it):
 | --- | --- |
 | 0 | `ix check-lean`: everything asked for passed; for a whole bound run, through the certified entry. `ix verify-host`: the statement replayed. `ix compile`, `ixcc`: the output written. `kernel-check-ixe`: the run completed; its rows carry each record's outcome, a rejection included |
 | 1 | an infrastructure failure: an unreadable file, an artifact the loader refuses; `ix compile`: also a failure of the compile or of its typing; `kernel-check-ixe`: also a check that raises an error other than a decline by a limit; `ixcc`: also its own refusals and declines, as before, a record nested past IxCC's own envelope bound among them ("Which limit a deep record meets in `ixcc`" below) |
-| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run whose threads cannot fit the address-space limit ("Threads" below), `ixcc` unable to re-run itself; `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind `sorryAx`, `propext` and `Classical.choice` |
+| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run that certainly cannot fit the address-space limit ("Under an address-space limit" below), `ixcc` unable to re-run itself; `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind `sorryAx`, `propext` and `Classical.choice` |
 | 3 | `ix check-lean`: a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused. `ix verify-host`: the replay rejected or failed. Both: a fixed decline (a fixed bound's exhaustion, above) |
 | 4 | `ix check-lean`, partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
 | 5 | `ix check-lean`, conditional: everything passed, but only with the listed user axioms admitted |
@@ -1606,16 +1606,42 @@ every thread started afterwards to `Limits.stackFor` (16 KiB per level of
 `maxDepth`, at least 256 MiB) before they start any task
 (`Ix.Cli.KernelLimits.prepareThreads`), and run everything after option
 parsing, the loading of the artifact included, on one dedicated thread of that
-size. They first check that the threads the run may start fit the process's
-address-space limit (the soft `Max address space` of `/proc/self/limits`; no
-limit, or no such file, fits): `workers` (or the pool's size,
-`LEAN_NUM_THREADS` or the processor count) plus four, each with its stack and a
-64 MiB malloc arena, plus 1 GiB for the process; a run that does not fit is
-refused before it starts (exit 2), naming `--workers` and `--max-depth` and
-their variables. `kernel-check-ixe` keeps its caller's stack
-(`LEAN_STACK_SIZE_KB`), which `initstd-stack` relies on. `ixcc` links no
-native code and so re-runs itself once on a stack of that size (`IxCC/IxCC/Cli/Main.lean`:
-`LEAN_STACK_SIZE_KB`, `IXCC_REEXECED`, the off switch `IXCC_REEXEC=0`).
+size. `kernel-check-ixe` keeps its caller's stack (`LEAN_STACK_SIZE_KB`, else
+the runtime's default, 1 GiB: measured on Lean 4.34.1, its thread stacks are
+mappings of 1,048,576 KiB, and of 8,320 KiB with `LEAN_STACK_SIZE_KB=8192`),
+which `initstd-stack` relies on. `ixcc` links no native code and so re-runs
+itself once on a stack of `stackFor` (`IxCC/IxCC/Cli/Main.lean`:
+`LEAN_STACK_SIZE_KB`, `IXCC_REEXECED`, the off switch `IXCC_REEXEC=0`), giving
+the second process `LEAN_NUM_THREADS` set to `--workers` when the caller gave
+`--workers` and left the variable unset, so that `--workers` alone bounds the
+runtime's pool there.
+
+**Under an address-space limit** (`ulimit -v`), the Lean runtime aborts the
+process when it cannot create a thread ("failed to create thread", exit 134),
+which no host can intercept, and the number of threads is the runtime's: its
+pool is `LEAN_NUM_THREADS`, else the processor count, and it starts another
+worker when one blocks on a task, whatever `--workers` says (on a 64-processor
+machine `ix check-lean` ran 38-39 threads, with `--workers 1` too, and
+`kernel-check-ixe` 91-133, with `IX_KERNEL_WORKERS=1` too). So every host
+(`Ix.Kernel.Host.spaceCheck`, with the stack its threads will have) refuses a
+run only when it certainly cannot fit: one stack over the soft limit, or, when
+the caller gave `--workers` or `IX_KERNEL_WORKERS` = w, w stacks over it
+(exit 2, naming the settings that lower it). Otherwise, when the estimate
+(twice the pool plus 8 threads, each with its stack and a 64 MiB malloc arena,
+plus 1 GiB) does not fit, it prints one line on standard error before it starts,
+`warning: this run may fail to create a thread under the address-space limit
+…`, with the estimate and the settings that lower it (`LEAN_NUM_THREADS` first,
+then `--workers`/`IX_KERNEL_WORKERS`, `--max-depth`/`IX_KERNEL_MAX_DEPTH`, and
+for `kernel-check-ixe` `LEAN_STACK_SIZE_KB`), and runs. To run under a cap,
+bound the pool and the workers together, `LEAN_NUM_THREADS=n` with `--workers n`
+(`IX_KERNEL_WORKERS=n`), and give `kernel-check-ixe` a stack,
+`LEAN_STACK_SIZE_KB=8192` for example. Measured on KI's Task 4 artifacts
+(248 records each; 64 processors; job `KK-pm`): under 32 GiB, `ix check-lean`
+at its defaults ran (38-39 threads, peak address space 13.7-16.9 GB; the
+estimate, 43.5 GiB, prints the warning);
+`kernel-check-ixe` with no `LEAN_STACK_SIZE_KB` aborted under 32 GiB and 16 GiB
+(91 and 76 threads), and ran with `LEAN_STACK_SIZE_KB=8192` (97-133 threads,
+8.9-11.6 GB).
 
 **Which limit a deep record meets in `ixcc`.** IxCC reads the whole envelope
 itself before the kernel sees it (`IxCC.Ixon.V3.decodeAnonymousEnv`): each

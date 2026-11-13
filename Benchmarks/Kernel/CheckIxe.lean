@@ -372,12 +372,21 @@ def runWith (settings : Ix.Kernel.Host.Resolved) (running : IO.Ref Bool) (args :
 /-- `kernel-check-ixe`: the kernel's limits from the `IX_KERNEL_*` variables over
 `Ix.KernelCheck.Binding.limits` (a malformed one exits 2), printed when set; a decline by one
 (the loaders' depth scan, `Ixon.depthLimitError`, or the artifact's admission) exits 6 with
-the message every host prints. The threads keep the caller's stack (`LEAN_STACK_SIZE_KB`). -/
+the message every host prints. The threads keep the caller's stack (`LEAN_STACK_SIZE_KB`, else
+the runtime's 1 GiB), against which the address-space check runs (`Ix.Kernel.Host.spaceCheck`:
+exit 2 only when the run certainly cannot fit, else a warning line when it may not). -/
 def run (args : List String) : IO UInt32 := do
   let settings ← match ← Ix.Kernel.Host.resolveIO Ix.KernelCheck.Binding.limits (fun _ => none) with
     | .ok s => pure s
     | .error e => IO.eprintln s!"check-ixe: {e}"; return 2
   if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"check-ixe: {h}"
+  -- the address-space check with the stack the threads will have (the caller's: not resized)
+  match ← Ix.Kernel.Host.spaceCheck (← Ix.Kernel.Host.callerStack) settings.limits.workers
+      (← Ix.Kernel.Host.poolSize)
+      "LEAN_STACK_SIZE_KB, or IX_KERNEL_WORKERS" "IX_KERNEL_WORKERS, or LEAN_STACK_SIZE_KB" with
+  | .refuse why => IO.eprintln s!"check-ixe: {why}"; return 2
+  | .warn line => IO.eprintln s!"check-ixe: {line}"
+  | .fits => pure ()
   -- the watchdog runs until `running` is false: set on every way out, an exception's too (a
   -- dedicated task still running when `main` returns keeps the process from exiting)
   let running ← IO.mkRef true
