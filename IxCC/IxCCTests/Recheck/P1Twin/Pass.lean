@@ -336,7 +336,7 @@ def quotElemOps (ps : PState) (c : Call) : List (String × Call) :=
           ("quotElem", Call.fire k (.quotLift cl) ls (args.set 5 (.val (.con c'' l' pars [.irr none [] l']))))) ++
         -- aimed at `SortCoherent` (e): the program's own `Quot.mk` value at levels where its element's class
         -- is irrelevant (an element not written erased), a marker element
-        (match (ps.ex.ann.constRel? c').bind (·.params[2]?) with
+        (match ((ps.ex.ann.constRel? c').bind (·.params[2]?) : Option Rel) with
           | some (.proof (.allZero zs)) =>
             if zs.isEmpty then [] else
             [("sortElem", Call.fire k (.quotLift cl) ls (args.set 5 (.val (.con c' (zeroAt zs l') pars [.irr none [] (zeroAt zs l')]))))]
