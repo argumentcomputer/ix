@@ -27,7 +27,11 @@ wrapper's check, also on the typed x86 machine and ByteEval) and `2⁶⁴`
   `Nat.decLt a b` as `Nat.decLe (a + 1) b` and `Nat.blt a b` as
   `Nat.ble (a + 1) b` — `blt`, `decLt` and the fused `ltBranch` at
   `[2⁶³ − 1, b]` for every `b`, `decGt` at `[a, 2⁶³ − 1]`, and `ltK` at
-  `2⁶³ − 1`. `≤`, `=`, `==`, `!=`, `min` and `max` have none.
+  `2⁶³ − 1`. `≤`, `=`, `==`, `!=`, `min` and `max` have none. **Fixed
+  2026-11-13**: the shrink walk turns `Nat.ble (a + 1) b` into `natBlt a b`
+  (`Anf.Walk.succBle`), so these 13 cases give Lean's value at every level
+  and natively, and `corpus.json` no longer marks them `fail`. `n < 2⁶⁴` still
+  fails, on its literal operand.
 - **Intermediate status 3** (allowed by the specification): `(a + b) - c`,
   `a * b / c`, `(a <<< b) >>> b`, `a ^ b % m`, `(a + 1).pred`, and
   `n + 1 == 0` guarding a dead literal, each where the intermediate reaches
