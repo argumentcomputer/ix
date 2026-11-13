@@ -13,13 +13,20 @@ the nesting of the input, in two places of the byte stage
 * **before decoding**, `Depth.within` reads a record's bytes in the codec's
   grammar (`Ixon.getConstantWithUnivs` and the readers it calls) without
   building anything, and stops at the first expression or universe nested past
-  the limit. Shares are leaves here. It keeps its pending reads in an array, so
-  it takes no native stack per level; the codec then decodes only records whose
-  stored nesting is within the limit.
+  the limit. Shares are leaves here. It keeps its pending reads in an array of
+  words, so it takes no native stack per level and allocates nothing per read;
+  the codec then decodes only records whose stored nesting is within the limit.
 * **after decoding**, `Depth.expandedWithin` measures each decoded record's
-  expressions with their shares expanded, as the reader will build them: an
-  explicit post-order, each sharing entry's depth memoised, a share that
-  reaches itself past any limit.
+  expressions with their shares expanded, as the reader will build them: the
+  sharing entries in order, each against the depths of the entries before it
+  (the only ones the reader lets it use), then the payload. This walk recurses
+  on the native stack, one call per stored level: no deeper than the stored
+  nesting the scan has just admitted under the same limit, through which the
+  decoder has just recursed with larger frames, and never past one level beyond
+  the limit. A table in which an entry refers to itself or to a later entry
+  (which the reader refuses) is measured by the general post-order
+  (`expandedPost`: explicit stack, each entry memoised, a share that reaches
+  itself past any limit).
 
 Levels count as the kernel's terms nest, the root at level 1: an application of
 `n` arguments has its head `n` levels below it and its `k`-th argument
@@ -30,8 +37,10 @@ two) one level below; a universe `succ^k u` has `u` `k` levels below it.
 
 Both are coverage bounds, not validity checks: no theorem depends on what they
 compute (they only add declines). Bytes the scan cannot read are left to the
-decoder, which rejects them; the scan reads with the decoder's own readers and
-validates less, so it reads at least as far into any record as the decoder does.
+decoder, which rejects them; the scan reads with the decoder's own readers
+(its one- and two-byte integer headers read in place, equal to the codec's
+reader: `tagAt_eq`) and validates less, so it reads at least as far into any
+record as the decoder does.
 -/
 
 @[expose] public section
@@ -48,50 +57,75 @@ inductive Stop where
   | unreadable
   deriving Repr, DecidableEq
 
-/-- A pending read of the scan, with the level its root is at. -/
-inductive Slot where
-  /-- one expression -/
-  | expr (level : Nat)
-  /-- the `k`-th (from 0) of the `n` arguments of an application at `level` -/
-  | arg (k n level : Nat)
-  /-- the `k`-th (from 0) of the `n` binders of a λ telescope at `level` -/
-  | lam (k n level : Nat)
-  /-- the `k`-th (from 0) of the `n` binders of a ∀ telescope at `level` -/
-  | all (k n level : Nat)
-  /-- one universe -/
-  | univ (level : Nat)
-
 /-- The codec's reader `r` run at byte `i`: its value and the next index. -/
 @[inline] def readAt {α : Type} (r : GetM α) (bytes : ByteArray) (i : Nat) : Option (α × Nat) :=
   match r.run { idx := i, bytes } with
   | .ok a s => some (a, s.idx)
   | .error _ _ => none
 
+/-- `getU8` at byte `i`, read in place (`u8At_eq`). -/
+@[inline] def u8At (bytes : ByteArray) (i : Nat) : Option (UInt8 × Nat) :=
+  if h : i < bytes.size then some (bytes[i], i + 1) else none
+
+/-- `getTagN f` at byte `i` (`tagAt_eq`): a one- or two-byte header read in place with the
+codec's own arithmetic, a wider one by the codec's reader. Inlined at a literal `f`, its powers
+fold to constants. -/
+@[inline] def tagAt (f : Nat) (bytes : ByteArray) (i : Nat) : Option (TagN × Nat) :=
+  if h : i < bytes.size then
+    let b := bytes[i]
+    let flag := (b.toNat / 2 ^ (8 - f)).toUInt8
+    let p := b.toNat % 2 ^ (8 - f)
+    if p < 2 ^ (8 - f - 1) then some (⟨flag, p.toUInt64⟩, i + 1)
+    else if p - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2) then
+      if h' : i + 1 < bytes.size then
+        some (⟨flag, (2 ^ (8 - f - 1) + (p - 2 ^ (8 - f - 1)) * 256 + bytes[i + 1].toNat).toUInt64⟩,
+          i + 1 + 1)
+      else none
+    else readAt (getTagN f) bytes i
+  else none
+
 /-- Skip `n` TagN integers with no flag bits from byte `i`. -/
 def skipTagN0 (bytes : ByteArray) : Nat → Nat → Option Nat
   | 0, i => some i
   | n + 1, i =>
-    match readAt (getTagN 0) bytes i with
+    match tagAt 0 bytes i with
     | some (_, i) => skipTagN0 bytes n i
     | none => none
 
+/-! ### The scan's pending reads
+
+The scan's stack holds words; the top word of each pending read carries its kind
+in its low three bits:
+
+* `8 * L`: one expression at level `L`;
+* `8 * L + 1`: one universe at level `L`;
+* `L, n, 8 * k + 2` (top last): the `k`-th (from 0) of the `n` arguments of an
+  application at level `L`; `8 * k + 3` a λ telescope's `k`-th binder, `8 * k + 4`
+  a ∀ telescope's;
+* `8 * r + 5`: `r` more expressions at level 1, one after another (a sharing
+  table); `8 * r + 6`: `r` more universes at level 1 (a universe table).
+
+The words are naturals in an array the loop owns, so a read pushes, pops and
+rewrites them in place and allocates nothing. -/
+
 /-- The scan's loop over its stack of pending reads, at most `fuel` steps from
 byte `i`: the index after the last read and the deepest level met. Each step
-reads a tag, or turns a telescope or spine slot into one expression slot, so
-`2 * bytes + 2` steps suffice for any bytes. Every call of itself is a tail
-call: the loop runs in constant native stack. -/
+reads a tag, or turns a pending argument or binder into one expression, or
+takes the next expression or universe of a table, so `2 * bytes + count + 2`
+steps suffice for any bytes holding a table of `count` (the caller's fuel).
+Every call of itself is a tail call: the loop runs in constant native stack. -/
 def loop (bytes : ByteArray) (limit : Nat) :
-    Nat → Nat → Array Slot → Nat → Except Stop (Nat × Nat)
+    Nat → Nat → Array Nat → Nat → Except Stop (Nat × Nat)
   | 0, _, _, _ => .error .unreadable
   | fuel + 1, i, stack, deepest =>
-    match stack.back? with
-    | none => .ok (i, deepest)
-    | some slot =>
-      let stack := stack.pop
-      match slot with
-      | .expr level =>
+    if h : 0 < stack.size then
+      let w := stack[stack.size - 1]
+      let kind := w % 8
+      if kind == 0 then
+        let level := w / 8
+        let stack := stack.pop
         if limit < level then .error .deep else
-        match readAt (getTagN 4) bytes i with
+        match tagAt 4 bytes i with
         | none => .error .unreadable
         | some (tag, i) =>
           let deepest := max deepest level
@@ -103,55 +137,66 @@ def loop (bytes : ByteArray) (limit : Nat) :
             | some i => loop bytes limit fuel i stack deepest
             | none => .error .unreadable
           | 0x4 =>
-            match readAt (getTagN 0) bytes i with
-            | some (_, i) => loop bytes limit fuel i (stack.push (.expr (level + 1))) deepest
+            match tagAt 0 bytes i with
+            | some (_, i) => loop bytes limit fuel i (stack.push (8 * (level + 1))) deepest
             | none => .error .unreadable
           | 0x7 =>
             if n == 0 || bytes.size < n then .error .unreadable else
-            loop bytes limit fuel i ((stack.push (.arg 0 n level)).push (.expr (level + n))) deepest
+            loop bytes limit fuel i ((((stack.push level).push n).push 2).push (8 * (level + n)))
+              deepest
           | 0x8 =>
             if n == 0 || bytes.size < n then .error .unreadable else
-            loop bytes limit fuel i (stack.push (.lam 0 n level)) deepest
+            loop bytes limit fuel i (((stack.push level).push n).push 3) deepest
           | 0x9 =>
             if n == 0 || bytes.size < n then .error .unreadable else
-            loop bytes limit fuel i (stack.push (.all 0 n level)) deepest
+            loop bytes limit fuel i (((stack.push level).push n).push 4) deepest
           | 0xA =>
-            match readAt getU8 bytes i with
+            match u8At bytes i with
             | some (_, i) =>
-              let child := Slot.expr (level + 1)
+              let child := 8 * (level + 1)
               loop bytes limit fuel i (((stack.push child).push child).push child) deepest
             | none => .error .unreadable
           | _ => .error .unreadable
-      | .arg k n level =>
-        let stack := if k + 1 < n then stack.push (.arg (k + 1) n level) else stack
-        loop bytes limit fuel i (stack.push (.expr (level + n - k))) deepest
-      | .lam k n level =>
-        match readAt getU8 bytes i with
-        | some (_, i) =>
-          let next := if k + 1 < n then Slot.lam (k + 1) n level else Slot.expr (level + n)
-          loop bytes limit fuel i ((stack.push next).push (.expr (level + k + 1))) deepest
-        | none => .error .unreadable
-      | .all k n level =>
-        match readAt getU8 bytes i with
-        | some (_, i) =>
-          let next := if k + 1 < n then Slot.all (k + 1) n level else Slot.expr (level + n)
-          loop bytes limit fuel i ((stack.push next).push (.expr (level + k + 1))) deepest
-        | none => .error .unreadable
-      | .univ level =>
+      else if kind == 1 then
+        let level := w / 8
+        let stack := stack.pop
         if limit < level then .error .deep else
-        match readAt (getTagN 2) bytes i with
+        match tagAt 2 bytes i with
         | none => .error .unreadable
         | some (tag, i) =>
           let deepest := max deepest level
           match tag.flag with
           | 0 =>
             if tag.value == 0 then loop bytes limit fuel i stack deepest
-            else loop bytes limit fuel i (stack.push (.univ (level + tag.value.toNat))) deepest
+            else loop bytes limit fuel i (stack.push (8 * (level + tag.value.toNat) + 1)) deepest
           | 1 | 2 =>
-            let child := Slot.univ (level + 1)
+            let child := 8 * (level + 1) + 1
             loop bytes limit fuel i ((stack.push child).push child) deepest
           | 3 => loop bytes limit fuel i stack deepest
           | _ => .error .unreadable
+      else if kind == 5 || kind == 6 then
+        let r := w / 8
+        if r == 0 then loop bytes limit fuel i stack.pop deepest
+        else
+          loop bytes limit fuel i
+            ((stack.set! (stack.size - 1) (8 * (r - 1) + kind)).push (if kind == 5 then 8 else 9))
+            deepest
+      else
+        let k := w / 8
+        let n := stack[stack.size - 2]!
+        let level := stack[stack.size - 3]!
+        if kind == 2 then
+          let stack := if k + 1 < n then stack.set! (stack.size - 1) (8 * (k + 1) + 2)
+            else stack.pop.pop.pop
+          loop bytes limit fuel i (stack.push (8 * (level + n - k))) deepest
+        else
+          match u8At bytes i with
+          | some (_, i) =>
+            let stack := if k + 1 < n then stack.set! (stack.size - 1) (8 * (k + 1) + kind)
+              else stack.pop.pop.pop.push (8 * (level + n))
+            loop bytes limit fuel i (stack.push (8 * (level + k + 1))) deepest
+          | none => .error .unreadable
+    else .ok (i, deepest)
 
 /-- The scan's monad: the codec's cursor, and a stop. -/
 abbrev ScanM := EStateM Stop GetState
@@ -160,19 +205,27 @@ abbrev ScanM := EStateM Stop GetState
 @[inline] def lift {α : Type} (r : GetM α) : ScanM α := fun s =>
   match EStateM.run r s with
   | .ok a s => .ok a s
-  | .error _ s => .error .unreadable s
+  | .error e s => .error .unreadable s
 
-/-- The loop from `start` at the cursor: the deepest level of what it read. -/
-@[inline] def run (limit : Nat) (start : Slot) : ScanM Nat := fun s =>
-  match loop s.bytes limit (2 * (s.bytes.size - s.idx) + 2) s.idx #[start] 0 with
+/-- The loop from the pending read `start` at the cursor, holding a table of `count`: the
+deepest level of what it read. -/
+@[inline] def run (limit start count : Nat) : ScanM Nat := fun s =>
+  match loop s.bytes limit (2 * (s.bytes.size - s.idx) + count + 2) s.idx #[start] 0 with
   | .ok (i, d) => .ok d { s with idx := i }
   | .error e => .error e s
 
 /-- One expression (`Ixon.getExpr`). -/
-def expr (limit : Nat) : ScanM Nat := run limit (.expr 1)
+def expr (limit : Nat) : ScanM Nat := run limit 8 0
 
-/-- One universe (`Ixon.getUniv`). -/
-def univ (limit : Nat) : ScanM Nat := run limit (.univ 1)
+/-- `count` expressions one after another (`Ixon.getArray Ixon.getExpr`). -/
+def exprs (limit count : Nat) : ScanM Nat := run limit (8 * count + 5) count
+
+/-- `count` universes one after another (`Ixon.getArray Ixon.getUniv`). -/
+def univs (limit count : Nat) : ScanM Nat := run limit (8 * count + 6) count
+
+/-- `n` bytes skipped, if the record holds them (`Ixon.getBytes`'s test). -/
+def skip (n : Nat) : ScanM Unit := fun s =>
+  if s.idx + n ≤ s.bytes.size then .ok () { s with idx := s.idx + n } else .error .unreadable s
 
 /-- `Ixon.getDefinition`. -/
 def definition (limit : Nat) : ScanM Nat := do
@@ -248,19 +301,15 @@ def info (limit : Nat) : ScanM Nat := do
   else throw .unreadable
 
 /-- `Ixon.getConstantWithUnivs`: the payload, the sharing table, the
-references, the universe table. -/
+references (32 bytes each, skipped), the universe table. -/
 def constant (limit : Nat) : ScanM Nat := do
-  let mut deepest ← info limit
+  let deepest ← info limit
   let sharing := (← lift (getTagN 0)).value.toNat
-  for _ in [0:sharing] do
-    deepest := max deepest (← expr limit)
+  let deepest := max deepest (← exprs limit sharing)
   let refs := (← lift (getTagN 0)).value.toNat
-  for _ in [0:refs] do
-    discard <| lift (Serialize.get (α := Address))
-  let univs := (← lift (getTagN 0)).value.toNat
-  for _ in [0:univs] do
-    deepest := max deepest (← univ limit)
-  return deepest
+  skip (32 * refs)
+  let count := (← lift (getTagN 0)).value.toNat
+  return max deepest (← univs limit count)
 
 /-- **The scan of one record's bytes**: the deepest level of its expressions
 (shares as leaves) and universes; `.deep` at the first past `limit`;
@@ -303,6 +352,62 @@ def payload (c : Ixon.Constant) : Array Ixon.Expr :=
       | .recr r => recr r
   | _ => #[]
 
+/-- The deepest level among `e`'s nodes with its shares expanded, `e`'s root at
+`level`: a share of an entry below `memo.size` stands for that entry, of depth
+`memo[i]`; a share past the table is a leaf (as the post-order counts it; the
+reader refuses it); `0` for a share of an entry at or past `memo.size` and within
+the table (the caller then measures the record by the post-order). A level past
+`limit` is returned as soon as it is met, without descending further, so the
+recursion nests at most as deep as `e` is stored, and at most `limit + 1` calls. -/
+def walk (memo : Array Nat) (size limit level : Nat) : Ixon.Expr → Nat
+  | .share i =>
+    let j := i.toNat
+    if h : j < memo.size then level - 1 + memo[j]
+    else if j < size then 0 else level
+  | .prj _ _ b => if limit < level then level else walk memo size limit (level + 1) b
+  | .app f a =>
+    if limit < level then level else
+    let x := walk memo size limit (level + 1) f
+    if x == 0 || limit < x then x else
+    let y := walk memo size limit (level + 1) a
+    if y == 0 then 0 else max x y
+  | .lam _ t b =>
+    if limit < level then level else
+    let x := walk memo size limit (level + 1) t
+    if x == 0 || limit < x then x else
+    let y := walk memo size limit (level + 1) b
+    if y == 0 then 0 else max x y
+  | .all _ _ t b =>
+    if limit < level then level else
+    let x := walk memo size limit (level + 1) t
+    if x == 0 || limit < x then x else
+    let y := walk memo size limit (level + 1) b
+    if y == 0 then 0 else max x y
+  | .letE _ t v b =>
+    if limit < level then level else
+    let x := walk memo size limit (level + 1) t
+    if x == 0 || limit < x then x else
+    let y := walk memo size limit (level + 1) v
+    if y == 0 || limit < y then y else
+    let z := walk memo size limit (level + 1) b
+    if z == 0 then 0 else max x (max y z)
+  | _ => level
+
+/-- The sharing entries in order, each measured against the entries before it,
+then the payload: `some true` when every one is within `limit`, `some false` at
+the first past it, `none` when an entry refers to itself or a later entry. -/
+def expandedInOrder (limit : Nat) (c : Ixon.Constant) : Option Bool := Id.run do
+  let size := c.sharing.size
+  let mut memo : Array Nat := Array.mkEmpty size
+  for e in c.sharing do
+    let d := walk memo size limit 1 e
+    if d == 0 then return none
+    if limit < d then return some false
+    memo := memo.push d
+  for e in payload c do
+    if limit < walk memo size limit 1 e then return some false
+  return some true
+
 /-- A step of the post-order. -/
 inductive Visit where
   /-- measure an expression -/
@@ -312,11 +417,13 @@ inductive Visit where
   /-- the last measured is sharing entry `i`'s depth -/
   | share (i : Nat)
 
-/-- The largest of the last `k` values of `vals` (and `m`), and `vals` without them; in place
-when `vals` is not shared. -/
+/-- The largest of the last `k` values of `vals` (and `m`), and `vals` without them. Each value is
+read before it is popped, so the pop is in place when `vals` is not shared. -/
 def popMax (vals : Array Nat) : Nat → Nat → Nat × Array Nat
   | 0, m => (m, vals)
-  | k + 1, m => popMax vals.pop k (max m (vals.back?.getD 0))
+  | k + 1, m =>
+    let top := vals.back?.getD 0
+    popMax vals.pop k (max m top)
 
 /-- The post-order over `stack`, at most `fuel` steps: the depths measured
 (`vals`) and the sharing entries' memo, or `none` when a depth passes `limit`,
@@ -360,14 +467,13 @@ def expandLoop (sharing : Array Ixon.Expr) (limit : Nat) :
         expandLoop sharing limit fuel stack vals (memo.set! i (some (vals.back?.getD 0)))
           (active.set! i false)
 
-/-- **A decoded record's expressions with shares expanded are within
-`limit`**: its payload and its sharing table, each sharing entry measured
-once; false past the limit or on a share that reaches itself. `fuel` bounds the
-post-order's steps (each stored node is entered and left once, each share
-entered and recorded once: eight per byte of the record suffice, a spine
-or telescope of n decoded nodes having n + 1 tags; the caller passes a bound
-from the record byte limit). -/
-def expandedWithin (limit fuel : Nat) (c : Ixon.Constant) : Bool :=
+/-- **The general post-order**: a decoded record's payload and sharing table
+with shares expanded, each sharing entry measured once, false past `limit` or on
+a share that reaches itself. `fuel` bounds the post-order's steps (each stored
+node is entered and left once, each share entered and recorded once: eight per
+byte of the record suffice, a spine or telescope of n decoded nodes having n + 1
+tags; the caller passes a bound from the record byte limit). -/
+def expandedPost (limit fuel : Nat) (c : Ixon.Constant) : Bool :=
   let stack := (payload c).foldl (fun st e => st.push (Visit.enter e)) #[]
   let stack := (List.range c.sharing.size).foldl
     (fun st i => st.push (Visit.enter (.share i.toUInt64))) stack
@@ -375,6 +481,15 @@ def expandedWithin (limit fuel : Nat) (c : Ixon.Constant) : Bool :=
       (Array.replicate c.sharing.size false) with
   | some (vals, _, _) => vals.all (· ≤ limit)
   | none => false
+
+/-- **A decoded record's expressions with shares expanded are within
+`limit`**: its payload and its sharing table, each sharing entry measured once
+(`expandedInOrder`; `expandedPost` when an entry refers to itself or a later
+entry); false past the limit or on a share that reaches itself. -/
+def expandedWithin (limit fuel : Nat) (c : Ixon.Constant) : Bool :=
+  match expandedInOrder limit c with
+  | some b => b
+  | none => expandedPost limit fuel c
 
 end Ix.Kernel.Admission.Depth
 
