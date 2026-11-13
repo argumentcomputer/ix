@@ -48,6 +48,9 @@ structure ShapeOk (p : Program) : Prop where
 structure Facts (p : Program) (ann : Ann) (ch : Checked) : Prop where
   wa : WellAnnotatedC p ann ch
   canon : Canonical p ann ch
+  /-- A reached instance's constant is reached (`check`'s `reached` is its instances' constants):
+  `Canonical`'s per-constant clauses are over `ch.reached`, the evaluator meets `ch.instances`. -/
+  reached : ∀ inst ∈ ch.instances, inst.1 ∈ ch.reached
 
 /-! ## Receivers that ignore an argument -/
 
