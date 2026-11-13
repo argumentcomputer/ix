@@ -464,10 +464,14 @@ def anTerm (P : Prog) : Nat → List ABnd → Term → CM AVal
       match h with
       | .const r _ => anCall P n env r args c
       | _ => do
+        -- every argument, then the applications, as `runR`'s `spine` and `applyAll` (finding
+        -- 13: as landed each argument was judged after the applications before it)
         let mut f ← anTerm P n env h
-        for (a, i) in args.zipIdx do
-          let av ← anTerm P n env a
-          f ← applyValue f av (if i + 1 == args.size then c else .val) "an application"
+        let mut avs : Array AVal := #[]
+        for a in args do
+          avs := avs.push (← anTerm P n env a)
+        for (av, i) in avs.zipIdx do
+          f ← applyValue f av (if i + 1 == avs.size then c else .val) "an application"
         pure f
     | .lam p res rc fvs body => anLam P n env p res rc fvs body
     | .letE m d v b => do
@@ -622,9 +626,13 @@ def anCase (P : Prog) :
                     deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
                     onceOnly := r.onceOnly || x.onceOnly }
     r := { r with cls := c, src := none }
+    -- the extra arguments, then the applications, all but the last at class `val`, as
+    -- `runR`'s `applyAll` (finding 16: as landed each was judged in turn, at the case's class)
+    let mut avs : Array AVal := #[]
     for e in ex do
-      let av ← anTerm P n env e
-      r ← applyValue r av c "an application"
+      avs := avs.push (← anTerm P n env e)
+    for (av, i) in avs.zipIdx do
+      r ← applyValue r av (if i + 1 == avs.size then c else .val) "an application"
     pure r
 
 /-- An alternative applied to its fields, as `applyAlt`: a λ telescope binds
