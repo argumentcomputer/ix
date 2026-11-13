@@ -358,10 +358,44 @@ def subsingleton (a : Assert) (label : String) (fx : Fixture) (xs : List Nat) :
     eliminators, each with its derived sources one per field; the honest root runs alike in the \
     object and SrcEval"]
 
+/-- `E.casesOn` (a `case` key) reached as a `csimp` target at the profile where its minors are proofs:
+`main := E.casesOn.{1} (λ _. E) c₁ c₀ c₂ c₁` (`Erased.casesEnv`, whose constructors have no fields),
+and the root `r₁ := c₁` given the entry `r₁ ↦ E.casesOn.{0}` in the table `Src.Recheck.annotation`
+reads. With only that entry, tier S refuses it first: the key reaches `E.rec` at its own levels, whose
+rules' λs are proofs there (C6). With `E.rec` given a table entry too (`E.rec ↦ r₀`), no check walks
+`E.rec`'s rules, tiers S and C accept, and `appliedAt` alone refuses: F5 there would force a minor
+that is a marker and apply it to the selected constructor's (no) fields, returning the marker
+(found by the P1 twin's mutant pass before `appliedAt` existed). -/
+def caseCsimp (a : Assert) : IO (Array String) := do
+  let (e, co, roots) ← IxCCTests.Recheck.Erased.casesEnv .many
+  let h ← ingest "appliedAt, a case key as a csimp target" e roots
+  let P := h.inp.program
+  let coId ← lookup P co "E.casesOn"
+  let some (_, r0) := P.roots[1]? | throw (IO.userError "appliedAt, csimp: no r₀")
+  let some (_, r1) := P.roots[2]? | throw (IO.userError "appliedAt, csimp: no r₁")
+  let table ← match Src.Table.ofCert h.cfg.table P h.cert.table with
+    | .ok t => pure t
+    | .error m => throw (IO.userError s!"appliedAt, csimp: the table refused it: {m}")
+  let some (.case recId) := table.resolveOf coId | throw (IO.userError "appliedAt, csimp: no case entry")
+  let t1 := { table with resolve := table.resolve.insert r1 (.csimp coId [.zero] r1) }
+  let Pa := { P with table := t1 }
+  let first ← match Src.Recheck.annotation Pa h.cert.relevance with
+    | .error (.relevance errs) => do
+      let ms := errs.toList.map (·.render Pa)
+      expect a (ms.any (·.contains "[relevance C6]")) s!"appliedAt, r₁ ↦ E.casesOn.\{0}: not refused by C6: {ms}"
+      pure s!"appliedAt, r₁ ↦ E.casesOn.\{0}: refused first by C6 at E.rec's rules ({ms.length} errors)"
+    | _ => do
+      expect a false "appliedAt, r₁ ↦ E.casesOn.{0}: not refused at relevance"
+      pure ""
+  let t2 := { t1 with resolve := t1.resolve.insert recId (.csimp r0 [] recId) }
+  let shown ← annotationOnly a "appliedAt, r₁ ↦ E.casesOn.{0} and E.rec ↦ r₀" { P with table := t2 }
+    h.cert.relevance [s!"({P.short coId})", "is forced and applied"]
+  return #[first, s!"appliedAt, r₁ ↦ E.casesOn.\{0} and E.rec ↦ r₀: {shown}"]
+
 def run (a : Assert) : IO (Array String) := do
   let words ← fixture "Words.u8" (wordsDir / "words.ixe") (wordsDir / "words.equations.json") ["Words.u8"]
   return (← sorts a) ++ (← rules a) ++ (← univsDenseRecords a) ++
     (← subsingleton a "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a words) ++
-    (← caseRoot a)
+    (← caseRoot a) ++ (← caseCsimp a)
 
 end IxCCTests.Recheck.Shape
