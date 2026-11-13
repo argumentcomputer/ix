@@ -48,6 +48,8 @@ def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
     throw (IO.userError "Aiur compression verification requires --aggregate")
   if AiurCompression.selected p && p.hasFlag "ixc" then
     throw (IO.userError "Aiur compression currently accepts CheckEnv proofs, not --ixc catalog proofs")
+  if AiurCompression.selected p then
+    let _ ← AiurCompression.options p
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   if p.hasFlag "aggregate" then
@@ -64,6 +66,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "aiur-chain" : String; "Trusted GL-to-BN chain manifest; verification needs no proving powers."
+    "aiur-chain-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-chain manifest bytes."
     "aiur-gl" : String; "Use the Aiur CompressGL KZG stage with this independently trusted compiler artifact."
     "aiur-gl-blake3" : String; "Independent BLAKE3 pin for --aiur-gl."
     "aiur-kzg-key" : String; "Independently trusted CompressGL KZG verifier key."

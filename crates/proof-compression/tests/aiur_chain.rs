@@ -1,4 +1,5 @@
 use aiur::trace::stark::Parameters;
+use ark_ec::{AffineRepr, CurveGroup};
 use ix_proof_compression::{
   aiur_backend::{
     chain::{
@@ -6,11 +7,14 @@ use ix_proof_compression::{
       StageConfiguration, Verifier,
     },
     compress_bn, compress_gl,
+    kzg::VerifyingKey,
+    kzg_advice as wire,
   },
   pipeline::SetupConfig,
 };
 use multi_stark::{
   batch::ShardInput,
+  config::ProofConfig,
   expr::Expr,
   lookup::Lookup,
   p3_field::PrimeCharacteristicRing,
@@ -167,6 +171,17 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
   assert!(gl.execute_with_record_limit(&root, 1).is_err());
   let execution =
     gl.execute_with_record_limit(&root, admission.gl.max_record_bytes).unwrap();
+  let gl_profile = gl.profile(&execution).unwrap();
+  let mut limited = admission;
+  limited.gl.max_trace_bytes = gl_profile.main_fixed_lookup_bytes - 1;
+  let limited = Prover::new(
+    Verifier::from_bytes(configuration.clone(), assets()).unwrap(),
+    SetupConfig::from_env(true).unwrap(),
+    limited,
+  )
+  .unwrap();
+  let error = limited.prove_gl(&root, expected).err().unwrap();
+  assert!(error.contains("GL trace exceeds chain admission"), "{error}");
   let error = gl
     .prove_with_expected_key(
       &execution,
@@ -224,6 +239,119 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
   let mut trailing = gl_proof.clone();
   trailing.push(0);
   assert!(prover.verifier().first_bn_input(expected, &trailing).is_err());
+  if std::env::var("IX_AIUR_CHAIN_FORGED_OPENING").as_deref() == Ok("1") {
+    let gl_verifier =
+      VerifyingKey::from_bytes(&gl_key, &configuration.gl.key_blake3).unwrap();
+    let claim = gl.claim(expected).unwrap();
+    let mut forged = gl_verifier.decode_proof(&gl_proof).unwrap();
+    forged.opening_proof.0[0] = (forged.opening_proof.0[0]
+      + ark_bn254::G1Affine::generator())
+    .into_affine();
+    let forged_bytes = gl_verifier.encode_proof(&forged).unwrap();
+    assert!(prover.verifier().first_bn_input(expected, &forged_bytes).is_err());
+    let public = compress_bn::PublicInputs {
+      policy: compress_bn::PolicyDigest::from_trusted(
+        prover.verifier().policy().digest(),
+      ),
+      stage: compress_bn::Stage::FIRST,
+      statement: compress_bn::StatementDigest::from_root(expected),
+    };
+    let input = compress_bn::Input::from_source(
+      public,
+      wire::key_bytes(&gl_verifier).unwrap(),
+      wire::claims_bytes(&[claim]).unwrap(),
+      wire::proof_bytes(&forged).unwrap(),
+      prover.verifier().policy().to_bytes(),
+    )
+    .unwrap();
+    let execution = bn.execute(&input, admission.bn.max_record_bytes).unwrap();
+    assert!(
+      execution
+        .accumulator()
+        .check_pairing(prover.verifier().parameters())
+        .is_err()
+    );
+    let setup = SetupConfig::from_env(true).unwrap();
+    let limits = compress_bn::TraceLimits {
+      max_height: 1 << 24,
+      max_total_rows: admission.bn.max_total_rows,
+      max_trace_bytes: admission.bn.max_trace_bytes,
+    };
+    let profile = bn
+      .preflight(&execution, &bn_capacity.config(&setup, 2).unwrap(), limits)
+      .unwrap();
+    if let Some(output) = &output {
+      fs::write(
+        output.join("forged-profile.json"),
+        serde_json::to_vec_pretty(&profile).unwrap(),
+      )
+      .unwrap();
+    }
+    let proven = bn
+      .prove(
+        &execution,
+        bn_capacity.config(&setup, profile.max_height).unwrap(),
+        limits,
+      )
+      .unwrap();
+    let native =
+      VerifyingKey::from_bytes(&bn_key, &configuration.bn.key_blake3).unwrap();
+    native.verify_bytes(&proven.claim, &proven.proof).unwrap();
+    assert!(
+      proven
+        .accumulator
+        .check_pairing(native.system().config.pcs().verifier_params())
+        .is_err()
+    );
+    let envelope = Envelope {
+      stage: 1,
+      accumulator: *proven.accumulator.words(),
+      proof: proven.proof,
+    };
+    let error = prover
+      .verifier()
+      .verify_bytes(expected, &envelope.to_bytes().unwrap())
+      .unwrap_err();
+    assert!(error.contains("deferred pairing equation failed"), "{error}");
+    let mut stage_two_config = configuration.clone();
+    stage_two_config.bn_stages = NonZeroU32::new(2).unwrap();
+    let stage_two = Verifier::from_bytes(stage_two_config, assets()).unwrap();
+    let mut changed_stage = envelope.clone();
+    changed_stage.stage = 2;
+    let stage_error = stage_two.verify(expected, &changed_stage).unwrap_err();
+    assert!(
+      stage_error.contains("Aiur KZG verification failed"),
+      "{stage_error}"
+    );
+    let mut swapped = envelope.clone();
+    let mut points = compress_bn::Accumulator::from_words(&swapped.accumulator)
+      .unwrap()
+      .points();
+    points.swap(0, 1);
+    swapped.accumulator =
+      *compress_bn::Accumulator::from_points(&points).unwrap().words();
+    compress_bn::Accumulator::from_words(&swapped.accumulator).unwrap();
+    assert_ne!(swapped.accumulator, envelope.accumulator);
+    let swap_error = prover.verifier().verify(expected, &swapped).unwrap_err();
+    assert!(
+      swap_error.contains("Aiur KZG verification failed"),
+      "{swap_error}"
+    );
+    if let Some(output) = &output {
+      fs::write(
+        output.join("forged-outer-proof.bin"),
+        envelope.to_bytes().unwrap(),
+      )
+      .unwrap();
+      fs::write(output.join("forged-result.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "native_gl_rejected":true,"outer_proof_verified":true,"accumulator_rejected":true,"chain_rejected":true,
+          "stage_proof_binding_rejected":true,"canonical_point_swap_proof_binding_rejected":true,
+          "real_gl_trace_budget_rejected":true,
+        "chain_error":error,"profile":profile,
+      })).unwrap()).unwrap();
+    }
+    return;
+  }
   if std::env::var("IX_AIUR_CHAIN_PROVE_BN").as_deref() != Ok("1") {
     let profile = prover.profile_from_gl(expected, &gl_proof).unwrap();
     eprintln!(
@@ -240,7 +368,8 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
     return;
   }
   let proven = prover.prove_from_gl(expected, &gl_proof).unwrap();
-  let independent = Verifier::from_bytes(configuration, assets()).unwrap();
+  let independent =
+    Verifier::from_bytes(configuration.clone(), assets()).unwrap();
   let bytes = proven.envelope.to_bytes().unwrap();
   independent.verify_bytes(expected, &bytes).unwrap();
   assert!(independent.verify(&changed, &proven.envelope).is_err());
@@ -248,9 +377,23 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
   let mut wrong_stage = proven.envelope.clone();
   wrong_stage.stage += 1;
   assert!(independent.verify(expected, &wrong_stage).is_err());
+  let mut stage_two = configuration;
+  stage_two.bn_stages = NonZeroU32::new(2).unwrap();
+  let stage_two = Verifier::from_bytes(stage_two, assets()).unwrap();
+  let error = stage_two.verify(expected, &wrong_stage).unwrap_err();
+  assert!(error.contains("Aiur KZG verification failed"), "{error}");
   let mut wrong_accumulator = proven.envelope.clone();
-  wrong_accumulator.accumulator.swap(0, 2);
-  assert!(independent.verify(expected, &wrong_accumulator).is_err());
+  let mut points =
+    compress_bn::Accumulator::from_words(&wrong_accumulator.accumulator)
+      .unwrap()
+      .points();
+  points.swap(0, 1);
+  wrong_accumulator.accumulator =
+    *compress_bn::Accumulator::from_points(&points).unwrap().words();
+  compress_bn::Accumulator::from_words(&wrong_accumulator.accumulator).unwrap();
+  assert_ne!(wrong_accumulator.accumulator, proven.envelope.accumulator);
+  let error = independent.verify(expected, &wrong_accumulator).unwrap_err();
+  assert!(error.contains("Aiur KZG verification failed"), "{error}");
   let mut trailing = bytes.clone();
   trailing.push(0);
   assert!(Envelope::from_bytes(&trailing).is_err());

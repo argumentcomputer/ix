@@ -81,7 +81,7 @@ def cacheDir : IO System.FilePath := do
 -- Reserve the family prefix, including unknown versions, so they fail closed.
 def isCompressed (proof : ByteArray) : Bool :=
   proof.extract 0 5 == "IXCMP".toUTF8 || proof.extract 0 4 == "IXBN".toUTF8 ||
-    proof.extract 0 5 == "IXACG".toUTF8
+    proof.extract 0 5 == "IXACG".toUTF8 || proof.extract 0 6 == "IXAUCH".toUTF8
 
 def readProof (addr : Address) : IO Ixon.Proof := do
   let bytes ← StoreIO.toIO (Store.read addr)

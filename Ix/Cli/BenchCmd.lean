@@ -473,12 +473,14 @@ def envProofOptions (p : Cli.Parsed) (backend : String) (envRow : Bool) : Except
     unless (Address.fromString address).isSome do
       throw "--env-root requires a stored aggregate proof address"
   let compression := ((p.flag? "env-compression").map (·.as! String)).getD "plonk"
-  unless compression == "kzg" || compression == "plonk" || compression == "aiur-gl" do
-    throw "--env-compression must be kzg, plonk or aiur-gl"
+  unless compression == "kzg" || compression == "plonk" || compression == "aiur-gl" || compression == "aiur-bn" do
+    throw "--env-compression must be kzg, plonk, aiur-gl or aiur-bn"
   let aiurFlags := #["aiur-gl", "aiur-gl-blake3", "aiur-kzg-key", "aiur-kzg-key-blake3"]
   let aiurLimits := #["aiur-max-log-height", "aiur-quotient-degree"]
   if (aiurFlags ++ aiurLimits).any p.hasFlag && (mode != .compress || compression != "aiur-gl") then
     throw "Aiur compression options require --env-mode compress --env-compression aiur-gl"
+  if (p.hasFlag "aiur-chain" || p.hasFlag "aiur-chain-blake3") && (mode != .compress || compression != "aiur-bn") then
+    throw "--aiur-chain requires --env-mode compress --env-compression aiur-bn"
   let mut aiurArgs := #[]
   if compression == "aiur-gl" then
     for flag in aiurFlags do
@@ -487,6 +489,12 @@ def envProofOptions (p : Cli.Parsed) (backend : String) (envRow : Bool) : Except
     for flag in aiurLimits do
       if let some value := p.flag? flag then
         aiurArgs := aiurArgs ++ #["--" ++ flag, toString (value.as! Nat)]
+  if compression == "aiur-bn" then
+    let some manifest := p.flag? "aiur-chain"
+      | throw "--env-compression aiur-bn requires --aiur-chain"
+    let some pin := p.flag? "aiur-chain-blake3"
+      | throw "--env-compression aiur-bn requires --aiur-chain-blake3"
+    aiurArgs := #["--aiur-chain", manifest.as! String, "--aiur-chain-blake3", pin.as! String]
   return {
     mode := mode
     compression := compression
@@ -517,7 +525,7 @@ def runIxvmEnvProof (ix ixe out env : String) (opts : EnvProofOptions) : IO Bool
   if opts.mode == .compress then
     let finalProof : UInt8 := if opts.compression == "plonk" then 1 else 0
     IO.eprintln s!"[bench] env compression setup: {← Compression.describeSetup opts.development opts.development finalProof}"
-  if opts.compression == "aiur-gl" && opts.mode == .compress then
+  if (opts.compression == "aiur-gl" || opts.compression == "aiur-bn") && opts.mode == .compress then
     let exit ← runTool ix <| #["compress", "aiur-check"] ++ opts.aiurArgs ++
       (if opts.development then #["--dev-srs"] else #[])
     if exit != 0 then return ← failed "Aiur verifier preflight" exit
@@ -764,7 +772,9 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     mode         : String; "ixvm constant rows: execute (default), prove (execution, proving, aggregation and verification), or compress (also KZG compression with development parameters and verification). --env-mode selects whole-environment stages independently."
     "env-mode"   : String; "Whole ixvm environment: execute (default), prove (fresh aggregate proof and manifest-bound verification), or compress (also compression and verification). Independent of constant-row --mode."
     "env-root" : String; "Compression-only diagnostic using this stored aggregate root. Requires --env-mode compress, --ixe and its exact refined --ixes manifest; omits prove/e2e metrics."
-    "env-compression" : String; "With --env-mode compress: plonk (default), kzg, or the first Aiur stage aiur-gl."
+    "env-compression" : String; "With --env-mode compress: plonk (default), kzg, aiur-gl, or the GL-to-BN chain aiur-bn."
+    "aiur-chain" : String; "With --env-compression aiur-bn: trusted chain manifest with artifact/key pins, capacities and resource limits."
+    "aiur-chain-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-chain manifest bytes."
     "aiur-gl" : String; "With --env-compression aiur-gl: trusted CompressGL compiler artifact."
     "aiur-gl-blake3" : String; "Independent BLAKE3 pin for --aiur-gl."
     "aiur-kzg-key" : String; "Independently trusted CompressGL KZG verifier key."

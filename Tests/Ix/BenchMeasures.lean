@@ -273,6 +273,10 @@ def testRunMode : TestSeq := .individualIO "invalid run modes fail before starti
                ["--backend", "ixvm", "--env-mode", "prove", "--no-env-row"],
                ["--backend", "ixvm", "--gpu-device", "0"],
                ["--backend", "ixvm", "--env-mode", "prove", "--env-dev-srs"],
+               ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "aiur-bn"],
+               ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "aiur-bn", "--aiur-chain", "chain.json"],
+               ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "kzg", "--aiur-chain", "chain.json"],
+               ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "aiur-bn", "--aiur-chain", "chain.json", "--aiur-gl", "gl.ixa"],
                ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "unknown"]] do
     let (_, code) ← IO.FS.withIsolatedStreams (benchRunCmd.validate args)
     ok := ok && code == 2
@@ -296,6 +300,11 @@ def testEnvProofOptions : TestSeq :=
       "--gpu-device", "0", "--max-ram", "200"]).any fun opts =>
       opts.compressArgs == #["--dev-kzg-srs"] &&
       opts.hostArgs == #["--gpu-device", "0", "--max-ram", "200"])
+  ++ test "Aiur BN forwards only the independently selected chain manifest"
+    ((options ["--env-mode", "compress", "--env-compression", "aiur-bn",
+      "--aiur-chain", "trusted-chain.json", "--aiur-chain-blake3", "expected-pin", "--env-dev-srs"]).any fun opts =>
+      opts.aiurArgs == #["--aiur-chain", "trusted-chain.json", "--aiur-chain-blake3", "expected-pin"] &&
+      opts.compressArgs == #["--dev-kzg-srs", "--aiur-chain", "trusted-chain.json", "--aiur-chain-blake3", "expected-pin"])
 
 def suite : List TestSeq :=
   [testRows, testCells, testReport, testFftCost, testThroughput, testRowKinds, testCommands,

@@ -24,6 +24,7 @@ pub mod unsigned;
 pub mod catalog;
 mod compression;
 mod aiur_compression;
+mod aiur_chain;
 pub mod formal;
 pub mod lean_ixon;
 pub mod primitives;

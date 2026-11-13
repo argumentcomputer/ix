@@ -15,8 +15,34 @@ use std::{fs, io::Write, path::Path};
 
 const MAGIC: &[u8; 8] = b"IXACGL1\0";
 
+pub(super) fn reset_output(out: &Path) -> Result<(), String> {
+  for name in [
+    "aiur-gl-proof.bin",
+    "aiur-gl-report.json",
+    "aiur-bn-proof.bin",
+    "aiur-bn-report.json",
+  ] {
+    match fs::remove_file(out.join(name)) {
+      Ok(()) => {},
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+      Err(error) => return Err(error.to_string()),
+    }
+  }
+  Ok(())
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_compression_reset_output(
+  out: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match reset_output(Path::new(&out.to_string())) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(error) => LeanIOResult::error_string(&error),
+  }
+}
+
 #[cfg_attr(not(feature = "cuda"), allow(clippy::unnecessary_wraps))]
-fn configure_prover(development: bool) -> Result<(), String> {
+pub(super) fn configure_prover(development: bool) -> Result<(), String> {
   let _ = tracing_subscriber::fmt()
     .with_env_filter(
       tracing_subscriber::EnvFilter::try_from_default_env()
@@ -110,7 +136,11 @@ fn trusted_key(
   }
   Ok((bytes, key, class))
 }
-fn expected(vk: &[u8], claim: &[u8], rows: &[u8]) -> Result<Statement, String> {
+pub(super) fn expected(
+  vk: &[u8],
+  claim: &[u8],
+  rows: &[u8],
+) -> Result<Statement, String> {
   pipeline::check_claim(claim, rows).map_err(|e| e.to_string())?;
   let rows = decode_claims(rows)?;
   if rows.len() != 1 {
@@ -176,6 +206,11 @@ extern "C" fn rs_aiur_compression_run(
   fresh: bool,
 ) -> LeanIOResult<LeanOwned> {
   bytes_result((|| {
+    let out = out.to_string();
+    let out = Path::new(&out);
+    if fresh {
+      reset_output(out)?;
+    }
     configure_prover(development)?;
     let expected = expected(vk.as_bytes(), claim.as_bytes(), rows.as_bytes())?;
     let wrapper =
@@ -195,8 +230,6 @@ extern "C" fn rs_aiur_compression_run(
       rows.as_bytes(),
       raw.as_bytes(),
     )?;
-    let out = out.to_string();
-    let out = Path::new(&out);
     fs::create_dir_all(out).map_err(|e| e.to_string())?;
     if !fresh && fs::read_dir(out).map_err(|e| e.to_string())?.next().is_some()
     {

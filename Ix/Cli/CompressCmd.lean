@@ -20,6 +20,11 @@ structure Options where
   fresh : Bool := false
   aiur : Option AiurCompression.Options := none
 
+private def outputDirectory (opts : Options) (addr : Address) : IO String := do
+  match opts.out with
+  | some path => return path
+  | none => return ((← StoreIO.toIO Store.getHomeDir) / ".ix/compression" / toString addr).toString
+
 /-- Select the proof system independently of its setup policy. -/
 def finalOf : String → Except String UInt8
   | "kzg" => .ok 0
@@ -31,10 +36,9 @@ def finalOf : String → Except String UInt8
 authenticates, and the options are consistent. Returns the setup description. -/
 def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
   if opts.aiur.isSome && (opts.finalProof != 0 || opts.rootVk.isSome || opts.devFinalSrs) then
-    throw (IO.userError "Aiur CompressGL is a KZG stage; --plonk, --groth16, --root-vk and --dev-final-srs are incompatible")
+    throw (IO.userError "Aiur compression currently produces KZG proofs; --plonk, --groth16, --root-vk and --dev-final-srs are incompatible")
   if let some aiur := opts.aiur then
-    let _ ← AiurCompression.preflight aiur.artifact aiur.artifactPin aiur.key aiur.keyPin
-      aiur.maxLogHeight aiur.quotientDegree opts.devKzgSrs
+    let _ ← AiurCompression.preflightOptions aiur opts.devKzgSrs
   Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
 /-- Compress the aggregate root `addr`, persist the compressed proof under the
@@ -51,19 +55,14 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   let ctx ← FormalAggregate.context p
   let statement := FormalAggregate.statementBytes ctx.toKeys wrapper.claim
   Compression.checkClaim (Ix.Claim.ser wrapper.claim) statement
-  let out ← match opts.out with
-    | some path => pure path
-    | none =>
-      let dir := (← StoreIO.toIO Store.getHomeDir) / ".ix/compression"
-      pure (dir / toString addr).toString
+  let out ← outputDirectory opts addr
   if opts.fresh then IO.eprintln s!"[compress] fresh: replacing stage artifacts in {out}"
   if let some aiur := opts.aiur then
     let raw ← FormalAggregate.rawProof .aggr wrapper.proof
     Compression.releaseGpuMemory
-    IO.eprintln s!"Compressing raw aggregate root {addr} with Aiur CompressGL and {setup}."
-    let proof ← AiurCompression.run ctx.aggr.key raw (Ix.Claim.ser wrapper.claim) statement
-      aiur.artifact aiur.artifactPin aiur.key aiur.keyPin out aiur.maxLogHeight aiur.quotientDegree
-      opts.devKzgSrs opts.fresh
+    IO.eprintln s!"Compressing raw aggregate root {addr} with {aiur.label} and {setup}."
+    let proof ← AiurCompression.runOptions aiur ctx.aggr.key raw (Ix.Claim.ser wrapper.claim) statement
+      out opts.devKzgSrs opts.fresh
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     return ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
   let vk ← match opts.rootVk with
@@ -85,11 +84,16 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
 
 /-- Compress a stored aggregate proof and return the compressed proof address. -/
 def compressRoot (p : Cli.Parsed) (addr : Address) (opts : Options) : IO Address := do
+  if opts.fresh && opts.aiur.isSome then AiurCompression.resetOutput (← outputDirectory opts addr)
   let setup ← preflight p opts
   compressProof p addr (← Compression.readProof addr) opts setup
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
+    if p.hasFlag "fresh" && AiurCompression.selected p then
+      if let some out := p.flag? "out" then AiurCompression.resetOutput (out.as! String)
+      else if let some addr := Address.fromString (p.positionalArg! "proof" |>.as! String) then
+        AiurCompression.resetOutput (← outputDirectory {} addr)
     if p.hasFlag "plonk" && p.hasFlag "groth16" then
       throw <| IO.userError "choose at most one of --plonk and --groth16"
     let finalProof : UInt8 := if p.hasFlag "groth16" then 2
@@ -103,8 +107,15 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
       out := (p.flag? "out").map (·.as! String)
       rootVk := (p.flag? "root-vk").map (·.as! String)
       aiur }
-    let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
+    if opts.aiur.isSome then
+      let (addr, wrapper) ← Compression.readProofInput input
+      if opts.fresh then AiurCompression.resetOutput (← outputDirectory opts addr)
+      let setup ← preflight p opts
+      let result ← compressProof p addr wrapper opts setup
+      IO.println (toString result)
+      return 0
+    let setup ← preflight p opts
     let (addr, wrapper) ← Compression.readProofInput input
     let result ← compressProof p addr wrapper opts setup
     IO.println (toString result)
@@ -120,6 +131,8 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
+    "aiur-chain" : String; "Use the trusted GL-to-BN chain manifest with independently pinned artifacts and keys."
+    "aiur-chain-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-chain manifest bytes."
     "aiur-gl" : String; "Use the Aiur CompressGL KZG stage with this independently trusted compiler artifact."
     "aiur-gl-blake3" : String; "Independent BLAKE3 pin for --aiur-gl."
     "aiur-kzg-key" : String; "Independently trusted CompressGL KZG verifier key."
@@ -131,7 +144,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
-    "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
+    "out" : String; "Output directory for stage proofs (default ~/.ix/compression/<root>). Aiur runs require --fresh when the directory is nonempty."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "max-ram" : Nat; "RAM budget in GiB for native root normalization; does not cap Aiur KZG workspaces (default 85% of available memory)."
     "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
@@ -145,6 +158,7 @@ def compressCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     Ix.Cli.AiurCompression.keyCmd;
     Ix.Cli.AiurCompression.checkCmd;
+    Ix.Cli.AiurCompression.chainKeyCmd;
     Ix.Cli.CompressionCmd.layoutCmd;
     Ix.Cli.CompressionCmd.normalizeCmd;
     Ix.Cli.CompressionCmd.setupCmd
