@@ -91,11 +91,11 @@ variable {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {ann : IxC
   {Sl : List CId}
 
 /-- An enumeration's listed constructor relates to its image, which lies in the enumeration. -/
-theorem enum_arg (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
+theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
     (hE : EnumStored p env κ (· ∈ Sl) D) {safe : Bool} {cs : List CId} {ty : Term}
     (hd : p.decl? D = some (.induct safe 0 0 0 ty cs)) (hc : cs[i]? = some c)
     (φ : LevelParam → Nat) :
-    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) (.con c [] [] []) (M.cval (κ c) φ) ∧
+    RelV M κ lpsOf (· ∈ Sl) Ok' (.con c [] [] []) (M.cval (κ c) φ) ∧
       (∀ ρ X, Denotes M.cval env φ ρ (.const (κ c) []) X ↔ X = M.cval (κ c) φ) ∧
       (∀ ρ X, Denotes M.cval env φ ρ (.const (κ D) []) X → M.cval (κ c) φ ∈ˢ X) := by
   obtain ⟨safe', ty', cs', hd', ⟨ciD, hfD, hlD⟩, hcs, _⟩ := hE
@@ -110,9 +110,10 @@ theorem enum_arg (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
   have hlv : LvAt φ (lpsOf c) [] := by
     rw [← hlps]; simp only [ConstantInfo.toConstantVal, hlc]; intro i q h; simp at h
   refine ⟨?_, fun ρ X => den_const0 hfc hlc, fun ρ X hX => ?_⟩
-  · have := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok p ann)
+  · have := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok')
       (c := c) (ls := []) (ps := []) (fs := []) (φ := φ) (Ps := []) (Fs := []) (ρ := fun _ => empty)
       hS hlv hfc rfl rfl .nil .nil .nil
+      (.inl (by rw [← hlps]; simpa [ConstantInfo.toConstantVal] using hlc))
     simpa using this
   · obtain ⟨T, hT, hm⟩ := mem_key M hfc φ ρ
     simp only [ConstantInfo.toConstantVal, htc] at hT
@@ -136,7 +137,8 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     {args : List FoTy} {res : FoTy}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
-    (hAllK : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k)
+    {Ok' : CId → Levels → Prop} (hAllK : ∀ k, AllP M p κ lpsOf (· ∈ Sl) Ok' k)
+    (hOkR : Ok' root [])
     {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
     (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
     (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
@@ -154,14 +156,14 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   rw [hfr] at hf2
   cases hf2
   have hlv : LvAt φ (lpsOf root) [] := by rw [← hlps, hlr]; intro i q h; simp at h
-  have hrelf := hAll.evalConst [] root f φ hf hR.mem hR.ok hlv
+  have hrelf := hAll.evalConst [] root f φ hf hR.mem hOkR hlv
   -- the arguments
   obtain ⟨F, Es, hFd, hEs, rfl⟩ := (den_mkAppN es).mp hX
   obtain rfl : F = M.cval (κ root) φ := (den_const0 hfr hlr).mp hFd
   have hargs : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr} {Es : List V},
       (∀ D, FoTy.enum D ∈ ts → FoTy.enum D ∈ args) → FoArgs p κ ts xs es →
       DenotesList M.cval env φ ρ es Es →
-      RelSlots M κ lpsOf (· ∈ Sl) (Ok p ann) (xs.map .val) Es ∧
+      RelSlots M κ lpsOf (· ∈ Sl) Ok' (xs.map .val) Es ∧
         ∀ (E : BVarIdx → V), Fits M.cval env φ E
           (piTele (ts.map fun t => (t.kexpr κ, { pw := PropWhen.never })) (res.kexpr κ)) Es
           (pushAll Es E) (res.kexpr κ) := by
@@ -172,7 +174,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
       cases hEs with
       | @cons _ _ Y Ys hY hYs =>
       obtain ⟨ih1, ih2⟩ := ih (fun D h => hsub D (List.mem_cons_of_mem _ h)) hYs
-      have hYrel : RelV M κ lpsOf (· ∈ Sl) (Ok p ann) x Y ∧
+      have hYrel : RelV M κ lpsOf (· ∈ Sl) Ok' x Y ∧
           ∀ ρ' Z, Denotes M.cval env φ ρ' (t.kexpr κ) Z → Y ∈ˢ Z := by
         cases hv with
         | nat n =>
@@ -181,7 +183,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
             rw [(hF0.natD ρ' Z).mp hZ]; exact lit_mem M hF0 n⟩
         | @enum D c i safe cs ty hd hc =>
           have hE := hR.enums D (Or.inl (hsub D (List.mem_cons_self ..)))
-          obtain ⟨hrel, hden, hmem⟩ := enum_arg (M := M) (ann := ann) hG.faith hE hd hc φ
+          obtain ⟨hrel, hden, hmem⟩ := enum_arg (M := M) (Ok' := Ok') hG.faith hE hd hc φ
           rw [(hden ρ Y).mp hY]
           exact ⟨hrel, fun ρ' Z hZ => hmem ρ' Z hZ⟩
       refine ⟨.cons (.val hYrel.1) ih1, fun E => ?_⟩
@@ -216,7 +218,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   | @enum D c i safe cs ty hd hc =>
     obtain ⟨c'', ls, ps, rfl, htag⟩ := readback_ctor hrb
     have hE := hR.enums D (Or.inr rfl)
-    obtain ⟨_, hden, _⟩ := enum_arg (M := M) (ann := ann) hG.faith hE hd hc φ
+    obtain ⟨_, hden, _⟩ := enum_arg (M := M) (Ok' := Ok') hG.faith hE hd hc φ
     obtain ⟨_, _, _, hd', _, hcs, _⟩ := hE
     rw [hd] at hd'
     injection hd' with hd''
@@ -250,7 +252,8 @@ theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId �
     (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
     (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
     Denotes M.cval env φ ρ eo X :=
-  rootSound_core (lawsCore_of_laws hL) hG hR (allP_of_facts hL hG hC hT) hA hrun hrb hRT hO φ ρ X hX
+  rootSound_core (lawsCore_of_laws hL) hG hR (allP_of_facts hL hG hC hT) hR.ok hA hrun hrb hRT hO φ
+    ρ X hX
 
 /-- The landed form of `rootSound`, under `SitesOk`. -/
 theorem rootSound_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
@@ -393,8 +396,8 @@ theorem rootSound_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey}
     (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
     Denotes M.cval env φ ρ eo X :=
   rootSound_core hL.core hG hR
-    (allP (fundHyps_of_noCanon hL hG hC hNC (sitesOk_of_res hL.core hG hT))) hA hrun hrb hRT hO
-    φ ρ X hX
+    (allP (fundHyps_of_noCanon hL hG hC hNC (sitesOk_of_res hL.core hG hT))) hR.ok hA hrun hrb hRT
+    hO φ ρ X hX
 
 /-- **`fib`, without canonicity and with no typing hypothesis.** -/
 theorem fibRoot_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey}

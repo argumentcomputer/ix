@@ -1131,7 +1131,11 @@
    "imports": ["IxCC.Src.KernelFront.Annotate", "IxCCGrounding.Direct.Check"]},
   "IxCCTests.Grounding.NoCanon":
   {"path": "IxCCTests/Grounding/NoCanon.lean",
-   "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Corpus.Manifest"]},
+   "imports":
+   ["IxCCTests.Grounding.Run",
+    "IxCCTests.Corpus.Manifest",
+    "IxCCGrounding.CaseLevels",
+    "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
    "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Grounding.NoCanon"]},
@@ -4097,6 +4101,9 @@
   "IxCCGrounding.Runs":
   {"path": "IxCCGrounding/Runs.lean",
    "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Hyps", "IxCCGrounding.Ok"]},
+  "IxCCGrounding.RootInst":
+  {"path": "IxCCGrounding/RootInst.lean",
+   "imports": ["IxCCGrounding.Root", "IxCCGrounding.CaseLevels"]},
   "IxCCGrounding.RootCheck":
   {"path": "IxCCGrounding/RootCheck.lean", "imports": ["IxCCGrounding.Syntax"]},
   "IxCCGrounding.Root":
@@ -4149,7 +4156,9 @@
     "IxCCGrounding.Root",
     "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.CaseBlind",
-    "IxCCGrounding.Adapt678"]},
+    "IxCCGrounding.Adapt678",
+    "IxCCGrounding.CaseLevels",
+    "IxCCGrounding.RootInst"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4187,6 +4196,9 @@
   {"path": "IxCCGrounding/Check.lean",
    "imports":
    ["IxCCGrounding.Ok", "IxCCGrounding.CaseCheck", "IxCCGrounding.Facts"]},
+  "IxCCGrounding.CaseLevels":
+  {"path": "IxCCGrounding/CaseLevels.lean",
+   "imports": ["IxCCGrounding.CaseBlind", "IxCCGrounding.Check"]},
   "IxCCGrounding.CaseFire":
   {"path": "IxCCGrounding/CaseFire.lean",
    "imports": ["IxCCGrounding.Case", "IxCCGrounding.Hyps"]},
@@ -4242,6 +4254,8 @@
     "IxCCGrounding.Direct.Rules",
     "IxCCGrounding.Direct.Sound",
     "IxCCGrounding.Direct.Sites",
+    "IxCCGrounding.CaseLevels",
+    "IxCCGrounding.RootInst",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",

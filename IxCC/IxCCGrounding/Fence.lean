@@ -3,6 +3,8 @@ import IxCCGrounding.Root
 import IxCCGrounding.Direct.Sites
 import IxCCGrounding.CaseBlind
 import IxCCGrounding.Adapt678
+import IxCCGrounding.CaseLevels
+import IxCCGrounding.RootInst
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -795,3 +797,99 @@ example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List
   decideRoot_678 hL hb hBL hG hC hNC hLD hR hD hRT hrun hrb φ ρ X hX
 
 end Conclusions678
+
+/-! **Step A: `case` entries over level-polymorphic families under a verified instance set**
+(`IxCCGrounding.CaseLevels`, `IxCCGrounding.RootInst`). -/
+
+/-- info: 'IxCC.Grounding.substFn_of_agree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.substFn_of_agree
+
+/-- info: 'IxCC.Grounding.majorAt_of_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.majorAt_of_agree
+
+/-- info: 'IxCC.Grounding.caseFires_of_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_agree
+
+/-- info: 'IxCC.Grounding.posIn_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.posIn_spec
+
+/-- info: 'IxCC.Grounding.eval_φAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval_φAt
+
+/-- info: 'IxCC.Grounding.instFacts_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.instFacts_of_check
+
+/-- info: 'IxCC.Grounding.caseLevelAgree_of_inst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseLevelAgree_of_inst
+
+/-- info: 'IxCC.Grounding.CaseFactsRead.facts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.CaseFactsRead.facts
+
+/-- info: 'IxCC.Grounding.caseFactsRead_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFactsRead_of_check
+
+/-- info: 'IxCC.Grounding.noCanonA_of_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.noCanonA_of_noCanon
+
+/-- info: 'IxCC.Grounding.noCanonA_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.noCanonA_of_check
+
+/-- info: 'IxCC.Grounding.caseFires_of_inst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_inst
+
+/-- info: 'IxCC.Grounding.runs_of_sitesIn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runs_of_sitesIn
+
+/-- info: 'IxCC.Grounding.fundHyps_of_inst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundHyps_of_inst
+
+/-- info: 'IxCC.Grounding.rootSound_678A' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678A
+
+/-- info: 'IxCC.Grounding.rootSound_678A_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678A_of_check
+
+/-! **`rootSound_678A` concludes exactly what `rootSound_678` does**: the `example` states
+`rootSound_678`'s hypotheses with `CaseFactsRead` for `CaseFacts`, `NoCanonA` for `NoCanon` and the
+instance premises added, and `rootSound_678`'s conclusion copied word for word; the second, the
+Boolean form, with `noCanonAB` for `noCanonB` and `instCheckB` added. -/
+
+section ConclusionsA
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    {Inst : List (CId × Levels)}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFactsRead p env κ (· ∈ Sl))
+    (hNC : NoCanonA p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hI : InstClosed p Inst) (hU : InstUniform p env κ lpsOf Inst) (hroot : (root, []) ∈ Inst)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678A hL hG hC hNC hLD hI hU hroot hR hT hA hrun hrb hRT hO φ ρ X hX
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    {Inst : List (CId × Levels)}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonAB p env κ Sl = true)
+    (hld : litDefsB env = true) (hinst : instCheckB p env κ lpsOf [root] Inst = true)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678A_of_check hL hchk hnc hld hinst hR hT hA hrun hrb hRT hO φ ρ X hX
+
+end ConclusionsA

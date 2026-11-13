@@ -50,9 +50,10 @@ theorem mem_key (M : Model V env) {n : KKey} {ci : ConstantInfo .anon}
   rwa [find_name hf] at hm
 
 theorem head_mem (M : Model V env) {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
+    {Ok : CId → Levels → Prop}
     {h : IxCC.Src.Head}
     {ls : Levels} {φ : LevelParam → Nat} {k : KKey} {T : KExpr}
-    (hh : HeadAt M κ lpsOf S h ls φ k T) (ρ : BVarIdx → V) :
+    (hh : HeadAt M κ lpsOf S Ok h ls φ k T) (ρ : BVarIdx → V) :
     ∃ TT, Denotes M.cval env φ ρ T TT ∧ M.cval k φ ∈ˢ TT := by
   cases hh with
   | ctor _ _ hf => exact mem_key M hf φ ρ
@@ -147,10 +148,10 @@ theorem apply_pap {h : IxCC.Src.Head} {ls : Levels} {args : List Slot} {X Y : V}
     (hv : RelV M κ lpsOf S Ok (.pap h ls args) X) (hs : RelSlot M κ lpsOf S Ok s Y)
     {v : Nat} {A : V} {B : V → V} (hvz : v ≠ 0) (hX : X ∈ˢ piR v A B) (hY : Y ∈ˢ A)
     (htele : ∀ (φ : LevelParam → Nat) (k : KKey) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr)
-      (As : List V), HeadAt M κ lpsOf S h ls φ k T → Fits M.cval env φ ρ T As σ R →
+      (As : List V), HeadAt M κ lpsOf S Ok h ls φ k T → Fits M.cval env φ ρ T As σ R →
       As.length = args.length → ∃ D Bk m, R = .forallE D Bk m) :
     ∃ (φ : LevelParam → Nat) (k : KKey) (T : KExpr) (As : List V) (ρ σ : BVarIdx → V) (R : KExpr),
-      HeadAt M κ lpsOf S h ls φ k T ∧ RelSlots M κ lpsOf S Ok (args ++ [s]) (As ++ [Y]) ∧
+      HeadAt M κ lpsOf S Ok h ls φ k T ∧ RelSlots M κ lpsOf S Ok (args ++ [s]) (As ++ [Y]) ∧
       Fits M.cval env φ ρ T (As ++ [Y]) σ R ∧ X = As.foldl app (M.cval k φ) ∧
       app X Y = (As ++ [Y]).foldl app (M.cval k φ) := by
   cases hv with
