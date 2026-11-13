@@ -201,36 +201,15 @@ private def qPropWhen (pw : Ix.Kernel.PropWhen) : Lean.Expr :=
   | none => mkConst ``Ix.Kernel.PropWhen.never
   | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qLevelParams ps)
 
-/-- A binder mode, as its constructor (the default `many` included, which is
-the term `{ pw := … }` elaborates to). -/
-private def qBinderMode : Ixon.BinderMode → Lean.Expr
-  | .many => mkConst ``Ixon.BinderMode.many
-  | .borrowed => mkConst ``Ixon.BinderMode.borrowed
-  | .unique => mkConst ``Ixon.BinderMode.unique
-  | .uniqueBorrowed => mkConst ``Ixon.BinderMode.uniqueBorrowed
-  | .once => mkConst ``Ixon.BinderMode.once
-  | .onceBorrowed => mkConst ``Ixon.BinderMode.onceBorrowed
-  | .erased => mkConst ``Ixon.BinderMode.erased
-
-private def qResultMode : Ixon.ResultMode → Lean.Expr
-  | .shared => mkConst ``Ixon.ResultMode.shared
-  | .borrowed => mkConst ``Ixon.ResultMode.borrowed
-  | .unique => mkConst ``Ixon.ResultMode.unique
-  | .uniqueBorrowed => mkConst ``Ixon.ResultMode.uniqueBorrowed
-
-private def qLetMode : Ixon.LetMode → Lean.Expr
-  | .value m => mkApp (mkConst ``Ixon.LetMode.value) (qBinderMode m)
-  | .borrow => mkConst ``Ixon.LetMode.borrow
-
-/-- A let's metadata: its `nonDep` flag and its mode. -/
+/-- A let's metadata: its `nonDep` flag. -/
 private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
-  mkApp3 (mkConst ``Ix.Kernel.LetMeta.mk) (qBool l.nonDep) (qLetMode l.contract)
+  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk) (qBool l.nonDep)
     (mkConst ``Ix.Kernel.LetDisplay.anon)
 
 /-- A pin's binders carry no name (the default, `BinderDisplay.anon`). -/
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp4 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderMode m.contract)
-    (qResultMode m.result) (mkConst ``Ix.Kernel.BinderDisplay.anon)
+  mkApp2 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
+    (mkConst ``Ix.Kernel.BinderDisplay.anon)
 
 private def qLiteral : Ix.Kernel.Literal → Lean.Expr
   | .natVal n => mkApp (mkConst ``Ix.Kernel.Literal.natVal) (mkRawNatLit n)

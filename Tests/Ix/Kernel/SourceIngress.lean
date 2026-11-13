@@ -202,8 +202,8 @@ def refusedWith (message : String) : Except ExprError (List KExpr) → Bool
   | .error (.contract m) => m.startsWith message
   | _ => false
 
-/-- Contract frames: kernel terms carry no modes, so every binder carries the
-default ones; an ordinary frame lowers to the binder it wraps, as the
+/-- Contract frames: kernel terms carry no modes; an ordinary frame lowers to
+the binder it wraps, as the
 compiler lowers it; an annotated frame is refused, as the compiler refuses it;
 a frame not directly around a binder of its kind, or a malformed one, is
 refused. -/
@@ -225,14 +225,14 @@ def contractFrames : TestSeq :=
   let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
   let dag := Ix.Expr.mkApp (framed allO pi) (plain (framed lamO lam))
-  test "a plain binder carries the default modes"
-    (binderOf (conv lam) == some { pw := .never, contract := .many, result := .shared }) ++
+  test "a plain binder carries the never datum"
+    (binderOf (conv lam) == some { pw := .never }) ++
   test "an ordinary lam frame lowers to the plain binder"
     (binderOf (conv (framed lamO lam)) == some { pw := .never }) ++
   test "an ordinary all frame lowers to the plain binder"
     (binderOf (conv (framed allO pi)) == some { pw := .never }) ++
-  test "a plain let carries Lean's nonDep and the default mode"
-    (letOf (conv letE) == some { nonDep := false, contract := .value .many }) ++
+  test "a plain let carries Lean's nonDep"
+    (letOf (conv letE) == some { nonDep := false }) ++
   test "an ordinary let frame lowers to the plain let"
     (letOf (conv (framed letO letE)) == some { nonDep := false }) ++
   test "plain metadata around an ordinary frame is erased"

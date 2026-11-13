@@ -133,7 +133,6 @@ theorem defeqStep_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : Cor
              (hr.defeq (d + 1) _ _ (Expr.Good.instantiate1 (v := .fvar d _) ha'.2 hb'.1 0)
                (Expr.Good.instantiate1 (v := .fvar d _) hb'.2 hb'.1 0))) (fun _ _ => ?_)
            refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
-           refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
            exact SimE.ite Iff.rfl (fun _ => SimE.throw') (fun _ => SimV.pureT true))
         | -- two applications: spine congruence
           (simp only [Expr.app_mapKeys_fold, Expr.getAppArgs_mapKeys, List.length_map,

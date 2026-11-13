@@ -518,13 +518,13 @@ theorem finishBinder_checked (isAll : Bool) (name : Ix.Name) (type body : Ix.Exp
   cases isAll with
   | false =>
     change (do pure (Ix.Kernel.Expr.lam (← (reader before).read targetType.1)
-      (← (reader before).read targetBody.1) (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _
-    rw [readType, readBody, Ix.Kernel.BinderMeta.ofContracts_eq]
+      (← (reader before).read targetBody.1) Ix.Kernel.BinderMeta.leanNever)) = _
+    rw [readType, readBody]
     rfl
   | true =>
     change (do pure (Ix.Kernel.Expr.forallE (← (reader before).read targetType.1)
-      (← (reader before).read targetBody.1) (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _
-    rw [readType, readBody, Ix.Kernel.BinderMeta.ofContracts_eq]
+      (← (reader before).read targetBody.1) Ix.Kernel.BinderMeta.leanNever)) = _
+    rw [readType, readBody]
     rfl
 
 theorem binder_step_checked (isAll : Bool) (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
@@ -691,9 +691,9 @@ theorem projection_step_refuses (compile : Ix.Expr → CompileM (Ixon.Expr × UI
 theorem read_lam {state : BlockState} {type body : Ixon.Expr}
     {target : CExpr md} (read : (reader state).read (.lam type body) = .ok target) :
     ∃ t b, (reader state).read type = .ok t ∧ (reader state).read body = .ok b ∧
-      target = .lam t b (Ix.Kernel.BinderMeta.ofContracts .many .shared) := by
+      target = .lam t b Ix.Kernel.BinderMeta.leanNever := by
   change ((reader state).read type >>= fun t => (reader state).read body >>= fun b =>
-    pure (Ix.Kernel.Expr.lam t b (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _ at read
+    pure (Ix.Kernel.Expr.lam t b Ix.Kernel.BinderMeta.leanNever)) = _ at read
   cases ht : (reader state).read type with
   | error e => rw [ht] at read; cases read
   | ok t =>
@@ -705,9 +705,9 @@ theorem read_all {state : BlockState}
     {type body : Ixon.Expr} {target : CExpr md}
     (read : (reader state).read (.all type body) = .ok target) :
     ∃ t b, (reader state).read type = .ok t ∧ (reader state).read body = .ok b ∧
-      target = .forallE t b (Ix.Kernel.BinderMeta.ofContracts .many .shared) := by
+      target = .forallE t b Ix.Kernel.BinderMeta.leanNever := by
   change ((reader state).read type >>= fun t => (reader state).read body >>= fun b =>
-    pure (Ix.Kernel.Expr.forallE t b (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _ at read
+    pure (Ix.Kernel.Expr.forallE t b Ix.Kernel.BinderMeta.leanNever)) = _ at read
   cases ht : (reader state).read type with
   | error e => rw [ht] at read; cases read
   | ok t =>

@@ -115,9 +115,9 @@ def liftExcept {α} (x : Except String α) : EncM α := match x with
   | .ok a => pure a
   | .error e => throw e
 
-/-- `e` as a record's expression. A binder or a let keeps its contracts
-(`BinderMeta.contract`/`result`, `LetMeta.contract`: a let's `nonDep` flag among
-them), which are committed content of the record the kernel read it from, so a
+/-- `e` as a record's expression. Kernel terms carry no modes, so a binder and a let
+encode at the default ones; a let keeps its `nonDep` flag, which is committed content
+of the record the kernel read it from, so a
 declaration read from a record encodes to that record's expressions; the modeller's
 own binders and lets carry the Lean fragment's. -/
 partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option Nat) :

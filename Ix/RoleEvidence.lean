@@ -437,10 +437,10 @@ def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
   | .app f a => do pure (.app (← b.conv c univs tbl f) (← b.conv c univs tbl a))
   | .lam t bd => do
     pure (.lam (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
-      (Ix.Kernel.BinderMeta.ofContracts .many .shared))
+      Ix.Kernel.BinderMeta.leanNever)
   | .all t bd => do
     pure (.forallE (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
-      (Ix.Kernel.BinderMeta.ofContracts .many .shared))
+      Ix.Kernel.BinderMeta.leanNever)
   | .letE nonDep _ t v bd => do
     pure (.letE (← b.conv c univs tbl t) (← b.conv c univs tbl v) (← b.conv c univs tbl bd)
       { nonDep })

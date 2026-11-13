@@ -623,9 +623,9 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
   | .nat i => do pure (.lit (.natVal (← e.natAt i)))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
   | .lam t b => do
-    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
+    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) BinderMeta.leanNever)
   | .all t b => do
-    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
+    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) BinderMeta.leanNever)
   | .letE nonDep _ t v b => do
     pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { nonDep })
   | .share i =>

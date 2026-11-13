@@ -2369,7 +2369,7 @@ theorem etaCert_inv {env : Env md} {fuel d : Nat} {ty₁ body₁ b : Expr md}
       isDefEqCore mode env fuel d ty₂ ty₁ = .ok true ∧
       isDefEqCore mode env fuel (d + 1) (body₁.instantiate1 (.fvar d ty₁))
         (.app b (.fvar d ty₁)) = .ok true ∧
-      (mode.verifiedChecks = true → m₁.pw = m₂.pw) ∧ m₁.contract = m₂.contract := by
+      (mode.verifiedChecks = true → m₁.pw = m₂.pw) := by
   dsimp only [etaCertFueled] at h
   simp only [etaCert, Bind.bind, Except.bind] at h
   simp only [inferTypeIO_def, whnf_def, defeq_def] at h
@@ -2413,15 +2413,11 @@ theorem etaCert_inv {env : Env md} {fuel d : Nat} {ty₁ body₁ b : Expr md}
   | false => simp [pure, Except.pure] at h
   | true =>
   simp only [↓reduceIte] at h
-  cases hc : (m₁.contract == m₂.contract) with
-  | false => simp [hc, pure, Except.pure] at h
-  | true =>
-  simp only [hc, ↓reduceIte] at h
   by_cases hpw : (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true
   · rw [if_pos hpw] at h
     simp [throw, throwThe, MonadExceptOf.throw] at h
   · rw [if_neg hpw] at h
-    refine ⟨tb, ty₂, fb, m₂, rfl, hwtb, hd1, rfl, ?_, eq_of_beq hc⟩
+    refine ⟨tb, ty₂, fb, m₂, rfl, hwtb, hd1, rfl, ?_⟩
     intro hv
     by_cases he : (m₁.pw == m₂.pw) = true
     · exact eq_of_beq he

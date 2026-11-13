@@ -145,10 +145,8 @@ def Expr.erasePwEq : Expr md → Expr md → Bool
   | .sort u, .sort v => u == v
   | .const n us, .const n' us' => n == n' && us == us'
   | .app f a, .app f' a' => f.erasePwEq f' && a.erasePwEq a'
-  | .lam t b m, .lam t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
-      m.contract == m'.contract && m.result == m'.result
-  | .forallE t b m, .forallE t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
-      m.contract == m'.contract && m.result == m'.result
+  | .lam t b _, .lam t' b' _ => t.erasePwEq t' && b.erasePwEq b'
+  | .forallE t b _, .forallE t' b' _ => t.erasePwEq t' && b.erasePwEq b'
   | .letE t v b l, .letE t' v' b' l' =>
       t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b' && l == l'
   | .lit l, .lit l' => l == l'
@@ -175,10 +173,10 @@ theorem Expr.erasePwEq_iff :
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
   | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihv, ihb, and_assoc]

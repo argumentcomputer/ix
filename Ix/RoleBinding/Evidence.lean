@@ -104,7 +104,7 @@ where
     | .forallE t b _ =>
       pure (.all (← egress uses addrOf t) (← egress uses addrOf b))
     | .letE t v b l =>
-      pure (.letE l.nonDep l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
+      pure (.letE l.nonDep (.value .many) (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
     | .lit (.natVal n) => pure (.nat (← blobOf (natBytes n)))
     | .lit (.strVal s) => pure (.str (← blobOf s.toUTF8))
     | .proj s i x =>

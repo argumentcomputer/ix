@@ -866,9 +866,9 @@ carry none); then both bodies. -/
 def binderRun (pi : Bool) : Ixon.Expr → KExpr → Array (Ixon.Expr × KExpr × BinderMeta) →
     Ixon.Expr × KExpr × Array (Ixon.Expr × KExpr × BinderMeta)
   | e@(.lam t b), x@(.lam ty body _), acc =>
-    if pi then (e, x, acc) else binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts .many .shared))
+    if pi then (e, x, acc) else binderRun pi b body (acc.push (t, ty, BinderMeta.leanNever))
   | e@(.all t b), x@(.forallE ty body _), acc =>
-    if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts .many .shared)) else (e, x, acc)
+    if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.leanNever)) else (e, x, acc)
   | e, x, acc => (e, x, acc)
 
 /-- What the walk knows of the type `T` of the term it walks: the zero-ness of

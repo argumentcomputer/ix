@@ -485,7 +485,7 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Exp
       let (pw, decided) ← datum rc false (depth + 1) b' expPw
       let bad := !decided || bt || bb
       setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
-      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
+      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.leanNever).withPw pw),
         bad)
     | .all t b => do
       let ord ← reserve
@@ -495,7 +495,7 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Exp
       let (pw, decided) ← datum rc true (depth + 1) b'
       let bad := !decided || bt || bb
       setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
-      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
+      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.leanNever).withPw pw),
         bad)
     | .letE _ _ t v b => do
       -- the kernel annotates the type and the value, then the body with the

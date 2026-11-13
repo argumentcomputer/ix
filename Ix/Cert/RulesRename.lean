@@ -658,27 +658,27 @@ theorem defEq_rename (hR : Renaming P f env env') :
         exact ht (by simp only [natOffsetAdd_mapKeys] at h'; exact h'))
       (by rw [natOffsetOf_mapKeys, ha]; rfl) (by rw [natOffsetOf_mapKeys, hb']; rfl)
       (defEq_rename hR h (natOffsetOf_good _ ha hga) (natOffsetOf_good _ hb' hgb))
-  | _, _, _, .forallE hty hbody hpw hc, ha, hb => by
+  | _, _, _, .forallE hty hbody hpw, ha, hb => by
     have h1 := defEq_rename hR hty ha.1 hb.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 hb.1)
       (good_inst_fvar hb.2 hb.1)
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .forallE h1 h2 hpw hc
-  | _, _, _, .lam hty hbody hpw hc, ha, hb => by
+    exact .forallE h1 h2 hpw
+  | _, _, _, .lam hty hbody hpw, ha, hb => by
     have h1 := defEq_rename hR hty ha.1 hb.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 hb.1)
       (good_inst_fvar hb.2 hb.1)
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .lam h1 h2 hpw hc
+    exact .lam h1 h2 hpw
   | _, _, _, .app hf ha', ha, hb => .app (defEq_rename hR hf ha.1 hb.1) (defEq_rename hR ha' ha.2 hb.2)
   | _, _, _, .proj h, ha, hb => .proj (defEq_rename hR h ha.2 hb.2)
-  | _, _, _, .eta htb hwtb hty hbody hpw hc, ha, hb => by
+  | _, _, _, .eta htb hwtb hty hbody hpw, ha, hb => by
     obtain ⟨gtb, itb⟩ := infer_rename hR htb hb
     obtain ⟨gw, rw'⟩ := red_rename hR hwtb gtb
     have h1 := defEq_rename hR hty gw.1 ha.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 ha.1) ⟨hb, ha.1⟩
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .eta itb rw' h1 h2 hpw hc
+    exact .eta itb rw' h1 h2 hpw
   | _, _, _, .proofFast h₁ h₂, ha, hb =>
     .proofFast (by rw [isProofFast_ren hR.rel ha]; exact h₁) (by rw [isProofFast_ren hR.rel hb]; exact h₂)
   | _, _, _, .proofIrrel hta htta hu hu0 htb httb hv hv0, ha, hb => by

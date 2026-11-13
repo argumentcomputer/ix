@@ -8,10 +8,10 @@ An Ixon record keeps its binders' modes in its binder-data section and a
 `let`'s mode in the `let`'s header (`IxC/Ixon/Types/Modes.lean`). The checker
 is mode-blind:
 
-* **The reader writes the default modes.** A definition whose section gives
+* **The reader does not read modes.** A definition whose section gives
   its `all` and `lam` binders non-default modes, read through the certified
-  entry at BLAKE3 (`Ixon.Authenticated.checkBytes`), is installed with the
-  default modes in its type's and value's `BinderMeta`, as is one whose
+  entry at BLAKE3 (`Ixon.Authenticated.checkBytes`), is installed with the same
+  type and value as one without a section (kernel terms carry no modes), as is one whose
   section carries the defaults; a `let` with a mode in its header is read
   like an ordinary one.
 * **Modes do not change a verdict.** A record gets the verdict it gets with
@@ -64,38 +64,36 @@ def allModes : List Ixon.AllMode :=
     fun input => [Ixon.ResultMode.shared, .borrowed, .unique, .uniqueBorrowed].map
       fun result => { input, result }
 
-/-- The modes of a term's binders, in preorder. -/
-def modesOf : Ix.Kernel.Expr .anon → List (Ixon.BinderMode × Ixon.ResultMode)
-  | .lam t b m | .forallE t b m => (m.contract, m.result) :: (modesOf t ++ modesOf b)
-  | .app f a => modesOf f ++ modesOf a
-  | .letE t v b _ => modesOf t ++ modesOf v ++ modesOf b
-  | .proj _ _ e | .fvar _ e => modesOf e
-  | _ => []
-
-/-- An installed definition's type and value modes. -/
-def defnModes : Option (Ix.Kernel.ConstantInfo .anon) →
-    Option (List (Ixon.BinderMode × Ixon.ResultMode) × List (Ixon.BinderMode × Ixon.ResultMode))
-  | some (.defnInfo cv value _) => some (modesOf cv.type, modesOf value)
+/-- An installed definition's type and value. -/
+def defnTerms : Option (Ix.Kernel.ConstantInfo .anon) →
+    Option (Ix.Kernel.Expr .anon × Ix.Kernel.Expr .anon)
+  | some (.defnInfo cv value _) => some (cv.type, value)
   | _ => none
 
-def defaults : Option (List (Ixon.BinderMode × Ixon.ResultMode) × List (Ixon.BinderMode × Ixon.ResultMode)) :=
-  some ([(.many, .shared)], [(.many, .shared)])
+/-- The identity's type and value, read without a section. -/
+def plainTerms : Option (Ix.Kernel.Expr .anon × Ix.Kernel.Expr .anon) :=
+  defnTerms (installed [(address 10, idNat)] (address 10))
 
-/-! ## The reader writes the default modes -/
+/-! ## The reader does not read modes -/
 
 #guard allModes.length == 28
--- without a section, and with the default modes in it
-#guard defnModes (installed [(address 10, idNat)] (address 10)) == defaults
-#guard defnModes (installed [(address 10, idNatWith {} {})] (address 10)) == defaults
+#guard plainTerms.isSome
+-- with the default modes in the section
+#guard defnTerms (installed [(address 10, idNatWith {} {})] (address 10)) == plainTerms
 -- every mode in the section, on the type and on the value
 #guard allModes.all fun m =>
-  defnModes (installed [(address 10, idNatWith m m)] (address 10)) == defaults
+  defnTerms (installed [(address 10, idNatWith m m)] (address 10)) == plainTerms
 -- a `let` with a mode in its header (`borrow`) is read like an ordinary one
 def borrowLet : Ixon.Constant :=
   defn .defn (all (ref 0) (ref 0))
     (lam (ref 0) (.letE false .borrow (ref 0) (var 0) (var 0))) [nat]
+def valueLet : Ixon.Constant :=
+  defn .defn (all (ref 0) (ref 0))
+    (lam (ref 0) (.letE false (.value .many) (ref 0) (var 0) (var 0))) [nat]
 #guard outcomeOf [(address 10, borrowLet)] == none
-#guard defnModes (installed [(address 10, borrowLet)] (address 10)) == defaults
+#guard (defnTerms (installed [(address 10, valueLet)] (address 10))).isSome
+#guard defnTerms (installed [(address 10, borrowLet)] (address 10))
+  == defnTerms (installed [(address 10, valueLet)] (address 10))
 
 /-! ## Modes do not change a verdict -/
 

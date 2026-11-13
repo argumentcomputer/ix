@@ -40,15 +40,15 @@ namespace Ix.LeanIngress
 subsingleton). -/
 theorem binderMeta_named (m : Ix.Kernel.BinderMeta) (d : Squash Ix.Kernel.BinderDisplay) :
     { m with display := d } = m := by
-  obtain ⟨p, c, r, d0⟩ := m
-  show Ix.Kernel.BinderMeta.mk p c r d = Ix.Kernel.BinderMeta.mk p c r d0
+  obtain ⟨p, d0⟩ := m
+  show Ix.Kernel.BinderMeta.mk p d = Ix.Kernel.BinderMeta.mk p d0
   rw [Subsingleton.elim d d0]
 
 /-- A let's metadata with a Lean name: the same let. -/
 theorem letMeta_named (l : Ix.Kernel.LetMeta) (d : Squash Ix.Kernel.Name) :
     { l with display := d } = l := by
-  obtain ⟨n, c, d0⟩ := l
-  show Ix.Kernel.LetMeta.mk n c d = Ix.Kernel.LetMeta.mk n c d0
+  obtain ⟨n, d0⟩ := l
+  show Ix.Kernel.LetMeta.mk n d = Ix.Kernel.LetMeta.mk n d0
   rw [Subsingleton.elim d d0]
 
 /-- A memo entry: the conversion a node was annotated at, and the result. -/

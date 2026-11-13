@@ -114,13 +114,13 @@ theorem defeq_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat}
   | _, _, _, .natSucc h => DefEq.natSucc_sound (defeq_sound hin h)
   | _, _, _, .natOffset hs ht ha hb h =>
     DefEq.natOffset_sound (hin φ) hs ht ha hb (defeq_sound hin h)
-  | _, _, _, .forallE hty hbody hpw _ =>
+  | _, _, _, .forallE hty hbody hpw =>
     DefEq.forallE_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
-  | _, _, _, .lam hty hbody hpw _ =>
+  | _, _, _, .lam hty hbody hpw =>
     DefEq.lam_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .app hf ha => DefEq.app_sound (defeq_sound hin hf) (defeq_sound hin ha)
   | _, _, _, .proj h => DefEq.proj_sound (defeq_sound hin h)
-  | _, _, _, .eta htb hwtb hty hbody hpw _ =>
+  | _, _, _, .eta htb hwtb hty hbody hpw =>
     DefEq.eta_sound (infer_sound hin htb) (red_sound hin hwtb)
       (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .proofFast ha hb => DefEq.proofFast_sound (hin φ) ha hb

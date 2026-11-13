@@ -107,13 +107,13 @@ theorem defeq_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
   | _, _, _, .natSucc h => DefEq.natSucc_sound (defeq_sound hse h)
   | _, _, _, .natOffset hs ht ha hb h =>
     DefEq.natOffset_sound hs ht ha hb (defeq_sound hse h)
-  | _, _, _, .forallE hty hbody hpw _ =>
+  | _, _, _, .forallE hty hbody hpw =>
     DefEq.forallE_sound (defeq_sound hse hty) (defeq_sound hse hbody) hpw
-  | _, _, _, .lam hty hbody hpw _ =>
+  | _, _, _, .lam hty hbody hpw =>
     DefEq.lam_sound (defeq_sound hse hty) (defeq_sound hse hbody) hpw
   | _, _, _, .app hf ha => DefEq.app_sound (defeq_sound hse hf) (defeq_sound hse ha)
   | _, _, _, .proj h => DefEq.proj_sound (defeq_sound hse h)
-  | _, _, _, .eta htb hwtb hty hbody hpw _ =>
+  | _, _, _, .eta htb hwtb hty hbody hpw =>
     DefEq.eta_sound (infer_sound hse htb) (red_sound hse hwtb) (defeq_sound hse hty)
       (defeq_sound hse hbody) hpw
   | _, _, _, .proofFast ha hb => DefEq.proofFast_sound ha hb

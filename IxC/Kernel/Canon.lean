@@ -135,12 +135,10 @@ def canonExprEqFast (m m' : LevelParam → LevelParam) : Expr md → Expr md →
       n == n' && us.map (canonLevel m) == us'.map (canonLevel m')
   | .app f a, .app f' a' =>
       canonExprEqFast m m' f f' && canonExprEqFast m m' a a'
-  | .lam t b bm, .lam t' b' bm' =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
-        bm.contract == bm'.contract && bm.result == bm'.result
-  | .forallE t b bm, .forallE t' b' bm' =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
-        bm.contract == bm'.contract && bm.result == bm'.result
+  | .lam t b _, .lam t' b' _ =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
+  | .forallE t b _, .forallE t' b' _ =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
   | .letE t v b l, .letE t' v' b' l' =>
       canonExprEqFast m m' t t' && canonExprEqFast m m' v v' &&
         canonExprEqFast m m' b b' && l == l'
@@ -168,10 +166,10 @@ theorem canonExprEqFast_iff (m m' : LevelParam → LevelParam) :
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
   | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihv, ihb, and_assoc]

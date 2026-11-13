@@ -363,23 +363,23 @@ theorem defEq_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
         (ht (by simp only [natOffsetAdd_renFV] at h'; exact h')) rfl)
       (by rw [natOffsetOf_renFV, ha]; rfl)
       (by rw [natOffsetOf_renFV, hb]; rfl) (defEq_tr hT h hd)
-  | _, _, _, .forallE hty hbody hpw hc, hd => by
+  | _, _, _, .forallE hty hbody hpw, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)
     simp only [hT.δ_succ hd, hT.renFV_open hd] at h2
-    exact .forallE (defEq_tr hT hty hd) h2 hpw hc
-  | _, _, _, .lam hty hbody hpw hc, hd => by
+    exact .forallE (defEq_tr hT hty hd) h2 hpw
+  | _, _, _, .lam hty hbody hpw, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)
     simp only [hT.δ_succ hd, hT.renFV_open hd] at h2
-    exact .lam (defEq_tr hT hty hd) h2 hpw hc
+    exact .lam (defEq_tr hT hty hd) h2 hpw
   | _, _, _, .app hf ha, hd => .app (defEq_tr hT hf hd) (defEq_tr hT ha hd)
   | _, _, _, .proj h, hd => .proj (defEq_tr hT h hd)
-  | d, _, _, .eta (b := b) (ty₁ := ty₁) htb hwtb hty hbody hpw hc, hd => by
+  | d, _, _, .eta (b := b) (ty₁ := ty₁) htb hwtb hty hbody hpw, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)
     have hap : (Expr.app b (.fvar d ty₁)).renFV ρ = .app (b.renFV ρ) ((Expr.fvar d ty₁).renFV ρ) :=
       rfl
     rw [hap, hT.renFV_fvar_open hd] at h2
     simp only [hT.δ_succ hd, hT.renFV_open hd] at h2
-    exact .eta (infer_tr hT htb hd) (red_tr hT hwtb hd) (defEq_tr hT hty hd) h2 hpw hc
+    exact .eta (infer_tr hT htb hd) (red_tr hT hwtb hd) (defEq_tr hT hty hd) h2 hpw
   | _, _, _, .proofFast h₁ h₂, _ =>
     .proofFast (by rw [isProofFast_renFV]; exact hT.ext.isProofFast_mono h₁)
       (by rw [isProofFast_renFV]; exact hT.ext.isProofFast_mono h₂)
