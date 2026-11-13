@@ -23,9 +23,16 @@ object: `cx_<root>` for each root (the sidecar's names; every sidecar root
 when no `--root` is given) and `cx_init` (`IxCC.X86.Driver` models how they are
 called; `--exe` writes an executable that calls them). With `--cert`, the
 given certificate replaces `produce`'s (so the recheck needs nothing from the
-producer); `--emit-cert` writes the certificate used. `check-cert` runs
-`Recheck.run` on a certificate and reports acceptance or the rejection. A
-certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
+producer). `check-cert` runs its verifier (`checkText`: the text read with every
+text and decode limit, Stage A, `Recheck.run` or `RcReplay.run`) on a certificate's
+text and reports acceptance or the rejection. `compile` runs the same verifier on
+the text it writes: the producer's certificate file text, which the producer has
+already read back through the same reader (`Cert.readBack`), or the given file's
+text; the object comes from that verdict, and `--emit-cert` writes exactly that
+text, so a certificate `compile` writes is one `check-cert` accepts. A
+certificate past a text or decode limit declines the compile with the limit's
+reason (`cert: cert.parse: …`); under `--rc auto` a plain-RC one falls back to
+the immortal policy, as any plain-RC refusal does. A certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
 `check-cert`) is a usage error.
 
 `--exe FILE` also writes a standalone static Linux x86-64 executable that runs
@@ -266,30 +273,80 @@ inductive CliCert where
   | zeroRc (cert : Cert)
   | plainRc (cert : RcReplay.Cert)
 
-def CliCert.toText : CliCert → String
-  | .zeroRc c => c.toText
-  | .plainRc c => c.toText
-
 def CliCert.base : CliCert → Cert
   | .zeroRc c => c
   | .plainRc c => c.base
 
-def readCert (f : FilePath) : ExceptT Err IO Cert := do
-  let text ← (IO.FS.readFile f).toBaseIO >>= fun
-    | .ok t => pure t
-    | .error e => throw (cliErr "cli.read" s!"{f}: {e}")
-  ExceptT.mk (pure (Cert.ofText text))
+/-- The certificate a text is, by the format its envelope names: `RcReplay.Cert.parse` for a
+plain-RC envelope (`["ixcc/rc-cert/2", …]`), `Cert.ofText` otherwise. The reader of `check-cert`
+and `compile --cert`, with every text and decode limit. -/
+def CliCert.ofText (text : String) : Except Err CliCert :=
+  if text.trimAscii.toString.startsWith "[\"ixcc/rc-cert/2\"" then .plainRc <$> RcReplay.Cert.parse text
+  else .zeroRc <$> Cert.ofText text
 
-def readCliCert (f : FilePath) : ExceptT Err IO CliCert := do
-  let text ← (IO.FS.readFile f).toBaseIO >>= fun
+/-- **`check-cert`'s verifier**, on a certificate's text: the text read (`CliCert.ofText`), its
+relevance annotation checked to be the annotator's (Stage A, `checkCanonicalRelevance`), and the
+certificate replayed (`run`, or `RcReplay.run` for a plain-RC certificate). `compile` runs it on
+the text it is about to write, so a successful compile is one whose written certificate this
+accepts. -/
+def checkText (cfg : Config) (inp : Input) (text : String) : Except Err (CliCert × Artifact) := do
+  let cc ← CliCert.ofText text
+  unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
+    throw { stage := .relevance, code := "relevance-canonical",
+            message := "certificate relevance annotation does not match canonical annotator output" }
+  match cc with
+  | .zeroRc cert => return (cc, ← run cfg inp.program cert)
+  | .plainRc cert =>
+    let rcArt ← RcReplay.run cfg inp.program cert
+    return (cc, ← rcArt.toRecheckArtifact cert)
+
+/-- The certificate text `compile` writes under `--rc` mode `rc` (the producer's file text, read
+back through the verifier's reader inside the producer), with the allocation outcomes and, for
+`--rc auto`, the policy it compiled under, and the word hints after admission (stage W1). `--rc auto` follows `RcReplay.produceAuto`: plain RC when
+it is selected and its certificate is produced and replayed, else the immortal policy. -/
+def produceText (rc : RcMode) (cfg : Config) (inp : Input) :
+    Except Err (String × List Xv.Alloc.Outcome × Option String × Array Src.Diag) := do
+  match rc with
+  | .off =>
+    let p ← produceWith cfg inp
+    pure (p.text, p.alloc, none, p.wordHints)
+  | .on =>
+    let p ← RcReplay.produceWith cfg inp
+    pure (p.text, p.alloc, none, p.front.wordHints)
+  | .auto =>
+    let front ← RcReplay.produceFir cfg inp
+    match Own.Plain.selectRcPolicyForSrc front.src front.fir with
+    | .zeroRc =>
+      let p ← RcReplay.finishZeroRcCert cfg front
+      pure (p.text, p.alloc, some "zero-rc", front.wordHints)
+    | .plainRc =>
+      match RcReplay.producePlain cfg inp front with
+      | .ok (p, _) => pure (p.text, p.alloc, some "plain-rc", front.wordHints)
+      | .error reason =>
+        let p ← RcReplay.finishZeroRcCert cfg front
+        pure (p.text, p.alloc,
+          some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})",
+          front.wordHints)
+
+/-- An attempt at a configuration with the middle end's inline-round retry and, if that fails at
+any stage, again without it (each run is the proved composition at its own configuration). -/
+def withRetry {m : Type → Type} [Monad m] [MonadExcept Err m] {α : Type} (cfg : Config)
+    (attempt : Config → m α) : m α :=
+  if cfg.budgets.retryInline then tryCatch (attempt cfg) fun _ => attempt cfg.noRetry
+  else attempt cfg
+
+/-- What `compile` computes without a given certificate, as a pure function: the certificate text
+it writes (`produceText`) and `check-cert`'s verdict on that text (`checkText`), with the retry. -/
+def compileText (rc : RcMode) (cfg : Config) (inp : Input) : Except Err (String × CliCert × Artifact) :=
+  withRetry cfg fun cfg => do
+    let (text, _, _, _) ← produceText rc cfg inp
+    let (cc, a) ← checkText cfg inp text
+    pure (text, cc, a)
+
+def readText (f : FilePath) : ExceptT Err IO String := do
+  (IO.FS.readFile f).toBaseIO >>= fun
     | .ok t => pure t
     | .error e => throw (cliErr "cli.read" s!"{f}: {e}")
-  if text.trimAscii.toString.startsWith "[\"ixcc/rc-cert/2\"" then
-    match RcReplay.Cert.ofText text with
-    | .ok c => pure (.plainRc c)
-    | .error m => throw { stage := .cert, code := "cert.parse", message := m }
-  else
-    ExceptT.mk (pure ((Cert.ofText text).map .zeroRc))
 
 def write (f : FilePath) (write : IO Unit) : ExceptT Err IO Unit := do
   match ← write.toBaseIO with
@@ -312,54 +369,23 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   -- a root whose caller would pass a closure has no meaningful caller: refused
   -- before anything is produced (every producer refuses it too, `produceClosures`)
   if o.command == "compile" then lift fun _ => checkFnParams cfg.names inp.program
-  -- `policy`: the policy `--rc auto` compiled under, reported on standard output
-  -- produce and replay at a configuration; with the middle end's inline-round
-  -- retry first and, if that fails at any stage, without it (each run is the
-  -- proved composition at its own configuration)
+  -- `policy`: the policy `--rc auto` compiled under, reported on standard output.
+  -- The certificate text (the producer's, read back inside the producer, or the given file's),
+  -- then `check-cert`'s verifier on that text (`checkText`): the object and everything written
+  -- come from its verdict on the text that is written. Without a given certificate, with the
+  -- middle end's inline-round retry first and, if that fails at any stage, without it
+  -- (`withRetry`; each run is the proved composition at its own configuration).
   let produceRun := fun (cfg : Config) => show ExceptT Err IO _ from do
-    let ((cliCert, outcomes, policy, hints), tProduce) ← timed do
+    let ((text, outcomes, policy, hints), tProduce) ← timed do
       match o.cert with
-      | some f =>
-        let cc ← readCliCert f
-        unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
-          throw { stage := .relevance, code := "relevance-canonical",
-                  message := "certificate relevance annotation does not match canonical annotator output" }
-        pure (cc, none, none, #[])
+      | some f => pure (← readText f, none, none, #[])
       | none =>
-        match o.rc with
-        | .off =>
-          let p ← lift fun _ => produceWith cfg inp
-          pure (.zeroRc p.cert, some p.alloc, none, p.wordHints)
-        | .on =>
-          let p ← lift fun _ => RcReplay.produceWith cfg inp
-          pure (.plainRc p.cert, some p.alloc, none, p.front.wordHints)
-        | .auto =>
-          -- `RcReplay.produceAuto`'s choice: plain RC when it is selected and its
-          -- certificate is produced and replayed, else the immortal policy
-          let front ← lift fun _ => RcReplay.produceFir cfg inp
-          match Own.Plain.selectRcPolicyForSrc front.src front.fir with
-          | .zeroRc =>
-            let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-            pure (.zeroRc p.cert, some p.alloc, some "zero-rc", front.wordHints)
-          | .plainRc =>
-            match ← lift fun _ => .ok (RcReplay.producePlain cfg inp front) with
-            | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc", front.wordHints)
-            | .error reason =>
-              let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-              pure (.zeroRc p.cert, some p.alloc,
-                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})",
-                front.wordHints)
-    let (a, tRun) ← timed do
-      match cliCert with
-      | .zeroRc cert => lift fun _ => run cfg inp.program cert
-      | .plainRc rcCert =>
-        let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
-        lift fun _ => rcArt.toRecheckArtifact rcCert
-    pure (cliCert, outcomes, policy, tProduce, a, tRun, hints)
-  let (cliCert, outcomes, policy, tProduce, a, tRun, hints) ←
-    if o.cert.isNone && cfg.budgets.retryInline then
-      tryCatch (produceRun cfg) fun _ => produceRun cfg.noRetry
-    else produceRun cfg
+        let (text, outcomes, policy, hints) ← lift fun _ => produceText o.rc cfg inp
+        pure (text, some outcomes, policy, hints)
+    let ((cliCert, a), tRun) ← timed (lift fun _ => checkText cfg inp text)
+    pure (text, cliCert, outcomes, policy, tProduce, a, tRun, hints)
+  let (text, cliCert, outcomes, policy, tProduce, a, tRun, hints) ←
+    if o.cert.isNone then withRetry cfg produceRun else produceRun cfg
   if let some l := Src.Table.wordHintLine hints then IO.eprintln l
   if let some f := o.out then
     write f do
@@ -385,7 +411,8 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     if o.stats then
       IO.println s!"executable: {bytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
         stack {o.layout.stack} bytes, region {o.layout.region} bytes"
-  if let some f := o.emitCert then write f (IO.FS.writeFile f (cliCert.toText ++ "\n"))
+  -- exactly the text that was verified
+  if let some f := o.emitCert then write f (IO.FS.writeFile f text)
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
   for l in o.dumps do
     IO.println s!"== {l} =="
@@ -396,7 +423,7 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   if let some p := policy then IO.println s!"rc policy: {p}"
   if o.stats then
     let cert := cliCert.base
-    let certBytes := cliCert.toText.utf8ByteSize
+    let certBytes := if text.endsWith "\n" then text.utf8ByteSize - 1 else text.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println (envelopeLine inp)
     IO.println s!"kernel: accepted {inp.kernel.acc.records.length} records, \

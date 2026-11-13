@@ -5,9 +5,13 @@ compiled program the code after the branch is a join that captures the `C` param
 every leaf jumps to, so an ownership certificate makes the checker take `C` captured tokens at each
 of the `K` jumps and `C` at the join's declaration: `Own.Plain.Certificate.capturedWork`, which
 admission bounds by `Anf.maxCapturedWork` (2²⁰). A root calls forty-one fan functions (distinct by
-their offsets `o`, so that content addressing keeps them apart), in four parts, with every `xᵢ`
-its own `n`, sums them and returns a pair, so that the program allocates and the automatic
-policy selects plain RC: `fanUnder` (C = 197) is within the limit, `fanOver` (C = 198) past it.
+their offsets `o`, so that content addressing keeps them apart), in twenty-one parts of at most
+two calls, with every `xᵢ` its own `n`, sums them and returns a pair, so that the program allocates
+and the automatic policy selects plain RC: `fanUnder` (C = 197) is within the limit, `fanOver`
+(C = 198) past it. A part is a global of its own because the canonical placement gives `n` one
+`inc` per extra copy passed, each nesting the ownership code one level: two calls nest a part's
+code about 400 deep, within the certificate text's 512 (`Src.Hints.maxJsonDepth`), where the
+four parts of ten or eleven calls this input had first nested 2,208 deep, past it.
 The captured values are parameters, which cost the middle end no node, and the terms are written
 without type-class instances or `if` (primitives, raw literals, `Bool.casesOn`), so that each fan
 function stays within the consumer's expression depth (256: the parameters nest) and the middle
@@ -172,22 +176,57 @@ def fanB39 : fanType% 198 := fanFun% 198 127 390000
 def fanB40 : fanType% 198 := fanFun% 198 127 400000
 def fanB41 : fanType% 198 := fanFun% 198 127 410000
 
-/-- The calls are split in four parts (each a global of its own), so that each global stays within
-the middle end's node budget. -/
-def fanUnder1 (n s : Nat) : Nat := fanCalls% fanA n s 197 1 11
-def fanUnder2 (n s : Nat) : Nat := fanCalls% fanA n s 197 11 21
-def fanUnder3 (n s : Nat) : Nat := fanCalls% fanA n s 197 21 31
-def fanUnder4 (n s : Nat) : Nat := fanCalls% fanA n s 197 31 42
-def fanOver1 (n s : Nat) : Nat := fanCalls% fanB n s 198 1 11
-def fanOver2 (n s : Nat) : Nat := fanCalls% fanB n s 198 11 21
-def fanOver3 (n s : Nat) : Nat := fanCalls% fanB n s 198 21 31
-def fanOver4 (n s : Nat) : Nat := fanCalls% fanB n s 198 31 42
+/-- The calls are split in parts of 2 (each a global of its own), so that each part's ownership
+code nests within the certificate text's depth limit and each global within the node budget. -/
+def fanUnder1 (n s : Nat) : Nat := fanCalls% fanA n s 197 1 3
+def fanUnder2 (n s : Nat) : Nat := fanCalls% fanA n s 197 3 5
+def fanUnder3 (n s : Nat) : Nat := fanCalls% fanA n s 197 5 7
+def fanUnder4 (n s : Nat) : Nat := fanCalls% fanA n s 197 7 9
+def fanUnder5 (n s : Nat) : Nat := fanCalls% fanA n s 197 9 11
+def fanUnder6 (n s : Nat) : Nat := fanCalls% fanA n s 197 11 13
+def fanUnder7 (n s : Nat) : Nat := fanCalls% fanA n s 197 13 15
+def fanUnder8 (n s : Nat) : Nat := fanCalls% fanA n s 197 15 17
+def fanUnder9 (n s : Nat) : Nat := fanCalls% fanA n s 197 17 19
+def fanUnder10 (n s : Nat) : Nat := fanCalls% fanA n s 197 19 21
+def fanUnder11 (n s : Nat) : Nat := fanCalls% fanA n s 197 21 23
+def fanUnder12 (n s : Nat) : Nat := fanCalls% fanA n s 197 23 25
+def fanUnder13 (n s : Nat) : Nat := fanCalls% fanA n s 197 25 27
+def fanUnder14 (n s : Nat) : Nat := fanCalls% fanA n s 197 27 29
+def fanUnder15 (n s : Nat) : Nat := fanCalls% fanA n s 197 29 31
+def fanUnder16 (n s : Nat) : Nat := fanCalls% fanA n s 197 31 33
+def fanUnder17 (n s : Nat) : Nat := fanCalls% fanA n s 197 33 35
+def fanUnder18 (n s : Nat) : Nat := fanCalls% fanA n s 197 35 37
+def fanUnder19 (n s : Nat) : Nat := fanCalls% fanA n s 197 37 39
+def fanUnder20 (n s : Nat) : Nat := fanCalls% fanA n s 197 39 41
+def fanUnder21 (n s : Nat) : Nat := fanCalls% fanA n s 197 41 42
 
 def fanUnder (n s : Nat) : Nat × Nat :=
-  (Nat.add (Nat.add (fanUnder1 n s) (fanUnder2 n s)) (Nat.add (fanUnder3 n s) (fanUnder4 n s)), s)
+  ((Nat.add (Nat.add (Nat.add (Nat.add (fanUnder1 n s) (fanUnder2 n s)) (Nat.add (fanUnder3 n s) (Nat.add (fanUnder4 n s) (fanUnder5 n s)))) (Nat.add (Nat.add (fanUnder6 n s) (fanUnder7 n s)) (Nat.add (fanUnder8 n s) (Nat.add (fanUnder9 n s) (fanUnder10 n s))))) (Nat.add (Nat.add (Nat.add (fanUnder11 n s) (fanUnder12 n s)) (Nat.add (fanUnder13 n s) (Nat.add (fanUnder14 n s) (fanUnder15 n s)))) (Nat.add (Nat.add (fanUnder16 n s) (Nat.add (fanUnder17 n s) (fanUnder18 n s))) (Nat.add (fanUnder19 n s) (Nat.add (fanUnder20 n s) (fanUnder21 n s)))))), s)
+
+def fanOver1 (n s : Nat) : Nat := fanCalls% fanB n s 198 1 3
+def fanOver2 (n s : Nat) : Nat := fanCalls% fanB n s 198 3 5
+def fanOver3 (n s : Nat) : Nat := fanCalls% fanB n s 198 5 7
+def fanOver4 (n s : Nat) : Nat := fanCalls% fanB n s 198 7 9
+def fanOver5 (n s : Nat) : Nat := fanCalls% fanB n s 198 9 11
+def fanOver6 (n s : Nat) : Nat := fanCalls% fanB n s 198 11 13
+def fanOver7 (n s : Nat) : Nat := fanCalls% fanB n s 198 13 15
+def fanOver8 (n s : Nat) : Nat := fanCalls% fanB n s 198 15 17
+def fanOver9 (n s : Nat) : Nat := fanCalls% fanB n s 198 17 19
+def fanOver10 (n s : Nat) : Nat := fanCalls% fanB n s 198 19 21
+def fanOver11 (n s : Nat) : Nat := fanCalls% fanB n s 198 21 23
+def fanOver12 (n s : Nat) : Nat := fanCalls% fanB n s 198 23 25
+def fanOver13 (n s : Nat) : Nat := fanCalls% fanB n s 198 25 27
+def fanOver14 (n s : Nat) : Nat := fanCalls% fanB n s 198 27 29
+def fanOver15 (n s : Nat) : Nat := fanCalls% fanB n s 198 29 31
+def fanOver16 (n s : Nat) : Nat := fanCalls% fanB n s 198 31 33
+def fanOver17 (n s : Nat) : Nat := fanCalls% fanB n s 198 33 35
+def fanOver18 (n s : Nat) : Nat := fanCalls% fanB n s 198 35 37
+def fanOver19 (n s : Nat) : Nat := fanCalls% fanB n s 198 37 39
+def fanOver20 (n s : Nat) : Nat := fanCalls% fanB n s 198 39 41
+def fanOver21 (n s : Nat) : Nat := fanCalls% fanB n s 198 41 42
 
 def fanOver (n s : Nat) : Nat × Nat :=
-  (Nat.add (Nat.add (fanOver1 n s) (fanOver2 n s)) (Nat.add (fanOver3 n s) (fanOver4 n s)), s)
+  ((Nat.add (Nat.add (Nat.add (Nat.add (fanOver1 n s) (fanOver2 n s)) (Nat.add (fanOver3 n s) (Nat.add (fanOver4 n s) (fanOver5 n s)))) (Nat.add (Nat.add (fanOver6 n s) (fanOver7 n s)) (Nat.add (fanOver8 n s) (Nat.add (fanOver9 n s) (fanOver10 n s))))) (Nat.add (Nat.add (Nat.add (fanOver11 n s) (fanOver12 n s)) (Nat.add (fanOver13 n s) (Nat.add (fanOver14 n s) (fanOver15 n s)))) (Nat.add (Nat.add (fanOver16 n s) (Nat.add (fanOver17 n s) (fanOver18 n s))) (Nat.add (fanOver19 n s) (Nat.add (fanOver20 n s) (fanOver21 n s)))))), s)
 
 /-- The reference: forty-one leaves `min s (K - 1) + o` and forty-one sums `C·n`. -/
 def reference (c k n s : Nat) : Nat × Nat :=
