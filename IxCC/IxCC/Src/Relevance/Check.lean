@@ -1444,8 +1444,26 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
         RelError.of "S1" s!"argument {pos} is forced and applied (a case key's minor, Quot.lift's \
           function), but its class ({relName r}) is irrelevant at a reached instance" (some c)
     | none => none
+  -- F3 (and F5 at a `case` key over a subsingleton recursor) binds rule 0's fields from index
+  -- slots or `irr`, with no constructor value to read a record from: rule 0's constructor has a
+  -- record, so that C3 checks the minors against its fields and S4 its sources (without one,
+  -- neither reads anything, and a source contradicting a field's type goes unchecked).
+  let subRecordErrs : List RelError := ch.reached.filterMap fun c =>
+    match elimShape? p c with
+    | some shape =>
+      match p.table.recKindOf shape.recr, p.decl? shape.recr with
+      | some (.subsingleton ..), some (.recr _ _ _ _ _ _ _ _ rules _) =>
+        match rules[0]? with
+        | some rule =>
+          if (ann.ctorRel? rule.ctor).isNone then
+            some (RelError.of "S1" "a subsingleton eliminator's rule 0 is for a constructor \
+              without a constructor record" (some rule.ctor))
+          else none
+        | none => none
+      | _, _ => none
+    | none => none
   readErrs ++ forwardErrs ++ redirectErrs ++ headerErrs ++ denseErrs ++ ruleErrs ++ univErrs ++
-    recordErrs ++ srcsErrs ++ finErrs ++ appliedErrs ++
+    recordErrs ++ srcsErrs ++ finErrs ++ appliedErrs ++ subRecordErrs ++
     if okConsts && okCtors && okReached then []
     else [RelError.of "S1" "non-canonical relevance annotation"]
 
