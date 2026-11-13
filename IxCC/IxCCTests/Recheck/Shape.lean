@@ -291,27 +291,41 @@ def finProof (a : Assert) (fx : Fixture) : IO (Array String) := do
     (withCtor fx.ann Pc fin) [s!"({fx.P.short fin})", "not a constructor of two fields"]
   return #[kept, both, count, "finProof: Words.u8 0 3 4 = 7 (object and SrcEval)"]
 
-/-- `Key.casesOn` (a `case` key) made a root: its instance at the empty profile, where its motive
-lands in `Sort 0` and its minors are proofs, arrives without C5 at it. `appliedAt` refuses it (F5
-would force a minor that is a marker there); C1 also refuses `Key.rec`'s rules at that profile,
-since a rule's body uses its minor at a relevant position. -/
+/-- `Key.casesOn` (a `case` key) at the empty profile, where its motive lands in `Sort 0` and its
+minors are proofs (F5 would force a minor that is a marker there). Made a root, tier S refuses it
+first: the key reaches `Key.rec` at its own levels, whose rules' minor λs are proofs there (C6).
+Its instance alone, given to `checkCanonical` beside the honest program's check output, is refused
+by `appliedAt` alone. -/
 def caseRoot (a : Assert) : IO (Array String) := do
-  let (h, cId, _, _, _, _) ← IxCCTests.Recheck.Erased.keyProg "appliedAt, a case key as a root" true
+  let (h, cId, _, _, _, _) ← IxCCTests.Recheck.Erased.keyProg "appliedAt, a case key" true
   let P := h.inp.program
-  let Pr := { P with roots := P.roots ++ [(P.addr cId, cId)] }
-  let table ← match Src.Table.ofCert h.cfg.table Pr h.cert.table with
+  let table ← match Src.Table.ofCert h.cfg.table P h.cert.table with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"appliedAt: the table refused it: {m}")
-  let Pt := { Pr with table }
-  match Src.Recheck.annotation Pt h.cert.relevance with
-  | .error (.relevance errs) =>
-    let ms := errs.toList.map (·.render Pt)
-    let shown := (ms.find? fun m => m.contains s!"({P.short cId})" && m.contains "is forced and applied").getD ""
-    expect a (!shown.isEmpty) s!"appliedAt, Key.casesOn as a root: not refused by appliedAt: {ms}"
-    return #[s!"appliedAt, Key.casesOn as a root at the empty profile: {shown} ({ms.length} errors)"]
-  | _ => do
-    expect a false "appliedAt, Key.casesOn as a root: not refused at relevance"
-    return #[]
+  let Pt := { P with table }
+  let Pr := { Pt with roots := Pt.roots ++ [(P.addr cId, cId)] }
+  let first ← match Src.Recheck.annotation Pr h.cert.relevance with
+    | .error (.relevance errs) => do
+      let ms := errs.toList.map (·.render Pr)
+      expect a (ms.any (·.contains "[relevance C6]")) s!"appliedAt, Key.casesOn as a root: not refused by C6: {ms}"
+      pure s!"appliedAt, Key.casesOn as a root at the empty profile: refused first by C6 at Key.rec's rules \
+        ({ms.length} errors)"
+    | _ => do
+      expect a false "appliedAt, Key.casesOn as a root: not refused at relevance"
+      pure ""
+  let Pi ← match Src.Relevance.install Pt h.cert.relevance with
+    | .ok Pi => pure Pi
+    | .error m => throw (IO.userError s!"appliedAt: install: {m}")
+  let .ok ch := Src.Relevance.check Pi h.cert.relevance
+    | throw (IO.userError "appliedAt: the honest program is refused")
+  let honest := Src.Relevance.checkCanonical Pi h.cert.relevance ch
+  let ms := (Src.Relevance.checkCanonical Pi h.cert.relevance
+    { ch with instances := ch.instances ++ [(cId, [])] }).map (·.render Pi)
+  expect a (honest.isEmpty && !ms.isEmpty && ms.all fun m =>
+      m.contains s!"({P.short cId})" && m.contains "is forced and applied")
+    s!"appliedAt, Key.casesOn's instance at the empty profile: not refused by appliedAt alone: {ms}"
+  return #[first, s!"appliedAt, Key.casesOn's instance at the empty profile, given to checkCanonical: \
+    {ms.headD ""}"]
 
 /-- A reached eliminator of a subsingleton kind in the committed closure `clo` at root `chosen`:
 its sources given one more (a proof). Through `Recheck.run` the table certificate's `recKind`
