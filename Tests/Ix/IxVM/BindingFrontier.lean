@@ -31,10 +31,10 @@ def anchorFixture (base : Ixon.Env) (table : RoleTable)
     (illTyped : Bool) : Except String AnchorFixture := do
   let refs ← #[Role.nat, .char, .charOfNat,
     if illTyped then .trueIntro else .natZero].mapM (address table)
-  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
+  let typ : Ixon.Expr := .all (.ref 0 #[]) (.ref 1 #[])
   let original : Ixon.Expr := .app (.ref 2 #[]) (.var 1)
-  let erased : Ixon.Expr := .app (.lam default (.ref 0 #[]) original) (.ref 3 #[])
-  let value := .lam default (.ref 0 #[]) erased
+  let erased : Ixon.Expr := .app (.lam (.ref 0 #[]) original) (.ref 3 #[])
+  let value := .lam (.ref 0 #[]) erased
   let (env, helper) := putConstant base (definition typ value refs)
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[refs[0]!, refs[1]!, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (r, key) =>
@@ -49,7 +49,7 @@ def theoremClaim (env : Ixon.Env) (refs : Array Address)
   let typ : Ixon.Expr := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) lhs) rhs
   let value : Ixon.Expr := .app (.app (.ref 2 #[0]) (.ref 1 #[])) rhs
   let (env, target) := putConstant env
-    ⟨.defn ⟨.thm, .safe, 0, typ, value⟩, #[], refs, #[.succ .zero]⟩
+    ⟨.defn ⟨.thm, .safe, {}, 0, typ, value⟩, #[], refs, #[.succ .zero], #[]⟩
   let context ← Ix.ClaimContext.ofEnv env
   return (env, .check { context with bindingAssumed := assumed } target none)
 
@@ -75,7 +75,7 @@ def absentFromConsumer (fixture : AnchorFixture) (env : Ixon.Env)
 def invalidWfEvidence (base : Ixon.Env) (table : RoleTable) : Except String Ixon.Env := do
   let refs ← #[Role.false, .trueIntro].mapM (address table)
   let (env, proof) := putConstant base
-    ⟨.defn ⟨.thm, .safe, 0, .ref 0 #[], .ref 1 #[]⟩, #[], refs, #[]⟩
+    ⟨.defn ⟨.thm, .safe, {}, 0, .ref 0 #[], .ref 1 #[]⟩, #[], refs, #[], #[]⟩
   let wfRole (role : Role) := (IxVM.RoleSpecGen.equations role).any (!·.1.isEmpty)
   need "fixture has no well-founded evidence" (table.evidence.any fun (role, _) => wfRole role)
   rebind env { table with evidence := table.evidence.map fun (role, entries) =>

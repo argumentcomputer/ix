@@ -29,7 +29,7 @@ def putConstant (env : Ixon.Env) (constant : Ixon.Constant) : Ixon.Env × Addres
   ({ env with anonHints := env.anonHints.insert key .opaque }, key)
 
 def definition (typ value : Ixon.Expr) (refs : Array Address) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 0, typ, value⟩, #[], refs, #[]⟩
+  ⟨.defn ⟨.defn, .safe, {}, 0, typ, value⟩, #[], refs, #[], #[]⟩
 
 structure Fixture where
   env : Ixon.Env
@@ -41,9 +41,9 @@ def fixture (base : Ixon.Env) (table : RoleTable) (illTyped : Bool) : Except Str
   let int ← address table .int
   let original ← address table .intNegSucc
   let discarded ← address table (if illTyped then .trueIntro else .natZero)
-  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
-  let value : Ixon.Expr := .lam default (.ref 0 #[])
-    (.app (.lam default (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
+  let typ : Ixon.Expr := .all (.ref 0 #[]) (.ref 1 #[])
+  let value : Ixon.Expr := .lam (.ref 0 #[])
+    (.app (.lam (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
   let (env, helper) := putConstant base (definition typ value #[nat, int, original, discarded])
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[nat, int, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (role, key) =>
@@ -83,8 +83,8 @@ def consumer (table : RoleTable) (fixture : Fixture) (assumed : Bool) :
   let rhs : Ixon.Expr := .app (.ref 6 #[]) (.ref 5 #[])
   let typ : Ixon.Expr := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) lhs) rhs
   let value : Ixon.Expr := .app (.app (.ref 7 #[0]) (.ref 1 #[])) rhs
-  let proofRecord : Ixon.Constant := ⟨.defn ⟨.thm, .safe, 0, typ, value⟩,
-    #[], refs, #[.succ .zero]⟩
+  let proofRecord : Ixon.Constant := ⟨.defn ⟨.thm, .safe, {}, 0, typ, value⟩,
+    #[], refs, #[.succ .zero], #[]⟩
   let (env, target) := putConstant fixture.env proofRecord
   let closure := IxVM.ClaimHarness.closureFromRoots env #[target]
   need "consumer directly references the new anchor" (!closure.contains fixture.anchor)

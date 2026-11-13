@@ -3,61 +3,15 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::needless_pass_by_value)]
 
-use crate::contract::{BinderContract, LetContract, Locality, ValueContract};
+use crate::modes::LetMode;
 use std::sync::Arc;
-
-/// Computational usage, independent of ownership and locality.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum Uses {
-  Erased = 0,
-  Linear = 1,
-  Affine = 2,
-  Many = 3,
-}
-
-impl Uses {
-  pub const fn to_bits(self) -> u8 {
-    self as u8
-  }
-
-  pub const fn from_bits(bits: u8) -> Option<Self> {
-    match bits {
-      0 => Some(Self::Erased),
-      1 => Some(Self::Linear),
-      2 => Some(Self::Affine),
-      3 => Some(Self::Many),
-      _ => None,
-    }
-  }
-}
-
-/// Ownership of a bound or returned value, independent of usage and locality.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum Owned {
-  Unique = 0,
-  Shared = 1,
-}
-
-impl Owned {
-  pub const fn to_bits(self) -> u8 {
-    self as u8
-  }
-
-  pub const fn from_bits(bits: u8) -> Option<Self> {
-    match bits {
-      0 => Some(Self::Unique),
-      1 => Some(Self::Shared),
-      _ => None,
-    }
-  }
-}
 
 /// Expression in the Ixon format.
 ///
 /// This is the alpha-invariant representation of Lean expressions.
-/// Names are stripped, binder info is stored in metadata.
+/// Names are stripped, binder info is stored in metadata. A binder's mode is
+/// in the record's binder-data section (`BinderNode`), a `Let`'s in its
+/// header (`Let`'s [`LetMode`]).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Expr {
   /// Sort/Type at a universe level (index into Constant.univs table)
@@ -79,12 +33,12 @@ pub enum Expr {
   Nat(u64),
   /// Application: (function, argument)
   App(Arc<Expr>, Arc<Expr>),
-  /// Lambda: (input contract, binder type, body)
-  Lam(BinderContract, Arc<Expr>, Arc<Expr>),
-  /// Forall/Pi: (input contract, independent result contract, domain, body)
-  All(BinderContract, ValueContract, Arc<Expr>, Arc<Expr>),
-  /// Ordinary let: (dependency/input contract, type, value, body)
-  Let(LetContract, Arc<Expr>, Arc<Expr>, Arc<Expr>),
+  /// Lambda: (binder type, body)
+  Lam(Arc<Expr>, Arc<Expr>),
+  /// Forall/Pi: (domain, body)
+  All(Arc<Expr>, Arc<Expr>),
+  /// Let: (non-dependent, mode, type, value, body)
+  Let(bool, LetMode, Arc<Expr>, Arc<Expr>, Arc<Expr>),
   /// Reference to shared subexpression in MutualBlock.sharing[idx]
   Share(u64),
 }
@@ -101,7 +55,7 @@ impl Expr {
   pub const FLAG_APP: u8 = 0x7;
   pub const FLAG_LAM: u8 = 0x8;
   pub const FLAG_ALL: u8 = 0x9;
-  pub const FLAG_LET: u8 = 0xA; // size holds dependency and borrow flags
+  pub const FLAG_LET: u8 = 0xA; // size is `LetMode::header(non_dep, mode)`
   pub const FLAG_SHARE: u8 = 0xB;
 
   pub fn sort(univ_idx: u64) -> Arc<Self> {
@@ -137,71 +91,38 @@ impl Expr {
   }
 
   pub fn lam(ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Self::lam_mode(Uses::Many, ty, body)
-  }
-
-  pub fn lam_mode(uses: Uses, ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Self::lam_contract(BinderContract::plain(uses), ty, body)
-  }
-
-  pub fn lam_contract(
-    contract: BinderContract,
-    ty: Arc<Expr>,
-    body: Arc<Expr>,
-  ) -> Arc<Self> {
-    Arc::new(Expr::Lam(contract, ty, body))
+    Arc::new(Expr::Lam(ty, body))
   }
 
   pub fn all(ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Self::all_mode(Uses::Many, Owned::Shared, ty, body)
+    Arc::new(Expr::All(ty, body))
   }
 
-  pub fn all_mode(
-    uses: Uses,
-    owned: Owned,
-    ty: Arc<Expr>,
-    body: Arc<Expr>,
-  ) -> Arc<Self> {
-    Self::all_contract(
-      BinderContract::plain(uses),
-      ValueContract { owned, locality: Locality::Unrestricted },
-      ty,
-      body,
-    )
-  }
-
-  pub fn all_contract(
-    contract: BinderContract,
-    result: ValueContract,
-    ty: Arc<Expr>,
-    body: Arc<Expr>,
-  ) -> Arc<Self> {
-    Arc::new(Expr::All(contract, result, ty, body))
-  }
-
+  /// A `Let` at the default mode.
   pub fn let_(
     non_dep: bool,
     ty: Arc<Expr>,
     val: Arc<Expr>,
     body: Arc<Expr>,
   ) -> Arc<Self> {
-    Self::let_contract(LetContract::plain(non_dep), ty, val, body)
+    Self::let_mode(non_dep, LetMode::default(), ty, val, body)
   }
 
-  pub fn let_contract(
-    contract: LetContract,
+  pub fn let_mode(
+    non_dep: bool,
+    mode: LetMode,
     ty: Arc<Expr>,
     val: Arc<Expr>,
     body: Arc<Expr>,
   ) -> Arc<Self> {
-    Arc::new(Expr::Let(contract, ty, val, body))
+    Arc::new(Expr::Let(non_dep, mode, ty, val, body))
   }
 
   pub fn share(idx: u64) -> Arc<Self> {
     Arc::new(Expr::Share(idx))
   }
 
-  /// Direct expression children, preserving contracts on their parent.
+  /// Direct expression children.
   pub fn children(&self) -> Vec<&Arc<Self>> {
     match self {
       Self::Sort(_)
@@ -212,10 +133,8 @@ impl Expr {
       | Self::Nat(_)
       | Self::Share(_) => vec![],
       Self::Prj(_, _, e) => vec![e],
-      Self::App(a, b) | Self::Lam(_, a, b) | Self::All(_, _, a, b) => {
-        vec![a, b]
-      },
-      Self::Let(_, a, b, c) => vec![a, b, c],
+      Self::App(a, b) | Self::Lam(a, b) | Self::All(a, b) => vec![a, b],
+      Self::Let(_, _, a, b, c) => vec![a, b, c],
     }
   }
 
@@ -234,7 +153,7 @@ impl Expr {
   pub fn lam_telescope_count(&self) -> u64 {
     let mut count = 0u64;
     let mut curr = self;
-    while let Expr::Lam(_, _, body) = curr {
+    while let Expr::Lam(_, body) = curr {
       count += 1;
       curr = body.as_ref();
     }
@@ -245,7 +164,7 @@ impl Expr {
   pub fn all_telescope_count(&self) -> u64 {
     let mut count = 0u64;
     let mut curr = self;
-    while let Expr::All(_, _, _, body) = curr {
+    while let Expr::All(_, body) = curr {
       count += 1;
       curr = body.as_ref();
     }
@@ -272,11 +191,11 @@ impl Expr {
     };
     match self {
       Self::Prj(_, _, a) => detach(a),
-      Self::App(a, b) | Self::Lam(_, a, b) | Self::All(_, _, a, b) => {
+      Self::App(a, b) | Self::Lam(a, b) | Self::All(a, b) => {
         detach(a);
         detach(b);
       },
-      Self::Let(_, a, b, c) => {
+      Self::Let(_, _, a, b, c) => {
         detach(a);
         detach(b);
         detach(c);
@@ -333,21 +252,6 @@ pub mod tests {
     Let,
   }
 
-  fn arbitrary_value_contract(g: &mut Gen) -> ValueContract {
-    ValueContract {
-      owned: if bool::arbitrary(g) { Owned::Unique } else { Owned::Shared },
-      locality: if bool::arbitrary(g) {
-        Locality::Local
-      } else {
-        Locality::Unrestricted
-      },
-    }
-  }
-
-  fn arbitrary_binder_contract(g: &mut Gen, uses: Uses) -> BinderContract {
-    BinderContract { uses, value: arbitrary_value_contract(g) }
-  }
-
   /// Generate an arbitrary Expr using pointer-tree technique (no stack overflow)
   pub fn arbitrary_expr(g: &mut Gen) -> Arc<Expr> {
     use crate::tests::next_case;
@@ -371,7 +275,8 @@ pub mod tests {
         (10, Case::Let),
       ];
 
-      match next_case(g, &gens) {
+      let case = next_case(g, &gens);
+      match case {
         Case::Var => unsafe {
           ptr::write(ptr, Expr::Var(gen_range(g, 0..16) as u64));
         },
@@ -419,51 +324,20 @@ pub mod tests {
           stack.push(a_ptr);
           stack.push(f_ptr);
         },
-        Case::Lam => {
-          let uses = match gen_range(g, 0..4) {
-            0 => Uses::Erased,
-            1 => Uses::Linear,
-            2 => Uses::Affine,
-            _ => Uses::Many,
-          };
+        Case::Lam | Case::All => {
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
           let (ty_ptr, body_ptr) = (
             Arc::get_mut(&mut ty).unwrap() as *mut Expr,
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
-          unsafe {
-            ptr::write(
-              ptr,
-              Expr::Lam(arbitrary_binder_contract(g, uses), ty, body),
-            );
-          }
-          stack.push(body_ptr);
-          stack.push(ty_ptr);
-        },
-        Case::All => {
-          let uses = match gen_range(g, 0..4) {
-            0 => Uses::Erased,
-            1 => Uses::Linear,
-            2 => Uses::Affine,
-            _ => Uses::Many,
+          let e = if matches!(case, Case::Lam) {
+            Expr::Lam(ty, body)
+          } else {
+            Expr::All(ty, body)
           };
-          let mut ty = Arc::new(Expr::Var(0));
-          let mut body = Arc::new(Expr::Var(0));
-          let (ty_ptr, body_ptr) = (
-            Arc::get_mut(&mut ty).unwrap() as *mut Expr,
-            Arc::get_mut(&mut body).unwrap() as *mut Expr,
-          );
           unsafe {
-            ptr::write(
-              ptr,
-              Expr::All(
-                arbitrary_binder_contract(g, uses),
-                arbitrary_value_contract(g),
-                ty,
-                body,
-              ),
-            );
+            ptr::write(ptr, e);
           }
           stack.push(body_ptr);
           stack.push(ty_ptr);
@@ -479,7 +353,8 @@ pub mod tests {
           stack.push(val_ptr);
         },
         Case::Let => {
-          let uses = Uses::from_bits(gen_range(g, 0..4) as u8).unwrap();
+          let non_dep = bool::arbitrary(g);
+          let mode = LetMode::arbitrary(g);
           let mut ty = Arc::new(Expr::Var(0));
           let mut val = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
@@ -489,23 +364,7 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(
-              ptr,
-              Expr::Let(
-                LetContract {
-                  non_dep: bool::arbitrary(g),
-                  kind: if bool::arbitrary(g) {
-                    crate::contract::LetKind::BorrowShared
-                  } else {
-                    crate::contract::LetKind::Value
-                  },
-                  binder: arbitrary_binder_contract(g, uses),
-                },
-                ty,
-                val,
-                body,
-              ),
-            );
+            ptr::write(ptr, Expr::Let(non_dep, mode, ty, val, body));
           }
           stack.push(body_ptr);
           stack.push(val_ptr);
@@ -637,7 +496,7 @@ pub mod tests {
       Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
     let mut buf = Vec::new();
     put_expr(expr.as_ref(), &mut buf);
-    assert_eq!(buf.len(), 8);
+    assert_eq!(buf.len(), 5);
     assert!(expr_roundtrip(&expr));
   }
 
@@ -665,7 +524,7 @@ pub mod tests {
       }
       let mut buf = Vec::new();
       put_expr(expr.as_ref(), &mut buf);
-      assert_eq!(buf.len(), tag_bytes + 2 * (n as usize) + 1);
+      assert_eq!(buf.len(), tag_bytes + (n as usize) + 1);
       assert!(expr_roundtrip(&expr));
     }
   }

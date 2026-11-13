@@ -154,14 +154,14 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
   unfold buildCompiledMutualBlock at built
   have standalone : standaloneMutConstInfo? #[Ixon.MutConst.indc ind] = none := rfl
   simp only [standalone] at built
-  obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+  obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
   cases Except.ok.inj returned
   dsimp only at shape ctorShapes roots
   have rootsList := EmissionBlocks.family_roots ind
   rw [← rootsList] at roots
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits
-    (.muts #[.indc ind]) block hb roots
-  refine ⟨cleanD, extends_trans kept.2 growth, ⟨_, rfl⟩, ?_, read⟩
+    (.muts #[.indc ind]) _ hb roots
+  refine ⟨cleanD, extends_trans kept.2 growth, ⟨_, rfl⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   change SharingRoots.erase block.info = _
   rw [erased, shape]
   exact EmissionBlocks.inductive_erase _ _ _ ctorShapes
@@ -192,7 +192,7 @@ theorem singleton_headers (d : Ix.Ind) :
   unfold buildCompiledMutualBlock at built
   have standalone : standaloneMutConstInfo? #[Ixon.MutConst.indc ind] = none := rfl
   simp only [standalone] at built
-  obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+  obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
   cases Except.ok.inj returned
   obtain ⟨erased, _, _, _⟩ := SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb
   obtain ⟨target, info, _, lvls, params, indices, ctors⟩ := InductiveReading.erase_singleton erased

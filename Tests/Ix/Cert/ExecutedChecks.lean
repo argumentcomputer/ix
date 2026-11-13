@@ -2,6 +2,7 @@ import Ix.Cert.CompileCorrect
 import Ix.KernelFidelity.Reader
 import Ix.Compile.SourceContract.Transport
 import Tests.Ix.Kernel.SourceIngressStep
+import Ix.IxVM.ClaimHarness
 
 /-! # `CompileCorrect.checked`'s premises, executed (part of `cert-statement`)
 
@@ -22,6 +23,13 @@ inputs it must refuse (the other two have planted cases in `cert-statement`). -/
 
 namespace Tests.Ix.Cert.ExecutedChecks
 
+/-- `env` with the compile's binder-data annotator
+(`IxVM.ClaimHarness.withKernelAnnotator`): its records carry the decided sections the
+default role table's records carry, so a constant the table binds compiles to its bound
+address. -/
+def annotated (env : Ix.Environment) : IO Ix.Environment :=
+  IxVM.ClaimHarness.withKernelAnnotator env
+
 /-- The roots whose closures the premises are run on. -/
 def roots : List Lean.Name := [``Nat.add, ``List.length]
 
@@ -33,7 +41,7 @@ def premisesAt (leanEnv : Lean.Environment) (root : Lean.Name) :
   let t0 ← IO.monoMsNow
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[root])
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
-  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let env ← annotated (Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray)
   let sub := Ix.Cert.closure env [Ix.Name.fromLeanName root]
   let .ok t := Ix.Kernel.Reader.defaultTable
     | return (#[s!"{root}: the default role table does not read"], #[])
@@ -77,7 +85,7 @@ one of the artifact checks `compileChecked` runs). On the compiled closure of
 def evidenceRefusals (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``List.length])
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
-  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let env ← annotated (Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray)
   let .ok t := Ix.Kernel.Reader.defaultTable
     | return (#["evidence refusals: the default role table does not read"], #[])
   let .ok (ixe, _) := Ix.Cert.compileChecked t env

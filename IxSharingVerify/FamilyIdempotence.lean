@@ -69,8 +69,8 @@ theorem normalizeFamily_congr {cfg : Config} {layout : ShareLayout} {limits : Li
   rw [written1, written2] at written
   have infoEq := Except.ok.inj written
   rw [output1, output2]
-  change Ixon.Constant.mk firstInfo leftResult.result.sharing first.refs first.univs =
-    Ixon.Constant.mk secondInfo rightResult.result.sharing second.refs second.univs
+  change Ixon.Constant.mk firstInfo leftResult.result.sharing first.refs first.univs #[] =
+    Ixon.Constant.mk secondInfo rightResult.result.sharing second.refs second.univs #[]
   rw [infoEq, show leftResult.result.sharing = rightResult.result.sharing from sharing, refs, univs]
 
 /-- Byte equality follows from equality of the entire output constant;
@@ -128,8 +128,11 @@ theorem normalizeFamily_repeat_of_expand {cfg : Config} {layout : ShareLayout} {
   dsimp only
   rw [secondWrite]
   simp only [pure, Except.pure]
-  change Except.ok ({ middle with info := middle.info, sharing := first.result.sharing }, second) = .ok (middle, second)
-  rw [← sharing]
+  -- the normalizer writes the empty binder-data section, as the first run did
+  have noBinders : middle.binders = #[] := by rw [output]
+  change Except.ok ({ middle with info := middle.info, sharing := first.result.sharing, binders := #[] },
+    second) = .ok (middle, second)
+  rw [← sharing, ← noBinders]
 
 end Ix.Sharing.Family
 

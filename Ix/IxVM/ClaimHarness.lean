@@ -7,7 +7,6 @@ public import Ix.CompileCertified
 public import Ix.Common
 public import Ix.PrimAddrs
 public import Ix.ClaimContext
-public import Ix.IxVM.PwHints
 public import Ix.IxVM.Model
 public import Ix.IxVM.ClaimSeeds
 
@@ -55,6 +54,7 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
   let closure := Ix.Kernel.Reader.RoleData.closure
   let records := (← Ix.Kernel.Reader.preludeRecords) ++ (← Ix.Kernel.Reader.evidenceRecords)
     ++ (← Ix.Kernel.Reader.decodeCommitted "closure" closure)
+    ++ (← Ix.Kernel.Reader.decodeCommitted "inert" Ix.Kernel.Reader.RoleData.inert)
   let blobs ← (Ix.Kernel.Reader.RoleData.blobs ++ Ix.Kernel.Reader.RoleData.closureBlobs).mapM
     fun (hex, bytes) => do
       let some a := Ix.Kernel.Reader.addressOfHex hex
@@ -83,7 +83,7 @@ def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env 
   let table? := Ix.Kernel.RoleTable.ofBytes bytes
   let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
-    let c : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+    let c : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
   for (a, c) in records do
     if let .axio _ := c.info then
@@ -188,6 +188,20 @@ def withModeledRecursors (roots : Array Lean.Name) (leanEnv : Lean.Environment) 
     roots := roots ++ more
   return roots
 
+/-- `env`, a canonicalized compile input (`Ix.CompileM.canonInput`), with the compile's
+binder-data annotator over it, installed as `Ix.CompileM.compileCertifiedPrepared` installs
+it: a compile of `env` (`Ix.Cert.compileUnchecked`, `compileReport`) then writes each
+record's binder data, as `ix compile` does. Fails if IxC's environment does not install. -/
+def withKernelAnnotator (env : Ix.Environment) (workers : Nat := 32) : IO Ix.Environment := do
+  let pre ← match Ix.Compile.KernelAnnotate.prelude? with
+    | .ok pre => pure pre
+    | .error e => throw (IO.userError s!"binder data: IxC's prelude is not installed: {e}")
+  match ← Ix.Compile.KernelAnnotate.installInput env pre workers with
+  | .ok installed =>
+    pure { env with
+      binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env (Task.pure (.ok installed))) }
+  | .error e => throw (IO.userError s!"binder data: IxC's environment is not installed: {e}")
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
@@ -232,7 +246,7 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
 
 /-- Content address of a synthesized projection wrapper. -/
 def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
-  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[]⟩ : Ixon.Constant))
+  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant))
 
 /-- Walk the Constant ref-graph from `roots` to compute the set of
     addresses needed to type-check them. -/
@@ -393,8 +407,7 @@ def closureFrom (env : Ixon.Env) (target : Address)
     address the claim variant names (plus any caller-supplied
     `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
-    (trees : Std.HashMap Address Ix.AssumptionTree := {})
-    (profiles : Std.HashMap Address ByteArray := {}) :
+    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
     Except String ClaimWitness := do
   let env ← withDefaultRoleBinding env
   let claimBytes := Ix.Claim.ser claim
@@ -434,13 +447,6 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .resource root profile =>
-    ioBuffer := addEntries env (fun _ => true) ioBuffer
-    ioBuffer ← seedTreeAt root trees ioBuffer
-    let some bytes := profiles[profile]? <|> env.blobs[profile]?
-      | throw s!"no resource profile supplied for {profile}"
-    unless Address.blake3 bytes == profile do throw "resource profile hash mismatch"
-    ioBuffer := ioBuffer.extend 5 (addrKey profile) (bytes.data.map .ofUInt8)
   | .reveal comm _info =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
@@ -453,8 +459,6 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
-  -- the binder data the conversion reads (`IxVM.PwHints`)
-  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
@@ -552,7 +556,6 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   ioBuffer := addEntries env closure.contains ioBuffer
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
-  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
@@ -570,7 +573,6 @@ def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWi
     | throw "verify_const: the environment carries no role binding"
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains (seedBinding env default)
-  let ioBuffer ← (·.1) <$> IxVM.PwHints.annotate ioBuffer env
   return { funcName := `verify_const
            input := addrKey binding.address ++ addrKey target, inputIOBuffer := ioBuffer }
 

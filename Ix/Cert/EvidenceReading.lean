@@ -159,12 +159,24 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
   | nat i =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
-    cases hb : b.blobAt c i with
-    | error err => rw [hb] at h; cases h
-    | ok bs =>
-      rw [hb] at h
+    cases hn : b.natAt c i with
+    | error err => rw [hn] at h; cases h
+    | ok n =>
+      rw [hn] at h
       cases h
-      simp [convExpr, hblob i bs hb, bind, Except.bind, pure, Except.pure]
+      have read : e.natAt i = .ok n := by
+        unfold Bundle.natAt at hn
+        unfold ECx.natAt
+        cases hb : b.blobAt c i with
+        | error err => rw [hb] at hn; cases hn
+        | ok bs =>
+          rw [hb] at hn
+          rw [hblob i bs hb]
+          by_cases hc : Ix.Kernel.Reader.canonicalNatural bs = true
+          · simp only [bind, Except.bind, hc, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at hn ⊢
+            exact hn
+          · simp [bind, Except.bind, hc, throw, throwThe, MonadExceptOf.throw] at hn
+      simp [convExpr, read, bind, Except.bind, pure, Except.pure]
   | app a d iha ihd =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
@@ -178,7 +190,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hd] at h
         cases h
         simp [convExpr, iha pa ha, ihd pd hd, bind, Except.bind, pure, Except.pure]
-  | lam ct t bd iht ihb =>
+  | lam t bd iht ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with
@@ -191,7 +203,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hb] at h
         cases h
         simp [convExpr, iht pt ht, ihb pb hb, bind, Except.bind, pure, Except.pure]
-  | all ct r t bd iht ihb =>
+  | all t bd iht ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with
@@ -204,7 +216,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hb] at h
         cases h
         simp [convExpr, iht pt ht, ihb pb hb, bind, Except.bind, pure, Except.pure]
-  | letE ct t v bd iht ihv ihb =>
+  | letE nd m t v bd iht ihv ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with

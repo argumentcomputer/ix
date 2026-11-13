@@ -1,4 +1,5 @@
 import Ix.CompileM
+import IxC.Ixon.Verify.WireCheck
 import IxSharingVerify.CanonicalProduction
 import IxSharingVerify.BlockTables
 
@@ -622,7 +623,7 @@ theorem buildConstantWithSharing_wireWF_headers {limits : Ix.Sharing.Exact.Limit
   obtain ⟨r, info', hr, -, hw, rfl⟩ := buildConstantWithSharing_eq_ok h
   obtain ⟨hentries, hroots, hcapacity, -, -⟩ := Tiered.canonicalSharingTiered_format hr
   refine ⟨withRootExprs_wireWF_headers hw hinfo ?_, hcapacity, ?_, htables.refsCount,
-    htables.refs, htables.univsCount, htables.univs⟩
+    htables.refs, htables.univsCount, htables.univs, Ixon.bindersWireWF_empty⟩
   · intro expr hmem
     exact hroots expr (by simpa using hmem)
   · intro expr hmem
@@ -745,6 +746,11 @@ theorem run_read_eq (compileEnv : Ix.CompileM.CompileEnv)
     Ix.CompileM.CompileM.run compileEnv blockEnv state read =
       .ok ((compileEnv, blockEnv), state) := rfl
 
+theorem run_getBlockEnv_eq (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state Ix.CompileM.getBlockEnv =
+      .ok (blockEnv, state) := rfl
+
 theorem run_liftSharing_eq (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (x : Except Ix.CompileM.CompileError Ixon.Constant) :
@@ -783,13 +789,27 @@ theorem finishConstantWithSharing_run
     Ix.CompileM.CompileM.run compileEnv blockEnv state
         (Ix.CompileM.finishConstantWithSharing info blockMeta) =
       match Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
-          state.refs state.univs with
+          state.refs state.univs >>=
+          Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] with
       | .ok block => .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state)
       | .error e => .error e := by
   simp only [Ix.CompileM.finishConstantWithSharing, Ix.CompileM.buildBlockConstant,
-    run_bind, run_getBlockState_eq, run_read_eq, run_liftSharing_eq]
+    run_bind, run_getBlockState_eq, run_getBlockEnv_eq, run_read_eq, run_liftSharing_eq]
   cases Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
-    state.refs state.univs <;> rfl
+    state.refs state.univs >>=
+    Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] <;> rfl
+
+/-- A record given its section is in the wire domain when the record without it is. -/
+theorem withBinderSection_wireWF {annotator? : Option Ix.BinderAnnotator} {names : Array Ix.Name}
+    {c₀ c : Ixon.Constant} (h : Ix.CompileM.withBinderSection annotator? names c₀ = .ok c)
+    (wire : c₀.wireWF) : c.wireWF := by
+  obtain ⟨binders, ok, rfl⟩ := Ix.CompileM.withBinderSection_ok h
+  have valid := Ix.CompileM.sectionAdmissible_wire ok
+  have bw : Ixon.bindersWireWF binders := by
+    simpa [Ixon.bindersWireWF, Ixon.WireCheck.validArray, -Array.all_eq_true, Array.all_eq_true']
+      using valid
+  exact ⟨wire.1, wire.2.1, wire.2.2.1, wire.2.2.2.1, wire.2.2.2.2.1, wire.2.2.2.2.2.1,
+    wire.2.2.2.2.2.2.1, bw⟩
 
 /-- When the builder succeeds, the singleton-driver tail returns that block in
 a wire-safe, exactly decodable `BlockResult` and leaves the state unchanged. -/
@@ -797,10 +817,12 @@ theorem finishConstantWithSharing_run_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
-    {block : Ixon.Constant} (hinfo : info.wireWF)
+    {built block : Ixon.Constant} (hinfo : info.wireWF)
     (htables : BlockWireTablesWF state)
     (hbuild : Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
-      state.refs state.univs = .ok block) :
+      state.refs state.univs = .ok built)
+    (hsec : Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] built =
+      .ok block) :
     let result := Ix.CompileM.BlockResult.mk' block blockMeta
     Ix.CompileM.CompileM.run compileEnv blockEnv state
         (Ix.CompileM.finishConstantWithSharing info blockMeta) =
@@ -809,8 +831,9 @@ theorem finishConstantWithSharing_run_codecWF
   dsimp only
   constructor
   · rw [finishConstantWithSharing_run compileEnv blockEnv state info blockMeta, hbuild]
+    simp only [bind, Except.bind, hsec]
   · apply BlockResult.mk'_codecWF
-    exact buildConstantWithSharing_wireWF hinfo htables hbuild
+    exact withBinderSection_wireWF hsec (buildConstantWithSharing_wireWF hinfo htables hbuild)
 
 /-- `finishConstantInfoWithSharing` is `finishConstantWithSharing`. -/
 theorem finishConstantInfoWithSharing_run
@@ -821,7 +844,8 @@ theorem finishConstantInfoWithSharing_run
     Ix.CompileM.CompileM.run compileEnv blockEnv state
         (Ix.CompileM.finishConstantInfoWithSharing info blockMeta) =
       match Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
-          state.refs state.univs with
+          state.refs state.univs >>=
+          Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] with
       | .ok block => .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state)
       | .error e => .error e :=
   finishConstantWithSharing_run compileEnv blockEnv state info blockMeta
@@ -839,8 +863,8 @@ def SharingRunOK (limits : Ix.Sharing.Exact.Limits)
   (∃ result state', run = .ok (result, state') ∧ BlockResultCodecWF result) ∨
   ∃ (info : Ixon.ConstantInfo) (state' : Ix.CompileM.BlockState)
     (err : Ix.CompileM.CompileError),
-    Ix.CompileM.buildConstantWithSharing limits info state'.refs state'.univs =
-      .error err ∧ run = .error err
+    (Ix.CompileM.buildConstantWithSharing limits info state'.refs state'.univs = .error err ∨
+      ∃ reason, err = .binderData reason) ∧ run = .error err
 
 /-- Every successful run covered by `SharingRunOK` returns a wire-safe, exactly
 decodable block. -/
@@ -871,10 +895,16 @@ theorem finishConstantInfoWithSharing_run_codecWF
   rw [finishConstantInfoWithSharing_run compileEnv blockEnv state info blockMeta]
   cases hbuild : Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
       state.refs state.univs with
-  | ok block =>
-    exact .inl ⟨_, _, rfl, BlockResult.mk'_codecWF block blockMeta #[]
-      (buildConstantWithSharing_wireWF hinfo htables hbuild)⟩
-  | error err => exact .inr ⟨info, state, err, hbuild, rfl⟩
+  | ok built =>
+    simp only [bind, Except.bind]
+    cases hsec : Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] built with
+    | ok block =>
+      exact .inl ⟨_, _, rfl, BlockResult.mk'_codecWF block blockMeta #[]
+        (withBinderSection_wireWF hsec (buildConstantWithSharing_wireWF hinfo htables hbuild))⟩
+    | error err => exact .inr ⟨info, state, err, .inr (Ix.CompileM.withBinderSection_error hsec), rfl⟩
+  | error err =>
+    simp only [bind, Except.bind]
+    exact .inr ⟨info, state, err, .inl hbuild, rfl⟩
 
 /-- When the canonical sharing of the payload succeeds, so does the
 singleton-driver tail, with a wire-safe, exactly decodable block. -/
@@ -883,17 +913,22 @@ theorem finishConstantInfoWithSharing_run_codecWF_of_succeeds
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
     (hinfo : info.wireWF) (htables : BlockWireTablesWF state)
-    (hshare : SharingSucceeds compileEnv.sharingLimits info) :
-    ∃ block,
+    (hshare : SharingSucceeds compileEnv.sharingLimits info)
+    (hsection : ∀ built, ∃ block,
+      Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] built = .ok block) :
+    ∃ built block,
       Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
-          state.refs state.univs = .ok block ∧
+          state.refs state.univs = .ok built ∧
+      Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] built =
+        .ok block ∧
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.finishConstantInfoWithSharing info blockMeta) =
         .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state) ∧
       BlockResultCodecWF (Ix.CompileM.BlockResult.mk' block blockMeta) := by
-  obtain ⟨block, hbuild⟩ := buildConstantWithSharing_of_succeeds hshare state.refs state.univs
+  obtain ⟨built, hbuild⟩ := buildConstantWithSharing_of_succeeds hshare state.refs state.univs
+  obtain ⟨block, hsec⟩ := hsection built
   obtain ⟨hrun, hcodec⟩ := finishConstantWithSharing_run_codecWF compileEnv blockEnv state
-    info blockMeta hinfo htables hbuild
-  exact ⟨block, hbuild, hrun, hcodec⟩
+    info blockMeta hinfo htables hbuild hsec
+  exact ⟨built, block, hbuild, hsec, hrun, hcodec⟩
 
 end Ix.Sharing.Verify

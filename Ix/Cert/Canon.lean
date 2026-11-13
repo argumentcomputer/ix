@@ -257,16 +257,21 @@ def readContractLean (md : Lean.MData) : Except String Ix.SemanticContract.Contr
   let some codeValue := code | throw "missing semantic contract code"
   Ix.SemanticContract.decode kindValue codeValue
 
+/-- `Ix.SemanticContract.Contract.attachedTo`, on a Lean binder. -/
+def attachedToLean (c : Ix.SemanticContract.Contract) (e : Lean.Expr) : Bool :=
+  match c.kind, e with
+  | .lam, .lam .. => true
+  | .all, .forallE .. => true
+  | .letE, .letE .. => true
+  | _, _ => false
+
 /-- `Ix.LeanIngress.withContract`, on a Lean binder. -/
 def withContractLean (c : Ix.SemanticContract.Contract) (e : Lean.Expr) (x : KExpr) :
     Except ExprError KExpr :=
-  match c.kind, e, x with
-  | .lam, .lam .., .lam t b m => pure (.lam t b { m with contract := c.binder })
-  | .all, .forallE .., .forallE t b m =>
-    pure (.forallE t b { m with contract := c.binder, result := c.result })
-  | .letE, .letE .., .letE t v b l =>
-    pure (.letE t v b { contract := { l.contract with binder := c.binder, kind := c.letKind } })
-  | _, _, _ => throw (.contract "semantic contract is not attached to its original binder")
+  if c.isOrdinary && attachedToLean c e then pure x
+  else if attachedToLean c e then
+    throw (.contract "annotated source is refused until a mode checker lands")
+  else throw (.contract "semantic contract is not attached to its original binder")
 
 def leanMData (d : Lean.MData) (e : Lean.Expr) (x : Except ExprError KExpr) :
     Except ExprError KExpr :=
@@ -287,7 +292,7 @@ def leanExpr (σ : Lean.Name → LevelParam) : Lean.Expr → Except ExprError KE
   | .lam _ t b _ => return .lam (← leanExpr σ t) (← leanExpr σ b) { pw := .never }
   | .forallE _ t b _ => return .forallE (← leanExpr σ t) (← leanExpr σ b) { pw := .never }
   | .letE _ t v b nd =>
-    return .letE (← leanExpr σ t) (← leanExpr σ v) (← leanExpr σ b) { contract := .lean nd }
+    return .letE (← leanExpr σ t) (← leanExpr σ v) (← leanExpr σ b) { nonDep := nd }
   | .lit (.natVal n) => pure (.lit (.natVal n))
   | .lit (.strVal s) => pure (.lit (.strVal s))
   | .mdata d e => leanMData d e (leanExpr σ e)
@@ -353,18 +358,23 @@ theorem read_mdataS (d : Lean.MData) :
 /-- `Id`'s bind is application (the smart constructors hash in `Id`). -/
 theorem idBind {α β : Type} (x : Id α) (f : α → Id β) : (x >>= f) = f x := rfl
 
-theorem withContract_exprS (c : Ix.SemanticContract.Contract) (e : Lean.Expr) (x : KExpr) :
-    Ix.LeanIngress.withContract c (exprS e) x = withContractLean c e x := by
+theorem attachedTo_exprS (c : Ix.SemanticContract.Contract) (e : Lean.Expr) :
+    c.attachedTo (exprS e) = attachedToLean c e := by
   cases e
   case lit l =>
-    cases l <;> cases hk : c.kind <;> cases x <;>
-      simp [Ix.LeanIngress.withContract, withContractLean, exprS, hk, Id.run, Ix.Expr.mkLit]
+    cases l <;> cases hk : c.kind <;>
+      simp [Ix.SemanticContract.Contract.attachedTo, attachedToLean, exprS, hk, Id.run, Ix.Expr.mkLit]
   all_goals
-    cases hk : c.kind <;> cases x <;>
-      simp [Ix.LeanIngress.withContract, withContractLean, exprS, hk, Id.run, idBind,
+    cases hk : c.kind <;>
+      simp [Ix.SemanticContract.Contract.attachedTo, attachedToLean, exprS, hk, Id.run, idBind,
         Ix.Expr.mkLam, Ix.Expr.mkForallE, Ix.Expr.mkLetE, Ix.Expr.mkBVar, Ix.Expr.mkFVar,
         Ix.Expr.mkMVar, Ix.Expr.mkSort, Ix.Expr.mkConst, Ix.Expr.mkApp, Ix.Expr.mkMData,
         Ix.Expr.mkProj]
+
+theorem withContract_exprS (c : Ix.SemanticContract.Contract) (e : Lean.Expr) (x : KExpr) :
+    Ix.LeanIngress.withContract c (exprS e) x = withContractLean c e x := by
+  unfold Ix.LeanIngress.withContract withContractLean Ix.SemanticContract.Contract.admits
+  rw [attachedTo_exprS]
 
 /-- **The CanonM correspondence, Source half** (proved): Source mode's
 reading of the specification's term is the direct reading of Lean's term,

@@ -1,7 +1,6 @@
 import Tests.Ix.IxonV4
 import Tests.Ix.ResourceAddressed
 import Tests.Ix.IxVM.TagN
-import Ix.Resource.Claim
 
 /-!
 # The IxVM program's Ixon codec and claim boundary
@@ -23,8 +22,10 @@ The claim boundary: a check, check-env, reveal and contains claim, each
 accepted as built and as rewritten unchanged, and refused with a trailing byte,
 truncated, under another object format or validator, and (the typing claims)
 with the retired validator, another specification or further axioms; a
-catalog claim has no arm; a resource claim is refused explicitly; and an
-erased-typing claim accepts a resource-invalid body.
+catalog claim has no arm; and the retired resource claim is refused. The fixture's hand-built
+records get their binder-data sections first, as the compiler writes them
+(`withRecordSections`), so a claim is decided by its bytes, not by a missing
+section.
 -/
 
 namespace Tests.Ix.IxVM.Codec
@@ -57,8 +58,8 @@ def countCases : Array Builder := Id.run do
         ("ref-universes", tag4 2 ++ .mk #[0, 0]),
         ("rec-universes", tag4 3 ++ .mk #[0, 0]),
         ("app-arguments", tag4 7 ++ .mk #[0x10, 0x10]),
-        ("lambda-binders", finish (tag4 8 ++ .mk #[0x07, 0x00]) (.mk #[0x10])),
-        ("forall-binders", finish (tag4 9 ++ .mk #[0x17, 0x00]) (.mk #[0x10]))] do
+        ("lambda-binders", finish (tag4 8 ++ .mk #[0x00]) (.mk #[0x10])),
+        ("forall-binders", finish (tag4 9 ++ .mk #[0x00]) (.mk #[0x10]))] do
       out := out.push (expression s!"codec count {label}-{countLabel}" bytes)
     let axiomPrefix : ByteArray := .mk #[0xd2, 0, 0, 0]
     for (label, bytes) in [
@@ -101,17 +102,17 @@ def claimCases (r : Runner) : IO Unit := do
     | throw <| IO.userError "the claim fixture has no tree"
   let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert tree.root tree
   let ctx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
-  let revealedType := Address.blake3 (Ixon.runPut (Ixon.putExpr
-    (.all Tests.ResourceAddressed.linearLocal .localShared (.ref 0 #[]) (.ref 0 #[]))))
+  let revealedType := Address.blake3 (Ixon.runPut (Ixon.putExpr (.all (.ref 0 #[]) (.ref 0 #[]))))
   let add (label : String) (witness : IxVM.ClaimHarness.ClaimWitness) (accept : Bool)
       (rejectsWith : Option String := none) : IO Unit :=
     r.add { label := s!"claim boundary {label}", accept, rejectsWith, witness }
-  for (name, claim) in [
+  for (name, original) in [
       ("check", Ix.Claim.check ctx validTarget none),
       ("check-env", .checkEnv ctx tree.root none),
       ("reveal", .reveal validTarget (.defn none none none (some revealedType) none)),
       ("contains", .contains tree.root validTarget)] do
-    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
+    let (cenv, claim, ctrees) ← IO.ofExcept (withRecordSections env original trees)
+    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness cenv claim ctrees)
     add name witness true
     let bytes := Ix.Claim.ser claim
     -- Positive control: the unchanged bytes, through the same replacement as
@@ -138,35 +139,22 @@ def claimCases (r : Runner) : IO Unit := do
       -- so the refusal is the axiom policy's rather than a missing tree.
       let some axioms := Ix.AssumptionTree.canonical #[validTarget]
         | throw <| IO.userError "the axiom fixture has no tree"
-      let further := match claim with
+      let further := match original with
         | .check c t a => .check { c with axioms := some axioms.root } t a
         | .checkEnv c root a => .checkEnv { c with axioms := some axioms.root } root a
         | other => other
-      add s!"{name}-further-axioms" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env
-        further (trees.insert axioms.root axioms))) false "axioms tree entry is not an axiom"
+      let (fenv, further, ftrees) ← IO.ofExcept
+        (withRecordSections env further (trees.insert axioms.root axioms))
+      add s!"{name}-further-axioms" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness fenv
+        further ftrees)) false "axioms tree entry is not an axiom"
     -- A catalog claim has no circuit arm: catalogs are verified by host or
     -- aggregate composition, never by `run_claim`.
     if name == "check" then
       add "catalog-no-arm" (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root))) false
         "no matching arm"
-  -- Erased typing deliberately accepts a resource-invalid body; the validator
-  -- byte keeps that apart from resource admission.
-  let (escaping, escapingTarget) := Tests.ResourceAddressed.store base
-    (Tests.ResourceAddressed.identity unit Tests.ResourceAddressed.linearLocal .shared)
-  let escaping := { escaping with anonHints := escaping.anonHints.insert escapingTarget .opaque }
-  unless (Ix.Resource.validate escaping {}).toOption.isNone do
-    throw <| IO.userError "the escaping fixture passed native resource validation"
-  add "explicit erased typing" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping
-    (.check ctx escapingTarget none))) true
-  -- A resource claim has a native validator, and fails explicitly at the
-  -- circuit boundary rather than accepting a host validation result.
-  let profile : Ix.Resource.Profile := {}
-  let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
-  let profileAddr ← IO.ofExcept profile.address
-  let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees
-    (({} : Std.HashMap Address ByteArray).insert profileAddr profile.bytes))
-  r.add { label := "claim boundary unsupported resource validator", accept := false,
-          rejectsWith := some "resource-v1 is not implemented by IxVM", witness }
+      -- The retired resource claim's tag and scope (`E8 01`, validator 2) are refused.
+      add "resource-retired" (replaceClaimBytes witness
+        (ByteArray.mk #[0xE8, 0x01, Ixon.Env.OBJECT_FORMAT, 2] ++ tree.root.hash ++ tree.root.hash)) false
 
 def run : IO UInt32 := do
   let golden ← Tests.IxonV4.readExprCases

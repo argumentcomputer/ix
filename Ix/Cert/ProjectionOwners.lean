@@ -35,13 +35,14 @@ theorem built_muts {limits : Ix.Sharing.Exact.Limits} {ms : Array Ixon.MutConst}
 /-- **A mutual build's rows are its block, or its block is a block record.** -/
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     (∀ p ∈ out.projections, p.2.1 = out.block) ∨ ∃ ms, out.block.info = .muts ms := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     refine .inl fun p hp => ?_
     have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows
@@ -52,9 +53,10 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    exact .inr (built_muts hb)
+    have muts := built_muts hb
+    exact .inr muts
 
 /-- `buildMutual_rows` for the mutual block compile. -/
 theorem compileMutualBlock_rows (classes : List MutConst) :
@@ -237,9 +239,9 @@ theorem compileReport_store {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       StoredEncoding.FoldStart env cenv₀ ∧
-      foldWavesSeq (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
-        ((Ix.CondenseM.run (groundSplit { consts := env.consts }).1).blocks.size + 1)
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched) = .ok st ∧
+      foldWavesSeq (Ix.CondenseM.run (groundSplit env.materialized).1) sched
+        ((Ix.CondenseM.run (groundSplit env.materialized).1).blocks.size + 1)
+        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched) = .ok st ∧
       (∀ a lc, ixe.consts.get? a = some lc →
         ∃ b, st.acc.cenv.constants.get? a = some b ∧ lc = { buf := b, len := b.size }) ∧
       ∀ a b, st.acc.cenv.constants.get? a = some b → ixe.consts.get? a = some { buf := b, len := b.size } := by
@@ -267,13 +269,13 @@ theorem projections_owned {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
     (hc : recordAt ixe a = some c) (hp : c.info = .dPrj p) :
     ∃ m ms, recordAt ixe p.block = some m ∧ m.info = .muts ms := by
   obtain ⟨cenv₀, sched, st, h₀, hst, toStore, ofStore⟩ := compileReport_store h
-  have start : Owned (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
+  have start : Owned (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1)
       sched).acc.cenv.constants := by
     show Owned cenv₀.constants
     rw [h₀.constants]
     exact owned_empty
   have hreach := foldWavesSeq_reach _ _ _ hst (Reach.init (blocks := Ix.CondenseM.run
-    (groundSplit { consts := env.consts }).1) (init := (FoldState.init cenv₀ _ sched).acc))
+    (groundSplit env.materialized).1) (init := (FoldState.init cenv₀ _ sched).acc))
   have owned := reach_owned start hreach
   -- the artifact's record at `a` is the final store's
   have hsa : storeOf st.acc.cenv.constants a = some c := by

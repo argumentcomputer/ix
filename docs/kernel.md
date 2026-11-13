@@ -1096,8 +1096,8 @@ interleaved:
    circuit terms by `Ix/IxVM/RoleSpecGen.lean`, which change with `specVersion`
    or the specification digest; `lake exe ix codegen --check` must pass. The
    other IxVM modules (`IxVM/IxVM/Source/*.lean`) are source, written by hand.
-4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
-   writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
+4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures`
+   writes `claims.tsv` and `addressed.tsv`
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
    `lake exe ixon-v4-tests` validates them. If they moved, so did the
    catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);

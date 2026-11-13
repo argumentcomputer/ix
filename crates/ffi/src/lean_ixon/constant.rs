@@ -7,14 +7,15 @@
 use std::sync::Arc;
 
 use crate::lean::{
-  LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
-  LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
-  LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
-  LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
-  LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
+  LeanIxAddress, LeanIxonAllMode, LeanIxonAxiom, LeanIxonBinderBlock,
+  LeanIxonBinderNode, LeanIxonConstant, LeanIxonConstantInfo,
+  LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefAsserts,
+  LeanIxonDefinition, LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonFieldModes,
+  LeanIxonInductive, LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient,
+  LeanIxonRecursor, LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
 };
 use ixon::constant::{
-  Axiom as IxonAxiom, Constant as IxonConstant,
+  Axiom as IxonAxiom, BinderBlock, BinderNode, Constant as IxonConstant,
   ConstantInfo as IxonConstantInfo, Constructor as IxonConstructor,
   ConstructorProj, DefKind, Definition as IxonDefinition, DefinitionProj,
   Inductive as IxonInductive, InductiveProj, MutConst,
@@ -30,15 +31,18 @@ use lean_ffi::object::{LeanArray, LeanOwned, LeanRef};
 // =============================================================================
 
 impl LeanIxonDefinition<LeanOwned> {
-  /// Build Ixon.Definition
-  /// Lean stores scalar fields ordered by size (largest first).
-  /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
+  /// Build Ixon.Definition (`kind safety asserts lvls typ value`).
+  /// Objects in declaration order (asserts, typ, value), then scalars by
+  /// size: lvls(8) + kind(1) + safety(1).
+  /// Layout: header(8) + asserts(8) + typ(8) + value(8) + lvls(8) + kind(1)
+  /// + safety(1) + padding(6)
   pub fn build(def: &IxonDefinition) -> Self {
     let typ_obj = LeanIxonExpr::build(&def.typ);
     let value_obj = LeanIxonExpr::build(&def.value);
     let ctor = Self::alloc(0);
-    ctor.set_obj(0, typ_obj);
-    ctor.set_obj(1, value_obj);
+    ctor.set_obj(0, LeanIxonDefAsserts::build(&def.asserts));
+    ctor.set_obj(1, typ_obj);
+    ctor.set_obj(2, value_obj);
     ctor.set_num_64(0, def.lvls);
     let kind_val: u8 = match def.kind {
       DefKind::Definition => 0,
@@ -58,13 +62,14 @@ impl LeanIxonDefinition<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonDefinition<R> {
   /// Decode Ixon.Definition.
-  /// Lean stores scalar fields ordered by size (largest first).
-  /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
+  /// Layout: header(8) + asserts(8) + typ(8) + value(8) + lvls(8) + kind(1)
+  /// + safety(1) + padding(6)
   pub fn decode(&self) -> IxonDefinition {
     let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let asserts = LeanIxonDefAsserts(ctor.get(0)).decode();
+    let typ = Arc::new(LeanIxonExpr::new(ctor.get(1).to_owned_ref()).decode());
     let value =
-      Arc::new(LeanIxonExpr::new(ctor.get(1).to_owned_ref()).decode());
+      Arc::new(LeanIxonExpr::new(ctor.get(2).to_owned_ref()).decode());
     let lvls = self.get_num_64(0);
     let kind_val = self.get_num_8(0);
     let kind = match kind_val {
@@ -80,7 +85,7 @@ impl<R: LeanRef> LeanIxonDefinition<R> {
       2 => ix_common::env::DefinitionSafety::Partial,
       _ => panic!("Invalid DefinitionSafety: {}", safety_val),
     };
-    IxonDefinition { kind, safety, lvls, typ, value }
+    IxonDefinition { kind, safety, asserts, lvls, typ, value }
   }
 }
 
@@ -245,11 +250,14 @@ impl<R: LeanRef> LeanIxonQuotient<R> {
 
 impl LeanIxonConstructor<LeanOwned> {
   /// Build Ixon.Constructor
-  /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
+  /// (`isUnsafe lvls cidx params fields fieldModes typ`).
+  /// Objects in declaration order (fieldModes, typ), then scalars by size:
+  /// lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
   pub fn build(c: &IxonConstructor) -> Self {
     let typ_obj = LeanIxonExpr::build(&c.typ);
     let ctor = Self::alloc(0);
-    ctor.set_obj(0, typ_obj);
+    ctor.set_obj(0, LeanIxonFieldModes::build(&c.field_modes));
+    ctor.set_obj(1, typ_obj);
     ctor.set_num_64(0, c.lvls);
     ctor.set_num_64(1, c.cidx);
     ctor.set_num_64(2, c.params);
@@ -261,16 +269,18 @@ impl LeanIxonConstructor<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstructor<R> {
   /// Decode Ixon.Constructor.
-  /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
+  /// Objects: fieldModes, typ; scalars: lvls(8) + cidx(8) + params(8) +
+  /// fields(8) + isUnsafe(1) + padding(7)
   pub fn decode(&self) -> IxonConstructor {
     let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let field_modes = LeanIxonFieldModes(ctor.get(0)).decode();
+    let typ = Arc::new(LeanIxonExpr::new(ctor.get(1).to_owned_ref()).decode());
     let lvls = self.get_num_64(0);
     let cidx = self.get_num_64(1);
     let params = self.get_num_64(2);
     let fields = self.get_num_64(3);
     let is_unsafe = self.get_num_8(0) != 0;
-    IxonConstructor { is_unsafe, lvls, cidx, params, fields, typ }
+    IxonConstructor { is_unsafe, lvls, cidx, params, fields, field_modes, typ }
   }
 }
 
@@ -548,6 +558,117 @@ impl<R: LeanRef> LeanIxonConstantInfo<R> {
 }
 
 // =============================================================================
+// Binder data
+// =============================================================================
+
+impl LeanIxonBinderNode<LeanOwned> {
+  /// Build Ixon.BinderNode. Every binder node holds its `AllMode` as an
+  /// object field (after `ifAllZero`'s parameter array); `share` holds its
+  /// variant as a `UInt64` scalar.
+  pub fn build(node: &BinderNode) -> Self {
+    let with_mode = |tag, m| {
+      let ctor = Self::alloc(tag);
+      ctor.set_obj(0, LeanIxonAllMode::build(m));
+      ctor
+    };
+    match node {
+      BinderNode::Never(m) => with_mode(0, m),
+      BinderNode::Zero(m) => with_mode(1, m),
+      BinderNode::Undecided(m) => with_mode(4, m),
+      BinderNode::IfAllZero(params, m) => {
+        let arr = LeanArray::alloc(params.len());
+        for (i, p) in params.iter().enumerate() {
+          arr.set(i, LeanOwned::box_u64(*p));
+        }
+        let ctor = Self::alloc(2);
+        ctor.set_obj(0, arr);
+        ctor.set_obj(1, LeanIxonAllMode::build(m));
+        ctor
+      },
+      BinderNode::Share(variant) => {
+        let ctor = Self::alloc(3);
+        ctor.set_num_64(0, *variant);
+        ctor
+      },
+    }
+  }
+}
+
+impl<R: LeanRef> LeanIxonBinderNode<R> {
+  /// Decode Ixon.BinderNode.
+  pub fn decode(&self) -> BinderNode {
+    let ctor = self.as_ctor();
+    match ctor.tag() {
+      0 => BinderNode::Never(LeanIxonAllMode(ctor.get(0)).decode()),
+      1 => BinderNode::Zero(LeanIxonAllMode(ctor.get(0)).decode()),
+      2 => BinderNode::IfAllZero(
+        ctor
+          .get(0)
+          .as_array()
+          .iter()
+          .map(|elem| {
+            if elem.is_scalar() {
+              elem.unbox_usize() as u64
+            } else {
+              elem.unbox_u64()
+            }
+          })
+          .collect(),
+        LeanIxonAllMode(ctor.get(1)).decode(),
+      ),
+      3 => BinderNode::Share(self.get_num_64(0)),
+      4 => BinderNode::Undecided(LeanIxonAllMode(ctor.get(0)).decode()),
+      tag => panic!("Invalid Ixon.BinderNode tag: {tag}"),
+    }
+  }
+}
+
+impl LeanIxonBinderBlock<LeanOwned> {
+  /// Build Ixon.BinderBlock. Scalars ordered by size: index(8) + variant(8)
+  /// + shared(1) + padding(7).
+  pub fn build(block: &BinderBlock) -> Self {
+    let nodes = LeanArray::alloc(block.nodes.len());
+    for (i, node) in block.nodes.iter().enumerate() {
+      nodes.set(i, LeanIxonBinderNode::build(node));
+    }
+    let ctor = Self::alloc(0);
+    ctor.set_obj(0, nodes);
+    ctor.set_num_64(0, block.index);
+    ctor.set_num_64(1, block.variant);
+    ctor.set_num_8(0, u8::from(block.shared));
+    ctor
+  }
+
+  /// Build an Array of Ixon.BinderBlock.
+  pub fn build_array(blocks: &[BinderBlock]) -> LeanArray<LeanOwned> {
+    let arr = LeanArray::alloc(blocks.len());
+    for (i, block) in blocks.iter().enumerate() {
+      arr.set(i, Self::build(block));
+    }
+    arr
+  }
+}
+
+impl<R: LeanRef> LeanIxonBinderBlock<R> {
+  /// Decode Ixon.BinderBlock.
+  pub fn decode(&self) -> BinderBlock {
+    let ctor = self.as_ctor();
+    let nodes = ctor
+      .get(0)
+      .as_array()
+      .iter()
+      .map(|elem| LeanIxonBinderNode(elem).decode())
+      .collect();
+    BinderBlock {
+      shared: self.get_num_8(0) != 0,
+      index: self.get_num_64(0),
+      variant: self.get_num_64(1),
+      nodes,
+    }
+  }
+}
+
+// =============================================================================
 // Constant
 // =============================================================================
 
@@ -558,11 +679,13 @@ impl LeanIxonConstant<LeanOwned> {
     let sharing_obj = LeanIxonExpr::build_array(&constant.sharing);
     let refs_obj = LeanIxAddress::build_array(&constant.refs);
     let univs_obj = LeanIxonUniv::build_array(&constant.univs);
+    let binders_obj = LeanIxonBinderBlock::build_array(&constant.binders);
     let ctor = LeanIxonConstant::alloc(0);
     ctor.set_obj(0, info_obj);
     ctor.set_obj(1, sharing_obj);
     ctor.set_obj(2, refs_obj);
     ctor.set_obj(3, univs_obj);
+    ctor.set_obj(4, binders_obj);
     ctor
   }
 }
@@ -576,6 +699,12 @@ impl<R: LeanRef> LeanIxonConstant<R> {
       sharing: LeanIxonExpr::decode_array(&ctor.get(1).as_array()),
       refs: LeanIxAddress::decode_array(ctor.get(2).as_array()),
       univs: LeanIxonUniv::decode_array(&ctor.get(3).as_array()),
+      binders: ctor
+        .get(4)
+        .as_array()
+        .iter()
+        .map(|elem| LeanIxonBinderBlock(elem).decode())
+        .collect(),
     }
   }
 }

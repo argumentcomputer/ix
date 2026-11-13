@@ -313,9 +313,13 @@ theorem nat_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) 
   rw [nat_step_eq]
   apply literal_checked cx param self related bindings _ _ _ _ context before good aligned rel
   intro state index read
-  change (do pure (Ix.Kernel.Expr.lit (.natVal (Kernel.Reader.natural (← (reader state).ecx.blobAt index))))) = _
-  rw [read]
-  simp only [bind, Except.bind, pure, Except.pure, natural_toBytes]
+  change (do pure (Ix.Kernel.Expr.lit (.natVal (← (reader state).ecx.natAt index)))) = _
+  have natRead : (reader state).ecx.natAt index = .ok value := by
+    unfold Kernel.Reader.ECx.natAt
+    rw [read]
+    simp only [bind, Except.bind, canonicalNatural_toBytes, ↓reduceIte, pure, Except.pure, natural_toBytes]
+  rw [natRead]
+  rfl
 
 theorem string_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (value : String)
     (hash : Address) (context : CompileEnv × BlockEnv) (before : BlockState)
@@ -554,7 +558,7 @@ theorem finishLet_checked (name : Ix.Name) (type value body : Ix.Expr) (nonDep :
     (typeRead : meaning before type targetType) (valueRead : meaning before value targetValue)
     (bodyRead : meaning before body targetBody)
     (congruent : ∀ t v b, related type t → related value v → related body b →
-      related (.letE name type value body nonDep hash) (.letE t v b { contract := .lean nonDep })) :
+      related (.letE name type value body nonDep hash) (.letE t v b { nonDep := nonDep })) :
     Checked cx param self related bindings (.letE name type value body nonDep hash) before
       (rawRun (finishLet name nonDep targetType targetValue targetBody) context before) := by
   obtain ⟨t, rt, readType⟩ := typeRead
@@ -563,10 +567,10 @@ theorem finishLet_checked (name : Ix.Name) (type value body : Ix.Expr) (nonDep :
   refine allocFinish_checked cx param self related bindings _
     (.letBinder name.getHash targetType.2 targetValue.2 targetBody.2)
     (.leanLet nonDep targetType.1 targetValue.1 targetBody.1) context before good
-    ⟨.letE t v b { contract := .lean nonDep }, congruent t v b rt rv rb, ?_⟩
+    ⟨.letE t v b { nonDep := nonDep }, congruent t v b rt rv rb, ?_⟩
   change (do pure (Ix.Kernel.Expr.letE (← (reader before).read targetType.1)
     (← (reader before).read targetValue.1) (← (reader before).read targetBody.1)
-    { contract := .lean nonDep })) = _
+    { nonDep := nonDep })) = _
   rw [readType, readValue, readBody]
   rfl
 
@@ -582,7 +586,7 @@ theorem let_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
     (bodyCorrect : ∀ state, Good cx param self related bindings state →
       Checked cx param self related bindings body state (rawRun (compile body) context state))
     (congruent : ∀ t v b, related type t → related value v → related body b →
-      related (.letE name type value body nonDep hash) (.letE t v b { contract := .lean nonDep })) :
+      related (.letE name type value body nonDep hash) (.letE t v b { nonDep := nonDep })) :
     Checked cx param self related bindings (.letE name type value body nonDep hash) before
       (rawRun (step compile (.letE name type value body nonDep hash)) context before) := by
   rw [let_step_eq]
@@ -684,12 +688,12 @@ theorem projection_step_refuses (compile : Ix.Expr → CompileM (Ixon.Expr × UI
 /-! ## Metadata and contract frames -/
 
 
-theorem read_lam {state : BlockState} {contract : Ixon.BinderContract} {type body : Ixon.Expr}
-    {target : CExpr md} (read : (reader state).read (.lam contract type body) = .ok target) :
+theorem read_lam {state : BlockState} {type body : Ixon.Expr}
+    {target : CExpr md} (read : (reader state).read (.lam type body) = .ok target) :
     ∃ t b, (reader state).read type = .ok t ∧ (reader state).read body = .ok b ∧
-      target = .lam t b (Ix.Kernel.BinderMeta.ofContracts contract .shared) := by
+      target = .lam t b (Ix.Kernel.BinderMeta.ofContracts .many .shared) := by
   change ((reader state).read type >>= fun t => (reader state).read body >>= fun b =>
-    pure (Ix.Kernel.Expr.lam t b (Ix.Kernel.BinderMeta.ofContracts contract .shared))) = _ at read
+    pure (Ix.Kernel.Expr.lam t b (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _ at read
   cases ht : (reader state).read type with
   | error e => rw [ht] at read; cases read
   | ok t =>
@@ -697,13 +701,13 @@ theorem read_lam {state : BlockState} {contract : Ixon.BinderContract} {type bod
     | error e => rw [ht, hb] at read; cases read
     | ok b => rw [ht, hb] at read; cases read; exact ⟨t, b, rfl, rfl, rfl⟩
 
-theorem read_all {state : BlockState} {contract : Ixon.BinderContract} {result : Ixon.ValueContract}
+theorem read_all {state : BlockState}
     {type body : Ixon.Expr} {target : CExpr md}
-    (read : (reader state).read (.all contract result type body) = .ok target) :
+    (read : (reader state).read (.all type body) = .ok target) :
     ∃ t b, (reader state).read type = .ok t ∧ (reader state).read body = .ok b ∧
-      target = .forallE t b (Ix.Kernel.BinderMeta.ofContracts contract result) := by
+      target = .forallE t b (Ix.Kernel.BinderMeta.ofContracts .many .shared) := by
   change ((reader state).read type >>= fun t => (reader state).read body >>= fun b =>
-    pure (Ix.Kernel.Expr.forallE t b (Ix.Kernel.BinderMeta.ofContracts contract result))) = _ at read
+    pure (Ix.Kernel.Expr.forallE t b (Ix.Kernel.BinderMeta.ofContracts .many .shared))) = _ at read
   cases ht : (reader state).read type with
   | error e => rw [ht] at read; cases read
   | ok t =>
@@ -711,12 +715,13 @@ theorem read_all {state : BlockState} {contract : Ixon.BinderContract} {result :
     | error e => rw [ht, hb] at read; cases read
     | ok b => rw [ht, hb] at read; cases read; exact ⟨t, b, rfl, rfl, rfl⟩
 
-theorem read_letE {state : BlockState} {contract : Ixon.LetContract} {type value body : Ixon.Expr}
-    {target : CExpr md} (read : (reader state).read (.letE contract type value body) = .ok target) :
+theorem read_letE {state : BlockState} {nonDep : Bool} {mode : Ixon.LetMode}
+    {type value body : Ixon.Expr} {target : CExpr md}
+    (read : (reader state).read (.letE nonDep mode type value body) = .ok target) :
     ∃ t v b, (reader state).read type = .ok t ∧ (reader state).read value = .ok v ∧
-      (reader state).read body = .ok b ∧ target = .letE t v b { contract := contract } := by
+      (reader state).read body = .ok b ∧ target = .letE t v b { nonDep } := by
   change ((reader state).read type >>= fun t => (reader state).read value >>= fun v =>
-    (reader state).read body >>= fun b => pure (Ix.Kernel.Expr.letE t v b { contract := contract })) = _ at read
+    (reader state).read body >>= fun b => pure (Ix.Kernel.Expr.letE t v b { nonDep })) = _ at read
   cases ht : (reader state).read type with
   | error e => rw [ht] at read; cases read
   | ok t =>
@@ -735,28 +740,12 @@ theorem lowerContract_read (contract : Ix.SemanticContract.Contract) (source : I
     (state : BlockState) {target : CExpr md} (read : (reader state).read value = .ok target) :
     ∃ result, withContract contract source target = some result ∧
       (reader state).read lowered = .ok result := by
-  obtain ⟨kind, binder, valueContract, letKind⟩ := contract
-  cases kind <;> cases source <;> cases value <;>
-    simp only [Ix.SemanticContract.Contract.lower, pure, Except.pure] at success <;>
-    (try cases success)
-  · obtain ⟨t, b, readType, readBody, rfl⟩ := read_lam cx param self read
-    refine ⟨_, rfl, ?_⟩
-    change ((reader state).read _ >>= fun t => (reader state).read _ >>= fun b =>
-      pure (Ix.Kernel.Expr.lam t b (Ix.Kernel.BinderMeta.ofContracts binder .shared))) = _
-    rw [readType, readBody, Ix.Kernel.BinderMeta.ofContracts_eq, Ix.Kernel.BinderMeta.ofContracts_eq]
-    rfl
-  · obtain ⟨t, b, readType, readBody, rfl⟩ := read_all cx param self read
-    refine ⟨_, rfl, ?_⟩
-    change ((reader state).read _ >>= fun t => (reader state).read _ >>= fun b =>
-      pure (Ix.Kernel.Expr.forallE t b (Ix.Kernel.BinderMeta.ofContracts binder valueContract))) = _
-    rw [readType, readBody, Ix.Kernel.BinderMeta.ofContracts_eq, Ix.Kernel.BinderMeta.ofContracts_eq]
-    rfl
-  · obtain ⟨t, v, b, readType, readValue, readBody, rfl⟩ := read_letE cx param self read
-    refine ⟨_, rfl, ?_⟩
-    change ((reader state).read _ >>= fun t => (reader state).read _ >>= fun v =>
-      (reader state).read _ >>= fun b => pure (Ix.Kernel.Expr.letE t v b { contract := _ })) = _
-    rw [readType, readValue, readBody]
-    rfl
+  unfold Ix.SemanticContract.Contract.lower at success
+  split at success
+  · rename_i admits
+    cases success
+    exact ⟨target, by rw [withContract, ite_eq_left admits], read⟩
+  · split at success <;> cases success
 
 theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
     (data : Array (Ix.Name × Ix.DataValue)) (source : Ix.Expr) (hash : Address)

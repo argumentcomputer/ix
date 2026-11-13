@@ -71,8 +71,8 @@ def const_idxs_expr := aiur_fn⟦
         Ixon::Expr::Prj(i, _, inner) => {
           (&(Lists::Node::Cons(UInt64::to_field(i), const_idxs_expr(inner)))) } ,
         Ixon::Expr::App(f, a) => {  Lists::concat(const_idxs_expr(f), const_idxs_expr(a)) } ,
-        Ixon::Expr::Lam(_, t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
-        Ixon::Expr::All(_, _, t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
+        Ixon::Expr::Lam(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
+        Ixon::Expr::All(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
         Ixon::Expr::Let(_, t, v, b) => {
           Lists::concat(const_idxs_expr(t),
             Lists::concat(const_idxs_expr(v), const_idxs_expr(b))) } ,
@@ -111,7 +111,7 @@ def const_idxs_ctors := aiur_fn⟦
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(_, _, _, _, _, typ) => {
+            Ixon::Constructor::Mk(_, _, _, _, _, _, typ) => {
               Lists::concat(const_idxs_expr(typ), const_idxs_ctors(rest)) } ,
           } } ,
       }
@@ -126,7 +126,7 @@ def const_idxs_muts := aiur_fn⟦
           match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(_, _, _, typ, value) => {
+                Ixon::Definition::Mk(_, _, _, _, typ, value) => {
                   Lists::concat(
                     Lists::concat(const_idxs_expr(typ), const_idxs_expr(value)),
                     const_idxs_muts(rest)) } ,
@@ -153,12 +153,12 @@ def const_idxs_muts := aiur_fn⟦
 def const_idxs_of := aiur_fn⟦
   fn const_idxs_of(c: Ixon::Constant) -> Lists::List<Field> {
       match c {
-        Ixon::Constant::Mk(info, sharing, _, _) => {
+        Ixon::Constant::Mk(info, sharing, _, _, _) => {
           let shared = const_idxs_exprs(sharing);
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(_, _, _, typ, value) => {
+                Ixon::Definition::Mk(_, _, _, _, typ, value) => {
                   Lists::concat(shared,
                     Lists::concat(const_idxs_expr(typ), const_idxs_expr(value))) } ,
               } } ,
@@ -204,7 +204,7 @@ def run_check_transitive := aiur_fn⟦
   fn run_check_transitive(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, refs, _) => {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               check_muts_all(rc, addr, members, members, 0) } ,
@@ -369,7 +369,7 @@ def env_walk := aiur_fn⟦
           };
           let c = Ingress::load_verified_constant(addr);
           match c {
-            Ixon::Constant::Mk(info, _, refs, _) => {
+            Ixon::Constant::Mk(info, _, refs, _, _) => {
               match info {
                 Ixon::ConstantInfo::Muts(members) => {
                   check_muts_all(rc, addr, members, members, 0) } ,
@@ -462,7 +462,7 @@ def ctors_unsafe := aiur_fn⟦
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _, _) => {
               match is_unsafe {
                 0 => {  ctors_unsafe(rest) } ,
                 _ => {  1 } ,
@@ -480,7 +480,7 @@ def muts_unsafe := aiur_fn⟦
           let u = match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   Ingress::defn_is_unsafe_ci(kind, safety) } ,
               } } ,
             Ixon::MutConst::Indc(ind) => {
@@ -508,11 +508,11 @@ def record_unsafe := aiur_fn⟦
   fn record_unsafe(addr: Bytes::AddressRef) -> Field {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   Ingress::defn_is_unsafe_ci(kind, safety) } ,
               } } ,
             Ixon::ConstantInfo::Recr(r) => {
@@ -534,7 +534,7 @@ def assert_claimable := aiur_fn⟦
   fn assert_claimable(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       let owner = match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::DPrj(p) => {
               match p {
@@ -668,7 +668,7 @@ def env_walk_all := aiur_fn⟦
   fn env_walk_all(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, refs, _) => {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               check_muts_all(rc, addr, members, members, 0) } ,
@@ -1227,7 +1227,7 @@ def check_ctor_entry := aiur_fn⟦
         RevealConstructorInfo::Mk(opt_unsafe, opt_lvls, opt_cidx,
                                   opt_params, opt_fields, opt_typ) => {
           match real_ctor {
-            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, r_typ) => {
+            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, _, r_typ) => {
               check_opt_bool(r_unsafe, opt_unsafe);
               check_opt_u64(r_lvls, opt_lvls);
               check_opt_u64(r_cidx, opt_cidx);
@@ -1272,7 +1272,7 @@ def check_mut_const := aiur_fn⟦
             RevealMutConstInfo::Defn(opt_kind, opt_safety, opt_lvls,
                                      opt_typ, opt_value) => {
               match d {
-                Ixon::Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
                   check_opt_def_kind(r_kind, opt_kind);
                   check_opt_def_safety(r_safety, opt_safety);
                   check_opt_u64(r_lvls, opt_lvls);
@@ -1339,14 +1339,14 @@ def run_reveal := aiur_fn⟦
   fn run_reveal(comm_addr: Bytes::AddressRef, info: RevealConstantInfo) -> () {
       let c = Ingress::load_verified_constant(comm_addr);
       match c {
-        Ixon::Constant::Mk(ci, _, _, _) => {
+        Ixon::Constant::Mk(ci, _, _, _, _) => {
           match ci {
             Ixon::ConstantInfo::Defn(d) => {
               match info {
                 RevealConstantInfo::Defn(opt_kind, opt_safety, opt_lvls,
                                          opt_typ, opt_value) => {
                   match d {
-                    Ixon::Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                    Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
                       check_opt_def_kind(r_kind, opt_kind);
                       check_opt_def_safety(r_safety, opt_safety);
                       check_opt_u64(r_lvls, opt_lvls);

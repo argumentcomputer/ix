@@ -136,14 +136,14 @@ theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockStat
   cases hs : standaloneMutConstInfo? members with
   | none =>
     rw [hs] at built
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     refine .inl ⟨rfl, ?_⟩
     dsimp only [BlockResult.mk']
     exact MutualProjections.build_rows _ _ _
   | some info =>
     rw [hs] at built
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     refine .inr ⟨by simp, ?_⟩
     dsimp only [BlockResult.mk']

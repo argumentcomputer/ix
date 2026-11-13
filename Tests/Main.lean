@@ -52,6 +52,7 @@ import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
+import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.Kernel.ReaderCoverage
@@ -264,9 +265,14 @@ def registry : List Entry := [
   -- A wrong datum is rejected and a missing one a host error, through the program
   -- (runs once the program reads the data).
   .runner "ixvm-pw-circuit" (.ci .ixvm) Tests.Ix.IxVM.PwHints.circuit,
-  .runner "ixvm-pw-fixture" (.manual "rewrite the dev fixture with its binder data; IX_PW_FIXTURE, IX_PW_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
+  .env "ixvm-fixture" (.manual "rebuild the dev fixture IxVM/IxVM/fixtures/nat-add-comm.ixf; IX_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
+  .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxC's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
+  .runner "prim-addrs-artifact" (.manual "every Ix.PrimAddrs address is the record a compiled artifact publishes under its Lean name; IX_PRIM_IXE") Tests.Ix.Kernel.PrimAddrs.artifact,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
+  -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).
+  .runner "ixvm-binder-data" (.ci .ixvm) Tests.Ix.IxVM.BinderData.run,
+  .runner "binder-data-corpus" (.manual "a compiled artifact's binder-data sections: canonical, recomputed equal; IX_BD_IXE") Tests.Ix.IxVM.BinderData.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,

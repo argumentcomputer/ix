@@ -57,14 +57,14 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
--- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6909 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions to each closure
+-- here, as for `Admission.checkBytes`. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6935 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -72,14 +72,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
--- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7043 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7069 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -87,14 +83,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
--- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6909 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6935 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -102,14 +94,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
--- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7043 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7069 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -130,15 +118,8 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
--- unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7104 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7130 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

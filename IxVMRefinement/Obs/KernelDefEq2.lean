@@ -798,15 +798,16 @@ theorem «KernelDefEq::compare_struct_fields».obs {x_rc x_struct_addr x_nparams
 inductive «KernelDefEq::compute_iprj_addr».Path (x_block_addr x_idx : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (m83 : Heap F) (m96 : Heap F) (m109 : Heap F) (v121 : SourceValue F) (m122 : Heap F) (cs132 : List (Call F)) (m145 : Heap F) (cs160 : List (Call F))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (m84 : Heap F) (m97 : Heap F) (m110 : Heap F) (m123 : Heap F) (v135 : SourceValue F) (m136 : Heap F) (cs146 : List (Call F)) (m159 : Heap F) (cs174 : List (Call F))
       (ev14 : ObsFn W "UInt64::from_field" [x_idx] h v1 m2 cs12)
-      (hm91 : m83 = (m2 ++ [(.construct Names.«Lists::Node<&Ixon::Expr>» "Nil" [])]))
-      (hm104 : m96 = (m83 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (hm117 : m109 = (m96 ++ [(.construct Names.«Lists::Node<&Ixon::Univ>» "Nil" [])]))
-      (hm153 : m145 = (m109 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
-      (ev134 : ObsFn W "IxonSerialize::put_constant" [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [(.construct "Ixon::InductiveProj" "Mk" [v1, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m2).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m83).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m96).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m109).length)] m145 v121 m122 cs132)
-      (ev162 : ObsFn W "Blake3::bytes_to_addr" [v121] m122 r h' cs160)
-      (hc171 : calls = ((⟨"UInt64::from_field", [x_idx], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonSerialize::put_constant", [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [(.construct "Ixon::InductiveProj" "Mk" [v1, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m2).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m83).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m96).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m109).length)], m145⟩ : Call F) :: (cs132 ++ ((⟨"Blake3::bytes_to_addr", [v121], m122⟩ : Call F) :: cs160))))))
+      (hm92 : m84 = (m2 ++ [(.construct Names.«Lists::Node<&Ixon::Expr>» "Nil" [])]))
+      (hm105 : m97 = (m84 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
+      (hm118 : m110 = (m97 ++ [(.construct Names.«Lists::Node<&Ixon::Univ>» "Nil" [])]))
+      (hm131 : m123 = (m110 ++ [(.construct Names.«Lists::Node<Ixon::BinderBlock>» "Nil" [])]))
+      (hm167 : m159 = (m123 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
+      (ev148 : ObsFn W "IxonSerialize::put_constant" [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [(.construct "Ixon::InductiveProj" "Mk" [v1, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m2).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m84).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m97).length), (.ptr (.enum Names.«Lists::Node<Ixon::BinderBlock>») (m110).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m123).length)] m159 v135 m136 cs146)
+      (ev176 : ObsFn W "Blake3::bytes_to_addr" [v135] m136 r h' cs174)
+      (hc185 : calls = ((⟨"UInt64::from_field", [x_idx], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonSerialize::put_constant", [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [(.construct "Ixon::InductiveProj" "Mk" [v1, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m2).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m84).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m97).length), (.ptr (.enum Names.«Lists::Node<Ixon::BinderBlock>») (m110).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m123).length)], m159⟩ : Call F) :: (cs146 ++ ((⟨"Blake3::bytes_to_addr", [v135], m136⟩ : Call F) :: cs174))))))
 
 /-- **Every observed derivation of `KernelDefEq::compute_iprj_addr` takes one of its paths.** -/
 theorem «KernelDefEq::compute_iprj_addr».obs {x_block_addr x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -847,54 +848,60 @@ theorem «KernelDefEq::compute_iprj_addr».obs {x_block_addr x_idx : SourceValue
   obtain ⟨vs68, a69, hres70⟩ := d65.construct_inv
   rw [instanceName_plain_some] at hres70
   subst hres70
-  obtain ⟨v71, vs75, m76, c77, c78, rfl, d79, a80, rfl⟩ := a69.cons_inv
-  obtain ⟨l81, rfl, rfl⟩ := d79.var_inv
-  simp at l81
-  subst l81
-  obtain ⟨v72, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a80.cons_inv
-  obtain ⟨v88, m89, d90, rfl, hm91⟩ := d86.store_inv
-  obtain ⟨vs92, a93, hres94⟩ := d90.construct_inv
-  rw [Names.n14714430324747779335] at hres94
-  subst hres94
-  obtain ⟨rfl, rfl, rfl⟩ := a93.nil_inv
-  obtain ⟨v73, vs95, m96, c97, c98, rfl, d99, a100, rfl⟩ := a87.cons_inv
-  obtain ⟨v101, m102, d103, rfl, hm104⟩ := d99.store_inv
-  obtain ⟨vs105, a106, hres107⟩ := d103.construct_inv
-  rw [Names.n17025598268237686609] at hres107
-  subst hres107
-  obtain ⟨rfl, rfl, rfl⟩ := a106.nil_inv
-  obtain ⟨v74, vs108, m109, c110, c111, rfl, d112, a113, rfl⟩ := a100.cons_inv
-  obtain ⟨v114, m115, d116, rfl, hm117⟩ := d112.store_inv
-  obtain ⟨vs118, a119, hres120⟩ := d116.construct_inv
-  rw [Names.n1245658151410455720] at hres120
-  subst hres120
-  obtain ⟨rfl, rfl, rfl⟩ := a119.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a113.nil_inv
+  obtain ⟨v71, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a69.cons_inv
+  obtain ⟨l82, rfl, rfl⟩ := d80.var_inv
+  simp at l82
+  subst l82
+  obtain ⟨v72, vs83, m84, c85, c86, rfl, d87, a88, rfl⟩ := a81.cons_inv
+  obtain ⟨v89, m90, d91, rfl, hm92⟩ := d87.store_inv
+  obtain ⟨vs93, a94, hres95⟩ := d91.construct_inv
+  rw [Names.n14714430324747779335] at hres95
+  subst hres95
+  obtain ⟨rfl, rfl, rfl⟩ := a94.nil_inv
+  obtain ⟨v73, vs96, m97, c98, c99, rfl, d100, a101, rfl⟩ := a88.cons_inv
+  obtain ⟨v102, m103, d104, rfl, hm105⟩ := d100.store_inv
+  obtain ⟨vs106, a107, hres108⟩ := d104.construct_inv
+  rw [Names.n17025598268237686609] at hres108
+  subst hres108
+  obtain ⟨rfl, rfl, rfl⟩ := a107.nil_inv
+  obtain ⟨v74, vs109, m110, c111, c112, rfl, d113, a114, rfl⟩ := a101.cons_inv
+  obtain ⟨v115, m116, d117, rfl, hm118⟩ := d113.store_inv
+  obtain ⟨vs119, a120, hres121⟩ := d117.construct_inv
+  rw [Names.n1245658151410455720] at hres121
+  subst hres121
+  obtain ⟨rfl, rfl, rfl⟩ := a120.nil_inv
+  obtain ⟨v75, vs122, m123, c124, c125, rfl, d126, a127, rfl⟩ := a114.cons_inv
+  obtain ⟨v128, m129, d130, rfl, hm131⟩ := d126.store_inv
+  obtain ⟨vs132, a133, hres134⟩ := d130.construct_inv
+  rw [Names.n9574717375266508469] at hres134
+  subst hres134
+  obtain ⟨rfl, rfl, rfl⟩ := a133.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a127.nil_inv
   obtain rfl := matchPattern_bind_inv mt66
-  obtain ⟨v121, m122, bs123, c124, c125, d126, mt127, d128, rfl⟩ := d67.letValue_inv
-  obtain ⟨vs129, m130, c131, cs132, a133, ev134, rfl⟩ := d126.call_inv
-  rw [instanceName_plain_some] at ev134
-  obtain ⟨v135, vs137, m138, c139, c140, rfl, d141, a142, rfl⟩ := a133.cons_inv
-  obtain ⟨l143, rfl, rfl⟩ := d141.var_inv
-  simp at l143
-  subst l143
-  obtain ⟨v136, vs144, m145, c146, c147, rfl, d148, a149, rfl⟩ := a142.cons_inv
-  obtain ⟨v150, m151, d152, rfl, hm153⟩ := d148.store_inv
-  obtain ⟨vs154, a155, hres156⟩ := d152.construct_inv
-  rw [Names.n12516105052029042359] at hres156
-  subst hres156
-  obtain ⟨rfl, rfl, rfl⟩ := a155.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a149.nil_inv
-  obtain rfl := matchPattern_bind_inv mt127
-  obtain ⟨vs157, m158, c159, cs160, a161, ev162, rfl⟩ := d128.call_inv
-  rw [instanceName_plain_some] at ev162
-  obtain ⟨v163, vs164, m165, c166, c167, rfl, d168, a169, rfl⟩ := a161.cons_inv
-  obtain ⟨l170, rfl, rfl⟩ := d168.var_inv
-  simp at l170
-  subst l170
+  obtain ⟨v135, m136, bs137, c138, c139, d140, mt141, d142, rfl⟩ := d67.letValue_inv
+  obtain ⟨vs143, m144, c145, cs146, a147, ev148, rfl⟩ := d140.call_inv
+  rw [instanceName_plain_some] at ev148
+  obtain ⟨v149, vs151, m152, c153, c154, rfl, d155, a156, rfl⟩ := a147.cons_inv
+  obtain ⟨l157, rfl, rfl⟩ := d155.var_inv
+  simp at l157
+  subst l157
+  obtain ⟨v150, vs158, m159, c160, c161, rfl, d162, a163, rfl⟩ := a156.cons_inv
+  obtain ⟨v164, m165, d166, rfl, hm167⟩ := d162.store_inv
+  obtain ⟨vs168, a169, hres170⟩ := d166.construct_inv
+  rw [Names.n12516105052029042359] at hres170
+  subst hres170
   obtain ⟨rfl, rfl, rfl⟩ := a169.nil_inv
-  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hm91 hm104 hm117 hm153 ev134 ev162 ⊢
-  exact «KernelDefEq::compute_iprj_addr».Path.run _ _ _ _ _ _ _ _ _ _ _ ev14 hm91 hm104 hm117 hm153 ev134 ev162 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  obtain ⟨rfl, rfl, rfl⟩ := a163.nil_inv
+  obtain rfl := matchPattern_bind_inv mt141
+  obtain ⟨vs171, m172, c173, cs174, a175, ev176, rfl⟩ := d142.call_inv
+  rw [instanceName_plain_some] at ev176
+  obtain ⟨v177, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a175.cons_inv
+  obtain ⟨l184, rfl, rfl⟩ := d182.var_inv
+  simp at l184
+  subst l184
+  obtain ⟨rfl, rfl, rfl⟩ := a183.nil_inv
+  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hm92 hm105 hm118 hm131 hm167 ev148 ev176 ⊢
+  exact «KernelDefEq::compute_iprj_addr».Path.run _ _ _ _ _ _ _ _ _ _ _ _ ev14 hm92 hm105 hm118 hm131 hm167 ev148 ev176 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `KernelDefEq::try_eta_swap`: one constructor per combination of selected arms. -/
 inductive «KernelDefEq::try_eta_swap».Path (x_rc x_a x_b x_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

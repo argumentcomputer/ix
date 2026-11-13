@@ -37,11 +37,11 @@ private def beta : Ixon.Expr := .app (.leanLam idType (.var 0)) idValue
 
 private def definition (ty value : Ixon.Expr) (refs : Array Address := #[])
     (univs : Array Ixon.Univ := #[.zero]) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 0, ty, value⟩, #[], refs, univs⟩
+  ⟨.defn ⟨.defn, .safe, {}, 0, ty, value⟩, #[], refs, univs, #[]⟩
 
 /-- A safe axiom of type `ty`. -/
 private def axiomOf (ty : Ixon.Expr) (univs : Array Ixon.Univ) : Ixon.Constant :=
-  ⟨.axio ⟨false, 0, ty⟩, #[], #[], univs⟩
+  ⟨.axio ⟨false, 0, ty⟩, #[], #[], univs, #[]⟩
 
 /-- `axiom good : (fun (p : Type) => p) Prop`. -/
 private def good : Ixon.Constant :=

@@ -293,17 +293,21 @@ def arityProducerTests : TestSeq := Id.run do
     | .mdata data _ _ => data.size == 3 && ((_root_.Ix.SemanticContract.read data).toOption).any (·.kind == kind)
     | _ => false
   let readable := fun e => (_root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e).isOk
+  -- An annotated frame is refused by the ingress as by the compiler.
+  let refused := fun e => match _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e with
+    | .error (.contract m) => m.startsWith "annotated source is refused"
+    | _ => false
   let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
   let pair := linear.toOption.bind (fun c => c.decorate.toOption)
   let pairOK := pair.any fun out => match canonical out with
-    | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && readable v.cnst.type && readable v.value
+    | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && refused v.cnst.type && refused v.value
     | _ => false
   let binding := definition `arityLet natType (.letE `view natType (.lit (.natVal 0)) (.bvar 0) false)
   let borrow : SourceContract := {
     source := binding
     binders := #[{ site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
   let letOK := ((borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
-    match canonical out with | .defnInfo v => frame .letE v.value && readable v.value | _ => false
+    match canonical out with | .defnInfo v => frame .letE v.value && refused v.value | _ => false
   let theoremSource : ConstantInfo := .thmInfo {
     name := `arityTheorem, levelParams := [], type := .const `True [], value := .const `True.intro [], all := [`arityTheorem] }
   let opaqueSource : ConstantInfo := .opaqueInfo {
@@ -328,8 +332,8 @@ def arityProducerTests : TestSeq := Id.run do
     (match stripped with | some (.lam ..) => stripped == some body | _ => false) &&
     (match decorateExpr c .body [] (semantic.attach body) with
       | .error "source transport: reserved semantic metadata in unprocessed source" => true | _ => false)
-  return test "actual decorator and CanonM keep distinct type/value semantic frames readable" pairOK ++
-    test "actual borrow-let decoration has a readable three-field semantic frame" letOK ++
+  return test "actual decorator and CanonM keep distinct type/value semantic frames; the ingress refuses them as annotated" pairOK ++
+    test "actual borrow-let decoration has a three-field semantic frame; the ingress refuses it as annotated" letOK ++
     test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
     test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
 

@@ -52,10 +52,6 @@ def otherChannels : List (String × Option (List String)) := [
   ("ixvm.io.info", some ["IxVMCompat::io_get_info"]),
   ("ixvm.io.claim", some ["KernelClaim::run_claim"]),
   ("ixvm.io.tag", some ["Ingress::load_constant_hint"]),
-  -- The binder data of the conversion: untrusted, validated by the kernel's rules.
-  ("ixvm.pw", some ["Convert::read_pw"]),
-  ("ixvm.pw.param", some ["Convert::pw_params"]),
-  ("ixvm.pw.share", some ["Convert::read_pw_share"]),
   -- `ix_aggr` locates every advice section by `(slot, key)`; the sections it
   -- reads are byte streams read through `StarkIO::read_byte_stream`.
   ("stark.io.info", none), ("stark.io.address", none), ("stark.io.digest", none)]

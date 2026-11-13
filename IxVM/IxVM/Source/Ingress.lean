@@ -25,7 +25,7 @@ def load_verified_constant := aiur_fn⟦
 def definition_hint := aiur_fn⟦
   fn definition_hint(addr: Bytes::AddressRef, d: Ixon::Definition) -> Field {
       match d {
-        Ixon::Definition::Mk(kind, _, _, _, _) => {
+        Ixon::Definition::Mk(kind, _, _, _, _, _) => {
           match kind {
             Ixon::DefKind::Definition => {  load_constant_hint(addr) } ,
             _ => {  0 } ,
@@ -75,7 +75,7 @@ def defn_member_recur_addrs := aiur_fn⟦
   fn defn_member_recur_addrs(d: Ixon::Definition, members: Lists::List<Ixon::MutConst>,
                                     block_addr: Bytes::AddressRef) -> Lists::List<Bytes::AddressRef> {
       match d {
-        Ixon::Definition::Mk(kind, safety, _, _, _) => {
+        Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
           match defn_is_unsafe_ci(kind, safety) {
             0 => {  (&(Lists::Node::Nil)) } ,
             _ => {  build_recur_addrs(members, block_addr) } ,
@@ -88,27 +88,27 @@ def get_ci := aiur_fn⟦
   fn get_ci(addr: Bytes::AddressRef) -> &KernelTypes::KConstantInfo {
       let c = load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
           match info {
             Ixon::ConstantInfo::Defn(defn) => {
               let hint = definition_hint(addr, defn);
 
               let self_recur = match defn {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   match defn_is_unsafe_ci(kind, safety) {
                     0 => {  (&(Lists::Node::Nil)) } ,
                     _ => {  (&(Lists::Node::Cons(addr, (&(Lists::Node::Nil))))) } ,
                   } } ,
               };
               (&(Convert::convert_definition(defn, sharing, refs,
-                                            self_recur, univs, hint, addr, 0))) } ,
+                                            self_recur, univs, hint, Convert::binder_table(binders), 0))) } ,
             Ixon::ConstantInfo::Axio(axio) => {
 
               (&(Convert::convert_axiom(axio, sharing, refs,
-                                       (&(Lists::Node::Nil)), univs, addr))) } ,
+                                       (&(Lists::Node::Nil)), univs, Convert::binder_table(binders)))) } ,
             Ixon::ConstantInfo::Quot(quot) => {
               (&(Convert::convert_quotient(quot, sharing, refs,
-                                          (&(Lists::Node::Nil)), univs, addr))) } ,
+                                          (&(Lists::Node::Nil)), univs, Convert::binder_table(binders)))) } ,
             Ixon::ConstantInfo::DPrj(prj) => {
               match prj {
                 Ixon::DefinitionProj::Mk(idx, block_addr) => {
@@ -134,7 +134,7 @@ def get_ci := aiur_fn⟦
 
               let self_recur = (&(Lists::Node::Cons(addr, (&(Lists::Node::Nil)))));
               (&(Convert::convert_recursor(recr, addr, 0,
-                                          sharing, refs, self_recur, univs, 0))) } ,
+                                          sharing, refs, self_recur, univs, Convert::binder_table(binders), 0))) } ,
           } } ,
       }
     }
@@ -145,7 +145,7 @@ def get_ci_dprj := aiur_fn⟦
       KernelCheck::check_block_member_kinds(block_addr);
       let block_c = load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               let mc = WordLists::lookup_u64(members, idx);
@@ -155,7 +155,7 @@ def get_ci_dprj := aiur_fn⟦
                   let recur_addrs =
                     defn_member_recur_addrs(d, members, block_addr);
                   (&(Convert::convert_definition(d, sharing, refs, recur_addrs, univs, hint,
-                    block_addr, Convert::muts_root_offset(members, UInt64::to_field(idx))))) } ,
+                    Convert::binder_table(binders), Convert::muts_root_offset(members, UInt64::to_field(idx))))) } ,
               } } ,
           } } ,
       }
@@ -166,7 +166,7 @@ def get_ci_iprj := aiur_fn⟦
   fn get_ci_iprj(block_addr: Bytes::AddressRef, idx: Field) -> &KernelTypes::KConstantInfo {
       let block_c = load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               let mc = muts_member_at(members, idx);
@@ -174,7 +174,8 @@ def get_ci_iprj := aiur_fn⟦
                 Ixon::MutConst::Indc(ind) => {
                   let recur_addrs = build_recur_addrs(members, block_addr);
                   (&(Convert::convert_inductive(ind, block_addr, idx,
-                                               sharing, refs, recur_addrs, univs, Convert::muts_root_offset(members, idx)))) } ,
+                                               sharing, refs, recur_addrs, univs, Convert::binder_table(binders),
+                                               Convert::muts_root_offset(members, idx)))) } ,
               } } ,
           } } ,
       }
@@ -185,7 +186,7 @@ def get_ci_cprj := aiur_fn⟦
   fn get_ci_cprj(block_addr: Bytes::AddressRef, idx: Field, cidx: Field) -> &KernelTypes::KConstantInfo {
       let block_c = load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               let mc = muts_member_at(members, idx);
@@ -197,6 +198,7 @@ def get_ci_cprj := aiur_fn⟦
                       let recur_addrs = build_recur_addrs(members, block_addr);
                       (&(Convert::convert_constructor(c, block_addr, idx,
                                                     sharing, refs, recur_addrs, univs,
+                                                    Convert::binder_table(binders),
                                                     (Convert::muts_root_offset(members, idx) + 1) + cidx))) } ,
                   } } ,
               } } ,
@@ -209,7 +211,7 @@ def get_ci_rprj := aiur_fn⟦
   fn get_ci_rprj(block_addr: Bytes::AddressRef, idx: Field) -> &KernelTypes::KConstantInfo {
   let block_c = load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               let mc = muts_member_at(members, idx);
@@ -217,7 +219,8 @@ def get_ci_rprj := aiur_fn⟦
                 Ixon::MutConst::Recr(r) => {
                   let recur_addrs = build_recur_addrs(members, block_addr);
                   (&(Convert::convert_recursor(r, block_addr, idx,
-                                             sharing, refs, recur_addrs, univs, Convert::muts_root_offset(members, idx)))) } ,
+                                             sharing, refs, recur_addrs, univs, Convert::binder_table(binders),
+                                               Convert::muts_root_offset(members, idx)))) } ,
               } } ,
           } } ,
       }
@@ -249,6 +252,7 @@ def projection_addr := aiur_fn⟦
           Ixon::ConstantInfo::RPrj(Ixon::RecursorProj::Mk(idx_u64, block_addr)) } ,
       };
       let proj_c = Ixon::Constant::Mk(info,
+                                (&(Lists::Node::Nil)),
                                 (&(Lists::Node::Nil)),
                                 (&(Lists::Node::Nil)),
                                 (&(Lists::Node::Nil)));

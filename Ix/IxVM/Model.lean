@@ -6,6 +6,8 @@ public import Ix.Ixon.CheckOrder
 public import IxC.Kernel.Admission
 public import IxC.Kernel.Ixon.Prelude
 public import Aiur.Ixon
+public import Ix.CompileM
+public import Ix.IxVM.RecordSections
 
 /-!
 # Model advice for IxVM's modeled route
@@ -113,6 +115,11 @@ def liftExcept {α} (x : Except String α) : EncM α := match x with
   | .ok a => pure a
   | .error e => throw e
 
+/-- `e` as a record's expression. A binder or a let keeps its contracts
+(`BinderMeta.contract`/`result`, `LetMeta.contract`: a let's `nonDep` flag among
+them), which are committed content of the record the kernel read it from, so a
+declaration read from a record encodes to that record's expressions; the modeller's
+own binders and lets carry the Lean fragment's. -/
 partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option Nat) :
     Expr .anon → EncM Ixon.Expr
   | .bvar i => pure (.var i.toUInt64)
@@ -124,10 +131,11 @@ partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option N
     | some i => pure (.recur i.toUInt64 uis)
     | none => pure (.ref (← refOf (← liftExcept (nm.addr k))) uis)
   | .app f a => return .app (← encExpr nm lps self f) (← encExpr nm lps self a)
-  | .lam t b _ => return .leanLam (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .forallE t b _ => return .leanAll (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .letE t v b _ =>
-    return .leanLet false (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
+  | .lam t b _ => return .lam (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .forallE t b _ =>
+    return .all (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .letE t v b l =>
+    return .letE l.nonDep (.value .many) (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
   | .lit (.natVal n) => return .nat (← blobOf (ByteArray.mk (Nat.toBytesLE n)))
   | .lit (.strVal s) => return .str (← blobOf s.toUTF8)
   | .proj s i e => do
@@ -136,7 +144,127 @@ partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option N
 
 def addressOf (c : Ixon.Constant) : Address := Address.blake3 (Ixon.ser c)
 
-def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
+
+/-- `e` with every index into the record's refs table moved by `f`: a reference, a
+projection's structure, a literal's blob. -/
+def remapRefs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
+  | .ref i us => .ref (f i) us
+  | .prj t i v => .prj (f t) i (remapRefs f v)
+  | .str i => .str (f i)
+  | .nat i => .nat (f i)
+  | .app a b => .app (remapRefs f a) (remapRefs f b)
+  | .lam t b => .lam (remapRefs f t) (remapRefs f b)
+  | .all t b => .all (remapRefs f t) (remapRefs f b)
+  | .letE nd lm t v b => .letE nd lm (remapRefs f t) (remapRefs f v) (remapRefs f b)
+  | e => e
+
+/-- `e` with every index into the record's univs table moved by `f`: a sort's level
+and the universe arguments of a reference or of a recursive reference. -/
+def remapUnivs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
+  | .sort i => .sort (f i)
+  | .ref i us => .ref i (us.map f)
+  | .recur i us => .recur i (us.map f)
+  | .prj t i v => .prj t i (remapUnivs f v)
+  | .app a b => .app (remapUnivs f a) (remapUnivs f b)
+  | .lam t b => .lam (remapUnivs f t) (remapUnivs f b)
+  | .all t b => .all (remapUnivs f t) (remapUnivs f b)
+  | .letE nd lm t v b => .letE nd lm (remapUnivs f t) (remapUnivs f v) (remapUnivs f b)
+  | e => e
+
+/-- The compiler's univs table for the levels `univs` (`Ix.CompileM.preseedExprTables`):
+each in its canonical form (`Ixon.canonUniv`), sorted by encoding
+(`Ix.CompileM.univSortKey`), each once; with the new index of each old one. -/
+def canonicalUnivs (univs : Array Ixon.Univ) : Array Ixon.Univ × (UInt64 → UInt64) :=
+  let canon := univs.map Ixon.canonUniv
+  let keyed := (canon.map fun u => (Ix.CompileM.univSortKey u, u)).qsort
+    fun (ka, _) (kb, _) => Ix.CompileM.byteArrayCmp ka kb == .lt
+  let table : Array Ixon.Univ :=
+    keyed.foldl (fun acc (_, u) => if acc.back? == some u then acc else acc.push u) #[]
+  let pos : Std.HashMap Ixon.Univ UInt64 :=
+    table.zipIdx.foldl (fun m (u, i) => m.insert u i.toUInt64) {}
+  (table, fun i => ((canon[i.toNat]?).bind (pos[·]?)).getD i)
+
+/-- A generated record with the compiler's tables and canonical sharing: the refs
+sorted by address bytes and the levels canonical and sorted by encoding, as the
+compiler preseeds them, every index into either table moved with it, then
+`Ix.CompileM.buildConstantWithSharing`. A generated record that is alpha-equivalent
+to a compiled one (a block's tag enumeration and a Lean enumeration of its size) is then the same record whatever order
+the encoder met its references and levels in. Its binder data come later, per block
+(`BlockAdvice.withSections`). -/
+def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
+    Except String Ixon.Constant := do
+  let sorted := refs.qsort fun a b => a.cmpBytes b == .lt
+  let pos : Std.HashMap Address UInt64 :=
+    sorted.zipIdx.foldl (fun m (a, i) => m.insert a i.toUInt64) {}
+  let move (i : UInt64) : UInt64 := ((refs[i.toNat]?).bind (pos[·]?)).getD i
+  let (table, umove) := canonicalUnivs univs
+  let roots := (Ix.CompileM.constantInfoRootExprs info).map (remapUnivs umove ∘ remapRefs move)
+  let info ← (Ix.CompileM.withRootExprs info roots).mapError (s!"model record refs: {·}")
+  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted table).mapError
+    (s!"model record sharing: {·}")
+
+/-- `e` with every `share` node replaced by its entry of `sharing`, recursively (a
+canonical table is acyclic). -/
+partial def unshareAll (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => match sharing[i.toNat]? with
+    | some e => unshareAll sharing e
+    | none => .share i
+  | .prj t i v => .prj t i (unshareAll sharing v)
+  | .app a b => .app (unshareAll sharing a) (unshareAll sharing b)
+  | .lam t b => .lam (unshareAll sharing t) (unshareAll sharing b)
+  | .all t b => .all (unshareAll sharing t) (unshareAll sharing b)
+  | .letE nd lm t v b => .letE nd lm (unshareAll sharing t) (unshareAll sharing v) (unshareAll sharing b)
+  | e => e
+
+/-- Record `c` with its references renamed by `rename`, in the compiler's form again
+(`sharedRecord` over its expressions with the sharing expanded: refs sorted, levels
+canonical and sorted, sharing rebuilt), without a section. A projection, whose tables
+are empty, has its block renamed. -/
+def renormalize (rename : Address → Address) (c : Ixon.Constant) : Except String Ixon.Constant := do
+  match c.info with
+  | .iPrj _ | .cPrj _ | .rPrj _ | .dPrj _ => return Ix.Compile.BinderData.rewriteRecord rename c #[]
+  | _ =>
+    let roots := (Ix.CompileM.constantInfoRootExprs c.info).map (unshareAll c.sharing)
+    let info ← (Ix.CompileM.withRootExprs c.info roots).mapError (s!"model record refs: {·}")
+    sharedRecord info (c.refs.map rename) c.univs
+
+/-- An expression with its table indices erased: the places of its binders and share
+nodes, which are all a record's section depends on, and not which reference, level
+or blob a leaf names. -/
+def shapeOf : Ixon.Expr → Ixon.Expr
+  | .sort _ => .sort 0
+  | .ref _ _ => .ref 0 #[]
+  | .recur i _ => .recur i #[]
+  | .prj _ i v => .prj 0 i (shapeOf v)
+  | .str _ => .str 0
+  | .nat _ => .nat 0
+  | .app a b => .app (shapeOf a) (shapeOf b)
+  | .lam t b => .lam (shapeOf t) (shapeOf b)
+  | .all t b => .all (shapeOf t) (shapeOf b)
+  | .letE nd lm t v b => .letE nd lm (shapeOf t) (shapeOf v) (shapeOf b)
+  | e => e
+
+/-- The shapes of a record's roots and sharing entries. -/
+def recordShape (c : Ixon.Constant) : Array Ixon.Expr × Array Ixon.Expr :=
+  ((Ix.CompileM.constantInfoRootExprs c.info).map shapeOf, c.sharing.map shapeOf)
+
+/-- Each element of `xs` before the next by `lt`. -/
+def ascendingBy {α : Type} (xs : Array α) (lt : α → α → Bool) : Bool :=
+  (xs.zip (xs.extract 1 xs.size)).all fun (a, b) => lt a b
+
+/-- **The compiler's table invariant** (`Ix.CompileM.preseedExprTables`): the refs
+strictly ascending by address bytes; the levels each in canonical form
+(`Ixon.canonUniv`) and strictly ascending by encoding. No decoder checks it: Lean's
+`Ixon.Canonical.deConstant`, the reader's wire check, Rust's codec and IxVM's parser
+read the tables in any order. Like the complete binder-data form, it is a property of
+how records are built, which makes a constant's address unique; every model record
+holds it (`ixvm-model-advice`). Finalize's evidence theorems keep their references in
+first-use order. -/
+def tablesCanonical (c : Ixon.Constant) : Bool :=
+  ascendingBy c.refs (fun a b => a.cmpBytes b == .lt) &&
+    c.univs.all (fun u => Ixon.canonUniv u == u) &&
+    ascendingBy (c.univs.map Ix.CompileM.univSortKey) (fun a b => Ix.CompileM.byteArrayCmp a b == .lt)
 
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
   | .opaque => .opaque
@@ -169,8 +297,8 @@ def encDefinition (nm : Names) (cv : ConstantVal .anon) (value : Expr .anon) (ki
       let t ← encExpr nm lps (fun _ => none) cv.type
       let v ← encExpr nm lps (fun _ => none) value
       pure (t, v) : EncM _).run {}
-  let c : Ixon.Constant := ⟨.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v },
-    #[], s.refs, s.univs⟩
+  let c ← sharedRecord (.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v })
+    s.refs s.univs
   let a := addressOf c
   return { records := #[(a, c)], keys := #[(cv.name, a)], blobs := s.blobs,
            hints := match hint with | some h => #[(a, hintOf h)] | none => #[] }
@@ -200,7 +328,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       pure (t, cs) : EncM _).run {}
   let ind : Ixon.Inductive := { isUnsafe := false, lvls := lps.length.toUInt64, params := nP.toUInt64,
                                 indices := nIdx.toUInt64, typ, ctors := ctorRecs }
-  let blockC : Ixon.Constant := ⟨.muts #[.indc ind], #[], s.refs, s.univs⟩
+  let blockC ← sharedRecord (.muts #[.indc ind]) s.refs s.univs
   let blockA := addressOf blockC
   let iprj := projRecord (.iPrj ⟨0, blockA⟩)
   let iprjA := addressOf iprj
@@ -231,7 +359,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
         params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
         minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
-    let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs⟩
+    let recC ← sharedRecord (.recr recR) rs.refs rs.univs
     let recA := addressOf recC
     out := { out with records := out.records.push (recA, recC), keys := out.keys.push (cvR.name, recA),
                       blobs := out.blobs ++ rs.blobs }
@@ -257,8 +385,8 @@ def basisRoleAllowed (r : Nat) : Bool :=
 partial def usedIdxsExpr : Ixon.Expr → Std.HashSet Nat
   | .ref i _ => ({} : Std.HashSet Nat).insert i.toNat
   | .prj i _ inner => (usedIdxsExpr inner).insert i.toNat
-  | .app a b | .lam _ a b | .all _ _ a b => (usedIdxsExpr a).union (usedIdxsExpr b)
-  | .letE _ t v b => ((usedIdxsExpr t).union (usedIdxsExpr v)).union (usedIdxsExpr b)
+  | .app a b | .lam a b | .all a b => (usedIdxsExpr a).union (usedIdxsExpr b)
+  | .letE _ _ t v b => ((usedIdxsExpr t).union (usedIdxsExpr v)).union (usedIdxsExpr b)
   | _ => {}
 
 def usedIdxs (c : Ixon.Constant) : Std.HashSet Nat := Id.run do
@@ -522,6 +650,75 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
                             typeModels, ctorModels, recModels, iotas }
   return { layout, records, hints, blobs, deps }
 
+/-! ## The advice's binder data
+
+A generated record carries its binder-data section like any record, so its
+address covers the data IxVM reads from it. The records are encoded first (each
+naming the ones before it by address), then annotated as a whole by IxC's pass,
+typed against the environment's records (`IxVM.RecordSections.sectionsOf`; the
+data do not depend on addresses), and then re-addressed bottom-up: each record's
+references to the advice follow their new addresses, the record is put in the
+compiler's form again (`renormalize`: its refs sorted by the new addresses, its
+sharing rebuilt), its section is set, and it is hashed. The section computed before
+fits the rebuilt record when the two have the same shape (`recordShape`); otherwise
+it is computed again for the record as it stands. So every advice record is the
+record the compiler would write for its declaration. The payload, hints and
+dependencies name the new addresses. -/
+
+/-- `adv` with every record's binder-data section, re-addressed. `support` are the
+environment's records, `chosen` its role table and prelude. -/
+def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ixon.Constant))
+    (blobs : Std.HashMap Address ByteArray) (hints : Std.HashMap Address Lean.ReducibilityHints)
+    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) : Except String BlockAdvice := do
+  let blobs := adv.blobs.foldl (fun m (a, b) => m.insert a b) blobs
+  let hints := adv.hints.foldl (fun m (a, h) => m.insert a h) hints
+  -- the advice records are the view's models: indexed after the environment's, so a generated
+  -- recursor cannot displace the environment's recursor of an alpha-equivalent block
+  let models : Std.HashSet Address := adv.records.foldl (fun s (a, _) => s.insert a) {}
+  let sections ← IxVM.RecordSections.sectionsOf adv.records support blobs hints chosen (models := models)
+  let store : Std.HashMap Address Ixon.Constant :=
+    adv.records.foldl (fun m (a, c) => m.insert a c) {}
+  let order ← Ix.Compile.BinderData.bottomUp store adv.records
+  let mut renamed : Std.HashMap Address Address := {}
+  let mut rewritten : Std.HashMap Address Ixon.Constant := {}
+  for a in order do
+    let some c := store[a]? | continue
+    let rename (x : Address) : Address := renamed.getD x x
+    let c1 ← renormalize rename c
+    let c' ← if recordShape c1 == recordShape c then
+        pure { c1 with binders := sections.getD a #[] }
+      else do
+        -- the rebuilt sharing moved a binder or a share: the section of the record as it stands,
+        -- typed against the environment and the advice re-addressed so far
+        let a1 := addressOf c1
+        let done := rewritten.toArray
+        let fresh ← IxVM.RecordSections.sectionsOf #[(a1, c1)] (support ++ done) blobs hints chosen
+          (models := done.foldl (fun s (x, _) => s.insert x) ({} : Std.HashSet Address))
+        pure { c1 with binders := fresh.getD a1 #[] }
+    let a' := addressOf c'
+    renamed := renamed.insert a a'
+    rewritten := rewritten.insert a' c'
+  let rename (x : Address) : Address := renamed.getD x x
+  -- the records in their original order, each once
+  let mut records : Array (Address × Ixon.Constant) := #[]
+  for (a, _) in adv.records do
+    let a' := rename a
+    if records.any (·.1 == a') then continue
+    let some c' := rewritten[a']? | throw s!"model advice: record {a} was not re-addressed"
+    records := records.push (a', c')
+  let l := adv.layout
+  let layout : Payload := { l with
+    recBlock := rename l.recBlock
+    advice := records.map (·.1)
+    witnesses := l.witnesses.map (fun (x, k, steps, extra) => (rename x, k, steps, extra))
+    typeModels := l.typeModels.map rename
+    ctorModels := l.ctorModels.map rename
+    recModels := l.recModels.map rename
+    iotas := l.iotas.map rename }
+  return { adv with layout, records,
+                    hints := adv.hints.map (fun (a, h) => (rename a, h)),
+                    deps := adv.deps.map rename }
+
 /-! ## Attaching the models -/
 
 /-- `env` with an empty payload for every inductive block that has none: a
@@ -598,7 +795,9 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         report := { report with blocks := report.blocks.push (a, .error "the reader generated no model")}
         continue
       let some shape := cx.index.blocks[a]? | continue
-      match blockAdvice table look cx a c shape (r.decls.toList.take r.generated) tweak with
+      let advice := blockAdvice table look cx a c shape (r.decls.toList.take r.generated) tweak
+        >>= (·.withSections records env.blobs env.anonHints (table, pre))
+      match advice with
       | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
       | .ok adv =>
         for (ra, rc) in adv.records do

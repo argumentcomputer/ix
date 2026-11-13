@@ -286,20 +286,20 @@ theorem mutualBlock_correct (context : CompileEnv × BlockEnv)
   cases hs : standaloneMutConstInfo? ps.toArray with
   | some info =>
     rw [hs] at built
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     have hinfo : blockInfo ps = info := by unfold blockInfo; rw [hs]
     rw [hinfo] at roots
-    obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self _ _ info block hb roots
-    exact ⟨by rw [hinfo]; exact erased, read⟩
+    obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self _ _ info _ hb roots
+    exact ⟨by rw [hinfo]; exact erased, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   | none =>
     rw [hs] at built
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     have hinfo : blockInfo ps = .muts ps.toArray := by unfold blockInfo; rw [hs]
     rw [hinfo] at roots
-    obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self _ _ (.muts ps.toArray) block hb roots
-    exact ⟨by rw [hinfo]; exact erased, read⟩
+    obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self _ _ (.muts ps.toArray) _ hb roots
+    exact ⟨by rw [hinfo]; exact erased, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
 
 end Blocks
 

@@ -24,15 +24,18 @@ boundaries). The specification set is unchanged, so `specVersion` and every
 role table are too. Under version 1 (no version field, the roles alone) the
 encoding was 17727 bytes, with digest
 6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33; version 2
-adds 1700 bytes. -/
+adds 1700 bytes, with digest
+e6f717602b5c3d293803bcc6165dddcbf2c6163b49bc4e5704505cf286856fa9 (19730 bytes).
+Version 3 drops the binder and let contracts from the encoding (kernel terms
+carry no modes): 1384 bytes fewer. -/
 
-/-- info: "19721 bytes" -/
+/-- info: "18346 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "04794ebf18e57a04d6e2239b97b0ca28139e6c4c7e2acb0a068b47ccaac67111" -/
+/-- info: "43b34c7a1e95e869697f5d99839ea13aa50241c311228fe3a19454f7bb942aa1" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

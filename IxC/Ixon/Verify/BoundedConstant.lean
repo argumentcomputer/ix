@@ -120,16 +120,18 @@ theorem getConstantWithUnivs_eq (readUnivs : Nat → GetM (Array Univ)) :
     getConstantWithUnivs readUnivs = do
       let (info, sharing, refs, count) ← getPrefix
       let univs ← readUnivs count
-      return ⟨info, sharing, refs, univs⟩ := by
+      let binders ← getBinders
+      return ⟨info, sharing, refs, univs, binders⟩ := by
   unfold getConstantWithUnivs getPrefix
   simp
 
 theorem getConstantWithUnivs_ok_iff (readUnivs : Nat → GetM (Array Univ))
     (start finish : GetState) (constant : Constant) :
     getConstantWithUnivs readUnivs start = .ok constant finish ↔
-      ∃ count middle,
+      ∃ count middle after,
         getPrefix start = .ok (constant.info, constant.sharing, constant.refs, count) middle ∧
-        readUnivs count middle = .ok constant.univs finish := by
+        readUnivs count middle = .ok constant.univs after ∧
+        getBinders after = .ok constant.binders finish := by
   rw [getConstantWithUnivs_eq]
   constructor
   · intro h
@@ -141,12 +143,16 @@ theorem getConstantWithUnivs_ok_iff (readUnivs : Nat → GetM (Array Univ))
       simp only [prefixRead] at h
       cases univsRead : readUnivs count middle with
       | error reason state => simp [univsRead] at h
-      | ok univs state =>
-        simp only [univsRead, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
-        rcases h with ⟨rfl, rfl⟩
-        exact ⟨count, middle, rfl, univsRead⟩
-  · rintro ⟨count, middle, prefixRead, univsRead⟩
-    simp [bind, EStateM.bind, prefixRead, univsRead, pure, EStateM.pure]
+      | ok univs after =>
+        simp only [univsRead] at h
+        cases bindersRead : getBinders after with
+        | error reason state => simp [bindersRead] at h
+        | ok binders state =>
+          simp only [bindersRead, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨count, middle, after, rfl, univsRead, bindersRead⟩
+  · rintro ⟨count, middle, after, prefixRead, univsRead, bindersRead⟩
+    simp [bind, EStateM.bind, prefixRead, univsRead, bindersRead, pure, EStateM.pure]
 
 /-- Bounded record reads retain the production result and cursor while
 enforcing one aggregate limit for the entire universe table. -/
@@ -154,7 +160,7 @@ theorem getConstant_spec (budget : Nat) (start finish : GetState) (constant : Co
     (h : Bounded.getConstant budget start = .ok constant finish) :
     Ixon.getConstant start = .ok constant finish ∧
       Bounded.univNodes constant.univs ≤ budget := by
-  obtain ⟨count, middle, prefixRead, univsRead⟩ :=
+  obtain ⟨count, middle, after, prefixRead, univsRead, bindersRead⟩ :=
     (getConstantWithUnivs_ok_iff _ start finish constant).mp h
   change (EStateM.map Prod.fst (Bounded.getUnivArray count budget)) middle = _ at univsRead
   cases read : Bounded.getUnivArray count budget middle with
@@ -166,7 +172,7 @@ theorem getConstant_spec (budget : Nat) (start finish : GetState) (constant : Co
     obtain ⟨same, spent⟩ := getUnivArray_spec count budget _ _ _ _ read
     refine ⟨?_, by omega⟩
     exact (getConstantWithUnivs_ok_iff _ start _ constant).mpr
-      ⟨count, middle, prefixRead, same⟩
+      ⟨count, middle, _, prefixRead, same, bindersRead⟩
 
 /-- A successful production record read remains accepted whenever the whole
 universe table, rather than just each individual entry, fits the limit. -/
@@ -174,11 +180,11 @@ theorem getConstant_complete (budget : Nat) (start finish : GetState) (constant 
     (h : Ixon.getConstant start = .ok constant finish)
     (fits : Bounded.univNodes constant.univs ≤ budget) :
     Bounded.getConstant budget start = .ok constant finish := by
-  obtain ⟨count, middle, prefixRead, univsRead⟩ :=
+  obtain ⟨count, middle, after, prefixRead, univsRead, bindersRead⟩ :=
     (getConstantWithUnivs_ok_iff _ start finish constant).mp h
   have bounded := getUnivArray_complete count budget _ _ _ univsRead fits
   apply (getConstantWithUnivs_ok_iff _ start finish constant).mpr
-  refine ⟨count, middle, prefixRead, ?_⟩
+  refine ⟨count, middle, after, prefixRead, ?_, bindersRead⟩
   change (EStateM.map Prod.fst (Bounded.getUnivArray count budget)) middle = _
   simp [EStateM.map, bounded]
 

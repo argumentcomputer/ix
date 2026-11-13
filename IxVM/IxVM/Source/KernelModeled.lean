@@ -89,7 +89,7 @@ def block_is_modeled := aiur_fn⟦
   fn block_is_modeled(block: Bytes::AddressRef) -> Field {
       let c = Ingress::load_verified_constant(block);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               match muts_indc_count(members) {
@@ -114,7 +114,7 @@ def block_is_multi := aiur_fn⟦
   fn block_is_multi(block: Bytes::AddressRef) -> Field {
       let c = Ingress::load_verified_constant(block);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               match muts_indc_count(members) {
@@ -620,7 +620,7 @@ def walk_path := aiur_fn⟦
             0 => {  projection_block(c) } ,
             _ => {
               match c {
-                Ixon::Constant::Mk(_, _, refs, _) => {
+                Ixon::Constant::Mk(_, _, refs, _, _) => {
                   assert_eq!(KernelClaim::g_list_has(KernelClaim::const_idxs_of(c), st - 1), 1,
                     "model advice: a dependency path step uses an unused reference");
                   Lists::lookup(refs, st - 1) } ,
@@ -634,7 +634,7 @@ def walk_path := aiur_fn⟦
 def projection_block := aiur_fn⟦
   fn projection_block(c: Ixon::Constant) -> Bytes::AddressRef {
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::IPrj(p) => {
               match p { Ixon::InductiveProj::Mk(_, b) => {  b } , } } ,
@@ -676,7 +676,7 @@ def container_recs_refs := aiur_fn⟦
         Lists::Node::Cons(x, rest) => {
           let c0 = Ingress::load_verified_constant(x);
           match c0 {
-            Ixon::Constant::Mk(info, _, _, _) => {
+            Ixon::Constant::Mk(info, _, _, _, _) => {
               match info {
                 Ixon::ConstantInfo::Recr(_) => {  container_refs_check(x, c0, wset) } ,
                 Ixon::ConstantInfo::RPrj(_) => {
@@ -694,9 +694,9 @@ def container_refs_check := aiur_fn⟦
       let iblock = rec_family_block(x);
       let ib = Ingress::load_verified_constant(iblock);
       match c {
-        Ixon::Constant::Mk(_, _, refs, _) => {
+        Ixon::Constant::Mk(_, _, refs, _, _) => {
           match ib {
-            Ixon::Constant::Mk(_, _, irefs, _) => {
+            Ixon::Constant::Mk(_, _, irefs, _, _) => {
               container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs,
                                 KernelClaim::const_idxs_of(ib), wset) } ,
           } } ,
@@ -741,7 +741,7 @@ def projection_of_ref_block := aiur_fn⟦
                              iused: Lists::List<Field>) -> Field {
       let c = Ingress::load_verified_constant(r);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::IPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
             Ixon::ConstantInfo::CPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
@@ -773,7 +773,7 @@ def is_projection_of := aiur_fn⟦
   fn is_projection_of(r: Bytes::AddressRef, block: Bytes::AddressRef) -> Field {
       let c = Ingress::load_verified_constant(r);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
             Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
@@ -808,11 +808,11 @@ def check_advice_record := aiur_fn⟦
                          aset: RBTreeMap::RBTreeMap<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       let c = Ingress::load_verified_constant(a);
       match c {
-        Ixon::Constant::Mk(info, _, refs, _) => {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   let kind_ok = match kind {
                     Ixon::DefKind::Definition => {
                       match safety {
@@ -903,7 +903,7 @@ def projection_of_advice := aiur_fn⟦
   fn projection_of_advice(r: Bytes::AddressRef, aset: RBTreeMap::RBTreeMap<Field>) -> Field {
       let c = Ingress::load_verified_constant(r);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::IPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
             Ixon::ConstantInfo::CPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
@@ -955,7 +955,7 @@ def check_family := aiur_fn⟦
       check_advice_records(rc, advice, aset, wset);
       let bc = Ingress::load_verified_constant(block);
       match bc {
-        Ixon::Constant::Mk(binfo, _, _, _) => {
+        Ixon::Constant::Mk(binfo, _, _, _, _) => {
           match binfo {
             Ixon::ConstantInfo::Muts(members) => {
               let n_types = Lists::length(members);
@@ -1178,7 +1178,7 @@ def family_recs := aiur_fn⟦
   fn family_recs(rec_block: Bytes::AddressRef) -> Lists::List<Bytes::AddressRef> {
       let c = Ingress::load_verified_constant(rec_block);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               assert_eq!(muts_recr_count(members), Lists::length(members),

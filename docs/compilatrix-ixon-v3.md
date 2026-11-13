@@ -70,32 +70,25 @@ The [fixture directory](../Tests/Fixtures/ixon-v4/) contains:
 | --- | --- |
 | `expressions.txt` | Independently authored canonical expression bytes and addresses |
 | `text.tsv` | All binder/arrow modes and both let kinds |
-| `resource.tsv` | Accepted and rejected resource programs |
 | `addressed.tsv` | Addressed declarations and a canonical profile |
 | `claims.tsv` | Claim bytes and BLAKE3 digests for every variant |
 | `primitives.tsv` | Regenerated v4 primitive identities |
-| `handoff/accepted.ixe` | Complete anonymous closure with a linear local identity |
-| `handoff/rejected-local-escape.ixe` | Type-correct closure whose local input escapes |
-| `handoff/profile.bin` | Canonical resource profile with no external assumptions |
-| `handoff/accepted.claim` | Native resource claim for the accepted closure |
-| `handoff/manifest.json` | Exact file hashes and subject/profile/claim identities |
+| `reject-parity.txt` | Byte strings every Lean and Rust reader of their kind refuses, with accepted controls |
+| `role-table.tsv` | Role-table wire vectors |
 
-Both binary environments must decode and pass erased typing. Resource admission
-must accept the first and reject the second. Changing any committed contract,
-subject, or profile must invalidate the associated identity. Reading the claim
-is not validation, and its bytes are not an IxVM resource proof.
+Changing any committed contract, subject, or profile must invalidate the
+associated identity.
 
 Run `lake exe ixon-v4-tests` from the repository root for codec, FFI, source,
-resource, decompiler, catalog, and VM checks. The generated files (the handoff
-set, `claims.tsv`, `addressed.tsv` and `resource.tsv`) must equal their
+resource, decompiler, catalog, and VM checks. The generated files
+(`claims.tsv` and `addressed.tsv`) must equal their
 producers' output byte for byte. Scratch files live in `$IX_IXON_V4_DIR`
 (default `/tmp`; set it when two checkouts run these executables at the same
 time). `lake exe ixon-v4-primitives` writes the primitive closure there
 (`ixon-v4-primitives.ixe`) and fails if `primitives.tsv` differs from the live
 addresses; `ixon-v4-tests --primitives` then validates that closure.
-`--export-handoff` writes the deterministic handoff files to `ixon-v4-handoff/`
-in the scratch directory, and `--export-fixtures` writes `claims.tsv`,
-`addressed.tsv` and `resource.tsv` to `ixon-v4-fixtures/`; copy them into the
+`--export-fixtures` writes `claims.tsv` and `addressed.tsv` to
+`ixon-v4-fixtures/` in the scratch directory; copy them into the
 fixture directory only after validation.
 
 The formal gates are `lake build Ix.Resource.Audit` (the resource-state

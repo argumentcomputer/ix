@@ -201,43 +201,36 @@ private def qPropWhen (pw : Ix.Kernel.PropWhen) : Lean.Expr :=
   | none => mkConst ``Ix.Kernel.PropWhen.never
   | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qLevelParams ps)
 
-private def qUses : Ixon.Uses → Lean.Expr
-  | .erased => mkConst ``Ixon.Uses.erased
-  | .linear => mkConst ``Ixon.Uses.linear
-  | .affine => mkConst ``Ixon.Uses.affine
-  | .many => mkConst ``Ixon.Uses.many
+/-- A binder mode, as its constructor (the default `many` included, which is
+the term `{ pw := … }` elaborates to). -/
+private def qBinderMode : Ixon.BinderMode → Lean.Expr
+  | .many => mkConst ``Ixon.BinderMode.many
+  | .borrowed => mkConst ``Ixon.BinderMode.borrowed
+  | .unique => mkConst ``Ixon.BinderMode.unique
+  | .uniqueBorrowed => mkConst ``Ixon.BinderMode.uniqueBorrowed
+  | .once => mkConst ``Ixon.BinderMode.once
+  | .onceBorrowed => mkConst ``Ixon.BinderMode.onceBorrowed
+  | .erased => mkConst ``Ixon.BinderMode.erased
 
-private def qValueContract (v : Ixon.ValueContract) : Lean.Expr :=
-  mkApp2 (mkConst ``Ixon.ValueContract.mk)
-    (match v.owned with
-      | .unique => mkConst ``Ixon.Owned.unique
-      | .shared => mkConst ``Ixon.Owned.shared)
-    (match v.locality with
-      | .unrestricted => mkConst ``Ixon.Locality.unrestricted
-      | .local => mkConst ``Ixon.Locality.local)
+private def qResultMode : Ixon.ResultMode → Lean.Expr
+  | .shared => mkConst ``Ixon.ResultMode.shared
+  | .borrowed => mkConst ``Ixon.ResultMode.borrowed
+  | .unique => mkConst ``Ixon.ResultMode.unique
+  | .uniqueBorrowed => mkConst ``Ixon.ResultMode.uniqueBorrowed
 
-/-- Defaults are quoted as the default constants, so a quoted pin is the
-same term `{ pw := … }` elaborates to. -/
-private def qBinderContract (c : Ixon.BinderContract) : Lean.Expr :=
-  if c == .many then mkConst ``Ixon.BinderContract.many else
-    mkApp2 (mkConst ``Ixon.BinderContract.mk) (qUses c.uses) (qValueContract c.value)
+private def qLetMode : Ixon.LetMode → Lean.Expr
+  | .value m => mkApp (mkConst ``Ixon.LetMode.value) (qBinderMode m)
+  | .borrow => mkConst ``Ixon.LetMode.borrow
 
-/-- A let's metadata: its contract, field by field. -/
+/-- A let's metadata: its `nonDep` flag and its mode. -/
 private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
-  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk)
-    (mkApp3 (mkConst ``Ixon.LetContract.mk) (qBool l.contract.nonDep)
-      (match l.contract.kind with
-        | .value => mkConst ``Ixon.LetKind.value
-        | .borrowShared => mkConst ``Ixon.LetKind.borrowShared)
-      (qBinderContract l.contract.binder))
+  mkApp3 (mkConst ``Ix.Kernel.LetMeta.mk) (qBool l.nonDep) (qLetMode l.contract)
     (mkConst ``Ix.Kernel.LetDisplay.anon)
 
 /-- A pin's binders carry no name (the default, `BinderDisplay.anon`). -/
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp4 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderContract m.contract)
-    (if m.result == .shared then mkConst ``Ixon.ValueContract.shared else
-      qValueContract m.result)
-    (mkConst ``Ix.Kernel.BinderDisplay.anon)
+  mkApp4 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderMode m.contract)
+    (qResultMode m.result) (mkConst ``Ix.Kernel.BinderDisplay.anon)
 
 private def qLiteral : Ix.Kernel.Literal → Lean.Expr
   | .natVal n => mkApp (mkConst ``Ix.Kernel.Literal.natVal) (mkRawNatLit n)

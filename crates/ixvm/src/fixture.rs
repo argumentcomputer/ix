@@ -5,7 +5,7 @@ use aiur::ixon::Reader;
 use std::path::Path;
 
 pub const MAGIC: &[u8; 8] = b"IXVMFIX\0";
-pub const VERSION: u64 = 2;
+pub const VERSION: u64 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Serialized {
@@ -32,9 +32,6 @@ pub struct Fixture {
   pub constants: Vec<Serialized>,
   pub blobs: Vec<Serialized>,
   pub roles: Vec<Serialized>,
-  /// The records' binder data, version 2: per record its address and
-  /// its stream values as IO channel 8 carries them (`Ix/IxVM/PwHints.lean`).
-  pub binder_data: Vec<([u8; 32], Vec<u64>)>,
 }
 
 fn words(address: &[u8; 32]) -> Vec<u64> {
@@ -60,7 +57,9 @@ impl Fixture {
       return Err("not an IxVM fixture".into());
     }
     let version = r.nat()?;
-    if version != 1 && version != VERSION {
+    // Version 3: Ixon v5 records, each carrying its binder data. Version 2
+    // carried the binder data beside the records, which IxVM no longer reads.
+    if version != VERSION {
       return Err(format!("unsupported IxVM fixture version {version}"));
     }
     let fixture = Self {
@@ -71,11 +70,6 @@ impl Fixture {
       constants: r.list(serialized)?,
       blobs: r.list(serialized)?,
       roles: r.list(serialized)?,
-      binder_data: if version == 1 {
-        vec![]
-      } else {
-        r.list(|r| Ok((address(r)?, r.nats()?)))?
-      },
     };
     r.finish()?;
     Ok(fixture)
@@ -107,7 +101,7 @@ mod tests {
       "/../../IxVM/IxVM/fixtures/nat-add-comm.ixf"
     );
     let fixture = Fixture::load(Path::new(path)).unwrap();
-    assert_eq!(fixture.format, "ixon-v4");
+    assert_eq!(fixture.format, "ixon-v5");
     assert_eq!(fixture.name, "Nat.add_comm");
     assert!(fixture.constants.iter().any(|c| c.address == fixture.address));
     for entry in fixture

@@ -121,12 +121,10 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
 * `defn`/`axio`/`quot` singletons become one declaration each; projection
   records emit nothing (they are only checked to resolve).
 * Every binder carries `pw := .never` (the checker's annotation pass computes
-  the datum) and keeps its Ixon contracts in `BinderMeta`: a `lam`'s
-  binder contract as `contract` (its `result` is `shared`), an `all`'s input
-  contract as `contract` and its result contract as `result`, and a `letE`'s
-  contract (`Ixon.LetContract`) as its `LetMeta`'s `contract`.  A binder with
-  the Lean fragment's contracts shares one metadata object
-  (`BinderMeta.ofContracts`, PERF P14).
+  the datum) and the default modes: the reader does not read the record's
+  binder-data section, where its binders' modes are, and drops a `let`'s mode
+  from its header. Kernel terms carry no modes. Every binder shares one
+  metadata object (`BinderMeta.leanNever`, PERF P14).
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
@@ -181,7 +179,7 @@ structure Bindings (md : Mode) where
 abbrev Store := Address → Option Ixon.Constant
 
 def emptyTables (c : Ixon.Constant) : Bool :=
-  c.sharing.isEmpty && c.refs.isEmpty && c.univs.isEmpty
+  c.sharing.isEmpty && c.refs.isEmpty && c.univs.isEmpty && c.binders.isEmpty
 
 /-- The reference a record address denotes: a singleton is member 0 of
 itself, a projection the member (or constructor) of its owning block, a
@@ -269,7 +267,7 @@ def stripAll (c : Ixon.Constant) : Nat → Ixon.Expr → Option (List Ixon.Expr 
   | 0, e => some ([], e)
   | n + 1, e =>
     match unshare c e with
-    | .all _ _ t b => do
+    | .all t b => do
       let (ts, r) ← stripAll c n b
       pure (t :: ts, r)
     | _ => none
@@ -279,7 +277,7 @@ def stripAllFull (c : Ixon.Constant) : Nat → Ixon.Expr → List Ixon.Expr × I
   | 0, e => ([], e)
   | n + 1, e =>
     match unshare c e with
-    | .all _ _ t b =>
+    | .all t b =>
       let (ts, r) := stripAllFull c n b
       (t :: ts, r)
     | e => ([], e)
@@ -551,6 +549,14 @@ def recLps (large : Bool) (blockLps : List LevelParam) : List LevelParam :=
 def natural (bytes : ByteArray) : Nat :=
   bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0
 
+/-- Whether `bytes` is a natural number's one blob, the compiler's (Ix's
+`Nat.toBytesLE`): little-endian with no trailing zero byte, and `[0]` for
+zero. -/
+def canonicalNatural (bytes : ByteArray) : Bool :=
+  match bytes.data.toList.getLast? with
+  | none => false
+  | some last => last != 0 || bytes.size == 1
+
 def convUniv (param : Nat → LevelParam) : Ixon.Univ → CLevel
   | .zero => .zero
   | .succ u => .succ (convUniv param u)
@@ -589,6 +595,14 @@ def ECx.blobAt (e : ECx md) (i : UInt64) : ReadM ByteArray := do
   let some b := e.cx.blob a | malformed s!"literal blob {a} is missing"
   pure b
 
+/-- The natural number whose blob is at `refs[i]`. A blob other than the number's
+canonical one (`canonicalNatural`) is refused, so each number has one record
+spelling. -/
+def ECx.natAt (e : ECx md) (i : UInt64) : ReadM Nat := do
+  let bytes ← e.blobAt i
+  if canonicalNatural bytes then pure (natural bytes)
+  else malformed "natural literal blob is not canonical"
+
 /-- One expression, against the converted sharing entries before it. -/
 def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM (CExpr md)
   | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
@@ -606,14 +620,14 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
     let bytes ← e.blobAt i
     let some s := String.fromUTF8? bytes | malformed "string literal is not valid UTF-8"
     pure (.lit (.strVal s))
-  | .nat i => do pure (.lit (.natVal (natural (← e.blobAt i))))
+  | .nat i => do pure (.lit (.natVal (← e.natAt i)))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
-  | .lam c t b => do
-    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts c .shared))
-  | .all c r t b => do
-    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts c r))
-  | .letE c t v b => do
-    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { contract := c })
+  | .lam t b => do
+    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
+  | .all t b => do
+    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
+  | .letE nonDep _ t v b => do
+    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { nonDep })
   | .share i =>
     match tbl[i.toNat]? with
     | some r => r
@@ -866,9 +880,9 @@ where
     | .recur i _ => acc.insert i.toNat
     | .prj _ _ v => go shared acc v
     | .app f a => go shared (go shared acc f) a
-    | .lam _ t b => go shared (go shared acc t) b
-    | .all _ _ t b => go shared (go shared acc t) b
-    | .letE _ t v b => go shared (go shared (go shared acc t) v) b
+    | .lam t b => go shared (go shared acc t) b
+    | .all t b => go shared (go shared acc t) b
+    | .letE _ _ t v b => go shared (go shared (go shared acc t) v) b
     | .share i => (shared[i.toNat]?.getD {}).fold (·.insert ·) acc
     | _ => acc
 
@@ -1193,9 +1207,9 @@ where
     | .str _ => (acc.1, true)
     | .prj _ _ v => go acc v
     | .app f a => go (go acc f) a
-    | .lam _ t b => go (go acc t) b
-    | .all _ _ t b => go (go acc t) b
-    | .letE _ t v b => go (go (go acc t) v) b
+    | .lam t b => go (go acc t) b
+    | .all t b => go (go acc t) b
+    | .letE _ _ t v b => go (go (go acc t) v) b
     | _ => acc
 
 /-- The constants a `Nat` literal references (`Expr.constsResolve`). -/

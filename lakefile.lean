@@ -253,7 +253,7 @@ lean_exe «source-contract-tests» where
   supportInterpreter := true
 
 /-- Focused Ixon v4 codec, locality, and cross-language transport checks;
-`--export-fixtures` and `--export-handoff` regenerate the generated fixtures.
+`--export-fixtures` regenerates the generated text fixtures.
 Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
 lean_exe «ixon-v4-tests» where
   root := `Tests.IxonV4Main
@@ -297,6 +297,10 @@ expands every stored sharing table in an `.ixe`, checks the production
 rebuild and reports subterm, candidate and MSS statistics. -/
 lean_exe «sharing-study» where
   root := `Benchmarks.SharingStudy
+
+/-- The binder-data sections of compiled environments: sizes, and two compiles compared. -/
+lean_exe «binder-data-stats» where
+  root := `Benchmarks.BinderDataStats
 
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,

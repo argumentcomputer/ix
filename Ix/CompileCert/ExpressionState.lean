@@ -37,18 +37,12 @@ open Ix.Kernel.Reader (Ctx CName CExpr ReadM)
 
 /-! ## The source relation -/
 
-/-- The checker side of a contract frame: the binder's metadata takes the
-contract, exactly as `Ix.LeanIngress.withContract` puts it, on a binder of
-the frame's kind. -/
+/-- The checker side of a contract frame, as `Ix.LeanIngress.withContract`
+treats it: the term itself for a frame the compiler lowers (an ordinary
+contract on a binder of its kind), none otherwise. -/
 def withContract {md : Mode} (c : Ix.SemanticContract.Contract) (source : Ix.Expr)
     (target : CExpr md) : Option (CExpr md) :=
-  match c.kind, source, target with
-  | .lam, .lam .., .lam t b m => some (.lam t b { m with contract := c.binder })
-  | .all, .forallE .., .forallE t b m =>
-    some (.forallE t b { m with contract := c.binder, result := c.result })
-  | .letE, .letE .., .letE t v b l =>
-    some (.letE t v b { contract := { l.contract with binder := c.binder, kind := c.letKind } })
-  | _, _, _ => none
+  if c.admits source then some target else none
 
 /-- A source expression and the checker term the certified reader reads,
 independently of compiler success. Each case is the ingress's
@@ -82,7 +76,7 @@ inductive Related {md : Mode} (names : Ix.Name → CName md → Prop)
       (valueRel : Related names levels value targetValue)
       (bodyRel : Related names levels body targetBody) :
       Related names levels (.letE name type value body nonDep hash)
-        (.letE targetType targetValue targetBody { contract := .lean nonDep })
+        (.letE targetType targetValue targetBody { nonDep := nonDep })
   | nat (value : Nat) (hash : Address) :
       Related names levels (.lit (.natVal value) hash) (.lit (.natVal value))
   | str (value : String) (hash : Address) :
@@ -234,6 +228,55 @@ theorem natural_go (fuel value : Nat) (bounded : value ≤ fuel) :
       rw [ih _ smaller]
       exact Nat.mod_add_div _ _
       all_goals omega
+
+/-- The bytes `Nat.toBytesLE.go` writes for a positive value its fuel covers:
+at least one, the last nonzero. -/
+theorem toBytesLE_go_last (fuel value : Nat) (pos : 0 < value) (bounded : value ≤ fuel) :
+    ∃ init last, Nat.toBytesLE.go fuel value = init ++ [last] ∧ last ≠ 0 := by
+  induction fuel generalizing value with
+  | zero => omega
+  | succ fuel ih =>
+    cases value with
+    | zero => omega
+    | succ value =>
+      rw [Nat.toBytesLE.go]
+      by_cases small : (value + 1) / 256 = 0
+      · refine ⟨[], Nat.toUInt8 (value + 1), ?_, ?_⟩
+        · rw [small]
+          cases fuel <;> rfl
+        · intro zero
+          have byte : (Nat.toUInt8 (value + 1)).toNat = (value + 1) % 256 := rfl
+          rw [zero] at byte
+          have whole : (value + 1) % 256 = value + 1 := Nat.mod_eq_of_lt (by omega)
+          simp at byte
+          omega
+      · have smaller : (value + 1) / 256 ≤ fuel := by
+          have less := Nat.div_lt_self (by omega : 0 < value + 1) (by decide : 1 < 256)
+          omega
+        obtain ⟨init, last, eq, ne⟩ := ih _ (by omega) smaller
+        exact ⟨Nat.toUInt8 (value + 1) :: init, last, by rw [eq]; rfl, ne⟩
+      all_goals omega
+
+theorem getLast?_snoc (bytes : List UInt8) (last : UInt8) :
+    (bytes ++ [last]).getLast? = some last := by
+  induction bytes with
+  | nil => rfl
+  | cons byte rest ih =>
+    cases rest with
+    | nil => rfl
+    | cons next rest => exact ih
+
+set_option linter.unusedSimpArgs false in
+/-- A natural-number literal's blob is the reader's canonical one. -/
+theorem canonicalNatural_toBytes (value : Nat) :
+    Kernel.Reader.canonicalNatural (ByteArray.mk (Nat.toBytesLE value)) = true := by
+  unfold Kernel.Reader.canonicalNatural Nat.toBytesLE
+  by_cases zero : value = 0
+  · subst value; rfl
+  · simp only [beq_iff_eq, zero, ↓reduceIte]
+    obtain ⟨init, last, eq, ne⟩ := toBytesLE_go_last value value (by omega) (Nat.le_refl _)
+    rw [eq]
+    simp [getLast?_snoc, ne]
 
 /-- A natural-number literal's blob reads back as the literal. -/
 theorem natural_toBytes (value : Nat) :

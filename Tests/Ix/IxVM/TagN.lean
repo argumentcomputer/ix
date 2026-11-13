@@ -1,4 +1,7 @@
 import Ix.Ixon
+import IxC.Ixon.Canonical
+import IxC.Kernel.Admission.Bytes
+import Tests.FFI.Ixon
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.Exploits
 import LSpec
@@ -20,11 +23,15 @@ The cases rewrite one field of `unsafe axiom _ : Sort 0`, whose bytes are
   numeral or share node carrying the value;
 - the last universe (`f = 2`, the last byte), a variable or a successor count.
 
-Each rewritten string is a differential case. If the host's reader accepts the
-whole constant, a `Reveal` of its level count and of its type's address must be
-accepted: the program decodes the level count to the host's value, and
-re-encodes the type to the host's bytes. If the host rejects it, any `Reveal`
-of it must be rejected. The vectors: every rung boundary for each flag width,
+Each rewritten string is a differential case. If the host's canonical decoder
+(`Ixon.Canonical.deConstant`) accepts the whole constant, a `Reveal` of its
+level count and of its type's address must be accepted: the program decodes the
+level count to the host's value, and re-encodes the type to the host's bytes.
+If the host rejects it, any `Reveal` of it must be rejected. The canonical
+decoder reads these strings as the codec does, except a level count of `2^32`
+or more (`Ixon.maxLevelCount`), which every reader refuses
+(`levelCountParityCases` holds Lean's decoder, the kernel's byte admission,
+Rust's reading and the program to it). The vectors: every rung boundary for each flag width,
 with the lowest and the highest flag; the expected encodings; the rejection
 vectors; every invalid code followed by as many bytes as a valid rung reads;
 the 2^64 limit; truncations and a trailing byte; and every one-byte string
@@ -32,10 +39,10 @@ with a sample of second bytes.
 
 A universe variable is checked by value too: `Sort (var v)` is well-formed under
 `v + 1` universe parameters and not under `v`. The program bounds the variable
-with `UInt32::less_than_fields(v, lvls)`, whose operands must have a 4-byte
-decomposition in the circuit, so a parameter count of `2^32` or more has no
-trace: those claims are true but unprovable, and the circuit verdict (the
-suite's) rejects them at the comparison's range check.
+with `UInt32::less_than_fields(v, lvls)`. A parameter count of `2^32` or more is
+refused by every reader, and the program refuses it at `max_lvls`' range check
+(`UInt32::less_than_fields`, whose operands must have a 4-byte decomposition),
+before the variable is compared.
 
 The legacy suite also proved one value per rung through a test-only codec
 entry point. The production program has no such entry point, and
@@ -47,7 +54,7 @@ namespace Tests.Ix.IxVM.TagN
 open LSpec Tests.Ix.IxVM
 
 /-- The constant the cases rewrite. -/
-def base : Ixon.Constant := ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+def base : Ixon.Constant := ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
 
 /-- Where a case rewrites `base`'s bytes. -/
 inductive Field where
@@ -101,11 +108,12 @@ def revealAll : Ixon.ConstantInfo → Ix.RevealConstantInfo
   | .muts _ => .muts #[]
 
 /-- The `Reveal` case for constant bytes: the host's reading of every field
-when the host accepts them (`revealAll`), a rejection when it does not. -/
+when the host's canonical decoder accepts them (`revealAll`), a rejection when
+it does not. -/
 def differential (label : String) (bytes : ByteArray) : Builder := fun _ => do
   let (env, addr) := Exploits.storeRawAt {} bytes
   let env ← bare env
-  match Ixon.runGetExact Ixon.getConstant bytes with
+  match Ixon.Canonical.deConstant bytes.size Ixon.loadMaxUnivNodes bytes with
   | .ok c =>
     Case.ofClaim s!"{label} (the host reads it)" env (.reveal addr (revealAll c.info))
   | .error e =>
@@ -265,30 +273,66 @@ def sweepCases (_ : Unit) : Array Builder := Id.run do
 /-- `axiom _ : Sort (var v)` with `lvls` universe parameters, a user axiom of
 the claim (its axioms tree names it, so a typing claim checks it under the
 axiom policy; an unsafe axiom is no claim's seed): well-formed exactly when
-`v < lvls`, so the program must read `v` as the host wrote it. A well-formed
-one with `lvls ≥ 2^32` is unprovable (the bound's range check has no trace), so
-the circuit rejects it at `u32 comparison`. -/
+`v < lvls`, so the program must read `v` as the host wrote it. One with
+`lvls ≥ 2^32` is refused by every reader (`Ixon.maxLevelCount`); the circuit
+refuses it at `max_lvls`' range check (`u32 comparison`). -/
 def universeVariableCases (_ : Unit) : Array Builder :=
   let values := (boundaries 2).filter (· < 2 ^ 64 - 1)
   values.toArray.flatMap fun v =>
     #[(v + 1, true), (v, false)].map fun (lvls, wellFormed) _ => do
       let ctx ← Ix.ClaimContext.ofDefaultTable
       let c : Ixon.Constant :=
-        ⟨.axio ⟨false, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64]⟩
+        ⟨.axio ⟨false, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64], #[]⟩
       let (env, addr) := Exploits.storeAt {} c
       let some axioms := Ix.AssumptionTree.canonical #[addr]
         | throw "the axiom has no tree"
       let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert axioms.root axioms
-      let provable := lvls < 2 ^ 32
+      let admitted := lvls < Ixon.maxLevelCount
       Case.ofClaim s!"TagN f=2 universe variable {v} under {lvls} parameters" (← bare env)
         (.check { ctx with axioms := some axioms.root } addr none) trees
-        (accept := wellFormed && provable)
-        (rejectsWith := if wellFormed && !provable then some "u32 comparison" else none)
+        (accept := wellFormed && admitted)
+        (rejectsWith := if admitted then none else some "u32 comparison")
+
+/-- The admission limits of `levelCountParityCases`' kernel reading. -/
+def parityLimits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+
+/-- **Every reader agrees on the level-count bound** (`Ixon.maxLevelCount`).
+The wire carries any `UInt64` level count, which the host's codec reads. A
+record with a count of `2^32` or more, standalone or a block's member, is
+refused by Lean's canonical decoder (`Ixon.Canonical.deConstant`), by the
+kernel's byte admission (`Ix.Kernel.Admission.decodeRecords`), by Rust's
+canonical reading (`Constant::binders_canonical`) and by the program (a
+`Reveal` of it); one below the bound is read by all four. The host's three
+verdicts are checked when the case is built, the program's by the case. -/
+def levelCountParityCases (_ : Unit) : Array Builder := Id.run do
+  let mut out : Array Builder := #[]
+  for lvls in [0, 1, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 56 - 1, 2 ^ 56, 2 ^ 64 - 1] do
+    let records : List (String × Ixon.Constant) := [
+      ("a record", ⟨.axio ⟨true, lvls.toUInt64, .sort 0⟩, #[], #[], #[.zero], #[]⟩),
+      ("a block member",
+        ⟨.muts #[.defn ⟨.defn, .safe, {}, lvls.toUInt64, .sort 0, .sort 0⟩], #[], #[], #[.zero], #[]⟩)]
+    for (what, c) in records do
+      out := out.push fun _ => do
+        let bytes := Ixon.ser c
+        let expected := decide (lvls < Ixon.maxLevelCount)
+        let codec := (Ixon.runGetExact Ixon.getConstant bytes).toOption.isSome
+        let lean := (Ixon.Canonical.deConstant bytes.size Ixon.loadMaxUnivNodes bytes).toOption.isSome
+        let kernel :=
+          (Ix.Kernel.Admission.decodeRecords parityLimits [(Address.blake3 bytes, bytes)]).toOption.isSome
+        let rust := Tests.FFI.Ixon.rsConstantCanonical bytes
+        unless codec && lean == expected && kernel == expected && rust == expected do
+          throw s!"level count {lvls} in {what}: the codec reads it: {codec}; Lean's canonical \
+            decoder: {lean}, the kernel's admission: {kernel}, Rust: {rust}; expected {expected}"
+        let (env, addr) := Exploits.storeRawAt {} bytes
+        Case.ofClaim s!"TagN level count {lvls} in {what}: every reader \
+          {if expected then "reads" else "refuses"} it" (← bare env)
+          (.reveal addr (revealAll c.info)) (accept := expected)
+  return out
 
 /-- The level count by value: a `Reveal` of another count is refused. -/
 def levelCountCases (_ : Unit) : Array Builder :=
   (boundaries 0).toArray.map fun v _ => do
-    let c : Ixon.Constant := ⟨.axio ⟨true, v.toUInt64, .sort 0⟩, #[], #[], #[.zero]⟩
+    let c : Ixon.Constant := ⟨.axio ⟨true, v.toUInt64, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let (env, addr) := Exploits.storeAt {} c
     let other := if v == 0 then 1 else v - 1
     Case.ofClaim s!"TagN f=0 level count {v} is not revealed as {other}" (← bare env)
@@ -297,7 +341,7 @@ def levelCountCases (_ : Unit) : Array Builder :=
 def run : IO UInt32 := do
   let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []
   let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeCases ()
-    ++ levelCountCases () ++ universeVariableCases () ++ sweepCases ()
+    ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases () ++ sweepCases ()
   -- The universe-variable cases are decided by the circuit's range check, so
   -- this suite always takes the circuit verdict.
   let ixvm ← runCases "ixvm-tagn" cases (circuit := some true)

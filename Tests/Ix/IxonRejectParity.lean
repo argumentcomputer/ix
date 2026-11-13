@@ -18,6 +18,8 @@ it, and accepts the kind's controls. The kinds and the readers:
   `check-lean`'s limits), the loaders' bounded decoder (`deConstantLoaded`) and
   the lazy window decoder (`deConstantAt`);
 * `noncanonical`: the canonical decoder;
+* `canonical-rule`: the canonical decoder; a record rule beyond the codec (a
+  theorem with assertions) refuses these bytes, which the codec reads;
 * `env`: the full reader (`deEnv`) and the verified loader
   (`deEnvVerifiedLazy`);
 * `ixes`: `parseIxesManifest`;
@@ -91,7 +93,7 @@ def readers (kind : String) (bytes : ByteArray) : Option (List (String × Bool))
       ("deConstantLoaded", (Ixon.Env.deConstantLoaded bytes).isOk),
       ("deConstantAt", (Ixon.deConstantAt bytes 0 bytes.size).isOk),
       ("refsAt", (Ix.Cert.RecordRefs.refsAt bytes 0 bytes.size).isSome)]
-  | "noncanonical" => some [canonical]
+  | "noncanonical" | "canonical-rule" => some [canonical]
   | "env" => some [("deEnv", (Ixon.deEnv bytes).isOk),
       ("deEnvVerifiedLazy", (Ixon.deEnvVerifiedLazy bytes).isOk)]
   | "ixes" => some [("parseIxesManifest", (Ix.Shard.parseIxesManifest bytes).isOk)]
@@ -145,6 +147,10 @@ def suite : IO (List TestSeq) := do
       for (reader, result) in results do
         let verb := if accepted then "accepts" else "refuses"
         tests := tests ++ test s!"{reader} {verb} {case.kind} {case.name}" (result == accepted)
+      -- a record rule beyond the codec: the codec reads the bytes either way
+      if kind == "canonical-rule" then
+        tests := tests ++ test s!"the codec reads {case.kind} {case.name}"
+          (Ixon.runGetExact Ixon.getConstant case.bytes).isOk
   return [tests]
 
 end Tests.Ix.IxonRejectParity

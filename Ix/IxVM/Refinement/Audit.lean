@@ -1,6 +1,7 @@
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.TagNWide
 import Ix.IxVM.Refinement.Deserialize
+import Ix.IxVM.Refinement.DeserializeBinders
 import IxC.Kernel.Audit.Axioms
 
 /-! # The IxVM ↔ IxC refinement statement, frozen
@@ -410,7 +411,6 @@ fun V x =>
   | Ix.Claim.reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ IxVM.Refinement.RevealLE info c.info
   | Ix.Claim.contains tree a => V.HoldsTree tree ∧ ∀ (leaves : List Address), V.LeavesAt tree leaves → a ∈ leaves
   | Ix.Claim.catalog members => False
-  | Ix.Claim.resource root profile => False
   | Ix.Claim.binding spec b => IxVM.Refinement.BindingIn V spec b
 -/
 #guard_msgs in
@@ -435,7 +435,6 @@ fun V x =>
   | Ix.Claim.contains tree const => V.HoldsTree tree
   | Ix.Claim.binding spec b => V.Closed ∧ (V.binding? b).isSome = true
   | Ix.Claim.catalog members => True
-  | Ix.Claim.resource root profile => True
 -/
 #guard_msgs in
 #print Ix.Claim.Covers
@@ -1169,7 +1168,7 @@ fun V =>
 /--
 info: def IxVM.Refinement.ConstantExprsClosed : Ixon.Env → Ixon.Constant → Prop :=
 fun ixe c =>
-  (∀ e ∈ c.info.exprs ++ c.sharing.toList, e.leanFragment = true ∧ IxVM.Refinement.ExprRefsClosed ixe c false e) ∧
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList, IxVM.Refinement.ExprRefsClosed ixe c false e) ∧
     ∀ e ∈ c.info.exprs,
       (¬∃ d n, c.info = Ixon.ConstantInfo.defn d ∧ e = d.value ∧ IxVM.Refinement.IsProjFnAt c n d.value) →
         IxVM.Refinement.ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)
@@ -1236,7 +1235,7 @@ fun x =>
 example (c : Ixon.Constant) (e : Ixon.Expr) : IxVM.Refinement.IsProjFnAt c 0 e =
     (∃ i f v, Ix.Kernel.Reader.unshare c e = .prj i f v ∧ Ix.Kernel.Reader.unshare c v = .var 0) := rfl
 example (c : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : IxVM.Refinement.IsProjFnAt c (n + 1) e =
-    (∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IxVM.Refinement.IsProjFnAt c n b) := rfl
+    (∃ t b, Ix.Kernel.Reader.unshare c e = .lam t b ∧ IxVM.Refinement.IsProjFnAt c n b) := rfl
 
 example (a : Address) : IxVM.Refinement.treeRoot (.leaf a) = Ix.HostAdmission.Merkle.leaf a := rfl
 example : IxVM.Refinement.treeRoot .padding = Ix.HostAdmission.Merkle.padding := rfl
@@ -1531,22 +1530,26 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Deserialize.u64WrappingSucc_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_run [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_run [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.letMode_ofHeader?_of_lt16 [propext, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.readByte_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.assertWireBool_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_all_mode».of_eval [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_lam_mode».of_eval [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNode_binder [propext, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getModedBinderNode_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNode_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNodeList_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlock_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlockList_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::unpack_def_kind_safety».of_eval [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
   IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
   Ix.IxVM.Refinement.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
-  Ix.IxVM.Refinement.Deserialize
+  Ix.IxVM.Refinement.Deserialize Ix.IxVM.Refinement.DeserializeBinders

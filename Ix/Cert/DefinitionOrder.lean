@@ -261,7 +261,7 @@ theorem go_read (inj : ∀ a b, K a = K b → a = b)
     simp only [recurDeps.go, Frontend.occursConst, Bool.or_eq_true]
     rw [iha a' _ ha j, ihf f' acc hf j]
     simp only [or_assoc]
-  | lam bc ty b iht ihb =>
+  | lam ty b iht ihb =>
     intro t acc h j
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h
@@ -271,7 +271,7 @@ theorem go_read (inj : ∀ a b, K a = K b → a = b)
     simp only [recurDeps.go, Frontend.occursConst, Bool.or_eq_true]
     rw [ihb b' _ hb j, iht ty' acc hty j]
     simp only [or_assoc]
-  | all bc vc ty b iht ihb =>
+  | all ty b iht ihb =>
     intro t acc h j
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h
@@ -281,7 +281,7 @@ theorem go_read (inj : ∀ a b, K a = K b → a = b)
     simp only [recurDeps.go, Frontend.occursConst, Bool.or_eq_true]
     rw [ihb b' _ hb j, iht ty' acc hty j]
     simp only [or_assoc]
-  | letE lc ty v b iht ihv ihb =>
+  | letE nd lm ty v b iht ihv ihb =>
     intro t acc h j
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h

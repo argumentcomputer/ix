@@ -48,9 +48,10 @@ them as unauthenticated advice.
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
 * `binding spec b`: the role table with hash `b` binds every role, and IxC
   accepts the closure of the bound constants and evidence theorems under it.
-* `catalog`, `resource`: `False`. IxVM rejects both (no arm for variant 8;
-  variant 9 asserts `0 = 1`), so `False` is the strongest true statement for
-  the IxVM theorem.
+* `catalog`: `False`. IxVM rejects it (no arm for variant 8), so `False` is
+  the strongest true statement for the IxVM theorem. Variant 9, the retired
+  resource claim, is no claim: every reader refuses its tag, and IxVM asserts
+  `0 = 1` on it.
 
 The typing claims (`check`, `checkEnv`, `eval`) carry, beside their context's
 specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
@@ -548,14 +549,14 @@ def IsProjFnAt (c : Ixon.Constant) : Nat → Ixon.Expr → Prop
     ∃ i f v, Ix.Kernel.Reader.unshare c e = .prj i f v ∧
       Ix.Kernel.Reader.unshare c v = .var 0
   | n + 1, e =>
-    ∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IsProjFnAt c n b
+    ∃ t b, Ix.Kernel.Reader.unshare c e = .lam t b ∧ IsProjFnAt c n b
 
 /-- Whether `e` has no `.recur` inside an application argument (`inArg = true`). -/
 def noArgRecur (inArg : Bool) : Ixon.Expr → Bool
   | .recur _ _ => !inArg
   | .app fn arg => noArgRecur inArg fn && noArgRecur true arg
-  | .lam _ ty body | .all _ _ ty body => noArgRecur inArg ty && noArgRecur inArg body
-  | .letE _ ty val body => noArgRecur inArg ty && noArgRecur inArg val && noArgRecur inArg body
+  | .lam ty body | .all ty body => noArgRecur inArg ty && noArgRecur inArg body
+  | .letE _ _ ty val body => noArgRecur inArg ty && noArgRecur inArg val && noArgRecur inArg body
   | .prj _ _ val => noArgRecur inArg val
   | _ => true
 
@@ -585,19 +586,18 @@ def ExprRefsClosed (ixe : Ixon.Env) (c : Ixon.Constant) (directProj : Bool) :
       ExprRefsClosed ixe c directProj val
   | .str idx | .nat idx => ∃ r, c.refs[idx.toNat]? = some r ∧ ixe.blobs.contains r = true
   | .app fn arg => ExprRefsClosed ixe c directProj fn ∧ ExprRefsClosed ixe c directProj arg
-  | .lam _ ty body | .all _ _ ty body =>
+  | .lam ty body | .all ty body =>
     ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj body
-  | .letE _ ty val body =>
+  | .letE _ _ ty val body =>
     ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj val ∧
       ExprRefsClosed ixe c directProj body
   | _ => True
 
-/-- Every expression of `c` is in the Lean contract fragment (`leanFragment`),
-resolves its references by kind (`ExprRefsClosed`), and outside projection
-functions (`IsProjFnAt`) projects only from direct structures. -/
+/-- Every expression of `c` resolves its references by kind (`ExprRefsClosed`),
+and outside projection functions (`IsProjFnAt`) projects only from direct
+structures. -/
 def ConstantExprsClosed (ixe : Ixon.Env) (c : Ixon.Constant) : Prop :=
-  (∀ e ∈ c.info.exprs ++ c.sharing.toList,
-    e.leanFragment = true ∧ ExprRefsClosed ixe c false e) ∧
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList, ExprRefsClosed ixe c false e) ∧
   ∀ e ∈ c.info.exprs,
     (¬ ∃ d n, c.info = .defn d ∧ e = d.value ∧ IsProjFnAt c n d.value) →
       ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)
@@ -664,7 +664,6 @@ def HoldsIn (V : View) : Claim → Prop
   | .reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ RevealLE info c.info
   | .contains tree a => V.HoldsTree tree ∧ ∀ leaves, V.LeavesAt tree leaves → a ∈ leaves
   | .catalog _ => False
-  | .resource _ _ => False
   | .binding spec b => BindingIn V spec b
 
 /-- **What a view must hold for the claim** before the main statement says
@@ -681,6 +680,5 @@ def Covers (V : View) : Claim → Prop
   | .contains tree _ => V.HoldsTree tree
   | .binding _ b => V.Closed ∧ (V.binding? b).isSome = true
   | .catalog _ => True
-  | .resource _ _ => True
 
 end Ix.Claim

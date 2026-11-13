@@ -127,6 +127,7 @@ private def binderAt (label : String) (nodes : Array Node) (ord : Nat)
     | none =>
       modify fun st => { st with report := { st.report with unaligned := st.report.unaligned + 1 } }
   | some (.share _) => missingKey s!"{label} ordinal {ord}: a share datum at a binder"
+  | some .undecided => missingKey s!"{label} ordinal {ord}: an undecided datum"
   | none => missingKey s!"{label} ordinal {ord}: no binder datum"
 
 /-- The check of one entry conversion: `nodes` its block, `e` its tree, `k`
@@ -149,18 +150,18 @@ def checkTree (a : Address) (sharing : Array Ixon.Expr) (table : Table) (label :
         | some (.proj _ _ kv) => some kv
         | _ => none
       checkTree a sharing table label nodes fuel v kv ord
-    | .letE _ t v b => do
+    | .letE _ _ t v b => do
       let ord ← checkTree a sharing table label nodes fuel t none ord
       let ord ← checkTree a sharing table label nodes fuel v none ord
       checkTree a sharing table label nodes fuel b k ord
-    | .lam _ t b => do
+    | .lam t b => do
       let (kt, kb, kpw) := match k with
         | some (.lam kt kb m) => (some kt, some kb, some m.pw)
         | _ => (none, none, none)
       binderAt label nodes ord kpw
       let ord ← checkTree a sharing table label nodes fuel t kt (ord + 1)
       checkTree a sharing table label nodes fuel b kb ord
-    | .all _ _ t b => do
+    | .all t b => do
       let (kt, kb, kpw) := match k with
         | some (.forallE kt kb m) => (some kt, some kb, some m.pw)
         | _ => (none, none, none)
@@ -184,7 +185,8 @@ def checkTree (a : Address) (sharing : Array Ixon.Expr) (table : Table) (label :
                 missingKey s!"{label'}: {nodes'.size} data for {used} numbered nodes"
           | none, _ => missingKey s!"{label'}: no such sharing entry"
           | _, none => missingKey s!"{label'}: no block"
-      | some (.binder _) => missingKey s!"{label} ordinal {ord}: a binder datum at a share site"
+      | some (.binder _) | some .undecided =>
+        missingKey s!"{label} ordinal {ord}: a binder datum at a share site"
       | none => missingKey s!"{label} ordinal {ord}: no share datum"
       pure (ord + 1)
     | _ => pure ord

@@ -87,6 +87,10 @@ inductive Node where
   | binder (params : Option (Array Nat))
   /-- a `Share` node: the variant its entry is converted with -/
   | share (variant : Nat)
+  /-- a `Lam` or `All` node whose datum is not decided: the kernel's datum
+  function could not run there, or something under the binder is undecided.
+  Written only in tainting mode (`RecCx.taint`, the compiler's). -/
+  | undecided
   deriving BEq, Hashable, Repr, Inhabited
 
 /-- One conversion of one entry: the entry, its variant, and the data of its
@@ -124,6 +128,9 @@ structure Stats where
   /-- declarations the kernel installed, and records it refused -/
   installed : Nat := 0
   refused : Nat := 0
+  /-- constants of records the kernel did not install that are left out of the
+  environment, a root of theirs undecided (`lenientInfos`) -/
+  lenientLeftOut : Nat := 0
   /-- the stream values written -/
   values : Nat := 0
   deriving Repr, Inhabited
@@ -135,12 +142,13 @@ def Stats.add (a b : Stats) : Stats :=
     freeShares := a.freeShares + b.freeShares,
     fallbacks := a.fallbacks + b.fallbacks, inherited := a.inherited + b.inherited,
     installed := a.installed + b.installed,
-    refused := a.refused + b.refused, values := a.values + b.values }
+    refused := a.refused + b.refused, lenientLeftOut := a.lenientLeftOut + b.lenientLeftOut,
+    values := a.values + b.values }
 
 def Stats.render (s : Stats) : String :=
   s!"records={s.records} blocks={s.blocks} binders={s.binders} params={s.params} \
     shares={s.shares} free-shares={s.freeShares} variants>0={s.extraVariants} fallbacks={s.fallbacks} inherited={s.inherited} \
-    installed={s.installed} refused={s.refused} values={s.values}"
+    installed={s.installed} refused={s.refused} lenient-left-out={s.lenientLeftOut} values={s.values}"
 
 /-! ## Records and their entries -/
 
@@ -191,9 +199,9 @@ def memberCount (c : Ixon.Constant) : Nat :=
 def looseBound (shared : Array Nat) : Ixon.Expr → Nat
   | .var i => i.toNat + 1
   | .app f a => max (looseBound shared f) (looseBound shared a)
-  | .lam _ t b => max (looseBound shared t) (looseBound shared b - 1)
-  | .all _ _ t b => max (looseBound shared t) (looseBound shared b - 1)
-  | .letE _ t v b =>
+  | .lam t b => max (looseBound shared t) (looseBound shared b - 1)
+  | .all t b => max (looseBound shared t) (looseBound shared b - 1)
+  | .letE _ _ t v b =>
     max (max (looseBound shared t) (looseBound shared v)) (looseBound shared b - 1)
   | .prj _ _ v => looseBound shared v
   | .share n => shared[n.toNat]?.getD 0
@@ -207,7 +215,7 @@ def bounds (sharing : Array Ixon.Expr) : Array Nat :=
 def hasBinder (shared : Array Bool) : Ixon.Expr → Bool
   | .lam .. | .all .. => true
   | .app f a => hasBinder shared f || hasBinder shared a
-  | .letE _ t v b => hasBinder shared t || hasBinder shared v || hasBinder shared b
+  | .letE _ _ t v b => hasBinder shared t || hasBinder shared v || hasBinder shared b
   | .prj _ _ v => hasBinder shared v
   | .share n => shared[n.toNat]?.getD false
   | _ => false
@@ -218,10 +226,10 @@ def binderful (sharing : Array Ixon.Expr) : Array Bool :=
 
 /-- The share sites of a tree (its own numbered nodes) whose entry has no binder. -/
 def freeSites (full : Array Bool) : Ixon.Expr → Nat
-  | .lam _ t b => freeSites full t + freeSites full b
-  | .all _ _ t b => freeSites full t + freeSites full b
+  | .lam t b => freeSites full t + freeSites full b
+  | .all t b => freeSites full t + freeSites full b
   | .app f a => freeSites full f + freeSites full a
-  | .letE _ t v b => freeSites full t + freeSites full v + freeSites full b
+  | .letE _ _ t v b => freeSites full t + freeSites full v + freeSites full b
   | .prj _ _ v => freeSites full v
   | .share n => if full[n.toNat]?.getD false then 0 else 1
   | _ => 0
@@ -310,6 +318,8 @@ structure KernelEnv where
   refused : Nat
   /-- why each refused record was refused (the first reason) -/
   failures : Array (Address × String) := #[]
+  /-- constants of refused records left out, a root of theirs undecided (`lenientInfos`) -/
+  lenientLeftOut : Nat := 0
 
 /-- The index of `env`, as `Ix.Kernel.mkFEnv` builds it (the newest
 constant of a key wins; counters from the oldest), by a loop rather than
@@ -374,6 +384,10 @@ structure RecCx where
   ecx : ECx .anon
   sharing : Array Ixon.Expr
   bounds : Array Nat
+  /-- tainting mode (the compiler's): a binder whose datum the kernel's function
+  cannot compute, or under which anything is undecided, is `Node.undecided`
+  rather than `never` -/
+  taint : Bool := false
 
 /-- A record's walk state: the sharing entries' variants (by datum vector)
 and blocks, and the memo of share sites under the same context. -/
@@ -381,7 +395,7 @@ structure WState where
   nextId : Nat := 0
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
-  memo : Std.HashMap (Nat × List Nat) (KExpr × Nat) := {}
+  memo : Std.HashMap (Nat × List Nat) (KExpr × Nat × Bool) := {}
   fallbacks : Nat := 0
   /-- data taken from the declared type where the kernel's pass could not run -/
   inherited : Nat := 0
@@ -401,21 +415,22 @@ private def freshId : WM Nat :=
   modifyGet fun st => (st.nextId, { st with nextId := st.nextId + 1 })
 
 /-- The kernel's datum of a binder whose annotated opened body is `body`,
-at `depth` (the body's): `annotPwPiI` for a ∀, `annotPwLamI` for a λ.
-Where the kernel's pass fails, `never`. -/
+at `depth` (the body's): `annotPwPiI` for a ∀, `annotPwLamI` for a λ, and
+whether it is decided. Where the kernel's pass fails, the declared type's datum
+`typed` (decided), else `never` (undecided). -/
 def datum (rc : RecCx) (pi : Bool) (depth : Nat) (body : KExpr)
-    (typed : Option Ix.Kernel.PropWhen := none) : WM Ix.Kernel.PropWhen := do
+    (typed : Option Ix.Kernel.PropWhen := none) : WM (Ix.Kernel.PropWhen × Bool) := do
   let act : CM Ix.Kernel.PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI rc.core rc.fe depth body
     else Ix.Kernel.Cached.annotPwLamI rc.core rc.fe depth body
   let res : Option Ix.Kernel.PropWhen ←
     (tryCatch (some <$> act) (fun _ => pure none) : CM (Option Ix.Kernel.PropWhen))
   match res, typed with
-  | some pw, _ => pure pw
+  | some pw, _ => pure (pw, true)
   | none, some pw => do
     modify fun st => { st with inherited := st.inherited + 1 }
-    pure pw
-  | none, none => do fallback; pure Ix.Kernel.PropWhen.never
+    pure (pw, true)
+  | none, none => do fallback; pure (Ix.Kernel.PropWhen.never, false)
 
 private def reserve : EM Nat :=
   modifyGet fun nodes => (nodes.size, nodes.push (.binder none))
@@ -423,11 +438,11 @@ private def reserve : EM Nat :=
 private def setNode (ord : Nat) (n : Node) : EM Unit :=
   modify fun nodes => nodes.set! ord n
 
-/-- A leaf, by IxC's reader (`convExpr`). -/
-private def leaf (rc : RecCx) (e : Ixon.Expr) : WM KExpr :=
+/-- A leaf, by IxC's reader (`convExpr`), and whether it failed. -/
+private def leaf (rc : RecCx) (e : Ixon.Expr) : WM (KExpr × Bool) :=
   match Ix.Kernel.Reader.convExpr rc.ecx #[] e with
-  | .ok k => pure k
-  | .error _ => do fallback; pure (.sort .zero)
+  | .ok k => pure (k, false)
+  | .error _ => do fallback; pure (.sort .zero, true)
 
 /-- The variant of entry `n` for the datum vector `nodes`. -/
 private def variantOf (n : Nat) (nodes : Array Node) : WM Nat := do
@@ -442,80 +457,88 @@ private def variantOf (n : Nat) (nodes : Array Node) : WM Nat := do
     pure v
 
 /-- The walk of one entry's tree under `ctx` (innermost first) at binder
-depth `depth`. -/
-def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Expr → EM KExpr
-  | 0, _, _, _, _, _ => do fallback; pure (.sort .zero)
+depth `depth`: the annotated term, and whether anything in the tree is
+undecided (a datum the kernel's function could not compute, or a node the walk
+could not read). -/
+def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Expr → EM (KExpr × Bool)
+  | 0, _, _, _, _, _ => do fallback; pure (.sort .zero, true)
   | fuel + 1, rc, ctx, depth, exp, e =>
     match e with
     | .var i =>
       match ctx[i.toNat]? with
-      | some c => pure c.val
-      | none => do fallback; pure (Ix.Kernel.Expr.mkBvar i.toNat)
+      | some c => pure (c.val, false)
+      | none => do fallback; pure (Ix.Kernel.Expr.mkBvar i.toNat, true)
     | .app f a => do
-      let f' ← walk fuel rc ctx depth none f
-      let a' ← walk fuel rc ctx depth none a
-      pure (.app f' a')
-    | .lam c t b => do
+      let (f', bf) ← walk fuel rc ctx depth none f
+      let (a', ba) ← walk fuel rc ctx depth none a
+      pure (.app f' a', bf || ba)
+    | .lam t b => do
       let ord ← reserve
-      let t' ← walk fuel rc ctx depth none t
+      let (t', bt) ← walk fuel rc ctx depth none t
       let id ← freshId
       -- a definition value's top λ chain: the declared type's ∀ at the same
       -- place, whose datum the kernel's binder congruence requires of the λ
       let (expBody, expPw) : Option KExpr × Option Ix.Kernel.PropWhen := match exp with
         | some (.forallE _ eb m) => (some eb, some m.pw)
         | _ => (none, none)
-      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) expBody b
-      let pw ← datum rc false (depth + 1) b' expPw
-      setNode ord (Node.ofPw pw)
-      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c .shared).withPw pw))
-    | .all c r t b => do
+      let (b', bb) ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) expBody b
+      let (pw, decided) ← datum rc false (depth + 1) b' expPw
+      let bad := !decided || bt || bb
+      setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
+      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
+        bad)
+    | .all t b => do
       let ord ← reserve
-      let t' ← walk fuel rc ctx depth none t
+      let (t', bt) ← walk fuel rc ctx depth none t
       let id ← freshId
-      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) none b
-      let pw ← datum rc true (depth + 1) b'
-      setNode ord (Node.ofPw pw)
-      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c r).withPw pw))
-    | .letE _ t v b => do
+      let (b', bb) ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) none b
+      let (pw, decided) ← datum rc true (depth + 1) b'
+      let bad := !decided || bt || bb
+      setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
+      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
+        bad)
+    | .letE _ _ t v b => do
       -- the kernel annotates the type and the value, then the body with the
       -- value transparent (its ζ-reduct)
-      let _ ← walk fuel rc ctx depth none t
-      let v' ← walk fuel rc ctx depth none v
+      let (_, bt) ← walk fuel rc ctx depth none t
+      let (v', bv) ← walk fuel rc ctx depth none v
       let id ← freshId
-      walk fuel rc (⟨id, v'⟩ :: ctx) depth exp b
+      let (b', bb) ← walk fuel rc (⟨id, v'⟩ :: ctx) depth exp b
+      pure (b', bt || bv || bb)
     | .prj i f v => do
-      let v' ← walk fuel rc ctx depth none v
+      let (v', bv) ← walk fuel rc ctx depth none v
       match rc.ecx.keyAt i with
-      | .ok k => pure (.proj k f.toNat v')
-      | .error _ => do fallback; pure v'
+      | .ok k => pure (.proj k f.toNat v', bv)
+      | .error _ => do fallback; pure (v', true)
     | .share n => do
       let ord ← reserve
       let n := n.toNat
       let key := (n, (ctx.take (rc.bounds[n]?.getD 0)).map (·.id))
-      let (e', variant) ← match (← getThe WState).memo[key]? with
+      let (e', variant, bad) ← match (← getThe WState).memo[key]? with
         | some hit => pure hit
         | none => do
           match rc.sharing[n]? with
-          | none => do fallback; pure ((.sort .zero : KExpr), 0)
+          | none => do fallback; pure ((.sort .zero : KExpr), 0, true)
           | some entry => do
-            let (e', nodes) ← ((walk fuel rc ctx depth none entry).run #[] : WM (KExpr × Array Node))
+            let ((e', bad), nodes) ← ((walk fuel rc ctx depth none entry).run #[] :
+              WM ((KExpr × Bool) × Array Node))
             let variant ← variantOf n nodes
-            modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant) }
-            pure (e', variant)
+            modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad) }
+            pure (e', variant, bad)
       setNode ord (.share variant)
-      pure e'
+      pure (e', bad)
     | _ => leaf rc e
 
 /-- A record's blocks: its roots at variant 0, then its sharing entries'
 conversions in the order they were first met; and its fallback count. -/
 def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (addr : Address)
-    (c : Ixon.Constant) : Array Block × Nat × Nat :=
+    (c : Ixon.Constant) (taint : Bool := false) : Array Block × Nat × Nat :=
   let n := memberCount c
   let cx := k.setup.cx
   let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
     if i < n then some (cx.memberKey (.member addr i)) else none
   let ecx : ECx .anon := ⟨cx, c, c.univs.map (Ix.Kernel.Reader.convUniv id), self⟩
-  let rc : RecCx := { fe := k.fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing }
+  let rc : RecCx := { fe := k.fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing, taint }
   let act : WM (Array Block) := do
     let mut out := #[]
     let mut annotated : Array KExpr := #[]
@@ -525,7 +548,7 @@ def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (add
       let exp := match tys[i]? with
         | some (some j) => annotated[j]?
         | _ => none
-      let (k, nodes) ← (walk walkFuel rc [] 0 exp e).run #[]
+      let ((k, _), nodes) ← (walk walkFuel rc [] 0 exp e).run #[]
       annotated := annotated.push k
       out := out.push ⟨0, i, 0, nodes⟩
     return out
@@ -543,47 +566,69 @@ install is annotated by the walk (the kernel's datum functions over the
 constants installed before it), and its constants enter the environment
 directly, without the fold's checks: a definition with its annotated value
 (so that it unfolds), a theorem with its value, everything else by its annotated
-type. -/
+type. A constant whose type, or a definition whose value, the walk leaves with an
+undecided binder is left out (`lenientInfos`). -/
 
-/-- A record's roots, annotated by the walk against `fe`. -/
+/-- A record's roots, annotated by the walk against `fe`, each with whether
+anything in it is undecided (a datum the kernel's function could not compute,
+written `never`). -/
 def annotatedRoots (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon) (addr : Address)
-    (c : Ixon.Constant) : Array KExpr :=
+    (c : Ixon.Constant) : Array (KExpr × Bool) :=
   let n := memberCount c
   let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
     if i < n then some (cx.memberKey (.member addr i)) else none
   let ecx : ECx .anon := ⟨cx, c, c.univs.map (Ix.Kernel.Reader.convUniv id), self⟩
   let core := Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel
   let rc : RecCx := { fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing }
-  let act : WM (Array KExpr) := do
-    let mut out : Array KExpr := #[]
+  let act : WM (Array (KExpr × Bool)) := do
+    let mut out : Array (KExpr × Bool) := #[]
     let tys := valueTypes c
     for (e, i) in (roots c).zipIdx do
+      -- a definition's value is walked against its annotated type, when that is decided
       let exp := match tys[i]? with
-        | some (some j) => out[j]?
+        | some (some j) => match out[j]? with
+          | some (k, false) => some k
+          | _ => none
         | _ => none
-      let (kx, _) ← (walk walkFuel rc [] 0 exp e).run #[]
-      out := out.push kx
+      let ((kx, bad), _) ← (walk walkFuel rc [] 0 exp e).run #[]
+      out := out.push (kx, bad)
     return out
   match (act.run {}).run {} with
   | .ok ((rs, _), _) => rs
   | .error _ => #[]
 
 /-- The constants of a record the kernel does not install, with their annotated
-types (and a definition's or theorem's annotated value). -/
+types (and a definition's or theorem's annotated value), and the number of its
+constants left out. A root with an undecided binder carries `never` there, which
+the kernel's readers would trust, so it is not offered: a constant whose type, or
+a definition whose value, has one is left out, and a record typed against it then
+taints instead of reading a wrong datum. A theorem keeps its decided statement
+with its value whatever that value's data are, and an opaque definition its
+statement alone: neither unfolds (`unfoldDefinition` has no arm for them), so no
+reader takes data from their values. -/
 def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) (addr : Address)
-    (c : Ixon.Constant) : Array (Ix.Kernel.ConstantInfo .anon) := Id.run do
+    (c : Ixon.Constant) : Array (Ix.Kernel.ConstantInfo .anon) × Nat := Id.run do
   let rs := annotatedRoots cx fe addr c
+  let decided (i : Nat) : Option KExpr := match rs[i]? with
+    | some (k, false) => some k
+    | _ => none
+  let undecided (i : Nat) : Bool := match rs[i]? with
+    | some (_, true) => true
+    | _ => false
   let key (r : Ix.Kernel.ConstRef Address) : Option (Ix.Kernel.Key .anon) := (cx.memberKey r).toOption
   let lps (n : UInt64) : List Nat := List.range n.toNat
   let mut out : Array (Ix.Kernel.ConstantInfo .anon) := #[]
+  let mut left := 0
   match c.info with
   | .axio x =>
-    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+    if let (some k, some ty) := (key (.member addr 0), decided 0) then
       out := out.push (.axiomInfo ⟨k, lps x.lvls, ty⟩)
+    else if undecided 0 then left := left + 1
   | .quot q =>
-    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+    if let (some k, some ty) := (key (.member addr 0), decided 0) then
       out := out.push (.axiomInfo ⟨k, lps q.lvls, ty⟩)
+    else if undecided 0 then left := left + 1
   | _ =>
     let members : Array Ixon.MutConst := match c.info with
       | .defn d => #[.defn d]
@@ -594,39 +639,48 @@ def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
     for (m, i) in members.zipIdx do
       match m with
       | .defn d =>
-        if let (some k, some ty, some v) := (key (.member addr i), rs[j]?, rs[j + 1]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           let cv : Ix.Kernel.ConstantVal .anon := ⟨k, lps d.lvls, ty⟩
-          out := out.push (match d.kind with
-            | .defn => .defnInfo cv v ((hint (.member addr i)).getD (.regular 1))
-            | .thm => .thmInfo cv v
-            | .opaq => .axiomInfo cv)
+          if d.kind == .defn then
+            -- a definition unfolds: its value's data are read
+            if let some v := decided (j + 1) then
+              out := out.push (.defnInfo cv v ((hint (.member addr i)).getD (.regular 1)))
+            else if undecided (j + 1) then left := left + 1
+          else if d.kind == .thm then
+            if let some (v, _) := rs[j + 1]? then out := out.push (.thmInfo cv v)
+          else out := out.push (.axiomInfo cv)
+        else if undecided j then left := left + 1
         j := j + 2
       | .recr r =>
-        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           out := out.push (.axiomInfo ⟨k, lps r.lvls, ty⟩)
+        else if undecided j then left := left + 1
         j := j + 1 + r.rules.size
       | .indc ind =>
-        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           out := out.push (.axiomInfo ⟨k, lps ind.lvls, ty⟩)
+        else if undecided j then left := left + 1
         for (ctor, ci) in ind.ctors.zipIdx do
-          if let (some k, some ty) := (key (.ctor addr i ci), rs[j + 1 + ci]?) then
+          if let (some k, some ty) := (key (.ctor addr i ci), decided (j + 1 + ci)) then
             out := out.push (.axiomInfo ⟨k, lps ctor.lvls, ty⟩)
+          else if undecided (j + 1 + ci) then left := left + 1
         j := j + 1 + ind.ctors.size
-  return out
+  return (out, left)
 
 /-- Install `addresses` (owners, in check order) as phase A of IxC's fold
 does, continuing past failures: a failed declaration leaves the environment
 as it was. Partial and unsafe records go through the typing tier. A record
 the kernel does not install enters directly, annotated by the walk
-(`lenientInfos`). Returns the environment, the declarations installed and the
-records refused. -/
+(`lenientInfos`). Returns the environment, the declarations installed, the
+records refused, and the constants of those records left out (undecided). -/
 def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
-    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
+    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) × Nat := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut st : Ix.Kernel.Reader.State .anon := {}
   let mut pos := 0
   let mut ok := 0
   let mut failures : Array (Address × String) := #[]
+  let mut leftOut := 0
   for a in addresses do
     let mut failure : Option String := none
     let mut unread := false
@@ -661,23 +715,32 @@ def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
     if let some why := failure then failures := failures.push (a, why)
     if lenient && (failure.isSome || unread) then
       if let some c := s.store[a]? then
-        for ci in lenientInfos s.cx fe s.cx.hint a c do
+        let (infos, left) := lenientInfos s.cx fe s.cx.hint a c
+        leftOut := leftOut + left
+        for ci in infos do
           if (fe.find? ci.name).isNone then fe := fe.push ci
-  return (fe, ok, failures)
+  return (fe, ok, failures, leftOut)
 
-/-- The kernel's environment for a view. -/
-def KernelEnv.ofView (v : View) (lenient : Bool := true) : Except String KernelEnv := do
+/-- The kernel's environment for a view. `prelude?` gives the role table and
+its prelude read from the environment's own records (the compiler's, whose
+records are not yet the committed prelude's); without it, the witness's table
+and the committed prelude. -/
+def KernelEnv.ofView (v : View) (lenient : Bool := true)
+    (prelude? : Option (Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) := none) :
+    Except String KernelEnv := do
   -- the witness's role table and its prelude; a table that does not decode
   -- or whose prelude does not read (a malformed binding, which the circuit
   -- refuses) falls back to the default one, so that every key is answered
-  let fallbackTable ← Ix.Kernel.Reader.defaultTable
-  let given := (v.table.bind Ix.Kernel.RoleTable.ofBytes).getD fallbackTable
-  let chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon ←
-    match Ix.Kernel.Reader.preludeFor (md := .anon) given with
-    | .ok pre => pure (given, pre)
-    | .error _ => do
-      let pre ← Ix.Kernel.Reader.preludeFor (md := .anon) fallbackTable
-      pure (fallbackTable, pre)
+  let chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon ← match prelude? with
+    | some p => pure p
+    | none => do
+      let fallbackTable ← Ix.Kernel.Reader.defaultTable
+      let given := (v.table.bind Ix.Kernel.RoleTable.ofBytes).getD fallbackTable
+      match Ix.Kernel.Reader.preludeFor (md := .anon) given with
+      | .ok pre => pure (given, pre)
+      | .error _ => do
+        let pre ← Ix.Kernel.Reader.preludeFor (md := .anon) fallbackTable
+        pure (fallbackTable, pre)
   let (table, pre) := chosen
   let store : Ixon.CheckOrder.RecordStore :=
     (v.support ++ v.records).foldl (fun m (a, c) => m.insert a c) {}
@@ -697,17 +760,19 @@ def KernelEnv.ofView (v : View) (lenient : Bool := true) : Except String KernelE
       unless (roots oc).isEmpty do owners := owners.push o
   let first := pre.records.map (·.1)
   let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
-  let (fe, installed, failures) := install s addresses lenient
-  return { setup := s, fe, owners, installed, refused := failures.size, failures }
+  let (fe, installed, failures, lenientLeftOut) := install s addresses lenient
+  return { setup := s, fe, owners, installed, refused := failures.size, failures, lenientLeftOut }
 
 /-- Every owner record's blocks. -/
-def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := Id.run do
+def annotateKernel (k : KernelEnv) (taint : Bool := false) :
+    Array (Address × Array Block) × Stats := Id.run do
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
   let mut out := #[]
-  let mut stats : Stats := { installed := k.installed, refused := k.refused }
+  let mut stats : Stats := { installed := k.installed, refused := k.refused,
+                             lenientLeftOut := k.lenientLeftOut }
   for a in k.owners do
     let some c := k.setup.store[a]? | continue
-    let (blocks, fb, inh) := annotateRecord k core a c
+    let (blocks, fb, inh) := annotateRecord k core a c taint
     out := out.push (a, blocks)
     stats := { stats with records := stats.records + 1, fallbacks := stats.fallbacks + fb,
                           inherited := stats.inherited + inh }
@@ -724,6 +789,7 @@ def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := 
         | .binder (some ps) =>
           stats := { stats with binders := stats.binders + 1, params := stats.params + ps.size }
         | .share _ => stats := { stats with shares := stats.shares + 1 }
+        | .undecided => stats := { stats with binders := stats.binders + 1 }
   return (out, stats)
 
 /-! ## The stream -/
@@ -736,6 +802,9 @@ def encode (blocks : Array Block) : Array Aiur.G := Id.run do
     for node in b.nodes do
       match node with
       | .binder none => out := out.push (.ofNat 0)
+      -- the channel has no undecided datum (the annotator writes none outside
+      -- tainting mode): `never`, as an undecided datum was before
+      | .undecided => out := out.push (.ofNat 0)
       | .share v => out := (out.push (.ofNat 1)).push (.ofNat v)
       | .binder (some ps) => out := (out.push (.ofNat (2 + ps.size))) ++ ps.map (.ofNat ·)
   return out

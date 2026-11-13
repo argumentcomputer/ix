@@ -7,6 +7,43 @@
 //! which fields are present, followed by only the present field values in bit
 //! order. This enables revealing specific fields of a committed constant without
 //! exposing the full structure.
+//!
+//! # Tag registry
+//!
+//! The registry of record is `Ix/Claim.lean`; this table mirrors it. It lists
+//! every number in use under the claim flag `0xE`, the proof flag `0xF` and
+//! the validator byte of a claim's scope, in this tree and in the IxCC and
+//! frontend trees, with this tree's allocation. Under `0xE` and `0xF` a
+//! value below 8 is the one byte `E0`–`E7` (`F0`–`F7`); from 8 on the TagN
+//! header is two bytes (`E8 00` is 8).
+//!
+//! | Space | Value (bytes) | Allocation |
+//! |---|---|---|
+//! | 0xE | 0 (`E0`) | reserved |
+//! | 0xE | 1 (`E1`) | commitment ([`crate::comm`]) |
+//! | 0xE | 2–7 (`E2`–`E7`) | assumption tree, eval, check, checkEnv, reveal, contains |
+//! | 0xE | 4, 5 (`E4`, `E5`) also | `.ixe` header: envelope version 4 / 5 (the same bytes as check / checkEnv, told apart by position; a version reset of the header moves them) |
+//! | 0xE | 8 (`E8 00`) | catalog claim |
+//! | 0xE | 9 (`E8 01`) | **retired** (resource claim): refused |
+//! | 0xE | 10 (`E8 02`) | binding claim |
+//! | 0xE | 11 (`E8 03`) | role-table section preimage ([`crate::role_table`]) |
+//! | 0xE | 12 (`E8 04`) | literal-class preimage |
+//! | 0xE | 13 (`E8 05`) | reserved: IxCC compile claim (not implemented here) |
+//! | 0xE | 14 (`E8 06`) | reserved: frontend `.ixsp` header |
+//! | 0xE | 15–18 (`E8 07`–`E8 0A`) | reserved: frontend `.ixc`, `.ixes`, `.ixprof` and host-admission tags (this tree's files of those kinds use ASCII magic) |
+//! | 0xE | 19 (`E8 0B`) | reserved: frontend elaboration claim |
+//! | 0xE | 20 (`E8 0C`) | reserved: frontend `.ixs` header |
+//! | 0xF | 0–5, 7 (`F0`–`F5`, `F7`) | eval, check, checkEnv, reveal, contains, catalog, binding proofs |
+//! | 0xF | 6 (`F6`) | **retired** (resource proof): refused |
+//! | 0xF | 8 (`F8 00`) | reserved: IxCC compile proof |
+//! | validator | 0, 3, 4, 5 | structural-v1, erased-lean-v2, erased-lean-v2-assumed, erased-lean-v2-class |
+//! | validator | 1 | retired (erased-lean-v1): refused |
+//! | validator | 2 | **retired** (resource-v1): refused |
+//! | validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
+//! | validator | 7 | reserved: IxCC compile-v2: refused |
+//! | validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
+//!
+//! `E9` is not a tag value: under TagN `E9` opens a two-byte header.
 
 use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
@@ -230,8 +267,6 @@ pub enum Claim {
   /// unconditional `CheckEnv` claims (validator 3 or 5) and other catalogs;
   /// there is no whole-catalog interpreter arm.
   Catalog { members: Address },
-  /// Combined erased typing and resource admission of a complete addressed closure.
-  Resource { root: Address, profile: Address },
   /// The role table with hash `binding` binds every role, and each bound
   /// constant meets its specification in the set with digest `spec`. It
   /// discharges the condition of the typing claims that assume their binding
@@ -256,7 +291,8 @@ pub struct Proof {
 ///
 /// The header is `TagN(4, 0xE, variant)`. Variants 0–7 are in rung 1, the
 /// single bytes `0xE0`–`0xE7`; from 8 on the header is two bytes (rung 2),
-/// so Catalog is `E8 00`, Resource `E8 01` and Binding `E8 02`.
+/// so Catalog is `E8 00` and Binding `E8 02` (`E8 01` is retired). The full
+/// registry is in the module documentation.
 ///
 /// - 1: Comm (commitment, handled in `comm.rs`)
 /// - 2: AssumptionTree (recursive merkle-tree data, see `assumption_tree.rs`)
@@ -266,7 +302,7 @@ pub struct Proof {
 /// - 6: Reveal claim
 /// - 7: Contains claim
 /// - 8: Catalog claim (`E8 00`)
-/// - 9: Resource claim (`E8 01`)
+/// - 9: retired (the resource claim, `E8 01`), refused
 /// - 10: Binding claim (`E8 02`)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
@@ -283,7 +319,8 @@ pub const VARIANT_CHECK_ENV_CLAIM: u64 = 5;
 pub const VARIANT_REVEAL_CLAIM: u64 = 6;
 pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
-pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
+/// Retired: the resource claim. Its tag is refused.
+pub const VARIANT_RESOURCE_CLAIM_RETIRED: u64 = 9;
 pub const VARIANT_BINDING_CLAIM: u64 = 10;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
@@ -300,7 +337,7 @@ pub const VARIANT_BINDING_CLAIM: u64 = 10;
 /// - 3: Reveal proof
 /// - 4: Contains proof
 /// - 5: Catalog proof
-/// - 6: Resource proof
+/// - 6: retired (the resource proof), refused
 /// - 7: Binding proof
 pub const FLAG_PROOF: u8 = 0xF;
 
@@ -310,7 +347,8 @@ pub const VARIANT_CHECK_ENV_PROOF: u64 = 2;
 pub const VARIANT_REVEAL_PROOF: u64 = 3;
 pub const VARIANT_CONTAINS_PROOF: u64 = 4;
 pub const VARIANT_CATALOG_PROOF: u64 = 5;
-pub const VARIANT_RESOURCE_PROOF: u64 = 6;
+/// Retired: the resource proof. Its tag is refused.
+pub const VARIANT_RESOURCE_PROOF_RETIRED: u64 = 6;
 pub const VARIANT_BINDING_PROOF: u64 = 7;
 
 // Backwards-compatibility re-export: many call sites refer to FLAG.
@@ -1063,7 +1101,7 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 /// - `1`, erased-lean-v1: retired. It named typing claims whose primitives
 ///   were recognized by fixed addresses and which admitted any axiom; readers
 ///   refuse it rather than read such a claim as a newer one.
-/// - `2`, resource-v1: `Resource`.
+/// - `2`, resource-v1: retired with the resource claim; refused.
 /// - `3`, erased-lean-v2: the typing claims, relative to their
 ///   [`ClaimContext`], and `Binding`.
 /// - `4`, erased-lean-v2-assumed: a `Check` or `CheckEnv` claim that assumes
@@ -1074,19 +1112,38 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 ///   class instead of one binding ([`ClaimContext::literal_class`]); its
 ///   typing holds under every binding of that class that meets the
 ///   specifications.
+/// - `6`, `7`: reserved for IxCC's compile-v1 (retired there) and
+///   compile-v2; refused.
+/// - `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
+///   refused until a validator for it exists.
 pub const VALIDATOR_STRUCTURAL: u8 = 0;
 pub const VALIDATOR_ERASED_LEAN_RETIRED: u8 = 1;
-pub const VALIDATOR_RESOURCE: u8 = 2;
+pub const VALIDATOR_RESOURCE_RETIRED: u8 = 2;
 pub const VALIDATOR_ERASED_LEAN: u8 = 3;
 pub const VALIDATOR_ERASED_LEAN_ASSUMED: u8 = 4;
 pub const VALIDATOR_ERASED_LEAN_CLASS: u8 = 5;
+pub const VALIDATOR_COMPILE_V1_RESERVED: u8 = 6;
+pub const VALIDATOR_COMPILE_V2_RESERVED: u8 = 7;
+pub const VALIDATOR_ERASED_LEAN_MODES_RESERVED: u8 = 8;
 
 fn validator_for_variant(variant: u64) -> u8 {
   match variant {
     VARIANT_REVEAL_CLAIM | VARIANT_CONTAINS_CLAIM => VALIDATOR_STRUCTURAL,
-    VARIANT_RESOURCE_CLAIM => VALIDATOR_RESOURCE,
     _ => VALIDATOR_ERASED_LEAN,
   }
+}
+
+/// The refusal of a retired claim variant.
+fn retired_claim(variant: u64) -> String {
+  format!("claim: variant {variant} (the resource claim) is retired")
+}
+
+/// Refuse a retired claim variant before reading anything after its tag.
+fn refuse_retired_claim(variant: u64) -> Result<(), String> {
+  if variant == VARIANT_RESOURCE_CLAIM_RETIRED {
+    return Err(retired_claim(variant));
+  }
+  Ok(())
 }
 /// Whether claims of variant `variant` may assume their binding: `Check`
 /// and `CheckEnv`.
@@ -1125,6 +1182,17 @@ fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<u8, String> {
       "claim: validator erased-lean-v1 is retired — regenerate the claim"
         .into(),
     );
+  }
+  if found == VALIDATOR_RESOURCE_RETIRED {
+    return Err("claim: validator resource-v1 is retired".into());
+  }
+  if matches!(
+    found,
+    VALIDATOR_COMPILE_V1_RESERVED
+      | VALIDATOR_COMPILE_V2_RESERVED
+      | VALIDATOR_ERASED_LEAN_MODES_RESERVED
+  ) {
+    return Err(format!("claim: validator {found} is reserved, not read"));
   }
   Err("claim: wrong validator identity".into())
 }
@@ -1263,10 +1331,6 @@ impl Claim {
         // A two-byte claim tag: `E8 00` on the wire.
         buf.extend_from_slice(members.as_bytes());
       },
-      Claim::Resource { root, profile } => {
-        buf.extend_from_slice(root.as_bytes());
-        buf.extend_from_slice(profile.as_bytes());
-      },
       Claim::Binding { spec, binding } => {
         // A two-byte claim tag: `E8 02` on the wire.
         buf.extend_from_slice(spec.as_bytes());
@@ -1319,10 +1383,7 @@ impl Claim {
       VARIANT_CATALOG_CLAIM => {
         Ok(Claim::Catalog { members: get_address(buf)? })
       },
-      VARIANT_RESOURCE_CLAIM => Ok(Claim::Resource {
-        root: get_address(buf)?,
-        profile: get_address(buf)?,
-      }),
+      VARIANT_RESOURCE_CLAIM_RETIRED => Err(retired_claim(variant)),
       VARIANT_BINDING_CLAIM => Ok(Claim::Binding {
         spec: get_address(buf)?,
         binding: get_address(buf)?,
@@ -1366,6 +1427,7 @@ impl Claim {
         FLAG_CLAIM, tag.flag
       ));
     }
+    refuse_retired_claim(tag.value)?;
     let validator = get_scope(tag.value, buf)?;
     Self::get_payload(tag.value, validator, buf)
   }
@@ -1396,7 +1458,6 @@ impl Claim {
       Claim::Reveal { .. }
       | Claim::Contains { .. }
       | Claim::Catalog { .. }
-      | Claim::Resource { .. }
       | Claim::Binding { .. } => None,
     }
   }
@@ -1410,7 +1471,6 @@ impl Claim {
       Claim::Reveal { .. } => VARIANT_REVEAL_PROOF,
       Claim::Contains { .. } => VARIANT_CONTAINS_PROOF,
       Claim::Catalog { .. } => VARIANT_CATALOG_PROOF,
-      Claim::Resource { .. } => VARIANT_RESOURCE_PROOF,
       Claim::Binding { .. } => VARIANT_BINDING_PROOF,
     }
   }
@@ -1448,6 +1508,12 @@ impl Proof {
     if tag.value > VARIANT_BINDING_PROOF {
       return Err(format!(
         "Proof::get: invalid proof variant {} under flag 0xF",
+        tag.value
+      ));
+    }
+    if tag.value == VARIANT_RESOURCE_PROOF_RETIRED {
+      return Err(format!(
+        "proof: variant {} (the resource proof) is retired",
         tag.value
       ));
     }
@@ -1726,7 +1792,7 @@ mod tests {
 
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 8 {
+      match u8::arbitrary(g) % 7 {
         0 => Claim::Eval {
           ctx: ClaimContext::arbitrary(g),
           input: Address::arbitrary(g),
@@ -1752,10 +1818,6 @@ mod tests {
           info: RevealConstantInfo::arbitrary(g),
         },
         4 => Claim::Catalog { members: Address::arbitrary(g) },
-        5 => Claim::Resource {
-          root: Address::arbitrary(g),
-          profile: Address::arbitrary(g),
-        },
         _ => Claim::Contains {
           tree: Address::arbitrary(g),
           const_addr: Address::arbitrary(g),
@@ -1865,6 +1927,79 @@ mod tests {
     bytes[2] = VALIDATOR_ERASED_LEAN_RETIRED;
     let err = Claim::from_bytes(&bytes).unwrap_err();
     assert!(err.contains("erased-lean-v1 is retired"), "{err}");
+  }
+
+  /// The retired resource claim (`E8 01`) and proof (`F6`) are refused as
+  /// retired, whatever follows their tag, and so are the retired and reserved
+  /// validators 2 and 6 to 8 on every claim and proof.
+  #[test]
+  fn retired_resource_claim_and_reserved_validators_refused() {
+    let root = Address::hash(b"root");
+    // The resource claim as it was written: tag, scope (object format,
+    // resource-v1), root, profile.
+    let mut claim = vec![0xE8, 0x01, Env::OBJECT_FORMAT, 2];
+    claim.extend_from_slice(root.as_bytes());
+    claim.extend_from_slice(root.as_bytes());
+    let err = Claim::from_bytes(&claim).unwrap_err();
+    assert!(err.contains("resource claim) is retired"), "{err}");
+    for len in 0..claim.len() {
+      assert!(Claim::from_bytes(&claim[..len]).is_err());
+    }
+    let mut proof = vec![0xF6, Env::OBJECT_FORMAT, 2];
+    proof.extend_from_slice(root.as_bytes());
+    proof.extend_from_slice(root.as_bytes());
+    proof.push(0);
+    let err = Proof::get(&mut proof.as_slice()).unwrap_err();
+    assert!(err.contains("resource proof) is retired"), "{err}");
+
+    let ctx = test_ctx();
+    let claims = [
+      Claim::Eval {
+        ctx: ctx.clone(),
+        input: root.clone(),
+        output: root.clone(),
+        assumptions: None,
+      },
+      Claim::Check {
+        ctx: ctx.clone(),
+        const_addr: root.clone(),
+        assumptions: None,
+      },
+      Claim::CheckEnv {
+        ctx: ctx.clone(),
+        root: root.clone(),
+        assumptions: None,
+      },
+      Claim::Reveal {
+        comm: root.clone(),
+        info: RevealConstantInfo::DPrj { idx: Some(0), block: None },
+      },
+      Claim::Contains { tree: root.clone(), const_addr: root.clone() },
+      Claim::Catalog { members: root.clone() },
+      Claim::Binding { spec: ctx.spec.clone(), binding: ctx.binding.clone() },
+    ];
+    for claim in claims {
+      let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
+      let (_, bytes) = claim.commit();
+      assert_eq!(Claim::from_bytes(&bytes).unwrap(), claim);
+      let mut proof_bytes = Vec::new();
+      Proof::new(claim.clone(), vec![]).put(&mut proof_bytes);
+      for (validator, text) in [
+        (VALIDATOR_RESOURCE_RETIRED, "resource-v1 is retired"),
+        (VALIDATOR_COMPILE_V1_RESERVED, "reserved"),
+        (VALIDATOR_COMPILE_V2_RESERVED, "reserved"),
+        (VALIDATOR_ERASED_LEAN_MODES_RESERVED, "reserved"),
+      ] {
+        let mut bad = bytes.clone();
+        bad[header + 1] = validator;
+        let err = Claim::from_bytes(&bad).unwrap_err();
+        assert!(err.contains(text), "{claim:?} {validator}: {err}");
+        let mut bad = proof_bytes.clone();
+        bad[2] = validator;
+        let err = Proof::get(&mut bad.as_slice()).unwrap_err();
+        assert!(err.contains(text), "{claim:?} {validator}: {err}");
+      }
+    }
   }
 
   fn reveal_info_roundtrip(info: &RevealConstantInfo) -> bool {

@@ -732,7 +732,11 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms.Mode
 -- The canonical rule's level link and the declines of rules that would not fire
 -- (the nested shape, the native route's and the projection function's canonical major)
 -- add 17 compiled functions to this closure and to each entry closure below.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3703 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 25 -/
+-- Modes in records: the kernel's binder and let metadata carry the mode types, the reader
+-- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
+-- nodes' modes, let headers, definition assertions and constructor field modes and checks
+-- `Constant.modesCanonical`. From 3708 compiled functions to 3689; externs unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3689 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 25 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -761,16 +765,14 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`:
--- `nestedOcc?`, `addAuxMembers`, `nestedScan`, `nestedScanAll`, `auxCtorBody`, `auxCtorBodies`,
--- `nestedWalk`) adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
+-- Modes in records: the kernel's binder and let metadata carry the mode types, the reader
+-- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
+-- nodes' modes, let headers, definition assertions and constructor field modes and checks
+-- `Constant.modesCanonical`. From 2382 compiled functions to 2377; externs unchanged.
+-- The reader's canonical natural-literal check (`Reader.canonicalNatural` in `ECx.natAt`)
+-- takes it to 2383 functions and 90 inherited externs.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2414 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2383 compiled functions; inherited externs 90, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -791,6 +793,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- leave. Exact extern/unsafe/replacement/partial entry sets are unchanged.
 -- Specification version 5 (the compiler-trust roles) adds 49 compiled functions, from
 -- Roles, Key and RoleData. Execution-trust entries are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check the reader runs on
+-- every record) adds 38 compiled functions, 9 of them to the stream reader. Execution-trust
+-- entries are unchanged.
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
@@ -798,18 +803,15 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`:
--- `nestedOcc?`, `addAuxMembers`, `nestedScan`, `nestedScanAll`, `auxCtorBody`, `auxCtorBodies`,
--- `nestedWalk`) adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
+-- Modes in records: the kernel's binder and let metadata carry the mode types, the reader
+-- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
+-- nodes' modes, let headers, definition assertions and constructor field modes and checks
+-- `Constant.modesCanonical`. From 6987 compiled functions and 113 inherited externs to 7006 and 114.
+-- The reader's canonical natural-literal check (`Reader.canonicalNatural` in `ECx.natAt`) adds 5.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6985 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkConstants]: 7011 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -867,16 +869,13 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`:
--- `nestedOcc?`, `addAuxMembers`, `nestedScan`, `nestedScanAll`, `auxCtorBody`, `auxCtorBodies`,
--- `nestedWalk`) adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
+-- Modes in records: the kernel's binder and let metadata carry the mode types, the reader
+-- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
+-- nodes' modes, let headers, definition assertions and constructor field modes and checks
+-- `Constant.modesCanonical`. From 7097 compiled functions and 113 inherited externs to 7116 and 114.
+-- The reader's canonical natural-literal check (`Reader.canonicalNatural` in `ECx.natAt`) adds 5.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7095 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 7121 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -893,6 +892,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
 -- prelude (each takes its prelude or table as an argument); inherited externs 112, and the
 -- same rulings admit it with the same unsafe, csimp and ruled counts.
 -- Specification version 5 (the compiler-trust roles) moved it from 6683 by 49.
+-- The Ixon v5 binder-data section (its parser and local canonical check) moved it by 38.
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
@@ -900,14 +900,11 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`:
--- `nestedOcc?`, `addAuxMembers`, `nestedScan`, `nestedScanAll`, `auxCtorBody`, `auxCtorBodies`,
--- `nestedWalk`) adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
+-- Modes in records: the kernel's binder and let metadata carry the mode types, the reader
+-- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
+-- nodes' modes, let headers, definition assertions and constructor field modes and checks
+-- `Constant.modesCanonical`. From 6810 compiled functions and 112 inherited externs to 6829 and 113.
+-- The reader's canonical natural-literal check (`Reader.canonicalNatural` in `ECx.natAt`) adds 5.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
  Ix.Kernel.Admission.checkConstantsWithUserAxioms,
  Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
@@ -917,7 +914,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6808 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6834 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

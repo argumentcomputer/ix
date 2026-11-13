@@ -21,9 +21,9 @@ namespace IxVM.ClaimHarness
 partial def constIdxsExpr : Ixon.Expr → Std.HashSet UInt64
   | .ref i _ => {i}
   | .prj i _ inner => (constIdxsExpr inner).insert i
-  | .app a b | .lam _ a b | .all _ _ a b =>
+  | .app a b | .lam a b | .all a b =>
     (constIdxsExpr a).union (constIdxsExpr b)
-  | .letE _ t v b =>
+  | .letE _ _ t v b =>
     ((constIdxsExpr t).union (constIdxsExpr v)).union (constIdxsExpr b)
   | _ => {}
 

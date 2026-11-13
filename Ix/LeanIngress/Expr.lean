@@ -33,31 +33,22 @@ instead of repeating it; the rest of the Source-mode ingress
   The ingress then puts every level of a converted term in the compiler's
   canonical form (`canonLevel`, `mapLevels`, below; `Ix.LeanIngress.exprsOf`).
 * **Terms**: `mdata` is erased (except a contract frame, below), binder names
-  and binder infos are dropped, a `letE` carries Lean's let contract
-  (`LetContract.lean nonDep`), every binder
+  and binder infos are dropped, a `letE` carries Lean's `nonDep` flag, every binder
   carries `pw := .never` (the checker's annotation pass computes the datum,
   as for the Ixon reader's terms), literals stay literals and a projection
   names its structure. A free variable or a metavariable is refused.
-* **Binder contracts.** Lean has none, so a binder carries the Lean
-  fragment's (`BinderMeta`'s defaults) unless a contract frame wraps it: an
-  `mdata` node with `ix.contract` fields (`Ix.SemanticContract`). Frames are
-  how the compiler's input carries resolved source contracts:
-  `Ix.Compile.CompileInput.prepare` resolves the source markers
-  (`ix.source.binder` metadata) and registrations on the Lean constants and
-  puts a frame directly around each annotated binder, `Ix.CanonM` keeps
-  the frames, and the compiler lowers each one into the Ixon binder it wraps
-  (`Ix.SemanticContract.Contract.lower`). The ingress reads a frame as the
-  compiler does, with the compiler's own `hasMetadata` and `read`
-  (`ingressMData`): a `lam` frame's contract becomes the binder's
-  `contract`; an `all` frame's input and result contracts become `contract`
-  and `result`; a `letE` frame's binder contract and kind go on the let's
-  contract, over Lean's `nonDep` flag, as the compiler lowers it; and a
-  malformed frame, or one that is not directly around a binder of its kind,
-  is refused, as the compiler refuses it. So a Source term carries the
-  contracts that `Ix.Cert.compile` writes into the Ixon term the reader
-  reads back, by construction. Unresolved source markers are plain metadata
-  to both the ingress and `Ix.Cert.compile`, which then both give the
-  defaults; the IO pipeline refuses them.
+* **Binder contracts.** Kernel terms carry no modes, so every binder carries
+  the defaults (`BinderMeta`'s). A contract frame (an `mdata` node with
+  `ix.contract` fields, `Ix.SemanticContract`), which is how the compiler's
+  input carries resolved source contracts, is read as the compiler reads it,
+  with the compiler's own `hasMetadata` and `read` (`ingressMData`): the
+  compiler writes only the default binder mode, so it lowers only an ordinary
+  frame (`Ix.SemanticContract.Contract.lower`) and refuses an annotated one;
+  the ingress likewise keeps the term for an ordinary frame and refuses the
+  others, and refuses a malformed frame or one that is not directly around a
+  binder of its kind. Unresolved source markers are plain metadata to both
+  the ingress and `Ix.Cert.compile`, which then both give the defaults; the IO
+  pipeline refuses them.
 
 `ingressExpr` is the specification, a structural recursion over the term
 tree. A canonicalized term is a DAG (`CanonM` interns structurally equal
@@ -161,19 +152,15 @@ instance : BEq Numbering where
   | .param n _ => pure (.param (σ n))
   | .mvar n _ => throw (.levelMVar (ingressName n))
 
-/-- The conversion `x` of the term `e` under a contract frame `c`: the
-binder `e` with `c` on it, where the compiler's `Contract.lower` puts it
-(`Ix.SemanticContract`): a `lam`'s or an `all`'s on its binder, a `letE`'s on
-its let contract (its binder contract and kind over the `nonDep` flag). -/
+/-- The conversion `x` of the term `e` under a contract frame `c`, as the
+compiler's `Contract.lower` treats it (`Ix.SemanticContract`): `x` itself for
+an ordinary frame on a binder of its kind, a refusal for an annotated one. -/
 @[expose] def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
     Except ExprError KExpr :=
-  match c.kind, e, x with
-  | .lam, .lam .., .lam t b m => pure (.lam t b { m with contract := c.binder })
-  | .all, .forallE .., .forallE t b m =>
-    pure (.forallE t b { m with contract := c.binder, result := c.result })
-  | .letE, .letE .., .letE t v b l =>
-    pure (.letE t v b { contract := { l.contract with binder := c.binder, kind := c.letKind } })
-  | _, _, _ => throw (.contract "semantic contract is not attached to its original binder")
+  if c.admits e then pure x
+  else if c.attachedTo e then
+    throw (.contract "annotated source is refused until a mode checker lands")
+  else throw (.contract "semantic contract is not attached to its original binder")
 
 /-- An `mdata` node with data `d` over the term `e`, whose conversion is `x`:
 a contract frame (`Ix.SemanticContract.hasMetadata`) puts its contract on
@@ -199,7 +186,7 @@ numbering `σ` of its level parameters. -/
   | .forallE _ t b _ _ => return .forallE (← ingressExpr σ t) (← ingressExpr σ b) { pw := .never }
   | .letE _ t v b nd _ =>
     return .letE (← ingressExpr σ t) (← ingressExpr σ v) (← ingressExpr σ b)
-      { contract := .lean nd }
+      { nonDep := nd }
   | .lit (.natVal n) _ => pure (.lit (.natVal n))
   | .lit (.strVal s) _ => pure (.lit (.strVal s))
   | .mdata d e _ => ingressMData d e (ingressExpr σ e)
@@ -289,7 +276,7 @@ theorem ingressExpr_forallE (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo)
 theorem ingressExpr_letE (n : Ix.Name) (t v b : Ix.Expr) (nd : Bool) (h : Address) :
     ingressExpr σ (.letE n t v b nd h) =
     (ingressExpr σ t >>= fun x => ingressExpr σ v >>= fun y =>
-      ingressExpr σ b >>= fun z => pure (.letE x y z { contract := .lean nd })) := rfl
+      ingressExpr σ b >>= fun z => pure (.letE x y z { nonDep := nd })) := rfl
 
 theorem ingressExpr_proj (n : Ix.Name) (i : Nat) (b : Ix.Expr) (h : Address) :
     ingressExpr σ (.proj n i b h) =
@@ -372,7 +359,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
                   Squash.mk ⟨.error err,
                     by rw [ingressExpr_letE, ← r₁.eq, h₁, ← r₂.eq, h₂, ← r₃.eq, h₃]; rfl, r₃.memo⟩
                 | .ok z =>
-                  Squash.mk ⟨.ok (.letE x y z { contract := .lean nd }),
+                  Squash.mk ⟨.ok (.letE x y z { nonDep := nd }),
                     by rw [ingressExpr_letE, ← r₁.eq, h₁, ← r₂.eq, h₂, ← r₃.eq, h₃]; rfl, r₃.memo⟩
         | .proj n i b h =>
           Squash.lift (go memo b) fun r =>

@@ -15,7 +15,7 @@ private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
   let ty : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let beta : Ixon.Expr := .app (.leanLam ty (.var 0)) value
-  let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, v⟩, #[], #[], #[.zero]⟩
+  let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, ty, v⟩, #[], #[], #[.zero], #[]⟩
   let input := constant beta
   let output := constant value
   let ia := Address.blake3 (Ixon.ser input)
@@ -42,8 +42,8 @@ private def controllerEnv : Except String Ixon.Env := do
   for i in [:3] do
     let body := if i == 0 then value else if i == 1 then .ref 0 #[]
       else .app (.leanLam ty (.var 0)) (.ref 0 #[])
-    let c : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, body⟩,
-      #[], prior.toArray, #[.zero]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, ty, body⟩,
+      #[], prior.toArray, #[.zero], #[]⟩
     let addr := Address.blake3 (Ixon.ser c)
     env := env.storeConst addr c
     env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
@@ -69,7 +69,7 @@ that would let the circuit skip checking it; the control shows the circuit
 rejects it when it is checked. -/
 private def assumptionCases : Except String (Array Ix.AiurInvocation.Case) := do
   let prop : Ixon.Expr := .sort 0
-  let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, prop, prop⟩, #[], #[], #[.zero]⟩
+  let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, prop, prop⟩, #[], #[], #[.zero], #[]⟩
   let ba := Address.blake3 (Ixon.ser bad)
   let env := ({} : Ixon.Env).storeConst ba bad
   let env := { env with anonHints := env.anonHints.insert ba (.regular 0) }
@@ -146,18 +146,17 @@ private def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO (String × ClaimWitnes
   pure ("Claim Reveal Defn (typ Expr addr)", witness)
 
 private def claimRevealBinderModes : IO (String × ClaimWitness) := do
-  let typ : Ixon.Expr :=
-    .all .linear .unique (.sort 0)
-      (.lam .affine (.sort 0)
-        (.all .erased .shared (.sort 0) (.var 0)))
+  let typ : Ixon.Expr := .all (.sort 0) (.lam (.sort 0) (.all (.sort 0) (.var 0)))
+  -- the binders' modes, in the record's section
+  let modes : Array Ixon.AllMode := #[⟨.unique, .unique⟩, ⟨.once, .shared⟩, ⟨.erased, .borrowed⟩]
   let c : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero]⟩
+    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], #[⟨false, 0, 0, modes.map Ixon.BinderNode.never⟩]⟩
   let addr := Address.blake3 (Ixon.ser c)
   let ixonEnv := ({} : Ixon.Env).storeConst addr c
   let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr typ))
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
     (Ix.Claim.reveal addr (.axio none none (some typAddr))) {}
-  pure ("Claim Reveal Expr (v3 binder modes)", witness)
+  pure ("Claim Reveal Expr (binder modes in the section)", witness)
 
 private def claimRevealCPrj (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"

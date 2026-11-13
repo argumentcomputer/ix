@@ -255,8 +255,8 @@ theorem node_const {E : Ix.Environment} {z : Ix.Name} (h : ((groundSplit E).1.ge
 /-- **The environment's grounded paths from a closure name stay in the closure.** -/
 theorem closure_closed_env {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     (hcl : IsClosure env roots sub) :
-    ∀ x z rs, (sub.consts.get? x).isSome = true → (groundSplit { consts := env.consts }).1.get? x = some rs →
-      rs.contains z = true → ((groundSplit { consts := env.consts }).1.get? z).isSome = true →
+    ∀ x z rs, (sub.consts.get? x).isSome = true → (groundSplit env.materialized).1.get? x = some rs →
+      rs.contains z = true → ((groundSplit env.materialized).1.get? z).isSome = true →
         (sub.consts.get? z).isSome = true := by
   intro x z rs hx hrs hz hzk
   exact Condense.closure_path hcl (.step hrs hz hzk (.refl (BEq.refl z))) hx
@@ -311,7 +311,7 @@ theorem placed {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source → Optio
 
 /-- The environment's condensation: the compile's blocks. -/
 abbrev envBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
-  Ix.CondenseM.run (groundSplit { consts := env.consts }).1
+  Ix.CondenseM.run (groundSplit env.materialized).1
 
 /-- **What the fold gives of a published closure name's block, for its references**: the
 block of the environment's condensation the name is in, compiled from a snapshot whose
@@ -400,7 +400,7 @@ theorem compiledRefs_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
   have keySub : ∀ y, S y → (groundSplit sub).1.contains y = true := fun y hy => by
     obtain ⟨_, allY, -, hallY, hyY⟩ := placed scheduled hy
     exact key_of_member hallY hyY
-  have keyEnv : ∀ y, S y → (groundSplit { consts := env.consts }).1.contains y = true := fun y hy => by
+  have keyEnv : ∀ y, S y → (groundSplit env.materialized).1.contains y = true := fun y hy => by
     obtain ⟨_, allY, hallY, hyY⟩ := inBlocks y hy
     exact key_of_member hallY hyY
   refine ⟨x', m, hm, ?_, fun lo allS hlo hallS => ?_⟩
@@ -422,9 +422,9 @@ theorem compiledRefs_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     cases e
     constructor
     · -- `x'` is in `n`'s component of the closure
-      have q₁ := path_transfer (E₁ := { consts := env.consts }) (E₂ := sub) S (closure_closed_env hcl) keySub
+      have q₁ := path_transfer (E₁ := env.materialized) (E₂ := sub) S (closure_closed_env hcl) keySub
         (fun y hy => closure_same hcl hy) (Condense.condense_scc hall hnall hx'all) hnsub
-      have q₂ := path_transfer (E₁ := { consts := env.consts }) (E₂ := sub) S (closure_closed_env hcl) keySub
+      have q₂ := path_transfer (E₁ := env.materialized) (E₂ := sub) S (closure_closed_env hcl) keySub
         (fun y hy => closure_same hcl hy) (Condense.condense_scc hall hx'all hnall) hx'sub
       obtain ⟨_, allX, -, hallX, hxX⟩ := placed scheduled hx'sub
       exact same_block (refs := (groundSplit sub).1) hallS hn₀ hallX hxX q₁ q₂
@@ -432,10 +432,10 @@ theorem compiledRefs_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       cases hmS : allS.contains m with
       | false => rfl
       | true =>
-        have q₁ := path_transfer (E₁ := sub) (E₂ := { consts := env.consts }) S closure_closed_sub keyEnv
+        have q₁ := path_transfer (E₁ := sub) (E₂ := env.materialized) S closure_closed_sub keyEnv
           (fun y hy => (closure_same hcl hy).symm) (Condense.condense_scc (refs := (groundSplit sub).1) hallS hn₀ hmS)
           hnsub
-        have q₂ := path_transfer (E₁ := sub) (E₂ := { consts := env.consts }) S closure_closed_sub keyEnv
+        have q₂ := path_transfer (E₁ := sub) (E₂ := env.materialized) S closure_closed_sub keyEnv
           (fun y hy => (closure_same hcl hy).symm) (Condense.condense_scc (refs := (groundSplit sub).1) hallS hmS hn₀)
           hmsub
         obtain ⟨_, allM, hallM, hmM⟩ := inBlocks m hmsub

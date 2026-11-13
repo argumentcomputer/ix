@@ -101,14 +101,30 @@ def read (data : Array (Ix.Name × Ix.DataValue)) : Except String Contract := do
   let some codeValue := code | throw "missing semantic contract code"
   decode kindValue codeValue
 
+/-- Whether the frame sits directly on a binder of its kind. -/
+def Contract.attachedTo (contract : Contract) (source : Ix.Expr) : Bool :=
+  match contract.kind, source with
+  | .lam, .lam .. => true
+  | .all, .forallE .. => true
+  | .letE, .letE .. => true
+  | _, _ => false
+
+/-- Whether the compiler lowers the frame: an ordinary contract on a binder of
+its kind. -/
+def Contract.admits (contract : Contract) (source : Ix.Expr) : Bool :=
+  contract.isOrdinary && contract.attachedTo source
+
+/-- Lower a contract frame onto the binder it annotates. An Ixon record holds
+its binders' modes in its binder-data section, which the compiler writes
+with the default mode for every binder, so only the ordinary contract lowers
+(to the compiled binder itself); annotated source is refused until source
+modes reach the section. -/
 def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Expr) :
-    Except String Ixon.Expr := do
-  match contract.kind, source, compiled with
-  | .lam, .lam .., .lam _ type body => return .lam contract.binder type body
-  | .all, .forallE .., .all _ _ type body => return .all contract.binder contract.result type body
-  | .letE, .letE .., .letE c type value body =>
-    return .letE { c with binder := contract.binder, kind := contract.letKind } type value body
-  | _, _, _ => throw "semantic contract is not attached to its original binder"
+    Except String Ixon.Expr :=
+  if contract.admits source then .ok compiled
+  else if contract.attachedTo source then
+    .error "annotated source is refused until a mode checker lands"
+  else .error "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do
@@ -137,19 +153,6 @@ def inspect (top : Ix.Expr) : Except String Bool := do
       stack := stack.push inner
     | _ => pure ()
   return annotated
-
-/-- Reconstruct only committed binder fields; optional metadata cannot
-supply or replace semantic contracts. -/
-def ofIxon? : Ixon.Expr → Option Contract
-  | .lam binder _ _ =>
-    if binder == .many then none else some { kind := .lam, binder }
-  | .all binder result _ _ =>
-    if binder == .many && result == .shared then none
-    else some { kind := .all, binder, result }
-  | .letE c _ _ _ =>
-    if c.binder == .many && c.kind == .value then none
-    else some { kind := .letE, binder := c.binder, letKind := c.kind }
-  | _ => none
 
 def Contract.ixMetadata (contract : Contract) : Array (Ix.Name × Ix.DataValue) :=
   let key := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "ix") "contract"

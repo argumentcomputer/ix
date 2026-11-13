@@ -317,7 +317,7 @@ in the artifact with the bytes it read. -/
 structure FoldBlock (env sub : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (snap : DriverAcc)
     (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult) (c : BlockState) : Prop where
   fold : ∃ (cenv cenv₀ : CompileEnv) (sched : FoldSchedule), compileUnchecked env = .ok (ixe, failures, cenv) ∧
-    FoldRun { consts := env.consts } (CompiledRefs.envBlocks env) cenv cenv₀ sched ∧
+    FoldRun env.materialized (CompiledRefs.envBlocks env) cenv cenv₀ sched ∧
     OnRun (CompiledRefs.envBlocks env) sched (FoldState.init cenv₀ (CompiledRefs.envBlocks env) sched) snap ∧
     Mono snap.cenv cenv
   block : (CompiledRefs.envBlocks env).blocks.get? rep = some all

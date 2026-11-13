@@ -157,7 +157,7 @@ abbrev «KernelKlimbs::klimbs_add».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_add" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_add» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_add».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) : «KernelKlimbs::klimbs_add».Complete := by
+theorem «KernelKlimbs::klimbs_add».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) : «KernelKlimbs::klimbs_add».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_add.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_add, ControlLower.hasControl])
@@ -175,7 +175,7 @@ theorem «KernelKlimbs::klimbs_add».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   obtain ⟨rfl, rfl⟩ := d19.literal_inv
   obtain ⟨rfl, rfl⟩ := args20.nil_inv
   rw [instanceName_plain_some] at callee3
-  obtain ⟨k21, hk22⟩ := ih17 callee3
+  obtain ⟨k21, hk22⟩ := ih23 callee3
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk22
   refine ⟨k21 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -684,7 +684,7 @@ abbrev «UInt64::mul».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "UInt64::mul" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «UInt64::mul» k h x_a x_b = some (r, h')
 
-theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UInt64::mul».Complete := by
+theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UInt64::mul».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.UInt64.mul.lookup
     (by simp [IxVM.UInt64.mul, ControlLower.hasControl])
@@ -901,7 +901,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   subst l406
   obtain ⟨rfl, rfl⟩ := args398.nil_inv
   rw [instanceName_plain_some] at callee393
-  obtain ⟨k407, hk408⟩ := ih19 callee393
+  obtain ⟨k407, hk408⟩ := ih25 callee393
   obtain ⟨ys409, hp410, hl411, ml412⟩ := matchPattern_tuple_inv mt388
   rcases ys409 with _ | ⟨y413, _ | ⟨y414, _ | ⟨_, _⟩⟩⟩ <;> simp at hl411
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp410
@@ -961,7 +961,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k525, hk526⟩ := «UInt8::to_field».of_eval callee515
   obtain ⟨rfl, rfl⟩ := args429.nil_inv
   rw [instanceName_plain_some] at callee424
-  obtain ⟨k527, hk528⟩ := ih19 callee424
+  obtain ⟨k527, hk528⟩ := ih25 callee424
   obtain ⟨ys529, hp530, hl531, ml532⟩ := matchPattern_tuple_inv mt419
   rcases ys529 with _ | ⟨y533, _ | ⟨y534, _ | ⟨_, _⟩⟩⟩ <;> simp at hl531
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp530
@@ -1029,7 +1029,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k659, hk660⟩ := «UInt8::to_field».of_eval callee649
   obtain ⟨rfl, rfl⟩ := args549.nil_inv
   rw [instanceName_plain_some] at callee544
-  obtain ⟨k661, hk662⟩ := ih19 callee544
+  obtain ⟨k661, hk662⟩ := ih25 callee544
   obtain ⟨ys663, hp664, hl665, ml666⟩ := matchPattern_tuple_inv mt539
   rcases ys663 with _ | ⟨y667, _ | ⟨y668, _ | ⟨_, _⟩⟩⟩ <;> simp at hl665
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp664
@@ -1105,7 +1105,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k807, hk808⟩ := «UInt8::to_field».of_eval callee797
   obtain ⟨rfl, rfl⟩ := args683.nil_inv
   rw [instanceName_plain_some] at callee678
-  obtain ⟨k809, hk810⟩ := ih19 callee678
+  obtain ⟨k809, hk810⟩ := ih25 callee678
   obtain ⟨ys811, hp812, hl813, ml814⟩ := matchPattern_tuple_inv mt673
   rcases ys811 with _ | ⟨y815, _ | ⟨y816, _ | ⟨_, _⟩⟩⟩ <;> simp at hl813
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp812
@@ -1173,7 +1173,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k941, hk942⟩ := «UInt8::to_field».of_eval callee931
   obtain ⟨rfl, rfl⟩ := args831.nil_inv
   rw [instanceName_plain_some] at callee826
-  obtain ⟨k943, hk944⟩ := ih19 callee826
+  obtain ⟨k943, hk944⟩ := ih25 callee826
   obtain ⟨ys945, hp946, hl947, ml948⟩ := matchPattern_tuple_inv mt821
   rcases ys945 with _ | ⟨y949, _ | ⟨y950, _ | ⟨_, _⟩⟩⟩ <;> simp at hl947
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp946
@@ -1233,7 +1233,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k1061, hk1062⟩ := «UInt8::to_field».of_eval callee1051
   obtain ⟨rfl, rfl⟩ := args965.nil_inv
   rw [instanceName_plain_some] at callee960
-  obtain ⟨k1063, hk1064⟩ := ih19 callee960
+  obtain ⟨k1063, hk1064⟩ := ih25 callee960
   obtain ⟨ys1065, hp1066, hl1067, ml1068⟩ := matchPattern_tuple_inv mt955
   rcases ys1065 with _ | ⟨y1069, _ | ⟨y1070, _ | ⟨_, _⟩⟩⟩ <;> simp at hl1067
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp1066
@@ -1285,7 +1285,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k1167, hk1168⟩ := «UInt8::to_field».of_eval callee1157
   obtain ⟨rfl, rfl⟩ := args1085.nil_inv
   rw [instanceName_plain_some] at callee1080
-  obtain ⟨k1169, hk1170⟩ := ih19 callee1080
+  obtain ⟨k1169, hk1170⟩ := ih25 callee1080
   obtain ⟨ys1171, hp1172, hl1173, ml1174⟩ := matchPattern_tuple_inv mt1075
   rcases ys1171 with _ | ⟨y1175, _ | ⟨y1176, _ | ⟨_, _⟩⟩⟩ <;> simp at hl1173
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp1172
@@ -1522,7 +1522,7 @@ abbrev «KernelKlimbs::klimbs_mul».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_mul" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mul» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_mul».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) : «KernelKlimbs::klimbs_mul».Complete := by
+theorem «KernelKlimbs::klimbs_mul».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) : «KernelKlimbs::klimbs_mul».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_mul.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_mul, ControlLower.hasControl])
@@ -1544,7 +1544,7 @@ theorem «KernelKlimbs::klimbs_mul».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   obtain ⟨rfl, rfl⟩ := d29.literal_inv
   obtain ⟨rfl, rfl⟩ := args30.nil_inv
   rw [instanceName_plain_some] at callee3
-  obtain ⟨k31, hk32⟩ := ih21 callee3
+  obtain ⟨k31, hk32⟩ := ih27 callee3
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk32
   refine ⟨k31 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -1623,7 +1623,7 @@ abbrev «KernelKlimbs::klimbs_is_zero».Complete : Prop :=
   ∀ {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_is_zero" [x_x] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_is_zero» k h x_x = some (r, h')
 
-theorem «KernelKlimbs::klimbs_is_zero».of_eval (ih22 : «KernelKlimbs::klimbs_normalize».Complete) : «KernelKlimbs::klimbs_is_zero».Complete := by
+theorem «KernelKlimbs::klimbs_is_zero».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) : «KernelKlimbs::klimbs_is_zero».Complete := by
   intro x_x h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_is_zero.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_is_zero, ControlLower.hasControl])
@@ -1637,7 +1637,7 @@ theorem «KernelKlimbs::klimbs_is_zero».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l19
   obtain ⟨rfl, rfl⟩ := args18.nil_inv
   rw [instanceName_plain_some] at callee13
-  obtain ⟨k20, hk21⟩ := ih22 callee13
+  obtain ⟨k20, hk21⟩ := ih28 callee13
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk21
   rcases selectArm_construct_inv (by trivial) sel5 with ⟨ys22, hp23, hl24, ml25, rfl⟩ | ⟨hc26, sel27⟩
   · rcases ys22 with _ | ⟨_, _⟩ <;> simp at hl24
@@ -1812,7 +1812,7 @@ abbrev «KernelKlimbs::klimbs_sub».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_sub" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_sub» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_sub».of_eval (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_sub».Complete := by
+theorem «KernelKlimbs::klimbs_sub».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_sub».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_sub.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_sub, ControlLower.hasControl])
@@ -1831,7 +1831,7 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih22 : «KernelKlimbs::klimbs_norm
   obtain ⟨rfl, rfl⟩ := d25.literal_inv
   obtain ⟨rfl, rfl⟩ := args26.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k27, hk28⟩ := ih23 callee9
+  obtain ⟨k27, hk28⟩ := ih29 callee9
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk28
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
@@ -1865,7 +1865,7 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih22 : «KernelKlimbs::klimbs_norm
         subst l71
         obtain ⟨rfl, rfl⟩ := args70.nil_inv
         rw [instanceName_plain_some] at callee65
-        obtain ⟨k72, hk73⟩ := ih22 callee65
+        obtain ⟨k72, hk73⟩ := ih28 callee65
         try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk73
         refine ⟨k27 + k72 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -1895,7 +1895,7 @@ abbrev «KernelKlimbs::klimbs_le».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_le" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_le» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_le».of_eval (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_le».Complete := by
+theorem «KernelKlimbs::klimbs_le».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_le».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_le.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_le, ControlLower.hasControl])
@@ -1912,7 +1912,7 @@ theorem «KernelKlimbs::klimbs_le».of_eval (ih22 : «KernelKlimbs::klimbs_norma
   subst l21
   obtain ⟨rfl, rfl⟩ := args20.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k22, hk23⟩ := «KernelKlimbs::klimbs_sub».of_eval ih22 ih23 callee9
+  obtain ⟨k22, hk23⟩ := «KernelKlimbs::klimbs_sub».of_eval ih28 ih29 callee9
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk23
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
@@ -2053,7 +2053,7 @@ abbrev «IxVMCompat::ordinary_div_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxVMCompat::ordinary_div_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «IxVMCompat::ordinary_div_mod» k h x_a x_b = some (r, h')
 
-theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) : «IxVMCompat::ordinary_div_mod».Complete := by
+theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «IxVMCompat::ordinary_div_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.IxVMCompat.ordinary_div_mod.lookup
     (by simp [IxVM.IxVMCompat.ordinary_div_mod, ControlLower.hasControl])
@@ -2066,7 +2066,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l15
   obtain ⟨rfl, rfl⟩ := args14.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k16, hk17⟩ := ih22 callee9
+  obtain ⟨k16, hk17⟩ := ih28 callee9
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
   subst mt4
@@ -2078,7 +2078,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l33
   obtain ⟨rfl, rfl⟩ := args32.nil_inv
   rw [instanceName_plain_some] at callee27
-  obtain ⟨k34, hk35⟩ := ih22 callee27
+  obtain ⟨k34, hk35⟩ := ih28 callee27
   rw [matchPattern_bind] at mt22
   simp only [Except.ok.injEq, Option.some.injEq] at mt22
   subst mt22
@@ -2090,7 +2090,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l52
   obtain ⟨rfl, rfl⟩ := args51.nil_inv
   rw [instanceName_plain_some] at callee46
-  obtain ⟨k53, hk54⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih22 callee46
+  obtain ⟨k53, hk54⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee46
   rcases selectArm_literal_inv sel41 with ⟨hc55, rfl, rfl⟩ | ⟨hc55, sel56⟩
   · obtain ⟨vs57, args58, rfl⟩ := d42.tuple_inv
     obtain ⟨v59, vs60, m61, rfl, d62, args63⟩ := args58.cons_inv
@@ -2117,7 +2117,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
     subst l90
     obtain ⟨rfl, rfl⟩ := args89.nil_inv
     rw [instanceName_plain_some] at callee78
-    obtain ⟨k91, hk92⟩ := ih25 callee78
+    obtain ⟨k91, hk92⟩ := ih31 callee78
     refine ⟨k16 + k34 + k53 + k91 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
     simp (config := { decide := true, maxSteps := 10000000 }) [«IxVMCompat::ordinary_div_mod», hk17 k' (by omega), hk35 k' (by omega), hk54 k' (by omega), hc55, hk92 k' (by omega)]
@@ -2183,7 +2183,7 @@ abbrev «KernelKlimbs::klimbs_div_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_div_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_div_mod» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih24 : «KernelLevels::klimbs_eq».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div_mod».Complete := by
+theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_div_mod.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_div_mod, ControlLower.hasControl])
@@ -2200,7 +2200,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l21
   obtain ⟨rfl, rfl⟩ := args20.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k22, hk23⟩ := «IxVMCompat::ordinary_div_mod».of_eval ih16 ih17 ih22 ih23 ih25 callee9
+  obtain ⟨k22, hk23⟩ := «IxVMCompat::ordinary_div_mod».of_eval ih22 ih23 ih28 ih29 ih31 callee9
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk23
   obtain ⟨ys24, hp25, hl26, ml27⟩ := matchPattern_tuple_inv mt4
   rcases ys24 with _ | ⟨y28, _ | ⟨y29, _ | ⟨_, _⟩⟩⟩ <;> simp at hl26
@@ -2215,7 +2215,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l45
   obtain ⟨rfl, rfl⟩ := args44.nil_inv
   rw [instanceName_plain_some] at callee39
-  obtain ⟨k46, hk47⟩ := ih22 callee39
+  obtain ⟨k46, hk47⟩ := ih28 callee39
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk47
   rw [matchPattern_bind] at mt34
   simp only [Except.ok.injEq, Option.some.injEq] at mt34
@@ -2228,7 +2228,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l63
   obtain ⟨rfl, rfl⟩ := args62.nil_inv
   rw [instanceName_plain_some] at callee57
-  obtain ⟨k64, hk65⟩ := ih22 callee57
+  obtain ⟨k64, hk65⟩ := ih28 callee57
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk65
   rw [matchPattern_bind] at mt52
   simp only [Except.ok.injEq, Option.some.injEq] at mt52
@@ -2245,7 +2245,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l87
   obtain ⟨rfl, rfl⟩ := args86.nil_inv
   rw [instanceName_plain_some] at callee75
-  obtain ⟨k88, hk89⟩ := «KernelKlimbs::klimbs_mul».of_eval ih16 ih17 ih18 ih19 ih20 ih21 callee75
+  obtain ⟨k88, hk89⟩ := «KernelKlimbs::klimbs_mul».of_eval ih22 ih23 ih24 ih25 ih26 ih27 callee75
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk89
   rw [matchPattern_bind] at mt70
   simp only [Except.ok.injEq, Option.some.injEq] at mt70
@@ -2264,11 +2264,11 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l120
   obtain ⟨rfl, rfl⟩ := args119.nil_inv
   rw [instanceName_plain_some] at callee108
-  obtain ⟨k121, hk122⟩ := «KernelKlimbs::klimbs_add».of_eval ih16 ih17 callee108
+  obtain ⟨k121, hk122⟩ := «KernelKlimbs::klimbs_add».of_eval ih22 ih23 callee108
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk122
   obtain ⟨rfl, rfl⟩ := args104.nil_inv
   rw [instanceName_plain_some] at callee99
-  obtain ⟨k123, hk124⟩ := ih22 callee99
+  obtain ⟨k123, hk124⟩ := ih28 callee99
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk124
   rw [matchPattern_bind] at mt94
   simp only [Except.ok.injEq, Option.some.injEq] at mt94
@@ -2281,7 +2281,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l140
   obtain ⟨rfl, rfl⟩ := args139.nil_inv
   rw [instanceName_plain_some] at callee134
-  obtain ⟨k141, hk142⟩ := ih22 callee134
+  obtain ⟨k141, hk142⟩ := ih28 callee134
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk142
   rw [matchPattern_bind] at mt129
   simp only [Except.ok.injEq, Option.some.injEq] at mt129
@@ -2300,7 +2300,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l172
   obtain ⟨rfl, rfl⟩ := args171.nil_inv
   rw [instanceName_plain_some] at callee160
-  obtain ⟨k173, hk174⟩ := ih24 callee160
+  obtain ⟨k173, hk174⟩ := ih30 callee160
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk174
   obtain ⟨v175, vs176, m177, rfl, d178, args179⟩ := args156.cons_inv
   obtain ⟨rfl, rfl⟩ := d178.literal_inv
@@ -2316,7 +2316,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
   subst l196
   obtain ⟨rfl, rfl⟩ := args195.nil_inv
   rw [instanceName_plain_some] at callee190
-  obtain ⟨k197, hk198⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih22 callee190
+  obtain ⟨k197, hk198⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee190
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk198
   rcases selectArm_literal_inv sel185 with ⟨hc199, rfl, rfl⟩ | ⟨hc199, sel200⟩
   · obtain ⟨v201, m202, bs203, d204, mt205, d206⟩ := d186.letValue_inv
@@ -2329,7 +2329,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
     subst l224
     obtain ⟨rfl, rfl⟩ := args223.nil_inv
     rw [instanceName_plain_some] at callee218
-    obtain ⟨k225, hk226⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih22 callee218
+    obtain ⟨k225, hk226⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee218
     try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk226
     obtain ⟨v227, vs228, m229, rfl, d230, args231⟩ := args214.cons_inv
     obtain ⟨rfl, rfl⟩ := d230.literal_inv
@@ -2363,7 +2363,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
       subst l280
       obtain ⟨rfl, rfl⟩ := args279.nil_inv
       rw [instanceName_plain_some] at callee274
-      obtain ⟨k281, hk282⟩ := ih16 callee274
+      obtain ⟨k281, hk282⟩ := ih22 callee274
       try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk282
       obtain ⟨v283, vs284, m285, rfl, d286, args287⟩ := args270.cons_inv
       obtain ⟨l288, rfl⟩ := d286.var_inv
@@ -2371,7 +2371,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
       subst l288
       obtain ⟨rfl, rfl⟩ := args287.nil_inv
       rw [instanceName_plain_some] at callee265
-      obtain ⟨k289, hk290⟩ := «KernelKlimbs::klimbs_le».of_eval ih22 ih23 callee265
+      obtain ⟨k289, hk290⟩ := «KernelKlimbs::klimbs_le».of_eval ih28 ih29 callee265
       try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk290
       obtain ⟨v291, vs292, m293, rfl, d294, args295⟩ := args261.cons_inv
       obtain ⟨rfl, rfl⟩ := d294.literal_inv
@@ -2469,7 +2469,7 @@ abbrev «KernelKlimbs::klimbs_div».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_div" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_div» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_div».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih24 : «KernelLevels::klimbs_eq».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div».Complete := by
+theorem «KernelKlimbs::klimbs_div».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_div.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_div, ControlLower.hasControl])
@@ -2486,7 +2486,7 @@ theorem «KernelKlimbs::klimbs_div».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   subst l22
   obtain ⟨rfl, rfl⟩ := args21.nil_inv
   rw [instanceName_plain_some] at callee10
-  obtain ⟨k23, hk24⟩ := «KernelKlimbs::klimbs_div_mod».of_eval ih16 ih17 ih18 ih19 ih20 ih21 ih22 ih23 ih24 ih25 callee10
+  obtain ⟨k23, hk24⟩ := «KernelKlimbs::klimbs_div_mod».of_eval ih22 ih23 ih24 ih25 ih26 ih27 ih28 ih29 ih30 ih31 callee10
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk24
   rcases selectArm_tuple_inv (by trivial) sel5 with ⟨ys25, hp26, hl27, ml28, rfl⟩ | ⟨hc29, sel30⟩
   · rcases ys25 with _ | ⟨y31, _ | ⟨y32, _ | ⟨_, _⟩⟩⟩ <;> simp at hl27
@@ -2526,7 +2526,7 @@ abbrev «KernelKlimbs::klimbs_shr».Complete : Prop :=
   ∀ {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_shr" [x_a, x_n] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_shr» k h x_a x_n = some (r, h')
 
-theorem «KernelKlimbs::klimbs_shr».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih24 : «KernelLevels::klimbs_eq».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) (ih26 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shr».Complete := by
+theorem «KernelKlimbs::klimbs_shr».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shr».Complete := by
   intro x_a x_n h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_shr.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_shr, ControlLower.hasControl])
@@ -2578,11 +2578,11 @@ theorem «KernelKlimbs::klimbs_shr».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   subst l98
   obtain ⟨rfl, rfl⟩ := args97.nil_inv
   rw [instanceName_plain_some] at callee86
-  obtain ⟨k99, hk100⟩ := ih26 callee86
+  obtain ⟨k99, hk100⟩ := ih32 callee86
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk100
   obtain ⟨rfl, rfl⟩ := args82.nil_inv
   rw [instanceName_plain_some] at callee71
-  obtain ⟨k101, hk102⟩ := «KernelKlimbs::klimbs_div».of_eval ih16 ih17 ih18 ih19 ih20 ih21 ih22 ih23 ih24 ih25 callee71
+  obtain ⟨k101, hk102⟩ := «KernelKlimbs::klimbs_div».of_eval ih22 ih23 ih24 ih25 ih26 ih27 ih28 ih29 ih30 ih31 callee71
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk102
   refine ⟨k99 + k101 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -2611,7 +2611,7 @@ abbrev «KernelKlimbs::klimbs_shl».Complete : Prop :=
   ∀ {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_shl" [x_a, x_n] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_shl» k h x_a x_n = some (r, h')
 
-theorem «KernelKlimbs::klimbs_shl».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih24 : «KernelLevels::klimbs_eq».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) (ih26 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shl».Complete := by
+theorem «KernelKlimbs::klimbs_shl».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shl».Complete := by
   intro x_a x_n h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_shl.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_shl, ControlLower.hasControl])
@@ -2663,11 +2663,11 @@ theorem «KernelKlimbs::klimbs_shl».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   subst l98
   obtain ⟨rfl, rfl⟩ := args97.nil_inv
   rw [instanceName_plain_some] at callee86
-  obtain ⟨k99, hk100⟩ := ih26 callee86
+  obtain ⟨k99, hk100⟩ := ih32 callee86
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk100
   obtain ⟨rfl, rfl⟩ := args82.nil_inv
   rw [instanceName_plain_some] at callee71
-  obtain ⟨k101, hk102⟩ := «KernelKlimbs::klimbs_mul».of_eval ih16 ih17 ih18 ih19 ih20 ih21 callee71
+  obtain ⟨k101, hk102⟩ := «KernelKlimbs::klimbs_mul».of_eval ih22 ih23 ih24 ih25 ih26 ih27 callee71
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk102
   refine ⟨k99 + k101 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -2815,7 +2815,7 @@ abbrev «KernelKlimbs::klimbs_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mod» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_mod».of_eval (ih16 : «KernelKlimbs::klimbs_succ».Complete) (ih17 : «KernelKlimbs::klimbs_add_carry».Complete) (ih18 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih19 : «UInt64::mul_column».Complete) (ih20 : «KernelKlimbs::klimbs_mul_single».Complete) (ih21 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih24 : «KernelLevels::klimbs_eq».Complete) (ih25 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_mod».Complete := by
+theorem «KernelKlimbs::klimbs_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_mod.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_mod, ControlLower.hasControl])
@@ -2832,7 +2832,7 @@ theorem «KernelKlimbs::klimbs_mod».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   subst l22
   obtain ⟨rfl, rfl⟩ := args21.nil_inv
   rw [instanceName_plain_some] at callee10
-  obtain ⟨k23, hk24⟩ := «KernelKlimbs::klimbs_div_mod».of_eval ih16 ih17 ih18 ih19 ih20 ih21 ih22 ih23 ih24 ih25 callee10
+  obtain ⟨k23, hk24⟩ := «KernelKlimbs::klimbs_div_mod».of_eval ih22 ih23 ih24 ih25 ih26 ih27 ih28 ih29 ih30 ih31 callee10
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk24
   rcases selectArm_tuple_inv (by trivial) sel5 with ⟨ys25, hp26, hl27, ml28, rfl⟩ | ⟨hc29, sel30⟩
   · rcases ys25 with _ | ⟨y31, _ | ⟨y32, _ | ⟨_, _⟩⟩⟩ <;> simp at hl27
@@ -2917,7 +2917,7 @@ abbrev «KernelKlimbs::klimbs_dec».Complete : Prop :=
   ∀ {x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_dec" [x_a] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_dec» k h x_a = some (r, h')
 
-theorem «KernelKlimbs::klimbs_dec».of_eval (ih22 : «KernelKlimbs::klimbs_normalize».Complete) (ih23 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_dec».Complete := by
+theorem «KernelKlimbs::klimbs_dec».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_dec».Complete := by
   intro x_a h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_dec.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_dec, ControlLower.hasControl])
@@ -2963,7 +2963,7 @@ theorem «KernelKlimbs::klimbs_dec».of_eval (ih22 : «KernelKlimbs::klimbs_norm
   subst l83
   obtain ⟨rfl, rfl⟩ := args82.nil_inv
   rw [instanceName_plain_some] at callee71
-  obtain ⟨k84, hk85⟩ := «KernelKlimbs::klimbs_sub».of_eval ih22 ih23 callee71
+  obtain ⟨k84, hk85⟩ := «KernelKlimbs::klimbs_sub».of_eval ih28 ih29 callee71
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk85
   refine ⟨k84 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -3381,7 +3381,7 @@ abbrev «Lists::lookup».Complete : Prop :=
   ∀ {t_T : Generic.Ty} {x_list x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W (Instance.mk "Lists::lookup" [t_T]).symbol [x_list, x_idx] h r h' → ∃ k0, ∀ k ≥ k0, «Lists::lookup» t_T k h x_list x_idx = some (r, h')
 
-theorem «Lists::lookup».of_eval (ih38 : «Lists::drop».Complete) : «Lists::lookup».Complete := by
+theorem «Lists::lookup».of_eval (ih44 : «Lists::drop».Complete) : «Lists::lookup».Complete := by
   intro t_T x_list x_idx h h' r ev
   have body := ev.function_inv («Lists::lookup».lookup t_T)
     (by simp [IxVM.Lists.lookup, ControlLower.hasControl])
@@ -3399,7 +3399,7 @@ theorem «Lists::lookup».of_eval (ih38 : «Lists::drop».Complete) : «Lists::l
   subst l24
   obtain ⟨rfl, rfl⟩ := args23.nil_inv
   rw [instanceName_some_one, subst_param_singleton] at callee12
-  obtain ⟨k25, hk26⟩ := ih38 callee12
+  obtain ⟨k25, hk26⟩ := ih44 callee12
   obtain ⟨ys27, hp28, hl29, ml30⟩ := matchPattern_construct_inv mt4
   rcases ys27 with _ | ⟨y31, _ | ⟨y32, _ | ⟨_, _⟩⟩⟩ <;> simp at hl29
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp28
@@ -3701,7 +3701,7 @@ abbrev «KernelSubst::expr_inst_many_bvar».Complete : Prop :=
   ∀ {x_i x_substs x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelSubst::expr_inst_many_bvar" [x_i, x_substs, x_depth] h r h' → ∃ k0, ∀ k ≥ k0, «KernelSubst::expr_inst_many_bvar» k h x_i x_substs x_depth = some (r, h')
 
-theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih34 : «KernelSubst::expr_lbr_let».Complete) (ih35 : «KernelSubst::expr_lbr».Complete) (ih38 : «Lists::drop».Complete) (ih39 : «KernelSubst::expr_lift_let».Complete) (ih40 : «KernelSubst::expr_lift_walk».Complete) (ih41 : «KernelSubst::expr_lift».Complete) (ih42 : «Lists::length».Complete) : «KernelSubst::expr_inst_many_bvar».Complete := by
+theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih40 : «KernelSubst::expr_lbr_let».Complete) (ih41 : «KernelSubst::expr_lbr».Complete) (ih44 : «Lists::drop».Complete) (ih45 : «KernelSubst::expr_lift_let».Complete) (ih46 : «KernelSubst::expr_lift_walk».Complete) (ih47 : «KernelSubst::expr_lift».Complete) (ih48 : «Lists::length».Complete) : «KernelSubst::expr_inst_many_bvar».Complete := by
   intro x_i x_substs x_depth h h' r ev
   have body := ev.function_inv IxVM.KernelSubst.expr_inst_many_bvar.lookup
     (by simp [IxVM.KernelSubst.expr_inst_many_bvar, ControlLower.hasControl])
@@ -3714,7 +3714,7 @@ theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_
   subst l15
   obtain ⟨rfl, rfl⟩ := args14.nil_inv
   rw [instanceName_some_one, Generic.Ty.subst_nil] at callee9
-  obtain ⟨k16, hk17⟩ := ih42 callee9
+  obtain ⟨k16, hk17⟩ := ih48 callee9
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
   subst mt4
@@ -3756,7 +3756,7 @@ theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_
     subst l83
     obtain ⟨rfl, rfl⟩ := args82.nil_inv
     rw [instanceName_some_one, Generic.Ty.subst_nil] at callee71
-    obtain ⟨k84, hk85⟩ := «Lists::lookup».of_eval ih38 callee71
+    obtain ⟨k84, hk85⟩ := «Lists::lookup».of_eval ih44 callee71
     obtain ⟨v86, vs87, m88, rfl, d89, args90⟩ := args67.cons_inv
     obtain ⟨l91, rfl⟩ := d89.var_inv
     simp at l91
@@ -3765,7 +3765,7 @@ theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_
     obtain ⟨rfl, rfl⟩ := d95.literal_inv
     obtain ⟨rfl, rfl⟩ := args96.nil_inv
     rw [instanceName_plain_some] at callee62
-    obtain ⟨k97, hk98⟩ := ih41 callee62
+    obtain ⟨k97, hk98⟩ := ih47 callee62
     refine ⟨k16 + k55 + k84 + k97 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
     simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst_many_bvar», hk17 k' (by omega), op29, hk56 k' (by omega), hc57, hk85 k' (by omega), hk98 k' (by omega)]
@@ -4177,7 +4177,7 @@ abbrev «KernelSubst::expr_inst1_bvar».Complete : Prop :=
   ∀ {x_i x_arg x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelSubst::expr_inst1_bvar" [x_i, x_arg, x_depth] h r h' → ∃ k0, ∀ k ≥ k0, «KernelSubst::expr_inst1_bvar» k h x_i x_arg x_depth = some (r, h')
 
-theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih34 : «KernelSubst::expr_lbr_let».Complete) (ih35 : «KernelSubst::expr_lbr».Complete) (ih39 : «KernelSubst::expr_lift_let».Complete) (ih40 : «KernelSubst::expr_lift_walk».Complete) (ih41 : «KernelSubst::expr_lift».Complete) : «KernelSubst::expr_inst1_bvar».Complete := by
+theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih40 : «KernelSubst::expr_lbr_let».Complete) (ih41 : «KernelSubst::expr_lbr».Complete) (ih45 : «KernelSubst::expr_lift_let».Complete) (ih46 : «KernelSubst::expr_lift_walk».Complete) (ih47 : «KernelSubst::expr_lift».Complete) : «KernelSubst::expr_inst1_bvar».Complete := by
   intro x_i x_arg x_depth h h' r ev
   have body := ev.function_inv IxVM.KernelSubst.expr_inst1_bvar.lookup
     (by simp [IxVM.KernelSubst.expr_inst1_bvar, ControlLower.hasControl])
@@ -4229,7 +4229,7 @@ theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fiel
         obtain ⟨rfl, rfl⟩ := d76.literal_inv
         obtain ⟨rfl, rfl⟩ := args77.nil_inv
         rw [instanceName_plain_some] at callee60
-        obtain ⟨k78, hk79⟩ := ih41 callee60
+        obtain ⟨k78, hk79⟩ := ih47 callee60
         refine ⟨k23 + k78 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
         simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25, hc38, op52, hc55, hk79 k' (by omega)]
@@ -4847,7 +4847,7 @@ abbrev «KernelSubst::ctx_reachable».Complete : Prop :=
   ∀ {x_types x_base : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelSubst::ctx_reachable" [x_types, x_base] h r h' → ∃ k0, ∀ k ≥ k0, «KernelSubst::ctx_reachable» k h x_types x_base = some (r, h')
 
-theorem «KernelSubst::ctx_reachable».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih34 : «KernelSubst::expr_lbr_let».Complete) (ih35 : «KernelSubst::expr_lbr».Complete) (ih38 : «Lists::drop».Complete) (ih42 : «Lists::length».Complete) (ih58 : «KernelSubst::ctx_close_cut».Complete) (ih59 : «KernelSubst::ctx_next_cut».Complete) (ih60 : «KernelSubst::ctx_seek_cut».Complete) : «KernelSubst::ctx_reachable».Complete := by
+theorem «KernelSubst::ctx_reachable».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih40 : «KernelSubst::expr_lbr_let».Complete) (ih41 : «KernelSubst::expr_lbr».Complete) (ih44 : «Lists::drop».Complete) (ih48 : «Lists::length».Complete) (ih64 : «KernelSubst::ctx_close_cut».Complete) (ih65 : «KernelSubst::ctx_next_cut».Complete) (ih66 : «KernelSubst::ctx_seek_cut».Complete) : «KernelSubst::ctx_reachable».Complete := by
   intro x_types x_base h h' r ev
   have body := ev.function_inv IxVM.KernelSubst.ctx_reachable.lookup
     (by simp [IxVM.KernelSubst.ctx_reachable, ControlLower.hasControl])
@@ -4860,7 +4860,7 @@ theorem «KernelSubst::ctx_reachable».of_eval (ih0 : «UInt32::less_than_fields
   subst l15
   obtain ⟨rfl, rfl⟩ := args14.nil_inv
   rw [instanceName_some_one, Generic.Ty.subst_nil] at callee9
-  obtain ⟨k16, hk17⟩ := ih42 callee9
+  obtain ⟨k16, hk17⟩ := ih48 callee9
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
   subst mt4
@@ -4884,7 +4884,7 @@ theorem «KernelSubst::ctx_reachable».of_eval (ih0 : «UInt32::less_than_fields
   obtain ⟨k49, hk50⟩ := «KernelSubst::lbr_min».of_eval ih0 callee36
   obtain ⟨rfl, rfl⟩ := args32.nil_inv
   rw [instanceName_plain_some] at callee21
-  obtain ⟨k51, hk52⟩ := ih60 callee21
+  obtain ⟨k51, hk52⟩ := ih66 callee21
   refine ⟨k16 + k49 + k51 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_reachable», hk17 k' (by omega), hk50 k' (by omega), hk52 k' (by omega)]
@@ -4958,7 +4958,7 @@ abbrev «KernelSubst::ctx_trim».Complete : Prop :=
   ∀ {x_types x_base : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelSubst::ctx_trim" [x_types, x_base] h r h' → ∃ k0, ∀ k ≥ k0, «KernelSubst::ctx_trim» k h x_types x_base = some (r, h')
 
-theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih34 : «KernelSubst::expr_lbr_let».Complete) (ih35 : «KernelSubst::expr_lbr».Complete) (ih38 : «Lists::drop».Complete) (ih42 : «Lists::length».Complete) (ih58 : «KernelSubst::ctx_close_cut».Complete) (ih59 : «KernelSubst::ctx_next_cut».Complete) (ih60 : «KernelSubst::ctx_seek_cut».Complete) (ih61 : «Lists::take».Complete) : «KernelSubst::ctx_trim».Complete := by
+theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih40 : «KernelSubst::expr_lbr_let».Complete) (ih41 : «KernelSubst::expr_lbr».Complete) (ih44 : «Lists::drop».Complete) (ih48 : «Lists::length».Complete) (ih64 : «KernelSubst::ctx_close_cut».Complete) (ih65 : «KernelSubst::ctx_next_cut».Complete) (ih66 : «KernelSubst::ctx_seek_cut».Complete) (ih67 : «Lists::take».Complete) : «KernelSubst::ctx_trim».Complete := by
   intro x_types x_base h h' r ev
   have body := ev.function_inv IxVM.KernelSubst.ctx_trim.lookup
     (by simp [IxVM.KernelSubst.ctx_trim, ControlLower.hasControl])
@@ -4989,7 +4989,7 @@ theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Co
     subst l46
     obtain ⟨rfl, rfl⟩ := args45.nil_inv
     rw [instanceName_some_one, Generic.Ty.subst_nil] at callee40
-    obtain ⟨k47, hk48⟩ := ih42 callee40
+    obtain ⟨k47, hk48⟩ := ih48 callee40
     obtain ⟨rfl, rfl⟩ := args36.nil_inv
     rw [instanceName_plain_some] at callee25
     obtain ⟨k49, hk50⟩ := ih0 callee25
@@ -5018,10 +5018,10 @@ theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Co
         subst l86
         obtain ⟨rfl, rfl⟩ := args85.nil_inv
         rw [instanceName_plain_some] at callee74
-        obtain ⟨k87, hk88⟩ := «KernelSubst::ctx_reachable».of_eval ih0 ih34 ih35 ih38 ih42 ih58 ih59 ih60 callee74
+        obtain ⟨k87, hk88⟩ := «KernelSubst::ctx_reachable».of_eval ih0 ih40 ih41 ih44 ih48 ih64 ih65 ih66 callee74
         obtain ⟨rfl, rfl⟩ := args70.nil_inv
         rw [instanceName_some_one, Generic.Ty.subst_nil] at callee59
-        obtain ⟨k89, hk90⟩ := ih61 callee59
+        obtain ⟨k89, hk90⟩ := ih67 callee59
         refine ⟨k47 + k49 + k87 + k89 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
         simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_trim», hc8, hk48 k' (by omega), hk50 k' (by omega), hc51, hc54, hk88 k' (by omega), hk90 k' (by omega)]
@@ -5110,7 +5110,7 @@ abbrev «KernelLevels::literal_eq».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::literal_eq" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::literal_eq» k h x_a x_b = some (r, h')
 
-theorem «KernelLevels::literal_eq».of_eval (ih24 : «KernelLevels::klimbs_eq».Complete) (ih62 : «KernelLevels::bytestream_eq».Complete) : «KernelLevels::literal_eq».Complete := by
+theorem «KernelLevels::literal_eq».of_eval (ih30 : «KernelLevels::klimbs_eq».Complete) (ih68 : «KernelLevels::bytestream_eq».Complete) : «KernelLevels::literal_eq».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.literal_eq.lookup
     (by simp [IxVM.KernelLevels.literal_eq, ControlLower.hasControl])
@@ -5144,7 +5144,7 @@ theorem «KernelLevels::literal_eq».of_eval (ih24 : «KernelLevels::klimbs_eq»
       subst l45
       obtain ⟨rfl, rfl⟩ := args44.nil_inv
       rw [instanceName_plain_some] at callee33
-      obtain ⟨k46, hk47⟩ := ih24 callee33
+      obtain ⟨k46, hk47⟩ := ih30 callee33
       refine ⟨k46 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
       simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hp9, hp24, hk47 k' (by omega)]
@@ -5180,7 +5180,7 @@ theorem «KernelLevels::literal_eq».of_eval (ih24 : «KernelLevels::klimbs_eq»
         subst l85
         obtain ⟨rfl, rfl⟩ := args84.nil_inv
         rw [instanceName_plain_some] at callee73
-        obtain ⟨k86, hk87⟩ := ih62 callee73
+        obtain ⟨k86, hk87⟩ := ih68 callee73
         refine ⟨k86 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
         simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hc12, hp49, hp64, hk87 k' (by omega)]
@@ -5533,7 +5533,7 @@ abbrev «KernelLevels::level_max_offsets».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::level_max_offsets" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::level_max_offsets» k h x_a x_b = some (r, h')
 
-theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih65 : «KernelLevels::level_struct_eq».Complete) (ih66 : «KernelLevels::level_offset_of».Complete) : «KernelLevels::level_max_offsets».Complete := by
+theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih71 : «KernelLevels::level_struct_eq».Complete) (ih72 : «KernelLevels::level_offset_of».Complete) : «KernelLevels::level_max_offsets».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.level_max_offsets.lookup
     (by simp [IxVM.KernelLevels.level_max_offsets, ControlLower.hasControl])
@@ -5548,7 +5548,7 @@ theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_f
   obtain ⟨rfl, rfl⟩ := d20.literal_inv
   obtain ⟨rfl, rfl⟩ := args21.nil_inv
   rw [instanceName_plain_some] at callee10
-  obtain ⟨k22, hk23⟩ := ih66 callee10
+  obtain ⟨k22, hk23⟩ := ih72 callee10
   rcases selectArm_tuple_inv (by trivial) sel5 with ⟨ys24, hp25, hl26, ml27, rfl⟩ | ⟨hc28, sel29⟩
   · rcases ys24 with _ | ⟨y30, _ | ⟨y31, _ | ⟨_, _⟩⟩⟩ <;> simp at hl26
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp25
@@ -5565,7 +5565,7 @@ theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_f
     obtain ⟨rfl, rfl⟩ := d52.literal_inv
     obtain ⟨rfl, rfl⟩ := args53.nil_inv
     rw [instanceName_plain_some] at callee42
-    obtain ⟨k54, hk55⟩ := ih66 callee42
+    obtain ⟨k54, hk55⟩ := ih72 callee42
     rcases selectArm_tuple_inv (by trivial) sel37 with ⟨ys56, hp57, hl58, ml59, rfl⟩ | ⟨hc60, sel61⟩
     · rcases ys56 with _ | ⟨y62, _ | ⟨y63, _ | ⟨_, _⟩⟩⟩ <;> simp at hl58
       try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp57
@@ -5584,7 +5584,7 @@ theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_f
       subst l86
       obtain ⟨rfl, rfl⟩ := args85.nil_inv
       rw [instanceName_plain_some] at callee74
-      obtain ⟨k87, hk88⟩ := ih65 callee74
+      obtain ⟨k87, hk88⟩ := ih71 callee74
       rcases selectArm_literal_inv sel69 with ⟨hc89, rfl, rfl⟩ | ⟨hc89, sel90⟩
       · obtain ⟨v91, m92, bs93, body94, d95, sel96, d97⟩ := d70.matchValue_inv
         obtain ⟨vs98, m99, args100, callee101⟩ := d95.call_inv
@@ -5663,7 +5663,7 @@ abbrev «KernelLevels::level_max_subsumes».Complete : Prop :=
   ∀ {x_m x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::level_max_subsumes" [x_m, x_x] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::level_max_subsumes» k h x_m x_x = some (r, h')
 
-theorem «KernelLevels::level_max_subsumes».of_eval (ih65 : «KernelLevels::level_struct_eq».Complete) : «KernelLevels::level_max_subsumes».Complete := by
+theorem «KernelLevels::level_max_subsumes».of_eval (ih71 : «KernelLevels::level_struct_eq».Complete) : «KernelLevels::level_max_subsumes».Complete := by
   intro x_m x_x h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.level_max_subsumes.lookup
     (by simp [IxVM.KernelLevels.level_max_subsumes, ControlLower.hasControl])
@@ -5690,7 +5690,7 @@ theorem «KernelLevels::level_max_subsumes».of_eval (ih65 : «KernelLevels::lev
     subst l41
     obtain ⟨rfl, rfl⟩ := args40.nil_inv
     rw [instanceName_plain_some] at callee29
-    obtain ⟨k42, hk43⟩ := ih65 callee29
+    obtain ⟨k42, hk43⟩ := ih71 callee29
     rcases selectArm_literal_inv sel24 with ⟨hc44, rfl, rfl⟩ | ⟨hc44, sel45⟩
     · obtain ⟨rfl, rfl⟩ := d25.literal_inv
       refine ⟨k42 + 1, fun k hk => ?_⟩
@@ -5708,7 +5708,7 @@ theorem «KernelLevels::level_max_subsumes».of_eval (ih65 : «KernelLevels::lev
         subst l63
         obtain ⟨rfl, rfl⟩ := args62.nil_inv
         rw [instanceName_plain_some] at callee51
-        obtain ⟨k64, hk65⟩ := ih65 callee51
+        obtain ⟨k64, hk65⟩ := ih71 callee51
         refine ⟨k42 + k64 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
         simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_subsumes», ld9, hp12, hk43 k' (by omega), hc44, hc46, hk65 k' (by omega)]
@@ -5769,7 +5769,7 @@ abbrev «KernelLevels::level_max_go».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::level_max_go" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::level_max_go» k h x_a x_b = some (r, h')
 
-theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih65 : «KernelLevels::level_struct_eq».Complete) (ih66 : «KernelLevels::level_offset_of».Complete) : «KernelLevels::level_max_go».Complete := by
+theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih71 : «KernelLevels::level_struct_eq».Complete) (ih72 : «KernelLevels::level_offset_of».Complete) : «KernelLevels::level_max_go».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.level_max_go.lookup
     (by simp [IxVM.KernelLevels.level_max_go, ControlLower.hasControl])
@@ -5786,7 +5786,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
   subst l22
   obtain ⟨rfl, rfl⟩ := args21.nil_inv
   rw [instanceName_plain_some] at callee10
-  obtain ⟨k23, hk24⟩ := ih65 callee10
+  obtain ⟨k23, hk24⟩ := ih71 callee10
   rcases selectArm_literal_inv sel5 with ⟨hc25, rfl, rfl⟩ | ⟨hc25, sel26⟩
   · obtain ⟨l27, rfl⟩ := d6.var_inv
     simp at l27
@@ -5843,7 +5843,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
           subst l88
           obtain ⟨rfl, rfl⟩ := args87.nil_inv
           rw [instanceName_plain_some] at callee76
-          obtain ⟨k89, hk90⟩ := «KernelLevels::level_max_subsumes».of_eval ih65 callee76
+          obtain ⟨k89, hk90⟩ := «KernelLevels::level_max_subsumes».of_eval ih71 callee76
           rcases selectArm_literal_inv sel71 with ⟨hc91, rfl, rfl⟩ | ⟨hc91, sel92⟩
           · obtain ⟨l93, rfl⟩ := d72.var_inv
             simp at l93
@@ -5864,7 +5864,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
               subst l118
               obtain ⟨rfl, rfl⟩ := args117.nil_inv
               rw [instanceName_plain_some] at callee106
-              obtain ⟨k119, hk120⟩ := «KernelLevels::level_max_subsumes».of_eval ih65 callee106
+              obtain ⟨k119, hk120⟩ := «KernelLevels::level_max_subsumes».of_eval ih71 callee106
               rcases selectArm_literal_inv sel101 with ⟨hc121, rfl, rfl⟩ | ⟨hc121, sel122⟩
               · obtain ⟨l123, rfl⟩ := d102.var_inv
                 simp at l123
@@ -5884,7 +5884,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
                   subst l141
                   obtain ⟨rfl, rfl⟩ := args140.nil_inv
                   rw [instanceName_plain_some] at callee129
-                  obtain ⟨k142, hk143⟩ := «KernelLevels::level_max_offsets».of_eval ih0 ih65 ih66 callee129
+                  obtain ⟨k142, hk143⟩ := «KernelLevels::level_max_offsets».of_eval ih0 ih71 ih72 callee129
                   refine ⟨k23 + k89 + k119 + k142 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
                   simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91, hc94, hk120 k' (by omega), hc121, hc124, hk143 k' (by omega)]
@@ -5959,7 +5959,7 @@ abbrev «KernelLevels::level_max».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::level_max" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::level_max» k h x_a x_b = some (r, h')
 
-theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih65 : «KernelLevels::level_struct_eq».Complete) (ih66 : «KernelLevels::level_offset_of».Complete) (ih67 : «KernelLevels::level_explicit_val».Complete) : «KernelLevels::level_max».Complete := by
+theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih71 : «KernelLevels::level_struct_eq».Complete) (ih72 : «KernelLevels::level_offset_of».Complete) (ih73 : «KernelLevels::level_explicit_val».Complete) : «KernelLevels::level_max».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.level_max.lookup
     (by simp [IxVM.KernelLevels.level_max, ControlLower.hasControl])
@@ -5972,7 +5972,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
   subst l16
   obtain ⟨rfl, rfl⟩ := args15.nil_inv
   rw [instanceName_plain_some] at callee10
-  obtain ⟨k17, hk18⟩ := ih67 callee10
+  obtain ⟨k17, hk18⟩ := ih73 callee10
   rcases selectArm_litTuple_inv (by trivial) sel5 with ⟨ys19, hp20, hl21, ml22, rfl⟩ | ⟨hc23, sel24⟩
   · rcases ys19 with _ | ⟨y25, _ | ⟨_, _⟩⟩ <;> simp at hl21
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp20
@@ -5987,7 +5987,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
     subst l42
     obtain ⟨rfl, rfl⟩ := args41.nil_inv
     rw [instanceName_plain_some] at callee36
-    obtain ⟨k43, hk44⟩ := ih67 callee36
+    obtain ⟨k43, hk44⟩ := ih73 callee36
     rcases selectArm_litTuple_inv (by trivial) sel31 with ⟨ys45, hp46, hl47, ml48, rfl⟩ | ⟨hc49, sel50⟩
     · rcases ys45 with _ | ⟨y51, _ | ⟨_, _⟩⟩ <;> simp at hl47
       try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp46
@@ -6035,7 +6035,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
       subst l98
       obtain ⟨rfl, rfl⟩ := args97.nil_inv
       rw [instanceName_plain_some] at callee86
-      obtain ⟨k99, hk100⟩ := «KernelLevels::level_max_go».of_eval ih0 ih65 ih66 callee86
+      obtain ⟨k99, hk100⟩ := «KernelLevels::level_max_go».of_eval ih0 ih71 ih72 callee86
       refine ⟨k17 + k43 + k99 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
       simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hc49, hk100 k' (by omega)]
@@ -6052,7 +6052,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
     subst l116
     obtain ⟨rfl, rfl⟩ := args115.nil_inv
     rw [instanceName_plain_some] at callee104
-    obtain ⟨k117, hk118⟩ := «KernelLevels::level_max_go».of_eval ih0 ih65 ih66 callee104
+    obtain ⟨k117, hk118⟩ := «KernelLevels::level_max_go».of_eval ih0 ih71 ih72 callee104
     refine ⟨k17 + k117 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
     simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hc23, hk118 k' (by omega)]
@@ -6109,7 +6109,7 @@ abbrev «KernelLevels::level_imax».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelLevels::level_imax" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::level_imax» k h x_a x_b = some (r, h')
 
-theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih63 : «KernelLevels::level_eq».Complete) (ih64 : «KernelLevels::level_is_not_zero».Complete) (ih65 : «KernelLevels::level_struct_eq».Complete) (ih66 : «KernelLevels::level_offset_of».Complete) (ih67 : «KernelLevels::level_explicit_val».Complete) : «KernelLevels::level_imax».Complete := by
+theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields».Complete) (ih69 : «KernelLevels::level_eq».Complete) (ih70 : «KernelLevels::level_is_not_zero».Complete) (ih71 : «KernelLevels::level_struct_eq».Complete) (ih72 : «KernelLevels::level_offset_of».Complete) (ih73 : «KernelLevels::level_explicit_val».Complete) : «KernelLevels::level_imax».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelLevels.level_imax.lookup
     (by simp [IxVM.KernelLevels.level_imax, ControlLower.hasControl])
@@ -6147,7 +6147,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
       subst l44
       obtain ⟨rfl, rfl⟩ := args43.nil_inv
       rw [instanceName_plain_some] at callee32
-      obtain ⟨k45, hk46⟩ := «KernelLevels::level_max».of_eval ih0 ih65 ih66 ih67 callee32
+      obtain ⟨k45, hk46⟩ := «KernelLevels::level_max».of_eval ih0 ih71 ih72 ih73 callee32
       refine ⟨k45 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
       simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hp23, hk46 k' (by omega)]
@@ -6161,7 +6161,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
       subst l62
       obtain ⟨rfl, rfl⟩ := args61.nil_inv
       rw [instanceName_plain_some] at callee56
-      obtain ⟨k63, hk64⟩ := ih64 callee56
+      obtain ⟨k63, hk64⟩ := ih70 callee56
       rw [matchPattern_bind] at mt51
       simp only [Except.ok.injEq, Option.some.injEq] at mt51
       subst mt51
@@ -6181,7 +6181,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
         subst l90
         obtain ⟨rfl, rfl⟩ := args89.nil_inv
         rw [instanceName_plain_some] at callee78
-        obtain ⟨k91, hk92⟩ := «KernelLevels::level_max».of_eval ih0 ih65 ih66 ih67 callee78
+        obtain ⟨k91, hk92⟩ := «KernelLevels::level_max».of_eval ih0 ih71 ih72 ih73 callee78
         refine ⟨k63 + k91 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
         simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hk92 k' (by omega)]
@@ -6216,7 +6216,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
             subst l134
             obtain ⟨rfl, rfl⟩ := args133.nil_inv
             rw [instanceName_plain_some] at callee122
-            obtain ⟨k135, hk136⟩ := ih63 callee122
+            obtain ⟨k135, hk136⟩ := ih69 callee122
             rw [matchPattern_bind] at mt117
             simp only [Except.ok.injEq, Option.some.injEq] at mt117
             subst mt117
@@ -6684,7 +6684,7 @@ abbrev «Lists::lookup_or_default».Complete : Prop :=
   ∀ {t_T : Generic.Ty} {x_list x_idx x_default : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W (Instance.mk "Lists::lookup_or_default" [t_T]).symbol [x_list, x_idx, x_default] h r h' → ∃ k0, ∀ k ≥ k0, «Lists::lookup_or_default» t_T k h x_list x_idx x_default = some (r, h')
 
-theorem «Lists::lookup_or_default».of_eval (ih38 : «Lists::drop».Complete) : «Lists::lookup_or_default».Complete := by
+theorem «Lists::lookup_or_default».of_eval (ih44 : «Lists::drop».Complete) : «Lists::lookup_or_default».Complete := by
   intro t_T x_list x_idx x_default h h' r ev
   have body := ev.function_inv («Lists::lookup_or_default».lookup t_T)
     (by simp [IxVM.Lists.lookup_or_default, ControlLower.hasControl])
@@ -6702,7 +6702,7 @@ theorem «Lists::lookup_or_default».of_eval (ih38 : «Lists::drop».Complete) :
   subst l25
   obtain ⟨rfl, rfl⟩ := args24.nil_inv
   rw [instanceName_some_one, subst_param_singleton] at callee13
-  obtain ⟨k26, hk27⟩ := ih38 callee13
+  obtain ⟨k26, hk27⟩ := ih44 callee13
   rcases selectArm_construct_inv (by trivial) sel5 with ⟨ys28, hp29, hl30, ml31, rfl⟩ | ⟨hc32, sel33⟩
   · rcases ys28 with _ | ⟨_, _⟩ <;> simp at hl30
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml31

@@ -14,7 +14,7 @@ digest is the hash of, and `ix codegen --check` fails when the file and the
 digest drift apart.
 
 A role key decodes to `Role.all[i]`, the role at the index the bytes give.
-The reader is strict: tags, contract bits and role indices outside their
+The reader is strict: tags and role indices outside their
 ranges are refused, a count larger than the bytes left is refused, and
 `Committed.ofBytes` accepts the bytes only when the data read re-encode to
 exactly those bytes (`encode`), so the reader and the encoder agree on every
@@ -75,18 +75,8 @@ def getPropWhen : Ixon.GetM PropWhen := do
   | 1 => return .ifAllZero (← getList getNat)
   | b => throw s!"spec bytes: datum tag {b}"
 
-def getBinderContract : Ixon.GetM Ixon.BinderContract := do
-  let b ← Ixon.getU8
-  match Ixon.BinderContract.ofBits? b with
-  | some c => pure c
-  | none => throw s!"spec bytes: binder contract {b}"
-
 def getBinder : Ixon.GetM BinderMeta := do
-  let pw ← getPropWhen
-  let contract ← getBinderContract
-  let b ← Ixon.getU8
-  let some result := Ixon.ValueContract.ofBits? b | throw s!"spec bytes: value contract {b}"
-  return { pw, contract, result }
+  return { pw := ← getPropWhen }
 
 partial def getExpr : Ixon.GetM (Expr .anon) := do
   match ← Ixon.getU8 with
@@ -100,13 +90,7 @@ partial def getExpr : Ixon.GetM (Expr .anon) := do
   | 7 =>
     let t ← getExpr; let v ← getExpr; let b ← getExpr
     let nonDep ← getBool
-    let kindTag ← Ixon.getU8
-    let kind ← match kindTag with
-      | 0 => pure Ixon.LetKind.value
-      | 1 => pure Ixon.LetKind.borrowShared
-      | k => throw s!"spec bytes: let kind {k}"
-    let binder ← getBinderContract
-    return .letE t v b { contract := { nonDep, kind, binder } }
+    return .letE t v b { nonDep }
   | 8 => return .lit (.natVal (← getNat))
   | 9 => return .lit (.strVal (← getStr))
   | 10 => let k ← getKey; let i ← getNat; return .proj k i (← getExpr)

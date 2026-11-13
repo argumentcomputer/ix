@@ -18,17 +18,20 @@ private def identityValue : Ixon.Expr :=
   .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
 
 private def definition (kind : Ix.DefKind) (ty value : Ixon.Expr) : Ixon.Definition :=
-  ⟨kind, .safe, 0, ty, value⟩
+  ⟨kind, .safe, {}, 0, ty, value⟩
 
 private def block (definitions : Array Ixon.Definition)
-    (sharing : Array Ixon.Expr := #[]) : Ixon.Env × Address := Id.run do
-  let (source, address) := storeAt {}
-    ⟨.muts (definitions.map .defn), sharing, #[], #[.zero]⟩
+    (sharing : Array Ixon.Expr := #[]) (safeTwinSection : Bool := false) : Ixon.Env × Address := Id.run do
+  let c : Ixon.Constant := ⟨.muts (definitions.map .defn), sharing, #[], #[.zero], #[]⟩
+  -- an unsafe or partial member: the safe twin's data (a prover's choice), so that the case
+  -- reaches the check it is about, not the refusal of an undecided binder
+  let c := if safeTwinSection then ((Tests.Ix.IxVM.withSafeTwinSection {} c).toOption.getD c) else c
+  let (source, address) := storeAt {} c
   let mut source := source
   let mut first := address
   for i in [:definitions.size] do
     let (updated, projection) := storeAt source
-      ⟨.dPrj ⟨i.toUInt64, address⟩, #[], #[], #[]⟩
+      ⟨.dPrj ⟨i.toUInt64, address⟩, #[], #[], #[], #[]⟩
     source := { updated with anonHints := updated.anonHints.insert projection (.regular 0) }
     if i == 0 then first := projection
   return (source, first)
@@ -48,7 +51,7 @@ def cases : Array ExploitCase := Id.run do
   for (label, kind) in [("definition", Ix.DefKind.defn), ("theorem", .thm), ("opaque", .opaq)] do
     result := result.push (asCase s!"axiom-free-self-{label}"
       "prove every proposition by citing the declaration itself"
-      (storeAt {} ⟨.defn (definition kind everyProp (.recur 0 #[])), #[], #[], #[.zero]⟩))
+      (storeAt {} ⟨.defn (definition kind everyProp (.recur 0 #[])), #[], #[], #[.zero], #[]⟩))
     result := result.push (asCase s!"mutual-self-{label}"
       "hide the same false proof in a one-member mutual block"
       (block #[definition kind everyProp (.recur 0 #[])]))
@@ -92,12 +95,12 @@ private def ixvmSafetyCases : Array ExploitCase :=
     fun (label, kind, safety) =>
       asCase s!"mutual-self-{label}"
         "the wire safety byte must not bypass the safe declaration peer-slot restriction"
-        (block #[{ definition kind everyProp (.recur 0 #[]) with safety }])
+        (block #[{ definition kind everyProp (.recur 0 #[]) with safety }] (safeTwinSection := true))
 
 def run : IO UInt32 := do
   let control := asCase "control-closed-identity"
     "a genuine closed proof must still be accepted"
-    (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero]⟩) true
+    (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero], #[]⟩) true
   let ixvmCases := cases.filter (fun c => !c.expectAccept) ++ ixvmSafetyCases ++ #[control]
   Tests.Ix.IxVM.runCases "ixvm-definition-dependencies" (ixvmCases.map fun c _ => c.toCase)
 

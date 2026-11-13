@@ -76,24 +76,26 @@ def CollapsedRows (sources : List MutConst) (members : Array Ixon.MutConst) (out
 /-- **The mutual builder's two cases**, with the block's address. -/
 theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output) :
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? sources members metadata state = .ok output) :
     output.blockAddr = Address.admissionHash (Ixon.ser output.block) ∧
       (WrappedRows sources members output ∨ CollapsedRows sources members output) := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, built, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     have selected := chosen_standalone members info chosen
-    exact ⟨rfl, .inr ⟨sharing_standalone limits info state.refs state.univs block selected.1 built,
+    exact ⟨rfl, .inr ⟨sharing_standalone limits info state.refs state.univs
+      { block with binders := #[] } selected.1 built,
       selected.2, MutualProjections.standalone_rows sources block metadata⟩⟩
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, built, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     obtain ⟨targets, info, shape⟩ :=
-      ProjectionLayout.sharing_mutual_shape limits members state.refs state.univs block built
+      ProjectionLayout.sharing_mutual_shape limits members state.refs state.univs { block with binders := #[] } built
     exact ⟨rfl, .inl ⟨targets, metadata, info, shape, rfl⟩⟩
 
 theorem no_ctor_references (owner : Address) (index : Nat) (source : MutConst) (kind : MemberShape)
@@ -126,7 +128,8 @@ theorem standalone_resolves (store : Store) (owner : Address) (block : Ixon.Cons
 /-- **The built block's rows read as their sources**, in either case. -/
 theorem build_resolves (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output)
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? sources members metadata state = .ok output)
     (shape : members.toList.map memberShape = sources.map sourceShape)
     (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source)
     (store : Store) (stored : store output.blockAddr = some output.block) (wire : output.block.wireWF) :

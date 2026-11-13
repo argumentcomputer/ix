@@ -37,19 +37,17 @@ def put_expr := aiur_fn⟦
           let count = app_telescope_count(expr);
           put_tagn4(7, count, put_app_telescope(expr, rest)) } ,
 
-        Ixon::Expr::Lam(_, _, _) => {
+        Ixon::Expr::Lam(_, _) => {
           let count = lam_telescope_count(expr);
           put_tagn4(8, count, put_lam_telescope(expr, rest)) } ,
 
-        Ixon::Expr::All(_, _, _, _) => {
+        Ixon::Expr::All(_, _) => {
           let count = all_telescope_count(expr);
           put_tagn4(9, count, put_all_telescope(expr, rest)) } ,
 
-        Ixon::Expr::Let(Ixon::LetContract::Mk(non_dep, kind, contract), &ty, &val, &body) => {
-          let kind_bit = match kind { Ixon::LetKind::Value => {  0 } , Ixon::LetKind::BorrowShared => {  1 } , };
-          let flags = [UInt8::from_field(non_dep + 2 * kind_bit), UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
-          put_tagn4(10, flags, put_lam_mode(contract,
-            put_expr(ty, put_expr(val, put_expr(body, rest))))) } ,
+        Ixon::Expr::Let(header, &ty, &val, &body) => {
+          let value = [UInt8::from_field(header), UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
+          put_tagn4(10, value, put_expr(ty, put_expr(val, put_expr(body, rest)))) } ,
 
         Ixon::Expr::Share(idx) => {  put_tagn4(11, idx, rest) } ,
       }
@@ -170,36 +168,6 @@ def put_u64_list := aiur_fn⟦
     }
 ⟧
 
-def value_contract_code := aiur_fn⟦
-  fn value_contract_code(value: Ixon::ValueContract) -> Field {
-      let Ixon::ValueContract::Mk(owned, locality) = value;
-      let o = match owned { Ixon::Owned::Unique => {  0 } , Ixon::Owned::Shared => {  1 } , };
-      let l = match locality { Ixon::Locality::Unrestricted => {  0 } , Ixon::Locality::Local => {  1 } , };
-      o + 2 * l
-    }
-⟧
-
-def binder_contract_code := aiur_fn⟦
-  fn binder_contract_code(contract: Ixon::BinderContract) -> Field {
-      let Ixon::BinderContract::Mk(uses, value) = contract;
-      let u = match uses { Ixon::Uses::Erased => {  0 } , Ixon::Uses::Linear => {  1 } , Ixon::Uses::Affine => {  2 } , Ixon::Uses::Many => {  3 } , };
-      u + 4 * value_contract_code(value)
-    }
-⟧
-
-def put_lam_mode := aiur_fn⟦
-  fn put_lam_mode(contract: Ixon::BinderContract, rest: Bytes::Stream) -> Bytes::Stream {
-      (&(Lists::Node::Cons(UInt8::from_field(binder_contract_code(contract)), rest)))
-    }
-⟧
-
-def put_all_mode := aiur_fn⟦
-  fn put_all_mode(contract: Ixon::BinderContract, result: Ixon::ValueContract, rest: Bytes::Stream) -> Bytes::Stream {
-      let code = binder_contract_code(contract) + 16 * value_contract_code(result);
-      (&(Lists::Node::Cons(UInt8::from_field(code), rest)))
-    }
-⟧
-
 def app_telescope_count := aiur_fn⟦
   fn app_telescope_count(expr: Ixon::Expr) -> UInt64::U64 {
       match expr {
@@ -212,7 +180,7 @@ def app_telescope_count := aiur_fn⟦
 def lam_telescope_count := aiur_fn⟦
   fn lam_telescope_count(expr: Ixon::Expr) -> UInt64::U64 {
       match expr {
-        Ixon::Expr::Lam(_, _, &body) => {  UInt64::wrapping_succ(lam_telescope_count(body)) } ,
+        Ixon::Expr::Lam(_, &body) => {  UInt64::wrapping_succ(lam_telescope_count(body)) } ,
         _ => {  [UInt8::BYTE_0; 8] } ,
       }
     }
@@ -221,7 +189,7 @@ def lam_telescope_count := aiur_fn⟦
 def all_telescope_count := aiur_fn⟦
   fn all_telescope_count(expr: Ixon::Expr) -> UInt64::U64 {
       match expr {
-        Ixon::Expr::All(_, _, _, &body) => {  UInt64::wrapping_succ(all_telescope_count(body)) } ,
+        Ixon::Expr::All(_, &body) => {  UInt64::wrapping_succ(all_telescope_count(body)) } ,
         _ => {  [UInt8::BYTE_0; 8] } ,
       }
     }
@@ -240,8 +208,8 @@ def put_app_telescope := aiur_fn⟦
 def put_lam_telescope := aiur_fn⟦
   fn put_lam_telescope(expr: Ixon::Expr, rest: Bytes::Stream) -> Bytes::Stream {
       match expr {
-        Ixon::Expr::Lam(contract, &ty, &body) => {
-          put_lam_mode(contract, put_expr(ty, put_lam_telescope(body, rest))) } ,
+        Ixon::Expr::Lam(&ty, &body) => {
+          put_expr(ty, put_lam_telescope(body, rest)) } ,
         _ => {  put_expr(expr, rest) } ,
       }
     }
@@ -250,8 +218,8 @@ def put_lam_telescope := aiur_fn⟦
 def put_all_telescope := aiur_fn⟦
   fn put_all_telescope(expr: Ixon::Expr, rest: Bytes::Stream) -> Bytes::Stream {
       match expr {
-        Ixon::Expr::All(input, result, &ty, &body) => {
-          put_all_mode(input, result, put_expr(ty, put_all_telescope(body, rest))) } ,
+        Ixon::Expr::All(&ty, &body) => {
+          put_expr(ty, put_all_telescope(body, rest)) } ,
         _ => {  put_expr(expr, rest) } ,
       }
     }
@@ -403,8 +371,8 @@ def put_quot_kind := aiur_fn⟦
 def put_definition := aiur_fn⟦
   fn put_definition(defn: Ixon::Definition, rest: Bytes::Stream) -> Bytes::Stream {
       match defn {
-        Ixon::Definition::Mk(kind, safety, lvls, &typ, &value) => {
-          let packed = pack_def_kind_safety(kind, safety);
+        Ixon::Definition::Mk(kind, safety, asserts, lvls, &typ, &value) => {
+          let packed = pack_def_kind_safety(kind, safety) + 16 * asserts;
           (&(Lists::Node::Cons(UInt8::from_field(packed), put_tagn0(lvls, put_expr(typ, put_expr(value, rest)))))) } ,
       }
     }
@@ -466,16 +434,29 @@ def put_quotient := aiur_fn⟦
     }
 ⟧
 
+  -- A constructor's listed field modes, one byte each.
+
+def put_field_modes := aiur_fn⟦
+  fn put_field_modes(list: Lists::List<Field>, rest: Bytes::Stream) -> Bytes::Stream {
+      match (*(list)) {
+        Lists::Node::Nil => {  rest } ,
+        Lists::Node::Cons(mode, rest_list) => {
+          (&(Lists::Node::Cons(UInt8::from_field(mode), put_field_modes(rest_list, rest)))) } ,
+      }
+    }
+⟧
+
 def put_constructor := aiur_fn⟦
   fn put_constructor(ctor: Ixon::Constructor, rest: Bytes::Stream) -> Bytes::Stream {
       match ctor {
-        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, &typ) => {
-          (&(Lists::Node::Cons(UInt8::from_field(is_unsafe),
+        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, modes, &typ) => {
+          let listed = match (*(modes)) { Lists::Node::Nil => {  0 } , Lists::Node::Cons(_, _) => {  1 } , };
+          (&(Lists::Node::Cons(UInt8::from_field(is_unsafe + 2 * listed),
             put_tagn0(lvls,
               put_tagn0(cidx,
                 put_tagn0(params,
                   put_tagn0(fields,
-                    put_expr(typ, rest)))))))) } ,
+                    put_field_modes(modes, put_expr(typ, rest))))))))) } ,
       }
     }
 ⟧
@@ -601,11 +582,65 @@ def put_univs := aiur_fn⟦
     }
 ⟧
 
+  -- The binder-data section (`IxonDeserialize::get_binders` reads it back). A binder node's
+  -- byte is its tag plus 8 times its mode's code.
+
+def put_binder_node := aiur_fn⟦
+  fn put_binder_node(node: Ixon::BinderNode, rest: Bytes::Stream) -> Bytes::Stream {
+      match node {
+        Ixon::BinderNode::Never(mode) => {  (&(Lists::Node::Cons(UInt8::from_field(8 * mode), rest))) } ,
+        Ixon::BinderNode::Zero(mode) => {  (&(Lists::Node::Cons(UInt8::from_field(1 + 8 * mode), rest))) } ,
+        Ixon::BinderNode::IfAllZero(params, mode) => {
+          (&(Lists::Node::Cons(UInt8::from_field(2 + 8 * mode),
+            put_tagn0(WordLists::length_u64(params), put_u64_list(params, rest))))) } ,
+        Ixon::BinderNode::Share(variant) => {
+          (&(Lists::Node::Cons(UInt8::BYTE_3, put_tagn0(variant, rest)))) } ,
+        Ixon::BinderNode::Undecided(mode) => {  (&(Lists::Node::Cons(UInt8::from_field(4 + 8 * mode), rest))) } ,
+      }
+    }
+⟧
+
+def put_binder_node_list := aiur_fn⟦
+  fn put_binder_node_list(list: Lists::List<Ixon::BinderNode>, rest: Bytes::Stream) -> Bytes::Stream {
+      match (*(list)) {
+        Lists::Node::Nil => {  rest } ,
+        Lists::Node::Cons(node, rest_list) => {
+          put_binder_node(node, put_binder_node_list(rest_list, rest)) } ,
+      }
+    }
+⟧
+
+def put_binder_block := aiur_fn⟦
+  fn put_binder_block(block: Ixon::BinderBlock, rest: Bytes::Stream) -> Bytes::Stream {
+      let Ixon::BinderBlock::Mk(ekind, eidx, variant, nodes) = block;
+      (&(Lists::Node::Cons(UInt8::from_field(ekind),
+        put_tagn0(eidx, put_tagn0(variant,
+          put_tagn0(WordLists::length_u64(nodes), put_binder_node_list(nodes, rest)))))))
+    }
+⟧
+
+def put_binder_block_list := aiur_fn⟦
+  fn put_binder_block_list(list: Lists::List<Ixon::BinderBlock>, rest: Bytes::Stream) -> Bytes::Stream {
+      match (*(list)) {
+        Lists::Node::Nil => {  rest } ,
+        Lists::Node::Cons(block, rest_list) => {
+          put_binder_block(block, put_binder_block_list(rest_list, rest)) } ,
+      }
+    }
+⟧
+
+def put_binders := aiur_fn⟦
+  fn put_binders(list: Lists::List<Ixon::BinderBlock>, rest: Bytes::Stream) -> Bytes::Stream {
+      let len = WordLists::length_u64(list);
+      put_tagn0(len, put_binder_block_list(list, rest))
+    }
+⟧
+
 def put_constant := aiur_fn⟦
   fn put_constant(cnst: Ixon::Constant, rest: Bytes::Stream) -> Bytes::Stream {
       match cnst {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
-          let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
+          let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, put_binders(binders, rest))));
           match info {
             Ixon::ConstantInfo::Muts(mutuals) => {
 

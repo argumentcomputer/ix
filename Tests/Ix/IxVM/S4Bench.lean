@@ -58,13 +58,6 @@ def runStats (suite : String) (cases : Array (Unit → Except String Case)) (job
       IO.eprintln s!"[{suite}] a case could not be built: {e}"
       failed := failed + 1
     | .ok c =>
-      -- the binder data, and with `$IX_PW_CHECK` their host-side check
-      let c ← IO.ofExcept c.withPwHints
-      if let some mode ← IO.getEnv "IX_PW_CHECK" then
-        if let some e ← pwCheckCase suite c then
-          IO.eprintln s!"[{suite}] {e}"
-          failed := failed + 1
-        if mode == "only" then continue
       let path := dir / s!"{suite}-{i}.ixt"
       i := i + 1
       IO.FS.writeBinFile path (Ix.AiurInvocation.casesHeader ++ c.encode ++ Ix.AiurInvocation.casesTrailer)
@@ -171,7 +164,7 @@ def stdShard (env : Lean.Environment) (base : Lean.Name) (pre : List String) :
     if owned.isEmpty then throw s!"the Std shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
     return { label := s!"s4 std shard {".".intercalate pre} of {base} ({owned.size} owned)",
-             accept := true, witness, env := ixonEnv }
+             accept := true, witness }
 
 /-- A module shard: every constant declared in a module whose name begins
 with `pre` (and, when `only` is given, whose own name begins with it too),
@@ -198,8 +191,7 @@ def moduleShard (env : Lean.Environment) (pre : Lean.Name) : IO (Unit → Except
   return fun _ => do
     if owned.isEmpty then throw s!"the module shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
-    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness,
-             env := ixonEnv }
+    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness }
 
 def bench (env : Lean.Environment) : IO UInt32 := do
   let present := targets.filter fun (label, ns, r) =>
@@ -214,8 +206,7 @@ def bench (env : Lean.Environment) : IO UInt32 := do
     cases := cases.push fun _ => do
       let owned ← declOwned ixonEnv ns
       let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-      return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness,
-               env := ixonEnv }
+      return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness }
     -- the same declarations split: the inductive block alone, then the
     -- recursor block alone (the other assumed)
     let (recs, inds) := ns.partition isRecName
@@ -224,8 +215,7 @@ def bench (env : Lean.Environment) : IO UInt32 := do
         cases := cases.push fun _ => do
           let owned ← declOwned ixonEnv sel
           let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness,
-                   env := ixonEnv }
+          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness }
     cases := cases.push fun _ => do
       let some target := ixonEnv.getAddr? (Ix.Name.fromLeanName (nameOfString r))
         | throw s!"{r} is not in the Ixon environment"

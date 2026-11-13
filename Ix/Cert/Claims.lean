@@ -81,7 +81,8 @@ theorem finish_lone (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Yields (finishConstantInfoWithSharing info blockMeta) (fun r => r.projections = #[]) := by
   intro context before output after ran
   rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
-  cases built : buildConstantWithSharing context.1.sharingLimits info before.refs before.univs with
+  cases built : (buildConstantWithSharing context.1.sharingLimits info before.refs before.univs >>=
+      Ix.CompileM.withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
   | error e => rw [built] at ran; cases ran
   | ok block =>
     rw [built] at ran

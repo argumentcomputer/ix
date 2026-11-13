@@ -84,7 +84,11 @@ def compileDef (compileEnv : CompileM.CompileEnv)
   let (ixConst, _) := (CanonM.canonConst leanConst).run canonState
 
   -- 3. Add to canonical environment
-  let env' := { compileEnv.env with consts := compileEnv.env.consts.insert ixName ixConst }
+  -- The annotator reads the binder data off this definition, which the
+  -- installed input lacks.
+  let env' := { compileEnv.env with
+    consts := compileEnv.env.consts.insert ixName ixConst
+    binderAnnotator? := compileEnv.env.binderAnnotator?.map (·.withSource ixName ixConst) }
   let compileEnv' := { compileEnv with env := env' }
 
   -- 4. Compile via CompileM (pure, runs in Except)

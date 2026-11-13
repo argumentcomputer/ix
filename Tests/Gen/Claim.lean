@@ -111,7 +111,6 @@ def genClaim : Gen Claim :=
     (10, Claim.contains <$> genAddress <*> genAddress),
     (10, Claim.binding  <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genAddress),
-    (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
 /-! ## Shrinkable instances -/
@@ -149,7 +148,6 @@ instance : Shrinkable Claim where
       (.reveal comm <$> Shrinkable.shrink info) ++ [.check default comm none]
     | .contains t _ => [.checkEnv default t none]
     | .catalog m => [.checkEnv default m none]
-    | .resource _ _ => []
     | .binding _ _ => []
 
 /-! ## SampleableExt instances -/

@@ -2,32 +2,25 @@ import IxC.Kernel.Admission.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Reader
 
-/-! # Ixon binder contracts in the checker
+/-! # Binder modes in the checker
 
-Ixon's binder contracts (`IxC/Ixon/Types/Contract.lean`) are identity data
-in the checker's `BinderMeta`. Conversion compares binders' input contracts
-and never their result contracts:
+An Ixon record keeps its binders' modes in its binder-data section and a
+`let`'s mode in the `let`'s header (`IxC/Ixon/Types/Modes.lean`). The checker
+is mode-blind:
 
-* **The reader keeps them.** A definition whose `all` and `lam` carry
-  non-default contracts, read through the certified entry at BLAKE3
-  (`Ixon.Authenticated.checkBytes`), is installed with those contracts in
-  its type's and value's `BinderMeta`; a `let` contract is erased.
-* **Matching input contracts convert.** A value whose binders' input
-  contracts are its type's is accepted, at every input and result contract;
-  so is a conversion between λs, and between ∀s, with equal input contracts.
-* **Unequal input contracts do not.** A value whose binder's input contract
-  is not its type's, `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, is
-  declined, and so is an equation between λs whose input contracts differ.
-* **Result contracts do not matter.** Pairs of fixtures that differ only in
-  result contracts get the same verdict: a λ, which has none, checks against
-  a ∀ with any result contract, and ∀s whose result contracts differ
-  convert. A false equation is declined whatever the contracts.
-* **Pinned shapes compare them.** The basis blocks are matched up to
-  `canon` and the standard pins by `matchesPin`, and both compare
-  contracts: the prelude's `Eq` block with a non-default contract on a
-  binder is not the basis `Eq` (the fold rejects the reserved name), and
-  a `propext` whose binder carries one does not match its pin. Both still
-  forgive the `pw` datum. -/
+* **The reader writes the default modes.** A definition whose section gives
+  its `all` and `lam` binders non-default modes, read through the certified
+  entry at BLAKE3 (`Ixon.Authenticated.checkBytes`), is installed with the
+  default modes in its type's and value's `BinderMeta`, as is one whose
+  section carries the defaults; a `let` with a mode in its header is read
+  like an ordinary one.
+* **Modes do not change a verdict.** A record gets the verdict it gets with
+  default modes, whatever its section's modes, including modes that differ
+  between a definition's type and its value: an identity is accepted, a
+  false equation declined.
+* **Pinned shapes forgive the `pw` datum.** The basis blocks are matched up
+  to `canon` and the standard pins by `matchesPin`, and both forgive the
+  `pw` datum. -/
 
 open Ix.Kernel (ConstRef)
 open Tests.Ix.Kernel.Reader
@@ -53,120 +46,81 @@ def installed (cs : List (Address × Ixon.Constant)) (a : Address) : Option (Ix.
   | .ok env => env.find? (.id ((rekeyed cs).rename a))
   | .error _ => none
 
-/-- `∀[c, r] (n : Nat), Nat := fun[c'] n => n`, over the prelude's `Nat`. -/
-def idNatWith (c : Ixon.BinderContract) (r : Ixon.ValueContract) (c' : Ixon.BinderContract) :
-    Ixon.Constant :=
-  defn .defn (.all c r (ref 0) (ref 0)) (.lam c' (ref 0) (var 0)) [nat]
+/-- `c` with a binder-data section of one root block per entry of `roots`,
+in root order, each binder's node `never` at its mode. -/
+def withModes (c : Ixon.Constant) (roots : List (List Ixon.AllMode)) : Ixon.Constant :=
+  { c with binders := roots.toArray.mapIdx fun i modes =>
+      { shared := false, index := i.toUInt64, variant := 0
+        nodes := modes.toArray.map Ixon.BinderNode.never } }
 
-/-- The contracts of a term's binders, in preorder. -/
-def contracts : Ix.Kernel.Expr .anon → List (Ixon.BinderContract × Ixon.ValueContract)
-  | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contracts t ++ contracts b)
-  | .app f a => contracts f ++ contracts a
-  | .letE t v b _ => contracts t ++ contracts v ++ contracts b
-  | .proj _ _ e | .fvar _ e => contracts e
+/-- `∀ (n : Nat), Nat := fun n => n` over the prelude's `Nat`, its type's
+binder at mode `type` and its value's at `value`. -/
+def idNatWith (type value : Ixon.AllMode) : Ixon.Constant :=
+  withModes idNat [[type], [value]]
+
+/-- Every binder mode. -/
+def allModes : List Ixon.AllMode :=
+  [Ixon.BinderMode.many, .borrowed, .unique, .uniqueBorrowed, .once, .onceBorrowed, .erased].flatMap
+    fun input => [Ixon.ResultMode.shared, .borrowed, .unique, .uniqueBorrowed].map
+      fun result => { input, result }
+
+/-- The modes of a term's binders, in preorder. -/
+def modesOf : Ix.Kernel.Expr .anon → List (Ixon.BinderMode × Ixon.ResultMode)
+  | .lam t b m | .forallE t b m => (m.contract, m.result) :: (modesOf t ++ modesOf b)
+  | .app f a => modesOf f ++ modesOf a
+  | .letE t v b _ => modesOf t ++ modesOf v ++ modesOf b
+  | .proj _ _ e | .fvar _ e => modesOf e
   | _ => []
 
-/-- An installed definition's type and value contracts. -/
-def defnContracts : Option (Ix.Kernel.ConstantInfo .anon) →
-    Option (List (Ixon.BinderContract × Ixon.ValueContract) ×
-      List (Ixon.BinderContract × Ixon.ValueContract))
-  | some (.defnInfo cv value _) => some (contracts cv.type, contracts value)
+/-- An installed definition's type and value modes. -/
+def defnModes : Option (Ix.Kernel.ConstantInfo .anon) →
+    Option (List (Ixon.BinderMode × Ixon.ResultMode) × List (Ixon.BinderMode × Ixon.ResultMode))
+  | some (.defnInfo cv value _) => some (modesOf cv.type, modesOf value)
   | _ => none
 
-/-! ## The reader keeps binder contracts -/
-
-def linearUnique : Ixon.Constant := idNatWith .linear .unique .linear
-
-#guard defnContracts (installed [(address 10, linearUnique)] (address 10)) ==
-  some ([(.linear, .unique)], [(.linear, .shared)])
--- Lean-fragment binders carry the defaults
-#guard defnContracts (installed [(address 10, idNat)] (address 10)) ==
+def defaults : Option (List (Ixon.BinderMode × Ixon.ResultMode) × List (Ixon.BinderMode × Ixon.ResultMode)) :=
   some ([(.many, .shared)], [(.many, .shared)])
--- every input contract and every result contract reaches `BinderMeta`
-def binderContracts : List Ixon.BinderContract :=
-  (List.range 16).filterMap fun bits => Ixon.BinderContract.ofBits? bits.toUInt8
-def valueContracts : List Ixon.ValueContract :=
-  (List.range 4).filterMap fun bits => Ixon.ValueContract.ofBits? bits.toUInt8
-#guard binderContracts.length == 16 && valueContracts.length == 4
-#guard binderContracts.all fun c => valueContracts.all fun r =>
-  defnContracts (installed [(address 10, idNatWith c r c)] (address 10)) ==
-    some ([(c, r)], [(c, .shared)])
--- a `let` contract is read into the `let`'s `LetMeta`, and the annotation pass
--- ζ-reduces the `let`, so the installed value has the binder contracts only
+
+/-! ## The reader writes the default modes -/
+
+#guard allModes.length == 28
+-- without a section, and with the default modes in it
+#guard defnModes (installed [(address 10, idNat)] (address 10)) == defaults
+#guard defnModes (installed [(address 10, idNatWith {} {})] (address 10)) == defaults
+-- every mode in the section, on the type and on the value
+#guard allModes.all fun m =>
+  defnModes (installed [(address 10, idNatWith m m)] (address 10)) == defaults
+-- a `let` with a mode in its header (`borrow`) is read like an ordinary one
 def borrowLet : Ixon.Constant :=
   defn .defn (all (ref 0) (ref 0))
-    (lam (ref 0) (.letE (.borrow false .linear) (ref 0) (var 0) (var 0))) [nat]
-#guard defnContracts (installed [(address 10, borrowLet)] (address 10)) ==
-  some ([(.many, .shared)], [(.many, .shared)])
+    (lam (ref 0) (.letE false .borrow (ref 0) (var 0) (var 0))) [nat]
+#guard outcomeOf [(address 10, borrowLet)] == none
+#guard defnModes (installed [(address 10, borrowLet)] (address 10)) == defaults
 
-/-! ## Conversion compares input contracts, not result contracts -/
+/-! ## Modes do not change a verdict -/
 
-/-- Both fixtures get the verdict `v`. -/
-def sameVerdict (a b : List (Address × Ixon.Constant)) (v : Option Ix.Kernel.Admission.Outcome) :
-    Bool :=
-  outcomeOf a == v && outcomeOf b == v
+-- the identity is accepted at every mode, and with its type's and value's
+-- modes apart
+#guard allModes.all fun m => outcomeOf [(address 10, idNatWith m m)] == none
+#guard allModes.all fun m =>
+  outcomeOf [(address 10, idNatWith m {})] == none && outcomeOf [(address 10, idNatWith {} m)] == none
 
-def natPi (c : Ixon.BinderContract) (r : Ixon.ValueContract) : E := .all c r (ref 2) (ref 2)
+def natPi : E := all (ref 2) (ref 2)
+def idLam : E := lam (ref 2) (var 0)
+def zeroLam : E := lam (ref 2) (ref 3)
 
-/-- `@Eq.{1} (∀[c] (n : Nat), Nat) l r := @Eq.refl.{1} _ v`, refs
-`[Eq, Eq.refl, Nat]`. -/
-def lamEq (c : Ixon.BinderContract) (l r v : E) : Ixon.Constant :=
-  defn .thm (apps (ref 0 [0]) [natPi c .shared, l, r]) (apps (ref 1 [0]) [natPi c .shared, v])
-    [eq, eqRefl, nat] [one]
+/-- `@Eq.{1} (∀ (n : Nat), Nat) (fun n => n) (fun n => Nat.zero) :=
+@Eq.refl.{1} _ (fun n => n)`, refs `[Eq, Eq.refl, Nat, Nat.zero]`: false. -/
+def falseLamEq : Ixon.Constant :=
+  defn .thm (apps (ref 0 [0]) [natPi, idLam, zeroLam])
+    (apps (ref 1 [0]) [natPi, idLam]) [eq, eqRefl, nat, natZero] [one]
 
-def idLam (c : Ixon.BinderContract) : E := .lam c (ref 2) (var 0)
+-- a false equation is declined, whatever the modes of its binders
+#guard outcomeOf [(address 10, falseLamEq)] == some .declined
+#guard [({} : Ixon.AllMode), ⟨.erased, .unique⟩, ⟨.once, .borrowed⟩].all fun m =>
+  outcomeOf [(address 10, withModes falseLamEq [[m, m, m], [m, m]])] == some .declined
 
-/-- `@Eq.{2} Type l r := @Eq.refl.{2} Type v`, refs `[Eq, Eq.refl, Nat]`,
-universes `[2, 1]`. -/
-def piEq (l r v : E) : Ixon.Constant :=
-  defn .thm (apps (ref 0 [0]) [sort 1, l, r]) (apps (ref 1 [0]) [sort 1, v])
-    [eq, eqRefl, nat] [.succ one, one]
-
--- matching input contracts convert: a value whose λ's input contract is its
--- type's, at every input and result contract
-#guard binderContracts.all fun c => valueContracts.all fun r =>
-  outcomeOf [(address 10, idNatWith c r c)] == none
--- λs, and ∀s, with equal input contracts
-#guard outcomeOf [(address 10, lamEq .linear (idLam .linear) (idLam .linear) (idLam .linear))] == none
-#guard outcomeOf [(address 10, piEq (natPi .erased .shared) (natPi .erased .shared)
-  (natPi .erased .shared))] == none
-
--- unequal input contracts do not: `f : ∀[erased] (x : Nat), Nat :=
--- fun[many] x => x` is declined, as is every value whose λ's input contract
--- is not its type's
-def erasedType : Ixon.Constant := idNatWith .erased .shared .many
-#guard outcomeOf [(address 10, erasedType)] == some .declined
-#guard binderContracts.all fun c => binderContracts.all fun c' =>
-  c == c' || outcomeOf [(address 10, idNatWith c .shared c')] == some .declined
--- an equation between ∀s whose input contracts differ, and between λs (whose
--- types then differ too)
-#guard outcomeOf [(address 10, piEq (natPi .erased .shared) (natPi .many .shared)
-  (natPi .many .shared))] == some .declined
-#guard outcomeOf [(address 10, lamEq .many (idLam .linear) (idLam .many) (idLam .many))] ==
-  some .declined
-
--- result contracts are never compared: a λ has none, so the type inferred
--- for `fun[linear] x => x` has the default result, and it checks against
--- `∀[linear] (x : Nat), unique Nat`
-#guard sameVerdict [(address 10, idNatWith .linear .shared .linear)]
-  [(address 10, idNatWith .linear .unique .linear)] none
--- ∀s that differ only in result contracts convert
-#guard sameVerdict [(address 10, piEq (natPi .many .shared) (natPi .many .shared) (natPi .many .shared))]
-  [(address 10, piEq (natPi .linear .unique) (natPi .linear .shared) (natPi .linear .localShared))] none
--- and a false equation is declined, whatever the contracts
-def zeroLam (c : Ixon.BinderContract) : E := .lam c (ref 2) (ref 3)
-def falseLamEq (c : Ixon.BinderContract) : Ixon.Constant :=
-  defn .thm (apps (ref 0 [0]) [natPi c .shared, idLam c, zeroLam c])
-    (apps (ref 1 [0]) [natPi c .shared, idLam c]) [eq, eqRefl, nat, natZero] [one]
-#guard sameVerdict [(address 10, falseLamEq .many)] [(address 10, falseLamEq .linear)] (some .declined)
-
-/-! ## Pinned shapes compare binder contracts -/
-
-/-- The first binder of a term with input contract `c`. -/
-def withFirstContract (c : Ixon.BinderContract) : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon
-  | .forallE t b m => .forallE t b { m with contract := c }
-  | .lam t b m => .lam t b { m with contract := c }
-  | e => e
+/-! ## Pinned shapes forgive the `pw` datum -/
 
 /-- The first binder of a term with the datum `pw`. -/
 def withFirstPw (pw : Ix.Kernel.PropWhen) : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon
@@ -189,21 +143,10 @@ def foldOutcome (ds : Array (Ix.Kernel.Declaration .anon)) : Option String :=
   | .error (.invalid msg, _) => some (Ix.Kernel.Msg.render toString msg)
   | .error _ => some "other"
 
--- the prelude as it is installs every basis block
+-- the prelude as it is installs every basis block, and the `pw` datum is forgiven
 #guard foldOutcome (preludeWithEq id) == none
--- an `Eq` whose `{α : Sort u}` is `erased` is not the basis `Eq`
-#guard foldOutcome (preludeWithEq (withFirstContract .erased)) == some "reserved basis name Eq"
--- an `Eq` whose result contract differs is not either
-#guard foldOutcome (preludeWithEq fun
-    | .forallE t b m => .forallE t b { m with result := .unique }
-    | e => e) == some "reserved basis name Eq"
--- the `pw` datum is still forgiven
 #guard foldOutcome (preludeWithEq (withFirstPw (.ifAllZero []))) == none
-
--- `matchesPin` compares contracts and forgives `pw`
 #guard Ix.Kernel.ConstantVal.matchesPin (md := .anon) Ix.Kernel.propextA Ix.Kernel.propextA
-#guard !Ix.Kernel.ConstantVal.matchesPin
-  { Ix.Kernel.propextA (md := .anon) with type := withFirstContract .linear Ix.Kernel.propextA.type } Ix.Kernel.propextA
 #guard Ix.Kernel.ConstantVal.matchesPin
   { Ix.Kernel.propextA with type := withFirstPw (.ifAllZero []) Ix.Kernel.propextA.type } Ix.Kernel.propextA
 

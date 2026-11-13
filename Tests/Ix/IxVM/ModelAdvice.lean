@@ -30,6 +30,22 @@ model is witness data. Two properties are tested here:
   domain that mentions a parameter, a reflexive field into a member): ι
   reductions through their recursors are accepted, and false ι and constructor
   equations, installed in Lean unchecked, are refused.
+* **A tag enumeration is the compiled enumeration of its size** (`tagsCoincide`):
+  the model of a block of `n` types holds a tag enumeration of `n` constructors
+  and its recursor, encoded with the compiler's refs order and sharing
+  (`IxVM.Model.sharedRecord`), so they are, by address, the records the compiler
+  makes for a Lean enumeration of `n` constructors: `IxVMInd.Tri` for the block
+  `TriA`/`TriB`/`TriC`, of types in `Type`. `Tri.rec` names `Tri` and its three
+  constructors, so in the encoder's order of references the generated recursor
+  would equal the compiled one for one order in 24. Checks of `TriA` and of
+  `Tri.rec`, with the generated and the compiled records one, are accepted.
+* **A model record is the compiled record** (`univTables`): every definition of
+  a compiled environment, read by the kernel's reader and encoded again by the
+  model's encoder, is the compiled record (tables, sharing, binder and let
+  contracts), including `IxVMInd.univOrder`, whose two levels the encoder meets
+  in the other order. The default table's evidence theorems are not compiler
+  records (`kernel-pin-gen` closes and writes them, tables in first-use order),
+  and no model record is one: they are counted, not compared.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -129,6 +145,185 @@ def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
     the shard claim over them agree with and without models (shard digest {digest})"
   return ok
 
+/-- The Lean enumerations, each with a member of a block whose tag enumeration
+has its number of constructors. -/
+def tagEnums : List (Lean.Name × Lean.Name) :=
+  [(`IxVMInd.Tri, `IxVMInd.TriA)]
+
+/-- The names `tagsCoincide` compiles: the enumerations and the blocks, with
+their recursors. -/
+def tagNames : Array Lean.Name :=
+  #[`IxVMInd.Tri, `IxVMInd.Tri.rec, `IxVMInd.TriA, `IxVMInd.TriA.rec,
+    `IxVMInd.Even, `IxVMInd.Even.rec]
+
+/-- The definitions `univTables` compiles besides `tagNames`: `IxVMInd.univOrder`,
+whose two levels the encoder meets in the order the compiler's table reverses, and
+universe-polymorphic definitions whose closures hold many more. -/
+def univNames : Array Lean.Name :=
+  #[`IxVMInd.univOrder, `Function.comp, `List.map, `Prod.map, `List.foldl]
+
+/-- The levels of a definition in the order the model's encoder meets them. -/
+def levelsMet (nm : IxVM.Model.Names) (cv : Ix.Kernel.ConstantVal .anon)
+    (v : Ix.Kernel.Expr .anon) : Array Ixon.Univ :=
+  let run : IxVM.Model.EncM Unit := do
+    let _ ← IxVM.Model.encExpr nm cv.levelParams (fun _ => none) cv.type
+    let _ ← IxVM.Model.encExpr nm cv.levelParams (fun _ => none) v
+  match run.run {} with
+  | .ok (_, s) => s.univs
+  | .error _ => #[]
+
+/-- Each safe definition and theorem of `env` that the kernel's reader reads as one
+declaration: its address, its compiled record without the binder-data section (the
+model's encoder writes none), the record `IxVM.Model.encDecl` makes of the
+declaration read, and the levels in the order the encoder met them. -/
+def reencoded (env : Ixon.Env) :
+    Except String (Array (Address × Ixon.Constant × Ixon.Constant × Array Ixon.Univ)) := do
+  let some b := env.roleBinding | throw "no role binding"
+  let some table := Ix.Kernel.RoleTable.ofBytes b.bytes | throw "the role table does not decode"
+  let pre : Ix.Kernel.Reader.Prelude .anon ← Ix.Kernel.Reader.preludeFor table
+  let mut records : Array (Address × Ixon.Constant) := #[]
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then records := records.push (a, c)
+  let cx : Ix.Kernel.Reader.Ctx .anon :=
+    Ix.Kernel.Reader.contextOf table records env.blobs.toList (pre.records ++ pre.evidence) pre.blobs
+      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3)
+  let store : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
+  let nm : IxVM.Model.Names := { roles := table.bound.foldl (fun m (r, a) => m.insert r a) {} }
+  let mut st := pre.state
+  let mut out := #[]
+  for a in Ixon.CheckOrder.wholeEnv table pre records do
+    let some c := store[a]? | continue
+    let .ok r := Ix.Kernel.Reader.readRecord cx st a c | continue
+    st := st.commit r
+    let .defn d := c.info | continue
+    unless d.safety == .safe && d.kind != .opaq do continue
+    let #[decl] := r.decls | continue
+    let met := match decl with
+      | .defnDecl cv v _ => levelsMet nm cv v
+      | .thmDecl cv v => levelsMet nm cv v
+      | _ => #[]
+    let .ok e := IxVM.Model.encDecl nm decl | continue
+    let some (_, c') := e.records[0]? | continue
+    out := out.push (a, { c with binders := #[] }, c', met)
+  return out
+
+/-- The default table's evidence theorems (`Ix.Kernel.Reader.evidenceRecords`):
+`kernel-pin-gen` closes each over its operation's dependency closure and writes its
+record with the tables in first-use order, not in the compiler's form. No model
+record is an evidence theorem. -/
+def evidenceAddresses : Std.HashSet Address :=
+  match Ix.Kernel.Reader.evidenceRecords with
+  | .ok rs => rs.foldl (fun s (a, _) => s.insert a) {}
+  | .error _ => {}
+
+/-- **A model record is the compiled record.** `IxVMInd.univOrder`, whose levels the
+encoder meets out of the table's order, re-encoded by the model's encoder, is the
+compiled record, and so is every other definition of `env` the kernel's reader reads as
+one declaration, except the default table's evidence theorems (`evidenceAddresses`),
+which no compiler wrote: they are counted, with how many are the encoder's record once
+put in the compiler's form (`IxVM.Model.renormalize`). Any other difference is a
+failure, reported. -/
+def univTables (env : Ixon.Env) : IO Bool := do
+  let rows ← IO.ofExcept (reencoded env)
+  let mut same := 0
+  let mut multi := 0
+  let mut reordered := 0
+  let mut evidence := 0
+  let mut evidenceForm := 0
+  let mut univsDiffer : Array Address := #[]
+  let mut otherDiffer : Array String := #[]
+  for (a, c, c', met) in rows do
+    if IxVM.Model.addressOf c == IxVM.Model.addressOf c' then
+      same := same + 1
+      if c.univs.size ≥ 2 then multi := multi + 1
+      if met != c.univs then reordered := reordered + 1
+    else if evidenceAddresses.contains a then
+      evidence := evidence + 1
+      if (match IxVM.Model.renormalize id c with
+          | .ok r => IxVM.Model.addressOf r == IxVM.Model.addressOf c'
+          | .error _ => false) then
+        evidenceForm := evidenceForm + 1
+    else if c.univs != c'.univs then
+      univsDiffer := univsDiffer.push a
+    else
+      let parts := [("info", c.info == c'.info), ("sharing", c.sharing == c'.sharing),
+        ("refs", c.refs == c'.refs)]
+      otherDiffer := otherDiffer.push s!"{a} ({(parts.filter (!·.2)).map (·.1)})"
+  let target := env.getAddr? (Ix.Name.fromLeanName `IxVMInd.univOrder)
+  let targetOk := match rows.find? (some ·.1 == target) with
+    | some (_, c, c', met) =>
+      IxVM.Model.addressOf c == IxVM.Model.addressOf c' && c.univs.size == 2 && met != c.univs
+    | none => false
+  IO.println s!"[ixvm-model-advice] {rows.size} definitions re-encoded by the model's encoder: \
+    {same} are the compiled record ({multi} with two levels or more, {reordered} met in another \
+    order than the table's); {evidence} are evidence theorems ({evidenceForm} of them the encoder's record \
+    in the compiler's form); \
+    {univsDiffer.size} have another univs table, {otherDiffer.size} differ elsewhere"
+  for a in univsDiffer.toList.take 10 do
+    IO.eprintln s!"[ixvm-model-advice] another univs table than the compiled record's: {a}"
+  for s in otherDiffer.toList.take 10 do
+    IO.eprintln s!"[ixvm-model-advice] differs from the compiled record outside the univs table: {s}"
+  unless targetOk do
+    IO.eprintln "[ixvm-model-advice] IxVMInd.univOrder: the re-encoded record is not the compiled \
+      one, or its levels are not met out of the table's order"
+  return targetOk && univsDiffer.isEmpty && otherDiffer.isEmpty
+
+/-- Each enumeration's compiled block and recursor are model records of `env`
+(the generated tag enumeration and its recursor, by address). -/
+def tagsCoincide (env : Ixon.Env) : IO Bool := do
+  let mut ok := true
+  for (enum, member) in tagEnums do
+    let ty ← lookupAddr env enum
+    let recA ← lookupAddr env (enum.str "rec")
+    let block : Option Address := (env.getConst? ty).bind IxVM.Model.projectionBlock?
+    let blockOk := block.any env.modelRecords.contains
+    let recOk := env.modelRecords.contains recA
+    unless blockOk && recOk do
+      IO.eprintln s!"[ixvm-model-advice] the tag enumeration of {member}'s block is not \
+        {enum}: block {if blockOk then "equal" else "different"}, recursor \
+        {if recOk then "equal" else "different"}"
+      ok := false
+  if ok then
+    IO.println s!"[ixvm-model-advice] the tag enumerations of the blocks of \
+      {tagEnums.map (·.2)} are {tagEnums.map (·.1)}, block and recursor"
+  return ok
+
+/-- **Every advice record is the compiler's record for its declaration.** Each model
+record of `env` holds the compiler's table invariant (`IxVM.Model.tablesCanonical`),
+is unchanged by being put in the compiler's form again (`IxVM.Model.renormalize`), and
+carries the section IxC's pass computes for it as it stands. At least one cites
+another advice record that re-addressing moved (one with a section), so its refs table
+is sorted by addresses it was given after encoding. -/
+def adviceCanonical (env : Ixon.Env) (label : String) : IO Bool := do
+  let advice := env.modelRecords.toArray
+  let aset : Std.HashSet Address := advice.foldl (fun s (a, _) => s.insert a) {}
+  let moved : Std.HashSet Address :=
+    advice.foldl (fun s (a, c) => if c.binders.isEmpty then s else s.insert a) {}
+  let mut bad : Array String := #[]
+  let mut citers := 0
+  for (a, c) in advice do
+    unless IxVM.Model.tablesCanonical c do bad := bad.push s!"{a}: tables out of the compiler's order"
+    match IxVM.Model.renormalize id c with
+    | .ok c' => unless { c' with binders := c.binders } == c do
+        bad := bad.push s!"{a}: not in the compiler's form"
+    | .error e => bad := bad.push s!"{a}: {e}"
+    if c.refs.any moved.contains then citers := citers + 1
+  let support : Array (Address × Ixon.Constant) := env.consts.fold (init := #[]) fun out a lc =>
+    if aset.contains a then out else match lc.get? with
+      | some c => out.push (a, c)
+      | none => out
+  let blobs := env.modelBlobs.fold (init := env.blobs) fun m a b => m.insert a b
+  let hints := env.modelHints.fold (init := env.anonHints) fun m a h => m.insert a h
+  let chosen ← IO.ofExcept (IxVM.RecordSections.chosenOf env)
+  let sections ← IO.ofExcept
+    (IxVM.RecordSections.sectionsOf advice support blobs hints chosen (models := aset))
+  for (a, c) in advice do
+    unless sections.getD a #[] == c.binders do bad := bad.push s!"{a}: another section than IxC's"
+  for b in bad.toList.take 10 do IO.eprintln s!"[ixvm-model-advice] {label}: advice record {b}"
+  IO.println s!"[ixvm-model-advice] {label}: {advice.size} advice records, {bad.size} not the \
+    compiler's; {citers} cite an advice record re-addressing moved"
+  return bad.isEmpty && citers > 0
+
 /-- Every theorem's value under `let _ : Nat := 0`: a different proof of the
 same statement, so a different record. -/
 def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
@@ -188,12 +383,16 @@ def quotNames : List String := ["IxVMInd.Even.rec", "IxVMInd.Tree.rec"]
 
 def run (lenv : Lean.Environment) : IO UInt32 := do
   let names := modeledNames.map nameOfString
-  let missing := names.filter (!lenv.constants.contains ·)
+  let missing := (names ++ tagNames.toList ++ univNames.toList).filter (!lenv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-model-advice] not in the environment: {missing}"
     return 1
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
+  let tagEnv ← loadSharedIxonEnv (tagNames ++ univNames) lenv
+  let tagsOk ← tagsCoincide tagEnv
+  let univsOk ← univTables tagEnv
+  let adviceOk := (← adviceCanonical env "modeled blocks") && (← adviceCanonical tagEnv "tag blocks")
   -- why a modeled block has no model, if one has none
   let (_, rep0) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false })
   for (b, r) in rep0.blocks do
@@ -230,7 +429,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
   -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
   let underAxiom : Builder := fun _ => do
-    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
     let e := env.storeConst a ax
     let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
@@ -244,7 +443,9 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++
     (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++
-    [underAxiom]
+    [underAxiom] ++
+    [mkCase tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
+     mkCase tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
@@ -255,7 +456,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && quotOk && rc == 0 then 0 else 1
+  return if digestOk && differ && quotOk && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do
@@ -298,8 +499,8 @@ def coverage (_ : Lean.Environment) : IO UInt32 := do
 /-- The `refs` indices a record projects at (`.prj`). -/
 private partial def prjIdxsExpr : Ixon.Expr → Std.HashSet Nat
   | .prj i _ inner => (prjIdxsExpr inner).insert i.toNat
-  | .app a b | .lam _ a b | .all _ _ a b => (prjIdxsExpr a).union (prjIdxsExpr b)
-  | .letE _ t v b => ((prjIdxsExpr t).union (prjIdxsExpr v)).union (prjIdxsExpr b)
+  | .app a b | .lam a b | .all a b => (prjIdxsExpr a).union (prjIdxsExpr b)
+  | .letE _ _ t v b => ((prjIdxsExpr t).union (prjIdxsExpr v)).union (prjIdxsExpr b)
   | _ => {}
 
 private def prjIdxs (c : Ixon.Constant) : Std.HashSet Nat := Id.run do

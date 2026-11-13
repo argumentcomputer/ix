@@ -403,91 +403,628 @@ theorem «IxonSerialize::put_univs».obs {x_list x_rest : SourceValue F} {h h' :
   obtain ⟨rfl, rfl, rfl⟩ := a43.nil_inv
   exact «IxonSerialize::put_univs».Path.run _ _ _ _ _ _ _ ev14 ev49 ev28 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n14911588889091628089])
 
+/-- The evaluation paths of `IxonSerialize::put_binder_node`: one constructor per combination of selected arms. -/
+inductive «IxonSerialize::put_binder_node».Path (x_node x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Never
+      (x_mode : SourceValue F) (v30 : SourceValue F) (m33 : Heap F) (cs41 : List (Call F)) (v44 : SourceValue F)
+      (hv15 : x_node = (.construct "Ixon::BinderNode" "Never" [x_mode]))
+      (he26 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m33).length))
+      (hm25 : h' = (m33 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [v30, x_rest])]))
+      (op58 : evalBinOp .mul ((.field 8) : SourceValue F) (x_mode : SourceValue F) = .ok v44)
+      (ev43 : ObsFn W "UInt8::from_field" [v44] h v30 m33 cs41)
+      (hc67 : calls = ((⟨"UInt8::from_field", [v44], h⟩ : Call F) :: cs41))
+  | Zero
+      (x_mode : SourceValue F) (v88 : SourceValue F) (m91 : Heap F) (cs99 : List (Call F)) (v102 : SourceValue F) (y110 : SourceValue F)
+      (hne68 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Never" vs)
+      (hv73 : x_node = (.construct "Ixon::BinderNode" "Zero" [x_mode]))
+      (he84 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m91).length))
+      (hm83 : h' = (m91 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [v88, x_rest])]))
+      (op124 : evalBinOp .mul ((.field 8) : SourceValue F) (x_mode : SourceValue F) = .ok y110)
+      (op116 : evalBinOp .add ((.field 1) : SourceValue F) (y110 : SourceValue F) = .ok v102)
+      (ev101 : ObsFn W "UInt8::from_field" [v102] h v88 m91 cs99)
+      (hc133 : calls = ((⟨"UInt8::from_field", [v102], h⟩ : Call F) :: cs99))
+  | IfAllZero
+      (x_params : SourceValue F) (x_mode : SourceValue F) (v159 : SourceValue F) (v160 : SourceValue F) (m162 : Heap F) (cs170 : List (Call F)) (v173 : SourceValue F) (y181 : SourceValue F) (m198 : Heap F) (cs206 : List (Call F)) (v209 : SourceValue F) (v210 : SourceValue F) (m212 : Heap F) (cs220 : List (Call F)) (m232 : Heap F) (cs240 : List (Call F))
+      (hne68 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Never" vs)
+      (hne134 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Zero" vs)
+      (hv139 : x_node = (.construct "Ixon::BinderNode" "IfAllZero" [x_params, x_mode]))
+      (he155 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m198).length))
+      (hm154 : h' = (m198 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [v159, v160])]))
+      (op195 : evalBinOp .mul ((.field 8) : SourceValue F) (x_mode : SourceValue F) = .ok y181)
+      (op187 : evalBinOp .add ((.field 2) : SourceValue F) (y181 : SourceValue F) = .ok v173)
+      (ev172 : ObsFn W "UInt8::from_field" [v173] h v159 m162 cs170)
+      (ev222 : ObsFn W Names.«WordLists::length_u64<[Field; 8]>» [x_params] m162 v209 m212 cs220)
+      (ev242 : ObsFn W "IxonSerialize::put_u64_list" [x_params, x_rest] m212 v210 m232 cs240)
+      (ev208 : ObsFn W "IxonSerialize::put_tagn0" [v209, v210] m232 v160 m198 cs206)
+      (hc259 : calls = ((⟨"UInt8::from_field", [v173], h⟩ : Call F) :: (cs170 ++ ((⟨Names.«WordLists::length_u64<[Field; 8]>», [x_params], m162⟩ : Call F) :: (cs220 ++ ((⟨"IxonSerialize::put_u64_list", [x_params, x_rest], m212⟩ : Call F) :: (cs240 ++ ((⟨"IxonSerialize::put_tagn0", [v209, v210], m232⟩ : Call F) :: cs206))))))))
+  | Share
+      (x_variant : SourceValue F) (v281 : SourceValue F) (m289 : Heap F) (cs297 : List (Call F))
+      (hne68 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Never" vs)
+      (hne134 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Zero" vs)
+      (hne260 : ∀ vs : List (SourceValue F), vs.length = 2 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "IfAllZero" vs)
+      (hv265 : x_node = (.construct "Ixon::BinderNode" "Share" [x_variant]))
+      (he276 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m289).length))
+      (hm275 : h' = (m289 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [(.field 3), v281])]))
+      (ev299 : ObsFn W "IxonSerialize::put_tagn0" [x_variant, x_rest] h v281 m289 cs297)
+      (hc316 : calls = ((⟨"IxonSerialize::put_tagn0", [x_variant, x_rest], h⟩ : Call F) :: cs297))
+  | Undecided
+      (x_mode : SourceValue F) (v337 : SourceValue F) (m340 : Heap F) (cs348 : List (Call F)) (v351 : SourceValue F) (y359 : SourceValue F)
+      (hne68 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Never" vs)
+      (hne134 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Zero" vs)
+      (hne260 : ∀ vs : List (SourceValue F), vs.length = 2 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "IfAllZero" vs)
+      (hne317 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_node : SourceValue F) ≠ .construct "Ixon::BinderNode" "Share" vs)
+      (hv322 : x_node = (.construct "Ixon::BinderNode" "Undecided" [x_mode]))
+      (he333 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m340).length))
+      (hm332 : h' = (m340 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [v337, x_rest])]))
+      (op373 : evalBinOp .mul ((.field 8) : SourceValue F) (x_mode : SourceValue F) = .ok y359)
+      (op365 : evalBinOp .add ((.field 4) : SourceValue F) (y359 : SourceValue F) = .ok v351)
+      (ev350 : ObsFn W "UInt8::from_field" [v351] h v337 m340 cs348)
+      (hc382 : calls = ((⟨"UInt8::from_field", [v351], h⟩ : Call F) :: cs348))
+
+/-- **Every observed derivation of `IxonSerialize::put_binder_node` takes one of its paths.** -/
+theorem «IxonSerialize::put_binder_node».obs {x_node x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "IxonSerialize::put_binder_node" [x_node, x_rest] h r h' calls) :
+    «IxonSerialize::put_binder_node».Path x_node x_rest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonSerialize.put_binder_node.lookup
+    (by simp [IxVM.IxonSerialize.put_binder_node, ControlLower.hasControl]) ev
+  simp only [IxVM.IxonSerialize.put_binder_node] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [Names.n7516136566660357059] at hv15
+    obtain ⟨x_mode, vs17, b18, b19, rfl, mt20, ml21, rfl⟩ := matchListWith_cons_inv ml16
+    obtain rfl := matchPattern_bind_inv mt20
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml21
+    obtain ⟨v22, m23, d24, rfl, hm25⟩ := d9.store_inv
+    obtain ⟨vs27, a28, hres29⟩ := d24.construct_inv
+    rw [Names.n12516105052029042359] at hres29
+    subst hres29
+    obtain ⟨v30, vs32, m33, c34, c35, rfl, d36, a37, rfl⟩ := a28.cons_inv
+    obtain ⟨vs38, m39, c40, cs41, a42, ev43, rfl⟩ := d36.call_inv
+    rw [instanceName_plain_some] at ev43
+    obtain ⟨v44, vs45, m46, c47, c48, rfl, d49, a50, rfl⟩ := a42.cons_inv
+    obtain ⟨x51, y52, m53, c54, c55, d56, d57, op58, rfl⟩ := d49.binary_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d56.literal_inv
+    obtain ⟨l59, rfl, rfl⟩ := d57.var_inv
+    simp at l59
+    subst l59
+    obtain ⟨rfl, rfl, rfl⟩ := a50.nil_inv
+    obtain ⟨v31, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a37.cons_inv
+    obtain ⟨l66, rfl, rfl⟩ := d64.var_inv
+    simp at l66
+    subst l66
+    obtain ⟨rfl, rfl, rfl⟩ := a65.nil_inv
+    try simp only [Value.type, List.map_cons, List.map_nil] at hv15 hm25 op58 ev43 ⊢
+    exact «IxonSerialize::put_binder_node».Path.Never _ _ _ _ _ hv15 rfl hm25 op58 ev43 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne68 := matchPattern_construct_none (by trivial) nm12
+    simp only [Names.n7516136566660357059] at hne68
+    rcases selectArm_cons_inv sel13 with ⟨mt69, rfl⟩ | ⟨nm70, sel71⟩
+    · obtain ⟨vs72, hv73, -, ml74⟩ := matchPattern_construct_inv mt69
+      rw [Names.n7516136566660357059] at hv73
+      obtain ⟨x_mode, vs75, b76, b77, rfl, mt78, ml79, rfl⟩ := matchListWith_cons_inv ml74
+      obtain rfl := matchPattern_bind_inv mt78
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml79
+      obtain ⟨v80, m81, d82, rfl, hm83⟩ := d9.store_inv
+      obtain ⟨vs85, a86, hres87⟩ := d82.construct_inv
+      rw [Names.n12516105052029042359] at hres87
+      subst hres87
+      obtain ⟨v88, vs90, m91, c92, c93, rfl, d94, a95, rfl⟩ := a86.cons_inv
+      obtain ⟨vs96, m97, c98, cs99, a100, ev101, rfl⟩ := d94.call_inv
+      rw [instanceName_plain_some] at ev101
+      obtain ⟨v102, vs103, m104, c105, c106, rfl, d107, a108, rfl⟩ := a100.cons_inv
+      obtain ⟨x109, y110, m111, c112, c113, d114, d115, op116, rfl⟩ := d107.binary_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d114.literal_inv
+      obtain ⟨x117, y118, m119, c120, c121, d122, d123, op124, rfl⟩ := d115.binary_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d122.literal_inv
+      obtain ⟨l125, rfl, rfl⟩ := d123.var_inv
+      simp at l125
+      subst l125
+      obtain ⟨rfl, rfl, rfl⟩ := a108.nil_inv
+      obtain ⟨v89, vs126, m127, c128, c129, rfl, d130, a131, rfl⟩ := a95.cons_inv
+      obtain ⟨l132, rfl, rfl⟩ := d130.var_inv
+      simp at l132
+      subst l132
+      obtain ⟨rfl, rfl, rfl⟩ := a131.nil_inv
+      try simp only [Value.type, List.map_cons, List.map_nil] at hne68 hv73 hm83 op124 op116 ev101 ⊢
+      exact «IxonSerialize::put_binder_node».Path.Zero _ _ _ _ _ _ hne68 hv73 rfl hm83 op124 op116 ev101 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne134 := matchPattern_construct_none (by trivial) nm70
+      simp only [Names.n7516136566660357059] at hne134
+      rcases selectArm_cons_inv sel71 with ⟨mt135, rfl⟩ | ⟨nm136, sel137⟩
+      · obtain ⟨vs138, hv139, -, ml140⟩ := matchPattern_construct_inv mt135
+        rw [Names.n7516136566660357059] at hv139
+        obtain ⟨x_params, vs141, b142, b143, rfl, mt144, ml145, rfl⟩ := matchListWith_cons_inv ml140
+        obtain rfl := matchPattern_bind_inv mt144
+        obtain ⟨x_mode, vs146, b147, b148, rfl, mt149, ml150, rfl⟩ := matchListWith_cons_inv ml145
+        obtain rfl := matchPattern_bind_inv mt149
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml150
+        obtain ⟨v151, m152, d153, rfl, hm154⟩ := d9.store_inv
+        obtain ⟨vs156, a157, hres158⟩ := d153.construct_inv
+        rw [Names.n12516105052029042359] at hres158
+        subst hres158
+        obtain ⟨v159, vs161, m162, c163, c164, rfl, d165, a166, rfl⟩ := a157.cons_inv
+        obtain ⟨vs167, m168, c169, cs170, a171, ev172, rfl⟩ := d165.call_inv
+        rw [instanceName_plain_some] at ev172
+        obtain ⟨v173, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a171.cons_inv
+        obtain ⟨x180, y181, m182, c183, c184, d185, d186, op187, rfl⟩ := d178.binary_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d185.literal_inv
+        obtain ⟨x188, y189, m190, c191, c192, d193, d194, op195, rfl⟩ := d186.binary_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d193.literal_inv
+        obtain ⟨l196, rfl, rfl⟩ := d194.var_inv
+        simp at l196
+        subst l196
+        obtain ⟨rfl, rfl, rfl⟩ := a179.nil_inv
+        obtain ⟨v160, vs197, m198, c199, c200, rfl, d201, a202, rfl⟩ := a166.cons_inv
+        obtain ⟨vs203, m204, c205, cs206, a207, ev208, rfl⟩ := d201.call_inv
+        rw [instanceName_plain_some] at ev208
+        obtain ⟨v209, vs211, m212, c213, c214, rfl, d215, a216, rfl⟩ := a207.cons_inv
+        obtain ⟨vs217, m218, c219, cs220, a221, ev222, rfl⟩ := d215.call_inv
+        rw [Names.n7126347638910987197] at ev222
+        obtain ⟨v223, vs224, m225, c226, c227, rfl, d228, a229, rfl⟩ := a221.cons_inv
+        obtain ⟨l230, rfl, rfl⟩ := d228.var_inv
+        simp at l230
+        subst l230
+        obtain ⟨rfl, rfl, rfl⟩ := a229.nil_inv
+        obtain ⟨v210, vs231, m232, c233, c234, rfl, d235, a236, rfl⟩ := a216.cons_inv
+        obtain ⟨vs237, m238, c239, cs240, a241, ev242, rfl⟩ := d235.call_inv
+        rw [instanceName_plain_some] at ev242
+        obtain ⟨v243, vs245, m246, c247, c248, rfl, d249, a250, rfl⟩ := a241.cons_inv
+        obtain ⟨l251, rfl, rfl⟩ := d249.var_inv
+        simp at l251
+        subst l251
+        obtain ⟨v244, vs252, m253, c254, c255, rfl, d256, a257, rfl⟩ := a250.cons_inv
+        obtain ⟨l258, rfl, rfl⟩ := d256.var_inv
+        simp at l258
+        subst l258
+        obtain ⟨rfl, rfl, rfl⟩ := a257.nil_inv
+        obtain ⟨rfl, rfl, rfl⟩ := a236.nil_inv
+        obtain ⟨rfl, rfl, rfl⟩ := a202.nil_inv
+        try simp only [Value.type, List.map_cons, List.map_nil] at hne68 hne134 hv139 hm154 op195 op187 ev172 ev222 ev242 ev208 ⊢
+        exact «IxonSerialize::put_binder_node».Path.IfAllZero _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne68 hne134 hv139 rfl hm154 op195 op187 ev172 ev222 ev242 ev208 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n7126347638910987197])
+      · have hne260 := matchPattern_construct_none (by trivial) nm136
+        simp only [Names.n7516136566660357059] at hne260
+        rcases selectArm_cons_inv sel137 with ⟨mt261, rfl⟩ | ⟨nm262, sel263⟩
+        · obtain ⟨vs264, hv265, -, ml266⟩ := matchPattern_construct_inv mt261
+          rw [Names.n7516136566660357059] at hv265
+          obtain ⟨x_variant, vs267, b268, b269, rfl, mt270, ml271, rfl⟩ := matchListWith_cons_inv ml266
+          obtain rfl := matchPattern_bind_inv mt270
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml271
+          obtain ⟨v272, m273, d274, rfl, hm275⟩ := d9.store_inv
+          obtain ⟨vs277, a278, hres279⟩ := d274.construct_inv
+          rw [Names.n12516105052029042359] at hres279
+          subst hres279
+          obtain ⟨v280, vs282, m283, c284, c285, rfl, d286, a287, rfl⟩ := a278.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d286.global_literal_inv Names.c4658543753026666081
+          obtain ⟨v281, vs288, m289, c290, c291, rfl, d292, a293, rfl⟩ := a287.cons_inv
+          obtain ⟨vs294, m295, c296, cs297, a298, ev299, rfl⟩ := d292.call_inv
+          rw [instanceName_plain_some] at ev299
+          obtain ⟨v300, vs302, m303, c304, c305, rfl, d306, a307, rfl⟩ := a298.cons_inv
+          obtain ⟨l308, rfl, rfl⟩ := d306.var_inv
+          simp at l308
+          subst l308
+          obtain ⟨v301, vs309, m310, c311, c312, rfl, d313, a314, rfl⟩ := a307.cons_inv
+          obtain ⟨l315, rfl, rfl⟩ := d313.var_inv
+          simp at l315
+          subst l315
+          obtain ⟨rfl, rfl, rfl⟩ := a314.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := a293.nil_inv
+          try simp only [Value.type, List.map_cons, List.map_nil] at hne68 hne134 hne260 hv265 hm275 ev299 ⊢
+          exact «IxonSerialize::put_binder_node».Path.Share _ _ _ _ hne68 hne134 hne260 hv265 rfl hm275 ev299 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne317 := matchPattern_construct_none (by trivial) nm262
+          simp only [Names.n7516136566660357059] at hne317
+          rcases selectArm_cons_inv sel263 with ⟨mt318, rfl⟩ | ⟨nm319, sel320⟩
+          · obtain ⟨vs321, hv322, -, ml323⟩ := matchPattern_construct_inv mt318
+            rw [Names.n7516136566660357059] at hv322
+            obtain ⟨x_mode, vs324, b325, b326, rfl, mt327, ml328, rfl⟩ := matchListWith_cons_inv ml323
+            obtain rfl := matchPattern_bind_inv mt327
+            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml328
+            obtain ⟨v329, m330, d331, rfl, hm332⟩ := d9.store_inv
+            obtain ⟨vs334, a335, hres336⟩ := d331.construct_inv
+            rw [Names.n12516105052029042359] at hres336
+            subst hres336
+            obtain ⟨v337, vs339, m340, c341, c342, rfl, d343, a344, rfl⟩ := a335.cons_inv
+            obtain ⟨vs345, m346, c347, cs348, a349, ev350, rfl⟩ := d343.call_inv
+            rw [instanceName_plain_some] at ev350
+            obtain ⟨v351, vs352, m353, c354, c355, rfl, d356, a357, rfl⟩ := a349.cons_inv
+            obtain ⟨x358, y359, m360, c361, c362, d363, d364, op365, rfl⟩ := d356.binary_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d363.literal_inv
+            obtain ⟨x366, y367, m368, c369, c370, d371, d372, op373, rfl⟩ := d364.binary_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d371.literal_inv
+            obtain ⟨l374, rfl, rfl⟩ := d372.var_inv
+            simp at l374
+            subst l374
+            obtain ⟨rfl, rfl, rfl⟩ := a357.nil_inv
+            obtain ⟨v338, vs375, m376, c377, c378, rfl, d379, a380, rfl⟩ := a344.cons_inv
+            obtain ⟨l381, rfl, rfl⟩ := d379.var_inv
+            simp at l381
+            subst l381
+            obtain ⟨rfl, rfl, rfl⟩ := a380.nil_inv
+            try simp only [Value.type, List.map_cons, List.map_nil] at hne68 hne134 hne260 hne317 hv322 hm332 op373 op365 ev350 ⊢
+            exact «IxonSerialize::put_binder_node».Path.Undecided _ _ _ _ _ _ hne68 hne134 hne260 hne317 hv322 rfl hm332 op373 op365 ev350 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne383 := matchPattern_construct_none (by trivial) nm319
+            simp only [Names.n7516136566660357059] at hne383
+            exact (selectArm_nil_inv sel320).elim
+
+/-- The evaluation paths of `IxonSerialize::put_binder_node_list`: one constructor per combination of selected arms. -/
+inductive «IxonSerialize::put_binder_node_list».Path (x_list x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld12 : loadValue h x_list = .ok (.construct Names.«Lists::Node<Ixon::BinderNode>» "Nil" []))
+      (he21 : r = x_rest)
+      (he22 : h' = h)
+      (hc23 : calls = [])
+  | Cons
+      (x_node : SourceValue F) (x_rest_list : SourceValue F) (cs44 : List (Call F)) (v48 : SourceValue F) (m57 : Heap F) (cs65 : List (Call F))
+      (ld12 : loadValue h x_list = .ok (.construct Names.«Lists::Node<Ixon::BinderNode>» "Cons" [x_node, x_rest_list]))
+      (ev67 : ObsFn W "IxonSerialize::put_binder_node_list" [x_rest_list, x_rest] h v48 m57 cs65)
+      (ev46 : ObsFn W "IxonSerialize::put_binder_node" [x_node, v48] m57 r h' cs44)
+      (hc84 : calls = ((⟨"IxonSerialize::put_binder_node_list", [x_rest_list, x_rest], h⟩ : Call F) :: (cs65 ++ ((⟨"IxonSerialize::put_binder_node", [x_node, v48], m57⟩ : Call F) :: cs44))))
+
+/-- **Every observed derivation of `IxonSerialize::put_binder_node_list` takes one of its paths.** -/
+theorem «IxonSerialize::put_binder_node_list».obs {x_list x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "IxonSerialize::put_binder_node_list" [x_list, x_rest] h r h' calls) :
+    «IxonSerialize::put_binder_node_list».Path x_list x_rest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonSerialize.put_binder_node_list.lookup
+    (by simp [IxVM.IxonSerialize.put_binder_node_list, ControlLower.hasControl]) ev
+  simp only [IxVM.IxonSerialize.put_binder_node_list] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n5527369450665788998] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨l20, rfl, rfl⟩ := d9.var_inv
+    simp at l20
+    subst l20
+    exact «IxonSerialize::put_binder_node_list».Path.Nil ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne24 := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n5527369450665788998] at hne24
+    rcases selectArm_cons_inv sel16 with ⟨mt25, rfl⟩ | ⟨nm26, sel27⟩
+    · obtain ⟨vs28, hv29, -, ml30⟩ := matchPattern_construct_inv mt25
+      rw [Names.n5527369450665788998] at hv29
+      subst hv29
+      obtain ⟨x_node, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml30
+      obtain rfl := matchPattern_bind_inv mt34
+      obtain ⟨x_rest_list, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
+      obtain rfl := matchPattern_bind_inv mt39
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml40
+      obtain ⟨vs41, m42, c43, cs44, a45, ev46, rfl⟩ := d9.call_inv
+      rw [instanceName_plain_some] at ev46
+      obtain ⟨v47, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a45.cons_inv
+      obtain ⟨l55, rfl, rfl⟩ := d53.var_inv
+      simp at l55
+      subst l55
+      obtain ⟨v48, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a54.cons_inv
+      obtain ⟨vs62, m63, c64, cs65, a66, ev67, rfl⟩ := d60.call_inv
+      rw [instanceName_plain_some] at ev67
+      obtain ⟨v68, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a66.cons_inv
+      obtain ⟨l76, rfl, rfl⟩ := d74.var_inv
+      simp at l76
+      subst l76
+      obtain ⟨v69, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a75.cons_inv
+      obtain ⟨l83, rfl, rfl⟩ := d81.var_inv
+      simp at l83
+      subst l83
+      obtain ⟨rfl, rfl, rfl⟩ := a82.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+      exact «IxonSerialize::put_binder_node_list».Path.Cons _ _ _ _ _ _ ld12 ev67 ev46 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne85 := matchPattern_construct_none (by trivial) nm26
+      simp only [Names.n5527369450665788998] at hne85
+      exact (selectArm_nil_inv sel27).elim
+
+/-- The evaluation paths of `IxonSerialize::put_binder_block`: one constructor per combination of selected arms. -/
+inductive «IxonSerialize::put_binder_block».Path (x_block x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (x_ekind : SourceValue F) (x_eidx : SourceValue F) (x_variant : SourceValue F) (x_nodes : SourceValue F) (v41 : SourceValue F) (v42 : SourceValue F) (m44 : Heap F) (cs52 : List (Call F)) (m64 : Heap F) (cs72 : List (Call F)) (v76 : SourceValue F) (m85 : Heap F) (cs93 : List (Call F)) (v97 : SourceValue F) (m106 : Heap F) (cs114 : List (Call F)) (v117 : SourceValue F) (v118 : SourceValue F) (m120 : Heap F) (cs128 : List (Call F)) (m140 : Heap F) (cs148 : List (Call F))
+      (hv11 : x_block = (.construct "Ixon::BinderBlock" "Mk" [x_ekind, x_eidx, x_variant, x_nodes]))
+      (he37 : r = (.ptr (.enum Names.«Lists::Node<Field>») (m64).length))
+      (hm36 : h' = (m64 ++ [(.construct Names.«Lists::Node<Field>» "Cons" [v41, v42])]))
+      (ev54 : ObsFn W "UInt8::from_field" [x_ekind] h v41 m44 cs52)
+      (ev130 : ObsFn W Names.«WordLists::length_u64<Ixon::BinderNode>» [x_nodes] m44 v117 m120 cs128)
+      (ev150 : ObsFn W "IxonSerialize::put_binder_node_list" [x_nodes, x_rest] m120 v118 m140 cs148)
+      (ev116 : ObsFn W "IxonSerialize::put_tagn0" [v117, v118] m140 v97 m106 cs114)
+      (ev95 : ObsFn W "IxonSerialize::put_tagn0" [x_variant, v97] m106 v76 m85 cs93)
+      (ev74 : ObsFn W "IxonSerialize::put_tagn0" [x_eidx, v76] m85 v42 m64 cs72)
+      (hc167 : calls = ((⟨"UInt8::from_field", [x_ekind], h⟩ : Call F) :: (cs52 ++ ((⟨Names.«WordLists::length_u64<Ixon::BinderNode>», [x_nodes], m44⟩ : Call F) :: (cs128 ++ ((⟨"IxonSerialize::put_binder_node_list", [x_nodes, x_rest], m120⟩ : Call F) :: (cs148 ++ ((⟨"IxonSerialize::put_tagn0", [v117, v118], m140⟩ : Call F) :: (cs114 ++ ((⟨"IxonSerialize::put_tagn0", [x_variant, v97], m106⟩ : Call F) :: (cs93 ++ ((⟨"IxonSerialize::put_tagn0", [x_eidx, v76], m85⟩ : Call F) :: cs72))))))))))))
+
+/-- **Every observed derivation of `IxonSerialize::put_binder_block` takes one of its paths.** -/
+theorem «IxonSerialize::put_binder_block».obs {x_block x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "IxonSerialize::put_binder_block" [x_block, x_rest] h r h' calls) :
+    «IxonSerialize::put_binder_block».Path x_block x_rest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonSerialize.put_binder_block.lookup
+    (by simp [IxVM.IxonSerialize.put_binder_block, ControlLower.hasControl]) ev
+  simp only [IxVM.IxonSerialize.put_binder_block] at d0
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨l9, rfl, rfl⟩ := d6.var_inv
+  simp at l9
+  subst l9
+  obtain ⟨vs10, hv11, -, ml12⟩ := matchPattern_construct_inv mt7
+  rw [Names.n7340272268790896387] at hv11
+  obtain ⟨x_ekind, vs13, b14, b15, rfl, mt16, ml17, rfl⟩ := matchListWith_cons_inv ml12
+  obtain rfl := matchPattern_bind_inv mt16
+  obtain ⟨x_eidx, vs18, b19, b20, rfl, mt21, ml22, rfl⟩ := matchListWith_cons_inv ml17
+  obtain rfl := matchPattern_bind_inv mt21
+  obtain ⟨x_variant, vs23, b24, b25, rfl, mt26, ml27, rfl⟩ := matchListWith_cons_inv ml22
+  obtain rfl := matchPattern_bind_inv mt26
+  obtain ⟨x_nodes, vs28, b29, b30, rfl, mt31, ml32, rfl⟩ := matchListWith_cons_inv ml27
+  obtain rfl := matchPattern_bind_inv mt31
+  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml32
+  obtain ⟨v33, m34, d35, rfl, hm36⟩ := d8.store_inv
+  obtain ⟨vs38, a39, hres40⟩ := d35.construct_inv
+  rw [Names.n12516105052029042359] at hres40
+  subst hres40
+  obtain ⟨v41, vs43, m44, c45, c46, rfl, d47, a48, rfl⟩ := a39.cons_inv
+  obtain ⟨vs49, m50, c51, cs52, a53, ev54, rfl⟩ := d47.call_inv
+  rw [instanceName_plain_some] at ev54
+  obtain ⟨v55, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a53.cons_inv
+  obtain ⟨l62, rfl, rfl⟩ := d60.var_inv
+  simp at l62
+  subst l62
+  obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+  obtain ⟨v42, vs63, m64, c65, c66, rfl, d67, a68, rfl⟩ := a48.cons_inv
+  obtain ⟨vs69, m70, c71, cs72, a73, ev74, rfl⟩ := d67.call_inv
+  rw [instanceName_plain_some] at ev74
+  obtain ⟨v75, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a73.cons_inv
+  obtain ⟨l83, rfl, rfl⟩ := d81.var_inv
+  simp at l83
+  subst l83
+  obtain ⟨v76, vs84, m85, c86, c87, rfl, d88, a89, rfl⟩ := a82.cons_inv
+  obtain ⟨vs90, m91, c92, cs93, a94, ev95, rfl⟩ := d88.call_inv
+  rw [instanceName_plain_some] at ev95
+  obtain ⟨v96, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a94.cons_inv
+  obtain ⟨l104, rfl, rfl⟩ := d102.var_inv
+  simp at l104
+  subst l104
+  obtain ⟨v97, vs105, m106, c107, c108, rfl, d109, a110, rfl⟩ := a103.cons_inv
+  obtain ⟨vs111, m112, c113, cs114, a115, ev116, rfl⟩ := d109.call_inv
+  rw [instanceName_plain_some] at ev116
+  obtain ⟨v117, vs119, m120, c121, c122, rfl, d123, a124, rfl⟩ := a115.cons_inv
+  obtain ⟨vs125, m126, c127, cs128, a129, ev130, rfl⟩ := d123.call_inv
+  rw [Names.n8525735934792768777] at ev130
+  obtain ⟨v131, vs132, m133, c134, c135, rfl, d136, a137, rfl⟩ := a129.cons_inv
+  obtain ⟨l138, rfl, rfl⟩ := d136.var_inv
+  simp at l138
+  subst l138
+  obtain ⟨rfl, rfl, rfl⟩ := a137.nil_inv
+  obtain ⟨v118, vs139, m140, c141, c142, rfl, d143, a144, rfl⟩ := a124.cons_inv
+  obtain ⟨vs145, m146, c147, cs148, a149, ev150, rfl⟩ := d143.call_inv
+  rw [instanceName_plain_some] at ev150
+  obtain ⟨v151, vs153, m154, c155, c156, rfl, d157, a158, rfl⟩ := a149.cons_inv
+  obtain ⟨l159, rfl, rfl⟩ := d157.var_inv
+  simp at l159
+  subst l159
+  obtain ⟨v152, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a158.cons_inv
+  obtain ⟨l166, rfl, rfl⟩ := d164.var_inv
+  simp at l166
+  subst l166
+  obtain ⟨rfl, rfl, rfl⟩ := a165.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a144.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a110.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a89.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a68.nil_inv
+  try simp only [Value.type, List.map_cons, List.map_nil] at hv11 hm36 ev54 ev130 ev150 ev116 ev95 ev74 ⊢
+  exact «IxonSerialize::put_binder_block».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 rfl hm36 ev54 ev130 ev150 ev116 ev95 ev74 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n8525735934792768777])
+
+/-- The evaluation paths of `IxonSerialize::put_binder_block_list`: one constructor per combination of selected arms. -/
+inductive «IxonSerialize::put_binder_block_list».Path (x_list x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld12 : loadValue h x_list = .ok (.construct Names.«Lists::Node<Ixon::BinderBlock>» "Nil" []))
+      (he21 : r = x_rest)
+      (he22 : h' = h)
+      (hc23 : calls = [])
+  | Cons
+      (x_block : SourceValue F) (x_rest_list : SourceValue F) (cs44 : List (Call F)) (v48 : SourceValue F) (m57 : Heap F) (cs65 : List (Call F))
+      (ld12 : loadValue h x_list = .ok (.construct Names.«Lists::Node<Ixon::BinderBlock>» "Cons" [x_block, x_rest_list]))
+      (ev67 : ObsFn W "IxonSerialize::put_binder_block_list" [x_rest_list, x_rest] h v48 m57 cs65)
+      (ev46 : ObsFn W "IxonSerialize::put_binder_block" [x_block, v48] m57 r h' cs44)
+      (hc84 : calls = ((⟨"IxonSerialize::put_binder_block_list", [x_rest_list, x_rest], h⟩ : Call F) :: (cs65 ++ ((⟨"IxonSerialize::put_binder_block", [x_block, v48], m57⟩ : Call F) :: cs44))))
+
+/-- **Every observed derivation of `IxonSerialize::put_binder_block_list` takes one of its paths.** -/
+theorem «IxonSerialize::put_binder_block_list».obs {x_list x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "IxonSerialize::put_binder_block_list" [x_list, x_rest] h r h' calls) :
+    «IxonSerialize::put_binder_block_list».Path x_list x_rest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonSerialize.put_binder_block_list.lookup
+    (by simp [IxVM.IxonSerialize.put_binder_block_list, ControlLower.hasControl]) ev
+  simp only [IxVM.IxonSerialize.put_binder_block_list] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n7039976160276323251] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨l20, rfl, rfl⟩ := d9.var_inv
+    simp at l20
+    subst l20
+    exact «IxonSerialize::put_binder_block_list».Path.Nil ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne24 := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n7039976160276323251] at hne24
+    rcases selectArm_cons_inv sel16 with ⟨mt25, rfl⟩ | ⟨nm26, sel27⟩
+    · obtain ⟨vs28, hv29, -, ml30⟩ := matchPattern_construct_inv mt25
+      rw [Names.n7039976160276323251] at hv29
+      subst hv29
+      obtain ⟨x_block, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml30
+      obtain rfl := matchPattern_bind_inv mt34
+      obtain ⟨x_rest_list, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
+      obtain rfl := matchPattern_bind_inv mt39
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml40
+      obtain ⟨vs41, m42, c43, cs44, a45, ev46, rfl⟩ := d9.call_inv
+      rw [instanceName_plain_some] at ev46
+      obtain ⟨v47, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a45.cons_inv
+      obtain ⟨l55, rfl, rfl⟩ := d53.var_inv
+      simp at l55
+      subst l55
+      obtain ⟨v48, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a54.cons_inv
+      obtain ⟨vs62, m63, c64, cs65, a66, ev67, rfl⟩ := d60.call_inv
+      rw [instanceName_plain_some] at ev67
+      obtain ⟨v68, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a66.cons_inv
+      obtain ⟨l76, rfl, rfl⟩ := d74.var_inv
+      simp at l76
+      subst l76
+      obtain ⟨v69, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a75.cons_inv
+      obtain ⟨l83, rfl, rfl⟩ := d81.var_inv
+      simp at l83
+      subst l83
+      obtain ⟨rfl, rfl, rfl⟩ := a82.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+      exact «IxonSerialize::put_binder_block_list».Path.Cons _ _ _ _ _ _ ld12 ev67 ev46 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne85 := matchPattern_construct_none (by trivial) nm26
+      simp only [Names.n7039976160276323251] at hne85
+      exact (selectArm_nil_inv sel27).elim
+
+/-- The evaluation paths of `IxonSerialize::put_binders`: one constructor per combination of selected arms. -/
+inductive «IxonSerialize::put_binders».Path (x_list x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (cs26 : List (Call F)) (v30 : SourceValue F) (m39 : Heap F) (cs47 : List (Call F))
+      (ev14 : ObsFn W Names.«WordLists::length_u64<Ixon::BinderBlock>» [x_list] h v1 m2 cs12)
+      (ev49 : ObsFn W "IxonSerialize::put_binder_block_list" [x_list, x_rest] m2 v30 m39 cs47)
+      (ev28 : ObsFn W "IxonSerialize::put_tagn0" [v1, v30] m39 r h' cs26)
+      (hc66 : calls = ((⟨Names.«WordLists::length_u64<Ixon::BinderBlock>», [x_list], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonSerialize::put_binder_block_list", [x_list, x_rest], m2⟩ : Call F) :: (cs47 ++ ((⟨"IxonSerialize::put_tagn0", [v1, v30], m39⟩ : Call F) :: cs26))))))
+
+/-- **Every observed derivation of `IxonSerialize::put_binders` takes one of its paths.** -/
+theorem «IxonSerialize::put_binders».obs {x_list x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "IxonSerialize::put_binders" [x_list, x_rest] h r h' calls) :
+    «IxonSerialize::put_binders».Path x_list x_rest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonSerialize.put_binders.lookup
+    (by simp [IxVM.IxonSerialize.put_binders, ControlLower.hasControl]) ev
+  simp only [IxVM.IxonSerialize.put_binders] at d0
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
+  rw [Names.n10260442118937760086] at ev14
+  obtain ⟨v15, vs16, m17, c18, c19, rfl, d20, a21, rfl⟩ := a13.cons_inv
+  obtain ⟨l22, rfl, rfl⟩ := d20.var_inv
+  simp at l22
+  subst l22
+  obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
+  obtain rfl := matchPattern_bind_inv mt7
+  obtain ⟨vs23, m24, c25, cs26, a27, ev28, rfl⟩ := d8.call_inv
+  rw [instanceName_plain_some] at ev28
+  obtain ⟨v29, vs31, m32, c33, c34, rfl, d35, a36, rfl⟩ := a27.cons_inv
+  obtain ⟨l37, rfl, rfl⟩ := d35.var_inv
+  simp at l37
+  subst l37
+  obtain ⟨v30, vs38, m39, c40, c41, rfl, d42, a43, rfl⟩ := a36.cons_inv
+  obtain ⟨vs44, m45, c46, cs47, a48, ev49, rfl⟩ := d42.call_inv
+  rw [instanceName_plain_some] at ev49
+  obtain ⟨v50, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a48.cons_inv
+  obtain ⟨l58, rfl, rfl⟩ := d56.var_inv
+  simp at l58
+  subst l58
+  obtain ⟨v51, vs59, m60, c61, c62, rfl, d63, a64, rfl⟩ := a57.cons_inv
+  obtain ⟨l65, rfl, rfl⟩ := d63.var_inv
+  simp at l65
+  subst l65
+  obtain ⟨rfl, rfl, rfl⟩ := a64.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a43.nil_inv
+  exact «IxonSerialize::put_binders».Path.run _ _ _ _ _ _ _ ev14 ev49 ev28 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n10260442118937760086])
+
 /-- The evaluation paths of `IxonSerialize::put_constant`: one constructor per combination of selected arms. -/
 inductive «IxonSerialize::put_constant».Path (x_cnst x_rest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | Muts
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (x_mutuals : SourceValue F) (v130 : SourceValue F) (m131 : Heap F) (cs141 : List (Call F)) (cs155 : List (Call F)) (v160 : SourceValue F) (m175 : Heap F) (cs183 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Muts" [x_mutuals]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev143 : ObsFn W Names.«WordLists::length_u64<Ixon::MutConst>» [x_mutuals] m38 v130 m131 cs141)
-      (ev185 : ObsFn W "IxonSerialize::put_mut_const_list" [x_mutuals, v37] m131 v160 m175 cs183)
-      (ev157 : ObsFn W "IxonSerialize::put_tagn4" [(.field 12), v130, v160] m175 r h' cs155)
-      (hc202 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨Names.«WordLists::length_u64<Ixon::MutConst>», [x_mutuals], m38⟩ : Call F) :: (cs141 ++ ((⟨"IxonSerialize::put_mut_const_list", [x_mutuals, v37], m131⟩ : Call F) :: (cs183 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 12), v130, v160], m175⟩ : Call F) :: cs155))))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (x_mutuals : SourceValue F) (v156 : SourceValue F) (m157 : Heap F) (cs167 : List (Call F)) (cs181 : List (Call F)) (v186 : SourceValue F) (m201 : Heap F) (cs209 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Muts" [x_mutuals]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev169 : ObsFn W Names.«WordLists::length_u64<Ixon::MutConst>» [x_mutuals] m43 v156 m157 cs167)
+      (ev211 : ObsFn W "IxonSerialize::put_mut_const_list" [x_mutuals, v42] m157 v186 m201 cs209)
+      (ev183 : ObsFn W "IxonSerialize::put_tagn4" [(.field 12), v156, v186] m201 r h' cs181)
+      (hc228 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨Names.«WordLists::length_u64<Ixon::MutConst>», [x_mutuals], m43⟩ : Call F) :: (cs167 ++ ((⟨"IxonSerialize::put_mut_const_list", [x_mutuals, v42], m157⟩ : Call F) :: (cs209 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 12), v156, v186], m201⟩ : Call F) :: cs181))))))))))))))
   | Defn
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w210 : SourceValue F) (cs219 : List (Call F)) (v224 : SourceValue F) (m240 : Heap F) (cs248 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Defn" [w210]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev250 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Defn" [w210]), v37] m38 v224 m240 cs248)
-      (ev221 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple (List.replicate 8 (.field 0))), v224] m240 r h' cs219)
-      (hc267 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Defn" [w210]), v37], m38⟩ : Call F) :: (cs248 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple (List.replicate 8 (.field 0))), v224], m240⟩ : Call F) :: cs219))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w236 : SourceValue F) (cs245 : List (Call F)) (v250 : SourceValue F) (m266 : Heap F) (cs274 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Defn" [w236]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev276 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Defn" [w236]), v42] m43 v250 m266 cs274)
+      (ev247 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple (List.replicate 8 (.field 0))), v250] m266 r h' cs245)
+      (hc293 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Defn" [w236]), v42], m43⟩ : Call F) :: (cs274 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple (List.replicate 8 (.field 0))), v250], m266⟩ : Call F) :: cs245))))))))))))
   | Recr
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w275 : SourceValue F) (cs284 : List (Call F)) (v289 : SourceValue F) (m361 : Heap F) (cs369 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Recr" [w275]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev371 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Recr" [w275]), v37] m38 v289 m361 cs369)
-      (ev286 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v289] m361 r h' cs284)
-      (hc388 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Recr" [w275]), v37], m38⟩ : Call F) :: (cs369 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v289], m361⟩ : Call F) :: cs284))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w301 : SourceValue F) (cs310 : List (Call F)) (v315 : SourceValue F) (m387 : Heap F) (cs395 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Recr" [w301]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev397 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Recr" [w301]), v42] m43 v315 m387 cs395)
+      (ev312 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v315] m387 r h' cs310)
+      (hc414 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Recr" [w301]), v42], m43⟩ : Call F) :: (cs395 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v315], m387⟩ : Call F) :: cs310))))))))))))
   | Axio
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w396 : SourceValue F) (cs405 : List (Call F)) (v410 : SourceValue F) (m482 : Heap F) (cs490 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Axio" [w396]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev492 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Axio" [w396]), v37] m38 v410 m482 cs490)
-      (ev407 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 2), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v410] m482 r h' cs405)
-      (hc509 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Axio" [w396]), v37], m38⟩ : Call F) :: (cs490 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 2), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v410], m482⟩ : Call F) :: cs405))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w422 : SourceValue F) (cs431 : List (Call F)) (v436 : SourceValue F) (m508 : Heap F) (cs516 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Axio" [w422]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev518 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Axio" [w422]), v42] m43 v436 m508 cs516)
+      (ev433 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 2), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v436] m508 r h' cs431)
+      (hc535 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Axio" [w422]), v42], m43⟩ : Call F) :: (cs516 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 2), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v436], m508⟩ : Call F) :: cs431))))))))))))
   | Quot
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w517 : SourceValue F) (cs526 : List (Call F)) (v531 : SourceValue F) (m603 : Heap F) (cs611 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Quot" [w517]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev613 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Quot" [w517]), v37] m38 v531 m603 cs611)
-      (ev528 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 3), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v531] m603 r h' cs526)
-      (hc630 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Quot" [w517]), v37], m38⟩ : Call F) :: (cs611 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 3), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v531], m603⟩ : Call F) :: cs526))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w543 : SourceValue F) (cs552 : List (Call F)) (v557 : SourceValue F) (m629 : Heap F) (cs637 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Quot" [w543]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev639 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "Quot" [w543]), v42] m43 v557 m629 cs637)
+      (ev554 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 3), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v557] m629 r h' cs552)
+      (hc656 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "Quot" [w543]), v42], m43⟩ : Call F) :: (cs637 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 3), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v557], m629⟩ : Call F) :: cs552))))))))))))
   | CPrj
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w638 : SourceValue F) (cs647 : List (Call F)) (v652 : SourceValue F) (m724 : Heap F) (cs732 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [w638]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev734 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "CPrj" [w638]), v37] m38 v652 m724 cs732)
-      (ev649 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 4), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v652] m724 r h' cs647)
-      (hc751 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "CPrj" [w638]), v37], m38⟩ : Call F) :: (cs732 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 4), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v652], m724⟩ : Call F) :: cs647))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w664 : SourceValue F) (cs673 : List (Call F)) (v678 : SourceValue F) (m750 : Heap F) (cs758 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [w664]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev760 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "CPrj" [w664]), v42] m43 v678 m750 cs758)
+      (ev675 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 4), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v678] m750 r h' cs673)
+      (hc777 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "CPrj" [w664]), v42], m43⟩ : Call F) :: (cs758 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 4), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v678], m750⟩ : Call F) :: cs673))))))))))))
   | RPrj
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w759 : SourceValue F) (cs768 : List (Call F)) (v773 : SourceValue F) (m845 : Heap F) (cs853 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "RPrj" [w759]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev855 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "RPrj" [w759]), v37] m38 v773 m845 cs853)
-      (ev770 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 5), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v773] m845 r h' cs768)
-      (hc872 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "RPrj" [w759]), v37], m38⟩ : Call F) :: (cs853 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 5), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v773], m845⟩ : Call F) :: cs768))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w785 : SourceValue F) (cs794 : List (Call F)) (v799 : SourceValue F) (m871 : Heap F) (cs879 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "RPrj" [w785]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev881 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "RPrj" [w785]), v42] m43 v799 m871 cs879)
+      (ev796 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 5), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v799] m871 r h' cs794)
+      (hc898 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "RPrj" [w785]), v42], m43⟩ : Call F) :: (cs879 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 5), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v799], m871⟩ : Call F) :: cs794))))))))))))
   | IPrj
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w880 : SourceValue F) (cs889 : List (Call F)) (v894 : SourceValue F) (m966 : Heap F) (cs974 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [w880]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev976 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "IPrj" [w880]), v37] m38 v894 m966 cs974)
-      (ev891 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 6), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v894] m966 r h' cs889)
-      (hc993 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "IPrj" [w880]), v37], m38⟩ : Call F) :: (cs974 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 6), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v894], m966⟩ : Call F) :: cs889))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w906 : SourceValue F) (cs915 : List (Call F)) (v920 : SourceValue F) (m992 : Heap F) (cs1000 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "IPrj" [w906]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev1002 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "IPrj" [w906]), v42] m43 v920 m992 cs1000)
+      (ev917 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 6), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v920] m992 r h' cs915)
+      (hc1019 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "IPrj" [w906]), v42], m43⟩ : Call F) :: (cs1000 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 6), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v920], m992⟩ : Call F) :: cs915))))))))))))
   | DPrj
-      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v52 : SourceValue F) (m61 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (m82 : Heap F) (cs90 : List (Call F)) (w1001 : SourceValue F) (cs1010 : List (Call F)) (v1015 : SourceValue F) (m1087 : Heap F) (cs1095 : List (Call F))
-      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "DPrj" [w1001]), x_sharing, x_refs, x_univs]))
-      (ev92 : ObsFn W "IxonSerialize::put_univs" [x_univs, x_rest] h v73 m82 cs90)
-      (ev71 : ObsFn W "IxonSerialize::put_refs" [x_refs, v73] m82 v52 m61 cs69)
-      (ev50 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v52] m61 v37 m38 cs48)
-      (ev1097 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "DPrj" [w1001]), v37] m38 v1015 m1087 cs1095)
-      (ev1012 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 7), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v1015] m1087 r h' cs1010)
-      (hc1114 : calls = ((⟨"IxonSerialize::put_univs", [x_univs, x_rest], h⟩ : Call F) :: (cs90 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v73], m82⟩ : Call F) :: (cs69 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v52], m61⟩ : Call F) :: (cs48 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "DPrj" [w1001]), v37], m38⟩ : Call F) :: (cs1095 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 7), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v1015], m1087⟩ : Call F) :: cs1010))))))))))
+      (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_binders : SourceValue F) (v42 : SourceValue F) (m43 : Heap F) (cs53 : List (Call F)) (v57 : SourceValue F) (m66 : Heap F) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F)) (v99 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F)) (w1027 : SourceValue F) (cs1036 : List (Call F)) (v1041 : SourceValue F) (m1113 : Heap F) (cs1121 : List (Call F))
+      (hv15 : x_cnst = (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "DPrj" [w1027]), x_sharing, x_refs, x_univs, x_binders]))
+      (ev118 : ObsFn W "IxonSerialize::put_binders" [x_binders, x_rest] h v99 m108 cs116)
+      (ev97 : ObsFn W "IxonSerialize::put_univs" [x_univs, v99] m108 v78 m87 cs95)
+      (ev76 : ObsFn W "IxonSerialize::put_refs" [x_refs, v78] m87 v57 m66 cs74)
+      (ev55 : ObsFn W "IxonSerialize::put_sharing" [x_sharing, v57] m66 v42 m43 cs53)
+      (ev1123 : ObsFn W "IxonSerialize::put_constant_info" [(.construct "Ixon::ConstantInfo" "DPrj" [w1027]), v42] m43 v1041 m1113 cs1121)
+      (ev1038 : ObsFn W "IxonSerialize::put_tagn4" [(.field 13), (.tuple [(.field 7), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v1041] m1113 r h' cs1036)
+      (hc1140 : calls = ((⟨"IxonSerialize::put_binders", [x_binders, x_rest], h⟩ : Call F) :: (cs116 ++ ((⟨"IxonSerialize::put_univs", [x_univs, v99], m108⟩ : Call F) :: (cs95 ++ ((⟨"IxonSerialize::put_refs", [x_refs, v78], m87⟩ : Call F) :: (cs74 ++ ((⟨"IxonSerialize::put_sharing", [x_sharing, v57], m66⟩ : Call F) :: (cs53 ++ ((⟨"IxonSerialize::put_constant_info", [(.construct "Ixon::ConstantInfo" "DPrj" [w1027]), v42], m43⟩ : Call F) :: (cs1121 ++ ((⟨"IxonSerialize::put_tagn4", [(.field 13), (.tuple [(.field 7), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)]), v1041], m1113⟩ : Call F) :: cs1036))))))))))))
 
 /-- **Every observed derivation of `IxonSerialize::put_constant` takes one of its paths.** -/
 theorem «IxonSerialize::put_constant».obs {x_cnst x_rest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -511,435 +1048,445 @@ theorem «IxonSerialize::put_constant».obs {x_cnst x_rest : SourceValue F} {h h
     obtain rfl := matchPattern_bind_inv mt30
     obtain ⟨x_univs, vs32, b33, b34, rfl, mt35, ml36, rfl⟩ := matchListWith_cons_inv ml31
     obtain rfl := matchPattern_bind_inv mt35
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml36
-    obtain ⟨v37, m38, bs39, c40, c41, d42, mt43, d44, rfl⟩ := d9.letValue_inv
-    obtain ⟨vs45, m46, c47, cs48, a49, ev50, rfl⟩ := d42.call_inv
-    rw [instanceName_plain_some] at ev50
-    obtain ⟨v51, vs53, m54, c55, c56, rfl, d57, a58, rfl⟩ := a49.cons_inv
-    obtain ⟨l59, rfl, rfl⟩ := d57.var_inv
-    simp at l59
-    subst l59
-    obtain ⟨v52, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a58.cons_inv
-    obtain ⟨vs66, m67, c68, cs69, a70, ev71, rfl⟩ := d64.call_inv
-    rw [instanceName_plain_some] at ev71
-    obtain ⟨v72, vs74, m75, c76, c77, rfl, d78, a79, rfl⟩ := a70.cons_inv
-    obtain ⟨l80, rfl, rfl⟩ := d78.var_inv
-    simp at l80
-    subst l80
-    obtain ⟨v73, vs81, m82, c83, c84, rfl, d85, a86, rfl⟩ := a79.cons_inv
-    obtain ⟨vs87, m88, c89, cs90, a91, ev92, rfl⟩ := d85.call_inv
-    rw [instanceName_plain_some] at ev92
-    obtain ⟨v93, vs95, m96, c97, c98, rfl, d99, a100, rfl⟩ := a91.cons_inv
-    obtain ⟨l101, rfl, rfl⟩ := d99.var_inv
-    simp at l101
-    subst l101
-    obtain ⟨v94, vs102, m103, c104, c105, rfl, d106, a107, rfl⟩ := a100.cons_inv
-    obtain ⟨l108, rfl, rfl⟩ := d106.var_inv
-    simp at l108
-    subst l108
-    obtain ⟨rfl, rfl, rfl⟩ := a107.nil_inv
-    obtain ⟨rfl, rfl, rfl⟩ := a86.nil_inv
-    obtain ⟨rfl, rfl, rfl⟩ := a65.nil_inv
-    obtain rfl := matchPattern_bind_inv mt43
-    obtain ⟨v109, m110, bs111, body112, c113, c114, d115, sel116, d117, rfl⟩ := d44.matchValue_inv
-    obtain ⟨l118, rfl, rfl⟩ := d115.var_inv
-    simp at l118
-    subst l118
-    rcases selectArm_cons_inv sel116 with ⟨mt119, rfl⟩ | ⟨nm120, sel121⟩
-    · obtain ⟨vs122, hv123, -, ml124⟩ := matchPattern_construct_inv mt119
-      rw [Names.n13917575780398666258] at hv123
-      subst hv123
-      obtain ⟨x_mutuals, vs125, b126, b127, rfl, mt128, ml129, rfl⟩ := matchListWith_cons_inv ml124
-      obtain rfl := matchPattern_bind_inv mt128
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml129
-      obtain ⟨v130, m131, bs132, c133, c134, d135, mt136, d137, rfl⟩ := d117.letValue_inv
-      obtain ⟨vs138, m139, c140, cs141, a142, ev143, rfl⟩ := d135.call_inv
-      rw [Names.n3472392075165680861] at ev143
-      obtain ⟨v144, vs145, m146, c147, c148, rfl, d149, a150, rfl⟩ := a142.cons_inv
-      obtain ⟨l151, rfl, rfl⟩ := d149.var_inv
-      simp at l151
-      subst l151
-      obtain ⟨rfl, rfl, rfl⟩ := a150.nil_inv
-      obtain rfl := matchPattern_bind_inv mt136
-      obtain ⟨vs152, m153, c154, cs155, a156, ev157, rfl⟩ := d137.call_inv
-      rw [instanceName_plain_some] at ev157
-      obtain ⟨v158, vs161, m162, c163, c164, rfl, d165, a166, rfl⟩ := a156.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d165.literal_inv
-      obtain ⟨v159, vs167, m168, c169, c170, rfl, d171, a172, rfl⟩ := a166.cons_inv
-      obtain ⟨l173, rfl, rfl⟩ := d171.var_inv
-      simp at l173
-      subst l173
-      obtain ⟨v160, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a172.cons_inv
-      obtain ⟨vs180, m181, c182, cs183, a184, ev185, rfl⟩ := d178.call_inv
-      rw [instanceName_plain_some] at ev185
-      obtain ⟨v186, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a184.cons_inv
-      obtain ⟨l194, rfl, rfl⟩ := d192.var_inv
-      simp at l194
-      subst l194
-      obtain ⟨v187, vs195, m196, c197, c198, rfl, d199, a200, rfl⟩ := a193.cons_inv
-      obtain ⟨l201, rfl, rfl⟩ := d199.var_inv
-      simp at l201
-      subst l201
-      obtain ⟨rfl, rfl, rfl⟩ := a200.nil_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a179.nil_inv
-      exact «IxonSerialize::put_constant».Path.Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev143 ev185 ev157 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n3472392075165680861])
-    · have hne203 := matchPattern_construct_none (by trivial) nm120
-      simp only [Names.n13917575780398666258] at hne203
-      rcases selectArm_cons_inv sel121 with ⟨mt204, rfl⟩ | ⟨nm205, sel206⟩
-      · obtain ⟨vs207, hv208, -, ml209⟩ := matchPattern_construct_inv mt204
-        rw [Names.n13917575780398666258] at hv208
-        subst hv208
-        obtain ⟨w210, vs211, b212, b213, rfl, mt214, ml215, rfl⟩ := matchListWith_cons_inv ml209
-        obtain rfl := matchPattern_wildcard_inv mt214
-        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml215
-        obtain ⟨vs216, m217, c218, cs219, a220, ev221, rfl⟩ := d117.call_inv
-        rw [instanceName_plain_some] at ev221
-        obtain ⟨v222, vs225, m226, c227, c228, rfl, d229, a230, rfl⟩ := a220.cons_inv
-        obtain ⟨rfl, rfl, rfl⟩ := d229.literal_inv
-        obtain ⟨v223, vs231, m232, c233, c234, rfl, d235, a236, rfl⟩ := a230.cons_inv
-        obtain ⟨v237, d238, rfl⟩ := d235.repeat_inv
-        obtain ⟨rfl, rfl, rfl⟩ := d238.global_literal_inv Names.c9173999864893739538
-        obtain ⟨v224, vs239, m240, c241, c242, rfl, d243, a244, rfl⟩ := a236.cons_inv
-        obtain ⟨vs245, m246, c247, cs248, a249, ev250, rfl⟩ := d243.call_inv
-        rw [instanceName_plain_some] at ev250
-        obtain ⟨v251, vs253, m254, c255, c256, rfl, d257, a258, rfl⟩ := a249.cons_inv
-        obtain ⟨l259, rfl, rfl⟩ := d257.var_inv
-        simp at l259
-        subst l259
-        obtain ⟨v252, vs260, m261, c262, c263, rfl, d264, a265, rfl⟩ := a258.cons_inv
-        obtain ⟨l266, rfl, rfl⟩ := d264.var_inv
-        simp at l266
-        subst l266
-        obtain ⟨rfl, rfl, rfl⟩ := a265.nil_inv
-        obtain ⟨rfl, rfl, rfl⟩ := a244.nil_inv
-        exact «IxonSerialize::put_constant».Path.Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev250 ev221 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne268 := matchPattern_construct_none (by trivial) nm205
-        simp only [Names.n13917575780398666258] at hne268
-        rcases selectArm_cons_inv sel206 with ⟨mt269, rfl⟩ | ⟨nm270, sel271⟩
-        · obtain ⟨vs272, hv273, -, ml274⟩ := matchPattern_construct_inv mt269
-          rw [Names.n13917575780398666258] at hv273
-          subst hv273
-          obtain ⟨w275, vs276, b277, b278, rfl, mt279, ml280, rfl⟩ := matchListWith_cons_inv ml274
-          obtain rfl := matchPattern_wildcard_inv mt279
-          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml280
-          obtain ⟨vs281, m282, c283, cs284, a285, ev286, rfl⟩ := d117.call_inv
-          rw [instanceName_plain_some] at ev286
-          obtain ⟨v287, vs290, m291, c292, c293, rfl, d294, a295, rfl⟩ := a285.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d294.literal_inv
-          obtain ⟨v288, vs296, m297, c298, c299, rfl, d300, a301, rfl⟩ := a295.cons_inv
-          obtain ⟨vs302, a303, rfl⟩ := d300.array_inv
-          obtain ⟨v304, vs312, m313, c314, c315, rfl, d316, a317, rfl⟩ := a303.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d316.global_literal_inv Names.c3167744620027602021
-          obtain ⟨v305, vs318, m319, c320, c321, rfl, d322, a323, rfl⟩ := a317.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d322.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v306, vs324, m325, c326, c327, rfl, d328, a329, rfl⟩ := a323.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d328.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v307, vs330, m331, c332, c333, rfl, d334, a335, rfl⟩ := a329.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d334.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v308, vs336, m337, c338, c339, rfl, d340, a341, rfl⟩ := a335.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d340.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v309, vs342, m343, c344, c345, rfl, d346, a347, rfl⟩ := a341.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d346.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v310, vs348, m349, c350, c351, rfl, d352, a353, rfl⟩ := a347.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d352.global_literal_inv Names.c9173999864893739538
-          obtain ⟨v311, vs354, m355, c356, c357, rfl, d358, a359, rfl⟩ := a353.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d358.global_literal_inv Names.c9173999864893739538
-          obtain ⟨rfl, rfl, rfl⟩ := a359.nil_inv
-          obtain ⟨v289, vs360, m361, c362, c363, rfl, d364, a365, rfl⟩ := a301.cons_inv
-          obtain ⟨vs366, m367, c368, cs369, a370, ev371, rfl⟩ := d364.call_inv
-          rw [instanceName_plain_some] at ev371
-          obtain ⟨v372, vs374, m375, c376, c377, rfl, d378, a379, rfl⟩ := a370.cons_inv
-          obtain ⟨l380, rfl, rfl⟩ := d378.var_inv
-          simp at l380
-          subst l380
-          obtain ⟨v373, vs381, m382, c383, c384, rfl, d385, a386, rfl⟩ := a379.cons_inv
-          obtain ⟨l387, rfl, rfl⟩ := d385.var_inv
-          simp at l387
-          subst l387
-          obtain ⟨rfl, rfl, rfl⟩ := a386.nil_inv
-          obtain ⟨rfl, rfl, rfl⟩ := a365.nil_inv
-          exact «IxonSerialize::put_constant».Path.Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev371 ev286 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · have hne389 := matchPattern_construct_none (by trivial) nm270
-          simp only [Names.n13917575780398666258] at hne389
-          rcases selectArm_cons_inv sel271 with ⟨mt390, rfl⟩ | ⟨nm391, sel392⟩
-          · obtain ⟨vs393, hv394, -, ml395⟩ := matchPattern_construct_inv mt390
-            rw [Names.n13917575780398666258] at hv394
-            subst hv394
-            obtain ⟨w396, vs397, b398, b399, rfl, mt400, ml401, rfl⟩ := matchListWith_cons_inv ml395
-            obtain rfl := matchPattern_wildcard_inv mt400
-            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml401
-            obtain ⟨vs402, m403, c404, cs405, a406, ev407, rfl⟩ := d117.call_inv
-            rw [instanceName_plain_some] at ev407
-            obtain ⟨v408, vs411, m412, c413, c414, rfl, d415, a416, rfl⟩ := a406.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d415.literal_inv
-            obtain ⟨v409, vs417, m418, c419, c420, rfl, d421, a422, rfl⟩ := a416.cons_inv
-            obtain ⟨vs423, a424, rfl⟩ := d421.array_inv
-            obtain ⟨v425, vs433, m434, c435, c436, rfl, d437, a438, rfl⟩ := a424.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d437.global_literal_inv Names.c1350107512230497446
-            obtain ⟨v426, vs439, m440, c441, c442, rfl, d443, a444, rfl⟩ := a438.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d443.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v427, vs445, m446, c447, c448, rfl, d449, a450, rfl⟩ := a444.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d449.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v428, vs451, m452, c453, c454, rfl, d455, a456, rfl⟩ := a450.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d455.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v429, vs457, m458, c459, c460, rfl, d461, a462, rfl⟩ := a456.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d461.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v430, vs463, m464, c465, c466, rfl, d467, a468, rfl⟩ := a462.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d467.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v431, vs469, m470, c471, c472, rfl, d473, a474, rfl⟩ := a468.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d473.global_literal_inv Names.c9173999864893739538
-            obtain ⟨v432, vs475, m476, c477, c478, rfl, d479, a480, rfl⟩ := a474.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d479.global_literal_inv Names.c9173999864893739538
-            obtain ⟨rfl, rfl, rfl⟩ := a480.nil_inv
-            obtain ⟨v410, vs481, m482, c483, c484, rfl, d485, a486, rfl⟩ := a422.cons_inv
-            obtain ⟨vs487, m488, c489, cs490, a491, ev492, rfl⟩ := d485.call_inv
-            rw [instanceName_plain_some] at ev492
-            obtain ⟨v493, vs495, m496, c497, c498, rfl, d499, a500, rfl⟩ := a491.cons_inv
-            obtain ⟨l501, rfl, rfl⟩ := d499.var_inv
-            simp at l501
-            subst l501
-            obtain ⟨v494, vs502, m503, c504, c505, rfl, d506, a507, rfl⟩ := a500.cons_inv
-            obtain ⟨l508, rfl, rfl⟩ := d506.var_inv
-            simp at l508
-            subst l508
-            obtain ⟨rfl, rfl, rfl⟩ := a507.nil_inv
-            obtain ⟨rfl, rfl, rfl⟩ := a486.nil_inv
-            exact «IxonSerialize::put_constant».Path.Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev492 ev407 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · have hne510 := matchPattern_construct_none (by trivial) nm391
-            simp only [Names.n13917575780398666258] at hne510
-            rcases selectArm_cons_inv sel392 with ⟨mt511, rfl⟩ | ⟨nm512, sel513⟩
-            · obtain ⟨vs514, hv515, -, ml516⟩ := matchPattern_construct_inv mt511
-              rw [Names.n13917575780398666258] at hv515
-              subst hv515
-              obtain ⟨w517, vs518, b519, b520, rfl, mt521, ml522, rfl⟩ := matchListWith_cons_inv ml516
-              obtain rfl := matchPattern_wildcard_inv mt521
-              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml522
-              obtain ⟨vs523, m524, c525, cs526, a527, ev528, rfl⟩ := d117.call_inv
-              rw [instanceName_plain_some] at ev528
-              obtain ⟨v529, vs532, m533, c534, c535, rfl, d536, a537, rfl⟩ := a527.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d536.literal_inv
-              obtain ⟨v530, vs538, m539, c540, c541, rfl, d542, a543, rfl⟩ := a537.cons_inv
-              obtain ⟨vs544, a545, rfl⟩ := d542.array_inv
-              obtain ⟨v546, vs554, m555, c556, c557, rfl, d558, a559, rfl⟩ := a545.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d558.global_literal_inv Names.c4658543753026666081
-              obtain ⟨v547, vs560, m561, c562, c563, rfl, d564, a565, rfl⟩ := a559.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d564.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v548, vs566, m567, c568, c569, rfl, d570, a571, rfl⟩ := a565.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d570.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v549, vs572, m573, c574, c575, rfl, d576, a577, rfl⟩ := a571.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d576.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v550, vs578, m579, c580, c581, rfl, d582, a583, rfl⟩ := a577.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d582.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v551, vs584, m585, c586, c587, rfl, d588, a589, rfl⟩ := a583.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d588.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v552, vs590, m591, c592, c593, rfl, d594, a595, rfl⟩ := a589.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d594.global_literal_inv Names.c9173999864893739538
-              obtain ⟨v553, vs596, m597, c598, c599, rfl, d600, a601, rfl⟩ := a595.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d600.global_literal_inv Names.c9173999864893739538
-              obtain ⟨rfl, rfl, rfl⟩ := a601.nil_inv
-              obtain ⟨v531, vs602, m603, c604, c605, rfl, d606, a607, rfl⟩ := a543.cons_inv
-              obtain ⟨vs608, m609, c610, cs611, a612, ev613, rfl⟩ := d606.call_inv
-              rw [instanceName_plain_some] at ev613
-              obtain ⟨v614, vs616, m617, c618, c619, rfl, d620, a621, rfl⟩ := a612.cons_inv
-              obtain ⟨l622, rfl, rfl⟩ := d620.var_inv
-              simp at l622
-              subst l622
-              obtain ⟨v615, vs623, m624, c625, c626, rfl, d627, a628, rfl⟩ := a621.cons_inv
-              obtain ⟨l629, rfl, rfl⟩ := d627.var_inv
-              simp at l629
-              subst l629
-              obtain ⟨rfl, rfl, rfl⟩ := a628.nil_inv
-              obtain ⟨rfl, rfl, rfl⟩ := a607.nil_inv
-              exact «IxonSerialize::put_constant».Path.Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev613 ev528 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-            · have hne631 := matchPattern_construct_none (by trivial) nm512
-              simp only [Names.n13917575780398666258] at hne631
-              rcases selectArm_cons_inv sel513 with ⟨mt632, rfl⟩ | ⟨nm633, sel634⟩
-              · obtain ⟨vs635, hv636, -, ml637⟩ := matchPattern_construct_inv mt632
-                rw [Names.n13917575780398666258] at hv636
-                subst hv636
-                obtain ⟨w638, vs639, b640, b641, rfl, mt642, ml643, rfl⟩ := matchListWith_cons_inv ml637
-                obtain rfl := matchPattern_wildcard_inv mt642
-                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml643
-                obtain ⟨vs644, m645, c646, cs647, a648, ev649, rfl⟩ := d117.call_inv
-                rw [instanceName_plain_some] at ev649
-                obtain ⟨v650, vs653, m654, c655, c656, rfl, d657, a658, rfl⟩ := a648.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d657.literal_inv
-                obtain ⟨v651, vs659, m660, c661, c662, rfl, d663, a664, rfl⟩ := a658.cons_inv
-                obtain ⟨vs665, a666, rfl⟩ := d663.array_inv
-                obtain ⟨v667, vs675, m676, c677, c678, rfl, d679, a680, rfl⟩ := a666.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d679.global_literal_inv Names.c11500736482030662876
-                obtain ⟨v668, vs681, m682, c683, c684, rfl, d685, a686, rfl⟩ := a680.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d685.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v669, vs687, m688, c689, c690, rfl, d691, a692, rfl⟩ := a686.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d691.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v670, vs693, m694, c695, c696, rfl, d697, a698, rfl⟩ := a692.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d697.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v671, vs699, m700, c701, c702, rfl, d703, a704, rfl⟩ := a698.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d703.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v672, vs705, m706, c707, c708, rfl, d709, a710, rfl⟩ := a704.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d709.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v673, vs711, m712, c713, c714, rfl, d715, a716, rfl⟩ := a710.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d715.global_literal_inv Names.c9173999864893739538
-                obtain ⟨v674, vs717, m718, c719, c720, rfl, d721, a722, rfl⟩ := a716.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d721.global_literal_inv Names.c9173999864893739538
-                obtain ⟨rfl, rfl, rfl⟩ := a722.nil_inv
-                obtain ⟨v652, vs723, m724, c725, c726, rfl, d727, a728, rfl⟩ := a664.cons_inv
-                obtain ⟨vs729, m730, c731, cs732, a733, ev734, rfl⟩ := d727.call_inv
-                rw [instanceName_plain_some] at ev734
-                obtain ⟨v735, vs737, m738, c739, c740, rfl, d741, a742, rfl⟩ := a733.cons_inv
-                obtain ⟨l743, rfl, rfl⟩ := d741.var_inv
-                simp at l743
-                subst l743
-                obtain ⟨v736, vs744, m745, c746, c747, rfl, d748, a749, rfl⟩ := a742.cons_inv
-                obtain ⟨l750, rfl, rfl⟩ := d748.var_inv
-                simp at l750
-                subst l750
-                obtain ⟨rfl, rfl, rfl⟩ := a749.nil_inv
-                obtain ⟨rfl, rfl, rfl⟩ := a728.nil_inv
-                exact «IxonSerialize::put_constant».Path.CPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev734 ev649 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · have hne752 := matchPattern_construct_none (by trivial) nm633
-                simp only [Names.n13917575780398666258] at hne752
-                rcases selectArm_cons_inv sel634 with ⟨mt753, rfl⟩ | ⟨nm754, sel755⟩
-                · obtain ⟨vs756, hv757, -, ml758⟩ := matchPattern_construct_inv mt753
-                  rw [Names.n13917575780398666258] at hv757
-                  subst hv757
-                  obtain ⟨w759, vs760, b761, b762, rfl, mt763, ml764, rfl⟩ := matchListWith_cons_inv ml758
-                  obtain rfl := matchPattern_wildcard_inv mt763
-                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml764
-                  obtain ⟨vs765, m766, c767, cs768, a769, ev770, rfl⟩ := d117.call_inv
-                  rw [instanceName_plain_some] at ev770
-                  obtain ⟨v771, vs774, m775, c776, c777, rfl, d778, a779, rfl⟩ := a769.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d778.literal_inv
-                  obtain ⟨v772, vs780, m781, c782, c783, rfl, d784, a785, rfl⟩ := a779.cons_inv
-                  obtain ⟨vs786, a787, rfl⟩ := d784.array_inv
-                  obtain ⟨v788, vs796, m797, c798, c799, rfl, d800, a801, rfl⟩ := a787.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d800.global_literal_inv Names.c17466073297580105161
-                  obtain ⟨v789, vs802, m803, c804, c805, rfl, d806, a807, rfl⟩ := a801.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d806.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v790, vs808, m809, c810, c811, rfl, d812, a813, rfl⟩ := a807.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d812.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v791, vs814, m815, c816, c817, rfl, d818, a819, rfl⟩ := a813.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d818.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v792, vs820, m821, c822, c823, rfl, d824, a825, rfl⟩ := a819.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d824.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v793, vs826, m827, c828, c829, rfl, d830, a831, rfl⟩ := a825.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d830.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v794, vs832, m833, c834, c835, rfl, d836, a837, rfl⟩ := a831.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d836.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨v795, vs838, m839, c840, c841, rfl, d842, a843, rfl⟩ := a837.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d842.global_literal_inv Names.c9173999864893739538
-                  obtain ⟨rfl, rfl, rfl⟩ := a843.nil_inv
-                  obtain ⟨v773, vs844, m845, c846, c847, rfl, d848, a849, rfl⟩ := a785.cons_inv
-                  obtain ⟨vs850, m851, c852, cs853, a854, ev855, rfl⟩ := d848.call_inv
-                  rw [instanceName_plain_some] at ev855
-                  obtain ⟨v856, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a854.cons_inv
-                  obtain ⟨l864, rfl, rfl⟩ := d862.var_inv
-                  simp at l864
-                  subst l864
-                  obtain ⟨v857, vs865, m866, c867, c868, rfl, d869, a870, rfl⟩ := a863.cons_inv
-                  obtain ⟨l871, rfl, rfl⟩ := d869.var_inv
-                  simp at l871
-                  subst l871
-                  obtain ⟨rfl, rfl, rfl⟩ := a870.nil_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := a849.nil_inv
-                  exact «IxonSerialize::put_constant».Path.RPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev855 ev770 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                · have hne873 := matchPattern_construct_none (by trivial) nm754
-                  simp only [Names.n13917575780398666258] at hne873
-                  rcases selectArm_cons_inv sel755 with ⟨mt874, rfl⟩ | ⟨nm875, sel876⟩
-                  · obtain ⟨vs877, hv878, -, ml879⟩ := matchPattern_construct_inv mt874
-                    rw [Names.n13917575780398666258] at hv878
-                    subst hv878
-                    obtain ⟨w880, vs881, b882, b883, rfl, mt884, ml885, rfl⟩ := matchListWith_cons_inv ml879
-                    obtain rfl := matchPattern_wildcard_inv mt884
-                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml885
-                    obtain ⟨vs886, m887, c888, cs889, a890, ev891, rfl⟩ := d117.call_inv
-                    rw [instanceName_plain_some] at ev891
-                    obtain ⟨v892, vs895, m896, c897, c898, rfl, d899, a900, rfl⟩ := a890.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d899.literal_inv
-                    obtain ⟨v893, vs901, m902, c903, c904, rfl, d905, a906, rfl⟩ := a900.cons_inv
-                    obtain ⟨vs907, a908, rfl⟩ := d905.array_inv
-                    obtain ⟨v909, vs917, m918, c919, c920, rfl, d921, a922, rfl⟩ := a908.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d921.global_literal_inv Names.c9858639577359652784
-                    obtain ⟨v910, vs923, m924, c925, c926, rfl, d927, a928, rfl⟩ := a922.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d927.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v911, vs929, m930, c931, c932, rfl, d933, a934, rfl⟩ := a928.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d933.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v912, vs935, m936, c937, c938, rfl, d939, a940, rfl⟩ := a934.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d939.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v913, vs941, m942, c943, c944, rfl, d945, a946, rfl⟩ := a940.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d945.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v914, vs947, m948, c949, c950, rfl, d951, a952, rfl⟩ := a946.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d951.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v915, vs953, m954, c955, c956, rfl, d957, a958, rfl⟩ := a952.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d957.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨v916, vs959, m960, c961, c962, rfl, d963, a964, rfl⟩ := a958.cons_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := d963.global_literal_inv Names.c9173999864893739538
-                    obtain ⟨rfl, rfl, rfl⟩ := a964.nil_inv
-                    obtain ⟨v894, vs965, m966, c967, c968, rfl, d969, a970, rfl⟩ := a906.cons_inv
-                    obtain ⟨vs971, m972, c973, cs974, a975, ev976, rfl⟩ := d969.call_inv
-                    rw [instanceName_plain_some] at ev976
-                    obtain ⟨v977, vs979, m980, c981, c982, rfl, d983, a984, rfl⟩ := a975.cons_inv
-                    obtain ⟨l985, rfl, rfl⟩ := d983.var_inv
-                    simp at l985
-                    subst l985
-                    obtain ⟨v978, vs986, m987, c988, c989, rfl, d990, a991, rfl⟩ := a984.cons_inv
-                    obtain ⟨l992, rfl, rfl⟩ := d990.var_inv
-                    simp at l992
-                    subst l992
-                    obtain ⟨rfl, rfl, rfl⟩ := a991.nil_inv
-                    obtain ⟨rfl, rfl, rfl⟩ := a970.nil_inv
-                    exact «IxonSerialize::put_constant».Path.IPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev976 ev891 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                  · have hne994 := matchPattern_construct_none (by trivial) nm875
-                    simp only [Names.n13917575780398666258] at hne994
-                    rcases selectArm_cons_inv sel876 with ⟨mt995, rfl⟩ | ⟨nm996, sel997⟩
-                    · obtain ⟨vs998, hv999, -, ml1000⟩ := matchPattern_construct_inv mt995
-                      rw [Names.n13917575780398666258] at hv999
-                      subst hv999
-                      obtain ⟨w1001, vs1002, b1003, b1004, rfl, mt1005, ml1006, rfl⟩ := matchListWith_cons_inv ml1000
-                      obtain rfl := matchPattern_wildcard_inv mt1005
-                      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1006
-                      obtain ⟨vs1007, m1008, c1009, cs1010, a1011, ev1012, rfl⟩ := d117.call_inv
-                      rw [instanceName_plain_some] at ev1012
-                      obtain ⟨v1013, vs1016, m1017, c1018, c1019, rfl, d1020, a1021, rfl⟩ := a1011.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1020.literal_inv
-                      obtain ⟨v1014, vs1022, m1023, c1024, c1025, rfl, d1026, a1027, rfl⟩ := a1021.cons_inv
-                      obtain ⟨vs1028, a1029, rfl⟩ := d1026.array_inv
-                      obtain ⟨v1030, vs1038, m1039, c1040, c1041, rfl, d1042, a1043, rfl⟩ := a1029.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1042.global_literal_inv Names.c16146895348398941544
-                      obtain ⟨v1031, vs1044, m1045, c1046, c1047, rfl, d1048, a1049, rfl⟩ := a1043.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1048.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1032, vs1050, m1051, c1052, c1053, rfl, d1054, a1055, rfl⟩ := a1049.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1054.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1033, vs1056, m1057, c1058, c1059, rfl, d1060, a1061, rfl⟩ := a1055.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1060.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1034, vs1062, m1063, c1064, c1065, rfl, d1066, a1067, rfl⟩ := a1061.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1066.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1035, vs1068, m1069, c1070, c1071, rfl, d1072, a1073, rfl⟩ := a1067.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1072.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1036, vs1074, m1075, c1076, c1077, rfl, d1078, a1079, rfl⟩ := a1073.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1078.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨v1037, vs1080, m1081, c1082, c1083, rfl, d1084, a1085, rfl⟩ := a1079.cons_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := d1084.global_literal_inv Names.c9173999864893739538
-                      obtain ⟨rfl, rfl, rfl⟩ := a1085.nil_inv
-                      obtain ⟨v1015, vs1086, m1087, c1088, c1089, rfl, d1090, a1091, rfl⟩ := a1027.cons_inv
-                      obtain ⟨vs1092, m1093, c1094, cs1095, a1096, ev1097, rfl⟩ := d1090.call_inv
-                      rw [instanceName_plain_some] at ev1097
-                      obtain ⟨v1098, vs1100, m1101, c1102, c1103, rfl, d1104, a1105, rfl⟩ := a1096.cons_inv
-                      obtain ⟨l1106, rfl, rfl⟩ := d1104.var_inv
-                      simp at l1106
-                      subst l1106
-                      obtain ⟨v1099, vs1107, m1108, c1109, c1110, rfl, d1111, a1112, rfl⟩ := a1105.cons_inv
-                      obtain ⟨l1113, rfl, rfl⟩ := d1111.var_inv
-                      simp at l1113
-                      subst l1113
-                      obtain ⟨rfl, rfl, rfl⟩ := a1112.nil_inv
-                      obtain ⟨rfl, rfl, rfl⟩ := a1091.nil_inv
-                      exact «IxonSerialize::put_constant».Path.DPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev92 ev71 ev50 ev1097 ev1012 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                    · have hne1115 := matchPattern_construct_none (by trivial) nm996
-                      simp only [Names.n13917575780398666258] at hne1115
-                      exact (selectArm_nil_inv sel997).elim
-  · have hne1116 := matchPattern_construct_none (by trivial) nm12
-    simp only [Names.n1557030883061810801] at hne1116
+    obtain ⟨x_binders, vs37, b38, b39, rfl, mt40, ml41, rfl⟩ := matchListWith_cons_inv ml36
+    obtain rfl := matchPattern_bind_inv mt40
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml41
+    obtain ⟨v42, m43, bs44, c45, c46, d47, mt48, d49, rfl⟩ := d9.letValue_inv
+    obtain ⟨vs50, m51, c52, cs53, a54, ev55, rfl⟩ := d47.call_inv
+    rw [instanceName_plain_some] at ev55
+    obtain ⟨v56, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a54.cons_inv
+    obtain ⟨l64, rfl, rfl⟩ := d62.var_inv
+    simp at l64
+    subst l64
+    obtain ⟨v57, vs65, m66, c67, c68, rfl, d69, a70, rfl⟩ := a63.cons_inv
+    obtain ⟨vs71, m72, c73, cs74, a75, ev76, rfl⟩ := d69.call_inv
+    rw [instanceName_plain_some] at ev76
+    obtain ⟨v77, vs79, m80, c81, c82, rfl, d83, a84, rfl⟩ := a75.cons_inv
+    obtain ⟨l85, rfl, rfl⟩ := d83.var_inv
+    simp at l85
+    subst l85
+    obtain ⟨v78, vs86, m87, c88, c89, rfl, d90, a91, rfl⟩ := a84.cons_inv
+    obtain ⟨vs92, m93, c94, cs95, a96, ev97, rfl⟩ := d90.call_inv
+    rw [instanceName_plain_some] at ev97
+    obtain ⟨v98, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a96.cons_inv
+    obtain ⟨l106, rfl, rfl⟩ := d104.var_inv
+    simp at l106
+    subst l106
+    obtain ⟨v99, vs107, m108, c109, c110, rfl, d111, a112, rfl⟩ := a105.cons_inv
+    obtain ⟨vs113, m114, c115, cs116, a117, ev118, rfl⟩ := d111.call_inv
+    rw [instanceName_plain_some] at ev118
+    obtain ⟨v119, vs121, m122, c123, c124, rfl, d125, a126, rfl⟩ := a117.cons_inv
+    obtain ⟨l127, rfl, rfl⟩ := d125.var_inv
+    simp at l127
+    subst l127
+    obtain ⟨v120, vs128, m129, c130, c131, rfl, d132, a133, rfl⟩ := a126.cons_inv
+    obtain ⟨l134, rfl, rfl⟩ := d132.var_inv
+    simp at l134
+    subst l134
+    obtain ⟨rfl, rfl, rfl⟩ := a133.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a112.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a91.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a70.nil_inv
+    obtain rfl := matchPattern_bind_inv mt48
+    obtain ⟨v135, m136, bs137, body138, c139, c140, d141, sel142, d143, rfl⟩ := d49.matchValue_inv
+    obtain ⟨l144, rfl, rfl⟩ := d141.var_inv
+    simp at l144
+    subst l144
+    rcases selectArm_cons_inv sel142 with ⟨mt145, rfl⟩ | ⟨nm146, sel147⟩
+    · obtain ⟨vs148, hv149, -, ml150⟩ := matchPattern_construct_inv mt145
+      rw [Names.n13917575780398666258] at hv149
+      subst hv149
+      obtain ⟨x_mutuals, vs151, b152, b153, rfl, mt154, ml155, rfl⟩ := matchListWith_cons_inv ml150
+      obtain rfl := matchPattern_bind_inv mt154
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml155
+      obtain ⟨v156, m157, bs158, c159, c160, d161, mt162, d163, rfl⟩ := d143.letValue_inv
+      obtain ⟨vs164, m165, c166, cs167, a168, ev169, rfl⟩ := d161.call_inv
+      rw [Names.n3472392075165680861] at ev169
+      obtain ⟨v170, vs171, m172, c173, c174, rfl, d175, a176, rfl⟩ := a168.cons_inv
+      obtain ⟨l177, rfl, rfl⟩ := d175.var_inv
+      simp at l177
+      subst l177
+      obtain ⟨rfl, rfl, rfl⟩ := a176.nil_inv
+      obtain rfl := matchPattern_bind_inv mt162
+      obtain ⟨vs178, m179, c180, cs181, a182, ev183, rfl⟩ := d163.call_inv
+      rw [instanceName_plain_some] at ev183
+      obtain ⟨v184, vs187, m188, c189, c190, rfl, d191, a192, rfl⟩ := a182.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d191.literal_inv
+      obtain ⟨v185, vs193, m194, c195, c196, rfl, d197, a198, rfl⟩ := a192.cons_inv
+      obtain ⟨l199, rfl, rfl⟩ := d197.var_inv
+      simp at l199
+      subst l199
+      obtain ⟨v186, vs200, m201, c202, c203, rfl, d204, a205, rfl⟩ := a198.cons_inv
+      obtain ⟨vs206, m207, c208, cs209, a210, ev211, rfl⟩ := d204.call_inv
+      rw [instanceName_plain_some] at ev211
+      obtain ⟨v212, vs214, m215, c216, c217, rfl, d218, a219, rfl⟩ := a210.cons_inv
+      obtain ⟨l220, rfl, rfl⟩ := d218.var_inv
+      simp at l220
+      subst l220
+      obtain ⟨v213, vs221, m222, c223, c224, rfl, d225, a226, rfl⟩ := a219.cons_inv
+      obtain ⟨l227, rfl, rfl⟩ := d225.var_inv
+      simp at l227
+      subst l227
+      obtain ⟨rfl, rfl, rfl⟩ := a226.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a205.nil_inv
+      exact «IxonSerialize::put_constant».Path.Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev169 ev211 ev183 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n3472392075165680861])
+    · have hne229 := matchPattern_construct_none (by trivial) nm146
+      simp only [Names.n13917575780398666258] at hne229
+      rcases selectArm_cons_inv sel147 with ⟨mt230, rfl⟩ | ⟨nm231, sel232⟩
+      · obtain ⟨vs233, hv234, -, ml235⟩ := matchPattern_construct_inv mt230
+        rw [Names.n13917575780398666258] at hv234
+        subst hv234
+        obtain ⟨w236, vs237, b238, b239, rfl, mt240, ml241, rfl⟩ := matchListWith_cons_inv ml235
+        obtain rfl := matchPattern_wildcard_inv mt240
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml241
+        obtain ⟨vs242, m243, c244, cs245, a246, ev247, rfl⟩ := d143.call_inv
+        rw [instanceName_plain_some] at ev247
+        obtain ⟨v248, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a246.cons_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d255.literal_inv
+        obtain ⟨v249, vs257, m258, c259, c260, rfl, d261, a262, rfl⟩ := a256.cons_inv
+        obtain ⟨v263, d264, rfl⟩ := d261.repeat_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d264.global_literal_inv Names.c9173999864893739538
+        obtain ⟨v250, vs265, m266, c267, c268, rfl, d269, a270, rfl⟩ := a262.cons_inv
+        obtain ⟨vs271, m272, c273, cs274, a275, ev276, rfl⟩ := d269.call_inv
+        rw [instanceName_plain_some] at ev276
+        obtain ⟨v277, vs279, m280, c281, c282, rfl, d283, a284, rfl⟩ := a275.cons_inv
+        obtain ⟨l285, rfl, rfl⟩ := d283.var_inv
+        simp at l285
+        subst l285
+        obtain ⟨v278, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a284.cons_inv
+        obtain ⟨l292, rfl, rfl⟩ := d290.var_inv
+        simp at l292
+        subst l292
+        obtain ⟨rfl, rfl, rfl⟩ := a291.nil_inv
+        obtain ⟨rfl, rfl, rfl⟩ := a270.nil_inv
+        exact «IxonSerialize::put_constant».Path.Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev276 ev247 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne294 := matchPattern_construct_none (by trivial) nm231
+        simp only [Names.n13917575780398666258] at hne294
+        rcases selectArm_cons_inv sel232 with ⟨mt295, rfl⟩ | ⟨nm296, sel297⟩
+        · obtain ⟨vs298, hv299, -, ml300⟩ := matchPattern_construct_inv mt295
+          rw [Names.n13917575780398666258] at hv299
+          subst hv299
+          obtain ⟨w301, vs302, b303, b304, rfl, mt305, ml306, rfl⟩ := matchListWith_cons_inv ml300
+          obtain rfl := matchPattern_wildcard_inv mt305
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml306
+          obtain ⟨vs307, m308, c309, cs310, a311, ev312, rfl⟩ := d143.call_inv
+          rw [instanceName_plain_some] at ev312
+          obtain ⟨v313, vs316, m317, c318, c319, rfl, d320, a321, rfl⟩ := a311.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d320.literal_inv
+          obtain ⟨v314, vs322, m323, c324, c325, rfl, d326, a327, rfl⟩ := a321.cons_inv
+          obtain ⟨vs328, a329, rfl⟩ := d326.array_inv
+          obtain ⟨v330, vs338, m339, c340, c341, rfl, d342, a343, rfl⟩ := a329.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d342.global_literal_inv Names.c3167744620027602021
+          obtain ⟨v331, vs344, m345, c346, c347, rfl, d348, a349, rfl⟩ := a343.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d348.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v332, vs350, m351, c352, c353, rfl, d354, a355, rfl⟩ := a349.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d354.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v333, vs356, m357, c358, c359, rfl, d360, a361, rfl⟩ := a355.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d360.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v334, vs362, m363, c364, c365, rfl, d366, a367, rfl⟩ := a361.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d366.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v335, vs368, m369, c370, c371, rfl, d372, a373, rfl⟩ := a367.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d372.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v336, vs374, m375, c376, c377, rfl, d378, a379, rfl⟩ := a373.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d378.global_literal_inv Names.c9173999864893739538
+          obtain ⟨v337, vs380, m381, c382, c383, rfl, d384, a385, rfl⟩ := a379.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d384.global_literal_inv Names.c9173999864893739538
+          obtain ⟨rfl, rfl, rfl⟩ := a385.nil_inv
+          obtain ⟨v315, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a327.cons_inv
+          obtain ⟨vs392, m393, c394, cs395, a396, ev397, rfl⟩ := d390.call_inv
+          rw [instanceName_plain_some] at ev397
+          obtain ⟨v398, vs400, m401, c402, c403, rfl, d404, a405, rfl⟩ := a396.cons_inv
+          obtain ⟨l406, rfl, rfl⟩ := d404.var_inv
+          simp at l406
+          subst l406
+          obtain ⟨v399, vs407, m408, c409, c410, rfl, d411, a412, rfl⟩ := a405.cons_inv
+          obtain ⟨l413, rfl, rfl⟩ := d411.var_inv
+          simp at l413
+          subst l413
+          obtain ⟨rfl, rfl, rfl⟩ := a412.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := a391.nil_inv
+          exact «IxonSerialize::put_constant».Path.Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev397 ev312 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne415 := matchPattern_construct_none (by trivial) nm296
+          simp only [Names.n13917575780398666258] at hne415
+          rcases selectArm_cons_inv sel297 with ⟨mt416, rfl⟩ | ⟨nm417, sel418⟩
+          · obtain ⟨vs419, hv420, -, ml421⟩ := matchPattern_construct_inv mt416
+            rw [Names.n13917575780398666258] at hv420
+            subst hv420
+            obtain ⟨w422, vs423, b424, b425, rfl, mt426, ml427, rfl⟩ := matchListWith_cons_inv ml421
+            obtain rfl := matchPattern_wildcard_inv mt426
+            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml427
+            obtain ⟨vs428, m429, c430, cs431, a432, ev433, rfl⟩ := d143.call_inv
+            rw [instanceName_plain_some] at ev433
+            obtain ⟨v434, vs437, m438, c439, c440, rfl, d441, a442, rfl⟩ := a432.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d441.literal_inv
+            obtain ⟨v435, vs443, m444, c445, c446, rfl, d447, a448, rfl⟩ := a442.cons_inv
+            obtain ⟨vs449, a450, rfl⟩ := d447.array_inv
+            obtain ⟨v451, vs459, m460, c461, c462, rfl, d463, a464, rfl⟩ := a450.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d463.global_literal_inv Names.c1350107512230497446
+            obtain ⟨v452, vs465, m466, c467, c468, rfl, d469, a470, rfl⟩ := a464.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d469.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v453, vs471, m472, c473, c474, rfl, d475, a476, rfl⟩ := a470.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d475.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v454, vs477, m478, c479, c480, rfl, d481, a482, rfl⟩ := a476.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d481.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v455, vs483, m484, c485, c486, rfl, d487, a488, rfl⟩ := a482.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d487.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v456, vs489, m490, c491, c492, rfl, d493, a494, rfl⟩ := a488.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d493.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v457, vs495, m496, c497, c498, rfl, d499, a500, rfl⟩ := a494.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d499.global_literal_inv Names.c9173999864893739538
+            obtain ⟨v458, vs501, m502, c503, c504, rfl, d505, a506, rfl⟩ := a500.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d505.global_literal_inv Names.c9173999864893739538
+            obtain ⟨rfl, rfl, rfl⟩ := a506.nil_inv
+            obtain ⟨v436, vs507, m508, c509, c510, rfl, d511, a512, rfl⟩ := a448.cons_inv
+            obtain ⟨vs513, m514, c515, cs516, a517, ev518, rfl⟩ := d511.call_inv
+            rw [instanceName_plain_some] at ev518
+            obtain ⟨v519, vs521, m522, c523, c524, rfl, d525, a526, rfl⟩ := a517.cons_inv
+            obtain ⟨l527, rfl, rfl⟩ := d525.var_inv
+            simp at l527
+            subst l527
+            obtain ⟨v520, vs528, m529, c530, c531, rfl, d532, a533, rfl⟩ := a526.cons_inv
+            obtain ⟨l534, rfl, rfl⟩ := d532.var_inv
+            simp at l534
+            subst l534
+            obtain ⟨rfl, rfl, rfl⟩ := a533.nil_inv
+            obtain ⟨rfl, rfl, rfl⟩ := a512.nil_inv
+            exact «IxonSerialize::put_constant».Path.Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev518 ev433 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne536 := matchPattern_construct_none (by trivial) nm417
+            simp only [Names.n13917575780398666258] at hne536
+            rcases selectArm_cons_inv sel418 with ⟨mt537, rfl⟩ | ⟨nm538, sel539⟩
+            · obtain ⟨vs540, hv541, -, ml542⟩ := matchPattern_construct_inv mt537
+              rw [Names.n13917575780398666258] at hv541
+              subst hv541
+              obtain ⟨w543, vs544, b545, b546, rfl, mt547, ml548, rfl⟩ := matchListWith_cons_inv ml542
+              obtain rfl := matchPattern_wildcard_inv mt547
+              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml548
+              obtain ⟨vs549, m550, c551, cs552, a553, ev554, rfl⟩ := d143.call_inv
+              rw [instanceName_plain_some] at ev554
+              obtain ⟨v555, vs558, m559, c560, c561, rfl, d562, a563, rfl⟩ := a553.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d562.literal_inv
+              obtain ⟨v556, vs564, m565, c566, c567, rfl, d568, a569, rfl⟩ := a563.cons_inv
+              obtain ⟨vs570, a571, rfl⟩ := d568.array_inv
+              obtain ⟨v572, vs580, m581, c582, c583, rfl, d584, a585, rfl⟩ := a571.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d584.global_literal_inv Names.c4658543753026666081
+              obtain ⟨v573, vs586, m587, c588, c589, rfl, d590, a591, rfl⟩ := a585.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d590.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v574, vs592, m593, c594, c595, rfl, d596, a597, rfl⟩ := a591.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d596.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v575, vs598, m599, c600, c601, rfl, d602, a603, rfl⟩ := a597.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d602.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v576, vs604, m605, c606, c607, rfl, d608, a609, rfl⟩ := a603.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d608.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v577, vs610, m611, c612, c613, rfl, d614, a615, rfl⟩ := a609.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d614.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v578, vs616, m617, c618, c619, rfl, d620, a621, rfl⟩ := a615.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d620.global_literal_inv Names.c9173999864893739538
+              obtain ⟨v579, vs622, m623, c624, c625, rfl, d626, a627, rfl⟩ := a621.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d626.global_literal_inv Names.c9173999864893739538
+              obtain ⟨rfl, rfl, rfl⟩ := a627.nil_inv
+              obtain ⟨v557, vs628, m629, c630, c631, rfl, d632, a633, rfl⟩ := a569.cons_inv
+              obtain ⟨vs634, m635, c636, cs637, a638, ev639, rfl⟩ := d632.call_inv
+              rw [instanceName_plain_some] at ev639
+              obtain ⟨v640, vs642, m643, c644, c645, rfl, d646, a647, rfl⟩ := a638.cons_inv
+              obtain ⟨l648, rfl, rfl⟩ := d646.var_inv
+              simp at l648
+              subst l648
+              obtain ⟨v641, vs649, m650, c651, c652, rfl, d653, a654, rfl⟩ := a647.cons_inv
+              obtain ⟨l655, rfl, rfl⟩ := d653.var_inv
+              simp at l655
+              subst l655
+              obtain ⟨rfl, rfl, rfl⟩ := a654.nil_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a633.nil_inv
+              exact «IxonSerialize::put_constant».Path.Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev639 ev554 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            · have hne657 := matchPattern_construct_none (by trivial) nm538
+              simp only [Names.n13917575780398666258] at hne657
+              rcases selectArm_cons_inv sel539 with ⟨mt658, rfl⟩ | ⟨nm659, sel660⟩
+              · obtain ⟨vs661, hv662, -, ml663⟩ := matchPattern_construct_inv mt658
+                rw [Names.n13917575780398666258] at hv662
+                subst hv662
+                obtain ⟨w664, vs665, b666, b667, rfl, mt668, ml669, rfl⟩ := matchListWith_cons_inv ml663
+                obtain rfl := matchPattern_wildcard_inv mt668
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml669
+                obtain ⟨vs670, m671, c672, cs673, a674, ev675, rfl⟩ := d143.call_inv
+                rw [instanceName_plain_some] at ev675
+                obtain ⟨v676, vs679, m680, c681, c682, rfl, d683, a684, rfl⟩ := a674.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d683.literal_inv
+                obtain ⟨v677, vs685, m686, c687, c688, rfl, d689, a690, rfl⟩ := a684.cons_inv
+                obtain ⟨vs691, a692, rfl⟩ := d689.array_inv
+                obtain ⟨v693, vs701, m702, c703, c704, rfl, d705, a706, rfl⟩ := a692.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d705.global_literal_inv Names.c11500736482030662876
+                obtain ⟨v694, vs707, m708, c709, c710, rfl, d711, a712, rfl⟩ := a706.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d711.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v695, vs713, m714, c715, c716, rfl, d717, a718, rfl⟩ := a712.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d717.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v696, vs719, m720, c721, c722, rfl, d723, a724, rfl⟩ := a718.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d723.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v697, vs725, m726, c727, c728, rfl, d729, a730, rfl⟩ := a724.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d729.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v698, vs731, m732, c733, c734, rfl, d735, a736, rfl⟩ := a730.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d735.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v699, vs737, m738, c739, c740, rfl, d741, a742, rfl⟩ := a736.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d741.global_literal_inv Names.c9173999864893739538
+                obtain ⟨v700, vs743, m744, c745, c746, rfl, d747, a748, rfl⟩ := a742.cons_inv
+                obtain ⟨rfl, rfl, rfl⟩ := d747.global_literal_inv Names.c9173999864893739538
+                obtain ⟨rfl, rfl, rfl⟩ := a748.nil_inv
+                obtain ⟨v678, vs749, m750, c751, c752, rfl, d753, a754, rfl⟩ := a690.cons_inv
+                obtain ⟨vs755, m756, c757, cs758, a759, ev760, rfl⟩ := d753.call_inv
+                rw [instanceName_plain_some] at ev760
+                obtain ⟨v761, vs763, m764, c765, c766, rfl, d767, a768, rfl⟩ := a759.cons_inv
+                obtain ⟨l769, rfl, rfl⟩ := d767.var_inv
+                simp at l769
+                subst l769
+                obtain ⟨v762, vs770, m771, c772, c773, rfl, d774, a775, rfl⟩ := a768.cons_inv
+                obtain ⟨l776, rfl, rfl⟩ := d774.var_inv
+                simp at l776
+                subst l776
+                obtain ⟨rfl, rfl, rfl⟩ := a775.nil_inv
+                obtain ⟨rfl, rfl, rfl⟩ := a754.nil_inv
+                exact «IxonSerialize::put_constant».Path.CPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev760 ev675 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne778 := matchPattern_construct_none (by trivial) nm659
+                simp only [Names.n13917575780398666258] at hne778
+                rcases selectArm_cons_inv sel660 with ⟨mt779, rfl⟩ | ⟨nm780, sel781⟩
+                · obtain ⟨vs782, hv783, -, ml784⟩ := matchPattern_construct_inv mt779
+                  rw [Names.n13917575780398666258] at hv783
+                  subst hv783
+                  obtain ⟨w785, vs786, b787, b788, rfl, mt789, ml790, rfl⟩ := matchListWith_cons_inv ml784
+                  obtain rfl := matchPattern_wildcard_inv mt789
+                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml790
+                  obtain ⟨vs791, m792, c793, cs794, a795, ev796, rfl⟩ := d143.call_inv
+                  rw [instanceName_plain_some] at ev796
+                  obtain ⟨v797, vs800, m801, c802, c803, rfl, d804, a805, rfl⟩ := a795.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d804.literal_inv
+                  obtain ⟨v798, vs806, m807, c808, c809, rfl, d810, a811, rfl⟩ := a805.cons_inv
+                  obtain ⟨vs812, a813, rfl⟩ := d810.array_inv
+                  obtain ⟨v814, vs822, m823, c824, c825, rfl, d826, a827, rfl⟩ := a813.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d826.global_literal_inv Names.c17466073297580105161
+                  obtain ⟨v815, vs828, m829, c830, c831, rfl, d832, a833, rfl⟩ := a827.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d832.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v816, vs834, m835, c836, c837, rfl, d838, a839, rfl⟩ := a833.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d838.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v817, vs840, m841, c842, c843, rfl, d844, a845, rfl⟩ := a839.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d844.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v818, vs846, m847, c848, c849, rfl, d850, a851, rfl⟩ := a845.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d850.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v819, vs852, m853, c854, c855, rfl, d856, a857, rfl⟩ := a851.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d856.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v820, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a857.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d862.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨v821, vs864, m865, c866, c867, rfl, d868, a869, rfl⟩ := a863.cons_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d868.global_literal_inv Names.c9173999864893739538
+                  obtain ⟨rfl, rfl, rfl⟩ := a869.nil_inv
+                  obtain ⟨v799, vs870, m871, c872, c873, rfl, d874, a875, rfl⟩ := a811.cons_inv
+                  obtain ⟨vs876, m877, c878, cs879, a880, ev881, rfl⟩ := d874.call_inv
+                  rw [instanceName_plain_some] at ev881
+                  obtain ⟨v882, vs884, m885, c886, c887, rfl, d888, a889, rfl⟩ := a880.cons_inv
+                  obtain ⟨l890, rfl, rfl⟩ := d888.var_inv
+                  simp at l890
+                  subst l890
+                  obtain ⟨v883, vs891, m892, c893, c894, rfl, d895, a896, rfl⟩ := a889.cons_inv
+                  obtain ⟨l897, rfl, rfl⟩ := d895.var_inv
+                  simp at l897
+                  subst l897
+                  obtain ⟨rfl, rfl, rfl⟩ := a896.nil_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := a875.nil_inv
+                  exact «IxonSerialize::put_constant».Path.RPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev881 ev796 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                · have hne899 := matchPattern_construct_none (by trivial) nm780
+                  simp only [Names.n13917575780398666258] at hne899
+                  rcases selectArm_cons_inv sel781 with ⟨mt900, rfl⟩ | ⟨nm901, sel902⟩
+                  · obtain ⟨vs903, hv904, -, ml905⟩ := matchPattern_construct_inv mt900
+                    rw [Names.n13917575780398666258] at hv904
+                    subst hv904
+                    obtain ⟨w906, vs907, b908, b909, rfl, mt910, ml911, rfl⟩ := matchListWith_cons_inv ml905
+                    obtain rfl := matchPattern_wildcard_inv mt910
+                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml911
+                    obtain ⟨vs912, m913, c914, cs915, a916, ev917, rfl⟩ := d143.call_inv
+                    rw [instanceName_plain_some] at ev917
+                    obtain ⟨v918, vs921, m922, c923, c924, rfl, d925, a926, rfl⟩ := a916.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d925.literal_inv
+                    obtain ⟨v919, vs927, m928, c929, c930, rfl, d931, a932, rfl⟩ := a926.cons_inv
+                    obtain ⟨vs933, a934, rfl⟩ := d931.array_inv
+                    obtain ⟨v935, vs943, m944, c945, c946, rfl, d947, a948, rfl⟩ := a934.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d947.global_literal_inv Names.c9858639577359652784
+                    obtain ⟨v936, vs949, m950, c951, c952, rfl, d953, a954, rfl⟩ := a948.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d953.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v937, vs955, m956, c957, c958, rfl, d959, a960, rfl⟩ := a954.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d959.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v938, vs961, m962, c963, c964, rfl, d965, a966, rfl⟩ := a960.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d965.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v939, vs967, m968, c969, c970, rfl, d971, a972, rfl⟩ := a966.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d971.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v940, vs973, m974, c975, c976, rfl, d977, a978, rfl⟩ := a972.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d977.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v941, vs979, m980, c981, c982, rfl, d983, a984, rfl⟩ := a978.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d983.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨v942, vs985, m986, c987, c988, rfl, d989, a990, rfl⟩ := a984.cons_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := d989.global_literal_inv Names.c9173999864893739538
+                    obtain ⟨rfl, rfl, rfl⟩ := a990.nil_inv
+                    obtain ⟨v920, vs991, m992, c993, c994, rfl, d995, a996, rfl⟩ := a932.cons_inv
+                    obtain ⟨vs997, m998, c999, cs1000, a1001, ev1002, rfl⟩ := d995.call_inv
+                    rw [instanceName_plain_some] at ev1002
+                    obtain ⟨v1003, vs1005, m1006, c1007, c1008, rfl, d1009, a1010, rfl⟩ := a1001.cons_inv
+                    obtain ⟨l1011, rfl, rfl⟩ := d1009.var_inv
+                    simp at l1011
+                    subst l1011
+                    obtain ⟨v1004, vs1012, m1013, c1014, c1015, rfl, d1016, a1017, rfl⟩ := a1010.cons_inv
+                    obtain ⟨l1018, rfl, rfl⟩ := d1016.var_inv
+                    simp at l1018
+                    subst l1018
+                    obtain ⟨rfl, rfl, rfl⟩ := a1017.nil_inv
+                    obtain ⟨rfl, rfl, rfl⟩ := a996.nil_inv
+                    exact «IxonSerialize::put_constant».Path.IPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev1002 ev917 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · have hne1020 := matchPattern_construct_none (by trivial) nm901
+                    simp only [Names.n13917575780398666258] at hne1020
+                    rcases selectArm_cons_inv sel902 with ⟨mt1021, rfl⟩ | ⟨nm1022, sel1023⟩
+                    · obtain ⟨vs1024, hv1025, -, ml1026⟩ := matchPattern_construct_inv mt1021
+                      rw [Names.n13917575780398666258] at hv1025
+                      subst hv1025
+                      obtain ⟨w1027, vs1028, b1029, b1030, rfl, mt1031, ml1032, rfl⟩ := matchListWith_cons_inv ml1026
+                      obtain rfl := matchPattern_wildcard_inv mt1031
+                      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1032
+                      obtain ⟨vs1033, m1034, c1035, cs1036, a1037, ev1038, rfl⟩ := d143.call_inv
+                      rw [instanceName_plain_some] at ev1038
+                      obtain ⟨v1039, vs1042, m1043, c1044, c1045, rfl, d1046, a1047, rfl⟩ := a1037.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1046.literal_inv
+                      obtain ⟨v1040, vs1048, m1049, c1050, c1051, rfl, d1052, a1053, rfl⟩ := a1047.cons_inv
+                      obtain ⟨vs1054, a1055, rfl⟩ := d1052.array_inv
+                      obtain ⟨v1056, vs1064, m1065, c1066, c1067, rfl, d1068, a1069, rfl⟩ := a1055.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1068.global_literal_inv Names.c16146895348398941544
+                      obtain ⟨v1057, vs1070, m1071, c1072, c1073, rfl, d1074, a1075, rfl⟩ := a1069.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1074.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1058, vs1076, m1077, c1078, c1079, rfl, d1080, a1081, rfl⟩ := a1075.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1080.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1059, vs1082, m1083, c1084, c1085, rfl, d1086, a1087, rfl⟩ := a1081.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1086.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1060, vs1088, m1089, c1090, c1091, rfl, d1092, a1093, rfl⟩ := a1087.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1092.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1061, vs1094, m1095, c1096, c1097, rfl, d1098, a1099, rfl⟩ := a1093.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1098.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1062, vs1100, m1101, c1102, c1103, rfl, d1104, a1105, rfl⟩ := a1099.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1104.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨v1063, vs1106, m1107, c1108, c1109, rfl, d1110, a1111, rfl⟩ := a1105.cons_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := d1110.global_literal_inv Names.c9173999864893739538
+                      obtain ⟨rfl, rfl, rfl⟩ := a1111.nil_inv
+                      obtain ⟨v1041, vs1112, m1113, c1114, c1115, rfl, d1116, a1117, rfl⟩ := a1053.cons_inv
+                      obtain ⟨vs1118, m1119, c1120, cs1121, a1122, ev1123, rfl⟩ := d1116.call_inv
+                      rw [instanceName_plain_some] at ev1123
+                      obtain ⟨v1124, vs1126, m1127, c1128, c1129, rfl, d1130, a1131, rfl⟩ := a1122.cons_inv
+                      obtain ⟨l1132, rfl, rfl⟩ := d1130.var_inv
+                      simp at l1132
+                      subst l1132
+                      obtain ⟨v1125, vs1133, m1134, c1135, c1136, rfl, d1137, a1138, rfl⟩ := a1131.cons_inv
+                      obtain ⟨l1139, rfl, rfl⟩ := d1137.var_inv
+                      simp at l1139
+                      subst l1139
+                      obtain ⟨rfl, rfl, rfl⟩ := a1138.nil_inv
+                      obtain ⟨rfl, rfl, rfl⟩ := a1117.nil_inv
+                      exact «IxonSerialize::put_constant».Path.DPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 ev118 ev97 ev76 ev55 ev1123 ev1038 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    · have hne1141 := matchPattern_construct_none (by trivial) nm1022
+                      simp only [Names.n13917575780398666258] at hne1141
+                      exact (selectArm_nil_inv sel1023).elim
+  · have hne1142 := matchPattern_construct_none (by trivial) nm12
+    simp only [Names.n1557030883061810801] at hne1142
     exact (selectArm_nil_inv sel13).elim
 
 end IxVM.Refinement.Obs

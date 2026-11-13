@@ -1,7 +1,57 @@
-//! Independent usage, ownership, and relative-locality contracts.
+//! The v4 contract vocabulary: independent usage, ownership, and
+//! relative-locality contracts (mirrors `IxC/Ixon/Types/Contract.lean`).
+//!
+//! These types are not on the wire: a record's modes are
+//! [`crate::modes`]. They remain the vocabulary of the Ixon text syntax
+//! ([`crate::syntax`]), which mirrors Lean's `Ix/IxonSyntax`.
 
-use crate::expr::{Owned, Uses};
-use crate::serialize::get_u8;
+/// Computational usage, independent of ownership and locality.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Uses {
+  Erased = 0,
+  Linear = 1,
+  Affine = 2,
+  Many = 3,
+}
+
+impl Uses {
+  pub const fn to_bits(self) -> u8 {
+    self as u8
+  }
+
+  pub const fn from_bits(bits: u8) -> Option<Self> {
+    match bits {
+      0 => Some(Self::Erased),
+      1 => Some(Self::Linear),
+      2 => Some(Self::Affine),
+      3 => Some(Self::Many),
+      _ => None,
+    }
+  }
+}
+
+/// Ownership of a bound or returned value, independent of usage and locality.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Owned {
+  Unique = 0,
+  Shared = 1,
+}
+
+impl Owned {
+  pub const fn to_bits(self) -> u8 {
+    self as u8
+  }
+
+  pub const fn from_bits(bits: u8) -> Option<Self> {
+    match bits {
+      0 => Some(Self::Unique),
+      1 => Some(Self::Shared),
+      _ => None,
+    }
+  }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -155,26 +205,6 @@ impl LetContract {
       binder,
     })
   }
-}
-
-pub fn put_value_contract(value: &ValueContract, buf: &mut Vec<u8>) {
-  buf.push(value.to_bits());
-}
-
-pub fn get_value_contract(buf: &mut &[u8]) -> Result<ValueContract, String> {
-  let bits = get_u8(buf)?;
-  ValueContract::from_bits(bits)
-    .ok_or_else(|| format!("invalid value contract {bits}"))
-}
-
-pub fn put_binder_contract(binder: &BinderContract, buf: &mut Vec<u8>) {
-  buf.push(binder.to_bits());
-}
-
-pub fn get_binder_contract(buf: &mut &[u8]) -> Result<BinderContract, String> {
-  let bits = get_u8(buf)?;
-  BinderContract::from_bits(bits)
-    .ok_or_else(|| format!("invalid binder contract {bits}"))
 }
 
 #[cfg(test)]

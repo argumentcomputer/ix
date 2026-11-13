@@ -145,9 +145,13 @@ def ixonExprTests : TestSeq :=
   test "Ixon.Expr.nat" (roundtripIxonExpr (.nat 42) == .nat 42) ++
   test "Ixon.Expr.share" (roundtripIxonExpr (.share 0) == .share 0) ++
   test "Ixon.Expr.app" (roundtripIxonExpr (.app (.var 0) (.var 1)) == .app (.var 0) (.var 1)) ++
-  test "Ixon.Expr.lam affine" (roundtripIxonExpr (.lam .affine (.sort 0) (.var 0)) == .lam .affine (.sort 0) (.var 0)) ++
-  test "Ixon.Expr.all linear unique" (roundtripIxonExpr (.all .linear .unique (.sort 0) (.var 0)) == .all .linear .unique (.sort 0) (.var 0)) ++
-  test "Ixon.Expr.letE" (roundtripIxonExpr (.letE (.lean true) (.sort 0) (.var 0) (.var 1)) == .letE (.lean true) (.sort 0) (.var 0) (.var 1)) ++
+  test "Ixon.Expr.lam" (roundtripIxonExpr (.lam (.sort 0) (.var 0)) == .lam (.sort 0) (.var 0)) ++
+  test "Ixon.Expr.all" (roundtripIxonExpr (.all (.sort 0) (.var 0)) == .all (.sort 0) (.var 0)) ++
+  test "Ixon.Expr.letE" (roundtripIxonExpr (.leanLet true (.sort 0) (.var 0) (.var 1)) == .leanLet true (.sort 0) (.var 0) (.var 1)) ++
+  test "Ixon.Expr.letE unique" (roundtripIxonExpr (.letE false (.value .unique) (.sort 0) (.var 0) (.var 1)) ==
+    .letE false (.value .unique) (.sort 0) (.var 0) (.var 1)) ++
+  test "Ixon.Expr.letE borrow" (roundtripIxonExpr (.letE true .borrow (.sort 0) (.var 0) (.var 1)) ==
+    .letE true .borrow (.sort 0) (.var 0) (.var 1)) ++
   test "Ixon.Expr.prj" (roundtripIxonExpr (.prj 0 1 (.var 0)) == .prj 0 1 (.var 0))
 
 /-! ## Metadata Unit Tests -/
@@ -228,6 +232,11 @@ opaque rsEqExprSerialization : @& Expr → @& ByteArray → Bool
 
 @[extern "rs_eq_constant_serialization"]
 opaque rsEqConstantSerialization : @& Constant → @& ByteArray → Bool
+
+/-- Whether Rust reads the bytes as one canonical record (`Constant::get`, the
+same bytes again, `Constant::binders_canonical`). -/
+@[extern "rs_constant_canonical"]
+opaque rsConstantCanonical : @& ByteArray → Bool
 
 @[extern "rs_eq_env_serialization"]
 opaque rsEqEnvSerialization : @& RawEnv → @& ByteArray → Bool

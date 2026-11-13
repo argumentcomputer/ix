@@ -54,15 +54,14 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- counts are unchanged.
 -- Declining the rules the kernel cannot certify, instead of storing them inert, adds 17
 -- compiled functions here (`IxC/Kernel/Audit/Roots.lean`).
--- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
--- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
--- ruling counts are unchanged.
--- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
--- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
+-- The level-count bound (`Ixon.maxLevelCount`, the canonical check's and the compiler's)
+-- adds 38 compiled functions. Externs, implemented_by, unsafe, csimp and every ruling are
 -- unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions and one inherited extern, as for
+-- `Admission.checkBytes`.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7693 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7719 compiled functions; inherited externs 126, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

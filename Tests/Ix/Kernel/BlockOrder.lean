@@ -21,20 +21,20 @@ local instance [BEq α] : BEq (Except Error α) where
 def owner : Address := address 42
 
 def defn (value : Ixon.Expr) (typ : Ixon.Expr := .sort 0) : Ixon.MutConst :=
-  .defn ⟨.defn, .safe, 0, typ, value⟩
+  .defn ⟨.defn, .safe, {}, 0, typ, value⟩
 
 def indc (params : UInt64) (ctors : Array Ixon.Constructor := #[]) : Ixon.MutConst :=
   .indc ⟨false, 0, params, 0, .sort 0, ctors⟩
 
 def record (members : Array Ixon.MutConst) : Ixon.Constant :=
-  ⟨.muts members, #[], #[], #[.zero, .succ .zero, .var 0]⟩
+  ⟨.muts members, #[], #[], #[.zero, .succ .zero, .var 0], #[]⟩
 
 -- A block of recursors is checked in motive order: member `j` must eliminate
 -- motive `j` (the head of its result, as the reader reads it) and declare one
 -- motive per member. `motive j` is a recursor of a block with `motives`
 -- motives (no parameters, minors or indices) whose type ends in motive `j`.
 def motive (j : Nat) (motives : UInt64 := 2) : Ixon.MutConst :=
-  let binder (body : Ixon.Expr) : Ixon.Expr := .all .many .shared (.sort 0) body
+  let binder (body : Ixon.Expr) : Ixon.Expr := .all (.sort 0) body
   let depth := motives.toNat + 1
   .recr ⟨false, false, 0, 0, 0, motives, 0,
     (List.range depth).foldl (fun body _ => binder body) (.var (UInt64.ofNat (depth - 1 - j))), #[]⟩
@@ -64,6 +64,6 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 #guard recordCheck (record #[motive 0, indc 0]) == .ok ()
 #guard recordCheck (record #[indc 0, motive 0]) == .ok ()
 -- a record that is not a block is unconstrained
-#guard recordCheck ⟨.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩, #[], #[], #[]⟩ == .ok ()
+#guard recordCheck ⟨.defn ⟨.defn, .safe, {}, 0, .sort 0, .sort 0⟩, #[], #[], #[], #[]⟩ == .ok ()
 
 end Tests.Ix.Kernel.BlockOrder

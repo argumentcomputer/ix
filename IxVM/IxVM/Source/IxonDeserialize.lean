@@ -134,38 +134,8 @@ def get_app_telescope := aiur_fn⟦
     }
 ⟧
 
-def value_contract_from_bits := aiur_fn⟦
-  fn value_contract_from_bits(owned_bit: Field, locality_bit: Field) -> Ixon::ValueContract {
-      let owned = match owned_bit { 0 => {  Ixon::Owned::Unique } , 1 => {  Ixon::Owned::Shared } , };
-      let locality = match locality_bit { 0 => {  Ixon::Locality::Unrestricted } , 1 => {  Ixon::Locality::Local } , };
-      Ixon::ValueContract::Mk(owned, locality)
-    }
-⟧
-
-def binder_contract_from_bits := aiur_fn⟦
-  fn binder_contract_from_bits(b0: Field, b1: Field, b2: Field, b3: Field) -> Ixon::BinderContract {
-      let uses = match b0 + 2 * b1 { 0 => {  Ixon::Uses::Erased } , 1 => {  Ixon::Uses::Linear } , 2 => {  Ixon::Uses::Affine } , 3 => {  Ixon::Uses::Many } , };
-      Ixon::BinderContract::Mk(uses, value_contract_from_bits(b2, b3))
-    }
-⟧
-
-def get_lam_mode := aiur_fn⟦
-  fn get_lam_mode(stream: Bytes::Stream) -> (Ixon::BinderContract, Bytes::Stream) {
-      let (mode, s) = read_byte(stream);
-      let [b0, b1, b2, b3, b4, b5, b6, b7] = UInt8::bit_decomposition(mode);
-      assert_eq!(b4 + b5 + b6 + b7, 0, "reserved binder contract bits");
-      (binder_contract_from_bits(b0, b1, b2, b3), s)
-    }
-⟧
-
-def get_all_mode := aiur_fn⟦
-  fn get_all_mode(stream: Bytes::Stream) -> ((Ixon::BinderContract, Ixon::ValueContract), Bytes::Stream) {
-      let (mode, s) = read_byte(stream);
-      let [b0, b1, b2, b3, b4, b5, b6, b7] = UInt8::bit_decomposition(mode);
-      assert_eq!(b6 + b7, 0, "reserved forall contract bits");
-      ((binder_contract_from_bits(b0, b1, b2, b3), value_contract_from_bits(b4, b5)), s)
-    }
-⟧
+  -- A `lam` or `all` telescope: its binders' types, then its body. A binder's mode is not in
+  -- the expression but in its node of the record's binder-data section.
 
 def get_lam_telescope := aiur_fn⟦
   fn get_lam_telescope(stream: Bytes::Stream, count: UInt64::U64) -> (&Ixon::Expr, Bytes::Stream) {
@@ -174,16 +144,15 @@ def get_lam_telescope := aiur_fn⟦
         1 => {
           let (body, s) = get_expr(stream);
           match (*(body)) {
-            Ixon::Expr::Lam(_, _, _) => {
+            Ixon::Expr::Lam(_, _) => {
               assert_eq!(0, 1, "non-canonical lambda telescope");
               (body, s) } ,
             _ => {  (body, s) } ,
           } } ,
         0 => {
-          let (contract, s) = get_lam_mode(stream);
-          let (ty, s2) = get_expr(s);
+          let (ty, s2) = get_expr(stream);
           let (inner, s3) = get_lam_telescope(s2, UInt64::saturating_pred(count));
-          ((&(Ixon::Expr::Lam(contract, ty, inner))), s3) } ,
+          ((&(Ixon::Expr::Lam(ty, inner))), s3) } ,
       }
     }
 ⟧
@@ -195,17 +164,15 @@ def get_all_telescope := aiur_fn⟦
         1 => {
           let (body, s) = get_expr(stream);
           match (*(body)) {
-            Ixon::Expr::All(_, _, _, _) => {
+            Ixon::Expr::All(_, _) => {
               assert_eq!(0, 1, "non-canonical forall telescope");
               (body, s) } ,
             _ => {  (body, s) } ,
           } } ,
         0 => {
-          let (mode, s) = get_all_mode(stream);
-          let (input, result) = mode;
-          let (ty, s2) = get_expr(s);
+          let (ty, s2) = get_expr(stream);
           let (inner, s3) = get_all_telescope(s2, UInt64::saturating_pred(count));
-          ((&(Ixon::Expr::All(input, result, ty, inner))), s3) } ,
+          ((&(Ixon::Expr::All(ty, inner))), s3) } ,
       }
     }
 ⟧
@@ -265,19 +232,19 @@ def get_expr := aiur_fn⟦
     }
 ⟧
 
+  -- A `let`'s header value is `nonDep + 2 · m` for its mode's code `m` (IxC's `LetMode.header`):
+  -- every value below 16 is a header, and none above. The `Let` node keeps the value.
+
 def get_expr_let := aiur_fn⟦
   fn get_expr_let(s: Bytes::Stream, size: UInt64::U64) -> (&Ixon::Expr, Bytes::Stream) {
       let [head, b1, b2, b3, b4, b5, b6, b7] = size;
       assert_eq!(UInt8::to_field(b1) + UInt8::to_field(b2) + UInt8::to_field(b3) + UInt8::to_field(b4) +
-        UInt8::to_field(b5) + UInt8::to_field(b6) + UInt8::to_field(b7), 0, "oversized let flags");
-      assert_eq!(UInt8::less_than(head, UInt8::BYTE_4), 1, "reserved let flags");
-      let bits = UInt8::bit_decomposition(head);
-      let kind = match bits[1] { 0 => {  Ixon::LetKind::Value } , 1 => {  Ixon::LetKind::BorrowShared } , };
-      let (contract, s1) = get_lam_mode(s);
-      let (ty, s2) = get_expr(s1);
-      let (value, s3) = get_expr(s2);
-      let (body, rest) = get_expr(s3);
-      ((&(Ixon::Expr::Let(Ixon::LetContract::Mk(bits[0], kind, contract), ty, value, body))), rest)
+        UInt8::to_field(b5) + UInt8::to_field(b6) + UInt8::to_field(b7), 0, "oversized let header");
+      assert_eq!(UInt8::less_than(head, UInt8::BYTE_16), 1, "let header 16 or more");
+      let (ty, s1) = get_expr(s);
+      let (value, s2) = get_expr(s1);
+      let (body, rest) = get_expr(s2);
+      ((&(Ixon::Expr::Let(UInt8::to_field(head), ty, value, body))), rest)
     }
 ⟧
 
@@ -431,18 +398,46 @@ def get_univs := aiur_fn⟦
     }
 ⟧
 
+  -- A definition's first byte: its kind and safety in the low nibble (`kind · 4 + safety`, both
+  -- below 3), the code of its assertions (IxC's `DefAsserts`) in the high nibble. A byte with no
+  -- assertions is one of the nine below; any other is read by `unpack_def_asserts`.
+
 def unpack_def_kind_safety := aiur_fn⟦
-  fn unpack_def_kind_safety(byte: UInt8::U8) -> (Ixon::DefKind, Ixon::DefinitionSafety) {
+  fn unpack_def_kind_safety(byte: UInt8::U8) -> (Ixon::DefKind, Ixon::DefinitionSafety, Field) {
       match UInt8::to_field(byte) {
-        0 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Unsafe) } ,
-        1 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Safe) } ,
-        2 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Partial) } ,
-        4 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Unsafe) } ,
-        5 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Safe) } ,
-        6 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Partial) } ,
-        8 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Unsafe) } ,
-        9 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Safe) } ,
-        10 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Partial) } ,
+        0 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Unsafe, 0) } ,
+        1 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Safe, 0) } ,
+        2 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Partial, 0) } ,
+        4 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Unsafe, 0) } ,
+        5 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Safe, 0) } ,
+        6 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Partial, 0) } ,
+        8 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Unsafe, 0) } ,
+        9 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Safe, 0) } ,
+        10 => {  (Ixon::DefKind::Theorem, Ixon::DefinitionSafety::Partial, 0) } ,
+        _ => {  unpack_def_asserts(byte) } ,
+      }
+    }
+⟧
+
+  -- A definition's first byte that is none of the nine without assertions. Its high nibble is a
+  -- `DefAsserts` code: the allocation's code (0 to 2, not 3) in bits 4 and 5, a bounded stack in
+  -- bit 6, bit 7 clear. Its low nibble is a definition's or an opaque's: a theorem asserts
+  -- nothing (IxC's `Constant.modesCanonical`). A byte whose high nibble is 0 is one of the nine
+  -- or no definition's, so a low nibble without an arm here is refused either way.
+
+def unpack_def_asserts := aiur_fn⟦
+  fn unpack_def_asserts(byte: UInt8::U8) -> (Ixon::DefKind, Ixon::DefinitionSafety, Field) {
+      let [b0, b1, b2, b3, b4, b5, b6, b7] = UInt8::bit_decomposition(byte);
+      assert_eq!(b7, 0, "definition: reserved assertion bit");
+      assert_eq!(b4 * b5, 0, "definition: allocation assertion code 3");
+      let asserts = b4 + 2 * b5 + 4 * b6;
+      match b0 + 2 * b1 + 4 * b2 + 8 * b3 {
+        0 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Unsafe, asserts) } ,
+        1 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Safe, asserts) } ,
+        2 => {  (Ixon::DefKind::Definition, Ixon::DefinitionSafety::Partial, asserts) } ,
+        4 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Unsafe, asserts) } ,
+        5 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Safe, asserts) } ,
+        6 => {  (Ixon::DefKind::Opaque, Ixon::DefinitionSafety::Partial, asserts) } ,
       }
     }
 ⟧
@@ -450,11 +445,11 @@ def unpack_def_kind_safety := aiur_fn⟦
 def get_definition := aiur_fn⟦
   fn get_definition(stream: Bytes::Stream) -> (Ixon::Definition, Bytes::Stream) {
       let (packed, s) = read_byte(stream);
-      let (kind, safety) = unpack_def_kind_safety(packed);
+      let (kind, safety, asserts) = unpack_def_kind_safety(packed);
       let (lvls, s2) = get_tagn0(s);
       let (typ, s3) = get_expr(s2);
       let (value, s4) = get_expr(s3);
-      (Ixon::Definition::Mk(kind, safety, lvls, typ, value), s4)
+      (Ixon::Definition::Mk(kind, safety, asserts, lvls, typ, value), s4)
     }
 ⟧
 
@@ -536,16 +531,58 @@ def get_quotient := aiur_fn⟦
     }
 ⟧
 
+  -- A constructor's listed field modes: `count` bytes after its `fields` count, each a
+  -- `FieldMode` code (0 inherited, 1 shared), and whether one of them is shared (0 or 1).
+
+def get_field_mode_list := aiur_fn⟦
+  fn get_field_mode_list(stream: Bytes::Stream, count: UInt64::U64)
+      -> (Lists::List<Field>, Field, Bytes::Stream) {
+      let is_zero = UInt64::is_zero(count);
+      match is_zero {
+        1 => {  ((&(Lists::Node::Nil)), 0, stream) } ,
+        0 => {
+          let (mode, s) = read_byte(stream);
+          let (rest, shared, s2) = get_field_mode_list(s, UInt64::saturating_pred(count));
+          match UInt8::to_field(mode) {
+            0 => {  ((&(Lists::Node::Cons(0, rest))), shared, s2) } ,
+            1 => {  ((&(Lists::Node::Cons(1, rest))), 1, s2) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A constructor's field modes (IxC's `getConstructorFieldModes`): none when the flag bit is
+  -- clear (every field inherited), otherwise `fields` mode bytes, at least one of them shared
+  -- (IxC's `FieldModes.listed`).
+
+def get_constructor_modes := aiur_fn⟦
+  fn get_constructor_modes(listed: Field, fields: UInt64::U64, s: Bytes::Stream)
+      -> (Lists::List<Field>, Bytes::Stream) {
+      match listed {
+        0 => {  ((&(Lists::Node::Nil)), s) } ,
+        1 => {
+          let (modes, shared, s2) = get_field_mode_list(s, fields);
+          assert_eq!(shared, 1, "constructor: listed field modes with no shared field");
+          (modes, s2) } ,
+      }
+    }
+⟧
+
+  -- A constructor's first byte: bit 0 `isUnsafe`, bit 1 set when its field modes are listed
+  -- (they follow its `fields` count), every other bit clear.
+
 def get_constructor := aiur_fn⟦
   fn get_constructor(stream: Bytes::Stream) -> (Ixon::Constructor, Bytes::Stream) {
-      let (is_unsafe, s) = read_byte(stream);
-      assert_wire_bool(is_unsafe);
+      let (flags, s) = read_byte(stream);
+      assert_eq!(UInt8::less_than(flags, UInt8::BYTE_4), 1, "invalid constructor flags");
+      let bits = UInt8::bit_decomposition(flags);
       let (lvls, s2) = get_tagn0(s);
       let (cidx, s3) = get_tagn0(s2);
       let (params, s4) = get_tagn0(s3);
       let (fields, s5) = get_tagn0(s4);
-      let (typ, s6) = get_expr(s5);
-      (Ixon::Constructor::Mk(UInt8::to_field(is_unsafe), lvls, cidx, params, fields, typ), s6)
+      let (modes, s6) = get_constructor_modes(bits[1], fields, s5);
+      let (typ, s7) = get_expr(s6);
+      (Ixon::Constructor::Mk(bits[0], lvls, cidx, params, fields, modes, typ), s7)
     }
 ⟧
 
@@ -691,34 +728,277 @@ def get_constant_info := aiur_fn⟦
     }
 ⟧
 
+  -- The binder-data section, the last field of a record:
+  --
+  --   section := nblocks:TagN0 block[nblocks]
+  --   block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
+  --   node    := b | b k:TagN0 p[k]:TagN0 (tag 2) | 0x03 v:TagN0
+  --   b       := tag | input << 3 | result << 6   (tag 0 never, 1 zero, 2 ifAllZero, 4 undecided)
+  --
+  -- It is read in canonical form: `ekind` 0 (a root) or 1 (a sharing entry); a root block at
+  -- variant 0; no empty block; blocks strictly ascending by `(ekind, eidx, variant)`; a node
+  -- byte a binder's (tag 0, 1, 2 or 4, its input code not 7) or exactly 3 (a share node); an
+  -- `ifAllZero` parameter list (tag 2) nonempty, strictly ascending and below the record's
+  -- level count (`max_lvls`, the largest of its members'); the section of a record with
+  -- no root (a projection, an empty mutual block) empty. The undecided node (tag 4) is read; a
+  -- conversion that reaches it rejects. The record's level count, a block's index and variant
+  -- are below 2^32; parameters and level counts are compared as fields by
+  -- `UInt32::less_than_fields`, which refuses a value of 2^32 or more.
+
+def mut_const_lvls := aiur_fn⟦
+  fn mut_const_lvls(m: Ixon::MutConst) -> Field {
+      match m {
+        Ixon::MutConst::Defn(d) => {
+          let Ixon::Definition::Mk(_, _, _, lvls, _, _) = d;
+          UInt64::to_field(lvls) } ,
+        Ixon::MutConst::Indc(i) => {
+          let Ixon::Inductive::Mk(_, lvls, _, _, _, _) = i;
+          UInt64::to_field(lvls) } ,
+        Ixon::MutConst::Recr(r) => {
+          let Ixon::Recursor::Mk(_, _, lvls, _, _, _, _, _, _) = r;
+          UInt64::to_field(lvls) } ,
+      }
+    }
+⟧
+
+def muts_max_lvls := aiur_fn⟦
+  fn muts_max_lvls(members: Lists::List<Ixon::MutConst>, acc: Field) -> Field {
+      match (*(members)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(m, rest) => {
+          let lvls = mut_const_lvls(m);
+          match UInt32::less_than_fields(acc, lvls) {
+            1 => {  muts_max_lvls(rest, lvls) } ,
+            0 => {  muts_max_lvls(rest, acc) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The record's level count is below 2^32 (`Ixon.maxLevelCount`), as every reader's canonical
+  -- check requires: one `UInt32::less_than_fields` range-checks it, a standalone record's as a
+  -- block's (whose members' counts `muts_max_lvls` compares).
+
+def max_lvls := aiur_fn⟦
+  fn max_lvls(info: Ixon::ConstantInfo) -> Field {
+      let lvls = match info {
+        Ixon::ConstantInfo::Defn(d) => {
+          let Ixon::Definition::Mk(_, _, _, lvls, _, _) = d;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Recr(r) => {
+          let Ixon::Recursor::Mk(_, _, lvls, _, _, _, _, _, _) = r;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Axio(a) => {
+          let Ixon::Axiom::Mk(_, lvls, _) = a;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Quot(q) => {
+          let Ixon::Quotient::Mk(_, lvls, _) = q;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Muts(members) => {  muts_max_lvls(members, 0) } ,
+        _ => {  0 } ,
+      };
+      UInt32::less_than_fields(0, lvls);
+      lvls
+    }
+⟧
+
+def assert_params_canonical := aiur_fn⟦
+  fn assert_params_canonical(params: Lists::List<UInt64::U64>, lvls: Field) -> () {
+      match (*(params)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(p, rest) => {
+          let pf = UInt64::to_field(p);
+          assert_eq!(UInt32::less_than_fields(pf, lvls), 1,
+            "binder data: a parameter is not below the level count");
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            Lists::Node::Cons(q, _) => {
+              assert_eq!(UInt32::less_than_fields(pf, UInt64::to_field(q)), 1,
+                "binder data: parameters are not strictly ascending");
+              assert_params_canonical(rest, lvls) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A node byte below 5 is a binder's at the default mode (code 0), or the share node's (3).
+
+def get_binder_node := aiur_fn⟦
+  fn get_binder_node(stream: Bytes::Stream, lvls: Field) -> (Ixon::BinderNode, Bytes::Stream) {
+      let (tag, s) = read_byte(stream);
+      match UInt8::to_field(tag) {
+        0 => {  (Ixon::BinderNode::Never(0), s) } ,
+        1 => {  (Ixon::BinderNode::Zero(0), s) } ,
+        2 => {
+          let (count, s2) = get_tagn0(s);
+          assert_eq!(UInt64::is_zero(count), 0, "binder data: an empty parameter list");
+          let (params, s3) = get_u64_list(s2, count);
+          assert_params_canonical(params, lvls);
+          (Ixon::BinderNode::IfAllZero(params, 0), s3) } ,
+        3 => {
+          let (variant, s2) = get_tagn0(s);
+          (Ixon::BinderNode::Share(variant), s2) } ,
+        4 => {  (Ixon::BinderNode::Undecided(0), s) } ,
+        _ => {  get_moded_binder_node(tag, s, lvls) } ,
+      }
+    }
+⟧
+
+  -- Any other node byte: `tag | input << 3 | result << 6`, the node of a binder (tag 0, 1, 2 or
+  -- 4) at a mode other than the default, `input` a `BinderMode` code (not 7) and `result` a
+  -- `ResultMode` code. A share node has no mode (its byte is 3), and tags 5 to 7 are no node.
+  -- The node keeps the mode's code `input + 8 · result` (IxC's `AllMode.toCode`).
+
+def get_moded_binder_node := aiur_fn⟦
+  fn get_moded_binder_node(byte: UInt8::U8, s: Bytes::Stream, lvls: Field)
+      -> (Ixon::BinderNode, Bytes::Stream) {
+      let [b0, b1, b2, b3, b4, b5, b6, b7] = UInt8::bit_decomposition(byte);
+      assert_eq!(b3 * b4 * b5, 0, "binder data: a binder mode with input code 7");
+      let mode = b3 + 2 * b4 + 4 * b5 + 8 * b6 + 16 * b7;
+      match b0 + 2 * b1 + 4 * b2 {
+        0 => {  (Ixon::BinderNode::Never(mode), s) } ,
+        1 => {  (Ixon::BinderNode::Zero(mode), s) } ,
+        2 => {
+          let (count, s2) = get_tagn0(s);
+          assert_eq!(UInt64::is_zero(count), 0, "binder data: an empty parameter list");
+          let (params, s3) = get_u64_list(s2, count);
+          assert_params_canonical(params, lvls);
+          (Ixon::BinderNode::IfAllZero(params, mode), s3) } ,
+        4 => {  (Ixon::BinderNode::Undecided(mode), s) } ,
+      }
+    }
+⟧
+
+def get_binder_node_list := aiur_fn⟦
+  fn get_binder_node_list(stream: Bytes::Stream, count: UInt64::U64, lvls: Field)
+      -> (Lists::List<Ixon::BinderNode>, Bytes::Stream) {
+      let is_zero = UInt64::is_zero(count);
+      match is_zero {
+        1 => {  ((&(Lists::Node::Nil)), stream) } ,
+        0 => {
+          let (node, s) = get_binder_node(stream, lvls);
+          let (rest, s2) = get_binder_node_list(s, UInt64::saturating_pred(count), lvls);
+          ((&(Lists::Node::Cons(node, rest))), s2) } ,
+      }
+    }
+⟧
+
+def get_binder_block := aiur_fn⟦
+  fn get_binder_block(stream: Bytes::Stream, lvls: Field) -> (Ixon::BinderBlock, Bytes::Stream) {
+      let (ekind, s) = read_byte(stream);
+      assert_wire_bool(ekind);
+      let shared = UInt8::to_field(ekind);
+      let (eidx, s2) = get_tagn0(s);
+      let (variant, s3) = get_tagn0(s2);
+      -- the index and the variant are below 2^32, which every comparison of them needs (block
+      -- order, the conversion's binder table), whether or not one reaches this block
+      UInt32::less_than_fields(UInt64::to_field(eidx), UInt64::to_field(variant));
+      assert_eq!((1 - shared) * (1 - UInt64::is_zero(variant)), 0,
+        "binder data: a root block at a variant other than 0");
+      let (count, s4) = get_tagn0(s3);
+      assert_eq!(UInt64::is_zero(count), 0, "binder data: an empty block");
+      let (nodes, s5) = get_binder_node_list(s4, count, lvls);
+      (Ixon::BinderBlock::Mk(shared, eidx, variant, nodes), s5)
+    }
+⟧
+
+def get_binder_block_list := aiur_fn⟦
+  fn get_binder_block_list(stream: Bytes::Stream, count: UInt64::U64, lvls: Field)
+      -> (Lists::List<Ixon::BinderBlock>, Bytes::Stream) {
+      let is_zero = UInt64::is_zero(count);
+      match is_zero {
+        1 => {  ((&(Lists::Node::Nil)), stream) } ,
+        0 => {
+          let (block, s) = get_binder_block(stream, lvls);
+          let (rest, s2) = get_binder_block_list(s, UInt64::saturating_pred(count), lvls);
+          ((&(Lists::Node::Cons(block, rest))), s2) } ,
+      }
+    }
+⟧
+
+  -- The strict `(ekind, eidx, variant)` order of blocks (a root before a sharing entry).
+
+def binder_block_lt := aiur_fn⟦
+  fn binder_block_lt(a: Ixon::BinderBlock, b: Ixon::BinderBlock) -> Field {
+      let Ixon::BinderBlock::Mk(ea, ia, va, _) = a;
+      let Ixon::BinderBlock::Mk(eb, ib, vb, _) = b;
+      match ea - eb {
+        0 => {
+          let i = UInt64::to_field(ia);
+          let j = UInt64::to_field(ib);
+          match i - j {
+            0 => {  UInt32::less_than_fields(UInt64::to_field(va), UInt64::to_field(vb)) } ,
+            _ => {  UInt32::less_than_fields(i, j) } ,
+          } } ,
+        _ => {  eb } ,
+      }
+    }
+⟧
+
+def assert_blocks_ascending := aiur_fn⟦
+  fn assert_blocks_ascending(blocks: Lists::List<Ixon::BinderBlock>) -> () {
+      match (*(blocks)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            Lists::Node::Cons(b, _) => {
+              assert_eq!(binder_block_lt(a, b), 1, "binder data: blocks are not strictly ascending");
+              assert_blocks_ascending(rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+def get_binders := aiur_fn⟦
+  fn get_binders(stream: Bytes::Stream, lvls: Field) -> (Lists::List<Ixon::BinderBlock>, Bytes::Stream) {
+      let (len, s) = get_tagn0(stream);
+      let (blocks, s2) = get_binder_block_list(s, len, lvls);
+      assert_blocks_ascending(blocks);
+      (blocks, s2)
+    }
+⟧
+
 def assert_prj_empty_tables := aiur_fn⟦
   fn assert_prj_empty_tables(
     info: Ixon::ConstantInfo,
     sharing: Lists::List<&Ixon::Expr>,
     refs: Lists::List<Bytes::AddressRef>,
-    univs: Lists::List<&Ixon::Univ>
+    univs: Lists::List<&Ixon::Univ>,
+    binders: Lists::List<Ixon::BinderBlock>
   ) -> () {
       match info {
         Ixon::ConstantInfo::DPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::IPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::CPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::RPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
+        Ixon::ConstantInfo::Muts(members) => {
+          match (*(members)) {
+            Lists::Node::Nil => {
+              let Lists::Node::Nil = (*(binders));
+              () } ,
+            Lists::Node::Cons(_, _) => {  () } ,
+          } } ,
         _ => {  () } ,
       }
     }
@@ -732,8 +1012,9 @@ def get_constant := aiur_fn⟦
       let (sharing, s3) = get_sharing(s2);
       let (refs, s4) = get_refs(s3);
       let (univs, s5) = get_univs(s4);
-      assert_prj_empty_tables(info, sharing, refs, univs);
-      (Ixon::Constant::Mk(info, sharing, refs, univs), s5)
+      let (binders, s6) = get_binders(s5, max_lvls(info));
+      assert_prj_empty_tables(info, sharing, refs, univs, binders);
+      (Ixon::Constant::Mk(info, sharing, refs, univs, binders), s6)
     }
 ⟧
 

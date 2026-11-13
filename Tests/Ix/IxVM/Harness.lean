@@ -4,7 +4,7 @@ public import Ix.Cli.FormalAiur
 public import Ix.IxVM.ClaimHarness
 public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
-public import Ix.IxVM.PwCheck
+public import Ix.IxVM.RecordSections
 
 /-!
 # Running claims through the IxVM program
@@ -99,29 +99,161 @@ structure Case where
   /-- Exact rounded FFT-work surrogate of the accepted execution. -/
   expectedFftCost : Option Nat := none
   witness : ClaimWitness
-  /-- The environment the witness was built from, when known: the binder-data
-  annotator and its check read it to type the witness's records
-  (`IxVM.PwHints.View.support`). -/
-  env : Ixon.Env := {}
+
+/-! ## Binder data for hand-built records
+
+Records the compiler writes carry their binder-data section. The suites also
+build records by hand, without one, and name them in claims, trees and role
+tables by the address of their bytes. `withRecordSections` gives each decodable
+record that has no section but has a binder its section from IxC's pass
+(`IxVM.RecordSections`; `never` where the pass cannot compute a datum, so a
+deliberately ill-typed record is still rejected where it was), re-addresses it and
+every record that names it, and renames the environment's names, hints, role
+binding, assumptions, the claim and its trees to follow. Every other record keeps
+its bytes (as does a record whose bytes are not its canonical encoding), so a hand-crafted
+encoding stays as it was. A re-addressed record's old version is dropped, as the
+compiler would never have written it, unless a hand-crafted record still names it: left
+in, an old axiom that the renamed role table no longer binds would become one of the
+environment's user axioms (`Ix.ClaimContext.userAxioms`), without its section. -/
+
+/-- Whether `c` lacks the section it needs: none, and a binder in a root. -/
+def needsSection (c : Ixon.Constant) : Bool :=
+  c.binders.isEmpty &&
+    (_root_.IxVM.PwHints.roots c).any (_root_.IxVM.PwHints.hasBinder (_root_.IxVM.PwHints.binderful c.sharing))
+
+/-- A claim context with its binding renamed by `a` and its axioms tree by `t`. -/
+def renameCtx (a t : Address → Address) (ctx : Ix.ClaimContext) : Ix.ClaimContext :=
+  { ctx with binding := a ctx.binding, axioms := ctx.axioms.map t }
+
+/-- `claim` with its addresses renamed: constants by `a`, tree roots by `t`. -/
+def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
+  | .eval ctx i o asm => .eval (renameCtx a t ctx) (a i) (a o) (asm.map t)
+  | .check ctx c asm => .check (renameCtx a t ctx) (a c) (asm.map t)
+  | .checkEnv ctx r asm => .checkEnv (renameCtx a t ctx) (t r) (asm.map t)
+  | .reveal c info => .reveal (a c) (match info with
+    | .cPrj i k b => .cPrj i k (b.map a)
+    | .rPrj i b => .rPrj i (b.map a)
+    | .iPrj i b => .iPrj i (b.map a)
+    | .dPrj i b => .dPrj i (b.map a)
+    | other => other)
+  | .contains tree c => .contains (t tree) (a c)
+  | .catalog members => .catalog (t members)
+  | .binding spec b => .binding spec (a b)
+
+/-- `env`, `claim` and `trees` with every hand-built record that needs one given
+its section. Nothing changes when no record needs one. -/
+def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree) :
+    Except String (Ixon.Env × Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  -- the records whose bytes are their canonical encoding: a hand-crafted encoding is left as it is
+  let mut store : Std.HashMap Address Ixon.Constant := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then
+      if Ixon.serConstant c == lc.rawBytes then store := store.insert a c
+  let pending := store.toArray.filter (needsSection ·.2)
+  if pending.isEmpty then return (env, claim, trees)
+  let support := store.toArray.filter (!needsSection ·.2)
+  let sections ← _root_.IxVM.RecordSections.sectionsOf pending support env.blobs env.anonHints
+    (← _root_.IxVM.RecordSections.chosenOf env) (taint := false)
+  -- the records to rewrite: those needing a section, and every record naming one
+  let mut affected : Std.HashSet Address := pending.foldl (fun s (a, _) => s.insert a) {}
+  let mut grown := true
+  while grown do
+    grown := false
+    for (a, c) in store do
+      if affected.contains a then continue
+      if (Ix.Compile.BinderData.targets c).any affected.contains then
+        affected := affected.insert a
+        grown := true
+  let order ← Ix.Compile.BinderData.bottomUp store
+    (store.toArray.filter (affected.contains ·.1))
+  let mut renamed : Std.HashMap Address Address := {}
+  let mut consts := env.consts
+  for a in order do
+    unless affected.contains a do continue
+    let some c := store[a]? | continue
+    let rename (x : Address) : Address := renamed.getD x x
+    let binders := if needsSection c then sections.getD a #[] else c.binders
+    let c' := Ix.Compile.BinderData.rewriteRecord rename c binders
+    let bytes := Ixon.serConstant c'
+    let a' := Address.blake3 bytes
+    consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
+    renamed := renamed.insert a a'
+  -- the old records go, except those a hand-crafted record (left as it is) still names
+  let mut stillNamed : Std.HashSet Address := {}
+  for (a, lc) in env.consts do
+    unless store.contains a do
+      if let some c := lc.get? then
+        for x in Ix.Compile.BinderData.targets c do stillNamed := stillNamed.insert x
+  for (a, a') in renamed do
+    unless a == a' || stillNamed.contains a do consts := consts.erase a
+  let rename (x : Address) : Address := renamed.getD x x
+  let named := env.named.fold (init := ({} : Std.HashMap Ix.Name Ixon.Named)) fun m n entry =>
+    m.insert n { entry with addr := rename entry.addr
+                            original := entry.original.map fun (x, cm) => (rename x, cm) }
+  let addrToName := env.addrToName.fold (init := ({} : Std.HashMap Address Ix.Name)) fun m x n =>
+    m.insert (rename x) n
+  let anonHints := env.anonHints.fold
+    (init := ({} : Std.HashMap Address Lean.ReducibilityHints)) fun m x h => m.insert (rename x) h
+  let mut addrMap := renamed
+  let roleBinding ← match env.roleBinding with
+    | none => pure none
+    | some b => do
+      let some t := Ix.Kernel.RoleTable.ofBytes b.bytes | pure (some b)
+      let bytes := (Ix.Compile.BinderData.renameTable rename t).toBytes
+      if bytes == b.bytes then pure (some b) else pure (some { address := Address.blake3 bytes, bytes })
+  if let (some b, some b') := (env.roleBinding, roleBinding) then
+    unless b.address == b'.address do addrMap := addrMap.insert b.address b'.address
+  let env' := { env with
+    consts, named, addrToName, anonHints, roleBinding
+    main := env.main.map rename
+    assumptions := env.assumptions.fold (init := ({} : Std.HashSet Address)) fun s x => s.insert (rename x) }
+  -- the trees: a tree with a renamed leaf is rebuilt canonically
+  let mut treeMap : Std.HashMap Address Address := {}
+  let mut trees' : Std.HashMap Address Ix.AssumptionTree := {}
+  for (root, tree) in trees do
+    let leaves := tree.leaves
+    let leaves' := leaves.map rename
+    if leaves' == leaves then trees' := trees'.insert root tree
+    else match Ix.AssumptionTree.canonical leaves' with
+      | some t =>
+        trees' := trees'.insert t.root t
+        treeMap := treeMap.insert root t.root
+      | none => trees' := trees'.insert root tree
+  if let (some old, some new) := (Ix.ClaimContext.userAxiomTree env, Ix.ClaimContext.userAxiomTree env') then
+    unless old.root == new.root do treeMap := treeMap.insert old.root new.root
+  let a (x : Address) : Address := addrMap.getD x x
+  let t (x : Address) : Address := treeMap.getD x x
+  return (env', renameClaim a t claim, trees')
+
+/-- `c` with the section of its safe twin (each unsafe or partial definition made safe),
+typed against `env`. The compiler leaves every binder of an unsafe or partial record
+undecided, which IxVM refuses when it reads it; data are untrusted, so a prover may attach
+decided ones instead, and a case about IxVM's safety checks needs them to reach those
+checks. -/
+def withSafeTwinSection (env : Ixon.Env) (c : Ixon.Constant) : Except String Ixon.Constant := do
+  let safe (d : Ixon.Definition) : Ixon.Definition := { d with safety := .safe }
+  let info : Ixon.ConstantInfo := match c.info with
+    | .defn d => .defn (safe d)
+    | .muts ms => .muts (ms.map fun m => match m with
+      | .defn d => .defn (safe d)
+      | m => m)
+    | i => i
+  let twin ← _root_.IxVM.RecordSections.withSection env { c with info }
+  return { c with binders := twin.binders }
+
+/-- `buildClaimWitness` after `withRecordSections`. -/
+def buildSectionedWitness (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree := {}) : Except String ClaimWitness := do
+  let (env, claim, trees) ← withRecordSections env claim trees
+  buildClaimWitness env claim trees
 
 /-- The case for `claim` over `env`, with the assumption trees its roots name. -/
 def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) (accept : Bool := true)
     (rejectsWith : Option String := none) : Except String Case := do
-  let witness ← buildClaimWitness env claim trees
-  -- Only a claim that converts expressions reads binder data, so only its environment is
-  -- kept (closing every case's environment over the role table is slow on large suites).
-  let env ← if _root_.IxVM.PwHints.converts claim then withDefaultRoleBinding env else pure {}
-  return { label, accept, rejectsWith, witness, env }
-
-/-- `c` with the binder data (`IxVM.PwHints`) its claim's conversion
-reads, when its witness carries none: a suite that builds its IO by hand gets
-them as `IxVM.ClaimHarness`'s builders give them. -/
-def Case.withPwHints (c : Case) : Except String Case := do
-  if _root_.IxVM.PwHints.hasHints c.witness.inputIOBuffer then return c
-  let some claim := _root_.IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
-  let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer c.env
-  return { c with witness := { c.witness with inputIOBuffer := io } }
+  let witness ← buildSectionedWitness env claim trees
+  return { label, accept, rejectsWith, witness }
 
 /-! ## The case file
 
@@ -206,56 +338,8 @@ def Runner.fail (r : Runner) (message : String) : IO Unit := do
   r.broken.modify (· + 1)
   IO.eprintln s!"[{r.suite}] {message}"
 
-/-- The host-side check of a case's binder data (`$IX_PW_CHECK`): every key
-the conversion asks for answered, every datum the kernel's
-(`IxVM.PwHints.check`), and the annotator, rerun on the witness without its
-data, deterministic. Prints one `PW` line; returns the failure, if any. -/
-def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
-  let io := c.witness.inputIOBuffer
-  unless _root_.IxVM.PwHints.hasHints io do return none
-  let t0 ← IO.monoMsNow
-  let again := _root_.IxVM.PwHints.annotate (_root_.IxVM.PwHints.stripHints io) c.env
-  let rerun ← match again with
-    | .ok (io', stats) => do
-      let same := match _root_.IxVM.PwHints.tableOf io', _root_.IxVM.PwHints.tableOf io with
-        | .ok a, .ok b => a.size == b.size && a.toList.all fun (k, v) => b[k]? == some v
-        | _, _ => false
-      pure (some (stats, same))
-    | .error _ => pure none
-  let t1 ← IO.monoMsNow
-  match _root_.IxVM.PwHints.check io c.env, rerun with
-  | .ok rep, some (stats, same) =>
-    let (values, blocks, extra) := _root_.IxVM.PwHints.streamCounts io
-    IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
-      variants>0={extra} binders={stats.binders} shares={stats.shares} \
-      free-shares={stats.freeShares} params={stats.params} \
-      fallbacks={stats.fallbacks} inherited={stats.inherited} refused={stats.refused} \
-      annotate_ms={t1 - t0} \
-      check_ms={(← IO.monoMsNow) - t1}"
-    -- the rerun repeats the build only when the case kept its environment
-    -- (`Case.env`); without it the rerun types with the witness's records alone
-    let same := same || c.env.consts.isEmpty
-    if rep.ok && same then return none
-    for s in rep.samples do IO.eprintln s!"[{suite}] PW {c.label}: {s}"
-    return some s!"PW {c.label}: binder data incomplete, not the kernel's, or not deterministic"
-  | .error e, _ => return some s!"PW {c.label}: {e}"
-  | _, none => return some s!"PW {c.label}: the annotator failed on a rerun"
-
-/-- `pwCheckCase` in a runner: a failure fails the suite. -/
-def Runner.pwCheck (r : Runner) (c : Case) : IO Unit := do
-  if let some e ← pwCheckCase r.suite c then r.fail e
-
 /-- Write `c` to the current case file. -/
 def Runner.add (r : Runner) (c : Case) : IO Unit := do
-  let built ← match c.withPwHints with
-    | .ok c' => pure (some c')
-    | .error e => do
-      r.fail s!"the binder data of {c.label} could not be built: {e}"
-      pure none
-  let some c := built | return
-  if let some mode ← IO.getEnv "IX_PW_CHECK" then
-    r.pwCheck c
-    if mode == "only" then return
   if c.expectedFftCost.isSome && !c.accept then
     return ← r.fail s!"FFT pin on rejection case {c.label}"
   if (← r.labels.get).contains c.label then
@@ -355,7 +439,7 @@ def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8)
     (circuit : Option Bool := none) : IO UInt32 :=
   withRunner suite (jobs := jobs) (circuit := circuit) fun r => do
     IO.println s!"[{suite}] {cases.size} claims through the IxVM program"
-    let trace := (← IO.getEnv "IX_PW_TRACE").isSome
+    let trace := (← IO.getEnv "IX_CASE_TRACE").isSome
     for (build, i) in cases.zipIdx do
       if trace then IO.eprintln s!"[{suite}] building case {i}"
       let t0 ← IO.monoMsNow

@@ -673,7 +673,7 @@ def check_block_peer_param_agreement := aiur_fn⟦
             _ => {
               let block_c = Ingress::load_verified_constant(block_addr);
               match block_c {
-                Ixon::Constant::Mk(info, _, _, _) => {
+                Ixon::Constant::Mk(info, _, _, _, _) => {
                   match info {
                     Ixon::ConstantInfo::Muts(members) => {
                       peer_agree_walk(rc, members, self_ty, self_np, self_ni,
@@ -885,7 +885,7 @@ def ind_is_solo := aiur_fn⟦
         _ => {
           let block_c = Ingress::load_verified_constant(block_addr);
           match block_c {
-            Ixon::Constant::Mk(info, _, _, _) => {
+            Ixon::Constant::Mk(info, _, _, _, _) => {
               match info {
                 Ixon::ConstantInfo::Muts(members) => {  muts_indc_count_is_one(members, 0) } ,
                 _ => {  0 } ,
@@ -899,7 +899,7 @@ def is_muts_block := aiur_fn⟦
   fn is_muts_block(addr: Bytes::AddressRef) -> Field {
       let block_c = Ingress::load_verified_constant(addr);
       match block_c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(_) => {  1 } ,
             _ => {  0 } ,
@@ -1010,7 +1010,7 @@ def build_flat_originals := aiur_fn⟦
                                   -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
       let block_c = Ingress::load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               flat_originals_walk(members, members, block_addr,
@@ -1237,7 +1237,7 @@ def primary_parent_block_of := aiur_fn⟦
   inline fn primary_parent_block_of(rec_block_addr: Bytes::AddressRef, fallback: Bytes::AddressRef) -> Bytes::AddressRef {
       let block_c = Ingress::load_verified_constant(rec_block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               first_recr_parent_block(members, members, rec_block_addr, 0,
@@ -1301,7 +1301,7 @@ def detect_aux_from_recrs_ex := aiur_fn⟦
                                      -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
       let block_c = Ingress::load_verified_constant(rec_block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               aux_from_recrs_walk_ex(members, members, rec_block_addr,
@@ -2168,7 +2168,7 @@ def find_peer_recursor_with_spec := aiur_fn⟦
                                           rec_self_addr: Bytes::AddressRef) -> Bytes::AddressRef {
       let block_c = Ingress::load_verified_constant(block_addr);
       match block_c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               find_peer_rec_spec_walk(members, members, block_addr,
@@ -2259,7 +2259,7 @@ def projection_addr_ctor := aiur_fn⟦
       let info = Ixon::ConstantInfo::CPrj(Ixon::ConstructorProj::Mk(idx_u64, cidx_u64,
         block_addr));
       let proj_c = Ixon::Constant::Mk(info,
-        (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)));
+        (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)));
       let bytes = IxonSerialize::put_constant(proj_c, (&(Lists::Node::Nil)));
       Blake3::bytes_to_addr(bytes)
     }
@@ -2913,7 +2913,7 @@ def check_block_member_kinds := aiur_fn⟦
   fn check_block_member_kinds(block_addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(block_addr);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               let has_defn = muts_has_kind(members, 1);
@@ -2945,7 +2945,7 @@ def muts_safety_counts := aiur_fn⟦
           match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   muts_safety_counts(rest, u + Ingress::defn_is_unsafe_ci(kind, safety), n + 1) } ,
               } } ,
             Ixon::MutConst::Indc(ind) => {
@@ -2978,7 +2978,7 @@ def ctors_safety_counts := aiur_fn⟦
         Lists::Node::Nil => {  (u, n) } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _, _) => {
               let cu = match is_unsafe {
                 0 => {  0 } ,
                 _ => {  1 } ,

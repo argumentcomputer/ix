@@ -229,6 +229,8 @@ inductive CompileError where
   /-- The sharing construction failed (other than by resource exhaustion, which is
       `resourceLimit`). -/
   | sharingConstruction (reason : String)
+  /-- No admissible binder-data section for a block record. -/
+  | binderData (reason : String)
   deriving Repr, BEq
 
 instance : ToString CompileError where
@@ -240,6 +242,7 @@ instance : ToString CompileError where
   | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
   | .resourceLimit reason => s!"resourceLimit: {reason}"
   | .sharingConstruction reason => s!"sharingConstruction: {reason}"
+  | .binderData reason => s!"binderData: {reason}"
 
 abbrev CompileM := ReaderT (CompileEnv × BlockEnv) (ExceptT CompileError (StateT BlockState Id))
 
@@ -1504,12 +1507,203 @@ def liftSharing (r : Except CompileError Ixon.Constant) : CompileM Ixon.Constant
   | .ok c => pure c
   | .error e => throw e
 
+/-! ## Binder data
+
+Every block record carries the binder data of its `lam` and `all` nodes
+(`Ixon.Constant.binders`), which its address hashes. The compiler takes them
+from the annotator of its input environment (`Ix.Environment.binderAnnotator?`)
+and keeps them only when they are in the wire domain, in canonical form and
+complete for the record (`sectionAdmissible`); otherwise the record carries the
+undecided section (`undecidedSection`), so a record with binders always carries
+a complete one. Nothing else about the record depends on the annotator: its
+payload, sharing, refs and univs are the canonical construction's,
+definitionally (`withBinderSection` updates the section only).
+
+The data are not trusted. A checker that reads them validates every datum it
+uses. So the logic needs nothing of the annotator, and every theorem about the
+compiler holds for every annotator; the compile's result is a function of its
+input environment, annotator included. -/
+
+/-- Whether `binders` is a section the record `c` may carry: every count in the
+wire domain, the canonical form a reader checks (`Ixon.Constant.bindersCanonical`)
+and the complete one the compiler writes (`Ixon.Constant.bindersComplete`), on a
+record whose modes outside the section are canonical too
+(`Ixon.Constant.modesCanonical`: no theorem asserts anything). -/
+@[expose] def sectionAdmissible (c : Ixon.Constant) (binders : Array Ixon.BinderBlock) : Bool :=
+  Ixon.WireCheck.validArray binders Ixon.WireCheck.validBinderBlock &&
+    Ixon.Constant.bindersCanonical { c with binders } &&
+    Ixon.Constant.bindersComplete { c with binders } &&
+    Ixon.Constant.modesCanonical { c with binders }
+
+/-! ### The undecided section
+
+The section with every binder undecided (`0x04`), in the canonical structure:
+one block per root with a numbered node, one variant per sharing entry a share
+node reaches. The compiler writes it when the annotator's section is not
+admissible: a record with binders always carries a complete section. -/
+
+/-- `e`'s numbered nodes, every binder undecided and every share of an entry
+with a binder that entry's one variant. -/
+@[expose] def undecidedNodes (full : Array Bool) : Ixon.Expr → Array Ixon.BinderNode → Array Ixon.BinderNode
+  | .lam t b, out => undecidedNodes full b (undecidedNodes full t (out.push (.undecided {})))
+  | .all t b, out => undecidedNodes full b (undecidedNodes full t (out.push (.undecided {})))
+  | .app f a, out => undecidedNodes full a (undecidedNodes full f out)
+  | .letE _ _ t v b, out => undecidedNodes full b (undecidedNodes full v (undecidedNodes full t out))
+  | .prj _ _ v, out => undecidedNodes full v out
+  | .share n, out => if full[n.toNat]?.getD false then out.push (.share 0) else out
+  | _, out => out
+
+/-- The entries with a binder that `e`'s share nodes name, appended to `acc`. -/
+@[expose] def directShares (full : Array Bool) : Ixon.Expr → Array Nat → Array Nat
+  | .lam t b, acc => directShares full b (directShares full t acc)
+  | .all t b, acc => directShares full b (directShares full t acc)
+  | .app f a, acc => directShares full a (directShares full f acc)
+  | .letE _ _ t v b, acc => directShares full b (directShares full v (directShares full t acc))
+  | .prj _ _ v, acc => directShares full v acc
+  | .share n, acc => if full[n.toNat]?.getD false then acc.push n.toNat else acc
+  | _, acc => acc
+
+/-- The undecided section of `c`. -/
+@[expose] def undecidedSection (c : Ixon.Constant) : Array Ixon.BinderBlock := Id.run do
+  let full := Ixon.binderfulEntries c.sharing
+  let roots := c.info.binderRoots
+  let mut out : Array Ixon.BinderBlock := #[]
+  let mut work : Array Nat := #[]
+  for h : r in [:roots.size] do
+    let nodes := undecidedNodes full roots[r] #[]
+    unless nodes.isEmpty do
+      out := out.push { shared := false, index := r.toUInt64, variant := 0, nodes }
+    work := directShares full roots[r] work
+  let mut seen : Array Bool := Array.replicate c.sharing.size false
+  for _ in [:c.sharing.size + 1] do
+    if work.isEmpty then break
+    let mut next : Array Nat := #[]
+    for n in work do
+      unless seen[n]?.getD true do
+        seen := seen.set! n true
+        if let some e := c.sharing[n]? then next := directShares full e next
+    work := next
+  for h : n in [:c.sharing.size] do
+    if seen[n]?.getD false then
+      out := out.push { shared := true, index := n.toUInt64, variant := 0,
+                        nodes := undecidedNodes full c.sharing[n] #[] }
+  return out
+
+/-- The annotator's section for `c`, or none without an annotator. -/
+@[expose] def annotatorSection (annotator? : Option BinderAnnotator) (names : Array Name)
+    (c : Ixon.Constant) : Array Ixon.BinderBlock :=
+  match annotator? with
+  | some annotate => annotate.run annotate.extra names c
+  | none => #[]
+
+/-- The section kept for `c` given the annotator's section `s`: `s` when it is
+admissible, otherwise the undecided section, otherwise none; among the records
+with none, every record with `Ixon.maxLevelCount` (`2^32`) universe parameters
+or more, whose level count no reader admits (`Ixon.Constant.bindersCanonical`). -/
+@[expose] def sectionChoose (c : Ixon.Constant) (s : Array Ixon.BinderBlock) :
+    Except CompileError (Array Ixon.BinderBlock) :=
+  if sectionAdmissible c s then .ok s
+  else if sectionAdmissible c (undecidedSection c) then .ok (undecidedSection c)
+  else if c.info.maxLvls < Ixon.maxLevelCount then
+    .error (.binderData "no admissible binder-data section")
+  else
+    .error (.binderData "2^32 universe parameters or more, which no reader admits")
+
+/-- The section the compiler gives a block record `c`: the annotator's when it
+is admissible, otherwise the undecided section (`undecidedSection`). A record
+for which neither is admissible does not compile. The annotator runs once. -/
+@[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
+    (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
+  sectionChoose c (annotatorSection annotator? names c)
+
+/-- `c` with the section the compiler gives it (`sectionFor`). Every other
+field is `c`'s, definitionally. -/
+@[expose] def withBinderSection (annotator? : Option BinderAnnotator) (names : Array Name)
+    (c : Ixon.Constant) : Except CompileError Ixon.Constant :=
+  match sectionFor annotator? names c with
+  | .ok binders => .ok { c with binders }
+  | .error e => .error e
+
+/-- The section the compiler keeps is admissible. -/
+theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
+  unfold sectionFor sectionChoose at h
+  split at h
+  · rename_i ha
+    cases h
+    exact ha
+  · split at h
+    · rename_i hu
+      cases h
+      exact hu
+    · split at h <;> cases h
+
+/-- **The compiler's section is admissible**: a record built with a section
+is `c` with an admissible one. -/
+theorem withBinderSection_ok {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c out : Ixon.Constant} (h : withBinderSection annotator? names c = .ok out) :
+    ∃ binders, sectionAdmissible c binders = true ∧ out = { c with binders } := by
+  unfold withBinderSection at h
+  split at h
+  · rename_i binders hs
+    cases h
+    exact ⟨binders, sectionFor_ok hs, rfl⟩
+  · cases h
+
+/-- A record the compiler cannot give an admissible section fails with a binder-data error. -/
+theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {err : CompileError} (h : withBinderSection annotator? names c = .error err) :
+    ∃ reason, err = .binderData reason := by
+  unfold withBinderSection at h
+  split at h
+  · cases h
+  · rename_i e hs
+    cases h
+    unfold sectionFor sectionChoose at hs
+    split at hs
+    · cases hs
+    · split at hs
+      · cases hs
+      · split at hs
+        · cases hs
+          exact ⟨_, rfl⟩
+        · cases hs
+          exact ⟨_, rfl⟩
+
+/-- An admissible section is in the wire domain. -/
+theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionAdmissible c binders = true) :
+    Ixon.WireCheck.validArray binders Ixon.WireCheck.validBinderBlock = true :=
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).1).1
+
+/-- An admissible section is canonical for its record. -/
+theorem sectionAdmissible_canonical {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionAdmissible c binders = true) :
+    Ixon.Constant.bindersCanonical { c with binders } = true :=
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).1).2
+
+/-- An admissible section is complete for its record. -/
+theorem sectionAdmissible_complete {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionAdmissible c binders = true) :
+    Ixon.Constant.bindersComplete { c with binders } = true :=
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
+
+/-- A record with an admissible section has canonical modes. -/
+theorem sectionAdmissible_modes {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionAdmissible c binders = true) :
+    Ixon.Constant.modesCanonical { c with binders } = true :=
+  ((Bool.and_eq_true _ _).mp h).2
+
 /-- Build a block Constant with the compiler's canonical sharing under
-    `CompileEnv.sharingLimits`. Every block the compiler emits goes through
-    here. -/
+    `CompileEnv.sharingLimits`, and its binder data (`withBinderSection` at the
+    block's member names `names`). Every block the compiler emits goes through
+    here or through `buildCompiledMutualBlock`. -/
 def buildBlockConstant (info : Ixon.ConstantInfo) (refs : Array Address)
-    (univs : Array Ixon.Univ) : CompileM Ixon.Constant := do
-  liftSharing (buildConstantWithSharing (← read).1.sharingLimits info refs univs)
+    (univs : Array Ixon.Univ) (names : Array Name) : CompileM Ixon.Constant := do
+  let ctx ← read
+  liftSharing (buildConstantWithSharing ctx.1.sharingLimits info refs univs >>=
+    withBinderSection ctx.1.env.binderAnnotator? names)
 
 /-! ## Individual Constant Compilation -/
 
@@ -2112,7 +2306,7 @@ def buildMutualProjections (sources : List MutConst)
       | .defn _ => .dPrj ⟨idx, blockAddr⟩
       | .indc _ => .iPrj ⟨idx, blockAddr⟩
       | .recr _ => .rPrj ⟨idx, blockAddr⟩
-    let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[]⟩
+    let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[], #[]⟩
     let sourceMeta := metaMap.get? source.name |>.getD .empty
     projections := projections.push (source.name, proj, sourceMeta)
     if let .indc inductiveData := source then
@@ -2120,7 +2314,7 @@ def buildMutualProjections (sources : List MutConst)
       for ctor in inductiveData.ctors do
         let ctorProjInfo : Ixon.ConstantInfo :=
           .cPrj ⟨idx, cidx, blockAddr⟩
-        let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+        let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[], #[]⟩
         let ctorMeta := metaMap.get? ctor.cnst.name |>.getD .empty
         projections := projections.push
           (ctor.cnst.name, ctorProj, ctorMeta)
@@ -2133,15 +2327,19 @@ under `limits`; fails exactly when the construction does. Projection arrays do
 not affect the serialized main-block codec but remain part of the exact
 production result. -/
 @[expose] def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
+    (annotator? : Option BinderAnnotator)
     (sources : List MutConst) (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta))
     (cache : BlockState) : Except CompileError BlockResult := do
+  let names := (sources.map MutConst.name).toArray
   if let some info := standaloneMutConstInfo? payloads then
-    let block ← buildConstantWithSharing limits info cache.refs cache.univs
+    let block ← withBinderSection annotator? names
+      (← buildConstantWithSharing limits info cache.refs cache.univs)
     pure (BlockResult.mk' block .empty
       (buildStandaloneMutualProjections sources block metas))
   else
-    let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
+    let block ← withBinderSection annotator? names
+      (← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs)
     let res := BlockResult.mk' block
     pure { res with projections := buildMutualProjections sources res.blockAddr metas }
 
@@ -2169,7 +2367,9 @@ def finishMutualCompilation (sources : List MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   checkMutualPayloadCounts payloads
   let cache ← getBlockState
-  match buildCompiledMutualBlock (← read).1.sharingLimits sources payloads metas cache with
+  let ctx ← read
+  match buildCompiledMutualBlock ctx.1.sharingLimits ctx.1.env.binderAnnotator? sources payloads metas
+      cache with
   | .ok result => pure result
   | .error e => throw e
 
@@ -2224,12 +2424,12 @@ def buildInductiveProjections (i : InductiveVal)
     (blockAddr : Address) :
     Array (Name × Ixon.Constant × Ixon.ConstantMeta) :=
   let indProjInfo : Ixon.ConstantInfo := .iPrj ⟨0, blockAddr⟩
-  let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[]⟩
+  let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[], #[]⟩
   #[(i.cnst.name, indProj, indMeta)] ++
     ctorMetaPairs.mapIdx fun cidx (ctorName, ctorMeta) =>
       let ctorProjInfo : Ixon.ConstantInfo :=
         .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
-      let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+      let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[], #[]⟩
       (ctorName, ctorProj, ctorMeta)
 
 /-- Finish the main block and projections of a compiled standalone inductive
@@ -2241,7 +2441,7 @@ family. -/
   let _ ← checkedTableCount "constructor projections" ctorMetaPairs.size
   let cache ← getBlockState
   let block ← buildBlockConstant
-    (.muts #[.indc ind]) cache.refs cache.univs
+    (.muts #[.indc ind]) cache.refs cache.univs #[i.cnst.name]
   let res := BlockResult.mk' block
   let projections :=
     buildInductiveProjections i indMeta ctorMetaPairs res.blockAddr
@@ -2249,11 +2449,12 @@ family. -/
 
 /-- Finish a compiled singleton payload using the current block tables, the
 compiler's canonical sharing (`buildBlockConstant`, roots derived from the
-payload), and the canonical `BlockResult` serializer. -/
+payload), and the canonical `BlockResult` serializer. Its one member is the block's
+constant (`BlockEnv.current`). -/
 def finishConstantWithSharing (info : Ixon.ConstantInfo)
     (blockMeta : Ixon.ConstantMeta := .empty) : CompileM BlockResult := do
   let cache ← getBlockState
-  let block ← buildBlockConstant info cache.refs cache.univs
+  let block ← buildBlockConstant info cache.refs cache.univs #[(← getBlockEnv).current]
   pure (BlockResult.mk' block blockMeta)
 
 /-- Finish a singleton declaration (`finishConstantWithSharing`; the sharing

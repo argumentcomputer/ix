@@ -23,6 +23,7 @@ pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
+pub mod modes;
 pub mod proof;
 pub mod role_table;
 pub mod serialize;
@@ -31,17 +32,17 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for checked Ixon grammar, version 4
-/// (`Env::CHECKED_FORMAT_VERSION`). Unchecked envelope data does not change it.
-/// Mirrors `Ixon.wireFormatId`.
-pub const WIRE_FORMAT_ID: &str = "ixon-v4";
+/// Stable identifier for checked Ixon grammar, version 5: version 4's TagN
+/// integers plus each record's binder-data section. Unchecked envelope data
+/// does not change it. Mirrors `Ixon.wireFormatId`.
+pub const WIRE_FORMAT_ID: &str = "ixon-v5";
 
 // Re-export main types
 pub use comm::Comm;
 pub use constant::{
-  Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
-  Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
-  Recursor, RecursorProj, RecursorRule,
+  Axiom, BinderBlock, BinderNode, Constant, ConstantInfo, Constructor,
+  ConstructorProj, DefKind, Definition, DefinitionProj, Inductive,
+  InductiveProj, MutConst, Quotient, Recursor, RecursorProj, RecursorRule,
 };
 #[cfg(not(target_arch = "riscv64"))]
 pub use diff::{
@@ -54,6 +55,10 @@ pub use lazy::LazyConstant;
 pub use metadata::{
   ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
   NameReverseIndex,
+};
+pub use modes::{
+  AllMode, AllocAssert, BinderMode, DefAsserts, FieldMode, FieldModes, LetMode,
+  ResultMode,
 };
 pub use proof::{
   Claim, ClaimContext, Proof, RevealConstantInfo, RevealConstructorInfo,
@@ -265,8 +270,8 @@ mod doc_examples {
   #[test]
   fn expr_lam_telescope() {
     // Lam(t1, Lam(t2, Lam(t3, body))) with all types Sort(0) and body Var(0)
-    // Each binder uses one byte: many (3), shared (bit 2), unrestricted.
-    // Its domain follows; the body follows all three binders.
+    // Each binder is its domain alone (its mode is in the binder-data
+    // section); the body follows all three domains.
     let ty = Expr::sort(0);
     let expr = Expr::lam(
       ty.clone(),
@@ -276,8 +281,8 @@ mod doc_examples {
     serialize::put_expr(&expr, &mut buf);
     assert_eq!(
       buf,
-      vec![0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10],
-      "Lam telescope carries explicit input contracts"
+      vec![0x83, 0x00, 0x00, 0x00, 0x10],
+      "Lam telescope is its domains, then its body"
     );
   }
 
@@ -385,6 +390,7 @@ mod doc_examples {
     let def = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -404,6 +410,7 @@ mod doc_examples {
     let def = Definition {
       kind: DefKind::Opaque,
       safety: DefinitionSafety::Unsafe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -423,6 +430,7 @@ mod doc_examples {
     let def = Definition {
       kind: DefKind::Theorem,
       safety: DefinitionSafety::Partial,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -445,6 +453,7 @@ mod doc_examples {
     let constant = Constant::new(ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -463,6 +472,7 @@ mod doc_examples {
     let def = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
