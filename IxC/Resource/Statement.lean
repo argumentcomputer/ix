@@ -2,14 +2,15 @@ module
 
 public import IxC.Resource.Read
 public import IxC.Resource.Eval
+public import IxC.Resource.Oracle
 public import IxC.Kernel.Rules.Rel
 public import IxC.Kernel.Verify.Level
 
 /-!
 # The mode-safety statement
 
-`ModeSafe env s` is the statement a modes claim would carry: the claim's records
-read as a run program `P` (`Reads`); for every seed with a run body, every input
+`ModeSafe lim env s` is the statement a modes claim would carry: the claim's records
+read as a run program `P` at the oracle limits `lim` (`Reads`); for every seed with a run body, every input
 heap meeting its declared modes (`InputsOk`), every extern behaving as its
 declared modes allow (`ExternOk`) and every fuel, `runR` never ends in one of
 its four violations. Runs that end `stuck` or out of fuel are not covered.
@@ -24,11 +25,14 @@ consistency statement's reading installs (`IxVM.Consistency.ConsistentRead`'s
 states them inside one existential, so typing and modes are answered from the
 same bytes.
 
-**Classes are the kernel's.** The run program's classes are read with the
-canonical class oracle (`canonClassifier`): a term is `irr` when the kernel's
-rules (`Rules.Infer`, `Rules.Red`) type it as a type, a type former or a proof;
-`imm` or `leaf` when they type it at an immediate or leaf type (`ImmT`, `LeafT`,
-least fixed points, so a type that wraps itself is neither).
+**Classes at stated limits.** The run program's classes are read with the
+decidable class oracle (`oracleClassifier`) at the limits `lim` the claim
+states, so the program the statement speaks of is the one the checker checks;
+a decline at those limits is not a refusal of the program. The canonical
+classes (`canonClassifier`: the kernel's rules, `Rules.Infer`, `Rules.Red`,
+`ImmT`, `LeafT`) remain as the target of a separate lemma, "the oracle's
+classes are the kernel's where it answers", which the bridge to compiled code
+and adequacy need and which nothing here proves.
 -/
 
 @[expose] public section
@@ -38,49 +42,8 @@ namespace IxC.Resource
 open Ixon
 open Ix.Kernel (Env Key)
 
-/-! ## Constructor shapes -/
-
-/-- A constructor, as the classes need it: its kernel type, its parameter count,
-and which of its fields are erased (its binders' modes in its record). -/
-structure CtorShape where
-  type : KExpr
-  nParams : Nat
-  erased : List Bool
-
-/-- The record address a kernel key names. -/
-def keyAddress (s : Subject) : Key .anon → Option Address
-  | .id a => some a
-  | .role r => s.table.addressOf? r
-  | .aux _ _ => none
-
-/-- A class oracle that answers `val`, for readings that use no class. -/
-def noClasses : Classifier := { type := fun _ _ => .ok .val, node := fun _ _ => .ok .val }
-
-/-- The constructors of the inductive type a key names, from the records. -/
-def ctorShapes (rd : Reading) (k : Key .anon) : Option (List CtorShape) := do
-  let a ← keyAddress rd.s k
-  let r ← Ix.Kernel.Reader.resolve rd.s.store a
-  let ind ← inductiveAt? rd.s r
-  let x ← (rd.rcx noClasses r).toOption
-  let .member _ i := r | none
-  let base := rootBase x.c i
-  let nP := ind.params.toNat
-  (List.range ind.ctors.size).mapM fun ci => do
-    let ctor ← ind.ctors[ci]?
-    let type ← (x.toK [] ctor.typ).toOption
-    let (alls, _) ← ((inBlock x.rm (rootKey (base + 1 + ci)) (do
-        let (alls, cod) ← readForalls x readFuel ctor.typ
-        let _ ← readSkel x readFuel cod
-        pure alls)).run {}).toOption
-    pure { type, nParams := nP, erased := (alls.drop nP).map fun (m, _, _) => m.input == .erased }
 
 /-! ## The canonical classes -/
-
-/-- Instantiate a type's leading ∀s with `args`. -/
-def instParams : KExpr → List KExpr → Option KExpr
-  | t, [] => some t
-  | .forallE _ b _, a :: as => instParams (b.instantiate1 a) as
-  | _, _ :: _ => none
 
 /-- **The types of irrelevant terms**: `T`, opened at depth `d`, reduces to a
 sort (its terms are types), to a ∀ whose body is again such a type (type
@@ -163,16 +126,30 @@ noncomputable def nodeClass (env : Env .anon) (sh : Key .anon → Option (List C
     else if ∃ T, Ix.Kernel.Rules.Infer env .full d e T ∧ LeafT env sh d T then .leaf
     else .val
 
-/-- **The class oracle's definition**: the kernel's own judgements, over the
-environment `env`. One definition, so a different oracle (a fueled run at fixed
-limits, say) is a change here. -/
+/-- **The canonical classes**: the kernel's own judgements, over the environment
+`env`. No longer what `ModeSafe` reads with (`Reads` uses the decidable oracle at
+limits the claim states): it remains the target of a separate lemma, "the
+oracle's classes are the kernel's where it answers", which the bridge to
+compiled code and adequacy need and which nothing here proves. -/
 noncomputable def canonClassifier (env : Env .anon) (s : Subject) : Classifier :=
   let sh := ctorShapes (Reading.make s)
   { type := fun d T => .ok (typeClass env sh d T), node := fun d e => .ok (nodeClass env sh d e) }
 
-/-- **The run program of a subject**, read with the kernel's classes. -/
-def Reads (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
+/-- The run program of a subject read with the canonical classes: what `Reads`
+was before the reading moved to the decidable oracle (kept for that lemma and
+for the other workstream's texts that name the canonical reading). -/
+def ReadsCanon (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
   readProg s (canonClassifier env s) = .ok P
+
+/-- **The run program of a subject**, read with the decidable class oracle
+(`oracleClassifier`) at the limits `lim`. The limits are part of what is
+claimed: a claim of mode safety is a claim at stated oracle limits, and a
+decline at those limits is not a refusal of the program. By definition this is
+the program the checker checks (`check` reads the whole closure with the same
+classifier), which is why the oracle declines at its depth limit instead of
+inventing a class. -/
+def Reads (lim : OracleLimits) (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
+  readProg s (oracleClassifier env (ctorShapes (Reading.make s)) lim) = .ok P
 
 /-! ## Heaps meeting declared modes -/
 
@@ -355,10 +332,11 @@ never uses a reference revoked by a unique transfer, never lets a borrowed value
 outlive its scope, and never calls a once-closure twice. Runs that end `stuck`
 or out of fuel are not covered. A seed with no input meeting `InputsOk` is
 covered vacuously: one with a (non-erased) parameter at an arrow skeleton that
-no constant of the program matches (`ClosureAt`). -/
-def ModeSafe (env : Env .anon) (s : Subject) : Prop :=
-  (∃ P, Reads env s P) ∧
-  ∀ P, Reads env s P → ∀ a ∈ s.seeds, ∀ r, SeedRef s a r →
+no constant of the program matches (`ClosureAt`). The program is the one read at
+the oracle limits `lim` (`Reads`), which the claim states. -/
+def ModeSafe (lim : OracleLimits) (env : Env .anon) (s : Subject) : Prop :=
+  (∃ P, Reads lim env s P) ∧
+  ∀ P, Reads lim env s P → ∀ a ∈ s.seeds, ∀ r, SeedRef s a r →
     ∀ params res rc rs t, P.find? r = some (.body params res rc rs t) →
     ∀ ext, ExternOk P ext → ∀ h args, InputsOk P h params args →
     ∀ fuel k, runR P ext fuel r h args ≠ .violation k
@@ -409,7 +387,7 @@ natively in its place reads no erased position either. For run bodies the
 corresponding sentence is `ModeSafe`'s second conjunct: no run of a seed reads
 an erased binding. -/
 def ReadsRespectErasure : Prop :=
-  ∀ env s P, Reads env s P → RespectsErasure s P
+  ∀ lim env s P, Reads lim env s P → RespectsErasure s P
 
 /-! ## Statements for the follow-up work (definitions; nothing is proved here) -/
 

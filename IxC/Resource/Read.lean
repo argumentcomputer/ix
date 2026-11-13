@@ -1038,6 +1038,57 @@ def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
       defs := defs.push (r, ← rd.readDef cl rt true r)
   pure { defs, nat := roleRef? s .nat }
 
+
+/-! ## Constructor shapes (moved here from `Statement.lean`, so that the class oracle, which
+uses them, can sit below the statement that reads with it) -/
+
+section
+open Ix.Kernel (Env Key)
+
+
+/-- A constructor, as the classes need it: its kernel type, its parameter count,
+and which of its fields are erased (its binders' modes in its record). -/
+structure CtorShape where
+  type : KExpr
+  nParams : Nat
+  erased : List Bool
+
+/-- The record address a kernel key names. -/
+def keyAddress (s : Subject) : Key .anon → Option Address
+  | .id a => some a
+  | .role r => s.table.addressOf? r
+  | .aux _ _ => none
+
+/-- A class oracle that answers `val`, for readings that use no class. -/
+def noClasses : Classifier := { type := fun _ _ => .ok .val, node := fun _ _ => .ok .val }
+
+/-- The constructors of the inductive type a key names, from the records. -/
+def ctorShapes (rd : Reading) (k : Key .anon) : Option (List CtorShape) := do
+  let a ← keyAddress rd.s k
+  let r ← Ix.Kernel.Reader.resolve rd.s.store a
+  let ind ← inductiveAt? rd.s r
+  let x ← (rd.rcx noClasses r).toOption
+  let .member _ i := r | none
+  let base := rootBase x.c i
+  let nP := ind.params.toNat
+  (List.range ind.ctors.size).mapM fun ci => do
+    let ctor ← ind.ctors[ci]?
+    let type ← (x.toK [] ctor.typ).toOption
+    let (alls, _) ← ((inBlock x.rm (rootKey (base + 1 + ci)) (do
+        let (alls, cod) ← readForalls x readFuel ctor.typ
+        let _ ← readSkel x readFuel cod
+        pure alls)).run {}).toOption
+    pure { type, nParams := nP, erased := (alls.drop nP).map fun (m, _, _) => m.input == .erased }
+
+
+/-- Instantiate a type's leading ∀s with `args`. -/
+def instParams : KExpr → List KExpr → Option KExpr
+  | t, [] => some t
+  | .forallE _ b _, a :: as => instParams (b.instantiate1 a) as
+  | _, _ :: _ => none
+
+end
+
 end IxC.Resource
 
 end

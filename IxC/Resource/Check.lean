@@ -1,6 +1,7 @@
 module
 
 public import IxC.Resource.Oracle
+public import IxC.Resource.Statement
 
 /-!
 # The mode checker (uncertified)
@@ -816,12 +817,16 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
       for r in refsOf a c do toCheck := toCheck.push r
   checkBodies lim P toCheck.toList
 
-/-- **The checker's soundness**, to prove: whatever it accepts is mode-safe
-(over the environment the subject's typing installs). The fast path rests on
-`DefaultOk`, and on a closure whose modes are all default reading as a run
-program (`Reads`) whenever the kernel reads it. -/
-def CheckSound : Prop :=
-  ∀ lim env s n fp, check lim env s = .accept n fp → ModeSafe env s
+/-- **The checker's soundness**, to prove: whatever it accepts is mode-safe at
+its oracle limits, over an environment the kernel installed from the subject's
+records. `KernelRead env s` is that reading; it is a parameter because the
+kernel's reading lives in the root package, where the consistency statement's
+`IxVM.Consistency.ConsistentRead` (its `env` and its records) instantiates it.
+The program `ModeSafe` speaks of is by definition the one `check` checks: both
+read the whole closure with `oracleClassifier` at `lim.oracle` (`Reads`). The
+fast path rests on `DefaultOk`. -/
+def CheckSound (KernelRead : Ix.Kernel.Env .anon → Subject → Prop) : Prop :=
+  ∀ lim env s n fp, KernelRead env s → check lim env s = .accept n fp → ModeSafe lim.oracle env s
 
 end IxC.Resource
 
