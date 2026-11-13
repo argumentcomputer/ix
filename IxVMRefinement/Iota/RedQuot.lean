@@ -795,10 +795,10 @@ theorem quot_subst_singleton_cons (p : Ix.Kernel.LevelParam) (m0 : KLevel)
     (mrest : List KLevel) :
     ∀ (l : KLevel), Ix.Kernel.Level.subst [p] (m0 :: mrest) l = Ix.Kernel.Level.subst [p] [m0] l
   | .zero => rfl
-  | .succ l => congrArg .succ (quot_subst_singleton_cons p m0 mrest l)
-  | .max a b => congrArg₂ .max (quot_subst_singleton_cons p m0 mrest a)
+  | .succ l => congrArg Ix.Kernel.Level.succ (quot_subst_singleton_cons p m0 mrest l)
+  | .max a b => congrArg₂ Ix.Kernel.Level.max (quot_subst_singleton_cons p m0 mrest a)
       (quot_subst_singleton_cons p m0 mrest b)
-  | .imax a b => congrArg₂ .imax (quot_subst_singleton_cons p m0 mrest a)
+  | .imax a b => congrArg₂ Ix.Kernel.Level.imax (quot_subst_singleton_cons p m0 mrest a)
       (quot_subst_singleton_cons p m0 mrest b)
   | .param _ => rfl
 
@@ -807,11 +807,11 @@ theorem quot_instLP_singleton_cons (p : Ix.Kernel.LevelParam) (m0 : KLevel)
     ∀ (e : KExpr),
       e.instantiateLevelParams [p] (m0 :: mrest) = e.instantiateLevelParams [p] [m0]
   | .bvar _ => rfl
-  | .fvar idx ty => congrArg (.fvar idx) (quot_instLP_singleton_cons p m0 mrest ty)
-  | .sort u => congrArg .sort (quot_subst_singleton_cons p m0 mrest u)
-  | .const n ls => congrArg (.const n) (List.map_congr_left fun l _ =>
+  | .fvar idx ty => congrArg (Ix.Kernel.Expr.fvar idx) (quot_instLP_singleton_cons p m0 mrest ty)
+  | .sort u => congrArg Ix.Kernel.Expr.sort (quot_subst_singleton_cons p m0 mrest u)
+  | .const n ls => congrArg (Ix.Kernel.Expr.const n) (List.map_congr_left fun l _ =>
       quot_subst_singleton_cons p m0 mrest l)
-  | .app f a => congrArg₂ .app (quot_instLP_singleton_cons p m0 mrest f)
+  | .app f a => congrArg₂ Ix.Kernel.Expr.app (quot_instLP_singleton_cons p m0 mrest f)
       (quot_instLP_singleton_cons p m0 mrest a)
   | .lam ty b m => by
       simp only [Ix.Kernel.Expr.instantiateLevelParams,
@@ -826,7 +826,7 @@ theorem quot_instLP_singleton_cons (p : Ix.Kernel.LevelParam) (m0 : KLevel)
         quot_instLP_singleton_cons p m0 mrest ty, quot_instLP_singleton_cons p m0 mrest v,
         quot_instLP_singleton_cons p m0 mrest b]
   | .lit _ => rfl
-  | .proj s i e => congrArg (.proj s i) (quot_instLP_singleton_cons p m0 mrest e)
+  | .proj s i e => congrArg (Ix.Kernel.Expr.proj s i) (quot_instLP_singleton_cons p m0 mrest e)
 
 theorem quot_posOf_inst_cons {p : Ix.Kernel.LevelParam} {m0 : KLevel} {mrest : List KLevel}
     {e : KExpr} (h : e.allLevelParamsDefined [p] = true) :
@@ -890,13 +890,14 @@ private theorem quot_certs_seg1 {c : Ctx} {calls cs60 : List (Call F)} (ih : IH 
       rwa [Nat.cast_one] at h0
     rw [hv1] at hl1
     obtain ⟨hr1, -⟩ := ih.get (.levelOps .level_is_not_zero)
-      (by simp only [List.length_cons, List.length_append] at hle; omega) ev20 v21 rfl l1 hrl1
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev20 v21 rfl l1
+      (hrl1.mono e33)
     rw [hv57] at hr1
     have hnz := WhnfAux.isNeverZero_of_answer hr1
     obtain ⟨u1, hu1, heq1⟩ := quot_lvEqList_getElem? hlseq 1 hl1
     exact ⟨hv14, u1, hu1, (WhnfAux.isNeverZero_congr heq1).trans hnz⟩
   · subst he55
-    exact ⟨Heap.Extends.refl h, fun hv => absurd (he54.symm.trans hv) (by simp)⟩
+    exact ⟨Heap.Extends.refl _, fun hv => absurd (he54.symm.trans hv) (by simp)⟩
 
 private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List (Call F)}
     (ih : IH c calls) (good : Good c calls) (hsub : ∀ z ∈ cs320, z ∈ calls)
@@ -936,7 +937,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
       obtain ⟨u0, u1, rfl⟩ := quot_list2 hus2
       have hv1 : u1 = v := by simpa using hv
       subst hv1
-      refine ⟨Heap.Extends.refl m58, ?_, .inl ⟨hil1, u1, rfl, hvnz⟩⟩
+      refine ⟨Heap.Extends.refl _, ?_, .inl ⟨hil1, u1, rfl, hvnz⟩⟩
       intro ci hci
       rw [hka, hfL] at hci
       obtain rfl := Option.some.inj hci
@@ -1008,7 +1009,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
     obtain ⟨ta, hta, hinf⟩ := ih.get (.infer .k_infer_only)
       (by simp only [List.length_cons, List.length_append] at hle; omega) ev230 rc v232 types rfl
       (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono E242 hrc) d Γ
-      (types_mono E242 htypes) q2 htq2
+      (types_mono E242 htypes) q2 (Tm.mono e252 htq2)
     obtain ⟨⟨r0, hr0_lk, htr0⟩, -⟩ := Lib.Lists.lookup_spec (t := kexprTy) (R := TmE c.κ d Γ)
       (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev286)
       (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono E220 hRA)
@@ -1016,7 +1017,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
     have hde := ih.get (.defEq .k_is_def_eq)
       (by simp only [List.length_cons, List.length_append] at hle; omega) ev207 rc v209 v210 types
       rfl (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono E276 hrc) d Γ
-      (types_mono E276 htypes) ta r0 (Tm.mono e286 hta) htr0 NatAux.field_one_ne_zero
+      (types_mono E276 htypes) ta r0 (Tm.mono e286 hta) (Tm.mono e286 htr0) NatAux.field_one_ne_zero
     refine ⟨E276.trans e207, ?_, .inr ⟨ta, ?_, ?_⟩⟩
     · intro ci hci
       rw [hfind0] at hci
@@ -1062,7 +1063,8 @@ theorem quot_certs_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F
       (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol]; exact ev367)
       (by rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]; exact hmls318)
     rw [ZMod.val_zero] at hml0
-    obtain ⟨hrM, -⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev354 v355 rfl ml0 hrml0
+    obtain ⟨hrM, -⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev354 v355 rfl ml0
+      (hrml0.mono (ObsFn.heap_extends ev367))
     have hnz0 := WhnfAux.isNeverZero_of_answer hrM
     obtain ⟨m0, hm0, heqm0⟩ := quot_lvEqList_getElem? hmuseq 0 hml0
     have hm0nz : m0.isNeverZero = true := (WhnfAux.isNeverZero_congr heqm0).trans hnz0

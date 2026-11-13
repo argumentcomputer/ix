@@ -273,8 +273,8 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
       ev36 ev14 ev82 ld118 ev166 ev209 op203 ev188 op160 ev245 op239 ev224 op152 ev273 ev340
       hm373 ev316 ev405 ld399 ev494 hm543 ev531 ev583 ev637 ev701 hm734 ev677 he753 he767
       hc768 =>
-    obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he753)
-    subst he767 hc768
+    obtain ⟨-, hx_eq⟩ := tuple2_inj (hr.symm.trans he753)
+    subst x he767 hc768
     obtain ⟨hfind, -⟩ := hrec
     have hrl : rl ∈ [rl] := List.mem_singleton_self rl
     obtain ⟨cvj, cnP, cnF, T', tus', cvT', caps', hcj, hres', hT', heta, hetaCtor, -, hlp_eq⟩ :=
@@ -619,8 +619,8 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     have hmIv : ZMod.val (mI : F) = mI := NatAux.val_natCast (by omega)
     rw [hmIv, Option.map_eq_some_iff] at hpi_pos
     obtain ⟨Dm_pos, hDm_pos, hDm_fn⟩ := hpi_pos
-    have hmh : Specs.Whnf.MajorHead c cv mI p := WhnfAux.majorHead_of_pos hDm_pos hDm_fn
-    obtain ⟨us_m, hmh0⟩ := hmh
+    obtain ⟨us_m, hmh0⟩ := WhnfAux.majorHead_of_pos hDm_pos hDm_fn
+    have hmh : Specs.Whnf.MajorHead c cv mI p := ⟨us_m, hmh0⟩
     -- inductive load and counts
     have e192 := ObsFn.heap_extends ev192
     have e295 := ObsFn.heap_extends ev295
@@ -695,7 +695,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         obtain rfl := ixAddr_inj hb_eq.symm
         exact ⟨x_block_sr, m2_sr, m90_sr, cs101_sr, ev103_sr, hgood101, hb_sr⟩
     -- major lookup
-    obtain ⟨⟨A, hAs_idx, hAs_get⟩, rfl⟩ := Lib.Lists.lookup_spec
+    obtain ⟨⟨A, hAs_idx, hAs_get⟩, -⟩ := Lib.Lists.lookup_spec
       (t := .ptr (.named "KernelTypes::KExprNode" [])) (R := TmE c.κ d Γ)
       (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev448)
       (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono X409 hAs)
@@ -703,7 +703,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     -- unpack ev577 (eta_iota_fab) to extract type_sort_never = 1
     have ev577_keep := ev577
     have hgood575 : Good c cs575 := good.sub fun z hz => by simp [hz]
-    have ih575 : IH c cs575 := ih.mono (by simp)
+    have ih575 : IH c cs575 := ih.mono (by simp only [List.length_cons, List.length_append]; omega)
     have hsort_obs : ∃ (ust : List KLevel) (l : KLevel),
         piSortAt (ZMod.val (nPT : F)) (posOf cvT.levelParams cvT.type) = some l ∧
           (Ix.Kernel.Level.subst (List.range ust.length) ust l).isNeverZero = true := by
@@ -714,12 +714,11 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       | .Const_n1_other (he850 := he0) .. => exact (tag_zero_ne_one he0.symm).elim
       | .Const_other (he874 := he0) .. => exact (tag_zero_ne_one he0.symm).elim
       | .other (he898 := he0) .. => exact (tag_zero_ne_one he0.symm).elim
-      | .Const_n1_n1_n1_Ctor_n1 v1_f m2_f cs12_f v16_f m26_f cs34_f m69_f cs80_f x_th_f x_targs_f
-          x_taddr_f x_tus_f m137_f _ _ m147_f _ _ m155_f cs164_f cs186_f _ _ m198_f cs207_f
-          cs222_f _ _ m234_f cs243_f m260_f cs271_f _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _
-          ev36_f ev14_f ev82_f ld118_f ev166_f ev209_f _ ev188_f _ ev245_f _ ev224_f _ ev273_f
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc768_f =>
+      | .Const_n1_n1_n1_Ctor_n1
+          (v1 := v1_f) (v16 := v16_f) (m69 := m69_f) (x_tus := x_tus_f) (m137 := m137_f)
+          (ev36 := ev36_f) (ev14 := ev14_f) (ev82 := ev82_f) (ld118 := ld118_f) (ev166 := ev166_f)
+          (ev209 := ev209_f) (ev188 := ev188_f) (ev245 := ev245_f) (ev224 := ev224_f)
+          (ev273 := ev273_f) (hc768 := hc768_f) .. =>
         subst hc768_f
         have e36_f := ObsFn.heap_extends ev36_f
         have e14_f := ObsFn.heap_extends ev14_f
@@ -732,7 +731,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         obtain ⟨TM_f, hTM_f, -⟩ := ih575.get (.infer .k_infer) (by lt_calls) ev36_f
           rc v435 types rfl (hgood575.sub fun z hz => by simp [hz])
           (RCRep.mono X466 hrc) d Γ (types_mono X466 htypes) A
-          (Tm.mono (e493.trans (e513.trans e479)) hAs_get)
+          (Tm.mono (e448.trans (e493.trans (e513.trans e479))) hAs_get)
         obtain ⟨TW_f, hTW_f, -⟩ := ih575.get (.whnf .whnf) (by lt_calls) ev14_f
           rc v16_f types rfl (hgood575.sub fun z hz => by simp [hz])
           (RCRep.mono (X466.trans e36_f) hrc) d Γ (types_mono (X466.trans e36_f) htypes) TM_f hTM_f
@@ -777,7 +776,8 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       k nl rt np ni nm nmi rules kf cv mI rP rl p (.indInfo cvT caps) (.field (nIT : F))
       (.field (nCT : F)) w310 A (RecRedHyps.mono X466 hrr').1 hrleta
       (Bytes.repAddressRef_heapMono₂ addrTy (e295.trans Y466) hp) hmh hfindI
-      (CIRep.mono Y466 hciI') (Tm.mono (e493.trans (e513.trans e479)) hAs_get) x_fab rfl
+      (CIRep.mono Y466 hciI')
+      (Tm.mono (e448.trans (e493.trans (e513.trans e479))) hAs_get) x_fab rfl
     have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hAs_idx]; rfl
     exact ih.get (.whnf .red_iota) (by lt_calls) ev673
       rc rt lvls sp np nm nmi ni rules x_parent x_fab types rfl
