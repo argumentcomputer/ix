@@ -209,7 +209,8 @@ def heldPart (dir : FilePath) : IO (Nat × Nat) := do
   let ms := (← IO.monoMsNow) - t0
   IO.println s!"ixcc at the command line: held runs in {ms} ms (bound 90000)"
   check (ms < 90000) s!"the held runs took {ms} ms, over their 90 s bound"
-  return (← n.get + 1, 0)
+  let k ← n.get
+  return (k + 1, 0)
 
 def suite (dir : FilePath) : IO (Nat × Nat) := do
   check (← ixccPath.pathExists) s!"{ixccPath} is not built"

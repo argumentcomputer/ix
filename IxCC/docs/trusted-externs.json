@@ -3244,7 +3244,7 @@
       "IxCC/Src/Relevance/Proof/P1/CaseKey.lean": "4c2433af82a49d428d539129d036a8fe59da3ebde41c15905bd8b4d7122d94fb",
       "IxCC/Src/Relevance/Proof/P1/App.lean": "439a984580b41cbb313afa9206e7c2fd48a8229629456f2ae7aa0a2c9f02aa58",
       "IxCC/Recheck/Proof/LiveClosed.lean": "0e42205b133f26e891ea240c32f3af468224ef799893a10911ded51473c6d2e1",
-      "IxCCTests/KernelFront/Cli.lean": "7a1997ad09b751dbcb54b39f6bdaf0bdfeb69366f906bb43071681ae76f57bfa",
+      "IxCCTests/KernelFront/Cli.lean": "c34ca06d2d47d354b8178928e62c5cf1a6859a5e116676bcc4425a8afa1d6fce",
       "IxCCTests/Grounding/CaseEmpty.lean": "1257bd33c63dd38a8e55a1e9e11da191cc0bea263391ff05ed0da8fce871a5b2",
       "IxCCTests/Grounding/LetClo.lean": "3b54f7d28ad786618dfd9cdd861d698d419eb05f9770d4e6d1f526153d37f351",
       "fixtures/corpus/grounding/words.ixe": "7279500198f7f061d32aa86f853a59de4d57329a82061b20aad2c667a90ef791",
