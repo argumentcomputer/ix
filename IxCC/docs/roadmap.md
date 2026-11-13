@@ -729,18 +729,26 @@ for nesting depth before decoding); neither is made yet. The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
-Known costs in the kernel on small hostile inputs (2026-11-12), open, not fixed by the change
-that keeps the ∀ rule's level upstream's and hash-conses it in the executed core (both are on
-upstream's main too; reproducers in the kernel-robustness notes, `plans/kernel-robustness/NOTES.md`):
-- a `let` chain over one shared type (`let a(j+1) : Type := aj → aj`) is superquadratic in time
-  and quadratic in memory in every build: 20 to 30 s and up to 3 GB at 8,000 `let`s (a 56 KB
-  constant), because the binder loop re-peels each value's whole telescope although the tail's
-  type is memoised; a fix would stop the peel at a closed tail and take its sort from the memo,
-  an obligation in the binder-loop simulation proofs;
-- the kernel's acceptance of a program that applies `T k → E → E` to `fun x : T(k-1) => x`, the
-  chain in a sharing table or as `let`s, grows 6 to 9 times per doubling between 1,000 and 2,000
-  (8 to 10 s at 2,000) with or without the fold; cause unknown; IxCC then refuses the program by
-  its own budgets within 70 ms.
+Known costs in the kernel on small hostile inputs (2026-11-12; reproducers in the kernel-robustness
+notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
+- fixed (2026-11-12): a `let` chain over one shared type (`let a(j+1) : Type := aj → aj`) was
+  quadratic in time and memory (27 s and 1.6 GB at 8,000 `let`s), and the kernel's acceptance of
+  a program applying `T k → E → E` to `fun x : T(k-1) => x` grew 6 to 9 times per doubling (6.5 s
+  at 2,000): the binder loops re-peeled each step's whole telescope and annotation rebuilt it
+  unshared. They now stop at a closed tail the memo holds: 0.9 s at 16,000 `let`s, 50 ms for the
+  program at 2,000 (`kernel-level-sharing` bounds the chains);
+- open: the same `let` chain at `Sort u` (`kl-probe chain param K`) stays quadratic, 8.8 s at
+  8,000 `let`s, and is declined at 16,000 by the level comparison's depth fuel (10,000): the
+  specification's `Level.simplify` does not merge `max u u`, so each step's simplified sort is a
+  DAG as deep as the chain and `leqCore` walks it. Nothing changes on our side; the level budget
+  bounds it;
+- open: a chain of λs over the previous value (`let a(j+1) : U(j+1) := fun _ : Prop => aj`, `lamlet`
+  in `kernel-level-sharing`): 0.7 s at 4,000 steps, 3.6 s at 8,000, 18.8 s at 16,000 (4.7 s at
+  4,000 before the stop), in `Level.zeronessOf` walking the ∀ rule's level of each step's type
+  with a per-call memo;
+- open: nested head normalisation (`E_k = (λx. E_{k-1}) P L`) is cubic past about 8,000 levels
+  (99 s at 32,000) because `Expr`'s 32-bit hash cycles along such a chain; a wider hash is the
+  planned fix.
 
 Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
 ownership checker's own, which the captured-work budget bounds

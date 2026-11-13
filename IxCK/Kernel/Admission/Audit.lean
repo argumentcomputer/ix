@@ -151,11 +151,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- net and five ruled csimps (`IxCK/Kernel/Audit/Roots.lean`); every other field is unchanged.
 -- Withdrawing the ∀ rule's fold and hash-consing its levels instead (`Cached.internLM`) adds 3
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- Stopping the telescope loops at a checked tail and seeding the level simplification
+-- (`Cached.peelFuelToM`, `Cached.simplifyMemoC`) add 4 compiled functions to each closure here
+-- (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6906 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkBytes]: 6910 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

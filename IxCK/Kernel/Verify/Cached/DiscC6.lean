@@ -168,7 +168,7 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       (pureC_eff hs₁ (x := Expr.fvar d ty'))
       (fun s₂ fv hs₂ hQfv => ?_)
     have hQfv' : RelC fv (Expr.fvar d ty') := hQfv
-    refine SimC.bind_left (peelFuelM_eff hs₂)
+    refine SimC.bind_left (peelFuelToM_eff hs₂ _ _ _)
       (fun s₃ fuel hs₃ _hQfuel => ?_)
     exact annotatePisC_tail_sim ih hs₃ rfl rfl rfl
       hQfv' hwty' hwtb.2
@@ -193,7 +193,7 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
         (pureC_eff hs₁ (x := Expr.fvar d ty'))
         (fun s₂ fv hs₂ hQfv => ?_)
       have hQfv' : RelC fv (Expr.fvar d ty') := hQfv
-      refine SimC.bind_left (peelFuelM_eff hs₂)
+      refine SimC.bind_left (peelFuelToM_eff hs₂ _ _ _)
         (fun s₃ fuel hs₃ _hQfuel => ?_)
       exact annotateLamsC_tail_sim ih hs₃ rfl rfl rfl
         hQfv' hwty' hwtb.2

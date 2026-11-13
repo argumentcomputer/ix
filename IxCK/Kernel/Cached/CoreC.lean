@@ -1722,7 +1722,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
       match wtty with
       | .sort u => do
         let fv ← pure (Expr.fvar depth ty)
-        let fuel ← peelFuelM
+        let fuel ← peelFuelToM true (·.inferC) body
         inferPisI mode r depth fuel body 1 #[fv] [(u, mb.pw)]
       | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | .lam ty body mb => withChain depth e do
@@ -1733,7 +1733,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
         -- Binder-telescope loop (task #72): peel the whole λ-chain,
         -- open in bulk, rebuild with `abstractRange`.
         let fv ← pure (Expr.fvar depth ty)
-        let fuel ← peelFuelM
+        let fuel ← peelFuelToM false (·.inferC) body
         inferLamsI mode r depth fuel body 1 #[fv] [(ty, mb)]
       | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | .app _ _ => do
@@ -2436,7 +2436,7 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       -- open in bulk, rebuild with `abstractRange`.
       let ty' ← r.annotate depth ty
       let fv ← pure (Expr.fvar depth ty')
-      let fuel ← peelFuelM
+      let fuel ← peelFuelToM true (·.annotC) body
       annotatePisI r fe depth fuel body 1 #[fv] [(ty', mb)]
     | .lam ty body mb => withChain depth e do
       -- The λ-loop is chain-identical only on bvar-closed nodes (the
@@ -2445,7 +2445,7 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       if (← bvarBoundM e) = 0 then do
         let ty' ← r.annotate depth ty
         let fv ← pure (Expr.fvar depth ty')
-        let fuel ← peelFuelM
+        let fuel ← peelFuelToM false (·.annotC) body
         annotateLamsI r fe depth fuel body 1 #[fv] [(ty', mb)]
       else do
         let ty' ← r.annotate depth ty

@@ -202,6 +202,39 @@ def peelFuel : Nat := 16777216
 
 @[inline] def peelFuelM : (CheckCM md) Nat := pure peelFuel
 
+/-- How far a binder-telescope loop peels: the binders of `t`'s spine
+(`∀` binders when `pi`, else `λ` binders) before the first residual that
+is closed (`bvarB = 0`: it mentions no binder peeled so far) and is a key
+of `memo`, at most `n`.
+
+The fuel is semantically transparent (`peelFuel`): wherever the peel
+stops, the leaf phase hands the residual to the knot. Stopping at a
+closed residual the memo already holds makes the leaf a memo hit and lets
+the rebuild share the memoised result. Without it a telescope whose tail
+is already checked was peeled again to its end: on a chain
+`T (j+1) = T j → T j` (a `let` chain, or a sharing table) each step
+re-peeled `j` binders, and annotation rebuilt them as fresh nodes, so two
+annotations of one chain shared nothing and comparing them visited about
+`k²/2` pairs. A residual the memo lacks is peeled as before, so no knot
+nesting is added. -/
+def peelFuelTo (pi : Bool) (memo : Std.HashMap (Expr md) (Expr md)) :
+    Nat → Expr md → Nat → Nat
+  | 0, _, acc => acc
+  | n + 1, t, acc =>
+    if t.bvarB == 0 && memo.contains t then acc
+    else match pi, t with
+      | true, .forallE _ b _ => peelFuelTo pi memo n b (acc + 1)
+      | false, .lam _ b _ => peelFuelTo pi memo n b (acc + 1)
+      | _, _ => acc
+
+/-- The peel fuel of a telescope loop over the body `t` of its first
+binder: `peelFuelTo` against the memo its leaf consults (`sel`). It reads
+the state and changes nothing (`peelFuelToM_eff`). -/
+@[inline] def peelFuelToM (pi : Bool) (sel : CState md → Std.HashMap (Expr md) (Expr md))
+    (t : Expr md) : (CheckCM md) Nat := do
+  let s ← get
+  pure (peelFuelTo pi (sel s) peelFuel t 0)
+
 /-- The per-node loose-bvar bound — an `O(1)` field read. -/
 @[inline] def bvarBoundM (e : Expr md) : (CheckCM md) Nat := pure e.bvarB
 
@@ -265,6 +298,23 @@ comparison is never recomputed within a declaration. -/
     (ls : List Level) : (CheckCM md) (List Level) :=
   pure (ls.map (Level.subst ks us))
 
+/-- `simplify` through the state's memo `mp` (`lsimpC`): a hit; else a
+small level by the plain walk, recorded at its root; else the memoised
+walk `Level.simplifyGo` seeded with `mp`, which keeps every node it
+simplifies. A level built on levels already simplified (the ∀ rule's
+`imax u v` over a telescope's tail, at every step of a chain) then costs
+its new nodes only, where a fresh per-call memo walked its whole DAG.
+`mp`'s entries are the specification at their keys (`CSOK.lsimp`), which
+is `simplifyGo`'s own memo invariant (`simplifyMemoC_spec`). -/
+def simplifyMemoC (mp : Std.HashMap Level Level) (u : Level) :
+    Level × Std.HashMap Level Level :=
+  match mp[u]? with
+  | some x => (x, mp)
+  | none =>
+    if Level.sizeLeft Level.smallWalk u != 0 then
+      let x := Level.simplify u; (x, mp.insert u x)
+    else Level.simplifyGo mp u
+
 /-- Level equivalence with a persistent result cache: simplify both
 sides, compare, then the `leqCore` cascade both ways.
 
@@ -283,14 +333,8 @@ def isEquivLM (l r : Level) : (CheckCM md) (Option Bool) :=
       let mp := s.lsimpC
       let ec := s.eqvC
       let s := { s with lsimpC := {}, eqvC := {} }
-      let (ls, mp) :=
-        match mp[l]? with
-        | some x => (x, mp)
-        | none => let x := Level.simplify l; (x, mp.insert l x)
-      let (rs, mp) :=
-        match mp[r]? with
-        | some x => (x, mp)
-        | none => let x := Level.simplify r; (x, mp.insert r x)
+      let (ls, mp) := simplifyMemoC mp l
+      let (rs, mp) := simplifyMemoC mp r
       if ls == rs then
         (some true, { s with lsimpC := mp, eqvC := ec.insert (l, r) true })
       else
