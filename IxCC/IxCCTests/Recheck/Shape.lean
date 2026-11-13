@@ -389,8 +389,8 @@ def runNoCanonical (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert) :
 
 /-- `T | mk (h g : E) : Type` with Lean's large recursor `T.rec.{u}`, and
 `main := T.rec.{1} (λ _ : T. E) (λ h g. h) (mk c₁ c₂)` (`c₁`). Returns the program, `T.rec`, `T`,
-`mk`, `main` and `E`. -/
-def subProg : IO (Honest × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId) := do
+`mk`, `main`, `E` and `c₁`. -/
+def subProg : IO (Honest × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId) := do
   let (e, en) := addEnum (← loadBase) 3
   let (e, t) := addSimple e #[#[.ext en.ind, .ext en.ind]]
   let motive : X := .lam .many (.ref 2 #[]) (.ref 0 #[])
@@ -403,7 +403,7 @@ def subProg : IO (Honest × Src.CId × Src.CId × Src.CId × Src.CId × Src.CId)
   let h ← ingest "route 12, the honest program (T : Type)" e ([("main", main)] ++ rs)
   let P := h.inp.program
   return (h, ← lookup P t.recursor "T.rec", ← lookup P t.ind "T", ← lookup P t.ctors[0]! "T.mk",
-    ← lookup P main "main", ← lookup P en.ind "E")
+    ← lookup P main "main", ← lookup P en.ind "E", ← lookup P en.ctors[1]! "c₁")
 
 /-- Route 12 (engineer PJ's run of engineer PF's reading, `plans/resource-cert/P1.md`). Below the
 kernel, `subProg` with `T : Prop` and `mk`'s fields written erased (`mk (0 h 0 g : E)`): `T.rec`
@@ -420,7 +420,7 @@ kernel-faithful recursor (motive into `Prop`, made a root, since C5 refuses a re
 it) is refused by C6 or C1: its minors are proofs. -/
 def subRecord (a : Assert) : IO (Array String) := do
   let c₁ : Sem.Obs := .ctor 1 []
-  let (h, rId, tId, mkId, main, eId) ← subProg
+  let (h, rId, tId, mkId, main, eId, c1Id) ← subProg
   expect a (objMain h.art == some c₁ && srcMain h.art main == some c₁)
     s!"route 12: the honest program (T : Type) returns {repr (objMain h.art)}, SrcEval {repr (srcMain h.art main)}"
   let Pi ← installed h
@@ -473,7 +473,7 @@ def subRecord (a : Assert) : IO (Array String) := do
       { r with rhs := retagLams [none, some Src.Rel.prf] pw 0 (Src.Relevance.Check.Canonical.instUnivsTerm [.zero] r.rhs) }
     let PA := Pt.setDecl rId (.recr sf kk 0 rnp nmot nmin rni ind rules
       (Src.Relevance.Check.Canonical.instUnivsTerm [.zero] rty))
-    let PA := { withValue PA main (.const eId []) with roots := Pt.roots ++ [(Pt.addr rId, rId)] }
+    let PA := { withValue PA main (.const c1Id []) with roots := Pt.roots ++ [(Pt.addr rId, rId)] }
     let annA := withNode (withNode (withConst ann PA rId) (.value main) []) (.rule rId 0)
       ((rules[0]?.map (·.rhs.tagOrder)).getD [])
     let tableA ← match Src.Table.ofCert h.cfg.table PA h.cert.table with
