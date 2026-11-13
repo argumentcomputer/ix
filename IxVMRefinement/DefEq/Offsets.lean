@@ -216,6 +216,57 @@ private theorem defEq_of_offsets {c : Ctx} (hc : CoreFacts c) {d : Nat} {A B BA 
     exact DefEq.redBoth (red_offsetSplit hlit hc.env.natAdd ha)
       (red_offsetSplit hlit hc.env.natAdd hb) (defEq_succTower hab k)
 
+private theorem repLimbs_store_nil (h : Heap F) :
+    RepLimbs (h ++ [.construct limbListEnum "Nil" []]) 0
+      (.ptr (.enum limbListEnum) h.length) :=
+  ⟨[], .nil (by simp), rfl⟩
+
+private theorem repLimbsC_store_nil (h : Heap F) :
+    Specs.Nat.RepLimbsC (h ++ [.construct limbListEnum "Nil" []]) 0
+      (.ptr (.enum limbListEnum) h.length) :=
+  ⟨[], .nil (by simp), rfl, by simp⟩
+
+private theorem nat_offset_tag0 {c : Ctx} {h : Heap F} {e : SourceValue F} (m : Heap F) :
+    (∀ x y, (Value.tuple [.field 0, e, .ptr (.enum limbListEnum) m.length] : SourceValue F) =
+        .tuple [.field 0, x, y] →
+      x = e ∧ RepLimbs (m ++ [.construct limbListEnum "Nil" []]) 0 y) ∧
+    (∀ tag x y, (Value.tuple [.field 0, e, .ptr (.enum limbListEnum) m.length] : SourceValue F) =
+        .tuple [tag, x, y] → tag ≠ .field 0 → ∀ d Γ E, c.tm d Γ h E e →
+      ∃ B k, Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) E B k ∧
+        c.tm d Γ (m ++ [.construct limbListEnum "Nil" []]) B x ∧
+        RepLimbs (m ++ [.construct limbListEnum "Nil" []]) k y) := by
+  refine ⟨fun x y ht => ?_, fun tag x y ht hne => ?_⟩
+  · injection ht with hl
+    injection hl with _ hl
+    injection hl with hx hl
+    injection hl with hy
+    subst hx hy
+    exact ⟨rfl, repLimbs_store_nil m⟩
+  · injection ht with hl
+    injection hl with htag
+    exact absurd htag.symm hne
+
+private theorem nat_offset_tag1 {c : Ctx} {h h' : Heap F} {e xb xo : SourceValue F}
+    (h1 : ∀ d Γ E, c.tm d Γ h E e →
+      ∃ B k, Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) E B k ∧
+        c.tm d Γ h' B xb ∧ RepLimbs h' k xo) :
+    (∀ x y, (Value.tuple [.field 1, xb, xo] : SourceValue F) = .tuple [.field 0, x, y] →
+      x = e ∧ RepLimbs h' 0 y) ∧
+    (∀ tag x y, (Value.tuple [.field 1, xb, xo] : SourceValue F) = .tuple [tag, x, y] →
+      tag ≠ .field 0 → ∀ d Γ E, c.tm d Γ h E e →
+      ∃ B k, Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) E B k ∧
+        c.tm d Γ h' B x ∧ RepLimbs h' k y) := by
+  refine ⟨fun x y ht => ?_, fun tag x y ht _ d Γ E hE => ?_⟩
+  · injection ht with hl
+    injection hl with h01
+    exact absurd h01 field_one_ne_zero
+  · injection ht with hl
+    injection hl with _ hl
+    injection hl with hx hl
+    injection hl with hy
+    subst hx hy
+    exact h1 d Γ E hE
+
 end IxVM.Refinement.Core.DefEqAux
 
 namespace IxVM.Refinement.Core
@@ -433,6 +484,146 @@ theorem is_nat_zero_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
     rw [hk]
     exact .inr rfl
   · exact absurd he147 hr
+
+/-- `KernelDefEq::nat_offset_of`: a `Nat` literal splits into the literal `0` and its limbs
+(`mk_nat_lit`), a level-free `Nat.succ` application peels one step (`role_is`, `lvls_empty`,
+`klimbs_succ`), and a `Nat.add` application with a `Nat` literal right-hand side peels that
+literal (`role_is`, `klimbs_add`). Every `0`-tagged path returns the input and the empty limb
+list. -/
+theorem nat_offset_of_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelDefEq::nat_offset_of" args h r h' calls) (ih : IH c calls) :
+    Specs.DefEq.nat_offset_of c args h r h' calls := by
+  intro rc e hargs good hrc
+  subst hargs
+  cases Obs.«KernelDefEq::nat_offset_of».obs ev with
+  | Lit_Nat x_n v49 m59 cs67 m72 ld12 he51 hm80 ev69 he91 hc92 =>
+    subst he51 hm80 he91 hc92
+    refine nat_offset_tag1 fun d Γ E hE => ?_
+    rcases hE.lit_of_load ld12 with ⟨lp, limbs, hx, hrl, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
+    · injection hx with _ _ hx'
+      injection hx' with hx''
+      subst hx''
+      have e0 : Heap.Extends h (h ++ [.construct limbListEnum "Nil" []]) :=
+        Heap.Extends.snoc _ _
+      have e1 := ObsFn.heap_extends ev69
+      have h0 : c.tmc h' (.lit (.natVal 0)) v49 :=
+        ih.get (.nat .mk_nat_lit) (by lt_calls) ev69 _ rfl (good.sub fun x hx => by simp [hx]) 0
+          (repLimbsC_store_nil h)
+      exact ⟨.lit (.natVal 0), limbsVal limbs, .lit, h0 d Γ, limbs,
+        repList_heapMono₂ _ repU64_heapMono₂ (e0.trans e1) hrl, rfl⟩
+    · injection hx with _ hc'
+      exact absurd hc' (by decide)
+  | Lit_other _ m117 _ _ he102 hm125 he129 _ =>
+    subst he102 hm125 he129
+    exact nat_offset_tag0 h
+  | App_Const_n1 x_f x_a x_caddr x_clvls m178 x186 y187 m188 cs197 v202 m218 cs226 cs232 m248
+      cs259 w284 x_base x_o v304 m320 cs328 ld12 ld159 ev228 ev199 ev234 op193 ev261 he305 ev330
+      he339 hc340 =>
+    subst he305 he339 hc340
+    refine nat_offset_tag1 fun d Γ E hE => ?_
+    obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := hE.app_of_load ld12
+    obtain ⟨a, us, rfl, ha, hus⟩ := hEf.const_of_load ld159
+    obtain ⟨rfl, rfl⟩ := ih.get (.roles .role_nat_succ) (by lt_calls) ev228 rfl
+    obtain ⟨hx186, hy187⟩ := mul_field_ne_zero op193 field_one_ne_zero
+    obtain ⟨haddr, hforce⟩ := ih.get (.roles .role_is) (by lt_calls) ev199 rc x_caddr a .natSucc
+      rfl (good.sub fun x hx => by simp [hx]) hrc ha hx186
+    have e199 := ObsFn.heap_extends ev199
+    obtain ⟨hy, rfl⟩ := ih.get (.nat .lvls_empty) (by lt_calls) ev234 x_clvls rfl
+      (good.sub fun x hx => by simp [hx]) us (LvListRep.mono e199 hus)
+    have hus0 : us = [] := of_ite_field_ne_zero hy hy187
+    subst hus0
+    have hk : c.κ (ixAddr a) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    rw [hk]
+    have e261 := ObsFn.heap_extends ev261
+    have e330 := ObsFn.heap_extends ev330
+    have hrec := ih.get (.defEq .nat_offset_of) (by lt_calls) ev261 rc x_a rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono e199 hrc)
+    by_cases hw : w284 = .field 0
+    · subst hw
+      obtain ⟨rfl, ho⟩ := hrec.1 x_base x_o rfl
+      have hs := (ih.get (.nat .klimbs_succ) (by lt_calls) ev330 x_o rfl
+        (good.sub fun x hx => by simp [hx]) 0).1 ho
+      exact ⟨Ea, 1, .succStop hforce, Tm.mono (e199.trans (e261.trans e330)) hEa, hs⟩
+    · obtain ⟨B, k, hsp, hB, ho⟩ := hrec.2 w284 x_base x_o rfl hw d Γ Ea (Tm.mono e199 hEa)
+      have hs := (ih.get (.nat .klimbs_succ) (by lt_calls) ev330 x_o rfl
+        (good.sub fun x hx => by simp [hx]) k).1 ho
+      exact ⟨B, k + 1, .succ hforce hsp, Tm.mono e330 hB, hs⟩
+  | App_Const_other _ _ _ _ _ m178 _ _ _ _ _ _ _ _ m366 _ _ _ _ _ _ _ he351 hm374 he378 _ =>
+    subst he351 hm374 he378
+    exact nat_offset_tag0 m178
+  | App_App_Const_n1_Lit_Nat_n1_bind_bind x_f x_a x_g x_x x_caddr w416 m428 cs439 v444 m460 cs468
+      x_m m521 cs532 x_base x_o v578 m594 cs602 ld12 ld159 ld408 ev470 ev441 ld486 ev534 he579
+      ev604 he621 hc622 =>
+    subst he579 he621 hc622
+    refine nat_offset_tag1 fun d Γ E hE => ?_
+    obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := hE.app_of_load ld12
+    obtain ⟨Eg, Ex, rfl, hEg, hEx⟩ := hEf.app_of_load ld159
+    obtain ⟨a, us, rfl, ha, -⟩ := hEg.const_of_load ld408
+    obtain ⟨rfl, rfl⟩ := ih.get (.roles .role_nat_add) (by lt_calls) ev470 rfl
+    obtain ⟨haddr, hforce⟩ := ih.get (.roles .role_is) (by lt_calls) ev441 rc x_caddr a .natAdd
+      rfl (good.sub fun x hx => by simp [hx]) hrc ha field_one_ne_zero
+    have e441 := ObsFn.heap_extends ev441
+    have e534 := ObsFn.heap_extends ev534
+    have e604 := ObsFn.heap_extends ev604
+    have hk : c.κ (ixAddr a) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    rw [hk]
+    rcases (Tm.mono e441 hEa).lit_of_load ld486 with
+      ⟨lp, limbs, hx, hrl, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
+    · injection hx with _ _ hx'
+      injection hx' with hx''
+      subst hx''
+      obtain ⟨B, k, hsp, hB, ho⟩ := (ih.get (.defEq .nat_offset_of) (by lt_calls) ev534 rc x_x
+        rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e441 hrc)).2 (.field 1) x_base x_o rfl
+        field_one_ne_zero d Γ Ex (Tm.mono e441 hEx)
+      have hhm : RepLimbs m521 (limbsVal limbs) x_m :=
+        ⟨limbs, repList_heapMono₂ _ repU64_heapMono₂ e534 hrl, rfl⟩
+      have hadd := ih.get (.nat .klimbs_add) (by lt_calls) ev604 x_o x_m rfl
+        (good.sub fun x hx => by simp [hx]) k (limbsVal limbs) ho hhm
+      exact ⟨B, k + limbsVal limbs, .add hforce hsp, Tm.mono e604 hB, hadd⟩
+    · injection hx with _ hc'
+      exact absurd hc' (by decide)
+  | App_App_Const_n1_Lit_Nat_other x_f x_a x_g x_x x_caddr w416 m428 cs439 v444 m460 cs468 x_m
+      v520 m521 cs532 ld12 ld159 ld408 ev470 ev441 ld486 ev534 he631 he652 hc653 =>
+    subst he631 he652 hc653
+    refine nat_offset_tag1 fun d Γ E hE => ?_
+    obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := hE.app_of_load ld12
+    obtain ⟨Eg, Ex, rfl, hEg, hEx⟩ := hEf.app_of_load ld159
+    obtain ⟨a, us, rfl, ha, -⟩ := hEg.const_of_load ld408
+    obtain ⟨rfl, rfl⟩ := ih.get (.roles .role_nat_add) (by lt_calls) ev470 rfl
+    obtain ⟨haddr, hforce⟩ := ih.get (.roles .role_is) (by lt_calls) ev441 rc x_caddr a .natAdd
+      rfl (good.sub fun x hx => by simp [hx]) hrc ha field_one_ne_zero
+    have e441 := ObsFn.heap_extends ev441
+    have e534 := ObsFn.heap_extends ev534
+    have hk : c.κ (ixAddr a) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    rw [hk]
+    rcases (Tm.mono e441 hEa).lit_of_load ld486 with
+      ⟨lp, limbs, hx, hrl, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
+    · injection hx with _ _ hx'
+      injection hx' with hx''
+      subst hx''
+      exact ⟨Ex, limbsVal limbs, .addStop hforce, Tm.mono (e441.trans e534) hEx, limbs,
+        repList_heapMono₂ _ repU64_heapMono₂ e534 hrl, rfl⟩
+    · injection hx with _ hc'
+      exact absurd hc' (by decide)
+  | App_App_Const_n1_Lit_other _ _ _ _ _ _ m428 _ _ _ _ _ m678 _ _ _ _ _ _ _ he663 hm686 he690 _ =>
+    subst he663 hm686 he690
+    exact nat_offset_tag0 m428
+  | App_App_Const_n1_other _ _ _ _ _ _ m428 _ _ _ _ _ m716 _ _ _ _ _ _ _ he701 hm724 he728 _ =>
+    subst he701 hm724 he728
+    exact nat_offset_tag0 m428
+  | App_App_Const_other _ _ _ _ _ _ _ m428 _ _ _ _ m754 _ _ _ _ _ _ he739 hm762 he766 _ =>
+    subst he739 hm762 he766
+    exact nat_offset_tag0 m428
+  | App_App_other _ _ _ _ _ m792 _ _ _ _ he777 hm800 he804 _ =>
+    subst he777 hm800 he804
+    exact nat_offset_tag0 h
+  | App_other _ _ _ m830 _ _ _ _ he815 hm838 he842 _ =>
+    subst he815 hm838 he842
+    exact nat_offset_tag0 h
+  | other _ m868 _ _ _ he853 hm876 he880 _ =>
+    subst he853 hm876 he880
+    exact nat_offset_tag0 h
 
 /-- `KernelDefEq::try_def_eq_nat`: both sides zero readings (`DefEq.refl`, `DefEq.natZero`,
 `DefEq.symm`), or both split at one offset (`nat_offset_of`, `klimbs_eq`) with definitionally

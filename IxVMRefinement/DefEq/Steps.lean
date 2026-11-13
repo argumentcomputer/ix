@@ -2,16 +2,15 @@ import IxVMRefinement.DefEq.Delta
 import IxVMRefinement.DefEq.Tiers
 import IxVMRefinement.DefEq.Offsets
 import IxVMRefinement.DefEq.Rescue
+import IxVMRefinement.DefEq.ProofIrrel
 
 /-! # The `DefEq` family's steps
 
-`defEq_step c hc hnat hpi`: the registry's `Steps` restricted to the `DefEq` family
-(`Core/Specs/DefEq.lean`): every function of `KernelDefEq` meets its registered spec, from the
-induction hypothesis at its derivation's calls. The step lemmas are in `Core/Steps/DefEq.lean`
-(the ordered tiers' entry and spine congruence) and `DefEq/{Delta,Tiers,Offsets,Rescue}.lean`;
-those that read the role table, the environment or the loads take the context's facts
-(`CoreFacts c`). The steps of `nat_offset_of` and `try_proof_irrel` are hypotheses (`hnat`,
-`hpi`). -/
+`defEq_step c hc`: the registry's `Steps` restricted to the `DefEq` family (`Core/Specs/DefEq.lean`):
+every function of `KernelDefEq` meets its registered spec, from the induction hypothesis at its
+derivation's calls. The step lemmas are in `Core/Steps/DefEq.lean` (the ordered tiers' entry and
+spine congruence) and `DefEq/{Delta,Tiers,Offsets,Rescue,ProofIrrel}.lean`; those that read the
+role table, the environment or the loads take the context's facts (`CoreFacts c`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -24,10 +23,8 @@ def DefEqStepAt (c : Ctx) (f : Specs.DefEq.Fn) : Prop :=
     (cs : List (Call F)), ObsFn W (Fn.defEq f).name args h r h' cs → IH c cs →
       (Fn.defEq f).spec c args h r h' cs
 
-/-- **One step per function of the `DefEq` family**, given the steps of `nat_offset_of` and
-`try_proof_irrel`. -/
-theorem defEq_step (c : Ctx) (hc : CoreFacts c) (hnat : DefEqStepAt c .nat_offset_of)
-    (hpi : DefEqStepAt c .try_proof_irrel) :
+/-- **One step per function of the `DefEq` family.** -/
+theorem defEq_step (c : Ctx) (hc : CoreFacts c) :
     ∀ (f : Specs.DefEq.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.defEq f).name args h r h' cs → IH c cs →
       (Fn.defEq f).spec c args h r h' cs
@@ -70,7 +67,7 @@ theorem defEq_step (c : Ctx) (hc : CoreFacts c) (hnat : DefEqStepAt c .nat_offse
     lazy_delta_step_const_const_step c ev ih
   | .leading_foralls, _, _, _, _, _, ev, ih => leading_foralls_step c ev ih
   | .level_list_eq, _, _, _, _, _, ev, ih => level_list_eq_step c ev ih
-  | .nat_offset_of, _, _, _, _, _, ev, ih => hnat _ _ _ _ _ ev ih
+  | .nat_offset_of, _, _, _, _, _, ev, ih => nat_offset_of_step c hc ev ih
   | .slow2_after_delta, _, _, _, _, _, ev, ih => slow2_after_delta_step c ev ih
   | .slow2_eager_fallback, _, _, _, _, _, ev, ih => slow2_eager_fallback_step c ev ih
   | .try_def_eq_app, _, _, _, _, _, ev, ih => try_def_eq_app_step c ev ih
@@ -79,7 +76,7 @@ theorem defEq_step (c : Ctx) (hc : CoreFacts c) (hnat : DefEqStepAt c .nat_offse
   | .try_eta_struct, _, _, _, _, _, ev, ih => try_eta_struct_step c hc ev ih
   | .try_eta_swap, _, _, _, _, _, ev, ih => try_eta_swap_step c ev ih
   | .try_lazy_delta_app, _, _, _, _, _, ev, ih => try_lazy_delta_app_step c ev ih
-  | .try_proof_irrel, _, _, _, _, _, ev, ih => hpi _ _ _ _ _ ev ih
+  | .try_proof_irrel, _, _, _, _, _, ev, ih => try_proof_irrel_step c hc ev ih
   | .try_same_proj_head_app, _, _, _, _, _, ev, ih => try_same_proj_head_app_step c ev ih
   | .try_string_lit_one, _, _, _, _, _, ev, ih => try_string_lit_one_step c ev ih
   | .try_string_lit_pair, _, _, _, _, _, ev, ih => try_string_lit_pair_step c ev ih
