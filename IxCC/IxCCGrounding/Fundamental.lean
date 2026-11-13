@@ -115,7 +115,7 @@ variable {M p κ lpsOf S Ok}
 theorem atLevels_ordinary (ls : Levels) : IxCC.Src.RecKind.atLevels ls .ordinary = .ordinary := rfl
 
 /-- A head's arity is no longer than its stored telescope. -/
-theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Levels}
+theorem head_teleK (H : FundHypsK M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Levels}
     {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M p κ lpsOf S Ok h ls φ kk T) :
     p.headArity h ≤ kPis T := by
   cases hh with
@@ -224,7 +224,7 @@ major premise was applied at a graph-regime site (`LastSiteOk`, `last_regime`). 
 image and fields are moved to the recursor's assignment without a law beyond `cval_params` where
 the constructor has no level parameters (`ctorFields_noLevels`), by the restricted canonicity where
 it has some (`ctorFields_canon`). Laws: through the direct route's soundness, `Laws` whole. -/
-theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
+theorem fire_noParamsK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
     (ih : AllP M p κ lpsOf S Ok k') {r : CId} (hcl : recClassB p env κ r = some .noParams)
     {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
     {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
@@ -563,7 +563,7 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
   | _ => simp at hsel2
 
 /-- F1, F3 at `Eq.rec`, F4, F5 and F6. -/
-theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
     (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfa : ForceAllP M p κ lpsOf S Ok k) :
     FireP M p κ lpsOf S Ok k := by
   intro h ls args v φ kk T ρ σ R As hrun hargs hh hfit hlen hlast
@@ -634,19 +634,20 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
         cases res with
         | case r =>
           rw [hres] at hrun
-          obtain ⟨hkind', -⟩ := H.faith.caseRec c r hSc hres
+          have hkind' := H.kindAt c r ls hSc hres hOkc
           cases hd : p.decl? r with
           | none => simp [hd] at hrun
           | some d =>
             cases d with
             | recr sf kk lvls np nmot nmin ni ind rules ty =>
-              -- E0: at kind `empty` SrcEval traps, so the run returns no value
-              have hkind : p.table.recKindOf r = some .ordinary := by
+              -- E0: at kind `empty` SrcEval traps, so the run returns no value; otherwise the kind
+              -- at the instance's levels is `ordinary` (`kindAt`; step Pc)
+              have hkind : (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary := by
                 rcases hkind' with hkind | hkind
                 · exact hkind
                 · simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind]
                     at hrun
-              simp only [hd, hkind, Option.map_some, atLevels_ordinary, IxCC.Src.recChosen] at hrun
+              simp only [hd, hkind, IxCC.Src.recChosen] at hrun
               obtain ⟨⟨j, fields⟩, hsel, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
               obtain ⟨major, hmaj, hsel'⟩ := Result.bind_eq_ok_iff.mp hsel
               obtain ⟨minor, hmin, happ⟩ := Result.bind_eq_ok_iff.mp hrest
@@ -662,7 +663,8 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               have hmajR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmaj hrelM
               -- F5's meaning
               obtain ⟨Mn, Ys, hMn, hYs, heq, hchain⟩ :=
-                H.cases c r hSc hres hkind r sf kk lvls np nmot nmin ni ind rules ty hres hd ls φ _
+                H.cases c r hSc hres ⟨ls, hOkc, hkind⟩ r sf kk lvls np nmot nmin ni ind rules ty hres hd
+                  ls φ _
                   ρ σ R As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
                   (ofOption_eq_ok.mp hsel')
               -- the minor
@@ -919,7 +921,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                 | _ => simp [hdc] at hsel2
             | _ => simp at hsel2
           · -- `noParams` (part E): F2, the rule body evaluated; `fire_noParams`
-            exact fire_noParams H (ih k' (Nat.lt_succ_self k')) hcl hrun0 hargs
+            exact fire_noParamsK H (ih k' (Nat.lt_succ_self k')) hcl hrun0 hargs
               (.recr hSr hlv hfind) hfit hlen hlast
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
@@ -1008,7 +1010,7 @@ theorem headValue_step {k : Nat} (hfire : FireP M p κ lpsOf S Ok k) :
     exact .pap (ρ := fun _ => empty) hh .nil .nil
 
 /-- A1 and A2. -/
-theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+theorem apply_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
     (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfire : FireP M p κ lpsOf S Ok k) :
     ApplyP M p κ lpsOf S Ok k := by
   intro f s w X Y v A B hrun hf hs hv hX hY
@@ -1033,7 +1035,7 @@ theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
         (ρ σ : BVarIdx → V) (R : KExpr) (As : List V), HeadAt M p κ lpsOf S Ok h ls' φ kk T →
         Fits M.cval env φ ρ T As σ R → As.length = args.length → ∃ D Bk m, R = .forallE D Bk m := by
       intro hlt φ kk T ρ σ R As hh hfit hl
-      exact fits_pi_of_lt hfit (by have := head_tele H hh; omega)
+      exact fits_pi_of_lt hfit (by have := head_teleK H hh; omega)
     split at hrun
     · rename_i heq
       have hl1 : args.length + 1 = p.headArity h := by simpa using heq
@@ -1075,7 +1077,7 @@ theorem applyAll_step {k : Nat} (ha : ApplyP M p κ lpsOf S Ok k) :
         exact ih f' w (app X X1) Xs hrest (ha _ _ _ _ _ _ _ _ hf' hf hs hv hX hy) hss' hch'
 
 /-- E8: δ, `eqn`, and the special heads. -/
-theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+theorem evalConst_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
     (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hhv : HeadValueP M p κ lpsOf S Ok k) :
     EvalConstP M p κ lpsOf S Ok k := by
   intro ls c v φ hrun hSc hOk hlv
@@ -1143,7 +1145,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       | _ => exact absurd hrun (by simp)
 
 /-- E1–E8 by induction on `Runs`. -/
-theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+theorem eval_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
     (hforce : ForceP M p κ lpsOf S Ok k) (happly : ApplyP M p κ lpsOf S Ok k)
     (hec : EvalConstP M p κ lpsOf S Ok k) : EvalP M p κ lpsOf S Ok k := by
   intro lps ls φ σ Γ t e hruns
@@ -1339,35 +1341,90 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     | _ => simp [Program.projectField] at hpf
 
 /-- **The fundamental lemma**: all eight statements, at every clock. -/
-theorem allP (H : FundHyps M p κ lpsOf S Ok) : ∀ k, AllP M p κ lpsOf S Ok k := by
+theorem allPK (H : FundHypsK M p κ lpsOf S Ok) : ∀ k, AllP M p κ lpsOf S Ok k := by
   intro k
   induction k using Nat.strongRecOn with
   | ind k ih =>
     have hforce := force_step ih
     have hforceAll := forceAll_step hforce
-    have hfire := fire_step H ih hforceAll
+    have hfire := fire_stepK H ih hforceAll
     have hhv := headValue_step hfire
-    have happly := apply_step H ih hfire
+    have happly := apply_stepK H ih hfire
     have happlyAll := applyAll_step happly
-    have hec := evalConst_step H ih hhv
-    have heval := eval_step H hforce happly hec
+    have hec := evalConst_stepK H ih hhv
+    have heval := eval_stepK H hforce happly hec
     exact ⟨hforce, hforceAll, hfire, hhv, happly, happlyAll, hec, heval⟩
 
 /-- The fundamental lemma's clause for constants: a constant of `S` that SrcEval unfolds at an
 instance `Ok` admits returns a value related to the constant's denotation. -/
+theorem fundamental_constK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat} {ls : Levels} {c : CId}
+    {v : Value} {φ : LevelParam → Nat} (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hSc : S c)
+    (hOk : Ok c ls) (hlv : LvAt φ (lpsOf c) ls) : RelV M p κ lpsOf S Ok v (M.cval (κ c) φ) :=
+  (allPK H k).evalConst ls c v φ hrun hSc hOk hlv
+
+/-- The fundamental lemma's clause for terms. -/
+theorem fundamental_termK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat} {lps : List Nat} {ls : Levels}
+    {φ : LevelParam → Nat} {σ : Sig} {Γ : List KExpr} {t : Term} {e : KExpr} {ρ : IxCC.Src.Env}
+    {ρk : BVarIdx → V} {v : Value} (hruns : Runs M κ Ok lps ls φ σ Γ t e) (hcs : ConstsIn S t)
+    (hlv : LvAt φ lps ls) (henv : RelEnv M p κ lpsOf S Ok φ ρ σ ρk) (hctx : CtxSat M φ Γ ρk)
+    (hrun : IxCC.Src.eval p k ls ρ t = .ok v) :
+    ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M p κ lpsOf S Ok v X :=
+  (allPK H k).eval _ _ _ _ _ _ _ hruns ρ ρk v hcs hlv henv hctx hrun
+
+/-! ## The landed statements over `FundHyps` (step Pc: each through `FundHyps.toK`) -/
+
+theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Levels}
+    {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M p κ lpsOf S Ok h ls φ kk T) :
+    p.headArity h ≤ kPis T :=
+  head_teleK H.toK hh
+
+theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
+    (ih : AllP M p κ lpsOf S Ok k') {r : CId} (hcl : recClassB p env κ r = some .noParams)
+    {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
+    {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
+    (hrun : IxCC.Src.fire p (k' + 1) (.recr r) ls args = .ok v)
+    (hargs : RelSlots M p κ lpsOf S Ok args As) (hh : HeadAt M p κ lpsOf S Ok (.recr r) ls φ (κ r) T)
+    (hfit : Fits M.cval env φ ρ T As σ R) (hlen : args.length = p.headArity (.recr r))
+    (hlast : LastSiteOk (M.cval (κ r) φ) As) :
+    RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) :=
+  fire_noParamsK H.toK ih hcl hrun hargs hh hfit hlen hlast
+
+theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+    (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfa : ForceAllP M p κ lpsOf S Ok k) :
+    FireP M p κ lpsOf S Ok k :=
+  fire_stepK H.toK ih hfa
+
+theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+    (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfire : FireP M p κ lpsOf S Ok k) :
+    ApplyP M p κ lpsOf S Ok k :=
+  apply_stepK H.toK ih hfire
+
+theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+    (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hhv : HeadValueP M p κ lpsOf S Ok k) :
+    EvalConstP M p κ lpsOf S Ok k :=
+  evalConst_stepK H.toK ih hhv
+
+theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
+    (hforce : ForceP M p κ lpsOf S Ok k) (happly : ApplyP M p κ lpsOf S Ok k)
+    (hec : EvalConstP M p κ lpsOf S Ok k) : EvalP M p κ lpsOf S Ok k :=
+  eval_stepK H.toK hforce happly hec
+
+/-- **The fundamental lemma**, under `FundHyps`. -/
+theorem allP (H : FundHyps M p κ lpsOf S Ok) : ∀ k, AllP M p κ lpsOf S Ok k :=
+  allPK H.toK
+
 theorem fundamental_const (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {ls : Levels} {c : CId}
     {v : Value} {φ : LevelParam → Nat} (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hSc : S c)
     (hOk : Ok c ls) (hlv : LvAt φ (lpsOf c) ls) : RelV M p κ lpsOf S Ok v (M.cval (κ c) φ) :=
-  (allP H k).evalConst ls c v φ hrun hSc hOk hlv
+  fundamental_constK H.toK hrun hSc hOk hlv
 
-/-- The fundamental lemma's clause for terms. -/
 theorem fundamental_term (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {lps : List Nat} {ls : Levels}
     {φ : LevelParam → Nat} {σ : Sig} {Γ : List KExpr} {t : Term} {e : KExpr} {ρ : IxCC.Src.Env}
     {ρk : BVarIdx → V} {v : Value} (hruns : Runs M κ Ok lps ls φ σ Γ t e) (hcs : ConstsIn S t)
     (hlv : LvAt φ lps ls) (henv : RelEnv M p κ lpsOf S Ok φ ρ σ ρk) (hctx : CtxSat M φ Γ ρk)
     (hrun : IxCC.Src.eval p k ls ρ t = .ok v) :
     ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M p κ lpsOf S Ok v X :=
-  (allP H k).eval _ _ _ _ _ _ _ hruns ρ ρk v hcs hlv henv hctx hrun
+  fundamental_termK H.toK hruns hcs hlv henv hctx hrun
 
 end Fund
 

@@ -358,9 +358,10 @@ theorem evalSites_sub_allSites (ls : Levels) :
         · exact Or.inr (Or.inr (Or.inr (ihb Γ e s hs)))
   | _ => intro Γ e s hs; simp [evalSites] at hs
 
-/-- **A run pair is one the check enumerates**, on a closure the check passes. -/
-theorem runPair_mem_of_sans {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : CheckSans p env κ lpsOf ann Sl)
+/-- **A run pair is one the check enumerates**, from every conjunct but `noWord`, `caseRec` and
+`caseShape` (step Pc). -/
+theorem runPair_mem_of_sansK {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : CheckSansK p env κ lpsOf ann Sl)
     {c : CId} {t : Term} {e : KExpr} (hc : c ∈ Sl) (hrp : RunPair p env κ c t e) :
     (t, e) ∈ runPairsB p env κ c := by
   cases hrp with
@@ -376,6 +377,13 @@ theorem runPair_mem_of_sans {p : Program} {κ : CId → KKey} {lpsOf : CId → L
       have hb := eqnShape_body hsh (eqnShape_of_check hE h1)
       simp [runPairsB, hr, hd', hb]
     · cases h1
+
+/-- **A run pair is one the check enumerates**, on a closure the check passes. -/
+theorem runPair_mem_of_sans {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : CheckSans p env κ lpsOf ann Sl)
+    {c : CId} {t : Term} {e : KExpr} (hc : c ∈ Sl) (hrp : RunPair p env κ c t e) :
+    (t, e) ∈ runPairsB p env κ c :=
+  runPair_mem_of_sansK (sansK_of_sans hchk) hc hrp
 
 theorem runPair_mem_of_check {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : groundCheck p env κ lpsOf ann Sl = true)

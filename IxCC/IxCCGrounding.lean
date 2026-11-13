@@ -46,4 +46,5 @@ import IxCCGrounding.WordAccel
 import IxCCGrounding.WordFire
 import IxCCGrounding.WordCheck
 import IxCCGrounding.WordRoot
+import IxCCGrounding.PcRoot
 import IxCCGrounding.Fence

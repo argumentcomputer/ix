@@ -146,10 +146,12 @@ arguments that fit its type, the last at a graph-regime site, with the major the
 constructor `j` at the `case`'s levels applied to **its own** parameters `Ps` and to fields `Fs`
 that fit its type there, is minor `j` applied to the fields, along a graph-regime chain. Laws:
 `DefnValue` (δ on `casesOn`), `IotaLawG` (ι at rule `j`, guarded, with `SpineOk`), `CvalParams`
-(the recursor's type read at the levels `casesOn` calls it at); `Model.mem`. -/
-theorem caseIotaG (M : Model V env) (hδ : DefnValue M) (hι : IotaLawG M.cval env)
-    (hcv : CvalParams M) {kc kr : KKey} {sh : CaseShape}
-    (hS : CaseStored env kc kr sh) (hB : CaseRulesBlind env kr) (cvc : ConstantVal .anon) (val : KExpr)
+(the recursor's type read at the levels `casesOn` calls it at); `Model.mem`.
+Over any sort clause (step Pc: it reads none). -/
+theorem caseIotaGWith (M : Model V env) (hδ : DefnValue M) (hι : IotaLawG M.cval env)
+    (hcv : CvalParams M) {kc kr : KKey} {sh : CaseShape} {Srt : KEnv → KKey → Prop}
+    (hS : CaseStoredWith Srt env kc kr sh) (hB : CaseRulesBlind env kr) (cvc : ConstantVal .anon)
+    (val : KExpr)
     (hint : ReducibilityHint) (hfc : env.find? kc = some (.defnInfo cvc val hint))
     (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V)
     (hfit : Fits M.cval env φ ρ cvc.type As σ R) (hlen : As.length = sh.nP + 2 + sh.nM)
@@ -576,6 +578,28 @@ theorem caseIotaG (M : Model V env) (hδ : DefnValue M) (hι : IotaLawG M.cval e
   rw [ht, heq, List.take_of_length_le (show (ps ++ [mo] ++ Ws).length ≤ sh.nP + 1 + sh.nM by
     simp; omega), show (Ps ++ Fs).drop sh.nP = Fs by rw [← hPl]; simp, List.foldl_append, eY1, eY2,
     eY2', eY3, eY3']
+
+/-- **The generic `case` lemma, model side, without canonicity** (`caseIotaGWith` at the sort clause
+`NeverProp`). -/
+theorem caseIotaG (M : Model V env) (hδ : DefnValue M) (hι : IotaLawG M.cval env)
+    (hcv : CvalParams M) {kc kr : KKey} {sh : CaseShape}
+    (hS : CaseStored env kc kr sh) (hB : CaseRulesBlind env kr) (cvc : ConstantVal .anon) (val : KExpr)
+    (hint : ReducibilityHint) (hfc : env.find? kc = some (.defnInfo cvc val hint))
+    (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V)
+    (hfit : Fits M.cval env φ ρ cvc.type As σ R) (hlen : As.length = sh.nP + 2 + sh.nM)
+    (hlast : LastSiteOk (M.cval kc φ) As)
+    (j : Nat) (cs : CtorShape) (cvC : ConstantVal .anon) (K : V) (Ps Fs : List V)
+    (σC : BVarIdx → V) (RC : KExpr) (hj : sh.ctors[j]? = some cs)
+    (hcC : env.find? cs.key = some (.ctorInfo cvC sh.nP cs.nF))
+    (hK : Denotes M.cval env φ ρ (.const cs.key sh.indLevels) K)
+    (hFC : Fits M.cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams sh.indLevels)
+      (Ps ++ Fs) σC RC)
+    (hPl : Ps.length = sh.nP) (hFl : Fs.length = cs.nF)
+    (hmaj : As[sh.nP + 1]? = some ((Ps ++ Fs).foldl app K)) :
+    ∃ Mn, As[sh.nP + 2 + j]? = some Mn ∧ As.foldl app (M.cval kc φ) = Fs.foldl app Mn ∧
+      AppChain Mn Fs :=
+  caseIotaGWith M hδ hι hcv hS hB cvc val hint hfc φ ρ σ R As hfit hlen hlast j cs cvC K Ps Fs σC RC
+    hj hcC hK hFC hPl hFl hmaj
 
 /-! ## The SrcEval side -/
 

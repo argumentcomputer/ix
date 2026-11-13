@@ -1316,20 +1316,45 @@ theorem sans_of_check {ann : IxCC.Src.Relevance.Ann} (h : groundCheck p env κ l
     CheckSans p env κ lpsOf ann Sl :=
   fun _ _ hm _ => part_of h hm
 
-/-- **Every conjunct of the check but `noWord` is sound**, over any word clause `Wd` given (step W:
-the word family's check replaces `noWord` by its decided word facts). -/
-theorem groundFactsW_of_sans {ann : IxCC.Src.Relevance.Ann} {Wd : Prop}
-    (h : CheckSans p env κ lpsOf ann Sl) (hW : Wd) :
-    GroundFactsW Wd p env κ lpsOf ann (· ∈ Sl) := by
-  have P : ∀ name b, (name, b) ∈ checkParts p env κ lpsOf ann Sl → name ≠ "noWord" → b = true := h
+/-- **Every conjunct of the check but `noWord`, `caseRec` and `caseShape`** (step Pc: the Pc family's
+check replaces the last two). -/
+def CheckSansK (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Prop :=
+  ∀ name b, (name, b) ∈ checkParts p env κ lpsOf ann Sl →
+    (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape") → b = true
+
+theorem sansK_of_sans {ann : IxCC.Src.Relevance.Ann} (h : CheckSans p env κ lpsOf ann Sl) :
+    CheckSansK p env κ lpsOf ann Sl :=
+  fun name b hm hn => h name b hm hn.1
+
+/-- **`FaithWithK`'s `case` clause at the kinds `K`** (step Pc): each `case` entry's recursor is of
+a kind in `K`, and the stored constant has a binder for every argument. -/
+def CaseRecK (K : CId → Prop) (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop :=
+  ∀ c r, S c → p.table.resolveOf c = some (.case r) → K r ∧
+    ∃ ci, env.find? (κ c) = some ci ∧ p.headArity (.cases c) ≤ kPis ci.toConstantVal.type
+
+/-- The conjunct `caseRec` gives the clause at the kinds `ordinary` or `empty`. -/
+theorem caseRecK_of_sans {ann : IxCC.Src.Relevance.Ann} (h : CheckSans p env κ lpsOf ann Sl) :
+    CaseRecK (fun r => p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty)
+      p env κ (· ∈ Sl) :=
+  fun c r hc hr => caseRec_of (List.all_eq_true.mp (h "caseRec" (Sl.all (caseRecB p env κ))
+    (by simp [checkParts, checkPartsWith]) (by decide)) c hc) r hr
+
+/-- **Every conjunct of the check but `noWord`, `caseRec` and `caseShape` is sound**, over any word
+clause `Wd` and any kinds `K` whose `case` clause is given (step Pc). -/
+theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : CId → Prop}
+    (h : CheckSansK p env κ lpsOf ann Sl) (hW : Wd) (hK : CaseRecK K p env κ (· ∈ Sl)) :
+    GroundFactsWithK (RecFacts p env κ lpsOf (· ∈ Sl)) Wd K p env κ lpsOf ann (· ∈ Sl) := by
+  have P : ∀ name b, (name, b) ∈ checkParts p env κ lpsOf ann Sl →
+      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape") → b = true := h
   have all : ∀ {f : CId → Bool} (name : String), (name, Sl.all f) ∈ checkParts p env κ lpsOf ann Sl →
-      name ≠ "noWord" → ∀ c, c ∈ Sl → f c = true :=
+      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape") → ∀ c, c ∈ Sl → f c = true :=
     fun name hm hn c hc => List.all_eq_true.mp (P name _ hm hn) c hc
   have hE : EqBasis env := eqBasis_of_check (P "eqBasis" (eqBasisB env) (by simp [checkParts, checkPartsWith]) (by decide))
   have hpins := P "pins" (pinsB p env κ Sl) (by simp [checkParts, checkPartsWith]) (by decide)
   simp only [pinsB, Bool.and_eq_true] at hpins
   obtain ⟨⟨⟨hz, hs⟩, hbt⟩, hbf⟩ := hpins
-  have hfaith : FaithW Wd p env κ lpsOf (· ∈ Sl) := by
+  have hfaith : FaithWithK (RecFacts p env κ lpsOf (· ∈ Sl)) Wd K p env κ lpsOf (· ∈ Sl) := by
     refine ⟨fun c hc => stored_of (all "stored" (by simp [checkParts, checkPartsWith]) (by decide) c hc),
       fun c hc => beq_iff_eq.mp (all (f := lvlsB p lpsOf) "lvls" (by simp [checkParts, checkPartsWith]) (by decide) c hc),
       fun c hc => of_decide_eq_true (all (f := nodupB lpsOf) "nodup" (by simp [checkParts, checkPartsWith]) (by decide) c hc),
@@ -1369,7 +1394,7 @@ theorem groundFactsW_of_sans {ann : IxCC.Src.Relevance.Ann} {Wd : Prop}
         simpa using this,
       fun c op hc => prim_of (all "prim" (by simp [checkParts, checkPartsWith]) (by decide) c hc) op,
       fun c hc => ctor_of (all "ctor" (by simp [checkParts, checkPartsWith]) (by decide) c hc),
-      fun c r hc hr => caseRec_of (all "caseRec" (by simp [checkParts, checkPartsWith]) (by decide) c hc) r hr,
+      hK,
       fun c hc => defn_of (all "defn" (by simp [checkParts, checkPartsWith]) (by decide) c hc),
       fun c thm body hc hr => eqnNames_of (all "eqnNames" (by simp [checkParts, checkPartsWith]) (by decide) c hc) thm body hr,
       fun s hc => proj_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts, checkPartsWith]) (by decide) s hc),
@@ -1425,6 +1450,13 @@ theorem groundFactsW_of_sans {ann : IxCC.Src.Relevance.Ann} {Wd : Prop}
       simp only [letWitB, hr, hd] at h1
       rw [eqnShape_body hsh hsh'] at hA
       exact witness_of_check (List.all_eq_true.mp h1 A hA)
+
+/-- **Every conjunct of the check but `noWord` is sound**, over any word clause `Wd` given (step W:
+the word family's check replaces `noWord` by its decided word facts). -/
+theorem groundFactsW_of_sans {ann : IxCC.Src.Relevance.Ann} {Wd : Prop}
+    (h : CheckSans p env κ lpsOf ann Sl) (hW : Wd) :
+    GroundFactsW Wd p env κ lpsOf ann (· ∈ Sl) :=
+  groundFactsWK_of_sansK (sansK_of_sans h) hW (caseRecK_of_sans h)
 
 /-- **The check is sound**: it establishes every fact `GroundFacts` names. -/
 theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
