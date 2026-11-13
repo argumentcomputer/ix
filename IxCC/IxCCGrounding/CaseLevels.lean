@@ -370,6 +370,24 @@ def instCheckB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
       | _, _ => true
     | _ => true
 
+
+/-- **The instance walk** (a producer, not trusted: `instCheckB` verifies what it returns): from
+the seeds at no level, every constant `evalConsts` reaches in a run term or a rule body of a
+reached instance, at the levels it computes there; at most `fuel` steps (`none` beyond). Like
+`evalConsts` it reads no `let`: on a program whose run terms hold one the set it returns is
+incomplete, which no theorem uses (the check's `valueCorr`/`eqnCorr` refuse such a program). -/
+def instWalk (p : Program) (seeds : List CId) (fuel : Nat) : Option (List (CId × Levels)) :=
+  go fuel (seeds.map fun c => (c, [])) []
+where
+  go : Nat → List (CId × Levels) → List (CId × Levels) → Option (List (CId × Levels))
+    | _, [], acc => some acc.reverse
+    | 0, _ :: _, _ => none
+    | n + 1, x :: todo, acc =>
+      if acc.contains x then go n todo acc
+      else
+        go n (todo ++ (runTerms p x.1 ++ ruleBodies p x.1).flatMap fun t =>
+          (evalConsts x.2 t).map fun y => (y.1, y.2.map (IxCC.Src.evalUniv x.2))) (x :: acc)
+
 /-- **`instCheckB` is sound.** -/
 theorem instFacts_of_check {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {seeds : List CId} {Inst : List (CId × Levels)}
