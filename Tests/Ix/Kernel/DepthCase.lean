@@ -160,6 +160,109 @@ def nestedHashes (p n : Nat) : Array UInt64 × Array UInt64 := Id.run do
   return (lams, es)
 
 /-- Run one case; the line it prints starts with the verdict. -/
+/-! ## The depth limit (`Limits.maxDepth`) -/
+
+/-- `step^n leaf`, written out (`shared = false`) or as a chain of sharing
+entries appended to `tbl`, one per level (the codec then reads each level as a
+leaf, and only the expanded depth sees the nesting). -/
+def nest (shared : Bool) (n : Nat) (leaf : IE) (step : IE → IE) (tbl : Array IE) :
+    IE × Array IE := Id.run do
+  let mut t := tbl
+  let mut cur := leaf
+  for _ in [0:n] do
+    if shared then
+      t := t.push (step cur)
+      cur := .share (t.size - 1).toUInt64
+    else
+      cur := step cur
+  return (cur, t)
+
+def defnS (lvls : UInt64) (ty val : IE) (sharing : Array IE) (refs : Array Address)
+    (us : Array IU) : _root_.Ixon.Constant :=
+  ⟨.defn ⟨.defn, .safe, lvls, ty, val⟩, sharing, refs, us⟩
+
+def lamConst (shared : Bool) (n : Nat) : _root_.Ixon.Constant :=
+  let (ty, t) := nest shared n (.sort 0) (_root_.Ixon.Expr.leanAll (.sort 0)) #[]
+  let (val, t) := nest shared n (.var 0) (_root_.Ixon.Expr.leanLam (.sort 0)) t
+  defnS 0 ty val t #[] univs01
+
+/-- The robustness plan's shapes (`P` is `∀ p : Prop, p`), `n` steps each:
+`lam` (`def F : ∀ (x : Prop)^n, Prop := λ (x : Prop)^n, x`), `pi`
+(`def T : Type := ∀ (x : Prop)^n, Prop`), `appArg` (`g (g (… (g P)))`), `spine`
+(`F P … P`), `let` (`let x1 : Prop := P; let x2 : Prop := x1; …`), `usucc`
+(`def U : Sort (L+1) := Sort L`, `L = succ^n 0`), `umax` (`L = max u (max u (… u))`). -/
+def shape (name : String) (shared : Bool) (n : Nat) : Option (List _root_.Ixon.Constant) :=
+  match name with
+  | "lam" => some [lamConst shared n]
+  | "pi" =>
+    let (val, t) := nest shared n (.sort 0) (_root_.Ixon.Expr.leanAll (.sort 0)) #[]
+    some [defnS 0 (.sort 1) val t #[] univs01]
+  | "appArg" =>
+    let g := defnS 0 (_root_.Ixon.Expr.leanAll (.sort 0) (.sort 0))
+      (_root_.Ixon.Expr.leanLam (.sort 0) (.var 0)) #[] #[] univs01
+    let (val, t) := nest shared n P (fun b => .app (.ref 0 #[]) b) #[]
+    some [g, defnS 0 (.sort 0) val t #[(record g).1] univs01]
+  | "spine" =>
+    let f := lamConst shared n
+    let (val, t) := nest shared n (.ref 0 #[]) (fun b => .app b P) #[]
+    some [f, defnS 0 (.sort 0) val t #[(record f).1] univs01]
+  | "let" =>
+    let (body, t) := nest shared (n - 1) (.var 0)
+      (fun b => _root_.Ixon.Expr.leanLet false (.sort 0) (.var 0) b) #[]
+    some [defnS 0 (.sort 0) (_root_.Ixon.Expr.leanLet false (.sort 0) P body) t #[] univs01]
+  | "usucc" => Id.run do
+    let mut l : IU := .zero
+    for _ in [0:n] do l := .succ l
+    return some [defnS 0 (.sort 1) (.sort 0) #[] #[] #[l, .succ l]]
+  | "umax" => Id.run do
+    let mut l : IU := .var 0
+    for _ in [0:n] do l := .max (.var 0) l
+    return some [defnS 1 (.sort 1) (.sort 0) #[] #[] #[l, .succ l]]
+  | _ => none
+
+/-- A shape of `n` steps is `n + shapeOffset` deep. -/
+def shapeOffset : String → Nat
+  | "lam" | "pi" | "let" => 1
+  | _ => 2
+
+/-- The depth the limit is about, computed independently of the kernel's
+scan: the kernel's binary nesting with shares expanded, the root at 1. -/
+partial def exprDepth (sharing : Array IE) : IE → Nat
+  | .app f a => 1 + max (exprDepth sharing f) (exprDepth sharing a)
+  | .lam _ t b | .all _ _ t b => 1 + max (exprDepth sharing t) (exprDepth sharing b)
+  | .letE _ t v b => 1 + max (exprDepth sharing t) (max (exprDepth sharing v) (exprDepth sharing b))
+  | .prj _ _ v => 1 + exprDepth sharing v
+  | .share i => (sharing[i.toNat]?.map (exprDepth sharing)).getD 1
+  | _ => 1
+
+def univDepth : IU → Nat
+  | .succ u => 1 + univDepth u
+  | .max a b | .imax a b => 1 + max (univDepth a) (univDepth b)
+  | _ => 1
+
+def constDepth (c : _root_.Ixon.Constant) : Nat :=
+  let payload := match c.info with
+    | .defn d => max (exprDepth c.sharing d.typ) (exprDepth c.sharing d.value)
+    | _ => 0
+  max payload (max (c.sharing.foldl (fun m e => max m (exprDepth c.sharing e)) 0)
+    (c.univs.foldl (fun m u => max m (univDepth u)) 0))
+
+/-- `limit[MAX]-SHAPE-ENC d`: the shape `d` deep (`ENC` `flat` or `shared`)
+through the certified entry under `maxDepth` `MAX` (the default if absent):
+the measured depth, then the verdict. -/
+def limitCase (binding : _root_.Ix.Kernel.Admission.Binding) (name : String) (d : Nat) :
+    IO String := do
+  let [pre, sh, enc] := name.splitOn "-" | throw (IO.userError s!"kernel-depth: bad case {name}")
+  let maxDepth := ((toString (pre.drop 5)).toNat?).getD limits.maxDepth
+  let some cs := shape sh (enc == "shared") (d - shapeOffset sh)
+    | throw (IO.userError s!"kernel-depth: unknown shape {sh}")
+  let measured := cs.foldl (fun m c => max m (constDepth c)) 0
+  let rs := cs.map record
+  let lim := { limits with maxDepth }
+  timed do
+    IO.lazyPure fun _ =>
+      s!"depth {measured}, {entryVerdict (_root_.Ixon.Authenticated.checkBytes binding lim rs [] hint)}"
+
 def runOne (name : String) (n : Nat) : IO String := do
   let binding ← IO.ofExcept _root_.Ix.Kernel.Admission.defaultBinding
   match name with
@@ -208,7 +311,9 @@ def runOne (name : String) (n : Nat) : IO String := do
     return match firstRepeat es, firstRepeat lams with
       | none, none => s!"no repeat in {n} levels"
       | re, rl => s!"repeat: E_k at {re}, λ heads at {rl}"
-  | _ => throw (IO.userError s!"kernel-depth: unknown case {name}")
+  | _ =>
+    if name.startsWith "limit" then limitCase binding name n
+    else throw (IO.userError s!"kernel-depth: unknown case {name}")
 
 /-- `kernel-depth-case NAME N`: run the case on a dedicated thread of
 `LEAN_STACK_SIZE_KB` and print one line, `NAME N: VERDICT`. -/

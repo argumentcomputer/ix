@@ -58,6 +58,12 @@ structure Limits where
   workers : Option Nat := none
   deriving Repr
 
+/-- The native stack, in bytes, a host runs the entry on: 16 KiB per level of
+`maxDepth`, and at least 256 MiB, which the typing core's recursion at its
+fixed fuel (`checkFuel`, 100,000 levels, under 1 KiB each as measured) needs
+with a margin. 256 MiB at the default. -/
+def Limits.stackFor (l : Limits) : Nat := max (256 * 1024 * 1024) (16 * 1024 * l.maxDepth)
+
 inductive Resource where
   | records
   | blobs

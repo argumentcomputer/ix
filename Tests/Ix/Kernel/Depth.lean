@@ -1,3 +1,5 @@
+import IxCK.Kernel.Admission.Bytes
+
 /-! # Reduction steps and record counts take no native stack (`lake test -- kernel-depth`)
 
 The kernel's reduction loops (`whnfCoreLoopI`, `whnfLoopI`, `defeqLoopI`)
@@ -76,6 +78,38 @@ def chainStackKb : Nat := 65536
 def reportedMs (verdict : String) : Option Nat :=
   ((verdict.splitOn " in ").getLast?.bind fun t => (t.splitOn " ms").head?.bind String.toNat?)
 
+/-- **The depth limit** (`Limits.maxDepth`; `docs/kernel.md`, "Native stack"):
+each shape of `kernel-depth-case`'s `shape` (λ and ∀ telescopes, an argument
+nest, a spine, a `let` nest, a `succ` and a `max` universe), written out and
+with one sharing entry per level, at the limit and one past it, under
+`maxDepth` 64 on the small stack and under the default (16,384) on the stack
+`Limits.stackFor` gives it. At the limit nothing is declined for depth (each
+shape is accepted, but the two universe shapes at 16,384, which the level
+comparison's fixed fuel `Level.defaultFuel`, 10,000, declines); one past it the
+entry declines with `.limit .depth`, before decoding (written out) or after it
+(shared). The measured depth comes from an oracle of the test's own
+(`exprDepth`). -/
+/-- The default limits (only `maxDepth` and the stack it gives are read). -/
+def defaultLimits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0, maxRecordUnivNodes := 0 }
+
+def limitCases : List (String × Nat × Nat) :=
+  let big := defaultLimits.stackFor / 1024
+  ["lam", "pi", "appArg", "spine", "let", "usucc", "umax"].flatMap fun s =>
+    ["flat", "shared"].flatMap fun e =>
+      [(s!"limit64-{s}-{e}", 64, stackKb), (s!"limit64-{s}-{e}", 65, stackKb),
+       (s!"limit-{s}-{e}", defaultLimits.maxDepth, big),
+       (s!"limit-{s}-{e}", defaultLimits.maxDepth + 1, big)]
+
+/-- One `limitCases` case: its line and whether it passed. -/
+def limitCaseOk (name : String) (d : Nat) (verdict : String) (exitCode : UInt32) : Bool :=
+  let maxDepth := if name.startsWith "limit64" then 64 else defaultLimits.maxDepth
+  let univ := name.contains "usucc" || name.contains "umax"
+  exitCode == 0 && verdict.startsWith s!"depth {d}, " &&
+    if d ≤ maxDepth then
+      !verdict.contains "Resource.depth" && ((univ && d > 64) || verdict.contains "accepted")
+    else verdict.contains "declined" && verdict.contains "Resource.depth"
+
 def run : IO UInt32 := do
   IO.println s!"kernel-depth: reduction steps and record counts on a {stackKb} KiB stack"
   let exe ← IO.FS.realPath caseExe
@@ -99,6 +133,18 @@ def run : IO UInt32 := do
       else if line.isEmpty then s!"no verdict (exit {out.exitCode}): {(toString (out.stderr.takeEnd 300)).replace "\n" " "}"
       else verdict
     IO.println s!"  {name} {n}: {shown}{if bound == 0 then "" else s!" (bound {bound} ms)"}{if ok then "" else "  FAILED"}"
+    unless ok do failed := failed + 1
+  for (name, d, kb) in limitCases do
+    let out ← IO.Process.output {
+      cmd := "sh", args := #["-c", "ulimit -c 0; exec \"$0\" \"$@\"", exe.toString, name, toString d],
+      env := #[("LEAN_STACK_SIZE_KB", some (toString kb))] }
+    let line := (out.stdout.splitOn "\n").find? (·.startsWith s!"{name} {d}: ") |>.getD ""
+    let verdict := toString (line.drop (s!"{name} {d}: ").length)
+    let ok := limitCaseOk name d verdict out.exitCode
+    let shown := if line.isEmpty then
+        s!"no verdict (exit {out.exitCode}): {(toString (out.stderr.takeEnd 300)).replace "\n" " "}"
+      else verdict
+    IO.println s!"  {name} {d} ({kb} KiB): {shown}{if ok then "" else "  FAILED"}"
     unless ok do failed := failed + 1
   (← IO.getStdout).flush
   if failed == 0 then
