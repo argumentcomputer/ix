@@ -24,6 +24,12 @@ reproduction is closed: (i), (iii) in both forms and (iv) rejected by `Pre` with
 one broken alone, (v) at `Quot.lift` and at a `case` key refused by `appliedAt` alone. `SortAgree` is
 tested here on the registered runs, not proved.
 
+What the pass cannot reach: it mutates the values of sampled calls, never a declaration, a record or a
+table entry, so a state whose distinguishing property is a declaration, record or table fact the
+registered programs lack (a constructor field written erased under a subsingleton eliminator, a missing
+record, a recursor with a table entry) is tested only where a plant builds it. "No counterexample" is
+not coverage of adversarial programs.
+
 The pass makes no mutation that moves the arguments of `Nat.pow` or `Nat.shiftLeft`, and runs no mutant
 that saturates either with an exponent above 2^32 − 1 (the same abort; `bigExp`). Sampling is
 deterministic: the seed, the budgets and the depth cut are printed, and the same ones give the same
