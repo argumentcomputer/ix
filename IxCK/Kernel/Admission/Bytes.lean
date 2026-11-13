@@ -201,6 +201,12 @@ and is skipped. -/
 def storedDepthBound (limits : Limits) (bytes : ByteArray) : Nat :=
   bytes.size + limits.maxRecordUnivNodes + 1
 
+/-- The scan declines a record: within the byte limit, able to reach the depth limit, and
+nested past it. -/
+def scanFails (limits : Limits) (bytes : ByteArray) : Bool :=
+  bytes.size ≤ limits.maxRecordBytes && limits.maxDepth < storedDepthBound limits bytes &&
+    !Depth.within limits.maxDepth bytes
+
 /-- **The stored-nesting scan**: every record's expressions (shares as leaves)
 and universes within `limits.maxDepth` (`Depth.within`), read from the bytes
 before anything decodes them, so that the decoder's recursion is bounded. A
@@ -209,15 +215,18 @@ record the limit cannot be reached in (`storedDepthBound`). -/
 def scanDepths (limits : Limits) : Records → Except ByteError Unit
   | [] => .ok ()
   | (_, bytes) :: rest =>
-    if bytes.size ≤ limits.maxRecordBytes && limits.maxDepth < storedDepthBound limits bytes &&
-        !Depth.within limits.maxDepth bytes then
-      .error (.limit .depth)
-    else scanDepths limits rest
+    if scanFails limits bytes then .error (.limit .depth) else scanDepths limits rest
 
 /-- A bound on how deep any record within the byte limit can nest with its shares expanded:
 two decoded nodes per byte at most (an application or binder telescope of `n` steps is written
 with `n + 1` expressions), and an acyclic path meets each node once. -/
 def expandedDepthBound (limits : Limits) : Nat := 2 * limits.maxRecordBytes + 2
+
+/-- The expanded check declines a decoded record: the limit below `expandedDepthBound` and a
+path past it. -/
+def expandedFails (limits : Limits) (constant : Ixon.Constant) : Bool :=
+  !(expandedDepthBound limits ≤ limits.maxDepth ||
+    Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant)
 
 /-- **The expanded-depth check**: every decoded record's expressions within
 `limits.maxDepth` with their shares expanded, as the reader builds them
@@ -227,10 +236,26 @@ path through its shares meets each stored node at most once, so none is that dee
 def expandedDepths (limits : Limits) : Ingress.Constants → Except ByteError Unit
   | [] => .ok ()
   | (_, constant) :: rest =>
-    if expandedDepthBound limits ≤ limits.maxDepth ||
-        Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant then
-      expandedDepths limits rest
-    else .error (.limit .depth)
+    if expandedFails limits constant then .error (.limit .depth) else expandedDepths limits rest
+
+/-- The scan as one test over the records (`scanFails`), in any order: what a parallel scan
+computes (`Ix.RoleBinding.RecordDecoding.scanDepthsParallel_eq`). -/
+theorem scanDepths_eq_all (limits : Limits) : ∀ records : Records,
+    scanDepths limits records =
+      if records.all (fun p => !scanFails limits p.2) then .ok () else .error (.limit .depth)
+  | [] => rfl
+  | (_, b) :: rest => by
+    rw [scanDepths, scanDepths_eq_all limits rest]
+    by_cases h : scanFails limits b <;> simp [h]
+
+/-- The expanded check as one test over the records (`expandedFails`). -/
+theorem expandedDepths_eq_all (limits : Limits) : ∀ constants : Ingress.Constants,
+    expandedDepths limits constants =
+      if constants.all (fun p => !expandedFails limits p.2) then .ok () else .error (.limit .depth)
+  | [] => rfl
+  | (_, c) :: rest => by
+    rw [expandedDepths, expandedDepths_eq_all limits rest]
+    by_cases h : expandedFails limits c <;> simp [h]
 
 /-- **Decoding within the depth limit**: the stored-nesting scan, canonical
 decoding (`decodeRecords`, its per-record limits reported as such: `ByteError.asLimit`), the

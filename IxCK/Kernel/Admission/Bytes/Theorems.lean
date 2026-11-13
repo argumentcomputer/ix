@@ -323,8 +323,8 @@ theorem expandedDepths_error {limits : Limits} :
   | (_, _) :: _, _, h => by
     rw [expandedDepths] at h
     split at h
-    · exact expandedDepths_error h
     · cases h; rfl
+    · exact expandedDepths_error h
 
 /-- `asLimit` changes a decode error into a per-record limit's decline, or nothing. -/
 theorem ByteError.asLimit_cases (e : ByteError) :
@@ -406,7 +406,7 @@ theorem scanDepths_ok_of_bound {limits : Limits} :
     rw [scanDepths, if_neg]
     · exact scanDepths_ok_of_bound (fun e he => h e (List.mem_cons_of_mem _ he))
     · intro hc
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      simp only [scanFails, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨-, hlt⟩, -⟩ := hc
       exact absurd (h (a, bytes) (List.mem_cons_self ..)) (Nat.not_le.mpr hlt)
 
@@ -415,10 +415,9 @@ theorem expandedDepths_ok_of_bound {limits : Limits} (h : expandedDepthBound lim
     ∀ {constants : Ingress.Constants}, expandedDepths limits constants = .ok ()
   | [] => rfl
   | (_, _) :: _ => by
-    rw [expandedDepths, if_pos]
+    rw [expandedDepths, if_neg]
     · exact expandedDepths_ok_of_bound h
-    · simp only [Bool.or_eq_true, decide_eq_true_eq]
-      exact .inl h
+    · simp [expandedFails, h]
 
 /-- **Within any limit at least the records' bounds**: a depth limit no record can reach
 (`storedDepthBound`, `expandedDepthBound`) is met. -/

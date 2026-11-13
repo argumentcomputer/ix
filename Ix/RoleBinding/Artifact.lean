@@ -4,6 +4,7 @@ public import Ix.RoleBinding.Publication
 public import Ix.Ixon.Authenticated
 public import Ix.KernelCheck.Step
 public import IxCK.Kernel.Admission.UserAxioms
+public import Ix.RoleBinding.RecordDecoding
 
 /-! # Certified checking of an artifact's own binding and records
 
@@ -207,18 +208,20 @@ theorem decodeRecordsPar_eq (limits : Limits) (records : Records) :
   simp only [decodeRecordsPar, decodeRecords, joinDecodes_spawnDecodes]
 
 /-- `Ix.Kernel.Admission.decodeWithin` with the decoding in parallel
-(`decodeRecordsPar`): the depth scan, the decoding (its per-record limits as declines), the
-expanded-depth check. -/
+(`decodeRecordsPar`), the depth scan and the expanded check in parallel too
+(`RecordDecoding.scanDepthsParallel`, `expandedDepthsParallel`): the same result. -/
 def decodeWithinPar (limits : Limits) (records : Records) :
     Except ByteError Ix.Kernel.Ingress.Constants := do
-  Ix.Kernel.Admission.scanDepths limits records
+  Ix.RoleBinding.RecordDecoding.scanDepthsParallel 256 limits records
   let constants ← (decodeRecordsPar limits records).mapError Ix.Kernel.Admission.ByteError.asLimit
-  Ix.Kernel.Admission.expandedDepths limits constants
+  Ix.RoleBinding.RecordDecoding.expandedDepthsParallel 256 limits constants
   pure constants
 
 theorem decodeWithinPar_eq (limits : Limits) (records : Records) :
     decodeWithinPar limits records = Ix.Kernel.Admission.decodeWithin limits records := by
-  simp only [decodeWithinPar, Ix.Kernel.Admission.decodeWithin, decodeRecordsPar_eq]
+  simp only [decodeWithinPar, Ix.Kernel.Admission.decodeWithin, decodeRecordsPar_eq,
+    Ix.RoleBinding.RecordDecoding.scanDepthsParallel_eq,
+    Ix.RoleBinding.RecordDecoding.expandedDepthsParallel_eq]
 
 end DecodePar
 
