@@ -1823,9 +1823,9 @@
   "IxCCGrounding.WordLe",
   "IxCCGrounding.WordRoot"],
  "grounding_axiom_sha256":
- "5c9ed285e935fd07db006e1bcf6784f969b5134b7d30cc5f2cec51bb750e285a",
- "grounding_axiom_count": 400,
- "baseline": "W",
+ "9297c352230b0f784dc1b8729748f05ab0e6800fb8f99b999d9f692d00511691",
+ "grounding_axiom_count": 408,
+ "baseline": "η-short step of 1b (GR21)",
  "axiom_sha256":
  "e006ef662d55519a73262c509f18d0da6ea4eccec30d26bc9b1a3126770577ff",
  "axiom_count": 6888}

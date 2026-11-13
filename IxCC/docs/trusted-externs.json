@@ -1945,8 +1945,8 @@
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
       "nix/build.nix": "46388020f117a06b447ce84229d08a077c3a57ceccf90eb3c91ad2eb0751c2f9",
       "nix/checks.nix": "e057166c3f31b05c0ef44fd88e9c680c91d6f6fe36cdc121a83810bbba22b56b",
-      "nix/ci-coverage.json": "90a3f36c6858cf7a36da2f863baf4a7150ce3d123573c3dd3089ffd528107968",
-      "nix/lean-modules.json": "e906affa74386364d3fbd6ac11547b8862e90268b00e176ff50d5da6ce7c21f2",
+      "nix/ci-coverage.json": "e881db7dd97aaf282f5305c6fc0df2fc098c6e3542bae20422c09f61fa93b885",
+      "nix/lean-modules.json": "f11c613b3d887d06c758caf007fe868cdfc906cf42bccce6ae65b265bd12a0aa",
       "nix/sources.nix": "68ac9be48afc58308053746c2c556bfcab92a5c28a68d663890b1ee84e0fe553",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "012ce5230a7976558b2e087b6077861101fed19887a24fbba15a86f38c086196",
@@ -2837,7 +2837,7 @@
       "IxCCGrounding/Heads.lean": "a68d5cd4f7007f39b54e6166309df4d11947f046c890aeaea2af31715e379167",
       "IxCCGrounding/Ground.lean": "9bf45071799ba4e68bb5132c20c9c0473cf2071af4704c521caeef48a533d992",
       "IxCCGrounding/Fundamental.lean": "9fe15757a49dc7c4465d73a641548407ce8fee4bfff9acb7ab2d9303e8d88bb3",
-      "IxCCGrounding/Fence.lean": "98c40a6a333132511972ba24127ffe3491f86b12e37eeef7e167a0660dbd836b",
+      "IxCCGrounding/Fence.lean": "8cf21d8607a5f06cb721c3cb4b7d46f3629acce9735f375003fca82da91bd330",
       "IxCCGrounding/Eqn.lean": "e87936960d30f7c29feab8eb874d88baae22942d309f7176e120fc845fdd9719",
       "IxCCGrounding/Check.lean": "04b671870eee9567f19b02bf9829b9e42156598974752616ab0dfe2f9aa42aed",
       "IxCCGrounding/Apply.lean": "b092a8816c10254c2800afde452e4ab8b2dd410ed86cb266401f98e88e2ebcc0",
@@ -3197,8 +3197,8 @@
       "IxCC/Src/Relevance/Proof/Canonical.lean": "68257544bce1665deab00e6cf6d1389b1b9c625e07230a00841e76268b2c4bca",
       "IxCCTests/Grounding/Zeta.lean": "c2d124a82b575431436991971e77dce228eca495aada3cb843a430003654518a",
       "IxCCGrounding/Lift.lean": "2e526e323c2b50e351b914475b63bcf030379033a8fd9e412ca438f2e8ddc7d2",
-      "IxCCTests/Grounding/GradedHead.lean": "b020f5709ce728e1972287c9c41dde4c0a3f5533c496216943d209d39282d270",
-      "IxCCGrounding/GradedHead.lean": "e0e093f750ed6ac5a7425e7769250ea7ad40fbb741eb24d24459c4c469d28a69",
+      "IxCCTests/Grounding/GradedHead.lean": "63b0dd68eb7dc15ad7603285ce2659f5a73a29972d74fc6458938b4abfd4eae9",
+      "IxCCGrounding/GradedHead.lean": "4c8527d4bef8926e89c19741c7f5922dd9052b1d6369fc0deb5d9285db84bceb",
       "IxCCTests/Xv/StackingLinear.lean": "4106cef0432065248504decf096397481c74e830a1452f37ef5729b78989fce6",
       "IxCC/Xv/Stacking/Proof/Linear.lean": "82191fef818b813a05162b95555ae68d58524d356968c3ec7f65db4ff92e20ff",
       "IxCCTests/Recheck/ErasedPartial.lean": "aa78ec8b966919c78a67f4cfecdde77e1ce1b7adb73e233a601f40823fc18f1c",
@@ -3260,7 +3260,8 @@
       "IxCCGrounding/WordCheck.lean": "99733ed37c7e38601b54c867aaa04c7ce544bd4adb360df5f6391a1b1bda3385",
       "IxCCGrounding/WordCanon.lean": "74b3e70677eca7ed2862e67c2aa7799890fbff1cec79e767f75c12070664fbfc",
       "IxCCGrounding/WordBridge.lean": "c22bb652d0209e66ea8f29d85970cd49bb85357294e0cc6ec4b67824b39b42d4",
-      "IxCCGrounding/WordAccel.lean": "48401f1ff869a2a38fadcdf5f40c487343b75542a6e576c989c5d8f065ebe785"
+      "IxCCGrounding/WordAccel.lean": "48401f1ff869a2a38fadcdf5f40c487343b75542a6e576c989c5d8f065ebe785",
+      "IxCCTests/Grounding/EtaShort.lean": "a77347381b6369d6d3dc24fc980df225e7b3c578afa559ce041fe5c2dc18b9c7"
     },
     "repository_files": {
       ".github/workflows/ixcc.yml": "457a376b2e4b245f54245af44a29dc91bd08f4b4cf33937aaf51c09a903aaa80"

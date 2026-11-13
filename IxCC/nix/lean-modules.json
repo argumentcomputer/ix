@@ -1254,7 +1254,11 @@
    ["IxCCTests.Grounding.NoCanon",
     "IxCCTests.Grounding.Zeta",
     "IxCCGrounding.SelRetype",
-    "IxCCGrounding.WordRoot"]},
+    "IxCCGrounding.WordRoot",
+    "IxCCTests.Grounding.EtaShort"]},
+  "IxCCTests.Grounding.EtaShort":
+  {"path": "IxCCTests/Grounding/EtaShort.lean",
+   "imports": ["IxCCTests.Grounding.Run", "IxCCGrounding.GradedHead"]},
   "IxCCTests.Grounding.CaseEmpty":
   {"path": "IxCCTests/Grounding/CaseEmpty.lean",
    "imports": ["IxCCTests.Grounding.GradedHead"]},
