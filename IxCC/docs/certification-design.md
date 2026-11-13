@@ -781,6 +781,38 @@ not its copy refused at `valueCorr` alone, a `let` used only under a λ refused 
 (deep); on `OS16-plain`, a constructor at a disagreeing level as a dead `let`'s value accepted by
 every conjunct of the check and refused by `instCheckB`.
 
+**The corpus after step C** (`GR-3m-cA2`, `cB2`, at the merge of `a387aa3b8`: the library's own
+check, `instWalk`/`instCheckB`, `noCanonB`, `noCanonAB`, `litDefsB`, `headRegimeResB` and
+`sitesDirectB` on each of the 50 closures that load, all non-declined roots at once). The 14 that
+hold a `let` in a run term of their checked set; "678" is `groundCheck ∧ noCanonB ∧ litDefsB`,
+"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis); "sites" are those
+the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'s 16), which are
+`SitesOkRes` for the Laws, 678 and 678A families:
+
+| Closure | `corrSB []` (of the constants the let-free check refused) | False conjuncts | Families | `headRegimeResB` refused instances (sites) |
+| --- | --- | --- | --- | --- |
+| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G | 0 (13) |
+| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G | 0 (724) |
+| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A | 74 (1,191) |
+| bench-k1/sum-loop | 3 of 3 | `eqnShape` | — | 0 (95) |
+| bench-k1/collatz | 3 of 3 | `eqnShape` | — | 0 (96) |
+| bench-k1/prime-count | 3 of 3 | `eqnShape` | — | 2 (129) |
+| phase1-scalar/scalar | 12 of 12 | `eqnShape` | — | 12 (1,260) |
+| phase1-decline/loops | 4 of 4 | `eqnShape` | — | 0 (213) |
+| phase1-resource/resource | 4 of 4 | `caseRec`, `eqnShape`, `caseShape` | — | 0 (214) |
+| phase1-decline/strings | 7 of 8 (c262: a string literal) | `noWord`, `caseRec`, `proj`, `valueCorr`, `caseShape`, `caseProg` | — | 10 (388) |
+| phase1-decline/panic | 2 of 4 (c363, c322: string literals) | `noWord`, `proj`, `valueCorr` | — | 2 (405) |
+| phase2-closures/closures | 4 of 6 (c272, c19: deep `let`s) | `caseRec`, `eqnCorr`, `valueCorr`, `caseShape` | — | 6 (201) |
+| phase2-arity/arity | 0 of 1 (c597: a deep `let`) | `valueCorr` | — | 0 (8) |
+| src-diag/diag | 11 of 11 | `declOk`, `recShape`, `notOpaque`, `proj`, `caseShape`, `caseProg` | — | 38 (588) |
+
+The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
+`OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
+Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
+out until 1b). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
+`diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
 fewer (`IxCCGrounding/Fence.lean`, 255 exact assertions):**
 
