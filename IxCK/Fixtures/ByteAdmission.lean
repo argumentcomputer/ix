@@ -57,11 +57,12 @@ def outcomeOf (constants : List (Address × Ixon.Constant)) (blobs : List (Addre
 
 /-- The byte stage's verdict alone: `none` when the batch limits hold, no
 key repeats in its table, every key is the hash of its bytes, and every
-record decodes canonically. -/
+record decodes canonically within the depth limit (`decodeWithin`: the per-record limits and the
+depth limit decline). -/
 def failure (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
     Option Ix.Kernel.Admission.ByteError :=
   match preflight bounds records blobs, uniqueKeys records blobs, authenticate fixtureHash records blobs,
-      decodeRecords bounds records with
+      decodeWithin bounds records with
   | .error error, _, _, _ => some error
   | .ok _, .error error, _, _ => some error
   | .ok _, .ok _, .error error, _ => some error
@@ -138,7 +139,8 @@ def malformed : Records := [(address 1, ⟨#[]⟩)]
     (bounds := { limits with maxTotalBytes := 0 }) = some (.limit .totalBytes)
 #guard failure (encode falseStore) (bounds := { limits with maxRecords := 2 }) =
   some (.limit .records)
-#guard (preflight ⟨0, 0, 0, 0, 0⟩ [] []).isOk
+#guard (preflight { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0,
+    maxRecordUnivNodes := 0 } [] []).isOk
 #guard failure [] [(address 9, ⟨#[]⟩), (address 10, ⟨#[]⟩)]
     (bounds := { limits with maxBlobs := 1 }) = some (.limit .blobs)
 #guard entryAgrees malformed (bounds := { limits with maxRecords := 0 })
@@ -208,9 +210,13 @@ def blob : List (Address × ByteArray) := [authentic ⟨#[1, 2, 3]⟩]
   some (.limit .totalBytes)
 #guard failure one blob
     (bounds := { limits with maxTotalBytes := payloadBytes one + payloadBytes blob }) = none
-#guard decodeFailureOf one 0 { limits with maxRecordBytes := payloadBytes one - 1 }
+-- a record over the per-record limits is declined, not rejected as malformed (`ByteError.asLimit`)
+#guard failure one (bounds := { limits with maxRecordBytes := payloadBytes one - 1 }) =
+  some (.limit .recordBytes)
+#guard entryAgrees one (bounds := { limits with maxRecordBytes := payloadBytes one - 1 })
 #guard failure one (bounds := { limits with maxRecordBytes := payloadBytes one }) = none
-#guard decodeFailureOf one 0 { limits with maxRecordUnivNodes := 0 }
+#guard failure one (bounds := { limits with maxRecordUnivNodes := 0 }) = some (.limit .recordUnivNodes)
+#guard entryAgrees one (bounds := { limits with maxRecordUnivNodes := 0 })
 #guard failure one (bounds := { limits with maxRecordUnivNodes := 1 }) = none
 #guard (check two (bounds := { limits with maxTotalBytes := payloadBytes two })).isOk
 #guard (check one blob (bounds := { limits with maxTotalBytes := payloadBytes one + payloadBytes blob })).isOk
@@ -230,7 +236,9 @@ def blob : List (Address × ByteArray) := [authentic ⟨#[1, 2, 3]⟩]
 #guard decodeFailureOf (one ++ [authentic invalidSharingCount]) 1
 #guard decodeFailureOf (one ++ [authentic (recordSharingCount [0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])])
   1
-#guard decodeFailureOf [authentic (recordUnivsPayload 1 successorBomb)] 0
+-- a successor chain of 2^56 levels: past the depth limit, declined by the scan before decoding
+#guard failure [authentic (recordUnivsPayload 1 successorBomb)] = some (.limit .depth)
+#guard entryAgrees [authentic (recordUnivsPayload 1 successorBomb)]
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (h : checkBytes fixtureHash binding limits (sealed separatedFalse) [] = .ok env) :
