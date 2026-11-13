@@ -1957,10 +1957,7 @@
                 0
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+              "machine": true
             },
             {
               "args": [
@@ -1968,10 +1965,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+              "machine": true
             },
             {
               "args": [
@@ -1979,10 +1973,7 @@
                 9223372036854775806
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+              "machine": true
             },
             {
               "args": [
@@ -2284,10 +2275,7 @@
                 0
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2295,10 +2283,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2306,10 +2291,7 @@
                 9223372036854775806
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2399,10 +2381,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a > b` is `b < a`, so `b = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2410,10 +2389,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: as `[0, 2⁶³ − 1]`"
+              "machine": true
             },
             {
               "args": [
@@ -2421,10 +2397,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: as `[0, 2⁶³ − 1]`"
+              "machine": true
             },
             {
               "args": [
@@ -2620,10 +2593,7 @@
                 0
               ],
               "value": "0",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2631,10 +2601,7 @@
                 9223372036854775807
               ],
               "value": "0",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -2642,10 +2609,7 @@
                 9223372036854775806
               ],
               "value": "0",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [
@@ -4214,10 +4178,7 @@
                 9223372036854775807
               ],
               "value": "false",
-              "machine": true,
-              "fail": "natOverflow",
-              "spurious": true,
-              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+              "machine": true
             },
             {
               "args": [

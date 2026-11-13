@@ -54,7 +54,10 @@ Gap 6 (trusted operand descriptions) is closed where the metadata is
 derived.
 
 The whole pass recurses structurally over lists and uses `NatMap`, so the
-kernel can evaluate it (D17). -/
+kernel can evaluate it (D17). A block is walked on `Tracked`, the state with
+the registers and outgoing cells it may hold, so a call or a definition does
+no pass over the whole state (`checkBlock`; its specification, the walk on the
+plain state, is `checkBlockList`, `Proof/Tracked.lean`). -/
 
 namespace IxCC.Xv.Validate
 
@@ -326,7 +329,11 @@ def checkEdges (info : BlockInfo) (a : AState) : List (Edge VReg) → Option Cod
           else if !cert.le (a.bindParams params e.args) then some .edge
           else checkEdges info a es
 
-def checkBlock (c : Ctx) (info : BlockInfo) (b : Block VReg) (o : BlockOut) : Except (Nat × Code) Unit := do
+/-- A block checked on the plain state: the body from its certificate, the terminator, then its
+edges. The definition before 2026-11-13, kept as the specification of `checkBlock`
+(`checkBlock_eq_list`), which the soundness proof reads; at every call it passes over the whole
+state twice (`clearOutArgs`, `forget`). -/
+def checkBlockList (c : Ctx) (info : BlockInfo) (b : Block VReg) (o : BlockOut) : Except (Nat × Code) Unit := do
   let body := b.body.toList
   let n := body.length
   unless nodup b.params do throw (0, .params)
@@ -337,6 +344,98 @@ def checkBlock (c : Ctx) (info : BlockInfo) (b : Block VReg) (o : BlockOut) : Ex
   let a ← (stepEdits c a now).mapError (n, ·)
   let a ← (stepTerm c a b.term o.termLocs).mapError (n, ·)
   if let some code := checkEdges info a b.term.edges then throw (n + 1, code)
+
+
+/-! ## The walk on the tracked state
+
+`stepOperands` … `walkBody` again, on `Tracked`: the same checks, read from the state, and the same
+updates through `Tracked`'s operations. `checkBlock` runs them; the definitions above are its
+specification (`checkBlockList`, `Proof.checkBlock_eq_list`). -/
+
+def stepOperandsT (c : Ctx) (a : Tracked) (ops : List (Operand VReg)) (ls : List Loc) (row : Bool) :
+    Except Code Tracked := do
+  unless ops.length == ls.length do throw .shape
+  let ps := ops.zip ls
+  if let some code := operandCode c ps row then throw code
+  unless usesHold a.st ps do throw .useMissing
+  pure (a.define (defsOfPairs ps) [])
+
+def stepInstT (c : Ctx) (a : Tracked) (inst : Inst VReg) (ls : List Loc) : Except Code Tracked :=
+  match inst with
+  | .call g args rets => do
+      let ops := inst.operands
+      unless ops.length == ls.length do throw .shape
+      let n := args.length
+      unless rets.length ≤ Xl.nResultRegs do throw .convention
+      unless nodup rets do throw .alias
+      unless ls.take n == argLocs n && ls.drop n == resultLocs rets.length do throw .convention
+      unless (args.zip (argLocs n)).all (fun (v, l) => a.st.holds l v) do throw .useMissing
+      let clobbers := (c.env.clobbers g).map Loc.reg
+      pure ((a.clearOutArgs).define (rets.zip (resultLocs rets.length)) clobbers)
+  | .move .. => do
+      match ls with
+      | [src, dst] => if src.isCell && dst.isCell then throw .cellMove
+      | _ => pure ()
+      stepOperandsT c a inst.operands ls false
+  | .zero _ => stepOperandsT c a inst.operands ls false
+  | .op o defs args => do
+      unless rowShapeOk o defs args false do throw .constraint
+      stepOperandsT c a inst.operands ls true
+  | .fused p pargs q defs qargs => do
+      unless rowShapeOk p [] pargs false && rowShapeOk q defs qargs true do throw .constraint
+      stepOperandsT c a inst.operands ls true
+
+def stepTermT (c : Ctx) (a : Tracked) (t : Term VReg) (ls : List Loc) : Except Code Tracked :=
+  match t with
+  | .jcc p pargs defs .. => do
+      unless rowShapeOk p defs pargs false do throw .constraint
+      stepOperandsT c a t.operands ls true
+  | .ret vs => do
+      unless vs.length ≤ Xl.nResultRegs && ls == resultLocs vs.length do throw .convention
+      unless (vs.zip ls).all (fun (v, l) => a.st.holds l v) do throw .useMissing
+      pure a
+  | .tail _ args => do
+      unless args.length ≤ Xl.nArgRegs && ls == argLocs args.length do throw .convention
+      unless (args.zip ls).all (fun (v, l) => a.st.holds l v) do throw .useMissing
+      pure a
+  | .jmp _ | .fail _ | .trap => do
+      unless ls.isEmpty do throw .shape
+      pure a
+
+def stepEditT (c : Ctx) (a : Tracked) : Edit → Except Code Tracked
+  | .move dst src => do
+      if let some code := editLocCode c dst then throw code
+      if let some code := editLocCode c src then throw code
+      if dst.isCell && src.isCell then throw .cellMove
+      if (a.st.get src).isEmpty then throw .unknownSource
+      pure (a.stepMove dst src)
+
+def stepEditsT (c : Ctx) : Tracked → List Edit → Except Code Tracked
+  | a, [] => pure a
+  | a, e :: es => do stepEditsT c (← stepEditT c a e) es
+
+def walkBodyT (c : Ctx) : Tracked → List (Inst VReg) → List (List Loc) → List (Nat × Edit) → Nat →
+    Except (Nat × Code) (Tracked × List (Nat × Edit))
+  | a, [], [], es, _ => pure (a, es)
+  | a, inst :: insts, ls :: lss, es, i => do
+      let (now, later) := takeAt i es
+      let a ← (stepEditsT c a now).mapError (i, ·)
+      let a ← (stepInstT c a inst ls).mapError (i, ·)
+      walkBodyT c a insts lss later (i + 1)
+  | _, _, _, _, i => throw (i, .shape)
+
+/-- Check a block: its body from its certificate, its terminator, then its edges. -/
+def checkBlock (c : Ctx) (info : BlockInfo) (b : Block VReg) (o : BlockOut) : Except (Nat × Code) Unit := do
+  let body := b.body.toList
+  let n := body.length
+  unless nodup b.params do throw (0, .params)
+  unless editsOrdered n o.edits 0 do throw (0, .editOrder)
+  let (a, left) ← walkBodyT c (Tracked.ofList o.cert) body o.locs o.edits 0
+  let (now, rest) := takeAt n left
+  unless rest.isEmpty do throw (n, .editOrder)
+  let a ← (stepEditsT c a now).mapError (n, ·)
+  let a ← (stepTermT c a b.term o.termLocs).mapError (n, ·)
+  if let some code := checkEdges info a.st b.term.edges then throw (n + 1, code)
 
 /-- The state the entry convention gives: parameter `i` at `Xl.paramLoc i`. -/
 def entryState (params : List VReg) : AState :=

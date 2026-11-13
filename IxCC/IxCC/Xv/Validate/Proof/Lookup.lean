@@ -1,4 +1,5 @@
 import IxCC.Xv.Validate.Proof.Inst
+import IxCC.Xv.Validate.Proof.Tracked
 
 /-!
 # What an accepted allocation looks like
@@ -303,7 +304,8 @@ theorem checkBlock_ok {c : Ctx} {info : BlockInfo} {b : Block VReg} {bo : BlockO
       .ok (aEnd, left) ∧ (takeAt b.body.size left).2 = [] ∧
       ∃ a₁, stepEdits c aEnd (takeAt b.body.size left).1 = .ok a₁ ∧
       ∃ a₂, stepTerm c a₁ b.term bo.termLocs = .ok a₂ ∧ checkEdges info a₂ b.term.edges = none := by
-  unfold checkBlock at h
+  rw [checkBlock_eq_list] at h
+  unfold checkBlockList at h
   simp only [bind, Except.bind] at h
   cases h₁ : nodup b.params <;>
     simp only [h₁, Bool.not_true, Bool.not_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure,
