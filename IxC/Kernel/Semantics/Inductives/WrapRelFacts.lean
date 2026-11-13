@@ -573,4 +573,236 @@ theorem litGuards_cons_rec {E : Env md} {cv : ConstantVal md} {mI rP : Nat}
     guard_cons_rec hfresh Ix.Kernel.charTyOk h2 rfl,
     guard_cons_rec hfresh Ix.Kernel.charOfNatTyOk h6 rfl]
 
+/-! ## The generated recursor's major premise
+
+Past the parameters, the motive, the minor premises and the indices, the generated recursor
+type's next domain is the family at its own level parameters applied to the parameter variables
+and the index variables (`structFamI`). So the generated type fires every rule whose constructor
+carries the family's level parameters (`Expr.recRulePlain`), and the major premise's index
+arguments are the trailing bound variables. A declared type without `let` related to it carries
+the same domain: no wrapper heads it while the family is stored as an inductive type. -/
+
+theorem stripPis_succ_forallE {t b body : Expr md} {m : Ix.Kernel.BinderMeta} {k : Nat}
+    {bs : List (Expr md × Ix.Kernel.BinderMeta)} (h : b.stripPis k = some (bs, body)) :
+    (Expr.forallE t b m).stripPis (k + 1) = some ((t, m) :: bs, body) := by
+  simp only [Expr.stripPis, h, Option.map_some]
+
+theorem stripPis_succ_inv : ∀ {e : Expr md} {k : Nat} {bs : List (Expr md × Ix.Kernel.BinderMeta)}
+    {body : Expr md}, e.stripPis (k + 1) = some (bs, body) →
+      ∃ t b m bs0, e = .forallE t b m ∧ b.stripPis k = some (bs0, body)
+  | .forallE t b m, k, _, body, h => by
+    simp only [Expr.stripPis, Option.map_eq_some_iff] at h
+    obtain ⟨⟨bs0, body0⟩, hs0, heq⟩ := h
+    obtain rfl : body0 = body := congrArg Prod.snd heq
+    exact ⟨t, b, m, bs0, rfl, hs0⟩
+  | .bvar _, _, _, _, h | .fvar _ _, _, _, _, h | .sort _, _, _, _, h | .const _ _, _, _, _, h
+  | .app _ _, _, _, _, h | .lam _ _ _, _, _, _, h | .letE _ _ _ _, _, _, _, h
+  | .lit _, _, _, _, h | .proj _ _ _, _, _, _, h => by simp [Expr.stripPis] at h
+
+/-- The strip of `k` binders replaced over a body lands on the body. -/
+theorem stripPis_replacePisPw {pw : Ix.Kernel.PropWhen} {b : Expr md} :
+    ∀ (k : Nat) (e r : Expr md), Expr.replacePisPw pw k e b = some r →
+      ∃ bs, r.stripPis k = some (bs, b)
+  | 0, _, r, h => by
+    simp only [Expr.replacePisPw, Option.some.injEq] at h
+    subst h
+    exact ⟨[], rfl⟩
+  | k + 1, .forallE ty rest _, r, h => by
+    simp only [Expr.replacePisPw] at h
+    cases hr : Expr.replacePisPw pw k rest b with
+    | none => rw [hr] at h; exact nomatch h
+    | some r' =>
+      rw [hr] at h
+      obtain rfl := Option.some.inj h
+      obtain ⟨bs, hbs⟩ := stripPis_replacePisPw k rest r' hr
+      exact ⟨_, stripPis_succ_forallE hbs⟩
+  | _ + 1, .bvar _, _, h | _ + 1, .fvar _ _, _, h | _ + 1, .sort _, _, h
+  | _ + 1, .const _ _, _, h | _ + 1, .app _ _, _, h | _ + 1, .lam _ _ _, _, h
+  | _ + 1, .letE _ _ _ _, _, h | _ + 1, .lit _, _, h | _ + 1, .proj _ _ _, _, h => by
+    simp [Expr.replacePisPw] at h
+
+/-- The strip of the minor premises' telescope lands on its body. -/
+theorem stripPis_structMinorsPisR {lps : List LevelParam} {nP : Nat} {pw : Ix.Kernel.PropWhen}
+    {body : Expr md} :
+    ∀ (cs : List (Key md × Nat × Expr md × List Nat)) (o : Nat) (r : Expr md),
+      Ix.Kernel.structMinorsPisR lps nP pw cs o body = some r →
+      ∃ bs, r.stripPis cs.length = some (bs, body)
+  | [], _, r, h => by
+    simp only [Ix.Kernel.structMinorsPisR, Option.some.injEq] at h
+    subst h
+    exact ⟨[], rfl⟩
+  | (C, nF, cty, recIdx) :: cs, o, r, h => by
+    simp only [Ix.Kernel.structMinorsPisR] at h
+    cases hm : Ix.Kernel.structMinorTyR C lps nP nF o pw cty recIdx with
+    | none => rw [hm] at h; exact nomatch h
+    | some mty =>
+      rw [hm] at h
+      cases hr : Ix.Kernel.structMinorsPisR lps nP pw cs (o + 1) body with
+      | none => rw [hr] at h; exact nomatch h
+      | some r' =>
+        rw [hr] at h
+        obtain rfl := Option.some.inj h
+        obtain ⟨bs, hbs⟩ := stripPis_structMinorsPisR cs (o + 1) r' hr
+        exact ⟨_, stripPis_succ_forallE hbs⟩
+
+/-- **The generated recursor type's major premise**: the domain after the parameters, the
+motive, the minor premises and the indices is the family applied to the parameter and index
+variables. -/
+theorem structRecTyR_major {T : Key md} {lps : List LevelParam} {elim : LevelParam}
+    {large : Bool} {nP nIdx : Nat} {tty recTy : Expr md}
+    {ctors : List (Key md × Nat × Expr md × List Nat)}
+    (h : Ix.Kernel.structRecTyR T lps elim large nP nIdx tty ctors = some recTy) :
+    ∃ bs B m, recTy.stripPis (nP + 1 + ctors.length + nIdx) =
+      some (bs, .forallE (Ix.Kernel.structFamI T lps nP nIdx (ctors.length + 1) 0) B m) := by
+  obtain ⟨_tbs, _itele, motiveTy, major, minors, -, -, hmaj, hmin, hr⟩ :=
+    Ix.Kernel.structRecTyR_unfold h
+  obtain ⟨bs1, h1⟩ := stripPis_replacePisPw nP tty recTy hr
+  obtain ⟨bs2, h2⟩ := stripPis_structMinorsPisR ctors 1 minors hmin
+  obtain ⟨bs3, h3⟩ := stripPis_replacePisPw nIdx _ major hmaj
+  have h0 := stripPis_succ_forallE (t := motiveTy)
+    (m := { pw := Ix.Kernel.Level.zeronessOf (Ix.Kernel.structElimLevel elim large) })
+    (Ix.Kernel.stripPis_append _ h2 h3)
+  have := Ix.Kernel.stripPis_append _ h1 h0
+  rw [show nP + (ctors.length + nIdx + 1) = nP + 1 + ctors.length + nIdx by omega] at this
+  exact ⟨_, _, _, this⟩
+
+theorem structFamI_getAppFn {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat} :
+    (Ix.Kernel.structFamI T lps nP nIdx e o).getAppFn = .const T (lps.map .param) := by
+  simp [Ix.Kernel.structFamI, Ix.Kernel.Expr.getAppFn_mkAppN, Ix.Kernel.Expr.getAppFn]
+
+theorem structFamI_getAppArgs {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat} :
+    (Ix.Kernel.structFamI T lps nP nIdx e o).getAppArgs =
+      Ix.Kernel.structPsAt (o + e + nIdx) nP ++ Ix.Kernel.structPsAt o nIdx := by
+  simp [Ix.Kernel.structFamI, Ix.Kernel.Expr.getAppArgs_mkAppN, Ix.Kernel.Expr.getAppArgs]
+
+theorem length_structPsAt {o n : Nat} : (Ix.Kernel.structPsAt (md := md) o n).length = n := by
+  simp [Ix.Kernel.structPsAt]
+
+/-- **A major premise at the family fires every rule** of a constructor at the family's level
+parameters: the domain's head is the family at those parameters and its first `nP` arguments are
+the recursor's leading bound variables. -/
+theorem recRulePlain_of_major {recTy B : Expr md} {bs : List (Expr md × Ix.Kernel.BinderMeta)}
+    {m : Ix.Kernel.BinderMeta} {T : Key md} {lps : List LevelParam} {nP n nIdx : Nat}
+    (hs : recTy.stripPis (nP + 1 + n + nIdx) =
+      some (bs, .forallE (Ix.Kernel.structFamI T lps nP nIdx (n + 1) 0) B m)) :
+    Expr.recRulePlain recTy (nP + 1 + n + nIdx) (nP + 1 + n) nP lps = true := by
+  have hps : Ix.Kernel.structPsAt (md := md) (0 + (n + 1) + nIdx) nP =
+      (List.range nP).map (fun k => Expr.bvar (nP + 1 + n + nIdx - 1 - k)) := by
+    unfold Ix.Kernel.structPsAt
+    refine List.map_congr_left fun k _ => ?_
+    congr 1
+    omega
+  have htake : (Ix.Kernel.structFamI T lps nP nIdx (n + 1) 0).getAppArgs.take nP =
+      (List.range nP).map (fun k => Expr.bvar (nP + 1 + n + nIdx - 1 - k)) := by
+    rw [structFamI_getAppArgs, List.take_left' length_structPsAt, hps]
+  unfold Expr.recRulePlain
+  rw [hs]
+  simp only [structFamI_getAppFn, htake]
+  simp <;> omega
+
+/-- **The generated recursor type fires every rule** of a constructor at the family's level
+parameters. -/
+theorem recRulePlain_structRecTyR {T : Key md} {lps : List LevelParam} {elim : LevelParam}
+    {large : Bool} {nP nIdx : Nat} {tty recTy : Expr md}
+    {ctors : List (Key md × Nat × Expr md × List Nat)}
+    (h : Ix.Kernel.structRecTyR T lps elim large nP nIdx tty ctors = some recTy) :
+    Expr.recRulePlain recTy (nP + 1 + ctors.length + nIdx) (nP + 1 + ctors.length) nP lps
+      = true :=
+  let ⟨_, _, _, hs⟩ := structRecTyR_major h
+  recRulePlain_of_major hs
+
+/-- The major premise's index arguments are the trailing bound variables. -/
+theorem structFamI_args_drop {T : Key md} {lps : List LevelParam} {nP nIdx e : Nat} :
+    (Ix.Kernel.structFamI T lps nP nIdx e 0).getAppArgs.drop nP =
+      (List.range nIdx).map fun i => Expr.bvar (nIdx - 1 - i) := by
+  rw [structFamI_getAppArgs, List.drop_left' length_structPsAt]
+  simp [Ix.Kernel.structPsAt]
+
+/-- Built of applications, constants and bound variables only. -/
+def appBC : Expr md → Bool
+  | .app f a => appBC f && appBC a
+  | .const _ _ => true
+  | .bvar _ => true
+  | _ => false
+
+theorem appBC_mkAppN : ∀ (args : List (Expr md)) (f : Expr md),
+    appBC (Expr.mkAppN f args) = (appBC f && args.all appBC)
+  | [], f => by simp [Expr.mkAppN]
+  | a :: as, f => by
+    rw [show Expr.mkAppN f (a :: as) = Expr.mkAppN (.app f a) as from rfl, appBC_mkAppN as]
+    simp only [appBC, List.all_cons, Bool.and_assoc]
+
+theorem appBC_structFamI {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat} :
+    appBC (Ix.Kernel.structFamI T lps nP nIdx e o) = true := by
+  simp [Ix.Kernel.structFamI, appBC_mkAppN, appBC, Ix.Kernel.structPsAt]
+
+/-- The family stored as an inductive type heads no wrapper. -/
+theorem consumeWrapper_structFamI {find? : Key md → Option (ConstantInfo md)} {T : Key md}
+    {lps : List LevelParam} {nP nIdx e o : Nat}
+    (hT : ∃ cv caps, find? T = some (.indInfo cv caps)) :
+    consumeWrapper find? (Ix.Kernel.structFamI T lps nP nIdx e o) = none := by
+  obtain ⟨cv, caps, hT⟩ := hT
+  have hw : wrapperArity find? T = none := by simp [wrapperArity, hT]
+  unfold consumeWrapper
+  rw [structFamI_getAppFn, structFamI_getAppArgs]
+  generalize Ix.Kernel.structPsAt (md := md) (o + e + nIdx) nP ++ Ix.Kernel.structPsAt o nIdx
+    = args
+  cases args with
+  | nil => rfl
+  | cons a rest => simp [hw]
+
+section Major
+
+variable {find? : Key md → Option (ConstantInfo md)}
+
+theorem ConsumeStar.eq_of_none {t a : Expr md} (h : ConsumeStar find? t a)
+    (hn : consumeWrapper find? t = none) : a = t := by
+  cases h with
+  | refl => rfl
+  | step hc _ => rw [hn] at hc; exact nomatch hc
+
+/-- A related term built of applications, constants and bound variables is the term itself. -/
+theorem WrapT.eq_of_appBC {g d : Expr md} (h : WrapT find? g d) (hg : appBC g = true) :
+    d = g := by
+  induction h with
+  | bvar => rfl
+  | const => rfl
+  | app _ _ ihf iha =>
+    simp only [appBC, Bool.and_eq_true] at hg
+    rw [ihf hg.1, iha hg.2]
+  | _ => simp [appBC] at hg
+
+/-- The strip moves to a related term, its body related. -/
+theorem WrapT.stripPis : ∀ (k : Nat) {g d : Expr md} {bs : List (Expr md × Ix.Kernel.BinderMeta)}
+    {body : Expr md}, WrapT find? g d → g.stripPis k = some (bs, body) →
+      ∃ bs' body', d.stripPis k = some (bs', body') ∧ WrapT find? body body'
+  | 0, _, d, _, _, h, hs => by
+    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨-, rfl⟩ := hs
+    exact ⟨[], d, rfl, h⟩
+  | k + 1, _, _, _, _, h, hs => by
+    obtain ⟨t, b, m, bs0, rfl, hs0⟩ := stripPis_succ_inv hs
+    cases h with
+    | forallE _ _ _ hb =>
+      obtain ⟨bs', body', h1, h2⟩ := WrapT.stripPis k hb hs0
+      exact ⟨_, body', stripPis_succ_forallE h1, h2⟩
+
+/-- **A declared type without `let` carries the generated major premise verbatim**, when the
+family is stored as an inductive type. -/
+theorem WrapRel.major_structFamI {g d : Expr md} (h : WrapRel find? g d) (hd : letFree d = true)
+    {k : Nat} {bs : List (Expr md × Ix.Kernel.BinderMeta)} {B : Expr md}
+    {m : Ix.Kernel.BinderMeta} {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat}
+    (hT : ∃ cv caps, find? T = some (.indInfo cv caps))
+    (hs : g.stripPis k = some (bs, .forallE (Ix.Kernel.structFamI T lps nP nIdx e o) B m)) :
+    ∃ bs' B' m', d.stripPis k =
+      some (bs', .forallE (Ix.Kernel.structFamI T lps nP nIdx e o) B' m') := by
+  obtain ⟨bs', body', h1, h2⟩ := WrapT.stripPis k (h.toWrapT hd) hs
+  cases h2 with
+  | forallE _ hc hdom _ =>
+    rw [ConsumeStar.eq_of_none hc (consumeWrapper_structFamI hT)] at hdom
+    rw [hdom.eq_of_appBC appBC_structFamI] at h1
+    exact ⟨_, _, _, h1⟩
+
+end Major
+
 end Ix.Kernel.Semantics
