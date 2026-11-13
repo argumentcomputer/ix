@@ -2,9 +2,11 @@ import IxCCTests.Src.Relevance.Checker
 import IxCCTests.Src.Relevance.Census
 import IxCCTests.Src.Relevance.Mutation
 import IxCCTests.Src.Relevance.Stuck
+import IxCCTests.Src.Relevance.ModeFlip
 
 /-! The `tests-relevance` suite: checker rules on
-synthetic programs, the census on `k1.ixe`, annotation mutation on the
+synthetic programs, the checks under application-mode flips at a planted
+whnf cycle, the census on `k1.ixe`, annotation mutation on the
 bench-k1 closures, and the stuck-cause census on `k1.ixe`, bench-k1 and
 `src-sortpoly`. `--report PATH` writes the census JSON and
 `--stuck-report PATH` the stuck-cause census JSON. -/
@@ -30,6 +32,7 @@ def main (args : List String) : IO UInt32 := do
   try
     IO.println "tests-relevance"
     part a "checker rules" (Checker.run a)
+    part a "mode flips at a planted whnf cycle" (ModeFlip.run a)
     part a "census on k1.ixe" do
       for line in ← Census.run a reportPath do IO.println s!"    {line}"
     part a "annotation mutation" do
