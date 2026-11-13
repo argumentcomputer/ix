@@ -212,10 +212,12 @@ def red_proj : SpecFn := fun c args h r h' calls =>
 
 /-- `projection_definition_info(val, arity)`: tag `1` recognizes a projection function's value,
 `λ … λ, proj s f (bvar j)`: the value (under `arity` local binders) is `m` more `λ`s over
-`.proj (κ s) f (.bvar (n - 1 - j))` with `n = arity + m` and `j < n`. Tag `0`: no claim. -/
+`.proj (κ s) f (.bvar (n - 1 - j))` with `n = arity + m` and `j < n`, for an arity below `2^32`
+(the counter is a field element). Tag `0`: no claim. -/
 def projection_definition_info : SpecFn := fun c args h r h' calls =>
   ∀ val arity, args = [val, arity] → Good c calls →
-    ∀ d Γ (a : F) V, arity = .field a → c.tmk d Γ (ZMod.val a) h V val →
+    ∀ d Γ (a : F) V, arity = .field a → ZMod.val a < 4294967296 →
+      c.tmk d Γ (ZMod.val a) h V val →
       ∀ (n f j : F) sp, r = .tuple [.field 1, .field n, sp, .field f, .field j] →
         ∃ (s : Bytes.Address) (m : Nat), RepAddr h' s sp ∧ ZMod.val n = ZMod.val a + m ∧
           ZMod.val j < ZMod.val n ∧
