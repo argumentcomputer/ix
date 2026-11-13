@@ -847,19 +847,52 @@ ownership checker's own, which the captured-work budget bounds
   #678 ingest: reading each λ's condition from the datum the kernel's own annotation pass writes
   and its inference validates (`BinderMeta.pw`, the zero condition of the binder's codomain) in
   place of asking the kernel's inference.
-- Open: `RcReplay`'s plain-RC back end after admission has a per-function quadratic term:
+- `RcReplay`'s plain-RC back end after admission had a per-function quadratic term:
   `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
   (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
   drops each unused parameter at the return, so a function of P parameters has P `dec`
   statements that no Anf node counts (`maxBackWork` sees one node), each a call made while up
-  to P values are live. Located (2026-11-13, gdb samples of `check-cert` and counts on the
-  generated inputs): at every call the validator runs two passes over its whole abstract state,
-  `AState.clearOutArgs` (forget the outgoing cells) and, through `define`, `AState.forget` of
-  the call's result; at (110, 2,398) that is 264,551 calls over 29.9 million state entries and
-  271,763 definitions over 30.7 million. On the immortal route the same passes run about once
-  per function, so there the stage is linear in the program. Within the parameter limit the
-  sum of the squares can still reach about 2³¹ when one function has about 2,048 parameters
-  (only a hand-written artifact gets there; `ix`'s output stays near 230).
+  to P values are live, and at every call the validator passed over its whole abstract state
+  twice: `AState.clearOutArgs` (forget the outgoing cells) and, through `define`,
+  `AState.forget` of the call's result (located by gdb samples of `check-cert` and counts: at
+  (110, 2,398), 264,551 calls over 29.9 million state entries and 271,763 definitions over 30.7
+  million). Fixed (2026-11-13): `checkBlock` walks a block on `Tracked`, the state with the
+  registers and the outgoing cells it may hold, so a definition forgets its register only when
+  it is listed and a call erases only the listed cells; the former walk is kept as
+  `checkBlockList` and proved equal (`checkBlock_eq_list`, `Xv/Validate/Proof/Tracked.lean`),
+  and tested against it on every corpus root's allocations and on generated Lir, with
+  certificates made wrong (`tests-own-owned`). On the build box, the probe's
+  `Validate.program` on the verifier's own inputs, the former walk against the new one in one
+  process: plain-RC route 3.07 → 0.82 s at (110, 2,398), 10.1 → 1.82 s at (220, 2,398), 5.87 →
+  1.59 s at (110, 4,793); the immortal route unchanged (0.25–1.37 s). What remains grows ×1.95
+  when F doubles and ×2.2 when P doubles on the plain-RC route (×2.7 on the immortal route).
+- Open: what remains superlinear in the allocation validator after that fix, measured on the
+  build box (probe `probe-h12`, modes `back`, `edges`, `residual`):
+  - A function's parameters are checked distinct by a list (`nodup`), quadratic in them:
+    23 ms and 84 ms over the 2,398 functions of 110 and 220 parameters; within the parameter
+    limit the sum of the squares can reach about 2³¹ (about 1.6 s at the measured rate).
+  - An edge binds its target's parameters over the whole state at the source's end
+    (`bindParams`, each held register tested against the parameter list) and checks the
+    target's certificate against the result (`le`): per edge about the state times the
+    parameters. On a synthetic join of K parameters reached from E arms that pass all K values:
+    2.6 ms at (E, K) = (64, 32), 6.4 ms at (64, 64), 17.8 ms at (64, 128), 34.6 ms at
+    (128, 128), 71.7 ms at (256, 128): linear in E, about K² per edge. By an argument, not a
+    check: where every block has an earlier predecessor a certificate's claims must hold on
+    that edge, so it cannot make the state larger than the honest one and the term is the
+    program's. The generated inputs have no edges.
+  - The tracked walk still passes over the whole state when a register it defines is already
+    listed, which happens only when a block's certificate claims a register before its
+    definition. Where every block has a predecessor earlier in the order and the program is
+    SSA, such a claim fails that predecessor's edge check before the block is walked. Cfg
+    numbers every forward edge upward and Xv is SSA, but neither is checked on the verifier's
+    path; the corpus suite counts no such scan (15,876 allocations, 15,552 of them with edited
+    certificates). Where the order does not hold (generated Lir with permuted labels: 29 such
+    walks in 3,656 allocations), a certificate can claim every register a block defines: on a
+    synthetic block of D definitions placed before its only predecessor, refused at that
+    predecessor's edge check, 13.5 ms at D = 500, 161 ms at 2,000, 564 ms at 4,000 and
+    2.05 s at 8,000 (honest certificate 0.9 ms to 15.6 ms); the former walk costs the same.
+    The certificate's limits admit it (8 fact entries per register mention), so it is bounded
+    only by the size of one block.
 - The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
   the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
   16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
