@@ -122,9 +122,6 @@ def checkProgram (t : Tally) (label : String) (p : LProgram) (layouts : List Fra
   | .error _ => t := { t with refused := t.refused + 1 }
   return t
 
-/-- A program's Xl on the immortal route and on the plain-RC route under `bodies`, each allocated
-as the producer allocates it, with the layouts the producer gives, its export passing and its
-clobber sets. -/
 /-- A program's Lir on the immortal route and on the plain-RC route under `bodies` (when the
 candidate lowering accepts it), with its export passing and clobber sets. -/
 def lirRoutes (names : List String) (env : Xl.Env) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) :
