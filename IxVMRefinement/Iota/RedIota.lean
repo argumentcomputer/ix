@@ -337,8 +337,8 @@ theorem rulesRep_descent {κ : _root_.Address → KKey} {h : Heap F}
     {rls : List (Ix.Kernel.RecRule .anon)} (r : RulesRep κ h ps j p rls) :
     RomBound.HeapDescent h (.enum krrListEnum) p rls.length := by
   induction r with
-  | nil cell => exact .here cell (by simp [Value.type])
-  | cons cell _ _ ih => exact .down cell (by simp [Value.type]) (by simp [RomBound.cellArgs]) ih
+  | nil cell => exact .here cell (by simp)
+  | cons cell _ _ ih => exact .down cell (by simp) (by simp [RomBound.cellArgs]) ih
 
 /-- **`KernelWhnf::red_iota`**: the major's head is a constructor whose block and index give
 the major premise's head (the guard); the rule at the constructor's index, at a major of the
