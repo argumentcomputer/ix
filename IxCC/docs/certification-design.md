@@ -1290,6 +1290,16 @@ every conjunct true, the live case alone (`corrSBLive`) still refusing it; three
 at `valueCorr` alone: the copy under a second binder, a body that is not a λ, a copy that is not
 the value.
 
+**The value relation takes the program (since 2026-11-13; a refactor with no change of meaning).**
+`HeadAt`, `RelV`, `RelSlot`, `RelEnv`, `RelSlots` and `RelVs` take the program SrcEval runs as a
+parameter, which no constructor reads yet. A special head's meaning is the program's: `.cases c`
+names its constant, and the word head `.word w op` of stage W1 names none (its operation's meaning is
+the stored theorem of a table entry, `word w op thm`), so the word case relates a word head through
+the table. Statements that mention the relations changed text by the parameter only (`CaseFires`,
+`enum_arg`, `const_of_check`, `const_of_check_of_sitesOk`, `const_of_check_noCanon`,
+`const_of_check_678` and the fence's `example`s that pin them); no root theorem's text and no axiom
+set changes.
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
 fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
 

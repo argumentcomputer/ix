@@ -111,11 +111,11 @@ theorem major_dom {cval : KKey → (LevelParam → Nat) → V} {kc kr : KKey} {s
   have := den_bvarsFrom (cval := cval) (env := env) (φ := φ) ρ [mo] ps []
   simpa using this
 
-variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
+variable {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
   {Ok : CId → Levels → Prop}
 
 theorem relSlots_of_relVs : ∀ {fs : List Value} {Fs : List V},
-    RelVs M κ lpsOf S Ok fs Fs → RelSlots M κ lpsOf S Ok (fs.map .val) Fs
+    RelVs M p κ lpsOf S Ok fs Fs → RelSlots M p κ lpsOf S Ok (fs.map .val) Fs
   | [], _, h => by cases h; exact .nil
   | _ :: _, _, h => by
     cases h with

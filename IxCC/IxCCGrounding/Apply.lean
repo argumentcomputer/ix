@@ -50,11 +50,11 @@ theorem mem_key (M : Model V env) {n : KKey} {ci : ConstantInfo .anon}
   simp only [ConstantInfo.name] at hm
   rwa [find_name hf] at hm
 
-theorem head_mem (M : Model V env) {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
-    {Ok : CId → Levels → Prop}
+theorem head_mem (M : Model V env) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} {Ok : CId → Levels → Prop}
     {h : IxCC.Src.Head}
     {ls : Levels} {φ : LevelParam → Nat} {k : KKey} {T : KExpr}
-    (hh : HeadAt M κ lpsOf S Ok h ls φ k T) (ρ : BVarIdx → V) :
+    (hh : HeadAt M p κ lpsOf S Ok h ls φ k T) (ρ : BVarIdx → V) :
     ∃ TT, Denotes M.cval env φ ρ T TT ∧ M.cval k φ ∈ˢ TT := by
   cases hh with
   | ctor _ _ hf => exact mem_key M hf φ ρ
@@ -95,10 +95,10 @@ theorem push_tail (Y : V) (ρk : BVarIdx → V) : (fun i => push Y ρk (i + 1)) 
 
 section Rel
 
-variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
+variable {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
   {Ok : CId → Levels → Prop}
 
-theorem relSlots_length : ∀ {ss : List Slot} {Xs : List V}, RelSlots M κ lpsOf S Ok ss Xs →
+theorem relSlots_length : ∀ {ss : List Slot} {Xs : List V}, RelSlots M p κ lpsOf S Ok ss Xs →
     Xs.length = ss.length
   | [], _, h => by cases h; rfl
   | _ :: _, _, h => by
@@ -106,8 +106,8 @@ theorem relSlots_length : ∀ {ss : List Slot} {Xs : List V}, RelSlots M κ lpsO
     | cons _ h' => simp [relSlots_length h']
 
 theorem relSlots_snoc : ∀ {ss : List Slot} {Xs : List V} {s : Slot} {X : V},
-    RelSlots M κ lpsOf S Ok ss Xs → RelSlot M κ lpsOf S Ok s X →
-    RelSlots M κ lpsOf S Ok (ss ++ [s]) (Xs ++ [X])
+    RelSlots M p κ lpsOf S Ok ss Xs → RelSlot M p κ lpsOf S Ok s X →
+    RelSlots M p κ lpsOf S Ok (ss ++ [s]) (Xs ++ [X])
   | [], _, _, _, h, hs => by cases h; exact .cons hs .nil
   | _ :: _, _, _, _, h, hs => by
     cases h with
@@ -121,8 +121,8 @@ theorem skipEnv_push_one (Y : V) (ρk : BVarIdx → V) : skipEnv (push Y ρk) 1 
 
 /-- Lifting every term of the substitution past a new binder keeps the environment related. -/
 theorem relEnv_liftAll {φ : LevelParam → Nat} {ρk : BVarIdx → V} (Y : V) :
-    ∀ {ρ : IxCC.Src.Env} {σ : Sig}, RelEnv M κ lpsOf S Ok φ ρ σ ρk →
-      RelEnv M κ lpsOf S Ok φ ρ (σ.map (·.map (Expr.liftLooseBVars 1 0))) (push Y ρk)
+    ∀ {ρ : IxCC.Src.Env} {σ : Sig}, RelEnv M p κ lpsOf S Ok φ ρ σ ρk →
+      RelEnv M p κ lpsOf S Ok φ ρ (σ.map (·.map (Expr.liftLooseBVars 1 0))) (push Y ρk)
   | [], _, h => by cases h; exact .nil
   | _ :: _, _, h => by
     cases h with
@@ -134,8 +134,8 @@ theorem relEnv_liftAll {φ : LevelParam → Nat} {ρk : BVarIdx → V} (Y : V) :
 /-- **Under a new binder** (closure application): the bound slot related to the bound set, the
 substitution lifted (`liftσ`), the environment pushed. -/
 theorem relEnv_lift {φ : LevelParam → Nat} {ρ : IxCC.Src.Env} {σ : Sig} {ρk : BVarIdx → V}
-    {s : Slot} {Y : V} (hs : RelSlot M κ lpsOf S Ok s Y) (h : RelEnv M κ lpsOf S Ok φ ρ σ ρk) :
-    RelEnv M κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) :=
+    {s : Slot} {Y : V} (hs : RelSlot M p κ lpsOf S Ok s Y) (h : RelEnv M p κ lpsOf S Ok φ ρ σ ρk) :
+    RelEnv M p κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) :=
   .some hs .bvar (relEnv_liftAll Y h)
 
 /-! ## The application lemma -/
@@ -143,11 +143,11 @@ theorem relEnv_lift {φ : LevelParam → Nat} {ρ : IxCC.Src.Env} {σ : Sig} {ρ
 /-- **A1: applying a closure** at a graph-regime site. -/
 theorem apply_clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {ls : Levels}
     {X Y : V} {s : Slot}
-    (hv : RelV M κ lpsOf S Ok (.clo b dom body ρ ls) X) (hs : RelSlot M κ lpsOf S Ok s Y)
+    (hv : RelV M p κ lpsOf S Ok (.clo b dom body ρ ls) X) (hs : RelSlot M p κ lpsOf S Ok s Y)
     {v : Nat} {A : V} {B : V → V} (hvz : v ≠ 0) (hX : X ∈ˢ piR v A B) (hY : Y ∈ˢ A) :
     ∃ (φ : LevelParam → Nat) (lps : List Nat) (Γ : List KExpr) (σ : Sig) (ρk : BVarIdx → V)
       (Ak Bk : KExpr) (Z : V),
-      LvAt φ lps ls ∧ RelEnv M κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) ∧
+      LvAt φ lps ls ∧ RelEnv M p κ lpsOf S Ok φ (s :: ρ) (liftσ σ) (push Y ρk) ∧
       CtxSat M φ (Ak :: Γ) (push Y ρk) ∧ Runs M κ Ok lps ls φ (liftσ σ) (Ak :: Γ) body Bk ∧
       ConstsIn S body ∧ Denotes M.cval env φ (push Y ρk) Bk Z ∧ app X Y = Z := by
   cases hv with
@@ -172,13 +172,13 @@ theorem apply_clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {l
 long enough (`htele`, a fact about the stored type: a special head's stored type is a `∀`
 telescope at least as long as its arity, and SrcEval never over-applies one). -/
 theorem apply_pap {h : IxCC.Src.Head} {ls : Levels} {args : List Slot} {X Y : V} {s : Slot}
-    (hv : RelV M κ lpsOf S Ok (.pap h ls args) X) (hs : RelSlot M κ lpsOf S Ok s Y)
+    (hv : RelV M p κ lpsOf S Ok (.pap h ls args) X) (hs : RelSlot M p κ lpsOf S Ok s Y)
     {v : Nat} {A : V} {B : V → V} (hvz : v ≠ 0) (hX : X ∈ˢ piR v A B) (hY : Y ∈ˢ A)
     (htele : ∀ (φ : LevelParam → Nat) (k : KKey) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr)
-      (As : List V), HeadAt M κ lpsOf S Ok h ls φ k T → Fits M.cval env φ ρ T As σ R →
+      (As : List V), HeadAt M p κ lpsOf S Ok h ls φ k T → Fits M.cval env φ ρ T As σ R →
       As.length = args.length → ∃ D Bk m, R = .forallE D Bk m) :
     ∃ (φ : LevelParam → Nat) (k : KKey) (T : KExpr) (As : List V) (ρ σ : BVarIdx → V) (R : KExpr),
-      HeadAt M κ lpsOf S Ok h ls φ k T ∧ RelSlots M κ lpsOf S Ok (args ++ [s]) (As ++ [Y]) ∧
+      HeadAt M p κ lpsOf S Ok h ls φ k T ∧ RelSlots M p κ lpsOf S Ok (args ++ [s]) (As ++ [Y]) ∧
       Fits M.cval env φ ρ T (As ++ [Y]) σ R ∧ X = As.foldl app (M.cval k φ) ∧
       app X Y = (As ++ [Y]).foldl app (M.cval k φ) := by
   cases hv with

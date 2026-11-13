@@ -49,55 +49,55 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} (M : Model V env) (p 
 /-- `force` at clock `k`. -/
 def ForceP (k : Nat) : Prop :=
   ∀ (s : Slot) (v : Value) (X : V), IxCC.Src.force p k s = .ok v →
-    RelSlot M κ lpsOf S Ok s X → RelV M κ lpsOf S Ok v X
+    RelSlot M p κ lpsOf S Ok s X → RelV M p κ lpsOf S Ok v X
 
 /-- `forceAll` at clock `k`. -/
 def ForceAllP (k : Nat) : Prop :=
   ∀ (ss : List Slot) (vs : List Value) (Xs : List V), IxCC.Src.forceAll p k ss = .ok vs →
-    RelSlots M κ lpsOf S Ok ss Xs → RelVs M κ lpsOf S Ok vs Xs
+    RelSlots M p κ lpsOf S Ok ss Xs → RelVs M p κ lpsOf S Ok vs Xs
 
 /-- `fire` at clock `k`: a saturated head whose arguments fit its stored type, the last applied
 at a graph-regime site. -/
 def FireP (k : Nat) : Prop :=
   ∀ (h : IxCC.Src.Head) (ls : Levels) (args : List Slot) (v : Value) (φ : LevelParam → Nat)
     (kk : KKey) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V),
-    IxCC.Src.fire p k h ls args = .ok v → RelSlots M κ lpsOf S Ok args As →
-    HeadAt M κ lpsOf S Ok h ls φ kk T → Fits M.cval env φ ρ T As σ R →
+    IxCC.Src.fire p k h ls args = .ok v → RelSlots M p κ lpsOf S Ok args As →
+    HeadAt M p κ lpsOf S Ok h ls φ kk T → Fits M.cval env φ ρ T As σ R →
     args.length = p.headArity h → LastSiteOk (M.cval kk φ) As →
-    RelV M κ lpsOf S Ok v (As.foldl app (M.cval kk φ))
+    RelV M p κ lpsOf S Ok v (As.foldl app (M.cval kk φ))
 
 /-- `headValue` at clock `k`. -/
 def HeadValueP (k : Nat) : Prop :=
   ∀ (h : IxCC.Src.Head) (ls : Levels) (v : Value) (φ : LevelParam → Nat) (kk : KKey) (T : KExpr),
-    IxCC.Src.headValue p k ls h = .ok v → HeadAt M κ lpsOf S Ok h ls φ kk T →
-    RelV M κ lpsOf S Ok v (M.cval kk φ)
+    IxCC.Src.headValue p k ls h = .ok v → HeadAt M p κ lpsOf S Ok h ls φ kk T →
+    RelV M p κ lpsOf S Ok v (M.cval kk φ)
 
 /-- `apply` at clock `k`, at a graph-regime site. -/
 def ApplyP (k : Nat) : Prop :=
   ∀ (f : Value) (s : Slot) (w : Value) (X Y : V) (v : Nat) (A : V) (B : V → V),
-    IxCC.Src.apply p k f s = .ok w → RelV M κ lpsOf S Ok f X → RelSlot M κ lpsOf S Ok s Y →
-    v ≠ 0 → X ∈ˢ piR v A B → Y ∈ˢ A → RelV M κ lpsOf S Ok w (app X Y)
+    IxCC.Src.apply p k f s = .ok w → RelV M p κ lpsOf S Ok f X → RelSlot M p κ lpsOf S Ok s Y →
+    v ≠ 0 → X ∈ˢ piR v A B → Y ∈ˢ A → RelV M p κ lpsOf S Ok w (app X Y)
 
 /-- `applyAll` at clock `k`, along a graph-regime chain. -/
 def ApplyAllP (k : Nat) : Prop :=
   ∀ (f : Value) (ss : List Slot) (w : Value) (X : V) (Ys : List V),
-    IxCC.Src.applyAll p k f ss = .ok w → RelV M κ lpsOf S Ok f X →
-    RelSlots M κ lpsOf S Ok ss Ys → AppChain X Ys → RelV M κ lpsOf S Ok w (Ys.foldl app X)
+    IxCC.Src.applyAll p k f ss = .ok w → RelV M p κ lpsOf S Ok f X →
+    RelSlots M p κ lpsOf S Ok ss Ys → AppChain X Ys → RelV M p κ lpsOf S Ok w (Ys.foldl app X)
 
 /-- `evalConst` at clock `k`, at an instance `Ok` admits. -/
 def EvalConstP (k : Nat) : Prop :=
   ∀ (ls : Levels) (c : CId) (v : Value) (φ : LevelParam → Nat),
     IxCC.Src.evalConst p k ls c = .ok v → S c → Ok c ls → LvAt φ (lpsOf c) ls →
-    RelV M κ lpsOf S Ok v (M.cval (κ c) φ)
+    RelV M p κ lpsOf S Ok v (M.cval (κ c) φ)
 
 /-- `eval` at clock `k`, on a term that runs. -/
 def EvalP (k : Nat) : Prop :=
   ∀ (lps : List Nat) (ls : Levels) (φ : LevelParam → Nat) (σ : Sig) (Γ : List KExpr) (t : Term)
     (e : KExpr), Runs M κ Ok lps ls φ σ Γ t e →
     ∀ (ρ : IxCC.Src.Env) (ρk : BVarIdx → V) (v : Value),
-    ConstsIn S t → LvAt φ lps ls → RelEnv M κ lpsOf S Ok φ ρ σ ρk → CtxSat M φ Γ ρk →
+    ConstsIn S t → LvAt φ lps ls → RelEnv M p κ lpsOf S Ok φ ρ σ ρk → CtxSat M φ Γ ρk →
     IxCC.Src.eval p k ls ρ t = .ok v →
-    ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M κ lpsOf S Ok v X
+    ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M p κ lpsOf S Ok v X
 
 /-- **All eight statements at clock `k`.** -/
 structure AllP (k : Nat) : Prop where
@@ -116,7 +116,7 @@ theorem atLevels_ordinary (ls : Levels) : IxCC.Src.RecKind.atLevels ls .ordinary
 
 /-- A head's arity is no longer than its stored telescope. -/
 theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Levels}
-    {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M κ lpsOf S Ok h ls φ kk T) :
+    {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M p κ lpsOf S Ok h ls φ kk T) :
     p.headArity h ≤ kPis T := by
   cases hh with
   | @ctor c _ _ ci hSc _ hfind =>
@@ -162,7 +162,7 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
 
 /-- `As` related to literal values are the literals' sets. -/
 theorem relVs_lits (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat) :
-    ∀ {ns : List Nat} {Xs : List V}, RelVs M κ lpsOf S Ok (ns.map .lit) Xs →
+    ∀ {ns : List Nat} {Xs : List V}, RelVs M p κ lpsOf S Ok (ns.map .lit) Xs →
       Xs = ns.map (litSet M φ)
   | [], _, h => by rw [List.map_nil] at h; cases h; rfl
   | n :: ns, _, h => by
@@ -228,10 +228,10 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
     {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
     (hrun : IxCC.Src.fire p (k' + 1) (.recr r) ls args = .ok v)
-    (hargs : RelSlots M κ lpsOf S Ok args As) (hh : HeadAt M κ lpsOf S Ok (.recr r) ls φ (κ r) T)
+    (hargs : RelSlots M p κ lpsOf S Ok args As) (hh : HeadAt M p κ lpsOf S Ok (.recr r) ls φ (κ r) T)
     (hfit : Fits M.cval env φ ρ T As σ R) (hlen : args.length = p.headArity (.recr r))
     (hlast : LastSiteOk (M.cval (κ r) φ) As) :
-    RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
+    RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
   have hN := H.natBasis
   cases hh with
   | @recr _ _ _ ci hSr hlv hfind =>
@@ -349,10 +349,10 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
       env.find? krl.ctor = some (.ctorInfo cvC 0 krl.nfields) →
       Denotes M.cval env φ ρ (.const krl.ctor ls0) K →
       Fits M.cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls0) Fs σC RC →
-      Fs.length = krl.nfields → Tm = Fs.foldl app K → RelSlots M κ lpsOf S Ok fields Fs →
+      Fs.length = krl.nfields → Tm = Fs.foldl app K → RelSlots M p κ lpsOf S Ok fields Fs →
       (∀ t', IxCC.Src.peelLams (args.take (nmot + nmin) ++ fields).length rl.rhs = some t' →
         IxCC.Src.eval p k' ls (args.take (nmot + nmin) ++ fields).reverse t' = .ok v) →
-      RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
+      RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
     intro j fields rl krl cvC K Fs σC RC hrl hkrl hcC hK hFs hFl hTmK hrelF hev
     have hkm := List.mem_of_getElem? hkrl
     have hrm := List.mem_of_getElem? hrl
@@ -400,7 +400,7 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     have hslen : (args.take (nmot + nmin) ++ fields).length = bs.length := by
       rw [List.length_append, ← relSlots_length hrelF, hFl]; simp; omega
     have hev' := hev t' (by rw [hslen]; exact hpeel)
-    have henv : RelEnv M κ lpsOf S Ok φ (args.take (nmot + nmin) ++ fields).reverse
+    have henv : RelEnv M p κ lpsOf S Ok φ (args.take (nmot + nmin) ++ fields).reverse
         (idσ (0 + bs.length)) (pushAll (As.take (nmot + nmin) ++ Fs) ρ) := by
       rw [Nat.zero_add, ← hslen]
       exact relEnv_pushAll (relSlots_append (relSlots_take (nmot + nmin) hargs) hrelF)
@@ -614,7 +614,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             | _ => exact absurd hres (by simp)
           · -- any other constructor
             rw [← ok_inj hres]
-            have hcon := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok)
+            have hcon := RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok)
               (ls := ls) (ps := args.take np) (fs := fields) (Ps := As.take np) (Fs := As.drop np)
               hSc hlv hfind (by rw [List.length_take, hAsl]; omega)
               (by rw [List.length_drop, hAsl]; omega) (relSlots_take np hargs) hrelF
@@ -734,7 +734,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             obtain ⟨Mn, hMn, heq⟩ := eqRec_iota M H.laws hEb hRb hB (by rwa [← hty0]) hAsl
             rw [hX3] at hMn
             cases hMn
-            show RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ))
+            show RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ))
             rw [hκ, heq]
             exact hv
           · -- `flat`: F2; the major is a field-less constructor of the recursor's inductive (the
@@ -911,7 +911,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                       rw [hX] at hX'
                       cases hX'
                       have hv := (ih k' (Nat.lt_succ_self k')).force _ _ _ hrest hrelS
-                      show RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ))
+                      show RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ))
                       rw [heq]
                       exact hv
                   · simp at hsel2
@@ -986,7 +986,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             rw [(den_const0 hfc hlc).mp hX]
             have hl0 : lpsOf c = [] := hlps.symm.trans hlc
             have hlv0 : LvAt φ (lpsOf c) [] := by rw [hl0]; intro i q h; simp at h
-            exact RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
+            exact RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
               .nil (.inl hl0)
 
@@ -1024,7 +1024,7 @@ theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
   | pap h ls' args =>
     rw [IxCC.Src.apply_pap] at hrun
     have htele : args.length < p.headArity h → ∀ (φ : LevelParam → Nat) (kk : KKey) (T : KExpr)
-        (ρ σ : BVarIdx → V) (R : KExpr) (As : List V), HeadAt M κ lpsOf S Ok h ls' φ kk T →
+        (ρ σ : BVarIdx → V) (R : KExpr) (As : List V), HeadAt M p κ lpsOf S Ok h ls' φ kk T →
         Fits M.cval env φ ρ T As σ R → As.length = args.length → ∃ D Bk m, R = .forallE D Bk m := by
       intro hlt φ kk T ρ σ R As hh hfit hl
       exact fits_pi_of_lt hfit (by have := head_tele H hh; omega)
@@ -1324,16 +1324,16 @@ theorem allP (H : FundHyps M p κ lpsOf S Ok) : ∀ k, AllP M p κ lpsOf S Ok k 
 instance `Ok` admits returns a value related to the constant's denotation. -/
 theorem fundamental_const (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {ls : Levels} {c : CId}
     {v : Value} {φ : LevelParam → Nat} (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hSc : S c)
-    (hOk : Ok c ls) (hlv : LvAt φ (lpsOf c) ls) : RelV M κ lpsOf S Ok v (M.cval (κ c) φ) :=
+    (hOk : Ok c ls) (hlv : LvAt φ (lpsOf c) ls) : RelV M p κ lpsOf S Ok v (M.cval (κ c) φ) :=
   (allP H k).evalConst ls c v φ hrun hSc hOk hlv
 
 /-- The fundamental lemma's clause for terms. -/
 theorem fundamental_term (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {lps : List Nat} {ls : Levels}
     {φ : LevelParam → Nat} {σ : Sig} {Γ : List KExpr} {t : Term} {e : KExpr} {ρ : IxCC.Src.Env}
     {ρk : BVarIdx → V} {v : Value} (hruns : Runs M κ Ok lps ls φ σ Γ t e) (hcs : ConstsIn S t)
-    (hlv : LvAt φ lps ls) (henv : RelEnv M κ lpsOf S Ok φ ρ σ ρk) (hctx : CtxSat M φ Γ ρk)
+    (hlv : LvAt φ lps ls) (henv : RelEnv M p κ lpsOf S Ok φ ρ σ ρk) (hctx : CtxSat M φ Γ ρk)
     (hrun : IxCC.Src.eval p k ls ρ t = .ok v) :
-    ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M κ lpsOf S Ok v X :=
+    ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M p κ lpsOf S Ok v X :=
   (allP H k).eval _ _ _ _ _ _ _ hruns ρ ρk v hcs hlv henv hctx hrun
 
 end Fund

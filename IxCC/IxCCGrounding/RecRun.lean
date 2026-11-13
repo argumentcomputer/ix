@@ -265,18 +265,18 @@ theorem runs_peel {M : Model V env} {κ : CId → KKey} {Ok : CId → Levels →
 
 /-- Slots related to sets, pushed onto an environment related under the identity substitution,
 give one related under the longer identity substitution, the last slot innermost. -/
-theorem relEnv_pushAll_gen {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat}
+theorem relEnv_pushAll_gen {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {S : CId → Prop} {Ok : CId → Levels → Prop} {φ : LevelParam → Nat} :
     ∀ {ss : List Slot} {Xs : List V} {E : IxCC.Src.Env} {k : Nat} {ρ : BVarIdx → V},
-      RelSlots M κ lpsOf S Ok ss Xs → RelEnv M κ lpsOf S Ok φ E (idσ k) ρ →
-        RelEnv M κ lpsOf S Ok φ (ss.reverse ++ E) (idσ (k + ss.length)) (pushAll Xs ρ)
+      RelSlots M p κ lpsOf S Ok ss Xs → RelEnv M p κ lpsOf S Ok φ E (idσ k) ρ →
+        RelEnv M p κ lpsOf S Ok φ (ss.reverse ++ E) (idσ (k + ss.length)) (pushAll Xs ρ)
   | [], _, _, _, _, h, hE => by
     cases h
     simpa [pushAll_nil] using hE
   | s :: ss, _, E, k, ρ, h, hE => by
     cases h with
     | @cons _ _ X Xs hs h' =>
-      have hE' : RelEnv M κ lpsOf S Ok φ (s :: E) (idσ (k + 1)) (push X ρ) := by
+      have hE' : RelEnv M p κ lpsOf S Ok φ (s :: E) (idσ (k + 1)) (push X ρ) := by
         rw [← liftσ_idσ]; exact relEnv_lift hs hE
       have := relEnv_pushAll_gen (E := s :: E) (k := k + 1) (ρ := push X ρ) h' hE'
       rw [show k + (s :: ss).length = k + 1 + ss.length by simp; omega]
@@ -284,10 +284,10 @@ theorem relEnv_pushAll_gen {M : Model V env} {κ : CId → KKey} {lpsOf : CId �
 
 /-- **Slots related to sets give a related environment** under the identity substitution, the last
 slot innermost (a rule body's environment, F2's ι). -/
-theorem relEnv_pushAll {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat}
+theorem relEnv_pushAll {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {S : CId → Prop} {Ok : CId → Levels → Prop} {φ : LevelParam → Nat} {ss : List Slot}
-    {Xs : List V} {ρ : BVarIdx → V} (h : RelSlots M κ lpsOf S Ok ss Xs) :
-    RelEnv M κ lpsOf S Ok φ ss.reverse (idσ ss.length) (pushAll Xs ρ) := by
+    {Xs : List V} {ρ : BVarIdx → V} (h : RelSlots M p κ lpsOf S Ok ss Xs) :
+    RelEnv M p κ lpsOf S Ok φ ss.reverse (idσ ss.length) (pushAll Xs ρ) := by
   have := relEnv_pushAll_gen (φ := φ) (E := []) (k := 0) (ρ := ρ) h
     (by rw [idσ_zero]; exact .nil)
   simpa using this

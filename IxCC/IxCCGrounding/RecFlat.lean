@@ -245,19 +245,20 @@ theorem ctorImage_canon (M : Model V env) (hL : LawsCore M) (hcc : CtorCanon M) 
 
 section Rel
 
-variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
+variable {M : Model V env} {p : IxCC.Src.Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+  {S : CId → Prop}
   {Ok : CId → IxCC.Src.Levels → Prop}
 
 theorem relSlots_append : ∀ {a b : List IxCC.Src.Slot} {A B : List V},
-    RelSlots M κ lpsOf S Ok a A → RelSlots M κ lpsOf S Ok b B →
-      RelSlots M κ lpsOf S Ok (a ++ b) (A ++ B)
+    RelSlots M p κ lpsOf S Ok a A → RelSlots M p κ lpsOf S Ok b B →
+      RelSlots M p κ lpsOf S Ok (a ++ b) (A ++ B)
   | [], _, _, _, ha, hb => by cases ha; exact hb
   | _ :: _, _, _, _, ha, hb => by
     cases ha with
     | cons hs h' => exact .cons hs (relSlots_append h' hb)
 
 theorem relSlots_reverse : ∀ {ss : List IxCC.Src.Slot} {Xs : List V},
-    RelSlots M κ lpsOf S Ok ss Xs → RelSlots M κ lpsOf S Ok ss.reverse Xs.reverse
+    RelSlots M p κ lpsOf S Ok ss Xs → RelSlots M p κ lpsOf S Ok ss.reverse Xs.reverse
   | [], _, h => by cases h; exact .nil
   | _ :: _, _, h => by
     cases h with
