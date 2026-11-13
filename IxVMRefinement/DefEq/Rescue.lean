@@ -595,47 +595,50 @@ theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
     Specs.DefEq.compute_iprj_addr c args h r h' calls := by
   intro bp ip hargs good b i hb hip
   subst hargs hip
-  obtain ⟨v1, m2, cs12, m83, m96, m109, v121, m122, cs132, m145, cs160, ev14, hm91, hm104, hm117,
-    hm153, ev134, ev162, hc171⟩ := Obs.«KernelDefEq::compute_iprj_addr».obs ev
-  subst hc171
+  obtain ⟨v1, m2, cs12, m84, m97, m110, m123, v135, m136, cs146, m159, cs174, ev14, hm92, hm105,
+    hm118, hm131, hm167, ev148, ev176, hc185⟩ := Obs.«KernelDefEq::compute_iprj_addr».obs ev
+  subst hc185
   obtain ⟨n, hn, hx, rfl, hm2⟩ := Lib.u64_from_field_spec ev14
   injection hx with hx
   have hval : ZMod.val i = n := by
     rw [hx]
     exact val_natCast_small (by omega)
-  have e1 : Heap.Extends m2 m83 := by rw [hm91]; exact Heap.Extends.snoc _ _
-  have e2 : Heap.Extends m83 m96 := by rw [hm104]; exact Heap.Extends.snoc _ _
-  have e3 : Heap.Extends m96 m109 := by rw [hm117]; exact Heap.Extends.snoc _ _
-  have e4 : Heap.Extends m109 m145 := by rw [hm153]; exact Heap.Extends.snoc _ _
-  have E : Heap.Extends h m145 := by
+  have e1 : Heap.Extends m2 m84 := by rw [hm92]; exact Heap.Extends.snoc _ _
+  have e2 : Heap.Extends m84 m97 := by rw [hm105]; exact Heap.Extends.snoc _ _
+  have e3 : Heap.Extends m97 m110 := by rw [hm118]; exact Heap.Extends.snoc _ _
+  have e4 : Heap.Extends m110 m123 := by rw [hm131]; exact Heap.Extends.snoc _ _
+  have e5 : Heap.Extends m123 m159 := by rw [hm167]; exact Heap.Extends.snoc _ _
+  have E : Heap.Extends h m159 := by
     rw [← hm2]
-    exact e1.trans (e2.trans (e3.trans e4))
-  have c1 : m145[m2.length]? = some (.construct Specs.Callees.ixExprListEnum "Nil" []) :=
-    (e2.trans (e3.trans e4)).getElem?_eq (by rw [hm91]; simp)
-  have c2 : m145[m83.length]? = some (.construct addrListEnum "Nil" []) :=
-    (e3.trans e4).getElem?_eq (by rw [hm104]; simp)
-  have c3 : m145[m96.length]? = some (.construct Specs.Callees.ixUnivListEnum "Nil" []) :=
-    e4.getElem?_eq (by rw [hm117]; simp)
-  have c4 : m145[m109.length]? = some (.construct byteListEnum "Nil" []) := by
-    rw [hm153]
+    exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+  have c1 : m159[m2.length]? = some (.construct Specs.Callees.ixExprListEnum "Nil" []) :=
+    (e2.trans (e3.trans (e4.trans e5))).getElem?_eq (by rw [hm92]; simp)
+  have c2 : m159[m84.length]? = some (.construct addrListEnum "Nil" []) :=
+    (e3.trans (e4.trans e5)).getElem?_eq (by rw [hm105]; simp)
+  have c3 : m159[m97.length]? = some (.construct Specs.Callees.ixUnivListEnum "Nil" []) :=
+    (e4.trans e5).getElem?_eq (by rw [hm118]; simp)
+  have c4 : m159[m110.length]? = some (.construct Specs.Callees.ixBinderListEnum "Nil" []) :=
+    e5.getElem?_eq (by rw [hm131]; simp)
+  have c5 : m159[m123.length]? = some (.construct byteListEnum "Nil" []) := by
+    rw [hm167]
     simp
-  have hrep : RepU64 m145 (ZMod.val i).toUInt64 (TagN.u64Value n) := by
+  have hrep : RepU64 m159 (ZMod.val i).toUInt64 (TagN.u64Value n) := by
     rw [hval]
-    have e := Lib.repU64_ofNatLT m145 (m := n) (by omega)
+    have e := Lib.repU64_ofNatLT m159 (m := n) (by omega)
     rwa [UInt64.ofNatLT_eq_ofNat] at e
-  have hinfo : Specs.Callees.ProjInfoRep m145 (.iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩)
+  have hinfo : Specs.Callees.ProjInfoRep m159 (.iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩)
       (.construct "Ixon::ConstantInfo" "IPrj"
         [.construct "Ixon::InductiveProj" "Mk" [TagN.u64Value n, bp]]) := by
     simp only [Specs.Callees.ProjInfoRep]
     exact ⟨TagN.u64Value n, bp, b, rfl, hrep, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
-  have hbytes := ih.get (.callees .put_constant) (by lt_calls) ev134 _ _
+  have hbytes := ih.get (.callees .put_constant) (by lt_calls) ev148 _ _
     (.iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩) [] rfl
     (by
       unfold Specs.Callees.ProjConstRep
-      exact ⟨_, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
-        RepLinkedList.nil c3⟩)
-    (RepLinkedList.nil c4)
-  obtain ⟨a, ha, haddr⟩ := ih.get (.callees .bytes_to_addr) (by lt_calls) ev162 v121 _ rfl hbytes
+      exact ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
+        RepLinkedList.nil c3, RepLinkedList.nil c4⟩)
+    (RepLinkedList.nil c5)
+  obtain ⟨a, ha, haddr⟩ := ih.get (.callees .bytes_to_addr) (by lt_calls) ev176 v135 _ rfl hbytes
   refine ⟨a, ha, ?_, ?_⟩
   · rw [haddr, bytes_mk_toList]
     rfl
@@ -649,7 +652,7 @@ theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
       | some lc => exact ⟨lc, rfl, ho⟩
     obtain ⟨lc, hlc, hget⟩ := key (c.E.consts.get? (ixAddr a)) hcm
     have hraw := load_escape hlc good.1 _
-      (hashed_of_bytes_to_addr ev162 (fun x hx => by simp [hx]) hbytes) haddr.symm
+      (hashed_of_bytes_to_addr ev176 (fun x hx => by simp [hx]) hbytes) haddr.symm
     rw [bytes_mk_toList] at hraw
     exact hc.loads.canonical _ lc _ hlc hraw.symm cm hget
 

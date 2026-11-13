@@ -554,7 +554,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
     have e1 := ObsFn.heap_extends ev14
     obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
       (good.sub fun z hz => by simp [hz]) hb
-    obtain ⟨info, sh, rf, un, hv, hinfo⟩ := hshape cb hcb
+    obtain ⟨info, sh, rf, un, bd, hv, hinfo⟩ := hshape cb hcb
     injection hv with _ _ hv
     injection hv with hi _
     subst hi
@@ -582,7 +582,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
     have e1 := ObsFn.heap_extends ev14
     obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
       (good.sub fun z hz => by simp [hz]) hb
-    obtain ⟨info, sh, rf, un, hv, hinfo⟩ := hshape cb hcb
+    obtain ⟨info, sh, rf, un, bd, hv, hinfo⟩ := hshape cb hcb
     injection hv with _ _ hv
     injection hv with hi _
     subst hi

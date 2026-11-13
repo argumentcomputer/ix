@@ -14,8 +14,7 @@ represented terms); nothing is claimed for tag `0` / answer `0` unless the docst
 (below): `Certs` with a `Red` step on the telescope. Where a rule needs `Certs` (`Red.iota`,
 `Red.rescueK`, `Red.rescueEta`) the step lemma reads it through `CertsR.toCerts`
 (`Core/Certs.lean`): a stored telescope has a binder for every argument (an environment fact),
-and a `∀` reduces only to itself. Specs marked "after the pending batch" are stated for the
-circuit with the checks that batch adds. -/
+and a `∀` reduces only to itself. -/
 
 namespace IxVM.Refinement.Core.Specs.Whnf
 
@@ -335,9 +334,9 @@ recursor's (level-instantiated) type instantiated by the arguments before the ma
 constructor's levels equal `MD`'s head's levels, the constructor's parameters are pairwise
 definitionally equal to `MD`'s, and for an indexed family the residual indices of the
 constructor's type at the major's arguments are pairwise definitionally equal to `MD`'s
-indices. Answer `0`: no claim. Stated for the circuit after the fold-in regeneration, which
+indices. Answer `0`: no claim. The circuit
 compares the indices only when the residual's heap head is a constant (so its arguments are the
-image's); its path lemmas change at the pin. -/
+image's). -/
 def iota_cmp : SpecFn := fun c args h r h' calls =>
   ∀ rc rt pre mi cty clvls cnp ma ni types,
     args = [rc, rt, pre, mi, cty, clvls, cnp, ma, ni, types] → Good c calls → c.rc h rc →
@@ -465,8 +464,7 @@ k_flag, types)`: the recursor dispatch (K, ι, structure-η ι). For the recurso
 (loaded with these fields) applied to `As`: tags `1` (ι or structure-η ι), `2` (stuck: the
 application) and `3` (the K reduct) are `Red` of the applied recursor to the result. Tag `0`:
 no claim. The K branch runs only where `se_parent_addr` answers a nonzero tag (which
-gives `MajorHead` for `try_k_synth_iota`). Stated for the circuit after the pending batch; its
-path lemmas change at the pin. -/
+gives `MajorHead` for `try_k_synth_iota`). -/
 def red_rec : SpecFn := fun c args h r h' calls =>
   ∀ rc nl rt lvls hd sp np ni nm nmi rules kf types,
     args = [rc, nl, rt, lvls, hd, sp, np, ni, nm, nmi, rules, kf, types] → Good c calls →
@@ -491,7 +489,7 @@ stored type at `mk_lvls` over its arguments, and, unless
 the eliminator is `Quot.lift` at a never-zero motive level (where every datum of the rule's
 right-hand side is `never`), the premise of the right-hand side's last `β`: the io-grade type
 of `Quot.mk`'s third argument is definitionally equal to the eliminator's first. Answer `0`: no
-claim. Stated for the circuit after the pending batch; its path lemmas change at the pin. -/
+claim. -/
 def quot_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc il addr lvls ra mk mklvls ma types,
     args = [rc, il, addr, lvls, ra, mk, mklvls, ma, types] → Good c calls → c.rc h rc →
@@ -771,8 +769,7 @@ inductive HeapClean (P : Bytes.Address → Prop) (h : Heap F) : SourceValue F �
 
 /-- **The fields of a constructor type are clean**: the maximal `∀` chain of the heap term
 `ty` ends at a node other than a `∀` or a `Let` (`ChainEnd`) and has, after its first `p`
-domains, only domains that mention no address of `membs`. Stated for the circuit after the
-pending batch; its path lemmas change at the pin. -/
+domains, only domains that mention no address of `membs`. -/
 def FieldsClean (h : Heap F) (p : Nat) (membs : List Bytes.Address) (ty : SourceValue F) : Prop :=
   ∃ ds q, ForallChain h ty ds q ∧ ChainEnd h q ∧
     ∀ dp ∈ ds.drop p, HeapClean (· ∈ membs) h dp
@@ -780,8 +777,7 @@ def FieldsClean (h : Heap F) (p : Nat) (membs : List Bytes.Address) (ty : Source
 /-- For every address of `ms` whose record in `c.E` is the inductive projection `p` of a block
 member `ind`, every constructor of `ind` (`0, …, ctors.size - 1`, the constant at the key of its
 projection record) is loaded with a type whose fields, after `ind`'s parameters, mention no
-address of `membs` (`FieldsClean`, on the loaded heap term). Stated for the circuit after the
-pending batch; its path lemmas change at the pin. -/
+address of `membs` (`FieldsClean`, on the loaded heap term). -/
 def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :=
   ∀ m ∈ ms, ∀ (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
       (ind : Ixon.Inductive),
@@ -810,8 +806,7 @@ def se_peel_tol : SpecFn := fun c args h r h' calls =>
 
 /-- `se_scan_fields(ty, members)`: an answer other than `1` means the maximal `∀` chain of the
 heap term ends at a node other than a `∀` or a `Let` (`ChainEnd`) and has only domains that
-mention no address of `members`. Answer `1`: no claim. Stated for the circuit after the pending
-batch; its path lemmas change at the pin. -/
+mention no address of `members`. Answer `1`: no claim. -/
 def se_scan_fields : SpecFn := fun c args h r h' calls =>
   ∀ ty xs, args = [ty, xs] → Good c calls →
     ∀ ms, RepList addrListEnum RepAddr h ms xs → (∃ d Γ k T, c.tmk d Γ k h T ty) →
@@ -833,8 +828,7 @@ def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
 /-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: an answer other than `1`
 means the constructors `c, …, num_ctors - 1` of member `idx` of the block (the constants at the
 keys of their projection records) are loaded with types whose fields, after `n_params`
-binders, mention no address of `members` (`FieldsClean`). Answer `1`: no claim. Stated for the
-circuit after the pending batch; its path lemmas change at the pin. -/
+binders, mention no address of `members` (`FieldsClean`). Answer `1`: no claim. -/
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
@@ -847,8 +841,7 @@ def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
           FieldsClean h' (ZMod.val p) ms ty'
 
 /-- `struct_scan_members(ms, members)`: an answer other than `1` is `MembersClean ms members`.
-Answer `1`: no claim. Stated for the circuit after the pending batch; its path lemmas change at
-the pin. -/
+Answer `1`: no claim. -/
 def struct_scan_members : SpecFn := fun c args h r h' calls =>
   ∀ msp xs, args = [msp, xs] → Good c calls →
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
@@ -859,8 +852,7 @@ block `b` IxVM loaded for the parent (when `block_is_multi` answers `0`), the me
 computed (`struct_block_member_addrs`: every inductive member's projection record when the record
 at `b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`); when the
 parent's record is the inductive projection of a member of a block, `b` is that block. Answer
-`1`: no claim. Stated for the circuit after the pending batch; its path lemmas change at the
-pin. -/
+`1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →

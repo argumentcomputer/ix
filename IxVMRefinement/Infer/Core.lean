@@ -467,7 +467,7 @@ theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c)
     · rw [he1104]
       exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
   case Proj x_struct_addr x_fidx x_e1
-      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact hproj rc e types x_struct_addr x_fidx x_e1 rfl ld12 rc e types rfl good hrc d Γ htypes E hE
 
 end IxVM.Refinement.Core

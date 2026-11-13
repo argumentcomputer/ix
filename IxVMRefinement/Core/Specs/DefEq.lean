@@ -162,8 +162,7 @@ the base's image plus the limbs' value. A `Nat.succ` head is peeled only at no l
 (`KernelNatPrim::lvls_empty`). Tag `0` returns the input and the empty limbs (decided by the code;
 IxVM's own recursion reads the base of a tag-`0` result). The split is IxVM's: it stops at a head
 its role lookup does not answer, where the kernel's `natOffsetOf` (the reading
-`DefEq.natOffset` asks for) may go on.
-Stated for the circuit after the pending batch; its path lemmas change at the pin. -/
+`DefEq.natOffset` asks for) may go on. -/
 def nat_offset_of : SpecFn := fun c args h r h' calls =>
   ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc →
     (∀ x y, r = .tuple [.field 0, x, y] → x = e ∧ RepLimbs h' 0 y) ∧
@@ -182,8 +181,7 @@ comparison back. The rules' guards come from `EnvFacts` at the roles in force: `
 `natAdd` where a split has a `Nat.add` step, `natLitSupported` from `natLit` where a split has
 any step (`Nat`, `Nat.zero` and `Nat.succ` are one block, the first group, and `Nat.add`
 depends on `Nat`, so they are in force whenever `Nat.succ` or `Nat.add` is). Two literals at
-one offset are one term (`DefEq.refl`). `(1, 0)` and `(0, _)` claim nothing.
-Stated for the circuit after the pending batch; its path lemmas change at the pin. -/
+one offset are one term (`DefEq.refl`). `(1, 0)` and `(0, _)` claim nothing. -/
 def try_def_eq_nat : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types, args = [rc, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →

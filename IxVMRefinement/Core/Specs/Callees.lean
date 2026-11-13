@@ -36,6 +36,8 @@ abbrev mutListEnum : String := Obs.Names.«Lists::Node<Ixon::MutConst>»
 abbrev ixExprListEnum : String := Obs.Names.«Lists::Node<&Ixon::Expr>»
 /-- `Lists::Node<&Ixon::Univ>`: a record's universe table. -/
 abbrev ixUnivListEnum : String := Obs.Names.«Lists::Node<&Ixon::Univ>»
+/-- `Lists::Node<Ixon::BinderBlock>`: a record's binder-data table. -/
+abbrev ixBinderListEnum : String := Obs.Names.«Lists::Node<Ixon::BinderBlock>»
 
 /-- The constructor of `Ixon::MutConst` a block member is. -/
 def mutCtor : Ixon.MutConst → String
@@ -68,9 +70,9 @@ def InfoShape (h : Heap F) : Ixon.ConstantInfo → SourceValue F → Prop
   | .muts ms, v => ∃ lp, v = .construct ixInfoEnum "Muts" [lp] ∧ MembersRep h ms.toList lp
   | info, v => ∃ x, v = .construct ixInfoEnum (infoCtor info) [x]
 
-/-- **A decoded record, shallowly** (`Ixon::Constant::Mk(info, sharing, refs, univs)`). -/
+/-- **A decoded record, shallowly** (`Ixon::Constant::Mk(info, sharing, refs, univs, binders)`). -/
 def ConstShapeRep (h : Heap F) (cst : Ixon.Constant) (v : SourceValue F) : Prop :=
-  ∃ info sh rf un, v = .construct ixConstEnum "Mk" [info, sh, rf, un] ∧ InfoShape h cst.info info
+  ∃ info sh rf un bd, v = .construct ixConstEnum "Mk" [info, sh, rf, un, bd] ∧ InfoShape h cst.info info
 
 /-- An inductive block member (`Core.isIndc`). -/
 abbrev isIndc : Ixon.MutConst → Bool := IxVM.Refinement.Core.isIndc
@@ -103,13 +105,14 @@ def ProjInfoRep (h : Heap F) : Ixon.ConstantInfo → SourceValue F → Prop
   | _, _ => False
 
 /-- **A projection record with empty tables, as IxVM builds it**
-(`Ixon::Constant::Mk(info, &Nil, &Nil, &Nil)`). -/
+(`Ixon::Constant::Mk(info, &Nil, &Nil, &Nil, &Nil)`). -/
 def ProjConstRep (h : Heap F) (info : Ixon.ConstantInfo) (v : SourceValue F) : Prop :=
-  ∃ (iv p1 p2 p3 : SourceValue F), v = .construct ixConstEnum "Mk" [iv, p1, p2, p3] ∧
+  ∃ (iv p1 p2 p3 p4 : SourceValue F), v = .construct ixConstEnum "Mk" [iv, p1, p2, p3, p4] ∧
     ProjInfoRep h info iv ∧
     RepList ixExprListEnum (fun _ (_ : Unit) _ => True) h [] p1 ∧
     RepList addrListEnum (fun _ (_ : Unit) _ => True) h [] p2 ∧
-    RepList ixUnivListEnum (fun _ (_ : Unit) _ => True) h [] p3
+    RepList ixUnivListEnum (fun _ (_ : Unit) _ => True) h [] p3 ∧
+    RepList ixBinderListEnum (fun _ (_ : Unit) _ => True) h [] p4
 
 /-! ## The modeled route's comparands, on the kernel side -/
 
