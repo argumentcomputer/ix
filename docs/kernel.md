@@ -178,7 +178,9 @@ The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
+| the depth limit, as stored: every record's expressions (shares as leaves) and universes nest at most `limits.maxDepth` levels, read from the bytes before decoding | `Admission.scanDepths` | `.limit .depth` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
+| the depth limit, shares expanded: every decoded record's expressions nest at most `limits.maxDepth` levels as the reader builds them | `Admission.expandedDepths` | `.limit .depth` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
