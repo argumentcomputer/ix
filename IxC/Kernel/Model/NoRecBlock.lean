@@ -10,25 +10,28 @@ import all IxC.Kernel.PropWhen
 @[expose] public section
 
 /-!
-# A block installed without its recursor is never eliminated through a recursor
+# A block installed without its recursor is never eliminated through a native or basis recursor
 
 The native route without a recursor record (`DeclNativeNoRecRunJ`) installs a family `T`, its
 constructors and, at a structure-like block, its projection table, and no recursor. This file
-proves that no rule that reads a recursor can then fire on `T`:
+proves that no rule of a native or basis recursor can then fire on `T`:
 
-* `NoRuleFamily env T`: no rule of any stored recursor is at a constructor whose type ends in
-  `T`. The install leaves it holding (`noRuleFamily_noRec`, which also says the route stores no
+* `NoRuleFamily env T`: no rule of a stored recursor without a model companion (`HasModel`) is at
+  a constructor whose type ends in `T`. A modeled recursor is exempt; its docstring says why. The
+  install leaves the invariant holding (`noRuleFamily_noRec`, which also says the route stores no
   recursor at any key, the stub's `Key.aux T .recursor` among them);
-* at such an environment, the major premise of an `ι` step is never a constructor of `T`
-  (`iota_ctor_family_ne`), and the family of the K, structure-η and `And` rescues, each of which
-  fires the single rule of a stored recursor, is never `T` (`rescue_family_ne`);
-* every later declaration keeps it (`noRuleFamily_declsRunJ`): the value kinds and the native
-  routes without a recursor install no recursor; a basis block's recursors are at constructors of
-  reserved families, which `T` is not; the native route's recursor is at the constructors of the
-  block's own former, which is fresh while `T` is stored, so `T`'s own recursor can never arrive
-  later (`nativeRoute_former_ne`). The modeled route installs rules at the constructors its
-  declared recursors name; that they avoid `T` is the lemma's explicit hypothesis on the run's
-  modeled blocks (`NewRulesAvoid`), which the reading supplies.
+* at such an environment, the constructor heading the major premise of an `ι` step ends in `T`
+  only if the recursor is a modeled one (`iota_ctor_family_ne`), and so does the family of the K,
+  structure-η and `And` rescues, each of which fires the single rule of a stored recursor
+  (`rescue_family_ne`);
+* every later declaration keeps it (`noRuleFamily_declsRunJ`, which has no hypothesis on the
+  run): the value kinds and the native routes without a recursor install no recursor; a basis
+  block's recursors are at constructors of reserved families, which `T` is not; the native route's
+  recursor is at the constructors of the block's own former, which is fresh while `T` is stored, so
+  `T`'s own recursor can never arrive later (`nativeRoute_former_ne`); every recursor the modeled
+  route stores carries a model companion (`declIndRunJ_hasModel`).
+
+The last section states the owner's condition in its refined form.
 -/
 
 namespace Ix.Kernel.Model
@@ -103,17 +106,45 @@ theorem family_of_residual {ty : Expr md} {k : Nat} {bs : List (Expr md × Ix.Ke
 
 /-! ## The invariant -/
 
-/-- **No stored recursor's rule is at a constructor of `T`**: every rule of every stored
-recursor is at a stored constructor whose type does not end in `T`. -/
+/-- **A model companion**: a definition stored at `n`'s model key (`auxKey n .model`). The
+modeled route requires one of every member and recursor it stores (`MemberValRunJ`). -/
+def HasModel (env : Env md) (n : Key md) : Prop :=
+  ∃ cvm mval hint, env.find? (Ix.Kernel.auxKey n .model) = some (.defnInfo cvm mval hint)
+
+theorem HasModel.mono {env env' : Env md} {n : Key md}
+    (hfind : ∀ {k : Key md} {c : ConstantInfo md}, env.find? k = some c → env'.find? k = some c)
+    (h : HasModel env n) : HasModel env' n := by
+  obtain ⟨cvm, mval, hint, hf⟩ := h
+  exact ⟨cvm, mval, hint, hfind hf⟩
+
+/-- **No native or basis recursor's rule is at a constructor of `T`**: every rule of a stored
+recursor without a model companion is at a stored constructor whose type does not end in `T`.
+
+A modeled recursor is exempt. Its rules are equations of its stored model definition, proved by
+the `ι` theorems its record carries (`IotaThmRunJ`), so firing one reads only that record's facts
+and never a fact that `T`'s absent recursor stage would have established. The record does not
+restrict which constructor such a rule is at: a modeled recursor may carry a rule at any stored
+constructor. For example, the modeled record (`DeclIndRunJ`) holds of a block `X₁ X₂ : Type` whose
+one recursor `X₁.rec : ∀ (motive : Sort u) (minor : motive) (major : T), motive` has a rule at a
+constructor `t` of `T` with right-hand side `λ motive minor, minor`, at the model
+`X₁.rec._model := λ motive minor _, minor`, whose `ι` theorem is `Eq.refl minor`.
+
+The store does not record which route stored a recursor, so the exemption reads the mark the
+modeled route leaves: a definition at the recursor's model key (`HasModel`), which the modeled
+record requires of every recursor it stores. A native or basis recursor is exempt only if a
+definition is stored at its model key; IxC's reader derives no input key, and its modeller
+generates model keys only for the members of the modeled blocks it reads. -/
 def NoRuleFamily (env : Env md) (T : Key md) : Prop :=
-  ∀ n cv mI rP rules, env.find? n = some (.recInfo cv mI rP rules) → ∀ rl ∈ rules,
-    ∀ cvj cnP cnF, env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
+  ∀ n cv mI rP rules, env.find? n = some (.recInfo cv mI rP rules) → ¬ HasModel env n →
+    ∀ rl ∈ rules, ∀ cvj cnP cnF, env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
       ∀ us, (cvj.type.piResult).getAppFn ≠ .const T us
 
 /-- **A step's new recursors avoid `T`**: every recursor stored after the step under a key that
-was free before it has its rules at constructors whose types do not end in `T`. -/
+was free before it, and without a model companion, has its rules at constructors whose types do
+not end in `T`. -/
 def NewRulesAvoid (env env' : Env md) (T : Key md) : Prop :=
   ∀ n cv mI rP rules, env'.find? n = some (.recInfo cv mI rP rules) → env.find? n = none →
+    ¬ HasModel env' n →
     ∀ rl ∈ rules, ∀ cvj cnP cnF, env'.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
       ∀ us, (cvj.type.piResult).getAppFn ≠ .const T us
 
@@ -121,7 +152,7 @@ def NewRulesAvoid (env env' : Env md) (T : Key md) : Prop :=
 resolves, so the family it ends in is stored. -/
 theorem noRuleFamily_of_fresh {env : Env md} {T : Key md} (h : StoreInv env)
     (hT : env.find? T = none) : NoRuleFamily env T := by
-  intro n cv mI rP rules hf rl hrl cvj cnP cnF hc us heq
+  intro n cv mI rP rules hf _ rl hrl cvj cnP cnF hc us heq
   have hres : cvj.type.constsResolve env = true :=
     (h.wf _ (Ix.Kernel.Semantics.Env.find?_mem hc)).2.2.1
   have h2 := constsResolve_getAppFn (constsResolve_piResult hres)
@@ -134,9 +165,9 @@ theorem noRuleFamily_step {env env' : Env md} {T : Key md} (h : NoRuleFamily env
     (hrc : Ix.Kernel.RecCtorsStored env)
     (hfind : ∀ {k : Key md} {c : ConstantInfo md}, env.find? k = some c → env'.find? k = some c)
     (hn : NewRulesAvoid env env' T) : NoRuleFamily env' T := by
-  intro n cv mI rP rules hf rl hrl cvj cnP cnF hc us
+  intro n cv mI rP rules hf hm rl hrl cvj cnP cnF hc us
   cases hold : env.find? n with
-  | none => exact hn n cv mI rP rules hf hold rl hrl cvj cnP cnF hc us
+  | none => exact hn n cv mI rP rules hf hold hm rl hrl cvj cnP cnF hc us
   | some ci =>
     have hf' := hfind hold
     rw [hf] at hf'
@@ -145,7 +176,7 @@ theorem noRuleFamily_step {env env' : Env md} {T : Key md} (h : NoRuleFamily env
     have hc'' := hfind hc'
     rw [hc] at hc''
     obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hc'')
-    exact h n cv mI rP rules hold rl hrl _ _ _ hc' us
+    exact h n cv mI rP rules hold (fun hm' => hm (hm'.mono hfind)) rl hrl _ _ _ hc' us
 
 /-- A step that stores no recursor under a new key. -/
 theorem newRulesAvoid_of_noNewRec {env env' : Env md} {T : Key md}
@@ -158,34 +189,40 @@ theorem newRulesAvoid_of_noNewRec {env env' : Env md} {T : Key md}
 
 /-! ## The owner's condition at the rules -/
 
-/-- **No ι step on `T`**: at an environment keeping `NoRuleFamily env T`, the constructor an ι
-step's major premise is headed by (`Red.iota`'s `major.getAppFn = .const cj usj`,
-`env.find? cj = some (.ctorInfo cvj cnP cnF)` and the rule found at `cj`) has a type that does
-not end in `T`. -/
+/-- **No ι step on `T` through a native or basis recursor**: at an environment keeping
+`NoRuleFamily env T`, the constructor an ι step's major premise is headed by (`Red.iota`'s
+`major.getAppFn = .const cj usj`, `env.find? cj = some (.ctorInfo cvj cnP cnF)` and the rule
+found at `cj`) has a type that does not end in `T`, unless the recursor is a modeled one. -/
 theorem iota_ctor_family_ne {env : Env md} {T : Key md} (h : NoRuleFamily env T)
     {c cj : Key md} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
     {rl : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat}
     (hc : env.find? c = some (.recInfo cv mI rP rules))
     (hcj : env.find? cj = some (.ctorInfo cvj cnP cnF))
     (hrl : rules.find? (fun r' => r'.ctor == cj) = some rl) :
-    ∀ us, (cvj.type.piResult).getAppFn ≠ .const T us := by
-  have hmem := List.mem_of_find?_eq_some hrl
-  have hct : rl.ctor = cj := by simpa using List.find?_some hrl
-  exact h c cv mI rP rules hc rl hmem cvj cnP cnF (by rw [hct]; exact hcj)
+    HasModel env c ∨ ∀ us, (cvj.type.piResult).getAppFn ≠ .const T us := by
+  by_cases hm : HasModel env c
+  · exact .inl hm
+  · have hmem := List.mem_of_find?_eq_some hrl
+    have hct : rl.ctor = cj := by simpa using List.find?_some hrl
+    exact .inr (h c cv mI rP rules hc hm rl hmem cvj cnP cnF (by rw [hct]; exact hcj))
 
-/-- **No recursor-reading rescue on `T`**: the K, structure-η and `And` rescues (`Red.rescueK`,
-`Red.rescueEta`, `Red.rescueAnd`) each fire the single rule `rl` of a stored recursor at a
-constructor whose type ends in the rescue's family `T'`; at an environment keeping
-`NoRuleFamily env T`, `T'` is not `T`. -/
+/-- **No recursor-reading rescue on `T` through a native or basis recursor**: the K,
+structure-η and `And` rescues (`Red.rescueK`, `Red.rescueEta`, `Red.rescueAnd`) each fire the
+single rule `rl` of a stored recursor at a constructor whose type ends in the rescue's family `T'`;
+at an environment keeping `NoRuleFamily env T`, `T'` is not `T` unless the recursor is a modeled
+one. -/
 theorem rescue_family_ne {env : Env md} {T : Key md} (h : NoRuleFamily env T)
     {recName : Key md} {cv : ConstantVal md} {mI rP : Nat} {rl : RecRule md}
     {cvj : ConstantVal md} {cnP cnF : Nat} {T' : Key md} {tus : List Level}
     (hr : env.find? recName = some (.recInfo cv mI rP [rl]))
     (hc : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
-    (hT' : (cvj.type.piResult).getAppFn = .const T' tus) : T' ≠ T := by
-  intro he
-  subst he
-  exact h recName cv mI rP [rl] hr rl List.mem_cons_self cvj cnP cnF hc tus hT'
+    (hT' : (cvj.type.piResult).getAppFn = .const T' tus) : HasModel env recName ∨ T' ≠ T := by
+  by_cases hm : HasModel env recName
+  · exact .inl hm
+  · refine .inr ?_
+    intro he
+    subst he
+    exact h recName cv mI rP [rl] hr hm rl List.mem_cons_self cvj cnP cnF hc tus hT'
 
 /-! ## The steps' new recursors -/
 
@@ -289,7 +326,7 @@ theorem declNativeRunJ_newRulesAvoid {J : Judgements md} (hfr : ∀ e : Env md, 
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
   have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by
     rw [hnR]; exact hfR
-  intro n cv mI rP rules hf hn0 rl hrl cvj cnP cnF hc us heq
+  intro n cv mI rP rules hf hn0 _ rl hrl cvj cnP cnF hc us heq
   have hR := nativeTable_rec hTbl hf
   rw [Ix.Kernel.Env.find?_cons] at hR
   split at hR
@@ -349,7 +386,7 @@ theorem basis_newRulesAvoid {env env₂ : Env md} {kind : BasisKind} {T : Key md
     (hrun : DeclBasisRun env kind env₂) : NewRulesAvoid env env₂ T := by
   obtain ⟨-, hinst⟩ := hrun
   obtain ⟨rfl, -⟩ := basisInstallRun_eq hinst
-  intro n cv mI rP rules hf hn0 rl hrl cvj cnP cnF hc us heq
+  intro n cv mI rP rules hf hn0 _ rl hrl cvj cnP cnF hc us heq
   rw [find?_prefix, hn0] at hf
   have hb : Env.find? ⟨kind.declsA.reverse⟩ n = some (.recInfo cv mI rP rules) := by
     cases hb0 : Env.find? ⟨kind.declsA.reverse⟩ n with
@@ -383,6 +420,130 @@ theorem cons_nonRec {env : Env md} {c₀ : ConstantInfo md} (hfresh : env.find? 
       Env.find? ⟨c₀ :: env.consts⟩ k = some c) ∧ NewRulesAvoid env ⟨c₀ :: env.consts⟩ T :=
   ⟨fun hf => Ix.Kernel.Env.find?_cons_of_fresh hfresh hf,
     newRulesAvoid_of_noNewRec fun hf => find?_rec_of_cons hf hc⟩
+
+/-! ## The modeled route's recursors carry a model companion -/
+
+/-- The members of a modeled block store no recursor. -/
+theorem indMembersRunJ_rec {J : Judgements md} {blockNames : List (Key md)} {caps : IndCaps md} :
+    ∀ {env' : Env md} {members : List (ConstantInfo md)} {env₂ : Env md},
+      IndMembersRunJ J blockNames caps env' members env₂ →
+      ∀ {n : Key md} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)},
+        env₂.find? n = some (.recInfo cv mI rP rules) →
+        env'.find? n = some (.recInfo cv mI rP rules)
+  | _, [], _, h => by
+    subst h
+    exact fun hf => hf
+  | _, ci :: _, _, h => by
+    obtain ⟨_, -, hm⟩ := h
+    cases ci with
+    | indInfo _ _ =>
+      exact fun hf => find?_rec_of_cons (indMembersRunJ_rec hm hf) (fun _ _ _ _ heq => nomatch heq)
+    | ctorInfo _ _ _ =>
+      exact fun hf => find?_rec_of_cons (indMembersRunJ_rec hm hf) (fun _ _ _ _ heq => nomatch heq)
+    | axiomInfo _ => exact nomatch hm
+    | defnInfo _ _ _ => exact nomatch hm
+    | thmInfo _ _ => exact nomatch hm
+    | recInfo _ _ _ _ => exact nomatch hm
+    | projInfo _ => exact nomatch hm
+
+/-- Two environments storing the same names, each with a cons of the same name. -/
+theorem find?_isNone_cons_same {env₁ env₂ : Env md} {c₁ c₂ : ConstantInfo md}
+    (hn : c₁.name = c₂.name)
+    (h : ∀ n, (env₁.find? n).isNone = (env₂.find? n).isNone) :
+    ∀ n, ((⟨c₁ :: env₁.consts⟩ : Env md).find? n).isNone
+      = ((⟨c₂ :: env₂.consts⟩ : Env md).find? n).isNone := by
+  intro n
+  rw [Ix.Kernel.Env.find?_cons, Ix.Kernel.Env.find?_cons, hn]
+  by_cases h₁ : c₂.name = n
+  · simp [h₁]
+  · simp only [if_neg h₁]
+    exact h n
+
+/-- The install fold stores each provisioned recursor beside the model companion its
+provisioning read. The fold's environment and the provisioning's store the same names and agree
+on every constant that is not a recursor. -/
+theorem indRecsFoldRunJ_hasModel {J : Judgements md} {blockNames : List (Key md)}
+    {envBase envSelf : Env md} :
+    ∀ {recs : List (ConstantInfo md)} {envP envF out : Env md}
+      {checked : List (ConstantVal md × Nat × Nat × List (RecRule md))},
+      ProvisionRecsRunJ J blockNames envP recs envSelf checked →
+      IndRecsFoldRunJ J blockNames envBase envSelf envF checked out →
+      (∀ n, (envF.find? n).isNone = (envP.find? n).isNone) →
+      (∀ k c, envP.find? k = some c → (∀ cv mI rP rules, c ≠ .recInfo cv mI rP rules) →
+        envF.find? k = some c) →
+      ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
+        out.find? n = some (.recInfo cv mI rP rules) → envF.find? n = none → HasModel out n
+  | [], _, envF, out, _, hprov, hfold, _, _ => by
+    obtain ⟨-, rfl⟩ := hprov
+    obtain rfl : out = envF := hfold
+    intro n cv mI rP rules hf hn
+    rw [hf] at hn
+    exact nomatch hn
+  | _ :: _, envP, envF, _, _, hprov, hfold, hsame, hR => by
+    obtain ⟨cvA, mI, rP, rules, rest', -, hmv, hprov', rfl⟩ := hprov
+    obtain ⟨rules', -, hfold'⟩ := hfold
+    obtain ⟨type', hcv, hcvA, -, cvm, mval, hint, hcm, -, -⟩ := hmv
+    have hfreshP : envP.find? cvA.name = none := by
+      rw [hcvA]; exact Option.isNone_iff_eq_none.mp hcv.1
+    have hfreshF : envF.find? cvA.name = none := by
+      have hs := hsame cvA.name
+      rw [hfreshP] at hs
+      exact Option.isNone_iff_eq_none.mp hs
+    have hsame' := find?_isNone_cons_same (env₁ := envF) (env₂ := envP)
+      (c₁ := .recInfo cvA mI rP rules') (c₂ := .recInfo cvA mI rP []) rfl hsame
+    have hext := indRecsFoldRunJ_envExt hprov' hfold' hsame' (Ix.Kernel.EnvExt.refl _)
+    have hR' : ∀ k c, Env.find? ⟨.recInfo cvA mI rP [] :: envP.consts⟩ k = some c →
+        (∀ cv mI rP rules, c ≠ .recInfo cv mI rP rules) →
+        Env.find? ⟨.recInfo cvA mI rP rules' :: envF.consts⟩ k = some c := by
+      intro k c hk hc
+      rw [Ix.Kernel.Env.find?_cons] at hk ⊢
+      split at hk
+      · exact absurd (Option.some.inj hk).symm (hc _ _ _ _)
+      · next hne =>
+        split
+        · next heq => exact absurd heq hne
+        · exact hR k c hk hc
+    intro n cv' mI' rP' rules'' hf hn
+    by_cases hnA : cvA.name = n
+    · subst hnA
+      exact ⟨cvm, mval, hint, hext.find (Ix.Kernel.Env.find?_cons_of_fresh hfreshF
+        (hR _ _ hcm (fun _ _ _ _ heq => nomatch heq)))⟩
+    · have hn' : Env.find? ⟨.recInfo cvA mI rP rules' :: envF.consts⟩ n = none := by
+        rw [Ix.Kernel.Env.find?_cons]
+        split
+        · next heq => exact absurd heq hnA
+        · exact hn
+      exact indRecsFoldRunJ_hasModel hprov' hfold' hsame' hR' n cv' mI' rP' rules'' hf hn'
+
+/-- **Every recursor a modeled block stores carries a model companion**, so a modeled step's new
+recursors are exempt from `NoRuleFamily`. -/
+theorem declIndRunJ_hasModel {J : Judgements md} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} (h : DeclIndRunJ J env block env₂) {n : Key md}
+    {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
+    (hf : env₂.find? n = some (.recInfo cv mI rP rules)) (hn : env.find? n = none) :
+    HasModel env₂ n := by
+  obtain ⟨-, envM, hmem, hrecs⟩ := h
+  rcases hrecs with ⟨-, rfl⟩ | ⟨-, -, envSelf, checked, hprov, hfold⟩
+  · rw [indMembersRunJ_rec hmem hf] at hn
+    exact nomatch hn
+  · have hnM : envM.find? n = none := by
+      cases hM : envM.find? n with
+      | none => rfl
+      | some c =>
+        have h2 := (indRecsFoldRunJ_envExt hprov hfold (fun _ => rfl)
+          (Ix.Kernel.EnvExt.refl _)).find hM
+        rw [hf] at h2
+        obtain rfl := Option.some.inj h2
+        rw [indMembersRunJ_rec hmem hM] at hn
+        exact nomatch hn
+    exact indRecsFoldRunJ_hasModel hprov hfold (fun _ => rfl) (fun _ _ hk _ => hk) _ _ _ _ _ hf hnM
+
+/-- **A modeled step's new recursors avoid `T`**, vacuously: each carries a model companion. -/
+theorem declIndRunJ_newRulesAvoid {J : Judgements md} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {T : Key md} (h : DeclIndRunJ J env block env₂) :
+    NewRulesAvoid env env₂ T := by
+  intro n cv mI rP rules hf hn0 hm
+  exact absurd (declIndRunJ_hasModel h hf hn0) hm
 
 /-! ## The install, and the run after it -/
 
@@ -425,14 +586,11 @@ theorem noRuleFamily_noRec {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrame
     rw [nativeTable_keep hTbl hfT]
     rfl
 
-/-- **One declaration step keeps the owner's condition**, given that a modeled block the step
-installs puts its new rules away from `T`. -/
+/-- **One declaration step keeps the owner's condition.** -/
 theorem noRuleFamily_declRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
     {env env₂ : Env md} {d : Declaration md} {T : Key md}
     (hTres : Ix.Kernel.reservedBasisNames.contains T = false) (h : StoreInv env)
     (hT : (env.find? T).isSome = true) (hno : NoRuleFamily env T)
-    (hmod : ∀ block nP, d = .indDecl block nP → ∀ env₁, DeclIndRunJ J env block env₁ →
-      NewRulesAvoid env env₁ T)
     (hrun : DeclRunJ J (IndRoutesJ J env) env d env₂) :
     NoRuleFamily env₂ T ∧ (env₂.find? T).isSome = true := by
   cases d with
@@ -470,7 +628,7 @@ theorem noRuleFamily_declRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFr
       · exact noRuleFamily_of_step h hT hno (declNativeRunJ_envExt hN).find
           (declNativeRunJ_newRulesAvoid hfr (nativeRecog_of hdp) h hT hN)
       · exact noRuleFamily_of_step h hT hno (declIndRunJ_envExt hM).find
-          (hmod block nP rfl _ hM)
+          (declIndRunJ_newRulesAvoid hM)
       · exact noRuleFamily_of_step h hT hno (declNativeNoRecRunJ_envExt hN).find
           (newRulesAvoid_of_noNewRec fun hf => declNativeNoRecRunJ_noNewRec hN hf)
   | quotDecl k cv =>
@@ -481,27 +639,41 @@ theorem noRuleFamily_declRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFr
       exact ⟨hno, hT⟩
 
 /-- **The owner's condition along a run**: from an environment keeping it (the install's,
-`noRuleFamily_noRec`), every declaration of the run keeps it, given the run's modeled blocks put
-their new rules away from `T` (`NewRulesAvoid`, the reading's obligation). With
-`iota_ctor_family_ne` and `rescue_family_ne`, no ι step and no K, structure-η or `And` rescue
-ever fires on `T` in the run. -/
+`noRuleFamily_noRec`), every declaration of the run keeps it. With `iota_ctor_family_ne` and
+`rescue_family_ne`, no ι step and no K, structure-η or `And` rescue fires on `T` in the run through
+a native or basis recursor. -/
 theorem noRuleFamily_declsRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
     {T : Key md} (hTres : Ix.Kernel.reservedBasisNames.contains T = false) :
     ∀ {env env' : Env md} {ds : List (Declaration md)},
       DeclsRunJ J (IndRoutesJ J) env ds env' →
-      (∀ block nP, Declaration.indDecl block nP ∈ ds → ∀ env₀ env₁,
-        DeclIndRunJ J env₀ block env₁ → NewRulesAvoid env₀ env₁ T) →
       StoreInv env → (env.find? T).isSome = true → NoRuleFamily env T →
       NoRuleFamily env' T := by
   intro env env' ds hds
   induction hds with
-  | nil => intro _ _ _ h; exact h
+  | nil => intro _ _ h; exact h
   | cons hd _ ih =>
-    intro hmod h hT hno
-    obtain ⟨hno₁, hT₁⟩ := noRuleFamily_declRunJ hfr hTres h hT hno
-      (fun block nP hd' env₁ hM => hmod block nP (by rw [hd']; exact List.mem_cons_self) _ env₁ hM)
-      hd
-    exact ih (fun block nP hm env₀ env₁ hM => hmod block nP (List.mem_cons_of_mem _ hm) env₀ env₁ hM)
-      (storeInv_declRunJ hfr (fun hI => storeInv_indRoutesJ hfr h hI) h hd) hT₁ hno₁
+    intro h hT hno
+    obtain ⟨hno₁, hT₁⟩ := noRuleFamily_declRunJ hfr hTres h hT hno hd
+    exact ih (storeInv_declRunJ hfr (fun hI => storeInv_indRoutesJ hfr h hI) h hd) hT₁ hno₁
+
+/-! ## The owner's condition, refined
+
+"No elimination on a block installed without its recursor", along any run from the block's install
+(`DeclsRunJ`, from the environment `noRuleFamily_noRec` describes), is the conjunction of the
+following; nothing further is stated as a lemma.
+
+* Every ι step and every K, structure-η and `And` rescue fires a rule of a stored recursor: the
+  rules' premises look the recursor up. Every environment of the run keeps the store invariant, at
+  all three inductive routes (`storeInv_declsRunJ`), and it gives each stored rule its fire mode and
+  its stored constructor (`StoreInv.recRules_fire`). A recursor keeps them from the step that stored
+  it, since every later step extends the store.
+* No stored recursor is `T`'s. `T`'s install stores no recursor at any key (the last conjunct of
+  `noRuleFamily_noRec`), and a later native route's recursor is its own fresh former's
+  (`nativeRoute_former_ne`).
+* No native or basis recursor carries a rule at a constructor of `T` (`noRuleFamily_declsRunJ`),
+  so such a rule never fires there (`iota_ctor_family_ne`, `rescue_family_ne`). A modeled
+  recursor's rule there is an equation of that recursor's model, proved by its own record's `ι`
+  theorem (`NoRuleFamily`'s docstring).
+-/
 
 end Ix.Kernel.Model
