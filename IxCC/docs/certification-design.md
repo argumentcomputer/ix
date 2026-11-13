@@ -260,9 +260,9 @@ it. Invariants by provenance (`Live`, `LiveSlot`, `EnvOk` with a slot shielded w
 a dropped field to the minor that ignores it, `Whole`, `MinorsIgnore`), each call's precondition
 and result (`Pre`, `Post`) and what it reads (`Reads`); `Front.GoesWrongLive` is `Recheck.sound`'s
 escape with a `Live` result. These are the definitions of a theorem not yet proved: no theorem
-rests on them but `live_not_irr` (a marker is never `Live`), and P1's statements (`preserve`,
-`pre_step`, `reads_live`, `run_live`, and the narrowing `Front.goesWrong_live`, `sound_live`)
-join the library only as they are proved.
+rests on them but `live_not_irr` (a marker is never `Live`) and the two parts below, and P1's
+statements (`preserve`, `pre_step`, `reads_live`, `run_live`, and the narrowing
+`Front.goesWrong_live`, `sound_live`) join the library only as they are proved.
 
 Reading the statements against SrcEval case by case before the proof (engineer PA) found them false
 in five places, all where a call whose precondition holds starts from values no run makes: P1
@@ -277,6 +277,40 @@ reached instance of a `case` key its minors, and of `Quot.lift` its function, ar
 (`Check.Canonical.appliedAt`, `Canonical.minorsRead`: F5 and F8 force those and apply them, and a
 marker there, irrelevant by its sort, was returned or applied). No committed closure is refused by
 either check ([ci](ci.md)).
+
+**Two parts of P1's proof are in the library (2026-11-13).** On P1's definitions,
+[`Src/Relevance/Proof/P1/Prefix.lean`](../IxCC/Src/Relevance/Proof/P1/Prefix.lean) proves the two cases
+in which E7 passes the marker to the value of a spine's prefix and P1's core must know that value
+ignores it: `eval_shielded_prefix` (a spine headed by a variable whose slot ignores the next
+argument, the field written erased a rule body passes to the minor it dispatches, evaluates to a
+value that ignores it and is no partial application) and `eval_erased_prefix` (under `Facts` and
+`Frame`, at a position written erased: through δ at a constant head, by the run body's header, a
+special head's partial application below its arity, or a constructor value applying is stuck on;
+through β at a λ head, by C0). [`Recheck/Proof/FrontAccepted.lean`](../IxCC/Recheck/Proof/FrontAccepted.lean)
+proves what `Recheck.run`'s acceptance gives the narrowing of its escape: `front_accepted` (both
+relevance checks accepted the installed program, and SrcEval runs that program's Lazify image) and
+`shapeOk_of_run` (one constructor per inductive and index, from erasure's success on the program
+SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`), L1's facts
+on the Lazify image (`facts_modeEq`) and the narrowing (`Front.goesWrong_live`, `sound_live`).
+
+**P1's core as one induction over 25 cases; the cases are not all proved (2026-11-13).**
+[`Src/Relevance/Proof/P1/Cases.lean`](../IxCC/Src/Relevance/Proof/P1/Cases.lean) proves `preserve`
+and `pre_step`, as approved, from a hypothesis `Cases`: one statement per evaluator case (E1–E8,
+δ, `headValue`, A1–A3, `applyAll`, F1–F8 with F6w, `force`, `forceAll`), each a named proposition
+with one signature (L1's facts, the structure, the call's precondition and sort events, and the
+statement at every call its evaluation makes). The induction is well founded on SrcEval's own
+termination measure, which every `Step` decreases
+([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Six of the 25 are proved: E2 at a
+sort and at a Π, where C7 leaves no precondition; E3 at both literals; F4; and F2, an ordinary
+recursor fired ([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor
+writes erased holds the marker under a rule λ whose class may be relevant, and is shielded there,
+passed only to the minor the rule dispatches, which ignores it). The other nineteen are stated,
+not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take `Cases`
+as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the lemmas the
+cases share. Reading F3 (subsingleton ι) against the statements found it false where a reached
+subsingleton recursor's rule-0 constructor has no constructor record, which the relevance checks
+allow when nothing reaches the constructor: then C3 checks no minor against it and S4 none of its
+sources; a check closing it is approved, not yet written.
 
 ## Target statements
 
