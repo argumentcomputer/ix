@@ -1051,17 +1051,43 @@ def specialHead? (p : Program) (c : CId) : Option Head :=
     | some (.quot .lift ..) => some (.quotLift c)
     | _ => none
 
+/-- The number of arguments special head `h` fires at: SrcEval's `Program.headArity`,
+copied here because the relevance check comes before the evaluator
+(`IxCC.Src.Relevance.Proof.headArityOf_eq` proves the two equal). -/
+def headArityOf (p : Program) : Head → Nat
+  | .ctor c =>
+    match p.decl? c with
+    | some (.ctor _ _ _ _ np nf _) => np + nf
+    | _ => 0
+  | .quotMk _ => 3
+  | .quotLift _ => 6
+  | .recr r => ((p.decl? r).bind Decl.recArity).getD 0
+  | .cases c =>
+    match p.table.resolveOf c with
+    | some (.case r) =>
+      match p.decl? r with
+      | some (.recr _ _ _ np _ nmin ni _ _ _) => np + 1 + ni + 1 + nmin
+      | _ => 0
+    | _ => 0
+  | .prim op => op.arity
+  | .word _ op => op.arity
+
 /-- What special head `h` (the run behaviour of `c`) reads at argument `i`:
 `headReadsWith`, except a constructor field dropped at every instance, which a
 constructor does not store (`Lam.Erase.ctorForm`; SrcEval stores the `irr` it is
-given), and with the pinned `Nat.succ`, which reads its field always. -/
+given), and with the pinned `Nat.succ`, which reads its field always. A position
+at or past the head's arity is read: the head fires before it, and the value it
+fires to receives that argument as any function would (`Quot.lift` fires to its
+function's result; an argument the type writes erased there would reach that
+result as `irr`). -/
 def readsAt (p : Program) (ann : Ann) (c : CId) (h : Head) (i : Nat) : Bool :=
-  headReadsWith p.decl? p.table.resolveOf h i &&
+  decide (headArityOf p h ≤ i) ||
+  (headReadsWith p.decl? p.table.resolveOf h i &&
     match h, p.decl? c with
     | .ctor _, some (.ctor _ _ _ _ np _ _) =>
       some c == p.known.natSucc ||
         !((((ann.ctorRel? c).bind (·.fields[i - np]?)).map FieldClass.alwaysDropped).getD false)
-    | _, _ => true
+    | _, _ => true)
 
 def headName : Head → String
   | .ctor _ => "the constructor"
@@ -1072,6 +1098,13 @@ def headName : Head → String
   | .prim op => s!"the primitive Nat.{op.name}"
   | .word w op => s!"the word operation {op.leanName w}"
 
+/-- Who reads argument `i` of special head `h`: the head, or (at or past its
+arity) the value it fires to. -/
+def readerName (p : Program) (h : Head) (i : Nat) : String :=
+  if headArityOf p h ≤ i then
+    s!"the value {headName h} fires to (it is at or past the arity {headArityOf p h})"
+  else headName h
+
 /-- A constant whose run behaviour is a special head: the positions its type
 writes erased are disjoint from those the head reads. `none` when they are;
 otherwise the first position both erased and read. -/
@@ -1079,7 +1112,7 @@ def readsErased? (p : Program) (ann : Ann) (c : CId) : Option String := do
   let h ← specialHead? p c
   let d ← p.decl? c
   let i ← (erasedParams d.type).find? (readsAt p ann c h)
-  some s!"parameter {i} is written erased, but {headName h} reads it"
+  some s!"parameter {i} is written erased, but {readerName p h i} reads it"
 
 /-- Whether de Bruijn variable `k` occurs in `t` (structural). -/
 def mentionsVar : Nat → Term → Bool
