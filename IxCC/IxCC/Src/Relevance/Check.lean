@@ -1089,6 +1089,22 @@ def readsAt (p : Program) (ann : Ann) (c : CId) (h : Head) (i : Nat) : Bool :=
         !((((ann.ctorRel? c).bind (·.fields[i - np]?)).map FieldClass.alwaysDropped).getD false)
     | _, _ => true)
 
+/-- Argument `pos` of `c` is one its special head forces and applies: a `case` key's minor (F5
+applies minor `j` to the fields) or `Quot.lift`'s function (F8 applies it to the element). A
+marker there would be applied (stuck) or returned (F5 on a constructor with no fields), so such a
+position must be relevant at every instance the head is reached at. -/
+def appliedAt (p : Program) (c : CId) (pos : Nat) : Bool :=
+  match specialHead? p c with
+  | some (.cases _) =>
+    match p.table.resolveOf c with
+    | some (.case r) =>
+      match p.decl? r with
+      | some (.recr _ _ _ np _ nmin ni _ _ _) => np + 1 + ni + 1 ≤ pos && pos < np + 1 + ni + 1 + nmin
+      | _ => false
+    | _ => false
+  | some (.quotLift _) => pos == 3
+  | _ => false
+
 def headName : Head → String
   | .ctor _ => "the constructor"
   | .quotMk _ => "Quot.mk"
@@ -1281,6 +1297,14 @@ def subsingletonSrcs? (p : Program) (r : CId) : Option String :=
     | none => none
   | _, _ => none
 
+/-- `c` is a constructor of exactly `n` fields. F6w builds `Fin.mk`'s value with two fields
+(`Program.mkWord?`) whatever the pinned declaration says, and F2 binds a rule's field λs by the
+value's field count. -/
+def ctorFieldsIs (p : Program) (c : CId) (n : Nat) : Bool :=
+  match p.decl? c with
+  | some (.ctor _ _ _ _ _ nf _) => nf == n
+  | _ => false
+
 end Check.Canonical
 
 open Check Check.Canonical in
@@ -1396,18 +1420,32 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
     | some shape =>
       (subsingletonSrcs? p shape.recr).map fun msg => RelError.of "S1" msg (some shape.recr)
     | none => none
-  -- F6w builds a word's tower with `irr` as `Fin.mk`'s proof field: the pinned `Fin.mk`
-  -- drops it at the empty profile wherever a word entry is reached.
+  -- F6w builds a word's tower with `irr` as `Fin.mk`'s proof field and with two fields: the
+  -- pinned `Fin.mk` is a constructor of two fields and drops the proof field at the empty profile
+  -- wherever a word entry is reached.
   let finErrs : List RelError := ch.reached.filterMap fun c =>
     match p.table.resolveOf c, p.known.finMk with
     | some (.word ..), some fin =>
-      if ch.keepsP fin [] 1 then
+      if !Check.Canonical.ctorFieldsIs p fin 2 then
+        some (RelError.of "S1" "a word operation builds Fin.mk's value with two fields, but the \
+          pinned Fin.mk is not a constructor of two fields" (some fin))
+      else if ch.keepsP fin [] 1 then
         some (RelError.of "S1" "a word operation builds its tower with `irr` as Fin.mk's proof \
           field, which the pinned Fin.mk's record keeps at the empty profile" (some fin))
       else none
     | _, _ => none
+  -- F5 applies a `case` key's minor and F8 `Quot.lift`'s function: at every reached instance of
+  -- such a head, those positions are relevant (a marker there is irrelevant by its sort, never
+  -- written erased, since the head reads them).
+  let appliedErrs : List RelError := ch.instances.filterMap fun (c, q) =>
+    match ann.constRel? c with
+    | some cr =>
+      (cr.params.zipIdx.find? fun (r, pos) => appliedAt p c pos && r.irrP q).map fun (r, pos) =>
+        RelError.of "S1" s!"argument {pos} is forced and applied (a case key's minor, Quot.lift's \
+          function), but its class ({relName r}) is irrelevant at a reached instance" (some c)
+    | none => none
   readErrs ++ forwardErrs ++ redirectErrs ++ headerErrs ++ denseErrs ++ ruleErrs ++ univErrs ++
-    recordErrs ++ srcsErrs ++ finErrs ++
+    recordErrs ++ srcsErrs ++ finErrs ++ appliedErrs ++
     if okConsts && okCtors && okReached then []
     else [RelError.of "S1" "non-canonical relevance annotation"]
 
