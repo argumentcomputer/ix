@@ -892,7 +892,25 @@ ownership checker's own, which the captured-work budget bounds
     predecessor's edge check, 13.5 ms at D = 500, 161 ms at 2,000, 564 ms at 4,000 and
     2.05 s at 8,000 (honest certificate 0.9 ms to 15.6 ms); the former walk costs the same.
     The certificate's limits admit it (8 fact entries per register mention), so it is bounded
-    only by the size of one block.
+    only by the size of one block. Kept, so that the tracked walk stays equal to the former one:
+    refusing at such a definition would report a different error than the walk that goes on to
+    the predecessor's edge check.
+  - Candidate for a later landing, the cheapest check that excludes that layout: before the
+    walk, every block after the entry has a predecessor earlier in the order (one pass over
+    the edges), and every register is defined once (one pass over the definitions). With both,
+    a claim before a definition fails an earlier block's edge check before the defining block
+    is walked, so the scan cannot happen (the argument above, to be proved with the check). The
+    validator's own inputs satisfy both on the corpus (28,882 blocks: none without an earlier
+    predecessor, no register defined twice; the generated Lir with permuted labels has 398 of
+    4,055 blocks without one). What proving that the verifier's lowering always passes would
+    cost (estimates, not established): the order half builds on what exists, since `Rt.lower`
+    already refuses a Cfg function whose forward edges do not go upward (`misordered`,
+    `edgeOrder`) and `Cfg.Proof.Layout.lower_ordered` proves Cfg's lowering satisfies it;
+    carrying it through `Rt.lower`'s block chunks and pruning (`prune_sim` keeps the label
+    order) and through selection (block for block) is a few hundred lines. The defined-once
+    half is larger: it follows each pass's fresh-register supply (Cfg, `Rt.lower`'s `supply`,
+    selection's temporaries), or it can rest on the check and tests alone, refusing what the
+    check does not admit.
 - The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
   the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
   16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
