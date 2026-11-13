@@ -126,9 +126,10 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
 
 /-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
 the first fragment): the key's set at the assignment, its stored type the telescope a partial
-application's arguments fit. The head and the value relation take the program SrcEval runs (`p`), which no
-constructor reads yet: a special head means what the program's table says (`.cases c` names its
-constant; a word head `.word w op` names none, so its case, stage W, reads the table). -/
+application's arguments fit. The head and the value relation take the program SrcEval runs
+(`p`), which no constructor reads yet: a special head means what the program's table says
+(`.cases c` names its constant; a word head `.word w op` names none, so its case, stage W, reads
+the table). -/
 inductive HeadAt (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) (Ok : CId → Levels → Prop) :
     IxCC.Src.Head → Levels → (LevelParam → Nat) → KKey → KExpr → Prop
