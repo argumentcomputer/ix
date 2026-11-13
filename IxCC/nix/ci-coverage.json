@@ -1793,7 +1793,8 @@
  "grounding_axiom_sha256":
  "18151a1db67336782e87ed765ac6d798a90d1ecb61eb3278537539324c73b6cc",
  "grounding_axiom_count": 285,
- "baseline": "b65b80708: stacking linear, merged 706840ad8",
+ "baseline":
+ "routes 8 and 9: an eliminator over a field written erased only saturated",
  "axiom_sha256":
- "b0161908f16556dc46c3ff8af517b52c77c8a5a2726f3f5a5b61b897b4507d79",
- "axiom_count": 6672}
+ "6994abd582ac87624d5d77248eb66567eb191a3b6ea608353b0084c76e926613",
+ "axiom_count": 6674}

@@ -11,13 +11,15 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   instance), C2 (at a constant head against the callee's parameter classes at the callee's
   profile, at a β-redex against the λ binders), C3 (each minor of a saturated eliminator against
   the constructor whose fields it receives, paired as `Check.elimShape?` pairs them: at a recursor
-  each rule with the minor it dispatches, `elimShape_recr_minors`; a projection reads no field
+  each rule with the minor it dispatches, `elimShape_recr_minors`; an eliminator with a rule for a
+  constructor that writes a field erased occurs only at a saturated spine; a projection reads no field
   dropped at every instance), C4 (an irrelevant major only at a subsingleton or empty eliminator)
   and C5 (a constant at a relevant position has a relevant result). `WellAnnotatedC` adds them at
   every reached instance to `WellAnnotated`.
 * **(b) `checkCanonical_sound`**: from `checkCanonical p ann ch = []`, the canonical constant and
   constructor records, the header agreement of every run body and `csimp` redirect, the special
-  heads' reads, the forwarding clause on recursor rules, and canonical tags on every reached
+  heads' reads, the forwarding clause on recursor rules, no `csimp` redirect to an eliminator
+  over a field written erased, and canonical tags on every reached
   runtime term; then the three facts about positions written erased that relevance preservation
   consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
 
@@ -68,20 +70,24 @@ def MinorC (p : Program) (prof qc : Profile) (k : CId) (bs : List Rel) (fields :
       cls.dropP qc = true → b.irrP prof = true) ∧
   (∀ i, i < fields.length → bs.length ≤ i → fieldWrittenErased p k i = false)
 
-/-- C4 and C3 at a saturated eliminator spine (`Check.knownHead`). The minors are paired as
-`Check.elimShape?` pairs them: at a `case` entry minor `j` with constructor `j`; at a recursor each
-rule with the minor it dispatches (`Check.ruleDispatch`; `elimShape_recr_minors` below). -/
+/-- C4 and C3 at an eliminator spine (`Check.knownHead`). Shorter than the eliminator's arity, the
+eliminator has no rule for a constructor that writes a field erased (`Check.erasedMinors`;
+`Check.partialElim`). Saturated, the minors are paired as `Check.elimShape?` pairs them: at a
+`case` entry minor `j` with constructor `j`; at a recursor each rule with the minor it dispatches
+(`Check.ruleDispatch`; `elimShape_recr_minors` below). -/
 def ElimC (p : Program) (ann : Ann) (prof : Profile) (c : CId) (us : List Ixon.Univ)
     (args : List Term.Arg) : Prop :=
-  ∀ shape, elimShape? p c = some shape → shape.arity ≤ args.length →
-    (∀ a : Term.Arg, args[shape.major]? = some a → a.2.2.irrP prof = true →
-      (((p.table.recKindOf shape.recr).map (fun k => RecKind.atProfile (prof.inst us) k)).getD
-        .ordinary).allowsIrrMajor = true) ∧
-    (∀ pos j rule, (pos, j, rule) ∈ shape.minors →
-      ∀ (minor : Term) (m : Mode) (a : Rel) (k : CId) (fields : List FieldClass),
-        args[pos]? = some (minor, m, a) → ruleCtorFields p ann shape.recr rule = some (k, fields) →
-        a.irrP prof = false →
-        MinorC p prof (ctorProfile p shape.recr (prof.inst us)) k (lamRels minor) fields)
+  ∀ shape, elimShape? p c = some shape →
+    (args.length < shape.arity → erasedMinors p shape = false) ∧
+    (shape.arity ≤ args.length →
+      (∀ a : Term.Arg, args[shape.major]? = some a → a.2.2.irrP prof = true →
+        (((p.table.recKindOf shape.recr).map (fun k => RecKind.atProfile (prof.inst us) k)).getD
+          .ordinary).allowsIrrMajor = true) ∧
+      (∀ pos j rule, (pos, j, rule) ∈ shape.minors →
+        ∀ (minor : Term) (m : Mode) (a : Rel) (k : CId) (fields : List FieldClass),
+          args[pos]? = some (minor, m, a) → ruleCtorFields p ann shape.recr rule = some (k, fields) →
+          a.irrP prof = false →
+          MinorC p prof (ctorProfile p shape.recr (prof.inst us)) k (lamRels minor) fields))
 
 /-- The tier-C facts at an application spine's head (`Check.appRule`). -/
 def HeadC (p : Program) (ann : Ann) (prof : Profile) : Term → List Term.Arg → Prop
@@ -99,9 +105,10 @@ inductive TermC (p : Program) (ann : Ann) (prof : Profile) : List Rel → Term �
   /-- C1. -/
   | var {bs : List Rel} {i : Nat} :
       (∀ r, bs[i]? = some r → r.irrP prof = false) → TermC p ann prof bs (.var i)
-  /-- C5. -/
+  /-- C5, and C3 at a bare eliminator (`Check.bareHead`). -/
   | const {bs : List Rel} {c : CId} {us : List Ixon.Univ} :
       (∀ rel, ann.constRel? c = some rel → rel.result.irrP (prof.inst us) = false) →
+      (∀ shape, elimShape? p c = some shape → erasedMinors p shape = false) →
       TermC p ann prof bs (.const c us)
   /-- C0 at a λ (C6 is `TermS.lam`'s). -/
   | lam {bs : List Rel} {b : Binder} {d t : Term} :
@@ -128,12 +135,16 @@ inductive TermC (p : Program) (ann : Ann) (prof : Profile) : List Rel → Term �
   | natLit {bs : List Rel} {n : Nat} : TermC p ann prof bs (.natLit n)
   | strLit {bs : List Rel} {s : String} : TermC p ann prof bs (.strLit s)
 
-/-- The same facts over the rest of an application spine (`Check.rest`). -/
+/-- The same facts over the rest of an application spine (`Check.rest`): a constant head has C5
+(its spine's facts are `HeadC`'s), any other head its term's facts. -/
 inductive SpineC (p : Program) (ann : Ann) (prof : Profile) : List Rel → Term → Prop
   | app {bs : List Rel} {f a : Term} {m : Mode} {r : Rel} :
       SpineC p ann prof bs f → (r.irrP prof = false → TermC p ann prof bs a) →
       SpineC p ann prof bs (.app f a m r)
-  | head {bs : List Rel} {t : Term} : (∀ f a m r, t ≠ .app f a m r) →
+  | const {bs : List Rel} {c : CId} {us : List Ixon.Univ} :
+      (∀ rel, ann.constRel? c = some rel → rel.result.irrP (prof.inst us) = false) →
+      SpineC p ann prof bs (.const c us)
+  | head {bs : List Rel} {t : Term} : (∀ f a m r, t ≠ .app f a m r) → (∀ c us, t ≠ .const c us) →
       TermC p ann prof bs t → SpineC p ann prof bs t
 
 end
@@ -288,6 +299,21 @@ private theorem minorBinders_nilC (k : CId) (j : Nat) (qc : Profile) :
   | _, [], [], _, _ => ⟨fun _ _ _ hb => by simp at hb, fun _ hn _ => by simp at hn⟩
   | _, _ :: _, [], _, _ => ⟨fun _ _ _ _ hc => by simp at hc, fun _ hn _ => by simp at hn⟩
 
+private theorem partialElim_nilC (shape : ElimShape) (errs : List RelError)
+    (e : partialElim ctx shape errs = []) : errs = [] ∧ erasedMinors ctx.p shape = false := by
+  unfold partialElim at e
+  split at e
+  · cases e
+  · next h => exact ⟨e, by simpa using h⟩
+
+private theorem bareHead_nilC (c : CId) (us : List Ixon.Univ) (errs : List RelError)
+    (e : bareHead ctx c us errs = []) :
+    ∀ shape, elimShape? ctx.p c = some shape → erasedMinors ctx.p shape = false := by
+  intro shape hs
+  unfold bareHead at e
+  rw [hs] at e
+  exact (partialElim_nilC ctx shape _ e).2
+
 private theorem knownHead_nilC (errs : List RelError) (c : CId) (us : List Ixon.Univ)
     (args : List Term.Arg) (e : knownHead ctx errs c us args = []) :
     (∀ rel, ctx.ann.constRel? c = some rel →
@@ -298,7 +324,7 @@ private theorem knownHead_nilC (errs : List RelError) (c : CId) (us : List Ixon.
   have htail : ∀ E : List RelError, (match elimShape? ctx.p c with
       | none => E
       | some shape =>
-        if args.length < shape.arity then E else
+        if args.length < shape.arity then partialElim ctx shape E else
         (shape.minors.foldl (init := match args[shape.major]? with
           | some (_, _, a) =>
             if a.irrP ctx.prof &&
@@ -322,7 +348,11 @@ private theorem knownHead_nilC (errs : List RelError) (c : CId) (us : List Ixon.
       dsimp only at hE
       by_cases har : args.length < shape.arity
       · simp only [har, ↓reduceIte] at hE
-        exact ⟨hE, fun shape' hs' har' => by rw [hs] at hs'; cases hs'; omega⟩
+        obtain ⟨hE', hpe⟩ := partialElim_nilC ctx shape E hE
+        exact ⟨hE', fun shape' hs' => by
+          rw [hs] at hs'
+          cases hs'
+          exact ⟨fun _ => hpe, fun har' => absurd har' (by omega)⟩⟩
       · simp only [har, ↓reduceIte] at hE
         obtain ⟨h₁, h₂⟩ := foldl_nil (P := fun (x : Nat × Nat × Nat) =>
             ∀ (minor : Term) (m : Mode) (a : Rel) (k : CId) (fields : List FieldClass),
@@ -362,7 +392,7 @@ private theorem knownHead_nilC (errs : List RelError) (c : CId) (us : List Ixon.
                   cases hr'
                   exact ⟨h₁, fun n hn hl => by simpa using h₂ n hn hl⟩)
           shape.minors _ hE
-        refine ⟨?_, fun shape' hs' _ => ?_⟩
+        refine ⟨?_, fun shape' hs' => ?_⟩
         · cases hm : args[shape.major]? with
           | none => rw [hm] at h₁; exact h₁
           | some x =>
@@ -374,8 +404,9 @@ private theorem knownHead_nilC (errs : List RelError) (c : CId) (us : List Ixon.
             · exact h₁
         · rw [hs] at hs'
           cases hs'
-          refine ⟨fun a ha hirr => ?_, fun pos j rule hmem minor m a k fields hpos hrc hrel =>
-            h₂ (pos, j, rule) hmem minor m a k fields hpos hrc hrel⟩
+          refine ⟨fun h => absurd h har, fun _ => ⟨fun a ha hirr => ?_,
+            fun pos j rule hmem minor m a k fields hpos hrc hrel =>
+              h₂ (pos, j, rule) hmem minor m a k fields hpos hrc hrel⟩⟩
           rw [ha] at h₁
           obtain ⟨_, _, a⟩ := a
           dsimp only at h₁ hirr
@@ -431,7 +462,8 @@ private theorem term_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
     exact .var (varRule_nilC ctx bs errs i e)
   | bs, errs, .const c us, e => by
     unfold term at e
-    exact .const (constHead_nilC ctx c us errs e)
+    exact .const (constHead_nilC ctx c us errs (bareHead_constHead ctx c us errs e))
+      (bareHead_nilC ctx c us errs e)
   | bs, errs, .lam b d t, e => by
     unfold term at e
     rcases hl : lamRule ctx errs b with ⟨errs', enter⟩
@@ -500,10 +532,10 @@ private theorem rest_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
       exact .app (rest_nilC' bs _ f h₅) fun _ => ha
   | bs, errs, .var i, e => by
     unfold rest at e
-    exact .head (fun _ _ _ _ h => by cases h) (.var (varRule_nilC ctx bs errs i e))
+    exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) (.var (varRule_nilC ctx bs errs i e))
   | bs, errs, .const c us, e => by
     unfold rest at e
-    exact .head (fun _ _ _ _ h => by cases h) (.const (constHead_nilC ctx c us errs e))
+    exact .const (constHead_nilC ctx c us errs e)
   | bs, errs, .lam b d t, e => by
     unfold rest at e
     rcases hl : lamRule ctx errs b with ⟨errs', enter⟩
@@ -513,7 +545,7 @@ private theorem rest_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
     | true =>
       simp only [↓reduceIte] at e
       have h₁ := (term_nil ctx (b.rel :: bs) errs' t e).1
-      exact .head (fun _ _ _ _ h => by cases h)
+      exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h)
         (.lam (lamRule_nilC ctx errs b (by rw [hl]; exact h₁)) (term_nilC' (b.rel :: bs) errs' t e))
     | false =>
       simp only [Bool.false_eq_true, ↓reduceIte] at e
@@ -527,20 +559,20 @@ private theorem rest_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
     have h₁ := (term_nil ctx (r :: bs) _ b e).1
     by_cases hr : r.irrP ctx.prof = true
     · simp only [hr, ↓reduceIte] at h₁
-      exact .head (fun _ _ _ _ h => by cases h)
+      exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h)
         (.letE (letRule_nilC ctx errs c r h₁) (fun h => by rw [hr] at h; cases h) hb)
     · simp only [hr, Bool.false_eq_true, ↓reduceIte] at h₁
       have hv := term_nilC' bs _ v h₁
       have h₃ := (term_nil ctx bs _ v h₁).1
-      exact .head (fun _ _ _ _ h => by cases h) (.letE (letRule_nilC ctx errs c r h₃) (fun _ => hv) hb)
+      exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) (.letE (letRule_nilC ctx errs c r h₃) (fun _ => hv) hb)
   | bs, errs, .proj s i e', e => by
     unfold rest at e
     have h₁ := (term_nil ctx bs _ e' e).1
-    exact .head (fun _ _ _ _ h => by cases h) (.proj (projRule_nilC ctx errs s i h₁) (term_nilC' bs _ e' e))
-  | bs, errs, .sort u, _ => .head (fun _ _ _ _ h => by cases h) .sort
-  | bs, errs, .pi b res d c, _ => .head (fun _ _ _ _ h => by cases h) .pi
-  | bs, errs, .natLit n, _ => .head (fun _ _ _ _ h => by cases h) .natLit
-  | bs, errs, .strLit s, _ => .head (fun _ _ _ _ h => by cases h) .strLit
+    exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) (.proj (projRule_nilC ctx errs s i h₁) (term_nilC' bs _ e' e))
+  | bs, errs, .sort u, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .sort
+  | bs, errs, .pi b res d c, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .pi
+  | bs, errs, .natLit n, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .natLit
+  | bs, errs, .strLit s, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .strLit
 
 end
 
@@ -699,6 +731,10 @@ structure Canonical (p : Program) (ann : Ann) (ch : Checked) : Prop where
     p.table.resolveOf c = some (.csimp g us thm) → erasedParams d.type = []
   reads : ∀ c ∈ ch.reached, ReadsOk p ann c
   forwards : ∀ c ∈ ch.reached, ForwardOk p c
+  /-- A `csimp` subject's target is no eliminator with a rule for a constructor that writes a
+  field erased (`redirectsErased?`: its minors would meet no C3 check). -/
+  redirects : ∀ c ∈ ch.reached, ∀ g us thm, p.table.resolveOf c = some (.csimp g us thm) →
+    ∀ shape, elimShape? p g = some shape → erasedMinors p shape = false
   /-- Every reached constant has a record, and its run bodies' and rules' tags are canonical. -/
   reachedRecord : ∀ c ∈ ch.reached, (ann.constRel? c).isSome = true
   tags : ∀ c ∈ ch.reached,
@@ -824,7 +860,7 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
   unfold checkCanonical at h
   dsimp only at h
   simp only [List.append_eq_nil_iff] at h
-  obtain ⟨⟨⟨hread, hfwd⟩, hhdr⟩, hokE⟩ := h
+  obtain ⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hokE⟩ := h
   split at hokE
   · rename_i hall
     simp only [Bool.and_eq_true, List.all_eq_true] at hall
@@ -832,7 +868,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
     have hhdr' := List.flatMap_eq_nil_iff.1 hhdr
     have hread' := List.filterMap_eq_nil_iff.1 hread
     have hfwd' := List.filterMap_eq_nil_iff.1 hfwd
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    have hred' := List.filterMap_eq_nil_iff.1 hred
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- the constant records
     · intro c cr hcr
       have hx := hconsts (c, cr) (NatMap.mem_toList hcr)
@@ -962,6 +999,17 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
               · cases hi'
             · cases hg
             · cases hg
+    -- no csimp redirect to an eliminator whose minors C3 must see
+    · intro c hc g us thm hres shape hs
+      have hn := Option.map_eq_none_iff.1 (hred' c hc)
+      unfold redirectsErased? at hn
+      rw [hres] at hn
+      dsimp only at hn
+      rw [hs] at hn
+      dsimp only at hn
+      split at hn
+      · cases hn
+      · next hfalse => simpa using hfalse
     -- every reached constant has a record
     · intro c hc
       have hx := hreached c hc
@@ -1056,7 +1104,7 @@ private theorem alwaysIrr_irrP {r : Rel} (h : r.alwaysIrr = true) (q : Profile) 
   rfl
 
 /-- A parameter written erased has a class irrelevant at every instance. -/
-theorem param_erased_irr {p : Program} {ann : Ann} {c : CId} {cr : ConstRel} {d : Decl}
+theorem param_erased_irr {p : Program} {c : CId} {cr : ConstRel} {d : Decl}
     (hc : ConstCanon p c cr) (hd : p.decl? c = some d) {i : Nat} (hi : i ∈ erasedParams d.type) :
     ∃ r, cr.params[i]? = some r ∧ r.alwaysIrr = true := by
   obtain ⟨d', hd', hlen, htag, -, -, -⟩ := hc
@@ -1101,12 +1149,12 @@ theorem field_erased_dropped {p : Program} {ann : Ann} {k : CId} {kr : CtorRel}
 
 /-- The caller's side: a constant head's argument at a parameter written erased is irrelevant at
 every instance (C2 with `param_erased_irr`). -/
-theorem arg_erased_irr {p : Program} {ann : Ann} {prof : Profile} {c : CId} {us : List Ixon.Univ}
+theorem arg_erased_irr {p : Program} {prof : Profile} {c : CId} {us : List Ixon.Univ}
     {cr : ConstRel} {d : Decl} {args : List Term.Arg}
-    (hc : ConstCanon p c cr) (hd : p.decl? c = some d) (hcr : ann.constRel? c = some cr)
+    (hc : ConstCanon p c cr) (hd : p.decl? c = some d)
     (hargs : ParamsC prof (prof.inst us) args cr.params) {i : Nat} (hi : i ∈ erasedParams d.type)
     {a : Term.Arg} (ha : args[i]? = some a) : a.2.2.irrP prof = true := by
-  obtain ⟨r, hr, hirr⟩ := param_erased_irr (ann := ann) hc hd hi
+  obtain ⟨r, hr, hirr⟩ := param_erased_irr hc hd hi
   rw [← paramsC_getElem hargs ha hr]
   exact alwaysIrr_irrP hirr _
 

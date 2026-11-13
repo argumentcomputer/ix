@@ -892,6 +892,29 @@ Nested blocks (`Tree | node (O Tree)`) are stored as mutual blocks with
 auxiliary types and are refused on the same checks (C3 at a rule's hypothesis
 call, the forwarding clause on the auxiliary recursor).
 
+**An eliminator away from a saturated spine (2026-11-13).** C3 sees a minor
+only at a saturated eliminator spine. An eliminator applied to fewer
+arguments than its arity (passed on, `let`-bound, the argument of a β-redex,
+a definition's value) or bare receives its minors later at a variable head
+(the eighth route: through the certified kernel, refused on the byte path only
+by Stage A), and a `csimp` redirect to a `case` key (a target the table admits;
+a raw recursor it refuses) hands its callers' minors to the eliminator through
+no walked term (the ninth); an η-short minor over a field written erased then
+met no check, and the object returned a wrong constructor. C3 now refuses, at a relevant position of a
+walked term, an eliminator with a rule for a constructor that writes a field
+erased (`Check.erasedMinors`) unless it heads a saturated spine
+(`Check.partialElim`, in `knownHead` and on a bare constant, `bareHead`), and
+`checkCanonical` refuses a `csimp` redirect to one
+(`Check.Canonical.redirectsErased?`). Every other way an eliminator meets its
+minors goes through a walked term (read, not run): an `eqn` body is a
+runtime key, walked as a definition's value is (the η-reduced definition was run); a constructor, projection or closure can carry the eliminator
+only after a walked term built it; an over-applied spine is saturated. A
+mutual or nested block's recursor is an eliminator like any other (run at a
+mutual block's second recursor), its rules passing a field written erased only
+to the minor they dispatch (the forwarding clause), which C3 checks at the
+user's call. The tests are in `tests-recheck`
+(`ErasedPartial`).
+
 **Erasure** then:
 - replaces irrelevant arguments with □ but keeps every binder slot
   (dropping parameters of globals is a later Anf worker/wrapper pass), and

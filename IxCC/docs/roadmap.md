@@ -1116,6 +1116,36 @@ and IxCC never checks that a stored rule has the kernel's generated shape, so
 P1 may use only what the forwarding clause decides of the rule as stored
 (`ForwardOk`), or a shape check of our own.
 
+**Two more routes, found by writing P1's statement (2026-11-13).** C3 compares
+minors with constructors only at a saturated eliminator spine. An eliminator
+partially applied or bare, its minors supplied later at a variable head (the
+eighth route), or reached through a `csimp` redirect to a `case` key (the
+ninth), met no check, and an η-short minor over a field written erased
+compiled to an object returning constructor 0 where the program means
+constructor 1, SrcEval returning the marker. The eighth passes the certified
+kernel; `Recheck.run` accepted both; on the byte path only Stage A refused the
+eighth (next paragraph). So before this check the planned P1 was false for
+programs every check accepted. C3 now refuses such an eliminator away from a
+saturated spine (`Check.partialElim`, closing the eighth) and `checkCanonical`
+a `csimp` redirect to one (`redirectsErased?`, closing the ninth); the facts are
+in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
+`Canonical.redirects`). [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the nine routes; P1's statements, checked against the evaluator on the
+erased-misuse programs and every registered root, come next.
+
+**Open capability item: no program with a constructor field written erased can
+be produced (since at least 2026-11-13).** The kernel annotator's constructor
+record keeps a field its type writes erased (`CtorRel` `keep`) while its
+parameter classes drop it (`ConstRel` `proof always` at that parameter), so
+`checkCanonical` calls every such annotation non-canonical and `produce`
+refuses the program; honest programs with such a field compile only with a
+hand-made certificate, and the byte-level verifiers' Stage A (equality with the
+annotator) refuses those. This is conservative, and it is what refused route 8
+on the byte path before its check: making the annotator canonical there would
+have opened that route on the byte path. Fixing the annotator is now safe
+(route 8 is refused by C3), and it is the order to keep: a capability widened
+only after the check that it needs.
+
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
 resource context in the equations sidecar (the profile and the checked
