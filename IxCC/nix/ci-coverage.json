@@ -1752,6 +1752,7 @@
   "IxCCGrounding.CaseBlind",
   "IxCCGrounding.CaseCheck",
   "IxCCGrounding.CaseFire",
+  "IxCCGrounding.CaseLevels",
   "IxCCGrounding.Check",
   "IxCCGrounding.Direct.Check",
   "IxCCGrounding.Direct.Eq",
@@ -1776,16 +1777,16 @@
   "IxCCGrounding.Relation",
   "IxCCGrounding.Root",
   "IxCCGrounding.RootCheck",
+  "IxCCGrounding.RootInst",
   "IxCCGrounding.Runs",
   "IxCCGrounding.Subst",
   "IxCCGrounding.Support",
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "dcfe005edf93d0cc7428fec97d65fcc6499e28e067f4dc8438c4947445dee77b",
- "grounding_axiom_count": 209,
- "baseline":
- "the parameter total (Anf.maxParamTotal) and the zero-RC route's check (10 exact axiom assertions in Fences/OwnParams.lean)",
+ "c55b83d154a6e52d48115044c8a0596e0a6cbbdcc9c7a5046cb6bad84d734e93",
+ "grounding_axiom_count": 225,
+ "baseline": "step A: case entries over level-polymorphic families (GR14)",
  "axiom_sha256":
  "ed9352875d578e70771a5a265fe9e59a47b8beb8f5ec22a9eeb14d054b8d8b53",
  "axiom_count": 6644}
