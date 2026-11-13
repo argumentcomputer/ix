@@ -1202,6 +1202,18 @@ constructor per inductive and index stays a hypothesis, discharged by
 [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
 has the class and the six facts. P1's statements on these checks come next.
 
+**The eleventh route: a special head over-applied (2026-11-13).** Stating P1's
+E7 case at a position written erased (the function value must ignore the
+argument) found that `readsErased?` compared a special head's positions written
+erased with those the head reads, not with its arity. `Quot.lift` reads only its
+function and its quotient, and its stored type is not checked on the recheck
+path, so below the kernel a `Quot.lift` with a seventh Π written erased,
+over-applied, passed every check and `Recheck.run`: its object returned `c₀`
+where the program means `c₂`, and SrcEval the marker. `readsAt` now reads every
+position at or past a special head's arity, and L1 gains `erased_lt_arity`
+(engineer PB; the other special heads, harmless or refused before, are asserted
+in `tests-recheck`'s `ErasedArity`).
+
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor
 record keeps a field its type writes erased (`CtorRel` `keep`) while its
