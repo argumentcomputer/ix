@@ -1290,8 +1290,8 @@ end ConclusionsAGp
 `RelV.clo`'s environment related at the members of the λ's domain, the walks' closure branch: the
 landed theorems that changed keep the sets above) -/
 
-/-- info: 'IxCC.Grounding.cloShapeB_lam' depends on axioms: [propext] -/
+/-- info: 'IxCC.Grounding.cloShapeB_lam' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.cloShapeB_lam
 
-/-- info: 'IxCC.Grounding.cloSite?_spec' depends on axioms: [propext] -/
+/-- info: 'IxCC.Grounding.cloSite?_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.cloSite?_spec
