@@ -2153,10 +2153,27 @@ def f19Cases : List Case := [
     verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 
+/-! ### Repair M: a call of a constant the program does not define is a refusal -/
+
+def callAbsent := mem 490
+def callPresent := mem 492
+
+def pM : Prog := prog [
+  (callAbsent, body [par] (app (.const (mem 491) .val) [v 0] .leaf) .shared .leaf),
+  (callPresent, body [par] (app (.const lenR .val) [v 0] .leaf) .shared .leaf)]
+
+def mCases : List Case := [
+  -- REPAIR M: accepted as landed (`unknownCall`); the run is stuck
+  { label := "M a call of a constant the program does not define", P := pM, seed := callAbsent, inp := oneList,
+    toCheck := [callAbsent], verdict := .refuse "does not define", run := [(0, .valOrOof), (1, .stuck)] },
+  { label := "M control: the same call of a constant it defines", P := pM, seed := callPresent, inp := oneList,
+    toCheck := [callPresent], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
+
+
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
     f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases ++
-    oCases ++ pCases ++ f19Cases
+    oCases ++ pCases ++ f19Cases ++ mCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
@@ -2169,7 +2186,7 @@ def run : IO UInt32 := do
   IO.println "== Part 2: the findings"
   for c in findingCases do runCase t c
   try finding1b t false catch e => check1 t "F1b" false s!"error: {e}"
-  try finding6 t true catch e => check1 t "F6" false s!"error: {e}"
+  try finding6 t false catch e => check1 t "F6" false s!"error: {e}"  -- REPAIR M: true as landed
   finding14ext t
   finding4oracle t
   let s ← t.get

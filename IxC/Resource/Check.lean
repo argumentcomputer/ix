@@ -12,12 +12,15 @@ seed's run can reach none of `runR`'s four violations: it **accepts**,
 runs out. Nothing about it is proved: its soundness, `CheckSound` (accept gives
 `ModeSafe`), is left to prove.
 
+* **Reading.** Every record of the closure has a complete binder-data section
+  (`Reading.complete`), and the whole closure is read as a run program, with the
+  kernel as class oracle (`oracleClassifier`); a closure that does not read is
+  refused, or declined at an oracle limit.
 * **Fast path.** A closure whose every record carries only default modes, with
-  no run table, is accepted without reading it (`DefaultOk`).
-* **Otherwise** it reads, with the kernel as class oracle (`oracleClassifier`),
-  every constant of a record with a non-default mode and every constant that
-  references one, with the interfaces they call, and runs an abstract
-  interpretation of `runR` on each run body: per binding whether it is live and
+  no run table, is then accepted without checking a body (`DefaultOk`).
+* **Otherwise** it runs, on each run body of a record with a non-default mode
+  or of a constant that references one, an abstract
+  interpretation of `runR`: per binding whether it is live and
   unique, shared or consumed, the regions a value may be confined to, the
   bindings a value may alias, whether a once binding has been called, whether a
   closure may only be called once; alternatives joined; skeletons compared at
@@ -562,7 +565,9 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
             | none => pure ()
           pure { f with cls := c }
       | none => unknownCall avs c
-    | none => unknownCall avs c
+    -- a constant the program does not define is a refusal: `runR` is stuck there, but the program
+    -- checked may stand for a larger one (finding 6; `Rules.repaired`'s r8, `absent = false`)
+    | none => refuseM "a call of a constant the program does not define"
 
 /-- A closure: its captures read, the unique ones transferred into it; its body
 checked as a call of its own, from a copy of the state; once-only if the body
@@ -781,8 +786,16 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
     | .ok true => pure ()
     | .ok false => nonDefault := nonDefault.push a
     | .error e => return .refuse s!"record {a}" s!"malformed modes: {e}"
-  if nonDefault.isEmpty && s.runTable.isNone then return .accept 0 true
   let cl := oracleClassifier env (ctorShapes rd) lim.oracle
+  -- the whole closure must read as a run program, on both paths, and that program is the one
+  -- checked (finding 6: as landed the fast path read nothing, and the slow path read only the
+  -- constants it checked and the interfaces they name, through a work list cut at `1 <<< 20`
+  -- iterations, a constant left unread being called as `unknownCall`); `readProg` repeats
+  -- `rd.complete`, which held above, so the closure's one completeness check is that refusal
+  let P ← match readProg s cl with
+    | .ok P => pure P
+    | .error e => return readFailure "the reading" e
+  if nonDefault.isEmpty && s.runTable.isNone then return .accept 0 true
   let rt ← match rd.runTable cl with
     | .ok rt => pure rt
     | .error e => return readFailure "the run table" e
@@ -801,35 +814,6 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
     let some c := s.store a | continue
     if touches a || c.refs.any touches || rt.any (fun (f, _) => f.block == a) then
       for r in refsOf a c do toCheck := toCheck.push r
-  -- their run definitions, then the interfaces they reach
-  let mut defs : Array (Ref × RunDef) := #[]
-  for r in toCheck do
-    match rd.readDef cl rt true r with
-    | .ok d => defs := defs.push (r, d)
-    | .error e => return readFailure (refName r) e
-  let mut todo : List Ref := []
-  for (_, d) in defs do
-    match d with
-    | .body _ _ _ _ t => todo := todo ++ termRefs (1 <<< 20) t
-    | .ind cs => todo := todo ++ cs.toList
-    | .caseDef k => todo := todo ++ [k.ind]
-    | _ => pure ()
-  for _ in [0:1 <<< 20] do
-    match todo with
-    | [] => break
-    | r :: rest =>
-      todo := rest
-      if defs.any (·.1 == r) then continue
-      match rd.readDef cl rt false r with
-      | .ok d =>
-        defs := defs.push (r, d)
-        match d with
-        | .ind cs => todo := todo ++ cs.toList
-        | .caseDef k => todo := todo ++ [k.ind]
-        | .ctor ind .. => todo := todo ++ [ind]
-        | _ => pure ()
-      | .error e => return readFailure (refName r) e
-  let P : Prog := { defs, nat := roleRef? s .nat }
   checkBodies lim P toCheck.toList
 
 /-- **The checker's soundness**, to prove: whatever it accepts is mode-safe
