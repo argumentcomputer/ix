@@ -161,8 +161,9 @@ theorem apply_clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {l
         rw [h0, lamR_zero] at hX
         exact not_pt_mem_piR_pos hvz hX
       have hYd : Y ∈ˢ Ad := lamR_dom_eq hr hvz hX ▸ hY
-      refine ⟨φ, lps, Γ, σ, ρk, Ak, Bk, G Y, hlv, relEnv_lift hs henv, ?_, hbody, ?_, hG Y hYd,
-        app_lamR_pos hr hYd⟩
+      -- the closure's environment is related at a member of its domain: `Y`
+      refine ⟨φ, lps, Γ, σ, ρk, Ak, Bk, G Y, hlv, relEnv_lift hs (henv Ad Y hAd hYd), ?_, hbody, ?_,
+        hG Y hYd, app_lamR_pos hr hYd⟩
       · exact .cons (by rw [push_tail]; exact hctx) (by rw [push_tail]; exact hAd) hYd
       · intro c hc
         exact hcs c (by simp [Term.mentions, hc])
