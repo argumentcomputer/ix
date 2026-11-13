@@ -41,4 +41,7 @@ import IxCCGrounding.WordLe
 import IxCCGrounding.WordFits
 import IxCCGrounding.WordForm
 import IxCCGrounding.WordBridge
+import IxCCGrounding.WordCanon
+import IxCCGrounding.WordAccel
+import IxCCGrounding.WordFire
 import IxCCGrounding.Fence

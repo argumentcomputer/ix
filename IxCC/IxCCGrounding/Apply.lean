@@ -61,6 +61,7 @@ theorem head_mem (M : Model V env) {p : Program} {κ : CId → KKey} {lpsOf : CI
   | cases _ _ hf => exact mem_key M hf φ ρ
   | recr _ _ hf => exact mem_key M hf φ ρ
   | prim hf _ _ => exact mem_key M hf φ ρ
+  | word _ _ hf _ _ => exact mem_key M hf φ ρ
 
 /-- Arguments that fit a telescope, applied to a member of its denotation, land in the remainder's. -/
 theorem fits_app_mem {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat}

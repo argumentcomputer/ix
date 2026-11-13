@@ -1330,17 +1330,23 @@ theorem recClassB_noParams {p : Program} {env : KEnv} {κ : CId → KKey} {r : C
     · cases h
   · cases h
 
+/-- **No fixed-width word entry** (stage W1) in `S`: the word clause of every family landed before
+the word case (step W), whose model fact `wordAccel_of_eqns` they do not read. -/
+def NoWord (p : Program) (S : CId → Prop) : Prop :=
+  ∀ c w op thm, S c → p.table.resolveOf c ≠ some (.word w op thm)
+
 /-- **The faithfulness clauses** (the spike's `Faith`, with `lvls` added), over a recursor clause
-`Recs`: `Faith` takes `RecFacts`; as first landed it took `NoRecr` (`FaithWith.mono`). -/
-structure FaithWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+`Recs` and a word clause `Words`: `Faith` takes `RecFacts` and `NoWord`; as first landed it took
+`NoRecr` (`FaithWith.mono`); the word family takes its checked word facts (step W). -/
+structure FaithWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
     (lpsOf : CId → List Nat) (S : CId → Prop) : Prop where
   stored : ∀ c, S c → ∃ ci, env.find? (κ c) = some ci ∧ ci.toConstantVal.levelParams = lpsOf c
   lvls : ∀ c, S c → lvlsOf p c = (lpsOf c).length
   nodup : ∀ c, S c → (lpsOf c).Nodup
   noCsimp : ∀ c g us thm, S c → p.table.resolveOf c ≠ some (.csimp g us thm)
-  /-- No fixed-width word entry (stage W1): their model fact (`wordAccel_of_eqns`) is not yet in
-  the library, so a program whose relevant closure reaches one is outside the grounded fragment. -/
-  noWord : ∀ c w op thm, S c → p.table.resolveOf c ≠ some (.word w op thm)
+  /-- the word entries of `S` (`NoWord`: none, in every family landed before step W; the word
+  family: their checked facts) -/
+  words : Words
   /-- the recursors of `S` (`RecFacts`: each in an admitted class, with the checked shape; as
   first landed, `NoRecr`: none) -/
   recs : Recs
@@ -1379,12 +1385,18 @@ structure FaithWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
 /-- **`Faith` as first landed** (before G3): no constant of `S` is a recursor. -/
 abbrev FaithNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) : Prop :=
-  FaithWith (NoRecr p S) p env κ lpsOf S
+  FaithWith (NoRecr p S) (NoWord p S) p env κ lpsOf S
 
-theorem FaithWith.mono {A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
-    {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B) (hF : FaithWith A p env κ lpsOf S) :
-    FaithWith B p env κ lpsOf S :=
+theorem FaithWith.mono {A B W : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B) (hF : FaithWith A W p env κ lpsOf S) :
+    FaithWith B W p env κ lpsOf S :=
   { hF with recs := h hF.recs }
+
+/-- The word clause weakened (step W). -/
+theorem FaithWith.monoW {R A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B) (hF : FaithWith R A p env κ lpsOf S) :
+    FaithWith R B p env κ lpsOf S :=
+  { hF with words := h hF.words }
 
 /-- `Nat` and its constructors are stored as the literal reading needs. -/
 structure NatBasis (env : KEnv) : Prop where
@@ -1405,10 +1417,11 @@ def CaseFacts (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) 
 
 /-- **Every decidable fact the root theorem consumes** about the program, the kernel's reading
 and the certificate's annotation, on a set `S` of constants, over a recursor clause `Recs`
-(`GroundFacts` takes `RecFacts`, decided by the check; as first landed, `NoRecr`). -/
-structure GroundFactsWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+and a word clause `Words` (`GroundFacts` takes `RecFacts` and `NoWord`, decided by the check; as
+first landed, `NoRecr`). -/
+structure GroundFactsWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
     (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop where
-  faith : FaithWith Recs p env κ lpsOf S
+  faith : FaithWith Recs Words p env κ lpsOf S
   natBasis : NatBasis env
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
     (∃ d, EqnShape env κ c thm d) ∧
@@ -1427,12 +1440,18 @@ structure GroundFactsWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId →
 /-- **`GroundFacts` as first landed** (before G3): no constant of `S` is a recursor. -/
 abbrev GroundFactsNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
-  GroundFactsWith (NoRecr p S) p env κ lpsOf ann S
+  GroundFactsWith (NoRecr p S) (NoWord p S) p env κ lpsOf ann S
 
-theorem GroundFactsWith.mono {A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+theorem GroundFactsWith.mono {A B W : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (h : A → B)
-    (hG : GroundFactsWith A p env κ lpsOf ann S) : GroundFactsWith B p env κ lpsOf ann S :=
+    (hG : GroundFactsWith A W p env κ lpsOf ann S) : GroundFactsWith B W p env κ lpsOf ann S :=
   { hG with faith := hG.faith.mono h }
+
+/-- The word clause weakened (step W). -/
+theorem GroundFactsWith.monoW {R A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (h : A → B)
+    (hG : GroundFactsWith R A p env κ lpsOf ann S) : GroundFactsWith R B p env κ lpsOf ann S :=
+  { hG with faith := hG.faith.monoW h }
 
 
 end IxCC.Grounding
