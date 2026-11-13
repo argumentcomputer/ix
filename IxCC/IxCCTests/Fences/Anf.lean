@@ -1720,6 +1720,9 @@ expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Anf.WalkProof.fold_lits' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.WalkProof.fold_lits
 
+/-- info: 'IxCC.Anf.WalkProof.fold_some' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.WalkProof.fold_some
+
 /-- info: 'IxCC.Anf.WalkProof.lvl_top' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.WalkProof.lvl_top
 

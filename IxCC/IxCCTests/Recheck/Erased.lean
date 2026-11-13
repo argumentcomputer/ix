@@ -68,24 +68,35 @@ def ingest (label : String) (env : Env) (roots : List (String × IxCC.Ixon.Addre
   let art ← ofErr s!"{label}: Recheck.run" (Recheck.run cfg inp.program cert)
   return { inp, cfg, cert, art }
 
+/-- What a part does with each program it builds, besides its assertions: nothing in `tests-recheck`
+(`run`'s default); `tests-p1-twin` (`IxCCTests.Recheck.P1Twin`) runs every refused program through its
+instrumented evaluator and every accepted one through the evaluator and the mutant pass. -/
+structure Hooks where
+  /-- A program the front end refuses at relevance, its table built, before the verdict is asserted. -/
+  refused : String → Src.Program → Src.Relevance.Ann → IO Unit := fun _ _ _ => pure ()
+  /-- A program `Recheck.run` accepts: its artifact, annotation and root. -/
+  accepted : String → Recheck.Artifact → Src.Relevance.Ann → Src.CId → IO Unit := fun _ _ _ _ => pure ()
+
 /-- The program with this table certificate and annotation compiles, and its object and SrcEval
 return `expected` at `main`. -/
-def accepted (a : Assert) (label : String) (cfg : Recheck.Config) (P : Src.Program)
+def accepted (a : Assert) (hk : Hooks) (label : String) (cfg : Recheck.Config) (P : Src.Program)
     (tc : Src.Table.TableCert) (ann : Src.Relevance.Ann) (main : Src.CId) (expected : Sem.Obs) : IO Unit := do
   let cert ← ofErr s!"{label}: certificate" (mkCert cfg P tc ann)
   let art ← ofErr s!"{label}: Recheck.run" (Recheck.run cfg P cert)
+  hk.accepted label art ann main
   expect a (objMain art == some expected) s!"{label}: the object returns {repr (objMain art)}"
   expect a (srcMain art main == some expected) s!"{label}: SrcEval returns {repr (srcMain art main)}"
 
 /-- The front end refuses it with a message containing every needle; so does `Recheck.run` on a
 certificate made without the canonical check, where tiers S and C let one be made. -/
-def refused (a : Assert) (label : String) (cfg : Recheck.Config) (P : Src.Program)
+def refused (a : Assert) (hk : Hooks) (label : String) (cfg : Recheck.Config) (P : Src.Program)
     (tc : Src.Table.TableCert) (ann : Src.Relevance.Ann) (needles : List String) : IO String := do
   let table ← match Src.Table.ofCert cfg.table P tc with
     | .ok t => pure t
     | .error m => throw (IO.userError s!"{label}: the table refused it: {m}")
   let Pt := { P with table }
   let mut shown := ""
+  hk.refused label Pt ann
   match Src.Recheck.annotation Pt ann with
   | .ok _ => expect a false s!"{label}: accepted by Src.Recheck.annotation"
   | .error (.relevance errs) =>
@@ -183,14 +194,14 @@ def fProg (label : String) (fc : BinderContract) : IO (Honest × Src.CId × Src.
   let P := h.inp.program
   return (h, ← lookup P f "f", ← lookup P k "k", ← lookup P main "main")
 
-def valueAndCsimp (a : Assert) : IO (Array String) := do
+def valueAndCsimp (a : Assert) (hk : Hooks) : IO (Array String) := do
   let c₂ : Sem.Obs := .ctor 2 []
   let (h, f, k, main) ← fProg "own body" .erased
   let P := h.inp.program
   expect a (objMain h.art == some c₂ && srcMain h.art main == some c₂) "own body: the honest twin is not c₂"
   -- the value η-short under the erased parameter: `f := k`
   let some (.defn _ _ _ fTy _) := P.decl? f | throw (IO.userError "f")
-  let short ← refused a "own body, η-short under a parameter written erased" h.cfg
+  let short ← refused a hk "own body, η-short under a parameter written erased" h.cfg
     (P.setDecl f (.defn .defn .safe 0 fTy (.const k []))) h.cert.table (withNode h.cert.relevance (.value f) [])
     [s!"in the value of {P.short f}", "parameter 0 is written erased"]
   -- csimp f g thm, with `g : E → E → E := λ a b. a` (the `0` not written on `g`)
@@ -202,7 +213,7 @@ def valueAndCsimp (a : Assert) : IO (Array String) := do
   let P' := P'.setDecl g (.defn .defn .safe 0 (.pi {} {} eS rest) gVal)
   let ann := withNode (withConst h.cert.relevance P' g) (.value g) [.lam .rel .never, .lam .rel .never]
   let tc := { h.cert.table with resolve := (f, .csimp g thm) :: h.cert.table.resolve }
-  let redirect ← refused a "csimp redirect of a definition with a parameter written erased" h.cfg P' tc ann
+  let redirect ← refused a hk "csimp redirect of a definition with a parameter written erased" h.cfg P' tc ann
     [s!"({P.short f})", s!"the csimp redirect to {P'.short g}", "parameter 0 is written erased"]
   -- a lazy row or a word entry proposed for `f` is refused by the table
   let lazyTc := { h.cert.table with lazy := (f, 2) :: h.cert.table.lazy }
@@ -234,7 +245,7 @@ def valueAndCsimp (a : Assert) : IO (Array String) := do
   let ann := withNode (withConst h.cert.relevance P' g) (.value g)
     [.lam ((canonRel P' g).params.headD .rel) .never, .lam .rel .never]
   let tc := { h.cert.table with resolve := (f, .csimp g thm) :: h.cert.table.resolve }
-  accepted a "csimp to a target whose type writes its first parameter erased" h.cfg P' tc ann main c₂
+  accepted a hk "csimp to a target whose type writes its first parameter erased" h.cfg P' tc ann main c₂
   return #[short, redirect, "csimp to a target writing its parameter erased: accepted, c₂ (object and SrcEval)",
     "a lazy row, a word entry and an eqn entry (no resource context) proposed for f: refused by the table"]
 
@@ -263,7 +274,7 @@ def casesEnv (mc : BinderContract) : IO (Env × IxCC.Ixon.Address × List (Strin
   let (e, rs) := ctorRoots e en.ind en.ctors
   return (e, co, [("main", main)] ++ rs)
 
-def caseEntry (a : Assert) : IO (Array String) := do
+def caseEntry (a : Assert) (hk : Hooks) : IO (Array String) := do
   let c₂ : Sem.Obs := .ctor 2 []
   let (e, _, roots) ← casesEnv .many
   let h ← ingest "casesOn, nothing erased" e roots
@@ -290,7 +301,7 @@ def caseEntry (a : Assert) : IO (Array String) := do
   let tc := Src.Table.TableCert.ofTable table
   expect a (Recheck.checkCanonicalRelevance cfg inp tc ann) "casesOn with m₁ erased: Stage A refuses the annotator's annotation"
   expect a (tc.resolve.lookup coId == some .case) "casesOn with m₁ erased: no case entry"
-  let line ← refused a "a case entry whose type writes a minor erased (kernel-accepted)" cfg P tc ann needles
+  let line ← refused a hk "a case entry whose type writes a minor erased (kernel-accepted)" cfg P tc ann needles
   return #["casesOn control: accepted, c₂ (object and SrcEval)", line]
 
 /-! ## A recursor -/
@@ -311,7 +322,7 @@ def enumRec (blk : IxCC.Ixon.Address) (n : Nat) : Constant := Id.run do
   let r : Recursor := ⟨false, false, 1, 0, 0, 1, n.toUInt64, typ, (Array.range n).map rule⟩
   return ⟨.recr r, #[], refs, #[.var 0]⟩
 
-def recursor (a : Assert) : IO (Array String) := do
+def recursor (a : Assert) (hk : Hooks) : IO (Array String) := do
   let n := 4
   let (e, blk) := block (← loadBase) (simpleBlock ((Array.range n).map fun _ => #[]))
   let (e, recr) := store e (enumRec blk n)
@@ -336,7 +347,7 @@ def recursor (a : Assert) : IO (Array String) := do
   let mval := mapArg rId 2 (fun (x, m, _) => (x, m, Src.Rel.prf)) mval
   let Pi := Pi.setDecl mainId (.defn dk ds dl mty mval)
   let ann := withNode (withConst h.cert.relevance Pi rId) (.value mainId) mval.tagOrder
-  let line ← refused a "a recursor whose type writes a minor erased" h.cfg Pi h.cert.table ann
+  let line ← refused a hk "a recursor whose type writes a minor erased" h.cfg Pi h.cert.table ann
     [s!"({P.short rId})", "parameter 2 is written erased", "the recursor"]
   return #["recursor control: accepted, d₁ (object and SrcEval)", line]
 
@@ -385,7 +396,7 @@ def keyProg (label : String) (viaCase : Bool) :
 where
   expect' (cond : Bool) (msg : String) : IO Unit := unless cond do throw (IO.userError msg)
 
-def minors (a : Assert) (viaCase : Bool) : IO (Array String) := do
+def minors (a : Assert) (hk : Hooks) (viaCase : Bool) : IO (Array String) := do
   let route := if viaCase then "case entry" else "recursor"
   let (h, rId, mkId, main, minorPos, majorPos) ← keyProg s!"minors, {route}" viaCase
   expect a (objMain h.art == some (.ctor 1 []) && srcMain h.art main == some (.ctor 1 []))
@@ -406,7 +417,7 @@ def minors (a : Assert) (viaCase : Bool) : IO (Array String) := do
   let mut out := #[]
   for (body, expected, what) in [(Src.Term.var 0, Sem.Obs.ctor 2 [], "c"), (.var 2, .ctor 0 [], "a")] do
     let (P, v) := withMinor Pi (lam3 body)
-    accepted a s!"{route}: minor λ a (0 b) c. {what} on mk c₀ c₁ c₂" h.cfg P h.cert.table
+    accepted a hk s!"{route}: minor λ a (0 b) c. {what} on mk c₀ c₁ c₂" h.cfg P h.cert.table
       (withNode h.cert.relevance (.value main) v.tagOrder) main expected
     out := out.push s!"{route}: minor λ a (0 b) c. {what}, no field erased: accepted, {repr expected} (object and SrcEval)"
   -- field 1 written erased on `mk`, and the program's `mk c₀ c₁ c₂` passing □ for it
@@ -417,14 +428,14 @@ def minors (a : Assert) (viaCase : Bool) : IO (Array String) := do
   -- the η-short minor `useG3`, as the program has it
   let v := dropB mval
   let P := Pe.setDecl main (.defn dk ds dl mty v)
-  out := out.push (← refused a s!"{route}: an η-short minor over a field written erased" h.cfg P h.cert.table
+  out := out.push (← refused a hk s!"{route}: an η-short minor over a field written erased" h.cfg P h.cert.table
     (withNode annE (.value main) v.tagOrder)
     [s!"in the value of {P.short main}", s!"({P.short mkId})", "minor 0 does not bind field 1, which is written erased"])
   -- its honest twin: the minor binds the erased field with an erased λ
   let (P, v) := withMinor Pe (lam3 (.var 0))
   let v := dropB v
   let P := P.setDecl main (.defn dk ds dl mty v)
-  accepted a s!"{route}: minor λ a (0 b) c. c over field 1 written erased" h.cfg P h.cert.table
+  accepted a hk s!"{route}: minor λ a (0 b) c. c over field 1 written erased" h.cfg P h.cert.table
     (withNode annE (.value main) v.tagOrder) main (.ctor 2 [])
   return out.push s!"{route}: minor λ a (0 b) c. c, field 1 erased: accepted, c₂ (object and SrcEval)"
 
@@ -442,7 +453,7 @@ def quotAddrs (env : Env) : List (QuotKind × IxCC.Ixon.Address) :=
 /-- `main := Quot.lift.{1,1} E (Eq E) E idc h (Quot.mk.{1} E (Eq E) c₁)` (`c₁`), built on an
 ingested program that reads `Quot.lift`, `Quot.mk` and `Eq` (unchosen sidecar roots), with
 `Quot.lift`'s function or `Quot.mk`'s element written erased. -/
-def quot (a : Assert) : IO (Array String) := do
+def quot (a : Assert) (hk : Hooks) : IO (Array String) := do
   let env0 ← loadBase
   let qs := quotAddrs env0
   let some qty := qs.lookup .type | throw (IO.userError "no Quot in the base")
@@ -498,12 +509,12 @@ def quot (a : Assert) : IO (Array String) := do
     let ann := withNode (withNode ann (.value mainId) v.tagOrder) (.value idcId) [.lam .rel .never]
     (Q, ann)
   let (P0, ann0) := build false false
-  accepted a "Quot.lift idc h (Quot.mk r c₁)" h.cfg P0 h.cert.table ann0 mainId (.ctor 1 [])
+  accepted a hk "Quot.lift idc h (Quot.mk r c₁)" h.cfg P0 h.cert.table ann0 mainId (.ctor 1 [])
   let (P1, ann1) := build true false
-  let lift ← refused a "Quot.lift with its function written erased" h.cfg P1 h.cert.table ann1
+  let lift ← refused a hk "Quot.lift with its function written erased" h.cfg P1 h.cert.table ann1
     [s!"({P.short liftId})", "parameter 3 is written erased, but Quot.lift reads it"]
   let (P2, ann2) := build false true
-  let mk ← refused a "Quot.mk with its element written erased" h.cfg P2 h.cert.table ann2
+  let mk ← refused a hk "Quot.mk with its element written erased" h.cfg P2 h.cert.table ann2
     [s!"({P.short mkId})", "parameter 2 is written erased, but Quot.mk reads it"]
   -- `Quot.lift` made a root: its instance at the empty profile, where `β : Sort 0` and its
   -- function is a proof, arrives without C5 at it; `checkCanonical`'s `appliedAt` alone refuses it
@@ -527,7 +538,7 @@ def quot (a : Assert) : IO (Array String) := do
 
 /-- `main : Nat := Nat.succ 4` and `main : Nat := Nat.add 2 3` (`5`) on an ingested program
 (the pinned constants are read with it), with the field or the first parameter written erased. -/
-def pinned (a : Assert) : IO (Array String) := do
+def pinned (a : Assert) (hk : Hooks) : IO (Array String) := do
   let (e, en) := addEnum (← loadBase) 3
   let (e, main) := store e ⟨defn E (.ref 1 #[]), #[], #[en.ind, en.ctors[1]!], #[]⟩
   let (e, rs) := ctorRoots e en.ind en.ctors
@@ -551,9 +562,9 @@ def pinned (a : Assert) : IO (Array String) := do
     let Q := P.setDecl mainId (.defn .defn .safe 0 natT v)
     (Q, withNode (withCtor h.cert.relevance Q succId) (.value mainId) v.tagOrder)
   let (P0, ann0) := succ false
-  accepted a "Nat.succ 4" h.cfg P0 h.cert.table ann0 mainId five
+  accepted a hk "Nat.succ 4" h.cfg P0 h.cert.table ann0 mainId five
   let (P1, ann1) := succ true
-  let s ← refused a "Nat.succ with its field written erased" h.cfg P1 h.cert.table ann1
+  let s ← refused a hk "Nat.succ with its field written erased" h.cfg P1 h.cert.table ann1
     [s!"({P.short succId})", "parameter 0 is written erased, but the constructor reads it"]
   let tc := if h.cert.table.resolve.any (·.1 == addId) then h.cert.table
     else { h.cert.table with resolve := (addId, .prim .add) :: h.cert.table.resolve }
@@ -567,15 +578,15 @@ def pinned (a : Assert) : IO (Array String) := do
     let Q := P.setDecl mainId (.defn .defn .safe 0 natT v)
     (Q, withNode (withConst h.cert.relevance Q addId) (.value mainId) v.tagOrder)
   let (P2, ann2) := add false
-  accepted a "Nat.add 2 3" h.cfg P2 tc ann2 mainId five
+  accepted a hk "Nat.add 2 3" h.cfg P2 tc ann2 mainId five
   let (P3, ann3) := add true
-  let ad ← refused a "Nat.add with parameter 0 written erased" h.cfg P3 tc ann3
+  let ad ← refused a hk "Nat.add with parameter 0 written erased" h.cfg P3 tc ann3
     [s!"({P.short addId})", "parameter 0 is written erased, but the primitive Nat.add reads it"]
   return #["Nat.succ 4 and Nat.add 2 3: accepted, 5 (object and SrcEval)", s, ad]
 
-def run (a : Assert) : IO (Array String) := do
-  return (← valueAndCsimp a) ++ (← caseEntry a) ++ (← recursor a) ++ (← minors a false) ++
-    (← minors a true) ++ (← quot a) ++
-    (← pinned a)
+def run (a : Assert) (hk : Hooks := {}) : IO (Array String) := do
+  return (← valueAndCsimp a hk) ++ (← caseEntry a hk) ++ (← recursor a hk) ++ (← minors a hk false) ++
+    (← minors a hk true) ++ (← quot a hk) ++
+    (← pinned a hk)
 
 end IxCCTests.Recheck.Erased

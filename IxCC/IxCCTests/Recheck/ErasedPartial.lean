@@ -51,7 +51,7 @@ def viaLet (dom : Src.Term) (n : Nat) (v : Src.Term) : Src.Term :=
     (Src.Term.mkApps (.var 0) (args.drop n))
 
 /-- Below the kernel, at `Key.rec` and at `Key.casesOn`'s `case` entry. -/
-def below (a : Assert) (viaCase : Bool) : IO (Array String) := do
+def below (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (viaCase : Bool) : IO (Array String) := do
   let route := if viaCase then "case entry" else "recursor"
   let (h, eId, mkId, main, _, majorPos) ← keyProg s!"partial, {route}" viaCase
   let Pi ← installed h
@@ -60,7 +60,7 @@ def below (a : Assert) (viaCase : Bool) : IO (Array String) := do
   let mut out := #[]
   -- honest: the eliminator partially applied, by a β-redex and by a `let`
   for (what, v) in [("β-redex", viaBeta mty 1 mval), ("let", viaLet mty 1 mval)] do
-    accepted a s!"{route} partially applied ({what}), no field erased" h.cfg (Pi.setDecl main (.defn dk ds dl mty v))
+    accepted a hk s!"{route} partially applied ({what}), no field erased" h.cfg (Pi.setDecl main (.defn dk ds dl mty v))
       h.cert.table (withNode h.cert.relevance (.value main) v.tagOrder) main (.ctor 1 [])
     out := out.push s!"{route} partially applied ({what}), honest: accepted, c₁ (object and SrcEval)"
   -- field 1 of mk written erased, the major passing □ for it
@@ -70,19 +70,19 @@ def below (a : Assert) (viaCase : Bool) : IO (Array String) := do
   let annE := withCtor h.cert.relevance Pe mkId
   let v0 := dropB mval
   let P := Pe.setDecl main (.defn dk ds dl mty v0)
-  out := out.push (← refused a s!"{route} saturated, η-short minor over field 1 written erased (C3's η-short clause)"
+  out := out.push (← refused a hk s!"{route} saturated, η-short minor over field 1 written erased (C3's η-short clause)"
     h.cfg P h.cert.table (withNode annE (.value main) v0.tagOrder)
     [s!"in the value of {P.short main}", "minor 0 does not bind field 1, which is written erased"])
   for (what, v) in [("partially applied, a β-redex's argument", viaBeta mty 1 v0),
       ("bare, a β-redex's argument", viaBeta mty 0 v0), ("partially applied, let-bound", viaLet mty 1 v0)] do
     let P := Pe.setDecl main (.defn dk ds dl mty v)
-    out := out.push (← refused a s!"{route} {what}, η-short minor over field 1 written erased" h.cfg P
+    out := out.push (← refused a hk s!"{route} {what}, η-short minor over field 1 written erased" h.cfg P
       h.cert.table (withNode annE (.value main) v.tagOrder) [s!"in the value of {P.short main}", partialMsg])
   return out
 
 /-- A `csimp` redirect of `f.{u}` (with `Key.casesOn`'s type) to `Key.casesOn`, a `case` key:
 `main := f (λ _. E) (mk c₀ c₁ c₂) useG3`, saturated at `f`, which C3 does not see as an eliminator. -/
-def csimpCase (a : Assert) : IO (Array String) := do
+def csimpCase (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let (h, cId, mkId, main, _, majorPos) ← keyProg "csimp to a case key" true
   let Pi ← installed h
   let some (.defn dk ds dl mty mval) := Pi.decl? main | throw (IO.userError "main")
@@ -114,27 +114,27 @@ def csimpCase (a : Assert) : IO (Array String) := do
     let ann := withNode (withConst annB Pf f) (.value main) v.tagOrder
     let tc := { h.cert.table with resolve := (f, .csimp cId thm) :: h.cert.table.resolve }
     if erased then
-      out := out.push (← refused a "csimp f ↦ Key.casesOn, η-short minor over field 1 written erased" h.cfg Pf tc ann
+      out := out.push (← refused a hk "csimp f ↦ Key.casesOn, η-short minor over field 1 written erased" h.cfg Pf tc ann
         [s!"({Pf.short f})", s!"the csimp redirect to {Pf.short cId}",
          "an eliminator over a constructor that writes a field erased"])
     else
-      accepted a "csimp f ↦ Key.casesOn, no field erased" h.cfg Pf tc ann main (.ctor 1 [])
+      accepted a hk "csimp f ↦ Key.casesOn, no field erased" h.cfg Pf tc ann main (.ctor 1 [])
       out := out.push "csimp f ↦ Key.casesOn, honest: accepted, c₁ (object and SrcEval)"
   return out
 
 /-- The committed closure's `B.rec`, a mutual block's second recursor, partially applied
 (`viaBeta` after the motives): honest, and with `b1`'s field written erased below the kernel. -/
-def mutualBlock (a : Assert) : IO (Array String) := do
+def mutualBlock (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) : IO (Array String) := do
   let l ← IxCCTests.Recheck.ErasedBlocks.load "mainB"
   let some (.defn dk ds dl mty mval) := l.Pi.decl? l.main | throw (IO.userError "main")
   let v := viaBeta mty 2 mval
-  accepted a "B.rec partially applied, no field erased" l.cfg (l.Pi.setDecl l.main (.defn dk ds dl mty v)) l.tc
+  accepted a hk "B.rec partially applied, no field erased" l.cfg (l.Pi.setDecl l.main (.defn dk ds dl mty v)) l.tc
     (withNode l.ann (.value l.main) v.tagOrder) l.main (.ctor 1 [])
   let (Q, ann, _, _) ← IxCCTests.Recheck.ErasedBlocks.plant l [6] 0 []
   let some (.defn dk ds dl mty qv) := Q.decl? l.main | throw (IO.userError "main")
   let v := viaBeta mty 2 qv
   let Q := Q.setDecl l.main (.defn dk ds dl mty v)
-  let line ← refused a "B.rec partially applied, η-short minor over b1's field written erased" l.cfg Q l.tc
+  let line ← refused a hk "B.rec partially applied, η-short minor over b1's field written erased" l.cfg Q l.tc
     (withNode ann (.value l.main) v.tagOrder) [s!"in the value of {Q.short l.main}", partialMsg]
   return #["B.rec partially applied, honest: accepted, c₁ (object and SrcEval)", line]
 
@@ -148,7 +148,7 @@ def keyBlock (eAddr : IxCC.Ixon.Address) (erased : Bool) : Constant :=
 /-- Through the certified kernel. `variant`: 0 `Key.rec` partially applied (a β-redex's
 argument), 1 `Key.casesOn` partially applied, 2 the η-reduced definition
 `myRec : (E → E → E → E) → Key → E := Key.rec.{1} (λ _. E)` with `main := myRec useG3 major`. -/
-def kernel (a : Assert) (label : String) (variant : Nat) (erased : Bool) : IO String := do
+def kernel (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (variant : Nat) (erased : Bool) : IO String := do
   let (e, en) := addEnum (← loadBase) 3
   let (e, blk) := block e (keyBlock en.ind erased)
   let fields : Array (Array Field) := #[#[.ext en.ind, .ext en.ind, .ext en.ind]]
@@ -197,15 +197,15 @@ def kernel (a : Assert) (label : String) (variant : Nat) (erased : Bool) : IO St
   match Recheck.produce cfg inp with
   | .ok _ => expect a false s!"{label}: produce accepted it"
   | .error err => expect a (needles.all (err.render.contains ·)) s!"{label}: produce refused it otherwise: {err.render}"
-  refused a s!"{label} (the record made canonical)" cfg P (Src.Table.TableCert.ofTable table) (withCtor ann P mkId)
+  refused a hk s!"{label} (the record made canonical)" cfg P (Src.Table.TableCert.ofTable table) (withCtor ann P mkId)
     needles
 
-def run (a : Assert) : IO (Array String) := do
-  let mut out := (← below a false) ++ (← below a true) ++ (← csimpCase a) ++ (← mutualBlock a)
+def run (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks := {}) : IO (Array String) := do
+  let mut out := (← below a hk false) ++ (← below a hk true) ++ (← csimpCase a hk) ++ (← mutualBlock a hk)
   for (label, variant) in [("bytes, Key.rec partially applied", 0), ("bytes, Key.casesOn partially applied", 1),
       ("bytes, myRec := Key.rec (λ _. E)", 2)] do
-    out := out.push (← kernel a s!"{label}, no field erased" variant false)
-    out := out.push (← kernel a s!"{label}, field b written erased" variant true)
+    out := out.push (← kernel a hk s!"{label}, no field erased" variant false)
+    out := out.push (← kernel a hk s!"{label}, field b written erased" variant true)
   return out
 
 end IxCCTests.Recheck.ErasedPartial

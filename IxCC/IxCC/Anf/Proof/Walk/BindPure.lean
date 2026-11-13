@@ -66,6 +66,17 @@ theorem fold_lits {ρ' : List Val} : ∀ {os : List Opd} {ns : List Nat} {ws : L
     | lvl l => simp [Walk.fold.lits] at h
     | box => simp [Walk.fold.lits] at h
 
+/-- A fold's result is the primitive's meaning on the literals it read: `Walk.foldable` only
+declines folds. -/
+theorem fold_some {p : Lam.Prim} {os : List Opd} {r : Src.PrimResult}
+    (h : Walk.fold p os = some r) : ∃ ns, Walk.fold.lits os = some ns ∧ p.sem ns = some r := by
+  unfold Walk.fold at h
+  obtain ⟨ns, hlits, hr⟩ := Option.bind_eq_some_iff.1 h
+  refine ⟨ns, hlits, ?_⟩
+  split at hr
+  · exact hr
+  · cases hr
+
 /-- The value of a projection is stuck or a field. -/
 theorem projVal_cases (c : Key.CtorKey) (i : Nat) (v : Val) :
     projVal c i v = .stuck ∨ ∃ u, projVal c i v = .ok u := by
