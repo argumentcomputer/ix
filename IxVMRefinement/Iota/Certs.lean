@@ -123,4 +123,150 @@ theorem iota_certs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact ⟨h1, CertsR.lic_true hcr⟩
   · exact absurd he248 hr0
 
+/-! ## `iota_cmp` -/
+
+/-- **`KernelWhnf::iota_cmp`**: peels the recursor's telescope to the major premise's domain
+(`pi_peel`), reads its constant head (`collect_spine`), compares the constructor's levels against
+its levels (`level_list_eq`) and the constructor's parameters against its leading arguments
+(`de_args`), and when the family has indices (`nix ≠ 0`), computes the constructor's residual type
+(`expr_inst_levels`, `pi_residual`), reads its constant head, and compares the trailing index
+arguments (`de_args`). -/
+theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::iota_cmp" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.iota_cmp c args h r h' calls := by
+  intro rc rt pre mi cty clvls cnp ma ni types hargs good hrc d Γ htypes
+    RT PRE m CT cus np MA nix hRT hPRE hmi hCT hcus hcnp hMA hni hr0
+  subst hargs hmi hcnp hni
+  match Obs.«KernelWhnf::iota_cmp».obs ev with
+  | .n1_bind_Const_n1_n1_other_n1_bind_other (he529 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_n1_other_other (he536 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_other (he543 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_other (he550 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_other (he557 := he0) .. => exact absurd he0 hr0
+  | .other (he564 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_n1_n0 m2 cs13 m35 x_md m73 cs84 x_mdh x_mda w130 x_mlvls m142 cs153 m177
+      cs188 v192 v193 m203 cs211 m231 cs239 hm43 ev15 ev86 ld122 ev155 ev213 ev241 ev190 hv282
+      he283 he284 hc285 =>
+    subst hm43 hc285
+    have hn0 : nix = 0 := Value.field.inj hv282
+    have e0 : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
+    have e15 := ObsFn.heap_extends ev15
+    have e86 := ObsFn.heap_extends ev86
+    have e155 := ObsFn.heap_extends ev155
+    have e213 := ObsFn.heap_extends ev213
+    have e241 := ObsFn.heap_extends ev241
+    have H73 := e0.trans (e15.trans e86)
+    have H142 := H73.trans e155
+    have H231 := H142.trans (e213.trans e241)
+    obtain ⟨MD, hMD, hpi⟩ := ih.get (.whnf .pi_peel) (by lt_calls) ev15 rt pre _ (.field m) rfl
+      (good.sub fun z hz => by simp [hz]) d Γ RT [] PRE m
+      (by simp [List.length_nil]; exact (hRT d Γ).mono e0) (TmL.store_nil h) (tml_mono e0 hPRE)
+      rfl x_md rfl
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hpi
+    obtain ⟨hd0, sp0, MDH, MDA, he1, hMDH, hMDA, rfl⟩ := ih.get (.subst .collect_spine)
+      (by lt_calls) ev86 x_md rfl (good.sub fun z hz => by simp [hz]) d Γ 0 MD hMD
+    obtain ⟨rfl, rfl⟩ := tuple2_inj he1
+    obtain ⟨ma0, mus, rfl, -, hmus⟩ := hMDH.const_of_load ld122
+    have hlveq := ih.get (.defEq .level_list_eq) (by lt_calls) ev155 clvls x_mlvls rfl
+      (good.sub fun z hz => by simp [hz]) cus mus (LvListRep.mono H73 hcus) hmus
+      NatAux.field_one_ne_zero
+    obtain ⟨-, htakeMA⟩ := Lib.Lists.take_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
+      (by rw [Obs.Names.«Lists::take<&KernelTypes::KExprNode>».symbol]; exact ev213)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono H142 hMA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at htakeMA
+    obtain ⟨-, htakeMDA⟩ := Lib.Lists.take_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
+      (by rw [Obs.Names.«Lists::take<&KernelTypes::KExprNode>».symbol]; exact ev241)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]
+          exact tml_mono (e155.trans e213) hMDA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at htakeMDA
+    have hdeP := ih.get (.defEq .de_args) (by lt_calls) ev190 rc v192 v193 types rfl
+      (good.sub fun z hz => by simp [hz]) (RCRep.mono H231 hrc) d Γ (types_mono H231 htypes)
+      (MA.take (ZMod.val np)) (MDA.take (ZMod.val np)) (tml_mono e241 htakeMA) htakeMDA
+      NatAux.field_one_ne_zero
+    refine ⟨_, c.κ (ixAddr ma0), mus, hpi, by rw [getAppFn_mkAppN]; rfl, hlveq, ?_,
+      fun hne => (hne hn0).elim⟩
+    rw [getAppArgs_mkAppN]
+    exact hdeP
+  | .n1_bind_Const_n1_n1_other_n1_bind_Const m2 cs13 m35 x_md m73 cs84 x_mdh x_mda w130 x_mlvls
+      m142 cs153 m177 cs188 v192 v193 m203 cs211 m231 cs239 m291 cs302 v305 m309 cs317 m344 x_res
+      m375 cs386 x_rh x_ra w432 w433 cs447 v451 v452 m462 cs470 m490 cs498 hm43 ev15 ev86 ld122
+      ev155 ev213 ev241 ev190 hne286 ev319 hm352 ev304 ev388 ld424 ev472 ev500 ev449 hc524 =>
+    subst hm43 hm352 hc524
+    have e0 : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
+    have e15 := ObsFn.heap_extends ev15
+    have e86 := ObsFn.heap_extends ev86
+    have e155 := ObsFn.heap_extends ev155
+    have e213 := ObsFn.heap_extends ev213
+    have e241 := ObsFn.heap_extends ev241
+    have e190 := ObsFn.heap_extends ev190
+    have e319 := ObsFn.heap_extends ev319
+    have e352 : Heap.Extends m309 (m309 ++ [.construct kexprListEnum "Nil" []]) :=
+      Heap.Extends.snoc _ _
+    have e304 := ObsFn.heap_extends ev304
+    have e388 := ObsFn.heap_extends ev388
+    have e472 := ObsFn.heap_extends ev472
+    have e500 := ObsFn.heap_extends ev500
+    have H73 := e0.trans (e15.trans e86)
+    have H142 := H73.trans e155
+    have H231 := H142.trans (e213.trans e241)
+    have H177 := H231.trans e190
+    have H344 := H177.trans (e319.trans e352)
+    have F462 := e155.trans (e213.trans (e241.trans (e190.trans
+      (e319.trans (e352.trans (e304.trans (e388.trans e472)))))))
+    have H490 := H344.trans (e304.trans (e388.trans (e472.trans e500)))
+    obtain ⟨MD, hMD, hpi⟩ := ih.get (.whnf .pi_peel) (by lt_calls) ev15 rt pre _ (.field m) rfl
+      (good.sub fun z hz => by simp [hz]) d Γ RT [] PRE m
+      (by simp [List.length_nil]; exact (hRT d Γ).mono e0) (TmL.store_nil h) (tml_mono e0 hPRE)
+      rfl x_md rfl
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hpi
+    obtain ⟨hd0, sp0, MDH, MDA, he1, hMDH, hMDA, rfl⟩ := ih.get (.subst .collect_spine)
+      (by lt_calls) ev86 x_md rfl (good.sub fun z hz => by simp [hz]) d Γ 0 MD hMD
+    obtain ⟨rfl, rfl⟩ := tuple2_inj he1
+    obtain ⟨ma0, mus, rfl, -, hmus⟩ := hMDH.const_of_load ld122
+    have hlveq := ih.get (.defEq .level_list_eq) (by lt_calls) ev155 clvls x_mlvls rfl
+      (good.sub fun z hz => by simp [hz]) cus mus (LvListRep.mono H73 hcus) hmus
+      NatAux.field_one_ne_zero
+    obtain ⟨-, htakeMA⟩ := Lib.Lists.take_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
+      (by rw [Obs.Names.«Lists::take<&KernelTypes::KExprNode>».symbol]; exact ev213)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono H142 hMA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at htakeMA
+    obtain ⟨-, htakeMDA⟩ := Lib.Lists.take_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
+      (by rw [Obs.Names.«Lists::take<&KernelTypes::KExprNode>».symbol]; exact ev241)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]
+          exact tml_mono (e155.trans e213) hMDA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at htakeMDA
+    have hdeP := ih.get (.defEq .de_args) (by lt_calls) ev190 rc v192 v193 types rfl
+      (good.sub fun z hz => by simp [hz]) (RCRep.mono H231 hrc) d Γ (types_mono H231 htypes)
+      (MA.take (ZMod.val np)) (MDA.take (ZMod.val np)) (tml_mono e241 htakeMA) htakeMDA
+      NatAux.field_one_ne_zero
+    have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev319 cty clvls rfl
+      (good.sub fun z hz => by simp [hz]) Γ 0 CT cus ((hCT 0 Γ).mono H177) (LvListRep.mono H177 hcus)
+    obtain ⟨RES, hRES, hres⟩ := ih.get (.whnf .pi_residual) (by lt_calls) ev304 v305 ma _ rfl
+      (good.sub fun z hz => by simp [hz]) d Γ
+      (CT.instantiateLevelParams (List.range cus.length) cus) [] MA
+      (by simp [List.length_nil]; exact (hinst.of_depth_zero d).mono e352)
+      (TmL.store_nil m309) (tml_mono H344 hMA) x_res rfl
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hres
+    obtain ⟨hd1, sp1, RH, RA, he2, hRH, hRA, rfl⟩ := ih.get (.subst .collect_spine)
+      (by lt_calls) ev388 x_res rfl (good.sub fun z hz => by simp [hz]) d Γ 0 RES hRES
+    obtain ⟨rfl, rfl⟩ := tuple2_inj he2
+    obtain ⟨ra0, rus, rfl, -, -⟩ := hRH.const_of_load ld424
+    obtain ⟨-, hdropRA, -⟩ := Lib.Lists.drop_spec (ZMod.val np) (t := kexprTy) (R := TmE c.κ d Γ)
+      rfl (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev472)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hRA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hdropRA
+    obtain ⟨-, hdropMDA, -⟩ := Lib.Lists.drop_spec (ZMod.val np) (t := kexprTy) (R := TmE c.κ d Γ)
+      rfl (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev500)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono F462 hMDA)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hdropMDA
+    have hdeI := ih.get (.defEq .de_args) (by lt_calls) ev449 rc v451 v452 types rfl
+      (good.sub fun z hz => by simp [hz]) (RCRep.mono H490 hrc) d Γ (types_mono H490 htypes)
+      (RA.drop (ZMod.val np)) (MDA.drop (ZMod.val np)) (tml_mono (e472.trans e500) hdropRA)
+      (tml_mono e500 hdropMDA) hr0
+    refine ⟨_, c.κ (ixAddr ma0), mus, hpi, by rw [getAppFn_mkAppN]; rfl, hlveq, ?_,
+      fun _ => ⟨_, hres, ?_⟩⟩
+    · rw [getAppArgs_mkAppN]; exact hdeP
+    · rw [getAppArgs_mkAppN, getAppArgs_mkAppN]; exact hdeI
+
 end IxVM.Refinement.Core

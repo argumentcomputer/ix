@@ -1,4 +1,7 @@
 import IxVMRefinement.Iota.Major
+import IxVMRefinement.Iota.Certs
+import IxVMRefinement.Iota.RecKernel
+import IxVMRefinement.Whnf.Basic
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
@@ -766,5 +769,376 @@ theorem red_quot_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
       · exact absurd (Value.field.inj h1) (by simp)
   all_goals exact (tag_zero_ne_one
     ((‹r = .tuple [.field 0, _]› : r = _).symm.trans hr)).elim
+
+/-! ## `quot_certs` -/
+
+theorem quot_lvEqList_getElem? {us ls : List KLevel} (h : LvEqList us ls) :
+    ∀ (i : Nat) {l : KLevel}, ls[i]? = some l → ∃ u, us[i]? = some u ∧ LvEq u l := by
+  intro i l hl
+  induction i generalizing us ls with
+  | zero =>
+    rcases ls with _ | ⟨l0, ls'⟩
+    · simp at hl
+    · have he : l0 = l := by simpa using hl
+      subst he
+      rcases us with _ | ⟨u0, us'⟩
+      · exact (h fun _ => 0).elim
+      · exact ⟨u0, rfl, fun φ => (h φ).1⟩
+  | succ i ih =>
+    rcases ls with _ | ⟨l0, ls'⟩
+    · simp at hl
+    · rcases us with _ | ⟨u0, us'⟩
+      · exact (h fun _ => 0).elim
+      · exact ih (fun φ => (h φ).2) (by simpa using hl)
+
+theorem quot_subst_singleton_cons (p : Ix.Kernel.LevelParam) (m0 : KLevel)
+    (mrest : List KLevel) :
+    ∀ (l : KLevel), Ix.Kernel.Level.subst [p] (m0 :: mrest) l = Ix.Kernel.Level.subst [p] [m0] l
+  | .zero => rfl
+  | .succ l => congrArg Ix.Kernel.Level.succ (quot_subst_singleton_cons p m0 mrest l)
+  | .max a b => congrArg₂ Ix.Kernel.Level.max (quot_subst_singleton_cons p m0 mrest a)
+      (quot_subst_singleton_cons p m0 mrest b)
+  | .imax a b => congrArg₂ Ix.Kernel.Level.imax (quot_subst_singleton_cons p m0 mrest a)
+      (quot_subst_singleton_cons p m0 mrest b)
+  | .param _ => rfl
+
+theorem quot_instLP_singleton_cons (p : Ix.Kernel.LevelParam) (m0 : KLevel)
+    (mrest : List KLevel) :
+    ∀ (e : KExpr),
+      e.instantiateLevelParams [p] (m0 :: mrest) = e.instantiateLevelParams [p] [m0]
+  | .bvar _ => rfl
+  | .fvar idx ty => congrArg (Ix.Kernel.Expr.fvar idx) (quot_instLP_singleton_cons p m0 mrest ty)
+  | .sort u => congrArg Ix.Kernel.Expr.sort (quot_subst_singleton_cons p m0 mrest u)
+  | .const n ls => congrArg (Ix.Kernel.Expr.const n) (List.map_congr_left fun l _ =>
+      quot_subst_singleton_cons p m0 mrest l)
+  | .app f a => congrArg₂ Ix.Kernel.Expr.app (quot_instLP_singleton_cons p m0 mrest f)
+      (quot_instLP_singleton_cons p m0 mrest a)
+  | .lam ty b m => by
+      simp only [Ix.Kernel.Expr.instantiateLevelParams,
+        quot_instLP_singleton_cons p m0 mrest ty, quot_instLP_singleton_cons p m0 mrest b]
+      rfl
+  | .forallE ty b m => by
+      simp only [Ix.Kernel.Expr.instantiateLevelParams,
+        quot_instLP_singleton_cons p m0 mrest ty, quot_instLP_singleton_cons p m0 mrest b]
+      rfl
+  | .letE ty v b m => by
+      simp only [Ix.Kernel.Expr.instantiateLevelParams,
+        quot_instLP_singleton_cons p m0 mrest ty, quot_instLP_singleton_cons p m0 mrest v,
+        quot_instLP_singleton_cons p m0 mrest b]
+  | .lit _ => rfl
+  | .proj s i e => congrArg (Ix.Kernel.Expr.proj s i) (quot_instLP_singleton_cons p m0 mrest e)
+
+theorem quot_posOf_inst_cons {p : Ix.Kernel.LevelParam} {m0 : KLevel} {mrest : List KLevel}
+    {e : KExpr} (h : e.allLevelParamsDefined [p] = true) :
+    (posOf [p] e).instantiateLevelParams (List.range (m0 :: mrest).length) (m0 :: mrest) =
+      e.instantiateLevelParams [p] (m0 :: mrest) := by
+  unfold posOf
+  rw [inst_inst (by simp [posLevels]) e h, quot_instLP_singleton_cons]
+  have hmap : (posLevels [p]).map (Ix.Kernel.Level.subst (List.range (m0 :: mrest).length)
+      (m0 :: mrest)) = [m0] := by
+    simp only [posLevels, List.length_singleton, List.range_one, List.map_cons, List.map_nil,
+      List.length_cons]
+    rw [List.range_eq_range', List.range'_succ]
+    simp [Ix.Kernel.Level.subst, Ix.Kernel.Level.subst.go]
+  rw [hmap]
+
+theorem quotLift_forallsNever (u0 u1 : KLevel) (h : u1.isNeverZero = true) :
+    Specs.Whnf.forallsNever 6
+      ((Ix.Kernel.quotLiftA (md := .anon)).toConstantVal.type.instantiateLevelParams
+        [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]) := by
+  have hpw : (Ix.Kernel.Level.substPW [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]
+      (.ifAllZero [Ix.Kernel.vN])).isNever = true := by
+    rw [quotLift_substPW, ← Ix.Kernel.Level.isNeverZero_eq_isNever]
+    exact h
+  exact ⟨hpw, hpw, hpw, hpw, hpw, hpw, trivial⟩
+
+theorem quotMk_forallsNever (m0 : KLevel) (mrest : List KLevel) (h : m0.isNeverZero = true) :
+    Specs.Whnf.forallsNever 3
+      ((Ix.Kernel.quotMkA (md := .anon)).toConstantVal.type.instantiateLevelParams
+        [Ix.Kernel.uN] (m0 :: mrest)) := by
+  have hpw : (Ix.Kernel.Level.substPW [Ix.Kernel.uN] (m0 :: mrest)
+      (.ifAllZero [Ix.Kernel.uN])).isNever = true := by
+    have hs : Ix.Kernel.Level.substPW [Ix.Kernel.uN] (m0 :: mrest) (.ifAllZero [Ix.Kernel.uN]) =
+        Ix.Kernel.Level.zeronessOf m0 :=
+      (Ix.Kernel.Level.zeronessOf_subst [Ix.Kernel.uN] (m0 :: mrest)
+        (.param Ix.Kernel.uN)).symm
+    rw [hs, ← Ix.Kernel.Level.isNeverZero_eq_isNever]
+    exact h
+  exact ⟨hpw, hpw, hpw, trivial⟩
+
+private theorem quot_certs_seg1 {c : Ctx} {calls cs60 : List (Call F)} (ih : IH c calls)
+    (hle : cs60.length ≤ calls.length)
+    {rc il addr lvls ra mk mklvls ma types v57 : SourceValue F} {h m58 : Heap F}
+    {us : List KLevel}
+    (sg : Obs.«KernelWhnf::quot_certs».Seg1 rc il addr lvls ra mk mklvls ma types h v57 m58 cs60)
+    (hus : LvListRep h us lvls) :
+    Heap.Extends h m58 ∧
+      (v57 = .field 1 → il = .field 1 ∧ ∃ v, us[1]? = some v ∧ v.isNeverZero = true) := by
+  rcases sg with ⟨cs18, v21, m23, cs31, hv14, ev33, ev20, hc49⟩ | ⟨hne50, he54, he55, hc56⟩
+  · subst hc49
+    have e33 := ObsFn.heap_extends ev33
+    have e20 := ObsFn.heap_extends ev20
+    refine ⟨e33.trans e20, fun hv57 => ?_⟩
+    obtain ⟨ls, hls, hlseq⟩ := hus
+    have hls' : RepList klevelListEnum RepKLevel h ls lvls := by
+      rw [klevelListEnum_eq]; exact hls
+    obtain ⟨⟨l1, hl1, hrl1⟩, -⟩ := Lib.Lists.lookup_spec (t := klevelTy) (R := RepKLevel)
+      (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol]; exact ev33)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]; exact hls')
+    have hv1 : ZMod.val (1 : F) = 1 := by
+      have h0 := quot_val_lit 1 (by omega)
+      rwa [Nat.cast_one] at h0
+    rw [hv1] at hl1
+    obtain ⟨hr1, -⟩ := ih.get (.levelOps .level_is_not_zero)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev20 v21 rfl l1
+      (hrl1.mono e33)
+    rw [hv57] at hr1
+    have hnz := WhnfAux.isNeverZero_of_answer hr1
+    obtain ⟨u1, hu1, heq1⟩ := quot_lvEqList_getElem? hlseq 1 hl1
+    exact ⟨hv14, u1, hu1, (WhnfAux.isNeverZero_congr heq1).trans hnz⟩
+  · subst he55
+    exact ⟨Heap.Extends.refl _, fun hv => absurd (he54.symm.trans hv) (by simp)⟩
+
+private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List (Call F)}
+    (ih : IH c calls) (good : Good c calls) (hsub : ∀ z ∈ cs320, z ∈ calls)
+    (hle : cs320.length ≤ calls.length)
+    {v57 rc il addr lvls ra mk mklvls ma types : SourceValue F} {m58 m318 : Heap F}
+    {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {us : List KLevel} {RA MA : List KExpr}
+    (sg : Obs.«KernelWhnf::quot_certs».Seg2 v57 rc il addr lvls ra mk mklvls ma types m58
+      (.field 1) m318 cs320)
+    (hsg1 : v57 = .field 1 → il = .field 1 ∧ ∃ v, us[1]? = some v ∧ v.isNeverZero = true)
+    (hrc : c.rc m58 rc) (htypes : c.types Γ m58 d types) (ha : RepAddr m58 a addr)
+    (hus : LvListRep m58 us lvls) (hRA : c.tml d Γ m58 RA ra) (hMA : c.tml d Γ m58 MA ma)
+    (hrole : (il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ c.inForce .quotLift ∧
+        RA.length = 6 ∧ us.length = 2) ∨
+      (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ c.inForce .quotInd ∧
+        RA.length = 5 ∧ us.length = 1))
+    (hMA3 : MA.length = 3) :
+    Heap.Extends m58 m318 ∧
+      (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
+        Specs.Whnf.CertsR c.env d true
+          (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) RA) ∧
+      ((il = .field 1 ∧ ∃ v, us[1]? = some v ∧ v.isNeverZero = true) ∨
+        ∃ ta, Infer c.env .io d (MA.getD 2 (.bvar 0)) ta ∧
+          DefEq c.env d ta (RA.getD 0 (.bvar 0))) := by
+  have hwf := hc.env.tableWf
+  rcases sg with ⟨hv79, _, he81, hc82⟩ |
+    ⟨m88, cs99, v103, m115, cs123, v126, m129, cs137, v140, m142, p147, cs153, m179, cs205,
+      v209, v210, m220, cs228, v232, m242, cs250, m276, cs284, hne83, ev155, ld149, ev139, ev125,
+      hm187, ev101, ev252, ev230, ev286, ev207, hc309⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he314, _, _⟩
+  · subst he81
+    obtain ⟨hil1, v, hv, hvnz⟩ := hsg1 hv79
+    rcases hrole with ⟨-, haddr, hin, hRA6, hus2⟩ | ⟨hil0, -⟩
+    · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
+      have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+      have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
+        hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
+      obtain ⟨u0, u1, rfl⟩ := quot_list2 hus2
+      have hv1 : u1 = v := by simpa using hv
+      subst hv1
+      refine ⟨Heap.Extends.refl _, ?_, .inl ⟨hil1, u1, rfl, hvnz⟩⟩
+      intro ci hci
+      rw [hka, hfL] at hci
+      obtain rfl := Option.some.inj hci
+      exact certsR_of_forallsNever RA _ (by rw [hRA6]; exact quotLift_forallsNever u0 u1 hvnz)
+    · exact absurd (hil1.symm.trans hil0) NatAux.field_one_ne_zero
+  · subst hc309
+    have e155 := ObsFn.heap_extends ev155
+    have e139 := ObsFn.heap_extends ev139
+    have e125 := ObsFn.heap_extends ev125
+    have e187 : Heap.Extends m115 m179 := by rw [hm187]; exact Heap.Extends.snoc _ _
+    have e101 := ObsFn.heap_extends ev101
+    have e252 := ObsFn.heap_extends ev252
+    have e230 := ObsFn.heap_extends ev230
+    have e286 := ObsFn.heap_extends ev286
+    have e207 := ObsFn.heap_extends ev207
+    have E129 := e155.trans e139
+    have E179 := E129.trans (e125.trans e187)
+    have E88 := E179.trans e101
+    have E242 := E88.trans e252
+    have E220 := E242.trans e230
+    have E276 := E220.trans e286
+    obtain ⟨ci0, hfind0, v0, hv0, hrep0⟩ := ih.get (.callees .get_ci)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev155 addr a rfl
+      (good.sub fun z hz => hsub z (by simp [hz])) ha
+    rw [ld149] at hv0
+    injection hv0 with hv0
+    subst hv0
+    obtain ⟨hcty, -⟩ := ih.get (.infer .const_type_of)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev139 v140 ci0 rfl
+      (good.sub fun z hz => hsub z (by simp [hz])) hrep0
+    have hinst := ih.get (.subst .expr_inst_levels)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev125 v126 lvls rfl
+      (good.sub fun z hz => hsub z (by simp [hz])) Γ 0 _ us (hcty 0 Γ) (LvListRep.mono E129 hus)
+    obtain ⟨-, halpd0, -⟩ := hc.env.store.wf _ (List.mem_of_find?_eq_some hfind0)
+    have halpd0' : ci0.toConstantVal.type.allLevelParamsDefined ci0.toConstantVal.levelParams =
+        true := halpd0
+    have huslen0 : us.length = ci0.toConstantVal.levelParams.length := by
+      rcases hrole with ⟨-, haddr, hin, -, hus2⟩ | ⟨-, haddr, hin, -, hus1⟩
+      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
+        have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+        have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
+          hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
+        rw [hka, hfL] at hfind0
+        obtain rfl := Option.some.inj hfind0
+        exact hus2
+      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := keyOf_of_addressOf hwf haddr
+        have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+        have hfI : c.env.find? Ix.Kernel.quotIndName = some Ix.Kernel.quotIndA :=
+          hc.env.quotBasis hq Ix.Kernel.quotIndA (by simp [Ix.Kernel.BasisKind.declsA])
+        rw [hka, hfI] at hfind0
+        obtain rfl := Option.some.inj hfind0
+        exact hus1
+    rw [huslen0, posOf_inst huslen0 halpd0'] at hinst
+    have hnil179 : c.tml d Γ m179 [] (.ptr (.enum kexprListEnum) m115.length) := by
+      subst hm187; exact TmL.store_nil m115
+    have hcr0 := ih.get (.whnf .certs_all)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev101 rc v103 ra _
+      types rfl (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono E179 hrc) d Γ
+      (types_mono E179 htypes) _ [] RA ((hinst.of_depth_zero d).mono e187) hnil179
+      (tml_mono E179 hRA) NatAux.field_one_ne_zero
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hcr0
+    have hv2 : ZMod.val (2 : F) = 2 := by
+      have h0 := quot_val_lit 2 (by omega)
+      rwa [Nat.cast_ofNat] at h0
+    obtain ⟨⟨q2, hq2, htq2⟩, -⟩ := Lib.Lists.lookup_spec (t := kexprTy) (R := TmE c.κ d Γ)
+      (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev252)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono E88 hMA)
+    rw [hv2] at hq2
+    obtain ⟨ta, hta, hinf⟩ := ih.get (.infer .k_infer_only)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev230 rc v232 types rfl
+      (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono E242 hrc) d Γ
+      (types_mono E242 htypes) q2 (Tm.mono e252 htq2)
+    obtain ⟨⟨r0, hr0_lk, htr0⟩, -⟩ := Lib.Lists.lookup_spec (t := kexprTy) (R := TmE c.κ d Γ)
+      (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev286)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono E220 hRA)
+    rw [ZMod.val_zero] at hr0_lk
+    have hde := ih.get (.defEq .k_is_def_eq)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev207 rc v209 v210 types
+      rfl (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono E276 hrc) d Γ
+      (types_mono E276 htypes) ta r0 (Tm.mono e286 hta) (Tm.mono e286 htr0) NatAux.field_one_ne_zero
+    refine ⟨E276.trans e207, ?_, .inr ⟨ta, ?_, ?_⟩⟩
+    · intro ci hci
+      rw [hfind0] at hci
+      obtain rfl := Option.some.inj hci
+      exact CertsR.lic_true hcr0
+    · rwa [List.getD_eq_getElem?_getD, hq2]
+    · rwa [List.getD_eq_getElem?_getD, hr0_lk]
+  · exact absurd he314 NatAux.field_one_ne_zero
+
+/-- **`KernelWhnf::quot_certs`**: the eliminator's walk (gated by `Quot.lift`'s never-zero motive
+level, or certified together with the last `β`'s conversion), then `Quot.mk`'s walk (gated by its
+never-zero level, or certified). -/
+theorem quot_certs_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::quot_certs" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.quot_certs c args h r h' calls := by
+  intro rc il addr lvls ra mk mklvls ma types hargs good hrc d Γ htypes a b us mus RA MA
+    ha hus hRA hb hmus hMA hrole hmk hmkin hMA3 hr
+  subst hargs
+  have hwf := hc.env.tableWf
+  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
+  have hqM : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hmkin (.inl (by decide))
+  have hfM : c.env.find? Ix.Kernel.quotMkName = some Ix.Kernel.quotMkA :=
+    hc.env.quotBasis hqM Ix.Kernel.quotMkA (by simp [Ix.Kernel.BasisKind.declsA])
+  rcases Obs.«KernelWhnf::quot_certs».obs ev with
+    ⟨v57, m58, cs60, m318, cs320, m341, cs352, v355, m357, cs365, sg65, sg325, ev367, ev354,
+      he387, he388, hc389⟩ |
+    ⟨v57, m58, cs60, m318, cs320, v340, m341, cs352, v355, m357, cs365, cs397, v401, m413, cs421,
+      v424, m427, cs435, v438, m440, p445, cs451, m477, sg65, sg325, ev367, ev354, hne390, ev453,
+      ld447, ev437, ev423, hm485, ev399, hc496⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, he501, _, _⟩
+  · subst hc389
+    obtain ⟨e1, hsg1⟩ := quot_certs_seg1 ih (by simp only [List.length_append]; omega) sg65 hus
+    obtain ⟨e2, hcT, hlast⟩ := quot_certs_seg2 c hc ih good (fun z hz => by simp [hz])
+      (by simp only [List.length_append]; omega) sg325 hsg1 (RCRep.mono e1 hrc)
+      (types_mono e1 htypes) (Bytes.repAddressRef_heapMono₂ addrTy e1 ha) (LvListRep.mono e1 hus)
+      (tml_mono e1 hRA) (tml_mono e1 hMA) hrole hMA3
+    have E318 := e1.trans e2
+    obtain ⟨mls, hmls, hmuseq⟩ := hmus
+    have hmls318 : RepList klevelListEnum RepKLevel m318 mls mklvls := by
+      rw [klevelListEnum_eq]; exact KernelLevels.RepKLevelList.mono hmls E318
+    obtain ⟨⟨ml0, hml0, hrml0⟩, -⟩ := Lib.Lists.lookup_spec (t := klevelTy) (R := RepKLevel)
+      (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol]; exact ev367)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]; exact hmls318)
+    rw [ZMod.val_zero] at hml0
+    obtain ⟨hrM, -⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev354 v355 rfl ml0
+      (hrml0.mono (ObsFn.heap_extends ev367))
+    have hnz0 := WhnfAux.isNeverZero_of_answer hrM
+    obtain ⟨m0, hm0, heqm0⟩ := quot_lvEqList_getElem? hmuseq 0 hml0
+    have hm0nz : m0.isNeverZero = true := (WhnfAux.isNeverZero_congr heqm0).trans hnz0
+    rcases mus with _ | ⟨m0', mrest⟩
+    · simp at hm0
+    · have hm0eq : m0' = m0 := by simpa using hm0
+      subst hm0eq
+      refine ⟨hcT, ?_, hlast⟩
+      intro ci hci
+      rw [hkb, hfM] at hci
+      obtain rfl := Option.some.inj hci
+      exact certsR_of_forallsNever MA _ (by rw [hMA3]; exact quotMk_forallsNever m0' mrest hm0nz)
+  · subst hc496
+    obtain ⟨e1, hsg1⟩ := quot_certs_seg1 ih (by simp only [List.length_append]; omega) sg65 hus
+    obtain ⟨e2, hcT, hlast⟩ := quot_certs_seg2 c hc ih good (fun z hz => by simp [hz])
+      (by simp only [List.length_append]; omega) sg325 hsg1 (RCRep.mono e1 hrc)
+      (types_mono e1 htypes) (Bytes.repAddressRef_heapMono₂ addrTy e1 ha) (LvListRep.mono e1 hus)
+      (tml_mono e1 hRA) (tml_mono e1 hMA) hrole hMA3
+    have E318 := e1.trans e2
+    have e367 := ObsFn.heap_extends ev367
+    have e354 := ObsFn.heap_extends ev354
+    have e453 := ObsFn.heap_extends ev453
+    have e437 := ObsFn.heap_extends ev437
+    have e423 := ObsFn.heap_extends ev423
+    have e485 : Heap.Extends m413 m477 := by rw [hm485]; exact Heap.Extends.snoc _ _
+    have E341 := E318.trans (e367.trans e354)
+    have E427 := E341.trans (e453.trans e437)
+    have E477 := E427.trans (e423.trans e485)
+    obtain ⟨mls, hmls, hmuseq⟩ := hmus
+    have hmls318 : RepList klevelListEnum RepKLevel m318 mls mklvls := by
+      rw [klevelListEnum_eq]; exact KernelLevels.RepKLevelList.mono hmls E318
+    obtain ⟨⟨ml0, hml0, -⟩, -⟩ := Lib.Lists.lookup_spec (t := klevelTy) (R := RepKLevel)
+      (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol]; exact ev367)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol]; exact hmls318)
+    rw [ZMod.val_zero] at hml0
+    obtain ⟨m0, hm0, -⟩ := quot_lvEqList_getElem? hmuseq 0 hml0
+    rcases mus with _ | ⟨m0', mrest⟩
+    · simp at hm0
+    · have hm0eq : m0' = m0 := by simpa using hm0
+      subst hm0eq
+      obtain ⟨ciM, hfindM, vM, hvM, hrepM⟩ := ih.get (.callees .get_ci) (by lt_calls) ev453 mk b rfl
+        (good.sub fun z hz => by simp [hz]) (Bytes.repAddressRef_heapMono₂ addrTy E341 hb)
+      rw [ld447] at hvM
+      injection hvM with hvM
+      subst hvM
+      have hciM : ciM = Ix.Kernel.quotMkA := by
+        rw [hkb, hfM] at hfindM
+        exact (Option.some.inj hfindM).symm
+      subst hciM
+      obtain ⟨hctyM, -⟩ := ih.get (.infer .const_type_of) (by lt_calls) ev437 v438
+        Ix.Kernel.quotMkA rfl (good.sub fun z hz => by simp [hz]) hrepM
+      have hinstM := ih.get (.subst .expr_inst_levels) (by lt_calls) ev423 v424 mklvls rfl
+        (good.sub fun z hz => by simp [hz]) Γ 0 _ (m0' :: mrest) (hctyM 0 Γ)
+        ⟨mls, KernelLevels.RepKLevelList.mono hmls E427, hmuseq⟩
+      obtain ⟨-, halpdM, -⟩ := hc.env.store.wf _ (List.mem_of_find?_eq_some hfM)
+      have halpdM' :
+          (Ix.Kernel.quotMkA (md := .anon)).toConstantVal.type.allLevelParamsDefined
+            [Ix.Kernel.uN] = true := halpdM
+      change c.tmk 0 Γ 0 m413
+        ((posOf [Ix.Kernel.uN]
+          (Ix.Kernel.quotMkA (md := .anon)).toConstantVal.type).instantiateLevelParams
+          (List.range (m0' :: mrest).length) (m0' :: mrest)) v401 at hinstM
+      rw [quot_posOf_inst_cons halpdM'] at hinstM
+      have hnil477 : c.tml d Γ m477 [] (.ptr (.enum kexprListEnum) m413.length) := by
+        subst hm485; exact TmL.store_nil m413
+      have hcrM := ih.get (.whnf .certs_all) (by lt_calls) ev399 rc v401 ma _ types rfl
+        (good.sub fun z hz => by simp [hz]) (RCRep.mono E477 hrc) d Γ (types_mono E477 htypes) _ []
+        MA ((hinstM.of_depth_zero d).mono e485) hnil477 (tml_mono E477 hMA) hr
+      rw [Ix.Kernel.Expr.instantiateList_nil] at hcrM
+      refine ⟨hcT, ?_, hlast⟩
+      intro ci hci
+      rw [hkb, hfM] at hci
+      obtain rfl := Option.some.inj hci
+      exact CertsR.lic_true hcrM
+  · exact absurd he501 hr
 
 end IxVM.Refinement.Core

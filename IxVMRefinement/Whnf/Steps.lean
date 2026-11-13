@@ -3,35 +3,30 @@ import IxVMRefinement.Whnf.Scans
 import IxVMRefinement.Whnf.Beta
 import IxVMRefinement.Whnf.Delta
 import IxVMRefinement.Whnf.Proj
+import IxVMRefinement.Iota.Basic
+import IxVMRefinement.Iota.Certs
+import IxVMRefinement.Iota.Major
+import IxVMRefinement.Iota.RedIota
+import IxVMRefinement.Iota.RedQuot
+import IxVMRefinement.Iota.Rescue
+import IxVMRefinement.Iota.Scan
+import IxVMRefinement.Iota.Eta
 import IxVMRefinement.Core.Whnf
 
 /-! # The `Whnf` family's steps
 
-`whnf_family_step c hc hrest`: the registry's `Steps` restricted to the `Whnf` family
+`whnf_family_step c hc hex`: the registry's `Steps` restricted to the `Whnf` family
 (`Core/Specs/Whnf.lean`): every function of `KernelWhnf` meets its registered spec, from the
 induction hypothesis at its derivation's calls. The step lemmas are the slice's
-(`Core/Whnf.lean`, `Core/Steps/Whnf.lean`) and this package's (`Whnf/{Norm,Scans,Beta,Prim,Heads,
-Delta}.lean`). The steps of the functions in `whnfPending` are a hypothesis (`hrest`): the ι, K,
-structure-η and quotient functions. -/
+(`Core/Whnf.lean`, `Core/Steps/Whnf.lean`), `Whnf/{Norm,Scans,Beta,Prim,Heads,Delta,Proj}.lean`,
+and `Iota/{Basic,Certs,Major,RedIota,RedQuot,Rescue,Scan,Eta}.lean`. -/
 
 namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
-/-- The functions of the family whose steps `whnf_family_step` takes as a hypothesis. -/
-def whnfPending : List Specs.Whnf.Fn :=
-  [.red_iota, .iota_cmp, .iota_certs, .find_rule, .try_iota, .whnf_iota_major, .pi_peel,
-    .pi_residual, .k_synth_fab, .try_k_synth_iota, .eta_iota_fab, .try_struct_eta_iota,
-    .struct_is_rec, .struct_scan_members, .struct_block_member_addrs, .struct_scan_ctors,
-    .se_parent_addr, .se_peel_tol, .se_scan_fields, .se_mentions, .se_addr_in, .red_quot,
-    .quot_certs, .try_quot_iota, .red_rec]
-
-/-- **One step per function of the `Whnf` family**, given the steps of the functions in
-`whnfPending`. -/
-theorem whnf_family_step (c : Ctx) (hc : CoreFacts c)
-    (hrest : ∀ f ∈ whnfPending, ∀ (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
-      (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.whnf f).name args h r h' cs → IH c cs →
-        (Fn.whnf f).spec c args h r h' cs) :
+/-- **One step per function of the `Whnf` family.** -/
+theorem whnf_family_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c) :
     ∀ (f : Specs.Whnf.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.whnf f).name args h r h' cs → IH c cs →
       (Fn.whnf f).spec c args h r h' cs
@@ -66,35 +61,31 @@ theorem whnf_family_step (c : Ctx) (hc : CoreFacts c)
   | .whnf_nd_with_spine, _, _, _, _, _, ev, ih => whnf_nd_with_spine_step c ev ih
   | .whnf_nd_proj_head, _, _, _, _, _, ev, ih => whnf_nd_proj_head_step c ev ih
   | .whnf_nd_const_head, _, _, _, _, _, ev, ih => whnf_nd_const_head_step c ev ih
-  | .red_iota, _, _, _, _, _, ev, ih => hrest .red_iota (by decide) _ _ _ _ _ ev ih
-  | .iota_cmp, _, _, _, _, _, ev, ih => hrest .iota_cmp (by decide) _ _ _ _ _ ev ih
-  | .iota_certs, _, _, _, _, _, ev, ih => hrest .iota_certs (by decide) _ _ _ _ _ ev ih
-  | .find_rule, _, _, _, _, _, ev, ih => hrest .find_rule (by decide) _ _ _ _ _ ev ih
-  | .try_iota, _, _, _, _, _, ev, ih => hrest .try_iota (by decide) _ _ _ _ _ ev ih
-  | .whnf_iota_major, _, _, _, _, _, ev, ih => hrest .whnf_iota_major (by decide) _ _ _ _ _ ev ih
-  | .pi_peel, _, _, _, _, _, ev, ih => hrest .pi_peel (by decide) _ _ _ _ _ ev ih
-  | .pi_residual, _, _, _, _, _, ev, ih => hrest .pi_residual (by decide) _ _ _ _ _ ev ih
-  | .k_synth_fab, _, _, _, _, _, ev, ih => hrest .k_synth_fab (by decide) _ _ _ _ _ ev ih
-  | .try_k_synth_iota, _, _, _, _, _, ev, ih => hrest .try_k_synth_iota (by decide) _ _ _ _ _ ev ih
-  | .eta_iota_fab, _, _, _, _, _, ev, ih => hrest .eta_iota_fab (by decide) _ _ _ _ _ ev ih
-  | .try_struct_eta_iota, _, _, _, _, _, ev, ih =>
-    hrest .try_struct_eta_iota (by decide) _ _ _ _ _ ev ih
-  | .struct_is_rec, _, _, _, _, _, ev, ih => hrest .struct_is_rec (by decide) _ _ _ _ _ ev ih
-  | .struct_scan_members, _, _, _, _, _, ev, ih =>
-    hrest .struct_scan_members (by decide) _ _ _ _ _ ev ih
-  | .struct_block_member_addrs, _, _, _, _, _, ev, ih =>
-    hrest .struct_block_member_addrs (by decide) _ _ _ _ _ ev ih
-  | .struct_scan_ctors, _, _, _, _, _, ev, ih =>
-    hrest .struct_scan_ctors (by decide) _ _ _ _ _ ev ih
-  | .se_parent_addr, _, _, _, _, _, ev, ih => hrest .se_parent_addr (by decide) _ _ _ _ _ ev ih
-  | .se_peel_tol, _, _, _, _, _, ev, ih => hrest .se_peel_tol (by decide) _ _ _ _ _ ev ih
-  | .se_scan_fields, _, _, _, _, _, ev, ih => hrest .se_scan_fields (by decide) _ _ _ _ _ ev ih
-  | .se_mentions, _, _, _, _, _, ev, ih => hrest .se_mentions (by decide) _ _ _ _ _ ev ih
-  | .se_addr_in, _, _, _, _, _, ev, ih => hrest .se_addr_in (by decide) _ _ _ _ _ ev ih
-  | .red_quot, _, _, _, _, _, ev, ih => hrest .red_quot (by decide) _ _ _ _ _ ev ih
-  | .quot_certs, _, _, _, _, _, ev, ih => hrest .quot_certs (by decide) _ _ _ _ _ ev ih
-  | .try_quot_iota, _, _, _, _, _, ev, ih => hrest .try_quot_iota (by decide) _ _ _ _ _ ev ih
-  | .red_rec, _, _, _, _, _, ev, ih => hrest .red_rec (by decide) _ _ _ _ _ ev ih
+  | .red_iota, _, _, _, _, _, ev, ih => red_iota_step c hc ev ih
+  | .iota_cmp, _, _, _, _, _, ev, ih => iota_cmp_step c ev ih
+  | .iota_certs, _, _, _, _, _, ev, ih => iota_certs_step c ev ih
+  | .find_rule, _, _, _, _, _, ev, ih => find_rule_step c ev ih
+  | .try_iota, _, _, _, _, _, ev, ih => try_iota_step c ev ih
+  | .whnf_iota_major, _, _, _, _, _, ev, ih => whnf_iota_major_step c hc ev ih
+  | .pi_peel, _, _, _, _, _, ev, ih => pi_peel_step c ev ih
+  | .pi_residual, _, _, _, _, _, ev, ih => pi_residual_step c ev ih
+  | .k_synth_fab, _, _, _, _, _, ev, ih => k_synth_fab_step c hc ev ih
+  | .try_k_synth_iota, _, _, _, _, _, ev, ih => try_k_synth_iota_step c ev ih
+  | .eta_iota_fab, _, _, _, _, _, ev, ih => eta_iota_fab_step c hc hex ev ih
+  | .try_struct_eta_iota, _, _, _, _, _, ev, ih => try_struct_eta_iota_step c hc ev ih
+  | .struct_is_rec, _, _, _, _, _, ev, ih => struct_is_rec_step c hc ev ih
+  | .struct_scan_members, _, _, _, _, _, ev, ih => struct_scan_members_step c hc ev ih
+  | .struct_block_member_addrs, _, _, _, _, _, ev, ih => struct_block_member_addrs_step c ev ih
+  | .struct_scan_ctors, _, _, _, _, _, ev, ih => struct_scan_ctors_step c ev ih
+  | .se_parent_addr, _, _, _, _, _, ev, ih => se_parent_addr_step c ev ih
+  | .se_peel_tol, _, _, _, _, _, ev, ih => se_peel_tol_step c ev ih
+  | .se_scan_fields, _, _, _, _, _, ev, ih => se_scan_fields_step c ev ih
+  | .se_mentions, _, _, _, _, _, ev, ih => se_mentions_step c ev ih
+  | .se_addr_in, _, _, _, _, _, ev, ih => se_addr_in_step c ev ih
+  | .red_quot, _, _, _, _, _, ev, ih => red_quot_step c hc ev ih
+  | .quot_certs, _, _, _, _, _, ev, ih => quot_certs_step c hc ev ih
+  | .try_quot_iota, _, _, _, _, _, ev, ih => try_quot_iota_step c ev ih
+  | .red_rec, _, _, _, _, _, ev, ih => red_rec_step c ev ih
   | .red_proj, _, _, _, _, _, ev, ih => red_proj_step c hc ev ih
   | .try_reduce_projection_definition, _, _, _, _, _, ev, ih =>
     try_reduce_projection_definition_step c ev ih
