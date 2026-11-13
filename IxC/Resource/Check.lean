@@ -732,6 +732,8 @@ structure Limits where
   steps : Nat := 1 <<< 22
   depth : Nat := 1 <<< 12
   oracle : OracleLimits := {}
+  /-- the step limit of the closure's walk (`closureOf`): a walk cut there declines -/
+  walk : Nat := closureFuel
   deriving Inhabited
 
 /-- **The verdict**: accepted (how many run bodies were checked, and whether by
@@ -766,9 +768,13 @@ def checkBodies (lim : Limits) (P : Prog) (rs : List Ref) : Verdict := Id.run do
 
 /-- **The fast path's test**: every record of the subject's closure carries only
 default modes, and there is no run table (an error: a record's modes are
-malformed). -/
-def allDefault (s : Subject) : Except String Bool := do
-  for a in closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) do
+malformed). A closure whose walk is cut at its step limit is not known to be
+all default: false, so the caller takes the slow path, where `check` declines
+(V5: as landed the records past the cut were not looked at). -/
+def allDefault (s : Subject) (walk : Nat := closureFuel) : Except String Bool := do
+  let (closure, walked) := closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) walk
+  unless walked do return false
+  for a in closure do
     let some c := s.store a | continue
     unless (← recordDefault c) do return false
   return s.runTable.isNone
@@ -776,8 +782,10 @@ def allDefault (s : Subject) : Except String Bool := do
 /-- **The mode checker** (uncertified): the subject's closure, its records' modes,
 the kernel environment `env` its typing installed (for the class oracle). -/
 def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := Id.run do
-  let rd := Reading.make s
-  if let .error e := rd.complete then return .refuse "the closure" e
+  let rd := Reading.make s lim.walk
+  -- a closure cut at the walk's limit declines (V5); an incomplete binder-data section refuses
+  if let .error e := rd.complete then
+    return if e.startsWith "decline:" then .decline s!"the closure: {e}" else .refuse "the closure" e
   -- the fast path: every record's modes default, and no run table
   let mut nonDefault : Array Address := #[]
   for a in rd.closure do

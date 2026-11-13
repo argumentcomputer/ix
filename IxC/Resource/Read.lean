@@ -206,6 +206,8 @@ structure Reading where
   cx : Ix.Kernel.Reader.Ctx .anon
   /-- the closure's record addresses -/
   closure : Array Address
+  /-- the closure's walk finished within its step limit (else `closure` is a part of it) -/
+  walked : Bool
 
 /-- What reading one member of one record needs. -/
 structure RCx where
@@ -679,10 +681,16 @@ def caseShape (s : Subject) (rt : Array (Ref × RunDef)) : Nat → Ref → Optio
 
 /-! ## The closure and the reading context -/
 
+/-- The default step limit of the closure's walk (`closureOf`). -/
+def closureFuel : Nat := 1 <<< 24
+
 /-- The record addresses reachable from `roots` (through references and the
-blocks projections name). -/
-def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Nat := 1 <<< 24) :
-    Array Address := Id.run do
+blocks projections name), and whether the walk finished within `fuel` steps.
+As landed a walk cut at its limit returned what it had found so far, silently,
+so a larger closure was read in part (V5): the caller now sees the cut, and
+`Reading.complete` declines on it. -/
+def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Nat := closureFuel) :
+    Array Address × Bool := Id.run do
   let mut seen : Std.HashSet Address := {}
   let mut out : Array Address := #[]
   let mut todo := roots
@@ -704,20 +712,24 @@ def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Na
         | .cPrj p => todo := p.block :: todo
         | .rPrj p => todo := p.block :: todo
         | _ => pure ()
-  return out
+  return (out, todo.isEmpty)
 
-/-- The subject's closure's records, and the kernel reader's context over them. -/
-def Reading.make (s : Subject) : Reading :=
+/-- The subject's closure's records, and the kernel reader's context over them;
+`walked` says whether the closure's walk finished within `fuel` steps. -/
+def Reading.make (s : Subject) (fuel : Nat := closureFuel) : Reading :=
   let roots := s.seeds ++ s.runTable.toList ++ s.externs
-  let closure := closureOf s.store roots
+  let (closure, walked) := closureOf s.store roots fuel
   let records := closure.filterMap fun a => (s.store a).map (a, ·)
-  { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table records, closure }
+  { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table records, closure,
+    walked }
 
-/-- Every record of the reading's closure has a complete binder-data section
-(`Ixon.Constant.bindersComplete`: a block for each root and each variant of a
-sharing entry with a binder, each node of a binder's kind). A closure with an
-incomplete section is not read. -/
+/-- The closure's walk finished (else a decline: a closure cut at the walk's
+limit is never read in part), and every record of the reading's closure has a
+complete binder-data section (`Ixon.Constant.bindersComplete`: a block for each
+root and each variant of a sharing entry with a binder, each node of a binder's
+kind). A closure with an incomplete section is not read. -/
 def Reading.complete (rd : Reading) : Except String Unit := do
+  unless rd.walked do throw "decline: the closure's walk reached its step limit"
   for a in rd.closure do
     let some c := rd.s.store a | continue
     unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"

@@ -2274,6 +2274,46 @@ def gapACases : List Case := [
   { label := "V5 Gap A, control: the closure captures a plain list (capAp)", P := pA, ext := extAOra,
     seed := capAp, inp := oneList, toCheck := [capAp], verdict := .accept, run := [(0, .value)] }]
 
+/-! ### V5 `closureOf`: a walk cut at its step limit is seen, and declines
+
+A chain of five all-default axioms (`Sort 0`), each naming the next in its `refs`. As landed
+`closureOf` stopped at its step limit (2^24) and returned what it had found, silently, so the
+fast path's test and the reading saw part of a larger closure. Not run before the repair: a cut
+at 2^24 steps is out of a driver's reach, and the parent's `closureOf` has no flag to test. -/
+
+/-- An all-default axiom of type `Sort 0` naming `next` in its `refs`. -/
+def chainRec (next : Array Address) : Ixon.Constant :=
+  { info := .axio ⟨false, 0, .sort 0⟩, sharing := #[], refs := next, univs := #[.zero] }
+
+def chainStore (n : Nat) : Ix.Kernel.Reader.Store := fun a => Id.run do
+  for k in [0:n] do
+    if a == addr (210 + k) then
+      return some (chainRec (if k + 1 < n then #[addr (210 + k + 1)] else #[]))
+  return none
+
+def v5closure (t : IO.Ref Tally) : IO Unit := do
+  let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
+  let s : Subject := { table, store := chainStore 5, seeds := [addr 210] }
+  let (c3, w3) := closureOf s.store s.seeds 3
+  check1 t "V5 closureOf: a chain of five records, walked in three steps: the cut is reported"
+    (c3.size == 3 && !w3) s!"{c3.size} records, walked {w3}"
+  let (c, w) := closureOf s.store s.seeds
+  check1 t "V5 closureOf: the same at the default limit: five records, walked" (c.size == 5 && w)
+    s!"{c.size} records, walked {w}"
+  -- REPAIR V5: as landed a cut walk was a part of the closure, read as if whole
+  let v3 := check { walk := 3 } Ix.Kernel.Env.empty s
+  check1 t "V5 check: the chain's walk cut (limit 3): a decline"
+    (match v3 with | .decline r => (r.splitOn "walk reached its step limit").length > 1 | _ => false) (verdictLong v3)
+  let v := check {} Ix.Kernel.Env.empty s
+  check1 t "V5 check: the chain walked whole: accept on the fast path"
+    (match v with | .accept 0 true => true | _ => false) (verdictLong v)
+  let d3 := allDefault s 3
+  check1 t "V5 allDefault: the chain's walk cut (limit 3): not known all default (false)"
+    (match d3 with | .ok false => true | _ => false) (match d3 with | .ok b => s!"ok {b}" | .error e => e)
+  let d := allDefault s
+  check1 t "V5 allDefault: the chain walked whole: true"
+    (match d with | .ok true => true | _ => false) (match d with | .ok b => s!"ok {b}" | .error e => e)
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2291,6 +2331,7 @@ def run : IO UInt32 := do
   IO.println "== Part 3: V5, the places that failed open"
   v5oracle t
   for c in gapACases do runCase t c
+  v5closure t
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"
