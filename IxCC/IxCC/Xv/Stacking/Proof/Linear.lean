@@ -46,7 +46,6 @@ theorem placeExports_eq_list : placeExports = placeExportsList := by
       ({ fn := e.1, symbol := e.2.1, reps := e.2.2.1, start := n } : PlacedExport))
     (fun e => wrapperBlocks e.2.2.1)]
   simp only [List.reverse_nil, List.reverse_reverse]
-  rfl
 
 theorem placeFuncs_eq_list : placeFuncs = placeFuncsList := by
   funext fns next
@@ -55,6 +54,5 @@ theorem placeFuncs_eq_list : placeFuncs = placeFuncsList := by
       ({ func := e.1, fn := e.2.1, layout := e.2.2.1, facts := e.2.2.2, start := n } : Placed))
     (fun e => funcBlocks e.1 e.2.2.1 e.2.2.2)]
   simp only [List.reverse_nil, List.reverse_reverse]
-  rfl
 
 end IxCC.Xv.Stacking.Proof
