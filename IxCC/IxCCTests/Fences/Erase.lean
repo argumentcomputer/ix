@@ -138,10 +138,10 @@ Expected messages are preserved verbatim. -/
 
 /-! C3's refusal of an eliminator away from a saturated spine only adds errors. -/
 
-/-- info: 'IxCC.Src.Relevance.Proof.adds_partialElim' depends on axioms: [propext] -/
+/-- info: 'IxCC.Src.Relevance.Proof.adds_partialElim' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.adds_partialElim
 
-/-- info: 'IxCC.Src.Relevance.Proof.bareHead_constHead' depends on axioms: [propext] -/
+/-- info: 'IxCC.Src.Relevance.Proof.bareHead_constHead' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.bareHead_constHead
 
 /-! The closure loop over any fact the term walk gives (`visit_spec` and `loop_spec` are its
