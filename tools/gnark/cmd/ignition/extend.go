@@ -153,8 +153,19 @@ func extendSRS(source, expectedDigest, candidates, output string, powers int) er
 	if err := writer.Flush(); err != nil {
 		return err
 	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Link(file.Name(), output)
+	if err := os.Link(file.Name(), output); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(output))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

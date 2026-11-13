@@ -60,6 +60,8 @@ canonical encoding and subgroup, and individually checks
 all old points and the complete verifier-key suffix. Candidate points need no
 independent trust because each is uniquely determined by that equation. Output
 publication is atomic and refuses overwriting; the original file is unchanged.
+The temporary file is synced before publication and the parent directory is
+synced after linking the completed output.
 
 The [domain-26 preparation receipt](../../docs/measurements/aiur-ignition-prefix-extension.json)
 records the release source pin, exact transcript ranges, three additional
