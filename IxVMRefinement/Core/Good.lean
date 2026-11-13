@@ -1,5 +1,7 @@
 import IxVMRefinement.Core.Ctx
 import Ix.IxVM.Consistency.Statement
+import IxC.Kernel.Inductives.StructParts
+import IxC.Kernel.Verify.EnvPreds
 
 /-! # Good calls, the collision escape, and the loads
 
@@ -71,7 +73,9 @@ theorem load_escape {E : Ixon.Env} {calls : List (Call F)} {x : _root_.Address}
 `Ingress::get_ci` at an address `a` returns a constant representing `env`'s constant at
 `κ a`; and so do the projection loaders the core calls directly, `get_ci_cprj(block, i, j)` and
 `get_ci_iprj(block, i)`, at the key of the projection record they stand for. An inductive
-projection record loads as its block member, with the member's counts (`indRecord`).
+projection record loads as its block member, with the member's counts (`indRecord`), and an
+inductive loads only from such a record (`inductRecord`). A native structure IxVM projects from
+has its projection table (`projTables`).
 Owed by the record conversion and the assembly. -/
 structure LoadFacts (c : Ctx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
@@ -105,6 +109,55 @@ structure LoadFacts (c : Ctx) : Prop where
         .field (p.idx.toNat : F)]) ∧
       Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block ∧
       p.idx.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
+  /-- (L1, L7) **A loaded inductive comes from its projection record**: an inductive `get_ci`
+  returns at `a` is read from the record at `a` in `c.E`, the inductive projection of member
+  `idx` of the block `blk` (the converse of `indRecord`; the loader converts only that record
+  shape to an inductive). -/
+  inductRecord : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (a : Bytes.Address) (nl ty np ni nc u blk idx : SourceValue F),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs → Bytes.RepAddressRef addrTy h a addr →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) →
+    ∃ (cm : Ixon.Constant) (b : Bytes.Address) (i : F),
+      Ix.Cert.recordAt c.E (ixAddr a) = some cm ∧ Bytes.RepAddressRef addrTy h' b blk ∧
+      idx = .field i ∧ cm.info = .iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩
+  /-- **A native structure's projection table**, for `Red.proj` and `Infer.proj`: a good
+  derivation of `KernelModeled::proj_ctor(block, idx)` (which asserts that IxVM does not model the
+  block and loads member `idx`'s constructor) means the inductive at the member's key `S` is
+  stored with its table. For every stored constructor of the member (at any index `j`; there is
+  one), the table names that constructor at its counts and level parameters; every entry below
+  the field count is found and has its head data (`TowerHead`: the constructor and the structure
+  stored at the entry's counts and level parameters, the structure's type after its parameters
+  the sort `structSort`); the bodies are `structProjBodies`' at the constructor's type (so
+  `entry.typeAt` is the field type IxVM computes) and the guards `structProjGuards`' at some
+  field sorts (`FireSem`); and the constructor's binders carry the zero-ness of that sort (its
+  arguments' `Certs` are `never` skips where the sort is never zero).
+
+  Owed: the table's existence where IxVM's route is native, and the constructor's binder data,
+  by the declaration layer (it installs natively exactly where IxVM checked the block natively;
+  `block_is_modeled` is a function of the record); the head data by the store invariant
+  (`EnvFacts.store`, `ProjOkT.towerHead`); the bodies and guards by
+  `Ix.Kernel.Model.TableBodies` (`IxC/Kernel/Model/StoreCompanions.lean`,
+  `tableBodies_declsRunJ`). Still owed by the declaration layer: that the guards' `sorts` are the
+  fields' sorts. -/
+  projTables : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (b : Bytes.Address) (i : F),
+    ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h b bp → ip = .field i →
+    ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      ∃ tbl : Ix.Kernel.ProjTable .anon,
+        c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
+          some (.projInfo tbl) ∧
+        tbl.structName = c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ∧
+        tbl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) ∧ tbl.numParams = nP ∧
+        tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+        (∀ f, f < nF → c.env.findProj? tbl.structName f = some (tbl.entry f) ∧
+          Ix.Kernel.TowerHead c.env (tbl.entry f)) ∧
+        Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
+        (∃ sorts : List Ix.Kernel.Level, sorts.length = nF ∧
+          tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
+        ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
+          ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
 
 /-! ## Specs -/
 
