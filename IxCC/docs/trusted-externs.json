@@ -2068,7 +2068,7 @@
       "IxCC/Cfg/Syntax.lean": "e32dc1ec49d2eeb431abfb67e53cf29a783a505899e9bec66ff1ab15e25f9038",
       "IxCC/Cfg/WellFormed.lean": "8ab908e8034a0924e727f2df6b97f87cf84a105787ffb5a736a1cdf0bab9a7a2",
       "IxCC/Cli.lean": "676ce947880fc00e3b652cfe2519d12d7b78a0270c62f2fe880ab631d44b1f7a",
-      "IxCC/Cli/Main.lean": "a376c13c32bb5d29a953bf64aaecabfddc17c30411847ed2805f24b807bdff5d",
+      "IxCC/Cli/Main.lean": "c616e715565a985dd7acabdf5096964460ceac3614a50d81a5de17cc73aa8809",
       "IxCC/CompileClaim.lean": "ce03cee7192a4af6ed6d00d6cdc0930ab8a2e33cd65d470526dd184c6edae7d4",
       "IxCC/Compiler/Proof.lean": "9a0bb06e7e6539a289d53d3d3fd66af047a4ab67593773be9c205c34d1e86d07",
       "IxCC/Fir/Lower.lean": "4ef2610d541efc897114f8fe02c61b397491f13069369b75037a13e3077336e5",
@@ -3244,7 +3244,7 @@
       "IxCC/Src/Relevance/Proof/P1/CaseKey.lean": "4c2433af82a49d428d539129d036a8fe59da3ebde41c15905bd8b4d7122d94fb",
       "IxCC/Src/Relevance/Proof/P1/App.lean": "439a984580b41cbb313afa9206e7c2fd48a8229629456f2ae7aa0a2c9f02aa58",
       "IxCC/Recheck/Proof/LiveClosed.lean": "0e42205b133f26e891ea240c32f3af468224ef799893a10911ded51473c6d2e1",
-      "IxCCTests/KernelFront/Cli.lean": "c612d2443436f0da41c99437d936f876a1a71e71781c38fab80308bd820ea82b"
+      "IxCCTests/KernelFront/Cli.lean": "f73d28a4814201e34fbd27df44e3a1e55c3728001441e6accdbbcc7e1b64bd12"
     },
     "repository_files": {
       ".github/workflows/ixcc.yml": "457a376b2e4b245f54245af44a29dc91bd08f4b4cf33937aaf51c09a903aaa80"

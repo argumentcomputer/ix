@@ -46,7 +46,9 @@ def watchParent : IO Unit := do
     while true do
       IO.sleep 500
       if (← parentPid) != some started then
-        IO.eprintln "ixcc: the process that started this one ended; stopping"
+        -- standard error may be a pipe nobody reads any more: a failed write must not end
+        -- this task before the exit (it did: the process then stayed)
+        try IO.eprintln "ixcc: the process that started this one ended; stopping" catch _ => pure ()
         IO.Process.exit 1
   return
 

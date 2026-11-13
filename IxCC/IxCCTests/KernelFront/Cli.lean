@@ -69,9 +69,10 @@ def environHas (pid : Nat) (entry : String) : IO Bool := do
   | .ok b => return ((String.fromUTF8! b).splitOn "\x00").contains entry
   | .error _ => return false
 
-/-- A run held on a FIFO given as the closure, started under `setsid` (which, not a group leader
-here, runs `ixcc` in its own process: the child's pid is the first `ixcc` process, the leader of
-a process group of its own), after its tree has settled. -/
+/-- A run held on a FIFO given as the closure, started in a session of its own
+(`SpawnArgs.setsid`: the child's pid is the first `ixcc` process, the leader of a process group
+of its own; the `setsid` command, used at first, forked here, so the pid read was not `ixcc`'s),
+after its tree has settled. -/
 def held (dir : FilePath) (env : Array (String × Option String)) :
     IO (IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped } × FilePath) := do
   let fifo := dir / s!"hold-{← IO.monoNanosNow}"
@@ -79,8 +80,8 @@ def held (dir : FilePath) (env : Array (String × Option String)) :
   check (made.exitCode == 0) "mkfifo"
   let app := (← IO.FS.realPath ixccPath).toString
   let child ← IO.Process.spawn {
-    cmd := "setsid", stdin := .null, stdout := .piped, stderr := .piped, env
-    args := #[app, "compile", fifo.toString, "--equations", (fx / "fib.equations.json").toString,
+    cmd := app, stdin := .null, stdout := .piped, stderr := .piped, env, setsid := true
+    args := #["compile", fifo.toString, "--equations", (fx / "fib.equations.json").toString,
       "-o", (dir / "held.o").toString] }
   IO.sleep 1500
   return (child, fifo)
