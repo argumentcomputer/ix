@@ -80,7 +80,7 @@ def ValRep (κ : _root_.Address → KKey) (h : Heap F) (nl ty : SourceValue F)
 /-- The level parameters of a represented constant are distinct. -/
 theorem ValRep.nodup {κ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
     {cv : Ix.Kernel.ConstantVal .anon} (r : ValRep κ h nl ty cv) : cv.levelParams.Nodup :=
-  r.2.2.1.nodup_iff.mpr (List.nodup_range _)
+  r.2.2.1.nodup_iff.mpr (by simp [List.nodup_range])
 
 /-- **A recursor rule** (`KernelTypes::KRecRule::Mk(cidx, nfields, rhs)`, the `j`-th of its
 list): its constructor index is its position, its field count and closed right-hand side are
