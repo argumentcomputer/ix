@@ -1,4 +1,5 @@
 import IxCC.Src.Relevance.Proof.Sound
+import IxCC.Src.Semantics
 
 /-! # L1: the relevance checks' facts as propositions
 
@@ -24,8 +25,10 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   runtime term; the structure the kernel ensures (no constant at or above the program's size,
   rule `j` of a reached eliminator's recursor for constructor `j`, universe-argument counts, a
   record for every reached constructor, F3's field count, `Fin.mk`'s proof field dropped where a
-  word entry is reached); then the three facts about positions written erased that relevance
-  preservation consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
+  word entry is reached); then the facts about positions written erased that relevance
+  preservation consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`, and
+  `erased_lt_arity`: a special head's parameter written erased lies below its arity, so the
+  argument reaches the head, never the value it fires to).
 
 Not here, and not yet a theorem: that the evaluator never yields the irrelevance marker at a
 position that is read (relevance preservation, P1). These are the checks' facts only.
@@ -1295,5 +1298,21 @@ theorem arg_erased_irr {p : Program} {prof : Profile} {c : CId} {us : List Ixon.
   obtain ⟨r, hr, hirr⟩ := param_erased_irr hc hd hi
   rw [← paramsC_getElem hargs ha hr]
   exact alwaysIrr_irrP hirr _
+
+/-- The checker's copy of a special head's arity is SrcEval's. -/
+theorem headArityOf_eq (p : Program) (h : Head) : headArityOf p h = p.headArity h := by
+  cases h <;> rfl
+
+/-- A special head's parameter written erased lies below the head's arity (`readsAt` reads every
+position at or past it): the head fires after that argument, so no value it fires to receives
+it. -/
+theorem erased_lt_arity {p : Program} {ann : Ann} {c : CId} {h : Head} {d : Decl}
+    (hr : ReadsOk p ann c) (hh : specialHead? p c = some h) (hd : p.decl? c = some d) {i : Nat}
+    (hi : i ∈ erasedParams d.type) : i < p.headArity h := by
+  have e := hr h d hh hd i hi
+  unfold readsAt at e
+  rw [Bool.or_eq_false_iff, decide_eq_false_iff_not] at e
+  rw [← headArityOf_eq]
+  exact Nat.lt_of_not_le e.1
 
 end IxCC.Src.Relevance.Proof
