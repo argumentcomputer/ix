@@ -370,6 +370,11 @@ def stateCheck (label : String) (p : Program) (ann : Relevance.Ann) (ch : Releva
   for d in childDetail ex [] c do IO.println s!"  child: {d}"
   return (ok && !cutp, sv, o)
 
+/-- The domain of the `n`-th leading λ of `t` mapped by `f`. -/
+def mapLamDom (n : Nat) (f : Term → Term) : Term → Term
+  | .lam b d t => if n == 0 then .lam b (f d) t else .lam b d (mapLamDom (n - 1) f t)
+  | t => t
+
 /-- F3 (engineer PF's reading): a reached subsingleton recursor whose rule-0 constructor `K` has no
 constructor record. On `Words.u8` (whose reached subsingleton eliminators `Shape.subsingleton` finds), the
 first one whose `K` is unreached: `K` given one more field `(0 h : Nat)` written erased, the recursor's
@@ -418,7 +423,7 @@ def f3Record (a : Assert) : IO Unit := do
   let body := Term.mkApps (.var minorVar) ((List.range (knf + 1)).map fun i =>
     (.var (knf - i), .strict, if i < knf then fieldRel i else .rel))
   let lastPw := ((lbs[np + nmot + nmin + knf - 1]?).map (·.propWhen)).getD .never
-  let rhs := keepLams (np + nmot + nmin + knf) rule0.rhs (.lam { rel := .rel, propWhen := lastPw } natT body)
+  let rhs := mapLamDom (np + nmot) addPi (keepLams (np + nmot + nmin + knf) rule0.rhs (.lam { rel := .rel, propWhen := lastPw } natT body))
   let P1 := ((Pt.setDecl k (.ctor ks kl ki kj knp (knf + 1) kty')).setDecl r
     (.recr sf kk lv np nmot nmin ni ind (rules.set 0 { rule0 with fields := knf + 1, rhs }) rty'))
   let P1 := { P1 with table := { table with recKind := table.recKind.insert r (.subsingleton w (srcs ++ [.proof])) } }
