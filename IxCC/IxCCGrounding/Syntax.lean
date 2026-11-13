@@ -727,6 +727,15 @@ def witDoms : Term → KExpr → List KExpr
       | none => []) ++ witDoms b e))
   | _, _ => []
 
+/-- A `let`-free correspondence (`TermCorr`, the recursor rules') meets no witness path. -/
+theorem witDoms_of_termCorr {κ : CId → KKey} {lps : List Nat} {t : Term} {e : KExpr}
+    (h : TermCorr κ lps t e) : witDoms t e = [] := by
+  induction h with
+  | app _ _ ihf iha => simp [witDoms, ihf, iha]
+  | lam _ _ _ ihb => simp [witDoms, ihb]
+  | proj _ ih => simp [witDoms, ih]
+  | _ => simp [witDoms]
+
 /-! ## The checked shape of a `case` entry
 
 `casesOn` is stored as `λ ps motive t minors. rec.{lps} ps motive W₀ … W_{n-1} t`, each `Wⱼ`

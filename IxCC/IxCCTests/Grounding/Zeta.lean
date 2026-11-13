@@ -115,10 +115,27 @@ def corrSBClo (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → 
     | some v' =>
       (if subAt0B v' e then corrSBClo κ lps σ v v'
         else cloShapeB b e v' &&
-          corrSBClo κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)) &&
+          corrSBClo κ lps (σ.map (·.map (Ix.Kernel.Expr.liftLooseBVars 1 0))) v
+            (v'.liftLooseBVars 1 0)) &&
         corrSBClo κ lps (some v' :: σ) b e
     | none => corrSBClo κ lps (none :: σ) b e
   | _, _, _ => false
+
+/-- The constants of `Sl` with a run pair the check's decider accepts and the decider as landed
+with step C (`corrSBClo`) refuses: those the witness case alone accepts. -/
+def witConsts (i : Input) : List CId :=
+  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
+    corrSB i.κ (i.lpsOf c) [] t e && !corrSBClo i.κ (i.lpsOf c) [] t e
+
+/-- The constants of `Sl` with a run pair the decider as landed with step C accepts and the check's
+decider refuses (none: the witness case only accepts more). -/
+def lostConsts (i : Input) : List CId :=
+  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
+    corrSBClo i.κ (i.lpsOf c) [] t e && !corrSB i.κ (i.lpsOf c) [] t e
+
+/-- The constants the witness case alone accepts, by closure (none elsewhere). -/
+def witExpected : List (String × List CId) :=
+  [("phase2-closures/closures", [19]), ("src-words", [619, 229, 803, 520])]
 
 /-- The closures holding the 67 constants: label, the number `corrSB []` accepts, the refused
 ones with their reasons. -/

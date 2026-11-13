@@ -11,10 +11,11 @@ the copy lifted past them (`Runs.letWit`). The check's correspondence accepts th
 live case and the closure-capture case fail (`TermCorrS.letWit`, `corrSB`, `witSite?`), and the
 typing routes list the value's sites in the λs' context (`evalSites`, `evalSitesP`, 1a, 1b).
 
-* **The corpus** (the 51 closures the suite loads, and `src-words`: 52): the conjunct `letWit`
-  holds on every one; no run pair the decider as landed with step C accepted (`corrSBClo`) is
-  refused; the decider accepts more exactly at `closures` c19 (`Closures.coreKnot`) and
-  `src-words` c619, c229, c803, c520 (`Words.u8` … `Words.u64`), by name.
+* **The corpus** (the 51 closures the suite loads, asserted in `IxCCTests.Grounding.GradedHead`'s
+  pass over them, and `src-words`, here: 52): the conjunct `letWit` holds on every one; no run pair
+  the decider as landed with step C accepted (`Zeta.corrSBClo`) is refused; the decider accepts
+  more exactly at `closures` c19 (`Closures.coreKnot`) and `src-words` c619, c229, c803, c520
+  (`Words.u8` … `Words.u64`), by name (`Zeta.witExpected`).
 * **`phase2-closures/closures`**: no run pair is refused; the check's false conjuncts are
   `caseRec` and `caseShape` (`PUnit.casesOn`); at `Closures.knot` every decided hypothesis of
   `rootSound_678AGp_of_check` holds and SrcEval reads back the manifest's five values.
@@ -38,18 +39,6 @@ open IxCC IxCC.Grounding IxCCTests.Grounding
 open Ix.Kernel (ConstantInfo)
 open IxCC.Src (Term CId Value)
 open IxCCTests.Src (Assert expect)
-
-/-- The constants of `Sl` with a run pair the check's decider accepts and the decider as landed
-with step C (`Zeta.corrSBClo`) refuses. -/
-def witConsts (i : Input) : List CId :=
-  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
-    corrSB i.κ (i.lpsOf c) [] t e && !Zeta.corrSBClo i.κ (i.lpsOf c) [] t e
-
-/-- The constants of `Sl` with a run pair the decider as landed with step C accepts and the check's
-decider refuses (none: the witness case only accepts more). -/
-def lostConsts (i : Input) : List CId :=
-  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
-    Zeta.corrSBClo i.κ (i.lpsOf c) [] t e && !corrSB i.κ (i.lpsOf c) [] t e
 
 /-- A conjunct of the check, by name. -/
 def part (i : Input) (n : String) : Option Bool :=
@@ -81,24 +70,10 @@ def setType (T : KExpr) : ConstantInfo .anon → ConstantInfo .anon
 def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
-    -- the corpus: `letWit` everywhere; what the decider accepts beyond step C's, by name
+    -- the suite's 51 closures are asserted in `GradedHead`'s pass over them (one load each)
     let all ← GradedHead.allJobs
     let all := all.filter (!GradedHead.notLoaded.contains ·.1)
     let words := ("src-words", "fixtures/ixon-v4/src-words/words", ([] : List String))
-    let expected : List (String × List CId) :=
-      [("phase2-closures/closures", [19]), ("src-words", [619, 229, 803, 520])]
-    let mut n := 0
-    for (label, stem, roots) in all ++ [words] do
-      let (i, _) ← loadClosure label stem roots
-      n := n + 1
-      expect a (part i "letWit" == some true) s!"letWit: {label}: the conjunct letWit {part i "letWit"}"
-      let lost := lostConsts i
-      expect a lost.isEmpty s!"letWit: {label}: accepted with step C, refused now: {lost}"
-      let wc := witConsts i
-      let exp := (expected.lookup label).getD []
-      expect a (wc == exp) s!"letWit: {label}: accepted by the witness case alone {wc}, expected {exp}"
-    expect a (n == all.length + 1 && all.length == 51)
-      s!"letWit: {n} closures loaded (the suite's {all.length} and src-words), expected 52"
     -- `closures`: `knot`
     let some (lc, sc, rc) := all.find? (·.1 == "phase2-closures/closures")
       | throw (IO.userError "no closures closure")
@@ -119,6 +94,12 @@ def run : IO Bool := do
       s!"letWit: closures: SrcEval at c{knot} reads back {outs.map fun (o, _) => repr o}"
     -- `src-words`
     let (iw, _) ← loadClosure words.1 words.2.1 words.2.2
+    let lostW := Zeta.lostConsts iw
+    let wcW := Zeta.witConsts iw
+    let expW := (Zeta.witExpected.lookup "src-words").getD []
+    expect a (part iw "letWit" == some true && lostW.isEmpty && wcW == expW)
+      s!"letWit: src-words: letWit {part iw "letWit"}, accepted with step C and refused now \
+        {lostW}, accepted by the witness case alone {wcW} (expected {expW})"
     let rw := LetClo.refusedConsts iw
     expect a rw.isEmpty s!"letWit: src-words: run pairs still refused at {rw}, expected none"
     let fw := failing iw
@@ -207,10 +188,10 @@ def run : IO Bool := do
         failing notCopy == ["valueCorr"])
       s!"letWit: fib, the live and closure-capture plants: witness sites {unseen}, false \
         conjuncts {failing live} {failing clo} {failing notCopy}"
-    IO.println s!"letWit: {n} closures: letWit true on each, nothing accepted with step C refused, \
-      the witness case alone accepting closures c19 and src-words c619 c229 c803 c520; closures: \
-      false conjuncts {fc}, at c{knot} every decided hypothesis and SrcEval's five values; \
-      src-words: false conjuncts {fw}, at each of its 4 roots noWord alone and 1b true; the \
+    IO.println s!"letWit: src-words: letWit true, nothing accepted with step C refused, the \
+      witness case alone accepting {wcW}; closures: false conjuncts {fc}, at c{knot} every decided \
+      hypothesis and SrcEval's five values; src-words: false conjuncts {fw}, at each of its 4 \
+      roots noWord alone and 1b true; the \
       witness's stored type unfolded: {fw'}; fib: the shape at depths 1 and 2 accepted (55), \
       refused: a non-constant domain and a copy under a ∀ (valueCorr), a domain without a witness \
       (letWit); the live and closure-capture plants not seen by the witness case"
