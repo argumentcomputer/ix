@@ -1,5 +1,6 @@
 import IxCC.Recheck
 import IxCC.Src.KernelFront.Annotate
+import IxCCTests.KernelFront.Reference
 
 /-! H11's Stage A probe (test-only; removed before the landing). `stagea CLOSURE EQS ROOT CERT`
 times production's `annotate` and `checkReachedTypes` on a saved zero-RC certificate, then runs
@@ -262,6 +263,11 @@ def stagea (clo eqs : System.FilePath) (root : String) (cert : System.FilePath)
   IO.println s!"production checkReachedTypes {fmt tr} ms ({(r.toBool)})"
   let (tot, tw) ← timeMs fun _ => Recheck.checkCanonicalRelevance cfg inp zc.table zc.relevance
   IO.println s!"production checkCanonicalRelevance {fmt tw} ms ({tot})"
+  if variants.contains "reference" then
+    let (ar, tref) ← timeMs fun _ => IxCCTests.KernelFront.Reference.annotate k.fe k.rd p
+    match ar with
+    | .ok b => IO.println s!"reference (per-λ) annotate {fmt tref} ms; equals production's: {b.eqb a0}"
+    | .error e => IO.println s!"reference (per-λ) annotate {fmt tref} ms: REFUSED {e.take 200}"
   for name in variants do
     let v : V := match name with
       | "noretain" => { noRetain := true }

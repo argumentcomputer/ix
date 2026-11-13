@@ -1,4 +1,5 @@
 import IxCCTests.Recheck.Hostile
+import IxCCTests.KernelFront.LamRuns
 
 /-! # Erased parameters: what a caller drops, the callee's run behaviour never reads
 
@@ -16,7 +17,10 @@ outcomes. Only the `case` part goes through the certified kernel as it is (the k
 today); every other part is built on an ingested honest program below the kernel, as a kernel
 without the contract comparison would accept it: the kernel refuses each today because its
 conversion compares binder contracts, or because a stored recursor's type must be the generated
-one. -/
+one.
+
+Every program ingested here is also annotated by the annotator's per-λ reference and must get the
+same annotation as from the kernel annotator (`KernelFront.LamRuns.agree`). -/
 
 namespace IxCCTests.Recheck.Erased
 
@@ -58,6 +62,7 @@ def lookup (P : Src.Program) (a : IxCC.Ixon.Address) (what : String) : IO Src.CI
 def ingest (label : String) (env : Env) (roots : List (String × IxCC.Ixon.Address))
     (chosen : List String := []) : IO Honest := do
   let inp ← ofErr s!"{label}: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write env) (sidecar roots) chosen)
+  IxCCTests.KernelFront.LamRuns.agree label inp
   let cfg := Recheck.Config.forInput {} inp
   let cert ← ofErr s!"{label}: produce" (Recheck.produce cfg inp)
   let art ← ofErr s!"{label}: Recheck.run" (Recheck.run cfg inp.program cert)
@@ -267,6 +272,7 @@ def caseEntry (a : Assert) : IO (Array String) := do
   -- the minor m₁ written erased: the kernel accepts the artifact, the producer refuses it
   let (e, co, roots) ← casesEnv .erased
   let inp ← ofErr "casesOn with m₁ erased: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write e) (sidecar roots) [])
+  IxCCTests.KernelFront.LamRuns.agree "casesOn with m₁ erased" inp
   let P := inp.program
   let coId ← lookup P co "casesOn"
   let cfg := Recheck.Config.forInput {} inp
@@ -446,6 +452,7 @@ def quot (a : Assert) : IO (Array String) := do
   let (e, idc) := store e ⟨defn (arrow E E) (lambda E (.var 0)), #[], #[en.ind], #[]⟩
   let (e0, m0) := store e ⟨defn E (.ref 1 #[]), #[], #[en.ind, en.ctors[1]!], #[]⟩
   let inp0 ← ofErr "quot: first ingress" (Recheck.ingress (IxCCTests.Support.Bound.write e0) (sidecar [("main", m0)]) [])
+  IxCCTests.KernelFront.LamRuns.agree "quot: first ingress" inp0
   let some eq0 := inp0.program.known.eq | throw (IO.userError "no Eq")
   let eqA := inp0.program.addr eq0
   let eqE : X := .app (.ref 2 #[0]) E
