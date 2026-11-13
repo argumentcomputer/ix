@@ -1234,8 +1234,30 @@ theorem check_modeEq (hme : Program.ModeEq p₀ p) (ann : Ann) : check p₀ ann 
   simp only [check, hme.roots, instOf_eq hme, loop_eq ann hme, records_eq hme]
 
 /-- `check`'s reached constants are its instances' constants. -/
+theorem foldl_keeps {f : List CId → Inst → List CId}
+    (hf : ∀ acc x, (∀ c ∈ acc, c ∈ f acc x) ∧ x.1 ∈ f acc x) :
+    ∀ (l : List Inst) (acc : List CId), (∀ c ∈ acc, c ∈ l.foldl f acc) ∧ ∀ x ∈ l, x.1 ∈ l.foldl f acc
+  | [], _ => ⟨fun _ h => h, fun _ h => by cases h⟩
+  | y :: ys, acc => by
+    obtain ⟨h1, h2⟩ := foldl_keeps hf ys (f acc y)
+    refine ⟨fun c hc => h1 c ((hf acc y).1 c hc), fun x hx => ?_⟩
+    rcases List.mem_cons.1 hx with rfl | hx
+    · exact h1 _ (hf acc x).2
+    · exact h2 x hx
+
 theorem check_reached {q : Program} {ann : Ann} {ch : Checked} (h : check q ann = .ok ch) :
-    ∀ inst ∈ ch.instances, inst.1 ∈ ch.reached := sorry
+    ∀ inst ∈ ch.instances, inst.1 ∈ ch.reached := by
+  unfold check at h
+  dsimp only at h
+  split at h
+  · cases h
+  · cases h
+    intro inst hi
+    rw [List.mem_reverse]
+    refine (foldl_keeps (fun acc x => ?_) _ []).2 inst hi
+    obtain ⟨c, prof⟩ := x
+    dsimp only
+    split <;> simp_all
 
 /-! ## `checkCanonical` -/
 
