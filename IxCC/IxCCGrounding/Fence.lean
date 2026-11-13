@@ -1105,6 +1105,34 @@ the environment relation under it, the walks' `let` cases) -/
 /-- info: 'IxCC.Grounding.tyRead_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.tyRead_pos
 
+/-! **The η-short step** (`TyRead.deltaShort`, GR21): a definition with no level parameter whose
+value has fewer λs than its arguments, its λs consumed and its body applied to the arguments left
+(`tyRead_of_check`, `tyRead_prefix` and `tyRead_pos` above gain its case; their sets unchanged). -/
+
+/-- info: 'IxCC.Grounding.mkAppN_append_list' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Grounding.mkAppN_append_list
+
+/-- info: 'IxCC.Grounding.substFn_nil_params' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.substFn_nil_params
+
+/-- info: 'IxCC.Grounding.lamPeel_lamPeelMax' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamPeel_lamPeelMax
+
+/-- info: 'IxCC.Grounding.lamPeelMax_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamPeelMax_lt
+
+/-- info: 'IxCC.Grounding.skipEnv_pushAll_block' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.skipEnv_pushAll_block
+
+/-- info: 'IxCC.Grounding.denotesList_liftBlock' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotesList_liftBlock
+
+/-- info: 'IxCC.Grounding.spineMem_append_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineMem_append_left
+
+/-- info: 'IxCC.Grounding.gradedBy_mkAppN_swap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_mkAppN_swap
+
 /-- info: 'IxCC.Grounding.gradedCtx_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.gradedCtx_get
 
