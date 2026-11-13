@@ -251,7 +251,12 @@ def PapArgOk (h : Heap) (v : Val) : Prop :=
   (∃ i, v = .imm i) ∨ ∃ loc cap o n, v = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n
 
 /-- An input at an arrow skeleton `s`: a partial application of a constant of
-the program whose remaining interface `s` admits. -/
+the program whose remaining interface `s` admits. A function value arriving
+from outside the program is not admitted: a seed with a (non-erased) parameter
+at an arrow skeleton that no constant's remaining interface matches has no
+admissible input, and `ModeSafe` is vacuous for it. In whole-program
+compilation the only function inputs are partial applications of the
+program's own constants, which this admits. -/
 def ClosureAt (P : Prog) (h : Heap) (s : Skel) (v : Val) : Prop :=
   ∃ loc cap r args o sk, v = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .pap r args ∧
     (∀ a ∈ args.toList, PapArgOk h a) ∧ papSkel P r args.size = some sk ∧ s.admits sk = true
@@ -261,18 +266,22 @@ def DefaultPaps (P : Prog) (h : Heap) (v : Val) : Prop :=
   ∀ (l : Nat) (o : Obj) (r : Ref) (args : Array Val), Reach h v l → h.objs[l]? = some o → o.cell = .pap r args →
     (∀ a ∈ args.toList, PapArgOk h a) ∧ ∃ sk, papSkel P r args.size = some sk ∧ sk.isDefault = true
 
-/-- An argument meeting a parameter: erased and irrelevant ones `irr`, the class
-respected, a closure at an arrow skeleton the skeleton admits, and only default
-closures elsewhere. -/
+/-- An argument meeting a parameter: an erased one `irr` (whatever its class and
+skeleton: `runR` binds an erased parameter as `irr`, and as landed the class and
+skeleton clauses applied too, so an erased parameter of class `leaf` or `imm` or
+at an arrow skeleton had no admissible input and `ModeSafe` said nothing about
+its seed); otherwise irrelevant ones `irr`, the class respected, a closure at an
+arrow skeleton the skeleton admits, and only default closures elsewhere. -/
 def ArgOk (P : Prog) (h : Heap) (p : Param) (a : Val) : Prop :=
   ValOk h a ∧
   (p.mode = .erased → a = .imm .irr) ∧
-  (p.cls = .irr → a = .imm .irr) ∧
-  (p.cls = .imm → ∃ i, a = .imm i) ∧
-  (p.cls = .leaf → ∃ loc cap o n, a = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n) ∧
-  (match p.skel with
-    | .arrow .. => ClosureAt P h p.skel a
-    | _ => DefaultPaps P h a)
+  (p.mode ≠ .erased →
+    (p.cls = .irr → a = .imm .irr) ∧
+    (p.cls = .imm → ∃ i, a = .imm i) ∧
+    (p.cls = .leaf → ∃ loc cap o n, a = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n) ∧
+    (match p.skel with
+      | .arrow .. => ClosureAt P h p.skel a
+      | _ => DefaultPaps P h a))
 
 /-- **Inputs meeting the declared modes**: one argument per parameter, each
 meeting it, in an input heap; an argument at a unique parameter owns a tree
@@ -344,7 +353,9 @@ seed with a run body, every extern behaving as declared, every input meeting the
 declared modes and every fuel, the run of the seed never reads an erased value,
 never uses a reference revoked by a unique transfer, never lets a borrowed value
 outlive its scope, and never calls a once-closure twice. Runs that end `stuck`
-or out of fuel are not covered. -/
+or out of fuel are not covered. A seed with no input meeting `InputsOk` is
+covered vacuously: one with a (non-erased) parameter at an arrow skeleton that
+no constant of the program matches (`ClosureAt`). -/
 def ModeSafe (env : Env .anon) (s : Subject) : Prop :=
   (∃ P, Reads env s P) ∧
   ∀ P, Reads env s P → ∀ a ∈ s.seeds, ∀ r, SeedRef s a r →
