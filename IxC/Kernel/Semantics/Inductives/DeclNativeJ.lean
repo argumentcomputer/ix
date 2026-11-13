@@ -66,11 +66,13 @@ def ConstantValCheckJ (J : Judgements md) (env : Env md) (cv cv' : ConstantVal m
 
 /-- **The former the block stores**, against the checked declared former `cvTa₀`
 and the telescope constant `cvTa` the later stages read: the telescope constant
-itself, as the kernel stores it. One definition, so that which constant is stored
-is decided in one place. -/
-def FormerStoredJ (_J : Judgements md) (_env : Env md) (_cvTa₀ cvTa cvS : ConstantVal md) :
-    Prop :=
-  cvS = cvTa
+itself, as the kernel stores it, or the declared former, definitionally equal to
+the telescope, at a family with indices (so with no η, unit-like or projection
+capability, which read arities off the stored type). One definition, so that which
+constant is stored is decided in one place. -/
+def FormerStoredJ (J : Judgements md) (env : Env md) (nIdx : Nat)
+    (cvTa₀ cvTa cvS : ConstantVal md) : Prop :=
+  cvS = cvTa ∨ (cvS = cvTa₀ ∧ J.defeq env 0 cvTa₀.type cvTa.type ∧ nIdx ≠ 0)
 
 /-- **The former's stage** (`checkSumInd`) over a package. The declared type is
 checked (`cvTa₀`); the telescope constant `cvTa` the later stages read is that
@@ -87,7 +89,7 @@ def SumIndRunJ (J : Judgements md) (env : Env md) (p : InductiveShape md)
     ConstantValCheckJ J env p.cvT cvTa₀ ∧
     (cvTa = cvTa₀ ∨ ∃ ty, ConstantValCheckJ J env { p.cvT with type := ty } cvTa) ∧
     cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) ∧
-    FormerStoredJ J env cvTa₀ cvTa cvS ∧
+    FormerStoredJ J env p.nIdx cvTa₀ cvTa cvS ∧
     p' = p.withSort s ∧
     envI = ⟨.indInfo cvS (capsOf p') :: env.consts⟩
 
@@ -152,6 +154,41 @@ def SumCtorsRunJ (J : Judgements md) (env₀ env : Env md) (T : Key md)
   ∀ (j : Nat) (c cA : ConstantVal md × Nat), cs[j]? = some c → ctorsA[j]? = some cA →
     cA.2 = c.2 ∧ ∃ sorts, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large c.1 c.2 cvTa cA.1 sorts
+
+/-! ## The zero-ness the constructors carry -/
+
+/-- Every `∀` binder along the spine carries the zero-ness datum `z`. -/
+def pwsAll (z : Ix.Kernel.PropWhen) : Expr md → Bool
+  | .forallE _ b m => m.pw == z && pwsAll z b
+  | _ => true
+
+/-- The telescope of `e` ends in the family `T` applied (its spine's head, past the binders). -/
+def famHead (T : Key md) : Expr md → Bool
+  | .forallE _ b _ => famHead T b
+  | .app f _ => famHead T f
+  | .const c _ => c == T
+  | _ => false
+
+/-- A domain whose telescope ends in the family `T` carries `z` at every binder. -/
+def famDomOk (T : Key md) (z : Ix.Kernel.PropWhen) (dom : Expr md) : Bool :=
+  !famHead T dom || pwsAll z dom
+
+/-- **A constructor type's binders carry `z`**: every binder of its telescope, and every
+binder of each of its domains that ends in the family `T`. -/
+def ctorZeroOk (T : Key md) (z : Ix.Kernel.PropWhen) : Expr md → Bool
+  | .forallE dom b m => m.pw == z && famDomOk T z dom && ctorZeroOk T z b
+  | _ => true
+
+/-- **What the later stages read of the former**: the stored former is the telescope
+constant, or every stored constructor's binders carry the zero-ness of the family's result
+sort (`ctorZeroOk`). At the telescope the zero-ness follows from the constructors' typing,
+which reads the former's type; at a declared former that is not a syntactic telescope it is
+checked, since a derivation reaches the family's sort through the declared type's
+reductions. -/
+def FormerReadJ (env₁ : Env md) (p : NativeParts md) (cvTa : ConstantVal md)
+    (ctorsA : List (ConstantVal md × Nat)) : Prop :=
+  (∃ caps, env₁.find? p.cvT.name = some (.indInfo cvTa caps)) ∨
+  ctorsA.all (fun cA => ctorZeroOk p.cvT.name (Level.zeronessOf p.resSort) cA.1.type) = true
 
 /-- **The recursor's stage** (`checkNativeRec`) over a package: the record's pins
 (its level parameters are the generated ones; its rule count, rules' constructors
@@ -257,7 +294,9 @@ def DeclNativeRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
         (sumRules (consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP p.majorIdx p.rulePrefix
           cvRa.type ctorsA rhss)
-        :: (consSumCtors p.nP ctorsA env₁).consts⟩ = .ok env₂
+        :: (consSumCtors p.nP ctorsA env₁).consts⟩ = .ok env₂ ∧
+    -- what the stages read of the former
+    FormerReadJ env₁ p cvTa ctorsA
 
 /-! ## The native route without a recursor record -/
 
@@ -310,7 +349,9 @@ def DeclNativeNoRecRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts m
     nativeFieldsOk env p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA p.kinds = true ∧
     -- the projection table at a structure-like block, over the constructors
     checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss (consSumCtors p.nP ctorsA env₁)
-      = .ok env₂
+      = .ok env₂ ∧
+    -- what the stages read of the former
+    FormerReadJ env₁ p cvTa ctorsA
 
 /-- **An inductive block's routes over a package**: the native route at the parts
 the recogniser reads off the block, the modeled route (`DeclIndRunJ`, stated for
@@ -410,9 +451,17 @@ theorem SumIndRunJ.former {J : Judgements md} {env envI : Env md} {p p' : Induct
     · exact h₀.levelParams_eq
     · exact h₁.levelParams_eq
 
+/-- **The former the stage stores**: the telescope constant, or a checked constant of the
+declared former's name and level parameters, definitionally equal to it, at a family with
+indices. -/
+def StoredFormer (J : Judgements md) (env : Env md) (p : InductiveShape md)
+    (cvTa cvS : ConstantVal md) : Prop :=
+  cvS = cvTa ∨
+    (ConstantValCheckJ J env p.cvT cvS ∧ J.defeq env 0 cvS.type cvTa.type ∧ p.nIdx ≠ 0)
+
 /-- **The former's stage's shape** (`checkSumInd_shape` over a package): a constant
 check of the declared former at some type, the completed record, the stored
-former (`FormerStoredJ`), and the telescope ending in the record's sort. -/
+former (`StoredFormer`), and the telescope ending in the record's sort. -/
 theorem SumIndRunJ.shape {J : Judgements md} {env envI : Env md} {p p' : InductiveShape md}
     {capsOf : InductiveShape md → IndCaps md} {cvTa : ConstantVal md}
     (h : SumIndRunJ J env p capsOf envI cvTa p') :
@@ -420,13 +469,26 @@ theorem SumIndRunJ.shape {J : Judgements md} {env envI : Env md} {p p' : Inducti
       cvT.name = p.cvT.name ∧ cvT.levelParams = p.cvT.levelParams ∧
       ConstantValCheckJ J env cvT cvTa ∧
       p' = p.withSort s ∧
-      envI = ⟨.indInfo cvTa (capsOf p') :: env.consts⟩ ∧
+      (∃ cvS, envI = ⟨.indInfo cvS (capsOf p') :: env.consts⟩ ∧ StoredFormer J env p cvTa cvS) ∧
       ∃ bs, cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) := by
   obtain ⟨cvTa₀, s, bs, cvS, h₀, hbr, hstrip, hSt, hp', henv⟩ := h
-  obtain rfl : cvS = cvTa := hSt
+  have hS : StoredFormer J env p cvTa cvS := by
+    rcases hSt with rfl | ⟨rfl, hdq, hn⟩
+    · exact Or.inl rfl
+    · exact Or.inr ⟨h₀, hdq, hn⟩
   rcases hbr with rfl | ⟨ty, h₁⟩
-  · exact ⟨p.cvT, s, rfl, rfl, h₀, hp', henv, bs, hstrip⟩
-  · exact ⟨{ p.cvT with type := ty }, s, rfl, rfl, h₁, hp', henv, bs, hstrip⟩
+  · exact ⟨p.cvT, s, rfl, rfl, h₀, hp', ⟨cvS, henv, hS⟩, bs, hstrip⟩
+  · exact ⟨{ p.cvT with type := ty }, s, rfl, rfl, h₁, hp', ⟨cvS, henv, hS⟩, bs, hstrip⟩
+
+/-- The stored former keeps the telescope constant's name and level parameters. -/
+theorem StoredFormer.name_lps {J : Judgements md} {env : Env md} {p : InductiveShape md}
+    {cvTa cvS : ConstantVal md} (hT : cvTa.name = p.cvT.name ∧ cvTa.levelParams = p.cvT.levelParams)
+    (h : StoredFormer J env p cvTa cvS) :
+    cvS.name = cvTa.name ∧ cvS.levelParams = cvTa.levelParams := by
+  rcases h with rfl | ⟨hc, -, -⟩
+  · exact ⟨rfl, rfl⟩
+  · rw [hc.name_eq, hc.levelParams_eq, hT.1, hT.2]
+    exact ⟨rfl, rfl⟩
 
 /-- **The recursor record's pins** (`checkNativeRec_pins` over a package): at a
 large eliminator the elimination parameter is the recursor's, and the family's
@@ -729,7 +791,7 @@ theorem sumIndRunJ_of_run {env envI : Env md} {p p' : InductiveShape md}
     obtain ⟨rfl, rfl, rfl⟩ := h
     have hstrip : cvTa'.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) := by
       rw [hq', beq_iff_eq.mp hc]
-    refine ⟨cvTa₀, s, bs, cvTa', constantValCheckJ_of_run hccv₀, ?_, hstrip, rfl, rfl, rfl⟩
+    refine ⟨cvTa₀, s, bs, cvTa', constantValCheckJ_of_run hccv₀, ?_, hstrip, Or.inl rfl, rfl, rfl⟩
     rcases Ix.Kernel.checkSumTele_shape htele with ⟨rfl, -⟩ | ⟨ty, hccv⟩
     · exact Or.inl rfl
     · exact Or.inr ⟨ty, constantValCheckJ_of_run hccv⟩
@@ -861,11 +923,20 @@ theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRun μ F env p₀ env₂) : DeclNativeRunJ (runJ μ F) env p₀ env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest,
     isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, hROk, hRec, -, hTbl⟩ := h
+  -- the kernel stores the telescope constant
+  have hFR : FormerReadJ env₁ p cvTa ctorsA := by
+    obtain ⟨cvT, s, -, -, -, hp₁, henv₁, -⟩ := Ix.Kernel.checkSumInd_shape hInd
+    have hcvTn : cvTa.name = p.cvT.name := by
+      subst hp hp₁
+      exact (sumIndRunJ_of_run hInd).former.1
+    refine Or.inl ?_
+    rw [henv₁, ← hcvTn]
+    exact ⟨_, Ix.Kernel.Env.find?_cons_self _ _⟩
   exact ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     sumIndRunJ_of_run hInd, hp, sumCtorsRunJ_of_run hCtors, hK, hcaps,
     fun hl => (hwl hl).imp_left fun hnz φ => Ix.Kernel.Level.isNeverZero_sound φ _ hnz,
     hopT, fieldSortsJ_of_run hsorts, hFOk, hROk,
-    ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩, hTbl⟩
+    ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩, hTbl, hFR⟩
 
 end RunInstance
 

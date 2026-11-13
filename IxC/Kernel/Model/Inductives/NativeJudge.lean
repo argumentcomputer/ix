@@ -255,4 +255,11 @@ theorem sortClaim_runJ (hμ : μ.verifiedChecks = true) {env : Env md}
 
 end RunInstance
 
+/-- The arity-reading capabilities are an index-free family's. -/
+theorem nativeCapsAt_nIdx (q : Ix.Kernel.InductiveShape md) (isRec : Bool) :
+    ((Ix.Kernel.nativeCapsAt q isRec).unitlike = true → q.nIdx = 0) ∧
+    ((Ix.Kernel.nativeCapsAt q isRec).eta = true → q.nIdx = 0) := by
+  unfold Ix.Kernel.nativeCapsAt
+  split <;> simp_all
+
 end Ix.Kernel.Model

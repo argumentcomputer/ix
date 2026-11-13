@@ -192,8 +192,9 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
     {rhss : List (Expr md)} {mI rP : Nat}
     (hmI : mI = p.nP + 1 + ctorsA.length + p.nIdx) (hrP : rP = p.nP + 1 + ctorsA.length)
     (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
-    {caps : IndCaps md}
-    (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
+    {caps : IndCaps md} {cvS : ConstantVal md}
+    (hfT : env.find? p.cvT.name = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = p.cvT.levelParams)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
@@ -325,7 +326,7 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
     fun d e => denoteMeta_instLevels (acvalParamsAt_of_core m₂) φ d e
   generalize hψR : Level.substFn φ cvRa.levelParams us = ψR at hinstR ⊢
   -- the right-hand side's reading, at the extension
-  obtain ⟨rhs', hrhs', -, -, -, hread⟩ := fixRuleData_of mp hRec hfT hlpsT hstripT hopT hFD hlenK hks
+  obtain ⟨rhs', hrhs', -, -, -, hread⟩ := fixRuleData_of mp hRec hfT hlpsS hstripT hopT hFD hlenK hks
     hcf (mI := mI) (rP := rP) (rules := rules) hfresh hRT m₂ hac hj
   obtain rfl := Option.some.inj (hrhs.symm.trans hrhs')
   have hRa₂ : denoteMeta m₂.acval ⟨.recInfo cvRa mI rP rules :: env.consts⟩ φ 0
@@ -590,8 +591,8 @@ theorem stageFixRecJ {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcep
     (hplAll : ctorsA.all (fun c => Expr.recRulePlain cvRa.type mI rP p.nP c.1.levelParams) = true)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
-    {caps : IndCaps md}
-    (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
+    {caps : IndCaps md} {cvS : ConstantVal md}
+    (hfT : env.find? p.cvT.name = some (.indInfo cvS caps))
     -- the block's own capability laws at the cons (task #210 Part A),
     -- at any carrier agreeing with this one off the recursor's name
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
@@ -602,8 +603,9 @@ theorem stageFixRecJ {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcep
       (∀ ψ, m₂.acval p.cvT.name ψ = mp.base2.acval p.cvT.name ψ) →
       (∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
         ∀ ψ, m₂.acval cA.1.name ψ = mp.base2.acval cA.1.name ψ) →
-      CapsLawsAt m₂ p.cvT.name cvTa caps)
+      CapsLawsAt m₂ p.cvT.name cvS caps)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
+    (hlpsS : cvS.levelParams = p.cvT.levelParams)
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
     (helim : p.large = true → p.elim ∈ p.cvR.levelParams)
@@ -678,7 +680,7 @@ theorem stageFixRecJ {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcep
       mp'.base2.acval = acvalWith mp.base2.acval cvRa.name
         (fixLeafAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV) := by
   -- the data, the openings
-  obtain ⟨hRD, u, hsort⟩ := fixRecDataJ hJ hS hRec hfT hlpsT hstripT hopT hFD hlenK hks hcf
+  obtain ⟨hRD, u, hsort⟩ := fixRecDataJ hJ hS hRec hfT hlpsS hstripT hopT hFD hlenK hks hcf
   obtain ⟨fvsR, oR, hR⟩ := fixRecOpenedAll mp hRec hstripT hlenK hRD
   -- the constant's facts
   obtain ⟨-, -, cvRi, recTy, sty, u', hccv, -, htp, htrR, -, -, -, -, -, -, hcvRa⟩ :=
@@ -1129,13 +1131,11 @@ theorem stageFixRecJ {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcep
     · intro T' cvT' caps' hf hne hres hcape
       exact hE T' cvT' caps' hf hne hcape hres
     · intro cvT caps' hf _
-      have hfT' : (⟨c₀ :: env.consts⟩ : Env md).find? p.cvT.name = some (.indInfo cvTa caps) := by
+      have hfT' : (⟨c₀ :: env.consts⟩ : Env md).find? p.cvT.name = some (.indInfo cvS caps) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hTR h.symm)]
         exact hfT
       obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj (hfT'.symm.trans hf))
-      have hcbT : ConstsBound env cvTa.type :=
-        constsBound_of_constsResolve _
-          (mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)).2.2.1
+      have hcbT : ConstsBound env cvTa.type := constsBound_of_constsResolve _ hFD.cr
       refine hTlaws m₂ (fun n hn => ?_)
         (hFD.cross (c₀ := c₀) hfresh (hcross _) hcbT m₂ hac) (fun ψ => ?_) (fun j cA hj ψ => ?_)
       · rw [hac]
@@ -1163,7 +1163,7 @@ theorem stageFixRecJ {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcep
              Ix.Kernel.recRuleEtaOf env.find? cvRa.name cA.1.name, true⟩ := by
         simp [hplain, Ix.Kernel.recRuleBits]
       subst hElimL
-      exact fixRecRuleLaw mp hmI hrP hRec hfT hlpsT hstripT hopT hFD hlenK hks hcf hidxRes hRD
+      exact fixRecRuleLaw mp hmI hrP hRec hfT hlpsS hlpsT hstripT hopT hFD hlenK hks hcf hidxRes hRD
         hA hpre hAcl (fun ψ ρp hρp => by
           intro Fs hFs
           obtain ⟨j', hj'⟩ := List.getElem?_of_mem hFs
@@ -1276,7 +1276,7 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
       mp'.base2.acval = acvalWith mp.base2.acval cvRa.name
         (fixLeafAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV) :=
   stageFixRecJ hE mp (judgeSound_runJ hμ mp F) (sortClaim_runJ hμ mp F) hmI hrP hmIp hrPp
-    (Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec) hplAll hstripT hfT hTlaws hlpsT hopT helim hRlps'
+    (Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec) hplAll hstripT hfT hTlaws hlpsT hlpsT hopT helim hRlps'
     hFD hlenK hks hcf hidxRes _hUparams hleafT hleafC hiff hframes
     (fun hl => (hwl hl).imp_left fun hnz φ => Ix.Kernel.Level.isNeverZero_sound φ _ hnz)
 

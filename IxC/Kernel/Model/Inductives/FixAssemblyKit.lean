@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Model.Inductives.FixStageRec
+public import IxC.Kernel.Model.Inductives.FormerZero
 public import IxC.Kernel.Model.Inductives.FixStageFormer
 public import IxC.Kernel.Model.Inductives.FixCtorsLoop
 public import IxC.Kernel.Model.Inductives.FixCtorCross
@@ -80,8 +81,7 @@ theorem DenoteMetaSpine.congr {acval₁ acval₂ : Key md → (LevelParam → Na
 /-- **The former's index telescope**, valid at the parameter frame
 (beside `idxOk_of`). -/
 theorem idxValid_of (mp : EnvModelM V μ env)
-    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md} {T : Key md}
-    {caps : IndCaps md} (hfT : env.find? T = some (.indInfo cvTa caps))
+    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md}
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
@@ -89,8 +89,8 @@ theorem idxValid_of (mp : EnvModelM V μ env)
     (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     FieldsValid ρp (((ppsAll ψ).drop nP).map (·.2.2)) := by
-  obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf hTb
+  have hTf := hFD.tf
+  have hTb := hFD.tb
   have hT : Opened mp.base2 ψ (nP + nIdx) cvTa.type tfvs trest
       (((ppsAll ψ).map (·.2.2)).reverse) (.sort (resSort.eval ψ)) :=
     opened_of_peel hopT hTf hTb (hFD.read ψ) (hFD.len ψ) (hFD.okTy ψ)
@@ -110,10 +110,9 @@ data at a carrier storing the former as a λ-tower over the parameters
 theorem fixChainValidFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
@@ -129,7 +128,7 @@ theorem fixChainValidFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : Judge
     ChainValidFacts nP nF ρp ks (tss ψ) (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) := by
   have hlenDs := hD.len ψ
   -- the parameter frames identified
-  have hiff := (ctorFramesGenJ hJ hS hCtor hfT hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
+  have hiff := (ctorFramesGenJ hJ hS hCtor hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
   have hρp' : Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρp := hiff.mp hρp
   -- the shadow gradings
   obtain ⟨hkey, hkeyR⟩ := fixShadowGradingJ hJ hI hS hCtor hProp hD ψ
@@ -372,18 +371,18 @@ theorem fixCtorPickJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
-    {bs : List (Expr md × BinderMeta)} {ks : List RecFieldKind}
+    {cvS : ConstantVal md} {ks : List RecFieldKind}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = lps)
-    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
+    (hfT : env.find? T = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = lps)
+    (hZ : FormerZeroSrc T nP nIdx resSort cvTa cvS cvCa.type)
     (hks : ks.length = nF)
     (hopened : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cvCa.type nF ks = true) :
     ∃ q : FixCtorPick md, FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large
       q.idxArgs q.ds q.Es q.srcs ks q.fvsP q.xFvs q.xrest q.Eiss q.tss := by
   obtain ⟨idxArgs, ds, Es, srcs, fvsP, xFvs, xrest, Eiss, tss, hD⟩ :=
-    fixCtorDataJ hJ hI hS hCtor hfT hlpsT hstripT hks hopened
+    fixCtorDataJ hJ hI hS hCtor hfT hlpsS hZ hks hopened
   exact ⟨⟨idxArgs, ds, Es, srcs, fvsP, xFvs, xrest, Eiss, tss⟩, hD⟩
 
 /-- **The constructors' data functions** at a carrier storing the
@@ -392,11 +391,11 @@ theorem fixCtorFunsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvTa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
-    {bs : List (Expr md × BinderMeta)} {ctorsA : List (ConstantVal md × Nat)}
+    {cvS : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
     {kinds : List (List RecFieldKind)}
-    (hfT : env.find? T = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = lps)
-    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
+    (hfT : env.find? T = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = lps)
+    (hZ : FormerZeroSrcAll T nP nIdx resSort cvTa cvS ctorsA)
     (hFOk : Ix.Kernel.nativeFieldsOk env₀ T lps nP nIdx ctorsA kinds = true)
     (hrunOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∃ (c : ConstantVal md × Nat) (sorts : List Level),
@@ -420,7 +419,8 @@ theorem fixCtorFunsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
       obtain ⟨c, sorts, hCtor⟩ := hrunOf j cA hj
       obtain ⟨ks, hks, hksLen, hopened⟩ := Ix.Kernel.nativeFieldsOk_inv hFOk hj
       have hksD : kinds.getD j [] = ks := by rw [List.getD_eq_getElem?_getD, hks]; rfl
-      obtain ⟨q, hq⟩ := fixCtorPickJ hJ hI hS hCtor hfT hlpsT hstripT hksLen hopened
+      obtain ⟨q, hq⟩ := fixCtorPickJ hJ hI hS hCtor hfT hlpsS (hZ.get (List.mem_of_getElem? hj))
+        hksLen hopened
       refine ⟨q, fun cA' h => ?_⟩
       obtain rfl := Option.some.inj h
       rw [hksD]
@@ -606,11 +606,10 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
 /-- The validity halves from the constructor's stage run: `fixChainValidFactsJ` at the kernel's runs. -/
 theorem fixChainValidFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
@@ -625,7 +624,7 @@ theorem fixChainValidFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     ChainValidFacts nP nF ρp ks (tss ψ) (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) :=
   fixChainValidFactsJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
-    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hProp hFD hleafT hD ψ ρp hρp
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hFD hleafT hD ψ ρp hρp
 
 /-- The constructors' data functions from their stage runs: `fixCtorFunsJ` at the kernel's runs. -/
 theorem fixCtorFuns_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
@@ -650,7 +649,7 @@ theorem fixCtorFuns_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
         FixCtorDataI mp.base2 env₀ T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF j) (dsF j)
           (esF j) (srcsF j) (kinds.getD j []) (fvsPF j) (xFvsF j) (xrestF j) (eissF j) (tssF j) :=
   fixCtorFunsJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F) hfT hlpsT
-    hstripT hFOk (fun j cA hj => by
+    (Or.inl ⟨rfl, _, hstripT⟩) hFOk (fun j cA hj => by
       obtain ⟨c, sorts, h⟩ := hrunOf j cA hj
       exact ⟨c, sorts, Ix.Kernel.Semantics.sumCtorRunJ_of_run h⟩)
 

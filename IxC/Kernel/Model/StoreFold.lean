@@ -904,7 +904,8 @@ theorem consSumCtors_find?_ctor {nP : Nat} :
 structure NativeFront (p : NativeParts md) (cvTa : ConstantVal md)
     (ctorsA : List (ConstantVal md × Nat)) (envC : Env md) : Prop where
   store : StoreInv envC
-  former : ∃ caps, envC.find? p.cvT.name = some (.indInfo cvTa caps)
+  former : ∃ cvS caps, envC.find? p.cvT.name = some (.indInfo cvS caps) ∧
+    cvS.levelParams = p.cvT.levelParams ∧ (cvS = cvTa ∨ p.nIdx ≠ 0)
   formerLps : cvTa.levelParams = p.cvT.levelParams
   formerStrip : ∃ bs, cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort p.resSort)
   resT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false
@@ -932,7 +933,8 @@ theorem nativeFront {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
       p.isProp p.large cvTa p.ctors ctorsA sortss) :
     NativeFront p cvTa ctorsA (Ix.Kernel.consSumCtors p.nP ctorsA env₁) := by
   obtain ⟨hClps₀, hresT₀⟩ := hrc
-  obtain ⟨cvT, s, hTname₀, hTlps₀, hccvT, rfl, henv₁, bsT, hstripT₀⟩ := hInd.shape
+  obtain ⟨cvT, s, hTname₀, hTlps₀, hccvT, rfl, ⟨cvS, henv₁, hSt⟩, bsT, hstripT₀⟩ := hInd.shape
+  obtain ⟨hSn, hSl⟩ := hSt.name_lps ⟨by rw [hccvT.name_eq, hTname₀], by rw [hccvT.levelParams_eq, hTlps₀]⟩
   subst hp
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
     simp [NativeParts.withKinds]
@@ -959,20 +961,33 @@ theorem nativeFront {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
     rw [hstripT₀]; rfl
   have hS₁ : StoreInv env₁ := by
     rw [henv₁]
-    show StoreInv ⟨.indInfo cvTa (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec)
+    show StoreInv ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec)
       :: env.consts⟩
-    refine storeInv_consTyped h hfreshT (ConstantValCheckJ.typeWF (hfr env) hccvT)
+    have hwfS : cvS.type.hasFvar = false ∧ cvS.type.allLevelParamsDefined cvS.levelParams = true ∧
+        cvS.type.constsResolve env = true ∧ cvS.type.looseBVarsBounded 0 = true := by
+      rcases hSt with rfl | ⟨hcS, -, -⟩
+      · exact ConstantValCheckJ.typeWF (hfr env) hccvT
+      · exact ConstantValCheckJ.typeWF (hfr env) hcS
+    refine storeInv_consTyped h (show env.find? cvS.name = none by rw [hSn]; exact hfreshT) hwfS
       (fun _ _ _ heq => nomatch heq) (fun _ _ _ _ heq => nomatch heq)
       (fun _ heq => nomatch heq) (Ix.Kernel.IndCapsWF.of_caps ?_ ?_)
     · intro hu
-      rw [(nativeCapsAt_params _ isRec).1 hu, InductiveShape.withSort_nP]
-      exact Ix.Kernel.stripPis_isSome_of_le (Nat.le_add_right _ _) hsome
+      rcases hSt with rfl | ⟨-, -, hn⟩
+      · rw [(nativeCapsAt_params _ isRec).1 hu, InductiveShape.withSort_nP]
+        exact Ix.Kernel.stripPis_isSome_of_le (Nat.le_add_right _ _) hsome
+      · exact absurd ((nativeCapsAt_nIdx _ isRec).1 hu) hn
     · intro he
-      rw [(nativeCapsAt_params _ isRec).2 he, InductiveShape.withSort_nP]
-      exact Ix.Kernel.stripPis_isSome_of_le (Nat.le_add_right _ _) hsome
-  have hfT₁ : ∃ caps, env₁.find? p.cvT.name = some (.indInfo cvTa caps) := by
-    rw [henv₁, ← hTname]
+      rcases hSt with rfl | ⟨-, -, hn⟩
+      · rw [(nativeCapsAt_params _ isRec).2 he, InductiveShape.withSort_nP]
+        exact Ix.Kernel.stripPis_isSome_of_le (Nat.le_add_right _ _) hsome
+      · exact absurd ((nativeCapsAt_nIdx _ isRec).2 he) hn
+  have hfT₁ : ∃ caps, env₁.find? p.cvT.name = some (.indInfo cvS caps) := by
+    rw [henv₁, ← hTname, ← hSn]
     exact ⟨_, Ix.Kernel.Env.find?_cons_self _ _⟩
+  have hSalt : cvS = cvTa ∨ p.nIdx ≠ 0 := by
+    rcases hSt with h' | ⟨-, -, hn⟩
+    · exact Or.inl h'
+    · exact Or.inr (by rw [hpI]; exact hn)
   -- the constructors
   obtain ⟨hlen, -, hall⟩ := hCtors
   have hcf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
@@ -1026,7 +1041,7 @@ theorem nativeFront {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
   refine ⟨storeInv_consSumCtors hS₁ hndA (fun c hc => (hcfm c hc).1) (fun c hc => (hcfm c hc).2),
     ?_, hlpsT, ⟨bsT, hstripT⟩, by rw [hpT]; exact hresT₀, ?_⟩
   · obtain ⟨caps, hf⟩ := hfT₁
-    exact ⟨caps, by rw [consSumCtors_find?_of_not_mem hTnot]; exact hf⟩
+    exact ⟨cvS, caps, by rw [consSumCtors_find?_of_not_mem hTnot]; exact hf, hSl.trans hlpsT, hSalt⟩
   · intro j cA hj
     obtain ⟨-, -, hlp, hres, hstrip⟩ := hcf j cA hj
     exact ⟨consSumCtors_find?_ctor hndA cA (List.mem_of_getElem? hj), hlp, hres, hstrip⟩
@@ -1039,8 +1054,8 @@ theorem NativeFront.plain {p : NativeParts md} {cvTa : ConstantVal md}
     (hlenA : ctorsA.length = p.ctors.length) :
     ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
       c.1.levelParams) = true :=
-  let ⟨caps, hfT⟩ := hF.former
-  hRec.plain ⟨cvTa, caps, hfT⟩ hk hlenA fun c hc =>
+  let ⟨cvS, caps, hfT, _⟩ := hF.former
+  hRec.plain ⟨cvS, caps, hfT⟩ hk hlenA fun c hc =>
     let ⟨j, hj⟩ := List.mem_iff_getElem?.mp hc
     (hF.ctor j c hj).2.1
 
@@ -1091,7 +1106,7 @@ theorem storeInv_declNativeRunJ {J : Judgements md} (hfr : ∀ e : Env md, Judge
     {env env₂ : Env md} {p₀ : NativeParts md} (hrc : NativeRecog p₀) (h : StoreInv env)
     (hrun : DeclNativeRunJ J env p₀ env₂) : StoreInv env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   have hplAll := hF.plain hRec (nativeFieldsOk_length hFOk) hCtors.1
   -- the recursor
@@ -1119,7 +1134,8 @@ theorem storeInv_declNativeRunJ {J : Judgements md} (hfr : ∀ e : Env md, Judge
   refine storeInv_nativeTable hSR hTbl ?_
   intro cA hA hI
   obtain ⟨hfC, hlpC, hresC, cbs, es, hres, hes⟩ := hF.ctor 0 cA (by simp [hA])
-  obtain ⟨caps, hfT⟩ := hF.former
+  obtain ⟨cvS, caps, hfT, -, hSalt⟩ := hF.former
+  obtain rfl : cvTa = cvS := (hSalt.resolve_right fun h => h hI).symm
   obtain ⟨bs, hsT⟩ := hF.formerStrip
   have hes0 : es = [] := List.eq_nil_of_length_eq_zero (by rw [hes, hI])
   rw [hI, Nat.add_zero] at hsT
@@ -1134,12 +1150,13 @@ theorem storeInv_declNativeNoRecRunJ {J : Judgements md} (hfr : ∀ e : Env md, 
     {env env₂ : Env md} {p₀ : NativeParts md} (hrc : NativeRecog p₀) (h : StoreInv env)
     (hrun : DeclNativeNoRecRunJ J env p₀ env₂) : StoreInv env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   refine storeInv_nativeTable hF.store hTbl ?_
   intro cA hA hI
   obtain ⟨hfC, hlpC, hresC, cbs, es, hres, hes⟩ := hF.ctor 0 cA (by simp [hA])
-  obtain ⟨caps, hfT⟩ := hF.former
+  obtain ⟨cvS, caps, hfT, -, hSalt⟩ := hF.former
+  obtain rfl : cvTa = cvS := (hSalt.resolve_right fun h => h hI).symm
   obtain ⟨bs, hsT⟩ := hF.formerStrip
   have hes0 : es = [] := List.eq_nil_of_length_eq_zero (by rw [hes, hI])
   rw [hI, Nat.add_zero] at hsT

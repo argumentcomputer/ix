@@ -93,6 +93,11 @@ structure FormerData {env : Env md} (m : EnvModel V env) (cvT : ConstantVal md)
   below : ∀ ψ : LevelParam → Nat, DomsBelow 0 (pps ψ)
   params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ p ∈ cvT.levelParams, ψ₁ p = ψ₂ p) →
     pps ψ₁ = pps ψ₂ ∧ resSort.eval ψ₁ = resSort.eval ψ₂
+  /-- the type is closed -/
+  tf : cvT.type.hasFvar = false
+  tb : cvT.type.looseBVarsBounded 0 = true
+  /-- the type's constants resolve -/
+  cr : cvT.type.constsResolve env = true
 
 /-- The former's data, from its constant check at the pre-block
 environment (over a judgement package) and the annotated telescope
@@ -145,7 +150,7 @@ theorem formerDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J 
       simp only [Level.eval, Nat.succ_ne_zero, iff_false] at this
       exact this
     · exact (stripPisAV_below hst' (bvarsBelow_of_reading hw hbt' hTa)).1
-  refine ⟨fun ψ => Classical.choose (hper ψ), ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨fun ψ => Classical.choose (hper ψ), ?_, ?_, ?_, ?_, ?_, ?_, htf', hbt', htr'⟩
   · exact fun ψ => (Classical.choose_spec (hper ψ)).1
   · exact fun ψ => (Classical.choose_spec (hper ψ)).2.1
   · exact fun ψ => (Classical.choose_spec (hper ψ)).2.2.1
@@ -197,5 +202,8 @@ theorem FormerData.cross {m : EnvModel V env} {cvT : ConstantVal md}
   okTy := h.okTy
   below := h.below
   params := h.params
+  tf := h.tf
+  tb := h.tb
+  cr := Ix.Kernel.Expr.constsResolve_mono h.cr
 
 end Ix.Kernel.Model

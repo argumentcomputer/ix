@@ -6,6 +6,7 @@ public import IxC.Kernel.Model.Inductives.SumRecRead
 public import IxC.Kernel.Verify.Inductives.SumInv
 import IxC.Kernel.Model.Annot.BitLevels
 public import IxC.Kernel.Model.Inductives.NativeJudge
+public import IxC.Kernel.Model.Inductives.FormerZero
 public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 public section
 
@@ -377,17 +378,18 @@ theorem CtorDataI.Es_eq {env : Env md} {acval : Key md → (LevelParam → Nat) 
   exact DenoteMetaSpine.unique (DenoteMetaSpine.acvalWith_congr hfresh hres hsp₁) hsp₂
 
 /-- The constructor's data, from its stage at the environment holding the
-former (over a judgement package). -/
+former (over a judgement package). The stored former `cvS` is the telescope constant `cvTa`,
+whose type strips to the result sort, or the constructor's binders carry the result sort's
+zero-ness (`ctorZeroOk`). -/
 theorem sumCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
-    {bs : List (Expr md × Ix.Kernel.BinderMeta)}
+    {isProp large : Bool} {cvC cvTa cvCa cvS : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = lps)
-    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort)) :
+    (hfT : env.find? T = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = lps)
+    (hZ : FormerZeroSrc T nP nIdx resSort cvTa cvS cvCa.type) :
     ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
       (Es : (LevelParam → Nat) → List AnnotTerm) (srcs : List (Option Nat)),
       (∀ e ∈ idxArgs, e.constsResolve env₀ = true) ∧
@@ -410,17 +412,23 @@ theorem sumCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
   have hopAll := openPisAtFvars_add nP hopC (by rw [Nat.zero_add]; exact hopX)
   have hidx := openPisAtFvars_index nP type' 0 hopC
   obtain ⟨hlenX, hidxX, -⟩ := opening_vars_at hopX
-  obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI (nP + nF) hopAll hst hens
-  rw [Nat.zero_add] at hib hensb
-  have hstripI : ((ConstantInfo.indInfo cvTa caps).toConstantVal.type.instantiateLevelParams
-      (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams (lps.map .param)).stripPis
-      (fvsP ++ idxArgs).length = some (bs, .sort resSort) := by
-    rw [show (ConstantInfo.indInfo cvTa caps).toConstantVal = cvTa from rfl,
-      hlpsT, Expr.instantiateLevelParams_self, List.length_append, hlenP, hlenI]
-    exact hstripT
-  obtain rfl := hI.infer_spine_sort hib hfT hstripI
-  have hvb := hI.sort_sort hensb
-  rw [hvb] at hbits
+  -- the binders' bits: the result sort's zero-ness, read off the stored telescope's typing
+  -- or carried by the constructor
+  have hbits : ∀ φ, PiBitsOpen φ (Level.eval φ resSort = 0) (nP + nF) 0 type' := by
+    rcases hZ with ⟨rfl, bs, hstripT⟩ | hz
+    · obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI (nP + nF) hopAll hst hens
+      rw [Nat.zero_add] at hib hensb
+      have hstripI : ((ConstantInfo.indInfo cvS caps).toConstantVal.type.instantiateLevelParams
+          (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams (lps.map .param)).stripPis
+          (fvsP ++ idxArgs).length = some (bs, .sort resSort) := by
+        rw [show (ConstantInfo.indInfo cvS caps).toConstantVal = cvS from rfl,
+          hlpsS, Expr.instantiateLevelParams_self, List.length_append, hlenP, hlenI]
+        exact hstripT
+      obtain rfl := hI.infer_spine_sort hib hfT hstripI
+      have hvb := hI.sort_sort hensb
+      rw [hvb] at hbits
+      exact hbits
+    · exact (ctorZeroOk_open (nP + nF) hz hopAll).2
   -- the per-assignment reading
   have hper : ∀ ψ : LevelParam → Nat, ∃ (ds : List (Nat × Nat × AnnotTerm)) (Es : List AnnotTerm),
       denoteMeta m.acval env ψ 0 type'
@@ -442,13 +450,13 @@ theorem sumCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
       have hconst := denoteMeta_const (acval := m.acval) (env := env) (φ := ψ)
         (d := nP + nF) hfT
         (show (lps.map Level.param).length
-          = (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams.length by
-          show (lps.map Level.param).length = cvTa.levelParams.length
-          rw [hlpsT, List.length_map])
-      have hsubst : Level.substFn ψ (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams
+          = (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams.length by
+          show (lps.map Level.param).length = cvS.levelParams.length
+          rw [hlpsS, List.length_map])
+      have hsubst : Level.substFn ψ (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams
           (lps.map Level.param) = ψ := by
-        show Level.substFn ψ cvTa.levelParams (lps.map Level.param) = ψ
-        rw [hlpsT]
+        show Level.substFn ψ cvS.levelParams (lps.map Level.param) = ψ
+        rw [hlpsS]
         exact Level.substFn_param_self ψ _
       rw [hconst, hsubst] at hfa
       exact (Option.some.inj hfa).symm
@@ -614,7 +622,7 @@ theorem sumCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
         idxArgs = xrest.getAppArgs.drop nP) ∧
       CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs :=
   sumCtorDataJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
-    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hlpsT hstripT
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hlpsT (Or.inl ⟨rfl, _, hstripT⟩)
 
 /-! ## The constructor's frames -/
 
@@ -626,10 +634,9 @@ fitting field spine. -/
 theorem ctorFramesGenJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
     (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
@@ -671,8 +678,8 @@ theorem ctorFramesGenJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
   simp only at htf' hbt' hopC hsorts
   have hlenP : fvsP.length = nP := openPisAtFvars_length _ hopC
   have hopAll := openPisAtFvars_add nP hopC (by rw [Nat.zero_add]; exact hopX)
-  obtain ⟨hTf, -, -, hTb, -⟩ := m.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf hTb
+  have hTf := hFD.tf
+  have hTb := hFD.tb
   obtain ⟨hlenS, hfields⟩ := hsorts
   have hpins := hdoms
   have hlenX : xFvs.length = nF := openPisAtFvars_length _ hopX
@@ -833,11 +840,10 @@ theorem ctorFramesGenJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
 /-- The constructor's frames from its stage run: `ctorFramesGenJ` at the kernel's runs. -/
 theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) {F : Nat}
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
@@ -872,6 +878,6 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
           interp V (consList as ρ) ((((ds ψ).drop nP).map (·.2.2)).getD j default)
             ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) :=
   ctorFramesGenJ (judgeSound_runJ hμ mp F) (sortClaim_runJ hμ mp F)
-    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hProp hFD hCD hleafT
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hFD hCD hleafT
 
 end Ix.Kernel.Model

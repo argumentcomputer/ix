@@ -100,8 +100,8 @@ theorem native_newSat {J : Judgements md} {env env₂ : Env md} {p₀ : NativePa
     (hQr : ∀ cv a b rs, Q (.recInfo cv a b rs)) (hQp : ∀ t, Q (.projInfo t))
     (hrun : DeclNativeRunJ J env p₀ env₂) : NewSat env env₂ Q := by
   obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, -,
-    -, -, -, -, -, -, -, -, -, hTbl⟩ := hrun
-  obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+    -, -, -, -, -, -, -, -, -, hTbl, -⟩ := hrun
+  obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   subst henv₁
   exact (NewSat.cons (hQi _ _)).trans ((consSumCtors_newSat hQc).trans
     ((NewSat.cons (hQr _ _ _ _)).trans (nativeTable_newSat hQp hTbl)))
@@ -113,8 +113,8 @@ theorem nativeNoRec_newSat {J : Judgements md} {env env₂ : Env md} {p₀ : Nat
     (hQp : ∀ t, Q (.projInfo t))
     (hrun : DeclNativeNoRecRunJ J env p₀ env₂) : NewSat env env₂ Q := by
   obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, -, -, -, -, -, -,
-    -, hTbl⟩ := hrun
-  obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+    -, hTbl, -⟩ := hrun
+  obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   subst henv₁
   exact (NewSat.cons (hQi _ _)).trans ((consSumCtors_newSat hQc).trans
     (nativeTable_newSat hQp hTbl))
@@ -497,9 +497,9 @@ theorem native_recK_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J
       (∀ r ∈ rules, r.k = Ix.Kernel.recRuleKOf env₂.find? r.ctor) ∧
       (∀ r ∈ rules, r.k = true → rules = [r]) := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, -, -, hRec, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
-  obtain ⟨_, s, _, _, _, hp₁, henv₁, _, _⟩ := hInd.shape
+  obtain ⟨_, s, _, _, _, hp₁, ⟨cvS, henv₁, hS⟩, _, _⟩ := hInd.shape
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
   let envC := Ix.Kernel.consSumCtors p.nP ctorsA env₁
   have hfreshR : envC.find? cvRa.name = none := by rw [hnR]; exact hfR
@@ -561,9 +561,9 @@ theorem native_recK_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J
       · next hne =>
         exfalso
         apply hne
-        obtain ⟨cvT', s', hn', -, hcc, -⟩ := hInd.shape
-        show cvTa.name = p.cvT.name
-        rw [native_cvT hInd hp, hcc.name_eq, hn']
+        show cvS.name = p.cvT.name
+        rw [native_cvT hInd hp, (hS.name_lps ⟨hInd.former.1, hInd.former.2.1⟩).1]
+        exact hInd.former.1
   · have h1 := consSumCtors_rec hR
     rw [henv₁] at h1
     rw [find?_rec_of_cons h1 (fun _ _ _ _ heq => nomatch heq)] at hn0
@@ -912,7 +912,7 @@ theorem nativeFormer_towers {J : Judgements md} {env env₁ X env₂ : Env md}
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss X = .ok env₂) :
     ∀ T cvT caps, env₂.find? T = some (.indInfo cvT caps) → env.find? T = none →
       caps.eta = true → Ix.Kernel.towerSlotsAll env₂ T caps.etaFields = true := by
-  obtain ⟨_, s, _, _, _, hp₁, henv₁, _, _⟩ := hInd.shape
+  obtain ⟨_, s, _, _, _, hp₁, ⟨cvS, henv₁, hS⟩, _, _⟩ := hInd.shape
   intro T cvT caps hf hn he
   -- the family is the former
   have hT₁ : env₁.find? T = some (.indInfo cvT caps) := by
@@ -928,9 +928,9 @@ theorem nativeFormer_towers {J : Judgements md} {env env₁ X env₂ : Env md}
     rw [hF]
     have hT : T = p.cvT.name := by
       rw [← hname, native_cvT hInd hp]
-      obtain ⟨cvT', s', hn', -, hcc, -⟩ := hInd.shape
-      show cvTa.name = p₀.cvT.name
-      rw [hcc.name_eq, hn']
+      show cvS.name = p₀.cvT.name
+      rw [(hS.name_lps ⟨hInd.former.1, hInd.former.2.1⟩).1]
+      exact hInd.former.1
     subst hT
     subst hp hp₁
     have hc' : p₀.ctors = [c] := by simpa [InductiveShape.withSort] using hc
@@ -985,7 +985,7 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
       · refine etaTowers_step hext h ?_
         obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-          hCtors, -, -, -, -, -, -, -, -, hTbl⟩ := hN
+          hCtors, -, -, -, -, -, -, -, -, hTbl, -⟩ := hN
         exact nativeFormer_towers hInd hp hCtors
           ((consSumCtors_newSat (fun _ _ _ _ _ heq => nomatch heq)).trans
             (NewSat.cons (c := .recInfo _ _ _ _) (fun _ _ heq => nomatch heq))) hTbl
@@ -996,7 +996,7 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
             (fun _ _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ _ heq => nomatch heq) hM)
       · refine etaTowers_step hext h ?_
         obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, hp, hCtors, -,
-          -, -, -, -, hTbl⟩ := hN
+          -, -, -, -, hTbl, -⟩ := hN
         exact nativeFormer_towers hInd hp hCtors
           (consSumCtors_newSat (fun _ _ _ _ _ heq => nomatch heq)) hTbl
   | quotDecl k cv =>
@@ -1144,12 +1144,12 @@ theorem tableBodies_declRunJ {env env₂ : Env md} {d : Declaration md} (hS : St
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
       · refine tableBodies_step hext.find h ?_
         obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd,
-          hp, hCtors, -, -, -, -, -, -, -, hRec, hTbl⟩ := hN
+          hp, hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hN
         have hF := nativeFront hfr hS (nativeRecog_of hdp) hnd hInd hp hCtors
         obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
         have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by
           rw [hnR]; exact hfR
-        obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+        obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
         have hXno : NewSat env ⟨.recInfo cvRa p.majorIdx p.rulePrefix
             (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP
               p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
@@ -1165,9 +1165,9 @@ theorem tableBodies_declRunJ {env env₂ : Env md} {d : Declaration md} (hS : St
             (fun _ _ _ _ _ heq => nomatch heq) hM)
       · refine tableBodies_step hext.find h ?_
         obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, hp, hCtors,
-          -, -, -, -, -, hTbl⟩ := hN
+          -, -, -, -, -, hTbl, -⟩ := hN
         have hF := nativeFront hfr hS (nativeRecog_noRec hdp) hnd hInd hp hCtors
-        obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+        obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
         have hXno : NewSat env (Ix.Kernel.consSumCtors p.nP ctorsA env₁) NotProj := by
           subst henv₁
           exact (NewSat.cons (fun _ heq => nomatch heq)).trans

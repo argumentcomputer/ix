@@ -33,7 +33,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 set_option maxHeartbeats 6400000 in
 /-- **The constructors' conses, in order.** -/
 theorem ctorsLoopGenJ {J : Judgements md}
-    {p : InductiveShape md} {env₀ envI : Env md} {cvTa : ConstantVal md} (hfr : JudgeFrames J envI)
+    {p : InductiveShape md} {env₀ envI : Env md} {cvTa cvS : ConstantVal md} (hfr : JudgeFrames J envI)
     {ctors ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     (hCtors : SumCtorsRunJ J env₀ envI p.cvT.name
       p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large cvTa ctors ctorsA sortss)
@@ -75,7 +75,7 @@ theorem ctorsLoopGenJ {J : Judgements md}
       (∀ ψ, m'.acval cA.1.name ψ
         = sumMkAV (p.resSort.eval ψ) k (dsF k ψ) (((dsF k ψ).drop p.nP).map (·.2.2))
             (uChains (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)))) →
-      CapsLawsAt m' p.cvT.name cvTa caps)
+      CapsLawsAt m' p.cvT.name cvS caps)
     (hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
@@ -88,7 +88,7 @@ theorem ctorsLoopGenJ {J : Judgements md}
     ∀ (rest : List (ConstantVal md × Nat)) (k : Nat) (env : Env md) (mp : EnvModelM V μ env),
       (∀ i, rest[i]? = ctorsA[k + i]?) → k + rest.length = ctorsA.length →
       Ix.Kernel.EtaFamiliesClosedExcept env p.cvT.name →
-      env.find? p.cvT.name = some (.indInfo cvTa caps) →
+      env.find? p.cvT.name = some (.indInfo cvS caps) →
       FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, mp.base2.acval p.cvT.name ψ = leafT ψ) →
       ConsedAt mp.base2 p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large
@@ -99,7 +99,7 @@ theorem ctorsLoopGenJ {J : Judgements md}
       ∃ mp' : EnvModelM V μ (Ix.Kernel.consSumCtors p.nP rest env),
         Ix.Kernel.EtaFamiliesClosedExcept (Ix.Kernel.consSumCtors p.nP rest env) p.cvT.name ∧
         (Ix.Kernel.consSumCtors p.nP rest env).find? p.cvT.name
-          = some (.indInfo cvTa caps) ∧
+          = some (.indInfo cvS caps) ∧
         FormerData mp'.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll ∧
         (∀ ψ, mp'.base2.acval p.cvT.name ψ = leafT ψ) ∧
         ConsedAt mp'.base2 p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large
@@ -142,7 +142,7 @@ theorem ctorsLoopGenJ {J : Judgements md}
       rw [hleafT ψ]
       exact hfold k cA hcAk ψ ρ hρ bs hsp
     have hcbT : ConstsBound env cvTa.type :=
-      constsBound_of_constsResolve _ (mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)).2.2.1
+      constsBound_of_constsResolve _ hFD.cr
     have hcross : ∀ e : Expr md, ConsCrossAt (.ctorInfo cA.1 p.nP cA.2) e :=
       fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
     obtain ⟨mpC, hacC⟩ := stageCtorGenJ (j := k) hE mp hfr hCtor hfresh htr hfT hlpsT hlpsC
@@ -166,7 +166,7 @@ theorem ctorsLoopGenJ {J : Judgements md}
         p.cvT.name :=
       hE.cons hfresh (fun _ _ heq => nomatch heq)
     have hfT' : (⟨.ctorInfo cA.1 p.nP cA.2 :: env.consts⟩ : Env md).find? p.cvT.name
-        = some (.indInfo cvTa caps) := Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT
+        = some (.indInfo cvS caps) := Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT
     have hFD' : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll :=
       hFD.cross (c₀ := .ctorInfo cA.1 p.nP cA.2) hfresh (hcross _) hcbT mpC.base2 hacC
     have hleafT' : ∀ ψ, mpC.base2.acval p.cvT.name ψ = leafT ψ := by

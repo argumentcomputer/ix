@@ -526,9 +526,9 @@ set_option maxHeartbeats 3200000 in
 A): at a structure-like block the P carrier survives the table's cons
 (`stageFixTable`); at any other block the stage conses nothing. -/
 theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
-    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {cvTa cvS cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     {rhss : List (Expr md)} {J : Judgements md} (hI : JudgeInv J)
-    (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
+    (h₁ : env₁ = ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
@@ -564,7 +564,8 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
       ∃ sorts : List Level, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₁ env₁
         p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large c.1 cA.2 cvTa cA.1 sorts)
-    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)))
+    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvS (Ix.Kernel.nativeCaps p)))
+    (hSalt : cvS = cvTa ∨ p.nIdx ≠ 0)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
@@ -631,6 +632,8 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
     split at hTbl
     · next hnIdx =>
       have hnIdx' : p.nIdx = 0 := beq_iff_eq.mp hnIdx
+      have hS : cvS = cvTa := hSalt.resolve_right fun h => h hnIdx'
+      subst cvS
       obtain ⟨c, hc, hCname, hlpsC, -, -, hCshape, sorts', hsj, hCtor⟩ := hrunOf 0 cA rfl
       obtain rfl : sorts = sorts' := Option.some.inj hsj
       have hc' : p.ctors = [c] := by
@@ -875,9 +878,9 @@ structure-like block the P carrier survives the table's cons over the
 constructors' environment (`stageFixTable`); at any other block the stage conses
 nothing. -/
 theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
-    {cvTa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {cvTa cvS : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     {J : Judgements md} (hI : JudgeInv J)
-    (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
+    (h₁ : env₁ = ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss envC = .ok env₂)
     (mpC : EnvModelM V μ envC)
@@ -905,7 +908,8 @@ theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts
       ∃ sorts : List Level, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₁ env₁
         p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large c.1 cA.2 cvTa cA.1 sorts)
-    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)))
+    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvS (Ix.Kernel.nativeCaps p)))
+    (hSalt : cvS = cvTa ∨ p.nIdx ≠ 0)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
@@ -971,6 +975,8 @@ theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts
     split at hTbl
     · next hnIdx =>
       have hnIdx' : p.nIdx = 0 := beq_iff_eq.mp hnIdx
+      have hS : cvS = cvTa := hSalt.resolve_right fun h => h hnIdx'
+      subst cvS
       obtain ⟨c, hc, hCname, hlpsC, -, -, hCshape, sorts', hsj, hCtor⟩ := hrunOf 0 cA rfl
       obtain rfl : sorts = sorts' := Option.some.inj hsj
       have hc' : p.ctors = [c] := by
@@ -1230,7 +1236,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
     (fun j cA hj => by
       obtain ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, hrun⟩ := hrunOf j cA hj
       exact ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, Ix.Kernel.Semantics.sumCtorRunJ_of_run hrun⟩)
-    hfT_C hlpsT hTfresh htrT hFD_C hstripT hcf_C hleafT hleafC hframes hsortsOf hXR
+    hfT_C (Or.inl rfl) hlpsT hTfresh htrT hFD_C hstripT hcf_C hleafT hleafC hframes hsortsOf hXR
     ⟨cvRa, rhss, Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩).elim
     fun mp₂ _ => ⟨mp₂⟩
 

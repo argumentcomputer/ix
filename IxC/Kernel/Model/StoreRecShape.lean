@@ -171,9 +171,9 @@ theorem native_recShape_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFram
     ∀ n cv mI rP rules, env₂.find? n = some (.recInfo cv mI rP rules) → env.find? n = none →
       RecAt env₂ n cv mI rP rules := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
-  obtain ⟨_, s, _, _, _, hp₁, henv₁, _, _⟩ := hInd.shape
+  obtain ⟨_, s, _, _, _, hp₁, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
   let envC := Ix.Kernel.consSumCtors p.nP ctorsA env₁
   have hfreshR : envC.find? cvRa.name = none := by rw [hnR]; exact hfR
@@ -182,7 +182,7 @@ theorem native_recShape_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFram
   have hk := nativeFieldsOk_length hFOk
   have hlenA : ctorsA.length = p.ctors.length := hCtors.1
   obtain ⟨bs₀, B₀, m₀, hmaj⟩ :=
-    hRec.majorOf (let ⟨caps, hfT⟩ := hF.former; ⟨cvTa, caps, hfT⟩) hk hlenA
+    hRec.majorOf (let ⟨cvS, caps, hfT, _⟩ := hF.former; ⟨cvS, caps, hfT⟩) hk hlenA
   have hmr : p.majorIdx - p.rulePrefix = p.nIdx := Nat.add_sub_cancel_left p.rulePrefix p.nIdx
   intro n cv mI rP rules hf hn0
   have hR := nativeTable_rec hTbl hf

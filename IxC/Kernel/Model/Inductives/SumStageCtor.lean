@@ -177,7 +177,7 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Key md} {lps : List LevelParam} {
 theorem stageCtorGenJ {T : Key md}
     (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
     {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa cvS : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
     (mp : EnvModelM V μ env) {J : Judgements md} (hfr : JudgeFrames J env₁)
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₀ env₁ T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
@@ -185,7 +185,7 @@ theorem stageCtorGenJ {T : Key md}
     -- resolves there
     (hfresh : env.find? cvCa.name = none)
     (htr : cvCa.type.constsResolve env = true)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hfT : env.find? T = some (.indInfo cvS caps))
     (hlpsT : cvTa.levelParams = lps)
     (hlpsC : cvCa.levelParams = lps)
     {idxArgs : List (Expr md)}
@@ -199,7 +199,7 @@ theorem stageCtorGenJ {T : Key md}
       (∀ n, n ≠ cvCa.name → m₂.acval n = mp.base2.acval n) →
       (∀ ψ, m₂.acval cvCa.name ψ
         = sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP).map (·.2.2)) (uChains (Fss ψ))) →
-      CapsLawsAt m₂ T cvTa caps)
+      CapsLawsAt m₂ T cvS caps)
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
     (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
     (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -309,7 +309,7 @@ theorem stageCtorGenJ {T : Key md}
       exact hE T' cvT' caps' hf hne hcape hres
     · intro cvT caps' hf _
       have hfT' : (⟨.ctorInfo cvCa nP nF :: env.consts⟩ : Env md).find? T
-          = some (.indInfo cvTa caps) := by
+          = some (.indInfo cvS caps) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hTC h.symm)]
         exact hfT
       obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj (hfT'.symm.trans hf))

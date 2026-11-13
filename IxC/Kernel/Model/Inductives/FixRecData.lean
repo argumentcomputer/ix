@@ -102,10 +102,10 @@ universe: the kernel's sort inference, through the claims' sort row. -/
 theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
     (hS : ∀ ψ, SortClaimJ J m ψ)
     {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
-    {rhss : List (Expr md)} {caps : IndCaps md}
+    {rhss : List (Expr md)} {caps : IndCaps md} {cvS : ConstantVal md}
     (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
-    (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = p.cvT.levelParams)
+    (hfT : env.find? p.cvT.name = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = p.cvT.levelParams)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {tfvs : List (Expr md)} {trest : Expr md}
@@ -130,16 +130,16 @@ theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J 
   obtain ⟨-, -, cvRi, recTy, sty, u, -, hgen, htp, -, hbt, hRf, hsty, hens, -, -, hstR⟩ :=
     hRec
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
-  obtain ⟨hTf, -, -, hTb, -⟩ := m.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf hTb
+  have hTf := hFD.tf
+  have hTb := hFD.tb
   have hcr : ∀ ψ, CtorReadsR m ψ p.cvT.name p.cvT.levelParams p.nP p.nIdx
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) :=
     fun ψ => fixCtorReadsR_of ψ hlenK hks hcf
   have hread : ∀ ψ : LevelParam → Nat, denoteMeta m.acval env ψ 0 recTy
       = some (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) := fun ψ => by
-    have := denoteMeta_structRecTyR hfT (show (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams
-        = p.cvT.levelParams from hlpsT) (hcr ψ) hgen hTf hTb
+    have := denoteMeta_structRecTyR hfT (show (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams
+        = p.cvT.levelParams from hlpsS) (hcr ψ) hgen hTf hTb
       (by rw [hstripT]; rfl) hopT (hFD.read ψ) (hFD.len ψ)
     rwa [fixCtorDataList_length] at this
   have hw : Expr.WScoped 0 recTy := Expr.WScoped.of_not_hasFvar hRf
