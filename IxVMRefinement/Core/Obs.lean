@@ -393,7 +393,7 @@ theorem MixedMatchList.matchListWith {ps : List (Pattern F)} {us : List (SourceV
     obtain ⟨bs1, h1⟩ : ∃ bs, world.matchPattern types heap p u = .ok (some bs) := by
       rcases hp with hflat | ⟨c, hc, huc⟩
       · exact hflat.matchPattern (world := world) (types := types) u heap
-      · exact ⟨[], by rw [huc, hc heap c, if_pos rfl]⟩
+      · exact ⟨[], by rw [huc, hc heap c]; simp⟩
     obtain ⟨bs2, h2⟩ := ih
     refine ⟨bs1 ++ bs2, ?_⟩
     simp [SourceSemantics.matchListWith, h1, h2, bind, Except.bind, pure, Except.pure]
