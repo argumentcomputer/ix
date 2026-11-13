@@ -203,6 +203,13 @@ def evalSitesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr →
     ((Γ, f', a'), P) :: (evalSitesPs P Γ f f' ++ (if P'.isEmpty then [] else evalSitesPs P' Γ a a'))
   | P, Γ, .lam _ _ body, .lam d' body' _ => evalSitesPs P (d' :: Γ) body body'
   | P, Γ, .proj _ _ e, .proj _ _ e' => evalSitesPs P Γ e e'
+  | P, Γ, .letE _ r _ v b, e =>
+    (match zcopy b e with
+      | some v' =>
+        if !subAt0B v' e then [] else
+          let P' := P.filter fun prof => !r.irrP prof
+          if P'.isEmpty then [] else evalSitesPs P' Γ v v'
+      | none => []) ++ evalSitesPs P Γ b e
   | _, _, _, _ => []
 
 /-- **`HeadRegime`, decided per site** (the reference reading, quadratic in a spine's length): every
@@ -233,7 +240,7 @@ def spineHere (P : List IxCC.Src.Profile) (Γ : List KExpr) (e : KExpr) (acc : L
   if acc.isEmpty then [] else [⟨Γ, e.getAppFn, e.getAppArgs ++ acc, P⟩]
 
 /-- **The maximal spines SrcEval may evaluate**, with their profiles, `acc` the arguments already
-peeled above `e` (each evaluated spine once; walked as `evalSites`). -/
+peeled above `e` (each evaluated spine once; walked as `evalSites`: through a `let`, its value's spines at its copy when the value is relevant and the copy sits at depth 0, then its body's against the same kernel term, the arguments peeled above carried on, since the reduct is that term). -/
 def spinesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr → List KExpr → List SpineAt
   | P, Γ, .app f a _ r, .app f' a', acc =>
     spinesPs P Γ f f' (a' :: acc) ++
@@ -243,6 +250,13 @@ def spinesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr → List 
     spineHere P Γ (.lam d' body' m) acc ++ spinesPs P (d' :: Γ) body body' []
   | P, Γ, .proj _ _ x, .proj s i x', acc =>
     spineHere P Γ (.proj s i x') acc ++ spinesPs P Γ x x' []
+  | P, Γ, .letE _ r _ v b, e, acc =>
+    (match zcopy b e with
+      | some v' =>
+        if !subAt0B v' e then [] else
+          let P' := P.filter fun prof => !r.irrP prof
+          if P'.isEmpty then [] else spinesPs P' Γ v v' []
+      | none => []) ++ spinesPs P Γ b e acc
   | P, Γ, _, e, acc => spineHere P Γ e acc
 
 /-- **`HeadRegime`, decided per maximal spine** (the decision the root theorem reads): each spine
@@ -366,6 +380,18 @@ theorem spineRead_prefix {env : KEnv} :
         (ys.map (·.liftLooseBVars 1 0)) (by simp)
       exact ⟨_, .lam hr', t, rfl⟩
 
+/-- An argument relevant at `ls`: its profile survives the relevance filter, which is not empty. -/
+theorem mem_filter_irr {ls : Levels} {P : List IxCC.Src.Profile} {r : IxCC.Src.Rel}
+    (hP : IxCC.Src.profileOf ls ∈ P) (hirr : ¬ r.irrAt ls = true) :
+    IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) ∧
+      (P.filter fun prof => !r.irrP prof).isEmpty = false := by
+  have hP' : IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) := by
+    simp [List.mem_filter, hP, ← irrAt_profile, hirr]
+  refine ⟨hP', ?_⟩
+  cases hq : (P.filter fun prof => !r.irrP prof) with
+  | nil => rw [hq] at hP'; simp at hP'
+  | cons _ _ => rfl
+
 /-- Every site `evalSites` lists at `Ok` levels is listed at their profile. -/
 theorem mem_evalSitesPs {ls : Levels} :
     ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KExpr) (e : KExpr) (s : Site),
@@ -415,6 +441,30 @@ theorem mem_evalSitesPs {ls : Levels} :
       obtain ⟨Ps, h1, h2⟩ := ih P Γ x' s hP hs
       exact ⟨Ps, by simpa only [evalSitesPs] using h1, h2⟩
     | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro P Γ e s hP hs
+    simp only [evalSites, List.mem_append] at hs
+    rcases hs with hs | hs
+    · cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs
+        cases hsub : subAt0B v' e
+        · simp [hsub] at hs
+        · simp only [hsub, Bool.not_true, Bool.or_false] at hs
+          split at hs
+          · simp at hs
+          · rename_i hirr
+            obtain ⟨hP', hne⟩ := mem_filter_irr hP hirr
+            obtain ⟨Ps, h1, h2⟩ := ihv _ Γ v' s hP' hs
+            refine ⟨Ps, ?_, h2⟩
+            simp only [evalSitesPs, List.mem_append, hz, hsub, Bool.not_true, Bool.false_eq_true,
+              ↓reduceIte, hne]
+            exact Or.inl h1
+    · obtain ⟨Ps, h1, h2⟩ := ihb P Γ e s hP hs
+      refine ⟨Ps, ?_, h2⟩
+      simp only [evalSitesPs, List.mem_append]
+      exact Or.inr h1
   | _ => intro P Γ e s _ hs; cases e <;> simp [evalSites] at hs
 
 /-- An `Ok` instance's profile is among the `Ok` profiles. -/
@@ -494,6 +544,10 @@ theorem spinesPs_tail : ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KE
     | _ =>
       obtain ⟨sp, hsp, h⟩ := here P Γ _ acc hacc
       exact ⟨sp, by simpa only [spinesPs] using hsp, h⟩
+  | letE c r ty v b _ _ ihb =>
+    intro P Γ e acc hacc
+    obtain ⟨sp, hsp, h⟩ := ihb P Γ e acc hacc
+    exact ⟨sp, by simp only [spinesPs, List.mem_append]; exact Or.inr hsp, h⟩
   | _ =>
     intro P Γ e acc hacc
     obtain ⟨sp, hsp, h⟩ := here P Γ e acc hacc
@@ -556,6 +610,30 @@ theorem spinesPs_cover {ls : Levels} : ∀ (t : Term) (P : List IxCC.Src.Profile
       simp only [spinesPs, List.mem_append]
       exact Or.inr hsp
     | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro P Γ e acc hP s hs
+    simp only [evalSites, List.mem_append] at hs
+    rcases hs with hs | hs
+    · cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs
+        cases hsub : subAt0B v' e
+        · simp [hsub] at hs
+        · simp only [hsub, Bool.not_true, Bool.or_false] at hs
+          split at hs
+          · simp at hs
+          · rename_i hirr
+            obtain ⟨hP', hne⟩ := mem_filter_irr hP hirr
+            obtain ⟨sp, hsp, h⟩ := ihv _ Γ v' [] hP' s hs
+            refine ⟨sp, ?_, h⟩
+            simp only [spinesPs, List.mem_append, hz, hsub, Bool.not_true, Bool.false_eq_true,
+              ↓reduceIte, hne]
+            exact Or.inl hsp
+    · obtain ⟨sp, hsp, h⟩ := ihb P Γ e acc hP s hs
+      refine ⟨sp, ?_, h⟩
+      simp only [spinesPs, List.mem_append]
+      exact Or.inr hsp
   | _ => intro P Γ e acc _ s hs; cases e <;> simp [evalSites] at hs
 
 theorem take_dropLast {α : Type _} {l : List α} {j : Nat} (h : j < l.length) :
@@ -942,6 +1020,22 @@ theorem graded_sites_ctx (M : Model V env) {φ : LevelParam → Nat} {ls : Level
         simp only [GradedBy] at h1
         exact ⟨h0, h1⟩) s hs
     | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro Γ e hg s hs
+    simp only [evalSites, List.mem_append] at hs
+    rcases hs with hs | hs
+    · cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs
+        cases hsub : subAt0B v' e
+        · simp [hsub] at hs
+        · simp only [hsub, Bool.not_true, Bool.or_false] at hs
+          split at hs
+          · simp at hs
+          · exact ihv Γ v' (fun ρ hρ => ⟨(hg ρ hρ).1,
+              gradedBy_of_subAt0 (subAt0_of_check hsub) (hg ρ hρ).2⟩) s hs
+    · exact ihb Γ e hg s hs
   | _ => intro Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 /-- **A value spine read through δ and β lies in a positive-regime product** (a constant by `mem`,

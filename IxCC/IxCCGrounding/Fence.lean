@@ -981,6 +981,60 @@ example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId �
 
 end ConclusionsG
 
+/-! ## Step C: a `let` in a run term (the correspondence through a substitution, `Runs` with `σ`,
+the environment relation under it, the walks' `let` cases) -/
+
+/-- info: 'IxCC.Grounding.idσ_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Grounding.idσ_zero
+
+/-- info: 'IxCC.Grounding.liftσ_idσ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.liftσ_idσ
+
+/-- info: 'IxCC.Grounding.idσ_get' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.idσ_get
+
+/-- info: 'IxCC.Grounding.subAt0_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.subAt0_of_check
+
+/-- info: 'IxCC.Grounding.termCorrS_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.termCorrS_of_check
+
+/-- info: 'IxCC.Grounding.corrSB_idσ_of_termCorrB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.corrSB_idσ_of_termCorrB
+
+/-- info: 'IxCC.Grounding.corrSB_of_termCorrB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.corrSB_of_termCorrB
+
+/-- info: 'IxCC.Grounding.termCorrS_of_termCorr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.termCorrS_of_termCorr
+
+/-- info: 'IxCC.Grounding.denotesIn_of_subAt0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotesIn_of_subAt0
+
+/-- info: 'IxCC.Grounding.skipEnv_push_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.skipEnv_push_one
+
+/-- info: 'IxCC.Grounding.relEnv_liftAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relEnv_liftAll
+
+/-- info: 'IxCC.Grounding.relEnv_lift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relEnv_lift
+
+/-- info: 'IxCC.Grounding.mentions_let_val' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.mentions_let_val
+
+/-- info: 'IxCC.Grounding.mentions_let_body' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.mentions_let_body
+
+/-- info: 'IxCC.Grounding.relEnv_pushAll_gen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relEnv_pushAll_gen
+
+/-- info: 'IxCC.Grounding.evalSites_mem_P' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.evalSites_mem_P
+
+/-- info: 'IxCC.Grounding.gradedBy_of_subAt0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_of_subAt0
+
 /-! **Every run-term site typed from `graded`: the head's type read through δ and β** (`IxCCGrounding.GradedHead`, step 1b). -/
 
 /-- info: 'IxCC.Grounding.holds_pwChain' depends on axioms: [propext, Classical.choice, Quot.sound] -/
