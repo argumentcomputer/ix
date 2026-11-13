@@ -25,12 +25,26 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 
 set_option linter.unusedVariables false
-
-namespace RolesAux
+set_option linter.unusedSimpArgs false
 
 /-- A callee's derivation has fewer calls than its caller's. -/
 local macro "roles_lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
+
+namespace RolesAux
+
+theorem construct_ctor_ne {en₁ en₂ c₁ c₂ : String} {vs₁ vs₂ : List (SourceValue F)}
+    (hne : c₁ ≠ c₂)
+    (h : (Value.construct en₁ c₁ vs₁ : SourceValue F) = .construct en₂ c₂ vs₂) : False := by
+  injection h with _ hc _
+  exact hne hc
+
+theorem ok_construct_ctor_ne {en₁ en₂ c₁ c₂ : String} {vs₁ vs₂ : List (SourceValue F)}
+    (hne : c₁ ≠ c₂)
+    (h : (Except.ok (Value.construct en₁ c₁ vs₁) : Except EvalError (SourceValue F)) =
+      .ok (.construct en₂ c₂ vs₂)) : False := by
+  injection h with hv
+  exact construct_ctor_ne hne hv
 
 /-! ## Arithmetic and binary-operation inversions -/
 
@@ -75,27 +89,91 @@ theorem roleMapSearch_det {en : String} {h : Heap F} {k : F} {tree : SourceValue
     (h₂ : Specs.Roles.RoleMapSearch en h k tree r₂) : r₁ = r₂ := by
   induction h₁ generalizing r₂ with
   | nil =>
-    cases h₂
-    rfl
-  | here =>
+    generalize ht : (Value.construct en "Nil" [] : SourceValue F) = t at h₂
     cases h₂ with
-    | here => rfl
-    | left hlt => exact absurd hlt (Nat.lt_irrefl _)
-    | right hgt => exact absurd hgt (Nat.lt_irrefl _)
-  | left hlt hl _ ih =>
+    | nil => rfl
+    | here => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | left => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | right => exact (construct_ctor_ne (by decide) ht.symm).elim
+  | @here c v lp rp =>
+    generalize ht : (Value.construct en "Node" [c, .field k, v, lp, rp] : SourceValue F) = t at h₂
     cases h₂ with
-    | here => exact absurd hlt (Nat.lt_irrefl _)
+    | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | here =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with _ hvs2
+      injection hvs2 with hv _
+      exact hv
+    | left hlt =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      exact absurd hlt (Nat.lt_irrefl _)
+    | right hgt =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      exact absurd hgt (Nat.lt_irrefl _)
+  | @left c v lp rp lv key res hlt hl _ ih =>
+    generalize ht : (Value.construct en "Node" [c, .field key, v, lp, rp] : SourceValue F) = t at h₂
+    cases h₂ with
+    | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | here =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      exact absurd hlt (Nat.lt_irrefl _)
     | left _ hl' hs' =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with _ hvs2
+      injection hvs2 with _ hvs3
+      injection hvs3 with hlp _
+      subst hlp
       rw [hl] at hl'
       injection hl' with hlv
       subst hlv
       exact ih hs'
-    | right hgt => omega
-  | right hgt hr _ ih =>
+    | right hgt =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      omega
+  | @right c v lp rp rv key res hgt hr _ ih =>
+    generalize ht : (Value.construct en "Node" [c, .field key, v, lp, rp] : SourceValue F) = t at h₂
     cases h₂ with
-    | here => exact absurd hgt (Nat.lt_irrefl _)
-    | left hlt => omega
+    | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | here =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      exact absurd hgt (Nat.lt_irrefl _)
+    | left hlt =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk _
+      injection hk with hkeq
+      subst hkeq
+      omega
     | right _ hr' hs' =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with _ hvs2
+      injection hvs2 with _ hvs3
+      injection hvs3 with _ hvs4
+      injection hvs4 with hrp _
+      subst hrp
       rw [hr] at hr'
       injection hr' with hrv
       subst hrv
@@ -155,16 +233,42 @@ theorem roleMapSearch_mem_all {en : String} {P : Heap F → F → SourceValue F 
     (hall : RoleMapAll en P h tree)
     (hs : Specs.Roles.RoleMapSearch en h k tree (some v)) : P h k v := by
   induction hall with
-  | nil => cases hs
-  | node hP hl hr _ _ ihl ihr =>
+  | nil =>
+    generalize ht : (Value.construct en "Nil" [] : SourceValue F) = t at hs
     cases hs with
-    | here => exact hP
+    | here => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | left => exact (construct_ctor_ne (by decide) ht.symm).elim
+    | right => exact (construct_ctor_ne (by decide) ht.symm).elim
+  | @node c key nv lp rp lv rv hP hl hr _ _ ihl ihr =>
+    generalize ht : (Value.construct en "Node" [.field c, .field key, nv, lp, rp] : SourceValue F) = t at hs
+    cases hs with
+    | here =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with hk hvs2
+      injection hk with hkeq
+      injection hvs2 with hv _
+      subst hkeq hv
+      exact hP
     | left _ hl' hs' =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with _ hvs2
+      injection hvs2 with _ hvs3
+      injection hvs3 with hlp _
+      subst hlp
       rw [hl] at hl'
       injection hl' with hlv
       subst hlv
       exact ihl hs'
     | right _ hr' hs' =>
+      injection ht with _ _ hvs
+      injection hvs with _ hvs1
+      injection hvs1 with _ hvs2
+      injection hvs2 with _ hvs3
+      injection hvs3 with _ hvs4
+      injection hvs4 with hrp _
+      subst hrp
       rw [hr] at hr'
       injection hr' with hrv
       subst hrv
@@ -197,7 +301,7 @@ theorem role_map_lookup_generic (t_V : Generic.Ty) :
       | Node_n0 w28 x_k x_v x_left x_right _ hv26 op69 he87 he88 _ =>
         obtain ⟨k', rfl, heq⟩ := evalBinOp_sub_field_left_inv op69
         have hk : k' = k := (sub_eq_zero.mp (Value.field.inj heq).symm).symm
-        subst hk hv26 he87 he88
+        rw [hv26, hk, he87, he88]
         exact ⟨rfl, some x_v, .here, rfl⟩
       | Node_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc162 =>
         rw [hc162] at hle; simp at hle
@@ -212,7 +316,7 @@ theorem role_map_lookup_generic (t_V : Generic.Ty) :
       | Node_n0 w28 x_k x_v x_left x_right _ hv26 op69 he87 he88 _ =>
         obtain ⟨k', rfl, heq⟩ := evalBinOp_sub_field_left_inv op69
         have hk : k' = k := (sub_eq_zero.mp (Value.field.inj heq).symm).symm
-        subst hk hv26 he87 he88
+        rw [hv26, hk, he87, he88]
         exact ⟨rfl, some x_v, .here, rfl⟩
       | Node_other_n1 w28 x_k x_v x_left x_right v54 m95 cs106 cs132 v136 _ hv26 op69 hne90 ev108 ld153 ev134 hc162 =>
         obtain ⟨k', rfl, rfl⟩ := evalBinOp_sub_field_left_inv op69
@@ -225,7 +329,7 @@ theorem role_map_lookup_generic (t_V : Generic.Ty) :
       | Node_other_other w28 x_k x_v x_left x_right v54 v94 m95 cs106 cs170 v174 _ hv26 op69 hne90 ev108 hne163 ld191 ev172 hc200 =>
         obtain ⟨k', rfl, rfl⟩ := evalBinOp_sub_field_left_inv op69
         have hkne : k ≠ k' := fun e => hne90 (by rw [e, sub_self])
-        have hvne : ZMod.val k ≠ ZMod.val k' := fun e => hkne (ZMod.val_injective F e)
+        have hvne : ZMod.val k ≠ ZMod.val k' := fun e => hkne (ZMod.val_injective PF e)
         obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev108
         have hnlt : ¬ ZMod.val k < ZMod.val k' := fun h1 => hne163 (hlt_iff.mpr h1)
         have hgt : ZMod.val k' < ZMod.val k := by omega
@@ -242,14 +346,15 @@ theorem repAddr_zeroAddr_snoc (h : Heap F) :
     RepAddr (h ++ [.tuple (List.replicate 32 (.field 0))]) Specs.Roles.zeroAddr
       (.ptr (.tuple (List.map Value.type (List.replicate 32 ((.field 0) : SourceValue F)))) h.length) := by
   have hty : (List.map Value.type (List.replicate 32 ((.field 0) : SourceValue F))) =
-      List.replicate 32 .field := by rfl
+      List.replicate 32 .field := by simp [Value.type]
   rw [hty]
   refine ⟨h.length, .tuple (List.replicate 32 (.field 0)), rfl, by simp, ?_⟩
   unfold Bytes.RepAddress Specs.Roles.zeroAddr
   apply congrArg Value.tuple
   apply List.ext_getElem (by simp)
   intro i h1 h2
-  simp
+  have hi : i < 32 := by simpa using h1
+  simp [List.getElem_replicate, Vector.getElem_toList, hi]
 
 /-! ## `RBTreeMap::canon_addr_cmp` and `rbtree_map_lookup_or_default` -/
 
@@ -280,7 +385,7 @@ theorem canon_ord_then_spec {x_a x_b r : SourceValue F} {h h' : Heap F} {calls :
     exact ⟨he25, fun hr => absurd (he24.symm.trans hr) hne19⟩
 
 theorem u8_eq_of_toNat {b c : UInt8} (h : b.toNat = c.toNat) : b = c :=
-  UInt8.ext (Fin.ext h)
+  congrArg UInt8.ofBitVec (BitVec.eq_of_toNat_eq h)
 
 theorem canon_addr_chunk_spec {b0 b1 b2 b3 c0 c1 c2 c3 : UInt8}
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -586,7 +691,7 @@ theorem rbtree_map_lookup_generic :
         rw [hc149] at hle; simp at hle
       | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc209 =>
         rw [hc209] at hle; simp at hle
-      | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc244 =>
+      | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc244 =>
         rw [hc244] at hle; simp at hle
     | succ N ih =>
       intro kp tree dflt r h h' calls a P hle ha hall ev
@@ -595,8 +700,16 @@ theorem rbtree_map_lookup_generic :
       | Node_n1 w28 x_k x_v w29 w30 y51 y59 m63 cs73 v76 m78 cs86 cs122 _ hv26 ld52 _ ev88 ev75 ev124 hc149 =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
         cases hall with
+        | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk _ hl _ rl _ =>
+          injection ht with _ _ hvs
+          injection hvs with _ hvs1
+          injection hvs1 with hxk hvs2
+          injection hvs2 with _ hvs3
+          injection hvs3 with hw29 _
+          subst hxk hw29
           rw [hl] at ld52; injection ld52 with hy51; subst hy51
           obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
           obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
@@ -605,21 +718,37 @@ theorem rbtree_map_lookup_generic :
       | Node_other_n0 w28 x_k x_v w29 w30 y51 y59 v62 m63 cs73 v76 m78 cs86 x162 m164 cs173 _ hv26 _ _ ev88 ev75 _ ev175 op169 he207 he208 _ =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
         cases hall with
+        | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk hP _ _ _ _ =>
+          injection ht with _ _ hvs
+          injection hvs with _ hvs1
+          injection hvs1 with hxk hvs2
+          injection hvs2 with hxv _
+          subst hxk hxv
           obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
           obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
           obtain ⟨x, hx1, hx2⟩ := evalBinOp_sub_eq_zero_inv op169
           have hx162 : x162 = .field 1 := hx1.trans hx2.symm
           obtain ⟨rfl, heqa⟩ := canon_addr_cmp_spec ha hk ev175
           obtain rfl := heqa hx162
-          subst he207 he208
+          rw [he207, he208]
           exact ⟨rfl, .inr hP⟩
       | Node_other_other w28 x_k x_v w29 w30 y51 y59 v62 m63 cs73 v76 m78 cs86 v154 x162 m164 cs173 cs217 _ hv26 _ ld60 ev88 ev75 _ ev175 _ _ ev219 hc244 =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
         cases hall with
+        | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk _ _ hr _ rr =>
+          injection ht with _ _ hvs
+          injection hvs with _ hvs1
+          injection hvs1 with hxk hvs2
+          injection hvs2 with _ hvs3
+          injection hvs3 with _ hvs4
+          injection hvs4 with hw30 _
+          subst hxk hw30
           rw [hr] at ld60; injection ld60 with hy59; subst hy59
           obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
           obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
@@ -678,11 +807,11 @@ theorem role_ctx_table_step (c : Ctx) {args h r h' calls}
       injection hxs with hxt
       subst hxt he38 he39
       exact ⟨rfl, htbl⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
   | Assumed x_tbl w48 ld12 he60 he61 _ =>
     rw [hload] at ld12
     rcases hnode with ⟨n, _, _, rfl⟩ | ⟨_, rfl⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
     · injection ld12 with hv
       injection hv with _ _ hxs
       injection hxs with hxt
@@ -724,7 +853,7 @@ theorem role_bound_addr_or_zero_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, res, hs_ext, hr⟩ := RolesAux.role_map_lookup_generic (.ptr (.array .field 32)) ev48
   rw [Obs.Names.«KernelRoles::RoleMap<&[Field; 32]>».symbol] at hs_ext
   have hs : Specs.Roles.RoleMapSearch roleAddrMapEnum h k byRole res :=
-    RolesAux.roleMapSearch_unextend_snoc (fun _ _ e => nomatch e) hs_ext
+    RolesAux.roleMapSearch_unextend_snoc (fun _ _ e => by cases e) hs_ext
   cases res with
   | some v =>
     simp only [Option.getD_some] at hr
@@ -745,7 +874,7 @@ theorem role_is_bound_step (c : Ctx) {args h r h' calls}
     exact absurd he110 hr_ne
   | n0 v1 m2 cs12 x40 y41 m42 cs51 v55 m65 cs73 ev14 ev75 ev53 op97 op47 _ _ hc105 =>
     obtain ⟨res, hs, hres⟩ :=
-      ih.get (.roles .role_bound_addr_or_zero) (by rw [hc105]; RolesAux.roles_lt_calls) ev14
+      ih.get (.roles .role_bound_addr_or_zero) (by rw [hc105]; roles_lt_calls) ev14
         tbl (roleNum ro) rfl byRole hby
     obtain ⟨bp, byRole', byAddr, evMap, hload, hbyRoleAll, _, _⟩ := htbl
     obtain ⟨bp', byAddr', evMap', hload'⟩ := hby
@@ -767,10 +896,10 @@ theorem role_is_bound_step (c : Ctx) {args h r h' calls}
       · cases hnone
       have htbl_m2 : TableRep c.t m2 tbl := htbl.mono ev14.heap_extends
       obtain ⟨rfl, hIdx⟩ :=
-        ih.get (.roles .role_addr_index) (by rw [hc105]; RolesAux.roles_lt_calls) ev75
+        ih.get (.roles .role_addr_index) (by rw [hc105]; roles_lt_calls) ev75
           tbl rfl htbl_m2
       have hlookup :=
-        ih.get (.roles .rbtree_map_lookup_or_default_field) (by rw [hc105]; RolesAux.roles_lt_calls)
+        ih.get (.roles .rbtree_map_lookup_or_default_field) (by rw [hc105]; roles_lt_calls)
           ev53 v1 v55 (.field 0) rfl Specs.Roles.zeroAddr ha_zero (IndexEntry c.t) hIdx
       obtain rfl := RolesAux.evalBinOp_add_field_inv op97
       obtain ⟨x, hx1, hx2⟩ := RolesAux.evalBinOp_sub_eq_zero_inv op47
@@ -797,13 +926,13 @@ theorem role_bound_addr_step (c : Ctx) {args h r h' calls}
     rw [heq48]
     exact fun e => one_ne_zero (Value.field.inj e)
   obtain ⟨res₁, hs₁, hbound⟩ :=
-    ih.get (.roles .role_is_bound) (by rw [hc71]; RolesAux.roles_lt_calls) ev25
+    ih.get (.roles .role_is_bound) (by rw [hc71]; roles_lt_calls) ev25
       tbl ro rfl good1 htbl hv12_ne byRole hby
   have ext1 : Heap.Extends h m15 := ev25.heap_extends
   have hby_m15 : Specs.Roles.ByRole m15 tbl byRole :=
     ⟨bp, byAddr, evMap, ext1.loadValue_eq hload⟩
   obtain ⟨res₂, hs₂, hres₂⟩ :=
-    ih.get (.roles .role_bound_addr_or_zero) (by rw [hc71]; RolesAux.roles_lt_calls) ev54
+    ih.get (.roles .role_bound_addr_or_zero) (by rw [hc71]; roles_lt_calls) ev54
       tbl (roleNum ro) rfl byRole hby_m15
   have hdet : res₁ = res₂ := RolesAux.roleMapSearch_det (RolesAux.roleMapSearch_mono ext1 hs₁) hs₂
   subst hdet
@@ -828,11 +957,11 @@ theorem role_index_of_step (c : Ctx) {args h r h' calls}
   obtain ⟨cs4, v8, m18, cs26, v29, m31, cs39, ev41, ev28, ev6, hc56⟩ :=
     Obs.«KernelRoles::role_index_of».obs ev
   obtain ⟨rfl, htbl⟩ :=
-    ih.get (.roles .role_ctx_table) (by rw [hc56]; RolesAux.roles_lt_calls) ev41 rc rfl hrc
+    ih.get (.roles .role_ctx_table) (by rw [hc56]; roles_lt_calls) ev41 rc rfl hrc
   obtain ⟨rfl, hIdx⟩ :=
-    ih.get (.roles .role_addr_index) (by rw [hc56]; RolesAux.roles_lt_calls) ev28 v29 rfl htbl
+    ih.get (.roles .role_addr_index) (by rw [hc56]; roles_lt_calls) ev28 v29 rfl htbl
   exact ih.get (.roles .rbtree_map_lookup_or_default_field)
-    (by rw [hc56]; RolesAux.roles_lt_calls) ev6 ap v8 (.field 0) rfl a ha (IndexEntry c.t) hIdx
+    (by rw [hc56]; roles_lt_calls) ev6 ap v8 (.field 0) rfl a ha (IndexEntry c.t) hIdx
 
 theorem role_of_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_of" args h r h' calls) (ih : IH c calls) :
@@ -855,10 +984,10 @@ theorem role_of_step (c : Ctx) {args h r h' calls}
       injection hxs1 with hxl
       subst hxt hxl
       obtain ⟨rfl, hIdx⟩ :=
-        ih.get (.roles .role_addr_index) (by rw [hc217]; RolesAux.roles_lt_calls) ev71 tbl rfl htbl
+        ih.get (.roles .role_addr_index) (by rw [hc217]; roles_lt_calls) ev71 tbl rfl htbl
       have hlookup :=
         ih.get (.roles .rbtree_map_lookup_or_default_field)
-          (by rw [hc217]; RolesAux.roles_lt_calls) ev49 ap v51 (.field 0) rfl a ha (IndexEntry c.t) hIdx
+          (by rw [hc217]; roles_lt_calls) ev49 ap v51 (.field 0) rfl a ha (IndexEntry c.t) hIdx
       rcases hlookup with hv0 | ⟨ro, hv36, haddr⟩
       · exact absurd hv0 hne103
       · subst hv36
@@ -877,20 +1006,20 @@ theorem role_of_step (c : Ctx) {args h r h' calls}
           injection hm with hnm
           omega⟩
         exact .inr ⟨ro, he215, haddr, hinForce⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
   | Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 hc285 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, _, _, rfl⟩ | ⟨hlim, rfl⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
     · injection ld12 with hv
       injection hv with _ _ hxs
       injection hxs with hxt
       subst hxt
       obtain ⟨rfl, hIdx⟩ :=
-        ih.get (.roles .role_addr_index) (by rw [hc285]; RolesAux.roles_lt_calls) ev270 tbl rfl htbl
+        ih.get (.roles .role_addr_index) (by rw [hc285]; roles_lt_calls) ev270 tbl rfl htbl
       have hlookup :=
         ih.get (.roles .rbtree_map_lookup_or_default_field)
-          (by rw [hc285]; RolesAux.roles_lt_calls) ev248 ap v250 (.field 0) rfl a ha (IndexEntry c.t) hIdx
+          (by rw [hc285]; roles_lt_calls) ev248 ap v250 (.field 0) rfl a ha (IndexEntry c.t) hIdx
       rcases hlookup with hr0 | ⟨ro, hr, haddr⟩
       · exact .inl hr0
       · have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
@@ -910,7 +1039,7 @@ theorem role_is_step (c : Ctx) (hc : CoreFacts c) {args h r h' calls}
   | n0_other x10 y11 m12 cs21 v53 m54 cs65 ev23 op47 op17 ev67 hne91 _ _ hc97 =>
     have good1 : Good c cs21 := good.sub (by rw [hc97]; intro x hx; simp [hx])
     have hidx :=
-      ih.get (.roles .role_index_of) (by rw [hc97]; RolesAux.roles_lt_calls) ev23
+      ih.get (.roles .role_index_of) (by rw [hc97]; roles_lt_calls) ev23
         rc ap a rfl good1 hrc ha
     obtain rfl := RolesAux.evalBinOp_add_field_inv op47
     obtain ⟨x, hx1, hx2⟩ := RolesAux.evalBinOp_sub_eq_zero_inv op17
@@ -924,7 +1053,7 @@ theorem role_is_step (c : Ctx) (hc : CoreFacts c) {args h r h' calls}
     have ext1 : Heap.Extends h m12 := ev23.heap_extends
     have good2 : Good c cs65 := good.sub (by rw [hc97]; intro x hx; simp [hx])
     have hof :=
-      ih.get (.roles .role_of) (by rw [hc97]; RolesAux.roles_lt_calls) ev67
+      ih.get (.roles .role_of) (by rw [hc97]; roles_lt_calls) ev67
         rc ap a rfl good2 (hrc.mono ext1) (Bytes.repAddressRef_heapMono₂ addrTy ext1 ha)
     rcases hof with hv0 | ⟨ro₂, _, haddr₂, hinForce₂⟩
     · exact absurd hv0 hne91
@@ -958,7 +1087,7 @@ theorem role_addr_step (c : Ctx) {args h r h' calls}
       rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn_lt (by decide))] at hlt_val
       have good_ba : Good c cs108 := good.sub (by rw [hc173]; intro x hx; simp [hx])
       obtain ⟨a, ha_m98, haddr⟩ :=
-        ih.get (.roles .role_bound_addr) (by rw [hc173]; RolesAux.roles_lt_calls) ev110
+        ih.get (.roles .role_bound_addr) (by rw [hc173]; roles_lt_calls) ev110
           tbl ro rfl good_ba htbl
       have ext_tail : Heap.Extends m98 h' := by
         rw [he172]
@@ -970,18 +1099,18 @@ theorem role_addr_step (c : Ctx) {args h r h' calls}
         injection hm with hnm
         omega⟩
       exact ⟨a, Bytes.repAddressRef_heapMono₂ addrTy ext_tail ha_m98, haddr, hinForce⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
   | Assumed x_tbl w181 cs195 ld12 ev197 hc214 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, _, _, rfl⟩ | ⟨hlim, rfl⟩
-    · cases ld12
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
     · injection ld12 with hv
       injection hv with _ _ hxs
       injection hxs with hxt
       subst hxt
       have good_ba : Good c cs195 := good.sub (by rw [hc214]; intro x hx; simp [hx])
       obtain ⟨a, ha_h', haddr⟩ :=
-        ih.get (.roles .role_bound_addr) (by rw [hc214]; RolesAux.roles_lt_calls) ev197
+        ih.get (.roles .role_bound_addr) (by rw [hc214]; roles_lt_calls) ev197
           tbl ro rfl good_ba htbl
       have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
       have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
@@ -996,7 +1125,7 @@ theorem role_used_implicitly_step (c : Ctx) {args h r h' calls}
     Obs.«KernelRoles::role_used_implicitly».obs ev
   have good1 : Good c cs12 := good.sub (by rw [hc64]; intro x hx; simp [hx])
   obtain ⟨a, ha_m2, haddr, hinForce⟩ :=
-    ih.get (.roles .role_addr) (by rw [hc64]; RolesAux.roles_lt_calls) ev14 rc ro rfl good1 hrc
+    ih.get (.roles .role_addr) (by rw [hc64]; roles_lt_calls) ev14 rc ro rfl good1 hrc
   exact ⟨a, Bytes.repAddressRef_heapMono₂ addrTy ev44.heap_extends ha_m2, haddr, hinForce⟩
 
 theorem role_evidence_step (c : Ctx) {args h r h' calls}
@@ -1022,7 +1151,7 @@ theorem role_evidence_step (c : Ctx) {args h r h' calls}
   have hcell_ne : ∀ ctor vs,
       (Value.construct evListEnum "Nil" [] : SourceValue F) ≠ .construct roleEvMapEnum ctor vs := by
     intro ctor vs e
-    have hne : evListEnum ≠ roleEvMapEnum := by decide
+    have hne : evListEnum ≠ roleEvMapEnum := by decide +kernel
     injection e with he
     exact hne he
   have hs : Specs.Roles.RoleMapSearch roleEvMapEnum h (roleNum ro) evMap res :=
