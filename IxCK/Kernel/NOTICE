@@ -98,6 +98,17 @@ Modifications
     continuation through a closure, which kept native frames per
     reduction step, and the two recursions kept one per installed
     constant or declaration.
+  * Telescopes that stop at a checked tail (2026-11): Cached/StateC.lean
+    adds peelFuelTo and peelFuelToM, and Cached/CoreC.lean's inference and
+    annotation clauses for ∀ and λ take the binder loops' peel fuel from
+    them (the binders before the first closed residual the memo already
+    holds) in place of the constant peelFuel; the loops' simulations hold
+    for every peel fuel, and Verify/Cached/SimCEff.lean proves
+    peelFuelToM_eff, which Verify/Cached/{DiscC4,DiscC6}.lean take in place
+    of peelFuelM_eff. StateC.lean's isEquivLM simplifies through
+    simplifyMemoC, Level.simplifyGo seeded with the declaration's memo
+    (simplifyMemoC_spec). A chain T (j+1) = T j → T j re-peeled the whole
+    telescope below each step, and annotation rebuilt it as fresh nodes.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import

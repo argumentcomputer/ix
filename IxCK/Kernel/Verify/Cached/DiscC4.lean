@@ -20,8 +20,9 @@ byte-identical to the interned original's.
 
 The one code-shape deviation from the interned original (recorded at
 the batch-10 re-sync) lives in `inferBodyI`: the binder-telescope peel
-fuel is the constant `peelFuelM`, opaque to the binder-loop tails,
-which quantify over the fuel.
+fuel is `peelFuelToM` (the binders before a closed residual the memo
+holds; the constant `peelFuel` until 2026-11), opaque to the binder-loop
+tails, which quantify over the fuel (`peelFuelToM_eff`).
 -/
 
 set_option linter.unusedSimpArgs false
@@ -1955,7 +1956,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
       refine SimC.bind_left
         (pureC_eff hs₂ (x := Expr.fvar d t))
         (fun s₃ fv hs₃ hQfv => ?_)
-      refine SimC.bind_left (peelFuelM_eff hs₃)
+      refine SimC.bind_left (peelFuelToM_eff hs₃ _ _ _)
         (fun s₃f fuel hs₃f _hQfuel => ?_)
       exact inferPisC_tail_sim ih hs₃f rfl rfl hQfv hwtb.1 hwtb.2
     | bvar k' => exact SimC.throw
@@ -1989,7 +1990,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
       refine SimC.bind_left
         (pureC_eff hs₂ (x := Expr.fvar d t))
         (fun s₃ fv hs₃ hQfv => ?_)
-      refine SimC.bind_left (peelFuelM_eff hs₃)
+      refine SimC.bind_left (peelFuelToM_eff hs₃ _ _ _)
         (fun s₃f fuel hs₃f _hQfuel => ?_)
       exact inferLamsC_tail_sim ih henv hs₃f rfl rfl hQfv
         hwtb.1 hwtb.2

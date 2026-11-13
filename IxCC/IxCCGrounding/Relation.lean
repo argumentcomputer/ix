@@ -83,21 +83,22 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
 /-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
 the first fragment): the key's set at the assignment, its stored type the telescope a partial
 application's arguments fit. -/
-inductive HeadAt (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) (S : CId → Prop) :
+inductive HeadAt (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) (S : CId → Prop)
+    (Ok : CId → Levels → Prop) :
     IxCC.Src.Head → Levels → (LevelParam → Nat) → KKey → KExpr → Prop
   | ctor {c : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
-      S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci →
-      HeadAt M κ lpsOf S (.ctor c) ls φ (κ c) ci.toConstantVal.type
+      S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci → Ok c ls →
+      HeadAt M κ lpsOf S Ok (.ctor c) ls φ (κ c) ci.toConstantVal.type
   | cases {c : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
-      S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci →
-      HeadAt M κ lpsOf S (.cases c) ls φ (κ c) ci.toConstantVal.type
+      S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci → Ok c ls →
+      HeadAt M κ lpsOf S Ok (.cases c) ls φ (κ c) ci.toConstantVal.type
   | recr {r : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
       S r → LvAt φ (lpsOf r) ls → env.find? (κ r) = some ci →
-      HeadAt M κ lpsOf S (.recr r) ls φ (κ r) ci.toConstantVal.type
+      HeadAt M κ lpsOf S Ok (.recr r) ls φ (κ r) ci.toConstantVal.type
   | prim {op : IxCC.Src.PrimOp} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
       env.find? (primKey op) = some ci → ci.toConstantVal.levelParams = [] →
       op.arity ≤ kPis ci.toConstantVal.type →
-      HeadAt M κ lpsOf S (.prim op) ls φ (primKey op) ci.toConstantVal.type
+      HeadAt M κ lpsOf S Ok (.prim op) ls φ (primKey op) ci.toConstantVal.type
 
 mutual
 
@@ -112,6 +113,7 @@ inductive RelV (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) 
       Ps.length = np → Fs.length = nf →
       RelSlots M κ lpsOf S Ok ps Ps → RelVs M κ lpsOf S Ok fs Fs →
       Fits M.cval env φ ρ cvC.type (Ps ++ Fs) σ R →
+      (lpsOf c = [] ∨ Ok c ls) →
       RelV M κ lpsOf S Ok (.con c ls ps fs) ((Ps ++ Fs).foldl app (M.cval (κ c) φ))
   | clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {ls : Levels}
       {φ : LevelParam → Nat} {lps : List Nat} {Γ : List KExpr} {ρk : BVarIdx → V}
@@ -121,7 +123,7 @@ inductive RelV (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) 
       Denotes M.cval env φ ρk (.lam A B m) X → RelV M κ lpsOf S Ok (.clo b dom body ρ ls) X
   | pap {h : IxCC.Src.Head} {ls : Levels} {args : List Slot} {φ : LevelParam → Nat} {k : KKey}
       {T : KExpr} {As : List V} {ρ σ : BVarIdx → V} {R : KExpr} :
-      HeadAt M κ lpsOf S h ls φ k T → RelSlots M κ lpsOf S Ok args As →
+      HeadAt M κ lpsOf S Ok h ls φ k T → RelSlots M κ lpsOf S Ok args As →
       Fits M.cval env φ ρ T As σ R →
       RelV M κ lpsOf S Ok (.pap h ls args) (As.foldl app (M.cval k φ))
   | irr {t : Term} {ρ : IxCC.Src.Env} {ls : Levels} {φ : LevelParam → Nat} {lps : List Nat}

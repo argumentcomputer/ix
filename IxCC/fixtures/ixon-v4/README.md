@@ -38,8 +38,10 @@ bindings; every other closure here is unbound (`0xE4`).
 by-name arities) and its opaque-by-value row (`Lean.opaqueId`), transcribed
 in `IxCC.Src.Pinned` (`pin-src-tables --repin` after a refreeze). `src-names.tsv` resolves a few Init names for
 tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
-the admission-diagnostics closure, and [`src-sortpoly/`](src-sortpoly/README.md)
-the sort-polymorphism closure (level-exact relevance). All four come from
+the admission-diagnostics closure, [`src-sortpoly/`](src-sortpoly/README.md)
+the sort-polymorphism closure (level-exact relevance), and
+[`erased-blocks/`](erased-blocks/README.md) mutual and nested inductive blocks for the relevance
+check's tests of constructor fields written erased. All five come from
 `lake exe pin-src-tables` (`IxCCTests/Scripts/PinSrcTables.lean`) with the same ix
 producer as the K1 packs; `src-tables.provenance.json` and each directory's
 `provenance.json` record it, and `tests-src` compares the TSVs with the Lean

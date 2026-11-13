@@ -47,7 +47,11 @@ so the closure walked here is the one SrcEval can reach.
   binders (`have` and `let_fun` elaborate to such redexes).
 * C3 fields dropped at the constructor's profile are bound by irrelevant
   minor binders, and a minor's λs cover every field written erased (the
-  dispatch passes □ for it); a projection in a relevant position does not read a field
+  dispatch passes □ for it). Each minor meets the constructor whose fields it
+  receives: at a `case` entry minor `j` meets constructor `j`; at a recursor
+  each rule meets the minor it dispatches (`ruleDispatch`), which at a mutual
+  or nested block's recursor is not minor `j` for rule `j`. A projection in a
+  relevant position does not read a field
   dropped at every instance (a projection carries no universe arguments, so
   the structure's profile is not known there).
 * C4 a saturated eliminator whose major is irrelevant is a subsingleton or
@@ -184,13 +188,47 @@ def onlyCtor? (p : Program) (s : CId) : Option CId :=
   | some (.induct _ _ _ _ _ [k]) => some k
   | _ => none
 
-/-- Positional roles of a saturated eliminator spine: minors with their rule
-index, the major position, and the recursor. A `case` key has the
-recursor's universe parameters (`Table.checkCase`), so both are decided at
-the head's profile. -/
+/-- Peel exactly `n` leading λs (structural). -/
+def peelLamsN : Nat → Term → Option Term
+  | 0, t => some t
+  | n + 1, .lam _ _ t => peelLamsN n t
+  | _ + 1, _ => none
+
+/-- The minor premise that rule `rule` of recursor `r` dispatches, as SrcEval's
+F2 runs it: the rule's body, under its `np + nmot + nmin` leading λs and one
+per field, is an application headed by the variable bound at a minor position.
+`none` for a body of any other shape. This is erasure's reading
+(`Lam.Erase.ruleShape`). A recursor of a mutual block (and of a nested one,
+stored as a mutual block with auxiliary types) takes the minors of every
+constructor of the block and has rules only for its own inductive's
+constructors, so its minor `j` is not in general the minor of its rule `j`. -/
+def ruleDispatch (p : Program) (r : CId) (rule : Rule) : Option Nat :=
+  match p.decl? r with
+  | some (.recr _ _ _ np nmot nmin _ _ _ _) =>
+    let total := np + nmot + nmin + rule.fields
+    match peelLamsN total rule.rhs with
+    | some body =>
+      match body.spineL.1 with
+      | .var i =>
+        if i < total && np + nmot ≤ total - 1 - i && total - 1 - i < np + nmot + nmin then
+          some (total - 1 - i - (np + nmot))
+        else none
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- Positional roles of a saturated eliminator spine: its minors as
+(argument position, minor index, rule index), the major position, and the
+recursor. A `case` entry applies minor `j` to the fields of constructor `j`
+(SrcEval's F5), so there minor `j` meets rule `j`; a recursor runs the rule
+of the major's constructor, which applies the minor it dispatches (F2), so
+there each rule meets the minor it dispatches (`ruleDispatch`), and a minor
+no rule dispatches meets none. A `case` key has the recursor's universe
+parameters (`Table.checkCase`), so both are decided at the head's
+profile. -/
 structure ElimShape where
   recr : CId
-  minors : List (Nat × Nat)
+  minors : List (Nat × Nat × Nat)
   major : Nat
   arity : Nat
 
@@ -199,13 +237,15 @@ def elimShape? (p : Program) (c : CId) : Option ElimShape :=
   | some (.case r) =>
     match p.decl? r with
     | some (.recr _ _ _ np _ nmin ni _ _ _) =>
-      some { recr := r, minors := (List.range nmin).map fun j => (np + 1 + ni + 1 + j, j)
+      some { recr := r, minors := (List.range nmin).map fun j => (np + 1 + ni + 1 + j, j, j)
              major := np + 1 + ni, arity := np + 1 + ni + 1 + nmin }
     | _ => none
   | none =>
     match p.decl? c with
-    | some (.recr _ _ _ np nmot nmin ni _ _ _) =>
-      some { recr := c, minors := (List.range nmin).map fun j => (np + nmot + j, j)
+    | some (.recr _ _ _ np nmot nmin ni _ rules _) =>
+      some { recr := c
+             minors := rules.zipIdx.filterMap fun (rule, k) =>
+               (ruleDispatch p c rule).map fun j => (np + nmot + j, j, k)
              major := np + nmot + nmin + ni, arity := np + nmot + nmin + ni + 1 }
     | _ => none
   | _ => none
@@ -317,8 +357,8 @@ def knownHead (ctx : Ctx) (errs : List RelError) (c : CId) (us : List Ixon.Univ)
         else errs
       | none => errs
     let qc := ctorProfile p shape.recr q
-    shape.minors.foldl (init := errs) fun errs (pos, j) =>
-      match args[pos]?, ruleCtorFields p ctx.ann shape.recr j with
+    shape.minors.foldl (init := errs) fun errs (pos, j, rule) =>
+      match args[pos]?, ruleCtorFields p ctx.ann shape.recr rule with
       | some (minor, _, a), some (k, fields) =>
         if a.irrP ctx.prof then errs
         else minorBinders ctx k j qc 0 (lamRels minor) fields errs
@@ -991,6 +1031,62 @@ def readsErased? (p : Program) (ann : Ann) (c : CId) : Option String := do
   let i ← (erasedParams d.type).find? (readsAt p ann c h)
   some s!"parameter {i} is written erased, but {headName h} reads it"
 
+/-- Whether de Bruijn variable `k` occurs in `t` (structural). -/
+def mentionsVar : Nat → Term → Bool
+  | k, .var i => i == k
+  | k, .app f a _ _ => mentionsVar k f || mentionsVar k a
+  | k, .lam _ d b => mentionsVar k d || mentionsVar (k + 1) b
+  | k, .pi _ _ d b => mentionsVar k d || mentionsVar (k + 1) b
+  | k, .letE _ _ ty v b => mentionsVar k ty || mentionsVar k v || mentionsVar (k + 1) b
+  | k, .proj _ _ e => mentionsVar k e
+  | _, _ => false
+
+/-- A recursor's rules against its constructors' interfaces. A field its
+constructor writes erased is dropped (`okCtors`), so its slot holds `irr` when
+the rule runs (F2), and the rule may use it only where it is never read: as
+that field's argument to the minor premise the rule dispatches, whose binder
+for it C3 holds irrelevant at every call. Any other occurrence of the field's
+variable in the stored rule term refuses, a type or an irrelevant argument
+included; the major of an induction hypothesis is one (SrcEval would force
+`irr` there; the hypothesis may be another member's recursor, whose C3 check
+concerns that member's constructors). Decided on the rule term as stored, not
+on the kernel's generated shape, which IxCC does not check. A rule that
+dispatches no minor (`ruleDispatch`), or is not a λ over its parameters,
+motives, minors and fields, or binds a number of fields other than its
+constructor's (SrcEval passes as many as the constructor has), refuses when its
+constructor writes any field erased. Fields dropped only by their sort are not written erased and are not
+constrained here. `none` when every rule agrees; otherwise the first
+disagreement. -/
+def forwardsErased? (p : Program) (r : CId) : Option String := do
+  let .recr _ _ _ np nmot nmin _ _ rules _ ← p.decl? r | none
+  rules.zipIdx.findSome? fun (rule, k) =>
+    -- SrcEval passes the constructor value's fields, as many as the constructor has
+    let nf := match p.decl? rule.ctor with
+      | some (.ctor _ _ _ _ _ nf _) => nf
+      | _ => rule.fields
+    match (List.range nf).filter (fieldWrittenErased p rule.ctor ·) with
+    | [] => none
+    | i₀ :: rest =>
+      if nf != rule.fields then
+        some s!"rule {k} of the recursor binds {rule.fields} fields, {p.short rule.ctor} has {nf} \
+          and writes field {i₀} erased"
+      else match peelLamsN (np + nmot + nmin + rule.fields) rule.rhs, ruleDispatch p r rule with
+      | some body, some _ =>
+        let (head, args) := body.spineL
+        (i₀ :: rest).findSome? fun i =>
+          let v := rule.fields - 1 - i
+          let ok := !mentionsVar v head && args.zipIdx.all fun ((a, _, _), n) =>
+            (n == i && a == Term.var v) || !mentionsVar v a
+          if ok then none
+          else some s!"rule {k} of the recursor uses field {i} of {p.short rule.ctor}, which is \
+            written erased, other than as that field's argument to the minor premise it dispatches"
+      | some _, none =>
+        some s!"rule {k} of the recursor dispatches no minor premise, and {p.short rule.ctor} \
+          writes field {i₀} erased"
+      | none, _ =>
+        some s!"rule {k} of the recursor is not a λ over its parameters, motives, minors and \
+          fields, and {p.short rule.ctor} writes field {i₀} erased"
+
 /-- A run body `t` (`what`, for the message) against the header of its
 constant, whose type is `ty` and whose parameter classes are `params`. Its
 leading λ telescope must cover every parameter written erased in `ty`, and
@@ -1022,7 +1118,9 @@ re-derivation from the declaration types in `p`, and that at every reached
 constant the arguments a caller drops (the parameters its type writes erased)
 are ones its run behaviour never reads: its run bodies and a csimp redirect
 cover them with λs of their classes (`headerAgreement`), and a special head
-does not read them (`readsErased?`). Minor premises are held to the same rule by
+does not read them (`readsErased?`); and that a reached recursor's rules use a
+field its constructor writes erased only as that field's argument to the minor
+they dispatch (`forwardsErased?`). Minor premises are held to the same rule by
 C3 (`Check.minorBinders`). -/
 def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   let okConsts := ann.consts.toList.all fun (c, cr) =>
@@ -1073,6 +1171,10 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   -- or quotient) reads no argument its type writes erased.
   let readErrs : List RelError := ch.reached.filterMap fun c =>
     (readsErased? p ann c).map fun msg => RelError.of "S1" msg (some c)
+  -- A recursor's rule uses a field its constructor writes erased only as that
+  -- field's argument to the minor it dispatches.
+  let forwardErrs : List RelError := ch.reached.filterMap fun c =>
+    (forwardsErased? p c).map fun msg => RelError.of "S1" msg (some c)
   let okReached := ch.reached.all fun c =>
     match ann.constRel? c with
     | none => false
@@ -1083,7 +1185,7 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
         | _ => []
       ((runBodies p c).all fun (_, t) => checkTermBinders p ann [] t []) &&
       (ruleTerms.all fun t => checkTermBinders p ann [] t [])
-  readErrs ++ headerErrs ++
+  readErrs ++ forwardErrs ++ headerErrs ++
     if okConsts && okCtors && okReached then []
     else [RelError.of "S1" "non-canonical relevance annotation"]
 

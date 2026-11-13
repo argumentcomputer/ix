@@ -468,6 +468,35 @@ the families at 200, the `let` chain and its parameter variant at 2,000
 within a bound, and the printing of a failure about such a level: the
 display shows at most 64 `max`/`imax` nodes of a level, `⋯` past them).
 
+Terms repeat the same pattern one level up. The binder-telescope loops
+(`Cached.inferPisI`, `inferLamsI`, `annotatePisI`, `annotateLamsI`) peel a
+telescope to its end, and on a chain `T (j+1) = T j → T j` that meant
+re-peeling, at every step, the whole telescope below it, although its tail
+`T j` was inferred and annotated the step before; annotation also rebuilt
+the peeled spine as fresh nodes, so an annotated chain of `k` steps held
+about `k²/2` distinct nodes, and comparing two annotations of the same
+chain built in different declarations (a function's declared type against
+its value's) visited them all. The loops now stop at the first closed
+residual the memo already holds (`Cached.peelFuelToM`: the peel fuel is the
+number of binders before it; the fuel is semantically transparent, the
+loops' simulations hold for every fuel, and `peelFuelToM_eff` says the
+choice reads the state and changes nothing), so the leaf is a memo hit
+and the rebuild shares the memoised term. And a level is simplified
+through the declaration's memo (`Cached.simplifyMemoC`, the memoised walk
+seeded with `lsimpC`), so a level built on levels already simplified costs
+its new nodes. A residual the memo lacks is peeled as before: no knot
+nesting is added. On the build box a 16,000-step `let` chain (a 112 KB
+constant) checks in under a second where 8,000 steps took 27 s and 1.6 GB,
+and comparing two annotations of a 2,000-step chain in 50 ms where it took
+6.5 s (the `kernel-level-sharing` test bounds them). Two chains stay
+quadratic: at a universe parameter, the specification's `Level.simplify`
+does not merge `max u u`, so the simplified sort of each step is a DAG as
+deep as the chain and `leqCore` walks it (8.8 s at 8,000 steps; at 16,000
+the comparison's depth fuel declines it); and a chain of λs over the
+previous value (`lamlet` in the test), where `Level.zeronessOf` walks the
+∀ rule's level of each step's type (3.6 s at 8,000 steps, 18.8 s at
+16,000).
+
 What remains is the comparison itself. `Level.leqCore` decides
 `eval l ≤ eval r + diff` at every assignment by nanoda's case analysis:
 splitting on a parameter being zero or not (`byCases`), distributing `imax`
@@ -1287,6 +1316,7 @@ files carry further changes:
 | `IxCK/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
 | `IxCK/Kernel/Level.lean`, `IxCK/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
+| `IxCK/Kernel/Cached/{StateC,CoreC}.lean`, `IxCK/Kernel/Verify/Cached/{SimCEff,DiscC4,DiscC6}.lean` | the binder-telescope loops' peel fuel is `peelFuelToM` (the binders before the first closed residual the memo holds) in place of the constant `peelFuel`, at the ∀ and λ clauses of inference and annotation, with `peelFuelToM_eff` in place of `peelFuelM_eff`; `isEquivLM` simplifies through `simplifyMemoC` (`Level.simplifyGo` seeded with `lsimpC`; `simplifyMemoC_spec`) | a chain `T (j+1) = T j → T j` re-peeled the telescope below each step and annotation rebuilt it unshared: quadratic time and memory, and quadratic comparison of two annotations ("Running time") |
 | `IxCK/Kernel/Cached/{StateC,CoreC}.lean`, `IxCK/Kernel/Verify/Cached/{SimCEff,BinderLoopC,DiscC4}.lean` | the cached core hash-conses the ∀ rule's levels: a table `lvlIntern` in `CState`, and `internLM (.imax u v)` in place of `pure (.imax u v)` in `inferPisOutI` and `inferBodyIOI`; `internLM` returns its argument on every branch (a hit is returned after `==` confirms it), proved by `internLM_eff` (with `CSOK.withIntern`: no clause reads the table), which the two simulation steps take in place of `pureEq_eff`. The rule, the model and the reference core are upstream's | without it the binder loop rebuilds the level of a telescope's tail as a new object equal to the one built before, and a `let` chain over one shared type is cubic ("Running time"). Earlier (`c076298dc`) the rule's level was folded (`Level.mkIMax`); withdrawn so that the rules tier is upstream's |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |

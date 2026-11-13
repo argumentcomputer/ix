@@ -1,5 +1,7 @@
 import IxCCTests.Grounding.Run
 import IxCCTests.Corpus.Manifest
+import IxCCGrounding.CaseLevels
+import IxCC.Src.Relevance.Check
 
 /-! # `tests-grounding`: the canonicity-free family's decided fact on the corpus
 
@@ -18,7 +20,17 @@ true.
 the fifteen roles a closure stores those its program reaches, each a definition without level
 parameters, and nothing else (measured on all 50 loaded closures). Controls on `decide`: `Nat.add`
 stored as an axiom makes it false; `Nat.beq` not stored at all leaves it true (a role that is not
-stored needs nothing: no term naming it denotes). -/
+stored needs nothing: no term naming it denotes).
+
+Step A (`IxCCGrounding.CaseLevels`, `rootSound_678A`): `noCanonAB` (`noCanonB` less the level
+condition at `case` entries) and `instCheckB` on the instance set `instWalk` returns from every
+root are true on the same 34, so the family over the instance set holds on all 34 (`erase` and
+`OS16-plain` included). Controls on `OS16-plain`: a constructor of its `List`-shaped family raised
+one level in one value, in the reading and the program alike, leaves the check and `noCanonAB`
+true and makes `instCheckB` false (the family used at two level instantiations); the same
+constructor at level 1 bound by a `let` in that value is not walked (`instCheckB` stays true), and
+the check refuses the program at `valueCorr`, which is what keeps the walk's stopping at a
+`let` out of every theorem. -/
 
 namespace IxCCTests.Grounding.NoCanon
 
@@ -73,6 +85,58 @@ def medianUs (n : Nat) (f : Nat → Bool) : IO (Bool × Nat) := do
     ts := ts.push ((t1 - t0) / 1000)
   return (b, (ts.qsort (· < ·))[n / 2]!)
 
+/-! ## Step A: the verified instance set -/
+
+/-- The roots of a loaded closure. -/
+def rootsOf (i : Input) : List CId := i.src.roots.map (·.2)
+
+/-- The instance set from every root, and whether `instCheckB` accepts it with every root as a seed. -/
+def instOk (i : Input) : Bool :=
+  match instWalk i.src (rootsOf i) 1000000 with
+  | some Inst => instCheckB i.src i.env i.κ i.lpsOf (rootsOf i) Inst
+  | none => false
+
+/-- Every occurrence of the constructor `d` raised one level (the program's side). -/
+def raiseS (d : CId) : IxCC.Src.Term → IxCC.Src.Term
+  | .const c us => if c == d then .const c (us.map .succ) else .const c us
+  | .app f a m r => .app (raiseS d f) (raiseS d a) m r
+  | .lam b t u => .lam b (raiseS d t) (raiseS d u)
+  | .pi b r t u => .pi b r (raiseS d t) (raiseS d u)
+  | .letE x r t v u => .letE x r (raiseS d t) (raiseS d v) (raiseS d u)
+  | .proj s n e => .proj s n (raiseS d e)
+  | t => t
+
+/-- The same in the kernel's reading. -/
+def raiseK (k : KKey) : KExpr → KExpr
+  | .const c ls => if c == k then .const c (ls.map .succ) else .const c ls
+  | .app f a => .app (raiseK k f) (raiseK k a)
+  | .lam A b m => .lam (raiseK k A) (raiseK k b) m
+  | .forallE A b m => .forallE (raiseK k A) (raiseK k b) m
+  | .proj s n e => .proj s n (raiseK k e)
+  | e => e
+
+/-- A constant of `Sl` with a value (no table entry) whose value names a constructor `d` of a
+family with level parameters that a `case` entry of `Sl` is over. -/
+def plantSite (i : Input) : Option (CId × CId) :=
+  let fams := i.Sl.filterMap fun c =>
+    match i.src.table.resolveOf c with
+    | some (.case r) =>
+      match i.src.decl? r with
+      | some (.recr _ _ _ _ _ _ _ ind _ _) =>
+        match i.src.decl? ind with
+        | some (.induct _ lv _ _ _ _) => if lv > 0 then some ind else none
+        | _ => none
+      | _ => none
+    | _ => none
+  i.Sl.findSome? fun c =>
+    match i.src.table.resolveOf c, i.src.decl? c with
+    | none, some (.defn .defn .safe _ _ v) =>
+      (constsOf v).findSome? fun d =>
+        match i.src.decl? d with
+        | some (.ctor _ lv ind _ _ _ _) => if lv > 0 && fams.contains ind then some (c, d) else none
+        | _ => none
+    | _, _ => none
+
 def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
@@ -82,15 +146,29 @@ def run : IO Bool := do
     let mut no : List String := []
     let mut tagsUs : Nat := 0
     let mut ldUs : Nat := 0
+    let mut famA : Nat := 0
+    let mut instUs : Nat := 0
+    let mut instN : Nat := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let b := noCanonB i.src i.env i.κ i.Sl
+      -- step A: `noCanonAB` and the verified instance set, on every accepted closure
+      let bA := noCanonAB i.src i.env i.κ i.Sl
+      let iA := instOk i
+      expect a (bA && iA) s!"levels: {label}: noCanonAB {bA}, instCheckB {iA}"
+      if bA && iA && litDefsB i.env then famA := famA + 1
       -- the cost on the largest accepted closure: the median of 9 evaluations, each on an
       -- environment the compiler cannot share between them
       if label == "phase1-boundary/tags125" then
         tagsUs := (← medianUs 9 fun k => noCanonB i.src (if k == 1000000 then default else i.env)
           i.κ i.Sl).2
         ldUs := (← medianUs 9 fun k => litDefsB (if k == 1000000 then default else i.env)).2
+        match instWalk i.src (rootsOf i) 1000000 with
+        | some Inst =>
+          instN := Inst.length
+          instUs := (← medianUs 9 fun k => instCheckB i.src (if k == 1000000 then default else i.env)
+            i.κ i.lpsOf (rootsOf i) Inst).2
+        | none => pure ()
       expect a (b == !notQualifying.contains label)
         s!"noCanon: {label}: noCanonB {b}, expected {!notQualifying.contains label}"
       if b then yes := yes + 1 else no := no ++ [label]
@@ -142,6 +220,31 @@ def run : IO Bool := do
       "decide: Nat.beq not stored: litDefsB false"
     IO.println s!"litDefs: litDefsB true on the 34 accepted closures; tags125 {ldUs} µs (median of \
       9); decide: Nat.add stored as an axiom: litDefsB false; Nat.beq not stored: litDefsB true"
+    -- step A: the family over the verified instance set accepts all 34 (`erase` and `OS16-plain`
+    -- among them); on `OS16-plain`, a constructor of its `List`-shaped family raised one level in
+    -- one value, in the reading and the program alike, leaves the check and `noCanonAB` true and
+    -- makes `instCheckB` false; the same constructor hidden under a `let` in that value is not walked
+    -- (`instCheckB` true) and the check refuses the program at `valueCorr` (`TermCorr` has no `let`)
+    expect a (famA == 34) s!"levels: the family over the instance set holds on {famA} of 34"
+    let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []
+    let some (c, d) := plantSite oi | throw (IO.userError "OS16-plain: no plant site")
+    let some (.defn k s lv ty v) := oi.src.decl? c | throw (IO.userError "OS16-plain: no value")
+    let envR := mapConst oi.env (oi.κ c) fun
+      | .defnInfo cv val h => .defnInfo cv (raiseK (oi.κ d) val) h
+      | ci => ci
+    let raised := { oi with src := oi.src.setDecl c (.defn k s lv ty (raiseS d v)), env := envR }
+    expect a (instOk oi && (failing raised).isEmpty && noCanonAB raised.src raised.env raised.κ raised.Sl &&
+        !instOk raised)
+      s!"levels: OS16-plain, c{d} raised in c{c}: check {failing raised}, instCheckB {instOk raised}"
+    let hidden := { oi with src := oi.src.setDecl c (.defn k s lv ty
+      (.letE default default (.sort .zero) (.const d [.succ .zero])
+        (IxCC.Src.Relevance.Check.Canonical.liftTerm 1 0 v))) }
+    expect a (instOk hidden && (failing hidden).contains "valueCorr")
+      s!"levels: OS16-plain, c{d} at level 1 under a let in c{c}: check {failing hidden}, instCheckB {instOk hidden}"
+    IO.println s!"levels: noCanonAB and instCheckB true on the 34 accepted closures, the family on {famA}; \
+      tags125 {instN} instances, instCheckB {instUs} µs (median of 9); OS16-plain: c{d} raised one level \
+      in c{c}: instCheckB false, the check true; under a let: instCheckB true, the check refuses at \
+      {failing hidden}"
     IO.println s!"tests-grounding (noCanon): {← a.get} assertions passed"
     return true
   catch error =>

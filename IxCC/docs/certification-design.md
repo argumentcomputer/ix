@@ -111,6 +111,48 @@ Three facts follow, each a reason for the plan's order.
   value equation for opaques
   ([`IxCK/Kernel/Ixon/Values.lean`](../../IxCK/Kernel/Ixon/Values.lean)).
 
+### Erased positions: the routes found, and what closes each
+
+A program may write a parameter or a constructor field erased (`0`). IxCC then drops the argument
+(the annotator's `KernelFront.erasedAt`, C2) or the field (`checkCanonical` on the constructor's
+record), and is right only if the run behaviour that receives the position never reads it (the
+invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Seven routes have been
+found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
+returned the irrelevance marker. Each is now refused by a check that `Recheck.run` runs; **none by
+a theorem**: the relevance proof (`Relevance.Proof.check_sound`) says nothing about this invariant,
+and `checkCanonical`, with the checks in it, has no theorem.
+
+| # | Route | Reproduced | Refused by |
+| --- | --- | --- | --- |
+| 1 | a definition's own value with fewer λs than its erased parameters | 2026-11-12, below the kernel | `headerAgreement` |
+| 2 | a `csimp` redirect to a target that reads the parameter | 2026-11-12, below the kernel | the `csimp` refusal (`headerAgreement`) |
+| 3 | a `case` entry whose type writes a minor erased | 2026-11-12, **through the certified kernel** | `readsErased?` |
+| 4 | a recursor whose type writes a minor erased | 2026-11-12, below the kernel | `readsErased?` |
+| 5 | an η-short minor over a constructor field written erased | 2026-11-12, below the kernel | C3 (`Check.minorBinders`) |
+| 6 | `Quot.mk` with its element erased | 2026-11-12, below the kernel | `readsErased?` |
+| 7 | the minor for a constructor of a mutual block's second inductive, at that inductive's recursor: C3 paired minor `j` with rule `j`, and such a recursor takes the minors of every constructor of the block, so C3 checked the wrong minors there and its own not at all | 2026-11-13, below the kernel | C3 with each rule paired with the minor it dispatches (`Check.ruleDispatch`) |
+
+Also refused, where the source was stuck or a later stage refused: `Quot.lift`'s function, the
+pinned `Nat.succ`'s field and a primitive's parameter (`readsErased?`, `okPrim`); and a recursive
+field written erased, which a recursor's rule passes as the major of an induction hypothesis
+(SrcEval is stuck there). Under a single inductive that was refused before 2026-11-13 by C3's
+η-short clause at the hypothesis call (whose minors are the rule's own variables) and now also by
+name by the forwarding clause (`Check.Canonical.forwardsErased?`: a rule uses a field written
+erased only as that field's argument to the minor it dispatches). Where the hypothesis is another
+member's recursor (`mutual A2 | a1 (0 b : B2); B2 | …`) only the forwarding clause refuses it:
+before it no check did, and only erasure's decline of a rule that calls a sibling recursor (a
+capability gap) kept that program from an object. A nested block (stored as a mutual block with
+auxiliary types) is refused on the same checks; its honest programs do not compile today
+([roadmap](roadmap.md)).
+
+"Below the kernel": an honest program is ingested and the mark written in its Src program, as a
+kernel that sees no mode accepts it. Today's certified kernel refuses those artifacts because its
+conversion compares binder contracts (and its modeller of mutual blocks refuses a field written
+erased at the constructor), which ends with the Ixon format change that moves modes out of the
+term bytes. The table records routes found by testing, one at a time; that there is no other is
+not established. What would establish it is a theorem that an accepted program's evaluation never
+yields the marker at a position that is read; it is not proved.
+
 ## Target statements
 
 Notation: `kenv` is IxCK's environment read from the claim's bytes under the
@@ -603,8 +645,56 @@ constructor with level parameters at a `flat` or `noParams` recursor). `noCanonB
 closure (compiled, in `tests-grounding`, the median of nine evaluations; a single one measured 11 ms
 when it landed; 128 ms interpreted before the index), and `litDefsB` 0.52 ms there.
 
+**`case` entries over level-polymorphic families (step A, since 2026-11-13).** `rootSound_678A`
+(`IxCCGrounding/RootInst.lean`) concludes word for word what `rootSound_678` does (pinned in the
+fence), with `NoCanonA` for `NoCanon` (a `case` entry's rules must still not compare parameters,
+but its family may have level parameters; decided by `noCanonAB`), the shapes the check reads
+(`CaseFactsRead`, which gives `CaseFacts`), and a **verified instance set** `Inst` of (constant,
+concrete levels): the root in it at no level, closed under every constant SrcEval may evaluate in a
+run term or a recursor rule body of one of its instances (`InstClosed`, over `evalConsts`), and
+uniform (`InstUniform`: at every instance of a `case` entry, every instance of a constructor of the
+entry's family is at the entry's `indLevels`). `instWalk` computes it from the roots and is not
+trusted; `instCheckB` verifies it (`instFacts_of_check`); `rootSound_678A_of_check` takes the
+Boolean checks. Why a restriction and not a law: at such an entry the major is a constructor value
+built at some assignment `ψ`, and #678's ι reads the constructor at the `case`'s levels. The two
+coincide by `cval_params` exactly when they agree on the constructor's level parameters
+(`majorAt_of_agree`, the interface `MajorAt` that either evaluator needs), and none of the five
+fields says when they do; a law doing without agreement would have to move the parameters too,
+which is canonicity. Agreement is a fact about the run, so the proof carries it there: `HeadAt.ctor`
+and `HeadAt.cases` record `Ok c ls` (`HeadAt` now takes `Ok` as a parameter), `RelV.con` records
+`lpsOf c = [] ∨ Ok c ls`, and the fundamental lemma runs at `Ok := OkIn p ann Inst`; F5 at such an
+entry is `caseFires_of_agree` (over `DefnValue`, `IotaLawG`, `CvalParams`). The landed root theorems
+keep their text and their axiom sets; the internal statements that changed are listed in
+[`ci.md`](ci.md)'s change record.
+
+*Where a `let` goes.* The walk and `InstClosed` read `evalConsts`, which reads no `let`, so on a
+program whose run terms hold one the instance set is incomplete. No theorem uses that set there:
+`Runs.const` asks `Ok` exactly at `evalConsts`, and the check asks `TermCorr`, which has no `let`, of
+every term SrcEval runs (`valueCorr`, `eqnCorr`; `RecStored` at recursor rules), so such a program
+fails `groundCheck`, a hypothesis of `rootSound_678A_of_check`. The exclusion is that hypothesis,
+not `instCheckB` (which can be true there); `tests-grounding` shows it: a constructor at a
+disagreeing level bound by a `let` in `OS16-plain`'s root is not walked, and the check refuses the
+program at `valueCorr`. It stays so until `let` is in the fragment (step C), which must extend the
+walk with it.
+
+*What the restriction refuses.* Not every kernel-typed program passes it, by reasoning (not tested
+on a real program): the kernel's typing makes a `case` and the constructor values that reach it
+agree on the family's levels, but uniformity asks every constructor instance of a family to agree
+with every `case` instance over it, so a well-typed program that uses `List` at two level
+instantiations in unrelated places is refused. What is established: on the corpus every closure
+passes it (50 of 50 that load; complete on the 34 the check accepts, whose run terms have no
+`let`), so the family holds on 34 of the 34 (`erase` and `OS16-plain` added); the kernel refuses to
+type a constructor at a disagreeing level in every one of the 34 constructor instances tried at
+the corpus's 19 such `case` entries, and its ι never fires there; a level change planted in one
+value (reading and program alike) leaves the check true and makes `instCheckB` false. So the check
+is a restriction on programs, narrower than typing; a flow-sensitive form (agreement only between
+a `case` and the constructors that can reach it) would remove the difference and is not done.
+Cost: `instCheckB` is quadratic in the instance count (list membership; every constructor instance
+against every `case` instance): 0.9 ms compiled on `tags125` (41 instances), 170 ms interpreted on
+`phase1-decline/strings` (138 instances); an index is open ([roadmap](roadmap.md)).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 209 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 225 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

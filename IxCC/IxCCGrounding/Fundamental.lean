@@ -62,14 +62,14 @@ def FireP (k : Nat) : Prop :=
   ∀ (h : IxCC.Src.Head) (ls : Levels) (args : List Slot) (v : Value) (φ : LevelParam → Nat)
     (kk : KKey) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V),
     IxCC.Src.fire p k h ls args = .ok v → RelSlots M κ lpsOf S Ok args As →
-    HeadAt M κ lpsOf S h ls φ kk T → Fits M.cval env φ ρ T As σ R →
+    HeadAt M κ lpsOf S Ok h ls φ kk T → Fits M.cval env φ ρ T As σ R →
     args.length = p.headArity h → LastSiteOk (M.cval kk φ) As →
     RelV M κ lpsOf S Ok v (As.foldl app (M.cval kk φ))
 
 /-- `headValue` at clock `k`. -/
 def HeadValueP (k : Nat) : Prop :=
   ∀ (h : IxCC.Src.Head) (ls : Levels) (v : Value) (φ : LevelParam → Nat) (kk : KKey) (T : KExpr),
-    IxCC.Src.headValue p k ls h = .ok v → HeadAt M κ lpsOf S h ls φ kk T →
+    IxCC.Src.headValue p k ls h = .ok v → HeadAt M κ lpsOf S Ok h ls φ kk T →
     RelV M κ lpsOf S Ok v (M.cval kk φ)
 
 /-- `apply` at clock `k`, at a graph-regime site. -/
@@ -116,7 +116,7 @@ theorem atLevels_ordinary (ls : Levels) : IxCC.Src.RecKind.atLevels ls .ordinary
 
 /-- A head's arity is no longer than its stored telescope. -/
 theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Levels}
-    {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M κ lpsOf S h ls φ kk T) :
+    {φ : LevelParam → Nat} {kk : KKey} {T : KExpr} (hh : HeadAt M κ lpsOf S Ok h ls φ kk T) :
     p.headArity h ≤ kPis T := by
   cases hh with
   | @ctor c _ _ ci hSc _ hfind =>
@@ -228,7 +228,7 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
     {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
     (hrun : IxCC.Src.fire p (k' + 1) (.recr r) ls args = .ok v)
-    (hargs : RelSlots M κ lpsOf S Ok args As) (hh : HeadAt M κ lpsOf S (.recr r) ls φ (κ r) T)
+    (hargs : RelSlots M κ lpsOf S Ok args As) (hh : HeadAt M κ lpsOf S Ok (.recr r) ls φ (κ r) T)
     (hfit : Fits M.cval env φ ρ T As σ R) (hlen : args.length = p.headArity (.recr r))
     (hlast : LastSiteOk (M.cval (κ r) φ) As) :
     RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
@@ -569,7 +569,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
   intro h ls args v φ kk T ρ σ R As hrun hargs hh hfit hlen hlast
   have hN := H.natBasis
   cases hh with
-  | @ctor c _ _ ci hSc hlv hfind =>
+  | @ctor c _ _ ci hSc hlv hfind hOkc =>
     -- F1
     rw [IxCC.Src.fire_ctor] at hrun
     cases hd : p.decl? c with
@@ -619,10 +619,10 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               (ls := ls) (ps := args.take np) (fs := fields) (Ps := As.take np) (Fs := As.drop np)
               hSc hlv hfind (by rw [List.length_take, hAsl]; omega)
               (by rw [List.length_drop, hAsl]; omega) (relSlots_take np hargs) hrelF
-              (by rw [List.take_append_drop]; exact hfit)
+              (by rw [List.take_append_drop]; exact hfit) (.inr hOkc)
             rwa [List.take_append_drop] at hcon
       | _ => exact absurd hrun (by simp)
-  | @cases c _ _ ci hSc hlv hfind =>
+  | @cases c _ _ ci hSc hlv hfind hOkc =>
     -- F5
     cases k with
     | zero => rw [IxCC.Src.fire_cases, later_zero] at hrun; exact absurd hrun (by simp)
@@ -657,7 +657,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               -- F5's meaning
               obtain ⟨Mn, Ys, hMn, hYs, heq, hchain⟩ :=
                 H.cases c r hSc hres r sf kk lvls np nmot nmin ni ind rules ty hres hd ls φ _ ρ σ R
-                  As (.cases hSc hlv hfind) hfit hAsl hlast Tm major j fields hTm hmajR
+                  As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
                   (ofOption_eq_ok.mp hsel')
               -- the minor
               obtain ⟨sm, hsm, hrelm⟩ := relSlots_get' hargs hMn
@@ -983,7 +983,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             have hlv0 : LvAt φ (lpsOf c) [] := by rw [hl0]; intro i q h; simp at h
             exact RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
-              .nil
+              .nil (.inl hl0)
 
 theorem headValue_step {k : Nat} (hfire : FireP M p κ lpsOf S Ok k) :
     HeadValueP M p κ lpsOf S Ok k := by
@@ -1019,7 +1019,7 @@ theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
   | pap h ls' args =>
     rw [IxCC.Src.apply_pap] at hrun
     have htele : args.length < p.headArity h → ∀ (φ : LevelParam → Nat) (kk : KKey) (T : KExpr)
-        (ρ σ : BVarIdx → V) (R : KExpr) (As : List V), HeadAt M κ lpsOf S h ls' φ kk T →
+        (ρ σ : BVarIdx → V) (R : KExpr) (As : List V), HeadAt M κ lpsOf S Ok h ls' φ kk T →
         Fits M.cval env φ ρ T As σ R → As.length = args.length → ∃ D Bk m, R = .forallE D Bk m := by
       intro hlt φ kk T ρ σ R As hh hfit hl
       exact fits_pi_of_lt hfit (by have := head_tele H hh; omega)
@@ -1091,7 +1091,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
           .nil .nil hrun
         rw [hcomp φ _ X hX]
         exact hrel
-    | case r => exact hhv _ _ _ φ _ _ hrun (.cases hSc hlv hfind)
+    | case r => exact hhv _ _ _ φ _ _ hrun (.cases hSc hlv hfind hOk)
   | none =>
     rw [hres] at hrun
     cases hd : p.decl? c with
@@ -1099,7 +1099,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     | some d =>
       rw [hd] at hrun
       cases d with
-      | ctor sf lvls ind cidx np nf ty => exact hhv _ _ _ φ _ _ hrun (.ctor hSc hlv hfind)
+      | ctor sf lvls ind cidx np nf ty => exact hhv _ _ _ φ _ _ hrun (.ctor hSc hlv hfind hOk)
       | recr sf kk lvls np nmot nmin ni ind rules ty =>
         exact hhv _ _ _ φ _ _ hrun (.recr hSc hlv hfind)
       | quot qk lvls ty => exact absurd hd (H.faith.noQuot c hSc qk lvls ty)
