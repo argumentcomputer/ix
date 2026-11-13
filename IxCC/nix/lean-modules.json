@@ -3785,7 +3785,8 @@
   {"path": "IxCCTests/Exe/Run.lean",
    "imports": ["IxCCTests.Corpus.Run", "IxCCTests.Exe.Session", "IxCC.Cli"]},
   "IxCCTests.Exe.Main":
-  {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Machine"]},
+  {"path": "IxCCTests/Exe/Main.lean",
+   "imports": ["IxCCTests.Exe.Machine", "IxCCTests.Exe.FoldGuard"]},
   "IxCCTests.Exe.MachineSessions":
   {"path": "IxCCTests/Exe/MachineSessions.lean", "imports": []},
   "IxCCTests.Exe.MachineProcess":
@@ -3797,6 +3798,9 @@
    ["IxCCTests.Exe.Run",
     "IxCCTests.Exe.MachineSessions",
     "IxCCTests.Exe.MachineProcess"]},
+  "IxCCTests.Exe.FoldGuard":
+  {"path": "IxCCTests/Exe/FoldGuard.lean",
+   "imports": ["IxCCTests.Exe.Run", "IxCCTests.Anf.FoldGuard"]},
   "IxCCTests.Corpus.ToolMain":
   {"path": "IxCCTests/Corpus/ToolMain.lean",
    "imports": ["IxCCTests.Corpus.Build", "IxCCTests.Corpus.KernelGen"]},
@@ -3994,7 +3998,8 @@
     "IxCCTests.Anf.KernelEval",
     "IxCCTests.Anf.LeanRender",
     "IxCCTests.Anf.Defun",
-    "IxCCTests.Anf.SuccBle"]},
+    "IxCCTests.Anf.SuccBle",
+    "IxCCTests.Anf.FoldGuard"]},
   "IxCCTests.Anf.Main":
   {"path": "IxCCTests/Anf/Main.lean", "imports": ["IxCCTests.Anf.Run"]},
   "IxCCTests.Anf.LeanRender":
@@ -4005,6 +4010,9 @@
   {"path": "IxCCTests/Anf/Generated.lean",
    "imports":
    ["IxCCTests.Anf.Support", "IxCCTests.Support.LamGen", "IxCC.Anf.Pipeline"]},
+  "IxCCTests.Anf.FoldGuard":
+  {"path": "IxCCTests/Anf/FoldGuard.lean",
+   "imports": ["IxCC.Anf.Pipeline", "IxCC.Anf.Print", "IxCCTests.Src.Support"]},
   "IxCCTests.Anf.Eval":
   {"path": "IxCCTests/Anf/Eval.lean",
    "imports": ["IxCCTests.Anf.Support", "IxCCTests.Src.Rules"]},

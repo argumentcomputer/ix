@@ -1,0 +1,21 @@
+{"source_sha256":
+ {"consumer.equations.json":
+  "8c0e639437fa06b2f3d63802a15117d29743826e5b870a85b9b0fb4ddce759ea",
+  "anonymous.ixe":
+  "ff797b1ce8dbf504756f678d59746192e2d35428277bd09117ff59cb42b25791",
+  "Fold.lean":
+  "c91c773e48f6ba59d2be948374081c619d139694f65f0ac4c9ec4b84d37834aa"},
+ "source_path": "fixtures/fold",
+ "regenerate":
+ "lake exe refreeze-ixon fold --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "d27372b698c1408667647536cd02de6b9ed2fb8ff5d79081e5a506dbadcbc9e6",
+ "lean_version":
+ "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --anon --out anonymous.ixe --equations-out anonymous.equations.json fixtures/fold/Fold.lean",
+  "ix compile --no-build --consts <roots> --equations --out named.ixe --equations-out named.equations.json fixtures/fold/Fold.lean",
+  "ix addr-of --ixe named.ixe NAME, for every root, definition and equation"]}

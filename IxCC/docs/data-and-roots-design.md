@@ -596,6 +596,17 @@ simpler form and stays. Primitive decisions, a table entry per decision justifie
 theorem fixing what it denotes as a `Decidable` value, remain a design for after the grounding's
 word case; the boundary no longer needs them.
 
+A third limit was added on 2026-11-13, by design: literal folding is bounded
+(`Anf.Walk.foldable`, `foldBits` = 1024; [compiler design](compiler-design.md), P2's rules on a
+primitive binding). The walk folds only when every literal operand is below `2^1024` and a
+`natPow` or `natShl` result is too; otherwise the primitive runs natively. Before, `Lam.Prim.sem`
+computed any power or shift on literals, so an exponent past `2^32 − 1` aborted the compiler and
+the verifier's replay, and folded squarings grew without bound. The cost is a program whose wide
+intermediate a later fold reduced: `2 ^ 2000 % 7 + x` (and a closure literal of `2^1024` or more
+under `% 7`) now fails natively with `natOverflow`, where Lean's value is `4 + x`; `2 ^ 100 % 7` and
+`2 ^ 512 % 7` still fold. Arbitrary-precision naturals (Phase 4) are what make such programs run;
+folding is not to be widened to keep them.
+
 **What stage W1 means for a user.** `ix compile` on a selected closure (`--consts`,
 `--consts-file`, `--local`, `--module`) adds the word equations by default, with its unfolding
 equations, so such a closure runs its word operations as primitives (F6w, the Lam word primitive,

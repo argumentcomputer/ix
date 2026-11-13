@@ -6,8 +6,11 @@ import IxCCTests.Anf.KernelEval
 import IxCCTests.Anf.LeanRender
 import IxCCTests.Anf.Defun
 import IxCCTests.Anf.SuccBle
+import IxCCTests.Anf.FoldGuard
 
-/-! The `tests-anf` suite: Anf's rules and clock
+/-! The `tests-anf` suite: the shrink walk's bound on literal folding
+(`IxCCTests.Anf.FoldGuard`, first, so that its memory bound reads the part's
+own peak); Anf's rules and clock
 monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
 every root and first-order constant of `k1.ixe` and the bench-k1 closures
 (readback, traps, the timeout clause, tick dominance, `WellScoped`); the K1
@@ -70,6 +73,8 @@ def main (args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
     IO.println "tests-anf"
+    part a "the shrink walk's bound on literal folding: decisions, mutants, exactness, the middle end" do
+      for line in ← FoldGuard.run a do IO.println s!"    {line}"
     part a "Anf rules and clock monotonicity" (Eval.run a)
     part a "Lam against Anf on k1.ixe and bench-k1, after every step" do
       for line in ← Differential.packs a stages do IO.println s!"    {line}"
