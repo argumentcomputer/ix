@@ -1205,6 +1205,7 @@
   "IxCC.Xv.Validate.Proof.Steps",
   "IxCC.Xv.Validate.Proof.Terms",
   "IxCC.Xv.Validate.Proof.Traced",
+  "IxCC.Xv.Validate.Proof.Tracked",
   "IxCC.Xv.Validate.Proof.XlLoc",
   "IxCC.Xv.Validate.Proof.XlPlace",
   "IxCC.Xv.Validate.Proof.XvRow",
@@ -1793,7 +1794,7 @@
  "grounding_axiom_sha256":
  "18151a1db67336782e87ed765ac6d798a90d1ecb61eb3278537539324c73b6cc",
  "grounding_axiom_count": 285,
- "baseline": "succBle: natBle of a successor as natBlt",
+ "baseline": "44ce491ab: validator tracked walk on 131c85bf1, +47 fences",
  "axiom_sha256":
- "ce53e3723d2f6b23a148af56cb8bcf5afa282e2c2f22b1814076be77b41be317",
- "axiom_count": 6675}
+ "7cff447c82267d8be0d504db548c686edb4877ca1f33e7aed0d30172cfcb64b5",
+ "axiom_count": 6722}

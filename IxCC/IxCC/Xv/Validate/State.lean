@@ -291,4 +291,62 @@ def facts (a : AState) : List (Nat × VSet) := a.toList
 
 end AState
 
+
+/-! ## The tracked state
+
+`checkBlock` walks a block with the state and a record of what it may hold (`Tracked`): every
+register some location may hold (`regs`, a superset) and the key of every outgoing cell that may
+hold something (`outs`, a superset). A definition forgets its register only when `regs` lists it,
+and a call clears only the listed cells, so a call or a definition does no pass over the whole
+state. The state is the one `AState`'s operations give (`Proof.checkBlock_eq_list`), which is what
+the soundness proof reads. -/
+
+structure Tracked where
+  st : AState
+  regs : NatMap Unit
+  outs : List Nat
+
+namespace Tracked
+
+/-- `m` with the registers `vs` listed. -/
+def addRegs (m : NatMap Unit) (vs : List VReg) : NatMap Unit := vs.foldl (fun m v => m.insert v ()) m
+
+/-- `outs` with `l`'s key added if `l` is an outgoing cell. -/
+def noteOut (outs : List Nat) (l : Loc) : List Nat :=
+  if isOutArgKey (locKey l) then locKey l :: outs else outs
+
+def empty : Tracked := { st := AState.empty, regs := .leaf, outs := [] }
+
+/-- Location `l` holds exactly `vs`, all listed. -/
+def setRow (s : Tracked) (l : Loc) (vs : VSet) : Tracked :=
+  { st := s.st.set l vs, regs := addRegs s.regs vs, outs := noteOut s.outs l }
+
+/-- `AState.ofList`, listing every register and outgoing cell it puts in the state. -/
+def ofList (facts : List (Loc × List VReg)) : Tracked :=
+  facts.foldl (fun s (l, vs) => s.setRow l (VSet.ofList (vs ++ s.st.get l))) empty
+
+/-- `AState.forget`, skipped when `v` is not listed (no location holds it). -/
+def forget (s : Tracked) (v : VReg) : Tracked :=
+  match s.regs.find? v with
+  | some _ => { s with st := s.st.forget v, regs := s.regs.erase v }
+  | none => s
+
+/-- `AState.clearOutArgs`: the listed cells erased. -/
+def clearOutArgs (s : Tracked) : Tracked :=
+  { s with st := s.outs.foldl (fun a k => a.erase k) s.st, outs := [] }
+
+def clear (s : Tracked) (l : Loc) : Tracked := { s with st := s.st.clear l }
+
+/-- `AState.define`. -/
+def define (s : Tracked) (defs : List (VReg × Loc)) (clobbers : List Loc) : Tracked :=
+  let s := defs.foldl (fun s (v, _) => s.forget v) s
+  let s := clobbers.foldl clear s
+  defs.foldl (fun s (v, l) => s.setRow l [v]) s
+
+/-- `AState.stepMove`: the destination holds the source's registers, which are listed. -/
+def stepMove (s : Tracked) (dst src : Loc) : Tracked :=
+  { s with st := s.st.stepMove dst src, outs := noteOut s.outs dst }
+
+end Tracked
+
 end IxCC.Xv.Validate

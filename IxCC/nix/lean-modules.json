@@ -91,6 +91,13 @@
     "IxCC.Xv.Operands",
     "IxCC.Xv.Select.Basic",
     "IxCCTests.Lir.Region"]},
+  "IxCCTests.Xv.ValidateTracked":
+  {"path": "IxCCTests/Xv/ValidateTracked.lean",
+   "imports":
+   ["IxCC.Xv.Validate.Check",
+    "IxCCTests.Xv.StackingLinear",
+    "IxCCTests.Lir.Gen",
+    "IxCCTests.Lir.Kernels"]},
   "IxCCTests.Xv.Support":
   {"path": "IxCCTests/Xv/Support.lean",
    "imports":
@@ -957,6 +964,7 @@
     "IxCCTests.Own.Owned.ScopeSet",
     "IxCCTests.Own.Owned.KeyIndex",
     "IxCCTests.Xv.StackingLinear",
+    "IxCCTests.Xv.ValidateTracked",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Own.Plain.Certificate",
     "IxCC.Recheck.Rc.Produce",
@@ -4348,6 +4356,9 @@
   "IxCC.Xv.Validate.Proof.XlLoc":
   {"path": "IxCC/Xv/Validate/Proof/XlLoc.lean",
    "imports": ["IxCC.Xv.XlSemantics"]},
+  "IxCC.Xv.Validate.Proof.Tracked":
+  {"path": "IxCC/Xv/Validate/Proof/Tracked.lean",
+   "imports": ["IxCC.Xv.Validate.Check", "IxCC.Xv.Validate.Proof.State"]},
   "IxCC.Xv.Validate.Proof.Traced":
   {"path": "IxCC/Xv/Validate/Proof/Traced.lean",
    "imports": ["IxCC.Xv.Validate.Proof.Program", "IxCC.Sem.TracedSim"]},
@@ -4398,7 +4409,8 @@
   {"path": "IxCC/Xv/Validate/Proof/Map.lean", "imports": ["IxCC.Xv.Operands"]},
   "IxCC.Xv.Validate.Proof.Lookup":
   {"path": "IxCC/Xv/Validate/Proof/Lookup.lean",
-   "imports": ["IxCC.Xv.Validate.Proof.Inst"]},
+   "imports":
+   ["IxCC.Xv.Validate.Proof.Inst", "IxCC.Xv.Validate.Proof.Tracked"]},
   "IxCC.Xv.Validate.Proof.Inst":
   {"path": "IxCC/Xv/Validate/Proof/Inst.lean",
    "imports": ["IxCC.Xv.Validate.Proof.RowChecks"]},

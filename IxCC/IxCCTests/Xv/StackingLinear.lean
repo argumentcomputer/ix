@@ -122,22 +122,26 @@ def checkProgram (t : Tally) (label : String) (p : LProgram) (layouts : List Fra
   | .error _ => t := { t with refused := t.refused + 1 }
   return t
 
-/-- A program's Xl on the immortal route and on the plain-RC route under `bodies`, each allocated
-as the producer allocates it, with the layouts the producer gives, its export passing and its
-clobber sets. -/
-def routes (names : List String) (env : Xl.Env) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) :
-    Except String (List (String × LProgram × (FunId → Option (List ArgRep)) × Xl.Env)) := do
+/-- A program's Lir on the immortal route and on the plain-RC route under `bodies` (when the
+candidate lowering accepts it), with its export passing and clobber sets. -/
+def lirRoutes (names : List String) (env : Xl.Env) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) :
+    Except String (List (String × Lir.Program × (FunId → Option (List ArgRep)) × Xl.Env)) := do
   let lowered ← (Rt.lower { names } (Cfg.lower (Own.immortal F))).mapError fun e => s!"Rt.lower: {e}"
-  let (xv, _) ← (Select.run lowered.program).mapError fun e => s!"select: {e.form}: {e.reason}"
-  let zero ← Alloc.runProducer env xv
-  let some cand := Cfg.Rc.generate F bodies | return [("immortal", zero.program, lowered.reps, env)]
+  let some cand := Cfg.Rc.generate F bodies | return [("immortal", lowered.program, lowered.reps, env)]
   let pub ← Cfg.Rc.Public.lower { names } F bodies cand
   let layout : Cfg.Rc.Native.Layout := ⟨cand.base.size, cand.base.ctors.filter (fun c => c.arity > 0)⟩
-  let rcEnv := layout.env env
-  let (pxv, _) ← (Select.run pub.runtime.program).mapError fun e => s!"select: {e.form}: {e.reason}"
-  let plain ← Alloc.runProducer rcEnv pxv
-  return [("immortal", zero.program, lowered.reps, env),
-          ("plain-RC", plain.program, (⟨pub.runtime, pub.drop⟩ : Cfg.Rc.Public.Lowered).reps, rcEnv)]
+  return [("immortal", lowered.program, lowered.reps, env),
+          ("plain-RC", pub.runtime.program, (⟨pub.runtime, pub.drop⟩ : Cfg.Rc.Public.Lowered).reps,
+            layout.env env)]
+
+/-- Each route's Lir selected and allocated as the producer allocates it. -/
+def routes (names : List String) (env : Xl.Env) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) :
+    Except String (List (String × LProgram × (FunId → Option (List ArgRep)) × Xl.Env)) := do
+  let rs ← lirRoutes names env F bodies
+  rs.mapM fun (route, lir, reps, env) => do
+    let (xv, _) ← (Select.run lir).mapError fun e => s!"select: {e.form}: {e.reason}"
+    let a ← Alloc.runProducer env xv
+    pure (route, a.program, reps, env)
 
 /-- Both routes of one corpus root. -/
 def checkRoot (t : Tally) (label : String) (names : List String) (env : Xl.Env) (F : Fir.Program)

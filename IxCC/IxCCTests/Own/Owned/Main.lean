@@ -3,6 +3,7 @@ import IxCCTests.Own.Owned.Sites
 import IxCCTests.Own.Owned.ScopeSet
 import IxCCTests.Own.Owned.KeyIndex
 import IxCCTests.Xv.StackingLinear
+import IxCCTests.Xv.ValidateTracked
 import IxCCTests.Corpus.Manifest
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
@@ -43,7 +44,11 @@ a second placement of every root made by the liveness producer (`Live`, untruste
 * **stacking's reads and placements** (`IxCCTests.Xv.StackingLinear`): on every root's Xl on the
   immortal route and on the plain-RC route under the canonical map, then on the backend suite's
   hand-written programs and generated programs of many functions, `Stacking.run` and the reads and
-  placements it makes against their first forms.
+  placements it makes against their first forms;
+* **the validator's walk** (`IxCCTests.Xv.ValidateTracked`): on every root's allocations on both
+  routes, and on the same allocations with certificates made wrong (`CAP` edits per allocation),
+  `checkBlock` against `checkBlockList` per block and `Validate.program` against the check written
+  out with it, the error included; and the count of `forget`s that still pass over the state.
 
 Arguments: `[COUNT [CAP]]` (defaults 100 and 12). Run from the `IxCC` directory (the manifests'
 paths are relative to it). -/
@@ -71,6 +76,7 @@ structure Totals where
   scope : ScopeSet.Tally := {}
   policy : KeyIndex.Tally := {}
   stacking : IxCCTests.Xv.StackingLinear.Tally := {}
+  validator : IxCCTests.Xv.ValidateTracked.Tally := {}
   failures : Array String := #[]
 
 def Totals.fail (t : Totals) (msg : String) : Totals :=
@@ -252,6 +258,7 @@ def run (count cap : Nat) : IO UInt32 := do
           let (F, canonical, src, cfg) ← front (dir / fx.closure.path) (dir / fx.equations.path) r.name
           t := { t with policy := KeyIndex.checkProgram t.policy label src F }
           t := { t with stacking := IxCCTests.Xv.StackingLinear.checkRoot t.stacking label cfg.names cfg.env F canonical }
+          t := { t with validator := IxCCTests.Xv.ValidateTracked.checkRoot t.validator label cfg.names cfg.env F canonical (4 * cap) }
           t ← IO.lazyPure fun _ => root t label F canonical count cap
         catch e =>
           errors := errors + 1
@@ -274,6 +281,13 @@ def run (count cap : Nat) : IO UInt32 := do
   let (stackLines, stackFailures) := IxCCTests.Xv.StackingLinear.report (IxCCTests.Xv.StackingLinear.synthetic t.stacking)
   for l in stackLines do IO.println l
   t := { t with failures := t.failures ++ stackFailures.toArray }
+  let (valLines, valFailures) := IxCCTests.Xv.ValidateTracked.report "corpus roots" t.validator
+  for l in valLines do IO.println l
+  t := { t with failures := t.failures ++ valFailures.toArray }
+  let (genLines, genFailures) :=
+    IxCCTests.Xv.ValidateTracked.report "generated Lir" (IxCCTests.Xv.ValidateTracked.synthetic count (4 * cap))
+  for l in genLines do IO.println l
+  t := { t with failures := t.failures ++ genFailures.toArray }
   for e in t.failures.toList.take 50 do IO.println s!"FAIL {e}"
   IO.println s!"{t.failures.size} failure(s), front-end errors {errors}"
   return if t.failures.isEmpty then 0 else 1
