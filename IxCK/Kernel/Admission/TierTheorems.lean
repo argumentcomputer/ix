@@ -117,13 +117,13 @@ theorem checkBytesTieredUsing_ok {prelude : Ix.Kernel.RoleTable → Except Strin
   cases h5 : prelude t with
   | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
   | ok pre =>
-  cases h6 : decodeRecords limits records with
+  cases h6 : decodeWithin limits records with
   | error e => simp [h1, h2, h3, h4, h5, h6, bind, Except.bind, Except.mapError] at h
   | ok constants =>
   simp only [h1, h2, h3, h4, h5, h6, bind, Except.bind, Except.mapError] at h
   cases u3
   exact ⟨(authenticate_ok_iff hash records blobs).mp h3, t, pre, constants, rfl,
-    by first | rfl | exact h5, by first | rfl | exact h6, h⟩
+    by first | rfl | exact h5, decodeWithin_decodeRecords h6, h⟩
 
 /-- **The tiered Ixon entry**, behind the committed prelude: `checkBytesTieredUsing_ok`
 at `preludeFor`. -/

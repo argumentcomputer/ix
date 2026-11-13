@@ -16,7 +16,9 @@ namespace Tests.Ix.Kernel.ByteAdmission
 
 open Ix.Kernel.Admission
 
-def limits : Limits := ⟨256, 256, 1048576, 65536, 65536⟩
+def limits : Limits :=
+  { maxRecords := 256, maxBlobs := 256, maxTotalBytes := 1048576,
+    maxRecordBytes := 65536, maxRecordUnivNodes := 65536 }
 
 def encode (constants : List (Address × Ixon.Constant)) : Records :=
   constants.map fun (address, constant) => (address, Ixon.serConstant constant)

@@ -206,6 +206,19 @@ theorem decodeRecordsPar_eq (limits : Limits) (records : Records) :
     decodeRecordsPar limits records = decodeRecords limits records := by
   simp only [decodeRecordsPar, decodeRecords, joinDecodes_spawnDecodes]
 
+/-- `Ix.Kernel.Admission.decodeWithin` with the decoding in parallel
+(`decodeRecordsPar`): the depth scan, the decoding, the expanded-depth check. -/
+def decodeWithinPar (limits : Limits) (records : Records) :
+    Except ByteError Ix.Kernel.Ingress.Constants := do
+  Ix.Kernel.Admission.scanDepths limits records
+  let constants ← decodeRecordsPar limits records
+  Ix.Kernel.Admission.expandedDepths limits constants
+  pure constants
+
+theorem decodeWithinPar_eq (limits : Limits) (records : Records) :
+    decodeWithinPar limits records = Ix.Kernel.Admission.decodeWithin limits records := by
+  simp only [decodeWithinPar, Ix.Kernel.Admission.decodeWithin, decodeRecordsPar_eq]
+
 end DecodePar
 
 /-- The order is selected before reading/checking, then subjected to the same
@@ -222,7 +235,7 @@ def prepareRecordsFor (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits
   (Ix.Kernel.Admission.uniqueKeys rawRecords.toList blobs).mapError .bytes
   (Ix.Kernel.Admission.authenticate Address.admissionHash rawRecords.toList blobs).mapError .bytes
   let table ← (Ix.Kernel.Admission.admitBinding Address.admissionHash binding).mapError .binding
-  let constants ← (Ix.Kernel.Admission.decodeRecords limits rawRecords.toList).mapError .bytes
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits rawRecords.toList).mapError .bytes
   let store : RecordStore := constants.foldl (fun m (a, c) => m.insert a c) {}
   checkBindings table store
   let preRecords ← (Ix.RoleBinding.preludeRecords table (store[·]?) Ix.Kernel.preludeShape).mapError .prelude
@@ -262,7 +275,7 @@ def prepareRecordsForPar (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Lim
   (Ix.Kernel.Admission.uniqueKeys rawRecords.toList blobs).mapError .bytes
   (Ix.Kernel.Admission.authenticate Address.admissionHash rawRecords.toList blobs).mapError .bytes
   let table ← (Ix.Kernel.Admission.admitBinding Address.admissionHash binding).mapError .binding
-  let constants ← (decodeRecordsPar limits rawRecords.toList).mapError .bytes
+  let constants ← (decodeWithinPar limits rawRecords.toList).mapError .bytes
   let store : RecordStore := constants.foldl (fun m (a, c) => m.insert a c) {}
   checkBindings table store
   let preRecords ← (Ix.RoleBinding.preludeRecords table (store[·]?) Ix.Kernel.preludeShape).mapError .prelude
@@ -282,7 +295,7 @@ theorem prepareRecordsForPar_eq (artifact : Ixon.Env) (limits : Ix.Kernel.Admiss
     (requested : Option (Array Address)) :
     prepareRecordsForPar artifact limits requested = prepareRecordsFor artifact limits requested := by
   unfold prepareRecordsForPar prepareRecordsFor
-  simp only [decodeRecordsPar_eq]
+  simp only [decodeWithinPar_eq]
 
 /-- `prepareRecords` with the records decoded in parallel
 (`prepareRecordsPar_eq`). -/

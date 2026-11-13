@@ -229,7 +229,7 @@ def checkBytesTieredUsing (prelude : Ix.Kernel.RoleTable → Except String (Prel
   (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
   let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
   let pre ← (prelude t).mapError (.entry ∘ .prelude)
-  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
+  let constants ← (decodeWithin limits records).mapError (.entry ∘ Error.ofBytes)
   checkConstantsTiered hash t pre constants blobs hint
 
 /-- **The tiered Ixon entry** behind the committed prelude read under the
@@ -276,7 +276,7 @@ def checkBytesTieredUsingUnder (policy : Ix.Kernel.Cached.AxiomPolicy)
   (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
   let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
   let pre ← (prelude t).mapError (.entry ∘ .prelude)
-  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
+  let constants ← (decodeWithin limits records).mapError (.entry ∘ Error.ofBytes)
   checkConstantsTieredUnder policy hash t pre constants blobs hint
 
 /-- `checkConstantsTiered` with user axioms admitted on the logical part: the

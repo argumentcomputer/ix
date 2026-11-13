@@ -287,4 +287,101 @@ theorem RecordsRead.deterministic {limits : Limits} {records : Records}
   rw [h₁] at h₂
   exact Except.ok.inj h₂
 
+/-- **Decoding within the depth limit decodes**: what `decodeWithin` returns
+is `decodeRecords`'s (so `RecordsRead`). -/
+theorem decodeWithin_decodeRecords {limits : Limits} {records : Records}
+    {constants : Ingress.Constants} (h : decodeWithin limits records = .ok constants) :
+    decodeRecords limits records = .ok constants := by
+  unfold decodeWithin at h
+  cases hs : scanDepths limits records with
+  | error e => simp [hs, bind, Except.bind] at h
+  | ok u =>
+    cases hd : decodeRecords limits records with
+    | error e => simp [hs, hd, bind, Except.bind] at h
+    | ok cs =>
+      cases he : expandedDepths limits cs with
+      | error e => simp [hs, hd, he, bind, Except.bind] at h
+      | ok v =>
+        simp only [hs, hd, he, bind, Except.bind, pure, Except.pure] at h
+        rw [h]
+
+/-- A failing scan is the depth decline. -/
+theorem scanDepths_error {limits : Limits} :
+    ∀ {records : Records} {e : ByteError}, scanDepths limits records = .error e → e = .limit .depth
+  | [], _, h => by simp [scanDepths] at h
+  | (_, _) :: _, _, h => by
+    rw [scanDepths] at h
+    split at h
+    · cases h; rfl
+    · exact scanDepths_error h
+
+/-- A failing expanded-depth check is the depth decline. -/
+theorem expandedDepths_error {limits : Limits} :
+    ∀ {constants : Ingress.Constants} {e : ByteError},
+      expandedDepths limits constants = .error e → e = .limit .depth
+  | [], _, h => by simp [expandedDepths] at h
+  | (_, _) :: _, _, h => by
+    rw [expandedDepths] at h
+    split at h
+    · exact expandedDepths_error h
+    · cases h; rfl
+
+/-- **The depth limit only declines**: `decodeWithin` fails with
+`decodeRecords`'s error or with `.limit .depth`, which the entries report as
+a decline (`Ix.Kernel.Admission.Error.outcome`). -/
+theorem decodeWithin_error {limits : Limits} {records : Records} {e : ByteError}
+    (h : decodeWithin limits records = .error e) :
+    e = .limit .depth ∨ decodeRecords limits records = .error e := by
+  unfold decodeWithin at h
+  cases hs : scanDepths limits records with
+  | error e' =>
+    simp only [hs, bind, Except.bind] at h
+    cases h
+    exact .inl (scanDepths_error hs)
+  | ok u =>
+    cases hd : decodeRecords limits records with
+    | error e' =>
+      simp only [hs, hd, bind, Except.bind] at h
+      cases h
+      exact .inr rfl
+    | ok cs =>
+      cases he : expandedDepths limits cs with
+      | error e' =>
+        simp only [hs, hd, he, bind, Except.bind] at h
+        cases h
+        exact .inl (expandedDepths_error he)
+      | ok v => simp [hs, hd, he, bind, Except.bind, pure, Except.pure] at h
+
+/-- **Within the depth limit**: the stored-nesting scan of `records` and the
+expanded-depth check of their reading `constants` pass. -/
+def DepthsWithin (limits : Limits) (records : Records) (constants : Ingress.Constants) : Prop :=
+  scanDepths limits records = .ok () ∧ expandedDepths limits constants = .ok ()
+
+/-- **Decoding within the depth limit** reads exactly (`RecordsRead`) and
+within the limit. -/
+theorem decodeWithin_ok_iff (limits : Limits) (records : Records) (constants : Ingress.Constants) :
+    decodeWithin limits records = .ok constants ↔
+      RecordsRead limits records constants ∧ DepthsWithin limits records constants := by
+  rw [← decodeRecords_ok_iff]
+  constructor
+  · intro h
+    have hd := decodeWithin_decodeRecords h
+    refine ⟨hd, ?_⟩
+    unfold DepthsWithin
+    refine ⟨?_, ?_⟩
+    · cases hs : scanDepths limits records with
+      | ok u => cases u; rfl
+      | error e =>
+        unfold decodeWithin at h
+        simp [hs, bind, Except.bind] at h
+    · cases he : expandedDepths limits constants with
+      | ok u => cases u; rfl
+      | error e =>
+        unfold decodeWithin at h
+        cases hs : scanDepths limits records <;> simp [hs, hd, he, bind, Except.bind] at h
+  · rintro ⟨hd, hw⟩
+    obtain ⟨hs, he⟩ := hw
+    unfold decodeWithin
+    simp [hs, hd, he, bind, Except.bind, pure, Except.pure]
+
 end Ix.Kernel.Admission

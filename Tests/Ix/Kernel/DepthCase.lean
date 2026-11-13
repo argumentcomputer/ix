@@ -85,7 +85,9 @@ def iota (table : _root_.Ix.Kernel.RoleTable) (n : Nat) :
   pure ([x, t], [(blobAddr, blob)])
 
 /-- The command line's limits (`ix check-lean`'s `artifactLimits`). -/
-def limits : _root_.Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : _root_.Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 def hint : _root_.Ix.Kernel.ConstRef Address → Option _root_.Ix.Kernel.ReducibilityHint := fun _ => some (.regular 1)
 

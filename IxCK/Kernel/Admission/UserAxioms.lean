@@ -136,7 +136,7 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
         cases admitBinding hash binding with
         | error e => rfl
         | ok t =>
-          cases decodeRecords limits records with
+          cases decodeWithin limits records with
           | error e => rfl
           | ok constants =>
             refine (checkConstantsUnder_strict hash t pre constants blobs hint).trans ?_
@@ -167,7 +167,7 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
         cases h4 : admitBinding hash binding with
         | error e => simp [h1, h2, h3, h4, bind, Except.bind, Except.mapError] at h
         | ok t =>
-          cases h5 : decodeRecords limits records with
+          cases h5 : decodeWithin limits records with
           | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
           | ok constants =>
             simp only [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h

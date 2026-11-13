@@ -294,7 +294,9 @@ def cases : List Case := [
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 14, maxBlobs := 1 <<< 14, maxTotalBytes := 1 <<< 26,
+    maxRecordBytes := 1 <<< 22, maxRecordUnivNodes := 1 <<< 20 }
 
 /-- The names the seeds are installed under. -/
 def seedNames (input : Input) : List (Lean.Name × Option (CName .anon)) :=

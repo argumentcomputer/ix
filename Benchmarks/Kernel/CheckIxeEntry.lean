@@ -30,7 +30,9 @@ open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- Bounds wide enough for a whole compiled library. -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 

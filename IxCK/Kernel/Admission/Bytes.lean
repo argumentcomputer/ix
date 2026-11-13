@@ -1,6 +1,7 @@
 module
 
 public import IxCK.Ixon.Canonical
+public import IxCK.Kernel.Admission.Depth
 public import IxCK.Kernel.Ingress.Records
 public import Std.Data.HashSet.Basic
 
@@ -34,19 +35,36 @@ abbrev Records := List (Address × ByteArray)
 payloads, excluding address keys and host transport framing. Universe nodes
 are bounded across each record's entire universe table; the batch bound is
 therefore at most `maxRecords * maxRecordUnivNodes`. These are input/expansion
-limits, not heap or wall-clock bounds for the remaining readers or checker. -/
+limits, not heap or wall-clock bounds for the remaining readers or checker.
+
+The last three fields have defaults. `maxDepth` bounds how deep a record's
+expressions and universes nest, as stored (`scanDepth`, before decoding) and
+with their shares expanded (`expandedDepth`, after decoding), and sets the
+typing core's recursion fuel (`Limits.knotFuel`). `levelBudget` is reserved
+for the level comparison's work budget and is not read yet. `workers` bounds
+the tasks phase B runs on (`Cached.checkPendingTasks`): `none` is one task
+per 64 records, `some 0` the walk on the calling thread, `some w` at most `w`
+tasks; it cannot change a verdict (`Cached.checkDecls_workers`). A limit only
+turns an answer into a decline, so an input accepted under some limits is
+accepted under larger ones (`docs/kernel.md`, "Limits"). -/
 structure Limits where
   maxRecords : Nat
   maxBlobs : Nat
   maxTotalBytes : Nat
   maxRecordBytes : Nat
   maxRecordUnivNodes : Nat
+  maxDepth : Nat := 16384
+  levelBudget : Nat := 65536
+  workers : Option Nat := none
   deriving Repr
 
 inductive Resource where
   | records
   | blobs
   | totalBytes
+  /-- A record's expressions or universes nest deeper than `maxDepth`, as
+  stored or with their shares expanded. -/
+  | depth
   deriving Repr, DecidableEq
 
 /-- The two keyed tables of a batch. -/
@@ -147,6 +165,37 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
 preflight is part of `checkBytes`, not this independently useful operation. -/
 def decodeRecords (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
   decodeLoop limits 0 records []
+
+/-- **The stored-nesting scan**: every record's expressions (shares as leaves)
+and universes within `limits.maxDepth` (`Depth.within`), read from the bytes
+before anything decodes them, so that the decoder's recursion is bounded. A
+record over `maxRecordBytes` is left to the decoder, which refuses it. -/
+def scanDepths (limits : Limits) : Records → Except ByteError Unit
+  | [] => .ok ()
+  | (_, bytes) :: rest =>
+    if bytes.size ≤ limits.maxRecordBytes && !Depth.within limits.maxDepth bytes then
+      .error (.limit .depth)
+    else scanDepths limits rest
+
+/-- **The expanded-depth check**: every decoded record's expressions within
+`limits.maxDepth` with their shares expanded, as the reader builds them
+(`Depth.expandedWithin`). -/
+def expandedDepths (limits : Limits) : Ingress.Constants → Except ByteError Unit
+  | [] => .ok ()
+  | (_, constant) :: rest =>
+    if Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant then
+      expandedDepths limits rest
+    else .error (.limit .depth)
+
+/-- **Decoding within the depth limit**: the stored-nesting scan, canonical
+decoding (`decodeRecords`), the expanded-depth check. The entries decode with
+it; its result is `decodeRecords`'s (`decodeWithin_decodeRecords`), and its
+only other failure is the decline `.limit .depth`. -/
+def decodeWithin (limits : Limits) (records : Records) : Except ByteError Ingress.Constants := do
+  scanDepths limits records
+  let constants ← decodeRecords limits records
+  expandedDepths limits constants
+  pure constants
 
 end Ix.Kernel.Admission
 

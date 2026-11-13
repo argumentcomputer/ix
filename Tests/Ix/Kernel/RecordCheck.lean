@@ -191,7 +191,9 @@ open _root_.Ix.Kernel.Admission (Limits ByteError)
 private def need (label : String) (ok : Bool) : Except String Unit :=
   if ok then .ok () else .error label
 
-private def storeLimits : Limits := ⟨2048, 8, 1 <<< 26, 1 <<< 20, 1 <<< 16⟩
+private def storeLimits : Limits :=
+  { maxRecords := 2048, maxBlobs := 8, maxTotalBytes := 1 <<< 26,
+    maxRecordBytes := 1 <<< 20, maxRecordUnivNodes := 1 <<< 16 }
 
 private def fixtureConstant (index : Nat) : Ixon.Constant := {
   sharing := #[], refs := #[], univs := #[.zero, .succ .zero]

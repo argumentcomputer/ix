@@ -36,7 +36,9 @@ def recordStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.authenticate Address.admissionHash records.toList blobs).mapError byteError
+  (Ix.Kernel.Admission.scanDepths limits records.toList).mapError byteError
   let decoded ← (Ix.Kernel.Admission.decodeRecords limits records.toList).mapError byteError
+  (Ix.Kernel.Admission.expandedDepths limits decoded).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
 /-- The same store construction with bounded parallel authentication and
@@ -50,7 +52,9 @@ def recordStoreParallel (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
   (RecordDecoding.authenticateParallel 256 Address.admissionHash records.toList blobs).mapError byteError
+  (Ix.Kernel.Admission.scanDepths limits records.toList).mapError byteError
   let decoded ← (RecordDecoding.parallel 256 limits records.toList).mapError byteError
+  (Ix.Kernel.Admission.expandedDepths limits decoded).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
 @[csimp] theorem recordStore_eq_parallel : @recordStore = @recordStoreParallel := by

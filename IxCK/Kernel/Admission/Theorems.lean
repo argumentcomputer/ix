@@ -217,7 +217,7 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
       (uniqueKeys records blobs).mapError Error.ofBytes
       (authenticate hash records blobs).mapError Error.ofBytes
       let t ← (admitBinding hash binding).mapError .binding
-      let constants ← (decodeRecords limits records).mapError Error.ofBytes
+      let constants ← (decodeWithin limits records).mapError Error.ofBytes
       checkConstantsWith hash t pre constants blobs hint) := by
   unfold checkBytesWith prepareWith checkConstantsWith
   cases preflight limits records blobs with
@@ -232,7 +232,7 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
         cases admitBinding hash binding with
         | error e => rfl
         | ok t =>
-          cases decodeRecords limits records with
+          cases decodeWithin limits records with
           | error e => rfl
           | ok constants =>
             show (Except.bind (Except.bind (readStream hash t pre constants blobs hint) _) _) =
@@ -466,12 +466,12 @@ theorem checkBytesWith_reading {hash : ByteArray → Address} {binding : Binding
         cases hb : admitBinding hash binding with
         | error e => simp [hf, hu, ha, hb, Except.mapError, bind, Except.bind] at h
         | ok t =>
-          cases hd : decodeRecords limits records with
+          cases hd : decodeWithin limits records with
           | error e => simp [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
           | ok constants =>
             simp only [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
             have authentic := (Ix.Kernel.Admission.authenticate_ok_iff _ _ _).mp ha
-            have reading := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd
+            have reading := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp (decodeWithin_decodeRecords hd)
             exact ⟨(Ix.Kernel.Admission.preflight_ok_iff _ _ _).mp hf,
               (Ix.Kernel.Admission.uniqueKeys_ok_iff _ _).mp hu, authentic, t, constants,
               (admitBinding_ok_iff _ _ _).mp hb, reading, reading.hashed authentic.1,
@@ -557,11 +557,11 @@ theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
       cases ha : authenticate hash records blobs with
       | error e => simp [hf, hu, ha, Except.mapError, bind, Except.bind] at h
       | ok w =>
-        cases hd : decodeRecords limits records with
+        cases hd : decodeWithin limits records with
         | error e => simp [hf, hu, ha, ht, hd, Except.mapError, bind, Except.bind] at h
         | ok constants' =>
           simp only [hf, hu, ha, ht, hd, Except.mapError, bind, Except.bind] at h
-          have reading' := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd
+          have reading' := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp (decodeWithin_decodeRecords hd)
           obtain rfl := reading.deterministic reading'
           exact (checkConstantsWith_installed h).no_False_theorem V hmem hc hk hty
 

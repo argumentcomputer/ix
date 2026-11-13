@@ -188,7 +188,7 @@ def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelud
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
   let t ← (admitBinding hash binding).mapError .binding
-  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  let constants ← (decodeWithin limits records).mapError Error.ofBytes
   let (ev, decls) ← readStream hash t pre constants blobs hint
   pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
@@ -382,7 +382,7 @@ def checkBytesUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray �
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
   let t ← (admitBinding hash binding).mapError .binding
-  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  let constants ← (decodeWithin limits records).mapError Error.ofBytes
   checkConstantsUnder policy hash t pre constants blobs hint
 
 /-- `checkBytesWith` with user axioms admitted: the environment of
