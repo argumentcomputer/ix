@@ -178,7 +178,8 @@ theorem readRecord_family (cx : Ctx md) (st : State md) (owner : Address) (c : I
             (ctorReadsAt ctorKey x.1 0 x.2.ctors.toList (ctorTypesOf x.1)).map (·.1.name)).toArray, recs⟩ := by
   rw [readRecord_muts_indc cx st owner c targets hne info, Ix.CompileCert.InductiveReading.readInductive_eq]
   unfold Ix.CompileCert.InductiveReading.readInductiveSpec
-  rw [hindexed]
+  rw [show blockShapeOf cx.index owner (targets.map Ixon.MutConst.indc).toArray = some shape by
+    simp only [blockShapeOf, hindexed]]
   dsimp only
   rw [order, indcs_family]
   obtain ⟨t, rest, rfl⟩ := List.exists_cons_of_ne_nil hne

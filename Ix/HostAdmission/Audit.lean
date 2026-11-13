@@ -61,8 +61,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7693 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7698 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

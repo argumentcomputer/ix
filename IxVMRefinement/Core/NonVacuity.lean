@@ -57,6 +57,10 @@ theorem envFacts₀ : EnvFacts c₀ where
   ruleCtorArity := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
   tableCtorArity := by intro sn i entry h; simp [c₀, env₀_findProj] at h
   familyArity := by intro T cvT caps h; simp [c₀, env₀_find] at h
+  store := Ix.Kernel.Open.StoreInv.empty
+  recMajorRecord := by intro k cv mI rP rls p us h; simp [c₀, env₀_find] at h
+  ruleCtorHead := by intro k cv mI rP rls rl cvj nP nF T us h; simp [c₀, env₀_find] at h
+  quotBasis := fun h => absurd h (not_inForce _)
 
 /-- The table cell: an empty binding section and three empty maps. -/
 def tableCell : SourceValue F :=
