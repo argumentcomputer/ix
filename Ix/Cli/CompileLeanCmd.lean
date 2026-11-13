@@ -52,12 +52,11 @@ the whole import environment (not `--local`) publishes every role, so it
 prefetches every role's certificates beside the source compile. -/
 private def compileFinalized (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat) (allowPartial : Bool) (outPath : String) (wholeEnv : Bool)
-    (binderData : Ix.CompileM.BinderDataMode) (strictBinderData : Bool) :
+    (strictBinderData : Bool) :
     IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
   match ← Ix.CompileM.compileAndFinalize fe.env constList workers allowPartial log
-      (prefetch := wholeEnv) (binderData := binderData) (strictBinderData := strictBinderData)
-      (onBinders := fun r a => r.print a "compile-lean") with
+      (prefetch := wholeEnv) (strictBinderData := strictBinderData) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return .error 1
@@ -94,13 +93,9 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, certified compiler"
 
-  let some binderData := Ix.CompileM.BinderDataMode.parse?
-      ((p.flag? "binder-data").map (·.as! String) |>.getD "inline")
-    | IO.eprintln "[compile-lean] --binder-data is off, inline or post"
-      return 1
   let t0 ← IO.monoMsNow
   let compiled ← compileFinalized fe constList workers allowPartial outPath (!p.hasFlag "local")
-    binderData (p.hasFlag "strict-binder-data")
+    (p.hasFlag "strict-binder-data")
   let out ← match compiled with
     | .ok out => pure out
     | .error code => return code
@@ -127,7 +122,6 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env."
     "allow-partial" ;      "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
-    "binder-data" : String; "How records get their binder data: inline (the default: while each record is built, from the Ix kernel's annotation pass over the compile's input), off (every binder undecided; for measurement), or post (off, then IxC's pass over the finalized artifact and re-addressing; for comparison)."
     "strict-binder-data" ; "Fail the compile, naming the record and binder, where the annotator cannot decide a binder's datum. Without it such a binder carries the undecided node (Ixon section tag 4), which IxVM rejects when it reads it, and is reported."
 
   ARGS:

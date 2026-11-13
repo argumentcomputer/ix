@@ -306,21 +306,15 @@ end Ix.RoleBinding.Compile
 
 namespace Ix.CompileM
 
-/-- How `ix compile` gives records their binder data: while building each record,
-from IxC's pass over the input (`inline`, the default:
-`Ix.CompileM.withBinderSection` with `Ix.Compile.KernelAnnotate.annotator`); with every
-binder undecided (`off`, for measurement); or as `off`, then by IxC's pass over
-the finalized artifact, which is then re-addressed (`post`, for comparison:
-`Ix.Compile.BinderData.apply`). -/
+/-- How `compileAndFinalize` gives records their binder data: while building each
+record, from IxC's pass over the input (`inline`, the default and what the compile
+commands run: `Ix.CompileM.withBinderSection` with
+`Ix.Compile.KernelAnnotate.annotator`); with every binder undecided (`off`, for
+measurement); or as `off`, then by IxC's pass over the finalized artifact, which is
+then re-addressed (`post`, for comparison: `Ix.Compile.BinderData.apply`). -/
 inductive BinderDataMode where
   | off | inline | post
   deriving BEq, Repr, Inhabited
-
-def BinderDataMode.parse? : String → Option BinderDataMode
-  | "off" => some .off
-  | "inline" => some .inline
-  | "post" => some .post
-  | _ => none
 
 /-- What `compileAndFinalize` made of a certified compile. -/
 inductive Finalization where
