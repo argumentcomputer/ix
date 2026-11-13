@@ -92,9 +92,7 @@ each shape of `kernel-depth-case`'s `shape` (λ and ∀ telescopes, an argument
 nest, a spine, a `let` nest, a `succ` and a `max` universe), written out and
 with one sharing entry per level, at the limit and one past it, under
 `maxDepth` 64 on the small stack and under the default (16,384) on the stack
-`Limits.stackFor` gives it. At the limit nothing is declined for depth (each
-shape is accepted, but the two universe shapes at 16,384, which the level
-comparison's fixed fuel `Level.defaultFuel`, 10,000, declines); one past it the
+`Limits.stackFor` gives it. At the limit each shape is accepted; one past it the
 entry declines with `.limit .depth`, before decoding (written out) or after it
 (shared). The measured depth comes from an oracle of the test's own
 (`exprDepth`). -/
@@ -109,10 +107,9 @@ def limitCases : List (String × Nat × Nat) :=
 /-- One `limitCases` case: its line and whether it passed. -/
 def limitCaseOk (name : String) (d : Nat) (verdict : String) (exitCode : UInt32) : Bool :=
   let maxDepth := if name.startsWith "limit64" then 64 else defaultLimits.maxDepth
-  let univ := name.contains "usucc" || name.contains "umax"
   exitCode == 0 && verdict.startsWith s!"depth {d}, " &&
     if d ≤ maxDepth then
-      !verdict.contains "Resource.depth" && ((univ && d > 64) || verdict.contains "accepted")
+      !verdict.contains "Resource.depth" && verdict.contains "accepted"
     else verdict.contains "declined" && verdict.contains "Resource.depth"
 
 def run : IO UInt32 := do
