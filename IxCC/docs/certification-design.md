@@ -278,6 +278,19 @@ reached instance of a `case` key its minors, and of `Quot.lift` its function, ar
 marker there, irrelevant by its sort, was returned or applied). No committed closure is refused by
 either check ([ci](ci.md)).
 
+**P1's core as one induction over 25 cases; the cases are not all proved (2026-11-13).**
+[`Src/Relevance/Proof/P1/Cases.lean`](../IxCC/Src/Relevance/Proof/P1/Cases.lean) proves `preserve`
+and `pre_step`, as approved, from a hypothesis `Cases`: one statement per evaluator case (E1–E8,
+δ, `headValue`, A1–A3, `applyAll`, F1–F8 with F6w, `force`, `forceAll`), each a named proposition
+with one signature (L1's facts, the structure, the call's precondition and sort events, and the
+statement at every call its evaluation makes). The induction is well founded on SrcEval's own
+termination measure, which every `Step` decreases
+([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Five of the 25 are proved (E2 at a
+sort and at a Π, where C7 leaves no precondition; E3 at both literals; F4); the other twenty are
+stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
+`Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the first
+lemmas the cases share.
+
 ## Target statements
 
 Notation: `kenv` is IxCK's environment read from the claim's bytes under the
