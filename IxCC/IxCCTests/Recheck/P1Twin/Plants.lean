@@ -430,6 +430,7 @@ def f3Record (a : Assert) : IO Unit := do
   -- `K` keeps a canonical constant record and has no constructor record (it is unreached)
   let annK := withConst fx.ann P1 k
   let ann := withNode { annK with ctors := annK.ctors.erase k } (.rule r 0) (tagsOf rhs)
+  IO.println s!"F3 diag: rule 0 tags canonical {Src.Relevance.Check.Canonical.checkTermBinders P1 ann [] rhs []}; r's record canonical {ann.constRel? r == some (IxCCTests.Recheck.Erased.canonRel P1 r)}; K's {ann.constRel? k == some (IxCCTests.Recheck.Erased.canonRel P1 k)}"
   let _ ← direct s!"F3: {Pt.short r}'s rule-0 constructor {Pt.short k} unreached, with a field written erased" P1 ann fx.main
   match Src.Recheck.annotation P1 ann with
   | .ok (src, ch1) =>
