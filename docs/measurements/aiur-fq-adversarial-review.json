@@ -1,0 +1,17 @@
+{
+  "focused_tests_passed": 8,
+  "clippy": "pass with -D warnings",
+  "changes": {
+    "canonical_boundary_advice": "The helper already replaced host-advice errors with zero candidates. The test now counts those fallbacks, confirms integer p reaches and fails the source range80 decomposition assertion, and explicitly supplies both wrong recompositions and value-preserving out-of-range chunks.",
+    "canonical_forged_proof": "The previous blanket scalar substitution also corrupted the raw range decomposition. Its replacement repairs the changed raw limb chunks and fixed-map multiplicities. The original key rejects integer p; a mutant changing only canonical_low's strict p0-1 endpoint to p0 accepts the identical trace matrices, isolating the canonical comparison."
+  },
+  "logs": [
+    "target/fq-test-review/all-tests.log",
+    "target/fq-test-review/clippy.log"
+  ],
+  "owned_file": "crates/proof-compression/tests/aiur_fq.rs",
+  "format": "ix-aiur-fq-adversarial-review-v1",
+  "date_utc": "2026-11-13",
+  "test_source_sha256": "c78ed06363b4b1391d88f46b2f909d20854631dd343c354cc6c3a0d4aaef2ae7",
+  "scope": "Follow-up test corrections; no arithmetic implementation or fixture change."
+}

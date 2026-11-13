@@ -1,4 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+  collections::HashSet,
+  sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+  },
+};
 
 use aiur::{
   FieldWord,
@@ -6,16 +12,22 @@ use aiur::{
   bytecode::Instruction,
   field::FieldBackend,
   hints::HintChannels,
-  trace::{Action, TracePlan},
+  trace::{Action, Polynomial, TracePlan},
 };
 use ark_bn254::Fq;
 use ark_ff::{BigInteger, Field, PrimeField};
 use ix_proof_compression::{
-  aiur_backend::{Bn254, fq, kzg::Backend},
+  aiur_backend::{
+    Bn254, fq,
+    kzg::{Backend, circuit_inputs},
+  },
   kzg::{KzgConfig, Scalar, Srs},
   recursive::native_field::{integer, modulus},
 };
-use multi_stark::system::SystemWitness;
+use multi_stark::{
+  expr::{Expr, Source},
+  system::{System, SystemWitness},
+};
 use num_bigint::BigUint;
 
 fn plan() -> TracePlan<'static, Bn254> {
@@ -74,6 +86,8 @@ fn poisoned(
           key_type.clone(),
           r#type.clone(),
           move |input, output| {
+            // Failed host advice becomes a candidate so invalid inputs reach
+            // the source's constraints instead of stopping in the advice code.
             let mut candidate = fq::advice(&name, input)
               .unwrap_or_else(|_| vec![Bn254.zero(); output.len()]);
             if name == target {
@@ -205,9 +219,16 @@ fn compiled_arithmetic_matches_base_field_at_boundaries() {
 }
 
 #[test]
-fn canonical_prefix_checks_every_boundary_with_untrusted_range_advice() {
+fn canonical_prefix_checks_boundaries_with_zero_fallback_range_advice() {
   let plan = plan();
-  let channels = poisoned(&plan, "bn254.fq.u16_80", |_, _| {});
+  let fallbacks = Arc::new(AtomicUsize::new(0));
+  let observed = Arc::clone(&fallbacks);
+  let channels = poisoned(&plan, "bn254.fq.u16_80", move |input, output| {
+    if fq::advice("bn254.fq.u16_80", input).is_err() {
+      assert_eq!(*output, vec![Bn254.zero(); 5]);
+      observed.fetch_add(1, Ordering::Relaxed);
+    }
+  });
   let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
   let prime = modulus();
   let mut values =
@@ -249,6 +270,38 @@ fn canonical_prefix_checks_every_boundary_with_untrusted_range_advice() {
         assert!(executor.execute("FqTest::canonical", input).is_err());
       }
     }
+  }
+  assert!(fallbacks.load(Ordering::Relaxed) > 0);
+  let before = fallbacks.load(Ordering::Relaxed);
+  let error = executor.execute("FqTest::canonical", raw(&prime)).unwrap_err();
+  assert_eq!(fallbacks.load(Ordering::Relaxed), before + 1);
+  assert_eq!(error.function, "BN254Fq::range80");
+  assert!(error.message.contains("Fq 80-bit decomposition"), "{error}");
+
+  for chunks in [
+    vec![Bn254.one(), Bn254.zero(), Bn254.zero(), Bn254.zero(), Bn254.zero()],
+    vec![
+      Bn254.from_u64(65536),
+      -Bn254.one(),
+      Bn254.zero(),
+      Bn254.zero(),
+      Bn254.zero(),
+    ],
+  ] {
+    let supplied = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&supplied);
+    let channels = poisoned(&plan, "bn254.fq.u16_80", move |_, output| {
+      output.clone_from(&chunks);
+      observed.fetch_add(1, Ordering::Relaxed);
+    });
+    let error = plan
+      .program()
+      .prepare_hint_channels(&[], &channels)
+      .unwrap()
+      .execute("FqTest::canonical", vec![Bn254.zero(); 4])
+      .unwrap_err();
+    assert!(supplied.load(Ordering::Relaxed) > 0);
+    assert_eq!(error.function, "BN254Fq::range80");
   }
 }
 
@@ -544,23 +597,6 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
         .verify(entry, &args, &fq::encode(expected + Fq::from(1)), &proof)
         .is_err()
     );
-    if entry == "FqTest::canonical" {
-      let mut traces = witness.traces.clone();
-      for trace in &mut traces {
-        for value in &mut trace.values {
-          if *value == args[0] {
-            *value += Bn254.one();
-          }
-        }
-      }
-      let noncanonical = raw(&modulus());
-      let forged = SystemWitness::from_stage_1(traces, backend.system());
-      let proof =
-        backend.prove(entry, &noncanonical, &noncanonical, forged).unwrap();
-      assert!(
-        backend.verify(entry, &noncanonical, &noncanonical, &proof).is_err()
-      );
-    }
     if entry == "FqTest::mul" {
       let (function, fill) = plan
         .artifact()
@@ -602,4 +638,211 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
       }
     }
   }
+}
+
+#[test]
+fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
+  let plan = plan();
+  let channels = channels();
+  let capacity = plan
+    .program()
+    .program()
+    .tables
+    .iter()
+    .map(|table| table.rows.len())
+    .max()
+    .unwrap()
+    .next_power_of_two();
+  let config = KzgConfig::new(
+    Arc::new(Srs::unsafe_dev_setup(
+      capacity,
+      b"aiur-fq-canonical-endpoint-test",
+    )),
+    8,
+  );
+  let backend = Backend::new(&plan, config.clone()).unwrap();
+  let entry = "FqTest::canonical";
+  let accepted = raw(&(modulus() - 1u8));
+  let rejected = raw(&modulus());
+  assert_eq!(&accepted[1..], &rejected[1..]);
+  assert_eq!(accepted[0] + Bn254.one(), rejected[0]);
+  for limb in &rejected {
+    assert!(integer(*limb) < BigUint::from(1u8) << fq::LIMB_BITS);
+  }
+  let record = plan
+    .program()
+    .prepare_hint_channels(&[], &channels)
+    .unwrap()
+    .execute(entry, accepted.clone())
+    .unwrap();
+  let mut traces = backend.generate(&record, entry, &accepted).unwrap().traces;
+  let (function, fill) = plan
+    .artifact()
+    .functions
+    .iter()
+    .enumerate()
+    .find(|(_, fill)| fill.name == "BN254Fq::range80")
+    .unwrap();
+  let chip = plan.function_chips()[function];
+  let layout = plan.layout().unwrap();
+  let placement = &layout.placements[chip];
+  assert!(!placement.grouped);
+  let input_column = placement.columns[plan.artifact().chips[chip].inputs[0]];
+  let range_trace = &traces[placement.circuit];
+  let rows: Vec<_> = range_trace
+    .values
+    .chunks_exact(range_trace.width)
+    .enumerate()
+    .filter_map(|(i, row)| (row[input_column] == accepted[0]).then_some(i))
+    .collect();
+  assert_eq!(rows.len(), 1);
+  let row_offset = rows[0] * range_trace.width;
+  let destinations = fill
+    .steps
+    .iter()
+    .find_map(|step| match &step.action {
+      Action::Hint { channel, dest, .. } if channel == "bn254.fq.u16_80" => {
+        Some(dest)
+      },
+      _ => None,
+    })
+    .unwrap();
+  let old_chunks = fq::advice("bn254.fq.u16_80", &[accepted[0]]).unwrap();
+  let new_chunks = fq::advice("bn254.fq.u16_80", &[rejected[0]]).unwrap();
+  assert!(
+    new_chunks.iter().all(|&chunk| Bn254.try_to_u64(chunk).unwrap() < 1 << 16)
+  );
+  for trace in &mut traces {
+    for value in &mut trace.values {
+      if *value == accepted[0] {
+        *value = rejected[0];
+      }
+    }
+  }
+  for ((&destination, old), new) in
+    destinations.iter().zip(&old_chunks).zip(&new_chunks)
+  {
+    let Some(column) = fill
+      .writes
+      .iter()
+      .find(|write| write.source == destination)
+      .map(|write| write.column)
+    else {
+      // Linear elimination reconstructs this chunk from the input and the
+      // retained chunks; the emitted lookup values are checked below.
+      continue;
+    };
+    let cell = &mut traces[placement.circuit].values
+      [row_offset + placement.columns[column]];
+    assert_eq!(*cell, *old);
+    *cell = *new;
+  }
+  let logical_row: Vec<_> = placement
+    .columns
+    .iter()
+    .map(|&column| traces[placement.circuit].values[row_offset + column])
+    .collect();
+  fn value(polynomial: &Polynomial<FieldWord>, row: &[Scalar]) -> Scalar {
+    match polynomial {
+      Polynomial::Const(value) => Bn254.from_word(*value),
+      Polynomial::Var(column) => row[*column],
+      Polynomial::Add(terms) => value(&terms[0], row) + value(&terms[1], row),
+      Polynomial::Sub(terms) => value(&terms[0], row) - value(&terms[1], row),
+      Polynomial::Mul(terms) => value(&terms[0], row) * value(&terms[1], row),
+    }
+  }
+  let raw_range_chunks: Vec<_> = plan.artifact().chips[chip]
+    .sends
+    .iter()
+    .filter(|send| send.channel == "BN254Fq::limb16")
+    .map(|send| value(&send.args[0], &logical_row))
+    .collect();
+  assert_eq!(raw_range_chunks, new_chunks);
+
+  let mut inputs = circuit_inputs(&plan).unwrap();
+  let program = plan.program().program();
+  let limb_map =
+    program.maps.iter().position(|map| map.name == "BN254Fq::limb16").unwrap();
+  let callable =
+    Bn254.from_u64(u64::try_from(program.functions.len() + limb_map).unwrap());
+  let (table, lookup) = inputs.iter().enumerate().find_map(|(index, input)| {
+    input.preprocessed.as_ref()?;
+    input.lookups.iter().find(|lookup| matches!(lookup.args.get(1), Some(Expr::Const(value)) if *value == callable))
+      .map(|lookup| (index, lookup))
+  }).unwrap();
+  let Expr::Neg(count) = &lookup.multiplicity else {
+    panic!("fixed-map multiplicity")
+  };
+  let Expr::Var(count_column) = count.as_ref() else {
+    panic!("fixed-map count column")
+  };
+  let Expr::Var(value_column) = lookup.args[2] else {
+    panic!("fixed-map value")
+  };
+  assert_eq!(count_column.source, Source::Main);
+  assert_eq!(value_column.source, Source::Preprocessed);
+  let fixed = inputs[table].preprocessed.as_ref().unwrap();
+  for (old, new) in old_chunks.iter().zip(&new_chunks).filter(|(a, b)| a != b) {
+    for (value, increment) in [(old, -Bn254.one()), (new, Bn254.one())] {
+      let row = fixed
+        .values
+        .chunks_exact(fixed.width)
+        .position(|row| row[value_column.index as usize] == *value)
+        .unwrap();
+      let width = traces[table].width;
+      let count =
+        &mut traces[table].values[row * width + count_column.index as usize];
+      if increment == -Bn254.one() {
+        assert!(Bn254.try_to_u64(*count).unwrap() > 0);
+      }
+      *count += increment;
+    }
+  }
+
+  let claim = backend.claim(entry, &rejected, &rejected).unwrap();
+  let proof = backend
+    .prove(
+      entry,
+      &rejected,
+      &rejected,
+      SystemWitness::from_stage_1(traces.clone(), backend.system()),
+    )
+    .unwrap();
+  assert!(backend.verify(entry, &rejected, &rejected, &proof).is_err());
+
+  fn relax(expr: &mut Expr<Scalar>, old: Scalar, new: Scalar) -> usize {
+    match expr {
+      Expr::Const(value) if *value == old => {
+        *value = new;
+        1
+      },
+      Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) => {
+        relax(a, old, new) + relax(b, old, new)
+      },
+      Expr::Neg(value) => relax(value, old, new),
+      _ => 0,
+    }
+  }
+  let comparison = backend
+    .circuit_names()
+    .iter()
+    .position(|name| name == "BN254Fq::canonical_low")
+    .unwrap();
+  let mut replaced = 0;
+  for constraint in &mut inputs[comparison].constraints {
+    replaced += relax(constraint, accepted[0], rejected[0]);
+  }
+  for lookup in &mut inputs[comparison].lookups {
+    replaced += relax(&mut lookup.multiplicity, accepted[0], rejected[0]);
+    for argument in &mut lookup.args {
+      replaced += relax(argument, accepted[0], rejected[0]);
+    }
+  }
+  assert!(replaced > 0);
+  // Accepting the same matrices with only p0-1 changed to p0 isolates the
+  // strict canonical endpoint from raw ranges and fixed-table membership.
+  let (relaxed, key) = System::new(config, inputs);
+  let witness = SystemWitness::from_stage_1(traces, &relaxed);
+  let proof = relaxed.prove(&key, &claim, witness);
+  relaxed.verify(&claim, &proof).unwrap();
 }

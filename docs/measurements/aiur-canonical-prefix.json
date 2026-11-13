@@ -124,7 +124,7 @@
   "validation": {
     "lean": "Targeted Fq and terminal exporter builds pass, including canonical_prefix_iff and add_sub carry integer lemmas.",
     "fq_tests": 7,
-    "fq_negative_cases": "Every lexicographic modulus threshold, arbitrary fallback range advice for oversized/negative limbs, altered quotient/carry columns, direct carry-map forgery, and a forged KZG canonical-constructor witness for integer p. Fr\u22121, Fr and Fr+1 are accepted as valid Fq values.",
+    "fq_negative_cases": "Original tests covered lexicographic thresholds, zero-candidate fallback when host range advice failed, changed quotient/carry columns and direct carry-map invalid membership. The original integer-p trace mutation also broke its raw range decomposition; follow-up validation isolates the canonical endpoint.",
     "clippy": "Targeted aiur_fq Clippy passes with -D warnings.",
     "terminal_kzg_proof": true,
     "changed_terminal_statement_rejected": true,
@@ -216,5 +216,12 @@
       "bytes": 906204,
       "blake3": "f9adef85a551405a97bbc6e83cc1aea806fd6fd9216c93bbf375355f050652b6"
     }
-  ]
+  ],
+  "follow_up_validation": {
+    "evidence": "docs/measurements/aiur-fq-adversarial-review.json",
+    "fq_tests": 8,
+    "source_hash_scope": "Original source_sha256 and32-test batch describe the measurement snapshot; the follow-up evidence records the newer test source separately.",
+    "endpoint_isolation": "Corrected raw limb chunks and fixed-map counts; original verifier rejects while changing only canonical_low threshold p0-1 to p0 makes the identical matrices verify.",
+    "range_advice": "Counted zero-candidate fallbacks after host advice errors; explicitly supplied incorrect recompositions and value-preserving out-of-range chunks."
+  }
 }
