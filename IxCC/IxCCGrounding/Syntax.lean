@@ -289,13 +289,151 @@ theorem cloSite?_spec {b : Term} {e A cp : KExpr} (h : cloSite? b e = some (A, c
       · cases h
     | _ => simp at h
 
+/-! ### The witness shape (the minor-premise shape of a deep `let`)
+
+A `let` whose copy is not at depth 0 and is not of the closure-capture shape, the copy reached
+from the `let`'s kernel term through applications, projections and λs (as in `match` minor premises
+`λ (_ : Unit). … x …`), every λ on the way over a closed level-free constant domain. Where each such
+domain has a witness (a stored constant of exactly that type: the check's `letWit` conjunct), every
+environment of the `let`'s context extends to one of the λs' context, where the value runs against
+the copy lifted past them. -/
+
+/-- **The witness path**: `cp` (in the context under `Δ`'s binders) occurs with no binder between
+in `e`, reached through applications, projections and λs, the λs' domains `Δ` (outermost
+first). -/
+inductive UnderLams (cp : KExpr) : List KExpr → KExpr → Prop
+  | here {e : KExpr} : SubAt0 cp e → UnderLams cp [] e
+  | appL {Δ : List KExpr} {f a : KExpr} : UnderLams cp Δ f → UnderLams cp Δ (.app f a)
+  | appR {Δ : List KExpr} {f a : KExpr} : UnderLams cp Δ a → UnderLams cp Δ (.app f a)
+  | proj {Δ : List KExpr} {s : KKey} {i : Nat} {x : KExpr} :
+      UnderLams cp Δ x → UnderLams cp Δ (.proj s i x)
+  | lam {Δ : List KExpr} {A b : KExpr} {m : BinderMeta} :
+      UnderLams cp Δ b → UnderLams cp (A :: Δ) (.lam A b m)
+
+/-- **The witness path, searched**: the λ domains (outermost first) on the first path from `e`,
+`d` binders below the copy's context, through applications, projections and λs to an occurrence of
+`v` lifted past the binders, with no binder between at the end. -/
+def lamPath (v : KExpr) : Nat → KExpr → Option (List KExpr)
+  | d, .app f a =>
+    if subAt0B (v.liftLooseBVars d 0) (.app f a) then some []
+    else (lamPath v d f).orElse fun _ => lamPath v d a
+  | d, .proj s i x =>
+    if subAt0B (v.liftLooseBVars d 0) (.proj s i x) then some [] else lamPath v d x
+  | d, .lam A b m =>
+    if subAt0B (v.liftLooseBVars d 0) (.lam A b m) then some []
+    else (lamPath v (d + 1) b).map (A :: ·)
+  | d, e => if subAt0B (v.liftLooseBVars d 0) e then some [] else none
+
+/-- **What `lamPath` returns is a witness path** (`UnderLams`) to `v` lifted past the binders. -/
+theorem underLams_of_check {v : KExpr} :
+    ∀ {d : Nat} {e : KExpr} {Δ : List KExpr}, lamPath v d e = some Δ →
+      UnderLams (v.liftLooseBVars (d + Δ.length) 0) Δ e := by
+  intro d e
+  induction e generalizing d with
+  | app f a ihf iha =>
+    intro Δ h
+    simp only [lamPath] at h
+    split at h
+    · rename_i hs
+      cases h
+      exact .here (subAt0_of_check hs)
+    · cases hf : lamPath v d f with
+      | some Δ' =>
+        rw [hf] at h
+        cases h
+        exact .appL (ihf hf)
+      | none =>
+        rw [hf] at h
+        exact .appR (iha h)
+  | proj s i x ih =>
+    intro Δ h
+    simp only [lamPath] at h
+    split at h
+    · rename_i hs
+      cases h
+      exact .here (subAt0_of_check hs)
+    · exact .proj (ih h)
+  | lam A b m _ ihb =>
+    intro Δ h
+    simp only [lamPath] at h
+    split at h
+    · rename_i hs
+      cases h
+      exact .here (subAt0_of_check hs)
+    · cases hb : lamPath v (d + 1) b with
+      | some Δ' =>
+        rw [hb] at h
+        cases h
+        have h' := ihb hb
+        have hl : d + 1 + Δ'.length = d + (A :: Δ').length := by
+          rw [List.length_cons, Nat.add_assoc, Nat.add_comm 1]
+        rw [hl] at h'
+        exact .lam h'
+      | none => rw [hb] at h; cases h
+  | _ =>
+    intro Δ h
+    simp only [lamPath] at h
+    split at h
+    · rename_i hs
+      cases h
+      exact .here (subAt0_of_check hs)
+    · cases h
+
+/-- A closed level-free constant: the domains the witness shape admits. -/
+def constDomB : KExpr → Bool
+  | .const _ [] => true
+  | _ => false
+
+/-- **Where a witness-shape `let`'s value runs**: the path's domains and the copy lifted past them,
+when the copy is not at depth 0, the shape is not the closure-capture one (so the three `let`
+cases are exclusive), a path exists (`lamPath`) and its domains are closed level-free constants. -/
+def witSite? (b : Term) (e : KExpr) : Option (List KExpr × KExpr) :=
+  match zcopy b e with
+  | some v' =>
+    if subAt0B v' e || cloShapeB b e v' then none
+    else
+      match lamPath v' 0 e with
+      | some Δ => if Δ.all constDomB then some (Δ, v'.liftLooseBVars Δ.length 0) else none
+      | none => none
+  | none => none
+
+/-- **What `witSite?` returns**: the copy is not at depth 0 and not of the closure-capture shape;
+the returned term is the copy lifted past the path's binders, it occurs on a witness path whose
+domains are closed level-free constants. -/
+theorem witSite?_spec {b : Term} {e cp : KExpr} {Δ : List KExpr} (h : witSite? b e = some (Δ, cp)) :
+    ∃ v', zcopy b e = some v' ∧ subAt0B v' e = false ∧ cloShapeB b e v' = false ∧
+      cp = v'.liftLooseBVars Δ.length 0 ∧ UnderLams cp Δ e ∧ ∀ A ∈ Δ, constDomB A = true := by
+  unfold witSite? at h
+  cases hz : zcopy b e with
+  | none => simp [hz] at h
+  | some v' =>
+    rw [hz] at h
+    simp only at h
+    split at h
+    · cases h
+    · rename_i hn
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hn
+      cases hp : lamPath v' 0 e with
+      | none => rw [hp] at h; cases h
+      | some Δ' =>
+        rw [hp] at h
+        simp only at h
+        split at h
+        · rename_i hall
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          have hu := underLams_of_check hp
+          rw [Nat.zero_add] at hu
+          exact ⟨v', rfl, hn.1, hn.2, rfl, hu, List.all_eq_true.mp hall⟩
+        · cases h
+
 
 /-- **The correspondence under a substitution** (what `valueCorr` and `eqnCorr` check, at `σ = []`):
 as `TermCorr`, with `var i` meeting `σ[i]`'s term, binders lifting `σ`, and two `let` cases: a live
 `let` (its variable's copy `v'` occurs in the body's kernel term with no binder between, and the value
 corresponds to it) and a dead one (its variable meets no kernel term); since step C a third, the
-closure-capture shape (`letClo`). The `let`'s type is not compared: SrcEval never evaluates it, and
-the kernel stores no `let`. -/
+closure-capture shape (`letClo`), and a fourth, the witness shape (`letWit`). The `let`'s type is
+not compared: SrcEval never evaluates it, and the kernel stores no `let`. -/
 inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Prop
   | var {σ : Sig} {i : Nat} {e : KExpr} : σ[i]? = some (some e) → TermCorrS κ lps σ (.var i) e
   | sort {σ : Sig} {u : IxCC.Ixon.Univ} {l : Level} : UnivCorr lps u l →
@@ -334,6 +472,15 @@ inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExp
       TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0) →
       TermCorrS κ lps (some v' :: σ) (.lam bz d body) (.lam A b' mb) →
       TermCorrS κ lps σ (.letE c r ty v (.lam bz d body)) (.lam A b' mb)
+  /-- the witness shape (the minor-premise shape of a deep `let`): the copy is not at depth 0 and
+  not of the closure-capture shape, it occurs, lifted past them, under λs over closed level-free
+  constant domains `Δ` (`witSite?`); the value corresponds in their context to the lifted copy -/
+  | letWit {σ : Sig} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
+      {e v' : KExpr} {Δ : List KExpr} :
+      zcopy b e = some v' → witSite? b e = some (Δ, v'.liftLooseBVars Δ.length 0) →
+      TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) v
+        (v'.liftLooseBVars Δ.length 0) →
+      TermCorrS κ lps (some v' :: σ) b e → TermCorrS κ lps σ (.letE c r ty v b) e
 
 /-- Every bound variable of a kernel term is below `n` (under its binders): the term is closed
 in a context of `n` binders. -/
@@ -540,9 +687,10 @@ inductive RunPair (p : Program) (env : KEnv) (κ : CId → KKey) (c : CId) : Ter
 application reached through functions, arguments relevant at `ls`, λ bodies and projections; at a
 `let`, its value's sites at the value's copy where the `let` is relevant and the copy occurs with no
 binder between (none where it is dead); at a closure-capture `let` (step C, `cloSite?`) where it
-is relevant, its value's sites in the λ's context at the lifted copy; and its body's. Every site
-is an application node of the kernel term with its binder domains (a `let` adds no kernel
-binder). -/
+is relevant, its value's sites in the λ's context at the lifted copy; at a witness-shape `let`
+(`witSite?`) where it is relevant, its value's sites in the context of the λs on the path at the
+copy lifted past them; and its body's. Every site is an application node of the kernel term with
+its binder domains (a `let` adds no kernel binder). -/
 def evalSites (ls : Levels) : List KExpr → Term → KExpr → List (List KExpr × KExpr × KExpr)
   | Γ, .app f a _ r, .app f' a' =>
     (Γ, f', a') :: (evalSites ls Γ f f' ++ (if r.irrAt ls then [] else evalSites ls Γ a a'))
@@ -554,8 +702,39 @@ def evalSites (ls : Levels) : List KExpr → Term → KExpr → List (List KExpr
       | none => []) ++
     ((match cloSite? b e with
       | some (A, cp) => if r.irrAt ls then [] else evalSites ls (A :: Γ) v cp
-      | none => []) ++ evalSites ls Γ b e)
+      | none => []) ++
+    ((match witSite? b e with
+      | some (Δ, cp) => if r.irrAt ls then [] else evalSites ls (Δ.reverse ++ Γ) v cp
+      | none => []) ++ evalSites ls Γ b e))
   | _, _, _ => []
+
+/-- **The domains the witness shape asks witnesses of** (the check's `letWit` conjunct): at every
+`let` taking the witness shape (`witSite?`) that the walks reach, the path's domains; walked as
+`evalSites` walks, at every level (so a superset of what SrcEval evaluates at any `ls`). -/
+def witDoms : Term → KExpr → List KExpr
+  | .app f a _ _, .app f' a' => witDoms f f' ++ witDoms a a'
+  | .lam _ _ body, .lam _ body' _ => witDoms body body'
+  | .proj _ _ x, .proj _ _ x' => witDoms x x'
+  | .letE _ _ _ v b, e =>
+    (match zcopy b e with
+      | some v' => if subAt0B v' e then witDoms v v' else []
+      | none => []) ++
+    ((match cloSite? b e with
+      | some (_, cp) => witDoms v cp
+      | none => []) ++
+    ((match witSite? b e with
+      | some (Δ, cp) => Δ ++ witDoms v cp
+      | none => []) ++ witDoms b e))
+  | _, _ => []
+
+/-- A `let`-free correspondence (`TermCorr`, the recursor rules') meets no witness path. -/
+theorem witDoms_of_termCorr {κ : CId → KKey} {lps : List Nat} {t : Term} {e : KExpr}
+    (h : TermCorr κ lps t e) : witDoms t e = [] := by
+  induction h with
+  | app _ _ ihf iha => simp [witDoms, ihf, iha]
+  | lam _ _ _ ihb => simp [witDoms, ihb]
+  | proj _ ih => simp [witDoms, ih]
+  | _ => simp [witDoms]
 
 /-! ## The checked shape of a `case` entry
 
@@ -1239,6 +1418,10 @@ structure GroundFactsWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId →
     env.find? (κ c) = some (.defnInfo cv val hint) → TermCorrS κ (lpsOf c) [] v val
   /-- every run term is closed -/
   closed : ∀ c t e, S c → RunPair p env κ c t e → bvarsLt 0 e = true
+  /-- every domain on a witness path of a run pair (the minor-premise shape of a deep `let`) is the
+  stored type of a stored constant -/
+  wits : ∀ c t e, S c → RunPair p env κ c t e → ∀ A ∈ witDoms t e,
+    ∃ ci ∈ env.consts, ci.toConstantVal.type = A
   okClosed : OkClosed p ann S
 
 /-- **`GroundFacts` as first landed** (before G3): no constant of `S` is a recursor. -/

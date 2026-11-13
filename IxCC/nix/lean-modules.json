@@ -1233,13 +1233,20 @@
     "IxCCTests.Grounding.Zeta",
     "IxCCTests.Grounding.GradedHead",
     "IxCCTests.Grounding.CaseEmpty",
-    "IxCCTests.Grounding.LetClo"]},
+    "IxCCTests.Grounding.LetClo",
+    "IxCCTests.Grounding.LetWit"]},
+  "IxCCTests.Grounding.LetWit":
+  {"path": "IxCCTests/Grounding/LetWit.lean",
+   "imports": ["IxCCTests.Grounding.LetClo"]},
   "IxCCTests.Grounding.LetClo":
   {"path": "IxCCTests/Grounding/LetClo.lean",
    "imports": ["IxCCTests.Grounding.CaseEmpty", "IxCCTests.Grounding.Zeta"]},
   "IxCCTests.Grounding.GradedHead":
   {"path": "IxCCTests/Grounding/GradedHead.lean",
-   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.SelRetype"]},
+   "imports":
+   ["IxCCTests.Grounding.NoCanon",
+    "IxCCTests.Grounding.Zeta",
+    "IxCCGrounding.SelRetype"]},
   "IxCCTests.Grounding.CaseEmpty":
   {"path": "IxCCTests/Grounding/CaseEmpty.lean",
    "imports": ["IxCCTests.Grounding.GradedHead"]},

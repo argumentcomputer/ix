@@ -1295,3 +1295,34 @@ landed theorems that changed keep the sets above) -/
 
 /-- info: 'IxCC.Grounding.cloSite?_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.cloSite?_spec
+
+/-! ## The witness shape (the minor-premise shape of a deep `let`: `UnderLams`, `lamPath`,
+`witSite?`, `witDoms`, the conjunct `letWit`; `TermCorrS.letWit`, `Runs.letWit`, the walks' witness
+branch: the landed theorems that changed keep the sets above) -/
+
+/-- info: 'IxCC.Grounding.underLams_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.underLams_of_check
+
+/-- info: 'IxCC.Grounding.witSite?_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.witSite?_spec
+
+/-- info: 'IxCC.Grounding.witness_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.witness_of_check
+
+/-- info: 'IxCC.Grounding.witDoms_of_termCorr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.witDoms_of_termCorr
+
+/-- info: 'IxCC.Grounding.denotesIn_under' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotesIn_under
+
+/-- info: 'IxCC.Grounding.ctxExt_of_wits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ctxExt_of_wits
+
+/-- info: 'IxCC.Grounding.relEnv_liftN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relEnv_liftN
+
+/-- info: 'IxCC.Grounding.gradedBy_under' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_under
+
+/-- info: 'IxCC.Grounding.gradedCtx_under' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedCtx_under

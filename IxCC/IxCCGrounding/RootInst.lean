@@ -50,7 +50,7 @@ theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lps
     | eqn hr _ => simp [runTerms, hr]
   exact runs_of_corr hcorr hden (hT c ls t e hS hOk.1 hrp φ hlv)
     (fun d us h => ⟨hG.okClosed c ls hS hOk.1 t hterm d us h,
-      hI c ls hOk.2 t (List.mem_append_left _ hterm) d us h⟩)
+      hI c ls hOk.2 t (List.mem_append_left _ hterm) d us h⟩) (hG.wits c t e hS hrp)
 
 /-- **The fundamental lemma's hypotheses at `OkIn`** (as `fundHyps_of_core`). -/
 theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}

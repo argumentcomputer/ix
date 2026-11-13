@@ -1181,7 +1181,8 @@ out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the o
 "678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`), 43 since step E0 (below:
 `resource`; `GR19-p6`, every other verdict unchanged); since step C's closure-capture case (below)
 `arity` in every family: `groundCheck` 38, "678" 36, "678A" 38, "678G" 37, "678AG" 38, "678AGp" 44
-(`GR19-p7`, every other verdict unchanged). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+(`GR19-p7`, every other verdict unchanged); the witness shape (below) moves no closure between
+families (`GR20-y2`). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
@@ -1300,8 +1301,52 @@ the table. Statements that mention the relations changed text by the parameter o
 `const_of_check_678` and the fence's `example`s that pin them); no root theorem's text and no axiom
 set changes.
 
+**The minor-premise shape of a deep `let` (the witness shape, since 2026-11-13).** A `let` whose copy
+is not at depth 0 and not of the closure-capture shape, reached from the `let`'s kernel term through
+applications, projections and λs whose domains are closed level-free constants: a `match`'s minor
+premises `λ (_ : Unit). … x …` (`src-words`' `let x := a.toUInt8; …; match op with …`, two per
+function) and `λ (_ : Nat) (_ : Nat). … x …` (`closures`' `coreKnot`). The copy need not denote in the
+`let`'s context (a λ's domain may be empty), but **where every domain on the path has a witness** (a
+stored constant whose stored type is exactly that domain, a member of its denotation by the model's
+`mem`), every environment of the `let`'s context extends to one of the λs' context that agrees with
+it past them (`ctxExt_of_wits`); there the value runs against the copy lifted past the λs (the
+fundamental lemma's own hypothesis on the value's `Runs`, `relEnv_liftN`), and `den_lift` brings the
+denotation back, so the variable's slot is related unconditionally, as a live `let`'s. **No change to
+`RelV` or `RelEnv`.** `TermCorrS` and `Runs` gain a constructor each (`letWit`: the path the search
+finds, `witSite?`, its specification `UnderLams`; the value corresponding, and running where the
+`let` is relevant, in the λs' context against the lifted copy; `Runs.letWit`'s witness premise is
+that every environment satisfying the `let`'s context extends, so `Runs` names no stored constant);
+`corrSB` tries the shape only after the live case and the closure-capture case fail (their shapes
+decide which case applies, so nothing accepted or refused before changes); `evalSites` and its mirrors
+(`evalSitesP`, `allSites`, `evalSitesPs`, `spinesPs`) list the value's sites in the λs' context at the
+lifted copy. **`groundCheck` gains a conjunct, `letWit` (26)**: on each run pair, every domain on the
+path of a `let` of this shape (`witDoms`) is exactly the stored type of a stored level-free
+constructor or definition (`witnessB`); `GroundFacts` gains the field `wits`, and `runs_of_corr` one
+hypothesis, threaded down its induction. Wherever the check held before, `letWit` holds: `witDoms`
+collects domains only at `let`s of this shape, which `corrSB` refused. No root theorem's text or
+axiom set changes; nine lemmas are new (fence 323). **What `SitesOkRes` now asks on a program of this
+shape**: typing at the value's sites in the λs' context, where the kernel typed them (the direct route
+refuses every site under a `let`); on every program the check accepted before, the new branch never
+fires, so `SitesOk` and `SitesOkRes` are unchanged there; 1a's and 1b's families decide the new sites
+themselves. Measured (`GR20-y2`, 52 closures with `src-words`): 1a and 1b decide every new site
+(`closures` c19: 1 site, 1 spine; `src-words`: 8 and 8; none refused); no closure changes family
+(totals unchanged); `closures` loses `eqnCorr` (still `caseRec`, `caseShape` at `PUnit.casesOn`, and 1b's
+η-short sites), its root `knot` passes every decided hypothesis of `rootSound_678AGp_of_check`;
+`src-words` loses `valueCorr` and is refused by `noWord` alone, on the closure and at each of its four
+roots. In `tests-grounding` (`IxCCTests/Grounding/LetWit.lean`, and in the 1b part's pass over the
+51): `letWit` true on all 52, nothing accepted with step C refused, the witness case alone accepting
+exactly `closures` c19 and `src-words` c619, c229, c803, c520; at `knot` SrcEval reads back the
+manifest's five values; on `fib`'s root the shape at depths 1 and 2 accepted (SrcEval `55`), a
+non-constant domain (`Nat → Nat`) and a copy under a `∀` refused at `valueCorr` alone, a closed
+constant domain with no stored constant of its type refused at `letWit` alone, and the live and
+closure-capture plants never reach the witness case; on `src-words` the witness `Unit.unit` with its
+stored type replaced by its domain's unfolding (`PUnit.{1}`) refused at `letWit` alone. Recorded
+expectations moved: `closures`' refused run pairs (c19 → none) and false conjuncts (`eqnCorr`
+gone, in `LetClo` and `Zeta`); `Zeta`'s `closures` row (5 accepted, c19 refused as deep → 6, none)
+and total (55 → 56).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 323 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -1994,7 +2039,8 @@ ordered by how many closures each blocks (a closure can have several):
    literal* is (`valueCorr`, `eqnCorr`), 4 closures: the deep `let`s of `arity`
    (its only false conjunct) and `closures`, the string literals of `strings` and
    `panic`; since step C's closure-capture case, 3 closures: the minor-premise
-   `let` of `closures` (c19), the string literals (`arity` admitted).
+   `let` of `closures` (c19), the string literals (`arity` admitted); since the
+   witness shape, 2 closures: the string literals (`closures` c19 admitted).
 2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
    renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
    that can be propositions or are indexed; no longer the `casesOn` of a
@@ -2053,8 +2099,10 @@ gives.
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
 - the fragment: deep `let`s (a `let` whose variable meets its copy only under a binder; step C
-  admits the others, and since its closure-capture case a `let` whose body is a λ holding the copy
-  directly), recursors fired directly outside the admitted classes
+  admits the others, since its closure-capture case a `let` whose body is a λ holding the copy
+  directly, and since the witness shape a copy under λs over closed constant domains each with a
+  stored witness: refused remain a path through a `∀`, a non-constant or witness-less domain, a
+  closure-capture `let` whose value is not its copy), recursors fired directly outside the admitted classes
   (today all but `False.rec`'s, `Eq.rec`'s, the field-less ones without
   parameters, `Bool.rec`'s, and the other ones without parameters whose rule
   bodies name no constant, `T16.rec`'s: so no recursion, no parameters), `Quot`, `csimp`, strings, and `case` constants

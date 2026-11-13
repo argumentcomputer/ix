@@ -186,6 +186,46 @@ theorem gradedBy_of_subAt0 {D : (BVarIdx → V) → KExpr → V → Prop} {ρ : 
   | _, .appR hs, h => gradedBy_of_subAt0 hs (by simp only [GradedBy] at h; exact h.2.1)
   | _, .proj hs, h => gradedBy_of_subAt0 hs (by simpa only [GradedBy] using h)
 
+/-- **`GradedBy` passes down a witness path** (the witness shape): below a term graded in every
+environment satisfying `Γ`, the copy is graded in every environment satisfying the path's λs over
+`Γ` (`GradedBy`'s λ clause at each, as `CtxSat`'s cons case). -/
+theorem gradedBy_under (M : Model V env) {φ : LevelParam → Nat} {cp : KExpr} :
+    ∀ {Δ : List KExpr} {e : KExpr}, UnderLams cp Δ e → ∀ {Γ : List KExpr},
+      (∀ ρ, CtxSat M φ Γ ρ → GradedBy (Denotes M.cval env φ) ρ e) →
+      ∀ ρ, CtxSat M φ (Δ.reverse ++ Γ) ρ → GradedBy (Denotes M.cval env φ) ρ cp := by
+  intro Δ e h
+  induction h with
+  | here hs => exact fun hg ρ hρ => gradedBy_of_subAt0 hs (hg ρ (by simpa using hρ))
+  | appL _ ih =>
+    intro Γ hg
+    exact ih fun ρ hρ => by
+      have h1 := hg ρ hρ
+      simp only [GradedBy] at h1
+      exact h1.1
+  | appR _ ih =>
+    intro Γ hg
+    exact ih fun ρ hρ => by
+      have h1 := hg ρ hρ
+      simp only [GradedBy] at h1
+      exact h1.2.1
+  | proj _ ih =>
+    intro Γ hg
+    exact ih fun ρ hρ => by
+      have h1 := hg ρ hρ
+      simpa only [GradedBy] using h1
+  | lam _ ih =>
+    intro Γ hg ρ hρ
+    have hρ' := hρ
+    simp only [List.reverse_cons, List.append_assoc, List.singleton_append] at hρ'
+    refine ih (fun ρ hρ => ?_) ρ hρ'
+    cases hρ with
+    | cons hΓ hX hmem =>
+      have h1 := hg _ hΓ
+      simp only [GradedBy] at h1
+      have h2 := h1.2 _ hX _ hmem
+      have hpush : push (ρ 0) (fun i => ρ (i + 1)) = ρ := by funext i; cases i <;> rfl
+      rwa [hpush] at h2
+
 /-- **A graded reading reaches every evaluated site** (no law): below a term whose reading is
 graded in every environment satisfying `Γ`, the application node of every site `evalSites` lists is
 graded in every environment satisfying the site's context (`GradedBy`'s λ clause is `CtxSat`'s cons
@@ -274,7 +314,19 @@ theorem graded_sites (M : Model V env) {φ : LevelParam → Nat} {ls : Levels} :
                 have hpush : push (ρ 0) (fun i => ρ (i + 1)) = ρ := by funext i; cases i <;> rfl
                 rw [hpush] at h2
                 exact gradedBy_of_subAt0 hsub h2) s hs
-      · exact ihb Γ e hg s hs
+      · rcases hs with hs | hs
+        · -- the witness shape: the value's sites in the context of the path's λs, graded there
+          -- through the path (`gradedBy_under`)
+          cases hw : witSite? b e with
+          | none => simp [hw] at hs
+          | some p =>
+            obtain ⟨Δ, cp⟩ := p
+            simp only [hw] at hs
+            split at hs
+            · simp at hs
+            · obtain ⟨_, _, _, _, _, hu, _⟩ := witSite?_spec hw
+              exact ihv (Δ.reverse ++ Γ) cp (gradedBy_under M hu hg) s hs
+        · exact ihb Γ e hg s hs
   | _ => intro Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 /-- `GradedBy` of a `∀`-telescope gives `GradedBy` of the `λ`-telescope over the same domains (the

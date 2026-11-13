@@ -18,7 +18,8 @@ body is a λ and the copy, lifted past it, occurs in the λ's body with no binde
   their word equations: step S) and 3 for a deep `let` (`phase2-arity/arity` c597,
   `phase2-closures/closures` c272 and c19), each asserted by name with its reason; since the
   closure-capture case it accepts 63 and refuses one deep `let`, `closures` c19 (the minor-premise
-  shape: the copy in a `match`'s minor premise), so `arity` passes the check. The three closures
+  shape: the copy in a `match`'s minor premise), so `arity` passes the check; since the witness case
+  (`IxCCTests.Grounding.LetWit`) it accepts 64 and refuses no deep `let`. The three closures
   step C unlocked (`fields254`, `machines`, `natural`) are checked with the accepted closures
   (`IxCCTests.Grounding.NoCanon`); here, the other eleven closures' false conjuncts, by name
   (`arity`: none).
@@ -96,6 +97,46 @@ def corrSBLive (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr →
     | none => corrSBLive κ lps (none :: σ) b e
   | _, _, _ => false
 
+/-- **The decider as landed with step C** (test-only, `corrSB` before the witness shape): a copy
+not at depth 0 only in the closure-capture shape. -/
+def corrSBClo (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Bool
+  | σ, .var i, e => match σ[i]? with | some (some e') => decide (e' = e) | _ => false
+  | _, .sort u, .sort l => univCorrB lps u l
+  | _, .const c us, .const k ls =>
+    decide (k = κ c) && us.length == ls.length && (us.zip ls).all fun (u, l) => univCorrB lps u l
+  | σ, .app f a _ _, .app f' a' => corrSBClo κ lps σ f f' && corrSBClo κ lps σ a a'
+  | σ, .lam _ d b, .lam d' b' _ => corrSBClo κ lps σ d d' && corrSBClo κ lps (liftσ σ) b b'
+  | σ, .pi _ _ d c, .forallE d' c' _ =>
+    corrSBClo κ lps σ d d' && corrSBClo κ lps (liftσ σ) c c'
+  | σ, .proj s i x, .proj k j x' => decide (k = κ s) && i == j && corrSBClo κ lps σ x x'
+  | _, .natLit n, .lit (.natVal m) => n == m
+  | σ, .letE _ _ _ v b, e =>
+    match zcopy b e with
+    | some v' =>
+      (if subAt0B v' e then corrSBClo κ lps σ v v'
+        else cloShapeB b e v' &&
+          corrSBClo κ lps (σ.map (·.map (Ix.Kernel.Expr.liftLooseBVars 1 0))) v
+            (v'.liftLooseBVars 1 0)) &&
+        corrSBClo κ lps (some v' :: σ) b e
+    | none => corrSBClo κ lps (none :: σ) b e
+  | _, _, _ => false
+
+/-- The constants of `Sl` with a run pair the check's decider accepts and the decider as landed
+with step C (`corrSBClo`) refuses: those the witness case alone accepts. -/
+def witConsts (i : Input) : List CId :=
+  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
+    corrSB i.κ (i.lpsOf c) [] t e && !corrSBClo i.κ (i.lpsOf c) [] t e
+
+/-- The constants of `Sl` with a run pair the decider as landed with step C accepts and the check's
+decider refuses (none: the witness case only accepts more). -/
+def lostConsts (i : Input) : List CId :=
+  i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
+    corrSBClo i.κ (i.lpsOf c) [] t e && !corrSB i.κ (i.lpsOf c) [] t e
+
+/-- The constants the witness case alone accepts, by closure (none elsewhere). -/
+def witExpected : List (String × List CId) :=
+  [("phase2-closures/closures", [19]), ("src-words", [619, 229, 803, 520])]
+
 /-- The closures holding the 67 constants: label, the number `corrSB []` accepts, the refused
 ones with their reasons. -/
 def zetaTable : List (String × Nat × List (CId × String)) :=
@@ -104,7 +145,7 @@ def zetaTable : List (String × Nat × List (CId × String)) :=
    ("phase1-resource/resource", 4, []), ("phase1-decline/loops", 4, []),
    ("phase1-decline/strings", 7, [(262, "string")]),
    ("phase1-decline/panic", 2, [(363, "string"), (322, "string")]),
-   ("phase2-closures/closures", 5, [(19, "deep")]),
+   ("phase2-closures/closures", 6, []),
    ("phase1-machines/machines", 3, []), ("phase1-machines/natural", 4, []),
    ("phase2-arity/arity", 1, []),
    ("fixtures/ixon-v4/src-diag/diag", 11, [])]
@@ -126,7 +167,7 @@ def refusedTable : List (String × List String) :=
    ("phase1-decline/loops", ["eqnShape"]),
    ("phase1-decline/strings", ["noWord", "caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
    ("phase1-decline/panic", ["noWord", "proj", "valueCorr"]),
-   ("phase2-closures/closures", ["caseRec", "eqnCorr", "caseShape"]),
+   ("phase2-closures/closures", ["caseRec", "caseShape"]),
    ("phase2-arity/arity", []),
    ("fixtures/ixon-v4/src-diag/diag",
      ["declOk", "recShape", "notOpaque", "proj", "caseShape", "caseProg"])]
@@ -178,12 +219,14 @@ def run : IO Bool := do
       let f := failing i
       let some (_, exp) := refusedTable.find? (·.1 == label) | throw (IO.userError label)
       expect a (f == exp) s!"zeta: {label}: false conjuncts {f}, expected {exp}"
-    expect a (total == 55)
-      s!"zeta: corrSB accepts {total} constants of the eleven closures, expected 55"
+    -- the recorded expectations moved with the witness shape (was: 55, closures c19 refused as
+    -- deep, closures' false conjuncts with `eqnCorr`)
+    expect a (total == 56)
+      s!"zeta: corrSB accepts {total} constants of the eleven closures, expected 56"
     IO.println s!"zeta: corrSB [] accepts {total} of the constants the let-free check refuses in \
-      the eleven closures (the other 8 of 63 in fields254, machines, natural); refused: strings \
-      c262, panic c363 c322 (string literals), closures c19 (a deep let, the minor-premise shape); \
-      the eleven closures' false conjuncts as expected (arity: none)"
+      the eleven closures (the other 8 of 64 in fields254, machines, natural); refused: strings \
+      c262, panic c363 c322 (string literals); closures c19 (the minor-premise shape) accepted by \
+      the witness case; the eleven closures' false conjuncts as expected (arity: none)"
     -- planted, on `fib`'s root
     let some fs := subjects.head? | throw (IO.userError "no subject")
     let (fi, _) ← load fs

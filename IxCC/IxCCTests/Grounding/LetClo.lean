@@ -16,8 +16,9 @@ typing routes list the value's sites in the λ's context (`evalSites`, `evalSite
   decided hypothesis of `rootSound_678AGp_of_check` holds, and SrcEval reads back `13` on the
   manifest's case `(3, 4)`.
 * **`phase2-closures/closures`**: exactly one constant (under `Closures.storedApply`) is accepted by
-  the closure case; exactly one constant's run pair is still refused (`Closures.coreKnot`, the
-  minor-premise shape); the check's false conjuncts are `caseRec`, `eqnCorr`, `caseShape`; at
+  the closure case; no constant's run pair is refused (`Closures.coreKnot`, the minor-premise shape,
+  refused when step C landed, is accepted by the witness case since: `IxCCTests.Grounding.LetWit`);
+  the check's false conjuncts are `caseRec` and `caseShape` (with `eqnCorr` when step C landed); at
   `storedApply` every decided hypothesis of `rootSound_678AGp_of_check` holds and SrcEval reads back
   the manifest's four values.
 
@@ -31,11 +32,12 @@ open IxCC IxCC.Grounding IxCCTests.Grounding
 open IxCC.Src (Term CId Value)
 open IxCCTests.Src (Assert expect)
 
-/-- The constants of `Sl` with a run pair the check's decider accepts and the live case alone
-refuses. -/
+/-- The constants of `Sl` with a run pair the check's decider and the decider as landed with step
+C (`Zeta.corrSBClo`: so not by the witness shape) accept and the live case alone refuses. -/
 def cloConsts (i : Input) : List CId :=
   i.Sl.filter fun c => (runPairsB i.src i.env i.κ c).any fun (t, e) =>
-    corrSB i.κ (i.lpsOf c) [] t e && !Zeta.corrSBLive i.κ (i.lpsOf c) [] t e
+    corrSB i.κ (i.lpsOf c) [] t e && Zeta.corrSBClo i.κ (i.lpsOf c) [] t e &&
+      !Zeta.corrSBLive i.κ (i.lpsOf c) [] t e
 
 /-- The constants of `Sl` with a run pair the check's decider refuses. -/
 def refusedConsts (i : Input) : List CId :=
@@ -93,11 +95,13 @@ def run : IO Bool := do
     expect a (cc.length == 1)
       s!"letClo: closures: accepted by the closure case alone {cc}, expected one"
     let some c2 := cc.head? | throw (IO.userError "closures: no closure-capture constant")
+    -- the recorded expectations moved with the witness shape (was: one run pair refused, c19;
+    -- false conjuncts `caseRec`, `eqnCorr`, `caseShape`): c19 is accepted by the witness case
     let rc' := refusedConsts ic
-    expect a (rc'.length == 1) s!"letClo: closures: run pairs still refused at {rc'}, expected one"
+    expect a rc'.isEmpty s!"letClo: closures: run pairs still refused at {rc'}, expected none"
     let fc := failing ic
-    expect a (fc == ["caseRec", "eqnCorr", "caseShape"])
-      s!"letClo: closures: false conjuncts {fc}, expected [caseRec, eqnCorr, caseShape]"
+    expect a (fc == ["caseRec", "caseShape"])
+      s!"letClo: closures: false conjuncts {fc}, expected [caseRec, caseShape]"
     let rs2 := rootsReaching ic c2
     expect a (rs2.length == 1) s!"letClo: closures: roots reaching c{c2}: {rs2}, expected one"
     let some rt := rs2.head? | throw (IO.userError "closures: no root")
@@ -109,9 +113,8 @@ def run : IO Bool := do
       s!"letClo: closures: SrcEval at c{rt} reads back {outs.map fun (o, _) => repr o}"
     IO.println s!"letClo: arity: c{c1} accepted by the closure case alone, every conjunct and 1a's \
       and 1b's decisions true, every decided hypothesis of rootSound_678AGp_of_check at the root, \
-      SrcEval 13 on (3, 4); closures: c{c2} accepted by the closure case alone, c{rc'} still \
-      refused (the minor-premise shape), false conjuncts {fc}, at c{rt} every decided hypothesis \
-      and SrcEval's four values"
+      SrcEval 13 on (3, 4); closures: c{c2} accepted by the closure case alone, no run pair \
+      refused, false conjuncts {fc}, at c{rt} every decided hypothesis and SrcEval's four values"
     IO.println s!"tests-grounding (letClo): {← a.get} assertions passed"
     return true
   catch error =>

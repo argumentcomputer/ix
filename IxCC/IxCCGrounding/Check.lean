@@ -32,6 +32,7 @@ mutation targeting one makes exactly that one false.
 | `eqnShape` | each `eqn` entry's theorem has the checked shape (`EqnShape`) |
 | `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body (its `let`s through the substitution of their copies, `corrSB []`), which is closed |
 | `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, the ζ-reduct (`corrSB []`), which is closed |
+| `letWit` | every domain on the path of a `let` of the witness shape (`witSite?`, the minor-premise shape of a deep `let`) in a run pair is exactly the stored type of a stored level-free constructor or definition (`witnessB`); vacuous on a run term with no such `let` |
 | `okClosed` | `Ok`'s closure (`okClosedB`) |
 | `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`), its inductive never a proposition |
 | `caseProg` | each `case` entry's recursor and constructors in the program agree with the shape (`CaseProg`) |
@@ -162,7 +163,9 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
 
 /-- **`TermCorrS`, decided** (`valueCorr` and `eqnCorr` at `σ = []`): structural on the Src term, the
 copy of each `let`'s variable produced by `zcopy` and checked at every occurrence; a copy not at
-depth 0 only in the closure-capture shape (`cloShapeB`, step C), tried after the live case fails. -/
+depth 0 only in the closure-capture shape (`cloShapeB`, step C), tried after the live case fails,
+and otherwise only in the witness shape (`witSite?`), tried after both shapes fail (so it accepts
+everything it accepted before, the same way). -/
 def corrSB (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Bool
   | σ, .var i, e => match σ[i]? with | some (some e') => decide (e' = e) | _ => false
   | _, .sort u, .sort l => univCorrB lps u l
@@ -177,8 +180,12 @@ def corrSB (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Boo
     match zcopy b e with
     | some v' =>
       (if subAt0B v' e then corrSB κ lps σ v v'
-        else cloShapeB b e v' &&
-          corrSB κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)) &&
+        else if cloShapeB b e v' then
+          corrSB κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)
+        else
+          match witSite? b e with
+          | some (Δ, cp) => corrSB κ lps (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) v cp
+          | none => false) &&
         corrSB κ lps (some v' :: σ) b e
     | none => corrSB κ lps (none :: σ) b e
   | _, _, _ => false
@@ -219,13 +226,25 @@ theorem termCorrS_of_check {κ : CId → KKey} {lps : List Nat} :
       simp only [Bool.and_eq_true] at h
       obtain ⟨hv, hb⟩ := h
       cases hsub : subAt0B v' e
-      · -- the closure-capture shape (step C)
-        simp only [hsub, Bool.false_eq_true, ↓reduceIte, Bool.and_eq_true] at hv
-        obtain ⟨hcl, hv⟩ := hv
-        unfold cloShapeB at hcl
-        split at hcl
-        · exact .letClo hz hsub hcl (ihv _ _ hv) (ihb _ _ hb)
-        · cases hcl
+      · simp only [hsub, Bool.false_eq_true, ↓reduceIte] at hv
+        cases hcs : cloShapeB b e v'
+        · -- the witness shape
+          simp only [hcs, Bool.false_eq_true, ↓reduceIte] at hv
+          split at hv
+          · rename_i Δ cp hw
+            obtain ⟨v'', hz', _, _, hcp, _⟩ := witSite?_spec hw
+            rw [hz] at hz'
+            cases hz'
+            subst hcp
+            exact .letWit hz hw (ihv _ _ hv) (ihb _ _ hb)
+          · cases hv
+        · -- the closure-capture shape (step C)
+          simp only [hcs, ↓reduceIte] at hv
+          have hcl := hcs
+          unfold cloShapeB at hcl
+          split at hcl
+          · exact .letClo hz hsub hcl (ihv _ _ hv) (ihb _ _ hb)
+          · cases hcl
       · simp only [hsub, ↓reduceIte] at hv
         exact .letLive hz hsub (ihv _ _ hv) (ihb _ _ hb)
     · rename_i hz
@@ -751,6 +770,29 @@ def valueClosedB (c : CId) : Bool :=
   | none, some (.defn .defn .safe _ _ _), some (.defnInfo _ val _) => bvarsLt 0 val
   | _, _, _ => true
 
+/-- **A witness of a domain**: a closed level-free constant domain that is exactly the stored type of
+a stored level-free constructor or definition. -/
+def witnessB (A : KExpr) : Bool :=
+  constDomB A && env.consts.any fun ci =>
+    ci.toConstantVal.levelParams.isEmpty && decide (ci.toConstantVal.type = A) &&
+      (match ci with
+        | .ctorInfo .. | .defnInfo .. => true
+        | _ => false)
+
+/-- Every domain on a witness path of `c`'s run pair has a witness (true where no `let` of `c`'s run
+term takes the witness shape: `witDoms` is then empty). -/
+def letWitB (c : CId) : Bool :=
+  match p.table.resolveOf c with
+  | none =>
+    match p.decl? c, env.find? (κ c) with
+    | some (.defn .defn .safe _ _ v), some (.defnInfo _ val _) => (witDoms v val).all (witnessB env)
+    | _, _ => true
+  | some (.eqn thm body) =>
+    match eqnData? env (κ c) (κ thm) with
+    | some d => (witDoms body d.body).all (witnessB env)
+    | none => true
+  | _ => true
+
 /-- A `case` entry's stored shape (none is read at an entry whose recursor is of kind `empty`, where
 SrcEval traps: step E0). -/
 def caseShapeB (c : CId) : Bool :=
@@ -805,6 +847,7 @@ def checkPartsWith (adm : List RecClass) (p : Program) (env : KEnv) (κ : CId �
    ("eqnClosed", Sl.all (eqnClosedB p env κ)),
    ("valueCorr", Sl.all (valueCorrB p env κ lpsOf)),
    ("valueClosed", Sl.all (valueClosedB p env κ)),
+   ("letWit", Sl.all (letWitB p env κ)),
    ("okClosed", okClosedB p ann Sl),
    ("caseShape", Sl.all (caseShapeB p env κ)),
    ("caseProg", Sl.all (caseProgOkB p env κ Sl))]
@@ -872,9 +915,10 @@ theorem groundCheckWith_mono {adm adm' : List RecClass} (hsub : ∀ k ∈ adm, k
   unfold groundCheckWith checkPartsWith at h ⊢
   simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at h ⊢
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
-    h20, h21, h22, h23, h24, h25⟩ := h
+    h20, h21, h22, h23, h24, h25, h26⟩ := h
   exact ⟨h1, h2, h3, h4, h5, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h6 c hc),
-    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24, h25⟩
+    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24, h25,
+    h26⟩
 
 /-! ## Soundness -/
 
@@ -1253,6 +1297,15 @@ theorem natBasis_of (h : natBasisB env = true) : NatBasis env := by
       exact ⟨cv, hf, a, b, c⟩
     · exact absurd h3 (by simp)
 
+/-- **A witness is a stored constant of exactly that type.** -/
+theorem witness_of_check {A : KExpr} (h : witnessB env A = true) :
+    ∃ ci ∈ env.consts, ci.toConstantVal.type = A := by
+  unfold witnessB at h
+  rw [Bool.and_eq_true, List.any_eq_true] at h
+  obtain ⟨_, ci, hci, hc⟩ := h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+  exact ⟨ci, hci, hc.1.2⟩
+
 /-- **The check is sound**: it establishes every fact `GroundFacts` names. -/
 theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
     (h : groundCheck p env κ lpsOf ann Sl = true) :
@@ -1332,7 +1385,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       exact ⟨d, hd, eqnShape_of_check hE h1, termCorrS_of_check _ _ _ h2, h3⟩
     · exact absurd h1 (by simp)
   refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts, checkPartsWith])), ?_, ?_, ?_,
-    okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts, checkPartsWith]))⟩
+    ?_, okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts, checkPartsWith]))⟩
   · intro c thm body hc hr
     obtain ⟨d, _, hsh, hcorr, _⟩ := heqn c thm body hc hr
     exact ⟨⟨d, hsh⟩, fun d' hsh' => eqnShape_body hsh hsh' ▸ hcorr⟩
@@ -1350,6 +1403,18 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       obtain ⟨d, _, hsh', _, hcl⟩ := heqn c _ _ hc hr
       rw [eqnShape_body hsh hsh']
       exact hcl
+  · -- the witness shape's domains (`letWit`)
+    intro c t e hc hrp A hA
+    have h1 := all (f := letWitB p env κ) "letWit" (by simp [checkParts, checkPartsWith]) c hc
+    cases hrp with
+    | value hr hd hf =>
+      simp only [letWitB, hr, hd, hf] at h1
+      exact witness_of_check (List.all_eq_true.mp h1 A hA)
+    | eqn hr hsh =>
+      obtain ⟨d, hd, hsh', _, _⟩ := heqn c _ _ hc hr
+      simp only [letWitB, hr, hd] at h1
+      rw [eqnShape_body hsh hsh'] at hA
+      exact witness_of_check (List.all_eq_true.mp h1 A hA)
 
 /-- **The check is sound for the `case` entries**: it establishes `CaseFacts`. -/
 theorem caseFacts_of_check {ann : IxCC.Src.Relevance.Ann}

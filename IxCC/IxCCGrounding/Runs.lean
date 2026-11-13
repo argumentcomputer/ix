@@ -98,76 +98,151 @@ theorem denotesIn_of_subAt0 {φ : LevelParam → Nat} {Γ : List KExpr} {v : KEx
   | appR _ ih => exact ih (denotesIn_app_right hd)
   | proj _ ih => exact ih (denotesIn_proj hd)
 
+/-- **A copy on a witness path denotes in the λs' context** wherever the term holding it denotes in
+the `let`'s (the witness shape: through applications, projections and λ bodies). -/
+theorem denotesIn_under {φ : LevelParam → Nat} {cp : KExpr} :
+    ∀ {Δ : List KExpr} {e : KExpr}, UnderLams cp Δ e → ∀ {Γ : List KExpr}, DenotesIn M φ Γ e →
+      DenotesIn M φ (Δ.reverse ++ Γ) cp := by
+  intro Δ e h
+  induction h with
+  | here hs => intro Γ hd; simpa using denotesIn_of_subAt0 hs hd
+  | appL _ ih => intro Γ hd; exact ih (denotesIn_app_left hd)
+  | appR _ ih => intro Γ hd; exact ih (denotesIn_app_right hd)
+  | proj _ ih => intro Γ hd; exact ih (denotesIn_proj hd)
+  | lam _ ih =>
+    intro Γ hd
+    have h' := ih (denotesIn_lam_body hd)
+    simpa only [List.reverse_cons, List.append_assoc, List.singleton_append] using h'
+
+/-- **Inhabited domains extend every environment** (the witness shape): where every domain of `Δ`
+is the stored type of a stored constant (a member of its denotation: `Model.mem`), every
+environment satisfying `Γ` extends to one satisfying `Δ`'s binders over `Γ` that agrees with it
+past them. -/
+theorem ctxExt_of_wits {φ : LevelParam → Nat} :
+    ∀ {Δ : List KExpr}, (∀ A ∈ Δ, ∃ ci ∈ env.consts, ci.toConstantVal.type = A) →
+      ∀ {Γ : List KExpr} (ρ : BVarIdx → V), CtxSat M φ Γ ρ →
+        ∃ ρ', CtxSat M φ (Δ.reverse ++ Γ) ρ' ∧ ∀ i, ρ' (i + Δ.length) = ρ i
+  | [], _, _, ρ, hρ => ⟨ρ, by simpa using hρ, fun _ => rfl⟩
+  | A :: Δ, hw, Γ, ρ, hρ => by
+    obtain ⟨ci, hci, hty⟩ := hw A (by simp)
+    obtain ⟨T, hT, hmem⟩ := M.mem ci hci φ ρ
+    rw [hty] at hT
+    have h1 : CtxSat M φ (A :: Γ) (push (M.cval ci.name φ) ρ) :=
+      .cons (by rw [push_tail]; exact hρ) (by rw [push_tail]; exact hT) hmem
+    obtain ⟨ρ', h2, h3⟩ := ctxExt_of_wits (Δ := Δ) (fun A' h => hw A' (by simp [h])) _ h1
+    refine ⟨ρ', by simpa only [List.reverse_cons, List.append_assoc, List.singleton_append]
+      using h2, fun i => ?_⟩
+    have h4 := h3 (i + 1)
+    have hl : i + 1 + Δ.length = i + (A :: Δ).length := by
+      rw [List.length_cons, Nat.add_assoc, Nat.add_comm 1]
+    rw [hl] at h4
+    exact h4
+
 /-! ## The construction of `Runs` -/
 
-/-- **A corresponding term that denotes runs**, at every site `SiteOk`, every constant node `Ok'`:
-no closedness premise (the substitution gives every variable its kernel term); at a live `let` the
-copy denotes because it occurs with no binder between (`denotesIn_of_subAt0`), and the value's
-sites and constants are among the walks' (`evalSites`, `evalConsts`). -/
+/-- **A corresponding term that denotes runs**, at every site `SiteOk`, every constant node `Ok'`,
+every domain on a witness path inhabited by a stored constant: no closedness premise (the
+substitution gives every variable its kernel term); at a live `let` the copy denotes because it
+occurs with no binder between (`denotesIn_of_subAt0`); at a witness-shape `let` every environment
+extends past the path's λs (`ctxExt_of_wits`), where the lifted copy denotes (`denotesIn_under`);
+the value's sites and constants are among the walks' (`evalSites`, `evalConsts`). -/
 theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : LevelParam → Nat}
     {Ok' : CId → Levels → Prop} {σ : Sig} {t : Term} {e : KExpr} (hc : TermCorrS κ lps σ t e) :
     ∀ {Γ : List KExpr}, DenotesIn M φ Γ e →
       (∀ s ∈ evalSites ls Γ t e, SiteOk M φ s.1 s.2.1 s.2.2) →
       (∀ d us, (d, us) ∈ evalConsts ls t → Ok' d (us.map (IxCC.Src.evalUniv ls))) →
+      (∀ A ∈ witDoms t e, ∃ ci ∈ env.consts, ci.toConstantVal.type = A) →
       Runs M κ Ok' lps ls φ σ Γ t e := by
   induction hc with
-  | var h => intro Γ _ _ _; exact .var h
-  | sort hu => intro Γ _ _ _; exact .sort hu
+  | var h => intro Γ _ _ _ _; exact .var h
+  | sort hu => intro Γ _ _ _ _; exact .sort hu
   | const hlen hu =>
-    intro Γ hd _ hok
+    intro Γ hd _ hok _
     exact .const (.const hlen hu) (hok _ _ (by simp [evalConsts])) hd
   | @app σ f a m r f' a' hf ha ihf iha =>
-    intro Γ hd hs hok
-    refine .app (ihf (denotesIn_app_left hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
-      (fun hr => iha (denotesIn_app_right hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
+    intro Γ hd hs hok hw
+    refine .app (ihf (denotesIn_app_left hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_)
+        (fun A h => hw A ?_))
+      (fun hr => iha (denotesIn_app_right hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_)
+        (fun A h => hw A ?_))
       (fun _ => ⟨ha, denotesIn_app_right hd⟩) (hs (Γ, f', a') ?_)
     · simp [evalSites, h]
     · simp [evalConsts, h]
+    · simp [witDoms, h]
     · simp [evalSites, hr, h]
     · simp [evalConsts, hr, h]
+    · simp [witDoms, h]
     · simp [evalSites]
   | @lam σ b d body d' body' mb hd' _ _ ihb =>
-    intro Γ hd hs hok
+    intro Γ hd hs hok hw
     exact .lam hd' (ihb (denotesIn_lam_body hd)
       (fun s h => hs s (by simpa [evalSites] using h))
-      (fun d us h => hok d us (by simpa [evalConsts] using h))) hd
-  | pi hd' hc' => intro Γ hd _ _; exact .pi (.pi hd' hc') hd
+      (fun d us h => hok d us (by simpa [evalConsts] using h))
+      (fun A h => hw A (by simpa [witDoms] using h))) hd
+  | pi hd' hc' => intro Γ hd _ _ _; exact .pi (.pi hd' hc') hd
   | @proj σ s i e e' _ ih =>
-    intro Γ hd hs hok
+    intro Γ hd hs hok hw
     exact .proj (ih (denotesIn_proj hd)
       (fun s h => hs s (by simpa [evalSites] using h))
-      (fun d us h => hok d us (by simpa [evalConsts] using h))) hd
-  | natLit => intro Γ hd _ _; exact .natLit hd
+      (fun d us h => hok d us (by simpa [evalConsts] using h))
+      (fun A h => hw A (by simpa [witDoms] using h))) hd
+  | natLit => intro Γ hd _ _ _; exact .natLit hd
   | @letLive σ c r ty v b e v' hz hsub hv _ ihv ihb =>
-    intro Γ hd hs hok
+    intro Γ hd hs hok hw
     have hdv : DenotesIn M φ Γ v' := denotesIn_of_subAt0 (subAt0_of_check hsub) hd
     have hrb := ihb hd (fun s h => hs s (by simp [evalSites, h]))
-      (fun d us h => hok d us (by simp [evalConsts, h]))
+      (fun d us h => hok d us (by simp [evalConsts, h])) (fun A h => hw A (by simp [witDoms, h]))
     cases hr : r.irrAt ls with
     | false =>
-      refine .letRel hr hz (ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_)) hrb
+      refine .letRel hr hz (ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_)
+        (fun A h => hw A ?_)) hrb
       · simp [evalSites, hz, hr, hsub, h]
       · simp [evalConsts, hr, h]
+      · simp [witDoms, hz, hsub, h]
     | true => exact .letIrr hr hz hv hdv hrb
   | letDead hz _ ihb =>
-    intro Γ hd hs hok
+    intro Γ hd hs hok hw
     exact .letDead hz (ihb hd (fun s h => hs s (by simp [evalSites, hz, h]))
-      (fun d us h => hok d us (by simp [evalConsts, h])))
+      (fun d us h => hok d us (by simp [evalConsts, h])) (fun A h => hw A (by simp [witDoms, h])))
   | @letClo σ c r ty v bz d body A b' v' mb hz hsub0 hcl hv _ ihv ihlam =>
     -- step C, the closure-capture shape: the lifted copy denotes in the λ's context (it occurs in
     -- the λ's body with no binder between), and the value's sites there are `evalSites`'
-    intro Γ hd hs hok
+    intro Γ hd hs hok hw
     have hsite : cloSite? (.lam bz d body) (.lam A b' mb) = some (A, v'.liftLooseBVars 1 0) := by
       simp [cloSite?, hz, hsub0, cloShapeB, hcl]
     have hsub := subAt0_of_check hcl
     have hdv : DenotesIn M φ (A :: Γ) (v'.liftLooseBVars 1 0) :=
       denotesIn_of_subAt0 hsub (denotesIn_lam_body hd)
-    have hlam := ihlam hd (fun s h => hs s (List.mem_append_right _ (List.mem_append_right _ h)))
+    have hlam := ihlam hd
+      (fun s h => hs s (List.mem_append_right _ (List.mem_append_right _
+        (List.mem_append_right _ h))))
       (fun d us h => hok d us (List.mem_append_right _ h))
-    refine .letClo hsub (fun hr => ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_))
-      (fun _ => hv) hlam
+      (fun A h => hw A (List.mem_append_right _ (List.mem_append_right _
+        (List.mem_append_right _ h))))
+    refine .letClo hsub (fun hr => ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_)
+      (fun A h => hw A ?_)) (fun _ => hv) hlam
     · simp [evalSites, hsite, hr, h]
     · simp [evalConsts, hr, h]
+    · simp [witDoms, hsite, h]
+  | @letWit σ c r ty v b e v' Δ hz hws hv _ ihv ihb =>
+    -- the witness shape: every environment extends past the path's λs (their domains inhabited),
+    -- where the lifted copy denotes and the value's sites are `evalSites`'
+    intro Γ hd hs hok hw
+    obtain ⟨_, _, _, _, _, hu, _⟩ := witSite?_spec hws
+    have hdv : DenotesIn M φ (Δ.reverse ++ Γ) (v'.liftLooseBVars Δ.length 0) := denotesIn_under hu hd
+    have hext := ctxExt_of_wits (M := M) (φ := φ) (Δ := Δ) (Γ := Γ)
+      (fun A h => hw A (by simp [witDoms, hws, h]))
+    have hrb := ihb hd
+      (fun s h => hs s (List.mem_append_right _ (List.mem_append_right _
+        (List.mem_append_right _ h))))
+      (fun d us h => hok d us (List.mem_append_right _ h))
+      (fun A h => hw A (List.mem_append_right _ (List.mem_append_right _
+        (List.mem_append_right _ h))))
+    refine .letWit hz hext (fun hr => ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_)
+      (fun A h => hw A ?_)) (fun _ => ⟨hv, hdv⟩) hrb
+    · simp [evalSites, hws, hr, h]
+    · simp [evalConsts, hr, h]
+    · simp [witDoms, hws, h]
 
 /-- **The run terms run**: every constant of `S` SrcEval unfolds, at every `Ok` instance, runs
 its value (or its equation body), from the laws, the checked facts and `SitesOk`. -/
@@ -190,7 +265,7 @@ theorem runs_of_sites (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf
     | value hr hd _ => simp [runTerms, hr, hd]
     | eqn hr _ => simp [runTerms, hr]
   exact runs_of_corr hcorr hden (hT c ls t e hS hOk hrp φ hlv)
-    (fun d us h => hG.okClosed c ls hS hOk t hterm d us h)
+    (fun d us h => hG.okClosed c ls hS hOk t hterm d us h) (hG.wits c t e hS hrp)
 
 /-- **The fundamental lemma's hypotheses, from the laws other than canonicity**, the recursors'
 canonicity (the law, or no constructor with level parameters), the checked facts, `SitesOk` and F5's

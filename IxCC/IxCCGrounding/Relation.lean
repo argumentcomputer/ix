@@ -123,6 +123,24 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
         TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)) →
       Runs M κ Ok lps ls φ (some v' :: σ) Γ (.lam bz d body) (.lam A b' mb) →
       Runs M κ Ok lps ls φ σ Γ (.letE c r ty v (.lam bz d body)) (.lam A b' mb)
+  /-- a `let` of the witness shape (the minor-premise shape of a deep `let`): its copy `v'` occurs,
+  lifted, under λs whose domains `Δ` are inhabited, so every environment satisfying `Γ` extends to
+  one satisfying the λs' context; where relevant at `ls`, its value runs in that context against the
+  lifted copy; where irrelevant, it corresponds there to the lifted copy, which denotes there; the
+  body runs with the variable standing for the copy -/
+  | letWit {σ : Sig} {Γ : List KExpr} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel}
+      {ty v b : Term} {e v' : KExpr} {Δ : List KExpr} :
+      zcopy b e = some v' →
+      (∀ ρ, CtxSat M φ Γ ρ →
+        ∃ ρ', CtxSat M φ (Δ.reverse ++ Γ) ρ' ∧ ∀ i, ρ' (i + Δ.length) = ρ i) →
+      (r.irrAt ls = false →
+        Runs M κ Ok lps ls φ (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) (Δ.reverse ++ Γ) v
+          (v'.liftLooseBVars Δ.length 0)) →
+      (r.irrAt ls = true →
+        TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars Δ.length 0))) v
+          (v'.liftLooseBVars Δ.length 0) ∧
+        DenotesIn M φ (Δ.reverse ++ Γ) (v'.liftLooseBVars Δ.length 0)) →
+      Runs M κ Ok lps ls φ (some v' :: σ) Γ b e → Runs M κ Ok lps ls φ σ Γ (.letE c r ty v b) e
 
 /-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
 the first fragment): the key's set at the assignment, its stored type the telescope a partial
