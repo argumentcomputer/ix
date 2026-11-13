@@ -35,7 +35,7 @@ set_option maxRecDepth 100000 in
 example : summary Fir.Artifacts.ackermann = some (5, 38, 106, 4, 9) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-example : summary Fir.Artifacts.tak = some (5, 36, 116, 3, 8) := by decide +kernel
+example : summary Fir.Artifacts.tak = some (5, 34, 116, 3, 7) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 example : summary Fir.Artifacts.gcd = some (5, 32, 109, 3, 7) := by decide +kernel

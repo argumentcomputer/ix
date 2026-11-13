@@ -395,6 +395,19 @@ The implemented schedule is in [`Anf.Pipeline`](../IxCC/Anf/Pipeline.lean);
 P1 has no certificate data, P2 to P4 read their choices from the
 certificate.
 
+P2's rules on a primitive binding (`Anf.Walk`, the `prim` case; proved in
+`Anf/Proof/Walk/BindPrim.lean`):
+- Literal folding, to a literal or a `Bool` constructor.
+- A primitive an outer binding already holds, reused (`knownPrim`; a kept
+  `natAdd [y, 1]` records the fact `x = y + 1`).
+- A dead pure primitive dropped.
+- `natBle [x, m]` where `x = y + 1` is known becomes `natBlt [y, m]`
+  (`succBle`, 2026-11-13). Lean's `x < y` on `Nat`, and every fixed-width
+  word's `decLt`, is `Nat.ble (x + 1) y`. Natively that `x + 1` failed with
+  `natOverflow` at `x = 2^63 − 1`; `natBlt` compares the tagged words and
+  builds no `x + 1`. The census counts these firings under `fold`.
+  `natBle m (y + 1)` has no simpler form and stays.
+
 ### Middle-end budgets
 
 The middle end's certificate chooses which callees are inlined where, how many

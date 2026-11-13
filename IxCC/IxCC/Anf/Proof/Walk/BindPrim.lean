@@ -70,6 +70,39 @@ private theorem knownPrim_sound {facts : Src.NatMap Fact} {ρ' : List Val}
         · exact knownPrim_sound hf hws h
       | ctor _ _ | glob _ | pap _ _ => exact knownPrim_sound hf hws h
 
+/-- `succBle`'s `natBlt` has the result of the `natBle` it replaces (`y + 1 ≤ m ↔ y < m`). -/
+theorem succBle_sound {facts : Src.NatMap Fact} {ρ' : List Val}
+    (hf : FactsOk Q Valid facts ρ') {p : Lam.Prim} {os os' : List Opd} {ws : List Val}
+    (hws : os.mapM (·.val ρ') = some ws) (h : Walk.succBle facts p os = some os') :
+    ∃ ws', os'.mapM (·.val ρ') = some ws' ∧
+      primResult Q.known .natBlt ws' = primResult Q.known p ws := by
+  unfold Walk.succBle at h
+  split at h
+  · next l m =>
+    split at h
+    · next y hl =>
+      cases h
+      obtain ⟨n, hx, hy⟩ := hf l _ hl
+      cases hm : m.val ρ' with
+      | none => simp [List.mapM_cons, hx, hm] at hws
+      | some wm =>
+        have hws' : ws = [.lit (.nat (n + 1)), wm] := by
+          simp [List.mapM_cons, hx, hm] at hws; exact hws.symm
+        subst hws'
+        refine ⟨[.lit (.nat n), wm], by simp [List.mapM_cons, hy, hm], ?_⟩
+        cases wm
+        case lit l' =>
+          cases l'
+          case nat b =>
+            have hsem : Lam.Prim.sem .natBlt [n, b] = Lam.Prim.sem .natBle [n + 1, b] := by
+              simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2, Nat.lt_iff_add_one_le]
+            simp only [primResult, natArgs, Option.map_some]
+            rw [hsem]
+          all_goals simp [primResult, natArgs]
+        all_goals simp [primResult, natArgs]
+    · cases h
+  · cases h
+
 theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {p : Lam.Prim} {as : List Atom} {body : Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
@@ -112,6 +145,27 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hst]) (fun _ => rfl)
     · exact (SimUpTo.ok ⟨WV.lit_or_con hlu, hfacts u hu⟩).congr (fun k => by rw [hsrc, hu])
         (fun k => by rw [htgt, hu])
+  -- `natBle [x, m]` emitted as `natBlt [y, m]` where `x = y + 1` is known (`succBle`)
+  have hemitBlt : ∀ {os' : List Opd} {e : Exp} {s0 s0' : Fires} {facts' : Src.NatMap Fact},
+      Walk.succBle here.facts p os = some os' →
+      (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
+        { d := here.d + 1, dj := here.dj, facts := facts', lvl := here.lvl } body k).run s0 = .ok (e, s0') →
+      (∀ u, primResult P.known p vs = .ok u → FactsOk Q Valid facts' (u :: ρ')) →
+      SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
+        (fun k => eval Q k ρ' J' (.bind c (.prim .natBlt (Walk.atoms here.d os')) e)) := by
+    intro os' e s0 s0' facts' hsb he hfacts
+    obtain ⟨ws', hws', hpr⟩ := succBle_sound hf hws hsb
+    have htgt' : ∀ k, evalBind Q k ρ' (.prim .natBlt (Walk.atoms here.d os')) =
+        primResult P.known p vs := by
+      intro k
+      rw [evalBind_prim, hd, Walk.atoms, opds_eval hws']
+      simp only [Result.ofOption, Result.bind_ok]
+      rw [hpr, hctx.known]; unfold primResult; rw [hnat]
+    refine emit_sim hctx hW he hV henv hJ hd hdj hnd hk ?_
+    rcases primResult_cases P.known p vs with hst | ⟨u, hu, hlu⟩
+    · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hst]) (fun _ => rfl)
+    · exact (SimUpTo.ok ⟨WV.lit_or_con hlu, hfacts u hu⟩).congr (fun k => by rw [hsrc, hu])
+        (fun k => by rw [htgt', hu])
   -- the fact `y + 1` about a kept `natAdd [y, 1]`
   have hsucc : ∀ (y : Opd) (u : Val), p = .natAdd → os = [y, .lit (.nat 1)] →
       primResult P.known p vs = .ok u → FactOk Q Valid (u :: ρ') here.d (.succ y) := by
@@ -218,9 +272,18 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       · next hc =>
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
         exact hdead hc.2 (run_fire_then h2)
-      · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
-        obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
-        exact hemit h3 hsuccFacts
+      · split at h2
+        · next os' hsb =>
+          have hsb' : Walk.succBle here.facts p os = some os' := by
+            split at hsb
+            · exact hsb
+            · cases hsb
+          obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok (run_fire_then h2)
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
+          exact hemitBlt hsb' h3 hsuccFacts
+        · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
+          exact hemit h3 hsuccFacts
 
 theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {ps : List Ixon.V3.BinderContract} {fb : Exp} {body : Exp}

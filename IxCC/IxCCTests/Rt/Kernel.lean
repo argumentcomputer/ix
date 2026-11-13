@@ -39,7 +39,7 @@ def expected : List (String × Anf.Program × Nat × Nat × Nat × Nat × Nat) :
   [("fib", Fir.Artifacts.fib, 5, 37, 108, 2, 9),
    ("sum-loop", Fir.Artifacts.sumLoop, 5, 36, 104, 3, 9),
    ("ackermann", Fir.Artifacts.ackermann, 5, 38, 106, 4, 9),
-   ("tak", Fir.Artifacts.tak, 5, 36, 116, 3, 8),
+   ("tak", Fir.Artifacts.tak, 5, 34, 116, 3, 7),
    ("gcd", Fir.Artifacts.gcd, 5, 32, 109, 3, 7)]
 
 /-- Hand-written Cfg programs with what K1 lacks: allocation, projection,

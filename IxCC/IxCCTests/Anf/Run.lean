@@ -5,6 +5,7 @@ import IxCCTests.Anf.Generated
 import IxCCTests.Anf.KernelEval
 import IxCCTests.Anf.LeanRender
 import IxCCTests.Anf.Defun
+import IxCCTests.Anf.SuccBle
 
 /-! The `tests-anf` suite: Anf's rules and clock
 monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
@@ -76,6 +77,8 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Differential.fallback a stages do IO.println s!"    {line}"
     part a "src-sortpoly, after every step" do
       for line in ← Differential.sortpoly a stages do IO.println s!"    {line}"
+    part a "the shrink walk's succBle rule: where it applies, exactness at the boundary, mutants" do
+      for line in ← SuccBle.run a do IO.println s!"    {line}"
     part a "K1 shapes after the pipeline (02 §13.4), replay, idempotence, least clocks" do
       for line in ← Shapes.run a do IO.println s!"    {line}"
     part a "bench-k1 entries through the pipeline's output" do

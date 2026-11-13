@@ -49,8 +49,8 @@ def wordSem (w : Src.Width) (op : Src.WordOp) : List Nat → Option Src.PrimResu
   | _ => none
 
 /-- Src's `PrimOp`, one to one, plus operations only proved rewrites
-introduce (`natBlt`, from `Nat.decLt` by case-of-case), plus the fixed-width
-word operations (`word`, stage W1). -/
+introduce (`natBlt`, from `Nat.decLt`'s `natBle (x + 1) y` by the shrink walk's
+`succBle`), plus the fixed-width word operations (`word`, stage W1). -/
 inductive Prim where
   | natAdd | natSub | natMul | natDiv | natMod | natPow | natGcd | natBeq | natBle
   | natLand | natLor | natXor | natShl | natShr | natPred

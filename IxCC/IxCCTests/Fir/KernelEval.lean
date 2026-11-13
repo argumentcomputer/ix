@@ -37,7 +37,7 @@ def expected : List (String × Anf.Program × Nat × Nat × Nat × Nat × Nat) :
   [("fib", Artifacts.fib, 2, 6, 12, 0, 31),
    ("sum-loop", Artifacts.sumLoop, 2, 4, 7, 1, 71),
    ("ackermann", Artifacts.ackermann, 2, 6, 11, 2, 22),
-   ("tak", Artifacts.tak, 2, 6, 15, 1, 73),
+   ("tak", Artifacts.tak, 2, 6, 14, 1, 73),
    ("gcd", Artifacts.gcd, 2, 4, 6, 1, 31)]
 
 /-! ## Small programs -/
@@ -112,7 +112,7 @@ set_option maxRecDepth 100000 in
 example : summary Artifacts.ackermann = some (2, 6, 11, 2, 22) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-example : summary Artifacts.tak = some (2, 6, 15, 1, 73) := by decide +kernel
+example : summary Artifacts.tak = some (2, 6, 14, 1, 73) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 example : summary Artifacts.gcd = some (2, 4, 6, 1, 31) := by decide +kernel

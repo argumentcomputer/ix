@@ -312,17 +312,17 @@ hosted-CI or cold-store timing is claimed.
   `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
   operations) become the first registered roots that run word primitives. A
   program with a word entry is outside the grounded fragment (`noWord`) until the
-  grounding's word case is proved. Two limits stay after W1, by design:
-  a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
-  result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
-  to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
-  that meets a uniform position boxed as a cell of one scalar word), so a width-64 result
-  needs no tag bit; and the comparisons (`decEq`, `decLt`,
-  `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
-  `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
-  per decision, a stored theorem fixing what it denotes as a `Decidable` value
-  (as each operation's equation does; see DR2, "Stage W1"). There are no arrays,
-  byte arrays or strings.
+  grounding's word case is proved. One limit stays after W1, by design: a `UInt64` is
+  native only below 2^63. A word is a tagged immediate, so a width-64 result at or
+  above 2^63 fails with `natOverflow`, as a `Nat` does. Stage W2 is planned to lift it
+  with raw unboxed words (direction chosen 2026-11-13): raw 64-bit words in registers
+  and frames, and a word that meets a uniform position boxed as a cell of one scalar
+  word. Its DR2 design section comes before any code. The comparisons (`decEq`,
+  `decLt`, `decLe`) stay reference bodies. Since 2026-11-13 `x < y` (and `>`) at
+  `x = 2^63 − 1` no longer fails, for `Nat` and every width: the shrink walk turns
+  `Nat.lt`'s `natBle (x + 1) y` into `natBlt x y`, which builds no `x + 1`
+  (`natBle m (y + 1)` has no simpler form and stays). There are no arrays, byte
+  arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a

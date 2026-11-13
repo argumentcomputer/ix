@@ -137,6 +137,9 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
       {o.wordsEvery}th case)"
       (Words.levels a native o.wordsEvery)
     part a "fixed-width words: the hint on the command line" (Words.cliHints a work)
+    if let some t := native then
+      part a "fixed-width words: `<` and `≤` at the tagged boundary, natively, on every route"
+        (Words.routes a t work)
 
 def main (args : List String) : IO UInt32 := do
   if let "--level" :: name :: level :: xs := args then
