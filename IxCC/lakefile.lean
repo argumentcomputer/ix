@@ -226,7 +226,7 @@ lean_exe «tests-recheck» where
 
 /- P1, relevance preservation, tested by running it (`IxCCTests.Recheck.P1Twin`): SrcEval's twin with
 the executable invariants and a mutant pass, on the 12 corpus manifests, the five erased-position parts'
-programs and planted ones. Its own target, not a required check (about 25 minutes on the build box;
+programs and planted ones. Its own target, not a required check (about 10 minutes on the build box;
 `docs/ci.md`). -/
 lean_exe «tests-p1-twin» where
   root := `IxCCTests.Recheck.P1TwinMain
