@@ -167,7 +167,12 @@ def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
   valid v w
   unless exp.admits v.skel do refuseM s!"mode skeletons differ: {w}"
   match d with
-  | .once => pure ()
+  | .once => do
+    -- a once binding already called or passed on is not passed on again (repair T): each once
+    -- position wraps its own once view around the same target
+    for x in v.deps do
+      if (← isOnceBnd x) && (← isSpent x) then
+        refuseM s!"onceReentry: a once binding passed on after it was called or passed on: {w}"
   | _ => do
     if v.onceOnly then refuseM s!"onceReentry: a once-only closure where it may be called again: {w}"
     notOnceSrc v w
