@@ -12,6 +12,8 @@ namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
+set_option linter.unusedVariables false
+
 /-- **One step per function of the `Roles` family.** -/
 theorem roles_step (c : Ctx) (hc : CoreFacts c) :
     ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)

@@ -14,6 +14,8 @@ namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
+set_option linter.unusedVariables false
+
 namespace RolesAux
 
 /-- The Goldilocks modulus, as a literal for `omega`. -/
@@ -53,29 +55,29 @@ theorem roleNum_add_one_ne_zero (r : Ix.Kernel.Role) : roleNum r + 1 ≠ 0 := by
   omega
 
 /-- Extract the arms of a top-level `match` expression. -/
-def matchArms : Expr F → List (Pattern F × Expr F)
+def matchArms : Generic.Expr F → List (Generic.Pattern F × Generic.Expr F)
   | .matchValue _ arms => arms
   | _ => []
 
 /-- Pure evaluator for a literal/wildcard → literal match table. -/
-def evalLitTable : List (Pattern F × Expr F) → F → Option F
+def evalLitTable : List (Generic.Pattern F × Generic.Expr F) → F → Option F
   | [], _ => none
   | (.literal c, .literal g) :: rest, x => if x = c then some g else evalLitTable rest x
   | (.wildcard, .literal g) :: _, _ => some g
   | _ :: _, _ => none
 
 /-- Pure evaluator for a literal/wildcard → literal-pair match table. -/
-def evalLitPairTable : List (Pattern F × Expr F) → F → Option (F × F)
+def evalLitPairTable : List (Generic.Pattern F × Generic.Expr F) → F → Option (F × F)
   | [], _ => none
   | (.literal c, .tuple [.literal a, .literal b]) :: rest, x =>
     if x = c then some (a, b) else evalLitPairTable rest x
   | (.wildcard, .tuple [.literal a, .literal b]) :: _, _ => some (a, b)
   | _ :: _, _ => none
 
-theorem selectArm_litTable {arms : List (Pattern F × Expr F)} {x g : F}
-    {heap : Heap F} {bs : Environment F Nat} {body : Expr F}
+theorem selectArm_litTable {arms : List (Generic.Pattern F × Generic.Expr F)} {x g : F}
+    {heap : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
     (ht : evalLitTable arms x = some g)
-    (hsel : selectArm W [] heap (.field x) arms = .ok (some (bs, body))) :
+    (hsel : selectArm W [] heap (.field x) arms = Except.ok (some (bs, body))) :
     bs = [] ∧ body = .literal g := by
   induction arms with
   | nil => simp [evalLitTable] at ht
@@ -109,10 +111,10 @@ theorem selectArm_litTable {arms : List (Pattern F × Expr F)} {x g : F}
       | _ => simp [evalLitTable] at ht
     | _ => simp [evalLitTable] at ht
 
-theorem selectArm_litPairTable {arms : List (Pattern F × Expr F)} {x a b : F}
-    {heap : Heap F} {bs : Environment F Nat} {body : Expr F}
+theorem selectArm_litPairTable {arms : List (Generic.Pattern F × Generic.Expr F)} {x a b : F}
+    {heap : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
     (ht : evalLitPairTable arms x = some (a, b))
-    (hsel : selectArm W [] heap (.field x) arms = .ok (some (bs, body))) :
+    (hsel : selectArm W [] heap (.field x) arms = Except.ok (some (bs, body))) :
     bs = [] ∧ body = .tuple [.literal a, .literal b] := by
   induction arms with
   | nil => simp [evalLitPairTable] at ht
@@ -187,7 +189,7 @@ theorem role_group_table (ro : Ix.Kernel.Role) :
 set_option maxRecDepth 100000 in
 theorem role_prim_family_table (ro : Ix.Kernel.Role) :
     evalLitPairTable (matchArms IxVM.KernelRoleSpec.role_prim_family.body) (roleNum ro) =
-      some ((Ix.SpecDigest.nativeOp ro).1, (Ix.SpecDigest.nativeOp ro).2) := by
+      some (((Ix.SpecDigest.nativeOp ro).1 : F), ((Ix.SpecDigest.nativeOp ro).2 : F)) := by
   cases ro <;> decide
 
 /-- **`KernelRoleSpec::role_group(roleNum ro)`** evaluates to `(Ix.SpecDigest.groupOf ro : F)`
@@ -222,7 +224,7 @@ theorem role_nat_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_nat_zero_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_zero" args h r h' calls) :
@@ -232,7 +234,7 @@ theorem role_nat_zero_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_nat_zero, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_zero] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_nat_succ_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_succ" args h r h' calls) :
@@ -242,7 +244,7 @@ theorem role_nat_succ_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_nat_succ, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_succ] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_nat_add_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_add" args h r h' calls) :
@@ -252,7 +254,7 @@ theorem role_nat_add_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_nat_add, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_add] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_bool_true_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_bool_true" args h r h' calls) :
@@ -262,7 +264,7 @@ theorem role_bool_true_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_bool_true, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bool_true] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_bool_false_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_bool_false" args h r h' calls) :
@@ -272,7 +274,7 @@ theorem role_bool_false_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_bool_false, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bool_false] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_char_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_char" args h r h' calls) :
@@ -282,7 +284,7 @@ theorem role_char_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_char, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_char] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_char_of_nat_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_char_of_nat" args h r h' calls) :
@@ -292,7 +294,7 @@ theorem role_char_of_nat_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_char_of_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_char_of_nat] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_list_nil_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_list_nil" args h r h' calls) :
@@ -302,7 +304,7 @@ theorem role_list_nil_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_list_nil, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_list_nil] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_list_cons_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_list_cons" args h r h' calls) :
@@ -312,7 +314,7 @@ theorem role_list_cons_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_list_cons, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_list_cons] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_string_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_string" args h r h' calls) :
@@ -322,7 +324,7 @@ theorem role_string_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_string, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_string] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_string_of_list_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_string_of_list" args h r h' calls) :
@@ -332,7 +334,7 @@ theorem role_string_of_list_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_string_of_list, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_string_of_list] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_quot_mk_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_mk" args h r h' calls) :
@@ -342,7 +344,7 @@ theorem role_quot_mk_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_quot_mk, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_mk] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_quot_lift_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_lift" args h r h' calls) :
@@ -352,7 +354,7 @@ theorem role_quot_lift_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_quot_lift, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_lift] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_quot_ind_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_ind" args h r h' calls) :
@@ -362,7 +364,7 @@ theorem role_quot_ind_step (c : Ctx) {args h r h' calls}
     (by simp [IxVM.KernelRoleSpec.role_quot_ind, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_ind] at d0
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
-  exact ⟨by decide, rfl⟩
+  exact ⟨congrArg Value.field (by decide), rfl⟩
 
 theorem role_prim_family_step (c : Ctx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_prim_family" args h r h' calls) :
