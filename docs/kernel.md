@@ -1614,6 +1614,20 @@ their variables. `kernel-check-ixe` keeps its caller's stack
 native code and so re-runs itself once on a stack of that size (`IxCC/IxCC/Cli/Main.lean`:
 `LEAN_STACK_SIZE_KB`, `IXCC_REEXECED`, the off switch `IXCC_REEXEC=0`).
 
+**Which limit a deep record meets in `ixcc`.** IxCC reads the whole envelope
+itself before the kernel sees it (`IxCC.Ixon.V3.decodeAnonymousEnv`): each
+record with the kernel package's canonical decoder, then IxCC's own depth bound
+(`withinKernelDepth`, 2,560 levels with shares expanded). A record nested past
+2,560 levels is therefore IxCC's refusal (exit 1, `ixcc: ingress: decode: …
+nests deeper than the kernel reads (2560, shares expanded)`) before the
+kernel's depth limit (16,384) could decline it (exit 6); `ixcc` meets the
+kernel's limit only under a lowered setting. IxCC's decoder recurses once per
+level before that bound: the re-executed stack (256 MiB at the defaults) holds
+a record of IxCC's 1 MiB budget at any nesting its bytes allow, and with
+`IXCC_REEXEC=0` on 8 MiB the same record overflows the stack
+(`tests-kernel-front`'s command-line part). Scanning before IxCC's decoder, as
+the root's loaders now do, is open (IxCC's roadmap, "Hardening").
+
 **The loaders scan before they decode.** The root's artifact loaders
 (`Ixon.deEnvVerifiedLazy`, used by `ix check-lean` and `ix verify-host`;
 `Ixon.deEnv`; the streaming load of `Ix/KernelCheck/Stream.lean`) decode each
