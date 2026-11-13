@@ -1586,17 +1586,20 @@ does not record the limits it was issued under. The fixed bounds ("Five bounds
 are fixed" above: the reference core's loop fuels, `Level.defaultFuel`,
 `checkFuel`) are not settings; their exhaustion is a fixed decline, exit 3.
 
-**Exit codes** of the hosts that run the kernel:
+**Exit codes** of the hosts that run the kernel (the one table; the sections
+below refer to it):
 
 | exit | meaning |
 | --- | --- |
-| 0 | accepted: everything asked for passed |
-| 1 | an infrastructure failure (`ixcc`: also a decline or rejection of its own, as before) |
-| 2 | a usage error: a bad flag, a malformed setting, a run whose threads cannot fit the address-space limit, `ixcc` unable to re-run itself (and `ix check-lean`'s own cases below) |
-| 3 | rejected or failed, and the fixed declines (`ix check-lean`, `ix verify-host`) |
-| 4, 5 | `ix check-lean`'s partial and conditional runs |
-| 6 | declined by a limit a setting raises (every host, `ixcc` included) |
-| 7 | `kernel-check-ixe`'s watchdog (`CHECK_IXE_WATCH_MS`, `CHECK_IXE_WATCH_MB`); `--guarded` reruns on it |
+| 0 | `ix check-lean`: everything asked for passed; for a whole bound run, through the certified entry. `ix verify-host`: the statement replayed. `ix compile`, `ixcc`: the output written. `kernel-check-ixe`: the run completed; its rows carry each record's outcome, a rejection included |
+| 1 | an infrastructure failure: an unreadable file, an artifact the loader refuses; `ix compile`: also a failure of the compile or of its typing; `kernel-check-ixe`: also a check that raises an error other than a decline by a limit; `ixcc`: also its own refusals and declines, as before, a record nested past IxCC's own envelope bound among them ("Which limit a deep record meets in `ixcc`" below) |
+| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run whose threads cannot fit the address-space limit ("Threads" below), `ixcc` unable to re-run itself; `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind `sorryAx`, `propext` and `Classical.choice` |
+| 3 | `ix check-lean`: a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused. `ix verify-host`: the replay rejected or failed. Both: a fixed decline (a fixed bound's exhaustion, above) |
+| 4 | `ix check-lean`, partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
+| 5 | `ix check-lean`, conditional: everything passed, but only with the listed user axioms admitted |
+| 6 | declined by a limit a setting raises (every host, `ixcc` included): the message names the limit, its value and source, and the flag and variable that raise it |
+| 7 | `kernel-check-ixe`'s watchdog (`CHECK_IXE_WATCH_MS`, `CHECK_IXE_WATCH_MB`, "Environment check" below); `--guarded` reruns on it |
+| 128 + n | `ixcc`: its second process (below) died by signal n (Lean's `wait` reports a death by signal so; `tests-kernel-front` kills the second process with `SIGKILL` and reads 137) |
 
 **Threads.** `ix check-lean`, `ix verify-host` and `ix compile` set the stack of
 every thread started afterwards to `Limits.stackFor` (16 KiB per level of
@@ -1689,10 +1692,11 @@ rows print a failure with its terms and Lean's names
   a watchdog ends the run with exit code 7 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway` (with `--jobs`, every
-  worker's check is watched). A run whose check raises an error (an artifact the
-  loader refuses, a decline of the artifact's admission) ends with that error and exit
-  code 1; until the watchdog was stopped on every way out, such a run hung with no CPU
-  and nothing printed. The resident size includes what the driver
+  worker's check is watched). A run whose check raises an error ends with that
+  error: exit code 6 for a decline by a limit (the artifact's admission, or the
+  loader's depth scan), 1 for anything else (an artifact the loader refuses); until
+  the watchdog was stopped on every way out, such a run hung with no CPU and
+  nothing printed. The resident size includes what the driver
   holds of the environment. Measured peaks: Init+Std 1.5 GB streaming and
   3.6 GB with `--load eager`; Mathlib 14.7 GB streaming (15.7 GB with
   `--jobs 32`) and 34.2 GB with `--load eager`
@@ -1709,7 +1713,12 @@ rows print a failure with its terms and Lean's names
   prelude and the dependency closure of those constants;
 - `CHECK_IXE_THREAD=0` runs the check on the main thread instead of a
   dedicated one, and `CHECK_IXE_READ_CACHE=<dir>` keeps a persistent read
-  cache (`Benchmarks/Kernel/CheckIxeReadCache.lean`).
+  cache (`Benchmarks/Kernel/CheckIxeReadCache.lean`);
+- the kernel's limits, by their variables only (`IX_KERNEL_MAX_RECORDS`,
+  `IX_KERNEL_MAX_BLOBS`, `IX_KERNEL_MAX_TOTAL_BYTES`, `IX_KERNEL_MAX_RECORD_BYTES`,
+  `IX_KERNEL_MAX_RECORD_UNIV_NODES`, `IX_KERNEL_MAX_DEPTH`, `IX_KERNEL_WORKERS`;
+  "Limits at the command line, and exit codes" above), and `LEAN_STACK_SIZE_KB`,
+  the stack it keeps (it does not resize its threads).
 
 Run one environment check at a time, under a memory cap, with no concurrent build.
 `kernel-check-ixe --report` and `--summary` summarize a run's rows, and
@@ -1747,15 +1756,8 @@ one line per axiom, the name in meta mode only, and never the `accepted all`
 line of a certified run. A selected run whose declaration checks read a user
 axiom prints the same list under `selected checking:`.
 
-| Exit | Meaning |
-| --- | --- |
-| 0 | everything asked for passed; for a whole bound run, through the certified entry |
-| 1 | an infrastructure failure |
-| 2 | a usage error: a bad flag or selector, a malformed limit setting, a run whose threads cannot fit the address-space limit, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run) |
-| 3 | a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused |
-| 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
-| 5 | conditional: everything passed, but only with the listed user axioms admitted |
-| 6 | declined by a kernel limit: the message names it, its value and source, and the flag and variable that raise it ("Limits at the command line, and exit codes") |
+Its exit codes, 0 to 6, are in the table of "Limits at the command line, and
+exit codes" above.
 
 `--allow-declined` runs the record-by-record check (as the `ooc` whole-env
 benchmark uses it on upstream libraries that contain `Lean.trustCompiler` or
