@@ -9,7 +9,7 @@ import IxCC.Src.Relevance.Proof.P1.Defs
 import IxCC.Src.Relevance.Proof.P1.Basic
 import IxCC.Src.Relevance.Proof.P1.Cases
 import IxCC.Src.Relevance.Proof.P1.Recr
-import IxCC.Src.Relevance.Proof.P1.Con
+import IxCC.Src.Relevance.Proof.P1.Ctor
 import IxCC.Src.Relevance.Proof.P1.Delta
 import IxCC.Src.Relevance.Proof.P1.Plumbing
 import IxCC.Lam.Erase.Proof.ModesOk
@@ -328,7 +328,7 @@ lemmas, the induction's measure, the five cases proved so far, and `preserve` an
 /-- info: 'IxCC.Src.Relevance.Proof.P1.case_F2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_F2
 
-/-! P1's core, the constructor values (`Relevance.Proof.P1.Con`): E6, F1, F7, F8 and the lemmas they
+/-! P1's core, the constructor values (`Relevance.Proof.P1.Ctor`): E6, F1, F7, F8 and the lemmas they
 share, marked for `Basic` and not yet moved. -/
 
 /-- info: 'IxCC.Src.Relevance.Proof.P1.tg_head' does not depend on any axioms -/

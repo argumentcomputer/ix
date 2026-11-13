@@ -328,7 +328,7 @@ literals; F4. F2, an ordinary recursor fired
 ([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor writes erased
 holds the marker under a rule λ whose class may be relevant, and is shielded there, passed only to
 the minor the rule dispatches, which ignores it). The constructor
-values ([`Con.lean`](../IxCC/Src/Relevance/Proof/P1/Con.lean)): E6, a projection's field `Live`
+values ([`Ctor.lean`](../IxCC/Src/Relevance/Proof/P1/Ctor.lean)): E6, a projection's field `Live`
 where it is read (a marker there would be at a field written erased, which C3 refuses at the
 projection); F1, a constructor's fields, each `Live` unless a marker at a position the constructor
 ignores, where the field is dropped at the value's levels; F7, `Quot.mk`'s element; F8,
@@ -344,10 +344,11 @@ that move values without reading them
 stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
 `Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
 lemmas the cases share; those the three later modules mark for it are still in their modules. F3
-as stated appears false, by reading only; not reproduced by a run: where a reached
-subsingleton recursor's rule-0 constructor has no constructor record, which the relevance checks
-allow when nothing reaches the constructor, C3 checks no minor against it and S4 none of its
-sources. A check closing it is proposed; it lands only after the state is run.
+as stated is false where a reached subsingleton recursor's rule-0 constructor has no constructor
+record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field,
+built below the kernel, which only the kernel refuses); it is also a wrong-value route on the
+recheck path. The check that closes it (`checkCanonical`: such a constructor has a record) is
+approved and lands next, before `case_F3`.
 
 ## Target statements
 
