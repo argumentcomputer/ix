@@ -13,7 +13,8 @@ seed's run can reach none of `runR`'s four violations: it **accepts**,
 runs out. Nothing about it is proved: its soundness, `CheckSound` (accept gives
 `ModeSafe`), is left to prove.
 
-* **Reading.** Every record of the closure has a complete binder-data section
+* **Reading.** Every record of the closure is well formed (`recordWellFormed`: a
+  complete binder-data section, canonical modes)
   (`Reading.complete`), and the whole closure is read as a run program, with the
   kernel as class oracle (`oracleClassifier`); a closure that does not read is
   refused, or declined at an oracle limit.
@@ -784,16 +785,21 @@ def checkBodies (lim : Limits) (P : Prog) (rs : List Ref) : Verdict := Id.run do
     | .error (.decline w) => return .decline s!"{refName r}: {w}"
   return .accept n false
 
-/-- **The fast path's test**: every record of the subject's closure carries only
-default modes, and there is no run table (an error: a record's modes are
-malformed). A closure whose walk is cut at its step limit is not known to be
-all default: false, so the caller takes the slow path, where `check` declines
-(V5: as landed the records past the cut were not looked at). -/
+/-- **The fast path's test**: every record of the subject's closure is well formed
+(`recordWellFormed`: a complete binder-data section, canonical modes; else an
+error, as `check` refuses it) and carries only default modes, and there is no
+run table (an error: a record's modes are malformed). A closure whose walk is
+cut at its step limit is not known to be all default: false, so the caller
+takes the slow path, where `check` declines (V5: as landed the records past the
+cut were not looked at). V4: as landed a record with an incomplete section, or a
+theorem asserting something, passed this test, so a host tool taking the fast
+path accepted a closure `check` refuses and that does not read. -/
 def allDefault (s : Subject) (walk : Nat := closureFuel) : Except String Bool := do
   let (closure, walked) := closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) walk
   unless walked do return false
   for a in closure do
     let some c := s.store a | continue
+    recordWellFormed a c
     unless (← recordDefault c) do return false
   return s.runTable.isNone
 

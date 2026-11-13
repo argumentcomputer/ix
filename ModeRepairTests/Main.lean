@@ -2847,6 +2847,61 @@ def v3Eliminators (t : IO.Ref Tally) : IO Unit := do
   readCheck t "V3 K.rec passed unapplied as an argument, its rule erasing b (useKA): refused"
     (p.subj (useKARecord natA true :: ks) (addr 345)) "applied to 0 of its 3 arguments"
 
+/-! ### V4 (note 12 §2.4, the lead's ruling): well-formed records, on both paths
+
+As landed `allDefault` (the fast path's test of `Ix.ModeCheck`, which then accepts without typing
+or reading) looked neither at a record's binder-data section nor at its assertions, `check`
+(through `Reading.complete`) at the section only, and `recordDefault` not at a definition's
+assertions. One record per subject (360), under the empty role table. -/
+
+def boolOrErr : Except String Bool → String
+  | .ok b => s!"ok {b}"
+  | .error e => s!"error: {e}"
+
+def v4WellFormed (t : IO.Ref Tally) : IO Unit := do
+  let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
+  let mk (c : Ixon.Constant) : Subject :=
+    { table, store := fun a => if a == addr 360 then some c else none, seeds := [addr 360] }
+  let has (w frag : String) := (w.splitOn frag).length > 1
+  -- an axiom `∀ (x : Sort 0), Sort 0` with no binder-data section
+  let noSection : Ixon.Constant :=
+    { info := .axio ⟨false, 0, .all (.sort 0) (.sort 0)⟩, sharing := #[], refs := #[], univs := #[.zero] }
+  let d1 := allDefault (mk noSection)
+  let v1 := check {} Ix.Kernel.Env.empty (mk noSection)
+  -- REPAIR V4: allDefault answered `ok true` (Ix.ModeCheck accepted, unread)
+  check1 t "V4 a record with an incomplete binder-data section: allDefault an error, check refuses"
+    ((match d1 with | .error e => has e "binder-data section is incomplete" | .ok _ => false) &&
+      (match v1 with | .refuse _ w => has w "binder-data section is incomplete" | _ => false))
+    s!"allDefault {boolOrErr d1}; check {verdictLong v1}"
+  -- a theorem asserting a bounded stack (no binder, so a complete section)
+  let thmDef : Ixon.Definition :=
+    { kind := Ix.DefKind.thm, safety := Ix.DefinitionSafety.safe, asserts := { boundedStack := true },
+      lvls := 0, typ := .sort 0, value := .sort 0 }
+  let thm : Ixon.Constant := { info := .defn thmDef, sharing := #[], refs := #[], univs := #[.zero] }
+  let d2 := allDefault (mk thm)
+  let v2 := check {} Ix.Kernel.Env.empty (mk thm)
+  -- REPAIR V4: allDefault `ok true`, check accepted on the fast path
+  check1 t "V4 a theorem asserting something (modes not canonical): allDefault an error, check refuses"
+    ((match d2 with | .error e => has e "not canonical" | .ok _ => false) &&
+      (match v2 with | .refuse _ w => has w "not canonical" | _ => false))
+    s!"allDefault {boolOrErr d2}; check {verdictLong v2}"
+  -- a safe definition asserting a bounded stack, every mode default
+  let defA : Ixon.Constant :=
+    { info := .defn { thmDef with kind := Ix.DefKind.defn }, sharing := #[], refs := #[], univs := #[.zero] }
+  let d3 := allDefault (mk defA)
+  let v3 := check {} Ix.Kernel.Env.empty (mk defA)
+  -- REPAIR V4: counted as default (allDefault `ok true`, check on the fast path)
+  check1 t "V4 a definition asserting something: not default (allDefault false), checked on the slow path, accepted"
+    ((match d3 with | .ok false => true | _ => false) && (match v3 with | .accept 1 false => true | _ => false))
+    s!"allDefault {boolOrErr d3}; check {verdictLong v3}"
+  -- the control: the same definition asserting nothing
+  let defN : Ixon.Constant := { defA with info := .defn { thmDef with kind := Ix.DefKind.defn, asserts := {} } }
+  let d4 := allDefault (mk defN)
+  let v4 := check {} Ix.Kernel.Env.empty (mk defN)
+  check1 t "V4 control: the definition asserting nothing: default, the fast path"
+    ((match d4 with | .ok true => true | _ => false) && (match v4 with | .accept 0 true => true | _ => false))
+    s!"allDefault {boolOrErr d4}; check {verdictLong v4}"
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2872,6 +2927,7 @@ def run : IO UInt32 := do
   try v1FollowUp t catch e => check1 t "V1 follow-up" false s!"error: {e}"
   for c in v3Cases do runCase t c
   try v3Eliminators t catch e => check1 t "V3" false s!"error: {e}"
+  try v4WellFormed t catch e => check1 t "V4" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

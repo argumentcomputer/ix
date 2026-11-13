@@ -757,16 +757,24 @@ def Reading.bare (s : Subject) : Reading :=
   { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table #[], closure := #[],
     walked := true }
 
+/-- **A record's modes are well formed**: its binder-data section is complete
+(`Ixon.Constant.bindersComplete`: a block for each root and each variant of a
+sharing entry with a binder, each node of a binder's kind), and its modes outside
+the section are canonical (`Ixon.Constant.modesCanonical`: no theorem asserts
+anything). As landed `Reading.complete` checked the section only, and the fast
+path's test (`allDefault`) neither (note 12 §2 item 4, the lead's ruling, V4). -/
+def recordWellFormed (a : Address) (c : Ixon.Constant) : Except String Unit := do
+  unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"
+  unless c.modesCanonical do throw s!"record {a}: its modes are not canonical (a theorem asserts something)"
+
 /-- The closure's walk finished (else a decline: a closure cut at the walk's
-limit is never read in part), and every record of the reading's closure has a
-complete binder-data section (`Ixon.Constant.bindersComplete`: a block for each
-root and each variant of a sharing entry with a binder, each node of a binder's
-kind). A closure with an incomplete section is not read. -/
+limit is never read in part), and every record of the reading's closure is well
+formed (`recordWellFormed`). A closure with a record that is not is not read. -/
 def Reading.complete (rd : Reading) : Except String Unit := do
   unless rd.walked do throw "decline: the closure's walk reached its step limit"
   for a in rd.closure do
     let some c := rd.s.store a | continue
-    unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"
+    recordWellFormed a c
 
 /-- The reading context of member `r`'s record. -/
 def Reading.rcx (rd : Reading) (cl : Classifier) (r : Ref) : Except String RCx := do
@@ -876,7 +884,10 @@ def letsDefault : Nat → Ixon.Expr → Except String Bool
     | .prj _ _ v => letsDefault n v
     | _ => pure true
 
-/-- Whether a record carries only default modes (binders, `let`s, fields). -/
+/-- Whether a record carries only default modes (binders, `let`s, fields) and no
+definition of it asserts anything (`Definition.asserts`, Ixon v5's `tailrec`/
+`nonalloc` bits; V4: as landed the assertions were not looked at, so a record
+asserting something counted as default). -/
 def recordDefault (c : Ixon.Constant) : Except String Bool := do
   let rm ← recordModes c
   let mut ok := rm.blocks.all fun (_, ns) => ns.all fun
@@ -884,7 +895,13 @@ def recordDefault (c : Ixon.Constant) : Except String Bool := do
     | .share _ => true
   for root in binderRoots c.info ++ c.sharing do
     ok := ok && (← letsDefault readFuel root)
-  pure (ok && fieldModesDefault c)
+  let noAsserts := match c.info with
+    | .defn d => d.asserts == {}
+    | .muts ms => ms.all fun
+      | .defn d => d.asserts == {}
+      | _ => true
+    | _ => true
+  pure (ok && fieldModesDefault c && noAsserts)
 
 /-- **The run definition of a constant** (`bodies = false` reads a run body's
 telescopes and not its body, for an interface).
