@@ -696,7 +696,7 @@
    "imports": ["IxCCTests.Recheck.Erased"]},
   "IxCCTests.Recheck.Erased":
   {"path": "IxCCTests/Recheck/Erased.lean",
-   "imports": ["IxCCTests.Recheck.Hostile"]},
+   "imports": ["IxCCTests.Recheck.Hostile", "IxCCTests.KernelFront.LamRuns"]},
   "IxCCTests.Recheck.Deep":
   {"path": "IxCCTests/Recheck/Deep.lean",
    "imports": ["IxCCTests.Recheck.Hostile"]},
@@ -1052,14 +1052,25 @@
    ["IxCCTests.KernelFront.Report",
     "IxCCTests.KernelFront.Bound",
     "IxCCTests.KernelFront.Hints",
+    "IxCCTests.KernelFront.LamRuns",
     "IxCCTests.Src.Support",
     "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Report":
   {"path": "IxCCTests/KernelFront/Report.lean",
    "imports": ["IxCC.Recheck.Produce", "IxCC.Recheck.Json"]},
+  "IxCCTests.KernelFront.Reference":
+  {"path": "IxCCTests/KernelFront/Reference.lean",
+   "imports": ["IxCC.Src.KernelFront.Annotate"]},
   "IxCCTests.KernelFront.Main":
   {"path": "IxCCTests/KernelFront/Main.lean",
    "imports": ["IxCCTests.KernelFront.Run"]},
+  "IxCCTests.KernelFront.LamRuns":
+  {"path": "IxCCTests/KernelFront/LamRuns.lean",
+   "imports":
+   ["IxCCTests.KernelFront.Reference",
+    "IxCCTests.Support.Bound",
+    "IxCCTests.Src.Support",
+    "IxCC.Recheck"]},
   "IxCCTests.KernelFront.Hints":
   {"path": "IxCCTests/KernelFront/Hints.lean",
    "imports":
@@ -1139,6 +1150,7 @@
    ["IxCCTests.Grounding.Run",
     "IxCCTests.Corpus.Manifest",
     "IxCCGrounding.CaseLevels",
+    "IxCCGrounding.Graded",
     "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
@@ -4145,6 +4157,8 @@
     "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.CaseBlind",
     "IxCCGrounding.Adapt678"]},
+  "IxCCGrounding.Graded":
+  {"path": "IxCCGrounding/Graded.lean", "imports": ["IxCCGrounding.RootInst"]},
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
    "imports":
@@ -4162,7 +4176,8 @@
     "IxCCGrounding.CaseBlind",
     "IxCCGrounding.Adapt678",
     "IxCCGrounding.CaseLevels",
-    "IxCCGrounding.RootInst"]},
+    "IxCCGrounding.RootInst",
+    "IxCCGrounding.Graded"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4260,6 +4275,7 @@
     "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
+    "IxCCGrounding.Graded",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",

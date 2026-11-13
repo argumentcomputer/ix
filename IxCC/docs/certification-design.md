@@ -47,7 +47,7 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); `checkCanonical` has no theorem; the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements | Premise (ii), against the kernel's typing, both directions |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); `checkCanonical` has no theorem; the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -693,8 +693,43 @@ Cost: `instCheckB` is quadratic in the instance count (list membership; every co
 against every `case` instance): 0.9 ms compiled on `tags125` (41 instances), 170 ms interpreted on
 `phase1-decline/strings` (138 instances); an index is open ([roadmap](roadmap.md)).
 
+**No typing hypothesis: the refused sites from #678's `graded` field (since 2026-11-13).**
+`rootSound_678G` and `rootSound_678G_of_check` (`IxCCGrounding/Graded.lean`) conclude word for word
+what `rootSound_678A` does, with **no typing hypothesis**: `SitesOkRes` (typing at the sites the
+syntactic direct route refuses) is discharged from a sixth field of #678's model, `graded`
+(`GradedLaw`, copied verbatim from `jcb/ixvmc-int` at `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`;
+#678's `model_exists` returns a model with it, `Model/Iota.lean:1354`), taken as a hypothesis beside
+`Laws678`, and a decided fact, `HeadRegimeRes` (`headRegimeResB`). `graded` says every stored type and
+definition value has a graded reading: at every application node, under every binder at every member
+of its domain, the function lies in some product `piR r A B` whose domain holds the argument.
+Walked down the sites SrcEval evaluates (`graded_sites`; an `eqn` body through its stored theorem's
+type, `runPair_graded`), that is `SiteOk` less `r ≠ 0`. `r = 0` would make the function the proof
+point, which lies in no positive-regime product; `HeadRegimeRes` gives such a product (`head_pos`):
+at each refused site the function is a spine `k.{us} a₁ … aₙ` over a stored constant, and **the
+binder data (`BinderMeta.pw`) of the first `n + 1` `∀`s of `k`'s stored type, as written**, do not
+hold at the head's assignment (`Level.substFn φ lps us`; decided by reading each datum, substituted
+at the head's levels with `Level.substPW`, at every profile of the enclosing constant's level
+parameters, `pwAt`). When binder data move into the record format at the #678 ingest, this check
+reads them from there. *Why not relax `SiteOk` at regime 0 instead*: applying a closure in regime 0,
+the fundamental lemma reads the body at the argument, which `Denotes.lam` gives only for arguments in
+the λ's own domain, and a regime-0 product (`{pt}`-valued) carries no domain to supply it; the gap
+is closed on the head. Measured on the 34 accepted closures: `headRegimeResB` holds on all 34 (the
+only refused site is `OS02-plain`'s, where the kernel types the site in the graph regime). The
+syntactic reading is narrower than the direct route at 70 accepted sites (the head's type a `∀`
+only after δ, e.g. `DecidableEq Nat`; GR.md lists them by closure), which is why it is used at the
+refused sites only and the direct route keeps the rest. Not covered: recursor rule bodies'
+sites (`RecSites`), which `graded` does not speak of (a rule is neither a stored type nor a value)
+and which stay with the check. In `tests-grounding`: `headRegimeResB` on the 34 by name;
+`OS02-plain`'s refused site accepted, refused once its head's binder datum is made a proposition,
+and refused once it reads a level parameter the constant does not have.
+
+| Theorems | #678's fields they assume |
+| --- | --- |
+| `rootSound_678`, `fibRoot_678`, `decideRoot_678`, `allP_of_check_678`, `const_of_check_678`, `rootSound_678A`, `rootSound_678A_of_check` | five (`Laws678`: `defn_value`, `iota_rule`, `proj_law`, `lit_ops`, `cval_params`), and `SitesOkRes` as a hypothesis (discharged by the direct route where it refuses nothing) |
+| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis |
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 225 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 238 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

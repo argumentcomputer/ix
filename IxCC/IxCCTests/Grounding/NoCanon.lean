@@ -1,6 +1,7 @@
 import IxCCTests.Grounding.Run
 import IxCCTests.Corpus.Manifest
 import IxCCGrounding.CaseLevels
+import IxCCGrounding.Graded
 import IxCC.Src.Relevance.Check
 
 /-! # `tests-grounding`: the canonicity-free family's decided fact on the corpus
@@ -149,12 +150,17 @@ def run : IO Bool := do
     let mut famA : Nat := 0
     let mut instUs : Nat := 0
     let mut instN : Nat := 0
+    let mut hrN : Nat := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let b := noCanonB i.src i.env i.κ i.Sl
       -- step A: `noCanonAB` and the verified instance set, on every accepted closure
       let bA := noCanonAB i.src i.env i.κ i.Sl
       let iA := instOk i
+      -- item 1a: the head's regime at every site the direct route refuses
+      let hrB := headRegimeResB i.src i.env i.κ i.lpsOf i.ann i.Sl
+      expect a hrB s!"graded: {label}: headRegimeResB false"
+      if hrB then hrN := hrN + 1
       expect a (bA && iA) s!"levels: {label}: noCanonAB {bA}, instCheckB {iA}"
       if bA && iA && litDefsB i.env then famA := famA + 1
       -- the cost on the largest accepted closure: the median of 9 evaluations, each on an
@@ -245,6 +251,33 @@ def run : IO Bool := do
       tags125 {instN} instances, instCheckB {instUs} µs (median of 9); OS16-plain: c{d} raised one level \
       in c{c}: instCheckB false, the check true; under a let: instCheckB true, the check refuses at \
       {failing hidden}"
+    -- item 1a: `headRegimeResB` true on all 34; on `OS02-plain`, the one site the direct route
+    -- refuses has a constant head whose stored type's binder data hold nowhere; that binder's datum
+    -- made a proposition at every assignment is refused, and so is a datum over a level parameter
+    -- the enclosing constant does not have (the check cannot read it at the profile: fail closed)
+    expect a (hrN == 34) s!"graded: headRegimeResB true on {hrN} of 34"
+    let (gi, _) ← loadClosure "OS02-plain" "fixtures/ownership/OS02-plain" []
+    let gref := refusedSites gi
+    let some (_, (_, gf, _)) := gref.head? | throw (IO.userError "OS02-plain: no refused site")
+    let .const gk _ := gf.getAppFn | throw (IO.userError "OS02-plain: the refused site's head is not a constant")
+    let gn := gf.getAppArgs.length
+    let setDatum (pw : Ix.Kernel.PropWhen) : Input :=
+      let T := match gi.env.find? gk with
+        | some ci => setPiMetaK gn ci.toConstantVal.type { pw := pw }
+        | none => .sort .zero
+      { gi with env := mapConst gi.env gk fun
+        | .defnInfo cv v h => .defnInfo { cv with type := T } v h
+        | .ctorInfo cv np nf => .ctorInfo { cv with type := T } np nf
+        | .axiomInfo cv => .axiomInfo { cv with type := T }
+        | .thmInfo cv v => .thmInfo { cv with type := T } v
+        | .indInfo cv caps => .indInfo { cv with type := T } caps
+        | ci => ci }
+    let hr (j : Input) := headRegimeResB j.src j.env j.κ j.lpsOf j.ann j.Sl
+    let gProp := setDatum (.ifAllZero [])
+    let gFree := setDatum (.ifAllZero [99])
+    expect a (gref.length == 1 && hr gi && !hr gProp && !hr gFree)
+      s!"graded: OS02-plain: {gref.length} refused sites; headRegimeResB {hr gi}, datum made a proposition {hr gProp}, datum over an unknown parameter {hr gFree}"
+    IO.println s!"graded: headRegimeResB true on the 34 accepted closures; OS02-plain's refused site (head {gk}, argument {gn}): accepted, its head's datum made a proposition: refused, made to read a parameter the constant does not have: refused"
     IO.println s!"tests-grounding (noCanon): {← a.get} assertions passed"
     return true
   catch error =>
