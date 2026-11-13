@@ -563,7 +563,8 @@
    ["IxCCTests.Recheck.Rc.CodecIO",
     "IxCCTests.Recheck.Rc.ReplayIO",
     "IxCCTests.Recheck.Rc.FreshIO",
-    "IxCCTests.Recheck.Rc.OwnedIO"]},
+    "IxCCTests.Recheck.Rc.OwnedIO",
+    "IxCCTests.Recheck.Rc.ParamsIO"]},
   "IxCCTests.Recheck.Rc.ReplayIO":
   {"path": "IxCCTests/Recheck/Rc/ReplayIO.lean",
    "imports":
@@ -571,6 +572,9 @@
     "IxCCTests.Recheck.Rc.Fixtures",
     "IxCCTests.Rt.Native",
     "IxCCTests.Rt.Rc.ReuseSupport"]},
+  "IxCCTests.Recheck.Rc.ParamsIO":
+  {"path": "IxCCTests/Recheck/Rc/ParamsIO.lean",
+   "imports": ["IxCC.Recheck", "IxCC.Recheck.Rc.Produce"]},
   "IxCCTests.Recheck.Rc.OwnedIO":
   {"path": "IxCCTests/Recheck/Rc/OwnedIO.lean",
    "imports":
@@ -3407,6 +3411,12 @@
     "IxCC.Own.Plain.Proof.Values",
     "IxCC.Own.Plain.Semantics",
     "IxCC.Own.Plain.Syntax"]},
+  "IxCCTests.Fences.OwnParams":
+  {"path": "IxCCTests/Fences/OwnParams.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Certificate",
+    "IxCC.Recheck.Rc.Proof.Replay",
+    "IxCC.Compiler.Proof"]},
   "IxCCTests.Fences.OwnOwnedSwitch":
   {"path": "IxCCTests/Fences/OwnOwnedSwitch.lean",
    "imports":
@@ -3639,6 +3649,7 @@
     "IxCCTests.Fences.OwnPlain",
     "IxCCTests.Fences.OwnOwned",
     "IxCCTests.Fences.OwnOwnedSwitch",
+    "IxCCTests.Fences.OwnParams",
     "IxCCTests.Fences.OwnRc",
     "IxCCTests.Fences.Rt",
     "IxCCTests.Fences.RtRc",
