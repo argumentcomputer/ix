@@ -1252,3 +1252,146 @@ proof modules' public theorems; expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Xv.Validate.program_eval_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Validate.program_eval_eq
+
+/-! ## The tracked walk (2026-11-13): `NatMap` canonical form, choice-free lookups, `checkBlock_eq_list` -/
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.mk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.mk
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.leftChild' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.leftChild
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.rightChild' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.rightChild
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.alterAux' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.alterAux
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.alter' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.alter
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.insert' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.insert
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.erase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.erase
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.filterMapAux' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.filterMapAux
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.filterMap' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.filterMap
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_node_left' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_node_left
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_node_right' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_node_right
+
+/-- info: 'IxCC.Xv.Validate.NatMap.Canon.eq_leaf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.Canon.eq_leaf
+
+/-- info: 'IxCC.Xv.Validate.NatMap.ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.ext
+
+/-- info: 'IxCC.Xv.Validate.NatMap.key_cases'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.key_cases'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_alterAux'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_alterAux'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_alter'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_alter'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_insert'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_insert'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_erase'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_erase'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_filterMapAux'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_filterMapAux'
+
+/-- info: 'IxCC.Xv.Validate.NatMap.find?_filterMap'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.NatMap.find?_filterMap'
+
+/-- info: 'IxCC.Xv.Validate.find?_addRegs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.find?_addRegs
+
+/-- info: 'IxCC.Xv.Validate.AState.find?_set' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.AState.find?_set
+
+/-- info: 'IxCC.Xv.Validate.AState.canon_set' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.AState.canon_set
+
+/-- info: 'IxCC.Xv.Validate.find?_foldl_erase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.find?_foldl_erase
+
+/-- info: 'IxCC.Xv.Validate.canon_foldl_erase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.canon_foldl_erase
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.empty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.empty
+
+/-- info: 'IxCC.Xv.Validate.mem_noteOut' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.mem_noteOut
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.setRow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.setRow
+
+/-- info: 'IxCC.Xv.Validate.Tracked.ofList_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.ofList_inv
+
+/-- info: 'IxCC.Xv.Validate.AState.forget_unlisted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.AState.forget_unlisted
+
+/-- info: 'IxCC.Xv.Validate.AState.find?_forget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.AState.find?_forget
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.forget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.forget
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.clearOutArgs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.clearOutArgs
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.clear' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.clear
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.define' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.define
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.stepMove' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.stepMove
+
+/-- info: 'IxCC.Xv.Validate.tracks_ok' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.tracks_ok
+
+/-- info: 'IxCC.Xv.Validate.Tracked.Inv.callState' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracked.Inv.callState
+
+/-- info: 'IxCC.Xv.Validate.stepOperandsT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.stepOperandsT_tracks
+
+/-- info: 'IxCC.Xv.Validate.stepInstT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.stepInstT_tracks
+
+/-- info: 'IxCC.Xv.Validate.stepTermT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.stepTermT_tracks
+
+/-- info: 'IxCC.Xv.Validate.stepEditT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.stepEditT_tracks
+
+/-- info: 'IxCC.Xv.Validate.stepEditsT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.stepEditsT_tracks
+
+/-- info: 'IxCC.Xv.Validate.Tracks.bind' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.Tracks.bind
+
+/-- info: 'IxCC.Xv.Validate.tracks2_err' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.tracks2_err
+
+/-- info: 'IxCC.Xv.Validate.walkBodyT_tracks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.walkBodyT_tracks
+
+/-- info: 'IxCC.Xv.Validate.checkBlock_eq_list' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Validate.checkBlock_eq_list

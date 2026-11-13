@@ -478,6 +478,18 @@ def knownPrim (facts : Src.NatMap Fact) (p : Lam.Prim) (os : List Opd) : Nat →
       if decide (p = .natAdd ∧ os = [y, .lit (.nat 1)]) then some (.lvl l) else knownPrim facts p os l
     | _ => knownPrim facts p os l
 
+/-- `natBle [x, m]` where `x = y + 1` is known (`Fact.succ`): the operands `[y, m]` of the
+`natBlt` with the same result (`y + 1 ≤ m ↔ y < m`). Lean's `x < y` on `Nat` (`Nat.decLt`, and
+through it every fixed-width word's `decLt`) is `Nat.ble (x + 1) y`; `natBlt` does not build
+`x + 1`, which natively fails with `natOverflow` at `x = 2^63 − 1`. `natBle m x` has no such
+form and is kept. -/
+def succBle (facts : Src.NatMap Fact) : Lam.Prim → List Opd → Option (List Opd)
+  | .natBle, [.lvl l, m] =>
+    match facts.get? l with
+    | some (.succ y) => some [y, m]
+    | _ => none
+  | _, _ => none
+
 /-- The fact a successful `prim p os` records at its level. -/
 def primFact (p : Lam.Prim) (os : List Opd) : Fact :=
   match p, os with
@@ -769,7 +781,12 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         | some o => do fire fun f => { f with fold := f.fold + 1 }; skip (.opd o)
         | none =>
           if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
-          else emit (.prim p (atoms here.d os)) fact
+          else
+            match (if C.shrink then succBle here.facts p os else none) with
+            | some os' => do
+              fire fun f => { f with fold := f.fold + 1 }
+              emit (.prim .natBlt (atoms here.d os')) fact
+            | none => emit (.prim p (atoms here.d os)) fact
     | .glob g =>
       match P.global? g with
       | some gd =>

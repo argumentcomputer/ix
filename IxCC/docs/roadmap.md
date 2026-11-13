@@ -312,17 +312,17 @@ hosted-CI or cold-store timing is claimed.
   `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
   operations) become the first registered roots that run word primitives. A
   program with a word entry is outside the grounded fragment (`noWord`) until the
-  grounding's word case is proved. Two limits stay after W1, by design:
-  a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
-  result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
-  to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
-  that meets a uniform position boxed as a cell of one scalar word), so a width-64 result
-  needs no tag bit; and the comparisons (`decEq`, `decLt`,
-  `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
-  `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
-  per decision, a stored theorem fixing what it denotes as a `Decidable` value
-  (as each operation's equation does; see DR2, "Stage W1"). There are no arrays,
-  byte arrays or strings.
+  grounding's word case is proved. One limit stays after W1, by design: a `UInt64` is
+  native only below 2^63. A word is a tagged immediate, so a width-64 result at or
+  above 2^63 fails with `natOverflow`, as a `Nat` does. Stage W2 is planned to lift it
+  with raw unboxed words (direction chosen 2026-11-13): raw 64-bit words in registers
+  and frames, and a word that meets a uniform position boxed as a cell of one scalar
+  word. Its DR2 design section comes before any code. The comparisons (`decEq`,
+  `decLt`, `decLe`) stay reference bodies. Since 2026-11-13 `x < y` (and `>`) at
+  `x = 2^63 − 1` no longer fails, for `Nat` and every width: the shrink walk turns
+  `Nat.lt`'s `natBle (x + 1) y` into `natBlt x y`, which builds no `x + 1`
+  (`natBle m (y + 1)` has no simpler form and stays). There are no arrays, byte
+  arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a
@@ -493,7 +493,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | EV-2 | The image, version 1, with shared subterms: format, deterministic producer, round trip, interfaces (role table, readback to Ixon, budgets) | EV-1 | theorems fenced; round trip over every committed closure in a gate; byte-identical images on two machines; digests committed | codec 0.5k, proofs 1–2k, interfaces 0.5–1.5k; 1–3 months (IxCC's Aiur wire format, 1.3k with proofs) | IxCC | a stable program identity and the circuit's input format |
 | SP-0 | The conditional statement: the claim also binds the image digest, so that the target and `D` fix the seeds; the laws as an explicit structure of hypotheses about a model (named as on the IxVM side); the faithfulness and typing clauses; soundness and progress as separate propositions; the conditional x86 and evaluator statements with both as explicit hypotheses; the table (`eqn`, `csimp` from `mem` and `eq_equality`; `case` from δ and ι), primitive, `let` and readback lemmas in every model with the laws | SP-B | the conditional statements fenced; role-bound K1 fixtures verify under the new claim format | 6–13k lines; 2–4 months (IxCK's reader 1.3k and IxCC's ingress 0.3k for the reading; the lemma estimates of the certification design; 2–4k more if the `Nat` operations' meaning must be derived on IxCC's side) | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table; the `eqn`/`csimp` and primitive lemmas for its own discharge path |
 | SP-A | The typing-transport question is answered (2026-11-11: a model gives no typing for subterms, so typing derivations join premise (ii)); the spike: soundness on K1's `fib`, then `decide (fib 10 = 55)`, with the derivations from the kernel's runs | — | the spike theorem fenced or a stop report | 1–3 months | shared | whether SP-1 is engineering |
-| SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction). **In progress** since 2026-11-11 as [the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress) (`IxCCGrounding`, required check `ixcc-grounding`): G1a and G1b landed: soundness at a root on first-order arguments (`rootSound`, with `fib` and `decide (fib 10 = 55)` as instances), from checks run on the bytes, over every model with the laws as hypotheses, under `SitesOk`, F5's meaning proved by the generic `case` lemma; G2a landed: the direct route discharges the typing hypothesis at every site of both instances (`fibRoot`, `decideRoot` have none) and of every measured closure the check accepts (elsewhere it remains at the sites the direct route refuses); two laws (constructor canonicity, the projection of a constructor) restricted on 2026-11-11 to families that are not propositions, both false as first landed in a proof-irrelevant set model, and the laws not yet shown to have a model (canonicity scheduled by no one); G2b landed: ι and `Nat` arithmetic on literals in the conversion (`iota_rule` and `nat_accel` added to the laws the direct route rests on), string literals, `imax u u` in the level comparison, two fuel levels per nested argument, a renaming-tolerant `case` shape: on the corpus the direct route refuses 22 sites in four closures (262 before) and the check accepts 24 closures (22 before); G3's first step landed: the direct route's cost profiled and fixed (constants looked up in a table of the reading, a telescope's width costing no fuel): `sitesDirectB` on `tags125` 48.7 s instead of 624 s interpreted, all 418 of its sites accepted (171 before), `tests-grounding` 1.4 s instead of 5.4 s, and on the 49 closures that load the direct route refuses 21 sites in three; G3's parts A and B landed: recursors enter the checked set by class (`declOk` admits a class once its case of the fundamental lemma is proved; a new conjunct `recShape` checks each recursor's stored shape, its type a binder for every argument SrcEval takes), a recursor head in the relation, the landed root theorems kept as corollaries; G3's part C landed: the class of the built-in `Eq.rec` admitted, F3's meaning there proved from ι and the model's `Eq` law (a checked `EqRecBasis`: its type and rule as F3 reads them), so the check accepts 29 of the 49 closures that load (24 before); G3's part D, first step, landed: the field-less recursors without parameters (class `flat`, `Bool.rec`) admitted, F2's meaning there proved from ι and level-parameter irrelevance alone (canonicity only where such a recursor's constructor has level parameters, none measured; checked facts `RecTele`, `RecProg`, `RecCtorsRaw`), so the check accepts 31 of the 50 closures that load; G3's part E landed: the other recursors without parameters whose rule bodies name no constant (class `noParams`, `T16.rec`) admitted, F2's meaning there proved with the rule body evaluated through `eval`'s induction hypothesis (its model side, ι and β, from `iota_rule` alone, the constructor image moved by `cval_params` alone on every measured closure; the rule bodies' sites typed by the direct route inside the check, at the profiles where the major premise is in the graph regime, so that step takes the laws whole; checked facts `RecFields`, `RecBodies`, `RecSites`), so the check accepts 34 of the 50 closures that load (measured after ingress was changed to read only what the seeds reach); what remains: a model of the laws, `ResultTag` (a checked hypothesis that rejects some roots), and the rest of G3 (recursion, `Nat.rec`, whose rule body calls the recursor at an instance the fundamental lemma's `Ok` must admit, and recursors with parameters, `List.rec`, where F2 needs canonicity, then the rest of the recursors, and the rest of the residue: projections out of a bound variable, as recursion compiled through `brecOn` makes them, need a typing derivation or a model fact the laws do not state); a second family of root theorems landed on 2026-11-12 that names no canonicity law (`rootSound_noCanon` and its corollaries, over `LawsNoCanon`: δ, ι in #678's guarded form and level-parameter irrelevance, fields of #678's model, and the projection law and the `Nat` accelerations, not yet derived from it), for programs passing `noCanonB` (32 of the 34 accepted corpus closures); the copies of #678's fields that close that gap landed (`rootSound_678`, over `Laws678`); step A landed on 2026-11-13: `case` entries over level-polymorphic families, under a verified instance set (`rootSound_678A`, the family holding on 34 of the 34 accepted closures; level agreement is a checked restriction, not a law: [certification design](certification-design.md#the-grounding-library-sp-1-in-progress)); **open**: `instCheckB`'s cost is quadratic in the instance count (0.9 ms compiled on `tags125`, 170 ms interpreted on `phase1-decline/strings`, 138 instances, the reproducer), an index to be added before it runs in the verifier on hostile input; item 1a landed on 2026-11-13: no typing hypothesis (`rootSound_678G`: `SitesOkRes` from #678's `graded` field, a sixth field beside `Laws678`, and the decided `HeadRegimeRes` at the sites the direct route refuses; all 34 accepted closures); step C landed on 2026-11-13: a `let` in a run term, the correspondence with the stored ζ-reduct through a substitution (a dead `let`'s slot related to nothing; the instance walk reading `let`s; the direct route refusing at a `let`; 37 of the 50 corpus closures accepted, `fields254`, `machines`, `natural` added; `natural` outside 1a's family without a typing hypothesis, inside 1b's); **open**: deep `let`s (a `let` whose variable meets its copy only under a binder) are refused, in two shapes on the corpus: the closure a function returns (`λx. let y := …x…; λz. …y…z`; `arity` c597, `closures` c272), which a closure relation relating the captured environment in the body's context would admit, and the minor premises of a `match` (`let r := f n; match … with | … => …r…`; `closures` c19), which that does not (minors are applied at other clocks); step 1b landed on 2026-11-13: every run-term site typed from `graded` (`rootSound_678AG`: the head's type read through δ and β, `HeadRegime` decided once per maximal spine by `headRegimeSB`; no direct route at run-term sites, `RecSites` still with it; all 37 accepted closures, `natural` among them); **open** (non-linear steps that remain in that check): the profile enumeration, 2^parameters per constant, capped at `maxDirectParams` = 8 (fail closed), the list appends in the site walk (`spinesPs`, as `evalSites`), a λ head copying the outer arguments (`liftLooseBVars`, at most `headFuel` times per spine), the level substitution of the data per δ step (`Level.substPW` through the chain); its completeness limits are listed in the [certification design](certification-design.md#the-grounding-library-sp-1-in-progress); next, in order (GR.md "GR14", "GR16" pick-up sections): `autoParam` binders in an `eqn` entry's shape (Ap), recursors with parameters, recursion in rule bodies last; then G4 (widening, which meets that shape as soon as recursors enter the checked set), G5 (progress) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
+| SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction). **In progress** since 2026-11-11 as [the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress) (`IxCCGrounding`, required check `ixcc-grounding`): G1a and G1b landed: soundness at a root on first-order arguments (`rootSound`, with `fib` and `decide (fib 10 = 55)` as instances), from checks run on the bytes, over every model with the laws as hypotheses, under `SitesOk`, F5's meaning proved by the generic `case` lemma; G2a landed: the direct route discharges the typing hypothesis at every site of both instances (`fibRoot`, `decideRoot` have none) and of every measured closure the check accepts (elsewhere it remains at the sites the direct route refuses); two laws (constructor canonicity, the projection of a constructor) restricted on 2026-11-11 to families that are not propositions, both false as first landed in a proof-irrelevant set model, and the laws not yet shown to have a model (canonicity scheduled by no one); G2b landed: ι and `Nat` arithmetic on literals in the conversion (`iota_rule` and `nat_accel` added to the laws the direct route rests on), string literals, `imax u u` in the level comparison, two fuel levels per nested argument, a renaming-tolerant `case` shape: on the corpus the direct route refuses 22 sites in four closures (262 before) and the check accepts 24 closures (22 before); G3's first step landed: the direct route's cost profiled and fixed (constants looked up in a table of the reading, a telescope's width costing no fuel): `sitesDirectB` on `tags125` 48.7 s instead of 624 s interpreted, all 418 of its sites accepted (171 before), `tests-grounding` 1.4 s instead of 5.4 s, and on the 49 closures that load the direct route refuses 21 sites in three; G3's parts A and B landed: recursors enter the checked set by class (`declOk` admits a class once its case of the fundamental lemma is proved; a new conjunct `recShape` checks each recursor's stored shape, its type a binder for every argument SrcEval takes), a recursor head in the relation, the landed root theorems kept as corollaries; G3's part C landed: the class of the built-in `Eq.rec` admitted, F3's meaning there proved from ι and the model's `Eq` law (a checked `EqRecBasis`: its type and rule as F3 reads them), so the check accepts 29 of the 49 closures that load (24 before); G3's part D, first step, landed: the field-less recursors without parameters (class `flat`, `Bool.rec`) admitted, F2's meaning there proved from ι and level-parameter irrelevance alone (canonicity only where such a recursor's constructor has level parameters, none measured; checked facts `RecTele`, `RecProg`, `RecCtorsRaw`), so the check accepts 31 of the 50 closures that load; G3's part E landed: the other recursors without parameters whose rule bodies name no constant (class `noParams`, `T16.rec`) admitted, F2's meaning there proved with the rule body evaluated through `eval`'s induction hypothesis (its model side, ι and β, from `iota_rule` alone, the constructor image moved by `cval_params` alone on every measured closure; the rule bodies' sites typed by the direct route inside the check, at the profiles where the major premise is in the graph regime, so that step takes the laws whole; checked facts `RecFields`, `RecBodies`, `RecSites`), so the check accepts 34 of the 50 closures that load (measured after ingress was changed to read only what the seeds reach); what remains: a model of the laws, `ResultTag` (a checked hypothesis that rejects some roots), and the rest of G3 (recursion, `Nat.rec`, whose rule body calls the recursor at an instance the fundamental lemma's `Ok` must admit, and recursors with parameters, `List.rec`, where F2 needs canonicity, then the rest of the recursors, and the rest of the residue: projections out of a bound variable, as recursion compiled through `brecOn` makes them, need a typing derivation or a model fact the laws do not state); a second family of root theorems landed on 2026-11-12 that names no canonicity law (`rootSound_noCanon` and its corollaries, over `LawsNoCanon`: δ, ι in #678's guarded form and level-parameter irrelevance, fields of #678's model, and the projection law and the `Nat` accelerations, not yet derived from it), for programs passing `noCanonB` (32 of the 34 accepted corpus closures); the copies of #678's fields that close that gap landed (`rootSound_678`, over `Laws678`); step A landed on 2026-11-13: `case` entries over level-polymorphic families, under a verified instance set (`rootSound_678A`, the family holding on 34 of the 34 accepted closures; level agreement is a checked restriction, not a law: [certification design](certification-design.md#the-grounding-library-sp-1-in-progress)); **open**: `instCheckB`'s cost is quadratic in the instance count (0.9 ms compiled on `tags125`, 170 ms interpreted on `phase1-decline/strings`, 138 instances, the reproducer), an index to be added before it runs in the verifier on hostile input; item 1a landed on 2026-11-13: no typing hypothesis (`rootSound_678G`: `SitesOkRes` from #678's `graded` field, a sixth field beside `Laws678`, and the decided `HeadRegimeRes` at the sites the direct route refuses; all 34 accepted closures); step C landed on 2026-11-13: a `let` in a run term, the correspondence with the stored ζ-reduct through a substitution (a dead `let`'s slot related to nothing; the instance walk reading `let`s; the direct route refusing at a `let`; 37 of the 50 corpus closures accepted, `fields254`, `machines`, `natural` added; `natural` outside 1a's family without a typing hypothesis, inside 1b's); **open**: deep `let`s (a `let` whose variable meets its copy only under a binder) are refused, in two shapes on the corpus: the closure a function returns (`λx. let y := …x…; λz. …y…z`; `arity` c597, `closures` c272), which a closure relation relating the captured environment in the body's context would admit, and the minor premises of a `match` (`let r := f n; match … with | … => …r…`; `closures` c19), which that does not (minors are applied at other clocks); step 1b landed on 2026-11-13: every run-term site typed from `graded` (`rootSound_678AG`: the head's type read through δ and β, `HeadRegime` decided once per maximal spine by `headRegimeSB`; no direct route at run-term sites, `RecSites` still with it; all 37 accepted closures, `natural` among them); **open** (non-linear steps that remain in that check): the profile enumeration, 2^parameters per constant, capped at `maxDirectParams` = 8 (fail closed), the list appends in the site walk (`spinesPs`, as `evalSites`), a λ head copying the outer arguments (`liftLooseBVars`, at most `headFuel` times per spine), the level substitution of the data per δ step (`Level.substPW` through the chain); its completeness limits are listed in the [certification design](certification-design.md#the-grounding-library-sp-1-in-progress); step Ap landed on 2026-11-13: `autoParam`/`optParam` binders in an `eqn` function's type, the check read on the reading retyped up to selector domains (`rootSound_678AGp_of_check`; six fields only, since the agreement needs `graded`; the six-field family on 42 of the 50 corpus closures, the `for`-loop closures added but `resource`, still refused at `caseRec`, `caseShape`); next, in order: recursors with parameters, recursion in rule bodies last; then G4 (widening, which meets that shape as soon as recursors enter the checked set), G5 (progress) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
 | XK | **External dependencies of the spine** (none in this repository; listed for tracking): the IxVM consistency theorem's eight obligations proved; its claimed environment fixing kinds and values; its derivations exposed or the lowering claim proving typing; the rules' soundness over the public model; the projection of a constructor and the `Nat` operations on literals as public laws; constructor canonicity across parameters and levels (asked 2026-11-11; else a relation carrying types on IxCC's side); public level irrelevance; "the annotation pass preserves denotation"; the table restriction lemma | the certified-IxVM work | each stated on the kernel or IxVM side | theirs | kernel and IxVM workstreams | — |
 | SP-2 | Widening: `Quot`, nested inductives, strings, data primitives, plain-RC results, other roots | SP-1, the phases | per item | per item | IxCC | wider images |
 | SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch in progress: its step 2, moving what is not typing out of the checker, and its step 3, the kernel front end the only front end, done 2026-11-11). Decided by the owner on 2026-11-11 ([decisions](kernel-front-end-design.md#decisions)): the switch proceeds now; the kernel's blow-up on chains of `let` is fixed in the kernel package on this branch, in parallel, and has landed (on a hostile `let` chain the kernel front end's acceptance took 52.2 s at 30 `let`s against the erased checker's 0.19 s, and takes 28 ms with the fix); the kernel's level walks on shared levels are memoised, and the level comparison itself (coNP-hard for levels with `imax`) stays exponential on some small constants until its planned call budget. the front end passes the artifact's own reducibility hints to the kernel's entry and reading (2026-11-12, as `ix check-lean` does: without them the kernel computes its own heights, and a one-line `rfl` proof Lean checks in a millisecond took time exponential in a literal's width; hints are advice, no theorem depends on them, and a hostile hint can make the kernel slow or decline, never accept something else). Working defaults, awaiting the owner's confirmation: IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude; unbound environments are refused, which follows from the switch | SP-B; SP-0 for the statement; for the switch's step 3, the role-bound refreeze (RL-1 phase 2, in progress); before the branch merges, the kernel's fix of its blow-up on `let` chains (KF-3, in parallel on this branch) | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.3k) | IxCC | — |
@@ -855,19 +855,89 @@ ownership checker's own, which the captured-work budget bounds
   #678 ingest: reading each λ's condition from the datum the kernel's own annotation pass writes
   and its inference validates (`BinderMeta.pw`, the zero condition of the binder's codomain) in
   place of asking the kernel's inference.
-- Open: `RcReplay`'s plain-RC back end after admission has a per-function quadratic term:
+- `RcReplay`'s plain-RC back end after admission had a per-function quadratic term:
   `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
   (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
   drops each unused parameter at the return, so a function of P parameters has P `dec`
-  statements that no Anf node counts (`maxBackWork` sees one node), and the allocation
-  certificate's per-block facts grow with the values live there. Within the parameter limit the
-  sum of the squares can still reach about 2³¹ when one function has about 2,048 parameters
-  (only a hand-written artifact gets there; `ix`'s output stays near 230).
-- Open: the back end's layout (`Backend.lay`: stacking and block layout) grows with the
-  function count faster than linearly, about F^1.6: 0.36 s and 1.15 s on the immortal route at
-  2,398 and 4,793 functions (whatever their parameters), 16.7 s and 29.8 s on the plain-RC
-  route with 529,000 `dec` statements in both. Not located; the function count is bounded by the
-  node budget and, from an artifact, by ingress's object table.
+  statements that no Anf node counts (`maxBackWork` sees one node), each a call made while up
+  to P values are live, and at every call the validator passed over its whole abstract state
+  twice: `AState.clearOutArgs` (forget the outgoing cells) and, through `define`,
+  `AState.forget` of the call's result (located by gdb samples of `check-cert` and counts: at
+  (110, 2,398), 264,551 calls over 29.9 million state entries and 271,763 definitions over 30.7
+  million). Fixed (2026-11-13): `checkBlock` walks a block on `Tracked`, the state with the
+  registers and the outgoing cells it may hold, so a definition forgets its register only when
+  it is listed and a call erases only the listed cells; the former walk is kept as
+  `checkBlockList` and proved equal (`checkBlock_eq_list`, `Xv/Validate/Proof/Tracked.lean`),
+  and tested against it on every corpus root's allocations and on generated Lir, with
+  certificates made wrong (`tests-own-owned`). On the build box, the probe's
+  `Validate.program` on the verifier's own inputs, the former walk against the new one in one
+  process: plain-RC route 3.07 → 0.82 s at (110, 2,398), 10.1 → 1.82 s at (220, 2,398), 5.87 →
+  1.59 s at (110, 4,793); the immortal route unchanged (0.25–1.37 s). What remains grows ×1.95
+  when F doubles and ×2.2 when P doubles on the plain-RC route (×2.7 on the immortal route).
+- Open: what remains superlinear in the allocation validator after that fix, measured on the
+  build box (probe `probe-h12`, modes `back`, `edges`, `residual`):
+  - A function's parameters are checked distinct by a list (`nodup`), quadratic in them:
+    23 ms and 84 ms over the 2,398 functions of 110 and 220 parameters; within the parameter
+    limit the sum of the squares can reach about 2³¹ (about 1.6 s at the measured rate).
+  - An edge binds its target's parameters over the whole state at the source's end
+    (`bindParams`, each held register tested against the parameter list) and checks the
+    target's certificate against the result (`le`): per edge about the state times the
+    parameters. On a synthetic join of K parameters reached from E arms that pass all K values:
+    2.6 ms at (E, K) = (64, 32), 6.4 ms at (64, 64), 17.8 ms at (64, 128), 34.6 ms at
+    (128, 128), 71.7 ms at (256, 128): linear in E, about K² per edge. By an argument, not a
+    check: where every block has an earlier predecessor a certificate's claims must hold on
+    that edge, so it cannot make the state larger than the honest one and the term is the
+    program's. The generated inputs have no edges.
+  - The tracked walk still passes over the whole state when a register it defines is already
+    listed, which happens only when a block's certificate claims a register before its
+    definition. Where every block has a predecessor earlier in the order and the program is
+    SSA, such a claim fails that predecessor's edge check before the block is walked. Cfg
+    numbers every forward edge upward and Xv is SSA, but neither is checked on the verifier's
+    path; the corpus suite counts no such scan (15,876 allocations, 15,552 of them with edited
+    certificates). Where the order does not hold (generated Lir with permuted labels: 29 such
+    walks in 3,656 allocations), a certificate can claim every register a block defines: on a
+    synthetic block of D definitions placed before its only predecessor, refused at that
+    predecessor's edge check, 13.5 ms at D = 500, 161 ms at 2,000, 564 ms at 4,000 and
+    2.05 s at 8,000 (honest certificate 0.9 ms to 15.6 ms); the former walk costs the same.
+    The certificate's limits admit it (8 fact entries per register mention), so it is bounded
+    only by the size of one block. Kept, so that the tracked walk stays equal to the former one:
+    refusing at such a definition would report a different error than the walk that goes on to
+    the predecessor's edge check.
+  - Candidate for a later landing, the cheapest check that excludes that layout: before the
+    walk, every block after the entry has a predecessor earlier in the order (one pass over
+    the edges), and every register is defined once (one pass over the definitions). With both,
+    a claim before a definition fails an earlier block's edge check before the defining block
+    is walked, so the scan cannot happen (the argument above, to be proved with the check). The
+    validator's own inputs satisfy both on the corpus (28,882 blocks: none without an earlier
+    predecessor, no register defined twice; the generated Lir with permuted labels has 398 of
+    4,055 blocks without one). What proving that the verifier's lowering always passes would
+    cost (estimates, not established): the order half builds on what exists, since `Rt.lower`
+    already refuses a Cfg function whose forward edges do not go upward (`misordered`,
+    `edgeOrder`) and `Cfg.Proof.Layout.lower_ordered` proves Cfg's lowering satisfies it;
+    carrying it through `Rt.lower`'s block chunks and pruning (`prune_sim` keeps the label
+    order) and through selection (block for block) is a few hundred lines. The defined-once
+    half is larger: it follows each pass's fresh-register supply (Cfg, `Rt.lower`'s `supply`,
+    selection's temporaries), or it can rest on the check and tests alone, refusing what the
+    check does not admit.
+- The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
+  the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
+  16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
+  `Stacking.run` read a callee's declared result count by converting the whole function array
+  to a list at every call (`resultsOf`, through the arity check) and every tail call
+  (`tailResults`, through the clobber check), O(F) per site, and placed functions and wrappers
+  by appending each to the list built so far (O(F²)). Fixed (2026-11-13): the array is read at
+  the callee's index and each placement is one pass, the first forms kept as
+  `resultsOfList`, `tailResultsList`, `placeExportsList` and `placeFuncsList` and proved equal
+  to the definitions (`Xv/Stacking/Proof/Linear.lean`), and tested against them on every
+  corpus root on both routes and on synthetic programs (`tests-own-owned`). On the build box,
+  the probe's `Backend.lay` on the verifier's own inputs, before and after: immortal route
+  309 → 48 ms at (P, F) = (110, 2,398), 289 → 46 ms at (220, 2,398), 857 → 92 ms at
+  (110, 4,793), 876 → 109 ms at (220, 4,793); plain-RC route 8.5 → 0.70 s at (110, 2,398),
+  16.3 → 1.37 s at (220, 2,398), 59.5 → 1.45 s at (110, 4,793). What remains grows about ×2
+  when F or P doubles, linearly in the functions and call sites: on the plain-RC route mostly
+  the clobber check's callee lists (`mayChange`, 0.3–0.6 s), the typed program's
+  well-formedness check (0.2–0.4 s) and emission (0.1–0.25 s); tunnelling and block layout
+  take under 20 ms in every cell.
 - The RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through `enrichFirContracts`:
   `progKeyContracts` and `progKeyResult` rebuilt `funList` and searched it once per function)
   was quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at 4,096, 48.8 s at
@@ -1104,6 +1174,36 @@ unchanged by hypothesis calls), not "every slot at a relevant binder is live";
 and IxCC never checks that a stored rule has the kernel's generated shape, so
 P1 may use only what the forwarding clause decides of the rule as stored
 (`ForwardOk`), or a shape check of our own.
+
+**Two more routes, found by writing P1's statement (2026-11-13).** C3 compares
+minors with constructors only at a saturated eliminator spine. An eliminator
+partially applied or bare, its minors supplied later at a variable head (the
+eighth route), or reached through a `csimp` redirect to a `case` key (the
+ninth), met no check, and an η-short minor over a field written erased
+compiled to an object returning constructor 0 where the program means
+constructor 1, SrcEval returning the marker. The eighth passes the certified
+kernel; `Recheck.run` accepted both; on the byte path only Stage A refused the
+eighth (next paragraph). So before this check the planned P1 was false for
+programs every check accepted. C3 now refuses such an eliminator away from a
+saturated spine (`Check.partialElim`, closing the eighth) and `checkCanonical`
+a `csimp` redirect to one (`redirectsErased?`, closing the ninth); the facts are
+in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
+`Canonical.redirects`). [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the nine routes; P1's statements, checked against the evaluator on the
+erased-misuse programs and every registered root, come next.
+
+**Open capability item: no program with a constructor field written erased can
+be produced (since at least 2026-11-13).** The kernel annotator's constructor
+record keeps a field its type writes erased (`CtorRel` `keep`) while its
+parameter classes drop it (`ConstRel` `proof always` at that parameter), so
+`checkCanonical` calls every such annotation non-canonical and `produce`
+refuses the program; honest programs with such a field compile only with a
+hand-made certificate, and the byte-level verifiers' Stage A (equality with the
+annotator) refuses those. This is conservative, and it is what refused route 8
+on the byte path before its check: making the annotator canonical there would
+have opened that route on the byte path. Fixing the annotator is now safe
+(route 8 is refused by C3), and it is the order to keep: a capability widened
+only after the check that it needs.
 
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
