@@ -117,7 +117,10 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
         "the original partial companion was removed to make logical-only checking pass"
       for anon in [false, true] do
         let outPath := dir / (if anon then "cert-anon.ixe" else "cert-named.ixe")
-        let args := #["compile", source, "--local", "--no-build", "--out", outPath.toString]
+        -- `--no-equations`: the named bytes are compared with `compile-lean`'s, which realizes no
+        -- equations.
+        let args := #["compile", source, "--local", "--no-build", "--no-equations", "--out",
+          outPath.toString]
         let result ← IO.Process.output {
           cmd := executable.toString
           args := if anon then args.push "--anon" else args

@@ -11,6 +11,6 @@
   "diag.equations.json":
   "bbc2efdd9ad21075053f62167ecb0c4fb63d5147c75e027dc45100a96e0543eb"},
  "commands":
- ["ix compile --no-build --consts <roots> --anon --out diag.ixe Diag.lean",
-  "ix compile --no-build --consts <roots> --out diag.named.ixe Diag.lean",
+ ["ix compile --no-build --consts <roots> --no-equations --anon --out diag.ixe Diag.lean",
+  "ix compile --no-build --consts <roots> --no-equations --out diag.named.ixe Diag.lean",
   "ix addr-of --ixe diag.named.ixe NAME, for every root"]}

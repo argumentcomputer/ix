@@ -105,5 +105,28 @@
       "equation_address": "9a2ab6dc75ee03dd37423131d4d50353639508d77132b40630d4b615bca93f41"
     }
   ],
+  "theorems": [
+    {
+      "kind": "word",
+      "subject": "UInt32.ofNat",
+      "subject_address": "a3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07",
+      "theorem": "IxWordEquations.UInt32_ofNat",
+      "theorem_address": "261106e3334d2c3278ed0a2dbc2c86752a0780b682e268267ad9da98490e15b0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.toNat",
+      "subject_address": "39e2b134273ce4ba230b50e6ab1fa434965198707788279dd271dbbe13c046a4",
+      "theorem": "IxWordEquations.UInt32_toNat",
+      "theorem_address": "364f56c035aa69f7b6440a18a0a75b3d2f6415c69ec8e2496c049bf13cd43eeb"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.ofNat",
+      "subject_address": "b75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee",
+      "theorem": "IxWordEquations.UInt8_ofNat",
+      "theorem_address": "c599a5c7467baec84e2709253279322427cb0ae75f3cca11fb8682628abae65e"
+    }
+  ],
   "failures": []
 }
