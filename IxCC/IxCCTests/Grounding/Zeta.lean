@@ -29,7 +29,9 @@ body is a λ and the copy, lifted past it, occurs in the λ's body with no binde
   correspond to its copy is refused at `valueCorr` alone. A `let` whose variable occurs only under
   a λ (`let x := v; λ _. x` against the stored `λ _. v`) was refused at `valueCorr` alone, as deep;
   it is the closure-capture shape, so since that case it is accepted, every conjunct true, while
-  the live case alone (`corrSBLive`, the decider as it was before) still refuses it. Three plants
+  the live case alone (`corrSBLive`, the decider as it was before) still refuses it (attributed: it
+  accepts `fib`'s root unplanted, and `corrSBClo`, with the closure-capture case, accepts the plant).
+  Three plants
   stay refused at `valueCorr` alone: the copy under a second binder (`let x := v; λ _ _. x`), a body
   that is not a λ (`let x := v; (λ _. x) 0`), and a copy that is not the value
   (`let x := v; λ _. x` against the stored `λ _. 7`).
@@ -251,9 +253,20 @@ def run : IO Bool := do
     -- shape (was: `failing deep == ["valueCorr"]`); the live case alone still refuses it
     let deepLive := (runPairsB deep.src deep.env deep.κ deep.rootId).all fun (t, e) =>
       !corrSBLive deep.κ (deep.lpsOf deep.rootId) [] t e
-    expect a ((failing deep).isEmpty && deepRun && deepLive)
+    -- attributed (GA): the live case alone accepts `fib`'s root unplanted, the plant changed the run
+    -- term it reads, and the decider with the closure-capture case (`corrSBClo`) accepts the plant:
+    -- the live case's refusal is the closure-capture shape's
+    let liveFib := (runPairsB fi.src fi.env fi.κ fi.rootId).all fun (t, e) =>
+      corrSBLive fi.κ (fi.lpsOf fi.rootId) [] t e
+    let deepChanged := (runPairsB fi.src fi.env fi.κ fi.rootId).map (·.2) !=
+      (runPairsB deep.src deep.env deep.κ deep.rootId).map (·.2)
+    let deepClo := (runPairsB deep.src deep.env deep.κ deep.rootId).all fun (t, e) =>
+      corrSBClo deep.κ (deep.lpsOf deep.rootId) [] t e
+    expect a ((failing deep).isEmpty && deepRun && liveFib && deepChanged && deepLive && deepClo)
       s!"zeta: fib, a let used only under a λ (the closure-capture shape): false conjuncts \
-        {failing deep}, deep {deepRun}, the live case alone refuses it {deepLive}"
+        {failing deep}, deep {deepRun}; the live case alone accepts fib's root unplanted {liveFib}, \
+        the run term changed {deepChanged}, the live case alone refuses the plant {deepLive}, with \
+        the closure-capture case accepts it {deepClo}"
     let some deep2 := setRoot fi (lt v (.lam default (.sort .zero) (.lam default (.sort .zero) (.var 2))))
         (some (.lam (.sort .zero) (.lam (.sort .zero) val bmN) bmN)) | throw (IO.userError "fib: deep2")
     expect a (failing deep2 == ["valueCorr"])

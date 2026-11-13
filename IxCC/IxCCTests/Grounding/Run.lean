@@ -38,8 +38,14 @@ Then the negative controls, on `fib`: each mutation makes exactly the conjunct i
 
 The direct route (`IxCCGrounding.Direct.Check`, a Boolean beside `groundCheck`): `sitesDirectB`
 refuses no application site of either subject; two controls on `fib` each make it false and leave
-`groundCheck` true: (a) the stored type of a constant passed as an argument made `Nat`; (h) a head
-constant's first binder datum (`never`) made "always a proposition".
+`groundCheck` true: (a) the stored type of a constant passed as an argument made `Nat` (10 sites
+refused, each naming it); (h) a head constant's first binder datum (`never`) made "always a
+proposition" (3 sites refused, each headed by it).
+
+Every planted control is attributed in the assertion that checks it: the same input unplanted is
+accepted by the same decision there, the plant changed what the decision reads (a stored record, a
+term, an observation, a pin), and where the decision has parts or is refused at places the suite
+can name (conjuncts, sites, constants of `Sl`, roles), exactly those are asserted.
 
 The kernel as an oracle (`IxCCTests.Grounding.Oracle`), on both subjects: at every site-profile
 instance the direct route accepts, the kernel's own typing core (the front end's, over the
@@ -50,11 +56,15 @@ some other profile is refused by the walk at that profile; the walk's refused po
 `runRefused`'s. The counts (sites, site-profile instances, site-profile pairs where the kernel's
 datum holds) are asserted per subject.
 
-And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
-(`PUnit.unit` is a field-less constructor at index `0` in `Sl` beside `Bool.false`, so the check
-rejects it, as documented); an enumeration argument that is not its type's listed constructor
-fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and nothing in
-`groundCheck`.
+And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB` where
+`true` passes (`PUnit.unit` and `Eq.refl` are field-less constructors at index `0` in `Sl` beside
+`Bool.false`, so the check rejects it, as documented; the refusing constants asserted by key, and on
+`fib` `PUnit.unit` alone); an enumeration argument that is not its type's listed constructor fails
+`foArgsB` where `Bool.true` passes; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` where
+the pinned `Bool` passes, and nothing in `groundCheck`. On `tags16`, `Bool.rec`'s `true` rule given
+the `false` rule's right-hand side makes the direct route refuse 5 sites (in one constant); on
+`panic`, `String.ofList`'s codomain made `Nat` makes it refuse 25 more, each holding a string
+literal.
 
 Recursors (G3): with no recursor class admitted the check is the landed one, true on `fib`. On
 `tak` (`fixtures/ixon-v4/bench-k1/tak`), whose one recursor in `Sl` is `Eq.rec` (run by
@@ -267,6 +277,58 @@ def refusedSites (i : Input) : List (CId × Site) :=
     (runRefusedT tab i.src i.lpsOf i.ann c t e).map fun s => (c, s)
 
 def directOk (i : Input) : Bool := sitesDirectB i.src i.env i.κ i.lpsOf i.ann i.Sl
+
+/-! ### Attribution of the planted controls
+
+A planted control's refusal counts only where the same input unplanted is accepted by the same
+decision, asserted in the same place, and the plant changed what the decision reads (the stored
+record, term or datum differs from the unplanted one); where the decision is a list of parts, the
+parts that refuse are asserted exactly. The helpers below name what a control changed and where its
+decision refuses. -/
+
+/-- A stored constant's type (`none` where the reading does not store it). -/
+def typeAt (env : KEnv) (k : KKey) : Option KExpr := (env.find? k).map (·.toConstantVal.type)
+
+/-- Does a kernel term name the constant `k` anywhere in it? -/
+def namesKey (k : KKey) : KExpr → Bool
+  | .const k' _ => k' == k
+  | .app f a => namesKey k f || namesKey k a
+  | .lam d b _ => namesKey k d || namesKey k b
+  | .forallE d b _ => namesKey k d || namesKey k b
+  | .letE t v b _ => namesKey k t || namesKey k v || namesKey k b
+  | .proj _ _ e => namesKey k e
+  | _ => false
+
+/-- Does a site name the constant `k` in its function, its argument or its context? -/
+def siteNames (k : KKey) (s : Site) : Bool :=
+  namesKey k s.2.1 || namesKey k s.2.2 || s.1.any (namesKey k)
+
+/-- Is a site's head (its function's head) the constant `k`? -/
+def headIs (k : KKey) (s : Site) : Bool :=
+  match s.2.1.getAppFn with
+  | .const k' _ => k' == k
+  | _ => false
+
+/-- Does a kernel term hold a string literal? -/
+def hasStrLitK : KExpr → Bool
+  | .lit (.strVal _) => true
+  | .app f a => hasStrLitK f || hasStrLitK a
+  | .lam d b _ => hasStrLitK d || hasStrLitK b
+  | .forallE d b _ => hasStrLitK d || hasStrLitK b
+  | .letE t v b _ => hasStrLitK t || hasStrLitK v || hasStrLitK b
+  | .proj _ _ e => hasStrLitK e
+  | _ => false
+
+/-- The constants of `Sl` at which `resultTagB` refuses the pinned `Bool`'s observation `tag` (the
+decision is `Sl.all` of a condition per constant), by key. -/
+def tagRefusals (i : Input) (boolD : CId) (tag : Nat) : List KKey :=
+  (i.Sl.filter fun c => !resultTagB i.src i.env i.κ [c] (.enum boolD) (.ctor tag [])).map i.κ
+
+/-- A recursor's stored rules' right-hand sides. -/
+def recRhss (env : KEnv) (k : KKey) : List KExpr :=
+  match env.find? k with
+  | some (.recInfo _ _ _ rules) => rules.map fun (rl : Ix.Kernel.RecRule .anon) => rl.rhs
+  | _ => []
 
 /-- `expect` with its failure message computed only when the assertion fails (several messages
 count refused sites, a walk of the closure). -/
@@ -717,35 +779,69 @@ def run : IO Bool := do
     let pp := failing (mutateIndSort pj (pj.κ ps))
     expect a (pp == ["proj"])
       s!"structure c{ps} made a family of propositions: false conjuncts {pp}, expected [proj]"
-    -- the direct route's controls: each makes `sitesDirect` false and leaves `groundCheck` true
+    -- the direct route's controls: each makes `sitesDirect` false and leaves `groundCheck` true,
+    -- attributed in the same assertion: `fib` unplanted accepted by both, the planted constant's
+    -- stored type changed, and the refused sites counted, each naming the planted constant (the
+    -- argument's: 10 sites, in their function, argument or context; the head's: 3, as their head)
     let some (ia, ka) := mutateArgType i | throw (IO.userError "fib: no constant argument")
-    expectL a (!directOk ia && (failing ia).isEmpty) fun _ =>
-      s!"argument {ka}'s stored type made Nat: sitesDirect {directOk ia}, false conjuncts {failing ia}"
+    let ra := refusedSites ia
+    expectL a (directOk i && (failing i).isEmpty && typeAt i.env ka != typeAt ia.env ka &&
+        typeAt ia.env ka == some natK && !directOk ia && (failing ia).isEmpty && ra.length == 10 &&
+        ra.all (siteNames ka ·.2)) fun _ =>
+      s!"argument {ka}'s stored type made Nat: unplanted sitesDirect {directOk i}, false conjuncts \
+        {failing i}; stored type changed {typeAt i.env ka != typeAt ia.env ka}; planted sitesDirect \
+        {directOk ia}, false conjuncts {failing ia}, {ra.length} sites refused (expected 10), \
+        {(ra.filter (siteNames ka ·.2)).length} of them naming {ka}"
     let some (ih, kh) := mutateHeadDatum i | throw (IO.userError "fib: no head with a `never` binder")
-    expectL a (!directOk ih && (failing ih).isEmpty) fun _ =>
-      s!"head {kh}'s first binder datum made always: sitesDirect {directOk ih}, false conjuncts {failing ih}"
-    IO.println s!"direct-route controls: argument {ka}'s type made Nat, head {kh}'s datum made \
-      always a proposition: sitesDirect false, groundCheck true"
+    let rh := refusedSites ih
+    expectL a (directOk i && (failing i).isEmpty && typeAt i.env kh != typeAt ih.env kh &&
+        !directOk ih && (failing ih).isEmpty && rh.length == 3 && rh.all (headIs kh ·.2)) fun _ =>
+      s!"head {kh}'s first binder datum made always: unplanted sitesDirect {directOk i}; stored type \
+        changed {typeAt i.env kh != typeAt ih.env kh}; planted sitesDirect {directOk ih}, false \
+        conjuncts {failing ih}, {rh.length} sites refused (expected 3), \
+        {(rh.filter (headIs kh ·.2)).length} of them headed by {kh}"
+    IO.println s!"direct-route controls: argument {ka}'s type made Nat ({ra.length} sites refused, each \
+      naming it), head {kh}'s datum made always a proposition ({rh.length} sites refused, each headed \
+      by it): sitesDirect false, groundCheck true; fib unplanted: both true"
     IO.println s!"negative controls: each mutation falsifies exactly its conjunct \
       (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc}; Nat made Prop: caseShape; \
       structure c{ps} made Prop: proj)"
     -- the root's checks, on `decide`
     let some (di, boolD) := dec? | throw (IO.userError "no decide subject")
-    expect a (!resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
-      "decide: the observation `false` passes resultTag (expected the documented rejection)"
+    -- `resultTagB` at the observation `false` (tag 0): refused where `true` (tag 1) is accepted, at
+    -- exactly the field-less constructors at index 0 of `Sl` other than `Bool.false`: on `decide`
+    -- `PUnit.unit` and `Eq.refl`, on `fib` `PUnit.unit` alone (until GA the documented reason named
+    -- `PUnit.unit` alone on both)
+    let (r1, r0) := (resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 1 []),
+      resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
+    let (dt1, dt0) := (tagRefusals di boolD 1, tagRefusals di boolD 0)
+    expect a (r1 && !r0 && dt1.isEmpty && dt0 == [Ix.Kernel.punitUnitName, Ix.Kernel.eqReflName])
+      s!"decide: resultTag at the observation true {r1}, false {r0} (expected the documented \
+        rejection); refused at tag 1 at {dt1}, at tag 0 at {dt0}, expected [PUnit.unit, Eq.refl]"
+    let some fBool := i.src.known.bool | throw (IO.userError "fib: no pinned Bool")
+    let (ft1, ft0) := (tagRefusals i fBool 1, tagRefusals i fBool 0)
+    expect a (ft1.isEmpty && ft0 == [Ix.Kernel.punitUnitName])
+      s!"fib: resultTag of the pinned Bool refused at tag 1 at {ft1}, at tag 0 at {ft0}, expected [PUnit.unit]"
+    -- `foArgsB`: `Bool.true` accepted and `Nat.zero` refused as a `Bool` argument, in one assertion
     let some natZ := di.src.known.natZero | throw (IO.userError "decide: no pinned Nat.zero")
     let some tru := di.src.known.boolTrue | throw (IO.userError "decide: no pinned Bool.true")
-    expect a (foArgsB di.src di.κ [.enum boolD] [.con tru [] [] []] [.const (di.κ tru) []])
-      "decide: Bool.true is not a first-order Bool argument"
-    expect a (!foArgsB di.src di.κ [.enum boolD] [.con natZ [] [] []] [.const (di.κ natZ) []])
-      "decide: Nat.zero passes as a Bool argument"
+    let (fa1, fa0) := (foArgsB di.src di.κ [.enum boolD] [.con tru [] [] []] [.const (di.κ tru) []],
+      foArgsB di.src di.κ [.enum boolD] [.con natZ [] [] []] [.const (di.κ natZ) []])
+    expect a (fa1 && natZ != tru && !fa0)
+      s!"decide: foArgs on Bool.true {fa1} (expected true), on Nat.zero {fa0} (expected false)"
+    -- `boolListedB`: the pinned `Bool` accepted, the pin moved to `Nat` (another inductive) refused
     let some natD := di.src.known.nat | throw (IO.userError "decide: no pinned Nat")
     let dm := { di with src := { di.src with known := { di.src.known with bool := some natD } } }
-    expect a (!boolListedB dm.src natD) "decide: Bool re-pinned at Nat passes boolListed"
-    expect a (failing dm).isEmpty s!"decide: Bool re-pinned at Nat falsifies {failing dm}"
-    IO.println "root controls on decide: resultTag rejects `false` (PUnit.unit at index 0); \
-      foArgs rejects Nat.zero as a Bool argument; boolListed rejects Bool re-pinned at Nat, \
-      groundCheck unaffected"
+    expect a (boolListedB di.src boolD && natD != boolD && dm.src.known.bool == some natD &&
+        !boolListedB dm.src natD)
+      s!"decide: boolListed on the pinned Bool {boolListedB di.src boolD}, re-pinned at Nat \
+        {boolListedB dm.src natD}"
+    expect a ((failing di).isEmpty && (failing dm).isEmpty)
+      s!"decide: Bool re-pinned at Nat falsifies {failing dm} (unplanted {failing di})"
+    IO.println s!"root controls on decide: resultTag accepts `true` and rejects `false`, at \
+      {dt0.length} constants of Sl (PUnit.unit, Eq.refl; on fib PUnit.unit alone); foArgs accepts \
+      Bool.true and rejects Nat.zero as a Bool argument; boolListed accepts the pinned Bool and \
+      rejects Bool re-pinned at Nat, groundCheck unaffected"
     -- G2b. Levels: `imax a a` against `a`, and controls that differ at some assignment
     let u : Ix.Kernel.Level := .param 0
     let w : Ix.Kernel.Level := .param 1
@@ -782,10 +878,18 @@ def run : IO Bool := do
       s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 76)"
     let some br := boolRec? ti.env | throw (IO.userError "tags16: no Bool.rec in the reading")
     let tm := mutateRecRules ti br
-    expect a (!directOk tm) "tags16: Bool.rec's `true` rule given the `false` rule's right-hand side, and sitesDirect is still true"
+    -- attributed: `tags16` unplanted accepted, `Bool.rec`'s stored rules changed, and exactly 5
+    -- sites refused, all in c165 (sites whose conversion takes ι at `Bool.rec`)
+    let ttr := refusedSites tm
+    expectL a (directOk ti && recRhss ti.env br != recRhss tm.env br && !directOk tm &&
+        ttr.length == 5 && (ttr.map (·.1)).eraseDups == [165]) fun _ =>
+      s!"tags16: Bool.rec's `true` rule given the `false` rule's right-hand side: unplanted \
+        sitesDirect {directOk ti}, rules changed {recRhss ti.env br != recRhss tm.env br}; planted \
+        sitesDirect {directOk tm}, {ttr.length} sites refused (expected 5) in {(ttr.map (·.1)).eraseDups} \
+        (expected [165])"
     IO.println s!"tags16: sitesDirect true, the kernel agrees at all {tt.acceptedInstances} accepted \
-      site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false ({(refusedSites tm).length} \
-      sites refused)"
+      site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false \
+      ({ttr.length} sites refused, in c165)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
     -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
     -- telescope's width costs no fuel), the kernel agreeing. 698 sites since the closure carries
@@ -801,12 +905,24 @@ def run : IO Bool := do
     expect a ((pt.sites, pt.accepted) == (698 + 405, 698))
       s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 698 of {698 + 405}"
     let pm := mutateStringOfList pa
-    let npm := (refusedSites pm).length
-    expect a (npm > (refusedSites pa).length)
-      s!"panic: String.ofList's codomain made Nat, and no more site is refused"
+    -- attributed: `String.ofList`'s stored type changed; the 405 sites refused unplanted (under the
+    -- `let`s) still refused, and exactly 25 more, each holding a string literal (whose type the route
+    -- reads off `String.ofList`) in its function or argument, all in the two constants whose run terms
+    -- hold string literals, c363 and c322 (`IxCCTests.Grounding.Zeta`)
+    let sk := Ix.Kernel.stringOfListName
+    let (paR, pmR) := (refusedSites pa, refusedSites pm)
+    let pnew := pmR.filter (!paR.contains ·)
+    expectL a (typeAt pa.env sk != typeAt pm.env sk && paR.length == 405 && paR.all pmR.contains &&
+        pmR.length == 405 + 25 && pnew.length == 25 &&
+        pnew.all (fun (_, _, f, x) => hasStrLitK f || hasStrLitK x) &&
+        (pnew.map (·.1)).eraseDups == [363, 322]) fun _ =>
+      s!"panic: String.ofList's codomain made Nat: type changed {typeAt pa.env sk != typeAt pm.env sk}; \
+        {paR.length} sites refused unplanted (expected 405), {pmR.length} planted (expected 430), \
+        {pnew.length} new (expected 25), {(pnew.filter fun (_, _, f, x) => hasStrLitK f || hasStrLitK x).length} \
+        of them holding a string literal, in {(pnew.map (·.1)).eraseDups} (expected [363, 322])"
     IO.println s!"panic: {pt.accepted} of {pt.sites} sites accepted, the kernel agrees at all \
       {pt.acceptedInstances} accepted instances; String.ofList's codomain made Nat: \
-      {npm} refused"
+      {pmR.length} refused, {pnew.length} more, each holding a string literal, in c363 and c322"
     -- the renaming-tolerant `case` shape, on `OS16-plain`: `List.casesOn`'s recursor names its
     -- level parameters apart; the landed check refused the closure at `caseShape` alone
     let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []

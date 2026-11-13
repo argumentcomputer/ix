@@ -23,7 +23,8 @@ typing routes list the value's sites in the λs' context (`evalSites`, `evalSite
   case), on the closure and at each of its four roots, where 1b's decision holds.
 * **Planted, on `fib`'s root**: `let x := v; (λ (_ : Nat). x) 0` and, at depth 2,
   `let x := v; (λ (_ : Nat) (_ : Nat). x) 0 0` are accepted by the witness case alone, every
-  conjunct true, SrcEval still reads back `55`. Refused: a domain that is not a closed constant
+  conjunct true, SrcEval still reads back `55` (attributed: the decider as landed with step C,
+  `Zeta.corrSBClo`, accepts `fib`'s root unplanted and refuses each plant, whose run term differs). Refused: a domain that is not a closed constant
   (`Nat → Nat`) and a copy under a `∀`, at `valueCorr` alone; a closed constant domain with no
   stored constant of that type (the root's own key), at `letWit` alone. The live plant, the
   closure-capture plant and the closure-capture plant whose copy is not the value are not seen
@@ -145,18 +146,28 @@ def run : IO Bool := do
     let accepted (j : Input) : Bool :=
       (runPairsB j.src j.env j.κ j.rootId).all fun (t, e) =>
         corrSB j.κ (j.lpsOf j.rootId) [] t e && !Zeta.corrSBClo j.κ (j.lpsOf j.rootId) [] t e
+    -- attributed (GA): the decider as landed with step C (`Zeta.corrSBClo`) accepts `fib`'s root
+    -- unplanted, and each plant changed the run term it reads, so its refusal is the shape's
+    let cloFib := (runPairsB fi.src fi.env fi.κ fi.rootId).all fun (t, e) =>
+      Zeta.corrSBClo fi.κ (fi.lpsOf fi.rootId) [] t e
+    let changed (j : Input) : Bool := (runPairsB fi.src fi.env fi.κ fi.rootId).map (·.2) !=
+      (runPairsB j.src j.env j.κ j.rootId).map (·.2)
     let some wit1 := Zeta.setRoot fi (lt v (app (lam natT (.var 1)) (.natLit 0)))
         (some (.app (.lam natK val bmN) (litE 0))) | throw (IO.userError "fib: wit1")
-    expect a ((failing wit1).isEmpty && accepted wit1 && Zeta.fibOut wit1 == some (.nat 55))
-      s!"letWit: fib, let x := v; (λ (_ : Nat). x) 0: false conjuncts {failing wit1}, the \
-        witness case alone {accepted wit1}, read back {repr (Zeta.fibOut wit1)}"
+    expect a ((failing wit1).isEmpty && cloFib && changed wit1 && accepted wit1 &&
+        Zeta.fibOut wit1 == some (.nat 55))
+      s!"letWit: fib, let x := v; (λ (_ : Nat). x) 0: false conjuncts {failing wit1}, step C's \
+        decider on fib's root unplanted {cloFib}, the run term changed {changed wit1}, the witness \
+        case alone {accepted wit1}, read back {repr (Zeta.fibOut wit1)}"
     let some wit2 := Zeta.setRoot fi
         (lt v (app (app (lam natT (lam natT (.var 2))) (.natLit 0)) (.natLit 0)))
         (some (.app (.app (.lam natK (.lam natK val bmN) bmN) (litE 0)) (litE 0)))
         | throw (IO.userError "fib: wit2")
-    expect a ((failing wit2).isEmpty && accepted wit2 && Zeta.fibOut wit2 == some (.nat 55))
+    expect a ((failing wit2).isEmpty && cloFib && changed wit2 && accepted wit2 &&
+        Zeta.fibOut wit2 == some (.nat 55))
       s!"letWit: fib, let x := v; (λ (_ : Nat) (_ : Nat). x) 0 0: false conjuncts \
-        {failing wit2}, the witness case alone {accepted wit2}, read back {repr (Zeta.fibOut wit2)}"
+        {failing wit2}, step C's decider on fib's root unplanted {cloFib}, the run term changed \
+        {changed wit2}, the witness case alone {accepted wit2}, read back {repr (Zeta.fibOut wit2)}"
     let fnT : Term := .pi default default natT natT
     let some nonConst := Zeta.setRoot fi (lt v (app (lam fnT (.var 1)) (.natLit 0)))
         (some (.app (.lam (.forallE natK natK bmN) val bmN) (litE 0)))

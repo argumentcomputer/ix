@@ -1081,9 +1081,12 @@ the check accepts (`natural` included, where `headRegimeResB` is false). In `tes
 before step C) that 1a's reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s
 direct-refused site decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
 first `∀` datum made a proposition, its unfolding made endless, its first λ datum made a proposition:
-75, on the 25 closures with a δ site; a constant with a bound-variable head, its λ domains' `∀` data
-made propositions: 32; for an `eqn` entry the plant goes into its equation theorem's type, where its
-run term is read, and each plant is attributed: the unplanted reading true per spine and per site,
+75, on the 25 closures with a δ site, each changing the definition's stored value, 72 attributed (the
+unplanted reading true per spine and per site) and the 3 on `diag` reported as not attributable,
+since `diag` is refused unplanted for its projection heads (until GA they were counted as passes); a
+constant with a bound-variable head, its λ domains' `∀` data made propositions: 32, 31 attributed and
+`diag`'s reported likewise; for an `eqn` entry the plant goes into its equation theorem's type, where
+its run term is read, and each plant is attributed: the unplanted reading true per spine and per site,
 the planted run term differing from the unplanted one; at `closures` the plant into the stored value
 of the `eqn` entry c139 changed nothing the decision reads, and was refused only while the η-short
 spines made `headRegimeSB` false). **The η-short step, measured and controlled**
@@ -1092,7 +1095,9 @@ reader, frozen in the test tree at `27006d16b`, on all 8,305 spines of the 51 cl
 read are read identically and exactly 10 more are read, all at `phase2-closures/closures` c38, whose
 context types meet the one η-short definition of the corpus (`#d706c4869d04`: no level parameter in
 its stored record, a value with no λ applied to one argument), and accepted, so `headRegimeSB` holds on
-`closures`; refused, each planted on `closures` (every one of the ten spines and the closure): the
+`closures`; refused, each planted on `closures` (every one of the ten spines and the closure, each
+plant attributed: the ten spines and the closure accepted unplanted, every spine read otherwise
+planted): the
 definition's value made `Type` (the unfolding is not a `∀`), made the definition itself (the unfolding
 never ends: fuel), the applied definition's first λ datum made a proposition; and in synthetic
 readings, a value with one λ applied to three arguments reads its datum and then exactly what the
@@ -1960,8 +1965,11 @@ variables of their stored types) is that constructor's minor premise applied to
 its fields, and, where the entry has two or more minor premises, not another one.
 
 **What `ResultTag` rejects on the committed closures.** Both closures' `Sl`
-hold `PUnit.unit` (index `0`, no parameters, no fields) beside `Bool.false`, so
-`ResultTag` fails at tag `0`: on these closures every `Bool` root that returns
+hold `PUnit.unit` (index `0`, no parameters, no fields) beside `Bool.false`, and
+`decide`'s also `Eq.refl` (index `0`, two parameters, no fields), so `ResultTag`
+fails at tag `0`, at exactly those constants (`tests-grounding` asserts them by
+key, on both closures: `PUnit.unit` on `fib`, `PUnit.unit` and `Eq.refl` on
+`decide`; until GA this paragraph named `PUnit.unit` alone): on these closures every `Bool` root that returns
 `false` is rejected (for instance `decide (fib 10 = 56)`), and every root whose
 result type is an enumeration other than `Bool` and that returns its
 constructor `0`. Roots returning `true` (tag `1`) and every `Nat` root pass.
