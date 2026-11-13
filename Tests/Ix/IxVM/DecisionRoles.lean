@@ -6,8 +6,9 @@ public import Tests.Ix.IxVM.Harness
 
 /-! # Decisions under a compiled binding
 
-A compiled artifact binds the roles its closure reaches, closed under
-`Role.deps` (`Ix.RoleBinding.Compile.supportInput`). When IxVM answered a native
+A compiled artifact binds the roles its closure reaches, the prelude's and the
+axiom roles, closed under `Role.deps` (`Ix.RoleBinding.Compile.supportInput`,
+`alwaysBound`). When IxVM answered a native
 `Nat` or `Int` decision with `Decidable.isTrue p (of_decide_eq_true p d rfl)` or
 `Decidable.isFalse p (of_decide_eq_false p d rfl)`, it refused a claim whose
 binding did not bind the role it used, and a binding without those roles lost
@@ -21,10 +22,13 @@ the decisions' dependencies on the `of_decide_eq_*` roles (`IxC/Kernel/Roles.lea
 and a binding may bind a decision without them.
 
 The case compiles that constant's closure as `ix compile --consts` does
-(`Ix.CompileM.compileAndFinalize`). It checks that the binding binds `Nat.decEq`,
-reports whether it binds the `of_decide_eq_*` roles, and submits the constant as
-a one-constant shard (`buildShardCheckEnvWitness`), validating the binding as
-`ix prove --aggregate` does: the shard must be accepted either way.
+(`Ix.CompileM.compileAndFinalize`). It checks that the binding binds `Nat.decEq`
+and the three axiom roles, reports whether it binds the `of_decide_eq_*` roles,
+and submits the constant as a one-constant shard (`buildShardCheckEnvWitness`),
+validating the binding as `ix prove --aggregate` does: the shard must be
+accepted either way. A claim names the artifact's unbound axioms as user
+axioms (`Ix.ClaimContext.userAxioms`), which IxVM admits only under a binding
+of the axiom roles.
 -/
 
 public section
@@ -38,8 +42,9 @@ open Ix.Kernel (Role RoleTable)
 def leaf : Lean.Name :=
   .str (.str (.str (.num `_private.Init.Data.Array.Extract 0) "Array") "extract_append") "_proof_1_1"
 
-/-- The roles the leaf's check uses, which its binding must bind. -/
-def required : List Role := [.natDecEq]
+/-- The roles the leaf's check uses, which its binding must bind: `Nat.decEq`, and
+the axiom roles its user axioms need bound. -/
+def required : List Role := .natDecEq :: Ix.Kernel.Admission.userAxiomRoles
 
 /-- The roles a decision depended on before specification version 6; reported, not required. -/
 def formerDeps : List Role := [.ofDecideEqTrue, .ofDecideEqFalse]
