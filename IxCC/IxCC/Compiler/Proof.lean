@@ -206,9 +206,11 @@ namespace IxCC.Recheck
 open IxCC.Sem (Obs Lang)
 open IxCC.Lam.Erase.Proof (CheckedProgram)
 
-theorem runWithContracts_parts {cfg : Config} {P : Src.Program} {c : Cert} {artifact : Artifact}
-    (accepted : runWithContracts cfg P c = .ok artifact) :
-    run cfg P c = .ok artifact ∧
+/-- What `runWithContracts` accepts at any parameter limit: `run`'s artifact, whose program is
+within the limit and passes the contract-aware check of its canonical map. -/
+theorem runWithContracts_ok {cfg : Config} {P : Src.Program} {c : Cert} {params : Nat}
+    {artifact : Artifact} (accepted : runWithContracts cfg P c params = .ok artifact) :
+    run cfg P c = .ok artifact ∧ Own.Plain.Certificate.paramTotal artifact.fir ≤ params ∧
       Own.Plain.checkContractPlainMap artifact.fir (Own.Plain.Program.canonical artifact.fir).bodies = true := by
   unfold runWithContracts at accepted
   cases hrun : run cfg P c with
@@ -216,12 +218,31 @@ theorem runWithContracts_parts {cfg : Config} {P : Src.Program} {c : Cert} {arti
   | ok a =>
     rw [hrun] at accepted
     simp only [bind, Except.bind] at accepted
-    split at accepted
-    · next hown =>
-      simp only [pure, Except.pure, Except.ok.injEq] at accepted
-      subst accepted
-      exact ⟨rfl, (Artifact.checkContractOwn_iff a).mp hown⟩
-    · cases accepted
+    cases hp : Own.Plain.Certificate.checkParamTotal params a.fir with
+    | error e => simp only [hp, Except.mapError] at accepted; cases accepted
+    | ok u =>
+      simp only [hp, Except.mapError] at accepted
+      split at accepted
+      · next hown =>
+        simp only [pure, Except.pure, Except.ok.injEq] at accepted
+        subst accepted
+        exact ⟨rfl, Own.Plain.Certificate.checkParamTotal_ok.mp hp,
+          (Artifact.checkContractOwn_iff a).mp hown⟩
+      · cases accepted
+
+theorem runWithContracts_parts {cfg : Config} {P : Src.Program} {c : Cert} {artifact : Artifact}
+    (accepted : runWithContracts cfg P c = .ok artifact) :
+    run cfg P c = .ok artifact ∧
+      Own.Plain.checkContractPlainMap artifact.fir (Own.Plain.Program.canonical artifact.fir).bodies = true :=
+  ⟨(runWithContracts_ok accepted).1, (runWithContracts_ok accepted).2.2⟩
+
+/-- **The zero-RC route's domain check runs on a bounded program**: an artifact `runWithContracts`
+accepts has at most `params` parameters over its functions and join points
+(`Own.Plain.Certificate.paramTotal`), refused before the check walked them. -/
+theorem runWithContracts_paramTotal {cfg : Config} {P : Src.Program} {c : Cert} {params : Nat}
+    {artifact : Artifact} (accepted : runWithContracts cfg P c params = .ok artifact) :
+    Own.Plain.Certificate.paramTotal artifact.fir ≤ params :=
+  (runWithContracts_ok accepted).2.1
 
 theorem compileInputWithContracts_parts {cfg : Config} {inp : Input} {cert : Cert} {artifact : Artifact}
     (accepted : compileInputWithContracts cfg inp = .ok (cert, artifact)) :

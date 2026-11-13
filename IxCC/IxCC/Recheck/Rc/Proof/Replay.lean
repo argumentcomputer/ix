@@ -89,4 +89,13 @@ theorem runFront_budget {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     Own.Plain.Certificate.capturedWork f.own.bodies ≤ Anf.maxCapturedWork :=
   Own.Plain.Certificate.admit_budget (runFront_spec accepted).2.2.2.2.1
 
+/-- **The source-domain check runs on a bounded program.** Each of the three runs of the checker
+starts with the source-domain check (`programDomain`), which walks every parameter of every
+function and join point; the program they judge has at most `Anf.maxParamTotal` of them
+(`Own.Plain.Certificate.paramTotal`), because `admit` refused any other first. -/
+theorem runFront_paramTotal {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (accepted : runFront cfg P c = .ok f) :
+    Own.Plain.Certificate.paramTotal f.fir ≤ Anf.maxParamTotal :=
+  Own.Plain.Certificate.admit_paramTotal (runFront_spec accepted).2.2.2.2.1
+
 end IxCC.Recheck.RcReplay
