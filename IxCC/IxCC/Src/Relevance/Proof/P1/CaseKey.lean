@@ -311,7 +311,8 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
         omega
       have hig : IgnoresSlot sm m := by
         refine hfire.minors c _ rfl hshape (np + 1 + ni + 1 + j) j j ?_ sm hsm rule.ctor kr.fields ?_ m hm hwe
-        · simp only [List.mem_map, List.mem_range]
+        · show (np + 1 + ni + 1 + j, j, j) ∈ (List.range nmin).map fun j => (np + 1 + ni + 1 + j, j, j)
+          simp only [List.mem_map, List.mem_range]
           exact ⟨j, hjlt, rfl⟩
         · simp [ruleCtorFields, hd, hrule, hkr]
       exact ignoresAt_of_slot hig hmv
@@ -377,7 +378,9 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
             · obtain ⟨v, hv, rfl⟩ := List.mem_map.1 hs
               obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 hv
               have hvi : v.isIrr = false := by
-                cases v <;> simp_all [Value.isIrr, MarkerSlot]
+                cases v with
+                | irr t ρ' l' => exact (hms ⟨t, ρ', l', rfl⟩).elim
+                | _ => rfl
               exact .val (hread i v hi (Or.inr hvi)) (hwhole i v hi)
             · rw [List.getElem?_map] at hs
               cases hv : fs[m]? with
@@ -390,7 +393,7 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
                   obtain ⟨_, _, _, h⟩ := hms
                   cases h
                   rfl
-                rcases hex with hwe' | ⟨w, srcs, i', d, hkd, -⟩
+                rcases hex with hwe' | ⟨w, srcs, i', d, hkd, -, -, -⟩
                 · cases hrule : rules[j]? with
                   | none => rw [hrule] at hwe'; cases hwe'
                   | some rule =>
@@ -428,7 +431,7 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
     | _ => rw [hfm] at hch; cases hch
   | subsingleton w srcs =>
     simp only [caseChosen, Sem.Result.ok.injEq, Prod.mk.injEq] at hch
-    obtain ⟨rfl, rfl⟩ := hch
+    obtain ⟨rfl, hfields⟩ := hch
     -- the raw kind
     have hraw : p.table.recKindOf r = some (.subsingleton w srcs) := by
       cases hr : p.table.recKindOf r with
@@ -444,12 +447,11 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
           · cases hk
         | _ => simp [RecKind.atLevels] at hk
     -- a field slot: an index argument of the key, or the marker
-    have hslot : ∀ m s, (srcs.map fun
-        | .index i => args.getD (np + 1 + i) (Slot.irrNone ls)
-        | .proof => Slot.irrNone ls)[m]? = some s → ¬ MarkerSlot s →
+    have hflen : fields.length = srcs.length := by rw [← hfields, List.length_map]
+    have hslot : ∀ m s, fields[m]? = some s → ¬ MarkerSlot s →
         ∃ i', srcs[m]? = some (.index i') ∧ args[np + 1 + i']? = some s := by
       intro m s hs hms
-      rw [List.getElem?_map] at hs
+      rw [← hfields, List.getElem?_map] at hs
       cases hsrc : srcs[m]? with
       | none => rw [hsrc] at hs; cases hs
       | some src =>
@@ -485,7 +487,6 @@ theorem fields_F5 (hf : Facts p ann ch) (hs : ShapeOk p) {k : Nat} {c r : CId} {
           have hcf : ctorFields p rule = nf3 := by simp [ctorFields, hdr3]
           have hmlt : m < kr.fields.length := by
             have := (List.getElem?_eq_some_iff.1 hs).1
-            simp only [List.length_map] at this
             omega
           exact hminor rule kr m hrule hkr hmlt hwe'
       · simp only [RecKind.subsingleton.injEq] at hkd
