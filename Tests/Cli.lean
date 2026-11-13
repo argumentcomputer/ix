@@ -422,6 +422,9 @@ private def Tests.Cli.testCheckIxeExits : IO Unit := do
       unless out.exitCode == code && (needle.isEmpty || (out.stderr.splitOn needle).length > 1) do
         throw <| IO.userError s!"kernel-check-ixe on the {label} artifact: exit {out.exitCode}, \
 expected {code} with '{needle}'\n{out.stdout}\n{out.stderr}"
+  finally
+    IO.FS.removeDirAll dir
+
 /-! ## The kernel's limits as settings (`IxCK/Host/Limits.lean`, `docs/kernel.md`, "Limits at
 the command line, and exit codes"): each limit lowered and raised by its flag and by its
 variable, the flag over the variable, malformed values, the address-space refusal, on
