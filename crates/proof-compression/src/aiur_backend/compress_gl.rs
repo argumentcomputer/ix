@@ -14,6 +14,7 @@ use crate::{
 use aiur::{
   Execution,
   artifact::WidePackage,
+  budget::{RecordPool, RecordReservation},
   bytecode::CheckedProgram,
   field::FieldBackend,
   trace::{TracePlan, stark::planning},
@@ -208,6 +209,34 @@ impl Wrapper {
   }
 
   pub fn execute<'a>(&self, input: &'a Input) -> Result<Executed<'a>, String> {
+    self.execute_inner(input, None)
+  }
+
+  /// Limit resident interpreter storage, including temporary growth. Program
+  /// artifacts, source advice and prover workspaces are separate allocations.
+  pub fn execute_with_record_limit<'a>(
+    &self,
+    input: &'a Input,
+    max_record_bytes: usize,
+  ) -> Result<Executed<'a>, String> {
+    if max_record_bytes == 0 {
+      return Err("CompressGL record limit must be positive".into());
+    }
+    let pool = RecordPool::new(max_record_bytes, max_record_bytes);
+    let reservation = pool
+      .try_admit()
+      .map_err(|error| error.to_string())?
+      .ok_or("CompressGL record reservation unavailable")?;
+    let execution = self.execute_inner(input, Some(&reservation))?;
+    reservation.finish_execution();
+    Ok(execution)
+  }
+
+  fn execute_inner<'a>(
+    &self,
+    input: &'a Input,
+    reservation: Option<&RecordReservation>,
+  ) -> Result<Executed<'a>, String> {
     let started = Instant::now();
     let advice = stark_verifier::advice(
       Bn254,
@@ -218,8 +247,13 @@ impl Wrapper {
     let prepared =
       stark_verifier::prepare_compress_gl_advice(&self.program, &advice)?;
     let args = arguments(input.statement());
-    let record =
-      prepared.execute(ENTRY, args.clone()).map_err(|e| e.to_string())?;
+    let record = match reservation {
+      Some(reservation) => {
+        prepared.execute_reserved(ENTRY, args.clone(), reservation)
+      },
+      None => prepared.execute(ENTRY, args.clone()),
+    }
+    .map_err(|error| error.to_string())?;
     if !record.output.is_empty() {
       return Err("CompressGL returned non-unit output".into());
     }
@@ -341,6 +375,27 @@ impl Wrapper {
     setup: &SetupConfig,
     capacity: Capacity,
   ) -> Result<Proven, String> {
+    self.prove_inner(execution, setup, capacity, None)
+  }
+
+  /// Reproduce the caller-pinned key before allocating execution traces.
+  pub fn prove_with_expected_key(
+    &self,
+    execution: &Executed<'_>,
+    setup: &SetupConfig,
+    capacity: Capacity,
+    expected_key_digest: &[u8; 32],
+  ) -> Result<Proven, String> {
+    self.prove_inner(execution, setup, capacity, Some(expected_key_digest))
+  }
+
+  fn prove_inner(
+    &self,
+    execution: &Executed<'_>,
+    setup: &SetupConfig,
+    capacity: Capacity,
+    expected_key_digest: Option<&[u8; 32]>,
+  ) -> Result<Proven, String> {
     let profile = self.profile(execution)?;
     if profile.max_height > capacity.height()?
       || profile.quotient_degree > capacity.quotient_degree
@@ -355,6 +410,11 @@ impl Wrapper {
     let backend = Backend::new(&self.plan, config)?;
     let portable = backend.verifying_key()?;
     let key = portable.to_bytes()?;
+    if expected_key_digest
+      .is_some_and(|expected| blake3::hash(&key).as_bytes() != expected)
+    {
+      return Err("CompressGL proving key differs from the trusted pin".into());
+    }
     let setup_seconds = started.elapsed().as_secs_f64();
     let started = Instant::now();
     let witness =

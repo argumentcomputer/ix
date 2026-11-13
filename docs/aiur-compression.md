@@ -1115,3 +1115,20 @@ verifier-path pins remain unchanged. The installed Ignition prefix contains
 exactly `2^26` G1 powers, three fewer than gnark needs for a PLONK domain of
 that size. Extending it from the same authenticated ceremony is separate
 parameter preparation, and does not require changing the ceremony bound.
+
+## 24. Reusable GL-to-BN host chain
+
+The host `chain` API composes bounded GL execution with a configured positive
+number of BN stages. Verifier loading authenticates artifacts and portable
+keys, checks their graphs and public capacities, and derives the policy from
+source-key digests and physical entry IDs. It needs no proving powers.
+Prover preparation reproduces both keys; each stage checks admission before
+allocating its execution-dependent traces. GL proving can be saved and resumed.
+
+The proof envelope carries only the stage, canonical accumulator and final
+outer proof. The original root statement and trusted assets remain external.
+Native acceptance verifies the outer proof and the carried pairing under
+those assets. A [real small FRI root](measurements/aiur-chain-host.json) passes GL and one BN stage, independent
+verifier reloading, and rejection of altered root statements, stages,
+accumulators and trailing bytes. This validates host composition with
+development parameters, not the final PLONK stage or Init performance.
