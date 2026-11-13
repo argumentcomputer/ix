@@ -170,6 +170,129 @@ theorem stageSumFormerJ (mp : EnvModelM V μ env)
     exact hTlaws m₂ hac
 
 
+/-- **The P step at the sum former's cons, storing the declared former** `cvS`, checked and
+definitionally equal to the telescope constant `cvTa` the block's data read (as
+`stageFixFormerDeclJ`). -/
+theorem stageSumFormerDeclJ (mp : EnvModelM V μ env)
+    (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
+    {J : Judgements md} (hfr : JudgeFrames J env) (hJ : JudgeSound J mp.base2)
+    {p : InductiveShape md} {cvT cvTa cvTS cvS : ConstantVal md}
+    (hccv : ConstantValCheckJ J env cvT cvTa)
+    (hname₀ : cvT.name = p.cvT.name)
+    (hccvS : ConstantValCheckJ J env cvTS cvS) (hnameS : cvTS.name = p.cvT.name)
+    (hdq : J.defeq env 0 cvS.type cvTa.type)
+    (hlpsS : cvS.levelParams = cvTa.levelParams)
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
+    (Fss : (LevelParam → Nat) → List (List AnnotTerm))
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
+      (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) → Fss ψ₁ = Fss ψ₂)
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow (p.nP + p.nIdx) Fs)
+    (hFssOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V ((pps ψ).map (·.2.2)).reverse ρ →
+      SumFieldsOkB (p.resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
+    (caps : IndCaps md)
+    (hicw : Ix.Kernel.IndCapsWF (.indInfo cvS caps))
+    (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvS caps :: env.consts⟩,
+      m₂.acval = acvalWith mp.base2.acval cvS.name
+        (fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)) →
+      CapsLawsAt m₂ cvS.name cvS caps) :
+    ∃ mp' : EnvModelM V μ ⟨.indInfo cvS caps :: env.consts⟩,
+      mp'.base2.acval = acvalWith mp.base2.acval cvS.name
+        (fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)) := by
+  obtain ⟨type', ⟨hfind', -, -, -, -, -, -, -, -, -⟩, hty⟩ := id hccv
+  have hfind := Option.isNone_iff_eq_none.mp hfind'
+  have hname : cvTa.name = p.cvT.name := by rw [hty]; exact hname₀
+  have hfresh : env.find? cvTa.name = none := by
+    rw [hname, ← hname₀]; exact hfind
+  obtain ⟨typeS, ⟨-, hnresS, hpshapeS, -, hlbS, hifS, hannS, -, htrS, _, _, hstS, -⟩,
+    htyS⟩ := id hccvS
+  have hSn : cvS.name = cvTa.name := by rw [htyS, hname]; exact hnameS
+  have hfreshS : env.find? cvS.name = none := by rw [hSn]; exact hfresh
+  have htyS' : cvS.type = typeS := by rw [htyS]
+  obtain ⟨htfS, hbS⟩ := hfr.annot_syntax hannS hifS hlbS
+  have hcbS : ConstsBound env cvS.type :=
+    constsBound_of_constsResolve _ (by rw [htyS']; exact htrS)
+  have hwfI : Ix.Kernel.EnvWF ⟨.indInfo cvS caps :: env.consts⟩ :=
+    envWF_cons_indJ hfr mp.base2.wf hccvS hicw
+  let A : (LevelParam → Nat) → AnnotTerm :=
+    fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)
+  have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
+    sumTyAV_below (hFD.below ψ)
+      (by rw [hFD.len ψ, Nat.zero_add]; exact hFssBelow ψ)
+  have hwalks := formerWalksS hFD hFssOk
+  -- the declared type at the pre-block environment: read, graded, valued as the telescope
+  have hwS : Expr.WScoped 0 typeS := Expr.WScoped.of_not_hasFvar htfS
+  have hLS : Expr.LeavesBounded typeS := Expr.LeavesBounded.of_not_hasFvar htfS
+  have hnilS : typeS.fvarLeaves = [] := Expr.fvarLeaves_eq_nil_of_not_hasFvar htfS
+  have hdq' : J.defeq env 0 typeS cvTa.type := by rw [← htyS']; exact hdq
+  have hreadS : ∀ ψ, ∃ Ta, denoteMeta mp.base2.acval env ψ 0 cvS.type = some Ta ∧
+      (∀ ρ : Nat → V, WellDenotedV V ρ Ta) ∧
+      ∀ ρ : Nat → V, interp V ρ Ta = interp V ρ (mkPisAV (pps ψ) (.sort (p.resSort.eval ψ))) := by
+    intro ψ
+    obtain ⟨Ta, hTa⟩ := hJ.accepted ψ hstS hwS hbS hLS
+    obtain ⟨-, -, hokT, -, -⟩ := inferRowJ hJ hstS hwS hbS hLS (CtxOk.nil hnilS) hTa
+    have hokT' : ∀ ρ : Nat → V, WellDenotedV V ρ Ta := fun ρ => hokT ρ (Sat_nil V ρ)
+    have hTf := hFD.tf
+    have hTb := hFD.tb
+    refine ⟨Ta, by rw [htyS']; exact hTa, hokT', fun ρ => ?_⟩
+    exact (hJ.defeq ψ) hdq' hwS hbS hLS (Expr.WScoped.of_not_hasFvar hTf) hTb
+      (Expr.LeavesBounded.of_not_hasFvar hTf) (CtxOk.nil hnilS)
+      (CtxOk.nil (Expr.fvarLeaves_eq_nil_of_not_hasFvar hTf)) hTa (hFD.read ψ)
+      (fun ρ _ => hokT' ρ) (fun ρ _ => hFD.okTy ψ ρ) ρ (Sat_nil V ρ)
+  have hreadI : ∀ ψ (Ta : AnnotTerm), denoteMeta mp.base2.acval env ψ 0 cvS.type = some Ta →
+      denoteMeta (acvalWith mp.base2.acval cvS.name A)
+        ⟨.indInfo cvS caps :: env.consts⟩ ψ 0 cvS.type = some Ta := fun ψ _ hTa =>
+    denoteMeta_cons_mono (c₀ := .indInfo cvS caps) hfreshS
+      (ConsCrossAt.ofNtc fun _ h => nomatch h) ψ 0 hcbS hTa
+  have hnresI : Ix.Kernel.reservedBasisNames.contains
+      (ConstantInfo.indInfo cvS caps).name = false := by
+    show Ix.Kernel.reservedBasisNames.contains cvS.name = false
+    rw [htyS]; exact hnresS
+  have hpshapeI : (ConstantInfo.indInfo cvS caps).name.isProjFnShape = false := by
+    show cvS.name.isProjFnShape = false
+    rw [htyS]; exact hpshapeS
+  refine declStep_preserves_of_ind_member_cons mp (c₀ := .indInfo cvS caps)
+    (A := A) hfreshS hnresI (Or.inl ⟨_, _, rfl⟩)
+    (ConsHead.ofFresh hwfI (fun ψ => hAbelow ψ) hnresI
+      (fun _ h => nomatch h)
+      (fun _ _ _ _ h => nomatch h))
+    (fun ψ k => AnnotTerm.liftN_eq_self _
+      (Term.bvarsBelow.mono (Nat.zero_le k) (hAbelow ψ)) 1)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  · intro ψ₁ ψ₂ hφ
+    have hφ' : ∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q := by
+      rw [← hlpsS]; exact hφ
+    obtain ⟨hp, hw⟩ := hFD.params ψ₁ ψ₂ hφ'
+    show sumTyAV _ _ _ = sumTyAV _ _ _
+    rw [hp, hw, hFssParams ψ₁ ψ₂ hφ']
+  · exact fun ψ ρ => sumTyAV_wellDenoted (hwalks ψ ρ).1
+  · exact fun ψ ρ => (sumTyAV_wellDenotedV (hwalks ψ ρ).1 (hwalks ψ ρ).2).2
+  · intro ψ
+    obtain ⟨Ta, hTa, -, -⟩ := hreadS ψ
+    exact ⟨Ta, hreadI ψ Ta hTa⟩
+  · intro ψ ta hta ρ
+    obtain ⟨Ta, hTa, hok, -⟩ := hreadS ψ
+    obtain rfl := Option.some.inj ((hreadI ψ Ta hTa).symm.trans hta)
+    exact hok ρ
+  · intro ψ ta hta ρ
+    obtain ⟨Ta, hTa, -, heq⟩ := hreadS ψ
+    obtain rfl := Option.some.inj ((hreadI ψ Ta hTa).symm.trans hta)
+    rw [heq ρ]
+    exact sumTyAV_mem (hwalks ψ ρ).1
+  · intro m₂ hac
+    refine capsOk_cons_native mp (c₀ := .indInfo cvS caps)
+      (A := A) (T := cvS.name) hfreshS
+      (ConsCrossEnv.ofNtc fun _ h => nomatch h) hpshapeI
+      (Or.inl ⟨cvS, caps, rfl, rfl⟩)
+      (fun T' cvT' caps' hf _ hres hcape => hE₀ T' cvT' caps' hf hcape hres)
+      m₂ hac ?_
+    intro cvT caps' hf _
+    have hself := Ix.Kernel.Env.find?_cons_self (ConstantInfo.indInfo cvS caps) env
+    obtain ⟨rfl, rfl⟩ :=
+      ConstantInfo.indInfo.inj (Option.some.inj (hself.symm.trans hf))
+    exact hTlaws m₂ hac
+
 /-- The former's cons from its constant check run: `stageSumFormerJ` at the kernel's runs. -/
 theorem stageSumFormer (mp : EnvModelM V μ env)
     (hE₀ : Ix.Kernel.EtaFamiliesClosed env)

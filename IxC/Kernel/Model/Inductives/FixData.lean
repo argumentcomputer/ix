@@ -293,12 +293,12 @@ theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
-    {bs : List (Expr md × BinderMeta)} {ks : List RecFieldKind}
+    {cvS : ConstantVal md} {ks : List RecFieldKind}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = lps)
-    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
+    (hfT : env.find? T = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = lps)
+    (hZ : FormerZeroSrc T nP nIdx resSort cvTa cvS cvCa.type)
     (hks : ks.length = nF)
     (hopened : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cvCa.type nF ks = true) :
     ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
@@ -308,7 +308,7 @@ theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
       FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
         ks fvsP xFvs xrest Eiss tss := by
   obtain ⟨idxArgs, ds, Es, srcs, -, ⟨fvsP, crest, xFvs, xrest, hopP, hopX, hidxEq⟩, hCD⟩ :=
-    sumCtorDataJ hJ hI hS hCtor hfT hlpsT hstripT
+    sumCtorDataJ hJ hI hS hCtor hfT hlpsS hZ
   obtain ⟨fvsP', crest', xFvs', xrest', hopP', hopX', hO⟩ := fixOpened_of hopened
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopP'))
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopX.symm.trans hopX'))
@@ -363,8 +363,8 @@ theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
       rw [hfn, ← htake, List.take_append_drop]
     rw [hshape] at hread
     obtain ⟨fa, vs, hfa, hsp, hea⟩ := denoteMeta_mkAppN_inv hread
-    have hlpsT' : (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams = lps := by
-      simpa [ConstantInfo.toConstantVal] using hlpsT
+    have hlpsT' : (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams = lps := by
+      simpa [ConstantInfo.toConstantVal] using hlpsS
     have hfa' : fa = m.acval T ψ := by
       rw [denoteMeta_const hfT (by rw [hlpsT']; simp), hlpsT', Level.substFn_param_self] at hfa
       exact (Option.some.inj hfa).symm
@@ -414,22 +414,29 @@ theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
     -- the telescope's bits: the field's sort row, walked through the binders
     obtain ⟨fv, ty, u, hfv, -, hinf, hens, -, -⟩ := hrows i hi
     obtain rfl := Option.some.inj (hx.symm.trans hfv)
-    obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI _ hopA hinf hens
-    have hshape : body
-        = Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ body.getAppArgs.drop nP) := by
-      conv => lhs; rw [← Expr.mkAppN_getApp body]
-      rw [hfn, ← htake, List.take_append_drop]
-    rw [hshape] at hib
-    have hstripI : ((ConstantInfo.indInfo cvTa caps).toConstantVal.type.instantiateLevelParams
-        (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams (lps.map .param)).stripPis
-        (fvsP ++ body.getAppArgs.drop nP).length = some (bs, .sort resSort) := by
-      rw [show (ConstantInfo.indInfo cvTa caps).toConstantVal = cvTa from rfl,
-        hlpsT, Expr.instantiateLevelParams_self, List.length_append, hlenP, List.length_drop,
-        hlenA, Nat.add_sub_cancel_left]
-      exact hstripT
-    obtain rfl := hI.infer_spine_sort hib hfT hstripI
-    have hvb := hI.sort_sort hensb
-    rw [hvb] at hbits
+    -- the bits: read off the stored telescope's typing, or carried by the constructor
+    have hbits : ∀ φ, PiBitsOpen φ (Level.eval φ resSort = 0)
+        (x.fvarTypeD.piBinders).1.length (nP + i) x.fvarTypeD := by
+      rcases hZ with ⟨rfl, bs, hstripT⟩ | hz
+      · obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI _ hopA hinf hens
+        have hshape : body
+            = Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ body.getAppArgs.drop nP) := by
+          conv => lhs; rw [← Expr.mkAppN_getApp body]
+          rw [hfn, ← htake, List.take_append_drop]
+        rw [hshape] at hib
+        have hstripI : ((ConstantInfo.indInfo cvS caps).toConstantVal.type.instantiateLevelParams
+            (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams (lps.map .param)).stripPis
+            (fvsP ++ body.getAppArgs.drop nP).length = some (bs, .sort resSort) := by
+          rw [show (ConstantInfo.indInfo cvS caps).toConstantVal = cvS from rfl,
+            hlpsS, Expr.instantiateLevelParams_self, List.length_append, hlenP, List.length_drop,
+            hlenA, Nat.add_sub_cancel_left]
+          exact hstripT
+        obtain rfl := hI.infer_spine_sort hib hfT hstripI
+        have hvb := hI.sort_sort hensb
+        rw [hvb] at hbits
+        exact hbits
+      · exact famDomOk_open ((ctorZeroOk_open (nP + nF) hz hopAll).1 x
+          (List.mem_append_right _ (List.mem_of_getElem? hx))) hopA hfn
     refine ⟨tl, Eis, hlen, fun x' hx' => ?_, fun x' hx' => ?_, by rw [hentry, hR, hlenT], ?_,
       stripPisAV_denoteMeta_bits _ hopA (hdomRead ψ i x hx) hst⟩
     · obtain rfl := Option.some.inj (hx.symm.trans hx')
@@ -670,6 +677,6 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
       FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
         ks fvsP xFvs xrest Eiss tss :=
   fixCtorDataJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
-    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hlpsT hstripT hks hopened
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hlpsT (Or.inl ⟨rfl, _, hstripT⟩) hks hopened
 
 end Ix.Kernel.Model

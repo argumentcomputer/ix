@@ -39,11 +39,14 @@ open Ix.Kernel (Env Expr Key Level ConstantVal ConstantInfo IndCaps NativeParts 
 theorem declNativeRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
     {p₀ : NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeRunJ J env p₀ env₂) : EtaFamiliesClosed env₂ := by
-  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, hcaps, -, -, -, -, -, hRec, -, hTbl⟩ := h
+  obtain ⟨hnd, isRec, env₁, cvTt, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
+    hCtors, -, hcaps, -, -, -, -, -, hRec, hTbl, -⟩ := h
   obtain ⟨hTn, -, hfT, -⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
-  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  obtain ⟨cvTa₀, s, bs, cvTa, hc₀, -, -, hSt, rfl, rfl⟩ := hInd
+  replace hTn : cvTa.name = p₀.cvT.name := by
+    rcases hSt with rfl | ⟨rfl, -, -⟩
+    · exact hTn
+    · exact hc₀.name_eq
   try dsimp only at hCtors hRec hTbl hcaps
   rw [← hcaps] at hCtors hRec hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
@@ -135,11 +138,14 @@ a package: as `declNativeRunJ_etaClosed`, with the table over the constructors. 
 theorem declNativeNoRecRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
     {p₀ : NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeNoRecRunJ J env p₀ env₂) : EtaFamiliesClosed env₂ := by
-  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
-    hCtors, -, hcaps, -, -, -, hTbl⟩ := h
+  obtain ⟨hnd, isRec, env₁, cvTt, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
+    hCtors, -, hcaps, -, -, -, hTbl, -⟩ := h
   obtain ⟨hTn, -, hfT, -⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
-  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  obtain ⟨cvTa₀, s, bs, cvTa, hc₀, -, -, hSt, rfl, rfl⟩ := hInd
+  replace hTn : cvTa.name = p₀.cvT.name := by
+    rcases hSt with rfl | ⟨rfl, -, -⟩
+    · exact hTn
+    · exact hc₀.name_eq
   try dsimp only at hCtors hTbl hcaps
   rw [← hcaps] at hCtors hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
@@ -299,11 +305,14 @@ constructors and the recursor are fresh and pass the front door's shape test, an
 the table, at a structure-like block, is the new structure's own. -/
 theorem declNativeRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRunJ J env p₀ env₂) : EnvExt env env₂ := by
-  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, -, -, -, -, -, -, hRec, -, hTbl⟩ := h
+  obtain ⟨hnd, isRec, env₁, cvTt, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
+    hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := h
   obtain ⟨hTn, -, hfT, hTsh⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
-  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  obtain ⟨cvTa₀, s, bs, cvTa, hc₀, -, -, hSt, rfl, rfl⟩ := hInd
+  replace hTn : cvTa.name = p₀.cvT.name := by
+    rcases hSt with rfl | ⟨rfl, -, -⟩
+    · exact hTn
+    · exact hc₀.name_eq
   try dsimp only at hCtors hRec hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
     simp [Ix.Kernel.NativeParts.withKinds]
@@ -359,11 +368,14 @@ package: the former and the constructors are fresh and pass the front door's sha
 test, and the table, at a structure-like block, is the new structure's own. -/
 theorem declNativeNoRecRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeNoRecRunJ J env p₀ env₂) : EnvExt env env₂ := by
-  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
-    hCtors, -, -, -, -, -, hTbl⟩ := h
+  obtain ⟨hnd, isRec, env₁, cvTt, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
+    hCtors, -, -, -, -, -, hTbl, -⟩ := h
   obtain ⟨hTn, -, hfT, hTsh⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
-  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  obtain ⟨cvTa₀, s, bs, cvTa, hc₀, -, -, hSt, rfl, rfl⟩ := hInd
+  replace hTn : cvTa.name = p₀.cvT.name := by
+    rcases hSt with rfl | ⟨rfl, -, -⟩
+    · exact hTn
+    · exact hc₀.name_eq
   try dsimp only at hCtors hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
     simp [Ix.Kernel.NativeParts.withKinds]

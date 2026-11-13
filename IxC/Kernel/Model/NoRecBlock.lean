@@ -304,8 +304,8 @@ theorem declNativeNoRecRunJ_noNewRec {J : Judgements md} {env env₂ : Env md}
     (hf : env₂.find? n = some (.recInfo cv mI rP rules)) :
     env.find? n = some (.recInfo cv mI rP rules) := by
   obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, -, -, -, -, -, -,
-    -, hTbl⟩ := hrun
-  obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+    -, hTbl, -⟩ := hrun
+  obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   have h1 := consSumCtors_rec (nativeTable_rec hTbl hf)
   rw [henv₁] at h1
   exact find?_rec_of_cons h1 (fun _ _ _ _ heq => nomatch heq)
@@ -317,12 +317,12 @@ theorem declNativeRunJ_newRulesAvoid {J : Judgements md} (hfr : ∀ e : Env md, 
     {T : Key md} (hT : (env.find? T).isSome = true) (hrun : DeclNativeRunJ J env p₀ env₂) :
     NewRulesAvoid env env₂ T := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, -, -, hRec, -, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   have hfreshT' : env.find? p.cvT.name = none := by
     rw [native_cvT hInd hp]
     exact hInd.former.2.2.1
-  obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
+  obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
   have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by
     rw [hnR]; exact hfR
@@ -579,9 +579,9 @@ theorem noRuleFamily_noRec {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrame
       (declNativeNoRecRunJ_envExt hrun).find
       (newRulesAvoid_of_noNewRec fun hf => declNativeNoRecRunJ_noNewRec hrun hf)
   · obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, hp,
-      hCtors, -, -, -, -, -, hTbl⟩ := hrun
+      hCtors, -, -, -, -, -, hTbl, -⟩ := hrun
     have hF := nativeFront hfr h hrc hnd hInd hp hCtors
-    obtain ⟨caps, hfT⟩ := hF.former
+    obtain ⟨_, caps, hfT, -⟩ := hF.former
     rw [native_cvT hInd hp] at hfT
     rw [nativeTable_keep hTbl hfT]
     rfl

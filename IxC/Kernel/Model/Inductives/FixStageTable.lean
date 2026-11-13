@@ -8,6 +8,8 @@ import IxC.Kernel.Model.Inductives.StructStageTable
 import IxC.Kernel.Verify.Inductives.FixParts
 import IxC.Kernel.Model.Annot.BitLevels
 import IxC.Kernel.Model.Annot.BitInst
+import IxC.Kernel.Verify.Inductives.SumWF
+import IxC.Kernel.Model.Inductives.WrapModel
 public section
 
 /-!
@@ -524,9 +526,9 @@ set_option maxHeartbeats 3200000 in
 A): at a structure-like block the P carrier survives the table's cons
 (`stageFixTable`); at any other block the stage conses nothing. -/
 theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
-    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {cvTa cvS cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     {rhss : List (Expr md)} {J : Judgements md} (hI : JudgeInv J)
-    (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
+    (h₁ : env₁ = ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
@@ -562,7 +564,8 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
       ∃ sorts : List Level, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₁ env₁
         p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large c.1 cA.2 cvTa cA.1 sorts)
-    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)))
+    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvS (Ix.Kernel.nativeCaps p)))
+    (hSalt : cvS = cvTa ∨ p.nIdx ≠ 0)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
@@ -618,7 +621,7 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
         (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (fssZ ψ)
         (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
         (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
-    (hRec : NativeRecRunJ J envC p cvTa ctorsA cvRa rhss) :
+    (hRec : NativeRecJ J envC p cvTa ctorsA cvRa rhss) :
     ∃ mp₂ : EnvModelM V μ env₂,
       (∀ (cv : ConstantVal md) (v : Expr md), ConstantInfo.thmInfo cv v ∈ envC.consts →
         ∀ i, Expr.NoProjAt p.cvT.name i v) → ModelExt mp₃ mp₂ := by
@@ -629,6 +632,8 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
     split at hTbl
     · next hnIdx =>
       have hnIdx' : p.nIdx = 0 := beq_iff_eq.mp hnIdx
+      have hS : cvS = cvTa := hSalt.resolve_right fun h => h hnIdx'
+      subst cvS
       obtain ⟨c, hc, hCname, hlpsC, -, -, hCshape, sorts', hsj, hCtor⟩ := hrunOf 0 cA rfl
       obtain rfl : sorts = sorts' := Option.some.inj hsj
       have hc' : p.ctors = [c] := by
@@ -651,13 +656,13 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
         rw [hcapsR] at he ⊢
         simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at he
         refine ⟨by rw [← hProp]; exact he.1.2, by rw [hCname], rfl, hnFc'.symm⟩
-      -- the recursor's constant and its freshness
-      obtain ⟨-, -, cvRi, recTy, sty, u, hccvR, hgenR, -, -, -, -, -, -, -, hrules, hcvRa⟩ :=
-        id hRec
-      have hcvRa : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hcvRa
-      have hRfresh₀ := Ix.Kernel.Semantics.ConstantValCheckJ.fresh hccvR
-      have hRname' : cvRa.name = p.cvR.name := by rw [hcvRa]
-      have hRtype : cvRa.type = recTy := by rw [hcvRa]
+      -- the recursor's constant and its freshness: the stage's generated recursor and
+      -- rules, and the stored ones
+      obtain ⟨cvRg, rhsG, hRecG, hst⟩ := id hRec
+      obtain ⟨-, -, cvRi, recTy, sty, u, hccvR, hgenR, -, -, -, hfvR, -, -, -, hrules, hcvRg⟩ :=
+        id hRecG
+      have hcvRg : cvRg = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hcvRg
+      obtain ⟨hRname', -, hRfresh₀, -⟩ := hRec.recursor
       have hRfresh : envC.find? cvRa.name = none := by rw [hRname']; exact hRfresh₀
       have hfC_C : envC.find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) := (hcf_C 0 cA rfl).1
       have hTR : p.cvT.name ≠ cvRa.name := by
@@ -736,23 +741,33 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
         refine h2.cons ⟨?_, (fun _ _ _ h => nomatch h), ?_,
           (fun _ h => nomatch h)⟩
         · show Expr.NoProjAt p.cvT.name j cvRa.type
-          rw [hRtype]
-          exact Ix.Kernel.Expr.NoProjAt.structRecTyR hgenR (hnpT j) (hnpC4 j)
+          have hg : Expr.NoProjAt p.cvT.name j recTy :=
+            Ix.Kernel.Expr.NoProjAt.structRecTyR hgenR (hnpT j) (hnpC4 j)
+          rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, -⟩
+          · rw [hcvRg]; exact hg
+          · rw [hcvRg] at hW
+            obtain ⟨ta, hta⟩ := mp₃.type_reads _ List.mem_cons_self (fun _ => 0)
+            exact (hW.toWrapT (letFree_of_denoteMeta _ _ (Nat.lt_succ_self _) 0 ta hta)).noProjAt
+              p.cvT.name j hfvR hg
         · intro cv mI rP rules heq r hr
           injection heq with _ _ _ hrules'
           subst hrules'
           obtain ⟨hlenR, hallR⟩ := Ix.Kernel.checkNativeRules_inv hrules
-          cases rhss with
-          | nil => exact absurd hr List.not_mem_nil
-          | cons rhs rest =>
-            simp only [Ix.Kernel.sumRules, List.mem_cons, List.not_mem_nil, or_false] at hr
-            subst hr
-            obtain ⟨rhs', hget, hgen, -, -, -, -⟩ := hallR 0 (by
-              rw [← hlenR]; exact Nat.succ_pos _)
-            obtain rfl : rhs = rhs' := by simpa using hget
-            refine ⟨Ix.Kernel.Expr.NoProjAt.structRecRhsR hgen (hnpT j) (hnpC4 j), ?_⟩
-            intro lvls pins hfire
-            split at hfire <;> exact nomatch hfire
+          -- every generated rule has no slot node, and no free variable
+          have hgR : ∀ g ∈ rhsG, Expr.NoProjAt p.cvT.name j g ∧ g.hasFvar = false := by
+            intro g hg
+            obtain ⟨i, hi⟩ := List.getElem?_of_mem hg
+            have hil : i < (Ix.Kernel.nativeCtors4 [cA] p.kinds).length := by
+              rw [← hlenR]; exact (List.getElem?_eq_some_iff.mp hi).1
+            obtain ⟨rhs', hget, hgen, -, -, -, hfv'⟩ := hallR i hil
+            obtain rfl : g = rhs' := Option.some.inj (hi.symm.trans hget)
+            exact ⟨Ix.Kernel.Expr.NoProjAt.structRecRhsR hgen (hnpT j) (hnpC4 j), hfv'⟩
+          obtain ⟨hmem, hfire⟩ := Ix.Kernel.sumRules_mem hr
+          refine ⟨?_, fun lvls pins hf => absurd hf (hfire lvls pins)⟩
+          rcases hst with ⟨-, rfl⟩ | ⟨cvRi', -, -, -, hWr, hlf, -, -⟩
+          · exact (hgR r.rhs hmem).1
+          · obtain ⟨g, hg, hW⟩ := Ix.Kernel.Semantics.forall₂_mem_right hWr r.rhs hmem
+            exact (hW.toWrapT (hlf r.rhs hmem)).noProjAt p.cvT.name j (hgR g hg).2 (hgR g hg).1
       -- the former's and the constructor's data at the recursor's carrier
       have hcbT_C : ConstsBound envC cvTa.type := constsBound_of_constsResolve _
         (mpC.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT_C)).2.2.1
@@ -863,9 +878,9 @@ structure-like block the P carrier survives the table's cons over the
 constructors' environment (`stageFixTable`); at any other block the stage conses
 nothing. -/
 theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
-    {cvTa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {cvTa cvS : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     {J : Judgements md} (hI : JudgeInv J)
-    (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
+    (h₁ : env₁ = ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss envC = .ok env₂)
     (mpC : EnvModelM V μ envC)
@@ -893,7 +908,8 @@ theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts
       ∃ sorts : List Level, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₁ env₁
         p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large c.1 cA.2 cvTa cA.1 sorts)
-    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)))
+    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvS (Ix.Kernel.nativeCaps p)))
+    (hSalt : cvS = cvTa ∨ p.nIdx ≠ 0)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
@@ -959,6 +975,8 @@ theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts
     split at hTbl
     · next hnIdx =>
       have hnIdx' : p.nIdx = 0 := beq_iff_eq.mp hnIdx
+      have hS : cvS = cvTa := hSalt.resolve_right fun h => h hnIdx'
+      subst cvS
       obtain ⟨c, hc, hCname, hlpsC, -, -, hCshape, sorts', hsj, hCtor⟩ := hrunOf 0 cA rfl
       obtain rfl : sorts = sorts' := Option.some.inj hsj
       have hc' : p.ctors = [c] := by
@@ -1218,7 +1236,8 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
     (fun j cA hj => by
       obtain ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, hrun⟩ := hrunOf j cA hj
       exact ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, Ix.Kernel.Semantics.sumCtorRunJ_of_run hrun⟩)
-    hfT_C hlpsT hTfresh htrT hFD_C hstripT hcf_C hleafT hleafC hframes hsortsOf hXR
-    (Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec)).elim fun mp₂ _ => ⟨mp₂⟩
+    hfT_C (Or.inl rfl) hlpsT hTfresh htrT hFD_C hstripT hcf_C hleafT hleafC hframes hsortsOf hXR
+    ⟨cvRa, rhss, Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩).elim
+    fun mp₂ _ => ⟨mp₂⟩
 
 end Ix.Kernel.Model

@@ -63,8 +63,7 @@ theorem eval_le_idxUniv {ψ : LevelParam → Nat} {isorts : List Level} {j : Nat
 /-- **The former's index telescope**, graded and bounded by the tuple
 universe at every parameter frame. -/
 theorem idxOkJ {J : Judgements md} {m : EnvModel V env} (hS : ∀ ψ, SortClaimJ J m ψ)
-    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md} {T : Key md}
-    {caps : IndCaps md} (hfT : env.find? T = some (.indInfo cvTa caps))
+    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md}
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
     {isorts : List Level}
@@ -74,8 +73,8 @@ theorem idxOkJ {J : Judgements md} {m : EnvModel V env} (hS : ∀ ψ, SortClaimJ
     (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     IdxOk (idxUniv ψ isorts) ρp (((ppsAll ψ).drop nP).map (·.2.2)) := by
-  obtain ⟨hTf, -, -, hTb, -⟩ := m.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf hTb
+  have hTf := hFD.tf
+  have hTb := hFD.tb
   have hT : Opened m ψ (nP + nIdx) cvTa.type tfvs trest
       (((ppsAll ψ).map (·.2.2)).reverse) (.sort (resSort.eval ψ)) :=
     opened_of_peel hopT hTf hTb (hFD.read ψ) (hFD.len ψ) (hFD.okTy ψ)
@@ -172,10 +171,9 @@ carrier storing the former as a λ-tower over the parameters. -/
 theorem fixChainFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
     (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
     {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
     (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
@@ -204,7 +202,7 @@ theorem fixChainFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
   have hlenIds : ((((ppsAll ψ).drop nP).map (·.2.2))).length = nIdx := by
     simp [hFD.len ψ]
   -- the parameter frames identified
-  have hiff := (ctorFramesGenJ hJ hS hCtor hfT hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
+  have hiff := (ctorFramesGenJ hJ hS hCtor hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
   have hρp' : Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρp := hiff.mp hρp
   -- the shadow gradings
   obtain ⟨hkey, hkeyR⟩ := fixShadowGradingJ hJ hI hS hCtor hProp hD ψ
@@ -426,8 +424,7 @@ theorem fixChainFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
 
 /-- The former's index telescope from its sort runs: `idxOkJ` at the kernel's runs. -/
 theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md} {T : Key md}
-    {caps : IndCaps md} (hfT : env.find? T = some (.indInfo cvTa caps))
+    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md}
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
     {isorts : List Level}
@@ -438,16 +435,15 @@ theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     IdxOk (idxUniv ψ isorts) ρp (((ppsAll ψ).drop nP).map (·.2.2)) :=
-  idxOkJ (sortClaim_runJ hμ mp F) hfT hopT (Ix.Kernel.Semantics.fieldSortsJ_of_run hsorts) hFD ψ ρp hρp
+  idxOkJ (sortClaim_runJ hμ mp F) hopT (Ix.Kernel.Semantics.fieldSortsJ_of_run hsorts) hFD ψ ρp hρp
 
 /-- The walk's inputs from the constructor's stage run: `fixChainFactsJ` at the kernel's runs. -/
 theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
-    (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
@@ -463,6 +459,6 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     ChainFacts u (resSort.eval ψ) nP nF ρp (((ppsAll ψ).drop nP).map (·.2.2)) ks (tss ψ)
       (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) :=
   fixChainFactsJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
-    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hProp hFD hleafT hD u ψ ρp hρp
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hFD hleafT hD u ψ ρp hρp
 
 end Ix.Kernel.Model
