@@ -226,7 +226,7 @@ def annotateV (v : V) (fe : Ix.Kernel.FEnv .anon) (rd : Reading) (p : Program) :
 
 def timeMs {α : Type} (f : Unit → α) : IO (α × Float) := do
   let t0 ← IO.monoNanosNow
-  let a := f ()
+  let a ← IO.lazyPure f
   let t1 ← IO.monoNanosNow
   return (a, (t1 - t0).toFloat / 1e6)
 
@@ -269,6 +269,7 @@ def stagea (clo eqs : System.FilePath) (root : String) (cert : System.FilePath)
       | "nopw" => { noPw := true }
       | "instr" => { instr := true }
       | "noretain-instr" => { noRetain := true, instr := true }
+      | "noretain-nopw" => { noRetain := true, noPw := true }
       | _ => {}
     let (res, t) ← timeMs fun _ => annotateV v k.fe k.rd p
     match res with
