@@ -324,11 +324,11 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
         reconstruct hash maxProjections input = .ok output ∧
         Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
-  | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, Except.mapError, bind, Except.bind]
+  | error reason => simp [checkBytes, flight, Except.mapError, bind, Except.bind]
   | ok value =>
     cases value
     cases unique : Admission.uniqueKeys records blobs with
-    | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, Except.mapError, bind, Except.bind]
+    | error reason => simp [checkBytes, flight, unique, Except.mapError, bind, Except.bind]
     | ok value =>
       cases value
       cases authentic : Admission.authenticate hash records blobs with

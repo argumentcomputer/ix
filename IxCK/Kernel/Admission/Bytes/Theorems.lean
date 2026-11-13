@@ -397,4 +397,48 @@ theorem decodeWithin_ok_iff (limits : Limits) (records : Records) (constants : I
     unfold decodeWithin
     simp [hs, hd, he, bind, Except.bind, pure, Except.pure, Except.mapError]
 
+/-- The scan passes every record whose bytes cannot reach the limit (`storedDepthBound`). -/
+theorem scanDepths_ok_of_bound {limits : Limits} :
+    ∀ {records : Records}, (∀ entry ∈ records, storedDepthBound limits entry.2 ≤ limits.maxDepth) →
+      scanDepths limits records = .ok ()
+  | [], _ => rfl
+  | (a, bytes) :: rest, h => by
+    rw [scanDepths, if_neg]
+    · exact scanDepths_ok_of_bound (fun e he => h e (List.mem_cons_of_mem _ he))
+    · intro hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨-, hlt⟩, -⟩ := hc
+      exact absurd (h (a, bytes) (List.mem_cons_self ..)) (Nat.not_le.mpr hlt)
+
+/-- The expanded-depth check passes every record with fewer stored nodes than the limit. -/
+theorem expandedDepths_ok_of_bound {limits : Limits} :
+    ∀ {constants : Ingress.Constants}, (∀ entry ∈ constants, entry.2.resourceSize < limits.maxDepth) →
+      expandedDepths limits constants = .ok ()
+  | [], _ => rfl
+  | (a, c) :: rest, h => by
+    rw [expandedDepths, if_pos]
+    · exact expandedDepths_ok_of_bound (fun e he => h e (List.mem_cons_of_mem _ he))
+    · simp only [Bool.or_eq_true, decide_eq_true_eq]
+      exact .inl (h (a, c) (List.mem_cons_self ..))
+
+/-- **Within any limit at least the records' bounds**: a depth limit no record can reach
+(`storedDepthBound`, the stored node count) is met. -/
+theorem DepthsWithin.of_bound {limits : Limits} {records : Records} {constants : Ingress.Constants}
+    (stored : ∀ entry ∈ records, storedDepthBound limits entry.2 ≤ limits.maxDepth)
+    (expanded : ∀ entry ∈ constants, entry.2.resourceSize < limits.maxDepth) :
+    DepthsWithin limits records constants := by
+  unfold DepthsWithin
+  exact ⟨scanDepths_ok_of_bound stored, expandedDepths_ok_of_bound expanded⟩
+
+/-- A record's stored nodes are at most the batch's resource units. -/
+theorem resourceSize_le_resourceUnits {constants : Ingress.Constants} {entry : Address × Ixon.Constant}
+    (h : entry ∈ constants) : entry.2.resourceSize ≤ resourceUnits constants := by
+  induction constants with
+  | nil => cases h
+  | cons x xs ih =>
+    rcases List.mem_cons.mp h with rfl | h
+    · simp only [resourceUnits, List.map_cons, List.sum_cons]; omega
+    · have := ih h
+      simp only [resourceUnits, List.map_cons, List.sum_cons] at this ⊢; omega
+
 end Ix.Kernel.Admission

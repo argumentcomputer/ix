@@ -83,6 +83,10 @@ def chainStackKb : Nat := 65536
 def reportedMs (verdict : String) : Option Nat :=
   ((verdict.splitOn " in ").getLast?.bind fun t => (t.splitOn " ms").head?.bind String.toNat?)
 
+/-- The default limits (only `maxDepth` and the stack it gives are read). -/
+def defaultLimits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0, maxRecordUnivNodes := 0 }
+
 /-- **The depth limit** (`Limits.maxDepth`; `docs/kernel.md`, "Native stack"):
 each shape of `kernel-depth-case`'s `shape` (λ and ∀ telescopes, an argument
 nest, a spine, a `let` nest, a `succ` and a `max` universe), written out and
@@ -94,10 +98,6 @@ comparison's fixed fuel `Level.defaultFuel`, 10,000, declines); one past it the
 entry declines with `.limit .depth`, before decoding (written out) or after it
 (shared). The measured depth comes from an oracle of the test's own
 (`exprDepth`). -/
-/-- The default limits (only `maxDepth` and the stack it gives are read). -/
-def defaultLimits : Ix.Kernel.Admission.Limits :=
-  { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0, maxRecordUnivNodes := 0 }
-
 def limitCases : List (String × Nat × Nat) :=
   let big := defaultLimits.stackFor / 1024
   ["lam", "pi", "appArg", "spine", "let", "usucc", "umax"].flatMap fun s =>

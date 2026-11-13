@@ -159,7 +159,6 @@ def nestedHashes (p n : Nat) : Array UInt64 × Array UInt64 := Id.run do
     es := es.push e.hash
   return (lams, es)
 
-/-- Run one case; the line it prints starts with the verdict. -/
 /-! ## The depth limit (`Limits.maxDepth`) -/
 
 /-- `step^n leaf`, written out (`shared = false`) or as a chain of sharing
@@ -263,6 +262,7 @@ def limitCase (binding : _root_.Ix.Kernel.Admission.Binding) (name : String) (d 
     IO.lazyPure fun _ =>
       s!"depth {measured}, {entryVerdict (_root_.Ixon.Authenticated.checkBytes binding lim rs [] hint)}"
 
+/-- Run one case; the line it prints starts with the verdict. -/
 def runOne (name : String) (n : Nat) : IO String := do
   let binding ← IO.ofExcept _root_.Ix.Kernel.Admission.defaultBinding
   match name with

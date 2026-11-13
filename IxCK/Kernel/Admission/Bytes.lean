@@ -1,6 +1,7 @@
 module
 
 public import IxCK.Ixon.Canonical
+public import IxCK.Ixon.Bounded.Size
 public import IxCK.Kernel.Admission.Depth
 public import IxCK.Kernel.Ingress.Records
 public import Std.Data.HashSet.Basic
@@ -193,24 +194,37 @@ def ByteError.asLimit : ByteError → ByteError
     else .decode p a r
   | e => e
 
+/-- A bound on how deep a record of these bytes can nest: an expression's levels grow by at most one
+per byte it is written in (a spine or telescope of `n` steps is written in at least `n` more
+bytes), and a universe's by at most the decoder's node budget, which it checks before it
+builds a `succ` chain. When `maxDepth` is at least this, the scan cannot decline the record
+and is skipped. -/
+def storedDepthBound (limits : Limits) (bytes : ByteArray) : Nat :=
+  bytes.size + limits.maxRecordUnivNodes + 1
+
 /-- **The stored-nesting scan**: every record's expressions (shares as leaves)
 and universes within `limits.maxDepth` (`Depth.within`), read from the bytes
 before anything decodes them, so that the decoder's recursion is bounded. A
-record over `maxRecordBytes` is left to the decoder, which refuses it. -/
+record over `maxRecordBytes` is left to the decoder, which refuses it, and so is a
+record the limit cannot be reached in (`storedDepthBound`). -/
 def scanDepths (limits : Limits) : Records → Except ByteError Unit
   | [] => .ok ()
   | (_, bytes) :: rest =>
-    if bytes.size ≤ limits.maxRecordBytes && !Depth.within limits.maxDepth bytes then
+    if bytes.size ≤ limits.maxRecordBytes && limits.maxDepth < storedDepthBound limits bytes &&
+        !Depth.within limits.maxDepth bytes then
       .error (.limit .depth)
     else scanDepths limits rest
 
 /-- **The expanded-depth check**: every decoded record's expressions within
 `limits.maxDepth` with their shares expanded, as the reader builds them
-(`Depth.expandedWithin`). -/
+(`Depth.expandedWithin`). A record with no more stored nodes than the limit (`Ixon.Constant.resourceSize`)
+cannot be deeper than it with its shares expanded (a path through the shares meets each stored
+node at most once) and is not walked. -/
 def expandedDepths (limits : Limits) : Ingress.Constants → Except ByteError Unit
   | [] => .ok ()
   | (_, constant) :: rest =>
-    if Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant then
+    if constant.resourceSize < limits.maxDepth ||
+        Depth.expandedWithin limits.maxDepth (8 * limits.maxRecordBytes + 16) constant then
       expandedDepths limits rest
     else .error (.limit .depth)
 
