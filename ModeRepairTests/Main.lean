@@ -729,6 +729,12 @@ def fuelCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input
     verdict := if accept then .accept else .refuse, fuels,
     run := [(0, .valOrOof), (fuels.getLastD 0, .value)], inputs := none }
 
+/-- The suite's `stuckCase` (not copied: it is harness): a stuck run at fuel 100000. -/
+def stuckCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
+    (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
+  { label := s!"suite: {label}", P := prog defs, seed := entry, inp := input, toCheck,
+    verdict := if accept then .accept else .refuse, fuels := [100000], run := [(0, .stuck)], inputs := none }
+
 -- BEGIN COPY of Tests/Ix/ResourceModes.lean, "Findings of the mode study"
 
 -- Finding 1: `idN (n : Nat) : Nat := n`; `g4 (@borrowed n : Nat) : Nat := idN n`
@@ -956,6 +962,30 @@ def uDefs : List (Ref × RunDef) := [(E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 
   (mkSBU, body [par] (app (.const sboxR .val) [v 0]) .unique),
   (isSB, body [par] (.const e0R .imm) .shared .imm)]
 def isSBmk : Term := app (.const isSB .val) [app (.const mkSBU .val) [v 0]] .imm
+-- Finding 15 (repair J): `NP` with one constructor and two `Nat` fields; `mkK {α β} (a : α) (b : β) : Nat → α :=
+-- fun _ => a`; `g15 (@borrowed k : NP) : Nat → Nat := NP.casesOn k (@mkK Nat Nat)`, on an input whose first
+-- field holds a list cell (ill-typed): a stuck run since repair J; on a well-typed input, a value
+def NP := mem 8
+def npR := ctr 8 0
+def caseNP : CaseInfo := { ind := NP, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0, .field 1] }] }
+def mkK := mem 332
+def g15 := mem 333
+def p15Defs : List (Ref × RunDef) := [
+  (NP, .ind #[npR]), (npR, .ctor NP 0 0 #[fld .leaf, fld .leaf]),
+  (mkK, body [par .many .irr, par .many .irr, par .many .val .unknown, par .many .val .unknown]
+    (lam (par .many .leaf) (v 2) .shared .val) .shared .val (.arrow .many .data .shared .unknown)),
+  (g15, body [par .borrowed] (.case caseNP (v 0) #[app (.const mkK .val) [.irr, .irr]] #[] .val)
+    .shared .val arrowSk)]
+def in15 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1]
+  let (b, n) := b.alloc (.num 3)
+  let (b, k) := b.alloc (.ctor npR #[xs, n])
+  (b.heap, [k])
+def in15ok : Heap × List Val :=
+  let (b, n0) := ({} : HB).alloc (.num 2)
+  let (b, n) := b.alloc (.num 3)
+  let (b, k) := b.alloc (.ctor npR #[n0, n])
+  (b.heap, [k])
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1110,7 +1140,9 @@ def findingCases : List Case := [
     (uDefs ++ [(leakU, body [par .borrowed] isSBmk .shared .imm)]) leakU oneList (some .borrowEscape) false
     [leakU, mkSBU, isSB],
   runCase "the same, the list not borrowed"
-    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB]
+    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB],
+  stuckCase "finding 15: an input cell's Nat field holding a list, read by a case" p15Defs g15 in15 true [g15, mkK],
+  runCase "finding 15, control: a well-typed input" p15Defs g15 in15ok none true [g15, mkK]
 ]
 
 -- END COPY
@@ -1737,7 +1769,7 @@ def in15ok : Heap × List Val :=
 
 def f15Cases : List Case := [
   { label := "F15 g15 on an ill-typed input (field 0 a list cell)", P := p15, seed := g15, inp := in15,
-    toCheck := [g15, mkK], verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    toCheck := [g15, mkK], verdict := .accept, run := [(0, .stuck)] },  -- REPAIR J: borrowEscape before (open)
   { label := "F15 control: a well-typed input", P := p15, seed := g15, inp := in15ok, toCheck := [g15, mkK],
     verdict := .accept, run := [(0, .value)] }]
 

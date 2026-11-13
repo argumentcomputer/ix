@@ -488,8 +488,12 @@ def select (P : Prog) (k : CaseInfo) (mv : Val) : M (Nat × Array (Val × Bool))
         unless ind == k.ind do stuckM
         let mut out : Array (Val × Bool) := #[]
         for (f, i) in fdefs.zipIdx do
-          let v := fs[i]?.getD (.imm .irr)
-          out := out.push ((← readOut (f.fmode == .inherited) t v), f.mode == .erased)
+          let v ← readOut (f.fmode == .inherited) t (fs[i]?.getD (.imm .irr))
+          -- a kept field conforms to its class, as `proj` conforms to its node's (finding 15: a cell
+          -- whose field is outside its class, possible only in an ill-typed input, is a stuck run,
+          -- not a violation)
+          let v ← if f.kept then conform f.cls v else pure v
+          out := out.push (v, f.mode == .erased)
         pure (cidx, out)
       | none => stuckM
     | .num _ => wrapperCase

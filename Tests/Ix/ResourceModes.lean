@@ -187,6 +187,19 @@ def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input 
     let msg := s!"run: {outcomeName o}; checker: {verdictName verdict}"
     return (runOk && checkOk && consistent, 0, 0, if runOk && checkOk && consistent then none else some msg)) .done
 
+/-- Run `entry` on `input` (an ill-typed input): the run is stuck, which is not
+a violation, and the checker accepts exactly when `accept`. -/
+def stuckCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
+    (accept : Bool) (toCheck : List Ref := [entry]) : LSpec.TestSeq :=
+  .individualIO label none (do
+    let P := prog defs
+    let o := runR P noExtern 100000 entry input.1 input.2
+    let runOk := match o with | .stuck => true | _ => false
+    let verdict := checkBodies {} P toCheck
+    let checkOk := verdict.isAccept == accept
+    let msg := s!"run: {outcomeName o}; checker: {verdictName verdict}"
+    return (runOk && checkOk, 0, 0, if runOk && checkOk then none else some msg)) .done
+
 /-! ### Erased binders and fields -/
 
 -- `useErased (@erased n : Nat) : Nat := n + 1`
@@ -672,6 +685,30 @@ def uDefs : List (Ref × RunDef) := [(E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 
   (mkSBU, body [par] (app (.const sboxR .val) [v 0]) .unique),
   (isSB, body [par] (.const e0R .imm) .shared .imm)]
 def isSBmk : Term := app (.const isSB .val) [app (.const mkSBU .val) [v 0]] .imm
+-- Finding 15 (repair J): `NP` with one constructor and two `Nat` fields; `mkK {α β} (a : α) (b : β) : Nat → α :=
+-- fun _ => a`; `g15 (@borrowed k : NP) : Nat → Nat := NP.casesOn k (@mkK Nat Nat)`, on an input whose first
+-- field holds a list cell (ill-typed): a stuck run since repair J; on a well-typed input, a value
+def NP := mem 8
+def npR := ctr 8 0
+def caseNP : CaseInfo := { ind := NP, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0, .field 1] }] }
+def mkK := mem 332
+def g15 := mem 333
+def p15Defs : List (Ref × RunDef) := [
+  (NP, .ind #[npR]), (npR, .ctor NP 0 0 #[fld .leaf, fld .leaf]),
+  (mkK, body [par .many .irr, par .many .irr, par .many .val .unknown, par .many .val .unknown]
+    (lam (par .many .leaf) (v 2) .shared .val) .shared .val (.arrow .many .data .shared .unknown)),
+  (g15, body [par .borrowed] (.case caseNP (v 0) #[app (.const mkK .val) [.irr, .irr]] #[] .val)
+    .shared .val arrowSk)]
+def in15 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1]
+  let (b, n) := b.alloc (.num 3)
+  let (b, k) := b.alloc (.ctor npR #[xs, n])
+  (b.heap, [k])
+def in15ok : Heap × List Val :=
+  let (b, n0) := ({} : HB).alloc (.num 2)
+  let (b, n) := b.alloc (.num 3)
+  let (b, k) := b.alloc (.ctor npR #[n0, n])
+  (b.heap, [k])
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -840,7 +877,9 @@ def findingCases : List LSpec.TestSeq := [
     (uDefs ++ [(leakU, body [par .borrowed] isSBmk .shared .imm)]) leakU oneList (some .borrowEscape) false
     [leakU, mkSBU, isSB],
   runCase "the same, the list not borrowed"
-    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB]
+    (uDefs ++ [(leakUp, body [par] isSBmk .shared .imm)]) leakUp oneList none true [leakUp, mkSBU, isSB],
+  stuckCase "finding 15: an input cell's Nat field holding a list, read by a case" p15Defs g15 in15 true [g15, mkK],
+  runCase "finding 15, control: a well-typed input" p15Defs g15 in15ok none true [g15, mkK]
 ]
 
 /-! ### Must-reject cases from records -/
