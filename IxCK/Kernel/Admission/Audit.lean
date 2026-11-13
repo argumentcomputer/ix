@@ -154,6 +154,8 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Stopping the telescope loops at a checked tail and seeding the level simplification
 -- (`Cached.peelFuelToM`, `Cached.simplifyMemoC`) add 4 compiled functions to each closure here
 -- (`IxCK/Kernel/Audit/Roots.lean`).
+-- The 64-bit term hash (`Expr.hashW`) takes 1 compiled function, `Cached.defeqStepR._closed_2`
+-- (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,

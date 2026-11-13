@@ -763,6 +763,10 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.UserAxioms.Mod
 -- through the declaration's memo (`Cached.simplifyMemoC`, which reaches `Level.simplifyGo`)
 -- add 4 compiled functions to every closure below but the reader's; externs, implemented_by,
 -- unsafe, csimp and every ruling count are unchanged.
+-- The 64-bit term hash in a word of its own (`Expr.hashW`) takes 1 compiled function from every
+-- closure below but the reader's: `Cached.defeqStepR._closed_2`, the constant `DefeqStep.done true`
+-- the compiler had floated out of `defeqStepR`, is built in place, and nothing enters (the closure
+-- listed by name before and after); which edit moved the compiler's choice is not established.
 /-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3736 compiled functions; inherited externs 68, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 35 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

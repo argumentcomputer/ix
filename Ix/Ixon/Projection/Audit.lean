@@ -150,6 +150,8 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- count is unchanged.
 -- Withdrawing the ∀ rule's fold and hash-consing its levels instead (`Cached.internLM`) adds 3
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- The 64-bit term hash (`Expr.hashW`) takes 1 compiled function, `Cached.defeqStepR._closed_2`
+-- (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
  Ixon.Projection.checkBytes]: 6934 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
