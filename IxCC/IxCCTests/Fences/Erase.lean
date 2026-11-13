@@ -136,6 +136,14 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Src.Relevance.Proof.subsingletonFields_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.subsingletonFields_nil
 
+/-! C3's refusal of an eliminator away from a saturated spine only adds errors. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.adds_partialElim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.adds_partialElim
+
+/-- info: 'IxCC.Src.Relevance.Proof.bareHead_constHead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.bareHead_constHead
+
 /-! The closure loop over any fact the term walk gives (`visit_spec` and `loop_spec` are its
 tier-S instances, `check_soundC` its tier-C one). -/
 
@@ -160,7 +168,7 @@ tier-S instances, `check_soundC` its tier-C one). -/
 /-! The relevance checks' facts as propositions (L1): tier C (`check_soundC`), the pairing C3
 uses at a recursor, `checkCanonical`'s facts and the three facts about positions written erased. -/
 
-/-- info: 'IxCC.Src.Relevance.Proof.term_nilC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Src.Relevance.Proof.term_nilC' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.term_nilC
 
 /-- info: 'IxCC.Src.Relevance.Proof.check_soundC' depends on axioms: [propext, Classical.choice, Quot.sound] -/

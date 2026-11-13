@@ -73,6 +73,21 @@ verbatim. -/
 /-- info: 'IxCC.Xv.Stacking.Proof.placeFuncs_eq' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.placeFuncs_eq
 
+/-- info: 'IxCC.Xv.Stacking.Proof.resultsOf_eq_list' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.resultsOf_eq_list
+
+/-- info: 'IxCC.Xv.Stacking.Proof.tailResults_eq_list' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.tailResults_eq_list
+
+/-- info: 'IxCC.Xv.Stacking.Proof.foldl_cons_rev' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.foldl_cons_rev
+
+/-- info: 'IxCC.Xv.Stacking.Proof.placeExports_eq_list' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.placeExports_eq_list
+
+/-- info: 'IxCC.Xv.Stacking.Proof.placeFuncs_eq_list' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.placeFuncs_eq_list
+
 /-- info: 'IxCC.Xv.Stacking.Proof.withLayouts_length' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Stacking.Proof.withLayouts_length
 

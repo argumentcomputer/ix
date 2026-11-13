@@ -50,7 +50,12 @@ so the closure walked here is the one SrcEval can reach.
   dispatch passes □ for it). Each minor meets the constructor whose fields it
   receives: at a `case` entry minor `j` meets constructor `j`; at a recursor
   each rule meets the minor it dispatches (`ruleDispatch`), which at a mutual
-  or nested block's recursor is not minor `j` for rule `j`. A projection in a
+  or nested block's recursor is not minor `j` for rule `j`. C3 sees the minors
+  only at a saturated spine, so an eliminator with a rule for a constructor that
+  writes a field erased (`erasedMinors`) occurs only there: applied to fewer
+  arguments (`knownHead`), bare (`bareHead`) or as a `csimp` target
+  (`checkCanonical`) it is refused, since its minors would arrive later at a head
+  C3 does not see. A projection in a
   relevant position does not read a field
   dropped at every instance (a projection carries no universe arguments, so
   the structure's profile is not known there).
@@ -312,6 +317,21 @@ def fieldWrittenErased (p : Program) (k : CId) (i : Nat) : Bool :=
   | some (.ctor _ _ _ _ np _ ty) => (ty.pis.1[np + i]?).any (·.1.contract.uses == .erased)
   | _ => false
 
+/-- Whether the eliminator `shape` has a rule for a constructor that writes a field erased (the
+rules of its recursor; a `case` entry dispatches the same constructors). Its minors must then
+meet C3, which compares them with the constructors only at a saturated spine: elsewhere the
+eliminator is refused (`knownHead` on a shorter spine, `bareHead` on a bare occurrence,
+`Canonical.redirectsErased?` on a `csimp` redirect). Minors no rule of the recursor dispatches
+receive no field of its own rules (`Canonical.forwardsErased?`). -/
+def erasedMinors (p : Program) (shape : ElimShape) : Bool :=
+  match p.decl? shape.recr with
+  | some (.recr _ _ _ _ _ _ _ _ rules _) =>
+    rules.any fun rule =>
+      match p.decl? rule.ctor with
+      | some (.ctor _ _ _ _ _ nf _) => (List.range nf).any (fieldWrittenErased p rule.ctor ·)
+      | _ => false
+  | _ => false
+
 /-- C3 over a minor's binders at the constructor's profile `qc`. The minor's
 leading λs must also cover every field written erased: the dispatch passes □
 for it (a field written erased is dropped at every instance), so a minor with
@@ -333,7 +353,25 @@ def minorBinders (ctx : Ctx) (k : CId) (j : Nat) (qc : Profile) :
     else minorBinders ctx k j qc (i + 1) [] fields errs
   | _, _, _, errs => errs
 
-/-- Rules at a constant head: C2, S2, and C3/C4 at saturated eliminators. -/
+/-- C3's refusal of an eliminator applied to fewer arguments than its arity, or not applied, when
+it has a rule for a constructor that writes a field erased (`erasedMinors`): its minors would
+arrive later at a head C3 does not see. -/
+def partialElim (ctx : Ctx) (shape : ElimShape) (errs : List RelError) : List RelError :=
+  if erasedMinors ctx.p shape then
+    err ctx "C3" "an eliminator over a constructor that writes a field erased is applied to fewer \
+      arguments than its arity: its minor premises would meet no check" (some shape.recr) :: errs
+  else errs
+
+/-- A constant in a relevant position that is not the head of an application spine: C5 and S1
+(`constHead`), and C3 on a bare eliminator (`partialElim`). -/
+def bareHead (ctx : Ctx) (c : CId) (us : List Ixon.Univ) (errs : List RelError) : List RelError :=
+  let errs := constHead ctx c us errs
+  match elimShape? ctx.p c with
+  | some shape => partialElim ctx shape errs
+  | none => errs
+
+/-- Rules at a constant head: C2, S2, and C3/C4 at eliminators (C3 on the minors at a saturated
+spine, `partialElim` on a shorter one). -/
 def knownHead (ctx : Ctx) (errs : List RelError) (c : CId) (us : List Ixon.Univ)
     (args : List Term.Arg) : List RelError :=
   let p := ctx.p
@@ -348,7 +386,7 @@ def knownHead (ctx : Ctx) (errs : List RelError) (c : CId) (us : List Ixon.Univ)
   match elimShape? p c with
   | none => errs
   | some shape =>
-    if args.length < shape.arity then errs else
+    if args.length < shape.arity then partialElim ctx shape errs else
     let kind := ((p.table.recKindOf shape.recr).map (fun k => RecKind.atProfile q k)).getD .ordinary
     let errs := match args[shape.major]? with
       | some (_, _, a) =>
@@ -444,7 +482,7 @@ mutual
 (innermost first). -/
 def term (ctx : Ctx) (binders : List Rel) (errs : List RelError) : Term → List RelError
   | .var i => varRule ctx binders errs i
-  | .const c us => constHead ctx c us errs
+  | .const c us => bareHead ctx c us errs
   | .lam b _ t =>
     let (errs, enter) := lamRule ctx errs b
     if enter then term ctx (b.rel :: binders) errs t else errs
@@ -1109,6 +1147,23 @@ def headerAgreement (ty t : Term) (params : List Rel) (what : String := "the bod
     | some ((b, r), i) => some s!"the body's λ {i} is {relName b}, its parameter {relName r}"
     | none => none
 
+/-- A `csimp` redirect of `c` to an eliminator with a rule for a constructor that writes a field
+erased (`erasedMinors`). The redirect is reached through the table, not a walked term, and the
+subject is no eliminator to C3, so the minors its callers pass would meet no check (the
+complement of `partialElim`, which sees the walked terms). `none` when `c` has no such
+redirect. -/
+def redirectsErased? (p : Program) (c : CId) : Option String :=
+  match p.table.resolveOf c with
+  | some (.csimp g _ _) =>
+    match elimShape? p g with
+    | some shape =>
+      if erasedMinors p shape then
+        some s!"the csimp redirect to {p.short g}, an eliminator over a constructor that writes a \
+          field erased: the minor premises its callers pass would meet no check"
+      else none
+    | none => none
+  | _ => none
+
 end Check.Canonical
 
 open Check Check.Canonical in
@@ -1121,7 +1176,10 @@ cover them with λs of their classes (`headerAgreement`), and a special head
 does not read them (`readsErased?`); and that a reached recursor's rules use a
 field its constructor writes erased only as that field's argument to the minor
 they dispatch (`forwardsErased?`). Minor premises are held to the same rule by
-C3 (`Check.minorBinders`). -/
+C3 (`Check.minorBinders`), which sees them only at a saturated spine; a `csimp`
+redirect to an eliminator with a rule for a constructor writing a field erased
+is refused (`redirectsErased?`), as C3 refuses such an eliminator's partial and
+bare occurrences in the walked terms (`Check.partialElim`). -/
 def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   let okConsts := ann.consts.toList.all fun (c, cr) =>
     match p.decl? c with
@@ -1175,6 +1233,10 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   -- field's argument to the minor it dispatches.
   let forwardErrs : List RelError := ch.reached.filterMap fun c =>
     (forwardsErased? p c).map fun msg => RelError.of "S1" msg (some c)
+  -- A `csimp` redirect to an eliminator whose minors C3 must see: refused (C3 sees
+  -- only walked terms; `partialElim` refuses the partial and bare occurrences there).
+  let redirectErrs : List RelError := ch.reached.filterMap fun c =>
+    (redirectsErased? p c).map fun msg => RelError.of "C3" msg (some c)
   let okReached := ch.reached.all fun c =>
     match ann.constRel? c with
     | none => false
@@ -1185,7 +1247,7 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
         | _ => []
       ((runBodies p c).all fun (_, t) => checkTermBinders p ann [] t []) &&
       (ruleTerms.all fun t => checkTermBinders p ann [] t [])
-  readErrs ++ forwardErrs ++ headerErrs ++
+  readErrs ++ forwardErrs ++ redirectErrs ++ headerErrs ++
     if okConsts && okCtors && okReached then []
     else [RelError.of "S1" "non-canonical relevance annotation"]
 

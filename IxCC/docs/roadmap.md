@@ -851,15 +851,34 @@ ownership checker's own, which the captured-work budget bounds
   `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
   (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
   drops each unused parameter at the return, so a function of P parameters has P `dec`
-  statements that no Anf node counts (`maxBackWork` sees one node), and the allocation
-  certificate's per-block facts grow with the values live there. Within the parameter limit the
+  statements that no Anf node counts (`maxBackWork` sees one node), each a call made while up
+  to P values are live. Located (2026-11-13, gdb samples of `check-cert` and counts on the
+  generated inputs): at every call the validator runs two passes over its whole abstract state,
+  `AState.clearOutArgs` (forget the outgoing cells) and, through `define`, `AState.forget` of
+  the call's result; at (110, 2,398) that is 264,551 calls over 29.9 million state entries and
+  271,763 definitions over 30.7 million. On the immortal route the same passes run about once
+  per function, so there the stage is linear in the program. Within the parameter limit the
   sum of the squares can still reach about 2³¹ when one function has about 2,048 parameters
   (only a hand-written artifact gets there; `ix`'s output stays near 230).
-- Open: the back end's layout (`Backend.lay`: stacking and block layout) grows with the
-  function count faster than linearly, about F^1.6: 0.36 s and 1.15 s on the immortal route at
-  2,398 and 4,793 functions (whatever their parameters), 16.7 s and 29.8 s on the plain-RC
-  route with 529,000 `dec` statements in both. Not located; the function count is bounded by the
-  node budget and, from an artifact, by ingress's object table.
+- The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
+  the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
+  16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
+  `Stacking.run` read a callee's declared result count by converting the whole function array
+  to a list at every call (`resultsOf`, through the arity check) and every tail call
+  (`tailResults`, through the clobber check), O(F) per site, and placed functions and wrappers
+  by appending each to the list built so far (O(F²)). Fixed (2026-11-13): the array is read at
+  the callee's index and each placement is one pass, the first forms kept as
+  `resultsOfList`, `tailResultsList`, `placeExportsList` and `placeFuncsList` and proved equal
+  to the definitions (`Xv/Stacking/Proof/Linear.lean`), and tested against them on every
+  corpus root on both routes and on synthetic programs (`tests-own-owned`). On the build box,
+  the probe's `Backend.lay` on the verifier's own inputs, before and after: immortal route
+  309 → 48 ms at (P, F) = (110, 2,398), 289 → 46 ms at (220, 2,398), 857 → 92 ms at
+  (110, 4,793), 876 → 109 ms at (220, 4,793); plain-RC route 8.5 → 0.70 s at (110, 2,398),
+  16.3 → 1.37 s at (220, 2,398), 59.5 → 1.45 s at (110, 4,793). What remains grows about ×2
+  when F or P doubles, linearly in the functions and call sites: on the plain-RC route mostly
+  the clobber check's callee lists (`mayChange`, 0.3–0.6 s), the typed program's
+  well-formedness check (0.2–0.4 s) and emission (0.1–0.25 s); tunnelling and block layout
+  take under 20 ms in every cell.
 - The RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through `enrichFirContracts`:
   `progKeyContracts` and `progKeyResult` rebuilt `funList` and searched it once per function)
   was quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at 4,096, 48.8 s at
@@ -1096,6 +1115,36 @@ unchanged by hypothesis calls), not "every slot at a relevant binder is live";
 and IxCC never checks that a stored rule has the kernel's generated shape, so
 P1 may use only what the forwarding clause decides of the rule as stored
 (`ForwardOk`), or a shape check of our own.
+
+**Two more routes, found by writing P1's statement (2026-11-13).** C3 compares
+minors with constructors only at a saturated eliminator spine. An eliminator
+partially applied or bare, its minors supplied later at a variable head (the
+eighth route), or reached through a `csimp` redirect to a `case` key (the
+ninth), met no check, and an η-short minor over a field written erased
+compiled to an object returning constructor 0 where the program means
+constructor 1, SrcEval returning the marker. The eighth passes the certified
+kernel; `Recheck.run` accepted both; on the byte path only Stage A refused the
+eighth (next paragraph). So before this check the planned P1 was false for
+programs every check accepted. C3 now refuses such an eliminator away from a
+saturated spine (`Check.partialElim`, closing the eighth) and `checkCanonical`
+a `csimp` redirect to one (`redirectsErased?`, closing the ninth); the facts are
+in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
+`Canonical.redirects`). [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the nine routes; P1's statements, checked against the evaluator on the
+erased-misuse programs and every registered root, come next.
+
+**Open capability item: no program with a constructor field written erased can
+be produced (since at least 2026-11-13).** The kernel annotator's constructor
+record keeps a field its type writes erased (`CtorRel` `keep`) while its
+parameter classes drop it (`ConstRel` `proof always` at that parameter), so
+`checkCanonical` calls every such annotation non-canonical and `produce`
+refuses the program; honest programs with such a field compile only with a
+hand-made certificate, and the byte-level verifiers' Stage A (equality with the
+annotator) refuses those. This is conservative, and it is what refused route 8
+on the byte path before its check: making the annotator canonical there would
+have opened that route on the byte path. Fixing the annotator is now safe
+(route 8 is refused by C3), and it is the order to keep: a capability widened
+only after the check that it needs.
 
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
