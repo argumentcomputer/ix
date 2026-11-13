@@ -29,6 +29,10 @@ open Ix.Kernel.Rules (Red Certs Infer DefEq)
 open IxVM.Refinement.KernelLevels (RepKLevel)
 
 set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
 
 /-! ## Helpers -/
 
@@ -217,8 +221,8 @@ theorem quotLift_peel (u0 u1 : KLevel) {a0 a1 a2 a3 a4 : KExpr}
         ((Ix.Kernel.Semantics.quotLiftRule (md := .anon)).rhs.instantiateLevelParams
           [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]) =
       .lam a0 (.app a3 (.bvar 0))
-        { pw := Ix.Kernel.Level.substPW [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]
-          (.ifAllZero [Ix.Kernel.vN]) } := by
+        { pw := (Ix.Kernel.Level.substPW [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]
+          (.ifAllZero [Ix.Kernel.vN])) } := by
   simp [quotPeel, quotBody, Ix.Kernel.Semantics.quotLiftRule,
     Ix.Kernel.Expr.instantiateLevelParams, Ix.Kernel.Expr.instantiate1, c0, c1, c2, c3, c4]
   try rfl
@@ -344,8 +348,8 @@ theorem quot_lift_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Addres
     simp [Ix.Kernel.Expr.instantiate1, c3]
   have hlastR : Red c.env d
       (.app (.lam a0 (.app a3 (.bvar 0))
-        { pw := Ix.Kernel.Level.substPW [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]
-          (.ifAllZero [Ix.Kernel.vN]) }) q2) (.app a3 q2) := by
+        { pw := (Ix.Kernel.Level.substPW [Ix.Kernel.uN, Ix.Kernel.vN] [u0, u1]
+          (.ifAllZero [Ix.Kernel.vN])) }) q2) (.app a3 q2) := by
     rw [← hbody]
     rcases hlast with ⟨v, hv, hnz⟩ | ⟨ta, hi, hd⟩
     · have hv1 : u1 = v := by simpa using hv
@@ -492,20 +496,7 @@ theorem red_quot_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
       m651, v664, m673, cs681, m700, cs708, v712, op16, ev61, ev40, ev96, op112, op90, ev75, op34,
       ev153, ev131, ev191, ld227, ev303, ev274, ev330, op324, ev309, op268, ev365, op359, ev344,
       op260, ev416, ev443, ev402, ev540, ev526, ev477, ev609, he629, hm659, ev683, op733, ev710,
-      ev647, he735, hc736⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, he0, -, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, -, -, he0, -, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-      -, -, -, -, -, -, -, -, -, he0, -, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -, -⟩
+      ev647, he735, hc736⟩ | _ | _ | _ | _ | _
   · subst he735 hc736
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he629)
     have hnb : n ≤ 1 := by omega
@@ -695,12 +686,12 @@ theorem red_quot_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     have hRAlen : (As.take (4 + n) ++
         [Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr b)) mus) QA]).length = 5 + n := by
       simp only [List.length_append, List.length_take, List.length_singleton]; omega
-    have hroleQ : (Value.field (n : F) = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧
-          c.inForce .quotLift ∧
+    have hroleQ : ((Value.field (n : F) : SourceValue F) = .field 1 ∧
+          c.t.addressOf? .quotLift = some (ixAddr a) ∧ c.inForce .quotLift ∧
           (As.take (4 + n) ++ [Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr b)) mus) QA]).length =
             6 ∧ us.length = 2) ∨
-        (Value.field (n : F) = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧
-          c.inForce .quotInd ∧
+        ((Value.field (n : F) : SourceValue F) = .field 0 ∧
+          c.t.addressOf? .quotInd = some (ixAddr a) ∧ c.inForce .quotInd ∧
           (As.take (4 + n) ++ [Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr b)) mus) QA]).length =
             5 ∧ us.length = 1) := by
       rcases hrole with ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
@@ -773,6 +764,7 @@ theorem red_quot_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
       · exact quot_lift_red c hc haddr hin hmkaddr huslen hmuslen hlev (by omega) hAc hQA3
           hred' ha3 hq2i hcT hcM (hlast.imp (fun hl => hl.2) id)
       · exact absurd (Value.field.inj h1) (by simp)
-  all_goals exact (tag_zero_ne_one (he0.symm.trans hr)).elim
+  all_goals exact (tag_zero_ne_one
+    ((‹r = .tuple [.field 0, _]› : r = _).symm.trans hr)).elim
 
 end IxVM.Refinement.Core
