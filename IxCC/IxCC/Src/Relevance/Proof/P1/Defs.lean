@@ -5,11 +5,12 @@ import IxCC.Src.Semantics
 /-! # P1, relevance preservation: the definitions
 
 SrcEval binds the marker `irr` where an argument is erased or irrelevant by its sort, and
-`Recheck.sound`'s escape "the source goes wrong" includes a marker returned. P1 is to say that on a
+`Recheck.sound`'s escape "the source goes wrong" includes a marker returned. P1 says that on a
 program the relevance checks accept (`Relevance.check`, `checkCanonical`), SrcEval never yields the
-marker at a position that is read. **P1 is not proved.** This module holds its definitions only, as
-approved for the proof; the theorems join the library as they are proved
-(`docs/certification-design.md`, the relevance row). The one theorem here is `live_not_irr`.
+marker at a position that is read. **P1 is proved** in `IxCC.Src.Relevance.Proof.P1.Main`
+(`preserve`, `pre_step`, `reads_live`, `run_live`), under the hypotheses below. This module holds
+its definitions, as approved for the proof (`Reads` at a recursor and at a `case` key repaired
+since: the major is read only at an ordinary kind); the one theorem here is `live_not_irr`.
 
 * Hypotheses: `Facts` (L1's propositions, `WellAnnotatedC` and `Canonical`, on the program SrcEval
   runs), `ShapeOk` (one constructor per inductive and index, the structural fact no check of the
@@ -19,10 +20,10 @@ approved for the proof; the theorems join the library as they are proved
 * Invariants: `Live`, `LiveSlot`, `EnvOk` (by provenance, strictly positive), `Whole`,
   `MinorsIgnore`, `IgnoresSlot`, `ShieldedIn`; each call's precondition `Pre` and result `Post`;
   what a call reads, `Reads`.
-* The statements to prove: every reachable call whose `Pre` holds has its `Post` (`preserve`);
-  `Pre` propagates along every `Step` but the evaluation of a shielded variable (`pre_step`); what a
-  call reads is `Live` (`reads_live`); the root on literal inputs returns a `Live` value
-  (`run_live`). The narrowing of `Recheck.sound`'s escape that they give is stated over
+* The statements (proved in `IxCC.Src.Relevance.Proof.P1.Main`): every reachable call whose `Pre`
+  holds has its `Post` (`preserve`); `Pre` propagates along every `Step` but the evaluation of a
+  shielded variable (`pre_step`); what a call reads is `Live` (`reads_live`); the root on literal
+  inputs returns a `Live` value (`run_live`). The narrowing of `Recheck.sound`'s escape that they give is stated over
   `Recheck.Front.GoesWrongLive` (`IxCC.Recheck.Proof.LiveDefs`).
 
 `preserve` and `pre_step` hold for any call a run may start from, with arbitrary values in its
@@ -552,19 +553,23 @@ def Post (p : Program) (ann : Ann) (ch : Checked) : Call → Prop
   | .forceAll k ss => ∀ vs, forceAll p k ss = .ok vs → ∀ v ∈ vs, (v.isIrr = false → Live p ann ch v) ∧ Whole p v
 
 /-- What a call reads: the function an application returns from, the structure a projection
-reads and the field it yields, the major F2 or F5 selects a rule by, and the quotient F8 lifts. -/
+reads and the field it yields, the major F2 or F5 selects a rule by, and the quotient F8 lifts.
+The major is read only at an ordinary kind at the levels (`Step.recMajor`, `Step.caseMajor`): a
+subsingleton or empty kind forces no major, so its clause has the steps' own premise. -/
 def Reads (p : Program) (ann : Ann) (ch : Checked) : Call → Prop
   | .apply k f s => (∃ v, apply p k f s = .ok v) → Live p ann ch f
   | .eval k ls ρ (.proj s i e) => ∀ v w, eval p k ls ρ e = .ok v → p.projectField s i v = .ok w →
       Live p ann ch v ∧ Live p ann ch w
-  | .fire (k + 1) (.recr r) _ args =>
+  | .fire (k + 1) (.recr r) ls args =>
       ∀ sf kk lv np nmot nmin ni ind rules ty major jf,
         p.decl? r = some (.recr sf kk lv np nmot nmin ni ind rules ty) →
+        (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary →
         force p k (args.getD (np + nmot + nmin + ni) default) = .ok major →
         p.selectRule ind np major = some jf → Live p ann ch major
-  | .fire (k + 1) (.cases c) _ args =>
+  | .fire (k + 1) (.cases c) ls args =>
       ∀ r sf kk lv np nmot nmin ni ind rules ty major jf,
         p.table.resolveOf c = some (.case r) → p.decl? r = some (.recr sf kk lv np nmot nmin ni ind rules ty) →
+        (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary →
         force p k (args.getD (np + 1 + ni) default) = .ok major →
         p.selectRule ind np major = some jf → Live p ann ch major
   | .fire (k + 1) (.quotLift _) _ [_, _, _, _, _, q] =>

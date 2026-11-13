@@ -11,7 +11,7 @@ parameter written erased (`recr_no_erased`); through leading λs, the binder cou
 counts and references (`lamRels_length_of_peel`, `univsOk_peel`, `refs_peel` with C6), a runtime
 term's references handled (`refsHandled_runtime`, `WellAnnotated.closed`), an environment read
 backwards (`rev_get`), and a variable a spine's head does not mention found among its arguments
-(`mentionsVar_arg`). P1 itself is not proved. -/
+(`mentionsVar_arg`). P1 itself is `IxCC.Src.Relevance.Proof.P1.Main`. -/
 
 set_option autoImplicit false
 

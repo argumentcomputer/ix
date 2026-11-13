@@ -10,7 +10,8 @@ import IxCC.Src.Relevance.Proof.P1.RunLive
 Under `Recheck.run`'s acceptance and the run's sort events (`Front.RunSortAgree`), the source goes
 wrong only by being stuck, trapping, or returning a `Live` value the view rejects
 (`Front.goesWrong_live`), and `Recheck.sound` holds with that escape (`sound_live`). Both take P1's
-root as a hypothesis (`hrl : RunLiveStmt`, `run_live`'s statement), which is not proved. They
+root as a hypothesis (`hrl : RunLiveStmt`, `run_live`'s statement), which `run_live` proves
+(`IxCC.Recheck.Proof.LiveClosed`: `Front.goesWrong_live_closed`, `sound_live_closed`). They
 also use L1's facts on the program SrcEval runs (`P1.facts_modeEq`), what the front end's acceptance
 gives (`front_accepted`, `shapeOk_of_run`) and `P1.bind_ok_inv`. Engineer PB's proofs, with
 `run_live` as the hypothesis `hrl`. -/

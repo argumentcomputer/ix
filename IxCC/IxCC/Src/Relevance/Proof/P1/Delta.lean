@@ -26,7 +26,7 @@ makes of it:
   proof field, which the pinned `Fin.mk` drops at the empty profile and which sits in a value of its
   two fields (`Canonical.finProof`, from the reached word entry of `HeadSeen`).
 
-P1 itself is not proved. -/
+P1 itself is `IxCC.Src.Relevance.Proof.P1.Main`. -/
 
 set_option autoImplicit false
 

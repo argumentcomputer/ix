@@ -609,6 +609,7 @@
   "IxCC.Recheck.Proof.Front",
   "IxCC.Recheck.Proof.FrontAccepted",
   "IxCC.Recheck.Proof.Live",
+  "IxCC.Recheck.Proof.LiveClosed",
   "IxCC.Recheck.Proof.LiveDefs",
   "IxCC.Recheck.Proof.Middle",
   "IxCC.Recheck.Proof.Object",
@@ -967,12 +968,15 @@
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Canonical",
   "IxCC.Src.Relevance.Proof.ModeEq",
+  "IxCC.Src.Relevance.Proof.P1.App",
   "IxCC.Src.Relevance.Proof.P1.Basic",
+  "IxCC.Src.Relevance.Proof.P1.CaseKey",
   "IxCC.Src.Relevance.Proof.P1.Cases",
   "IxCC.Src.Relevance.Proof.P1.Ctor",
   "IxCC.Src.Relevance.Proof.P1.Defs",
   "IxCC.Src.Relevance.Proof.P1.Delta",
   "IxCC.Src.Relevance.Proof.P1.Facts",
+  "IxCC.Src.Relevance.Proof.P1.Main",
   "IxCC.Src.Relevance.Proof.P1.Measure",
   "IxCC.Src.Relevance.Proof.P1.Plumbing",
   "IxCC.Src.Relevance.Proof.P1.Prefix",
@@ -1813,7 +1817,7 @@
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
  "baseline":
- "P1 consumption under run_live as a hypothesis (goesWrong_live, sound_live)",
+ "P1 proved: preserve, pre_step, reads_live, run_live; the narrowing with run_live given (goesWrong_live_closed, sound_live_closed)",
  "axiom_sha256":
- "40832782e71ad9744d88d8c487662b0d00b6936290e56eaf8311bd3d53c340f8",
- "axiom_count": 6838}
+ "e006ef662d55519a73262c509f18d0da6ea4eccec30d26bc9b1a3126770577ff",
+ "axiom_count": 6888}

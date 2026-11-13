@@ -510,19 +510,21 @@ def readsM (x : ECx) : Call → EM Bool
       | .ok w => do pure ((← liveM x x.depth v) && (← liveM x x.depth w))
       | _ => pure true
     | _ => pure true
-  | .fire (k + 1) (.recr r) _ args => match x.p.decl? r with
-    | some (.recr _ _ _ np nmot nmin ni ind _ _) =>
+  | .fire (k + 1) (.recr r) ls args =>
+    match x.p.decl? r, ((x.p.table.recKindOf r).map (·.atLevels ls) : Option RecKind) with
+    | some (.recr _ _ _ np nmot nmin ni ind _ _), some RecKind.ordinary =>
       match force x.p k (args.getD (np + nmot + nmin + ni) default) with
       | .ok major => if (x.p.selectRule ind np major).isSome then liveM x x.depth major else pure true
       | _ => pure true
-    | _ => pure true
-  | .fire (k + 1) (.cases c) _ args => match x.p.table.resolveOf c with
-    | some (.case r) => match x.p.decl? r with
-      | some (.recr _ _ _ np _ _ ni ind _ _) =>
+    | _, _ => pure true
+  | .fire (k + 1) (.cases c) ls args => match x.p.table.resolveOf c with
+    | some (.case r) =>
+      match x.p.decl? r, ((x.p.table.recKindOf r).map (·.atLevels ls) : Option RecKind) with
+      | some (.recr _ _ _ np _ _ ni ind _ _), some RecKind.ordinary =>
         match force x.p k (args.getD (np + 1 + ni) default) with
         | .ok major => if (x.p.selectRule ind np major).isSome then liveM x x.depth major else pure true
         | _ => pure true
-      | _ => pure true
+      | _, _ => pure true
     | _ => pure true
   | .fire (k + 1) (.quotLift _) _ [_, _, _, _, _, q] => match force x.p k q with
     | .ok (.con c' l' ps [a]) => if x.p.isQuotCtor c' then liveM x x.depth (.con c' l' ps [a]) else pure true

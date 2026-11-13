@@ -898,11 +898,17 @@ minors to the right value. These are checks with tests. The relevance proof
 (`Relevance.Proof.check_sound`) gives the tier-S facts erasure needs relative
 to SrcEval; since 2026-11-13 what the other checks decide is a proposition too
 (`Relevance.Proof.check_soundC` for tier C, `checkCanonical_sound` for
-`checkCanonical`, in `Src/Relevance/Proof/Canonical.lean`), but no theorem yet
-derives the invariant from them (relevance preservation, P1 in the
-[roadmap](roadmap.md#resource-soundness)). A violation makes SrcEval return an irrelevant value or get stuck,
-which the correctness statement counts as the source going wrong
-(`Front.GoesWrong`) and so does not bound. The certified kernel refused most
+`checkCanonical`, in `Src/Relevance/Proof/Canonical.lean`), and since a later
+landing of that day relevance preservation (P1, `Src/Relevance/Proof/P1/Main.lean`;
+[roadmap](roadmap.md#resource-soundness)) derives the invariant from them, with
+the run's sort events agreeing (`SortAgree`) as a hypothesis that nothing
+proves: an accepted program's evaluation never yields the marker at a position
+that is read. A violation makes SrcEval return an irrelevant value or get
+stuck, which the correctness statement counts as the source going wrong
+(`Front.GoesWrong`) and so does not bound; under the sort hypothesis the
+escape is narrowed to being stuck, trapping, or a value with no marker at a
+read position that the view rejects (`Recheck.sound_live_closed`). The
+certified kernel refused most
 of these programs only because its conversion compares binder contracts
 (the `case` route not even then); the checks do not rely on that, which the
 format change (modes leave the term bytes) requires.

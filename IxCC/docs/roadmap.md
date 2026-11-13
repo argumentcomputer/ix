@@ -1299,7 +1299,20 @@ has the route.
 root as a hypothesis (`RunLiveStmt`, `Src/Relevance/Proof/P1/RunLive.lean`). Under `Recheck.run`'s
 acceptance and the run's sort events, the source goes wrong only by being stuck, by trapping, or by
 returning a `Live` value that the view rejects; it never goes wrong because of a marker.
-`run_live` is not proved: three of P1's 25 cases (E7, F3, F5) are open.
+`run_live` has since been proved (next paragraph).
+
+**P1, relevance preservation, is proved (2026-11-13).** `Src/Relevance/Proof/P1/Main.lean` proves
+`preserve`, `pre_step`, `reads_live` and `run_live` from the 25 cases of the core. The last three
+are F3 (`Recr.lean`) and F5 (`CaseKey.lean`), engineer PJ's, and E7 (`App.lean`), engineer PR's,
+who also assembled the theorem. The theorems' hypotheses are L1's facts (`Facts`), one constructor per inductive
+and index (`ShapeOk`) and the run's sort events (`SortAgree`). `Recheck/Proof/LiveClosed.lean`
+gives `run_live` to the narrowing above (`Front.goesWrong_live_closed`, `sound_live_closed`): under
+`Recheck.run`'s acceptance and `Front.RunSortAgree`, the source goes wrong only by being stuck, by
+trapping, or by returning a value with no marker at a read position that the view rejects. One
+definition changed with the proof: `Reads` asks for the selected major at a recursor or a `case`
+key only at an ordinary kind, where the run forces one. Open: `SortAgree`, which typing should
+give and `tests-p1-twin` tests on every registered run, is not proved; the adequacy and mode
+theorems are other work.
 
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor
