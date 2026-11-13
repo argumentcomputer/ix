@@ -746,20 +746,6 @@ def Verdict.isAccept : Verdict → Bool
   | .accept .. => true
   | _ => false
 
-/-- The constants a run term names. -/
-def termRefs : Nat → Term → List Ref
-  | 0, _ => []
-  | n + 1, t =>
-    match t with
-    | .const r _ => [r]
-    | .app f a _ => termRefs n f ++ termRefs n a
-    | .lam _ _ _ _ b => termRefs n b
-    | .letE _ _ v b => termRefs n v ++ termRefs n b
-    | .proj s _ e _ => s :: termRefs n e
-    | .case k mj alts ex _ =>
-      k.ind :: (termRefs n mj ++ alts.toList.flatMap (termRefs n) ++ ex.toList.flatMap (termRefs n))
-    | _ => []
-
 /-- A reading failure as a verdict: the oracle's declines decline, anything
 else (malformed modes, a telescope mismatch, a bad run table) refuses. -/
 def readFailure (where_ e : String) : Verdict :=
