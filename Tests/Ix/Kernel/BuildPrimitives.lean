@@ -5,6 +5,7 @@ import Ix.IxVM.ClaimHarness
 import Ix.Meta
 import Ix.Address
 import Ix.Environment
+import Ix.EnvScope
 import Ix.Ixon
 import LSpec
 
@@ -103,35 +104,14 @@ def parseNameToLean (s : String) : Lean.Name := Id.run do
       name := .str name part
   return name
 
-/-- Collect the transitive Const refs of a `ConstantInfo`. Mirrors ix_old. -/
-def getConstRefs : Lean.ConstantInfo → Array Lean.Name
-  | .defnInfo v   => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .thmInfo v    => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .opaqueInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .axiomInfo v  => v.type.getUsedConstants
-  | .ctorInfo v   => v.type.getUsedConstants ++ #[v.induct]
-  | .inductInfo v => v.type.getUsedConstants ++ v.ctors ++ v.all
-  | .recInfo v    => v.type.getUsedConstants ++ v.all
-      ++ (v.rules.toArray.flatMap (fun r => r.rhs.getUsedConstants ++ #[r.ctor]))
-  | .quotInfo v   => v.type.getUsedConstants
-
-/-- Closure over all constants transitively referenced from `roots`. -/
-partial def collectDeps (env : Lean.Environment) (roots : Array Lean.Name)
-    : Lean.NameSet := Id.run do
-  let mut visited : Lean.NameSet := {}
-  let mut queue := roots.toList
-  while !queue.isEmpty do
-    match queue with
-    | [] => break
-    | name :: rest =>
-      queue := rest
-      if visited.contains name then continue
-      visited := visited.insert name
-      if let some ci := env.find? name then
-        for ref in getConstRefs ci do
-          if !visited.contains ref then
-            queue := ref :: queue
-  return visited
+/-- The primitives' selected closure, self-contained for IxC (recursors, literal
+    support), which `lake exe ixon-v4-primitives` compiles for `PrimAddrs`: the
+    binder data the annotator gives a record depends on the records IxC installs
+    beside it, so a smaller closure can give a primitive another address. -/
+def primitiveClosure (env : Lean.Environment) : List (Lean.Name × Lean.ConstantInfo) :=
+  let needed : Lean.NameSet := (Ix.EnvScope.collectSelectedDeps env
+    (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}
+  env.constants.toList.filter fun (name, _) => needed.contains name
 
 /-- Parse a dotted string into an `Ix.Name`. -/
 def parseIxName (s : String) : Ix.Name := Id.run do
@@ -146,12 +126,9 @@ def parseIxName (s : String) : Ix.Name := Id.run do
 def testBuildPrimitives : TestSeq :=
   .individualIO "build primitives dump" none (do
     let leanEnv ← get_env!
-    let roots := kernelPrimitives.map parseNameToLean
-    let needed := collectDeps leanEnv roots
-    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
-      needed.contains name
+    let filtered := primitiveClosure leanEnv
 
-    IO.println s!"[build-primitives] {filtered.length} constants in transitive closure"
+    IO.println s!"[build-primitives] {filtered.length} constants in the selected closure"
 
     -- with the compile's binder-data annotator, as `PrimAddrs` was computed
     let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput filtered.toArray 32)
@@ -215,10 +192,7 @@ def testPrimitivesParity : TestSeq :=
   .individualIO "primitive address parity (PrimAddrs vs live compile)" none (do
     -- Reuse the same Lean → Ixon compile pipeline as testBuildPrimitives.
     let leanEnv ← get_env!
-    let roots := kernelPrimitives.map parseNameToLean
-    let needed := collectDeps leanEnv roots
-    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
-      needed.contains name
+    let filtered := primitiveClosure leanEnv
     -- with the compile's binder-data annotator, as `PrimAddrs` was computed
     let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput filtered.toArray 32)
     let (env, _) ← IO.ofExcept (Ix.Cert.compileReport input)
