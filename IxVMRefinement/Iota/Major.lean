@@ -199,8 +199,8 @@ theorem try_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     injection ht0 with ht0
     subst ht0
     rcases ht with h1 | h2
-    · exact zero_ne_one h1
-    · exact field_two_ne_zero h2.symm
+    · exact (zero_ne_one h1).elim
+    · exact (field_two_ne_zero h2.symm).elim
   · -- fired, but the modeled gate refused: the application itself
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he497)
     subst he532 hc1
@@ -223,7 +223,7 @@ theorem try_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       (t := .ptr (.named "KernelTypes::KExprNode" [])) (R := TmE c.κ d Γ)
       (by rw [Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>».symbol]; exact ev144)
       (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e0 hAs)
-    rw [NatAux.val_natCast (by omega)] at hA
+    rw [NatAux.val_natCast (n := mI) (by omega)] at hA
     obtain ⟨A1, hA1, hr1⟩ := ih.get (.nat .cleanup_nat_offset_major) (by lt_calls) ev174 rc v131
       rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono e0 hrc) d Γ A hAt
     have e1 := ObsFn.heap_extends ev174
@@ -239,13 +239,13 @@ theorem try_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       d Γ A3 hA3
     have e4 := ObsFn.heap_extends ev272
     have ext := e0.trans (e1.trans (e2.trans (e3.trans e4)))
-    have hget : As.getD mI (.bvar 0) = A := by simp [List.getD_eq_getElem?_getD, hA]
+    have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hA]; rfl
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_iota) (by lt_calls) ev303 rc rt lvls sp np nm nmi
       ni rules rp v259 types rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) k us nl kf cv mI rP rls p As M
       (RecRedHyps.mono ext ⟨⟨hfind, u, blk, idx, hci⟩, hus⟩) hlen
       (Bytes.repAddressRef_heapMono₂ addrTy ext hp) hmh (tml_mono ext hAs) hM
-      (by rw [hget]; exact .trans hr1 (.trans hr2 (.trans hr3 hr4))) x_r3 rfl
+      (by rw [hget]; exact .trans hr1 (.trans hr2 (.trans hr3 hr4))) x rfl
     exact ⟨E, Tm.mono (ObsFn.heap_extends ev432) hE, hred⟩
   · -- no rule fired: the application itself
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he565)
