@@ -1,5 +1,6 @@
 import IxVMRefinement.Infer.Leaves
 import IxVMRefinement.Infer.Close
+import IxVMRefinement.Infer.Proj
 
 /-! # One step of inference by the head node, at both grades
 
@@ -15,13 +16,11 @@ dispatch on the head node of the term:
   `types_extend`), its type closed again (`Tm.close`), the datum checked by `lam_datum_ok`
   (`Infer.lam`, `lam_infer`); `Forall`: both sorts and `forall_datum_ok` (`Infer.forallE`);
 * `Let`: the ζ-reduct, the image of the node; `Lit`: the literal's role constant; `Proj`: at the
-  full grade `k_infer_proj`.
+  full grade `k_infer_proj`, and at the io grade `infer_proj_common`.
 
 **`Infer.const` reads the stored type at the constant's own level parameters.** IxVM loads it with
 those renamed to positions (`posOf`) and instantiates the positions; the parameters are a
-permutation of the positions (`ValRep`), so the two agree (`posOf_instantiateLevelParams_perm`).
-
-The io grade's projection arm is a hypothesis of its step lemma (`hproj`). -/
+permutation of the positions (`ValRep`), so the two agree (`posOf_instantiateLevelParams_perm`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -283,14 +282,10 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
     exact ih.get (.infer .k_infer_proj) (by lt_calls) ev957 rc x_struct_addr _ x_e1 types rfl
       (good.sub fun x hx => by simp [hx]) hrc i rfl d Γ htypes a Es ha hEs
 
-/-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node, given
-the projection arm (`hproj`: at a term whose node is a projection, the spec holds). -/
-theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c)
+/-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node. -/
+theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c) (hp : InferProjFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls)
-    (hproj : ∀ rc e types sa fi e1, args = [rc, e, types] →
-      loadValue h e = .ok (.construct kexprEnum "Proj" [sa, fi, e1]) →
-        Specs.Infer.k_infer_only_core c args h r h' calls) :
+    (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_only_core c args h r h' calls := by
   intro rc e types hargs good hrc d Γ htypes E hE
   subst hargs
@@ -466,7 +461,31 @@ theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c)
       exact absurd h2 (by decide)
     · rw [he1104]
       exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
-  case Proj =>
-    exact hproj rc e types _ _ _ rfl ‹_› rc e types rfl good hrc d Γ htypes E hE
+  case Proj x_struct_addr x_fidx x_e1 v1180 m1181 cs1191 v1218 m1219 cs1229 m1257 cs1268
+      x_head x_args x_head_addr x_lvls v1335 m1338 cs1346 m1373 p1380 cs1386
+      x_ind_nlvls x_ind_ty x_n_params x_n_indices x_num_ctors w1413 x_block_addr x_ind_idx
+      v1481 m1482 cs1492 m1536 p1543 cs1549
+      x_ctor_nlvls x_ctor_ty w1584 w1585 w1586 w1587 w1588 w1589
+      v1658 m1659 cs1669 v1688 m1689 cs1699 v1726 m1727 cs1737 v1779 m1780 cs1790
+      v1793 v1795 m1797 cs1805 m1848 cs1856
+      ld12 ev1193 ev1231 ev1270 ld1306 ev1348 heq1371 ev1388 ld1382 _ ev1494 ev1551 ld1545
+      heq1657 ev1671 ev1701 ev1739 ev1807 ev1858 ev1792 he1884 he1885 hc1886 =>
+    obtain ⟨a, i, PE, rfl, rfl, ha, hPE⟩ := hE.proj_of_load ld12
+    have hlt1191 : cs1191.length < calls.length := by rw [hc1886]; lt_calls
+    have g1191 : Good c cs1191 := good.sub fun x hx => by rw [hc1886]; simp [hx]
+    have hlt1699 : cs1699.length < calls.length := by rw [hc1886]; lt_calls
+    have g1699 : Good c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
+    refine infer_proj_common c hc hp ih good hrc rfl htypes ha hPE hc1886 ?_ ev1231 ev1270 ld1306
+      ev1348 heq1371 ev1388 ld1382 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
+      ev1792 he1884 he1885
+    · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer_only) hlt1191 ev1193 rc x_e1 types rfl
+        g1191 hrc d Γ htypes PE hPE
+      exact ⟨TPE, hTPE, hinf, ObsFn.heap_extends ev1193⟩
+    · intro n T As hnp hT hAs
+      obtain ⟨T_after, hT_after, hpis⟩ := ih.get (.infer .io_peel_params_subst) hlt1699 ev1701
+        v1658 x_args x_n_params rfl g1699 n hnp d Γ T As hT hAs
+      exact ⟨T_after, hT_after, hpis, ObsFn.heap_extends ev1701⟩
+    · intro _ hnp _
+      exact hnp
 
 end IxVM.Refinement.Core
