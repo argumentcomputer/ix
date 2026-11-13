@@ -150,7 +150,7 @@ mode. -/
 def recordModes (c : Ixon.Constant) : Except String RecordModes := do
   let full := binderfulEntries c.sharing
   let blocks := c.binders.map fun b =>
-    ({ shared := b.shared, index := b.index.toNat, variant := b.variant.toNat } : BlockKey,
+    (({ shared := b.shared, index := b.index.toNat, variant := b.variant.toNat } : BlockKey),
       b.nodes.map modeNode)
   return { blocks, binderful := full }
 

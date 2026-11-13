@@ -153,7 +153,6 @@ def run : IO UInt32 := do
     let kinds : List (String × Ix.Claim) := [
       ("reveal", .reveal (addr "commitment") (.axio none none none)),
       ("contains", .contains (addr "tree") (addr "constant")),
-      ("resource", .resource (addr "root") (addr "profile")),
       ("binding", .binding spec ctx.binding)]
     for (kind, claim) in kinds do
       let w ← wrapperOf home claim
@@ -169,7 +168,7 @@ def run : IO UInt32 := do
     let catalogRoot ← wrapperOf home (.catalog (addr "members"))
     let everyFlag := #["--allow-custom-binding", "--allow-axioms", "--allow-assumed-binding",
       "--allow-assumptions", "--allow-reveal-claim", "--allow-contains-claim",
-      "--allow-resource-claim", "--allow-binding-claim"]
+      "--allow-binding-claim"]
     let o ← verify catalogRoot #[]
     check "a catalog claim is refused, naming --ixc" (mentions o "refused:" && mentions o "--ixc") o
     let o ← verify catalogRoot everyFlag

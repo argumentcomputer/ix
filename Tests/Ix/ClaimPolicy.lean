@@ -57,19 +57,18 @@ def refusesSaying (pol : Policy) (claim : Ix.Claim) (text : String)
 /-- Every flag. -/
 private def everyFlag : Policy :=
   { customBinding := true, axioms := true, assumedBinding := true, assumptions := true,
-    reveal := true, contains := true, resource := true, binding := true }
+    reveal := true, contains := true, binding := true }
 
 /-- `everyFlag` without `except`'s kind flag. -/
 private def allBut (except : String) : Policy :=
   { everyFlag with
     reveal := except != "reveal", contains := except != "contains",
-    resource := except != "resource", binding := except != "binding" }
+    binding := except != "binding" }
 
 /-- A claim of each kind that states no typing, with its kind and its flag. -/
 private def untyped : List (String × Ix.Claim × Policy) := [
   ("reveal", .reveal (addr "comm") (.axio none none none), { reveal := true }),
   ("contains", .contains (addr "tree") (addr "const"), { contains := true }),
-  ("resource", .resource (addr "root") (addr "profile"), { resource := true }),
   ("binding", .binding spec (addr "binding"), { binding := true })]
 
 /-- Refusals by kind and by specification set. -/
@@ -95,7 +94,7 @@ def kindTests : TestSeq :=
   ++ test "a binding claim under another specification set is refused under its flag"
       (!admits { binding := true } (.binding otherSpec (addr "binding")))
   ++ test "the kind flags accept no conditional typing claim"
-      (!admits { reveal := true, contains := true, resource := true, binding := true }
+      (!admits { reveal := true, contains := true, binding := true }
         (.checkEnv { ctx with axioms := some (addr "axioms") } (addr "root") none))
 
 /-- Whether `claim`'s statement says every one of `texts`. -/
@@ -150,10 +149,8 @@ def statementTests : TestSeq :=
   ++ test "a binding claim names its table and specification set"
       (statementSays (.binding spec (addr "binding"))
         ["kind: binding", s!"the role table {addr "binding"}", s!"specification set: {spec}, this build's"])
-  ++ test "a resource claim and a catalog name their subjects"
-      (statementSays (.resource (addr "root") (addr "profile"))
-          ["kind: resource", s!"resource profile {addr "profile"}", "does not cover"]
-        && statementSays (.catalog (addr "members"))
+  ++ test "a catalog names its subjects"
+      (statementSays (.catalog (addr "members"))
           ["kind: catalog", s!"root {addr "members"}", "each member's own"])
 
 def unitTests : TestSeq :=

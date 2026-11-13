@@ -86,7 +86,6 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "allow-assumptions"; "Accept a claim conditional on typing assumptions (assumed leaves) that no verified proof discharges."
     "allow-reveal-claim"; "Accept a reveal claim (fields of a committed constant), which states no typing."
     "allow-contains-claim"; "Accept a contains claim (a leaf of a merkle tree), which states no typing."
-    "allow-resource-claim"; "Accept a resource claim, which the IxVM consistency theorem does not cover."
     "allow-binding-claim"; "Accept a binding claim (a role table meets this build's specifications) verified on its own; --binding-proof needs no flag."
 
   ARGS:

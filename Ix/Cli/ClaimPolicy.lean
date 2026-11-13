@@ -25,7 +25,7 @@ the kernel admits. These commands accept the typing claims (`eval`, `check`,
   must discharge (`--allow-assumptions`).
 
 Every other kind of claim is refused unless its own flag accepts it:
-`--allow-reveal-claim`, `--allow-contains-claim`, `--allow-resource-claim` and
+`--allow-reveal-claim`, `--allow-contains-claim` and
 `--allow-binding-claim` (a binding claim names a specification set too, which
 must be this build's). A command given a binding proof for the purpose
 (`ix verify --binding-proof`) checks that proof's claim itself and needs no flag.
@@ -60,7 +60,6 @@ structure Policy where
   assumptions : Bool := false
   reveal : Bool := false
   contains : Bool := false
-  resource : Bool := false
   binding : Bool := false
   deriving Repr, Inhabited
 
@@ -72,7 +71,6 @@ def ofParsed (p : Cli.Parsed) : Policy where
   assumptions := p.hasFlag "allow-assumptions"
   reveal := p.hasFlag "allow-reveal-claim"
   contains := p.hasFlag "allow-contains-claim"
-  resource := p.hasFlag "allow-resource-claim"
   binding := p.hasFlag "allow-binding-claim"
 
 /-- A typing claim's assumptions (assumed leaves). -/
@@ -88,7 +86,6 @@ def kind : Ix.Claim → String
   | .reveal .. => "reveal"
   | .contains .. => "contains"
   | .catalog .. => "catalog"
-  | .resource .. => "resource"
   | .binding .. => "binding"
 
 /-- The specification set a claim names: a typing claim's context's, or a binding
@@ -112,8 +109,6 @@ def kindRefusal (pol : Policy) : Ix.Claim → Option String
     kindFlagged pol.reveal "a reveal claim, which states no typing" "allow-reveal-claim"
   | .contains .. =>
     kindFlagged pol.contains "a contains claim, which states no typing" "allow-contains-claim"
-  | .resource .. => kindFlagged pol.resource
-      "a resource claim, which the IxVM consistency theorem does not cover" "allow-resource-claim"
   | .binding .. =>
     kindFlagged pol.binding "a binding claim, which states no typing" "allow-binding-claim"
 
@@ -216,10 +211,6 @@ def statement (claim : Ix.Claim) (bindingDischarged : Bool := false)
       ("every member claim holds",
         s!"the member claims of the canonical tree with root {members}",
         ["each member's own, which the claim does not show"])
-    | .resource root profile =>
-      ("erased typing and resource admission of an environment",
-        s!"the environment with root {root}, under the resource profile {profile}",
-        ["the resource validator's own; the IxVM consistency theorem does not cover it"])
     | .binding named table =>
       ("a role table binds every role, each bound constant meeting its specification",
         s!"the role table {table}", [specLine spec named])
