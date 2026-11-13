@@ -622,6 +622,11 @@ def anCase (P : Prog) :
     Nat → List ABnd → CaseInfo → Term → Array Term → Array Term → Cls → CM AVal
   | 0, _, _, _, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, k, mj, alts, ex, c => do
+    -- one alternative per alternative of the case shape (V5, Gap B: as landed a missing one was
+    -- skipped and an extra one never looked at; `readTerm` builds only matching cases, so this
+    -- refuses only a program built otherwise, on which `runR` is stuck at the missing one)
+    unless alts.size == k.alts.size do
+      refuseM "a case's alternatives do not match its case shape's"
     let (mv, consuming) ← match mj with
       | .var j mc => do
         let some b := env[j]? | refuseM "a variable out of scope"
@@ -648,7 +653,7 @@ def anCase (P : Prog) :
         | .field i => caseField P k fields mv consuming i
         | .irr => (({ cls := .irr } : AVal), false, false)
         | .unit => (({ cls := .imm } : AVal), false, false)
-      let some alt := alts[j]? | continue
+      let some alt := alts[j]? | refuseM "a case's alternative is missing"
       let r ← anAlt P n env alt args
       -- the join drops the binding a result was read from, so a once binding cannot leave an
       -- alternative (repair R; judged here, where a once binding made inside it is still known)
@@ -668,13 +673,17 @@ def anCase (P : Prog) :
           else if a == BSt.shared || b == BSt.shared then BSt.shared else BSt.live)
         if post.spent[i]! then spent := spent.set! i true
     set { pre with st, spent, steps, nextRegion }
-    let some r0 := results[0]? | return { cls := c }
-    let mut r := r0
-    for x in results do
-      unless x.skel.admits r.skel do refuseM "mode skeletons differ between a case's alternatives"
-      r := { r with own := (if r.own == Own.uniq && x.own == Own.uniq then Own.uniq else Own.shared),
-                    deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
-                    onceOnly := r.onceOnly || x.onceOnly }
+    -- the alternatives' results joined; a case with no alternative (on an inductive with no
+    -- constructor, where `runR` is stuck at `select`) has a result holding nothing, and its extra
+    -- arguments are still analysed below (V5, Gap B: as landed it returned before them)
+    let mut r : AVal := { cls := c }
+    if let some r0 := results[0]? then
+      r := r0
+      for x in results do
+        unless x.skel.admits r.skel do refuseM "mode skeletons differ between a case's alternatives"
+        r := { r with own := (if r.own == Own.uniq && x.own == Own.uniq then Own.uniq else Own.shared),
+                      deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
+                      onceOnly := r.onceOnly || x.onceOnly }
     r := { r with cls := c, src := none }
     -- the extra arguments, then the applications, all but the last at class `val`, as
     -- `runR`'s `applyAll` (finding 16: as landed each was judged in turn, at the case's class)

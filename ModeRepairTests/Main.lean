@@ -2314,6 +2314,59 @@ def v5closure (t : IO.Ref Tally) : IO Unit := do
   check1 t "V5 allDefault: the chain walked whole: true"
     (match d with | .ok true => true | _ => false) (match d with | .ok b => s!"ok {b}" | .error e => e)
 
+/-! ### V5 Gap B: a case's alternatives against its case shape, and a case with no alternative
+
+`anCase` skipped an alternative its term lacked (`alts[j]? | continue`), never looked at one past
+the case shape's, and returned before analysing the extra arguments of a case with no
+alternative. `runR` is stuck at a missing alternative and at `select` on an inductive with no
+constructor, so none of these runs violates: the checker's rule failed open, its verdicts
+were not unsound on a run. `readTerm` builds only cases whose alternatives match the shape's.
+`EmptyI` has no constructor. -/
+
+def EmptyI := mem 494
+def caseEmp : CaseInfo := { ind := EmptyI, arity := 1, major := 0, alts := #[] }
+def gb0 := mem 495
+def gb0e := mem 496
+def gbL := mem 497
+def gbL3 := mem 498
+def gbLok := mem 499
+
+def pGapB : Prog := prog [
+  (EmptyI, .ind #[]),
+  -- `gb0 (x : Empty) (n : Nat) : Nat := Empty.casesOn x n`
+  (gb0, body [par, par .many .leaf] (.case caseEmp (v 1) #[] #[v 0 .leaf] .leaf) .shared .leaf),
+  -- `gb0e (@erased e : Nat) (x : Empty) : Nat := Empty.casesOn x e`: an extra argument read erased
+  (gb0e, body [par .erased .leaf, par] (.case caseEmp (v 0) #[] #[v 1 .leaf] .leaf) .shared .leaf),
+  -- `gbL (xs : List) : Nat`, a case on a list with its `cons` alternative missing
+  (gbL, body [par] (.case caseL (v 0) #[.natLit 0] #[] .leaf) .shared .leaf),
+  -- `gbL3 (@erased e : Nat) (xs : List) : Nat`, three alternatives for two, the third reading `e`
+  (gbL3, body [par .erased .leaf, par] (.case caseL (v 0)
+    #[.natLit 0, lam (par .many .leaf) (lam (par .many .val) (.natLit 1) .shared .leaf) .shared .leaf, v 1 .leaf]
+    #[] .leaf) .shared .leaf),
+  -- the control: both alternatives
+  (gbLok, body [par] (.case caseL (v 0)
+    #[.natLit 0, lam (par .many .leaf) (lam (par .many .val) (.natLit 1) .shared .leaf) .shared .leaf]
+    #[] .leaf) .shared .leaf)]
+
+def irrAndNat : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, n])
+def twoIrr : Heap × List Val := (({} : HB).heap, [.imm .irr, .imm .irr])
+def irrAndOneList : Heap × List Val := let (b, xs) := ({} : HB).list [1]; (b.heap, [.imm .irr, xs])
+
+def gapBCases : List Case := [
+  { label := "V5 Gap B: a case with no alternative, its extra argument a plain number (gb0)", P := pGapB,
+    seed := gb0, inp := irrAndNat, toCheck := [gb0], verdict := .accept, run := [(0, .stuck)] },
+  -- REPAIR V5 (Gap B): accepted before (the extra arguments not analysed)
+  { label := "V5 Gap B: a case with no alternative, its extra argument erased (gb0e)", P := pGapB,
+    seed := gb0e, inp := twoIrr, toCheck := [gb0e], verdict := .refuse "erasedRead", run := [(0, .stuck)] },
+  -- REPAIR V5 (Gap B): accepted before (the missing alternative skipped)
+  { label := "V5 Gap B: a case on a list with its cons alternative missing (gbL)", P := pGapB,
+    seed := gbL, inp := oneList, toCheck := [gbL], verdict := .refuse "do not match", run := [(0, .stuck)] },
+  -- REPAIR V5 (Gap B): accepted before (the third alternative never looked at)
+  { label := "V5 Gap B: a case on a list with a third alternative, reading an erased binding (gbL3)", P := pGapB,
+    seed := gbL3, inp := irrAndOneList, toCheck := [gbL3], verdict := .refuse "do not match", run := [(0, .value)] },
+  { label := "V5 Gap B, control: both alternatives (gbLok)", P := pGapB, seed := gbLok, inp := oneList,
+    toCheck := [gbLok], verdict := .accept, run := [(0, .value)] }]
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2332,6 +2385,7 @@ def run : IO UInt32 := do
   v5oracle t
   for c in gapACases do runCase t c
   v5closure t
+  for c in gapBCases do runCase t c
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"
