@@ -2291,7 +2291,19 @@ def chainStore (n : Nat) : Ix.Kernel.Reader.Store := fun a => Id.run do
       return some (chainRec (if k + 1 < n then #[addr (210 + k + 1)] else #[]))
   return none
 
+/-! The default limit, pinned (the cut at 2^24 cannot be run here): `closureFuel` is the
+default of `closureOf`, `Reading.make`, `allDefault` and `Limits.walk`. Each `example` holds
+by `rfl` only while the default argument is `closureFuel`, so the driver does not compile if
+one is lowered without the others. -/
+example : closureFuel = 1 <<< 24 := rfl
+example (st : Ix.Kernel.Reader.Store) (rs : List Address) : closureOf st rs = closureOf st rs closureFuel := rfl
+example (s : Subject) : Reading.make s = Reading.make s closureFuel := rfl
+example (s : Subject) : allDefault s = allDefault s closureFuel := rfl
+example : ({} : Limits).walk = closureFuel := rfl
+
 def v5closure (t : IO.Ref Tally) : IO Unit := do
+  check1 t "V5 closureFuel: 2^24, the default of Limits.walk"
+    (closureFuel == 1 <<< 24 && ({} : Limits).walk == closureFuel) s!"{closureFuel}, {({} : Limits).walk}"
   let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
   let s : Subject := { table, store := chainStore 5, seeds := [addr 210] }
   let (c3, w3) := closureOf s.store s.seeds 3

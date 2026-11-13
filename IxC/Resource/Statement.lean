@@ -147,7 +147,11 @@ claimed: a claim of mode safety is a claim at stated oracle limits, and a
 decline at those limits is not a refusal of the program. By definition this is
 the program the checker checks (`check` reads the whole closure with the same
 classifier), which is why the oracle declines at its depth limit instead of
-inventing a class. -/
+inventing a class. Every source of a decline, in one place: the oracle's
+kernel fuel, its depth limit and a level comparison out of fuel
+(`Oracle.lean`), and the closure's walk cut at its step limit (`closureFuel`,
+`Reading.complete`; `check` at `Limits.walk`), in which case no program is
+read and `check` declines. -/
 def Reads (lim : OracleLimits) (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
   readProg s (oracleClassifier env (ctorShapes (Reading.make s)) lim) = .ok P
 
