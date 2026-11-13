@@ -23,7 +23,16 @@ approved for the proof; the theorems join the library as they are proved
   `Pre` propagates along every `Step` but the evaluation of a shielded variable (`pre_step`); what a
   call reads is `Live` (`reads_live`); the root on literal inputs returns a `Live` value
   (`run_live`). The narrowing of `Recheck.sound`'s escape that they give is stated over
-  `Recheck.Front.GoesWrongLive` (`IxCC.Recheck.Proof.LiveDefs`). -/
+  `Recheck.Front.GoesWrongLive` (`IxCC.Recheck.Proof.LiveDefs`).
+
+`preserve` and `pre_step` hold for any call a run may start from, with arbitrary values in its
+environment and arguments that satisfy `Pre`; so the invariants say of a value what SrcEval's own
+values have and an arbitrary one need not. Three clauses exist for that reason alone: a special
+head is the one δ makes for its constant (`HeadSeen`), a constructor value holds a marker at a
+field written erased only with its constructor's field count, and a `Quot.mk` value with a marker
+element only from a `Quot.mk` that reads its element (`MarkersPlaced`). Without each, a call whose
+`Pre` holds returns the marker (a recursor with a table entry fired as `.recr r`; F2 binding a
+rule's field λs short; F8 applying a function to an element written erased). -/
 
 set_option autoImplicit false
 
@@ -65,11 +74,17 @@ def HeadIgnores (ann : Ann) (h : Head) (ls : Levels) (j : Nat) : Prop :=
   ∃ c cr r, headConst? h = some c ∧ ann.constRel? c = some cr ∧ cr.params[j]? = some r ∧
     r.irrAt ls = true
 
-/-- A special head as SrcEval met it: its constant (if any) is a reached instance at a profile
-agreeing with `ls`, and a word operation comes from a reached `word` entry (where one is reached,
-`Canonical.finProof` has `Fin.mk` drop the proof field F6w builds with the marker). -/
+/-- A special head as SrcEval met it: the head `evalConst` makes for its constant
+(`specialHead?`: a `case` entry gives `.cases c`; with no table entry, a constructor, recursor or
+quotient declaration gives `.ctor c`, `.recr c`, `.quotMk c` or `.quotLift c`; a primitive or word
+operation has no constant), that constant a reached instance at a profile agreeing with `ls`, and
+a word operation from a reached `word` entry (where one is reached, `Canonical.finProof` has
+`Fin.mk` drop the proof field F6w builds with the marker, and have the two fields F6w builds).
+Without the first conjunct a recursor with a table entry could fire as `.recr r`, which no run
+does, with rules no check reads (`runtimeKeys` omits them; `ReadsOk` and `RulesOk` speak of the
+head δ makes). -/
 def HeadSeen (p : Program) (ch : Checked) (ls : Levels) (h : Head) : Prop :=
-  (∀ c, headConst? h = some c → ∃ q, Agree ls q ∧ (c, q) ∈ ch.instances) ∧
+  (∀ c, headConst? h = some c → specialHead? p c = some h ∧ ∃ q, Agree ls q ∧ (c, q) ∈ ch.instances) ∧
   (∀ w op, h = .word w op → ∃ c ∈ ch.reached, ∃ thm, p.table.resolveOf c = some (.word w op thm))
 
 /-- `v`, applied to one more slot, does not read it: a closure whose binder is irrelevant at its
@@ -144,6 +159,27 @@ def WholeTerm (p : Program) (t : Term) : Prop :=
   ∀ c us shape, t.spineL.1 = .const c us → elimShape? p c = some shape → erasedMinors p shape = true →
     shape.arity ≤ t.spineL.2.length
 
+/-- Where a constructor value `con c _ _ fs` may hold a marker, beyond the fields it does not
+read: what the values SrcEval builds have (F1 builds every field from its constructor's
+arguments, F7 from a `Quot.mk` that reads its element, `Program.boolValue` builds no field, F6w's
+tower holds its one marker at `Fin.mk`'s proof field, whose count `Canonical.finProof` fixes) and
+an arbitrary value need not. -/
+structure MarkersPlaced (p : Program) (c : CId) (fs : List Value) : Prop where
+  /-- A marker at a field its constructor writes erased sits only in a value with the
+  constructor's field count. F2 binds the rule's field λs by the value's field count (`peelLams`
+  over `pre ++ fields`) and the forwarding clause (`ForwardOk`) speaks of the rule's body under the
+  declared count: with fewer fields the body is still a λ, in which the marker's variable is not
+  shielded. The parameter slots F2 binds are the eliminator's own arguments, never the value's,
+  whose count `selectRule` only compares; F3 takes its fields from the eliminator's index slots;
+  F5 applies the minor to the fields without peeling. -/
+  count : ∀ i v, fs[i]? = some v → v.isIrr = true → fieldWrittenErased p c i = true →
+    ∀ sf lv ind cidx np nf ty, p.decl? c = some (.ctor sf lv ind cidx np nf ty) → fs.length = nf
+  /-- A `Quot.mk` value whose element is a marker is of a `Quot.mk` that does not write its element
+  (parameter 2) erased: F8's sort clause (`SortCoherent` (e)) exempts an element written erased,
+  which `ReadsOk` refuses only at the `Quot.mk` δ makes. -/
+  quotElem : ∀ v, fs[0]? = some v → v.isIrr = true → ∀ lv ty, p.decl? c = some (.quot .ctor lv ty) →
+    2 ∉ erasedParams ty
+
 /-! ## `Live`: no marker at a read position, by provenance -/
 
 mutual
@@ -154,11 +190,13 @@ definition is strictly positive. A marker is never `Live`. -/
 inductive Live (p : Program) (ann : Ann) (ch : Checked) : Value → Prop
   | lit (n : Nat) : Live p ann ch (.lit n)
   | str (s : String) : Live p ann ch (.str s)
-  /-- Every field is `Live` or a marker, a field that is read is `Live`, and none is a partial eliminator. -/
+  /-- Every field is `Live` or a marker, a field that is read is `Live`, none is a partial
+  eliminator, and the markers are where SrcEval's own values have them (`MarkersPlaced`). -/
   | con {c : CId} {ls : Levels} {ps : List Slot} {fs : List Value} :
       (∀ i v, fs[i]? = some v → (ReadsField p ann ch c ls i = true ∨ v.isIrr = false) →
         Live p ann ch v) →
       (∀ (i : Nat) (v : Value), fs[i]? = some v → Whole p v) →
+      MarkersPlaced p c fs →
       Live p ann ch (.con c ls ps fs)
   /-- The closure of `λ b d. body` under `ρ`, from a term with the facts at a profile agreeing
   with its levels. -/
