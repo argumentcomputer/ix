@@ -425,11 +425,6 @@ expected {code} with '{needle}'\n{out.stdout}\n{out.stderr}"
   finally
     IO.FS.removeDirAll dir
 
-/-! ## The kernel's limits as settings (`IxCK/Host/Limits.lean`, `docs/kernel.md`, "Limits at
-the command line, and exit codes"): each limit lowered and raised by its flag and by its
-variable, the flag over the variable, malformed values, the address-space refusal, on
-`ix check-lean`, `ix verify-host`, `ix compile` and `kernel-check-ixe`. -/
-
 /-- Run `cmd args` with `env` added; exit code, stdout, stderr. -/
 private def Tests.Cli.runEnv (cmd : String) (args : Array String)
     (env : Array (String × Option String) := #[]) : IO IO.Process.Output :=
@@ -442,6 +437,73 @@ private def Tests.Cli.expect (what : String) (out : IO.Process.Output) (code : U
   for n in needles do
     unless (out.stderr.splitOn n).length > 1 || (out.stdout.splitOn n).length > 1 do
       throw <| IO.userError s!"{what}: no '{n}' in its output\n{out.stdout}\n{out.stderr}"
+
+/-- Compile, into `dir`, an artifact whose one theorem `kjDeep`'s proof is
+`@id True (… True.intro)` nested `n` levels (built by a loop, added without Lean's kernel
+check). The producer runs on a 4 GiB stack: it recurses on the depth and is not under test. -/
+private def Tests.Cli.compileDeep (ix dir : System.FilePath) (n : Nat) : IO System.FilePath := do
+  let source := dir / s!"KjDeep{n}.lean"
+  IO.FS.writeFile source
+    s!"import Lean\nopen Lean\n\
+     def kjNest (n : Nat) : Expr := Id.run do\n\
+     \x20 let mut e : Expr := .const ``True.intro []\n\
+     \x20 for _ in [0:n] do\n\
+     \x20   e := mkApp2 (.const ``id [Level.zero]) (.const ``True []) e\n\
+     \x20 return e\n\
+     set_option debug.skipKernelTC true\n\
+     run_cmd Lean.Elab.Command.liftCoreM do\n\
+     \x20 addDecl (.thmDecl \{ name := `kjDeep, levelParams := [], type := .const ``True [], value := kjNest {n} })\n"
+  let out := dir / s!"deep{n}.ixe"
+  let built ← IO.Process.output {
+    cmd := ix.toString, env := Tests.Cli.spawnEnv ++ #[("LEAN_STACK_SIZE_KB", some "4194304")]
+    args := #["compile", source.toString, "--no-build", "--consts", "kjDeep", "--out", out.toString] }
+  unless built.exitCode == 0 do
+    throw <| IO.userError s!"compile of the {n}-level record failed:\n{built.stdout}\n{built.stderr}"
+  return out
+
+/-- **A deep record is declined, not a crash** (the root loaders scan a record's depth before
+they decode it: `Ix/Ixon.lean`'s `getEnv`/`getEnvVerifiedLazy`, the stream's `decodeOwn`). A
+record nested 20,000 levels, past the default depth limit (16,384): `ix check-lean`, `ix
+verify-host` (a statement issued for a 10-level artifact, replayed against the deep one; the
+loader runs first) and `kernel-check-ixe` exit 6 naming the limit. A record nested 100,000
+levels on an 8 MiB stack (`LEAN_STACK_SIZE_KB=8192`), on which `check-lean` used to abort
+with a stack overflow while it decoded: every host exits 6 (`kernel-check-ixe` keeps its
+caller's stack). Each run under a 120 s bound. -/
+private def Tests.Cli.testDeepRecordExits : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let kci ← IO.FS.realPath ".lake/build/bin/kernel-check-ixe"
+  let dir ← IO.FS.createTempDir
+  try
+    let shallow ← Tests.Cli.compileDeep ix dir 10
+    let deep ← Tests.Cli.compileDeep ix dir 20000
+    let deeper ← Tests.Cli.compileDeep ix dir 100000
+    let stmt := dir / "deep10.stmt"
+    let issued ← Tests.Cli.runEnv ix.toString #["check-lean", shallow.toString, "--host-out", stmt.toString]
+    Tests.Cli.expect "check-lean on the 10-level artifact" issued 0
+    let some line := issued.stdout.splitOn "\n" |>.find? (·.startsWith "[check-lean] host admission statement: ")
+      | throw <| IO.userError s!"no host statement line\n{issued.stdout}"
+    let address := (line.drop "[check-lean] host admission statement: ".length).toString.trimAscii.toString
+    let bounded := fun (cmd : System.FilePath) (args : Array String) => #["--kill-after=5", "120", cmd.toString] ++ args
+    let declined := "declined by the depth limit (16384, default)"
+    for (input, label, vars) in [(deep, "20,000 levels, defaults",
+          (#[("LEAN_STACK_SIZE_KB", none)] : Array (String × Option String))),
+        (deeper, "100,000 levels, 8 MiB stack", #[("LEAN_STACK_SIZE_KB", some "8192")])] do
+      for (host, args) in [("check-lean", bounded ix #["check-lean", input.toString]),
+          ("verify-host", bounded ix #["verify-host", address, input.toString, "--statement-file", stmt.toString]),
+          ("kernel-check-ixe", bounded kci #[input.toString, (dir / "rows.jsonl").toString])] do
+        let out ← Tests.Cli.runEnv "timeout" args vars
+        if out.exitCode == 124 || out.exitCode == 137 then
+          throw <| IO.userError s!"{host} on the record of {label} ran past 120 s"
+        Tests.Cli.expect s!"{host} on the record of {label}" out 6 [declined]
+    IO.println "deep records: 20,000 levels at the defaults and 100,000 on an 8 MiB stack \
+      declined (exit 6) by check-lean, verify-host and kernel-check-ixe"
+  finally
+    IO.FS.removeDirAll dir
+
+/-! ## The kernel's limits as settings (`IxCK/Host/Limits.lean`, `docs/kernel.md`, "Limits at
+the command line, and exit codes"): each limit lowered and raised by its flag and by its
+variable, the flag over the variable, malformed values, the address-space refusal, on
+`ix check-lean`, `ix verify-host`, `ix compile` and `kernel-check-ixe`. -/
 
 private def Tests.Cli.testKernelLimits : IO Unit := do
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
@@ -556,6 +618,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testCompileExportForeignRoles
   Tests.Cli.testCompileEquations
   Tests.Cli.testCheckIxeExits
+  Tests.Cli.testDeepRecordExits
   Tests.Cli.testKernelLimits
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
