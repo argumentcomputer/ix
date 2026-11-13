@@ -657,7 +657,12 @@ stack of its own, and declines (`.limit .depth`) at the first expression or
 universe nested past the limit, shares counted as leaves; after decoding,
 `expandedDepths` measures each record's expressions with their shares
 expanded, as the reader builds them (memoised per sharing entry; a share that
-reaches itself is past every limit). Levels count as the kernel's terms nest:
+reaches itself is past every limit). A record that cannot reach the limit is not
+walked: an expression's levels grow by at most one per byte that writes it and a
+universe's by at most the decoder's node budget (`storedDepthBound`), and an
+expansion meets each stored node at most once (`Ixon.Constant.resourceSize`); the
+statements about a compiled closure choose a limit above both
+(`Ix.Cert.Stream.closure_decodes`). Levels count as the kernel's terms nest:
 an application of `n` arguments has its head `n` levels down, a telescope of `n`
 binders its body `n` levels down, `succ^k u` has `u` `k` levels down. The
 checks are coverage bounds: nothing is proved about what they compute, and
