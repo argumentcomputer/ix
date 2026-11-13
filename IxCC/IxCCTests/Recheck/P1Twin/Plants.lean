@@ -388,7 +388,7 @@ def f3Record (a : Assert) : IO Unit := do
   let Pt := { fx.P with table }
   let .ok (_, ch) := Src.Recheck.annotation Pt fx.ann | throw (IO.userError "F3: Words.u8 refused")
   let found := ch.reached.filterMap fun c => do
-    let shape ← elimShape? Pt c
+    let shape ← Src.Relevance.Check.elimShape? Pt c
     let .subsingleton w srcs ← Pt.table.recKindOf shape.recr | none
     let .recr _ _ _ _ _ _ _ _ rules _ ← Pt.decl? shape.recr | none
     let rule ← rules[0]?
