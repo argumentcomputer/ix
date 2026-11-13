@@ -301,11 +301,16 @@ hosted-CI or cold-store timing is claimed.
   of inductive types; □. Fixed-width integers are tagged words (erasure unboxes
   a tower to its number). Stage W1 makes the word operations primitives
   ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int), "Stage W1"): a
-  closure compiled with `ix compile --equations --word-equations` runs them as
+  closure `ix compile` compiles with its defaults (a selected closure) runs them as
   SrcEval's rule F6w, Lam's word primitive and Rt's proved tagged lowering; without
-  the flag they run their reference bodies, as before W1 (`UInt8` to `UInt32` work,
+  the word equations (`--no-equations`, `--no-word-equations`, a whole environment
+  without `--equations`) they run their reference bodies, as before W1 (`UInt8` to `UInt32` work,
   every `UInt64` operation fails natively with `natOverflow`, since its body computes
-  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so. A
+  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so. Open:
+  measure the equations' cost on Init+Std and decide whether the default should cover a
+  whole-environment compile; and when string literals are admitted, `phase1-decline`'s
+  `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
+  operations) become the first registered roots that run word primitives. A
   program with a word entry is outside the grounded fragment (`noWord`) until the
   grounding's word case is proved. Two limits stay after W1, by design:
   a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64

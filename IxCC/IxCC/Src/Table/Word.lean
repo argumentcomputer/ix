@@ -20,8 +20,8 @@ closure (`checkAxiomClosure` walks the proof), whose stored statement is, syntac
 
 where `spec` is `WordOp.eval`'s number as a term over `Nat`'s pinned operations, on the arguments
 reduced first (`Nat.mod x size`), and reduced again where `eval` reduces (`add`, `sub`, `mul`,
-`shiftLeft`, `neg`). `ix compile --equations --word-equations` adds exactly these theorems
-(`Ix.Compile.WordEquations`) and names each in its output's `theorems` list (kind `word`, subject
+`shiftLeft`, `neg`). `ix compile` adds exactly these theorems, by default with its equations
+(`Ix.Compile.WordEquations`), and names each in its output's `theorems` list (kind `word`, subject
 the operation), which the sidecar carries with addresses; the producer proposes the entry from
 there (`Table.wordProposal`), never by searching the closure for a statement. The theorem fixes
 what the pinned constant computes, so a wrong

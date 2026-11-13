@@ -81,7 +81,7 @@ def suite : IO (List LSpec.TestSeq) := do
   IO.FS.withTempDir fun dir => do
     let env ← elaborate dir "Equations.lean" source
     let before := structural.map fun d => env.contains (d ++ `eq_def)
-    let (env, closed, found, failed) ← Ix.Compile.Equations.close env [`EqnFixture.entry]
+    let (env, closed, found, failed) ← Ix.Compile.Equations.close env [`EqnFixture.entry] (words := true)
     let leanEnv ← elaborate dir "EquationsReferenced.lean" referenced
     let closedNames : NameSet := closed.foldl (fun s (n, _) => s.insert n) {}
     let pairs := found.toList.map fun a => (a.definition, a.equation)
@@ -119,7 +119,9 @@ def suite : IO (List LSpec.TestSeq) := do
       test "each associated theorem states `f xs = …` for its definition" selfUnfolding,
       test "the JSON names its format"
         ((json.getObjValAs? String "format").toOption == some "ix/compile-equations/2"),
-      test "without --word-equations no word equation joins the closure (its omega proof reaches word operations)"
+      test "the closure reaches word operations, through log2's omega proof only"
+        (closed.any fun (n, _) => Ix.Compile.WordEquations.operations.contains n),
+      test "with the word equations on (ix compile's default) none joins the closure: a proof is a theorem, which the word walk does not enter"
         ((json.getObjValAs? (Array Json) "theorems").toOption.map (·.size) == some 0 &&
           !closed.any fun (n, _) => n.getPrefix == `IxWordEquations),
       test "the JSON lists every association, sorted by definition"

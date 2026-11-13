@@ -249,14 +249,20 @@ same certified compiler (`Ix.CompileM.compileCertified`). The uncertified
 streamed and Rust compilers have been retired. See
 [docs/kernel.md](docs/kernel.md) for what the theorem covers on these paths.
 
-`ix compile --equations` also realizes the unfolding theorem `f.eq_def` of
-every recursive definition the selected closure reaches (Lean derives most of
-them only on demand), compiles each with its dependencies, and writes which
-theorem unfolds which definition to `--equations-out` (JSON,
-`ix/compile-equations/2`; `Ix/Compile/Equations.lean`). With `--word-equations` it also adds the stored
-equation of every fixed-width word operation the closure reaches
-(`Ix/Compile/WordEquations.lean`) and names each, with its operation, in the
-output's `theorems` list (kind `word`). It serves consumers
+`ix compile` on a selected closure (`--consts`, `--consts-file`, `--local`,
+`--module`) also realizes the unfolding theorem `f.eq_def` of every recursive
+definition the closure reaches (Lean derives most of them only on demand),
+compiles each with its dependencies, and writes which theorem unfolds which
+definition to `--equations-out` (JSON, `ix/compile-equations/2`;
+`Ix/Compile/Equations.lean`); `--no-equations` turns this off. A
+whole-environment compile does it only with `--equations`, because its cost on a
+whole environment is not measured yet. With the equations it also adds the
+stored equation of every fixed-width word operation the compile's roots reach (a
+dependency walk over the values of definitions and opaques and the rules of recursors that enters
+no declaration type, no theorem and no word operation; `Ix/Compile/WordEquations.lean`;
+`--no-word-equations` turns this off) and names
+each, with its operation, in the output's `theorems` list (kind `word`). It
+serves consumers
 such as IxCC's corpus fixtures ([IxCC/docs/corpus.md](IxCC/docs/corpus.md)),
 which compile recursion through the unfolding theorems.
 

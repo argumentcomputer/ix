@@ -18,7 +18,8 @@ structure Config where
   prims : List PrimOp := PrimOp.all
   /-- Whether the fixed-width word operations are primitives (stage W1, `Table.Word`): a pinned
   word operation the sidecar proposes with its stored equation becomes a `word` entry. On by
-  default; a closure compiled without `--word-equations` proposes none, so it has no word entry. -/
+  default; a closure whose sidecar names no word theorem (compiled with `--no-equations` or
+  `--no-word-equations`, or frozen before `ix compile` added them by default) has no word entry. -/
   words : Bool := true
   /-- Node cap for `inline` entries. -/
   inlineCap : Nat := 256

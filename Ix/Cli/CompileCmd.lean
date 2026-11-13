@@ -107,15 +107,18 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     return 1
   -- With each list, whether it is the whole import environment (the default
   -- scope, as `compile-lean` without `--local`), whose compile publishes every
-  -- role: that compile prefetches every role's certificates.
-  let (constList, wholeEnv) ←
+  -- role: that compile prefetches every role's certificates. With them, the
+  -- constants the compile selected (the roots of the word-equation walk).
+  let (constList, wholeEnv, roots) ←
     if p.hasFlag "local" then do
       if !constsSeeds.isEmpty || (p.flag? "module").isSome || !excludeSet.isEmpty then
         p.printError "error: --local excludes --consts/--consts-file, --module and --exclude"
         return 1
       let closed := localConstList fe
       IO.println s!"[compile] local: {closed.length} constants (the file's own and their dependencies)"
-      pure (closed, false)
+      let own := leanEnv.constants.toList.filterMap fun (n, _) =>
+        if (leanEnv.getModuleIdxFor? n).isNone then some n else none
+      pure (closed, false, own)
     else if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
@@ -140,12 +143,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
       let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
-      pure (closed, false)
+      pure (closed, false, seeds)
     else match p.flag? "module" with
     | none =>
       if excludeSet.isEmpty then
         let whole ← defaultConstList fe pathStr
-        pure (whole, true)
+        pure (whole, true, whole.map (·.1))
       else
         -- Exclusion applies on top of the default scope (full env for classic
         -- files, module-visible closure for module-mode files).
@@ -153,13 +156,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectSelectedDeps leanEnv seeds, false)
+        pure (collectSelectedDeps leanEnv seeds, false, seeds)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
       if prefixes.isEmpty then
         IO.println s!"[compile] warning: --module '{raw}' parsed to empty list; compiling full env"
-        pure (leanEnv.constants.toList, true)
+        pure (leanEnv.constants.toList, true, leanEnv.constants.toList.map (·.1))
       else
         let moduleNames := leanEnv.allImportedModuleNames
         let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
@@ -172,22 +175,32 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
         let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
-        pure (closed, false)
+        pure (closed, false, seeds)
 
-  -- `--equations`: realize the unfolding theorem `f.eq_def` of every recursive
-  -- definition the closure reaches, library definitions included, close over
-  -- the theorems and their dependencies, and write which theorem unfolds which
-  -- definition (`Ix.Compile.Equations`).
-  if (p.flag? "equations-out").isSome && !p.hasFlag "equations" then
-    p.printError "error: --equations-out needs --equations"
+  -- The equations: realize the unfolding theorem `f.eq_def` of every recursive
+  -- definition the closure reaches, library definitions included, add the word
+  -- equations of the word operations reached from the roots outside theorems,
+  -- close over the theorems and their dependencies, and write which theorem
+  -- unfolds which definition (`Ix.Compile.Equations`). On by default for a
+  -- selected closure (`--consts`, `--consts-file`, `--local`, `--module`); a
+  -- whole environment gets them only with `--equations` (the cost there is not
+  -- measured). `--no-equations` and `--no-word-equations` turn them off.
+  for (on, off) in [("equations", "no-equations"), ("word-equations", "no-word-equations")] do
+    if p.hasFlag on && p.hasFlag off then
+      p.printError s!"error: --{on} and --{off} contradict each other"
+      return 1
+  let selected := p.hasFlag "local" || !constsSeeds.isEmpty || ((p.flag? "module").isSome && !wholeEnv)
+  let equations := p.hasFlag "equations" || (selected && !p.hasFlag "no-equations")
+  if (p.flag? "equations-out").isSome && !equations then
+    p.printError "error: --equations-out needs equations (the default for a selected closure, or --equations)"
     return 1
-  if p.hasFlag "word-equations" && !p.hasFlag "equations" then
-    p.printError "error: --word-equations needs --equations"
+  if p.hasFlag "word-equations" && !equations then
+    p.printError "error: --word-equations needs equations (the default for a selected closure, or --equations)"
     return 1
-  let (leanEnv, constList) ← if p.hasFlag "equations" then do
+  let (leanEnv, constList) ← if equations then do
       let (env, closed, found, failed) ←
         Ix.Compile.Equations.close leanEnv (constList.map (·.1))
-          (words := p.hasFlag "word-equations")
+          (words := !p.hasFlag "no-word-equations") (roots := roots)
       IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
       let sidecar := (p.flag? "equations-out").map (·.as! String)
         |>.getD (outPath ++ ".equations.json")
@@ -336,9 +349,11 @@ def compileCmd : Cli.Cmd := `[Cli|
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
-    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the selected closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out."
-    "word-equations" ;       "With --equations: also add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) the closure reaches (`Ix.Compile.WordEquations`), as seeds, and name each, with its operation, in the output's `theorems` list. Off by default: a closure reaches word operations through proofs alone, and no consumer uses the equations yet."
-    "equations-out" : String; "Path for the --equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
+    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out. The default for a selected closure (--consts, --consts-file, --local, --module); a whole-environment compile realizes none unless given this flag, since the cost on a whole environment is not measured."
+    "no-equations" ;         "Realize no unfolding theorem and add no word equation (the selected closure as it is; no --equations-out)."
+    "word-equations" ;       "Add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) the compile's roots reach (a dependency walk over the values of definitions and opaques and the rules of recursors that enters no declaration type, no theorem and no word operation; `Ix.Compile.WordEquations`), with the bridges it mentions, as seeds, and name each, with its operation, in the output's `theorems` list. On wherever the equations are; the flag says so explicitly."
+    "no-word-equations" ;    "Keep the unfolding theorems but add no word equation."
+    "equations-out" : String; "Path for the equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

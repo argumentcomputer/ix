@@ -11,9 +11,10 @@
   `Nat.mod`, … applied (no notation), sizes as raw literals (`nat_lit`), and the bridge's bound as
   `Nat.le (Nat.succ (Nat.mod x size)) size`.
 
-  `close` adds the theorem of every word operation the closure reaches (each statement mentions its
-  width's `ofNat`, so the bridges follow), by elaborating the statements in the environment being
-  compiled (Lean's `Init` is all they need), so that they join the closure as seeds. The decisions
+  `close` adds the theorem of every word operation the closure reaches outside theorems
+  (`reachedOutsideTheorems`, from the compile's roots), with the bridges its statement mentions
+  (`neededFor`), by elaborating the statements in the environment being compiled (Lean's `Init` is
+  all they need), so that they join the closure as seeds. The decisions
   (`decEq`, `decLt`, `decLe`) have no theorem: their reference bodies reduce to `Nat`'s own and
   compile as they are.
 -/
@@ -94,14 +95,51 @@ def equations (w : Width) : List Equation :=
 /-- Every equation of every width. -/
 def all : List Equation := widths.flatMap equations
 
-/-- The equations to add for a closure: those of the operations it holds whose theorem is not
-yet in the environment (each statement mentions its width's `ofNat`, and a conversion's its target
-width's, so the bridges of those widths follow at the next round). -/
-def needed (env : Lean.Environment) (closed : List Lean.Name) : List Equation :=
-  let present : Lean.NameSet := closed.foldl (·.insert ·) {}
-  widths.flatMap fun w =>
-    let eqs := equations w
-    eqs.filter fun e => present.contains e.operation && !env.contains e.theoremName
+/-- The operations that have an equation. -/
+def operations : Lean.NameSet := all.foldl (fun s e => s.insert e.operation) {}
+
+/-- **The word operations reached outside theorems**: a dependency walk from `roots` over the
+values of definitions and opaques and the rules of recursors, the terms that can run, that enters
+no theorem (a theorem's statement and proof never run, and Lean puts the proofs nested in a
+definition, an `omega` termination proof among them, in auxiliary theorems), no declaration's type
+(a type never runs; through `autoParam`'s, every `for` loop would reach `String` and `Char`) and no
+word operation (a consumer that takes the operation as a primitive does not run its body). It is a
+dependency walk, not a consumer's relevance analysis: it can hold an operation that occurs only in
+a binder's type or an irrelevant argument of a value (an equation too many, harmless), and it misses
+one that runs only through a theorem (the target of a `csimp` redirect), for which IxCC's hint
+names the operation. -/
+partial def reachedOutsideTheorems (env : Lean.Environment) (roots : List Lean.Name) :
+    Lean.NameSet :=
+  go roots {} {}
+where
+  go : List Lean.Name → Lean.NameSet → Lean.NameSet → Lean.NameSet
+    | [], _, found => found
+    | n :: rest, seen, found =>
+      if seen.contains n then go rest seen found
+      else if operations.contains n then go rest (seen.insert n) (found.insert n)
+      else
+        let refs : Array Lean.Name := match env.find? n with
+          | some (.defnInfo v) => v.value.getUsedConstants
+          | some (.opaqueInfo v) => v.value.getUsedConstants
+          | some (.recInfo v) => v.rules.foldl (fun acc r => acc ++ r.rhs.getUsedConstants) #[]
+          | _ => #[]
+        go (refs.toList ++ rest) (seen.insert n) found
+
+/-- The equations to add for the word operations `ops` (`reachedOutsideTheorems`): each
+operation's, and the bridges its statement mentions (its width's `ofNat`, and a conversion's
+target width's), unless already in the environment; in the order of `all`. -/
+def neededFor (env : Lean.Environment) (ops : Lean.NameSet) : List Equation :=
+  let ofNat := fun (w : Width) => s!"{w.name}.ofNat".toName
+  let bridges : Lean.NameSet := widths.foldl (init := {}) fun s w =>
+    (equations w).foldl (init := s) fun s e =>
+      if !ops.contains e.operation then s
+      else
+        let s := s.insert (ofNat w)
+        match widths.find? fun w' => e.operation == s!"{w.name}.to{w'.name}".toName with
+        | some w' => s.insert (ofNat w')
+        | none => s
+  all.filter fun e =>
+    (ops.contains e.operation || bridges.contains e.operation) && !env.contains e.theoremName
 
 /-- Elaborate `eqs` in `env` (every statement checked by Lean's kernel as any theorem is). -/
 def add (env : Lean.Environment) (eqs : List Equation) : IO Lean.Environment := do

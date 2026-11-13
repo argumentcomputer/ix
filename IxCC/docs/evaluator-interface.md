@@ -120,7 +120,7 @@ clock is a depth bound, counting needs a separate counter.
     equation over `Nat`'s operations; `ofNat`'s, the bridge to the tower), checked by statement.
     No other rule changes, and the producer proposes word entries only when the table's `words`
     switch is on (on by default since stage W1's lowering exists) and the sidecar names the
-    theorems (`ix compile --equations --word-equations`). Whether the rule agrees with SrcEval's
+    theorems (`ix compile` writes them by default for a selected closure). Whether the rule agrees with SrcEval's
     own run of the pinned constant's reference body is tested on every boundary case, not
     proved (`tests-src`, "F6w against the reference bodies").
 - **Exit.** The version constant and changelog; the entries agree with

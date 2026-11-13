@@ -452,8 +452,8 @@ annotated twin measured against the plain one.
 ## DR2. Fixed-width integers and `Int`
 
 **Status: in progress** (Phase 3, stage W1 done: the word operations as primitives, tagged at run
-time; below, "Stage W1"). A closure compiled with `ix compile --equations --word-equations` runs
-its word operations as primitives; the grounding's word case, stage W2 (raw words) and `Int`
+time; below, "Stage W1"). A closure `ix compile` compiles with its defaults (a selected closure)
+runs its word operations as primitives; the grounding's word case, stage W2 (raw words) and `Int`
 remain.
 
 **Motivation.** BLAKE3 and `qsort` (K4); the bignum library's limbs; IxCK,
@@ -515,8 +515,8 @@ exists (`Table.Config.words`, on by default):
   ([`Src/Table/Word.lean`](../IxCC/Src/Table/Word.lean)). An earlier draft's bridge, below the
   size only, constrained nothing above it (a key returning `5` there satisfied it);
   `IxCCTests/Src/Words.lean` refutes that key with the reducing bridge;
-- the theorems, which `ix compile --equations --word-equations` adds for every word operation a closure reaches
-  (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
+- the theorems, which `ix compile` adds by default with its equations for every word operation the
+  compile's roots reach outside theorems (`Ix/Compile/WordEquations.lean`; below) and names, with the operation, in its output's `theorems`
   list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
   producer proposes a word entry from it only, so ingress, which reads only what a program
   reaches, finds each theorem and reads it with its proof once its operation is reached (a
@@ -586,10 +586,13 @@ isTrue h` and its `isFalse` twin, with `x < y`'s inhabitation from a `Bool` equa
 grounding case that uses them, a `Bool`-valued Lam word primitive and its lowering (a comparison
 of tagged words, as `natBlt`'s); it is a design of its own.
 
-**What stage W1 means for a user.** A closure compiled with `ix compile --equations
---word-equations` runs its word operations as primitives (F6w, the Lam word primitive, Rt's tagged
-lowering). A closure compiled without the flag has no word entry: its word operations run their
-reference bodies, as before W1, and `ixcc compile` says so in one `hint:` line on standard error,
+**What stage W1 means for a user.** `ix compile` on a selected closure (`--consts`,
+`--consts-file`, `--local`, `--module`) adds the word equations by default, with its unfolding
+equations, so such a closure runs its word operations as primitives (F6w, the Lam word primitive,
+Rt's tagged lowering) and no hint is printed. A closure without them (compiled with
+`--no-equations` or `--no-word-equations`, a whole environment compiled without `--equations`, or
+one frozen before this default) has no word entry: its word operations run their reference bodies,
+as before W1, and `ixcc compile` says so in one `hint:` line on standard error,
 naming the first operations the program reaches at run time (`--stats` prints each); the hint
 changes no object, certificate or exit status. A program with a word entry is outside the grounded
 fragment (`noWord`, below) until the grounding's word case is proved. A `UInt64` is native only
@@ -604,13 +607,33 @@ the result tower typed in the model: its constructors' stored types mention
 equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
 `nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
 The input towers' range needs no fact: F6w reads only towers below the size. When that case is
-proved, `noWord` gives way to a check that every word entry's facts hold. Open:
-`ix compile --word-equations` is opt-in (a closure reaches word operations through
-proofs alone, an `omega` termination proof for one, so adding the equations by default would
-change closures that never run a word operation); whether `ix` should add them by itself for the
-word operations a closure reaches in positions that run is not decided (an open item for the
-next piece), and until it is, the families that need word entries pass the flag. No registered
-family passes it today, so no registered program has a word entry.
+proved, `noWord` gives way to a check that every word entry's facts hold.
+
+**Which word operations get equations.** `ix compile` adds the equation of every word operation
+the compile's roots reach by a dependency walk that follows the values of definitions and opaques
+and the rules of recursors, and enters no declaration type, no theorem and no word operation, with
+the bridges each statement mentions (`Ix.Compile.WordEquations.reachedOutsideTheorems`,
+`neededFor`). Types are excluded because a type never runs and following them reaches far: through
+`autoParam`'s type, which mentions `Lean.Syntax`, every `for` loop would reach `String` and `Char`
+and with them `UInt32` and `UInt8` operations. Theorems are excluded because a proof never runs: a
+closure reaches word operations through proofs alone (an `omega` termination proof reaches some,
+through Lean's auxiliary proof theorems), and those get none. The walk is not IxCC's relevance
+analysis: it is a superset of what IxCC runs in most cases (an operation in a binder's type or an
+irrelevant argument of a value gets an equation too many, harmless), and it can miss an operation
+IxCC runs (one reached only through a theorem, as a `csimp` redirect's target is), in which case
+the hint names it.
+
+Measured on the registered families (`regenerate.sh` with these defaults): two closures moved, and
+were refrozen, `phase1-decline`'s `panic` and `strings`. Their string code runs, so they gain the
+word equations of the `Char` and UTF-8 operations it reaches (`panic`: `UInt32.ofNat`,
+`UInt32.toNat`, `UInt8.ofNat`; `strings`: `UInt32.lor`, `UInt32.ofNat`, `UInt32.shiftLeft`,
+`UInt8.land`, `UInt8.ofNat`, `UInt8.toUInt32`). IxCC's verdict and full error output on both roots
+are unchanged under `--rc off`, `on` and `auto`: both are refused at admission for a string literal
+in a relevant position. The roots-only fixtures (`kernel-hints`, `src-diag`, `src-sortpoly`, `erased-blocks`) compile
+with `--no-equations`, which their provenance records; their closures are unchanged. Open: when
+string literals are admitted, these two closures run word primitives and become the first
+registered roots that do; and the cost of the equations on a whole environment (Init+Std) is not
+measured: measure it and decide whether the default should cover a whole-environment compile.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with
