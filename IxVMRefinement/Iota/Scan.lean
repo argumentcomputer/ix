@@ -3,17 +3,12 @@ import IxVMRefinement.Iota.Basic
 /-! # Step lemmas of `KernelWhnf`'s structure-η shape scans
 
 The mention scan of a heap term (`se_mentions`), the constructor scan of a block member
-(`struct_scan_ctors`), the member scan (`struct_scan_members`), the block-level `is_rec`
-(`struct_is_rec`) and the telescope peel (`se_peel_tol`). The scans' claims are heap syntax
-(`HeapClean`, `ForallChain`, `ChainEnd`, `FieldsClean`, `MembersClean`); the first section proves
-that heap extension preserves them, and that a mention-free reading of a represented term at a
-later heap is one at the heap the term is represented in.
-
-* `struct_scan_members_spec'` is the step of `struct_scan_members` under `MemberCountsSmall`:
-  the circuit reads a member's index and constructor count as field elements, so the scan covers
-  every constructor of the record only when both are below the field's size.
-* `se_peel_tol_spec'` is `se_peel_tol`'s spec with a representation hypothesis on the type: at a
-  value that loads to no `∀` node, `NotForallNode` needs the value to be a term node. -/
+(`struct_scan_ctors`), the member scan (`struct_scan_members`), the block's member addresses
+(`struct_block_member_addrs`), the block-level `is_rec` (`struct_is_rec`) and the telescope peel
+(`se_peel_tol`). The scans' claims are heap syntax (`HeapClean`, `ForallChain`, `ChainEnd`,
+`FieldsClean`, `MembersClean`); the first section proves that heap extension preserves them, and
+that a mention-free reading of a represented term at a later heap is one at the heap the term is
+represented in. -/
 
 namespace IxVM.Refinement.Core
 
@@ -83,7 +78,7 @@ theorem ci_ctor_ty {κ : _root_.Address → KKey} {h : Heap F} {w nl ty : Source
     subst hty
     exact ⟨_, hv.2.2.2⟩
   | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _
-  | recr _ _ _ _ _ _ _ _ _ _ =>
+  | recr _ _ _ _ _ _ _ _ _ _ _ =>
     injection hw with _ hc _
     exact absurd hc (by decide)
 
@@ -100,7 +95,7 @@ theorem ci_induct_blk {κ : _root_.Address → KKey} {h : Heap F}
     obtain ⟨b, i, hb, -, -⟩ := hkey
     exact ⟨b, hb⟩
   | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | ctor _ _ _ _ _
-  | recr _ _ _ _ _ _ _ _ _ _ =>
+  | recr _ _ _ _ _ _ _ _ _ _ _ =>
     injection hw with _ hc _
     exact absurd hc (by decide)
 
@@ -423,7 +418,7 @@ theorem struct_scan_ctors_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     subst hv
     obtain ⟨T, hT⟩ := ci_ctor_ty hci rfl
     obtain ⟨rfl, ds1, hch1, hle1, -⟩ := ih.get (.whnf .se_peel_tol) (by lt_calls) ev148 x_cty
-      (.field p) rfl (good.sub fun z hz => by simp [hz]) p rfl
+      (.field p) rfl (good.sub fun z hz => by simp [hz]) p rfl ⟨0, fun _ => T, 0, T, hT 0 (fun _ => T)⟩
     obtain ⟨E1, hE1⟩ := tm_forallChain hch1 (hT 0 (fun _ => T))
     obtain ⟨ds2, q, hch2, hq, hcl⟩ := ih.get (.whnf .se_scan_fields) (by lt_calls) ev179 v135 xs
       rfl (good.sub fun z hz => by simp [hz]) ms (se_addrs_mono e1 hms)
@@ -454,20 +449,11 @@ theorem struct_scan_ctors_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 
 /-! ## `struct_scan_members` -/
 
-/-- The inductive members the records of `c.E` describe have their index and constructor count
-below the field's size (the circuit reads both as field elements). -/
-def MemberCountsSmall (c : Ctx) : Prop :=
-  ∀ (cb : Ixon.Constant) (pp : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
-      (ind : Ixon.Inductive),
-    Ix.Cert.recordAt c.E pp.block = some cb → cb.info = .muts xs →
-    xs[pp.idx.toNat]? = some (.indc ind) →
-      pp.idx.toNat < 18446744069414584321 ∧ ind.ctors.size < 18446744069414584321
-
 /-- `KernelWhnf::struct_scan_members` loads each address (`Ingress::get_ci`) and scans the
 constructors of an inductive (`struct_scan_ctors`); `LoadFacts.indRecord` ties the loaded
-inductive's counts, block and index to the records, and `MemberCountsSmall` reads the field
-elements back as the records' numbers. -/
-theorem struct_scan_members_spec' (c : Ctx) (hc : CoreFacts c) (hsmall : MemberCountsSmall c)
+inductive's counts, block and index to the records, and its bounds read the field elements back
+as the records' numbers. -/
+theorem struct_scan_members_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_scan_members" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_scan_members c args h r h' calls := by
@@ -494,14 +480,15 @@ theorem struct_scan_members_spec' (c : Ctx) (hc : CoreFacts c) (hsmall : MemberC
       (se_addrs_mono (e1.trans e2) hmembs) hr
     intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
     rcases List.mem_cons.mp hm with rfl | hm'
-    · obtain ⟨nl, ty, u, blk, b, hl, hb, hbb⟩ := hc.loads.indRecord x_m p49 h m41 cs55 m cm cb pp
-        ys ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
+    · obtain ⟨nl, ty, u, blk, b, hl, hb, hbb, hidx, hsize⟩ := hc.loads.indRecord x_m p49 h m41
+        cs55 m cm cb pp ys ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
+      have hidx' : pp.idx.toNat < 18446744069414584321 := lt_trans hidx (by norm_num)
+      have hsize' : ind.ctors.size < 18446744069414584321 := lt_trans hsize (by norm_num)
       rw [ld51] at hl
       injection hl with hl
       injection hl with _ _ hl
       simp only [List.cons.injEq, and_true] at hl
       obtain ⟨-, -, rfl, -, rfl, -, rfl, rfl⟩ := hl
-      obtain ⟨hidx, hsize⟩ := hsmall cb pp ys ind h3 h4 h5
       have hsc := ih.get (.whnf .struct_scan_ctors) (by lt_calls) ev130 x_block
         (.field (pp.idx.toNat : F)) (.field (ind.ctors.size : F)) (.field (ind.params.toNat : F))
         xs (.field 0) rfl (good.sub fun z hz => by simp [hz]) b (pp.idx.toNat : F)
@@ -509,12 +496,12 @@ theorem struct_scan_members_spec' (c : Ctx) (hc : CoreFacts c) (hsmall : MemberC
         (se_addrs_mono e1 hmembs) rfl hne185
       intro t ht
       have ht' : t < ZMod.val ((ind.ctors.size : F) - 0) := by
-        rw [sub_zero, NatAux.val_natCast hsize]
+        rw [sub_zero, NatAux.val_natCast hsize']
         exact ht
       obtain ⟨cicon, w, nl', ty', rest, hf, hci, hw, hfc⟩ := hsc t ht'
       refine ⟨cicon, w, nl', ty', rest, ?_, CIRep.mono e3 hci, hw,
         fieldsClean_le (se_val_natCast_le _) (fieldsClean_mono e3 hfc)⟩
-      rw [zero_add, NatAux.val_natCast (n := t) (by omega), NatAux.val_natCast hidx, hbb] at hf
+      rw [zero_add, NatAux.val_natCast (n := t) (by omega), NatAux.val_natCast hidx', hbb] at hf
       exact hf
     · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5
   · obtain ⟨a, ms', rfl, ha, hms'⟩ := RepList.cons_of_load hms ld12
@@ -525,18 +512,94 @@ theorem struct_scan_members_spec' (c : Ctx) (hc : CoreFacts c) (hsmall : MemberC
       (se_addrs_mono e1 hmembs) hr
     intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
     rcases List.mem_cons.mp hm with rfl | hm'
-    · obtain ⟨nl, ty, u, blk, b, hl, -, -⟩ := hc.loads.indRecord x_m p49 h m41 cs55 m cm cb pp ys
-        ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
+    · obtain ⟨nl, ty, u, blk, b, hl, -, -, -, -⟩ := hc.loads.indRecord x_m p49 h m41 cs55 m cm cb
+        pp ys ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
       rw [ld51] at hl
       injection hl with hl
       exact (hne212 _ (by rfl) hl).elim
     · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5
 
+/-! ## `struct_block_member_addrs` -/
+
+/-- A decoded record whose info is a `Muts` node is a block, with its members. -/
+theorem infoShape_muts {h : Heap F} {info : Ixon.ConstantInfo} {x : SourceValue F}
+    (hs : Specs.Callees.InfoShape h info (.construct Specs.Callees.ixInfoEnum "Muts" [x])) :
+    ∃ ms, info = .muts ms ∧ Specs.Callees.MembersRep h ms.toList x := by
+  cases info with
+  | muts ms =>
+    obtain ⟨lp, hv, hm⟩ := hs
+    injection hv with _ _ hv
+    injection hv with hv
+    subst hv
+    exact ⟨ms, rfl, hm⟩
+  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
+    obtain ⟨y, hv⟩ := hs
+    injection hv with _ hc _
+    revert hc
+    simp +decide [Specs.Callees.infoCtor]
+
+/-- `KernelWhnf::struct_block_member_addrs` loads the record at the block
+(`Ingress::load_verified_constant`): at a block it builds the members' projection-record
+addresses (`Ingress::build_recur_addrs`), otherwise the one-element list of the parent. -/
+theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::struct_block_member_addrs" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.struct_block_member_addrs c args h r h' calls := by
+  intro par blk hargs good p b hp hb cb hcb
+  subst hargs
+  rcases Obs.«KernelWhnf::struct_block_member_addrs».obs ev with
+    ⟨m2, cs12, w39, w40, w41, x_members, cs86, ev14, ev88, hc105⟩ |
+    ⟨m2, cs12, x_info, w39, w40, w41, m128, ev14, hne106, he114, hm113, hm136, hc140⟩
+  · subst hc105
+    have e1 := ObsFn.heap_extends ev14
+    obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
+      (good.sub fun z hz => by simp [hz]) hb
+    obtain ⟨info, sh, rf, un, hv, hinfo⟩ := hshape cb hcb
+    injection hv with _ _ hv
+    injection hv with hi _
+    subst hi
+    obtain ⟨ms, hms, hmr⟩ := infoShape_muts hinfo
+    obtain ⟨as, has, hmap⟩ := ih.get (.callees .build_recur_addrs) (by lt_calls) ev88 x_members
+      blk ms.toList b rfl (good.sub fun z hz => by simp [hz]) hmr (se_addrRep_mono e1 hb)
+    refine ⟨as, has, ?_, fun hn => absurd hms (hn ms)⟩
+    intro ms' hms' i ind hi
+    rw [hms] at hms'
+    injection hms' with e
+    subst e
+    have h1 : ms.toList[i]? = some (.indc ind) := by simpa using hi
+    have h2 : (as.map ixAddr)[i]? = some (iprjAddr (ixAddr b) i) := by
+      rw [hmap, List.getElem?_mapIdx, h1]
+      try rfl
+    rw [List.getElem?_map] at h2
+    cases ha : as[i]? with
+    | none =>
+      rw [ha] at h2
+      simp at h2
+    | some a =>
+      rw [ha] at h2
+      exact ⟨a, List.mem_of_getElem? ha, Option.some.inj h2⟩
+  · subst hc140 hm136 hm113 he114
+    have e1 := ObsFn.heap_extends ev14
+    obtain ⟨-, hshape⟩ := ih.get (.callees .load_verified_constant) (by lt_calls) ev14 blk b rfl
+      (good.sub fun z hz => by simp [hz]) hb
+    obtain ⟨info, sh, rf, un, hv, hinfo⟩ := hshape cb hcb
+    injection hv with _ _ hv
+    injection hv with hi _
+    subst hi
+    refine ⟨[p], Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy)
+      (se_addrRep_mono (e1.trans (Heap.Extends.snoc _ _)) hp) (Lib.rep_store_nil m2), ?_,
+      fun _ => rfl⟩
+    intro ms hms i ind hi
+    rw [hms] at hinfo
+    obtain ⟨lp, hv', -⟩ := hinfo
+    exact (hne106 _ (by rfl) hv').elim
+
 /-! ## `struct_is_rec` -/
 
 /-- `KernelWhnf::struct_is_rec` loads the parent (`Ingress::get_ci`), and at a single-inductive
 block scans the block's member list against itself. The block IxVM loaded is the parent's block
-in the records (`LoadFacts.indRecord`, `addr_det`). -/
+in the records (`LoadFacts.indRecord`, `addr_det`); with no record at the block the member list
+is taken empty. -/
 theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_is_rec" args h r h' calls) (ih : IH c calls) :
@@ -558,21 +621,39 @@ theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValu
     injection hv with hv
     subst hv
     obtain ⟨b, hb⟩ := ci_induct_blk hci rfl
-    obtain ⟨ms, hms, hmem⟩ := ih.get (.whnf .struct_block_member_addrs) (by lt_calls) ev129 par
+    have hmem := ih.get (.whnf .struct_block_member_addrs) (by lt_calls) ev129 par
       x_block rfl (good.sub fun z hz => by simp [hz]) p b (se_addrRep_mono (e1.trans e2) hp)
       (se_addrRep_mono e2 hb)
-    have hmc := ih.get (.whnf .struct_scan_members) (by lt_calls) ev151 v116 v116 rfl
-      (good.sub fun z hz => by simp [hz]) ms ms hms hms hr
-    refine ⟨b, ms, hmc, ?_, hmem⟩
-    intro cm cb pp ys ind h1 h2 h3 h4 h5
-    obtain ⟨nl, ty, u, blk, b', hl, hb', hbb⟩ := hc.loads.indRecord par p9 h m2 cs15 p cm cb pp ys
-      ind ev17 (good.sub fun z hz => by simp [hz]) hp h1 h2 h3 h4 h5
-    rw [ld11] at hl
-    injection hl with hl
-    injection hl with _ _ hl
-    simp only [List.cons.injEq, and_true] at hl
-    obtain ⟨-, -, -, -, -, -, rfl, -⟩ := hl
-    rw [addr_det hb hb', hbb]
+    have hpar : ∀ (cm cb : Ixon.Constant) (pp : Ixon.InductiveProj) (ys : Array Ixon.MutConst)
+        (ind : Ixon.Inductive),
+        Ix.Cert.recordAt c.E (ixAddr p) = some cm → cm.info = .iPrj pp →
+        Ix.Cert.recordAt c.E pp.block = some cb → cb.info = .muts ys →
+        ys[pp.idx.toNat]? = some (.indc ind) → ixAddr b = pp.block := by
+      intro cm cb pp ys ind h1 h2 h3 h4 h5
+      obtain ⟨nl, ty, u, blk, b', hl, hb', hbb, -, -⟩ := hc.loads.indRecord par p9 h m2 cs15 p cm
+        cb pp ys ind ev17 (good.sub fun z hz => by simp [hz]) hp h1 h2 h3 h4 h5
+      rw [ld11] at hl
+      injection hl with hl
+      injection hl with _ _ hl
+      simp only [List.cons.injEq, and_true] at hl
+      obtain ⟨-, -, -, -, -, -, rfl, -⟩ := hl
+      rw [addr_det hb hb', hbb]
+    cases hrec : Ix.Cert.recordAt c.E (ixAddr b) with
+    | none =>
+      refine ⟨b, [], ?_, hpar, fun cb hcb => ?_⟩
+      · intro m hm
+        simp at hm
+      · rw [hrec] at hcb
+        cases hcb
+    | some cb0 =>
+      obtain ⟨ms, hms, hall, hnot⟩ := hmem cb0 hrec
+      have hmc := ih.get (.whnf .struct_scan_members) (by lt_calls) ev151 v116 v116 rfl
+        (good.sub fun z hz => by simp [hz]) ms ms hms hms hr
+      refine ⟨b, ms, hmc, hpar, fun cb hcb => ?_⟩
+      rw [hrec] at hcb
+      injection hcb with hcb
+      subst hcb
+      exact ⟨hall, hnot⟩
   · exact absurd he173 hr
   · exact absurd he180 hr
 
@@ -620,15 +701,12 @@ theorem se_peel_tol_aux (c : Ctx) (N : Nat) :
       | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
       | proj cell _ _ => exact ⟨_, _, loadValue_enum_cell cell, by decide⟩
 
-/-- **`se_peel_tol` on a represented type**: `se_peel_tol`'s spec with the hypothesis that `ty`
-is a term. At a node other than a `∀` node the walk stops, and that node is a term node. -/
-theorem se_peel_tol_spec' (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+/-- `KernelWhnf::se_peel_tol` walks up to `n` `∀` nodes of the represented type; at a node other
+than a `∀` node the walk stops, and that node is a term node. -/
+theorem se_peel_tol_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_peel_tol" args h r h' calls) (ih : IH c calls) :
-    ∀ ty n, args = [ty, n] → Good c calls → ∀ m : F, n = .field m →
-      (∃ d Γ k T, c.tmk d Γ k h T ty) →
-      h' = h ∧ ∃ ds, ForallChain h ty ds r ∧ ds.length ≤ ZMod.val m ∧
-        (ds.length < ZMod.val m → NotForallNode h r) := by
+    Specs.Whnf.se_peel_tol c args h r h' calls := by
   rintro ty n rfl good m hn ⟨d, Γ, k, T, hT⟩
   exact se_peel_tol_aux c (calls.length + 1) (Nat.lt_succ_self _) ev m hn d Γ k T hT
 
