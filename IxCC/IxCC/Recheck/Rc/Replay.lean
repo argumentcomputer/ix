@@ -21,6 +21,29 @@ def Cert.ofText (text : String) : Except String Cert := do
   | [.str "ixcc/rc-cert/2", base, own] => return { base := ← CertJson.cert? base, own }
   | _ => throw "rc.cert: unsupported certificate envelope"
 
+/-- `Cert.ofText` with its refusal as the verifier reports it (`cert: cert.parse: …`): the reader
+of `ixcc check-cert` and `compile --cert` for a plain-RC certificate. -/
+def Cert.parse (text : String) : Except Err Cert :=
+  (Cert.ofText text).mapError fun message => { stage := .cert, code := "cert.parse", message }
+
+/-- The certificate's file: its text and a newline, the bytes `ixcc compile --emit-cert` writes. -/
+def Cert.toFile (c : Cert) : String := c.toText ++ "\n"
+
+/-- A plain-RC certificate as the verifier reads it: a file text and what `Cert.parse` reads it
+as. -/
+structure Cert.Read where
+  text : String
+  cert : Cert
+  read : Cert.parse text = .ok cert
+
+/-- **The producer's read-back** (`Recheck.Cert.readBack` for the plain-RC envelope): the
+certificate's file text read back through `Cert.parse`, with every text and decode limit. -/
+def Cert.readBack (c : Cert) : Except Err Cert.Read :=
+  let text := c.toFile
+  match h : Cert.parse text with
+  | .ok d => .ok ⟨text, d, h⟩
+  | .error e => .error e
+
 structure Front where
   src : Src.Program
   checked : Src.Relevance.Checked

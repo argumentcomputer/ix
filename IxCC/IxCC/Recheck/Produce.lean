@@ -1,4 +1,5 @@
 import IxCC.Recheck.Run
+import IxCC.Recheck.Json
 import IxCC.Ixon.V3.Env
 import IxCC.Src.Ingress
 import IxCC.Src.Pinned
@@ -32,7 +33,9 @@ The untrusted half of the compiler (D17) and the whole compiler:
   (`Recheck.closuresOf`: the roots' entries and P8, a deterministic step that
   is not in the certificate), linear scan with its validated all-slots
   fallback (`Alloc.runProducer`), and the frame-layout and block-order oracles; the
-  result is the certificate;
+  result is the certificate, read back from its file text through the verifier's reader
+  (`Cert.readBack`: every text and decode limit of `Cert.ofText`), so `produce` returns the
+  certificate a verifier reads from the text it writes;
 * `compile = ingress; produce; Recheck.run`: the object is `run`'s, never
   `produce`'s. -/
 
@@ -108,6 +111,9 @@ def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := 
 /-- What `produce` found beside the certificate, for reports. -/
 structure Produced where
   cert : Cert
+  /-- The certificate's file text, which `cert` was read back from (`Cert.readBack`). -/
+  text : String
+  read : Cert.ofText text = .ok cert
   tableDiags : Array Src.Diag
   tableStats : Src.Table.Stats
   fires : Anf.Walk.Fires
@@ -181,9 +187,12 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let layouts := Xv.Stacking.produce r.program
   let stacked ← (Xv.Stacking.run r.program layouts lowered.reps cfg.env).mapError (Err.ofBackend ∘ .stacking)
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
-  pure { cert := { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert
-                   alloc := r.outs, frames := layouts, order }
-         tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes, wordHints }
+  -- the certificate as the verifier reads it: its file text, read back through `Cert.ofText`
+  let built : Cert := { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert,
+                        alloc := r.outs, frames := layouts, order }
+  let ⟨text, cert, read⟩ ← Cert.readBack built
+  pure { cert, text, read, tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes
+         wordHints }
 
 /-- **Stage A**: `rel` is exactly the annotation the relevance annotator over
 the kernel (`Src.KernelFront.Kernel.annotateChecked`) gives on the

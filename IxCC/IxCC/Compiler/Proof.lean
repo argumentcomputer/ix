@@ -438,6 +438,26 @@ theorem producePlain_parts {cfg : Recheck.Config} {inp : Recheck.Input}
       obtain ⟨rfl, rfl⟩ := h
       exact ⟨rfl, hr⟩
 
+/-- **The immortal finisher's text is what was verified.** The zero-RC certificate file text
+`RcReplay.produceImmortal` produced (`finishZeroRcCert`'s `text`) is read by the verifier's
+reader (`Cert.ofText`) as exactly the certificate `Recheck.run` accepted. -/
+theorem produceImmortal_text {cfg : Recheck.Config} {inp : Recheck.Input}
+    {front : Recheck.RcReplay.ProducedFir} {p : Recheck.Produced} {a : Recheck.Artifact}
+    (h : Recheck.RcReplay.produceImmortal cfg inp front = .ok (p, a)) :
+    Recheck.Cert.ofText p.text = .ok p.cert ∧ Recheck.run cfg inp.program p.cert = .ok a :=
+  ⟨p.read, (produceImmortal_parts h).2⟩
+
+/-- **The plain-RC finisher's text is what was verified.** The plain-RC certificate file text
+`RcReplay.producePlain` produced (`finishPlainRcCert`'s `text`) is read by the verifier's reader
+(`RcReplay.Cert.parse`) as exactly the certificate `RcReplay.run` accepted. -/
+theorem producePlain_text {cfg : Recheck.Config} {inp : Recheck.Input}
+    {front : Recheck.RcReplay.ProducedFir} {p : Recheck.RcReplay.Produced}
+    {a : Recheck.RcReplay.Artifact}
+    (h : Recheck.RcReplay.producePlain cfg inp front = .ok (p, a)) :
+    Recheck.RcReplay.Cert.parse p.text = .ok p.cert ∧
+      Recheck.RcReplay.run cfg inp.program p.cert = .ok a :=
+  ⟨p.read, (producePlain_parts h).2⟩
+
 /-- Decomposition of `RcReplay.produceAuto` when it selects `.zeroRc` (including
 contract-annotated zero-RC programs). -/
 theorem produceAuto_zeroRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}

@@ -216,6 +216,21 @@ def regressions (a : Assert) (l : Loaded) : IO Unit := do
   expect a (isOk (Hints.checkJsonText okDepth)) "N10: JSON nesting depth 512 accepted"
   expect a (!isOk (Hints.checkJsonText badDepth)) "N10: JSON nesting depth 513 rejected"
   expect a (isOk (Hints.checkJsonText quotedBrackets)) "N10: quoted brackets do not increase JSON depth"
+  -- each refusal names its limit and the value measured on the whole text
+  let errOf := fun (r : Except String Unit) => match r with | .error e => e | .ok () => ""
+  let deeper := String.ofList (List.replicate 600 '[') ++ String.ofList (List.replicate 600 ']')
+  expect a (errOf (Hints.checkJsonText (badDepth ++ deeper)) == "JSON nesting depth 600 exceeds maximum 512")
+    "N10: the depth refusal names the deepest nesting and the limit"
+  let digits := fun (n : Nat) => "[" ++ String.ofList (List.replicate n '7') ++ "]"
+  expect a (isOk (Hints.checkJsonText (digits 32))) "N10: a 32-digit number token accepted"
+  expect a (errOf (Hints.checkJsonText (digits 33 ++ digits 40)) == "JSON number token of 40 digits exceeds maximum 32")
+    "N10: the number-token refusal names the longest token and the limit"
+  expect a (isOk (Hints.checkJsonText ("[\"" ++ String.ofList (List.replicate 40 '7') ++ "\"]")))
+    "N10: digits inside a string are not a number token"
+  expect a (isOk (Hints.checkJsonText "[\"a\\\"[[[\", 1]")) "N10: an escaped quote keeps the string open"
+  expect a (!isOk (Hints.checkJsonText "[1e5]") && !isOk (Hints.checkJsonText "[1.5]") &&
+      isOk (Hints.checkJsonText "[\"1e5\", \"x.y\"]"))
+    "N10: exponents and fractions refused outside strings only"
 
 /-! ## Sparse casesOn: `lazy` rows by shape (`Table.checkSparseCases`)
 

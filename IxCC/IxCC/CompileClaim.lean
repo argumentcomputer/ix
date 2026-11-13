@@ -475,16 +475,31 @@ def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.
   | .error _ => false
 
 /-- Produce `(claim, certText, elfBytes)` from `Recheck.Input` and `Compiler.RcMode`
-(defaulting to `.auto` via `Compiler.produceAuto`). -/
+(defaulting to `.auto`, `Compiler.produceAuto`'s choice). `certText` is the certificate's file
+text that the producer read back (`Cert.readBack`), byte for byte what `ixcc compile --emit-cert`
+writes, so a verifier reading it (`Cert.ofText`, `RcReplay.Cert.ofText`) gets exactly the
+certificate the object was verified with. The claim binds the object's hash, not the text. -/
 def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMode := .auto) :
     Except Recheck.Err (CompileClaim × String × ByteArray) := do
   let some (target, _) := input.program.roots.head?
     | throw { stage := .ingress, code := "roots", message := "program has no root" }
   let inp := { input with names := cfg.names }
+  let claimOf := fun (policy : CompilePolicy) (abiArity : Nat) (elfBytes : ByteArray) =>
+    ({ env := input.env.root
+       roleTable := input.env.bindingAddress
+       target
+       policy
+       abiArity
+       elfHash := Ixon.Address.blake3Pure elfBytes } : CompileClaim)
   match mode with
   | .auto =>
-    match ← Compiler.produceAuto cfg inp with
-    | .zeroRc cert a _ =>
+    -- `Compiler.produceAuto` (`RcReplay.produceAuto`) over the produced records, which carry the
+    -- certificate's text
+    let cfg := cfg.forInput inp
+    let front ← Recheck.RcReplay.produceFir cfg inp
+    match Own.Plain.selectRcPolicyForSrc front.src front.fir with
+    | .zeroRc =>
+      let (p, a) ← Recheck.RcReplay.produceImmortal cfg inp front
       -- the claim's verifier (`Recheck.runWithContracts`) refuses past the parameter limit
       (Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal a.fir).mapError fun message =>
         ({ stage := .cert, code := "own.plain", message } : Recheck.Err)
@@ -494,93 +509,50 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
         | throw { stage := .rt, code := "roots", message := "artifact has no root" }
       unless checkImmortalRoot a.src root do
         throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for zeroRc" }
-      let elfBytes := a.backend.object
-      let claim : CompileClaim :=
-        { env := input.env.root
-          roleTable := input.env.bindingAddress
-          target
-          policy := .zeroRc
-          abiArity := root.params
-          elfHash := Ixon.Address.blake3Pure elfBytes }
-      return (claim, cert.toText, elfBytes)
-    | .plainRc cert a _ =>
-      let some root := a.roots.head?
-        | throw { stage := .rt, code := "roots", message := "artifact has no root" }
-      unless checkPlainRcRoot a.front.src root do
-        throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be observable for plainRc" }
-      let elfBytes := a.backend.object
-      let claim : CompileClaim :=
-        { env := input.env.root
-          roleTable := input.env.bindingAddress
-          target
-          policy := .plainRc
-          abiArity := root.params
-          elfHash := Ixon.Address.blake3Pure elfBytes }
-      return (claim, cert.toText, elfBytes)
-    | .immortal cert a _ _ =>
-      -- plain RC was selected but refused: the claim binds the immortal policy it compiled under
-      let some root := a.roots.head?
-        | throw { stage := .rt, code := "roots", message := "artifact has no root" }
-      unless checkImmortalRoot a.src root do
-        throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
-      let elfBytes := a.backend.object
-      let claim : CompileClaim :=
-        { env := input.env.root
-          roleTable := input.env.bindingAddress
-          target
-          policy := .immortal
-          abiArity := root.params
-          elfHash := Ixon.Address.blake3Pure elfBytes }
-      return (claim, cert.toText, elfBytes)
+      return (claimOf .zeroRc root.params a.backend.object, p.text, a.backend.object)
+    | .plainRc =>
+      match Recheck.RcReplay.producePlain cfg inp front with
+      | .ok (p, a) =>
+        let some root := a.roots.head?
+          | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+        unless checkPlainRcRoot a.front.src root do
+          throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be observable for plainRc" }
+        return (claimOf .plainRc root.params a.backend.object, p.text, a.backend.object)
+      | .error _ =>
+        -- plain RC was selected but refused: the claim binds the immortal policy it compiled under
+        let (p, a) ← Recheck.RcReplay.produceImmortal cfg inp front
+        let some root := a.roots.head?
+          | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+        unless checkImmortalRoot a.src root do
+          throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
+        return (claimOf .immortal root.params a.backend.object, p.text, a.backend.object)
   | .off | .immortal =>
-    let cert ← Recheck.produce cfg inp
-    let a ← Recheck.run cfg input.program cert
+    let p ← Recheck.produceWith cfg inp
+    let a ← Recheck.run cfg input.program p.cert
     let some root := a.roots.head?
       | throw { stage := .rt, code := "roots", message := "artifact has no root" }
     unless checkImmortalRoot a.src root do
       throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
-    let elfBytes := a.backend.object
-    let claim : CompileClaim :=
-      { env := input.env.root
-        roleTable := input.env.bindingAddress
-        target
-        policy := .immortal
-        abiArity := root.params
-        elfHash := Ixon.Address.blake3Pure elfBytes }
-    return (claim, cert.toText, elfBytes)
+    return (claimOf .immortal root.params a.backend.object, p.text, a.backend.object)
   | .zeroRc =>
-    let cert ← Recheck.produce cfg inp
-    let a ← Recheck.runWithContracts cfg input.program cert
+    let p ← Recheck.produceWith cfg inp
+    let a ← Recheck.runWithContracts cfg input.program p.cert
     unless Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc do
       throw { stage := .cert, code := "own.plain", message := "program does not select zeroRc policy" }
     let some root := a.roots.head?
       | throw { stage := .rt, code := "roots", message := "artifact has no root" }
     unless checkImmortalRoot a.src root do
       throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for zeroRc" }
-    let elfBytes := a.backend.object
-    let claim : CompileClaim :=
-      { env := input.env.root
-        roleTable := input.env.bindingAddress
-        target
-        policy := .zeroRc
-        abiArity := root.params
-        elfHash := Ixon.Address.blake3Pure elfBytes }
-    return (claim, cert.toText, elfBytes)
+    return (claimOf .zeroRc root.params a.backend.object, p.text, a.backend.object)
   | .on | .plainRc =>
-    let (cert, a) ← Recheck.RcReplay.produce cfg inp
+    let cfg := cfg.forInput inp
+    let p ← Recheck.RcReplay.produceWith cfg inp
+    let a ← Recheck.RcReplay.run cfg inp.program p.cert
     let some root := a.roots.head?
       | throw { stage := .rt, code := "roots", message := "artifact has no root" }
     unless checkPlainRcRoot a.front.src root do
       throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be observable for plainRc" }
-    let elfBytes := a.backend.object
-    let claim : CompileClaim :=
-      { env := input.env.root
-        roleTable := input.env.bindingAddress
-        target
-        policy := .plainRc
-        abiArity := root.params
-        elfHash := Ixon.Address.blake3Pure elfBytes }
-    return (claim, cert.toText, elfBytes)
+    return (claimOf .plainRc root.params a.backend.object, p.text, a.backend.object)
 
 /-- Check a `CompileClaim` against a `Src.Program` (precondition: ingested, or passed
 `Recheck.checkSrc`, as for `Recheck.run`) and serialized certificate. -/

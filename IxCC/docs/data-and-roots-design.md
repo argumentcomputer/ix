@@ -358,6 +358,15 @@ line `rc policy: immortal (plain RC refused: cert: own.plain: own.cert.budget:
 since a join then captures only what its body uses: 1,039,104 for the same
 program, within the limit. The limit is not settable at invocation yet (a
 mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
+Its twin within the limit, `fanUnder` (1,044,352 tokens), compiles under plain
+RC with a certificate within the certificate text's limits (nesting 410 of 512,
+54,727,677 bytes of 64 MiB), since its roots call the fan functions in parts of
+two; in parts of ten or eleven the callers' `inc`s of the shared argument
+nested its certificate 2,208 deep, which `check-cert` refused and which the
+compiler, reading its certificates back since 2026-11-12, would decline
+([compiler design](compiler-design.md#middle-end-budgets), "Certificate text and
+decode limits"). So a program the front end produces can meet the
+captured-work budget before the text limits.
 The source-domain check the checker runs first (`programDomain`,
 `contractProgramDomain`: fresh parameters, every body's lexical scope and
 every call's arity) is linear in the program it reads up to a logarithm: it

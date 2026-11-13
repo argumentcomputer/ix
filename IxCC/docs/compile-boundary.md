@@ -32,6 +32,28 @@ and then only at the operation's pinned
 address with a stored theorem whose statement is the operation's equation
 (`Table.checkWord`).
 
+**The certificate's text.** `compile_parts` and its relatives relate the
+certificate `produce` returns to `run`'s acceptance of it as a value. The
+verifiers a user runs (`ixcc check-cert`, `compile --cert`, the claim
+verifiers `CompileClaim.verifyBytes` and `Ring0Sip.verifyBytes`) read a
+certificate from its text, with limits only that reader applies (64 MiB of
+text, nesting 512, number tokens of 32 digits, and the decoders' limits:
+[compiler design](compiler-design.md#middle-end-budgets), "Certificate text and
+decode limits"). Since 2026-11-12 every producer reads its certificate back
+from its file text through that reader before handing it on (`Cert.readBack`,
+`RcReplay.Cert.readBack`), so `produce` returns the decoded certificate, and the
+statements say so: `compileInput_text` (a successful `compileInput`'s producer
+text is read by `Cert.ofText` as exactly the certificate `run` accepted) and
+`producePlain_text` and `produceImmortal_text` (the same for the plain-RC and
+immortal finishers, through `RcReplay.Cert.parse` and `Cert.ofText`), each with
+the standard axioms. `ixcc compile` then runs `check-cert`'s verifier
+(`Cli.checkText`: the reader, Stage A, the replay) on the text it is about to
+write, takes the object from that verdict, and writes exactly that text
+(`--emit-cert`; with `--cert`, the given file's text): the command line is IO
+and no theorem covers it; `tests-cert-text` checks it on every committed root
+under every mode. `CompileClaim.produce` returns the same text beside its
+claim; the claim binds the object's hash, not the certificate.
+
 The implementation composes `compile = ingress; produce; run`. Every address
 IxCC computes is pure BLAKE3: `Address.blake3` is defined as `Address.blake3Pure`
 (`Ixon/Hash.lean`), so no statement depends on foreign hash code. The hashing

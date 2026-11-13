@@ -800,9 +800,10 @@ ownership checker's own, which the captured-work budget bounds
   `Recheck.checkCanonicalRelevance`: `Src.KernelFront.Kernel.annotateChecked`, the kernel
   annotator and `checkReachedTypes`, rerun on the certificate's table and compared) is
   superlinear in the reached source. It runs on the source program, before any Fir program
-  exists, on every `ixcc compile --cert` and `check-cert` input (the CLI's certificate read) and
-  in the claim verifiers (`CompileClaim.checkCertCanonicalRelevance`, Ring0), on both routes; the
-  producer runs the same annotator. On the generated inputs (P parameters per function, F
+  exists, on every `ixcc compile` and `check-cert` input (`Cli.checkText`, `check-cert`'s verifier,
+  which `compile` runs on the text it writes since the producer's read-back landed) and in the
+  claim verifiers (`CompileClaim.checkCertCanonicalRelevance`, Ring0), on both routes; the producer
+  runs the same annotator, so on such inputs a compile pays it twice. On the generated inputs (P parameters per function, F
   functions reached): 11.0 s at (P, F) = (110, 2,398), 33.4 s at (220, 2,398), 35.5 s at
   (110, 4,793), 102.8 s at (220, 4,793), a factor of three when either doubles; a sum
   α·F·P² + β·F²·P fits within the box's noise. The parameter limit cannot bound it (it runs
@@ -829,25 +830,66 @@ ownership checker's own, which the captured-work budget bounds
   2,398 and 4,793. It runs in `--rc auto`'s producer and in the zero-RC claim verifiers
   (`CompileClaim.verifyProgram`, Ring0) after `runWithContracts`. A lookup structure in place of
   the rebuilt list is the planned fix.
-- Known limit, not a cost: the certificate text is refused past 512 levels
-  of JSON nesting (`Src.Hints.maxJsonDepth`, `checkJsonText`), and a plain-RC
+- The certificate text's limits (`Src.Hints.checkJsonText`: 64 MiB of text,
+  nesting 512, number tokens of 32 digits; the decoders' 4,096 frame slots,
+  ids up to 1,000,000 and 64 middle-end steps) applied only to certificates
+  read from text: the producers built theirs as values and the compile path
+  verified the value, so `ixcc compile` could write a certificate that
+  `ixcc check-cert` refused. It did on a registered input: `fixtures/rc/budget`'s
+  `fanUnder` under `--rc on` and `auto` (a plain-RC certificate nested 2,208
+  deep, from one `inc` per extra copy of `n` passed in a part of ten or
+  eleven calls). Fixed (2026-11-12): every producer reads its certificate back
+  from its file text through the verifier's reader (`Cert.readBack`), and
+  `ixcc compile` runs `check-cert`'s verifier on the text it writes and writes
+  exactly that text ([compile boundary](compile-boundary.md), "The certificate's
+  text"; `compileInput_text`, `producePlain_text`, `produceImmortal_text`). A
+  certificate past a limit now declines the compile with the limit's reason
+  (`--rc off`, `on`) or, from plain RC, falls back to the immortal policy
+  (`auto`). `fanUnder`'s roots call its fan functions in parts of two (nesting
+  410). Of the limits, two are reachable by the producer: the depth under plain
+  RC (`fixtures/rc/deep`'s `deep240`, 240 nested tests, nesting 726) and the
+  size in every mode (probes kept with the change's notes, not committed:
+  `FanBig56.lean`, 56 of the budget input's fan functions under one root, a
+  zero-RC certificate of 68,888,457 bytes; `Size100x80.lean`, 80 functions of
+  101 parameters each with a chain of 100 tests whose `k`-th leaf returns
+  parameter `k`, a plain-RC certificate of 73,006,286 bytes; each frozen with
+  `ix` through `IxCCTests.Corpus.rebuildFixture` and compiled with `ixcc compile
+  --rc off|on|auto --emit-cert`, then `ixcc check-cert`).
+- Open, not changed by that fix: the depth limit itself. A plain-RC
   certificate's ownership code nests one level per binding, action and join
-  and two per `case`, below the middle end's own depth limit
-  (`Anf.maxDepth`, 2,048). A function whose canonical code nests past about
-  510 levels (one that must drop more than about 500 values at one return,
-  or a chain of a few hundred tests) gets a certificate the text path
-  refuses. On a probe input (240 nested `Bool.casesOn (Nat.blt k s)` tests
-  on two parameters, within the consumer's expression depth; certificate
-  nesting 726), `--rc on` and `--rc auto` compile under plain RC and write the
-  object (the producer admits its certificate as a JSON value, not as text),
-  but `ixcc check-cert` refuses the emitted certificate with `cert:
-  cert.parse: JSON nesting depth exceeds maximum`; under `--rc off` the
-  zero-RC certificate (nesting 8) is accepted. The registered corpus's
-  certificates nest at most 121 levels (`Natural.fibMain` under `--rc on`).
-  A flat encoding of an action sequence (one level for a run of actions) or
-  a liveness placement (fewer drops at a return) lifts the case of many
-  drops; a chain of bindings and `case`s would need the control tree itself
-  encoded flatter. The format is not changed yet.
+  and two per `case`, below the middle end's own depth limit (`Anf.maxDepth`,
+  2,048), so a function whose canonical code nests past about 510 levels (a
+  chain of about 170 tests, or about 500 copies of a variable passed at one
+  point) is declined under `--rc on` and compiled under the immortal policy
+  under `auto`. The registered corpus's plain-RC certificates nest at most 410
+  (`fanUnder`; 121 on the corpus manifests, `Natural.fibMain`). What would lift
+  it: a flat encoding of the ownership code. The code mirrors the source's
+  control tree, which the decoder already walks in step (`Certificate.decode`,
+  fuel 4,096, the source within `Anf.maxDepth`), so the certificate need only
+  carry, per body, the actions and the joins' captured lists as one list in the
+  tree's preorder, which the decoder consumes as it walks the source: one
+  format version (`ixcc/own-plain/2`), its encoder and decoder, the decoder's
+  facts that admission's proofs use, and `tests-rc-certificate`'s codec tests;
+  the checker and everything after it read the decoded `Code` and do not
+  change. Merging a run of `inc`s of one variable into one `inc x n` (which the
+  format already has) would lift only the case of many copies.
+- Open: the command line's `--rc auto` verifies a plain-RC certificate twice:
+  `RcReplay.producePlain` runs `RcReplay.run` to decide between plain RC and
+  the fallback, and `compile` then runs `check-cert`'s verifier, the replay
+  included, on the text (before 2026-11-12 it ran `RcReplay.run` again on the
+  value). Deciding the fallback on `check-cert`'s verdict instead would save one
+  replay per automatic compile.
+- Open, not reached by any producer output found: the number-token limit
+  (32 digits: the certificate's numbers are indices, counts, offsets and bounds
+  below the program-size budgets, at most 7 digits; numerals of 40 to 60 digits
+  in a source never reach it; 5 digits on the corpus), the frame-slot limit
+  (4,096: linear scan reuses slots, so its count is the values spilled at once,
+  bounded by the values in scope, Anf depth 2,048 and the parameters, which
+  `ix`'s output holds to about 230; the all-slots fallback, a slot per value,
+  ran for no function of the corpus or of the probes; 240 on the corpus) and
+  the id limit (1,000,000: ids are dense, so it takes more than a million
+  reached constants or Anf globals; 1,540 on the corpus). If one is reached,
+  the compile declines (or falls back) with its reason, as for the others.
 - `RcReplay.runFront` runs the ownership check three times on the same map:
   at admission (`Own.Plain.Certificate.admit`), in the program gate
   (`checkScopedProgram`'s `checkProgram`) and in the lowering

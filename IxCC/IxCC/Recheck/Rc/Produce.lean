@@ -278,15 +278,20 @@ def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.P
   let stacked ← (Xv.Stacking.run r.program layouts lowered.reps cfg.env).mapError
     (Err.ofBackend ∘ .stacking)
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
-  pure { cert := { table := front.tableCert, relevance := front.relevance, mid := front.mid
-                   alloc := r.outs, frames := layouts, order }
-         tableDiags := front.tableDiags, tableStats := front.tableStats
+  -- the certificate as the verifier reads it: its file text, read back (`Recheck.Cert.readBack`)
+  let built : Recheck.Cert := { table := front.tableCert, relevance := front.relevance, mid := front.mid,
+                                alloc := r.outs, frames := layouts, order }
+  let ⟨text, cert, read⟩ ← Recheck.Cert.readBack built
+  pure { cert, text, read, tableDiags := front.tableDiags, tableStats := front.tableStats
          fires := front.fires, stages := front.stages, alloc := r.outcomes
          wordHints := front.wordHints }
 
 /-- What single-pass `RcReplay.produceWith` found beside the certificate. -/
 structure Produced where
   cert : Cert
+  /-- The certificate's file text, which `cert` was read back from (`Cert.readBack`). -/
+  text : String
+  read : Cert.parse text = .ok cert
   front : ProducedFir
   own : Own.Plain.Program
   alloc : List Xv.Alloc.Outcome
@@ -320,8 +325,10 @@ def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced
   let base : Recheck.Cert :=
     { table := front.tableCert, relevance := front.relevance, mid := front.mid
       alloc := allocated.outs, frames, order }
-  let cert : Cert := { base, own := ownJson }
-  pure { cert, front, own := canonicalOwn, alloc := allocated.outcomes }
+  -- the certificate as the verifier reads it: its file text, read back through `Cert.parse`
+  -- (the ownership code was admitted above as a value; the read-back applies the text limits)
+  let ⟨text, cert, read⟩ ← Cert.readBack { base, own := ownJson }
+  pure { cert, text, read, front, own := canonicalOwn, alloc := allocated.outcomes }
 
 /-- Single-pass RC certificate producer with allocation outcomes and contract-aware
 `Own.Plain.Program`. -/

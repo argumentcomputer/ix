@@ -345,6 +345,26 @@ def Cert.ofText (text : String) : Except Err Cert :=
   | .ok c => .ok c
   | .error m => .error { stage := .cert, code := "cert.parse", message := m }
 
+/-- The certificate's file: its text and a newline, the bytes `ixcc compile --emit-cert` writes. -/
+def Cert.toFile (c : Cert) : String := c.toText ++ "\n"
+
+/-- A certificate as the verifier reads it: a file text and what `Cert.ofText`, the reader of
+`ixcc check-cert` and `compile --cert`, reads it as. -/
+structure Cert.Read where
+  text : String
+  cert : Cert
+  read : Cert.ofText text = .ok cert
+
+/-- **The producer's read-back.** The certificate `c` a producer built, read back from its file
+text (`toFile`) through `Cert.ofText`, with every text and decode limit the verifier applies; a
+certificate past one is refused here with the limit's reason (`cert: cert.parse: …`). The
+verifier then runs on the decoded certificate, and the text is what is written. -/
+def Cert.readBack (c : Cert) : Except Err Cert.Read :=
+  let text := c.toFile
+  match h : Cert.ofText text with
+  | .ok d => .ok ⟨text, d, h⟩
+  | .error e => .error e
+
 #guard (CertJson.rel? (CertJson.arr [CertJson.str "p", CertJson.str "n"])).isOk == false
 #guard (CertJson.fieldClass? (CertJson.arr [CertJson.str "p", CertJson.str "n"])).isOk == false
 #guard (CertJson.output? (CertJson.arr [CertJson.nat 4097, CertJson.arr []])).isOk == false

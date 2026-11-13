@@ -1785,7 +1785,7 @@
  "dcfe005edf93d0cc7428fec97d65fcc6499e28e067f4dc8438c4947445dee77b",
  "grounding_axiom_count": 209,
  "baseline":
- "the parameter total (Anf.maxParamTotal) and the zero-RC route's check (10 exact axiom assertions in Fences/OwnParams.lean)",
+ "fb6c8a18b: tests-cert-text; the fences of compileInput_text, producePlain_text and produceImmortal_text; merged with 8b8fdc66b",
  "axiom_sha256":
- "ed9352875d578e70771a5a265fe9e59a47b8beb8f5ec22a9eeb14d054b8d8b53",
- "axiom_count": 6644}
+ "7d1f3a1406cbce9da1ba8b713c42c89758d476e89952c5a4a1a4675931de61c9",
+ "axiom_count": 6647}

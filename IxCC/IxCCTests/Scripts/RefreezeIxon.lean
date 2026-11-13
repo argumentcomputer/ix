@@ -16,9 +16,10 @@ their provenance; required CI never runs it.
   (`Ix/PrimAddrs.lean`, or `Ix/Tc/Primitive.lean` in earlier revisions), and
   check that the two tables are equal; tables with different fields are
   refused, naming the fields.
-* `rc-real-source --ix IX [--ix-path DIR]`, `rc-budget --ix IX [--ix-path DIR]`: regenerate the RC
-  real-source input `fixtures/rc/real-source` and the captured-work budget input
-  `fixtures/rc/budget` (`rcInput`).
+* `rc-real-source --ix IX [--ix-path DIR]`, `rc-budget --ix IX [--ix-path DIR]`, `rc-deep --ix IX
+  [--ix-path DIR]`: regenerate the RC real-source input `fixtures/rc/real-source`, the
+  captured-work budget input `fixtures/rc/budget` and the certificate-depth input
+  `fixtures/rc/deep` (`rcInput`).
 -/
 
 namespace RefreezeIxon
@@ -119,6 +120,12 @@ def rcBudgetInput : RcInput :=
   { command := "rc-budget", dir := "fixtures/rc/budget", source := "Fan.lean",
     roots := ["IxCCTests.Own.Budget.fanUnder", "IxCCTests.Own.Budget.fanOver"] }
 
+/-- The certificate-depth input (the producer's read-back): a root whose plain-RC certificate nests
+past the certificate text's depth limit, one within it. -/
+def rcDeepInput : RcInput :=
+  { command := "rc-deep", dir := "fixtures/rc/deep", source := "Deep.lean",
+    roots := ["IxCCTests.Cert.Deep.deep240", "IxCCTests.Cert.Deep.deep168"] }
+
 /-- An RC input's directory: the closure of its roots and its sidecar, by `corpus rebuild`'s
 fixture step (the anonymous closure, the named twin, every root, definition and equation resolved
 with `ix addr-of`; the roots have no cases), then `provenance.json` and every hash of
@@ -173,7 +180,8 @@ def usage : String :=
   "usage: refreeze-ixon package --ix-repo DIR --ix-revision REV\n" ++
   "       refreeze-ixon tc-primitives --ix-repo DIR --ix-revision REV\n" ++
   "       refreeze-ixon rc-real-source --ix IX [--ix-path DIR] [--work DIR]\n" ++
-  "       refreeze-ixon rc-budget --ix IX [--ix-path DIR] [--work DIR]"
+  "       refreeze-ixon rc-budget --ix IX [--ix-path DIR] [--work DIR]\n" ++
+  "       refreeze-ixon rc-deep --ix IX [--ix-path DIR] [--work DIR]"
 
 def main (args : List String) : IO Unit := do
   let (command, rest) := match args with
@@ -187,6 +195,7 @@ def main (args : List String) : IO Unit := do
   | "tc-primitives" => tcPrimitives (← req "--ix-repo") (← req "--ix-revision")
   | "rc-real-source" => rcInput rcRealSourceInput (← req "--ix") ((optional options "--ix-path").toList) work
   | "rc-budget" => rcInput rcBudgetInput (← req "--ix") ((optional options "--ix-path").toList) work
+  | "rc-deep" => rcInput rcDeepInput (← req "--ix") ((optional options "--ix-path").toList) work
   | _ => throw (IO.userError usage)
 
 end RefreezeIxon

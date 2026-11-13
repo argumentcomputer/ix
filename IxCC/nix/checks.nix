@@ -177,6 +177,7 @@ in
       launch tests-relevance $bin/tests-relevance
       launch tests-recheck $bin/tests-recheck
       launch tests-recheck-readback $bin/tests-recheck-readback
+      launch tests-cert-text $bin/tests-cert-text
       launch tests-kernel-front $bin/tests-kernel-front
       launch src-artifacts $bin/gen-src-artifacts --check
       launch recheck-artifacts $bin/gen-recheck-artifacts --check
