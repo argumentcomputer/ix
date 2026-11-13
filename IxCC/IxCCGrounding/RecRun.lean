@@ -242,7 +242,7 @@ theorem runs_peel {M : Model V env} {κ : CId → KKey} {Ok : CId → Levels →
   | [], n, Γ, t, t', b, h, hp => by
     simp only [List.length_nil, IxCC.Src.peelLams, Option.some.injEq] at hp
     subst hp
-    simp only [List.map_nil, List.reverse_nil, List.nil_append, Nat.add_zero]
+    simp only [List.map_nil, List.reverse_nil, List.nil_append]
     exact h
   | (A, m) :: bs, n, Γ, t, t', b, h, hp => by
     have h' : Runs M κ Ok lps ls φ (idσ n) Γ t (.lam A (lamTele bs b) m) := h
@@ -281,7 +281,8 @@ theorem relEnv_pushAll {M : Model V env} {κ : CId → KKey} {lpsOf : CId → Li
     {S : CId → Prop} {Ok : CId → Levels → Prop} {φ : LevelParam → Nat} {ss : List Slot}
     {Xs : List V} {ρ : BVarIdx → V} (h : RelSlots M κ lpsOf S Ok ss Xs) :
     RelEnv M κ lpsOf S Ok φ ss.reverse (idσ ss.length) (pushAll Xs ρ) := by
-  have := relEnv_pushAll_gen (E := []) (k := 0) (ρ := ρ) h (by rw [idσ_zero]; exact .nil)
+  have := relEnv_pushAll_gen (φ := φ) (E := []) (k := 0) (ρ := ρ) h
+    (by rw [idσ_zero]; exact .nil)
   simpa using this
 
 /-- Sets that fit a `∀`-telescope satisfy its domains as a context, the last innermost. -/

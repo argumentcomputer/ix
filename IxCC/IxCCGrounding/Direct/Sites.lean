@@ -86,7 +86,7 @@ theorem evalSites_mem_P (ls : Levels) :
               cases hq : P.filter (fun prof => !r.irrP prof) with
               | nil => rw [hq] at hP'; simp at hP'
               | cons _ _ => rfl
-            simp only [hne, hsub, Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+            simp only [hne, Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
             exact ihv _ Γ v' hP' s hs
         · simp [hr] at hs
     · exact Or.inr (ihb P Γ e hP s hs)
