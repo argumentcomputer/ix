@@ -11,6 +11,6 @@
   "blocks.equations.json":
   "3377d105a586342ad5767d34ade9049a37bb68767828d01ae2142f64f293f1fa"},
  "commands":
- ["ix compile --no-build --consts <roots> --anon --out blocks.ixe Blocks.lean",
-  "ix compile --no-build --consts <roots> --out blocks.named.ixe Blocks.lean",
+ ["ix compile --no-build --consts <roots> --no-equations --anon --out blocks.ixe Blocks.lean",
+  "ix compile --no-build --consts <roots> --no-equations --out blocks.named.ixe Blocks.lean",
   "ix addr-of --ixe blocks.named.ixe NAME, for every root"]}
