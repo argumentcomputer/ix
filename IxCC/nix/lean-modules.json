@@ -3557,7 +3557,10 @@
   "IxCCTests.Fences.Front":
   {"path": "IxCCTests/Fences/Front.lean",
    "imports":
-   ["IxCC.Rt.Proof.Publish", "IxCC.Rt.Proof.Lang", "IxCC.Recheck.Proof.Sound"]},
+   ["IxCC.Rt.Proof.Publish",
+    "IxCC.Rt.Proof.Lang",
+    "IxCC.Recheck.Proof.Sound",
+    "IxCC.Recheck.Proof.LiveDefs"]},
   "IxCCTests.Fences.FirProof":
   {"path": "IxCCTests/Fences/FirProof.lean",
    "imports": ["IxCC.Fir.Proof.Mono", "IxCC.Fir.Proof.Lang"]},
@@ -3583,6 +3586,7 @@
     "IxCC.Lam.Erase.Proof.Correct",
     "IxCC.Src.Relevance.Proof.Sound",
     "IxCC.Src.Relevance.Proof.Canonical",
+    "IxCC.Src.Relevance.Proof.P1.Defs",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Defun":
@@ -5173,6 +5177,12 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.P1.Defs":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Defs.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.Canonical",
+    "IxCC.Lam.Erase.Proof.Rel",
+    "IxCC.Src.Semantics"]},
   "IxCC.Src.Relevance.Proof.Canonical":
   {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Sound", "IxCC.Src.Semantics"]},
@@ -6689,6 +6699,9 @@
   "IxCC.Recheck.Proof.Middle":
   {"path": "IxCC/Recheck/Proof/Middle.lean",
    "imports": ["IxCC.Recheck.Run", "IxCC.Anf.Proof.Pass.Closures"]},
+  "IxCC.Recheck.Proof.LiveDefs":
+  {"path": "IxCC/Recheck/Proof/LiveDefs.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.P1.Defs", "IxCC.Recheck.Proof.Sound"]},
   "IxCC.Recheck.Proof.Front":
   {"path": "IxCC/Recheck/Proof/Front.lean",
    "imports":
