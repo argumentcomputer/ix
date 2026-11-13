@@ -245,7 +245,9 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
   if ifc.resCls == .irr || ifc.resCls == .imm then return base
   let inner ← innermost
   match ifc.res with
-  | .unique => pure { base with own := .uniq }
+  -- a unique result keeps the arguments' regions: `runR`'s transfer of a leaf is a no-op that
+  -- keeps its confinement, and a number may sit at class `val` (repair O)
+  | .unique => pure { base with own := .uniq, regs }
   | .uniqueBorrowed => pure { base with own := .uniq, deps, regs := natUnion regs [inner] }
   | .borrowed => pure { base with deps, regs := natUnion regs [inner] }
   | .shared =>
@@ -319,7 +321,10 @@ def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String)
   | .erased => pure { cls := .irr }
   | .unique | .uniqueBorrowed => do
     flowTo (.uniq m.isBorrowed) v.skel v w
-    pure { cls, own := .uniq, regs := (if m.isBorrowed then natUnion v.regs [s] else []),
+    -- a value of class other than `val` may be a leaf, whose transfer keeps its confinement;
+    -- at class `val` the flow has refused a confined value already (repair O)
+    pure { cls, own := .uniq,
+           regs := (if m.isBorrowed then natUnion v.regs [s] else if v.cls == .val then [] else v.regs),
            skel := v.skel }
   | .borrowed => do valid v w; pure { v with cls, regs := natUnion v.regs [s], src := none }
   | .once => do flowTo .once v.skel v w; pure { v with cls, src := none }
