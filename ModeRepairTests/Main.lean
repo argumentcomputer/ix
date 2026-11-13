@@ -858,6 +858,26 @@ def consumeClo : Term := lam (par .many .leaf) (app (.const consumeR .val) [v 1]
 -- Finding 12: `addB (@borrowed n : Nat) : Nat → Nat := Nat.add n`; the control `addP` with `n` plain
 def addB := mem 325
 def addP := mem 362
+-- Finding 16: `use16 (k : List Nat → Nat → Nat) (@unique y : List Nat) (b : E) : Nat :=
+-- (match b with | e0 => k | e1 => k) y (consume y)`, the case of class leaf, with
+-- `kk16 (a : List Nat) (n : Nat) : Nat := len a` given as `k`; the control `use16p` has `y` plain
+-- and applies the case to `y` and `1`
+def E2 := mem 9
+def e0R := ctr 9 0
+def e1R := ctr 9 1
+def caseE : CaseInfo :=
+  { ind := E2, arity := 3, major := 0, alts := #[{ alt := 1, args := #[] }, { alt := 2, args := #[] }] }
+def kk16 := mem 337
+def use16 := mem 338
+def use16p := mem 364
+def sk16 : Skel := .arrow .many .data .shared (.arrow .many .data .shared .data)
+def p16Defs : List (Ref × RunDef) := [
+  (E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 #[]), (e1R, .ctor E2 1 0 #[]),
+  (kk16, body [par, par .many .leaf] (lenOf (v 1)) .shared .leaf)]
+def in16 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, k) := b.alloc (.pap kk16 #[])
+  (b.heap, [k, xs, .imm (.con e0R)])
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -952,7 +972,15 @@ def findingCases : List Case := [
     addB oneNat (some .borrowEscape) false,
   runCase "finding 12, control: the number not borrowed"
     [(addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
-    addP oneNat none true
+    addP oneNat none true,
+  runCase "finding 16: a case's two extra arguments, the second consuming the first"
+    (p16Defs ++ [(use16, body [par .many .val sk16, par .unique, par .many .imm]
+      (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, app (.const consumeR .val) [v 1] .leaf] .leaf) .shared .leaf)])
+    use16 in16 (some .revokedUse) false [use16, kk16],
+  runCase "finding 16, control: the extra arguments a plain list and a number"
+    (p16Defs ++ [(use16p, body [par .many .val sk16, par .many, par .many .imm]
+      (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, .natLit 1] .leaf) .shared .leaf)])
+    use16p in16 none true [use16p, kk16]
 ]
 
 -- END COPY
@@ -1576,6 +1604,7 @@ def kk16 := mem 337
 def use16 := mem 338
 def use16c := mem 339
 def use16v := mem 340
+def use16p := mem 364
 
 def sk16 : Skel := .arrow .many .data .shared (.arrow .many .data .shared .data)
 
@@ -1587,7 +1616,10 @@ def p16 : Prog := prog [
   (use16c, body [par .many .val sk16 true, par .unique, par .many .imm .data true]
     (app (v 2) [v 1, app (.const consumeR .val) [v 1] .leaf] .leaf) .shared .leaf),
   (use16v, body [par .many .val sk16 true, par .unique, par .many .imm .data true]
-    (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, app (.const consumeR .val) [v 1] .leaf] .val) .shared .val)]
+    (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, app (.const consumeR .val) [v 1] .leaf] .val) .shared .val),
+  -- `use16p (k) (y : List Nat) (b : E) : Nat := (match b with | e0 => k | e1 => k) y 1`
+  (use16p, body [par .many .val sk16 true, par .many, par .many .imm .data true]
+    (.case caseE (v 0 .imm) #[v 2, v 2] #[v 1, .natLit 1] .leaf) .shared .leaf)]
 
 def in16 : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
@@ -1595,12 +1627,15 @@ def in16 : Heap × List Val :=
   (b.heap, [k, xs, .imm (.con e0R)])
 
 def f16Cases : List Case := [
+  -- REPAIR G: accepted as landed
   { label := "F16 use16: (match b with | _ => k) y (consume y), the case of class leaf", P := p16, seed := use16,
-    inp := in16, toCheck := [use16, kk16], verdict := .accept, run := [(0, .vio .revokedUse)], open_ := true },
+    inp := in16, toCheck := [use16, kk16], verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] },
   { label := "F16 control: no case", P := p16, seed := use16c, inp := in16, toCheck := [use16c, kk16],
     verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] },
   { label := "F16 control: the case at class val", P := p16, seed := use16v, inp := in16, toCheck := [use16v, kk16],
-    verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] }]
+    verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] },
+  { label := "F16 control: the case applied to a plain list and a number", P := p16, seed := use16p, inp := in16,
+    toCheck := [use16p, kk16], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 /-! ### Repair N: a spine longer than the checker's depth left at it (found by reading; run)
 
