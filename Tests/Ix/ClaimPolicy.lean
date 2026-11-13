@@ -67,7 +67,7 @@ private def allBut (except : String) : Policy :=
 
 /-- A claim of each kind that states no typing, with its kind and its flag. -/
 private def untyped : List (String × Ix.Claim × Policy) := [
-  ("reveal", .reveal (addr "comm") (.axio none none none), { reveal := true }),
+  ("reveal", .reveal (addr "comm") (.axio none none none) none, { reveal := true }),
   ("contains", .contains (addr "tree") (addr "const"), { contains := true }),
   ("binding", .binding spec (addr "binding"), { binding := true })]
 
@@ -144,7 +144,7 @@ def statementTests : TestSeq :=
       (statementSays (.contains (addr "tree") (addr "const"))
           ["kind: contains", s!"the leaf {addr "const"} of the tree with root {addr "tree"}",
            "none; the claim states no typing"]
-        && statementSays (.reveal (addr "comm") (.axio none none none))
+        && statementSays (.reveal (addr "comm") (.axio none none none) none)
           ["kind: reveal", s!"the constant committed as {addr "comm"}"])
   ++ test "a binding claim names its table and specification set"
       (statementSays (.binding spec (addr "binding"))

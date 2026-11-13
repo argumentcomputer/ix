@@ -17,7 +17,7 @@ public section
 
 namespace Ix.Commit
 
-open Ixon (PutM runPut putConstant putExpr Comm)
+open Ixon (PutM runPut putConstant putExpr putBinders Comm)
 
 -- ============================================================================
 -- mkCompileEnv: Build a compilation cache from CompilePhases output
@@ -198,9 +198,11 @@ def checkClaim (ctx : ClaimContext) (compileEnv : CompileM.CompileEnv)
   let (addr, _) ← compileDef compileEnv lvls type value
   return .check ctx addr none
 
-/-- Build a reveal claim from a commitment address and revealed field info. -/
-def revealClaim (comm : Address) (info : RevealConstantInfo) : Claim :=
-  .reveal comm info
+/-- Build a reveal claim from a commitment address, revealed field info, and
+    an optional binder-data section address. -/
+def revealClaim (comm : Address) (info : RevealConstantInfo)
+    (binders : Option Address := none) : Claim :=
+  .reveal comm info binders
 
 -- ============================================================================
 -- Opening committed constants for reveal claims
@@ -210,6 +212,10 @@ def revealClaim (comm : Address) (info : RevealConstantInfo) : Claim :=
 def exprAddr (e : Ixon.Expr) : Address :=
   Address.blake3 (runPut (putExpr e))
 
+/-- Content address of a serialized binder-data section: `blake3(putBinders bs)`. -/
+def sectionAddr (bs : Array Ixon.BinderBlock) : Address :=
+  Address.blake3 (runPut (putBinders bs))
+
 /-- Open all fields of a compiled Constructor. -/
 def openConstructor (c : Ixon.Constructor) : RevealConstructorInfo :=
   { isUnsafe := some c.isUnsafe
@@ -217,7 +223,8 @@ def openConstructor (c : Ixon.Constructor) : RevealConstructorInfo :=
   , cidx := some c.cidx
   , params := some c.params
   , fields := some c.fields
-  , typ := some (exprAddr c.typ) }
+  , typ := some (exprAddr c.typ)
+  , fieldModes := some c.fieldModes.toArray }
 
 /-- Open a compiled RecursorRule at a given array index. -/
 def openRecursorRule (idx : UInt64) (r : Ixon.RecursorRule) : RevealRecursorRule :=
@@ -227,7 +234,7 @@ def openRecursorRule (idx : UInt64) (r : Ixon.RecursorRule) : RevealRecursorRule
 def openMutConst (mc : Ixon.MutConst) : RevealMutConstInfo :=
   match mc with
   | .defn d => .defn (some d.kind) (some d.safety) (some d.lvls)
-      (some (exprAddr d.typ)) (some (exprAddr d.value))
+      (some (exprAddr d.typ)) (some (exprAddr d.value)) (some d.asserts)
   | .indc i =>
     let ctors := Id.run do
       let mut arr := #[]
@@ -252,7 +259,7 @@ def openMutConst (mc : Ixon.MutConst) : RevealMutConstInfo :=
 def openConstantInfo (ci : Ixon.ConstantInfo) : RevealConstantInfo :=
   match ci with
   | .defn d => .defn (some d.kind) (some d.safety) (some d.lvls)
-      (some (exprAddr d.typ)) (some (exprAddr d.value))
+      (some (exprAddr d.typ)) (some (exprAddr d.value)) (some d.asserts)
   | .recr r =>
     let rules := Id.run do
       let mut arr := #[]

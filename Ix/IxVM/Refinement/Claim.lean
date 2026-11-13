@@ -45,8 +45,9 @@ them as unauthenticated advice.
   universe count and type; and at some fuel in the accepted environment their
   annotated values are definitionally equal (`Ix.Kernel.isDefEqCore` at
   `.verified`, `EvalValues`).
-* `reveal comm info`: the record at `comm` has every field `info` reveals
-  (`RevealLE`).
+* `reveal comm info binders`: the record at `comm` has every field `info`
+  reveals (`RevealLE`) and, when `binders` is present, its binder-data section
+  hashes to it (`sectionAddr`).
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
 * `binding spec b`: the role table with hash `b` binds every role, and IxC
   accepts the closure of the bound constants and evidence theorems under it.
@@ -470,6 +471,12 @@ hashes the same bytes). -/
 def exprAddr (e : Ixon.Expr) : Address :=
   Address.blake3Pure (Ixon.runPut (Ixon.putExpr e))
 
+/-- The address a reveal names a record's binder-data section by: pure BLAKE3
+of its Ixon serialization (`KernelClaim::section_addr`; the host's
+`Ix.Commit.sectionAddr` hashes the same bytes). -/
+def sectionAddr (bs : Array Ixon.BinderBlock) : Address :=
+  Address.blake3Pure (Ixon.runPut (Ixon.putBinders bs))
+
 /-- A recursor's rules as a reveal states them: every rule, at its position. -/
 def revealRules (rules : Array Ixon.RecursorRule) : List RevealRecursorRule :=
   rules.toList.zipIdx.map fun (r, j) => ⟨j.toUInt64, r.fields, exprAddr r.rhs⟩
@@ -477,13 +484,15 @@ def revealRules (rules : Array Ixon.RecursorRule) : List RevealRecursorRule :=
 /-- Revealed constructor fields hold of `c`. -/
 def RevealConstructorLE (info : RevealConstructorInfo) (c : Ixon.Constructor) : Prop :=
   OptEq info.isUnsafe c.isUnsafe ∧ OptEq info.lvls c.lvls ∧ OptEq info.cidx c.cidx ∧
-    OptEq info.params c.params ∧ OptEq info.fields c.fields ∧ OptEq info.typ (exprAddr c.typ)
+    OptEq info.params c.params ∧ OptEq info.fields c.fields ∧ OptEq info.typ (exprAddr c.typ) ∧
+    OptEq info.fieldModes c.fieldModes.toArray
 
 /-- Revealed definition fields hold of `d`. -/
 def RevealDefnLE (kind : Option Ix.DefKind) (safety : Option Ix.DefinitionSafety)
-    (lvls : Option UInt64) (typ value : Option Address) (d : Ixon.Definition) : Prop :=
+    (lvls : Option UInt64) (typ value : Option Address) (asserts : Option Ixon.DefAsserts)
+    (d : Ixon.Definition) : Prop :=
   OptEq kind d.kind ∧ OptEq safety d.safety ∧ OptEq lvls d.lvls ∧
-    OptEq typ (exprAddr d.typ) ∧ OptEq value (exprAddr d.value)
+    OptEq typ (exprAddr d.typ) ∧ OptEq value (exprAddr d.value) ∧ OptEq asserts d.asserts
 
 /-- Revealed recursor fields hold of `r`; revealed rules are all of them, in
 order (`KernelClaim::check_recr_rules`). -/
@@ -505,7 +514,7 @@ def RevealIndcLE (isUnsafe : Option Bool) (lvls params indices : Option UInt64)
 
 /-- Revealed fields of a block member hold of `m`, of the same kind. -/
 def RevealMutLE : RevealMutConstInfo → Ixon.MutConst → Prop
-  | .defn k s l t v, .defn d => RevealDefnLE k s l t v d
+  | .defn k s l t v a, .defn d => RevealDefnLE k s l t v a d
   | .indc u l p ix t cs, .indc i => RevealIndcLE u l p ix t cs i
   | .recr k u l p ix mo mi t rs, .recr r => RevealRecrLE k u l p ix mo mi t rs r
   | _, _ => False
@@ -514,7 +523,7 @@ def RevealMutLE : RevealMutConstInfo → Ixon.MutConst → Prop
 variant (`KernelClaim::run_reveal`); a block's revealed components name
 members by index (`check_muts_components`). -/
 def RevealLE : RevealConstantInfo → Ixon.ConstantInfo → Prop
-  | .defn k s l t v, .defn d => RevealDefnLE k s l t v d
+  | .defn k s l t v a, .defn d => RevealDefnLE k s l t v a d
   | .recr k u l p ix mo mi t rs, .recr r => RevealRecrLE k u l p ix mo mi t rs r
   | .axio u l t, .axio a => OptEq u a.isUnsafe ∧ OptEq l a.lvls ∧ OptEq t (exprAddr a.typ)
   | .quot k l t, .quot q => OptEq k q.kind ∧ OptEq l q.lvls ∧ OptEq t (exprAddr q.typ)
@@ -663,7 +672,9 @@ def HoldsIn (V : View) : Claim → Prop
   | .check ctx a asm => TypingIn V ctx (· = a) asm
   | .checkEnv ctx root asm => V.HoldsTree root ∧
       ∀ leaves, V.LeavesAt root leaves → leaves ≠ [] ∧ TypingIn V ctx (· ∈ leaves) asm
-  | .reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ RevealLE info c.info
+  | .reveal comm info binders =>
+      ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ RevealLE info c.info ∧
+        OptEq binders (sectionAddr c.binders)
   | .contains tree a => V.HoldsTree tree ∧ ∀ leaves, V.LeavesAt tree leaves → a ∈ leaves
   | .catalog _ => False
   | .binding spec b => BindingIn V spec b
@@ -678,7 +689,7 @@ def Covers (V : View) : Claim → Prop
   | .check ctx a asm => V.TypingCovers ctx asm ∧ V.Stores a
   | .checkEnv ctx root asm => V.TypingCovers ctx asm ∧ V.HoldsTree root ∧
       ∀ leaves, V.LeavesAt root leaves → ∀ a ∈ leaves, V.Stores a
-  | .reveal comm _ => V.Stores comm
+  | .reveal comm _ _ => V.Stores comm
   | .contains tree _ => V.HoldsTree tree
   | .binding _ b => V.Closed ∧ (V.binding? b).isSome = true
   | .catalog _ => True

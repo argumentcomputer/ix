@@ -64,7 +64,33 @@ private def getQuotKind : GetM QuotKind := do
   | 0 => return .type | 1 => return .ctor | 2 => return .lift | 3 => return .ind
   | v => throw s!"getQuotKind: invalid {v}"
 
+private def putDefAsserts (a : DefAsserts) : PutM Unit :=
+  putU8 a.toCode
+
+private def getDefAsserts : GetM DefAsserts := do
+  let v ← getU8
+  match DefAsserts.ofCode? v with
+  | some a => return a
+  | none => throw s!"getDefAsserts: invalid {v}"
+
 private def getTagN0Value : GetM UInt64 := return (← getTagN 0).value
+
+private def putRevealFieldModes (modes : Array FieldMode) : PutM Unit := do
+  putTagN 0 0 modes.size.toUInt64
+  for m in modes do putU8 m.toCode
+
+private def getRevealFieldModes : GetM (Array FieldMode) := do
+  let count ← getTagN0Value
+  let st ← get
+  if count.toNat > st.bytes.size - st.idx then
+    throw "getRevealFieldModes: count exceeds remaining bytes"
+  let mut modes := #[]
+  for _ in [:count.toNat] do
+    let b ← getU8
+    match FieldMode.ofCode? b with
+    | some m => modes := modes.push m
+    | none => throw s!"getRevealFieldModes: invalid field mode {b}"
+  return modes
 
 private def getOpt (mask : UInt64) (bit : UInt64) (read : GetM α) : GetM (Option α) :=
   if mask &&& bit != 0 then some <$> read else pure none
@@ -87,6 +113,7 @@ structure RevealConstructorInfo where
   params : Option UInt64 := none
   fields : Option UInt64 := none
   typ : Option Address := none
+  fieldModes : Option (Array FieldMode) := none
   deriving BEq, Repr, Inhabited
 
 /-- Revealed fields of a RecursorRule. -/
@@ -100,6 +127,7 @@ structure RevealRecursorRule where
 inductive RevealMutConstInfo where
   | defn (kind : Option DefKind) (safety : Option DefinitionSafety)
          (lvls : Option UInt64) (typ : Option Address) (value : Option Address)
+         (asserts : Option DefAsserts)
   | indc (isUnsafe : Option Bool) (lvls : Option UInt64) (params : Option UInt64)
          (indices : Option UInt64) (typ : Option Address)
          (ctors : Option (Array (UInt64 × RevealConstructorInfo)))
@@ -113,6 +141,7 @@ inductive RevealMutConstInfo where
 inductive RevealConstantInfo where
   | defn (kind : Option DefKind) (safety : Option DefinitionSafety)
          (lvls : Option UInt64) (typ : Option Address) (value : Option Address)
+         (asserts : Option DefAsserts)
   | recr (k : Option Bool) (isUnsafe : Option Bool) (lvls : Option UInt64)
          (params : Option UInt64) (indices : Option UInt64)
          (motives : Option UInt64) (minors : Option UInt64)
@@ -217,7 +246,7 @@ inductive Claim where
   | eval     (ctx : ClaimContext) (input output : Address) (assumptions : Option Address)
   | check    (ctx : ClaimContext) (const : Address) (assumptions : Option Address)
   | checkEnv (ctx : ClaimContext) (root : Address) (assumptions : Option Address)
-  | reveal   (comm : Address) (info : RevealConstantInfo)
+  | reveal   (comm : Address) (info : RevealConstantInfo) (binders : Option Address)
   | contains (tree : Address) (const : Address)
   /-- Every claim whose digest is a leaf of the canonical merkle tree `members`
   holds: each an unconditional `checkEnv`. -/
@@ -235,7 +264,8 @@ namespace RevealConstructorInfo
 
 def put (info : RevealConstructorInfo) : PutM Unit := do
   let mask := computeMask [info.isUnsafe.isSome, info.lvls.isSome, info.cidx.isSome,
-                           info.params.isSome, info.fields.isSome, info.typ.isSome]
+                           info.params.isSome, info.fields.isSome, info.typ.isSome,
+                           info.fieldModes.isSome]
   putTagN 0 0 mask
   match info.isUnsafe with | some b => putBoolField b | none => pure ()
   match info.lvls with | some n => putTagN 0 0 n | none => pure ()
@@ -243,17 +273,19 @@ def put (info : RevealConstructorInfo) : PutM Unit := do
   match info.params with | some n => putTagN 0 0 n | none => pure ()
   match info.fields with | some n => putTagN 0 0 n | none => pure ()
   match info.typ with | some a => Serialize.put a | none => pure ()
+  match info.fieldModes with | some ms => putRevealFieldModes ms | none => pure ()
 
 def get : GetM RevealConstructorInfo := do
   let mask := (← getTagN 0).value
-  requireMask mask 6
+  requireMask mask 7
   let isUnsafe ← getOpt mask 1 getBoolField
   let lvls ← getOpt mask 2 getTagN0Value
   let cidx ← getOpt mask 4 getTagN0Value
   let params ← getOpt mask 8 getTagN0Value
   let fields ← getOpt mask 16 getTagN0Value
   let typ ← getOpt mask 32 Serialize.get
-  return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
+  let fieldModes ← getOpt mask 64 getRevealFieldModes
+  return ⟨isUnsafe, lvls, cidx, params, fields, typ, fieldModes⟩
 
 end RevealConstructorInfo
 
@@ -312,15 +344,17 @@ private def getCtors : GetM (Array (UInt64 × RevealConstructorInfo)) := do
 namespace RevealMutConstInfo
 
 def put : RevealMutConstInfo → PutM Unit
-  | .defn kind safety lvls typ value => do
+  | .defn kind safety lvls typ value asserts => do
     putU8 0
-    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
+    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome,
+                             asserts.isSome]
     putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
     match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
+    match asserts with | some a => putDefAsserts a | none => pure ()
   | .indc isUnsafe lvls params indices typ ctors => do
     putU8 1
     let mask := computeMask [isUnsafe.isSome, lvls.isSome, params.isSome, 
@@ -351,7 +385,7 @@ def put : RevealMutConstInfo → PutM Unit
 def get : GetM RevealMutConstInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
-  requireMask mask (match variant with | 0 => 5 | 1 => 6 | 2 => 9 | _ => 64)
+  requireMask mask (match variant with | 0 => 6 | 1 => 6 | 2 => 9 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -359,7 +393,8 @@ def get : GetM RevealMutConstInfo := do
     let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
-    return .defn kind safety lvls typ value
+    let asserts ← getOpt mask 32 getDefAsserts
+    return .defn kind safety lvls typ value asserts
   | 1 => do -- Indc
     let isUnsafe ← getOpt mask 1 getBoolField
     let lvls ← getOpt mask 2 getTagN0Value
@@ -390,15 +425,17 @@ end RevealMutConstInfo
 namespace RevealConstantInfo
 
 def put : RevealConstantInfo → PutM Unit
-  | .defn kind safety lvls typ value => do
+  | .defn kind safety lvls typ value asserts => do
     putU8 0
-    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
+    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome,
+                             asserts.isSome]
     putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
     match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
+    match asserts with | some a => putDefAsserts a | none => pure ()
   | .recr k isUnsafe lvls params indices motives minors typ rules => do
     putU8 1
     let mask := computeMask [k.isSome, isUnsafe.isSome, lvls.isSome,
@@ -467,7 +504,7 @@ def get : GetM RevealConstantInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
   requireMask mask (match variant with
-    | 0 => 5 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
+    | 0 => 6 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -475,7 +512,8 @@ def get : GetM RevealConstantInfo := do
     let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
-    return .defn kind safety lvls typ value
+    let asserts ← getOpt mask 32 getDefAsserts
+    return .defn kind safety lvls typ value asserts
   | 1 => do -- Recr
     let k ← getOpt mask 1 getBoolField
     let isUnsafe ← getOpt mask 2 getBoolField
@@ -726,9 +764,10 @@ def putPayload : Claim → PutM Unit
     putContext ctx
     Serialize.put root
     putOptAddr assumptions
-  | .reveal comm info => do
+  | .reveal comm info binders => do
     Serialize.put comm
     RevealConstantInfo.put info
+    putOptAddr binders
   | .contains tree const => do
     Serialize.put tree
     Serialize.put const
@@ -762,7 +801,7 @@ def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
     let literalClass := validator == VALIDATOR_ERASED_LEAN_CLASS
     return .checkEnv { ctx with bindingAssumed := assumed, literalClass } root asm
   else if variant == VARIANT_REVEAL_CLAIM then
-    return .reveal (← Serialize.get) (← RevealConstantInfo.get)
+    return .reveal (← Serialize.get) (← RevealConstantInfo.get) (← getOptAddr)
   else if variant == VARIANT_CONTAINS_CLAIM then
     return .contains (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_CATALOG_CLAIM then
@@ -816,7 +855,7 @@ instance : ToString Claim where
     | .eval ctx i o asm => s!"Eval({i}, {o}, {asm}; {ctx})"
     | .check ctx v asm => s!"Check({v}, {asm}; {ctx})"
     | .checkEnv ctx r asm => s!"CheckEnv({r}, {asm}; {ctx})"
-    | .reveal comm info => s!"Reveal({comm}, {repr info})"
+    | .reveal comm info binders => s!"Reveal({comm}, {repr info}, {binders})"
     | .contains t c => s!"Contains({t}, {c})"
     | .catalog m => s!"Catalog({m})"
     | .binding spec bound => s!"Binding({bound} meets spec {spec})"

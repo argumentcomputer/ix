@@ -52,6 +52,7 @@ use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
 use super::env::Env;
+use super::modes::{DefAsserts, FieldMode};
 use super::tag::TagN;
 
 // ============================================================================
@@ -68,6 +69,8 @@ pub struct RevealConstructorInfo {
   pub fields: Option<u64>,
   /// blake3(serialized typ Expr)
   pub typ: Option<Address>,
+  /// `[]` when all fields are inherited, else `fields` entries.
+  pub field_modes: Option<Vec<FieldMode>>,
 }
 
 /// Revealed fields of a RecursorRule.
@@ -88,6 +91,7 @@ pub enum RevealMutConstInfo {
     lvls: Option<u64>,
     typ: Option<Address>,
     value: Option<Address>,
+    asserts: Option<DefAsserts>,
   },
   Indc {
     is_unsafe: Option<bool>,
@@ -119,6 +123,7 @@ pub enum RevealConstantInfo {
     lvls: Option<u64>,
     typ: Option<Address>,
     value: Option<Address>,
+    asserts: Option<DefAsserts>,
   },
   Recr {
     k: Option<bool>,
@@ -257,8 +262,9 @@ pub enum Claim {
   /// optionally modulo `assumptions` (typically the env's axiom
   /// leaves).
   CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
-  /// Selective field revelation of a committed constant.
-  Reveal { comm: Address, info: RevealConstantInfo },
+  /// Selective field revelation of a committed constant, optionally committing
+  /// to `blake3(put_binders(c.binders))`.
+  Reveal { comm: Address, info: RevealConstantInfo, binders: Option<Address> },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
   Contains { tree: Address, const_addr: Address },
   /// A conjunction of unconditional `CheckEnv` claims, each under its own
@@ -466,6 +472,41 @@ fn get_bool_field(buf: &mut &[u8]) -> Result<bool, String> {
   }
 }
 
+fn put_def_asserts(a: DefAsserts, buf: &mut Vec<u8>) {
+  buf.push(a.to_code());
+}
+
+fn get_def_asserts(buf: &mut &[u8]) -> Result<DefAsserts, String> {
+  let b = get_u8(buf)?;
+  DefAsserts::of_code(b).ok_or_else(|| format!("get_def_asserts: invalid {b}"))
+}
+
+fn put_field_modes(modes: &[FieldMode], buf: &mut Vec<u8>) {
+  TagN::put(0, 0, modes.len() as u64, buf);
+  for m in modes {
+    buf.push(m.to_code());
+  }
+}
+
+fn get_field_modes(buf: &mut &[u8]) -> Result<Vec<FieldMode>, String> {
+  let count =
+    usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
+  if count > buf.len() {
+    return Err(format!(
+      "get_field_modes: count {count} exceeds remaining {} bytes",
+      buf.len()
+    ));
+  }
+  let mut modes = Vec::with_capacity(count);
+  for _ in 0..count {
+    let b = get_u8(buf)?;
+    let mode = FieldMode::of_code(b)
+      .ok_or_else(|| format!("get_field_modes: invalid {b}"))?;
+    modes.push(mode);
+  }
+  Ok(modes)
+}
+
 // ============================================================================
 // RevealConstructorInfo serialization
 // ============================================================================
@@ -480,6 +521,7 @@ impl RevealConstructorInfo {
       self.params.is_some(),
       self.fields.is_some(),
       self.typ.is_some(),
+      self.field_modes.is_some(),
     ]);
     TagN::put(0, 0, mask, buf);
     if let Some(u) = self.is_unsafe {
@@ -500,11 +542,14 @@ impl RevealConstructorInfo {
     if let Some(t) = &self.typ {
       buf.extend_from_slice(t.as_bytes());
     }
+    if let Some(modes) = &self.field_modes {
+      put_field_modes(modes, buf);
+    }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let mask = TagN::get(0, buf)?.value;
-    require_mask(mask, 6)?;
+    require_mask(mask, 7)?;
     let is_unsafe =
       if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
     let lvls =
@@ -516,7 +561,17 @@ impl RevealConstructorInfo {
     let fields =
       if mask & 16 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
     let typ = if mask & 32 != 0 { Some(get_address(buf)?) } else { None };
-    Ok(RevealConstructorInfo { is_unsafe, lvls, cidx, params, fields, typ })
+    let field_modes =
+      if mask & 64 != 0 { Some(get_field_modes(buf)?) } else { None };
+    Ok(RevealConstructorInfo {
+      is_unsafe,
+      lvls,
+      cidx,
+      params,
+      fields,
+      typ,
+      field_modes,
+    })
   }
 }
 
@@ -589,7 +644,7 @@ fn get_ctors(
 impl RevealMutConstInfo {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      Self::Defn { kind, safety, lvls, typ, value } => {
+      Self::Defn { kind, safety, lvls, typ, value, asserts } => {
         buf.push(0);
         let mask = compute_mask(&[
           kind.is_some(),
@@ -597,6 +652,7 @@ impl RevealMutConstInfo {
           lvls.is_some(),
           typ.is_some(),
           value.is_some(),
+          asserts.is_some(),
         ]);
         TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
@@ -613,6 +669,9 @@ impl RevealMutConstInfo {
         }
         if let Some(v) = value {
           buf.extend_from_slice(v.as_bytes());
+        }
+        if let Some(a) = asserts {
+          put_def_asserts(*a, buf);
         }
       },
       Self::Indc { is_unsafe, lvls, params, indices, typ, ctors } => {
@@ -706,8 +765,7 @@ impl RevealMutConstInfo {
     require_mask(
       mask,
       match variant {
-        0 => 5,
-        1 => 6,
+        0 | 1 => 6,
         2 => 9,
         _ => 64,
       },
@@ -721,7 +779,9 @@ impl RevealMutConstInfo {
           if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
-        Ok(Self::Defn { kind, safety, lvls, typ, value })
+        let asserts =
+          if mask & 32 != 0 { Some(get_def_asserts(buf)?) } else { None };
+        Ok(Self::Defn { kind, safety, lvls, typ, value, asserts })
       },
       1 => {
         let is_unsafe =
@@ -777,7 +837,7 @@ impl RevealConstantInfo {
   /// Serialize: variant byte + mask (TagN) + field values in mask order.
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      Self::Defn { kind, safety, lvls, typ, value } => {
+      Self::Defn { kind, safety, lvls, typ, value, asserts } => {
         buf.push(0);
         let mask = compute_mask(&[
           kind.is_some(),
@@ -785,6 +845,7 @@ impl RevealConstantInfo {
           lvls.is_some(),
           typ.is_some(),
           value.is_some(),
+          asserts.is_some(),
         ]);
         TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
@@ -801,6 +862,9 @@ impl RevealConstantInfo {
         }
         if let Some(v) = value {
           buf.extend_from_slice(v.as_bytes());
+        }
+        if let Some(a) = asserts {
+          put_def_asserts(*a, buf);
         }
       },
       Self::Recr {
@@ -954,7 +1018,7 @@ impl RevealConstantInfo {
     require_mask(
       mask,
       match variant {
-        0 => 5,
+        0 => 6,
         1 => 9,
         2..=4 => 3,
         5..=7 => 2,
@@ -972,7 +1036,9 @@ impl RevealConstantInfo {
           if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
-        Ok(Self::Defn { kind, safety, lvls, typ, value })
+        let asserts =
+          if mask & 32 != 0 { Some(get_def_asserts(buf)?) } else { None };
+        Ok(Self::Defn { kind, safety, lvls, typ, value, asserts })
       },
       1 => {
         // Recr
@@ -1321,9 +1387,10 @@ impl Claim {
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::Reveal { comm, info } => {
+      Claim::Reveal { comm, info, binders } => {
         buf.extend_from_slice(comm.as_bytes());
         info.put(buf);
+        put_opt_addr(binders, buf);
       },
       Claim::Contains { tree, const_addr } => {
         buf.extend_from_slice(tree.as_bytes());
@@ -1375,7 +1442,8 @@ impl Claim {
       VARIANT_REVEAL_CLAIM => {
         let comm = get_address(buf)?;
         let info = RevealConstantInfo::get(buf)?;
-        Ok(Claim::Reveal { comm, info })
+        let binders = get_opt_addr(buf)?;
+        Ok(Claim::Reveal { comm, info, binders })
       },
       VARIANT_CONTAINS_CLAIM => {
         let tree = get_address(buf)?;
@@ -1555,10 +1623,26 @@ impl Proof {
 mod tests {
   use super::*;
   use crate::merkle::{merkle_join, merkle_root_canonical};
+  use crate::modes::AllocAssert;
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
   // ========== Arbitrary impls ==========
+
+  fn gen_opt_field_modes(g: &mut Gen) -> Option<Vec<FieldMode>> {
+    match u8::arbitrary(g) % 3 {
+      0 => None,
+      1 => Some(Vec::new()),
+      _ => {
+        let n = (u8::arbitrary(g) % 5) as usize;
+        Some((0..n).map(|_| FieldMode::arbitrary(g)).collect())
+      },
+    }
+  }
+
+  fn gen_opt_def_asserts(g: &mut Gen) -> Option<DefAsserts> {
+    if bool::arbitrary(g) { Some(DefAsserts::arbitrary(g)) } else { None }
+  }
 
   impl Arbitrary for RevealConstructorInfo {
     fn arbitrary(g: &mut Gen) -> Self {
@@ -1593,6 +1677,7 @@ mod tests {
         } else {
           None
         },
+        field_modes: gen_opt_field_modes(g),
       }
     }
   }
@@ -1660,6 +1745,7 @@ mod tests {
           lvls: gen_opt_u64(g),
           typ: gen_opt_addr(g),
           value: gen_opt_addr(g),
+          asserts: gen_opt_def_asserts(g),
         },
         1 => Self::Indc {
           is_unsafe: gen_opt_bool(g),
@@ -1701,6 +1787,7 @@ mod tests {
           lvls: gen_opt_u64(g),
           typ: gen_opt_addr(g),
           value: gen_opt_addr(g),
+          asserts: gen_opt_def_asserts(g),
         },
         1 => Self::Recr {
           k: gen_opt_bool(g),
@@ -1818,6 +1905,7 @@ mod tests {
         3 => Claim::Reveal {
           comm: Address::arbitrary(g),
           info: RevealConstantInfo::arbitrary(g),
+          binders: gen_opt_addr(g),
         },
         4 => Claim::Catalog { members: Address::arbitrary(g) },
         _ => Claim::Contains {
@@ -1865,20 +1953,42 @@ mod tests {
   /// A reveal mask bit beyond the variant's fields is refused, so one claim
   /// has one encoding. The Lean reader refuses the same bytes
   /// (`Tests/Ix/Claim.lean`, `revealMaskTests`): a Reveal claim over the zero
-  /// commitment, its variant byte, then the one-byte mask.
+  /// commitment, its variant byte, the one-byte mask, then `0x00` (`binders =
+  /// None`).
   #[test]
   fn reveal_mask_refuses_unknown_bits() {
     let mut header = vec![0xE6, 0x04, 0x00];
     header.extend_from_slice(&[0u8; 32]);
-    for (variant, unknown) in [(0u8, 0x20u8), (2, 0x08), (7, 0x04)] {
+    for (variant, unknown) in [(0u8, 0x40u8), (2, 0x08), (7, 0x04)] {
       let mut bytes = header.clone();
-      bytes.extend_from_slice(&[variant, 0x00]);
+      bytes.extend_from_slice(&[variant, 0x00, 0x00]);
       assert!(Claim::from_bytes(&bytes).is_ok(), "variant {variant}");
-      let last = bytes.len() - 1;
-      bytes[last] = unknown;
+      let mask_idx = bytes.len() - 2;
+      bytes[mask_idx] = unknown;
       let err = Claim::from_bytes(&bytes).unwrap_err();
       assert!(err.contains("reveal mask"), "{err}");
     }
+    // MutConst::Defn bit 6 (0x40) and Constructor bit 7 (0x80) are refused.
+    let mut mut_defn = header.clone();
+    mut_defn.extend_from_slice(&[0x08, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    assert!(Claim::from_bytes(&mut_defn).is_ok());
+    let idx = mut_defn.len() - 2;
+    mut_defn[idx] = 0x40;
+    let err = Claim::from_bytes(&mut_defn).unwrap_err();
+    assert!(err.contains("reveal mask"), "{err}");
+
+    let mut ctor = header.clone();
+    ctor.extend_from_slice(&[
+      0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x00, 0x00, 0x00,
+    ]);
+    assert!(Claim::from_bytes(&ctor).is_ok());
+    // In TagN(f = 0), 128 (bit 7) is rung 2: two bytes `0x80, 0x00`.
+    let mut ctor_bad = header;
+    ctor_bad.extend_from_slice(&[
+      0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x00, 0x80, 0x00, 0x00,
+    ]);
+    let err = Claim::from_bytes(&ctor_bad).unwrap_err();
+    assert!(err.contains("reveal mask"), "{err}");
   }
 
   /// The catalog claim's exact wire form is a cross-serializer
@@ -1975,6 +2085,7 @@ mod tests {
       Claim::Reveal {
         comm: root.clone(),
         info: RevealConstantInfo::DPrj { idx: Some(0), block: None },
+        binders: None,
       },
       Claim::Contains { tree: root.clone(), const_addr: root.clone() },
       Claim::Catalog { members: root.clone() },
@@ -2218,7 +2329,12 @@ mod tests {
         lvls: Some(0),
         typ: None,
         value: None,
+        asserts: Some(DefAsserts {
+          alloc: AllocAssert::NoAlloc,
+          bounded_stack: true,
+        }),
       },
+      binders: Some(Address::hash(b"binders")),
     };
     assert!(claim_roundtrip(&claim));
   }
@@ -2233,6 +2349,7 @@ mod tests {
           lvls: None,
           typ: Some(Address::hash(b"typ")),
         },
+        binders: None,
       },
       vec![0xAB, 0xCD],
     );
@@ -2267,6 +2384,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u64)> = vec![
@@ -2292,7 +2410,7 @@ mod tests {
         VARIANT_CHECK_ENV_CLAIM,
       ),
       (
-        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
         VARIANT_REVEAL_CLAIM,
       ),
       (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_CLAIM),
@@ -2315,6 +2433,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u64)> = vec![
@@ -2340,7 +2459,7 @@ mod tests {
         VARIANT_CHECK_ENV_PROOF,
       ),
       (
-        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
         VARIANT_REVEAL_PROOF,
       ),
       (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_PROOF),
@@ -2440,6 +2559,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u8)> = vec![
@@ -2464,7 +2584,10 @@ mod tests {
         Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         0xE5,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
+        0xE6,
+      ),
       (Claim::Contains { tree: a, const_addr: b }, 0xE7),
     ];
     for (claim, expected_byte) in cases {
@@ -2483,6 +2606,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
     let cases: Vec<(Claim, u8)> = vec![
       (
@@ -2506,7 +2630,10 @@ mod tests {
         Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         0xF2,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
+        0xF3,
+      ),
       (Claim::Contains { tree: a, const_addr: b }, 0xF4),
     ];
     for (claim, expected_byte) in cases {
@@ -2522,7 +2649,7 @@ mod tests {
 
   #[test]
   fn test_reveal_defn_safety() {
-    // 0xE6 <32 bytes comm> 0x00 0x02 0x01
+    // 0xE6 0x04 0x00 <32 bytes comm> 0x00 0x02 0x01 0x00
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Defn {
@@ -2531,7 +2658,9 @@ mod tests {
         lvls: None,
         typ: None,
         value: None,
+        asserts: None,
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
@@ -2540,12 +2669,13 @@ mod tests {
     assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[36], 0x02); // mask: bit 1 (safety)
     assert_eq!(buf[37], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 38); // Total: 1 + 2 + 32 + 1 + 1 + 1 = 38 bytes
+    assert_eq!(buf[38], 0x00); // binders: None
+    assert_eq!(buf.len(), 39); // Total: 1 + 2 + 32 + 1 + 1 + 1 + 1 = 39 bytes
   }
 
   #[test]
   fn test_reveal_defn_typ() {
-    // 0xE6 <32 bytes comm> 0x00 0x08 <32 bytes typ>
+    // 0xE6 0x04 0x00 <32 bytes comm> 0x00 0x08 <32 bytes typ> 0x00
     let typ_addr = Address::hash(b"serialized typ expr");
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
@@ -2555,20 +2685,23 @@ mod tests {
         lvls: None,
         typ: Some(typ_addr),
         value: None,
+        asserts: None,
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE6);
     assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[36], 0x08); // mask: bit 3 (typ)
-    // buf[35..67] = typ address (32 bytes)
-    assert_eq!(buf.len(), 69); // Total: 1 + 2 + 32 + 1 + 1 + 32 = 69 bytes
+    // buf[37..69] = typ address (32 bytes)
+    assert_eq!(buf[69], 0x00); // binders: None
+    assert_eq!(buf.len(), 70); // Total: 1 + 2 + 32 + 1 + 1 + 32 + 1 = 70 bytes
   }
 
   #[test]
   fn test_reveal_muts_component_safety() {
-    // 0xE6 <32 comm> 0x08 0x01 0x01 0x02 0x00 0x02 0x01
+    // 0xE6 0x04 0x00 <32 comm> 0x08 0x01 0x01 0x02 0x00 0x02 0x01 0x00
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Muts {
@@ -2580,9 +2713,11 @@ mod tests {
             lvls: None,
             typ: None,
             value: None,
+            asserts: None,
           },
         )],
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
@@ -2594,7 +2729,122 @@ mod tests {
     assert_eq!(buf[39], 0x00); // RevealMutConstInfo variant: Definition
     assert_eq!(buf[40], 0x02); // mask: bit 1 (safety)
     assert_eq!(buf[41], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 42); // Total: 1 + 32 + 7 = 40 bytes
+    assert_eq!(buf[42], 0x00); // binders: None
+    assert_eq!(buf.len(), 43); // Total: 1 + 2 + 32 + 7 + 1 = 43 bytes
+  }
+
+  #[test]
+  fn test_reveal_mode_commitments_wire_and_rejects() {
+    let comm = Address::hash(b"comm");
+    let binders = Address::hash(b"binders");
+
+    // Every legal DefAsserts code (0, 1, 2, 4, 5, 6) round-trips; illegal codes
+    // (3, 7, >= 8) are refused on both standalone and mutual definitions.
+    for code in 0..=16u8 {
+      let mut bytes = vec![0xE6, 0x04, 0x00];
+      bytes.extend_from_slice(comm.as_bytes());
+      bytes.extend_from_slice(&[0x00, 0x20, code, 0x01]);
+      bytes.extend_from_slice(binders.as_bytes());
+      match DefAsserts::of_code(code) {
+        Some(expected) => {
+          let claim = Claim::from_bytes(&bytes).unwrap();
+          assert_eq!(
+            claim,
+            Claim::Reveal {
+              comm: comm.clone(),
+              info: RevealConstantInfo::Defn {
+                kind: None,
+                safety: None,
+                lvls: None,
+                typ: None,
+                value: None,
+                asserts: Some(expected),
+              },
+              binders: Some(binders.clone()),
+            }
+          );
+          assert_eq!(claim.commit().1, bytes);
+        },
+        None => {
+          let err = Claim::from_bytes(&bytes).unwrap_err();
+          assert!(err.contains("get_def_asserts"), "{code}: {err}");
+        },
+      }
+    }
+
+    // Constructor field_modes: empty (all inherited) and listed round-trip;
+    // mode byte >= 2 and count > remaining bytes are refused.
+    let ctor_inherited = RevealConstantInfo::Muts {
+      components: vec![(
+        0,
+        RevealMutConstInfo::Indc {
+          is_unsafe: None,
+          lvls: None,
+          params: None,
+          indices: None,
+          typ: None,
+          ctors: Some(vec![(
+            0,
+            RevealConstructorInfo {
+              is_unsafe: None,
+              lvls: None,
+              cidx: None,
+              params: None,
+              fields: None,
+              typ: None,
+              field_modes: Some(vec![]),
+            },
+          )]),
+        },
+      )],
+    };
+    assert!(reveal_info_roundtrip(&ctor_inherited));
+
+    let mut bad_mode = Vec::new();
+    Claim::Reveal {
+      comm: comm.clone(),
+      info: RevealConstantInfo::Muts {
+        components: vec![(
+          0,
+          RevealMutConstInfo::Indc {
+            is_unsafe: None,
+            lvls: None,
+            params: None,
+            indices: None,
+            typ: None,
+            ctors: Some(vec![(
+              0,
+              RevealConstructorInfo {
+                is_unsafe: None,
+                lvls: None,
+                cidx: None,
+                params: None,
+                fields: None,
+                typ: None,
+                field_modes: Some(vec![
+                  FieldMode::Inherited,
+                  FieldMode::Shared,
+                ]),
+              },
+            )]),
+          },
+        )],
+      },
+      binders: None,
+    }
+    .put(&mut bad_mode);
+    assert!(Claim::from_bytes(&bad_mode).is_ok());
+    let mode_idx = bad_mode.len() - 2;
+    bad_mode[mode_idx] = 2;
+    let err = Claim::from_bytes(&bad_mode).unwrap_err();
+    assert!(err.contains("get_field_modes"), "{err}");
+
+    // Binders option tag >= 2 is refused.
+    let mut bad_binders = vec![0xE6, 0x04, 0x00];
+    bad_binders.extend_from_slice(comm.as_bytes());
+    bad_binders.extend_from_slice(&[0x00, 0x00, 0x02]);
+    let err = Claim::from_bytes(&bad_binders).unwrap_err();
+    assert!(err.contains("get_opt_addr"), "{err}");
   }
 
   // ========== All RevealConstantInfo variant roundtrips ==========
@@ -2609,6 +2859,10 @@ mod tests {
         lvls: Some(3),
         typ: Some(Address::hash(b"typ")),
         value: Some(Address::hash(b"val")),
+        asserts: Some(DefAsserts {
+          alloc: AllocAssert::NoRc,
+          bounded_stack: true,
+        }),
       },
       // Defn with no fields
       RevealConstantInfo::Defn {
@@ -2617,6 +2871,7 @@ mod tests {
         lvls: None,
         typ: None,
         value: None,
+        asserts: None,
       },
       // Recr with rules
       RevealConstantInfo::Recr {
@@ -2684,6 +2939,11 @@ mod tests {
                   params: None,
                   fields: Some(3),
                   typ: None,
+                  field_modes: Some(vec![
+                    FieldMode::Inherited,
+                    FieldMode::Shared,
+                    FieldMode::Inherited,
+                  ]),
                 },
               )]),
             },
@@ -2700,6 +2960,20 @@ mod tests {
               minors: None,
               typ: None,
               rules: None,
+            },
+          ),
+          (
+            2,
+            RevealMutConstInfo::Defn {
+              kind: Some(DefKind::Definition),
+              safety: Some(DefinitionSafety::Safe),
+              lvls: Some(0),
+              typ: None,
+              value: None,
+              asserts: Some(DefAsserts {
+                alloc: AllocAssert::NoAlloc,
+                bounded_stack: false,
+              }),
             },
           ),
         ],

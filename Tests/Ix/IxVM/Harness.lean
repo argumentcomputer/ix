@@ -130,12 +130,12 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
   | .eval ctx i o asm => .eval (renameCtx a t ctx) (a i) (a o) (asm.map t)
   | .check ctx c asm => .check (renameCtx a t ctx) (a c) (asm.map t)
   | .checkEnv ctx r asm => .checkEnv (renameCtx a t ctx) (t r) (asm.map t)
-  | .reveal c info => .reveal (a c) (match info with
+  | .reveal c info binders => .reveal (a c) (match info with
     | .cPrj i k b => .cPrj i k (b.map a)
     | .rPrj i b => .rPrj i (b.map a)
     | .iPrj i b => .iPrj i (b.map a)
     | .dPrj i b => .dPrj i (b.map a)
-    | other => other)
+    | other => other) binders
   | .contains tree c => .contains (t tree) (a c)
   | .catalog members => .catalog (t members)
   | .binding spec b => .binding spec (a b)

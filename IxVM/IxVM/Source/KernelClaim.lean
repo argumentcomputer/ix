@@ -21,12 +21,14 @@ module KernelClaim {
 
   enum RevealConstructorInfo {
       Mk(Options::Option<Field>, Options::Option<UInt64::U64>, Options::Option<UInt64::U64>,
-         Options::Option<UInt64::U64>, Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>)
+         Options::Option<UInt64::U64>, Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>,
+         Options::Option<Lists::List<Field>>)
     }
 
   enum RevealMutConstInfo {
       Defn(Options::Option<Ixon::DefKind>, Options::Option<Ixon::DefinitionSafety>,
-           Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>, Options::Option<Bytes::AddressRef>),
+           Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>,
+           Options::Option<Bytes::AddressRef>, Options::Option<Field>),
       Indc(Options::Option<Field>,
            Options::Option<UInt64::U64>, Options::Option<UInt64::U64>, Options::Option<UInt64::U64>,
            Options::Option<Bytes::AddressRef>,
@@ -39,7 +41,8 @@ module KernelClaim {
 
   enum RevealConstantInfo {
       Defn(Options::Option<Ixon::DefKind>, Options::Option<Ixon::DefinitionSafety>,
-           Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>, Options::Option<Bytes::AddressRef>),
+           Options::Option<UInt64::U64>, Options::Option<Bytes::AddressRef>,
+           Options::Option<Bytes::AddressRef>, Options::Option<Field>),
       Recr(Options::Option<Field>, Options::Option<Field>,
            Options::Option<UInt64::U64>, Options::Option<UInt64::U64>, Options::Option<UInt64::U64>,
            Options::Option<UInt64::U64>, Options::Option<UInt64::U64>,
@@ -837,6 +840,38 @@ def get_opt_quot_kind_masked := aiur_fn⟦
     }
 ⟧
 
+def get_opt_def_asserts_masked := aiur_fn⟦
+  fn get_opt_def_asserts_masked(mb: Field, stream: Bytes::Stream)
+        -> (Options::Option<Field>, Bytes::Stream) {
+      match mb {
+        0 => {  (Options::Option::None, stream) } ,
+        _ => {
+          let (b, s) = IxonDeserialize::read_byte(stream);
+          match UInt8::to_field(b) {
+            0 => {  (Options::Option::Some(0), s) } ,
+            1 => {  (Options::Option::Some(1), s) } ,
+            2 => {  (Options::Option::Some(2), s) } ,
+            4 => {  (Options::Option::Some(4), s) } ,
+            5 => {  (Options::Option::Some(5), s) } ,
+            6 => {  (Options::Option::Some(6), s) } ,
+          } } ,
+      }
+    }
+⟧
+
+def get_opt_field_modes_masked := aiur_fn⟦
+  fn get_opt_field_modes_masked(mb: Field, stream: Bytes::Stream)
+        -> (Options::Option<Lists::List<Field>>, Bytes::Stream) {
+      match mb {
+        0 => {  (Options::Option::None, stream) } ,
+        _ => {
+          let (count, s) = IxonDeserialize::get_tagn0(stream);
+          let (modes, _, s2) = IxonDeserialize::get_field_mode_list(s, count);
+          (Options::Option::Some(modes), s2) } ,
+      }
+    }
+⟧
+
 def get_reveal_rule := aiur_fn⟦
   fn get_reveal_rule(stream: Bytes::Stream) -> (RevealRecursorRule, Bytes::Stream) {
       let (rule_idx, s) = IxonDeserialize::get_tagn0(stream);
@@ -876,15 +911,21 @@ def get_reveal_ctor_info := aiur_fn⟦
   fn get_reveal_ctor_info(stream: Bytes::Stream)
         -> (RevealConstructorInfo, Bytes::Stream) {
       let (mask, s) = IxonDeserialize::get_tagn0(stream);
-      let mask_lo = UInt8::bit_decomposition(mask[0]);
-      let [b0, b1, b2, b3, b4, b5, _, _] = mask_lo;
+      let [m0, m1, m2, m3, m4, m5, m6, m7] = mask;
+      let mask_lo = UInt8::bit_decomposition(m0);
+      let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
+      assert_eq!((((((((b7 + UInt8::to_field(m1)) + UInt8::to_field(m2))
+        + UInt8::to_field(m3)) + UInt8::to_field(m4)) + UInt8::to_field(m5))
+        + UInt8::to_field(m6)) + UInt8::to_field(m7)), 0,
+        "claim: reveal constructor mask out of range");
       let (is_unsafe, s) = get_opt_bool_masked(b0, s);
       let (lvls, s) = get_opt_u64_masked(b1, s);
       let (cidx, s) = get_opt_u64_masked(b2, s);
       let (params, s) = get_opt_u64_masked(b3, s);
       let (fields, s) = get_opt_u64_masked(b4, s);
       let (typ, s) = get_opt_addr_masked(b5, s);
-      (RevealConstructorInfo::Mk(is_unsafe, lvls, cidx, params, fields, typ), s)
+      let (field_modes, s) = get_opt_field_modes_masked(b6, s);
+      (RevealConstructorInfo::Mk(is_unsafe, lvls, cidx, params, fields, typ, field_modes), s)
     }
 ⟧
 
@@ -928,19 +969,26 @@ def get_reveal_mut_const_info := aiur_fn⟦
         -> (RevealMutConstInfo, Bytes::Stream) {
       let (variant, s) = IxonDeserialize::read_byte(stream);
       let (mask, s) = IxonDeserialize::get_tagn0(s);
-      let mask_lo = UInt8::bit_decomposition(mask[0]);
+      let [m0, m1, m2, m3, m4, m5, m6, m7] = mask;
+      let mask_lo = UInt8::bit_decomposition(m0);
       let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
-      let mask_hi = UInt8::bit_decomposition(mask[1]);
-      let [b8, _, _, _, _, _, _, _] = mask_hi;
+      let mask_hi = UInt8::bit_decomposition(m1);
+      let [b8, b9, b10, b11, b12, b13, b14, b15] = mask_hi;
+      let hi = ((((((((((((b9 + b10) + b11) + b12) + b13) + b14) + b15)
+        + UInt8::to_field(m2)) + UInt8::to_field(m3)) + UInt8::to_field(m4))
+        + UInt8::to_field(m5)) + UInt8::to_field(m6)) + UInt8::to_field(m7));
       match UInt8::to_field(variant) {
         0 => {
+          assert_eq!((((b6 + b7) + b8) + hi), 0, "claim: reveal mut defn mask out of range");
           let (kind, s) = get_opt_def_kind_masked(b0, s);
           let (safety, s) = get_opt_def_safety_masked(b1, s);
           let (lvls, s) = get_opt_u64_masked(b2, s);
           let (typ, s) = get_opt_addr_masked(b3, s);
           let (value, s) = get_opt_addr_masked(b4, s);
-          (RevealMutConstInfo::Defn(kind, safety, lvls, typ, value), s) } ,
+          let (asserts, s) = get_opt_def_asserts_masked(b5, s);
+          (RevealMutConstInfo::Defn(kind, safety, lvls, typ, value, asserts), s) } ,
         1 => {
+          assert_eq!((((b6 + b7) + b8) + hi), 0, "claim: reveal mut indc mask out of range");
           let (is_unsafe, s) = get_opt_bool_masked(b0, s);
           let (lvls, s) = get_opt_u64_masked(b1, s);
           let (params, s) = get_opt_u64_masked(b2, s);
@@ -950,6 +998,7 @@ def get_reveal_mut_const_info := aiur_fn⟦
           (RevealMutConstInfo::Indc(is_unsafe, lvls, params,
                                     indices, typ, ctors), s) } ,
         2 => {
+          assert_eq!(hi, 0, "claim: reveal mut recr mask out of range");
           let (k, s) = get_opt_bool_masked(b0, s);
           let (is_unsafe, s) = get_opt_bool_masked(b1, s);
           let (lvls, s) = get_opt_u64_masked(b2, s);
@@ -991,19 +1040,26 @@ def get_reveal_info := aiur_fn⟦
   fn get_reveal_info(stream: Bytes::Stream) -> (RevealConstantInfo, Bytes::Stream) {
       let (variant, s) = IxonDeserialize::read_byte(stream);
       let (mask, s) = IxonDeserialize::get_tagn0(s);
-      let mask_lo = UInt8::bit_decomposition(mask[0]);
+      let [m0, m1, m2, m3, m4, m5, m6, m7] = mask;
+      let mask_lo = UInt8::bit_decomposition(m0);
       let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
-      let mask_hi = UInt8::bit_decomposition(mask[1]);
-      let [b8, _, _, _, _, _, _, _] = mask_hi;
+      let mask_hi = UInt8::bit_decomposition(m1);
+      let [b8, b9, b10, b11, b12, b13, b14, b15] = mask_hi;
+      let hi = ((((((((((((b9 + b10) + b11) + b12) + b13) + b14) + b15)
+        + UInt8::to_field(m2)) + UInt8::to_field(m3)) + UInt8::to_field(m4))
+        + UInt8::to_field(m5)) + UInt8::to_field(m6)) + UInt8::to_field(m7));
       match UInt8::to_field(variant) {
         0 => {
+          assert_eq!((((b6 + b7) + b8) + hi), 0, "claim: reveal defn mask out of range");
           let (kind, s) = get_opt_def_kind_masked(b0, s);
           let (safety, s) = get_opt_def_safety_masked(b1, s);
           let (lvls, s) = get_opt_u64_masked(b2, s);
           let (typ, s) = get_opt_addr_masked(b3, s);
           let (value, s) = get_opt_addr_masked(b4, s);
-          (RevealConstantInfo::Defn(kind, safety, lvls, typ, value), s) } ,
+          let (asserts, s) = get_opt_def_asserts_masked(b5, s);
+          (RevealConstantInfo::Defn(kind, safety, lvls, typ, value, asserts), s) } ,
         1 => {
+          assert_eq!(hi, 0, "claim: reveal recr mask out of range");
           let (k, s) = get_opt_bool_masked(b0, s);
           let (is_unsafe, s) = get_opt_bool_masked(b1, s);
           let (lvls, s) = get_opt_u64_masked(b2, s);
@@ -1016,33 +1072,47 @@ def get_reveal_info := aiur_fn⟦
           (RevealConstantInfo::Recr(k, is_unsafe, lvls, params, indices,
                                     motives, minors, typ, rules), s) } ,
         2 => {
+          assert_eq!(((((((b3 + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal axio mask out of range");
           let (is_unsafe, s) = get_opt_bool_masked(b0, s);
           let (lvls, s) = get_opt_u64_masked(b1, s);
           let (typ, s) = get_opt_addr_masked(b2, s);
           (RevealConstantInfo::Axio(is_unsafe, lvls, typ), s) } ,
         3 => {
+          assert_eq!(((((((b3 + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal quot mask out of range");
           let (kind, s) = get_opt_quot_kind_masked(b0, s);
           let (lvls, s) = get_opt_u64_masked(b1, s);
           let (typ, s) = get_opt_addr_masked(b2, s);
           (RevealConstantInfo::Quot(kind, lvls, typ), s) } ,
         4 => {
+          assert_eq!(((((((b3 + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal cprj mask out of range");
           let (idx, s) = get_opt_u64_masked(b0, s);
           let (cidx, s) = get_opt_u64_masked(b1, s);
           let (block, s) = get_opt_addr_masked(b2, s);
           (RevealConstantInfo::CPrj(idx, cidx, block), s) } ,
         5 => {
+          assert_eq!((((((((b2 + b3) + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal rprj mask out of range");
           let (idx, s) = get_opt_u64_masked(b0, s);
           let (block, s) = get_opt_addr_masked(b1, s);
           (RevealConstantInfo::RPrj(idx, block), s) } ,
         6 => {
+          assert_eq!((((((((b2 + b3) + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal iprj mask out of range");
           let (idx, s) = get_opt_u64_masked(b0, s);
           let (block, s) = get_opt_addr_masked(b1, s);
           (RevealConstantInfo::IPrj(idx, block), s) } ,
         7 => {
+          assert_eq!((((((((b2 + b3) + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal dprj mask out of range");
           let (idx, s) = get_opt_u64_masked(b0, s);
           let (block, s) = get_opt_addr_masked(b1, s);
           (RevealConstantInfo::DPrj(idx, block), s) } ,
         8 => {
+          assert_eq!(((((((((b1 + b2) + b3) + b4) + b5) + b6) + b7) + b8) + hi), 0,
+            "claim: reveal muts mask out of range");
           let (components, s) = match b0 {
             0 => {  ((&(Lists::Node::Nil)), s) } ,
             1 => {
@@ -1057,6 +1127,13 @@ def get_reveal_info := aiur_fn⟦
 def expr_addr := aiur_fn⟦
   fn expr_addr(e_ref: &Ixon::Expr) -> Bytes::AddressRef {
       let bytes = IxonSerialize::put_expr((*(e_ref)), (&(Lists::Node::Nil)));
+      Blake3::bytes_to_addr(bytes)
+    }
+⟧
+
+def section_addr := aiur_fn⟦
+  fn section_addr(binders: Lists::List<Ixon::BinderBlock>) -> Bytes::AddressRef {
+      let bytes = IxonSerialize::put_binders(binders, (&(Lists::Node::Nil)));
       Blake3::bytes_to_addr(bytes)
     }
 ⟧
@@ -1176,6 +1253,58 @@ def check_opt_expr_addr := aiur_fn⟦
     }
 ⟧
 
+def check_opt_def_asserts := aiur_fn⟦
+  fn check_opt_def_asserts(real: Field, opt: Options::Option<Field>) -> () {
+      match opt {
+        Options::Option::None => {  () } ,
+        Options::Option::Some(claimed) => {
+          assert_eq!(real, claimed, "Reveal: claimed definition asserts != real");
+          () } ,
+      }
+    }
+⟧
+
+def check_field_modes := aiur_fn⟦
+  fn check_field_modes(real: Lists::List<Field>, claimed: Lists::List<Field>) -> () {
+      match (*(claimed)) {
+        Lists::Node::Nil => {
+          match (*(real)) {
+            Lists::Node::Nil => {  () } ,
+          } } ,
+        Lists::Node::Cons(cm, rest_claimed) => {
+          match (*(real)) {
+            Lists::Node::Cons(rm, rest_real) => {
+              assert_eq!(rm, cm, "Reveal: claimed constructor field mode != real");
+              check_field_modes(rest_real, rest_claimed) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_opt_field_modes := aiur_fn⟦
+  fn check_opt_field_modes(real: Lists::List<Field>,
+                             opt: Options::Option<Lists::List<Field>>) -> () {
+      match opt {
+        Options::Option::None => {  () } ,
+        Options::Option::Some(claimed) => {  check_field_modes(real, claimed) } ,
+      }
+    }
+⟧
+
+def check_opt_section_addr := aiur_fn⟦
+  fn check_opt_section_addr(real_binders: Lists::List<Ixon::BinderBlock>,
+                              opt: Options::Option<Bytes::AddressRef>) -> () {
+      match opt {
+        Options::Option::None => {  () } ,
+        Options::Option::Some(claimed) => {
+          let computed = section_addr(real_binders);
+          assert_eq!(Bytes::address_eq(computed, claimed), 1,
+            "Reveal: claimed binder section hash != hash of the real section");
+          () } ,
+      }
+    }
+⟧
+
 def check_recr_rules := aiur_fn⟦
   fn check_recr_rules(real: Lists::List<Ixon::RecursorRule>,
                         claimed: Lists::List<RevealRecursorRule>,
@@ -1225,15 +1354,16 @@ def check_ctor_entry := aiur_fn⟦
       let real_ctor = WordLists::lookup_u64(real_list, idx);
       match info {
         RevealConstructorInfo::Mk(opt_unsafe, opt_lvls, opt_cidx,
-                                  opt_params, opt_fields, opt_typ) => {
+                                  opt_params, opt_fields, opt_typ, opt_field_modes) => {
           match real_ctor {
-            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, _, r_typ) => {
+            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, r_modes, r_typ) => {
               check_opt_bool(r_unsafe, opt_unsafe);
               check_opt_u64(r_lvls, opt_lvls);
               check_opt_u64(r_cidx, opt_cidx);
               check_opt_u64(r_params, opt_params);
               check_opt_u64(r_fields, opt_fields);
-              check_opt_expr_addr(r_typ, opt_typ) } ,
+              check_opt_expr_addr(r_typ, opt_typ);
+              check_opt_field_modes(r_modes, opt_field_modes) } ,
           } } ,
       }
     }
@@ -1270,14 +1400,15 @@ def check_mut_const := aiur_fn⟦
         Ixon::MutConst::Defn(d) => {
           match claimed {
             RevealMutConstInfo::Defn(opt_kind, opt_safety, opt_lvls,
-                                     opt_typ, opt_value) => {
+                                     opt_typ, opt_value, opt_asserts) => {
               match d {
-                Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
+                Ixon::Definition::Mk(r_kind, r_safety, r_asserts, r_lvls, r_typ, r_value) => {
                   check_opt_def_kind(r_kind, opt_kind);
                   check_opt_def_safety(r_safety, opt_safety);
                   check_opt_u64(r_lvls, opt_lvls);
                   check_opt_expr_addr(r_typ, opt_typ);
-                  check_opt_expr_addr(r_value, opt_value) } ,
+                  check_opt_expr_addr(r_value, opt_value);
+                  check_opt_def_asserts(r_asserts, opt_asserts) } ,
               } } ,
           } } ,
         Ixon::MutConst::Indc(i) => {
@@ -1336,22 +1467,25 @@ def check_muts_components := aiur_fn⟦
 ⟧
 
 def run_reveal := aiur_fn⟦
-  fn run_reveal(comm_addr: Bytes::AddressRef, info: RevealConstantInfo) -> () {
+  fn run_reveal(comm_addr: Bytes::AddressRef, info: RevealConstantInfo,
+                opt_binders: Options::Option<Bytes::AddressRef>) -> () {
       let c = Ingress::load_verified_constant(comm_addr);
       match c {
-        Ixon::Constant::Mk(ci, _, _, _, _) => {
+        Ixon::Constant::Mk(ci, _, _, _, binders) => {
+          check_opt_section_addr(binders, opt_binders);
           match ci {
             Ixon::ConstantInfo::Defn(d) => {
               match info {
                 RevealConstantInfo::Defn(opt_kind, opt_safety, opt_lvls,
-                                         opt_typ, opt_value) => {
+                                         opt_typ, opt_value, opt_asserts) => {
                   match d {
-                    Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
+                    Ixon::Definition::Mk(r_kind, r_safety, r_asserts, r_lvls, r_typ, r_value) => {
                       check_opt_def_kind(r_kind, opt_kind);
                       check_opt_def_safety(r_safety, opt_safety);
                       check_opt_u64(r_lvls, opt_lvls);
                       check_opt_expr_addr(r_typ, opt_typ);
-                      check_opt_expr_addr(r_value, opt_value) } ,
+                      check_opt_expr_addr(r_value, opt_value);
+                      check_opt_def_asserts(r_asserts, opt_asserts) } ,
                   } } ,
               } } ,
             Ixon::ConstantInfo::Recr(r) => {
@@ -1511,9 +1645,10 @@ def run_claim := aiur_fn⟦
         6 => {
           assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
           let (comm, s2) = IxonDeserialize::get_address(s);
-          let (info, rest) = get_reveal_info(s2);
+          let (info, s3) = get_reveal_info(s2);
+          let (opt_binders, rest) = get_opt_addr(s3);
           let Lists::Node::Nil = (*(rest));
-          run_reveal(comm, info) } ,
+          run_reveal(comm, info, opt_binders) } ,
         7 => {
           assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
           let (tree, s2) = IxonDeserialize::get_address(s);

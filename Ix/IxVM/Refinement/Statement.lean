@@ -115,7 +115,8 @@ def verifyClaim : String := "IxVM::verify_claim"
 /-- **The program's BLAKE3**: `Blake3::hash(input: ByteStream)`. Every hash
 the program computes is a call to it: `Blake3::verify_bytes_against`
 (records, blobs, the role table), `Blake3::bytes_to_addr` (assumption-tree
-nodes) and `KernelClaim::run_claim` (the claim's bytes). -/
+nodes, revealed expressions and binder-data sections) and
+`KernelClaim::run_claim` (the claim's bytes). -/
 def blake3Hash : String := "Blake3::hash"
 
 /-- **The byte-stream enum** of the prepared program: the instance symbol of

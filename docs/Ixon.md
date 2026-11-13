@@ -1870,7 +1870,7 @@ and proof statement. A claim with another object format is rejected with
 | 3 | `0xE3` | Eval claim | context + 2 addr (input, output) + opt assumptions |
 | 4 | `0xE4` | Check claim | context + 1 addr (const) + opt assumptions |
 | 5 | `0xE5` | CheckEnv claim | context + 1 addr (env root) + opt assumptions |
-| 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
+| 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo + opt binders |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
 | 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
 | 9 | `0xE8 0x01` | retired (resource claim) | refused |
@@ -2000,8 +2000,9 @@ pub enum Claim {
     /// Every constant in the env merkle-rooted at `root` is well-typed,
     /// optionally modulo `assumptions`.
     CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
-    /// Selective field revelation of a committed constant.
-    Reveal { comm: Address, info: RevealConstantInfo },
+    /// Selective field revelation of a committed constant, optionally
+    /// committing to `blake3(put_binders(c.binders))`.
+    Reveal { comm: Address, info: RevealConstantInfo, binders: Option<Address> },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
     Contains { tree: Address, const_addr: Address },
     /// Every unconditional CheckEnv claim whose digest is a leaf of the
@@ -2050,12 +2051,19 @@ Two commitments to the same constant share the same payload address.
 ### RevealConstantInfo Format
 
 The Reveal claim allows selective revelation of constant metadata fields
-(kind, safety, idx, etc.) without opening the full commitment.
-Serialization: `variant (1 byte) + field_mask (N0) + field values...`
+(kind, safety, assertions, constructor field modes, idx, etc.) and, optionally,
+the constant's binder-data section (`opt binders = blake3(put_binders(c.binders))`)
+without opening the full commitment.
+Serialization: `variant (1 byte) + field_mask (N0) + field values...` followed
+by `0x00` (`binders = None`) or `0x01` + 32-byte section digest (`binders = Some`).
 
 The field_mask is an `N0` integer (1 byte for masks < 128). Fields are
 serialized in mask bit order. Expression fields are revealed as `Address
-= blake3(serialized Expr bytes)`.
+= blake3(serialized Expr bytes)`. Standalone and mutual definitions carry
+`asserts` (`DefAsserts::to_code`, 1 byte) at mask bit 5 (`0x20`, 6-bit mask);
+constructors carry `field_modes` (`N0` count + 1 byte `FieldMode::to_code` per
+entry; `[]` when all fields are `inherited`, else `fields` entries) at mask bit
+6 (`0x40`, 7-bit mask).
 
 ### Proof Structure
 
@@ -2106,7 +2114,8 @@ E4                    -- N4(0xE, 4) (Check)
 00                    -- assumptions = None
 ```
 
-**Reveal claim** — reveal that a committed Definition has `safety = Safe`:
+**Reveal claim** — reveal that a committed Definition has `safety = Safe`
+(without revealing its binder-data section):
 ```
 E6                    -- N4(0xE, 6) (Reveal)
 04 00                 -- object format 4, structural-v1
@@ -2114,8 +2123,9 @@ E6                    -- N4(0xE, 6) (Reveal)
 00                    -- variant: Definition
 02                    -- mask: bit 1 (safety) [N0]
 01                    -- DefinitionSafety::Safe
+00                    -- binders = None (or 01 + [32 bytes] for Some)
 ```
-Total: 38 bytes.
+Total: 39 bytes.
 
 **Contains claim** (0xE7, 2 addresses):
 ```

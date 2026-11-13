@@ -96,7 +96,7 @@ host's value and re-encode each expression to the host's bytes. A mutual
 block is revealed by kind alone. -/
 def revealAll : Ixon.ConstantInfo → Ix.RevealConstantInfo
   | .defn d => .defn (some d.kind) (some d.safety) (some d.lvls) (some (exprAddr d.typ))
-      (some (exprAddr d.value))
+      (some (exprAddr d.value)) (some d.asserts)
   | .recr r => .recr (some r.k) (some r.isUnsafe) (some r.lvls) (some r.params)
       (some r.indices) (some r.motives) (some r.minors) (some (exprAddr r.typ)) none
   | .axio a => .axio (some a.isUnsafe) (some a.lvls) (some (exprAddr a.typ))
@@ -115,10 +115,11 @@ def differential (label : String) (bytes : ByteArray) : Builder := fun _ => do
   let env ← bare env
   match Ixon.Canonical.deConstant bytes.size Ixon.loadMaxUnivNodes bytes with
   | .ok c =>
-    Case.ofClaim s!"{label} (the host reads it)" env (.reveal addr (revealAll c.info))
+    Case.ofClaim s!"{label} (the host reads it)" env
+      (.reveal addr (revealAll c.info) none)
   | .error e =>
     Case.ofClaim s!"{label} (the host refuses it: {e})" env
-      (.reveal addr (.axio none none none)) (accept := false)
+      (.reveal addr (.axio none none none) none) (accept := false)
 
 def tagNBytes (f : Nat) (flag : UInt8) (v : Nat) : ByteArray :=
   Ixon.runPut (Ixon.putTagN f flag v.toUInt64)
@@ -326,7 +327,7 @@ def levelCountParityCases (_ : Unit) : Array Builder := Id.run do
         let (env, addr) := Exploits.storeRawAt {} bytes
         Case.ofClaim s!"TagN level count {lvls} in {what}: every reader \
           {if expected then "reads" else "refuses"} it" (← bare env)
-          (.reveal addr (revealAll c.info)) (accept := expected)
+          (.reveal addr (revealAll c.info) none) (accept := expected)
   return out
 
 /-- The level count by value: a `Reveal` of another count is refused. -/
@@ -336,7 +337,7 @@ def levelCountCases (_ : Unit) : Array Builder :=
     let (env, addr) := Exploits.storeAt {} c
     let other := if v == 0 then 1 else v - 1
     Case.ofClaim s!"TagN f=0 level count {v} is not revealed as {other}" (← bare env)
-      (.reveal addr (.axio none (some other.toUInt64) none)) (accept := false)
+      (.reveal addr (.axio none (some other.toUInt64) none) none) (accept := false)
 
 def run : IO UInt32 := do
   let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []

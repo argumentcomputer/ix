@@ -115,7 +115,7 @@ def shiftOutOfRange (w : IxVM.ClaimHarness.ClaimWitness) (addr : Address) :
 the same bytes with a word shifted out of byte range. -/
 def cases : Except String (Array Case) := do
   let (env, addr) := Exploits.storeAt {} Exploits.unsafePropAxiom
-  let claim : Ix.Claim := .reveal addr (.axio (some true) (some 0) none)
+  let claim : Ix.Claim := .reveal addr (.axio (some true) (some 0) none) none
   let genuine ← Case.ofClaim "ingress: genuine constant bytes are read" env claim
   let shifted ← shiftOutOfRange genuine.witness addr
   return #[genuine,

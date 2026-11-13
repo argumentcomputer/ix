@@ -100,8 +100,22 @@ tree deep E2 02*5000 01*5001
 tree trailing-bytes E2 01 00
 tree body-tag E2 03
 
-# A Reveal claim declaring 2^40-odd components in a few bytes.
+# Reveal claims: controls for definition assertions + binder section address
+# and constructor field modes, then out-of-range masks, illegal mode codes, a
+# component/field-mode count bomb, and an illegal binders option tag.
+claim-accept reveal-defn-asserts E6 04 00 00*32 00 20 06 01 11*32
+claim-accept reveal-ctor-modes E6 04 00 00*32 08 01 01 00 01 20 01 00 40 02 00 01 00
+claim-accept reveal-ctor-modes-empty E6 04 00 00*32 08 01 01 00 01 20 01 00 40 00 00
 claim reveal-count E6 04 00 00*32 08 01 C3 80 BF FE FE FE 00 00 00
+claim reveal-defn-mask-64 E6 04 00 00*32 00 40 00
+claim reveal-mut-defn-mask-64 E6 04 00 00*32 08 01 01 00 00 40 00
+claim reveal-ctor-mask-128 E6 04 00 00*32 08 01 01 00 01 20 01 00 80 00 00
+claim reveal-asserts-alloc-3 E6 04 00 00*32 00 20 03 00
+claim reveal-asserts-7 E6 04 00 00*32 00 20 07 00
+claim reveal-asserts-bit-3 E6 04 00 00*32 00 20 08 00
+claim reveal-field-mode-2 E6 04 00 00*32 08 01 01 00 01 20 01 00 40 02 00 02 00
+claim reveal-field-modes-count E6 04 00 00*32 08 01 01 00 01 20 01 00 40 C3 80 BF FE FE FE 00
+claim reveal-binders-tag-2 E6 04 00 00*32 00 00 02
 # The retired resource claim (E8 01, scope 04 02), and a Check claim under the
 # reserved validator 8.
 claim resource-retired E8 01 04 02 00*32 00*32

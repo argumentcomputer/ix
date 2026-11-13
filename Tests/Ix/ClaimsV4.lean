@@ -18,7 +18,7 @@ def fixtures : Array (String × Ix.Claim) :=
   let assumed := { ctx with bindingAssumed := true }
   let klass := { ctx with literalClass := true }
   #[ ("eval", .eval ctx a b asm), ("check", .check ctx a none),
-     ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none)),
+     ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none) none),
      ("contains", .contains a b), ("catalog", .catalog a),
      ("check_assumed", .check assumed a none),
      ("check_env_assumed", .checkEnv assumed a asm),

@@ -159,6 +159,9 @@ fn assumption_trees_are_refused() {
 
 #[test]
 fn claims_are_refused() {
+  for (name, bytes) in of_kind("claim-accept") {
+    Claim::from_bytes(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+  }
   for (name, bytes) in of_kind("claim") {
     assert!(Claim::from_bytes(&bytes).is_err(), "{name} accepted");
   }
