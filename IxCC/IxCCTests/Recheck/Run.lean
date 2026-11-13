@@ -13,6 +13,7 @@ import IxCCTests.Recheck.RootShape
 import IxCCTests.Recheck.Bound
 import IxCCTests.Recheck.Erased
 import IxCCTests.Recheck.ErasedBlocks
+import IxCCTests.Recheck.ErasedPartial
 
 /-! The `tests-recheck` suite: the recheck path in kernel-evaluable
 style. Building the suite evaluates, in the kernel
@@ -283,6 +284,8 @@ def main (args : List String) : IO UInt32 := do
       (Erased.run a)
     part a "constructor fields written erased under recursors; the minors of mutual and nested blocks"
       (ErasedBlocks.run a)
+    part a "an eliminator over a constructor field written erased, away from a saturated spine"
+      (ErasedPartial.run a)
     part a "middle-end budgets (REPORT item 2)" do
       return #[← Hostile.budgets a, ← Hostile.betaMoves a, ← Hostile.pendingJoin a,
         ← Hostile.pendChoice a, ← Hostile.retryFallbackMechanism a,

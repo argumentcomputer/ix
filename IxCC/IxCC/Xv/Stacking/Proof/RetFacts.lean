@@ -52,7 +52,8 @@ theorem FnAt.arities {S : Stk} {k : Lir.FunId} {f : Func Loc} {l : FrameLayout} 
 
 theorem resultsOf_eq {S : Stk} {g : Lir.FunId} {gf : Func Loc} (h : S.p.funcs[g]? = some gf) :
     resultsOf S.p g = some gf.results := by
-  simp [resultsOf, h]
+  rw [resultsOf_eq_list]
+  simp [resultsOfList, h]
 
 theorem call_arity {S : Stk} {k : Lir.FunId} {f : Func Loc} {l : FrameLayout} {pl : Placed} (hf : FnAt S k f l pl)
     {b : Block Loc} (hb : b ∈ f.blocks.toList) {g : Lir.FunId} {args rets : List Loc}

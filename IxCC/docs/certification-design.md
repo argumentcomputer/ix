@@ -47,7 +47,7 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5, C3 with the dispatch pairing, `elimShape_recr_minors`) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, canonical tags), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -116,7 +116,7 @@ Three facts follow, each a reason for the plan's order.
 A program may write a parameter or a constructor field erased (`0`). IxCC then drops the argument
 (the annotator's `KernelFront.erasedAt`, C2) or the field (`checkCanonical` on the constructor's
 record), and is right only if the run behaviour that receives the position never reads it (the
-invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Seven routes have been
+invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Nine routes have been
 found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
 returned the irrelevance marker. Each is now refused by a check that `Recheck.run` runs, **none by
 a theorem**. Since 2026-11-13 what each check decides is a proposition proved from its acceptance
@@ -132,6 +132,8 @@ derives from those facts that an accepted program never reads a dropped value (P
 | 5 | an η-short minor over a constructor field written erased | 2026-11-12, below the kernel | C3 (`Check.minorBinders`) | `TermC.app` (`ElimC`, `MinorC`) |
 | 6 | `Quot.mk` with its element erased | 2026-11-12, below the kernel | `readsErased?` | `Canonical.reads` |
 | 7 | the minor for a constructor of a mutual block's second inductive, at that inductive's recursor: C3 paired minor `j` with rule `j`, and such a recursor takes the minors of every constructor of the block, so C3 checked the wrong minors there and its own not at all | 2026-11-13, below the kernel | C3 with each rule paired with the minor it dispatches (`Check.ruleDispatch`) | `ElimC` with `elimShape_recr_minors` |
+| 8 | an η-short minor over a constructor field written erased, supplied to an eliminator that is not at a saturated spine: the eliminator partially applied (passed on, `let`-bound, the argument of a β-redex, the value of a definition) or bare, its minors arriving later at a variable head, where C3 does not see them | 2026-11-13, below the kernel and **through the certified kernel** (see below); a mutual block's second recursor too | C3: an eliminator with a rule for a constructor that writes a field erased (`Check.erasedMinors`) only heads a saturated spine (`Check.partialElim`, at a shorter spine in `knownHead` and on a bare constant, `bareHead`) | `ElimC`'s shorter-spine clause, `TermC.const` |
+| 9 | the same minor passed to a `csimp` subject whose redirect targets a `case` key (a target the table admits; a raw recursor it does not): the subject is no eliminator to C3 and the redirect is no walked term | 2026-11-13, below the kernel | `checkCanonical`: no `csimp` redirect targets such an eliminator (`Check.Canonical.redirectsErased?`) | `Canonical.redirects` |
 
 Also refused, where the source was stuck or a later stage refused: `Quot.lift`'s function, the
 pinned `Nat.succ`'s field and a primitive's parameter (`readsErased?`, `okPrim`); and a recursive
@@ -151,7 +153,33 @@ auxiliary types) is refused on the same checks; its honest programs do not compi
 kernel that sees no mode accepts it. Today's certified kernel refuses those artifacts because its
 conversion compares binder contracts (and its modeller of mutual blocks refuses a field written
 erased at the constructor), which ends with the Ixon format change that moves modes out of the
-term bytes. The table records routes found by testing, one at a time; that there is no other is
+term bytes.
+
+Routes 8 and 9 were found by writing P1's statement, and closed by one landing; before it, the
+planned P1 was false for programs every check accepted (their evaluation returns the marker at a
+root of data type). Run before the check (accepted, object constructor 0) and after it (refused
+by name): the eliminator partially applied by a β-redex and by a `let`, an η-reduced definition
+(through the kernel), a mutual block's second recursor, at a recursor and at a `case` entry, and
+the `csimp` redirect to a `case` key; the bare eliminator only after (the program built for it
+before was refused for an unrelated reason) (`tests-recheck`'s `ErasedPartial`). Read and not
+run: an `eqn` body, a runtime key walked like a definition's value; a constructor, projection or
+closure carrying the eliminator, which only a walked term can have built; an over-applied spine,
+which is saturated, so C3 applies.
+
+Route 8 also differs from the others in where it stood before its check. Like route 3 it passes
+the certified kernel today: the kernel accepts a constructor field written erased in a single
+inductive, and the partial application is well typed. `Recheck.run` accepted it, with a
+certificate whose only departure from the kernel annotator's output is the constructor's record
+set to the canonical one (the field dropped), and its object returned constructor 0 where the
+program means constructor 1. What refused it on the byte path (`check-cert` and the claim
+verifiers) was Stage A, which requires the certificate's annotation to equal the kernel
+annotator's, and only because that annotator's constructor record keeps a field written erased
+while its parameter classes drop it; `checkCanonical` calls that record non-canonical, so no
+program with a constructor field written erased can be produced today (an open capability item in
+the [roadmap](roadmap.md)). Making the annotator canonical there before this check would have
+opened route 8 on the byte path.
+
+The table records routes found by testing, one at a time; that there is no other is
 not established. What would establish it is a theorem that an accepted program's evaluation never
 yields the marker at a position that is read (relevance preservation, P1); it is not proved. Its
 premises are now propositions (L1, above); the proof is the next step ([roadmap](roadmap.md#resource-soundness)),
@@ -761,7 +789,8 @@ reading (`headRegimeGB`, with its own soundness `headRegime_of_check`) re-reads 
 the start, quadratic in a spine's length; it is kept as the reference the suite compares with
 (compiled, `tests-grounding`, one run: `fields254` 0.8 ms per spine against 11.3 ms per site,
 `tags125` 9.7 against 13.2). Both decisions read the enclosing constant's level parameters once per
-constant (`headRegimeSB1`, `headRegimeGB1`): read once per datum checked, as first written, an `lpsOf`
+constant (`headRegimeSB1`, `headRegimeGB1`; since step Ap 1a's `headRegimeResB` too, `headRegimeResB1`,
+where it made no measurable difference, its cost being the direct route's walk): read once per datum checked, as first written, an `lpsOf`
 that searches the reading (the suite's does, `Env.find?` over 3,545 to 4,645 constants on the
 `for`-loop, `strings` and `diag` closures) dominated the check, which is what made it 2 to 6.5 times
 the direct route's cost on the closures with `let`s (not the `let`s: `sum-loop` 82 ms, 74.5 of them in
@@ -799,6 +828,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 | `rootSound_678AS` | five (`Laws678`), and `SitesOk` (every run-term site) as a hypothesis |
 | `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
 | `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
+| `rootSound_678AGp_of_check` | six: `Laws678` and `graded`, every check read on `selEnv` (step Ap, below); `autoParam`/`optParam` binders in an `eqn` function's type admitted, which needs `graded`, so the five-field families and 1a's keep refusing those `eqn` entries |
 
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
@@ -884,12 +914,50 @@ the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'
 The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
 `OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
-out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals),
+"678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
+**`autoParam` binders in an `eqn` function's type (step Ap, since 2026-11-13).** `eqnShape` asks an
+`eqn` function's stored type to be `∀ Ds, R` over its equation theorem's own binder domains. The
+`for`-loop function `Std.Legacy.Range.forIn'.loop` has a binder `autoParam.{0} (j ≤ …) stx` where its
+equation theorem binds the bare `j ≤ …`, so `eqnShape` is false on the six closures with a `for` loop
+(`sum-loop`, `collatz`, `prime-count`, `scalar`, `resource`, `loops`), at that binder only. The two
+domains denote alike by δ at `autoParam` (its value `λ α stx. α`, both data `never`) and β twice,
+each argument in its λ's domain by `graded` at the function type's own node (`beta_peel`, 1b): **so
+the agreement needs `graded`**. Without its memberships the function's domain can be empty (a
+graph-regime λ applied off its domain gives `∅`) while the equation body's λ ranges over the
+selected argument, and the `eqn` lemma's equality fails. Ap therefore belongs to the family over six
+fields only; the five-field families and 1a's keep refusing those six `eqn` entries (their check
+reads the stored reading, where `eqnShape` is false). **Transport, not a new shape**
+(`IxCCGrounding/SelRetype.lean`): no landed definition changes (`EqnShape`, `RunPair`,
+`GroundFacts`, `groundCheck` keep text and meaning). The check reads `selEnv`, the reading with each
+`eqn` function's stored type replaced by `∀ Ds, R` where the two agree binder by binder up to
+**selector domains** (`SelDom`: equal, or `D.{vs} b₀ … b_{k-1}` with `D` a stored definition whose
+value is `λ x₀ … x_{k-1}. x_j`, every λ's datum `never`, and `b_j` the theorem's domain; `autoParam`
+and `optParam` are such, with `j = 0`; no role pin), decided by `selTeleB`. A model of the reading with
+`defn_value` and `graded` is a model of `selEnv` with the same `cval` (`model_selRetype`: a retyped
+constant's `mem` by `selTele_den`), the same denotations (`denotes_selRetype`: a retyping keeps names,
+level parameters and projection tables), #678's five fields (`laws678_selRetype`) and `graded`
+(`gradedLaw_selRetype`), so 1b's root theorem on `selEnv` gives the conclusion for the reading:
+`rootSound_678AGp_of_check`, every check on `selEnv`, `rootSound_678A`'s conclusion (pinned). The
+check's new reading of `eqnShape` is `eqnShape` on `selEnv`. **One approved statement was false as
+written**: `selEnv` first retyped every constant of a target's name, the agreement having been checked
+against the first such constant's type only (`find?` reads the first), so `selRetype_selEnv` failed
+on a reading with two constants of one name; repaired by retyping a constant only if the agreement
+holds of its own type (`selEnv_unrepaired_refuted` checks the counterexample, `selEnv_repaired_ok` the
+repair, on a two-constant reading). Measured before proving (GR16's `Ap.lean`): of the 78 `eqn`
+entries of the 50 closures the strict shape fails at exactly the six, and the kernel finds the two
+domains definitionally equal at all six. In `tests-grounding`: `selEnv` retypes exactly the six
+`for`-loop functions and moves only their `eqnShape` (false to true), nothing on the other 44
+closures; on each of the six, three planted controls are refused (the selector's value made
+`λ α s. α → α`, its first λ's datum made a proposition, the selected argument made `Nat`); the family
+over six fields on `selEnv` holds on 42 closures: the 37 the check accepts and `sum-loop`,
+`collatz`, `prime-count`, `scalar`, `loops` (`resource` still refused at `caseRec`, `caseShape`).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 285 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

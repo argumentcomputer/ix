@@ -18,9 +18,11 @@ root reaches.
   on every `machineEvery`-th case), against Lean's own `UIntN` operations (`oracle`, compiled to
   Lean's C implementations), and natively (with `--native`) on every case. Owed exceptions, at
   the word levels and natively only: a `UInt64` result at or above `2^63` fails with
-  `natOverflow` (W1's tagged representation; `docs/roadmap.md`), and `x < y` at
-  `x = 2^63 − 1` fails the same way, since the decision stays `UInt64.decLt`'s reference body,
-  whose `Nat.lt` computes the `Nat` `x + 1`.
+  `natOverflow` (W1's tagged representation; `docs/roadmap.md`). `x < y` at `x = 2^63 − 1` is
+  owed Lean's result: `UInt64.decLt`'s reference body computes `Nat.ble (x + 1) y`, which the
+  shrink walk turns into `natBlt x y` (`Anf.Walk.succBle`), so no `x + 1` is built.
+* **The routes** (`routes`, natively): `<` and `≤` at the tagged boundary under `--rc off`, `on`
+  and `auto`.
 * **The hint** (`cliHints`): `ixcc compile` prints one `hint:` line on standard error for the word
   operations a program reaches at run time without word entries, and none otherwise. -/
 
@@ -81,7 +83,7 @@ def wordLevel (level : String) : Bool := ["lir", "xv", "xl", "x86", "bytes", "na
 (`natOverflow`) where W1's tagged representation cannot hold the result. -/
 def owed (w : Width) (level : String) (op x y : Nat) : Option Nat :=
   let r := oracle w op x y
-  if wordLevel level && w == .w64 && (r ≥ 2 ^ 63 || (op == 13 && x == 2 ^ 63 - 1)) then none
+  if wordLevel level && w == .w64 && r ≥ 2 ^ 63 then none
   else some r
 
 /-- The root's program alone, as `ixcc compile --root` makes it. -/
@@ -158,6 +160,35 @@ def levels (a : Assert) (native : Option Rt.Native.Tools) (machineEvery : Nat) :
           expect a (l.status != 0) s!"{rootName w} op {op} {x} {y} natively: status 0, owed natOverflow"
       line := line ++ s!"; natively {lines.length} cases ({nfail} owed natOverflow)"
     out := out.push line
+  return out
+
+/-- The comparisons at the tagged boundary. -/
+def boundary : List Nat := [0, 1, 2 ^ 62, 2 ^ 63 - 2, 2 ^ 63 - 1]
+
+/-- **`<` and `≤` at the boundary on every route, natively**: `Words.u64` compiled by `ixcc
+compile` under `--rc off`, `on` and `auto`, its `lt` (op 13) and `le` (op 14) on every pair of
+`boundary` in both orders, each giving Lean's result. `x < y` is `Nat.ble (x + 1) y` in
+`UInt64.decLt`'s reference body; the shrink walk's `succBle` makes it `natBlt x y`, which compares
+the tagged words and never builds `x + 1` (before it, `x = 2^63 − 1` failed with `natOverflow`). -/
+def routes (a : Assert) (tools : Rt.Native.Tools) (work : FilePath) : IO (Array String) := do
+  let c ← Levels.compileFrom (rootName .w64) (← input .w64)
+  let some root := c.art.roots.head? | throw (IO.userError "Words.u64: no root")
+  let cases := [13, 14].flatMap fun op => boundary.flatMap fun x => boundary.map fun y => [op, x, y]
+  let mut out := #[]
+  for rc in ["off", "on", "auto"] do
+    let obj := work / s!"words-u64-rc-{rc}.o"
+    let (_, code) ← IO.FS.withIsolatedStreams (IxCC.Cli.main
+      ["compile", ixe.toString, "--equations", eqs.toString, "--root", "Words.u64", "--rc", rc, "-o", obj.toString])
+    expect a (code == 0) s!"Words.u64 --rc {rc}: exit {code}"
+    let exe ← link tools s!"words_u64_rc_{rc}" (← IO.FS.readBinFile obj) root.symbol
+    let lines ← Rt.Native.run exe { ty := root.ty } cases
+    expectEq a lines.length cases.length s!"Words.u64 --rc {rc}: one line per case"
+    for (l, xs) in lines.zip cases do
+      let (op, x, y) := (xs.getD 0 0, xs.getD 1 0, xs.getD 2 0)
+      let r := oracle .w64 op x y
+      expect a (l.status == 0 && l.ok && l.obs == some (toString r))
+        s!"Words.u64 --rc {rc} op {op} {x} {y}: status {l.status} {l.obs}, Lean {r}"
+    out := out.push s!"Words.u64 --rc {rc}: {lines.length} comparisons at the boundary, each Lean's"
   return out
 
 /-- The `hint:` lines `ixcc compile` prints (in process, without `--stats`, so only the one line on
