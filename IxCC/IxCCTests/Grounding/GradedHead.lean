@@ -7,13 +7,17 @@ import IxCCGrounding.GradedHead
 `rootSound_678AG_of_check` reads) on every committed closure the grounding measurements load (the
 ten corpus families, 35 closures, and the fifteen extra ones: 50):
 
-* true on the 34 closures the check accepts, by name;
+* true on the 37 closures the check accepts, by name (since step C: `fields254`, `machines`,
+  `natural` added), so the family without a typing hypothesis holds on all 37: on `natural`,
+  `headRegimeResB` (1a) is false (74 site-profile instances under its `let`s whose heads it reads as
+  written) and `headRegimeSB` true;
 * false on exactly `phase2-closures/closures` (a bound-variable head whose context type is a
   definition applied to more arguments than its value has λs) and `src-diag/diag` (projection
   heads), both refused by the check as well;
 * equal to the per-site reading `headRegimeGB` on every closure (and on every planted control);
-* on the 34, the sites 1a's reading as written (`headRegimeB`: constant heads only, the stored type
-  not unfolded) refuses at some `Ok` profile: 322, all decided here (GR14's "70 sites" were by his
+* on the accepted closures, the sites 1a's reading as written (`headRegimeB`: constant heads only,
+  the stored type not unfolded) refuses at some `Ok` profile: 436 on the 37, of which 322 on the
+  34 accepted before step C, all decided here (GR14's "70 sites" were by his
   probe's reading, a bound-variable head's context type read as written);
 * on `OS02-plain`, the one site the direct route refuses is decided.
 
@@ -63,14 +67,19 @@ def accepted : List String := NoCanon.acceptedFamily ++ NoCanon.acceptedExtra
 def refused : List String := ["phase2-closures/closures", "diag"]
 
 /-- The sites 1a's reading as written refuses on the accepted closures, at some `Ok` profile (322 on
-the 34 accepted before step C; since C also the sites under a `let`). -/
-def gapExpected : Nat := 0
+the 34 accepted before step C, whose run terms hold no `let`; since C, 436 on the 37: those 322 and
+114 on `fields254`, `machines` and `natural`, sites under their `let`s among them). -/
+def gapExpected : Nat := 436
 
 /-- The closures with a site whose head type unfolds a definition (three δ plants each). -/
-def deltaClosuresExpected : Nat := 0
+def deltaClosuresExpected : Nat := 25
 
 /-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
-def bvExpected : Nat := 0
+def bvExpected : Nat := 32
+
+/-- The three closures step C added to the accepted ones. -/
+def addedByC : List String :=
+  ["phase1-boundary/fields254", "phase1-machines/machines", "phase1-machines/natural"]
 
 /-- The three corpus fixtures refused before the check (the annotation of
 `typeFormerPolymorphism`; the decoder's consumer budget at `fields255` and `tags126`): not
@@ -178,6 +187,7 @@ def run : IO Bool := do
     let mut nAcc := 0
     let mut sFalse : List String := []
     let mut gap := 0
+    let mut gap34 := 0
     let mut nDelta := 0
     let mut nDeltaClosures := 0
     let mut nBv := 0
@@ -199,7 +209,9 @@ def run : IO Bool := do
       if accepted.contains label then
         expect a s s!"graded1b: {label}: accepted by the check, headRegimeSB false"
         nAcc := nAcc + 1
-        gap := gap + gap1a i
+        let ng := gap1a i
+        gap := gap + ng
+        if !addedByC.contains label then gap34 := gap34 + ng
       else if !s then sFalse := sFalse ++ [label]
       if ["phase1-boundary/tags125", "phase1-boundary/fields254", "phase1-scalar/bigctor",
           "bench-k1/sum-loop"].contains label then
@@ -254,6 +266,8 @@ def run : IO Bool := do
     expect a (sFalse == refused) s!"graded1b: headRegimeSB false on {sFalse}, expected {refused}"
     expect a (natRes == some false && natS == some true)
       s!"graded1b: natural: headRegimeResB {natRes}, headRegimeSB {natS}"
+    expect a (gap34 == 322)
+      s!"graded1b: 1a's reading as written refuses {gap34} sites on the 34 accepted before step C, expected 322"
     expect a (gap == gapExpected)
       s!"graded1b: 1a's reading as written refuses {gap} sites on the accepted closures, expected {gapExpected}"
     expect a (nDelta == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected)
