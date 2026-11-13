@@ -614,7 +614,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             | _ => exact absurd hres (by simp)
           · -- any other constructor
             rw [← ok_inj hres]
-            have hcon := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok)
+            have hcon := RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok)
               (ls := ls) (ps := args.take np) (fs := fields) (Ps := As.take np) (Fs := As.drop np)
               hSc hlv hfind (by rw [List.length_take, hAsl]; omega)
               (by rw [List.length_drop, hAsl]; omega) (relSlots_take np hargs) hrelF
@@ -986,7 +986,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             rw [(den_const0 hfc hlc).mp hX]
             have hl0 : lpsOf c = [] := hlps.symm.trans hlc
             have hlv0 : LvAt φ (lpsOf c) [] := by rw [hl0]; intro i q h; simp at h
-            exact RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
+            exact RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
               .nil (.inl hl0)
 
