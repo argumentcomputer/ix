@@ -162,8 +162,8 @@ theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : Le
     have hsub := subAt0_of_check hcl
     have hdv : DenotesIn M φ (A :: Γ) (v'.liftLooseBVars 1 0) :=
       denotesIn_of_subAt0 hsub (denotesIn_lam_body hd)
-    have hlam := ihlam hd (fun s h => hs s (by simp [evalSites, h]))
-      (fun d us h => hok d us (by simp [evalConsts, h]))
+    have hlam := ihlam hd (fun s h => hs s (List.mem_append_right _ (List.mem_append_right _ h)))
+      (fun d us h => hok d us (List.mem_append_right _ h))
     refine .letClo hsub (fun hr => ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_))
       (fun _ => hv) hlam
     · simp [evalSites, hsite, hr, h]
