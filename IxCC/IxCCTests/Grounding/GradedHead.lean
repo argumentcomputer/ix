@@ -1,5 +1,5 @@
 import IxCCTests.Grounding.NoCanon
-import IxCCGrounding.GradedHead
+import IxCCGrounding.SelRetype
 
 /-! # `tests-grounding`: step 1b, every run-term site typed from `graded`
 
@@ -76,6 +76,12 @@ def deltaClosuresExpected : Nat := 25
 
 /-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
 def bvExpected : Nat := 32
+
+/-- The six closures whose `for`-loop function (`Std.Legacy.Range.forIn'.loop`) has an `autoParam`
+binder where its equation theorem binds the bare proposition (step Ap). -/
+def forLoops : List String :=
+  ["bench-k1/sum-loop", "bench-k1/collatz", "bench-k1/prime-count", "phase1-scalar/scalar",
+   "phase1-resource/resource", "phase1-decline/loops"]
 
 /-- The three closures step C added to the accepted ones. -/
 def addedByC : List String :=
@@ -196,6 +202,9 @@ def run : IO Bool := do
     let mut lines : List String := []
     let mut natRes : Option Bool := none
     let mut natS : Option Bool := none
+    let mut nAp := 0
+    let mut nApPlants := 0
+    let mut famAGp : List String := []
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -247,10 +256,60 @@ def run : IO Bool := do
           s!"graded1b: {label}: c{c}'s λ domains' ∀ data made propositions: per-spine {bs}, per-site {bg}"
         nBv := nBv + 1
       | none => pure ()
-      -- `OS02-plain`: the one site the direct route refuses, decided here
+      -- Ap: the check on `selEnv` retypes exactly the `for`-loop function of the six closures and
+      -- moves nothing but its `eqnShape`; the family over six fields on `selEnv`
+      let env' := selEnv i.src i.env i.κ i.Sl
+      let retyped := (i.env.consts.zip env'.consts).filter fun (x, y) =>
+        x.toConstantVal.type != y.toConstantVal.type
+      let parts := checkParts i.src i.env i.κ i.lpsOf i.ann i.Sl
+      let parts' := checkParts i.src env' i.κ i.lpsOf i.ann i.Sl
+      let moved := (parts.zip parts').filterMap fun (x, y) =>
+        if x.2 != y.2 then some (x.1, x.2, y.2) else none
+      if forLoops.contains label then
+        expect a (retyped.length == 1 && moved == [("eqnShape", false, true)])
+          s!"Ap: {label}: {retyped.length} constants retyped, conjuncts moved {moved}"
+        nAp := nAp + 1
+        -- the selector the retyping read, and the function it retyped
+        let some (fx, fy) := retyped.head? | throw (IO.userError s!"Ap: {label}: nothing retyped")
+        let sels := ((splitAll fx.toConstantVal.type).1.zip (splitAll fy.toConstantVal.type).1).filterMap
+          fun ((d, _), (d', _)) => if d != d' then
+            (match d.getAppFn with | .const D _ => some D | _ => none) else none
+        let some D := sels.head? | throw (IO.userError s!"Ap: {label}: no selector domain")
+        let eqnOn (e : KEnv) : Bool := i.Sl.all (eqnShapeOkB i.src (selEnv i.src e i.κ i.Sl) i.κ)
+        -- the selector's value made `λ α s. α → α` (a default that changes the type)
+        let ePl1 := mapConst i.env D fun
+          | .defnInfo cv _ h => .defnInfo cv (.lam (.sort (.param 0)) (.lam (.sort .zero)
+              (.forallE (.bvar 1) (.bvar 2) { pw := .never }) { pw := .never }) { pw := .never }) h
+          | ci => ci
+        -- its first λ's datum made a proposition everywhere
+        let ePl2 := mapConst i.env D fun
+          | .defnInfo cv (.lam d b _) h => .defnInfo cv (.lam d b { pw := .ifAllZero [] }) h
+          | ci => ci
+        -- the selected argument made `Nat` in the function's type
+        let swap : KExpr → KExpr := fun f =>
+          match f.getAppFn with
+          | .const D' vs => if D' == D then
+              Expr.mkAppN (.const D' vs) (f.getAppArgs.set 0 (.const Ix.Kernel.natName [])) else f
+          | _ => f
+        let ePl3 := mapConst i.env fx.name fun
+          | .defnInfo cv v h => .defnInfo { cv with type := piTele ((splitAll cv.type).1.map
+              fun p => (swap p.1, p.2)) (splitAll cv.type).2 } v h
+          | ci => ci
+        let (r1, r2, r3) := (eqnOn ePl1, eqnOn ePl2, eqnOn ePl3)
+        expect a (eqnOn i.env && !r1 && !r2 && !r3)
+          s!"Ap: {label}: eqnShape on selEnv {eqnOn i.env}; planted: selector value {r1}, selector datum {r2}, selected argument {r3}"
+        nApPlants := nApPlants + 3
+      else
+        expect a (retyped.isEmpty && moved.isEmpty)
+          s!"Ap: {label}: {retyped.length} constants retyped, conjuncts moved {moved}"
+      let j' := { i with env := env' }
+      if (failing j').isEmpty && noCanonAB i.src env' i.κ i.Sl && litDefsB env' && NoCanon.instOk j' &&
+          sB j' then
+        famAGp := famAGp ++ [label]
       if label == "phase1-machines/natural" then
         natRes := some (headRegimeResB i.src i.env i.κ i.lpsOf i.ann i.Sl)
         natS := some s
+      -- `OS02-plain`: the one site the direct route refuses, decided here
       if label == "OS02-plain" then
         expect a ((refusedSites i).length == 1 && s)
           s!"graded1b: OS02-plain: {(refusedSites i).length} sites the direct route refuses, headRegimeSB {s}"
@@ -273,6 +332,15 @@ def run : IO Bool := do
     expect a (nDelta == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected)
       s!"graded1b: {nDelta} δ plants on {nDeltaClosures} closures, expected 3 on each of {deltaClosuresExpected}"
     expect a (nBv == bvExpected) s!"graded1b: {nBv} bound-variable plants, expected {bvExpected}"
+    IO.println s!"Ap: selEnv retypes the for-loop function of each of the {nAp} for-loop closures and \
+      moves only its eqnShape (false to true), nothing on the other {js.length - nAp}; {nApPlants} \
+      planted controls refused; the family over six fields on selEnv holds on {famAGp.length}: \
+      {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
+    expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
+      s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
+    expect a (famAGp.length == 42 && accepted.all famAGp.contains &&
+        famAGp.filter (!accepted.contains ·) == forLoops.filter (· != "phase1-resource/resource"))
+      s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true
   catch error =>

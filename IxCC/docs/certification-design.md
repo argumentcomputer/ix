@@ -799,6 +799,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 | `rootSound_678AS` | five (`Laws678`), and `SitesOk` (every run-term site) as a hypothesis |
 | `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
 | `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
+| `rootSound_678AGp_of_check` | six: `Laws678` and `graded`, every check read on `selEnv` (step Ap, below); `autoParam`/`optParam` binders in an `eqn` function's type admitted, which needs `graded`, so the five-field families and 1a's keep refusing those `eqn` entries |
 
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
@@ -888,8 +889,45 @@ out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the o
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
+**`autoParam` binders in an `eqn` function's type (step Ap, since 2026-11-13).** `eqnShape` asks an
+`eqn` function's stored type to be `∀ Ds, R` over its equation theorem's own binder domains. The
+`for`-loop function `Std.Legacy.Range.forIn'.loop` has a binder `autoParam.{0} (j ≤ …) stx` where its
+equation theorem binds the bare `j ≤ …`, so `eqnShape` is false on the six closures with a `for` loop
+(`sum-loop`, `collatz`, `prime-count`, `scalar`, `resource`, `loops`), at that binder only. The two
+domains denote alike by δ at `autoParam` (its value `λ α stx. α`, both data `never`) and β twice,
+each argument in its λ's domain by `graded` at the function type's own node (`beta_peel`, 1b): **so
+the agreement needs `graded`**. Without its memberships the function's domain can be empty (a
+graph-regime λ applied off its domain gives `∅`) while the equation body's λ ranges over the
+selected argument, and the `eqn` lemma's equality fails. Ap therefore belongs to the family over six
+fields only; the five-field families and 1a's keep refusing those six `eqn` entries (their check
+reads the stored reading, where `eqnShape` is false). **Transport, not a new shape**
+(`IxCCGrounding/SelRetype.lean`): no landed definition changes (`EqnShape`, `RunPair`,
+`GroundFacts`, `groundCheck` keep text and meaning). The check reads `selEnv`, the reading with each
+`eqn` function's stored type replaced by `∀ Ds, R` where the two agree binder by binder up to
+**selector domains** (`SelDom`: equal, or `D.{vs} b₀ … b_{k-1}` with `D` a stored definition whose
+value is `λ x₀ … x_{k-1}. x_j`, every λ's datum `never`, and `b_j` the theorem's domain; `autoParam`
+and `optParam` are such, with `j = 0`; no role pin), decided by `selTeleB`. A model of the reading with
+`defn_value` and `graded` is a model of `selEnv` with the same `cval` (`model_selRetype`: a retyped
+constant's `mem` by `selTele_den`), the same denotations (`denotes_selRetype`: a retyping keeps names,
+level parameters and projection tables), #678's five fields (`laws678_selRetype`) and `graded`
+(`gradedLaw_selRetype`), so 1b's root theorem on `selEnv` gives the conclusion for the reading:
+`rootSound_678AGp_of_check`, every check on `selEnv`, `rootSound_678A`'s conclusion (pinned). The
+check's new reading of `eqnShape` is `eqnShape` on `selEnv`. **One approved statement was false as
+written**: `selEnv` first retyped every constant of a target's name, the agreement having been checked
+against the first such constant's type only (`find?` reads the first), so `selRetype_selEnv` failed
+on a reading with two constants of one name; repaired by retyping a constant only if the agreement
+holds of its own type (`selEnv_unrepaired_refuted` checks the counterexample, `selEnv_repaired_ok` the
+repair, on a two-constant reading). Measured before proving (GR16's `Ap.lean`): of the 78 `eqn`
+entries of the 50 closures the strict shape fails at exactly the six, and the kernel finds the two
+domains definitionally equal at all six. In `tests-grounding`: `selEnv` retypes exactly the six
+`for`-loop functions and moves only their `eqnShape` (false to true), nothing on the other 44
+closures; on each of the six, three planted controls are refused (the selector's value made
+`λ α s. α → α`, its first λ's datum made a proposition, the selected argument made `Nat`); the family
+over six fields on `selEnv` holds on APFAM closures: the 37 the check accepts and `sum-loop`,
+`collatz`, `prime-count`, `scalar`, `loops` (`resource` still refused at `caseRec`, `caseShape`).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 285 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
