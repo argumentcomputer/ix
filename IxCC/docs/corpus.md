@@ -97,7 +97,7 @@ Per case:
 | `region` | reviewed | the region's bytes: the word levels' region (default 64 KiB) and the native test executable's (default 16 MiB) |
 | `stack` | reviewed | the stack's bytes: the native test executable's stack (default 256 MiB), and `stack − 4096` as the stack budget of the typed x86 machine, ByteEval and the executable, as the host passes it to `cx_init` (default 896 KiB) |
 | `note` | reviewed | why the case is there, and where its expectation comes from |
-| `lean_fails` | reviewed | Lean's runtime fails on the case (its `Nat.pow` and `Nat.shiftLeft` refuse exponents of `2³²` or more), so neither the interpreter nor the source levels, which run on the same runtime, run it; the `constant` is its value |
+| `lean_fails` | reviewed | Lean's runtime fails on the case (its `Nat.pow` and `Nat.shiftLeft` refuse exponents of `2³²` or more), so neither the interpreter nor the source levels, which run on the same runtime, run it; the `constant` is its value. The test tools that run the source levels on arguments the caller chooses (`src-steps CLOSURE --root NAME ARG…`, `tests-pipeline --level`) have no such filter and abort on those arguments; they are left so ([CI](ci.md)). The compiler's own literal folding is bounded (`Anf.Walk.foldable`) |
 | `generated` | derived | drawn from the root's generator |
 
 Absent optional fields are not written, so manifests without them keep their
@@ -306,8 +306,9 @@ runs, in this order:
    `corpus rebuild` each; then ix's verdicts on the annotated ownership
    sources (`tests-own verdicts`), the RC real-source input (`refreeze-ixon
    rc-real-source`), the captured-work budget input (`refreeze-ixon rc-budget`,
-   `fixtures/rc/budget`) and the certificate-depth input (`refreeze-ixon
-   rc-deep`, `fixtures/rc/deep`), and the roots-only fixtures (`pin-src-tables
+   `fixtures/rc/budget`), the certificate-depth input (`refreeze-ixon
+   rc-deep`, `fixtures/rc/deep`) and the fold guard's input (`refreeze-ixon
+   fold`, `fixtures/fold`), and the roots-only fixtures (`pin-src-tables
    --diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
    fixtures/ixon-v4/src-sortpoly`, `--words fixtures/ixon-v4/src-words`,
    `--kernel-hints fixtures/ixon-v4/kernel-hints`, `--erased-blocks

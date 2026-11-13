@@ -92,7 +92,7 @@ else
   (cd "$ROOT/IxCC" && step lake build $TOOLS > "$LOG/tools-rebuild.log" 2>&1) || die "the tools did not rebuild"
 fi
 
-# 2. every family, in parallel; then the ownership verdicts, the RC input and the roots-only
+# 2. every family, in parallel; then the ownership verdicts, the RC inputs, the fold input and the roots-only
 #    fixtures (LEAN_PATH: the root workspace's, for the interpreter runs of the ownership sources)
 export LEAN_PATH="$LP"
 git -C "$ROOT" ls-files 'IxCC/fixtures/**/corpus.json' | sed 's|^IxCC/||' > "$WORK/manifests"
@@ -106,6 +106,7 @@ step "$BIN/tests-own" verdicts --ix "$IX" --ix-path "$FAKE" --work "$WORK/verdic
 step "$BIN/refreeze-ixon" rc-real-source --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc.log" 2>&1 || die "rc-real-source"
 step "$BIN/refreeze-ixon" rc-budget --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc-budget.log" 2>&1 || die "rc-budget"
 step "$BIN/refreeze-ixon" rc-deep --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc-deep.log" 2>&1 || die "rc-deep"
+step "$BIN/refreeze-ixon" fold --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/fold.log" 2>&1 || die "fold"
 unset LEAN_PATH
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --diagnostics fixtures/ixon-v4/src-diag --work "$WORK/diag" > "$LOG/diag.log" 2>&1 || die "src-diag"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --sortpoly fixtures/ixon-v4/src-sortpoly --work "$WORK/sortpoly" > "$LOG/sortpoly.log" 2>&1 || die "src-sortpoly"

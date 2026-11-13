@@ -216,8 +216,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   · -- folded to a literal
     next m0 hfold =>
     split at hfold
-    · unfold Walk.fold at hfold
-      obtain ⟨ns, hlits, hsem⟩ := Option.bind_eq_some_iff.1 hfold
+    · obtain ⟨ns, hlits, hsem⟩ := fold_some hfold
       have hna := fold_lits hlits hws
       rw [hnat] at hna
       refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
@@ -230,8 +229,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       split at hfold
       · exact hfold
       · cases hfold
-    unfold Walk.fold at hfold'
-    obtain ⟨ns, hlits, hsem⟩ := Option.bind_eq_some_iff.1 hfold'
+    obtain ⟨ns, hlits, hsem⟩ := fold_some hfold'
     have hna := fold_lits hlits hws
     rw [hnat] at hna
     split at h2
