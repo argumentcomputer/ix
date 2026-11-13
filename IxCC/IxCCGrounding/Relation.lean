@@ -113,7 +113,7 @@ inductive RelV (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) 
       Ps.length = np → Fs.length = nf →
       RelSlots M κ lpsOf S Ok ps Ps → RelVs M κ lpsOf S Ok fs Fs →
       Fits M.cval env φ ρ cvC.type (Ps ++ Fs) σ R →
-      (ls = [] ∨ Ok c ls) →
+      (lpsOf c = [] ∨ Ok c ls) →
       RelV M κ lpsOf S Ok (.con c ls ps fs) ((Ps ++ Fs).foldl app (M.cval (κ c) φ))
   | clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {ls : Levels}
       {φ : LevelParam → Nat} {lps : List Nat} {Γ : List KExpr} {ρk : BVarIdx → V}

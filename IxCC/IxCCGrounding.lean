@@ -31,4 +31,5 @@ import IxCCGrounding.Direct.Subst
 import IxCCGrounding.Direct.Rules
 import IxCCGrounding.Direct.Sound
 import IxCCGrounding.Direct.Sites
+import IxCCGrounding.CaseLevels
 import IxCCGrounding.Fence

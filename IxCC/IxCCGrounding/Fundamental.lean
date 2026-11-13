@@ -983,7 +983,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             have hlv0 : LvAt φ (lpsOf c) [] := by rw [hl0]; intro i q h; simp at h
             exact RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok) (ls := [])
               (ps := []) (fs := []) (Ps := []) (Fs := []) (ρ := ρ) hSc hlv0 hfc rfl rfl .nil .nil
-              .nil (.inl rfl)
+              .nil (.inl hl0)
 
 theorem headValue_step {k : Nat} (hfire : FireP M p κ lpsOf S Ok k) :
     HeadValueP M p κ lpsOf S Ok k := by

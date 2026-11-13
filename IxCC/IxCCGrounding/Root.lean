@@ -112,7 +112,8 @@ theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· 
   refine ⟨?_, fun ρ X => den_const0 hfc hlc, fun ρ X hX => ?_⟩
   · have := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok')
       (c := c) (ls := []) (ps := []) (fs := []) (φ := φ) (Ps := []) (Fs := []) (ρ := fun _ => empty)
-      hS hlv hfc rfl rfl .nil .nil .nil (.inl rfl)
+      hS hlv hfc rfl rfl .nil .nil .nil
+      (.inl (by rw [← hlps]; simpa [ConstantInfo.toConstantVal] using hlc))
     simpa using this
   · obtain ⟨T, hT, hm⟩ := mem_key M hfc φ ρ
     simp only [ConstantInfo.toConstantVal, htc] at hT
