@@ -959,14 +959,17 @@
   "IxCC.Src.Proof.Mono",
   "IxCC.Src.Proof.NatMap",
   "IxCC.Src.Proof.Spine",
+  "IxCC.Src.Proof.TermBEq",
   "IxCC.Src.Proof.Unfold",
   "IxCC.Src.Readback",
   "IxCC.Src.Recheck",
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Canonical",
+  "IxCC.Src.Relevance.Proof.ModeEq",
   "IxCC.Src.Relevance.Proof.P1.Basic",
   "IxCC.Src.Relevance.Proof.P1.Cases",
   "IxCC.Src.Relevance.Proof.P1.Defs",
+  "IxCC.Src.Relevance.Proof.P1.Facts",
   "IxCC.Src.Relevance.Proof.P1.Measure",
   "IxCC.Src.Relevance.Proof.P1.Prefix",
   "IxCC.Src.Relevance.Proof.P1.Recr",
@@ -1804,8 +1807,7 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline":
- "the shrink walk bounds literal folding (Anf.Walk.foldable): WalkProof.fold_some; tests-anf part IxCCTests.Anf.FoldGuard; tests-exe part IxCCTests.Exe.FoldGuard over fixtures/fold",
+ "baseline": "L1 facts on the Lazify image (facts_modeEq) as modules",
  "axiom_sha256":
- "7a85dc2617d77ba1c809194fb459a428fdce26b8a728a3adadaff2301b649a69",
- "axiom_count": 6782}
+ "40e7ecb522edc4dca095132f3262f95b1d34d176e8d959373c3c239d77279943",
+ "axiom_count": 6793}
