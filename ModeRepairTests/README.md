@@ -65,6 +65,40 @@ some repairs in its own terms. The places where this branch does something else,
   no longer uses `leadingBinders` (since V2 `ifaceErased` reads with `readForalls`); their suite's
   `eraseBinder` still does, to find a binder's node in a root block.
 
+## The class oracle on recursive inductives (V7)
+
+**The defect.** The class oracle (`oTypeClass`) classes a value of an inductive type by its
+constructors: each field's type is asked whether it is `irr` (`keptFields` → `irrAt`) and, for a
+trivial wrapper, the class of its one kept field. A recursive field's type is the type itself, so
+on a recursive, mutual or nested inductive the oracle followed the field one level deeper each
+time until its depth limit. As landed the depth limit answered `val`, which hid this (and was
+unsound for deep type formers, finding 4); repair L made the depth limit a decline, which exposed
+it: `check` declined at record level on every subject with a value of such a type (MX-oracle2, on
+a real environment: a hand-made `L | nil | cons (h : E) (t : L)`, Lean's `List E`, a mutual
+`A`/`B`, a nested `T | leaf | node (cs : List T)`, an indexed `V : Nat → Type`).
+
+**The fix.** `oTypeClass` carries the path of the inductive instances whose constructors it is
+analysing, each keyed by its head constant with its levels and its first `nParams` arguments; an
+instance met again on its own path answers `val`. Each question of the classifier starts with an
+empty path, and the oracle keeps no memo. The path is checked after the instance's own `irr`
+tests (a sort, a type former, a proposition), so it skips only the constructor analysis, which
+never answers `irr`. The argument is in the commit message; in short: where the oracle answered
+before, it answers the same (a re-entered key repeats its analysis, so the oracle declined there),
+and where it declined, the answer `val` at a re-entry is consumed as "not `irr`" (true by the
+instance's own tests) or as a trivial wrapper's field, where a cycle of trivial wrappers has no
+finite `ImmT`/`LeafT` derivation (least fixed points), so `val` is its class.
+
+**The remaining limit.** An instance whose parameters grow without repeating (`N α | mk (x : N
+(List α))`) never meets its key again and still declines at the depth limit. A constructor's type
+carries the inductive's own level parameters, so the recursive field of a level-polymorphic type
+at concrete levels (`List.{0} E`) has a different key (`List.{u} E`) and is caught one level
+later.
+
+The driver's cases (Part 3, `v7RecursiveTypes`) are hand-made records over the empty environment:
+`L` matched by a case shape (a value), the mutual, nested and indexed types each matched by a raw
+call of its recursor (stuck: `runR` is stuck at a recursor), the wrapper cycle in both orders, and
+the non-uniform type at the depth limit.
+
 ## Results of record
 
 All runs use seeds 1 to 8 × 100,000 programs (800,000). Case `i` of seed `s` is drawn from

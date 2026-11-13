@@ -1309,7 +1309,7 @@ def finding4oracle (t : IO.Ref Tally) : IO Unit := do
   let sh : Ix.Kernel.Key .anon → Option (List CtorShape) := fun _ => none
   for (k, d, expect) in [(1, 1, none), (1, 2, some Cls.irr), (16, 16, none), (16, 17, some Cls.irr),
       (17, 17, none)] do
-    let c := oTypeClass Ix.Kernel.Env.empty sh {} d 0 (former k)
+    let c := oTypeClass Ix.Kernel.Env.empty sh {} d [] 0 (former k)
     let ok := match c, expect with
       | .error e, none => e.startsWith "decline:"
       | .ok x, some y => x == y
@@ -2954,6 +2954,304 @@ def v6Cases : List Case := [
     ext := extPOra, seed := useStX, inp := oneNat, toCheck := [stX, useStX], verdict := .refuse "a static",
     run := [(0, .valOrOof)] }]
 
+/-! ### V7: the class oracle on recursive inductives
+
+`oTypeClass` followed a recursive field (`keptFields` → `irrAt` → `oTypeClass` on the field's
+type) into the same type one level deeper each time; since repair L its depth limit is a decline,
+so every subject with a value of a recursive, mutual or nested type declined. V7: the oracle
+carries the path of the inductive instances (head with levels, parameters) whose constructors it
+is analysing, and an instance met again on its path answers `val`.
+
+Hand-made records over the prelude (their own addresses, `a7`), read with the checker's class
+oracle over the empty environment (whose constructor analysis reads the records, `ctorShapes`),
+checked (`check`) and run (`runR` from a static, no input, fuel 100000):
+
+* `E | c₀ | c₁`; `L | nil | cons (h : E) (t : L)`, its recursor, `Lcases` (a case shape over it),
+  `headOr (d : E) (l : L) : E := Lcases (fun _ => E) l d (fun h _ => h)`, `mainL := headOr E.c₀
+  [E.c₁]`: a value, `E.c₁`; the same with `l` borrowed, which `check` takes on its slow path.
+* the mutual `A | a0 | a (b : B)`, `B | b (a : A)`, the nested `T | leaf | node (cs : Lst T)` (over
+  `Lst (α : Type) | nil | cons (h : α) (t : Lst α)`) and the indexed `V : Nat → Type | nil : V 0 |
+  cons (h : E) (n : Nat) (t : V n) : V (n + 1)`, each matched by a raw call of its recursor
+  (`isA0`, `isLeaf`, `isNil`): stuck, since `runR` is stuck at a recursor (the mutual and nested
+  recursors have two motives, so no definition over them is a case shape, `motives == 1`).
+* the oracle alone: a cycle of trivial wrappers `W₁ | mk (b : W₂)`, `W₂ | mk (a : W₁)`, asked in
+  both orders (`val` both, the same answers: the oracle keeps no memo), and the non-uniform
+  `N (α : Type) | mk (x : N (Lst α))`, whose parameter grows without repeating, which still
+  declines at the depth limit (and so does `check` of `idN (x : N E) : N E := x`). -/
+
+def a7 (k : Nat) : Address := ⟨⟨#[k.toUInt8, 0x07]⟩⟩
+def ctorP (ci params fields : Nat) (typ : Ixon.Expr) : Ixon.Constructor :=
+  { isUnsafe := false, lvls := 0, cidx := ci.toUInt64, params := params.toUInt64,
+    fields := fields.toUInt64, typ }
+def indP (params indices : Nat) (typ : Ixon.Expr) (ctors : Array Ixon.Constructor) : Ixon.Inductive :=
+  { isUnsafe := false, lvls := 0, params := params.toUInt64, indices := indices.toUInt64, typ, ctors }
+def alls (doms : List Ixon.Expr) (body : Ixon.Expr) : Ixon.Expr := doms.foldr .all body
+def lams (doms : List Ixon.Expr) (body : Ixon.Expr) : Ixon.Expr := doms.foldr .lam body
+/-- A recursor at one level parameter `u`, no parameters; rules `(fields, rhs)`. -/
+def recOf (motives minors indices : Nat) (typ : Ixon.Expr) (rules : List (Nat × Ixon.Expr)) :
+    Ixon.Recursor :=
+  { k := false, isUnsafe := false, lvls := 1, params := 0, indices := indices.toUInt64,
+    motives := motives.toUInt64, minors := minors.toUInt64, typ,
+    rules := (rules.map fun (f, rhs) => ({ fields := f.toUInt64, rhs } : Ixon.RecursorRule)).toArray }
+def recRecord (rr : Ixon.Recursor) (refs : Array Address) : Ixon.Constant :=
+  withSection { info := .recr rr, sharing := #[], refs, univs := #[.var 0] }
+def defRecord (typ value : Ixon.Expr) (refs : Array Address) (univs : Array Ixon.Univ := #[])
+    (mode : Bool → Nat → Nat → AllMode := fun _ _ _ => {}) : Ixon.Constant :=
+  withSection { info := .defn (safeDef typ value), sharing := #[], refs, univs } mode
+def blockOf (inds : Array Ixon.Inductive) (refs : Array Address := #[]) : Ixon.Constant :=
+  withSection { info := .muts (inds.map .indc), sharing := #[], refs, univs := #[.succ .zero] }
+
+/-- `E | c₀ | c₁` (block 1; `E` 2, `E.c₀` 3, `E.c₁` 4). -/
+def eRecords : List (Address × Ixon.Constant) :=
+  [(a7 1, blockOf #[indP 0 0 (.sort 0) #[ctorP 0 0 0 (.recur 0 #[]), ctorP 1 0 0 (.recur 0 #[])]]),
+   (a7 2, projI (a7 1) 0), (a7 3, projC (a7 1) 0 0), (a7 4, projC (a7 1) 0 1)]
+
+/-- `L` (block 10; `L` 11, `L.nil` 12, `L.cons` 13), `L.rec.{u}` (14), `Lcases.{u} (motive) (t : L)
+(mnil) (mcons : (h : E) → (t : L) → motive (L.cons h t)) : motive t := L.rec motive mnil (fun h t
+_ => mcons h t) t` (15), `headOr` (16) and `mainL` (17); with `borrowL` (18, 19) `headOr`'s `l` is
+`@borrowed` (node 1 of its type and of its value). -/
+def lRecords (borrowL : Bool) : List (Address × Ixon.Constant) :=
+  let blk := blockOf #[indP 0 0 (.sort 0) #[ctorP 0 0 0 (.recur 0 #[]),
+    ctorP 1 0 2 (alls [xRef 0, .recur 0 #[]] (.recur 0 #[]))]] #[a7 2]
+  -- L.rec: refs L, L.nil, L.cons, E
+  let motive := Ixon.Expr.all (xRef 0) (.sort 0)
+  let mnil := Ixon.Expr.app (xVar 0) (xRef 1)
+  let mcons := alls [xRef 3, xRef 0, .app (xVar 3) (xVar 0)] (.app (xVar 4) (xApp (xRef 2) [xVar 2, xVar 1]))
+  let pre := [motive, mnil, mcons]
+  let rr := recOf 1 2 0 (alls (pre ++ [xRef 0]) (.app (xVar 3) (xVar 0)))
+    [(0, lams pre (xVar 1)),
+     (2, lams (pre ++ [xRef 3, xRef 0])
+       (xApp (xVar 2) [xVar 1, xVar 0, xApp (.recur 0 #[0]) [xVar 4, xVar 3, xVar 2, xVar 0]]))]
+  -- Lcases: refs L, L.nil, L.cons, E, L.rec
+  let cMnil := Ixon.Expr.app (xVar 1) (xRef 1)
+  let cMcons := alls [xRef 3, xRef 0] (.app (xVar 4) (xApp (xRef 2) [xVar 1, xVar 0]))
+  let cDoms := [motive, xRef 0, cMnil, cMcons]
+  let minorCons := lams [xRef 3, xRef 0, .app (xVar 5) (xVar 0)] (xApp (xVar 3) [xVar 2, xVar 1])
+  let lcases : Ixon.Constant := withSection
+    { info := .defn { safeDef (alls cDoms (.app (xVar 3) (xVar 2)))
+        (lams cDoms (xApp (xRef 4 #[0]) [xVar 3, xVar 1, minorCons, xVar 2])) with lvls := 1 },
+      sharing := #[], refs := #[a7 11, a7 12, a7 13, a7 2, a7 14], univs := #[.var 0] }
+  -- headOr (d : E) (l : L) : E; refs E, L, Lcases
+  let bor : AllMode := { input := .borrowed }
+  let headOr := defRecord (alls [xRef 0, xRef 1] (xRef 0))
+    (lams [xRef 0, xRef 1] (xApp (xRef 2 #[0]) [.lam (xRef 1) (xRef 0), xVar 0, xVar 1,
+      lams [xRef 0, xRef 1] (xVar 1)]))
+    #[a7 2, a7 11, a7 15] #[.succ .zero] (modeAt (if borrowL then [(0, 1, bor), (1, 1, bor)] else []))
+  let (hA, mA) := if borrowL then (a7 18, a7 19) else (a7 16, a7 17)
+  -- mainL : E := headOr E.c₀ (L.cons E.c₁ L.nil); refs headOr, E.c₀, L.cons, E.c₁, L.nil, E
+  let mainL := defRecord (xRef 5) (xApp (xRef 0) [xRef 1, xApp (xRef 2) [xRef 3, xRef 4]])
+    #[hA, a7 3, a7 13, a7 4, a7 12, a7 2]
+  eRecords ++ [(a7 10, blk), (a7 11, projI (a7 10) 0), (a7 12, projC (a7 10) 0 0), (a7 13, projC (a7 10) 0 1),
+    (a7 14, recRecord rr #[a7 11, a7 12, a7 13, a7 2]), (a7 15, lcases), (hA, headOr), (mA, mainL)]
+
+/-- The mutual `A | a0 | a (b : B)`, `B | b (a : A)` (block 30; `A` 31, `B` 32, `A.a0` 33, `A.a` 34,
+`B.b` 35), `A.rec.{u}` (36) and `B.rec.{u}` (37), with two motives and three minor premises each,
+`isA0 (x : A) : E := A.rec.{1} (fun _ => E) (fun _ => E) E.c₀ (fun _ _ => E.c₁) (fun _ _ => E.c₁) x`
+(38) and `mainA := isA0 (A.a (B.b A.a0))` (39). -/
+def abRecords7 : List (Address × Ixon.Constant) :=
+  let blk := blockOf #[indP 0 0 (.sort 0) #[ctorP 0 0 0 (.recur 0 #[]), ctorP 1 0 1 (.all (.recur 1 #[]) (.recur 0 #[]))],
+    indP 0 0 (.sort 0) #[ctorP 0 0 1 (.all (.recur 0 #[]) (.recur 1 #[]))]]
+  -- the recursors: refs A, B, A.a0, A.a, B.b, the other recursor
+  let motA := Ixon.Expr.all (xRef 0) (.sort 0)
+  let motB := Ixon.Expr.all (xRef 1) (.sort 0)
+  let ma0 := Ixon.Expr.app (xVar 1) (xRef 2)
+  let ma := alls [xRef 1, .app (xVar 2) (xVar 0)] (.app (xVar 4) (.app (xRef 3) (xVar 1)))
+  let mb := alls [xRef 0, .app (xVar 4) (xVar 0)] (.app (xVar 4) (.app (xRef 4) (xVar 1)))
+  let pre := [motA, motB, ma0, ma, mb]
+  let other := xApp (xRef 5 #[0]) [xVar 5, xVar 4, xVar 3, xVar 2, xVar 1, xVar 0]
+  let aRec := recOf 2 3 0 (alls (pre ++ [xRef 0]) (.app (xVar 5) (xVar 0)))
+    [(0, lams pre (xVar 2)), (1, lams (pre ++ [xRef 1]) (xApp (xVar 2) [xVar 0, other]))]
+  let bRec := recOf 2 3 0 (alls (pre ++ [xRef 1]) (.app (xVar 4) (xVar 0)))
+    [(1, lams (pre ++ [xRef 0]) (xApp (xVar 1) [xVar 0, other]))]
+  let recRefs (o : Address) := #[a7 31, a7 32, a7 33, a7 34, a7 35, o]
+  -- isA0: refs A, B, E, E.c₀, E.c₁, A.rec
+  let isA0 := defRecord (.all (xRef 0) (xRef 2))
+    (.lam (xRef 0) (xApp (xRef 5 #[0]) [.lam (xRef 0) (xRef 2), .lam (xRef 1) (xRef 2), xRef 3,
+      lams [xRef 1, xRef 2] (xRef 4), lams [xRef 0, xRef 2] (xRef 4), xVar 0]))
+    #[a7 31, a7 32, a7 2, a7 3, a7 4, a7 36] #[.succ .zero]
+  -- mainA: refs isA0, A.a, B.b, A.a0, E
+  let mainA := defRecord (xRef 4) (.app (xRef 0) (.app (xRef 1) (.app (xRef 2) (xRef 3))))
+    #[a7 38, a7 34, a7 35, a7 33, a7 2]
+  eRecords ++ [(a7 30, blk), (a7 31, projI (a7 30) 0), (a7 32, projI (a7 30) 1), (a7 33, projC (a7 30) 0 0),
+    (a7 34, projC (a7 30) 0 1), (a7 35, projC (a7 30) 1 0), (a7 36, recRecord aRec (recRefs (a7 37))),
+    (a7 37, recRecord bRec (recRefs (a7 36))), (a7 38, isA0), (a7 39, mainA)]
+
+/-- `Lst (α : Type) | nil | cons (h : α) (t : Lst α)` (block 50; `Lst` 51, `Lst.nil` 52, `Lst.cons` 53). -/
+def lstRecords : List (Address × Ixon.Constant) :=
+  [(a7 50, blockOf #[indP 1 0 (.all (.sort 0) (.sort 0)) #[ctorP 0 1 0 (.all (.sort 0) (.app (.recur 0 #[]) (xVar 0))),
+      ctorP 1 1 2 (alls [.sort 0, xVar 0, .app (.recur 0 #[]) (xVar 1)] (.app (.recur 0 #[]) (xVar 2)))]]),
+   (a7 51, projI (a7 50) 0), (a7 52, projC (a7 50) 0 0), (a7 53, projC (a7 50) 0 1)]
+
+/-- The nested `T | leaf | node (cs : Lst T)` (block 54; `T` 55, `T.leaf` 56, `T.node` 57), its
+recursors `T.rec.{u}` (58, major `T`) and `T.rec_1.{u}` (59, major `Lst T`), each with the motives
+of `T` and `Lst T` and the four minor premises, `isLeaf (x : T) : E := T.rec.{1} (fun _ => E) (fun
+_ => E) E.c₀ (fun _ _ => E.c₁) E.c₀ (fun _ _ _ _ => E.c₀) x` (60) and `mainT := isLeaf (T.node
+(Lst.nil T))` (61). -/
+def tRecords : List (Address × Ixon.Constant) :=
+  let blk := blockOf #[indP 0 0 (.sort 0) #[ctorP 0 0 0 (.recur 0 #[]),
+    ctorP 1 0 1 (.all (.app (xRef 0) (.recur 0 #[])) (.recur 0 #[]))]] #[a7 51]
+  -- the recursors: refs T, Lst, T.leaf, T.node, Lst.nil, Lst.cons, the other recursor
+  let LT := Ixon.Expr.app (xRef 1) (xRef 0)
+  let motT := Ixon.Expr.all (xRef 0) (.sort 0)
+  let motL := Ixon.Expr.all LT (.sort 0)
+  let mleaf := Ixon.Expr.app (xVar 1) (xRef 2)
+  let mnode := alls [LT, .app (xVar 2) (xVar 0)] (.app (xVar 4) (.app (xRef 3) (xVar 1)))
+  let mnil := Ixon.Expr.app (xVar 2) (.app (xRef 4) (xRef 0))
+  let mcons := alls [xRef 0, LT, .app (xVar 6) (xVar 1), .app (xVar 6) (xVar 1)]
+    (.app (xVar 7) (xApp (xRef 5) [xRef 0, xVar 3, xVar 2]))
+  let pre := [motT, motL, mleaf, mnode, mnil, mcons]
+  let tRec := recOf 2 4 0 (alls (pre ++ [xRef 0]) (.app (xVar 6) (xVar 0)))
+    [(0, lams pre (xVar 3)),
+     (1, lams (pre ++ [LT]) (xApp (xVar 3) [xVar 0,
+       xApp (xRef 6 #[0]) [xVar 6, xVar 5, xVar 4, xVar 3, xVar 2, xVar 1, xVar 0]]))]
+  let tRec1 := recOf 2 4 0 (alls (pre ++ [LT]) (.app (xVar 5) (xVar 0)))
+    [(0, lams pre (xVar 1)),
+     (2, lams (pre ++ [xRef 0, LT]) (xApp (xVar 2) [xVar 1, xVar 0,
+       xApp (xRef 6 #[0]) [xVar 7, xVar 6, xVar 5, xVar 4, xVar 3, xVar 2, xVar 1],
+       xApp (.recur 0 #[0]) [xVar 7, xVar 6, xVar 5, xVar 4, xVar 3, xVar 2, xVar 0]]))]
+  let recRefs (o : Address) := #[a7 55, a7 51, a7 56, a7 57, a7 52, a7 53, o]
+  -- isLeaf: refs T, Lst, E, E.c₀, E.c₁, T.rec
+  let LT' := Ixon.Expr.app (xRef 1) (xRef 0)
+  let isLeaf := defRecord (.all (xRef 0) (xRef 2))
+    (.lam (xRef 0) (xApp (xRef 5 #[0]) [.lam (xRef 0) (xRef 2), .lam LT' (xRef 2), xRef 3,
+      lams [LT', xRef 2] (xRef 4), xRef 3, lams [xRef 0, LT', xRef 2, xRef 2] (xRef 3), xVar 0]))
+    #[a7 55, a7 51, a7 2, a7 3, a7 4, a7 58] #[.succ .zero]
+  -- mainT: refs isLeaf, T.node, Lst.nil, T, E
+  let mainT := defRecord (xRef 4) (.app (xRef 0) (.app (xRef 1) (.app (xRef 2) (xRef 3))))
+    #[a7 60, a7 57, a7 52, a7 55, a7 2]
+  eRecords ++ lstRecords ++ [(a7 54, blk), (a7 55, projI (a7 54) 0), (a7 56, projC (a7 54) 0 0),
+    (a7 57, projC (a7 54) 0 1), (a7 58, recRecord tRec (recRefs (a7 59))), (a7 59, recRecord tRec1 (recRefs (a7 58))),
+    (a7 60, isLeaf), (a7 61, mainT)]
+
+/-- The indexed `V : Nat → Type | nil : V 0 | cons (h : E) (n : Nat) (t : V n) : V (n + 1)` (block
+70; `V` 71, `V.nil` 72, `V.cons` 73; `Nat`, `Nat.zero`, `Nat.succ` the prelude's), `V.rec.{u}` (74),
+`isNil (n : Nat) (x : V n) : E := V.rec.{1} (fun _ _ => E) E.c₀ (fun _ _ _ _ => E.c₁) n x` (75) and
+`mainV := isNil 1 (V.cons E.c₁ 0 V.nil)` (76). -/
+def vRecords (natA zeroA succA : Address) : List (Address × Ixon.Constant) :=
+  let blk := blockOf #[indP 0 1 (.all (xRef 1) (.sort 0)) #[ctorP 0 0 0 (.app (.recur 0 #[]) (xRef 2)),
+    ctorP 1 0 3 (alls [xRef 0, xRef 1, .app (.recur 0 #[]) (xVar 0)] (.app (.recur 0 #[]) (.app (xRef 3) (xVar 1))))]]
+    #[a7 2, natA, zeroA, succA]
+  -- V.rec: refs V, V.nil, V.cons, E, Nat, Nat.zero, Nat.succ
+  let Vn := Ixon.Expr.app (xRef 0) (xVar 0)
+  let motive := alls [xRef 4, Vn] (.sort 0)
+  let mnil := xApp (xVar 0) [xRef 5, xRef 1]
+  let mcons := alls [xRef 3, xRef 4, Vn, xApp (xVar 4) [xVar 1, xVar 0]]
+    (xApp (xVar 5) [.app (xRef 6) (xVar 2), xApp (xRef 2) [xVar 3, xVar 2, xVar 1]])
+  let pre := [motive, mnil, mcons]
+  let vRec := recOf 1 2 1 (alls (pre ++ [xRef 4, Vn]) (xApp (xVar 4) [xVar 1, xVar 0]))
+    [(0, lams pre (xVar 1)),
+     (3, lams (pre ++ [xRef 3, xRef 4, Vn]) (xApp (xVar 3) [xVar 2, xVar 1, xVar 0,
+       xApp (.recur 0 #[0]) [xVar 5, xVar 4, xVar 3, xVar 1, xVar 0]]))]
+  -- isNil: refs V, E, E.c₀, E.c₁, Nat, V.rec
+  let isNil := defRecord (alls [xRef 4, Vn] (xRef 1))
+    (lams [xRef 4, Vn] (xApp (xRef 5 #[0]) [lams [xRef 4, Vn] (xRef 1), xRef 2,
+      lams [xRef 1, xRef 4, Vn, xRef 1] (xRef 3), xVar 1, xVar 0]))
+    #[a7 71, a7 2, a7 3, a7 4, natA, a7 74] #[.succ .zero]
+  -- mainV: refs isNil, Nat.succ, Nat.zero, V.cons, E.c₁, V.nil, E
+  let mainV := defRecord (xRef 6) (xApp (xRef 0) [.app (xRef 1) (xRef 2), xApp (xRef 3) [xRef 4, xRef 2, xRef 5]])
+    #[a7 75, succA, zeroA, a7 73, a7 4, a7 72, a7 2]
+  eRecords ++ [(a7 70, blk), (a7 71, projI (a7 70) 0), (a7 72, projC (a7 70) 0 0), (a7 73, projC (a7 70) 0 1),
+    (a7 74, recRecord vRec #[a7 71, a7 72, a7 73, a7 2, natA, zeroA, succA]), (a7 75, isNil), (a7 76, mainV)]
+
+/-- The wrapper cycle `W₁ | mk (b : W₂)`, `W₂ | mk (a : W₁)` (block 80; `W₁` 81, `W₂` 82, their
+`mk` 83, 84) and `idW (x : W₁) (y : W₂) : W₁ := x` (85). -/
+def wRecords : List (Address × Ixon.Constant) :=
+  [(a7 80, blockOf #[indP 0 0 (.sort 0) #[ctorP 0 0 1 (.all (.recur 1 #[]) (.recur 0 #[]))],
+      indP 0 0 (.sort 0) #[ctorP 0 0 1 (.all (.recur 0 #[]) (.recur 1 #[]))]]),
+   (a7 81, projI (a7 80) 0), (a7 82, projI (a7 80) 1), (a7 83, projC (a7 80) 0 0), (a7 84, projC (a7 80) 1 0),
+   (a7 85, defRecord (alls [xRef 0, xRef 1] (xRef 0)) (lams [xRef 0, xRef 1] (xVar 1)) #[a7 81, a7 82])]
+
+/-- The non-uniform `N (α : Type) | mk (x : N (Lst α))` (block 90; `N` 91, `N.mk` 92) and
+`idN (x : N E) : N E := x` (93). -/
+def nRecords : List (Address × Ixon.Constant) :=
+  eRecords ++ lstRecords ++
+  [(a7 90, blockOf #[indP 1 0 (.all (.sort 0) (.sort 0)) #[ctorP 0 1 1
+      (alls [.sort 0, .app (.recur 0 #[]) (.app (xRef 0) (xVar 0))] (.app (.recur 0 #[]) (xVar 1)))]] #[a7 51]),
+   (a7 91, projI (a7 90) 0), (a7 92, projC (a7 90) 0 0),
+   (a7 93, defRecord (.all (.app (xRef 0) (xRef 1)) (.app (xRef 0) (xRef 1))) (.lam (.app (xRef 0) (xRef 1)) (xVar 0))
+      #[a7 91, a7 2])]
+
+/-- The kernel expression `e` as read in the context of the record at `owner` (member 0). -/
+def kOf (s : Subject) (owner : Address) (e : Ixon.Expr) : IO KExpr := do
+  let x ← must "rcx" ((Reading.make s).rcx noClasses (.member owner 0))
+  must "toK" (x.toK [] e)
+
+def clsName : Except String Cls → String
+  | .ok c => s!"{repr c}"
+  | .error e => s!"error {e}"
+
+/-- Read `s` with the checker's class oracle over the empty environment, check it, run `entry`
+(a static: no input) at fuel 100000, and ask the oracle the class of each of `types` (a kernel
+expression, its expected class): the reading and `check` accept, the run is as `run` says (and
+returns the constructor `value` when given), and each class is as expected. -/
+def v7Case (t : IO.Ref Tally) (label : String) (s : Subject) (entry : Address) (run : OExp)
+    (types : List (String × KExpr × Cls)) (value : Option Ref := none) : IO Unit := do
+  let cl := oracleClassifier Ix.Kernel.Env.empty (ctorShapes (Reading.make s)) {}
+  let rp := readProg s cl
+  let v := check {} Ix.Kernel.Env.empty s
+  let some er := Ix.Kernel.Reader.resolve s.store entry | check1 t label false "the entry does not resolve"
+  let (runOk, runStr) := match rp with
+    | .ok P =>
+      let o := runR P noExtern 100000 er ({} : HB).heap []
+      let vOk := match value, o with
+        | some r, .value (.imm (.con r')) _ => r == r'
+        | some _, _ => false
+        | none, _ => true
+      (run.ok o && vOk, outcomeLong o)
+    | .error _ => (false, "not run")
+  let cs := types.map fun (n, T, c) => (n, cl.type 0 T, c)
+  let clsOk := cs.all fun (_, r, c) => match r with | .ok c' => c' == c | .error _ => false
+  let readOk := match rp with | .ok _ => true | .error _ => false
+  check1 t label (readOk && v.isAccept && runOk && clsOk)
+    s!"readProg: {readName rp}; check: {verdictLong v}; run: {runStr}; classes: {cs.map fun (n, r, _) => s!"{n} {clsName r}"}"
+
+def v7RecursiveTypes (t : IO.Ref Tally) : IO Unit := do
+  let p ← loadPre
+  let natA ← p.role .nat
+  let zeroA ← p.role .natZero
+  let succA ← p.role .natSucc
+  let c1 : Ref := .ctor (a7 1) 0 1
+  -- REPAIR V7: each case below declined before ("the class oracle's depth limit")
+  let sL := p.subj (lRecords false) (a7 17)
+  v7Case t "V7 L | nil | cons (h : E) (t : L), matched by a case shape (mainL): accept, a value" sL (a7 17) .value
+    [("L", ← kOf sL (a7 16) (xRef 1), .val), ("E", ← kOf sL (a7 16) (xRef 0), .imm)] (some c1)
+  let sLB := p.subj (lRecords true) (a7 19)
+  v7Case t "V7 the same, headOr's list borrowed (check's slow path): accept, a value" sLB (a7 19) .value
+    [("L", ← kOf sLB (a7 18) (xRef 1), .val)] (some c1)
+  let sA := p.subj abRecords7 (a7 39)
+  v7Case t "V7 mutual A | a0 | a (b : B), B | b (a : A), matched by a raw A.rec (two motives): accept, stuck"
+    sA (a7 39) .stuck [("A", ← kOf sA (a7 38) (xRef 0), .val), ("B", ← kOf sA (a7 38) (xRef 1), .val)]
+  let sT := p.subj tRecords (a7 61)
+  v7Case t "V7 nested T | leaf | node (cs : Lst T), matched by a raw T.rec (two motives): accept, stuck"
+    sT (a7 61) .stuck [("T", ← kOf sT (a7 60) (xRef 0), .val),
+      ("Lst T", ← kOf sT (a7 60) (.app (xRef 1) (xRef 0)), .val)]
+  let sV := p.subj (vRecords natA zeroA succA) (a7 76)
+  v7Case t "V7 indexed V : Nat → Type, matched by a raw V.rec: accept, stuck" sV (a7 76) .stuck
+    [("V Nat.zero", ← kOf sV (a7 74) (.app (xRef 0) (xRef 5)), .val)]
+  -- the wrapper cycle, asked in both orders
+  let sW := p.subj wRecords (a7 85)
+  let kW1 ← kOf sW (a7 85) (xRef 0)
+  let kW2 ← kOf sW (a7 85) (xRef 1)
+  let clW := oracleClassifier Ix.Kernel.Env.empty (ctorShapes (Reading.make sW)) {}
+  let first := [clW.type 0 kW1, clW.type 0 kW2]
+  let second := [clW.type 0 kW2, clW.type 0 kW1]
+  let isVal (r : Except String Cls) : Bool := match r with | .ok .val => true | _ => false
+  let vW := check {} Ix.Kernel.Env.empty sW
+  -- REPAIR V7: declined before
+  check1 t "V7 the wrapper cycle W₁ | mk (b : W₂), W₂ | mk (a : W₁): val both, in either order; idW accepted"
+    (first.all isVal && second.all isVal && vW.isAccept)
+    s!"W₁ then W₂: {first.map clsName}; W₂ then W₁: {second.map clsName}; check idW: {verdictLong vW}"
+  -- the non-uniform N α | mk (x : N (Lst α)): unchanged, a decline at the depth limit
+  let sN := p.subj nRecords (a7 93)
+  let kNE ← kOf sN (a7 93) (.app (xRef 0) (xRef 1))
+  let cN := (oracleClassifier Ix.Kernel.Env.empty (ctorShapes (Reading.make sN)) {}).type 0 kNE
+  let vN := check {} Ix.Kernel.Env.empty sN
+  let depthLimit (e : String) : Bool := (e.splitOn "the class oracle's depth limit").length > 1
+  check1 t "V7 the non-uniform N α | mk (x : N (Lst α)): N E declines at the depth limit, and check of idN declines"
+    ((match cN with | .error e => depthLimit e | .ok _ => false) &&
+      (match vN with | .decline w => depthLimit w | _ => false))
+    s!"N E: {clsName cN}; check idN: {verdictLong vN}"
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2981,6 +3279,8 @@ def run : IO UInt32 := do
   try v3Eliminators t catch e => check1 t "V3" false s!"error: {e}"
   try v4WellFormed t catch e => check1 t "V4" false s!"error: {e}"
   for c in v6Cases do runCase t c
+  IO.println "== Part 3, continued: V7, the class oracle on recursive inductives"
+  try v7RecursiveTypes t catch e => check1 t "V7" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

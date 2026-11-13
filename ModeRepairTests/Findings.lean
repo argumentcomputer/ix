@@ -352,7 +352,7 @@ def finding4 : IO Unit := do
   report "F4 Pc (canonical program)" pc4 noExtern stdFuels leak4 in4 [leak4]
   let sh : Ix.Kernel.Key .anon → Option (List CtorShape) := fun _ => none
   for (k, d) in [(1, 1), (1, 2), (17, 16), (17, 17), (16, 16)] do
-    let c := oTypeClass Ix.Kernel.Env.empty sh {} d 0 (former k)
+    let c := oTypeClass Ix.Kernel.Env.empty sh {} d [] 0 (former k)
     let cs := match c with | .ok x => s!"ok {repr x}" | .error e => s!"error {e}"
     IO.println s!"[F4 oracle] oTypeClass, empty env, depth {d}, a {k}-ary former (Type → … → Type): {cs}"
 

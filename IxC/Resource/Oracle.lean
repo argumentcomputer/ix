@@ -61,21 +61,40 @@ def keptFields (env : Env .anon) (lim : OracleLimits) (irr : Nat → KExpr → E
       | some out => if e || (← irr d A) then pure (some out) else pure (some ((d, A) :: out))
     | _ => pure none
 
+/-- An inductive instance whose constructors the class oracle is analysing: the
+head constant with its levels, and the first `nParams` arguments. -/
+abbrev InstKey := KExpr × List KExpr
+
 /-- **The class of the terms of type `T`**, by positive answers only. At its
 depth limit the oracle declines: as landed it answered `val`, which is not
 conservative, since the checker reads a positive class of a part against a
 `val` whole (`caseField`: a major of class `val` is a cell) and a k-ary type
-former needs depth k + 1 to be found `irr` (finding 4). -/
+former needs depth k + 1 to be found `irr` (finding 4).
+
+`path` holds the inductive instances (`InstKey`) whose constructors the calls
+above this one are analysing; the classifier starts it at `[]`. An instance met
+again on its own path answers `val` (V7): every recursive inductive meets
+itself through a field, and since the depth limit became a decline (repair L)
+the oracle declined on every value of such a type. The path is consulted after
+the instance's own `irr` tests, so it skips only the constructor analysis, which
+never answers `irr`; the key determines that analysis (`instParams`
+instantiates only the parameters), so the oracle without the path declined
+wherever this answer is given; and `ImmT` and `LeafT` are least fixed points,
+so `val` is the class of a cycle of trivial wrappers, while an `irr` test reads
+it as "not `irr`", the instance's own verdict. The answer is never returned to
+the classifier's caller (the path is empty there), and the oracle keeps no
+memo. An instance whose parameters grow without repeating
+(`T α | mk (x : T (List α))`) still reaches the depth limit and declines. -/
 def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (lim : OracleLimits) :
-    Nat → Nat → KExpr → Except String Cls
-  | 0, _, _ => throw "decline: the class oracle's depth limit"
-  | n + 1, d, T => do
+    Nat → List InstKey → Nat → KExpr → Except String Cls
+  | 0, _, _, _ => throw "decline: the class oracle's depth limit"
+  | n + 1, path, d, T => do
     let some W ← oWhnf env lim d T | return .val
     -- a type, a type former
     match W with
     | .sort _ => return .irr
     | .forallE A B _ =>
-      if (← oTypeClass env sh lim n (d + 1) (B.instantiate1 (.fvar d A))) == .irr then return .irr
+      if (← oTypeClass env sh lim n path (d + 1) (B.instantiate1 (.fvar d A))) == .irr then return .irr
     | _ => pure ()
     -- a proposition; a level comparison out of fuel (`Level.isEquiv` answers `none` past
     -- `Level.defaultFuel`) is a decline, not "not a proposition" (V5: as landed `none` was taken
@@ -94,8 +113,12 @@ def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (l
     | .const I _ =>
       let args := W.getAppArgs
       let some cs := sh I | return .val
+      -- V7: this instance met again on its own path (a recursive, mutual or nested occurrence)
+      let here : InstKey := (W.getAppFn, args.take ((cs.head?.map (·.nParams)).getD 0))
+      if path.contains here then return .val
+      let path := here :: path
       let irrAt (d' : Nat) (A : KExpr) : Except String Bool := do
-        pure ((← oTypeClass env sh lim n d' A) == .irr)
+        pure ((← oTypeClass env sh lim n path d' A) == .irr)
       let mut fields : List (List (Nat × KExpr)) := []
       for c in cs do
         let some T' := instParams c.type (args.take c.nParams) | return .val
@@ -104,7 +127,7 @@ def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (l
       if fields.all (·.isEmpty) then return .imm
       match fields with
       | [[(d', F)]] =>
-        let fc ← oTypeClass env sh lim n d' F
+        let fc ← oTypeClass env sh lim n path d' F
         if fc == .leaf then
           -- `BitVec w` at a literal width of at most 64 is an immediate
           if let .const (.role .bitVec) _ := W.getAppFn then
@@ -122,12 +145,13 @@ def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (l
 def oNodeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (lim : OracleLimits)
     (d : Nat) (e : KExpr) : Except String Cls := do
   let some T ← oInfer env lim d e | return .val
-  oTypeClass env sh lim lim.depth d T
+  oTypeClass env sh lim lim.depth [] d T
 
-/-- **The checker's class oracle** over the environment `env`. -/
+/-- **The checker's class oracle** over the environment `env`. Each question
+starts with an empty path. -/
 def oracleClassifier (env : Env .anon) (sh : Key .anon → Option (List CtorShape))
     (lim : OracleLimits) : Classifier :=
-  { type := fun d T => oTypeClass env sh lim lim.depth d T, node := oNodeClass env sh lim }
+  { type := fun d T => oTypeClass env sh lim lim.depth [] d T, node := oNodeClass env sh lim }
 
 end IxC.Resource
 
