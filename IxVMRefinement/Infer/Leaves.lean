@@ -62,14 +62,14 @@ theorem const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   intro v ci hargs good hci
   subst hargs
   rcases Obs.«KernelInfer::const_num_lvls».obs ev with
-    ⟨x_n, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩
+    ⟨x_n, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
   all_goals exact ⟨he.trans (hci.nl_of_eq hv), hh⟩
 
 /-- `KernelInferOnly::io_const_num_lvls`: as `const_num_lvls`. -/
@@ -80,14 +80,14 @@ theorem io_const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
   intro v ci hargs good hci
   subst hargs
   rcases Obs.«KernelInferOnly::io_const_num_lvls».obs ev with
-    ⟨x_n, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨x_n, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩
+    ⟨x_n, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
   all_goals exact ⟨he.trans (hci.nl_of_eq hv), hh⟩
 
 /-- `KernelInfer::const_type_of`: the second field, whatever the kind. -/
@@ -98,14 +98,14 @@ theorem const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   intro v ci hargs good hci
   subst hargs
   rcases Obs.«KernelInfer::const_type_of».obs ev with
-    ⟨-, x_ty, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩
+    ⟨_, x_ty, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
   all_goals (rw [he, hh]; exact ⟨hci.ty_of_eq hv, rfl⟩)
 
 /-- `KernelInferOnly::io_const_type_of`: as `const_type_of`. -/
@@ -116,14 +116,14 @@ theorem io_const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   intro v ci hargs good hci
   subst hargs
   rcases Obs.«KernelInferOnly::io_const_type_of».obs ev with
-    ⟨-, x_ty, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩ |
-    ⟨-, x_ty, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hv, he, hh, -⟩
+    ⟨_, x_ty, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
+    ⟨_, x_ty, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
   all_goals (rw [he, hh]; exact ⟨hci.ty_of_eq hv, rfl⟩)
 
 /-! ## Binder data -/
