@@ -7,6 +7,7 @@ import IxCCGrounding.CaseLevels
 import IxCCGrounding.RootInst
 import IxCCGrounding.Graded
 import IxCCGrounding.GradedHead
+import IxCCGrounding.SelRetype
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -1171,3 +1172,116 @@ example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId �
   rootSound_678AG_of_check hL hgr hchk hnc hld hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
 
 end ConclusionsAG
+
+/-! **`autoParam`/`optParam` binders in an `eqn` function's type: the check on the retyped reading** (`IxCCGrounding.SelRetype`, step Ap). -/
+
+/-- info: 'IxCC.Grounding.selDom_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selDom_of_check
+
+/-- info: 'IxCC.Grounding.selTele_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selTele_of_check
+
+/-- info: 'IxCC.Grounding.selIdx_peel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selIdx_peel
+
+/-- info: 'IxCC.Grounding.selDom_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selDom_den
+
+/-- info: 'IxCC.Grounding.selTele_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selTele_den
+
+/-- info: 'IxCC.Grounding.selRetypeL_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selRetypeL_map
+
+/-- info: 'IxCC.Grounding.selRetype_selEnv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selRetype_selEnv
+
+/-- info: 'IxCC.Grounding.SelRetype1.name' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.SelRetype1.name
+
+/-- info: 'IxCC.Grounding.SelRetype1.levelParams' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.SelRetype1.levelParams
+
+/-- info: 'IxCC.Grounding.SelRetype1.eq_of_not_defn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.SelRetype1.eq_of_not_defn
+
+/-- info: 'IxCC.Grounding.find?_retype' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.find?_retype
+
+/-- info: 'IxCC.Grounding.find?_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.find?_back
+
+/-- info: 'IxCC.Grounding.find?_fwd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.find?_fwd
+
+/-- info: 'IxCC.Grounding.find?_nondefn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.find?_nondefn
+
+/-- info: 'IxCC.Grounding.findProj?_selRetype' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.findProj?_selRetype
+
+/-- info: 'IxCC.Grounding.mem_retype' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_retype
+
+/-- info: 'IxCC.Grounding.denotes_transfer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotes_transfer
+
+/-- info: 'IxCC.Grounding.denotes_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotes_selRetype
+
+/-- info: 'IxCC.Grounding.denotes_selRetype'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotes_selRetype'
+
+/-- info: 'IxCC.Grounding.fits_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_selRetype
+
+/-- info: 'IxCC.Grounding.denotesList_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotesList_selRetype
+
+/-- info: 'IxCC.Grounding.model_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.model_selRetype
+
+/-- info: 'IxCC.Grounding.laws678_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.laws678_selRetype
+
+/-- info: 'IxCC.Grounding.gradedLaw_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedLaw_selRetype
+
+/-- info: 'IxCC.Grounding.rootSound_678AGp_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGp_of_check
+
+/-- info: 'IxCC.Grounding.selEnv_unrepaired_refuted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selEnv_unrepaired_refuted
+
+/-- info: 'IxCC.Grounding.selEnv_repaired_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selEnv_repaired_ok
+
+/-! **`rootSound_678AGp_of_check` concludes for the reading what `rootSound_678A` does**: every
+check on `selEnv`, the conclusion copied word for word. -/
+
+section ConclusionsAGp
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}
+    (hchk : groundCheck p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hnc : noCanonAB p (selEnv p env κ Sl) κ Sl = true)
+    (hld : litDefsB (selEnv p env κ Sl) = true)
+    (hinst : instCheckB p (selEnv p env κ Sl) κ lpsOf [root] Inst = true)
+    (hhr : headRegimeSB p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hR : RootFacts p (selEnv p env κ Sl) κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o)
+    (hRT : ResultTag p (selEnv p env κ Sl) κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AGp_of_check hL hgr hchk hnc hld hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
+
+end ConclusionsAGp

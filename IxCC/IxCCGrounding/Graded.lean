@@ -118,14 +118,20 @@ def headRegimeB (tab : KTab) (lps : List Nat) (prof : IxCC.Src.Profile) (f : KEx
     | none => false
   | _ => false
 
+/-- `headRegimeResB` at one constant, its level parameters `lps` computed once (read once per
+datum, an `lpsOf` that searches the reading costs the reading's length per check). -/
+def headRegimeResB1 (tab : KTab) (lps : List Nat) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (c : CId) : Bool :=
+  (runPairsB p env κ c).all fun x =>
+    (runRefusedT tab p lpsOf ann c x.1 x.2).all fun s =>
+      (profiles (lvlsOf p c)).all fun prof => headRegimeB tab lps prof s.2.1
+
 /-- **`HeadRegimeRes`, decided**: at every site the direct route refuses in a run pair of `Sl`, at
 every profile of the constant's level parameters. -/
 def headRegimeResB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
   let tab := KTab.of env
-  Sl.all fun c => (runPairsB p env κ c).all fun x =>
-    (runRefusedT tab p lpsOf ann c x.1 x.2).all fun s =>
-      (profiles (lvlsOf p c)).all fun prof => headRegimeB tab (lpsOf c) prof s.2.1
+  Sl.all fun c => headRegimeResB1 tab (lpsOf c) p env κ lpsOf ann c
 
 theorem headRegimeAt_of_check {env : KEnv} {φ : LevelParam → Nat} {lps : List Nat}
     {prof : IxCC.Src.Profile} (hφ : ProfAt φ lps prof) {f : KExpr}
@@ -161,7 +167,7 @@ theorem headRegimeRes_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
   have hlen : ls.length = (lpsOf c).length := hOk.1.trans (hG.faith.lvls c hS)
   have hprof : IxCC.Src.profileOf ls ∈ profiles (lvlsOf p c) :=
     mem_profiles _ _ (by simp [IxCC.Src.profileOf, hOk.1])
-  simp only [headRegimeResB, List.all_eq_true] at h
+  simp only [headRegimeResB, headRegimeResB1, List.all_eq_true] at h
   exact headRegimeAt_of_check (profAt_of_lvAt hlv hlen)
     (h c hS (t, e) hpair s hres _ hprof)
 

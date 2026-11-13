@@ -1196,7 +1196,7 @@
     "IxCCTests.Grounding.GradedHead"]},
   "IxCCTests.Grounding.GradedHead":
   {"path": "IxCCTests/Grounding/GradedHead.lean",
-   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.GradedHead"]},
+   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.SelRetype"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -4166,6 +4166,9 @@
   "IxCCGrounding.Subst":
   {"path": "IxCCGrounding/Subst.lean",
    "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Lift"]},
+  "IxCCGrounding.SelRetype":
+  {"path": "IxCCGrounding/SelRetype.lean",
+   "imports": ["IxCCGrounding.GradedHead"]},
   "IxCCGrounding.Runs":
   {"path": "IxCCGrounding/Runs.lean",
    "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Hyps", "IxCCGrounding.Ok"]},
@@ -4235,7 +4238,8 @@
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
     "IxCCGrounding.Graded",
-    "IxCCGrounding.GradedHead"]},
+    "IxCCGrounding.GradedHead",
+    "IxCCGrounding.SelRetype"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4337,6 +4341,7 @@
     "IxCCGrounding.RootInst",
     "IxCCGrounding.Graded",
     "IxCCGrounding.GradedHead",
+    "IxCCGrounding.SelRetype",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
