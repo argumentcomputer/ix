@@ -575,18 +575,26 @@ stated without either. The arrays', strings' and later primitives' expansions fo
 the 16 `Nat` primitives still have one proof per route, and their restatement over the core is a
 clean-up item on the [roadmap](roadmap.md) (Phase 3, "For the x86 back end").
 
-Two limits stay after W1, by design, and are open items: (a) a `UInt64` is native only below
-`2^63`: a word is a tagged immediate, so a width-64 result at or above `2^63` fails with
-`natOverflow`, as a `Nat` does; stage W2 is planned to lift it by keeping words unboxed (raw
-64-bit words in registers and frames, a cell of one scalar word where a word meets a uniform
-position), so that a width-64 result needs no tag bit; (b) the decisions stay reference bodies, so
-`x < y` at `x = 2^63 − 1` fails with `natOverflow` (`Nat.lt` is `x + 1 ≤ y`, and the `Nat`
-`x + 1` reaches `2^63`). The fix for (b) is primitive decisions: per decision and width a table
-entry justified, like the operations, by a stored theorem, here one fixing what the decision
-denotes as a `Decidable` value (for example `∀ x y (h : x < y), decLt (ofNat x) (ofNat y) =
-isTrue h` and its `isFalse` twin, with `x < y`'s inhabitation from a `Bool` equation), the
-grounding case that uses them, a `Bool`-valued Lam word primitive and its lowering (a comparison
-of tagged words, as `natBlt`'s); it is a design of its own.
+One limit stays after W1, by design, and is an open item: a `UInt64` is native only below
+`2^63`. A word is a tagged immediate, so a width-64 result at or above `2^63` fails with
+`natOverflow`, as a `Nat` does. Stage W2 is planned to lift it with raw unboxed words (direction
+chosen 2026-11-13): raw 64-bit words in registers and frames, and a cell of one scalar word where
+a word meets a uniform position, so that a width-64 result needs no tag bit. Its design section,
+still to be written, must settle:
+- the scalar cell and its overlap with Phase 2's scalar fields;
+- the representation analysis in Fir;
+- how RC insertion skips raw variables;
+- the raw case of Rt's value relation;
+- the landings.
+
+A second limit is closed. The decisions stay reference bodies, and `x < y` at `x = 2^63 − 1`
+used to fail with `natOverflow`: `Nat.lt` is `x + 1 ≤ y`, and the `Nat` `x + 1` reached `2^63`.
+Since 2026-11-13 the shrink walk turns `natBle [x, m]`, where `x = y + 1` is known, into
+`natBlt [y, m]` (`Anf.Walk.succBle`), which compares the tagged words. So `<` and `>` work at
+the boundary for `Nat` and every width. `≤` never built `x + 1`. `natBle m (y + 1)` has no
+simpler form and stays. Primitive decisions, a table entry per decision justified by a stored
+theorem fixing what it denotes as a `Decidable` value, remain a design for after the grounding's
+word case; the boundary no longer needs them.
 
 **What stage W1 means for a user.** `ix compile` on a selected closure (`--consts`,
 `--consts-file`, `--local`, `--module`) adds the word equations by default, with its unfolding

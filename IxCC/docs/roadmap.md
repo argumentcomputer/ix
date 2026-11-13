@@ -312,17 +312,17 @@ hosted-CI or cold-store timing is claimed.
   `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
   operations) become the first registered roots that run word primitives. A
   program with a word entry is outside the grounded fragment (`noWord`) until the
-  grounding's word case is proved. Two limits stay after W1, by design:
-  a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
-  result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
-  to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
-  that meets a uniform position boxed as a cell of one scalar word), so a width-64 result
-  needs no tag bit; and the comparisons (`decEq`, `decLt`,
-  `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
-  `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
-  per decision, a stored theorem fixing what it denotes as a `Decidable` value
-  (as each operation's equation does; see DR2, "Stage W1"). There are no arrays,
-  byte arrays or strings.
+  grounding's word case is proved. One limit stays after W1, by design: a `UInt64` is
+  native only below 2^63. A word is a tagged immediate, so a width-64 result at or
+  above 2^63 fails with `natOverflow`, as a `Nat` does. Stage W2 is planned to lift it
+  with raw unboxed words (direction chosen 2026-11-13): raw 64-bit words in registers
+  and frames, and a word that meets a uniform position boxed as a cell of one scalar
+  word. Its DR2 design section comes before any code. The comparisons (`decEq`,
+  `decLt`, `decLe`) stay reference bodies. Since 2026-11-13 `x < y` (and `>`) at
+  `x = 2^63 − 1` no longer fails, for `Nat` and every width: the shrink walk turns
+  `Nat.lt`'s `natBle (x + 1) y` into `natBlt x y`, which builds no `x + 1`
+  (`natBle m (y + 1)` has no simpler form and stays). There are no arrays, byte
+  arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a
@@ -1166,6 +1166,36 @@ unchanged by hypothesis calls), not "every slot at a relevant binder is live";
 and IxCC never checks that a stored rule has the kernel's generated shape, so
 P1 may use only what the forwarding clause decides of the rule as stored
 (`ForwardOk`), or a shape check of our own.
+
+**Two more routes, found by writing P1's statement (2026-11-13).** C3 compares
+minors with constructors only at a saturated eliminator spine. An eliminator
+partially applied or bare, its minors supplied later at a variable head (the
+eighth route), or reached through a `csimp` redirect to a `case` key (the
+ninth), met no check, and an η-short minor over a field written erased
+compiled to an object returning constructor 0 where the program means
+constructor 1, SrcEval returning the marker. The eighth passes the certified
+kernel; `Recheck.run` accepted both; on the byte path only Stage A refused the
+eighth (next paragraph). So before this check the planned P1 was false for
+programs every check accepted. C3 now refuses such an eliminator away from a
+saturated spine (`Check.partialElim`, closing the eighth) and `checkCanonical`
+a `csimp` redirect to one (`redirectsErased?`, closing the ninth); the facts are
+in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
+`Canonical.redirects`). [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the nine routes; P1's statements, checked against the evaluator on the
+erased-misuse programs and every registered root, come next.
+
+**Open capability item: no program with a constructor field written erased can
+be produced (since at least 2026-11-13).** The kernel annotator's constructor
+record keeps a field its type writes erased (`CtorRel` `keep`) while its
+parameter classes drop it (`ConstRel` `proof always` at that parameter), so
+`checkCanonical` calls every such annotation non-canonical and `produce`
+refuses the program; honest programs with such a field compile only with a
+hand-made certificate, and the byte-level verifiers' Stage A (equality with the
+annotator) refuses those. This is conservative, and it is what refused route 8
+on the byte path before its check: making the annotator canonical there would
+have opened that route on the byte path. Fixing the annotator is now safe
+(route 8 is refused by C3), and it is the order to keep: a capability widened
+only after the check that it needs.
 
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a

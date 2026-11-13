@@ -395,6 +395,19 @@ The implemented schedule is in [`Anf.Pipeline`](../IxCC/Anf/Pipeline.lean);
 P1 has no certificate data, P2 to P4 read their choices from the
 certificate.
 
+P2's rules on a primitive binding (`Anf.Walk`, the `prim` case; proved in
+`Anf/Proof/Walk/BindPrim.lean`):
+- Literal folding, to a literal or a `Bool` constructor.
+- A primitive an outer binding already holds, reused (`knownPrim`; a kept
+  `natAdd [y, 1]` records the fact `x = y + 1`).
+- A dead pure primitive dropped.
+- `natBle [x, m]` where `x = y + 1` is known becomes `natBlt [y, m]`
+  (`succBle`, 2026-11-13). Lean's `x < y` on `Nat`, and every fixed-width
+  word's `decLt`, is `Nat.ble (x + 1) y`. Natively that `x + 1` failed with
+  `natOverflow` at `x = 2^63 − 1`; `natBlt` compares the tagged words and
+  builds no `x + 1`. The census counts these firings under `fold`.
+  `natBle m (y + 1)` has no simpler form and stays.
+
 ### Middle-end budgets
 
 The middle end's certificate chooses which callees are inlined where, how many
@@ -891,6 +904,29 @@ reproduced on the box before its check, and what refuses each now:
 Nested blocks (`Tree | node (O Tree)`) are stored as mutual blocks with
 auxiliary types and are refused on the same checks (C3 at a rule's hypothesis
 call, the forwarding clause on the auxiliary recursor).
+
+**An eliminator away from a saturated spine (2026-11-13).** C3 sees a minor
+only at a saturated eliminator spine. An eliminator applied to fewer
+arguments than its arity (passed on, `let`-bound, the argument of a β-redex,
+a definition's value) or bare receives its minors later at a variable head
+(the eighth route: through the certified kernel, refused on the byte path only
+by Stage A), and a `csimp` redirect to a `case` key (a target the table admits;
+a raw recursor it refuses) hands its callers' minors to the eliminator through
+no walked term (the ninth); an η-short minor over a field written erased then
+met no check, and the object returned a wrong constructor. C3 now refuses, at a relevant position of a
+walked term, an eliminator with a rule for a constructor that writes a field
+erased (`Check.erasedMinors`) unless it heads a saturated spine
+(`Check.partialElim`, in `knownHead` and on a bare constant, `bareHead`), and
+`checkCanonical` refuses a `csimp` redirect to one
+(`Check.Canonical.redirectsErased?`). Every other way an eliminator meets its
+minors goes through a walked term (read, not run): an `eqn` body is a
+runtime key, walked as a definition's value is (the η-reduced definition was run); a constructor, projection or closure can carry the eliminator
+only after a walked term built it; an over-applied spine is saturated. A
+mutual or nested block's recursor is an eliminator like any other (run at a
+mutual block's second recursor), its rules passing a field written erased only
+to the minor they dispatch (the forwarding clause), which C3 checks at the
+user's call. The tests are in `tests-recheck`
+(`ErasedPartial`).
 
 **Erasure** then:
 - replaces irrelevant arguments with □ but keeps every binder slot
