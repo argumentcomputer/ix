@@ -100,7 +100,7 @@ theorem native_newSat {J : Judgements md} {env env₂ : Env md} {p₀ : NativePa
     (hQr : ∀ cv a b rs, Q (.recInfo cv a b rs)) (hQp : ∀ t, Q (.projInfo t))
     (hrun : DeclNativeRunJ J env p₀ env₂) : NewSat env env₂ Q := by
   obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, -,
-    -, -, -, -, -, -, -, -, -, -, hTbl⟩ := hrun
+    -, -, -, -, -, -, -, -, -, hTbl⟩ := hrun
   obtain ⟨_, _, _, _, _, _, henv₁, _, _⟩ := hInd.shape
   subst henv₁
   exact (NewSat.cons (hQi _ _)).trans ((consSumCtors_newSat hQc).trans
@@ -985,7 +985,7 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
       · refine etaTowers_step hext h ?_
         obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-          hCtors, -, -, -, -, -, -, -, -, -, hTbl⟩ := hN
+          hCtors, -, -, -, -, -, -, -, -, hTbl⟩ := hN
         exact nativeFormer_towers hInd hp hCtors
           ((consSumCtors_newSat (fun _ _ _ _ _ heq => nomatch heq)).trans
             (NewSat.cons (c := .recInfo _ _ _ _) (fun _ _ heq => nomatch heq))) hTbl

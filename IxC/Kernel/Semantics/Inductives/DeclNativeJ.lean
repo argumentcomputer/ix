@@ -656,6 +656,18 @@ theorem nativeFieldsOk_length {env₀ : Env md} {T : Key md} {lps : List LevelPa
   simp only [Ix.Kernel.nativeFieldsOk, Bool.and_eq_true, beq_iff_eq] at h
   exact h.1
 
+/-- `NativeRecJ.major` at the block's counts: one kind list and one declared constructor per
+stored constructor. -/
+theorem NativeRecJ.majorOf {J : Judgements md} {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
+    (h : NativeRecJ J env p cvTa ctorsA cvRa rhss)
+    (hT : ∃ cv caps, env.find? p.cvT.name = some (.indInfo cv caps))
+    (hk : ctorsA.length = p.kinds.length) (hlenA : ctorsA.length = p.ctors.length) :
+    ∃ bs B m, cvRa.type.stripPis p.majorIdx = some (bs,
+      .forallE (Ix.Kernel.structFamI p.cvT.name p.cvT.levelParams p.nP p.nIdx
+        (p.ctors.length + 1) 0) B m) :=
+  h.major hT (by rw [Ix.Kernel.nativeCtors4_length hk, hlenA])
+
 /-- **Every stored rule fires**: the stored type's major premise is the family at the
 constructors' level parameters, applied first to the parameters (`Expr.recRulePlain`, the
 kernel's test after the recursor's stage). -/
@@ -667,7 +679,7 @@ theorem NativeRecJ.plain {J : Judgements md} {env : Env md} {p : NativeParts md}
     (hlps : ∀ c ∈ ctorsA, c.1.levelParams = p.cvT.levelParams) :
     ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
       c.1.levelParams) = true := by
-  obtain ⟨bs, B, m, hs⟩ := h.major hT (by rw [Ix.Kernel.nativeCtors4_length hk, hlenA])
+  obtain ⟨bs, B, m, hs⟩ := h.majorOf hT hk hlenA
   refine List.all_eq_true.mpr fun c hc => ?_
   rw [hlps c hc]
   exact recRulePlain_of_major (nP := p.nP) (n := p.ctors.length) (nIdx := p.nIdx) hs
