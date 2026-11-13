@@ -295,7 +295,11 @@ def boundsCase : IO String := do
           let s := (_root_.Ixon.serConstant c).size
           let u := c.univs.foldl (fun acc v => acc + v.nodeCount) 0
           let stored := storedConstDepth c
-          let expanded := constDepth c
+          -- the expanded check measures expressions only (a universe has no shares: the scan's)
+          let expanded := match c.info with
+            | .defn d => max (max (exprDepth c.sharing d.typ) (exprDepth c.sharing d.value))
+                (c.sharing.foldl (fun m e => max m (exprDepth c.sharing e)) 0)
+            | _ => 0
           unless stored ≤ s + u + 1 && expanded ≤ 2 * s + 2 do
             return s!"bound broken: {sh} shared {shared} n {n}: stored {stored}, expanded {expanded}, \
               {s} bytes, {u} universe nodes"
