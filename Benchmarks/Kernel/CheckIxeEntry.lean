@@ -57,7 +57,7 @@ def limitsFromEnv : IO Ix.Kernel.Admission.Limits := do
 
 def run (args : List String) : IO UInt32 := do
   let [mode, input] := args
-    | IO.eprintln "usage: kernel-check-ixe --entry authenticated|unauthenticated|hash|depth <input.ixe>"; return 2
+    | IO.eprintln "usage: kernel-check-ixe --entry authenticated|unauthenticated|user|hash|depth <input.ixe>"; return 2
   let limits ← limitsFromEnv
   let started ← IO.monoMsNow
   let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input))
@@ -111,6 +111,16 @@ def run (args : List String) : IO UInt32 := do
       {millis t2 t3} ms; deepest stored nesting {deepest} (maxDepth {limits.maxDepth}); 
       {records.length} records, workers {repr limits.workers}"
     return if scan.isOk && expanded.isOk then 0 else 1
+  | "user" =>
+    -- the entry with user axioms admitted (`checkBytesWithUserAxioms`): phase B runs over every
+    -- record even when the input holds an axiom the strict entry declines
+    let t0 ← IO.monoNanosNow
+    let result ← IO.lazyPure fun _ =>
+      Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash binding pre limits records blobs
+        hints.lookup
+    let t1 ← IO.monoNanosNow
+    IO.eprintln s!"entry: user: {verdict result} in {millis t0 t1} ms; peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+    return if result.isOk then 0 else 1
   | "authenticated" | "unauthenticated" =>
     let t0 ← IO.monoNanosNow
     let result ← IO.lazyPure fun _ =>
