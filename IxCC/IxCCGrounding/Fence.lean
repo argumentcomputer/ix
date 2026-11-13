@@ -683,7 +683,7 @@ example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → 
     {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
     (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
     (hlv : LvAt φ (lpsOf c) ls) :
-    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+    RelV M p κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
   const_of_check_noCanon hL hchk hnc hT hrun hc hOk hlv
 
 example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
@@ -756,7 +756,7 @@ example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List
     {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
     (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
     (hlv : LvAt φ (lpsOf c) ls) :
-    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+    RelV M p κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
   const_of_check_678 hL hchk hnc hld hT hrun hc hOk hlv
 
 example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
@@ -1285,3 +1285,13 @@ example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId �
   rootSound_678AGp_of_check hL hgr hchk hnc hld hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
 
 end ConclusionsAGp
+
+/-! ## Step C's closure-capture shape (`cloShapeB`, `cloSite?`; `TermCorrS.letClo`, `Runs.letClo`,
+`RelV.clo`'s environment related at the members of the λ's domain, the walks' closure branch: the
+landed theorems that changed keep the sets above) -/
+
+/-- info: 'IxCC.Grounding.cloShapeB_lam' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.cloShapeB_lam
+
+/-- info: 'IxCC.Grounding.cloSite?_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.cloSite?_spec

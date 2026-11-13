@@ -796,9 +796,10 @@ does the rest. Laws: `DefnValue`, `IotaLawG`, `CvalParams`. -/
 theorem caseFires_of_noCanon (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
     {p : Program} (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFacts p env κ S)
     (hNC : NoCanon p env κ S) :
-    ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseFires M p κ lpsOf S Ok c := by
-  intro c r hc hr
-  obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
+    ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
+      CaseFires M p κ lpsOf S Ok c := by
+  intro c r hc hr hk
+  obtain ⟨sh, hst, hpr⟩ := hC c r hc hr hk
   obtain ⟨hB, hlv⟩ := caseBlind_of_noCanon (hNC.cases c r hc hr) hst
   exact caseFires_of_blind hδ hι hcv hF hN hc hr hst hpr hB hlv
 

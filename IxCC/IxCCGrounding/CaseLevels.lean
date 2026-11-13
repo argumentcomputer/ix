@@ -423,23 +423,24 @@ theorem caseLevelAgree_of_inst {p : Program} {env : KEnv} {κ : CId → KKey}
 
 /-! ## The family's decided facts -/
 
-/-- **`CaseFacts` at the shape the check reads** (`caseShape?`), which uniformity is stated at. -/
+/-- **`CaseFacts` at the shape the check reads** (`caseShape?`), which uniformity is stated at; as
+`CaseFacts`, only at entries whose recursor is of kind `ordinary` (step E0). -/
 def CaseFactsRead (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop :=
-  ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+  ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
     ∃ sh, caseShape? env (κ c) (κ r) = some sh ∧ CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
 
 theorem CaseFactsRead.facts {p : Program} {env : KEnv} {κ : CId → KKey} {S : CId → Prop}
-    (h : CaseFactsRead p env κ S) : CaseFacts p env κ S := fun c r hc hr => by
-  obtain ⟨sh, -, hst, hpr⟩ := h c r hc hr
+    (h : CaseFactsRead p env κ S) : CaseFacts p env κ S := fun c r hc hr hk => by
+  obtain ⟨sh, -, hst, hpr⟩ := h c r hc hr hk
   exact ⟨sh, hst, hpr⟩
 
 theorem caseFactsRead_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFactsRead p env κ (· ∈ Sl) := by
-  intro c r hc hr
+  intro c r hc hr hk
   have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts, checkPartsWith])) c hc
   have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts, checkPartsWith])) c hc
-  simp only [caseShapeB, caseProgOkB, hr] at h1 h2
+  simp only [caseShapeB, caseProgOkB, hr, hk] at h1 h2
   split at h1
   · rename_i sh hsh
     rw [hsh] at h2
@@ -521,10 +522,10 @@ theorem caseFires_of_inst (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv :
     {p : Program} {ann : IxCC.Src.Relevance.Ann} {Inst : List (CId × Levels)}
     (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFactsRead p env κ S)
     (hNC : NoCanonA p env κ S) (hU : InstUniform p env κ lpsOf Inst) :
-    ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+    ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
       CaseFires M p κ lpsOf S (OkIn p ann Inst) c := by
-  intro c r hc hr
-  obtain ⟨sh, hsh, hst, hpr⟩ := hC c r hc hr
+  intro c r hc hr hk
+  obtain ⟨sh, hsh, hst, hpr⟩ := hC c r hc hr hk
   exact caseFires_of_agree hδ hι hcv hF hN hc hr hst hpr (hNC.cases c r hc hr)
     (fun _ _ _ _ _ _ _ _ _ _ hd => caseLevelAgree_of_inst hU hr hsh hd)
 

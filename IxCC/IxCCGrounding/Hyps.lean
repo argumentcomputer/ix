@@ -41,13 +41,13 @@ def CaseFires (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId �
     p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
     ∀ (ls : Levels) (φ : LevelParam → Nat) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr)
       (As : List V),
-      HeadAt M κ lpsOf S Ok (.cases c) ls φ (κ c) T → Fits M.cval env φ ρ T As σ R →
+      HeadAt M p κ lpsOf S Ok (.cases c) ls φ (κ c) T → Fits M.cval env φ ρ T As σ R →
       As.length = np + 1 + ni + 1 + nmin → LastSiteOk (M.cval (κ c) φ) As →
       ∀ (Tm : V) (mv : Value) (j : Nat) (fields : List Slot),
-        As[np + 1 + ni]? = some Tm → RelV M κ lpsOf S Ok mv Tm →
+        As[np + 1 + ni]? = some Tm → RelV M p κ lpsOf S Ok mv Tm →
         p.selectRule ind np mv = some (j, fields) →
         ∃ (Mn : V) (Ys : List V), As[np + 1 + ni + 1 + j]? = some Mn ∧
-          RelSlots M κ lpsOf S Ok fields Ys ∧
+          RelSlots M p κ lpsOf S Ok fields Ys ∧
           As.foldl app (M.cval (κ c) φ) = Ys.foldl app Mn ∧ AppChain Mn Ys
 
 /-- **Everything the fundamental lemma assumes.** -/
@@ -66,8 +66,10 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
   natBasis : NatBasis env
   /-- the stored-shape and program facts -/
   faith : Faith p env κ lpsOf S
-  /-- F5's meaning at every `case` constant of `S` -/
-  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseFires M p κ lpsOf S Ok c
+  /-- F5's meaning at every `case` constant of `S` whose recursor is of kind `ordinary` (at kind
+  `empty` SrcEval traps, so F5 is never asked: step E0) -/
+  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → p.table.recKindOf r = some .ordinary →
+    CaseFires M p κ lpsOf S Ok c
   /-- an `eqn` entry's function denotes the kernel term `e` its body corresponds to (the `eqn`
   lemma), and its body runs (typing) -/
   eqn : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) → ∃ e : KExpr,

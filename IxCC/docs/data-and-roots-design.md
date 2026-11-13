@@ -651,10 +651,12 @@ word equations of the `Char` and UTF-8 operations it reaches (`panic`: `UInt32.o
 `UInt8.land`, `UInt8.ofNat`, `UInt8.toUInt32`). IxCC's verdict and full error output on both roots
 are unchanged under `--rc off`, `on` and `auto`: both are refused at admission for a string literal
 in a relevant position. The roots-only fixtures (`kernel-hints`, `src-diag`, `src-sortpoly`, `erased-blocks`) compile
-with `--no-equations`, which their provenance records; their closures are unchanged. Open: when
-string literals are admitted, these two closures run word primitives and become the first
-registered roots that do; and the cost of the equations on a whole environment (Init+Std) is not
-measured: measure it and decide whether the default should cover a whole-environment compile.
+with `--no-equations`, which their provenance records; their closures are unchanged. When string
+literals are admitted, these two closures run word primitives too. The first registered roots that
+run word primitives are the `grounding` family's `words` fixture (seven roots, word arithmetic only,
+30 word entries, added 2026-11-13 as the subject of the grounding's word case), compiled at every
+level and natively by `tests-corpus`. Open: the cost of the equations on a whole environment
+(Init+Std) is not measured: measure it and decide whether the default should cover a whole-environment compile.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with

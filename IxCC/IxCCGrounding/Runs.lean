@@ -153,6 +153,21 @@ theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : Le
     intro Γ hd hs hok
     exact .letDead hz (ihb hd (fun s h => hs s (by simp [evalSites, hz, h]))
       (fun d us h => hok d us (by simp [evalConsts, h])))
+  | @letClo σ c r ty v bz d body A b' v' mb hz hsub0 hcl hv _ ihv ihlam =>
+    -- step C, the closure-capture shape: the lifted copy denotes in the λ's context (it occurs in
+    -- the λ's body with no binder between), and the value's sites there are `evalSites`'
+    intro Γ hd hs hok
+    have hsite : cloSite? (.lam bz d body) (.lam A b' mb) = some (A, v'.liftLooseBVars 1 0) := by
+      simp [cloSite?, hz, hsub0, cloShapeB, hcl]
+    have hsub := subAt0_of_check hcl
+    have hdv : DenotesIn M φ (A :: Γ) (v'.liftLooseBVars 1 0) :=
+      denotesIn_of_subAt0 hsub (denotesIn_lam_body hd)
+    have hlam := ihlam hd (fun s h => hs s (List.mem_append_right _ (List.mem_append_right _ h)))
+      (fun d us h => hok d us (List.mem_append_right _ h))
+    refine .letClo hsub (fun hr => ihv hdv (fun s h => hs s ?_) (fun d us h => hok d us ?_))
+      (fun _ => hv) hlam
+    · simp [evalSites, hsite, hr, h]
+    · simp [evalConsts, hr, h]
 
 /-- **The run terms run**: every constant of `S` SrcEval unfolds, at every `Ok` instance, runs
 its value (or its equation body), from the laws, the checked facts and `SitesOk`. -/
@@ -187,7 +202,7 @@ theorem fundHyps_of_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
         RecNoLevels env (κ r))
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-      CaseFires M p κ lpsOf S (Ok p ann) c) :
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) where
   laws := hL
   canon := hcanon
@@ -207,7 +222,7 @@ theorem fundHyps_of (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId
     {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
     (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-      CaseFires M p κ lpsOf S (Ok p ann) c) :
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) :=
   fundHyps_of_core (lawsCore_of_laws hL) (.inl hL.ctor_canon) hG hT hcases
 
