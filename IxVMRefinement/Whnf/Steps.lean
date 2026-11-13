@@ -1,3 +1,6 @@
+import IxVMRefinement.Whnf.Norm
+import IxVMRefinement.Whnf.Scans
+import IxVMRefinement.Whnf.Beta
 import IxVMRefinement.Whnf.Delta
 import IxVMRefinement.Core.Whnf
 

@@ -172,7 +172,8 @@ theorem posOf_ilp_perm {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
 
 /-- A loaded `Thm` represents a stored theorem. -/
 theorem thm_inv {κ : _root_.Address → KKey} {h : Heap F} {nl ty val : SourceValue F}
-    {ci : Ix.Kernel.ConstantInfo .anon} (r : CIRep κ h (.construct kciEnum "Thm" [nl, ty, val]) ci) :
+    {ci : Ix.Kernel.ConstantInfo .anon}
+    (r : CIRep κ h (.construct kciEnum "Thm" [nl, ty, val]) ci) :
     ∃ cv V, ci = .thmInfo cv V ∧ ValRep κ h nl ty cv ∧ TmC κ h (posOf cv.levelParams V) val := by
   generalize hv : (Value.construct kciEnum "Thm" [nl, ty, val] : SourceValue F) = v at r
   cases r
@@ -253,9 +254,9 @@ theorem pdi_strong (c : Ctx) (N : Nat) :
           [x_body, .field (((K + 1 : Nat) : F))], h⟩) (by simp) (by simp) hdesc
       have h39 : (2 : ℕ) ^ 39 = 549755813888 := by norm_num
       obtain ⟨t, loc, rfl, hcell, htyped⟩ := cell_of_load ld12
-      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp [Value.type])
+      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp)
       refine ⟨n, f, j, i, s, m + 1, X, bp, hxa, hxf, hxj, hs, hh, ?_, hi, hn32, hj,
-        .down hcell (by simp [Value.type]) (by simp [RomBound.cellArgs]) hdesc, by omega, hstrip,
+        .down hcell (by simp) (by simp [RomBound.cellArgs]) hdesc, by omega, hstrip,
         ?_, hbp⟩
       · rw [hn, show K + 1 + m = K + (m + 1) by omega]
       · rw [show K + (m + 1) = K + 1 + m by omega]; exact hX
@@ -271,9 +272,9 @@ theorem pdi_strong (c : Ctx) (N : Nat) :
         by_contra hn
         exact field_one_ne_zero (by rw [hr1, ite_eq_right hn])
       obtain ⟨t, loc, rfl, hcell, htyped⟩ := cell_of_load ld12
-      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp [Value.type])
+      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp)
       refine ⟨((K : Nat) : F), i0, ((K : Nat) : F) - 1 - a0, a0, s, 0, Es, x_projected, rfl, rfl,
-        rfl, hs, rfl, by simp, hlt', hb32, rfl, .here hcell (by simp [Value.type]), by omega, rfl,
+        rfl, hs, rfl, by simp, hlt', hb32, rfl, .here hcell (by simp), by omega, rfl,
         hEs, ld101⟩
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he221)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he271)).1).elim
