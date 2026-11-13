@@ -17,9 +17,9 @@ shards: the binding of `agg-med`, the closure of `Array.extract_append` and
 `of_decide_eq_false`, and 10 of its 32 shards were refused. The smallest held
 `Array.extract_append._proof_1_1`.
 
-No native rule answers a decision any longer, so specification version 6 drops
-the decisions' dependencies on the `of_decide_eq_*` roles (`IxC/Kernel/Roles.lean`),
-and a binding may bind a decision without them.
+No native rule answers a decision, so the specification gives the decisions no
+dependency on the `of_decide_eq_*` roles (`IxC/Kernel/Roles.lean`), and a binding
+may bind a decision without them.
 
 The case compiles that constant's closure as `ix compile --consts` does
 (`Ix.CompileM.compileAndFinalize`). It checks that the binding binds `Nat.decEq`
@@ -46,7 +46,7 @@ def leaf : Lean.Name :=
 the axiom roles its user axioms need bound. -/
 def required : List Role := .natDecEq :: Ix.Kernel.Admission.userAxiomRoles
 
-/-- The roles a decision depended on before specification version 6; reported, not required. -/
+/-- The `of_decide_eq_*` roles, which a decision does not depend on; reported, not required. -/
 def formerDeps : List Role := [.ofDecideEqTrue, .ofDecideEqFalse]
 
 def run (env : Lean.Environment) : IO UInt32 := do

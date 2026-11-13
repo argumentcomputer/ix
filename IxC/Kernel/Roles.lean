@@ -1078,19 +1078,13 @@ with `Int.bmod` and `Int.bdiv`; `BitVec.toNat` and `BitVec.ult`; and `String.app
 `String.toByteArray`, `String.utf8ByteSize` with `Char.utf8Size`, and `String.back`)
 are roles, specified by their equations (`Spec.eqns`), with the anchors those
 equations need; and each role records whether the checker uses
-it implicitly (`Role.usedImplicitly`). Version 4 makes the decision procedures
-(`Nat.decEq`, `Nat.decLe`, `Int.decEq`, `Int.decLe`, `String.decEq`) depend on the
-`of_decide_eq_*` roles their native rules answer with (`Role.deps`). Version 5
-adds Lean's compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
-`Lean.ofReduceNat`) as inert axioms of their exact types, like `sorryAx`, and
-the opaques their types mention (`Lean.reduceBool`, `Lean.reduceNat`) as
-type-only anchors. Native evaluation stays outside the certified theory; the
-roles let a binding name the three axioms, so that a claim over Lean's `Init`
-need not list them as user axioms. Version 6 drops version 4's dependencies:
-no native rule answers a decision procedure any longer, so the decisions depend
-on the `of_decide_eq_*` roles no more (`Role.deps`), and a table may bind a
-decision without them. -/
-def specVersion : Nat := 6
+it implicitly (`Role.usedImplicitly`). Version 4 adds Lean's compiler-trust axioms
+(`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) as inert axioms of their
+exact types, like `sorryAx`, and the opaques their types mention (`Lean.reduceBool`,
+`Lean.reduceNat`) as type-only anchors. Native evaluation stays outside the certified theory;
+the roles let a binding name the three axioms, so that a claim over Lean's `Init` need not
+list them as user axioms. -/
+def specVersion : Nat := 4
 
 /-- **The roles the checker uses implicitly**: those it introduces into a term
 with no referenced constant that determines them. They are the literals' types

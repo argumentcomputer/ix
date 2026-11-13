@@ -43,7 +43,7 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- unsafe, csimp and every ruling are unchanged.
 -- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
 -- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
--- Specification version 5 (the compiler-trust roles) adds 66: the entry's 49 and 17 in the
+-- Specification version 4 (the compiler-trust roles) adds 66: the entry's 49 and 17 in the
 -- specification digest's encoder and schedule (the five roles' rows, inertness and groups).
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
