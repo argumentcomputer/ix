@@ -26,8 +26,9 @@ replacing it by a `tick` (tick dominance):
   `prim`, `fn`, function `glob`), dead join points; `call`, `app` and CAF
   `glob` bindings are kept, except that a dead known partial application
   becomes a `tick`;
-* projection of a known constructor; literal folding by `Prim.sem`; `case`
-  of a known constructor or `Nat` literal (or `y + 1`);
+* projection of a known constructor; literal folding by `Prim.sem`, within
+  `foldable`'s size bound (`foldBits`); `case` of a known constructor or
+  `Nat` literal (or `y + 1`);
 * known calls: `app` of a function global's closure, or of a partial
   application of one, becomes `call` when saturated (over-saturated: the
   call, then `app` of the rest);
@@ -459,13 +460,48 @@ def knownHead (here : Here) : Opd → Option (GlobalId × List Opd)
     | _ => none
   | _ => none
 
-/-- Literal folding. -/
+/-- The size bound of literal folding, in bits (`foldable`). A folded literal is then at most
+`2 · foldBits` bits (256 bytes), a few Anf nodes' worth, so the node budgets keep bounding the
+memory folding takes; one fold is one operation on numbers below `2 ^ foldBits`, microseconds, so
+the walk's work budgets keep bounding its time; and 256-bit constants and their products still
+fold. Every fold of every registered program reads and writes numbers below `2 ^ 63` (measured
+2026-11-13 over the 12 manifests and `fixtures/rc/budget`), so the bound changes none of them. -/
+def foldBits : Nat := 1024
+
+/-- `2 ^ foldBits`: every literal a fold reads is below it. -/
+def foldLimit : Nat := 2 ^ foldBits
+
+/-- **Whether the walk folds** `p` on the literal operands `ns` (`fold`), decided from the
+primitive and the operands only, never from the result: every operand is below `foldLimit`, and
+`natPow [a, b]` has `b = 0`, or `b ≤ foldBits` and `a < 2 ^ (foldBits / b)`, and `natShl [a, b]`
+has `b ≤ foldBits` and `a < 2 ^ (foldBits - b)`. So a `natPow` or `natShl` result is below
+`foldLimit`, every folded literal is below `2 ^ (2 · foldBits)` (`natMul`'s bound; `natAdd`'s is
+`2 · foldLimit`, the rest stay below their operands, a word primitive's below `2 ^ 64`), and no
+fold reads a literal of `foldLimit` or more: a fold's cost is bounded whatever the program, and
+folds cannot compound (squaring a folded literal `k` times would otherwise build `2^k` times its
+bits). The decision computes only `Nat.pow` of `2` to at most `foldBits`, division, subtraction
+and comparisons. A `natPow` or `natShl` whose exponent exceeds `2 ^ 32 - 1` is never folded (the
+runtime's `Nat.pow` aborts the process there, whatever the base).
+
+Not folding is always sound: the binding is kept and the primitive runs natively, where a result
+of `2 ^ 63` or more fails with `natOverflow`, as a folded literal that size does where it is read.
+A wide intermediate that a later fold would reduce (`2 ^ 2000 % 7`) is the one thing lost: past
+the bound it runs natively and fails with `natOverflow`. -/
+def foldable (p : Lam.Prim) (ns : List Nat) : Bool :=
+  ns.all (· < foldLimit) &&
+    match p, ns with
+    | .natPow, [a, b] => b == 0 || (b ≤ foldBits && a < 2 ^ (foldBits / b))
+    | .natShl, [a, b] => b ≤ foldBits && a < 2 ^ (foldBits - b)
+    | _, _ => true
+
+/-- Literal folding: `p`'s meaning (`Lam.Prim.sem`) on literal operands that `foldable` admits;
+`none` otherwise, and the walk keeps the binding. -/
 def fold (p : Lam.Prim) (os : List Opd) : Option Src.PrimResult :=
   let rec lits : List Opd → Option (List Nat)
     | [] => some []
     | .lit (.nat n) :: os => (lits os).map (n :: ·)
     | _ => none
-  (lits os).bind p.sem
+  (lits os).bind fun ns => if foldable p ns then p.sem ns else none
 
 /-- A target level that already holds `prim p os`. -/
 def knownPrim (facts : Src.NatMap Fact) (p : Lam.Prim) (os : List Opd) : Nat → Option Opd

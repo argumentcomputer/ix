@@ -20,6 +20,8 @@ their provenance; required CI never runs it.
   [--ix-path DIR]`: regenerate the RC real-source input `fixtures/rc/real-source`, the
   captured-work budget input `fixtures/rc/budget` and the certificate-depth input
   `fixtures/rc/deep` (`rcInput`).
+* `fold --ix IX [--ix-path DIR]`: regenerate the fold guard's front-door input `fixtures/fold`
+  (`rcInput`, as the RC inputs).
 -/
 
 namespace RefreezeIxon
@@ -126,6 +128,17 @@ def rcDeepInput : RcInput :=
   { command := "rc-deep", dir := "fixtures/rc/deep", source := "Deep.lean",
     roots := ["IxCCTests.Cert.Deep.deep240", "IxCCTests.Cert.Deep.deep168"] }
 
+/-- The fold guard's front-door input (`Anf.Walk.foldable`): roots applying `Nat.pow`,
+`Nat.shiftLeft`, `Nat.mul` and `Nat.mod` to literals on both sides of the folding bound, at and past
+the runtime's exponent cap, in chained squarings and on a literal of the closure's own text past
+the bound (`tests-exe`'s fold-guard part). Not an RC input; written the same way. -/
+def foldInput : RcInput :=
+  { command := "fold", dir := "fixtures/fold", source := "Fold.lean",
+    roots := ["powIn", "powOut", "powOneIn", "powOneOut", "shlIn", "shlOut", "powMod100",
+      "pow0At", "pow0Past", "pow1At", "pow1Past", "pow2At", "pow2Past", "pow1Far",
+      "shl0Past", "shl1At", "shl1Past", "shl2Past", "mulChain32", "litIn", "litOut"].map
+      ("IxCCTests.Fold." ++ ·) }
+
 /-- An RC input's directory: the closure of its roots and its sidecar, by `corpus rebuild`'s
 fixture step (the anonymous closure, the named twin, every root, definition and equation resolved
 with `ix addr-of`; the roots have no cases), then `provenance.json` and every hash of
@@ -181,7 +194,8 @@ def usage : String :=
   "       refreeze-ixon tc-primitives --ix-repo DIR --ix-revision REV\n" ++
   "       refreeze-ixon rc-real-source --ix IX [--ix-path DIR] [--work DIR]\n" ++
   "       refreeze-ixon rc-budget --ix IX [--ix-path DIR] [--work DIR]\n" ++
-  "       refreeze-ixon rc-deep --ix IX [--ix-path DIR] [--work DIR]"
+  "       refreeze-ixon rc-deep --ix IX [--ix-path DIR] [--work DIR]\n" ++
+  "       refreeze-ixon fold --ix IX [--ix-path DIR] [--work DIR]"
 
 def main (args : List String) : IO Unit := do
   let (command, rest) := match args with
@@ -196,6 +210,7 @@ def main (args : List String) : IO Unit := do
   | "rc-real-source" => rcInput rcRealSourceInput (← req "--ix") ((optional options "--ix-path").toList) work
   | "rc-budget" => rcInput rcBudgetInput (← req "--ix") ((optional options "--ix-path").toList) work
   | "rc-deep" => rcInput rcDeepInput (← req "--ix") ((optional options "--ix-path").toList) work
+  | "fold" => rcInput foldInput (← req "--ix") ((optional options "--ix-path").toList) work
   | _ => throw (IO.userError usage)
 
 end RefreezeIxon
