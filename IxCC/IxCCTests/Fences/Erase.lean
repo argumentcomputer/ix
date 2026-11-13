@@ -190,6 +190,12 @@ uses at a recursor, `checkCanonical`'s facts and the three facts about positions
 /-- info: 'IxCC.Src.Relevance.Proof.arg_erased_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.arg_erased_irr
 
+/-- info: 'IxCC.Src.Relevance.Proof.headArityOf_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.headArityOf_eq
+
+/-- info: 'IxCC.Src.Relevance.Proof.erased_lt_arity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.erased_lt_arity
+
 /-! P1's definitions (`Relevance.Proof.P1.Defs`; P1 itself is not proved): a marker is never
 `Live`. -/
 

@@ -562,7 +562,8 @@
     "IxCCTests.Recheck.Erased",
     "IxCCTests.Recheck.ErasedBlocks",
     "IxCCTests.Recheck.ErasedPartial",
-    "IxCCTests.Recheck.Shape"]},
+    "IxCCTests.Recheck.Shape",
+    "IxCCTests.Recheck.ErasedArity"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":
@@ -717,6 +718,9 @@
   "IxCCTests.Recheck.ErasedBlocks":
   {"path": "IxCCTests/Recheck/ErasedBlocks.lean",
    "imports": ["IxCCTests.Recheck.Erased"]},
+  "IxCCTests.Recheck.ErasedArity":
+  {"path": "IxCCTests/Recheck/ErasedArity.lean",
+   "imports": ["IxCCTests.Recheck.Shape"]},
   "IxCCTests.Recheck.Erased":
   {"path": "IxCCTests/Recheck/Erased.lean",
    "imports": ["IxCCTests.Recheck.Hostile", "IxCCTests.KernelFront.LamRuns"]},
@@ -5171,7 +5175,7 @@
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
   "IxCC.Src.Relevance.Proof.Canonical":
   {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
-   "imports": ["IxCC.Src.Relevance.Proof.Sound"]},
+   "imports": ["IxCC.Src.Relevance.Proof.Sound", "IxCC.Src.Semantics"]},
   "IxCC.Src.Relevance.Check":
   {"path": "IxCC/Src/Relevance/Check.lean",
    "imports":
