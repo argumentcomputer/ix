@@ -932,6 +932,17 @@ def oDefs : List (Ref × RunDef) := [
   (u17cp, body [par .many .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
   (u17d, body [par .borrowed .leaf] matchWNU .shared .leaf),
   (u17dp, body [par .many .leaf] matchWNU .shared .leaf)]
+-- Finding 18 (repair P): `mkSB (x : List Nat) : SBox := SBox.mk x`; `leak18 (@borrowed xs : List Nat) :
+-- List Nat := (mkSB xs).val`, `leak18m … := match mkSB xs with | ⟨y⟩ => y`; the controls have `xs` plain
+def mkSB := mem 430
+def leak18 := mem 445
+def leak18p := mem 465
+def leak18m := mem 447
+def leak18mp := mem 467
+def caseS : CaseInfo := { ind := S, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0] }] }
+def mkSBDef : Ref × RunDef := (mkSB, body [par] (app (.const sboxR .val) [v 0]))
+def projSB : Term := .proj S 0 (app (.const mkSB .val) [v 0]) .val
+def matchSB : Term := .case caseS (app (.const mkSB .val) [v 0]) #[lam par (v 0) .shared .val] #[] .val
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1073,7 +1084,15 @@ def findingCases : List Case := [
   runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
   runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
     (some .borrowEscape) false,
-  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true
+  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true,
+  runCase "finding 18: a borrowed list stored in a @shared field by a callee, projected"
+    [mkSBDef, (leak18, body [par .borrowed] projSB)] leak18 oneList (some .borrowEscape) false [leak18, mkSB],
+  runCase "finding 18, control: the list not borrowed"
+    [mkSBDef, (leak18p, body [par] projSB)] leak18p oneList none true [leak18p, mkSB],
+  runCase "finding 18: the same field matched"
+    [mkSBDef, (leak18m, body [par .borrowed] matchSB)] leak18m oneList (some .borrowEscape) false [leak18m, mkSB],
+  runCase "finding 18, control: the list not borrowed"
+    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB]
 ]
 
 -- END COPY
@@ -1258,7 +1277,7 @@ def extS : ExternOracle := fun r args h =>
 
 def f5Cases : List Case := [
   { label := "F5 leak5 (extern mkS)", P := p5, ext := extS, seed := leak5, inp := oneList, toCheck := [leak5],
-    verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },  -- REPAIR P: accepted before
   { label := "F5 control: SBox.mk itself", P := p5, ext := extS, seed := leak5c, inp := oneList,
     toCheck := [leak5c], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
 
@@ -1958,10 +1977,68 @@ def oCases : List Case := [
   oCase "F17d match w with | ⟨@unique m⟩ => m, w a borrowed wrapper" SuiteFindings.u17d [SuiteFindings.u17d] true,
   oCase "F17d control: w not borrowed" SuiteFindings.u17dp [SuiteFindings.u17dp] false]
 
+/-! ### Confined values reaching a place the checker treats as unconfined (repair P and after)
+
+A borrowed list `xs` against the same program with `xs` plain (the control, accepted, runs clean).
+`mkSB (x : List Nat) : SBox := SBox.mk x` (finding 18), `mkSBU` the same with a unique result,
+`idSB (b : SBox) : SBox := b`, `isSB (b : SBox) : E := e0`. The other routes are covered elsewhere:
+a `@shared` field filled directly (suite "a borrowed value stored in a @shared field and returned",
+refused by `anCtor`), through an extern (F5), a unique binding or result of a leaf and a wrapper
+(O), a closure capture (F9's control, D's F9), a partial application (F12 and its controls). -/
+
+def mkSB := mem 430
+def mkSBU := mem 431
+def idSB := mem 432
+def isSB := mem 441
+def caseS : CaseInfo := { ind := S, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0] }] }
+
+/-- Route `i`'s body over `xs`. -/
+def pRoute : Nat → Term
+  | 2 => .proj S 0 (app (.const mkSB .val) [v 0]) .val
+  | 4 => .case caseS (app (.const mkSB .val) [v 0]) #[lam par (v 0) .shared .val] #[] .val
+  | 5 => .proj S 0 (app (.const mkSBU .val) [v 0]) .val
+  | 12 => .proj S 0 (app (.const idSB .val) [app (.const mkSB .val) [v 0]]) .val
+  | _ => app (.const isSB .val) [app (.const mkSBU .val) [v 0]] .imm
+
+def pRouteName : Nat → String
+  | 2 => "a @shared field filled by a callee, projected ((mkSB xs).val, finding 18)"
+  | 4 => "a @shared field filled by a callee, matched (match mkSB xs with | ⟨y⟩ => y)"
+  | 5 => "a @shared field of a callee's unique result, projected ((mkSBU xs).val)"
+  | 12 => "a @shared field passed through a second callee ((idSB (mkSB xs)).val)"
+  | _ => "a callee's unique result holding a plain argument in a @shared field (isSB (mkSBU xs))"
+
+def pRoutes : List Nat := [2, 4, 5, 12, 13]
+def pB (i : Nat) : Ref := mem (443 + i)
+def pP (i : Nat) : Ref := mem (463 + i)
+
+def pPr : Prog := prog ([
+  (E2, .ind #[e0R, e1R]), (e0R, .ctor E2 0 0 #[]), (e1R, .ctor E2 1 0 #[]),
+  (mkSB, body [par] (app (.const sboxR .val) [v 0])),
+  (mkSBU, body [par] (app (.const sboxR .val) [v 0]) .unique),
+  (idSB, body [par] (v 0)),
+  (isSB, body [par] (.const e0R .imm) .shared .imm)] ++
+  pRoutes.flatMap fun i =>
+    let rc : Cls := if i == 13 then .imm else .val
+    [(pB i, body [par .borrowed] (pRoute i) .shared rc), (pP i, body [par] (pRoute i) .shared rc)])
+
+/-- After this repair: the borrowed version's verdict (`none`: open, accepted). -/
+def pExpect : Nat → Option String
+  | 13 => none    -- OPEN: the run is borrowEscape inside mkSBU's unique return
+  | _ => some "borrowEscape"
+
+def pCases : List Case := pRoutes.flatMap fun i =>
+  let helpers := if i == 13 then [isSB, mkSBU] else if i == 5 then [mkSBU] else if i == 12 then [idSB, mkSB] else [mkSB]
+  [{ label := s!"confined route {i}, xs borrowed: {pRouteName i}", P := pPr, seed := pB i, inp := oneList,
+     toCheck := pB i :: helpers, verdict := (match pExpect i with | some w => .refuse w | none => .accept),
+     run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], open_ := (pExpect i).isNone },
+   { label := s!"confined route {i}, control, xs plain", P := pPr, seed := pP i, inp := oneList,
+     toCheck := pP i :: helpers, verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
+
+
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
     f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases ++
-    oCases
+    oCases ++ pCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

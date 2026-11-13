@@ -431,7 +431,10 @@ def anProj (P : Prog) (s : Ref) (i : Nat) (v : AVal) (c : Cls) : CM AVal := do
   if f.cls == .irr || c == .irr then return { cls := .irr }
   if c == .imm then return { cls := .imm }
   if v.cls != .val then return { v with cls := c, src := none }
-  if f.fmode == .shared then return { cls := c, skel := .unknown }
+  -- a `@shared` field holds its value as it was stored, and a callee or an extern may have stored
+  -- a confined value there (findings 18, 5): it keeps the container's regions, and no alias
+  -- (repair P)
+  if f.fmode == .shared then return { cls := c, regs := v.regs, skel := .unknown }
   -- a leaf: read out of a cell it is unconfined, but the container may be a
   -- trivial wrapper represented by it
   if c == .leaf then return { cls := c, regs := v.regs, skel := .unknown }
@@ -450,7 +453,10 @@ def caseField (P : Prog) (k : CaseInfo) (fields : Array Field) (mv : AVal) (cons
       else if f.cls == .irr then ({ cls := .irr }, false, false)
       else if mv.cls != .val && P.wrapperField? k.ind == some i then ({ mv with src := none }, false, false)
       else if f.cls != .val then ({ cls := f.cls }, false, false)
-      else if f.fmode == .shared then ({ cls := .val }, false, false)
+      else if f.fmode == .shared then
+        -- as `anProj` (repair P): the container's regions, read out of a cell unless the
+        -- inductive may be a trivial wrapper
+        ({ cls := .val, regs := mv.regs }, false, (P.ctorsOf k.ind).size != 1)
       else
         -- read out of a cell, unless the inductive may be a trivial wrapper
         let fromCell := (P.ctorsOf k.ind).size != 1

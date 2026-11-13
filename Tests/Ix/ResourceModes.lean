@@ -650,6 +650,17 @@ def oDefs : List (Ref × RunDef) := [
   (u17cp, body [par .many .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
   (u17d, body [par .borrowed .leaf] matchWNU .shared .leaf),
   (u17dp, body [par .many .leaf] matchWNU .shared .leaf)]
+-- Finding 18 (repair P): `mkSB (x : List Nat) : SBox := SBox.mk x`; `leak18 (@borrowed xs : List Nat) :
+-- List Nat := (mkSB xs).val`, `leak18m … := match mkSB xs with | ⟨y⟩ => y`; the controls have `xs` plain
+def mkSB := mem 430
+def leak18 := mem 445
+def leak18p := mem 465
+def leak18m := mem 447
+def leak18mp := mem 467
+def caseS : CaseInfo := { ind := S, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0] }] }
+def mkSBDef : Ref × RunDef := (mkSB, body [par] (app (.const sboxR .val) [v 0]))
+def projSB : Term := .proj S 0 (app (.const mkSB .val) [v 0]) .val
+def matchSB : Term := .case caseS (app (.const mkSB .val) [v 0]) #[lam par (v 0) .shared .val] #[] .val
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -805,7 +816,15 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
   runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
     (some .borrowEscape) false,
-  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true
+  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true,
+  runCase "finding 18: a borrowed list stored in a @shared field by a callee, projected"
+    [mkSBDef, (leak18, body [par .borrowed] projSB)] leak18 oneList (some .borrowEscape) false [leak18, mkSB],
+  runCase "finding 18, control: the list not borrowed"
+    [mkSBDef, (leak18p, body [par] projSB)] leak18p oneList none true [leak18p, mkSB],
+  runCase "finding 18: the same field matched"
+    [mkSBDef, (leak18m, body [par .borrowed] matchSB)] leak18m oneList (some .borrowEscape) false [leak18m, mkSB],
+  runCase "finding 18, control: the list not borrowed"
+    [mkSBDef, (leak18mp, body [par] matchSB)] leak18mp oneList none true [leak18mp, mkSB]
 ]
 
 /-! ### Must-reject cases from records -/
