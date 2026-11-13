@@ -539,7 +539,8 @@ def indexRuntime : Array Lean.Name :=
 /-- The reader's inductive block and its lowering, which the inductive
 reading proofs unfold and state. -/
 def inductiveReadRuntime : Array Lean.Name :=
-  #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.lowerInductive, ``Ix.Kernel.Reader.piTeleLen,
+  #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.readRecursor, ``Ix.Kernel.Reader.lowerTwin,
+    ``Ix.Kernel.Reader.lowerInductive, ``Ix.Kernel.Reader.piTeleLen,
     ``Ix.Kernel.Reader.inductiveAt, ``Ix.Kernel.Reader.blockShapeOf, ``Ix.Kernel.Reader.unindexedShape]
 
 /-- Source mode's inductive group and conversion, and the compiler's

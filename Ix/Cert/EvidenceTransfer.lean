@@ -596,12 +596,14 @@ theorem readRecord_generated {cx : Ctx md} {st : State md} {owner : Address} {c 
     subst h
     simp
   case h_6 =>
-    dsimp only at h
     rcases ite_ok h with h | h
     · simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
       simp
-    · exact (fail_bind h).elim
+    · split at h
+      · rw [(lowerTwin_spec h).1]
+        simp
+      · exact (throw_ok h).elim
   case h_7 =>
     dsimp only at h
     rcases ite_ok h with h | h
@@ -625,10 +627,13 @@ theorem readRecord_generated {cx : Ctx md} {st : State md} {owner : Address} {c 
       · obtain ⟨_, _, hl⟩ := readInductive_lower h
         exact Ix.Cert.SourceNames.lowerInductive_generated hl
     · rcases ite_ok h with h | h
-      · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        simp
+      · rcases ite_ok h with h | h
+        · simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          simp
+        · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+          rw [(lowerTwin_spec h).1]
+          simp
       · rcases ite_ok h with h | h
         · split at h
           · exact (fail_bind h).elim

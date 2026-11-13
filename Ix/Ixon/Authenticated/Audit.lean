@@ -121,9 +121,12 @@ end Ixon.Authenticated.Audit
 -- constructor field modes, `Constant.modesCanonical`) and the reader's canonical
 -- natural-literal check (`ECx.natAt`) take the closure from 7025 compiled functions and 116
 -- inherited externs to 7049 and 117, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7084 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7108 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -287,7 +290,10 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- unsafe, csimp and all ruling counts are unchanged.
 -- Modes in records and the reader's canonical natural-literal check take the closure from
 -- 7107 compiled functions and 116 inherited externs to 7131 and 117.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7166 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7190 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

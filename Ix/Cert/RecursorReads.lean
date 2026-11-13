@@ -85,14 +85,25 @@ structure RecursorFacts (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstR
       (recReader cx rc rOwner key (recLps entry.large blockLps)).read x.1.rhs = .ok (rhsOf x.2)) ∧
     read = recRead key (recLps entry.large blockLps) type r entry.motive ruleKey rhsOf
 
-theorem recursorStep_ok (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstRef Address)
-    (recs : Array (CVal md × RecCounts × List (RecRule md))) {read : CVal md × RecCounts × List (RecRule md)}
-    (h : RecursorFacts cx blockLps ref read) :
-    recursorStep cx blockLps ref recs = .ok (.yield (recs.push read)) := by
-  obtain ⟨entry, rOwner, j, rc, j', r, key, type, major, mb, mi, ruleKey, rhsOf, hentry, rfl, hstore, hfind,
-    hsafe, hkey, htype, hmajor, hsize, hmb, hrules, rfl⟩ := h.facts
-  unfold recursorStep
-  simp only [hentry, hstore, hfind, hsafe, Bool.false_eq_true, ↓reduceIte]
+theorem readRecursor_ok (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstRef Address)
+    (entry : RecEntry) {read : CVal md × RecCounts × List (RecRule md)}
+    {rOwner : Address} {j : Nat} {rc : Ixon.Constant} {j' : Nat} {r : Ixon.Recursor}
+    {key : CName md} {type : CExpr md} {major : Ixon.Inductive} {mb : Address} {mi : Nat}
+    {ruleKey : Nat → CName md} {rhsOf : Nat → CExpr md}
+    (href : ref = .member rOwner j) (hstore : cx.store rOwner = some rc)
+    (hfind : (recursorMembers rc).find? (·.1 == j) = some (j', r))
+    (hsafe : r.isUnsafe = false) (hkey : cx.memberKey ref = .ok key)
+    (htype : (recReader cx rc rOwner key (recLps entry.large blockLps)).read r.typ = .ok type)
+    (hmajor : inductiveAt cx.store entry.major = some major)
+    (hsize : major.ctors.size = r.rules.size)
+    (hmb : entry.major = .member mb mi)
+    (hrules : ∀ x ∈ r.rules.toList.zipIdx, cx.memberKey (.ctor mb mi x.2) = .ok (ruleKey x.2) ∧
+      (recReader cx rc rOwner key (recLps entry.large blockLps)).read x.1.rhs = .ok (rhsOf x.2))
+    (hread : read = recRead key (recLps entry.large blockLps) type r entry.motive ruleKey rhsOf) :
+    readRecursor cx blockLps ref entry = .ok read := by
+  subst href hread
+  unfold readRecursor
+  simp only [hstore, hfind, hsafe, Bool.false_eq_true, ↓reduceIte]
   simp only [hkey, bind, Except.bind]
   split
   · rename_i err heq
@@ -113,6 +124,18 @@ theorem recursorStep_ok (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstR
         Except.ok.inj (heq2.symm.trans hloop)
       rw [hr]
       rfl
+
+theorem recursorStep_ok (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstRef Address)
+    (recs : Array (CVal md × RecCounts × List (RecRule md))) {read : CVal md × RecCounts × List (RecRule md)}
+    (h : RecursorFacts cx blockLps ref read) :
+    recursorStep cx blockLps ref recs = .ok (.yield (recs.push read)) := by
+  obtain ⟨entry, rOwner, j, rc, j', r, key, type, major, mb, mi, ruleKey, rhsOf, hentry, href, hstore, hfind,
+    hsafe, hkey, htype, hmajor, hsize, hmb, hrules, hread⟩ := h.facts
+  unfold recursorStep
+  rw [hentry]
+  dsimp only
+  rw [readRecursor_ok cx blockLps ref entry href hstore hfind hsafe hkey htype hmajor hsize hmb hrules hread]
+  rfl
 
 /-- **The reader reads a block's recursors**, recursor by recursor. -/
 theorem readRecursors_ok (cx : Ctx md) (blockLps : List LevelParam) :

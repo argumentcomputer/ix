@@ -253,6 +253,14 @@ theorem AW.piChain : ∀ (n : Nat) {X Y : AnnotTerm}, AW X Y → PiChain n X →
     | refl => exact hpc
     | pi _ _ hb => exact AW.piChain n hb hB
 
+theorem piChain_of_le : ∀ {m n : Nat} {X : AnnotTerm}, m ≤ n → PiChain n X → PiChain m X
+  | 0, _, _, _, _ => trivial
+  | m + 1, 0, _, hle, _ => absurd hle (Nat.not_succ_le_zero m)
+  | m + 1, n + 1, _, hle, hpc => by
+    obtain ⟨_, _, _, B, rfl, hB⟩ := piChain_succ_inv hpc
+    show PiChain m B
+    exact piChain_of_le (by omega : m ≤ n) hB
+
 /-- **A value-level fit moves from the declared telescope to the generated one.** -/
 theorem AW.teleFit : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r : V},
     AW X Y → WellDenotedV V ρ X → TeleFit V ρ Y vs r → ∃ r', TeleFit V ρ X vs r'
@@ -271,6 +279,25 @@ theorem AW.teleFit : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r : V
         have hmA : v ∈ˢ interp V ρ A₁ := by rw [hA]; exact hmem
         obtain ⟨r', hr'⟩ := AW.teleFit vs hb ⟨hwd.2 v hmA, hav.2.1 v hmA⟩ hrest
         exact ⟨r', .cons hmA hr'⟩
+
+/-- **A value-level fit moves from the generated telescope to the declared one.** -/
+theorem AW.teleFit_fwd : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r : V},
+    AW X Y → WellDenotedV V ρ X → TeleFit V ρ X vs r → ∃ r', TeleFit V ρ Y vs r'
+  | [], _, _, _, _, _, _, _ => ⟨_, .nil⟩
+  | v :: vs, X, Y, ρ, r, h, hX, hfit => by
+    cases hfit with
+    | @cons _ _ _ A₁ B₁ _ _ _ hmA hrest =>
+      cases h with
+      | refl => exact ⟨r, .cons hmA hrest⟩
+      | @pi _ _ _ _ _ A₀ _ B₀ hs hw hb =>
+        obtain ⟨hwd, hav⟩ := hX
+        rw [WellDenoted_pi] at hwd
+        rw [AnnotValid_pi] at hav
+        obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwd.1, hav.1⟩
+        have hA : interp V ρ A₁ = interp V ρ A₀ := hs2.trans (hw.sem ρ hs1).2
+        have hmA₀ : v ∈ˢ interp V ρ A₀ := by rw [← hA]; exact hmA
+        obtain ⟨r', hr'⟩ := AW.teleFit_fwd vs hb ⟨hwd.2 v hmA, hav.2.1 v hmA⟩ hrest
+        exact ⟨r', .cons hmA₀ hr'⟩
 
 /-- The fit instantiates, under the ∀-chain guard (`teleFit_of_inst`'s converse). -/
 theorem teleFit_inst {aa : AnnotTerm} :
@@ -562,6 +589,22 @@ theorem wrapRel_read {g d : Expr md} (h : WrapRel find? g d) (hd : letFree d = t
   wrapT_read hfind hdef (g.sizeB + 1) g d (Nat.lt_succ_self _) (h.toWrapT hd) k ga hg
 
 end Read
+
+/-- Stripping `k` binders on the declared side pulls back along `WrapT`. -/
+theorem WrapT.stripPis_back {find? : Key md → Option (ConstantInfo md)} :
+    ∀ (k : Nat) {g d : Expr md} {bs' : List (Expr md × Ix.Kernel.BinderMeta)} {body' : Expr md},
+      WrapT find? g d → d.stripPis k = some (bs', body') →
+        ∃ bs body, g.stripPis k = some (bs, body) ∧ WrapT find? body body'
+  | 0, g, _, _, _, h, hs => by
+    simp only [Ix.Kernel.Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨-, rfl⟩ := hs
+    exact ⟨[], g, rfl, h⟩
+  | k + 1, _, _, _, _, h, hs => by
+    obtain ⟨_, _, _, _, rfl, hs0⟩ := Ix.Kernel.Semantics.stripPis_succ_inv hs
+    cases h with
+    | forallE _ _ _ hb =>
+      obtain ⟨bs, body, h1, h2⟩ := WrapT.stripPis_back k hb hs0
+      exact ⟨_, body, Ix.Kernel.Semantics.stripPis_succ_forallE h1, h2⟩
 
 /-! ## One stored type swapped -/
 

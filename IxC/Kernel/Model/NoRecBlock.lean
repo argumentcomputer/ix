@@ -545,6 +545,33 @@ theorem declIndRunJ_newRulesAvoid {J : Judgements md} {env env₂ : Env md}
   intro n cv mI rP rules hf hn0 hm
   exact absurd (declIndRunJ_hasModel h hf hn0) hm
 
+/-- **A twin recursor step's new recursors avoid `T`**: a modeled twin carries its copied model
+companion, while an unmodeled twin mirrors an unmodeled canonical recursor whose rules already
+avoid `T`. -/
+theorem declRecTwinRunJ_newRulesAvoid {J : Judgements md} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {T : Key md}
+    (h : StoreInv env) (hno : NoRuleFamily env T)
+    (hrun : DeclRecTwinRunJ J env block env₂) :
+    NewRulesAvoid env env₂ T := by
+  intro n cv mI rP rules hf hn0 hm rl hrl cvj cnP cnF hc us
+  obtain ⟨ws, f, w, -, rfl, rfl, rfl, rfl, rfl, -, hfkC, -, hmodSome, hmodNone, hlenW, hrules⟩ :=
+    declRecTwinRunJ_newRec hrun hf hn0
+  cases hmw : w.model? with
+  | some triple =>
+    rcases triple with ⟨cvm, mval, hint⟩
+    exact absurd ⟨_, mval, hint, hmodSome cvm mval hint hmw⟩ hm
+  | none =>
+    have hmC : ¬ HasModel env w.kC := by
+      rintro ⟨cvm, mval, hint, hfm⟩
+      exact (hmodNone hmw).1 cvm mval hint hfm
+    obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules rl hrl
+    have hctor : rl.ctor = rC.ctor := hrule.2.2.2.2.2.2.2.2.1
+    obtain ⟨⟨cvj', hfcEnv, -⟩, -⟩ := h.rec_ctors w.kC w.cvC w.mI w.rP w.rulesC hfkC rC hrC
+    have hfc₂ := (declRecTwinRunJ_envExt hrun).find hfcEnv
+    rw [← hctor, hc] at hfc₂
+    obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfc₂)
+    exact hno w.kC w.cvC w.mI w.rP w.rulesC hfkC hmC rC hrC cvj _ _ hfcEnv us
+
 /-! ## The install, and the run after it -/
 
 theorem noRuleFamily_of_step {env env₂ : Env md} {T : Key md} (h : StoreInv env)
@@ -624,13 +651,15 @@ theorem noRuleFamily_declRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFr
     simp only [DeclRunJ] at hrun
     split at hrun
     · exact noRuleFamily_of_step h hT hno (basisRun_find hrun) (basis_newRulesAvoid hTres hrun)
-    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT'
       · exact noRuleFamily_of_step h hT hno (declNativeRunJ_envExt hN).find
           (declNativeRunJ_newRulesAvoid hfr (nativeRecog_of hdp) h hT hN)
       · exact noRuleFamily_of_step h hT hno (declIndRunJ_envExt hM).find
           (declIndRunJ_newRulesAvoid hM)
       · exact noRuleFamily_of_step h hT hno (declNativeNoRecRunJ_envExt hN).find
           (newRulesAvoid_of_noNewRec fun hf => declNativeNoRecRunJ_noNewRec hN hf)
+      · exact noRuleFamily_of_step h hT hno (declRecTwinRunJ_envExt hT').find
+          (declRecTwinRunJ_newRulesAvoid h hno hT')
   | quotDecl k cv =>
     simp only [DeclRunJ] at hrun
     split at hrun

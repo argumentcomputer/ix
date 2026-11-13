@@ -113,6 +113,7 @@ theorem candidate_transition (store : Store) (owner : Address) (constant : Ixon.
   refine ⟨after, ran, ?_⟩
   cases step with
   | keep => exact ⟨fun _ _ h => h, fun _ _ h => h, id⟩
+  | twin => exact ⟨fun _ _ h => h, fun _ _ h => h, id⟩
   | add motive carriers major block firstIndex blockRecord members slot first fresh =>
     refine ⟨?_, ?_, backed_added owner member before motive major block _ first⟩
     · intro query old found
@@ -414,6 +415,7 @@ theorem candidate_unique (store : Store) (owner : Address) (constant : Ixon.Cons
   rw [ran]
   cases step with
   | keep => exact unique
+  | twin => exact unique
   | add motive carriers major block firstIndex blockRecord members slot first _ _ _ _ _ _ _ unused =>
     change OnePerMotive (added owner member before motive major block _ first).2
     rw [added_found]

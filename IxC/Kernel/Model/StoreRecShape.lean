@@ -462,6 +462,76 @@ theorem basis_recShape_new {env env₂ : Env md} {kind : BasisKind}
 
 /-! ## The fold -/
 
+/-- **The twin recursor route stores recursors keeping `RecAt`.** -/
+theorem twin_recShape_new {J : Judgements md} {env env₂ : Env md} {block : List (ConstantInfo md)}
+    (h : StoreInv env) (hS : RecShape env)
+    (hrun : DeclRecTwinRunJ J env block env₂) :
+    ∀ n cv mI rP rules, env₂.find? n = some (.recInfo cv mI rP rules) → env.find? n = none →
+      RecAt env₂ n cv mI rP rules := by
+  have hext : ∀ {k : Key md} {x : ConstantInfo md}, env.find? k = some x → env₂.find? k = some x :=
+    (declRecTwinRunJ_envExt hrun).find
+  intro n cv mI rP rules hf hn0
+  obtain ⟨ws, f, w, -, rfl, rfl, rfl, rfl, rfl, -, hfkC, -, hmodSome, hmodNone, hlenW, hrules⟩ :=
+    declRecTwinRunJ_newRec hrun hf hn0
+  have ho := hS w.kC w.cvC w.mI w.rP w.rulesC hfkC
+  have hnoMod : ¬ HasModel env₂ w.cvW.name →
+      ¬ HasModel env w.kC ∧
+      (∀ bsW domW bodyW bmW,
+        w.cvW'.type.stripPis w.mI = some (bsW, .forallE domW bodyW bmW) →
+        ∃ bsC domC bodyC bmC,
+          w.cvC.type.stripPis w.mI = some (bsC, .forallE domC bodyC bmC) ∧
+          domW.getAppFn = domC.getAppFn ∧
+          domW.getAppArgs = domC.getAppArgs) := by
+    intro hm
+    cases hmw : w.model? with
+    | some triple =>
+      rcases triple with ⟨cvm, mval, hint⟩
+      exact absurd ⟨_, mval, hint, hmodSome cvm mval hint hmw⟩ hm
+    | none =>
+      obtain ⟨hnoC, hmajEq⟩ := hmodNone hmw
+      exact ⟨fun ⟨cvm, mval, hint, hfm⟩ => hnoC cvm mval hint hfm, hmajEq⟩
+  refine ⟨fun r hr => ?_, fun hm r hr hp => ?_, fun hm r hr cvj a b hc bsW D B m hsW T us hD => ?_,
+    fun hm r hwW hk => ?_⟩
+  · obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+    obtain ⟨-, -, -, -, -, -, -, -, hctor, -, -, -, -, -, hetaEq, -⟩ := hrule
+    rw [hetaEq, recRuleEtaOf_stable h hext hfkC hrC w.cvW.name, hctor]
+  · obtain ⟨hmC, hmajEq⟩ := hnoMod hm
+    obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+    obtain ⟨-, -, -, -, -, -, -, -, hctor, -, hcp, hfireEq, -, -, -, hplainShape, -⟩ := hrule
+    obtain ⟨⟨cvj, hfcEnv, -⟩, -⟩ := h.rec_ctors w.kC w.cvC w.mI w.rP w.rulesC hfkC rC hrC
+    obtain ⟨bsW, domW, bodyW, bmW, _, hsW, -⟩ :=
+      Ix.Kernel.recRulePlain_shapeT
+        (hplainShape hp cvj rC.ctorParams rC.nfields (by rw [hctor]; exact hfcEnv))
+    obtain ⟨bsC, domC, bodyC, bmC, hsC, -, hargsEq⟩ := hmajEq bsW domW bodyW bmW hsW
+    obtain ⟨bsC', domC', bodyC', bmC', hsC', hdropC⟩ := ho.plainIdx hmC rC hrC (hfireEq.symm.trans hp)
+    have hdomEq : domC = domC' := by
+      have h1 := Option.some.inj (hsC.symm.trans hsC')
+      injection h1 with _ h2
+      injection h2
+    refine ⟨bsW, domW, bodyW, bmW, hsW, ?_⟩
+    rw [hargsEq, hcp, hdomEq]
+    exact hdropC
+  · obtain ⟨hmC, hmajEq⟩ := hnoMod hm
+    obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+    obtain ⟨-, -, -, -, -, -, -, -, hctor, -⟩ := hrule
+    obtain ⟨⟨cvj', hfcEnv, -⟩, -⟩ := h.rec_ctors w.kC w.cvC w.mI w.rP w.rulesC hfkC rC hrC
+    have hfc₂ := hext hfcEnv
+    rw [← hctor, hc] at hfc₂
+    obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfc₂)
+    obtain ⟨bsC, domC, bodyC, bmC, hsC, hfnEq, -⟩ := hmajEq bsW D B m hsW
+    exact ho.ctorHead hmC rC hrC cvj _ _ hfcEnv bsC domC bodyC bmC hsC T us (hfnEq.symm.trans hD)
+  · obtain ⟨hmC, -⟩ := hnoMod hm
+    have hr : r ∈ w.rulesW' := by rw [hwW]; exact List.mem_cons_self
+    obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, hcp, -, hkEq, -⟩ := hrule
+    have hlenEq : (w.rulesW.zip w.rulesW').length = w.rulesC.length := forall₂_length hrules
+    have hlenC1 : w.rulesC.length = 1 := by
+      rw [List.length_zip, hlenW, Nat.min_self, hwW, List.length_singleton] at hlenEq
+      exact hlenEq.symm
+    have hwC : w.rulesC = [rC] := eq_singleton_of_length_le_one (Nat.le_of_eq hlenC1) hrC
+    rw [hcp]
+    exact ho.kParams hmC rC hwC (hkEq.symm.trans hk)
+
 /-- **One declaration step keeps the facts**, over the derivation package. -/
 theorem recShape_declRunJ {env env₂ : Env md} {d : Declaration md} (h : StoreInv env)
     (hS : RecShape env) (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
@@ -488,12 +558,13 @@ theorem recShape_declRunJ {env env₂ : Env md} {d : Declaration md} (h : StoreI
     simp only [DeclRunJ] at hrun
     split at hrun
     · exact recShape_step h hS hext.find (basis_recShape_new hrun)
-    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · exact recShape_step h hS hext.find (native_recShape_new hfr (nativeRecog_of hdp) h hN)
       · exact recShape_step h hS hext.find (modeled_recShape_new hM)
       · exact recShape_step_noRec h hS hext.find
           (nativeNoRec_newSat (fun _ _ _ _ _ _ heq => nomatch heq)
             (fun _ _ _ _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq) hN)
+      · exact recShape_step h hS hext.find (twin_recShape_new h hS hT)
   | quotDecl k cv =>
     simp only [DeclRunJ] at hrun
     split at hrun

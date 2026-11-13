@@ -45,8 +45,9 @@ the modeled route:
 record gives it at its runs (`declNativeRun_runJ`). `DeclNativeNoRecRunJ` is the
 same route for a one-type block without its recursor record (`nativePartsNoRec?`):
 the former's and the constructors' stages and the table, with no recursor stage.
-`IndRoutesJ` is the inductive kind's routes: native at the recognised parts,
-modeled (`DeclIndRunJ`), or native without a recursor.
+`DeclRecTwinRunJ` is the twin recursor route for recursor records of an already-installed
+inductive block. `IndRoutesJ` is the inductive kind's routes: native at the recognised
+parts, modeled (`DeclIndRunJ`), native without a recursor, or twin recursors.
 -/
 
 namespace Ix.Kernel.Semantics
@@ -353,15 +354,140 @@ def DeclNativeNoRecRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts m
     -- what the stages read of the former
     FormerReadJ env₁ p cvTa ctorsA
 
+/-! ## The twin recursor route -/
+
+/-- **One twin recursor rule's stage** over a package: the declared rule's right-hand side is
+closed, annotated at the provisioned environment `envSelf`, scoped at the recursor's level
+parameters and constants, and free of `let`; the installed rule carries the canonical rule's
+constructor, counts, fire mode, parameter blindness, K bit, and the η verdict at the twin's
+own name; a plain rule passes `Expr.recRulePlain` at the twin's checked type; a nested rule
+matches the twin's major-premise domain; and a single generated right-hand side `rhsG`
+(either the canonical rule's own right-hand side, or a closed term typed at `env`) relates
+to `rC.rhs` before renaming and to `rW'.rhs` after renaming `f`. -/
+def TwinRuleJ (J : Judgements md) (env envSelf : Env md) (f : Key md → Key md)
+    (recName : Key md) (lps : List LevelParam) (cvW' : ConstantVal md) (mI rP : Nat)
+    (rW rW' rC : RecRule md) : Prop :=
+  rW.ctor = rW'.ctor ∧ rW.nfields = rW'.nfields ∧
+  rW.rhs.looseBVarsBounded 0 = true ∧ rW.rhs.hasFvar = false ∧
+  J.annot envSelf 0 rW.rhs rW'.rhs ∧
+  rW'.rhs.allLevelParamsDefined lps = true ∧
+  rW'.rhs.constsResolve envSelf = true ∧
+  letFree rW'.rhs = true ∧
+  rW'.ctor = rC.ctor ∧ rW'.nfields = rC.nfields ∧
+  rW'.ctorParams = rC.ctorParams ∧ rW'.fire = rC.fire ∧
+  rW'.k = rC.k ∧ rW'.paramsBlind = rC.paramsBlind ∧
+  rW'.eta = Ix.Kernel.recRuleEtaOf env.find? recName rC.ctor ∧
+  (rW'.fire = .plain → ∀ cvj cnP cnF,
+    env.find? rW'.ctor = some (.ctorInfo cvj cnP cnF) →
+    Expr.recRulePlain cvW'.type mI rP rW'.ctorParams cvj.levelParams = true) ∧
+  (∀ lvls pins, rW'.fire = .nested lvls pins →
+    ∃ pre dom body bm D,
+      cvW'.type.stripPis mI = some (pre, .forallE dom body bm) ∧
+      dom.getAppFn = .const D lvls ∧
+      dom.getAppArgs =
+        pins.map (Expr.liftLooseBVars (mI - rP) 0) ++
+          (List.range (mI - rP)).map (fun i => Expr.bvar (mI - rP - 1 - i))) ∧
+  ∃ rhsG : Expr md,
+    WrapRel env.find? rhsG rC.rhs ∧
+    WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
+    (rhsG = rC.rhs ∨
+      (rhsG.hasFvar = false ∧ rhsG.allLevelParamsDefined lps = true ∧
+        rhsG.constsResolve env = true ∧ rhsG.looseBVarsBounded 0 = true ∧
+        ∃ rty, J.infer env 0 rhsG rty))
+
+/-- **One recursor of a twin recursor block**: the declared constant `cvW`, its checked
+annotation `cvW'`, the already-stored canonical recursor `(kC, cvC, mI, rP, rulesC)`, the
+declared and checked rule lists `rulesW` and `rulesW'`, and (for a twin of a modeled
+recursor) the canonical recursor's stored model companion `model?`. -/
+structure TwinRecPart (md : Ix.Kernel.Mode) where
+  cvW : ConstantVal md
+  cvW' : ConstantVal md
+  cvC : ConstantVal md
+  kC : Key md
+  mI : Nat
+  rP : Nat
+  rulesW : List (RecRule md)
+  rulesW' : List (RecRule md)
+  rulesC : List (RecRule md)
+  model? : Option (ConstantVal md × Expr md × Ix.Kernel.ReducibilityHint)
+
+/-- The model companion definition copied to a modeled twin's own `.model` key, if any. -/
+def TwinRecPart.modelInfo? (w : TwinRecPart md) : Option (ConstantInfo md) :=
+  w.model?.map fun (cvm, mval, hint) =>
+    .defnInfo ⟨Ix.Kernel.auxKey w.cvW.name .model, cvm.levelParams, cvm.type⟩ mval hint
+
+/-- Model companion definitions installed before the twin recursors. -/
+def twinModels (ws : List (TwinRecPart md)) : List (ConstantInfo md) :=
+  ws.filterMap TwinRecPart.modelInfo?
+
+/-- Provisioned rule-less twin recursor entries for annotating mutual twin rules. -/
+def twinProv (ws : List (TwinRecPart md)) : List (ConstantInfo md) :=
+  ws.map fun w => .recInfo w.cvW' w.mI w.rP []
+
+/-- Installed twin recursor entries carrying their checked rules. -/
+def twinRecs (ws : List (TwinRecPart md)) : List (ConstantInfo md) :=
+  ws.map fun w => .recInfo w.cvW' w.mI w.rP w.rulesW'
+
+/-- **The twin recursor route over a package**: a non-empty block of recursor records whose
+inductive block was already installed earlier in the environment. Each twin `w` checks its
+declared constant `w.cvW` to `w.cvW'`, names a stored canonical recursor `w.kC` with the same
+level parameters and counts `(w.mI, w.rP)`, shares a common generated type `tyG` under
+`WrapRel`, and checks its rules against `w.rulesC` up to `WrapRel` and the canonical-to-twin
+peer renaming `f`. If `w.kC` is a modeled recursor (`w.model? = some …`), its stored model
+companion is copied to `auxKey w.cvW.name .model` so `HasModel` holds on the twin; if `w.kC`
+is native or basis (`w.model? = none`), `w.kC` has no model companion and the twin's major
+premise domain has the canonical head and arguments. -/
+def DeclRecTwinRunJ (J : Judgements md) (env : Env md) (block : List (ConstantInfo md))
+    (env₂ : Env md) : Prop :=
+  ∃ (ws : List (TwinRecPart md)) (f : Key md → Key md),
+    ws ≠ [] ∧
+    block = ws.map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW) ∧
+    let envM : Env md := ⟨twinModels ws ++ env.consts⟩
+    let envSelf : Env md := ⟨twinProv ws ++ envM.consts⟩
+    env₂ = ⟨twinRecs ws ++ envM.consts⟩ ∧
+    ((twinRecs ws ++ twinModels ws).map (·.name)).Nodup ∧
+    (∀ ci ∈ twinRecs ws ++ twinModels ws, env.find? ci.name = none) ∧
+    (∀ k, f k = k ∨ ∃ w' ∈ ws, k = w'.kC ∧ f k = w'.cvW.name) ∧
+    ∀ w ∈ ws,
+      ConstantValCheckJ J env w.cvW w.cvW' ∧
+      letFree w.cvW'.type = true ∧
+      env.find? w.kC = some (.recInfo w.cvC w.mI w.rP w.rulesC) ∧
+      w.cvW.levelParams = w.cvC.levelParams ∧
+      (match w.model? with
+        | some (cvm, mval, hint) =>
+          env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint)
+        | none =>
+          (∀ cvm mval hint,
+            env.find? (Ix.Kernel.auxKey w.kC .model) ≠ some (.defnInfo cvm mval hint)) ∧
+          (∀ bsW domW bodyW bmW,
+            w.cvW'.type.stripPis w.mI = some (bsW, .forallE domW bodyW bmW) →
+            ∃ bsC domC bodyC bmC,
+              w.cvC.type.stripPis w.mI = some (bsC, .forallE domC bodyC bmC) ∧
+              domW.getAppFn = domC.getAppFn ∧
+              domW.getAppArgs = domC.getAppArgs)) ∧
+      (∃ tyG : Expr md,
+        WrapRel env.find? tyG w.cvC.type ∧
+        WrapRel env.find? tyG w.cvW'.type ∧
+        (tyG = w.cvC.type ∨
+          (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
+            tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
+            ∃ sty, J.infer env 0 tyG sty))) ∧
+      w.rulesW.length = w.rulesW'.length ∧
+      Forall₂ (fun (p : RecRule md × RecRule md) rC =>
+        TwinRuleJ J env envSelf f w.cvW.name w.cvC.levelParams w.cvW' w.mI w.rP p.1 p.2 rC)
+        (w.rulesW.zip w.rulesW') w.rulesC
+
 /-- **An inductive block's routes over a package**: the native route at the parts
 the recogniser reads off the block, the modeled route (`DeclIndRunJ`, stated for
-every block), or the native route without a recursor record at the parts read off
-a one-type block that has none (`nativePartsNoRec?`). -/
+every block), the native route without a recursor record at the parts read off
+a one-type block that has none (`nativePartsNoRec?`), or the twin recursor route
+(`DeclRecTwinRunJ`). -/
 def IndRoutesJ (J : Judgements md) (env : Env md) (block : List (ConstantInfo md))
     (nP : Nat) (env₂ : Env md) : Prop :=
   (∃ p₀, Ix.Kernel.nativeParts? nP block = some p₀ ∧ DeclNativeRunJ J env p₀ env₂) ∨
   DeclIndRunJ J env block env₂ ∨
-  (∃ p₀, nativePartsNoRec? nP block = some p₀ ∧ DeclNativeNoRecRunJ J env p₀ env₂)
+  (∃ p₀, nativePartsNoRec? nP block = some p₀ ∧ DeclNativeNoRecRunJ J env p₀ env₂) ∨
+  DeclRecTwinRunJ J env block env₂
 
 /-! ## Facts the records carry -/
 
@@ -590,6 +716,17 @@ theorem forall₂_length {α β : Type} {R : α → β → Prop} {l₁ : List α
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
+theorem forall₂_mem_left {α β : Type} {R : α → β → Prop} {l₁ : List α} {l₂ : List β}
+    (h : Forall₂ R l₁ l₂) : ∀ a ∈ l₁, ∃ b ∈ l₂, R a b := by
+  induction h with
+  | nil => intro a ha; exact nomatch ha
+  | @cons a' b _ _ hab _ ih =>
+    intro a ha
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact ⟨b, List.mem_cons_self, hab⟩
+    · obtain ⟨b', hb', h'⟩ := ih a ha
+      exact ⟨b', List.mem_cons_of_mem _ hb', h'⟩
+
 theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} {l₁ : List α} {l₂ : List β}
     (h : Forall₂ R l₁ l₂) : ∀ b ∈ l₂, ∃ a ∈ l₁, R a b := by
   induction h with
@@ -600,6 +737,25 @@ theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} {l₁ : List
     · exact ⟨a, List.mem_cons_self, hab⟩
     · obtain ⟨a', ha', h'⟩ := ih b hb
       exact ⟨a', List.mem_cons_of_mem _ ha', h'⟩
+
+theorem mem_zip_of_mem_snd {α β : Type} :
+    ∀ {l₁ : List α} {l₂ : List β}, l₁.length = l₂.length →
+      ∀ b ∈ l₂, ∃ a, (a, b) ∈ l₁.zip l₂
+  | [], [], _, _, hb => nomatch hb
+  | a :: _, _ :: l₂, hlen, b, hb => by
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ⟨a, List.mem_cons_self⟩
+    · obtain ⟨a', ha'⟩ := mem_zip_of_mem_snd (Nat.succ.inj hlen) b hb
+      exact ⟨a', List.mem_cons_of_mem _ ha'⟩
+
+theorem forall₂_zip_mem_snd {α β γ : Type} {R : α × β → γ → Prop}
+    {l₁ : List α} {l₂ : List β} {l₃ : List γ}
+    (hlen : l₁.length = l₂.length) (h : Forall₂ R (l₁.zip l₂) l₃) :
+    ∀ b ∈ l₂, ∃ a, ∃ c ∈ l₃, R (a, b) c := by
+  intro b hb
+  obtain ⟨a, hab⟩ := mem_zip_of_mem_snd hlen b hb
+  obtain ⟨c, hc, hR⟩ := forall₂_mem_left h (a, b) hab
+  exact ⟨a, c, hc, hR⟩
 
 /-- The block's recursor record's pins (`NativeRecRunJ.pins`, at the stage it holds). -/
 theorem NativeRecJ.pins {J : Judgements md} {env : Env md} {p : NativeParts md}
