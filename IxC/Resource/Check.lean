@@ -245,7 +245,9 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
       -- a unique result is transferred at the callee's return, which fails on a confined value it
       -- holds, and a plain parameter's confinement is not visible to the callee (a `@shared` field
       -- of a fresh cell, say): a retained argument must be unconfined (repair U)
-      if ifc.res == .unique && ifc.resCls == .val && !a.regs.isEmpty then
+      -- (a number is never confined, L1: an argument of class `leaf`, or at a `leaf` parameter, is
+      -- not checked here, W6)
+      if ifc.res == .unique && ifc.resCls == .val && !a.regs.isEmpty && a.cls != .leaf && p.cls != .leaf then
         match d with
         | .share | .once =>
           refuseM s!"borrowEscape: a borrowed value retained by a call whose result is unique: {w}"
