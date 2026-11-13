@@ -314,8 +314,7 @@ the claim" ("catalog: …" likewise). The in-circuit claim readers require objec
 
 | Fixture or pin | Location | Checked by | Producer |
 |---|---|---|---|
-| handoff set | `Tests/Fixtures/ixon-v4/handoff/` (`accepted.ixe`, `rejected-local-escape.ixe`, `profile.bin`, `accepted.claim`, `manifest.json`) | `ixon-v4-tests` (byte equality) | `lake exe ixon-v4-tests --export-handoff` |
-| claims, addressed resources, resource cases | `Tests/Fixtures/ixon-v4/{claims,addressed,resource}.tsv` | `ixon-v4-tests` (whole files); `ixon` `proof::tests::v4_claim_fixtures_and_strict_scope` | `lake exe ixon-v4-tests --export-fixtures` |
+| claims, addressed resources | `Tests/Fixtures/ixon-v4/{claims,addressed}.tsv` | `ixon-v4-tests` (whole files); `ixon` `proof::tests::v4_claim_fixtures_and_strict_scope` | `lake exe ixon-v4-tests --export-fixtures` |
 | canonical primitive addresses | `Tests/Fixtures/ixon-v4/primitives.tsv`, `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`), `Ix/PrimAddrs.lean`; the IxVM program holds none (only its specification digest) | `lake exe ixon-v4-primitives` (file equality), suites `primitive-address-parity` and `prim-addrs` (no address literal in the IxVM program's sources) | `lake exe ixon-v4-primitives` |
 | catalog claim digest | `Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs` (`catalog_claim_wire_bytes_pinned`) | `claim` suite, `ixon` tests | the serializers' output |
 | independent expression bytes | `Tests/Fixtures/ixon-v4/expressions.txt` | `ixon-v4-tests`; `ixon` `v4_independent_golden_expressions` | written by hand from the specification (`text.tsv` holds no bytes) |

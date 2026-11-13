@@ -253,7 +253,7 @@ lean_exe «source-contract-tests» where
   supportInterpreter := true
 
 /-- Focused Ixon v4 codec, locality, and cross-language transport checks;
-`--export-fixtures` and `--export-handoff` regenerate the generated fixtures.
+`--export-fixtures` regenerates the generated text fixtures.
 Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
 lean_exe «ixon-v4-tests» where
   root := `Tests.IxonV4Main

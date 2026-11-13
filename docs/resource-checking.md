@@ -182,8 +182,9 @@ These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
-[Resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
-accepted and rejected terms. The suites also cover
-all 64 input/result combinations, imported-interface aliases, mutual groups,
-profile omissions, constructor captures, and bounded rejection of cyclic
+The resource suites of `lake exe ixon-v4-tests` (`Tests/Ix/ResourceAdmit.lean`,
+`Tests/Ix/ResourceAddressed.lean` with its fixture
+[`addressed.tsv`](../Tests/Fixtures/ixon-v4/addressed.tsv), and
+`Tests/Ix/ResourceValidate.lean`) exercise accepted and rejected terms,
+imported-interface aliases, mutual groups, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
