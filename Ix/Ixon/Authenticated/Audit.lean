@@ -123,7 +123,7 @@ end Ixon.Authenticated.Audit
 -- inherited externs to 7049 and 117, as for `Admission.checkBytes`.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7049 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7084 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -287,7 +287,7 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- unsafe, csimp and all ruling counts are unchanged.
 -- Modes in records and the reader's canonical natural-literal check take the closure from
 -- 7107 compiled functions and 116 inherited externs to 7131 and 117.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7131 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7166 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

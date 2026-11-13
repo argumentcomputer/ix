@@ -27,13 +27,13 @@ e6f717602b5c3d293803bcc6165dddcbf2c6163b49bc4e5704505cf286856fa9 (19730 bytes).
 Version 3 drops the binder and let contracts from the encoding (kernel terms
 carry no modes): 1384 bytes fewer. -/
 
-/-- info: "18346 bytes" -/
+/-- info: "18337 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "43b34c7a1e95e869697f5d99839ea13aa50241c311228fe3a19454f7bb942aa1" -/
+/-- info: "088184d44ce34e7c7aed3488d63e4108df6f7190ce6c0499aaeb2e491458ddaa" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

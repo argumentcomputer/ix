@@ -54,7 +54,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 6 -/
+/-- info: 4 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
