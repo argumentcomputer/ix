@@ -6,6 +6,8 @@ import IxC.Kernel.Roles
 import IxC.Kernel.RoleEquations
 import Ix.IxVM.Refinement.Claim
 import Ix.SpecDigest.Schedule
+import IxC.Kernel.Model.Open.StoredFacts
+import IxC.Kernel.BasisA
 
 /-! # The context seam: the role context, the context list, and the environment the core reads
 
@@ -245,13 +247,44 @@ structure EnvFacts (c : Ctx) : Prop where
       Ix.Cert.recordAt c.E p = some cm → cm.info = .iPrj ip →
       ∀ j rl, rls[j]? = some rl → rl.ctor = c.κ (cprjAddr ip.block ip.idx.toNat j)
   /-- (L5) A plain rule's comparands (`recFireComparands`) are the major premise's domain: its
-  head is the inductive at the constructor's level parameters and its first `nP` arguments are
-  the recursor's leading bound variables (the canonical shape `Expr.recRulePlain` tests). -/
+  head is the inductive at the constructor's level parameters, its first `nP` arguments are
+  the recursor's leading bound variables (the canonical shape `Expr.recRulePlain` tests), and
+  its remaining arguments are the index binders' (the trailing `mI - rP` bound variables, which
+  `Red.iota` compares against the major's indices). The index part is not yet a store lemma
+  (lane K-N to prove it at the store level, as `recRulePlain_shapeT` gives the parameter part). -/
   recPlain : ∀ k cv mI rP rls rl cvj nP nF, c.env.find? k = some (.recInfo cv mI rP rls) →
     rl ∈ rls → rl.fire = .plain → c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
     ∃ D T, piDomAt mI cv.type = some D ∧
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
-      D.getAppArgs.take nP = (List.range nP).map fun i => .bvar (mI - 1 - i)
+      D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
+      D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
+  /-- (L5) **The store invariant** of the declaration layer's fold (`EnvWF`, `RecCtorsStored`,
+  `ProjOkT`; `IxC/Kernel/Model/StoreFold.lean`, `storeFoldRoutes`): nested rules' major-domain
+  shape, the stored types' level parameters defined, the projection tables' head data. The
+  arity fields below and `recRules`' firing conjunct follow from it
+  (`storedFacts_of_invariants`). -/
+  store : Ix.Kernel.Open.StoreInv c.env
+  /-- (L7) **The major inductive of a stored recursor with a rule has a record**: the key heading
+  the major premise's domain is that of an address the records `c.E` hold (the reader reads a
+  recursor only with its block's records). -/
+  recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
+    c.env.find? k = some (.recInfo cv mI rP rls) → rls ≠ [] →
+    (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
+    ∃ cm, Ix.Cert.recordAt c.E p = some cm
+  /-- (L5) **A rule's constructor builds the recursor's major inductive**: the head of the
+  constructor type's result is the key heading the major premise's domain (the K and η rescues
+  rebuild a major from it). -/
+  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
+    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
+    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
+    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
+  /-- (L5, L6) **The quotient roles in force store the pinned basis**: the annotated basis
+  constants (`Ix.Kernel.BasisKind.declsA .quotK`: `Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`,
+  `Quot.sound`) are stored at their keys once `Quot` is in force (its group admitted, the basis
+  installed by the basis route). -/
+  quotBasis : c.inForce .quot → ∀ ci ∈ Ix.Kernel.BasisKind.declsA (md := .anon) .quotK,
+    c.env.find? ci.name = some ci
   /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
   premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
   `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the

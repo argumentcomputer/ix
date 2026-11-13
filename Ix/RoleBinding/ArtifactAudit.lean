@@ -64,7 +64,10 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6909 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6914 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -79,7 +82,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7043 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7048 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -94,7 +100,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6909 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6914 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -109,7 +118,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7043 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7048 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -137,8 +149,11 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7104 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7109 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
