@@ -1703,14 +1703,18 @@ inductive ConvertAnnotatedPath
 
 section AnnotObsMacros
 
+set_option hygiene false in
 local macro "ca_var" d:ident : tactic =>
   `(tactic| (obtain ⟨l_v, rfl, rfl⟩ := ObsExpr.var_inv $d; simp at l_v; subst l_v))
 
+set_option hygiene false in
 local macro "ca_arg_var" a:ident a':ident : tactic =>
   `(tactic| (
     obtain ⟨_, _, _, _, _, rfl, d_av, $a', rfl⟩ := ObsArgs.cons_inv $a
-    ca_var d_av))
+    ca_var d_av
+    clear d_av))
 
+set_option hygiene false in
 local macro "ca_tuple2_pat" mt:ident x:ident y:ident : tactic =>
   `(tactic| (
     obtain ⟨_, hv_t2, -, ml_t1⟩ := matchPattern_tuple_inv $mt
@@ -1719,8 +1723,10 @@ local macro "ca_tuple2_pat" mt:ident x:ident y:ident : tactic =>
     obtain rfl := matchPattern_bind_inv mt_t1
     obtain ⟨$y, _, _, _, rfl, mt_t2, ml_t3, rfl⟩ := matchListWith_cons_inv ml_t2
     obtain rfl := matchPattern_bind_inv mt_t2
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_t3))
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_t3
+    clear ml_t1 mt_t1 ml_t2 mt_t2 ml_t3))
 
+set_option hygiene false in
 local macro "ca_let_conv_expr" d:ident xk:ident xb:ident m:ident cs:ident ev:ident drest:ident : tactic =>
   `(tactic| (
     obtain ⟨_, $m, _, _, _, d_ce, mt_ce, $drest, rfl⟩ := ObsExpr.letValue_inv $d
@@ -1733,8 +1739,10 @@ local macro "ca_let_conv_expr" d:ident xk:ident xb:ident m:ident cs:ident ev:ide
     ca_arg_var a_ce4 a_ce5
     ca_arg_var a_ce5 a_ce6
     obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_ce6
-    ca_tuple2_pat mt_ce $xk $xb))
+    ca_tuple2_pat mt_ce $xk $xb
+    clear d_ce mt_ce a_ce0 a_ce1 a_ce2 a_ce3 a_ce4 a_ce5 a_ce6))
 
+set_option hygiene false in
 local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br:ident drest:ident : tactic =>
   `(tactic| (
     obtain ⟨_, $m, _, $cs, _, d_ab, mt_ab, $drest, rfl⟩ := ObsExpr.letValue_inv $d
@@ -1766,7 +1774,8 @@ local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br
           obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_abr8
           exact AnnotBranch.other cs_abr hne_ab0 ev_abr
             (by simp only [List.nil_append])
-        · exact (matchPattern_wildcard_none nm_ab1).elim))
+        · exact (matchPattern_wildcard_none nm_ab1).elim
+    clear d_ab mt_ab d_sc sel_ab d_body_ab))
 
 set_option maxHeartbeats 40000000 in
 /-- **Every observed derivation of `Convert::convert_annotated` takes one of its 6 paths.** -/
@@ -1945,10 +1954,10 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml4d
     -- `let type_addr = Lists::lookup(refs, UInt64::to_field(type_ref_idx));`
     obtain ⟨x_taddr, m2, _, _, _, d_lk, mt_lk, d1, rfl⟩ := d_arm.letValue_inv
-    obtain ⟨_, _, _, cs2, a_lk0, ev_lk, rfl⟩ := d_lk.call_inv
+    obtain ⟨_, m1, _, cs2, a_lk0, ev_lk, rfl⟩ := d_lk.call_inv
     rw [Names.n16119986092388975791] at ev_lk
     ca_arg_var a_lk0 a_lk1
-    obtain ⟨v_tidx, _, m1, _, _, rfl, d_tf, a_lk2, rfl⟩ := a_lk1.cons_inv
+    obtain ⟨v_tidx, _, _, _, _, rfl, d_tf, a_lk2, rfl⟩ := a_lk1.cons_inv
     obtain ⟨_, _, _, cs1, a_tf0, ev_tf, rfl⟩ := d_tf.call_inv
     rw [instanceName_plain_some] at ev_tf
     ca_arg_var a_tf0 a_tf1
@@ -1972,11 +1981,11 @@ theorem convert_annotated_obs
     -- `((&(KernelTypes::KExprNode::Proj(type_addr, UInt64::to_field(field_idx), ki))), n1)`
     obtain ⟨_, a_ret0, rfl⟩ := d2.tuple_inv
     obtain ⟨_, _, _, _, _, rfl, d_st, a_ret1, rfl⟩ := a_ret0.cons_inv
-    obtain ⟨_, _, d_con, rfl, hm_st⟩ := d_st.store_inv
+    obtain ⟨_, m4, d_con, rfl, hm_st⟩ := d_st.store_inv
     obtain ⟨_, a_con0, hcon⟩ := d_con.construct_inv
     rw [instanceName_plain_some] at hcon; subst hcon
     ca_arg_var a_con0 a_con1
-    obtain ⟨v_fidx, _, m4, _, _, rfl, d_ff, a_con2, rfl⟩ := a_con1.cons_inv
+    obtain ⟨v_fidx, _, _, _, _, rfl, d_ff, a_con2, rfl⟩ := a_con1.cons_inv
     obtain ⟨_, _, _, cs4, a_ff0, ev_ff, rfl⟩ := d_ff.call_inv
     rw [instanceName_plain_some] at ev_ff
     ca_arg_var a_ff0 a_ff1
@@ -2039,13 +2048,13 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_sh1
     -- `let entry_nodes = binder_nodes(tbl, 1, n, UInt64::to_field(variant));`
     obtain ⟨x_enodes, m4, _, _, _, d_bn, mt_bn, d5, rfl⟩ := d4.letValue_inv
-    obtain ⟨_, _, _, cs4, a_bn0, ev_bn, rfl⟩ := d_bn.call_inv
+    obtain ⟨_, m3, _, cs4, a_bn0, ev_bn, rfl⟩ := d_bn.call_inv
     rw [instanceName_plain_some] at ev_bn
     ca_arg_var a_bn0 a_bn1
     obtain ⟨_, _, _, _, _, rfl, d_lit1, a_bn2, rfl⟩ := a_bn1.cons_inv
     obtain ⟨rfl, rfl, rfl⟩ := d_lit1.literal_inv
     ca_arg_var a_bn2 a_bn3
-    obtain ⟨v_var, _, m3, _, _, rfl, d_vf, a_bn4, rfl⟩ := a_bn3.cons_inv
+    obtain ⟨v_var, _, _, _, _, rfl, d_vf, a_bn4, rfl⟩ := a_bn3.cons_inv
     obtain ⟨_, _, _, cs3, a_vf0, ev_vf, rfl⟩ := d_vf.call_inv
     rw [instanceName_plain_some] at ev_vf
     ca_arg_var a_vf0 a_vf1
@@ -2480,7 +2489,8 @@ private theorem convert_expr_go (fuel : Nat) :
         have hb0 : b_in = 0 := by
           rcases hb_in with rfl | rfl
           · rfl
-          · simp only [Nat.cast_one, Value.field.injEq, one_ne_zero] at hb0_eq
+          · simp only [Nat.cast_one, Value.field.injEq] at hb0_eq
+            exact absurd hb0_eq zero_ne_one
         obtain ⟨ht_lt, hv564, hm573⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value m461 tIdx) ev583
         subst v564 m573
