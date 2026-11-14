@@ -1685,7 +1685,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d6_1, d6_2⟩ := inv_args2 a6
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_2
-  obtain ⟨heq6, rfl⟩ := Builtin.assertEq_inv ap6; subst peeled_v
+  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap6
   obtain rfl := matchPattern_wildcard_inv mt6
   -- 7. `KernelInfer::k_infer(rc, rhs, (&(Lists::Node::Nil)))`
   obtain ⟨v_rhs_ty, h_rhs_inf, _, c7a, _, d7, mt7, rest7, hc7⟩ := rest6.letValue_inv; clear rest6
@@ -2808,6 +2808,21 @@ private theorem CIRepExact.induct_of_eq {κ : _root_.Address → KKey} {h : Heap
       hb_ind, hiidx, hname⟩
   | _ => simp [kciEnum] at hv
 
+private theorem repList_map_rel {α β : Type} {R : Heap F → α → SourceValue F → Prop}
+    {S : Heap F → β → SourceValue F → Prop} {h : Heap F} {f : α → β}
+    (hf : ∀ x p, R h x p → S h (f x) p) :
+    ∀ {xs : List α} {v : SourceValue F},
+      RepList kexprListEnum R h xs v → RepList kexprListEnum S h (xs.map f) v
+  | _, _, .nil cell => .nil cell
+  | _, _, .cons cell hh htl => .cons cell (hf _ _ hh) (repList_map_rel hf htl)
+
+private theorem repList_imp {α : Type} {R S : Heap F → α → SourceValue F → Prop} {h : Heap F}
+    (hf : ∀ x p, R h x p → S h x p) :
+    ∀ {xs : List α} {v : SourceValue F},
+      RepList kexprListEnum R h xs v → RepList kexprListEnum S h xs v
+  | _, _, .nil cell => .nil cell
+  | _, _, .cons cell hh htl => .cons cell (hf _ _ hh) (repList_imp hf htl)
+
 set_option maxHeartbeats 4000000 in
 /-- **Refinement of `KernelModeled::check_iota_rule`**: discharges every syntactic, telescope,
 and typing obligation in `RawIotaRuleVmRun` across `(c_pub, c_adv)`. -/
@@ -2944,6 +2959,7 @@ theorem check_iota_rule_vm_spec
     rwa [constsResolve_posOf] at hcr
   have hrhs_noproj : NoProjIn blockNames r.rhs = true := by
     have hnp := infer_noProjIn hrhs_inf_pos hproj_pub (Tm.hasFvar_false hrhs_pos_tm0.toTm)
+    unfold posOf at hnp
     rwa [noProjIn_instantiateLevelParams] at hnp
   have ext_rhs_inf := ext_rhs_in.trans inv.ev_rhs_inf.heap_extends
   -- 3. Advice membership & theorem lookup `Ingress::get_ci(t_addr)`
@@ -2987,8 +3003,9 @@ theorem check_iota_rule_vm_spec
   injection htup_open with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
   simp only [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
   obtain ⟨fvs, tbody, hopen_t, hfvs_pos, htbody_pos⟩ := openPisAtFvars_of_posOf hopen_pos
+  subst hfvs_pos
   obtain ⟨hfvs_len, _, hfvs_shape⟩ := openPisAtFvars_spec depth cvt_lps 0 hopen_t
-  have hfvs_pos_len : fvs_pos.length = depth := by rw [hfvs_pos, List.length_map, hfvs_len]
+  have hfvs_pos_len : (fvs.map (posOf lps)).length = depth := by rw [List.length_map, hfvs_len]
   have ext_open := ext_tci.trans (ext_open_in.trans inv.ev_open.heap_extends)
   -- 5. Equation spine (`collect_spine(tbody)`, `eqName`, `[ell]`, `targs.length = 3`)
   obtain ⟨r_eqh, r_targs, eqH_pos, targs_pos, htup_tsp, heqH_ex, htargs_rep, htbody_app⟩ :=
@@ -3000,7 +3017,9 @@ theorem check_iota_rule_vm_spec
   have ext_raddr := ext_req.trans inv.ev_raddr.heap_extends
   obtain ⟨heq_key_adv, _⟩ :=
     eq_addr_key_spec (c := c_adv) hroles hef_adv.tableWf (hgood_adv.sub inv.sub_raddr)
-      (hrc_adv.mono ext_req) (Bytes.repAddressRef_heapMono₂ addrTy ext_raddr ra_eq)
+      (hrc_adv.mono ext_req)
+      (Bytes.repAddressRef_heapMono₂ addrTy
+        (inv.ev_req.heap_extends.trans inv.ev_raddr.heap_extends) ra_eq)
       inv.ev_req inv.ev_raddr inv.ev_eqa
   have heq_key : c_pub.κ (ixAddr a_eq) = eqName := by rwa [hκ_eq] at heq_key_adv
   have ext_tsp_eqa := inv.ev_req.heap_extends.trans
@@ -3136,7 +3155,7 @@ theorem check_iota_rule_vm_spec
     have hv := congrArg ZMod.val hf
     rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hmi_val, hval1,
       hlargs_pos_eq, List.length_map] at hv
-    exact hv
+    exact hv.symm
   -- Prefix check: `largs.take rP = fvs.take rP`
   have hlargs_llen := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
     inv.ev_llen.heap_extends hlargs_lheq
@@ -3150,23 +3169,17 @@ theorem check_iota_rule_vm_spec
   have hbvd1_fvs :
       ((List.range rP).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) =
         (fvs.take rP).map (posOf lps) := by
-    have hlen_take : ((fvs.take rP).map (posOf lps)).length = rP := by
-      simp [hfvs_len]; omega
-    apply List.ext_getElem (by simp [hlen_take])
+    apply List.ext_getElem (by simp [hfvs_len]; omega)
     intro m hm1 hm2
     simp only [List.length_map, List.length_range] at hm1
-    have hm_lt : m < fvs_pos.length := by rw [hfvs_pos_len]; omega
+    have hm_lt : m < (fvs.map (posOf lps)).length := by rw [hfvs_pos_len]; omega
     have hΓm := hΓt_hi m hm_lt
-    have hfv_pos_m : fvs_pos[m] = .fvar m (fvs_pos[m].fvarTypeD) := by
-      rw [hfvs_pos]
-      simp only [List.getElem_map]
-      have hm_fvs : m < fvs.length := by rw [hfvs_len]; omega
-      have hsh := hfvs_shape m hm_fvs
-      rw [Nat.zero_add] at hsh
-      conv_lhs => rw [hsh]
-      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-    simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm, ← hfv_pos_m]
-    simp [hfvs_pos, List.getElem_take]
+    have hm_fvs : m < fvs.length := by rw [hfvs_len]; omega
+    have hsh := hfvs_shape m hm_fvs
+    rw [Nat.zero_add] at hsh
+    simp only [List.getElem_map, List.getElem_range, List.getElem_take, Nat.zero_add, hΓm]
+    rw [hsh]
+    simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
   rw [hbvd1_fvs] at hbvd1_rep
   have hltake_eq_pos :
       largs_pos.take rP = (fvs.take rP).map (posOf lps) :=
@@ -3174,7 +3187,7 @@ theorem check_iota_rule_vm_spec
       inv.ev_bvd1.heap_extends hltake_rep) hbvd1_rep inv.ev_pref
   have hlargs_pre : lhsS.getAppArgs.take rP = fvs.take rP := by
     rw [hlargs_pos_eq, ← List.map_take] at hltake_eq_pos
-    exact List.map_injective_iff.mpr (posOf_inj hlps_perm) hltake_eq_pos
+    exact (List.map_injective_iff.mpr fun _ _ h => posOf_inj hlps_perm h) hltake_eq_pos
   -- Major premise check
   have ext_lheq_pref := inv.ev_llen.heap_extends.trans (inv.ev_ltake.heap_extends.trans
     (inv.ev_bvd1.heap_extends.trans inv.ev_pref.heap_extends))
@@ -3213,7 +3226,7 @@ theorem check_iota_rule_vm_spec
       unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_pins p hp
     rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_p]
     unfold posOf
-    exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) p).symm
+    exact (instantiateLevelParams_renameConsts lps (posLevels lps) f_id p).symm
   rw [hpins_ren_eq] at hpins_ren_rep
   -- Open `pins_ren` at `fvs.take rP` (depth `rP`, ghost `Γ_t`), then `lift_list` by `cnF` to `depth`
   let pinsF_lps : List KExpr :=
@@ -3234,14 +3247,10 @@ theorem check_iota_rule_vm_spec
       apply List.map_congr_left
       intro p _; simp only [Function.comp_apply]
       unfold posOf
-      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+      exact (instantiateLevelParams_instSpine lps (posLevels lps)
         (fvs.take rP) (rP - 1) (p.renameConsts f_id)).symm
     rw [← hlist_eq]
-    clear hlist_eq
-    generalize ((pins_lps.map (·.renameConsts f_id)).map (posOf lps)) = qs at hpins_ren_rep
-    induction hpins_ren_rep with
-    | nil cell => exact .nil cell
-    | cons cell hhead _ ih => exact .cons cell (hhead.open_prefix_eq Γ_t) ih
+    exact repList_map_rel (fun _ _ hh => hh.open_prefix_eq Γ_t) hpins_ren_rep
   have hpd_rep := lift_list_exact (bounded_sub inv.sub_pd hgood_pub.2)
     (by rw [hcnf_val]; omega) inv.ev_pd hpins_ren_open
   rw [hcnf_val] at hpd_rep
@@ -3255,7 +3264,7 @@ theorem check_iota_rule_vm_spec
       (.ptr (.enum kexprEnum) inv.h_pd.length) := by
     unfold posOf
     simp only [Expr.instantiateLevelParams]
-    rw [hcren_key]
+    rw [← hcren_key]
     exact .const (by simp)
       (Bytes.repAddressRef_heapMono₂ addrTy
         (inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans ext_pd_c)) ra_cren)
@@ -3266,22 +3275,17 @@ theorem check_iota_rule_vm_spec
   have hbvd2_fvs :
       ((List.range cnF).map fun m => Expr.fvar (rP + m) (Γ_t (rP + m))) =
         (fvs.drop rP).map (posOf lps) := by
-    have hlen_drop : ((fvs.drop rP).map (posOf lps)).length = cnF := by
-      simp [hfvs_len]; omega
-    apply List.ext_getElem (by simp [hlen_drop])
+    apply List.ext_getElem (by simp [hfvs_len]; omega)
     intro m hm1 hm2
     simp only [List.length_map, List.length_range] at hm1
-    have hm_lt : rP + m < fvs_pos.length := by rw [hfvs_pos_len]; omega
+    have hm_lt : rP + m < (fvs.map (posOf lps)).length := by rw [hfvs_pos_len]; omega
     have hΓm := hΓt_hi (rP + m) hm_lt
     have hm_fvs : rP + m < fvs.length := by rw [hfvs_len]; omega
-    have hfv_pos_m : fvs_pos[rP + m] = .fvar (rP + m) (fvs_pos[rP + m].fvarTypeD) := by
-      rw [hfvs_pos]; simp only [List.getElem_map]
-      have hsh := hfvs_shape (rP + m) hm_fvs
-      rw [Nat.zero_add] at hsh
-      conv_lhs => rw [hsh]
-      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-    simp only [List.getElem_map, List.getElem_range, hΓm, ← hfv_pos_m]
-    simp [hfvs_pos, List.getElem_drop]
+    have hsh := hfvs_shape (rP + m) hm_fvs
+    rw [Nat.zero_add] at hsh
+    simp only [List.getElem_map, List.getElem_range, List.getElem_drop, hΓm]
+    rw [hsh]
+    simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
   rw [hbvd2_fvs] at hbvd2_rep
   have hcat_rep := tele_kconcat (fun _ _ _ _ e x => x.mono e) inv.ev_cat
     (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
@@ -3310,7 +3314,7 @@ theorem check_iota_rule_vm_spec
   -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
   have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
   have hcvj_def : cvj.type.allLevelParamsDefined cvj.levelParams = true :=
-    (hef_pub.store.wf _ _ hfind_ctor).2.2.1
+    (hef_pub.store.wf _ (Ix.Kernel.Env.find?_mem hfind_ctor)).2.1
   let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls_lps
   have hctyl_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_ctyl 0 (posOf lps cty_inst) inv.cty_l := by
     have hinst := SubstAux.gall c_pub.κ .expr_inst_levels [cty, ilvls] inv.h_majeq inv.cty_l
@@ -3320,7 +3324,7 @@ theorem check_iota_rule_vm_spec
       ((hcty_rep 0 zeroGhost).toTm.mono ext_h_majeq)
       ⟨_, hilvls_rep.mono ext_h_majeq, LvEqList.refl _⟩
     rwa [posOf_instantiateLevelParams_eq hlvls_len hcvj_def] at hinst
-  have hcnp_cnf_eq : inv.cnp_cnf = .field ((cnP + cnF) : F) := by
+  have hcnp_cnf_eq : inv.cnp_cnf = .field ((cnP + cnF : Nat) : F) := by
     rw [SubstAux.add_ok inv.op_cnp_cnf]; congr 1
     exact ZMod.val_injective _ (by
       rw [SubstAux.val_add (by omega), hcnp_val, hcnf_val, SubstAux.val_natCast (by omega)])
@@ -3360,7 +3364,7 @@ theorem check_iota_rule_vm_spec
     rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_inst] at hr
     have hcomm : (posOf lps cty_inst).renameConsts f_id = posOf lps (cty_inst.renameConsts f_id) := by
       unfold posOf
-      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) cty_inst).symm
+      exact (instantiateLevelParams_renameConsts lps (posLevels lps) f_id cty_inst).symm
     rwa [hcomm] at hr
   have ext_pren_ctyren := inv.ev_pd.heap_extends.trans (ext_pd_c.trans
     (inv.ev_bvd2.heap_extends.trans (inv.ev_cat.heap_extends.trans
@@ -3368,12 +3372,9 @@ theorem check_iota_rule_vm_spec
         (inv.ev_ctyl.heap_extends.trans (ext_ctyl_csp0.trans inv.ev_cty_ren.heap_extends)))))))
   have hpins_ren_tm_rp :
       RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_t h 0 P p) inv.h_cty_ren
-        (pinsF_lps.map (posOf lps)) inv.pins_ren := by
-    have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pren_ctyren hpins_ren_open
-    clear ext_pren_ctyren
-    induction h1 with
-    | nil cell => exact .nil cell
-    | cons cell hh _ ih => exact .cons cell hh.toTm ih
+        (pinsF_lps.map (posOf lps)) inv.pins_ren :=
+    repList_imp (fun _ _ hh => hh.toTm)
+      (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pren_ctyren hpins_ren_open)
   obtain ⟨cdoms1_pos, crest_pos, hinst_c1_pos, hcrest_tm⟩ :=
     inst_params_tm (bounded_sub inv.sub_crest hgood_pub.2) inv.ev_crest
       (hcty_ren_tm0.of_depth_zero rP) hpins_ren_tm_rp
@@ -3427,7 +3428,7 @@ theorem check_iota_rule_vm_spec
     have hv := congrArg ZMod.val hf
     rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hcnp_val, hni_val,
       hcargs_pos_eq, List.length_map] at hv
-    exact hv
+    exact hv.symm
   -- Deduce `cbody_inst.getAppArgs.length = cnP + nI` via `instPisAt_constHead` on `cty_inst.renameConsts f_id`
   have hcbody_inst_len : cbody_inst.getAppArgs.length = cnP + nI := by
     have hstrip_ren := stripPis_renameConsts f_id (cnP + cnF) cty_inst hstrip_inst
@@ -3470,9 +3471,7 @@ theorem check_iota_rule_vm_spec
   have hidxl_tm : RepList kexprListEnum (fun h X p => Tm c_adv.κ depth Γ_t h 0 X p) inv.h_idxr
       (((lhsS.getAppArgs.drop rP).take nI).map (posOf lps)) inv.v_idxl := by
     rw [hκ_eq, hlargs_pos_eq, ← List.map_drop, ← List.map_take] at hidxl_idxr ⊢
-    induction hidxl_idxr with
-    | nil cell => exact .nil cell
-    | cons cell hh _ ih => exact .cons cell hh.toTm ih
+    exact repList_imp (fun _ _ hh => hh.toTm) hidxl_idxr
   have hidxr_tm : RepList kexprListEnum (fun h Y p => Tm c_adv.κ depth Γ_t h 0 Y p) inv.h_idxr
       ((cres.getAppArgs.drop cnP).map (posOf lps)) inv.v_idxr := by
     rw [hκ_eq]; rwa [hcargs_pos_eq, ← List.map_drop] at hidxr_rep
@@ -3501,7 +3500,7 @@ theorem check_iota_rule_vm_spec
     rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_ty_pos] at hr
     have hcomm : (posOf lps tyA).renameConsts f_id = posOf lps (tyA.renameConsts f_id) := by
       unfold posOf
-      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) tyA).symm
+      exact (instantiateLevelParams_renameConsts lps (posLevels lps) f_id tyA).symm
     rwa [hcomm] at hr
   have ext_tyr_nil := Heap.Extends.snoc inv.h_tyr_ren (.construct kexprListEnum "Nil" [])
   have ext_tci_dt1_in := ext_open_in.trans (inv.ev_open.heap_extends.trans
@@ -3688,12 +3687,10 @@ theorem check_iota_rule_vm_spec
       apply List.map_congr_left
       intro p _; simp only [Function.comp_apply]
       unfold posOf
-      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+      exact (instantiateLevelParams_instSpine lps (posLevels lps)
         fvsP (rP - 1) p).symm
-    rw [← hlist_eq]; clear hlist_eq
-    induction h1 with
-    | nil cell => exact .nil cell
-    | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_p).toTm ih
+    rw [← hlist_eq]
+    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq Γ_p).toTm) h1
   have hpins_ctxp_2 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_l h 0 P p) inv.h_ctxp
       (pinsL_lps.map (posOf lps)) pins := by
     have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
@@ -3707,12 +3704,10 @@ theorem check_iota_rule_vm_spec
       apply List.map_congr_left
       intro p _; simp only [Function.comp_apply]
       unfold posOf
-      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+      exact (instantiateLevelParams_instSpine lps (posLevels lps)
         lfvs1 (rP - 1) p).symm
-    rw [← hlist_eq]; clear hlist_eq
-    induction h1 with
-    | nil cell => exact .nil cell
-    | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_l).toTm ih
+    rw [← hlist_eq]
+    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq Γ_l).toTm) h1
   have ext_ctyl_ctxp := ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
     (inv.ev_crest.heap_extends.trans (ext_crest_dt1.trans
       (ext_dt1_dt2.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)))))
@@ -3798,7 +3793,7 @@ theorem check_iota_rule_vm_spec
     rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_rhs_pos] at hr
     have hcomm : (posOf lps r.rhs).renameConsts f_id = posOf lps (r.rhs.renameConsts f_id) := by
       unfold posOf
-      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) r.rhs).symm
+      exact (instantiateLevelParams_renameConsts lps (posLevels lps) f_id r.rhs).symm
     rwa [hcomm] at hr
   have ev_bvd3' := inv.ev_bvd3
   rw [hd_eq] at ev_bvd3'
@@ -3806,17 +3801,18 @@ theorem check_iota_rule_vm_spec
     (by rw [hd_val]) (by rw [hd_val]) (by omega) ev_bvd3'
   rw [hd_val, Nat.sub_self] at hbvd3_rep
   have hbvd3_fvs :
-      ((List.range depth).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) = fvs_pos := by
+      ((List.range depth).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) = fvs.map (posOf lps) := by
     apply List.ext_getElem (by simp [hfvs_pos_len])
     intro m hm1 hm2
     simp only [List.length_map, List.length_range] at hm1
     have hΓm := hΓt_hi m hm2
-    simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm]
-    rw [hfvs_pos]; simp only [List.getElem_map]
     have hm_fvs : m < fvs.length := by rw [hfvs_len]; exact hm1
-    conv_rhs => rw [hfvs_shape m hm_fvs]
-    simp [Nat.zero_add, posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-  rw [hbvd3_fvs, hfvs_pos] at hbvd3_rep
+    have hsh := hfvs_shape m hm_fvs
+    rw [Nat.zero_add] at hsh
+    simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm]
+    rw [hsh]
+    simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+  rw [hbvd3_fvs] at hbvd3_rep
   have hrhs_app_ex := apply_spine_exact inv.ev_rhsapp
     ((hrhs_ren_ex.of_depth_zero depth).mono inv.ev_bvd3.heap_extends) hbvd3_rep
   have hrhs_app_pos_eq :
