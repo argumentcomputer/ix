@@ -366,7 +366,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         subst himg
         exact hashed_mono (by intro c hc; rw [hc176]; simp [hc]) hhashed
       · rw [hb]
-        simpa using hs2.mono (extH.trans extPost)
+        simpa using L1.Stream.mono (extH.trans extPost) hs2
     · -- Padding (`tag = 1`)
       obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
@@ -396,7 +396,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       refine ⟨extPost, .padding, 1, zeroB, [], _, _, x_s, by omega, by rw [hb]; simp, rfl,
         hroot, hix_zero, hnil_l, rfl, by simp [treeImages], ?_⟩
       rw [hb]
-      simpa using hs1.mono extPost
+      simpa using L1.Stream.mono extPost hs1
     · -- Node (`tag = 2`)
       obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
@@ -891,7 +891,7 @@ theorem get_claim_context_spec {bytes : List UInt8} {i : Nat}
   have hget1 := getAddress_of_drop hlen1
   have extMid := ev81.heap_extends.trans ev60.heap_extends
   obtain ⟨ext2, hlen2, _, _, htup2, hbind, hs2⟩ :=
-    Deserialize.getAddress_refines (hs1.mono extMid) ev102.erase
+    Deserialize.getAddress_refines (L1.Stream.mono extMid hs1) ev102.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup2
   obtain ⟨rfl, rfl⟩ := htup2
   rw [List.drop_drop] at hs2
@@ -1276,7 +1276,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_xs1
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_fmt2
   obtain ⟨rfl, fmtByte, restFmt, _, hcons_fmt, hs_fmt, htup_fmt⟩ :=
-    Deserialize.readByte_refines (hs_n1.mono (ext_eq2.trans ext_eq3)) ev_fmt.erase
+    Deserialize.readByte_refines (L1.Stream.mono (ext_eq2.trans ext_eq3) hs_n1) ev_fmt.erase
   injection htup_fmt with htup_fmt'; simp only [List.cons.injEq, and_true] at htup_fmt'
   obtain ⟨rfl, rfl⟩ := htup_fmt'
   obtain ⟨hu8_fmt, hdrop_fmt, -⟩ := Deserialize.getU8_of_drop_cons hcons_fmt
@@ -1300,7 +1300,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_xs2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_val2
   obtain ⟨rfl, valByte, restVal, _, hcons_val, hs_val, htup_val⟩ :=
-    Deserialize.readByte_refines (hs_fmt.mono ext_eq4) ev_val.erase
+    Deserialize.readByte_refines (L1.Stream.mono ext_eq4 hs_fmt) ev_val.erase
   injection htup_val with htup_val'; simp only [List.cons.injEq, and_true] at htup_val'
   obtain ⟨rfl, rfl⟩ := htup_val'
   obtain ⟨hu8_val, hdrop_val, -⟩ := Deserialize.getU8_of_drop_cons hcons_val

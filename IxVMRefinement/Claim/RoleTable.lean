@@ -740,7 +740,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
           ih ((n' + 1) - (m + 1)) (by omega) l₂ hl2_len (by omega)
             (fun q hq => hsub q (by rw [hl_split]; simp [hq]))
             (fun q hq => hsz q (by rw [hl_split]; simp [hq]))
-            (seen ++ l₁ ++ [(ro, a)]) hinvM (hs2.mono ext_ins) ev537
+            (seen ++ l₁ ++ [(ro, a)]) hinvM (L1.Stream.mono ext_ins hs2) ev537
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupR
         obtain ⟨rfl, rfl, rfl, rfl⟩ := htupR
         have extSnoc1 := Heap.Extends.snoc m525 x_left
