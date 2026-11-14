@@ -2380,8 +2380,7 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld11, -⟩ :=
       Obs.«Ingress::load_verified_constant».obs ev
     have e := L1.load_of_cell cell ld11
-    subst e
-    exact ⟨v, ld11, hv⟩
+    exact ⟨_, ld11, e.trans hv⟩
   obtain ⟨raw, hld_ap, hraw_eq⟩ := ld_ap
   obtain ⟨bytes, inp, rest, m, cs', hlen_lt, ext1, hst, hashed, hproj, hget, hrest, -⟩ :=
     L1.load_verified_constant_spec hld_ap ev
