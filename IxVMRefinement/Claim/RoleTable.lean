@@ -752,7 +752,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
             rw [List.mem_append] at hm0
             rcases hm0 with hm0 | hm0
             · obtain ⟨b0, hix0, hb0⟩ := hmemL r0 a0 hm0
-              have hne0 : b0 ≠ a' := fun e => hnot_in _ (e ▸ hb0)
+              have hne0 : b0 ≠ a' := by intro e; subst e; exact hnot_in _ hb0
               exact ⟨b0, hix0, mem_insSorted_of_ne hb0 hne0⟩
             · simp only [List.mem_singleton, Prod.mk.injEq] at hm0
               obtain ⟨rfl, rfl⟩ := hm0

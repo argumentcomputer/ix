@@ -245,6 +245,29 @@ theorem thenCmp_packChunks {x y : Nat} {xs ys : List Nat}
       have key := thenCmp_cmpNat (x := x) (y := y) hrx hry
       simpa [packChunks, hlen] using key
 
+/-- Cascaded chunk comparison matching `canon_addr_cmp`'s eight `canon_ord_then` steps. -/
+def cmpChunks : List Nat → List Nat → Nat
+  | [x], [y] => cmpNat x y
+  | x :: x2 :: xs, y :: y2 :: ys => thenCmp (cmpNat x y) (cmpChunks (x2 :: xs) (y2 :: ys))
+  | _, _ => 1
+
+theorem cmpChunks_eq_packChunks : ∀ {xs ys : List Nat},
+    xs ≠ [] → xs.length = ys.length →
+    (∀ z ∈ xs, z < 4294967296) → (∀ z ∈ ys, z < 4294967296) →
+    cmpChunks xs ys = cmpNat (packChunks xs) (packChunks ys)
+  | [], _, hne, _, _, _ => absurd rfl hne
+  | [_], [], _, hlen, _, _ => by simp at hlen
+  | [x], [y], _, _, _, _ => rfl
+  | _ :: _ :: _, [], _, hlen, _, _ => by simp at hlen
+  | _ :: _ :: _, [_], _, hlen, _, _ => by simp at hlen
+  | x :: x2 :: xs, y :: y2 :: ys, _, hlen, hx, hy => by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+    simp only [cmpChunks]
+    rw [cmpChunks_eq_packChunks (by simp) hlen
+      (fun z hz => hx z (by simp [hz])) (fun z hz => hy z (by simp [hz]))]
+    exact thenCmp_packChunks (by simp) hlen
+      (fun z hz => hx z (by simp [hz])) (fun z hz => hy z (by simp [hz]))
+
 /-- The eight 32-bit chunks of a 32-byte address. -/
 def addrChunks (a : Bytes.Address) : List Nat :=
   [packChunk a[0] a[1] a[2] a[3],
@@ -533,15 +556,16 @@ theorem canon_addr_cmp_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (
                   (thenCmp (cmpNat (packChunk a[24] a[25] a[26] a[27]) (packChunk b[24] b[25] b[26] b[27]))
                     (cmpNat (packChunk a[28] a[29] a[30] a[31]) (packChunk b[28] b[29] b[30] b[31])))))))) =
         cmpNat (addrRank a) (addrRank b) := by
-    have bnd : ∀ (u0 u1 u2 u3 : UInt8), packChunk u0 u1 u2 u3 < 4294967296 := packChunk_lt
-    have hsing : cmpNat (packChunk a[28] a[29] a[30] a[31]) (packChunk b[28] b[29] b[30] b[31]) =
-        cmpNat (packChunks [packChunk a[28] a[29] a[30] a[31]])
-          (packChunks [packChunk b[28] b[29] b[30] b[31]]) := rfl
-    rw [hsing]
-    repeat rw [thenCmp_packChunks (by simp) (by simp)
-      (by simp only [List.forall_mem_cons, List.forall_mem_nil, bnd, and_self, and_true])
-      (by simp only [List.forall_mem_cons, List.forall_mem_nil, bnd, and_self, and_true])]
-    rfl
+    have ha : ∀ z ∈ addrChunks a, z < 4294967296 := by
+      intro z hz
+      simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
+      rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
+    have hb : ∀ z ∈ addrChunks b, z < 4294967296 := by
+      intro z hz
+      simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
+      rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
+    exact cmpChunks_eq_packChunks (xs := addrChunks a) (ys := addrChunks b)
+      (by simp [addrChunks]) (by simp [addrChunks]) ha hb
   exact ⟨hr.trans (congrArg Value.field (congrArg Nat.cast hfold)), hh⟩
 
 end CanonAddrCmp
@@ -1056,7 +1080,8 @@ theorem rbtree_map_balance_fix_entries {t_V : Generic.Ty}
     have tR : RBTreeEntries t_V m3 (lc ++ [(a, x_value)] ++ rs) nR :=
       .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk)
         (ext.loadValue_eq hl_c) ld_d (rl_c.mono ext) (hr.mono ext)
-    have tRoot := RBTreeEntries.node (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
+    have tRoot := RBTreeEntries.node (c := 0) (v := x_yv)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
     exact ⟨ext, by simpa only [List.append_assoc] using tRoot⟩
   · -- Arm 2: `(Node(0, xk, xv, a, &Node(0, yk, yv, b, c)), d)`
     subst hv252 hm357 hm454 hm409
@@ -1084,7 +1109,8 @@ theorem rbtree_map_balance_fix_entries {t_V : Generic.Ty}
     have tR : RBTreeEntries t_V m3 (lc ++ [(a, x_value)] ++ rs) nR :=
       .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk)
         (ext.loadValue_eq hl_c) ld_d (rl_c.mono ext) (hr.mono ext)
-    have tRoot := RBTreeEntries.node (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
+    have tRoot := RBTreeEntries.node (c := 0) (v := x_yv)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
     exact ⟨ext, by simpa only [List.append_assoc] using tRoot⟩
   · -- Arm 3: `(a, Node(0, zk, zv, &Node(0, yk, yv, b, c), d))`
     subst hv471 hm610 hm572 hm628
@@ -1112,7 +1138,8 @@ theorem rbtree_map_balance_fix_entries {t_V : Generic.Ty}
     have tR : RBTreeEntries t_V m3 (lc ++ [(az, x_zv)] ++ ld) nR :=
       .node (Bytes.repAddressRef_heapMono₂ addrTy ext hzk)
         (ext.loadValue_eq hl_c) (ext.loadValue_eq hl_d) (rl_c.mono ext) (rl_d.mono ext)
-    have tRoot := RBTreeEntries.node (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
+    have tRoot := RBTreeEntries.node (c := 0) (v := x_yv)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
     exact ⟨ext, by simpa only [List.append_assoc] using tRoot⟩
   · -- Arm 4: `(a, Node(0, yk, yv, b, &Node(0, zk, zv, c, d)))`
     subst hv686 hm825 hm787 hm843
@@ -1140,7 +1167,8 @@ theorem rbtree_map_balance_fix_entries {t_V : Generic.Ty}
     have tR : RBTreeEntries t_V m3 (lc ++ [(az, x_zv)] ++ ld) nR :=
       .node (Bytes.repAddressRef_heapMono₂ addrTy ext hzk)
         (ext.loadValue_eq hl_c) (ext.loadValue_eq hl_d) (rl_c.mono ext) (rl_d.mono ext)
-    have tRoot := RBTreeEntries.node (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
+    have tRoot := RBTreeEntries.node (c := 0) (v := x_yv)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hyk) ldL ldR tL tR
     exact ⟨ext, by simpa only [List.append_assoc] using tRoot⟩
   · -- Arm 5 (`other`): `Node(1, key, value, &left, &right)`
     subst hm929 hm940
@@ -1218,23 +1246,22 @@ theorem rbtree_map_lookup_or_default_spec {t_V : Generic.Ty}
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
       obtain rfl := loadValue_eq_inj ld52 hl
       obtain ⟨hm78, hlt⟩ := cmp_branch_lt hk hk_node ev88 ev75
-      subst m78
+      subst hm78
       rw [lookupEntries_split_lt hpw hlt]
-      exact ihl hpwL hk ev124
+      exact ihl hpwL ev124
     · injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
       obtain ⟨hm164, rfl⟩ := cmp_branch_eq hk hk_node ev88 ev75 ev175 op169
-      subst m164
-      exact ⟨(lookupEntries_split_eq hpw).symm, rfl⟩
+      exact ⟨(lookupEntries_split_eq hpw).symm, hm164⟩
     · injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
       obtain rfl := loadValue_eq_inj ld60 hr
       obtain ⟨hm164, hgt⟩ := cmp_branch_gt hk hk_node ev88 ev75 hne150 ev175 op169 hne210
-      subst m164
+      subst hm164
       rw [lookupEntries_split_gt hpw hgt]
-      exact ihr hpwR hk ev219
+      exact ihr hpwR ev219
 
 /-- **`RBTreeMap::rbtree_map_ins`**: inserts/overwrites `(a, x_value)` in `es` while preserving
 the structural entries invariant. -/
@@ -1265,9 +1292,7 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
         e12.loadValue_eq (loadValue_snoc_construct h _ _ _)
       have ldR : loadValue m2 (.ptr (.enum (rbtreeEnum t_V)) m1.length) = .ok nilVal :=
         loadValue_snoc_construct m1 _ _ _
-      have tRoot := RBTreeEntries.node (Bytes.repAddressRef_heapMono₂ addrTy ext hk)
-        ldL ldR .nil .nil
-      exact ⟨ext, tRoot⟩
+      exact ⟨ext, .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk) ldL ldR .nil .nil⟩
     · simp at hv79
     · simp at hv79
     · simp at hv79
@@ -1291,8 +1316,8 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       obtain rfl := loadValue_eq_inj ld104 hl
       obtain rfl := loadValue_eq_inj ld112 hr
       obtain ⟨hm130, hlt⟩ := cmp_branch_lt hk hk_node ev140 ev127
-      subst m130
-      obtain ⟨ext1, rl'⟩ := ihl hpwL hk ev214
+      subst hm130
+      obtain ⟨ext1, rl'⟩ := ihl hpwL ev214
       obtain ⟨ext2, rbal⟩ := rbtree_map_balance_entries
         (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) rl' (rr.mono ext1) ev176
       rw [insSorted_split_lt_aux hlt]
@@ -1304,7 +1329,7 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       obtain rfl := loadValue_eq_inj ld104 hl
       obtain rfl := loadValue_eq_inj ld112 hr
       obtain ⟨hm261, rfl⟩ := cmp_branch_eq hk hk_node ev140 ev127 ev272 op266
-      subst m261 hm342 hm353
+      subst hm261 hm342 hm353
       set m1 := h ++ [y103]
       set m2 := m1 ++ [y111]
       have e12 : Heap.Extends m1 m2 := Heap.Extends.snoc _ _
@@ -1323,8 +1348,8 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       obtain rfl := loadValue_eq_inj ld104 hl
       obtain rfl := loadValue_eq_inj ld112 hr
       obtain ⟨hm261, hgt⟩ := cmp_branch_gt hk hk_node ev140 ev127 hne247 ev272 op266 hne357
-      subst m261
-      obtain ⟨ext1, rr'⟩ := ihr hpwR hk ev411
+      subst hm261
+      obtain ⟨ext1, rr'⟩ := ihr hpwR ev411
       obtain ⟨ext2, rbal⟩ := rbtree_map_balance_entries
         (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) (rl.mono ext1) rr' ev366
       rw [insSorted_split_gt_aux hL hgt]

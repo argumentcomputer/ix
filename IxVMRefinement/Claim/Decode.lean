@@ -226,13 +226,13 @@ theorem leaf_hash_spec {a : Bytes.Address}
       ixAddr d = Ix.HostAdmission.Merkle.leaf (ixAddr a) := by
   obtain ⟨v1, m2, cs12, m25, m38, cs70, hm33, ev14, hm48, ev72, hc81⟩ :=
     Obs.«KernelClaim::leaf_hash».obs ev
-  have ext25 : Heap.Extends h m25 := hm33 ▸ Heap.Extends.snoc h _
+  have ext25 : Heap.Extends h m25 := by rw [hm33]; exact Heap.Extends.snoc h _
   have hnil : L1.Stream m25 [] (.ptr (.enum byteStreamEnum) h.length) := by
     rw [hm33]; exact L1.stream_nil_snoc h
   obtain ⟨ext1, hs1⟩ := put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy ext25 ha) hnil ev14
   rw [List.append_nil] at hs1
   have hbv0 : L1.bv 0 = .field 0 := by simp [L1.bv]
-  have ext38 : Heap.Extends m2 m38 := hm48 ▸ Heap.Extends.snoc m2 _
+  have ext38 : Heap.Extends m2 m38 := by rw [hm48]; exact Heap.Extends.snoc m2 _
   have hs0 : L1.Stream m38 (0 :: a.toList) (.ptr (.enum byteStreamEnum) m2.length) := by
     rw [hm48, ← hbv0]; exact L1.stream_cons_snoc hs1
   obtain ⟨ext2, hld, hcall⟩ := L1.bytes_to_addr_spec hs0 ev72
@@ -262,7 +262,7 @@ theorem node_hash_spec {al ar : Bytes.Address}
       ixAddr d = Ix.HostAdmission.Merkle.node (ixAddr al) (ixAddr ar) := by
   obtain ⟨v1, m2, cs12, v16, m25, cs33, m46, m59, cs91, hm54, ev35, ev14, hm69, ev93, hc102⟩ :=
     Obs.«KernelClaim::node_hash».obs ev
-  have ext46 : Heap.Extends h m46 := hm54 ▸ Heap.Extends.snoc h _
+  have ext46 : Heap.Extends h m46 := by rw [hm54]; exact Heap.Extends.snoc h _
   have hnil : L1.Stream m46 [] (.ptr (.enum byteStreamEnum) h.length) := by
     rw [hm54]; exact L1.stream_nil_snoc h
   obtain ⟨extR, hsR⟩ := put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy ext46 hr) hnil ev35
@@ -270,7 +270,7 @@ theorem node_hash_spec {al ar : Bytes.Address}
   obtain ⟨extL, hsL⟩ :=
     put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy (ext46.trans extR) hl) hsR ev14
   have hbv1 : L1.bv 1 = .field 1 := by simp [L1.bv]
-  have ext59 : Heap.Extends m2 m59 := hm69 ▸ Heap.Extends.snoc m2 _
+  have ext59 : Heap.Extends m2 m59 := by rw [hm69]; exact Heap.Extends.snoc m2 _
   have hs1 : L1.Stream m59 (1 :: (al.toList ++ ar.toList)) (.ptr (.enum byteStreamEnum) m2.length) := by
     rw [hm69, ← hbv1]; exact L1.stream_cons_snoc hsL
   obtain ⟨ext2, hld, hcall⟩ := L1.bytes_to_addr_spec hs1 ev93
@@ -346,8 +346,8 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       obtain ⟨rfl, rfl⟩ := htupA
       let aB := Deserialize.takeAddress rest1 hlenA
       obtain ⟨extH, hhashed, rootB, hroot, hix_root⟩ := leaf_hash_spec haddr ev111
-      have ext156 : Heap.Extends m99 m156 := hm164 ▸ Heap.Extends.snoc m99 _
-      have ext134 : Heap.Extends m156 m134 := hm142 ▸ Heap.Extends.snoc m156 _
+      have ext156 : Heap.Extends m99 m156 := by rw [hm164]; exact Heap.Extends.snoc m99 _
+      have ext134 : Heap.Extends m156 m134 := by rw [hm142]; exact Heap.Extends.snoc m156 _
       have extPost := ext156.trans ext134
       have hnil_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) m156 []
           (.ptr (.enum addrListEnum) m99.length) := by
@@ -372,8 +372,8 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
       obtain ⟨_, rfl⟩ := L1.u8_toField ev50
-      have ext189 : Heap.Extends h m189 := hm197 ▸ Heap.Extends.snoc h _
-      have ext201 : Heap.Extends m189 m201 := hm209 ▸ Heap.Extends.snoc m189 _
+      have ext189 : Heap.Extends h m189 := by rw [hm197]; exact Heap.Extends.snoc h _
+      have ext201 : Heap.Extends m189 m201 := by rw [hm209]; exact Heap.Extends.snoc m189 _
       have extPost := ext189.trans ext201
       let zeroB : Bytes.Address := Vector.replicate 32 0
       have hdig0 : L1.digestV zeroB = .tuple (List.replicate 32 (.field 0)) := by
@@ -957,8 +957,9 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
   · rcases load_assumption_tree_spec (V := V) (extra := extra) htTree hroot ev14 with
       hcoll | ⟨ext1, _, _, _⟩
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc264]; simp [hc]) hcoll)
-    · have extSeg := sg106.casesOn (fun _ _ _ he _ => he ▸ Heap.Extends.refl _)
-        (fun _ _ _ _ he _ => he ▸ Heap.Extends.refl _)
+    · have extSeg : Heap.Extends m2 m99 := by
+        rcases sg106 with ⟨_, _, _, hm99, _⟩ | ⟨_, _, _, _, hm99, _⟩ <;>
+          (rw [hm99]; exact Heap.Extends.refl _)
       obtain ⟨hax, _⟩ := role_ctx_axioms_spec (hrc.mono (ext1.trans extSeg)) ev137
       simp at hax
   · exact absurd rfl (hne266 [] rfl)
