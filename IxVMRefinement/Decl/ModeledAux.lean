@@ -1336,7 +1336,7 @@ theorem TmExact.noLet {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KEx
 
 theorem TmCExact.noLet {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr} {p : SourceValue F}
     (rep : TmCExact κ h E p) : noLetExpr E = true :=
-  (rep 0 (fun _ => .sort .zero)).noLet (fun _ hlt => nomatch hlt)
+  (rep 0 (fun _ => .sort .zero)).noLet (fun _ hlt => absurd hlt (Nat.not_lt_zero _))
 
 theorem annotates_refl_of_noLetExpr {e : KExpr} (h : noLetExpr e = true) :
     IxVM.Consistency.Annotates e e := by
@@ -1597,8 +1597,8 @@ theorem eqA_of_rawRule {V : Type u} [Ix.Kernel.SetTheory V]
   rw [hfn_pos] at hcr_fn
   obtain ⟨ciE, hfE⟩ := Option.isSome_iff_exists.mp hcr_fn
   have hci : ciE = eqA := by
-    rw [(mp_adv.base2.basis_pinned eqName ciE hfE reserved_eqName).1,
-      Ix.Kernel.pinnedInfo, ite_eq_left rfl]
+    rw [(mp_adv.base2.basis_pinned eqName ciE hfE reserved_eqName).1]
+    simp [Ix.Kernel.pinnedInfo]
   rwa [hci] at hfE
 
 /-- Lift a single `RawIotaRuleVmRun` certificate to `IotaRuleNVmRunJ posRulesJ` at positional
@@ -1640,11 +1640,11 @@ theorem rawIotaRule_to_posNVmRun
     let lvls_pos := lvls_lps.map (Level.subst lps (posLevels lps))
     let pins_pos := pins_lps.map (posOf lps)
     let rhs_pos := posOf lps r.rhs
-    let r_pos : RecRule .anon := { r with rhs := rhs_pos }
+    let r_pos : RecRule .anon :=
+      RecRule.mk r.ctor r.nfields r.ctorParams r.fire rhs_pos r.k r.eta r.paramsBlind
     let r'_pos : RecRule .anon :=
       recRuleBits envM_pos.find? cvName
-        ({ r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
-          fire := .nested lvls_pos pins_pos, paramsBlind := false })
+        (RecRule.mk r.ctor r.nfields hraw.cnP (.nested lvls_pos pins_pos) rhs_pos r.k r.eta false)
     IotaRuleNVmRunJ posRulesJ envM_pos envSelf_pos f_id cvName (List.range lps.length)
       (posOf lps tyA) mI rP j r_pos r'_pos ∧
     hraw.cnP = cnP_ind := by
@@ -1652,11 +1652,11 @@ theorem rawIotaRule_to_posNVmRun
   let pins_pos := pins_lps.map (posOf lps)
   let ty_pos := posOf lps tyA
   let rhs_pos := posOf lps r.rhs
-  let r_pos : RecRule .anon := { r with rhs := rhs_pos }
+  let r_pos : RecRule .anon :=
+    RecRule.mk r.ctor r.nfields r.ctorParams r.fire rhs_pos r.k r.eta r.paramsBlind
   let r'_pos : RecRule .anon :=
     recRuleBits envM_pos.find? cvName
-      ({ r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
-        fire := .nested lvls_pos pins_pos, paramsBlind := false })
+      (RecRule.mk r.ctor r.nfields hraw.cnP (.nested lvls_pos pins_pos) rhs_pos r.k r.eta false)
   have hlps_nd : lps.Nodup := hlps_perm.nodup_iff.mpr List.nodup_range
   have hcnp_eq : hraw.cnP = cnP_ind := by
     have h1 : pins_lps.length = cnP_ind := by
@@ -1984,16 +1984,14 @@ def posCheckedRule (find? : KKey → Option (ConstantInfo .anon))
   let pins_pos := pins_lps.map (posOf lps)
   let rhs_pos := posOf lps r.rhs
   recRuleBits find? cvName
-    ({ r with rhs := rhs_pos, ctorParams := cnP,
-      fire := .nested lvls_pos pins_pos, paramsBlind := false })
+    (RecRule.mk r.ctor r.nfields cnP (.nested lvls_pos pins_pos) rhs_pos r.k r.eta false)
 
 /-- Checked rule stored in real environment `env₂` (at original `lps`). -/
 def realCheckedRule (find? : KKey → Option (ConstantInfo .anon))
     (cvName : KKey) (cnP : Nat)
     (lvls_lps : List KLevel) (pins_lps : List KExpr) (r : RecRule .anon) : RecRule .anon :=
   recRuleBits find? cvName
-    ({ r with rhs := r.rhs, ctorParams := cnP,
-      fire := .nested lvls_lps pins_lps, paramsBlind := false })
+    (RecRule.mk r.ctor r.nfields cnP (.nested lvls_lps pins_lps) r.rhs r.k r.eta false)
 
 /-- Bundled witness that rule `(j, r)` has a `RawIotaRuleVmRun` certificate whose `.iota j`
 theorem copy is stored in `E`. -/
@@ -2087,7 +2085,8 @@ theorem installRecIotaThms {V : Type u} [Ix.Kernel.SetTheory V]
         some (.thmInfo
           ⟨auxKey (auxKey cvName .model) (.iota j), List.range lps.length, hraw.cvt.type⟩ hraw.vt) := by
       have h0 : E₁.find? c₀.name = some c₀ := Ix.Kernel.Env.find?_cons_self c₀ E
-      simpa only [c₀, hraw.ht_lps] using h0
+      dsimp only [c₀, ConstantInfo.name, ConstantInfo.toConstantVal] at h0
+      rwa [hraw.ht_lps] at h0
     have hready_j : IotaRuleReady E₁ c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
         lvls_lps pins_lps j r :=
       ⟨hraw, hf_self⟩
@@ -2148,13 +2147,14 @@ theorem rawIotaRules_to_posNVmRun
     (hnolet : ∀ r ∈ rls, noLetExpr (posOf lps r.rhs) = true)
     (hrhs_self : ∀ r ∈ rls,
       (posOf lps r.rhs).constsResolve envSelf_pos = true ∧
-      (∀ t', Infer c_rhs.env .full 0 r.rhs t' →
+      (∀ t', posRulesJ.infer c_rhs.env 0 r.rhs t' →
         ∃ t'', posRulesJ.infer envSelf_pos 0 (posOf lps r.rhs) t''))
     (hready : IotaRulesReady envM_pos c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
       lvls_lps pins_lps j rls) :
     IotaRulesNVmRunJ posRulesJ envM_pos envSelf_pos f_id cvName (List.range lps.length)
       (posOf lps tyA) mI rP j
-      (rls.map fun r => { r with rhs := posOf lps r.rhs })
+      (rls.map fun r =>
+        RecRule.mk r.ctor r.nfields r.ctorParams r.fire (posOf lps r.rhs) r.k r.eta r.paramsBlind)
       (rls.map (posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps)) := by
   induction rls generalizing j with
   | nil => rfl
@@ -2173,9 +2173,9 @@ theorem rawIotaRules_to_posNVmRun
       hr_cr (hr_inf t'_rhs ht'_rhs) hfind_cv
     have hr'_eq :
         recRuleBits envM_pos.find? cvName
-          ({ r with rhs := posOf lps r.rhs, ctorParams := hraw.cnP,
-            fire := .nested (lvls_lps.map (Level.subst lps (posLevels lps)))
-              (pins_lps.map (posOf lps)), paramsBlind := false }) =
+          (RecRule.mk r.ctor r.nfields hraw.cnP
+            (.nested (lvls_lps.map (Level.subst lps (posLevels lps))) (pins_lps.map (posOf lps)))
+            (posOf lps r.rhs) r.k r.eta false) =
         posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps r := by
       unfold posCheckedRule
       rw [hcnp]
