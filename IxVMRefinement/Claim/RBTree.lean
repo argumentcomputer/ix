@@ -261,11 +261,11 @@ theorem cmpChunks_eq_packChunks : ∀ {xs ys : List Nat},
   | _ :: _ :: _, [], _, hlen, _, _ => by simp at hlen
   | _ :: _ :: _, [_], _, hlen, _, _ => by simp at hlen
   | x :: x2 :: xs, y :: y2 :: ys, _, hlen, hx, hy => by
-    simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+    have hlen' : (x2 :: xs).length = (y2 :: ys).length := Nat.succ.inj hlen
     simp only [cmpChunks]
-    rw [cmpChunks_eq_packChunks (by simp) hlen
+    rw [cmpChunks_eq_packChunks (xs := x2 :: xs) (ys := y2 :: ys) (by simp) hlen'
       (fun z hz => hx z (by simp [hz])) (fun z hz => hy z (by simp [hz]))]
-    exact thenCmp_packChunks (by simp) hlen
+    exact thenCmp_packChunks (by simp) hlen'
       (fun z hz => hx z (by simp [hz])) (fun z hz => hy z (by simp [hz]))
 
 /-- The eight 32-bit chunks of a 32-byte address. -/
@@ -1329,7 +1329,8 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       obtain rfl := loadValue_eq_inj ld104 hl
       obtain rfl := loadValue_eq_inj ld112 hr
       obtain ⟨hm261, rfl⟩ := cmp_branch_eq hk hk_node ev140 ev127 ev272 op266
-      subst hm261 hm342 hm353
+      rw [hm261] at hm342
+      subst hm342 hm353
       set m1 := h ++ [y103]
       set m2 := m1 ++ [y111]
       have e12 : Heap.Extends m1 m2 := Heap.Extends.snoc _ _
