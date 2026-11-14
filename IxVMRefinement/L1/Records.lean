@@ -54,6 +54,14 @@ def mkLazyConst (raw : ByteArray) (c : Ixon.Constant) : Ixon.LazyConstant :=
     (mkLazyConst raw c).rawBytes = raw := by
   simp [mkLazyConst, Ixon.LazyConstant.rawBytes]
 
+private theorem recordAt_of_get? {E : Ixon.Env} {k : _root_.Address}
+    {lc : Ixon.LazyConstant} {c : Ixon.Constant}
+    (h1 : E.consts.get? k = some lc) (h2 : lc.get? = some c) :
+    Ix.Cert.recordAt E k = some c := by
+  unfold Ix.Cert.recordAt
+  rw [h1]
+  exact h2
+
 private theorem hashmap_get?_empty {α : Type} (k : _root_.Address) :
     ({} : Std.HashMap _root_.Address α).get? k = none := by
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty]
@@ -153,7 +161,7 @@ private theorem foldBlobsAux_exists_of_mem {m : Std.HashMap _root_.Address ByteA
   | cons p rest ih =>
     intro hmem
     rcases List.mem_cons.mp hmem with rfl | htl
-    · exact foldBlobsAux_exists_of_exists ⟨bs, hashmap_get?_insert_self m q bs⟩
+    · exact foldBlobsAux_exists_of_exists (m := m.insert q bs) ⟨bs, hashmap_get?_insert_self m q bs⟩
     · exact ih htl
 
 private theorem foldBlobs_exists_of_mem {blobs : List (_root_.Address × ByteArray)}
@@ -177,7 +185,7 @@ theorem EnvInternalCollision.hashedCollision {E₀ : Ixon.Env} {cs : List (Call 
   obtain ⟨x, d, lc, hblob, hconst, hne⟩ := hc
   obtain ⟨hh_c, ha_c⟩ := hl.1 x lc hconst
   obtain ⟨hh_b, ha_b⟩ := hl.2 x d hblob
-  exact .inl ⟨x, lc.rawBytes, d, .inr (.inr ⟨hh_c, ha_c⟩), hh_b, hne.symm, ha_b⟩
+  exact .inl ⟨x, lc.rawBytes, d, .inr (.inr ⟨hh_c, ha_c⟩), hh_b, hne, ha_b⟩
 
 /-- Every literal blob hashed during expression conversion is stored literally in `E₀.blobs` at its
 BLAKE3 address, unless `E₀` already witnesses an explicit hash collision (`EnvInternalCollision`). -/
@@ -234,9 +242,9 @@ private theorem build_env_with_blobs {cs : List (Call F)}
     · intro ba bs hmem
       obtain ⟨w, hw, hw_mem⟩ := foldBlobs_exists_of_mem hmem
       have heq : w = bs := hfun ba w bs hw_mem hmem
-      subst heq
+      rw [heq] at hw
       exact ⟨hw, (hhp (ba, bs) hmem).2⟩
-  · have hex : ∃ ba bs₁ bs₂, (ba, bs₁) ∈ blobs ∧ (ba, bs₂) ∈ blobs ∧ bs₁ ≠ bs₂ := by
+  · have hex : ∃ ba bs₁ bs₂, (ba, bs₁) ∈ blobs ∧ (ba, bs₂) ∈ blobs ∧ bs₁ ≠ bs₂ :=
       Classical.byContradiction fun hno =>
         hfun fun ba bs₁ bs₂ hm1 hm2 =>
           Classical.byContradiction fun hne => hno ⟨ba, bs₁, bs₂, hm1, hm2, hne⟩
@@ -384,36 +392,46 @@ theorem RawCIRep.mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {a : _root_.Address
     (ext : Heap.Extends h₁ h₂) (r : RawCIRep E₀ h₁ a c v) :
     RawCIRep E₀ h₂ a c v := by
   unfold RawCIRep at r ⊢
-  cases c.info with
-  | defn d =>
+  cases hc : c.info with
+  | defn _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
-  | axio ax =>
+  | axio _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
-  | quot q =>
+  | quot _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
-  | recr rc =>
+  | recr _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
-  | dPrj p =>
+  | dPrj _ =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, d, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, d, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
-  | iPrj p =>
+  | iPrj _ =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, ind, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, ind, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
-  | cPrj p =>
+  | cPrj _ =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs, h1, h2, h3, h4, h5, h6, h7, h8, hb, hraw⟩ := r
     exact ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs, h1, h2, h3, h4, h5, h6, h7, h8, hb,
       hraw.mono ext (fun _ hm => hm)⟩
-  | rPrj p =>
+  | rPrj _ =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, rc, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, rc, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
-  | muts _ => exact r
+  | muts _ =>
+    rw [hc] at r ⊢
+    exact r
 
 theorem RawCIPtrRep.mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {ptr : SourceValue F}
     {a : _root_.Address} {c : Ixon.Constant}
@@ -441,57 +459,63 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
     obtain ⟨lc', h1, _, h3⟩ := hconsts k lc hk
     exact ⟨lc', h1, h3⟩
   unfold RawCIRep at r ⊢
-  cases c.info with
-  | defn d =>
+  cases hc : c.info with
+  | defn _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
-  | axio ax =>
+  | axio _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
-  | quot q =>
+  | quot _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
-  | recr rc =>
+  | recr _ =>
+    rw [hc] at r ⊢
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
   | dPrj p =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, d, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
-    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB', hlcB']
+    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := recordAt_of_get? hgetB' hlcB'
     rw [← hraw_eq] at hexB hdeB
     exact ⟨hidx, lcB', cb, ms, d, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
   | iPrj p =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, ind, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
-    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB', hlcB']
+    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := recordAt_of_get? hgetB' hlcB'
     rw [← hraw_eq] at hexB hdeB
     exact ⟨hidx, lcB', cb, ms, ind, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
   | cPrj p =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs,
       hgetB, hlcB, _, hexB, hdeB, hcb, hms, hct, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
-    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB', hlcB']
+    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := recordAt_of_get? hgetB' hlcB'
     rw [← hraw_eq] at hexB hdeB
     exact ⟨hidx, hcidx, lcB', cb, ms, ind, ct, blobs, hgetB', hlcB', hrecB', hexB, hdeB,
       hcb, hms, hct, hb.env_mono hc_raw hblobs, hraw⟩
   | rPrj p =>
+    rw [hc] at r ⊢
     obtain ⟨hidx, lcB, cb, ms, rc, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
-    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB', hlcB']
+    have hrecB' : Ix.Cert.recordAt E₁ p.block = some cb := recordAt_of_get? hgetB' hlcB'
     rw [← hraw_eq] at hexB hdeB
     exact ⟨hidx, lcB', cb, ms, rc, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
-  | muts _ => exact r
+  | muts _ =>
+    rw [hc] at r ⊢
+    exact r
 
 theorem RawCIPtrRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {a : _root_.Address} {c : Ixon.Constant}
@@ -610,8 +634,7 @@ theorem get_ci_loadedL1_spec {a : Bytes.Address} {x_addr ptr : SourceValue F}
       build_env_with_blobs M (pair_consts_hashed c cb hhash haddr hhB haB) hhp
     have hgetB : E₀.consts.get? p.block = some lcB :=
       hkeep p.block lcB (hashmap_get?_insert_self _ p.block lcB)
-    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB, lcB]
+    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := recordAt_of_get? hgetB rfl
     refine ⟨ext, bytes, E₀, hhash, haddr, hloaded, c, hexact, hde, htv, v, hld, ?_⟩
     rw [haddr]
     simp only [RawCIRep, hc]
@@ -628,8 +651,7 @@ theorem get_ci_loadedL1_spec {a : Bytes.Address} {x_addr ptr : SourceValue F}
       build_env_with_blobs M (pair_consts_hashed c cb hhash haddr hhB haB) hhp
     have hgetB : E₀.consts.get? p.block = some lcB :=
       hkeep p.block lcB (hashmap_get?_insert_self _ p.block lcB)
-    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB, lcB]
+    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := recordAt_of_get? hgetB rfl
     refine ⟨ext, bytes, E₀, hhash, haddr, hloaded, c, hexact, hde, htv, v, hld, ?_⟩
     rw [haddr]
     simp only [RawCIRep, hc]
@@ -646,8 +668,7 @@ theorem get_ci_loadedL1_spec {a : Bytes.Address} {x_addr ptr : SourceValue F}
       build_env_with_blobs M (pair_consts_hashed c cb hhash haddr hhB haB) hhp
     have hgetB : E₀.consts.get? p.block = some lcB :=
       hkeep p.block lcB (hashmap_get?_insert_self _ p.block lcB)
-    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB, lcB]
+    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := recordAt_of_get? hgetB rfl
     refine ⟨ext, bytes, E₀, hhash, haddr, hloaded, c, hexact, hde, htv, v, hld, ?_⟩
     rw [haddr]
     simp only [RawCIRep, hc]
@@ -664,8 +685,7 @@ theorem get_ci_loadedL1_spec {a : Bytes.Address} {x_addr ptr : SourceValue F}
       build_env_with_blobs M (pair_consts_hashed c cb hhash haddr hhB haB) hhp
     have hgetB : E₀.consts.get? p.block = some lcB :=
       hkeep p.block lcB (hashmap_get?_insert_self _ p.block lcB)
-    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := by
-      simp [Ix.Cert.recordAt, hgetB, lcB]
+    have hrecB : Ix.Cert.recordAt E₀ p.block = some cb := recordAt_of_get? hgetB rfl
     refine ⟨ext, bytes, E₀, hhash, haddr, hloaded, c, hexact, hde, htv, v, hld, ?_⟩
     rw [haddr]
     simp only [RawCIRep, hc]
@@ -768,10 +788,10 @@ private theorem is_unsafe_ci_defnValShape_spec {d : Ixon.Definition}
       have hns : d.safety ≠ .safe := by
         intro hs
         exact hne [] rfl (by simp [repDefSafetyVal, hs])
-      cases hds : d.safety
-      · exact absurd hds hns
-      · simp [defnIsUnsafeCI, hk, hds, repBoolField, he, hr, hh]
-      · simp [defnIsUnsafeCI, hk, hds, repBoolField, he, hr, hh]
+      cases hds : d.safety with
+      | safe => exact absurd hds hns
+      | unsaf => simp [defnIsUnsafeCI, hk, hds, repBoolField, he, hr, hh]
+      | part => simp [defnIsUnsafeCI, hk, hds, repBoolField, he, hr, hh]
     | Thm _ _ _ _ _ hv => simp at hv
     | Opaque _ _ _ _ _ _ _ hv => simp at hv
     | Quot _ _ _ _ _ _ _ hv => simp at hv
@@ -791,7 +811,9 @@ private theorem is_unsafe_ci_defnValShape_spec {d : Ixon.Definition}
       subst hu_eq
       refine ⟨?_, hr, hh⟩
       rw [he]
-      cases hds : d.safety <;> rfl
+      unfold defnIsUnsafeCI
+      rw [hk]
+      cases hds : d.safety <;> rw [hds] <;> rfl
     | Quot _ _ _ _ _ _ _ hv => simp at hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv => simp at hv
     | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv => simp at hv
@@ -826,15 +848,13 @@ theorem is_unsafe_ci_raw_spec {E₀ : Ixon.Env} {h h' : Heap F} {a : _root_.Addr
   have bool_true_of_one : ∀ {b : Bool}, repBoolField b = .field 1 → b = true := by
     intro b hb
     cases b
-    · have h01 : ((0 : Nat) : F) = ((1 : Nat) : F) := by simpa [repBoolField] using hb
-      exact absurd (natCast_inj3 (by decide) (by decide) h01) (by decide)
+    · exact absurd (natCast_inj3 (by decide) (by decide) (Value.field.inj hb)) (by decide)
     · rfl
   have bool_false_of_zero : ∀ {b : Bool}, repBoolField b = .field 0 → b = false := by
     intro b hb
     cases b
     · rfl
-    · have h10 : ((1 : Nat) : F) = ((0 : Nat) : F) := by simpa [repBoolField] using hb
-      exact absurd (natCast_inj3 (by decide) (by decide) h10) (by decide)
+    · exact absurd (natCast_inj3 (by decide) (by decide) (Value.field.inj hb)) (by decide)
   unfold RawCIRep at hraw
   cases hc : c.info with
   | defn d =>
@@ -1255,13 +1275,13 @@ theorem RawCIRep.toCIRep (t : Ix.Kernel.RoleTable) {E₀ : Ixon.Env} {h : Heap F
     obtain ⟨blobs, hb, raw⟩ := hraw
     obtain ⟨_, _, name, _, _,
       hnl, hperm, hkey, hcx_blob, hty_rd, hty_lbb, hty_def, rfl⟩ := hrd_body
-    exact raw.toCIRep (name := name) hnl hperm hkey (fun _ _ _ _ hm => nomatch hm)
+    exact raw.toCIRep (name := name) hnl hperm hkey (fun _ _ _ _ hm => by simp at hm)
       (blob_lookup_of_loaded hb hnc hcx_blob) hty_rd hty_lbb hty_def
   | quot _ =>
     rw [hc] at hraw hrd_body
     obtain ⟨blobs, hb, raw⟩ := hraw
     obtain ⟨hqk, hnl, hperm, hrls, _, _, hkey, hcx_blob, hty_rd, hty_lbb, hty_def⟩ := hrd_body
-    exact raw.toCIRep_stored hqk hnl hperm hrls hkey (fun _ _ _ _ hm => nomatch hm)
+    exact raw.toCIRep_stored hqk hnl hperm hrls hkey (fun _ _ _ _ hm => by simp at hm)
       (blob_lookup_of_loaded hb hnc hcx_blob) hty_rd hty_lbb hty_def
   | recr _ =>
     rw [hc] at hraw hrd_body
@@ -1370,7 +1390,7 @@ theorem get_ci_iprj_toCIPtrRep {c : Core.Ctx} {bp ptr : SourceValue F} {i : F}
     rw [hesc, hdecB lcB hgetB] at hexB
     injection hexB with hcb_eq; subst hcb_eq
     rw [hcb] at hcb'; injection hcb' with hms_eq; subst hms_eq
-    rw [hms] at hms'; injection hms' with hind_eq; subst hind_eq
+    rw [hms] at hms'; injection hms' with hind_eq1; injection hind_eq1 with hind_eq; subst hind_eq
     obtain ⟨ci, hst, hrep⟩ :=
       raw.toCIRep rfl hnl hperm hkey hself
         (fun x bs hm => hblob x bs (hhp (x, bs) hm).1 (hhp (x, bs) hm).2)
@@ -1419,7 +1439,7 @@ theorem get_ci_cprj_toCIPtrRep {c : Core.Ctx} {bp ptr : SourceValue F} {i j : F}
     rw [hesc, hdecB lcB hgetB] at hexB
     injection hexB with hcb_eq; subst hcb_eq
     rw [hcb] at hcb'; injection hcb' with hms_eq; subst hms_eq
-    rw [hms] at hms'; injection hms' with hind_eq; subst hind_eq
+    rw [hms] at hms'; injection hms' with hind_eq1; injection hind_eq1 with hind_eq; subst hind_eq
     rw [hct] at hct'; injection hct' with hct_eq; subst hct_eq
     have hname : c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j)) =
         c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) ct.cidx.toNat) := by
@@ -1520,7 +1540,7 @@ theorem indRecord_of_deConstantExact {c : Core.Ctx}
       injection hexB with hcb_eq; subst hcb_eq
       rw [hcb_info] at hcb'; injection hcb' with hms_eq; subst hms_eq
       simp only [Array.getElem?_toList] at hms'
-      rw [hxs] at hms'; injection hms' with hind_eq; subst hind_eq
+      rw [hxs] at hms'; injection hms' with hind_eq1; injection hind_eq1 with hind_eq; subst hind_eq
       obtain ⟨_, _, _, hct56, _, tyPtr, blkPtr, b, hb_eq, hb_rep, rfl, _⟩ := raw
       have hpow56 : (72057594037927936 : Nat) = 2 ^ 56 := by decide
       rw [hpow56] at hidx56 hct56
@@ -1566,7 +1586,7 @@ private theorem defnValShape_ne_induct (d : Ixon.Definition)
     (tyPtr valPtr hint nl ty np ni nc u blk idx : SourceValue F) :
     defnValShape d tyPtr valPtr hint ≠
       .construct Core.kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] := by
-  cases d.kind <;> simp [defnValShape]
+  cases hk : d.kind <;> simp [defnValShape, hk]
 
 /-- Unconditional trace-level converse of `indRecord` (`Bounded cs` only): whenever `Ingress::get_ci`
 at `a` returns a pointer loading `.construct kciEnum "Induct" [...]`, the loaded record `cm` at `a`
@@ -1701,17 +1721,17 @@ theorem inductRecord_of_get_ci_strong {c : Core.Ctx}
   obtain ⟨_, hgetA, hexA₀⟩ := hdec (Core.ixAddr a) lcA hlcA
   have hescA := Core.load_escape hlcA hg.1 rawBytes hhA haA
   rw [hescA, hexA₀] at hexA
-  injection hexA with hcm_eq; subst hcm_eq
+  injection hexA with hcm_eq
+  rw [hcm_eq] at hgetA
   obtain ⟨lcB, hlcB⟩ := hmemB b blkBytes hhB haB
   obtain ⟨_, hgetB, hexB₀⟩ := hdec (Core.ixAddr b) lcB hlcB
   have hescB := Core.load_escape hlcB hg.1 blkBytes hhB haB
   rw [hescB, hexB₀] at hexB
-  injection hexB with hcb_eq; subst hcb_eq
-  have hrecA : Ix.Cert.recordAt c.E (Core.ixAddr a) = some cm := by
-    simp [Ix.Cert.recordAt, hlcA, hgetA]
-  have hrecB : Ix.Cert.recordAt c.E (Core.ixAddr b) = some cb := by
-    simp [Ix.Cert.recordAt, hlcB, hgetB]
-  exact ⟨cm, cb, xs, ind, b, i, hrecA, hb_rep, hidx_eq, hcm_info, hrecB, hcb_info, hxs⟩
+  injection hexB with hcb_eq
+  rw [hcb_eq] at hgetB
+  exact ⟨cm, cb, xs, ind, b, i,
+    recordAt_of_get? hlcA hgetA, hb_rep, hidx_eq, hcm_info, recordAt_of_get? hlcB hgetB,
+    hcb_info, hxs⟩
 
 /-- `LoadFacts.inductRecord` companion (`Core/Good.lean:134-140`). -/
 theorem inductRecord_of_get_ci {c : Core.Ctx}
@@ -1737,9 +1757,9 @@ theorem inductRecord_of_get_ci {c : Core.Ctx}
   obtain ⟨_, hgetA, hexA₀⟩ := hdec (Core.ixAddr a) lcA hlcA
   have hescA := Core.load_escape hlcA hg.1 rawBytes hhA haA
   rw [hescA, hexA₀] at hexA
-  injection hexA with hcm_eq; subst hcm_eq
-  refine ⟨cm, b, i, ?_, hb_rep, hidx_eq, hcm_info⟩
-  simp [Ix.Cert.recordAt, hlcA, hgetA]
+  injection hexA with hcm_eq
+  rw [hcm_eq] at hgetA
+  exact ⟨cm, b, i, recordAt_of_get? hlcA hgetA, hb_rep, hidx_eq, hcm_info⟩
 
 /-- An empty-tables `Ixon.Constant` is wire-well-formed iff its `ConstantInfo` payload is. -/
 theorem emptyTablesConstant_wireWF {info : Ixon.ConstantInfo} :
