@@ -1609,18 +1609,18 @@ private def encMutFuel (fuel : Nat) : Ixon.MutConst → List UInt8 → Option (L
 private theorem encMutFuel_spec (fuel : Nat) :
     ∀ (m : Ixon.MutConst) {k out : List UInt8},
       encMutFuel fuel m k = some out → EncodesTo (Ixon.putMutConst m) k out
-  | .defn d, k, _, h => by
-    unfold encMutFuel at h
+  | .defn d, k, out, h => by
+    change (encDefFuel fuel d k).map (0 :: ·) = some out at h
     cases hd : encDefFuel fuel d k with
     | none => rw [hd] at h; cases h
     | some rd => rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 0 _) (encDefFuel_spec fuel d hd)
-  | .indc i, k, _, h => by
-    unfold encMutFuel at h
+  | .indc i, k, out, h => by
+    change (encIndFuel fuel i k).map (1 :: ·) = some out at h
     cases hi : encIndFuel fuel i k with
     | none => rw [hi] at h; cases h
     | some ri => rw [hi] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 1 _) (encIndFuel_spec fuel i hi)
-  | .recr r, k, _, h => by
-    unfold encMutFuel at h
+  | .recr r, k, out, h => by
+    change (encRecFuel fuel r k).map (2 :: ·) = some out at h
     cases hr : encRecFuel fuel r k with
     | none => rw [hr] at h; cases h
     | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 2 _) (encRecFuel_spec fuel r hr)
@@ -1645,23 +1645,23 @@ private def encInfoFuel (fuel : Nat) : Ixon.ConstantInfo → List UInt8 → Opti
 private theorem encInfoFuel_spec (fuel : Nat) :
     ∀ (ci : Ixon.ConstantInfo) {k out : List UInt8},
       encInfoFuel fuel ci k = some out → EncodesTo (Ixon.putConstantInfo ci) k out
-  | .defn d, k, _, h => by
-    unfold encInfoFuel at h
+  | .defn d, k, out, h => by
+    change (encDefFuel fuel d k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DEFN) = some out at h
     cases hd : encDefFuel fuel d k with
     | none => rw [hd] at h; cases h
     | some rd => rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encDefFuel_spec fuel d hd)
-  | .recr r, k, _, h => by
-    unfold encInfoFuel at h
+  | .recr r, k, out, h => by
+    change (encRecFuel fuel r k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RECR) = some out at h
     cases hr : encRecFuel fuel r k with
     | none => rw [hr] at h; cases h
     | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encRecFuel_spec fuel r hr)
-  | .axio a, k, _, h => by
-    unfold encInfoFuel at h
+  | .axio a, k, out, h => by
+    change (encAxioFuel fuel a k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_AXIO) = some out at h
     cases ha : encAxioFuel fuel a k with
     | none => rw [ha] at h; cases h
     | some ra => rw [ha] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encAxioFuel_spec fuel a ha)
-  | .quot q, k, _, h => by
-    unfold encInfoFuel at h
+  | .quot q, k, out, h => by
+    change (encQuotFuel fuel q k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_QUOT) = some out at h
     cases hq : encQuotFuel fuel q k with
     | none => rw [hq] at h; cases h
     | some rq => rw [hq] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encQuotFuel_spec fuel q hq)
@@ -1682,8 +1682,9 @@ private theorem encInfoFuel_spec (fuel : Nat) :
     injection h with ho; subst ho
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _) (encAddress_spec p.block k))
-  | .muts ms, k, _, h => by
-    unfold encInfoFuel at h
+  | .muts ms, k, out, h => by
+    change (encManyOpt (encMutFuel fuel) ms.toList k).map
+      (encTagN 4 Ixon.Constant.FLAG_MUTS ms.size.toUInt64) = some out at h
     cases hm : encManyOpt (encMutFuel fuel) ms.toList k with
     | none => rw [hm] at h; cases h
     | some rm =>
