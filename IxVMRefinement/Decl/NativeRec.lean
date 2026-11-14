@@ -5043,7 +5043,8 @@ theorem build_param_lvls_range_go :
           List.map (fun k => Level.param (start + (i + 1 + k))) (List.range rem) := by
         apply List.map_congr_left; intro k _
         simp only [Function.comp_apply]
-        refine congrArg Level.param ?_
+        apply congrArg Level.param
+        show (start + (i + k.succ) : Nat) = start + (i + 1 + k)
         omega
       rw [Nat.add_zero, hmap_eq]
       have hcons : RepKLevelList
@@ -5111,7 +5112,8 @@ theorem build_rec_lvls_list_go :
           List.map (fun k => Level.param (i + 1 + k)) (List.range rem) := by
         apply List.map_congr_left; intro k _
         simp only [Function.comp_apply]
-        refine congrArg Level.param ?_
+        apply congrArg Level.param
+        show (i + k.succ : Nat) = i + 1 + k
         omega
       rw [Nat.add_zero, hmap_eq]
       have hcons : RepKLevelList
@@ -6094,6 +6096,20 @@ theorem nat_tele_at_go {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       cases htele with | nil cell => exact (load_cell_ne cell ld (by decide)).elim
   | cons b rest ih =>
     intro m ppw ptele r h h' cs hlt hbnd hpw htele ev
+    have hlist_eq :
+        List.map
+          ((fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + idx) ((b :: rest).getD idx default).1, bmeta ℓ)) ∘
+            Nat.succ)
+          (List.range rest.length) =
+        List.map
+          (fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + 1 + idx) (rest.getD idx default).1, bmeta ℓ))
+          (List.range rest.length) := by
+      apply List.map_congr_left
+      intro idx _
+      dsimp only [Function.comp_apply]
+      rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
     cases htele with
     | cons cell ht hl_hd hrest =>
       match Obs.«KernelCheck::nat_tele_at».obs ev with
@@ -6126,20 +6142,6 @@ theorem nat_tele_at_go {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
           Nat.add_zero, List.getD_cons_zero]
         have htl_ext := htl.mono ext_end
         rw [show k_base + o + nF + l + (m + 1) = k_base + o + nF + l + m + 1 by omega] at htl_ext
-        have hlist_eq :
-            List.map
-              ((fun idx =>
-                (Ix.Kernel.structIdxAt nF o i l (m + idx) ((b :: rest).getD idx default).1, bmeta ℓ)) ∘
-                Nat.succ)
-              (List.range rest.length) =
-            List.map
-              (fun idx =>
-                (Ix.Kernel.structIdxAt nF o i l (m + 1 + idx) (rest.getD idx default).1, bmeta ℓ))
-              (List.range rest.length) := by
-          apply List.map_congr_left
-          intro idx _
-          dsimp only [Function.comp_apply]
-          rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
         rw [hlist_eq]
         exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
           (repKLevel_heapMono₂ (ev1.heap_extends.trans (ev2.heap_extends.trans ext_end)) hpw)
@@ -6609,8 +6611,8 @@ theorem nat_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
   have ext_h_410 := ext_h_212.trans ev420.heap_extends
   have hbnd_ih : IxVM.Consistency.Bounded cs453 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-  have hv211' : Tm κ 0 Γ₀ m410 (nP + o + nF + 0 + recIdx.length) _ v211 := by
-    simpa using hv211.mono ev420.heap_extends
+  have hv211' := hv211.mono ev420.heap_extends
+  rw [show (nP + o + nF) + recIdx.length = nP + o + nF + 0 + recIdx.length by omega] at hv211'
   have hv393 := nat_ih_pis_spec ho hsR hsE 0
     (fun i hi => by obtain ⟨h1, h2, h3⟩ := hall i hi; exact ⟨h1, h2, by omega⟩)
     (by omega) hbnd_ih
@@ -6618,8 +6620,8 @@ theorem nat_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     (hRaw.mono ext_h_410) (fieldRepList_mono ext_h_410 hrec) hv211' ev455
   -- Step 13: `nat_replace_pis`
   have ext_h_445 := ext_h_410.trans ev455.heap_extends
-  have hv393' : Tm κ 0 Γ₀ m445 ((nP + o) + nF) _ v393 := by
-    simpa [Nat.add_assoc] using hv393
+  have hv393' := hv393
+  rw [show nP + o + nF + 0 = (nP + o) + nF by omega] at hv393'
   obtain ⟨mty, hmty, hmty_tm⟩ := nat_replace_pis_spec nF (by omega)
     (repKLevel_heapMono₂ ext_h_445 hpw)
     (hv392.mono ev455.heap_extends) hv393' ev389
