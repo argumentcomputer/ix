@@ -1745,7 +1745,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d10_1, d10_2⟩ := inv_args2 a10
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_2
-  obtain ⟨heq10, rfl⟩ := Builtin.assertEq_inv ap10; subst tnl
+  obtain ⟨heq10, rfl⟩ := Builtin.assertEq_inv ap10; subst heq10
   obtain rfl := matchPattern_wildcard_inv mt10
   -- 11. `let (tbody, ctx) = peel_collect(tty, d, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_open, _, _, _, d11, mt11, rest11, hc11⟩ := rest10.letValue_inv; clear rest10
@@ -1928,7 +1928,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, d24_b1, d24_b2, op_mi1, _⟩ := d24_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d24_b1
   obtain ⟨rfl, rfl, _⟩ := d24_b2.literal_inv
-  obtain ⟨heq24, rfl⟩ := Builtin.assertEq_inv ap24; subst v_llen
+  obtain ⟨heq24, rfl⟩ := Builtin.assertEq_inv ap24; subst heq24
   obtain rfl := matchPattern_wildcard_inv mt24
   rw [hc24_args, hc_llen] at sc24_l
   have call_llen := sc24_l.append_left.append_right.cons_head
@@ -2131,7 +2131,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, d39_b1, d39_b2, op_cnp_ni, _⟩ := d39_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b2
-  obtain ⟨heq39, rfl⟩ := Builtin.assertEq_inv ap39; subst v39_l
+  obtain ⟨heq39, rfl⟩ := Builtin.assertEq_inv ap39; subst heq39
   obtain rfl := matchPattern_wildcard_inv mt39
   rw [hc39_args, hc_clen] at sc39_l
   have call_clen := sc39_l.append_left.append_right.cons_head
@@ -3250,7 +3250,7 @@ theorem check_iota_rule_vm_spec
       exact (instantiateLevelParams_instSpine lps (posLevels lps)
         (fvs.take rP) (rP - 1) (p.renameConsts f_id)).symm
     rw [← hlist_eq]
-    exact repList_map_rel (fun _ _ hh => hh.open_prefix_eq Γ_t) hpins_ren_rep
+    exact repList_map_rel (fun _ _ hh => hh.open_prefix_eq (Γ := Γ_t)) hpins_ren_rep
   have hpd_rep := lift_list_exact (bounded_sub inv.sub_pd hgood_pub.2)
     (by rw [hcnf_val]; omega) inv.ev_pd hpins_ren_open
   rw [hcnf_val] at hpd_rep
@@ -3314,7 +3314,7 @@ theorem check_iota_rule_vm_spec
   -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
   have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
   have hcvj_def : cvj.type.allLevelParamsDefined cvj.levelParams = true :=
-    (hef_pub.store.wf _ (Ix.Kernel.Env.find?_mem hfind_ctor)).2.1
+    (hef_pub.store.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfind_ctor)).2.1
   let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls_lps
   have hctyl_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_ctyl 0 (posOf lps cty_inst) inv.cty_l := by
     have hinst := SubstAux.gall c_pub.κ .expr_inst_levels [cty, ilvls] inv.h_majeq inv.cty_l
@@ -3327,7 +3327,8 @@ theorem check_iota_rule_vm_spec
   have hcnp_cnf_eq : inv.cnp_cnf = .field ((cnP + cnF : Nat) : F) := by
     rw [SubstAux.add_ok inv.op_cnp_cnf]; congr 1
     exact ZMod.val_injective _ (by
-      rw [SubstAux.val_add (by omega), hcnp_val, hcnf_val, SubstAux.val_natCast (by omega)])
+      rw [SubstAux.val_add (by rw [hcnp_val, hcnf_val]; omega), hcnp_val, hcnf_val,
+        SubstAux.val_natCast (by omega)])
   have ev_peel0' := inv.ev_peel0
   rw [hcnp_cnf_eq] at ev_peel0'
   obtain ⟨bs0_pos, rem0_pos, hstrip0_pos, hrem0_ctyl, _⟩ :=
@@ -3386,7 +3387,7 @@ theorem check_iota_rule_vm_spec
   have hdrop_fvs_Γ : ∀ m (hm : m < ((fvs.drop rP).map (posOf lps)).length),
       Expr.fvar (rP + m) (Γ_t (rP + m)) = ((fvs.drop rP).map (posOf lps))[m] := by
     intro m hm
-    have hm_cnF : m < cnF := by rw [← hcnf_val, hdrop_fvs_len] at hm; exact hm
+    have hm_cnF : m < cnF := by rw [← hdrop_fvs_len, hcnf_val] at hm; exact hm
     have h1 := congrArg (·[m]?) hbvd2_fvs
     rw [List.getElem?_map, List.getElem?_range hm_cnF, Option.map_some,
       List.getElem?_eq_getElem hm] at h1
@@ -3426,7 +3427,8 @@ theorem check_iota_rule_vm_spec
     rw [SubstAux.add_ok inv.op_cnp_ni] at hclen_f
     injection hclen_f with hf
     have hv := congrArg ZMod.val hf
-    rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hcnp_val, hni_val,
+    rw [SubstAux.val_natCast (by omega),
+      SubstAux.val_add (by rw [hcnp_val, hni_val]; omega), hcnp_val, hni_val,
       hcargs_pos_eq, List.length_map] at hv
     exact hv.symm
   -- Deduce `cbody_inst.getAppArgs.length = cnP + nI` via `instPisAt_constHead` on `cty_inst.renameConsts f_id`
@@ -3470,7 +3472,8 @@ theorem check_iota_rule_vm_spec
     inv.ev_idxr.heap_extends hidxl_rep
   have hidxl_tm : RepList kexprListEnum (fun h X p => Tm c_adv.κ depth Γ_t h 0 X p) inv.h_idxr
       (((lhsS.getAppArgs.drop rP).take nI).map (posOf lps)) inv.v_idxl := by
-    rw [hκ_eq, hlargs_pos_eq, ← List.map_drop, ← List.map_take] at hidxl_idxr ⊢
+    rw [hκ_eq]
+    rw [hlargs_pos_eq, ← List.map_drop, ← List.map_take] at hidxl_idxr
     exact repList_imp (fun _ _ hh => hh.toTm) hidxl_idxr
   have hidxr_tm : RepList kexprListEnum (fun h Y p => Tm c_adv.κ depth Γ_t h 0 Y p) inv.h_idxr
       ((cres.getAppArgs.drop cnP).map (posOf lps)) inv.v_idxr := by
@@ -3516,11 +3519,12 @@ theorem check_iota_rule_vm_spec
       (htyr_ren_ex.toTm.mono ext_tyr_nil)
   obtain ⟨fvs1, remA1, hop_dt1, hfvs1_pos, hremA1_pos⟩ := openPisAtFvars_of_posOf hop_dt1_pos
   subst hfvs1_pos hremA1_pos
-  have hfvs_split := openPisAtFvars_split rP cnF cvt_lps 0
-  rw [show rP + cnF = depth from rfl, hopen_t, hop_dt1, Nat.zero_add, Option.map_eq_some_iff]
-    at hfvs_split
+  have hfvs_split := (openPisAtFvars_split rP cnF cvt_lps 0).symm
+  rw [show rP + cnF = depth from rfl, hopen_t, hop_dt1, Nat.zero_add] at hfvs_split
+  dsimp only at hfvs_split
+  rw [Option.map_eq_some_iff] at hfvs_split
   obtain ⟨⟨fvs2, tbody'⟩, hop_dt2_expected, hfvs_pair⟩ := hfvs_split
-  injection hfvs_pair with hfvs_app htbody_eq; subst htbody_eq
+  obtain ⟨hfvs_app, rfl⟩ := Prod.mk.inj hfvs_pair
   have hfvs1_len : fvs1.length = rP := (openPisAtFvars_spec rP cvt_lps 0 hop_dt1).1
   have hfvs_take_eq : fvs.take rP = fvs1 := by
     rw [← hfvs_app, List.take_left' hfvs1_len]
@@ -3550,7 +3554,7 @@ theorem check_iota_rule_vm_spec
   have htake_fvs_Γ : ∀ m (hm : m < ((fvs.take rP).map (posOf lps)).length),
       Expr.fvar (0 + m) (Γ_t (0 + m)) = ((fvs.take rP).map (posOf lps))[m] := by
     intro m hm
-    have hm_rP : m < rP := by rw [← hrp_val, htake_fvs_len] at hm; exact hm
+    have hm_rP : m < rP := by rw [← htake_fvs_len, hrp_val] at hm; exact hm
     have h1 := congrArg (·[m]?) hbvd1_fvs
     rw [List.getElem?_map, List.getElem?_range hm_rP, Option.map_some,
       List.getElem?_eq_getElem hm] at h1
@@ -3690,7 +3694,7 @@ theorem check_iota_rule_vm_spec
       exact (instantiateLevelParams_instSpine lps (posLevels lps)
         fvsP (rP - 1) p).symm
     rw [← hlist_eq]
-    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq Γ_p).toTm) h1
+    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq (Γ := Γ_p)).toTm) h1
   have hpins_ctxp_2 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_l h 0 P p) inv.h_ctxp
       (pinsL_lps.map (posOf lps)) pins := by
     have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
@@ -3707,7 +3711,7 @@ theorem check_iota_rule_vm_spec
       exact (instantiateLevelParams_instSpine lps (posLevels lps)
         lfvs1 (rP - 1) p).symm
     rw [← hlist_eq]
-    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq Γ_l).toTm) h1
+    exact repList_map_rel (fun _ _ hh => (hh.open_prefix_eq (Γ := Γ_l)).toTm) h1
   have ext_ctyl_ctxp := ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
     (inv.ev_crest.heap_extends.trans (ext_crest_dt1.trans
       (ext_dt1_dt2.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)))))
