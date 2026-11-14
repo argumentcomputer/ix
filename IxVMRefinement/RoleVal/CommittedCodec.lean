@@ -1787,23 +1787,24 @@ private theorem array_isEmpty_eq_toList_isEmpty {α : Type} (a : Array α) :
   cases a with
   | mk l => cases l <;> simp [Array.isEmpty, List.isEmpty]
 
-private def mutBinderRootsStep (acc : Array Ixon.Expr) (m : Ixon.MutConst) : Array Ixon.Expr :=
-  acc ++ match m with
-    | .defn d => #[d.typ, d.value]
-    | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
-    | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
-
-private theorem mutBinderRootsStep_nonempty (acc : Array Ixon.Expr) (m : Ixon.MutConst) :
-    (mutBinderRootsStep acc m).toList ≠ [] := by
-  cases m <;> simp [mutBinderRootsStep, Array.toList_append]
-
-private theorem foldl_mutBinderRootsStep_nonempty :
-    ∀ (xs : List Ixon.MutConst) (acc : Array Ixon.Expr),
-      acc.toList ≠ [] → (xs.foldl mutBinderRootsStep acc).toList ≠ []
+private theorem foldl_nonempty {α : Type} (f : Array Ixon.Expr → α → Array Ixon.Expr)
+    (hf : ∀ acc x, (f acc x).toList ≠ []) :
+    ∀ (xs : List α) (acc : Array Ixon.Expr),
+      acc.toList ≠ [] → (xs.foldl f acc).toList ≠ []
   | [], acc, h => h
-  | m :: xs, acc, _ =>
-    foldl_mutBinderRootsStep_nonempty xs (mutBinderRootsStep acc m)
-      (mutBinderRootsStep_nonempty acc m)
+  | x :: xs, acc, _ => foldl_nonempty f hf xs (f acc x) (hf acc x)
+
+private theorem isEmpty_eq_foldl_isEmpty {α : Type} (xs : List α)
+    (f : Array Ixon.Expr → α → Array Ixon.Expr)
+    (hf : ∀ acc x, (f acc x).toList ≠ []) :
+    xs.isEmpty = (xs.foldl f #[]).toList.isEmpty := by
+  cases xs with
+  | nil => rfl
+  | cons x rest =>
+    have hne := foldl_nonempty f hf rest (f #[] x) (hf #[] x)
+    cases hfl : (rest.foldl f (f #[] x)).toList with
+    | nil => exact absurd hfl hne
+    | cons _ _ => rfl
 
 private def binderRootsEmptyFast : Ixon.ConstantInfo → Bool
   | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => true
@@ -1821,26 +1822,8 @@ private theorem binderRootsEmptyFast_eq :
   | .muts ms => by
     dsimp only [binderRootsEmptyFast, Ixon.ConstantInfo.binderRoots]
     rw [← Array.foldl_toList, array_isEmpty_eq_toList_isEmpty]
-    have hstep :
-        (ms.toList.foldl
-          (fun acc m => acc ++ match m with
-            | .defn d => #[d.typ, d.value]
-            | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
-            | .recr r => #[r.typ] ++ r.rules.map (·.rhs)) #[]) =
-        ms.toList.foldl mutBinderRootsStep #[] := by
-      congr 1
-      funext acc m
-      cases m <;> rfl
-    rw [hstep]
-    cases hms : ms.toList with
-    | nil => rfl
-    | cons m xs =>
-      have hne : ((m :: xs).foldl mutBinderRootsStep #[]).toList ≠ [] :=
-        foldl_mutBinderRootsStep_nonempty xs (mutBinderRootsStep #[] m)
-          (mutBinderRootsStep_nonempty #[] m)
-      cases hfl : ((m :: xs).foldl mutBinderRootsStep #[]).toList with
-      | nil => exact absurd hfl hne
-      | cons _ _ => rfl
+    exact isEmpty_eq_foldl_isEmpty ms.toList _ fun acc m => by
+      cases m <;> simp [Array.toList_append]
 
 private def mutMaxLvlsStep (acc : Nat) : Ixon.MutConst → Nat
   | .defn d => max acc d.lvls.toNat
@@ -1912,6 +1895,11 @@ private def modesCanonicalFast (c : Ixon.Constant) : Bool :=
     | _ => true
   | _ => true
 
+private theorem list_all_congr {α : Type} {xs : List α} {p q : α → Bool}
+    (h : ∀ x, p x = q x) : xs.all p = xs.all q := by
+  have hfun : p = q := funext h
+  rw [hfun]
+
 private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalFast c = c.modesCanonical
   | ⟨.defn _, _, _, _, _⟩
   | ⟨.recr _, _, _, _, _⟩
@@ -1925,6 +1913,7 @@ private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalF
     unfold modesCanonicalFast Ixon.Constant.modesCanonical
     dsimp only
     rw [← Array.all_toList]
+    exact list_all_congr fun m => by cases m <;> rfl
 
 def checkConstBytesFast (c : Ixon.Constant) (bs : List UInt8) : Bool :=
   validConstantFast c &&
