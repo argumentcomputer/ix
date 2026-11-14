@@ -332,12 +332,12 @@ theorem allLevelParamsDefined_instantiateLevelParams {ks ps' : List LevelParam} 
     intro h
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
     simp only [Expr.instantiateLevelParams, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨iht h.1.1, ihb h.1.2⟩, Level.substPW_paramsDefined hus h.2⟩
+    exact ⟨⟨iht h.1.1, ihb h.1.2⟩, Level.substPW_paramsDefined hlen hus h.2⟩
   | forallE ty body m iht ihb =>
     intro h
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
     simp only [Expr.instantiateLevelParams, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨iht h.1.1, ihb h.1.2⟩, Level.substPW_paramsDefined hus h.2⟩
+    exact ⟨⟨iht h.1.1, ihb h.1.2⟩, Level.substPW_paramsDefined hlen hus h.2⟩
   | letE ty val body _ iht ihv ihb =>
     intro h
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
@@ -798,6 +798,7 @@ private theorem instantiate1_instAt {fvs : List KExpr} {fv : KExpr}
             else if i - fvs.length > j then Expr.bvar (i - fvs.length - 1)
             else Expr.bvar (i - fvs.length)) = Expr.bvar (i - (fvs.length + 1))
           rw [ite_eq_right (by omega), ite_eq_left (by omega)]
+          congr 1; omega
   | fvar _ _ _ => intro _ h; simp [Expr.hasFvar] at h
   | sort _ | const _ _ | lit _ => intro _ _; rfl
   | app f a ihf iha =>
@@ -1311,18 +1312,24 @@ private theorem infer_constsResolve_aux :
       {d : Nat} {e t : KExpr},
       exprDepth e ≤ n → Infer env g d e t → g = .full →
       Ix.Kernel.Open.StoreInv env → FvarConstsResolve env e →
-      e.constsResolve env = true
-  | 0, _, _, _, _, _, hdep, hinf, hg, _, hfv => by
+      e.constsResolve env = true := by
+  intro n
+  induction n with
+  | zero =>
+    intro env g d e t hdep hinf hg _ hfv
     cases hinf with
     | sort => rfl
     | fvar _ => exact hfv.1
     | const hfind _ _ => simp [Expr.constsResolve, hfind]
     | natLit hnat => exact isSome_of_natLitSupported hnat
     | @strLit _ _ s hstr => exact isSome_of_strLitSupported hstr s
-    | forallE .. | lam .. | app .. | proj .. =>
-      simp only [exprDepth] at hdep; omega
+    | forallE => simp only [exprDepth] at hdep; omega
+    | lam => simp only [exprDepth] at hdep; omega
+    | app => simp only [exprDepth] at hdep; omega
     | appSkip => nomatch hg
-  | n + 1, env, _, d, _, _, hdep, hinf, hg, hstore, hfv => by
+    | proj => simp only [exprDepth] at hdep; omega
+  | succ n ih =>
+    intro env g d e t hdep hinf hg hstore hfv
     cases hinf with
     | sort => rfl
     | fvar _ => exact hfv.1
@@ -1331,30 +1338,27 @@ private theorem infer_constsResolve_aux :
     | @strLit _ _ s hstr => exact isSome_of_strLitSupported hstr s
     | @forallE _ d₀ ty body _ _ _ _ hty hbo _ _ =>
       simp only [exprDepth] at hdep
-      have hty_res := infer_constsResolve_aux n (by omega) hty hg hstore hfv.1
-      have hbo_res := infer_constsResolve_aux n
-        (by rw [exprDepth_instantiate1_fvar]; omega)
+      have hty_res := ih (by omega) hty hg hstore hfv.1
+      have hbo_res := ih (by rw [exprDepth_instantiate1_fvar]; omega)
         hbo hg hstore (fvarConstsResolve_instantiate1 ⟨hty_res, hfv.1⟩ 0 hfv.2)
       simp only [Expr.constsResolve, Bool.and_eq_true]
       exact ⟨hty_res, constsResolve_of_instantiate1 0 hbo_res⟩
     | @lam _ d₀ ty body _ _ _ _ _ _ hty _ hbo _ _ _ _ =>
       simp only [exprDepth] at hdep
-      have hty_res := infer_constsResolve_aux n (by omega) (hty hg) rfl hstore hfv.1
-      have hbo_res := infer_constsResolve_aux n
-        (by rw [exprDepth_instantiate1_fvar]; omega)
+      have hty_res := ih (by omega) (hty hg) rfl hstore hfv.1
+      have hbo_res := ih (by rw [exprDepth_instantiate1_fvar]; omega)
         hbo hg hstore (fvarConstsResolve_instantiate1 ⟨hty_res, hfv.1⟩ 0 hfv.2)
       simp only [Expr.constsResolve, Bool.and_eq_true]
       exact ⟨hty_res, constsResolve_of_instantiate1 0 hbo_res⟩
     | app hfn _ harg _ =>
       simp only [exprDepth] at hdep
       simp only [Expr.constsResolve, Bool.and_eq_true]
-      exact ⟨infer_constsResolve_aux n (by omega) hfn hg hstore hfv.1,
-        infer_constsResolve_aux n (by omega) harg hg hstore hfv.2⟩
+      exact ⟨ih (by omega) hfn hg hstore hfv.1, ih (by omega) harg hg hstore hfv.2⟩
     | appSkip => nomatch hg
     | @proj _ _ sn i pe _ _ _ entry _ hpe _ hent _ _ _ =>
       simp only [exprDepth] at hdep
       simp only [Expr.constsResolve, Bool.and_eq_true]
-      refine ⟨?_, infer_constsResolve_aux n (by omega) hpe hg hstore hfv⟩
+      refine ⟨?_, ih (by omega) hpe hg hstore hfv⟩
       obtain ⟨tbl, hf, hi, _⟩ := Ix.Kernel.Env.findProj?_some hent
       obtain ⟨_, _, _, ⟨cvT, caps, hT, _, _⟩, _⟩ := hstore.proj_ok _ tbl hf i hi
       have hsn : tbl.structName = sn := by
@@ -2153,7 +2157,7 @@ end TmExactInversion
 
 /-! ## `validate_expr_well_scoped` -/
 
-private macro "decl_lt_calls" : tactic =>
+local macro "decl_lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
 
 private theorem validate_univ_params_seen_aux :
@@ -2196,6 +2200,7 @@ private theorem validate_univ_params_seen_aux :
         subst heq259
         obtain ⟨_, _, hlt, _, _⟩ := Lib.less_than_fields_field ev236
         have hplt : p < nl := by
+          have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
           have h1 : ((p : F)).val = p := ZMod.val_natCast_of_lt (by omega)
           have h2 : ((nl : F)).val = nl := ZMod.val_natCast_of_lt (by omega)
           simpa [h1, h2] using hlt.mp rfl
@@ -2232,7 +2237,7 @@ private theorem validate_univ_params_list_aux :
           rwa [klevelListEnum_eq]
         obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hrep ld12
         have hrest' : RepKLevelList m43 rest x_rest := by
-          rw [← klevelListEnum_eq] at hrest
+          rw [klevelListEnum_eq] at hrest
           exact repList_heapMono₂ _ repKLevel_heapMono₂ (ObsFn.heap_extends ev55) hrest
         subst hc94
         simp only [List.all_cons, Bool.and_eq_true]
@@ -2548,7 +2553,7 @@ private theorem level_list_struct_eq_aux :
           · exact beq_iff_eq.mp hbeq
           · simp [hbeq] at hlv
         subst hxy
-        rw [← klevelListEnum_eq] at hxr hyr
+        rw [klevelListEnum_eq] at hxr hyr
         obtain ⟨htl, hh⟩ := ih _ _ _ _ _ _ (by decl_lt_calls) ev145 rfl rfl xr yr x_xr x_yr rfl
           hxr hyr
         exact ⟨congrArg (x :: ·) htl, hh⟩
@@ -2611,14 +2616,14 @@ private theorem kexpr_struct_eq_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
           ⟨x_ta, x_va, x_ba, x_tb, x_vb, x_bb, m684, cs695, m719, cs730, cs756,
             ld12, ld660, ev697, ev732, ev758, hc775⟩ |
           ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he780, _, _⟩ |
-          ⟨_, _, _, _, _, _, _, _, _, _, _, _, he787, _, _⟩ |
+          ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, he787, _, _⟩ |
           ⟨_, _, _, _, _, _, _, he794, _, _⟩ |
           ⟨x_la, x_lb, cs836, ld12, ld820, ev838, hc855⟩ |
           ⟨_, _, _, _, _, he860, _, _⟩ |
           ⟨x_sa, x_fa2, x_ea, x_sb, x_fb2, x_eb, m920, cs931, cs980,
             ld12, ld896, ev933, op970, ev982, hc999⟩ |
           ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, he1004, _, _⟩ |
-          ⟨_, _, _, _, _, _, _, _, _, _, _, he1011, _, _⟩ |
+          ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, he1011, _, _⟩ |
           ⟨_, _, _, _, _, _, _, he1018, _, _⟩
         · obtain ⟨ia, rfl, _, hba_c⟩ := ha.bvar_of_load ld12
           obtain ⟨ib, rfl, _, hbb_c⟩ := hb.bvar_of_load ld36
@@ -2703,7 +2708,7 @@ private theorem kexpr_struct_eq_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
             · rw [hv15] at hva; injection hva with _ _ hxs; injection hxs with hxa; subst hxa
               rcases hb.lit_of_load ld820 with ⟨lp_b, limbs_b, hvb, rfl, rlb⟩ | ⟨_, _, _, hvb, _, _, _⟩
               · rw [hv36] at hvb; injection hvb with _ _ hys; injection hys with hxb; subst hxb
-                rw [klimbs_eq_one _ _ _ _ _ _ ev48 rfl rfl limbs_a limbs_b lp_a lp_b rfl rla rlb]
+                rw [klimbs_eq_one _ _ _ _ _ _ ev48 rfl rfl limbs_a limbs_b x_na x_nb rfl rla rlb]
               · rw [hv36] at hvb; injection hvb with _ hc; exact absurd hc (by decide)
             · rw [hv15] at hva; injection hva with _ hc; exact absurd hc (by decide)
           · exact absurd (Value.field.inj he70) one_ne_zero
@@ -2713,7 +2718,7 @@ private theorem kexpr_struct_eq_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
               rcases hb.lit_of_load ld820 with ⟨_, _, hvb, _, _⟩ | ⟨bp_b, bytes_b, sb, hvb, rfl, rbb, hsb⟩
               · rw [hv99] at hvb; injection hvb with _ hc; exact absurd hc (by decide)
               · rw [hv99] at hvb; injection hvb with _ _ hys; injection hys with hxb; subst hxb
-                have hbytes := bytestream_eq_one _ _ _ _ _ _ ev111 rfl rfl bytes_a bytes_b bp_a bp_b
+                have hbytes := bytestream_eq_one _ _ _ _ _ _ ev111 rfl rfl bytes_a bytes_b x_sa x_sb
                   rfl rba rbb
                 subst hbytes
                 rw [Option.some.inj (hsa.symm.trans hsb)]
