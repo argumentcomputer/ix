@@ -1217,17 +1217,21 @@ private theorem encTagN_spec (f : Nat) (flag : UInt8) (value : UInt64) (k : List
   simp only [Ixon.putTagN, encTagN,
     Ixon.tagNEnd5, Ixon.tagNEnd4, Ixon.tagNEnd3, Ixon.tagNEnd2, Ixon.tagNEnd1, Ixon.tagNHeader,
     tagNEnd5Fast, tagNEnd4Fast, tagNEnd3Fast, tagNEnd2Fast, tagNEnd1Fast, tagNHeaderFast]
-  split
-  · exact EncodesTo.putU8 _ _
-  · split
-    · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (EncodesTo.putU8 _ _)
-    · split
-      · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 2 _)
-      · split
-        · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 3 _)
-        · split
-          · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 4 _)
-          · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 8 _)
+  by_cases h1 : value.toNat < 2 ^ (8 - f - 1)
+  · simp only [h1, ↓reduceIte]; exact EncodesTo.putU8 _ _
+  · simp only [h1, ↓reduceIte]
+    by_cases h2 : value.toNat < 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2 + 8)
+    · simp only [h2, ↓reduceIte]; exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (EncodesTo.putU8 _ _)
+    · simp only [h2, ↓reduceIte]
+      by_cases h3 : value.toNat < 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2 + 8) + 2 ^ 16
+      · simp only [h3, ↓reduceIte]; exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 2 _)
+      · simp only [h3, ↓reduceIte]
+        by_cases h4 : value.toNat < 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2 + 8) + 2 ^ 16 + 2 ^ 24
+        · simp only [h4, ↓reduceIte]; exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 3 _)
+        · simp only [h4, ↓reduceIte]
+          by_cases h5 : value.toNat < 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2 + 8) + 2 ^ 16 + 2 ^ 24 + 2 ^ 32
+          · simp only [h5, ↓reduceIte]; exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 4 _)
+          · simp only [h5, ↓reduceIte]; exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 8 _)
 
 private def encUnivSuccCountNatFast : Ixon.Univ → Nat
   | .succ inner => 1 + encUnivSuccCountNatFast inner
@@ -2080,9 +2084,9 @@ private def isNotThmFast : Ix.DefKind → Bool
   | .defn | .opaq => true
 
 private theorem isNotThmFast_eq : ∀ (k : Ix.DefKind), isNotThmFast k = (k != .thm)
-  | .defn => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
-  | .opaq => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
-  | .thm => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
+  | .defn => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq, Ix.DefKind.ctorIdx]
+  | .opaq => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq, Ix.DefKind.ctorIdx]
+  | .thm => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq, Ix.DefKind.ctorIdx]
 
 private def assertsCanonicalFast (d : Ixon.Definition) : Bool :=
   isNotThmFast d.kind || d.asserts == {}
