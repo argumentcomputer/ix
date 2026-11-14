@@ -16,6 +16,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
+open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open Ix.Kernel (ConstantInfo ConstantVal Declaration RecRule BasisKind LevelParam Level Expr)
 open Ix.Kernel.Rules (Annot Infer DefEq Red)
 open Ix.Kernel.Semantics (ConstantValRunJ ValueFrontRunJ DeclDefnRunJ DeclThmRunJ
@@ -45,7 +46,7 @@ theorem DeclInv.exists_envModel_thmVal {V : Type u} [Ix.Kernel.SetTheory V]
 
 /-- Changing only the group limit `lim` of a `Ctx` preserves `LoadFacts`, since no field of
 `LoadFacts` reads `c.lim`. -/
-theorem LoadFacts.withLim {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
+theorem _root_.IxVM.Refinement.Core.LoadFacts.withLim {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {t : Ix.Kernel.RoleTable} {lim₁ lim₂ : Option Nat}
     (h : LoadFacts ⟨E, env, t, lim₁⟩) : LoadFacts ⟨E, env, t, lim₂⟩ where
   getCI := h.getCI
@@ -472,10 +473,10 @@ theorem check_const_axiom_inv {rc nl ty ap r : SourceValue F} {h h' : Heap F}
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
   | _ =>
-    have hv : Value.construct kciEnum "Axiom" [nl, ty, .field 0] =
-        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
-    injection hv with _ htag _
-    exact absurd htag (by decide)
+    exfalso
+    exact ‹∀ vs : List (SourceValue F), vs.length = 3 →
+      Value.construct kciEnum "Axiom" [nl, ty, .field 0] ≠
+        .construct "KernelTypes::KConstantInfo" "Axiom" vs› [nl, ty, .field 0] rfl rfl
 
 /-- Inversion of `KernelCheck::check_const` on a safe `"Defn"` constant. -/
 theorem check_const_defn_inv {rc nl ty val hint ap r : SourceValue F} {h h' : Heap F}
@@ -500,6 +501,12 @@ theorem check_const_defn_inv {rc nl ty val hint ap r : SourceValue F} {h h' : He
       (∀ x ∈ cs383, x ∈ calls) ∧ (∀ x ∈ cs479, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
+  | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
   | Defn v1 m2 cs12 x_nlvls x_ty x_val w271 w272 v298 m299 cs309 v335 m336 cs346 v372 m373 cs383
       m404 v416 m417 cs427 v446 m447 cs457 cs479 m508
       ev14 _ hv269 ev311 ev348 hm404 ev385 ev429 ev459 hm508 ev481 hc520 =>
@@ -517,11 +524,12 @@ theorem check_const_defn_inv {rc nl ty val hint ap r : SourceValue F} {h h' : He
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
   | _ =>
-    have hv : Value.construct kciEnum "Defn"
-        [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint] =
-        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
-    injection hv with _ htag _
-    exact absurd htag (by decide)
+    exfalso
+    exact ‹∀ vs : List (SourceValue F), vs.length = 5 →
+      Value.construct kciEnum "Defn"
+        [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint] ≠
+        .construct "KernelTypes::KConstantInfo" "Defn" vs›
+      [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint] rfl rfl
 
 /-- Inversion of `KernelCheck::check_const` on a `"Thm"` constant. -/
 theorem check_const_thm_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
@@ -548,6 +556,14 @@ theorem check_const_thm_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
       (∀ x ∈ cs628, x ∈ calls) ∧ (∀ x ∈ cs683, x ∈ calls) ∧ (∀ x ∈ cs778, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
+  | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv269 _ _ _ _ _ _ _ _ _ =>
+    injection hv269 with _ htag _; exact absurd htag (by decide)
   | Thm v1 m2 cs12 x_nlvls x_ty x_val v543 m544 cs554 v580 m581 cs591 v617 m618 cs628 m649
       v672 m675 cs683 m696 v715 m716 cs726 v745 m746 cs756 cs778 m807
       ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
@@ -566,10 +582,10 @@ theorem check_const_thm_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
   | _ =>
-    have hv : Value.construct kciEnum "Thm" [nl, ty, val] =
-        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
-    injection hv with _ htag _
-    exact absurd htag (by decide)
+    exfalso
+    exact ‹∀ vs : List (SourceValue F), vs.length = 3 →
+      Value.construct kciEnum "Thm" [nl, ty, val] ≠
+        .construct "KernelTypes::KConstantInfo" "Thm" vs› [nl, ty, val] rfl rfl
 
 /-- Inversion of `KernelCheck::check_const` on a safe `"Opaque"` constant. -/
 theorem check_const_opaque_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
@@ -593,6 +609,16 @@ theorem check_const_opaque_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap 
       (∀ x ∈ cs933, x ∈ calls) ∧ (∀ x ∈ cs1029, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
+  | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv269 _ _ _ _ _ _ _ _ _ =>
+    injection hv269 with _ htag _; exact absurd htag (by decide)
+  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv526 _ _ _ _ _ _ _ _ _ _ _ _ =>
+    injection hv526 with _ htag _; exact absurd htag (by decide)
   | Opaque v1 m2 cs12 x_nlvls x_ty x_val w827 v848 m849 cs859 v885 m886 cs896 v922 m923 cs933
       m954 v966 m967 cs977 v996 m997 cs1007 cs1029 m1058
       ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
@@ -610,10 +636,10 @@ theorem check_const_opaque_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap 
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
   | _ =>
-    have hv : Value.construct kciEnum "Opaque" [nl, ty, val, .field 0] =
-        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
-    injection hv with _ htag _
-    exact absurd htag (by decide)
+    exfalso
+    exact ‹∀ vs : List (SourceValue F), vs.length = 4 →
+      Value.construct kciEnum "Opaque" [nl, ty, val, .field 0] ≠
+        .construct "KernelTypes::KConstantInfo" "Opaque" vs› [nl, ty, val, .field 0] rfl rfl
 
 /-- Inversion of `KernelCheck::check_const` on a `"Quot"` constant. -/
 theorem check_const_quot_inv {rc nl ty kind ap r : SourceValue F} {h h' : Heap F}
@@ -633,6 +659,18 @@ theorem check_const_quot_inv {rc nl ty kind ap r : SourceValue F} {h h' : Heap F
       (∀ x ∈ cs1185, x ∈ calls) ∧ (∀ x ∈ cs1207, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
+  | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
+    injection hv37 with _ htag _; exact absurd htag (by decide)
+  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv269 _ _ _ _ _ _ _ _ _ =>
+    injection hv269 with _ htag _; exact absurd htag (by decide)
+  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv526 _ _ _ _ _ _ _ _ _ _ _ _ =>
+    injection hv526 with _ htag _; exact absurd htag (by decide)
+  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv825 _ _ _ _ _ _ _ _ _ =>
+    injection hv825 with _ htag _; exact absurd htag (by decide)
   | Quot v1 m2 cs12 x_nlvls x_ty x_kind v1093 m1094 cs1104 v1130 m1131 cs1141 m1162 v1174 m1175
       cs1185 cs1207 ev14 _ _ _ _ hv1076 ev1106 hm1170 ev1143 ev1187 ev1209 hc1234 =>
     obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 trivial
@@ -648,10 +686,10 @@ theorem check_const_quot_inv {rc nl ty kind ap r : SourceValue F} {h h' : Heap F
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
   | _ =>
-    have hv : Value.construct kciEnum "Quot" [nl, ty, kind] =
-        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
-    injection hv with _ htag _
-    exact absurd htag (by decide)
+    exfalso
+    exact ‹∀ vs : List (SourceValue F), vs.length = 3 →
+      Value.construct kciEnum "Quot" [nl, ty, kind] ≠
+        .construct "KernelTypes::KConstantInfo" "Quot" vs› [nl, ty, kind] rfl rfl
 
 /-! ## Shared front-end assembly (`ConstantValRunJ`, `ValueFrontRunJ`, `rulesJ.isZero`) -/
 
@@ -667,6 +705,8 @@ theorem constantValRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
     (hres : Ix.Kernel.reservedBasisNames.contains cv.name = false)
     (hnoprj : cv.name.isProjFnShape = false)
     (hrange : cv.levelParams = List.range cv.levelParams.length)
+    (hcv_bvs : cv.type.looseBVarsBounded 0 = true)
+    (hcv_nfv : cv.type.hasFvar = false)
     (hcenv : c.env = env)
     (hval : ValRepExact c.κ h nl ty ⟨cv.name, cv.levelParams, type'⟩)
     (hann : IxVM.Consistency.Annotates type' cv.type)
@@ -701,14 +741,10 @@ theorem constantValRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
   have hred : Red env 0 stype (.sort u) := hcenv ▸ hred0
   have hty'_nfv : type'.hasFvar = false :=
     Tm.hasFvar_false (hty_rep 0 zeroGhost).toTm
-  have hcv_nfv : cv.type.hasFvar = false := annotates_hasFvar_false hann hty'_nfv
-  have hty'_bvs : type'.looseBVarsBounded 0 = true :=
-    (hty_rep 0 zeroGhost).toTm.looseBVarsBounded
-  have hcv_bvs : cv.type.looseBVarsBounded 0 = true :=
-    annotates_looseBVarsBounded hann hty'_bvs
-  have hcr : type'.constsResolve env = true := infer_constsResolve hinf hty'_nfv
+  have hcr : type'.constsResolve env = true :=
+    infer_constsResolve hinf (hcenv ▸ hef.store) hty'_nfv
   refine ⟨⟨?_, hres, hnoprj, levelParam_nodup_of_perm_range hperm, hcv_bvs, hcv_nfv,
-    annot_of_annotates hann, hlvl_def, hcr, stype, u, hinf, hred⟩,
+    annot_of_annotates hann hcv_nfv hcv_bvs 0, hlvl_def, hcr, stype, u, hinf, hred⟩,
     stype, u, ℓ, hinf, hred, hℓ, hu⟩
   rw [hfresh]; rfl
 
@@ -719,6 +755,8 @@ theorem valueFrontRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
     {rc ty val v_sc r_chk : SourceValue F} {h₀ h_sc h_pre h_chk h_chk' h' : Heap F}
     {cs_sc cs_chk : List (Call F)}
     (hrange : cv.levelParams = List.range cv.levelParams.length)
+    (hval_bvs : value.looseBVarsBounded 0 = true)
+    (hval_nfv : value.hasFvar = false)
     (hcenv : c.env = env)
     (hnl : cv.levelParams.length < 4294967296)
     (hty_rep : TmCExact c.κ h₀ type' ty)
@@ -748,13 +786,10 @@ theorem valueFrontRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
   have hinf : Infer env .full 0 value' vtype := hcenv ▸ hinf0
   have hde : DefEq env 0 vtype type' := hcenv ▸ hde0
   have hval'_nfv : value'.hasFvar = false := Tm.hasFvar_false (hval_rep 0 zeroGhost).toTm
-  have hval_nfv : value.hasFvar = false := annotates_hasFvar_false hann hval'_nfv
-  have hval'_bvs : value'.looseBVarsBounded 0 = true :=
-    (hval_rep 0 zeroGhost).toTm.looseBVarsBounded
-  have hval_bvs : value.looseBVarsBounded 0 = true :=
-    annotates_looseBVarsBounded hann hval'_bvs
-  have hcr : value'.constsResolve env = true := infer_constsResolve hinf hval'_nfv
-  exact ⟨hval_bvs, hval_nfv, annot_of_annotates hann, hlvl_def, hcr, vtype, hinf, hde⟩
+  have hcr : value'.constsResolve env = true :=
+    infer_constsResolve hinf (hcenv ▸ hef.store) hval'_nfv
+  exact ⟨hval_bvs, hval_nfv, annot_of_annotates hann hval_nfv hval_bvs 0, hlvl_def, hcr,
+    vtype, hinf, hde⟩
 
 /-- Derive `rulesJ.isZero u` from `k_ensure_sort`'s output level `ℓ` (`LvEq u ℓ`) and
 `KernelLevels::level_equal` comparing `v617` against a freshly allocated `Zero` node. -/
@@ -807,6 +842,8 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       (DeclStoreInv env → CtxRoleFacts ⟨E, env, t, lim⟩) ∧
       CISafe v ∧ RCAxiomsNil cl.heap rc ∧
       Ix.Kernel.reservedBasisNames.contains ci₀.name = false ∧
+      ci₀.toConstantVal.type.looseBVarsBounded 0 = true ∧
+      ci₀.toConstantVal.type.hasFvar = false ∧
       ci₀.toConstantVal.levelParams = List.range ci₀.toConstantVal.levelParams.length ∧
       (∃ (r_cl : SourceValue F) (h'_cl : Heap F) (subcalls : List (Call F)),
         ObsFn W "KernelCheck::check_const" [rc, v, ap] cl.heap r_cl h'_cl subcalls ∧
@@ -814,13 +851,19 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       (∀ cv, d = .axiomDecl cv → ∃ nl ty u,
         v = .construct kciEnum "Axiom" [nl, ty, u] ∧
         ValRepExact (keyOf t) cl.heap nl ty ci.toConstantVal) ∧
-      (∀ cv value hint, d = .defnDecl cv value hint → CIRepExact (keyOf t) cl.heap v ci) ∧
-      (∀ cv value, d = .thmDecl cv value → CIRepExact (keyOf t) cl.heap v ci) ∧
-      (∀ cv value, d = .opaqueDecl cv value → ∃ nl ty val u value',
-        v = .construct kciEnum "Opaque" [nl, ty, val, u] ∧
-        ValRepExact (keyOf t) cl.heap nl ty ci.toConstantVal ∧
-        TmCExact (keyOf t) cl.heap (posOf ci.toConstantVal.levelParams value') val ∧
-        IxVM.Consistency.Annotates value' value)
+      (∀ cv value hint, d = .defnDecl cv value hint →
+        value.looseBVarsBounded 0 = true ∧ value.hasFvar = false ∧
+        CIRepExact (keyOf t) cl.heap v ci) ∧
+      (∀ cv value, d = .thmDecl cv value →
+        value.looseBVarsBounded 0 = true ∧ value.hasFvar = false ∧
+        CIRepExact (keyOf t) cl.heap v ci) ∧
+      (∀ cv value, d = .opaqueDecl cv value →
+        value.looseBVarsBounded 0 = true ∧ value.hasFvar = false ∧
+        ∃ nl ty val u value',
+          v = .construct kciEnum "Opaque" [nl, ty, val, u] ∧
+          ValRepExact (keyOf t) cl.heap nl ty ci.toConstantVal ∧
+          TmCExact (keyOf t) cl.heap (posOf ci.toConstantVal.levelParams value') val ∧
+          IxVM.Consistency.Annotates value' value)
   /-- L6 role-group validation (`validate_typed` / `validate_group`) pins `propext` and `choice`
   against their standard signatures once their role is in force. -/
   stdAxiomPinned :
@@ -875,8 +918,8 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
       rw [hinst_eq]; exact List.mem_singleton.mpr rfl
     obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
       hall (.axiomInfo cv) hmem
-    obtain ⟨hR_fn, hsafe, hnil, hres, hrange, ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩,
-      hax_shape, -, -, -⟩ :=
+    obtain ⟨hR_fn, hsafe, hnil, hres, hcv_bvs, hcv_nfv, hrange,
+      ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩, hax_shape, -, -, -⟩ :=
       hx.checkedValue E t cl rc v ap lim a ci (.axiomInfo cv) htwf hgood hcl hname hargs
         hrc hadr hkey hci hstored hmem
     obtain ⟨nl, ty, u, rfl, hval⟩ := hax_shape cv rfl
@@ -886,7 +929,9 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
     | defnInfo _ _ _ | thmInfo _ _ | indInfo _ _ | ctorInfo _ _ _ | recInfo _ _ _ _
     | projInfo _ => cases hstored.2
     | axiomInfo cvA =>
-      obtain ⟨⟨hcv_name, hcv_lps, hann_ty⟩, -⟩ := hstored
+      have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, _⟩ := hstored
+      change cvA.name = cv.name at hcv_name
+      change cvA.levelParams = cv.levelParams at hcv_lps
       dsimp only [ConstantInfo.toConstantVal] at hval
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
@@ -896,15 +941,15 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
       have hnoprj : cv.name.isProjFnShape = false := by
         have hk := keyOf_isProjFnShape_false t a
         rw [hkey] at hk; exact hk
-      have hval_cv : ValRepExact c.κ cl.heap nl ty ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-        have : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-          cases cvA; dsimp only at hcv_name hcv_lps; subst hcv_name hcv_lps; rfl
-        exact this ▸ hval
+      have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
+        cases cvA; cases hcv_name; cases hcv_lps; rfl
+      have hval_cv : ValRepExact c.κ cl.heap nl ty ⟨cv.name, cv.levelParams, cvA.type⟩ :=
+        hcvA_eq ▸ hval
       obtain ⟨v55, v92, v136, v189, m56, m93, m124, m137, m190, cs66, cs103, cs147, cs201,
         ev68, hm132, ev105, ev149, ev203, hne255, hcs66, hcs103, _, hcs201⟩ :=
         check_const_axiom_inv ev_chk
-      obtain ⟨hcv_run, -⟩ := constantValRunJ_of_front hCore hfresh_cv hres hnoprj hrange rfl
-        hval_cv hann_ty hrc hef hlf
+      obtain ⟨hcv_run, -⟩ := constantValRunJ_of_front hCore hfresh_cv hres hnoprj hrange
+        hcv_bvs hcv_nfv rfl hval_cv hann_ty hrc hef hlf
         (hgood_c.sub fun x hx => hsub x (hcs66 x hx))
         (hgood_c.sub fun x hx => hsub x (hcs103 x hx))
         ev68 hm132 ev105
@@ -920,7 +965,7 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
       have hkey_ro : cv.name = .role ro := by
         have hk := keyOf_of_addressOf htwf hro_addr
         rw [heq_a, hkey] at hk
-        exact hk.symm
+        exact hk
       have hro_std : ro = .propext ∨ ro = .choice := by
         rcases hro_cases with rfl | rfl | rfl | hinert
         · exact Or.inl rfl
@@ -929,8 +974,6 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
         · have : IxVM.Consistency.inertKey cv.name = true := by
             rw [hkey_ro]; exact hinert
           exact absurd (Or.inr this) hskip
-      have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-        cases cvA; dsimp only at hcv_name hcv_lps; subst hcv_name hcv_lps; rfl
       have hstd : Ix.Kernel.stdAxiomOk env ⟨cv.name, cv.levelParams, cvA.type⟩ = true :=
         hx.stdAxiomPinned E t lim ro _ hS htwf hin hro_std hkey_ro
       have hfresh_ci : env.find? (ConstantInfo.axiomInfo cvA).name = none := by
@@ -958,16 +1001,19 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
       IxVM.Consistency.installs (.defnDecl cv value hint) := List.mem_singleton.mpr rfl
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
     hall (.defnInfo cv value hint) hmem
-  obtain ⟨hR_fn, hsafe, -, hres, hrange, ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩,
-    -, hdefn_exact, -, -⟩ :=
+  obtain ⟨hR_fn, hsafe, -, hres, hcv_bvs, hcv_nfv, hrange,
+    ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩, -, hdefn_exact, -, -⟩ :=
     hx.checkedValue E t cl rc v ap lim a ci (.defnInfo cv value hint) htwf hgood hcl hname hargs
       hrc hadr hkey hci hstored hmem
-  have hexact := hdefn_exact cv value hint rfl
+  obtain ⟨hval_bvs, hval_nfv, hexact⟩ := hdefn_exact cv value hint rfl
   cases ci with
   | axiomInfo _ | thmInfo _ _ | indInfo _ _ | ctorInfo _ _ _ | recInfo _ _ _ _
   | projInfo _ => cases hstored.2
   | defnInfo cvA value' hint' =>
-    obtain ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val, rfl⟩ := hstored
+    have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val, hhint_eq⟩ := hstored
+    subst hhint_eq
+    change cvA.name = cv.name at hcv_name
+    change cvA.levelParams = cv.levelParams at hcv_lps
     cases hexact with
     | quot _ hk =>
       rcases hk with ⟨_, _, _, h⟩ | ⟨_, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ <;>
@@ -985,7 +1031,7 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
         have hk := keyOf_isProjFnShape_false t a
         rw [hkey] at hk; exact hk
       have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-        cases cvA; dsimp only at hcv_name hcv_lps; subst hcv_name hcv_lps; rfl
+        cases cvA; cases hcv_name; cases hcv_lps; rfl
       have hval_cv : ValRepExact c.κ cl.heap nl ty ⟨cv.name, cv.levelParams, cvA.type⟩ :=
         hcvA_eq ▸ hval
       obtain ⟨v298, v335, v372, v416, v446, m299, m336, m373, m404, m417, m447, m508,
@@ -1019,20 +1065,17 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
           (hgood_c.sub fun x hx => hsub x (hcs383 x hx)) ev385
           ((hty_rep0 0 zeroGhost).toTm.mono e_m404)
       have hty'_nfv : cvA.type.hasFvar = false := Tm.hasFvar_false (hty_rep0 0 zeroGhost).toTm
-      have hty'_bvs : cvA.type.looseBVarsBounded 0 = true :=
-        (hty_rep0 0 zeroGhost).toTm.looseBVarsBounded
       have hcv_run : ConstantValRunJ rulesJ env cv cvA.type :=
         ⟨by rw [hfresh_cv]; rfl, hres, hnoprj, levelParam_nodup_of_perm_range hperm,
-          annotates_looseBVarsBounded hann_ty hty'_bvs,
-          annotates_hasFvar_false hann_ty hty'_nfv,
-          annot_of_annotates hann_ty, hlvl_ty,
-          infer_constsResolve hinf_ty hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+          hcv_bvs, hcv_nfv,
+          annot_of_annotates hann_ty hcv_nfv hcv_bvs 0, hlvl_ty,
+          infer_constsResolve hinf_ty hS.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
       have e_pre_chk : Heap.Extends cl.heap m447 :=
         e_m404.trans ((ObsFn.heap_extends ev385).trans
           ((ObsFn.heap_extends ev429).trans (ObsFn.heap_extends ev459)))
       have hv_run : ValueFrontRunJ rulesJ env cv value cvA.type value' :=
-        valueFrontRunJ_of_front hCore hrange rfl hnl hty_rep0 hV hann_val e_sc1 e_pre_chk
-          hrc hef hlf
+        valueFrontRunJ_of_front hCore hrange hval_bvs hval_nfv rfl hnl hty_rep0 hV hann_val
+          e_sc1 e_pre_chk hrc hef hlf
           (hgood_c.sub fun x hx => hsub x (hcs346 x hx))
           (hgood_c.sub fun x hx => hsub x (hcs479 x hx))
           ev348 hm508 ev481
@@ -1062,16 +1105,18 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
     List.mem_singleton.mpr rfl
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
     hall (.thmInfo cv value) hmem
-  obtain ⟨hR_fn, -, -, hres, hrange, ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩,
-    -, -, hthm_exact, -⟩ :=
+  obtain ⟨hR_fn, -, -, hres, hcv_bvs, hcv_nfv, hrange,
+    ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩, -, -, hthm_exact, -⟩ :=
     hx.checkedValue E t cl rc v ap lim a ci (.thmInfo cv value) htwf hgood hcl hname hargs
       hrc hadr hkey hci hstored hmem
-  have hexact := hthm_exact cv value rfl
+  obtain ⟨hval_bvs, hval_nfv, hexact⟩ := hthm_exact cv value rfl
   cases ci with
   | axiomInfo _ | defnInfo _ _ _ | indInfo _ _ | ctorInfo _ _ _ | recInfo _ _ _ _
   | projInfo _ => cases hstored.2
   | thmInfo cvA value' =>
-    obtain ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val⟩ := hstored
+    have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val⟩ := hstored
+    change cvA.name = cv.name at hcv_name
+    change cvA.levelParams = cv.levelParams at hcv_lps
     cases hexact with
     | quot _ hk =>
       rcases hk with ⟨_, _, _, h⟩ | ⟨_, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ <;>
@@ -1087,7 +1132,7 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
         have hk := keyOf_isProjFnShape_false t a
         rw [hkey] at hk; exact hk
       have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-        cases cvA; dsimp only at hcv_name hcv_lps; subst hcv_name hcv_lps; rfl
+        cases cvA; cases hcv_name; cases hcv_lps; rfl
       have hval_cv : ValRepExact c.κ cl.heap nl ty ⟨cv.name, cv.levelParams, cvA.type⟩ :=
         hcvA_eq ▸ hval
       obtain ⟨v543, v580, v617, v724, v754, m544, m581, m618, m649, m675, m696, m725, m755, m807,
@@ -1123,22 +1168,19 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
           (bounded_sub (fun x hx => hsub x (hcs683 x hx)) hgood.2)
           hℓ hu hm696 ev685
       have hty'_nfv : cvA.type.hasFvar = false := Tm.hasFvar_false (hty_rep0 0 zeroGhost).toTm
-      have hty'_bvs : cvA.type.looseBVarsBounded 0 = true :=
-        (hty_rep0 0 zeroGhost).toTm.looseBVarsBounded
       have hcv_run : ConstantValRunJ rulesJ env cv cvA.type :=
         ⟨by rw [hfresh_cv]; rfl, hres, hnoprj, levelParam_nodup_of_perm_range hperm,
-          annotates_looseBVarsBounded hann_ty hty'_bvs,
-          annotates_hasFvar_false hann_ty hty'_nfv,
-          annot_of_annotates hann_ty, hlvl_ty,
-          infer_constsResolve hinf_ty hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+          hcv_bvs, hcv_nfv,
+          annot_of_annotates hann_ty hcv_nfv hcv_bvs 0, hlvl_ty,
+          infer_constsResolve hinf_ty hS.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
       have e_m696 : Heap.Extends m618 m696 := hm696 ▸ heap_extends_append m618 _
       have e_pre_chk : Heap.Extends cl.heap m755 :=
         e_m649.trans ((ObsFn.heap_extends ev630).trans
           (e_m696.trans ((ObsFn.heap_extends ev685).trans
             ((ObsFn.heap_extends ev737).trans (ObsFn.heap_extends ev767)))))
       have hv_run : ValueFrontRunJ rulesJ env cv value cvA.type value' :=
-        valueFrontRunJ_of_front hCore hrange rfl hnl hty_rep0 hV hann_val e_sc1 e_pre_chk
-          hrc hef hlf
+        valueFrontRunJ_of_front hCore hrange hval_bvs hval_nfv rfl hnl hty_rep0 hV hann_val
+          e_sc1 e_pre_chk hrc hef hlf
           (hgood_c.sub fun x hx => hsub x (hcs591 x hx))
           (hgood_c.sub fun x hx => hsub x (hcs778 x hx))
           ev593 hm807 ev780
@@ -1166,18 +1208,21 @@ theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
     List.mem_singleton.mpr rfl
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
     hall (.axiomInfo cv) hmem
-  obtain ⟨hR_fn, hsafe, -, hres, hrange, ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩,
-    -, -, -, hopaq_shape⟩ :=
+  obtain ⟨hR_fn, hsafe, -, hres, hcv_bvs, hcv_nfv, hrange,
+    ⟨r_cl, h'_cl, subcalls, ev_chk, hsub⟩, -, -, -, hopaq_shape⟩ :=
     hx.checkedValue E t cl rc v ap lim a ci (.axiomInfo cv) htwf hgood hcl hname hargs
       hrc hadr hkey hci hstored hmem
-  obtain ⟨nl, ty, val, u, value', rfl, hval, hV, hann_val⟩ := hopaq_shape cv value rfl
+  obtain ⟨hval_bvs, hval_nfv, nl, ty, val, u, value', rfl, hval, hV, hann_val⟩ :=
+    hopaq_shape cv value rfl
   have hu0 : u = .field 0 := hsafe rfl
   subst hu0
   cases ci with
   | defnInfo _ _ _ | thmInfo _ _ | indInfo _ _ | ctorInfo _ _ _ | recInfo _ _ _ _
   | projInfo _ => cases hstored.2
   | axiomInfo cvA =>
-    obtain ⟨⟨hcv_name, hcv_lps, hann_ty⟩, -⟩ := hstored
+    have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, _⟩ := hstored
+    change cvA.name = cv.name at hcv_name
+    change cvA.levelParams = cv.levelParams at hcv_lps
     dsimp only [ConstantInfo.toConstantVal] at hval hV
     let c : Ctx := ⟨E, env, t, lim⟩
     have hgood_c : Good c calls := hgood
@@ -1188,7 +1233,7 @@ theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
       have hk := keyOf_isProjFnShape_false t a
       rw [hkey] at hk; exact hk
     have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
-      cases cvA; dsimp only at hcv_name hcv_lps; subst hcv_name hcv_lps; rfl
+      cases cvA; cases hcv_name; cases hcv_lps; rfl
     have hval_cv : ValRepExact c.κ cl.heap nl ty ⟨cv.name, cv.levelParams, cvA.type⟩ :=
       hcvA_eq ▸ hval
     obtain ⟨v848, v885, v922, v966, v996, m849, m886, m923, m954, m967, m997, m1058,
@@ -1220,20 +1265,17 @@ theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
         (hgood_c.sub fun x hx => hsub x (hcs933 x hx)) ev935
         ((hty_rep0 0 zeroGhost).toTm.mono e_m954)
     have hty'_nfv : cvA.type.hasFvar = false := Tm.hasFvar_false (hty_rep0 0 zeroGhost).toTm
-    have hty'_bvs : cvA.type.looseBVarsBounded 0 = true :=
-      (hty_rep0 0 zeroGhost).toTm.looseBVarsBounded
     have hcv_run : ConstantValRunJ rulesJ env cv cvA.type :=
       ⟨by rw [hfresh_cv]; rfl, hres, hnoprj, levelParam_nodup_of_perm_range hperm,
-        annotates_looseBVarsBounded hann_ty hty'_bvs,
-        annotates_hasFvar_false hann_ty hty'_nfv,
-        annot_of_annotates hann_ty, hlvl_ty,
-        infer_constsResolve hinf_ty hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+        hcv_bvs, hcv_nfv,
+        annot_of_annotates hann_ty hcv_nfv hcv_bvs 0, hlvl_ty,
+        infer_constsResolve hinf_ty hS.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
     have e_pre_chk : Heap.Extends cl.heap m997 :=
       e_m954.trans ((ObsFn.heap_extends ev935).trans
         ((ObsFn.heap_extends ev979).trans (ObsFn.heap_extends ev1009)))
     have hv_run : ValueFrontRunJ rulesJ env cv value cvA.type value' :=
-      valueFrontRunJ_of_front hCore hrange rfl hnl hty_rep0 hV hann_val e_sc1 e_pre_chk
-        hrc hef hlf
+      valueFrontRunJ_of_front hCore hrange hval_bvs hval_nfv rfl hnl hty_rep0 hV hann_val
+        e_sc1 e_pre_chk hrc hef hlf
         (hgood_c.sub fun x hx => hsub x (hcs896 x hx))
         (hgood_c.sub fun x hx => hsub x (hcs1029 x hx))
         ev898 hm1058 ev1031
