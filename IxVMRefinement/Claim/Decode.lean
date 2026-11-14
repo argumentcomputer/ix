@@ -201,7 +201,9 @@ theorem leaf_hash_spec {a : Bytes.Address}
   rw [hmod] at hld
   have hba : (⟨(0 :: a.toList).toArray⟩ : ByteArray) = ByteArray.mk #[0] ++ (ixAddr a).hash := by
     apply byteArray_eq_of_toList
-    simp [ixAddr, ByteArray.data_append, Array.toList_append]
+    simp only [ixAddr, ByteArray.data_append, Array.toList_append, List.toList_toArray,
+      List.cons_append, List.nil_append]
+    rfl
   have hhashed : Hashed calls (ByteArray.mk #[0] ++ (ixAddr a).hash) := by
     rw [← hba]
     exact L1.hashed_of_call (by rw [hc81]; simp [hcall]) hs0
@@ -240,7 +242,9 @@ theorem node_hash_spec {al ar : Bytes.Address}
   have hba : (⟨(1 :: (al.toList ++ ar.toList)).toArray⟩ : ByteArray) =
       ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash := by
     apply byteArray_eq_of_toList
-    simp [ixAddr, ByteArray.data_append, Array.toList_append, List.append_assoc]
+    simp only [ixAddr, ByteArray.data_append, Array.toList_append, List.toList_toArray,
+      List.cons_append, List.nil_append, List.append_assoc]
+    rfl
   have hhashed : Hashed calls (ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash) := by
     rw [← hba]
     exact L1.hashed_of_call (by rw [hc102]; simp [hcall]) hs1
@@ -1301,7 +1305,8 @@ theorem verify_claim_decode_spec
   obtain ⟨_, _, _, _, _, rfl, d_sc0, a_sc1, rfl⟩ := a_scrut.cons_inv
   obtain ⟨l_sc0, rfl, rfl⟩ := d_sc0.var_inv; simp at l_sc0; subst l_sc0
   obtain ⟨rfl, rfl, rfl⟩ := a_sc1.nil_inv
-  obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_scrut
+  obtain ⟨hv_scrut, hm_scrut⟩ := L1.u8_toField ev_scrut
+  subst v_scrut m_scrut
   have hsub_arm : ∀ cl ∈ c_arm, cl ∈ calls := fun cl hcl =>
     hsub_run cl (by simp [hcl])
   rcases hvar_45 with htv4 | htv5
