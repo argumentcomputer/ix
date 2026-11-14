@@ -1,7 +1,6 @@
 import IxVMRefinement.Decl.Common
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Levels.Smart
-import IxVMRefinement.Infer.Core
 import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # Shared helpers for native inductive and twin recursor declaration refinement
@@ -1629,7 +1628,10 @@ theorem assert_lvls_are_params_spec :
     · subst hc59
       have hlen_lt : us.length < 549755813888 :=
         RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hus
-      obtain ⟨hv26, rfl⟩ := klevel_length ev39 hus
+      rw [← Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol] at ev39
+      obtain ⟨hv26, rfl⟩ :=
+        Lib.Lists.length_spec (t := .ptr (.named "KernelTypes::KLevelNode" [])) (R := RepKLevel)
+          ev39 hus
       rw [hv26] at heq54
       have heq54' : (.field (us.length : F) : SourceValue F) = .field ((0 : Nat) : F) := heq54
       have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) heq54'
