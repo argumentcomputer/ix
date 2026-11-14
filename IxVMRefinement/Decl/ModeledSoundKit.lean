@@ -5,7 +5,11 @@ import IxC.Kernel.Model.DeclIndJ
 import IxC.Kernel.Model.Annot.BitRename
 import IxC.Kernel.Model.Annot.BitInst
 import IxC.Kernel.Verify.InferLemmas
+import IxC.Kernel.Verify.InferLeaves
+import IxC.Kernel.Verify.InstSpine
 import IxC.Kernel.Verify.BridgeWfImp
+import IxC.Kernel.Verify.Extend.Iota
+import IxC.Kernel.Verify.Extend.Recs
 import IxC.Kernel.Verify.Denote.VClosed
 import IxC.Kernel.Verify.Denote.IndFrame
 
@@ -41,7 +45,8 @@ open Ix.Kernel.Term Ix.Kernel.Verify Ix.Kernel.SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal BinderMeta RecRule IndCaps
   CheckMode LevelParam EnvExt openPisAtFvars eqName eqA auxKey nestedRuleShape recRuleBits
-  isEqHead)
+  isEqHead fvarLeaves_instSpine hasFvar_renameConsts instPisAt_WScoped instPisAt_index_WScoped
+  instSpine_WScoped instSpine_closed openPisAtFvars_index)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -58,7 +63,7 @@ theorem openLamsAtFvars_WScoped :
     intro e i fvs body h hw
     dsimp only [openLamsAtFvars] at h
     rcases Prod.mk.inj (Option.some.inj h) with ⟨rfl, rfl⟩
-    exact ⟨fun _ hx => nomatch hx, hw⟩
+    exact ⟨fun _ hx => (nomatch hx), hw⟩
   | succ n ih =>
     intro e i fvs body h hw
     cases e with
@@ -192,7 +197,7 @@ theorem instLamsAt_of_stripLams_len :
   | a :: as, .lam dom body mb, h => by
     simp only [List.length_cons, Expr.stripLams, Option.isSome_map] at h
     obtain ⟨ds, rs, hinst, hlen⟩ :=
-      instLamsAt_of_stripLams_len as (stripLams_isSome_instantiate1 as.length 0 h)
+      instLamsAt_of_stripLams_len as (stripLams_isSome_instantiate1 (a := a) as.length 0 h)
     exact ⟨dom :: ds, rs, by simp [Expr.instLamsAt, hinst], by simp [hlen]⟩
   | _ :: _, .bvar _, h | _ :: _, .fvar _ _, h | _ :: _, .sort _, h
   | _ :: _, .const _ _, h | _ :: _, .app _ _, h | _ :: _, .forallE _ _ _, h
@@ -231,7 +236,7 @@ theorem instPisAt_erasedEq :
       dsimp only [Expr.instPisAt] at h h'
       rcases Prod.mk.inj (Option.some.inj h) with ⟨rfl, rfl⟩
       rcases Prod.mk.inj (Option.some.inj h') with ⟨rfl, rfl⟩
-      exact ⟨fun _ _ _ hx _ => nomatch hx, hty⟩
+      exact ⟨fun _ _ _ hx _ => (nomatch hx), hty⟩
     | cons _ _ => exact nomatch hlen
   | cons a as ih =>
     intro as' ty ty' ds ds' rs rs' h h' hty hargs hlen
@@ -299,8 +304,7 @@ theorem pinsWalkOk_plain {rP cnP : Nat} (hcnP : cnP ≤ rP) :
     by_cases hj : j < cnP
     · rw [List.getElem?_take_of_lt hj] at hx₁ hx₂
       exact hpre j x₁ x₂ hx₁ hx₂
-    · rw [List.getElem?_take_of_le (by omega)] at hx₁
-      exact nomatch hx₁
+    · simp [List.getElem?_take, hj] at hx₁
   wscoped _ _ hws _ hx := hws _ (List.mem_of_mem_take hx)
   bounded _ _ hbnd _ hx := hbnd _ (List.mem_of_mem_take hx)
   leaves _ _ x hx l hl := ⟨x, List.mem_of_mem_take hx, hl⟩
@@ -448,8 +452,8 @@ theorem lamTeleWalk_unpack {J : Judgements .anon} {env : Env .anon}
           exact hLleafClosed l ⟨a, List.mem_of_mem_take ha, hla⟩
       · exact hLleafClosed l ⟨a, List.mem_of_mem_drop ha, hla⟩
   -- Pointwise `ErasedEq` between `pdoms1 ++ pdoms2` and `(fvsP ++ xFvsP).map Expr.fvarTypeD`
-  have hfvsPlen : fvsP.length = rP := openPisAtFvars_length _ hopenP
-  have hxlen : xFvsP.length = cnF := openPisAtFvars_length _ hopenXP
+  have hfvsPlen : fvsP.length = rP := Ix.Kernel.Model.openPisAtFvars_length _ hopenP
+  have hxlen : xFvsP.length = cnF := Ix.Kernel.Model.openPisAtFvars_length _ hopenXP
   have hinstP1 : Expr.instPisAt fvsP tyA = some (fvsP.map Expr.fvarTypeD, crest2) :=
     openPisAtFvars_instPisAt _ hopenP
   have hinstP2 : Expr.instPisAt xFvsP crestP = some (xFvsP.map Expr.fvarTypeD, ldoms) :=
@@ -591,6 +595,7 @@ theorem annotMem_lamWalk {V : Type w} [Ix.Kernel.SetTheory V]
           = interp V (fun j => ρ' (j + (K - k))) (Γlam.getD (K - 1 - k) default) := by
   obtain ⟨hlfvsLen, -, hlfvsIdx⟩ := openLamsAtFvars_spec K rhsA 0 hopLam
   obtain ⟨hLws, -⟩ := openLamsAtFvars_WScoped K rhsA 0 hopLam (Expr.WScoped.of_not_hasFvar hrhsw)
+  rw [Nat.zero_add] at hLws
   have hLshape : ∀ (i : Nat) (x : KExpr), lfvs[i]? = some x → ∃ ty, x = .fvar i ty := by
     intro i x hx
     obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.mp hx
@@ -830,7 +835,7 @@ theorem annotOpeners_lamWalk {V : Type w} [Ix.Kernel.SetTheory V]
       WellDenotedV V σ ba := by
   let K := rP + cnF
   have hΓsBnd : ∀ mIdx, mIdx < K →
-      bvarsBelow mIdx (Γs.getD (K - 1 - mIdx) default).erase := by
+      Term.bvarsBelow mIdx (Γs.getD (K - 1 - mIdx) default).erase := by
     intro mIdx hmIdx
     rcases hx : fvs[mIdx]? with _ | x
     · rw [List.getElem?_eq_none_iff, hfvslen] at hx; omega
@@ -883,7 +888,7 @@ theorem annotOpeners_lamWalk {V : Type w} [Ix.Kernel.SetTheory V]
       · rw [List.getElem?_eq_none (by rw [hΓslen]; omega)] at hi
         exact nomatch hi
     obtain rfl : Aa = Γs.getD i default := by rw [List.getD, hi]; rfl
-    have hbnd : bvarsBelow (K - 1 - i) (Γs.getD i default).erase := by
+    have hbnd : Term.bvarsBelow (K - 1 - i) (Γs.getD i default).erase := by
       have h := hΓsBnd (K - 1 - i) (by omega)
       rwa [show K - 1 - (K - 1 - i) = i from by omega] at h
     rw [hchainbvs σ i hiK,
@@ -1002,8 +1007,8 @@ def IotaThmNVmRunJ (J : Judgements .anon) (env' envSelf : Env .anon)
      (largs.take rP == fvs.take rP) = true ∧
      Expr.ErasedEq (largs.getLastD (.bvar 0))
        (Expr.mkAppN (.const (f r.ctor) lvls) (pinsF ++ xFvs)) ∧
-     (∃ cbinders cbody0, cvj.type.stripPis (cnP + cnF) = some (cbinders, cbody0) ∧
-       (match cbody0.getAppFn with | .const _ _ => true | _ => false) = true) ∧
+     (∃ cbinders cbody0 Dc usc, cvj.type.stripPis (cnP + cnF) = some (cbinders, cbody0) ∧
+       cbody0.getAppFn = .const Dc usc) ∧
      ∃ cdoms cres rdoms lrest fvsP crest2 cdomsP crestP xFvsP ldoms,
        Expr.instPisAt (pinsF ++ xFvs)
          ((cvj.type.instantiateLevelParams cvj.levelParams lvls).renameConsts f)
@@ -1088,13 +1093,21 @@ def IndRecsVmRunJ (J : Judgements .anon)
      ProvisionRecsRunJ J blockNames env₂ recs envSelf checked ∧
      IndRecsFoldVmRunJ J blockNames env₂ envSelf env₂ checked env₃)
 
+/-- Whether a `ConstantInfo` entry is a `.recInfo` recursor. -/
+def isRecInfo : ConstantInfo .anon → Bool
+  | .recInfo _ _ _ _ => true
+  | _ => false
+
+/-- Whether a `ConstantInfo` entry is not a `.recInfo` recursor. -/
+def isNonRecInfo : ConstantInfo .anon → Bool
+  | .recInfo _ _ _ _ => false
+  | _ => true
+
 /-- Modeled-inductive block run record using `IndRecsVmRunJ`. -/
 def DeclIndVmRunJ (J : Judgements .anon) (env : Env .anon)
     (block : List (ConstantInfo .anon)) (env₂ : Env .anon) : Prop :=
-  let recs := block.filter (fun ci => match ci with
-    | .recInfo _ _ _ _ => true | _ => false)
-  let nonrecs := block.filter (fun ci => match ci with
-    | .recInfo _ _ _ _ => false | _ => true)
+  let recs := block.filter isRecInfo
+  let nonrecs := block.filter isNonRecInfo
   let blockNames := block.map (·.name)
   block = nonrecs ++ recs ∧
   ∃ envM,
@@ -1138,7 +1151,8 @@ theorem IotaRuleVmRunJ.toTrivDefEq {J : Judgements .anon} {env' envSelf : Env .a
       hcinst, hclen, hrinst, hopenP, hcinstP, hopenXP, _, hdePars,
       hdeIdx, hdeDom, hdePre, _, ⟨tl, htl, _⟩, ⟨tr, htr, _⟩⟩ := hthm
     have hPlen : (fvsP ++ xFvsP).length = rP + cnF := by
-      rw [List.length_append, openPisAtFvars_length _ hopenP, openPisAtFvars_length _ hopenXP]
+      rw [List.length_append, Ix.Kernel.Model.openPisAtFvars_length _ hopenP,
+        Ix.Kernel.Model.openPisAtFvars_length _ hopenXP]
     obtain ⟨ldomsL, lrest2, hinstLam, hldlen⟩ :=
       instLamsAt_of_stripLams_len (fvsP ++ xFvsP) (by rw [hPlen]; exact hstrip)
     exact ⟨cvt, fvs, tbody, hcvt, hlps, hop, heqH, hlen3, hlh, hlar, hlp, hmaj, hct,
@@ -1150,15 +1164,18 @@ theorem IotaRuleVmRunJ.toTrivDefEq {J : Judgements .anon} {env' envSelf : Env .a
       defEqListJ_trivDefEqOf_of_length (by simp [hldlen]),
       trivial, ⟨tl, htl, trivial⟩, ⟨tr, htr, trivial⟩⟩
   · refine Or.inr ⟨hnpl, lvls, pins, hfire, ?_⟩
-    obtain ⟨hshape, cvt, fvs, tbody, hcvt, hlps, hop, heqH, hlen3, hlh, hlar, hlp, hmaj, hct,
+    obtain ⟨hshape, cvt, fvs, tbody, hcvt, hlps, hop, heqH, hlen3, hlh, hlar, hlp, hmaj,
+      ⟨cbinders, cbody0, Dc, usc, hstrip0, hfn0⟩,
       cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP, crestP, xFvsP, ldoms,
       hcinst, hclen, hrinst, hopenP, ⟨hcinstP, hopenXP, hldlen0⟩, _, hTypedP,
       hdeIdx, hdeDom, hdePre, _, ⟨tl, htl, _⟩, ⟨tr, htr, _⟩⟩ := hthmN
     have hPlen : (fvsP ++ xFvsP).length = rP + cnF := by
-      rw [List.length_append, openPisAtFvars_length _ hopenP, openPisAtFvars_length _ hopenXP]
+      rw [List.length_append, Ix.Kernel.Model.openPisAtFvars_length _ hopenP,
+        Ix.Kernel.Model.openPisAtFvars_length _ hopenXP]
     obtain ⟨ldomsL, lrest2, hinstLam, hldlen⟩ :=
       instLamsAt_of_stripLams_len (fvsP ++ xFvsP) (by rw [hPlen]; exact hstrip)
-    exact ⟨hshape, cvt, fvs, tbody, hcvt, hlps, hop, heqH, hlen3, hlh, hlar, hlp, hmaj, hct,
+    exact ⟨hshape, cvt, fvs, tbody, hcvt, hlps, hop, heqH, hlen3, hlh, hlar, hlp, hmaj,
+      ⟨cbinders, cbody0, hstrip0, by rw [hfn0]⟩,
       cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP, crestP, xFvsP, ldoms,
       hcinst, hclen, hrinst, hopenP, ⟨hcinstP, hopenXP, hldlen0⟩,
       ldomsL, lrest2, hinstLam, typedListJ_to_trivDefEqOf hTypedP,
@@ -1212,10 +1229,8 @@ theorem IndMembersRunJ.toTrivDefEq {J : Judgements .anon} {blockNames : List KKe
   | _, .axiomInfo _ :: _, _, ⟨_, _, h⟩ => nomatch h
   | _, .defnInfo _ _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
   | _, .thmInfo _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
-  | _, .opaqueInfo _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
   | _, .recInfo _ _ _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
-  | _, .quotInfo _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
-  | _, .projTable _ _ _ :: _, _, ⟨_, _, h⟩ => nomatch h
+  | _, .projInfo _ :: _, _, ⟨_, _, h⟩ => nomatch h
 
 theorem ProvisionRecsRunJ.toTrivDefEq {J : Judgements .anon} {blockNames : List KKey} :
     ∀ {envAcc : Env .anon} {recs : List (ConstantInfo .anon)} {envSelf : Env .anon}
@@ -1236,12 +1251,25 @@ theorem IndRecsVmRunJ.toTrivDefEq {J : Judgements .anon} {blockNames : List KKey
   · exact Or.inr ⟨hne, heqf, envSelf, checked, ProvisionRecsRunJ.toTrivDefEq hprov,
       hfold.toTrivDefEq⟩
 
+private theorem filter_eq_of_forall {α : Type _} {p : α → Bool} (q : α → Bool) (xs : List α)
+    (h : ∀ x, p x = q x) : xs.filter p = xs.filter q := by
+  have hpq : p = q := funext h
+  rw [hpq]
+
 theorem DeclIndVmRunJ.toTrivDefEq {J : Judgements .anon} {env : Env .anon}
     {block : List (ConstantInfo .anon)} {env₂ : Env .anon}
     (h : DeclIndVmRunJ J env block env₂) :
     DeclIndRunJ (trivDefEqOf J) env block env₂ := by
   obtain ⟨hsplit, envM, hmem, hrecs⟩ := h
-  exact ⟨hsplit, envM, IndMembersRunJ.toTrivDefEq hmem, hrecs.toTrivDefEq⟩
+  refine ⟨?_, envM, ?_, ?_⟩
+  · rw [hsplit]
+    exact congrArg₂ List.append
+      (List.filter_congr fun ci _ => by cases ci <;> rfl)
+      (List.filter_congr fun ci _ => by cases ci <;> rfl)
+  · rw [filter_eq_of_forall isNonRecInfo block (fun ci => by cases ci <;> rfl)]
+    exact IndMembersRunJ.toTrivDefEq hmem
+  · rw [filter_eq_of_forall isRecInfo block (fun ci => by cases ci <;> rfl)]
+    exact hrecs.toTrivDefEq
 
 /-- `DeclIndVmRunJ posRulesJ` preserves `DeclStoreInv` via its `.toTrivDefEq` projection. -/
 theorem DeclStoreInv.declInd_vm {env env₂ : Env .anon} {block : List (ConstantInfo .anon)}

@@ -25,7 +25,10 @@ open Ix.Kernel.Model
 open Ix.Kernel.Term Ix.Kernel.Verify Ix.Kernel.SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal BinderMeta RecRule
-  LevelParam openPisAtFvars eqName eqA auxKey recRuleBits isEqHead)
+  LevelParam openPisAtFvars eqName eqA auxKey recRuleBits isEqHead
+  fvarLeaves_getAppArgs hasFvar_renameConsts instPisAt_WScoped
+  openPisAtFvars_WScoped openPisAtFvars_index
+  recFireComparands_plain recRulePlain_leT recRulePlain_le_mIT)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -166,7 +169,7 @@ theorem indBottomPlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
     openPisAtFvars_denotePTele (acval := mp.base2.acval) (env := env)
       (φ := Level.substFn φ lps us) (rP + cnF) hopen hTstden
   have hΓslen : Γs.length = rP + cnF := htowerS.length
-  have hfvslen : fvs.length = rP + cnF := openPisAtFvars_length _ hopen
+  have hfvslen : fvs.length = rP + cnF := Ix.Kernel.Model.openPisAtFvars_length _ hopen
   have hshapeS : ∀ (i : Nat) (x : KExpr), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty := by
     intro i x hx
@@ -240,7 +243,7 @@ theorem indBottomPlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
   obtain ⟨ΓP, RP, htowerP, hRPden, hdomsP0A⟩ :=
     openPisAtFvars_denotePTele (acval := mp.base2.acval) (env := env)
       (φ := Level.substFn φ lps us) rP hopenP hTV0
-  have hfvsPlen : fvsP.length = rP := openPisAtFvars_length _ hopenP
+  have hfvsPlen : fvsP.length = rP := Ix.Kernel.Model.openPisAtFvars_length _ hopenP
   have hshapeP : ∀ (i : Nat) (x : KExpr), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty := by
     intro i x hx
