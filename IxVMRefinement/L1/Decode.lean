@@ -81,6 +81,19 @@ theorem array_eq_empty_of_toList {α : Type} {a : Array α} (h : a.toList = []) 
 
 /-! ## `IxonDeserialize::get_constant_info_by_variant` and `get_constant_info` -/
 
+/-- Singleton-tag variant dispatch inside `Ixon.getConstantInfo`. -/
+def getConstantInfoByVariant (v : UInt64) : Ixon.GetM Ixon.ConstantInfo :=
+  match v with
+  | 0 => Ixon.ConstantInfo.defn <$> Ixon.getDefinition
+  | 1 => Ixon.ConstantInfo.recr <$> Ixon.getRecursor
+  | 2 => Ixon.ConstantInfo.axio <$> Ixon.getAxiom
+  | 3 => Ixon.ConstantInfo.quot <$> Ixon.getQuotient
+  | 4 => Ixon.ConstantInfo.cPrj <$> Ixon.getConstructorProj
+  | 5 => Ixon.ConstantInfo.rPrj <$> Ixon.getRecursorProj
+  | 6 => Ixon.ConstantInfo.iPrj <$> Ixon.getInductiveProj
+  | 7 => Ixon.ConstantInfo.dPrj <$> Ixon.getDefinitionProj
+  | val => throw s!"getConstantInfo: invalid variant {val}"
+
 /-- `IxonDeserialize::get_constant_info_by_variant` refines the singleton-tag dispatch of
 `Ixon.getConstantInfo`. -/
 theorem get_constant_info_by_variant_spec {v : UInt64} (hv : v.toNat < 256)
@@ -91,17 +104,7 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv : v.toNat < 256)
       [.field ((v.toNat : Nat) : F), stream] h r h' cs) :
     Heap.Extends h h' ∧
     ∃ (info : Ixon.ConstantInfo) (n : Nat) (infoVal restPtr : SourceValue F),
-      ((match v with
-       | 0 => Ixon.ConstantInfo.defn <$> Ixon.getDefinition
-       | 1 => Ixon.ConstantInfo.recr <$> Ixon.getRecursor
-       | 2 => Ixon.ConstantInfo.axio <$> Ixon.getAxiom
-       | 3 => Ixon.ConstantInfo.quot <$> Ixon.getQuotient
-       | 4 => Ixon.ConstantInfo.cPrj <$> Ixon.getConstructorProj
-       | 5 => Ixon.ConstantInfo.rPrj <$> Ixon.getRecursorProj
-       | 6 => Ixon.ConstantInfo.iPrj <$> Ixon.getInductiveProj
-       | 7 => Ixon.ConstantInfo.dPrj <$> Ixon.getDefinitionProj
-       | val => throw s!"getConstantInfo: invalid variant {val}") : Ixon.GetM Ixon.ConstantInfo)
-        { idx := i, bytes := ⟨bytes.toArray⟩ } =
+      getConstantInfoByVariant v { idx := i, bytes := ⟨bytes.toArray⟩ } =
         .ok info { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [infoVal, restPtr] ∧
       RepConstantInfo h' info infoVal ∧
@@ -112,56 +115,56 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv : v.toNat < 256)
     subst hv0 he79 he54
     obtain ⟨ext, d, n, dVal, restPtr, _, hok, heq, dRep, hrep⟩ := get_definition_spec rep ev28
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_defn x_s
-    exact ⟨ext, .defn d, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .defn d, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨dVal, rfl, dRep⟩, hrep⟩
   | n1 m87 cs97 x_recr x_s _ hv85 ev99 he125 he150 _ =>
     have hv1 : v = 1 := UInt64.ext ((natCast_eq_one_iff hv).mp (Value.field.inj hv85))
     subst hv1 he150 he125
     obtain ⟨ext, rc, n, rcVal, restPtr, hok, heq, rcRep, hrep⟩ := get_recursor_spec rep ev99
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_recr x_s
-    exact ⟨ext, .recr rc, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .recr rc, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨rcVal, rfl, rcRep⟩, hrep⟩
   | n2 m158 cs168 x_axim x_s _ _ hv156 ev170 he196 he221 _ =>
     have hv2 : v = 2 := UInt64.ext ((natCast_eq_ofNat_iff (n := 2) hv (by omega)).mp (Value.field.inj hv156))
     subst hv2 he221 he196
     obtain ⟨ext, ax, n, axVal, restPtr, hok, heq, axRep, hrep⟩ := get_axiom_spec rep ev170
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_axim x_s
-    exact ⟨ext, .axio ax, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .axio ax, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨axVal, rfl, axRep⟩, hrep⟩
   | n3 m229 cs239 x_quot x_s _ _ _ hv227 ev241 he267 he292 _ =>
     have hv3 : v = 3 := UInt64.ext ((natCast_eq_ofNat_iff (n := 3) hv (by omega)).mp (Value.field.inj hv227))
     subst hv3 he292 he267
     obtain ⟨ext, q, n, qVal, restPtr, hok, heq, qRep, hrep⟩ := get_quotient_spec rep ev241
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_quot x_s
-    exact ⟨ext, .quot q, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .quot q, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨qVal, rfl, qRep⟩, hrep⟩
   | n4 m300 cs310 x_prj x_s _ _ _ _ hv298 ev312 he338 he363 _ =>
     have hv4 : v = 4 := UInt64.ext ((natCast_eq_ofNat_iff (n := 4) hv (by omega)).mp (Value.field.inj hv298))
     subst hv4 he363 he338
     obtain ⟨ext, p, n, pVal, restPtr, hok, heq, pRep, hrep⟩ := getConstructorProj_codec_at rep ev312
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_prj x_s
-    exact ⟨ext, .cPrj p, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .cPrj p, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨pVal, rfl, pRep⟩, hrep⟩
   | n5 m371 cs381 x_prj x_s _ _ _ _ _ hv369 ev383 he409 he434 _ =>
     have hv5 : v = 5 := UInt64.ext ((natCast_eq_ofNat_iff (n := 5) hv (by omega)).mp (Value.field.inj hv369))
     subst hv5 he434 he409
     obtain ⟨ext, p, n, pVal, restPtr, hok, heq, pRep, hrep⟩ := getRecursorProj_codec_at rep ev383
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_prj x_s
-    exact ⟨ext, .rPrj p, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .rPrj p, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨pVal, rfl, pRep⟩, hrep⟩
   | n6 m442 cs452 x_prj x_s _ _ _ _ _ _ hv440 ev454 he480 he505 _ =>
     have hv6 : v = 6 := UInt64.ext ((natCast_eq_ofNat_iff (n := 6) hv (by omega)).mp (Value.field.inj hv440))
     subst hv6 he505 he480
     obtain ⟨ext, p, n, pVal, restPtr, hok, heq, pRep, hrep⟩ := getInductiveProj_codec_at rep ev454
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_prj x_s
-    exact ⟨ext, .iPrj p, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .iPrj p, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨pVal, rfl, pRep⟩, hrep⟩
   | n7 m513 cs523 x_prj x_s _ _ _ _ _ _ _ hv511 ev525 he551 he576 _ =>
     have hv7 : v = 7 := UInt64.ext ((natCast_eq_ofNat_iff (n := 7) hv (by omega)).mp (Value.field.inj hv511))
     subst hv7 he576 he551
     obtain ⟨ext, p, n, pVal, restPtr, hok, heq, pRep, hrep⟩ := getDefinitionProj_codec_at rep ev525
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_prj x_s
-    exact ⟨ext, .dPrj p, n, _, restPtr, by simp [Functor.map, EStateM.map, hok], rfl,
+    exact ⟨ext, .dPrj p, n, _, restPtr, by simp [getConstantInfoByVariant, Functor.map, EStateM.map, hok], rfl,
       ⟨pVal, rfl, pRep⟩, hrep⟩
 
 /-- `IxonDeserialize::get_constant_info` after `get_tagn4` refines `Ixon.getConstantInfo`. -/
@@ -288,6 +291,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
     simp only [bind, EStateM.bind, htag, hf13, Ixon.Constant.FLAG_MUTS, Ixon.Constant.FLAG]
     have hne12 : ((13 : UInt8) == (12 : UInt8)) = false := by decide
     have heq13 : ((13 : UInt8) == (13 : UInt8)) = true := by decide
+    simp only [getConstantInfoByVariant] at hok
     simp [hne12, heq13, hok, Nat.add_assoc]
 
 /-! ## `IxonDeserialize::mut_const_lvls`, `muts_max_lvls`, and `max_lvls` -/
