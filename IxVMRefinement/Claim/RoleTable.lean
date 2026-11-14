@@ -193,16 +193,8 @@ theorem addrMapAll_of_rbtreeEntries {t : Ix.Kernel.RoleTable} {h : Heap F}
     {es : List (Bytes.Address × SourceValue F)} {tree : SourceValue F}
     (hent : RBTreeEntries .field h es tree)
     (hie : ∀ p ∈ es, IndexEntry t h p.1 p.2) :
-    AddrMapAll addrMapEnum (IndexEntry t) h tree := by
-  induction hent with
-  | nil =>
-    rw [rbtreeEnum_field]
-    exact .nil
-  | @node _ ak vk _ _ _ _ ls rs hk hl hr _ _ ihl ihr =>
-    rw [rbtreeEnum_field]
-    refine .node hk (hie (ak, vk) (by simp)) hl hr (ihl ?_) (ihr ?_)
-    · intro p hp; exact hie p (by simp [hp])
-    · intro p hp; exact hie p (by simp [hp])
+    AddrMapAll addrMapEnum (IndexEntry t) h tree :=
+  hent.toAddrMapAll hie
 
 /-- Full representation of a loaded `KernelRoles::RoleTable` node: `TableRep t`, plus the
 binding pointer `bp` representing `bAddr`, `t.wf = true`, and full `ByAddrInv` coverage. -/
@@ -895,7 +887,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
   have extSnoc := Heap.Extends.snoc m512 rtNode
   have extAll := ext1.trans (ext2.trans (extB.trans (extE.trans extSnoc)))
   refine ⟨extAll, hwf, x_binding, x_by_role, x_by_addr, x_evidence,
-    L1.loadValue_snoc m512 rtNode,
+    loadValue_snoc_construct m512 rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence],
     ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy extAll hab, hix_b⟩, ?_,
     hinvB.mono (extE.trans extSnoc), ?_⟩
   · refine RoleMapAll.mono ?_ (extE.trans extSnoc) hmapRole
@@ -923,13 +915,17 @@ theorem load_role_ctx_spec {V : View} {extra : List ByteArray}
     ⟨_, _, _, _, _, _, _, _, _, _, _, hne187, -⟩
   · rcases load_role_table_spec (V := V) hadm hb_extra hb ev14 with hcoll | ⟨ext1, htbl⟩
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc186]; simp [hc]) hcoll)
-    · rcases sg134 with ⟨_, rfl, rfl, _⟩ | ⟨_, hne45, -⟩
-      · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::group_count».obs ev178
+    · rcases sg134 with ⟨_, rfl, hm_sg, _⟩ | ⟨_, hne45, -⟩
+      · subst hm_sg
+        obtain ⟨rfl, hm_gc, -⟩ := Obs.«KernelRoleSpec::group_count».obs ev178
+        subst hm_gc
         let rcNode := Value.construct rcEnum "Mk"
           [v1, .field (77 : F), .construct addrMapEnum "Nil" []]
         have extSnoc := Heap.Extends.snoc m2 rcNode
         exact .inr ⟨ext1.trans extSnoc, by decide, v1,
-          L1.loadValue_snoc m2 rcNode, htbl.mono extSnoc⟩
+          loadValue_snoc_construct m2 rcEnum "Mk"
+            [v1, .field (77 : F), .construct addrMapEnum "Nil" []],
+          htbl.mono extSnoc⟩
       · exact absurd rfl (hne45 [] rfl)
   · exact absurd rfl hne187
   · exact absurd rfl hne187
@@ -965,7 +961,7 @@ theorem role_ctx_table_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
     obtain ⟨rfl, -⟩ := hargs
     exact ⟨rfl, htbl⟩
   · rw [hl_rc] at ld12
-    cases ld12
+    simp at ld12
 
 theorem role_ctx_binding_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Nat}
     {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -994,7 +990,7 @@ theorem role_ctx_validator_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
   · simp only [evalBinOp, add_zero, Except.ok.injEq] at op8
     exact ⟨op8.symm, rfl⟩
   · rw [hl_rc] at ld12
-    cases ld12
+    simp at ld12
 
 theorem role_ctx_axioms_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Nat}
     {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1010,7 +1006,7 @@ theorem role_ctx_axioms_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} 
     simp only [List.cons.injEq, and_true] at hargs
     exact ⟨hargs.2.2.symm, rfl⟩
   · rw [hl_rc] at ld12
-    cases ld12
+    simp at ld12
 
 theorem role_ctx_limit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Nat}
     {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1021,7 +1017,7 @@ theorem role_ctx_limit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {
   rcases Obs.«KernelRoles::role_ctx_limit».obs ev with
     ⟨_, _, ld12, -⟩ | ⟨_, x_limit, _, ld12, rfl, rfl, -⟩
   · rw [hl_rc] at ld12
-    cases ld12
+    simp at ld12
   · rw [hl_rc] at ld12
     injection ld12 with hv
     injection hv with _ _ hargs
@@ -1213,8 +1209,8 @@ theorem walk_covered_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {li
     ⟨_, _, _, _, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, ld12, -⟩ |
     ⟨_, _, _, _, _, _, _, _, _, _, ld12, -⟩
   · exact ⟨rfl, rfl⟩
-  · rw [hl_rc] at ld12; cases ld12
-  · rw [hl_rc] at ld12; cases ld12
+  · rw [hl_rc] at ld12; simp at ld12
+  · rw [hl_rc] at ld12; simp at ld12
 
 theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1264,11 +1260,13 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
     simp only [List.cons.injEq] at hargs
     obtain ⟨rfl, _, _⟩ := hargs
     obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev160
-    obtain ⟨rfl, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
-    let rcNode := Value.construct rcEnum "Mk"
-      [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []]
-    exact ⟨ext, lim', by omega, x_tbl, L1.loadValue_snoc m139 rcNode, htbl.mono ext⟩
+    obtain ⟨hm_gvl, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
+    subst hm_gvl
+    exact ⟨ext, lim', by omega, x_tbl,
+      loadValue_snoc_construct m139 rcEnum "Mk"
+        [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
+      htbl.mono ext⟩
   · rw [hl_rc] at ld12
-    cases ld12
+    simp at ld12
 
 end IxVM.Refinement.Claim

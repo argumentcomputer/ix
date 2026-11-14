@@ -624,13 +624,13 @@ theorem load_assumption_tree_spec {V : View} {extra : List ByteArray}
   · exact .inl hcoll
   · exact .inr ⟨extRead.trans extParse, as, hmapLeaves, hlLeaves⟩
 
-theorem addr_set_build_spec {as : List Bytes.Address} {S : _root_.Address → Prop}
+theorem addr_set_build_spec {as : List Bytes.Address} {S : List _root_.Address}
     {x_leaves x_acc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hl : RepList addrListEnum (Bytes.RepAddressRef addrTy) h as x_leaves)
-    (hacc : RepAddrSet S h x_acc)
+    (hacc : RepAddrSet h S x_acc)
     (ev : ObsFn W "KernelClaim::addr_set_build" [x_leaves, x_acc] h r h' calls) :
     Heap.Extends h h' ∧
-    RepAddrSet (fun a => a ∈ as.map ixAddr ∨ S a) h' r := by
+    RepAddrSet h' (as.reverse.map ixAddr ++ S) r := by
   induction as generalizing S x_leaves x_acc r h h' calls with
   | nil =>
     rcases Obs.«KernelClaim::addr_set_build».obs ev with
@@ -648,14 +648,11 @@ theorem addr_set_build_spec {as : List Bytes.Address} {S : _root_.Address → Pr
       have hsym_ins : (Instance.mk "RBTreeMap::rbtree_map_insert" [.field]).symbol =
           Obs.Names.«RBTreeMap::rbtree_map_insert<Field>» := rfl
       rw [← hsym_ins] at ev67
-      obtain ⟨ext1, hacc1⟩ := rbtree_set_insert_spec (k := a) ha hacc ev67
+      obtain ⟨ext1, hacc1⟩ := rbtree_set_insert_spec ha hacc ev67
       obtain ⟨ext2, hres⟩ := ih
         (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext1 hrest) hacc1 ev46
-      obtain ⟨es, hbst, hiff⟩ := hres
-      refine ⟨ext1.trans ext2, es, hbst, ?_⟩
-      intro x
-      rw [hiff x]
-      simp [or_left_comm, or_assoc]
+      refine ⟨ext1.trans ext2, ?_⟩
+      simpa [List.reverse_cons, List.map_append, List.append_assoc] using hres
 
 /-! ## `pack_word`, `pack_digest`, and `packDigest` injectivity -/
 
@@ -963,7 +960,7 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
     · have extSeg := sg106.casesOn (fun _ _ _ he _ => he ▸ Heap.Extends.refl _)
         (fun _ _ _ _ he _ => he ▸ Heap.Extends.refl _)
       obtain ⟨hax, _⟩ := role_ctx_axioms_spec (hrc.mono (ext1.trans extSeg)) ev137
-      cases hax
+      simp at hax
   · exact absurd rfl (hne266 [] rfl)
 
 /-! ## `Claim.de` alignment helpers and `IxVM::verify_claim` entry refinement -/
