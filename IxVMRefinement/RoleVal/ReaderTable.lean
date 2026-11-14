@@ -259,8 +259,8 @@ private theorem bindingsStep_preserves (store : Store)
   | none => exact hm
   | some ref =>
     by_cases hc : m.contains ref = true
-    · rw [hc, if_pos rfl]; exact hm
-    · rw [Bool.not_eq_true _ |>.mp hc, Bool.false_eq_true, if_neg (by decide)]
+    · simp only [hc, ↓reduceIte]; exact hm
+    · simp only [Bool.not_eq_true _ |>.mp hc, Bool.false_eq_true, ↓reduceIte]
       have hne : ref ≠ ref₀ := by
         rintro rfl
         rw [Std.HashMap.contains_eq_isSome_getElem?, hm] at hc
@@ -1093,12 +1093,12 @@ private theorem forIn_sharing_tbl {pe : PureECx}
     intro i e hi
     rw [Array.getElem?_push] at hi ⊢
     by_cases heq : i = ptbl.size
-    · rw [if_pos heq] at hi
-      rw [← hsz, if_pos heq]
+    · rw [ite_eq_left heq] at hi
+      rw [← hsz, ite_eq_left heq]
       injection hi with hok
       exact congrArg some (pureConvExpr_sound ev hev_defn hself htbl entry hok)
-    · rw [if_neg heq] at hi
-      rw [← hsz, if_neg heq]
+    · rw [ite_eq_right heq] at hi
+      rw [← hsz, ite_eq_right heq]
       exact htbl i e hi
 
 private theorem pureReadExpr_sound {src : Ixon.Constant} {param : Nat → Ix.Kernel.LevelParam}
@@ -1488,7 +1488,7 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
                 · rename_i hi
                   injection hps with hps; subst hps
                   have hi' : i < (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).size := hi
-                  rw [if_pos hi']
+                  rw [ite_eq_left hi']
                   exact ⟨_, rfl, pureMemberKey_sound ev hev_defn hm⟩
                 · cases hps
               have htty' := pureReadExpr_sound ev hev_defn hself htty
@@ -1511,10 +1511,7 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
                 simp [hu]
               have hall_p : (#[(0, ind)] : Array (Nat × Ixon.Inductive)).all (·.2.params.toNat == ind.params.toNat) = true := by
                 simp
-              rw [hsz_ok, if_pos rfl, hfirst]
-              dsimp only
-              rw [hany_u, if_neg (by decide), hall_p, if_pos rfl]
-              dsimp only
+              simp only [hsz_ok, ↓reduceIte, hfirst, hany_u, Bool.false_eq_true, hall_p]
               -- Evaluate 1-element types loop, 1-element outer ctors loop, 1-element recs loop
               have htypes_loop :
                   (forIn (m := ReadM) (#[(0, ind)] : Array (Nat × Ixon.Inductive)) (#[] : Array (CVal .anon × Nat × Nat))
@@ -1648,7 +1645,7 @@ private theorem pureReadRecord_sound {owner : _root_.Address} {c : Ixon.Constant
               (fun | .indc _ => true | _ => false) = true := rfl
           have hany_d : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).any
               (fun | .defn _ => true | _ => false) = false := rfl
-          rw [hany_i, if_pos rfl, hany_d, if_neg (by decide)]
+          simp only [hany_i, ↓reduceIte, hany_d, Bool.false_eq_true]
           exact pureReadInductive1_sound ev hev_defn h st
   | defn _ => rw [hci] at h; cases h
 
@@ -1717,13 +1714,10 @@ theorem preludeFor_defaultRoleTable :
     have hcs : checkPreludeShape (md := .anon)
         ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩ = .ok () := by
       unfold checkPreludeShape
-      dsimp only
-      rw [hshape, if_pos rfl]
-      rfl
+      simp only [hshape, ↓reduceIte, pure, Except.pure]
     have hcfr : checkFallbackRecursors (md := .anon)
         ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩ = .ok () := by
       unfold checkFallbackRecursors
-      dsimp only
       have hall : (committedPrelude ++ ev).all (fun p => fallbackRecursorShape p.2) = true := by
         rw [Array.all_eq_true_iff_forall_mem]
         intro p hp
@@ -1731,8 +1725,7 @@ theorem preludeFor_defaultRoleTable :
         · exact Array.all_eq_true_iff_forall_mem.mp hrec_pre p h1
         · obtain ⟨d, hd⟩ := hev_defn p (Array.mem_toList_iff.mpr h2)
           simp [fallbackRecursorShape, hd]
-      rw [hall, if_pos rfl]
-      rfl
+      simp only [hall, ↓reduceIte, pure, Except.pure]
     refine ⟨⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩, ?_⟩
     unfold preludeFor
     rw [hread]

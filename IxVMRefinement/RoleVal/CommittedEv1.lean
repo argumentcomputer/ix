@@ -1,4 +1,4 @@
-import IxVMRefinement.RoleVal.CommittedBase
+import IxVMRefinement.RoleVal.CommittedCodec
 
 /-! # Kernel-verified `RoleData.evidence` shard 1 (entries 8..9) -/
 
