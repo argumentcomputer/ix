@@ -798,6 +798,19 @@ structure TableAdmittedAt (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Bi
   noCommittedCollision :
     ∀ x held img, V.Preimage x held → img ∈ IxVM.Consistency.committedImages →
       _root_.Address.blake3Pure held = x → _root_.Address.blake3Pure img = x → held = img
+  usedClosureOrder :
+    IxVM.Consistency.UsedClosureOrderAt t E_role (IxVM.Refinement.BindingSeeds t) order_role
+  boundConsistent :
+    ∀ r a layout ref rec_proj,
+      t.addressOf? r = some a →
+      Ix.Kernel.Egress.writeProjection layout ref = .ok rec_proj →
+      _root_.Address.blake3Pure (Ixon.serConstant rec_proj) = a →
+      IxVM.Refinement.compilerTrust r = false ∧ Ix.Cert.recordAt E_role a = some rec_proj
+  singleRecBlock :
+    ∀ a ∈ order_role, ∀ shape,
+      (Ix.Cert.artifactRecIndex E_role).blocks[a]? = some shape →
+      ∀ r₁ ∈ shape.recs, ∀ r₂ ∈ shape.recs,
+        r₁.block ≠ a → r₂.block ≠ a → r₁.block = r₂.block
 
 /-- Existential form of `TableAdmittedAt`. -/
 def TableAdmittedComplete (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Binding) : Prop :=

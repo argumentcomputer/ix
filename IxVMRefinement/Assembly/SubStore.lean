@@ -71,7 +71,7 @@ structure RolePreludeInputs : Prop where
         IxVM.Refinement.BindingSeeds t a ∨
         ∃ a' c', (a', c') ∈ pre.records ∧
           IxVM.Refinement.BindingSeeds t a' ∧
-          Ix.Cert.ownerOf a' c' = a ∧ a ≠ a'`
+          Ix.Cert.ownerOf a' c' = a ∧ a ≠ a'
 
 /-- Every record `(a, c)` in `pre.records ++ pre.evidence` has `Ixon.serConstant c` in
 `committedImages`, pure BLAKE3 digest `a`, wire well-formedness `c.wireWF`, and non-padding address
@@ -224,7 +224,7 @@ theorem TableAdmittedAt.order_record_spec
   obtain ⟨lc, hget⟩ := Option.isSome_iff_exists.mp hcont
   have hmem_rec : (a, lc.rawBytes) ∈ Ix.Cert.recordsOf E_role order_role := by
     unfold Ix.Cert.recordsOf
-    exact List.mem_filterMap.mpr ⟨a, ha, by simp [hget]⟩
+    exact List.mem_filterMap.mpr ⟨a, ha, by rw [hget]; rfl⟩
   have hblk : _root_.Address.blake3Pure lc.rawBytes = a := by
     have h1 := hauth.1 (a, lc.rawBytes) hmem_rec
     rw [_root_.Address.admissionHash_eq] at h1
@@ -312,12 +312,11 @@ theorem TableAdmittedAt.prelude_mem_orderRole (hRP : RolePreludeInputs)
 
 /-! ## `ClosedSubwalk` union (`WkAll`, `rankAll`) across `WalkedL6` and `RecsClosed` sub-walks -/
 
-/-- A `WalkEdge`-closed, rank-decreasing, safe, checked subset of `E₀`. -/
+/-- A `WalkEdge`-closed, rank-decreasing, checked subset of `E₀`. -/
 structure ClosedSubwalk (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (W : _root_.Address → Prop) (rk : _root_.Address → Nat) : Prop where
   step : ∀ x y, W x → Core.S0.WalkEdge E₀ x y → W y ∧ rk y < rk x
-  safe : ∀ x, W x → ¬ IxVM.Consistency.OutsideLogicAt E₀ x
   checked : ∀ x, W x → ∃ c, Ix.Cert.recordAt E₀ x = some c ∧
     ((∃ ms, c.info = .muts ms ∧
       ∀ (k : Nat), k < ms.size → Claim.MutsMemberCheckedAtFull calls bAddr t x ms k) ∨
@@ -327,6 +326,11 @@ structure ClosedSubwalk (calls : List (Call F)) (bAddr : _root_.Address)
 def WkAll (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (x : _root_.Address) : Prop :=
   ∃ W rk, ClosedSubwalk calls bAddr t E₀ W rk ∧ W x
+
+/-- Safe walked subset of `E₀`: in `WkAll` and not `OutsideLogicAt E₀`. -/
+def WkSafe (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (x : _root_.Address) : Prop :=
+  WkAll calls bAddr t E₀ x ∧ ¬ IxVM.Consistency.OutsideLogicAt E₀ x
 
 private theorem wkAll_exists_nat {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {x : _root_.Address}
@@ -376,51 +380,47 @@ theorem wkAll_closedSubwalk (calls : List (Call F)) (bAddr : _root_.Address)
     obtain ⟨hwy, hlt⟩ := hcs.step x y hwx hedge
     have hle := rankAll_le_of_closedSubwalk hcs hwy
     exact ⟨⟨W, rk, hcs, hwy⟩, by omega⟩
-  safe x hx := by
-    obtain ⟨W, rk, hcs, hwx⟩ := hx
-    exact hcs.safe x hwx
   checked x hx := by
     obtain ⟨W, rk, hcs, hwx⟩ := hx
     exact hcs.checked x hwx
 
-/-- Reflexive-transitive closure of `Core.S0.WalkEdge E₀` starting from `seeds`. -/
-def SeedReach (E₀ : Ixon.Env) (seeds : List _root_.Address) (x : _root_.Address) : Prop :=
-  ∃ s ∈ seeds, Relation.ReflTransGen (Core.S0.WalkEdge E₀) s x
+/-- If `WkSafe` holds at `x` and `ownerOf x cx ≠ x` (`recordAt E₀ x = some cx`), then `WkSafe` and
+strict `rankAll` decrease hold at `ownerOf x cx` provided `ownerOf (ownerOf x cx) cb = ownerOf x cx`
+(which holds whenever `cb` is not itself a projection, e.g., `.muts`). -/
+theorem wkSafe_owner_of_nonproj {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {x : _root_.Address} {cx : Ixon.Constant}
+    (hx : WkSafe calls bAddr t E₀ x) (hrec : Ix.Cert.recordAt E₀ x = some cx)
+    (hne : Ix.Cert.ownerOf x cx ≠ x)
+    (hcb_own : ∀ cb, Ix.Cert.recordAt E₀ (Ix.Cert.ownerOf x cx) = some cb →
+      Ix.Cert.ownerOf (Ix.Cert.ownerOf x cx) cb = Ix.Cert.ownerOf x cx) :
+    WkSafe calls bAddr t E₀ (Ix.Cert.ownerOf x cx) ∧
+      rankAll calls bAddr t E₀ (Ix.Cert.ownerOf x cx) < rankAll calls bAddr t E₀ x := by
+  have hedge : Core.S0.WalkEdge E₀ x (Ix.Cert.ownerOf x cx) :=
+    ⟨cx, hrec, Or.inl ⟨rfl, hne⟩⟩
+  obtain ⟨hwk_own, hlt⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step x _ hx.1 hedge
+  refine ⟨⟨hwk_own, ?_⟩, hlt⟩
+  rintro ⟨cb, hrec_cb, hbad⟩
+  apply hx.2
+  refine ⟨cx, hrec, Or.inr ⟨cb, hrec_cb, ?_⟩⟩
+  rcases hbad with hnin | ⟨cb2, hrec2, hnin2⟩
+  · exact hnin
+  · rw [hcb_own cb hrec_cb] at hrec2
+    rw [hrec_cb] at hrec2
+    injection hrec2 with heq
+    subst heq
+    exact hnin2
 
-theorem seedReach_of_mem {E₀ : Ixon.Env} {seeds : List _root_.Address} {a : _root_.Address}
-    (ha : a ∈ seeds) : SeedReach E₀ seeds a :=
-  ⟨a, ha, .refl⟩
-
-theorem seedReach_step {E₀ : Ixon.Env} {seeds : List _root_.Address} {x y : _root_.Address}
-    (hx : SeedReach E₀ seeds x) (hedge : Core.S0.WalkEdge E₀ x y) :
-    SeedReach E₀ seeds y := by
-  obtain ⟨s, hs, hrt⟩ := hx
-  exact ⟨s, hs, .tail hrt hedge⟩
-
-/-- Restricting `(Wk, rank)` from `WalkedL6` to `SeedReach E₀ seeds` forms a `ClosedSubwalk` once
-safety (`¬ OutsideLogicAt E₀`) is propagated along `SeedReach`. -/
-theorem closedSubwalk_of_seedReach {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {seeds : List _root_.Address}
+/-- `(Wk, rank)` from `WalkedL6` directly forms a `ClosedSubwalk`. -/
+theorem closedSubwalk_of_walked {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
-    (hseeds_wk : ∀ a ∈ seeds, Wk a)
     (hwk_step : ∀ a b, Wk a → Core.S0.WalkEdge E₀ a b → Wk b ∧ rank b < rank a)
     (hwk_chk : ∀ a, Wk a → ∃ c, Ix.Cert.recordAt E₀ a = some c ∧
       ((∃ ms, c.info = .muts ms ∧
         ∀ (k : Nat), k < ms.size → Claim.MutsMemberCheckedAtFull calls bAddr t a ms k) ∨
-       Claim.CheckedAtFull calls bAddr t a))
-    (hsafe : ∀ x, SeedReach E₀ seeds x → ¬ IxVM.Consistency.OutsideLogicAt E₀ x) :
-    ClosedSubwalk calls bAddr t E₀ (SeedReach E₀ seeds) rank := by
-  have hsub_wk : ∀ x, SeedReach E₀ seeds x → Wk x := by
-    intro x ⟨s, hs, hrt⟩
-    induction hrt with
-    | refl => exact hseeds_wk s hs
-    | tail _ hedge ih => exact (hwk_step _ _ ih hedge).1
-  exact {
-    step := fun x y hx hedge =>
-      ⟨seedReach_step hx hedge, (hwk_step x y (hsub_wk x hx) hedge).2⟩
-    safe := hsafe
-    checked := fun x hx => hwk_chk x (hsub_wk x hx)
-  }
+       Claim.CheckedAtFull calls bAddr t a)) :
+    ClosedSubwalk calls bAddr t E₀ Wk rank :=
+  { step := hwk_step, checked := hwk_chk }
 
 private def minNatList : List Nat → Nat
   | [] => 0
@@ -465,8 +465,7 @@ theorem closedSubwalk_of_recsClosed {calls : List (Call F)} {bAddr : _root_.Addr
       ∃ lc, E₀.consts.get? (_root_.Address.blake3Pure bytes) = some lc ∧
         lc.rawBytes = bytes ∧ lc.get? = some c)
     (recs : List (Claim.WalkedRec calls bAddr t))
-    (hcl : Claim.RecsClosed recs)
-    (hsafe : ∀ a ∈ recs.map (·.addr), ¬ IxVM.Consistency.OutsideLogicAt E₀ a) :
+    (hcl : Claim.RecsClosed recs) :
     ClosedSubwalk calls bAddr t E₀ (fun a => a ∈ recs.map (·.addr)) (recsRank recs) := by
   have hrecAt : ∀ r ∈ recs, Ix.Cert.recordAt E₀ r.addr = some r.c := by
     intro r hr
@@ -478,7 +477,6 @@ theorem closedSubwalk_of_recsClosed {calls : List (Call F)} {bAddr : _root_.Addr
     exact hlc_c
   refine {
     step := fun a b ha ⟨c, hrec_a, hstep⟩ => ?_
-    safe := hsafe
     checked := fun a ha => ?_
   }
   · obtain ⟨r₀, hr₀, rfl⟩ := List.mem_map.mp ha
@@ -608,18 +606,19 @@ theorem mem_roleSuppOf_iff {E_role : Ixon.Env} {order_role : List _root_.Address
   constructor
   · rintro ⟨a', ha', hfn⟩
     cases hget : E_role.consts.get? a' with
-    | none => simp [hget] at hfn
+    | none => rw [hget] at hfn; cases hfn
     | some lc =>
       cases hrec : Ix.Cert.recordAt E_role a' with
-      | none => simp [hget, hrec] at hfn
+      | none => rw [hget, hrec] at hfn; cases hfn
       | some c' =>
-        simp only [hget, hrec, Option.some.injEq] at hfn
-        injection hfn with ha hrest
-        injection hrest with hraw hc
+        rw [hget, hrec] at hfn
+        injection hfn with hprod
+        rcases Prod.mk.inj hprod with ⟨ha, hrest⟩
+        rcases Prod.mk.inj hrest with ⟨hraw, hc⟩
         subst ha; subst hraw; subst hc
         exact ⟨ha', lc, hget, hrec, rfl⟩
   · rintro ⟨ha, lc, hget, hrec, rfl⟩
-    exact ⟨a, ha, by simp [hget, hrec]⟩
+    exact ⟨a, ha, by rw [hget, hrec]⟩
 
 theorem roleSuppOf_nodup {E_role : Ixon.Env} {order_role : List _root_.Address}
     (hnd : order_role.Nodup) :
@@ -703,7 +702,7 @@ theorem subEnvRole_drawsRoleLocal {E₀ E_view : Ixon.Env} (Keep : _root_.Addres
     · exact Or.inl ⟨lc, hget₀, rfl⟩
     · refine Or.inr ⟨hnc, ?_⟩
       rcases hsupp a raw c hm with ⟨lcV, hgetV, hrawV⟩ | hrec
-      · exact Or.inl ⟨lcV, hgetV, hrawV⟩
+      · exact Or.inl ⟨lcV, hgetV, hrawV.trans (Claim.mkLazy_rawBytes raw c).symm⟩
       · exact Or.inr ⟨c, Claim.mkLazy_get? raw c, hrec⟩
   · rcases addBlobSupplements_get?_some_inv E₀.blobs roleBlobs hblob with hget₀ | ⟨hnc, hm⟩
     · exact Or.inl hget₀
@@ -765,8 +764,8 @@ theorem subEnvRole_agrees_on_role
         obtain ⟨c₀, hlc₀_c, hex₀⟩ := hexact₀ a lc₀ hget₀
         rw [hraw_eq, hex_r] at hex₀
         injection hex₀ with hceq
-        subst hceq
-        have hrec₀ : Ix.Cert.recordAt E₀ a = some c₀ := by
+        rw [← hceq] at hlc₀_c
+        have hrec₀ : Ix.Cert.recordAt E₀ a = some c_r := by
           unfold Ix.Cert.recordAt
           rw [hget₀]
           exact hlc₀_c
@@ -818,7 +817,7 @@ noncomputable def roleTwoTierRank (order_role : List _root_.Address)
   else
     order_role.length + twoTierRank Wk rank iblock a
 
-private theorem idxOf_lt_of_pairwise {α : Type} [DecidableEq α] {R : α → α → Prop} :
+private theorem idxOf_lt_of_pairwise {α : Type} [BEq α] [LawfulBEq α] {R : α → α → Prop} :
     ∀ {xs : List α} {a b : α},
       xs.Pairwise R → a ∈ xs → b ∈ xs → ¬ R a b → a ≠ b →
       xs.idxOf b < xs.idxOf a
@@ -827,8 +826,7 @@ private theorem idxOf_lt_of_pairwise {α : Type} [DecidableEq α] {R : α → α
     rw [List.pairwise_cons] at hpw
     by_cases hbx : b = x
     · subst hbx
-      simp only [List.idxOf_cons, beq_self_eq_true, ↓reduceIte,
-        beq_eq_false_iff_ne.mpr hne.symm]
+      rw [List.idxOf_cons_self, List.idxOf_cons_ne _ (Ne.symm hne)]
       omega
     · by_cases hax : a = x
       · subst hax
@@ -846,8 +844,7 @@ private theorem idxOf_lt_of_pairwise {α : Type} [DecidableEq α] {R : α → α
           · exact absurd rfl hbx
           · exact htl
         have ih := idxOf_lt_of_pairwise hpw.2 ha_tl hb_tl hnot hne
-        simp only [List.idxOf_cons, beq_eq_false_iff_ne.mpr hbx.symm,
-          beq_eq_false_iff_ne.mpr hax.symm, Bool.false_eq_true, ↓reduceIte]
+        rw [List.idxOf_cons_ne _ (Ne.symm hbx), List.idxOf_cons_ne _ (Ne.symm hax)]
         omega
 
 /-- **`UsedClosureOrderAt` on `subEnvRole`** under `roleTwoTierRank`. -/
@@ -863,41 +860,47 @@ theorem subEnvRole_usedClosureOrderAt
     (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
       ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
     (hnoCol : ¬ V.HashedCollision extra calls)
-    (Keep : _root_.Address → Prop) (extraRec : List SuppEntry) (S : _root_.Address → Prop)
+    (Keep : _root_.Address → Prop) (S : _root_.Address → Prop)
     {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
     (iblock : _root_.Address → _root_.Address)
     (hkeep_role : ∀ a ∈ order_role, Keep a)
     (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_owner : ∀ x c, Wk x → Ix.Cert.recordAt E₀ x = some c → Ix.Cert.ownerOf x c ≠ x →
+      Wk (Ix.Cert.ownerOf x c) ∧ rank (Ix.Cert.ownerOf x c) < rank x)
+    (hwk_edge_keep : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → y ∉ order_role → Keep y →
+      Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     (hextra_kind : ∀ x c, x ∉ order_role → ¬ Wk x →
-      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role)
         (Ix.Cert.blobsOf E_role order_role)) x = some c →
       IxVM.Refinement.IsRecursorRecord c ∨
         (c.sharing = #[] ∧ c.refs = #[] ∧ Ix.Cert.ownerOf x c ≠ x ∧
           (Ix.Cert.ownerOf x c ∈ order_role ∨
             Wk (Ix.Cert.ownerOf x c) ∨
-            ∃ co, Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+            ∃ co, Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role)
               (Ix.Cert.blobsOf E_role order_role)) (Ix.Cert.ownerOf x c) = some co ∧
               IxVM.Refinement.IsRecursorRecord co)))
     (hextra_refs : ∀ a c, a ∉ order_role → ¬ Wk a →
-      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role)
         (Ix.Cert.blobsOf E_role order_role)) a = some c →
       IxVM.Refinement.IsRecursorRecord c →
       ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r cr,
         c.refs[i]? = some r →
-        Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+        Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role)
           (Ix.Cert.blobsOf E_role order_role)) r = some cr →
         Ix.Cert.ownerOf r cr ≠ a →
         Ix.Cert.ownerOf r cr ∉ order_role →
         (Wk (Ix.Cert.ownerOf r cr) ∧ rank (Ix.Cert.ownerOf r cr) ≤ rank (iblock a)) ∨
           (¬ Wk (Ix.Cert.ownerOf r cr) ∧ rank (iblock (Ix.Cert.ownerOf r cr)) < rank (iblock a))) :
-    let E := subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+    let E := subEnvRole E₀ Keep (roleSuppOf E_role order_role)
       (Ix.Cert.blobsOf E_role order_role)
     IxVM.Consistency.UsedClosureOrderAt t E S
       (closureOrderByRank t E S (roleTwoTierRank order_role Wk rank iblock)) := by
   intro E
-  have hagree := (subEnvRole_agrees_on_role hadm hload hexact₀ hnoCol hkeep_role extraRec).1
+  have hagree : ∀ a ∈ order_role, Ix.Cert.recordAt E a = Ix.Cert.recordAt E_role a ∧
+      E.consts.contains a = true := by
+    have h := (subEnvRole_agrees_on_role hadm hload hexact₀ hnoCol hkeep_role []).1
+    rwa [List.append_nil] at h
   have hown : ∀ a c, Ix.Cert.recordAt E a = some c →
       E.consts.contains (Ix.Cert.ownerOf a c) = true := by
     intro a c hrec
@@ -921,7 +924,7 @@ theorem subEnvRole_usedClosureOrderAt
         by_cases hown_eq : Ix.Cert.ownerOf a c = a
         · rw [hown_eq]
           exact contains_of_recordAt hrec
-        · obtain ⟨hwb, _⟩ := hwk_step a (Ix.Cert.ownerOf a c) hwa ⟨c, hrec₀, Or.inl ⟨rfl, hown_eq⟩⟩
+        · obtain ⟨hwb, _⟩ := hwk_owner a c hwa hrec₀ hown_eq
           obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
           exact contains_of_recordAt
             (recordAt_subEnv_of_keep E₀ Keep _ (hwk_keep _ hwb) hrec_b)
@@ -963,8 +966,41 @@ theorem subEnvRole_usedClosureOrderAt
       omega
     · simp only [roleTwoTierRank, ha_role, hb_role, ↓reduceIte]
       by_cases hwa : Wk a
-      · obtain ⟨hwb, hlt⟩ := usedRecordRef_of_wk hwk_keep hwk_step hwk_rec hwa href
-        simp only [twoTierRank, hwa, hwb, ↓reduceIte]
+      · obtain ⟨c, hrec_a, i, hi, r, hr, cr, hrec_r, hown_r, _⟩ := href
+        obtain ⟨c₀, hrec_a0⟩ := hwk_rec a hwa
+        have hrec_a' : Ix.Cert.recordAt E a = some c₀ :=
+          recordAt_subEnv_of_keep E₀ Keep _ (hwk_keep a hwa) hrec_a0
+        rw [hrec_a] at hrec_a'
+        injection hrec_a' with hc_eq
+        subst hc_eq
+        have hi_s0 : i ∈ Core.S0.usedRefIdxs c := by
+          rw [usedRefIdxs_eq]
+          exact hi
+        have hedge_ar : Core.S0.WalkEdge E₀ a r := ⟨c, hrec_a0, Or.inr ⟨i, hi_s0, hr⟩⟩
+        have hr_not_role : r ∉ order_role := by
+          intro hr_role
+          have hrec_role_r : Ix.Cert.recordAt E_role r = some cr :=
+            (hagree r hr_role).1.symm.trans hrec_r
+          by_cases hbr : b = r
+          · rw [hbr] at hb_role
+            exact hb_role hr_role
+          · have hreach_r := (hadm.closureOrder.complete r).mp hr_role
+            exact hb_role ((hadm.closureOrder.complete b).mpr
+              (.step hreach_r ⟨cr, hrec_role_r, Or.inl ⟨hown_r, hbr⟩⟩))
+        have hkeep_r : Keep r ∧ Ix.Cert.recordAt E₀ r = some cr := by
+          rcases recordAt_subEnv_some_inv E₀ Keep (roleSuppOf E_role order_role) hrec_r with
+            hkp | ⟨_, _, hm_r⟩
+          · exact hkp
+          · exact absurd (mem_roleSuppOf_iff.mp hm_r).1 hr_not_role
+        obtain ⟨hwr, hlt_ra⟩ := hwk_edge_keep a r hwa hedge_ar hr_not_role hkeep_r.1
+        have hwb_lt : Wk b ∧ rank b < rank a := by
+          by_cases hbr : b = r
+          · subst hbr
+            exact ⟨hwr, hlt_ra⟩
+          · obtain ⟨hwb, hlt_br⟩ := hwk_owner r cr hwr hkeep_r.2 (by rw [hown_r]; exact hbr)
+            rw [hown_r] at hwb hlt_br
+            exact ⟨hwb, Nat.lt_trans hlt_br hlt_ra⟩
+        simp only [twoTierRank, hwa, hwb_lt.1, ↓reduceIte]
         omega
       · obtain ⟨c, hrec_a, i, hi, r, hr, cr, hrec_r, hown_r, hne_ba⟩ := href
         rcases hextra_kind a c ha_role hwa hrec_a with hrec_k | ⟨_, hrefs_emp, _, _⟩
