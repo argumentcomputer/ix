@@ -22,7 +22,6 @@ namespace IxVM.Refinement.Claim
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.Obs (W)
 open IxVM (F)
 open Ix (Claim ClaimContext AssumptionTree)
 
@@ -37,9 +36,10 @@ set_option linter.unnecessarySimpa false
 theorem digestV_type (d : Vector UInt8 32) : (L1.digestV d).type = addrTy := by
   rw [L1.digestV, Value.type, addrTy]
   congr 1
-  apply List.ext_getElem (by simp)
+  apply List.ext_getElem
+    (by simp only [List.length_map, Vector.length_toList, List.length_replicate])
   intro i h1 h2
-  simp [L1.bv, Value.type]
+  simp only [List.getElem_map, List.getElem_replicate, L1.bv, Value.type]
 
 theorem repAddressRef_of_load_digestV {h : Heap F} {r : SourceValue F} {d : Vector UInt8 32}
     (hl : loadValue h r = .ok (L1.digestV d)) :
@@ -72,15 +72,14 @@ private theorem blake3Pure_hash_size (b : ByteArray) :
     have h := L1.blake3Pure_eq arr.toList
     simp only [Array.toArray_toList] at h
     rw [h]
-    simp [L1.ixAddr, ByteArray.size]
+    exact (Blake3.Pure.digest arr.toList).size_toArray
 
 private theorem treeRoot_hash_size : ∀ t : AssumptionTree, (treeRoot t).hash.size = 32
   | .leaf a => by
     unfold treeRoot Ix.HostAdmission.Merkle.leaf
     rw [Address.admissionHash_eq]
     exact blake3Pure_hash_size _
-  | .padding => by
-    simp [treeRoot, Ix.HostAdmission.Merkle.padding, ByteArray.size]
+  | .padding => by decide
   | .node l r => by
     unfold treeRoot Ix.HostAdmission.Merkle.node
     rw [Address.admissionHash_eq]
@@ -214,7 +213,15 @@ theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     rw [hm1044]; exact L1.stream_cons_snoc hs2
   have hs0 : L1.Stream h' (a[0] :: a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) r := by
     rw [hm1070, he1071]; exact L1.stream_cons_snoc hs1
-  exact ⟨ext, by simpa only [← vector32_toList, List.cons_append, List.nil_append] using hs0⟩
+  have hlist : a.toList ++ rest =
+      a[0] :: a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] ::
+      a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] ::
+      a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] ::
+      a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest := by
+    rw [← vector32_toList]
+    rfl
+  rw [hlist]
+  exact ⟨ext, hs0⟩
 
 theorem leaf_hash_spec {a : Bytes.Address}
     {x_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -484,7 +491,7 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
       · right
         have hl := congrArg (fun x : ByteArray => x.data.toList) heq
         simp only [ByteArray.data_append, Array.toList_append, List.singleton_append,
-          List.cons.injEq] at hl
+          List.cons.injEq, true_and] at hl
         have ha_eq : a' = a := by
           cases a; cases a'
           congr 1
@@ -556,19 +563,21 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
       have hl_list := congrArg (fun x : ByteArray => x.data.toList) heq
       dsimp [img, held] at hl_list
       simp only [ByteArray.data_append, Array.toList_append, List.cons_append, List.nil_append,
-        List.cons.injEq] at hl_list
-      have hsz_l' : (treeRoot l').hash.data.toList.length = 32 := by
-        simpa [ByteArray.size] using treeRoot_hash_size l'
-      have hsz_l : (treeRoot l).hash.data.toList.length = 32 := by
-        simpa [ByteArray.size] using treeRoot_hash_size l
+        List.cons.injEq, true_and] at hl_list
+      have hsz_l' : (treeRoot l').hash.data.toList.length = 32 :=
+        Array.length_toList.trans (treeRoot_hash_size l')
+      have hsz_l : (treeRoot l).hash.data.toList.length = 32 :=
+        Array.length_toList.trans (treeRoot_hash_size l)
       obtain ⟨hl_eq, hr_eq⟩ := List.append_inj hl_list (hsz_l'.trans hsz_l.symm)
       have hroot_l : treeRoot l = treeRoot l' := by
-        cases h1 : treeRoot l; cases h2 : treeRoot l'
-        simp only [h1, h2] at hl_eq
+        cases h1 : treeRoot l with | mk b1 =>
+        cases h2 : treeRoot l' with | mk b2 =>
+        rw [h1, h2] at hl_eq
         exact congrArg Address.mk (byteArray_eq_of_toList hl_eq.symm)
       have hroot_r : treeRoot r = treeRoot r' := by
-        cases h1 : treeRoot r; cases h2 : treeRoot r'
-        simp only [h1, h2] at hr_eq
+        cases h1 : treeRoot r with | mk b1 =>
+        cases h2 : treeRoot r' with | mk b2 =>
+        rw [h1, h2] at hr_eq
         exact congrArg Address.mk (byteArray_eq_of_toList hr_eq.symm)
       rcases ihl (fun x hx => hsub x (by simp [treeImages, hx]))
         (fun x hx => hhashed x (by simp [treeImages, hx])) hroot_l with hcoll | rfl
@@ -674,19 +683,18 @@ private theorem packDigest_cv_word (cv : Blake3.Pure.CV) (k : Fin 8) :
       65536 * (Blake3.Pure.wordBytes cv[k.val])[2].toNat +
       16777216 * (Blake3.Pure.wordBytes cv[k.val])[3].toNat : Nat) : F) =
     (Value.field (packDigest (ixAddr (Blake3.Pure.cvBytes cv)) k) : SourceValue F) := by
-  rcases k with ⟨kv, hkv⟩
-  unfold packDigest ixAddr
-  congr 1
-  congr 1
+  unfold packDigest
+  dsimp only
+  apply congrArg (fun n : Nat => (Value.field (n : F) : SourceValue F))
   have getD_cv : ∀ m (hm : m < 32),
-      ((Blake3.Pure.cvBytes cv).toArray.getD m 0) = (Blake3.Pure.cvBytes cv)[m] := by
+      ((ixAddr (Blake3.Pure.cvBytes cv)).hash.data.getD m 0) = (Blake3.Pure.cvBytes cv)[m] := by
     intro m hm
     have hsz : m < (Blake3.Pure.cvBytes cv).toArray.size := by simpa using hm
-    simp [Array.getD, hsz]
+    simp [ixAddr, L1.ixAddr, Array.getD, hsz]
+  rcases k with ⟨kv, hkv⟩
   interval_cases kv <;>
     simp only [Nat.mul_zero, Nat.mul_one, Nat.zero_add,
-      getD_cv _ (by decide), Blake3.Pure.cvBytes, Vector.getElem_ofFn] <;>
-    rfl
+      getD_cv _ (by decide), Blake3.Pure.cvBytes, Vector.getElem_ofFn]
 
 theorem pack_digest_spec {cv : Blake3.Pure.CV} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
@@ -737,9 +745,12 @@ theorem packDigest_inj {a₁ a₂ : _root_.Address}
   cases a₂ with | mk bs₂ =>
   congr 1
   apply ByteArray.ext
-  apply Array.ext (by simpa [ByteArray.size] using h₁.trans h₂.symm)
+  have hsz_eq : bs₁.data.size = bs₂.data.size := h₁.trans h₂.symm
+  apply Array.ext hsz_eq
   intro k hk1 hk2
-  have hk32 : k < 32 := by simpa [ByteArray.size] using hk1
+  have hk32 : k < 32 := by
+    change bs₁.data.size = 32 at h₁
+    omega
   have hword := congrFun hp ⟨k / 4, by omega⟩
   unfold packDigest at hword
   simp only at hword
@@ -792,10 +803,11 @@ theorem getAddress_of_drop {bytes : List UInt8} {i : Nat} (hlen : 32 ≤ (bytes.
     (Ixon.Serialize.get : Ixon.GetM _root_.Address) { idx := i, bytes := ⟨bytes.toArray⟩ } =
       .ok (ixAddr (Deserialize.takeAddress (bytes.drop i) hlen))
         { idx := i + 32, bytes := ⟨bytes.toArray⟩ } := by
-  have hi_le : i ≤ bytes.length := by rw [List.length_drop] at hlen; omega
+  have hlen' : 32 ≤ bytes.length - i := by rw [List.length_drop] at hlen; exact hlen
+  have hi_le : i ≤ bytes.length := by omega
   have hsz : i + 32 ≤ (ByteArray.mk bytes.toArray).size := by
-    simp only [ByteArray.size, List.size_toArray]
-    rw [List.length_drop] at hlen
+    change i + 32 ≤ bytes.toArray.size
+    rw [List.size_toArray]
     omega
   let before : ByteArray := ⟨(bytes.take i).toArray⟩
   let chunk : ByteArray := ⟨((bytes.drop i).take 32).toArray⟩
@@ -806,12 +818,14 @@ theorem getAddress_of_drop {bytes : List UInt8} {i : Nat} (hlen : 32 ≤ (bytes.
       List.toList_toArray]
     rw [List.append_assoc, List.take_append_drop, List.take_append_drop]
   have hbef_sz : before.size = i := by
-    simp [before, ByteArray.size, Nat.min_eq_left hi_le]
+    change (bytes.take i).toArray.size = i
+    rw [List.size_toArray, List.length_take, Nat.min_eq_left hi_le]
   have hchk_sz : chunk.size = 32 := by
-    simp [chunk, ByteArray.size, Nat.min_eq_left hlen]
+    change ((bytes.drop i).take 32).toArray.size = 32
+    rw [List.size_toArray, List.length_take, List.length_drop, Nat.min_eq_left hlen']
   have hext : (⟨bytes.toArray⟩ : ByteArray).extract i (i + 32) = chunk := by
     rw [hsplit, ← hbef_sz, ← hchk_sz]
-    exact Ixon.Verify.ConstantTables.middle_extract before chunk after
+    exact Ixon.Verify.Codec.ConstantTables.middle_extract before chunk after
   change (Address.mk <$> Ixon.getBytes 32) { idx := i, bytes := ⟨bytes.toArray⟩ } = _
   simp only [Functor.map, EStateM.map, Ixon.getBytes, bind, EStateM.bind, get, getThe,
     MonadStateOf.get, EStateM.get, set, EStateM.set, pure, EStateM.pure, hsz, ↓reduceIte, hext]
@@ -905,8 +919,8 @@ theorem get_claim_context_spec {bytes : List UInt8} {i : Nat}
       axioms := optAx },
     32 + 32 + kOpt, x_binding, x_axioms, x_s3, ?_, rfl,
     ⟨_, Bytes.repAddressRef_heapMono₂ addrTy ext3 hbind, rfl⟩, ?_, ?_⟩
-  · simp only [Claim.getContext, bind, EStateM.bind, pure, EStateM.pure, hget1, hget2]
-    simpa only [Nat.add_assoc] using hgetOpt
+  · simp only [Claim.getContext, bind, EStateM.bind, pure, EStateM.pure,
+      hget1, hget2, hgetOpt, Nat.add_assoc]
   · intro hnone
     dsimp only at hnone
     subst hnone
@@ -943,9 +957,10 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
   · rcases load_assumption_tree_spec (V := V) (extra := extra) htTree hroot ev14 with
       hcoll | ⟨ext1, as, hmap, hlLeaves⟩
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc174]; simp [hc]) hcoll)
-    · rcases sg106 with ⟨_, heq67, _⟩ | ⟨w80, w81, ld34, _, rfl, rfl⟩
+    · rcases sg106 with ⟨_, heq67, _, _, _⟩ | ⟨w80, w81, ld34, _, hm99, hc101⟩
       · simp at heq67
-      · obtain ⟨a0, as0, hcons_as, _, _⟩ := Lib.rep_cons_of_load hlLeaves ld34
+      · subst hm99 hc101
+        obtain ⟨a0, as0, hcons_as, _, _⟩ := Lib.rep_cons_of_load hlLeaves ld34
         have hne_leaves : treeLeaves tTree ≠ [] := by
           rw [← hmap, hcons_as]; simp
         have hrc2 := hrc.mono ext1
@@ -955,10 +970,10 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
   · rcases load_assumption_tree_spec (V := V) (extra := extra) htTree hroot ev14 with
       hcoll | ⟨ext1, _, _, _⟩
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc264]; simp [hc]) hcoll)
-    · have extSeg : Heap.Extends m2 m99 := by
-        rcases sg106 with ⟨_, _, _, hm99, _⟩ | ⟨_, _, _, _, hm99, _⟩ <;>
-          (rw [hm99]; exact Heap.Extends.refl _)
-      obtain ⟨hax, _⟩ := role_ctx_axioms_spec (hrc.mono (ext1.trans extSeg)) ev137
+    · have hm99 : m99 = m2 := by
+        rcases sg106 with ⟨_, _, _, hm, _⟩ | ⟨_, _, _, _, hm, _⟩ <;> exact hm
+      subst hm99
+      obtain ⟨hax, _⟩ := role_ctx_axioms_spec (hrc.mono ext1) ev137
       simp at hax
   · exact absurd rfl (hne266 [] rfl)
 
@@ -977,22 +992,28 @@ private theorem getScope_ok_inv {variant : UInt64} {bs : List UInt8} {i : Nat}
   simp only [bind, EStateM.bind, pure, EStateM.pure, h1] at hok
   by_cases hfmt : (fmt == Ixon.Env.OBJECT_FORMAT) = true
   case neg =>
-    simp [unless, hfmt, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
-  simp only [unless, hfmt, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure, h2] at hok
+    simp [hfmt, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hfmt, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure, h2] at hok
   by_cases hc1 : (valByte == Claim.validatorForVariant variant) = true
-  · simp [hc1] at hok; exact hok.symm.imp Eq.symm Eq.symm
+  · simp only [hc1, ↓reduceIte] at hok
+    obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
+    exact ⟨hw.symm, hst⟩
   simp only [hc1, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc2 : (valByte == Claim.VALIDATOR_ERASED_LEAN_ASSUMED &&
       Claim.variantMayAssume variant) = true
-  · simp [hc2] at hok; exact hok.symm.imp Eq.symm Eq.symm
+  · simp only [hc2, ↓reduceIte] at hok
+    obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
+    exact ⟨hw.symm, hst⟩
   simp only [hc2, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc3 : (valByte == Claim.VALIDATOR_ERASED_LEAN_CLASS &&
       variant == Claim.VARIANT_CHECK_ENV_CLAIM) = true
-  · simp [hc3] at hok; exact hok.symm.imp Eq.symm Eq.symm
+  · simp only [hc3, ↓reduceIte] at hok
+    obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
+    exact ⟨hw.symm, hst⟩
   simp only [hc3, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc4 : (Claim.validatorForVariant variant == Claim.VALIDATOR_ERASED_LEAN &&
       valByte == Claim.VALIDATOR_ERASED_LEAN_RETIRED) = true
-  · simp [hc4, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  · simp [hc4, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
   · simp [hc4, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
 
 private theorem getPayload_inScope_variant {variant : UInt64} {valByte : UInt8}
@@ -1106,8 +1127,7 @@ theorem verify_claim_decode_spec
   obtain ⟨v_hint, m_hint, bs_hint, c_hint, c1, d_hint, mt_hint, d1, rfl⟩ := d0.letValue_inv
   obtain ⟨_, _, d_harg, _, rfl⟩ := d_hint.hint_inv
   obtain ⟨_, rfl, rfl⟩ := d_harg.var_inv
-  obtain ⟨_, hv_hint, -, ml_hint⟩ := matchPattern_tuple_inv mt_hint
-  subst hv_hint
+  obtain ⟨_, -, -, ml_hint⟩ := matchPattern_tuple_inv mt_hint
   obtain ⟨x_idx, _, _, _, rfl, mt_idx, ml_hint1, rfl⟩ := matchListWith_cons_inv ml_hint
   obtain rfl := matchPattern_bind_inv mt_idx
   obtain ⟨x_len, _, _, _, rfl, mt_len, ml_hint2, rfl⟩ := matchListWith_cons_inv ml_hint1
@@ -1308,13 +1328,13 @@ theorem verify_claim_decode_spec
   rw [Nat.add_assoc] at hu8_val hs_val
   -- Align `Claim.get` through `getTagN 4` and `getScope`
   unfold Claim.get at hget_claim
-  simp only [bind, EStateM.bind, hok_tag] at hget_claim
+  simp only [bind, EStateM.bind, pure, EStateM.pure, hok_tag] at hget_claim
   by_cases hflag_ne : (tag.flag != Claim.FLAG_CLAIM) = true
-  · simp [hflag_ne, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
-  simp only [hflag_ne, Bool.false_eq_true, ↓reduceIte] at hget_claim
+  · simp [hflag_ne, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
+  simp only [hflag_ne, Bool.false_eq_true, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hget_claim
   by_cases hret9 : (tag.value == Claim.VARIANT_RESOURCE_CLAIM_RETIRED) = true
-  · simp [hret9, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
-  simp only [hret9, Bool.false_eq_true, ↓reduceIte] at hget_claim
+  · simp [hret9, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
+  simp only [hret9, Bool.false_eq_true, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hget_claim
   obtain ⟨w_val, st_scope, hok_scope, hok_payload⟩ := Ixon.Verify.TagN.bind_ok_inv hget_claim
   obtain ⟨rfl, rfl⟩ := getScope_ok_inv hu8_fmt hu8_val hok_scope
   have hvar_45 := getPayload_inScope_variant hok_payload hscope
