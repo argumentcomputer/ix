@@ -247,7 +247,7 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
     halist, rfl, ?_, Heap.Extends.snoc h _, hcs_eq⟩
   rw [hty]
   exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp,
-    L1.repAddress_iff.mpr (by simp [L1.digestV, halist])⟩
+    L1.repAddress_iff.mpr (by simp [L1.digestV, L1.bv, bfn, halist])⟩
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
@@ -1170,11 +1170,11 @@ private theorem inv_var_find {locals : Environment F Nat} {name : String} {v exp
     {h h' : Heap F} {cs : List (Call F)}
     (hlkp : locals.find? (·.1 == name) = some (name, expected))
     (ev : ObsExpr W [] locals (.var name) h v h' cs) :
-    expected = v ∧ h = h' ∧ cs = [] := by
+    v = expected ∧ h' = h ∧ cs = [] := by
   obtain ⟨l, hh, hc⟩ := ev.var_inv
   rw [hlkp] at l
   injection l with l; injection l with _ hv
-  exact ⟨hv, hh.symm, hc⟩
+  exact ⟨hv.symm, hh, hc⟩
 
 private theorem inv_store_nil_kexpr {locals : Environment F Nat} {v : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
@@ -2759,6 +2759,55 @@ def RawIotaRulesVmRun
 
 private def zeroGhost : Nat → KExpr := fun _ => .sort .zero
 
+private theorem CIRepExact.thm_of_eq {κ : _root_.Address → KKey} {h : Heap F}
+    {v nl tty val : SourceValue F} {ci : ConstantInfo .anon}
+    (hcir : CIRepExact κ h v ci)
+    (hv : v = .construct kciEnum "Thm" [nl, tty, val]) :
+    ∃ (cvt : ConstantVal .anon) (vt : KExpr),
+      ci = .thmInfo cvt vt ∧ ValRepExact κ h nl tty cvt := by
+  cases hcir with
+  | thm hv_t _ =>
+    simp only [kciEnum, Value.construct.injEq, List.cons.injEq, and_true] at hv
+    obtain ⟨_, _, rfl, rfl, rfl⟩ := hv
+    exact ⟨_, _, rfl, hv_t⟩
+  | _ => simp [kciEnum] at hv
+
+private theorem CIRepExact.ctor_of_eq {κ : _root_.Address → KKey} {h : Heap F}
+    {v nl cty blk ind cidx cnp cnf u : SourceValue F} {ci : ConstantInfo .anon}
+    (hcir : CIRepExact κ h v ci)
+    (hv : v = .construct kciEnum "Ctor" [nl, cty, blk, ind, cidx, cnp, cnf, u]) :
+    ∃ (cvj : ConstantVal .anon) (cnP cnF : Nat),
+      ci = .ctorInfo cvj cnP cnF ∧ ValRepExact κ h nl cty cvj ∧
+      cnp = .field (cnP : F) ∧ cnf = .field (cnF : F) ∧
+      cnP < 72057594037927936 ∧ cnF < 72057594037927936 := by
+  cases hcir with
+  | ctor hv_c hnp hnf hcounts _ =>
+    simp only [kciEnum, Value.construct.injEq, List.cons.injEq, and_true] at hv
+    obtain ⟨_, _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv
+    exact ⟨_, _, _, rfl, hv_c, hnp, hnf, hcounts.1, hcounts.2⟩
+  | _ => simp [kciEnum] at hv
+
+private theorem CIRepExact.induct_of_eq {κ : _root_.Address → KKey} {h : Heap F}
+    {v nl ty inp ni inct u iblock iidx : SourceValue F} {ci : ConstantInfo .anon}
+    (hcir : CIRepExact κ h v ci)
+    (hv : v = .construct kciEnum "Induct" [nl, ty, inp, ni, inct, u, iblock, iidx]) :
+    ∃ (cv_ind : ConstantVal .anon) (caps_ind : Ix.Kernel.IndCaps .anon)
+      (cnP_ind nC_ind : Nat) (b_ind : Bytes.Address) (i_ind : F),
+      ci = .indInfo cv_ind caps_ind ∧
+      inp = .field (cnP_ind : F) ∧ inct = .field (nC_ind : F) ∧
+      cnP_ind < 72057594037927936 ∧ nC_ind < 72057594037927936 ∧
+      Bytes.RepAddressRef addrTy h b_ind iblock ∧ iidx = .field i_ind ∧
+      cv_ind.name = κ (iprjAddr (ixAddr b_ind) (ZMod.val i_ind)) := by
+  cases hcir with
+  | induct _ hcounts hkey =>
+    simp only [kciEnum, Value.construct.injEq, List.cons.injEq, and_true] at hv
+    obtain ⟨_, _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv
+    obtain ⟨cnP_ind, _, nC_ind, hinp, _, hinct, hcnp_lt, _, hnc_lt⟩ := hcounts
+    obtain ⟨b_ind, i_ind, hb_ind, hiidx, hname⟩ := hkey
+    exact ⟨_, _, cnP_ind, nC_ind, b_ind, i_ind, rfl, hinp, hinct, hcnp_lt, hnc_lt,
+      hb_ind, hiidx, hname⟩
+  | _ => simp [kciEnum] at hv
+
 set_option maxHeartbeats 4000000 in
 /-- **Refinement of `KernelModeled::check_iota_rule`**: discharges every syntactic, telescope,
 and typing obligation in `RawIotaRuleVmRun` across `(c_pub, c_adv)`. -/
@@ -2821,8 +2870,6 @@ theorem check_iota_rule_vm_spec
   have hnd_lps : lps.Nodup := hlps_perm.nodup_iff.mpr List.nodup_range
   let nI : Nat := mI - rP
   let depth : Nat := rP + cnF
-  have hnI_def : nI = mI - rP := rfl
-  have hdepth_def : depth = rP + cnF := rfl
   have hrp_val : ZMod.val (rP : F) = rP := SubstAux.val_natCast (by omega)
   have hni_val : ZMod.val (nI : F) = nI := SubstAux.val_natCast (by omega)
   have hcnp_val : ZMod.val (cnP : F) = cnP := SubstAux.val_natCast (by omega)
@@ -2865,7 +2912,7 @@ theorem check_iota_rule_vm_spec
     allLevelParamsDefined_of_posOf_perm hlps_perm
       (validate_expr_well_scoped_spec hlps_lt hrhs_pos_tm0 ev_sc_h)
   have ext_sc := ev_sc_h.heap_extends
-  have ext_peel_in := ext_sc.trans (Heap.Extends.snoc inv.h_sc _)
+  have ext_peel_in := ext_sc.trans (Heap.Extends.snoc inv.h_sc (.construct kexprListEnum "Nil" []))
   have ev_peel' := inv.ev_peel
   rw [hd_eq] at ev_peel'
   have hrhs_lams_pos : ((posOf lps r.rhs).stripLams depth).isSome = true := by
@@ -2883,7 +2930,7 @@ theorem check_iota_rule_vm_spec
         case lam _ b _ => exact ih b
     rwa [hcomm] at hrhs_lams_pos
   have ext_peel := ext_peel_in.trans inv.ev_peel.heap_extends
-  have ext_rhs_in := ext_peel.trans (Heap.Extends.snoc inv.h_peel _)
+  have ext_rhs_in := ext_peel.trans (Heap.Extends.snoc inv.h_peel (.construct kexprListEnum "Nil" []))
   obtain ⟨rhs_ty_pos, _, hrhs_inf_pos⟩ :=
     core_infer hCore (hrc.mono ext_rhs_in)
       (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_peel) (ghostScoped_zero zeroGhost)
@@ -2910,933 +2957,933 @@ theorem check_iota_rule_vm_spec
       (hgood_adv.sub inv.sub_tci)
       (Bytes.repAddressRef_heapMono₂ addrTy ext_aset ha_t)
       (not_rec_or_quot_of_load inv.ld_tci (by decide) (by decide))
-  rw [inv.ld_tci] at ld_tci'; injection ld_tci' with hv_tci; subst hv_tci
-  cases hcir_t with
-  | @thm _ _ _ cvt vt hv_t _ =>
-    have ht_nl_len : cvt.levelParams.length = lps.length := by
-      injection hv_t.1 with hf
-      have hv := congrArg ZMod.val hf
-      rw [hnl_val, SubstAux.val_natCast (by have := hv_t.2.1; omega)] at hv
-      exact hv.symm
-    have ht_lps : cvt.levelParams = List.range lps.length := by
-      rw [hthm_range cvt vt rfl, ht_nl_len]
-    let cvt_lps : KExpr := invPosOf lps cvt.type
-    have hcvt_pos_eq : posOf lps cvt_lps = cvt.type := posOf_invPosOf hlps_perm cvt.type
-    have htty_rep : TmCExact c_pub.κ inv.h_tci (posOf lps cvt_lps) inv.tty := by
-      have hrep0 := hv_t.2.2.2
-      rw [ht_lps, posOf_range lps.length cvt.type, ← hcvt_pos_eq, hκ_eq] at hrep0
-      exact hrep0
-    have ext_tci := ext_aset.trans inv.ev_tci.heap_extends
-    -- 4. Opening `tty` at `depth = rP + cnF` (`peel_collect`)
-    have ext_open_in := Heap.Extends.snoc inv.h_tci (.construct kexprListEnum "Nil" [])
-    have ev_open' := inv.ev_open
-    rw [hd_eq] at ev_open'
-    obtain ⟨r_tbody, r_ctx, Γ_t, fvs_pos, tbody_pos, htup_open, hopen_pos, _, hΓt_hi,
-        htbody_ex, hctx_rep, hsc_t⟩ :=
-      peel_collect_open_exact depth hd_val ev_open'
-        ((htty_rep 0 zeroGhost).mono ext_open_in)
-        (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_tci)
-        (ghostScoped_zero zeroGhost)
-    injection htup_open with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    rw [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
-    obtain ⟨fvs, tbody, hopen_t, hfvs_pos, htbody_pos⟩ := openPisAtFvars_of_posOf hopen_pos
-    obtain ⟨hfvs_len, _, hfvs_shape⟩ := openPisAtFvars_spec depth cvt_lps 0 hopen_t
-    have hfvs_pos_len : fvs_pos.length = depth := by rw [hfvs_pos, List.length_map, hfvs_len]
-    have ext_open := ext_tci.trans (ext_open_in.trans inv.ev_open.heap_extends)
-    -- 5. Equation spine (`collect_spine(tbody)`, `eqName`, `[ell]`, `targs.length = 3`)
-    obtain ⟨r_eqh, r_targs, eqH_pos, targs_pos, htup_tsp, heqH_ex, htargs_rep, htbody_app⟩ :=
-      collect_spine_exact inv.ev_tsp htbody_ex
-    injection htup_tsp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    obtain ⟨a_eq, eqls_pos, rfl, ra_eq, reqls⟩ := heqH_ex.const_of_load inv.ld_eqh
-    have ext_tsp := ext_open.trans inv.ev_tsp.heap_extends
-    have ext_req := ext_tsp.trans inv.ev_req.heap_extends
-    have ext_raddr := ext_req.trans inv.ev_raddr.heap_extends
-    obtain ⟨heq_key_adv, h_eqa_eq⟩ :=
-      eq_addr_key_spec (c := c_adv) hroles hef_adv.tableWf (hgood_adv.sub inv.sub_raddr)
-        (hrc_adv.mono ext_req) (Bytes.repAddressRef_heapMono₂ addrTy ext_raddr ra_eq)
-        inv.ev_req inv.ev_raddr inv.ev_eqa
-    subst h_eqa_eq
-    have heq_key : c_pub.κ (ixAddr a_eq) = eqName := by rwa [hκ_eq] at heq_key_adv
-    have reqls_eqa := reqls.mono (inv.ev_req.heap_extends.trans inv.ev_raddr.heap_extends)
-    have hld_eqls1' := inv.ld_eqls1
-    have hld_eqls2' := inv.ld_eqls2
-    rw [klevelListEnum_eq] at hld_eqls1' hld_eqls2'
-    obtain ⟨ell_pos, eqls_tail, heqls_cons, rell_pos, reqls_tail⟩ :=
-      Lib.rep_cons_of_load reqls_eqa hld_eqls1'
-    obtain rfl := Lib.rep_nil_of_load reqls_tail hld_eqls2'
-    subst heqls_cons
-    let ell_lps : KLevel := invPosLevel lps ell_pos
-    have hell_subst : Level.subst lps (posLevels lps) ell_lps = ell_pos :=
-      subst_invPosLevel hlps_perm ell_pos
-    have heq_head : tbody.getAppFn = .const eqName [ell_lps] := by
-      have hfn_pos : tbody_pos.getAppFn = .const eqName [ell_pos] := by
-        rw [htbody_app, getAppFn_mkAppN, heq_key]; rfl
-      rw [htbody_pos, ← hell_subst] at hfn_pos
-      exact posOf_inj hlps_perm (by
-        show posOf lps tbody.getAppFn = posOf lps (.const eqName [ell_lps])
-        unfold posOf
-        rw [← getAppFn_instantiateLevelParams]
-        exact hfn_pos)
-    have htargs_pos_eq : targs_pos = tbody.getAppArgs.map (posOf lps) := by
-      have h1 : tbody_pos.getAppArgs = targs_pos := by
-        rw [htbody_app, getAppArgs_mkAppN]; rfl
-      rw [htbody_pos] at h1
-      unfold posOf at h1
-      rw [getAppArgs_instantiateLevelParams] at h1
-      exact h1.symm
-    have htargs_eqa := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
-      (inv.ev_req.heap_extends.trans inv.ev_raddr.heap_extends) htargs_rep
-    have htargs_lt : targs_pos.length < 2 ^ 39 :=
-      IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_tlen (by simp) htargs_eqa
-    obtain ⟨htlen_f, h_tlen_eq⟩ := tele_klength inv.ev_tlen htargs_eqa
-    subst h_tlen_eq
-    have htargs_len : tbody.getAppArgs.length = 3 := by
-      injection htlen_f with hf
-      have hv := congrArg ZMod.val hf
-      rw [hval3, SubstAux.val_natCast (by omega), htargs_pos_eq, List.length_map] at hv
-      exact hv.symm
-    let alphaS := tbody.getAppArgs.getD 0 (.bvar 0)
-    let lhsS := tbody.getAppArgs.getD 1 (.bvar 0)
-    let rhsS := tbody.getAppArgs.getD 2 (.bvar 0)
-    obtain ⟨⟨alpha_pos, ha0_get, halpha_ex⟩, h_a0_eq⟩ := tele_klookup inv.ev_a0 htargs_eqa
-    subst h_a0_eq
-    obtain ⟨⟨lhs_pos, ha1_get, hlhs_ex⟩, h_a1_eq⟩ := tele_klookup inv.ev_a1 htargs_eqa
-    subst h_a1_eq
-    obtain ⟨⟨rhsS_pos, ha2_get, hrhsS_ex⟩, h_a2_eq⟩ := tele_klookup inv.ev_a2 htargs_eqa
-    subst h_a2_eq
-    rw [hval0, htargs_pos_eq, List.getElem?_map] at ha0_get
-    rw [hval1, htargs_pos_eq, List.getElem?_map] at ha1_get
-    rw [hval2, htargs_pos_eq, List.getElem?_map] at ha2_get
-    have halpha_pos : alpha_pos = posOf lps alphaS := by
-      have h0 : tbody.getAppArgs[0]? = some alphaS := by
-        cases hts : tbody.getAppArgs with
-        | nil => simp [hts] at htargs_len
-        | cons x0 xs => simp [alphaS, hts]
-      rw [h0] at ha0_get; injection ha0_get with h; exact h.symm
-    have hlhs_pos : lhs_pos = posOf lps lhsS := by
-      have h1 : tbody.getAppArgs[1]? = some lhsS := by
-        rcases hts : tbody.getAppArgs with _ | ⟨x0, _ | ⟨x1, xs⟩⟩
-        · simp [hts] at htargs_len
-        · simp [hts] at htargs_len
-        · simp [lhsS, hts]
-      rw [h1] at ha1_get; injection ha1_get with h; exact h.symm
-    have hrhsS_pos : rhsS_pos = posOf lps rhsS := by
-      have h2 : tbody.getAppArgs[2]? = some rhsS := by
-        rcases hts : tbody.getAppArgs with _ | ⟨x0, _ | ⟨x1, _ | ⟨x2, xs⟩⟩⟩
-        · simp [hts] at htargs_len
-        · simp [hts] at htargs_len
-        · simp [hts] at htargs_len
-        · simp [rhsS, hts]
-      rw [h2] at ha2_get; injection ha2_get with h; exact h.symm
-    subst halpha_pos hlhs_pos hrhsS_pos
-    -- 6. Left-hand side spine, head, prefix variables, and major premise
-    obtain ⟨r_lh, r_largs, lh_pos, largs_pos, htup_lsp, hlh_ex, hlargs_rep, hlhs_app⟩ :=
-      collect_spine_exact inv.ev_lsp hlhs_ex
-    injection htup_lsp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    have hplvls_rep := build_param_lvls_range_spec (by rw [hnl_val]; exact hlps_lt) inv.ev_plvls
-    rw [hnl_val] at hplvls_rep
-    have ext_lsp := inv.ev_lsp.heap_extends
-    have ext_plvls := ext_lsp.trans inv.ev_plvls.heap_extends
-    have ext_rhead := Heap.Extends.snoc inv.h_plvls (.construct kexprEnum "Const" [rm, inv.v_plvls])
-    have ext_h_to_rhead :=
-      ext_raddr.trans (ext_plvls.trans ext_rhead)
-    have hrhead_ex : TmExact c_pub.κ depth Γ_t
-        (inv.h_plvls ++ [.construct kexprEnum "Const" [rm, inv.v_plvls]]) 0
-        (posOf lps (.const (f_id cvName) (lps.map .param)))
-        (.ptr (.enum kexprEnum) inv.h_plvls.length) := by
-      rw [posOf_const_self_levels lps (f_id cvName) hnd_lps, ← hrm_key]
-      exact .const (by simp)
-        (Bytes.repAddressRef_heapMono₂ addrTy ext_h_to_rhead hrm)
-        (hplvls_rep.mono ext_rhead)
-    have hlh_eq_pos : lh_pos = posOf lps (.const (f_id cvName) (lps.map .param)) :=
-      kexpr_struct_eq_one (hlh_ex.mono (inv.ev_plvls.heap_extends.trans ext_rhead))
-        hrhead_ex inv.ev_lheq
-    have hlhs_fn : lhsS.getAppFn = .const (f_id cvName) (lps.map .param) := by
-      have hfn_pos : (posOf lps lhsS).getAppFn = posOf lps (.const (f_id cvName) (lps.map .param)) := by
-        rw [hlhs_app, getAppFn_mkAppN, hlh_eq_pos,
-          posOf_const_self_levels lps (f_id cvName) hnd_lps]; rfl
-      exact posOf_inj hlps_perm (by
-        unfold posOf at hfn_pos ⊢
-        rwa [← getAppFn_instantiateLevelParams])
-    have hlargs_pos_eq : largs_pos = lhsS.getAppArgs.map (posOf lps) := by
-      have h1 : (posOf lps lhsS).getAppArgs = largs_pos := by
-        rw [hlhs_app, getAppArgs_mkAppN, hlh_eq_pos,
-          posOf_const_self_levels lps (f_id cvName) hnd_lps]; rfl
-      unfold posOf at h1
-      rw [getAppArgs_instantiateLevelParams] at h1
-      exact h1.symm
-    have ext_lsp_lheq := inv.ev_plvls.heap_extends.trans
-      (ext_rhead.trans inv.ev_lheq.heap_extends)
-    have hlargs_lheq := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_lsp_lheq hlargs_rep
-    have hlargs_lt : largs_pos.length < 2 ^ 39 :=
-      IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_llen (by simp) hlargs_lheq
-    obtain ⟨hllen_f, h_llen_eq⟩ := tele_klength inv.ev_llen hlargs_lheq
-    subst h_llen_eq
-    have hlargs_len : lhsS.getAppArgs.length = mI + 1 := by
-      have hmi1_eq := inv.op_mi1
-      rw [hmi_eq] at hmi1_eq
-      rw [SubstAux.add_ok hmi1_eq] at hllen_f
-      injection hllen_f with hf
-      have hv := congrArg ZMod.val hf
-      rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hmi_val, hval1,
-        hlargs_pos_eq, List.length_map] at hv
-      exact hv
-    -- Prefix check: `largs.take rP = fvs.take rP`
-    obtain ⟨_, hltake_rep⟩ := tele_ktake (fun _ _ _ _ e x => x.mono e) inv.ev_ltake hlargs_lheq
-    rw [hrp_val] at hltake_rep
-    have ev_bvd1' := inv.ev_bvd1
-    rw [hd_eq] at ev_bvd1'
-    have hbvd1_rep := bvars_desc_exact_wide (κ := c_pub.κ) (d := depth) (Γ := Γ_t)
-      (by rw [hrp_val, hd_val]; omega) (by rw [hd_val]) (by omega) ev_bvd1'
-    rw [hrp_val, hd_val, Nat.sub_self] at hbvd1_rep
-    have hbvd1_fvs :
-        ((List.range rP).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) =
-          (fvs.take rP).map (posOf lps) := by
-      have hlen_take : ((fvs.take rP).map (posOf lps)).length = rP := by
-        simp [hfvs_len]; omega
-      apply List.ext_getElem (by simp [hlen_take])
-      intro m hm1 hm2
-      simp only [List.length_map, List.length_range] at hm1
-      have hm_lt : m < fvs_pos.length := by rw [hfvs_pos_len]; omega
-      have hΓm := hΓt_hi m hm_lt
-      have hfv_pos_m : fvs_pos[m] = .fvar m (fvs_pos[m].fvarTypeD) := by
-        rw [hfvs_pos]
-        simp only [List.getElem_map]
-        have hm_fvs : m < fvs.length := by rw [hfvs_len]; omega
-        have hsh := hfvs_shape m hm_fvs
-        rw [Nat.zero_add] at hsh
-        conv_lhs => rw [hsh]
-        simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-      simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm, ← hfv_pos_m]
-      simp [hfvs_pos, List.getElem_take]
-    rw [hbvd1_fvs] at hbvd1_rep
-    have hltake_eq_pos :
-        largs_pos.take rP = (fvs.take rP).map (posOf lps) :=
-      spec_params_ptr_eq_one (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
-        inv.ev_bvd1.heap_extends hltake_rep) hbvd1_rep inv.ev_pref
-    have hlargs_pre : lhsS.getAppArgs.take rP = fvs.take rP := by
-      rw [hlargs_pos_eq, ← List.map_take] at hltake_eq_pos
-      exact List.map_injective_iff.mpr (posOf_inj hlps_perm) hltake_eq_pos
-    -- Major premise check
-    have ext_lheq_pref := inv.ev_ltake.heap_extends.trans
-      (inv.ev_bvd1.heap_extends.trans inv.ev_pref.heap_extends)
-    have hlargs_pref := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_lheq_pref hlargs_lheq
-    have ev_maj' := inv.ev_maj
-    rw [hmi_eq] at ev_maj'
-    obtain ⟨⟨major_pos, hmaj_get, hmaj_ex⟩, h_maj_eq⟩ := tele_klookup ev_maj' hlargs_pref
-    subst h_maj_eq
-    rw [hmi_val, hlargs_pos_eq, List.getElem?_map] at hmaj_get
-    have hmaj_last : major_pos = posOf lps (lhsS.getAppArgs.getLastD (.bvar 0)) := by
-      cases hget_m : lhsS.getAppArgs[mI]? with
-      | none => simp [hget_m] at hmaj_get
-      | some mj =>
-        rw [hget_m] at hmaj_get; injection hmaj_get with hmj; subst hmj
-        rw [getLastD_eq_of_getElem? lhsS.getAppArgs mI mj (.bvar 0) hlargs_len hget_m]
-    have ext_h_pref := ext_raddr.trans (inv.ev_lsp.heap_extends.trans
-      (ext_lsp_lheq.trans ext_lheq_pref))
-    obtain ⟨⟨a_cren, ra_cren, hcren_key⟩, h_cren_eq⟩ :=
-      rename_addr_spec inv.ev_cren
-        (Bytes.repAddressRef_heapMono₂ addrTy ext_h_pref hcprj)
-        (hren.mono ext_h_pref)
-    subst h_cren_eq
-    rw [hcprj_key] at hcren_key
-    have hpins_ren_rep := rename_list_exact (Γ₂ := zeroGhost) inv.ev_pren
-      (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_pref hpins_rep)
+  rw [inv.ld_tci] at ld_tci'; injection ld_tci' with hv_tci
+  obtain ⟨cvt, vt, hci_t_eq, hv_t⟩ := hcir_t.thm_of_eq hv_tci.symm
+  subst hci_t_eq
+  have ht_nl_len : cvt.levelParams.length = lps.length := by
+    injection hv_t.1 with hf
+    have hv := congrArg ZMod.val hf
+    rw [hnl_val, SubstAux.val_natCast (by have := hv_t.2.1; omega)] at hv
+    exact hv.symm
+  have ht_lps : cvt.levelParams = List.range lps.length := by
+    rw [hthm_range cvt vt rfl, ht_nl_len]
+  let cvt_lps : KExpr := invPosOf lps cvt.type
+  have hcvt_pos_eq : posOf lps cvt_lps = cvt.type := posOf_invPosOf hlps_perm cvt.type
+  have htty_rep : TmCExact c_pub.κ inv.h_tci (posOf lps cvt_lps) inv.tty := by
+    have hrep0 := hv_t.2.2.2
+    rw [ht_lps, posOf_range lps.length cvt.type, ← hcvt_pos_eq, hκ_eq] at hrep0
+    exact hrep0
+  have ext_tci := ext_aset.trans inv.ev_tci.heap_extends
+  -- 4. Opening `tty` at `depth = rP + cnF` (`peel_collect`)
+  have ext_open_in := Heap.Extends.snoc inv.h_tci (.construct kexprListEnum "Nil" [])
+  have ev_open' := inv.ev_open
+  rw [hd_eq] at ev_open'
+  obtain ⟨r_tbody, r_ctx, Γ_t, fvs_pos, tbody_pos, htup_open, hopen_pos, _, hΓt_hi,
+      htbody_ex, hctx_rep, hsc_t⟩ :=
+    peel_collect_open_exact depth hd_val ev_open'
+      ((htty_rep 0 zeroGhost).mono ext_open_in)
+      (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_tci)
+      (ghostScoped_zero zeroGhost)
+  injection htup_open with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  rw [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
+  obtain ⟨fvs, tbody, hopen_t, hfvs_pos, htbody_pos⟩ := openPisAtFvars_of_posOf hopen_pos
+  obtain ⟨hfvs_len, _, hfvs_shape⟩ := openPisAtFvars_spec depth cvt_lps 0 hopen_t
+  have hfvs_pos_len : fvs_pos.length = depth := by rw [hfvs_pos, List.length_map, hfvs_len]
+  have ext_open := ext_tci.trans (ext_open_in.trans inv.ev_open.heap_extends)
+  -- 5. Equation spine (`collect_spine(tbody)`, `eqName`, `[ell]`, `targs.length = 3`)
+  obtain ⟨r_eqh, r_targs, eqH_pos, targs_pos, htup_tsp, heqH_ex, htargs_rep, htbody_app⟩ :=
+    collect_spine_exact inv.ev_tsp htbody_ex
+  injection htup_tsp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  obtain ⟨a_eq, eqls_pos, rfl, ra_eq, reqls⟩ := heqH_ex.const_of_load inv.ld_eqh
+  have ext_tsp := ext_open.trans inv.ev_tsp.heap_extends
+  have ext_req := ext_tsp.trans inv.ev_req.heap_extends
+  have ext_raddr := ext_req.trans inv.ev_raddr.heap_extends
+  obtain ⟨heq_key_adv, h_eqa_eq⟩ :=
+    eq_addr_key_spec (c := c_adv) hroles hef_adv.tableWf (hgood_adv.sub inv.sub_raddr)
+      (hrc_adv.mono ext_req) (Bytes.repAddressRef_heapMono₂ addrTy ext_raddr ra_eq)
+      inv.ev_req inv.ev_raddr inv.ev_eqa
+  subst h_eqa_eq
+  have heq_key : c_pub.κ (ixAddr a_eq) = eqName := by rwa [hκ_eq] at heq_key_adv
+  have reqls_eqa := reqls.mono (inv.ev_req.heap_extends.trans inv.ev_raddr.heap_extends)
+  have hld_eqls1' := inv.ld_eqls1
+  have hld_eqls2' := inv.ld_eqls2
+  rw [klevelListEnum_eq] at hld_eqls1' hld_eqls2'
+  obtain ⟨ell_pos, eqls_tail, heqls_cons, rell_pos, reqls_tail⟩ :=
+    Lib.rep_cons_of_load reqls_eqa hld_eqls1'
+  obtain rfl := Lib.rep_nil_of_load reqls_tail hld_eqls2'
+  subst heqls_cons
+  let ell_lps : KLevel := invPosLevel lps ell_pos
+  have hell_subst : Level.subst lps (posLevels lps) ell_lps = ell_pos :=
+    subst_invPosLevel hlps_perm ell_pos
+  have heq_head : tbody.getAppFn = .const eqName [ell_lps] := by
+    have hfn_pos : tbody_pos.getAppFn = .const eqName [ell_pos] := by
+      rw [htbody_app, getAppFn_mkAppN, heq_key]; rfl
+    rw [htbody_pos, ← hell_subst] at hfn_pos
+    exact posOf_inj hlps_perm (by
+      show posOf lps tbody.getAppFn = posOf lps (.const eqName [ell_lps])
+      unfold posOf
+      rw [← getAppFn_instantiateLevelParams]
+      exact hfn_pos)
+  have htargs_pos_eq : targs_pos = tbody.getAppArgs.map (posOf lps) := by
+    have h1 : tbody_pos.getAppArgs = targs_pos := by
+      rw [htbody_app, getAppArgs_mkAppN]; rfl
+    rw [htbody_pos] at h1
+    unfold posOf at h1
+    rw [getAppArgs_instantiateLevelParams] at h1
+    exact h1.symm
+  have htargs_eqa := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
+    (inv.ev_req.heap_extends.trans inv.ev_raddr.heap_extends) htargs_rep
+  have htargs_lt : targs_pos.length < 2 ^ 39 :=
+    IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_tlen (by simp) htargs_eqa
+  obtain ⟨htlen_f, h_tlen_eq⟩ := tele_klength inv.ev_tlen htargs_eqa
+  subst h_tlen_eq
+  have htargs_len : tbody.getAppArgs.length = 3 := by
+    injection htlen_f with hf
+    have hv := congrArg ZMod.val hf
+    rw [hval3, SubstAux.val_natCast (by omega), htargs_pos_eq, List.length_map] at hv
+    exact hv.symm
+  let alphaS := tbody.getAppArgs.getD 0 (.bvar 0)
+  let lhsS := tbody.getAppArgs.getD 1 (.bvar 0)
+  let rhsS := tbody.getAppArgs.getD 2 (.bvar 0)
+  obtain ⟨⟨alpha_pos, ha0_get, halpha_ex⟩, h_a0_eq⟩ := tele_klookup inv.ev_a0 htargs_eqa
+  subst h_a0_eq
+  obtain ⟨⟨lhs_pos, ha1_get, hlhs_ex⟩, h_a1_eq⟩ := tele_klookup inv.ev_a1 htargs_eqa
+  subst h_a1_eq
+  obtain ⟨⟨rhsS_pos, ha2_get, hrhsS_ex⟩, h_a2_eq⟩ := tele_klookup inv.ev_a2 htargs_eqa
+  subst h_a2_eq
+  rw [hval0, htargs_pos_eq, List.getElem?_map] at ha0_get
+  rw [hval1, htargs_pos_eq, List.getElem?_map] at ha1_get
+  rw [hval2, htargs_pos_eq, List.getElem?_map] at ha2_get
+  have halpha_pos : alpha_pos = posOf lps alphaS := by
+    have h0 : tbody.getAppArgs[0]? = some alphaS := by
+      cases hts : tbody.getAppArgs with
+      | nil => simp [hts] at htargs_len
+      | cons x0 xs => simp [alphaS, hts]
+    rw [h0] at ha0_get; injection ha0_get with h; exact h.symm
+  have hlhs_pos : lhs_pos = posOf lps lhsS := by
+    have h1 : tbody.getAppArgs[1]? = some lhsS := by
+      rcases hts : tbody.getAppArgs with _ | ⟨x0, _ | ⟨x1, xs⟩⟩
+      · simp [hts] at htargs_len
+      · simp [hts] at htargs_len
+      · simp [lhsS, hts]
+    rw [h1] at ha1_get; injection ha1_get with h; exact h.symm
+  have hrhsS_pos : rhsS_pos = posOf lps rhsS := by
+    have h2 : tbody.getAppArgs[2]? = some rhsS := by
+      rcases hts : tbody.getAppArgs with _ | ⟨x0, _ | ⟨x1, _ | ⟨x2, xs⟩⟩⟩
+      · simp [hts] at htargs_len
+      · simp [hts] at htargs_len
+      · simp [hts] at htargs_len
+      · simp [rhsS, hts]
+    rw [h2] at ha2_get; injection ha2_get with h; exact h.symm
+  subst halpha_pos hlhs_pos hrhsS_pos
+  -- 6. Left-hand side spine, head, prefix variables, and major premise
+  obtain ⟨r_lh, r_largs, lh_pos, largs_pos, htup_lsp, hlh_ex, hlargs_rep, hlhs_app⟩ :=
+    collect_spine_exact inv.ev_lsp hlhs_ex
+  injection htup_lsp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  have hplvls_rep := build_param_lvls_range_spec (by rw [hnl_val]; exact hlps_lt) inv.ev_plvls
+  rw [hnl_val] at hplvls_rep
+  have ext_lsp := inv.ev_lsp.heap_extends
+  have ext_plvls := ext_lsp.trans inv.ev_plvls.heap_extends
+  have ext_rhead := Heap.Extends.snoc inv.h_plvls (.construct kexprEnum "Const" [rm, inv.v_plvls])
+  have ext_h_to_rhead :=
+    ext_raddr.trans (ext_plvls.trans ext_rhead)
+  have hrhead_ex : TmExact c_pub.κ depth Γ_t
+      (inv.h_plvls ++ [.construct kexprEnum "Const" [rm, inv.v_plvls]]) 0
+      (posOf lps (.const (f_id cvName) (lps.map .param)))
+      (.ptr (.enum kexprEnum) inv.h_plvls.length) := by
+    rw [posOf_const_self_levels lps (f_id cvName) hnd_lps, ← hrm_key]
+    exact .const (by simp)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext_h_to_rhead hrm)
+      (hplvls_rep.mono ext_rhead)
+  have hlh_eq_pos : lh_pos = posOf lps (.const (f_id cvName) (lps.map .param)) :=
+    kexpr_struct_eq_one (hlh_ex.mono (inv.ev_plvls.heap_extends.trans ext_rhead))
+      hrhead_ex inv.ev_lheq
+  have hlhs_fn : lhsS.getAppFn = .const (f_id cvName) (lps.map .param) := by
+    have hfn_pos : (posOf lps lhsS).getAppFn = posOf lps (.const (f_id cvName) (lps.map .param)) := by
+      rw [hlhs_app, getAppFn_mkAppN, hlh_eq_pos,
+        posOf_const_self_levels lps (f_id cvName) hnd_lps]; rfl
+    exact posOf_inj hlps_perm (by
+      unfold posOf at hfn_pos ⊢
+      rwa [← getAppFn_instantiateLevelParams])
+  have hlargs_pos_eq : largs_pos = lhsS.getAppArgs.map (posOf lps) := by
+    have h1 : (posOf lps lhsS).getAppArgs = largs_pos := by
+      rw [hlhs_app, getAppArgs_mkAppN, hlh_eq_pos,
+        posOf_const_self_levels lps (f_id cvName) hnd_lps]; rfl
+    unfold posOf at h1
+    rw [getAppArgs_instantiateLevelParams] at h1
+    exact h1.symm
+  have ext_lsp_lheq := inv.ev_plvls.heap_extends.trans
+    (ext_rhead.trans inv.ev_lheq.heap_extends)
+  have hlargs_lheq := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_lsp_lheq hlargs_rep
+  have hlargs_lt : largs_pos.length < 2 ^ 39 :=
+    IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_llen (by simp) hlargs_lheq
+  obtain ⟨hllen_f, h_llen_eq⟩ := tele_klength inv.ev_llen hlargs_lheq
+  subst h_llen_eq
+  have hlargs_len : lhsS.getAppArgs.length = mI + 1 := by
+    have hmi1_eq := inv.op_mi1
+    rw [hmi_eq] at hmi1_eq
+    rw [SubstAux.add_ok hmi1_eq] at hllen_f
+    injection hllen_f with hf
+    have hv := congrArg ZMod.val hf
+    rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hmi_val, hval1,
+      hlargs_pos_eq, List.length_map] at hv
+    exact hv
+  -- Prefix check: `largs.take rP = fvs.take rP`
+  obtain ⟨_, hltake_rep⟩ := tele_ktake (fun _ _ _ _ e x => x.mono e) inv.ev_ltake hlargs_lheq
+  rw [hrp_val] at hltake_rep
+  have ev_bvd1' := inv.ev_bvd1
+  rw [hd_eq] at ev_bvd1'
+  have hbvd1_rep := bvars_desc_exact_wide (κ := c_pub.κ) (d := depth) (Γ := Γ_t)
+    (by rw [hrp_val, hd_val]; omega) (by rw [hd_val]) (by omega) ev_bvd1'
+  rw [hrp_val, hd_val, Nat.sub_self] at hbvd1_rep
+  have hbvd1_fvs :
+      ((List.range rP).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) =
+        (fvs.take rP).map (posOf lps) := by
+    have hlen_take : ((fvs.take rP).map (posOf lps)).length = rP := by
+      simp [hfvs_len]; omega
+    apply List.ext_getElem (by simp [hlen_take])
+    intro m hm1 hm2
+    simp only [List.length_map, List.length_range] at hm1
+    have hm_lt : m < fvs_pos.length := by rw [hfvs_pos_len]; omega
+    have hΓm := hΓt_hi m hm_lt
+    have hfv_pos_m : fvs_pos[m] = .fvar m (fvs_pos[m].fvarTypeD) := by
+      rw [hfvs_pos]
+      simp only [List.getElem_map]
+      have hm_fvs : m < fvs.length := by rw [hfvs_len]; omega
+      have hsh := hfvs_shape m hm_fvs
+      rw [Nat.zero_add] at hsh
+      conv_lhs => rw [hsh]
+      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+    simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm, ← hfv_pos_m]
+    simp [hfvs_pos, List.getElem_take]
+  rw [hbvd1_fvs] at hbvd1_rep
+  have hltake_eq_pos :
+      largs_pos.take rP = (fvs.take rP).map (posOf lps) :=
+    spec_params_ptr_eq_one (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
+      inv.ev_bvd1.heap_extends hltake_rep) hbvd1_rep inv.ev_pref
+  have hlargs_pre : lhsS.getAppArgs.take rP = fvs.take rP := by
+    rw [hlargs_pos_eq, ← List.map_take] at hltake_eq_pos
+    exact List.map_injective_iff.mpr (posOf_inj hlps_perm) hltake_eq_pos
+  -- Major premise check
+  have ext_lheq_pref := inv.ev_ltake.heap_extends.trans
+    (inv.ev_bvd1.heap_extends.trans inv.ev_pref.heap_extends)
+  have hlargs_pref := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_lheq_pref hlargs_lheq
+  have ev_maj' := inv.ev_maj
+  rw [hmi_eq] at ev_maj'
+  obtain ⟨⟨major_pos, hmaj_get, hmaj_ex⟩, h_maj_eq⟩ := tele_klookup ev_maj' hlargs_pref
+  subst h_maj_eq
+  rw [hmi_val, hlargs_pos_eq, List.getElem?_map] at hmaj_get
+  have hmaj_last : major_pos = posOf lps (lhsS.getAppArgs.getLastD (.bvar 0)) := by
+    cases hget_m : lhsS.getAppArgs[mI]? with
+    | none => simp [hget_m] at hmaj_get
+    | some mj =>
+      rw [hget_m] at hmaj_get; injection hmaj_get with hmj; subst hmj
+      rw [getLastD_eq_of_getElem? lhsS.getAppArgs mI mj (.bvar 0) hlargs_len hget_m]
+  have ext_h_pref := ext_raddr.trans (inv.ev_lsp.heap_extends.trans
+    (ext_lsp_lheq.trans ext_lheq_pref))
+  obtain ⟨⟨a_cren, ra_cren, hcren_key⟩, h_cren_eq⟩ :=
+    rename_addr_spec inv.ev_cren
+      (Bytes.repAddressRef_heapMono₂ addrTy ext_h_pref hcprj)
       (hren.mono ext_h_pref)
-    have hpins_ren_eq :
-        (pins_lps.map (posOf lps)).map (renameAll f_id) =
-          (pins_lps.map (·.renameConsts f_id)).map (posOf lps) := by
+  subst h_cren_eq
+  rw [hcprj_key] at hcren_key
+  have hpins_ren_rep := rename_list_exact (Γ₂ := zeroGhost) inv.ev_pren
+    (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_pref hpins_rep)
+    (hren.mono ext_h_pref)
+  have hpins_ren_eq :
+      (pins_lps.map (posOf lps)).map (renameAll f_id) =
+        (pins_lps.map (·.renameConsts f_id)).map (posOf lps) := by
+    rw [List.map_map, List.map_map]
+    apply List.map_congr_left
+    intro p hp
+    simp only [Function.comp_apply]
+    have hnp_p : NoProjIn blockNames (posOf lps p) = true := by
+      unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_pins p hp
+    rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_p]
+    unfold posOf
+    exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) p).symm
+  rw [hpins_ren_eq] at hpins_ren_rep
+  -- Open `pins_ren` at `fvs.take rP` (depth `rP`, ghost `Γ_t`), then `lift_list` by `cnF` to `depth`
+  let pinsF_lps : List KExpr :=
+    pins_lps.map fun p => Expr.instSpine (fvs.take rP) (rP - 1) (p.renameConsts f_id)
+  have hpins_ren_open :
+      RepList kexprListEnum (fun h P p => TmExact c_pub.κ rP Γ_t h 0 P p) inv.h_pren
+        (pinsF_lps.map (posOf lps)) inv.pins_ren := by
+    have hlist_eq :
+        ((pins_lps.map (·.renameConsts f_id)).map (posOf lps)).map
+          (fun P => Expr.instSpine ((List.range rP).map fun j => .fvar j (Γ_t j)) (rP - 1) P) =
+          pinsF_lps.map (posOf lps) := by
+      have hpre_eq : ((List.range rP).map fun j => Expr.fvar j (Γ_t j)) =
+          (fvs.take rP).map (posOf lps) := by
+        simpa [Nat.zero_add] using hbvd1_fvs
+      rw [hpre_eq, List.map_map, List.map_map]
+      dsimp only [pinsF_lps]
+      rw [List.map_map]
+      apply List.map_congr_left
+      intro p _; simp only [Function.comp_apply]
+      unfold posOf
+      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+        (fvs.take rP) (rP - 1) (p.renameConsts f_id)).symm
+    rw [← hlist_eq]
+    clear hlist_eq
+    generalize ((pins_lps.map (·.renameConsts f_id)).map (posOf lps)) = qs at hpins_ren_rep
+    induction hpins_ren_rep with
+    | nil cell => exact .nil cell
+    | cons cell hhead _ ih => exact .cons cell (hhead.open_prefix_eq Γ_t) ih
+  have hpd_rep := lift_list_exact (bounded_sub inv.sub_pd hgood_pub.2)
+    (by rw [hcnf_val]; omega) inv.ev_pd hpins_ren_open
+  rw [hcnf_val] at hpd_rep
+  have ext_pd_c := Heap.Extends.snoc inv.h_pd (.construct kexprEnum "Const" [inv.cren, ilvls])
+  have ext_h_pd := ext_h_pref.trans (inv.ev_pren.heap_extends.trans inv.ev_pd.heap_extends)
+  have hchead_exp_ex : TmExact c_pub.κ depth Γ_t
+      (inv.h_pd ++ [.construct kexprEnum "Const" [inv.cren, ilvls]]) 0
+      (posOf lps (.const (f_id r.ctor) lvls_lps))
+      (.ptr (.enum kexprEnum) inv.h_pd.length) := by
+    unfold posOf
+    simp only [Expr.instantiateLevelParams]
+    rw [hcren_key]
+    exact .const (by simp)
+      (Bytes.repAddressRef_heapMono₂ addrTy
+        (inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans ext_pd_c)) ra_cren)
+      (hilvls_rep.mono (ext_h_pd.trans ext_pd_c))
+  have hbvd2_rep := bvars_desc_exact_wide (κ := c_pub.κ) (d := depth) (Γ := Γ_t)
+    (by rw [hcnf_val]) (by rw [hcnf_val]; omega) (by omega) inv.ev_bvd2
+  rw [hcnf_val, show depth - cnF = rP by omega] at hbvd2_rep
+  have hbvd2_fvs :
+      ((List.range cnF).map fun m => Expr.fvar (rP + m) (Γ_t (rP + m))) =
+        (fvs.drop rP).map (posOf lps) := by
+    have hlen_drop : ((fvs.drop rP).map (posOf lps)).length = cnF := by
+      simp [hfvs_len]; omega
+    apply List.ext_getElem (by simp [hlen_drop])
+    intro m hm1 hm2
+    simp only [List.length_map, List.length_range] at hm1
+    have hm_lt : rP + m < fvs_pos.length := by rw [hfvs_pos_len]; omega
+    have hΓm := hΓt_hi (rP + m) hm_lt
+    have hm_fvs : rP + m < fvs.length := by rw [hfvs_len]; omega
+    have hfv_pos_m : fvs_pos[rP + m] = .fvar (rP + m) (fvs_pos[rP + m].fvarTypeD) := by
+      rw [hfvs_pos]; simp only [List.getElem_map]
+      have hsh := hfvs_shape (rP + m) hm_fvs
+      rw [Nat.zero_add] at hsh
+      conv_lhs => rw [hsh]
+      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+    simp only [List.getElem_map, List.getElem_range, hΓm, ← hfv_pos_m]
+    simp [hfvs_pos, List.getElem_drop]
+  rw [hbvd2_fvs] at hbvd2_rep
+  have hcat_rep := tele_kconcat (fun _ _ _ _ e x => x.mono e) inv.ev_cat
+    (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
+      (ext_pd_c.trans inv.ev_bvd2.heap_extends) hpd_rep)
+    hbvd2_rep
+  have hexp_ex := apply_spine_exact inv.ev_exp
+    (hchead_exp_ex.mono (inv.ev_bvd2.heap_extends.trans inv.ev_cat.heap_extends)) hcat_rep
+  have hexp_pos_eq :
+      Expr.mkAppN (posOf lps (.const (f_id r.ctor) lvls_lps))
+        (pinsF_lps.map (posOf lps) ++ (fvs.drop rP).map (posOf lps)) =
+        posOf lps (Expr.mkAppN (.const (f_id r.ctor) lvls_lps) (pinsF_lps ++ fvs.drop rP)) := by
+    rw [← List.map_append]
+    unfold posOf
+    exact (mkAppN_instantiateLevelParams lps (posLevels lps)
+      (pinsF_lps ++ fvs.drop rP) (.const (f_id r.ctor) lvls_lps)).symm
+  rw [hexp_pos_eq] at hexp_ex
+  have ext_pref_exp := inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans
+    (ext_pd_c.trans (inv.ev_bvd2.heap_extends.trans
+      (inv.ev_cat.heap_extends.trans inv.ev_exp.heap_extends))))
+  have hmajor_pos_eq := kexpr_struct_eq_one (hmaj_ex.mono ext_pref_exp) hexp_ex inv.ev_majeq
+  rw [hmaj_last] at hmajor_pos_eq
+  have hmajor_eq :
+      lhsS.getAppArgs.getLastD (.bvar 0) =
+        Expr.mkAppN (.const (f_id r.ctor) lvls_lps) (pinsF_lps ++ fvs.drop rP) :=
+    posOf_inj hlps_perm hmajor_pos_eq
+  -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
+  have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
+  have hcvj_def : cvj.type.allLevelParamsDefined cvj.levelParams = true :=
+    (hef_pub.store.wf _ _ hfind_ctor).2.2.1
+  let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls_lps
+  have hctyl_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_ctyl 0 (posOf lps cty_inst) inv.cty_l := by
+    have hinst := SubstAux.gall c_pub.κ .expr_inst_levels [cty, ilvls] inv.h_majeq inv.cty_l
+      inv.h_ctyl inv.cs_ctyl inv.ev_ctyl cty ilvls rfl
+      (bounded_sub inv.sub_ctyl hgood_pub.2) zeroGhost 0 (posOf cvj.levelParams cvj.type)
+      (lvls_lps.map (Level.subst lps (posLevels lps)))
+      ((hcty_rep 0 zeroGhost).toTm.mono ext_h_majeq)
+      ⟨_, hilvls_rep.mono ext_h_majeq, LvEqList.refl _⟩
+    rwa [posOf_instantiateLevelParams_eq hlvls_len hcvj_def] at hinst
+  have hcnp_cnf_eq : inv.cnp_cnf = .field ((cnP + cnF) : F) := by
+    rw [SubstAux.add_ok inv.op_cnp_cnf]; congr 1
+    exact ZMod.val_injective _ (by
+      rw [SubstAux.val_add (by omega), hcnp_val, hcnf_val, SubstAux.val_natCast (by omega)])
+  have ev_peel0' := inv.ev_peel0
+  rw [hcnp_cnf_eq] at ev_peel0'
+  obtain ⟨bs0_pos, rem0_pos, hstrip0_pos, hrem0_tm, h_peel0_eq⟩ :=
+    peel_n_foralls_tm (cnP + cnF) (SubstAux.val_natCast (by omega)) ev_peel0' hctyl_tm0
+  subst h_peel0_eq; rw [Nat.zero_add] at hrem0_tm
+  obtain ⟨r_ch0, r_ca0, ch0_pos, ca0_pos, htup_csp0, hch0_tm, _, hrem0_app⟩ :=
+    SubstAux.gall c_pub.κ .collect_spine [inv.v_peel0] inv.h_ctyl
+      (.tuple [inv.chead0, inv.cargs0]) inv.h_csp0 inv.cs_csp0 inv.ev_csp0 inv.v_peel0 rfl
+      (bounded_sub inv.sub_csp0 hgood_pub.2) 0 zeroGhost (cnP + cnF) rem0_pos hrem0_tm
+  injection htup_csp0 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  obtain ⟨a_ch0, us_ch0, rfl, _, _, _, _⟩ := hch0_tm.const_of_load inv.ld_chead0
+  have hrem0_fn : rem0_pos.getAppFn = .const (c_pub.κ (ixAddr a_ch0)) us_ch0 := by
+    rw [hrem0_app, getAppFn_mkAppN]; rfl
+  obtain ⟨bs_inst, cbody_inst, usc_inst, hstrip_inst, hfn_inst, _⟩ :=
+    stripPis_constHead_of_instantiateLevelParams lps (posLevels lps) (cnP + cnF) cty_inst
+      hstrip0_pos hrem0_fn
+  obtain ⟨cbinders, cbody0, usc0, hstrip_cvj, hfn_cvj, hctor_tele⟩ :=
+    stripPis_constHead_of_instantiateLevelParams cvj.levelParams lvls_lps (cnP + cnF) cvj.type
+      hstrip_inst hfn_inst
+  have hctor_head : ∃ cbinders cbody0 Dc usc,
+      cvj.type.stripPis (cnP + cnF) = some (cbinders, cbody0) ∧ cbody0.getAppFn = .const Dc usc :=
+    ⟨cbinders, cbody0, _, usc0, hstrip_cvj, hfn_cvj⟩
+  have ext_ctyl_csp0 := inv.ev_csp0.heap_extends
+  have ext_h_csp0 := ext_h_majeq.trans (inv.ev_ctyl.heap_extends.trans ext_ctyl_csp0)
+  have hcty_ren_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_cty_ren 0
+      (posOf lps (cty_inst.renameConsts f_id)) inv.v_cty_ren := by
+    have hr := rename_tm (Γ₂ := zeroGhost) inv.ev_cty_ren
+      (hctyl_tm0.mono ext_ctyl_csp0) (hren.mono ext_h_csp0)
+    have hnp_inst : NoProjIn blockNames (posOf lps cty_inst) = true := by
+      unfold posOf cty_inst
+      rw [noProjIn_instantiateLevelParams, noProjIn_instantiateLevelParams]
+      exact hnp_cty
+    rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_inst] at hr
+    have hcomm : (posOf lps cty_inst).renameConsts f_id = posOf lps (cty_inst.renameConsts f_id) := by
+      unfold posOf
+      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) cty_inst).symm
+    rwa [hcomm] at hr
+  have ext_pren_ctyren := inv.ev_pd.heap_extends.trans (ext_pd_c.trans
+    (inv.ev_bvd2.heap_extends.trans (inv.ev_cat.heap_extends.trans
+      (inv.ev_exp.heap_extends.trans (inv.ev_majeq.heap_extends.trans
+        (inv.ev_ctyl.heap_extends.trans (ext_ctyl_csp0.trans inv.ev_cty_ren.heap_extends)))))))
+  have hpins_ren_tm_rp :
+      RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_t h 0 P p) inv.h_cty_ren
+        (pinsF_lps.map (posOf lps)) inv.pins_ren := by
+    have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pren_ctyren hpins_ren_open
+    clear ext_pren_ctyren
+    induction h1 with
+    | nil cell => exact .nil cell
+    | cons cell hh _ ih => exact .cons cell hh.toTm ih
+  obtain ⟨cdoms1_pos, crest_pos, hinst_c1_pos, hcrest_tm⟩ :=
+    inst_params_tm (bounded_sub inv.sub_crest hgood_pub.2) inv.ev_crest
+      (hcty_ren_tm0.of_depth_zero rP) hpins_ren_tm_rp
+  obtain ⟨cdoms1, crest_lps, hinst_c1, hcdoms1_pos, hcrest_pos⟩ := instPisAt_of_posOf hinst_c1_pos
+  subst hcdoms1_pos hcrest_pos
+  have ext_crest_in := Heap.Extends.snoc inv.h_crest (.construct kexprListEnum "Nil" [])
+  have hdrop_fvs_len : ZMod.val (cnF : F) = ((fvs.drop rP).map (posOf lps)).length := by
+    rw [hcnf_val, List.length_map, List.length_drop, hfvs_len]; omega
+  have hdrop_fvs_Γ : ∀ m (hm : m < ((fvs.drop rP).map (posOf lps)).length),
+      Expr.fvar (rP + m) (Γ_t (rP + m)) = ((fvs.drop rP).map (posOf lps))[m] := by
+    intro m hm
+    have hm_cnF : m < cnF := by rw [← hcnf_val, hdrop_fvs_len] at hm; exact hm
+    have h1 := congrArg (·[m]?) hbvd2_fvs
+    rw [List.getElem?_map, List.getElem?_range hm_cnF, Option.map_some,
+      List.getElem?_eq_getElem hm] at h1
+    exact Option.some.inj h1
+  obtain ⟨r_cres, _, cdoms2_pos, cres_pos, htup_cres, hinst_c2_pos, hcres_tm⟩ :=
+    peel_collect_inst_tm hdrop_fvs_len hdrop_fvs_Γ inv.ev_cres (hcrest_tm.mono ext_crest_in)
+  injection htup_cres with hl; injection hl with h1 _; subst h1
+  rw [show rP + ((fvs.drop rP).map (posOf lps)).length = depth by
+    rw [ ← hdrop_fvs_len, hcnf_val]] at hcres_tm
+  obtain ⟨cdoms2, cres, hinst_c2, hcdoms2_pos, hcres_pos⟩ := instPisAt_of_posOf hinst_c2_pos
+  subst hcdoms2_pos hcres_pos
+  let cdoms := cdoms1 ++ cdoms2
+  have hinst_c : Expr.instPisAt (pinsF_lps ++ fvs.drop rP) (cty_inst.renameConsts f_id) =
+      some (cdoms, cres) := by
+    rw [instPisAt_append, hinst_c1, Option.map_eq_some_iff]
+    exact ⟨(cdoms2, cres), hinst_c2, rfl⟩
+  have hcdoms_drop : cdoms.drop cnP = cdoms2 := by
+    have hlen1 : cdoms1.length = cnP := by
+      rw [instPisAt_length hinst_c1]; simp [pinsF_lps, hpins_len]
+    simp [cdoms, List.drop_append, hlen1]
+  obtain ⟨r_ch, r_ca, ch_pos, cargs_pos, htup_csp, hch_tm, hcargs_rep, hcres_app⟩ :=
+    SubstAux.gall c_pub.κ .collect_spine [inv.cres] inv.h_cres
+      (.tuple [inv.chead, inv.cargs]) inv.h_csp inv.cs_csp inv.ev_csp inv.cres rfl
+      (bounded_sub inv.sub_csp hgood_pub.2) depth Γ_t 0 (posOf lps cres) hcres_tm
+  injection htup_csp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  obtain ⟨a_ch, us_ch, rfl, _, _, _, _⟩ := hch_tm.const_of_load inv.ld_chead
+  have hcargs_pos_eq : cargs_pos = cres.getAppArgs.map (posOf lps) := by
+    have h1 : (posOf lps cres).getAppArgs = cargs_pos := by
+      rw [hcres_app, getAppArgs_mkAppN]; rfl
+    unfold posOf at h1
+    rw [getAppArgs_instantiateLevelParams] at h1
+    exact h1.symm
+  have hcargs_lt : cargs_pos.length < 2 ^ 39 :=
+    IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_clen (by simp) hcargs_rep
+  obtain ⟨hclen_f, h_clen_eq⟩ := tele_klength inv.ev_clen hcargs_rep
+  subst h_clen_eq
+  have hcres_len : cres.getAppArgs.length = cnP + nI := by
+    rw [SubstAux.add_ok inv.op_cnp_ni] at hclen_f
+    injection hclen_f with hf
+    have hv := congrArg ZMod.val hf
+    rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hcnp_val, hni_val,
+      hcargs_pos_eq, List.length_map] at hv
+    exact hv
+  -- Deduce `cbody_inst.getAppArgs.length = cnP + nI` via `instPisAt_constHead` on `cty_inst.renameConsts f_id`
+  have hcbody_inst_len : cbody_inst.getAppArgs.length = cnP + nI := by
+    have hstrip_ren := stripPis_renameConsts f_id (cnP + cnF) cty_inst hstrip_inst
+    have hfn_ren : (cbody_inst.renameConsts f_id).getAppFn =
+        .const (f_id (c_pub.κ (ixAddr a_ch0))) usc_inst := by
+      rw [getAppFn_renameConsts, hfn_inst]; rfl
+    have hlen_ren : (cbody_inst.renameConsts f_id).getAppArgs.length =
+        cbody_inst.getAppArgs.length := by
+      rw [getAppArgs_renameConsts, List.length_map]
+    have hpfx_len : (pinsF_lps ++ fvs.drop rP).length + 0 = cnP + cnF := by
+      simp [pinsF_lps, hpins_len, hfvs_len]; omega
+    rw [← hpfx_len] at hstrip_ren
+    obtain ⟨_, cres', _, cbody_r, hinst_r', hs0, _, hlen_r⟩ :=
+      instPisAt_constHead _ _ cbody_inst.getAppArgs.length (pinsF_lps ++ fvs.drop rP) 0
+        (cty_inst.renameConsts f_id) hstrip_ren hfn_ren hlen_ren
+    rw [hinst_c] at hinst_r'; injection hinst_r' with hp; injection hp with _ hcr; subst hcr
+    injection hs0 with hp; injection hp with _ hcb; subst hcb
+    exact hlen_r.symm.trans hcres_len
+  -- Index `defeq_list_ok` (`c_adv`)
+  have ext_pref_csp := ext_pref_exp.trans (inv.ev_majeq.heap_extends.trans
+    (inv.ev_ctyl.heap_extends.trans (ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
+      (inv.ev_crest.heap_extends.trans (ext_crest_in.trans
+        (inv.ev_cres.heap_extends.trans inv.ev_csp.heap_extends)))))))
+  have hlargs_csp := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pref_csp hlargs_pref
+  obtain ⟨_, hldrop_rep, h_ldrop_eq⟩ := tele_kdrop inv.ev_ldrop hlargs_csp
+  subst h_ldrop_eq; rw [hrp_val] at hldrop_rep
+  obtain ⟨_, hidxl_rep⟩ := tele_ktake (fun _ _ _ _ e x => x.mono e) inv.ev_idxl hldrop_rep
+  rw [hni_val] at hidxl_rep
+  have hcargs_idxl := RepLinkedList.mono tmE_heapMono₂ inv.ev_idxl.heap_extends hcargs_rep
+  obtain ⟨_, hidxr_rep, h_idxr_eq⟩ := tele_kdrop inv.ev_idxr hcargs_idxl
+  subst h_idxr_eq; rw [hcnp_val] at hidxr_rep
+  have hidxl_tm : RepList kexprListEnum (fun h X p => Tm c_adv.κ depth Γ_t h 0 X p) inv.h_idxl
+      (((lhsS.getAppArgs.drop rP).take nI).map (posOf lps)) inv.v_idxl := by
+    rw [hκ_eq, hlargs_pos_eq, ← List.map_drop, ← List.map_take] at hidxl_rep ⊢
+    induction hidxl_rep with
+    | nil cell => exact .nil cell
+    | cons cell hh _ ih => exact .cons cell hh.toTm ih
+  have hidxr_tm : RepList kexprListEnum (fun h Y p => Tm c_adv.κ depth Γ_t h 0 Y p) inv.h_idxl
+      ((cres.getAppArgs.drop cnP).map (posOf lps)) inv.v_idxr := by
+    rw [hκ_eq]; rwa [hcargs_pos_eq, ← List.map_drop] at hidxr_rep
+  have ext_open_idxl := inv.ev_tsp.heap_extends.trans (inv.ev_req.heap_extends.trans
+    (inv.ev_raddr.heap_extends.trans (inv.ev_lsp.heap_extends.trans
+      (ext_lsp_lheq.trans (ext_lheq_pref.trans
+        (ext_pref_csp.trans inv.ev_idxl.heap_extends))))))
+  have ext_h_idxl := ext_open.trans ext_open_idxl
+  have hde_idx : DefEqListJ posRulesJ c_adv.env depth
+      ((lhsS.getAppArgs.drop rP).take nI) (cres.getAppArgs.drop cnP) :=
+    rawDefEqList_to_posRulesJ hlps_perm
+      (defeq_list_ok_spec hCore (hrc_adv.mono ext_h_idxl)
+        (by rw [hκ_eq]; exact hctx_rep.mono ext_open_idxl) hsc_t
+        hef_adv hlf_adv (hgood_adv.sub inv.sub_deidx) inv.ev_deidx hidxl_tm hidxr_tm)
+  -- 8. Statement domain telescopes (`defeq_tele` #1 and #2 in `c_adv`)
+  have ext_idxl_deidx := inv.ev_deidx.heap_extends
+  have ext_h_deidx := ext_h_idxl.trans ext_idxl_deidx
+  have htyr_ren_ex : TmExact c_adv.κ 0 zeroGhost inv.h_tyr_ren 0
+      (posOf lps (tyA.renameConsts f_id)) inv.v_tyr_ren := by
+    rw [hκ_eq]
+    have hr := rename_exact (Γ₂ := zeroGhost) inv.ev_tyr_ren
+      ((hty_rep 0 zeroGhost).mono ext_h_deidx) (hren.mono ext_h_deidx)
+    have hnp_ty_pos : NoProjIn blockNames (posOf lps tyA) = true := by
+      unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_ty
+    rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_ty_pos] at hr
+    have hcomm : (posOf lps tyA).renameConsts f_id = posOf lps (tyA.renameConsts f_id) := by
+      unfold posOf
+      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) tyA).symm
+    rwa [hcomm] at hr
+  have ext_tyr_nil := Heap.Extends.snoc inv.h_tyr_ren (.construct kexprListEnum "Nil" [])
+  have ext_tci_dt1_in := ext_open_in.trans (inv.ev_open.heap_extends.trans
+    (ext_open_idxl.trans (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans ext_tyr_nil))))
+  have ext_h_dt1_in := ext_tci.trans ext_tci_dt1_in
+  obtain ⟨fvs1_pos, remA1_pos, rdoms_pos, lrest_pos, hop_dt1_pos, hinst_r_pos, hraw_pre⟩ :=
+    defeq_tele_spec hCore hef_adv.storeClosed rP (d := 0) (depth := depth)
+      hrp_val (by omega)
+      (hrc_adv.mono ext_h_dt1_in)
+      (typesRep_alloc_nil c_adv.κ zeroGhost inv.h_tyr_ren)
+      (ghostScoped_zero zeroGhost) hef_adv hlf_adv (hgood_adv.sub inv.sub_dt1) inv.ev_dt1
+      (by rw [hκ_eq]; exact (htty_rep 0 zeroGhost).mono ext_tci_dt1_in)
+      (htyr_ren_ex.toTm.mono ext_tyr_nil)
+  obtain ⟨fvs1, remA1, hop_dt1, hfvs1_pos, hremA1_pos⟩ := openPisAtFvars_of_posOf hop_dt1_pos
+  subst hfvs1_pos hremA1_pos
+  have hfvs_split := openPisAtFvars_split rP cnF cvt_lps 0
+  rw [show rP + cnF = depth from rfl, hopen_t, hop_dt1, Nat.zero_add, Option.map_eq_some_iff]
+    at hfvs_split
+  obtain ⟨⟨fvs2, tbody'⟩, hop_dt2_expected, hfvs_pair⟩ := hfvs_split
+  injection hfvs_pair with hfvs_app htbody_eq; subst htbody_eq
+  have hfvs1_len : fvs1.length = rP := (openPisAtFvars_spec rP cvt_lps 0 hop_dt1).1
+  have hfvs_take_eq : fvs.take rP = fvs1 := by
+    rw [← hfvs_app, List.take_left' hfvs1_len]
+  have hfvs_drop_eq : fvs.drop rP = fvs2 := by
+    rw [← hfvs_app, List.drop_left' hfvs1_len]
+  rw [← hfvs_take_eq] at hinst_r_pos hraw_pre
+  obtain ⟨rdoms, lrest, hinst_r, hrdoms_pos, _⟩ := instPisAt_of_posOf hinst_r_pos
+  subst hrdoms_pos
+  have hde_pre : DefEqListJ posRulesJ c_adv.env depth
+      ((fvs.take rP).map Expr.fvarTypeD) rdoms := by
+    have hmap_ty : ((fvs.take rP).map (posOf lps)).map Expr.fvarTypeD =
+        ((fvs.take rP).map Expr.fvarTypeD).map (posOf lps) := by
       rw [List.map_map, List.map_map]
       apply List.map_congr_left
-      intro p hp
-      simp only [Function.comp_apply]
-      have hnp_p : NoProjIn blockNames (posOf lps p) = true := by
-        unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_pins p hp
-      rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_p]
+      intro x hx
+      have hx_mem : x ∈ fvs := List.mem_of_mem_take hx
+      obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx_mem
+      conv_lhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
+      conv_rhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
+      rfl
+    rw [hmap_ty] at hraw_pre
+    exact rawDefEqList_to_posRulesJ hlps_perm hraw_pre
+  -- `defeq_tele` #2
+  have ext_tci_dt1 := ext_tci_dt1_in.trans inv.ev_dt1.heap_extends
+  have htake_fvs_len : ZMod.val (rP : F) = ((fvs.take rP).map (posOf lps)).length := by
+    rw [hrp_val, List.length_map, List.length_take, hfvs_len]; omega
+  have htake_fvs_Γ : ∀ m (hm : m < ((fvs.take rP).map (posOf lps)).length),
+      Expr.fvar (0 + m) (Γ_t (0 + m)) = ((fvs.take rP).map (posOf lps))[m] := by
+    intro m hm
+    have hm_rP : m < rP := by rw [← hrp_val, htake_fvs_len] at hm; exact hm
+    have h1 := congrArg (·[m]?) hbvd1_fvs
+    rw [List.getElem?_map, List.getElem?_range hm_rP, Option.map_some,
+      List.getElem?_eq_getElem hm] at h1
+    exact Option.some.inj h1
+  obtain ⟨_, remA1_inst, hinst_tty_rp, htty_rp_ex, h_tty_rp_eq⟩ :=
+    peel_n_foralls_inst_exact htake_fvs_len htake_fvs_Γ inv.ev_tty_rp
+      ((htty_rep 0 zeroGhost).mono ext_tci_dt1)
+  subst h_tty_rp_eq; rw [ ← htake_fvs_len, hrp_val, Nat.zero_add] at htty_rp_ex
+  have hremA1_eq : remA1_inst = posOf lps remA1 := by
+    rw [hfvs_take_eq] at hinst_tty_rp
+    have hop_spec := (openPisAtFvars_spec rP (posOf lps cvt_lps) 0 hop_dt1_pos).2.1
+    rw [hop_spec] at hinst_tty_rp
+    injection hinst_tty_rp with hp; exact hp.2.symm
+  subst hremA1_eq
+  have ext_open_dt1 := ext_open_idxl.trans (ext_idxl_deidx.trans
+    (inv.ev_tyr_ren.heap_extends.trans (ext_tyr_nil.trans inv.ev_dt1.heap_extends)))
+  obtain ⟨_, hctx_rp_rep, h_ctx_rp_eq⟩ :=
+    typesRep_drop cnF hcnf_val inv.ev_ctx_rp (hctx_rep.mono ext_open_dt1)
+  subst h_ctx_rp_eq
+  rw [show depth - ZMod.val (cnF : F) = rP by rw [hcnf_val]; omega] at hctx_rp_rep
+  have hsc_t_rp : GhostScoped Γ_t rP := fun i hi => hsc_t i (by omega)
+  have ext_crest_dt1 := ext_crest_in.trans (inv.ev_cres.heap_extends.trans
+    (inv.ev_csp.heap_extends.trans (inv.ev_idxl.heap_extends.trans
+      (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans
+        (ext_tyr_nil.trans inv.ev_dt1.heap_extends))))))
+  have ext_h_dt1 := ext_tci.trans ext_tci_dt1
+  obtain ⟨fvs2_pos, _, doms2_pos, _, hop_dt2_pos, hinst_dt2_pos, hraw_dom⟩ :=
+    defeq_tele_spec hCore hef_adv.storeClosed cnF (d := rP) (depth := depth)
+      hcnf_val (by omega)
+      (hrc_adv.mono ext_h_dt1) (by rw [hκ_eq]; exact hctx_rp_rep) hsc_t_rp
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_dt2) inv.ev_dt2
+      (by rw [hκ_eq]; exact htty_rp_ex)
+      (by rw [hκ_eq]; exact hcrest_tm.mono ext_crest_dt1)
+  obtain ⟨fvs2', _, hop_dt2', hfvs2_pos, _⟩ := openPisAtFvars_of_posOf hop_dt2_pos
+  subst hfvs2_pos
+  rw [hop_dt2_expected] at hop_dt2'; injection hop_dt2' with hp
+  obtain ⟨hfvs2_eq, _⟩ := Prod.mk.inj hp; subst hfvs2_eq
+  rw [← hfvs_drop_eq] at hinst_dt2_pos hraw_dom
+  rw [hinst_c2_pos] at hinst_dt2_pos
+  injection hinst_dt2_pos with hp; obtain ⟨hdoms2_eq, _⟩ := Prod.mk.inj hp; subst hdoms2_eq
+  have hde_dom : DefEqListJ posRulesJ c_adv.env depth
+      ((fvs.drop rP).map Expr.fvarTypeD) (cdoms.drop cnP) := by
+    rw [hcdoms_drop]
+    have hmap_ty : ((fvs.drop rP).map (posOf lps)).map Expr.fvarTypeD =
+        ((fvs.drop rP).map Expr.fvarTypeD).map (posOf lps) := by
+      rw [List.map_map, List.map_map]
+      apply List.map_congr_left
+      intro x hx
+      have hx_mem : x ∈ fvs := List.mem_of_mem_drop hx
+      obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx_mem
+      conv_lhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
+      conv_rhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
+      rfl
+    rw [hmap_ty] at hraw_dom
+    exact rawDefEqList_to_posRulesJ hlps_perm hraw_dom
+  -- 9. Public parameter typing & `defeq_lam_tele` (#1 and #2 in `c_pub`)
+  have ext_h_dt2 := ext_h_dt1.trans inv.ev_dt2.heap_extends
+  have ext_dt2_nil := Heap.Extends.snoc inv.h_dt2 (.construct kexprListEnum "Nil" [])
+  obtain ⟨r_pbody, r_ctxp, Γ_p, fvsP_pos, crest2_pos, htup_ctxp, hopen_p_pos, _, hΓp_hi,
+      _, hctxp_rep, hsc_p⟩ :=
+    peel_collect_open_exact rP hrp_val inv.ev_ctxp
+      ((hty_rep 0 zeroGhost).mono (ext_h_dt2.trans ext_dt2_nil))
+      (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_dt2)
+      (ghostScoped_zero zeroGhost)
+  injection htup_ctxp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  rw [Nat.zero_add] at hΓp_hi hctxp_rep hsc_p
+  obtain ⟨fvsP, crest2, hopen_p, hfvsP_pos, hcrest2_pos⟩ := openPisAtFvars_of_posOf hopen_p_pos
+  subst hfvsP_pos hcrest2_pos
+  obtain ⟨hfvsP_len, _, hfvsP_shape⟩ := openPisAtFvars_spec rP tyA 0 hopen_p
+  have hfvsP_take : fvsP.take rP = fvsP := List.take_of_length_le (by omega)
+  -- Apply `defeq_lam_tele` #1 FIRST so we have `Γ_l` ready for `inst_params_typed_spec`!
+  have ext_h_ctxp := ext_h_dt2.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)
+  have ext_h_crestp := ext_h_ctxp.trans inv.ev_crestp.heap_extends
+  have ext_crestp_nil := Heap.Extends.snoc inv.h_crestp (.construct kexprListEnum "Nil" [])
+  have ext_h_lt1_in := ext_h_crestp.trans ext_crestp_nil
+  obtain ⟨r_rhs_rp, r_lctx, Γ_l, lfvs1_pos, remL1_pos, pdoms1_pos, tyRest_pos,
+      htup_lt1, hop_lt1_pos, hinst_lt1_pos, _, hΓl_hi, hremL1_tm, hlctx_rep, hsc_l, hraw_lt1⟩ :=
+    defeq_lam_tele_spec hCore hef_pub.storeClosed rP (d := 0) (depth := depth)
+      hrp_val (by omega)
+      (hrc.mono ext_h_lt1_in)
+      (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_crestp)
+      (ghostScoped_zero zeroGhost) hef_pub hlf_pub (hgood_pub.sub inv.sub_lt1) inv.ev_lt1
+      (hrhs_pos_tm0.toTm.mono ext_h_lt1_in)
+      ((hty_rep 0 zeroGhost).toTm.mono ext_h_lt1_in)
+  injection htup_lt1 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+  rw [Nat.zero_add] at hΓl_hi hremL1_tm hlctx_rep hsc_l
+  obtain ⟨lfvs1, remL1, hop_lt1, hlfvs1_pos, hremL1_pos⟩ := openLamsAtFvars_of_posOf hop_lt1_pos
+  subst hlfvs1_pos hremL1_pos
+  obtain ⟨hlfvs1_len, _, hlfvs1_shape⟩ := openLamsAtFvars_spec rP r.rhs 0 hop_lt1
+  obtain ⟨pdoms1, tyRest, hinst_lt1, hpdoms1_pos, _⟩ := instPisAt_of_posOf hinst_lt1_pos
+  subst hpdoms1_pos
+  -- Now apply `inst_params_typed_spec` with `Γ₁ := Γ_p` and `Γ₂ := Γ_l`!
+  have hΓp_list : ((List.range rP).map fun m => Expr.fvar m (Γ_p m)) = fvsP.map (posOf lps) := by
+    apply List.ext_getElem (by simp [hfvsP_len])
+    intro m hm1 hm2
+    simp only [List.length_range, List.length_map] at hm1
+    have hm_pos : m < (fvsP.map (posOf lps)).length := by simp [hfvsP_len, hm1]
+    have hΓm := hΓp_hi m hm_pos
+    have hm_fvsP : m < fvsP.length := by rw [hfvsP_len]; exact hm1
+    have hsh := hfvsP_shape m hm_fvsP
+    rw [Nat.zero_add] at hsh
+    simp only [List.getElem_map, List.getElem_range, hΓm]
+    conv_rhs => rw [hsh]
+    simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+  have hΓl_list : ((List.range rP).map fun m => Expr.fvar m (Γ_l m)) = lfvs1.map (posOf lps) := by
+    apply List.ext_getElem (by simp [hlfvs1_len])
+    intro m hm1 hm2
+    simp only [List.length_range, List.length_map] at hm1
+    have hm_pos : m < (lfvs1.map (posOf lps)).length := by simp [hlfvs1_len, hm1]
+    have hΓm := hΓl_hi m hm_pos
+    have hm_lfvs1 : m < lfvs1.length := by rw [hlfvs1_len]; exact hm1
+    have hsh := hlfvs1_shape m hm_lfvs1
+    rw [Nat.zero_add] at hsh
+    simp only [List.getElem_map, List.getElem_range, hΓm]
+    conv_rhs => rw [hsh]
+    simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+  let pinsP_lps := pins_lps.map fun p => Expr.instSpine (fvsP.take rP) (rP - 1) p
+  let pinsL_lps := pins_lps.map fun p => Expr.instSpine lfvs1 (rP - 1) p
+  have hpins_ctxp_1 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_p h 0 P p) inv.h_ctxp
+      (pinsP_lps.map (posOf lps)) pins := by
+    have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
+    have hlist_eq :
+        (pins_lps.map (posOf lps)).map
+          (fun P => Expr.instSpine ((List.range rP).map fun m => .fvar m (Γ_p m)) (rP - 1) P) =
+          pinsP_lps.map (posOf lps) := by
+      rw [hΓp_list]
+      dsimp only [pinsP_lps]
+      rw [hfvsP_take, List.map_map, List.map_map]
+      apply List.map_congr_left
+      intro p _; simp only [Function.comp_apply]
       unfold posOf
-      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) p).symm
-    rw [hpins_ren_eq] at hpins_ren_rep
-    -- Open `pins_ren` at `fvs.take rP` (depth `rP`, ghost `Γ_t`), then `lift_list` by `cnF` to `depth`
-    let pinsF_lps : List KExpr :=
-      pins_lps.map fun p => Expr.instSpine (fvs.take rP) (rP - 1) (p.renameConsts f_id)
-    have hpins_ren_open :
-        RepList kexprListEnum (fun h P p => TmExact c_pub.κ rP Γ_t h 0 P p) inv.h_pren
-          (pinsF_lps.map (posOf lps)) inv.pins_ren := by
-      have hlist_eq :
-          ((pins_lps.map (·.renameConsts f_id)).map (posOf lps)).map
-            (fun P => Expr.instSpine ((List.range rP).map fun j => .fvar j (Γ_t j)) (rP - 1) P) =
-            pinsF_lps.map (posOf lps) := by
-        have hpre_eq : ((List.range rP).map fun j => Expr.fvar j (Γ_t j)) =
-            (fvs.take rP).map (posOf lps) := by
-          simpa [Nat.zero_add] using hbvd1_fvs
-        rw [hpre_eq, List.map_map, List.map_map]
-        dsimp only [pinsF_lps]
-        rw [List.map_map]
-        apply List.map_congr_left
-        intro p _; simp only [Function.comp_apply]
-        unfold posOf
-        exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
-          (fvs.take rP) (rP - 1) (p.renameConsts f_id)).symm
-      rw [← hlist_eq]
-      clear hlist_eq
-      generalize ((pins_lps.map (·.renameConsts f_id)).map (posOf lps)) = qs at hpins_ren_rep
-      induction hpins_ren_rep with
-      | nil cell => exact .nil cell
-      | cons cell hhead _ ih => exact .cons cell (hhead.open_prefix_eq Γ_t) ih
-    have hpd_rep := lift_list_exact (bounded_sub inv.sub_pd hgood_pub.2)
-      (by rw [hcnf_val]; omega) inv.ev_pd hpins_ren_open
-    rw [hcnf_val] at hpd_rep
-    have ext_pd_c := Heap.Extends.snoc inv.h_pd (.construct kexprEnum "Const" [inv.cren, ilvls])
-    have ext_h_pd := ext_h_pref.trans (inv.ev_pren.heap_extends.trans inv.ev_pd.heap_extends)
-    have hchead_exp_ex : TmExact c_pub.κ depth Γ_t
-        (inv.h_pd ++ [.construct kexprEnum "Const" [inv.cren, ilvls]]) 0
-        (posOf lps (.const (f_id r.ctor) lvls_lps))
-        (.ptr (.enum kexprEnum) inv.h_pd.length) := by
+      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+        fvsP (rP - 1) p).symm
+    rw [← hlist_eq]; clear hlist_eq
+    induction h1 with
+    | nil cell => exact .nil cell
+    | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_p).toTm ih
+  have hpins_ctxp_2 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_l h 0 P p) inv.h_ctxp
+      (pinsL_lps.map (posOf lps)) pins := by
+    have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
+    have hlist_eq :
+        (pins_lps.map (posOf lps)).map
+          (fun P => Expr.instSpine ((List.range rP).map fun m => .fvar m (Γ_l m)) (rP - 1) P) =
+          pinsL_lps.map (posOf lps) := by
+      rw [hΓl_list]
+      dsimp only [pinsL_lps]
+      rw [List.map_map, List.map_map]
+      apply List.map_congr_left
+      intro p _; simp only [Function.comp_apply]
       unfold posOf
-      simp only [Expr.instantiateLevelParams]
-      rw [hcren_key]
-      exact .const (by simp)
-        (Bytes.repAddressRef_heapMono₂ addrTy
-          (inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans ext_pd_c)) ra_cren)
-        (hilvls_rep.mono (ext_h_pd.trans ext_pd_c))
-    have hbvd2_rep := bvars_desc_exact_wide (κ := c_pub.κ) (d := depth) (Γ := Γ_t)
-      (by rw [hcnf_val]) (by rw [hcnf_val]; omega) (by omega) inv.ev_bvd2
-    rw [hcnf_val, show depth - cnF = rP by omega] at hbvd2_rep
-    have hbvd2_fvs :
-        ((List.range cnF).map fun m => Expr.fvar (rP + m) (Γ_t (rP + m))) =
-          (fvs.drop rP).map (posOf lps) := by
-      have hlen_drop : ((fvs.drop rP).map (posOf lps)).length = cnF := by
-        simp [hfvs_len]; omega
-      apply List.ext_getElem (by simp [hlen_drop])
-      intro m hm1 hm2
-      simp only [List.length_map, List.length_range] at hm1
-      have hm_lt : rP + m < fvs_pos.length := by rw [hfvs_pos_len]; omega
-      have hΓm := hΓt_hi (rP + m) hm_lt
-      have hm_fvs : rP + m < fvs.length := by rw [hfvs_len]; omega
-      have hfv_pos_m : fvs_pos[rP + m] = .fvar (rP + m) (fvs_pos[rP + m].fvarTypeD) := by
-        rw [hfvs_pos]; simp only [List.getElem_map]
-        have hsh := hfvs_shape (rP + m) hm_fvs
-        rw [Nat.zero_add] at hsh
-        conv_lhs => rw [hsh]
-        simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-      simp only [List.getElem_map, List.getElem_range, hΓm, ← hfv_pos_m]
-      simp [hfvs_pos, List.getElem_drop]
-    rw [hbvd2_fvs] at hbvd2_rep
-    have hcat_rep := tele_kconcat (fun _ _ _ _ e x => x.mono e) inv.ev_cat
-      (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
-        (ext_pd_c.trans inv.ev_bvd2.heap_extends) hpd_rep)
-      hbvd2_rep
-    have hexp_ex := apply_spine_exact inv.ev_exp
-      (hchead_exp_ex.mono (inv.ev_bvd2.heap_extends.trans inv.ev_cat.heap_extends)) hcat_rep
-    have hexp_pos_eq :
-        Expr.mkAppN (posOf lps (.const (f_id r.ctor) lvls_lps))
-          (pinsF_lps.map (posOf lps) ++ (fvs.drop rP).map (posOf lps)) =
-          posOf lps (Expr.mkAppN (.const (f_id r.ctor) lvls_lps) (pinsF_lps ++ fvs.drop rP)) := by
-      rw [← List.map_append]
+      exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
+        lfvs1 (rP - 1) p).symm
+    rw [← hlist_eq]; clear hlist_eq
+    induction h1 with
+    | nil cell => exact .nil cell
+    | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_l).toTm ih
+  have ext_ctyl_ctxp := ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
+    (inv.ev_crest.heap_extends.trans (ext_crest_dt1.trans
+      (inv.ev_dt2.heap_extends.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)))))
+  obtain ⟨cdomsP_pos, crestP_pos, cdomsL_pos, crestL_pos,
+      hinst_p_pos, hinst_l_pos, _, hcrestL_tm, hraw_pins_typed⟩ :=
+    inst_params_typed_spec hCore hef_pub.storeClosed (d₁ := rP) (d₂ := rP) (depth := depth)
+      (by omega) (hrc.mono ext_h_ctxp) hctxp_rep hsc_p hef_pub hlf_pub
+      (hgood_pub.sub inv.sub_crestp) inv.ev_crestp
+      ((hctyl_tm0.mono ext_ctyl_ctxp).of_depth_zero rP)
+      ((hctyl_tm0.mono ext_ctyl_ctxp).of_depth_zero rP)
+      hpins_ctxp_1 hpins_ctxp_2
+  obtain ⟨cdomsP, crestP, hinst_p, hcdomsP_pos, _⟩ := instPisAt_of_posOf hinst_p_pos
+  subst hcdomsP_pos
+  obtain ⟨cdomsL, crestL, hinst_l, _, hcrestL_pos⟩ := instPisAt_of_posOf hinst_l_pos
+  subst hcrestL_pos
+  have hpins_typed : TypedListJ posRulesJ c_pub.env depth pinsP_lps cdomsP :=
+    rawTypedList_to_posRulesJ hlps_perm hraw_pins_typed
+  -- Construct `xFvsP, ldoms` (`openPisAtFvars cnF crestP rP`) and `ldoms.getAppArgs.length = cnP + nI`
+  have hpP_len : pinsP_lps.length + cnF = cnP + cnF := by simp [pinsP_lps, hpins_len]
+  rw [← hpP_len] at hstrip_inst
+  obtain ⟨_, crestP', bs_cp, cbody_cp, hinst_p', hstrip_cp, hfn_cp, hlen_cp⟩ :=
+    instPisAt_constHead _ _ (cnP + nI) pinsP_lps cnF cty_inst
+      hstrip_inst hfn_inst hcbody_inst_len
+  rw [hinst_p] at hinst_p'; injection hinst_p' with hp; injection hp with _ hcp; subst hcp
+  obtain ⟨xFvsP, ldoms, hopen_cf, _, hldoms_len⟩ :=
+    openPisAtFvars_constHead _ _ (cnP + nI) cnF crestP rP hstrip_cp hfn_cp hlen_cp
+  -- `defeq_lam_tele` #2 (`ev_lt2`)
+  have ext_crestp_lt1 := ext_crestp_nil.trans inv.ev_lt1.heap_extends
+  have ext_h_lt1 := ext_h_lt1_in.trans inv.ev_lt1.heap_extends
+  obtain ⟨_, _, _, lfvs2_pos, remL2_pos, pdoms2_pos, crestEnd_pos,
+      _, hop_lt2_pos, hinst_lt2_pos, _, _, _, _, _, hraw_lt2⟩ :=
+    defeq_lam_tele_spec hCore hef_pub.storeClosed cnF (d := rP) (depth := depth)
+      hcnf_val (by omega)
+      (hrc.mono ext_h_lt1) hlctx_rep hsc_l hef_pub hlf_pub (hgood_pub.sub inv.sub_lt2) inv.ev_lt2
+      hremL1_tm (hcrestL_tm.mono ext_crestp_lt1)
+  obtain ⟨lfvs2, remL2, hop_lt2, hlfvs2_pos, _⟩ := openLamsAtFvars_of_posOf hop_lt2_pos
+  subst hlfvs2_pos
+  obtain ⟨_, _, hlfvs2_shape⟩ := openLamsAtFvars_spec cnF remL1 rP hop_lt2
+  obtain ⟨pdoms2, crestEnd, hinst_lt2, hpdoms2_pos, _⟩ := instPisAt_of_posOf hinst_lt2_pos
+  subst hpdoms2_pos
+  have hlam_walk : LamTeleWalkJ posRulesJ c_pub.env rP cnF tyA cty_inst
+      (fun pre => pins_lps.map fun p => Expr.instSpine pre (rP - 1) p) r.rhs := by
+    let lfvs := lfvs1 ++ lfvs2
+    have hop_lams_all : openLamsAtFvars depth r.rhs 0 = some (lfvs, remL2) := by
+      show openLamsAtFvars (rP + cnF) r.rhs 0 = some (lfvs1 ++ lfvs2, remL2)
+      rw [openLamsAtFvars_split rP cnF r.rhs 0, hop_lt1, Nat.zero_add, hop_lt2]; rfl
+    have hlfvs_take : lfvs.take rP = lfvs1 := List.take_left' hlfvs1_len
+    have hlfvs_drop : lfvs.drop rP = lfvs2 := List.drop_left' hlfvs1_len
+    have hmap1 : (lfvs1.map (posOf lps)).map Expr.fvarTypeD =
+        (lfvs1.map Expr.fvarTypeD).map (posOf lps) := by
+      rw [List.map_map, List.map_map]
+      apply List.map_congr_left
+      intro x hx
+      obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
+      conv_lhs => rw [Function.comp_apply, hlfvs1_shape idx hidx_lt]
+      conv_rhs => rw [Function.comp_apply, hlfvs1_shape idx hidx_lt]
+      rfl
+    have hmap2 : (lfvs2.map (posOf lps)).map Expr.fvarTypeD =
+        (lfvs2.map Expr.fvarTypeD).map (posOf lps) := by
+      rw [List.map_map, List.map_map]
+      apply List.map_congr_left
+      intro x hx
+      obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
+      conv_lhs => rw [Function.comp_apply, hlfvs2_shape idx hidx_lt]
+      conv_rhs => rw [Function.comp_apply, hlfvs2_shape idx hidx_lt]
+      rfl
+    rw [hmap1] at hraw_lt1
+    rw [hmap2] at hraw_lt2
+    have hraw_both := rawDefEqList_append hraw_lt1 hraw_lt2
+    rw [← List.map_append, ← List.map_append, ← List.map_append] at hraw_both
+    exact ⟨lfvs, remL2, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
+      hop_lams_all, by rwa [hlfvs_take], by rwa [hlfvs_take], by rwa [hlfvs_drop],
+      rawDefEqList_to_posRulesJ hlps_perm hraw_both⟩
+  -- 10. Right-hand side application (`rhs_s ≡ mkAppN (r.rhs.renameConsts f_id) fvs` in `c_adv`)
+  have ext_h_lt2 := ext_h_lt1.trans inv.ev_lt2.heap_extends
+  have hrhs_ren_ex : TmExact c_adv.κ 0 zeroGhost inv.h_rhs_ren 0
+      (posOf lps (r.rhs.renameConsts f_id)) inv.v_rhs_ren := by
+    rw [hκ_eq]
+    have hr := rename_exact (Γ₂ := zeroGhost) inv.ev_rhs_ren
+      (hrhs_pos_tm0.mono ext_h_lt2) (hren.mono ext_h_lt2)
+    have hnp_rhs_pos : NoProjIn blockNames (posOf lps r.rhs) = true := by
+      unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hrhs_noproj
+    rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_rhs_pos] at hr
+    have hcomm : (posOf lps r.rhs).renameConsts f_id = posOf lps (r.rhs.renameConsts f_id) := by
       unfold posOf
-      exact (mkAppN_instantiateLevelParams lps (posLevels lps)
-        (pinsF_lps ++ fvs.drop rP) (.const (f_id r.ctor) lvls_lps)).symm
-    rw [hexp_pos_eq] at hexp_ex
-    have ext_pref_exp := inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans
-      (ext_pd_c.trans (inv.ev_bvd2.heap_extends.trans
-        (inv.ev_cat.heap_extends.trans inv.ev_exp.heap_extends))))
-    have hmajor_pos_eq := kexpr_struct_eq_one (hmaj_ex.mono ext_pref_exp) hexp_ex inv.ev_majeq
-    rw [hmaj_last] at hmajor_pos_eq
-    have hmajor_eq :
-        lhsS.getAppArgs.getLastD (.bvar 0) =
-          Expr.mkAppN (.const (f_id r.ctor) lvls_lps) (pinsF_lps ++ fvs.drop rP) :=
-      posOf_inj hlps_perm hmajor_pos_eq
-    -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
-    have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
-    have hcvj_def : cvj.type.allLevelParamsDefined cvj.levelParams = true :=
-      (hef_pub.store.wf _ _ hfind_ctor).2.2.1
-    let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls_lps
-    have hctyl_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_ctyl 0 (posOf lps cty_inst) inv.cty_l := by
-      have hinst := SubstAux.gall c_pub.κ .expr_inst_levels [cty, ilvls] inv.h_majeq inv.cty_l
-        inv.h_ctyl inv.cs_ctyl inv.ev_ctyl cty ilvls rfl
-        (bounded_sub inv.sub_ctyl hgood_pub.2) zeroGhost 0 (posOf cvj.levelParams cvj.type)
-        (lvls_lps.map (Level.subst lps (posLevels lps)))
-        ((hcty_rep 0 zeroGhost).toTm.mono ext_h_majeq)
-        ⟨_, hilvls_rep.mono ext_h_majeq, LvEqList.refl _⟩
-      rwa [posOf_instantiateLevelParams_eq hlvls_len hcvj_def] at hinst
-    have hcnp_cnf_eq : inv.cnp_cnf = .field ((cnP + cnF) : F) := by
-      rw [SubstAux.add_ok inv.op_cnp_cnf]; congr 1
-      exact ZMod.val_injective _ (by
-        rw [SubstAux.val_add (by omega), hcnp_val, hcnf_val, SubstAux.val_natCast (by omega)])
-    have ev_peel0' := inv.ev_peel0
-    rw [hcnp_cnf_eq] at ev_peel0'
-    obtain ⟨bs0_pos, rem0_pos, hstrip0_pos, hrem0_tm, h_peel0_eq⟩ :=
-      peel_n_foralls_tm (cnP + cnF) (SubstAux.val_natCast (by omega)) ev_peel0' hctyl_tm0
-    subst h_peel0_eq; rw [Nat.zero_add] at hrem0_tm
-    obtain ⟨r_ch0, r_ca0, ch0_pos, ca0_pos, htup_csp0, hch0_tm, _, hrem0_app⟩ :=
-      SubstAux.gall c_pub.κ .collect_spine [inv.v_peel0] inv.h_ctyl
-        (.tuple [inv.chead0, inv.cargs0]) inv.h_csp0 inv.cs_csp0 inv.ev_csp0 inv.v_peel0 rfl
-        (bounded_sub inv.sub_csp0 hgood_pub.2) 0 zeroGhost (cnP + cnF) rem0_pos hrem0_tm
-    injection htup_csp0 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    obtain ⟨a_ch0, us_ch0, rfl, _, _, _, _⟩ := hch0_tm.const_of_load inv.ld_chead0
-    have hrem0_fn : rem0_pos.getAppFn = .const (c_pub.κ (ixAddr a_ch0)) us_ch0 := by
-      rw [hrem0_app, getAppFn_mkAppN]; rfl
-    obtain ⟨bs_inst, cbody_inst, usc_inst, hstrip_inst, hfn_inst, _⟩ :=
-      stripPis_constHead_of_instantiateLevelParams lps (posLevels lps) (cnP + cnF) cty_inst
-        hstrip0_pos hrem0_fn
-    obtain ⟨cbinders, cbody0, usc0, hstrip_cvj, hfn_cvj, hctor_tele⟩ :=
-      stripPis_constHead_of_instantiateLevelParams cvj.levelParams lvls_lps (cnP + cnF) cvj.type
-        hstrip_inst hfn_inst
-    have hctor_head : ∃ cbinders cbody0 Dc usc,
-        cvj.type.stripPis (cnP + cnF) = some (cbinders, cbody0) ∧ cbody0.getAppFn = .const Dc usc :=
-      ⟨cbinders, cbody0, _, usc0, hstrip_cvj, hfn_cvj⟩
-    have ext_ctyl_csp0 := inv.ev_csp0.heap_extends
-    have ext_h_csp0 := ext_h_majeq.trans (inv.ev_ctyl.heap_extends.trans ext_ctyl_csp0)
-    have hcty_ren_tm0 : Tm c_pub.κ 0 zeroGhost inv.h_cty_ren 0
-        (posOf lps (cty_inst.renameConsts f_id)) inv.v_cty_ren := by
-      have hr := rename_tm (Γ₂ := zeroGhost) inv.ev_cty_ren
-        (hctyl_tm0.mono ext_ctyl_csp0) (hren.mono ext_h_csp0)
-      have hnp_inst : NoProjIn blockNames (posOf lps cty_inst) = true := by
-        unfold posOf cty_inst
-        rw [noProjIn_instantiateLevelParams, noProjIn_instantiateLevelParams]
-        exact hnp_cty
-      rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_inst] at hr
-      have hcomm : (posOf lps cty_inst).renameConsts f_id = posOf lps (cty_inst.renameConsts f_id) := by
-        unfold posOf
-        exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) cty_inst).symm
-      rwa [hcomm] at hr
-    have ext_pren_ctyren := inv.ev_pd.heap_extends.trans (ext_pd_c.trans
-      (inv.ev_bvd2.heap_extends.trans (inv.ev_cat.heap_extends.trans
-        (inv.ev_exp.heap_extends.trans (inv.ev_majeq.heap_extends.trans
-          (inv.ev_ctyl.heap_extends.trans (ext_ctyl_csp0.trans inv.ev_cty_ren.heap_extends)))))))
-    have hpins_ren_tm_rp :
-        RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_t h 0 P p) inv.h_cty_ren
-          (pinsF_lps.map (posOf lps)) inv.pins_ren := by
-      have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pren_ctyren hpins_ren_open
-      clear ext_pren_ctyren
-      induction h1 with
-      | nil cell => exact .nil cell
-      | cons cell hh _ ih => exact .cons cell hh.toTm ih
-    obtain ⟨cdoms1_pos, crest_pos, hinst_c1_pos, hcrest_tm⟩ :=
-      inst_params_tm (bounded_sub inv.sub_crest hgood_pub.2) inv.ev_crest
-        (hcty_ren_tm0.of_depth_zero rP) hpins_ren_tm_rp
-    obtain ⟨cdoms1, crest_lps, hinst_c1, hcdoms1_pos, hcrest_pos⟩ := instPisAt_of_posOf hinst_c1_pos
-    subst hcdoms1_pos hcrest_pos
-    have ext_crest_in := Heap.Extends.snoc inv.h_crest (.construct kexprListEnum "Nil" [])
-    have hdrop_fvs_len : ZMod.val (cnF : F) = ((fvs.drop rP).map (posOf lps)).length := by
-      rw [hcnf_val, List.length_map, List.length_drop, hfvs_len]; omega
-    have hdrop_fvs_Γ : ∀ m (hm : m < ((fvs.drop rP).map (posOf lps)).length),
-        Expr.fvar (rP + m) (Γ_t (rP + m)) = ((fvs.drop rP).map (posOf lps))[m] := by
-      intro m hm
-      have hm_cnF : m < cnF := by rw [← hcnf_val, hdrop_fvs_len] at hm; exact hm
-      have h1 := congrArg (·[m]?) hbvd2_fvs
-      rw [List.getElem?_map, List.getElem?_range hm_cnF, Option.map_some,
-        List.getElem?_eq_getElem hm] at h1
-      exact Option.some.inj h1
-    obtain ⟨r_cres, _, cdoms2_pos, cres_pos, htup_cres, hinst_c2_pos, hcres_tm⟩ :=
-      peel_collect_inst_tm hdrop_fvs_len hdrop_fvs_Γ inv.ev_cres (hcrest_tm.mono ext_crest_in)
-    injection htup_cres with hl; injection hl with h1 _; subst h1
-    rw [show rP + ((fvs.drop rP).map (posOf lps)).length = depth by
-      rw [ ← hdrop_fvs_len, hcnf_val]] at hcres_tm
-    obtain ⟨cdoms2, cres, hinst_c2, hcdoms2_pos, hcres_pos⟩ := instPisAt_of_posOf hinst_c2_pos
-    subst hcdoms2_pos hcres_pos
-    let cdoms := cdoms1 ++ cdoms2
-    have hinst_c : Expr.instPisAt (pinsF_lps ++ fvs.drop rP) (cty_inst.renameConsts f_id) =
-        some (cdoms, cres) := by
-      rw [instPisAt_append, hinst_c1, Option.map_eq_some_iff]
-      exact ⟨(cdoms2, cres), hinst_c2, rfl⟩
-    have hcdoms_drop : cdoms.drop cnP = cdoms2 := by
-      have hlen1 : cdoms1.length = cnP := by
-        rw [instPisAt_length hinst_c1]; simp [pinsF_lps, hpins_len]
-      simp [cdoms, List.drop_append, hlen1]
-    obtain ⟨r_ch, r_ca, ch_pos, cargs_pos, htup_csp, hch_tm, hcargs_rep, hcres_app⟩ :=
-      SubstAux.gall c_pub.κ .collect_spine [inv.cres] inv.h_cres
-        (.tuple [inv.chead, inv.cargs]) inv.h_csp inv.cs_csp inv.ev_csp inv.cres rfl
-        (bounded_sub inv.sub_csp hgood_pub.2) depth Γ_t 0 (posOf lps cres) hcres_tm
-    injection htup_csp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    obtain ⟨a_ch, us_ch, rfl, _, _, _, _⟩ := hch_tm.const_of_load inv.ld_chead
-    have hcargs_pos_eq : cargs_pos = cres.getAppArgs.map (posOf lps) := by
-      have h1 : (posOf lps cres).getAppArgs = cargs_pos := by
-        rw [hcres_app, getAppArgs_mkAppN]; rfl
-      unfold posOf at h1
-      rw [getAppArgs_instantiateLevelParams] at h1
-      exact h1.symm
-    have hcargs_lt : cargs_pos.length < 2 ^ 39 :=
-      IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_clen (by simp) hcargs_rep
-    obtain ⟨hclen_f, h_clen_eq⟩ := tele_klength inv.ev_clen hcargs_rep
-    subst h_clen_eq
-    have hcres_len : cres.getAppArgs.length = cnP + nI := by
-      rw [SubstAux.add_ok inv.op_cnp_ni] at hclen_f
-      injection hclen_f with hf
-      have hv := congrArg ZMod.val hf
-      rw [SubstAux.val_natCast (by omega), SubstAux.val_add (by omega), hcnp_val, hni_val,
-        hcargs_pos_eq, List.length_map] at hv
-      exact hv
-    -- Deduce `cbody_inst.getAppArgs.length = cnP + nI` via `instPisAt_constHead` on `cty_inst.renameConsts f_id`
-    have hcbody_inst_len : cbody_inst.getAppArgs.length = cnP + nI := by
-      have hstrip_ren := stripPis_renameConsts f_id (cnP + cnF) cty_inst hstrip_inst
-      have hfn_ren : (cbody_inst.renameConsts f_id).getAppFn =
-          .const (f_id (c_pub.κ (ixAddr a_ch0))) usc_inst := by
-        rw [getAppFn_renameConsts, hfn_inst]; rfl
-      have hlen_ren : (cbody_inst.renameConsts f_id).getAppArgs.length =
-          cbody_inst.getAppArgs.length := by
-        rw [getAppArgs_renameConsts, List.length_map]
-      have hpfx_len : (pinsF_lps ++ fvs.drop rP).length + 0 = cnP + cnF := by
-        simp [pinsF_lps, hpins_len, hfvs_len]; omega
-      rw [← hpfx_len] at hstrip_ren
-      obtain ⟨_, cres', _, cbody_r, hinst_r', hs0, _, hlen_r⟩ :=
-        instPisAt_constHead _ _ cbody_inst.getAppArgs.length (pinsF_lps ++ fvs.drop rP) 0
-          (cty_inst.renameConsts f_id) hstrip_ren hfn_ren hlen_ren
-      rw [hinst_c] at hinst_r'; injection hinst_r' with hp; injection hp with _ hcr; subst hcr
-      injection hs0 with hp; injection hp with _ hcb; subst hcb
-      exact hlen_r.symm.trans hcres_len
-    -- Index `defeq_list_ok` (`c_adv`)
-    have ext_pref_csp := ext_pref_exp.trans (inv.ev_majeq.heap_extends.trans
-      (inv.ev_ctyl.heap_extends.trans (ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
-        (inv.ev_crest.heap_extends.trans (ext_crest_in.trans
-          (inv.ev_cres.heap_extends.trans inv.ev_csp.heap_extends)))))))
-    have hlargs_csp := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_pref_csp hlargs_pref
-    obtain ⟨_, hldrop_rep, h_ldrop_eq⟩ := tele_kdrop inv.ev_ldrop hlargs_csp
-    subst h_ldrop_eq; rw [hrp_val] at hldrop_rep
-    obtain ⟨_, hidxl_rep⟩ := tele_ktake (fun _ _ _ _ e x => x.mono e) inv.ev_idxl hldrop_rep
-    rw [hni_val] at hidxl_rep
-    have hcargs_idxl := RepLinkedList.mono tmE_heapMono₂ inv.ev_idxl.heap_extends hcargs_rep
-    obtain ⟨_, hidxr_rep, h_idxr_eq⟩ := tele_kdrop inv.ev_idxr hcargs_idxl
-    subst h_idxr_eq; rw [hcnp_val] at hidxr_rep
-    have hidxl_tm : RepList kexprListEnum (fun h X p => Tm c_adv.κ depth Γ_t h 0 X p) inv.h_idxl
-        (((lhsS.getAppArgs.drop rP).take nI).map (posOf lps)) inv.v_idxl := by
-      rw [hκ_eq, hlargs_pos_eq, ← List.map_drop, ← List.map_take] at hidxl_rep ⊢
-      induction hidxl_rep with
-      | nil cell => exact .nil cell
-      | cons cell hh _ ih => exact .cons cell hh.toTm ih
-    have hidxr_tm : RepList kexprListEnum (fun h Y p => Tm c_adv.κ depth Γ_t h 0 Y p) inv.h_idxl
-        ((cres.getAppArgs.drop cnP).map (posOf lps)) inv.v_idxr := by
-      rw [hκ_eq]; rwa [hcargs_pos_eq, ← List.map_drop] at hidxr_rep
-    have ext_open_idxl := inv.ev_tsp.heap_extends.trans (inv.ev_req.heap_extends.trans
-      (inv.ev_raddr.heap_extends.trans (inv.ev_lsp.heap_extends.trans
-        (ext_lsp_lheq.trans (ext_lheq_pref.trans
-          (ext_pref_csp.trans inv.ev_idxl.heap_extends))))))
-    have ext_h_idxl := ext_open.trans ext_open_idxl
-    have hde_idx : DefEqListJ posRulesJ c_adv.env depth
-        ((lhsS.getAppArgs.drop rP).take nI) (cres.getAppArgs.drop cnP) :=
-      rawDefEqList_to_posRulesJ hlps_perm
-        (defeq_list_ok_spec hCore (hrc_adv.mono ext_h_idxl)
-          (by rw [hκ_eq]; exact hctx_rep.mono ext_open_idxl) hsc_t
-          hef_adv hlf_adv (hgood_adv.sub inv.sub_deidx) inv.ev_deidx hidxl_tm hidxr_tm)
-    -- 8. Statement domain telescopes (`defeq_tele` #1 and #2 in `c_adv`)
-    have ext_idxl_deidx := inv.ev_deidx.heap_extends
-    have ext_h_deidx := ext_h_idxl.trans ext_idxl_deidx
-    have htyr_ren_ex : TmExact c_adv.κ 0 zeroGhost inv.h_tyr_ren 0
-        (posOf lps (tyA.renameConsts f_id)) inv.v_tyr_ren := by
-      rw [hκ_eq]
-      have hr := rename_exact (Γ₂ := zeroGhost) inv.ev_tyr_ren
-        ((hty_rep 0 zeroGhost).mono ext_h_deidx) (hren.mono ext_h_deidx)
-      have hnp_ty_pos : NoProjIn blockNames (posOf lps tyA) = true := by
-        unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_ty
-      rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_ty_pos] at hr
-      have hcomm : (posOf lps tyA).renameConsts f_id = posOf lps (tyA.renameConsts f_id) := by
-        unfold posOf
-        exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) tyA).symm
-      rwa [hcomm] at hr
-    have ext_tyr_nil := Heap.Extends.snoc inv.h_tyr_ren (.construct kexprListEnum "Nil" [])
-    have ext_tci_dt1_in := ext_open_in.trans (inv.ev_open.heap_extends.trans
-      (ext_open_idxl.trans (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans ext_tyr_nil))))
-    have ext_h_dt1_in := ext_tci.trans ext_tci_dt1_in
-    obtain ⟨fvs1_pos, remA1_pos, rdoms_pos, lrest_pos, hop_dt1_pos, hinst_r_pos, hraw_pre⟩ :=
-      defeq_tele_spec hCore hef_adv.storeClosed rP (d := 0) (depth := depth)
-        hrp_val (by omega)
-        (hrc_adv.mono ext_h_dt1_in)
-        (typesRep_alloc_nil c_adv.κ zeroGhost inv.h_tyr_ren)
-        (ghostScoped_zero zeroGhost) hef_adv hlf_adv (hgood_adv.sub inv.sub_dt1) inv.ev_dt1
-        (by rw [hκ_eq]; exact (htty_rep 0 zeroGhost).mono ext_tci_dt1_in)
-        (htyr_ren_ex.toTm.mono ext_tyr_nil)
-    obtain ⟨fvs1, remA1, hop_dt1, hfvs1_pos, hremA1_pos⟩ := openPisAtFvars_of_posOf hop_dt1_pos
-    subst hfvs1_pos hremA1_pos
-    have hfvs_split := openPisAtFvars_split rP cnF cvt_lps 0
-    rw [show rP + cnF = depth from rfl, hopen_t, hop_dt1, Nat.zero_add, Option.map_eq_some_iff]
-      at hfvs_split
-    obtain ⟨⟨fvs2, tbody'⟩, hop_dt2_expected, hfvs_pair⟩ := hfvs_split
-    injection hfvs_pair with hfvs_app htbody_eq; subst htbody_eq
-    have hfvs1_len : fvs1.length = rP := (openPisAtFvars_spec rP cvt_lps 0 hop_dt1).1
-    have hfvs_take_eq : fvs.take rP = fvs1 := by
-      rw [← hfvs_app, List.take_left' hfvs1_len]
-    have hfvs_drop_eq : fvs.drop rP = fvs2 := by
-      rw [← hfvs_app, List.drop_left' hfvs1_len]
-    rw [← hfvs_take_eq] at hinst_r_pos hraw_pre
-    obtain ⟨rdoms, lrest, hinst_r, hrdoms_pos, _⟩ := instPisAt_of_posOf hinst_r_pos
-    subst hrdoms_pos
-    have hde_pre : DefEqListJ posRulesJ c_adv.env depth
-        ((fvs.take rP).map Expr.fvarTypeD) rdoms := by
-      have hmap_ty : ((fvs.take rP).map (posOf lps)).map Expr.fvarTypeD =
-          ((fvs.take rP).map Expr.fvarTypeD).map (posOf lps) := by
-        rw [List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro x hx
-        have hx_mem : x ∈ fvs := List.mem_of_mem_take hx
-        obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx_mem
-        conv_lhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
-        conv_rhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
-        rfl
-      rw [hmap_ty] at hraw_pre
-      exact rawDefEqList_to_posRulesJ hlps_perm hraw_pre
-    -- `defeq_tele` #2
-    have ext_tci_dt1 := ext_tci_dt1_in.trans inv.ev_dt1.heap_extends
-    have htake_fvs_len : ZMod.val (rP : F) = ((fvs.take rP).map (posOf lps)).length := by
-      rw [hrp_val, List.length_map, List.length_take, hfvs_len]; omega
-    have htake_fvs_Γ : ∀ m (hm : m < ((fvs.take rP).map (posOf lps)).length),
-        Expr.fvar (0 + m) (Γ_t (0 + m)) = ((fvs.take rP).map (posOf lps))[m] := by
-      intro m hm
-      have hm_rP : m < rP := by rw [← hrp_val, htake_fvs_len] at hm; exact hm
-      have h1 := congrArg (·[m]?) hbvd1_fvs
-      rw [List.getElem?_map, List.getElem?_range hm_rP, Option.map_some,
-        List.getElem?_eq_getElem hm] at h1
-      exact Option.some.inj h1
-    obtain ⟨_, remA1_inst, hinst_tty_rp, htty_rp_ex, h_tty_rp_eq⟩ :=
-      peel_n_foralls_inst_exact htake_fvs_len htake_fvs_Γ inv.ev_tty_rp
-        ((htty_rep 0 zeroGhost).mono ext_tci_dt1)
-    subst h_tty_rp_eq; rw [ ← htake_fvs_len, hrp_val, Nat.zero_add] at htty_rp_ex
-    have hremA1_eq : remA1_inst = posOf lps remA1 := by
-      rw [hfvs_take_eq] at hinst_tty_rp
-      have hop_spec := (openPisAtFvars_spec rP (posOf lps cvt_lps) 0 hop_dt1_pos).2.1
-      rw [hop_spec] at hinst_tty_rp
-      injection hinst_tty_rp with hp; exact hp.2.symm
-    subst hremA1_eq
-    have ext_open_dt1 := ext_open_idxl.trans (ext_idxl_deidx.trans
-      (inv.ev_tyr_ren.heap_extends.trans (ext_tyr_nil.trans inv.ev_dt1.heap_extends)))
-    obtain ⟨_, hctx_rp_rep, h_ctx_rp_eq⟩ :=
-      typesRep_drop cnF hcnf_val inv.ev_ctx_rp (hctx_rep.mono ext_open_dt1)
-    subst h_ctx_rp_eq
-    rw [show depth - ZMod.val (cnF : F) = rP by rw [hcnf_val]; omega] at hctx_rp_rep
-    have hsc_t_rp : GhostScoped Γ_t rP := fun i hi => hsc_t i (by omega)
-    have ext_crest_dt1 := ext_crest_in.trans (inv.ev_cres.heap_extends.trans
-      (inv.ev_csp.heap_extends.trans (inv.ev_idxl.heap_extends.trans
-        (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans
-          (ext_tyr_nil.trans inv.ev_dt1.heap_extends))))))
-    have ext_h_dt1 := ext_tci.trans ext_tci_dt1
-    obtain ⟨fvs2_pos, _, doms2_pos, _, hop_dt2_pos, hinst_dt2_pos, hraw_dom⟩ :=
-      defeq_tele_spec hCore hef_adv.storeClosed cnF (d := rP) (depth := depth)
-        hcnf_val (by omega)
-        (hrc_adv.mono ext_h_dt1) (by rw [hκ_eq]; exact hctx_rp_rep) hsc_t_rp
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_dt2) inv.ev_dt2
-        (by rw [hκ_eq]; exact htty_rp_ex)
-        (by rw [hκ_eq]; exact hcrest_tm.mono ext_crest_dt1)
-    obtain ⟨fvs2', _, hop_dt2', hfvs2_pos, _⟩ := openPisAtFvars_of_posOf hop_dt2_pos
-    subst hfvs2_pos
-    rw [hop_dt2_expected] at hop_dt2'; injection hop_dt2' with hp
-    obtain ⟨hfvs2_eq, _⟩ := Prod.mk.inj hp; subst hfvs2_eq
-    rw [← hfvs_drop_eq] at hinst_dt2_pos hraw_dom
-    rw [hinst_c2_pos] at hinst_dt2_pos
-    injection hinst_dt2_pos with hp; obtain ⟨hdoms2_eq, _⟩ := Prod.mk.inj hp; subst hdoms2_eq
-    have hde_dom : DefEqListJ posRulesJ c_adv.env depth
-        ((fvs.drop rP).map Expr.fvarTypeD) (cdoms.drop cnP) := by
-      rw [hcdoms_drop]
-      have hmap_ty : ((fvs.drop rP).map (posOf lps)).map Expr.fvarTypeD =
-          ((fvs.drop rP).map Expr.fvarTypeD).map (posOf lps) := by
-        rw [List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro x hx
-        have hx_mem : x ∈ fvs := List.mem_of_mem_drop hx
-        obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx_mem
-        conv_lhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
-        conv_rhs => rw [Function.comp_apply, hfvs_shape idx hidx_lt]
-        rfl
-      rw [hmap_ty] at hraw_dom
-      exact rawDefEqList_to_posRulesJ hlps_perm hraw_dom
-    -- 9. Public parameter typing & `defeq_lam_tele` (#1 and #2 in `c_pub`)
-    have ext_h_dt2 := ext_h_dt1.trans inv.ev_dt2.heap_extends
-    have ext_dt2_nil := Heap.Extends.snoc inv.h_dt2 (.construct kexprListEnum "Nil" [])
-    obtain ⟨r_pbody, r_ctxp, Γ_p, fvsP_pos, crest2_pos, htup_ctxp, hopen_p_pos, _, hΓp_hi,
-        _, hctxp_rep, hsc_p⟩ :=
-      peel_collect_open_exact rP hrp_val inv.ev_ctxp
-        ((hty_rep 0 zeroGhost).mono (ext_h_dt2.trans ext_dt2_nil))
-        (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_dt2)
-        (ghostScoped_zero zeroGhost)
-    injection htup_ctxp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    rw [Nat.zero_add] at hΓp_hi hctxp_rep hsc_p
-    obtain ⟨fvsP, crest2, hopen_p, hfvsP_pos, hcrest2_pos⟩ := openPisAtFvars_of_posOf hopen_p_pos
-    subst hfvsP_pos hcrest2_pos
-    obtain ⟨hfvsP_len, _, hfvsP_shape⟩ := openPisAtFvars_spec rP tyA 0 hopen_p
-    have hfvsP_take : fvsP.take rP = fvsP := List.take_of_length_le (by omega)
-    -- Apply `defeq_lam_tele` #1 FIRST so we have `Γ_l` ready for `inst_params_typed_spec`!
-    have ext_h_ctxp := ext_h_dt2.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)
-    have ext_h_crestp := ext_h_ctxp.trans inv.ev_crestp.heap_extends
-    have ext_crestp_nil := Heap.Extends.snoc inv.h_crestp (.construct kexprListEnum "Nil" [])
-    have ext_h_lt1_in := ext_h_crestp.trans ext_crestp_nil
-    obtain ⟨r_rhs_rp, r_lctx, Γ_l, lfvs1_pos, remL1_pos, pdoms1_pos, tyRest_pos,
-        htup_lt1, hop_lt1_pos, hinst_lt1_pos, _, hΓl_hi, hremL1_tm, hlctx_rep, hsc_l, hraw_lt1⟩ :=
-      defeq_lam_tele_spec hCore hef_pub.storeClosed rP (d := 0) (depth := depth)
-        hrp_val (by omega)
-        (hrc.mono ext_h_lt1_in)
-        (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_crestp)
-        (ghostScoped_zero zeroGhost) hef_pub hlf_pub (hgood_pub.sub inv.sub_lt1) inv.ev_lt1
-        (hrhs_pos_tm0.toTm.mono ext_h_lt1_in)
-        ((hty_rep 0 zeroGhost).toTm.mono ext_h_lt1_in)
-    injection htup_lt1 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    rw [Nat.zero_add] at hΓl_hi hremL1_tm hlctx_rep hsc_l
-    obtain ⟨lfvs1, remL1, hop_lt1, hlfvs1_pos, hremL1_pos⟩ := openLamsAtFvars_of_posOf hop_lt1_pos
-    subst hlfvs1_pos hremL1_pos
-    obtain ⟨hlfvs1_len, _, hlfvs1_shape⟩ := openLamsAtFvars_spec rP r.rhs 0 hop_lt1
-    obtain ⟨pdoms1, tyRest, hinst_lt1, hpdoms1_pos, _⟩ := instPisAt_of_posOf hinst_lt1_pos
-    subst hpdoms1_pos
-    -- Now apply `inst_params_typed_spec` with `Γ₁ := Γ_p` and `Γ₂ := Γ_l`!
-    have hΓp_list : ((List.range rP).map fun m => Expr.fvar m (Γ_p m)) = fvsP.map (posOf lps) := by
-      apply List.ext_getElem (by simp [hfvsP_len])
-      intro m hm1 hm2
-      simp only [List.length_range, List.length_map] at hm1
-      have hm_pos : m < (fvsP.map (posOf lps)).length := by simp [hfvsP_len, hm1]
-      have hΓm := hΓp_hi m hm_pos
-      have hm_fvsP : m < fvsP.length := by rw [hfvsP_len]; exact hm1
-      have hsh := hfvsP_shape m hm_fvsP
-      rw [Nat.zero_add] at hsh
-      simp only [List.getElem_map, List.getElem_range, hΓm]
-      conv_rhs => rw [hsh]
-      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-    have hΓl_list : ((List.range rP).map fun m => Expr.fvar m (Γ_l m)) = lfvs1.map (posOf lps) := by
-      apply List.ext_getElem (by simp [hlfvs1_len])
-      intro m hm1 hm2
-      simp only [List.length_range, List.length_map] at hm1
-      have hm_pos : m < (lfvs1.map (posOf lps)).length := by simp [hlfvs1_len, hm1]
-      have hΓm := hΓl_hi m hm_pos
-      have hm_lfvs1 : m < lfvs1.length := by rw [hlfvs1_len]; exact hm1
-      have hsh := hlfvs1_shape m hm_lfvs1
-      rw [Nat.zero_add] at hsh
-      simp only [List.getElem_map, List.getElem_range, hΓm]
-      conv_rhs => rw [hsh]
-      simp [posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-    let pinsP_lps := pins_lps.map fun p => Expr.instSpine (fvsP.take rP) (rP - 1) p
-    let pinsL_lps := pins_lps.map fun p => Expr.instSpine lfvs1 (rP - 1) p
-    have hpins_ctxp_1 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_p h 0 P p) inv.h_ctxp
-        (pinsP_lps.map (posOf lps)) pins := by
-      have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
-      have hlist_eq :
-          (pins_lps.map (posOf lps)).map
-            (fun P => Expr.instSpine ((List.range rP).map fun m => .fvar m (Γ_p m)) (rP - 1) P) =
-            pinsP_lps.map (posOf lps) := by
-        rw [hΓp_list]
-        dsimp only [pinsP_lps]
-        rw [hfvsP_take, List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro p _; simp only [Function.comp_apply]
-        unfold posOf
-        exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
-          fvsP (rP - 1) p).symm
-      rw [← hlist_eq]; clear hlist_eq
-      induction h1 with
-      | nil cell => exact .nil cell
-      | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_p).toTm ih
-    have hpins_ctxp_2 : RepList kexprListEnum (fun h P p => Tm c_pub.κ rP Γ_l h 0 P p) inv.h_ctxp
-        (pinsL_lps.map (posOf lps)) pins := by
-      have h1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_ctxp hpins_rep
-      have hlist_eq :
-          (pins_lps.map (posOf lps)).map
-            (fun P => Expr.instSpine ((List.range rP).map fun m => .fvar m (Γ_l m)) (rP - 1) P) =
-            pinsL_lps.map (posOf lps) := by
-        rw [hΓl_list]
-        dsimp only [pinsL_lps]
-        rw [List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro p _; simp only [Function.comp_apply]
-        unfold posOf
-        exact (Ix.Kernel.Expr.instSpine_instantiateLevelParams lps (posLevels lps)
-          lfvs1 (rP - 1) p).symm
-      rw [← hlist_eq]; clear hlist_eq
-      induction h1 with
-      | nil cell => exact .nil cell
-      | cons cell hh _ ih => exact .cons cell (hh.open_prefix_eq Γ_l).toTm ih
-    have ext_ctyl_ctxp := ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
-      (inv.ev_crest.heap_extends.trans (ext_crest_dt1.trans
-        (inv.ev_dt2.heap_extends.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)))))
-    obtain ⟨cdomsP_pos, crestP_pos, cdomsL_pos, crestL_pos,
-        hinst_p_pos, hinst_l_pos, _, hcrestL_tm, hraw_pins_typed⟩ :=
-      inst_params_typed_spec hCore hef_pub.storeClosed (d₁ := rP) (d₂ := rP) (depth := depth)
-        (by omega) (hrc.mono ext_h_ctxp) hctxp_rep hsc_p hef_pub hlf_pub
-        (hgood_pub.sub inv.sub_crestp) inv.ev_crestp
-        ((hctyl_tm0.mono ext_ctyl_ctxp).of_depth_zero rP)
-        ((hctyl_tm0.mono ext_ctyl_ctxp).of_depth_zero rP)
-        hpins_ctxp_1 hpins_ctxp_2
-    obtain ⟨cdomsP, crestP, hinst_p, hcdomsP_pos, _⟩ := instPisAt_of_posOf hinst_p_pos
-    subst hcdomsP_pos
-    obtain ⟨cdomsL, crestL, hinst_l, _, hcrestL_pos⟩ := instPisAt_of_posOf hinst_l_pos
-    subst hcrestL_pos
-    have hpins_typed : TypedListJ posRulesJ c_pub.env depth pinsP_lps cdomsP :=
-      rawTypedList_to_posRulesJ hlps_perm hraw_pins_typed
-    -- Construct `xFvsP, ldoms` (`openPisAtFvars cnF crestP rP`) and `ldoms.getAppArgs.length = cnP + nI`
-    have hpP_len : pinsP_lps.length + cnF = cnP + cnF := by simp [pinsP_lps, hpins_len]
-    rw [← hpP_len] at hstrip_inst
-    obtain ⟨_, crestP', bs_cp, cbody_cp, hinst_p', hstrip_cp, hfn_cp, hlen_cp⟩ :=
-      instPisAt_constHead _ _ (cnP + nI) pinsP_lps cnF cty_inst
-        hstrip_inst hfn_inst hcbody_inst_len
-    rw [hinst_p] at hinst_p'; injection hinst_p' with hp; injection hp with _ hcp; subst hcp
-    obtain ⟨xFvsP, ldoms, hopen_cf, _, hldoms_len⟩ :=
-      openPisAtFvars_constHead _ _ (cnP + nI) cnF crestP rP hstrip_cp hfn_cp hlen_cp
-    -- `defeq_lam_tele` #2 (`ev_lt2`)
-    have ext_crestp_lt1 := ext_crestp_nil.trans inv.ev_lt1.heap_extends
-    have ext_h_lt1 := ext_h_lt1_in.trans inv.ev_lt1.heap_extends
-    obtain ⟨_, _, _, lfvs2_pos, remL2_pos, pdoms2_pos, crestEnd_pos,
-        _, hop_lt2_pos, hinst_lt2_pos, _, _, _, _, _, hraw_lt2⟩ :=
-      defeq_lam_tele_spec hCore hef_pub.storeClosed cnF (d := rP) (depth := depth)
-        hcnf_val (by omega)
-        (hrc.mono ext_h_lt1) hlctx_rep hsc_l hef_pub hlf_pub (hgood_pub.sub inv.sub_lt2) inv.ev_lt2
-        hremL1_tm (hcrestL_tm.mono ext_crestp_lt1)
-    obtain ⟨lfvs2, remL2, hop_lt2, hlfvs2_pos, _⟩ := openLamsAtFvars_of_posOf hop_lt2_pos
-    subst hlfvs2_pos
-    obtain ⟨_, _, hlfvs2_shape⟩ := openLamsAtFvars_spec cnF remL1 rP hop_lt2
-    obtain ⟨pdoms2, crestEnd, hinst_lt2, hpdoms2_pos, _⟩ := instPisAt_of_posOf hinst_lt2_pos
-    subst hpdoms2_pos
-    have hlam_walk : LamTeleWalkJ posRulesJ c_pub.env rP cnF tyA cty_inst
-        (fun pre => pins_lps.map fun p => Expr.instSpine pre (rP - 1) p) r.rhs := by
-      let lfvs := lfvs1 ++ lfvs2
-      have hop_lams_all : openLamsAtFvars depth r.rhs 0 = some (lfvs, remL2) := by
-        show openLamsAtFvars (rP + cnF) r.rhs 0 = some (lfvs1 ++ lfvs2, remL2)
-        rw [openLamsAtFvars_split rP cnF r.rhs 0, hop_lt1, Nat.zero_add, hop_lt2]; rfl
-      have hlfvs_take : lfvs.take rP = lfvs1 := List.take_left' hlfvs1_len
-      have hlfvs_drop : lfvs.drop rP = lfvs2 := List.drop_left' hlfvs1_len
-      have hmap1 : (lfvs1.map (posOf lps)).map Expr.fvarTypeD =
-          (lfvs1.map Expr.fvarTypeD).map (posOf lps) := by
-        rw [List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro x hx
-        obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
-        conv_lhs => rw [Function.comp_apply, hlfvs1_shape idx hidx_lt]
-        conv_rhs => rw [Function.comp_apply, hlfvs1_shape idx hidx_lt]
-        rfl
-      have hmap2 : (lfvs2.map (posOf lps)).map Expr.fvarTypeD =
-          (lfvs2.map Expr.fvarTypeD).map (posOf lps) := by
-        rw [List.map_map, List.map_map]
-        apply List.map_congr_left
-        intro x hx
-        obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
-        conv_lhs => rw [Function.comp_apply, hlfvs2_shape idx hidx_lt]
-        conv_rhs => rw [Function.comp_apply, hlfvs2_shape idx hidx_lt]
-        rfl
-      rw [hmap1] at hraw_lt1
-      rw [hmap2] at hraw_lt2
-      have hraw_both := rawDefEqList_append hraw_lt1 hraw_lt2
-      rw [← List.map_append, ← List.map_append, ← List.map_append] at hraw_both
-      exact ⟨lfvs, remL2, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
-        hop_lams_all, by rwa [hlfvs_take], by rwa [hlfvs_take], by rwa [hlfvs_drop],
-        rawDefEqList_to_posRulesJ hlps_perm hraw_both⟩
-    -- 10. Right-hand side application (`rhs_s ≡ mkAppN (r.rhs.renameConsts f_id) fvs` in `c_adv`)
-    have ext_h_lt2 := ext_h_lt1.trans inv.ev_lt2.heap_extends
-    have hrhs_ren_ex : TmExact c_adv.κ 0 zeroGhost inv.h_rhs_ren 0
-        (posOf lps (r.rhs.renameConsts f_id)) inv.v_rhs_ren := by
-      rw [hκ_eq]
-      have hr := rename_exact (Γ₂ := zeroGhost) inv.ev_rhs_ren
-        (hrhs_pos_tm0.mono ext_h_lt2) (hren.mono ext_h_lt2)
-      have hnp_rhs_pos : NoProjIn blockNames (posOf lps r.rhs) = true := by
-        unfold posOf; rw [noProjIn_instantiateLevelParams]; exact hrhs_noproj
-      rw [renameAll_eq_renameConsts_of_noProjIn hf_out hnp_rhs_pos] at hr
-      have hcomm : (posOf lps r.rhs).renameConsts f_id = posOf lps (r.rhs.renameConsts f_id) := by
-        unfold posOf
-        exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) r.rhs).symm
-      rwa [hcomm] at hr
-    have ev_bvd3' := inv.ev_bvd3
-    rw [hd_eq] at ev_bvd3'
-    have hbvd3_rep := bvars_desc_exact_wide (κ := c_adv.κ) (d := depth) (Γ := Γ_t)
-      (by rw [hd_val]) (by rw [hd_val]) (by omega) ev_bvd3'
-    rw [hd_val, Nat.sub_self] at hbvd3_rep
-    have hbvd3_fvs :
-        ((List.range depth).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) = fvs_pos := by
-      apply List.ext_getElem (by simp [hfvs_pos_len])
-      intro m hm1 hm2
-      simp only [List.length_map, List.length_range] at hm1
-      have hΓm := hΓt_hi m hm2
-      simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm]
-      rw [hfvs_pos]; simp only [List.getElem_map]
-      have hm_fvs : m < fvs.length := by rw [hfvs_len]; exact hm1
-      conv_rhs => rw [hfvs_shape m hm_fvs]
-      simp [Nat.zero_add, posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
-    rw [hbvd3_fvs, hfvs_pos] at hbvd3_rep
-    have hrhs_app_ex := apply_spine_exact inv.ev_rhsapp
-      ((hrhs_ren_ex.of_depth_zero depth).mono inv.ev_bvd3.heap_extends) hbvd3_rep
-    have hrhs_app_pos_eq :
-        Expr.mkAppN (posOf lps (r.rhs.renameConsts f_id)) (fvs.map (posOf lps)) =
-          posOf lps (Expr.mkAppN (r.rhs.renameConsts f_id) fvs) := by
-      unfold posOf
-      exact (mkAppN_instantiateLevelParams lps (posLevels lps) fvs (r.rhs.renameConsts f_id)).symm
-    rw [hrhs_app_pos_eq] at hrhs_app_ex
-    have ext_dt1_rhsapp := inv.ev_dt2.heap_extends.trans (ext_dt2_nil.trans
-      (inv.ev_ctxp.heap_extends.trans (inv.ev_crestp.heap_extends.trans
-        (ext_crestp_lt1.trans (inv.ev_lt2.heap_extends.trans
-          (inv.ev_rhs_ren.heap_extends.trans
-            (inv.ev_bvd3.heap_extends.trans inv.ev_rhsapp.heap_extends)))))))
-    have ext_open_rhsapp := ext_open_dt1.trans ext_dt1_rhsapp
-    have ext_eqa_rhsapp := inv.ev_lsp.heap_extends.trans (ext_lsp_lheq.trans
-      (ext_lheq_pref.trans (ext_pref_csp.trans (inv.ev_idxl.heap_extends.trans
-        (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans
-          (ext_tyr_nil.trans (inv.ev_dt1.heap_extends.trans ext_dt1_rhsapp))))))))
-    have ext_h_rhsapp := ext_open.trans ext_open_rhsapp
-    have hde_rhs : posRulesJ.defeq c_adv.env depth rhsS
-        (Expr.mkAppN (r.rhs.renameConsts f_id) fvs) :=
-      posRulesJ_defeq_of_pos hlps_perm
-        (core_defeq hCore (hrc_adv.mono ext_h_rhsapp)
-          (by rw [hκ_eq]; exact hctx_rep.mono ext_open_rhsapp) hsc_t
-          hef_adv hlf_adv (hgood_adv.sub inv.sub_derhs) inv.ev_derhs
-          (by rw [hκ_eq]; exact hrhsS_ex.toTm.mono ext_eqa_rhsapp)
-          hrhs_app_ex.toTm)
-    -- 11. `lhsS : alphaS`, `rhsS : alphaS`, and `alphaS : .sort ell_lps` (`c_adv`)
-    have e_derhs := inv.ev_derhs.heap_extends
-    have ext_h_derhs := ext_h_rhsapp.trans e_derhs
-    have ext_open_derhs := ext_open_rhsapp.trans e_derhs
-    have ext_eqa_derhs := ext_eqa_rhsapp.trans e_derhs
-    obtain ⟨tl_pos, htl_tm, htl_inf⟩ :=
-      core_infer hCore (hrc_adv.mono ext_h_derhs)
-        (by rw [hκ_eq]; exact hctx_rep.mono ext_open_derhs) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_tl) inv.ev_tl
-        (by rw [hκ_eq]; exact hlhs_ex.toTm.mono ext_eqa_derhs)
-    have e_tl := inv.ev_tl.heap_extends
-    have htl_de :=
-      core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans e_tl))
-        (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_tl)) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_detl) inv.ev_detl
-        htl_tm (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_tl))
-    have e_detl := e_tl.trans inv.ev_detl.heap_extends
-    obtain ⟨tr_pos, htr_tm, htr_inf⟩ :=
-      core_infer hCore (hrc_adv.mono (ext_h_derhs.trans e_detl))
-        (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_detl)) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_tr) inv.ev_tr
-        (by rw [hκ_eq]; exact hrhsS_ex.toTm.mono (ext_eqa_derhs.trans e_detl))
-    have e_tr := e_detl.trans inv.ev_tr.heap_extends
-    have htr_de :=
-      core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans e_tr))
-        (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_tr)) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_detr) inv.ev_detr
-        htr_tm (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_tr))
-    have e_detr := e_tr.trans inv.ev_detr.heap_extends
-    obtain ⟨ta_pos, hta_tm, hta_inf⟩ :=
-      core_infer hCore (hrc_adv.mono (ext_h_derhs.trans e_detr))
-        (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_detr)) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_ta) inv.ev_ta
-        (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_detr))
-    have e_ta := e_detr.trans inv.ev_ta.heap_extends
-    have ext_srt := Heap.Extends.snoc inv.h_ta (.construct kexprEnum "Srt" [inv.ell])
-    have hsrt_tm : Tm c_adv.κ depth Γ_t
-        (inv.h_ta ++ [.construct kexprEnum "Srt" [inv.ell]]) 0
-        (posOf lps (.sort ell_lps)) (.ptr (.enum kexprEnum) inv.h_ta.length) := by
-      unfold posOf; simp only [Expr.instantiateLevelParams]
-      rw [hell_subst]
-      exact .sort (by simp) (rell_pos.mono (ext_eqa_derhs.trans (e_ta.trans ext_srt)))
-        (LvEq.refl ell_pos)
-    have hta_de :=
-      core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans (e_ta.trans ext_srt)))
-        (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans (e_ta.trans ext_srt))) hsc_t
-        hef_adv hlf_adv (hgood_adv.sub inv.sub_deta) inv.ev_deta
-        (hta_tm.mono ext_srt) hsrt_tm
-    exact ⟨
-      { a_t, hadv_t, cvt, vt, hfind_t := hfind_t0, ht_lps,
-        cvj, cnP, cnF, hfind_ctor, hlvls_len, hpins_len, hnfields,
-        hrhs_bvars, hrhs_nofvar, hrhs_lvls, hrhs_lams, hrhs_noproj, hrhs_cr, hrhs_typed,
-        hctor_tele, hctor_head,
-        ell_lps, fvs, tbody, hopen_t, heq_head, htargs_len,
-        hlhs_fn, hlargs_len, hlargs_pre, hmajor_eq,
-        cdoms, cres, hinst_c, hcres_len,
-        rdoms, lrest, hinst_r,
-        fvsP, crest2, hopen_p,
-        cdomsP, crestP, hinst_p,
-        xFvsP, ldoms, hopen_cf, hldoms_len,
-        hlam_walk, hpins_typed,
-        hruns := ⟨hde_idx, hde_dom, hde_pre, hde_rhs,
-          ⟨invPosOf lps tl_pos, posRulesJ_infer_of_pos hlps_perm htl_inf,
-            posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩,
-          ⟨invPosOf lps tr_pos, posRulesJ_infer_of_pos hlps_perm htr_inf,
-            posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩⟩,
-        halpha_sort := ⟨invPosOf lps ta_pos, posRulesJ_infer_of_pos hlps_perm hta_inf,
-          posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩ }⟩
+      exact (Ix.Kernel.Expr.renameConsts_instantiateLevelParams f_id lps (posLevels lps) r.rhs).symm
+    rwa [hcomm] at hr
+  have ev_bvd3' := inv.ev_bvd3
+  rw [hd_eq] at ev_bvd3'
+  have hbvd3_rep := bvars_desc_exact_wide (κ := c_adv.κ) (d := depth) (Γ := Γ_t)
+    (by rw [hd_val]) (by rw [hd_val]) (by omega) ev_bvd3'
+  rw [hd_val, Nat.sub_self] at hbvd3_rep
+  have hbvd3_fvs :
+      ((List.range depth).map fun m => Expr.fvar (0 + m) (Γ_t (0 + m))) = fvs_pos := by
+    apply List.ext_getElem (by simp [hfvs_pos_len])
+    intro m hm1 hm2
+    simp only [List.length_map, List.length_range] at hm1
+    have hΓm := hΓt_hi m hm2
+    simp only [List.getElem_map, List.getElem_range, Nat.zero_add, hΓm]
+    rw [hfvs_pos]; simp only [List.getElem_map]
+    have hm_fvs : m < fvs.length := by rw [hfvs_len]; exact hm1
+    conv_rhs => rw [hfvs_shape m hm_fvs]
+    simp [Nat.zero_add, posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
+  rw [hbvd3_fvs, hfvs_pos] at hbvd3_rep
+  have hrhs_app_ex := apply_spine_exact inv.ev_rhsapp
+    ((hrhs_ren_ex.of_depth_zero depth).mono inv.ev_bvd3.heap_extends) hbvd3_rep
+  have hrhs_app_pos_eq :
+      Expr.mkAppN (posOf lps (r.rhs.renameConsts f_id)) (fvs.map (posOf lps)) =
+        posOf lps (Expr.mkAppN (r.rhs.renameConsts f_id) fvs) := by
+    unfold posOf
+    exact (mkAppN_instantiateLevelParams lps (posLevels lps) fvs (r.rhs.renameConsts f_id)).symm
+  rw [hrhs_app_pos_eq] at hrhs_app_ex
+  have ext_dt1_rhsapp := inv.ev_dt2.heap_extends.trans (ext_dt2_nil.trans
+    (inv.ev_ctxp.heap_extends.trans (inv.ev_crestp.heap_extends.trans
+      (ext_crestp_lt1.trans (inv.ev_lt2.heap_extends.trans
+        (inv.ev_rhs_ren.heap_extends.trans
+          (inv.ev_bvd3.heap_extends.trans inv.ev_rhsapp.heap_extends)))))))
+  have ext_open_rhsapp := ext_open_dt1.trans ext_dt1_rhsapp
+  have ext_eqa_rhsapp := inv.ev_lsp.heap_extends.trans (ext_lsp_lheq.trans
+    (ext_lheq_pref.trans (ext_pref_csp.trans (inv.ev_idxl.heap_extends.trans
+      (ext_idxl_deidx.trans (inv.ev_tyr_ren.heap_extends.trans
+        (ext_tyr_nil.trans (inv.ev_dt1.heap_extends.trans ext_dt1_rhsapp))))))))
+  have ext_h_rhsapp := ext_open.trans ext_open_rhsapp
+  have hde_rhs : posRulesJ.defeq c_adv.env depth rhsS
+      (Expr.mkAppN (r.rhs.renameConsts f_id) fvs) :=
+    posRulesJ_defeq_of_pos hlps_perm
+      (core_defeq hCore (hrc_adv.mono ext_h_rhsapp)
+        (by rw [hκ_eq]; exact hctx_rep.mono ext_open_rhsapp) hsc_t
+        hef_adv hlf_adv (hgood_adv.sub inv.sub_derhs) inv.ev_derhs
+        (by rw [hκ_eq]; exact hrhsS_ex.toTm.mono ext_eqa_rhsapp)
+        hrhs_app_ex.toTm)
+  -- 11. `lhsS : alphaS`, `rhsS : alphaS`, and `alphaS : .sort ell_lps` (`c_adv`)
+  have e_derhs := inv.ev_derhs.heap_extends
+  have ext_h_derhs := ext_h_rhsapp.trans e_derhs
+  have ext_open_derhs := ext_open_rhsapp.trans e_derhs
+  have ext_eqa_derhs := ext_eqa_rhsapp.trans e_derhs
+  obtain ⟨tl_pos, htl_tm, htl_inf⟩ :=
+    core_infer hCore (hrc_adv.mono ext_h_derhs)
+      (by rw [hκ_eq]; exact hctx_rep.mono ext_open_derhs) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_tl) inv.ev_tl
+      (by rw [hκ_eq]; exact hlhs_ex.toTm.mono ext_eqa_derhs)
+  have e_tl := inv.ev_tl.heap_extends
+  have htl_de :=
+    core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans e_tl))
+      (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_tl)) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_detl) inv.ev_detl
+      htl_tm (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_tl))
+  have e_detl := e_tl.trans inv.ev_detl.heap_extends
+  obtain ⟨tr_pos, htr_tm, htr_inf⟩ :=
+    core_infer hCore (hrc_adv.mono (ext_h_derhs.trans e_detl))
+      (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_detl)) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_tr) inv.ev_tr
+      (by rw [hκ_eq]; exact hrhsS_ex.toTm.mono (ext_eqa_derhs.trans e_detl))
+  have e_tr := e_detl.trans inv.ev_tr.heap_extends
+  have htr_de :=
+    core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans e_tr))
+      (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_tr)) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_detr) inv.ev_detr
+      htr_tm (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_tr))
+  have e_detr := e_tr.trans inv.ev_detr.heap_extends
+  obtain ⟨ta_pos, hta_tm, hta_inf⟩ :=
+    core_infer hCore (hrc_adv.mono (ext_h_derhs.trans e_detr))
+      (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans e_detr)) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_ta) inv.ev_ta
+      (by rw [hκ_eq]; exact halpha_ex.toTm.mono (ext_eqa_derhs.trans e_detr))
+  have e_ta := e_detr.trans inv.ev_ta.heap_extends
+  have ext_srt := Heap.Extends.snoc inv.h_ta (.construct kexprEnum "Srt" [inv.ell])
+  have hsrt_tm : Tm c_adv.κ depth Γ_t
+      (inv.h_ta ++ [.construct kexprEnum "Srt" [inv.ell]]) 0
+      (posOf lps (.sort ell_lps)) (.ptr (.enum kexprEnum) inv.h_ta.length) := by
+    unfold posOf; simp only [Expr.instantiateLevelParams]
+    rw [hell_subst]
+    exact .sort (by simp) (rell_pos.mono (ext_eqa_derhs.trans (e_ta.trans ext_srt)))
+      (LvEq.refl ell_pos)
+  have hta_de :=
+    core_defeq hCore (hrc_adv.mono (ext_h_derhs.trans (e_ta.trans ext_srt)))
+      (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans (e_ta.trans ext_srt))) hsc_t
+      hef_adv hlf_adv (hgood_adv.sub inv.sub_deta) inv.ev_deta
+      (hta_tm.mono ext_srt) hsrt_tm
+  exact ⟨
+    { a_t, hadv_t, cvt, vt, hfind_t := hfind_t0, ht_lps,
+      cvj, cnP, cnF, hfind_ctor, hlvls_len, hpins_len, hnfields,
+      hrhs_bvars, hrhs_nofvar, hrhs_lvls, hrhs_lams, hrhs_noproj, hrhs_cr, hrhs_typed,
+      hctor_tele, hctor_head,
+      ell_lps, fvs, tbody, hopen_t, heq_head, htargs_len,
+      hlhs_fn, hlargs_len, hlargs_pre, hmajor_eq,
+      cdoms, cres, hinst_c, hcres_len,
+      rdoms, lrest, hinst_r,
+      fvsP, crest2, hopen_p,
+      cdomsP, crestP, hinst_p,
+      xFvsP, ldoms, hopen_cf, hldoms_len,
+      hlam_walk, hpins_typed,
+      hruns := ⟨hde_idx, hde_dom, hde_pre, hde_rhs,
+        ⟨invPosOf lps tl_pos, posRulesJ_infer_of_pos hlps_perm htl_inf,
+          posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩,
+        ⟨invPosOf lps tr_pos, posRulesJ_infer_of_pos hlps_perm htr_inf,
+          posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩⟩,
+      halpha_sort := ⟨invPosOf lps ta_pos, posRulesJ_infer_of_pos hlps_perm hta_inf,
+        posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩ }⟩
 
 /-- **Refinement of `KernelModeled::check_rules_go`** over a `RulesRepExact` list and `L1.Stream`. -/
 theorem check_rules_go_vm_spec
@@ -3914,7 +3961,7 @@ theorem check_rules_go_vm_spec
         (m155 := m155) (p163 := p163) (cs169 := cs169) (x_cty := x_cty)
         (x_cnp := x_cnp) (x_cnf := x_cnf) (cs290 := cs290) (cs432 := cs432) (v451 := v451)
         (ld12 := ld) (ev54 := ev_ga) (ev129 := ev_cprj) (ev171 := ev_ci) (ld165 := ld_ci)
-        (heq258 := heq_cnp) (heq286 := heq_rnf) (ev292 := ev_iota) (op577 := op_j1)
+        (heq286 := heq_rnf) (ev292 := ev_iota) (op577 := op_j1)
         (ev434 := ev_rec) (hc579 := hc) .. =>
       subst hc
       cases hrls with
@@ -3925,7 +3972,7 @@ theorem check_rules_go_vm_spec
         obtain ⟨rhs_ptr, hmk_eq, hnf_lt, hrhs_rep⟩ := hrl_rep
         unfold krrEnum at hmk_eq
         rw [hmk_eq] at hmk
-        injection hmk with hmk_args
+        injection hmk with _ _ hmk_args
         injection hmk_args with _ hmk_args2
         injection hmk_args2 with hrnf_eq hmk_args3
         injection hmk_args3 with hrhs_eq _
@@ -3950,60 +3997,59 @@ theorem check_rules_go_vm_spec
             (hg_pub.sub fun _ hx => by simp [hx]) ha_cprj
             (not_rec_or_quot_of_load ld_ci (by decide) (by decide))
         change loadValue _ _ = .ok (.construct kciEnum "Ctor" _) at ld_ci
-        rw [ld_ci] at ld_ci'; injection ld_ci' with hv_ci; subst hv_ci
+        rw [ld_ci] at ld_ci'; injection ld_ci' with hv_ci
         rw [hcprj_key] at hfind_c0
-        cases hcir_c with
-        | @ctor _ _ _ _ _ _ _ _ cvj cnP cnF hv_c hcnp_f hcnf_f hcounts_c _ =>
-          obtain ⟨hcnp_lt, hcnf_lt⟩ := hcounts_c
-          subst hcnp_f hcnf_f
-          have hnfields : rl.nfields = cnF := by
-            have hrnf_cnf := hrnf_eq.symm.trans heq_rnf
-            injection hrnf_cnf with hf
-            have hv := congrArg ZMod.val hf
-            rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
-          have ext_h_m155 := ext_ga.trans (ev_cprj.heap_extends.trans ev_ci.heap_extends)
-          have hrule_out :=
-            check_iota_rule_vm_spec (j := j) hCore hroles ht_eq hlim_eq
-              hef_pub hlf_pub hef_adv hlf_adv hexact_adv hf_out hproj_pub
-              (hg_pub.sub fun _ hx => by simp [hx])
-              (hg_adv.sub fun _ hx => by simp [hx])
-              hlps_lt hlps_perm hrp_le hmi_lt hcnp_lt hcnf_lt
-              hfind_c0 (hlvls_ctor 0 rl rfl cvj cnP cnF hfind_c0) hnfields
-              hnp_ty (hnp_ctor rl.ctor cvj cnP cnF hfind_c0) hnp_pins
-              (hrc.mono ext_h_m155)
-              (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m155 hrm) hrm_key
-              (Bytes.repAddressRef_heapMono₂ addrTy ev_ci.heap_extends ha_cprj) hcprj_key
-              (Bytes.repAddressRef_heapMono₂ addrTy (ev_cprj.heap_extends.trans ev_ci.heap_extends) ha_t)
-              (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m155 haset) (hren.mono ext_h_m155)
-              (hty_rep.mono ext_h_m155) (hrhs_rep.mono ext_h_m155) hv_c.2.2.2
-              (hilvls_rep.mono ext_h_m155)
-              (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m155 hpins_rep)
-              ev_iota
-          have hj1_eq : v451 = .field ((j + 1 : Nat) : F) := by
-            rw [SubstAux.add_ok op_j1]; congr 1
-            exact ZMod.val_injective _ (by
-              rw [SubstAux.val_add (by simp at hj_lt; omega), hj_val, hval1,
-                SubstAux.val_natCast (by simp at hj_lt; omega)])
-          rw [hj1_eq] at ev_rec
-          have ext_m42_m77 := ev_cprj.heap_extends.trans
-            (ev_ci.heap_extends.trans ev_iota.heap_extends)
-          have ext_h_m77 := ext_ga.trans ext_m42_m77
-          obtain ⟨bytes_out, hstr_out, hrest_out⟩ :=
-            ih (j + 1) (by simp at hj_lt; omega)
-              (fun k rl' hk => by
-                have h1 := hctor_eq (k + 1) rl' (by simpa using hk)
-                simpa [Nat.add_assoc, Nat.add_comm 1 k] using h1)
-              (fun k rl' hk => hlvls_ctor (k + 1) rl' (by simpa using hk))
-              (hg_pub.sub fun _ hx => by simp [hx])
-              (hg_adv.sub fun _ hx => by simp [hx])
-              (hrc.mono ext_h_m77)
-              (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hrm) hrm_key
-              (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hiblock)
-              (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m77 haset) (hren.mono ext_h_m77)
-              (hty_rep.mono ext_h_m77) (hilvls_rep.mono ext_h_m77)
-              (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m77 hpins_rep)
-              (hrls_rest.mono ext_h_m77) (hstr_mid.mono ext_m42_m77) ev_rec
-          exact ⟨bytes_out, hstr_out, hrule_out, hrest_out⟩
+        obtain ⟨cvj, cnP, cnF, hci_c_eq, hv_c, hcnp_f, hcnf_f, hcnp_lt, hcnf_lt⟩ :=
+          hcir_c.ctor_of_eq hv_ci.symm
+        subst hci_c_eq hcnp_f hcnf_f
+        have hnfields : rl.nfields = cnF := by
+          have hrnf_cnf := hrnf_eq.symm.trans heq_rnf
+          injection hrnf_cnf with hf
+          have hv := congrArg ZMod.val hf
+          rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
+        have ext_h_m155 := ext_ga.trans (ev_cprj.heap_extends.trans ev_ci.heap_extends)
+        have hrule_out :=
+          check_iota_rule_vm_spec (j := j) hCore hroles ht_eq hlim_eq
+            hef_pub hlf_pub hef_adv hlf_adv hexact_adv hf_out hproj_pub
+            (hg_pub.sub fun _ hx => by simp [hx])
+            (hg_adv.sub fun _ hx => by simp [hx])
+            hlps_lt hlps_perm hrp_le hmi_lt hcnp_lt hcnf_lt
+            hfind_c0 (hlvls_ctor 0 rl rfl cvj cnP cnF hfind_c0) hnfields
+            hnp_ty (hnp_ctor rl.ctor cvj cnP cnF hfind_c0) hnp_pins
+            (hrc.mono ext_h_m155)
+            (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m155 hrm) hrm_key
+            (Bytes.repAddressRef_heapMono₂ addrTy ev_ci.heap_extends ha_cprj) hcprj_key
+            (Bytes.repAddressRef_heapMono₂ addrTy (ev_cprj.heap_extends.trans ev_ci.heap_extends) ha_t)
+            (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m155 haset) (hren.mono ext_h_m155)
+            (hty_rep.mono ext_h_m155) (hrhs_rep.mono ext_h_m155) hv_c.2.2.2
+            (hilvls_rep.mono ext_h_m155)
+            (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m155 hpins_rep)
+            ev_iota
+        have hj1_eq : v451 = .field ((j + 1 : Nat) : F) := by
+          rw [SubstAux.add_ok op_j1]; congr 1
+          exact ZMod.val_injective _ (by
+            rw [SubstAux.val_add (by simp at hj_lt; omega), hj_val, hval1,
+              SubstAux.val_natCast (by simp at hj_lt; omega)])
+        rw [hj1_eq] at ev_rec
+        have ext_m42_m77 := ev_cprj.heap_extends.trans
+          (ev_ci.heap_extends.trans ev_iota.heap_extends)
+        have ext_h_m77 := ext_ga.trans ext_m42_m77
+        obtain ⟨bytes_out, hstr_out, hrest_out⟩ :=
+          ih (j + 1) (by simp at hj_lt; omega)
+            (fun k rl' hk => by
+              have h1 := hctor_eq (k + 1) rl' (by simpa using hk)
+              simpa [Nat.add_assoc, Nat.add_comm 1 k] using h1)
+            (fun k rl' hk => hlvls_ctor (k + 1) rl' (by simpa using hk))
+            (hg_pub.sub fun _ hx => by simp [hx])
+            (hg_adv.sub fun _ hx => by simp [hx])
+            (hrc.mono ext_h_m77)
+            (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hrm) hrm_key
+            (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hiblock)
+            (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m77 haset) (hren.mono ext_h_m77)
+            (hty_rep.mono ext_h_m77) (hilvls_rep.mono ext_h_m77)
+            (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m77 hpins_rep)
+            (hrls_rest.mono ext_h_m77) (hstr_mid.mono ext_m42_m77) ev_rec
+        exact ⟨bytes_out, hstr_out, hrule_out, hrest_out⟩
 
 /-- **Top-level refinement of `KernelModeled::check_rules`**: decomposes the recursor's major
 premise domain (`rec_major_pins`), resolves its inductive record and constructor arity, and runs
@@ -4068,7 +4114,6 @@ theorem check_rules_vm_spec
         lvls_lps pins_lps 0 rls := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   let nI : Nat := mI - rP
-  have hnI_def : nI = mI - rP := rfl
   have hrp_val : ZMod.val (rP : F) = rP := SubstAux.val_natCast (by omega)
   have hni_val : ZMod.val (nI : F) = nI := SubstAux.val_natCast (by omega)
   match Obs.«KernelModeled::check_rules».obs ev with
@@ -4143,102 +4188,100 @@ theorem check_rules_vm_spec
         (hg_pub.sub fun _ hx => by simp [hx]) ha_ind
         (not_rec_or_quot_of_load ld_ci (by decide) (by decide))
     change loadValue _ _ = .ok (.construct kciEnum "Induct" _) at ld_ci
-    rw [ld_ci] at ld_ind'; injection ld_ind' with hv_ind; subst hv_ind
-    cases hcir_ind with
-    | @induct _ _ _ _ _ _ _ _ cv_ind caps_ind _ hcounts_i hkey_i =>
-      obtain ⟨cnP_ind, _, nC_ind, hinp_f, _, hinct_f, _, _, hnc_lt⟩ := hcounts_i
-      obtain ⟨b_ind, i_ind, hb_ind, hiidx_f, hcv_ind_name⟩ := hkey_i
-      subst hinp_f hinct_f hiidx_f
-      -- `rls.length = nC_ind`
-      have ext_rmp_ci := ev_rmp.heap_extends.trans ev_ci.heap_extends
-      obtain ⟨hrlen_f, hrlen_lt, hm147_eq⟩ :=
-        rulesRepExact_length hg_pub.2 (by simp) ev_rlen (hrls.mono ext_rmp_ci)
-      subst hm147_eq
-      have hrls_len : rls.length = nC_ind := by
-        have hlen_eq := hrlen_f.symm.trans heq_inct
-        injection hlen_eq with hf
-        have hv := congrArg ZMod.val hf
-        rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
-      -- Level parameter count of `lvls_lps` from `hty_inf` + `infer_stripPis_dom_const_lvls`
-      obtain ⟨u_rec, hinf_ty⟩ := hty_inf
-      obtain ⟨ci_ind', hfind_ind_ci, hlvls_pos_len⟩ :=
-        infer_stripPis_dom_const_lvls mI hinf_ty hstrip_pos hfn_pos
-      rw [hfind_ind] at hfind_ind_ci
-      injection hfind_ind_ci with hci_eq; subst hci_eq
-      have hlvls_lps_len : lvls_lps.length = cv_ind.levelParams.length := by
-        simp [lvls_lps, hlvls_pos_len, ConstantInfo.toConstantVal]
-      let cnP_rmp : Nat := ZMod.val inp_rmp
-      have hdom_args_len : dom.getAppArgs.length = cnP_rmp + nI := by
-        have hlen := hAs_len
-        rw [hAs_pos_eq, List.length_map] at hlen
-        exact hlen
-      have hno_dom : ∀ p ∈ dom.getAppArgs.take cnP_rmp, noLooseIn 0 nI p = true := by
-        intro p hp
-        have hp_pos : posOf lps p ∈ As_pos.take cnP_rmp := by
-          rw [hAs_pos_eq, ← List.map_take]
-          exact List.mem_map_of_mem hp
-        have hn := hno_pos (posOf lps p) hp_pos
-        unfold posOf at hn
-        rwa [noLooseIn_instantiateLevelParams] at hn
-      have hdrop_dom :
-          dom.getAppArgs.drop cnP_rmp =
-            ((List.range nI).map fun m => .bvar (nI - 1 - m)) := by
-        have hd := hdrop_pos
-        rw [hAs_pos_eq, ← List.map_drop] at hd
-        have hrhs :
-            ((List.range nI).map fun m => (Expr.bvar (nI - 1 - m) : KExpr)) =
-              (((List.range nI).map fun m => (Expr.bvar (nI - 1 - m) : KExpr))).map (posOf lps) := by
-          rw [List.map_map]; rfl
-        rw [hrhs] at hd
-        exact (List.map_injective_iff.mpr fun _ _ h => posOf_inj hlps_perm h) hd
-      let pins_lps : List KExpr := (dom.getAppArgs.take cnP_rmp).map (Expr.lowerBVars nI 0)
-      have hpins_pos_eq :
-          pins_lps.map (posOf lps) = (As_pos.take cnP_rmp).map (Expr.lowerBVars nI 0) := by
-        simp only [pins_lps, hAs_pos_eq, ← List.map_take, List.map_map, Function.comp_def, posOf]
-        exact List.map_congr_left fun p _ => (lowerBVars_instantiateLevelParams _ _ nI p 0).symm
-      have hnp_pins : ∀ p ∈ pins_lps, NoProjIn blockNames p = true := by
-        intro p hp
-        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-        have hnp_fa := noProjIn_stripPis mI hnp_ty hstrip_ty
-        simp only [NoProjIn, Bool.and_eq_true] at hnp_fa
-        rw [noProjIn_lowerBVars]
-        exact noProjIn_getAppArgs hnp_fa.1 q (List.mem_of_mem_take hq)
-      have hind_key_eq :
-          c_pub.κ (ixAddr a_ind) = c_pub.κ (iprjAddr (ixAddr b_ind) (ZMod.val i_ind)) :=
-        (env_find?_name_eq hfind_ind).symm.trans hcv_ind_name
-      have hfind_ind_iprj :
-          c_pub.env.find? (c_pub.κ (iprjAddr (ixAddr b_ind) (ZMod.val i_ind))) =
-            some (.indInfo cv_ind caps_ind) := by
-        rwa [← hind_key_eq]
-      obtain ⟨hctor_eq0, hctor_lvls0⟩ :=
-        hrule_ctor b_ind (ZMod.val i_ind) cv_ind caps_ind hfind_ind_iprj
-          ⟨bs, dom, body, mb, lvls_lps, hstrip_ty, by rwa [← hind_key_eq]⟩
-      have ev_go' := ev_go
-      rw [show (.field 0 : SourceValue F) = .field ((0 : Nat) : F) by simp] at ev_go'
-      obtain ⟨bytes_out, hstr_out, hrules_out⟩ :=
-        check_rules_go_vm_spec hCore hroles hcallees ht_eq hlim_eq
-          hef_pub hlf_pub hexact_pub hef_adv hlf_adv hexact_adv
-          hf_out hproj_pub hlps_lt hlps_perm hrp_le hmi_lt
-          hnp_ty hnp_pins hnp_ctor rls 0
-          (by omega)
-          (fun k rl hk => by simpa [Nat.zero_add] using hctor_eq0 k rl hk)
-          (fun k rl hk cvj cnP cnF hfc =>
-            hlvls_lps_len.trans (hctor_lvls0 k rl hk cvj cnP cnF hfc).symm)
-          (hg_pub.sub fun _ hx => by simp [hx])
-          (hg_adv.sub fun _ hx => by simp [hx])
-          (hrc.mono ext_rmp_ci)
-          (Bytes.repAddressRef_heapMono₂ addrTy ext_rmp_ci hrm) hrm_key
-          hb_ind
-          (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_rmp_ci haset) (hren.mono ext_rmp_ci)
-          (hty_rep.mono ext_rmp_ci)
-          (by rw [hlvls_pos_eq]; exact hilvls_rep.mono ev_ci.heap_extends)
-          (by rw [hpins_pos_eq]
-              exact RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ev_ci.heap_extends hpins_pos_rep)
-          (hrls.mono ext_rmp_ci)
-          (hstr.mono ext_rmp_ci)
-          ev_go'
-      exact ⟨bytes_out, c_pub.κ (ixAddr a_ind), cnP_rmp, nC_ind, bs, dom, body, mb,
-        lvls_lps, pins_lps, hstr_out, hrls_len, hstrip_ty, hfn_dom, hdom_args_len,
-        hno_dom, hdrop_dom, rfl, hrules_out⟩
+    rw [ld_ci] at ld_ind'; injection ld_ind' with hv_ind
+    obtain ⟨cv_ind, caps_ind, cnP_ind, nC_ind, b_ind, i_ind, hci_ind_eq, hinp_f, hinct_f,
+      _, hnc_lt, hb_ind, hiidx_f, hcv_ind_name⟩ := hcir_ind.induct_of_eq hv_ind.symm
+    subst hci_ind_eq hinp_f hinct_f hiidx_f
+    -- `rls.length = nC_ind`
+    have ext_rmp_ci := ev_rmp.heap_extends.trans ev_ci.heap_extends
+    obtain ⟨hrlen_f, hrlen_lt, hm147_eq⟩ :=
+      rulesRepExact_length hg_pub.2 (by simp) ev_rlen (hrls.mono ext_rmp_ci)
+    subst hm147_eq
+    have hrls_len : rls.length = nC_ind := by
+      have hlen_eq := hrlen_f.symm.trans heq_inct
+      injection hlen_eq with hf
+      have hv := congrArg ZMod.val hf
+      rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
+    -- Level parameter count of `lvls_lps` from `hty_inf` + `infer_stripPis_dom_const_lvls`
+    obtain ⟨u_rec, hinf_ty⟩ := hty_inf
+    obtain ⟨ci_ind', hfind_ind_ci, hlvls_pos_len⟩ :=
+      infer_stripPis_dom_const_lvls mI hinf_ty hstrip_pos hfn_pos
+    rw [hfind_ind] at hfind_ind_ci
+    injection hfind_ind_ci with hci_eq; subst hci_eq
+    have hlvls_lps_len : lvls_lps.length = cv_ind.levelParams.length := by
+      simp [lvls_lps, hlvls_pos_len, ConstantInfo.toConstantVal]
+    let cnP_rmp : Nat := ZMod.val inp_rmp
+    have hdom_args_len : dom.getAppArgs.length = cnP_rmp + nI := by
+      have hlen := hAs_len
+      rw [hAs_pos_eq, List.length_map] at hlen
+      exact hlen
+    have hno_dom : ∀ p ∈ dom.getAppArgs.take cnP_rmp, noLooseIn 0 nI p = true := by
+      intro p hp
+      have hp_pos : posOf lps p ∈ As_pos.take cnP_rmp := by
+        rw [hAs_pos_eq, ← List.map_take]
+        exact List.mem_map_of_mem hp
+      have hn := hno_pos (posOf lps p) hp_pos
+      unfold posOf at hn
+      rwa [noLooseIn_instantiateLevelParams] at hn
+    have hdrop_dom :
+        dom.getAppArgs.drop cnP_rmp =
+          ((List.range nI).map fun m => .bvar (nI - 1 - m)) := by
+      have hd := hdrop_pos
+      rw [hAs_pos_eq, ← List.map_drop] at hd
+      have hrhs :
+          ((List.range nI).map fun m => (Expr.bvar (nI - 1 - m) : KExpr)) =
+            (((List.range nI).map fun m => (Expr.bvar (nI - 1 - m) : KExpr))).map (posOf lps) := by
+        rw [List.map_map]; rfl
+      rw [hrhs] at hd
+      exact (List.map_injective_iff.mpr fun _ _ h => posOf_inj hlps_perm h) hd
+    let pins_lps : List KExpr := (dom.getAppArgs.take cnP_rmp).map (Expr.lowerBVars nI 0)
+    have hpins_pos_eq :
+        pins_lps.map (posOf lps) = (As_pos.take cnP_rmp).map (Expr.lowerBVars nI 0) := by
+      simp only [pins_lps, hAs_pos_eq, ← List.map_take, List.map_map, Function.comp_def, posOf]
+      exact List.map_congr_left fun p _ => (lowerBVars_instantiateLevelParams _ _ nI p 0).symm
+    have hnp_pins : ∀ p ∈ pins_lps, NoProjIn blockNames p = true := by
+      intro p hp
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      have hnp_fa := noProjIn_stripPis mI hnp_ty hstrip_ty
+      simp only [NoProjIn, Bool.and_eq_true] at hnp_fa
+      rw [noProjIn_lowerBVars]
+      exact noProjIn_getAppArgs hnp_fa.1 q (List.mem_of_mem_take hq)
+    have hind_key_eq :
+        c_pub.κ (ixAddr a_ind) = c_pub.κ (iprjAddr (ixAddr b_ind) (ZMod.val i_ind)) :=
+      (env_find?_name_eq hfind_ind).symm.trans hcv_ind_name
+    have hfind_ind_iprj :
+        c_pub.env.find? (c_pub.κ (iprjAddr (ixAddr b_ind) (ZMod.val i_ind))) =
+          some (.indInfo cv_ind caps_ind) := by
+      rwa [← hind_key_eq]
+    obtain ⟨hctor_eq0, hctor_lvls0⟩ :=
+      hrule_ctor b_ind (ZMod.val i_ind) cv_ind caps_ind hfind_ind_iprj
+        ⟨bs, dom, body, mb, lvls_lps, hstrip_ty, by rwa [← hind_key_eq]⟩
+    have ev_go' := ev_go
+    rw [show (.field 0 : SourceValue F) = .field ((0 : Nat) : F) by simp] at ev_go'
+    obtain ⟨bytes_out, hstr_out, hrules_out⟩ :=
+      check_rules_go_vm_spec hCore hroles hcallees ht_eq hlim_eq
+        hef_pub hlf_pub hexact_pub hef_adv hlf_adv hexact_adv
+        hf_out hproj_pub hlps_lt hlps_perm hrp_le hmi_lt
+        hnp_ty hnp_pins hnp_ctor rls 0
+        (by omega)
+        (fun k rl hk => by simpa [Nat.zero_add] using hctor_eq0 k rl hk)
+        (fun k rl hk cvj cnP cnF hfc =>
+          hlvls_lps_len.trans (hctor_lvls0 k rl hk cvj cnP cnF hfc).symm)
+        (hg_pub.sub fun _ hx => by simp [hx])
+        (hg_adv.sub fun _ hx => by simp [hx])
+        (hrc.mono ext_rmp_ci)
+        (Bytes.repAddressRef_heapMono₂ addrTy ext_rmp_ci hrm) hrm_key
+        hb_ind
+        (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_rmp_ci haset) (hren.mono ext_rmp_ci)
+        (hty_rep.mono ext_rmp_ci)
+        (by rw [hlvls_pos_eq]; exact hilvls_rep.mono ev_ci.heap_extends)
+        (by rw [hpins_pos_eq]
+            exact RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ev_ci.heap_extends hpins_pos_rep)
+        (hrls.mono ext_rmp_ci)
+        (hstr.mono ext_rmp_ci)
+        ev_go'
+    exact ⟨bytes_out, c_pub.κ (ixAddr a_ind), cnP_rmp, nC_ind, bs, dom, body, mb,
+      lvls_lps, pins_lps, hstr_out, hrls_len, hstrip_ty, hfn_dom, hdom_args_len,
+      hno_dom, hdrop_dom, rfl, hrules_out⟩
 
 end IxVM.Refinement.Decl
