@@ -62,8 +62,8 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
       r = .field (groupValLimit g : F) := by
   rcases Obs.«KernelRoles::group_validation_limit».obs ev with
     ⟨v1, m2, _, m16, _, ev14, ev29, rfl, rfl, -⟩ |
-    ⟨v1, m2, _, hne, m16, _, v58, m59, _, m73, _, ev14, ev29, _, ev71, ev86, rfl, rfl, -⟩ |
-    ⟨v1, m2, _, hne1, m16, _, v58, m59, _, hne2, m73, _, ev14, ev29, _, ev71, ev86, _, rfl, rfl, -⟩
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, m73, _, ev14, ev29, hne, ev71, ev86, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, ev14, ev29, hne1, ev71, ev86, hne2, rfl, rfl, -⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
@@ -72,18 +72,18 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
     have hlt38 : gf.val < 38 := by
       by_cases hc : gf.val < 38
       · exact hc
-      · rw [h38, if_neg hc] at hr29
-        exact absurd (Value.field.inj hr29).symm one_ne_zero
+      · simp only [h38, hc, ↓reduceIte] at hr29
+        exact absurd (Value.field.inj hr29) one_ne_zero
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    rw [if_pos hlt38, natCast_val_eq]
+    simp only [hlt38, ↓reduceIte, natCast_val_eq]
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
     subst hbf_eq
     have h38 : ZMod.val (38 : F) = 38 := RolesAux.val_natCast (by decide)
     have hge38 : ¬ gf.val < 38 := fun hc => by
-      rw [h38, if_pos hc] at hr29
+      simp only [h38, hc, ↓reduceIte] at hr29
       exact hne hr29
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
     obtain ⟨_, _, hlt46_iff, _, rfl⟩ := Lib.less_than_fields_field ev86
@@ -93,14 +93,15 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
       rwa [h46] at h
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    rw [if_neg hge38, if_pos hlt46]
+    simp only [hge38, hlt46, ↓reduceIte]
+    rfl
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
     subst hbf_eq
     have h38 : ZMod.val (38 : F) = 38 := RolesAux.val_natCast (by decide)
     have hge38 : ¬ gf.val < 38 := fun hc => by
-      rw [h38, if_pos hc] at hr29
+      simp only [h38, hc, ↓reduceIte] at hr29
       exact hne1 hr29
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
     obtain ⟨_, _, hlt46_iff, _, rfl⟩ := Lib.less_than_fields_field ev86
@@ -110,7 +111,8 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
       exact hne2 (hlt46_iff.mpr hc')
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    rw [if_neg hge38, if_neg hge46]
+    simp only [hge38, hge46, ↓reduceIte]
+    rfl
 
 theorem group_validation_limit_of_nat {g : Nat} (hg : g < 4294967296)
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -160,10 +162,10 @@ theorem groupNeeds_groupOf_lt {g : Nat} {ro : Ix.Kernel.Role}
   by_cases hg : g < 77
   · have hfin := groupNeededRoles_lt_fin ⟨g, hg⟩
     simp only [groupNeededRoles, hg, ↓reduceIte] at hfin
-    rw [if_pos hg] at hm
+    simp only [hg, ↓reduceIte] at hm
     have hall := List.all_eq_true.mp hfin ro hm
     exact of_decide_eq_true hall
-  · rw [if_neg hg] at hm
+  · simp only [hg, ↓reduceIte] at hm
     cases hm
 
 /-- Reflexive-transitive group dependency relation induced by `KernelRoles::group_admit_needs`. -/
@@ -227,41 +229,75 @@ theorem check_evidence_nodup_and_eqns {t : Ix.Kernel.RoleTable} (hchk : t.check 
     (t.evidence.toList.map (·.1)).Nodup ∧
     ∀ p ∈ t.evidence.toList, roleHasEquations p.1 = true := by
   unfold Ix.Kernel.RoleTable.check at hchk
-  obtain ⟨_, _, h1⟩ := RoleClosure.except_bind_ok hchk
-  obtain ⟨_, _, h2⟩ := RoleClosure.except_bind_ok h1
-  obtain ⟨_, _, h3⟩ := RoleClosure.except_bind_ok h2
-  obtain ⟨_, _, h4⟩ := RoleClosure.except_bind_ok h3
-  obtain ⟨_, h5, h6⟩ := RoleClosure.except_bind_ok h4
-  have hnd : (t.evidence.toList.map (·.1)).Nodup := by
-    refine Classical.byContradiction fun hn => ?_
-    simp only [hn, ↓reduceIte] at h5
-    first | cases h5 | simp [throw, throwThe, MonadExceptOf.throw] at h5
-  refine ⟨hnd, ?_⟩
-  obtain ⟨u, hev, _⟩ := RoleClosure.except_bind_ok h6
-  cases u
-  rw [← Array.forIn_toList] at hev
-  have hall := RoleClosure.forIn_ok_all hev (by
-    intro p _ hst
+  by_cases hv : (t.version == Ix.Kernel.specVersion) = true
+  case neg =>
+    simp only [hv, Bool.false_eq_true, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  by_cases hbn : (List.map (fun x => x.1) t.bound.toList).Nodup
+  case neg =>
+    simp only [hv, hbn, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  cases hfr : Ix.Kernel.RoleTable.firstRepeat (List.map (fun x => x.2) t.bound.toList) with
+  | some a0 =>
+    simp only [hv, hbn, hfr, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  | none =>
+    simp only [hv, hbn, hfr, ↓reduceIte] at hchk
+    obtain ⟨_, _, hchk2⟩ := RoleClosure.except_bind_ok hchk
+    dsimp only at hchk2
+    by_cases hnd : (List.map (fun x => x.1) t.evidence.toList).Nodup
+    case neg =>
+      simp only [hnd, ↓reduceIte] at hchk2
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk2
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+    simp only [hnd, ↓reduceIte] at hchk2
+    refine ⟨hnd, ?_⟩
+    obtain ⟨u, hev, -⟩ := RoleClosure.except_bind_ok hchk2
+    cases u
+    rw [← Array.forIn_toList] at hev
+    have hall := RoleClosure.forIn_ok_all hev (by
+      intro p _ hst
+      rcases p with ⟨r, es⟩
+      dsimp only at hst
+      by_cases hrc : (List.map (fun x => x.1) t.bound.toList).contains r = true
+      case neg =>
+        simp only [hrc, Bool.false_eq_true, ↓reduceIte] at hst
+        obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+      simp only [hrc, ↓reduceIte] at hst
+      by_cases hke : r.spec.evidenceAllowed.isEmpty = true
+      case pos =>
+        simp only [hke, ↓reduceIte] at hst
+        obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+      simp only [hke, Bool.false_eq_true, ↓reduceIte] at hst
+      split at hst
+      · simp only [pure, Except.pure, Except.ok.injEq] at hst
+        exact hst.symm
+      · obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1)
+    intro p hp
+    have hp_ok := hall p hp
     rcases p with ⟨r, es⟩
-    obtain ⟨_, _, hs1⟩ := RoleClosure.except_bind_ok hst
-    obtain ⟨_, _, hs2⟩ := RoleClosure.except_bind_ok hs1
-    obtain ⟨_, _, hs3⟩ := RoleClosure.except_bind_ok hs2
-    simp only [pure, Except.pure, Except.ok.injEq] at hs3
-    exact hs3.symm)
-  intro p hp
-  have hp_ok := hall p hp
-  rcases p with ⟨r, es⟩
-  dsimp only at hp_ok ⊢
-  obtain ⟨_, _, hs1⟩ := RoleClosure.except_bind_ok hp_ok
-  obtain ⟨_, hkinds, _⟩ := RoleClosure.except_bind_ok hs1
-  by_cases hreq : roleHasEquations r = true
-  · exact hreq
-  · have hfalse : roleHasEquations r = false := Bool.eq_false_iff.mpr hreq
-    have hemp : ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed.isEmpty = true := by
-      rw [evidenceAllowed_isEmpty_eq, hfalse]
-      rfl
-    simp only [hemp, ↓reduceIte] at hkinds
-    first | cases hkinds | simp [throw, throwThe, MonadExceptOf.throw] at hkinds
+    dsimp only at hp_ok ⊢
+    by_cases hrc : (List.map (fun x => x.1) t.bound.toList).contains r = true
+    case neg =>
+      simp only [hrc, Bool.false_eq_true, ↓reduceIte] at hp_ok
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hp_ok
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+    simp only [hrc, ↓reduceIte] at hp_ok
+    by_cases hreq : roleHasEquations r = true
+    · exact hreq
+    · have hfalse : roleHasEquations r = false := Bool.eq_false_iff.mpr hreq
+      have hemp : ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed.isEmpty = true := by
+        rw [evidenceAllowed_isEmpty_eq, hfalse]
+        rfl
+      simp only [hemp, ↓reduceIte] at hp_ok
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hp_ok
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
 
 private theorem eq_of_mem_nodup_fst {α β : Type} :
     ∀ {l : List (α × β)} {k : α} {v₁ v₂ : β},
@@ -614,7 +650,7 @@ private theorem decodeNatListExpr_sound :
           obtain ⟨vs, a, hvin⟩ := isFieldListCtor_sound hnil din
           obtain ⟨rfl, rfl, _⟩ := a.nil_inv
           subst hvin
-          exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+          exact ⟨Heap.Extends.snoc _ _, Lib.rep_store_nil _⟩
         | cons _ _ =>
           cases hcons : isFieldListCtor "Cons" inner with
           | none => rw [hcons] at hd; cases hd
@@ -647,9 +683,9 @@ private theorem decodeNatListExpr_sound :
                   obtain ⟨rfl, rfl, _⟩ := a2.nil_inv
                   subst hvin
                   obtain ⟨ext_t, hrep_t⟩ := decodeNatListExpr_sound fuel htail dt
-                  have hhead : repRoleIdx m2 (ZMod.val x) (.field x) :=
+                  have hhead : repRoleIdx _ (ZMod.val x) (.field x) :=
                     congrArg Value.field (natCast_val_eq x).symm
-                  exact ⟨ext_t.trans (Heap.Extends.snoc m2 _),
+                  exact ⟨ext_t.trans (Heap.Extends.snoc _ _),
                     Lib.rep_store_cons repRoleIdx_heapMono₂ hhead hrep_t⟩
                 | cons _ _ => simp at hd
             | _ =>
@@ -815,7 +851,7 @@ theorem group_needs_spec {g : Nat} (hg : g < 4294967296)
     · have hge : 77 ≤ g := Nat.le_of_not_lt hg77
       have hemp : groupNeededRoles g = [] := by
         unfold groupNeededRoles
-        rw [if_neg hg77]
+        simp only [hg77, ↓reduceIte]
       rw [hemp, List.map_nil]
       exact evalNatListMatchNat_of_above77 hge group_needs_above77
   have hdec := selectArm_natListMatch ht sel8
@@ -1047,7 +1083,7 @@ private theorem validate_op_equations_walks {t : Ix.Kernel.RoleTable} {lim : Opt
       rw [← evListEnum] at ld12
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
     | Cons x_e x_rest v493 m494 cs496 cs505 v512 ld12 sg501 _ ev507 hc556 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
@@ -1116,7 +1152,7 @@ private theorem validate_op_equations_full_walks {t : Ix.Kernel.RoleTable}
       rw [← evListEnum] at ld12
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, [], by simp [Claim.RecsClosed], fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, [], by simp [Claim.RecsClosed], fun _ hm => (nomatch hm)⟩
     | Cons x_e x_rest v493 m494 cs496 cs505 v512 ld12 sg501 _ ev507 hc556 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
@@ -1192,7 +1228,7 @@ private theorem validate_eqns_equations_walks {t : Ix.Kernel.RoleTable} {lim : O
       rw [← evListEnum] at ld12
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
     | Cons x_e x_rest v432 m433 cs435 cs444 v451 ld12 sg440 _ ev446 hc495 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
@@ -1257,7 +1293,7 @@ private theorem validate_eqns_equations_full_walks {t : Ix.Kernel.RoleTable}
       rw [← evListEnum] at ld12
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, [], by simp [Claim.RecsClosed], fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, [], by simp [Claim.RecsClosed], fun _ hm => (nomatch hm)⟩
     | Cons x_e x_rest v432 m433 cs435 cs444 v451 ld12 sg440 _ ev446 hc495 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
@@ -1350,6 +1386,19 @@ private theorem nonempty_evidence_of_len_eq {ro : Ix.Kernel.Role} {t : Ix.Kernel
       omega
     · omega
 
+private theorem evList_length {es : List (Ix.Kernel.Evidence _root_.Address)}
+    {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W Obs.Names.«Lists::length<KernelRoles::RoleEvidence>» [l] h r h' cs)
+    (hl : RepList evListEnum EvRep h es l) :
+    r = .field (es.length : F) ∧ h' = h := by
+  have ev' : ObsFn W (Instance.mk "Lists::length" [.named "KernelRoles::RoleEvidence" []]).symbol
+      [l] h r h' cs := by
+    rw [Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol]; exact ev
+  have hl' : RepList (Instance.mk "Lists::Node" [.named "KernelRoles::RoleEvidence" []]).symbol
+      EvRep h es l := by
+    rw [Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol]; exact hl
+  exact Lib.Lists.length_spec ev' hl'
+
 theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
     {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCRep t (some (groupValLimit g)) h x_rc)
@@ -1364,9 +1413,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 0 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [ZMod.val_zero, RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     have hci : GetCiIn calls a := ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
       by rw [hc183]; simp, fun cl hm => by rw [hc183]; simp [hm], ld41⟩
     have ext_m111 : Heap.Extends m2 m111 :=
@@ -1383,9 +1430,9 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
         have ext_w : Heap.Extends m111 m198' :=
           ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
             (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends))))
-        exact (⟨m198', h', x_rc, v1, r, cs221', hrc_m111.mono ext_w,
+        exact RunCheckIn.mono hsub_mem ⟨m198', h', x_rc, v1, r, cs221', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev223', by rw [hc240']; simp,
-          fun cl hm => by rw [hc240']; simp [hm]⟩ : RunCheckIn cs140 t _ a).mono hsub_mem
+          fun cl hm => by rw [hc240']; simp [hm]⟩
       | n1 _ m2' _ _ m24' _ _ _ m40' _ m60' _ m88' _ _ _ _ _ _ _ _ _ m307' _ _ _ _ _
           m360' _ _ _ m379' _ _ _ _ _ _ _ _ _ _ m472' _ cs623'
           ev14' ev50' ev70' ev36' ev101' _ ev319' ev389' ev376' _ ev482' _ _ _ _ _ ev625' hc642' =>
@@ -1393,17 +1440,17 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
           ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
             (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
               (ev389'.heap_extends.trans (ev376'.heap_extends.trans ev482'.heap_extends)))))))
-        exact (⟨m472', h', x_rc, v1, r, cs623', hrc_m111.mono ext_w,
+        exact RunCheckIn.mono hsub_mem ⟨m472', h', x_rc, v1, r, cs623', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev625', by rw [hc642']; simp,
-          fun cl hm => by rw [hc642']; simp [hm]⟩ : RunCheckIn cs140 t _ a).mono hsub_mem
+          fun cl hm => by rw [hc642']; simp [hm]⟩
       | n2 _ m2' _ _ m24' _ _ _ m40' _ m60' _ m88' _ _ _ _ _ _ _ _ _ _ _ _ cs735'
           ev14' ev50' ev70' ev36' ev101' _ ev737' hc754' =>
         have ext_w : Heap.Extends m111 m88' :=
           ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
             (ev36'.heap_extends.trans ev101'.heap_extends)))
-        exact (⟨m88', h', x_rc, v1, r, cs735', hrc_m111.mono ext_w,
+        exact RunCheckIn.mono hsub_mem ⟨m88', h', x_rc, v1, r, cs735', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev737', by rw [hc754']; simp,
-          fun cl hm => by rw [hc754']; simp [hm]⟩ : RunCheckIn cs140 t _ a).mono hsub_mem
+          fun cl hm => by rw [hc754']; simp [hm]⟩
       | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ _ _ _ _ _ _ =>
         obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
         rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
@@ -1425,9 +1472,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 1 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [ZMod.val_one, RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
       by rw [hc227]; simp, fun cl hm => by rw [hc227]; simp [hm], ld41⟩,
       fun hw => ?_, fun he => ?_⟩
@@ -1438,10 +1483,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 2 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [RolesAux.val_natCast (by decide : 2 < _),
-        RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     have ext_m111 : Heap.Extends m2 m111 :=
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
@@ -1452,7 +1494,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
       Obs.«KernelRoles::validate_op».obs ev238
     have ext_sg : Heap.Extends m111 m102_op := by
       cases sg109 with
-      | Safe _ _ he64 _ => rw [he64]; exact Heap.Extends.refl _
+      | Safe _ _ he64 _ => rw [he64]
       | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
     have ext_w : Heap.Extends m111 m111_op :=
       ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
@@ -1460,17 +1502,12 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
       hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
     have ha_w : S0.addr m111_op v1 a := S0.addr_mono (ext_m111.trans ext_w) ha_m2
     have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
-      (⟨m111_op, m162, x_rc, v1, v161, cs172, hrc_w, ha_w, ev174,
-        by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩ :
-        RunCheckIn cs236 t _ a).mono hsub_op
+      RunCheckIn.mono hsub_op ⟨m111_op, m162, x_rc, v1, v161, cs172, hrc_w, ha_w, ev174,
+        by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩
     have htbl_m162 : TableRep c₀.t m162 x_tbl :=
       htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev174.heap_extends)))
     obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step c₀ ev204 x_tbl ro rfl htbl_m162
-    have ev245' := ev245
-    rw [← Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol] at ev245'
-    have hlist_m192' := hlist_m192
-    rw [← Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol] at hlist_m192'
-    obtain ⟨rfl, rfl⟩ := Lib.Lists.length_spec ev245' hlist_m192'
+    obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
     obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
     obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
     have hrc_m255 : RCRep t (some (groupValLimit g)) m255 x_rc :=
@@ -1489,10 +1526,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 3 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [RolesAux.val_natCast (by decide : 3 < _),
-        RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
       by rw [hc323]; simp, fun cl hm => by rw [hc323]; simp [hm], ld41⟩,
       fun hw => ?_, fun he => ?_⟩
@@ -1503,10 +1537,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 4 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [RolesAux.val_natCast (by decide : 4 < _),
-        RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
       by rw [hc367]; simp, fun cl hm => by rw [hc367]; simp [hm], ld41⟩,
       fun hw => ?_, fun he => ?_⟩
@@ -1517,10 +1548,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 5 := by
-      have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-      rw [RolesAux.val_natCast (by decide : 5 < _),
-        RolesAux.val_natCast (by cases ro <;> decide)] at hv
-      exact hv
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
     have ext_m111 : Heap.Extends m2 m111 :=
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
@@ -1531,7 +1559,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
       Obs.«KernelRoles::validate_eqns».obs ev378
     have ext_sg : Heap.Extends m111 m101_eq := by
       cases sg108 with
-      | Safe _ _ he63 _ => rw [he63]; exact Heap.Extends.refl _
+      | Safe _ _ he63 _ => rw [he63]
       | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
     have ext_w : Heap.Extends m111 m151_eq :=
       ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))
@@ -1539,17 +1567,12 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
       hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
     have ha_w : S0.addr m151_eq v1 a := S0.addr_mono (ext_m111.trans ext_w) ha_m2
     have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
-      (⟨m151_eq, m210, x_rc, v1, v209, cs220, hrc_w, ha_w, ev222,
-        by rw [hc368]; simp, fun cl hm => by rw [hc368]; simp [hm]⟩ :
-        RunCheckIn cs376 t _ a).mono hsub_eqns
+      RunCheckIn.mono hsub_eqns ⟨m151_eq, m210, x_rc, v1, v209, cs220, hrc_w, ha_w, ev222,
+        by rw [hc368]; simp, fun cl hm => by rw [hc368]; simp [hm]⟩
     have htbl_m210 : TableRep c₀.t m210 x_tbl :=
       htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
     obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step c₀ ev252 x_tbl ro rfl htbl_m210
-    have ev293' := ev293
-    rw [← Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol] at ev293'
-    have hlist_m240' := hlist_m240
-    rw [← Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol] at hlist_m240'
-    obtain ⟨rfl, rfl⟩ := Lib.Lists.length_spec ev293' hlist_m240'
+    obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
     obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
     obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
     have hrc_m303 : RCRep t (some (groupValLimit g)) m303 x_rc :=
@@ -1580,21 +1603,15 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
   obtain ⟨ext, hval⟩ := validate_role_walks hrc.toRCRep htbl.toTableRep ev
   have hwf : t.wf = true := htbl.1
   refine ⟨ext, hval, ?_⟩
-  obtain ⟨a₀, had₀, _, hwalk₀, heqns₀⟩ := hval
   by_cases hw : roleWalksBound ro = true
-  · obtain ⟨h_w, h'_w, rc_w, ap_w, r_w, cs_w, _, ha_w, ev_w, hcl_w, hsub_w⟩ := hwalk₀ hw
-    -- Note `ev_w` ran on `x_rc`; extract `WalkedRec`s directly from `validate_role`'s paths so `RCFullRep` applies.
-    clear h_w h'_w rc_w ap_w r_w cs_w ha_w ev_w hcl_w hsub_w
-    let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  · let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
     cases Obs.«KernelRoles::validate_role».obs ev with
     | n0 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs140
         ev14 ev47 _ ev80 ev100 _ ev124 ev142 hc183 =>
       obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 0 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [ZMod.val_zero, RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       have ext_m111 : Heap.Extends m2 m111 :=
         ev47.heap_extends.trans (ev80.heap_extends.trans
           (ev100.heap_extends.trans ev124.heap_extends))
@@ -1670,19 +1687,14 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
     | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 1 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [ZMod.val_one, RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
     | n2 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs236
         ev14 ev47 _ ev80 ev100 _ ev124 ev238 hc279 =>
       obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 2 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [RolesAux.val_natCast (by decide : 2 < _),
-          RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       have ext_m111 : Heap.Extends m2 m111 :=
         ev47.heap_extends.trans (ev80.heap_extends.trans
           (ev100.heap_extends.trans ev124.heap_extends))
@@ -1692,7 +1704,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         Obs.«KernelRoles::validate_op».obs ev238
       have ext_sg : Heap.Extends m111 m102_op := by
         cases sg109 with
-        | Safe _ _ he64 _ => rw [he64]; exact Heap.Extends.refl _
+        | Safe _ _ he64 _ => rw [he64]
         | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
       have ext_w : Heap.Extends m111 m111_op :=
         ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
@@ -1702,11 +1714,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       have htbl_m162 : TableRep c₀.t m162 x_tbl :=
         htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev174.heap_extends)))
       obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step c₀ ev204 x_tbl ro rfl htbl_m162
-      have ev245' := ev245
-      rw [← Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol] at ev245'
-      have hlist_m192' := hlist_m192
-      rw [← Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol] at hlist_m192'
-      obtain ⟨rfl, rfl⟩ := Lib.Lists.length_spec ev245' hlist_m192'
+      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
       obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
       obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
       have hrc_m255 := hrc_w.mono (ev174.heap_extends.trans ev204.heap_extends)
@@ -1731,28 +1739,19 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
     | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 3 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [RolesAux.val_natCast (by decide : 3 < _),
-          RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
     | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 4 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [RolesAux.val_natCast (by decide : 4 < _),
-          RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
     | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
         ev14 ev47 _ ev80 ev100 _ ev124 ev378 hc419 =>
       obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 5 := by
-        have hv := congrArg ZMod.val (Value.field.inj hsk_f).symm
-        rw [RolesAux.val_natCast (by decide : 5 < _),
-          RolesAux.val_natCast (by cases ro <;> decide)] at hv
-        exact hv
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
       have ext_m111 : Heap.Extends m2 m111 :=
         ev47.heap_extends.trans (ev80.heap_extends.trans
           (ev100.heap_extends.trans ev124.heap_extends))
@@ -1762,7 +1761,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         Obs.«KernelRoles::validate_eqns».obs ev378
       have ext_sg : Heap.Extends m111 m101_eq := by
         cases sg108 with
-        | Safe _ _ he63 _ => rw [he63]; exact Heap.Extends.refl _
+        | Safe _ _ he63 _ => rw [he63]
         | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
       have ext_w : Heap.Extends m111 m151_eq :=
         ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))
@@ -1772,11 +1771,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       have htbl_m210 : TableRep c₀.t m210 x_tbl :=
         htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
       obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step c₀ ev252 x_tbl ro rfl htbl_m210
-      have ev293' := ev293
-      rw [← Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol] at ev293'
-      have hlist_m240' := hlist_m240
-      rw [← Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol] at hlist_m240'
-      obtain ⟨rfl, rfl⟩ := Lib.Lists.length_spec ev293' hlist_m240'
+      obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
       obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
       obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
       have hrc_m303 := hrc_w.mono (ev222.heap_extends.trans ev252.heap_extends)
@@ -1820,7 +1815,7 @@ private theorem validate_group_roles_walks {t : Ix.Kernel.RoleTable} {g : Nat}
     | Nil ld12 _ he23 _ =>
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
     | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
       obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
       rw [hro] at ev55
@@ -1855,8 +1850,8 @@ private theorem validate_group_roles_full_walks {t : Ix.Kernel.RoleTable}
     | Nil ld12 _ he23 _ =>
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm, [], by simp [Claim.RecsClosed],
-        fun _ hm => by cases hm, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm), [], by simp [Claim.RecsClosed],
+        fun _ hm => (nomatch hm), fun _ hm => (nomatch hm)⟩
     | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
       obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
       rw [hro] at ev55
@@ -1905,7 +1900,7 @@ private theorem group_admit_needs_walks {t : Ix.Kernel.RoleTable} {g : Nat}
     | Nil ld12 _ he23 _ =>
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
     | Cons x_r x_rest v42 m43 cs53 v57 m66 cs74 cs88 ld12 ev76 ev55 ev90 hc107 =>
       obtain ⟨ro_h, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
       rw [hro] at ev76
@@ -1950,13 +1945,15 @@ theorem group_admit_nat_spec {t : Ix.Kernel.RoleTable} :
     fun g' hlt => ih g' hlt (Nat.lt_trans hlt hg)
   obtain ⟨ext_gan, hval_needs⟩ :=
     group_admit_needs_walks ih_lt (fun _ hm => hm) (htbl.mono ext_gn) hneeds_rep ev14
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
   have ext_m45 : Heap.Extends h m45 :=
-    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m2 _))
-  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m2.length) =
-      .ok (.construct rcEnum "Mk"
-        [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]) :=
-    Lib.load_enum_cell (by rw [hm55]; simp)
-  have hrc_m45 : RCRep t (some (groupValLimit g)) m45 (.ptr (.enum rcEnum) m2.length) :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : RCRep t (some (groupValLimit g)) m45 (.ptr (.enum rcEnum) m70.length) :=
     ⟨x_tbl, .construct addrMapEnum "Nil" [], _, hld_rc,
       .inl ⟨groupValLimit g, rfl, groupValLimit_lt_u32 g, rfl⟩, htbl.mono ext_m45⟩
   obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
@@ -2019,8 +2016,8 @@ private theorem group_admit_needs_full_walks {t : Ix.Kernel.RoleTable} {bAddr : 
     | Nil ld12 _ he23 _ =>
       obtain rfl := Lib.rep_nil_of_load hlist ld12
       subst he23
-      exact ⟨Heap.Extends.refl h, fun _ hm => by cases hm, [], by simp [Claim.RecsClosed],
-        fun _ hm => by cases hm, fun _ hm => by cases hm⟩
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm), [], by simp [Claim.RecsClosed],
+        fun _ hm => (nomatch hm), fun _ hm => (nomatch hm)⟩
     | Cons x_r x_rest v42 m43 cs53 v57 m66 cs74 cs88 ld12 ev76 ev55 ev90 hc107 =>
       obtain ⟨ro_h, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
       rw [hro] at ev76
@@ -2091,13 +2088,15 @@ theorem group_admit_full_nat_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     fun g' hlt => ih g' hlt (Nat.lt_trans hlt hg)
   obtain ⟨ext_gan, hval_needs, recs_n, hcl_n, ha_n, hev_n⟩ :=
     group_admit_needs_full_walks ih_lt (fun _ hm => hm) (htbl.mono ext_gn) hneeds_rep ev14
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
   have ext_m45 : Heap.Extends h m45 :=
-    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m2 _))
-  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m2.length) =
-      .ok (.construct rcEnum "Mk"
-        [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]) :=
-    Lib.load_enum_cell (by rw [hm55]; simp)
-  have hrc_m45 : Claim.RCFullRep t bAddr (groupValLimit g) m45 (.ptr (.enum rcEnum) m2.length) :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : Claim.RCFullRep t bAddr (groupValLimit g) m45 (.ptr (.enum rcEnum) m70.length) :=
     ⟨groupValLimit_lt_u32 g, x_tbl, hld_rc, htbl.mono ext_m45⟩
   obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
   obtain ⟨ext_vgr, hval_here, recs_h, hcl_h, ha_h, hev_h⟩ :=
@@ -2187,7 +2186,7 @@ theorem role_addr_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {ro : 
       rw [hlim] at hn'
       injection hn' with hnn
       subst hnn
-      exact ⟨hlt_val, ⟨m98, m128, tbl, v127, cs138, htbl.mono ext_ba, ev140,
+      exact ⟨hlt_val, ⟨_, _, tbl, v127, cs138, htbl.mono ext_ba, ev140,
         by rw [hc173]; simp, hsub_ga⟩, fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
   | Assumed x_tbl w181 cs195 ld12 ev197 _ =>
@@ -2234,12 +2233,11 @@ theorem role_addr_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     injection hxs with hxt _
     subst hxt
     obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev161
-    have ext_m98 : Heap.Extends h m98 :=
-      ev74.heap_extends.trans (ev60.heap_extends.trans ev110.heap_extends)
+    have ext_m151 := ev74.heap_extends.trans (ev60.heap_extends.trans ev110.heap_extends)
     have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
       Nat.lt_trans (groupOf_lt_77 ro) (by decide)
     obtain ⟨_, _, recs_ga, hcl_ga, ha_ga, hev_ga⟩ :=
-      group_admit_full_nat_spec _ hg_lt (htbl.mono ext_m98) ev140
+      group_admit_full_nat_spec _ hg_lt (htbl.mono ext_m151) ev140
     have hsub_ga : ∀ cl ∈ cs138, cl ∈ calls := fun cl hm => by rw [hc173]; simp [hm]
     refine ⟨ext, hlt, hga, hval, a, ha, had, recs_ga.map (Claim.WalkedRec.mono hsub_ga),
       hcl_ga.mono hsub_ga, ?_, ?_⟩
@@ -2273,7 +2271,7 @@ theorem role_used_implicitly_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat}
   obtain ⟨ext1, a, ha_m2, had, hmk⟩ := role_addr_admit_spec hrc ev14
   have hsub1 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hm => by rw [hc64]; simp [hm]
   have hwalk_a : RunCheckIn calls t lim a :=
-    ⟨m2, m32, x_rc, v1, v31, cs42, hrc.mono ext1, ha_m2, ev44,
+    ⟨_, _, x_rc, _, v31, cs42, hrc.mono ext1, ha_m2, ev44,
       by rw [hc64]; simp, fun cl hm => by rw [hc64]; simp [hm]⟩
   refine ⟨ext1.trans ev44.heap_extends, a, S0.addr_mono ev44.heap_extends ha_m2, had, hwalk_a,
     fun n hn => ?_⟩
@@ -2381,16 +2379,16 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
         subst hy2_eq
         rw [hsub] at ev197
         obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev197
-        have ext_m37 : Heap.Extends h m37 := ev71.heap_extends.trans ev49.heap_extends
+        have ext_m := ev71.heap_extends.trans ev49.heap_extends
         have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
           Nat.lt_trans (groupOf_lt_77 ro) (by decide)
-        obtain ⟨_, hval_ga⟩ := group_admit_nat_spec _ hg_lt (htbl.mono ext_m37) ev176
+        obtain ⟨_, hval_ga⟩ := group_admit_nat_spec _ hg_lt (htbl.mono ext_m) ev176
         have hsub_ga : ∀ cl ∈ cs174, cl ∈ calls := fun cl hm => by rw [hc217]; simp [hm]
         refine .inr ⟨ro, he215, had, fun n' hn' => ?_⟩
         rw [hlim] at hn'
         injection hn' with hnn
         subst hnn
-        exact ⟨hlt_val, ⟨m37, m164, tbl, v163, cs174, htbl.mono ext_m37, ev176,
+        exact ⟨hlt_val, ⟨_, _, tbl, v163, cs174, htbl.mono ext_m, ev176,
           by rw [hc217]; simp, hsub_ga⟩,
           fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
@@ -2444,7 +2442,7 @@ theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.A
     | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
       exfalso
       exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hr_eq.symm.trans he222))
-    | Assumed _ _ _ ld12 _ _ =>
+    | Assumed _ _ _ _ _ _ ld12 _ _ _ =>
       rw [hload] at ld12
       exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
     | Mk_other_n1 x_tbl _ _ v36 m37 _ _ m61 _ m108 _ _ m125 _ _
@@ -2463,7 +2461,7 @@ theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.A
       have hsub : roleNum ro + 1 - 1 = roleNum ro := add_sub_cancel_right _ _
       rw [hsub] at ev197
       obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev197
-      have ext_m187 : Heap.Extends h m187 :=
+      have ext_m187 :=
         ev71.heap_extends.trans (ev49.heap_extends.trans
           (ev135.heap_extends.trans ev121.heap_extends))
       have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
