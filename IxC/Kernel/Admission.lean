@@ -203,6 +203,21 @@ def readStreamBare (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre
     if State.keepsPrelude pre.state st then pure (evidenceOf cx st t, decls) else throw .preludeCopy
   | .error (e, i) => throw (.read i e)
 
+/-- Tail-recursive bounded exact decoding for `prepareBare`, retaining all
+records, keys, and their order under per-record byte and universe-node limits. -/
+def decodeLoopBare (limits : Limits) : Nat → Records → Ingress.Constants →
+    Except ByteError Ingress.Constants
+  | _, [], reversed => .ok reversed.reverse
+  | position, (address, bytes) :: rest, reversed => do
+    let constant ← (Ixon.Bounded.deConstant limits.maxRecordBytes
+      limits.maxRecordUnivNodes bytes).mapError (.decode position address)
+    decodeLoopBare limits (position + 1) rest ((address, constant) :: reversed)
+
+/-- Decode records with bounded exact per-record decoding (`Ixon.Bounded.deConstant`)
+for `prepareBare`. -/
+def decodeRecordsBare (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
+  decodeLoopBare limits 0 records []
+
 /-- `prepareWith` without generating in-process inductive models (`readStreamBare`):
 each inductive block lowers directly to its own declaration, so an external check
 that brings its own model advice supplies the model declarations separately. -/
@@ -214,7 +229,7 @@ def prepareBare (hash : ByteArray → Address) (binding : Binding) (pre : Prelud
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
   let t ← (admitBinding hash binding).mapError .binding
-  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  let constants ← (decodeRecordsBare limits records).mapError Error.ofBytes
   let (ev, decls) ← readStreamBare hash t pre constants blobs hint
   pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
