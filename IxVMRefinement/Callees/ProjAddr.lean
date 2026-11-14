@@ -67,7 +67,8 @@ theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   have hd_eq : d = Blake3.Pure.digest bytes :=
     Aiur.Library.Blake3.hash_model_spec bytes hnat
   have hty : (L1.digestV d).type = addrTy := by
-    have hf : (Value.type ∘ L1.bv : UInt8 → Aiur.Ty) = fun _ => .field := funext fun _ => rfl
+    have hf : (Value.type ∘ L1.bv : UInt8 → Aiur.Ty) = fun _ => .field :=
+      funext fun b => by rw [Function.comp_apply, L1.bv, Value.type]
     rw [L1.digestV, L1.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
   refine ⟨d, ?_, ?_⟩
   · refine ⟨m2.length, L1.digestV d, ?_, ?_, ?_⟩
@@ -371,7 +372,7 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
           (fun k y => projAddr (Specs.Callees.memberProjInfo (ixAddr b) (i + (k + 1)) y)) := by
         funext k y
         rw [show i + 1 + k = i + (k + 1) by omega]
-      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, hfn]
+      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, Nat.add_zero, hfn]
 
 end ProjAddrAux
 

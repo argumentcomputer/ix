@@ -23,6 +23,13 @@ set_option linter.unreachableTactic false
 
 namespace FireCompareAux
 
+theorem tmlk_mono (c : Ctx) {d k : Nat} {Γ : Nat → KExpr} {h₁ h₂ : Heap F}
+    {Es : List KExpr} {p : SourceValue F}
+    (ext : Heap.Extends h₁ h₂) (hEs : c.tmlk d Γ k h₁ Es p) :
+    c.tmlk d Γ k h₂ Es p :=
+  repList_heapMono₂ kexprListEnum
+    (R := fun h E p => Tm c.κ d Γ h k E p) (fun _ _ _ _ e r => Tm.mono e r) ext hEs
+
 /-! ## `last_binder_dom` and `rec_family_block` -/
 
 theorem last_binder_dom_spec (c : Ctx) :
@@ -166,7 +173,8 @@ theorem assert_index_vars_spec (c : Ctx) {ni k0 : Nat} (hni : ni < 7205759403792
       subst hv94 heq126
       have hnat_sum : (ni - 1 - idx) + idx + 1 = ni := by omega
       have hF_sum : ((ni - 1 - idx : Nat) : F) + (idx : F) + 1 = (ni : F) := by
-        exact_mod_cast hnat_sum
+        have hcast := congrArg (Nat.cast (R := F)) hnat_sum
+        simpa [Nat.cast_add] using hcast
       have hsub1 : (ni : F) - 1 = ((ni - 1 - idx : Nat) : F) + (idx : F) := by
         rw [← hF_sum, add_sub_cancel_right]
       have hsub2 : (ni : F) - 1 - (idx : F) = ((ni - 1 - idx : Nat) : F) := by
@@ -175,7 +183,7 @@ theorem assert_index_vars_spec (c : Ctx) {ni k0 : Nat} (hni : ni < 7205759403792
       obtain ⟨jF, hj_eq, -, hj_cases⟩ := hE.bvar_of_load ld69
       have hjF : jF = ((ni - 1 - idx : Nat) : F) := (Value.field.inj hj_eq).symm
       subst hjF
-      have hE_eq : E' = .bvar (ni - 1 - idx) := by
+      have hE_eq : E = .bvar (ni - 1 - idx) := by
         rcases hj_cases with ⟨-, hE'⟩ | ⟨-, hd, -⟩
         · rw [hE', FireAux.val_natCast_lt59
             (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (Nat.lt_trans hni (by decide)))]
@@ -211,7 +219,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
     cases Obs.«KernelModeled::lower_pins».obs ev with
     | Nil _ he24 hm23 _ =>
       subst he24 hm23
-      exact ⟨fun _ hm => nomatch hm, allocNil_rep _ _ h⟩
+      exact ⟨fun _ hm => False.elim (List.not_mem_nil hm), Lib.rep_store_nil h⟩
     | Cons _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ =>
       obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hps ld12
       cases he
@@ -230,7 +238,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
       obtain ⟨hm60, -, hnoF0⟩ :=
         ih.get (.subst .has_bvar_in_range) (by rw [hc174]; callees_lt) ev70
           x_p 0 (nI : F) rfl hgood1
-      subst hm60
+      subst m60
       have hnI_val : ZMod.val (nI : F) = nI :=
         FireAux.val_natCast_lt59 (Nat.lt_trans hnI (by decide))
       have hnoF : Specs.Subst.NoIdxF h 0 nI x_p := by
@@ -245,7 +253,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
         Specs.Subst.noIdx_of_noIdxF_call good.2 hcall_hb (by simp) hB hnoF
       have hopen : Tm c.κ (rP + nI) FireAux.Γ₀ h 0
           (FireAux.openZero (rP + nI) 0 (posOf ps x)) x_p :=
-        FireAux.tm_openZero hx_p 0 (by omega)
+        FireAux.tm_openZero (d := rP + nI) hx_p 0 (Nat.zero_add _).symm
       have hgood2 : Good c cs120 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       have hlow0 := ih.get (.subst .expr_lower) (by rw [hc174]; callees_lt) ev122
         x_p (nI : F) 0 rfl hgood2 0 nI hnI_val (Nat.zero_le _)
@@ -277,7 +285,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
         exact hc0
       have ext1 := ev122.heap_extends
       have hrest_m112 : c.tmlk 0 FireAux.Γ₀ (rP + nI) m112 (rest.map (posOf ps)) x_rest :=
-        repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext1 hrest_p
+        tmlk_mono c ext1 hrest_p
       have hgood3 : Good c cs155 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       obtain ⟨hrest_props, hrest_out⟩ := ih_list hgood3
         (ih.mono (by rw [hc174]; callees_lt)) hrest_m112 ev157
@@ -343,7 +351,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
     have h1 := Ix.Kernel.Expr.getAppArgs_instantiateLevelParams ps (posLevels ps) dom
     change (posOf ps dom).getAppArgs = dom.getAppArgs.map (posOf ps) at h1
     rw [hdom_mk, ModeledAux.getAppArgs_mkAppN] at h1
-    simpa [Ix.Kernel.Expr.getAppArgs] using h1.symm
+    simpa [Ix.Kernel.Expr.getAppArgs] using h1
   subst hargsPos_eq
   have hgood2 : Good c cs155 := good.sub (by rw [hc424]; intro z hz; simp [hz])
   obtain ⟨ci_i, _, v_i, hld_i, hci_i⟩ :=
@@ -368,7 +376,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
   have hnI_sub : nI = mI - rP := by omega
   have ext_141 := ev157.heap_extends
   have hargs_141 : c.tmlk 0 FireAux.Γ₀ mI m141 (dom.getAppArgs.map (posOf ps)) x_args :=
-    repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext_141 hargsPos
+    tmlk_mono c ext_141 hargsPos
   have hcall_len : (⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [x_args], m141⟩ :
       Call F) ∈ calls := by
     rw [hc424]; simp
@@ -433,6 +441,7 @@ theorem rec_comparands_spec (c : Ctx) {x_raddr r : SourceValue F} {h h' : Heap F
     (hfind : c.env.find? (c.κ (ixAddr a)) = some (.recInfo cv mI rP rls)) :
     ∃ (x_iaddr x_ilvls x_pins : SourceValue F) (lvls : List KLevel) (pins : List KExpr),
       r = .tuple [x_iaddr, x_ilvls, x_pins, .field (rP : F)] ∧
+      cv.levelParams.Perm (List.range cv.levelParams.length) ∧
       pins.length < 72057594037927936 ∧
       rP < 288230376151711744 ∧
       Ix.Kernel.Tier.nestedPins cv.type mI rP pins.length = some (lvls, pins) ∧
@@ -473,7 +482,7 @@ theorem rec_comparands_spec (c : Ctx) {x_raddr r : SourceValue F} {h h' : Heap F
   injection htuple with h1
   simp only [List.cons.injEq, and_true] at h1
   rcases h1 with ⟨rfl, rfl, rfl⟩
-  exact ⟨x_iaddr, x_ilvls, x_pins, lvls, pins, rfl, hplen,
+  exact ⟨x_iaddr, x_ilvls, x_pins, lvls, pins, rfl, hv.2.2.1, hplen,
     Nat.lt_of_le_of_lt hle hmI_lt, hnested, hilvls, hpins⟩
 
 /-! ## `level_list_equal` and `inst_pins` -/
@@ -486,44 +495,51 @@ theorem level_list_equal_spec :
       ObsFn W "KernelModeled::level_list_equal" [x_a, x_b] h r h' calls →
       r ≠ .field 0 →
       LvEqList as bs := by
+  have hkl : (Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» : String) =
+      KernelLevels.klevelListEnum := klevelListEnum_eq
   intro as
   induction as with
   | nil =>
     intro bs x_a x_b r h h' calls _ ha hb ev hr
     cases Obs.«KernelModeled::level_list_equal».obs ev with
     | Nil_Nil _ ld31 _ _ _ =>
+      rw [hkl] at ld31
       have hbs := Lib.rep_nil_of_load hb ld31
       subst hbs
       exact LvEqList.refl []
     | Nil_other _ _ _ _ he46 _ _ => exact (hr he46).elim
-    | Cons_Nil _ _ ld12 _ _ _ _ => cases Lib.rep_cons_of_load ha ld12
+    | Cons_Nil _ _ _ _ he85 _ _ => exact (hr he85).elim
     | Cons_Cons_n1 _ _ _ _ _ _ _ ld12 _ _ _ _ =>
+      rw [hkl] at ld12
       obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load ha ld12; cases he
-    | Cons_Cons_other _ _ _ _ _ _ _ ld12 _ _ _ he167 _ _ =>
+    | Cons_Cons_other _ _ _ _ _ _ _ _ _ _ _ he167 _ _ =>
       exact (hr he167).elim
   | cons a as ih =>
     intro bs x_a x_b r h h' calls hbnd ha hb ev hr
     cases Obs.«KernelModeled::level_list_equal».obs ev with
-    | Nil_Nil ld12 _ _ _ _ => cases Lib.rep_nil_of_load ha ld12
+    | Nil_Nil ld12 _ _ _ _ =>
+      rw [hkl] at ld12
+      cases Lib.rep_nil_of_load ha ld12
     | Nil_other _ _ _ _ he46 _ _ => exact (hr he46).elim
     | Cons_Nil _ _ _ _ he85 _ _ => exact (hr he85).elim
     | Cons_Cons_other _ _ _ _ _ _ _ _ _ _ _ he167 _ _ => exact (hr he167).elim
     | Cons_Cons_n1 x_x x_xr x_y x_yr m106 cs117 cs143 ld12 ld77 ev119 ev145 hc162 =>
+      rw [hkl] at ld12 ld77
       obtain ⟨a', as', hea, ha_hd, ha_tl⟩ := Lib.rep_cons_of_load ha ld12
       obtain ⟨b', bs', heb, hb_hd, hb_tl⟩ := Lib.rep_cons_of_load hb ld77
-      injection hea with h1 h2; subst h1 h2
-      injection heb with h3 h4; subst h3 h4
+      injection hea with h1 h2; subst a' as'
+      subst bs
       have hbnd1 : IxVM.Consistency.Bounded cs117 :=
         hbnd.sub (by rw [hc162]; intro z hz; simp [hz])
-      obtain ⟨heq_r, ext1⟩ := Levels.levelEqual_step ev119 x_x x_y rfl hbnd1 a' b' ha_hd hb_hd
-      have heq_true : KernelLevels.levelEqual a' b' = true := by
-        cases hbe : KernelLevels.levelEqual a' b'
+      obtain ⟨heq_r, ext1⟩ := Levels.levelEqual_step ev119 x_x x_y rfl hbnd1 a b' ha_hd hb_hd
+      have heq_true : KernelLevels.levelEqual a b' = true := by
+        cases hbe : KernelLevels.levelEqual a b'
         · simp [hbe] at heq_r
         · rfl
-      have hhead : LvEq a' b' := KernelLevels.levelEqual_eq_true_sound heq_true
+      have hhead : LvEq a b' := KernelLevels.levelEqual_eq_true_sound heq_true
       have hbnd2 : IxVM.Consistency.Bounded cs143 :=
         hbnd.sub (by rw [hc162]; intro z hz; simp [hz])
-      have htail : LvEqList as' bs' :=
+      have htail : LvEqList as bs' :=
         ih hbnd2 (ha_tl.mono ext1) (hb_tl.mono ext1) ev145 hr
       exact fun φ => ⟨hhead φ, htail φ⟩
 
@@ -585,7 +601,7 @@ theorem inst_pins_run (c : Ctx) {ps : List Ix.Kernel.LevelParam} {usK : List KLe
       have ext2 := ev97.heap_extends
       have ext12 := ext1.trans ext2
       have hrest_87 : c.tmlk 0 FireAux.Γ₀ rP m87 (rest.map (posOf ps)) x_rest :=
-        repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext12 hrest
+        tmlk_mono c ext12 hrest
       have hgood3 : Good c cs130 := good.sub (by rw [hc157]; intro z hz; simp [hz])
       have hv85 := ih_list hgood3 (ih.mono (by rw [hc157]; callees_lt))
         hrest_87 (hus.mono ext12) (TmL.mono ext2 hsubsts_47) ev132
@@ -615,9 +631,10 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
     exact (hr he419).elim
   | Const_n0 x_raddr w20 m32 cs43 v46 m48 cs56 ld12 ev58 ev45 _ _ hc73 =>
     rw [hhead] at ld12
-    injection ld12 with _ _ hfields
+    injection ld12 with hval
+    injection hval with _ _ hfields
     injection hfields with hap _
-    subst hap
+    subst ap
     have hgood1 : Good c cs56 := good.sub (by rw [hc73]; intro z hz; simp [hz])
     obtain ⟨b, np, k, mdom, dom, i, us_dom, hb, hpi1, hpi2, hfn_dom⟩ :=
       FireCompareAux.rec_family_block_spec c ev58 hgood1
@@ -633,28 +650,13 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       ld12 ev58 ev45 _ ev91 ev137 ev180 ev167 ev210 ev248 ld281 ev314 hne338 ev391 ev370 ev347
       hc414 =>
     rw [hhead] at ld12
-    injection ld12 with _ _ hfields
+    injection ld12 with hval
+    injection hval with _ _ hfields
     injection hfields with hap _
-    subst hap
-    -- Extract `cv.levelParams.Perm` via `get_ci` inside `rec_comparands`? Even simpler:
-    -- `rec_comparands` itself invokes `get_ci`, and we also get `hperm` from `rec_comparands`'s
-    -- first step or include `hperm` in `rec_comparands_spec`! Let's get `hperm` cleanly:
-    have hperm : cv.levelParams.Perm (List.range cv.levelParams.length) := by
-      obtain ⟨m_rc, p_rc, cs_rc, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-        ev_ci, ld_ci, _, _, _, _, _, _, _, hc_rc⟩ := Obs.«KernelModeled::rec_comparands».obs ev91
-      have ext_h_32 := ev58.heap_extends.trans ev45.heap_extends
-      have hgood_ci : Good c cs_rc :=
-        good.sub (by rw [hc414, hc_rc]; intro z hz; simp [hz])
-      obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-        ih.get (.callees .get_ci) (by rw [hc414, hc_rc]; callees_lt) ev_ci
-          x_raddr a rfl hgood_ci (Bytes.repAddressRef_heapMono₂ addrTy ext_h_32 ha)
-      rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
-      rw [ld_ci] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
-      obtain ⟨_, _, _, _, hv, -⟩ := FireAux.ciRep_rec_inv hci
-      exact hv.2.2.1
+    subst ap
     have ext_32 := ev58.heap_extends.trans ev45.heap_extends
     have hgood_rc : Good c cs89 := good.sub (by rw [hc414]; intro z hz; simp [hz])
-    obtain ⟨x_iaddr', x_ilvls', x_pins', lvls, pins, htuple_rc, hplen, hrP_lt,
+    obtain ⟨x_iaddr', x_ilvls', x_pins', lvls, pins, htuple_rc, hperm, hplen, hrP_lt,
         hnested, hilvls_79, hpins_79⟩ :=
       FireCompareAux.rec_comparands_spec c ev91 hgood_rc
         (ih.mono (by rw [hc414]; callees_lt))
@@ -680,7 +682,7 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
     have ext_79_155 := ext_125_step.trans (ev180.heap_extends.trans ev167.heap_extends)
     have ext_155 := ext_79.trans ext_79_155
     have hpins_155 : c.tmlk 0 FireAux.Γ₀ rP m155 (pins.map (posOf cv.levelParams)) x_pins :=
-      repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext_79_155 hpins_79
+      FireCompareAux.tmlk_mono c ext_79_155 hpins_79
     have hgood_inst : Good c cs208 := good.sub (by rw [hc414]; intro z hz; simp [hz])
     have hv197 := FireCompareAux.inst_pins_run c hperm hus_len hrP_le_val pins hgood_inst
       (ih.mono (by rw [hc414]; callees_lt)) hpins_155 (hus.mono ext_155) hrev_155 ev210
