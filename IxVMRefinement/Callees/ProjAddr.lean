@@ -23,6 +23,8 @@ set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 namespace ProjAddrAux
 
@@ -151,7 +153,8 @@ theorem muts_member_at_spec :
   | zero =>
     intro ms lp r h h' calls hk _ hms ev
     cases Obs.«Ingress::muts_member_at».obs ev with
-    | n0 x_m x_rest ld12 _ rfl rfl _ =>
+    | n0 x_m x_rest ld12 _ hr hh _ =>
+      subst hr hh
       obtain ⟨z, zs, he, hz, -⟩ := Lib.rep_cons_of_load hms ld12
       subst he
       exact ⟨hz, rfl⟩
@@ -216,12 +219,13 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       Specs.Callees.ProjInfoRep m306
         (Specs.Callees.memberProjInfo (ixAddr b) i ms[i]) v198 := by
     rcases hmem with ⟨x, hmc⟩
-    cases hmi : ms[i] with
+    cases ms[i] with
     | defn d =>
-      rw [hmi, Specs.Callees.mutCtor] at hmc
+      simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
-      | Defn _ _ rfl rfl _ =>
-        have E : Heap.Extends m199 m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
+      | Defn _ _ hv1 hm1 _ =>
+        subst hv1 hm1
+        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
         refine ⟨rfl, ?_⟩
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
@@ -230,26 +234,28 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       | Recr _ _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
     | indc d =>
-      rw [hmi, Specs.Callees.mutCtor] at hmc
+      simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
-      | Indc _ _ _ rfl rfl _ =>
-        have E : Heap.Extends m199 m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
+      | Indc _ _ _ hv1 hm1 _ =>
+        subst hv1 hm1
+        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
         refine ⟨rfl, ?_⟩
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
       | Recr _ _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
     | recr d =>
-      rw [hmi, Specs.Callees.mutCtor] at hmc
+      simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
       | Indc _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
-      | Recr _ _ _ _ rfl rfl _ =>
-        have E : Heap.Extends m199 m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
+      | Recr _ _ _ _ hv1 hm1 _ =>
+        subst hv1 hm1
+        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
         refine ⟨rfl, ?_⟩
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
@@ -325,7 +331,8 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
       cases Lib.rep_nil_of_load hcur ld12
     | Cons w36 x_rest v55 v56 m58 cs66 m94 cs102 v108 ld12 he51 hm50 ev68 op143 ev104 hc145 =>
       obtain ⟨z, zs, he, -, hrest_rep⟩ := Lib.rep_cons_of_load hcur ld12
-      injection he with rfl rfl
+      injection he with he1 he2
+      subst he1 he2
       obtain ⟨hi, hmi, hdrop'⟩ := drop_succ_of_drop_cons ms i hdrop
       have hgood1 : Good c cs66 := good.sub (by rw [hc145]; intro x hx; simp [hx])
       have hgood2 : Good c cs102 := good.sub (by rw [hc145]; intro x hx; simp [hx])
@@ -333,10 +340,10 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
       rw [hmi] at ha_addr
       have ext1 := ev68.heap_extends
       have hms' : Specs.Callees.MembersRep m58 ms lp :=
-        RepLinkedList.mono (fun _ hx => hx) ext1 hms
+        RepLinkedList.mono (fun _ _ _ _ _ hx => hx) ext1 hms
       have hb' : RepAddr m58 b bp := Bytes.repAddressRef_heapMono₂ addrTy ext1 hb
       have hrest_rep' : Specs.Callees.MembersRep m58 rest x_rest :=
-        RepLinkedList.mono (fun _ hx => hx) ext1 hrest_rep
+        RepLinkedList.mono (fun _ _ _ _ _ hx => hx) ext1 hrest_rep
       have hv108 : v108 = .field ((i + 1 : Nat) : F) := by
         rw [add_field_inv op143]
         push_cast

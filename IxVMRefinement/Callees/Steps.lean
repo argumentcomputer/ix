@@ -29,9 +29,9 @@ theorem callees_step (c : Ctx) (hc : CoreFacts c) (hce : CalleesExtraFacts c)
   | .get_ci_cprj, _, _, _, _, _, ev, _ => get_ci_cprj_step c hc ev
   | .get_ci_iprj, _, _, _, _, _, ev, _ => get_ci_iprj_step c hc ev
   | .load_verified_constant, _, _, _, _, _, ev, _ => load_verified_constant_step c hce ev
-  | .build_recur_addrs, _, _, _, _, _, ev, ih => build_recur_addrs_step c ev ih
+  | .build_recur_addrs, _, _, _, _, _, ev, _ => build_recur_addrs_step c ev
   | .rec_to_parent_addr, _, _, _, _, _, ev, ih => rec_to_parent_addr_step c ev ih
-  | .projection_addr_ctor, _, _, _, _, _, ev, ih => projection_addr_ctor_step c ev ih
+  | .projection_addr_ctor, _, _, _, _, _, ev, _ => projection_addr_ctor_step c ev
   | .put_constant, _, _, _, _, _, ev, _ => put_constant_step c ev
   | .bytes_to_addr, args, h, r, h', cs, ev, ih => hbta args h r h' cs ev ih
   | .block_is_multi, _, _, _, _, _, ev, ih => block_is_multi_step c ev ih

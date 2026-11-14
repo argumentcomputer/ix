@@ -16,6 +16,8 @@ set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 namespace ProjAddrAux
 
@@ -100,8 +102,9 @@ theorem put_sharing_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     rwa [Obs.Names.«Lists::Node<&Ixon::Expr>».symbol]
   obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
   cases Obs.«IxonSerialize::put_expr_list».obs ev49 with
-  | Nil _ rfl rfl _ =>
-    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
+  | Nil _ hr hh _ =>
+    subst hr hh
+    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ _ ld12 _ _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -119,8 +122,9 @@ theorem put_refs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]
   obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
   cases Obs.«IxonSerialize::put_address_list».obs ev49 with
-  | Nil _ rfl rfl _ =>
-    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
+  | Nil _ hr hh _ =>
+    subst hr hh
+    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ ld12 _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -138,8 +142,9 @@ theorem put_univs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     rwa [Obs.Names.«Lists::Node<&Ixon::Univ>».symbol]
   obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
   cases Obs.«IxonSerialize::put_univ_list».obs ev49 with
-  | Nil _ rfl rfl _ =>
-    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
+  | Nil _ hr hh _ =>
+    subst hr hh
+    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ _ ld12 _ _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -158,8 +163,9 @@ theorem put_binders_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     rwa [Obs.Names.«Lists::Node<Ixon::BinderBlock>».symbol]
   obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
   cases Obs.«IxonSerialize::put_binder_block_list».obs ev49 with
-  | Nil _ rfl rfl _ =>
-    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
+  | Nil _ hr hh _ =>
+    subst hr hh
+    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ ld12 _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -201,9 +207,9 @@ theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : Sourc
     rcases Obs.«IxonSerialize::put_constructor_proj».obs ev167 with
       ⟨x_idx, x_cidx, x_block, _, v39, m48, _, v60, m69, _, hv15, ev79, ev58, ev37, -⟩
     injection hv15 with _ _ hargs
-    injection hargs with rfl hargs
-    injection hargs with rfl hargs
-    injection hargs with rfl _
+    injection hargs with ha1 hargs; subst ha1
+    injection hargs with ha2 hargs; subst ha2
+    injection hargs with ha3 _; subst ha3
     have s1 := put_address_spec hb ev79 hrest
     have hvj' : RepU64 m69 p.cidx vj := U64.repU64_heapMono₂ ev79.heap_extends hvj
     have s2 := put_tagn0_spec hvj' ev58 s1
@@ -238,8 +244,8 @@ theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue
     rcases Obs.«IxonSerialize::put_recursor_proj».obs ev202 with
       ⟨x_idx, x_block, _, v34, m43, _, hv15, ev53, ev32, -⟩
     injection hv15 with _ _ hargs
-    injection hargs with rfl hargs
-    injection hargs with rfl _
+    injection hargs with ha1 hargs; subst ha1
+    injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
@@ -271,8 +277,8 @@ theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValu
     rcases Obs.«IxonSerialize::put_inductive_proj».obs ev237 with
       ⟨x_idx, x_block, _, v34, m43, _, hv15, ev53, ev32, -⟩
     injection hv15 with _ _ hargs
-    injection hargs with rfl hargs
-    injection hargs with rfl _
+    injection hargs with ha1 hargs; subst ha1
+    injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
@@ -304,8 +310,8 @@ theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceVal
     rcases Obs.«IxonSerialize::put_definition_proj».obs ev272 with
       ⟨x_idx, x_block, _, v34, m43, _, hv15, ev53, ev32, -⟩
     injection hv15 with _ _ hargs
-    injection hargs with rfl hargs
-    injection hargs with rfl _
+    injection hargs with ha1 hargs; subst ha1
+    injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
@@ -417,11 +423,11 @@ theorem put_empty_tables_spec
   have e3 := ev_rf.heap_extends
   have e4 := ev_sh.heap_extends
   have s_bd := put_binders_nil_spec hp4 ev_bd hrest
-  have s_un := put_univs_nil_spec (RepLinkedList.mono (fun _ hx => hx) e1 hp3) ev_un s_bd
+  have s_un := put_univs_nil_spec (RepLinkedList.mono (fun _ _ _ _ _ hx => hx) e1 hp3) ev_un s_bd
   have s_rf := put_refs_nil_spec
-    (RepLinkedList.mono (fun _ hx => hx) (e1.trans e2) hp2) ev_rf s_un
+    (RepLinkedList.mono (fun _ _ _ _ _ hx => hx) (e1.trans e2) hp2) ev_rf s_un
   have s_sh := put_sharing_nil_spec
-    (RepLinkedList.mono (fun _ hx => hx) (e1.trans (e2.trans e3)) hp1) ev_sh s_rf
+    (RepLinkedList.mono (fun _ _ _ _ _ hx => hx) (e1.trans (e2.trans e3)) hp1) ev_sh s_rf
   refine ⟨e1.trans (e2.trans (e3.trans e4)), ?_⟩
   simpa [List.append_assoc] using s_sh
 
@@ -454,8 +460,10 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
   | .CPrj (hv15 := hv) (ev118 := ev118) (ev97 := ev97) (ev76 := ev76) (ev55 := ev55)
       (ev760 := ev760) (ev675 := ev675) .. =>
     injection hv with _ _ hm; injection hm with hi hm
-    injection hm with rfl hm; injection hm with rfl hm
-    injection hm with rfl hm; injection hm with rfl _
+    injection hm with hm1 hm; subst hm1
+    injection hm with hm2 hm; subst hm2
+    injection hm with hm3 hm; subst hm3
+    injection hm with hm4 _; subst hm4
     subst hi
     cases info with
     | cPrj p =>
@@ -475,8 +483,10 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
   | .RPrj (hv15 := hv) (ev118 := ev118) (ev97 := ev97) (ev76 := ev76) (ev55 := ev55)
       (ev881 := ev881) (ev796 := ev796) .. =>
     injection hv with _ _ hm; injection hm with hi hm
-    injection hm with rfl hm; injection hm with rfl hm
-    injection hm with rfl hm; injection hm with rfl _
+    injection hm with hm1 hm; subst hm1
+    injection hm with hm2 hm; subst hm2
+    injection hm with hm3 hm; subst hm3
+    injection hm with hm4 _; subst hm4
     subst hi
     cases info with
     | rPrj p =>
@@ -498,8 +508,10 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
   | .IPrj (hv15 := hv) (ev118 := ev118) (ev97 := ev97) (ev76 := ev76) (ev55 := ev55)
       (ev1002 := ev1002) (ev917 := ev917) .. =>
     injection hv with _ _ hm; injection hm with hi hm
-    injection hm with rfl hm; injection hm with rfl hm
-    injection hm with rfl hm; injection hm with rfl _
+    injection hm with hm1 hm; subst hm1
+    injection hm with hm2 hm; subst hm2
+    injection hm with hm3 hm; subst hm3
+    injection hm with hm4 _; subst hm4
     subst hi
     cases info with
     | iPrj p =>
@@ -521,8 +533,10 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
   | .DPrj (hv15 := hv) (ev118 := ev118) (ev97 := ev97) (ev76 := ev76) (ev55 := ev55)
       (ev1123 := ev1123) (ev1038 := ev1038) .. =>
     injection hv with _ _ hm; injection hm with hi hm
-    injection hm with rfl hm; injection hm with rfl hm
-    injection hm with rfl hm; injection hm with rfl _
+    injection hm with hm1 hm; subst hm1
+    injection hm with hm2 hm; subst hm2
+    injection hm with hm3 hm; subst hm3
+    injection hm with hm4 _; subst hm4
     subst hi
     cases info with
     | dPrj p =>

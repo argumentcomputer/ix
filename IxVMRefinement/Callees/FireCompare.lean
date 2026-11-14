@@ -18,6 +18,8 @@ set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 namespace FireCompareAux
 
@@ -74,8 +76,8 @@ theorem rec_family_block_spec (c : Ctx) {x_rec_addr r : SourceValue F} {h h' : H
   subst he331 he332
   have hgood1 : Good c cs16 := good.sub (by rw [hc333]; intro z hz; simp [hz])
   obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc333]; ModeledAux.callees_lt) ev18 x_rec_addr a rfl hgood1 ha
-  rw [hfind] at hfind'; injection hfind' with rfl
+    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev18 x_rec_addr a rfl hgood1 ha
+  rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
   rw [ld12] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
   obtain ⟨p, _, _, _, hv, rfl, -, -, -, -, -, -, -⟩ := FireAux.ciRep_rec_inv hci
   have hty0 : c.tmk 0 FireAux.Γ₀ 0 m2 (posOf cv.levelParams cv.type) x_ty := hv.2.2.2 0 FireAux.Γ₀
@@ -91,7 +93,7 @@ theorem rec_family_block_spec (c : Ctx) {x_rec_addr r : SourceValue F} {h h' : H
   obtain ⟨dom, hpi2, rfl⟩ := FireAux.piDomAt_of_posOf k hpiPos2
   have hgood2 : Good c cs196 := good.sub (by rw [hc333]; intro z hz; simp [hz])
   obtain ⟨hd, sp, H, As_dom, htuple, hH, -, hdom_eq⟩ :=
-    ih.get (.subst .collect_spine) (by rw [hc333]; ModeledAux.callees_lt) ev198 v163 rfl hgood2
+    ih.get (.subst .collect_spine) (by rw [hc333]; callees_lt) ev198 v163 rfl hgood2
       0 FireAux.Γ₀ (ZMod.val p + k) (posOf cv.levelParams dom) hdomPos
   injection htuple with h1
   simp only [List.cons.injEq, and_true] at h1
@@ -106,7 +108,7 @@ theorem rec_family_block_spec (c : Ctx) {x_rec_addr r : SourceValue F} {h h' : H
   obtain ⟨us, hfn_dom, -⟩ := FireAux.const_of_posOf hfnPos
   have hgood3 : Good c cs266 := good.sub (by rw [hc333]; intro z hz; simp [hz])
   obtain ⟨ci_ind, hfind_ind, v_ind, hld_ind, hci_ind⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc333]; ModeledAux.callees_lt) ev268 x_t0 a_t0 rfl
+    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev268 x_t0 a_t0 rfl
       hgood3 ha_t0
   rw [ld262] at hld_ind; injection hld_ind with hv_ind; subst hv_ind
   obtain ⟨cvI, capsI, -, -, -, b, i_idx, rfl, -, -, -, -, -, -, hb, rfl, hname⟩ :=
@@ -226,7 +228,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
       rcases heq_cons with ⟨rfl, rfl⟩
       have hgood1 : Good c cs68 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       obtain ⟨hm60, -, hnoF0⟩ :=
-        ih.get (.subst .has_bvar_in_range) (by rw [hc174]; ModeledAux.callees_lt) ev70
+        ih.get (.subst .has_bvar_in_range) (by rw [hc174]; callees_lt) ev70
           x_p 0 (nI : F) rfl hgood1
       subst hm60
       have hnI_val : ZMod.val (nI : F) = nI :=
@@ -245,7 +247,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
           (FireAux.openZero (rP + nI) 0 (posOf ps x)) x_p :=
         FireAux.tm_openZero hx_p 0 (by omega)
       have hgood2 : Good c cs120 := good.sub (by rw [hc174]; intro z hz; simp [hz])
-      have hlow0 := ih.get (.subst .expr_lower) (by rw [hc174]; ModeledAux.callees_lt) ev122
+      have hlow0 := ih.get (.subst .expr_lower) (by rw [hc174]; callees_lt) ev122
         x_p (nI : F) 0 rfl hgood2 0 nI (by rw [hnI_val]; omega) (Nat.zero_le _)
         (rP + nI) FireAux.Γ₀ (FireAux.openZero (rP + nI) 0 (posOf ps x)) (by omega)
         (by rw [ZMod.val_zero]; exact hopen) (by rw [ZMod.val_zero]; exact hno)
@@ -278,7 +280,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
         repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext1 hrest_p
       have hgood3 : Good c cs155 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       obtain ⟨hrest_props, hrest_out⟩ := ih_list hgood3
-        (ih.mono (by rw [hc174]; ModeledAux.callees_lt)) hrest_m112 ev157
+        (ih.mono (by rw [hc174]; callees_lt)) hrest_m112 ev157
       have ext2 := ev157.heap_extends
       refine ⟨?_, ?_⟩
       · intro y hy
@@ -325,7 +327,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
   subst hdomPos_eq
   have hgood1 : Good c cs87 := good.sub (by rw [hc424]; intro z hz; simp [hz])
   obtain ⟨hd, sp, H, argsPos, htuple, hH, hargsPos, hdom_mk⟩ :=
-    ih.get (.subst .collect_spine) (by rw [hc424]; ModeledAux.callees_lt) ev89 x_dom rfl hgood1
+    ih.get (.subst .collect_spine) (by rw [hc424]; callees_lt) ev89 x_dom rfl hgood1
       0 FireAux.Γ₀ mI (posOf ps dom) hdomPos
   injection htuple with h1
   simp only [List.cons.injEq, and_true] at h1
@@ -345,7 +347,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
   subst hargsPos_eq
   have hgood2 : Good c cs155 := good.sub (by rw [hc424]; intro z hz; simp [hz])
   obtain ⟨ci_i, _, v_i, hld_i, hci_i⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc424]; ModeledAux.callees_lt) ev157 x_iaddr a_i rfl
+    ih.get (.callees .get_ci) (by rw [hc424]; callees_lt) ev157 x_iaddr a_i rfl
       hgood2 ha_i
   rw [ld151] at hld_i; injection hld_i with hv_i; subst hv_i
   obtain ⟨_, _, nP, nI, _, _, _, rfl, rfl, hni_eq, -, hnP_lt, hnI_lt, -, -, -, -⟩ :=
@@ -405,7 +407,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
   have hgood3 : Good c cs383 := good.sub (by rw [hc424]; intro z hz; simp [hz])
   obtain ⟨hlift_props, hpins_375⟩ :=
     lower_pins_spec c (ps := ps) (rP := rP) hnI_lt (dom.getAppArgs.take nP)
-      hgood3 (ih.mono (by rw [hc424]; ModeledAux.callees_lt)) htake_389 ev385
+      hgood3 (ih.mono (by rw [hc424]; callees_lt)) htake_389 ev385
   let pins : List KExpr := (dom.getAppArgs.take nP).map (Ix.Kernel.Expr.lowerBVars (mI - rP) 0)
   have hpins_eq' : (dom.getAppArgs.take nP).map (Ix.Kernel.Expr.lowerBVars nI 0) = pins := by
     rw [hnI_sub]
@@ -444,8 +446,8 @@ theorem rec_comparands_spec (c : Ctx) {x_raddr r : SourceValue F} {h h' : Heap F
   subst he174 he221
   have hgood1 : Good c cs16 := good.sub (by rw [hc222]; intro z hz; simp [hz])
   obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc222]; ModeledAux.callees_lt) ev18 x_raddr a rfl hgood1 ha
-  rw [hfind] at hfind'; injection hfind' with rfl
+    ih.get (.callees .get_ci) (by rw [hc222]; callees_lt) ev18 x_raddr a rfl hgood1 ha
+  rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
   rw [ld12] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
   obtain ⟨p, i_f, m_f, mi_f, hv, rfl, rfl, rfl, rfl, hrP_F, hmI_F, hle, hmI_lt⟩ :=
     FireAux.ciRep_rec_inv hci
@@ -466,7 +468,7 @@ theorem rec_comparands_spec (c : Ctx) {x_raddr r : SourceValue F} {h h' : Heap F
   have hmI_F' : (mI : F) = (rP : F) + i_f := by rw [hmI_F, hrP_F]
   have hgood2 : Good c cs105 := good.sub (by rw [hc222]; intro z hz; simp [hz])
   obtain ⟨x_iaddr', x_ilvls', x_pins', lvls, pins, htuple, hplen, hnested, hilvls, hpins⟩ :=
-    rec_major_pins_spec c ev107 hgood2 (ih.mono (by rw [hc222]; ModeledAux.callees_lt))
+    rec_major_pins_spec c ev107 hgood2 (ih.mono (by rw [hc222]; callees_lt))
       (hv.2.2.2 0 FireAux.Γ₀) hmI_F' hle hmI_lt
   injection htuple with h1
   simp only [List.cons.injEq, and_true] at h1
@@ -563,7 +565,7 @@ theorem inst_pins_run (c : Ctx) {ps : List Ix.Kernel.LevelParam} {usK : List KLe
       rcases heq_cons with ⟨rfl, rfl⟩
       have hgood1 : Good c cs57 := good.sub (by rw [hc157]; intro z hz; simp [hz])
       have hv46_0 :=
-        ih.get (.subst .expr_inst_levels) (by rw [hc157]; ModeledAux.callees_lt) ev59
+        ih.get (.subst .expr_inst_levels) (by rw [hc157]; callees_lt) ev59
           x_p x_us rfl hgood1 FireAux.Γ₀ rP (posOf ps p) usK hp hus
       rw [FireAux.posOf_instantiateLevelParams_perm hperm hlen p] at hv46_0
       have hv46_d : c.tmk d Γ rP m47 (p.instantiateLevelParams ps usK) v46 :=
@@ -576,7 +578,7 @@ theorem inst_pins_run (c : Ctx) {ps : List Ix.Kernel.LevelParam} {usK : List KLe
         omega
       have hgood2 : Good c cs95 := good.sub (by rw [hc157]; intro z hz; simp [hz])
       have hv84 :=
-        ih.get (.subst .expr_inst_many) (by rw [hc157]; ModeledAux.callees_lt) ev97
+        ih.get (.subst .expr_inst_many) (by rw [hc157]; callees_lt) ev97
           v46 x_substs 0 rfl hgood2 d Γ (p.instantiateLevelParams ps usK) (As.take rP).reverse
           (by rwa [hsub_len]) hsubsts_47
       rw [ZMod.val_zero, FireAux.instSpine_eq_instantiateList_all hrP_le] at hv84
@@ -585,7 +587,7 @@ theorem inst_pins_run (c : Ctx) {ps : List Ix.Kernel.LevelParam} {usK : List KLe
       have hrest_87 : c.tmlk 0 FireAux.Γ₀ rP m87 (rest.map (posOf ps)) x_rest :=
         repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext12 hrest
       have hgood3 : Good c cs130 := good.sub (by rw [hc157]; intro z hz; simp [hz])
-      have hv85 := ih_list hgood3 (ih.mono (by rw [hc157]; ModeledAux.callees_lt))
+      have hv85 := ih_list hgood3 (ih.mono (by rw [hc157]; callees_lt))
         hrest_87 (hus.mono ext12) (TmL.mono ext2 hsubsts_47) ev132
       have ext3 := ev132.heap_extends
       exact TmL.store_cons (hv84.mono ext3) hv85
@@ -619,9 +621,9 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
     have hgood1 : Good c cs56 := good.sub (by rw [hc73]; intro z hz; simp [hz])
     obtain ⟨b, np, k, mdom, dom, i, us_dom, hb, hpi1, hpi2, hfn_dom⟩ :=
       FireCompareAux.rec_family_block_spec c ev58 hgood1
-        (ih.mono (by rw [hc73]; ModeledAux.callees_lt)) ha hfind
+        (ih.mono (by rw [hc73]; callees_lt)) ha hfind
     have hgood2 : Good c cs43 := good.sub (by rw [hc73]; intro z hz; simp [hz])
-    have hbim := ih.get (.callees .block_is_modeled) (by rw [hc73]; ModeledAux.callees_lt) ev45
+    have hbim := ih.get (.callees .block_is_modeled) (by rw [hc73]; callees_lt) ev45
     have hfew : FewInductives c (ixAddr b) :=
       ModeledAux.fewInductives_of_modeled_zero c hbim hgood2 hb
     exact .inl ⟨np, k, mdom, dom, ixAddr b, i, us_dom, hpi1, hpi2, hfn_dom, hfew⟩
@@ -644,9 +646,9 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       have hgood_ci : Good c cs_rc :=
         good.sub (by rw [hc414, hc_rc]; intro z hz; simp [hz])
       obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-        ih.get (.callees .get_ci) (by rw [hc414, hc_rc]; ModeledAux.callees_lt) ev_ci
+        ih.get (.callees .get_ci) (by rw [hc414, hc_rc]; callees_lt) ev_ci
           x_raddr a rfl hgood_ci (Bytes.repAddressRef_heapMono₂ addrTy ext_h_32 ha)
-      rw [hfind] at hfind'; injection hfind' with rfl
+      rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
       rw [ld_ci] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
       obtain ⟨_, _, _, _, hv, -⟩ := FireAux.ciRep_rec_inv hci
       exact hv.2.2.1
@@ -655,7 +657,7 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
     obtain ⟨x_iaddr', x_ilvls', x_pins', lvls, pins, htuple_rc, hplen, hrP_lt,
         hnested, hilvls_79, hpins_79⟩ :=
       FireCompareAux.rec_comparands_spec c ev91 hgood_rc
-        (ih.mono (by rw [hc414]; ModeledAux.callees_lt))
+        (ih.mono (by rw [hc414]; callees_lt))
         (Bytes.repAddressRef_heapMono₂ addrTy ext_32 ha) hfind
     injection htuple_rc with h1
     simp only [List.cons.injEq, and_true] at h1
@@ -681,11 +683,11 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       repList_heapMono₂ kexprListEnum (fun _ _ _ _ e r => Tm.mono e r) ext_79_155 hpins_79
     have hgood_inst : Good c cs208 := good.sub (by rw [hc414]; intro z hz; simp [hz])
     have hv197 := FireCompareAux.inst_pins_run c hperm hus_len hrP_le_val pins hgood_inst
-      (ih.mono (by rw [hc414]; ModeledAux.callees_lt)) hpins_155 (hus.mono ext_155) hrev_155 ev210
+      (ih.mono (by rw [hc414]; callees_lt)) hpins_155 (hus.mono ext_155) hrev_155 ev210
     have ext_198 := ext_155.trans ev210.heap_extends
     have hgood_sp : Good c cs246 := good.sub (by rw [hc414]; intro z hz; simp [hz])
     obtain ⟨hd_m, sp_m, H_m, M_args, htuple_m, hH_m, hM_args, hM_eq⟩ :=
-      ih.get (.subst .collect_spine) (by rw [hc414]; ModeledAux.callees_lt) ev248 major rfl
+      ih.get (.subst .collect_spine) (by rw [hc414]; callees_lt) ev248 major rfl
         hgood_sp d Γ 0 M (Tm.mono ext_198 hM)
     injection htuple_m with h2
     simp only [List.cons.injEq, and_true] at h2
@@ -720,7 +722,7 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       ext_198.trans (ext_198_301.trans ev370.heap_extends)
     have hgood_de : Good c cs345 := good.sub (by rw [hc414]; intro z hz; simp [hz])
     have hdefeq :=
-      ih.get (.callees .defeq_list_ok) (by rw [hc414]; ModeledAux.callees_lt) ev347
+      ih.get (.callees .defeq_list_ok) (by rw [hc414]; callees_lt) ev347
         rc v349 v197 types rfl hgood_de (RCRep.mono ext_360 hrc) d Γ
         ⟨htypes.1.mono ext_360, htypes.2⟩
         (M.getAppArgs.take pins.length)
@@ -748,7 +750,7 @@ theorem fire_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   | other v1 cs33 _ _ ev35 hc84 =>
     have hgood1 : Good c cs33 := good.sub (by rw [hc84]; intro z hz; simp [hz])
     have hfc :=
-      ih.get (.callees .fire_compare) (by rw [hc84]; ModeledAux.callees_lt) ev35
+      ih.get (.callees .fire_compare) (by rw [hc84]; callees_lt) ev35
         rc head us spine major types rfl hgood1 hrc ap lp hhead a cv mI rP rls ha hfind
         usK hus hus_len d Γ htypes As M hAs hM hr
     exact .inr hfc

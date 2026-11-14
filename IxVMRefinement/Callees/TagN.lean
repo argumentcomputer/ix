@@ -17,6 +17,8 @@ set_option maxHeartbeats 400000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 /-! ## Field, word, and `ByteArray` arithmetic helpers -/
 
@@ -50,7 +52,6 @@ theorem sub_field_inv {a b : F} {v : SourceValue F}
 
 theorem div_mod_zero {d p : Nat} (h : d < p) : d / p % 256 = 0 := by
   rw [Nat.div_eq_of_lt h]
-  rfl
 
 theorem sum_eq_zero_4 {a b c e : Nat}
     (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256)
@@ -107,11 +108,11 @@ theorem wrap_sub_mod {d K S M : Nat} (hKS : K + S = M) (hd : d < M) (hge : ¬ d 
   have heq : d + S = (d - K) + M := by omega
   rw [heq, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
 
-theorem wrap_div_zero {w K S M : Nat} (hKS : K + S = M) (hdiv : (w + S) / M = 0) :
+theorem wrap_div_zero {w K S M : Nat} (hM : 0 < M) (hKS : K + S = M) (hdiv : (w + S) / M = 0) :
     w < K := by
   by_contra hge
   have hgeM : M ≤ w + S := by omega
-  have hpos : 0 < (w + S) / M := Nat.div_pos hgeM (by omega)
+  have hpos : 0 < (w + S) / M := Nat.div_pos hgeM hM
   omega
 
 theorem wrap_div_lt_two {w S M : Nat} (hw : w < M) (hS : S < M) :
@@ -145,7 +146,7 @@ theorem repBytes_cons {h h' : Heap F} {b : UInt8} {bs : List UInt8}
     (hr : r = .ptr (.enum byteListEnum) h.length) :
     RepBytes h' (b :: bs) r := by
   subst hvb hh' hr
-  exact Lib.rep_store_cons (fun _ hx => hx) rfl htl
+  exact Lib.rep_store_cons (fun _ _ _ _ _ hx => hx) rfl htl
 
 /-! ## `UInt8::raw_add` and `WordLists::length_u64` on empty lists -/
 
@@ -180,7 +181,8 @@ theorem length_u64_nil_spec {α : Type} {t_T : Generic.Ty}
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
     obtain ⟨w, dw, rfl⟩ := d9.repeat_inv
     have hc0 : W.constant "UInt8::BYTE_0" (Generic.Ty.field.subst [("T", t_T)]) =
-        .ok (.literal 0) := Obs.Names.c9173999864893739538
+        .ok (.literal 0) := by
+      simpa [Generic.Ty.subst] using Obs.Names.c9173999864893739538
     obtain ⟨rfl, rfl, rfl⟩ := dw.global_literal_inv hc0
     exact ⟨rfl, rfl⟩
   · rcases selectArm_cons_inv sel16 with ⟨mt24, rfl⟩ | ⟨-, sel26⟩
@@ -200,10 +202,14 @@ theorem length_u64_nil_spec {α : Type} {t_T : Generic.Ty}
 
 theorem toUInt64_shift8 {d : Nat} (hd : d < 18446744073709551616) :
     d.toUInt64 >>> 8 = (d / 256).toUInt64 := by
-  apply UInt64.eq_of_toNat_eq
+  apply UInt64.toNat_inj.mp
   have hd' : d / 256 < 18446744073709551616 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hd
   simp [Nat.toUInt64, UInt64.toNat_shiftRight, UInt64.toNat_ofNat',
     Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hd, Nat.mod_eq_of_lt hd']
+
+theorem toNat_toUInt8_mod (w : UInt64) : w.toUInt8.toNat = w.toNat % 256 := by
+  simp only [UInt64.toUInt8, Nat.toUInt8, UInt8.toNat_ofNat']
+  rfl
 
 theorem toUInt64_lowByte {d : Nat} (hd : d < 18446744073709551616) :
     d.toUInt64.toUInt8.toNat = d % 256 := by
@@ -401,12 +407,12 @@ theorem put_tagn_wide_c3 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     exact absurd (Value.field.inj hv) (by decide)
   | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd (Value.field.inj hv) (by decide)
-  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd (Value.field.inj hv) (by decide)
   | n3 _ _ _ _ _ _ _ _ v1080 v1081 m1083 _ v1094 m1111 _ _ _ _ _ _ he1076 hm1075 op1108 ev1093
       ev1121 _ =>
     have hv1094 : v1094 = .field 195 := by
-      rw [add_field_inv op1108]; congr 1; decide
+      rw [add_field_inv op1108]; rfl
     rw [hv1094] at ev1093
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev1093
     have hle := put_u64_le_spec 8 (by omega) hd ev1121 hrest
@@ -463,7 +469,7 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
       exact leBytes8_lt_4294967296 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
         (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
     rw [ite_eq_left hd_lt]
-    have hv872 : v872 = .field 194 := by rw [add_field_inv op886]; congr 1; decide
+    have hv872 : v872 = .field 194 := by rw [add_field_inv op886]; rfl
     rw [hv872] at ev871
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev871
     have hle := put_u64_le_spec 4 (by omega) hd ev899 hrest
@@ -502,12 +508,12 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hsub_tup : (.tuple [.field 0, .field 0, .field 0, .field 0,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
-      simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
+      simpa [subVal] using (Lib.u64Value_leBytes8
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 0) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev941
-    have hd_rep := Lib.repU64_ofNatLT h hd
-    have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT _ hd
+    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev941
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -541,7 +547,7 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     exact absurd (Value.field.inj hv) (by decide)
   | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
-  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
   | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
@@ -570,7 +576,7 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
       exact leBytes8_lt_16777216 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
         (Nat.mod_lt _ (by decide))
     rw [ite_eq_left hd_lt]
-    have hv557 : v557 = .field 193 := by rw [add_field_inv op571]; congr 1; decide
+    have hv557 : v557 = .field 193 := by rw [add_field_inv op571]; rfl
     rw [hv557] at ev556
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev556
     have hle := put_u64_le_spec 3 (by omega) hd ev584 hrest
@@ -609,12 +615,12 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hsub_tup : (.tuple [.field 0, .field 0, .field 0, .field 255,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
-      simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
+      simpa [subVal] using (Lib.u64Value_leBytes8
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev626
-    have hd_rep := Lib.repU64_ofNatLT h hd
-    have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT _ hd
+    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev626
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -651,7 +657,7 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     exact absurd rfl hne
   | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
-  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
   | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ =>
     exact absurd rfl hne
@@ -722,12 +728,12 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hsub_tup : (.tuple [.field 0, .field 0, .field 255, .field 255,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
-      simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
+      simpa [subVal] using (Lib.u64Value_leBytes8
         (b0 := 0) (b1 := 0) (b2 := 255) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev289
-    have hd_rep := Lib.repU64_ofNatLT h hd
-    have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT _ hd
+    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev289
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -752,7 +758,7 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
   have hsub_tup : (.tuple [.field 128, .field 191, .field 255, .field 255,
       .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
       TagN.u64Value subVal := by
-    simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
+    simpa [subVal] using (Lib.u64Value_leBytes8
       (b0 := 128) (b1 := 191) (b2 := 255) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
   cases Obs.«IxonSerialize::put_tagn_tail».obs ev with
@@ -760,17 +766,17 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
       v208 y226 x_lo x_no_borrow v255 x263 m265 x271 y272 m273 _ v285 _ v318 m321 _ v332 x339
       y348 m367 op74 op66 ev51 op102 ev87 ev14 ev167 pr217 ev207 op240 op232 ev193 pr294 ev284
       ev301 op278 op270 he314 hm313 op363 op354 op346 ev331 hm375 _ =>
-    have hy60 : y60 = .field 128 := by rw [mul_field_inv op74]; congr 1; decide
+    have hy60 : y60 = .field 128 := by rw [mul_field_inv op74]; rfl
     subst hy60
-    have hv52 : v52 = .field 128 := by rw [sub_field_inv op66]; congr 1; decide
+    have hv52 : v52 = .field 128 := by rw [sub_field_inv op66]; rfl
     subst hv52
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev51
-    have hv88 : v88 = .field 191 := by rw [sub_field_inv op102]; congr 1; decide
+    have hv88 : v88 = .field 191 := by rw [sub_field_inv op102]; rfl
     subst hv88
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev87
     rw [hsub_tup] at ev14
-    have hw_rep := Lib.repU64_ofNatLT h hw_lt
-    have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
+    have hw_rep := Lib.repU64_ofNatLT _ hw_lt
+    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hw_rep hsub_rep ev14
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨-, hcarry⟩
@@ -781,15 +787,15 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
       natCast_eq_zero_of_lt (Nat.lt_trans hlt2 (by decide)) (Value.field.inj hcF)
     have hw_r2 : w.toNat < 16512 := by
       rw [hsub_val] at hdiv0
-      exact wrap_div_zero (by decide) hdiv0
+      exact wrap_div_zero (by decide) (by decide) hdiv0
     have hp0 : projectValue (TagN.u64Value w.toNat : SourceValue F) 0 =
         .ok (.field ((w.toNat % 256 : Nat) : F)) := rfl
     have hv208 := Except.ok.inj (hp0.symm.trans pr217)
     subst hv208
     obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev207
-    have hy226 : y226 = .field 128 := by rw [mul_field_inv op240]; congr 1; decide
+    have hy226 : y226 = .field 128 := by rw [mul_field_inv op240]; rfl
     subst hy226
-    have hv195 : v195 = .field ((128 : Nat) : F) := by rw [sub_field_inv op232]; congr 1; decide
+    have hv195 : v195 = .field ((128 : Nat) : F) := by rw [sub_field_inv op232]; rfl
     subst hv195
     obtain ⟨hraw, rfl⟩ := u8_raw_add_spec (a := w.toNat % 256) (b := 128) (by omega) (by omega) ev193
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hraw
@@ -802,9 +808,9 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev301
     have hx263 := add_field_inv op278; subst hx263
     have hv255 := sub_field_inv op270; subst hv255
-    have hy348 : y348 = .field 128 := by rw [mul_field_inv op363]; congr 1; decide
+    have hy348 : y348 = .field 128 := by rw [mul_field_inv op363]; rfl
     subst hy348
-    have hx339 : x339 = .field 128 := by rw [add_field_inv op354]; congr 1; decide
+    have hx339 : x339 = .field 128 := by rw [add_field_inv op354]; rfl
     subst hx339
     have hv332 := add_field_inv op346; subst hv332
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev331
@@ -850,17 +856,17 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     exact hstep2
   | n1 m2 _ v32 v33 m41 _ v52 y60 m77 _ v88 x_d x_at_least_r2 m154 _ _ v407 y418 op74 op66 ev51
       op102 ev87 ev14 ev167 op433 op424 ev406 _ =>
-    have hy60 : y60 = .field 128 := by rw [mul_field_inv op74]; congr 1; decide
+    have hy60 : y60 = .field 128 := by rw [mul_field_inv op74]; rfl
     subst hy60
-    have hv52 : v52 = .field 128 := by rw [sub_field_inv op66]; congr 1; decide
+    have hv52 : v52 = .field 128 := by rw [sub_field_inv op66]; rfl
     subst hv52
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev51
-    have hv88 : v88 = .field 191 := by rw [sub_field_inv op102]; congr 1; decide
+    have hv88 : v88 = .field 191 := by rw [sub_field_inv op102]; rfl
     subst hv88
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev87
     rw [hsub_tup] at ev14
-    have hw_rep := Lib.repU64_ofNatLT h hw_lt
-    have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
+    have hw_rep := Lib.repU64_ofNatLT _ hw_lt
+    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hw_rep hsub_rep ev14
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_d, hcarry⟩
@@ -881,9 +887,9 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
       exact wrap_sub_mod (by decide) hw_lt hw_ge2
     rw [hmod] at hx_d
     subst hx_d
-    have hy418 : y418 = .field 192 := by rw [mul_field_inv op433]; congr 1; decide
+    have hy418 : y418 = .field 192 := by rw [mul_field_inv op433]; rfl
     subst hy418
-    have hv407 : v407 = .field 192 := by rw [add_field_inv op424]; congr 1; decide
+    have hv407 : v407 = .field 192 := by rw [add_field_inv op424]; rfl
     subst hv407
     have hwide := put_tagn_wide_c0 (d := w.toNat - 16512)
       (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hw_lt) ev406 hrest
@@ -972,15 +978,15 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [e1, e2, e3, e4, e5, e6, e7] at hb
       rw [← hb]
       exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
-    have hv0_rep : RepU8 h w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
+    have hv0_rep : RepU8 _ w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
-      simp [UInt64.toUInt8, UInt8.toNat_ofNat']
-    have h128_rep : RepU8 h (128 : UInt8) (.field 128) := by
+      rw [toNat_toUInt8_mod]
+    have h128_rep : RepU8 _ (128 : UInt8) (.field 128) := by
       show (.field 128 : SourceValue F) = .field ((128 : UInt8).toNat : F)
       simp only [show (128 : UInt8).toNat = 128 from rfl, Nat.cast_ofNat]
     obtain ⟨hltF, rfl⟩ := Lib.u8_less_than_spec hv0_rep h128_rep ev226
     have hw_toUInt8 : w.toUInt8.toNat = w.toNat := by
-      simp [UInt64.toUInt8, UInt8.toNat_ofNat', Nat.mod_eq_of_lt hw256]
+      rw [toNat_toUInt8_mod, Nat.mod_eq_of_lt hw256]
     have hw128 : w.toNat < 128 := by
       by_contra hge
       have hge' : ¬ w.toUInt8.toNat < (128 : UInt8).toNat := by
@@ -989,7 +995,7 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       exact absurd (Value.field.inj hltF) (by decide)
     have he1 : Ixon.tagNEnd1 0 = 128 := rfl
     have hhdr : Ixon.tagNHeader 0 0 w.toNat = w.toUInt8 := by
-      apply UInt8.eq_of_toNat_eq
+      apply UInt8.toNat_inj.mp
       rw [hw_toUInt8]
       simp [Ixon.tagNHeader, Nat.toUInt8, UInt8.toNat_ofNat', Nat.mod_eq_of_lt hw256]
     have hcons := repBytes_cons hv0_rep hrest hm249 he250
@@ -1027,15 +1033,15 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [e1, e2, e3, e4, e5, e6, e7] at hb
       rw [← hb]
       exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
-    have hv0_rep : RepU8 h w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
+    have hv0_rep : RepU8 _ w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
-      simp [UInt64.toUInt8, UInt8.toNat_ofNat']
-    have h128_rep : RepU8 h (128 : UInt8) (.field 128) := by
+      rw [toNat_toUInt8_mod]
+    have h128_rep : RepU8 _ (128 : UInt8) (.field 128) := by
       show (.field 128 : SourceValue F) = .field ((128 : UInt8).toNat : F)
       simp only [show (128 : UInt8).toNat = 128 from rfl, Nat.cast_ofNat]
     obtain ⟨hltF, rfl⟩ := Lib.u8_less_than_spec hv0_rep h128_rep ev226
     have hw_toUInt8 : w.toUInt8.toNat = w.toNat := by
-      simp [UInt64.toUInt8, UInt8.toNat_ofNat', Nat.mod_eq_of_lt hw256]
+      rw [toNat_toUInt8_mod, Nat.mod_eq_of_lt hw256]
     have hw128 : ¬ w.toNat < 128 := by
       intro hlt
       have hlt' : w.toUInt8.toNat < (128 : UInt8).toNat := by
@@ -1137,8 +1143,8 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev171
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev185
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev199
-    obtain ⟨-, rfl⟩ := Lib.u8_less_than_spec (hk_rep h) (h8_rep h) ev226
-    have hx275 : x275 = .field 208 := by rw [mul_field_inv op290]; congr 1; decide
+    obtain ⟨-, rfl⟩ := Lib.u8_less_than_spec (hk_rep _) (h8_rep _) ev226
+    have hx275 : x275 = .field 208 := by rw [mul_field_inv op290]; rfl
     subst hx275
     obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev297
     have hv268 := add_field_inv op282; subst hv268

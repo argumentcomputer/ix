@@ -25,11 +25,13 @@ set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
-
-namespace ModeledAux
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 macro "callees_lt" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
+
+namespace ModeledAux
 
 theorem getAppFn_mkAppN : ∀ (As : List KExpr) (f : KExpr),
     (Ix.Kernel.Expr.mkAppN f As).getAppFn = f.getAppFn
@@ -83,7 +85,8 @@ theorem peel_n_foralls_aux (c : Ctx) :
     have hn0 : n = 0 := (ZMod.val_eq_zero n).mp hval
     subst hn0
     cases Obs.«KernelCheck::peel_n_foralls».obs ev with
-    | n0 _ rfl rfl _ =>
+    | n0 _ hr hh _ =>
+      subst hr hh
       exact ⟨rfl, [], T, rfl, by simpa using hT⟩
     | other _ _ _ _ _ hne19 _ _ _ _ =>
       exact (hne19 rfl).elim
@@ -126,7 +129,9 @@ theorem muts_indc_count_spec :
   | nil =>
     intro x_members r h h' calls hms ev
     cases Obs.«KernelModeled::muts_indc_count».obs ev with
-    | Nil _ rfl rfl _ => simp
+    | Nil _ hr hh _ =>
+      subst hr hh
+      simp
     | Cons_Indc _ _ _ _ _ ld12 _ _ _ _ | Cons_other _ _ _ ld12 _ _ _ =>
       obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hms ld12
       cases he
@@ -135,9 +140,11 @@ theorem muts_indc_count_spec :
     cases Obs.«KernelModeled::muts_indc_count».obs ev with
     | Nil ld12 _ _ _ =>
       cases Lib.rep_nil_of_load hms ld12
-    | Cons_Indc x_rest w56 x62 m64 cs73 ld12 ev75 rfl op69 _ =>
+    | Cons_Indc x_rest w56 x62 m64 cs73 ld12 ev75 hm64 op69 _ =>
+      subst hm64
       obtain ⟨z, zs, he, ⟨x, hmc⟩, hzs⟩ := Lib.rep_cons_of_load hms ld12
-      injection he with rfl rfl
+      injection he with he1 he2
+      subst he1 he2
       obtain ⟨rfl, rfl⟩ := ih hzs ev75
       have hr : r = .field (((rest.filter Specs.Callees.isIndc).length : F) + 1) := by
         simp only [evalBinOp, Except.ok.injEq] at op69
@@ -154,7 +161,8 @@ theorem muts_indc_count_spec :
         exact absurd hc (by decide)
     | Cons_other x_m x_rest cs93 ld12 hne86 ev95 _ =>
       obtain ⟨z, zs, he, ⟨x, hmc⟩, hzs⟩ := Lib.rep_cons_of_load hms ld12
-      injection he with rfl rfl
+      injection he with he1 he2
+      subst he1 he2
       obtain ⟨rfl, rfl⟩ := ih hzs ev95
       cases m with
       | indc _ =>
@@ -175,12 +183,13 @@ theorem infoShape_muts_inv {h : Heap F} {info : Ixon.ConstantInfo} {lp : SourceV
   | muts ms =>
     rcases hi with ⟨lp', he, hms⟩
     injection he with _ _ hl
-    injection hl with rfl _
+    injection hl with hl1 _
+    subst hl1
     exact ⟨ms, rfl, hms⟩
   | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
     rcases hi with ⟨_, he⟩
     injection he with _ hc _
-    exact absurd hc (by decide)
+    simp [Specs.Callees.infoCtor] at hc
 
 theorem infoShape_not_muts {h : Heap F} {info : Ixon.ConstantInfo} {x_info : SourceValue F}
     (hi : Specs.Callees.InfoShape h info x_info)
@@ -229,7 +238,7 @@ theorem rec_to_parent_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
   have hpi : piDomAt (ZMod.val (p + m + mi + i)) T = some dom :=
     ModeledAux.piDomAt_of_stripPis hstrip
   obtain ⟨hd, sp, H, As, he, hH, -, rfl⟩ :=
-    ih.get (.subst .collect_spine) (by subst hc176; ModeledAux.callees_lt) ev117 x_major_ty rfl
+    ih.get (.subst .collect_spine) (by subst hc176; callees_lt) ev117 x_major_ty rfl
       (good.sub (by subst hc176; intro z hz; simp [hz])) 0 (fun _ => .sort .zero)
       (0 + ZMod.val (p + m + mi + i)) dom hdom
   injection he with h1
@@ -255,10 +264,10 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
     have hgood1 : Good c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc118]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc118]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     have hcall : (⟨"KernelModeled::muts_indc_count", [x_members], m2⟩ : Call F) ∈ calls := by
       rw [hc118]; simp
@@ -272,17 +281,17 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     constructor
     · intro h01; exact absurd (Value.field.inj h01) (by decide)
     · rintro ⟨ms', hms', h2⟩
-      rw [hms_eq] at hms'; injection hms' with rfl
+      rw [hms_eq] at hms'; injection hms' with hms_eq'; subst hms_eq'
       omega
   | Muts_n1 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 ev14 ev103 he124 he125 hc126 =>
     subst he124 he125
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
     have hgood1 : Good c cs12 := good.sub (by rw [hc126]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc126]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc126]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     have hcall : (⟨"KernelModeled::muts_indc_count", [x_members], m2⟩ : Call F) ∈ calls := by
       rw [hc126]; simp
@@ -296,7 +305,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     constructor
     · intro h01; exact absurd (Value.field.inj h01) (by decide)
     · rintro ⟨ms', hms', h2⟩
-      rw [hms_eq] at hms'; injection hms' with rfl
+      rw [hms_eq] at hms'; injection hms' with hms_eq'; subst hms_eq'
       omega
   | Muts_other m2 cs12 w39 w40 w41 w42 x_members v89 m90 cs101 ev14 ev103 hne119 hne127
       he131 he132 hc133 =>
@@ -304,10 +313,10 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     refine ⟨.inr rfl, fun cst hcst => ?_⟩
     have hgood1 : Good c cs12 := good.sub (by rw [hc133]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc133]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc133]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     obtain ⟨hcnt, -⟩ := ModeledAux.muts_indc_count_spec hms ev103
     subst hcnt
@@ -321,10 +330,10 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
     have hgood1 : Good c cs12 := good.sub (by rw [hc140]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc140]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc140]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     have hnm := ModeledAux.infoShape_not_muts hinfo hne134
     constructor
     · intro h01; exact absurd (Value.field.inj h01) (by decide)
@@ -343,10 +352,10 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     subst he116 he117
     have hgood1 : Good c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc118]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc118]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     have hcall : (⟨"KernelModeled::muts_indc_count", [x_members], m2⟩ : Call F) ∈ calls := by
       rw [hc118]; simp
@@ -359,15 +368,15 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
       (ModeledAux.natCast_inj_lt (by decide) hflen (Value.field.inj hcnt)).symm
     refine ⟨?_, fun _ => rfl⟩
     rintro ⟨ms', hms', h2⟩
-    rw [hms_eq] at hms'; injection hms' with rfl
+    rw [hms_eq] at hms'; injection hms' with hms_eq'; subst hms_eq'
     omega
   | Muts_n1 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 _ _ _ _ _ _ _ _ ev14 ev103 _ _ _ hc241 =>
     have hgood1 : Good c cs12 := good.sub (by rw [hc241]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc241]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc241]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     have hcall : (⟨"KernelModeled::muts_indc_count", [x_members], m2⟩ : Call F) ∈ calls := by
       rw [hc241]; simp
@@ -380,7 +389,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
       (ModeledAux.natCast_inj_lt (a := 1) (by decide) hflen (by simpa using Value.field.inj hcnt)).symm
     constructor
     · rintro ⟨ms', hms', h2⟩
-      rw [hms_eq] at hms'; injection hms' with rfl
+      rw [hms_eq] at hms'; injection hms' with hms_eq'; subst hms_eq'
       omega
     · intro h0
       have := h0 ms hms_eq
@@ -390,10 +399,10 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     subst he246 he247
     have hgood1 : Good c cs12 := good.sub (by rw [hc248]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc248]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc248]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     obtain ⟨ms, hms_eq, hms⟩ := ModeledAux.infoShape_muts_inv hinfo
     obtain ⟨hcnt, -⟩ := ModeledAux.muts_indc_count_spec hms ev103
     subst hcnt
@@ -404,10 +413,10 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     subst he253 he254
     have hgood1 : Good c cs12 := good.sub (by rw [hc255]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
-      ih.get (.callees .load_verified_constant) (by rw [hc255]; ModeledAux.callees_lt)
+      ih.get (.callees .load_verified_constant) (by rw [hc255]; callees_lt)
         ev14 bp b rfl hgood1 hb
     rcases hshape cst hcst with ⟨info, sh, rf, un, bd, he, hinfo⟩
-    injection he with _ _ hl; injection hl with rfl _
+    injection he with _ _ hl; injection hl with hl1 _; subst hl1
     have hnm := ModeledAux.infoShape_not_muts hinfo hne249
     refine ⟨?_, fun _ => rfl⟩
     rintro ⟨ms, hms, -⟩
@@ -428,14 +437,14 @@ theorem proj_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   have hgood1 : Good c cs23 :=
     good.sub (by rw [hc52, hc45]; intro z hz; simp [hz])
   have hbim := ih.get (.callees .block_is_modeled)
-    (by rw [hc52, hc45]; ModeledAux.callees_lt) ev25
+    (by rw [hc52, hc45]; callees_lt) ev25
   have hfew : FewInductives c (ixAddr b) :=
     ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
   have hgood2 : Good c cs26 :=
     good.sub (by rw [hc52]; intro z hz; simp [hz])
   have hb' : RepAddr m15 b bp := Bytes.repAddressRef_heapMono₂ addrTy ev25.heap_extends hb
   obtain ⟨ci, hfind, hci⟩ :=
-    ih.get (.callees .get_ci_cprj) (by rw [hc52]; ModeledAux.callees_lt) ev28
+    ih.get (.callees .get_ci_cprj) (by rw [hc52]; callees_lt) ev28
       bp i 0 b rfl hgood2 hb'
   rw [ZMod.val_zero] at hfind
   exact ⟨hfew, ci, hfind, hci⟩
@@ -465,11 +474,11 @@ theorem defeq_list_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     obtain ⟨B, Bs', heB, hB, hBs'⟩ := Lib.rep_cons_of_load hBs ld77
     subst heA heB
     have hgood1 : Good c cs117 := good.sub (by rw [hc194]; intro z hz; simp [hz])
-    have hde := ih.get (.defEq .k_is_def_eq) (by rw [hc194]; ModeledAux.callees_lt) ev119
+    have hde := ih.get (.defEq .k_is_def_eq) (by rw [hc194]; callees_lt) ev119
       rc x_x x_y types rfl hgood1 hrc d Γ htypes A B hA hB (by decide)
     have ext := ev119.heap_extends
     have hgood2 : Good c cs159 := good.sub (by rw [hc194]; intro z hz; simp [hz])
-    have hrest := ih.get (.callees .defeq_list_ok) (by rw [hc194]; ModeledAux.callees_lt) ev161
+    have hrest := ih.get (.callees .defeq_list_ok) (by rw [hc194]; callees_lt) ev161
       rc x_xr x_yr types rfl hgood2 (RCRep.mono ext hrc) d Γ ⟨htypes.1.mono ext, htypes.2⟩
       As' Bs' (TmL.mono ext hAs') (TmL.mono ext hBs') hr
     exact .cons hde hrest
