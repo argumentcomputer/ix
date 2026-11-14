@@ -43,6 +43,11 @@ open IxVM.Refinement.Deserialize
 
 local notation "W" => IxVM.Refinement.Obs.W
 
+private theorem val_cast_u56 {n : Nat} (h : n < 72057594037927936) :
+    ZMod.val (n : F) = n := by
+  have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
+  exact ZMod.val_cast_of_lt (Nat.lt_trans h hP)
+
 /-! ## Standalone UTF-8 validation (`KernelNatPrim::utf8_*`) -/
 
 /-- `KernelNatPrim::utf8_cont` checks `128 ≤ b < 192` and returns `b - 128` without allocation. -/
@@ -98,7 +103,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
   · obtain ⟨hv15, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst m2
     obtain ⟨hv37, hm41⟩ := Lib.u8_to_field_spec ev51
-    subst v37 m41 he39 he67
+    subst v37 m41 r h'
     obtain ⟨ch, hch, henc⟩ := Core.Utf8Aux.encode_one (Core.Utf8Aux.of_field_one hv15)
     refine ⟨rfl, ch, bs, rest, by simp [henc], ?_, hbs⟩
     rw [hbv]
@@ -115,7 +120,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hx194, hm196⟩ := Lib.u8_to_field_spec ev207
     subst x194 m196
     obtain ⟨c1lo, c1hi, hy179, hm171⟩ := utf8_cont_spec hb1 ev221
-    subst m171 he234 he249
+    subst m171 r h'
     have e170 : v170 = .field ((((b.toNat - 192) * 64 + (b1.toNat - 128) : Nat)) : F) :=
       (Core.Utf8Aux.binop_add
         (Core.Utf8Aux.binop_mul_lit (Core.Utf8Aux.binop_sub_lit hbv op201) op193) hy179 op185).trans
@@ -152,7 +157,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hlo, hm439⟩ := Core.Utf8Aux.ltf_zero 2048 (by omega) (by omega) (by rfl) ev452
     subst m439
     obtain ⟨hhi, hm473⟩ := Core.Utf8Aux.ltf_one 55296 (by omega) (by omega) (by rfl) ev486
-    subst m473 he510 he525
+    subst m473 r h'
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_three (b0 := b) (by omega) l240 c1lo c1hi c2lo c2hi (by omega)
         (.inl (by omega))
@@ -188,7 +193,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨-, hm473⟩ := Core.Utf8Aux.ltf_zero 55296 (by omega) (by omega) (by rfl) ev486
     subst m473
     obtain ⟨hhi, hm533⟩ := Core.Utf8Aux.ltf_zero 57344 (by omega) (by omega) (by rfl) ev546
-    subst m533 he570 he585
+    subst m533 r h'
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_three (b0 := b) (by omega) l240 c1lo c1hi c2lo c2hi (by omega)
         (.inr (by omega))
@@ -225,7 +230,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hlo, hm804⟩ := Core.Utf8Aux.ltf_zero 65536 (by omega) (by omega) (by rfl) ev817
     subst m804
     obtain ⟨hhi, hm838⟩ := Core.Utf8Aux.ltf_one 1114112 (by omega) (by omega) (by rfl) ev851
-    subst m838 he875 he890
+    subst m838 r h'
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_four (b0 := b) (by omega) c1lo c1hi c2lo c2hi c3lo c3hi
         (by omega) (by omega)
@@ -1031,8 +1036,7 @@ theorem convert_univ_idxs_spec {idxs : List UInt64} {univs : List Ixon.Univ} :
         rwa [univList_inst_eq]
       obtain ⟨⟨u, hu_get, hu_rep⟩, hm47⟩ := Lib.Lists.lookup_spec ev59 hunivs'
       subst m47
-      have hval_idx : ((idx.toNat : F).val) = idx.toNat :=
-        ZMod.val_cast_of_lt (by have := idx.toNat_lt; omega)
+      have hval_idx : ((idx.toNat : F).val) = idx.toNat := val_cast_u56 hlt
       rw [hval_idx] at hu_get
       obtain ⟨ext1, hconv1⟩ := convert_univ_spec hu_rep ev110
       rw [← u64ListEnum_eq] at hrest
@@ -1271,7 +1275,7 @@ theorem binder_leaves_spec {bound : Nat} {blocks : List Ixon.BinderBlock} :
         rw [hm174]; exact Heap.Extends.snoc _ _
       have hleaf : RepBinderTree bound m166 (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm174]
-        exact .leaf (by simp; rfl)
+        exact .leaf (by simp; exact ⟨rfl, rfl, rfl⟩)
           (repList_heapMono₂ _ repBinderNode_heapMono₂ (Heap.Extends.snoc _ _) hnodes)
           (fun nd hnd => hplt blk (by simp) nd hnd)
       rw [← binderBlockListEnum_eq] at hrest
@@ -1328,7 +1332,7 @@ private theorem binder_pairs_go (n : Nat) :
       have ext_node : Heap.Extends h m194 := by rw [hm202]; exact Heap.Extends.snoc _ _
       have hnode : RepBinderTree bound m194 (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm202]
-        exact .node (by simp; rfl) (ht1.mono (Heap.Extends.snoc _ _))
+        exact .node (by simp; exact ⟨rfl, rfl, rfl⟩) (ht1.mono (Heap.Extends.snoc _ _))
           (ht2.mono (Heap.Extends.snoc _ _))
       simp only [List.length_cons] at hlen
       obtain ⟨ext_rec, us2, hus2⟩ :=
@@ -1491,7 +1495,7 @@ theorem params_level_spec {params : List UInt64} :
       have ext_max := Heap.Extends.snoc m107
         (.construct Core.klevelEnum "Max" [.ptr (.enum Core.klevelEnum) h.length, v98])
       exact ⟨(ext_lp.trans ext_rec).trans ext_max, .max (.param p.toNat) ℓ_rest,
-        .max (by simp; rfl) (hlp.mono (ext_rec.trans ext_max)) (hℓ_rest.mono ext_max)⟩
+        .max (by simp) (hlp.mono (ext_rec.trans ext_max)) (hℓ_rest.mono ext_max)⟩
 
 /-- `Convert::binder_level` converts a `RepBinderNode` (with parameters `< 2^32`) into a
 `KernelLevels.RepKLevel` value. -/
@@ -1524,7 +1528,7 @@ theorem binder_level_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue F}
     | ifAllZero m hrep =>
       simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv73
       rcases hv73 with ⟨rfl, _⟩
-      exact params_level_spec hrep (by simpa [BinderNodeParamsLt] using hplt) ev91
+      exact params_level_spec hrep hplt.2 ev91
   · simp at heq139
   · simp at heq187
 
@@ -1701,7 +1705,7 @@ local macro "ca_var" d:ident : tactic =>
 
 local macro "ca_arg_var" a:ident a':ident : tactic =>
   `(tactic| (
-    obtain ⟨_, _, _, _, _, rfl, d_av, $a', rfl⟩ := ObsExprList.cons_inv $a
+    obtain ⟨_, _, _, _, _, rfl, d_av, $a', rfl⟩ := ObsArgs.cons_inv $a
     ca_var d_av))
 
 local macro "ca_tuple2_pat" mt:ident x:ident y:ident : tactic =>
@@ -1725,7 +1729,7 @@ local macro "ca_let_conv_expr" d:ident xk:ident xb:ident m:ident cs:ident ev:ide
     ca_arg_var a_ce3 a_ce4
     ca_arg_var a_ce4 a_ce5
     ca_arg_var a_ce5 a_ce6
-    obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_ce6
+    obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_ce6
     ca_tuple2_pat mt_ce $xk $xb))
 
 local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br:ident drest:ident : tactic =>
@@ -1740,7 +1744,7 @@ local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br
         obtain ⟨_, a_ab0, heq_ab0⟩ := ObsExpr.tuple_inv d_body_ab
         ca_arg_var a_ab0 a_ab1
         ca_arg_var a_ab1 a_ab2
-        obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_ab2
+        obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_ab2
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq_ab0
         exact AnnotBranch.n0 hv_ab0 heq_ab0.1.symm heq_ab0.2.symm rfl rfl
       · have hne_ab0 := MatchesConst.none_inv (MatchesConst.literal 0) nm_ab0
@@ -1756,7 +1760,7 @@ local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br
           ca_arg_var a_abr5 a_abr6
           ca_arg_var a_abr6 a_abr7
           ca_arg_var a_abr7 a_abr8
-          obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_abr8
+          obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_abr8
           exact AnnotBranch.other cs_abr hne_ab0 ev_abr
             (by simp only [List.nil_append])
         · exact (matchPattern_wildcard_none nm_ab1).elim))
@@ -2275,11 +2279,6 @@ private theorem exprDrop_inst_eq :
       Names.«Lists::drop<&Ixon::Expr>» := by
   decide +kernel
 
-private theorem val_cast_u56 {n : Nat} (h : n < 72057594037927936) :
-    ZMod.val (n : F) = n := by
-  have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
-  exact ZMod.val_cast_of_lt (Nat.lt_trans h hP)
-
 private theorem lookup_addr_spec {addrs : List _root_.Address} {listPtr r : SourceValue F}
     {idx : UInt64} {h h' : Heap F} {cs : List (Call F)}
     (hidx : idx.toNat < 72057594037927936)
@@ -2393,71 +2392,79 @@ private theorem convert_expr_go (fuel : Nat) :
         ev1731, ev1764, heq1787, ev1804, ld1798, ev1840, hc1889⟩
     · -- Srt
       cases hep with
-      | sort (idx := uIdx) cell =>
+      | @sort uIdx _ cell =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         obtain ⟨hlt, hv40, hm49⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h uIdx) ev59
-        subst hv40 hm49
+        subst v40 m49
         rw [← univLookup_inst_eq] at ev38
         have hunivs' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Univ" [])]).symbol
             RepUnivPtr h univs univsPtr := by rwa [univList_inst_eq]
         obtain ⟨⟨u, hu_get, hu_rep⟩, hm26⟩ := Lib.Lists.lookup_spec ev38 hunivs'
-        subst hm26
-        have hval : ((uIdx.toNat : F).val) = uIdx.toNat := ZMod.val_cast_of_lt (by omega)
+        subst m26
+        have hval : ((uIdx.toNat : F).val) = uIdx.toNat := val_cast_u56 hlt
         rw [hval] at hu_get
         obtain ⟨ext1, rl⟩ := convert_univ_spec hu_rep ev98
-        subst he72 hm82 he113
+        subst m74; subst r h'
         have ext_fin := Heap.Extends.snoc m88 (.construct Core.kexprEnum "Srt" [v86])
         exact ⟨ext1.trans ext_fin, .sort, _, 0, [], .inl rfl, rfl, .nil,
           fun _ => .sort hlt hu_get (rl.mono ext_fin) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Var
       cases hep with
-      | var (idx := idx) cell =>
+      | @var idx _ cell =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         obtain ⟨hlt, hv145, hm147⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h idx) ev157
-        subst hv145 hm147 he131 hm141 he172
+        subst v145 m147; subst m133; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .var, _, 0, [], .inl rfl, rfl, .nil,
           fun _ => .var hlt (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Ref
       cases hep with
-      | ref (idx := rIdx) (univs := uIdxs) cell listRep =>
+      | @ref rIdx uIdxs _ _ cell listRep =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; obtain ⟨rfl, rfl⟩ := hxs
         obtain ⟨hlt, hv206, hm215⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h rIdx) ev225
-        subst hv206 hm215
+        subst v206 m215
         obtain ⟨hm192, a, d, href_get, hd_eq, ha_rep⟩ := lookup_addr_spec hlt hrefs ev204
-        subst hm192
+        subst m192
         obtain ⟨ext1, ls, rls, hls⟩ := convert_univ_idxs_spec listRep hunivs ev247
-        subst he268 hm278 he304
+        subst m270; subst r h'
         have ext_fin := Heap.Extends.snoc m235 (.construct Core.kexprEnum "Const" [v191, v234])
         exact ⟨ext1.trans ext_fin, .ref, _, 0, [], .inl rfl, rfl, .nil,
           fun _ => .ref hlt href_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ (ext1.trans ext_fin) ha_rep)
             hls (rls.mono ext_fin) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Rec
       cases hep with
-      | recur (idx := rIdx) (univs := uIdxs) cell listRep =>
+      | @recur rIdx uIdxs _ _ cell listRep =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; obtain ⟨rfl, rfl⟩ := hxs
         obtain ⟨hlt, hv338, hm347⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h rIdx) ev357
-        subst hv338 hm347
+        subst v338 m347
         obtain ⟨hm324, a, d, hrec_get, hd_eq, ha_rep⟩ := lookup_addr_spec hlt hrecs ev336
-        subst hm324
+        subst m324
         obtain ⟨ext1, ls, rls, hls⟩ := convert_univ_idxs_spec listRep hunivs ev379
-        subst he400 hm410 he436
+        subst m402; subst r h'
         have ext_fin := Heap.Extends.snoc m367 (.construct Core.kexprEnum "Const" [v323, v366])
         exact ⟨ext1.trans ext_fin, .recur, _, 0, [], .inl rfl, rfl, .nil,
           fun _ => .recur hlt hrec_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ (ext1.trans ext_fin) ha_rep)
             hls (rls.mono ext_fin) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Prj_n0
       cases hep with
-      | prj (tIdx := tIdx) (fIdx := fIdx) cell valRep =>
+      | @prj tIdx fIdx _ _ _ cell valRep =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; rcases hxs with ⟨rfl, rfl, rfl⟩
         have hlen1 : cs471.length ≤ fuel := by
@@ -2466,16 +2473,19 @@ private theorem convert_expr_go (fuel : Nat) :
           ih hlen1 hbound valRep hsh hrefs hrecs hunivs ev473
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr_in
         obtain ⟨rfl, hb0_eq⟩ := hr_in
-        have hb0 : b_in = 0 := by rcases hb_in with rfl | rfl; · rfl; · simp at hb0_eq
+        have hb0 : b_in = 0 := by
+          rcases hb_in with rfl | rfl
+          · rfl
+          · simp only [Nat.cast_one, Value.field.injEq, one_ne_zero] at hb0_eq
         obtain ⟨ht_lt, hv564, hm573⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value m461 tIdx) ev583
-        subst hv564 hm573
+        subst v564 m573
         obtain ⟨hm550, a, d, href_get, hd_eq, ha_rep⟩ :=
           lookup_addr_spec ht_lt (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs) ev562
-        subst hm550
+        subst m550
         obtain ⟨hf_lt, hv611, hm621⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value m461 fIdx) ev631
-        subst hv611 hm621 he596 hm606 he653
+        subst v611 m621; subst m598; subst r h'
         have ext_fin := Heap.Extends.snoc m461
           (.construct Core.kexprEnum "Proj" [v549, .field (fIdx.toNat : F), kp_in])
         have hhp' : HashedPairs calls blobs_in :=
@@ -2484,7 +2494,9 @@ private theorem convert_expr_go (fuel : Nat) :
           fun _ => .prj ht_lt hf_lt href_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ ext_fin ha_rep)
             ((hraw_in hb0).mono ext_fin (fun _ h => h)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Prj_other
       cases hep with
       | prj cell valRep =>
@@ -2494,25 +2506,27 @@ private theorem convert_expr_go (fuel : Nat) :
           rw [hc678] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
         obtain ⟨ext1, hpre_in, kp_in, b_in, blobs_in, _, _, hhp_in, _⟩ :=
           ih hlen1 hbound valRep hsh hrefs hrecs hunivs ev473
-        subst he663 he677
+        subst r h'
         exact ⟨ext1, .prj hpre_in, _, 1, blobs_in, .inr rfl, rfl,
           hhp_in.sub (by rw [hc678]; intro c hc; simp [hc]), fun h0 => nomatch h0⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Str
       cases hep with
-      | str (idx := bIdx) cell =>
+      | @str bIdx _ cell =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         obtain ⟨hb_lt, hv706, hm715⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value h bIdx) ev725
-        subst hv706 hm715
+        subst v706 m715
         obtain ⟨hm692, a, d, href_get, hd_eq, ha_rep⟩ := lookup_addr_spec hb_lt hrefs ev704
-        subst hm692
+        subst m692
         obtain ⟨ext_blob, bs, hst, hhashed, hblake⟩ := load_verified_blob_addr ha_rep ev747
         have hst' : Bytes.RepByteStream Core.byteListEnum m735 bs v734 := by
           simpa [Stream, Core.byteListEnum] using hst
         obtain ⟨hm757, s, hs⟩ := utf8_validate_spec hst' ev769
-        subst hm757 he782 hm792 he820
+        subst m757; subst m784; subst r h'
         have ext_fin := Heap.Extends.snoc m735
           (.construct Core.kexprEnum "Lit" [.construct Core.klitEnum "Str" [v734]])
         have hhashed_calls : Hashed calls ⟨bs.toArray⟩ := by
@@ -2525,24 +2539,26 @@ private theorem convert_expr_go (fuel : Nat) :
         exact ⟨ext_blob.trans ext_fin, .str, _, 0, [(a, ⟨bs.toArray⟩)], .inl rfl, rfl, hhp,
           fun _ => .str hb_lt href_get (by simp)
             (Bytes.repByteStream_heapMono₂ _ ext_fin hst') hs (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Nat
       cases hep with
-      | nat (idx := bIdx) cell =>
+      | @nat bIdx _ cell =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         obtain ⟨hb_lt, hv849, hm858⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value h bIdx) ev868
-        subst hv849 hm858
+        subst v849 m858
         obtain ⟨hm835, a, d, href_get, hd_eq, ha_rep⟩ := lookup_addr_spec hb_lt hrefs ev847
-        subst hm835
+        subst m835
         obtain ⟨ext_blob, bs, hst, hhashed, hblake⟩ := load_verified_blob_addr ha_rep ev890
         have hst' : Bytes.RepByteStream Core.byteListEnum m878 bs v877 := by
           simpa [Stream, Core.byteListEnum] using hst
         obtain ⟨hcanon, hm900⟩ := assert_nat_blob_canonical_spec hst' ev912
-        subst hm900
+        subst m900
         obtain ⟨ext_limbs, limbs, rlimbs, hlast, hval⟩ := bytes_to_limbs_spec hst' ev934
-        subst he947 hm957 he985
+        subst m949; subst r h'
         have ext_fin := Heap.Extends.snoc m922
           (.construct Core.kexprEnum "Lit" [.construct Core.klitEnum "Nat" [v921]])
         have hhashed_calls : Hashed calls ⟨bs.toArray⟩ := by
@@ -2556,7 +2572,9 @@ private theorem convert_expr_go (fuel : Nat) :
           .inl rfl, rfl, hhp,
           fun _ => .nat hb_lt href_get (by simp) hcanon
             (repList_heapMono₂ _ repU64_heapMono₂ ext_fin rlimbs) hlast hval (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- App_n0
       cases hep with
       | app cell fnRep argRep =>
@@ -2577,7 +2595,7 @@ private theorem convert_expr_go (fuel : Nat) :
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hra; obtain ⟨rfl, rfl⟩ := hra
         obtain ⟨hb0, _⟩ := add_zero_one_eq_zero hbf hba op1170
         obtain ⟨hbf0, hba0⟩ := hb0 rfl
-        subst he1181 hm1191 he1217
+        subst m1183; subst r h'
         have ext_fin := Heap.Extends.snoc m1080 (.construct Core.kexprEnum "App" [kf, ka])
         have hhp : HashedPairs calls (blobs_f ++ blobs_a) :=
           HashedPairs.append
@@ -2588,7 +2606,9 @@ private theorem convert_expr_go (fuel : Nat) :
           fun _ => .app
             ((hraw_f hbf0).mono (ext2.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
             ((hraw_a hba0).mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- App_other
       cases hep with
       | app cell fnRep argRep =>
@@ -2605,26 +2625,32 @@ private theorem convert_expr_go (fuel : Nat) :
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev1092
-        subst he1227 he1241
+        subst r h'
         have hhp : HashedPairs calls (blobs_f ++ blobs_a) :=
           HashedPairs.append
             (hhp_f.sub (by rw [hc1242]; intro c hc; simp [hc]))
             (hhp_a.sub (by rw [hc1242]; intro c hc; simp [hc]))
         exact ⟨ext1.trans ext2, .app hpre_f hpre_a, _, 1, blobs_f ++ blobs_a,
           .inr rfl, rfl, hhp, fun h0 => nomatch h0⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Lam
       cases hep with
       | lam cell _ _ =>
-        subst he1266 hm1276 he1293
+        subst m1268; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, fun h0 => nomatch h0⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- All
       cases hep with
       | all cell _ _ =>
-        subst he1318 hm1328 he1345
+        subst m1320; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, fun h0 => nomatch h0⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Let_n0
       cases hep with
       | letE cell tyRep valRep bodyRep =>
@@ -2653,7 +2679,7 @@ private theorem convert_expr_go (fuel : Nat) :
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs) ev1538
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrb; obtain ⟨rfl, rfl⟩ := hrb
         obtain ⟨hbtv0, s12, hs12, hs12_le⟩ := add_zero_one_eq_zero hbt hbv op1624
-        subst hs12
+        subst x1609
         simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op1616
         have hs_all0 : s12 = 0 ∧ bb = 0 := by
           rcases hbb with rfl | rfl
@@ -2666,7 +2692,7 @@ private theorem convert_expr_go (fuel : Nat) :
             have hz := (natCast_eq_zero_iff hlt_s).mp op1616
             omega
         obtain ⟨hbt0, hbv0⟩ := hbtv0 (by rw [hs_all0.1, Nat.cast_zero])
-        subst he1636 hm1646 he1680
+        subst m1638; subst r h'
         have ext_fin := Heap.Extends.snoc m1526 (.construct Core.kexprEnum "Let" [kt, kv, kb])
         have hhp : HashedPairs calls ((blobs_t ++ blobs_v) ++ blobs_b) :=
           HashedPairs.append
@@ -2683,7 +2709,9 @@ private theorem convert_expr_go (fuel : Nat) :
               (fun _ hm => List.mem_append_left _ (List.mem_append_right _ hm)))
             ((hraw_b hs_all0.2).mono ext_fin
               (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Let_other
       cases hep with
       | letE cell tyRep valRep bodyRep =>
@@ -2708,7 +2736,7 @@ private theorem convert_expr_go (fuel : Nat) :
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs) ev1538
-        subst he1690 he1704
+        subst r h'
         have hhp : HashedPairs calls ((blobs_t ++ blobs_v) ++ blobs_b) :=
           HashedPairs.append
             (HashedPairs.append
@@ -2717,23 +2745,25 @@ private theorem convert_expr_go (fuel : Nat) :
             (hhp_b.sub (by rw [hc1705]; intro c hc; simp [hc]))
         exact ⟨(ext1.trans ext2).trans ext3, .letE hpre_t hpre_v hpre_b,
           _, 1, (blobs_t ++ blobs_v) ++ blobs_b, .inr rfl, rfl, hhp, fun h0 => nomatch h0⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
     · -- Share
       cases hep with
-      | share (idx := idx) cell =>
+      | @share idx _ cell =>
         have hxs := (Core.load_cell cell ld12).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         obtain ⟨hidx56, hv1718, hm1719⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value h idx) ev1731
-        subst hv1718 hm1719
+        subst v1718 m1719
         obtain ⟨a_lt, b_lt, ha32, hb32, ha_eq, hb_eq, hr_lt, hm1754⟩ :=
           lt_fields_both_spec ev1764
-        subst hm1754
+        subst m1754
         have ha_idx : idx.toNat = a_lt :=
           (natCast_eq_iff (by omega) (by omega)).mp (Value.field.inj ha_eq)
         have hb_bnd : bound = b_lt :=
           (natCast_eq_iff (by omega) (by omega)).mp (Value.field.inj hb_eq)
-        subst ha_idx hb_bnd
+        subst a_lt b_lt
         rw [hr_lt] at heq1787
         have hidx_lt : idx.toNat < bound := by
           by_cases hlt : idx.toNat < bound
@@ -2743,10 +2773,10 @@ private theorem convert_expr_go (fuel : Nat) :
         have hsh' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Expr" [])]).symbol
             RepExpr h sharing shPtr := by rwa [exprList_inst_eq]
         obtain ⟨_, hdrop, hm1789⟩ := Lib.Lists.drop_spec idx.toNat
-          (ZMod.val_cast_of_lt (by omega)) ev1804 hsh'
-        subst hm1789
+          (val_cast_u56 hidx56) ev1804 hsh'
+        subst m1789
         rw [exprList_inst_eq, exprListEnum_eq] at hdrop
-        have hval_idx : ((idx.toNat : F).val) = idx.toNat := ZMod.val_cast_of_lt (by omega)
+        have hval_idx : ((idx.toNat : F).val) = idx.toNat := val_cast_u56 hidx56
         rw [hval_idx] at hdrop
         obtain ⟨s, rest_sh, hdrop_eq, hs_rep, _⟩ := Core.RepList.cons_of_load hdrop ld1798
         have hsh_get : sharing[idx.toNat]? = some s := by
@@ -2758,7 +2788,9 @@ private theorem convert_expr_go (fuel : Nat) :
         exact ⟨ext_rec, .share hidx_lt hsh_get hpre_s, kp, b, blobs, hb, hr,
           hhp.sub (by rw [hc1889]; intro c hc; simp [hc]),
           fun hb0 => .share hidx_lt hsh_get (hraw_s hb0)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld12 (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ =>
+        exact (Core.load_cell_ne cell ld12 (by decide)).elim
 
 /-- `Convert::convert_expr` validates `PreShareOk`, records all loaded literal blobs in
 `HashedPairs`, and when `b = 0` constructs a `RawConvExpr` representation. -/
@@ -2844,8 +2876,11 @@ private theorem convert_annotated_go (fuel : Nat) :
         hbf hraw_ce br
       cases br with
       | n0 hbf_eq hkp2 hnout hm hcs_br =>
-        subst hkp2 hnout hm hcs_br
-        have hbf0 : bf = 0 := by rcases hbf with rfl | rfl; · rfl; · simp at hbf_eq
+        subst kp2 nout m_out cs_br
+        have hbf0 : bf = 0 := by
+          rcases hbf with rfl | rfl
+          · rfl
+          · simp only [Nat.cast_one, Value.field.injEq, one_ne_zero] at hbf_eq
         exact ⟨Heap.Extends.refl _, ns_in, [], hnin, hplt_in, .nil,
           (hraw_ce hbf0).mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_left _ hm)⟩
       | other cs_rec _ ev_rec hcs_br =>
@@ -2911,7 +2946,7 @@ private theorem convert_annotated_go (fuel : Nat) :
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext13 hunivs)
             (htbl.mono ext13) hns1 hplt1
             hba (fun h0 => (hraw_a h0).mono ext3 (fun _ hm => hm)) br_a
-        subst hr hh'
+        subst r h'
         have ext_fin := Heap.Extends.snoc m4 (.construct Core.kexprEnum "App" [x_kf2, x_ka2])
         let allBlobs := (blobs_f ++ blobs_bf) ++ (blobs_a ++ blobs_ba)
         have hhp_all : HashedPairs calls allBlobs :=
@@ -2926,7 +2961,9 @@ private theorem convert_annotated_go (fuel : Nat) :
           repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns2, hplt2, hhp_all,
           .app (hraw_f2.mono (ext4.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
             (hraw_a2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
     · -- Lam
       cases hep with
       | lam cell tyRep bodyRep =>
@@ -2972,7 +3009,7 @@ private theorem convert_annotated_go (fuel : Nat) :
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext14 hunivs)
             (htbl.mono ext14) hns1 hplt1
             hbb (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
-        subst hr hh'
+        subst r h'
         have ext_fin := Heap.Extends.snoc m5 (.construct Core.kexprEnum "Lam" [x_kt2, x_kb2, x_l])
         let allBlobs := (blobs_t ++ blobs_bt) ++ (blobs_b ++ blobs_bb)
         have hhp_all : HashedPairs calls allBlobs :=
@@ -2988,7 +3025,9 @@ private theorem convert_annotated_go (fuel : Nat) :
           .lam (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (hraw_t2.mono (ext5.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
             (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
     · -- All
       cases hep with
       | all cell tyRep bodyRep =>
@@ -3034,7 +3073,7 @@ private theorem convert_annotated_go (fuel : Nat) :
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext14 hunivs)
             (htbl.mono ext14) hns1 hplt1
             hbb (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
-        subst hr hh'
+        subst r h'
         have ext_fin := Heap.Extends.snoc m5 (.construct Core.kexprEnum "Forall" [x_kt2, x_kb2, x_l])
         let allBlobs := (blobs_t ++ blobs_bt) ++ (blobs_b ++ blobs_bb)
         have hhp_all : HashedPairs calls allBlobs :=
@@ -3050,7 +3089,9 @@ private theorem convert_annotated_go (fuel : Nat) :
           .all (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (hraw_t2.mono (ext5.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
             (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
     · -- Let
       cases hep with
       | letE cell tyRep valRep bodyRep =>
@@ -3103,7 +3144,7 @@ private theorem convert_annotated_go (fuel : Nat) :
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext15 hunivs)
             (htbl.mono ext15) hns2 hplt2
             hbb (fun h0 => (hraw_b h0).mono (ext4.trans ext5) (fun _ hm => hm)) br_b
-        subst hr hh'
+        subst r h'
         have ext_fin := Heap.Extends.snoc m6 (.construct Core.kexprEnum "Let" [x_kt2, x_kv2, x_kb2])
         let allBlobs := ((blobs_t ++ blobs_bt) ++ (blobs_v ++ blobs_bv)) ++ (blobs_b ++ blobs_bb)
         have hhp_all : HashedPairs calls allBlobs :=
@@ -3126,19 +3167,21 @@ private theorem convert_annotated_go (fuel : Nat) :
             (hraw_v2.mono (ext6.trans ext_fin)
               (fun _ hm => List.mem_append_left _ (List.mem_append_right _ hm)))
             (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
     · -- Prj
       cases hep with
-      | prj (tIdx := tIdx) (fIdx := fIdx) cell valRep =>
+      | @prj tIdx fIdx _ _ _ cell valRep =>
         have hxs := (Core.load_cell cell ld_e).2
         simp only [List.cons.injEq, and_true] at hxs; rcases hxs with ⟨rfl, rfl, rfl⟩
         cases hpre with
         | prj hpre_in =>
           obtain ⟨ht_lt, hv_tidx, hm1⟩ :=
             Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tIdx) ev_tf
-          subst hv_tidx hm1
+          subst v_tidx m1
           obtain ⟨hm2, a, d, href_get, hd_eq, ha_rep⟩ := lookup_addr_spec ht_lt hrefs ev_lk
-          subst hm2
+          subst m2
           have hcs3 : cs3.length ≤ fuel := by
             rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
           obtain ⟨ext3, ki', n1', ns1, blobs_in, htup, hns1, hplt1, hhp_in, hraw_in⟩ :=
@@ -3146,7 +3189,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup; obtain ⟨rfl, rfl⟩ := htup
           obtain ⟨hf_lt, hv_fidx, hm4⟩ :=
             Lib.u64_to_field_spec (Deserialize.repU64_u64Value m3 fIdx) ev_ff
-          subst hv_fidx hm4 hr hh'
+          subst v_fidx m4; subst r h'
           have ext_fin := Heap.Extends.snoc m3
             (.construct Core.kexprEnum "Proj" [x_taddr, .field (fIdx.toNat : F), ki'])
           exact ⟨ext3.trans ext_fin, _, n1', ns1, blobs_in, rfl,
@@ -3155,31 +3198,33 @@ private theorem convert_annotated_go (fuel : Nat) :
             .prj ht_lt hf_lt href_get hd_eq
               (Bytes.repAddressRef_heapMono₂ _ (ext3.trans ext_fin) ha_rep)
               (hraw_in.mono ext_fin (fun _ hm => hm)) (by simp)⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
     · -- Share
       cases hep with
-      | share (idx := idx) cell =>
+      | @share idx _ cell =>
         have hxs := (Core.load_cell cell ld_e).2
         simp only [List.cons.injEq, and_true] at hxs; subst hxs
         cases hpre with
         | share hidx_lt hsh_get hpre_s =>
           obtain ⟨hidx56, hx_n, hm1⟩ :=
             Lib.u64_to_field_spec (Deserialize.repU64_u64Value h idx) ev_nf
-          subst hx_n hm1
+          subst x_n m1
           rw [← exprDrop_inst_eq] at ev_dr
           have hsh' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Expr" [])]).symbol
               RepExpr h sharing shPtr := by rwa [exprList_inst_eq]
           obtain ⟨_, hdrop, hm2⟩ := Lib.Lists.drop_spec idx.toNat
-            (ZMod.val_cast_of_lt (by omega)) ev_dr hsh'
-          subst hm2
+            (val_cast_u56 hidx56) ev_dr hsh'
+          subst m2
           rw [exprList_inst_eq, exprListEnum_eq] at hdrop
-          have hval_idx : ((idx.toNat : F).val) = idx.toNat := ZMod.val_cast_of_lt (by omega)
+          have hval_idx : ((idx.toNat : F).val) = idx.toNat := val_cast_u56 hidx56
           rw [hval_idx] at hdrop
           obtain ⟨s', _, hdrop_eq, hs_rep, _⟩ := Core.RepList.cons_of_load hdrop ld_dr
           have hsh_get' : sharing[idx.toNat]? = some s' := by
             rw [← List.head?_drop, hdrop_eq]; rfl
           have hs_eq : s' = s := Option.some.inj (hsh_get'.symm.trans hsh_get)
-          subst hs_eq
+          subst s'
           have hnodes' := hnodes
           rw [binderNodeListEnum_eq] at hnodes'
           obtain ⟨nd0, ns1, rfl, hnd0, hns1⟩ := Core.RepList.cons_of_load hnodes' ld_nodes
@@ -3194,12 +3239,12 @@ private theorem convert_annotated_go (fuel : Nat) :
             subst hnode
             obtain ⟨_, hv_var, hm3⟩ :=
               Lib.u64_to_field_spec (Deserialize.repU64_u64Value h var0) ev_vf
-            subst hv_var hm3
+            subst v_var m3
             obtain ⟨hm4, ns_entry, hns_entry, hplt_entry⟩ := binder_nodes_spec htbl ev_bn
-            subst hm4
+            subst m4
             obtain ⟨m_cb, cs_ca, x_k_cb, x_rest_cb, ev_ca, _, he_k, he_h, hc_cb⟩ :=
               «Convert::convert_block».obs ev_cb
-            subst he_k he_h hr hh'
+            subst x_k m5; subst r h'
             have hcs_ca : cs_ca.length ≤ fuel := by
               rw [hcs, hc_cb] at hfuel
               simp only [List.length_cons, List.length_append] at hfuel
@@ -3214,7 +3259,9 @@ private theorem convert_annotated_go (fuel : Nat) :
               (fun nd hnd => hplt nd (List.mem_cons_of_mem _ hnd)),
               hhp_s.sub (by rw [hcs, hc_cb]; intro c hc; simp [hc]),
               .share hidx_lt hsh_get hraw_s⟩
-      | _ => exact (Core.load_cell_ne ‹_› ld_e (by decide)).elim
+      | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
+      | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ =>
+        exact (Core.load_cell_ne cell ld_e (by decide)).elim
 
 /-- `Convert::convert_annotated` converts an expression containing binders (pre-validated by
 `PreShareOk`) into a `RawConvExpr` value and returns the remaining binder nodes. -/
@@ -3511,7 +3558,7 @@ private theorem instantiate1Lift_liftLooseBVars_comm {md : Ix.Kernel.Mode}
       have heq : c + u + k = c + k + u := by omega
       simp only [Ix.Kernel.Expr.liftLooseBVars, hc, ↓reduceIte,
         Ix.Kernel.Expr.instantiate1Lift, heq]
-      rw [liftLooseBVars_comp_between k (c + u) v c 0 (Nat.zero_le _) hc]
+      rw [liftLooseBVars_comp_between k (c + u) v c 0 (Nat.zero_le _) (by omega)]
       exact congrArg (fun n => Ix.Kernel.Expr.liftLooseBVars n 0 v) (by omega)
     · by_cases hgt : j > c + u
       · have hc : c ≤ j := by omega
@@ -3694,7 +3741,7 @@ private theorem buildShareTblGo_prefix (ecx : Ix.Kernel.Reader.ECx .anon) :
   | e :: es, acc, i, hi => by
     simp only [buildShareTblGo]
     rw [buildShareTblGo_prefix ecx es _ i (by simp; omega)]
-    have hne : acc.size ≠ i := by omega
+    have hne : i ≠ acc.size := by omega
     simp [Array.getElem?_push, hne]
 
 private theorem buildShareTblGo_append (ecx : Ix.Kernel.Reader.ECx .anon) :
@@ -3725,14 +3772,14 @@ theorem buildShareTbl_take_getElem? (ecx : Ix.Kernel.Reader.ECx .anon)
     rw [h1, hdrop_cons, List.take_append]
     simp only [List.length_take, Nat.min_eq_left (Nat.le_of_lt hi_len)]
     have hsub : n - i = (n - 1 - i) + 1 := by omega
-    rw [List.take_of_le (by simp; omega), hsub, List.take_succ_cons]
+    rw [List.take_of_length_le (by simp; omega), hsub, List.take_succ_cons]
   unfold buildShareTbl
   rw [htake_split, buildShareTblGo_append]
   simp only [buildShareTblGo]
   have hsz_i : (buildShareTblGo ecx #[] (sharing.take i)).size = i := by
     rw [buildShareTblGo_size]; simp [Nat.min_eq_left (Nat.le_of_lt hi_len)]
   rw [buildShareTblGo_prefix ecx _ _ i (by simp [hsz_i])]
-  simp [Array.getElem?_push, hsz_i]
+  simp [Array.getElem?_push, ← hsz_i]
 
 /-- `MemberReader.mk'` builds `buildShareTbl mr.ecx src.sharing.toList`. -/
 theorem memberReader_mk'_eq (cx : Ix.Kernel.Reader.Ctx .anon) (src : Ixon.Constant)
@@ -3756,6 +3803,7 @@ theorem memberReader_mk'_eq (cx : Ix.Kernel.Reader.Ctx .anon) (src : Ixon.Consta
     | cons e es ih => intro acc; simp [List.foldl, buildShareTblGo, ih]
   unfold Ix.Kernel.Reader.MemberReader.mk' buildShareTbl
   simp [Id.run, Array.mkEmpty, Array.forIn_pure_yield_eq_foldl, ← Array.foldl_toList, hfold]
+  rfl
 
 private theorem except_bind_eq_ok {ε α β : Type} {m : Except ε α} {f : α → Except ε β} {b : β}
     (h : (m >>= f) = .ok b) : ∃ a, m = .ok a ∧ f a = .ok b := by
@@ -3804,7 +3852,7 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
         simp [hu_get]
       rw [hget_arr] at hl_rd1
       injection hl_rd1 with hl_eq
-      exact hl_eq
+      exact hl_eq.symm
     subst hl_rd1_eq
     simp only [List.all_cons, Bool.and_eq_true] at hdef
     obtain ⟨heq1, hplt1⟩ := convUniv_posOf_eq hperm hps_lt hdef.1
@@ -3867,7 +3915,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
         simp [hu]
       rw [hget] at hu_rd
       injection hu_rd with hu_eq'
-      exact hu_eq'
+      exact hu_eq'.symm
     subst hu_eq
     simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
     obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
