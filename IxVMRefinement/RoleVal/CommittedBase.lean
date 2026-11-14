@@ -1874,7 +1874,7 @@ private def encManyOpt {α : Type} (enc : α → List UInt8 → Option (List UIn
 
 private theorem encManyOpt_spec {α : Type} {putm : α → Ixon.PutM Unit}
     {enc : α → List UInt8 → Option (List UInt8)}
-    (h : ∀ x {k out}, enc x k = some out → EncodesTo (putm x) k out) :
+    (h : ∀ x k out, enc x k = some out → EncodesTo (putm x) k out) :
     ∀ (xs : List α) {k out : List UInt8},
       encManyOpt enc xs k = some out →
       EncodesTo (Ixon.Verify.Codec.ConstantTables.putMany putm xs) k out
@@ -1887,11 +1887,11 @@ private theorem encManyOpt_spec {α : Type} {putm : α → Ixon.PutM Unit}
       rw [hm] at hok
       unfold Ixon.Verify.Codec.ConstantTables.putMany
       rw [List.foldlM_cons]
-      exact EncodesTo.bindUnit (h x hok) (encManyOpt_spec h xs hm)
+      exact EncodesTo.bindUnit (h x mid out hok) (encManyOpt_spec h xs hm)
 
 private theorem forArray_encManyOpt_spec {α : Type} {putm : α → Ixon.PutM Unit}
     {enc : α → List UInt8 → Option (List UInt8)} {arr : Array α} {k out : List UInt8}
-    (h : ∀ x {k out}, enc x k = some out → EncodesTo (putm x) k out)
+    (h : ∀ x k out, enc x k = some out → EncodesTo (putm x) k out)
     (hok : encManyOpt enc arr.toList k = some out) :
     EncodesTo (do for x in arr do putm x) k out := by
   rw [Ixon.Verify.Codec.ConstantTables.arrayPut_eq_putMany]
@@ -1904,7 +1904,7 @@ private theorem listPut_eq_putMany {α : Type} (putm : α → Ixon.PutM Unit) (x
 private theorem forList_bind_encManyOpt_spec {α : Type} {putm : α → Ixon.PutM Unit}
     {enc : α → List UInt8 → Option (List UInt8)} {xs : List α} {next : Ixon.PutM Unit}
     {k mid out : List UInt8}
-    (h : ∀ x {k out}, enc x k = some out → EncodesTo (putm x) k out)
+    (h : ∀ x k out, enc x k = some out → EncodesTo (putm x) k out)
     (hok : encManyOpt enc xs mid = some out)
     (hnext : EncodesTo next k mid) :
     EncodesTo (do
@@ -1940,7 +1940,7 @@ private theorem forArray_bind_encList_spec {α : Type} {putm : α → Ixon.PutM 
 private theorem forArray_bind_encManyOpt_spec {α : Type} {putm : α → Ixon.PutM Unit}
     {enc : α → List UInt8 → Option (List UInt8)} {arr : Array α} {next : Ixon.PutM Unit}
     {k mid out : List UInt8}
-    (h : ∀ x {k out}, enc x k = some out → EncodesTo (putm x) k out)
+    (h : ∀ x k out, enc x k = some out → EncodesTo (putm x) k out)
     (hok : encManyOpt enc arr.toList mid = some out)
     (hnext : EncodesTo next k mid) :
     EncodesTo (do
@@ -2043,7 +2043,7 @@ private theorem encUnivFuel_spec :
       rw [Ixon.putUniv]
       exact EncodesTo.bindUnit (encTagN_spec 2 _ _ rest) (encUnivFuel_spec fuel _ hr)
   | fuel + 1, .max a b, k, _, h => by
-    unfold encUnivFuel at h; dsimp only at h
+    unfold encUnivFuel at h
     cases hb : encUnivFuel fuel b k with
     | none => rw [hb] at h; cases h
     | some rb =>
@@ -2056,7 +2056,7 @@ private theorem encUnivFuel_spec :
         exact EncodesTo.bindUnit (encTagN_spec 2 _ 0 ra)
           (EncodesTo.bindUnit (encUnivFuel_spec fuel a ha) (encUnivFuel_spec fuel b hb))
   | fuel + 1, .imax a b, k, _, h => by
-    unfold encUnivFuel at h; dsimp only at h
+    unfold encUnivFuel at h
     cases hb : encUnivFuel fuel b k with
     | none => rw [hb] at h; cases h
     | some rb =>
@@ -2167,7 +2167,7 @@ private theorem encExprFuel_spec :
         rw [Ixon.putExpr, listPut_eq_putMany]
         exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
           (EncodesTo.bindUnit (encExprFuel_spec fuel _ hf)
-            (encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) _ ha))
+            (encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) _ ha))
   | fuel + 1, .lam ty body, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
     cases hb : encExprFuel fuel (Ixon.Expr.lam ty body).collectLamBinders.2 k with
@@ -2180,7 +2180,7 @@ private theorem encExprFuel_spec :
         rw [ht] at h; injection h with ho; subst ho
         rw [Ixon.putExpr]
         exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
-          (forList_bind_encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) ht
+          (forList_bind_encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) ht
             (encExprFuel_spec fuel _ hb))
   | fuel + 1, .all ty body, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
@@ -2194,10 +2194,10 @@ private theorem encExprFuel_spec :
         rw [ht] at h; injection h with ho; subst ho
         rw [Ixon.putExpr]
         exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
-          (forList_bind_encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) ht
+          (forList_bind_encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) ht
             (encExprFuel_spec fuel _ hb))
   | fuel + 1, .letE nonDep mode ty val body, k, _, h => by
-    unfold encExprFuel at h; dsimp only at h
+    unfold encExprFuel at h
     cases hb : encExprFuel fuel body k with
     | none => rw [hb] at h; cases h
     | some rb =>
@@ -2236,7 +2236,7 @@ private def encDefFuel (fuel : Nat) (d : Ixon.Definition) (k : List UInt8) : Opt
 private theorem encDefFuel_spec (fuel : Nat) (d : Ixon.Definition) {k out : List UInt8}
     (h : encDefFuel fuel d k = some out) :
     EncodesTo (Ixon.putDefinition d) k out := by
-  unfold encDefFuel at h; dsimp only at h
+  unfold encDefFuel at h
   cases hv : encExprFuel fuel d.value k with
   | none => rw [hv] at h; cases h
   | some rv =>
@@ -2278,7 +2278,7 @@ private def encRecFuel (fuel : Nat) (r : Ixon.Recursor) (k : List UInt8) : Optio
 private theorem encRecFuel_spec (fuel : Nat) (r : Ixon.Recursor) {k out : List UInt8}
     (h : encRecFuel fuel r k = some out) :
     EncodesTo (Ixon.putRecursor r) k out := by
-  unfold encRecFuel at h; dsimp only at h
+  unfold encRecFuel at h
   cases hrl : encManyOpt (encRecRuleFuel fuel) r.rules.toList k with
   | none => rw [hrl] at h; cases h
   | some rrules =>
@@ -2295,7 +2295,7 @@ private theorem encRecFuel_spec (fuel : Nat) (r : Ixon.Recursor) {k out : List U
                 (EncodesTo.bindUnit (encTagN_spec 0 0 r.minors _)
                   (EncodesTo.bindUnit (encExprFuel_spec fuel r.typ ht)
                     (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
-                      (forArray_encManyOpt_spec (fun x hx => encRecRuleFuel_spec fuel x hx) hrl))))))))
+                      (forArray_encManyOpt_spec (fun x _ _ hx => encRecRuleFuel_spec fuel x hx) hrl))))))))
 
 private def encAxioFuel (fuel : Nat) (a : Ixon.Axiom) (k : List UInt8) : Option (List UInt8) :=
   match encExprFuel fuel a.typ k with
@@ -2369,7 +2369,7 @@ private def encIndFuel (fuel : Nat) (i : Ixon.Inductive) (k : List UInt8) : Opti
 private theorem encIndFuel_spec (fuel : Nat) (i : Ixon.Inductive) {k out : List UInt8}
     (h : encIndFuel fuel i k = some out) :
     EncodesTo (Ixon.putInductive i) k out := by
-  unfold encIndFuel at h; dsimp only at h
+  unfold encIndFuel at h
   cases hc : encManyOpt (encCtorFuel fuel) i.ctors.toList k with
   | none => rw [hc] at h; cases h
   | some rctors =>
@@ -2384,7 +2384,7 @@ private theorem encIndFuel_spec (fuel : Nat) (i : Ixon.Inductive) {k out : List 
             (EncodesTo.bindUnit (encTagN_spec 0 0 i.indices _)
               (EncodesTo.bindUnit (encExprFuel_spec fuel i.typ ht)
                 (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
-                  (forArray_encManyOpt_spec (fun x hx => encCtorFuel_spec fuel x hx) hc))))))
+                  (forArray_encManyOpt_spec (fun x _ _ hx => encCtorFuel_spec fuel x hx) hc))))))
 
 private def encMutFuel (fuel : Nat) : Ixon.MutConst → List UInt8 → Option (List UInt8)
   | .defn d, k => (encDefFuel fuel d k).map (0 :: ·)
@@ -2474,7 +2474,7 @@ private theorem encInfoFuel_spec (fuel : Nat) :
     | some rm =>
       rw [hm] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
       exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
-        (forArray_encManyOpt_spec (fun x hx => encMutFuel_spec fuel x hx) hm)
+        (forArray_encManyOpt_spec (fun x _ _ hx => encMutFuel_spec fuel x hx) hm)
 
 private def encBinderNode : Ixon.BinderNode → List UInt8 → List UInt8
   | .never m, k => Ixon.binderNodeByte 0 m :: k
@@ -2546,11 +2546,11 @@ private theorem encConstantFuel_spec (fuel : Nat) (c : Ixon.Constant) {k out : L
       rw [hs] at h; dsimp only at h
       exact EncodesTo.bindUnit (encInfoFuel_spec fuel c.info h)
         (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
-          (forArray_bind_encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) hs
+          (forArray_bind_encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) hs
             (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
               (forArray_bind_encList_spec encAddress_spec
                 (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
-                  (forArray_bind_encManyOpt_spec (fun x hx => encUnivFuel_spec fuel x hx) hu
+                  (forArray_bind_encManyOpt_spec (fun x _ _ hx => encUnivFuel_spec fuel x hx) hu
                     (encBinders_spec c.binders k)))))))
 
 private theorem serConstant_of_encConstantFuel {fuel : Nat} {c : Ixon.Constant} {bs : List UInt8}
@@ -2893,12 +2893,12 @@ theorem evRows_spec_of_forall {rows : List (List UInt8 × List (List UInt8))}
       ∀ p ∈ out, ∃ d, p.2.info = .defn d := by
   induction rows with
   | nil =>
-    exact ⟨fun _ hm => nomatch hm, [], List.Forall₂.nil, rfl, fun _ hm => nomatch hm⟩
+    exact ⟨fun _ hm => nomatch hm, ⟨[], ⟨List.Forall₂.nil, ⟨rfl, fun _ hm => nomatch hm⟩⟩⟩⟩
   | cons r rs ih =>
-    obtain ⟨hhash, c, hd, ha, hb⟩ := hall r List.mem_cons_self
-    obtain ⟨hhash_tl, out_tl, hf_tl, hfst_tl, hdefn_tl⟩ :=
+    obtain ⟨hhash, ⟨c, ⟨hd, ⟨ha, hb⟩⟩⟩⟩ := hall r List.mem_cons_self
+    obtain ⟨hhash_tl, ⟨out_tl, ⟨hf_tl, ⟨hfst_tl, hdefn_tl⟩⟩⟩⟩ :=
       ih (fun x hx => hall x (List.mem_cons_of_mem _ hx))
-    refine ⟨?_, (mkAddr r.1, c) :: out_tl, List.Forall₂.cons ⟨ha, hb⟩ hf_tl, by simp [hfst_tl], ?_⟩
+    refine ⟨?_, ⟨(mkAddr r.1, c) :: out_tl, ⟨List.Forall₂.cons ⟨ha, hb⟩ hf_tl, ⟨by simp [hfst_tl], ?_⟩⟩⟩⟩
     · intro row hmem
       rcases List.mem_cons.mp hmem with rfl | htl
       · exact hhash
