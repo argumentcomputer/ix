@@ -26,7 +26,7 @@ This module bridges the raw VM rule certificates (`RawIotaRuleVmRun`, `RawIotaRu
 
 namespace IxVM.Refinement.Decl
 
-open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur Aiur.Library Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 open IxVM.Refinement.Core
 open Ix.Kernel.Semantics
@@ -143,9 +143,8 @@ theorem env_find?_isSome_of_tail {new tail : List (ConstantInfo .anon)} {k : KKe
     (h : (Env.find? ⟨tail⟩ k).isSome = true) :
     (Env.find? ⟨new ++ tail⟩ k).isSome = true := by
   obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp h
-  exact env_find?_isSome_of_mem (by
-    rw [ show k = ci.name from (Ix.Kernel.Semantics.Env.find?_name hci).symm ]
-    exact List.mem_append_right new (Ix.Kernel.Semantics.Env.find?_mem hci))
+  rw [← Ix.Kernel.Semantics.Env.find?_name hci]
+  exact env_find?_isSome_of_mem (List.mem_append_right new (Ix.Kernel.Semantics.Env.find?_mem hci))
 
 theorem AuxRootSynced.of_prepend {env : Env .anon} (h : AuxRootSynced env)
     {new : List (ConstantInfo .anon)}
@@ -215,10 +214,8 @@ theorem find?_prepend_nonProjTable {new tail : List (ConstantInfo .anon)}
   induction new with
   | nil => rfl
   | cons c rest ih =>
-    change Env.find? ⟨c :: (rest ++ tail)⟩ (Ix.Kernel.projTableName T) = _
-    rw [Env.find?_cons]
-    have hne : ¬ (c.name = Ix.Kernel.projTableName T) := hnpt c List.mem_cons_self T
-    rw [ite_eq_right hne]
+    change (⟨c :: (rest ++ tail)⟩ : Env .anon).find? (Ix.Kernel.projTableName T) = _
+    rw [EnvExt.find?_cons_ne (hnpt c List.mem_cons_self T)]
     exact ih (fun ci hci => hnpt ci (List.mem_cons_of_mem c hci))
 
 theorem NoNewProjForOld.prepend_nonProjTable {env : Env .anon} {new : List (ConstantInfo .anon)}
@@ -231,10 +228,7 @@ theorem envExt_cons_fresh {env : Env .anon} {c₀ : ConstantInfo .anon}
     (hnpt : ∀ T, c₀.name ≠ Ix.Kernel.projTableName T) :
     EnvExt env ⟨c₀ :: env.consts⟩ where
   find hf := Env.find?_cons_of_fresh hfresh hf
-  tables _ := by
-    rw [Env.find?_cons]
-    have hne : ¬ (c₀.name = Ix.Kernel.projTableName _) := hnpt _
-    rw [ite_eq_right hne]
+  tables {T _ _} _ := EnvExt.find?_cons_ne (hnpt T)
 
 theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : Env .anon}
     (hext : EnvExt env₁ env₂)
@@ -248,10 +242,10 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     rw [List.find?_append] at hf ⊢
     cases hm : ms.find? (·.name == k) with
     | some cm =>
-      rw [hm] at hf ⊢
+      simp only [Option.or] at hf ⊢
       exact hf
     | none =>
-      rw [hm] at hf ⊢
+      simp only [Option.or] at hf ⊢
       exact hext.find hf
   tables {T cv caps} hf := by
     rw [find?_prepend_nonProjTable hnpt T, find?_prepend_nonProjTable hnpt T]
@@ -260,12 +254,12 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     cases hm : ms.find? (·.name == T) with
     | some cm =>
       have hmem : cm ∈ ms := List.mem_of_find?_eq_some hm
-      have hname : cm.name = T := of_decide_eq_true (List.find?_some hm)
+      have hname : cm.name = T := eq_of_beq (List.find?_some hm)
       rw [← hname]
       obtain ⟨h1, h2⟩ := hms_pt cm hmem
       rw [h1, h2]
     | none =>
-      rw [hm] at hf
+      simp only [Option.or] at hf
       exact hext.tables hf
 
 /-! ## Weakening of `posRulesJ` and Modeled Judgement Bundles -/
@@ -288,31 +282,35 @@ theorem posRulesJ_sort_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ 
   obtain ⟨ps, hp, hr⟩ := h
   exact ⟨ps, hp, Red.weaken hext hr⟩
 
-theorem defEqListJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂) {d : Nat} :
-    ∀ {as bs : List KExpr},
-      DefEqListJ posRulesJ env₁ d as bs → DefEqListJ posRulesJ env₂ d as bs
-  | [], [], _ => trivial
-  | _ :: _, [], h => nomatch h
-  | [], _ :: _, h => nomatch h
-  | _ :: _, _ :: _, ⟨h₀, hs⟩ => ⟨posRulesJ_defeq_weaken hext h₀, defEqListJ_weaken hext hs⟩
+theorem defEqListJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂) {d : Nat}
+    {as bs : List KExpr} (h : DefEqListJ posRulesJ env₁ d as bs) :
+    DefEqListJ posRulesJ env₂ d as bs := by
+  induction as generalizing bs with
+  | nil => cases bs with | nil => trivial | cons _ _ => exact nomatch h
+  | cons _ _ ih =>
+    cases bs with
+    | nil => exact nomatch h
+    | cons _ _ => exact ⟨posRulesJ_defeq_weaken hext h.1, ih h.2⟩
 
-theorem typedListJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂) {d : Nat} :
-    ∀ {as bs : List KExpr},
-      TypedListJ posRulesJ env₁ d as bs → TypedListJ posRulesJ env₂ d as bs
-  | [], [], _ => trivial
-  | _ :: _, [], h => nomatch h
-  | [], _ :: _, h => nomatch h
-  | _ :: _, _ :: _, ⟨⟨ty, hi, hd⟩, hs⟩ =>
-    ⟨⟨ty, posRulesJ_infer_weaken hext hi, posRulesJ_defeq_weaken hext hd⟩,
-      typedListJ_weaken hext hs⟩
+theorem typedListJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂) {d : Nat}
+    {as bs : List KExpr} (h : TypedListJ posRulesJ env₁ d as bs) :
+    TypedListJ posRulesJ env₂ d as bs := by
+  induction as generalizing bs with
+  | nil => cases bs with | nil => trivial | cons _ _ => exact nomatch h
+  | cons _ _ ih =>
+    cases bs with
+    | nil => exact nomatch h
+    | cons _ _ =>
+      obtain ⟨⟨ty, hi, hd⟩, hs⟩ := h
+      exact ⟨⟨ty, posRulesJ_infer_weaken hext hi, posRulesJ_defeq_weaken hext hd⟩, ih hs⟩
 
 theorem lamTeleWalkJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂)
     {rP cnF : Nat} {tyA cty : KExpr} {mkPins : List KExpr → List KExpr} {rhs : KExpr}
     (h : LamTeleWalkJ posRulesJ env₁ rP cnF tyA cty mkPins rhs) :
     LamTeleWalkJ posRulesJ env₂ rP cnF tyA cty mkPins rhs := by
-  obtain ⟨lfvs, lbody, rdomsL, crestL, cdomsL, fdomsL, cbodyL,
+  obtain ⟨lfvs, lrest, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
     hopen, hir, hic, hopc, hwalk⟩ := h
-  exact ⟨lfvs, lbody, rdomsL, crestL, cdomsL, fdomsL, cbodyL,
+  exact ⟨lfvs, lrest, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
     hopen, hir, hic, hopc, defEqListJ_weaken hext hwalk⟩
 
 theorem iotaRunsVmJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env₂)
@@ -322,15 +320,13 @@ theorem iotaRunsVmJ_weaken {env₁ env₂ : Env .anon} (hext : EnvExt env₁ env
       rhsS applied tyArg lhsS) :
     IotaRunsVmJ posRulesJ env₂ depth lindices cindices xdoms cfieldDoms fpreDoms rdoms
       rhsS applied tyArg lhsS := by
-  refine
-    { idx := defEqListJ_weaken hext h.idx
-      fields := defEqListJ_weaken hext h.fields
-      prefix_ := defEqListJ_weaken hext h.prefix_
-      rhs := posRulesJ_defeq_weaken hext h.rhs
-      lhsTyped := let ⟨tl, hi, hd⟩ := h.lhsTyped
-        ⟨tl, posRulesJ_infer_weaken hext hi, posRulesJ_defeq_weaken hext hd⟩
-      rhsTyped := let ⟨tr, hi, hd⟩ := h.rhsTyped
-        ⟨tr, posRulesJ_infer_weaken hext hi, posRulesJ_defeq_weaken hext hd⟩ }
+  obtain ⟨hidx, hfields, hpre, hrhs, ⟨tl, hil, hdl⟩, ⟨tr, hir, hdr⟩⟩ := h
+  exact ⟨defEqListJ_weaken hext hidx,
+    defEqListJ_weaken hext hfields,
+    defEqListJ_weaken hext hpre,
+    posRulesJ_defeq_weaken hext hrhs,
+    ⟨tl, posRulesJ_infer_weaken hext hil, posRulesJ_defeq_weaken hext hdl⟩,
+    ⟨tr, posRulesJ_infer_weaken hext hir, posRulesJ_defeq_weaken hext hdr⟩⟩
 
 /-! ## Permutation Composition on `posOf` and `posRulesJ` -/
 
@@ -346,9 +342,11 @@ private theorem padPerm_perm {N : Nat} {ps : List LevelParam}
       apply List.ext_getElem (by simp [Nat.min_eq_left hle])
       intro i hi₁ hi₂
       simp
-    conv => lhs; rw [← List.take_append_drop ps.length (List.range N), htake]
-  rw [hsplit]
-  exact hps.append_right _
+    have h1 := List.take_append_drop ps.length (List.range N)
+    rw [htake] at h1
+    exact h1.symm
+  have hp := hps.append_right ((List.range N).drop ps.length)
+  rwa [← hsplit] at hp
 
 private theorem padPerm_length {N : Nat} {ps : List LevelParam} (hle : ps.length ≤ N) :
     (padPerm N ps).length = N := by
@@ -412,8 +410,12 @@ private theorem posLevels_padPerm {N : Nat} {ps : List LevelParam} (hle : ps.len
       apply List.ext_getElem (by simp [Nat.min_eq_left hle])
       intro i hi₁ hi₂
       simp
-    conv => lhs; rw [← List.take_append_drop ps.length (List.range N), htake]
-  conv => lhs; rw [hsplit, List.map_append]
+    have h1 := List.take_append_drop ps.length (List.range N)
+    rw [htake] at h1
+    exact h1.symm
+  show (List.range N).map Level.param =
+    (List.range ps.length).map Level.param ++ ((List.range N).drop ps.length).map Level.param
+  rw [← List.map_append, ← hsplit]
 
 private theorem subst_padPerm_eq {N : Nat} {ps : List LevelParam} (hle : ps.length ≤ N) :
     ∀ u : KLevel,
@@ -501,13 +503,25 @@ private theorem subst_go_nodup_idxOf :
         rw [subst_go_nodup_idxOf ks vs hnd' (Nat.succ.inj hlen) p hp' hlt']
         simp [hidx]
 
+private theorem idxOf_getElem_nodup :
+    ∀ (ks : List LevelParam) (hnd : ks.Nodup) (i : Nat) (hi : i < ks.length),
+      ks.idxOf ks[i] = i
+  | [], _, _, hi => nomatch hi
+  | k :: ks, _, 0, _ => List.idxOf_cons_self
+  | k :: ks, hnd, i + 1, hi => by
+    obtain ⟨hk_nin, hnd'⟩ := List.nodup_cons.mp hnd
+    have hi' : i < ks.length := Nat.lt_of_succ_lt_succ hi
+    have hne : k ≠ ks[i] := fun heq => hk_nin (heq ▸ List.getElem_mem hi')
+    simp only [List.getElem_cons_succ]
+    rw [List.idxOf_cons_ne ks hne, idxOf_getElem_nodup ks hnd' i hi']
+
 private theorem map_idxOf_self {ks : List LevelParam} (hnd : ks.Nodup) :
     ks.map ks.idxOf = List.range ks.length := by
   apply List.ext_getElem (by simp)
   intro i hi₁ hi₂
   simp only [List.length_map] at hi₁
   simp only [List.getElem_map, List.getElem_range]
-  exact List.idxOf_getElem hnd i hi₁
+  exact idxOf_getElem_nodup ks hnd i hi₁
 
 private theorem compPerm_perm {N : Nat} {ps₁ lps₁ : List LevelParam}
     (hps₁ : ps₁.Perm (List.range N)) (hlps₁ : lps₁.Perm (List.range N)) :
@@ -532,7 +546,8 @@ private theorem subst_compPerm_eq {N : Nat} {ps₁ lps₁ : List LevelParam}
   have hps_len : ps₁.length = N := by simpa using hps₁.length_eq
   have hqs_len : qs.length = N := by simp [qs, hps_len]
   have hqs_perm : qs.Perm (List.range N) := by
-    simpa [hqs_len] using compPerm_perm hps₁ hlps₁
+    have hp := compPerm_perm hps₁ hlps₁
+    rwa [show (ps₁.map lps₁.idxOf).length = N from hqs_len] at hp
   have hlps_nd : lps₁.Nodup := hlps₁.nodup_iff.mpr List.nodup_range
   have hps_nd : ps₁.Nodup := hps₁.nodup_iff.mpr List.nodup_range
   have hqs_nd : qs.Nodup := hqs_perm.nodup_iff.mpr List.nodup_range
@@ -560,7 +575,7 @@ private theorem subst_compPerm_eq {N : Nat} {ps₁ lps₁ : List LevelParam}
         rw [← hqk]
         exact List.getElem_mem _
       have hqs_idx : qs.idxOf (lps₁.idxOf p) = ps₁.idxOf p := by
-        have h := List.idxOf_getElem hqs_nd (ps₁.idxOf p) (by simp [qs, hk_lt])
+        have h := idxOf_getElem_nodup qs hqs_nd (ps₁.idxOf p) (by simp [qs, hk_lt])
         rwa [hqk] at h
       show Level.subst.go qs (posLevels qs) (lps₁.idxOf p) =
         Level.subst.go ps₁ (posLevels ps₁) p
@@ -609,20 +624,25 @@ private theorem posOf_compPerm_eq {N : Nat} {ps₁ lps₁ : List LevelParam}
     congr 1
     exact List.map_congr_left fun u _ => subst_compPerm_eq hps₁ hlps₁ u
   | app f a ihf iha =>
-    simp only [posOf, Expr.instantiateLevelParams] at ihf iha ⊢
-    rw [ihf, iha]
+    simp only [posOf, Expr.instantiateLevelParams]
+    rw [← posOf, ← posOf, ihf, iha]
+    rfl
   | lam ty bo m iht ihb =>
-    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw] at iht ihb ⊢
-    rw [iht, ihb]
+    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw]
+    rw [← posOf, ← posOf, iht, ihb]
+    rfl
   | forallE ty bo m iht ihb =>
-    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw] at iht ihb ⊢
-    rw [iht, ihb]
+    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw]
+    rw [← posOf, ← posOf, iht, ihb]
+    rfl
   | letE ty v bo m iht ihv ihb =>
-    simp only [posOf, Expr.instantiateLevelParams] at iht ihv ihb ⊢
-    rw [iht, ihv, ihb]
+    simp only [posOf, Expr.instantiateLevelParams]
+    rw [← posOf, ← posOf, ← posOf, iht, ihv, ihb]
+    rfl
   | proj s i e ih =>
-    simp only [posOf, Expr.instantiateLevelParams] at ih ⊢
-    rw [ih]
+    simp only [posOf, Expr.instantiateLevelParams]
+    rw [← posOf, ih]
+    rfl
 
 /-- Given permutations `ps` and `lps` of arbitrary lengths, constructs a single permutation `qs`
 satisfying `posOf qs (posOf lps e) = posOf ps e` and matching `Level.subst` on all inputs. -/
@@ -671,27 +691,28 @@ theorem posRulesJ_sort_posOf {env : Env .anon} {d : Nat} {lps : List LevelParam}
   exact ⟨qs, hqs, by rw [heqE t, heqL u]; exact hr⟩
 
 theorem defEqListJ_posOf {env : Env .anon} {d : Nat} {lps : List LevelParam}
-    (hlps : lps.Perm (List.range lps.length)) :
-    ∀ {as bs : List KExpr},
-      DefEqListJ posRulesJ env d as bs →
-      DefEqListJ posRulesJ env d (as.map (posOf lps)) (bs.map (posOf lps))
-  | [], [], _ => trivial
-  | _ :: _, [], h => nomatch h
-  | [], _ :: _, h => nomatch h
-  | _ :: _, _ :: _, ⟨h₀, hs⟩ =>
-    ⟨posRulesJ_defeq_posOf hlps h₀, defEqListJ_posOf hlps hs⟩
+    (hlps : lps.Perm (List.range lps.length)) {as bs : List KExpr}
+    (h : DefEqListJ posRulesJ env d as bs) :
+    DefEqListJ posRulesJ env d (as.map (posOf lps)) (bs.map (posOf lps)) := by
+  induction as generalizing bs with
+  | nil => cases bs with | nil => trivial | cons _ _ => exact nomatch h
+  | cons _ _ ih =>
+    cases bs with
+    | nil => exact nomatch h
+    | cons _ _ => exact ⟨posRulesJ_defeq_posOf hlps h.1, ih h.2⟩
 
 theorem typedListJ_posOf {env : Env .anon} {d : Nat} {lps : List LevelParam}
-    (hlps : lps.Perm (List.range lps.length)) :
-    ∀ {as bs : List KExpr},
-      TypedListJ posRulesJ env d as bs →
-      TypedListJ posRulesJ env d (as.map (posOf lps)) (bs.map (posOf lps))
-  | [], [], _ => trivial
-  | _ :: _, [], h => nomatch h
-  | [], _ :: _, h => nomatch h
-  | _ :: _, _ :: _, ⟨⟨ty, hi, hd⟩, hs⟩ =>
-    ⟨⟨posOf lps ty, posRulesJ_infer_posOf hlps hi, posRulesJ_defeq_posOf hlps hd⟩,
-      typedListJ_posOf hlps hs⟩
+    (hlps : lps.Perm (List.range lps.length)) {as bs : List KExpr}
+    (h : TypedListJ posRulesJ env d as bs) :
+    TypedListJ posRulesJ env d (as.map (posOf lps)) (bs.map (posOf lps)) := by
+  induction as generalizing bs with
+  | nil => cases bs with | nil => trivial | cons _ _ => exact nomatch h
+  | cons _ _ ih =>
+    cases bs with
+    | nil => exact nomatch h
+    | cons _ _ =>
+      obtain ⟨⟨ty, hi, hd⟩, hs⟩ := h
+      exact ⟨⟨posOf lps ty, posRulesJ_infer_posOf hlps hi, posRulesJ_defeq_posOf hlps hd⟩, ih hs⟩
 
 theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
     (hlps : lps.Perm (List.range lps.length))
@@ -701,11 +722,12 @@ theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
     LamTeleWalkJ posRulesJ env rP cnF (posOf lps tyA) (posOf lps cty)
       (fun pre => (pins_lps.map (posOf lps)).map fun p => Expr.instSpine pre (rP - 1) p)
       (posOf lps rhs) := by
-  obtain ⟨lfvs, lbody, rdomsL, crestL, cdomsL, fdomsL, cbodyL,
+  obtain ⟨lfvs, lrest, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
     hopen, hir, hic, hopc, hwalk⟩ := h
-  have hopen' := openLamsAtFvars_instantiateLevelParams lps (posLevels lps) (rP + cnF) rhs 0 hopen
-  have hir' := instPisAt_instantiateLevelParams lps (posLevels lps) (lfvs.take rP) tyA hir
-  rw [← List.take_map] at hir'
+  have hopen' := openLamsAtFvars_instantiateLevelParams lps (posLevels lps) (rP + cnF) rhs 0
+  rw [hopen, Option.map_some] at hopen'
+  have hir' := instPisAt_instantiateLevelParams lps (posLevels lps) (lfvs.take rP) tyA
+  rw [hir, Option.map_some, ← List.take_map] at hir'
   have hpins_map :
       ((pins_lps.map fun p => Expr.instSpine (lfvs.take rP) (rP - 1) p).map (posOf lps)) =
       ((pins_lps.map (posOf lps)).map fun p =>
@@ -715,28 +737,22 @@ theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
     intro p _
     exact instantiateLevelParams_instSpine lps (posLevels lps) (lfvs.take rP) (rP - 1) p
   have hic' := instPisAt_instantiateLevelParams lps (posLevels lps)
-    (pins_lps.map fun p => Expr.instSpine (lfvs.take rP) (rP - 1) p) cty hic
-  rw [hpins_map] at hic'
-  have hopc' := openPisAtFvars_instantiateLevelParams lps (posLevels lps) cnF crestL rP hopc
+    (pins_lps.map fun p => Expr.instSpine (lfvs.take rP) (rP - 1) p) cty
+  rw [hic, Option.map_some, hpins_map] at hic'
+  have hopc' := instPisAt_instantiateLevelParams lps (posLevels lps) (lfvs.drop rP) crestL
+  rw [hopc, Option.map_some, ← List.drop_map] at hopc'
   have hfvd : (lfvs.map Expr.fvarTypeD).map (posOf lps) =
       (lfvs.map (posOf lps)).map Expr.fvarTypeD := by
     rw [List.map_map, List.map_map]
     apply List.map_congr_left
-    intro fv hfv
-    obtain ⟨idx, ty, rfl⟩ := openLamsAtFvars_is_fvar hopen fv hfv
-    rfl
-  have hfdoms : (fdomsL.map Expr.fvarTypeD).map (posOf lps) =
-      (fdomsL.map (posOf lps)).map Expr.fvarTypeD := by
-    rw [List.map_map, List.map_map]
-    apply List.map_congr_left
-    intro fv hfv
-    obtain ⟨idx, ty, rfl⟩ := openPisAtFvars_is_fvar hopc fv hfv
-    rfl
+    intro fv _
+    exact instantiateLevelParams_fvarTypeD lps (posLevels lps) fv
   have hwalk' := defEqListJ_posOf hlps hwalk
-  rw [hfvd, List.map_append, hfdoms] at hwalk'
-  exact ⟨lfvs.map (posOf lps), posOf lps lbody,
-    rdomsL.map (posOf lps), posOf lps crestL,
-    cdomsL.map (posOf lps), fdomsL.map (posOf lps), posOf lps cbodyL,
+  rw [hfvd, List.map_append] at hwalk'
+  exact ⟨lfvs.map (posOf lps), posOf lps lrest,
+    pdoms1.map (posOf lps), posOf lps tyRest,
+    cdomsL.map (posOf lps), posOf lps crestL,
+    pdoms2.map (posOf lps), posOf lps crestEnd,
     hopen', hir', hic', hopc', hwalk'⟩
 
 theorem iotaRunsVmJ_posOf {env : Env .anon} {lps : List LevelParam}
@@ -749,15 +765,14 @@ theorem iotaRunsVmJ_posOf {env : Env .anon} {lps : List LevelParam}
       (lindices.map (posOf lps)) (cindices.map (posOf lps))
       (xdoms.map (posOf lps)) (cfieldDoms.map (posOf lps))
       (fpreDoms.map (posOf lps)) (rdoms.map (posOf lps))
-      (posOf lps rhsS) (posOf lps applied) (posOf lps tyArg) (posOf lps lhsS) where
-  idx := defEqListJ_posOf hlps h.idx
-  fields := defEqListJ_posOf hlps h.fields
-  prefix_ := defEqListJ_posOf hlps h.prefix_
-  rhs := posRulesJ_defeq_posOf hlps h.rhs
-  lhsTyped := let ⟨tl, hi, hd⟩ := h.lhsTyped
-    ⟨posOf lps tl, posRulesJ_infer_posOf hlps hi, posRulesJ_defeq_posOf hlps hd⟩
-  rhsTyped := let ⟨tr, hi, hd⟩ := h.rhsTyped
-    ⟨posOf lps tr, posRulesJ_infer_posOf hlps hi, posRulesJ_defeq_posOf hlps hd⟩
+      (posOf lps rhsS) (posOf lps applied) (posOf lps tyArg) (posOf lps lhsS) := by
+  obtain ⟨hidx, hfields, hpre, hrhs, ⟨tl, hil, hdl⟩, ⟨tr, hir, hdr⟩⟩ := h
+  exact ⟨defEqListJ_posOf hlps hidx,
+    defEqListJ_posOf hlps hfields,
+    defEqListJ_posOf hlps hpre,
+    posRulesJ_defeq_posOf hlps hrhs,
+    ⟨posOf lps tl, posRulesJ_infer_posOf hlps hil, posRulesJ_defeq_posOf hlps hdl⟩,
+    ⟨posOf lps tr, posRulesJ_infer_posOf hlps hir, posRulesJ_defeq_posOf hlps hdr⟩⟩
 
 /-! ## Phase 1: Auxiliary `.iota` Theorem and `.model` Alias Installation (`env_adv → env_aux`) -/
 
@@ -856,8 +871,8 @@ theorem installIotaThmCopy {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
     Ix.Kernel.EtaFamiliesClosed.cons_nonind hEE hfresh (fun _ _ h => nomatch h),
     envExt_cons_fresh hfresh (ne_projTableName_auxKey_iota m · j),
     fun k hk => ?_⟩
-  have hne : k ≠ c₀.name := fun heq => by rw [heq, hfresh] at hk; exact nomatch hk
-  rw [hac, acvalWith_ne hne]
+  have hne : k ≠ auxKey m (.iota j) := fun heq => by rw [heq, hfresh] at hk; exact nomatch hk
+  rw [hac, show c₀.name = auxKey m (.iota j) from rfl, acvalWith_ne hne]
 
 /-- Every `.const` node in `e` satisfies `P`. -/
 def ConstNamesIn (P : KKey → Prop) : KExpr → Prop
@@ -869,25 +884,45 @@ def ConstNamesIn (P : KKey → Prop) : KExpr → Prop
   | .letE ty v b _ => ConstNamesIn P ty ∧ ConstNamesIn P v ∧ ConstNamesIn P b
   | .proj _ _ e => ConstNamesIn P e
 
-theorem constNamesIn_of_constsResolve {env : Env .anon} :
-    ∀ {e : KExpr}, e.constsResolve env = true →
-      ConstNamesIn (fun n => (env.find? n).isSome = true) e
-  | .bvar _ | .sort _ | .lit _, _ => trivial
-  | .fvar _ ty, h => constNamesIn_of_constsResolve h
-  | .const n _, h => h
-  | .app f a, h => by
+theorem constNamesIn_of_constsResolve {env : Env .anon} {e : KExpr}
+    (h : e.constsResolve env = true) :
+    ConstNamesIn (fun n => (env.find? n).isSome = true) e := by
+  induction e with
+  | bvar _ | sort _ | lit _ => trivial
+  | fvar _ _ ih => exact ih h
+  | const _ _ => exact h
+  | app _ _ ihf iha =>
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
-    exact ⟨constNamesIn_of_constsResolve h.1, constNamesIn_of_constsResolve h.2⟩
-  | .lam ty b _, h | .forallE ty b _, h => by
+    exact ⟨ihf h.1, iha h.2⟩
+  | lam _ _ _ iht ihb | forallE _ _ _ iht ihb =>
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
-    exact ⟨constNamesIn_of_constsResolve h.1, constNamesIn_of_constsResolve h.2⟩
-  | .letE ty v b _, h => by
+    exact ⟨iht h.1, ihb h.2⟩
+  | letE _ _ _ _ iht ihv ihb =>
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
-    exact ⟨constNamesIn_of_constsResolve h.1.1, constNamesIn_of_constsResolve h.1.2,
-      constNamesIn_of_constsResolve h.2⟩
-  | .proj _ _ e, h => by
+    exact ⟨iht h.1.1, ihv h.1.2, ihb h.2⟩
+  | proj _ _ _ ihe =>
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
-    exact constNamesIn_of_constsResolve h.2
+    exact ihe h.2
+
+theorem constNamesIn_instantiate1 {P : KKey → Prop} {v : KExpr} (hv : ConstNamesIn P v) :
+    ∀ {e : KExpr} {k : Nat}, ConstNamesIn P e → ConstNamesIn P (e.instantiate1 v k) := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro k _
+    simp only [Expr.instantiate1]
+    split
+    · exact hv
+    · split <;> trivial
+  | sort _ | lit _ => intro _ _; trivial
+  | fvar _ _ => intro _ hp; exact hp
+  | const _ _ => intro _ hp; exact hp
+  | app _ _ ihf iha => intro _ ⟨hf, ha⟩; exact ⟨ihf hf, iha ha⟩
+  | lam _ _ _ iht ihb | forallE _ _ _ iht ihb =>
+    intro _ ⟨ht, hb⟩; exact ⟨iht ht, ihb hb⟩
+  | letE _ _ _ _ iht ihv ihb =>
+    intro _ ⟨ht, hval, hb⟩; exact ⟨iht ht, ihv hval, ihb hb⟩
+  | proj _ _ _ ihe => intro _ hp; exact ihe hp
 
 theorem allLevelParamsDefined_renameConsts (f : KKey → KKey) (ps : List LevelParam) :
     ∀ e : KExpr, (e.renameConsts f).allLevelParamsDefined ps = e.allLevelParamsDefined ps
@@ -908,8 +943,7 @@ theorem allLevelParamsDefined_renameConsts (f : KKey → KKey) (ps : List LevelP
 
 theorem looseBVarsBounded_renameConsts (f : KKey → KKey) :
     ∀ (d : Nat) (e : KExpr), (e.renameConsts f).looseBVarsBounded d = e.looseBVarsBounded d
-  | _, .bvar _ | _, .sort _ | _, .const _ _ | _, .lit _ => rfl
-  | d, .fvar _ ty => looseBVarsBounded_renameConsts f d ty
+  | _, .bvar _ | _, .fvar _ _ | _, .sort _ | _, .const _ _ | _, .lit _ => rfl
   | d, .app g a => by
     simp only [Expr.renameConsts, Expr.looseBVarsBounded,
       looseBVarsBounded_renameConsts f d g, looseBVarsBounded_renameConsts f d a]
@@ -925,25 +959,21 @@ theorem looseBVarsBounded_renameConsts (f : KKey → KKey) :
 
 theorem constsResolve_renameConsts_congr {E : Env .anon} {g₁ g₂ : KKey → KKey}
     {P : KKey → Prop}
-    (hg : ∀ n, P n → (E.find? (g₁ n)).isSome = (E.find? (g₂ n)).isSome) :
-    ∀ {e : KExpr}, ConstNamesIn P e →
-      (e.renameConsts g₁).constsResolve E = (e.renameConsts g₂).constsResolve E
-  | .bvar _ | .sort _ | .lit _, _ => rfl
-  | .fvar _ ty, hp => constsResolve_renameConsts_congr hg hp
-  | .const n _, hp => hg n hp
-  | .app f a, ⟨hpf, hpa⟩ => by
-    simp only [Expr.renameConsts, Expr.constsResolve,
-      constsResolve_renameConsts_congr hg hpf, constsResolve_renameConsts_congr hg hpa]
-  | .lam ty b _, ⟨hpt, hpb⟩ | .forallE ty b _, ⟨hpt, hpb⟩ => by
-    simp only [Expr.renameConsts, Expr.constsResolve,
-      constsResolve_renameConsts_congr hg hpt, constsResolve_renameConsts_congr hg hpb]
-  | .letE ty v b _, ⟨hpt, hpv, hpb⟩ => by
-    simp only [Expr.renameConsts, Expr.constsResolve,
-      constsResolve_renameConsts_congr hg hpt,
-      constsResolve_renameConsts_congr hg hpv,
-      constsResolve_renameConsts_congr hg hpb]
-  | .proj s i e, hp => by
-    simp only [Expr.renameConsts, Expr.constsResolve, constsResolve_renameConsts_congr hg hp]
+    (hg : ∀ n, P n → (E.find? (g₁ n)).isSome = (E.find? (g₂ n)).isSome)
+    {e : KExpr} (hp : ConstNamesIn P e) :
+    (e.renameConsts g₁).constsResolve E = (e.renameConsts g₂).constsResolve E := by
+  induction e with
+  | bvar _ | sort _ | lit _ => rfl
+  | fvar _ _ ih => exact ih hp
+  | const n _ => exact hg n hp
+  | app _ _ ihf iha =>
+    simp only [Expr.renameConsts, Expr.constsResolve, ihf hp.1, iha hp.2]
+  | lam _ _ _ iht ihb | forallE _ _ _ iht ihb =>
+    simp only [Expr.renameConsts, Expr.constsResolve, iht hp.1, ihb hp.2]
+  | letE _ _ _ _ iht ihv ihb =>
+    simp only [Expr.renameConsts, Expr.constsResolve, iht hp.1, ihv hp.2.1, ihb hp.2.2]
+  | proj _ _ _ ihe =>
+    simp only [Expr.renameConsts, Expr.constsResolve, ihe hp]
 
 theorem denoteMeta_renameConsts_congr {acval : KKey → (LevelParam → Nat) → AnnotTerm}
     {E : Env .anon} {φ : LevelParam → Nat} {g₁ g₂ : KKey → KKey} {P : KKey → Prop}
@@ -951,16 +981,17 @@ theorem denoteMeta_renameConsts_congr {acval : KKey → (LevelParam → Nat) →
       (E.find? (g₁ n)).map (·.toConstantVal.levelParams) =
       (E.find? (g₂ n)).map (·.toConstantVal.levelParams))
     (hac : ∀ n, P n → acval (g₁ n) = acval (g₂ n)) :
-    ∀ (d : Nat) {e : KExpr}, ConstNamesIn P e →
+    ∀ (e : KExpr) (d : Nat), ConstNamesIn P e →
       denoteMeta acval E φ d (e.renameConsts g₁) =
         denoteMeta acval E φ d (e.renameConsts g₂)
-  | d, .bvar i, _ => by rw [Expr.renameConsts, Expr.renameConsts]
-  | d, .sort u, _ => by rw [Expr.renameConsts, Expr.renameConsts]
-  | d, .lit l, _ => by rw [Expr.renameConsts, Expr.renameConsts]
-  | d, .fvar idx ty, _ => by
+  | .bvar _, _, _ => by rw [Expr.renameConsts, Expr.renameConsts]
+  | .sort _, _, _ => by rw [Expr.renameConsts, Expr.renameConsts]
+  | .lit (.natVal _), _, _ => by rw [Expr.renameConsts, Expr.renameConsts]
+  | .lit (.strVal _), _, _ => by rw [Expr.renameConsts, Expr.renameConsts]
+  | .fvar _ _, _, _ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
-  | d, .const n us, hp => by
+  | .const n us, d, hp => by
     simp only [Expr.renameConsts]
     have hl := hlps n hp
     cases hf₁ : E.find? (g₁ n) with
@@ -981,27 +1012,52 @@ theorem denoteMeta_renameConsts_congr {acval : KKey → (LevelParam → Nat) →
         by_cases hlen : us.length = ci₁.toConstantVal.levelParams.length
         · rw [ite_eq_left hlen, ite_eq_left (hl ▸ hlen), hl, hac n hp]
         · rw [ite_eq_right hlen, ite_eq_right (fun hh => hlen (hl ▸ hh))]
-  | d, .app f a, ⟨hpf, hpa⟩ => by
+  | .app f a, d, ⟨hpf, hpa⟩ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta,
-      denoteMeta_renameConsts_congr hlps hac d hpf,
-      denoteMeta_renameConsts_congr hlps hac d hpa]
-  | d, .lam ty bo m, ⟨hpt, hpb⟩ => by
+      denoteMeta_renameConsts_congr hlps hac f d hpf,
+      denoteMeta_renameConsts_congr hlps hac a d hpa]
+  | .lam ty bo m, d, ⟨hpt, hpb⟩ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta,
-      denoteMeta_renameConsts_congr hlps hac d hpt,
-      denoteMeta_renameConsts_congr hlps hac (d + 1) hpb]
-  | d, .forallE ty bo m, ⟨hpt, hpb⟩ => by
+      ← Expr.renameConsts_instantiate1, ← Expr.renameConsts_instantiate1,
+      denoteMeta_renameConsts_congr hlps hac ty d hpt,
+      denoteMeta_renameConsts_congr hlps hac (bo.instantiate1 (.fvar d ty)) (d + 1)
+        (constNamesIn_instantiate1 hpt hpb)]
+  | .forallE ty bo m, d, ⟨hpt, hpb⟩ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta,
-      denoteMeta_renameConsts_congr hlps hac d hpt,
-      denoteMeta_renameConsts_congr hlps hac (d + 1) hpb]
-  | d, .letE ty v bo m, _ => by
+      ← Expr.renameConsts_instantiate1, ← Expr.renameConsts_instantiate1,
+      denoteMeta_renameConsts_congr hlps hac ty d hpt,
+      denoteMeta_renameConsts_congr hlps hac (bo.instantiate1 (.fvar d ty)) (d + 1)
+        (constNamesIn_instantiate1 hpt hpb)]
+  | .letE _ _ _ _, _, _ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
-  | d, .proj s i e, hp => by
+  | .proj _ _ e, d, hp => by
     simp only [Expr.renameConsts]
-    rw [denoteMeta, denoteMeta, denoteMeta_renameConsts_congr hlps hac d hp]
+    rw [denoteMeta, denoteMeta, denoteMeta_renameConsts_congr hlps hac e d hp]
+  termination_by e => e.sizeB
+  decreasing_by
+    all_goals first
+    | (simp [Expr.sizeB]; omega)
+    | (rw [Expr.sizeB_instantiate1 _ rfl]; simp [Expr.sizeB]; omega)
+    | (simp [Expr.sizeB])
+
+theorem auxKey_not_mem_natOpNames (k : KKey) (d : Derived) :
+    auxKey k d ∉ Ix.Kernel.natOpNames := by
+  intro h
+  simp [Ix.Kernel.natOpNames, Ix.Kernel.natPredName, Ix.Kernel.natAddName,
+    Ix.Kernel.natSubName, Ix.Kernel.natMulName, Ix.Kernel.natPowName,
+    Ix.Kernel.natBeqName, Ix.Kernel.natBleName, Ix.Kernel.roleKey, auxKey] at h
+
+theorem auxKey_not_mem_natDivModNames (k : KKey) (d : Derived) :
+    auxKey k d ∉ Ix.Kernel.natDivModNames := by
+  intro h
+  simp [Ix.Kernel.natDivModNames, Ix.Kernel.natDivName, Ix.Kernel.natModName,
+    Ix.Kernel.natGcdName, Ix.Kernel.natLandName, Ix.Kernel.natLorName,
+    Ix.Kernel.natXorName, Ix.Kernel.natShiftLeftName, Ix.Kernel.natShiftRightName,
+    Ix.Kernel.roleKey, auxKey] at h
 
 /-- Install a `.model` alias `auxKey n .model` at positional level parameters `List.range nl`,
 with type `ty_pos.renameConsts f_aux` and body `.const (f_id n) ((List.range nl).map .param)`,
@@ -1047,13 +1103,14 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       (E.find? (f_aux k)).map (·.toConstantVal.levelParams) =
       (E.find? (f_id k)).map (·.toConstantVal.levelParams) := by
     intro k hk
+    dsimp only [f_aux]
     rcases hk with hout | hink
-    · simp [f_aux, hout, hf_out k hout]
+    · simp [hout, hf_out k hout]
     · obtain ⟨cvm_k, mval_k, hint_k, cvm_fk, mval_fk, hint_fk, hfk1, hfk2, hlpsk, _⟩ := hseen k hink
       by_cases hbk : blockNames.contains k = true
-      · simp [f_aux, hbk, hfk1, hfk2, hlpsk]
+      · simp [hbk, hfk1, hfk2, hlpsk]
       · have hbk' : blockNames.contains k = false := Bool.eq_false_iff.mpr hbk
-        simp [f_aux, hbk', hf_out k hbk']
+        simp [hbk', hf_out k hbk']
   have P_some : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       (E.find? (f_aux k)).isSome = (E.find? (f_id k)).isSome := by
     intro k hk
@@ -1062,13 +1119,14 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
   have P_ac : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       mpE.base2.acval (f_aux k) = mpE.base2.acval (f_id k) := by
     intro k hk
+    dsimp only [f_aux]
     rcases hk with hout | hink
-    · simp [f_aux, hout, hf_out k hout]
+    · simp [hout, hf_out k hout]
     · obtain ⟨_, _, _, _, _, _, _, _, _, hack⟩ := hseen k hink
       by_cases hbk : blockNames.contains k = true
-      · simp [f_aux, hbk, hack]
+      · simp [hbk, hack]
       · have hbk' : blockNames.contains k = false := Bool.eq_false_iff.mpr hbk
-        simp [f_aux, hbk', hf_out k hbk']
+        simp [hbk', hf_out k hbk']
   have htf : (ty_pos.renameConsts f_aux).hasFvar = false := by
     have h1 : (ty_pos.renameConsts f_id).hasFvar = false := hty_f ▸ hwf_f.1
     rw [hasFvar_renameConsts] at h1 ⊢
@@ -1107,7 +1165,7 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       denoteMeta mpE.base2.acval E ψ 0 cvm_f.type := by
     intro ψ
     rw [hty_f]
-    exact denoteMeta_renameConsts_congr P_lps P_ac 0 hnames
+    exact denoteMeta_renameConsts_congr P_lps P_ac ty_pos 0 hnames
   have hstep : ∃ mp' : EnvModelM V .verified ⟨c₀ :: E.consts⟩,
       mp'.base2.acval = acvalWith mpE.base2.acval c₀.name A := by
     refine declStep_preserves_of_cons mpE (c₀ := c₀) (A := A) hfresh
@@ -1131,6 +1189,7 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · intro ψ
       obtain ⟨ta, hta⟩ := mpE.type_reads _ hmem_f ψ
+      dsimp only [ConstantInfo.toConstantVal] at hta
       rw [← hty_den_eq ψ] at hta
       exact ⟨ta, hcomp ψ (ty_pos.renameConsts f_aux) hcbT hta⟩
     · intro ψ ta hta ρ
@@ -1153,17 +1212,17 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       rwa [htaEq]
     · intro ψ cv2 value2 ⟨hint2, hdt⟩
       obtain ⟨_, rfl, _⟩ := ConstantInfo.defnInfo.inj hdt
-      have hne_fn : f_id n ≠ c₀.name := fun heq => by
+      have hne_fn : f_id n ≠ auxKey n .model := fun heq => by
         rw [heq, hfresh] at hsrc_f; exact nomatch hsrc_f
       have hfind_fn : (⟨c₀ :: E.consts⟩ : Env .anon).find? (f_id n) =
           some (.defnInfo cvm_f mval_f hint_f) :=
         Env.find?_cons_of_fresh hfresh hsrc_f
       simp only [mval_new]
       rw [denoteMeta, hfind_fn]
-      dsimp only
+      dsimp only [ConstantInfo.toConstantVal]
       have hlen_p : ((List.range nl).map Level.param).length = cvm_f.levelParams.length := by
         simp [hlps_f]
-      rw [ite_eq_left hlen_p, acvalWith_ne hne_fn]
+      rw [ite_eq_left hlen_p, show c₀.name = auxKey n .model from rfl, acvalWith_ne hne_fn]
       congr 1
       refine mpE.base2.acval_params (f_id n) _ hsrc_f _ ψ (fun p hp => ?_)
       rw [hlps_f] at hp ⊢
@@ -1197,8 +1256,8 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
     Ix.Kernel.EtaFamiliesClosed.cons_nonind hEE hfresh (fun _ _ h => nomatch h),
     envExt_cons_fresh hfresh (ne_projTableName_auxKey_model n ·),
     fun k hk => ?_⟩
-  have hne : k ≠ c₀.name := fun heq => by rw [heq, hfresh] at hk; exact nomatch hk
-  rw [hac, acvalWith_ne hne]
+  have hne : k ≠ auxKey n .model := fun heq => by rw [heq, hfresh] at hk; exact nomatch hk
+  rw [hac, show c₀.name = auxKey n .model from rfl, acvalWith_ne hne]
 
 /-! ## `noLetExpr` on `TmExact` and Reflexive `Annot` -/
 
@@ -1214,8 +1273,7 @@ def noLetExpr : KExpr → Bool
 theorem noLetExpr_liftLooseBVars (n : Nat) :
     ∀ (e : KExpr) (c : Nat), noLetExpr (e.liftLooseBVars n c) = noLetExpr e
   | .bvar i, c => by simp only [Expr.liftLooseBVars]; split <;> rfl
-  | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
-  | .fvar _ ty, c => noLetExpr_liftLooseBVars n ty c
+  | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
   | .app f a, c => by
     simp only [Expr.liftLooseBVars, noLetExpr,
       noLetExpr_liftLooseBVars n f c, noLetExpr_liftLooseBVars n a c]
@@ -1225,25 +1283,27 @@ theorem noLetExpr_liftLooseBVars (n : Nat) :
   | .letE _ _ _ _, _ => rfl
   | .proj _ _ e, c => noLetExpr_liftLooseBVars n e c
 
-theorem noLetExpr_instShift {v : KExpr} (hv : noLetExpr v = true) :
-    ∀ (k : Nat) {b : KExpr}, noLetExpr b = true → noLetExpr (instShift v k b) = true
-  | k, .bvar i, _ => by
-    simp only [instShift]
+theorem noLetExpr_instShift {v : KExpr} (hv : noLetExpr v = true)
+    (k : Nat) {b : KExpr} (hb : noLetExpr b = true) :
+    noLetExpr (instShift v k b) = true := by
+  induction b generalizing k with
+  | bvar _ =>
+    simp only [instShift, Expr.instantiate1Lift]
     split
     · rw [noLetExpr_liftLooseBVars]; exact hv
     · split <;> rfl
-  | _, .sort _, _ | _, .const _ _, _ | _, .lit _, _ => rfl
-  | k, .fvar _ ty, hb => noLetExpr_instShift hv k hb
-  | k, .app f a, hb => by
+  | sort _ | const _ _ | lit _ => rfl
+  | fvar _ _ => exact hb
+  | app _ _ ihf iha =>
     simp only [noLetExpr, Bool.and_eq_true] at hb
-    simp only [instShift, noLetExpr, Bool.and_eq_true]
-    exact ⟨noLetExpr_instShift hv k hb.1, noLetExpr_instShift hv k hb.2⟩
-  | k, .lam ty bo _, hb | k, .forallE ty bo _, hb => by
+    simp only [instShift, Expr.instantiate1Lift, noLetExpr, Bool.and_eq_true]
+    exact ⟨ihf k hb.1, iha k hb.2⟩
+  | lam _ _ _ iht ihb | forallE _ _ _ iht ihb =>
     simp only [noLetExpr, Bool.and_eq_true] at hb
-    simp only [instShift, noLetExpr, Bool.and_eq_true]
-    exact ⟨noLetExpr_instShift hv k hb.1, noLetExpr_instShift hv (k + 1) hb.2⟩
-  | _, .letE _ _ _ _, hb => nomatch hb
-  | k, .proj _ _ e, hb => noLetExpr_instShift hv k hb
+    simp only [instShift, Expr.instantiate1Lift, noLetExpr, Bool.and_eq_true]
+    exact ⟨iht k hb.1, ihb (k + 1) hb.2⟩
+  | letE _ _ _ _ => exact nomatch hb
+  | proj _ _ _ ihe => exact ihe k hb
 
 theorem noLetExpr_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
     ∀ e : KExpr, noLetExpr (e.instantiateLevelParams ks us) = noLetExpr e
@@ -1278,24 +1338,25 @@ theorem TmCExact.noLet {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr} {
     (rep : TmCExact κ h E p) : noLetExpr E = true :=
   (rep 0 (fun _ => .sort .zero)).noLet (fun _ hlt => nomatch hlt)
 
-theorem annotates_refl_of_noLetExpr :
-    ∀ {e : KExpr}, noLetExpr e = true → IxVM.Consistency.Annotates e e
-  | .bvar _, _ => .bvar
-  | .sort _, _ => .sort
-  | .const _ _, _ => .const
-  | .lit _, _ => .lit
-  | .fvar _ _, h => .fvar (annotates_refl_of_noLetExpr h)
-  | .app f a, h => by
+theorem annotates_refl_of_noLetExpr {e : KExpr} (h : noLetExpr e = true) :
+    IxVM.Consistency.Annotates e e := by
+  induction e with
+  | bvar _ => exact .bvar
+  | sort _ => exact .sort
+  | const _ _ => exact .const
+  | lit _ => exact .lit
+  | fvar _ _ ih => exact .fvar (ih h)
+  | app _ _ ihf iha =>
     simp only [noLetExpr, Bool.and_eq_true] at h
-    exact .app (annotates_refl_of_noLetExpr h.1) (annotates_refl_of_noLetExpr h.2)
-  | .lam _ _ _, h => by
+    exact .app (ihf h.1) (iha h.2)
+  | lam _ _ _ iht ihb =>
     simp only [noLetExpr, Bool.and_eq_true] at h
-    exact .lam (annotates_refl_of_noLetExpr h.1) (annotates_refl_of_noLetExpr h.2)
-  | .forallE _ _ _, h => by
+    exact .lam (iht h.1) (ihb h.2)
+  | forallE _ _ _ iht ihb =>
     simp only [noLetExpr, Bool.and_eq_true] at h
-    exact .forallE (annotates_refl_of_noLetExpr h.1) (annotates_refl_of_noLetExpr h.2)
-  | .letE _ _ _ _, h => nomatch h
-  | .proj _ _ _, h => .proj (annotates_refl_of_noLetExpr h)
+    exact .forallE (iht h.1) (ihb h.2)
+  | letE _ _ _ _ => exact nomatch h
+  | proj _ _ _ ihe => exact .proj (ihe h)
 
 theorem annot_refl_of_noLetExpr {e : KExpr} (hnl : noLetExpr e = true)
     (hf : e.hasFvar = false) (hb : e.looseBVarsBounded 0 = true) (d : Nat) :
@@ -1314,8 +1375,7 @@ theorem allLevelParamsDefined_posOf {lps : List LevelParam} {e : KExpr}
 
 theorem hasFvar_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
     ∀ e : KExpr, (e.instantiateLevelParams ks us).hasFvar = e.hasFvar
-  | .bvar _ | .sort _ | .const _ _ | .lit _ => rfl
-  | .fvar _ ty => hasFvar_instantiateLevelParams ks us ty
+  | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .lit _ => rfl
   | .app f a => by
     simp only [Expr.instantiateLevelParams, Expr.hasFvar,
       hasFvar_instantiateLevelParams ks us f, hasFvar_instantiateLevelParams ks us a]
@@ -1332,8 +1392,7 @@ theorem hasFvar_instantiateLevelParams (ks : List LevelParam) (us : List KLevel)
 theorem looseBVarsBounded_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
     ∀ (d : Nat) (e : KExpr),
       (e.instantiateLevelParams ks us).looseBVarsBounded d = e.looseBVarsBounded d
-  | _, .bvar _ | _, .sort _ | _, .const _ _ | _, .lit _ => rfl
-  | d, .fvar _ ty => looseBVarsBounded_instantiateLevelParams ks us d ty
+  | _, .bvar _ | _, .fvar _ _ | _, .sort _ | _, .const _ _ | _, .lit _ => rfl
   | d, .app f a => by
     simp only [Expr.instantiateLevelParams, Expr.looseBVarsBounded,
       looseBVarsBounded_instantiateLevelParams ks us d f,
@@ -1367,64 +1426,41 @@ theorem constsResolve_instantiateLevelParams (env : Env .anon)
       constsResolve_instantiateLevelParams env ks us ty,
       constsResolve_instantiateLevelParams env ks us v,
       constsResolve_instantiateLevelParams env ks us b]
-  | .proj _ _ e => constsResolve_instantiateLevelParams env ks us e
+  | .proj _ _ e => by
+    simp only [Expr.instantiateLevelParams, Expr.constsResolve,
+      constsResolve_instantiateLevelParams env ks us e]
 
-theorem noLooseIn_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
-    ∀ (lo n : Nat) (e : KExpr),
-      noLooseIn lo n (e.instantiateLevelParams ks us) = noLooseIn lo n e
-  | _, _, .bvar _ | _, _, .sort _ | _, _, .const _ _ | _, _, .lit _ => rfl
-  | lo, n, .fvar _ ty => noLooseIn_instantiateLevelParams ks us lo n ty
-  | lo, n, .app f a => by
-    simp only [Expr.instantiateLevelParams, noLooseIn,
-      noLooseIn_instantiateLevelParams ks us lo n f,
-      noLooseIn_instantiateLevelParams ks us lo n a]
-  | lo, n, .lam ty b _ | lo, n, .forallE ty b _ => by
-    simp only [Expr.instantiateLevelParams, noLooseIn,
-      noLooseIn_instantiateLevelParams ks us lo n ty,
-      noLooseIn_instantiateLevelParams ks us (lo + 1) n b]
-  | lo, n, .letE ty v b _ => by
-    simp only [Expr.instantiateLevelParams, noLooseIn,
-      noLooseIn_instantiateLevelParams ks us lo n ty,
-      noLooseIn_instantiateLevelParams ks us lo n v,
-      noLooseIn_instantiateLevelParams ks us (lo + 1) n b]
-  | lo, n, .proj _ _ e => noLooseIn_instantiateLevelParams ks us lo n e
-
-private theorem stripPis_body_wf {env : Env .anon} {ps : List LevelParam} :
-    ∀ (k d : Nat) {e : KExpr} {bs : List (KExpr × BinderMeta)} {body : KExpr},
-      e.stripPis k = some (bs, body) →
-      e.hasFvar = false →
-      e.looseBVarsBounded d = true →
-      e.constsResolve env = true →
-      e.allLevelParamsDefined ps = true →
-      body.hasFvar = false ∧
-      body.looseBVarsBounded (d + k) = true ∧
-      body.constsResolve env = true ∧
-      body.allLevelParamsDefined ps = true
-  | 0, d, e, _, body, h, hf, hb, hcr, hlps => by
+private theorem stripPis_body_wf {env : Env .anon} {ps : List LevelParam}
+    (k d : Nat) {e : KExpr} {bs : List (KExpr × BinderMeta)} {body : KExpr}
+    (h : e.stripPis k = some (bs, body))
+    (hf : e.hasFvar = false)
+    (hb : e.looseBVarsBounded d = true)
+    (hcr : e.constsResolve env = true)
+    (hlps : e.allLevelParamsDefined ps = true) :
+    body.hasFvar = false ∧
+    body.looseBVarsBounded (d + k) = true ∧
+    body.constsResolve env = true ∧
+    body.allLevelParamsDefined ps = true := by
+  induction k generalizing d e bs body with
+  | zero =>
     obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
     simpa using ⟨hf, hb, hcr, hlps⟩
-  | k + 1, d, .forallE ty b _, _, body, h, hf, hb, hcr, hlps => by
-    simp only [Expr.stripPis] at h
-    cases hsb : b.stripPis k with
-    | none => rw [hsb] at h; exact nomatch h
-    | some p =>
-      rw [hsb] at h
-      obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
-      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hf
-      simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-      simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
-      simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hlps
-      have ih := stripPis_body_wf k (d + 1) hsb hf.2 hb.2 hcr.2 hlps.1.2
-      rwa [show d + 1 + k = d + (k + 1) by omega] at ih
-  | _ + 1, _, .bvar _, _, _, h, _, _, _, _
-  | _ + 1, _, .fvar _ _, _, _, h, _, _, _, _
-  | _ + 1, _, .sort _, _, _, h, _, _, _, _
-  | _ + 1, _, .const _ _, _, _, h, _, _, _, _
-  | _ + 1, _, .app _ _, _, _, h, _, _, _, _
-  | _ + 1, _, .lam _ _ _, _, _, h, _, _, _, _
-  | _ + 1, _, .letE _ _ _ _, _, _, h, _, _, _, _
-  | _ + 1, _, .lit _, _, _, h, _, _, _, _
-  | _ + 1, _, .proj _ _ _, _, _, h, _, _, _, _ => nomatch h
+  | succ k ih =>
+    cases e with
+    | forallE ty b _ =>
+      simp only [Expr.stripPis] at h
+      cases hsb : b.stripPis k with
+      | none => rw [hsb] at h; exact nomatch h
+      | some p =>
+        rw [hsb] at h
+        obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
+        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hf
+        simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
+        simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
+        simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hlps
+        have hrec := ih (d + 1) hsb hf.2 hb.2 hcr.2 hlps.1.2
+        rwa [show d + 1 + k = d + (k + 1) by omega] at hrec
+    | _ => exact nomatch h
 
 private theorem app_spine_wf {env : Env .anon} {ps : List LevelParam} {d : Nat} :
     ∀ (e : KExpr),
@@ -1441,7 +1477,7 @@ private theorem app_spine_wf {env : Env .anon} {ps : List LevelParam} {d : Nat} 
         a.allLevelParamsDefined ps = true := by
   intro e
   induction e with
-  | app f a ihf iha =>
+  | app f a ihf _ =>
     intro hf hb hcr hlps
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hf
     simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
@@ -1449,7 +1485,7 @@ private theorem app_spine_wf {env : Env .anon} {ps : List LevelParam} {d : Nat} 
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hlps
     obtain ⟨hfn_lp, hfn_cr, hargs⟩ := ihf hf.1 hb.1 hcr.1 hlps.1
     have hfn_eq : (Expr.app f a).getAppFn = f.getAppFn := rfl
-    have hargs_eq : (Expr.app f a).getAppArgs = f.getAppArgs ++ [a] := Expr.getAppArgs_app f a
+    have hargs_eq : (Expr.app f a).getAppArgs = f.getAppArgs ++ [a] := rfl
     refine ⟨hfn_eq ▸ hfn_lp, hfn_eq ▸ hfn_cr, fun x hx => ?_⟩
     rw [hargs_eq] at hx
     rcases List.mem_append.mp hx with hxf | hxa
@@ -1475,8 +1511,7 @@ private theorem constsResolve_instantiate1 {env : Env .anon} {v : KExpr}
     split
     · exact hv
     · split <;> rfl
-  | .sort _, _ | .const _ _, _ | .lit _, _ => fun h => h
-  | .fvar _ ty, k => fun h => constsResolve_instantiate1 hv ty k h
+  | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => fun h => h
   | .app f a, k => fun h => by
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true]
@@ -1496,34 +1531,29 @@ private theorem constsResolve_instantiate1 {env : Env .anon} {v : KExpr}
     simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true]
     exact ⟨h.1, constsResolve_instantiate1 hv e k h.2⟩
 
-private theorem constsResolve_openPisAtFvars {env : Env .anon} :
-    ∀ (n : Nat) {e : KExpr} (i : Nat) {fvs : List KExpr} {body : KExpr},
-      openPisAtFvars n e i = some (fvs, body) →
-      e.constsResolve env = true →
-      body.constsResolve env = true
-  | 0, _, _, _, _, h, hcr => by
+private theorem constsResolve_openPisAtFvars {env : Env .anon}
+    (n : Nat) {e : KExpr} (i : Nat) {fvs : List KExpr} {body : KExpr}
+    (h : openPisAtFvars n e i = some (fvs, body))
+    (hcr : e.constsResolve env = true) :
+    body.constsResolve env = true := by
+  induction n generalizing e i fvs body with
+  | zero =>
     obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
     exact hcr
-  | n + 1, .forallE dom b _, i, _, _, h, hcr => by
-    simp only [openPisAtFvars] at h
-    simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
-    have hb' : (b.instantiate1 (.fvar i dom)).constsResolve env = true :=
-      constsResolve_instantiate1 hcr.1 b 0 hcr.2
-    cases hop : openPisAtFvars n (b.instantiate1 (.fvar i dom)) (i + 1) with
-    | none => rw [hop] at h; exact nomatch h
-    | some p =>
-      rw [hop] at h
-      obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
-      exact constsResolve_openPisAtFvars n (i + 1) hop hb'
-  | _ + 1, .bvar _, _, _, _, h, _
-  | _ + 1, .fvar _ _, _, _, _, h, _
-  | _ + 1, .sort _, _, _, _, h, _
-  | _ + 1, .const _ _, _, _, _, h, _
-  | _ + 1, .app _ _, _, _, _, h, _
-  | _ + 1, .lam _ _ _, _, _, h, _
-  | _ + 1, .letE _ _ _ _, _, _, h, _
-  | _ + 1, .lit _, _, _, _, h, _
-  | _ + 1, .proj _ _ _, _, _, h, _ => nomatch h
+  | succ n ih =>
+    cases e with
+    | forallE dom b _ =>
+      simp only [openPisAtFvars] at h
+      simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
+      have hb' : (b.instantiate1 (.fvar i dom)).constsResolve env = true :=
+        constsResolve_instantiate1 (v := .fvar i dom) hcr.1 b 0 hcr.2
+      cases hop : openPisAtFvars n (b.instantiate1 (.fvar i dom)) (i + 1) with
+      | none => rw [hop] at h; exact nomatch h
+      | some p =>
+        rw [hop] at h
+        obtain ⟨_, rfl⟩ := Prod.mk.inj (Option.some.inj h)
+        exact ih (i + 1) hop hb'
+    | _ => exact nomatch h
 
 /-- Extract `c_adv.env.find? eqName = some eqA` whenever a recursor has at least one rule,
 because rule `0`'s advice theorem opens to an `Eq`-headed equality in `c_adv.env`. -/
@@ -1567,8 +1597,8 @@ theorem eqA_of_rawRule {V : Type u} [Ix.Kernel.SetTheory V]
   rw [hfn_pos] at hcr_fn
   obtain ⟨ciE, hfE⟩ := Option.isSome_iff_exists.mp hcr_fn
   have hci : ciE = eqA := by
-    rw [(mp_adv.base2.basis_pinned eqName ciE hfE (by decide)).1]
-    rfl
+    rw [(mp_adv.base2.basis_pinned eqName ciE hfE reserved_eqName).1,
+      Ix.Kernel.pinnedInfo, ite_eq_left rfl]
   rwa [hci] at hfE
 
 /-- Lift a single `RawIotaRuleVmRun` certificate to `IotaRuleNVmRunJ posRulesJ` at positional
@@ -1613,8 +1643,8 @@ theorem rawIotaRule_to_posNVmRun
     let r_pos : RecRule .anon := { r with rhs := rhs_pos }
     let r'_pos : RecRule .anon :=
       recRuleBits envM_pos.find? cvName
-        { r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
-          fire := .nested lvls_pos pins_pos, paramsBlind := false }
+        ({ r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
+          fire := .nested lvls_pos pins_pos, paramsBlind := false })
     IotaRuleNVmRunJ posRulesJ envM_pos envSelf_pos f_id cvName (List.range lps.length)
       (posOf lps tyA) mI rP j r_pos r'_pos ∧
     hraw.cnP = cnP_ind := by
@@ -1625,8 +1655,8 @@ theorem rawIotaRule_to_posNVmRun
   let r_pos : RecRule .anon := { r with rhs := rhs_pos }
   let r'_pos : RecRule .anon :=
     recRuleBits envM_pos.find? cvName
-      { r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
-        fire := .nested lvls_pos pins_pos, paramsBlind := false }
+      ({ r_pos with rhs := rhs_pos, ctorParams := hraw.cnP,
+        fire := .nested lvls_pos pins_pos, paramsBlind := false })
   have hlps_nd : lps.Nodup := hlps_perm.nodup_iff.mpr List.nodup_range
   have hcnp_eq : hraw.cnP = cnP_ind := by
     have h1 : pins_lps.length = cnP_ind := by
@@ -1954,16 +1984,16 @@ def posCheckedRule (find? : KKey → Option (ConstantInfo .anon))
   let pins_pos := pins_lps.map (posOf lps)
   let rhs_pos := posOf lps r.rhs
   recRuleBits find? cvName
-    { r with rhs := rhs_pos, ctorParams := cnP,
-      fire := .nested lvls_pos pins_pos, paramsBlind := false }
+    ({ r with rhs := rhs_pos, ctorParams := cnP,
+      fire := .nested lvls_pos pins_pos, paramsBlind := false })
 
 /-- Checked rule stored in real environment `env₂` (at original `lps`). -/
 def realCheckedRule (find? : KKey → Option (ConstantInfo .anon))
     (cvName : KKey) (cnP : Nat)
     (lvls_lps : List KLevel) (pins_lps : List KExpr) (r : RecRule .anon) : RecRule .anon :=
   recRuleBits find? cvName
-    { r with rhs := r.rhs, ctorParams := cnP,
-      fire := .nested lvls_lps pins_lps, paramsBlind := false }
+    ({ r with rhs := r.rhs, ctorParams := cnP,
+      fire := .nested lvls_lps pins_lps, paramsBlind := false })
 
 /-- Bundled witness that rule `(j, r)` has a `RawIotaRuleVmRun` certificate whose `.iota j`
 theorem copy is stored in `E`. -/
@@ -2012,14 +2042,15 @@ theorem IotaRulesReady.mono {E₁ E₂ : Env .anon}
     {c_pub c_rhs c_adv : Ctx}
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
     {cvName : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
-    {lvls_lps : List KLevel} {pins_lps : List KExpr} :
-    ∀ {j : Nat} {rls : List (RecRule .anon)},
-      IotaRulesReady E₁ c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
-        lvls_lps pins_lps j rls →
-      IotaRulesReady E₂ c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
-        lvls_lps pins_lps j rls
-  | _, [], _ => trivial
-  | _, _ :: _, ⟨h, hs⟩ => ⟨h.mono hfind, hs.mono hfind⟩
+    {lvls_lps : List KLevel} {pins_lps : List KExpr}
+    {j : Nat} {rls : List (RecRule .anon)}
+    (h : IotaRulesReady E₁ c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
+      lvls_lps pins_lps j rls) :
+    IotaRulesReady E₂ c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
+      lvls_lps pins_lps j rls := by
+  induction rls generalizing j with
+  | nil => trivial
+  | cons _ _ ih => exact ⟨h.1.mono hfind, ih h.2⟩
 
 /-- Install `.iota j` theorem copies for every rule of `cvName` from `RawIotaRulesVmRun`,
 extending `(E, mpE)` while preserving lookups outside `{auxKey (auxKey cvName .model) (.iota j') | j' ≥ j}`. -/
@@ -2041,8 +2072,8 @@ theorem installRecIotaThms {V : Type u} [Ix.Kernel.SetTheory V]
         (∀ k, (∀ j' ≥ j, k ≠ auxKey (auxKey cvName .model) (.iota j')) → E'.find? k = E.find? k) ∧
         IotaRulesReady E' c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
           lvls_lps pins_lps j rls
-  | [], j, E, mpE, hEE, _, _, _ =>
-    ⟨E, mpE, hEE, EnvExt.refl E, fun _ _ => rfl, fun _ _ => rfl, trivial⟩
+  | [], j, _, mpE, hEE, _, _, _ =>
+    ⟨_, mpE, hEE, EnvExt.refl _, fun _ _ => rfl, fun _ _ => rfl, trivial⟩
   | r :: rest, j, E, mpE, hEE, hfind_adv, hfresh_ge, ⟨⟨hraw⟩, hrest⟩ => by
     have hfresh_j : E.find? (auxKey (auxKey cvName .model) (.iota j)) = none :=
       hfresh_ge j (Nat.le_refl j)
@@ -2062,12 +2093,13 @@ theorem installRecIotaThms {V : Type u} [Ix.Kernel.SetTheory V]
       ⟨hraw, hf_self⟩
     have hfresh_next : ∀ j' ≥ j + 1, E₁.find? (auxKey (auxKey cvName .model) (.iota j')) = none := by
       intro j' hj'
-      have hne : auxKey (auxKey cvName .model) (.iota j') ≠ c₀.name := by
+      have hne : c₀.name ≠ auxKey (auxKey cvName .model) (.iota j') := by
         intro heq
+        change auxKey (auxKey cvName .model) (.iota j) = _ at heq
         injection heq with _ hd
         injection hd with hjj
         omega
-      rw [Ix.Kernel.Env.find?_cons, ite_eq_right (fun hh => hne hh.symm)]
+      rw [EnvExt.find?_cons_ne hne]
       exact hfresh_ge j' (by omega)
     obtain ⟨E₂, mp₂, hE₂, hext₂, hac₂, hout₂, hready_rest⟩ :=
       installRecIotaThms rest (j + 1) mp₁ hE₁
@@ -2082,8 +2114,8 @@ theorem installRecIotaThms {V : Type u} [Ix.Kernel.SetTheory V]
       rw [hac₂ k hk₁, hac₁ k hk]
     · intro k hk_ne
       rw [hout₂ k (fun j' hj' => hk_ne j' (by omega))]
-      have hne₀ : k ≠ c₀.name := hk_ne j (Nat.le_refl j)
-      rw [Ix.Kernel.Env.find?_cons, ite_eq_right (fun hh => hne₀ hh.symm)]
+      have hne₀ : c₀.name ≠ k := fun hh => hk_ne j (Nat.le_refl j) hh.symm
+      exact EnvExt.find?_cons_ne hne₀
 
 /-- Lift `IotaRulesReady` across `rls` to `IotaRulesNVmRunJ posRulesJ` at `List.range lps.length`. -/
 theorem rawIotaRules_to_posNVmRun
@@ -2111,21 +2143,23 @@ theorem rawIotaRules_to_posNVmRun
     (hpins_def : pins_lps = (dom.getAppArgs.take cnP_ind).map (Expr.lowerBVars (mI - rP) 0))
     (hfind_pub_M : ∀ k ci, c_pub.env.find? k = some ci → envM_pos.find? k = some ci)
     (hext_pub : EnvExt c_pub.env envSelf_pos)
-    (hext_adv : EnvExt c_adv.env envSelf_pos) :
-    ∀ {j : Nat} {rls : List (RecRule .anon)},
-      (∀ r ∈ rls, noLetExpr (posOf lps r.rhs) = true) →
-      (∀ r ∈ rls,
-        (posOf lps r.rhs).constsResolve envSelf_pos = true ∧
-        (∀ t', Infer c_rhs.env .full 0 r.rhs t' →
-          ∃ t'', posRulesJ.infer envSelf_pos 0 (posOf lps r.rhs) t'')) →
-      IotaRulesReady envM_pos c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
-        lvls_lps pins_lps j rls →
-      IotaRulesNVmRunJ posRulesJ envM_pos envSelf_pos f_id cvName (List.range lps.length)
-        (posOf lps tyA) mI rP j
-        (rls.map fun r => { r with rhs := posOf lps r.rhs })
-        (rls.map (posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps))
-  | _, [], _, _, _ => rfl
-  | j, r :: rest, hnolet, hrhs_self, ⟨⟨hraw, hf_iota⟩, hrest⟩ => by
+    (hext_adv : EnvExt c_adv.env envSelf_pos)
+    {j : Nat} {rls : List (RecRule .anon)}
+    (hnolet : ∀ r ∈ rls, noLetExpr (posOf lps r.rhs) = true)
+    (hrhs_self : ∀ r ∈ rls,
+      (posOf lps r.rhs).constsResolve envSelf_pos = true ∧
+      (∀ t', Infer c_rhs.env .full 0 r.rhs t' →
+        ∃ t'', posRulesJ.infer envSelf_pos 0 (posOf lps r.rhs) t''))
+    (hready : IotaRulesReady envM_pos c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
+      lvls_lps pins_lps j rls) :
+    IotaRulesNVmRunJ posRulesJ envM_pos envSelf_pos f_id cvName (List.range lps.length)
+      (posOf lps tyA) mI rP j
+      (rls.map fun r => { r with rhs := posOf lps r.rhs })
+      (rls.map (posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps)) := by
+  induction rls generalizing j with
+  | nil => rfl
+  | cons r rest ih =>
+    obtain ⟨⟨hraw, hf_iota⟩, hrest⟩ := hready
     have hfind_cv : envM_pos.findCV? (auxKey (auxKey cvName .model) (.iota j)) =
         some ⟨auxKey (auxKey cvName .model) (.iota j), List.range lps.length, hraw.cvt.type⟩ := by
       unfold Env.findCV?
@@ -2139,9 +2173,9 @@ theorem rawIotaRules_to_posNVmRun
       hr_cr (hr_inf t'_rhs ht'_rhs) hfind_cv
     have hr'_eq :
         recRuleBits envM_pos.find? cvName
-          { r with rhs := posOf lps r.rhs, ctorParams := hraw.cnP,
+          ({ r with rhs := posOf lps r.rhs, ctorParams := hraw.cnP,
             fire := .nested (lvls_lps.map (Level.subst lps (posLevels lps)))
-              (pins_lps.map (posOf lps)), paramsBlind := false } =
+              (pins_lps.map (posOf lps)), paramsBlind := false }) =
         posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps r := by
       unfold posCheckedRule
       rw [hcnp]
@@ -2149,9 +2183,7 @@ theorem rawIotaRules_to_posNVmRun
     exact ⟨posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps r,
       rest.map (posCheckedRule envM_pos.find? cvName lps cnP_ind lvls_lps pins_lps),
       hrule,
-      rawIotaRules_to_posNVmRun hlps_perm hrp_le hty_wf hctor_wf hstrip_ty hdom_fn hdom_len
-        hdom_nli hdom_drop hpins_def hfind_pub_M hext_pub hext_adv
-        (fun r' hr' => hnolet r' (List.mem_cons_of_mem r hr'))
+      ih (fun r' hr' => hnolet r' (List.mem_cons_of_mem r hr'))
         (fun r' hr' => hrhs_self r' (List.mem_cons_of_mem r hr')) hrest,
       rfl⟩
 
