@@ -561,8 +561,8 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
         obtain ⟨rfl, rfl⟩ := htag_rb'
         simp only [List.cons.injEq] at hrb
         obtain ⟨rfl, rfl⟩ := hrb
-        rw [toUInt8_toNat_of_lt (Nat.lt_trans ro.idx_lt (by decide))] at ev255 op519 ⊢
         obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev255
+        rw [toUInt8_toNat_of_lt (Nat.lt_trans ro.idx_lt (by decide))] at *
         obtain ⟨_, rfl, -⟩ := Obs.«KernelRoleSpec::role_count».obs ev309
         obtain ⟨_, _, _, _, _, _, _, rfl⟩ := Lib.less_than_fields_spec ev288
         obtain ⟨_, _, _, _, _, _, _, rfl⟩ := Lib.less_than_fields_spec ev341
@@ -693,8 +693,8 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
         obtain ⟨rfl, rfl⟩ := htag_rb'
         simp only [List.cons.injEq] at hrb
         obtain ⟨rfl, rfl⟩ := hrb
-        rw [toUInt8_toNat_of_lt (Nat.lt_trans ro.idx_lt (by decide))] at ev277 op515 op586 ⊢
         obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev277
+        rw [toUInt8_toNat_of_lt (Nat.lt_trans ro.idx_lt (by decide))] at *
         obtain ⟨_, rfl, -⟩ := Obs.«KernelRoleSpec::role_count».obs ev331
         obtain ⟨_, _, _, _, _, _, _, rfl⟩ := Lib.less_than_fields_spec ev310
         obtain ⟨_, _, _, _, _, _, _, rfl⟩ := Lib.less_than_fields_spec ev363
@@ -836,7 +836,10 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
   obtain ⟨extB, roleMap, byAddr', nextB, sB, htupB, hmapRole, hinvB, hst5⟩ :=
     read_role_bindings_aux t hchk t.bound.size t.bound.toList Array.length_toList hn_lt
       (fun _ hp => hp) hb_sz []
-      ⟨[], by rw [← rbtreeEnum_field]; exact RBTreeBST.nil .field _, by simp, by simp⟩
+      ⟨[], by
+        change RBTreeBST .field _ [] (.construct addrMapEnum "Nil" [])
+        rw [← rbtreeEnum_field]
+        exact RBTreeBST.nil .field _, by simp, by simp⟩
       hst4 ev404
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupB
   obtain ⟨rfl, rfl, rfl, rfl⟩ := htupB
@@ -853,7 +856,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     simpa [Ix.Kernel.RoleTable.EntryOk] using this
   obtain ⟨extE, evMap, nextE, sE, htupE, hmapEv, hst7⟩ :=
     read_role_evidence_aux t t.evidence.size t.evidence.toList Array.length_toList hm_lt
-      (fun _ hp => hp) he_ok' (by simpa using hst6) ev524
+      (fun _ hp => hp) he_ok' (rest := []) (by rw [List.append_nil]; exact hst6) ev524
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupE
   obtain ⟨rfl, rfl, rfl⟩ := htupE
   let rtNode := Value.construct rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence]
