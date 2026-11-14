@@ -453,7 +453,7 @@ private theorem do_for_push_eq_getArray_bind {α β : Type} (getm : Ixon.GetM α
   funext s
   unfold Ixon.getArray
   simp only [bind, EStateM.bind, pure, EStateM.pure]
-  cases forIn [0:count] #[] _ s <;> rfl
+  split <;> rfl
 
 private theorem u64_lt_256_of_high_bytes_zero {x : Nat} (hx : x < 18446744073709551616)
     (h : x / 256 % 256 + x / 65536 % 256 + x / 16777216 % 256 + x / 4294967296 % 256 +
@@ -2112,6 +2112,7 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
         L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp only [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
+      rfl
 
 theorem get_refs_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -2350,7 +2351,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
     ⟨by simp [hshLen, shTag.value.toNat_lt],
      by rw [hrefsSz]; exact refsTag.value.toNat_lt,
      by rw [hunivsSz]; exact univsTag.value.toNat_lt,
-     by dsimp only; exact hprj⟩, hs6⟩
+     by dsimp only; cases ci <;> exact hprj⟩, hs6⟩
   unfold Ixon.getConstant Ixon.getConstantWithUnivs
   simp only [bind, EStateM.bind, hinfo_ok, hshTag_ok, hshArr_ok, hrefsTag_ok, hrefsArr_ok,
     hunivsTag_ok, hunivsArr_ok, hbinders_ok, pure, EStateM.pure]
@@ -2366,6 +2367,7 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
     (ev : ObsFn Obs.W "Ingress::load_verified_constant" [ap] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
+      rawBytes.size < 4294967296 ∧
       Hashed calls rawBytes ∧
       Address.blake3Pure rawBytes = addr ∧
       Ixon.deConstant rawBytes = .ok c ∧
@@ -2373,8 +2375,18 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       RepConstant h' c r ∧
       ConstantWireFacts c := by
   obtain ⟨aVec, haRep, rfl⟩ := ha
-  obtain ⟨bytes, inp, rest, m, cs', ext1, hst, hashed, hdigest, hget, hrest, -⟩ :=
-    L1.load_verified_constant_addr haRep ev
+  have ld_ap : ∃ raw, loadValue h ap = .ok raw ∧ raw = L1.digestV aVec := by
+    obtain ⟨n, v, rfl, cell, hv⟩ := haRep
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld11, -⟩ :=
+      Obs.«Ingress::load_verified_constant».obs ev
+    have e := L1.load_of_cell cell ld11
+    subst e
+    exact ⟨v, ld11, hv⟩
+  obtain ⟨raw, hld_ap, hraw_eq⟩ := ld_ap
+  obtain ⟨bytes, inp, rest, m, cs', hlen_lt, ext1, hst, hashed, hproj, hget, hrest, -⟩ :=
+    L1.load_verified_constant_spec hld_ap ev
+  have hdigest : Address.blake3Pure ⟨bytes.toArray⟩ = L1.ixAddr aVec := by
+    rw [L1.blake3Pure_eq, L1.digest_eq_of_proj hraw_eq hproj]
   obtain ⟨ext2, c, n, cVal, restPtr, hok, htup, hcRep, hwf, hs_rest⟩ :=
     get_constant_spec (i := 0) (by simpa using hst) hget
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -2394,6 +2406,10 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       change n = bytes.toArray.size
       rw [List.size_toArray]
       omega
+    have hsz_lt : (ByteArray.mk bytes.toArray).size < 4294967296 := by
+      change bytes.toArray.size < 4294967296
+      rw [List.size_toArray]
+      exact hlen_lt
     have hde : Ixon.deConstant ⟨bytes.toArray⟩ = .ok c := by
       unfold Ixon.deConstant Ixon.runGet EStateM.run
       rw [hok]
@@ -2402,7 +2418,7 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       rw [hok]
       dsimp only
       rw [ite_eq_left hn_eq]
-    exact ⟨ext1.trans ext2, ⟨bytes.toArray⟩, c, hashed, hdigest, hde, hdeExact, hcRep, hwf⟩
+    exact ⟨ext1.trans ext2, ⟨bytes.toArray⟩, c, hsz_lt, hashed, hdigest, hde, hdeExact, hcRep, hwf⟩
   · simp at hbad
 
 end IxVM.Refinement.Claim
