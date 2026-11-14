@@ -798,7 +798,7 @@ private theorem instantiate1_instAt {fvs : List KExpr} {fv : KExpr}
             else if i - fvs.length > j then Expr.bvar (i - fvs.length - 1)
             else Expr.bvar (i - fvs.length)) = Expr.bvar (i - (fvs.length + 1))
           rw [ite_eq_right (by omega), ite_eq_left (by omega)]
-          congr 1; omega
+          congr 1
   | fvar _ _ _ => intro _ h; simp [Expr.hasFvar] at h
   | sort _ | const _ _ | lit _ => intro _ _; rfl
   | app f a ihf iha =>
@@ -1336,18 +1336,20 @@ private theorem infer_constsResolve_aux :
     | const hfind _ _ => simp [Expr.constsResolve, hfind]
     | natLit hnat => exact isSome_of_natLitSupported hnat
     | @strLit _ _ s hstr => exact isSome_of_strLitSupported hstr s
-    | @forallE _ d₀ ty body _ _ _ _ hty hbo _ _ =>
+    | forallE hty _ hbo _ _ =>
       simp only [exprDepth] at hdep
       have hty_res := ih (by omega) hty hg hstore hfv.1
       have hbo_res := ih (by rw [exprDepth_instantiate1_fvar]; omega)
-        hbo hg hstore (fvarConstsResolve_instantiate1 ⟨hty_res, hfv.1⟩ 0 hfv.2)
+        hbo hg hstore
+        (fvarConstsResolve_instantiate1 (v := .fvar _ _) ⟨hty_res, hfv.1⟩ 0 hfv.2)
       simp only [Expr.constsResolve, Bool.and_eq_true]
       exact ⟨hty_res, constsResolve_of_instantiate1 0 hbo_res⟩
-    | @lam _ d₀ ty body _ _ _ _ _ _ hty _ hbo _ _ _ _ =>
+    | lam hty _ hbo _ _ _ _ =>
       simp only [exprDepth] at hdep
       have hty_res := ih (by omega) (hty hg) rfl hstore hfv.1
       have hbo_res := ih (by rw [exprDepth_instantiate1_fvar]; omega)
-        hbo hg hstore (fvarConstsResolve_instantiate1 ⟨hty_res, hfv.1⟩ 0 hfv.2)
+        hbo hg hstore
+        (fvarConstsResolve_instantiate1 (v := .fvar _ _) ⟨hty_res, hfv.1⟩ 0 hfv.2)
       simp only [Expr.constsResolve, Bool.and_eq_true]
       exact ⟨hty_res, constsResolve_of_instantiate1 0 hbo_res⟩
     | app hfn _ harg _ =>
@@ -1355,7 +1357,7 @@ private theorem infer_constsResolve_aux :
       simp only [Expr.constsResolve, Bool.and_eq_true]
       exact ⟨ih (by omega) hfn hg hstore hfv.1, ih (by omega) harg hg hstore hfv.2⟩
     | appSkip => nomatch hg
-    | @proj _ _ sn i pe _ _ _ entry _ hpe _ hent _ _ _ =>
+    | @proj _ _ sn i pe _ _ _ entry hpe _ _ hent _ _ _ =>
       simp only [exprDepth] at hdep
       simp only [Expr.constsResolve, Bool.and_eq_true]
       refine ⟨?_, ih (by omega) hpe hg hstore hfv⟩
@@ -2200,9 +2202,11 @@ private theorem validate_univ_params_seen_aux :
         subst heq259
         obtain ⟨_, _, hlt, _, _⟩ := Lib.less_than_fields_field ev236
         have hplt : p < nl := by
-          have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
-          have h1 : ((p : F)).val = p := ZMod.val_natCast_of_lt (by omega)
-          have h2 : ((nl : F)).val = nl := ZMod.val_natCast_of_lt (by omega)
+          have hp' : (p : Nat) < 4294967296 := hp
+          have h1 : ((p : F)).val = p :=
+            ZMod.val_natCast_of_lt (Nat.lt_trans hp' (by decide))
+          have h2 : ((nl : F)).val = nl :=
+            ZMod.val_natCast_of_lt (Nat.lt_trans hnl (by decide))
           simpa [h1, h2] using hlt.mp rfl
         simp [Level.allParamsDefined, hplt])
 
