@@ -1629,7 +1629,7 @@ theorem assert_lvls_are_params_spec :
     · subst hc59
       have hlen_lt : us.length < 549755813888 :=
         RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hus
-      obtain ⟨hv26, rfl⟩ := Core.klevel_length ev39 hus
+      obtain ⟨hv26, rfl⟩ := klevel_length ev39 hus
       rw [hv26] at heq54
       have heq54' : (.field (us.length : F) : SourceValue F) = .field ((0 : Nat) : F) := heq54
       have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) heq54'
@@ -1648,17 +1648,19 @@ theorem assert_lvls_are_params_spec :
       obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hus ld75'
       obtain ⟨p, rfl, hx_i, hp⟩ := Levels.rep_param_of_load' hu ld104
       rw [hx_i] at heq144
-      have hp_eq : p = idx := nat_eq_of_field_eq (by omega) (by omega) heq144
+      have hp_lt : p < 549755813888 := Nat.lt_trans hp (by decide)
+      have hp_eq : p = idx := nat_eq_of_field_eq hp_lt (by omega) heq144
       subst hp_eq
       rw [evalBinOp_sub_succ m op182, evalBinOp_add_one p op197] at ev158
       have hbnd' := RomBound.bounded_mono hbnd (fun c hc => List.mem_cons_of_mem _ hc)
       obtain ⟨htl, hh⟩ := assert_lvls_are_params_spec m (p + 1) (by omega) hbnd' hrest ev158
       refine ⟨?_, hh⟩
-      rw [htl, List.range_succ_eq_map, List.map_cons, List.map_map]
-      simp only [Nat.add_zero, Function.comp_def]
-      congr 2
+      rw [htl, List.range_succ_eq_map]
+      simp only [List.map_cons, List.map_map, Nat.add_zero, Function.comp_def]
+      congr 1
+      congr 1
       funext i
       congr 1
-      omega
+      exact Nat.add_right_comm p 1 i
 
 end IxVM.Refinement.Decl
