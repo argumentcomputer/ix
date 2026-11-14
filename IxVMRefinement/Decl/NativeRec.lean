@@ -5042,6 +5042,7 @@ theorem build_param_lvls_range_go :
           List.map ((fun k => Level.param (start + (i + k))) ∘ Nat.succ) (List.range rem) =
           List.map (fun k => Level.param (start + (i + 1 + k))) (List.range rem) := by
         apply List.map_congr_left; intro k _
+        simp only [Function.comp_apply]
         refine congrArg Level.param ?_
         omega
       rw [Nat.add_zero, hmap_eq]
@@ -5109,6 +5110,7 @@ theorem build_rec_lvls_list_go :
           List.map ((fun k => Level.param (i + k)) ∘ Nat.succ) (List.range rem) =
           List.map (fun k => Level.param (i + 1 + k)) (List.range rem) := by
         apply List.map_congr_left; intro k _
+        simp only [Function.comp_apply]
         refine congrArg Level.param ?_
         omega
       rw [Nat.add_zero, hmap_eq]
@@ -5602,7 +5604,6 @@ theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
             exact op_m1.symm
           rw [hx225] at op_m2
           cases y226 <;> simp [evalBinOp] at op_m2
-          exact (zero_ne_one op_m2).elim
       subst hab
       rw [hE_eq, hEh, hT]
       exact ⟨Or.inl hr, mentionsConst_mkAppN_of_head Eas (by simp [Ix.Kernel.Expr.mentionsConst])⟩
@@ -5624,7 +5625,6 @@ theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
             exact op_m1.symm
           rw [hx225] at op_m2
           cases y226 <;> simp [evalBinOp] at op_m2
-          exact (zero_ne_one op_m2).elim
       subst hab
       rw [hE_eq, hEh, hT]
       exact ⟨Or.inr hr, mentionsConst_mkAppN_of_head Eas (by simp [Ix.Kernel.Expr.mentionsConst])⟩
@@ -6126,13 +6126,24 @@ theorem nat_tele_at_go {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
           Nat.add_zero, List.getD_cons_zero]
         have htl_ext := htl.mono ext_end
         rw [show k_base + o + nF + l + (m + 1) = k_base + o + nF + l + m + 1 by omega] at htl_ext
-        refine .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
-          (repKLevel_heapMono₂ (ev1.heap_extends.trans (ev2.heap_extends.trans ext_end)) hpw) ?_
-        convert htl_ext using 2
-        apply List.map_congr_left
-        intro idx _
-        dsimp only [Function.comp_apply]
-        rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
+        have hlist_eq :
+            List.map
+              ((fun idx =>
+                (Ix.Kernel.structIdxAt nF o i l (m + idx) ((b :: rest).getD idx default).1, bmeta ℓ)) ∘
+                Nat.succ)
+              (List.range rest.length) =
+            List.map
+              (fun idx =>
+                (Ix.Kernel.structIdxAt nF o i l (m + 1 + idx) (rest.getD idx default).1, bmeta ℓ))
+              (List.range rest.length) := by
+          apply List.map_congr_left
+          intro idx _
+          dsimp only [Function.comp_apply]
+          rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
+        rw [hlist_eq]
+        exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
+          (repKLevel_heapMono₂ (ev1.heap_extends.trans (ev2.heap_extends.trans ext_end)) hpw)
+          htl_ext
 
 /-- `KernelCheck::nat_tele_at` at `k = 0` computes `Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele`. -/
 theorem nat_tele_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
@@ -6378,6 +6389,7 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       rw [← hta_len] at hmot_app'
       have hih_dom := nat_mk_binders_spec hta hmot_app' ev_mk
       simp only [↓reduceIte] at hih_dom
+      rw [hta_len] at hih_dom
       -- Recursive `nat_ih_pis` on `rest` at `l + 1`
       rw [evalBinOp_add_one l op_l1] at ev_rec
       have ext_h_367 := ext_h_214.trans (ev_ta.heap_extends.trans ev_mk.heap_extends)
@@ -6583,14 +6595,16 @@ theorem nat_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
   rw [hv226, hm359] at ev224
   have hbnd_l1 : IxVM.Consistency.Bounded cs222 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-  have hv211 := expr_lift_local_spec (by omega) (by omega) (by omega) hbnd_l1 hv225 ev224
+  have hv211 := expr_lift_local_spec (k := nP + o + nF) (shift := recIdx.length) (cut := 0)
+    (by omega) (by omega) (by omega) hbnd_l1 hv225 (by simpa using ev224)
   -- Step 11: lift `v1` (`Eq`) by `o` at `0`
   have ext_h_212 := ext_h_229.trans ev224.heap_extends
   have hbnd_l2 : IxVM.Consistency.Bounded cs418 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
   have hv1_tm : Tm κ 0 Γ₀ m212 nP Eq v1 := by
     simpa [Nat.zero_add] using hRq.toTm.mono ext_h_212
-  have hv392 := expr_lift_local_spec (by omega) (by omega) (by omega) hbnd_l2 hv1_tm ev420
+  have hv392 := expr_lift_local_spec (k := nP) (shift := o) (cut := 0)
+    (by omega) (by omega) (by omega) hbnd_l2 hv1_tm (by simpa using ev420)
   -- Step 12: `nat_ih_pis`
   have ext_h_410 := ext_h_212.trans ev420.heap_extends
   have hbnd_ih : IxVM.Consistency.Bounded cs453 :=
