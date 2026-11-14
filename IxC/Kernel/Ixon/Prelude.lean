@@ -48,11 +48,15 @@ def addressOfHex (s : String) : Option Address := do
 
 /-! ## The default role table -/
 
-/-- The default table's binding section. -/
-def defaultTableBytes : Except String ByteArray :=
-  match bytesOfHex RoleData.table with
+/-- Hex decoder for a binding section's committed hex string. -/
+def defaultTableBytesOf (s : String) : Except String ByteArray :=
+  match bytesOfHex s with
   | some b => pure b
   | none => throw "role table: bad bytes"
+
+/-- The default table's binding section. -/
+def defaultTableBytes : Except String ByteArray :=
+  defaultTableBytesOf RoleData.table
 
 /-- The address the default table's section is committed under (BLAKE3 of
 its bytes, computed by the generator). -/
