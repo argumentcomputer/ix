@@ -22,14 +22,15 @@ Suppose the verifier's checks hold for the deployed IxVM circuit on at most
 from `Ix.IxVM.Refinement.Statement`), for a
 public claim digest whose claim is `check` or `checkEnv` that validates its role
 table, with no user axioms and no assumed leaves (`InScope`), and every role table
-the reader reads it under (the default table, or one the kernel admits with its
-bound constants checked: `ReaderTable`, `TableAdmitted`). Then either the run
+the reader reads it under (one the kernel admits with its bound constants checked
+in the reader's view: `ReaderTable`, `TableAdmitted`). Then either the run
 hashed a BLAKE3 collision, exhibited from the
 trace (`View.HashedCollision`, reused), or there is an environment `env` that
 
 * is read from the records the run loaded (`LoadedBy`: every record and blob is a
-  byte string the run hashed, under its BLAKE3 address; `Draws` lets the reading
-  add recursor records the run did not load, as `AcceptsIn` does), through the
+  byte string the run hashed, under its BLAKE3 address; `DrawsRole` lets the reading
+  add role-closure records/blobs from the reader's view or recursor records at
+  addresses the run did not load), through the
   kernel's own reading of Ixon records (`ReadIn`: `admitBinding`,
   `UsedClosureOrderAt`, `preludeFor`, `prepareBare`: the statement trusts the kernel's
   reader), installed declaration by declaration (`Installs`, `InstallStep`),
@@ -223,12 +224,11 @@ def ClaimSeeds : Claim → View → List Address → Prop
   | _, _, _ => False
 
 /-- **The role table the reader reads a claim under**: a binding `b` at the
-claim's address, which is the default table (`Ix.Kernel.Admission.defaultBinding`)
-or a table the kernel admits with its bound constants checked in the reader's
-records (`TableAdmitted`). -/
+claim's address, which the kernel admits with its bound constants checked in the
+reader's records (`TableAdmitted`; for the default table, over the committed
+`RoleData` records via `Ix.Cert.TableAdmission.tableAdmitted_of_check`). -/
 def ReaderTable (c : Claim) (V : View) (b : Binding) : Prop :=
-  (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧
-    (Ix.Kernel.Admission.defaultBinding = .ok b ∨ TableAdmitted V b)
+  (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧ TableAdmitted V b
 
 /-! ## The environment read from the records the run loaded -/
 
@@ -514,21 +514,37 @@ their projection tables. -/
 def claimedEnv (env : Ix.Kernel.Env .anon) : Ix.Kernel.Env .anon :=
   ⟨env.consts.filter fun ci => !isModelAux ci⟩
 
+/-- **`E` draws from `E₀` backed by `R`**: every record of `E` at an address `E₀`
+stores has `E₀`'s bytes, and at an address `E₀` does not store has `R`'s bytes or
+is a recursor record; every blob of `E` is `E₀`'s, or `R`'s at an address `E₀`
+does not store. -/
+def DrawsRole (E E₀ R : Ixon.Env) : Prop :=
+  (∀ a lc, E.consts.get? a = some lc →
+    (∃ lc₀, E₀.consts.get? a = some lc₀ ∧ lc₀.rawBytes = lc.rawBytes) ∨
+    (E₀.consts.contains a = false ∧
+      ((∃ lcR, R.consts.get? a = some lcR ∧ lcR.rawBytes = lc.rawBytes) ∨
+       (∃ c, lc.get? = some c ∧ IsRecursorRecord c)))) ∧
+  (∀ a bytes, E.blobs.get? a = some bytes →
+    E₀.blobs.get? a = some bytes ∨
+    (E₀.blobs.contains a = false ∧ R.blobs.get? a = some bytes))
+
 /-- **The consistency conclusion**: an environment read from the records the run
-loaded, under the role table `b`, from the claim's seeds, installing every
+loaded (supplemented at unwalked addresses from the admitted role table's view `V`),
+under the role table `b`, from the claim's seeds, installing every
 declaration as declared (`Installs`) and storing every claimed constant, whose
 claimed sub-environment (`claimedEnv`: without the model families' auxiliary
 constants, which the run checks as advice) has a model in every set theory. A
 block seed is covered by its members, which are stored. Every seed is in Lean's
 logic and none is an inert axiom (`InertAt`; such an axiom installs nothing): IxVM refuses the
 others (`KernelClaim::assert_claimable`, carried by L6). -/
-def ConsistentRead (calls : List (Call IxVM.F)) (b : Binding) (seeds : List Address) : Prop :=
+def ConsistentRead (V : View) (calls : List (Call IxVM.F)) (b : Binding)
+    (seeds : List Address) : Prop :=
   ∃ (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
-    LoadedBy calls E₀ ∧ Draws E E₀ ∧
+    LoadedBy calls E₀ ∧ DrawsRole E E₀ V.env ∧
     ReadIn b E (fun a => a ∈ seeds) ev ds ∧ Installs ds.toList env ∧
     (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
-    ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
+    ∀ (W : Type u) [Ix.Kernel.SetTheory W], Nonempty (Ix.Kernel.Model W (claimedEnv env))
 
 /-- **The images the reading takes from the kernel's committed data**, not from the
 run: the records and blobs behind every reading (`Ix.Kernel.Reader.RoleData`: the
@@ -550,7 +566,7 @@ def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
       ∀ (V : View) (seeds : List Address) (b : Binding), ClaimSeeds c V seeds →
         ReaderTable c V b →
         V.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
-          ConsistentRead.{u} calls b seeds
+          ConsistentRead.{u} V calls b seeds
 
 /-- **The deployed IxVM circuit accepts only claims whose claimed environment has a
 model**: `CircuitSound` of `ConsistencySpec`. -/
@@ -562,8 +578,8 @@ def CircuitConsistent : Prop := CircuitSound ConsistencySpec.{u}
 environment is consistent (`Ix.Kernel.Consistent`), and every claimed constant
 that is not a block has a reader's type, and a stored type, other than `False`. -/
 theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
-    {calls : List (Call IxVM.F)} {b : Binding} {seeds : List Address}
-    (h : ConsistentRead.{u} calls b seeds) :
+    {W : View} {calls : List (Call IxVM.F)} {b : Binding} {seeds : List Address}
+    (h : ConsistentRead.{u} W calls b seeds) :
     ∃ (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
       (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
       ∀ a ∈ seeds, IsBlockAt E a ∨

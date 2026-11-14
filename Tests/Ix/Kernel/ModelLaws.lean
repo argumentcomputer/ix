@@ -102,8 +102,9 @@ open _root_.IxVM.Consistency in
 every set theory, the reading a `ConsistentRead` exhibits holds no such pair at input or
 role keys. -/
 theorem consistentRead_no_false_def (V : Type w) [SetTheory V]
+    {W : _root_.IxVM.Refinement.View}
     {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {seeds : List _root_.Address}
-    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} calls b seeds) :
+    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} W calls b seeds) :
     ∃ (E : _root_.Ixon.Env) (ev : Evidences .anon)
       (ds : Array (Declaration .anon)),
       ReadIn b E (fun a => a ∈ seeds) ev ds ∧
@@ -674,8 +675,9 @@ open _root_.IxVM.Consistency in
 set theory, the reading a `ConsistentRead` exhibits, if it holds the pinned `Nat` block
 and a proposition `T`, holds no such pair at input or role keys. -/
 theorem consistentRead_no_natRec_false (V : Type w) [SetTheory V]
+    {W : _root_.IxVM.Refinement.View}
     {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {seeds : List _root_.Address}
-    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} calls b seeds) :
+    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} W calls b seeds) :
     ∃ (E : _root_.Ixon.Env) (ev : Evidences .anon)
       (ds : Array (Declaration .anon)),
       ReadIn b E (fun a => a ∈ seeds) ev ds ∧

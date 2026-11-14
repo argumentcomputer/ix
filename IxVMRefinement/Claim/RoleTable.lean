@@ -97,17 +97,12 @@ theorem admitBinding_inv {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTa
       exact ⟨hh, hwf_wire, hto.symm, hlist, hchk, hwf⟩
 
 theorem readerTable_admits {c : _root_.Ix.Claim} {V : View} {b : Ix.Kernel.Admission.Binding}
-    (hDef : Ix.Cert.RoleClosure.DefaultAdmits)
+    (_hDef : Ix.Cert.RoleClosure.DefaultAdmits)
     (hRT : IxVM.Consistency.ReaderTable c V b) :
     ∃ t : Ix.Kernel.RoleTable,
       Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t := by
-  rcases hRT.2 with hdef | ⟨t, hadm, -, -⟩
-  · obtain ⟨b', t, hdef', hadm⟩ := hDef
-    rw [hdef] at hdef'
-    injection hdef' with hb
-    subst hb
-    exact ⟨t, hadm⟩
-  · exact ⟨t, hadm⟩
+  obtain ⟨t, hadm, -, -⟩ := hRT.2
+  exact ⟨t, hadm⟩
 
 private theorem find_fst_of_mem_nodup {l : List (Ix.Kernel.Role × _root_.Address)}
     (hnd : (l.map (·.1)).Nodup) {ro : Ix.Kernel.Role} {a : _root_.Address}
