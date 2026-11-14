@@ -1262,10 +1262,9 @@ theorem DeclIndVmRunJ.toTrivDefEq {J : Judgements .anon} {env : Env .anon}
     DeclIndRunJ (trivDefEqOf J) env block env₂ := by
   obtain ⟨hsplit, envM, hmem, hrecs⟩ := h
   refine ⟨?_, envM, ?_, ?_⟩
-  · rw [hsplit]
-    exact congrArg₂ List.append
-      (List.filter_congr fun ci _ => by cases ci <;> rfl)
-      (List.filter_congr fun ci _ => by cases ci <;> rfl)
+  · exact hsplit.trans (congrArg₂ List.append
+      (filter_eq_of_forall _ block fun ci => by cases ci <;> rfl)
+      (filter_eq_of_forall _ block fun ci => by cases ci <;> rfl))
   · rw [filter_eq_of_forall isNonRecInfo block (fun ci => by cases ci <;> rfl)]
     exact IndMembersRunJ.toTrivDefEq hmem
   · rw [filter_eq_of_forall isRecInfo block (fun ci => by cases ci <;> rfl)]
