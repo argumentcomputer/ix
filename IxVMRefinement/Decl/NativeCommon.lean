@@ -184,7 +184,7 @@ theorem Tm.letFree {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
 theorem TmExact.letFree {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : TmExact κ d Γ h k E p) :
     letFree E = true :=
-  rep.toTm.letFree
+  Tm.letFree rep.toTm
 
 /-! ## Route injectors into `DeclRunJ` -/
 
@@ -233,7 +233,7 @@ theorem Red.forallE_eq {env : Ix.Kernel.Env .anon} {d : Nat} {ty b : KExpr}
 /-! ## Role-key and projection-shape helpers -/
 
 theorem keyOf_not_aux (t : Ix.Kernel.RoleTable) (a : _root_.Address)
-    (k : KKey) (tk : Ix.Kernel.AuxKind) :
+    (k : KKey) (tk : Ix.Kernel.Derived) :
     keyOf t a ≠ .aux k tk := by
   unfold keyOf
   split <;> intro h <;> nomatch h
@@ -272,10 +272,7 @@ theorem DeclStoreInv.consIndEmpty {env : Ix.Kernel.Env .anon} {cv : ConstantVal 
   refine
     { store := Ix.Kernel.Model.storeInv_consTyped (c := .indInfo cv {}) hS.store hfresh hty
         (fun _ _ _ h => nomatch h) (fun _ _ _ _ h => nomatch h) (fun _ h => nomatch h)
-        (fun cv' caps' heq => by
-          injection heq with _ hcaps
-          subst hcaps
-          exact ⟨fun h => nomatch h, fun h => nomatch h⟩)
+        (Ix.Kernel.IndCapsWF.of_caps (fun h => nomatch h) (fun h => nomatch h))
       thmTyped := Ix.Kernel.Model.thmTyped_step_noThm hext hS.thmTyped
         (NewSat.cons fun _ _ h => nomatch h)
       recK := Ix.Kernel.Model.recK_step_noRec hS.store hS.recK hext.find
@@ -338,7 +335,7 @@ theorem DeclStoreInv.consRecNil {env : Ix.Kernel.Env .anon} {cv : ConstantVal .a
           · injection hf with heq
             injection heq with _ _ _ hrls
             subst hrls
-            exact ⟨fun _ hr => nomatch hr, fun _ _ hr => nomatch hr⟩
+            exact ⟨fun _ hr => nomatch hr, fun _ _ hr _ => nomatch hr⟩
           · rw [hf] at hn; exact nomatch hn)
       etaTowers := Ix.Kernel.Model.etaTowers_step_noEta hext hS.etaTowers
         (NewSat.cons fun _ _ h => nomatch h)
@@ -351,8 +348,10 @@ theorem DeclStoreInv.consRecNil {env : Ix.Kernel.Env .anon} {cv : ConstantVal .a
           · injection hf with heq
             injection heq with _ _ _ hrls
             subst hrls
-            exact ⟨fun _ hr => nomatch hr, fun _ _ hr => nomatch hr,
-              fun _ _ hr => nomatch hr, fun _ _ hr => nomatch hr⟩
+            refine { eta := fun _ hr => nomatch hr
+                     plainIdx := fun _ _ hr => nomatch hr
+                     ctorHead := fun _ _ hr => nomatch hr
+                     kParams := fun _ _ hr => nomatch hr }
           · rw [hf] at hn; exact nomatch hn) }
 
 /-! ## `CapsUpgradeAt`: transporting rules derivations from `{}` capabilities to `caps` -/
@@ -488,9 +487,11 @@ theorem strLitSupported_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
     h.pred_caps_inv Ix.Kernel.charOfNatTyOk (fun _ _ _ => rfl)]
 
 theorem natOpStored_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (c : KKey) :
-    Ix.Kernel.natOpStored envᵦ c = Ix.Kernel.natOpStored envₐ c :=
-  h.pred_caps_inv (fun o => match o with | some ci => _ | none => false)
-    (by intro _ _ _; rfl) c
+    Ix.Kernel.natOpStored envᵦ c = Ix.Kernel.natOpStored envₐ c := by
+  unfold Ix.Kernel.natOpStored
+  by_cases hc : c = T
+  · subst hc; rw [h.find_self_b, h.find_self_a]
+  · rw [h.find_ne hc]
 
 theorem natAddTyOk_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
     Ix.Kernel.Rules.natAddTyOk (envᵦ.find? Ix.Kernel.natAddName) =
@@ -510,7 +511,7 @@ theorem headTypePW_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (e : KExpr) (
     Ix.Kernel.headTypePW envᵦ.find? e n = Ix.Kernel.headTypePW envₐ.find? e n := by
   cases e with
   | const I us =>
-    unfold Ix.Kernel.headTypePW
+    simp only [Ix.Kernel.headTypePW]
     by_cases hI : I = T
     · subst hI; rw [h.find_self_b, h.find_self_a]; rfl
     · rw [h.find_ne hI]
@@ -518,21 +519,17 @@ theorem headTypePW_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (e : KExpr) (
 
 theorem typeSortPW_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (E : KExpr) :
     Ix.Kernel.typeSortPW envᵦ.find? E = Ix.Kernel.typeSortPW envₐ.find? E := by
-  by_cases h1 : ∃ ty b m, E = .forallE ty b m
-  · obtain ⟨ty, b, m, rfl⟩ := h1; rfl
-  by_cases h2 : ∃ u, E = .sort u
-  · obtain ⟨u, rfl⟩ := h2; rfl
-  have h1' : ∀ ty b m, E ≠ .forallE ty b m := fun ty b m e => h1 ⟨ty, b, m, e⟩
-  have h2' : ∀ u, E ≠ .sort u := fun u e => h2 ⟨u, e⟩
-  rw [Ix.Kernel.typeSortPW_other h1' h2', Ix.Kernel.typeSortPW_other h1' h2']
-  exact h.headTypePW_eq E 0
+  unfold Ix.Kernel.typeSortPW
+  split
+  · rfl
+  · rfl
+  · exact h.headTypePW_eq E.getAppFn E.numArgs
 
 theorem headProofPW_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (e : KExpr) :
     Ix.Kernel.headProofPW envᵦ.find? e = Ix.Kernel.headProofPW envₐ.find? e := by
   cases e with
   | const c us =>
-    unfold Ix.Kernel.headProofPW
-    simp only [h.typeSortPW_eq]
+    simp only [Ix.Kernel.headProofPW, h.typeSortPW_eq]
     by_cases hc : c = T
     · subst hc; rw [h.find_self_b, h.find_self_a]; rfl
     · rw [h.find_ne hc]
@@ -543,12 +540,73 @@ theorem isProofFast_eq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) (a : KExpr) 
     Ix.Kernel.isProofFast envᵦ.find? a = Ix.Kernel.isProofFast envₐ.find? a := by
   unfold Ix.Kernel.isProofFast
   have hpw : Ix.Kernel.proofPW envᵦ.find? a = Ix.Kernel.proofPW envₐ.find? a := by
-    by_cases hl : ∃ ty b m, a = .lam ty b m
-    · obtain ⟨ty, b, m, rfl⟩ := hl; rfl
-    have hl' : ∀ ty b m, a ≠ .lam ty b m := fun ty b m e => hl ⟨ty, b, m, e⟩
-    rw [Ix.Kernel.proofPW_other hl', Ix.Kernel.proofPW_other hl']
-    exact h.headProofPW_eq a
+    unfold Ix.Kernel.proofPW
+    split
+    · rfl
+    · exact h.headProofPW_eq a.getAppFn
   rw [hpw]
+
+theorem find_ind_any (h : CapsUpgradeAt T cvS caps envₐ envᵦ) {T₀ : KKey}
+    {cvT' : ConstantVal .anon} {caps' : Ix.Kernel.IndCaps .anon}
+    (hT : envₐ.find? T₀ = some (.indInfo cvT' caps')) :
+    ∃ cvT'' caps'', envᵦ.find? T₀ = some (.indInfo cvT'' caps'') := by
+  by_cases hT₀ : T₀ = T
+  · subst hT₀; exact ⟨cvS, caps, h.find_self_b⟩
+  · rw [h.find_ne hT₀]; exact ⟨cvT', caps', hT⟩
+
+theorem find_ind_of_no_rec_head (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
+    {recName : KKey} {cv : ConstantVal .anon} {mI rP : Nat} {rl : RecRule .anon}
+    {cvj : ConstantVal .anon} {cnP cnF : Nat} {T₀ : KKey} {tus : List KLevel}
+    {cvT' : ConstantVal .anon} {caps' : Ix.Kernel.IndCaps .anon}
+    (hrec : envₐ.find? recName = some (.recInfo cv mI rP [rl]))
+    (hctor : envₐ.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
+    (hhead : (cvj.type.piResult).getAppFn = .const T₀ tus)
+    (hT : envₐ.find? T₀ = some (.indInfo cvT' caps')) :
+    envᵦ.find? T₀ = some (.indInfo cvT' caps') := by
+  have hne : T₀ ≠ T := fun heq => by
+    subst heq
+    exact h.no_rec_head hrec hctor hhead
+  rwa [h.find_ne hne]
+
+theorem find_ind_of_eta (h : CapsUpgradeAt T cvS caps envₐ envᵦ) {T₀ : KKey}
+    {cvT' : ConstantVal .anon} {caps' : Ix.Kernel.IndCaps .anon}
+    (hT : envₐ.find? T₀ = some (.indInfo cvT' caps')) (heta : caps'.eta = true) :
+    envᵦ.find? T₀ = some (.indInfo cvT' caps') := by
+  have hne : T₀ ≠ T := fun heq => by
+    subst heq
+    rw [h.find_self_a] at hT
+    injection hT with heq'
+    injection heq' with _ hcaps
+    subst hcaps
+    exact nomatch heta
+  rwa [h.find_ne hne]
+
+theorem find_ind_of_unit (h : CapsUpgradeAt T cvS caps envₐ envᵦ) {T₀ : KKey}
+    {cvT' : ConstantVal .anon} {caps' : Ix.Kernel.IndCaps .anon}
+    (hT : envₐ.find? T₀ = some (.indInfo cvT' caps')) (hu : caps'.unitlike = true) :
+    envᵦ.find? T₀ = some (.indInfo cvT' caps') := by
+  have hne : T₀ ≠ T := fun heq => by
+    subst heq
+    rw [h.find_self_a] at hT
+    injection hT with heq'
+    injection heq' with _ hcaps
+    subst hcaps
+    exact nomatch hu
+  rwa [h.find_ne hne]
+
+theorem infer_const_upgrade (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
+    {g : Grade} {d : Nat} {n : KKey} {us : List KLevel} {ci : ConstantInfo .anon}
+    (hf : envₐ.find? n = some ci) (htw : ci.isTowerEntry = false)
+    (hlen : us.length = ci.toConstantVal.levelParams.length) :
+    Infer envᵦ g d (.const n us)
+      (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) := by
+  by_cases hn : n = T
+  · subst hn
+    rw [h.find_self_a] at hf
+    injection hf with hci
+    subst hci
+    exact Infer.const h.find_self_b rfl hlen
+  · exact Infer.const (by rwa [h.find_ne hn]) htw hlen
 
 mutual
 
@@ -593,24 +651,16 @@ theorem upgradeRed (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
       (fun hp => h.upgradeDefEqList (hpc hp))
       (h.upgradeCerts hc1) (h.upgradeCerts hc2) hres
       (fun hm => h.upgradeDefEqList (hideq hm))
-  | _, _, _, @Red.rescueK _ _ _ _ _ _ _ _ _ _ _ _ _ _ T₀ _ _ cvT' caps'
-      hrec hk hctor hhead hT hm hrm htfn hust hle hfab hws hlb hfl hcerts hif hdf1 hdf2 => by
-    have hT' : ∃ cvT'' caps'', envᵦ.find? T₀ = some (.indInfo cvT'' caps'') := by
-      by_cases hT₀ : T₀ = T
-      · subst hT₀; exact ⟨cvS, caps, h.find_self_b⟩
-      · rw [h.find_ne hT₀]; exact ⟨cvT', caps', hT⟩
-    obtain ⟨cvT'', caps'', hT'⟩ := hT'
+  | _, _, _, .rescueK hrec hk hctor hhead hT hm hrm htfn hust hle hfab hws hlb hfl hcerts hif
+      hdf1 hdf2 => by
+    obtain ⟨_, _, hT'⟩ := h.find_ind_any hT
     exact .rescueK (h.find_non_ind hrec fun _ _ e => nomatch e) hk
       (h.find_non_ind hctor fun _ _ e => nomatch e) hhead hT'
       (h.upgradeInfer hm) (h.upgradeRed hrm) htfn hust hle hfab hws hlb hfl
       (h.upgradeCerts hcerts) (h.upgradeInfer hif) (h.upgradeDefEq hdf1) (h.upgradeDefEq hdf2)
-  | _, _, _, @Red.rescueEta _ _ _ _ _ _ _ _ _ _ _ _ _ T₀ _ _ cvT' caps'
-      hrec heta hctor hhead hT hm hrm htfn hlen hust hnz hfab hws hlb hfl hcerts hepc hdf => by
-    have hne : T₀ ≠ T := by
-      intro heq
-      subst heq
-      exact h.no_rec_head hrec hctor hhead
-    have hT' : envᵦ.find? T₀ = some (.indInfo cvT' caps') := by rwa [h.find_ne hne]
+  | _, _, _, .rescueEta hrec heta hctor hhead hT hm hrm htfn hlen hust hnz hfab hws hlb hfl
+      hcerts hepc hdf => by
+    have hT' := h.find_ind_of_no_rec_head hrec hctor hhead hT
     rw [← h.etaFabArgsE_eq] at hfab hcerts
     exact .rescueEta (h.find_non_ind hrec fun _ _ e => nomatch e) heta
       (h.find_non_ind hctor fun _ _ e => nomatch e) hhead hT'
@@ -618,13 +668,9 @@ theorem upgradeRed (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
       (h.upgradeCerts hcerts)
       (fun htw => h.upgradeEtaProjCerts (hepc (by rwa [← h.towerSlotsAll_eq])))
       (h.upgradeDefEq hdf)
-  | _, _, _, @Red.rescueAnd _ _ _ _ _ _ _ _ _ _ _ _ _ _ cvT' caps'
-      hrec hctor hhead hT hm hrm htfn hlen hust hand hfab hws hlb hfl hcerts hif hdf1 hdf2 => by
-    have hT' : ∃ cvT'' caps'', envᵦ.find? Ix.Kernel.andName = some (.indInfo cvT'' caps'') := by
-      by_cases hA : (Ix.Kernel.andName : KKey) = T
-      · rw [hA]; exact ⟨cvS, caps, h.find_self_b⟩
-      · rw [h.find_ne hA]; exact ⟨cvT', caps', hT⟩
-    obtain ⟨cvT'', caps'', hT'⟩ := hT'
+  | _, _, _, .rescueAnd hrec hctor hhead hT hm hrm htfn hlen hust hand hfab hws hlb hfl hcerts
+      hif hdf1 hdf2 => by
+    obtain ⟨_, _, hT'⟩ := h.find_ind_any hT
     exact .rescueAnd (h.find_non_ind hrec fun _ _ e => nomatch e)
       (h.find_non_ind hctor fun _ _ e => nomatch e) hhead hT'
       (h.upgradeInfer hm) (h.upgradeRed hrm) htfn hlen hust (h.andRescueSlotsSem_iff hand)
@@ -660,61 +706,29 @@ theorem upgradeDefEq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
   | _, _, _, .unitLike hia hra hua hib hrb hub =>
     .unitLike (h.upgradeInfer hia) (h.upgradeRed hra) (by rwa [h.isUnitLikeTy_eq])
       (h.upgradeInfer hib) (h.upgradeRed hrb) (by rwa [h.isUnitLikeTy_eq])
-  | _, _, _, @DefEq.structEta _ _ _ _ _ _ _ _ _ _ _ T₀ _ cvT' caps'
-      hib hrb hafn hc halen hwfn hT heta hec hnbT hnbc hwlen hus hlps hslots hev hcerts hepc
-      hdp hdf => by
-    have hne : T₀ ≠ T := by
-      intro heq; subst heq
-      rw [h.find_self_a] at hT
-      injection hT with heq'
-      injection heq' with _ hcaps
-      subst hcaps
-      exact nomatch heta
-    have hT' : envᵦ.find? T₀ = some (.indInfo cvT' caps') := by rwa [h.find_ne hne]
+  | _, _, _, .structEta hib hrb hafn hc halen hwfn hT heta hec hnbT hnbc hwlen hus hlps hslots
+      hev hcerts hepc hdp hdf => by
+    have hT' := h.find_ind_of_eta hT heta
     rw [← h.etaProjs_eq] at hdf
     exact .structEta (h.upgradeInfer hib) (h.upgradeRed hrb) hafn
       (h.find_non_ind hc fun _ _ e => nomatch e) halen hwfn hT' heta hec hnbT hnbc hwlen hus hlps
       (by rwa [h.towerSlotsAll_eq, h.recSlotsAll_eq]) hev (h.upgradeCerts hcerts)
       (fun htw => h.upgradeEtaProjCerts (hepc (by rwa [← h.towerSlotsAll_eq])))
       (h.upgradeDefEqList hdp) (h.upgradeDefEqList hdf)
-  | _, _, _, @DefEq.structUnit _ _ _ _ _ _ _ T₀ _ cvT' caps'
-      hia hra hwfn hT hu hnbT hwlen hus hib hrb hde hcerts => by
-    have hne : T₀ ≠ T := by
-      intro heq; subst heq
-      rw [h.find_self_a] at hT
-      injection hT with heq'
-      injection heq' with _ hcaps
-      subst hcaps
-      exact nomatch hu
-    have hT' : envᵦ.find? T₀ = some (.indInfo cvT' caps') := by rwa [h.find_ne hne]
+  | _, _, _, .structUnit hia hra hwfn hT hu hnbT hwlen hus hib hrb hde hcerts => by
+    have hT' := h.find_ind_of_unit hT hu
     exact .structUnit (h.upgradeInfer hia) (h.upgradeRed hra) hwfn hT' hu hnbT hwlen hus
       (h.upgradeInfer hib) (h.upgradeRed hrb) (h.upgradeDefEq hde) (h.upgradeCerts hcerts)
   | _, _, _, .proofIrrelTy hia hta hra hza hib hde =>
     .proofIrrelTy (h.upgradeInfer hia) (h.upgradeInfer hta) (h.upgradeRed hra) hza
       (h.upgradeInfer hib) (h.upgradeDefEq hde)
-  | _, _, _, @DefEq.unitLikeTy _ _ _ _ _ _ T₀ _ cvT' caps'
-      hia hra hwfn hT hu hwlen hcerts hnb hib hde => by
-    have hne : T₀ ≠ T := by
-      intro heq; subst heq
-      rw [h.find_self_a] at hT
-      injection hT with heq'
-      injection heq' with _ hcaps
-      subst hcaps
-      exact nomatch hu
-    have hT' : envᵦ.find? T₀ = some (.indInfo cvT' caps') := by rwa [h.find_ne hne]
+  | _, _, _, .unitLikeTy hia hra hwfn hT hu hwlen hcerts hnb hib hde => by
+    have hT' := h.find_ind_of_unit hT hu
     exact .unitLikeTy (h.upgradeInfer hia) (h.upgradeRed hra) hwfn hT' hu hwlen
       (h.upgradeCerts hcerts) (hnb.imp id (by rw [h.isUnitLikeTy_eq]; exact id))
       (h.upgradeInfer hib) (h.upgradeDefEq hde)
-  | _, _, _, @DefEq.structEtaTy _ _ _ _ _ _ _ _ _ _ T₀ cvT' caps'
-      hafn hc halen hT heta hec hpos htw hia hra hcerts hib hde hdf => by
-    have hne : T₀ ≠ T := by
-      intro heq; subst heq
-      rw [h.find_self_a] at hT
-      injection hT with heq'
-      injection heq' with _ hcaps
-      subst hcaps
-      exact nomatch heta
-    have hT' : envᵦ.find? T₀ = some (.indInfo cvT' caps') := by rwa [h.find_ne hne]
+  | _, _, _, .structEtaTy hafn hc halen hT heta hec hpos htw hia hra hcerts hib hde hdf => by
+    have hT' := h.find_ind_of_eta hT heta
     exact .structEtaTy hafn (h.find_non_ind hc fun _ _ e => nomatch e) halen hT' heta hec hpos
       (by rwa [h.towerSlotsAll_eq]) (h.upgradeInfer hia) (h.upgradeRed hra)
       (h.upgradeCerts hcerts) (h.upgradeInfer hib) (h.upgradeDefEq hde) (h.upgradeDefEqList hdf)
@@ -723,14 +737,7 @@ theorem upgradeInfer (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
     ∀ {g : Grade} {d : Nat} {e t : KExpr}, Infer envₐ g d e t → Infer envᵦ g d e t
   | _, _, _, _, .sort => .sort
   | _, _, _, _, .fvar hlt => .fvar hlt
-  | _, _, _, _, @Infer.const _ _ _ n us ci hf htw hlen => by
-    by_cases hn : n = T
-    · subst hn
-      rw [h.find_self_a] at hf
-      injection hf with hci
-      subst hci
-      exact @Infer.const _ envᵦ _ _ T us (.indInfo cvS caps) h.find_self_b rfl hlen
-    · exact .const (by rwa [h.find_ne hn]) htw hlen
+  | _, _, _, _, .const hf htw hlen => h.infer_const_upgrade hf htw hlen
   | _, _, _, _, .natLit hn => .natLit (by rwa [h.natLitSupported_eq])
   | _, _, _, _, .strLit hs => .strLit (by rwa [h.strLitSupported_eq])
   | _, _, _, _, .forallE hty hrty hbo hrbo hz =>
@@ -777,6 +784,7 @@ private theorem constsResolve_piResult {env : Ix.Kernel.Env .anon} :
     ∀ {e : KExpr}, e.constsResolve env = true → e.piResult.constsResolve env = true
   | .forallE _ b _, h => by
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
+    unfold Expr.piResult
     exact constsResolve_piResult h.2
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
   | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => h
@@ -785,9 +793,15 @@ private theorem constsResolve_getAppFn {env : Ix.Kernel.Env .anon} :
     ∀ {e : KExpr}, e.constsResolve env = true → e.getAppFn.constsResolve env = true
   | .app f _, h => by
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
+    unfold Expr.getAppFn
     exact constsResolve_getAppFn h.1
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h
   | .lam _ _ _, h | .forallE _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => h
+
+private theorem env_find?_cons_ne {c : ConstantInfo .anon} {env : Ix.Kernel.Env .anon} {k : KKey}
+    (hne : c.name ≠ k) :
+    (Ix.Kernel.Env.mk (c :: env.consts)).find? k = env.find? k := by
+  rw [Ix.Kernel.Env.find?_cons, if_neg hne]
 
 /-- Construct `CapsUpgradeAt` between `⟨.indInfo cvS {} :: env.consts⟩` and
 `⟨.indInfo cvS caps :: env.consts⟩` for a fresh unpinned inductive `cvS.name`. -/
@@ -797,11 +811,11 @@ theorem CapsUpgradeAt.of_fresh_ind {env : Ix.Kernel.Env .anon} {cvS : ConstantVa
     (hnb : Ix.Kernel.reservedBasisNames.contains cvS.name = false) :
     CapsUpgradeAt cvS.name cvS caps
       ⟨.indInfo cvS {} :: env.consts⟩ ⟨.indInfo cvS caps :: env.consts⟩ where
-  find_self_a := by simp [Ix.Kernel.Env.find?]
-  find_self_b := by simp [Ix.Kernel.Env.find?]
+  find_self_a := Ix.Kernel.Env.find?_cons_self (.indInfo cvS {}) env
+  find_self_b := Ix.Kernel.Env.find?_cons_self (.indInfo cvS caps) env
   find_ne := fun {k} hne => by
     have hne' : cvS.name ≠ k := fun e => hne e.symm
-    rw [Ix.Kernel.EnvExt.find?_cons_ne hne', Ix.Kernel.EnvExt.find?_cons_ne hne']
+    rw [env_find?_cons_ne hne', env_find?_cons_ne hne']
   no_rec_head := fun {recName cv mI rP rl cvj cnP cnF tus} hrec hctor hhead => by
     have hrec_env : env.find? recName = some (.recInfo cv mI rP [rl]) := by
       rw [Ix.Kernel.Env.find?_cons] at hrec
@@ -813,7 +827,7 @@ theorem CapsUpgradeAt.of_fresh_ind {env : Ix.Kernel.Env .anon} {cvS : ConstantVa
       split at hctor
       · exact nomatch hctor
       · exact hctor
-    have hwf := hstore.wf.of_find hctor_env
+    have hwf := hstore.wf _ (List.mem_of_find?_eq_some hctor_env)
     have hcr : cvj.type.constsResolve env = true := hwf.2.2.1
     have hfn := constsResolve_getAppFn (constsResolve_piResult hcr)
     rw [hhead] at hfn
@@ -831,15 +845,18 @@ theorem CapsUpgradeAt.consCtor {T : KKey} {cvS : ConstantVal .anon}
     CapsUpgradeAt T cvS caps
       ⟨.ctorInfo cvC nP nF :: envₐ.consts⟩ ⟨.ctorInfo cvC nP nF :: envᵦ.consts⟩ where
   find_self_a := by
-    rw [Ix.Kernel.EnvExt.find?_cons_ne hC_ne]
+    rw [env_find?_cons_ne (c := .ctorInfo cvC nP nF) hC_ne]
     exact h.find_self_a
   find_self_b := by
-    rw [Ix.Kernel.EnvExt.find?_cons_ne hC_ne]
+    rw [env_find?_cons_ne (c := .ctorInfo cvC nP nF) hC_ne]
     exact h.find_self_b
   find_ne := fun {k} hne => by
     by_cases hk : cvC.name = k
-    · subst hk; simp [Ix.Kernel.Env.find?]
-    · rw [Ix.Kernel.EnvExt.find?_cons_ne hk, Ix.Kernel.EnvExt.find?_cons_ne hk]
+    · subst hk
+      rw [Ix.Kernel.Env.find?_cons_self (.ctorInfo cvC nP nF) envᵦ,
+        Ix.Kernel.Env.find?_cons_self (.ctorInfo cvC nP nF) envₐ]
+    · rw [env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk,
+        env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk]
       exact h.find_ne hne
   no_rec_head := fun {recName cv mI rP rl cvj cnP cnF tus} hrec hctor => by
     have hrec_a : envₐ.find? recName = some (.recInfo cv mI rP [rl]) := by
@@ -850,11 +867,11 @@ theorem CapsUpgradeAt.consCtor {T : KKey} {cvS : ConstantVal .anon}
     have hctor_a : envₐ.find? rl.ctor = some (.ctorInfo cvj cnP cnF) := by
       rw [Ix.Kernel.Env.find?_cons] at hctor
       split at hctor
-      · rename_i hbeq
-        have heq : cvC.name = rl.ctor := beq_iff_eq.mp hbeq
-        obtain ⟨_, cvj', nF', hfc⟩ :=
-          Ix.Kernel.Open.recRules_fire hrec_ctors hrec_a List.mem_cons_self
-        rw [← heq, hfresh_a] at hfc
+      · rename_i heq
+        have heq' : cvC.name = rl.ctor := heq
+        obtain ⟨⟨cvj', hfc, -⟩, -, -⟩ :=
+          hrec_ctors recName cv mI rP [rl] hrec_a rl List.mem_cons_self
+        rw [← heq', hfresh_a] at hfc
         exact nomatch hfc
       · exact hctor
     exact h.no_rec_head hrec_a hctor_a
@@ -879,7 +896,7 @@ theorem envExt_consSumCtors (nP : Nat) :
       intro c' hc'
       have hne : c.1.name ≠ c'.1.name := fun he =>
         hnd.1 (by rw [he]; exact List.mem_map.mpr ⟨c', hc', rfl⟩)
-      rw [Ix.Kernel.EnvExt.find?_cons_ne hne]
+      rw [env_find?_cons_ne (c := .ctorInfo c.1 nP c.2) hne]
       exact hfresh c' (List.mem_cons_of_mem _ hc')
     exact hext₁.trans (envExt_consSumCtors nP cs hnd.2 hfresh'
       (fun c' hc' => hsh c' (List.mem_cons_of_mem _ hc')))
@@ -902,19 +919,17 @@ theorem DeclStoreInv.consSumCtors (nP : Nat) :
     have hnp := ne_projTableName_of_isProjFnShape_false (hsh c List.mem_cons_self)
     have hS₁ : DeclStoreInv ⟨.ctorInfo c.1 nP c.2 :: env.consts⟩ :=
       hS.consCtor (hfresh c List.mem_cons_self) hnp (hty c List.mem_cons_self)
-    have hext₁ : Ix.Kernel.EnvExt env ⟨.ctorInfo c.1 nP c.2 :: env.consts⟩ :=
-      envExt_cons_nonProj (hfresh c List.mem_cons_self) hnp
     have hfresh' : ∀ c' ∈ cs,
         (Ix.Kernel.Env.mk (.ctorInfo c.1 nP c.2 :: env.consts)).find? c'.1.name = none := by
       intro c' hc'
       have hne : c.1.name ≠ c'.1.name := fun he =>
         hnd.1 (by rw [he]; exact List.mem_map.mpr ⟨c', hc', rfl⟩)
-      rw [Ix.Kernel.EnvExt.find?_cons_ne hne]
+      rw [env_find?_cons_ne (c := .ctorInfo c.1 nP c.2) hne]
       exact hfresh c' (List.mem_cons_of_mem _ hc')
     refine DeclStoreInv.consSumCtors nP cs hS₁ hnd.2 hfresh'
       (fun c' hc' => hsh c' (List.mem_cons_of_mem _ hc')) (fun c' hc' => ?_)
     obtain ⟨hfv, hlpd, hcr, hlbd⟩ := hty c' (List.mem_cons_of_mem _ hc')
-    exact ⟨hfv, hlpd, hext₁.constsResolve hcr, hlbd⟩
+    exact ⟨hfv, hlpd, Ix.Kernel.Expr.constsResolve_mono hcr, hlbd⟩
 
 theorem CapsUpgradeAt.consSumCtors (nP : Nat) {T : KKey} {cvS : ConstantVal .anon}
     {caps : Ix.Kernel.IndCaps .anon} :
@@ -941,22 +956,20 @@ theorem CapsUpgradeAt.consSumCtors (nP : Nat) {T : KKey} {cvS : ConstantVal .ano
       rw [heq, hup.find_self_a] at hfc
       exact nomatch hfc
     have hnp := ne_projTableName_of_isProjFnShape_false (hsh c List.mem_cons_self)
-    have hup₁ := hup.consCtor hSₐ.store.rec_ctors hC_ne hfc
+    have hup₁ := hup.consCtor (cvC := c.1) (nP := nP) (nF := c.2) hSₐ.store.rec_ctors hC_ne hfc
     have hSₐ₁ : DeclStoreInv ⟨.ctorInfo c.1 nP c.2 :: envₐ.consts⟩ :=
       hSₐ.consCtor hfc hnp (hty c List.mem_cons_self)
-    have hext₁ : Ix.Kernel.EnvExt envₐ ⟨.ctorInfo c.1 nP c.2 :: envₐ.consts⟩ :=
-      envExt_cons_nonProj hfc hnp
     have hfresh' : ∀ c' ∈ cs,
         (Ix.Kernel.Env.mk (.ctorInfo c.1 nP c.2 :: envₐ.consts)).find? c'.1.name = none := by
       intro c' hc'
       have hne : c.1.name ≠ c'.1.name := fun he =>
         hnd.1 (by rw [he]; exact List.mem_map.mpr ⟨c', hc', rfl⟩)
-      rw [Ix.Kernel.EnvExt.find?_cons_ne hne]
+      rw [env_find?_cons_ne (c := .ctorInfo c.1 nP c.2) hne]
       exact hfresh c' (List.mem_cons_of_mem _ hc')
     refine CapsUpgradeAt.consSumCtors nP cs hup₁ hSₐ₁ hnd.2 hfresh'
       (fun c' hc' => hsh c' (List.mem_cons_of_mem _ hc')) (fun c' hc' => ?_)
     obtain ⟨hfv, hlpd, hcr, hlbd⟩ := hty c' (List.mem_cons_of_mem _ hc')
-    exact ⟨hfv, hlpd, hext₁.constsResolve hcr, hlbd⟩
+    exact ⟨hfv, hlpd, Ix.Kernel.Expr.constsResolve_mono hcr, hlbd⟩
 
 /-! ## `ConstantValCheckJ` from `validate_expr_well_scoped` + `k_ensure_sort` -/
 
@@ -1026,7 +1039,11 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
   obtain ⟨sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩ :=
     core_ensure_sort hCore hrc hty (ghostScoped_zero Γ) hef hlf hgood ev_sort
       (((hv.2.2.2 0 Γ).mono ext).toTm)
-  have hcr_pos := infer_constsResolve hinf₀ hstore ((hv.2.2.2 0 Γ).toTm.hasFvar_false)
+  have hfv_pos : (posOf cv'.levelParams cv'.type).hasFvar = false := by
+    unfold posOf
+    rw [Ix.Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact annotates_hasFvar_false hvs.2.2 hfv
+  have hcr_pos := infer_constsResolve hinf₀ hstore hfv_pos
   rw [constsResolve_posOf] at hcr_pos
   obtain ⟨sty, u, hinf, hred⟩ := hpos sty₀ u₀ hinf₀ hred₀
   have hcv_eq : cv' = { cv with type := cv'.type } := by
@@ -1034,7 +1051,8 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
     cases hvs.1; cases hvs.2.1
     rfl
   refine ⟨⟨cv'.type, ⟨Option.isNone_iff_eq_none.mpr hfresh, hbasis, hshape, hnd_cv,
-    hlbd, hfv, annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
+    annotates_looseBVarsBounded hvs.2.2 0 hlbd, annotates_hasFvar_false hvs.2.2 hfv,
+    annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
 /-! ## Semantic level-list equivalence, `ExprSemEq`, and `WrapRelSem` -/
@@ -1100,7 +1118,7 @@ theorem ExprSemEq.liftLooseBVars {e e' : KExpr} (h : ExprSemEq e e') :
     intro n c
     simp only [Expr.liftLooseBVars]
     split <;> exact .bvar _
-  | fvar _ iht => intro n c; exact .fvar (iht n c)
+  | fvar ht _ => intro _ _; exact .fvar ht
   | sort hu => intro _ _; exact .sort hu
   | const hus => intro _ _; exact .const hus
   | lit l => intro _ _; exact .lit l
@@ -1120,7 +1138,7 @@ theorem ExprSemEq.instantiate1Lift {v v' : KExpr} (hv : ExprSemEq v v') {b b' : 
     split
     · exact hv.liftLooseBVars j 0
     · split <;> exact .bvar _
-  | fvar _ iht => intro j; exact .fvar (iht j)
+  | fvar ht _ => intro _; exact .fvar ht
   | sort hu => intro _; exact .sort hu
   | const hus => intro _; exact .const hus
   | lit l => intro _; exact .lit l
@@ -1390,7 +1408,7 @@ private theorem kexpr_struct_eq_tm_aux {κ : _root_.Address → KKey} {d : Nat} 
           subst haeq
           obtain ⟨hlseq, _⟩ := level_list_struct_eq_one hrlsa hrlsb ev241
           subst hlseq
-          exact .const (husa.trans husb.symm)
+          exact .const (LvEqList.trans husa (LvEqList.symm husb))
         · exact absurd (Value.field.inj he263) one_ne_zero
         · exact absurd (Value.field.inj he270) one_ne_zero
         · obtain ⟨Efa, Eaa, rfl, hfa, haa⟩ := ha.app_of_load ld12
@@ -1515,7 +1533,9 @@ theorem nat_eq_of_field_eq {a b : Nat} (ha : a < 549755813888) (hb : b < 5497558
 theorem succ_field_ne_zero {m : Nat} (hm : m + 1 < 549755813888) :
     (.field ((m + 1 : Nat) : F) : SourceValue F) ≠ .field 0 := by
   intro h
-  have := nat_eq_of_field_eq hm (by decide) h
+  have h' : (.field ((m + 1 : Nat) : F) : SourceValue F) = .field ((0 : Nat) : F) := by
+    simpa using h
+  have := nat_eq_of_field_eq hm (by decide) h'
   omega
 
 theorem evalBinOp_sub_succ (m : Nat) {v : SourceValue F}
@@ -1603,15 +1623,15 @@ theorem assert_lvls_are_params_spec :
     rcases Obs.«KernelCheck::assert_lvls_are_params».obs ev with
       ⟨v26, m29, cs37, _, ev39, heq54, _, rfl, hc59⟩ | ⟨_, _, _, _, _, _, _, _, hne, _, _, _, _, _, _, _, _, _⟩
     · subst hc59
+      have hrep : RepList klevelListEnum RepKLevel h us plvls := by
+        rwa [klevelListEnum_eq]
       have hlen_lt : us.length < 549755813888 := by
-        have hrep : RepList Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» RepKLevel h us plvls := by
-          rwa [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, ← klevelListEnum_eq]
         simpa using RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hrep
       rw [← Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol] at ev39
       obtain ⟨hv26, rfl⟩ := Lib.Lists.length_spec
-        (t := .ptr (.named "KernelTypes::KLevelNode" [])) (R := RepKLevel) ev39 hus
+        (t := klevelTy) (R := RepKLevel) ev39 hrep
       rw [hv26] at heq54
-      have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) heq54
+      have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) (by simpa using heq54)
       exact ⟨List.eq_nil_of_length_eq_zero hlen0, rfl⟩
     · exact absurd rfl hne
   | m + 1, idx, us, plvls, r, h, h', cs, hlt, hbnd, hus, ev => by
@@ -1621,11 +1641,11 @@ theorem assert_lvls_are_params_spec :
         ev158, _, rfl, hc203⟩
     · exact absurd hv (succ_field_ne_zero (by omega))
     · subst hc203
-      have hrep : RepList Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» RepKLevel h us plvls := by
-        rwa [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, ← klevelListEnum_eq]
+      have hrep : RepList klevelListEnum RepKLevel h us plvls := by
+        rwa [klevelListEnum_eq]
       obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hrep ld75
       have hrest' : RepKLevelList h rest x_rest := by
-        rwa [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, ← klevelListEnum_eq] at hrest
+        rwa [← klevelListEnum_eq]
       obtain ⟨p, rfl, hp, rfl⟩ := LevelsAux.param_of_load hu ld104
       have hp_eq : p = idx := nat_eq_of_field_eq (by omega) (by omega) heq144
       subst hp_eq
