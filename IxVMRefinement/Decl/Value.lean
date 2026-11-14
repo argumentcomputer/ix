@@ -1299,11 +1299,14 @@ theorem quotDecl_step {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
   | type =>
     obtain ⟨hrun, hinst⟩ := basis_step_of_fresh (d := .quotDecl .type cv) .quotK rfl
       (fun _ => hx.quotEqStored (Or.inl ⟨cv, rfl⟩)) hx.installsFresh
+    have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.quotDecl .type cv)
+        ⟨BasisKind.quotK.declsA.reverse ++ env.consts⟩ := hrun
     exact ⟨⟨BasisKind.quotK.declsA.reverse ++ env.consts⟩, hinst,
-      fun _ _ hInv => hInv.step_declRunJ hrun⟩
+      fun _ _ hInv => hInv.step_declRunJ hdecl⟩
   | ctor => exact ⟨env, installStep_empty rfl, fun _ _ h => h⟩
   | lift => exact ⟨env, installStep_empty rfl, fun _ _ h => h⟩
   | ind => exact ⟨env, installStep_empty rfl, fun _ _ h => h⟩
+  | sound => exact ⟨env, installStep_empty rfl, fun _ _ h => h⟩
 
 /-- Step preservation for `.basisDecl kind`. -/
 theorem basisDecl_step {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
@@ -1313,8 +1316,10 @@ theorem basisDecl_step {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInv V env → DeclInv V env₂ := by
   obtain ⟨hrun, hinst⟩ := basis_step_of_fresh (d := .basisDecl kind) kind rfl
     (fun hk => hx.quotEqStored (Or.inr (Or.inl (hk ▸ rfl)))) hx.installsFresh
+  have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.basisDecl kind)
+      ⟨kind.declsA.reverse ++ env.consts⟩ := hrun
   exact ⟨⟨kind.declsA.reverse ++ env.consts⟩, hinst,
-    fun _ _ hInv => hInv.step_declRunJ hrun⟩
+    fun _ _ hInv => hInv.step_declRunJ hdecl⟩
 
 /-- Step preservation for pinned `.indDecl block nP` (`basisPinHit block = some kind`). -/
 theorem pinnedIndDecl_step {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
