@@ -173,15 +173,15 @@ theorem packChunks_lt : ∀ {cs : List Nat}, cs ≠ [] → (∀ c ∈ cs, c < 42
     exact hbd c (by simp)
   | c :: d :: cs, _, hbd => by
     simp only [packChunks, List.length_cons]
-    have hc : c < 4294967296 := hbd c (by simp)
-    have hrest : packChunks (d :: cs) < 4294967296 ^ (d :: cs).length :=
+    have hc : c + 1 ≤ 4294967296 := hbd c (by simp)
+    have hrest : packChunks (d :: cs) < 4294967296 ^ (cs.length + 1) :=
       packChunks_lt (by simp) (fun x hx => hbd x (by simp [hx]))
-    set B := 4294967296 ^ (d :: cs).length
-    have hle : (c + 1) * B ≤ 4294967296 * B := Nat.mul_le_mul_right B hc
-    have hexp : (c + 1) * B = c * B + B := (Nat.add_mul c 1 B).trans (by simp)
-    have hpow : 4294967296 ^ (cs.length + 1 + 1) = 4294967296 * B := by
-      simp [B, Nat.pow_succ, Nat.mul_comm]
-    omega
+    set B := 4294967296 ^ (cs.length + 1)
+    calc c * B + packChunks (d :: cs)
+        < c * B + B := Nat.add_lt_add_left hrest (c * B)
+      _ = (c + 1) * B := by ring
+      _ ≤ 4294967296 * B := Nat.mul_le_mul_right B hc
+      _ = 4294967296 ^ (cs.length + 1 + 1) := by rw [Nat.pow_succ, Nat.mul_comm]
 
 theorem mul_add_inj {x y rx ry B : Nat} (hrx : rx < B) (hry : ry < B)
     (heq : x * B + rx = y * B + ry) : x = y ∧ rx = ry := by
@@ -236,7 +236,7 @@ theorem thenCmp_packChunks {x y : Nat} {xs ys : List Nat}
       have hry : packChunks (y2 :: ys') < 4294967296 ^ (x2 :: xs').length := by
         rw [hlen]
         exact packChunks_lt (by simp) hy
-      have key := thenCmp_cmpNat hrx hry
+      have key := thenCmp_cmpNat (x := x) (y := y) hrx hry
       simpa [packChunks, hlen] using key
 
 /-- The eight 32-bit chunks of a 32-byte address. -/
@@ -345,8 +345,7 @@ theorem canon_addr_chunk_spec {a0 a1 a2 a3 b0 b1 b2 b3 : UInt8}
   obtain ⟨v1, x9, x17, y18, x25, y26, v61, x69, x77, y78, x85, y86, cs124,
     op40, op49, op32, op58, op24, op16, op100, op109, op92, op118, op84, op76, ev126, -⟩ :=
     Obs.«RBTreeMap::canon_addr_chunk».obs ev
-  simp only [evalBinOp, Except.ok.injEq] at
-    op40 op49 op32 op58 op24 op16 op100 op109 op92 op118 op84 op76
+  simp only [evalBinOp, Except.ok.injEq] at op40 op49 op32 op58 op24 op16 op100 op109 op92 op118 op84 op76
   subst op40 op49 op32 op58 op24 op16 op100 op109 op92 op118 op84 op76
   have hx : ((a0.toNat : F) * 16777216 + (a1.toNat : F) * 65536 +
       (a2.toNat : F) * 256 + (a3.toNat : F)) = (packChunk a0 a1 a2 a3 : F) := by
@@ -427,25 +426,25 @@ private theorem computes_chunk {h : Heap F} {locals : List (String × SourceValu
       (.call "RBTreeMap::canon_addr_chunk" (some []) [e0, e1, e2, e3, f0, f1, f2, f3])
       (cmpNat (packChunk a0 a1 a2 a3) (packChunk b0 b1 b2 b3) : F) := by
   intro r h' cs d
-  obtain ⟨vs, m, c1, c2, args, ev, -⟩ := d.call_inv
+  obtain ⟨vs, m, c1, c2, a0_args, ev, -⟩ := d.call_inv
   rw [instanceName_plain_some] at ev
-  obtain ⟨v0, _, m0, _, _, rfl, d0, args, -⟩ := args.cons_inv
+  obtain ⟨v0, vs1, m0, _, _, rfl, d0, a1_args, -⟩ := a0_args.cons_inv
   obtain ⟨rfl, rfl⟩ := ha0 _ _ _ d0
-  obtain ⟨v1, _, m1, _, _, rfl, d1, args, -⟩ := args.cons_inv
+  obtain ⟨v1, vs2, m1, _, _, rfl, d1, a2_args, -⟩ := a1_args.cons_inv
   obtain ⟨rfl, rfl⟩ := ha1 _ _ _ d1
-  obtain ⟨v2, _, m2, _, _, rfl, d2, args, -⟩ := args.cons_inv
+  obtain ⟨v2, vs3, m2, _, _, rfl, d2, a3_args, -⟩ := a2_args.cons_inv
   obtain ⟨rfl, rfl⟩ := ha2 _ _ _ d2
-  obtain ⟨v3, _, m3, _, _, rfl, d3, args, -⟩ := args.cons_inv
+  obtain ⟨v3, vs4, m3, _, _, rfl, d3, a4_args, -⟩ := a3_args.cons_inv
   obtain ⟨rfl, rfl⟩ := ha3 _ _ _ d3
-  obtain ⟨w0, _, n0, _, _, rfl, g0, args, -⟩ := args.cons_inv
+  obtain ⟨w0, vs5, n0, _, _, rfl, g0, a5_args, -⟩ := a4_args.cons_inv
   obtain ⟨rfl, rfl⟩ := hb0 _ _ _ g0
-  obtain ⟨w1, _, n1, _, _, rfl, g1, args, -⟩ := args.cons_inv
+  obtain ⟨w1, vs6, n1, _, _, rfl, g1, a6_args, -⟩ := a5_args.cons_inv
   obtain ⟨rfl, rfl⟩ := hb1 _ _ _ g1
-  obtain ⟨w2, _, n2, _, _, rfl, g2, args, -⟩ := args.cons_inv
+  obtain ⟨w2, vs7, n2, _, _, rfl, g2, a7_args, -⟩ := a6_args.cons_inv
   obtain ⟨rfl, rfl⟩ := hb2 _ _ _ g2
-  obtain ⟨w3, _, n3, _, _, rfl, g3, args, -⟩ := args.cons_inv
+  obtain ⟨w3, vs8, n3, _, _, rfl, g3, a8_args, -⟩ := a7_args.cons_inv
   obtain ⟨rfl, rfl⟩ := hb3 _ _ _ g3
-  obtain ⟨rfl, rfl, -⟩ := args.nil_inv
+  obtain ⟨rfl, rfl, -⟩ := a8_args.nil_inv
   exact canon_addr_chunk_spec ev
 
 private theorem computes_then {h : Heap F} {locals : List (String × SourceValue F)}
@@ -457,13 +456,13 @@ private theorem computes_then {h : Heap F} {locals : List (String × SourceValue
       (.call "RBTreeMap::canon_ord_then" (some []) [e1, e2])
       (thenCmp c1 c2 : F) := by
   intro r h' cs d
-  obtain ⟨vs, m, ca, cb, args, ev, -⟩ := d.call_inv
+  obtain ⟨vs, m, ca, cb, a0_args, ev, -⟩ := d.call_inv
   rw [instanceName_plain_some] at ev
-  obtain ⟨v1, _, m1, _, _, rfl, d1, args, -⟩ := args.cons_inv
+  obtain ⟨v1, vs1, m1, _, _, rfl, d1, a1_args, -⟩ := a0_args.cons_inv
   obtain ⟨rfl, rfl⟩ := h1 _ _ _ d1
-  obtain ⟨v2, _, m2, _, _, rfl, d2, args, -⟩ := args.cons_inv
+  obtain ⟨v2, vs2, m2, _, _, rfl, d2, a2_args, -⟩ := a1_args.cons_inv
   obtain ⟨rfl, rfl⟩ := h2 _ _ _ d2
-  obtain ⟨rfl, rfl, -⟩ := args.nil_inv
+  obtain ⟨rfl, rfl, -⟩ := a2_args.nil_inv
   exact canon_ord_then_spec hc1 ev
 
 local macro "rbtree_lookup" : tactic =>
@@ -526,13 +525,9 @@ theorem canon_addr_cmp_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (
     unfold addrRank addrChunks
     change thenCmp _ (thenCmp _ (thenCmp _ (thenCmp _ (thenCmp _ (thenCmp _
       (thenCmp (cmpNat _ _) (cmpNat (packChunks [_]) (packChunks [_])))))))) = _
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
-    rw [thenCmp_packChunks (by simp) (by simp) (by simp [bnd]) (by simp [bnd])]
+    repeat rw [thenCmp_packChunks (by simp) (by simp)
+      (by simp only [List.forall_mem_cons, List.forall_mem_nil, bnd, and_self, and_true])
+      (by simp only [List.forall_mem_cons, List.forall_mem_nil, bnd, and_self, and_true])]
   exact ⟨hr.trans (congrArg Value.field (congrArg Nat.cast hfold)), hh⟩
 
 end CanonAddrCmp
