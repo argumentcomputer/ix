@@ -394,43 +394,43 @@ theorem RawCIRep.mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {a : _root_.Address
   unfold RawCIRep at r ⊢
   cases hc : c.info with
   | defn _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
   | axio _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
   | quot _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
   | recr _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb, hraw.mono ext (fun _ hm => hm)⟩
   | dPrj _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, d, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, d, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
   | iPrj _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, ind, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, ind, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
   | cPrj _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs, h1, h2, h3, h4, h5, h6, h7, h8, hb, hraw⟩ := r
     exact ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs, h1, h2, h3, h4, h5, h6, h7, h8, hb,
       hraw.mono ext (fun _ hm => hm)⟩
   | rPrj _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, rc, blobs, h1, h2, h3, h4, h5, h6, h7, hb, hraw⟩ := r
     exact ⟨hidx, lcB, cb, ms, rc, blobs, h1, h2, h3, h4, h5, h6, h7, hb,
       hraw.mono ext (fun _ hm => hm)⟩
   | muts _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     exact r
 
 theorem RawCIPtrRep.mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {ptr : SourceValue F}
@@ -461,23 +461,23 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
   unfold RawCIRep at r ⊢
   cases hc : c.info with
   | defn _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
   | axio _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
   | quot _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
   | recr _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨blobs, hb, hraw⟩ := r
     exact ⟨blobs, hb.env_mono hc_raw hblobs, hraw⟩
   | dPrj p =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, d, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
@@ -486,7 +486,7 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
     exact ⟨hidx, lcB', cb, ms, d, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
   | iPrj p =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, ind, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
@@ -495,7 +495,7 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
     exact ⟨hidx, lcB', cb, ms, ind, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
   | cPrj p =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, hcidx, lcB, cb, ms, ind, ct, blobs,
       hgetB, hlcB, _, hexB, hdeB, hcb, hms, hct, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
@@ -505,7 +505,7 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
     exact ⟨hidx, hcidx, lcB', cb, ms, ind, ct, blobs, hgetB', hlcB', hrecB', hexB, hdeB,
       hcb, hms, hct, hb.env_mono hc_raw hblobs, hraw⟩
   | rPrj p =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     obtain ⟨hidx, lcB, cb, ms, rc, blobs, hgetB, hlcB, _, hexB, hdeB, hcb, hms, hb, hraw⟩ := r
     obtain ⟨lcB', hgetB', hget_eq, hraw_eq⟩ := hconsts p.block lcB hgetB
     have hlcB' : lcB'.get? = some cb := hget_eq.trans hlcB
@@ -514,7 +514,7 @@ theorem RawCIRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {a : _root_.Addres
     exact ⟨hidx, lcB', cb, ms, rc, blobs, hgetB', hlcB', hrecB', hexB, hdeB, hcb, hms,
       hb.env_mono hc_raw hblobs, hraw⟩
   | muts _ =>
-    rw [hc] at r ⊢
+    rw [hc] at r
     exact r
 
 theorem RawCIPtrRep.env_mono {E₀ E₁ : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
@@ -813,7 +813,7 @@ private theorem is_unsafe_ci_defnValShape_spec {d : Ixon.Definition}
       rw [he]
       unfold defnIsUnsafeCI
       rw [hk]
-      cases hds : d.safety <;> rw [hds] <;> rfl
+      cases d.safety <;> rfl
     | Quot _ _ _ _ _ _ _ hv => simp at hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv => simp at hv
     | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv => simp at hv
