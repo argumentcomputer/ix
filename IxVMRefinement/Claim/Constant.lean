@@ -436,6 +436,23 @@ private theorem getAddress_of_drop {bytes : List UInt8} {i : Nat}
 
 /-! ## Flag byte unpacking: `unpack_def_asserts` and `unpack_def_kind_safety` -/
 
+@[simp] private theorem projectValue_tuple_zero (x : SourceValue F) (xs : List (SourceValue F)) :
+    projectValue (.tuple (x :: xs)) 0 = .ok x := rfl
+
+@[simp] private theorem projectValue_tuple_one (x y : SourceValue F) (xs : List (SourceValue F)) :
+    projectValue (.tuple (x :: y :: xs)) 1 = .ok y := rfl
+
+private theorem of_bind_pure_ok {α : Type} {m : Ixon.GetM α} {s s' : Ixon.GetState} {a : α}
+    (h : (m >>= pure) s = .ok a s') : m s = .ok a s' := by
+  simp only [bind, EStateM.bind, pure, EStateM.pure] at h
+  cases hm : m s with
+  | ok x sx => rw [hm] at h; exact h
+  | error e sx => rw [hm] at h; cases h
+
+private theorem singleton_append_toList {α : Type} (x : α) (xs : Array α) :
+    (#[x] ++ xs).toList = x :: xs.toList := by
+  simp
+
 private theorem evalBinOp_mul_natCast (a b : Nat) :
     (evalBinOp .mul (.field (a : F)) (.field (b : F)) : Except EvalError (SourceValue F)) =
       .ok (.field ((a * b : Nat) : F)) := by
@@ -481,9 +498,14 @@ private theorem unpack_def_asserts_arith {b : UInt8} {k : Nat}
     exact (Deserialize.natCast_eq_zero_iff (by omega)).mp h7
   rw [evalBinOp_mul_natCast, Except.ok.injEq] at op119
   rw [← op119] at heq128
+  have hd45_lt : d4 * d5 < 4 := by
+    rcases (by omega : d4 = 0 ∨ d4 = 1) with h4 | h4 <;>
+    rcases (by omega : d5 = 0 ∨ d5 = 1) with h5 | h5 <;>
+    simp [h4, h5]
   have hd45 : d4 * d5 = 0 := by
     injection heq128 with h45
     exact (Deserialize.natCast_eq_zero_iff (by omega)).mp h45
+  have hd45_or : d4 = 0 ∨ d5 = 0 := Nat.eq_zero_or_eq_zero_of_mul_eq_zero hd45
   have hy146 : y146 = .field ((2 * d5 : Nat) : F) := by
     have e := evalBinOp_mul_natCast 2 d5
     simp only [Nat.cast_ofNat] at e
@@ -526,6 +548,28 @@ private def defAssertsOfCode : Nat → Ixon.DefAsserts
   | 5 => ⟨.noRc, true⟩
   | 6 => ⟨.noAlloc, true⟩
   | _ => ⟨.unrestricted, false⟩
+
+private theorem unpack_def_asserts_finish {k c : Nat} {v129 : SourceValue F}
+    (kind : Ix.DefKind) (safety : Ix.DefinitionSafety)
+    (hk : (k = 0 ∧ kind = .defn ∧ safety = .unsaf) ∨
+          (k = 1 ∧ kind = .defn ∧ safety = .safe) ∨
+          (k = 2 ∧ kind = .defn ∧ safety = .part) ∨
+          (k = 4 ∧ kind = .opaq ∧ safety = .unsaf) ∨
+          (k = 5 ∧ kind = .opaq ∧ safety = .safe) ∨
+          (k = 6 ∧ kind = .opaq ∧ safety = .part))
+    (hc : c = 0 ∨ c = 1 ∨ c = 2 ∨ c = 4 ∨ c = 5 ∨ c = 6)
+    (hv129 : v129 = .field ((c : Nat) : F)) :
+    (((UInt8.ofNat (k + 16 * c) >>> 2) &&& 3 > 2) ||
+      ((UInt8.ofNat (k + 16 * c) &&& 3) > 2)) = false ∧
+    Ixon.DefAsserts.ofCode? (UInt8.ofNat (k + 16 * c) >>> 4) = some (defAssertsOfCode c) ∧
+    Ixon.unpackDefKindSafety (UInt8.ofNat (k + 16 * c) &&& 15) = (kind, safety) ∧
+    RepDefAsserts (defAssertsOfCode c) v129 := by
+  rw [hv129]
+  rcases hk with ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩ |
+    ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩ <;>
+  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
+  exact ⟨by decide, by decide, by decide,
+    congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide)⟩
 
 theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
@@ -576,10 +620,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 0) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .defn, .unsaf, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .defn .unsaf
+      (.inl ⟨rfl, rfl, rfl⟩) hc hv129
+    exact ⟨he_h.trans hm2, .defn, .unsaf, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -589,10 +633,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 1) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .defn, .safe, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .defn .safe
+      (.inr (.inl ⟨rfl, rfl, rfl⟩)) hc hv129
+    exact ⟨he_h.trans hm2, .defn, .safe, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -602,10 +646,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 2) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .defn, .part, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .defn .part
+      (.inr (.inr (.inl ⟨rfl, rfl, rfl⟩))) hc hv129
+    exact ⟨he_h.trans hm2, .defn, .part, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -615,10 +659,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 4) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .opaq, .unsaf, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .opaq .unsaf
+      (.inr (.inr (.inr (.inl ⟨rfl, rfl, rfl⟩)))) hc hv129
+    exact ⟨he_h.trans hm2, .opaq, .unsaf, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -628,10 +672,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 5) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .opaq, .safe, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .opaq .safe
+      (.inr (.inr (.inr (.inr (.inl ⟨rfl, rfl, rfl⟩))))) hc hv129
+    exact ⟨he_h.trans hm2, .opaq, .safe, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -641,10 +685,10 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 6) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
     rw [hbeq]
-    rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨he_h.trans hm2, .opaq, .part, defAssertsOfCode _, _, _, v129,
-        by decide, by decide, by decide, he_r, rfl, rfl,
-        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
+    obtain ⟨h1, h2, h3, h4⟩ := unpack_def_asserts_finish .opaq .part
+      (.inr (.inr (.inr (.inr (.inr ⟨rfl, rfl, rfl⟩))))) hc hv129
+    exact ⟨he_h.trans hm2, .opaq, .part, defAssertsOfCode c, _, _, v129,
+      h1, h2, h3, he_r, rfl, rfl, h4⟩
 
 theorem unpack_def_kind_safety_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
@@ -686,43 +730,43 @@ theorem unpack_def_kind_safety_spec {b : UInt8} {r : SourceValue F} {h h' : Heap
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 2 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 2 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 2) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .defn, .part, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 4 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 4 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 4) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .opaq, .unsaf, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 5 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 5 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 5) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .opaq, .safe, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 6 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 6 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 6) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .opaq, .part, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 8 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 8 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 8) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .thm, .unsaf, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 9 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 9 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 9) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .thm, .safe, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
   · obtain ⟨hv, hm2⟩ := Deserialize.u8ToField_refines ev15.erase
     injection hv with hf
-    have hbeq : b = 10 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff hb (by omega)).mp hf.symm)
+    have hbeq : b = 10 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 10) hb (by omega)).mp hf.symm)
     rw [hbeq]
     exact ⟨he_h.trans hm2, .thm, .part, ⟨.unrestricted, false⟩, _, _, _, by decide, rfl, rfl,
       he_r, rfl, rfl, rfl⟩
@@ -777,7 +821,7 @@ theorem get_definition_spec {bytes : List UInt8} {i : Nat}
   rw [show i + (1 + n1 + n2) + n3 = i + (1 + n1 + n2 + n3) by omega] at hval_ok hs4
   refine ⟨ext_typ.trans ext_val, ⟨kind, safety, asserts, lvlsTag.value, typ, val⟩,
     1 + n1 + n2 + n3, _, x_s4, ?_, he185,
-    ⟨kVal, sVal, aVal, x_typ, x_value, rfl, hkRep, hsRep, haRep,
+    ⟨x_kind, x_safety, x_asserts, x_typ, x_value, rfl, hkRep, hsRep, haRep,
       htypRep.mono ext_val, hvalRep⟩, hs4⟩
   unfold Ixon.getDefinition
   simp only [bind, EStateM.bind, hb_ok, hvalid, Bool.false_eq_true, ↓reduceIte,
@@ -837,10 +881,12 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::RecursorRule>» h
       have hs' := L1.Stream.mono ext hs
-      rw [he62, hm51]
+      have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::RecursorRule>» h).2 :=
+        he62.trans hm51
+      rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Ixon::RecursorRule>» h).1, x_stream,
         by simp, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he41, allocNil_rep _ _ h, by simpa using hs'⟩
+        he41, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       simp at hiz
   | succ count ih =>
@@ -866,11 +912,15 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<Ixon::RecursorRule>» x_rule x_rest m105
       have consRep := allocCons_rep Obs.Names.«Lists::Node<Ixon::RecursorRule>»
         repRecursorRule_heapMono₂ (hrlRep.mono ext2) htailRep
-      rw [he201, hm174]
+      have hm_cons :
+          h' = (allocCons Obs.Names.«Lists::Node<Ixon::RecursorRule>» x_rule x_rest m105).2 :=
+        he201.trans hm174
+      rw [hm_cons]
       rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hlen2 hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[rl] ++ tailRules, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::RecursorRule>» x_rule x_rest m105).1, x_s2,
-        by omega, ?_, he164, by simpa using consRep, L1.Stream.mono ext3 hs2⟩
+        by omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
+        L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
@@ -908,7 +958,7 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
   obtain ⟨hbts, hm84⟩ := Deserialize.u8BitDecomposition_refines b.toNat_lt ev96.erase
   subst m84
   rw [hbts] at pr115 pr127
-  simp only [projectValue, Except.ok.injEq] at pr115 pr127
+  simp only [projectValue_tuple_zero, projectValue_tuple_one, Except.ok.injEq] at pr115 pr127
   obtain ⟨hm130, lvlsT, n1, s2Ptr, _, _, hlvls_ok, _, hs2, hlvls_tup⟩ :=
     getTagN0_progress hs1 ev142.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hlvls_tup
@@ -960,8 +1010,9 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     have hu : rlenT.value.toNat.toUInt64 = rlenT.value := UInt64.ofNat_toNat
     rw [hu]
     exact Deserialize.checkCount_ok (by omega)
+  have hrules_for := of_bind_pure_ok hrules_ok
   have hk_flag : ∃ kFlag uFlag : Bool,
-      (b > 3) = false ∧
+      ¬ (b > 3) ∧
       (Ixon.unpackBools 2 b)[0]! = kFlag ∧
       (Ixon.unpackBools 2 b)[1]! = uFlag ∧
       RepBool kFlag v105 ∧
@@ -982,10 +1033,9 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
   simp only [Ixon.Verify.Codec.RecursorConstant.getRecursorFromFlags,
     Ixon.Verify.Codec.RecursorConstant.getRecursorAfterFlags,
     Ixon.Verify.Codec.RecursorConstant.getRecursorRules,
-    Ixon.Verify.Codec.ConstantTables.getMany_eq_getArray,
-    bind, EStateM.bind, hb_ok, hgt3, Bool.false_eq_true, ↓reduceIte,
+    bind, EStateM.bind, hb_ok, hgt3, ↓reduceIte,
     hk0, hu1, hlvls_ok, hparams_ok, hindices_ok, hmotives_ok, hminors_ok, htyp_ok,
-    hrlen_ok, hchk, hrules_ok, pure, EStateM.pure]
+    hrlen_ok, hchk, hrules_for, pure, EStateM.pure]
 
 theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1020,7 +1070,7 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htyp_tup
   rcases htyp_tup with ⟨rfl, rfl⟩
   obtain ⟨hv142, hm146⟩ := Deserialize.u8ToField_refines ev156.erase
-  subst m146 he186
+  rw [he186, hm146]
   rw [show i + (1 + n1) + n2 = i + (1 + n1 + n2) by omega] at htyp_ok hs3
   have huRep : RepBool (decide (b.toNat = 1)) v142 := by
     rw [hv142]
@@ -1109,10 +1159,11 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Field>» h
       have hs' := L1.Stream.mono ext hs
-      rw [he69, hm52]
+      have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Field>» h).2 := he69.trans hm52
+      rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Field>» h).1, .field 0, x_stream,
         rfl, by simp, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he42, rfl, allocNil_rep _ _ h, by simpa using hs'⟩
+        he42, by decide, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
   | succ count ih =>
@@ -1151,13 +1202,16 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
         unfold Ixon.getFieldMode
         simp only [bind, EStateM.bind, hb_ok, Ixon.FieldMode.ofCode?, pure, EStateM.pure]
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<Field>» (.field 0) x_rest m112
-      have consRep := allocCons_rep Obs.Names.«Lists::Node<Field>» repFieldMode_heapMono₂
-        (rfl : RepFieldMode .inherited (.field 0)) htailRep
-      rw [he247, hm214]
+      have consRep := allocCons_rep (R := fun _ => RepFieldMode)
+        Obs.Names.«Lists::Node<Field>» repFieldMode_heapMono₂ (x := .inherited) rfl htailRep
+      have hm_cons : h' = (allocCons Obs.Names.«Lists::Node<Field>» (.field 0) x_rest m112).2 :=
+        he247.trans hm214
+      rw [hm_cons]
       rw [show i + 1 + n2 = i + (1 + n2) by omega] at hlen2 hok2 hs2
       refine ⟨ext_tail.trans ext3, #[.inherited] ++ tailModes, 1 + n2,
         (allocCons Obs.Names.«Lists::Node<Field>» (.field 0) x_rest m112).1, x_shared, x_s2,
-        by simp [hsz2]; omega, by omega, ?_, he204, ?_, by simpa using consRep,
+        by simp [hsz2]; omega, by omega, ?_, he204, ?_,
+        by rw [singleton_append_toList]; exact consRep,
         L1.Stream.mono ext3 hs2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hfm_ok, hok2, pure, EStateM.pure]
@@ -1188,13 +1242,16 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
         unfold Ixon.getFieldMode
         simp only [bind, EStateM.bind, hb_ok, Ixon.FieldMode.ofCode?, pure, EStateM.pure]
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<Field>» (.field 1) x_rest m112
-      have consRep := allocCons_rep Obs.Names.«Lists::Node<Field>» repFieldMode_heapMono₂
-        (rfl : RepFieldMode .shared (.field 1)) htailRep
-      rw [he301, hm269]
+      have consRep := allocCons_rep (R := fun _ => RepFieldMode)
+        Obs.Names.«Lists::Node<Field>» repFieldMode_heapMono₂ (x := .shared) rfl htailRep
+      have hm_cons : h' = (allocCons Obs.Names.«Lists::Node<Field>» (.field 1) x_rest m112).2 :=
+        he301.trans hm269
+      rw [hm_cons]
       rw [show i + 1 + n2 = i + (1 + n2) by omega] at hlen2 hok2 hs2
       refine ⟨ext_tail.trans ext3, #[.shared] ++ tailModes, 1 + n2,
         (allocCons Obs.Names.«Lists::Node<Field>» (.field 1) x_rest m112).1, .field 1, x_s2,
-        by simp [hsz2]; omega, by omega, ?_, he259, by simp, by simpa using consRep,
+        by simp [hsz2]; omega, by omega, ?_, he259, by simp,
+        by rw [singleton_append_toList]; exact consRep,
         L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hfm_ok, hok2, pure, EStateM.pure]
@@ -1225,10 +1282,11 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
     subst hfalse
     have ext := allocNil_extends Obs.Names.«Lists::Node<Field>» h
     have hs' := L1.Stream.mono ext hs
-    rw [he40, hm29]
+    have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Field>» h).2 := he40.trans hm29
+    rw [hm_nil]
     refine ⟨ext, .inherited, 0, (allocNil Obs.Names.«Lists::Node<Field>» h).1, x_s,
       by simp, by simp [Ixon.getConstructorFieldModes, pure, EStateM.pure], he19,
-      allocNil_rep _ _ h, by simpa using hs'⟩
+      allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
   · have htrue : listed = true := by
       cases listed with
       | true => rfl
@@ -1292,7 +1350,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
   obtain ⟨hbts, hm84⟩ := Deserialize.u8BitDecomposition_refines b.toNat_lt ev96.erase
   subst m84
   rw [hbts] at pr270 pr363
-  simp only [projectValue, Except.ok.injEq] at pr270 pr363
+  simp only [projectValue_tuple_zero, projectValue_tuple_one, Except.ok.injEq] at pr270 pr363
   obtain ⟨hm106, lvlsT, n1, s2Ptr, _, hlt1, hlvls_ok, _, hs2, hlvls_tup⟩ :=
     getTagN0_progress hs1 ev118.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hlvls_tup
@@ -1315,7 +1373,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
   rw [show i + (1 + n1 + n2 + n3) + n4 =
     i + (1 + n1 + n2 + n3 + n4) by omega] at hfields_ok hs5 hlt4
   have hflags_decode :
-      (b > 3) = false ∧
+      ¬ (b > 3) ∧
       RepBool (b &&& 1 == 1) v348 ∧
       RepBool (b &&& 2 == 2) v259 := by
     rw [← pr363, ← pr270]
@@ -1341,7 +1399,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
     ⟨v348, x_modes, x_typ, rfl, huRep,
       repList_heapMono₂ _ repFieldMode_heapMono₂ ext_typ hfmRep, htypRep⟩, hs7⟩
   unfold Ixon.getConstructor
-  simp only [bind, EStateM.bind, hb_ok, hgt3, Bool.false_eq_true, ↓reduceIte,
+  simp only [bind, EStateM.bind, hb_ok, hgt3, ↓reduceIte,
     hlvls_ok, hcidx_ok, hparams_ok, hfields_ok, hfm_ok, htyp_ok, pure, EStateM.pure]
 
 theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709551616)
@@ -1368,10 +1426,12 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::Constructor>» h
       have hs' := L1.Stream.mono ext hs
-      rw [he62, hm51]
+      have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::Constructor>» h).2 :=
+        he62.trans hm51
+      rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Ixon::Constructor>» h).1, x_stream,
         by simp, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he41, allocNil_rep _ _ h, by simpa using hs'⟩
+        he41, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       simp at hiz
   | succ count ih =>
@@ -1397,11 +1457,15 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<Ixon::Constructor>» x_ctor x_rest m105
       have consRep := allocCons_rep Obs.Names.«Lists::Node<Ixon::Constructor>»
         repConstructor_heapMono₂ (hcRep.mono ext2) htailRep
-      rw [he201, hm174]
+      have hm_cons :
+          h' = (allocCons Obs.Names.«Lists::Node<Ixon::Constructor>» x_ctor x_rest m105).2 :=
+        he201.trans hm174
+      rw [hm_cons]
       rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hlen2 hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[c] ++ tailCtors, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::Constructor>» x_ctor x_rest m105).1, x_s2,
-        by omega, ?_, he164, by simpa using consRep, L1.Stream.mono ext3 hs2⟩
+        by omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
+        L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
@@ -1433,7 +1497,7 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
   obtain ⟨hbts, hm59⟩ := Deserialize.u8BitDecomposition_refines b.toNat_lt ev71.erase
   subst m59
   rw [hbts] at pr90
-  simp only [projectValue, Except.ok.injEq] at pr90
+  simp only [projectValue_tuple_zero, Except.ok.injEq] at pr90
   obtain ⟨hm93, lvlsT, n1, s2Ptr, _, _, hlvls_ok, _, hs2, hlvls_tup⟩ :=
     getTagN0_progress hs1 ev105.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hlvls_tup
@@ -1473,6 +1537,7 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     have hu : clenT.value.toNat.toUInt64 = clenT.value := UInt64.ofNat_toNat
     rw [hu]
     exact Deserialize.checkCount_ok (by omega)
+  have hctors_for := of_bind_pure_ok hctors_ok
   have huRep : RepBool (decide (b.toNat = 1)) v80 := by
     rw [← pr90]
     rcases uint8_lt2_cases b hb_lt2 with rfl | rfl <;> rfl
@@ -1483,9 +1548,8 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
   rw [Ixon.Verify.Codec.MutualConstant.getInductive_eq]
   simp only [Ixon.Verify.Codec.MutualConstant.getInductiveAfterFlags,
     Ixon.Verify.Codec.MutualConstant.getInductiveConstructors,
-    Ixon.Verify.Codec.ConstantTables.getMany_eq_getArray,
     bind, EStateM.bind, hbool_ok, hlvls_ok, hparams_ok, hindices_ok, htyp_ok,
-    hclen_ok, hchk, hctors_ok, pure, EStateM.pure]
+    hclen_ok, hchk, hctors_for, pure, EStateM.pure]
 
 /-! ## Projection payloads, mutual blocks, and `get_constant_info` -/
 
@@ -1676,7 +1740,8 @@ theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
     rw [← hdrop1] at hs1
     obtain ⟨hbf, hm37⟩ := Deserialize.u8ToField_refines ev50.erase; subst m37
     injection hbf with hf
-    have hb2 : b = 2 := UInt8.ext ((Deserialize.natCast_eq_ofNat_iff b.toNat_lt (by omega)).mp hf.symm)
+    have hb2 : b = 2 :=
+      UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 2) b.toNat_lt (by omega)).mp hf.symm)
     subst hb2
     obtain ⟨ext1, rc, n1, rcVal, s2Ptr, hr_ok, hr_tup, hrRep, hs2⟩ :=
       get_recursor_spec hs1 ev218
@@ -1710,10 +1775,12 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::MutConst>» h
       have hs' := L1.Stream.mono ext hs
-      rw [he62, hm51]
+      have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::MutConst>» h).2 :=
+        he62.trans hm51
+      rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Ixon::MutConst>» h).1, x_stream,
         by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he41, allocNil_rep _ _ h, by simpa using hs'⟩
+        he41, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
   | succ count ih =>
     rcases Obs.«IxonDeserialize::get_mut_const_list».obs ev with
@@ -1736,11 +1803,14 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<Ixon::MutConst>» x_mc x_rest m105
       have consRep := allocCons_rep Obs.Names.«Lists::Node<Ixon::MutConst>»
         repMutConst_heapMono₂ (hmcRep.mono ext2) htailRep
-      rw [he201, hm174]
+      have hm_cons :
+          h' = (allocCons Obs.Names.«Lists::Node<Ixon::MutConst>» x_mc x_rest m105).2 :=
+        he201.trans hm174
+      rw [hm_cons]
       rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[mc] ++ tailMs, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::MutConst>» x_mc x_rest m105).1, x_s2, ?_,
-        he164, by simpa using consRep, L1.Stream.mono ext3 hs2⟩
+        he164, by rw [singleton_append_toList]; exact consRep, L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
@@ -1786,7 +1856,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv156 with hf
-    have hveq : v = 2 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 2 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 2) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, a, n, aVal, sPtr, hok, htup, hrep, hs1⟩ := get_axiom_spec hs ev170
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1795,7 +1866,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv227 with hf
-    have hveq : v = 3 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 3 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 3) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, q, n, qVal, sPtr, hok, htup, hrep, hs1⟩ := get_quotient_spec hs ev241
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1804,7 +1876,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv298 with hf
-    have hveq : v = 4 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 4 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 4) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, p, n, pVal, sPtr, hok, htup, hrep, hs1⟩ := get_constructor_proj_spec hs ev312
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1813,7 +1886,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv369 with hf
-    have hveq : v = 5 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 5 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 5) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, p, n, pVal, sPtr, hok, htup, hrep, hs1⟩ := get_recursor_proj_spec hs ev383
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1822,7 +1896,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv440 with hf
-    have hveq : v = 6 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 6 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 6) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, p, n, pVal, sPtr, hok, htup, hrep, hs1⟩ := get_inductive_proj_spec hs ev454
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1831,7 +1906,8 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     simp [Ixon.Verify.Codec.Constant.getInfoFromTag, Ixon.Constant.FLAG, Ixon.Constant.FLAG_MUTS,
       Functor.map, EStateM.map, hok]
   · injection hv511 with hf
-    have hveq : v = 7 := UInt64.ext ((Deserialize.natCast_eq_ofNat_iff hv_lt (by omega)).mp hf)
+    have hveq : v = 7 :=
+      UInt64.ext ((Deserialize.natCast_eq_ofNat_iff (n := 7) hv_lt (by omega)).mp hf)
     subst hveq
     obtain ⟨ext1, p, n, pVal, sPtr, hok, htup, hrep, hs1⟩ := get_definition_proj_spec hs ev525
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1862,7 +1938,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
       ev289, op181, ev303, op173, heq318, pr348, ev338, ev324, -⟩
   · injection hv14 with hf
     have hfl : t.flag = 12 :=
-      UInt8.ext ((Deserialize.natCast_eq_ofNat_iff t.flag.toNat_lt (by omega)).mp hf)
+      UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 12) t.flag.toNat_lt (by omega)).mp hf)
     obtain ⟨ext1, ms, n, msPtr, sPtr, hok, htup, hrep, hs1⟩ :=
       get_mut_const_list_spec t.value.toNat t.value.toNat_lt hs ev28
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -1879,7 +1955,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
         simp only [EStateM.bind, hok, EStateM.pure])
   · injection hv93 with hf
     have hfl : t.flag = 13 :=
-      UInt8.ext ((Deserialize.natCast_eq_ofNat_iff t.flag.toNat_lt (by omega)).mp hf)
+      UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 13) t.flag.toNat_lt (by omega)).mp hf)
     have hsz_tup : TagN.u64Value t.value.toNat =
         .tuple [w106, x_sz1, x_sz2, x_sz3, x_sz4, x_sz5, x_sz6, x_sz7] := hv104
     dsimp only [TagN.u64Value] at hsz_tup
@@ -1916,7 +1992,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
       have hlt := t.value.toNat_lt
       omega
     dsimp only [TagN.u64Value] at pr348
-    simp only [projectValue, Except.ok.injEq] at pr348
+    simp only [projectValue_tuple_zero, Except.ok.injEq] at pr348
     obtain ⟨hv325, hm328⟩ := Deserialize.u8ToField_refines ev338.erase
     subst m328
     have hv325_eq : v325 = .field ((t.value.toNat : Nat) : F) := by
@@ -1960,10 +2036,12 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<&[Field; 32]>» h
       have hs' := L1.Stream.mono ext hs
-      rw [he62, hm51]
+      have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<&[Field; 32]>» h).2 :=
+        he62.trans hm51
+      rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<&[Field; 32]>» h).1, x_stream,
         rfl, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he41, allocNil_rep _ _ h, by simpa using hs'⟩
+        he41, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
   | succ count ih =>
     rcases Obs.«IxonDeserialize::get_address_list».obs ev with
@@ -1992,11 +2070,15 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105
       have consRep := allocCons_rep Obs.Names.«Lists::Node<&[Field; 32]>»
         repAddrElem_heapMono₂ (S0.addr_mono ext2 hheadRep) htailRep
-      rw [he201, hm174]
+      have hm_cons :
+          h' = (allocCons Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105).2 :=
+        he201.trans hm174
+      rw [hm_cons]
       rw [show i + 32 + n2 = i + (32 + n2) by omega] at hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[headAddr] ++ tailAddrs, 32 + n2,
         (allocCons Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105).1, x_s2,
-        by simp [hsz2]; omega, ?_, he164, by simpa using consRep, L1.Stream.mono ext3 hs2⟩
+        by simp [hsz2]; omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
+        L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
 
@@ -2215,7 +2297,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
   have hunivsRep' := repList_heapMono₂ _ Deserialize.repUnivPtr_heapMono₂ ext_after_univs hunivsRep
   obtain ⟨hm271, hprj⟩ := assert_prj_empty_tables_spec
     hciRep' hshRep' hrefsRep' hunivsRep' hbindersRep ev283
-  subst m271 he385
+  rw [he385, hm271]
   refine ⟨ext_info.trans ext_after_info,
     ⟨ci, shList.toArray, refsArr, univsArr, bindersArr⟩,
     n0 + n1 + n2a + n2b + n3a + n3b + n4a + n4b + n5, _, x_s6, ?_, he328,
@@ -2269,18 +2351,11 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       rw [List.size_toArray]
       omega
     have hde : Ixon.deConstant ⟨bytes.toArray⟩ = .ok c := by
-      unfold Ixon.deConstant Ixon.runGet
-      change (match Ixon.getConstant { idx := 0, bytes := ⟨bytes.toArray⟩ } with
-        | .ok x _ => Except.ok x
-        | .error msg _ => Except.error msg) = .ok c
+      unfold Ixon.deConstant Ixon.runGet EStateM.run
       rw [hok]
     have hdeExact : Ixon.deConstantExact ⟨bytes.toArray⟩ = .ok c := by
-      unfold Ixon.deConstantExact Ixon.runGetExact
-      change (match Ixon.getConstant { idx := 0, bytes := ⟨bytes.toArray⟩ } with
-        | .ok x s' => if s'.idx == (ByteArray.mk bytes.toArray).size then .ok x else .error _
-        | .error msg _ => .error msg) = .ok c
-      rw [hok]
-      simp [hn_eq]
+      unfold Ixon.deConstantExact Ixon.runGetExact EStateM.run
+      rw [hok, ite_eq_left hn_eq]
     exact ⟨ext1.trans ext2, ⟨bytes.toArray⟩, c, hashed, hdigest, hde, hdeExact, hcRep, hwf⟩
   · cases hbad
 

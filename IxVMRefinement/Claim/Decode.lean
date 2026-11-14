@@ -1295,7 +1295,8 @@ theorem verify_claim_decode_spec
   · simp [hret9, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
   simp only [hret9, Bool.false_eq_true, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hget_claim
   obtain ⟨w_val, st_scope, hok_scope, hok_payload⟩ := Ixon.Verify.TagN.bind_ok_inv hget_claim
-  obtain ⟨rfl, rfl⟩ := getScope_ok_inv hu8_fmt hu8_val hok_scope
+  obtain ⟨hw_val, rfl⟩ := getScope_ok_inv hu8_fmt hu8_val hok_scope
+  subst w_val
   have hvar_45 := getPayload_inScope_variant hok_payload hscope
   -- 14. `match UInt8::to_field(variant) { ... }`
   obtain ⟨v_scrut, m_scrut, bs_arm, body_arm, c_scrut, c_arm, d_scrut, sel_arm, d_arm, rfl⟩ :=
