@@ -45,9 +45,10 @@ theorem evidenceRecords_spec :
       ∀ p ∈ ev.toList, ∃ d, p.2.info = .defn d := by
   obtain ⟨_, out, hf, hfst, hdefn⟩ := evRows_spec_of_forall rawEvRows_all_spec
   refine ⟨out.toArray, ?_, ?_, ?_⟩
-  · unfold Ix.Kernel.Reader.evidenceRecords
-    rw [roleData_evidence_eq]
-    exact decodeCommitted_of_forall₂ "evidence" hf
+  · exact Eq.trans rfl
+      (Eq.trans
+        (congrArg (Ix.Kernel.Reader.decodeCommitted "evidence") roleData_evidence_eq)
+        (decodeCommitted_of_forall₂ "evidence" hf))
   · simpa [committedEvAddrs] using hfst
   · intro p hp
     exact hdefn p (by simpa using hp)
@@ -58,7 +59,7 @@ theorem fallbackHashed : Ix.Cert.RoleClosure.FallbackHashed := by
   rw [Array.toList_append, List.mem_append] at hmem
   rcases hmem with hpre | hev
   · exact preludeRowsHashed row hpre
-  · rw [roleData_evidence_eq, List.toList_toArray] at hev
-    exact (evRows_spec_of_forall rawEvRows_all_spec).1 row hev
+  · exact (evRows_spec_of_forall rawEvRows_all_spec).1 row
+      (mem_of_array_eq roleData_evidence_eq hev)
 
 end IxVM.Refinement.RoleVal

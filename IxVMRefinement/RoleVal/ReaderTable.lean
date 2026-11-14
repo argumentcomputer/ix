@@ -1748,7 +1748,7 @@ theorem preludeFor_of_readerTable {clm : Ix.Claim} {V : View} {b : Ix.Kernel.Adm
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
     ∃ pre, Ix.Kernel.Reader.preludeFor (md := .anon) t = .ok pre := by
   rcases hrt.2 with hdef | htab
-  · have ht := Ix.Cert.ReadingKeys.admitBinding_default defaultTable_eq hdef hadm
+  · have ht := admitBinding_committedDefault hdef hadm
     subst ht
     exact preludeFor_defaultRoleTable
   · obtain ⟨t', hadm', _, hacc⟩ := htab
@@ -1769,7 +1769,7 @@ theorem literalSupportBound_of_readerTable {clm : Ix.Claim} {V : View}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
     IxVM.Refinement.LiteralSupportBound t := by
   rcases hrt.2 with hdef | htab
-  · have ht := Ix.Cert.ReadingKeys.admitBinding_default defaultTable_eq hdef hadm
+  · have ht := admitBinding_committedDefault hdef hadm
     subst ht
     exact committedDefaultRoleTable_literalSupportBound
   · obtain ⟨t', hadm', hlit, _⟩ := htab

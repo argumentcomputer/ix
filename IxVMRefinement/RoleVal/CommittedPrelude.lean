@@ -819,51 +819,52 @@ private theorem blobRow_ok_13 : checkHashChunks blobChunks_13 blobAddrBytes_13 =
 private theorem blobRow_ok_14 : checkHashChunks blobChunks_14 blobAddrBytes_14 = true := by decide +kernel
 private theorem blobRow_ok_15 : checkHashChunks blobChunks_15 blobAddrBytes_15 = true := by decide +kernel
 
-theorem preludeRecords_eq : Ix.Kernel.Reader.preludeRecords = .ok committedPrelude := by
-  unfold Ix.Kernel.Reader.preludeRecords committedPrelude
-  rw [roleData_prelude_eq]
-  apply decodeCommitted_of_forall₂
-  unfold rawPreRows committedPreludeList List.map
-  refine .cons (let h := preRow_spec preRow_ok_0; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_1; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_2; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_3; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_4; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_5; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_6; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_7; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_8; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_9; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_10; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_11; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_12; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_13; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_14; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_15; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_16; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_17; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_18; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_19; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_20; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_21; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_22; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_23; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_24; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_25; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_26; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_27; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_28; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_29; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_30; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_31; ⟨h.2.1, h.2.2⟩) ?_
-  refine .cons (let h := preRow_spec preRow_ok_32; ⟨h.2.1, h.2.2⟩) ?_
-  exact .nil
+theorem preludeRecords_eq : Ix.Kernel.Reader.preludeRecords = .ok committedPrelude :=
+  Eq.trans rfl
+    (Eq.trans
+      (congrArg (Ix.Kernel.Reader.decodeCommitted "prelude") roleData_prelude_eq)
+      (decodeCommitted_of_forall₂ "prelude" (by
+        unfold rawPreRows committedPreludeList List.map
+        refine .cons (let h := preRow_spec preRow_ok_0; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_1; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_2; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_3; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_4; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_5; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_6; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_7; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_8; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_9; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_10; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_11; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_12; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_13; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_14; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_15; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_16; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_17; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_18; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_19; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_20; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_21; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_22; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_23; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_24; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_25; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_26; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_27; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_28; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_29; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_30; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_31; ⟨h.2.1, h.2.2⟩) ?_
+        refine .cons (let h := preRow_spec preRow_ok_32; ⟨h.2.1, h.2.2⟩) ?_
+        exact .nil)))
 
 theorem preludeRowsHashed :
     ∀ row ∈ Ix.Kernel.Reader.RoleData.prelude.toList,
       (bytesOfHex row.2).map Address.admissionHash = Ix.Kernel.Reader.addressOfHex row.1 := by
   intro row hmem
-  rw [roleData_prelude_eq, List.toList_toArray] at hmem
+  have hmem := mem_of_array_eq roleData_prelude_eq hmem
   unfold rawPreRows List.map at hmem
   rcases List.mem_cons.mp hmem with rfl | hmem
   · exact (preRow_spec preRow_ok_0).1
@@ -961,7 +962,7 @@ theorem blobsHashed :
     ∀ row ∈ Ix.Kernel.Reader.RoleData.blobs.toList,
       (bytesOfHex row.2).map Address.admissionHash = Ix.Kernel.Reader.addressOfHex row.1 := by
   intro row hmem
-  rw [roleData_blobs_eq, List.toList_toArray] at hmem
+  have hmem := mem_of_array_eq roleData_blobs_eq hmem
   unfold rawBlobRows List.map at hmem
   rcases List.mem_cons.mp hmem with rfl | hmem
   · exact row_hashed_of_checkHashChunks blobRow_ok_0

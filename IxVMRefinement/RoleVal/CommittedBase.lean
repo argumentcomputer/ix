@@ -9,7 +9,8 @@ import IxVMRefinement.L1.Hashed
 /-! # Base evaluators and default table admission for `RoleData`
 
 Provides:
-* `committedDefaultRoleTable`, `defaultTable_eq`, `committedDefaultRoleTable_literalSupportBound`;
+* `committedDefaultRoleTable`, `defaultBinding_eq`, `admitBinding_committedDefault`,
+  `committedDefaultRoleTable_literalSupportBound`;
 * strict `Nat`-word BLAKE3 tree hashing (`checkHashChunks`, `row_hashed_of_checkHashChunks`);
 * proof-free structural `wireWF` checker (`validConstantFast`) and fuel-indexed pure Ixon
   serializer (`encConstantFuel`), avoiding kernel unfolding of `WellFounded.fix` or dependent
@@ -617,12 +618,21 @@ private theorem bytesOfHex_roleData_table :
       (congrArg (fun bs : List UInt8 => some (⟨bs.toArray⟩ : ByteArray))
         committedDefaultRoleTable_encode_eq.symm))
 
-private theorem defaultTableBytes_eq :
-    Ix.Kernel.Reader.defaultTableBytes = .ok committedDefaultRoleTable.toBytes := by
-  show Ix.Kernel.Reader.defaultTableBytesOf Ix.Kernel.Reader.RoleData.table = _
+theorem mem_of_array_eq {α : Type} {arr : Array α} {xs : List α} {x : α}
+    (heq : arr = xs.toArray) (hx : x ∈ arr.toList) : x ∈ xs := by
+  rw [heq, List.toList_toArray] at hx
+  exact hx
+
+private theorem defaultTableBytesOf_of_bytesOfHex {s : String} {b : ByteArray}
+    (h : bytesOfHex s = some b) :
+    Ix.Kernel.Reader.defaultTableBytesOf s = .ok b := by
   unfold Ix.Kernel.Reader.defaultTableBytesOf
-  rw [bytesOfHex_roleData_table]
+  rw [h]
   rfl
+
+private theorem defaultTableBytes_eq :
+    Ix.Kernel.Reader.defaultTableBytes = .ok committedDefaultRoleTable.toBytes :=
+  Eq.trans rfl (defaultTableBytesOf_of_bytesOfHex bytesOfHex_roleData_table)
 
 private theorem committedDefaultRoleTable_wireWF : committedDefaultRoleTable.wireWF = true := by
   decide +kernel
@@ -745,13 +755,62 @@ private theorem check_of_nodupNat {t : Ix.Kernel.RoleTable}
 theorem committedDefaultRoleTable_check : committedDefaultRoleTable.check = .ok () :=
   check_of_nodupNat (by decide +kernel) (by decide +kernel)
 
-/-- `Ix.Kernel.Reader.defaultTable` evaluates to `.ok committedDefaultRoleTable`. -/
-theorem defaultTable_eq : Ix.Kernel.Reader.defaultTable = .ok committedDefaultRoleTable := by
-  unfold Ix.Kernel.Reader.defaultTable
-  rw [defaultTableBytes_eq]
-  simp only [bind, Except.bind, pure, Except.pure,
-    Ix.Kernel.RoleTable.ofBytes_toBytes committedDefaultRoleTable committedDefaultRoleTable_wireWF,
-    committedDefaultRoleTable_check, Except.mapError]
+private def defaultTableAddrBytes : List UInt8 :=
+  [0xc6, 0x0d, 0xd3, 0x12, 0x6e, 0x86, 0xfe, 0x6d, 0x52, 0x21, 0xf5, 0x14, 0xa2, 0x29, 0x56, 0x9a,
+   0x30, 0xd1, 0xc1, 0x07, 0x5f, 0x88, 0xf3, 0xb2, 0x32, 0x43, 0xdf, 0x82, 0xda, 0x81, 0x94, 0xb7]
+
+private def isExpectedTableAddr : Except String _root_.Address → Bool
+  | .ok a => a.hash.data.toList == defaultTableAddrBytes
+  | .error _ => false
+
+private theorem eq_ok_of_isExpectedTableAddr {e : Except String _root_.Address}
+    (h : isExpectedTableAddr e = true) :
+    e = .ok (mkAddr defaultTableAddrBytes) := by
+  cases e with
+  | error _ => cases h
+  | ok a =>
+    cases a with
+    | mk hsh =>
+      cases hsh with
+      | mk arr =>
+        cases arr with
+        | mk bs =>
+          simp only [isExpectedTableAddr, beq_iff_eq] at h
+          subst h
+          rfl
+
+private theorem defaultTableAddress_eq :
+    Ix.Kernel.Reader.defaultTableAddress = .ok (mkAddr defaultTableAddrBytes) :=
+  eq_ok_of_isExpectedTableAddr (by decide +kernel)
+
+private theorem mkDefaultBinding {ea : Except String _root_.Address} {eb : Except String ByteArray}
+    {a : _root_.Address} {b : ByteArray}
+    (ha : ea = .ok a) (hb : eb = .ok b) :
+    (do pure (Ix.Kernel.Admission.Binding.mk (← ea) (← eb))) = .ok ⟨a, b⟩ := by
+  rw [ha, hb]; rfl
+
+/-- `Ix.Kernel.Admission.defaultBinding` evaluates to the committed default table binding. -/
+theorem defaultBinding_eq :
+    Ix.Kernel.Admission.defaultBinding =
+      .ok ⟨mkAddr defaultTableAddrBytes, committedDefaultRoleTable.toBytes⟩ :=
+  mkDefaultBinding defaultTableAddress_eq defaultTableBytes_eq
+
+/-- Any table admitted from `defaultBinding` equals `committedDefaultRoleTable`. -/
+theorem admitBinding_committedDefault {hash : ByteArray → _root_.Address}
+    {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+    (hdef : Ix.Kernel.Admission.defaultBinding = .ok b)
+    (hadm : Ix.Kernel.Admission.admitBinding hash b = .ok t) :
+    t = committedDefaultRoleTable := by
+  have hb : b = ⟨mkAddr defaultTableAddrBytes, committedDefaultRoleTable.toBytes⟩ :=
+    Except.ok.inj (hdef.symm.trans defaultBinding_eq)
+  subst hb
+  unfold Ix.Kernel.Admission.admitBinding at hadm
+  dsimp only at hadm
+  split at hadm
+  · simp [Ix.Kernel.RoleTable.ofBytes_toBytes committedDefaultRoleTable committedDefaultRoleTable_wireWF,
+      committedDefaultRoleTable_check, Except.mapError, bind, Except.bind, pure, Except.pure] at hadm
+    exact hadm.symm
+  · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hadm
 
 private def literalSupportBool (t : Ix.Kernel.RoleTable) : Bool :=
   !(t.addressOf? .string).isSome ||
