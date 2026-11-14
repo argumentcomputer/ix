@@ -1155,7 +1155,7 @@ theorem verify_claim_decode_spec
     exact .inl (.inl ⟨Address.blake3Pure bytes, bytes, ⟨rawBytes.toArray⟩,
       .inr (.inl ⟨by simp, rfl⟩), hhashed_raw, heq_bytes, hblk_eq⟩)
   -- No collision on the claim's bytes: `⟨rawBytes.toArray⟩ = bytes`
-  subst heq_bytes
+  rw [← heq_bytes] at hde
   -- Unpack `Claim.de ⟨rawBytes.toArray⟩ = .ok c`
   have hget_top : ∃ st_end, Claim.get { idx := 0, bytes := ⟨rawBytes.toArray⟩ } = .ok c st_end := by
     unfold Claim.de Ixon.runGetExact EStateM.run at hde
@@ -1468,7 +1468,7 @@ theorem verify_claim_decode_spec
     obtain ⟨l_tr1, rfl, rfl⟩ := d_tr1.var_inv; simp at l_tr1; subst l_tr1
     obtain ⟨rfl, rfl, rfl⟩ := a_tr2.nil_inv
     obtain ⟨_, hseeds_eq⟩ := hseeds
-    exact .inr ⟨t, hadm, .inl ⟨_, m_asm, m_ac, m_mw, x_rc, x_target, v_ac, v_mw, cs_ac, cs_tr,
+    exact .inr ⟨t, hadm, .inl ⟨_, _, _, _, x_rc, x_target, v_ac, v_mw, cs_ac, cs_tr,
       hseeds_eq, hrc_rep.mono (ext_tgt.trans ext_asm),
       ⟨_, Bytes.repAddressRef_heapMono₂ addrTy ext_asm haddr_tgt, rfl⟩,
       ev_ac, ev_tr,
@@ -1621,7 +1621,7 @@ theorem verify_claim_decode_spec
     subst hopt_asm
     obtain ⟨tTree, hv_trees, htree_root, hseeds_eq⟩ := hseeds
     have htTree_mem : tTree ∈ V.trees := by rw [hv_trees]; simp
-    have hroot_addr : S0.addr m_asm x_root (treeRoot tTree) :=
+    have hroot_addr : S0.addr _ x_root (treeRoot tTree) :=
       ⟨_, Bytes.repAddressRef_heapMono₂ addrTy ext_asm haddr_rt, htree_root.symm⟩
     rcases run_check_env_none_spec (V := V)
         (extra := bytes :: b.bytes :: IxVM.Consistency.committedImages)

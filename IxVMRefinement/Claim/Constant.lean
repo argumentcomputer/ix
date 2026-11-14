@@ -442,12 +442,43 @@ private theorem getAddress_of_drop {bytes : List UInt8} {i : Nat}
 @[simp] private theorem projectValue_tuple_one (x y : SourceValue F) (xs : List (SourceValue F)) :
     projectValue (.tuple (x :: y :: xs)) 1 = .ok y := rfl
 
-private theorem of_bind_pure_ok {α : Type} {m : Ixon.GetM α} {s s' : Ixon.GetState} {a : α}
-    (h : (m >>= pure) s = .ok a s') : m s = .ok a s' := by
-  simp only [bind, EStateM.bind, pure, EStateM.pure] at h
-  cases hm : m s with
-  | ok x sx => rw [hm] at h; exact h
-  | error e sx => rw [hm] at h; cases h
+private theorem do_for_push_eq_getArray_bind {α β : Type} (getm : Ixon.GetM α) (count : Nat)
+    (k : Array α → Ixon.GetM β) :
+    (do
+      let mut values : Array α := #[]
+      for _ in [0:count] do
+        values := values.push (← getm)
+      k values) =
+    (Ixon.getArray getm count >>= k) := by
+  funext s
+  unfold Ixon.getArray
+  simp only [bind, EStateM.bind, pure, EStateM.pure]
+  cases forIn [0:count] #[] _ s <;> rfl
+
+private theorem u64_lt_256_of_high_bytes_zero {x : Nat} (hx : x < 18446744073709551616)
+    (h : x / 256 % 256 + x / 65536 % 256 + x / 16777216 % 256 + x / 4294967296 % 256 +
+         x / 1099511627776 % 256 + x / 281474976710656 % 256 + x / 72057594037927936 % 256 = 0) :
+    x < 256 := by
+  have h7 : x < 72057594037927936 := by
+    have : x / 72057594037927936 % 256 = 0 := by omega
+    omega
+  have h6 : x < 281474976710656 := by
+    have : x / 281474976710656 % 256 = 0 := by omega
+    omega
+  have h5 : x < 1099511627776 := by
+    have : x / 1099511627776 % 256 = 0 := by omega
+    omega
+  have h4 : x < 4294967296 := by
+    have : x / 4294967296 % 256 = 0 := by omega
+    omega
+  have h3 : x < 16777216 := by
+    have : x / 16777216 % 256 = 0 := by omega
+    omega
+  have h2 : x < 65536 := by
+    have : x / 65536 % 256 = 0 := by omega
+    omega
+  have : x / 256 % 256 = 0 := by omega
+  omega
 
 private theorem singleton_append_toList {α : Type} (x : α) (xs : Array α) :
     (#[x] ++ xs).toList = x :: xs.toList := by
@@ -505,7 +536,10 @@ private theorem unpack_def_asserts_arith {b : UInt8} {k : Nat}
   have hd45 : d4 * d5 = 0 := by
     injection heq128 with h45
     exact (Deserialize.natCast_eq_zero_iff (by omega)).mp h45
-  have hd45_or : d4 = 0 ∨ d5 = 0 := Nat.eq_zero_or_eq_zero_of_mul_eq_zero hd45
+  have hd45_or : d4 = 0 ∨ d5 = 0 := by
+    rcases (by omega : d4 = 0 ∨ d4 = 1) with h4 | h4
+    · exact .inl h4
+    · right; rw [h4, Nat.one_mul] at hd45; exact hd45
   have hy146 : y146 = .field ((2 * d5 : Nat) : F) := by
     have e := evalBinOp_mul_natCast 2 d5
     simp only [Nat.cast_ofNat] at e
@@ -1010,7 +1044,6 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     have hu : rlenT.value.toNat.toUInt64 = rlenT.value := UInt64.ofNat_toNat
     rw [hu]
     exact Deserialize.checkCount_ok (by omega)
-  have hrules_for := of_bind_pure_ok hrules_ok
   have hk_flag : ∃ kFlag uFlag : Bool,
       ¬ (b > 3) ∧
       (Ixon.unpackBools 2 b)[0]! = kFlag ∧
@@ -1030,12 +1063,13 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     1 + n1 + n2 + n3 + n4 + n5 + n6 + n7 + n8, _, x_s9, ?_, he421,
     ⟨v105, v117, x_typ, x_rules, rfl, hkRep, huRep, htypRep.mono ext_rules, hrulesRep⟩, hs9⟩
   rw [Ixon.Verify.Codec.RecursorConstant.getRecursor_eq]
-  simp only [Ixon.Verify.Codec.RecursorConstant.getRecursorFromFlags,
-    Ixon.Verify.Codec.RecursorConstant.getRecursorAfterFlags,
-    Ixon.Verify.Codec.RecursorConstant.getRecursorRules,
-    bind, EStateM.bind, hb_ok, hgt3, ↓reduceIte,
+  unfold Ixon.Verify.Codec.RecursorConstant.getRecursorFromFlags
+    Ixon.Verify.Codec.RecursorConstant.getRecursorAfterFlags
+    Ixon.Verify.Codec.RecursorConstant.getRecursorRules
+  simp only [do_for_push_eq_getArray_bind]
+  simp only [bind, EStateM.bind, hb_ok, hgt3, ↓reduceIte,
     hk0, hu1, hlvls_ok, hparams_ok, hindices_ok, hmotives_ok, hminors_ok, htyp_ok,
-    hrlen_ok, hchk, hrules_for, pure, EStateM.pure]
+    hrlen_ok, hchk, hrules_ok, pure, EStateM.pure]
 
 theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1163,7 +1197,7 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Field>» h).1, .field 0, x_stream,
         rfl, by simp, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
-        he42, by decide, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
+        he42, by simp, allocNil_rep _ _ h, by rw [Nat.add_zero]; exact hs'⟩
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
     · obtain ⟨hiz, _⟩ := Deserialize.u64IsZero_refines hcount ev14.erase; simp at hiz
   | succ count ih =>
@@ -1537,7 +1571,6 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     have hu : clenT.value.toNat.toUInt64 = clenT.value := UInt64.ofNat_toNat
     rw [hu]
     exact Deserialize.checkCount_ok (by omega)
-  have hctors_for := of_bind_pure_ok hctors_ok
   have huRep : RepBool (decide (b.toNat = 1)) v80 := by
     rw [← pr90]
     rcases uint8_lt2_cases b hb_lt2 with rfl | rfl <;> rfl
@@ -1546,10 +1579,11 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     1 + n1 + n2 + n3 + n4 + n5 + n6, _, x_s7, ?_, he314,
     ⟨v80, x_typ, x_ctors, rfl, huRep, htypRep.mono ext_ctors, hctorsRep⟩, hs7⟩
   rw [Ixon.Verify.Codec.MutualConstant.getInductive_eq]
-  simp only [Ixon.Verify.Codec.MutualConstant.getInductiveAfterFlags,
-    Ixon.Verify.Codec.MutualConstant.getInductiveConstructors,
-    bind, EStateM.bind, hbool_ok, hlvls_ok, hparams_ok, hindices_ok, htyp_ok,
-    hclen_ok, hchk, hctors_for, pure, EStateM.pure]
+  unfold Ixon.Verify.Codec.MutualConstant.getInductiveAfterFlags
+    Ixon.Verify.Codec.MutualConstant.getInductiveConstructors
+  simp only [do_for_push_eq_getArray_bind]
+  simp only [bind, EStateM.bind, hbool_ok, hlvls_ok, hparams_ok, hindices_ok, htyp_ok,
+    hclen_ok, hchk, hctors_ok, pure, EStateM.pure]
 
 /-! ## Projection payloads, mutual blocks, and `get_constant_info` -/
 
@@ -1948,11 +1982,8 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
       rw [hfl]; decide
     unfold Ixon.Verify.Codec.Constant.getInfoFromTag
     rw [ite_eq_left hmut]
-    simpa [Ixon.Verify.Codec.ConstantTables.getMany_eq_getArray] using
-      (show (EStateM.bind (Ixon.getArray Ixon.getMutConst t.value.toNat)
-          (fun ms => EStateM.pure (Ixon.ConstantInfo.muts ms)))
-          { idx := i, bytes := ⟨bytes.toArray⟩ } = _ by
-        simp only [EStateM.bind, hok, EStateM.pure])
+    simp only [do_for_push_eq_getArray_bind]
+    simp only [bind, EStateM.bind, hok, pure, EStateM.pure]
   · injection hv93 with hf
     have hfl : t.flag = 13 :=
       UInt8.ext ((Deserialize.natCast_eq_ofNat_iff (n := 13) t.flag.toNat_lt (by omega)).mp hf)
@@ -1988,9 +2019,8 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
       have hval := congrArg ZMod.val hsum
       rw [Deserialize.zmod_val_natCast_of_lt (by omega)] at hval
       simpa using hval
-    have hv_lt256 : t.value.toNat < 256 := by
-      have hlt := t.value.toNat_lt
-      omega
+    have hv_lt256 : t.value.toNat < 256 :=
+      u64_lt_256_of_high_bytes_zero t.value.toNat_lt hhi0
     dsimp only [TagN.u64Value] at pr348
     simp only [projectValue_tuple_zero, Except.ok.injEq] at pr348
     obtain ⟨hv325, hm328⟩ := Deserialize.u8ToField_refines ev338.erase
@@ -2077,10 +2107,11 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
       rw [show i + 32 + n2 = i + (32 + n2) by omega] at hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[headAddr] ++ tailAddrs, 32 + n2,
         (allocCons Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105).1, x_s2,
-        by simp [hsz2]; omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
+        by rw [Array.size_append, hsz2]; change 1 + count = count + 1; omega,
+        ?_, he164, by rw [singleton_append_toList]; exact consRep,
         L1.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
-      simp [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
+      simp only [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
 
 theorem get_refs_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -2139,11 +2170,12 @@ private theorem repList_nil_of_load {enumName : String} {R : Heap F → α → S
     xs = [] := by
   cases hrep with
   | nil _ => rfl
-  | @cons _ _ n _ _ cell _ _ =>
-    have h1 : loadValue h (.ptr (.enum enumName) n) = .ok _ := by
+  | @cons _ _ n headVal tailPtr cell _ _ =>
+    have h1 : loadValue h (.ptr (.enum enumName) n) =
+        .ok (.construct enumName "Cons" [headVal, tailPtr]) := by
       simp [loadValue, cell, bind, Except.bind, pure, Except.pure, Value.type]
     have heq := Except.ok.inj (h1.symm.trans hld)
-    cases heq
+    simp at heq
 
 private theorem array_eq_empty_of_toList_nil {α : Type} {a : Array α} (h : a.toList = []) :
     a = #[] := by
@@ -2171,6 +2203,18 @@ theorem assert_prj_empty_tables_spec {ci : Ixon.ConstantInfo}
      | .dPrj _ | .iPrj _ | .cPrj _ | .rPrj _ =>
          sharing = #[] ∧ refs = #[] ∧ univs = #[] ∧ binders = #[]
      | _ => True) := by
+  have hsh' : RepList Obs.Names.«Lists::Node<&Ixon::Expr>» Deserialize.RepExpr h
+      sharing.toList x_sharing := by
+    rw [← Obs.Names.n14714430324747779335]
+    exact hsh
+  have hunivs' : RepList Obs.Names.«Lists::Node<&Ixon::Univ>» Deserialize.RepUnivPtr h
+      univs.toList x_univs := by
+    rw [← Obs.Names.n1245658151410455720]
+    exact hunivs
+  have hbinders' : RepList Obs.Names.«Lists::Node<Ixon::BinderBlock>» Deserialize.RepBinderBlock h
+      binders.toList x_binders := by
+    rw [← Obs.Names.n9574717375266508469]
+    exact hbinders
   rcases Obs.«IxonDeserialize::assert_prj_empty_tables».obs ev with
     ⟨w17, hv15, ld33, ld48, ld63, ld78, -, he86, -⟩ |
     ⟨w95, -, hv93, ld111, ld126, ld141, ld156, -, he164, -⟩ |
@@ -2180,46 +2224,46 @@ theorem assert_prj_empty_tables_spec {ci : Ixon.ConstantInfo}
     ⟨x_members, w380, w381, -, -, -, -, hv327, _, -, he395, -⟩ |
     ⟨hne88, hne166, hne244, hne322, hne398, -, he405, -⟩
   · have empty4 : sharing = #[] ∧ refs = #[] ∧ univs = #[] ∧ binders = #[] :=
-      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh ld33),
+      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh' ld33),
        array_eq_empty_of_toList_nil (repList_nil_of_load hrefs ld48),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs ld63),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders ld78)⟩
+       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs' ld63),
+       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders' ld78)⟩
     refine ⟨he86, ?_⟩
     cases ci <;> first | exact empty4 | trivial
   · have empty4 : sharing = #[] ∧ refs = #[] ∧ univs = #[] ∧ binders = #[] :=
-      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh ld111),
+      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh' ld111),
        array_eq_empty_of_toList_nil (repList_nil_of_load hrefs ld126),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs ld141),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders ld156)⟩
+       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs' ld141),
+       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders' ld156)⟩
     refine ⟨he164, ?_⟩
     cases ci <;> first | exact empty4 | trivial
   · have empty4 : sharing = #[] ∧ refs = #[] ∧ univs = #[] ∧ binders = #[] :=
-      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh ld189),
+      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh' ld189),
        array_eq_empty_of_toList_nil (repList_nil_of_load hrefs ld204),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs ld219),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders ld234)⟩
+       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs' ld219),
+       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders' ld234)⟩
     refine ⟨he242, ?_⟩
     cases ci <;> first | exact empty4 | trivial
   · have empty4 : sharing = #[] ∧ refs = #[] ∧ univs = #[] ∧ binders = #[] :=
-      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh ld267),
+      ⟨array_eq_empty_of_toList_nil (repList_nil_of_load hsh' ld267),
        array_eq_empty_of_toList_nil (repList_nil_of_load hrefs ld282),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs ld297),
-       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders ld312)⟩
+       array_eq_empty_of_toList_nil (repList_nil_of_load hunivs' ld297),
+       array_eq_empty_of_toList_nil (repList_nil_of_load hbinders' ld312)⟩
     refine ⟨he320, ?_⟩
     cases ci <;> first | exact empty4 | trivial
   · refine ⟨he371, ?_⟩
     cases ci with
-    | dPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | iPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | cPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | rPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
+    | dPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | iPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | cPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | rPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
     | _ => trivial
   · refine ⟨he395, ?_⟩
     cases ci with
-    | dPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | iPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | cPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
-    | rPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; cases hv327
+    | dPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | iPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | cPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
+    | rPrj p => obtain ⟨pv, hv, -⟩ := hinfo; rw [hv] at hv327; simp at hv327
     | _ => trivial
   · refine ⟨he405, ?_⟩
     cases ci with
@@ -2306,7 +2350,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
     ⟨by simp [hshLen, shTag.value.toNat_lt],
      by rw [hrefsSz]; exact refsTag.value.toNat_lt,
      by rw [hunivsSz]; exact univsTag.value.toNat_lt,
-     hprj⟩, hs6⟩
+     by dsimp only; exact hprj⟩, hs6⟩
   unfold Ixon.getConstant Ixon.getConstantWithUnivs
   simp only [bind, EStateM.bind, hinfo_ok, hshTag_ok, hshArr_ok, hrefsTag_ok, hrefsArr_ok,
     hunivsTag_ok, hunivsArr_ok, hbinders_ok, pure, EStateM.pure]
@@ -2355,8 +2399,10 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       rw [hok]
     have hdeExact : Ixon.deConstantExact ⟨bytes.toArray⟩ = .ok c := by
       unfold Ixon.deConstantExact Ixon.runGetExact EStateM.run
-      rw [hok, ite_eq_left hn_eq]
+      rw [hok]
+      dsimp only
+      rw [ite_eq_left hn_eq]
     exact ⟨ext1.trans ext2, ⟨bytes.toArray⟩, c, hashed, hdigest, hde, hdeExact, hcRep, hwf⟩
-  · cases hbad
+  · simp at hbad
 
 end IxVM.Refinement.Claim
