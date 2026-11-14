@@ -149,7 +149,7 @@ theorem eq_addr_key_spec {c : Ctx} {rc eqa v_role v_raddr : SourceValue F} {a_eq
     · exact h
     · rw [ite_eq_right h] at heq_f
       injection heq_f with hf
-      exact absurd hf.symm one_ne_zero
+      exact absurd hf one_ne_zero
   subst ha_same
   exact ⟨keyOf_of_addressOf hwf haddr_of, hh₃⟩
 
@@ -240,13 +240,15 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
       intro k hk₁ hk₂
       rw [List.getElem_map, List.getElem_map, List.getElem_replicate]
       dsimp only [bfn, Value.type]
+      rfl
     unfold Value.type addrTy
-    exact congrArg Aiur.Generic.Ty.tuple hrep
+    exact congrArg Aiur.Ty.tuple hrep
   rw [hh'_eq, hm_arr, hbvals']
   refine ⟨a, .ptr (Value.tuple (xs.map bfn) : SourceValue F).type h.length,
     halist, rfl, ?_, Heap.Extends.snoc h _, hcs_eq⟩
   rw [hty]
-  exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp, by rw [halist]⟩
+  exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp,
+    L1.repAddress_iff.mpr (by simp [L1.digestV, halist]; rfl)⟩
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
@@ -1649,12 +1651,12 @@ theorem check_iota_rule_inv
   -- 4. `KernelCheck::validate_expr_well_scoped(rhs, 0, nl)`
   obtain ⟨v_sc, h_sc, _, c4a, _, d4, mt4, rest4, hc4⟩ := rest3.letValue_inv; clear rest3
   rw [hc4] at sc3; have sc4_l := sc3.append_left; have sc4 := sc3.append_right; clear sc3 hc4
-  obtain ⟨_, _, _, cs_sc, a4, ev_sc, hc_sc⟩ := d4.call_inv
+  obtain ⟨_, m4_3, _, cs_sc, a4, ev_sc, hc_sc⟩ := d4.call_inv
   rw [instanceName_plain_some] at ev_sc hc_sc
-  obtain ⟨_, _, _, _, _, _, _, _, rfl, hc4_args, d4_1, d4_2, d4_3⟩ := inv_args3 a4
-  obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d4_1
-  obtain ⟨rfl, rfl, rfl⟩ := d4_2.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d4_3
+  obtain ⟨_, _, _, m4_1, m4_2, _, _, _, rfl, hc4_args, d4_1, d4_2, d4_3⟩ := inv_args3 a4
+  obtain ⟨rfl, hm4_1, rfl⟩ := inv_var_find (by rfl) d4_1; subst m4_1
+  obtain ⟨rfl, hm4_2, rfl⟩ := d4_2.literal_inv; subst m4_2
+  obtain ⟨rfl, hm4_3, rfl⟩ := inv_var_find (by rfl) d4_3; subst m4_3
   obtain rfl := matchPattern_wildcard_inv mt4
   rw [hc_sc, hc4_args] at sc4_l
   have sub_sc := sc4_l.append_right.cons_tail
@@ -2820,6 +2822,8 @@ theorem check_iota_rule_vm_spec
   have hnd_lps : lps.Nodup := hlps_perm.nodup_iff.mpr List.nodup_range
   let nI : Nat := mI - rP
   let depth : Nat := rP + cnF
+  have hnI_def : nI = mI - rP := rfl
+  have hdepth_def : depth = rP + cnF := rfl
   have hrp_val : ZMod.val (rP : F) = rP := SubstAux.val_natCast (by omega)
   have hni_val : ZMod.val (nI : F) = nI := SubstAux.val_natCast (by omega)
   have hcnp_val : ZMod.val (cnP : F) = cnP := SubstAux.val_natCast (by omega)
@@ -2848,10 +2852,12 @@ theorem check_iota_rule_vm_spec
   -- 2. Stored `r.rhs` front-end (`validate_expr_well_scoped`, `peel_n_lams_collect`, `k_infer`)
   have hrhs_pos_tm0 : TmExact c_pub.κ 0 zeroGhost h 0 (posOf lps r.rhs) rhs := hrhs_rep 0 zeroGhost
   have hrhs_bvars : r.rhs.looseBVarsBounded 0 = true := by
-    have hb := Tm.wscopedB (ghostScoped_zero zeroGhost) hrhs_pos_tm0.toTm
+    have hb := hrhs_pos_tm0.toTm.looseBVarsBounded
+    unfold posOf at hb
     rwa [Expr.looseBVarsBounded_instantiateLevelParams] at hb
   have hrhs_nofvar : r.rhs.hasFvar = false := by
     have hf := Tm.hasFvar_false hrhs_pos_tm0.toTm
+    unfold posOf at hf
     rwa [Expr.hasFvar_instantiateLevelParams] at hf
   have hrhs_lvls : r.rhs.allLevelParamsDefined lps = true :=
     allLevelParamsDefined_of_posOf_perm hlps_perm
@@ -3855,9 +3861,9 @@ theorem check_rules_go_vm_spec
       {rc rm ty_r rules_ptr iblock ilvls pins src dst aset s_in s_out : SourceValue F}
       {bytes_in : List UInt8} {h h' : Heap F} {calls : List (Call F)},
       j + rls.length < 4611686018427387904 →
-      (∀ k (rl : RecRule .anon), rls[k]? = some rl →
+      (∀ (k : Nat) (rl : RecRule .anon), rls[k]? = some rl →
         rl.ctor = c_pub.κ (cprjAddr (ixAddr b_ind) (ZMod.val i_ind) (j + k))) →
-      (∀ k (rl : RecRule .anon), rls[k]? = some rl → ∀ cvj cnP cnF,
+      (∀ (k : Nat) (rl : RecRule .anon), rls[k]? = some rl → ∀ cvj cnP cnF,
         c_pub.env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
         lvls_lps.length = cvj.levelParams.length) →
       Good c_pub calls → Good c_adv calls →
@@ -4025,9 +4031,9 @@ theorem check_rules_vm_spec
       c_pub.env.find? (c_pub.κ (iprjAddr (ixAddr b_ind) i_ind)) = some (.indInfo cv_ind caps_ind) →
       (∃ bs dom body mb lvls_d, tyA.stripPis mI = some (bs, .forallE dom body mb) ∧
         dom.getAppFn = .const (c_pub.κ (iprjAddr (ixAddr b_ind) i_ind)) lvls_d) →
-      (∀ k (rl : RecRule .anon), rls[k]? = some rl →
+      (∀ (k : Nat) (rl : RecRule .anon), rls[k]? = some rl →
         rl.ctor = c_pub.κ (cprjAddr (ixAddr b_ind) i_ind k)) ∧
-      (∀ k (rl : RecRule .anon), rls[k]? = some rl → ∀ cvj cnP cnF,
+      (∀ (k : Nat) (rl : RecRule .anon), rls[k]? = some rl → ∀ cvj cnP cnF,
         c_pub.env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
         cvj.levelParams.length = cv_ind.levelParams.length))
     (hrc : RCRep c_pub.t c_pub.lim h rc)
@@ -4057,7 +4063,8 @@ theorem check_rules_vm_spec
       RawIotaRulesVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
         lvls_lps pins_lps 0 rls := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
-  let nI := mI - rP
+  let nI : Nat := mI - rP
+  have hnI_def : nI = mI - rP := rfl
   have hrp_val : ZMod.val (rP : F) = rP := SubstAux.val_natCast (by omega)
   have hni_val : ZMod.val (nI : F) = nI := SubstAux.val_natCast (by omega)
   match Obs.«KernelModeled::check_rules».obs ev with
