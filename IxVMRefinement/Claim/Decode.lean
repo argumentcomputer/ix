@@ -98,6 +98,20 @@ private theorem vector32_toList (a : Vector UInt8 32) :
   simp only [Vector.getElem_toList]
   interval_cases i <;> rfl
 
+private theorem stream_cons_step {m m' : Heap F} {v tail : SourceValue F} {b : UInt8}
+    {bs : List UInt8}
+    (hm : m' = m ++ [.construct Obs.Names.«Lists::Node<Field>» "Cons" [v, tail]])
+    (hv : v = L1.bv b)
+    (hs : L1.Stream m bs tail) :
+    L1.Stream m' (b :: bs) (.ptr (.enum Obs.Names.«Lists::Node<Field>») m.length) := by
+  rw [hm, hv]
+  exact L1.stream_cons_snoc hs
+
+private theorem proj_digestV_eq {a : Bytes.Address} {v : SourceValue F} (i : Nat) (hi : i < 32)
+    (hpr : projectValue (L1.digestV a : SourceValue F) i = .ok v) :
+    v = L1.bv a[i] :=
+  L1.ok_inj (hpr.symm.trans (L1.proj_digestV a i hi))
+
 theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     {x_a x_rest r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (ha : Bytes.RepAddressRef addrTy h a x_a)
@@ -116,103 +130,42 @@ theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     pr888, hm908, pr922, hm942, pr956, hm976, pr990, hm1010, pr1024, hm1044, pr1058, he1071,
     hm1070, pr1085, _⟩ := Obs.«IxonSerialize::put_address».obs ev
   have hv1 := L1.load_repAddressRef ha ld11
-  subst hv1
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 31 (by decide)).symm.trans pr38)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 30 (by decide)).symm.trans pr72)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 29 (by decide)).symm.trans pr106)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 28 (by decide)).symm.trans pr140)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 27 (by decide)).symm.trans pr174)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 26 (by decide)).symm.trans pr208)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 25 (by decide)).symm.trans pr242)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 24 (by decide)).symm.trans pr276)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 23 (by decide)).symm.trans pr310)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 22 (by decide)).symm.trans pr344)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 21 (by decide)).symm.trans pr378)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 20 (by decide)).symm.trans pr412)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 19 (by decide)).symm.trans pr446)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 18 (by decide)).symm.trans pr480)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 17 (by decide)).symm.trans pr514)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 16 (by decide)).symm.trans pr548)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 15 (by decide)).symm.trans pr582)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 14 (by decide)).symm.trans pr616)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 13 (by decide)).symm.trans pr650)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 12 (by decide)).symm.trans pr684)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 11 (by decide)).symm.trans pr718)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 10 (by decide)).symm.trans pr752)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 9 (by decide)).symm.trans pr786)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 8 (by decide)).symm.trans pr820)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 7 (by decide)).symm.trans pr854)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 6 (by decide)).symm.trans pr888)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 5 (by decide)).symm.trans pr922)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 4 (by decide)).symm.trans pr956)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 3 (by decide)).symm.trans pr990)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 2 (by decide)).symm.trans pr1024)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 1 (by decide)).symm.trans pr1058)
-  obtain rfl := L1.ok_inj ((L1.proj_digestV a 0 (by decide)).symm.trans pr1085)
-  have hs31 : L1.Stream m14 (a[31] :: rest) (.ptr (.enum byteStreamEnum) h.length) := by
-    rw [hm24]; exact L1.stream_cons_snoc hrest
-  have hs30 : L1.Stream m48 (a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m14.length) := by
-    rw [hm58]; exact L1.stream_cons_snoc hs31
-  have hs29 : L1.Stream m82 (a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m48.length) := by
-    rw [hm92]; exact L1.stream_cons_snoc hs30
-  have hs28 : L1.Stream m116 (a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m82.length) := by
-    rw [hm126]; exact L1.stream_cons_snoc hs29
-  have hs27 : L1.Stream m150 (a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m116.length) := by
-    rw [hm160]; exact L1.stream_cons_snoc hs28
-  have hs26 : L1.Stream m184 (a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m150.length) := by
-    rw [hm194]; exact L1.stream_cons_snoc hs27
-  have hs25 : L1.Stream m218 (a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m184.length) := by
-    rw [hm228]; exact L1.stream_cons_snoc hs26
-  have hs24 : L1.Stream m252 (a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m218.length) := by
-    rw [hm262]; exact L1.stream_cons_snoc hs25
-  have hs23 : L1.Stream m286 (a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m252.length) := by
-    rw [hm296]; exact L1.stream_cons_snoc hs24
-  have hs22 : L1.Stream m320 (a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m286.length) := by
-    rw [hm330]; exact L1.stream_cons_snoc hs23
-  have hs21 : L1.Stream m354 (a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m320.length) := by
-    rw [hm364]; exact L1.stream_cons_snoc hs22
-  have hs20 : L1.Stream m388 (a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m354.length) := by
-    rw [hm398]; exact L1.stream_cons_snoc hs21
-  have hs19 : L1.Stream m422 (a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m388.length) := by
-    rw [hm432]; exact L1.stream_cons_snoc hs20
-  have hs18 : L1.Stream m456 (a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m422.length) := by
-    rw [hm466]; exact L1.stream_cons_snoc hs19
-  have hs17 : L1.Stream m490 (a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m456.length) := by
-    rw [hm500]; exact L1.stream_cons_snoc hs18
-  have hs16 : L1.Stream m524 (a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m490.length) := by
-    rw [hm534]; exact L1.stream_cons_snoc hs17
-  have hs15 : L1.Stream m558 (a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m524.length) := by
-    rw [hm568]; exact L1.stream_cons_snoc hs16
-  have hs14 : L1.Stream m592 (a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m558.length) := by
-    rw [hm602]; exact L1.stream_cons_snoc hs15
-  have hs13 : L1.Stream m626 (a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m592.length) := by
-    rw [hm636]; exact L1.stream_cons_snoc hs14
-  have hs12 : L1.Stream m660 (a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m626.length) := by
-    rw [hm670]; exact L1.stream_cons_snoc hs13
-  have hs11 : L1.Stream m694 (a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m660.length) := by
-    rw [hm704]; exact L1.stream_cons_snoc hs12
-  have hs10 : L1.Stream m728 (a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m694.length) := by
-    rw [hm738]; exact L1.stream_cons_snoc hs11
-  have hs9 : L1.Stream m762 (a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m728.length) := by
-    rw [hm772]; exact L1.stream_cons_snoc hs10
-  have hs8 : L1.Stream m796 (a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m762.length) := by
-    rw [hm806]; exact L1.stream_cons_snoc hs9
-  have hs7 : L1.Stream m830 (a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m796.length) := by
-    rw [hm840]; exact L1.stream_cons_snoc hs8
-  have hs6 : L1.Stream m864 (a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m830.length) := by
-    rw [hm874]; exact L1.stream_cons_snoc hs7
-  have hs5 : L1.Stream m898 (a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m864.length) := by
-    rw [hm908]; exact L1.stream_cons_snoc hs6
-  have hs4 : L1.Stream m932 (a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m898.length) := by
-    rw [hm942]; exact L1.stream_cons_snoc hs5
-  have hs3 : L1.Stream m966 (a[3] :: a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m932.length) := by
-    rw [hm976]; exact L1.stream_cons_snoc hs4
-  have hs2 : L1.Stream m1000 (a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m966.length) := by
-    rw [hm1010]; exact L1.stream_cons_snoc hs3
-  have hs1 : L1.Stream m1034 (a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) (.ptr (.enum byteStreamEnum) m1000.length) := by
-    rw [hm1044]; exact L1.stream_cons_snoc hs2
-  have hs0 : L1.Stream h' (a[0] :: a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] :: a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] :: a[16] :: a[17] :: a[18] :: a[19] :: a[20] :: a[21] :: a[22] :: a[23] :: a[24] :: a[25] :: a[26] :: a[27] :: a[28] :: a[29] :: a[30] :: a[31] :: rest) r := by
-    rw [hm1070, he1071]; exact L1.stream_cons_snoc hs1
+  rw [hv1] at pr38 pr72 pr106 pr140 pr174 pr208 pr242 pr276 pr310 pr344 pr378 pr412 pr446 pr480
+    pr514 pr548 pr582 pr616 pr650 pr684 pr718 pr752 pr786 pr820 pr854 pr888 pr922 pr956 pr990
+    pr1024 pr1058 pr1085
+  have hs31 := stream_cons_step hm24 (proj_digestV_eq 31 (by omega) pr38) hrest
+  have hs30 := stream_cons_step hm58 (proj_digestV_eq 30 (by omega) pr72) hs31
+  have hs29 := stream_cons_step hm92 (proj_digestV_eq 29 (by omega) pr106) hs30
+  have hs28 := stream_cons_step hm126 (proj_digestV_eq 28 (by omega) pr140) hs29
+  have hs27 := stream_cons_step hm160 (proj_digestV_eq 27 (by omega) pr174) hs28
+  have hs26 := stream_cons_step hm194 (proj_digestV_eq 26 (by omega) pr208) hs27
+  have hs25 := stream_cons_step hm228 (proj_digestV_eq 25 (by omega) pr242) hs26
+  have hs24 := stream_cons_step hm262 (proj_digestV_eq 24 (by omega) pr276) hs25
+  have hs23 := stream_cons_step hm296 (proj_digestV_eq 23 (by omega) pr310) hs24
+  have hs22 := stream_cons_step hm330 (proj_digestV_eq 22 (by omega) pr344) hs23
+  have hs21 := stream_cons_step hm364 (proj_digestV_eq 21 (by omega) pr378) hs22
+  have hs20 := stream_cons_step hm398 (proj_digestV_eq 20 (by omega) pr412) hs21
+  have hs19 := stream_cons_step hm432 (proj_digestV_eq 19 (by omega) pr446) hs20
+  have hs18 := stream_cons_step hm466 (proj_digestV_eq 18 (by omega) pr480) hs19
+  have hs17 := stream_cons_step hm500 (proj_digestV_eq 17 (by omega) pr514) hs18
+  have hs16 := stream_cons_step hm534 (proj_digestV_eq 16 (by omega) pr548) hs17
+  have hs15 := stream_cons_step hm568 (proj_digestV_eq 15 (by omega) pr582) hs16
+  have hs14 := stream_cons_step hm602 (proj_digestV_eq 14 (by omega) pr616) hs15
+  have hs13 := stream_cons_step hm636 (proj_digestV_eq 13 (by omega) pr650) hs14
+  have hs12 := stream_cons_step hm670 (proj_digestV_eq 12 (by omega) pr684) hs13
+  have hs11 := stream_cons_step hm704 (proj_digestV_eq 11 (by omega) pr718) hs12
+  have hs10 := stream_cons_step hm738 (proj_digestV_eq 10 (by omega) pr752) hs11
+  have hs9 := stream_cons_step hm772 (proj_digestV_eq 9 (by omega) pr786) hs10
+  have hs8 := stream_cons_step hm806 (proj_digestV_eq 8 (by omega) pr820) hs9
+  have hs7 := stream_cons_step hm840 (proj_digestV_eq 7 (by omega) pr854) hs8
+  have hs6 := stream_cons_step hm874 (proj_digestV_eq 6 (by omega) pr888) hs7
+  have hs5 := stream_cons_step hm908 (proj_digestV_eq 5 (by omega) pr922) hs6
+  have hs4 := stream_cons_step hm942 (proj_digestV_eq 4 (by omega) pr956) hs5
+  have hs3 := stream_cons_step hm976 (proj_digestV_eq 3 (by omega) pr990) hs4
+  have hs2 := stream_cons_step hm1010 (proj_digestV_eq 2 (by omega) pr1024) hs3
+  have hs1 := stream_cons_step hm1044 (proj_digestV_eq 1 (by omega) pr1058) hs2
+  have hs0 := stream_cons_step hm1070 (proj_digestV_eq 0 (by omega) pr1085) hs1
+  rw [← he1071] at hs0
   have hlist : a.toList ++ rest =
       a[0] :: a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] ::
       a[8] :: a[9] :: a[10] :: a[11] :: a[12] :: a[13] :: a[14] :: a[15] ::
@@ -249,7 +202,7 @@ theorem leaf_hash_spec {a : Bytes.Address}
   rw [hmod] at hld
   have hba : (⟨(0 :: a.toList).toArray⟩ : ByteArray) = ByteArray.mk #[0] ++ (ixAddr a).hash := by
     apply byteArray_eq_of_toList
-    simp [ixAddr]
+    simp [ixAddr, ByteArray.data_append, Array.toList_append]
   have hhashed : Hashed calls (ByteArray.mk #[0] ++ (ixAddr a).hash) := by
     rw [← hba]
     exact L1.hashed_of_call (by rw [hc81]; simp [hcall]) hs0
@@ -288,7 +241,7 @@ theorem node_hash_spec {al ar : Bytes.Address}
   have hba : (⟨(1 :: (al.toList ++ ar.toList)).toArray⟩ : ByteArray) =
       ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash := by
     apply byteArray_eq_of_toList
-    simp [ixAddr, List.append_assoc]
+    simp [ixAddr, ByteArray.data_append, Array.toList_append, List.append_assoc]
   have hhashed : Hashed calls (ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash) := by
     rw [← hba]
     exact L1.hashed_of_call (by rw [hc102]; simp [hcall]) hs1
@@ -343,10 +296,12 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         x_rh, x_rl, x_s3, v307, m308, cs318, v340, m351, cs359,
         ev14, ev50, ev240, ev280, ev320, rfl, ev361, rfl, hc386⟩
     · -- Leaf (`tag = 0`)
-      obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
+      obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, rfl⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      rw [hm2] at hm37 ev50
+      subst hm2 hm37
       obtain ⟨extA, hlenA, addrPtr, restPtr2, htupA, haddr, hs2⟩ :=
         Deserialize.getAddress_refines hs1 ev76.erase
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupA
@@ -354,12 +309,12 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       let aB := Deserialize.takeAddress rest1 hlenA
       obtain ⟨extH, hhashed, rootB, hroot, hix_root⟩ := leaf_hash_spec haddr ev111
       have ext156 : Heap.Extends m99 m156 := by rw [hm164]; exact Heap.Extends.snoc m99 _
-      have ext134 : Heap.Extends m156 m134 := by rw [hm142]; exact Heap.Extends.snoc m156 _
+      have ext134 : Heap.Extends m156 h' := by rw [hm142]; exact Heap.Extends.snoc m156 _
       have extPost := ext156.trans ext134
       have hnil_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) m156 []
           (.ptr (.enum addrListEnum) m99.length) := by
         rw [hm164]; exact Lib.rep_store_nil m99
-      have hcons_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) m134 [aB]
+      have hcons_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) h' [aB]
           (.ptr (.enum addrListEnum) m156.length) := by
         rw [hm142]
         exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy)
@@ -375,12 +330,14 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       · rw [hb]
         simpa using L1.Stream.mono (extH.trans extPost) hs2
     · -- Padding (`tag = 1`)
-      obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
+      obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, rfl⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      rw [hm2] at hm37
+      subst hm2 hm37
       have ext189 : Heap.Extends h m189 := by rw [hm197]; exact Heap.Extends.snoc h _
-      have ext201 : Heap.Extends m189 m201 := by rw [hm209]; exact Heap.Extends.snoc m189 _
+      have ext201 : Heap.Extends m189 h' := by rw [hm209]; exact Heap.Extends.snoc m189 _
       have extPost := ext189.trans ext201
       let zeroB : Bytes.Address := Vector.replicate 32 0
       have hdig0 : L1.digestV zeroB = .tuple (List.replicate 32 (.field 0)) := by
@@ -388,11 +345,11 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       have hld0 : loadValue m189
           (.ptr (.tuple (List.map Value.type (List.replicate 32 ((.field 0) : SourceValue F))))
             h.length) = .ok (L1.digestV zeroB) := by
-        rw [hdig0, hm197]
-        simpa [Value.type] using L1.loadValue_snoc h (.tuple (List.replicate 32 (.field 0)))
-      have hroot : Bytes.RepAddressRef addrTy m201 zeroB _ :=
+        rw [hdig0, hm197, ← L1.type_tuple]
+        exact L1.loadValue_snoc h (.tuple (List.replicate 32 (.field 0)))
+      have hroot : Bytes.RepAddressRef addrTy h' zeroB _ :=
         Bytes.repAddressRef_heapMono₂ addrTy ext201 (repAddressRef_of_load_digestV hld0)
-      have hnil_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) m201 []
+      have hnil_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) h' []
           (.ptr (.enum addrListEnum) m189.length) := by
         rw [hm209]; exact Lib.rep_store_nil m189
       have hix_zero : ixAddr zeroB = Ix.HostAdmission.Merkle.padding := by
@@ -405,10 +362,12 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       rw [hb]
       simpa using L1.Stream.mono extPost hs1
     · -- Node (`tag = 2`)
-      obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
+      obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, rfl⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      rw [hm2] at hm37 hc386
+      subst hm2 hm37
       have hlt1 : rest1.length < n := by rw [← hlen_eq, hb]; simp
       obtain ⟨extL, tL, kL, lhB, asL, _, _, _, hkL_ge, hkL_le, htupL, hrepL, hixL, hlL, hmapL,
         hhashL, hsL⟩ := ih rest1.length hlt1 rfl hs1 ev240
@@ -436,7 +395,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
           (Bytes.RepAddressRef addrTy) m308 asR x_rl := by
         rw [hsym_node]
         exact RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) extN hlR
-      have hlCat : RepList addrListEnum (Bytes.RepAddressRef addrTy) m351 (asL ++ asR) v340 := by
+      have hlCat : RepList addrListEnum (Bytes.RepAddressRef addrTy) h' (asL ++ asR) v340 := by
         rw [← hsym_node]
         exact Lib.Lists.concat_spec (Bytes.repAddressRef_heapMono₂ addrTy) ev361 hlL' hlR'
       rw [List.length_drop] at hkR_le
@@ -456,7 +415,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         · exact hashed_mono (by intro c hc; rw [hc386]; simp [hc]) (hhashL img himgL)
         · exact hashed_mono (by intro c hc; rw [hc386]; simp [hc]) (hhashR img himgR)
       · rw [hb, show 1 + kL + kR = (kL + kR) + 1 by omega, List.drop_succ_cons, ← List.drop_drop]
-        exact hsR.mono extCat
+        exact L1.Stream.mono (extN.trans extCat) hsR
 
 private theorem byte0_ne_byte1 {b₀ b₁ : ByteArray} :
     ByteArray.mk #[1] ++ b₁ ≠ ByteArray.mk #[0] ++ b₀ := by
@@ -690,11 +649,23 @@ private theorem packDigest_cv_word (cv : Blake3.Pure.CV) (k : Fin 8) :
       ((ixAddr (Blake3.Pure.cvBytes cv)).hash.data.getD m 0) = (Blake3.Pure.cvBytes cv)[m] := by
     intro m hm
     have hsz : m < (Blake3.Pure.cvBytes cv).toArray.size := by simpa using hm
-    simp [ixAddr, L1.ixAddr, Array.getD, hsz]
-  rcases k with ⟨kv, hkv⟩
-  interval_cases kv <;>
-    simp only [Nat.mul_zero, Nat.mul_one, Nat.zero_add,
-      getD_cv _ (by decide), Blake3.Pure.cvBytes, Vector.getElem_ofFn]
+    simp [ixAddr, Array.getD, hsz, hm]
+  have hk8 : k.val < 8 := k.isLt
+  have h0 := getD_cv (4 * k.val) (by omega)
+  have h1 := getD_cv (4 * k.val + 1) (by omega)
+  have h2 := getD_cv (4 * k.val + 2) (by omega)
+  have h3 := getD_cv (4 * k.val + 3) (by omega)
+  rw [h0, h1, h2, h3]
+  simp only [Blake3.Pure.cvBytes, Vector.getElem_ofFn]
+  have d0 : (4 * k.val) / 4 = k.val := by omega
+  have m0 : (4 * k.val) % 4 = 0 := by omega
+  have d1 : (4 * k.val + 1) / 4 = k.val := by omega
+  have m1 : (4 * k.val + 1) % 4 = 1 := by omega
+  have d2 : (4 * k.val + 2) / 4 = k.val := by omega
+  have m2 : (4 * k.val + 2) % 4 = 2 := by omega
+  have d3 : (4 * k.val + 3) / 4 = k.val := by omega
+  have m3 : (4 * k.val + 3) % 4 = 3 := by omega
+  simp only [d0, m0, d1, m1, d2, m2, d3, m3]
 
 theorem pack_digest_spec {cv : Blake3.Pure.CV} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
@@ -964,7 +935,8 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
         have hne_leaves : treeLeaves tTree ≠ [] := by
           rw [← hmap, hcons_as]; simp
         have hrc2 := hrc.mono ext1
-        obtain ⟨_, rfl⟩ := role_ctx_axioms_spec hrc2 ev137
+        obtain ⟨_, hm124⟩ := role_ctx_axioms_spec hrc2 ev137
+        subst hm124
         exact .inr ⟨as, m2, v1, cs155, hne_leaves, hmap, hrc2, hlLeaves, ev157,
           by rw [hc174]; simp, fun cl hcl => by rw [hc174]; simp [hcl]⟩
   · rcases load_assumption_tree_spec (V := V) (extra := extra) htTree hroot ev14 with
@@ -1178,7 +1150,8 @@ theorem verify_claim_decode_spec
     apply packDigest_inj (blake3Pure_hash_size _) (blake3Pure_hash_size _)
     have hp := digestValue_inj heq_pd
     rw [← hpack] at hp
-    simpa [L1.blake3Pure_eq] using hp
+    rw [L1.blake3Pure_eq]
+    exact hp
   by_cases heq_bytes : (⟨rawBytes.toArray⟩ : ByteArray) = bytes
   case neg =>
     exact .inl (.inl ⟨Address.blake3Pure bytes, bytes, ⟨rawBytes.toArray⟩,
@@ -1211,7 +1184,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_s0
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_tagn2
   obtain ⟨rfl, tag, n1, restPtr1, hok_tag, hs_n1, htagn_tup⟩ :=
-    TagN.getTagN4_refines_at (i := 0) (by simpa using hst_raw.mono ext_hash) ev_tagn.erase
+    TagN.getTagN4_refines_at (i := 0) (by simpa using L1.Stream.mono ext_hash hst_raw) ev_tagn.erase
   simp only [Nat.zero_add] at hok_tag hs_n1
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htagn_tup
   obtain ⟨rfl, rfl⟩ := htagn_tup
@@ -1227,9 +1200,10 @@ theorem verify_claim_decode_spec
   obtain ⟨x_size, _, _, _, hxs, mt_size, ml_ft2, rfl⟩ := matchListWith_cons_inv ml_ft1
   obtain rfl := matchPattern_bind_inv mt_size
   obtain ⟨_, rfl⟩ := matchListWith_nil_inv ml_ft2
-  simp only [List.cons.injEq] at hxf hxs
+  simp only [List.cons.injEq] at hxf
   obtain ⟨rfl, hxf'⟩ := hxf
-  rw [hxf'] at hxs
+  rw [← hxf'] at hxs
+  simp only [List.cons.injEq] at hxs
   obtain ⟨rfl, _⟩ := hxs
   -- 7. `assert_eq!(flag, 14, ...);`
   obtain ⟨_, m_eq2, bs_eq2, c_eq2, c7, d_eq2, mt_eq2, d7, rfl⟩ := d6.letValue_inv
@@ -1261,14 +1235,14 @@ theorem verify_claim_decode_spec
   have hml8 : bs_sz = [("sz1", sz1), ("sz2", sz2), ("sz3", sz3), ("sz4", sz4),
       ("sz5", sz5), ("sz6", sz6), ("sz7", sz7)] := by
     simp only [List.cons.injEq] at hsz0
-    rw [hsz0.2] at hsz1; simp only [List.cons.injEq] at hsz1
-    rw [hsz1.2] at hsz2; simp only [List.cons.injEq] at hsz2
-    rw [hsz2.2] at hsz3; simp only [List.cons.injEq] at hsz3
-    rw [hsz3.2] at hsz4; simp only [List.cons.injEq] at hsz4
-    rw [hsz4.2] at hsz5; simp only [List.cons.injEq] at hsz5
-    rw [hsz5.2] at hsz6; simp only [List.cons.injEq] at hsz6
-    rw [hsz6.2] at hsz7; simp only [List.cons.injEq] at hsz7
-    rw [hsz7.2] at ml_sz8
+    rw [← hsz0.2] at hsz1; simp only [List.cons.injEq] at hsz1
+    rw [← hsz1.2] at hsz2; simp only [List.cons.injEq] at hsz2
+    rw [← hsz2.2] at hsz3; simp only [List.cons.injEq] at hsz3
+    rw [← hsz3.2] at hsz4; simp only [List.cons.injEq] at hsz4
+    rw [← hsz4.2] at hsz5; simp only [List.cons.injEq] at hsz5
+    rw [← hsz5.2] at hsz6; simp only [List.cons.injEq] at hsz6
+    rw [← hsz6.2] at hsz7; simp only [List.cons.injEq] at hsz7
+    rw [← hsz7.2] at ml_sz8
     obtain ⟨_, rfl⟩ := matchListWith_nil_inv ml_sz8
     rfl
   rw [hml8] at d8
@@ -1454,7 +1428,7 @@ theorem verify_claim_decode_spec
     -- Align `getPayload 4 valByte` with `get_claim_context`, `get_address`, `get_opt_addr`
     have ext_rc0 := ev_rc.heap_extends
     obtain ⟨ext_tgt, hlen_tgt, _, _, htup_tgt, haddr_tgt, hs_tgt⟩ :=
-      Deserialize.getAddress_refines (hs_ctx.mono ext_rc0) ev_tgt.erase
+      Deserialize.getAddress_refines (L1.Stream.mono ext_rc0 hs_ctx) ev_tgt.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_tgt
     obtain ⟨rfl, rfl⟩ := htup_tgt
     rw [List.drop_drop] at hs_tgt
@@ -1616,7 +1590,7 @@ theorem verify_claim_decode_spec
     -- Align `getPayload 5 valByte`
     have ext_rc0 := ev_rc.heap_extends
     obtain ⟨ext_rt, hlen_rt, _, _, htup_rt, haddr_rt, hs_rt⟩ :=
-      Deserialize.getAddress_refines (hs_ctx.mono ext_rc0) ev_rt.erase
+      Deserialize.getAddress_refines (L1.Stream.mono ext_rc0 hs_ctx) ev_rt.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_rt
     obtain ⟨rfl, rfl⟩ := htup_rt
     rw [List.drop_drop] at hs_rt
