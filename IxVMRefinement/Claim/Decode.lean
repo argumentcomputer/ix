@@ -1295,7 +1295,8 @@ theorem verify_claim_decode_spec
   · simp [hret9, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
   simp only [hret9, Bool.false_eq_true, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hget_claim
   obtain ⟨w_val, st_scope, hok_scope, hok_payload⟩ := Ixon.Verify.TagN.bind_ok_inv hget_claim
-  obtain ⟨rfl, rfl⟩ := getScope_ok_inv hu8_fmt hu8_val hok_scope
+  obtain ⟨rfl, hval_eq⟩ := getScope_ok_inv hu8_fmt hu8_val hok_scope
+  subst w_val
   have hvar_45 := getPayload_inScope_variant hok_payload hscope
   -- 14. `match UInt8::to_field(variant) { ... }`
   obtain ⟨v_scrut, m_scrut, bs_arm, body_arm, c_scrut, c_arm, d_scrut, sel_arm, d_arm, rfl⟩ :=
@@ -1320,6 +1321,7 @@ theorem verify_claim_decode_spec
     rcases selectArm_cons_inv sel_arm with ⟨mt3, _⟩ | ⟨_, sel_arm1⟩
     · obtain ⟨heq34, _⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt3
       simp at heq34
+      exact absurd heq34 (by decide)
     rcases selectArm_cons_inv sel_arm1 with ⟨mt4, rfl⟩ | ⟨nm4, _⟩
     case inr =>
       exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal 4) nm4)
@@ -1484,9 +1486,11 @@ theorem verify_claim_decode_spec
     rcases selectArm_cons_inv sel_arm with ⟨mt3, _⟩ | ⟨_, sel_arm1⟩
     · obtain ⟨heq35, _⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt3
       simp at heq35
+      exact absurd heq35 (by decide)
     rcases selectArm_cons_inv sel_arm1 with ⟨mt4, _⟩ | ⟨_, sel_arm2⟩
     · obtain ⟨heq45, _⟩ := MatchesConst.some_inv (MatchesConst.literal 4) mt4
       simp at heq45
+      exact absurd heq45 (by decide)
     rcases selectArm_cons_inv sel_arm2 with ⟨mt5, rfl⟩ | ⟨nm5, _⟩
     case inr =>
       exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal 5) nm5)
