@@ -1819,9 +1819,19 @@ private theorem binderRootsEmptyFast_eq :
     rw [array_isEmpty_eq_toList_isEmpty]
     simp [Array.toList_append]
   | .muts ms => by
-    unfold binderRootsEmptyFast Ixon.ConstantInfo.binderRoots
+    dsimp only [binderRootsEmptyFast, Ixon.ConstantInfo.binderRoots]
     rw [← Array.foldl_toList, array_isEmpty_eq_toList_isEmpty]
-    change ms.toList.isEmpty = (ms.toList.foldl mutBinderRootsStep #[]).toList.isEmpty
+    have hstep :
+        (ms.toList.foldl
+          (fun acc m => acc ++ match m with
+            | .defn d => #[d.typ, d.value]
+            | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
+            | .recr r => #[r.typ] ++ r.rules.map (·.rhs)) #[]) =
+        ms.toList.foldl mutBinderRootsStep #[] := by
+      congr 1
+      funext acc m
+      cases m <;> rfl
+    rw [hstep]
     cases hms : ms.toList with
     | nil => rfl
     | cons m xs =>
@@ -1832,22 +1842,27 @@ private theorem binderRootsEmptyFast_eq :
       | nil => exact absurd hfl hne
       | cons _ _ => rfl
 
+private def mutMaxLvlsStep (acc : Nat) : Ixon.MutConst → Nat
+  | .defn d => max acc d.lvls.toNat
+  | .indc i => max acc i.lvls.toNat
+  | .recr r => max acc r.lvls.toNat
+
 private def maxLvlsFast : Ixon.ConstantInfo → Nat
   | .defn d => d.lvls.toNat
   | .recr r => r.lvls.toNat
   | .axio a => a.lvls.toNat
   | .quot q => q.lvls.toNat
   | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => 0
-  | .muts ms => ms.toList.foldl (init := 0) fun acc m => max acc <| match m with
-    | .defn d => d.lvls.toNat
-    | .indc i => i.lvls.toNat
-    | .recr r => r.lvls.toNat
+  | .muts ms => ms.toList.foldl mutMaxLvlsStep 0
 
 private theorem maxLvlsFast_eq : ∀ (ci : Ixon.ConstantInfo), maxLvlsFast ci = ci.maxLvls
   | .defn _ | .recr _ | .axio _ | .quot _ | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => rfl
   | .muts ms => by
-    unfold maxLvlsFast Ixon.ConstantInfo.maxLvls
+    dsimp only [maxLvlsFast, Ixon.ConstantInfo.maxLvls]
     rw [← Array.foldl_toList]
+    congr 1
+    funext acc m
+    cases m <;> rfl
 
 private def binderNodeCanonicalFast (lvls : Nat) : Ixon.BinderNode → Bool
   | .ifAllZero params _ =>
@@ -1910,9 +1925,6 @@ private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalF
     unfold modesCanonicalFast Ixon.Constant.modesCanonical
     dsimp only
     rw [← Array.all_toList]
-    congr 1
-    funext m
-    cases m <;> rfl
 
 def checkConstBytesFast (c : Ixon.Constant) (bs : List UInt8) : Bool :=
   validConstantFast c &&
