@@ -1,3 +1,4 @@
+import IxVMRefinement.Claim.DefaultAdmits
 import IxVMRefinement.Claim.Walk
 
 /-! # Obligation L6: Claim-phase soundness and walked-closure assembly
@@ -354,6 +355,17 @@ theorem l6_L6 (hDef : Ix.Cert.RoleClosure.DefaultAdmits) :
     IxVM.Consistency.L6 S_L6 :=
   fun _ => claimPhase_L6 hDef
 
+/-- **Claim-phase soundness at `S_L6`** from `DefaultTableBytesUnfolds` (which holds by `rfl`
+once `Ix.Kernel.Reader.defaultTableBytes` delegates to `defaultTableBytesOf`). -/
+theorem claimPhase_L6_of_unfolds (hUnf : DefaultTableBytesUnfolds) :
+    IxVM.Consistency.ClaimPhase S_L6 :=
+  claimPhase_L6 (defaultAdmits_of_unfolds hUnf)
+
+/-- **Obligation `L6` at `S_L6`** from `DefaultTableBytesUnfolds`. -/
+theorem l6_L6_of_unfolds (hUnf : DefaultTableBytesUnfolds) :
+    IxVM.Consistency.L6 S_L6 :=
+  l6_L6 (defaultAdmits_of_unfolds hUnf)
+
 /-! ## Conditional bridge to provisional `S₀` -/
 
 /-- Explicit hypothesis isolating the two provisional `S0.Walked` conjuncts beyond `WalkedL6`:
@@ -426,5 +438,21 @@ theorem l6_S₀
     (hExtra : ClaimExtraFacts) :
     IxVM.Consistency.L6 S₀ :=
   fun _ => claimPhase_S₀ hDef hExtra
+
+/-- **Claim-phase soundness at provisional `S₀`** from `DefaultTableBytesUnfolds` and
+`ClaimExtraFacts`. -/
+theorem claimPhase_S₀_of_unfolds
+    (hUnf : DefaultTableBytesUnfolds)
+    (hExtra : ClaimExtraFacts) :
+    IxVM.Consistency.ClaimPhase S₀ :=
+  claimPhase_S₀ (defaultAdmits_of_unfolds hUnf) hExtra
+
+/-- **Obligation `L6` at provisional `S₀`** from `DefaultTableBytesUnfolds` and
+`ClaimExtraFacts`. -/
+theorem l6_S₀_of_unfolds
+    (hUnf : DefaultTableBytesUnfolds)
+    (hExtra : ClaimExtraFacts) :
+    IxVM.Consistency.L6 S₀ :=
+  l6_S₀ (defaultAdmits_of_unfolds hUnf) hExtra
 
 end IxVM.Refinement.Claim
