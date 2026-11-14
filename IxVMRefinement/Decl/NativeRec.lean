@@ -2604,12 +2604,15 @@ theorem is_large_eliminator_one_spec (hLevels : IxVM.Consistency.Levels)
       hopP, hopT, hdoms, hopF, hidx_len, hxres, heres,
       fieldSortsJ_large_of_isProp_false hfs true⟩
   | .other_other_n0 (hv69 := hv69) .. =>
-    have hlen0 : ctors.length = 0 := nat_eq_of_field_eq hnCtors_lt (by decide) hv69
-    refine ⟨Or.inr (by omega), [], by omega, by omega, fun j _ _ hcj _ => ?_⟩
+    have hlen0 : ctors.length = 0 :=
+      nat_eq_of_field_eq (Nat.lt_trans hnCtors_lt (by decide)) (by decide) hv69
+    have hctorsA_len : ctorsA.length = ctors.length := hctors₀.1
+    refine ⟨Or.inr (by omega), [], by simp [hctorsA_len, hlen0], by simp [hlen0], fun j _ _ hcj _ => ?_⟩
     have := (List.getElem?_eq_some_iff.mp hcj).1
     omega
   | .other_other_n1_other_Ctor_n0 (hv77 := hv77) (hv92 := hv92) .. =>
-    have hlen1 : ctors.length = 1 := nat_eq_of_field_eq hnCtors_lt (by decide) hv77
+    have hlen1 : ctors.length = 1 :=
+      nat_eq_of_field_eq (Nat.lt_trans hnCtors_lt (by decide)) (by decide) hv77
     obtain ⟨cA₀, xnl, xcty, w2, w3, w4, w5, hctorsA_eq, hopt_eq, _⟩ := hopt hlen1
     rw [hopt_eq] at hv92
     injection hv92 with h_tup; injection h_tup with _ h_tup; injection h_tup with h_ci _
@@ -2620,7 +2623,8 @@ theorem is_large_eliminator_one_spec (hLevels : IxVM.Consistency.Levels)
     have hnF_lt : cA₀.2 < 2147483648 := by
       have := hnPF_lt cA₀ (by rw [hctorsA_eq]; exact List.mem_cons_self)
       omega
-    have hnF0 : cA₀.2 = 0 := nat_eq_of_field_eq hnF_lt (by decide) hnf0
+    have hnF0 : cA₀.2 = 0 :=
+      nat_eq_of_field_eq (Nat.lt_trans hnF_lt (by decide)) (by decide) hnf0
     refine ⟨Or.inr (by omega), [[]], by simp [hctorsA_eq, hlen1], by simp [hlen1],
       fun j c₀ cA hc₀ hcA => ?_⟩
     have hj0 : j = 0 := by
@@ -2640,7 +2644,8 @@ theorem is_large_eliminator_one_spec (hLevels : IxVM.Consistency.Levels)
       (ev15 := ev15) (hv77 := hv77) (hv92 := hv92) (hm255 := hm255)
       (ev212 := ev212) (hc259 := hc259) .. =>
     subst hc259
-    have hlen1 : ctors.length = 1 := nat_eq_of_field_eq hnCtors_lt (by decide) hv77
+    have hlen1 : ctors.length = 1 :=
+      nat_eq_of_field_eq (Nat.lt_trans hnCtors_lt (by decide)) (by decide) hv77
     obtain ⟨cA₀, xnl, xcty, w2, w3, w4, w5, hctorsA_eq, hopt_eq, hxcty⟩ := hopt hlen1
     rw [hopt_eq] at hv92
     injection hv92 with h_tup; injection h_tup with _ h_tup; injection h_tup with h_ci _
@@ -2679,8 +2684,8 @@ theorem is_large_eliminator_one_spec (hLevels : IxVM.Consistency.Levels)
       obtain ⟨sorts_lg, hfs_lg0⟩ :=
         check_large_prop_ctor_go (fvsP := fun _ => True) (crest := fun _ => True)
           hLevels hCore hef hlf hnPF_cA₀
-          (fvar_not_in_fvsP hopP (Nat.le_refl nP)) hopF nP 0 (by omega) hopP hg_prop
-          (hrc.mono (e_15.trans e_247)) hty_nil GhostScoped.zero
+          (fvar_not_in_fvsP hopP (by omega)) hopF nP 0 (by omega) hopP hg_prop
+          (hrc.mono (e_15.trans e_247)) hty_nil (fun _ hj => nomatch hj)
           (hxcty.mono (e_15.trans e_247)) ev212
       have hfs_lg : FieldSortsJ rulesJ c.env true true resSort nP xFvs idxArgs c₀.2 sorts_lg :=
         fieldSortsJ_isProp_true_set_sort hfs_lg0
