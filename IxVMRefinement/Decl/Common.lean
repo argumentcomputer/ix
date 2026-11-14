@@ -1364,8 +1364,9 @@ private theorem infer_constsResolve_aux :
       obtain ⟨tbl, hf, hi, _⟩ := Ix.Kernel.Env.findProj?_some hent
       obtain ⟨_, _, _, ⟨cvT, caps, hT, _, _⟩, _⟩ := hstore.proj_ok _ tbl hf i hi
       have hsn : tbl.structName = sn := by
-        have hname : ((ConstantInfo.projInfo tbl).name == Ix.Kernel.projTableName sn) = true :=
-          List.find?_some hf
+        have hf' : env.consts.find? (·.name == Ix.Kernel.projTableName sn) =
+            some (.projInfo tbl) := hf
+        have hname := List.find?_some hf'
         exact Ix.Kernel.projTableName_inj (beq_iff_eq.mp hname)
       simp only [Ix.Kernel.ProjTable.entry, hsn] at hT
       simp [hT]
