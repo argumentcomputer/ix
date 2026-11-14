@@ -355,6 +355,98 @@ private theorem defCx_roles_of_pure {ref : ConstRef _root_.Address} {k : CName .
 
 /-! ### Pure recursor index -/
 
+private def recursorMembersFast (c : Ixon.Constant) : List (Nat × Ixon.Recursor) :=
+  match c.info with
+  | .recr r => [(0, r)]
+  | .muts ms => ms.toList.zipIdx.filterMap fun | (.recr r, j) => some (j, r) | _ => none
+  | _ => []
+
+private theorem recursorMembersFast_eq (c : Ixon.Constant) :
+    recursorMembersFast c = (recursorMembers c).toList := by
+  unfold recursorMembersFast recursorMembers
+  cases c.info with
+  | recr _ => rfl
+  | muts ms => rw [Array.toList_filterMap, Array.toList_zipIdx]
+  | _ => rfl
+
+private def analyseRecursorFast (store : Store) (owner : _root_.Address) (c : Ixon.Constant)
+    (r : Ixon.Recursor) : Option (Nat × Array (ConstRef _root_.Address) × ConstRef _root_.Address) := do
+  let nP := r.params.toNat
+  let nM := r.motives.toNat
+  let nm := r.minors.toNat
+  let nI := r.indices.toNat
+  let depth := nP + nM + nm + nI + 1
+  let (doms, body) ← stripAll c depth r.typ
+  let .var k := appHead c spineFuel body | none
+  let pos := depth - 1 - k.toNat
+  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
+  let carriersL ← (doms.drop nP |>.take nM).mapM fun dom => do
+    let (bs, _) := stripAllFull c spineFuel dom
+    headRef store owner c (← bs.getLast?)
+  let major ← headRef store owner c (← doms.getLast?)
+  pure (pos - nP, carriersL.toArray, major)
+
+private theorem analyseRecursorFast_eq (store : Store) (owner : _root_.Address)
+    (c : Ixon.Constant) (r : Ixon.Recursor) :
+    analyseRecursorFast store owner c r = analyseRecursor store owner c r := by
+  unfold analyseRecursorFast analyseRecursor
+  dsimp only
+  cases stripAll c (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat + 1) r.typ with
+  | none => rfl
+  | some pair =>
+    rcases pair with ⟨doms, body⟩
+    dsimp only
+    cases appHead c spineFuel body with
+    | var k =>
+      dsimp only
+      split
+      · simp only [Array.mapM_eq_mapM_toList, List.toList_toArray, Functor.map, Option.map,
+          bind, Option.bind, pure]
+        cases ((doms.drop r.params.toNat).take r.motives.toNat).mapM _ <;> rfl
+      · rfl
+    | _ => rfl
+
+private def inductivesFast (members : Array Ixon.MutConst) : Array (Nat × Ixon.Inductive) :=
+  (members.toList.zipIdx.filterMap fun | (.indc ind, index) => some (index, ind) | _ => none).toArray
+
+private theorem inductivesFast_eq (members : Array Ixon.MutConst) :
+    inductivesFast members = Ix.CompileCert.ReaderIndex.inductives members := by
+  apply Array.ext'
+  simp [inductivesFast, Ix.CompileCert.ReaderIndex.inductives, Array.toList_filterMap,
+    Array.toList_zipIdx]
+
+private def orderForFast (carriers : Array (ConstRef _root_.Address)) (owner : _root_.Address)
+    (count : Nat) : Array Nat :=
+  ((carriers.toList.take count).filterMap fun
+    | .member block index => if block == owner then some index else none
+    | .ctor .. => none).toArray
+
+private theorem orderForFast_eq (carriers : Array (ConstRef _root_.Address))
+    (owner : _root_.Address) (count : Nat) :
+    orderForFast carriers owner count =
+      Ix.CompileCert.ReaderIndex.orderFor carriers owner count := by
+  apply Array.ext'
+  rw [orderForFast, Ix.CompileCert.ReaderIndex.orderFor, List.toList_toArray,
+      Array.toList_filterMap, Array.toList_extract, List.extract_eq_take_drop, List.drop_zero]
+
+private def orderValidFast (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive))
+    (order : Array Nat) : Bool :=
+  order.size == indcs.size && order[0]? == some firstIndex &&
+    order.toList.all (fun index => indcs.toList.any (·.1 == index)) &&
+    order.toList.eraseDups.length == indcs.size
+
+private theorem orderValidFast_eq (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive))
+    (order : Array Nat) :
+    orderValidFast firstIndex indcs order =
+      Ix.CompileCert.ReaderIndex.orderValid firstIndex indcs order := by
+  unfold orderValidFast Ix.CompileCert.ReaderIndex.orderValid
+  rw [← Array.all_toList]
+  have hfun : (fun index => indcs.toList.any (·.1 == index)) =
+      (fun index => indcs.any (·.1 == index)) := by
+    funext index
+    rw [← Array.any_toList]
+  rw [hfun]
+
 private structure PureIdx where
   recs : List (ConstRef _root_.Address × RecEntry) := []
   blocks : List (_root_.Address × Array Nat) := []
@@ -366,15 +458,15 @@ private def pureCandStep (owner : _root_.Address) (c : Ixon.Constant)
   let ref : ConstRef _root_.Address := .member owner pos
   guard (s.recs.lookup ref).isNone
   guard (c.refs.toList.all committedPreAddrs.contains)
-  let (motive, carriers, major) ← analyseRecursor preStorePure owner c rec
+  let (motive, carriers, major) ← analyseRecursorFast preStorePure owner c rec
   let .member block firstIdx ← carriers[0]? | none
   guard (committedPreAddrs.contains block)
   let blockRec ← preStorePure block
   let .muts members := blockRec.info | none
-  let indcs := Ix.CompileCert.ReaderIndex.inductives members
+  let indcs := inductivesFast members
   let (_, first) ← indcs[0]?
-  let order := Ix.CompileCert.ReaderIndex.orderFor carriers block indcs.size
-  guard (Ix.CompileCert.ReaderIndex.orderValid firstIdx indcs order)
+  let order := orderForFast carriers block indcs.size
+  guard (orderValidFast firstIdx indcs order)
   guard (s.found.lookup block).isNone
   guard (s.blocks.lookup block).isNone
   let large := rec.lvls.toNat == first.lvls.toNat + 1
@@ -387,7 +479,7 @@ private def pureCandStep (owner : _root_.Address) (c : Ixon.Constant)
 
 private def pureRecordIdxStep (rec : _root_.Address × Ixon.Constant) (s : PureIdx) :
     Option PureIdx :=
-  match (recursorMembers rec.2).toList with
+  match recursorMembersFast rec.2 with
   | [] => some s
   | [m] => pureCandStep rec.1 rec.2 m s
   | _ => none
@@ -409,7 +501,7 @@ private def pureBlocksLookup (b : _root_.Address) : Option BlockShape := do
   let s ← purePreIdx?
   let order ← s.blocks.lookup b
   let foundArr ← s.found.lookup b
-  pure ⟨order, foundArr.map (·.2)⟩
+  pure ⟨order, (foundArr.toList.map (·.2)).toArray⟩
 
 private def IdxMatches (bs : Ix.CompileCert.ReaderIndex.BuildState) (s : PureIdx) : Prop :=
   (∀ r, bs.1.recs[r]? = s.recs.lookup r) ∧
@@ -457,8 +549,8 @@ private theorem foldl_insert_contains :
 
 private def preInputIndexedBool : Bool :=
   committedPreludeList.all fun (a, c) =>
-    (recursorMembers c).all fun (_, r) =>
-      match analyseRecursor preStorePure a c r with
+    (recursorMembersFast c).all fun (_, r) =>
+      match analyseRecursorFast preStorePure a c r with
       | some (_, carriers, _) =>
         match carriers[0]? with
         | some (.member b _) => committedPreAddrs.contains b
@@ -486,12 +578,14 @@ private theorem filter_committedPrelude_inputIndexed :
   have hrefs : c.refs.toList.all committedPreAddrs.contains = true :=
     (Bool.and_eq_true.mp (List.all_eq_true.mp preRefsAndProjClosed (a, c) hmem')).1
   have hpure := List.all_eq_true.mp preInputIndexed_true (a, c) hmem'
+  rw [recursorMembersFast_eq, List.all_eq_true] at hpure
   unfold inputIndexed
   apply Bool.or_eq_true.mpr
   left
-  rw [Array.all_eq_true_iff_forall_mem] at hpure ⊢
+  rw [Array.all_eq_true_iff_forall_mem]
   intro ⟨j, r⟩ hjr
-  have hp := hpure (j, r) hjr
+  have hp := hpure (j, r) (Array.mem_toList_iff.mpr hjr)
+  rw [analyseRecursorFast_eq] at hp
   rw [analyseRecursor_defCx_eq_pure ev hrefs r]
   cases analyseRecursor preStorePure a c r with
   | none => rfl
@@ -518,6 +612,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
   obtain ⟨hrecs, hblocks, hfound⟩ := hm
   unfold pureCandStep at hp
   dsimp only at hp
+  rw [analyseRecursorFast_eq] at hp
   cases hrnone : (s.recs.lookup (.member owner pos)).isNone with
   | false => simp [hrnone, guard] at hp
   | true =>
@@ -550,7 +645,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                 | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
                   simp [hbi] at hp
                 | muts members =>
-                  simp only [hbi] at hp
+                  simp only [hbi, inductivesFast_eq, orderForFast_eq, orderValidFast_eq] at hp
                   cases hind0 : (Ix.CompileCert.ReaderIndex.inductives members)[0]? with
                   | none => simp [hind0] at hp
                   | some ifirst =>
@@ -603,7 +698,8 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                           rw [hord]
                           simp only [↓reduceIte, hf_getD, hb_cont]
                           have hany_empty : (#[] : Array (Nat × ConstRef _root_.Address)).any
-                              (·.1 == motive) = false := rfl
+                              (·.1 == motive) = false := by
+                            rw [← Array.any_toList]; rfl
                           rw [hany_empty]
                           dsimp only
                           refine ⟨?_, ?_, ?_⟩
@@ -657,6 +753,7 @@ private theorem forIn_recordStep_pre :
       unfold Ix.CompileCert.ReaderIndex.recordStep
       rw [← Array.forIn_toList]
       unfold pureRecordIdxStep at hrs
+      rw [recursorMembersFast_eq] at hrs
       cases hrm : (recursorMembers r.2).toList with
       | nil =>
         rw [hrm] at hrs ⊢
@@ -702,7 +799,11 @@ private theorem forIn_completeStep_recs :
     exact forIn_completeStep_recs es _
 
 private theorem qsort_singleton {α : Type} (x : α) (lt : α → α → Bool) :
-    #[x].qsort lt = #[x] := rfl
+    #[x].qsort lt = #[x] := by
+  have hp : (#[x].qsort lt).toList.Perm [x] :=
+    Array.perm_iff_toList_perm.mp (Ix.CompileCert.Canon.qsort_perm #[x] lt)
+  apply Array.ext'
+  exact List.perm_singleton.mp hp
 
 private theorem forIn_completeStep_block
     {b : _root_.Address} {order : Array Nat} {m : Nat} {ref : ConstRef _root_.Address}
@@ -729,7 +830,8 @@ private theorem forIn_completeStep_block
       injection harr_some with harr
       subst harr
       rw [qsort_singleton]
-      have hmap : (#[(m, ref)].map (·.2)) = #[ref] := rfl
+      have hmap : (#[(m, ref)].map (·.2)) = #[ref] := by
+        apply Array.ext'; rfl
       rw [hmap]
       let idx' : RecIndex :=
         { idx with blocks := idx.blocks.insert k { idx.blocks.getD k default with recs := #[ref] } }
@@ -1065,7 +1167,7 @@ private def pureBuildTbl (pe : PureECx) : List Ixon.Expr → Array (ReadM (CExpr
 
 private def pureReadExpr (src : Ixon.Constant) (param : Nat → Ix.Kernel.LevelParam)
     (self : Nat → Option (ReadM (CName .anon))) (e : Ixon.Expr) : ReadM (CExpr .anon) :=
-  let pe : PureECx := ⟨src, src.univs.map (convUniv param), self⟩
+  let pe : PureECx := ⟨src, (src.univs.toList.map (convUniv param)).toArray, self⟩
   let tbl := pureBuildTbl pe src.sharing.toList #[]
   pureConvExpr pe tbl e
 
@@ -1107,6 +1209,11 @@ private theorem pureReadExpr_sound {src : Ixon.Constant} {param : Nat → Ix.Ker
     {expr : Ixon.Expr} {out : CExpr .anon}
     (h : pureReadExpr src param pself expr = .ok out) :
     (MemberReader.mk' (defCx ev) src param rself).read expr = .ok out := by
+  have hunivs : (src.univs.toList.map (convUniv param)).toArray = src.univs.map (convUniv param) := by
+    apply Array.ext'; simp
+  unfold pureReadExpr at h
+  dsimp only at h
+  rw [hunivs] at h
   let pe : PureECx := ⟨src, src.univs.map (convUniv param), pself⟩
   have hmk : (MemberReader.mk' (defCx ev) src param rself).tbl =
       forIn (m := Id) src.sharing.toList (#[] : Array (ReadM (CExpr .anon)))
@@ -1136,7 +1243,7 @@ private def pureReadRecursor (blockLps : List Ix.Kernel.LevelParam) (ref : Const
   let .member rOwner j := ref | malformed "recursor reference is a constructor"
   if !committedPreAddrs.contains rOwner then malformed "recursor outside prelude"
   let some rc := preStorePure rOwner | malformed "recursor record is missing"
-  let some (_, r) := (recursorMembers rc).find? (·.1 == j) | malformed "recursor member is missing"
+  let some (_, r) := (recursorMembersFast rc).find? (·.1 == j) | malformed "recursor member is missing"
   if r.isUnsafe then declined "unsafe inductive declaration"
   let key ← pureMemberKey ref
   let pself : Nat → Option (ReadM (CName .anon)) := fun i => match rc.info with
@@ -1149,7 +1256,7 @@ private def pureReadRecursor (blockLps : List Ix.Kernel.LevelParam) (ref : Const
   if !committedPreAddrs.contains mb then malformed "major outside prelude"
   let some major := inductiveAt preStorePure entry.major | declined "major not ind"
   unless major.ctors.size == r.rules.size do malformed "rule count"
-  let rules ← pureReadRecRules rc (recParam lps) pself mb mi r.rules.zipIdx.toList
+  let rules ← pureReadRecRules rc (recParam lps) pself mb mi r.rules.toList.zipIdx
   pure (cv, ⟨r.params.toNat, r.motives.toNat, r.minors.toNat, r.indices.toNat, r.k,
     some entry.motive⟩, rules)
 
@@ -1198,6 +1305,7 @@ private theorem pureReadRecursor_sound {blockLps : List Ix.Kernel.LevelParam}
       | some rc =>
         rw [hrc] at h
         dsimp only at h
+        rw [recursorMembersFast_eq, Array.find?_toList] at h
         cases hfind : (recursorMembers rc).find? (·.1 == j) with
         | none => rw [hfind] at h; cases h
         | some jr =>
@@ -1229,6 +1337,7 @@ private theorem pureReadRecursor_sound {blockLps : List Ix.Kernel.LevelParam}
                   | true =>
                     simp only [hsz, ↓reduceIte] at hr2
                     obtain ⟨rules, hrules, hpure⟩ := except_bind_ok_inv hr2
+                    rw [← Array.toList_zipIdx] at hrules
                     injection hpure with hout; subst hout
                     have hkey' := pureMemberKey_sound ev hev_defn hkey
                     let pself : Nat → Option (ReadM (CName .anon)) := fun i => match rc.info with
@@ -1336,8 +1445,45 @@ private theorem forIn_ctors_sound {owner : _root_.Address} {src : Ixon.Constant}
             simp [List.append_assoc]
           rw [hap, List.append_assoc, List.singleton_append]
 
-private def pureLowerNoModel (rb : BlockRead .anon) : ReadM (Read .anon) := do
+private def pureLowerDeclsList (rb : BlockRead .anon) : ReadM (Read .anon) := do
   let ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
+  let nTypes := types.size
+  let nCtors := ctors.size
+  let numNested := match recs[0]? with
+    | some (_, r, _) => r.motives - nTypes
+    | none => 0
+  let nested := numNested != 0
+  let kExpected? : Option Bool :=
+    match types.toList, ctorNames.toList, ctors.toList with
+    | [(ty, _, _)], [[_]], [(_, _, nF)] =>
+      match ty.type.piResult with
+      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+      | _ => none
+    | _, _, _ => some false
+  if nested then
+    for (cv, r, _) in recs.toList do
+      if r.k then malformed s!"recursor {cv.name} of a nested block declares k := true"
+  else
+    for (cv, r, _) in recs.toList do
+      unless r.params == nPd do
+        malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"
+      unless r.motives == nTypes do
+        malformed s!"recursor {cv.name} declares {r.motives} motives; the block has {nTypes} types"
+      unless r.minors == nCtors do
+        malformed s!"recursor {cv.name} declares {r.minors} minor premises; the block has {nCtors} constructors"
+      if let some kE := kExpected? then
+        unless r.k == kE do
+          malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
+      if let some m := r.motive then
+        if let some (ty, _, _) := types[m]? then
+          if let some n := ty.type.piSortTeleLen? then
+            unless nPd + r.indices == n do
+              malformed s!"recursor {cv.name} declares {r.indices} indices; {ty.name} has {n - nPd}"
+  let typeInfos : List (CInfo .anon) := types.toList.map fun (cv, _, _) => .indInfo cv {}
+  let ctorInfos : List (CInfo .anon) := ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF
+  let recInfos : List (CInfo .anon) := recs.toList.map fun (cv, r, rules) =>
+    .recInfo cv (r.params + r.motives + r.minors + r.indices) (r.params + r.motives + r.minors) rules
+  let block := typeInfos ++ ctorInfos ++ recInfos
   let memberNames := types.toList.map (·.1.name)
   let fieldDoms := ctors.toList.flatMap fun (cv, _, _) =>
     (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)
@@ -1345,70 +1491,103 @@ private def pureLowerNoModel (rb : BlockRead .anon) : ReadM (Read .anon) := do
   let isReflexive := fieldDoms.any fun d =>
     let (bs, body) := Ix.Kernel.Frontend.stripPisAll d
     !bs.isEmpty && memberNames.any (Ix.Kernel.Frontend.headIs · body)
-  let numNested := match recs[0]? with
-    | some (_, r, _) => r.motives - types.size
-    | none => 0
+  let ownerTypes := types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
+    (cv.name, cv.levelParams, cv.type, nP, nIdx, cs, isRec)
+  let ownerCtors := ctors.toList.map fun (cv, _, nF) => (cv.name, nF, cv.type)
+  let ownerRecs := recs.toList.map fun (cv, r, _) =>
+    (cv.name, cv.levelParams, cv.type, r.motives, r.minors)
+  let owners := Ix.Kernel.Frontend.projRecOwners block ownerTypes ownerCtors ownerRecs
   let b : Ix.Kernel.Frontend.InModel.BlockRec .anon :=
     ⟨types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
         { cv, nP, nIdx, ctors := cs, isRec, isReflexive, numNested },
      ctors.toList.map fun (cv, nP, nF) => { cv, nP, nF },
      recs.toList.map fun (cv, r, rules) =>
        { cv, nP := r.params, nM := r.motives, nm := r.minors, nI := r.indices, rules }⟩
+  let blocks := b.types.map (·.cv.name, b)
+  let decl := Ix.Kernel.Declaration.indDecl block nPd
   if Ix.Kernel.Frontend.InModel.wants b then
     declined "unexpected InModel.wants in prelude"
   else
-    let r ← lowerInductiveDecls ({} : State .anon) rb
-    if nodupNat ((r.decls.toList.flatMap Ix.Kernel.Declaration.names).map cnameCode) then
-      pure r
-    else
-      declined "duplicate key"
+    pure { decls := #[decl], owners, blocks }
+
+private def pureLowerNoModel (rb : BlockRead .anon) : ReadM (Read .anon) := do
+  let r ← pureLowerDeclsList rb
+  if nodupNat ((r.decls.toList.flatMap Ix.Kernel.Declaration.names).map cnameCode) then
+    pure r
+  else
+    declined "duplicate key"
 
 private theorem pureLowerNoModel_sound {rb : BlockRead .anon} {r : Read .anon}
     (h : pureLowerNoModel rb = .ok r) (st : State .anon) :
     lowerInductive st rb = .ok r := by
   unfold pureLowerNoModel at h
-  rcases rb with ⟨nPd, types, ctors, ctorNames, recs⟩
-  dsimp only at h
-  split at h
-  · cases h
-  · rename_i hwants_not
-    have hwants : Ix.Kernel.Frontend.InModel.wants
-        ⟨types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
-            { cv, nP, nIdx, ctors := cs,
-              isRec := (ctors.toList.flatMap fun (cv, _, _) =>
-                (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)).any fun d =>
-                  (types.toList.map (·.1.name)).any (Ix.Kernel.Frontend.occursConstFast · d),
-              isReflexive := (ctors.toList.flatMap fun (cv, _, _) =>
-                (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)).any fun d =>
-                  let (bs, body) := Ix.Kernel.Frontend.stripPisAll d
-                  !bs.isEmpty && (types.toList.map (·.1.name)).any (Ix.Kernel.Frontend.headIs · body),
-              numNested := match recs[0]? with | some (_, r, _) => r.motives - types.size | none => 0 },
-         ctors.toList.map fun (cv, nP, nF) => { cv, nP, nF },
-         recs.toList.map fun (cv, r, rules) =>
-           { cv, nP := r.params, nM := r.motives, nm := r.minors, nI := r.indices, rules }⟩ = false :=
-      Bool.not_eq_true _ |>.mp hwants_not
-    obtain ⟨r₀, hr₀, hnd_chk⟩ := except_bind_ok_inv h
-    split at hnd_chk
-    · rename_i hnd_nat
-      injection hnd_chk with hreq; subst hreq
-      have hnd : (r₀.decls.toList.flatMap Ix.Kernel.Declaration.names).Nodup :=
-        nodup_of_nodup_map cnameCode (nodup_of_nodupNat hnd_nat)
-      rw [Ix.Cert.LowerDistinct.lowerInductive_ok_iff]
-      refine ⟨?_, hnd⟩
-      have hst_indep :
-          lowerInductiveDecls st ⟨nPd, types, ctors, ctorNames, recs⟩ =
-            lowerInductiveDecls ({} : State .anon) ⟨nPd, types, ctors, ctorNames, recs⟩ := by
-        unfold lowerInductiveDecls
-        dsimp only
-        rw [hwants]
-      rw [hst_indep]
-      exact hr₀
-    · cases hnd_chk
+  obtain ⟨r₀, hr₀, hnd_chk⟩ := except_bind_ok_inv h
+  split at hnd_chk
+  · rename_i hnd_nat
+    injection hnd_chk with hreq; subst hreq
+    have hnd : (r₀.decls.toList.flatMap Ix.Kernel.Declaration.names).Nodup :=
+      nodup_of_nodup_map cnameCode (nodup_of_nodupNat hnd_nat)
+    rw [Ix.Cert.LowerDistinct.lowerInductive_ok_iff]
+    refine ⟨?_, hnd⟩
+    rcases rb with ⟨nPd, types, ctors, ctorNames, recs⟩
+    unfold pureLowerDeclsList at hr₀
+    unfold lowerInductiveDecls
+    simp only [← Array.forIn_toList]
+    dsimp only at hr₀ ⊢
+    let nTypes := types.size
+    let nCtors := ctors.size
+    let numNested := match recs[0]? with
+      | some (_, r, _) => r.motives - nTypes
+      | none => 0
+    let nested := numNested != 0
+    let kExpected? : Option Bool :=
+      match types.toList, ctorNames.toList, ctors.toList with
+      | [(ty, _, _)], [[_]], [(_, _, nF)] =>
+        match ty.type.piResult with
+        | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+        | _ => none
+      | _, _, _ => some false
+    let loopCheck : ReadM Unit :=
+      if nested then
+        for (cv, r, _) in recs.toList do
+          if r.k then malformed s!"recursor {cv.name} of a nested block declares k := true"
+      else
+        for (cv, r, _) in recs.toList do
+          unless r.params == nPd do
+            malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"
+          unless r.motives == nTypes do
+            malformed s!"recursor {cv.name} declares {r.motives} motives; the block has {nTypes} types"
+          unless r.minors == nCtors do
+            malformed s!"recursor {cv.name} declares {r.minors} minor premises; the block has {nCtors} constructors"
+          if let some kE := kExpected? then
+            unless r.k == kE do
+              malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
+          if let some m := r.motive then
+            if let some (ty, _, _) := types[m]? then
+              if let some n := ty.type.piSortTeleLen? then
+                unless nPd + r.indices == n do
+                  malformed s!"recursor {cv.name} declares {r.indices} indices; {ty.name} has {n - nPd}"
+    cases hloop : loopCheck with
+    | error e =>
+      change (loopCheck >>= _) = _ at hr₀ ⊢
+      rw [hloop] at hr₀
+      cases hr₀
+    | ok u =>
+      cases u
+      change (loopCheck >>= _) = _ at hr₀ ⊢
+      rw [hloop] at hr₀ ⊢
+      dsimp only [bind, Except.bind] at hr₀ ⊢
+      split at hr₀
+      · cases hr₀
+      · rename_i hwants_not
+        rw [Bool.not_eq_true _ |>.mp hwants_not]
+        exact hr₀
+  · cases hnd_chk
 
 private def pureReadInductive1 (owner : _root_.Address) (c : Ixon.Constant)
     (ind : Ixon.Inductive) : ReadM (Read .anon) := do
   let some shape := pureBlocksLookup owner | declined "unindexed block"
-  unless shape.order == #[0] do declined "non-singleton order"
+  unless shape.order.toList == [0] do declined "non-singleton order"
   let some recRef := shape.recs[0]? | declined "no rec"
   unless shape.recs.size == 1 do declined "multi rec"
   let some entry := pureRecsLookup recRef | malformed "unindexed recursor"
@@ -1421,7 +1600,7 @@ private def pureReadInductive1 (owner : _root_.Address) (c : Ixon.Constant)
   let tty ← pureReadExpr c id pself ind.typ
   let types : Array (CVal .anon × Nat × Nat) :=
     #[(⟨tk, List.range ind.lvls.toNat, tty⟩, ind.params.toNat, ind.indices.toNat)]
-  let (ctorList, ctorNameList) ← pureReadCtorList owner c pself nPd ind.ctors.zipIdx.toList
+  let (ctorList, ctorNameList) ← pureReadCtorList owner c pself nPd ind.ctors.toList.zipIdx
   let recOut ← pureReadRecursor blockLps recRef entry
   pureLowerNoModel ⟨nPd, types, ctorList.toArray, #[ctorNameList], #[recOut]⟩
 
@@ -1434,11 +1613,11 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
   | none => rw [hsh] at h; cases h
   | some shape =>
     rw [hsh] at h; dsimp only at h
-    cases hord : (shape.order == #[0]) with
+    cases hord : (shape.order.toList == [0]) with
     | false => simp [hord] at h
     | true =>
       simp only [hord, ↓reduceIte] at h
-      have hord_eq : shape.order = #[0] := beq_iff_eq.mp hord
+      have hord_eq : shape.order = #[0] := Array.ext' (beq_iff_eq.mp hord)
       cases hr0 : shape.recs[0]? with
       | none => rw [hr0] at h; cases h
       | some recRef =>
@@ -1471,6 +1650,7 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
               obtain ⟨tk, htk, hr1⟩ := except_bind_ok_inv h
               obtain ⟨tty, htty, hr2⟩ := except_bind_ok_inv hr1
               obtain ⟨⟨ctorList, ctorNameList⟩, hctors, hr3⟩ := except_bind_ok_inv hr2
+              rw [← Array.toList_zipIdx] at hctors
               obtain ⟨recOut, hrec, hlow⟩ := except_bind_ok_inv hr3
               have hsh_cx := defCx_index_blocks_of_pure ev hev_defn hsh
               have hent_cx := defCx_index_recs_of_pure ev hev_defn hent
@@ -1503,14 +1683,14 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
                   match ((#[Ixon.MutConst.indc ind] : Array Ixon.MutConst)[i]? : Option Ixon.MutConst) with
                   | some (.indc ind) => some (i, ind)
                   | _ => none) = #[(0, ind)] := by
-                rw [hord_eq]; rfl
+                rw [hord_eq]; apply Array.ext'; rfl
               rw [hfilt, hord_eq, hrecs_eq]
               have hsz_ok : ((#[(0, ind)] : Array (Nat × Ixon.Inductive)).size == (#[0] : Array Nat).size) = true := rfl
               have hfirst : (#[(0, ind)] : Array (Nat × Ixon.Inductive))[0]? = some (0, ind) := rfl
               have hany_u : (#[(0, ind)] : Array (Nat × Ixon.Inductive)).any (·.2.isUnsafe) = false := by
-                simp [hu]
+                rw [← Array.any_toList]; simp [hu]
               have hall_p : (#[(0, ind)] : Array (Nat × Ixon.Inductive)).all (·.2.params.toNat == ind.params.toNat) = true := by
-                simp
+                rw [← Array.all_toList]; simp
               simp only [hsz_ok, ↓reduceIte, hfirst, hany_u, Bool.false_eq_true, hall_p]
               -- Evaluate 1-element types loop, 1-element outer ctors loop, 1-element recs loop
               have htypes_loop :
@@ -1642,26 +1822,28 @@ private theorem pureReadRecord_sound {owner : _root_.Address} {c : Ixon.Constant
             apply Array.ext'; exact hms
           subst harr
           have hany_i : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).any
-              (fun | .indc _ => true | _ => false) = true := rfl
+              (fun | .indc _ => true | _ => false) = true := by
+            rw [← Array.any_toList]; rfl
           have hany_d : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).any
-              (fun | .defn _ => true | _ => false) = false := rfl
+              (fun | .defn _ => true | _ => false) = false := by
+            rw [← Array.any_toList]; rfl
           simp only [hany_i, ↓reduceIte, hany_d, Bool.false_eq_true]
           exact pureReadInductive1_sound ev hev_defn h st
   | defn _ => rw [hci] at h; cases h
 
 private def pureReadStream :
-    List (_root_.Address × Ixon.Constant) → ReadM (Array (CDecl .anon))
-  | [] => pure #[]
+    List (_root_.Address × Ixon.Constant) → ReadM (List (CDecl .anon))
+  | [] => pure []
   | (a, c) :: rest => do
     let r ← pureReadRecord a c
     let tail ← pureReadStream rest
-    pure (r.decls ++ tail)
+    pure (r.decls.toList ++ tail)
 
 private theorem pureReadStream_sound :
-    ∀ (rs : List (_root_.Address × Ixon.Constant)) {out : Array (CDecl .anon)},
+    ∀ (rs : List (_root_.Address × Ixon.Constant)) {out : List (CDecl .anon)},
       (∀ p ∈ rs, p ∈ committedPreludeList) →
       pureReadStream rs = .ok out →
-      ∀ st : State .anon, ∃ st', StreamRead (defCx ev) st rs st' out
+      ∀ st : State .anon, ∃ st', StreamRead (defCx ev) st rs st' out.toArray
   | [], _, _, h, st => by
     injection h with ho; subst ho
     exact ⟨st, .nil⟩
@@ -1673,16 +1855,32 @@ private theorem pureReadStream_sound :
     have hr' := pureReadRecord_sound ev hev_defn (hsub (a, c) List.mem_cons_self) hr st
     obtain ⟨st', hst'⟩ := pureReadStream_sound rest
       (fun p hp => hsub p (List.mem_cons_of_mem _ hp)) htail (st.commit r)
+    have happ : (r.decls.toList ++ tail).toArray = r.decls ++ tail.toArray := by
+      apply Array.ext'
+      simp
+    rw [happ]
     exact ⟨st', .cons hr' hst'⟩
 
 end WithEv
 
+private def fallbackRecursorShapeFast (c : Ixon.Constant) : Bool :=
+  match c.info with
+  | .muts ms => ms.toList.all fun | .recr _ => false | _ => true
+  | _ => true
+
+private theorem fallbackRecursorShapeFast_eq (c : Ixon.Constant) :
+    fallbackRecursorShapeFast c = fallbackRecursorShape c := by
+  unfold fallbackRecursorShapeFast fallbackRecursorShape
+  cases c.info with
+  | muts ms => dsimp only; rw [← Array.all_toList]
+  | _ => rfl
+
 private def purePreludeCheckBool : Bool :=
   match pureReadStream committedPreludeList with
   | .ok decls =>
-    (decls.toList.map (·.names) ==
+    (decls.map (·.names) ==
       Ix.Kernel.preludeShape.map (·.map (Ix.Kernel.Key.role (md := .anon)))) &&
-    committedPrelude.all (fun p => fallbackRecursorShape p.2)
+    committedPreludeList.all (fun p => fallbackRecursorShapeFast p.2)
   | .error _ => false
 
 private theorem purePreludeCheck_ok : purePreludeCheckBool = true := by
@@ -1703,7 +1901,7 @@ theorem preludeFor_defaultRoleTable :
       pureReadStream_sound ev hev_defn committedPreludeList (fun _ h => h) hps {}
     have hrr := Ix.Cert.Stream.readRecords_complete hstream committedPreAddrs_nodup
     have hread : preludeRead (md := .anon) committedDefaultRoleTable =
-        .ok ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩ := by
+        .ok ⟨committedPrelude, ev, committedBlobs, ⟨decls.toArray⟩, st'⟩ := by
       unfold preludeRead readPrelude
       rw [preludeRecords_eq, hev_eq, evidenceBlobs_eq]
       simp only [bind, Except.bind, pure, Except.pure]
@@ -1712,21 +1910,23 @@ theorem preludeFor_defaultRoleTable :
         | .error (e, i) => throw s!"prelude record {i}: {e}") = _
       rw [hrr]
     have hcs : checkPreludeShape (md := .anon)
-        ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩ = .ok () := by
+        ⟨committedPrelude, ev, committedBlobs, ⟨decls.toArray⟩, st'⟩ = .ok () := by
       unfold checkPreludeShape
-      simp only [hshape, ↓reduceIte, pure, Except.pure]
+      simp only [List.toList_toArray, hshape, ↓reduceIte, pure, Except.pure]
     have hcfr : checkFallbackRecursors (md := .anon)
-        ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩ = .ok () := by
+        ⟨committedPrelude, ev, committedBlobs, ⟨decls.toArray⟩, st'⟩ = .ok () := by
       unfold checkFallbackRecursors
       have hall : (committedPrelude ++ ev).all (fun p => fallbackRecursorShape p.2) = true := by
         rw [Array.all_eq_true_iff_forall_mem]
         intro p hp
         rcases Array.mem_append.mp hp with h1 | h2
-        · exact Array.all_eq_true_iff_forall_mem.mp hrec_pre p h1
+        · have hp' : p ∈ committedPreludeList := Array.mem_toList_iff.mpr h1
+          rw [← fallbackRecursorShapeFast_eq]
+          exact List.all_eq_true.mp hrec_pre p hp'
         · obtain ⟨d, hd⟩ := hev_defn p (Array.mem_toList_iff.mpr h2)
           simp [fallbackRecursorShape, hd]
       simp only [hall, ↓reduceIte, pure, Except.pure]
-    refine ⟨⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, st'⟩, ?_⟩
+    refine ⟨⟨committedPrelude, ev, committedBlobs, ⟨decls.toArray⟩, st'⟩, ?_⟩
     unfold preludeFor
     rw [hread]
     simp only [bind, Except.bind, pure, Except.pure, hcs, hcfr]

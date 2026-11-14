@@ -605,11 +605,6 @@ private theorem bytesOfHex_roleData_table :
       (congrArg (fun bs : List UInt8 => some (⟨bs.toArray⟩ : ByteArray))
         committedDefaultRoleTable_encode_eq.symm))
 
-theorem mem_of_array_eq {α : Type} {arr : Array α} {xs : List α} {x : α}
-    (heq : arr = xs.toArray) (hx : x ∈ arr.toList) : x ∈ xs := by
-  rw [heq, List.toList_toArray] at hx
-  exact hx
-
 private theorem defaultTableBytesOf_of_bytesOfHex {s : String} {b : ByteArray}
     (h : bytesOfHex s = some b) :
     Ix.Kernel.Reader.defaultTableBytesOf s = .ok b := by
@@ -709,14 +704,14 @@ private def checkWithRepeat (t : Ix.Kernel.RoleTable) (rep : Option _root_.Addre
   unless roles.Nodup do throw "a role is bound twice"
   if let some a := rep then
     throw s!"address {a} is bound to two roles"
-  for (r, _) in t.bound do
+  for (r, _) in t.bound.toList do
     for s in r.block do
       unless roles.contains s do throw s!"{repr r} is bound without {repr s}, its block's"
     for d in r.deps do
       unless roles.contains d do throw s!"{repr r} is bound without {repr d}, a dependency"
   let evRoles := t.evidence.toList.map (·.1)
   unless evRoles.Nodup do throw "a role has two evidence entries"
-  for (r, es) in t.evidence do
+  for (r, es) in t.evidence.toList do
     unless roles.contains r do throw s!"evidence for {repr r}, which is not bound"
     let kinds := ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed
     if kinds.isEmpty then throw s!"evidence for {repr r}, which has no equations"
@@ -736,6 +731,7 @@ private theorem check_of_nodupNat {t : Ix.Kernel.RoleTable}
   have hceq : t.check = checkWithRepeat t none := by
     delta Ix.Kernel.RoleTable.check checkWithRepeat
     rw [firstRepeat_eq_none_of_nodup hnd]
+    simp only [← Array.forIn_toList]
   rw [hceq]
   exact eq_ok_of_isOkUnit hok
 
@@ -799,14 +795,23 @@ theorem admitBinding_committedDefault {hash : ByteArray → _root_.Address}
     exact hadm.symm
   · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hadm
 
+private def addressOfFast (t : Ix.Kernel.RoleTable) (r : Ix.Kernel.Role) : Option _root_.Address :=
+  (t.bound.toList.find? (·.1 == r)).map (·.2)
+
+private theorem addressOfFast_eq (t : Ix.Kernel.RoleTable) (r : Ix.Kernel.Role) :
+    addressOfFast t r = t.addressOf? r := by
+  unfold addressOfFast Ix.Kernel.RoleTable.addressOf?
+  rw [← Array.find?_toList]
+
 private def literalSupportBool (t : Ix.Kernel.RoleTable) : Bool :=
-  !(t.addressOf? .string).isSome ||
-    IxVM.Refinement.strLitSupportRoles.all (fun r => (t.addressOf? r).isSome)
+  !(addressOfFast t .string).isSome ||
+    IxVM.Refinement.strLitSupportRoles.all (fun r => (addressOfFast t r).isSome)
 
 private theorem literalSupportBound_of_bool {t : Ix.Kernel.RoleTable}
     (h : literalSupportBool t = true) : IxVM.Refinement.LiteralSupportBound t := by
   intro hs r hr
-  simp only [literalSupportBool, hs, Bool.not_true, Bool.false_or, List.all_eq_true] at h
+  simp only [literalSupportBool, addressOfFast_eq, hs, Bool.not_true, Bool.false_or,
+    List.all_eq_true] at h
   exact h r hr
 
 /-- The committed default role table satisfies `LiteralSupportBound`. -/
