@@ -1859,7 +1859,7 @@ private theorem binderNodeCanonicalFast_eq (lvls : Nat) :
     ∀ (n : Ixon.BinderNode), binderNodeCanonicalFast lvls n = Ixon.BinderNode.canonical lvls n
   | .never _ | .zero _ | .undecided _ | .share _ => rfl
   | .ifAllZero params _ => by
-    unfold binderNodeCanonicalFast Ixon.BinderNode.canonical
+    dsimp only [binderNodeCanonicalFast, Ixon.BinderNode.canonical]
     rw [array_isEmpty_eq_toList_isEmpty, ← Array.all_toList]
 
 private def bindersCanonicalFast (c : Ixon.Constant) : Bool :=
@@ -1874,7 +1874,7 @@ private def bindersCanonicalFast (c : Ixon.Constant) : Bool :=
 private theorem bindersCanonicalFast_eq (c : Ixon.Constant) :
     bindersCanonicalFast c = c.bindersCanonical := by
   unfold bindersCanonicalFast Ixon.Constant.bindersCanonical
-  rw [binderRootsEmptyFast_eq, array_isEmpty_eq_toList_isEmpty, maxLvlsFast_eq, ← Array.all_toList]
+  rw [binderRootsEmptyFast_eq, array_isEmpty_eq_toList_isEmpty c.binders, maxLvlsFast_eq, ← Array.all_toList]
   have hfun :
       (fun (block : Ixon.BinderBlock) =>
         (block.shared || block.variant == 0) && !block.nodes.toList.isEmpty &&
@@ -1883,7 +1883,7 @@ private theorem bindersCanonicalFast_eq (c : Ixon.Constant) :
         (block.shared || block.variant == 0) && !block.nodes.isEmpty &&
           block.nodes.all (Ixon.BinderNode.canonical c.info.maxLvls)) := by
     funext block
-    rw [array_isEmpty_eq_toList_isEmpty, ← Array.all_toList]
+    rw [array_isEmpty_eq_toList_isEmpty block.nodes, ← Array.all_toList]
     have hnd : binderNodeCanonicalFast c.info.maxLvls = Ixon.BinderNode.canonical c.info.maxLvls :=
       funext (binderNodeCanonicalFast_eq c.info.maxLvls)
     rw [hnd]
@@ -1910,6 +1910,9 @@ private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalF
     unfold modesCanonicalFast Ixon.Constant.modesCanonical
     dsimp only
     rw [← Array.all_toList]
+    congr 1
+    funext m
+    cases m <;> rfl
 
 def checkConstBytesFast (c : Ixon.Constant) (bs : List UInt8) : Bool :=
   validConstantFast c &&
