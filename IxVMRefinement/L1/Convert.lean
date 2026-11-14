@@ -99,8 +99,12 @@ theorem lvls_to_field_spec {lvls : Nat} {r : SourceValue F} {h h' : Heap F} {cal
   have hlt32 : lvls < 4294967296 := by omega
   have hsum : lvls % 256 + 256 * (lvls / 256 % 256) + 65536 * (lvls / 65536 % 256) +
       16777216 * (lvls / 16777216 % 256) = lvls := by omega
-  simp only [evalBinOp, Except.ok.injEq] at op258 op236 op280 op228 op302 op220
-  subst y230 x221 y222 x213 y214
+  simp only [evalBinOp, Except.ok.injEq] at op258; subst y230
+  simp only [evalBinOp, Except.ok.injEq] at op236; subst x221
+  simp only [evalBinOp, Except.ok.injEq] at op280; subst y222
+  simp only [evalBinOp, Except.ok.injEq] at op228; subst x213
+  simp only [evalBinOp, Except.ok.injEq] at op302; subst y214
+  simp only [evalBinOp, Except.ok.injEq] at op220
   refine ⟨hlt32, ?_, hh'⟩
   rw [← op220]
   have hcast := congrArg (Nat.cast (R := F)) hsum
@@ -182,9 +186,10 @@ theorem mut_const_roots_spec {m : Ixon.MutConst} {x_m r : SourceValue F}
     | indc ind =>
       obtain ⟨iv, rfl, typPtr, ctorsPtr, hiv_eq, _, hctors⟩ := hm
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv31
-      rw [hiv_eq] at hv31
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv31
-      rcases hv31 with ⟨_, _, _, _, _, hct_eq⟩
+      rcases hv31 with ⟨_, _, h1⟩
+      rw [hiv_eq] at h1
+      simp only [Value.construct.injEq, List.cons.injEq, and_true] at h1
+      rcases h1 with ⟨_, _, _, _, _, _, _, hct_eq⟩
       subst x_ctors
       obtain ⟨hx89, hm91⟩ := count_ctors_spec hctors ev102
       subst x89
@@ -204,9 +209,10 @@ theorem mut_const_roots_spec {m : Ixon.MutConst} {x_m r : SourceValue F}
     | recr rc =>
       obtain ⟨rv, rfl, typPtr, rulesPtr, hrv_eq, _, hrules⟩ := hm
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv119
-      rw [hrv_eq] at hv119
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv119
-      rcases hv119 with ⟨_, _, _, _, _, _, _, _, hrl_eq⟩
+      rcases hv119 with ⟨_, _, h1⟩
+      rw [hrv_eq] at h1
+      simp only [Value.construct.injEq, List.cons.injEq, and_true] at h1
+      rcases h1 with ⟨_, _, _, _, _, _, _, _, _, _, hrl_eq⟩
       subst x_rules
       rw [← recRuleLength_sym] at ev208
       rw [← recRuleNode_sym] at hrules
@@ -540,7 +546,7 @@ theorem convert_definition_spec {d : Ixon.Definition} {sharing : List Ixon.Expr}
       v196, m197, cs207, hv15, ev61, op194, ev131, ev209, he373, he395, hc396⟩
   · -- Definition
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨_, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
+    rcases hv15 with ⟨_, _, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
     subst x_safety x_lvls x_typ x_value
     have hdk : d.kind = .defn := by
       cases hk : d.kind <;> simp [repDefKindVal, hk] at hkind; rfl
@@ -564,7 +570,7 @@ theorem convert_definition_spec {d : Ixon.Definition} {sharing : List Ixon.Expr}
     simp [defnValShape, hdk, he242]
   · -- Opaque
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨_, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
+    rcases hv15 with ⟨_, _, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
     subst x_safety x_lvls x_typ x_value
     have hdk : d.kind = .opaq := by
       cases hk : d.kind <;> simp [repDefKindVal, hk] at hkind; rfl
@@ -600,7 +606,7 @@ theorem convert_definition_spec {d : Ixon.Definition} {sharing : List Ixon.Expr}
     simp [defnValShape, hdk, he329]
   · -- Theorem
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨_, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
+    rcases hv15 with ⟨_, _, hkind, hsaf, _, hlvls_eq, htyp_eq, hval_eq⟩
     subst x_safety x_lvls x_typ x_value
     have hdk : d.kind = .thm := by
       cases hk : d.kind <;> simp [repDefKindVal, hk] at hkind; rfl
@@ -644,7 +650,7 @@ theorem convert_axiom_spec {ax : Ixon.Axiom} {sharing : List Ixon.Expr}
       hv15, ev45, he107, ev119, he142, hc143⟩ :=
     «Convert::convert_axiom».obs ev
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-  rcases hv15 with ⟨_, hu_eq, hlvls_eq, htyp_eq⟩
+  rcases hv15 with ⟨_, _, hu_eq, hlvls_eq, htyp_eq⟩
   subst x_is_unsafe x_lvls x_typ
   obtain ⟨ext1, blobs, hhp, hraw_ty⟩ :=
     convert_root_spec htyp hsh hrefs hrecs hunivs htbl ev45
@@ -674,7 +680,7 @@ theorem convert_quotient_spec {q : Ixon.Quotient} {sharing : List Ixon.Expr}
       hv15, ev45, he107, ev119, he142, hc143⟩ :=
     «Convert::convert_quotient».obs ev
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-  rcases hv15 with ⟨_, hk_eq, hlvls_eq, htyp_eq⟩
+  rcases hv15 with ⟨_, _, hk_eq, hlvls_eq, htyp_eq⟩
   subst x_kind x_lvls x_typ
   obtain ⟨ext1, blobs, hhp, hraw_ty⟩ :=
     convert_root_spec htyp hsh hrefs hrecs hunivs htbl ev45
@@ -712,7 +718,7 @@ theorem convert_inductive_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address}
       hv15, ev60, he128, ev140, ev167, ev187, ev207, he237, hc238⟩ :=
     «Convert::convert_inductive».obs ev
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-  rcases hv15 with ⟨_, hu_eq, hlvls_eq, hp_eq, hi_eq, htyp_eq, hctors_eq⟩
+  rcases hv15 with ⟨_, _, hu_eq, hlvls_eq, hp_eq, hi_eq, htyp_eq, hctors_eq⟩
   subst x_is_unsafe x_lvls x_params x_indices x_typ x_ctors
   obtain ⟨ext1, blobs, hhp, hraw_ty⟩ :=
     convert_root_spec htyp hsh hrefs hrecs hunivs htbl ev60
@@ -768,7 +774,7 @@ theorem convert_constructor_spec {ct : Ixon.Constructor} {blkAddr : _root_.Addre
       hv15, ev66, he134, ev146, ev187, ev207, ev227, he243, hc244⟩ :=
     «Convert::convert_constructor».obs ev
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-  rcases hv15 with ⟨_, hu_eq, hlvls_eq, hcidx_eq, hp_eq, hf_eq, _, htyp_eq⟩
+  rcases hv15 with ⟨_, _, hu_eq, hlvls_eq, hcidx_eq, hp_eq, hf_eq, _, htyp_eq⟩
   subst x_is_unsafe x_lvls x_cidx x_params x_fields x_typ
   obtain ⟨ext1, blobs, hhp, hraw_ty⟩ :=
     convert_root_spec htyp hsh hrefs hrecs hunivs htbl ev66
@@ -828,7 +834,7 @@ theorem convert_rec_rules_spec {rus : List Ixon.RecursorRule} :
       injection he with h1 h2; subst ru' rest'
       obtain ⟨rhsPtr, hru_eq, hrhs⟩ := hru
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hru_eq
-      rcases hru_eq with ⟨_, hf_eq, hrhs_eq⟩
+      rcases hru_eq with ⟨_, _, hf_eq, hrhs_eq⟩
       subst x_fields x_rhs
       obtain ⟨ext1, blobs1, hhp1, hraw_rhs⟩ :=
         convert_root_spec hrhs hsh hrefs hrecs hunivs htbl ev85
@@ -887,7 +893,7 @@ theorem convert_recursor_spec {rc : Ixon.Recursor} {blkAddr : _root_.Address} {r
       ev249, ev276, ev296, ev316, ev336, he380, hc381⟩ :=
     «Convert::convert_recursor».obs ev
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-  rcases hv15 with ⟨_, hk_eq, hu_eq, hlvls_eq, hp_eq, hi_eq, hm_eq, hmi_eq, htyp_eq, hrules_eq⟩
+  rcases hv15 with ⟨_, _, hk_eq, hu_eq, hlvls_eq, hp_eq, hi_eq, hm_eq, hmi_eq, htyp_eq, hrules_eq⟩
   subst x_k x_is_unsafe x_lvls x_params x_indices x_motives x_minors x_typ x_rules
   have ext0 : Heap.Extends h m105 := by
     rw [hm113]; exact Heap.Extends.snoc h _
