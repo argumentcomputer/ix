@@ -194,20 +194,30 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq; obtain ⟨_, _⟩ := heq; subst x_mutuals x_s
     refine ⟨ext, .muts ms, n2, _, restPtr, ?_, rfl, ⟨msPtr, rfl, msRep⟩,
       by rw [← Nat.add_assoc]; exact hrep⟩
-    have hloop :
-      (do
-        let mut arr : Array Ixon.MutConst := #[]
-        for _ in [0:t.value.toNat] do
-          arr := arr.push (← Ixon.getMutConst)
-        return Ixon.ConstantInfo.muts arr) =
-      (do
-        let arr ← Ixon.getArray Ixon.getMutConst t.value.toNat
-        return Ixon.ConstantInfo.muts arr) := by
-      simp [Ixon.getArray]
-    unfold Ixon.getConstantInfo
-    simp only [bind, EStateM.bind, htag, hf12, Ixon.Constant.FLAG_MUTS, beq_self_eq_true, ↓reduceIte]
-    rw [hloop]
-    simp [bind, EStateM.bind, hok, pure, EStateM.pure, Nat.add_assoc]
+    have hget : Ixon.getConstantInfo = (do
+        let tag ← Ixon.getTagN 4
+        if tag.flag == Ixon.Constant.FLAG_MUTS then
+          let ms ← Ixon.getArray Ixon.getMutConst tag.value.toNat
+          return .muts ms
+        else if tag.flag == Ixon.Constant.FLAG then
+          match tag.value with
+          | 0 => .defn <$> Ixon.getDefinition
+          | 1 => .recr <$> Ixon.getRecursor
+          | 2 => .axio <$> Ixon.getAxiom
+          | 3 => .quot <$> Ixon.getQuotient
+          | 4 => .cPrj <$> Ixon.getConstructorProj
+          | 5 => .rPrj <$> Ixon.getRecursorProj
+          | 6 => .iPrj <$> Ixon.getInductiveProj
+          | 7 => .dPrj <$> Ixon.getDefinitionProj
+          | v => throw s!"getConstantInfo: invalid variant {v}"
+        else
+          throw s!"getConstantInfo: invalid flag {tag.flag}") := by
+      unfold Ixon.getConstantInfo
+      simp only [forIn_push_eq_getArray]
+    rw [hget]
+    simp only [bind, EStateM.bind, htag, hf12, Ixon.Constant.FLAG_MUTS, beq_self_eq_true, ↓reduceIte,
+      hok, pure, EStateM.pure]
+    simp only [Nat.add_assoc]
   | n13 w106 x_sz1 x_sz2 x_sz3 x_sz4 x_sz5 x_sz6 x_sz7
       v158 m161 x166 y167 m168 x174 y175 m176 x182 y183 m184 x190 y191 m192
       x198 y199 m200 x206 y207 m208
@@ -1190,9 +1200,9 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
         infoRep215, shRep215, refsRep215, univsRep215, bindersRep⟩,
       by simp only [Nat.add_assoc] at hrep6 ⊢; exact hrep6⟩
     unfold Ixon.getConstant Ixon.getConstantWithUnivs
-    simp [bind, EStateM.bind] at hok3 hok4 hok5 ⊢
-    rw [hok2, hok3, hok4, hok5, hok6]
-    simp [pure, EStateM.pure, Nat.add_assoc]
+    rw [getM_bind_ok hok2, getM_bind2_ok hok3, getM_bind2_ok hok4,
+      getM_bind2_ok hok5, getM_bind_ok hok6]
+    simp only [pure, EStateM.pure, Nat.add_assoc]
 
 /-- **`Ingress::load_verified_constant` decodes the exact hashed byte string**:
 hashes `bytes`, checks `Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr`, decodes `bytes` to `c`
@@ -1389,8 +1399,7 @@ theorem recordShape_of_load_verified_constant_uncached {c : Core.Ctx}
     simp [Ixon.LazyConstant.rawBytes, hoff, hlen]
   rw [hraw]
   unfold Ixon.deConstantAt at hrec
-  have hle : 0 + lc.buf.size ≤ lc.buf.size := Nat.le_of_eq (Nat.zero_add _)
-  rw [ite_eq_left hle] at hrec
+  simp only [Nat.zero_add, Nat.le_refl, ↓reduceIte] at hrec
   cases hrun : (Ixon.Bounded.getConstant Ixon.loadMaxUnivNodes).run { idx := 0, bytes := lc.buf } with
   | error _ _ => simp [hrun, Except.toOption] at hrec
   | ok val st =>
