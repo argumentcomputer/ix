@@ -2985,7 +2985,7 @@ theorem check_iota_rule_vm_spec
       (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_tci)
       (ghostScoped_zero zeroGhost)
   injection htup_open with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-  rw [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
+  simp only [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
   obtain ⟨fvs, tbody, hopen_t, hfvs_pos, htbody_pos⟩ := openPisAtFvars_of_posOf hopen_pos
   obtain ⟨hfvs_len, _, hfvs_shape⟩ := openPisAtFvars_spec depth cvt_lps 0 hopen_t
   have hfvs_pos_len : fvs_pos.length = depth := by rw [hfvs_pos, List.length_map, hfvs_len]
@@ -3594,7 +3594,7 @@ theorem check_iota_rule_vm_spec
       (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_dt2)
       (ghostScoped_zero zeroGhost)
   injection htup_ctxp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-  rw [Nat.zero_add] at hΓp_hi hctxp_rep hsc_p
+  simp only [Nat.zero_add] at hΓp_hi hctxp_rep hsc_p
   obtain ⟨fvsP, crest2, hopen_p, hfvsP_pos, hcrest2_pos⟩ := openPisAtFvars_of_posOf hopen_p_pos
   subst hfvsP_pos hcrest2_pos
   obtain ⟨hfvsP_len, _, hfvsP_shape⟩ := openPisAtFvars_spec rP tyA 0 hopen_p
@@ -3614,7 +3614,7 @@ theorem check_iota_rule_vm_spec
       (hrhs_pos_tm0.toTm.mono ext_h_lt1_in)
       ((hty_rep 0 zeroGhost).toTm.mono ext_h_lt1_in)
   injection htup_lt1 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-  rw [Nat.zero_add] at hΓl_hi hremL1_tm hlctx_rep hsc_l
+  simp only [Nat.zero_add] at hΓl_hi hremL1_tm hlctx_rep hsc_l
   obtain ⟨lfvs1, remL1, hop_lt1, hlfvs1_pos, hremL1_pos⟩ := openLamsAtFvars_of_posOf hop_lt1_pos
   subst hlfvs1_pos hremL1_pos
   obtain ⟨hlfvs1_len, _, hlfvs1_shape⟩ := openLamsAtFvars_spec rP r.rhs 0 hop_lt1
