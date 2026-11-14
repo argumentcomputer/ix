@@ -962,23 +962,19 @@ theorem indBottomPlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
     (teleFitPA_to_chain (rP + cnF) htowerS hzslen hfitS) hzsAnnot
 
 set_option maxHeartbeats 12800000 in
-/-- One checked `.plain` rule's `RecRuleLaw` from `IotaRuleVmRunJ` (`iotaRulePlain` adapted). -/
-theorem iotaRulePlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
+/-- One checked `.plain` rule's `RecRuleLaw` from `IotaRuleVmRunJ` at arbitrary `RenameOk` renaming `f`. -/
+theorem iotaRulePlain_vmF {V : Type w} [Ix.Kernel.SetTheory V]
     {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
     (mp : EnvModelM V μ envSelf)
     (hJ : JudgeSound J mp.base2)
-    {blockNames : List KKey} {f : Key .anon → Key .anon}
-    (hf : f = fun n =>
-      if blockNames.contains n then auxKey n .model else n)
+    {f : Key .anon → Key .anon}
     (hroT : RenameOk mp.base2.acval envSelf f)
-    (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hup : ∀ (n : Key .anon) (ci : ConstantInfo .anon), env₂.find? n = some ci →
       envSelf.find? n = some ci ∨
       ∃ cv mI' rP' rules rules',
         ci = .recInfo cv mI' rP' rules ∧
         envSelf.find? n = some (.recInfo cv mI' rP' rules'))
     {cvA : ConstantVal .anon} {mI rP j : Nat} {r r' : RecRule .anon}
-    (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
     (hkit : IotaRuleVmRunJ J env₂ envSelf f cvA.name
@@ -1007,37 +1003,14 @@ theorem iotaRulePlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
     · exact nomatch heq
   obtain ⟨hCw, hClp, -, hCb, -, -, -⟩ :=
     mp.base2.wf _ (Env.find?_mem hfcS)
-  obtain ⟨cvm, mval, hm, hfm, hlpsm, -, -⟩ :=
-    hIS cvA.name hbnA _ hself
-  have hfRnE : envSelf.find? (f cvA.name)
-      = some (.defnInfo cvm mval hm) := by
-    rw [hf]
-    dsimp only
-    simp only [hbnA, ↓reduceIte]
-    exact hfm
-  obtain ⟨ciCm, hfCmE, hCmlps⟩ : ∃ ciCm,
-      envSelf.find? (f (RecRule.ctor r)) = some ciCm ∧
-      ciCm.toConstantVal.levelParams = cvjK.levelParams := by
-    by_cases hbc : blockNames.contains (RecRule.ctor r) = true
-    · obtain ⟨cvmC, mvalC, hmC, hfmC, hlpsC, -, -⟩ := hIS _ hbc _ hfcS
-      refine ⟨.defnInfo cvmC mvalC hmC, ?_, hlpsC⟩
-      rw [hf]
-      dsimp only
-      simp only [hbc, ↓reduceIte]
-      exact hfmC
-    · refine ⟨.ctorInfo cvjK cnPK cnFK, ?_, rfl⟩
-      rw [hf]
-      dsimp only
-      simp only [hbc, ↓reduceIte]
-      exact hfcS
+  obtain ⟨ciRm, hfRnE, hRmlps⟩ := hroT.1 cvA.name _ hself
+  obtain ⟨ciCm, hfCmE, hCmlps⟩ := hroT.1 (RecRule.ctor r) _ hfcS
   have heqfS : envSelf.find? eqName = some eqA := by
     rcases hup _ _ heqfind with h |
       ⟨cv, mI', rP', rules, rules', heq, -⟩
     · exact h
     · exact nomatch heq
   obtain ⟨hrhsAw, hrhsAb⟩ := hJ.annot_syntax hann hrf hrb
-  have hRmlps : (ConstantInfo.defnInfo cvm mval
-      hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta :=
@@ -1170,8 +1143,32 @@ theorem iotaRulePlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
   rw [hr'ctor] at hfitR ⊢
   refine hRalaw usj ρ xs ys TVa TVja restR restC hlenX hlenY husjlen
     ?_ ?_ hidx hTVa hTVja hfitR hfitC
-  · rw [hlev, recFireComparands_plain hfireP]
+  · dsimp only [ConstantInfo.toConstantVal]
+    rw [hlev, recFireComparands_plain hfireP]
   · intro i hi him
     exact hplain hr'pb hfireP i (by rw [hr'cp]; exact hi) him
+
+theorem iotaRulePlain_vm {V : Type w} [Ix.Kernel.SetTheory V]
+    {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
+    (mp : EnvModelM V μ envSelf)
+    (hJ : JudgeSound J mp.base2)
+    {blockNames : List KKey} {f : Key .anon → Key .anon}
+    (_hf : f = fun n => if blockNames.contains n then auxKey n .model else n)
+    (hroT : RenameOk mp.base2.acval envSelf f)
+    (_hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
+    (hup : ∀ (n : Key .anon) (ci : ConstantInfo .anon), env₂.find? n = some ci →
+      envSelf.find? n = some ci ∨
+      ∃ cv mI' rP' rules rules',
+        ci = .recInfo cv mI' rP' rules ∧
+        envSelf.find? n = some (.recInfo cv mI' rP' rules'))
+    {cvA : ConstantVal .anon} {mI rP j : Nat} {r r' : RecRule .anon}
+    (_hbnA : blockNames.contains cvA.name = true)
+    (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
+    (heqfind : env₂.find? eqName = some eqA)
+    (hkit : IotaRuleVmRunJ J env₂ envSelf f cvA.name
+      cvA.levelParams cvA.type mI rP j r r')
+    (hfireP : RecRule.fire r' = .plain) (φ : LevelParam → Nat) :
+    RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' :=
+  iotaRulePlain_vmF mp hJ hroT hup hself heqfind hkit hfireP φ
 
 end IxVM.Refinement.Decl

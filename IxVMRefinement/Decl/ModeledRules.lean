@@ -2664,12 +2664,12 @@ private theorem env_find?_name_eq {env : Ix.Kernel.Env .anon} {k : KKey} {ci : C
 
 /-! ## Unified VM rule judgement records (`RawIotaRuleVmRun`, `RawIotaRulesVmRun`) -/
 
-/-- Unified per-rule output of `KernelModeled::check_iota_rule` across public (`c_pub`) and advice
-(`c_adv`) contexts, capturing both canonical and nested rule shapes together with the advice
-theorem's universe sort check so `ModeledAux` can construct the `.aux` model environment and lift
-directly to `IotaRulesVmRunJ`. -/
+/-- Unified per-rule output of `KernelModeled::check_iota_rule` across public (`c_pub`), rule-RHS
+(`c_rhs`), and advice (`c_adv`) contexts, capturing both canonical and nested rule shapes together
+with the advice theorem's universe sort check so `ModeledAux` can construct the `.aux` model
+environment and lift directly to `IotaRulesVmRunJ`. -/
 structure RawIotaRuleVmRun
-    (c_pub c_adv : Ctx)
+    (c_pub c_rhs c_adv : Ctx)
     (blockNames : List KKey) (f_id : KKey → KKey) (advSet : Bytes.Address → Prop)
     (cvName : KKey) (lps : List LevelParam) (tyA : KExpr) (mI rP : Nat)
     (lvls_lps : List KLevel) (pins_lps : List KExpr)
@@ -2692,8 +2692,8 @@ structure RawIotaRuleVmRun
   hrhs_lvls : r.rhs.allLevelParamsDefined lps = true
   hrhs_lams : (r.rhs.stripLams (rP + cnF)).isSome = true
   hrhs_noproj : NoProjIn blockNames r.rhs = true
-  hrhs_cr : r.rhs.constsResolve c_pub.env = true
-  hrhs_typed : ∃ t', posRulesJ.infer c_pub.env 0 r.rhs t'
+  hrhs_cr : r.rhs.constsResolve c_rhs.env = true
+  hrhs_typed : ∃ t', posRulesJ.infer c_rhs.env 0 r.rhs t'
   hctor_tele : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   hctor_head : ∃ cbinders cbody0 Dc usc,
     cvj.type.stripPis (cnP + cnF) = some (cbinders, cbody0) ∧ cbody0.getAppFn = .const Dc usc
@@ -2755,17 +2755,17 @@ structure RawIotaRuleVmRun
 
 /-- Rule-list fold of `RawIotaRuleVmRun` produced by `KernelModeled::check_rules_go`. -/
 def RawIotaRulesVmRun
-    (c_pub c_adv : Ctx)
+    (c_pub c_rhs c_adv : Ctx)
     (blockNames : List KKey) (f_id : KKey → KKey) (advSet : Bytes.Address → Prop)
     (cvName : KKey) (lps : List LevelParam) (tyA : KExpr) (mI rP : Nat)
     (lvls_lps : List KLevel) (pins_lps : List KExpr) :
     Nat → List (RecRule .anon) → Prop
   | _, [] => True
   | j, r :: rest =>
-    Nonempty (RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+    Nonempty (RawIotaRuleVmRun c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
       lvls_lps pins_lps j r) ∧
-      RawIotaRulesVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP lvls_lps pins_lps
-        (j + 1) rest
+      RawIotaRulesVmRun c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
+        lvls_lps pins_lps (j + 1) rest
 
 /-! ## Refinement of `check_iota_rule`, `check_rules_go`, and `check_rules` -/
 
@@ -2837,17 +2837,19 @@ private theorem repList_imp {α : Type} {R S : Heap F → α → SourceValue F �
 
 set_option maxHeartbeats 4000000 in
 /-- **Refinement of `KernelModeled::check_iota_rule`**: discharges every syntactic, telescope,
-and typing obligation in `RawIotaRuleVmRun` across `(c_pub, c_adv)`. -/
+and typing obligation in `RawIotaRuleVmRun` across `(c_pub, c_rhs, c_adv)`. -/
 theorem check_iota_rule_vm_spec
     (hCore : IxVM.Consistency.Core S₀) (hroles : RolesSpec)
-    {c_pub c_adv : Ctx}
+    {c_pub c_rhs c_adv : Ctx}
+    (ht_rhs : c_rhs.t = c_pub.t) (hlim_rhs : c_rhs.lim = c_pub.lim)
     (ht_eq : c_adv.t = c_pub.t) (hlim_eq : c_adv.lim = c_pub.lim)
     (hef_pub : EnvFacts c_pub) (hlf_pub : LoadFacts c_pub)
+    (hef_rhs : EnvFacts c_rhs) (hlf_rhs : LoadFacts c_rhs)
     (hef_adv : EnvFacts c_adv) (hlf_adv : LoadFacts c_adv)
     (hexact_adv : ExactGetCI c_adv)
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
     (hf_out : ∀ k, blockNames.contains k = false → f_id k = k)
-    (hproj_pub : ∀ sn i entry, c_pub.env.findProj? sn i = some entry →
+    (hproj_rhs : ∀ sn i entry, c_rhs.env.findProj? sn i = some entry →
       blockNames.contains sn = false)
     {cvName : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
     {lvls_lps : List KLevel} {pins_lps : List KExpr}
@@ -2856,7 +2858,7 @@ theorem check_iota_rule_vm_spec
     {a_rm a_cprj a_t : Bytes.Address}
     {rc rm ty_r rhs cprj cty ilvls pins t_addr src dst aset v_ret : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (hgood_pub : Good c_pub calls) (hgood_adv : Good c_adv calls)
+    (hgood_pub : Good c_pub calls) (hgood_rhs : Good c_rhs calls) (hgood_adv : Good c_adv calls)
     (hlps_lt : lps.length < 4294967296)
     (hlps_perm : lps.Perm (List.range lps.length))
     (hrp_le : rP ≤ mI) (hmi_lt : mI < 288230376151711744)
@@ -2885,13 +2887,15 @@ theorem check_iota_rule_vm_spec
       [rc, rm, .field (lps.length : F), ty_r, .field (rP : F), .field ((mI - rP : Nat) : F),
        rhs, cprj, cty, .field (cnP : F), .field (cnF : F), ilvls, pins, t_addr, src, dst, aset]
       h v_ret h' calls) :
-    Nonempty (RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+    Nonempty (RawIotaRuleVmRun c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
       lvls_lps pins_lps j r) := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   have hval0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
   have hval1 : ZMod.val (1 : F) = 1 := rfl
   have hval2 : ZMod.val (2 : F) = 2 := rfl
   have hval3 : ZMod.val (3 : F) = 3 := rfl
+  have hκ_rhs : c_rhs.κ = c_pub.κ := by unfold Ctx.κ; rw [ht_rhs]
+  have hrc_rhs : RCRep c_rhs.t c_rhs.lim h rc := by rw [ht_rhs, hlim_rhs]; exact hrc
   have hκ_eq : c_adv.κ = c_pub.κ := by unfold Ctx.κ; rw [ht_eq]
   have hrc_adv : RCRep c_adv.t c_adv.lim h rc := by rw [ht_eq, hlim_eq]; exact hrc
   have hnd_lps : lps.Nodup := hlps_perm.nodup_iff.mpr List.nodup_range
@@ -2959,18 +2963,19 @@ theorem check_iota_rule_vm_spec
   have ext_peel := ext_peel_in.trans inv.ev_peel.heap_extends
   have ext_rhs_in := ext_peel.trans (Heap.Extends.snoc inv.h_peel (.construct kexprListEnum "Nil" []))
   obtain ⟨rhs_ty_pos, _, hrhs_inf_pos⟩ :=
-    core_infer hCore (hrc.mono ext_rhs_in)
-      (typesRep_alloc_nil c_pub.κ zeroGhost inv.h_peel) (ghostScoped_zero zeroGhost)
-      hef_pub hlf_pub (hgood_pub.sub inv.sub_rhs_inf) inv.ev_rhs_inf
-      (hrhs_pos_tm0.toTm.mono ext_rhs_in)
-  have hrhs_typed : ∃ t', posRulesJ.infer c_pub.env 0 r.rhs t' :=
+    core_infer hCore (hrc_rhs.mono ext_rhs_in)
+      (by rw [hκ_rhs]; exact typesRep_alloc_nil c_pub.κ zeroGhost inv.h_peel)
+      (ghostScoped_zero zeroGhost)
+      hef_rhs hlf_rhs (hgood_rhs.sub inv.sub_rhs_inf) inv.ev_rhs_inf
+      (by rw [hκ_rhs]; exact hrhs_pos_tm0.toTm.mono ext_rhs_in)
+  have hrhs_typed : ∃ t', posRulesJ.infer c_rhs.env 0 r.rhs t' :=
     ⟨invPosOf lps rhs_ty_pos, posRulesJ_infer_of_pos hlps_perm hrhs_inf_pos⟩
-  have hrhs_cr : r.rhs.constsResolve c_pub.env = true := by
-    have hcr := infer_constsResolve hrhs_inf_pos hef_pub.store
+  have hrhs_cr : r.rhs.constsResolve c_rhs.env = true := by
+    have hcr := infer_constsResolve hrhs_inf_pos hef_rhs.store
       (Tm.hasFvar_false hrhs_pos_tm0.toTm)
     rwa [constsResolve_posOf] at hcr
   have hrhs_noproj : NoProjIn blockNames r.rhs = true := by
-    have hnp := infer_noProjIn hrhs_inf_pos hproj_pub (Tm.hasFvar_false hrhs_pos_tm0.toTm)
+    have hnp := infer_noProjIn hrhs_inf_pos hproj_rhs (Tm.hasFvar_false hrhs_pos_tm0.toTm)
     unfold posOf at hnp
     rwa [noProjIn_instantiateLevelParams] at hnp
   have ext_rhs_inf := ext_rhs_in.trans inv.ev_rhs_inf.heap_extends
@@ -3933,13 +3938,15 @@ theorem check_iota_rule_vm_spec
 /-- **Refinement of `KernelModeled::check_rules_go`** over a `RulesRepExact` list and `L1.Stream`. -/
 theorem check_rules_go_vm_spec
     (hCore : IxVM.Consistency.Core S₀) (hroles : RolesSpec) (hcallees : CalleesSpec)
-    {c_pub c_adv : Ctx}
+    {c_pub c_rhs c_adv : Ctx}
+    (ht_rhs : c_rhs.t = c_pub.t) (hlim_rhs : c_rhs.lim = c_pub.lim)
     (ht_eq : c_adv.t = c_pub.t) (hlim_eq : c_adv.lim = c_pub.lim)
     (hef_pub : EnvFacts c_pub) (hlf_pub : LoadFacts c_pub) (hexact_pub : ExactGetCI c_pub)
+    (hef_rhs : EnvFacts c_rhs) (hlf_rhs : LoadFacts c_rhs)
     (hef_adv : EnvFacts c_adv) (hlf_adv : LoadFacts c_adv) (hexact_adv : ExactGetCI c_adv)
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
     (hf_out : ∀ k, blockNames.contains k = false → f_id k = k)
-    (hproj_pub : ∀ sn i entry, c_pub.env.findProj? sn i = some entry →
+    (hproj_rhs : ∀ sn i entry, c_rhs.env.findProj? sn i = some entry →
       blockNames.contains sn = false)
     {cvName : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
     {lvls_lps : List KLevel} {pins_lps : List KExpr}
@@ -3960,7 +3967,7 @@ theorem check_rules_go_vm_spec
       (∀ (k : Nat) (rl : RecRule .anon), rls[k]? = some rl → ∀ cvj cnP cnF,
         c_pub.env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) →
         lvls_lps.length = cvj.levelParams.length) →
-      Good c_pub calls → Good c_adv calls →
+      Good c_pub calls → Good c_rhs calls → Good c_adv calls →
       RCRep c_pub.t c_pub.lim h rc →
       Bytes.RepAddressRef addrTy h a_rm rm →
       c_pub.κ (ixAddr a_rm) = f_id cvName →
@@ -3978,13 +3985,13 @@ theorem check_rules_go_vm_spec
          rules_ptr, iblock, .field i_ind, .field inp, ilvls, pins, src, dst, aset, s_in, .field (j : F)]
         h s_out h' calls →
       ∃ bytes_out, L1.Stream h' bytes_out s_out ∧
-        RawIotaRulesVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+        RawIotaRulesVmRun c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
           lvls_lps pins_lps j rls := by
   intro rls
   induction rls with
   | nil =>
     intro j rc rm ty_r rules_ptr iblock ilvls pins src dst aset s_in s_out bytes_in h h' calls
-      _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrls hstr ev
+      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrls hstr ev
     match Obs.«KernelModeled::check_rules_go».obs ev with
     | .Nil (he21 := hr) (he22 := hh) .. =>
       subst hr hh; exact ⟨bytes_in, hstr, trivial⟩
@@ -3993,7 +4000,7 @@ theorem check_rules_go_vm_spec
       | nil cell => exact absurd ld (by simp [loadValue_enum_cell cell])
   | cons rl rls ih =>
     intro j rc rm ty_r rules_ptr iblock ilvls pins src dst aset s_in s_out bytes_in h h' calls
-      hj_lt hctor_eq hlvls_ctor hg_pub hg_adv hrc hrm hrm_key hiblock haset hren
+      hj_lt hctor_eq hlvls_ctor hg_pub hg_rhs hg_adv hrc hrm hrm_key hiblock haset hren
       hty_rep hilvls_rep hpins_rep hrls hstr ev
     have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
     have hval1 : ZMod.val (1 : F) = 1 := rfl
@@ -4054,9 +4061,10 @@ theorem check_rules_go_vm_spec
           rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
         have ext_h_m155 := ext_ga.trans (ev_cprj.heap_extends.trans ev_ci.heap_extends)
         have hrule_out :=
-          check_iota_rule_vm_spec (j := j) hCore hroles ht_eq hlim_eq
-            hef_pub hlf_pub hef_adv hlf_adv hexact_adv hf_out hproj_pub
+          check_iota_rule_vm_spec (j := j) hCore hroles ht_rhs hlim_rhs ht_eq hlim_eq
+            hef_pub hlf_pub hef_rhs hlf_rhs hef_adv hlf_adv hexact_adv hf_out hproj_rhs
             (hg_pub.sub fun _ hx => by simp [hx])
+            (hg_rhs.sub fun _ hx => by simp [hx])
             (hg_adv.sub fun _ hx => by simp [hx])
             hlps_lt hlps_perm hrp_le hmi_lt hcnp_lt hcnf_lt
             hfind_c0 (hlvls_ctor 0 rl rfl cvj cnP cnF hfind_c0) hnfields
@@ -4086,6 +4094,7 @@ theorem check_rules_go_vm_spec
               simpa [Nat.add_assoc, Nat.add_comm 1 k] using h1)
             (fun k rl' hk => hlvls_ctor (k + 1) rl' (by simpa using hk))
             (hg_pub.sub fun _ hx => by simp [hx])
+            (hg_rhs.sub fun _ hx => by simp [hx])
             (hg_adv.sub fun _ hx => by simp [hx])
             (hrc.mono ext_h_m77)
             (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hrm) hrm_key
@@ -4101,19 +4110,21 @@ premise domain (`rec_major_pins`), resolves its inductive record and constructor
 `check_rules_go_vm_spec` over all rules. -/
 theorem check_rules_vm_spec
     (hCore : IxVM.Consistency.Core S₀) (hroles : RolesSpec) (hcallees : CalleesSpec)
-    {c_pub c_adv : Ctx}
+    {c_pub c_rhs c_adv : Ctx}
+    (ht_rhs : c_rhs.t = c_pub.t) (hlim_rhs : c_rhs.lim = c_pub.lim)
     (ht_eq : c_adv.t = c_pub.t) (hlim_eq : c_adv.lim = c_pub.lim)
     (hef_pub : EnvFacts c_pub) (hlf_pub : LoadFacts c_pub) (hexact_pub : ExactGetCI c_pub)
+    (hef_rhs : EnvFacts c_rhs) (hlf_rhs : LoadFacts c_rhs)
     (hef_adv : EnvFacts c_adv) (hlf_adv : LoadFacts c_adv) (hexact_adv : ExactGetCI c_adv)
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
     (hf_out : ∀ k, blockNames.contains k = false → f_id k = k)
-    (hproj_pub : ∀ sn i entry, c_pub.env.findProj? sn i = some entry →
+    (hproj_rhs : ∀ sn i entry, c_rhs.env.findProj? sn i = some entry →
       blockNames.contains sn = false)
     {cvName : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
     {rls : List (RecRule .anon)} {a_rm : Bytes.Address}
     {rc rm ty_r rules_ptr src dst aset s_in s_out : SourceValue F}
     {bytes_in : List UInt8} {h h' : Heap F} {calls : List (Call F)}
-    (hg_pub : Good c_pub calls) (hg_adv : Good c_adv calls)
+    (hg_pub : Good c_pub calls) (hg_rhs : Good c_rhs calls) (hg_adv : Good c_adv calls)
     (hlps_lt : lps.length < 4294967296)
     (hlps_perm : lps.Perm (List.range lps.length))
     (hrp_le : rP ≤ mI) (hmi_lt : mI < 288230376151711744)
@@ -4155,7 +4166,7 @@ theorem check_rules_vm_spec
       dom.getAppArgs.drop cnP_ind =
         ((List.range (mI - rP)).map fun m => .bvar (mI - rP - 1 - m)) ∧
       pins_lps = (dom.getAppArgs.take cnP_ind).map (Expr.lowerBVars (mI - rP) 0) ∧
-      RawIotaRulesVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+      RawIotaRulesVmRun c_pub c_rhs c_adv blockNames f_id advSet cvName lps tyA mI rP
         lvls_lps pins_lps 0 rls := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   let nI : Nat := mI - rP
@@ -4304,15 +4315,16 @@ theorem check_rules_vm_spec
     have ev_go' := ev_go
     rw [show (.field 0 : SourceValue F) = .field ((0 : Nat) : F) by simp] at ev_go'
     obtain ⟨bytes_out, hstr_out, hrules_out⟩ :=
-      check_rules_go_vm_spec hCore hroles hcallees ht_eq hlim_eq
-        hef_pub hlf_pub hexact_pub hef_adv hlf_adv hexact_adv
-        hf_out hproj_pub hlps_lt hlps_perm hrp_le hmi_lt
+      check_rules_go_vm_spec hCore hroles hcallees ht_rhs hlim_rhs ht_eq hlim_eq
+        hef_pub hlf_pub hexact_pub hef_rhs hlf_rhs hef_adv hlf_adv hexact_adv
+        hf_out hproj_rhs hlps_lt hlps_perm hrp_le hmi_lt
         hnp_ty hnp_pins hnp_ctor rls 0
         (by omega)
         (fun k rl hk => by simpa [Nat.zero_add] using hctor_eq0 k rl hk)
         (fun k rl hk cvj cnP cnF hfc =>
           hlvls_lps_len.trans (hctor_lvls0 k rl hk cvj cnP cnF hfc).symm)
         (hg_pub.sub fun _ hx => by simp [hx])
+        (hg_rhs.sub fun _ hx => by simp [hx])
         (hg_adv.sub fun _ hx => by simp [hx])
         (hrc.mono ext_rmp_ci)
         (Bytes.repAddressRef_heapMono₂ addrTy ext_rmp_ci hrm) hrm_key

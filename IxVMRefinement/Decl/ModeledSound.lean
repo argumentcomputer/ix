@@ -1266,26 +1266,22 @@ theorem indBottomNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
     (teleFitPA_to_chain (rP + cnF) htowerS hzslen hfitS) hzsAnnot
 
 set_option maxHeartbeats 12800000 in
-/-- One checked `.nested` rule's `RecRuleLaw` from `IotaRuleVmRunJ` (`iotaRuleNested` adapted). -/
-theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
+/-- One checked `.nested` rule's `RecRuleLaw` from `IotaRuleVmRunJ` at arbitrary `RenameOk` renaming `f`. -/
+theorem iotaRuleNested_vmF {V : Type w} [Ix.Kernel.SetTheory V]
     {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
     (mp : EnvModelM V μ envSelf)
     (hJ : JudgeSound J mp.base2)
-    {blockNames : List KKey} {f : Key .anon → Key .anon}
-    (hf : f = fun n =>
-      if blockNames.contains n then auxKey n .model else n)
+    {f : Key .anon → Key .anon}
     (hroT : RenameOk mp.base2.acval envSelf f)
-    (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hup : ∀ (n : Key .anon) (ci : ConstantInfo .anon), env₂.find? n = some ci →
       envSelf.find? n = some ci ∨
       ∃ cv mI' rP' rules rules',
         ci = .recInfo cv mI' rP' rules ∧
         envSelf.find? n = some (.recInfo cv mI' rP' rules'))
     {cvA : ConstantVal .anon} {mI rP j : Nat} {r r' : RecRule .anon}
-    (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
-    (hkit : IotaRuleVmRunJ J env₂ envSelf f cvA.name
+    (hkit : IotaRuleNVmRunJ J env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
     {lvls : List Level} {pins : List KExpr}
     (hfireN : RecRule.fire r' = .nested lvls pins) (φ : LevelParam → Nat) :
@@ -1294,13 +1290,13 @@ theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
   have hinf := hJ.infer
   have hreadsP := hJ.reads
   have hframe := hJ.frame
-  obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
-    hrres, hstripRhs, hrun0, fire, hr'eq, hbranch⟩ := hkit
+  obtain ⟨cvjK, cnPK, cnFK, rhsA, lvls0, pins0, hfcK, hnfK, hrb, hrf, hann, hrlp,
+    hrres, hstripRhs, hrun0, hr'eq, hthm0⟩ := hkit
   have hr'rhs : RecRule.rhs r' = rhsA := by rw [hr'eq]; rfl
   have hr'ctor : RecRule.ctor r' = RecRule.ctor r := by rw [hr'eq]; rfl
   have hr'cp : RecRule.ctorParams r' = cnPK := by rw [hr'eq]; rfl
   have hr'nf : RecRule.nfields r' = cnFK := by rw [hr'eq, hnfK]; rfl
-  have hr'fire : RecRule.fire r' = fire := by rw [hr'eq]; rfl
+  have hr'fire : RecRule.fire r' = .nested lvls0 pins0 := by rw [hr'eq]; rfl
   obtain ⟨htyw0, -, -, htyb0, -, -, -⟩ :=
     mp.base2.wf _ (Env.find?_mem hself)
   have htyw : cvA.type.hasFvar = false := htyw0
@@ -1313,37 +1309,14 @@ theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
     · exact nomatch heq
   obtain ⟨hCw, hClp, -, hCb, -, -, -⟩ :=
     mp.base2.wf _ (Env.find?_mem hfcS)
-  obtain ⟨cvm, mval, hm, hfm, hlpsm, -, -⟩ :=
-    hIS cvA.name hbnA _ hself
-  have hfRnE : envSelf.find? (f cvA.name)
-      = some (.defnInfo cvm mval hm) := by
-    rw [hf]
-    dsimp only
-    simp only [hbnA, ↓reduceIte]
-    exact hfm
-  obtain ⟨ciCm, hfCmE, hCmlps⟩ : ∃ ciCm,
-      envSelf.find? (f (RecRule.ctor r)) = some ciCm ∧
-      ciCm.toConstantVal.levelParams = cvjK.levelParams := by
-    by_cases hbc : blockNames.contains (RecRule.ctor r) = true
-    · obtain ⟨cvmC, mvalC, hmC, hfmC, hlpsC, -, -⟩ := hIS _ hbc _ hfcS
-      refine ⟨.defnInfo cvmC mvalC hmC, ?_, hlpsC⟩
-      rw [hf]
-      dsimp only
-      simp only [hbc, ↓reduceIte]
-      exact hfmC
-    · refine ⟨.ctorInfo cvjK cnPK cnFK, ?_, rfl⟩
-      rw [hf]
-      dsimp only
-      simp only [hbc, ↓reduceIte]
-      exact hfcS
+  obtain ⟨ciRm, hfRnE, hRmlps⟩ := hroT.1 cvA.name _ hself
+  obtain ⟨ciCm, hfCmE, hCmlps⟩ := hroT.1 (RecRule.ctor r) _ hfcS
   have heqfS : envSelf.find? eqName = some eqA := by
     rcases hup _ _ heqfind with h |
       ⟨cv, mI', rP', rules, rules', heq, -⟩
     · exact h
     · exact nomatch heq
   obtain ⟨hrhsAw, hrhsAb⟩ := hJ.annot_syntax hann hrf hrb
-  have hRmlps : (ConstantInfo.defnInfo cvm mval
-      hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta :=
@@ -1381,20 +1354,9 @@ theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
     injection h1 with e1 e2 e3
     exact ⟨e1.symm, e2.symm, e3.symm⟩
   -- ===== the nested branch =====
-  obtain ⟨hshape, hthmN⟩ :
-      nestedRuleShape env₂ envSelf cvA.name cvA.levelParams cvA.type
-          mI rP cnPK j = some (lvls, pins) ∧
-        _ := by
-    rcases hbranch with ⟨hpl, hfireP0, -⟩ | ⟨hnpl, hrest⟩
-    · exfalso
-      rw [hr'fire, hfireP0] at hfireN
-      exact nomatch hfireN
-    · obtain ⟨lvls0, pins0, hfireN0, hthm0⟩ := hrest
-      obtain ⟨rfl, rfl⟩ : lvls0 = lvls ∧ pins0 = pins := by
-        rw [hr'fire, hfireN0] at hfireN
-        injection hfireN with a b
-        exact ⟨a, b⟩
-      exact hthm0
+  obtain ⟨rfl, rfl⟩ : lvls = lvls0 ∧ pins = pins0 :=
+    Ix.Kernel.RecRuleFire.nested.inj (hfireN.symm.trans hr'fire)
+  obtain ⟨hshape, hthmN⟩ := hthm0
   obtain ⟨hrPmI, -, hpinsWf0, -⟩ := nestedRuleShape_inv hshape
   obtain ⟨-, -, -, pre, domD, bodyD, bmD, D,
     -, -, -, hpinsLen⟩ := nestedRuleShape_inv hshape
@@ -1469,7 +1431,8 @@ theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
   have hCstrips' := hCstripsHead
   obtain ⟨Tst0, hTst0, -⟩ := hthm φ
   have hlvlsLen : lvls.length = cvjK.levelParams.length := by
-    rw [← hCmlps]
+    have hCmlps' : _ = cvjK.levelParams := hCmlps
+    rw [← hCmlps']
     exact nestedLvlsLength
       (denoteMeta_erase mp.base2.acval_erase 0 _ hTst0)
       hopen hheadEq hargs3 (eq_of_beq hlhead0) hlarity0 hmaj0 hfCmE
@@ -1650,8 +1613,33 @@ theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
   rw [hr'ctor] at hfitR ⊢
   refine hRalaw usj ρ xs ys TVa TVja restR restC hlenX hlenY husjlen
     ?_ ?_ hidx hTVa hTVja hfitR hfitC
-  · rw [hlev, recFireComparands_nested hfireN]
+  · dsimp only [ConstantInfo.toConstantVal]
+    rw [hlev, recFireComparands_nested hfireN]
   · exact hnested lvls pins hfireN
+
+theorem iotaRuleNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
+    {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
+    (mp : EnvModelM V μ envSelf)
+    (hJ : JudgeSound J mp.base2)
+    {blockNames : List KKey} {f : Key .anon → Key .anon}
+    (_hf : f = fun n => if blockNames.contains n then auxKey n .model else n)
+    (hroT : RenameOk mp.base2.acval envSelf f)
+    (_hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
+    (hup : ∀ (n : Key .anon) (ci : ConstantInfo .anon), env₂.find? n = some ci →
+      envSelf.find? n = some ci ∨
+      ∃ cv mI' rP' rules rules',
+        ci = .recInfo cv mI' rP' rules ∧
+        envSelf.find? n = some (.recInfo cv mI' rP' rules'))
+    {cvA : ConstantVal .anon} {mI rP j : Nat} {r r' : RecRule .anon}
+    (_hbnA : blockNames.contains cvA.name = true)
+    (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
+    (heqfind : env₂.find? eqName = some eqA)
+    (hkit : IotaRuleVmRunJ J env₂ envSelf f cvA.name
+      cvA.levelParams cvA.type mI rP j r r')
+    {lvls : List Level} {pins : List KExpr}
+    (hfireN : RecRule.fire r' = .nested lvls pins) (φ : LevelParam → Nat) :
+    RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' :=
+  iotaRuleNested_vmF mp hJ hroT hup hself heqfind (hkit.toNVm hfireN) hfireN φ
 
 /-- Per-rule soundness bridge over `IotaRuleVmRunJ` (`iotaRule` adapted). -/
 theorem iotaRule_vm {V : Type w} [Ix.Kernel.SetTheory V]
@@ -1983,5 +1971,294 @@ theorem decls_step_of_modeled_vm {calls : List (Call F)} {env : Env .anon}
     exact ⟨env₂, hinst, fun _ _ hInv => hInv.step_modeled_vm hrun⟩
   · obtain ⟨env₂, hinst⟩ := installStep_of_checked_fresh hchk hnodup hfresh
     exact ⟨env₂, hinst, fun _ _ hInv => absurd hInv.store hS⟩
+
+/-! ## `f`-parametric soundness bridge (`declIndJ_vmF`) -/
+
+/-- Per-rule soundness bridge over `IotaRuleNVmRunJ` at arbitrary `RenameOk` renaming `f`. -/
+theorem iotaRule_vmF {V : Type w} [Ix.Kernel.SetTheory V]
+    {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
+    (mp : EnvModelM V μ envSelf)
+    (hJ : JudgeSound J mp.base2)
+    {f : Key .anon → Key .anon}
+    (hroT : RenameOk mp.base2.acval envSelf f)
+    (hup : ∀ (n : Key .anon) (ci : ConstantInfo .anon), env₂.find? n = some ci →
+      envSelf.find? n = some ci ∨
+      ∃ cv mI' rP' rules rules',
+        ci = .recInfo cv mI' rP' rules ∧
+        envSelf.find? n = some (.recInfo cv mI' rP' rules'))
+    {cvA : ConstantVal .anon} {mI rP j : Nat} {r r' : RecRule .anon}
+    (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
+    (heqfind : env₂.find? eqName = some eqA)
+    (hkit : IotaRuleNVmRunJ J env₂ envSelf f cvA.name
+      cvA.levelParams cvA.type mI rP j r r')
+    (φ : LevelParam → Nat) :
+    RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
+  have ⟨_, _, _, _, lvls₀, pins₀, _, _, _, _, _, _, _, _, _, hr'eq, _⟩ := hkit
+  have hfm : RecRule.fire r' = .nested lvls₀ pins₀ := by rw [hr'eq]; rfl
+  exact iotaRuleNested_vmF mp hJ hroT hup hself heqfind hkit hfm φ
+
+/-- Rule-list soundness fold over `IotaRulesNVmRunJ` at arbitrary `RenameOk` renaming `f`. -/
+theorem iotaRules_vmF {V : Type w} [Ix.Kernel.SetTheory V]
+    {μ : CheckMode} {J : Judgements .anon} {env₂ envSelf : Env .anon}
+    (mp : EnvModelM V μ envSelf)
+    (hJ : JudgeSound J mp.base2)
+    {f : Key .anon → Key .anon}
+    (hroT : RenameOk mp.base2.acval envSelf f)
+    (hup : FoldUpS env₂ envSelf)
+    {cvA : ConstantVal .anon} {mI rP : Nat}
+    (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP [])) :
+    ∀ (j : Nat) (rules rules' : List (RecRule .anon)),
+      (rules ≠ [] → env₂.find? eqName = some eqA) →
+      IotaRulesNVmRunJ J env₂ envSelf f cvA.name
+        cvA.levelParams cvA.type mI rP j rules rules' →
+      ∀ rl ∈ rules', RecRule.fire rl ≠ .inert → ∀ φ : LevelParam → Nat,
+        RecRuleLaw mp.base2 φ cvA.name cvA mI rP rl := by
+  intro j rules
+  induction rules generalizing j with
+  | nil =>
+    intro rules' _ h rl hrl
+    rw [h] at hrl
+    exact nomatch hrl
+  | cons r rest ih =>
+    intro rules' heqfind h rl hrl
+    have heq₀ : env₂.find? eqName = some eqA := heqfind (fun hnil => nomatch hnil)
+    obtain ⟨r', rest', hkit, hrec, rfl⟩ := h
+    rcases List.mem_cons.mp hrl with heqrl | hrl'
+    · intro _ φ
+      rw [heqrl]
+      exact iotaRule_vmF mp hJ hroT hup hself heq₀ hkit φ
+    · exact ih (j + 1) rest' (fun _ => heq₀) hrec rl hrl'
+
+set_option maxHeartbeats 1600000 in
+/-- Provisioning and install fold over `IndRecsFoldNVmRunJF`. -/
+theorem indRecsFold_vmF {V : Type w} [Ix.Kernel.SetTheory V] {μ : CheckMode}
+    {J : Judgements .anon} {blockNames : List KKey} {f : KKey → KKey} {envSelf envBase : Env .anon}
+    (mp : EnvModelM V μ envSelf) (hJ : JudgeSound J mp.base2)
+    (hroT : RenameOk mp.base2.acval envSelf f)
+    (hupB : FoldUpS envBase envSelf) :
+    ∀ (recs : List (ConstantInfo .anon)) {envP envF env₃ : Env .anon}
+      {checked : List (ConstantVal .anon × Nat × Nat × List (RecRule .anon))},
+      ((∃ c ∈ checked, c.2.2.2 ≠ []) → envBase.find? eqName = some eqA) →
+      (∀ (n : Key .anon) (cv : ConstantVal .anon) (mI rP : Nat)
+        (rules : List (RecRule .anon)),
+        envF.find? n = some (.recInfo cv mI rP rules) →
+        envSelf.find? n = some (.recInfo cv mI rP rules) ∨
+        RecLawsAt mp.base2 cv mI rP rules) →
+      ProvisionRecsRunJ J blockNames envP recs envSelf checked →
+      IndRecsFoldNVmRunJF J f envBase envSelf envF checked env₃ →
+      ∀ (n : Key .anon) (cv : ConstantVal .anon) (mI rP : Nat)
+        (rules : List (RecRule .anon)),
+        env₃.find? n = some (.recInfo cv mI rP rules) →
+        envSelf.find? n = some (.recInfo cv mI rP rules) ∨
+        RecLawsAt mp.base2 cv mI rP rules := by
+  intro recs
+  induction recs with
+  | nil =>
+    intro envP envF env₃ checked _ hentF hprov hfold
+    obtain ⟨rfl, rfl⟩ := hprov
+    subst hfold
+    exact hentF
+  | cons ci₀ rest ih =>
+    intro envP envF env₃ checked heqfB hentF hprov hfold
+    obtain ⟨cvA, mI, rP, rules, rest', _, _, hprov', rfl⟩ := hprov
+    obtain ⟨rules', hiot, hfold'⟩ := hfold
+    have hselfA : envSelf.find? cvA.name = some (.recInfo cvA mI rP []) :=
+      provisionRecsRunS_mono rest hprov' _ _
+        (Env.find?_cons_self (.recInfo cvA mI rP []) envP)
+    have hfacts : RecLawsAt mp.base2 cvA mI rP rules' :=
+      fun rl hrl hfire φ =>
+        iotaRules_vmF mp hJ hroT hupB hselfA 0 rules rules'
+          (fun hne => heqfB ⟨(cvA, mI, rP, rules), List.mem_cons_self, hne⟩)
+          hiot rl hrl hfire φ
+    refine ih (fun ⟨c, hc, hne⟩ => heqfB ⟨c, List.mem_cons_of_mem _ hc, hne⟩) ?_ hprov' hfold'
+    intro n cv mI₀ rP₀ rules₀ hfx
+    rw [Env.find?_cons] at hfx
+    split at hfx
+    · obtain ⟨rfl, rfl, rfl, rfl⟩ :=
+        ConstantInfo.recInfo.inj (Option.some.inj hfx)
+      exact Or.inr hfacts
+    · exact hentF n cv mI₀ rP₀ rules₀ hfx
+
+set_option maxHeartbeats 1600000 in
+/-- Recursor-group phase over `IndRecsNVmRunJF`. -/
+theorem indRecs_vmF {V : Type w} [Ix.Kernel.SetTheory V] {μ : CheckMode}
+    (hetaP : (MemberEtaLaw (md := .anon)) V) (hunitP : (MemberUnitLaw (md := .anon)) V)
+    {J : Judgements .anon} (hfr : ∀ e : Env .anon, JudgeFrames J e)
+    (hJ : ∀ {e : Env .anon} (m : EnvModelM V μ e), JudgeSound J m.base2)
+    {blockNames : List KKey} {f : KKey → KKey} {env₀ env₂ env₃ : Env .anon}
+    {recs : List (ConstantInfo .anon)}
+    {mp₀ : EnvModelM V μ env₀} (mp : EnvModelM V μ env₂)
+    (hAlias : ModelAliasOk blockNames env₀ mp₀.base2.acval f)
+    (hext₀ : ModelExt mp₀ mp)
+    (hmono₀ : ∀ n ci, env₀.find? n = some ci → env₂.find? n = some ci)
+    (hI : BlockInstalledTT blockNames env₂ mp.base2.cvalE)
+    (hIA : BlockAcvalInstalled blockNames env₂ mp.base2.acval)
+    (hbn : ∀ ci ∈ recs, blockNames.contains ci.name = true)
+    (hall : ∀ n, blockNames.contains n = true →
+      (env₂.find? n).isSome = true ∨ ∃ ci ∈ recs, ci.name = n)
+    (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env₂)
+    (hBP : Ix.Kernel.BlockEtaPinned μ blockNames env₂)
+    (h : IndRecsNVmRunJF J blockNames f env₂ recs env₃) :
+    ∃ mp₃ : EnvModelM V μ env₃,
+      BlockInstalledTT blockNames env₃ mp₃.base2.cvalE ∧
+      BlockAcvalInstalled blockNames env₃ mp₃.base2.acval ∧
+      ModelExt mp mp₃ := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨-, envSelf, checked, heqf, hprov, hfold⟩
+  · exact ⟨mp, hI, hIA, .refl⟩
+  obtain ⟨mS, hIS, hIAS, hECS, hBPS, hextS⟩ :=
+    provisionRecsPM hetaP hunitP hfr recs mp hbn hprov hI hIA hEC hBP
+  have hnames : ∀ n, blockNames.contains n = true →
+      (envSelf.find? n).isSome = true := by
+    intro n hn
+    rcases hall n hn with hfound | ⟨ci, hci, rfl⟩
+    · rcases hf : env₂.find? n with _ | ci
+      · rw [hf] at hfound; exact nomatch hfound
+      · rw [provisionRecsRunS_mono recs hprov n ci hf]; rfl
+    · exact provisionRecsRunS_stored recs hprov ci hci
+  have hroP := modelRenameOk_of_alias hAlias (hext₀.trans hextS)
+    (fun n ci hf => provisionRecsRunS_mono recs hprov n ci (hmono₀ n ci hf))
+    hIS hIAS hnames
+  have hdenS : ∀ e : KExpr, e.hasFvar = false →
+      e.looseBVarsBounded 0 = true →
+      (∃ t', J.infer envSelf 0 e t') →
+      ∀ φ : LevelParam → Nat,
+        ∃ Rv, denoteClosed mS.base2.cvalE envSelf φ e = some Rv := by
+    intro e hef heb hrun φ
+    obtain ⟨t', hrun'⟩ := hrun
+    obtain ⟨ea, hea⟩ :=
+      (hJ mS).accepted φ hrun'
+        (Expr.WScoped.of_not_hasFvar hef) heb
+        (fun l hl => absurd hl (fun h' => by
+          rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hef] at h'
+          exact nomatch h'))
+    exact ⟨ea.erase, denoteMeta_erase mS.base2.acval_erase 0 e hea⟩
+  obtain ⟨hswR, hnresR, hentR, hentFR⟩ :=
+    indRecsFoldNVmFactsRunF (RuleFacts envSelf mS.base2.cvalE)
+      (fun _cvA _mI _rP rules rules' _hbnA _hselfA hiot =>
+        iotaRulesNVmFactsRun
+          (fun n ci hf =>
+            Or.inl (provisionRecsRunS_mono recs hprov n ci hf))
+          hdenS (hfr envSelf).annot_syntax 0 rules rules' hiot)
+      recs (SwapShList.of_eq env₂.consts)
+      (SwapNResS.of_eq env₂)
+      (fun n ci hf =>
+        Or.inl (provisionRecsRunS_mono recs hprov n ci hf))
+      (provisionRecsRunS_mono recs hprov)
+      (fun c hc => Or.inl (provisionRecsRunS_mem recs hprov c hc))
+      (fun n cv mI rP rules hf =>
+        Or.inl (provisionRecsRunS_mono recs hprov n _ hf))
+      hbn hprov hfold
+  have hcg : Ix.Kernel.SwapCongr envSelf env₃ := SwapShList.congr hswR
+  have hentF := indRecsFold_vmF (V := V) mS (hJ mS) hroP
+    (fun n ci hf => Or.inl (provisionRecsRunS_mono recs hprov n ci hf))
+    recs heqf
+    (fun n cv mI rP rules hf =>
+      Or.inl (provisionRecsRunS_mono recs hprov n _ hf))
+    hprov hfold
+  have hrecP : ∀ m₃ : EnvModel V env₃, m₃.acval = mS.base2.acval →
+      ∀ φ : LevelParam → Nat, RecRules m₃ φ := by
+    intro m₃ hac φ n cv mI rP rules hf rl hrl hfire
+    rcases hentF n cv mI rP rules hf with hfS | hlaws
+    · exact RecRuleLaw.swapP hcg hac
+        (mS.rec_rules φ n cv mI rP rules hfS rl hrl hfire)
+    · rw [← Env.find?_name hf]
+      exact RecRuleLaw.swapP hcg hac (hlaws rl hrl hfire φ)
+  obtain ⟨hwf₃, hctors₃, hbp₃, hproj₃⟩ :=
+    swapEnvFacts mS.base2.wf mS.base2.rec_ctors mS.base2.basis_pinned
+      mS.base2.proj_ok hswR hnresR hentR hentFR
+  obtain ⟨mp₃, hacc, hcval₃⟩ :=
+    EnvModelM.swapP mS hswR hwf₃ hctors₃ hbp₃ hproj₃ hrecP
+  have hext₃ : ModelExt mp mp₃ :=
+    ModelExt.swap hextS (fun n hn => by rw [← hcg.isSomeEq n]; exact hn)
+      (fun cv v hmem => by
+        rcases hentR _ hmem with h | ⟨_, _, _, _, heq, -⟩
+        · exact h
+        · exact nomatch heq)
+      (fun ψ d e => denoteMeta_swap hcg ψ d e) hacc
+  refine ⟨mp₃, ?_, by rw [hacc]; exact blockAcvalInstalled_swap hcg hIAS, hext₃⟩
+  rw [hcval₃]
+  intro n hn ci₃ hf₃
+  rcases swapSh_find?_corr hswR n with heq | ⟨cv, mI, rP, rules, h₀, h₃, -⟩
+  · rw [heq] at hf₃
+    obtain ⟨cvm, mval, hm, hfm, hlps, hren, hv⟩ := hIS n hn ci₃ hf₃
+    exact ⟨cvm, mval, hm,
+      hcg.findUp _ _ hfm
+        (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)),
+      hlps, hren, hv⟩
+  · rw [h₃] at hf₃
+    obtain rfl := Option.some.inj hf₃
+    obtain ⟨cvm, mval, hm, hfm, hlps, hren, hv⟩ := hIS n hn _ h₀
+    exact ⟨cvm, mval, hm,
+      hcg.findUp _ _ hfm
+        (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)),
+      hlps, hren, hv⟩
+
+set_option maxHeartbeats 1600000 in
+/-- Modeled block extends `EnvModelM` over `DeclIndNVmRunJF` with advice renaming `f`. -/
+theorem declIndJ_vmF {V : Type w} [Ix.Kernel.SetTheory V] {μ : CheckMode}
+    {J : Judgements .anon}
+    (hfr : ∀ e : Env .anon, JudgeFrames J e)
+    (hJ : ∀ {e : Env .anon} (m : EnvModelM V μ e), JudgeSound J m.base2)
+    {f : KKey → KKey} {env env₂ : Env .anon} {block : List (ConstantInfo .anon)}
+    (mp : EnvModelM V μ env)
+    (hAlias : ModelAliasOk (block.map (·.name)) env mp.base2.acval f)
+    (hE : Ix.Kernel.EtaFamiliesClosed env)
+    (h : DeclIndNVmRunJF J f env block env₂) :
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
+  obtain ⟨hsplit, envM, hmem, hrecs⟩ := h
+  have hbnAll : ∀ ci ∈ block,
+      (block.map (·.name)).contains ci.name = true := by
+    intro ci hci
+    have hmm : ci.name ∈ block.map (·.name) := List.mem_map_of_mem hci
+    simpa using hmm
+  have hbnNon : ∀ ci ∈ block.filter isNonRecInfo,
+      (block.map (·.name)).contains ci.name = true :=
+    fun ci hci => hbnAll ci (List.mem_filter.mp hci).1
+  have hbnRec : ∀ ci ∈ block.filter isRecInfo,
+      (block.map (·.name)).contains ci.name = true :=
+    fun ci hci => hbnAll ci (List.mem_filter.mp hci).1
+  have hEC0 : Ix.Kernel.EtaFamiliesClosedO (block.map (·.name)) env :=
+    fun T cvT caps hf hcape hres _ => hE T cvT caps hf hcape hres
+  have hrecs_fresh : ∀ ci₀ ∈ block.filter isRecInfo, envM.find? ci₀.name = none := by
+    rcases hrecs with ⟨href, _⟩ | ⟨_, _, _, _, hprov, _⟩
+    · intro ci₀ hci₀; rw [href] at hci₀; exact nomatch hci₀
+    · exact provisionRecsRunS_fresh _ hprov
+  have hnostore : ∀ n, (block.map (·.name)).contains n = true →
+      ∀ ci : ConstantInfo .anon, env.find? n = some ci → False := by
+    intro n hn ci hf
+    have hmm : n ∈ block.map (·.name) := by simpa using hn
+    obtain ⟨ci₀, hci₀, rfl⟩ := List.mem_map.mp hmm
+    rw [hsplit] at hci₀
+    rcases List.mem_append.mp hci₀ with hci₀ | hci₀
+    · rw [indMembersRun_fresh _ hmem ci₀ hci₀] at hf
+      exact nomatch hf
+    · have hup := indMembersRun_mono _ hmem _ _ hf
+      rw [hrecs_fresh ci₀ hci₀] at hup
+      exact nomatch hup
+  have hI0 : BlockInstalledTT (block.map (·.name)) env mp.base2.cvalE :=
+    fun n hn ci hf => absurd (hnostore n hn ci hf) (fun h => h)
+  have hIA0 : BlockAcvalInstalled (block.map (·.name)) env mp.base2.acval :=
+    fun n hn ci hf => absurd (hnostore n hn ci hf) (fun h => h)
+  have hBP0 : Ix.Kernel.BlockEtaPinned μ (block.map (·.name)) env :=
+    fun n cvS capsS hnb hf _ => absurd (hnostore n hnb _ hf) (fun h => h)
+  have hall : ∀ n, (block.map (·.name)).contains n = true →
+      (envM.find? n).isSome = true ∨
+      ∃ ci ∈ block.filter isRecInfo, ci.name = n := by
+    intro n hn
+    have hmm : n ∈ block.map (·.name) := by simpa using hn
+    obtain ⟨ci₀, hci₀, rfl⟩ := List.mem_map.mp hmm
+    rw [hsplit] at hci₀
+    rcases List.mem_append.mp hci₀ with hci₀ | hci₀
+    · exact Or.inl (indMembersRun_stored _ hmem ci₀ hci₀)
+    · exact Or.inr ⟨ci₀, hci₀, rfl⟩
+  obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, hext₁⟩ :=
+    indMembersPM memberEtaLaw memberUnitLaw hfr _ mp hbnNon
+      (fun cv caps₂ _ => ⟨etaPins_empty,
+        ⟨fun h => absurd h (by decide), fun h => absurd h (by decide)⟩⟩)
+      hmem hI0 hIA0 hEC0 hBP0
+  obtain ⟨mp₂, -, -, hext₂⟩ :=
+    indRecs_vmF memberEtaLaw memberUnitLaw hfr hJ mp₁ hAlias hext₁
+      (indMembersRun_mono _ hmem) hI₁ hIA₁ hbnRec hall hEC₁ hBP₁ hrecs
+  exact ⟨mp₂, hext₁.trans hext₂⟩
 
 end IxVM.Refinement.Decl
