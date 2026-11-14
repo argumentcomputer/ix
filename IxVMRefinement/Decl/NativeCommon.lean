@@ -335,7 +335,7 @@ theorem DeclStoreInv.consRecNil {env : Ix.Kernel.Env .anon} {cv : ConstantVal .a
           · injection hf with heq
             injection heq with _ _ _ hrls
             subst hrls
-            exact ⟨fun _ hr => nomatch hr, fun _ _ hr _ => nomatch hr⟩
+            exact And.intro (fun _ hr => nomatch hr) (fun _ _ hr _ => nomatch hr)
           · rw [hf] at hn; exact nomatch hn)
       etaTowers := Ix.Kernel.Model.etaTowers_step_noEta hext hS.etaTowers
         (NewSat.cons fun _ _ h => nomatch h)
@@ -605,7 +605,8 @@ theorem infer_const_upgrade (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
     rw [h.find_self_a] at hf
     injection hf with hci
     subst hci
-    exact Infer.const h.find_self_b rfl hlen
+    change Infer envᵦ g d (.const n us) (cvS.type.instantiateLevelParams cvS.levelParams us)
+    exact Infer.const (ci := .indInfo cvS caps) h.find_self_b rfl hlen
   · exact Infer.const (by rwa [h.find_ne hn]) htw hlen
 
 mutual
@@ -661,11 +662,12 @@ theorem upgradeRed (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
   | _, _, _, .rescueEta hrec heta hctor hhead hT hm hrm htfn hlen hust hnz hfab hws hlb hfl
       hcerts hepc hdf => by
     have hT' := h.find_ind_of_no_rec_head hrec hctor hhead hT
-    rw [← h.etaFabArgsE_eq] at hfab hcerts
+    have hc := h.upgradeCerts hcerts
+    rw [← h.etaFabArgsE_eq] at hfab hc
     exact .rescueEta (h.find_non_ind hrec fun _ _ e => nomatch e) heta
       (h.find_non_ind hctor fun _ _ e => nomatch e) hhead hT'
       (h.upgradeInfer hm) (h.upgradeRed hrm) htfn hlen hust hnz hfab hws hlb hfl
-      (h.upgradeCerts hcerts)
+      hc
       (fun htw => h.upgradeEtaProjCerts (hepc (by rwa [← h.towerSlotsAll_eq])))
       (h.upgradeDefEq hdf)
   | _, _, _, .rescueAnd hrec hctor hhead hT hm hrm htfn hlen hust hand hfab hws hlb hfl hcerts
@@ -709,12 +711,13 @@ theorem upgradeDefEq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
   | _, _, _, .structEta hib hrb hafn hc halen hwfn hT heta hec hnbT hnbc hwlen hus hlps hslots
       hev hcerts hepc hdp hdf => by
     have hT' := h.find_ind_of_eta hT heta
-    rw [← h.etaProjs_eq] at hdf
+    have hdf' := h.upgradeDefEqList hdf
+    rw [← h.etaProjs_eq] at hdf'
     exact .structEta (h.upgradeInfer hib) (h.upgradeRed hrb) hafn
       (h.find_non_ind hc fun _ _ e => nomatch e) halen hwfn hT' heta hec hnbT hnbc hwlen hus hlps
       (by rwa [h.towerSlotsAll_eq, h.recSlotsAll_eq]) hev (h.upgradeCerts hcerts)
       (fun htw => h.upgradeEtaProjCerts (hepc (by rwa [← h.towerSlotsAll_eq])))
-      (h.upgradeDefEqList hdp) (h.upgradeDefEqList hdf)
+      (h.upgradeDefEqList hdp) hdf'
   | _, _, _, .structUnit hia hra hwfn hT hu hnbT hwlen hus hib hrb hde hcerts => by
     have hT' := h.find_ind_of_unit hT hu
     exact .structUnit (h.upgradeInfer hia) (h.upgradeRed hra) hwfn hT' hu hnbT hwlen hus
@@ -801,7 +804,7 @@ private theorem constsResolve_getAppFn {env : Ix.Kernel.Env .anon} :
 private theorem env_find?_cons_ne {c : ConstantInfo .anon} {env : Ix.Kernel.Env .anon} {k : KKey}
     (hne : c.name ≠ k) :
     (Ix.Kernel.Env.mk (c :: env.consts)).find? k = env.find? k := by
-  rw [Ix.Kernel.Env.find?_cons, if_neg hne]
+  rw [Ix.Kernel.Env.find?_cons, ite_eq_right hne]
 
 /-- Construct `CapsUpgradeAt` between `⟨.indInfo cvS {} :: env.consts⟩` and
 `⟨.indInfo cvS caps :: env.consts⟩` for a fresh unpinned inductive `cvS.name`. -/
@@ -815,7 +818,8 @@ theorem CapsUpgradeAt.of_fresh_ind {env : Ix.Kernel.Env .anon} {cvS : ConstantVa
   find_self_b := Ix.Kernel.Env.find?_cons_self (.indInfo cvS caps) env
   find_ne := fun {k} hne => by
     have hne' : cvS.name ≠ k := fun e => hne e.symm
-    rw [env_find?_cons_ne hne', env_find?_cons_ne hne']
+    rw [env_find?_cons_ne (c := .indInfo cvS caps) hne',
+      env_find?_cons_ne (c := .indInfo cvS {}) hne']
   no_rec_head := fun {recName cv mI rP rl cvj cnP cnF tus} hrec hctor hhead => by
     have hrec_env : env.find? recName = some (.recInfo cv mI rP [rl]) := by
       rw [Ix.Kernel.Env.find?_cons] at hrec
@@ -832,7 +836,7 @@ theorem CapsUpgradeAt.of_fresh_ind {env : Ix.Kernel.Env .anon} {cvS : ConstantVa
     have hfn := constsResolve_getAppFn (constsResolve_piResult hcr)
     rw [hhead] at hfn
     simp only [Expr.constsResolve, hfresh] at hfn
-    exact Bool.false_eq_true hfn
+    exact absurd hfn Bool.false_ne_true
   not_basis := hnb
 
 /-- Extending both sides of `CapsUpgradeAt` with a fresh constructor preserves `CapsUpgradeAt`. -/
@@ -853,8 +857,7 @@ theorem CapsUpgradeAt.consCtor {T : KKey} {cvS : ConstantVal .anon}
   find_ne := fun {k} hne => by
     by_cases hk : cvC.name = k
     · subst hk
-      rw [Ix.Kernel.Env.find?_cons_self (.ctorInfo cvC nP nF) envᵦ,
-        Ix.Kernel.Env.find?_cons_self (.ctorInfo cvC nP nF) envₐ]
+      simp only [Ix.Kernel.Env.find?_cons, ConstantInfo.name, ↓reduceIte]
     · rw [env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk,
         env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk]
       exact h.find_ne hne
@@ -1051,7 +1054,7 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
     cases hvs.1; cases hvs.2.1
     rfl
   refine ⟨⟨cv'.type, ⟨Option.isNone_iff_eq_none.mpr hfresh, hbasis, hshape, hnd_cv,
-    annotates_looseBVarsBounded hvs.2.2 0 hlbd, annotates_hasFvar_false hvs.2.2 hfv,
+    hlbd, hfv,
     annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
@@ -1623,15 +1626,12 @@ theorem assert_lvls_are_params_spec :
     rcases Obs.«KernelCheck::assert_lvls_are_params».obs ev with
       ⟨v26, m29, cs37, _, ev39, heq54, _, rfl, hc59⟩ | ⟨_, _, _, _, _, _, _, _, hne, _, _, _, _, _, _, _, _, _⟩
     · subst hc59
-      have hrep : RepList klevelListEnum RepKLevel h us plvls := by
-        rwa [klevelListEnum_eq]
-      have hlen_lt : us.length < 549755813888 := by
-        simpa using RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hrep
-      rw [← Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol] at ev39
-      obtain ⟨hv26, rfl⟩ := Lib.Lists.length_spec
-        (t := klevelTy) (R := RepKLevel) ev39 hrep
+      have hlen_lt : us.length < 549755813888 :=
+        RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hus
+      obtain ⟨hv26, rfl⟩ := IxVM.Refinement.Infer.klevel_length ev39 hus
       rw [hv26] at heq54
-      have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) (by simpa using heq54)
+      have heq54' : (.field (us.length : F) : SourceValue F) = .field ((0 : Nat) : F) := heq54
+      have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) heq54'
       exact ⟨List.eq_nil_of_length_eq_zero hlen0, rfl⟩
     · exact absurd rfl hne
   | m + 1, idx, us, plvls, r, h, h', cs, hlt, hbnd, hus, ev => by
@@ -1641,17 +1641,17 @@ theorem assert_lvls_are_params_spec :
         ev158, _, rfl, hc203⟩
     · exact absurd hv (succ_field_ne_zero (by omega))
     · subst hc203
-      have hrep : RepList klevelListEnum RepKLevel h us plvls := by
-        rwa [klevelListEnum_eq]
-      obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hrep ld75
-      have hrest' : RepKLevelList h rest x_rest := by
-        rwa [← klevelListEnum_eq]
-      obtain ⟨p, rfl, hp, rfl⟩ := LevelsAux.param_of_load hu ld104
+      have ld75' : loadValue h plvls =
+          .ok (.construct KernelLevels.klevelListEnum "Cons" [x_l, x_rest]) := by
+        rwa [KernelLevels.klevelList_names]
+      obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hus ld75'
+      obtain ⟨p, rfl, hx_i, hp⟩ := KernelLevels.rep_param_of_load' hu ld104
+      rw [hx_i] at heq144
       have hp_eq : p = idx := nat_eq_of_field_eq (by omega) (by omega) heq144
       subst hp_eq
-      rw [evalBinOp_sub_succ m op182, evalBinOp_add_one idx op197] at ev158
+      rw [evalBinOp_sub_succ m op182, evalBinOp_add_one p op197] at ev158
       have hbnd' := RomBound.bounded_mono hbnd (fun c hc => List.mem_cons_of_mem _ hc)
-      obtain ⟨htl, hh⟩ := assert_lvls_are_params_spec m (idx + 1) (by omega) hbnd' hrest' ev158
+      obtain ⟨htl, hh⟩ := assert_lvls_are_params_spec m (p + 1) (by omega) hbnd' hrest ev158
       refine ⟨?_, hh⟩
       rw [htl, List.range_succ_eq_map, List.map_cons, List.map_map]
       simp only [Nat.add_zero, Function.comp_def]
