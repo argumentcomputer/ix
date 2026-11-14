@@ -1329,7 +1329,7 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       obtain rfl := loadValue_eq_inj ld104 hl
       obtain rfl := loadValue_eq_inj ld112 hr
       obtain ⟨hm261, rfl⟩ := cmp_branch_eq hk hk_node ev140 ev127 ev272 op266
-      rw [hm261] at hm342
+      rw [hm261] at hm342 ⊢
       subst hm342 hm353
       set m1 := h ++ [y103]
       set m2 := m1 ++ [y111]
