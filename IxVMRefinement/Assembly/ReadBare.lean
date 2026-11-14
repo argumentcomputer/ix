@@ -5,6 +5,7 @@ import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
 import Ix.Cert.ReadingKeys
 import IxC.Ixon.Verify.BoundedConstant
+import IxC.Kernel.Model.Restrict
 
 /-! # Bare stream reader completeness, empty `projLevels`, and structural `DeclNonAux`
 
@@ -93,7 +94,7 @@ theorem closure_readsBare (E : Ixon.Env) (limits : Limits) :
         Ixon.Bounded.univNodes entry.2.univs ≤ limits.maxRecordUnivNodes) →
       RecordsReadBare limits (Ix.Cert.recordsOf E order) (Ix.Cert.Stream.decodedOf E order)
   | [], _, _, _ => by
-    simpa [Ix.Cert.recordsOf, Ix.Cert.Stream.decodedOf] using List.Forall₂.nil
+    simp [Ix.Cert.recordsOf, Ix.Cert.Stream.decodedOf]
   | a :: order, hdec, bytesFit, nodesFit => by
     have tail := closure_readsBare E limits order
       (fun b hb => hdec b (List.mem_cons_of_mem _ hb))
@@ -234,18 +235,20 @@ theorem forIn_completeBare {md : Mode} {cx : Ctx md}
         exact keys'.1 (List.mem_map.2 ⟨y, hy, same.symm⟩))
     exact ⟨seen, by rw [ran]; simp [Array.append_assoc]⟩
 
-theorem readRecordsBare_complete {md : Mode} {cx : Ctx md} {st st' : State md}
-    {records : List (_root_.Address × Ixon.Constant)} {out : Array (CDecl md)}
+theorem readRecordsBare_loop {md : Mode} {cx : Ctx md}
+    {f : (_root_.Address × Ixon.Constant) × Nat →
+      Std.HashSet _root_.Address × State md × Array (CDecl md) →
+      Except (ReadError × Nat)
+        (ForInStep (Std.HashSet _root_.Address × State md × Array (CDecl md)))}
+    (hf : ∀ x s r, s.1.contains x.1.1 = false → readRecordBare cx s.2.1 x.1.1 x.1.2 = .ok r →
+      f x s = .ok (.yield (s.1.insert x.1.1, s.2.1.commit r, s.2.2 ++ r.decls)))
+    {st st' : State md} {records : List (_root_.Address × Ixon.Constant)} {out : Array (CDecl md)}
     (reads : StreamReadBare cx st records st' out)
     (keys : (records.map Prod.fst).Nodup) :
-    readRecordsBare cx st records.toArray = .ok (st', out) := by
-  unfold readRecordsBare
-  dsimp only
-  rw [← Array.forIn_toList, Array.toList_zipIdx, List.toList_toArray]
-  have zipped : records.zipIdx.map Prod.fst = records := by simp
-  obtain ⟨seen, ran⟩ := forIn_completeBare
-    (fun x s r hx hr => by simp [hx, hr, pure, Except.pure])
-    records.zipIdx ({}, st, #[]) st' out
+    (forIn records.zipIdx (({} : Std.HashSet _root_.Address), st, (#[] : Array (CDecl md))) f >>=
+      fun s => pure (s.2.1, s.2.2)) = (.ok (st', out) : Except (ReadError × Nat) _) := by
+  have zipped : (records.zipIdx.map Prod.fst) = records := by simp
+  obtain ⟨seen, ran⟩ := forIn_completeBare hf records.zipIdx ({}, st, #[]) st' out
     (by rw [zipped]; exact reads)
     (by
       have : records.zipIdx.map (·.1.1) = records.map Prod.fst := by
@@ -256,6 +259,18 @@ theorem readRecordsBare_complete {md : Mode} {cx : Ctx md} {st st' : State md}
     (fun _ _ => by simp)
   rw [ran]
   simp [bind, Except.bind, pure, Except.pure]
+
+theorem readRecordsBare_complete {md : Mode} {cx : Ctx md} {st st' : State md}
+    {records : List (_root_.Address × Ixon.Constant)} {out : Array (CDecl md)}
+    (reads : StreamReadBare cx st records st' out)
+    (keys : (records.map Prod.fst).Nodup) :
+    readRecordsBare cx st records.toArray = .ok (st', out) := by
+  unfold readRecordsBare
+  dsimp only
+  rw [← Array.forIn_toList, Array.toList_zipIdx, List.toList_toArray]
+  refine readRecordsBare_loop ?_ reads keys
+  intro x s r hx hr
+  simp [hx, hr, pure, Except.pure]
 
 theorem readStreamBare_complete {hash : ByteArray → _root_.Address}
     {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
@@ -340,7 +355,7 @@ theorem projLevels_commit_of_generated_zero {md : Mode} (st : State md) {r : Rea
   simp [Ix.Cert.CtxAgree.levelEntries, hg]
 
 theorem projRewrite_eq_none {md : Mode} {st : State md}
-    (hemp : ∀ k, st.projLevels[k]? = none)
+    (hemp : ∀ k : CName md, st.projLevels[k]? = none)
     (cv : CVal md) (value : CExpr md) :
     projRewrite st cv value = none := by
   unfold projRewrite
@@ -356,29 +371,33 @@ theorem projRewrite_eq_none {md : Mode} {st : State md}
 theorem lowerInductiveDeclsBare_spec {md : Mode} {rb : BlockRead md} {r : Read md}
     (h : lowerInductiveDeclsBare rb = .ok r) :
     let block : List (CInfo md) :=
-      (rb.types.toList.map fun (cv, _, _) => .indInfo cv {}) ++
-      (rb.ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF) ++
-      (rb.recs.toList.map fun (cv, rc, rules) =>
-        .recInfo cv (rc.params + rc.motives + rc.minors + rc.indices)
-          (rc.params + rc.motives + rc.minors) rules)
+      (rb.types.toList.map fun x => .indInfo x.1 {}) ++
+      (rb.ctors.toList.map fun x => .ctorInfo x.1 x.2.1 x.2.2) ++
+      (rb.recs.toList.map fun x =>
+        .recInfo x.1 (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
+          (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2)
     r.generated = 0 ∧ r.decls = #[.indDecl block rb.numParams] := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   unfold lowerInductiveDeclsBare at h
-  dsimp only at h
-  obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-  simp only [pure, Except.pure, Except.ok.injEq] at h
-  subst h
-  exact ⟨rfl, rfl⟩
+  simp only [ite_not, bne_iff_ne, ne_eq] at h
+  split at h
+  all_goals
+    rcases ite_ok h with h | h
+    all_goals obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+    all_goals
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      exact ⟨rfl, rfl⟩
 
 /-- Exact shape of `lowerInductiveBare`: `generated = 0`, single `.indDecl`, and distinct names. -/
 theorem lowerInductiveBare_spec {md : Mode} {rb : BlockRead md} {r : Read md}
     (h : lowerInductiveBare rb = .ok r) :
     let block : List (CInfo md) :=
-      (rb.types.toList.map fun (cv, _, _) => .indInfo cv {}) ++
-      (rb.ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF) ++
-      (rb.recs.toList.map fun (cv, rc, rules) =>
-        .recInfo cv (rc.params + rc.motives + rc.minors + rc.indices)
-          (rc.params + rc.motives + rc.minors) rules)
+      (rb.types.toList.map fun x => .indInfo x.1 {}) ++
+      (rb.ctors.toList.map fun x => .ctorInfo x.1 x.2.1 x.2.2) ++
+      (rb.recs.toList.map fun x =>
+        .recInfo x.1 (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
+          (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2)
     r.generated = 0 ∧
     r.decls = #[.indDecl block rb.numParams] ∧
     (block.map (·.name)).Nodup := by
@@ -393,7 +412,8 @@ theorem lowerInductiveBare_spec {md : Mode} {rb : BlockRead md} {r : Read md}
     subst h
     have hnd := Ix.Cert.LowerDistinct.firstRepeatedKey_eq_none_iff.mp hk
     rw [hd] at hnd
-    simpa [Ix.Kernel.Declaration.names] using ⟨hg, hd, hnd⟩
+    simp [Ix.Kernel.Declaration.names] at hnd
+    exact ⟨hg, hd, hnd⟩
 
 theorem readInductiveBare_generated_zero {md : Mode} {cx : Ctx md} {owner : _root_.Address}
     {c : Ixon.Constant} {ms : Array Ixon.MutConst} {r : Read md}
@@ -428,7 +448,6 @@ theorem readRecord_generated_zero_of_no_generated {md : Mode} {cx : Ctx md} {st 
     | muts ms =>
       unfold readRecord at h
       simp only [hinfo] at h
-      dsimp only at h
       rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
         · exact (fail_bind h).elim
@@ -475,7 +494,7 @@ theorem readRecord_generated_zero_of_no_generated {md : Mode} {cx : Ctx md} {st 
               · exact (throw_ok h).elim
           · exact (throw_ok h).elim
     | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
-      unfold readRecord at h; simp only [hinfo] at h; dsimp only at h
+      unfold readRecord at h; simp only [hinfo] at h
       rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
@@ -491,7 +510,7 @@ theorem readRecord_generated_zero_of_no_generated {md : Mode} {cx : Ctx md} {st 
         · exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
         · exact (throw_ok h).elim
     | axio _ =>
-      unfold readRecord at h; simp only [hinfo] at h; dsimp only at h
+      unfold readRecord at h; simp only [hinfo] at h
       rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
@@ -511,8 +530,9 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
   cases hinfo : c.info with
   | muts ms =>
     simp only [hinfo] at h
-    by_cases hind : (ms.any fun | .indc _ => true | _ => false) = true
-    · simp only [hind, ↓reduceIte] at h
+    cases hind : ms.any fun | .indc _ => true | _ => false with
+    | true =>
+      simp only [hind, ↓reduceIte] at h
       rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
@@ -526,7 +546,8 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
           simp only [pure, Except.pure, Except.ok.injEq] at h
           subst h
           exact hgInd
-    · simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
+    | false =>
+      simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
       unfold readRecord at h
       simp only [hinfo, hind, Bool.false_eq_true, ↓reduceIte] at h
       rcases ite_ok h with h | h
@@ -544,7 +565,7 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
         · exact (throw_ok h).elim
   | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
     simp only [hinfo] at h
-    unfold readRecord at h; simp only [hinfo] at h; dsimp only at h
+    unfold readRecord at h; simp only [hinfo] at h
     rcases ite_ok h with h | h
     · exact (fail_bind h).elim
     · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
@@ -563,7 +584,7 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
       · exact (throw_ok h).elim
   | axio _ =>
     simp only [hinfo] at h
-    unfold readRecord at h; simp only [hinfo] at h; dsimp only at h
+    unfold readRecord at h; simp only [hinfo] at h
     rcases ite_ok h with h | h
     · exact (fail_bind h).elim
     · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
@@ -586,7 +607,7 @@ theorem preludeFor_decls_not_generated {md : Mode} {t : Ix.Kernel.RoleTable} {pr
   rw [hshape] at hnames_mem
   obtain ⟨roles, hroles_mem, hnames_eq⟩ := List.mem_map.mp hnames_mem
   unfold Ix.Kernel.Declaration.isGenerated
-  rw [hnames_eq]
+  rw [← hnames_eq]
   cases roles with
   | nil => simp
   | cons r rs =>
@@ -595,9 +616,9 @@ theorem preludeFor_decls_not_generated {md : Mode} {t : Ix.Kernel.RoleTable} {pr
 theorem streamRead_projLevels_empty_of_no_generated {md : Mode} {cx : Ctx md}
     {st st' : State md} {records : List (_root_.Address × Ixon.Constant)} {out : Array (CDecl md)}
     (h : StreamRead cx st records st' out)
-    (hemp : ∀ k, st.projLevels[k]? = none)
+    (hemp : ∀ k : CName md, st.projLevels[k]? = none)
     (hno : ∀ d ∈ out.toList, d.isGenerated = false) :
-    ∀ k, st'.projLevels[k]? = none := by
+    ∀ k : CName md, st'.projLevels[k]? = none := by
   induction h with
   | nil => exact hemp
   | @cons st₀ _ _ _ r _ tailOut read _ ih =>
@@ -606,7 +627,7 @@ theorem streamRead_projLevels_empty_of_no_generated {md : Mode} {cx : Ctx md}
     have hno_tail : ∀ d ∈ tailOut.toList, d.isGenerated = false := fun d hd =>
       hno d (by rw [Array.toList_append]; exact List.mem_append_right _ hd)
     have hg := readRecord_generated_zero_of_no_generated read hno_r
-    have hemp' : ∀ k, (st₀.commit r).projLevels[k]? = none := by
+    have hemp' : ∀ k : CName md, (st₀.commit r).projLevels[k]? = none := by
       intro k
       rw [projLevels_commit_of_generated_zero st₀ hg]
       exact hemp k
@@ -643,7 +664,7 @@ theorem preludeRead_unpack {md : Mode} {t : Ix.Kernel.RoleTable} {pre : Prelude 
 /-- `pre.state.projLevels` is empty for every `preludeFor t = .ok pre`. -/
 theorem preludeFor_projLevels_empty {md : Mode} {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     (hpre : preludeFor t = .ok pre) :
-    ∀ k, pre.state.projLevels[k]? = none := by
+    ∀ k : CName md, pre.state.projLevels[k]? = none := by
   obtain ⟨rs, extra, extraBlobs, hrr⟩ := preludeRead_unpack (preludeFor_checks hpre).1
   exact streamRead_projLevels_empty_of_no_generated (readRecords_spec hrr)
     (fun _ => by simp) (preludeFor_decls_not_generated hpre)
@@ -652,8 +673,8 @@ theorem preludeFor_projLevels_empty {md : Mode} {t : Ix.Kernel.RoleTable} {pre :
 theorem streamReadBare_projLevels_empty {md : Mode} {cx : Ctx md}
     {st st' : State md} {records : List (_root_.Address × Ixon.Constant)} {out : Array (CDecl md)}
     (h : StreamReadBare cx st records st' out)
-    (hemp : ∀ k, st.projLevels[k]? = none) :
-    ∀ k, st'.projLevels[k]? = none := by
+    (hemp : ∀ k : CName md, st.projLevels[k]? = none) :
+    ∀ k : CName md, st'.projLevels[k]? = none := by
   induction h with
   | nil => exact hemp
   | @cons st₀ _ _ _ r _ _ read _ ih =>
@@ -1030,12 +1051,10 @@ theorem readRecursor_nonAux {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
             intro i m k hs hm
             cases rc.info with
             | muts rms =>
-              dsimp only at hs
               split at hs
               · injection hs with hs; rw [← hs] at hm; exact memberKey_nonAux hrk hm
               · cases hs
             | _ =>
-              dsimp only at hs
               split at hs
               · injection hs with hs
                 rw [← hs] at hm
@@ -1067,7 +1086,7 @@ theorem readRecursor_nonAux {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
                       subst hrl
                       exact ⟨memberKey_nonAux hrk hckey,
                         memberReader_read_refsIn_nonAux hrk hrself hrhs⟩)
-                  _ (fun _ hm => nomatch hm) hrules
+                  _ (by simp) hrules
                 exact ⟨hk_na, hty_na, hrl_na⟩
               · exact (throw_ok h).elim
             · exact (fail_bind h).elim
@@ -1110,25 +1129,30 @@ theorem lowerTwin_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
                         rcases he with he | rfl
                         · exact hI e he
                         · exact readRecursor_nonAux hrk hrv)
-                      _ (fun _ hm => nomatch hm) hrecs
-                    obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-                    cases hk : firstRepeatedKey
-                        ((recs.toList.map fun (cv, rc, rules) =>
-                          Ix.Kernel.ConstantInfo.recInfo cv
-                            (rc.params + rc.motives + rc.minors + rc.indices)
-                            (rc.params + rc.motives + rc.minors) rules).map (·.name)) with
-                    | some dup =>
-                      simp [hk, declined, throw, throwThe, MonadExceptOf.throw] at h
-                    | none =>
-                      simp only [hk, pure, Except.pure, Except.ok.injEq] at h
-                      subst h
-                      intro d hd
-                      simp only [Array.toList_eq, List.mem_singleton] at hd
-                      subst hd
-                      refine declNonAux_indDecl (fun ci₀ hci => ?_)
-                        (Ix.Cert.LowerDistinct.firstRepeatedKey_eq_none_iff.mp hk)
-                      obtain ⟨⟨cv, rc, rules⟩, hm, rfl⟩ := List.mem_map.mp hci
-                      exact hr_na (cv, rc, rules) hm
+                      _ (by simp) hrecs
+                    simp only [ite_not, bne_iff_ne, ne_eq] at h
+                    split at h
+                    all_goals
+                      rcases ite_ok h with h | h
+                      all_goals obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                      all_goals
+                        cases hk : firstRepeatedKey
+                            ((recs.toList.map fun x =>
+                              Ix.Kernel.ConstantInfo.recInfo x.1
+                                (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
+                                (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2).map (·.name)) with
+                        | some dup =>
+                          simp [hk, declined, throw, throwThe, MonadExceptOf.throw] at h
+                        | none =>
+                          simp only [hk, pure, Except.pure, Except.ok.injEq] at h
+                          subst h
+                          intro d hd
+                          simp at hd
+                          subst hd
+                          refine declNonAux_indDecl (fun ci₀ hci => ?_)
+                            (Ix.Cert.LowerDistinct.firstRepeatedKey_eq_none_iff.mp hk)
+                          obtain ⟨e, hm, rfl⟩ := List.mem_map.mp hci
+                          exact hr_na e hm
                   · exact (fail_bind h).elim
               · exact (throw_ok h).elim
             · exact (fail_bind h).elim
@@ -1150,16 +1174,16 @@ def BlockReadNonAux (rb : BlockRead .anon) : Prop :=
 
 theorem blockReadNonAux_block {rb : BlockRead .anon} (h : BlockReadNonAux rb) :
     ∀ ci₀ ∈
-      (rb.types.toList.map fun (cv, _, _) => Ix.Kernel.ConstantInfo.indInfo cv {}) ++
-      (rb.ctors.toList.map fun (cv, nP, nF) => Ix.Kernel.ConstantInfo.ctorInfo cv nP nF) ++
-      (rb.recs.toList.map fun (cv, rc, rules) =>
-        Ix.Kernel.ConstantInfo.recInfo cv
-          (rc.params + rc.motives + rc.minors + rc.indices)
-          (rc.params + rc.motives + rc.minors) rules),
+      (rb.types.toList.map fun x => Ix.Kernel.ConstantInfo.indInfo x.1 {}) ++
+      (rb.ctors.toList.map fun x => Ix.Kernel.ConstantInfo.ctorInfo x.1 x.2.1 x.2.2) ++
+      (rb.recs.toList.map fun x =>
+        Ix.Kernel.ConstantInfo.recInfo x.1
+          (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
+          (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2),
       ConstantInfoNonAux ci₀ := by
   intro ci₀ hci
   simp only [List.mem_append, List.mem_map] at hci
-  rcases hci with (⟨⟨cv, nP, nI⟩, hm, rfl⟩ | ⟨⟨cv, nP, nF⟩, hm, rfl⟩) | ⟨⟨cv, rc, rules⟩, hm, rfl⟩
+  rcases hci with (⟨e, hm, rfl⟩ | ⟨e, hm, rfl⟩) | ⟨e, hm, rfl⟩
   · obtain ⟨hn, hty⟩ := h.1 _ hm
     exact ⟨hn, hty, trivial⟩
   · obtain ⟨hn, hty⟩ := h.2.1 _ hm
@@ -1202,7 +1226,7 @@ theorem readInductiveBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
                 · exact hI e he
                 · exact ⟨memberKey_nonAux hrk hk,
                     memberReader_read_refsIn_nonAux hrk hself hty⟩)
-              _ (fun _ hm => nomatch hm) htypes
+              _ (by simp) htypes
             obtain ⟨cs, hcs, h⟩ := except_bind_ok.mp h
             rw [← Array.forIn_toList] at hcs
             have hct_na := forIn_readM_inv
@@ -1235,7 +1259,7 @@ theorem readInductiveBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
                         · exact (fail_bind hr').elim
                     · exact (fail_bind hr').elim)
                   _ hI hs1)
-              _ (fun _ hm => nomatch hm) hcs
+              _ (by simp) hcs
             obtain ⟨recs, hrecs, h⟩ := except_bind_ok.mp h
             rw [← Array.forIn_toList] at hrecs
             have hrc_na := forIn_readM_inv
@@ -1255,11 +1279,11 @@ theorem readInductiveBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
                   · exact hI e he
                   · exact readRecursor_nonAux hrk hrv
                 · exact (throw_ok hq).elim)
-              _ (fun _ hm => nomatch hm) hrecs
+              _ (by simp) hrecs
             obtain ⟨_, hd, hnd⟩ := lowerInductiveBare_spec h
             rw [hd]
             intro d hd'
-            simp only [Array.toList_eq, List.mem_singleton] at hd'
+            simp at hd'
             subst hd'
             exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd
           · exact (fail_bind h).elim
@@ -1303,7 +1327,7 @@ theorem readInductive_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {s
                 · exact hI e he
                 · exact ⟨memberKey_nonAux hrk hk,
                     memberReader_read_refsIn_nonAux hrk hself hty⟩)
-              _ (fun _ hm => nomatch hm) htypes
+              _ (by simp) htypes
             obtain ⟨cs, hcs, h⟩ := except_bind_ok.mp h
             rw [← Array.forIn_toList] at hcs
             have hct_na := forIn_readM_inv
@@ -1336,7 +1360,7 @@ theorem readInductive_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {s
                         · exact (fail_bind hr').elim
                     · exact (fail_bind hr').elim)
                   _ hI hs1)
-              _ (fun _ hm => nomatch hm) hcs
+              _ (by simp) hcs
             obtain ⟨recs, hrecs, h⟩ := except_bind_ok.mp h
             rw [← Array.forIn_toList] at hrecs
             have hrc_na := forIn_readM_inv
@@ -1356,43 +1380,44 @@ theorem readInductive_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {s
                   · exact hI e he
                   · exact readRecursor_nonAux hrk hrv
                 · exact (throw_ok hq).elim)
-              _ (fun _ hm => nomatch hm) hrecs
+              _ (by simp) hrecs
             have hnd_all := Ix.Cert.LowerDistinct.lowerInductive_names_nodup h
             have hdecls := Ix.Cert.LowerDistinct.lowerInductiveDecls_of_ok h
             unfold lowerInductiveDecls at hdecls
-            dsimp only at hdecls
-            obtain ⟨_, -, hdecls⟩ := except_bind_ok.mp hdecls
-            rcases ite_ok hdecls with hdecls | hdecls
-            · split at hdecls
-              · simp [declined, throw, throwThe, MonadExceptOf.throw] at hdecls
-              · rename_i gen _
-                simp only [pure, Except.pure, Except.ok.injEq] at hdecls
-                subst hdecls
-                cases gen with
-                | nil =>
-                  simp only [List.toArray_nil, Array.push_empty, Array.toList_eq,
-                    Ix.Kernel.Declaration.names, List.flatMap_cons, List.flatMap_nil,
-                    List.append_nil] at hnd_all ⊢
+            simp only [ite_not, bne_iff_ne, ne_eq] at hdecls
+            split at hdecls
+            all_goals
+              rcases ite_ok hdecls with hdecls | hdecls
+              all_goals obtain ⟨_, -, hdecls⟩ := except_bind_ok.mp hdecls
+              all_goals
+                rcases ite_ok hdecls with hdecls | hdecls
+                · split at hdecls
+                  · simp [declined, throw, throwThe, MonadExceptOf.throw] at hdecls
+                  · rename_i gen _
+                    simp only [pure, Except.pure, Except.ok.injEq] at hdecls
+                    subst hdecls
+                    cases gen with
+                    | nil =>
+                      simp [Ix.Kernel.Declaration.names] at hnd_all
+                      intro d hd'
+                      simp at hd'
+                      subst hd'
+                      exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd_all
+                    | cons _ _ => simp at hg
+                · simp only [pure, Except.pure, Except.ok.injEq] at hdecls
+                  subst hdecls
+                  simp [Ix.Kernel.Declaration.names] at hnd_all
                   intro d hd'
-                  rw [List.mem_singleton] at hd'
+                  simp at hd'
                   subst hd'
                   exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd_all
-                | cons _ _ => simp at hg
-            · simp only [pure, Except.pure, Except.ok.injEq] at hdecls
-              subst hdecls
-              simp only [Array.toList_eq, Ix.Kernel.Declaration.names, List.flatMap_cons,
-                List.flatMap_nil, List.append_nil] at hnd_all ⊢
-              intro d hd'
-              rw [List.mem_singleton] at hd'
-              subst hd'
-              exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd_all
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim
   · exact (throw_ok h).elim
 
 theorem lowerDefinition_declNonAux {hint : Option Ix.Kernel.ReducibilityHint} {st : State .anon}
-    (hemp : ∀ k, st.projLevels[k]? = none) {heights : CName .anon → Nat}
+    (hemp : ∀ k : CName .anon, st.projLevels[k]? = none) {heights : CName .anon → Nat}
     {cv : CVal .anon} {value : CExpr .anon} {kind : Ix.DefKind} {safety : Ix.DefinitionSafety}
     {decl : CDecl .anon} {rw : Bool}
     (hname : NonAuxKey cv.name) (hty : cv.type.RefsIn NonAuxKey) (hv : value.RefsIn NonAuxKey)
@@ -1400,17 +1425,18 @@ theorem lowerDefinition_declNonAux {hint : Option Ix.Kernel.ReducibilityHint} {s
     DeclNonAux decl := by
   unfold lowerDefinition at h
   rw [projRewrite_eq_none hemp cv value] at h
-  dsimp only at h
   split at h
-  · simp [declined, throw, throwThe, MonadExceptOf.throw] at h
-  · cases kind <;> simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h <;>
+  · exact (fail_bind h).elim
+  · cases kind <;>
+      simp only [Option.getD, Option.isSome, Bool.false_and, bind, Except.bind,
+        pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h <;>
       obtain ⟨rfl, -⟩ := h
     · exact declNonAux_defnDecl hname hty hv
     · exact declNonAux_thmDecl hname hty hv
     · exact declNonAux_opaqueDecl hname hty
 
 theorem readDefinition_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : State .anon}
-    (hemp : ∀ k, st.projLevels[k]? = none) {heights : CName .anon → Nat}
+    (hemp : ∀ k : CName .anon, st.projLevels[k]? = none) {heights : CName .anon → Nat}
     {ref : ConstRef _root_.Address} {lps : List Ix.Kernel.LevelParam}
     {src : Ixon.Constant} {param : Nat → Ix.Kernel.LevelParam}
     {self : Nat → Option (ReadM (CName .anon))}
@@ -1428,14 +1454,14 @@ theorem readDefinition_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
     (memberReader_read_refsIn_nonAux hrk hself hval) h
 
 theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : State .anon}
-    (hemp : ∀ k, st.projLevels[k]? = none)
+    (hemp : ∀ k : CName .anon, st.projLevels[k]? = none)
     {owner : _root_.Address} {c : Ixon.Constant} {r : Read .anon}
     (h : readRecord cx st owner c = .ok r) (hg : r.generated = 0) :
     ∀ d ∈ r.decls.toList, DeclNonAux d := by
   unfold readRecord at h
   cases hinfo : c.info with
   | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
-    simp only [hinfo] at h; dsimp only at h
+    simp only [hinfo] at h
     rcases ite_ok h with h | h
     · exact (fail_bind h).elim
     · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; intro _ hd; simp at hd
@@ -1452,7 +1478,7 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
     intro d hd'
-    simp only [Array.toList_eq, List.mem_singleton] at hd'
+    simp at hd'
     subst hd'
     exact readDefinition_declNonAux hrk hemp hself hd
   | recr _ =>
@@ -1463,7 +1489,7 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
       · exact lowerTwin_declNonAux hrk h
       · exact (throw_ok h).elim
   | axio ax =>
-    simp only [hinfo] at h; dsimp only at h
+    simp only [hinfo] at h
     rcases ite_ok h with h | h
     · exact (fail_bind h).elim
     · obtain ⟨k, hk, h⟩ := except_bind_ok.mp h
@@ -1471,7 +1497,7 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
       intro d hd'
-      simp only [Array.toList_eq, List.mem_singleton] at hd'
+      simp at hd'
       subst hd'
       exact declNonAux_axiomDecl (memberKey_nonAux hrk hk)
         (memberReader_read_refsIn_nonAux hrk (fun _ _ _ hs => nomatch hs) hty)
@@ -1482,11 +1508,11 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
     intro d hd'
-    simp only [Array.toList_eq, List.mem_singleton] at hd'
+    simp at hd'
     subst hd'
     exact declNonAux_quotDecl _ _
   | muts ms =>
-    simp only [hinfo] at h; dsimp only at h
+    simp only [hinfo] at h
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
@@ -1526,12 +1552,12 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
                     rcases hd' with hd' | rfl
                     · exact hI d hd'
                     · exact hdecl)
-                _ (fun _ hm => nomatch hm) hs
+                _ (by simp) hs
             · exact (throw_ok h).elim
         · exact (throw_ok h).elim
 
 theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : State .anon}
-    (hemp : ∀ k, st.projLevels[k]? = none)
+    (hemp : ∀ k : CName .anon, st.projLevels[k]? = none)
     {owner : _root_.Address} {c : Ixon.Constant} {r : Read .anon}
     (h : readRecordBare cx st owner c = .ok r) :
     ∀ d ∈ r.decls.toList, DeclNonAux d := by
@@ -1540,8 +1566,9 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
   cases hinfo : c.info with
   | muts ms =>
     simp only [hinfo] at h
-    by_cases hind : (ms.any fun | .indc _ => true | _ => false) = true
-    · simp only [hind, ↓reduceIte] at h
+    cases hind : ms.any fun | .indc _ => true | _ => false with
+    | true =>
+      simp only [hind, ↓reduceIte] at h
       rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
@@ -1558,7 +1585,8 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
           intro d hd
           rw [Array.toList_append, List.mem_append] at hd
           exact hd.elim (hInd d) (hTwin d)
-    · simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
+    | false =>
+      simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
       exact readRecord_noGen_declNonAux hrk hemp h hg
   | _ =>
     simp only [hinfo] at h
@@ -1575,7 +1603,7 @@ theorem preludeFor_decls_nonAux {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
   have go : ∀ {st st' : State .anon} {recs : List (_root_.Address × Ixon.Constant)}
       {out : Array (CDecl .anon)},
       StreamRead (contextOf t rs [] extra extraBlobs) st recs st' out →
-      (∀ k, st.projLevels[k]? = none) →
+      (∀ k : CName .anon, st.projLevels[k]? = none) →
       (∀ d ∈ out.toList, d.isGenerated = false) →
       ∀ d ∈ out.toList, DeclNonAux d := by
     intro st st' recs out h hemp hno_out
@@ -1588,7 +1616,7 @@ theorem preludeFor_decls_nonAux {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
         hno_out d (by rw [Array.toList_append]; exact List.mem_append_right _ hd)
       have hg := readRecord_generated_zero_of_no_generated read hno_r
       have hd_r := readRecord_noGen_declNonAux hrk hemp read hg
-      have hemp' : ∀ k, (st₀.commit r).projLevels[k]? = none := by
+      have hemp' : ∀ k : CName .anon, (st₀.commit r).projLevels[k]? = none := by
         intro k; rw [projLevels_commit_of_generated_zero st₀ hg]; exact hemp k
       intro d hd
       rw [Array.toList_append, List.mem_append] at hd
@@ -1599,14 +1627,14 @@ theorem streamReadBare_decls_nonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
     {st st' : State .anon} {records : List (_root_.Address × Ixon.Constant)}
     {out : Array (CDecl .anon)}
     (h : StreamReadBare cx st records st' out)
-    (hemp : ∀ k, st.projLevels[k]? = none) :
+    (hemp : ∀ k : CName .anon, st.projLevels[k]? = none) :
     ∀ d ∈ out.toList, DeclNonAux d := by
   induction h with
   | nil => intro _ hm; nomatch hm
   | @cons st₀ _ _ _ r _ _ read _ ih =>
     have hg := readRecordBare_generated_zero read
     have hd_r := readRecordBare_declNonAux hrk hemp read
-    have hemp' : ∀ k, (st₀.commit r).projLevels[k]? = none := by
+    have hemp' : ∀ k : CName .anon, (st₀.commit r).projLevels[k]? = none := by
       intro k; rw [projLevels_commit_of_generated_zero st₀ hg]; exact hemp k
     intro d hd
     rw [Array.toList_append, List.mem_append] at hd
