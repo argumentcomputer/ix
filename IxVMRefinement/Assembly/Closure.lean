@@ -289,14 +289,14 @@ theorem addSupplements_get?_of_mem_nodup
         exact ih
 
 /-- Construct the sub-environment of `E₀` keeping `Keep` from `E₀.consts`, adding recursor
-supplements `supp` at addresses absent from `E₀.consts`, and retaining `E₀`'s blobs, hints, and
-role binding. -/
+supplements `supp` at addresses absent from `E₀.consts`, and retaining `E₀`'s blobs and hints
+with `roleBinding := none`. -/
 noncomputable def subEnv (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
     (supp : List SuppEntry) : Ixon.Env where
   consts := addSupplements E₀.consts (restrictConsts E₀.consts Keep) supp
   blobs := E₀.blobs
   anonHints := E₀.anonHints
-  roleBinding := E₀.roleBinding
+  roleBinding := none
 
 theorem subEnv_get?_of_contains (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
     (supp : List SuppEntry) {a : _root_.Address} (hc : E₀.consts.contains a = true) :

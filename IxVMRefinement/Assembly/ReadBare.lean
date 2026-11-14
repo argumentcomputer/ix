@@ -360,7 +360,7 @@ theorem projRewrite_eq_none {md : Mode} {st : State md}
     projRewrite st cv value = none := by
   unfold projRewrite
   split
-  · rename_i T i
+  · rename_i T i _
     cases st.projOwners[T]? with
     | none => rfl
     | some o =>
@@ -412,7 +412,9 @@ theorem lowerInductiveBare_spec {md : Mode} {rb : BlockRead md} {r : Read md}
     subst h
     have hnd := Ix.Cert.LowerDistinct.firstRepeatedKey_eq_none_iff.mp hk
     rw [hd] at hnd
-    simp [Ix.Kernel.Declaration.names] at hnd
+    dsimp only at hnd
+    simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil,
+      Ix.Kernel.Declaration.names] at hnd
     exact ⟨hg, hd, hnd⟩
 
 theorem readInductiveBare_generated_zero {md : Mode} {cx : Ctx md} {owner : _root_.Address}
@@ -530,10 +532,8 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
   cases hinfo : c.info with
   | muts ms =>
     simp only [hinfo] at h
-    cases hind : ms.any fun | .indc _ => true | _ => false with
-    | true =>
-      simp only [hind, ↓reduceIte] at h
-      rcases ite_ok h with h | h
+    split at h
+    · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
         have hgInd := readInductiveBare_generated_zero hrInd
@@ -546,23 +546,25 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
           simp only [pure, Except.pure, Except.ok.injEq] at h
           subst h
           exact hgInd
-    | false =>
-      simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
+    · rename_i hind
       unfold readRecord at h
-      simp only [hinfo, hind, Bool.false_eq_true, ↓reduceIte] at h
-      rcases ite_ok h with h | h
+      simp only [hinfo] at h
+      split at h
+      · rename_i hind'
+        exact absurd hind' hind
       · rcases ite_ok h with h | h
-        · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-        · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-          exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
-      · rcases ite_ok h with h | h
-        · split at h
-          · exact (fail_bind h).elim
+        · rcases ite_ok h with h | h
+          · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
+          · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+            exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
+        · rcases ite_ok h with h | h
           · split at h
-            · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-              simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-            · exact (throw_ok h).elim
-        · exact (throw_ok h).elim
+            · exact (fail_bind h).elim
+            · split at h
+              · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
+              · exact (throw_ok h).elim
+          · exact (throw_ok h).elim
   | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
     simp only [hinfo] at h
     unfold readRecord at h; simp only [hinfo] at h
@@ -726,7 +728,7 @@ theorem exprNonAuxB_eq_true_iff {md : Mode} :
     ∀ e : Ix.Kernel.Expr md, exprNonAuxB e = true ↔ e.RefsIn NonAuxKey
   | .bvar _ | .fvar _ _ | .sort _ | .lit _ => by simp [exprNonAuxB, Ix.Kernel.Expr.RefsIn]
   | .const n _ => by
-    simp [exprNonAuxB, Ix.Kernel.Expr.RefsIn, Bool.not_eq_true', isAux_eq_false_iff]
+    simp [exprNonAuxB, Ix.Kernel.Expr.RefsIn, isAux_eq_false_iff]
   | .app f a => by
     simp [exprNonAuxB, Ix.Kernel.Expr.RefsIn, Bool.and_eq_true,
       exprNonAuxB_eq_true_iff f, exprNonAuxB_eq_true_iff a]
@@ -755,7 +757,7 @@ def cinfoNonAuxB {md : Mode} (ci : Ix.Kernel.ConstantInfo md) : Bool :=
 theorem cinfoNonAuxB_eq_true_iff {md : Mode} (ci : Ix.Kernel.ConstantInfo md) :
     cinfoNonAuxB ci = true ↔ ConstantInfoNonAux ci := by
   cases ci <;>
-    simp [cinfoNonAuxB, ConstantInfoNonAux, Bool.and_eq_true, Bool.not_eq_true',
+    simp [cinfoNonAuxB, ConstantInfoNonAux, Bool.and_eq_true,
       isAux_eq_false_iff, exprNonAuxB_eq_true_iff, List.all_eq_true, and_assoc]
 
 theorem basisDeclsA_nonAux (kind : Ix.Kernel.BasisKind) :
@@ -785,7 +787,8 @@ theorem basisDeclsA_nodup (kind : Ix.Kernel.BasisKind) :
 theorem declNonAux_axiomDecl {cv : Ix.Kernel.ConstantVal .anon}
     (hname : NonAuxKey cv.name) (hty : cv.type.RefsIn NonAuxKey) :
     DeclNonAux (.axiomDecl cv) := by
-  unfold DeclNonAux IxVM.Consistency.installs
+  unfold DeclNonAux
+  simp only [IxVM.Consistency.installs]
   split
   · simp
   · refine ⟨fun ci₀ hm => ?_, by simp⟩
@@ -824,16 +827,18 @@ theorem declNonAux_basisDecl (kind : Ix.Kernel.BasisKind) :
 
 theorem declNonAux_quotDecl (k : Ix.Kernel.QuotKind) (cv : Ix.Kernel.ConstantVal .anon) :
     DeclNonAux (.quotDecl k cv) := by
-  unfold DeclNonAux IxVM.Consistency.installs
+  unfold DeclNonAux
+  simp only [IxVM.Consistency.installs]
   cases k with
   | type => exact ⟨basisDeclsA_nonAux .quotK, basisDeclsA_nodup .quotK⟩
-  | ctor | lift | ind => simp
+  | ctor | lift | ind | sound => simp
 
 theorem declNonAux_indDecl {block : List (Ix.Kernel.ConstantInfo .anon)} {nPd : Nat}
     (hblk : ∀ ci₀ ∈ block, ConstantInfoNonAux ci₀)
     (hnd : (block.map (·.name)).Nodup) :
     DeclNonAux (.indDecl block nPd) := by
-  unfold DeclNonAux IxVM.Consistency.installs
+  unfold DeclNonAux
+  simp only [IxVM.Consistency.installs]
   cases Ix.Kernel.basisPinHit block with
   | some kind => exact ⟨basisDeclsA_nonAux kind, basisDeclsA_nodup kind⟩
   | none => exact ⟨hblk, hnd⟩
@@ -904,7 +909,7 @@ theorem convExpr_refsIn_nonAux {md : Mode} {ecx : ECx md}
   | .recur i us, e, h => by
     simp only [convExpr] at h
     cases hs : ecx.self i.toNat with
-    | none => simp [hs, malformed, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+    | none => simp [hs, malformed, throw, throwThe, MonadExceptOf.throw] at h
     | some m =>
       simp only [hs] at h
       obtain ⟨k, hk, h⟩ := except_bind_ok.mp h
@@ -918,6 +923,7 @@ theorem convExpr_refsIn_nonAux {md : Mode} {ecx : ECx md}
     obtain ⟨ev, hv, h⟩ := except_bind_ok.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
+    simp only [Ix.Kernel.Expr.RefsIn]
     exact convExpr_refsIn_nonAux hrk hself htbl v hv
   | .str i, e, h => by
     simp only [convExpr] at h
@@ -1049,12 +1055,14 @@ theorem readRecursor_nonAux {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
                 | _ => if i == 0 then some (pure key) else none) = some m →
               m = .ok k → NonAuxKey k := by
             intro i m k hs hm
-            cases rc.info with
+            cases hrc : rc.info with
             | muts rms =>
+              simp only [hrc] at hs
               split at hs
               · injection hs with hs; rw [← hs] at hm; exact memberKey_nonAux hrk hm
               · cases hs
             | _ =>
+              simp only [hrc] at hs
               split at hs
               · injection hs with hs
                 rw [← hs] at hm
@@ -1142,7 +1150,8 @@ theorem lowerTwin_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
                                 (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
                                 (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2).map (·.name)) with
                         | some dup =>
-                          simp [hk, declined, throw, throwThe, MonadExceptOf.throw] at h
+                          rw [hk] at h
+                          exact (fail_bind h).elim
                         | none =>
                           simp only [hk, pure, Except.pure, Except.ok.injEq] at h
                           subst h
@@ -1283,9 +1292,11 @@ theorem readInductiveBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
             obtain ⟨_, hd, hnd⟩ := lowerInductiveBare_spec h
             rw [hd]
             intro d hd'
-            simp at hd'
-            subst hd'
-            exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd
+            dsimp only at hd'
+            rcases List.mem_singleton.mp hd' with rfl
+            exact declNonAux_indDecl
+              (blockReadNonAux_block (rb := ⟨0, types, cs.1, #[], recs⟩) ⟨hty_na, hct_na, hrc_na⟩)
+              hnd
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim
@@ -1398,19 +1409,29 @@ theorem readInductive_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {s
                     subst hdecls
                     cases gen with
                     | nil =>
-                      simp [Ix.Kernel.Declaration.names] at hnd_all
+                      rw [Array.toList_push, List.toList_toArray, List.nil_append] at hnd_all
+                      simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil,
+                        Ix.Kernel.Declaration.names] at hnd_all
                       intro d hd'
-                      simp at hd'
-                      subst hd'
-                      exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd_all
+                      rw [Array.toList_push, List.toList_toArray, List.nil_append] at hd'
+                      rcases List.mem_singleton.mp hd' with rfl
+                      exact declNonAux_indDecl
+                        (blockReadNonAux_block (rb := ⟨0, types, cs.1, #[], recs⟩)
+                          ⟨hty_na, hct_na, hrc_na⟩)
+                        hnd_all
                     | cons _ _ => simp at hg
                 · simp only [pure, Except.pure, Except.ok.injEq] at hdecls
                   subst hdecls
-                  simp [Ix.Kernel.Declaration.names] at hnd_all
+                  dsimp only at hnd_all
+                  simp only [List.flatMap_cons, List.flatMap_nil,
+                    List.append_nil, Ix.Kernel.Declaration.names] at hnd_all
                   intro d hd'
-                  simp at hd'
-                  subst hd'
-                  exact declNonAux_indDecl (blockReadNonAux_block ⟨hty_na, hct_na, hrc_na⟩) hnd_all
+                  dsimp only at hd'
+                  rcases List.mem_singleton.mp hd' with rfl
+                  exact declNonAux_indDecl
+                    (blockReadNonAux_block (rb := ⟨0, types, cs.1, #[], recs⟩)
+                      ⟨hty_na, hct_na, hrc_na⟩)
+                    hnd_all
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim
@@ -1425,15 +1446,15 @@ theorem lowerDefinition_declNonAux {hint : Option Ix.Kernel.ReducibilityHint} {s
     DeclNonAux decl := by
   unfold lowerDefinition at h
   rw [projRewrite_eq_none hemp cv value] at h
+  dsimp only at h
   split at h
   · exact (fail_bind h).elim
   · cases kind <;>
-      simp only [Option.getD, Option.isSome, Bool.false_and, bind, Except.bind,
-        pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h <;>
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h <;>
       obtain ⟨rfl, -⟩ := h
     · exact declNonAux_defnDecl hname hty hv
-    · exact declNonAux_thmDecl hname hty hv
     · exact declNonAux_opaqueDecl hname hty
+    · exact declNonAux_thmDecl hname hty hv
 
 theorem readDefinition_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : State .anon}
     (hemp : ∀ k : CName .anon, st.projLevels[k]? = none) {heights : CName .anon → Nat}
@@ -1500,7 +1521,7 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
       simp at hd'
       subst hd'
       exact declNonAux_axiomDecl (memberKey_nonAux hrk hk)
-        (memberReader_read_refsIn_nonAux hrk (fun _ _ _ hs => nomatch hs) hty)
+        (memberReader_read_refsIn_nonAux hrk (by simp) hty)
   | quot q =>
     simp only [hinfo] at h
     obtain ⟨k, -, h⟩ := except_bind_ok.mp h
@@ -1566,10 +1587,8 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
   cases hinfo : c.info with
   | muts ms =>
     simp only [hinfo] at h
-    cases hind : ms.any fun | .indc _ => true | _ => false with
-    | true =>
-      simp only [hind, ↓reduceIte] at h
-      rcases ite_ok h with h | h
+    split at h
+    · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
         have hInd := readInductiveBare_declNonAux hrk hrInd
@@ -1585,9 +1604,7 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
           intro d hd
           rw [Array.toList_append, List.mem_append] at hd
           exact hd.elim (hInd d) (hTwin d)
-    | false =>
-      simp only [hind, Bool.false_eq_true, ↓reduceIte] at h
-      exact readRecord_noGen_declNonAux hrk hemp h hg
+    · exact readRecord_noGen_declNonAux hrk hemp h hg
   | _ =>
     simp only [hinfo] at h
     exact readRecord_noGen_declNonAux hrk hemp h hg
@@ -1596,13 +1613,13 @@ theorem preludeFor_decls_nonAux {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     (hpre : preludeFor t = .ok pre) :
     ∀ d ∈ pre.ix.decls.toList, DeclNonAux d := by
   obtain ⟨rs, extra, extraBlobs, hrr⟩ := preludeRead_unpack (preludeFor_checks hpre).1
-  have hrk : RolesKeyed (contextOf t rs [] extra extraBlobs) :=
-    contextOf_rolesKeyed t rs [] extra extraBlobs _ _
+  have hrk : RolesKeyed (contextOf (md := .anon) t rs [] extra extraBlobs) :=
+    contextOf_rolesKeyed (md := .anon) t rs [] extra extraBlobs _ _
   have hno := preludeFor_decls_not_generated hpre
   have hsr := readRecords_spec hrr
   have go : ∀ {st st' : State .anon} {recs : List (_root_.Address × Ixon.Constant)}
       {out : Array (CDecl .anon)},
-      StreamRead (contextOf t rs [] extra extraBlobs) st recs st' out →
+      StreamRead (contextOf (md := .anon) t rs [] extra extraBlobs) st recs st' out →
       (∀ k : CName .anon, st.projLevels[k]? = none) →
       (∀ d ∈ out.toList, d.isGenerated = false) →
       ∀ d ∈ out.toList, DeclNonAux d := by
@@ -1716,8 +1733,8 @@ theorem resolve_inj_of_proj_authentic {store : Store} {a a' : _root_.Address}
 
 private theorem keysOf_address_isSome {md : Mode} (store : Store) (roles : Bindings md) :
     ∀ (l : List (_root_.Address × Ixon.Constant)) (acc : Keys md store roles)
-      {a : _root_.Address} {c : Ixon.Constant} {q : ConstRef _root_.Address},
-      ((a, c) ∈ l ∧ resolve store a = some q ∨ (acc.address[q]?).isSome = true) →
+      {q : ConstRef _root_.Address},
+      ((∃ a c, (a, c) ∈ l ∧ resolve store a = some q) ∨ (acc.address[q]?).isSome = true) →
       (((l.foldl
         (fun (k : Keys md store roles) (p : _root_.Address × Ixon.Constant) =>
           let k := match h : resolve store p.1 with
@@ -1727,11 +1744,11 @@ private theorem keysOf_address_isSome {md : Mode} (store : Store) (roles : Bindi
           | some key => k.withKey p.1 key h
           | none => k)
         acc).address[q]?).isSome = true)
-  | [], acc, _, _, _, hor => by
-    rcases hor with ⟨hm, _⟩ | hsome
+  | [], acc, _, hor => by
+    rcases hor with ⟨_, _, hm, _⟩ | hsome
     · nomatch hm
     · exact hsome
-  | (a₀, c₀) :: rest, acc, a, c, q, hor => by
+  | (a₀, c₀) :: rest, acc, q, hor => by
     simp only [List.foldl_cons]
     let step1 : Keys md store roles :=
       match h : resolve store a₀ with
@@ -1758,7 +1775,7 @@ private theorem keysOf_address_isSome {md : Mode} (store : Store) (roles : Bindi
         · rw [Std.HashMap.getElem?_insert]
           split <;> simp [hsome]
       · exact hsome
-    rcases hor with ⟨hm, hres⟩ | hsome
+    rcases hor with ⟨a, c, hm, hres⟩ | hsome
     · rcases List.mem_cons.mp hm with hhead | htail
       · cases hhead
         refine keysOf_address_isSome store roles rest step2 (Or.inr ?_)
@@ -1777,7 +1794,7 @@ private theorem keysOf_address_isSome {md : Mode} (store : Store) (roles : Bindi
         · rename_i hr
           rw [hres] at hr
           cases hr
-      · exact keysOf_address_isSome store roles rest step2 (Or.inl ⟨htail, hres⟩)
+      · exact keysOf_address_isSome store roles rest step2 (Or.inl ⟨a, c, htail, hres⟩)
     · exact keysOf_address_isSome store roles rest step2 (Or.inr (hpres hsome))
 
 /-- **`Ctx.memberKey` yields `AddressKey b a k`** for any record `(a, c) ∈ constants` resolving
@@ -1803,7 +1820,7 @@ theorem streamContext_memberKey_addressKey {b : Binding} {t : Ix.Kernel.RoleTabl
   let cx := Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint
   have hba := (Ix.Kernel.Admission.admitBinding_ok_iff _root_.Address.admissionHash b t).mp hadm
   have hofBytes : Ix.Kernel.RoleTable.ofBytes b.bytes = some t :=
-    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff t b.bytes).mpr hba.canonical
+    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff b.bytes t).mpr hba.canonical
   cases hrole : cx.roles.names[q]? with
   | some k' =>
     have hk_eq : k' = k := by
@@ -1830,12 +1847,11 @@ theorem streamContext_memberKey_addressKey {b : Binding} {t : Ix.Kernel.RoleTabl
       change ((keysOf cx.store cx.roles _).address[q]?).isSome = true
       unfold keysOf
       rw [← Array.foldl_toList]
-      exact keysOf_address_isSome cx.store cx.roles _ {} (Or.inl ⟨hall_mem, hres⟩)
+      exact keysOf_address_isSome cx.store cx.roles _ {} (Or.inl ⟨a, c, hall_mem, hres⟩)
     obtain ⟨a', haddr⟩ := Option.isSome_iff_exists.mp haddr_some
     obtain ⟨hres', i, hid, rfl⟩ := Ctx.memberKey_of_unbound hrole haddr hmk
-    have hi : i = a' := Option.some.inj hid.symm
-    subst hi
-    rw [hinj a' hres']
+    have hi_eq : i = a := (Option.some.inj hid.symm).trans (hinj a' hres')
+    subst hi_eq
     exact Or.inl rfl
 
 /-- In `streamContext` over distinct stream keys, `(a, c) ∈ constants` implies `cx.store a = some c`. -/
@@ -1859,12 +1875,12 @@ theorem streamContext_store_of_mem {hash : ByteArray → _root_.Address} {t : Ix
       rcases List.mem_cons.mp hm_xs with hhd | htl
       · cases hhd
         simp
-      · have hne : a ≠ k := fun heq => hnd_xs.1 (heq ▸ List.mem_map.mpr ⟨(a, c), htl, rfl⟩)
+      · have hne : a ≠ k := fun heq => hnd_xs.1 (List.mem_map.mpr ⟨(a, c), htl, heq⟩)
         simp [beq_eq_false_iff_ne.mpr hne, ih hnd_xs.2 htl]
   change ((recordMap constants.toArray)[a]? <|>
     ((recordMap (pre.records ++ pre.evidence))[a]? <|> none)) = some c
   rw [Ix.Cert.ReaderClosureKeys.recordMap_get]
-  simp only [List.toList_toArray, hlookup hnd hmem]
+  simp only [hlookup hnd hmem]
   rfl
 
 /-- `AddressKey b a k` together with `¬ InertAt t a` rules out `inertKey k = true`. -/
@@ -1876,14 +1892,13 @@ theorem inertKey_false_of_addressKey_not_inert {b : Binding} {t : Ix.Kernel.Role
     IxVM.Consistency.inertKey k = false := by
   have hba := (Ix.Kernel.Admission.admitBinding_ok_iff _root_.Address.admissionHash b t).mp hadm
   have hofBytes : Ix.Kernel.RoleTable.ofBytes b.bytes = some t :=
-    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff t b.bytes).mpr hba.canonical
+    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff b.bytes t).mpr hba.canonical
   rcases hak with rfl | ⟨t', r, hof', haddr, rfl⟩
   · rfl
   · rw [hofBytes] at hof'
-    injection hof' with ht_eq
-    subst ht_eq
+    cases Option.some.inj hof'
     cases hin : r.inert with
-    | false => rfl
+    | false => exact hin
     | true => exact absurd ⟨r, hin, haddr⟩ hninert
 
 end IxVM.Refinement.Assembly
