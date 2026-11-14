@@ -185,7 +185,7 @@ theorem assert_index_vars_spec (c : Ctx) {ni k0 : Nat} (hni : ni < 7205759403792
       subst hjF
       have hE_eq : E = .bvar (ni - 1 - idx) := by
         rcases hj_cases with ⟨-, hE'⟩ | ⟨-, hd, -⟩
-        · rw [hE', FireAux.val_natCast_lt59 (n := ni - 1 - idx)
+        · rw [hE', FireAux.val_natCast_lt59 (a := ni - 1 - idx)
             (Nat.lt_of_le_of_lt (Nat.sub_le _ _)
               (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (Nat.lt_trans hni (by decide))))]
         · omega
