@@ -268,27 +268,27 @@ private theorem u64Value_neg_end2_0 :
       SourceValue F) = u64Value 18446744073709535104 := by
   unfold u64Value; norm_num
 
-private theorem field_3_ne_0 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 0) : α := by
+private theorem field_3_ne_0 {P : Prop} (h : (Value.field 3 : SourceValue F) = .field 0) : P := by
   have h' : ((3 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
-private theorem field_3_ne_1 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 1) : α := by
+private theorem field_3_ne_1 {P : Prop} (h : (Value.field 3 : SourceValue F) = .field 1) : P := by
   have h' : ((3 : Nat) : F) = ((1 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
-private theorem field_3_ne_2 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 2) : α := by
+private theorem field_3_ne_2 {P : Prop} (h : (Value.field 3 : SourceValue F) = .field 2) : P := by
   have h' : ((3 : Nat) : F) = ((2 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
-private theorem field_2_ne_0 {α : Sort*} (h : (Value.field 2 : SourceValue F) = .field 0) : α := by
+private theorem field_2_ne_0 {P : Prop} (h : (Value.field 2 : SourceValue F) = .field 0) : P := by
   have h' : ((2 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
-private theorem field_2_ne_1 {α : Sort*} (h : (Value.field 2 : SourceValue F) = .field 1) : α := by
+private theorem field_2_ne_1 {P : Prop} (h : (Value.field 2 : SourceValue F) = .field 1) : P := by
   have h' : ((2 : Nat) : F) = ((1 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
-private theorem field_1_ne_0 {α : Sort*} (h : (Value.field 1 : SourceValue F) = .field 0) : α := by
+private theorem field_1_ne_0 {P : Prop} (h : (Value.field 1 : SourceValue F) = .field 0) : P := by
   have h' : ((1 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
   exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
 
@@ -299,13 +299,15 @@ private theorem u64_lt_pow32_of_bytes_zero {d : Nat} (hd : d < 18446744073709551
   have h0 : d / 4294967296 % 256 + d / 1099511627776 % 256 +
       d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 :=
     natCast_inj3 (by omega) (by decide) (by simpa using h)
-  have b7 : d / 72057594037927936 = 0 := by omega
-  have d7 : d < 72057594037927936 := by omega
-  have b6 : d / 281474976710656 = 0 := by omega
-  have d6 : d < 281474976710656 := by omega
-  have b5 : d / 1099511627776 = 0 := by omega
-  have d5 : d < 1099511627776 := by omega
-  have b4 : d / 4294967296 = 0 := by omega
+  have h4 : ∀ {a b c e : Nat}, a + b + c + e = 0 → a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 := by omega
+  rcases h4 h0 with ⟨hz4, hz5, hz6, hz7⟩
+  rw [Nat.mod_eq_of_lt (by omega)] at hz7
+  have hb7 : d < 72057594037927936 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz6
+  have hb6 : d < 281474976710656 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz5
+  have hb5 : d < 1099511627776 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz4
   omega
 
 private theorem u64_lt_pow24_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
@@ -315,15 +317,18 @@ private theorem u64_lt_pow24_of_bytes_zero {d : Nat} (hd : d < 18446744073709551
   have h0 : d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
       d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 :=
     natCast_inj3 (by omega) (by decide) (by simpa using h)
-  have b7 : d / 72057594037927936 = 0 := by omega
-  have d7 : d < 72057594037927936 := by omega
-  have b6 : d / 281474976710656 = 0 := by omega
-  have d6 : d < 281474976710656 := by omega
-  have b5 : d / 1099511627776 = 0 := by omega
-  have d5 : d < 1099511627776 := by omega
-  have b4 : d / 4294967296 = 0 := by omega
-  have d4 : d < 4294967296 := by omega
-  have b3 : d / 16777216 = 0 := by omega
+  have h5 : ∀ {a b c e f : Nat}, a + b + c + e + f = 0 →
+      a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 := by omega
+  rcases h5 h0 with ⟨hz3, hz4, hz5, hz6, hz7⟩
+  rw [Nat.mod_eq_of_lt (by omega)] at hz7
+  have hb7 : d < 72057594037927936 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz6
+  have hb6 : d < 281474976710656 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz5
+  have hb5 : d < 1099511627776 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz4
+  have hb4 : d < 4294967296 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz3
   omega
 
 private theorem u64_lt_pow16_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
@@ -335,17 +340,20 @@ private theorem u64_lt_pow16_of_bytes_zero {d : Nat} (hd : d < 18446744073709551
       d / 1099511627776 % 256 + d / 281474976710656 % 256 +
       d / 72057594037927936 % 256 = 0 :=
     natCast_inj3 (by omega) (by decide) (by simpa using h)
-  have b7 : d / 72057594037927936 = 0 := by omega
-  have d7 : d < 72057594037927936 := by omega
-  have b6 : d / 281474976710656 = 0 := by omega
-  have d6 : d < 281474976710656 := by omega
-  have b5 : d / 1099511627776 = 0 := by omega
-  have d5 : d < 1099511627776 := by omega
-  have b4 : d / 4294967296 = 0 := by omega
-  have d4 : d < 4294967296 := by omega
-  have b3 : d / 16777216 = 0 := by omega
-  have d3 : d < 16777216 := by omega
-  have b2 : d / 65536 = 0 := by omega
+  have h6 : ∀ {a b c e f g : Nat}, a + b + c + e + f + g = 0 →
+      a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 ∧ g = 0 := by omega
+  rcases h6 h0 with ⟨hz2, hz3, hz4, hz5, hz6, hz7⟩
+  rw [Nat.mod_eq_of_lt (by omega)] at hz7
+  have hb7 : d < 72057594037927936 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz6
+  have hb6 : d < 281474976710656 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz5
+  have hb5 : d < 1099511627776 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz4
+  have hb4 : d < 4294967296 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz3
+  have hb3 : d < 16777216 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz2
   omega
 
 private theorem u64_lt_256_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
@@ -357,19 +365,22 @@ private theorem u64_lt_256_of_bytes_zero {d : Nat} (hd : d < 1844674407370955161
       d / 4294967296 % 256 + d / 1099511627776 % 256 + d / 281474976710656 % 256 +
       d / 72057594037927936 % 256 = 0 :=
     natCast_inj3 (by omega) (by decide) (by simpa using h)
-  have b7 : d / 72057594037927936 = 0 := by omega
-  have d7 : d < 72057594037927936 := by omega
-  have b6 : d / 281474976710656 = 0 := by omega
-  have d6 : d < 281474976710656 := by omega
-  have b5 : d / 1099511627776 = 0 := by omega
-  have d5 : d < 1099511627776 := by omega
-  have b4 : d / 4294967296 = 0 := by omega
-  have d4 : d < 4294967296 := by omega
-  have b3 : d / 16777216 = 0 := by omega
-  have d3 : d < 16777216 := by omega
-  have b2 : d / 65536 = 0 := by omega
-  have d2 : d < 65536 := by omega
-  have b1 : d / 256 = 0 := by omega
+  have h7 : ∀ {a b c e f g k : Nat}, a + b + c + e + f + g + k = 0 →
+      a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 ∧ g = 0 ∧ k = 0 := by omega
+  rcases h7 h0 with ⟨hz1, hz2, hz3, hz4, hz5, hz6, hz7⟩
+  rw [Nat.mod_eq_of_lt (by omega)] at hz7
+  have hb7 : d < 72057594037927936 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz6
+  have hb6 : d < 281474976710656 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz5
+  have hb5 : d < 1099511627776 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz4
+  have hb4 : d < 4294967296 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz3
+  have hb3 : d < 16777216 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz2
+  have hb2 : d < 65536 := by omega
+  rw [Nat.mod_eq_of_lt (by omega)] at hz1
   omega
 
 /-- `put_tagn_wide` at rung code `3` (`8` trailing bytes). -/
@@ -729,6 +740,9 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
   | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
     exact (hne415 rfl).elim
 
+private theorem sub_lt_iff_lt {x a b : Nat} (h : ¬ x < a) :
+    x - a < b ↔ x < a + b := by omega
+
 private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128) :
     (tag0Bytes val).data.toList =
       if val.toNat < 16512 then
@@ -751,34 +765,33 @@ private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128)
   have h3 : Ixon.tagNEnd3 0 = 82048 := by decide
   have h4 : Ixon.tagNEnd4 0 = 16859264 := by decide
   have h5 : Ixon.tagNEnd5 0 = 4311826560 := by decide
+  have esub3 : val.toNat - 16512 - 65536 = val.toNat - 82048 := by
+    rw [Nat.sub_sub]
+  have esub4 : val.toNat - 16512 - 65536 - 16777216 = val.toNat - 16859264 := by
+    rw [esub3, Nat.sub_sub]
+  have esub5 : val.toNat - 16512 - 65536 - 16777216 - 4294967296 = val.toNat - 4311826560 := by
+    rw [esub4, Nat.sub_sub]
+  rw [esub3, esub4, esub5]
   unfold tag0Bytes tagNBytes
   simp only [Nat.reduceSub, Nat.reducePow, h1, h2, h3, h4, h5, hge, ↓reduceIte]
   by_cases c2 : val.toNat < 16512
   · simp only [c2, ↓reduceIte, ByteArray.data_append, Array.toList_append,
       List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
-  · simp only [c2, ↓reduceIte]
+  · have e3 : (val.toNat - 16512 < 65536) = (val.toNat < 82048) := propext (sub_lt_iff_lt c2)
+    simp only [c2, e3, ↓reduceIte]
     by_cases c3 : val.toNat < 82048
-    · have c3' : val.toNat - 16512 < 65536 := by omega
-      simp only [c3, c3', ↓reduceIte, ByteArray.data_append, Array.toList_append,
+    · simp only [c3, ↓reduceIte, ByteArray.data_append, Array.toList_append,
         List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
-    · have c3' : ¬ val.toNat - 16512 < 65536 := by omega
-      simp only [c3, c3', ↓reduceIte]
+    · have e4 : (val.toNat - 82048 < 16777216) = (val.toNat < 16859264) := propext (sub_lt_iff_lt c3)
+      simp only [c3, e4, ↓reduceIte]
       by_cases c4 : val.toNat < 16859264
-      · have c4' : val.toNat - 16512 - 65536 < 16777216 := by omega
-        have esub : val.toNat - 82048 = val.toNat - 16512 - 65536 := by omega
-        simp only [c4, c4', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+      · simp only [c4, ↓reduceIte, ByteArray.data_append, Array.toList_append,
           List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
-      · have c4' : ¬ val.toNat - 16512 - 65536 < 16777216 := by omega
-        simp only [c4, c4', ↓reduceIte]
-        by_cases c5 : val.toNat < 4311826560
-        · have c5' : val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
-          have esub : val.toNat - 16859264 = val.toNat - 16512 - 65536 - 16777216 := by omega
-          simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
-            List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
-        · have c5' : ¬ val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
-          have esub : val.toNat - 4311826560 =
-              val.toNat - 16512 - 65536 - 16777216 - 4294967296 := by omega
-          simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+      · have e5 : (val.toNat - 16859264 < 4294967296) = (val.toNat < 4311826560) :=
+          propext (sub_lt_iff_lt c4)
+        simp only [c4, e5, ↓reduceIte]
+        by_cases c5 : val.toNat < 4311826560 <;>
+          simp only [c5, ↓reduceIte, ByteArray.data_append, Array.toList_append,
             List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
 
 /-- `IxonSerialize::put_tagn_tail` on `f = 0` (`x_base = 0`, `x_h = 64`) for `128 ≤ val.toNat`. -/
@@ -1256,7 +1269,7 @@ theorem put_address_spec {b : Bytes.Address} {rest : List UInt8}
     obtain ⟨e1, s1⟩ := snoc_byte hm1044 (repU8_bv _ b[1]) s2
     obtain ⟨e0, s0⟩ := snoc_byte hm1070 (repU8_bv _ b[0]) s1
     have hhash : (Core.ixAddr b).hash.data.toList = b.toList := by
-      simp [Core.ixAddr]
+      first | rfl | simp [Core.ixAddr, Vector.toList]
     rw [he1071, hhash, vector32_toList_eq b]
     have g3 := ((((((e31.trans e30).trans e29).trans e28).trans e27).trans e26).trans e25).trans e24
     have g2 := ((((((e23.trans e22).trans e21).trans e20).trans e19).trans e18).trans e17).trans e16
