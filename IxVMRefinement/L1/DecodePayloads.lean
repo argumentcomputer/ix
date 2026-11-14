@@ -32,6 +32,7 @@ set_option linter.unreachableTactic false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedVariables false
 set_option linter.unnecessarySimpa false
+set_option linter.unnecessarySeqFocus false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
@@ -432,17 +433,18 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
       r = .tuple [listPtr, restPtr] ∧
       Aiur.Library.List.RepList addressListEnum RepIxonAddressRef h' addrs.toList listPtr ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
+  have had_sym : addressListEnum = Names.«Lists::Node<&[Field; 32]>» := rfl
   induction count generalizing i stream r h h' cs with
   | zero =>
     cases «IxonDeserialize::get_address_list».obs ev with
     | n1 m2 cs12 m43 ev14 he41 hm51 he62 _ =>
       obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
       subst m2 he62 hm51 he41
-      have ext : Heap.Extends h (h ++ [.construct addressListEnum "Nil" []]) :=
+      have ext : Heap.Extends h (h ++ [.construct Names.«Lists::Node<&[Field; 32]>» "Nil" []]) :=
         Heap.Extends.snoc h _
-      refine ⟨ext, #[], 0, .ptr (.enum addressListEnum) h.length, stream,
+      refine ⟨ext, #[], 0, .ptr (.enum Names.«Lists::Node<&[Field; 32]>») h.length, stream,
         by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure], rfl,
-        Lib.rep_store_nil h,
+        by rw [had_sym]; exact Lib.rep_store_nil h,
         Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext rep⟩
     | n0 m2 cs12 _ _ _ _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ _ _ _ =>
       obtain ⟨hiz, _⟩ := u64IsZero_refines hcount ev14.erase
@@ -466,12 +468,12 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
       obtain ⟨_, _⟩ := heq2; subst x_rest x_s2
       subst he201 hm174 he164
-      have ext3 : Heap.Extends m105 (m105 ++ [.construct addressListEnum "Cons" [addrPtr, tailPtr]]) :=
+      have ext3 : Heap.Extends m105 (m105 ++ [.construct Names.«Lists::Node<&[Field; 32]>» "Cons" [addrPtr, tailPtr]]) :=
         Heap.Extends.snoc m105 _
       refine ⟨(ext1.trans ext2).trans ext3, #[a] ++ tailAddrs, 32 + n2,
-        .ptr (.enum addressListEnum) m105.length, restPtr2,
+        .ptr (.enum Names.«Lists::Node<&[Field; 32]>») m105.length, restPtr2,
         ?_, rfl,
-        by simpa using Lib.rep_store_cons repIxonAddressRef_heapMono₂ (aRep.mono ext2) tailRep,
+        by rw [had_sym] at tailRep ⊢; simpa using Lib.rep_store_cons repIxonAddressRef_heapMono₂ (aRep.mono ext2) tailRep,
         by simp only [Nat.add_assoc] at hrep2 ⊢; exact Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext3 hrep2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp only [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
@@ -1232,7 +1234,7 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
       rw [hget]
       simp only [bind, EStateM.bind, hu8, hflags_ok, ↓reduceIte,
         hok1, hok2, hok3, hok4, hok5, hok6, hok7, hchk, hok8, pure, EStateM.pure]
-      simp only [Nat.add_assoc]
+      simp only [Nat.add_assoc]; rfl
     · refine ⟨typPtr, rulesPtr, ?_, typRep.mono ext8, rulesRep⟩
       simp only [rc, hk_rep, hu_rep]
 
@@ -1503,7 +1505,12 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
       simpa [UInt64.ofNat_toNat] using hlen
     let fm : Ixon.FieldModes fields.toNat := .listed ⟨modes, hsz⟩ hany
     have hlisted_eq : Ixon.FieldModes.listed? (n := fields.toNat) modes = some fm := by
-      simp only [Ixon.FieldModes.listed?, hsz, hany, ↓reduceDIte]
+      unfold Ixon.FieldModes.listed?
+      split
+      · split
+        · rfl
+        · rename_i hnot; exact absurd hany hnot
+      · rename_i hnot; exact absurd hsz hnot
     refine ⟨ext, fm, fields.toNat, modesPtr, restPtr, ?_, rfl,
       by simpa [fm, Ixon.FieldModes.toArray] using modesRep, dropRep⟩
     unfold Ixon.getConstructorFieldModes Ixon.getFieldModes
@@ -1614,7 +1621,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
     · unfold Ixon.getConstructor
       simp only [bind, EStateM.bind, hu8, hflags_ok, ↓reduceIte,
         hok1, hok2, hok3, hok4, hok5, hok6, pure, EStateM.pure]
-      simp only [Nat.add_assoc]
+      simp only [Nat.add_assoc]; rfl
     · refine ⟨modesPtr, typPtr, ?_, modesRep.mono repFieldMode_heapMono₂ ext6, typRep⟩
       simp only [ct, hu_rep]
 
@@ -1759,7 +1766,7 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     rw [hget]
     simp only [bind, EStateM.bind, hbool, hok1, hok2, hok3, hok4, hok5, hchk, hok6,
       pure, EStateM.pure]
-    simp only [Nat.add_assoc]
+    simp only [Nat.add_assoc]; rfl
 
 /-- `IxonDeserialize::get_mut_const` at offset `i` refines `Ixon.getMutConst`. -/
 theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}

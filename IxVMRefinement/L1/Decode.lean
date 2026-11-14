@@ -24,6 +24,7 @@ set_option linter.unreachableTactic false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedVariables false
 set_option linter.unnecessarySimpa false
+set_option linter.unnecessarySeqFocus false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
@@ -1202,7 +1203,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
     unfold Ixon.getConstant Ixon.getConstantWithUnivs
     rw [getM_bind_ok hok2, getM_bind2_ok hok3, getM_bind2_ok hok4,
       getM_bind2_ok hok5, getM_bind_ok hok6]
-    simp only [pure, EStateM.pure, Nat.add_assoc]
+    simp only [pure, EStateM.pure, Nat.add_assoc]; rfl
 
 /-- **`Ingress::load_verified_constant` decodes the exact hashed byte string**:
 hashes `bytes`, checks `Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr`, decodes `bytes` to `c`
