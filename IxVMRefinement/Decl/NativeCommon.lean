@@ -1,6 +1,7 @@
 import IxVMRefinement.Decl.Common
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Levels.Smart
+import IxVMRefinement.Infer.Core
 import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # Shared helpers for native inductive and twin recursor declaration refinement
@@ -857,7 +858,7 @@ theorem CapsUpgradeAt.consCtor {T : KKey} {cvS : ConstantVal .anon}
   find_ne := fun {k} hne => by
     by_cases hk : cvC.name = k
     · subst hk
-      simp only [Ix.Kernel.Env.find?_cons, ConstantInfo.name, ↓reduceIte]
+      simp only [Ix.Kernel.Env.find?_cons, ConstantInfo.name, ConstantInfo.toConstantVal, ↓reduceIte]
     · rw [env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk,
         env_find?_cons_ne (c := .ctorInfo cvC nP nF) hk]
       exact h.find_ne hne
@@ -1628,7 +1629,7 @@ theorem assert_lvls_are_params_spec :
     · subst hc59
       have hlen_lt : us.length < 549755813888 :=
         RomBound.bounded_length_lt hbnd List.mem_cons_self List.mem_cons_self hus
-      obtain ⟨hv26, rfl⟩ := IxVM.Refinement.Infer.klevel_length ev39 hus
+      obtain ⟨hv26, rfl⟩ := Core.klevel_length ev39 hus
       rw [hv26] at heq54
       have heq54' : (.field (us.length : F) : SourceValue F) = .field ((0 : Nat) : F) := heq54
       have hlen0 := nat_eq_of_field_eq hlen_lt (by decide) heq54'
@@ -1643,9 +1644,9 @@ theorem assert_lvls_are_params_spec :
     · subst hc203
       have ld75' : loadValue h plvls =
           .ok (.construct KernelLevels.klevelListEnum "Cons" [x_l, x_rest]) := by
-        rwa [KernelLevels.klevelList_names]
+        rwa [Levels.klevelList_names]
       obtain ⟨u, rest, rfl, hu, hrest⟩ := RepList.cons_of_load hus ld75'
-      obtain ⟨p, rfl, hx_i, hp⟩ := KernelLevels.rep_param_of_load' hu ld104
+      obtain ⟨p, rfl, hx_i, hp⟩ := Levels.rep_param_of_load' hu ld104
       rw [hx_i] at heq144
       have hp_eq : p = idx := nat_eq_of_field_eq (by omega) (by omega) heq144
       subst hp_eq
