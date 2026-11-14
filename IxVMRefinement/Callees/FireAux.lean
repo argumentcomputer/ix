@@ -43,12 +43,12 @@ theorem env_find?_name {env : Ix.Kernel.Env .anon} {k : KKey}
     {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
   unfold Ix.Kernel.Env.find? at h
   induction env.consts with
-  | nil => simp at h
+  | nil => cases h
   | cons x xs ih =>
-    simp only [List.find?] at h
+    unfold List.find? at h
     cases hxk : x.name == k
     · rw [hxk] at h; exact ih h
-    · rw [hxk, Option.some.injEq] at h; subst h; exact eq_of_beq hxk
+    · rw [hxk] at h; injection h with h; subst h; exact eq_of_beq hxk
 
 theorem ciRep_rec_inv {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F}

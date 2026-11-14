@@ -47,8 +47,8 @@ theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   intro bp bytes hargs good hbytes
   subst hargs
   have hstream : L1.Stream h bytes bp := by
-    change Bytes.RepByteStream L1.byteStreamEnum h bytes bp
-    have e : (L1.byteStreamEnum : String) = byteListEnum := rfl
+    change Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h bytes bp
+    have e : (IxVM.Refinement.byteStreamEnum : String) = byteListEnum := rfl
     rw [e]
     exact hbytes
   obtain ⟨v1, m2, cs12, v23, m24, cs31, ev14, he27, hm26, ev33, hc42⟩ :=
@@ -67,12 +67,13 @@ theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   have hd_eq : d = Blake3.Pure.digest bytes :=
     Aiur.Library.Blake3.hash_model_spec bytes hnat
   have hty : (L1.digestV d).type = addrTy := by
-    simp [L1.digestV, L1.bv, addrTy, Value.type, List.map_map]
+    have hf : (Value.type ∘ L1.bv : UInt8 → Aiur.Ty) = fun _ => .field := funext fun _ => rfl
+    rw [L1.digestV, L1.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
   refine ⟨d, ?_, ?_⟩
   · refine ⟨m2.length, L1.digestV d, ?_, ?_, ?_⟩
-    · rw [he27, hty]
-    · rw [hm26]; simp
-    · simp [L1.digestV, L1.bv]
+    · rw [he27]; exact congrArg (fun t => Value.ptr t m2.length) hty
+    · rw [hm26, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]; rfl
+    · exact L1.repAddress_iff.mpr rfl
   · rw [hd_eq, ProjAddrAux.blake3Pure_eq_ixAddr]
 
 /-- `KernelCheck::projection_addr_ctor`: builds, serializes, and hashes the constructor-projection
@@ -190,15 +191,17 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
   obtain ⟨v1, m2, cs12, v31, m32, cs42, v198, m199, cs201, m231, m244, m257, m270, v282, m283,
     cs293, m306, cs321, ev14, ev44, sg206, hm239, hm252, hm265, hm278, hm314, ev295, ev323,
     hc332⟩ := Obs.«Ingress::projection_addr».obs ev
-  obtain ⟨hmem, rfl⟩ := muts_member_at_spec i hi hlen hms ev14
-  obtain ⟨ni, hni, hxi, rfl, rfl⟩ := Lib.u64_from_field_spec ev44
+  obtain ⟨hmem, hm2⟩ := muts_member_at_spec i hi hlen hms ev14
+  rw [hm2] at ev44
+  obtain ⟨ni, hni, hxi, hv31, hm32⟩ := Lib.u64_from_field_spec ev44
+  rw [hv31, hm32] at sg206
   injection hxi with hxi
   have hni_eq : ni = i := by
     have hv := congrArg ZMod.val hxi
     rw [val_natCast_small (Nat.lt_trans hni (by decide)),
       val_natCast_small (Nat.lt_trans hi (Nat.lt_trans hlen (by decide)))] at hv
     exact hv.symm
-  subst hni_eq
+  rw [hni_eq] at sg206
   have e1 : Heap.Extends m199 m231 := by rw [hm239]; exact Heap.Extends.snoc _ _
   have e2 : Heap.Extends m231 m244 := by rw [hm252]; exact Heap.Extends.snoc _ _
   have e3 : Heap.Extends m244 m257 := by rw [hm265]; exact Heap.Extends.snoc _ _
@@ -226,9 +229,10 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ _ hv1 hm1 _ =>
-        subst hv1 hm1
-        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
-        refine ⟨rfl, ?_⟩
+        have E : Heap.Extends h m306 := by
+          rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+        refine ⟨hm1, ?_⟩
+        rw [hv1]
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
       | Indc _ _ hv _ _ _ =>
@@ -241,9 +245,10 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       | Defn _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
       | Indc _ _ _ hv1 hm1 _ =>
-        subst hv1 hm1
-        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
-        refine ⟨rfl, ?_⟩
+        have E : Heap.Extends h m306 := by
+          rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+        refine ⟨hm1, ?_⟩
+        rw [hv1]
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
       | Recr _ _ _ hv _ _ _ =>
@@ -256,9 +261,10 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       | Indc _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
       | Recr _ _ _ _ hv1 hm1 _ =>
-        subst hv1 hm1
-        have E : Heap.Extends _ m306 := e1.trans (e2.trans (e3.trans (e4.trans e5)))
-        refine ⟨rfl, ?_⟩
+        have E : Heap.Extends h m306 := by
+          rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+        refine ⟨hm1, ?_⟩
+        rw [hv1]
         simp only [Specs.Callees.memberProjInfo, Specs.Callees.ProjInfoRep]
         exact ⟨TagN.u64Value i, bp, b, rfl, hrepi, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
   have hbytes := put_constant_step c ev295 _ _
@@ -357,17 +363,12 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
       subst he51 hm50
       refine ⟨a :: as_tail,
         Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy) ha' has_tail, ?_⟩
-      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq]
-      simp only [Nat.add_zero]
-      congr 1
-      apply List.ext_getElem?
-      intro k
-      simp only [List.getElem?_mapIdx]
-      cases rest[k]? with
-      | none => rfl
-      | some mk =>
-        simp only [Option.map_some, Option.some.injEq]
+      have hfn :
+          (fun k y => projAddr (Specs.Callees.memberProjInfo (ixAddr b) (i + 1 + k) y)) =
+          (fun k y => projAddr (Specs.Callees.memberProjInfo (ixAddr b) (i + (k + 1)) y)) := by
+        funext k y
         rw [show i + 1 + k = i + (k + 1) by omega]
+      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, Nat.add_zero, hfn]
 
 end ProjAddrAux
 
