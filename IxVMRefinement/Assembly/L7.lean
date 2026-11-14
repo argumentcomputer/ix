@@ -666,4 +666,236 @@ theorem consistent_of_declsStrong
     IxVM.Consistency.CircuitConsistent.{u} :=
   consistent_of_decls_l7 Checked hStrong.toDecls (l7_of_declsStrong hStrong hBridge)
 
+/-! ## Role-aware bare bridge (`DrawsRoleLocal`, `ReadInRole`, `TableAdmittedComplete`) -/
+
+/-- Store draw relation allowing unwalked role-closure records/blobs at addresses absent from `E₀`
+to come from `E_view` (`V.env`) or recursor records, while agreeing byte-for-byte with `E₀` at
+every address `E₀` stores. -/
+def DrawsRoleLocal (E E₀ E_view : Ixon.Env) : Prop :=
+  (∀ a lc, E.consts.get? a = some lc →
+    (∃ lc₀, E₀.consts.get? a = some lc₀ ∧ lc₀.rawBytes = lc.rawBytes) ∨
+    (E₀.consts.contains a = false ∧
+      ((∃ lcV, E_view.consts.get? a = some lcV ∧ lcV.rawBytes = lc.rawBytes) ∨
+       (∃ c, lc.get? = some c ∧ IxVM.Refinement.IsRecursorRecord c)))) ∧
+  (∀ a bytes, E.blobs.get? a = some bytes →
+    E₀.blobs.get? a = some bytes ∨
+    (E₀.blobs.contains a = false ∧ E_view.blobs.get? a = some bytes))
+
+/-- `ReadIn` seeded by `seeds` together with `IxVM.Refinement.BindingSeeds t`, ensuring every role
+and evidence theorem bound by `t` in `E` enters the closure order alongside `seeds`. -/
+def ReadInRole (b : Ix.Kernel.Admission.Binding) (E : Ixon.Env) (seeds : _root_.Address → Prop)
+    (ev : Ix.Kernel.Evidences .anon) (ds : Array (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∃ (t : Ix.Kernel.RoleTable) (order : List _root_.Address)
+    (pre : Ix.Kernel.Reader.Prelude .anon) (limits : Ix.Kernel.Admission.Limits),
+    Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t ∧
+    IxVM.Consistency.UsedClosureOrderAt t E
+      (fun a => seeds a ∨ IxVM.Refinement.BindingSeeds t a) order ∧
+    Ix.Kernel.Reader.preludeFor t = .ok pre ∧
+    Ix.Kernel.Admission.prepareBare _root_.Address.admissionHash b pre limits
+      (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
+
+/-- **`ReadInRole` from `StreamReadBare`** under `UsedClosureOrderAt` seeded with
+`seeds ∨ BindingSeeds t`. -/
+theorem readInRole_of_streamReadBare {b : Ix.Kernel.Admission.Binding} {E : Ixon.Env}
+    {seeds : _root_.Address → Prop} {t : Ix.Kernel.RoleTable} {order : List _root_.Address}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st' : Ix.Kernel.Reader.State .anon}
+    {decls : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
+    (hord : IxVM.Consistency.UsedClosureOrderAt t E
+      (fun a => seeds a ∨ IxVM.Refinement.BindingSeeds t a) order)
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
+    (hauth_rec : ∀ a lc, E.consts.get? a = some lc → _root_.Address.blake3Pure lc.rawBytes = a)
+    (hauth_blob : ∀ a bytes, E.blobs.get? a = some bytes → _root_.Address.blake3Pure bytes = a)
+    (hdec : ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
+    (hreads : StreamReadBare
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+        (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+      pre.state (Ix.Cert.Stream.decodedOf E order) st' decls)
+    (hkeeps : Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true) :
+    ReadInRole b E seeds
+      (Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+        st' t)
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) := by
+  obtain ⟨limits, hbatch, hdecoded⟩ := closure_decodesBare E hdec
+  refine ⟨t, order, pre, limits, hadm, hord, hpre, ?_⟩
+  exact prepareBare_ok hbatch (Ix.Cert.Stream.closure_unique E hord.nodup)
+    (closure_authentic_of_env E order hauth_rec hauth_blob) hadm hdecoded hreads hkeeps
+
+/-- Role-aware `ConsistentRead` with `DrawsRoleLocal E E₀ V.env` and `ReadInRole`. -/
+def ConsistentReadRole (V : IxVM.Refinement.View) (calls : List (Call F))
+    (b : Ix.Kernel.Admission.Binding) (seeds : List _root_.Address) : Prop :=
+  ∃ (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
+    (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
+    IxVM.Consistency.LoadedBy calls E₀ ∧
+    DrawsRoleLocal E E₀ V.env ∧
+    ReadInRole b E (fun a => a ∈ seeds) ev ds ∧
+    IxVM.Consistency.Installs ds.toList env ∧
+    (∀ a ∈ seeds, IxVM.Consistency.IsBlockAt E₀ a ∨ IxVM.Consistency.SeedStored b ds env a) ∧
+    ∀ (W : Type u) [Ix.Kernel.SetTheory W],
+      Nonempty (Ix.Kernel.Model W (IxVM.Consistency.claimedEnv env))
+
+/-- Unpacked witness of an admitted role table `b` in view `V` whose role closure `order_role` is
+stored in `V.env`, exact-decoded, used-ref closed, free of non-direct projection rewrites, and
+accepted by `Ix.Kernel.Cached.AcceptsRef`. -/
+structure TableAdmittedAt (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Binding)
+    (t : Ix.Kernel.RoleTable) (E_role : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order_role : List _root_.Address) (envA : Ix.Kernel.Env .anon)
+    (pre : Ix.Kernel.Reader.Prelude .anon) (st_role : Ix.Kernel.Reader.State .anon)
+    (decls_role : Array (Ix.Kernel.Reader.CDecl .anon)) : Prop where
+  tableAdmitted : IxVM.Refinement.TableAdmitted V b
+  admitBinding : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t
+  litBound : IxVM.Refinement.LiteralSupportBound t
+  draws : IxVM.Refinement.Draws E_role V.env
+  seeds_in : ∀ a, IxVM.Refinement.BindingSeeds t a → E_role.consts.contains a = true
+  closureOrder : Ix.Cert.ClosureOrderAt t E_role (IxVM.Refinement.BindingSeeds t) order_role
+  orderStored : ∀ a ∈ order_role, E_role.consts.contains a = true
+  preludeFor : Ix.Kernel.Reader.preludeFor t = .ok pre
+  prepareWith :
+    Ix.Kernel.Admission.prepareWith _root_.Address.admissionHash b pre limits
+      (Ix.Cert.recordsOf E_role order_role) (Ix.Cert.blobsOf E_role order_role)
+      (Ix.Cert.hintsOf E_role) =
+    .ok (Ix.Kernel.Reader.evidenceOf
+           (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+             (Ix.Cert.Stream.decodedOf E_role order_role)
+             (Ix.Cert.blobsOf E_role order_role) (Ix.Cert.hintsOf E_role))
+           st_role t,
+         Ix.Kernel.Frontend.preparePrelude pre.ix decls_role)
+  streamRead :
+    Ix.Kernel.Reader.StreamRead
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+        (Ix.Cert.Stream.decodedOf E_role order_role)
+        (Ix.Cert.blobsOf E_role order_role) (Ix.Cert.hintsOf E_role))
+      pre.state (Ix.Cert.Stream.decodedOf E_role order_role) st_role decls_role
+  keepsPrelude : Ix.Kernel.Reader.State.keepsPrelude pre.state st_role = true
+  noProjRewrites : st_role.projRewrites = 0
+  acceptsRef :
+    Ix.Kernel.Cached.AcceptsRef .verified
+      (Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E_role order_role)
+          (Ix.Cert.blobsOf E_role order_role) (Ix.Cert.hintsOf E_role))
+        st_role t)
+      ((Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList.map
+        IxVM.Refinement.thmToOpaqueDefn)
+      envA
+  theoremsInProp :
+    IxVM.Refinement.TheoremsInProp envA
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList
+  bindingSpecs :
+    IxVM.Refinement.BindingSpecs t b envA
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList
+  viewConsts :
+    ∀ a ∈ order_role, ∀ lc, E_role.consts.get? a = some lc →
+      (∃ lcV, V.env.consts.get? a = some lcV ∧ lcV.rawBytes = lc.rawBytes) ∧
+      (∀ c, Ixon.deConstantExact lc.rawBytes = .ok c → lc.get? = some c)
+  usedRefs :
+    ∀ a ∈ order_role, ∀ c, Ix.Cert.recordAt E_role a = some c →
+      ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r, c.refs[i]? = some r →
+        E_role.consts.contains r = true
+  noCommittedCollision :
+    ∀ x held img, V.Preimage x held → img ∈ IxVM.Consistency.committedImages →
+      _root_.Address.blake3Pure held = x → _root_.Address.blake3Pure img = x → held = img
+
+/-- Existential form of `TableAdmittedAt`. -/
+def TableAdmittedComplete (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Binding) : Prop :=
+  ∃ t E_role limits order_role envA pre st_role decls_role,
+    TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role
+
+/-- Role-aware bridge from `Claim.WalkedL6` + `TableAdmittedComplete` to `StreamReadBare` and
+per-declaration `Checked` at each installed prefix. -/
+def WalkedBareBridgeRole
+    (Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop) : Prop :=
+  ∀ {calls : List (Call F)} {clm : Ix.Claim} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {seeds : List _root_.Address}
+    {V : IxVM.Refinement.View} {extra : List ByteArray},
+    IxVM.Consistency.Bounded calls →
+    IxVM.Consistency.InScope clm →
+    IxVM.Consistency.ClaimSeeds clm V seeds →
+    IxVM.Consistency.ReaderTable clm V b →
+    TableAdmittedComplete V b →
+    Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t →
+    IxVM.Consistency.LoadedBy calls E₀ →
+    (∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a) →
+    Claim.WalkedL6 calls t E₀ seeds →
+    b.bytes ∈ extra →
+    (∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra) →
+    ¬ V.HashedCollision extra calls →
+    ∃ (E : Ixon.Env) (order : List _root_.Address) (pre : Ix.Kernel.Reader.Prelude .anon)
+      (st' : Ix.Kernel.Reader.State .anon) (decls : Array (Ix.Kernel.Reader.CDecl .anon)),
+      DrawsRoleLocal E E₀ V.env ∧
+      IxVM.Consistency.UsedClosureOrderAt t E
+        (fun a => a ∈ seeds ∨ IxVM.Refinement.BindingSeeds t a) order ∧
+      Ix.Kernel.Reader.preludeFor t = .ok pre ∧
+      (∀ a lc, E.consts.get? a = some lc → _root_.Address.blake3Pure lc.rawBytes = a) ∧
+      (∀ a bytes, E.blobs.get? a = some bytes → _root_.Address.blake3Pure bytes = a) ∧
+      (∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+        ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c) ∧
+      StreamReadBare
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+        pre.state (Ix.Cert.Stream.decodedOf E order) st' decls ∧
+      Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true ∧
+      (∀ ds_pre d ds_suf env_pre,
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList = ds_pre ++ d :: ds_suf →
+        IxVM.Consistency.Installs ds_pre env_pre →
+        Checked calls env_pre d) ∧
+      (∀ a ∈ seeds,
+        IxVM.Consistency.IsBlockAt E₀ a ∨
+        ∃ (k : Ix.Kernel.Key .anon) (d : Ix.Kernel.Declaration .anon)
+          (ci₀ : Ix.Kernel.ConstantInfo .anon),
+          IxVM.Refinement.AddressKey b a k ∧ ci₀.name = k ∧
+          d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList ∧
+          ci₀ ∈ IxVM.Consistency.installs d)
+
+/-- **`ConsistentReadRole` from `DeclsStrong` and `WalkedBareBridgeRole`**. -/
+theorem consistentReadRole_of_declsStrong
+    {Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop}
+    (hStrong : DeclsStrong.{u} Checked)
+    (hBridge : WalkedBareBridgeRole Checked)
+    {calls : List (Call F)} {clm : Ix.Claim} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {seeds : List _root_.Address}
+    {V : IxVM.Refinement.View} {extra : List ByteArray}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hscope : IxVM.Consistency.InScope clm)
+    (hseeds_clm : IxVM.Consistency.ClaimSeeds clm V seeds)
+    (hrt : IxVM.Consistency.ReaderTable clm V b)
+    (hadmV : TableAdmittedComplete V b)
+    (hadm : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hseedOk : ∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a)
+    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hb_extra : b.bytes ∈ extra)
+    (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
+    (hnoCol : ¬ V.HashedCollision extra calls) :
+    ConsistentReadRole.{u} V calls b seeds := by
+  obtain ⟨Inv, hemp, hok, hstep⟩ := hStrong
+  obtain ⟨E, order, pre, st', decls, hdraws, hord, hpre, hauth_rec, hauth_blob, hdec,
+    hreads, hkeeps, hchk, hseeds⟩ :=
+    hBridge hbound hscope hseeds_clm hrt hadmV hadm hload hseedOk hwalk hb_extra hcomm_extra hnoCol
+  let cx := Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+    (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)
+  let ev := Ix.Kernel.Reader.evidenceOf cx st' t
+  let ds := Ix.Kernel.Frontend.preparePrelude pre.ix decls
+  have hreadIn : ReadInRole b E (fun a => a ∈ seeds) ev ds :=
+    readInRole_of_streamReadBare hadm hord hpre hauth_rec hauth_blob hdec hreads hkeeps
+  have hna : ∀ d ∈ ds.toList, DeclNonAux d :=
+    preparePrelude_declNonAux hpre hreads
+  obtain ⟨env, hinst, hinv⟩ :=
+    installs_and_inv_of_prefix_checked hemp
+      (fun env_pre d hd => hstep calls env_pre d hbound hd)
+      ds.toList hchk
+  have hseedStored : ∀ a ∈ seeds,
+      IxVM.Consistency.IsBlockAt E₀ a ∨ IxVM.Consistency.SeedStored b ds env a := by
+    intro a ha
+    rcases hseeds a ha with hblk | ⟨k, d, ci₀, hkey, hname, hd, hci₀⟩
+    · exact Or.inl hblk
+    · exact Or.inr (seedStored_of_installs hinst hkey hname hd hci₀)
+  have hmodels : ∀ (W : Type u) [Ix.Kernel.SetTheory W],
+      Nonempty (Ix.Kernel.Model W (IxVM.Consistency.claimedEnv env)) :=
+    claimedEnv_models_of_installs hinst hna (fun W _ => hok W env (hinv W))
+  exact ⟨E₀, E, ev, ds, env, hload, hdraws, hreadIn, hinst, hseedStored, hmodels⟩
+
 end IxVM.Refinement.Assembly

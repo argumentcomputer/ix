@@ -1,26 +1,21 @@
 import IxVMRefinement.Assembly.L7
 import Ix.Cert.FallbackStore
 
-/-! # Sub-store construction, `RolePreludeInputs`, multi-walk union, and `coreEnv`
+/-! # Role-aware sub-store construction, `RolePreludeInputs`, multi-walk union, and `coreEnvRole`
 
-Provides the Phase-2 store infrastructure backing `WalkedBareBridge`:
+Provides the Phase-2 store infrastructure backing `WalkedBareBridgeRole`:
 
 * `RolePreludeInputs`: parametric role-table / committed-fallback interface matching `W4-Roles`'s
   proven exports (`fallbackHashed`, `preludeFor_of_readerTable`,
-  `literalSupportBound_of_readerTable`, `fallback_record_agree`, `fallback_blob_agree`), with
-  derived committed-image membership, non-padding addresses, and `recordAt` agreement;
-* `ClosedSubwalk`, `WkAll`, and `rankAll`: combines `WalkedL6`'s seed closure with any number of
-  `Claim.RecsClosed` sub-walks from `KernelClaim::run_check_transitive` (invoked by
-  `role_used_implicitly`, `group_admit`, and `check_witness` kind 0) into a single `WalkEdge`-closed
-  rank-decreasing safe set via `Nat.find`;
-* `subEnv_withProj_usedClosureOrderAt` and `walkedBareWitness_of_subEnv_withProj`: generalizes
-  `subEnv_twoTier_usedClosureOrderAt` so `Keep` may also retain canonical projection records of kept
-  blocks (`c.sharing = #[] ∧ c.refs = #[]`) without affecting `Draws`, owner-closure, or
-  `UsedRecordRef` ordering;
-* `preludeRecSupp` and `coreEnv`: supplements kept prelude blocks with their committed standalone
-  `.recr` records (kernel-verified self-contained in `RoleData.prelude`) and constructs `coreEnv`
-  extending `subEnv E₀ Keep supp` with `pre.records ++ pre.evidence`, discharging `Core.Good` and
-  `L1.EnvDecoded` unconditionally. -/
+  `literalSupportBound_of_readerTable`, `fallback_record_agree`, `fallback_blob_agree`,
+  `fallback_not_padding`, `prelude_in_bindingSeeds`);
+* `TableAdmittedAt` unpacking: authentic bytes, `Ixon.deConstantExact`, `recordAt E_role` on
+  `order_role`, `pre.records ⊆ order_role`, and `UsedRecordRef` → `idxOf` decrease on `order_role`;
+* `ClosedSubwalk`, `WkAll`, `rankAll`, `SeedReach`, and `closedSubwalk_of_recsClosed`: combines
+  `WalkedL6`'s seed closure with `Claim.RecsClosed` sub-walks;
+* `addBlobSupplements`, `roleSuppOf`, `subEnvRole`, `roleTwoTierRank`, and `coreEnvRole`: builds
+  the combined role+seed store `E` and core-backing store `coreEnvRole`, proving `DrawsRoleLocal`,
+  authenticated records/blobs, `UsedClosureOrderAt`, `Core.Good`, and `L1.EnvDecoded`. -/
 
 namespace IxVM.Refinement.Assembly
 
@@ -30,7 +25,8 @@ open IxVM (F)
 /-! ## Parametric role-prelude interface (`RolePreludeInputs`) -/
 
 /-- Role-validation and committed-fallback facts consumed by `Assembly/Bridge.lean`, matching the
-proven exports of `RoleVal/{CommittedData,ReaderTable}.lean` with zero cross-lane imports. -/
+proven exports of `RoleVal/{CommittedData,CommittedPrelude,ReaderTable}.lean` with zero cross-lane
+imports and zero kernel hex expansion. -/
 structure RolePreludeInputs : Prop where
   fallbackHashed : Ix.Cert.RoleClosure.FallbackHashed
   preludeFor_of_readerTable :
@@ -63,15 +59,19 @@ structure RolePreludeInputs : Prop where
         ∀ {a : _root_.Address} {blob raw : ByteArray}, (a, blob) ∈ pre.blobs →
         E₀.blobs.get? a = some raw →
         V.HashedCollision extra calls ∨ raw = blob
-
-private def fallbackRowsNotPaddingBool : Bool :=
-  (Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence).all fun row =>
-    Ix.Kernel.Reader.addressOfHex row.1 != some Ix.HostAdmission.Merkle.padding
-
-set_option maxHeartbeats 1000000 in
-set_option maxRecDepth 8000 in
-private theorem fallbackRowsNotPadding_ok : fallbackRowsNotPaddingBool = true := by
-  decide +kernel
+  fallback_not_padding :
+    ∀ {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon},
+      Ix.Kernel.Reader.preludeFor t = .ok pre →
+      ∀ {a : _root_.Address} {c : Ixon.Constant}, (a, c) ∈ pre.records ++ pre.evidence →
+        a ≠ Ix.HostAdmission.Merkle.padding
+  prelude_in_bindingSeeds :
+    ∀ {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon},
+      Ix.Kernel.Reader.preludeFor t = .ok pre →
+      ∀ {a : _root_.Address} {c : Ixon.Constant}, (a, c) ∈ pre.records →
+        IxVM.Refinement.BindingSeeds t a ∨
+        ∃ a' c', (a', c') ∈ pre.records ∧
+          IxVM.Refinement.BindingSeeds t a' ∧
+          Ix.Cert.ownerOf a' c' = a ∧ a ≠ a'`
 
 /-- Every record `(a, c)` in `pre.records ++ pre.evidence` has `Ixon.serConstant c` in
 `committedImages`, pure BLAKE3 digest `a`, wire well-formedness `c.wireWF`, and non-padding address
@@ -101,7 +101,7 @@ theorem RolePreludeInputs.serConstant_mem_committedImages (hRP : RolePreludeInpu
     · obtain ⟨row, hrow, hrest⟩ := Ix.Cert.FallbackStore.decoded_rows "evidence"
         Ix.Kernel.Reader.RoleData.evidence he (a, c) (Array.mem_toList_iff.mpr h2)
       exact ⟨row, by simp [Array.toList_append, hrow], hrest⟩
-  obtain ⟨row, hrow_mem, ha_hex, raw, hraw_hex, hde_can⟩ := hrow
+  obtain ⟨row, hrow_mem, _, raw, hraw_hex, hde_can⟩ := hrow
   obtain ⟨-, -, hser⟩ := Ixon.Verify.Canonical.deConstant_spec _ _ _ _ hde_can
   have himg : Ixon.serConstant c ∈ IxVM.Consistency.committedImages := by
     rw [hser]
@@ -112,13 +112,7 @@ theorem RolePreludeInputs.serConstant_mem_committedImages (hRP : RolePreludeInpu
     refine ⟨row, ?_, rfl⟩
     rw [Array.toList_append]
     exact List.mem_append_left _ hrow_mem
-  have hnotPad : a ≠ Ix.HostAdmission.Merkle.padding := by
-    have hall := Array.all_eq_true_iff_forall_mem.mp fallbackRowsNotPadding_ok row
-      (Array.mem_toList_iff.mp hrow_mem)
-    intro heq
-    rw [heq, ha_hex] at hall
-    simp at hall
-  exact ⟨himg, hauth.symm, hwf, hnotPad⟩
+  exact ⟨himg, hauth.symm, hwf, hRP.fallback_not_padding hpre hmem⟩
 
 /-- Under `¬ V.HashedCollision extra calls` and exact decoding on `E₀`, any record present in `E₀`
 at an address of `pre.records ++ pre.evidence` decodes to the committed fallback constant `c`. -/
@@ -145,6 +139,176 @@ theorem RolePreludeInputs.fallback_recordAt_agree (hRP : RolePreludeInputs)
     unfold Ix.Cert.recordAt
     rw [hget]
     exact hlc_c'
+
+/-! ## Unpacking `TableAdmittedAt` (`Authentic`, `RecordsRead`, `pre.records ⊆ order_role`) -/
+
+private theorem recordsRead_mem_spec {limits : Ix.Kernel.Admission.Limits}
+    {records : Ix.Kernel.Admission.Records} {constants : Ix.Kernel.Ingress.Constants}
+    (h : Ix.Kernel.Admission.RecordsRead limits records constants) :
+    ∀ {a : _root_.Address} {raw : ByteArray}, (a, raw) ∈ records →
+      ∃ c, (a, c) ∈ constants ∧ Ixon.serConstant c = raw ∧ c.wireWF ∧
+        Ixon.deConstantExact raw = .ok c := by
+  induction h with
+  | nil => intro _ _ hm; nomatch hm
+  | cons reads _ ih =>
+    intro a raw hm
+    rcases List.mem_cons.mp hm with heq | htl
+    · cases heq
+      have hex := Ixon.Verify.deConstantExact_serConstant _ reads.wire
+      rw [reads.encoded] at hex
+      exact ⟨_, List.mem_cons_self, reads.encoded, reads.wire, hex⟩
+    · obtain ⟨c, hc, hser, hwf, hex⟩ := ih htl
+      exact ⟨c, List.mem_cons_of_mem _ hc, hser, hwf, hex⟩
+
+/-- Unpacks `UniqueKeys`, `Authentic`, and `RecordsRead` from `hadm.prepareWith`. -/
+theorem TableAdmittedAt.prepareWith_unpack
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role) :
+    Ix.Kernel.Admission.UniqueKeys (Ix.Cert.recordsOf E_role order_role)
+      (Ix.Cert.blobsOf E_role order_role) ∧
+    Ix.Kernel.Admission.Authentic _root_.Address.admissionHash
+      (Ix.Cert.recordsOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) ∧
+    ∃ constants, Ix.Kernel.Admission.RecordsRead limits
+      (Ix.Cert.recordsOf E_role order_role) constants := by
+  have h := hadm.prepareWith
+  unfold Ix.Kernel.Admission.prepareWith at h
+  cases hf : Ix.Kernel.Admission.preflight limits (Ix.Cert.recordsOf E_role order_role)
+      (Ix.Cert.blobsOf E_role order_role) with
+  | error e => simp [hf, Except.mapError, bind, Except.bind] at h
+  | ok _ =>
+    cases hu : Ix.Kernel.Admission.uniqueKeys (Ix.Cert.recordsOf E_role order_role)
+        (Ix.Cert.blobsOf E_role order_role) with
+    | error e => simp [hf, hu, Except.mapError, bind, Except.bind] at h
+    | ok _ =>
+      cases ha : Ix.Kernel.Admission.authenticate _root_.Address.admissionHash
+          (Ix.Cert.recordsOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) with
+      | error e => simp [hf, hu, ha, Except.mapError, bind, Except.bind] at h
+      | ok _ =>
+        cases hb : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b with
+        | error e => simp [hf, hu, ha, hb, Except.mapError, bind, Except.bind] at h
+        | ok _ =>
+          cases hd : Ix.Kernel.Admission.decodeRecords limits
+              (Ix.Cert.recordsOf E_role order_role) with
+          | error e => simp [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
+          | ok constants =>
+            exact ⟨(Ix.Kernel.Admission.uniqueKeys_ok_iff _ _).mp hu,
+              (Ix.Kernel.Admission.authenticate_ok_iff _ _ _).mp ha,
+              constants, (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd⟩
+
+/-- Every `a ∈ order_role` is stored in `E_role.consts` with pure-BLAKE3 authenticated `rawBytes`,
+canonical encoding `serConstant c = lc.rawBytes`, wire-WF `c`, exact decoding
+`deConstantExact lc.rawBytes = .ok c`, `recordAt E_role a = some c`, and `V.Preimage a lc.rawBytes`. -/
+theorem TableAdmittedAt.order_record_spec
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    {a : _root_.Address} (ha : a ∈ order_role) :
+    ∃ lc c, E_role.consts.get? a = some lc ∧
+      lc.get? = some c ∧
+      Ix.Cert.recordAt E_role a = some c ∧
+      _root_.Address.blake3Pure lc.rawBytes = a ∧
+      Ixon.serConstant c = lc.rawBytes ∧
+      c.wireWF ∧
+      Ixon.deConstantExact lc.rawBytes = .ok c ∧
+      V.Preimage a lc.rawBytes := by
+  obtain ⟨_, hauth, constants, hread⟩ := hadm.prepareWith_unpack
+  have hcont := hadm.orderStored a ha
+  rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?] at hcont
+  obtain ⟨lc, hget⟩ := Option.isSome_iff_exists.mp hcont
+  have hmem_rec : (a, lc.rawBytes) ∈ Ix.Cert.recordsOf E_role order_role := by
+    unfold Ix.Cert.recordsOf
+    exact List.mem_filterMap.mpr ⟨a, ha, by simp [hget]⟩
+  have hblk : _root_.Address.blake3Pure lc.rawBytes = a := by
+    have h1 := hauth.1 (a, lc.rawBytes) hmem_rec
+    rw [_root_.Address.admissionHash_eq] at h1
+    exact h1.symm
+  obtain ⟨c, _, hser, hwf, hex⟩ := recordsRead_mem_spec hread hmem_rec
+  obtain ⟨⟨lcV, hgetV, hrawV⟩, hlc_get⟩ := hadm.viewConsts a ha lc hget
+  have hlc_c := hlc_get c hex
+  have hrecAt : Ix.Cert.recordAt E_role a = some c := by
+    unfold Ix.Cert.recordAt
+    rw [hget]
+    exact hlc_c
+  exact ⟨lc, c, hget, hlc_c, hrecAt, hblk, hser, hwf, hex, Or.inl ⟨lcV, hgetV, hrawV⟩⟩
+
+/-- Every `(a, bytes) ∈ blobsOf E_role order_role` has pure-BLAKE3 digest `a`, is stored in
+`V.env.blobs` (`V.Preimage a bytes`), and `blobsOf E_role order_role` has distinct keys. -/
+theorem TableAdmittedAt.blobs_spec
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role) :
+    ((Ix.Cert.blobsOf E_role order_role).map Prod.fst).Nodup ∧
+      ∀ a bytes, (a, bytes) ∈ Ix.Cert.blobsOf E_role order_role →
+        _root_.Address.blake3Pure bytes = a ∧
+        E_role.blobs.get? a = some bytes ∧
+        V.env.blobs.get? a = some bytes ∧
+        V.Preimage a bytes := by
+  obtain ⟨huniq, hauth, _⟩ := hadm.prepareWith_unpack
+  refine ⟨huniq.2, fun a bytes hm => ?_⟩
+  have hblk : _root_.Address.blake3Pure bytes = a := by
+    have h1 := hauth.2 (a, bytes) hm
+    rw [_root_.Address.admissionHash_eq] at h1
+    exact h1.symm
+  unfold Ix.Cert.blobsOf at hm
+  obtain ⟨hm_list, _⟩ := List.mem_filter.mp hm
+  have hget_role : E_role.blobs.get? a = some bytes := by
+    rw [Std.HashMap.get?_eq_getElem?]
+    exact Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm_list
+  have hget_view := hadm.draws.2 a bytes hget_role
+  exact ⟨hblk, hget_role, hget_view, Or.inr (Or.inl hget_view)⟩
+
+/-- At any address `a ∈ order_role` that also appears in `pre.records ++ pre.evidence`, `E_role`
+stores the exact committed fallback constant `c_pre`. -/
+theorem TableAdmittedAt.order_agrees_with_fallback (hRP : RolePreludeInputs)
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    {a : _root_.Address} {c_pre : Ixon.Constant}
+    (ha : a ∈ order_role) (hmem : (a, c_pre) ∈ pre.records ++ pre.evidence) :
+    Ix.Cert.recordAt E_role a = some c_pre := by
+  obtain ⟨lc, c, _, _, hrecAt, hblk_lc, _, _, hex_lc, hpreV⟩ := hadm.order_record_spec ha
+  obtain ⟨himg, hblk_pre, hwf_pre, _⟩ := hRP.serConstant_mem_committedImages hadm.preludeFor hmem
+  have hraw_eq := hadm.noCommittedCollision a lc.rawBytes (Ixon.serConstant c_pre)
+    hpreV himg hblk_lc hblk_pre
+  rw [hraw_eq, Ixon.Verify.deConstantExact_serConstant c_pre hwf_pre] at hex_lc
+  injection hex_lc with hceq
+  subst hceq
+  exact hrecAt
+
+/-- **Every committed prelude record `(a, c) ∈ pre.records` is in `order_role`** and stored as `c`
+in `E_role`. -/
+theorem TableAdmittedAt.prelude_mem_orderRole (hRP : RolePreludeInputs)
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    {a : _root_.Address} {c : Ixon.Constant} (hmem : (a, c) ∈ pre.records) :
+    a ∈ order_role ∧ Ix.Cert.recordAt E_role a = some c := by
+  have ha_ord : a ∈ order_role := by
+    rcases hRP.prelude_in_bindingSeeds hadm.preludeFor hmem with hb | ⟨a', c', hm', hb', hown, hne⟩
+    · exact (hadm.closureOrder.complete a).mpr (.seed hb (hadm.seeds_in a hb))
+    · have ha'_reach : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) a' :=
+        .seed hb' (hadm.seeds_in a' hb')
+      have ha'_ord : a' ∈ order_role := (hadm.closureOrder.complete a').mpr ha'_reach
+      have hrec' := hadm.order_agrees_with_fallback hRP ha'_ord (Array.mem_append_left _ hm')
+      exact (hadm.closureOrder.complete a).mpr
+        (.step ha'_reach ⟨c', hrec', Or.inl ⟨hown, hne⟩⟩)
+  exact ⟨ha_ord, hadm.order_agrees_with_fallback hRP ha_ord (Array.mem_append_left _ hmem)⟩
 
 /-! ## `ClosedSubwalk` union (`WkAll`, `rankAll`) across `WalkedL6` and `RecsClosed` sub-walks -/
 
@@ -197,8 +361,7 @@ theorem rankAll_le_of_closedSubwalk {calls : List (Call F)} {bAddr : _root_.Addr
   simp only [rankAll, hex, ↓reduceDIte]
   exact Nat.find_min' hex ⟨W, rk, hcs, hx, rfl⟩
 
-/-- `(WkAll, rankAll)` is itself a `ClosedSubwalk` (closed under `WalkEdge` with strict `rankAll`
-decrease, safe, and checked). -/
+/-- `(WkAll, rankAll)` is itself a `ClosedSubwalk`. -/
 theorem wkAll_closedSubwalk (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) :
     ClosedSubwalk calls bAddr t E₀
@@ -293,9 +456,7 @@ def recsRank {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.Rol
     (recs : List (Claim.WalkedRec calls bAddr t)) (a : _root_.Address) : Nat :=
   minNatList ((recs.filter (fun r => r.addr == a)).map (·.depth))
 
-/-- Any `Claim.RecsClosed` list `recs` from a `run_check_transitive` call in `calls` forms a
-`ClosedSubwalk` on `E₀` once `E₀.consts` completeness from `WalkedL6` and safety on `recs` are
-given. -/
+/-- Any `Claim.RecsClosed` list `recs` forms a `ClosedSubwalk` on `E₀`. -/
 theorem closedSubwalk_of_recsClosed {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     (hconsts_complete : ∀ bytes c, IxVM.Refinement.Hashed calls bytes →
@@ -352,481 +513,157 @@ theorem closedSubwalk_of_recsClosed {calls : List (Call F)} {bAddr : _root_.Addr
   · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp ha
     exact ⟨r.c, hrecAt r hr, r.hchecked⟩
 
-/-! ## `UsedClosureOrderAt` on `subEnv` with extra recursors and canonical projections -/
+/-! ## Blob supplements (`addBlobSupplements`) and role supplements (`roleSuppOf`) -/
 
-/-- Owner-closure and `UsedClosureOrderAt` for `subEnv E₀ Keep supp` when every non-`Wk` record in
-`subEnv` is either a recursor record (`IsRecursorRecord`) or a canonical projection record
-(`c.sharing = #[] ∧ c.refs = #[]`) whose owner is a kept `Wk` or `IsRecursorRecord` block. -/
-theorem subEnv_withProj_usedClosureOrderAt (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
-    (Keep : _root_.Address → Prop) (supp : List SuppEntry) (S : _root_.Address → Prop)
-    {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
-    (iblock : _root_.Address → _root_.Address)
-    (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
-    (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
-    (hextra_kind : ∀ x c, ¬ Wk x → Ix.Cert.recordAt (subEnv E₀ Keep supp) x = some c →
-      IxVM.Refinement.IsRecursorRecord c ∨
-        (c.sharing = #[] ∧ c.refs = #[] ∧ Ix.Cert.ownerOf x c ≠ x ∧
-          (Wk (Ix.Cert.ownerOf x c) ∨
-            ∃ co, Ix.Cert.recordAt (subEnv E₀ Keep supp) (Ix.Cert.ownerOf x c) = some co ∧
-              IxVM.Refinement.IsRecursorRecord co)))
-    (hextra_refs : ∀ a c, ¬ Wk a → Ix.Cert.recordAt (subEnv E₀ Keep supp) a = some c →
-      IxVM.Refinement.IsRecursorRecord c →
-      ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r cr,
-        c.refs[i]? = some r →
-        Ix.Cert.recordAt (subEnv E₀ Keep supp) r = some cr →
-        Ix.Cert.ownerOf r cr ≠ a →
-        (Wk (Ix.Cert.ownerOf r cr) ∧ rank (Ix.Cert.ownerOf r cr) ≤ rank (iblock a)) ∨
-          (¬ Wk (Ix.Cert.ownerOf r cr) ∧ rank (iblock (Ix.Cert.ownerOf r cr)) < rank (iblock a))) :
-    IxVM.Consistency.UsedClosureOrderAt t (subEnv E₀ Keep supp) S
-      (closureOrderByRank t (subEnv E₀ Keep supp) S (twoTierRank Wk rank iblock)) := by
-  let E := subEnv E₀ Keep supp
-  have hown : ∀ a c, Ix.Cert.recordAt E a = some c →
-      E.consts.contains (Ix.Cert.ownerOf a c) = true := by
-    intro a c hrec
-    by_cases hwa : Wk a
-    · obtain ⟨c₀, hrec₀⟩ := hwk_rec a hwa
-      have hrec' := recordAt_subEnv_of_keep E₀ Keep supp (hwk_keep a hwa) hrec₀
-      rw [hrec] at hrec'
-      injection hrec' with hceq
-      subst hceq
-      by_cases hown_eq : Ix.Cert.ownerOf a c = a
-      · rw [hown_eq]
-        exact contains_of_recordAt hrec
-      · obtain ⟨hwb, _⟩ := hwk_step a (Ix.Cert.ownerOf a c) hwa ⟨c, hrec₀, Or.inl ⟨rfl, hown_eq⟩⟩
-        obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
-        exact contains_of_recordAt (recordAt_subEnv_of_keep E₀ Keep supp (hwk_keep _ hwb) hrec_b)
-    · rcases hextra_kind a c hwa hrec with hrec_k | ⟨_, _, _, hown_wk⟩
-      · rw [isRecursorRecord_ownerOf_eq a hrec_k]
-        exact contains_of_recordAt hrec
-      · rcases hown_wk with hwb | ⟨co, hrec_o, _⟩
-        · obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
-          exact contains_of_recordAt (recordAt_subEnv_of_keep E₀ Keep supp (hwk_keep _ hwb) hrec_b)
-        · exact contains_of_recordAt hrec_o
-  refine usedClosureOrderAt_closureOrderByRank hown fun a b _ _ href => ?_
-  by_cases hwa : Wk a
-  · obtain ⟨hwb, hlt⟩ := usedRecordRef_of_wk hwk_keep hwk_step hwk_rec hwa href
-    simp only [twoTierRank, hwa, hwb, ↓reduceIte]
-    omega
-  · obtain ⟨c, hrec_a, i, hi, r, hr, cr, hrec_r, hown_r, hne⟩ := href
-    rcases hextra_kind a c hwa hrec_a with hrec_k | ⟨_, hrefs_emp, _, _⟩
-    · have hex := hextra_refs a c hwa hrec_a hrec_k i hi r cr hr hrec_r (by rw [hown_r]; exact hne)
-      rw [hown_r] at hex
-      rcases hex with ⟨hwb, hle⟩ | ⟨hnwb, hlt⟩
-      · simp only [twoTierRank, hwa, hwb, ↓reduceIte]
-        omega
-      · simp only [twoTierRank, hwa, hnwb, ↓reduceIte]
-        omega
-    · rw [hrefs_emp] at hr
-      simp at hr
+/-- Overlay blob entries `(a, bytes)` at addresses not already present in `m₀`. -/
+def addBlobSupplements (m₀ : Std.HashMap _root_.Address ByteArray) :
+    List (_root_.Address × ByteArray) → Std.HashMap _root_.Address ByteArray
+  | [] => m₀
+  | (a, bytes) :: rest =>
+    let tail := addBlobSupplements m₀ rest
+    if m₀.contains a then tail else tail.insert a bytes
 
-/-- Witness packager upgrading `walkedBareWitness_of_subEnv` with `subEnv_withProj_usedClosureOrderAt`. -/
-theorem walkedBareWitness_of_subEnv_withProj
-    {Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop}
-    {calls : List (Call F)} {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {seeds : List _root_.Address}
-    (hload : IxVM.Consistency.LoadedBy calls E₀)
-    (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
-      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
-    (Keep : _root_.Address → Prop) (supp : List SuppEntry)
-    {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
-    (iblock : _root_.Address → _root_.Address)
-    (hsupp_rec : ∀ entry ∈ supp, IxVM.Refinement.IsRecursorRecord entry.2.2)
-    (hsupp_auth : ∀ a raw c, (a, raw, c) ∈ supp →
-      _root_.Address.blake3Pure raw = a ∧ Ixon.deConstantExact raw = .ok c)
-    (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
-    (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
-    (hextra_kind : ∀ x c, ¬ Wk x → Ix.Cert.recordAt (subEnv E₀ Keep supp) x = some c →
-      IxVM.Refinement.IsRecursorRecord c ∨
-        (c.sharing = #[] ∧ c.refs = #[] ∧ Ix.Cert.ownerOf x c ≠ x ∧
-          (Wk (Ix.Cert.ownerOf x c) ∨
-            ∃ co, Ix.Cert.recordAt (subEnv E₀ Keep supp) (Ix.Cert.ownerOf x c) = some co ∧
-              IxVM.Refinement.IsRecursorRecord co)))
-    (hextra_refs : ∀ a c, ¬ Wk a → Ix.Cert.recordAt (subEnv E₀ Keep supp) a = some c →
-      IxVM.Refinement.IsRecursorRecord c →
-      ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r cr,
-        c.refs[i]? = some r →
-        Ix.Cert.recordAt (subEnv E₀ Keep supp) r = some cr →
-        Ix.Cert.ownerOf r cr ≠ a →
-        (Wk (Ix.Cert.ownerOf r cr) ∧ rank (Ix.Cert.ownerOf r cr) ≤ rank (iblock a)) ∨
-          (¬ Wk (Ix.Cert.ownerOf r cr) ∧ rank (iblock (Ix.Cert.ownerOf r cr)) < rank (iblock a)))
-    {pre : Ix.Kernel.Reader.Prelude .anon}
-    {st' : Ix.Kernel.Reader.State .anon} {decls : Array (Ix.Kernel.Reader.CDecl .anon)}
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
-    (hreads :
-      let E := subEnv E₀ Keep supp
-      let S := fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
-      let order := closureOrderByRank t E S (twoTierRank Wk rank iblock)
-      StreamReadBare
-        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
-          (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
-        pre.state (Ix.Cert.Stream.decodedOf E order) st' decls)
-    (hkeeps : Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true)
-    (hchk : ∀ ds_pre d ds_suf env_pre,
-      (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList = ds_pre ++ d :: ds_suf →
-      IxVM.Consistency.Installs ds_pre env_pre →
-      Checked calls env_pre d)
-    (hseeds : ∀ a ∈ seeds,
-      IxVM.Consistency.IsBlockAt E₀ a ∨
-      ∃ (k : Ix.Kernel.Key .anon) (d : Ix.Kernel.Declaration .anon)
-        (ci₀ : Ix.Kernel.ConstantInfo .anon),
-        IxVM.Refinement.AddressKey b a k ∧ ci₀.name = k ∧
-        d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList ∧
-        ci₀ ∈ IxVM.Consistency.installs d) :
-    ∃ (E : Ixon.Env) (order : List _root_.Address) (pre : Ix.Kernel.Reader.Prelude .anon)
-      (st' : Ix.Kernel.Reader.State .anon) (decls : Array (Ix.Kernel.Reader.CDecl .anon)),
-      IxVM.Refinement.Draws E E₀ ∧
-      IxVM.Consistency.UsedClosureOrderAt t E
-        (fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList)
-        order ∧
-      Ix.Kernel.Reader.preludeFor t = .ok pre ∧
-      (∀ a lc, E.consts.get? a = some lc → _root_.Address.blake3Pure lc.rawBytes = a) ∧
-      (∀ a bytes, E.blobs.get? a = some bytes → _root_.Address.blake3Pure bytes = a) ∧
-      (∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
-        ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c) ∧
-      StreamReadBare
-        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
-          (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
-        pre.state (Ix.Cert.Stream.decodedOf E order) st' decls ∧
-      Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true ∧
-      (∀ ds_pre d ds_suf env_pre,
-        (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList = ds_pre ++ d :: ds_suf →
-        IxVM.Consistency.Installs ds_pre env_pre →
-        Checked calls env_pre d) ∧
-      (∀ a ∈ seeds,
-        IxVM.Consistency.IsBlockAt E₀ a ∨
-        ∃ (k : Ix.Kernel.Key .anon) (d : Ix.Kernel.Declaration .anon)
-          (ci₀ : Ix.Kernel.ConstantInfo .anon),
-          IxVM.Refinement.AddressKey b a k ∧ ci₀.name = k ∧
-          d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList ∧
-          ci₀ ∈ IxVM.Consistency.installs d) := by
-  let E := subEnv E₀ Keep supp
-  let S := fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
-  let order := closureOrderByRank t E S (twoTierRank Wk rank iblock)
-  refine ⟨E, order, pre, st', decls,
-    subEnv_draws E₀ Keep supp hsupp_rec,
-    subEnv_withProj_usedClosureOrderAt t E₀ Keep supp S iblock
-      hwk_keep hwk_step hwk_rec hextra_kind hextra_refs,
-    hpre,
-    fun a lc hget => (subEnv_consts_authentic_exact hload hexact₀ hsupp_auth hget).1,
-    fun a bytes hget => (hload.2 a bytes hget).2,
-    fun a _ lc hget => (subEnv_consts_authentic_exact hload hexact₀ hsupp_auth hget).2,
-    hreads, hkeeps, hchk, hseeds⟩
+theorem addBlobSupplements_get?_of_contains (m₀ : Std.HashMap _root_.Address ByteArray) :
+    ∀ (blobs : List (_root_.Address × ByteArray)) {x : _root_.Address},
+      m₀.contains x = true →
+      (addBlobSupplements m₀ blobs).get? x = m₀.get? x
+  | [], _, _ => rfl
+  | (a, _) :: rest, x, hcx => by
+    simp only [addBlobSupplements]
+    have ih := addBlobSupplements_get?_of_contains m₀ rest hcx
+    split
+    · exact ih
+    · rename_i hca
+      have hne : a ≠ x := by
+        intro heq
+        rw [heq, hcx] at hca
+        exact hca rfl
+      have hbe : (a == x) = false := beq_eq_false_iff_ne.mpr hne
+      rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, hbe,
+        ← Std.HashMap.get?_eq_getElem?]
+      exact ih
 
-/-! ## Prelude standalone recursor supplements (`preludeRecSupp`) -/
+theorem addBlobSupplements_get?_some_inv (m₀ : Std.HashMap _root_.Address ByteArray) :
+    ∀ (blobs : List (_root_.Address × ByteArray)) {x : _root_.Address} {bytes : ByteArray},
+      (addBlobSupplements m₀ blobs).get? x = some bytes →
+      m₀.get? x = some bytes ∨ (m₀.contains x = false ∧ (x, bytes) ∈ blobs)
+  | [], _, _, h => Or.inl h
+  | (a, b₀) :: rest, x, bytes, h => by
+    simp only [addBlobSupplements] at h
+    split at h
+    · rcases addBlobSupplements_get?_some_inv m₀ rest h with hm | ⟨hnc, hmem⟩
+      · exact Or.inl hm
+      · exact Or.inr ⟨hnc, List.mem_cons_of_mem _ hmem⟩
+    · rename_i hca
+      rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
+      split at h
+      · rename_i heq
+        injection h with hb
+        subst hb
+        have hax : a = x := beq_iff_eq.mp heq
+        subst hax
+        exact Or.inr ⟨Bool.eq_false_iff.mpr hca, List.mem_cons_self⟩
+      · rw [← Std.HashMap.get?_eq_getElem?] at h
+        rcases addBlobSupplements_get?_some_inv m₀ rest h with hm | ⟨hnc, hmem⟩
+        · exact Or.inl hm
+        · exact Or.inr ⟨hnc, List.mem_cons_of_mem _ hmem⟩
 
-private theorem mem_of_lookup_some {α β : Type} [BEq α] [LawfulBEq α] :
-    ∀ {ls : List (α × β)} {k : α} {v : β}, ls.lookup k = some v → (k, v) ∈ ls
-  | [], _, _, h => nomatch h
-  | (a, b) :: tl, k, v, h => by
-    simp only [List.lookup] at h
-    cases hbeq : (k == a) with
-    | true =>
-      rw [hbeq] at h
-      injection h with hbv
-      subst hbv
-      rw [beq_iff_eq.mp hbeq]
-      exact List.mem_cons_self
-    | false =>
-      rw [hbeq] at h
-      exact List.mem_cons_of_mem _ (mem_of_lookup_some h)
+theorem addBlobSupplements_get?_of_mem_nodup (m₀ : Std.HashMap _root_.Address ByteArray) :
+    ∀ {blobs : List (_root_.Address × ByteArray)} {x : _root_.Address} {bytes : ByteArray},
+      (blobs.map Prod.fst).Nodup → (x, bytes) ∈ blobs → m₀.contains x = false →
+      (addBlobSupplements m₀ blobs).get? x = some bytes
+  | [], _, _, _, hm, _ => nomatch hm
+  | (a, b₀) :: rest, x, bytes, hnd, hm, hnc => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    rcases List.mem_cons.mp hm with heq | htl
+    · cases heq
+      simp only [addBlobSupplements, hnc, Bool.false_eq_true, ↓reduceIte,
+        Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, beq_self_eq_true]
+    · have hax : a ≠ x := by
+        intro heq
+        subst heq
+        exact hnd.1 (List.mem_map.mpr ⟨(a, bytes), htl, rfl⟩)
+      have ih := addBlobSupplements_get?_of_mem_nodup m₀ hnd.2 htl hnc
+      simp only [addBlobSupplements]
+      split
+      · exact ih
+      · have hbe : (a == x) = false := beq_eq_false_iff_ne.mpr hax
+        rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, hbe,
+          ← Std.HashMap.get?_eq_getElem?]
+        exact ih
 
-/-- For a `.recr` constant `c` in `records`, extract the inductive block owning `c.refs[0]?`. -/
-def preludeRecOwner? (records : List (_root_.Address × Ixon.Constant))
-    (c : Ixon.Constant) : Option _root_.Address :=
-  match c.info with
-  | .recr _ =>
-    match c.refs[0]? with
-    | some r => (records.lookup r).map (Ix.Cert.ownerOf r)
-    | none => none
-  | _ => none
+/-- Role-closure record supplements extracted from `(E_role, order_role)`. -/
+def roleSuppOf (E_role : Ixon.Env) (order_role : List _root_.Address) : List SuppEntry :=
+  order_role.filterMap fun a =>
+    match E_role.consts.get? a, Ix.Cert.recordAt E_role a with
+    | some lc, some c => some (a, lc.rawBytes, c)
+    | _, _ => none
 
-private def decodeRawPreludeRow (row : String × String) :
-    Option (_root_.Address × Ixon.Constant) := do
-  let a ← Ix.Kernel.Reader.addressOfHex row.1
-  let b ← bytesOfHex row.2
-  match Ixon.deConstantExact b with
-  | .ok c => some (a, c)
-  | .error _ => none
-
-private def decodeRawPrelude : Option (List (_root_.Address × Ixon.Constant)) :=
-  Ix.Kernel.Reader.RoleData.prelude.toList.mapM decodeRawPreludeRow
-
-private theorem decodeRawPrelude_of_forall₂ :
-    ∀ {rows : List (String × String)} {out : List (_root_.Address × Ixon.Constant)},
-      List.Forall₂ (fun row (p : _root_.Address × Ixon.Constant) =>
-        (do
-          let some a := Ix.Kernel.Reader.addressOfHex row.1
-            | throw s!"prelude: bad address {row.1}"
-          let some b := bytesOfHex row.2
-            | throw s!"prelude: bad bytes at {row.1}"
-          let c ← (Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
-            Ix.Kernel.Reader.preludeMaxUnivNodes b).mapError
-            (s!"prelude: record {row.1}: " ++ ·)
-          pure (a, c) : Except String (_root_.Address × Ixon.Constant)) = .ok p) rows out →
-      rows.mapM decodeRawPreludeRow = some out
-  | [], [], .nil => rfl
-  | row :: rrest, p :: prest, .cons hhd htl => by
-    have ih := decodeRawPrelude_of_forall₂ htl
-    have hrow : decodeRawPreludeRow row = some p := by
-      unfold decodeRawPreludeRow
-      cases ha : Ix.Kernel.Reader.addressOfHex row.1 with
-      | none => simp [ha] at hhd
-      | some a =>
-        cases hb : bytesOfHex row.2 with
-        | none => simp [ha, hb] at hhd
-        | some b =>
-          simp only [ha, hb] at hhd
-          obtain ⟨c, hdc, hpure⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hhd
-          cases hpure
-          cases hcan : Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
-              Ix.Kernel.Reader.preludeMaxUnivNodes b with
-          | error e => simp [hcan, Except.mapError] at hdc
-          | ok c' =>
-            simp only [hcan, Except.mapError, Except.ok.injEq] at hdc
-            subst hdc
-            have hbd := (Ixon.Verify.Canonical.deConstant_spec _ _ _ _ hcan).1
-            have hex := (Ixon.Verify.BoundedConstant.deConstant_spec _ _ _ _ hbd).2.2
-            simp [bind, Option.bind, hex]
-    simp [List.mapM_cons, hrow, ih, bind, Option.bind, pure]
-
-private theorem decodeRawPrelude_eq_of_preludeFor {t : Ix.Kernel.RoleTable}
-    {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre) :
-    decodeRawPrelude = some pre.records.toList := by
-  obtain ⟨hpr, _⟩ := Ix.Cert.ReaderFallback.preludeFor_records hpre
-  unfold Ix.Kernel.Reader.preludeRecords Ix.Kernel.Reader.decodeCommitted at hpr
-  rw [Array.mapM_eq_mapM_toList] at hpr
-  simp only [Functor.map, Except.map] at hpr
-  split at hpr
-  · cases hpr
-  · rename_i ys hr
-    cases hpr
-    simpa [decodeRawPrelude] using
-      decodeRawPrelude_of_forall₂ (Ix.CompileCert.Loop.mapM_forall₂ _ hr)
-
-private def preludeRecsSelfContainedBool : Bool :=
-  match decodeRawPrelude with
-  | none => false
-  | some ls =>
-    ls.all fun (a, c) =>
-      match c.info with
-      | .recr _ =>
-        match preludeRecOwner? ls c with
-        | some b =>
-          (b != a) &&
-          (ls.lookup b).isSome &&
-          c.refs.toList.all fun r =>
-            match ls.lookup r with
-            | some cr => Ix.Cert.ownerOf r cr == b
-            | none => false
-        | none => false
-      | _ => true
-
-set_option maxHeartbeats 1000000 in
-set_option maxRecDepth 8000 in
-private theorem preludeRecsSelfContained_ok : preludeRecsSelfContainedBool = true := by
-  decide +kernel
-
-/-- Every `.recr` record `(a, c)` in `pre.records` has a unique owner block `b ≠ a` in
-`pre.records` (`preludeRecOwner? pre.records.toList c = some b`), and every reference `r` in
-`c.refs` resolves in `pre.records` to a projection record with `Ix.Cert.ownerOf r cr = b`. -/
-theorem preludeRecOwner_spec {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
-    {a : _root_.Address} {c : Ixon.Constant} {recVal : Ixon.Recursor}
-    (hmem : (a, c) ∈ pre.records.toList) (hinfo : c.info = .recr recVal) :
-    ∃ b cb, preludeRecOwner? pre.records.toList c = some b ∧
-      b ≠ a ∧
-      (b, cb) ∈ pre.records.toList ∧
-      ∀ r ∈ c.refs.toList, ∃ cr, (r, cr) ∈ pre.records.toList ∧ Ix.Cert.ownerOf r cr = b := by
-  have hdec := decodeRawPrelude_eq_of_preludeFor hpre
-  have hchk := preludeRecsSelfContained_ok
-  unfold preludeRecsSelfContainedBool at hchk
-  rw [hdec] at hchk
-  have hrow := List.all_eq_true.mp hchk (a, c) hmem
-  simp only [hinfo] at hrow
-  cases hown : preludeRecOwner? pre.records.toList c with
-  | none => rw [hown] at hrow; cases hrow
-  | some b =>
-    rw [hown, Bool.and_eq_true, Bool.and_eq_true, bne_iff_ne] at hrow
-    obtain ⟨⟨hne, hisSome⟩, hall_refs⟩ := hrow
-    obtain ⟨cb, hlookup_b⟩ := Option.isSome_iff_exists.mp hisSome
-    refine ⟨b, cb, rfl, hne, mem_of_lookup_some hlookup_b, fun r hr => ?_⟩
-    have hr_ok := List.all_eq_true.mp hall_refs r hr
-    cases hlr : pre.records.toList.lookup r with
-    | none => rw [hlr] at hr_ok; cases hr_ok
-    | some cr =>
-      rw [hlr, beq_iff_eq] at hr_ok
-      exact ⟨cr, mem_of_lookup_some hlr, hr_ok⟩
-
-/-- Supplement list supplying committed prelude `.recr` records `(a, serConstant c, c)` whose
-prelude inductive block satisfies `KeepBlock`. -/
-noncomputable def preludeRecSupp (pre : Ix.Kernel.Reader.Prelude .anon)
-    (KeepBlock : _root_.Address → Prop) : List SuppEntry :=
-  letI := Classical.propDecidable
-  pre.records.toList.filterMap fun (a, c) =>
-    match preludeRecOwner? pre.records.toList c with
-    | some b => if KeepBlock b then some (a, Ixon.serConstant c, c) else none
-    | none => none
-
-theorem mem_preludeRecSupp_iff {pre : Ix.Kernel.Reader.Prelude .anon}
-    {KeepBlock : _root_.Address → Prop} {a : _root_.Address} {raw : ByteArray}
-    {c : Ixon.Constant} :
-    (a, raw, c) ∈ preludeRecSupp pre KeepBlock ↔
-      ∃ b, (a, c) ∈ pre.records.toList ∧
-        preludeRecOwner? pre.records.toList c = some b ∧
-        KeepBlock b ∧ raw = Ixon.serConstant c := by
-  classical
-  simp only [preludeRecSupp, List.mem_filterMap, Prod.exists]
+theorem mem_roleSuppOf_iff {E_role : Ixon.Env} {order_role : List _root_.Address}
+    {a : _root_.Address} {raw : ByteArray} {c : Ixon.Constant} :
+    (a, raw, c) ∈ roleSuppOf E_role order_role ↔
+      a ∈ order_role ∧ ∃ lc, E_role.consts.get? a = some lc ∧
+        Ix.Cert.recordAt E_role a = some c ∧ lc.rawBytes = raw := by
+  simp only [roleSuppOf, List.mem_filterMap]
   constructor
-  · rintro ⟨a', c', hm, hfn⟩
-    cases hown : preludeRecOwner? pre.records.toList c' with
-    | none => simp [hown] at hfn
-    | some b =>
-      simp only [hown] at hfn
-      split_ifs at hfn with hkb
-      · injection hfn with htuple
-        injection htuple with ha hrest
+  · rintro ⟨a', ha', hfn⟩
+    cases hget : E_role.consts.get? a' with
+    | none => simp [hget] at hfn
+    | some lc =>
+      cases hrec : Ix.Cert.recordAt E_role a' with
+      | none => simp [hget, hrec] at hfn
+      | some c' =>
+        simp only [hget, hrec, Option.some.injEq] at hfn
+        injection hfn with ha hrest
         injection hrest with hraw hc
         subst ha; subst hraw; subst hc
-        exact ⟨b, hm, hown, hkb, rfl⟩
-  · rintro ⟨b, hm, hown, hkb, rfl⟩
-    refine ⟨a, c, hm, ?_⟩
-    simp [hown, hkb]
+        exact ⟨ha', lc, hget, hrec, rfl⟩
+  · rintro ⟨ha, lc, hget, hrec, rfl⟩
+    exact ⟨a, ha, by simp [hget, hrec]⟩
 
-theorem preludeRecSupp_isRecursorRecord {pre : Ix.Kernel.Reader.Prelude .anon}
-    {KeepBlock : _root_.Address → Prop} {entry : SuppEntry}
-    (hm : entry ∈ preludeRecSupp pre KeepBlock) :
-    IxVM.Refinement.IsRecursorRecord entry.2.2 := by
-  rcases entry with ⟨a, raw, c⟩
-  obtain ⟨b, _, hown, _, _⟩ := mem_preludeRecSupp_iff.mp hm
-  unfold preludeRecOwner? at hown
-  cases hinfo : c.info <;> simp [hinfo, IxVM.Refinement.IsRecursorRecord] at hown ⊢
+theorem roleSuppOf_nodup {E_role : Ixon.Env} {order_role : List _root_.Address}
+    (hnd : order_role.Nodup) :
+    ((roleSuppOf E_role order_role).map (·.1)).Nodup := by
+  unfold roleSuppOf
+  induction order_role with
+  | nil => exact List.nodup_nil
+  | cons a rest ih =>
+    rw [List.nodup_cons] at hnd
+    simp only [List.filterMap_cons]
+    cases hget : E_role.consts.get? a with
+    | none => exact ih hnd.2
+    | some lc =>
+      cases hrec : Ix.Cert.recordAt E_role a with
+      | none => exact ih hnd.2
+      | some c =>
+        rw [List.map_cons, List.nodup_cons]
+        refine ⟨?_, ih hnd.2⟩
+        intro hm
+        obtain ⟨⟨a', raw', c'⟩, hm_fm, rfl⟩ := List.mem_map.mp hm
+        have hm_all : (a', raw', c') ∈ roleSuppOf E_role rest := hm_fm
+        exact hnd.1 (mem_roleSuppOf_iff.mp hm_all).1
 
-theorem preludeRecSupp_nodup {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
-    (KeepBlock : _root_.Address → Prop) :
-    ((preludeRecSupp pre KeepBlock).map (·.1)).Nodup := by
-  classical
-  have hkeys := Ix.Cert.ReaderFallback.preludeFor_keys hpre
-  rw [Array.toList_append, List.map_append, List.nodup_append] at hkeys
-  have hpre_nd : (pre.records.toList.map Prod.fst).Nodup := hkeys.1
-  unfold preludeRecSupp
-  have hsub : ∀ ls : List (_root_.Address × Ixon.Constant),
-      (ls.map Prod.fst).Nodup →
-      ((ls.filterMap fun (a, c) =>
-        match preludeRecOwner? pre.records.toList c with
-        | some b => if KeepBlock b then some (a, Ixon.serConstant c, c) else none
-        | none => none).map (·.1)).Nodup := by
-    intro ls hnd
-    induction ls with
-    | nil => exact List.nodup_nil
-    | cons hd tl ih =>
-      rcases hd with ⟨a, c⟩
-      rw [List.map_cons, List.nodup_cons] at hnd
-      cases hown : preludeRecOwner? pre.records.toList c with
-      | none =>
-        simp only [List.filterMap_cons, hown]
-        exact ih hnd.2
-      | some b =>
-        simp only [List.filterMap_cons, hown]
-        split_ifs
-        · rw [List.map_cons, List.nodup_cons]
-          refine ⟨?_, ih hnd.2⟩
-          intro hmem
-          obtain ⟨⟨a', _, c'⟩, hm_fm, rfl⟩ := List.mem_map.mp hmem
-          obtain ⟨⟨a'', c''⟩, hm_tl, hfn⟩ := List.mem_filterMap.mp hm_fm
-          dsimp only at hfn
-          cases hown' : preludeRecOwner? pre.records.toList c'' with
-          | none => simp [hown'] at hfn
-          | some b' =>
-            simp only [hown'] at hfn
-            split_ifs at hfn
-            injection hfn with ht
-            injection ht with ha_eq _
-            subst ha_eq
-            exact hnd.1 (List.mem_map.mpr ⟨(a'', c''), hm_tl, rfl⟩)
-        · exact ih hnd.2
-  exact hsub pre.records.toList hpre_nd
+/-! ## Role-aware sub-environment (`subEnvRole`) and `DrawsRoleLocal` -/
 
-/-! ## Core-backing environment (`coreEnv`) extending `subEnv` with committed fallback records -/
+/-- Role-aware sub-environment keeping `Keep` from `E₀.consts`, adding `supp` at addresses absent
+from `E₀.consts`, overlaying `roleBlobs` onto `E₀.blobs`, and setting `anonHints := {}`.
+Note that `(subEnvRole E₀ Keep supp roleBlobs).consts = (subEnv E₀ Keep supp).consts`
+definitionally, so all `subEnv` constant/record lemmas apply directly. -/
+noncomputable def subEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
+    (supp : List SuppEntry) (roleBlobs : List (_root_.Address × ByteArray)) : Ixon.Env where
+  consts := addSupplements E₀.consts (restrictConsts E₀.consts Keep) supp
+  blobs := addBlobSupplements E₀.blobs roleBlobs
+  anonHints := {}
+  roleBinding := none
 
-/-- All committed fallback records (`pre.records ++ pre.evidence`) packaged as `SuppEntry` items. -/
-def fallbackSupp (pre : Ix.Kernel.Reader.Prelude .anon) : List SuppEntry :=
-  (pre.records ++ pre.evidence).toList.map fun (a, c) => (a, Ixon.serConstant c, c)
+@[simp]
+theorem hintsOf_subEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
+    (supp : List SuppEntry) (roleBlobs : List (_root_.Address × ByteArray)) :
+    Ix.Cert.hintsOf (subEnvRole E₀ Keep supp roleBlobs) = fun _ => none := by
+  funext r
+  simp [Ix.Cert.hintsOf, subEnvRole]
 
-/-- Core-backing `Ixon.Env` extending `subEnv E₀ Keep supp` with every record in
-`pre.records ++ pre.evidence`, so `Core.LoadFacts`, `Core.Good`, and `L1.EnvDecoded` hold
-simultaneously across stream and prelude/evidence constants. -/
-noncomputable def coreEnv (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
-    (supp : List SuppEntry) (pre : Ix.Kernel.Reader.Prelude .anon) : Ixon.Env :=
-  subEnv E₀
-    (fun x => Keep x ∨ ∃ c, (x, c) ∈ pre.records ++ pre.evidence)
-    (supp ++ fallbackSupp pre)
-
-theorem fallbackSupp_nodup {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre) :
-    ((fallbackSupp pre).map (·.1)).Nodup := by
-  have hkeys := Ix.Cert.ReaderFallback.preludeFor_keys hpre
-  unfold fallbackSupp
-  rwa [List.map_map, show ((fun x : SuppEntry => x.1) ∘
-    fun (p : _root_.Address × Ixon.Constant) => (p.1, Ixon.serConstant p.2, p.2)) = Prod.fst from rfl]
-
-/-- **`Core.Good` on `coreEnv E₀ Keep supp pre`** from `RolePreludeInputs` and
-`¬ V.HashedCollision extra calls`. -/
-theorem coreEnv_good (hRP : RolePreludeInputs)
-    {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)} {E₀ : Ixon.Env}
-    {Keep : _root_.Address → Prop} {supp : List SuppEntry}
-    {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
-    (env : Ix.Kernel.Env .anon) (lim : Option Nat)
-    (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
-    (hload : IxVM.Consistency.LoadedBy calls E₀)
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
-    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
-      _root_.Address.blake3Pure raw = a ∧
-      (V.Preimage a raw ∨ IxVM.Refinement.Hashed calls raw ∨
-        (raw ∈ extra ∧ a ≠ Ix.HostAdmission.Merkle.padding)))
-    (hnoCol : ¬ V.HashedCollision extra calls)
-    (hbound : IxVM.Consistency.Bounded calls) :
-    Core.Good ⟨coreEnv E₀ Keep supp pre, env, t, lim⟩ calls := by
-  apply good_subEnv_of_noCollision env t lim hload _ hnoCol hbound
-  intro a raw c hm
-  rcases List.mem_append.mp hm with h1 | h2
-  · exact hsupp a raw c h1
-  · unfold fallbackSupp at h2
-    obtain ⟨⟨a', c'⟩, hmem, heq⟩ := List.mem_map.mp h2
-    injection heq with ha hrest
-    injection hrest with hraw hc
-    subst ha; subst hraw; subst hc
-    obtain ⟨himg, hblk, _, hnotPad⟩ :=
-      hRP.serConstant_mem_committedImages hpre (Array.mem_toList_iff.mp hmem)
-    exact ⟨hblk, Or.inr (Or.inr ⟨hcomm_extra _ himg, hnotPad⟩)⟩
-
-/-- **`L1.EnvDecoded` on `coreEnv E₀ Keep supp pre`** from `Claim.WalkedL6` and exact-decoded
-supplements. -/
-theorem coreEnv_envDecoded (hRP : RolePreludeInputs)
-    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
-    {seeds : List _root_.Address} {Keep : _root_.Address → Prop} {supp : List SuppEntry}
-    {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
-    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
-    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → Ixon.deConstantExact raw = .ok c) :
-    L1.EnvDecoded (coreEnv E₀ Keep supp pre) := by
-  apply subEnv_envDecoded_of_walkedL6 _ hwalk
-  intro a raw c hm
-  rcases List.mem_append.mp hm with h1 | h2
-  · exact hsupp a raw c h1
-  · unfold fallbackSupp at h2
-    obtain ⟨⟨a', c'⟩, hmem, heq⟩ := List.mem_map.mp h2
-    injection heq with ha hrest
-    injection hrest with hraw hc
-    subst ha; subst hraw; subst hc
-    obtain ⟨_, _, hwf, _⟩ :=
-      hRP.serConstant_mem_committedImages hpre (Array.mem_toList_iff.mp hmem)
-    exact Ixon.Verify.deConstantExact_serConstant c' hwf
-
-private theorem addSupplements_append_left
+theorem addSupplements_append_left
     (m₀ base : Std.HashMap _root_.Address Ixon.LazyConstant) :
     ∀ {supp₁ : List SuppEntry} (supp₂ : List SuppEntry)
       {x : _root_.Address} {raw : ByteArray} {c : Ixon.Constant},
@@ -852,27 +689,461 @@ private theorem addSupplements_append_left
           ← Std.HashMap.get?_eq_getElem?]
         exact ih
 
-/-- Every record in `subEnv E₀ Keep supp` (when `(supp.map (·.1)).Nodup`) is also stored identically
-in `coreEnv E₀ Keep supp pre`. -/
-theorem recordAt_coreEnv_of_subEnv {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
-    {supp : List SuppEntry} {pre : Ix.Kernel.Reader.Prelude .anon}
+/-- **`DrawsRoleLocal` for `subEnvRole`** when every supplement entry comes from `V.env.consts` or
+is a recursor record, and every supplemented blob comes from `V.env.blobs`. -/
+theorem subEnvRole_drawsRoleLocal {E₀ E_view : Ixon.Env} (Keep : _root_.Address → Prop)
+    (supp : List SuppEntry) (roleBlobs : List (_root_.Address × ByteArray))
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
+      (∃ lcV, E_view.consts.get? a = some lcV ∧ lcV.rawBytes = raw) ∨
+        IxVM.Refinement.IsRecursorRecord c)
+    (hblobs : ∀ a bytes, (a, bytes) ∈ roleBlobs → E_view.blobs.get? a = some bytes) :
+    DrawsRoleLocal (subEnvRole E₀ Keep supp roleBlobs) E₀ E_view := by
+  refine ⟨fun a lc hget => ?_, fun a bytes hblob => ?_⟩
+  · rcases subEnv_get?_some_inv E₀ Keep supp hget with ⟨_, hget₀⟩ | ⟨hnc, raw, c, hm, rfl⟩
+    · exact Or.inl ⟨lc, hget₀, rfl⟩
+    · refine Or.inr ⟨hnc, ?_⟩
+      rcases hsupp a raw c hm with ⟨lcV, hgetV, hrawV⟩ | hrec
+      · exact Or.inl ⟨lcV, hgetV, hrawV⟩
+      · exact Or.inr ⟨c, Claim.mkLazy_get? raw c, hrec⟩
+  · rcases addBlobSupplements_get?_some_inv E₀.blobs roleBlobs hblob with hget₀ | ⟨hnc, hm⟩
+    · exact Or.inl hget₀
+    · exact Or.inr ⟨hnc, hblobs a bytes hm⟩
+
+/-- Authenticated records/blobs and exact decoding on `subEnvRole`. -/
+theorem subEnvRole_authentic_exact {calls : List (Call F)} {E₀ : Ixon.Env}
+    {Keep : _root_.Address → Prop} {supp : List SuppEntry}
+    {roleBlobs : List (_root_.Address × ByteArray)}
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
+      _root_.Address.blake3Pure raw = a ∧ Ixon.deConstantExact raw = .ok c)
+    (hblobs : ∀ a bytes, (a, bytes) ∈ roleBlobs → _root_.Address.blake3Pure bytes = a) :
+    (∀ a lc, (subEnvRole E₀ Keep supp roleBlobs).consts.get? a = some lc →
+      _root_.Address.blake3Pure lc.rawBytes = a ∧
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c) ∧
+    (∀ a bytes, (subEnvRole E₀ Keep supp roleBlobs).blobs.get? a = some bytes →
+      _root_.Address.blake3Pure bytes = a) := by
+  refine ⟨fun a lc hget => subEnv_consts_authentic_exact hload hexact₀ hsupp hget,
+    fun a bytes hblob => ?_⟩
+  rcases addBlobSupplements_get?_some_inv E₀.blobs roleBlobs hblob with hget₀ | ⟨_, hm⟩
+  · exact (hload.2 a bytes hget₀).2
+  · exact hblobs a bytes hm
+
+/-- Under `¬ V.HashedCollision extra calls`, `subEnvRole` agrees with `E_role` on every record in
+`order_role` and every blob in `blobsOf E_role order_role`. -/
+theorem subEnvRole_agrees_on_role
+    {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
+    {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+    {E₀ E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    {Keep : _root_.Address → Prop} (hkeep_role : ∀ a ∈ order_role, Keep a)
+    (extraRec : List SuppEntry) :
+    let E := subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+      (Ix.Cert.blobsOf E_role order_role)
+    (∀ a ∈ order_role, Ix.Cert.recordAt E a = Ix.Cert.recordAt E_role a ∧
+      E.consts.contains a = true) ∧
+    (∀ a bytes, (a, bytes) ∈ Ix.Cert.blobsOf E_role order_role →
+      E.blobs.get? a = some bytes) := by
+  intro E
+  refine ⟨fun a ha => ?_, fun a bytes hm => ?_⟩
+  · obtain ⟨lc_r, c_r, hget_r, _, hrec_r, hblk_r, _, _, hex_r, hpreV⟩ := hadm.order_record_spec ha
+    have hrec_eq : Ix.Cert.recordAt E a = some c_r := by
+      cases hget₀ : E₀.consts.get? a with
+      | some lc₀ =>
+        obtain ⟨hh₀, hblk₀⟩ := hload.1 a lc₀ hget₀
+        have hraw_eq : lc₀.rawBytes = lc_r.rawBytes := by
+          by_contra hne
+          exact hnoCol (Or.inl ⟨a, lc_r.rawBytes, lc₀.rawBytes, Or.inl hpreV, hh₀, hne, hblk₀⟩)
+        obtain ⟨c₀, hlc₀_c, hex₀⟩ := hexact₀ a lc₀ hget₀
+        rw [hraw_eq, hex_r] at hex₀
+        injection hex₀ with hceq
+        subst hceq
+        have hrec₀ : Ix.Cert.recordAt E₀ a = some c₀ := by
+          unfold Ix.Cert.recordAt
+          rw [hget₀]
+          exact hlc₀_c
+        exact recordAt_subEnv_of_keep E₀ Keep _ (hkeep_role a ha) hrec₀
+      | none =>
+        have hnc : E₀.consts.contains a = false := by
+          rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hget₀]
+          rfl
+        have hm_supp : (a, lc_r.rawBytes, c_r) ∈ roleSuppOf E_role order_role :=
+          mem_roleSuppOf_iff.mpr ⟨ha, lc_r, hget_r, hrec_r, rfl⟩
+        have hgetE := addSupplements_append_left E₀.consts (restrictConsts E₀.consts Keep) extraRec
+          (roleSuppOf_nodup hadm.closureOrder.nodup) hm_supp hnc
+        unfold Ix.Cert.recordAt
+        change (E.consts.get? a >>= Ixon.LazyConstant.get?) = some c_r
+        rw [show E.consts = addSupplements E₀.consts (restrictConsts E₀.consts Keep)
+          (roleSuppOf E_role order_role ++ extraRec) from rfl, hgetE]
+        rfl
+    exact ⟨hrec_eq.trans hrec_r.symm, contains_of_recordAt hrec_eq⟩
+  · obtain ⟨hnd_blobs, hblob_spec⟩ := hadm.blobs_spec
+    obtain ⟨hblk_b, _, _, hpreV_b⟩ := hblob_spec a bytes hm
+    cases hget_b0 : E₀.blobs.get? a with
+    | some b₀ =>
+      obtain ⟨hh₀, hblk₀⟩ := hload.2 a b₀ hget_b0
+      have hbeq : b₀ = bytes := by
+        by_contra hne
+        exact hnoCol (Or.inl ⟨a, bytes, b₀, Or.inl hpreV_b, hh₀, hne, hblk₀⟩)
+      subst hbeq
+      have hcont : E₀.blobs.contains a = true := by
+        rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hget_b0]
+        rfl
+      change (addBlobSupplements E₀.blobs (Ix.Cert.blobsOf E_role order_role)).get? a = some b₀
+      rw [addBlobSupplements_get?_of_contains E₀.blobs _ hcont]
+      exact hget_b0
+    | none =>
+      have hnc : E₀.blobs.contains a = false := by
+        rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hget_b0]
+        rfl
+      exact addBlobSupplements_get?_of_mem_nodup E₀.blobs hnd_blobs hm hnc
+
+/-! ## Stratified rank (`roleTwoTierRank`) and `UsedClosureOrderAt` on `subEnvRole` -/
+
+/-- Stratified rank placing `order_role` first (ordered by `order_role.idxOf`) and all non-role
+records after `order_role.length` (ordered by `twoTierRank Wk rank iblock`). -/
+noncomputable def roleTwoTierRank (order_role : List _root_.Address)
+    (Wk : _root_.Address → Prop) (rank : _root_.Address → Nat)
+    (iblock : _root_.Address → _root_.Address) (a : _root_.Address) : Nat :=
+  if a ∈ order_role then
+    order_role.idxOf a
+  else
+    order_role.length + twoTierRank Wk rank iblock a
+
+private theorem idxOf_lt_of_pairwise {α : Type} [DecidableEq α] {R : α → α → Prop} :
+    ∀ {xs : List α} {a b : α},
+      xs.Pairwise R → a ∈ xs → b ∈ xs → ¬ R a b → a ≠ b →
+      xs.idxOf b < xs.idxOf a
+  | [], _, _, _, ha, _, _, _ => nomatch ha
+  | x :: tl, a, b, hpw, ha, hb, hnot, hne => by
+    rw [List.pairwise_cons] at hpw
+    by_cases hbx : b = x
+    · subst hbx
+      simp only [List.idxOf_cons, beq_self_eq_true, ↓reduceIte,
+        beq_eq_false_iff_ne.mpr hne.symm]
+      omega
+    · by_cases hax : a = x
+      · subst hax
+        have hb_tl : b ∈ tl := by
+          rcases List.mem_cons.mp hb with rfl | htl
+          · exact absurd rfl hbx
+          · exact htl
+        exact absurd (hpw.1 b hb_tl) hnot
+      · have ha_tl : a ∈ tl := by
+          rcases List.mem_cons.mp ha with rfl | htl
+          · exact absurd rfl hax
+          · exact htl
+        have hb_tl : b ∈ tl := by
+          rcases List.mem_cons.mp hb with rfl | htl
+          · exact absurd rfl hbx
+          · exact htl
+        have ih := idxOf_lt_of_pairwise hpw.2 ha_tl hb_tl hnot hne
+        simp only [List.idxOf_cons, beq_eq_false_iff_ne.mpr hbx.symm,
+          beq_eq_false_iff_ne.mpr hax.symm, Bool.false_eq_true, ↓reduceIte]
+        omega
+
+/-- **`UsedClosureOrderAt` on `subEnvRole`** under `roleTwoTierRank`. -/
+theorem subEnvRole_usedClosureOrderAt
+    {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
+    {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+    {E₀ E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (Keep : _root_.Address → Prop) (extraRec : List SuppEntry) (S : _root_.Address → Prop)
+    {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
+    (iblock : _root_.Address → _root_.Address)
+    (hkeep_role : ∀ a ∈ order_role, Keep a)
+    (hwk_keep : ∀ x, Wk x → Keep x)
+    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
+    (hextra_kind : ∀ x c, x ∉ order_role → ¬ Wk x →
+      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+        (Ix.Cert.blobsOf E_role order_role)) x = some c →
+      IxVM.Refinement.IsRecursorRecord c ∨
+        (c.sharing = #[] ∧ c.refs = #[] ∧ Ix.Cert.ownerOf x c ≠ x ∧
+          (Ix.Cert.ownerOf x c ∈ order_role ∨
+            Wk (Ix.Cert.ownerOf x c) ∨
+            ∃ co, Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+              (Ix.Cert.blobsOf E_role order_role)) (Ix.Cert.ownerOf x c) = some co ∧
+              IxVM.Refinement.IsRecursorRecord co)))
+    (hextra_refs : ∀ a c, a ∉ order_role → ¬ Wk a →
+      Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+        (Ix.Cert.blobsOf E_role order_role)) a = some c →
+      IxVM.Refinement.IsRecursorRecord c →
+      ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r cr,
+        c.refs[i]? = some r →
+        Ix.Cert.recordAt (subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+          (Ix.Cert.blobsOf E_role order_role)) r = some cr →
+        Ix.Cert.ownerOf r cr ≠ a →
+        Ix.Cert.ownerOf r cr ∉ order_role →
+        (Wk (Ix.Cert.ownerOf r cr) ∧ rank (Ix.Cert.ownerOf r cr) ≤ rank (iblock a)) ∨
+          (¬ Wk (Ix.Cert.ownerOf r cr) ∧ rank (iblock (Ix.Cert.ownerOf r cr)) < rank (iblock a))) :
+    let E := subEnvRole E₀ Keep (roleSuppOf E_role order_role ++ extraRec)
+      (Ix.Cert.blobsOf E_role order_role)
+    IxVM.Consistency.UsedClosureOrderAt t E S
+      (closureOrderByRank t E S (roleTwoTierRank order_role Wk rank iblock)) := by
+  intro E
+  have hagree := (subEnvRole_agrees_on_role hadm hload hexact₀ hnoCol hkeep_role extraRec).1
+  have hown : ∀ a c, Ix.Cert.recordAt E a = some c →
+      E.consts.contains (Ix.Cert.ownerOf a c) = true := by
+    intro a c hrec
+    by_cases ha_role : a ∈ order_role
+    · have hrec_role : Ix.Cert.recordAt E_role a = some c := (hagree a ha_role).1.symm.trans hrec
+      by_cases hown_eq : Ix.Cert.ownerOf a c = a
+      · rw [hown_eq]
+        exact (hagree a ha_role).2
+      · have hreach_a := (hadm.closureOrder.complete a).mp ha_role
+        have hreach_o : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t)
+            (Ix.Cert.ownerOf a c) :=
+          .step hreach_a ⟨c, hrec_role, Or.inl ⟨rfl, hown_eq⟩⟩
+        exact (hagree _ ((hadm.closureOrder.complete _).mpr hreach_o)).2
+    · by_cases hwa : Wk a
+      · obtain ⟨c₀, hrec₀⟩ := hwk_rec a hwa
+        have hrec' : Ix.Cert.recordAt E a = some c₀ :=
+          recordAt_subEnv_of_keep E₀ Keep _ (hwk_keep a hwa) hrec₀
+        rw [hrec] at hrec'
+        injection hrec' with hceq
+        subst hceq
+        by_cases hown_eq : Ix.Cert.ownerOf a c = a
+        · rw [hown_eq]
+          exact contains_of_recordAt hrec
+        · obtain ⟨hwb, _⟩ := hwk_step a (Ix.Cert.ownerOf a c) hwa ⟨c, hrec₀, Or.inl ⟨rfl, hown_eq⟩⟩
+          obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
+          exact contains_of_recordAt
+            (recordAt_subEnv_of_keep E₀ Keep _ (hwk_keep _ hwb) hrec_b)
+      · rcases hextra_kind a c ha_role hwa hrec with hrec_k | ⟨_, _, _, hown_cls⟩
+        · rw [isRecursorRecord_ownerOf_eq a hrec_k]
+          exact contains_of_recordAt hrec
+        · rcases hown_cls with hrole | hwb | ⟨co, hrec_o, _⟩
+          · exact (hagree _ hrole).2
+          · obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
+            exact contains_of_recordAt
+              (recordAt_subEnv_of_keep E₀ Keep _ (hwk_keep _ hwb) hrec_b)
+          · exact contains_of_recordAt hrec_o
+  refine usedClosureOrderAt_closureOrderByRank hown fun a b _ _ href => ?_
+  by_cases ha_role : a ∈ order_role
+  · obtain ⟨c, hrec_a, i, hi, r, hr, cr, hrec_r, hown_r, hne_ba⟩ := href
+    have hrec_role_a : Ix.Cert.recordAt E_role a = some c := (hagree a ha_role).1.symm.trans hrec_a
+    have hr_cont : E_role.consts.contains r = true := hadm.usedRefs a ha_role c hrec_role_a i hi r hr
+    have hr_mem : r ∈ c.refs := Array.mem_of_getElem? hr
+    have hr_contains : c.refs.contains r = true := Array.contains_iff_mem.mpr hr_mem
+    have hreach_a := (hadm.closureOrder.complete a).mp ha_role
+    have hreach_r : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) r :=
+      .step hreach_a ⟨c, hrec_role_a, Or.inr ⟨hr_contains, hr_cont⟩⟩
+    have hr_role : r ∈ order_role := (hadm.closureOrder.complete r).mpr hreach_r
+    have hrec_role_r : Ix.Cert.recordAt E_role r = some cr := (hagree r hr_role).1.symm.trans hrec_r
+    have hb_role : b ∈ order_role := by
+      by_cases hbr : b = r
+      · rwa [hbr]
+      · exact (hadm.closureOrder.complete b).mpr
+          (.step hreach_r ⟨cr, hrec_role_r, Or.inl ⟨hown_r, hbr⟩⟩)
+    have href_role : Ix.Cert.RecordRef E_role a b :=
+      ⟨c, hrec_role_a, r, hr_mem, cr, hrec_role_r, hown_r, hne_ba⟩
+    have hlt_idx := idxOf_lt_of_pairwise hadm.closureOrder.ordered ha_role hb_role
+      (fun hn => hn href_role) hne_ba.symm
+    simp only [roleTwoTierRank, ha_role, hb_role, ↓reduceIte]
+    exact hlt_idx
+  · by_cases hb_role : b ∈ order_role
+    · have hlt_len : order_role.idxOf b < order_role.length := List.idxOf_lt_length_iff.mpr hb_role
+      simp only [roleTwoTierRank, ha_role, hb_role, ↓reduceIte]
+      omega
+    · simp only [roleTwoTierRank, ha_role, hb_role, ↓reduceIte]
+      by_cases hwa : Wk a
+      · obtain ⟨hwb, hlt⟩ := usedRecordRef_of_wk hwk_keep hwk_step hwk_rec hwa href
+        simp only [twoTierRank, hwa, hwb, ↓reduceIte]
+        omega
+      · obtain ⟨c, hrec_a, i, hi, r, hr, cr, hrec_r, hown_r, hne_ba⟩ := href
+        rcases hextra_kind a c ha_role hwa hrec_a with hrec_k | ⟨_, hrefs_emp, _, _⟩
+        · have hex := hextra_refs a c ha_role hwa hrec_a hrec_k i hi r cr hr hrec_r
+            (by rw [hown_r]; exact hne_ba) (by rwa [hown_r])
+          rw [hown_r] at hex
+          rcases hex with ⟨hwb, hle⟩ | ⟨hnwb, hlt⟩
+          · simp only [twoTierRank, hwa, hwb, ↓reduceIte]
+            omega
+          · simp only [twoTierRank, hwa, hnwb, ↓reduceIte]
+            omega
+        · rw [hrefs_emp] at hr
+          simp at hr
+
+/-! ## Core-backing environment (`coreEnvRole`) for `Core.Good` and `L1.EnvDecoded` -/
+
+/-- All committed fallback records (`pre.records ++ pre.evidence`) packaged as `SuppEntry` items. -/
+def fallbackSupp (pre : Ix.Kernel.Reader.Prelude .anon) : List SuppEntry :=
+  (pre.records ++ pre.evidence).toList.map fun (a, c) => (a, Ixon.serConstant c, c)
+
+theorem fallbackSupp_nodup {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre) :
+    ((fallbackSupp pre).map (·.1)).Nodup := by
+  have hkeys := Ix.Cert.ReaderFallback.preludeFor_keys hpre
+  unfold fallbackSupp
+  rwa [List.map_map, show ((fun x : SuppEntry => x.1) ∘
+    fun (p : _root_.Address × Ixon.Constant) => (p.1, Ixon.serConstant p.2, p.2)) = Prod.fst from rfl]
+
+/-- Core-backing `Ixon.Env` extending `subEnvRole E₀ Keep supp roleBlobs` with every record in
+`pre.records ++ pre.evidence`. -/
+noncomputable def coreEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
+    (supp : List SuppEntry) (roleBlobs : List (_root_.Address × ByteArray))
+    (pre : Ix.Kernel.Reader.Prelude .anon) : Ixon.Env :=
+  subEnvRole E₀
+    (fun x => Keep x ∨ ∃ c, (x, c) ∈ pre.records ++ pre.evidence)
+    (supp ++ fallbackSupp pre)
+    roleBlobs
+
+/-- Preimage lifting for `subEnvRole E₀ Keep supp roleBlobs`. -/
+theorem subEnvRole_preimage_to_view {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {calls : List (Call F)} {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
+    {supp : List SuppEntry} {roleBlobs : List (_root_.Address × ByteArray)}
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
+      _root_.Address.blake3Pure raw = a ∧
+      (V.Preimage a raw ∨ IxVM.Refinement.Hashed calls raw ∨
+        (raw ∈ extra ∧ a ≠ Ix.HostAdmission.Merkle.padding)))
+    (hblobs : ∀ a bytes, (a, bytes) ∈ roleBlobs → V.Preimage a bytes)
+    {x : _root_.Address} {held : ByteArray}
+    (hpre : ({ env := subEnvRole E₀ Keep supp roleBlobs } : IxVM.Refinement.View).Preimage x held) :
+    V.Preimage x held ∨
+      (IxVM.Refinement.Hashed calls held ∧ _root_.Address.blake3Pure held = x) ∨
+      (held ∈ extra ∧ _root_.Address.blake3Pure held = x ∧
+        x ≠ Ix.HostAdmission.Merkle.padding) := by
+  rcases hpre with ⟨lc, hget, rfl⟩ | hblob | ⟨rb, hrb, -, -⟩ | ⟨t, ht, -, -⟩
+  · rcases subEnv_get?_some_inv E₀ Keep supp hget with ⟨_, hget₀⟩ | ⟨_, raw, c, hm, rfl⟩
+    · exact Or.inr (Or.inl (hload.1 x lc hget₀))
+    · simp only [Claim.mkLazy_rawBytes]
+      obtain ⟨hblk, hsrc⟩ := hsupp x raw c hm
+      rcases hsrc with hv | hh | ⟨hex, hne⟩
+      · exact Or.inl hv
+      · exact Or.inr (Or.inl ⟨hh, hblk⟩)
+      · exact Or.inr (Or.inr ⟨hex, hblk, hne⟩)
+  · rcases addBlobSupplements_get?_some_inv E₀.blobs roleBlobs hblob with hget₀ | ⟨_, hm⟩
+    · exact Or.inr (Or.inl (hload.2 x held hget₀))
+    · exact Or.inl (hblobs x held hm)
+  · cases hrb
+  · cases ht
+
+/-- **`Core.Good` on `subEnvRole E₀ Keep supp roleBlobs`** from `¬ V.HashedCollision extra calls`. -/
+theorem good_subEnvRole_of_noCollision {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {calls : List (Call F)} {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
+    {supp : List SuppEntry} {roleBlobs : List (_root_.Address × ByteArray)}
+    (env : Ix.Kernel.Env .anon) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
+      _root_.Address.blake3Pure raw = a ∧
+      (V.Preimage a raw ∨ IxVM.Refinement.Hashed calls raw ∨
+        (raw ∈ extra ∧ a ≠ Ix.HostAdmission.Merkle.padding)))
+    (hblobs : ∀ a bytes, (a, bytes) ∈ roleBlobs → V.Preimage a bytes)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hbound : IxVM.Consistency.Bounded calls) :
+    Core.Good ⟨subEnvRole E₀ Keep supp roleBlobs, env, t, lim⟩ calls := by
+  refine ⟨fun hcol => hnoCol ?_, hbound⟩
+  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
+  · refine Or.inl ⟨x, held, bytes, ?_, hh, hne, hblk⟩
+    rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
+    · rcases subEnvRole_preimage_to_view hload hsupp hblobs hpre with
+        hv | hh' | ⟨hex, hblk_held, -⟩
+      · exact Or.inl hv
+      · exact Or.inr (Or.inr hh')
+      · exact Or.inr (Or.inl ⟨hex, hblk_held⟩)
+    · cases hmem
+    · exact Or.inr (Or.inr hh_held)
+  · rcases hsrc with hpre | hh
+    · rcases subEnvRole_preimage_to_view hload hsupp hblobs hpre with hv | ⟨hh', -⟩ | ⟨-, -, hne⟩
+      · exact Or.inr ⟨bytes, Or.inl hv, hpad⟩
+      · exact Or.inr ⟨bytes, Or.inr hh', hpad⟩
+      · exact absurd rfl hne
+    · exact Or.inr ⟨bytes, Or.inr hh, hpad⟩
+
+/-- **`Core.Good` on `coreEnvRole E₀ Keep supp roleBlobs pre`** from `RolePreludeInputs` and
+`¬ V.HashedCollision extra calls`. -/
+theorem coreEnvRole_good (hRP : RolePreludeInputs)
+    {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)} {E₀ : Ixon.Env}
+    {Keep : _root_.Address → Prop} {supp : List SuppEntry}
+    {roleBlobs : List (_root_.Address × ByteArray)}
+    {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
+    (env : Ix.Kernel.Env .anon) (lim : Option Nat)
+    (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp →
+      _root_.Address.blake3Pure raw = a ∧
+      (V.Preimage a raw ∨ IxVM.Refinement.Hashed calls raw ∨
+        (raw ∈ extra ∧ a ≠ Ix.HostAdmission.Merkle.padding)))
+    (hblobs : ∀ a bytes, (a, bytes) ∈ roleBlobs → V.Preimage a bytes)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hbound : IxVM.Consistency.Bounded calls) :
+    Core.Good ⟨coreEnvRole E₀ Keep supp roleBlobs pre, env, t, lim⟩ calls := by
+  apply good_subEnvRole_of_noCollision env t lim hload _ hblobs hnoCol hbound
+  intro a raw c hm
+  rcases List.mem_append.mp hm with h1 | h2
+  · exact hsupp a raw c h1
+  · unfold fallbackSupp at h2
+    obtain ⟨⟨a', c'⟩, hmem, heq⟩ := List.mem_map.mp h2
+    injection heq with ha hrest
+    injection hrest with hraw hc
+    subst ha; subst hraw; subst hc
+    obtain ⟨himg, hblk, _, hnotPad⟩ :=
+      hRP.serConstant_mem_committedImages hpre (Array.mem_toList_iff.mp hmem)
+    exact ⟨hblk, Or.inr (Or.inr ⟨hcomm_extra _ himg, hnotPad⟩)⟩
+
+/-- **`L1.EnvDecoded` on `coreEnvRole E₀ Keep supp roleBlobs pre`**. -/
+theorem coreEnvRole_envDecoded (hRP : RolePreludeInputs)
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {seeds : List _root_.Address} {Keep : _root_.Address → Prop} {supp : List SuppEntry}
+    {roleBlobs : List (_root_.Address × ByteArray)}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
+    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
+    (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → Ixon.deConstantExact raw = .ok c) :
+    L1.EnvDecoded (coreEnvRole E₀ Keep supp roleBlobs pre) := by
+  apply subEnv_envDecoded_of_walkedL6 _ hwalk
+  intro a raw c hm
+  rcases List.mem_append.mp hm with h1 | h2
+  · exact hsupp a raw c h1
+  · unfold fallbackSupp at h2
+    obtain ⟨⟨a', c'⟩, hmem, heq⟩ := List.mem_map.mp h2
+    injection heq with ha hrest
+    injection hrest with hraw hc
+    subst ha; subst hraw; subst hc
+    obtain ⟨_, _, hwf, _⟩ :=
+      hRP.serConstant_mem_committedImages hpre (Array.mem_toList_iff.mp hmem)
+    exact Ixon.Verify.deConstantExact_serConstant c' hwf
+
+/-- Every record in `subEnvRole E₀ Keep supp roleBlobs` (when `(supp.map (·.1)).Nodup`) is also
+stored identically in `coreEnvRole E₀ Keep supp roleBlobs pre`. -/
+theorem recordAt_coreEnvRole_of_subEnvRole {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
+    {supp : List SuppEntry} {roleBlobs : List (_root_.Address × ByteArray)}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
     (hnd : (supp.map (·.1)).Nodup)
     {a : _root_.Address} {c : Ixon.Constant}
-    (hrec : Ix.Cert.recordAt (subEnv E₀ Keep supp) a = some c) :
-    Ix.Cert.recordAt (coreEnv E₀ Keep supp pre) a = some c := by
+    (hrec : Ix.Cert.recordAt (subEnvRole E₀ Keep supp roleBlobs) a = some c) :
+    Ix.Cert.recordAt (coreEnvRole E₀ Keep supp roleBlobs pre) a = some c := by
   rcases recordAt_subEnv_some_inv E₀ Keep supp hrec with ⟨hk, hrec₀⟩ | ⟨hnc, raw, hm⟩
   · exact recordAt_subEnv_of_keep E₀ _ _ (Or.inl hk) hrec₀
-  · unfold coreEnv subEnv Ix.Cert.recordAt
+  · unfold coreEnvRole subEnvRole Ix.Cert.recordAt
     dsimp only
     rw [addSupplements_append_left E₀.consts _ (fallbackSupp pre) hnd hm hnc]
     rfl
 
 /-- Every committed fallback record `(a, c) ∈ pre.records ++ pre.evidence` is stored at `a` in
-`coreEnv E₀ Keep supp pre` whenever `supp` agrees with `pre.records ++ pre.evidence` on shared
-addresses. -/
-theorem recordAt_coreEnv_of_fallback (hRP : RolePreludeInputs)
+`coreEnvRole E₀ Keep supp roleBlobs pre` whenever `supp` agrees with `pre.records ++ pre.evidence`
+on shared addresses. -/
+theorem recordAt_coreEnvRole_of_fallback (hRP : RolePreludeInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)} {E₀ : Ixon.Env}
     {Keep : _root_.Address → Prop} {supp : List SuppEntry}
+    {roleBlobs : List (_root_.Address × ByteArray)}
     {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon}
     (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
@@ -884,7 +1155,7 @@ theorem recordAt_coreEnv_of_fallback (hRP : RolePreludeInputs)
       (a, c) ∈ pre.records ++ pre.evidence → c' = c)
     {a : _root_.Address} {c : Ixon.Constant}
     (hmem : (a, c) ∈ pre.records ++ pre.evidence) :
-    Ix.Cert.recordAt (coreEnv E₀ Keep supp pre) a = some c := by
+    Ix.Cert.recordAt (coreEnvRole E₀ Keep supp roleBlobs pre) a = some c := by
   cases hget₀ : E₀.consts.get? a with
   | some lc =>
     obtain ⟨_, _, hrec₀⟩ :=
@@ -897,7 +1168,7 @@ theorem recordAt_coreEnv_of_fallback (hRP : RolePreludeInputs)
     have hfb_nd := fallbackSupp_nodup hpre
     have hfb_mem : (a, Ixon.serConstant c, c) ∈ fallbackSupp pre :=
       List.mem_map.mpr ⟨(a, c), Array.mem_toList_iff.mpr hmem, rfl⟩
-    unfold coreEnv subEnv Ix.Cert.recordAt
+    unfold coreEnvRole subEnvRole Ix.Cert.recordAt
     dsimp only
     have hstep : ∀ (s₁ : List SuppEntry),
         (∀ raw c', (a, raw, c') ∈ s₁ → c' = c) →
@@ -929,5 +1200,14 @@ theorem recordAt_coreEnv_of_fallback (hRP : RolePreludeInputs)
     obtain ⟨raw', hget'⟩ := hstep supp (fun raw c' hm => hsupp_compat a raw c' c hm hmem)
     rw [hget']
     rfl
+
+/-- Every blob in `E := subEnvRole ...` is stored identically in `coreEnvRole ...`. -/
+@[simp]
+theorem blobs_coreEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
+    (supp : List SuppEntry) (roleBlobs : List (_root_.Address × ByteArray))
+    (pre : Ix.Kernel.Reader.Prelude .anon) :
+    (coreEnvRole E₀ Keep supp roleBlobs pre).blobs =
+      (subEnvRole E₀ Keep supp roleBlobs).blobs :=
+  rfl
 
 end IxVM.Refinement.Assembly
