@@ -18,7 +18,6 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.Obs (W)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open Ix.Kernel (ConstantInfo ConstantVal Declaration RecRule RecRuleFire LevelParam Level Expr
   auxKey eqName eqA isEqHead recRuleBits openPisAtFvars)
@@ -218,34 +217,31 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
   obtain ⟨x_t, vs₁, m₁, c₁, c₂, rfl, dt, atail, rfl⟩ := atup.cons_inv
   obtain ⟨arr_v, m_arr, darr, rfl, hm₁⟩ := dt.store_inv
   obtain ⟨bvals, dvars, rfl⟩ := darr.array_inv
-  obtain ⟨hbvals, rfl, rfl⟩ := gaVars_inv gaNames xs hb dvars
+  obtain ⟨hbvals, hm_arr, hcs_vars⟩ := gaVars_inv gaNames xs hb dvars
+  subst hm_arr hcs_vars
   obtain ⟨x_s, vs₂, m₂, c₃, c₄, rfl, ds, anil, rfl⟩ := atail.cons_inv
   obtain ⟨ls, rfl, rfl⟩ := ds.var_inv
   rw [hs] at ls
   injection ls with ls; injection ls with _ hxs
   subst hxs
   obtain ⟨rfl, rfl, rfl⟩ := anil.nil_inv
-  subst hm₁
+  subst hm₁ hbvals
   let bfn : UInt8 → SourceValue F := fun b => .field (b.toNat : F)
   let a : Bytes.Address := ⟨xs.toArray, by simp [hxlen]⟩
   have halist : a.toList = xs := by simp [a, Vector.toList]
   have hty : (Value.tuple (xs.map bfn) : SourceValue F).type = addrTy := by
-    have hrep : (xs.map fun b => (bfn b).type) = List.replicate 32 .field := by
+    have hrep : ((xs.map bfn).map (fun v : SourceValue F => v.type)) =
+        List.replicate 32 .field := by
       apply List.ext_getElem (by simp [hxlen])
       intro k hk₁ hk₂
-      simp [bfn, Value.type]
-    show Ty.tuple ((xs.map bfn).map Value.type) = addrTy
-    rw [List.map_map]
+      rw [List.getElem_map, List.getElem_map, List.getElem_replicate]
+      rfl
+    unfold Value.type addrTy
     exact congrArg Ty.tuple hrep
-  refine ⟨a, .ptr (Value.tuple bvals).type h.length, halist, rfl, ?_, Heap.Extends.snoc h _, rfl⟩
-  subst hbvals
-  change Bytes.RepAddressRef addrTy (h ++ [Value.tuple (xs.map bfn)]) a
-    (.ptr (Value.tuple (xs.map bfn) : SourceValue F).type h.length)
+  refine ⟨a, .ptr (Value.tuple (xs.map bfn) : SourceValue F).type h.length,
+    halist, rfl, ?_, Heap.Extends.snoc h _, rfl⟩
   rw [hty]
-  refine ⟨Value.tuple (xs.map bfn), ?_, ?_⟩
-  · simp [loadValue, hty, bind, Except.bind, pure, Except.pure]
-  · show Value.tuple (xs.map bfn) = Value.tuple (a.toList.map bfn)
-    rw [halist]
+  exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp, by rw [halist]⟩
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
@@ -329,10 +325,11 @@ theorem get_address_spec {s_ptr r : SourceValue F} {bytes : List UInt8}
       Heap.Extends h h' ∧
       cs = [] := by
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonDeserialize.get_address.lookup
-    (by simp [IxVM.IxonDeserialize.get_address, ControlLower.hasControl]) ev
+    (by first | rfl | decide | simp [IxVM.IxonDeserialize.get_address, ControlLower.hasControl]) ev
   rw [get_address_body] at d0
   obtain ⟨a, xs, rem, x_t, x_s2, _, hbytes, halist, hr, hrep, hstr', ext, hcs⟩ :=
-    gaFrom_inv gaNames [] [] rfl .nil (fun h => nomatch h) (fun _ => by rfl) hs d0
+    gaFrom_inv gaNames [] [] rfl .nil (fun h => nomatch h)
+      (fun _ => by first | rfl | simp [IxVM.IxonDeserialize.get_address]) hs d0
   simp only [List.reverse_nil, List.nil_append] at halist
   exact ⟨a, rem, x_t, x_s2, by rw [halist]; exact hbytes, hr, hrep, hstr', ext, hcs⟩
 
@@ -356,20 +353,22 @@ private theorem peel_n_lams_collect_go_wide (rem : Nat) :
     intro κ Γ k E e acc r_e r_acc n peeled d_out h h' cs hn hlt hd ev hE
     have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
     have hval1 : ZMod.val (1 : F) = 1 := rfl
-    rcases Obs.«KernelCheck::peel_n_lams_collect».obs ev with ⟨hv, _, _, _⟩ |
-      ⟨x_dom, _, _, _, _, _, _, hne, ld, op_sub, op_add, rfl, ev_rec, _⟩ |
-      ⟨_, _, _, _, he_tup, _, _⟩
-    · injection hv with h0; subst h0; simp at hn
-    · obtain rfl := Lib.sub_one_inv op_sub
+    match Obs.«KernelCheck::peel_n_lams_collect».obs ev with
+    | .n0 (hv14 := hv) .. =>
+      injection hv with h0; subst h0; simp at hn
+    | .other_Lam (x_dom := x_dom) (hne44 := hne) (ld59 := ld) (op113 := op_sub)
+        (op128 := op_add) (hm139 := rfl) (ev88 := ev_rec) .. =>
+      obtain rfl := Lib.sub_one_inv op_sub
       have hpred := Lib.val_sub_one (fun (e : n = 0) => hne (by rw [e]))
       rw [SubstAux.add_ok op_add] at ev_rec
       have hp1 : ZMod.val (peeled + 1) = ZMod.val peeled + 1 := SubstAux.val_add (by omega)
       obtain ⟨_, B, _, rfl, _, hb, _⟩ := hE.lam_of_load ld
-      have ext := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [x_dom, acc])
+      have ext := Heap.Extends.snoc h _
       have hstrip := ih (n := n - 1) (peeled := peeled + 1) (d_out := d_out)
         (by omega) (by omega) (by omega) ev_rec (hb.mono ext)
       simp [Expr.stripLams, hstrip]
-    · injection he_tup with h1; injection h1 with _ h2; injection h2 with h2 _
+    | .other_other (he169 := he_tup) .. =>
+      injection he_tup with h1; injection h1 with _ h2; injection h2 with h2 _
       injection h2 with hpeel; subst hpeel; omega
 
 theorem peel_n_lams_collect_spec_wide {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
@@ -661,35 +660,33 @@ theorem infer_stripPis_dom_const_lvls :
       Infer env .full d E ty →
       E.stripPis m = some (bs, .forallE dom body mb) →
       dom.getAppFn = .const k us →
-      ∃ ci, env.find? k = some ci ∧ us.length = ci.toConstantVal.levelParams.length
-  | 0, _, _, _, _, _, _, _, _, _, _, hinf, hs, hfn => by
+      ∃ ci, env.find? k = some ci ∧ us.length = ci.toConstantVal.levelParams.length := by
+  intro m
+  induction m with
+  | zero =>
+    intro env d E ty dom body bs mb k us hinf hs hfn
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
     obtain ⟨_, rfl⟩ := hs
     cases hinf with
     | forallE hdom _ _ _ _ => exact infer_getAppFn_const hdom hfn
-  | m + 1, _, d, .forallE tyB b mb₀, _, dom, body, _, mb, k, us, hinf, hs, hfn => by
-    simp only [Expr.stripPis] at hs
-    cases hsb : b.stripPis m with
-    | none => simp [hsb] at hs
-    | some p =>
-      rw [hsb] at hs
-      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
-      rcases p with ⟨bs₁, rem₁⟩
-      obtain ⟨_, rfl⟩ := hs
-      cases hinf with
-      | forallE _ _ hb _ _ =>
-        obtain ⟨bs', dom', body', hs', hfn'⟩ :=
-          stripPis_forall_instantiate1 (.fvar d tyB) k us m b 0 hsb hfn
-        exact infer_stripPis_dom_const_lvls m hb hs' hfn'
-  | _ + 1, _, _, .bvar _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .fvar _ _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .sort _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .const _ _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .app _ _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .lam _ _ _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .letE _ _ _ _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .lit _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .proj _ _ _, _, _, _, _, _, _, _, _, hs, _ => nomatch hs
+  | succ m ih =>
+    intro env d E ty dom body bs mb k us hinf hs hfn
+    cases E with
+    | forallE tyB b mb₀ =>
+      simp only [Expr.stripPis] at hs
+      cases hsb : b.stripPis m with
+      | none => simp [hsb] at hs
+      | some p =>
+        rw [hsb] at hs
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+        rcases p with ⟨bs₁, rem₁⟩
+        obtain ⟨_, rfl⟩ := hs
+        cases hinf with
+        | forallE _ _ hb _ _ =>
+          obtain ⟨bs', dom', body', hs', hfn'⟩ :=
+            stripPis_forall_instantiate1 (.fvar d tyB) k us m b 0 hsb hfn
+          exact ih hb hs' hfn'
+    | _ => exact nomatch hs
 
 theorem noLooseIn_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) (n : Nat) :
     ∀ (e : KExpr) (lo : Nat),
@@ -811,43 +808,41 @@ theorem openPisAtFvars_fvars_closed :
       openPisAtFvars m e i = some (fvs, rem) →
       rem.looseBVarsBounded 0 = true ∧
         (∀ x ∈ fvs, x.looseBVarsBounded 0 = true) ∧
-        (∀ k (hk : k < fvs.length), ∃ ty, fvs[k] = .fvar (i + k) ty)
-  | 0, _, _, _, _, hb, hop => by
+        (∀ k (hk : k < fvs.length), ∃ ty, fvs[k] = .fvar (i + k) ty) := by
+  intro m
+  induction m with
+  | zero =>
+    intro e i fvs rem hb hop
     simp only [openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, rfl⟩ := hop
     exact ⟨hb, fun _ hm => absurd hm List.not_mem_nil, fun _ hk => absurd hk (Nat.not_lt_zero _)⟩
-  | m + 1, .forallE ty body _, i, _, _, hb, hop => by
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [openPisAtFvars] at hop
-    cases hop' : openPisAtFvars m (body.instantiate1 (.fvar i ty)) (i + 1) with
-    | none => simp [hop'] at hop
-    | some p =>
-      rw [hop'] at hop
-      simp only [Option.some.injEq, Prod.mk.injEq] at hop
-      rcases p with ⟨fvs', rem'⟩
-      obtain ⟨rfl, rfl⟩ := hop
-      have hb_open : (body.instantiate1 (.fvar i ty)).looseBVarsBounded 0 = true :=
-        Expr.looseBVarsBounded_instantiate1_gen (a := .fvar i ty) rfl hb.2
-      obtain ⟨hrem, hfvs', hshape⟩ := openPisAtFvars_fvars_closed m hb_open hop'
-      refine ⟨hrem, fun x hx => ?_, fun k hk => ?_⟩
-      · rcases List.mem_cons.mp hx with rfl | hx'
-        · rfl
-        · exact hfvs' x hx'
-      · cases k with
-        | zero => exact ⟨ty, by simp⟩
-        | succ k' =>
-          have hk' : k' < fvs'.length := Nat.lt_of_succ_lt_succ hk
-          obtain ⟨ty', hty'⟩ := hshape k' hk'
-          exact ⟨ty', by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hty'⟩
-  | _ + 1, .bvar _, _, _, _, _, hop
-  | _ + 1, .fvar _ _, _, _, _, _, hop
-  | _ + 1, .sort _, _, _, _, _, hop
-  | _ + 1, .const _ _, _, _, _, _, hop
-  | _ + 1, .app _ _, _, _, _, _, hop
-  | _ + 1, .lam _ _ _, _, _, _, hop
-  | _ + 1, .letE _ _ _ _, _, _, _, hop
-  | _ + 1, .lit _, _, _, _, _, hop
-  | _ + 1, .proj _ _ _, _, _, _, hop => nomatch hop
+  | succ m ih =>
+    intro e i fvs rem hb hop
+    cases e with
+    | forallE ty body _ =>
+      simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
+      simp only [openPisAtFvars] at hop
+      cases hop' : openPisAtFvars m (body.instantiate1 (.fvar i ty)) (i + 1) with
+      | none => simp [hop'] at hop
+      | some p =>
+        rw [hop'] at hop
+        simp only [Option.some.injEq, Prod.mk.injEq] at hop
+        rcases p with ⟨fvs', rem'⟩
+        obtain ⟨rfl, rfl⟩ := hop
+        have hb_open : (body.instantiate1 (.fvar i ty)).looseBVarsBounded 0 = true :=
+          Expr.looseBVarsBounded_instantiate1_gen (a := .fvar i ty) rfl hb.2
+        obtain ⟨hrem, hfvs', hshape⟩ := ih hb_open hop'
+        refine ⟨hrem, fun x hx => ?_, fun k hk => ?_⟩
+        · rcases List.mem_cons.mp hx with rfl | hx'
+          · rfl
+          · exact hfvs' x hx'
+        · cases k with
+          | zero => exact ⟨ty, by simp⟩
+          | succ k' =>
+            have hk' : k' < fvs'.length := Nat.lt_of_succ_lt_succ hk
+            obtain ⟨ty', hty'⟩ := hshape k' hk'
+            exact ⟨ty', by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hty'⟩
+    | _ => exact nomatch hop
 
 /-- Instantiating `e` at its own level parameter list `ps.map .param` is the identity. -/
 theorem instantiateLevelParams_self_eq {ps : List LevelParam} {e : KExpr} :
@@ -888,36 +883,34 @@ private theorem stripPis_wellFormed :
       rem.hasFvar = false ∧
       rem.looseBVarsBounded (c + m) = true ∧
       rem.constsResolve env = true ∧
-      rem.allLevelParamsDefined lps = true
-  | 0, _, c, _, _, _, _, hfv, hb, hcr, hlps, hs => by
+      rem.allLevelParamsDefined lps = true := by
+  intro m
+  induction m with
+  | zero =>
+    intro e c env lps bs rem hfv hb hcr hlps hs
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
     obtain ⟨_, rfl⟩ := hs
     exact ⟨hfv, by simpa using hb, hcr, hlps⟩
-  | m + 1, .forallE t b _, c, _, _, _, _, hfv, hb, hcr, hlps, hs => by
-    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hlps
-    simp only [Expr.stripPis] at hs
-    cases hsb : b.stripPis m with
-    | none => simp [hsb] at hs
-    | some p =>
-      rw [hsb] at hs
-      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
-      rcases p with ⟨_, rem'⟩
-      obtain ⟨_, rfl⟩ := hs
-      have ih := stripPis_wellFormed m hfv.2 hb.2 hcr.2 hlps.1.2 hsb
-      rw [show c + 1 + m = c + (m + 1) by omega] at ih
-      exact ih
-  | _ + 1, .bvar _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .fvar _ _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .sort _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .const _ _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .app _ _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .lam _ _ _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .letE _ _ _ _, _, _, _, _, _, _, _, hs
-  | _ + 1, .lit _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .proj _ _ _, _, _, _, _, _, _, _, _, hs => nomatch hs
+  | succ m ih =>
+    intro e c env lps bs rem hfv hb hcr hlps hs
+    cases e with
+    | forallE t b _ =>
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv
+      simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
+      simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
+      simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hlps
+      simp only [Expr.stripPis] at hs
+      cases hsb : b.stripPis m with
+      | none => simp [hsb] at hs
+      | some p =>
+        rw [hsb] at hs
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+        rcases p with ⟨_, rem'⟩
+        obtain ⟨_, rfl⟩ := hs
+        have res := ih hfv.2 hb.2 hcr.2 hlps.1.2 hsb
+        rw [show c + 1 + m = c + (m + 1) by omega] at res
+        exact res
+    | _ => exact nomatch hs
 
 private theorem getAppFn_wellFormed {lps : List LevelParam} :
     ∀ {e : KExpr}, e.allLevelParamsDefined lps = true →
@@ -938,8 +931,11 @@ private theorem getAppArgs_wellFormed {c : Nat} {env : Ix.Kernel.Env .anon} {lps
         a.hasFvar = false ∧
         a.looseBVarsBounded c = true ∧
         a.constsResolve env = true ∧
-        a.allLevelParamsDefined lps = true
-  | .app f x, hfv, hb, hcr, hlps, a, ha => by
+        a.allLevelParamsDefined lps = true := by
+  intro e
+  induction e with
+  | app f x ihf _ =>
+    intro hfv hb hcr hlps a ha
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv
     simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
     simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
@@ -947,18 +943,12 @@ private theorem getAppArgs_wellFormed {c : Nat} {env : Ix.Kernel.Env .anon} {lps
     have hargs : (Expr.app f x).getAppArgs = f.getAppArgs ++ [x] := getAppArgs_mkAppN [x] f
     rw [hargs] at ha
     rcases List.mem_append.mp ha with ha' | ha'
-    · exact getAppArgs_wellFormed (e := f) hfv.1 hb.1 hcr.1 hlps.1 a ha'
+    · exact ihf hfv.1 hb.1 hcr.1 hlps.1 a ha'
     · obtain rfl := List.mem_singleton.mp ha'
       exact ⟨hfv.2, hb.2, hcr.2, hlps.2⟩
-  | .bvar _, _, _, _, _, _, ha
-  | .fvar _ _, _, _, _, _, ha
-  | .sort _, _, _, _, _, _, ha
-  | .const _ _, _, _, _, _, ha
-  | .lam _ _ _, _, _, _, _, ha
-  | .forallE _ _ _, _, _, _, _, ha
-  | .letE _ _ _ _, _, _, _, _, ha
-  | .lit _, _, _, _, _, _, ha
-  | .proj _ _ _, _, _, _, _, ha => nomatch ha
+  | _ =>
+    intro _ _ _ _ _ ha
+    exact nomatch ha
 
 /-- Assemble `Ix.Kernel.nestedRuleShape` from the major-premise domain decomposition proved by
 `rec_major_pins_spec_wide` together with well-formedness of `tyA` in `envSelf`. -/
@@ -1020,9 +1010,7 @@ theorem nestedRuleShape_of_major_pins {env' envSelf : Ix.Kernel.Env .anon}
   unfold Ix.Kernel.nestedRuleShape
   rw [hcvt, hstrip]
   simp only [Option.isSome_some, true_and, hle]
-  rw [ite_eq_left trivial]
-  dsimp only
-  rw [hfn]
+  rw [ite_eq_left trivial, hfn]
   have hcond :
       dom.getAppArgs.length = cnP + (mI - rP) ∧
       (dom.getAppArgs.take cnP ==
@@ -1037,7 +1025,7 @@ theorem nestedRuleShape_of_major_pins {env' envSelf : Ix.Kernel.Env .anon}
     ⟨hlen, beq_iff_eq.mpr hlift_eq.symm, beq_iff_eq.mpr hdrop, hpins_all, hfn_lps⟩
   exact ite_eq_left hcond
 
-/-- Extract `lvls = cvj.levelParams.map .param`, `cnP ≤ rP`, and
+/-- Extract `lvls = cjLps.levelParams.map .param`, `cnP ≤ rP`, and
 `pins = (List.range cnP).map (fun k => .bvar (rP - 1 - k))` when `Expr.recRulePlain = true`. -/
 theorem recRulePlain_pins_lvls {tyA dom body : KExpr}
     {bs : List (KExpr × Ix.Kernel.BinderMeta)} {mb : Ix.Kernel.BinderMeta}
@@ -1053,7 +1041,7 @@ theorem recRulePlain_pins_lvls {tyA dom body : KExpr}
   dsimp only at hplain
   rw [hfn] at hplain
   simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hplain
-  obtain ⟨⟨⟨hcnp_le, hrp_le⟩, hlvls⟩, htake⟩ := hplain
+  obtain ⟨⟨hcnp_le, hrp_le⟩, hlvls, htake⟩ := hplain
   refine ⟨hcnp_le, hlvls, ?_⟩
   rw [htake, List.map_map]
   apply List.map_congr_left
@@ -1074,9 +1062,8 @@ theorem openPisAtFvars_renameConsts (π : KKey → KKey) :
   | m + 1, .forallE ty body _, i => by
     simp only [Expr.renameConsts, openPisAtFvars]
     have hinst : (body.renameConsts π).instantiate1 (.fvar i (ty.renameConsts π)) =
-        (body.instantiate1 (.fvar i ty)).renameConsts π := by
-      rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
-      rfl
+        (body.instantiate1 (.fvar i ty)).renameConsts π :=
+      (Ix.Kernel.Expr.renameConsts_instantiate1 π body 0).symm
     rw [hinst, openPisAtFvars_renameConsts π m _ (i + 1)]
     cases openPisAtFvars m (body.instantiate1 (.fvar i ty)) (i + 1) <;> rfl
   | _ + 1, .bvar _, _ | _ + 1, .fvar _ _, _ | _ + 1, .sort _, _ | _ + 1, .const _ _, _
@@ -1091,8 +1078,8 @@ theorem instPisAt_renameConsts (π : KKey → KKey) :
   | x :: xs, .forallE ty body _ => by
     simp only [List.map_cons, Expr.renameConsts, Expr.instPisAt]
     have hinst : (body.renameConsts π).instantiate1 (x.renameConsts π) =
-        (body.instantiate1 x).renameConsts π := by
-      rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
+        (body.instantiate1 x).renameConsts π :=
+      (Ix.Kernel.Expr.renameConsts_instantiate1_gen π body 0).symm
     rw [hinst, instPisAt_renameConsts π xs (body.instantiate1 x)]
     cases Expr.instPisAt xs (body.instantiate1 x) <;> rfl
   | _ :: _, .bvar _ | _ :: _, .fvar _ _ | _ :: _, .sort _ | _ :: _, .const _ _
@@ -1106,7 +1093,7 @@ theorem instSpine_renameConsts (π : KKey → KKey) :
   | [], _, _ => rfl
   | x :: xs, t, e => by
     simp only [List.map_cons, Expr.instSpine]
-    rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
+    rw [← Ix.Kernel.Expr.renameConsts_instantiate1_gen]
     exact instSpine_renameConsts π xs (t - 1) (e.instantiate1 x t)
 
 theorem mkAppN_renameConsts (π : KKey → KKey) :
