@@ -21,7 +21,8 @@ Completes the semantic soundness bridge for VM-checked modeled inductive blocks:
 
 namespace IxVM.Refinement.Decl
 
-open Aiur Aiur.Generic
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open IxVM (F)
 open IxVM.Refinement.Core
 open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
@@ -29,7 +30,7 @@ open Ix.Kernel.Model
 open Ix.Kernel.Term Ix.Kernel.Verify Ix.Kernel.SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal BinderMeta RecRule IndCaps
-  LevelParam openPisAtFvars eqName eqA auxKey nestedRuleShape recRuleBits isEqHead
+  LevelParam SwapShList openPisAtFvars eqName eqA auxKey nestedRuleShape recRuleBits isEqHead
   fvarLeaves_getAppArgs fvarLeaves_instSpine hasFvar_renameConsts instPisAt_WScoped
   instSpine_WScoped instSpine_closed nestedRuleShape_inv openPisAtFvars_WScoped
   openPisAtFvars_index recFireComparands_nested swapSh_find?_corr)
@@ -418,7 +419,7 @@ theorem indBottomNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
   have hheadLR : (bodyC0.renameConsts f).getAppFn
       = .const (f Dc) (usc.map (Level.subst cvj.levelParams lvls)) := by
     rw [Expr.getAppFn_renameConsts, hbodyL,
-      Expr.getAppFn_instantiateLevelParams, hheadRaw]
+      Ix.Kernel.Expr.getAppFn_instantiateLevelParams, hheadRaw]
     rfl
   have hstripRen : (ctyL.renameConsts f).stripPis
       (psR ++ fvs.drop rP).length
@@ -483,8 +484,8 @@ theorem indBottomNested_vm {V : Type w} [Ix.Kernel.SetTheory V]
     rw [List.length_append, hxtlen, List.length_drop, hlenY]
     omega
   have hzstake : (xs.take rP ++ ys.drop cnP).take rP = xs.take rP := by
-    rw [List.take_append_of_le_length (by rw [hxtlen]; omega)]
-    exact List.take_of_length_le (by rw [hxtlen]; omega)
+    rw [List.take_append_of_le_length (by rw [hxtlen])]
+    exact List.take_of_length_le (by rw [hxtlen])
   have hzsFld : ∀ j, j < cnF →
       (xs.take rP ++ ys.drop cnP).getD (rP + j) default
         = ys.getD (cnP + j) default := by
