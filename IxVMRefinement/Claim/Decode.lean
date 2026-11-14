@@ -107,10 +107,12 @@ private theorem stream_cons_step {m m' : Heap F} {v tail : SourceValue F} {b : U
   rw [hm, hv]
   exact L1.stream_cons_snoc hs
 
-private theorem proj_digestV_eq {a : Bytes.Address} {v : SourceValue F} (i : Nat) (hi : i < 32)
-    (hpr : projectValue (L1.digestV a : SourceValue F) i = .ok v) :
-    v = L1.bv a[i] :=
-  L1.ok_inj (hpr.symm.trans (L1.proj_digestV a i hi))
+private theorem proj_digestV_eq {a : Bytes.Address} {v1 v : SourceValue F}
+    (hv1 : v1 = L1.digestV a) (i : Nat) (hi : i < 32)
+    (hpr : projectValue v1 i = .ok v) :
+    v = L1.bv a[i] := by
+  rw [hv1] at hpr
+  exact L1.ok_inj (hpr.symm.trans (L1.proj_digestV a i hi))
 
 theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     {x_a x_rest r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -130,41 +132,38 @@ theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     pr888, hm908, pr922, hm942, pr956, hm976, pr990, hm1010, pr1024, hm1044, pr1058, he1071,
     hm1070, pr1085, _⟩ := Obs.«IxonSerialize::put_address».obs ev
   have hv1 := L1.load_repAddressRef ha ld11
-  rw [hv1] at pr38 pr72 pr106 pr140 pr174 pr208 pr242 pr276 pr310 pr344 pr378 pr412 pr446 pr480
-    pr514 pr548 pr582 pr616 pr650 pr684 pr718 pr752 pr786 pr820 pr854 pr888 pr922 pr956 pr990
-    pr1024 pr1058 pr1085
-  have hs31 := stream_cons_step hm24 (proj_digestV_eq 31 (by omega) pr38) hrest
-  have hs30 := stream_cons_step hm58 (proj_digestV_eq 30 (by omega) pr72) hs31
-  have hs29 := stream_cons_step hm92 (proj_digestV_eq 29 (by omega) pr106) hs30
-  have hs28 := stream_cons_step hm126 (proj_digestV_eq 28 (by omega) pr140) hs29
-  have hs27 := stream_cons_step hm160 (proj_digestV_eq 27 (by omega) pr174) hs28
-  have hs26 := stream_cons_step hm194 (proj_digestV_eq 26 (by omega) pr208) hs27
-  have hs25 := stream_cons_step hm228 (proj_digestV_eq 25 (by omega) pr242) hs26
-  have hs24 := stream_cons_step hm262 (proj_digestV_eq 24 (by omega) pr276) hs25
-  have hs23 := stream_cons_step hm296 (proj_digestV_eq 23 (by omega) pr310) hs24
-  have hs22 := stream_cons_step hm330 (proj_digestV_eq 22 (by omega) pr344) hs23
-  have hs21 := stream_cons_step hm364 (proj_digestV_eq 21 (by omega) pr378) hs22
-  have hs20 := stream_cons_step hm398 (proj_digestV_eq 20 (by omega) pr412) hs21
-  have hs19 := stream_cons_step hm432 (proj_digestV_eq 19 (by omega) pr446) hs20
-  have hs18 := stream_cons_step hm466 (proj_digestV_eq 18 (by omega) pr480) hs19
-  have hs17 := stream_cons_step hm500 (proj_digestV_eq 17 (by omega) pr514) hs18
-  have hs16 := stream_cons_step hm534 (proj_digestV_eq 16 (by omega) pr548) hs17
-  have hs15 := stream_cons_step hm568 (proj_digestV_eq 15 (by omega) pr582) hs16
-  have hs14 := stream_cons_step hm602 (proj_digestV_eq 14 (by omega) pr616) hs15
-  have hs13 := stream_cons_step hm636 (proj_digestV_eq 13 (by omega) pr650) hs14
-  have hs12 := stream_cons_step hm670 (proj_digestV_eq 12 (by omega) pr684) hs13
-  have hs11 := stream_cons_step hm704 (proj_digestV_eq 11 (by omega) pr718) hs12
-  have hs10 := stream_cons_step hm738 (proj_digestV_eq 10 (by omega) pr752) hs11
-  have hs9 := stream_cons_step hm772 (proj_digestV_eq 9 (by omega) pr786) hs10
-  have hs8 := stream_cons_step hm806 (proj_digestV_eq 8 (by omega) pr820) hs9
-  have hs7 := stream_cons_step hm840 (proj_digestV_eq 7 (by omega) pr854) hs8
-  have hs6 := stream_cons_step hm874 (proj_digestV_eq 6 (by omega) pr888) hs7
-  have hs5 := stream_cons_step hm908 (proj_digestV_eq 5 (by omega) pr922) hs6
-  have hs4 := stream_cons_step hm942 (proj_digestV_eq 4 (by omega) pr956) hs5
-  have hs3 := stream_cons_step hm976 (proj_digestV_eq 3 (by omega) pr990) hs4
-  have hs2 := stream_cons_step hm1010 (proj_digestV_eq 2 (by omega) pr1024) hs3
-  have hs1 := stream_cons_step hm1044 (proj_digestV_eq 1 (by omega) pr1058) hs2
-  have hs0 := stream_cons_step hm1070 (proj_digestV_eq 0 (by omega) pr1085) hs1
+  have hs31 := stream_cons_step hm24 (proj_digestV_eq hv1 31 (by omega) pr38) hrest
+  have hs30 := stream_cons_step hm58 (proj_digestV_eq hv1 30 (by omega) pr72) hs31
+  have hs29 := stream_cons_step hm92 (proj_digestV_eq hv1 29 (by omega) pr106) hs30
+  have hs28 := stream_cons_step hm126 (proj_digestV_eq hv1 28 (by omega) pr140) hs29
+  have hs27 := stream_cons_step hm160 (proj_digestV_eq hv1 27 (by omega) pr174) hs28
+  have hs26 := stream_cons_step hm194 (proj_digestV_eq hv1 26 (by omega) pr208) hs27
+  have hs25 := stream_cons_step hm228 (proj_digestV_eq hv1 25 (by omega) pr242) hs26
+  have hs24 := stream_cons_step hm262 (proj_digestV_eq hv1 24 (by omega) pr276) hs25
+  have hs23 := stream_cons_step hm296 (proj_digestV_eq hv1 23 (by omega) pr310) hs24
+  have hs22 := stream_cons_step hm330 (proj_digestV_eq hv1 22 (by omega) pr344) hs23
+  have hs21 := stream_cons_step hm364 (proj_digestV_eq hv1 21 (by omega) pr378) hs22
+  have hs20 := stream_cons_step hm398 (proj_digestV_eq hv1 20 (by omega) pr412) hs21
+  have hs19 := stream_cons_step hm432 (proj_digestV_eq hv1 19 (by omega) pr446) hs20
+  have hs18 := stream_cons_step hm466 (proj_digestV_eq hv1 18 (by omega) pr480) hs19
+  have hs17 := stream_cons_step hm500 (proj_digestV_eq hv1 17 (by omega) pr514) hs18
+  have hs16 := stream_cons_step hm534 (proj_digestV_eq hv1 16 (by omega) pr548) hs17
+  have hs15 := stream_cons_step hm568 (proj_digestV_eq hv1 15 (by omega) pr582) hs16
+  have hs14 := stream_cons_step hm602 (proj_digestV_eq hv1 14 (by omega) pr616) hs15
+  have hs13 := stream_cons_step hm636 (proj_digestV_eq hv1 13 (by omega) pr650) hs14
+  have hs12 := stream_cons_step hm670 (proj_digestV_eq hv1 12 (by omega) pr684) hs13
+  have hs11 := stream_cons_step hm704 (proj_digestV_eq hv1 11 (by omega) pr718) hs12
+  have hs10 := stream_cons_step hm738 (proj_digestV_eq hv1 10 (by omega) pr752) hs11
+  have hs9 := stream_cons_step hm772 (proj_digestV_eq hv1 9 (by omega) pr786) hs10
+  have hs8 := stream_cons_step hm806 (proj_digestV_eq hv1 8 (by omega) pr820) hs9
+  have hs7 := stream_cons_step hm840 (proj_digestV_eq hv1 7 (by omega) pr854) hs8
+  have hs6 := stream_cons_step hm874 (proj_digestV_eq hv1 6 (by omega) pr888) hs7
+  have hs5 := stream_cons_step hm908 (proj_digestV_eq hv1 5 (by omega) pr922) hs6
+  have hs4 := stream_cons_step hm942 (proj_digestV_eq hv1 4 (by omega) pr956) hs5
+  have hs3 := stream_cons_step hm976 (proj_digestV_eq hv1 3 (by omega) pr990) hs4
+  have hs2 := stream_cons_step hm1010 (proj_digestV_eq hv1 2 (by omega) pr1024) hs3
+  have hs1 := stream_cons_step hm1044 (proj_digestV_eq hv1 1 (by omega) pr1058) hs2
+  have hs0 := stream_cons_step hm1070 (proj_digestV_eq hv1 0 (by omega) pr1085) hs1
   rw [← he1071] at hs0
   have hlist : a.toList ++ rest =
       a[0] :: a[1] :: a[2] :: a[3] :: a[4] :: a[5] :: a[6] :: a[7] ::
@@ -300,8 +299,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
       obtain ⟨_, hm37⟩ := L1.u8_toField ev50
-      rw [hm2] at hm37 ev50
-      subst hm2 hm37
+      subst m2 m37
       obtain ⟨extA, hlenA, addrPtr, restPtr2, htupA, haddr, hs2⟩ :=
         Deserialize.getAddress_refines hs1 ev76.erase
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupA
@@ -334,8 +332,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
       obtain ⟨_, hm37⟩ := L1.u8_toField ev50
-      rw [hm2] at hm37
-      subst hm2 hm37
+      subst m2 m37
       have ext189 : Heap.Extends h m189 := by rw [hm197]; exact Heap.Extends.snoc h _
       have ext201 : Heap.Extends m189 h' := by rw [hm209]; exact Heap.Extends.snoc m189 _
       have extPost := ext189.trans ext201
@@ -355,8 +352,6 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       have hix_zero : ixAddr zeroB = Ix.HostAdmission.Merkle.padding := by
         unfold ixAddr zeroB Ix.HostAdmission.Merkle.padding
         congr 1
-        apply byteArray_eq_of_toList
-        simp
       refine ⟨extPost, .padding, 1, zeroB, [], _, _, x_s, by omega, by rw [hb]; simp, rfl,
         hroot, hix_zero, hnil_l, rfl, by simp [treeImages], ?_⟩
       rw [hb]
@@ -366,8 +361,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
       obtain ⟨_, hm37⟩ := L1.u8_toField ev50
-      rw [hm2] at hm37 hc386
-      subst hm2 hm37
+      subst m2 m37
       have hlt1 : rest1.length < n := by rw [← hlen_eq, hb]; simp
       obtain ⟨extL, tL, kL, lhB, asL, _, _, _, hkL_ge, hkL_le, htupL, hrepL, hixL, hlL, hmapL,
         hhashL, hsL⟩ := ih rest1.length hlt1 rfl hs1 ev240
@@ -930,13 +924,13 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc174]; simp [hc]) hcoll)
     · rcases sg106 with ⟨_, heq67, _, _, _⟩ | ⟨w80, w81, ld34, _, hm99, hc101⟩
       · simp at heq67
-      · subst hm99 hc101
+      · subst m99 cs101
         obtain ⟨a0, as0, hcons_as, _, _⟩ := Lib.rep_cons_of_load hlLeaves ld34
         have hne_leaves : treeLeaves tTree ≠ [] := by
           rw [← hmap, hcons_as]; simp
         have hrc2 := hrc.mono ext1
         obtain ⟨_, hm124⟩ := role_ctx_axioms_spec hrc2 ev137
-        subst hm124
+        subst m124
         exact .inr ⟨as, m2, v1, cs155, hne_leaves, hmap, hrc2, hlLeaves, ev157,
           by rw [hc174]; simp, fun cl hcl => by rw [hc174]; simp [hcl]⟩
   · rcases load_assumption_tree_spec (V := V) (extra := extra) htTree hroot ev14 with
@@ -1232,20 +1226,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_w6
   obtain ⟨sz7, _, _, _, hsz7, mt_w7, ml_sz8, rfl⟩ := matchListWith_cons_inv ml_sz7
   obtain rfl := matchPattern_bind_inv mt_w7
-  have hml8 : bs_sz = [("sz1", sz1), ("sz2", sz2), ("sz3", sz3), ("sz4", sz4),
-      ("sz5", sz5), ("sz6", sz6), ("sz7", sz7)] := by
-    simp only [List.cons.injEq] at hsz0
-    rw [← hsz0.2] at hsz1; simp only [List.cons.injEq] at hsz1
-    rw [← hsz1.2] at hsz2; simp only [List.cons.injEq] at hsz2
-    rw [← hsz2.2] at hsz3; simp only [List.cons.injEq] at hsz3
-    rw [← hsz3.2] at hsz4; simp only [List.cons.injEq] at hsz4
-    rw [← hsz4.2] at hsz5; simp only [List.cons.injEq] at hsz5
-    rw [← hsz5.2] at hsz6; simp only [List.cons.injEq] at hsz6
-    rw [← hsz6.2] at hsz7; simp only [List.cons.injEq] at hsz7
-    rw [← hsz7.2] at ml_sz8
-    obtain ⟨_, rfl⟩ := matchListWith_nil_inv ml_sz8
-    rfl
-  rw [hml8] at d8
+  obtain ⟨_, rfl⟩ := matchListWith_nil_inv ml_sz8
   -- 9. `assert_eq!(sz1 + ... + sz7, 0, ...);`
   obtain ⟨_, m_eq3, bs_eq3, c_eq3, c9, d_eq3, mt_eq3, d9, rfl⟩ := d8.letValue_inv
   have ext_eq3 := d_eq3.heap_extends
