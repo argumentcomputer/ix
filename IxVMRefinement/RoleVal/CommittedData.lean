@@ -22,8 +22,8 @@ def committedEvAddrs : List _root_.Address :=
   rawEvRows.map fun p => mkAddr p.1
 
 private theorem roleData_evidence_eq :
-    Ix.Kernel.Reader.RoleData.evidence = (rawEvRows.map fun p => hexRowOfChunks p.1 p.2).toArray :=
-  Eq.refl Ix.Kernel.Reader.RoleData.evidence
+    Ix.Kernel.Reader.RoleData.evidence = (rawEvRows.map fun p => hexRowOfChunks p.1 p.2).toArray := by
+  decide +kernel
 
 private theorem rawEvRows_all_spec : ∀ r ∈ rawEvRows, EvRowSpec r := by
   intro r hr
