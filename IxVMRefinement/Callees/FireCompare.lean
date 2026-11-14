@@ -185,8 +185,9 @@ theorem assert_index_vars_spec (c : Ctx) {ni k0 : Nat} (hni : ni < 7205759403792
       subst hjF
       have hE_eq : E = .bvar (ni - 1 - idx) := by
         rcases hj_cases with ⟨-, hE'⟩ | ⟨-, hd, -⟩
-        · rw [hE', FireAux.val_natCast_lt59
-            (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (Nat.lt_trans hni (by decide)))]
+        · rw [hE', FireAux.val_natCast_lt59 (n := ni - 1 - idx)
+            (Nat.lt_of_le_of_lt (Nat.sub_le _ _)
+              (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (Nat.lt_trans hni (by decide))))]
         · omega
       subst hE_eq
       have hv135 : v135 = .field ((idx + 1 : Nat) : F) := by
@@ -256,9 +257,10 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
         FireAux.tm_openZero (d := rP + nI) hx_p 0 (Nat.zero_add _).symm
       have hgood2 : Good c cs120 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       have hlow0 := ih.get (.subst .expr_lower) (by rw [hc174]; callees_lt) ev122
-        x_p (nI : F) 0 rfl hgood2 0 nI hnI_val (Nat.zero_le _)
+        x_p (nI : F) 0 rfl hgood2 0 nI (by simpa only [Nat.zero_add] using hnI_val) (Nat.zero_le _)
         (rP + nI) FireAux.Γ₀ (FireAux.openZero (rP + nI) 0 (posOf ps x)) (by omega)
-        (by rw [ZMod.val_zero]; exact hopen) (by rw [ZMod.val_zero]; exact hno)
+        (by rw [ZMod.val_zero]; exact hopen)
+        (by rw [ZMod.val_zero, Nat.sub_zero, Nat.zero_add]; exact hno)
       rw [ZMod.val_zero, show rP + nI - nI = rP by omega] at hlow0
       have hwscPos : (FireAux.openZero (rP + nI) 0 (posOf ps x)).wscopedB rP = true :=
         hlow0.wscopedB FireAux.ghostScoped_Γ₀
@@ -427,7 +429,7 @@ theorem rec_major_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam}
     rw [← hnI_sub]; exact hlift_props
   obtain ⟨hpins_len, hnested⟩ := FireAux.nestedPins_of_parts hle hstrip hfn_dom
     (by rw [hargs_len, hnI_sub]) (by rw [← hnI_sub]; exact hdrop_eq) rfl hlift_props'
-  have ext_all : Heap.Extends m77 m375 :=
+  have ext_all : Heap.Extends m77 h' :=
     ext_141.trans (ev399.heap_extends.trans ev385.heap_extends)
   exact ⟨x_iaddr, x_ilvls, v358, lvls, pins, rfl,
     by rw [hpins_len]; exact hnP_lt, hnested, hlsPos.mono ext_all, hpins_375⟩
@@ -530,7 +532,7 @@ theorem level_list_equal_spec :
       injection hea with h1 h2; subst a' as'
       subst bs
       have hbnd1 : IxVM.Consistency.Bounded cs117 :=
-        hbnd.sub (by rw [hc162]; intro z hz; simp [hz])
+        bounded_sub (by rw [hc162]; intro z hz; simp [hz]) hbnd
       obtain ⟨heq_r, ext1⟩ := Levels.levelEqual_step ev119 x_x x_y rfl hbnd1 a b' ha_hd hb_hd
       have heq_true : KernelLevels.levelEqual a b' = true := by
         cases hbe : KernelLevels.levelEqual a b'
@@ -538,9 +540,10 @@ theorem level_list_equal_spec :
         · rfl
       have hhead : LvEq a b' := KernelLevels.levelEqual_eq_true_sound heq_true
       have hbnd2 : IxVM.Consistency.Bounded cs143 :=
-        hbnd.sub (by rw [hc162]; intro z hz; simp [hz])
+        bounded_sub (by rw [hc162]; intro z hz; simp [hz]) hbnd
       have htail : LvEqList as bs' :=
-        ih hbnd2 (ha_tl.mono ext1) (hb_tl.mono ext1) ev145 hr
+        ih hbnd2 (KernelLevels.RepKLevelList.mono ha_tl ext1)
+          (KernelLevels.RepKLevelList.mono hb_tl ext1) ev145 hr
       exact fun φ => ⟨hhead φ, htail φ⟩
 
 theorem inst_pins_run (c : Ctx) {ps : List Ix.Kernel.LevelParam} {usK : List KLevel}
@@ -668,7 +671,7 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
     obtain ⟨ls_ilvls, hrep_ilvls, heq_ilvls⟩ := hilvls_79
     obtain ⟨ls_us, hrep_us, heq_us⟩ := hus.mono ext_79
     have hbnd_135 : IxVM.Consistency.Bounded cs135 :=
-      good.2.sub (by rw [hc414]; intro z hz; simp [hz])
+      bounded_sub (by rw [hc414]; intro z hz; simp [hz]) good.2
     obtain ⟨-, hv124, ext_125_step⟩ :=
       Levels.levelListInst_step ev137 x_ilvls us rfl hbnd_135 ls_ilvls ls_us hrep_ilvls hrep_us
     have ext_125 := ext_79.trans ext_125_step
@@ -705,7 +708,7 @@ theorem fire_compare_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       ev180.heap_extends.trans (ev167.heap_extends.trans
         (ev210.heap_extends.trans ev248.heap_extends))
     have hbnd_312 : IxVM.Consistency.Bounded cs312 :=
-      good.2.sub (by rw [hc414]; intro z hz; simp [hz])
+      bounded_sub (by rw [hc414]; intro z hz; simp [hz]) good.2
     have hlveq_raw : LvEqList ls_usj (KernelLevels.substLevelList ls_ilvls ls_us) :=
       FireCompareAux.level_list_equal_spec hbnd_312 hrep_usj (hv124.mono ext_125_236) ev314 hne338
     have hlveq_final : LvEqList usj (lvls.map (Ix.Kernel.Level.subst cv.levelParams usK)) :=

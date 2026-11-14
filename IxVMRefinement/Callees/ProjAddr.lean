@@ -372,7 +372,9 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
           (fun k y => projAddr (Specs.Callees.memberProjInfo (ixAddr b) (i + (k + 1)) y)) := by
         funext k y
         rw [show i + 1 + k = i + (k + 1) by omega]
-      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, Nat.add_zero, hfn]
+      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq]
+      dsimp only [Nat.add_zero]
+      rw [hfn]
 
 end ProjAddrAux
 
