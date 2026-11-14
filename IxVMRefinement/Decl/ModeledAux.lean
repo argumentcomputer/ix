@@ -242,10 +242,10 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     rw [List.find?_append] at hf ⊢
     cases hm : ms.find? (·.name == k) with
     | some cm =>
-      simp only [Option.or] at hf ⊢
+      dsimp only [Option.or] at hf ⊢
       exact hf
     | none =>
-      simp only [Option.or] at hf ⊢
+      dsimp only [Option.or] at hf ⊢
       exact hext.find hf
   tables {T cv caps} hf := by
     rw [find?_prepend_nonProjTable hnpt T, find?_prepend_nonProjTable hnpt T]
@@ -254,12 +254,13 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     cases hm : ms.find? (·.name == T) with
     | some cm =>
       have hmem : cm ∈ ms := List.mem_of_find?_eq_some hm
-      have hname : cm.name = T := eq_of_beq (List.find?_some hm)
+      have hbeq : (cm.name == T) = true := List.find?_some hm
+      have hname : cm.name = T := eq_of_beq hbeq
       rw [← hname]
       obtain ⟨h1, h2⟩ := hms_pt cm hmem
       rw [h1, h2]
     | none =>
-      simp only [Option.or] at hf
+      dsimp only [Option.or] at hf
       exact hext.tables hf
 
 /-! ## Weakening of `posRulesJ` and Modeled Judgement Bundles -/
@@ -624,25 +625,20 @@ private theorem posOf_compPerm_eq {N : Nat} {ps₁ lps₁ : List LevelParam}
     congr 1
     exact List.map_congr_left fun u _ => subst_compPerm_eq hps₁ hlps₁ u
   | app f a ihf iha =>
-    simp only [posOf, Expr.instantiateLevelParams]
-    rw [← posOf, ← posOf, ihf, iha]
-    rfl
+    simp only [posOf] at ihf iha ⊢
+    simp only [Expr.instantiateLevelParams, ihf, iha]
   | lam ty bo m iht ihb =>
-    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw]
-    rw [← posOf, ← posOf, iht, ihb]
-    rfl
+    simp only [posOf] at iht ihb ⊢
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_compPerm_eq hps₁ hlps₁ m.pw]
   | forallE ty bo m iht ihb =>
-    simp only [posOf, Expr.instantiateLevelParams, substPW_compPerm_eq hps₁ hlps₁ m.pw]
-    rw [← posOf, ← posOf, iht, ihb]
-    rfl
+    simp only [posOf] at iht ihb ⊢
+    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_compPerm_eq hps₁ hlps₁ m.pw]
   | letE ty v bo m iht ihv ihb =>
-    simp only [posOf, Expr.instantiateLevelParams]
-    rw [← posOf, ← posOf, ← posOf, iht, ihv, ihb]
-    rfl
+    simp only [posOf] at iht ihv ihb ⊢
+    simp only [Expr.instantiateLevelParams, iht, ihv, ihb]
   | proj s i e ih =>
-    simp only [posOf, Expr.instantiateLevelParams]
-    rw [← posOf, ih]
-    rfl
+    simp only [posOf] at ih ⊢
+    simp only [Expr.instantiateLevelParams, ih]
 
 /-- Given permutations `ps` and `lps` of arbitrary lengths, constructs a single permutation `qs`
 satisfying `posOf qs (posOf lps e) = posOf ps e` and matching `Level.subst` on all inputs. -/
@@ -714,6 +710,15 @@ theorem typedListJ_posOf {env : Env .anon} {d : Nat} {lps : List LevelParam}
       obtain ⟨⟨ty, hi, hd⟩, hs⟩ := h
       exact ⟨⟨posOf lps ty, posRulesJ_infer_posOf hlps hi, posRulesJ_defeq_posOf hlps hd⟩, ih hs⟩
 
+private theorem fold_posOf (lps : List LevelParam) :
+    (fun x : KExpr => x.instantiateLevelParams lps (posLevels lps)) = posOf lps := rfl
+
+private theorem getLastD_map_of_ne_nil {α β : Type _} (f : α → β) (d₁ : β) (d₂ : α) :
+    ∀ {l : List α}, l ≠ [] → (l.map f).getLastD d₁ = f (l.getLastD d₂)
+  | [], h => absurd rfl h
+  | [_], _ => rfl
+  | _ :: b :: tl, _ => getLastD_map_of_ne_nil f d₁ d₂ (List.cons_ne_nil b tl)
+
 theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
     (hlps : lps.Perm (List.range lps.length))
     {rP cnF : Nat} {tyA cty : KExpr} {pins_lps : List KExpr} {rhs : KExpr}
@@ -725,22 +730,22 @@ theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
   obtain ⟨lfvs, lrest, pdoms1, tyRest, cdomsL, crestL, pdoms2, crestEnd,
     hopen, hir, hic, hopc, hwalk⟩ := h
   have hopen' := openLamsAtFvars_instantiateLevelParams lps (posLevels lps) (rP + cnF) rhs 0
-  rw [hopen, Option.map_some] at hopen'
+  rw [fold_posOf lps, hopen, Option.map_some] at hopen'
   have hir' := instPisAt_instantiateLevelParams lps (posLevels lps) (lfvs.take rP) tyA
-  rw [hir, Option.map_some, ← List.take_map] at hir'
+  rw [fold_posOf lps, hir, Option.map_some, List.map_take] at hir'
   have hpins_map :
       ((pins_lps.map fun p => Expr.instSpine (lfvs.take rP) (rP - 1) p).map (posOf lps)) =
       ((pins_lps.map (posOf lps)).map fun p =>
         Expr.instSpine ((lfvs.map (posOf lps)).take rP) (rP - 1) p) := by
-    rw [List.map_map, List.map_map, List.take_map]
+    rw [List.map_map, List.map_map, ← List.map_take]
     apply List.map_congr_left
     intro p _
     exact instantiateLevelParams_instSpine lps (posLevels lps) (lfvs.take rP) (rP - 1) p
   have hic' := instPisAt_instantiateLevelParams lps (posLevels lps)
     (pins_lps.map fun p => Expr.instSpine (lfvs.take rP) (rP - 1) p) cty
-  rw [hic, Option.map_some, hpins_map] at hic'
+  rw [fold_posOf lps, hic, Option.map_some, hpins_map] at hic'
   have hopc' := instPisAt_instantiateLevelParams lps (posLevels lps) (lfvs.drop rP) crestL
-  rw [hopc, Option.map_some, ← List.drop_map] at hopc'
+  rw [fold_posOf lps, hopc, Option.map_some, List.map_drop] at hopc'
   have hfvd : (lfvs.map Expr.fvarTypeD).map (posOf lps) =
       (lfvs.map (posOf lps)).map Expr.fvarTypeD := by
     rw [List.map_map, List.map_map]
@@ -1023,14 +1028,14 @@ theorem denoteMeta_renameConsts_congr {acval : KKey → (LevelParam → Nat) →
       ← Expr.renameConsts_instantiate1, ← Expr.renameConsts_instantiate1,
       denoteMeta_renameConsts_congr hlps hac ty d hpt,
       denoteMeta_renameConsts_congr hlps hac (bo.instantiate1 (.fvar d ty)) (d + 1)
-        (constNamesIn_instantiate1 hpt hpb)]
+        (constNamesIn_instantiate1 (v := .fvar d ty) hpt hpb)]
   | .forallE ty bo m, d, ⟨hpt, hpb⟩ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta,
       ← Expr.renameConsts_instantiate1, ← Expr.renameConsts_instantiate1,
       denoteMeta_renameConsts_congr hlps hac ty d hpt,
       denoteMeta_renameConsts_congr hlps hac (bo.instantiate1 (.fvar d ty)) (d + 1)
-        (constNamesIn_instantiate1 hpt hpb)]
+        (constNamesIn_instantiate1 (v := .fvar d ty) hpt hpb)]
   | .letE _ _ _ _, _, _ => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
@@ -1099,18 +1104,21 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
     Ix.Kernel.Semantics.Env.find?_mem hsrc_f
   have hnm_f : cvm_f.name = f_id n := Ix.Kernel.Semantics.Env.find?_name hsrc_f
   have hwf_f := mpE.base2.wf _ hmem_f
+  have hf_aux_eq : ∀ k, f_aux k = if blockNames.contains k = true then auxKey k .model else k :=
+    fun _ => rfl
   have P_lps : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       (E.find? (f_aux k)).map (·.toConstantVal.levelParams) =
       (E.find? (f_id k)).map (·.toConstantVal.levelParams) := by
     intro k hk
-    dsimp only [f_aux]
+    rw [hf_aux_eq k]
     rcases hk with hout | hink
-    · simp [hout, hf_out k hout]
+    · rw [ite_eq_right (by rw [hout]; decide), hf_out k hout]
     · obtain ⟨cvm_k, mval_k, hint_k, cvm_fk, mval_fk, hint_fk, hfk1, hfk2, hlpsk, _⟩ := hseen k hink
       by_cases hbk : blockNames.contains k = true
-      · simp [hbk, hfk1, hfk2, hlpsk]
+      · rw [ite_eq_left hbk, hfk1, hfk2, Option.map_some, Option.map_some]
+        exact congrArg some hlpsk
       · have hbk' : blockNames.contains k = false := Bool.eq_false_iff.mpr hbk
-        simp [hbk', hf_out k hbk']
+        rw [ite_eq_right hbk, hf_out k hbk']
   have P_some : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       (E.find? (f_aux k)).isSome = (E.find? (f_id k)).isSome := by
     intro k hk
@@ -1119,14 +1127,14 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
   have P_ac : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       mpE.base2.acval (f_aux k) = mpE.base2.acval (f_id k) := by
     intro k hk
-    dsimp only [f_aux]
+    rw [hf_aux_eq k]
     rcases hk with hout | hink
-    · simp [hout, hf_out k hout]
+    · rw [ite_eq_right (by rw [hout]; decide), hf_out k hout]
     · obtain ⟨_, _, _, _, _, _, _, _, _, hack⟩ := hseen k hink
       by_cases hbk : blockNames.contains k = true
-      · simp [hbk, hack]
+      · rw [ite_eq_left hbk, hack]
       · have hbk' : blockNames.contains k = false := Bool.eq_false_iff.mpr hbk
-        simp [hbk', hf_out k hbk']
+        rw [ite_eq_right hbk, hf_out k hbk']
   have htf : (ty_pos.renameConsts f_aux).hasFvar = false := by
     have h1 : (ty_pos.renameConsts f_id).hasFvar = false := hty_f ▸ hwf_f.1
     rw [hasFvar_renameConsts] at h1 ⊢
@@ -1219,12 +1227,14 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
         Env.find?_cons_of_fresh hfresh hsrc_f
       simp only [mval_new]
       rw [denoteMeta, hfind_fn]
-      dsimp only [ConstantInfo.toConstantVal]
-      have hlen_p : ((List.range nl).map Level.param).length = cvm_f.levelParams.length := by
-        simp [hlps_f]
+      dsimp only
+      have hlen_p : ((List.range nl).map Level.param).length =
+          (ConstantInfo.defnInfo cvm_f mval_f hint_f).toConstantVal.levelParams.length := by
+        simp [ConstantInfo.toConstantVal, hlps_f]
       rw [ite_eq_left hlen_p, show c₀.name = auxKey n .model from rfl, acvalWith_ne hne_fn]
       congr 1
       refine mpE.base2.acval_params (f_id n) _ hsrc_f _ ψ (fun p hp => ?_)
+      dsimp only [ConstantInfo.toConstantVal] at hp ⊢
       rw [hlps_f] at hp ⊢
       show Level.eval ψ (Level.subst.go (List.range nl) ((List.range nl).map .param) p) = ψ p
       rw [subst_go_self_list]
@@ -1712,14 +1722,14 @@ theorem rawIotaRule_to_posNVmRun
     have hlvls_all : lvls_pos.all (Level.allParamsDefined (List.range lps.length)) = true := hfn_lp
     have hpins_eq : ((posOf lps dom).getAppArgs.take hraw.cnP).map (Expr.lowerBVars (mI - rP) 0) =
         pins_pos := by
-      rw [hcnp_eq, hdom_args_pos, ← List.take_map, List.map_map, hpins_def, List.map_map]
+      rw [hcnp_eq, hdom_args_pos, ← List.map_take, List.map_map, hpins_def, List.map_map]
       apply List.map_congr_left
       intro p _
       exact (instantiateLevelParams_lowerBVars lps (posLevels lps) p (mI - rP) 0).symm
     have htake_eq : ((posOf lps dom).getAppArgs.take hraw.cnP ==
         pins_pos.map (Expr.liftLooseBVars (mI - rP) 0)) = true := by
       apply beq_iff_eq.mpr
-      rw [hcnp_eq, hdom_args_pos, ← List.take_map]
+      rw [hcnp_eq, hdom_args_pos, ← List.map_take]
       simp only [pins_pos, hpins_def, List.map_map]
       apply List.map_congr_left
       intro p hp
@@ -1729,7 +1739,7 @@ theorem rawIotaRule_to_posNVmRun
     have hdrop_eq : ((posOf lps dom).getAppArgs.drop hraw.cnP ==
         (List.range (mI - rP)).map (fun i => Expr.bvar (mI - rP - 1 - i))) = true := by
       apply beq_iff_eq.mpr
-      rw [hcnp_eq, hdom_args_pos, ← List.drop_map, hdom_drop, List.map_map]
+      rw [hcnp_eq, hdom_args_pos, ← List.map_drop, hdom_drop, List.map_map]
       rfl
     have hpins_all : pins_pos.all (fun p =>
         !p.hasFvar && p.looseBVarsBounded rP && p.constsResolve envSelf_pos &&
@@ -1740,7 +1750,7 @@ theorem rawIotaRule_to_posNVmRun
       have harg_mem : arg ∈ (posOf lps dom).getAppArgs := List.mem_of_mem_take harg_tk
       obtain ⟨haf, hab, hacr, halp⟩ := hargs_wf arg harg_mem
       have hnli_arg : noLooseIn 0 (mI - rP) arg = true := by
-        rw [hcnp_eq, hdom_args_pos, ← List.take_map] at harg_tk
+        rw [hcnp_eq, hdom_args_pos, ← List.map_take] at harg_tk
         obtain ⟨p₀, hp₀, rfl⟩ := List.mem_map.mp harg_tk
         show noLooseIn 0 (mI - rP) (p₀.instantiateLevelParams lps (posLevels lps)) = true
         rw [noLooseIn_instantiateLevelParams]
@@ -1759,7 +1769,9 @@ theorem rawIotaRule_to_posNVmRun
     have hlen_args : (posOf lps dom).getAppArgs.length = hraw.cnP + (mI - rP) := by
       rw [hdom_args_pos, List.length_map, hdom_len, hcnp_eq]
     unfold nestedRuleShape
-    rw [ite_eq_left ⟨hiota_some, hrp_le⟩, hstrip_pos, hdom_fn_pos]
+    rw [ite_eq_left ⟨hiota_some, hrp_le⟩, hstrip_pos]
+    dsimp only
+    rw [hdom_fn_pos]
     dsimp only
     rw [hpins_eq, ite_eq_left ⟨hlen_args, htake_eq, hdrop_eq, hpins_all, hlvls_all⟩]
   -- Assemble `IotaThmNVmRunJ`
@@ -1806,25 +1818,27 @@ theorem rawIotaRule_to_posNVmRun
   have hlhs_fn_pos : (lhsS_pos.getAppFn ==
       Expr.const (f_id cvName) ((List.range lps.length).map .param)) = true := by
     apply beq_iff_eq.mpr
-    show (posOf lps lhsS).getAppFn = _
-    rw [show (posOf lps lhsS).getAppFn = posOf lps lhsS.getAppFn from
-      Ix.Kernel.Expr.getAppFn_instantiateLevelParams lps (posLevels lps) lhsS,
+    change (tbody_pos.getAppArgs.getD 1 (.bvar 0)).getAppFn = _
+    rw [hlhs_pos,
+      show (posOf lps lhsS).getAppFn = posOf lps lhsS.getAppFn from
+        Ix.Kernel.Expr.getAppFn_instantiateLevelParams lps (posLevels lps) lhsS,
       hraw.hlhs_fn]
     exact posOf_const_self_levels lps (f_id cvName) hlps_nd
   have hlargs_pos : lhsS_pos.getAppArgs = lhsS.getAppArgs.map (posOf lps) := by
-    show (posOf lps lhsS).getAppArgs = _
+    change (tbody_pos.getAppArgs.getD 1 (.bvar 0)).getAppArgs = _
+    rw [hlhs_pos]
     exact Ix.Kernel.Expr.getAppArgs_instantiateLevelParams lps (posLevels lps) lhsS
   have hlargs_len_pos : lhsS_pos.getAppArgs.length = mI + 1 := by
     rw [hlargs_pos, List.length_map, hraw.hlargs_len]
   have hlargs_pre_pos : (lhsS_pos.getAppArgs.take rP == fvs_pos.take rP) = true := by
     apply beq_iff_eq.mpr
-    rw [hlargs_pos, ← List.take_map, hraw.hlargs_pre, List.take_map]
+    rw [hlargs_pos, ← List.map_take, hraw.hlargs_pre, List.map_take]
   have hpinsF_pos :
       ((pins_lps.map fun p => Expr.instSpine (hraw.fvs.take rP) (rP - 1) (p.renameConsts f_id)) ++
         hraw.fvs.drop rP).map (posOf lps) =
       (pins_pos.map fun p => Expr.instSpine (fvs_pos.take rP) (rP - 1) (p.renameConsts f_id)) ++
         fvs_pos.drop rP := by
-    rw [List.map_append, List.drop_map, List.map_map, List.map_map, List.take_map]
+    rw [List.map_append, List.map_drop, List.map_map, List.map_map, ← List.map_take]
     congr 1
     apply List.map_congr_left
     intro p _
@@ -1838,17 +1852,17 @@ theorem rawIotaRule_to_posNVmRun
           fvs_pos.drop rP)) := by
     apply Expr.ErasedEq.of_eq
     have hne : lhsS.getAppArgs ≠ [] := by
-      intro he; rw [he] at hraw.hlargs_len; exact nomatch hraw.hlargs_len
+      intro he
+      have hl := hraw.hlargs_len
+      rw [he] at hl
+      exact nomatch hl
     have hlast : lhsS_pos.getAppArgs.getLastD (.bvar 0) =
         posOf lps (lhsS.getAppArgs.getLastD (.bvar 0)) := by
       rw [hlargs_pos]
-      cases hls : lhsS.getAppArgs with
-      | nil => exact absurd hls hne
-      | cons hd tl =>
-        simp [List.getLastD_cons, List.getLast_map]
+      exact getLastD_map_of_ne_nil (posOf lps) (.bvar 0) (.bvar 0) hne
     rw [hlast, hraw.hmajor_eq]
     show ((Expr.mkAppN (.const (f_id r.ctor) lvls_lps) _).instantiateLevelParams lps (posLevels lps)) = _
-    rw [Ix.Kernel.Verify.instantiateLevelParams_mkAppN, hpinsF_pos]
+    rw [mkAppN_instantiateLevelParams, fold_posOf lps, hpinsF_pos]
     rfl
   have hinst_c_pos : Expr.instPisAt
       ((pins_pos.map fun p => Expr.instSpine (fvs_pos.take rP) (rP - 1) (p.renameConsts f_id)) ++
@@ -1859,7 +1873,7 @@ theorem rawIotaRule_to_posNVmRun
       ((pins_lps.map fun p => Expr.instSpine (hraw.fvs.take rP) (rP - 1) (p.renameConsts f_id)) ++
         hraw.fvs.drop rP)
       ((hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_lps).renameConsts f_id)
-    rw [hraw.hinst_c, Option.map_some, hpinsF_pos,
+    rw [fold_posOf lps, hraw.hinst_c, Option.map_some, hpinsF_pos,
       instantiateLevelParams_renameConsts] at h
     rwa [show (hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_lps).instantiateLevelParams
         lps (posLevels lps) = hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_pos
@@ -1871,19 +1885,19 @@ theorem rawIotaRule_to_posNVmRun
       some (hraw.rdoms.map (posOf lps), posOf lps hraw.lrest) := by
     have h := instPisAt_instantiateLevelParams lps (posLevels lps) (hraw.fvs.take rP)
       (tyA.renameConsts f_id)
-    rw [hraw.hinst_r, Option.map_some, ← List.take_map,
+    rw [fold_posOf lps, hraw.hinst_r, Option.map_some, List.map_take,
       instantiateLevelParams_renameConsts] at h
     exact h
   have hopen_p_pos : openPisAtFvars rP ty_pos 0 =
       some (hraw.fvsP.map (posOf lps), posOf lps hraw.crest2) := by
     have h := openPisAtFvars_instantiateLevelParams lps (posLevels lps) rP tyA 0
-    rw [hraw.hopen_p, Option.map_some] at h
+    rw [fold_posOf lps, hraw.hopen_p, Option.map_some] at h
     exact h
   let fvsP_pos := hraw.fvsP.map (posOf lps)
   have hpinsP_pos :
       (pins_lps.map fun p => Expr.instSpine (hraw.fvsP.take rP) (rP - 1) p).map (posOf lps) =
       (pins_pos.map fun p => Expr.instSpine (fvsP_pos.take rP) (rP - 1) p) := by
-    rw [List.map_map, List.map_map, List.take_map]
+    rw [List.map_map, List.map_map, ← List.map_take]
     apply List.map_congr_left
     intro p _
     exact instantiateLevelParams_instSpine lps (posLevels lps) (hraw.fvsP.take rP) (rP - 1) p
@@ -1894,14 +1908,14 @@ theorem rawIotaRule_to_posNVmRun
     have h := instPisAt_instantiateLevelParams lps (posLevels lps)
       (pins_lps.map fun p => Expr.instSpine (hraw.fvsP.take rP) (rP - 1) p)
       (hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_lps)
-    rw [hraw.hinst_p, Option.map_some, hpinsP_pos] at h
+    rw [fold_posOf lps, hraw.hinst_p, Option.map_some, hpinsP_pos] at h
     rwa [show (hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_lps).instantiateLevelParams
         lps (posLevels lps) = hraw.cvj.type.instantiateLevelParams hraw.cvj.levelParams lvls_pos
         from hcty_pos] at h
   have hopen_cf_pos : openPisAtFvars hraw.cnF (posOf lps hraw.crestP) rP =
       some (hraw.xFvsP.map (posOf lps), posOf lps hraw.ldoms) := by
     have h := openPisAtFvars_instantiateLevelParams lps (posLevels lps) hraw.cnF hraw.crestP rP
-    rw [hraw.hopen_cf, Option.map_some] at h
+    rw [fold_posOf lps, hraw.hopen_cf, Option.map_some] at h
     exact h
   have hldoms_len_pos :
       ((posOf lps hraw.ldoms).getAppArgs.length == hraw.cnP + (mI - rP)) = true := by
@@ -1934,30 +1948,30 @@ theorem rawIotaRule_to_posNVmRun
     have hr := iotaRunsVmJ_weaken hext_adv (iotaRunsVmJ_posOf hlps_perm hraw.hruns)
     have h1 : ((lhsS.getAppArgs.drop rP).take (mI - rP)).map (posOf lps) =
         (lhsS_pos.getAppArgs.drop rP).take (mI - rP) := by
-      rw [hlargs_pos, List.drop_map, List.take_map]
+      rw [hlargs_pos, List.map_take, List.map_drop]
     have h2 : (hraw.cres.getAppArgs.drop hraw.cnP).map (posOf lps) =
         (posOf lps hraw.cres).getAppArgs.drop hraw.cnP := by
-      rw [← List.drop_map]
+      rw [List.map_drop]
       congr 1
       exact (Ix.Kernel.Expr.getAppArgs_instantiateLevelParams lps (posLevels lps) hraw.cres).symm
     have h3 : ((hraw.fvs.drop rP).map Expr.fvarTypeD).map (posOf lps) =
         (fvs_pos.drop rP).map Expr.fvarTypeD := by
-      rw [List.drop_map, List.map_map, List.map_map]
+      rw [← List.map_drop, List.map_map, List.map_map]
       apply List.map_congr_left
       intro fv _
       exact instantiateLevelParams_fvarTypeD lps (posLevels lps) fv
     have h4 : (hraw.cdoms.drop hraw.cnP).map (posOf lps) =
-        (hraw.cdoms.map (posOf lps)).drop hraw.cnP := (List.drop_map ..).symm
+        (hraw.cdoms.map (posOf lps)).drop hraw.cnP := List.map_drop
     have h5 : ((hraw.fvs.take rP).map Expr.fvarTypeD).map (posOf lps) =
         (fvs_pos.take rP).map Expr.fvarTypeD := by
-      rw [List.take_map, List.map_map, List.map_map]
+      rw [← List.map_take, List.map_map, List.map_map]
       apply List.map_congr_left
       intro fv _
       exact instantiateLevelParams_fvarTypeD lps (posLevels lps) fv
     have h6 : posOf lps (Expr.mkAppN (r.rhs.renameConsts f_id) hraw.fvs) =
         Expr.mkAppN (rhs_pos.renameConsts f_id) fvs_pos := by
       show (Expr.mkAppN (r.rhs.renameConsts f_id) hraw.fvs).instantiateLevelParams lps (posLevels lps) = _
-      rw [Ix.Kernel.Verify.instantiateLevelParams_mkAppN, instantiateLevelParams_renameConsts]
+      rw [mkAppN_instantiateLevelParams, fold_posOf lps, instantiateLevelParams_renameConsts]
       rfl
     rwa [h1, h2, h3, h4, h5, ← hrhsS_pos, h6, ← htyArg_pos, ← hlhs_pos] at hr
   refine ⟨⟨hraw.cvj, hraw.cnP, hraw.cnF, rhs_pos, lvls_pos, pins_pos,
