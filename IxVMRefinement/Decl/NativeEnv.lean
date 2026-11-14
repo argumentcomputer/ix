@@ -1,11 +1,7 @@
-module
-
-public import IxVMRefinement.Decl.NativeCommon
-public import IxC.Kernel.Model.Inductives.StructRecKit2
-public import IxC.Kernel.Model.Inductives.StructEntryFree
-public import IxC.Kernel.Semantics.Inductives.DeclStructEta
-
-@[expose] public section
+import IxVMRefinement.Decl.NativeCommon
+import IxC.Kernel.Model.Inductives.StructRecKit2
+import IxC.Kernel.Model.Inductives.StructEntryFree
+import IxC.Kernel.Semantics.Inductives.DeclStructEta
 
 namespace IxVM.Refinement.Decl
 
