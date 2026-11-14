@@ -242,10 +242,10 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     rw [List.find?_append] at hf ⊢
     cases hm : ms.find? (·.name == k) with
     | some cm =>
-      dsimp only [Option.or] at hf ⊢
+      rw [hm] at hf ⊢
       exact hf
     | none =>
-      dsimp only [Option.or] at hf ⊢
+      rw [hm] at hf ⊢
       exact hext.find hf
   tables {T cv caps} hf := by
     rw [find?_prepend_nonProjTable hnpt T, find?_prepend_nonProjTable hnpt T]
@@ -254,13 +254,13 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
     cases hm : ms.find? (·.name == T) with
     | some cm =>
       have hmem : cm ∈ ms := List.mem_of_find?_eq_some hm
-      have hbeq : (cm.name == T) = true := List.find?_some hm
+      have hbeq : (cm.name == T) = true := List.find?_some (p := (·.name == T)) hm
       have hname : cm.name = T := eq_of_beq hbeq
       rw [← hname]
       obtain ⟨h1, h2⟩ := hms_pt cm hmem
       rw [h1, h2]
     | none =>
-      dsimp only [Option.or] at hf
+      rw [hm] at hf
       exact hext.tables hf
 
 /-! ## Weakening of `posRulesJ` and Modeled Judgement Bundles -/
@@ -628,11 +628,15 @@ private theorem posOf_compPerm_eq {N : Nat} {ps₁ lps₁ : List LevelParam}
     simp only [posOf] at ihf iha ⊢
     simp only [Expr.instantiateLevelParams, ihf, iha]
   | lam ty bo m iht ihb =>
+    have hpw : Level.substPW qs (posLevels qs) (Level.substPW lps₁ (posLevels lps₁) m.pw) =
+        Level.substPW ps₁ (posLevels ps₁) m.pw := substPW_compPerm_eq hps₁ hlps₁ m.pw
     simp only [posOf] at iht ihb ⊢
-    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_compPerm_eq hps₁ hlps₁ m.pw]
+    simp only [Expr.instantiateLevelParams, iht, ihb, hpw]
   | forallE ty bo m iht ihb =>
+    have hpw : Level.substPW qs (posLevels qs) (Level.substPW lps₁ (posLevels lps₁) m.pw) =
+        Level.substPW ps₁ (posLevels ps₁) m.pw := substPW_compPerm_eq hps₁ hlps₁ m.pw
     simp only [posOf] at iht ihb ⊢
-    simp only [Expr.instantiateLevelParams, iht, ihb, substPW_compPerm_eq hps₁ hlps₁ m.pw]
+    simp only [Expr.instantiateLevelParams, iht, ihb, hpw]
   | letE ty v bo m iht ihv ihb =>
     simp only [posOf] at iht ihv ihb ⊢
     simp only [Expr.instantiateLevelParams, iht, ihv, ihb]
@@ -714,10 +718,10 @@ private theorem fold_posOf (lps : List LevelParam) :
     (fun x : KExpr => x.instantiateLevelParams lps (posLevels lps)) = posOf lps := rfl
 
 private theorem getLastD_map_of_ne_nil {α β : Type _} (f : α → β) (d₁ : β) (d₂ : α) :
-    ∀ {l : List α}, l ≠ [] → (l.map f).getLastD d₁ = f (l.getLastD d₂)
+    ∀ (l : List α), l ≠ [] → (l.map f).getLastD d₁ = f (l.getLastD d₂)
   | [], h => absurd rfl h
   | [_], _ => rfl
-  | _ :: b :: tl, _ => getLastD_map_of_ne_nil f d₁ d₂ (List.cons_ne_nil b tl)
+  | _ :: b :: tl, _ => getLastD_map_of_ne_nil f d₁ d₂ (b :: tl) (List.cons_ne_nil b tl)
 
 theorem lamTeleWalkJ_posOf {env : Env .anon} {lps : List LevelParam}
     (hlps : lps.Perm (List.range lps.length))
@@ -1044,10 +1048,10 @@ theorem denoteMeta_renameConsts_congr {acval : KKey → (LevelParam → Nat) →
     rw [denoteMeta, denoteMeta, denoteMeta_renameConsts_congr hlps hac e d hp]
   termination_by e => e.sizeB
   decreasing_by
-    all_goals first
-    | (simp [Expr.sizeB]; omega)
-    | (rw [Expr.sizeB_instantiate1 _ rfl]; simp [Expr.sizeB]; omega)
-    | (simp [Expr.sizeB])
+    all_goals
+      simp [Expr.sizeB]
+      try rw [Expr.sizeB_instantiate1 _ rfl]
+      try omega
 
 theorem auxKey_not_mem_natOpNames (k : KKey) (d : Derived) :
     auxKey k d ∉ Ix.Kernel.natOpNames := by
@@ -1123,7 +1127,8 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       (E.find? (f_aux k)).isSome = (E.find? (f_id k)).isSome := by
     intro k hk
     have hl := P_lps k hk
-    cases hf1 : E.find? (f_aux k) <;> cases hf2 : E.find? (f_id k) <;> simp_all
+    cases hf1 : E.find? (f_aux k) <;> cases hf2 : E.find? (f_id k) <;>
+      rw [hf1, hf2] at hl <;> first | rfl | exact nomatch hl
   have P_ac : ∀ k, (blockNames.contains k = false ∨ k ∈ seen) →
       mpE.base2.acval (f_aux k) = mpE.base2.acval (f_id k) := by
     intro k hk
@@ -1236,8 +1241,7 @@ theorem installModelAlias {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
       refine mpE.base2.acval_params (f_id n) _ hsrc_f _ ψ (fun p hp => ?_)
       dsimp only [ConstantInfo.toConstantVal] at hp ⊢
       rw [hlps_f] at hp ⊢
-      show Level.eval ψ (Level.subst.go (List.range nl) ((List.range nl).map .param) p) = ψ p
-      rw [subst_go_self_list]
+      rw [← Ix.Kernel.Level.eval_subst_go, subst_go_self_list]
       rfl
     · exact fun φ => natHeads_cons_offNat mpE
         (ne_of_notReserved hnres reserved_natName)
@@ -1722,6 +1726,8 @@ theorem rawIotaRule_to_posNVmRun
     have hlvls_all : lvls_pos.all (Level.allParamsDefined (List.range lps.length)) = true := hfn_lp
     have hpins_eq : ((posOf lps dom).getAppArgs.take hraw.cnP).map (Expr.lowerBVars (mI - rP) 0) =
         pins_pos := by
+      change ((posOf lps dom).getAppArgs.take hraw.cnP).map (Expr.lowerBVars (mI - rP) 0) =
+        pins_lps.map (posOf lps)
       rw [hcnp_eq, hdom_args_pos, ← List.map_take, List.map_map, hpins_def, List.map_map]
       apply List.map_congr_left
       intro p _
@@ -1733,14 +1739,16 @@ theorem rawIotaRule_to_posNVmRun
       simp only [pins_pos, hpins_def, List.map_map]
       apply List.map_congr_left
       intro p hp
-      show posOf lps p = (posOf lps (p.lowerBVars (mI - rP) 0)).liftLooseBVars (mI - rP) 0
+      show p.instantiateLevelParams lps (posLevels lps) =
+        ((p.lowerBVars (mI - rP) 0).instantiateLevelParams lps (posLevels lps)).liftLooseBVars (mI - rP) 0
       rw [← instantiateLevelParams_liftLooseBVars,
         liftLooseBVars_lowerBVars_of_noLooseIn (hdom_nli p hp)]
     have hdrop_eq : ((posOf lps dom).getAppArgs.drop hraw.cnP ==
         (List.range (mI - rP)).map (fun i => Expr.bvar (mI - rP - 1 - i))) = true := by
       apply beq_iff_eq.mpr
       rw [hcnp_eq, hdom_args_pos, ← List.map_drop, hdom_drop, List.map_map]
-      rfl
+      apply List.map_congr_left
+      intro _ _; rfl
     have hpins_all : pins_pos.all (fun p =>
         !p.hasFvar && p.looseBVarsBounded rP && p.constsResolve envSelf_pos &&
           p.allLevelParamsDefined (List.range lps.length)) = true := by
@@ -1755,8 +1763,8 @@ theorem rawIotaRule_to_posNVmRun
         show noLooseIn 0 (mI - rP) (p₀.instantiateLevelParams lps (posLevels lps)) = true
         rw [noLooseIn_instantiateLevelParams]
         exact hdom_nli p₀ hp₀
-      have h1 : !(arg.lowerBVars (mI - rP) 0).hasFvar = true := by
-        rw [hasFvar_lowerBVars, haf]; rfl
+      have h1 : (arg.lowerBVars (mI - rP) 0).hasFvar = false := by
+        rw [hasFvar_lowerBVars, haf]
       have h2 : (arg.lowerBVars (mI - rP) 0).looseBVarsBounded rP = true := by
         have hab' : arg.looseBVarsBounded (rP + 0 + (mI - rP)) = true := by
           rwa [show rP + 0 + (mI - rP) = mI by omega]
