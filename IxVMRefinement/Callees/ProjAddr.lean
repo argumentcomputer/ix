@@ -19,7 +19,6 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 
-set_option Elab.async false
 set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false

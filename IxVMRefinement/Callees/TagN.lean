@@ -13,8 +13,7 @@ namespace IxVM.Refinement.Core.ProjAddrAux
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 
-set_option Elab.async false
-set_option maxHeartbeats 2000000
+set_option maxHeartbeats 400000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -48,6 +47,77 @@ theorem sub_field_inv {a b : F} {v : SourceValue F}
     v = .field (a - b) := by
   simp only [evalBinOp, Except.ok.injEq] at op
   exact op.symm
+
+theorem div_mod_zero {d p : Nat} (h : d < p) : d / p % 256 = 0 := by
+  rw [Nat.div_eq_of_lt h]
+  rfl
+
+theorem sum_eq_zero_4 {a b c e : Nat}
+    (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256)
+    (h : ((a + b + c + e : Nat) : F) = 0) :
+    a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 := by
+  have h0 := natCast_eq_zero_of_lt (by omega) h
+  omega
+
+theorem sum_eq_zero_5 {a b c e f : Nat}
+    (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256) (hf : f < 256)
+    (h : ((a + b + c + e + f : Nat) : F) = 0) :
+    a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 := by
+  have h0 := natCast_eq_zero_of_lt (by omega) h
+  omega
+
+theorem sum_eq_zero_6 {a b c e f g : Nat}
+    (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256) (hf : f < 256) (hg : g < 256)
+    (h : ((a + b + c + e + f + g : Nat) : F) = 0) :
+    a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 ∧ g = 0 := by
+  have h0 := natCast_eq_zero_of_lt (by omega) h
+  omega
+
+theorem sum_eq_zero_7 {a b c e f g k : Nat}
+    (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256) (hf : f < 256)
+    (hg : g < 256) (hk : k < 256)
+    (h : ((a + b + c + e + f + g + k : Nat) : F) = 0) :
+    a = 0 ∧ b = 0 ∧ c = 0 ∧ e = 0 ∧ f = 0 ∧ g = 0 ∧ k = 0 := by
+  have h0 := natCast_eq_zero_of_lt (by omega) h
+  omega
+
+theorem leBytes8_lt_256 {b0 : Nat} (hb0 : b0 < 256) :
+    Lib.leBytes8 b0 0 0 0 0 0 0 0 < 256 := by
+  simpa [Lib.leBytes8] using hb0
+
+theorem leBytes8_lt_65536 {b0 b1 : Nat} (hb0 : b0 < 256) (hb1 : b1 < 256) :
+    Lib.leBytes8 b0 b1 0 0 0 0 0 0 < 65536 := by
+  simp only [Lib.leBytes8, Nat.mul_zero, Nat.add_zero]
+  omega
+
+theorem leBytes8_lt_16777216 {b0 b1 b2 : Nat}
+    (hb0 : b0 < 256) (hb1 : b1 < 256) (hb2 : b2 < 256) :
+    Lib.leBytes8 b0 b1 b2 0 0 0 0 0 < 16777216 := by
+  simp only [Lib.leBytes8, Nat.mul_zero, Nat.add_zero]
+  omega
+
+theorem leBytes8_lt_4294967296 {b0 b1 b2 b3 : Nat}
+    (hb0 : b0 < 256) (hb1 : b1 < 256) (hb2 : b2 < 256) (hb3 : b3 < 256) :
+    Lib.leBytes8 b0 b1 b2 b3 0 0 0 0 < 4294967296 := by
+  simp only [Lib.leBytes8, Nat.mul_zero, Nat.add_zero]
+  omega
+
+theorem wrap_sub_mod {d K S M : Nat} (hKS : K + S = M) (hd : d < M) (hge : ¬ d < K) :
+    (d + S) % M = d - K := by
+  have heq : d + S = (d - K) + M := by omega
+  rw [heq, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+
+theorem wrap_div_zero {w K S M : Nat} (hKS : K + S = M) (hdiv : (w + S) / M = 0) :
+    w < K := by
+  by_contra hge
+  have hgeM : M ≤ w + S := by omega
+  have hpos : 0 < (w + S) / M := Nat.div_pos hgeM (by omega)
+  omega
+
+theorem wrap_div_lt_two {w S M : Nat} (hw : w < M) (hS : S < M) :
+    (w + S) / M < 2 := by
+  have hlt : w + S < 2 * M := by omega
+  exact (Nat.div_lt_iff_lt_mul (by omega)).mpr hlt
 
 theorem bytes_mk_toList (x : ByteArray) :
     (⟨(x.data.toList ++ []).toArray⟩ : ByteArray) = x := by
@@ -131,7 +201,7 @@ theorem length_u64_nil_spec {α : Type} {t_T : Generic.Ty}
 theorem toUInt64_shift8 {d : Nat} (hd : d < 18446744073709551616) :
     d.toUInt64 >>> 8 = (d / 256).toUInt64 := by
   apply UInt64.eq_of_toNat_eq
-  have hd' : d / 256 < 18446744073709551616 := by omega
+  have hd' : d / 256 < 18446744073709551616 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hd
   simp [Nat.toUInt64, UInt64.toNat_shiftRight, UInt64.toNat_ofNat',
     Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hd, Nat.mod_eq_of_lt hd']
 
@@ -304,7 +374,8 @@ theorem put_u64_le_spec :
         push_cast
         ring_nf
       rw [hv178] at ev176
-      have hrec := ih (d := d / 256) (by omega) (by omega) ev176 hrest
+      have hrec := ih (d := d / 256) (by omega) (Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hd)
+        ev176 hrest
       have hb1 : (.field ((d % 256 : Nat) : F) : SourceValue F) =
           .field (d.toUInt64.toUInt8.toNat : F) := by
         rw [toUInt64_lowByte hd]
@@ -382,15 +453,15 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hx766 := add_field_inv op781
     subst hx766
     have hsumF := Value.field.inj (add_field_inv op773).symm
-    have hsum0 : d / 4294967296 % 256 + d / 1099511627776 % 256 +
-        d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 := by
-      apply natCast_eq_zero_of_lt (by omega)
-      push_cast
-      exact hsumF
+    rcases sum_eq_zero_4 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (by push_cast; exact hsumF) with
+      ⟨e4, e5, e6, e7⟩
     have hd_lt : d < 4294967296 := by
-      have := Lib.leBytes8_bytes hd
-      unfold Lib.leBytes8 at this
-      omega
+      have hb := Lib.leBytes8_bytes hd
+      rw [e4, e5, e6, e7] at hb
+      rw [← hb]
+      exact leBytes8_lt_4294967296 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
     rw [ite_eq_left hd_lt]
     have hv872 : v872 = .field 194 := by rw [add_field_inv op886]; congr 1; decide
     rw [hv872] at ev871
@@ -419,20 +490,21 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hd_ge : ¬ d < 4294967296 := by
       intro hlt
       apply hne924
-      have h0 : d / 4294967296 % 256 = 0 ∧ d / 1099511627776 % 256 = 0 ∧
-          d / 281474976710656 % 256 = 0 ∧ d / 72057594037927936 % 256 = 0 := by omega
-      rcases h0 with ⟨e1, e2, e3, e4⟩
+      have e1 : d / 4294967296 % 256 = 0 := div_mod_zero hlt
+      have e2 : d / 1099511627776 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e3 : d / 281474976710656 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e4 : d / 72057594037927936 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
       simp [e1, e2, e3, e4]
     rw [ite_eq_right hd_ge]
     let subVal : Nat := Lib.leBytes8 0 0 0 0 255 255 255 255
     have hsub_val : subVal = 18446744069414584320 := by decide
-    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; omega
+    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; decide
     have hsub_tup : (.tuple [.field 0, .field 0, .field 0, .field 0,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
       simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 0) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
-        (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)).symm
+        (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev941
     have hd_rep := Lib.repU64_ofNatLT h hd
     have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
@@ -440,10 +512,11 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
     have hmod : (d + subVal) % 18446744073709551616 = d - 4294967296 := by
-      rw [hsub_val]; omega
+      rw [hsub_val]
+      exact wrap_sub_mod (by decide) hd hd_ge
     rw [hmod] at hx_next
     subst hx_next
-    exact put_tagn_wide_c3 (by omega) ev1034 hrest
+    exact put_tagn_wide_c3 (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hd) ev1034 hrest
 
 theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -487,15 +560,15 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hx437 := add_field_inv op452; subst hx437
     have hx429 := add_field_inv op444; subst hx429
     have hsumF := Value.field.inj (add_field_inv op436).symm
-    have hsum0 : d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
-        d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 := by
-      apply natCast_eq_zero_of_lt (by omega)
-      push_cast
-      exact hsumF
+    rcases sum_eq_zero_5 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (by push_cast; exact hsumF) with ⟨e3, e4, e5, e6, e7⟩
     have hd_lt : d < 16777216 := by
-      have := Lib.leBytes8_bytes hd
-      unfold Lib.leBytes8 at this
-      omega
+      have hb := Lib.leBytes8_bytes hd
+      rw [e3, e4, e5, e6, e7] at hb
+      rw [← hb]
+      exact leBytes8_lt_16777216 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide))
     rw [ite_eq_left hd_lt]
     have hv557 : v557 = .field 193 := by rw [add_field_inv op571]; congr 1; decide
     rw [hv557] at ev556
@@ -523,21 +596,22 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hd_ge : ¬ d < 16777216 := by
       intro hlt
       apply hne609
-      have h0 : d / 16777216 % 256 = 0 ∧ d / 4294967296 % 256 = 0 ∧
-          d / 1099511627776 % 256 = 0 ∧ d / 281474976710656 % 256 = 0 ∧
-          d / 72057594037927936 % 256 = 0 := by omega
-      rcases h0 with ⟨e1, e2, e3, e4, e5⟩
+      have e1 : d / 16777216 % 256 = 0 := div_mod_zero hlt
+      have e2 : d / 4294967296 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e3 : d / 1099511627776 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e4 : d / 281474976710656 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e5 : d / 72057594037927936 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
       simp [e1, e2, e3, e4, e5]
     rw [ite_eq_right hd_ge]
     let subVal : Nat := Lib.leBytes8 0 0 0 255 255 255 255 255
     have hsub_val : subVal = 18446744073692774400 := by decide
-    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; omega
+    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; decide
     have hsub_tup : (.tuple [.field 0, .field 0, .field 0, .field 255,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
       simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
-        (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)).symm
+        (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev626
     have hd_rep := Lib.repU64_ofNatLT h hd
     have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
@@ -545,10 +619,11 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
     have hmod : (d + subVal) % 18446744073709551616 = d - 16777216 := by
-      rw [hsub_val]; omega
+      rw [hsub_val]
+      exact wrap_sub_mod (by decide) hd hd_ge
     rw [hmod] at hx_next
     subst hx_next
-    exact put_tagn_wide_c2 (by omega) ev719 hrest
+    exact put_tagn_wide_c2 (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hd) ev719 hrest
 
 theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -597,16 +672,15 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hx86 := add_field_inv op101; subst hx86
     have hx78 := add_field_inv op93; subst hx78
     have hsumF := Value.field.inj (add_field_inv op85).symm
-    have hsum0 : d / 65536 % 256 + d / 16777216 % 256 + d / 4294967296 % 256 +
-        d / 1099511627776 % 256 + d / 281474976710656 % 256 +
-        d / 72057594037927936 % 256 = 0 := by
-      apply natCast_eq_zero_of_lt (by omega)
-      push_cast
-      exact hsumF
+    rcases sum_eq_zero_6 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (by push_cast; exact hsumF) with
+      ⟨e2, e3, e4, e5, e6, e7⟩
     have hd_lt : d < 65536 := by
-      have := Lib.leBytes8_bytes hd
-      unfold Lib.leBytes8 at this
-      omega
+      have hb := Lib.leBytes8_bytes hd
+      rw [e2, e3, e4, e5, e6, e7] at hb
+      rw [← hb]
+      exact leBytes8_lt_65536 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
     rw [ite_eq_left hd_lt]
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev227
     have hle := put_u64_le_spec 2 (by omega) hd ev247 hrest
@@ -634,21 +708,23 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     have hd_ge : ¬ d < 65536 := by
       intro hlt
       apply hne272
-      have h0 : d / 65536 % 256 = 0 ∧ d / 16777216 % 256 = 0 ∧ d / 4294967296 % 256 = 0 ∧
-          d / 1099511627776 % 256 = 0 ∧ d / 281474976710656 % 256 = 0 ∧
-          d / 72057594037927936 % 256 = 0 := by omega
-      rcases h0 with ⟨e1, e2, e3, e4, e5, e6⟩
+      have e1 : d / 65536 % 256 = 0 := div_mod_zero hlt
+      have e2 : d / 16777216 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e3 : d / 4294967296 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e4 : d / 1099511627776 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e5 : d / 281474976710656 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e6 : d / 72057594037927936 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
       simp [e1, e2, e3, e4, e5, e6]
     rw [ite_eq_right hd_ge]
     let subVal : Nat := Lib.leBytes8 0 0 255 255 255 255 255 255
     have hsub_val : subVal = 18446744073709486080 := by decide
-    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; omega
+    have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; decide
     have hsub_tup : (.tuple [.field 0, .field 0, .field 255, .field 255,
         .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
         TagN.u64Value subVal := by
       simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
         (b0 := 0) (b1 := 0) (b2 := 255) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
-        (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)).symm
+        (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev289
     have hd_rep := Lib.repU64_ofNatLT h hd
     have hsub_rep := Lib.repU64_ofNatLT h hsub_lt
@@ -656,10 +732,11 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
     have hmod : (d + subVal) % 18446744073709551616 = d - 65536 := by
-      rw [hsub_val]; omega
+      rw [hsub_val]
+      exact wrap_sub_mod (by decide) hd hd_ge
     rw [hmod] at hx_next
     subst hx_next
-    exact put_tagn_wide_c1 (by omega) ev382 hrest
+    exact put_tagn_wide_c1 (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hd) ev382 hrest
 
 theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -671,13 +748,13 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
   have hw_lt := Lib.u64_toNat_lt w
   let subVal : Nat := Lib.leBytes8 128 191 255 255 255 255 255 255
   have hsub_val : subVal = 18446744073709535104 := by decide
-  have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; omega
+  have hsub_lt : subVal < 18446744073709551616 := by rw [hsub_val]; decide
   have hsub_tup : (.tuple [.field 128, .field 191, .field 255, .field 255,
       .field 255, .field 255, .field 255, .field 255] : SourceValue F) =
       TagN.u64Value subVal := by
     simpa [subVal] using (Lib.u64Value_leBytes8 (F := F)
       (b0 := 128) (b1 := 191) (b2 := 255) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
-      (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)).symm
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
   cases Obs.«IxonSerialize::put_tagn_tail».obs ev with
   | n0 m2 _ v32 v33 m41 _ v52 y60 m77 _ v88 x_d x_at_least_r2 m154 _ m181 _ v194 v195 m197 _
       v208 y226 x_lo x_no_borrow v255 x263 m265 x271 y272 m273 _ v285 _ v318 m321 _ v332 x339
@@ -699,9 +776,12 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     rcases hadd with ⟨-, hcarry⟩
     subst hcarry
     obtain ⟨hcF, rfl⟩ := Lib.u8_to_field_spec ev167
+    have hlt2 := wrap_div_lt_two hw_lt hsub_lt
     have hdiv0 : (w.toNat + subVal) / 18446744073709551616 = 0 :=
-      natCast_eq_zero_of_lt (by rw [hsub_val]; omega) (Value.field.inj hcF)
-    have hw_r2 : w.toNat < 16512 := by rw [hsub_val] at hdiv0; omega
+      natCast_eq_zero_of_lt (Nat.lt_trans hlt2 (by decide)) (Value.field.inj hcF)
+    have hw_r2 : w.toNat < 16512 := by
+      rw [hsub_val] at hdiv0
+      exact wrap_div_zero (by decide) hdiv0
     have hp0 : projectValue (TagN.u64Value w.toNat : SourceValue F) 0 =
         .ok (.field ((w.toNat % 256 : Nat) : F)) := rfl
     have hv208 := Except.ok.inj (hp0.symm.trans pr217)
@@ -786,23 +866,27 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     rcases hadd with ⟨hx_d, hcarry⟩
     subst hcarry
     obtain ⟨hcF, rfl⟩ := Lib.u8_to_field_spec ev167
-    have hdiv1 : (w.toNat + subVal) / 18446744073709551616 = 1 := by
-      have hne0 : (w.toNat + subVal) / 18446744073709551616 ≠ 0 := by
-        intro h0
-        rw [h0] at hcF
-        exact absurd (Value.field.inj hcF) (by decide)
-      rw [hsub_val] at hne0 ⊢
-      omega
-    have hw_ge2 : ¬ w.toNat < 16512 := by rw [hsub_val] at hdiv1; omega
+    have hw_ge2 : ¬ w.toNat < 16512 := by
+      intro hlt
+      have hsum_lt : w.toNat + subVal < 18446744073709551616 := by
+        rw [hsub_val]
+        have : w.toNat + 18446744073709535104 < 16512 + 18446744073709535104 :=
+          Nat.add_lt_add_right hlt _
+        exact Nat.lt_of_lt_of_eq this (by decide)
+      have h0 : (w.toNat + subVal) / 18446744073709551616 = 0 := Nat.div_eq_of_lt hsum_lt
+      rw [h0] at hcF
+      exact absurd (Value.field.inj hcF) (by decide)
     have hmod : (w.toNat + subVal) % 18446744073709551616 = w.toNat - 16512 := by
-      rw [hsub_val]; omega
+      rw [hsub_val]
+      exact wrap_sub_mod (by decide) hw_lt hw_ge2
     rw [hmod] at hx_d
     subst hx_d
     have hy418 : y418 = .field 192 := by rw [mul_field_inv op433]; congr 1; decide
     subst hy418
     have hv407 : v407 = .field 192 := by rw [add_field_inv op424]; congr 1; decide
     subst hv407
-    have hwide := put_tagn_wide_c0 (d := w.toNat - 16512) (by omega) ev406 hrest
+    have hwide := put_tagn_wide_c0 (d := w.toNat - 16512)
+      (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hw_lt) ev406 hrest
     have he1 : Ixon.tagNEnd1 0 = 128 := rfl
     have he2 : Ixon.tagNEnd2 0 = 16512 := rfl
     have he3 : Ixon.tagNEnd3 0 = 82048 := rfl
@@ -879,16 +963,15 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
     have hx70 := add_field_inv op85; subst hx70
     have hx62 := add_field_inv op77; subst hx62
     have hsumF := Value.field.inj (add_field_inv op69).symm
-    have hsum0 : w.toNat / 256 % 256 + w.toNat / 65536 % 256 + w.toNat / 16777216 % 256 +
-        w.toNat / 4294967296 % 256 + w.toNat / 1099511627776 % 256 +
-        w.toNat / 281474976710656 % 256 + w.toNat / 72057594037927936 % 256 = 0 := by
-      apply natCast_eq_zero_of_lt (by omega)
-      push_cast
-      exact hsumF
+    rcases sum_eq_zero_7 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (by push_cast; exact hsumF) with
+      ⟨e1, e2, e3, e4, e5, e6, e7⟩
     have hw256 : w.toNat < 256 := by
-      have := Lib.leBytes8_bytes hw_lt
-      unfold Lib.leBytes8 at this
-      omega
+      have hb := Lib.leBytes8_bytes hw_lt
+      rw [e1, e2, e3, e4, e5, e6, e7] at hb
+      rw [← hb]
+      exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
     have hv0_rep : RepU8 h w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
       simp [UInt64.toUInt8, UInt8.toNat_ofNat']
@@ -935,16 +1018,15 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
     have hx70 := add_field_inv op85; subst hx70
     have hx62 := add_field_inv op77; subst hx62
     have hsumF := Value.field.inj (add_field_inv op69).symm
-    have hsum0 : w.toNat / 256 % 256 + w.toNat / 65536 % 256 + w.toNat / 16777216 % 256 +
-        w.toNat / 4294967296 % 256 + w.toNat / 1099511627776 % 256 +
-        w.toNat / 281474976710656 % 256 + w.toNat / 72057594037927936 % 256 = 0 := by
-      apply natCast_eq_zero_of_lt (by omega)
-      push_cast
-      exact hsumF
+    rcases sum_eq_zero_7 (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide))
+        (Nat.mod_lt _ (by decide)) (Nat.mod_lt _ (by decide)) (by push_cast; exact hsumF) with
+      ⟨e1, e2, e3, e4, e5, e6, e7⟩
     have hw256 : w.toNat < 256 := by
-      have := Lib.leBytes8_bytes hw_lt
-      unfold Lib.leBytes8 at this
-      omega
+      have hb := Lib.leBytes8_bytes hw_lt
+      rw [e1, e2, e3, e4, e5, e6, e7] at hb
+      rw [← hb]
+      exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
     have hv0_rep : RepU8 h w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
       simp [UInt64.toUInt8, UInt8.toNat_ofNat']
@@ -983,11 +1065,14 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
     have hw128 : ¬ w.toNat < 128 := by
       intro hlt
       apply hne314
-      have h0 : w.toNat / 256 % 256 = 0 ∧ w.toNat / 65536 % 256 = 0 ∧
-          w.toNat / 16777216 % 256 = 0 ∧ w.toNat / 4294967296 % 256 = 0 ∧
-          w.toNat / 1099511627776 % 256 = 0 ∧ w.toNat / 281474976710656 % 256 = 0 ∧
-          w.toNat / 72057594037927936 % 256 = 0 := by omega
-      rcases h0 with ⟨e1, e2, e3, e4, e5, e6, e7⟩
+      have h256 : w.toNat < 256 := Nat.lt_trans hlt (by decide)
+      have e1 : w.toNat / 256 % 256 = 0 := div_mod_zero h256
+      have e2 : w.toNat / 65536 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e3 : w.toNat / 16777216 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e4 : w.toNat / 4294967296 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e5 : w.toNat / 1099511627776 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e6 : w.toNat / 281474976710656 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
+      have e7 : w.toNat / 72057594037927936 % 256 = 0 := div_mod_zero (Nat.lt_trans hlt (by decide))
       simp [e1, e2, e3, e4, e5, e6, e7]
     exact put_tagn_tail_zero_spec hw128 ev323 hrest
 
@@ -1059,7 +1144,7 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
     have hv268 := add_field_inv op282; subst hv268
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev267
     have hk_u64 : k.toUInt64.toNat = k := by
-      simp [Nat.toUInt64, UInt64.toNat_ofNat', Nat.mod_eq_of_lt (show k < 18446744073709551616 by omega)]
+      simp [Nat.toUInt64, UInt64.toNat_ofNat', Nat.mod_eq_of_lt (Nat.lt_trans hk (by decide))]
     have he1 : Ixon.tagNEnd1 4 = 8 := rfl
     have hhdr : (.field (208 + (k : F)) : SourceValue F) =
         .field ((Ixon.tagNHeader 4 Ixon.Constant.FLAG k).toNat : F) := by
