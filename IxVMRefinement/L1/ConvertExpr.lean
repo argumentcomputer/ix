@@ -95,17 +95,15 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
       cs756, x767, m769, cs778, cs792, m804, cs815, m838, cs849, ev15, hne69, ev87, ev121, hne252,
       ev270, hne592, ld607, ld636, ld665, ev736, op730, op722, ev758, op752, op714, ev780, op774,
       op706, ev794, op698, ev817, ev851, he875, he890, _⟩
-  · subst he39 he67
-    obtain ⟨hv15, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
+  · obtain ⟨hv15, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst m2
     obtain ⟨hv37, hm41⟩ := Lib.u8_to_field_spec ev51
-    subst v37 m41
+    subst v37 m41 he39 he67
     obtain ⟨ch, hch, henc⟩ := Core.Utf8Aux.encode_one (Core.Utf8Aux.of_field_one hv15)
     refine ⟨rfl, ch, bs, rest, by simp [henc], ?_, hbs⟩
     rw [hbv]
     exact Core.Utf8Aux.tuple_field_congr (congrArg (Nat.cast : Nat → F) hch.symm)
-  · subst he234 he249
-    obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
+  · obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst v1 m2
     obtain ⟨hv87, hm74⟩ := Core.Utf8Aux.u8_lt_lit 194 (by omega) (by rfl) hbv ev87
     subst m74
@@ -117,7 +115,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hx194, hm196⟩ := Lib.u8_to_field_spec ev207
     subst x194 m196
     obtain ⟨c1lo, c1hi, hy179, hm171⟩ := utf8_cont_spec hb1 ev221
-    subst m171
+    subst m171 he234 he249
     have e170 : v170 = .field ((((b.toNat - 192) * 64 + (b1.toNat - 128) : Nat)) : F) :=
       (Core.Utf8Aux.binop_add
         (Core.Utf8Aux.binop_mul_lit (Core.Utf8Aux.binop_sub_lit hbv op201) op193) hy179 op185).trans
@@ -126,8 +124,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨ch, hch, henc⟩ := Core.Utf8Aux.encode_two (by omega) l224 c1lo c1hi
     refine ⟨rfl, ch, bs1, x_r1, by simp [henc], ?_, hbs1⟩
     exact Core.Utf8Aux.tuple_field_congr (congrArg (Nat.cast : Nat → F) hch.symm)
-  · subst he510 he525
-    obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
+  · obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst v1 m2
     obtain ⟨hv87, hm74⟩ := Core.Utf8Aux.u8_lt_lit 194 (by omega) (by rfl) hbv ev87
     subst m74
@@ -155,14 +152,13 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hlo, hm439⟩ := Core.Utf8Aux.ltf_zero 2048 (by omega) (by omega) (by rfl) ev452
     subst m439
     obtain ⟨hhi, hm473⟩ := Core.Utf8Aux.ltf_one 55296 (by omega) (by omega) (by rfl) ev486
-    subst m473
+    subst m473 he510 he525
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_three (b0 := b) (by omega) l240 c1lo c1hi c2lo c2hi (by omega)
         (.inl (by omega))
     refine ⟨rfl, ch, bs2, x_r2, by simp [henc], ?_, hbs2⟩
     exact Core.Utf8Aux.tuple_field_congr (congrArg (Nat.cast : Nat → F) hch.symm)
-  · subst he570 he585
-    obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
+  · obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst v1 m2
     obtain ⟨hv87, hm74⟩ := Core.Utf8Aux.u8_lt_lit 194 (by omega) (by rfl) hbv ev87
     subst m74
@@ -192,14 +188,13 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨-, hm473⟩ := Core.Utf8Aux.ltf_zero 55296 (by omega) (by omega) (by rfl) ev486
     subst m473
     obtain ⟨hhi, hm533⟩ := Core.Utf8Aux.ltf_zero 57344 (by omega) (by omega) (by rfl) ev546
-    subst m533
+    subst m533 he570 he585
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_three (b0 := b) (by omega) l240 c1lo c1hi c2lo c2hi (by omega)
         (.inr (by omega))
     refine ⟨rfl, ch, bs2, x_r2, by simp [henc], ?_, hbs2⟩
     exact Core.Utf8Aux.tuple_field_congr (congrArg (Nat.cast : Nat → F) hch.symm)
-  · subst he875 he890
-    obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
+  · obtain ⟨hv1, hm2⟩ := Core.Utf8Aux.u8_lt_lit 128 (by omega) (by rfl) hbv ev15
     subst v1 m2
     obtain ⟨hv87, hm74⟩ := Core.Utf8Aux.u8_lt_lit 194 (by omega) (by rfl) hbv ev87
     subst m74
@@ -230,7 +225,7 @@ theorem utf8_decode_one_spec {bp rest r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨hlo, hm804⟩ := Core.Utf8Aux.ltf_zero 65536 (by omega) (by omega) (by rfl) ev817
     subst m804
     obtain ⟨hhi, hm838⟩ := Core.Utf8Aux.ltf_one 1114112 (by omega) (by omega) (by rfl) ev851
-    subst m838
+    subst m838 he875 he890
     obtain ⟨ch, hch, henc⟩ :=
       Core.Utf8Aux.encode_four (b0 := b) (by omega) c1lo c1hi c2lo c2hi c3lo c3hi
         (by omega) (by omega)
@@ -326,11 +321,13 @@ theorem assert_nat_blob_last_nonzero_spec {bs : List UInt8} :
       cases heq
       obtain rfl := repList_nil_of_load hrest ld37
       obtain ⟨hv45, hm46⟩ := Lib.u8_to_field_spec ev59
+      subst v45
       have hbv : x_byte = .field (b.toNat : F) := hb'
       have hb_ne : b ≠ 0 := by
         intro hz
         subst hz
-        exact hne103 (hv45.symm.trans hbv)
+        simp at hbv
+        exact hne103 hbv
       exact ⟨he110.trans hm46, b, rfl, hb_ne⟩
     · obtain ⟨b', rest', heq, _, hrest⟩ := Core.RepList.cons_of_load hbs ld11
       cases heq
@@ -582,8 +579,8 @@ theorem bytes_to_u64_limb_spec {bs : List UInt8} {bp r : SourceValue F}
       pack8 b0 b1 b2 b3 b4 b5 b6 b7 + 18446744073709551616 * bytesVal (bs.drop 8) = bytesVal bs := by
     match bs with
     | [] => exact ⟨0, 0, 0, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]⟩
-    | [x0] => exact ⟨x0, 0, 0, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]; omega⟩
-    | [x0, x1] => exact ⟨x0, x1, 0, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]; omega⟩
+    | [x0] => exact ⟨x0, 0, 0, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]⟩
+    | [x0, x1] => exact ⟨x0, x1, 0, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]⟩
     | [x0, x1, x2] => exact ⟨x0, x1, x2, 0, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]; omega⟩
     | [x0, x1, x2, x3] => exact ⟨x0, x1, x2, x3, 0, 0, 0, 0, rfl, by simp [pack8, bytesVal]; omega⟩
     | [x0, x1, x2, x3, x4] =>
@@ -663,46 +660,45 @@ private theorem bytes_to_limbs_go (fuel : Nat) :
       subst m2
       obtain ⟨ext40, hskip⟩ := skip_bytes_spec 8 (by omega) hbs ev52
       rcases sg123 with ⟨_, _, hm90, _⟩ | ⟨v68, _, ld79, hne96, _, _⟩
-      · subst hm90
+      · subst m116
         obtain ⟨_, hm144⟩ := Lib.u64_is_zero_spec (repU64_heapMono₂ (ext40.trans (Heap.Extends.snoc _ _)) hw) ev157
-        subst hm144 he174 hm173
+        subst m144 r h'
         refine ⟨(ext40.trans (Heap.Extends.snoc _ _)).trans (Heap.Extends.snoc _ _), [],
           Lib.rep_store_nil _, by simp, ?_⟩
-        simp only [List.drop_nil, bytesVal, Nat.mul_zero, Nat.add_zero] at hval
-        simp [Core.limbsVal]
+        simp [Core.limbsVal, bytesVal]
       · cases hskip with
         | nil cell =>
           rw [Core.loadValue_enum_cell cell] at ld79
           injection ld79 with hv; subst hv
-          exact hne96 [] rfl rfl
+          exact (hne96 [] rfl rfl).elim
     · obtain ⟨hm2, w, hw, hval⟩ := bytes_to_u64_limb_spec hbs ev14
       subst m2
       obtain ⟨ext40, hskip⟩ := skip_bytes_spec 8 (by omega) hbs ev52
       simp only [List.drop_nil, bytesVal, Nat.mul_zero, Nat.add_zero] at hval
       rcases sg123 with ⟨_, _, hm90, _⟩ | ⟨v68, _, ld79, hne96, _, _⟩
-      · subst hm90
+      · subst m116
         obtain ⟨hiz, _⟩ := Lib.u64_is_zero_spec (repU64_heapMono₂ (ext40.trans (Heap.Extends.snoc _ _)) hw) ev157
         simp [hval] at hiz
       · cases hskip with
         | nil cell =>
           rw [Core.loadValue_enum_cell cell] at ld79
           injection ld79 with hv; subst hv
-          exact hne96 [] rfl rfl
+          exact (hne96 [] rfl rfl).elim
     · obtain ⟨hm2, _, _, _⟩ := bytes_to_u64_limb_spec hbs ev14
       subst m2
       obtain ⟨_, hskip⟩ := skip_bytes_spec 8 (by omega) hbs ev52
       rcases sg123 with ⟨_, he91, hm90, _⟩ | ⟨v68, _, ld79, hne96, _, _⟩
-      · subst he91 hm90
+      · subst v115 m116
         have hcell : (m40 ++ [.construct Core.limbListEnum "Nil" []])[m40.length]? =
             some (.construct Core.limbListEnum "Nil" []) := by simp
         rw [Core.loadValue_enum_cell hcell] at ld135
         injection ld135 with hv; subst hv
-        exact hne216 [] rfl rfl
+        exact (hne216 [] rfl rfl).elim
       · cases hskip with
         | nil cell =>
           rw [Core.loadValue_enum_cell cell] at ld79
           injection ld79 with hv; subst hv
-          exact hne96 [] rfl rfl
+          exact (hne96 [] rfl rfl).elim
   | succ fuel ih =>
     intro bs bp r h h' cs hlen hbs ev
     have seg1_spec : ∀ {v39 v1 v115 : SourceValue F} {m40 m116 : Heap F} {cs118 : List (Call F)},
@@ -745,7 +741,7 @@ private theorem bytes_to_limbs_go (fuel : Nat) :
       obtain ⟨ext116, rlimbs, hrlimbs, _, hrval⟩ := seg1_spec hskip sg123
       obtain rfl := repList_nil_of_load hrlimbs ld135
       obtain ⟨hiz, hm144⟩ := Lib.u64_is_zero_spec (repU64_heapMono₂ (ext40.trans ext116) hw) ev157
-      subst hm144 he174 hm173
+      subst m144; subst r h'
       have hw0 : w.toNat = 0 := by
         by_cases hz : w.toNat = 0
         · exact hz
@@ -760,7 +756,7 @@ private theorem bytes_to_limbs_go (fuel : Nat) :
       obtain ⟨ext116, rlimbs, hrlimbs, _, hrval⟩ := seg1_spec hskip sg123
       obtain rfl := repList_nil_of_load hrlimbs ld135
       obtain ⟨hiz, hm144⟩ := Lib.u64_is_zero_spec (repU64_heapMono₂ (ext40.trans ext116) hw) ev157
-      subst hm144 he188 hm187 hm210
+      subst m144; subst m202; subst r h'
       have hw_ne : w.toNat ≠ 0 := by
         intro hz
         simp [hz] at hiz
@@ -874,12 +870,11 @@ theorem RawKLevel.toRepKLevel {h : Heap F} {l : Core.KLevel} {p : SourceValue F}
 theorem RawKLevelList.toRepKLevelList {h : Heap F} {ls : List Core.KLevel} {p : SourceValue F}
     (rep : RawKLevelList h ls p) (hplt : ∀ l ∈ ls, KernelLevels.ParamsLt 4294967296 l) :
     KernelLevels.RepKLevelList h ls p := by
+  unfold RawKLevelList RepList at rep
+  rw [Core.klevelListEnum_eq] at rep
   induction rep with
-  | nil cell =>
-    rw [Core.klevelListEnum_eq] at cell
-    exact .nil cell
+  | nil cell => exact .nil cell
   | cons cell hhd _ ih =>
-    rw [Core.klevelListEnum_eq] at cell
     exact .cons cell (hhd.toRepKLevel (hplt _ (by simp)))
       (ih (fun l hl => hplt l (List.mem_cons_of_mem _ hl)))
 
@@ -1029,13 +1024,13 @@ theorem convert_univ_idxs_spec {idxs : List UInt64} {univs : List Ixon.Univ} :
     · obtain ⟨idx', rest', heq, hidx, hrest⟩ := Core.RepList.cons_of_load hidxs ld12
       cases heq
       obtain ⟨hlt, hv61, hm70⟩ := Lib.u64_to_field_spec hidx ev80
-      subst hv61 hm70
+      subst v61 m70
       rw [← univLookup_inst_eq] at ev59
       have hunivs' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Univ" [])]).symbol
           RepUnivPtr h univs univsPtr := by
         rwa [univList_inst_eq]
       obtain ⟨⟨u, hu_get, hu_rep⟩, hm47⟩ := Lib.Lists.lookup_spec ev59 hunivs'
-      subst hm47
+      subst m47
       have hval_idx : ((idx.toNat : F).val) = idx.toNat :=
         ZMod.val_cast_of_lt (by have := idx.toNat_lt; omega)
       rw [hval_idx] at hu_get
@@ -1044,7 +1039,7 @@ theorem convert_univ_idxs_spec {idxs : List UInt64} {univs : List Ixon.Univ} :
       obtain ⟨ext2, ls_rest, hls_rep, hmap_rest⟩ :=
         ih (repList_heapMono₂ _ repU64_heapMono₂ ext1 hrest)
           (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev130
-      subst he93 hm92
+      subst r h'
       have ext_fin := Heap.Extends.snoc m120
         (.construct Core.klevelListEnum "Cons" [v97, v98])
       refine ⟨(ext1.trans ext2).trans ext_fin,
@@ -1075,7 +1070,7 @@ private theorem subst_go_nodup_getElem :
     have hmem : ks[i]'(Nat.lt_of_succ_lt_succ hi) ∈ ks := List.getElem_mem _
     have hne : k ≠ ks[i]'(Nat.lt_of_succ_lt_succ hi) :=
       fun heq => hk_not_mem (by rw [heq]; exact hmem)
-    simp only [List.getElem_cons_succ, Ix.Kernel.Level.subst.go, if_neg hne]
+    simp only [List.getElem_cons_succ, Ix.Kernel.Level.subst.go, hne, ↓reduceIte]
     exact subst_go_nodup_getElem hnd_ks (Nat.lt_of_succ_lt_succ hi) (Nat.lt_of_succ_lt_succ hiv)
 
 private theorem subst_go_not_mem :
@@ -1085,7 +1080,7 @@ private theorem subst_go_not_mem :
   | _ :: _, [], _, _ => rfl
   | k :: ks, _ :: vs, q, hq => by
     have hne : k ≠ q := fun heq => hq (by simp [heq])
-    simp only [Ix.Kernel.Level.subst.go, if_neg hne]
+    simp only [Ix.Kernel.Level.subst.go, hne, ↓reduceIte]
     exact subst_go_not_mem ks vs (fun hm => hq (List.mem_cons_of_mem _ hm))
 
 /-- `posOf`'s level substitution cancels `invPosLevel` for every permutation of `0 .. n-1`. -/
@@ -1268,22 +1263,22 @@ theorem binder_leaves_spec {bound : Nat} {blocks : List Ixon.BinderBlock} :
       rcases hmk with ⟨rfl, rfl, rfl, rfl⟩
       obtain ⟨_, hv78, hm79⟩ :=
         Lib.u64_to_field_spec (Deserialize.repU64_u64Value h blk.index) ev91
-      subst hv78 hm79
+      subst v78 m79
       obtain ⟨_, hv100, hm101⟩ :=
         Lib.u64_to_field_spec (Deserialize.repU64_u64Value h blk.variant) ev113
-      subst hv100 hm101
+      subst v100 m101
       have ext_leaf : Heap.Extends h m166 := by
         rw [hm174]; exact Heap.Extends.snoc _ _
       have hleaf : RepBinderTree bound m166 (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm174]
-        exact .leaf (by simp)
+        exact .leaf (by simp; rfl)
           (repList_heapMono₂ _ repBinderNode_heapMono₂ (Heap.Extends.snoc _ _) hnodes)
           (fun nd hnd => hplt blk (by simp) nd hnd)
       rw [← binderBlockListEnum_eq] at hrest
       obtain ⟨ext_rest, us, hus⟩ :=
         ih (repList_heapMono₂ _ repBinderBlock_heapMono₂ ext_leaf hrest)
           (fun b hb nd hnd => hplt b (List.mem_cons_of_mem _ hb) nd hnd) ev221
-      subst he126 hm125
+      subst r h'
       have ext_cons := Heap.Extends.snoc m211
         (.construct binderPairListEnum "Cons"
           [.tuple [.field ((if blk.shared then 1 else 0 : Nat) : F),
@@ -1333,12 +1328,13 @@ private theorem binder_pairs_go (n : Nat) :
       have ext_node : Heap.Extends h m194 := by rw [hm202]; exact Heap.Extends.snoc _ _
       have hnode : RepBinderTree bound m194 (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm202]
-        exact .node (by simp) (ht1.mono (Heap.Extends.snoc _ _)) (ht2.mono (Heap.Extends.snoc _ _))
+        exact .node (by simp; rfl) (ht1.mono (Heap.Extends.snoc _ _))
+          (ht2.mono (Heap.Extends.snoc _ _))
       simp only [List.length_cons] at hlen
       obtain ⟨ext_rec, us2, hus2⟩ :=
         ih (by omega) (repList_heapMono₂ _ (repBinderTreeEntry_heapMono₂ bound) ext_node hrest2)
           ev257
-      subst he154 hm153
+      subst r h'
       have ext_cons := Heap.Extends.snoc m247
         (.construct binderPairListEnum "Cons"
           [.tuple [x_e1, x_i1, x_v1, .ptr (.enum binderTreeEnum) h.length], v159])
@@ -1476,13 +1472,13 @@ theorem params_level_spec {params : List UInt64} :
     · obtain ⟨p', rest', heq, hp, _⟩ := Core.RepList.cons_of_load hps ld11
       cases heq
       obtain ⟨_, hv41, hm43⟩ := Lib.u64_to_field_spec hp ev53
-      subst hv41 hm43 he82 he83 hm37
+      subst v41 m43; subst m27; subst r h'
       exact ⟨Heap.Extends.snoc _ _, .param p.toNat,
         .param (hplt p (by simp)) (by simp)⟩
     · obtain ⟨p', rest', heq, hp, hrest⟩ := Core.RepList.cons_of_load hps ld11
       cases heq
       obtain ⟨_, hv41, hm43⟩ := Lib.u64_to_field_spec hp ev53
-      subst hv41 hm43
+      subst v41 m43
       have ext_lp : Heap.Extends h m27 := by rw [hm37]; exact Heap.Extends.snoc _ _
       have hlp : KernelLevels.RepKLevel m27 (.param p.toNat)
           (.ptr (.enum Core.klevelEnum) h.length) := by
@@ -1491,11 +1487,11 @@ theorem params_level_spec {params : List UInt64} :
       obtain ⟨ext_rec, ℓ_rest, hℓ_rest⟩ :=
         ih (repList_heapMono₂ _ repU64_heapMono₂ ext_lp hrest)
           (fun q hq => hplt q (List.mem_cons_of_mem _ hq)) ev117
-      subst he93 hm92
+      subst r h'
       have ext_max := Heap.Extends.snoc m107
         (.construct Core.klevelEnum "Max" [.ptr (.enum Core.klevelEnum) h.length, v98])
       exact ⟨(ext_lp.trans ext_rec).trans ext_max, .max (.param p.toNat) ℓ_rest,
-        .max (by simp) (hlp.mono (ext_rec.trans ext_max)) (hℓ_rest.mono ext_max)⟩
+        .max (by simp; rfl) (hlp.mono (ext_rec.trans ext_max)) (hℓ_rest.mono ext_max)⟩
 
 /-- `Convert::binder_level` converts a `RepBinderNode` (with parameters `< 2^32`) into a
 `KernelLevels.RepKLevel` value. -/
@@ -1528,7 +1524,7 @@ theorem binder_level_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue F}
     | ifAllZero m hrep =>
       simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv73
       rcases hv73 with ⟨rfl, _⟩
-      exact params_level_spec hrep hplt ev91
+      exact params_level_spec hrep (by simpa [BinderNodeParamsLt] using hplt) ev91
   · simp at heq139
   · simp at heq187
 
@@ -1701,11 +1697,11 @@ inductive ConvertAnnotatedPath
 section AnnotObsMacros
 
 local macro "ca_var" d:ident : tactic =>
-  `(tactic| (obtain ⟨l_v, rfl, rfl⟩ := $d.var_inv; simp at l_v; subst l_v))
+  `(tactic| (obtain ⟨l_v, rfl, rfl⟩ := ObsExpr.var_inv $d; simp at l_v; subst l_v))
 
 local macro "ca_arg_var" a:ident a':ident : tactic =>
   `(tactic| (
-    obtain ⟨_, _, _, _, _, rfl, d_av, $a', rfl⟩ := $a.cons_inv
+    obtain ⟨_, _, _, _, _, rfl, d_av, $a', rfl⟩ := ObsExprList.cons_inv $a
     ca_var d_av))
 
 local macro "ca_tuple2_pat" mt:ident x:ident y:ident : tactic =>
@@ -1720,37 +1716,37 @@ local macro "ca_tuple2_pat" mt:ident x:ident y:ident : tactic =>
 
 local macro "ca_let_conv_expr" d:ident xk:ident xb:ident m:ident cs:ident ev:ident drest:ident : tactic =>
   `(tactic| (
-    obtain ⟨_, $m, _, _, _, d_ce, mt_ce, $drest, rfl⟩ := $d.letValue_inv
-    obtain ⟨_, _, _, $cs, a_ce0, $ev, rfl⟩ := d_ce.call_inv
-    rw [instanceName_plain_some] at $ev
+    obtain ⟨_, $m, _, _, _, d_ce, mt_ce, $drest, rfl⟩ := ObsExpr.letValue_inv $d
+    obtain ⟨_, _, _, $cs, a_ce0, $ev, rfl⟩ := ObsExpr.call_inv d_ce
+    rw [instanceName_plain_some] at $ev:ident
     ca_arg_var a_ce0 a_ce1
     ca_arg_var a_ce1 a_ce2
     ca_arg_var a_ce2 a_ce3
     ca_arg_var a_ce3 a_ce4
     ca_arg_var a_ce4 a_ce5
     ca_arg_var a_ce5 a_ce6
-    obtain ⟨rfl, rfl, rfl⟩ := a_ce6.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_ce6
     ca_tuple2_pat mt_ce $xk $xb))
 
 local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br:ident drest:ident : tactic =>
   `(tactic| (
-    obtain ⟨_, $m, _, $cs, _, d_ab, mt_ab, $drest, rfl⟩ := $d.letValue_inv
+    obtain ⟨_, $m, _, $cs, _, d_ab, mt_ab, $drest, rfl⟩ := ObsExpr.letValue_inv $d
     ca_tuple2_pat mt_ab $xk2 $xn
-    obtain ⟨_, _, _, _, _, _, d_sc, sel_ab, d_body_ab, rfl⟩ := d_ab.matchValue_inv
+    obtain ⟨_, _, _, _, _, _, d_sc, sel_ab, d_body_ab, rfl⟩ := ObsExpr.matchValue_inv d_ab
     ca_var d_sc
     have $br : AnnotBranch _ _ _ _ _ _ _ _ _ _ _ $xk2 $xn $m $cs := by
       rcases selectArm_cons_inv sel_ab with ⟨mt_ab0, rfl⟩ | ⟨nm_ab0, sel_ab1⟩
       · obtain ⟨hv_ab0, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt_ab0
-        obtain ⟨_, a_ab0, heq_ab0⟩ := d_body_ab.tuple_inv
+        obtain ⟨_, a_ab0, heq_ab0⟩ := ObsExpr.tuple_inv d_body_ab
         ca_arg_var a_ab0 a_ab1
         ca_arg_var a_ab1 a_ab2
-        obtain ⟨rfl, rfl, rfl⟩ := a_ab2.nil_inv
+        obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_ab2
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq_ab0
         exact AnnotBranch.n0 hv_ab0 heq_ab0.1.symm heq_ab0.2.symm rfl rfl
       · have hne_ab0 := MatchesConst.none_inv (MatchesConst.literal 0) nm_ab0
         rcases selectArm_cons_inv sel_ab1 with ⟨mt_ab1, rfl⟩ | ⟨nm_ab1, _⟩
         · obtain rfl := matchPattern_wildcard_inv mt_ab1
-          obtain ⟨_, _, _, cs_abr, a_abr0, ev_abr, rfl⟩ := d_body_ab.call_inv
+          obtain ⟨_, _, _, cs_abr, a_abr0, ev_abr, rfl⟩ := ObsExpr.call_inv d_body_ab
           rw [instanceName_plain_some] at ev_abr
           ca_arg_var a_abr0 a_abr1
           ca_arg_var a_abr1 a_abr2
@@ -1760,7 +1756,7 @@ local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident m:ident cs:ident br
           ca_arg_var a_abr5 a_abr6
           ca_arg_var a_abr6 a_abr7
           ca_arg_var a_abr7 a_abr8
-          obtain ⟨rfl, rfl, rfl⟩ := a_abr8.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := ObsExprList.nil_inv a_abr8
           exact AnnotBranch.other cs_abr hne_ab0 ev_abr
             (by simp only [List.nil_append])
         · exact (matchPattern_wildcard_none nm_ab1).elim))
@@ -2279,6 +2275,11 @@ private theorem exprDrop_inst_eq :
       Names.«Lists::drop<&Ixon::Expr>» := by
   decide +kernel
 
+private theorem val_cast_u56 {n : Nat} (h : n < 72057594037927936) :
+    ZMod.val (n : F) = n := by
+  have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
+  exact ZMod.val_cast_of_lt (Nat.lt_trans h hP)
+
 private theorem lookup_addr_spec {addrs : List _root_.Address} {listPtr r : SourceValue F}
     {idx : UInt64} {h h' : Heap F} {cs : List (Call F)}
     (hidx : idx.toNat < 72057594037927936)
@@ -2291,8 +2292,7 @@ private theorem lookup_addr_spec {addrs : List _root_.Address} {listPtr r : Sour
       RepIxonAddressRef h addrs listPtr := by
     rwa [addrList_inst_eq]
   obtain ⟨⟨a, hget, d, rfl, hd⟩, hh'⟩ := Lib.Lists.lookup_spec ev hlist'
-  have hval : ((idx.toNat : F).val) = idx.toNat := ZMod.val_cast_of_lt (by omega)
-  rw [hval] at hget
+  rw [val_cast_u56 hidx] at hget
   exact ⟨hh', ixAddr d, d, hget, rfl, hd⟩
 
 private theorem add_zero_one_eq_zero {b1 b2 : Nat} {v : SourceValue F}
@@ -2309,6 +2309,7 @@ private theorem add_zero_one_eq_zero {b1 b2 : Nat} {v : SourceValue F}
     simp at h
   · refine ⟨fun h => ?_, 2, by push_cast; rfl, by omega⟩
     have h2 : ((1 : F) + 1) = (2 : F) := by norm_num
+    push_cast at h
     rw [h2] at h
     have h0 := (natCast_eq_zero_iff (a := 2) (by omega)).mp (Value.field.inj h)
     omega
@@ -2341,7 +2342,7 @@ private theorem convert_expr_go (fuel : Nat) :
     | Lam _ _ m1268 ld12 he1266 hm1276 he1293 _ =>
       cases hep with
       | lam cell _ _ =>
-        subst he1266 hm1276 he1293
+        subst m1268; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
@@ -2349,15 +2350,13 @@ private theorem convert_expr_go (fuel : Nat) :
     | All _ _ m1320 ld12 he1318 hm1328 he1345 _ =>
       cases hep with
       | all cell _ _ =>
-        subst he1318 hm1328 he1345
+        subst m1320; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
-    | Srt (hc114 := hc) .. | Var (hc173 := hc) .. | Ref (hc305 := hc) .. | Rec (hc437 := hc) ..
-    | Prj_n0 (hc654 := hc) .. | Prj_other (hc678 := hc) .. | Str (hc821 := hc) ..
-    | Nat (hc986 := hc) .. | App_n0 (hc1218 := hc) .. | App_other (hc1242 := hc) ..
-    | Let_n0 (hc1681 := hc) .. | Let_other (hc1705 := hc) .. | Share (hc1889 := hc) .. =>
+    | _ =>
+      rename_i hc
       rw [hc] at hfuel; simp at hfuel
   | succ fuel ih =>
     intro e bound refs recurAddrs univs sharing ep shPtr refsPtr recPtr univsPtr r h h' calls
@@ -2813,10 +2812,7 @@ private theorem convert_annotated_go (fuel : Nat) :
   | zero =>
     intro e bound refs recurAddrs univs sharing ns ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r
       h h' calls hfuel _ _ _ _ _ _ _ _ _ _ ev
-    cases convert_annotated_obs ev with
-    | App (hcs := hcs) .. | Lam (hcs := hcs) .. | All (hcs := hcs) ..
-    | Let (hcs := hcs) .. | Prj (hcs := hcs) .. | Share (hcs := hcs) .. =>
-      rw [hcs] at hfuel; simp at hfuel
+    cases convert_annotated_obs ev <;> (rename_i hcs; rw [hcs] at hfuel; simp at hfuel)
   | succ fuel ih =>
     intro e bound refs recurAddrs univs sharing ns ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r
       h h' calls hfuel hbound hpre hep hsh hrefs hrecs hunivs htbl hnodes hplt ev
@@ -3305,12 +3301,15 @@ theorem convert_root_spec {e : Ixon.Expr}
   · have ev14' : ObsFn W "Convert::convert_expr"
         [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
         h (.tuple [x_k, .field 0]) m2 cs12 := ev14
-    subst he90 he91
+    subst r h'
     obtain ⟨ext, _, kp, b, blobs, hb, htup, hhp, hraw⟩ :=
       convert_expr_spec hbnd hep hsh hrefs hrecs hunivs ev14'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
     obtain ⟨rfl, hb0_eq⟩ := htup
-    have hb0 : b = 0 := by rcases hb with rfl | rfl; · rfl; · simp at hb0_eq
+    have hb0 : b = 0 := by
+      rcases hb with rfl | rfl
+      · rfl
+      · simp at hb0_eq
     exact ⟨ext, blobs, hhp.sub (by rw [hc92]; intro c hc; simp [hc]), hraw hb0⟩
   · have ev14' : ObsFn W "Convert::convert_expr"
         [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
@@ -3318,7 +3317,7 @@ theorem convert_root_spec {e : Ixon.Expr}
     obtain ⟨ext1, hpre, _, _, blobs1, _, _, hhp1, _⟩ :=
       convert_expr_spec hbnd hep hsh hrefs hrecs hunivs ev14'
     obtain ⟨hm160, ns, hns, hplt⟩ := binder_nodes_spec (htbl.mono ext1) ev170
-    subst hm160
+    subst m160
     have ev102' : ObsFn W "Convert::convert_block"
         [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr, tbl, v110]
         m2 r h' cs100 := ev102
@@ -3347,8 +3346,9 @@ private theorem liftLooseBVars_comm {md : Ix.Kernel.Mode} (a₁ a₂ : Nat) :
     intro c₁ c₂ hle
     by_cases h2 : c₂ ≤ i
     · have h1 : c₁ ≤ i := Nat.le_trans hle h2
+      have h1' : c₁ ≤ i + a₂ := by omega
       have h2' : c₂ + a₁ ≤ i + a₁ := by omega
-      simp [Ix.Kernel.Expr.liftLooseBVars, h1, h2, h2', Nat.add_right_comm]
+      simp [Ix.Kernel.Expr.liftLooseBVars, h1, h1', h2, h2', Nat.add_right_comm]
     · by_cases h1 : c₁ ≤ i
       · have h2' : ¬ (c₂ + a₁ ≤ i + a₁) := by omega
         simp [Ix.Kernel.Expr.liftLooseBVars, h1, h2, h2']
@@ -3377,25 +3377,39 @@ private theorem liftLooseBVars_comm {md : Ix.Kernel.Mode} (a₁ a₂ : Nat) :
     intro c₁ c₂ hle
     simp [Ix.Kernel.Expr.liftLooseBVars, ih _ _ hle]
 
-private theorem liftLooseBVars_add {md : Ix.Kernel.Mode} (a₁ a₂ : Nat) :
-    ∀ (e : Ix.Kernel.Expr md) (c : Nat),
-      Ix.Kernel.Expr.liftLooseBVars a₁ c (Ix.Kernel.Expr.liftLooseBVars a₂ c e) =
-        Ix.Kernel.Expr.liftLooseBVars (a₂ + a₁) c e := by
+private theorem liftLooseBVars_comp_between {md : Ix.Kernel.Mode} (a₁ a₂ : Nat) :
+    ∀ (e : Ix.Kernel.Expr md) (c₁ c₂ : Nat),
+      c₂ ≤ c₁ → c₁ ≤ c₂ + a₂ →
+      Ix.Kernel.Expr.liftLooseBVars a₁ c₁ (Ix.Kernel.Expr.liftLooseBVars a₂ c₂ e) =
+        Ix.Kernel.Expr.liftLooseBVars (a₂ + a₁) c₂ e := by
   intro e
   induction e with
   | bvar i =>
-    intro c
-    by_cases hc : c ≤ i
-    · have hc' : c ≤ i + a₂ := by omega
-      simp [Ix.Kernel.Expr.liftLooseBVars, hc, hc', Nat.add_assoc]
-    · simp [Ix.Kernel.Expr.liftLooseBVars, hc]
-  | fvar _ _ _ | sort _ | const _ _ | lit _ => intro _; rfl
-  | app f a ihf iha => intro c; simp [Ix.Kernel.Expr.liftLooseBVars, ihf, iha]
-  | lam ty body m iht ihb => intro c; simp [Ix.Kernel.Expr.liftLooseBVars, iht, ihb]
-  | forallE ty body m iht ihb => intro c; simp [Ix.Kernel.Expr.liftLooseBVars, iht, ihb]
+    intro c₁ c₂ hlo hhi
+    by_cases hc₂ : c₂ ≤ i
+    · have hc₁ : c₁ ≤ i + a₂ := by omega
+      simp [Ix.Kernel.Expr.liftLooseBVars, hc₂, hc₁, Nat.add_assoc]
+    · have hc₁ : ¬ (c₁ ≤ i) := by omega
+      simp [Ix.Kernel.Expr.liftLooseBVars, hc₂, hc₁]
+  | fvar _ _ _ | sort _ | const _ _ | lit _ => intro _ _ _ _; rfl
+  | app f a ihf iha =>
+    intro c₁ c₂ hlo hhi
+    simp [Ix.Kernel.Expr.liftLooseBVars, ihf _ _ hlo hhi, iha _ _ hlo hhi]
+  | lam ty body m iht ihb =>
+    intro c₁ c₂ hlo hhi
+    simp only [Ix.Kernel.Expr.liftLooseBVars, iht _ _ hlo hhi]
+    rw [ihb (c₁ + 1) (c₂ + 1) (by omega) (by omega)]
+  | forallE ty body m iht ihb =>
+    intro c₁ c₂ hlo hhi
+    simp only [Ix.Kernel.Expr.liftLooseBVars, iht _ _ hlo hhi]
+    rw [ihb (c₁ + 1) (c₂ + 1) (by omega) (by omega)]
   | letE ty val body m iht ihv ihb =>
-    intro c; simp [Ix.Kernel.Expr.liftLooseBVars, iht, ihv, ihb]
-  | proj s i e ih => intro c; simp [Ix.Kernel.Expr.liftLooseBVars, ih]
+    intro c₁ c₂ hlo hhi
+    simp only [Ix.Kernel.Expr.liftLooseBVars, iht _ _ hlo hhi, ihv _ _ hlo hhi]
+    rw [ihb (c₁ + 1) (c₂ + 1) (by omega) (by omega)]
+  | proj s i e ih =>
+    intro c₁ c₂ hlo hhi
+    simp [Ix.Kernel.Expr.liftLooseBVars, ih _ _ hlo hhi]
 
 private theorem liftLooseBVars_instantiate1Lift {md : Ix.Kernel.Mode} (amount : Nat)
     (v : Ix.Kernel.Expr md) :
@@ -3411,7 +3425,8 @@ private theorem liftLooseBVars_instantiate1Lift {md : Ix.Kernel.Mode} (amount : 
     · subst hid
       have hnc : ¬ (i + u + 1 ≤ i) := by omega
       simp only [Ix.Kernel.Expr.instantiate1Lift, ↓reduceIte, Ix.Kernel.Expr.liftLooseBVars, hnc]
-      rw [Nat.add_comm i u, liftLooseBVars_comm amount i v 0 u (Nat.zero_le _), Nat.zero_add]
+      rw [Nat.add_comm i u]
+      exact (liftLooseBVars_comm i amount v 0 u (Nat.zero_le _)).symm
     · by_cases hgt : i > d
       · by_cases hge : d + u + 1 ≤ i
         · have hge' : d + u ≤ i - 1 := by omega
@@ -3445,39 +3460,39 @@ private theorem liftLooseBVars_instantiate1Lift {md : Ix.Kernel.Mode} (amount : 
     intro d u
     simp [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.liftLooseBVars, ih]
 
-private theorem instantiate1Lift_liftLooseBVars_above {md : Ix.Kernel.Mode}
-    (v : Ix.Kernel.Expr md) (k : Nat) :
+private theorem instantiate1Lift_liftLooseBVars_lt {md : Ix.Kernel.Mode}
+    (v : Ix.Kernel.Expr md) (j m : Nat) (hjm : j < m) :
     ∀ (e : Ix.Kernel.Expr md) (c : Nat),
-      (Ix.Kernel.Expr.liftLooseBVars (k + 1) c e).instantiate1Lift v (c + k) =
-        Ix.Kernel.Expr.liftLooseBVars k c e := by
+      (Ix.Kernel.Expr.liftLooseBVars m c e).instantiate1Lift v (c + j) =
+        Ix.Kernel.Expr.liftLooseBVars (m - 1) c e := by
   intro e
   induction e with
   | bvar i =>
     intro c
     by_cases hc : c ≤ i
-    · have hne : i + (k + 1) ≠ c + k := by omega
-      have hgt : i + (k + 1) > c + k := by omega
+    · have hne : i + m ≠ c + j := by omega
+      have hgt : i + m > c + j := by omega
       simp only [Ix.Kernel.Expr.liftLooseBVars, hc, ↓reduceIte,
         Ix.Kernel.Expr.instantiate1Lift, hne, hgt]
       exact congrArg Ix.Kernel.Expr.bvar (by omega)
-    · have hne : i ≠ c + k := by omega
-      have hgt : ¬ (i > c + k) := by omega
+    · have hne : i ≠ c + j := by omega
+      have hgt : ¬ (i > c + j) := by omega
       simp [Ix.Kernel.Expr.liftLooseBVars, hc, Ix.Kernel.Expr.instantiate1Lift, hne, hgt]
   | fvar _ _ _ | sort _ | const _ _ | lit _ => intro _; rfl
   | app f a ihf iha =>
     intro c; simp [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.instantiate1Lift, ihf, iha]
-  | lam ty body m iht ihb =>
+  | lam ty body bm iht ihb =>
     intro c
     simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.instantiate1Lift, iht]
-    rw [show c + k + 1 = (c + 1) + k by omega, ihb (c + 1)]
-  | forallE ty body m iht ihb =>
+    rw [show c + j + 1 = (c + 1) + j by omega, ihb (c + 1)]
+  | forallE ty body bm iht ihb =>
     intro c
     simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.instantiate1Lift, iht]
-    rw [show c + k + 1 = (c + 1) + k by omega, ihb (c + 1)]
-  | letE ty val body m iht ihv ihb =>
+    rw [show c + j + 1 = (c + 1) + j by omega, ihb (c + 1)]
+  | letE ty val body bm iht ihv ihb =>
     intro c
     simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.instantiate1Lift, iht, ihv]
-    rw [show c + k + 1 = (c + 1) + k by omega, ihb (c + 1)]
+    rw [show c + j + 1 = (c + 1) + j by omega, ihb (c + 1)]
   | proj s i e ih =>
     intro c; simp [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.instantiate1Lift, ih]
 
@@ -3496,7 +3511,8 @@ private theorem instantiate1Lift_liftLooseBVars_comm {md : Ix.Kernel.Mode}
       have heq : c + u + k = c + k + u := by omega
       simp only [Ix.Kernel.Expr.liftLooseBVars, hc, ↓reduceIte,
         Ix.Kernel.Expr.instantiate1Lift, heq]
-      rw [← liftLooseBVars_comm k (c + u) v 0 c (Nat.zero_le _), liftLooseBVars_add]
+      rw [liftLooseBVars_comp_between k (c + u) v c 0 (Nat.zero_le _) hc]
+      exact congrArg (fun n => Ix.Kernel.Expr.liftLooseBVars n 0 v) (by omega)
     · by_cases hgt : j > c + u
       · have hc : c ≤ j := by omega
         have hc' : c ≤ j - 1 := by omega
@@ -3555,11 +3571,10 @@ private theorem instantiate1Lift_comm {md : Ix.Kernel.Mode} (w v : Ix.Kernel.Exp
         · subst hiu
           have heq1 : k + 1 + u - 1 = k + u := by omega
           simp only [Ix.Kernel.Expr.instantiate1Lift, hik, hgt, ↓reduceIte, heq1]
-          have habove := instantiate1Lift_liftLooseBVars_above (w.instantiate1Lift v u) (k + u) v 0
-          rw [Nat.zero_add, show k + u + 1 = k + 1 + u by omega] at habove
-          have hcomm := liftLooseBVars_comm k u v 0 0 (Nat.le_refl _)
-          -- Direct equality `liftLooseBVars (k + u) 0 v` on both sides
-          exact habove.symm
+          have hlt := instantiate1Lift_liftLooseBVars_lt (w.instantiate1Lift v u) k (k + 1 + u)
+            (by omega) v 0
+          rw [Nat.zero_add, heq1] at hlt
+          exact hlt.symm
         · by_cases hgtu : i > k + 1 + u
           · have hne1 : i - 1 ≠ k + u := by omega
             have hgt1 : i - 1 > k + u := by omega
@@ -3603,7 +3618,7 @@ theorem annotates_liftLooseBVars {e' e : Core.KExpr} (h : IxVM.Consistency.Annot
         (Ix.Kernel.Expr.liftLooseBVars amount c e) := by
   induction h with
   | bvar => intro amount c; simp only [Ix.Kernel.Expr.liftLooseBVars]; split <;> exact .bvar
-  | fvar _ ih => intro amount c; exact .fvar (ih amount c)
+  | fvar hty _ => intro _ _; exact .fvar hty
   | sort => intro _ _; exact .sort
   | const => intro _ _; exact .const
   | lit => intro _ _; exact .lit
@@ -3679,7 +3694,8 @@ private theorem buildShareTblGo_prefix (ecx : Ix.Kernel.Reader.ECx .anon) :
   | e :: es, acc, i, hi => by
     simp only [buildShareTblGo]
     rw [buildShareTblGo_prefix ecx es _ i (by simp; omega)]
-    rw [Array.getElem?_push, if_neg (by omega)]
+    have hne : acc.size ≠ i := by omega
+    simp [Array.getElem?_push, hne]
 
 private theorem buildShareTblGo_append (ecx : Ix.Kernel.Reader.ECx .anon) :
     ∀ (es₁ es₂ : List Ixon.Expr) (acc : Array (Ix.Kernel.Reader.ReadM Core.KExpr)),
@@ -3697,7 +3713,7 @@ theorem buildShareTbl_take_getElem? (ecx : Ix.Kernel.Reader.ECx .anon)
     (hi_n : i < n) (hsh : sharing[i]? = some s) :
     (buildShareTbl ecx (sharing.take n))[i]? =
       some (Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take i)) s) := by
-  have hi_len : i < sharing.length := List.getElem?_eq_some_iff.mp ⟨s, hsh⟩ |>.1
+  have hi_len : i < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
   have htake_split : sharing.take n =
       sharing.take i ++ (s :: (sharing.drop (i + 1)).take (n - 1 - i)) := by
     have h1 : sharing.take n = (sharing.take i ++ sharing.drop i).take n := by
@@ -3716,7 +3732,7 @@ theorem buildShareTbl_take_getElem? (ecx : Ix.Kernel.Reader.ECx .anon)
   have hsz_i : (buildShareTblGo ecx #[] (sharing.take i)).size = i := by
     rw [buildShareTblGo_size]; simp [Nat.min_eq_left (Nat.le_of_lt hi_len)]
   rw [buildShareTblGo_prefix ecx _ _ i (by simp [hsz_i])]
-  rw [Array.getElem?_push, if_pos hsz_i.symm]
+  simp [Array.getElem?_push, hsz_i]
 
 /-- `MemberReader.mk'` builds `buildShareTbl mr.ecx src.sharing.toList`. -/
 theorem memberReader_mk'_eq (cx : Ix.Kernel.Reader.Ctx .anon) (src : Ixon.Constant)
@@ -3728,8 +3744,6 @@ theorem memberReader_mk'_eq (cx : Ix.Kernel.Reader.Ctx .anon) (src : Ixon.Consta
       ⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv param), self⟩
       src.sharing.toList := by
   refine ⟨rfl, ?_⟩
-  show Id.run _ = _
-  -- `for entry in src.sharing` over `Array` lowers to `Array.forIn` = `List.foldl`
   have hfold : ∀ (es : List Ixon.Expr) (acc : Array (Ix.Kernel.Reader.ReadM Core.KExpr)),
       es.foldl (fun tbl entry =>
         tbl.push (Ix.Kernel.Reader.convExpr
@@ -3741,13 +3755,19 @@ theorem memberReader_mk'_eq (cx : Ix.Kernel.Reader.Ctx .anon) (src : Ixon.Consta
     | nil => intro _; rfl
     | cons e es ih => intro acc; simp [List.foldl, buildShareTblGo, ih]
   unfold Ix.Kernel.Reader.MemberReader.mk' buildShareTbl
-  simp [ Array.mkEmpty, hfold ]
+  simp [Id.run, Array.mkEmpty, Array.forIn_pure_yield_eq_foldl, ← Array.foldl_toList, hfold]
 
 private theorem except_bind_eq_ok {ε α β : Type} {m : Except ε α} {f : α → Except ε β} {b : β}
     (h : (m >>= f) = .ok b) : ∃ a, m = .ok a ∧ f a = .ok b := by
   cases m with
   | error e => simp [bind, Except.bind] at h
   | ok a => exact ⟨a, rfl, h⟩
+
+private theorem option_bind_eq_some {α β : Type} {m : Option α} {f : α → Option β} {b : β}
+    (h : (m >>= f) = some b) : ∃ a, m = some a ∧ f a = some b := by
+  cases m with
+  | none => simp [bind, Option.bind] at h
+  | some a => exact ⟨a, rfl, h⟩
 
 private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
@@ -3761,14 +3781,17 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
     ∀ l ∈ ls_id, KernelLevels.ParamsLt 4294967296 l := by
   induction idxs generalizing ls_id ls_rd with
   | nil =>
-    simp only [List.mapM_nil, Option.some.injEq] at hls_id
-    have hrd_nil : ls_rd = [] := by
-      cases hls_rd; rfl
-    subst hls_id hrd_nil
+    have hid_nil : ls_id = [] := by cases hls_id; rfl
+    have hrd_nil : ls_rd = [] := by cases hls_rd; rfl
+    subst hid_nil hrd_nil
     exact ⟨rfl, fun _ h => nomatch h⟩
   | cons i rest ih =>
-    simp only [List.mapM_cons, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hls_id
-    obtain ⟨l1, ⟨u, hu_get, rfl⟩, ls_id_rest, hrest_id, rfl⟩ := hls_id
+    simp only [List.mapM_cons] at hls_id
+    obtain ⟨l1, hl1, hbind_id⟩ := option_bind_eq_some hls_id
+    obtain ⟨ls_id_rest, hrest_id, hret_id⟩ := option_bind_eq_some hbind_id
+    injection hret_id with hls_id_eq; subst hls_id_eq
+    simp only [Option.map_eq_some_iff] at hl1
+    obtain ⟨u, hu_get, rfl⟩ := hl1
     simp only [List.mapM_cons] at hls_rd
     obtain ⟨l_rd1, hl_rd1, hbind_rest⟩ := except_bind_eq_ok hls_rd
     obtain ⟨ls_rd_rest, hrest_rd, hret⟩ := except_bind_eq_ok hbind_rest
@@ -3780,7 +3803,8 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
           some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
         simp [hu_get]
       rw [hget_arr] at hl_rd1
-      injection hl_rd1
+      injection hl_rd1 with hl_eq
+      exact hl_eq
     subst hl_rd1_eq
     simp only [List.all_cons, Bool.and_eq_true] at hdef
     obtain ⟨heq1, hplt1⟩ := convUniv_posOf_eq hperm hps_lt hdef.1
@@ -3825,7 +3849,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     subst hconv
     simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
     refine ⟨.bvar idx.toNat, .bvar, fun d Γ => ?_⟩
-    have hval : ZMod.val (idx.toNat : F) = idx.toNat := ZMod.val_cast_of_lt (by omega)
+    have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
     have htm : Core.Tm κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
         (.ptr (.enum Core.kexprEnum) addr) :=
       .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
@@ -3842,7 +3866,8 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
           some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
         simp [hu]
       rw [hget] at hu_rd
-      injection hu_rd
+      injection hu_rd with hu_eq'
+      exact hu_eq'
     subst hu_eq
     simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
     obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
@@ -3907,7 +3932,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     obtain ⟨Ein', hA_in, hTm_in⟩ := ih hn_le hbnd_le hEin_rd hlbb hdef
     refine ⟨.proj (κ a) fIdx.toNat Ein', .proj hA_in, fun d0 Γ => ?_⟩
     unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := ZMod.val_cast_of_lt (by omega)
+    have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := val_cast_u56 hfIdx
     rw [← hd, ← hf_val]
     exact .proj cell ra (hTm_in d0 Γ)
   | @str bound addr bIdx a bs s bp hbIdx href hmem rbs hs cell =>
@@ -3918,8 +3943,9 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
       unfold Ix.Kernel.Reader.ECx.blobAt at hb_at
       have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
         rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr, hblob a ⟨bs.toArray⟩ hmem] at hb_at
-      injection hb_at
+      rw [href_arr] at hb_at
+      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
+      exact hb_at.symm
     subst hb_eq
     have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
     rw [hs_utf8] at hrest
@@ -4001,7 +4027,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     exact .letE cell (hTmt d0 Γ) (hTmv d0 Γ) (hTmb d0 Γ)
   | @share bound idx s kp hidx hsh _ ih =>
     intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    have hidx_len : idx.toNat < sharing.length := List.getElem?_eq_some_iff.mp ⟨s, hsh⟩ |>.1
+    have hidx_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
     have hidx_n : idx.toNat < n := by omega
     simp only [Ix.Kernel.Reader.convExpr] at hconv
     rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
