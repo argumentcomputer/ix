@@ -1743,13 +1743,15 @@ local macro "ca_let_conv_expr" d:ident xk:ident xb:ident m:ident cs:ident ev:ide
     clear d_ce mt_ce a_ce0 a_ce1 a_ce2 a_ce3 a_ce4 a_ce5 a_ce6))
 
 set_option hygiene false in
-local macro "ca_let_annot_branch" d:ident xk2:ident xn:ident br:ident drest:ident : tactic =>
+local macro "ca_let_annot_branch" d:ident xsub:ident xk:ident xb:ident xnodes:ident min:ident
+    xk2:ident xn:ident mout:ident cs:ident br:ident drest:ident : tactic =>
   `(tactic| (
-    obtain ⟨_, _, _, _, _, d_ab, mt_ab, $drest, rfl⟩ := ObsExpr.letValue_inv $d
+    obtain ⟨_, $mout, _, _, _, d_ab, mt_ab, $drest, rfl⟩ := ObsExpr.letValue_inv $d
     ca_tuple2_pat mt_ab $xk2 $xn
-    obtain ⟨_, _, _, _, _, cs_ab_body, d_sc, sel_ab, d_body_ab, rfl⟩ := ObsExpr.matchValue_inv d_ab
+    obtain ⟨_, _, _, _, _, $cs, d_sc, sel_ab, d_body_ab, rfl⟩ := ObsExpr.matchValue_inv d_ab
     ca_var d_sc
-    have $br : AnnotBranch _ _ _ _ _ _ _ _ _ _ _ $xk2 $xn _ cs_ab_body := by
+    have $br : AnnotBranch $xsub x_sharing x_bound x_refs x_recur_addrs x_univs x_tbl
+        $xk $xb $xnodes $min $xk2 $xn $mout $cs := by
       rcases selectArm_cons_inv sel_ab with ⟨mt_ab0, rfl⟩ | ⟨nm_ab0, sel_ab1⟩
       · obtain ⟨hv_ab0, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt_ab0
         obtain ⟨_, a_ab0, heq_ab0⟩ := ObsExpr.tuple_inv d_body_ab
@@ -1804,8 +1806,8 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml0c
     ca_let_conv_expr d_arm x_kf x_bf m1 cs1 ev_f d1
     ca_let_conv_expr d1 x_ka x_ba m2 cs2 ev_a d2
-    ca_let_annot_branch d2 x_kf2 x_n1 br_f d3
-    ca_let_annot_branch d3 x_ka2 x_n2 br_a d4
+    ca_let_annot_branch d2 x_f x_kf x_bf x_nodes m2 x_kf2 x_n1 m3 cs3 br_f d3
+    ca_let_annot_branch d3 x_a x_ka x_ba x_n1 m3 x_ka2 x_n2 m4 cs4 br_a d4
     obtain ⟨_, a_ret0, rfl⟩ := d4.tuple_inv
     obtain ⟨_, _, _, _, _, rfl, d_st, a_ret1, rfl⟩ := a_ret0.cons_inv
     obtain ⟨_, _, d_con, rfl, hm_st⟩ := d_st.store_inv
@@ -1817,7 +1819,7 @@ theorem convert_annotated_obs
     ca_arg_var a_ret1 a_ret2
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.App _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ ld_e ev_f ev_a br_f br_a rfl hm_st
+      _ _ _ _ _ _ _ _ ld_e ev_f ev_a br_f br_a (by simp [Value.type]) hm_st
       (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
   -- Arm 2: Lam(ty, body)
   rcases selectArm_cons_inv sel1 with ⟨mt1, rfl⟩ | ⟨_, sel2⟩
@@ -1846,8 +1848,8 @@ theorem convert_annotated_obs
     obtain rfl := matchPattern_bind_inv mt_bl
     ca_let_conv_expr d2 x_kt x_bt m2 cs2 ev_t d3
     ca_let_conv_expr d3 x_kb x_bb m3 cs3 ev_b d4
-    ca_let_annot_branch d4 x_kt2 x_n1 br_t d5
-    ca_let_annot_branch d5 x_kb2 x_n2 br_b d6
+    ca_let_annot_branch d4 x_ty x_kt x_bt x_n0 m3 x_kt2 x_n1 m4 cs4 br_t d5
+    ca_let_annot_branch d5 x_body x_kb x_bb x_n1 m4 x_kb2 x_n2 m5 cs5 br_b d6
     obtain ⟨_, a_ret0, rfl⟩ := d6.tuple_inv
     obtain ⟨_, _, _, _, _, rfl, d_st, a_ret1, rfl⟩ := a_ret0.cons_inv
     obtain ⟨_, _, d_con, rfl, hm_st⟩ := d_st.store_inv
@@ -1861,7 +1863,7 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.Lam _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      ld_e ld_nodes ev_l ev_t ev_b br_t br_b rfl hm_st
+      ld_e ld_nodes ev_l ev_t ev_b br_t br_b (by simp [Value.type]) hm_st
       (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
   -- Arm 3: All(ty, body)
   rcases selectArm_cons_inv sel2 with ⟨mt2, rfl⟩ | ⟨_, sel3⟩
@@ -1890,8 +1892,8 @@ theorem convert_annotated_obs
     obtain rfl := matchPattern_bind_inv mt_bl
     ca_let_conv_expr d2 x_kt x_bt m2 cs2 ev_t d3
     ca_let_conv_expr d3 x_kb x_bb m3 cs3 ev_b d4
-    ca_let_annot_branch d4 x_kt2 x_n1 br_t d5
-    ca_let_annot_branch d5 x_kb2 x_n2 br_b d6
+    ca_let_annot_branch d4 x_ty x_kt x_bt x_n0 m3 x_kt2 x_n1 m4 cs4 br_t d5
+    ca_let_annot_branch d5 x_body x_kb x_bb x_n1 m4 x_kb2 x_n2 m5 cs5 br_b d6
     obtain ⟨_, a_ret0, rfl⟩ := d6.tuple_inv
     obtain ⟨_, _, _, _, _, rfl, d_st, a_ret1, rfl⟩ := a_ret0.cons_inv
     obtain ⟨_, _, d_con, rfl, hm_st⟩ := d_st.store_inv
@@ -1905,7 +1907,7 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.All _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      ld_e ld_nodes ev_l ev_t ev_b br_t br_b rfl hm_st
+      ld_e ld_nodes ev_l ev_t ev_b br_t br_b (by simp [Value.type]) hm_st
       (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
   -- Arm 4: Let(_, ty, val, body)
   rcases selectArm_cons_inv sel3 with ⟨mt3, rfl⟩ | ⟨_, sel4⟩
@@ -1923,9 +1925,9 @@ theorem convert_annotated_obs
     ca_let_conv_expr d_arm x_kt x_bt m1 cs1 ev_t d1
     ca_let_conv_expr d1 x_kv x_bv m2 cs2 ev_v d2
     ca_let_conv_expr d2 x_kb x_bb m3 cs3 ev_b d3
-    ca_let_annot_branch d3 x_kt2 x_n1 br_t d4
-    ca_let_annot_branch d4 x_kv2 x_n2 br_v d5
-    ca_let_annot_branch d5 x_kb2 x_n3 br_b d6
+    ca_let_annot_branch d3 x_ty x_kt x_bt x_nodes m3 x_kt2 x_n1 m4 cs4 br_t d4
+    ca_let_annot_branch d4 x_val x_kv x_bv x_n1 m4 x_kv2 x_n2 m5 cs5 br_v d5
+    ca_let_annot_branch d5 x_body x_kb x_bb x_n2 m5 x_kb2 x_n3 m6 cs6 br_b d6
     obtain ⟨_, a_ret0, rfl⟩ := d6.tuple_inv
     obtain ⟨_, _, _, _, _, rfl, d_st, a_ret1, rfl⟩ := a_ret0.cons_inv
     obtain ⟨_, _, d_con, rfl, hm_st⟩ := d_st.store_inv
@@ -1939,7 +1941,7 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.Let _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      ld_e ev_t ev_v ev_b br_t br_v br_b rfl hm_st
+      ld_e ev_t ev_v ev_b br_t br_v br_b (by simp [Value.type]) hm_st
       (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
   -- Arm 5: Prj(type_ref_idx, field_idx, inner)
   rcases selectArm_cons_inv sel4 with ⟨mt4, rfl⟩ | ⟨_, sel5⟩
@@ -1995,7 +1997,7 @@ theorem convert_annotated_obs
     ca_arg_var a_ret1 a_ret2
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.Prj _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ ld_e ev_tf ev_lk ev_in ev_ff rfl hm_st
+      _ _ _ _ _ _ _ _ ld_e ev_tf ev_lk ev_in ev_ff (by simp [Value.type]) hm_st
       (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil,
         instanceName_plain_some, Names.n16119986092388975791])
   -- Arm 6: Share(idx)
