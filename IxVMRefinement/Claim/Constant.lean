@@ -347,7 +347,8 @@ private theorem getExprChildren_to_getArray :
               rw [Ixon.Verify.BoundedConstant.getArray_succ]
               simp only [bind, EStateM.bind, h1, ih, pure, EStateM.pure, EStateM.Result.ok.injEq,
                 and_true]
-              rfl
+              apply Array.ext'
+              simp
 
 private theorem getUnivChildren_to_getArray :
     ∀ (count : Nat) {s s' : Ixon.GetState} {xs : List Ixon.Univ},
@@ -372,7 +373,8 @@ private theorem getUnivChildren_to_getArray :
               rw [Ixon.Verify.BoundedConstant.getArray_succ]
               simp only [bind, EStateM.bind, h1, ih, pure, EStateM.pure, EStateM.Result.ok.injEq,
                 and_true]
-              rfl
+              apply Array.ext'
+              simp
 
 private theorem uint8_lt4_cases (b : UInt8) (h : b.toNat < 4) :
     b = 0 ∨ b = 1 ∨ b = 2 ∨ b = 3 := by
@@ -435,12 +437,12 @@ private theorem getAddress_of_drop {bytes : List UInt8} {i : Nat}
 /-! ## Flag byte unpacking: `unpack_def_asserts` and `unpack_def_kind_safety` -/
 
 private theorem evalBinOp_mul_natCast (a b : Nat) :
-    (evalBinOp .mul (.field (a : F)) (.field (b : F)) : Except String (SourceValue F)) =
+    (evalBinOp .mul (.field (a : F)) (.field (b : F)) : Except EvalError (SourceValue F)) =
       .ok (.field ((a * b : Nat) : F)) := by
   simp [evalBinOp, Nat.cast_mul]
 
 private theorem evalBinOp_add_natCast (a b : Nat) :
-    (evalBinOp .add (.field (a : F)) (.field (b : F)) : Except String (SourceValue F)) =
+    (evalBinOp .add (.field (a : F)) (.field (b : F)) : Except EvalError (SourceValue F)) =
       .ok (.field ((a + b : Nat) : F)) := by
   simp [evalBinOp, Nat.cast_add]
 
@@ -517,9 +519,17 @@ private theorem unpack_def_asserts_arith {b : UInt8} {k : Nat}
     rw [UInt8.toNat_ofNat']
     omega
 
+private def defAssertsOfCode : Nat → Ixon.DefAsserts
+  | 1 => ⟨.noRc, false⟩
+  | 2 => ⟨.noAlloc, false⟩
+  | 4 => ⟨.unrestricted, true⟩
+  | 5 => ⟨.noRc, true⟩
+  | 6 => ⟨.noAlloc, true⟩
+  | _ => ⟨.unrestricted, false⟩
+
 theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::unpack_def_asserts"
+    {calls : List (Call F)}
+    (ev : ObsFn Obs.W "IxonDeserialize::unpack_def_asserts"
       [.field ((b.toNat : Nat) : F)] h r h' calls) :
     h' = h ∧
     ∃ (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) (asserts : Ixon.DefAsserts)
@@ -565,10 +575,11 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((0 : Nat) : F)) := op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 0) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .defn, .unsaf, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .defn, .unsaf, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -577,10 +588,11 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((1 : Nat) : F)) := op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 1) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .defn, .safe, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .defn, .safe, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -589,10 +601,11 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((2 : Nat) : F)) := by simpa using op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 2) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .defn, .part, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .defn, .part, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -601,10 +614,11 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((4 : Nat) : F)) := by simpa using op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 4) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .opaq, .unsaf, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .opaq, .unsaf, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -613,10 +627,11 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((5 : Nat) : F)) := by simpa using op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 5) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .opaq, .safe, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .opaq, .safe, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
   · obtain ⟨hbts, hm2⟩ := Deserialize.u8BitDecomposition_refines hb ev14.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbts
     rcases hbts with ⟨hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7⟩
@@ -625,14 +640,15 @@ theorem unpack_def_asserts_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
     have op188' : evalBinOp .add x181 y182 = .ok (.field ((6 : Nat) : F)) := by simpa using op188
     obtain ⟨c, hc, hv129, hbeq⟩ := unpack_def_asserts_arith (k := 6) (by omega)
       heq92 op119 heq128 op161 op152 op170 op144 op213 op204 op222 op196 op231 op188'
-    refine ⟨he_h.trans hm2, .opaq, .part, ?_⟩
+    rw [hbeq]
     rcases hc with rfl | rfl | rfl | rfl | rfl | rfl <;>
-      refine ⟨_, _, _, v129, ?_, rfl, ?_, he_r, rfl, rfl, ?_⟩
-    all_goals first | decide | rfl | exact hv129
+      exact ⟨he_h.trans hm2, .opaq, .part, defAssertsOfCode _, _, _, v129,
+        by decide, by decide, by decide, he_r, rfl, rfl,
+        hv129.trans (congrArg (fun n : Nat => (.field (n : F) : SourceValue F)) (by decide))⟩
 
 theorem unpack_def_kind_safety_spec {b : UInt8} {r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::unpack_def_kind_safety"
+    {calls : List (Call F)}
+    (ev : ObsFn Obs.W "IxonDeserialize::unpack_def_kind_safety"
       [.field ((b.toNat : Nat) : F)] h r h' calls) :
     h' = h ∧
     ∃ (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) (asserts : Ixon.DefAsserts)
@@ -717,9 +733,9 @@ theorem unpack_def_kind_safety_spec {b : UInt8} {r : SourceValue F} {h h' : Heap
 /-! ## Leaf payload deserializers -/
 
 theorem get_definition_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_definition" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_definition" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (d : Ixon.Definition) (n : Nat) (dVal restPtr : SourceValue F),
       Ixon.getDefinition { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -768,9 +784,9 @@ theorem get_definition_spec {bytes : List UInt8} {i : Nat}
     hasserts, hunpack, hlvls_ok, htyp_ok, hval_ok, pure, EStateM.pure]
 
 theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_recursor_rule" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_rule" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rl : Ixon.RecursorRule) (n : Nat) (rlVal restPtr : SourceValue F),
       (bytes.drop (i + n)).length + 2 ≤ (bytes.drop i).length ∧
@@ -799,9 +815,9 @@ theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_recursor_rule_list"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_rule_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rules : Array Ixon.RecursorRule) (n : Nat) (listPtr restPtr : SourceValue F),
@@ -859,9 +875,9 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
 theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_recursor" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_recursor" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rc : Ixon.Recursor) (n : Nat) (rcVal restPtr : SourceValue F),
       Ixon.getRecursor { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -917,8 +933,8 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     getTagN0_progress hs5 ev282.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hminors_tup
   rcases hminors_tup with ⟨rfl, rfl⟩; subst m270
-  rw [show i + (1 + n1 + n2 + n3 + n4) + n5 = i + (1 + n1 + n2 + n3 + n4 + n5) by omega] at
-    hminors_ok hs6
+  rw [show i + (1 + n1 + n2 + n3 + n4) + n5 =
+    i + (1 + n1 + n2 + n3 + n4 + n5) by omega] at hminors_ok hs6
   obtain ⟨ext_typ, typ, n6, typPtr, s7Ptr, _, _, htyp_ok, htyp_tup, htypRep, hs7⟩ :=
     Deserialize.getExpr_refines_at hs6 ev317.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htyp_tup
@@ -972,9 +988,9 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     hrlen_ok, hchk, hrules_ok, pure, EStateM.pure]
 
 theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_axiom" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_axiom" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (a : Ixon.Axiom) (n : Nat) (aVal restPtr : SourceValue F),
       Ixon.getAxiom { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -991,7 +1007,8 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
   subst x_is_unsafe x_s m2
   obtain ⟨hb_lt2, _, hm37⟩ := Deserialize.assertWireBool_refines b.toNat_lt ev49.erase
   subst m37
-  obtain ⟨hbool_ok, hdrop1⟩ := Deserialize.getBool_of_drop_cons hcons hb_lt2
+  obtain ⟨_, hdrop1, _⟩ := Deserialize.getU8_of_drop_cons hcons
+  have hbool_ok := Deserialize.getBool_of_drop_cons hcons hb_lt2
   rw [← hdrop1] at hs1
   obtain ⟨hm59, lvlsT, n1, s2Ptr, _, _, hlvls_ok, _, hs2, hlvls_tup⟩ :=
     getTagN0_progress hs1 ev71.erase
@@ -1005,18 +1022,18 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
   obtain ⟨hv142, hm146⟩ := Deserialize.u8ToField_refines ev156.erase
   subst m146 he186
   rw [show i + (1 + n1) + n2 = i + (1 + n1 + n2) by omega] at htyp_ok hs3
-  have huRep : RepBool (b == 1) v142 := by
+  have huRep : RepBool (decide (b.toNat = 1)) v142 := by
     rw [hv142]
     rcases uint8_lt2_cases b hb_lt2 with rfl | rfl <;> rfl
-  refine ⟨ext_typ, ⟨b == 1, lvlsT.value, typ⟩, 1 + n1 + n2, _, x_s3, ?_, he132,
+  refine ⟨ext_typ, ⟨decide (b.toNat = 1), lvlsT.value, typ⟩, 1 + n1 + n2, _, x_s3, ?_, he132,
     ⟨v142, x_typ, rfl, huRep, htypRep⟩, hs3⟩
   unfold Ixon.getAxiom
   simp only [bind, EStateM.bind, hbool_ok, hlvls_ok, htyp_ok, pure, EStateM.pure]
 
 theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_quotient" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_quotient" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (q : Ixon.Quotient) (n : Nat) (qVal restPtr : SourceValue F),
       Ixon.getQuotient { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1066,9 +1083,9 @@ theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_field_mode_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_field_mode_list"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_field_mode_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (modes : Array Ixon.FieldMode) (n : Nat) (listPtr sharedVal restPtr : SourceValue F),
@@ -1184,10 +1201,10 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
 
 theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
     {bytes : List UInt8} {i : Nat} {x_listed x_s r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hl : RepBool listed x_listed)
     (hs : L1.Stream h (bytes.drop i) x_s)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constructor_modes"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_modes"
       [x_listed, TagN.u64Value fields.toNat, x_s] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (fm : Ixon.FieldModes fields.toNat) (n : Nat) (modesPtr restPtr : SourceValue F),
@@ -1242,9 +1259,9 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
     simp only [↓reduceIte, bind, EStateM.bind, hchk, hok, hlisted, pure, EStateM.pure]
 
 theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constructor" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constructor" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (c : Ixon.Constructor) (n : Nat) (cVal restPtr : SourceValue F),
       (bytes.drop (i + n)).length + 6 ≤ (bytes.drop i).length ∧
@@ -1295,8 +1312,8 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
     getTagN0_progress hs4 ev223.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfields_tup
   rcases hfields_tup with ⟨rfl, rfl⟩; subst m211
-  rw [show i + (1 + n1 + n2 + n3) + n4 = i + (1 + n1 + n2 + n3 + n4) by omega] at
-    hfields_ok hs5 hlt4
+  rw [show i + (1 + n1 + n2 + n3) + n4 =
+    i + (1 + n1 + n2 + n3 + n4) by omega] at hfields_ok hs5 hlt4
   have hflags_decode :
       (b > 3) = false ∧
       RepBool (b &&& 1 == 1) v348 ∧
@@ -1329,9 +1346,9 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constructor_list"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ctors : Array Ixon.Constructor) (n : Nat) (listPtr restPtr : SourceValue F),
@@ -1389,9 +1406,9 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
 theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_inductive" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_inductive" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ind : Ixon.Inductive) (n : Nat) (indVal restPtr : SourceValue F),
       Ixon.getInductive { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1410,7 +1427,8 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
   subst x_bools_byte x_s m2
   obtain ⟨hb_lt2, _, hm37⟩ := Deserialize.assertWireBool_refines b.toNat_lt ev49.erase
   subst m37
-  obtain ⟨hbool_ok, hdrop1⟩ := Deserialize.getBool_of_drop_cons hcons hb_lt2
+  obtain ⟨_, hdrop1, _⟩ := Deserialize.getU8_of_drop_cons hcons
+  have hbool_ok := Deserialize.getBool_of_drop_cons hcons hb_lt2
   rw [← hdrop1] at hs1
   obtain ⟨hbts, hm59⟩ := Deserialize.u8BitDecomposition_refines b.toNat_lt ev71.erase
   subst m59
@@ -1455,11 +1473,11 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     have hu : clenT.value.toNat.toUInt64 = clenT.value := UInt64.ofNat_toNat
     rw [hu]
     exact Deserialize.checkCount_ok (by omega)
-  have huRep : RepBool (b == 1) v80 := by
+  have huRep : RepBool (decide (b.toNat = 1)) v80 := by
     rw [← pr90]
     rcases uint8_lt2_cases b hb_lt2 with rfl | rfl <;> rfl
   refine ⟨ext_typ.trans ext_ctors,
-    ⟨b == 1, lvlsT.value, paramsT.value, indicesT.value, typ, ctors⟩,
+    ⟨decide (b.toNat = 1), lvlsT.value, paramsT.value, indicesT.value, typ, ctors⟩,
     1 + n1 + n2 + n3 + n4 + n5 + n6, _, x_s7, ?_, he314,
     ⟨v80, x_typ, x_ctors, rfl, huRep, htypRep.mono ext_ctors, hctorsRep⟩, hs7⟩
   rw [Ixon.Verify.Codec.MutualConstant.getInductive_eq]
@@ -1472,9 +1490,9 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
 /-! ## Projection payloads, mutual blocks, and `get_constant_info` -/
 
 theorem get_inductive_proj_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_inductive_proj" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_inductive_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.InductiveProj) (n : Nat) (pVal restPtr : SourceValue F),
       Ixon.getInductiveProj { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1500,15 +1518,12 @@ theorem get_inductive_proj_spec {bytes : List UInt8} {i : Nat}
     n1 + 32, _, x_s2, ?_, he75,
     ⟨x_block, rfl, ⟨Deserialize.takeAddress (bytes.drop (i + n1)) hlen, haddrRep, rfl⟩⟩, hs2⟩
   unfold Ixon.getInductiveProj
-  change (EStateM.bind (Ixon.getTagN 0) fun t =>
-    EStateM.bind (Ixon.Serialize.get : Ixon.GetM _root_.Address) fun blk =>
-      EStateM.pure ⟨t.value, blk⟩) _ = _
-  simp only [EStateM.bind, hidx_ok, haddr_ok, EStateM.pure]
+  simp only [bind, EStateM.bind, pure, EStateM.pure, hidx_ok, haddr_ok]
 
 theorem get_constructor_proj_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constructor_proj" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.ConstructorProj) (n : Nat) (pVal restPtr : SourceValue F),
       Ixon.getConstructorProj { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1542,16 +1557,12 @@ theorem get_constructor_proj_spec {bytes : List UInt8} {i : Nat}
     ⟨x_block, rfl, ⟨Deserialize.takeAddress (bytes.drop (i + (n1 + n2))) hlen, haddrRep, rfl⟩⟩,
     hs3⟩
   unfold Ixon.getConstructorProj
-  change (EStateM.bind (Ixon.getTagN 0) fun t1 =>
-    EStateM.bind (Ixon.getTagN 0) fun t2 =>
-      EStateM.bind (Ixon.Serialize.get : Ixon.GetM _root_.Address) fun blk =>
-        EStateM.pure ⟨t1.value, t2.value, blk⟩) _ = _
-  simp only [EStateM.bind, hidx_ok, hcidx_ok, haddr_ok, EStateM.pure]
+  simp only [bind, EStateM.bind, pure, EStateM.pure, hidx_ok, hcidx_ok, haddr_ok]
 
 theorem get_recursor_proj_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_recursor_proj" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.RecursorProj) (n : Nat) (pVal restPtr : SourceValue F),
       Ixon.getRecursorProj { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1577,15 +1588,12 @@ theorem get_recursor_proj_spec {bytes : List UInt8} {i : Nat}
     n1 + 32, _, x_s2, ?_, he75,
     ⟨x_block, rfl, ⟨Deserialize.takeAddress (bytes.drop (i + n1)) hlen, haddrRep, rfl⟩⟩, hs2⟩
   unfold Ixon.getRecursorProj
-  change (EStateM.bind (Ixon.getTagN 0) fun t =>
-    EStateM.bind (Ixon.Serialize.get : Ixon.GetM _root_.Address) fun blk =>
-      EStateM.pure ⟨t.value, blk⟩) _ = _
-  simp only [EStateM.bind, hidx_ok, haddr_ok, EStateM.pure]
+  simp only [bind, EStateM.bind, pure, EStateM.pure, hidx_ok, haddr_ok]
 
 theorem get_definition_proj_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_definition_proj" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_definition_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.DefinitionProj) (n : Nat) (pVal restPtr : SourceValue F),
       Ixon.getDefinitionProj { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1611,15 +1619,12 @@ theorem get_definition_proj_spec {bytes : List UInt8} {i : Nat}
     n1 + 32, _, x_s2, ?_, he75,
     ⟨x_block, rfl, ⟨Deserialize.takeAddress (bytes.drop (i + n1)) hlen, haddrRep, rfl⟩⟩, hs2⟩
   unfold Ixon.getDefinitionProj
-  change (EStateM.bind (Ixon.getTagN 0) fun t =>
-    EStateM.bind (Ixon.Serialize.get : Ixon.GetM _root_.Address) fun blk =>
-      EStateM.pure ⟨t.value, blk⟩) _ = _
-  simp only [EStateM.bind, hidx_ok, haddr_ok, EStateM.pure]
+  simp only [bind, EStateM.bind, pure, EStateM.pure, hidx_ok, haddr_ok]
 
 theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_mut_const" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_mut_const" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (mc : Ixon.MutConst) (n : Nat) (mcVal restPtr : SourceValue F),
       Ixon.getMutConst { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1684,9 +1689,9 @@ theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_mut_const_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_mut_const_list"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_mut_const_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ms : Array Ixon.MutConst) (n : Nat) (listPtr restPtr : SourceValue F),
@@ -1741,9 +1746,9 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
 
 theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constant_info_by_variant"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constant_info_by_variant"
       [.field ((v.toNat : Nat) : F), x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ci : Ixon.ConstantInfo) (n : Nat) (ciVal restPtr : SourceValue F),
@@ -1836,9 +1841,9 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
       Functor.map, EStateM.map, hok]
 
 theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constant_info"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constant_info"
       [.field ((t.flag.toNat : Nat) : F), TagN.u64Value t.value.toNat, x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ci : Ixon.ConstantInfo) (n : Nat) (ciVal restPtr : SourceValue F),
@@ -1932,9 +1937,9 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
 
 theorem get_address_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
-    {calls : List (Obs.Call F)}
+    {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_address_list"
+    (ev : ObsFn Obs.W "IxonDeserialize::get_address_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (addrs : Array _root_.Address) (n : Nat) (listPtr restPtr : SourceValue F),
@@ -1996,9 +2001,9 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
       simp [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
 
 theorem get_refs_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_refs" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_refs" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (t : Ixon.TagN) (addrs : Array _root_.Address) (n1 n2 : Nat)
       (listPtr restPtr : SourceValue F),
@@ -2020,9 +2025,9 @@ theorem get_refs_spec {bytes : List UInt8} {i : Nat}
   exact ⟨ext1, t, addrs, n1, n2, listPtr, restPtr, hsz, ht_ok, hok2, htup2, hrep, hs2⟩
 
 theorem get_univs_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_univs" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_univs" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (t : Ixon.TagN) (univs : Array Ixon.Univ) (n1 n2 : Nat)
       (listPtr restPtr : SourceValue F),
@@ -2070,14 +2075,14 @@ theorem assert_prj_empty_tables_spec {ci : Ixon.ConstantInfo}
     {sharing : Array Ixon.Expr} {refs : Array _root_.Address}
     {univs : Array Ixon.Univ} {binders : Array Ixon.BinderBlock}
     {x_info x_sharing x_refs x_univs x_binders r : SourceValue F}
-    {h h' : Heap F} {calls : List (Obs.Call F)}
+    {h h' : Heap F} {calls : List (Call F)}
     (hinfo : RepConstantInfo h ci x_info)
     (hsh : Deserialize.RepShareVec h sharing.toList x_sharing)
     (hrefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs.toList x_refs)
     (hunivs : RepList Deserialize.univListEnum Deserialize.RepUnivPtr h univs.toList x_univs)
     (hbinders : RepList Deserialize.binderBlockListEnum Deserialize.RepBinderBlock h
       binders.toList x_binders)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::assert_prj_empty_tables"
+    (ev : ObsFn Obs.W "IxonDeserialize::assert_prj_empty_tables"
       [x_info, x_sharing, x_refs, x_univs, x_binders] h r h' calls) :
     h' = h ∧
     (match ci with
@@ -2145,9 +2150,9 @@ theorem assert_prj_empty_tables_spec {ci : Ixon.ConstantInfo}
 /-- **Every observed derivation of `IxonDeserialize::get_constant` at reader offset `i`** refines
 `Ixon.getConstant` at `i`, producing a `RepConstant` value with `ConstantWireFacts`. -/
 theorem get_constant_spec {bytes : List UInt8} {i : Nat}
-    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Obs.Call F)}
+    {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hs : L1.Stream h (bytes.drop i) x_stream)
-    (ev : Obs.ObsFn Obs.W "IxonDeserialize::get_constant" [x_stream] h r h' calls) :
+    (ev : ObsFn Obs.W "IxonDeserialize::get_constant" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (c : Ixon.Constant) (n : Nat) (cVal restPtr : SourceValue F),
       Ixon.getConstant { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -2230,9 +2235,9 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
 whose BLAKE3 digest is `addr`, decodes them to `c : Ixon.Constant` (`Ixon.deConstant = .ok c` and
 `Ixon.deConstantExact = .ok c`), and returns a `RepConstant` value with `ConstantWireFacts c`. -/
 theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
-    {h h' : Heap F} {calls : List (Obs.Call F)}
+    {h h' : Heap F} {calls : List (Call F)}
     (ha : S0.addr h ap addr)
-    (ev : Obs.ObsFn Obs.W "Ingress::load_verified_constant" [ap] h r h' calls) :
+    (ev : ObsFn Obs.W "Ingress::load_verified_constant" [ap] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
       Hashed calls rawBytes ∧
