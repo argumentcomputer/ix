@@ -42,8 +42,13 @@ theorem natCast_inj_lt59 {a b : Nat} (ha : a < 2 ^ 59) (hb : b < 2 ^ 59)
 theorem env_find?_name {env : Ix.Kernel.Env .anon} {k : KKey}
     {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
   unfold Ix.Kernel.Env.find? at h
-  have hbeq : (ci.name == k) = true := List.find?_some h
-  exact eq_of_beq hbeq
+  induction env.consts with
+  | nil => simp at h
+  | cons x xs ih =>
+    simp only [List.find?] at h
+    cases hxk : x.name == k
+    · rw [hxk] at h; exact ih h
+    · rw [hxk, Option.some.injEq] at h; subst h; exact eq_of_beq hxk
 
 theorem ciRep_rec_inv {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F}
@@ -199,12 +204,15 @@ theorem subst_go_posLevels_aux {us : List KLevel} :
       rw [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map]
       have hfn : ((fun j => Ix.Kernel.Level.param (j + k)) ∘ Nat.succ) =
           (fun j => Ix.Kernel.Level.param (j + (k + 1))) := by
-        funext x; simp only [Function.comp]; congr 1; omega
+        funext x
+        exact congrArg Ix.Kernel.Level.param (show (x + 1) + k = x + (k + 1) by omega)
       rw [hfn, Nat.zero_add]
       simp only [Ix.Kernel.Level.subst.go]
       by_cases hqn : q = n
       · simp only [hqn, ↓reduceIte, Ix.Kernel.Level.subst]
-        simpa [List.getElem_cons_zero] using hget 0 (by simp)
+        have h0 := hget 0 (by simp)
+        rw [Nat.zero_add, List.getElem_cons_zero] at h0
+        exact h0
       · simp only [hqn, ↓reduceIte]
         refine ih (k + 1) vs n (by simpa using hlen) ?_ ?_
         · intro j hj
@@ -993,7 +1001,6 @@ theorem nestedPins_of_parts {tyA dom body : KExpr}
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hp
     obtain ⟨-, hfv, hbnd⟩ := hlift x hx
     simp [hfv, hbnd]
-  dsimp only
   rw [← hpins] at htake_eq hall ⊢
   have hc1 : (dom.getAppArgs.length == cnP + (mI - rP)) = true := beq_iff_eq.mpr hlen
   have hc2 : (dom.getAppArgs.take cnP == pins.map (Ix.Kernel.Expr.liftLooseBVars (mI - rP) 0)) =

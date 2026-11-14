@@ -88,7 +88,7 @@ theorem put_address_spec {b : Bytes.Address} {x_a x_rest r : SourceValue F} {h h
     have s2  := repBytes_cons (get 2  (by omega) pr1024) s3    hm1010 rfl
     have s1  := repBytes_cons (get 1  (by omega) pr1058) s2    hm1044 rfl
     have s0  := repBytes_cons (get 0  (by omega) pr1085) s1    hm1070 he1071
-    have hhash : (ixAddr b).hash.data.toList = b.toList := by simp [ixAddr]
+    have hhash : (ixAddr b).hash.data.toList = b.toList := rfl
     rw [hhash, Lib.vec32_toList b]
     exact s0
 
@@ -218,8 +218,9 @@ theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : Sourc
     injection hargs with ha2 hargs; subst ha2
     injection hargs with ha3 _; subst ha3
     have s1 := put_address_spec hb ev79 hrest
-    have s2 := put_tagn0_spec hvj ev58 s1
-    have s3 := put_tagn0_spec hvi ev37 s2
+    have s2 := put_tagn0_spec (repU64_mono ev79.heap_extends hvj) ev58 s1
+    have s3 := put_tagn0_spec
+      (repU64_mono (ev79.heap_extends.trans ev58.heap_extends) hvi) ev37 s2
     rw [hblk] at s3
     simpa [constructorProjBytes, List.append_assoc]
       using s3
@@ -251,7 +252,7 @@ theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have s2 := put_tagn0_spec hvi ev32 s1
+    have s2 := put_tagn0_spec (repU64_mono ev53.heap_extends hvi) ev32 s1
     rw [hblk] at s2
     simpa [recursorProjBytes, List.append_assoc]
       using s2
@@ -283,7 +284,7 @@ theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValu
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have s2 := put_tagn0_spec hvi ev32 s1
+    have s2 := put_tagn0_spec (repU64_mono ev53.heap_extends hvi) ev32 s1
     rw [hblk] at s2
     simpa [inductiveProjBytes, List.append_assoc]
       using s2
@@ -315,7 +316,7 @@ theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceVal
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have s2 := put_tagn0_spec hvi ev32 s1
+    have s2 := put_tagn0_spec (repU64_mono ev53.heap_extends hvi) ev32 s1
     rw [hblk] at s2
     simpa [definitionProjBytes, List.append_assoc]
       using s2
