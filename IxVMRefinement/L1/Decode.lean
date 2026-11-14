@@ -256,30 +256,23 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
           t.value.toNat / 72057594037927936 % 256 = 0 :=
       natCast_inj_56 (by omega) (by omega) hsum_cast
     have hv_lt256 : t.value.toNat < 256 := by
-      let v := t.value.toNat
-      let v1 := v / 256
-      let v2 := v1 / 256
-      let v3 := v2 / 256
-      let v4 := v3 / 256
-      let v5 := v4 / 256
-      let v6 := v5 / 256
-      let v7 := v6 / 256
-      have hv_lt : v < 18446744073709551616 := t.value.toNat_lt
-      have hv2 : v / 65536 = v2 := by
-        rw [← (by decide : 256 * 256 = 65536), ← Nat.div_div_eq_div_mul]
-      have hv3 : v / 16777216 = v3 := by
-        rw [← (by decide : 65536 * 256 = 16777216), ← Nat.div_div_eq_div_mul, hv2]
-      have hv4 : v / 4294967296 = v4 := by
-        rw [← (by decide : 16777216 * 256 = 4294967296), ← Nat.div_div_eq_div_mul, hv3]
-      have hv5 : v / 1099511627776 = v5 := by
-        rw [← (by decide : 4294967296 * 256 = 1099511627776), ← Nat.div_div_eq_div_mul, hv4]
-      have hv6 : v / 281474976710656 = v6 := by
-        rw [← (by decide : 1099511627776 * 256 = 281474976710656), ← Nat.div_div_eq_div_mul, hv5]
-      have hv7 : v / 72057594037927936 = v7 := by
-        rw [← (by decide : 281474976710656 * 256 = 72057594037927936), ← Nat.div_div_eq_div_mul, hv6]
-      have hlt7 : v7 < 256 := by rw [← hv7]; omega
-      have hz : v1 % 256 + v2 % 256 + v3 % 256 + v4 % 256 + v5 % 256 + v6 % 256 + v7 % 256 = 0 := by
-        simpa only [v, v1, hv2, hv3, hv4, hv5, hv6, hv7] using hsum_zero
+      have hv_lt : t.value.toNat < 18446744073709551616 := t.value.toNat_lt
+      have h7 : ∀ {a b c d e f g : Nat}, a + b + c + d + e + f + g = 0 →
+          a = 0 ∧ b = 0 ∧ c = 0 ∧ d = 0 ∧ e = 0 ∧ f = 0 ∧ g = 0 := by omega
+      rcases h7 hsum_zero with ⟨hz1, hz2, hz3, hz4, hz5, hz6, hz7⟩
+      rw [Nat.mod_eq_of_lt (by omega)] at hz7
+      have hb7 : t.value.toNat < 72057594037927936 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz6
+      have hb6 : t.value.toNat < 281474976710656 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz5
+      have hb5 : t.value.toNat < 1099511627776 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz4
+      have hb4 : t.value.toNat < 4294967296 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz3
+      have hb3 : t.value.toNat < 16777216 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz2
+      have hb2 : t.value.toNat < 65536 := by omega
+      rw [Nat.mod_eq_of_lt (by omega)] at hz1
       omega
     simp only [u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure, Except.ok.injEq] at pr348
     subst v339
@@ -523,8 +516,6 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
           simp only [Ixon.ConstantInfo.maxLvls]
           rw [← Array.foldl_toList]
           congr 1
-          funext acc m
-          cases m <;> rfl
         rw [hfold_eq] at hfold_lt hv_eq
         exact ⟨hfold_lt, hall, hv_eq, hm330⟩
       | other _ _ _ _ hne322 _ _ _ => exact absurd rfl (hne322 _ rfl)
@@ -816,20 +807,24 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
           by_cases hlt' : p.toNat < bound
           · exact hlt'
           · simp [hlt'] at hcmp; rw [hcmp] at heq111; simp at heq111
-        cases htail with
-        | nil cell2 =>
-          exact (Core.load_cell_ne cell2 ld123 (by decide)).elim
-        | cons (x := q) (xs := tail2) cell2 hq htail2 =>
-          obtain ⟨_, hxs2⟩ := Core.load_cell cell2 ld123
-          simp only [List.cons.injEq, and_true] at hxs2; obtain ⟨_, _⟩ := hxs2; subst x_q w143
-          rw [Lib.repU64_eq hq] at ev199
-          obtain ⟨_, _, hm189⟩ := u64ToField_refines q.toNat_lt ev199.erase; subst hm189
-          obtain ⟨_, _, _, _, _, _, _, hm168⟩ := lt_fields_both_spec ev178; subst hm168
-          obtain ⟨hh', hall_tail⟩ := ih (.cons cell2 hq htail2) ev220
-          refine ⟨hh', fun x hx => ?_⟩
-          rcases List.mem_cons.mp hx with rfl | hmem
-          · exact hlt
-          · exact hall_tail x hmem
+        cases tail with
+        | nil =>
+          cases htail with
+          | nil cell2 =>
+            exact (Core.load_cell_ne cell2 ld123 (by decide)).elim
+        | cons q tail2 =>
+          cases htail with
+          | cons cell2 hq htail2 =>
+            obtain ⟨_, hxs2⟩ := Core.load_cell cell2 ld123
+            simp only [List.cons.injEq, and_true] at hxs2; obtain ⟨_, _⟩ := hxs2; subst x_q w143
+            rw [Lib.repU64_eq hq] at ev199
+            obtain ⟨_, _, hm189⟩ := u64ToField_refines q.toNat_lt ev199.erase; subst hm189
+            obtain ⟨_, _, _, _, _, _, _, hm168⟩ := lt_fields_both_spec ev178; subst hm168
+            obtain ⟨hh', hall_tail⟩ := ih (.cons cell2 hq htail2) ev220
+            refine ⟨hh', fun x hx => ?_⟩
+            rcases List.mem_cons.mp hx with rfl | hmem
+            · exact hlt
+            · exact hall_tail x hmem
 
 theorem repBinderNode_not_ifAllZero {bound : Nat} {h : Heap F} {nd : Ixon.BinderNode}
     {v : SourceValue F} {ctor : String} {args : List (SourceValue F)}
