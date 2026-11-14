@@ -54,30 +54,25 @@ inductive WrapTSem (find? : KKey → Option (ConstantInfo .anon)) : KExpr → KE
   | forallE {t a t' b b' : KExpr} {m m' : Ix.Kernel.BinderMeta} :
       m.pw = m'.pw → ConsumeStar find? t a → WrapTSem find? a t' → WrapTSem find? b b' →
       WrapTSem find? (.forallE t b m) (.forallE t' b' m')
+  | letE {t v b t' v' b' : KExpr} {l l' : Ix.Kernel.LetMeta} :
+      WrapTSem find? t t' → WrapTSem find? v v' → WrapTSem find? b b' →
+      WrapTSem find? (.letE t v b l) (.letE t' v' b' l')
   | proj {s : KKey} {i : Nat} {e e' : KExpr} :
       WrapTSem find? e e' → WrapTSem find? (.proj s i e) (.proj s i e')
 
 theorem ExprSemEq.toWrapTSem (find? : KKey → Option (ConstantInfo .anon)) {e e' : KExpr}
-    (h : ExprSemEq e e') (hl : letFree e' = true) : WrapTSem find? e e' := by
+    (h : ExprSemEq e e') : WrapTSem find? e e' := by
   induction h with
   | bvar i => exact .bvar i
   | fvar _ _ => exact .fvar _ _ _
   | sort hu => exact .sort hu
   | const hus => exact .const hus
   | lit l => exact .lit l
-  | app _ _ ihf iha =>
-    simp only [letFree, Bool.and_eq_true] at hl
-    exact .app (ihf hl.1) (iha hl.2)
-  | lam hpw _ _ iht ihb =>
-    simp only [letFree, Bool.and_eq_true] at hl
-    exact .lam hpw (.refl _) (iht hl.1) (ihb hl.2)
-  | forallE hpw _ _ iht ihb =>
-    simp only [letFree, Bool.and_eq_true] at hl
-    exact .forallE hpw (.refl _) (iht hl.1) (ihb hl.2)
-  | letE _ _ _ _ _ _ => simp [letFree] at hl
-  | proj _ ihe =>
-    simp only [letFree] at hl
-    exact .proj (ihe hl)
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam hpw _ _ iht ihb => exact .lam hpw (.refl _) iht ihb
+  | forallE hpw _ _ iht ihb => exact .forallE hpw (.refl _) iht ihb
+  | letE _ _ _ iht ihv ihb => exact .letE iht ihv ihb
+  | proj _ ihe => exact .proj ihe
 
 theorem WrapRelSem.toWrapTSem {find? : KKey → Option (ConstantInfo .anon)} {g d : KExpr}
     (h : WrapRelSem find? g d) (hd : letFree d = true) : WrapTSem find? g d :=
@@ -132,6 +127,8 @@ theorem WrapTSem.instantiate1 {find? : KKey → Option (ConstantInfo .anon)} {v 
   | lam hpw hs _ _ ihw ihb => intro j; exact .lam hpw (hs.instantiate1 v j) (ihw j) (ihb (j + 1))
   | forallE hpw hs _ _ ihw ihb =>
     intro j; exact .forallE hpw (hs.instantiate1 v j) (ihw j) (ihb (j + 1))
+  | letE _ _ _ iht ihv ihb =>
+    intro j; exact .letE (iht j) (ihv j) (ihb (j + 1))
   | proj _ ih => intro j; exact .proj (ih j)
 
 theorem mkAppN_abstract1 (d : Nat) :
@@ -176,6 +173,8 @@ theorem WrapTSem.abstract1 {find? : KKey → Option (ConstantInfo .anon)} {g d_e
     intro k; exact .lam hpw (ConsumeStar.abstract1 hs d k) (ihw k) (ihb (k + 1))
   | forallE hpw hs _ _ ihw ihb =>
     intro k; exact .forallE hpw (ConsumeStar.abstract1 hs d k) (ihw k) (ihb (k + 1))
+  | letE _ _ _ iht ihv ihb =>
+    intro k; exact .letE (iht k) (ihv k) (ihb (k + 1))
   | proj _ ih => intro k; exact .proj (ih k)
 
 theorem ConsumeStar.toWrapDomSem {find? : KKey → Option (ConstantInfo .anon)} {t a t' : KExpr}
@@ -209,6 +208,9 @@ theorem WrapTSem.toWrapRelSem {find? : KKey → Option (ConstantInfo .anon)} {g 
     exact .forallE hpw
       (ConsumeStar.toWrapDomSem hs (ihw (hs.of (P := fun e => e.hasFvar = false) hP hg.1)))
       (ihb hg.2)
+  | letE _ _ _ iht ihv ihb =>
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hg
+    exact .letE (iht hg.1.1) (ihv hg.1.2) (ihb hg.2)
   | proj _ ih =>
     simp only [Expr.hasFvar] at hg
     exact .proj (ih hg)
@@ -411,18 +413,18 @@ private theorem defnAritiesOk_of_infer_go {env : Ix.Kernel.Env .anon} :
       cases ci with
       | defnInfo cv _ _ => exact beq_iff_eq.mpr hlen
       | _ => rfl
-    | @forallE _ d' ty body _ _ _ _ _ hit _ hib _ _ =>
+    | @forallE _ _ ty body _ _ _ _ _ hit _ hib _ _ =>
       simp only [Expr.sizeB] at hsz
       simp only [defnAritiesOk, Bool.and_eq_true]
       refine ⟨defnAritiesOk_of_infer_go sz (by omega) hit, ?_⟩
-      rw [← defnAritiesOk_of_instantiate1_fvar d' ty body 0]
+      rw [← defnAritiesOk_of_instantiate1_fvar d ty body 0]
       exact defnAritiesOk_of_infer_go sz
         (by rw [sizeB_instantiate1_fvar]; omega) hib
-    | @lam _ d' ty body _ _ _ _ _ _ hit _ hib _ _ _ _ =>
+    | @lam _ _ ty body _ _ _ _ _ _ hit _ hib _ _ _ _ =>
       simp only [Expr.sizeB] at hsz
       simp only [defnAritiesOk, Bool.and_eq_true]
       refine ⟨defnAritiesOk_of_infer_go sz (by omega) (hit rfl), ?_⟩
-      rw [← defnAritiesOk_of_instantiate1_fvar d' ty body 0]
+      rw [← defnAritiesOk_of_instantiate1_fvar d ty body 0]
       exact defnAritiesOk_of_infer_go sz
         (by rw [sizeB_instantiate1_fvar]; omega) hib
     | @app _ _ f a _ _ _ _ _ hif _ hia _ =>
@@ -737,13 +739,40 @@ private theorem lbb_instantiate1_fvar (d : Nat) (ty : KExpr) :
     simp only [Expr.looseBVarsBounded] at hb
     simpa [Expr.instantiate1, Expr.looseBVarsBounded] using lbb_instantiate1_fvar d ty e j hb
 
+private theorem letFree_instantiate1_fvar (d : Nat) (ty : KExpr) :
+    ∀ (e : KExpr) (j : Nat),
+      letFree e = true → letFree (e.instantiate1 (.fvar d ty) j) = true
+  | .bvar i, j, _ => by
+    simp only [Expr.instantiate1]
+    split
+    · rfl
+    · split <;> rfl
+  | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
+  | .app f a, j, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    simp [Expr.instantiate1, letFree,
+      letFree_instantiate1_fvar d ty f j h.1, letFree_instantiate1_fvar d ty a j h.2]
+  | .lam t b _, j, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    simp [Expr.instantiate1, letFree,
+      letFree_instantiate1_fvar d ty t j h.1, letFree_instantiate1_fvar d ty b (j + 1) h.2]
+  | .forallE t b _, j, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    simp [Expr.instantiate1, letFree,
+      letFree_instantiate1_fvar d ty t j h.1, letFree_instantiate1_fvar d ty b (j + 1) h.2]
+  | .letE _ _ _ _, _, h => by simp [letFree] at h
+  | .proj _ _ e, j, h => by
+    simp only [letFree] at h
+    simpa [Expr.instantiate1, letFree] using letFree_instantiate1_fvar d ty e j h
+
 private theorem wrapTSem_defeq_go {env : Ix.Kernel.Env .anon} :
     ∀ (sz : Nat) {depth : Nat} {g d_e : KExpr},
-      d_e.sizeB ≤ sz → WrapTSem env.find? g d_e → defnAritiesOk env.find? g = true →
-      g.looseBVarsBounded 0 = true → DefEq env depth g d_e
-  | 0, _, _, _, hsz, hw, _, _ => by
+      d_e.sizeB ≤ sz → WrapTSem env.find? g d_e → letFree d_e = true →
+      defnAritiesOk env.find? g = true → g.looseBVarsBounded 0 = true →
+      DefEq env depth g d_e
+  | 0, _, _, _, hsz, hw, _, _, _ => by
     cases hw <;> simp [Expr.sizeB] at hsz
-  | sz + 1, depth, g, d_e, hsz, hw, hok, hlbb => by
+  | sz + 1, depth, g, d_e, hsz, hw, hl, hok, hlbb => by
     have hP_ok : ∀ f x : KExpr, defnAritiesOk env.find? (.app f x) = true →
         defnAritiesOk env.find? f = true ∧ defnAritiesOk env.find? x = true := by
       intro f x hfx
@@ -760,52 +789,59 @@ private theorem wrapTSem_defeq_go {env : Ix.Kernel.Env .anon} :
     | lit _ => exact .refl
     | app hf ha =>
       simp only [Expr.sizeB] at hsz
-      simp only [defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hok hlbb
+      simp only [letFree, defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hl hok hlbb
       exact .app
-        (wrapTSem_defeq_go sz (by omega) hf hok.1 hlbb.1)
-        (wrapTSem_defeq_go sz (by omega) ha hok.2 hlbb.2)
+        (wrapTSem_defeq_go sz (by omega) hf hl.1 hok.1 hlbb.1)
+        (wrapTSem_defeq_go sz (by omega) ha hl.2 hok.2 hlbb.2)
     | @lam t a t' b b' m m' hpw hs hw_dom hw_body =>
       simp only [Expr.sizeB] at hsz
-      simp only [defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hok hlbb
+      simp only [letFree, defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hl hok hlbb
       have hdom_a : DefEq env depth a t' :=
-        wrapTSem_defeq_go sz (by omega) hw_dom
+        wrapTSem_defeq_go sz (by omega) hw_dom hl.1
           (hs.of (P := fun e => defnAritiesOk env.find? e = true) hP_ok hok.1)
           (hs.of (P := fun e => e.looseBVarsBounded 0 = true) hP_lbb hlbb.1)
-      have hdom : DefEq env depth t t' := .redL (hs.red hok.1 hlbb.1) hdom_a
+      have hdom : DefEq env depth t t' := .redL (ConsumeStar.red hs hok.1 hlbb.1) hdom_a
       have hbody_w : WrapTSem env.find?
           (b.instantiate1 (.fvar depth t')) (b'.instantiate1 (.fvar depth t')) :=
-        hw_body.instantiate1 (.fvar depth t' t') 0
+        WrapTSem.instantiate1 (.fvar depth t' t') hw_body 0
       have hbody_ok : defnAritiesOk env.find? (b.instantiate1 (.fvar depth t')) = true := by
         rw [defnAritiesOk_of_instantiate1_fvar]; exact hok.2
       have hbody_lbb : (b.instantiate1 (.fvar depth t')).looseBVarsBounded 0 = true :=
         lbb_instantiate1_fvar depth t' b 0 hlbb.2
+      have hbody_lf : letFree (b'.instantiate1 (.fvar depth t')) = true :=
+        letFree_instantiate1_fvar depth t' b' 0 hl.2
       have hbody : DefEq env (depth + 1)
           (b.instantiate1 (.fvar depth t')) (b'.instantiate1 (.fvar depth t')) :=
-        wrapTSem_defeq_go sz (by rw [sizeB_instantiate1_fvar]; omega) hbody_w hbody_ok hbody_lbb
+        wrapTSem_defeq_go sz (by rw [sizeB_instantiate1_fvar]; omega)
+          hbody_w hbody_lf hbody_ok hbody_lbb
       exact .lam hdom hbody hpw
     | @forallE t a t' b b' m m' hpw hs hw_dom hw_body =>
       simp only [Expr.sizeB] at hsz
-      simp only [defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hok hlbb
+      simp only [letFree, defnAritiesOk, Expr.looseBVarsBounded, Bool.and_eq_true] at hl hok hlbb
       have hdom_a : DefEq env depth a t' :=
-        wrapTSem_defeq_go sz (by omega) hw_dom
+        wrapTSem_defeq_go sz (by omega) hw_dom hl.1
           (hs.of (P := fun e => defnAritiesOk env.find? e = true) hP_ok hok.1)
           (hs.of (P := fun e => e.looseBVarsBounded 0 = true) hP_lbb hlbb.1)
-      have hdom : DefEq env depth t t' := .redL (hs.red hok.1 hlbb.1) hdom_a
+      have hdom : DefEq env depth t t' := .redL (ConsumeStar.red hs hok.1 hlbb.1) hdom_a
       have hbody_w : WrapTSem env.find?
           (b.instantiate1 (.fvar depth t')) (b'.instantiate1 (.fvar depth t')) :=
-        hw_body.instantiate1 (.fvar depth t' t') 0
+        WrapTSem.instantiate1 (.fvar depth t' t') hw_body 0
       have hbody_ok : defnAritiesOk env.find? (b.instantiate1 (.fvar depth t')) = true := by
         rw [defnAritiesOk_of_instantiate1_fvar]; exact hok.2
       have hbody_lbb : (b.instantiate1 (.fvar depth t')).looseBVarsBounded 0 = true :=
         lbb_instantiate1_fvar depth t' b 0 hlbb.2
+      have hbody_lf : letFree (b'.instantiate1 (.fvar depth t')) = true :=
+        letFree_instantiate1_fvar depth t' b' 0 hl.2
       have hbody : DefEq env (depth + 1)
           (b.instantiate1 (.fvar depth t')) (b'.instantiate1 (.fvar depth t')) :=
-        wrapTSem_defeq_go sz (by rw [sizeB_instantiate1_fvar]; omega) hbody_w hbody_ok hbody_lbb
+        wrapTSem_defeq_go sz (by rw [sizeB_instantiate1_fvar]; omega)
+          hbody_w hbody_lf hbody_ok hbody_lbb
       exact .forallE hdom hbody hpw
+    | letE _ _ _ => simp [letFree] at hl
     | proj he =>
       simp only [Expr.sizeB] at hsz
-      simp only [defnAritiesOk, Expr.looseBVarsBounded] at hok hlbb
-      exact .proj (wrapTSem_defeq_go sz (by omega) he hok hlbb)
+      simp only [letFree, defnAritiesOk, Expr.looseBVarsBounded] at hl hok hlbb
+      exact .proj (wrapTSem_defeq_go sz (by omega) he hl hok hlbb)
 
 /-- `WrapRelSem` on a `let`-free declared term `d_e` and loose-bvar-closed generated term `g`
 implies kernel `DefEq env depth d_e g`. -/
@@ -813,7 +849,7 @@ theorem WrapRelSem.defeq {env : Ix.Kernel.Env .anon} {depth : Nat} {g d_e : KExp
     (h : WrapRelSem env.find? g d_e) (hl : letFree d_e = true)
     (hok : defnAritiesOk env.find? g = true) (hlbb : g.looseBVarsBounded 0 = true) :
     DefEq env depth d_e g :=
-  .symm (wrapTSem_defeq_go d_e.sizeB (Nat.le_refl _) (h.toWrapTSem hl) hok hlbb)
+  .symm (wrapTSem_defeq_go d_e.sizeB (Nat.le_refl _) (h.toWrapTSem hl) hl hok hlbb)
 
 private theorem substFn_congr (φ : LevelParam → Nat) :
     ∀ (ks : List LevelParam) {us vs : List KLevel},
@@ -974,9 +1010,7 @@ private theorem liftLooseBVars_abstract1 (j d : Nat) :
   | .fvar idx ty, k, c => by
     by_cases hidx : idx = d
     · subst hidx
-      simp only [Expr.liftLooseBVars, Expr.abstract1, ite_eq_left rfl,
-        ite_eq_left (show k + c ≥ c by omega)]
-      congr 1
+      simp [Expr.liftLooseBVars, Expr.abstract1, show k + c ≥ c by omega]
       omega
     · simp [Expr.liftLooseBVars, Expr.abstract1, hidx]
   | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
@@ -1011,8 +1045,8 @@ private theorem instantiate1Lift_abstract1 (v : KExpr) (d k : Nat) :
         (b.abstract1 d (k + j + 1)).instantiate1Lift (v.abstract1 d k) j
   | .bvar i, j => by
     by_cases hij : i = j
-    · subst hij
-      simp only [Expr.instantiate1Lift, Expr.abstract1, ite_eq_left rfl]
+    · subst i
+      simp [Expr.instantiate1Lift, Expr.abstract1]
       simpa using liftLooseBVars_abstract1 j d v k 0
     · by_cases hgt : i > j
       · simp [Expr.instantiate1Lift, Expr.abstract1, hij, hgt]
@@ -1020,11 +1054,8 @@ private theorem instantiate1Lift_abstract1 (v : KExpr) (d k : Nat) :
   | .fvar idx ty, j => by
     by_cases hidx : idx = d
     · subst hidx
-      simp only [Expr.instantiate1Lift, Expr.abstract1, ite_eq_left rfl,
-        ite_eq_right (show k + j + 1 ≠ j by omega),
-        ite_eq_left (show k + j + 1 > j by omega)]
-      congr 1
-      omega
+      simp [Expr.instantiate1Lift, Expr.abstract1,
+        show k + j + 1 ≠ j by omega, show k + j + 1 > j by omega]
     · simp [Expr.instantiate1Lift, Expr.abstract1, hidx]
   | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
   | .app f a, j => by
@@ -1267,9 +1298,7 @@ private theorem abstract1_lift_instantiate1_step (d shift : Nat) :
     simp only [Expr.instantiate1]
     by_cases him : i = c + m
     · subst him
-      simp only [Expr.liftLooseBVars, Expr.abstract1, ite_eq_left rfl,
-        ite_eq_left (show c + m ≥ c by omega)]
-      congr 1
+      simp [Expr.instantiate1, Expr.liftLooseBVars, Expr.abstract1, show c + m ≥ c by omega]
       omega
     · rw [ite_eq_right him, ite_eq_right (by omega)]
       by_cases hic : i ≥ c
@@ -1341,6 +1370,27 @@ private theorem fvarIdxLt_mono {d₁ d₂ : Nat} (hle : d₁ ≤ d₂) :
   | .proj _ _ e, h => by
     simp only [fvarIdxLt] at h ⊢
     exact fvarIdxLt_mono hle h
+
+private theorem hasFvar_false_of_fvarIdxLt_zero :
+    ∀ {e : KExpr}, fvarIdxLt 0 e = true → e.hasFvar = false
+  | .fvar _ _, h => by simp [fvarIdxLt] at h
+  | .bvar _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .app f a, h => by
+    simp only [fvarIdxLt, Bool.and_eq_true] at h
+    simp [Expr.hasFvar, hasFvar_false_of_fvarIdxLt_zero h.1, hasFvar_false_of_fvarIdxLt_zero h.2]
+  | .lam t b _, h => by
+    simp only [fvarIdxLt, Bool.and_eq_true] at h
+    simp [Expr.hasFvar, hasFvar_false_of_fvarIdxLt_zero h.1, hasFvar_false_of_fvarIdxLt_zero h.2]
+  | .forallE t b _, h => by
+    simp only [fvarIdxLt, Bool.and_eq_true] at h
+    simp [Expr.hasFvar, hasFvar_false_of_fvarIdxLt_zero h.1, hasFvar_false_of_fvarIdxLt_zero h.2]
+  | .letE t v b _, h => by
+    simp only [fvarIdxLt, Bool.and_eq_true] at h
+    simp [Expr.hasFvar, hasFvar_false_of_fvarIdxLt_zero h.1.1,
+      hasFvar_false_of_fvarIdxLt_zero h.1.2, hasFvar_false_of_fvarIdxLt_zero h.2]
+  | .proj _ _ e, h => by
+    simp only [fvarIdxLt] at h
+    simpa [Expr.hasFvar] using hasFvar_false_of_fvarIdxLt_zero h
 
 private theorem fvarIdxLt_instantiate1_fvar {d : Nat} :
     ∀ {e : KExpr} (j : Nat), fvarIdxLt d e = true →
@@ -1434,7 +1484,7 @@ private theorem hasLooseBVar_lift_false (s : Nat) :
       omega
     · simp only [Expr.liftLooseBVars, ite_eq_right hkc, Expr.hasLooseBVar, beq_eq_false_iff_ne]
       omega
-  | .fvar _ _, _, _, _, _ | .sort _, _, _, _, _ | .const _ _, _, _, _ | .lit _, _, _, _, _ => rfl
+  | .fvar _ _, _, _, _, _ | .sort _, _, _, _, _ | .const _ _, _, _, _, _ | .lit _, _, _, _, _ => rfl
   | .app f a, c, i, hci, hv => by
     simp only [Expr.hasLooseBVar, Bool.or_eq_false_iff] at hv
     simp [Expr.liftLooseBVars, Expr.hasLooseBVar,
@@ -1797,18 +1847,19 @@ theorem consume_wrapper_one_spec {c : Ctx} {d : Nat} {Γ : Nat → KExpr}
     obtain ⟨k_out, steps_v, hxk, hk_steps, hdesc_xv, hlam_pos, hm157⟩ :=
       lam_first_arity_go _ _ _ _ _ _ ev170 rfl 0 (posOf cv.levelParams V) xv xk
         rfl rfl hbnd_call_lfa (hV 0 (fun _ => default))
-    subst hm157
+    subst m157
     rw [lamFirstArity_posOf] at hlam_pos
     have hrest_m96 : RepList kexprListEnum (fun h E p => Tm c.κ d Γ h 0 E p) m96 rest xrest :=
-      hrest.mono (fun _ _ _ ext r => r.mono ext) e_ci
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => r.mono ext) e_ci hrest
     have hlen_rest_lt : rest.length < 549755813888 :=
       RomBound.bounded_length_lt hgood.2
         (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [xrest], m96⟩)
         (by simp) List.mem_cons_self hrest_m96
-    rw [← kexprList_inst] at ev235
     obtain ⟨hx222, rfl⟩ :=
-      Lib.Lists.length_spec (t := kexprTy) (R := fun h E p => Tm c.κ d Γ h 0 E p)
-        ev235 hrest_m96
+      Lib.Lists.length_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
+        (R := fun h E p => Tm c.κ d Γ h 0 E p)
+        (by rw [Obs.Names.«Lists::length<&KernelTypes::KExprNode>».symbol]; exact ev235)
+        (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hrest_m96)
     rw [hx222] at op229
     have hy214 : y214 = .field ((rest.length + 1 : Nat) : F) :=
       evalBinOp_add_one rest.length op229
@@ -1818,8 +1869,14 @@ theorem consume_wrapper_one_spec {c : Ctx} {d : Nat} {Γ : Nat → KExpr}
     have hk_lt : k_out < 549755813888 := by
       have := hbnd_call_lfa steps_v hdesc_xv
       omega
-    have hk_eq : k_out = rest.length + 1 :=
-      nat_eq_of_field_eq hk_lt (by omega) (congrArg Value.field (sub_eq_zero.mp op220))
+    have hk_eq : k_out = rest.length + 1 := by
+      have hf : (k_out : F) = ((rest.length + 1 : Nat) : F) := sub_eq_zero.mp op220
+      have hv1 : ((k_out : F)).val = k_out :=
+        ZMod.val_natCast_of_lt (Nat.lt_trans hk_lt (by decide))
+      have hv2 : (((rest.length + 1 : Nat) : F)).val = rest.length + 1 :=
+        ZMod.val_natCast_of_lt (Nat.lt_trans (show rest.length + 1 < 549755813889 by omega) (by decide))
+      have hv := congrArg ZMod.val hf
+      omega
     subst hk_eq
     have hwrap : wrapperArity c.env.find? (c.κ (ixAddr aw)) = some (rest.length + 1) := by
       simp [wrapperArity, hfind, hlam_pos]
@@ -1965,19 +2022,13 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
             by_cases hab : sa = sb
             · exact hab
             · rw [ite_eq_right hab] at haddr
-              rw [haddr] at op619
+              rw [haddr, hiz] at op619
               simp [evalBinOp, bind, Except.bind, pure, Except.pure] at op619
           subst hs_eq
           have hv648 : v648 = .field 0 := by
             by_cases h0 : v648 = .field 0
             · exact h0
-            · have hf_ne : ∀ x : F, v648 = .field x → x ≠ 0 := by
-                intro x hx hx0; subst hx0; exact h0 hx
-              simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
-                Except.ok.injEq] at op662
-              subst op662
-              have hne0 : fa - fb ≠ 0 := hf_ne _ rfl
-              rw [hiz, ite_eq_right hne0] at op619
+            · rw [hiz, ite_eq_right h0, haddr] at op619
               simp [evalBinOp, bind, Except.bind, pure, Except.pure] at op619
           rw [hv648] at op662
           simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
@@ -1989,7 +2040,7 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
               (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ Ea Eb xe xe2 rfl hEa hEb)
         | .other_other_other (cs713 := cs713) (ev715 := ev715) (hc732 := hc732) .. =>
           subst hc732
-          exact (kexpr_struct_eq_tm_one hG hD ev715).toWrapTSem c.env.find? hD.letFree
+          exact (kexpr_struct_eq_tm_one hG hD ev715).toWrapTSem c.env.find?
       · subst hfn hargs
         match Obs.«KernelCheck::wrap_dom».obsx ev with
         | .other_other_other (he200 := he) .. =>
@@ -2065,7 +2116,7 @@ theorem wrap_rel_spec {c : Ctx} {Γ : Nat → KExpr} {G D : KExpr} {xg xd : Sour
     (ev : ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs) :
     WrapRelSem c.env.find? G D :=
   ((wrap_rel_family hlf _ _ _ _ _ _ ev rfl hgood).1 rfl 0 Γ G D xg xd rfl hG hD).toWrapRelSem
-    ((Subst.lbrLe_of_idxLt hG (by simpa using Subst.tm_idxLt hG) (Nat.le_refl 0)).2.1)
+    (hasFvar_false_of_fvarIdxLt_zero (tm_fvarIdxLt hG))
 
 /-! ## Section 4: `is_large_eliminator` and large-`Prop` singleton sort checks -/
 
@@ -2159,6 +2210,21 @@ private theorem all_bvars_in_args_one_spec {κ : _root_.Address → KKey} {d : N
       · exact hmem0
       · exact ih_rest tgt hmem_tl
 
+private theorem openPisAtFvars_succ_forallE {m off : Nat} {dom body : KExpr}
+    {bi : Ix.Kernel.BinderMeta} {fvs : List KExpr} {res : KExpr}
+    (h : Ix.Kernel.openPisAtFvars (m + 1) (.forallE dom body bi) off = some (fvs, res)) :
+    ∃ fvs_tl, fvs = .fvar off dom :: fvs_tl ∧
+      Ix.Kernel.openPisAtFvars m (body.instantiate1 (.fvar off dom)) (off + 1) =
+        some (fvs_tl, res) := by
+  unfold Ix.Kernel.openPisAtFvars at h
+  split at h
+  · rename_i fvs_tl res' htl
+    injection h with hp
+    injection hp with hfvs hres
+    subst hres
+    exact ⟨fvs_tl, hfvs.symm, htl⟩
+  · cases h
+
 private theorem fvar_not_in_fvsP {nP : Nat} :
     ∀ {fvsP : List KExpr} {ty : KExpr} {m off : Nat} {crest : KExpr},
       Ix.Kernel.openPisAtFvars m ty off = some (fvsP, crest) →
@@ -2169,9 +2235,7 @@ private theorem fvar_not_in_fvsP {nP : Nat} :
     obtain ⟨rfl, _⟩ := hop
     exact nomatch he
   | _, .forallE dom body _, m + 1, off, _, hop, hle, k, hk, e, he, fty, heq => by
-    simp only [Ix.Kernel.openPisAtFvars, Option.map_eq_some_iff] at hop
-    obtain ⟨⟨tl, r⟩, htl, hcons, _⟩ := hop
-    subst hcons
+    obtain ⟨tl, rfl, htl⟩ := openPisAtFvars_succ_forallE hop
     rcases List.mem_cons.mp he with rfl | hmem
     · injection heq with hidx _
       omega
@@ -2239,7 +2303,8 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
         RomBound.bounded_mono hgood.2 (fun z hz => by simp [hz])
       obtain ⟨hd, sp, H, As, hpair, _, hAs, heq_app⟩ :=
         SubstAux.gall c.κ .collect_spine _ _ _ _ _ ev38 xty rfl hbnd36 (nP + field_idx) Γ 0 _ hcur
-      injection hpair with _ hsp; subst hsp
+      injection hpair with hlist; injection hlist with _ hlist; injection hlist with hsp _
+      subst hsp
       have hAs_sub : ∀ e ∈ As, e ∈ fvsP ++ idxArgs := by
         have h1 : (Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ idxArgs)).getAppArgs =
             fvsP ++ idxArgs := by
@@ -2278,8 +2343,8 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
     match Obs.«KernelCheck::check_large_walk_fields».obs ev with
     | .n0 (op17 := op17) .. =>
       have hsub := evalBinOp_sub_nat (by omega : field_idx ≤ nF) op17
-      have hzero := nat_eq_of_field_eq (by omega) (by decide) hsub.symm
-      omega
+      rw [show nF - field_idx = m + 1 by omega] at hsub
+      exact absurd hsub.symm (succ_field_ne_zero (by omega))
     | .other_other (he389 := he) .. =>
       exact absurd (Value.field.inj he) one_ne_zero
     | .other_Forall (x_dom := x_dom) (x_body := x_body) (w111 := w111)
@@ -2293,12 +2358,7 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
         (hm302 := hm302) (op368 := op368) (ev327 := ev327) (hc384 := hc384) .. =>
       subst hc384
       obtain ⟨dom, body, _, rfl, hdom, hbody, _⟩ := hcur.forallE_of_load ld103
-      simp only [Ix.Kernel.openPisAtFvars, Option.map_eq_some_iff] at hop
-      obtain ⟨⟨xFvs_tl, r_tl⟩, hop_tl, hxpair⟩ := hop
-      injection hxpair with hxFvs_eq hr_eq
-      subst hr_eq
-      have hxFvs_symm : xFvs = .fvar (nP + field_idx) dom :: xFvs_tl := hxFvs_eq.symm
-      subst hxFvs_symm
+      obtain ⟨xFvs_tl, rfl, hop_tl⟩ := openPisAtFvars_succ_forallE hop
       rw [show nP + field_idx + 1 = nP + (field_idx + 1) by omega] at hop_tl
       have hg_es : Good c cs138 := hgood.sub (fun z hz => by simp [hz])
       obtain ⟨ty₀, u₀, ℓ₀, hinf₀, hred₀, hℓ₀, hu₀⟩ :=
@@ -2333,7 +2393,7 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
         match sg290 with
         | .other (hne253 := hne) .. => exact absurd hv165 hne
         | .n0 (he250 := hv282) (he251 := hm283) (hc252 := hcs285) .. =>
-          subst hv282 hm283 hcs285
+          subst v282 m283 cs285
           obtain ⟨e_push, htypes', hsc'⟩ :=
             push_binder_types (hdom.mono e_pre) (htypes.mono e_pre) hsc
           rw [hm302] at ev327
@@ -2371,7 +2431,7 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
             cases i with
             | zero =>
               exact ⟨.fvar (nP + field_idx) dom, ty₀, u₀, rfl, rfl,
-                by simpa using hinf₀, by simpa using hred₀, Or.inl hu₀_zero⟩
+                by simpa [Expr.fvarTypeD] using hinf₀, by simpa using hred₀, Or.inl hu₀_zero⟩
             | succ k =>
               obtain ⟨fv, ty, u, hfv, hu, hinf_k, hred_k, hor_k⟩ := hfields_tl k (by omega)
               rw [show nP + (field_idx + 1) + k = nP + field_idx + (k + 1) by omega] at hinf_k hred_k
@@ -2443,7 +2503,7 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
             cases i with
             | zero =>
               exact ⟨.fvar (nP + field_idx) dom, ty₀, u₀, rfl, rfl,
-                by simpa using hinf₀, by simpa using hred₀, Or.inr hcur_in_idx⟩
+                by simpa [Expr.fvarTypeD] using hinf₀, by simpa using hred₀, Or.inr hcur_in_idx⟩
             | succ k =>
               obtain ⟨fv, ty, u, hfv, hu, hinf_k, hred_k, hor_k⟩ := hfields_tl k (by omega)
               rw [show nP + (field_idx + 1) + k = nP + field_idx + (k + 1) by omega] at hinf_k hred_k
@@ -2493,7 +2553,7 @@ private theorem check_large_prop_ctor_go (hLevels : IxVM.Consistency.Levels)
         check_large_walk_fields_go hLevels hCore hef hlf hnPF_lt hfvsP_not
           nF 0 (by omega) (by simpa using hopF) hg_walk
           (hrc.mono e_nil) (by simpa using htypes.mono e_nil) (by simpa using hsc)
-          (by simpa using hcur.mono e_nil) (fun _ hm => nomatch hm) hbvars_nil ev20
+          (by simpa using hcur.mono e_nil) (by intro _ hm; cases hm) hbvars_nil ev20
       refine ⟨sorts, hlen, ?_⟩
       intro i hi
       obtain ⟨fv, ty, u, hfv, hu, hinf, hred, hor⟩ := hfields i hi
@@ -2511,10 +2571,7 @@ private theorem check_large_prop_ctor_go (hLevels : IxVM.Consistency.Levels)
         (ld90 := ld90) (hm125 := hm125) (op183 := op183) (ev150 := ev150) (hc199 := hc199) .. =>
       subst hc199
       obtain ⟨dom, body, _, rfl, hdom, hbody, _⟩ := hcur.forallE_of_load ld90
-      simp only [Ix.Kernel.openPisAtFvars, Option.map_eq_some_iff] at hopP
-      obtain ⟨⟨fvsP_tl, r_tl⟩, hopP_tl, hxpair⟩ := hopP
-      injection hxpair with _ hr_eq
-      subst hr_eq
+      obtain ⟨fvsP_tl, rfl, hopP_tl⟩ := openPisAtFvars_succ_forallE hopP
       obtain ⟨e_push, htypes', hsc'⟩ := push_binder_types hdom htypes hsc
       rw [evalBinOp_sub_succ m op183, hm125] at ev150
       have hbody_open : Tm c.κ (off + 1) (Ghost.extend Γ off dom)
