@@ -239,16 +239,15 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
       apply List.ext_getElem (by simp [hxlen])
       intro k hk₁ hk₂
       rw [List.getElem_map, List.getElem_map, List.getElem_replicate]
-      dsimp only [bfn, Value.type]
-      rfl
-    unfold Value.type addrTy
+      simp [bfn, Value.type]
+    simp only [Value.type, addrTy]
     exact congrArg Aiur.Ty.tuple hrep
   rw [hh'_eq, hm_arr, hbvals']
   refine ⟨a, .ptr (Value.tuple (xs.map bfn) : SourceValue F).type h.length,
     halist, rfl, ?_, Heap.Extends.snoc h _, hcs_eq⟩
   rw [hty]
   exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp,
-    L1.repAddress_iff.mpr (by simp [L1.digestV, halist]; rfl)⟩
+    L1.repAddress_iff.mpr (by simp [L1.digestV, halist])⟩
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
@@ -2418,58 +2417,58 @@ theorem check_iota_rule_inv
   have sub_deta := sc54_l.append_left.append_right.cons_tail
   subst hcalls₀_eq
   exact ⟨
-    { mi, d, op_mi, op_d, h_plen, cs_plen, call_plen, ev_plen
-      v_sc, h_sc, cs_sc, ev_sc, sub_sc
-      r_peel_e, r_peel_acc, h_peel, cs_peel, ev_peel
-      v_rhs_ty, h_rhs_inf, cs_rhs_inf, ev_rhs_inf, sub_rhs_inf
-      h_aset, cs_aset, ev_aset, sub_aset
-      p_tci, h_tci, cs_tci, ev_tci, sub_tci, tty, w_tval, ld_tci
-      tbody, ctx, h_open, cs_open, ev_open
-      eqh, targs, h_tsp, cs_tsp, ev_tsp, eqa, eqls, ld_eqh
-      v_req, h_req, cs_req, v_raddr, h_raddr, cs_raddr, h_eqa, cs_eqa
-      ev_req, ev_raddr, sub_raddr, ev_eqa
-      ell, eqrest, ld_eqls1, ld_eqls2
-      h_tlen, cs_tlen, call_tlen, ev_tlen
-      alpha, lhs, rhs_s, h_a0, cs_a0, h_a1, cs_a1, h_a2, cs_a2, ev_a0, ev_a1, ev_a2
-      lh, largs, h_lsp, cs_lsp, ev_lsp
-      v_plvls, h_plvls, cs_plvls, ev_plvls
-      h_lheq, cs_lheq, ev_lheq
-      mi1, op_mi1, h_llen, cs_llen, call_llen, ev_llen
-      v_ltake, h_ltake, cs_ltake, v_bvd1, h_bvd1, cs_bvd1, h_pref, cs_pref
-      ev_ltake, ev_bvd1, ev_pref
-      major, h_maj, cs_maj, ev_maj
-      cren, h_cren, cs_cren, ev_cren
-      pins_ren, h_pren, cs_pren, ev_pren
-      pins_d, h_pd, cs_pd, ev_pd, sub_pd
-      v_bvd2, h_bvd2, cs_bvd2, v_cat, h_cat, cs_cat
-      expected, h_exp, cs_exp, h_majeq, cs_majeq
-      ev_bvd2, ev_cat, ev_exp, ev_majeq
-      cty_l, h_ctyl, cs_ctyl, ev_ctyl, sub_ctyl
-      cnp_cnf, op_cnp_cnf, v_peel0, h_peel0, cs_peel0
-      chead0, cargs0, h_csp0, cs_csp0, ev_peel0, ev_csp0, sub_csp0
-      w_ch0a, w_ch0b, ld_chead0
-      v_cty_ren, h_cty_ren, cs_cty_ren, crest, h_crest, cs_crest
-      ev_cty_ren, ev_crest, sub_crest
-      cres, w_cctx, h_cres, cs_cres, ev_cres
-      chead, cargs, h_csp, cs_csp, ev_csp, sub_csp
-      w_cha, w_chb, ld_chead
-      cnp_ni, op_cnp_ni, h_clen, cs_clen, call_clen, ev_clen
-      v_ldrop, h_ldrop, cs_ldrop, v_idxl, h_idxl, cs_idxl, v_idxr, h_idxr, cs_idxr
-      h_deidx, cs_deidx, ev_ldrop, ev_idxl, ev_idxr, ev_deidx, sub_deidx
-      v_tyr_ren, h_tyr_ren, cs_tyr_ren, v_dt1, h_dt1, cs_dt1
-      ev_tyr_ren, ev_dt1, sub_dt1
-      v_tty_rp, h_tty_rp, cs_tty_rp, v_ctx_rp, h_ctx_rp, cs_ctx_rp
-      v_dt2, h_dt2, cs_dt2, ev_tty_rp, ev_ctx_rp, ev_dt2, sub_dt2
-      w_pbody, ctx_p, h_ctxp, cs_ctxp, ev_ctxp
-      crest_p, h_crestp, cs_crestp, ev_crestp, sub_crestp
-      rhs_rp, lctx, h_lt1, cs_lt1, ev_lt1, sub_lt1
-      w_lt2a, w_lt2b, h_lt2, cs_lt2, ev_lt2, sub_lt2
-      v_rhs_ren, h_rhs_ren, cs_rhs_ren, v_bvd3, h_bvd3, cs_bvd3
-      rhs_app, h_rhsapp, cs_rhsapp, h_derhs, cs_derhs
-      ev_rhs_ren, ev_bvd3, ev_rhsapp, ev_derhs, sub_derhs
-      tl, h_tl, cs_tl, h_detl, cs_detl, tr, h_tr, cs_tr, h_detr, cs_detr
-      ta, h_ta, cs_ta, h_deta, cs_deta
-      ev_tl, sub_tl, ev_detl, sub_detl, ev_tr, sub_tr, ev_detr, sub_detr
+    { mi, d, op_mi, op_d, h_plen, cs_plen, call_plen, ev_plen,
+      v_sc, h_sc, cs_sc, ev_sc, sub_sc,
+      r_peel_e, r_peel_acc, h_peel, cs_peel, ev_peel,
+      v_rhs_ty, h_rhs_inf, cs_rhs_inf, ev_rhs_inf, sub_rhs_inf,
+      h_aset, cs_aset, ev_aset, sub_aset,
+      p_tci, h_tci, cs_tci, ev_tci, sub_tci, tty, w_tval, ld_tci,
+      tbody, ctx, h_open, cs_open, ev_open,
+      eqh, targs, h_tsp, cs_tsp, ev_tsp, eqa, eqls, ld_eqh,
+      v_req, h_req, cs_req, v_raddr, h_raddr, cs_raddr, h_eqa, cs_eqa,
+      ev_req, ev_raddr, sub_raddr, ev_eqa,
+      ell, eqrest, ld_eqls1, ld_eqls2,
+      h_tlen, cs_tlen, call_tlen, ev_tlen,
+      alpha, lhs, rhs_s, h_a0, cs_a0, h_a1, cs_a1, h_a2, cs_a2, ev_a0, ev_a1, ev_a2,
+      lh, largs, h_lsp, cs_lsp, ev_lsp,
+      v_plvls, h_plvls, cs_plvls, ev_plvls,
+      h_lheq, cs_lheq, ev_lheq,
+      mi1, op_mi1, h_llen, cs_llen, call_llen, ev_llen,
+      v_ltake, h_ltake, cs_ltake, v_bvd1, h_bvd1, cs_bvd1, h_pref, cs_pref,
+      ev_ltake, ev_bvd1, ev_pref,
+      major, h_maj, cs_maj, ev_maj,
+      cren, h_cren, cs_cren, ev_cren,
+      pins_ren, h_pren, cs_pren, ev_pren,
+      pins_d, h_pd, cs_pd, ev_pd, sub_pd,
+      v_bvd2, h_bvd2, cs_bvd2, v_cat, h_cat, cs_cat,
+      expected, h_exp, cs_exp, h_majeq, cs_majeq,
+      ev_bvd2, ev_cat, ev_exp, ev_majeq,
+      cty_l, h_ctyl, cs_ctyl, ev_ctyl, sub_ctyl,
+      cnp_cnf, op_cnp_cnf, v_peel0, h_peel0, cs_peel0,
+      chead0, cargs0, h_csp0, cs_csp0, ev_peel0, ev_csp0, sub_csp0,
+      w_ch0a, w_ch0b, ld_chead0,
+      v_cty_ren, h_cty_ren, cs_cty_ren, crest, h_crest, cs_crest,
+      ev_cty_ren, ev_crest, sub_crest,
+      cres, w_cctx, h_cres, cs_cres, ev_cres,
+      chead, cargs, h_csp, cs_csp, ev_csp, sub_csp,
+      w_cha, w_chb, ld_chead,
+      cnp_ni, op_cnp_ni, h_clen, cs_clen, call_clen, ev_clen,
+      v_ldrop, h_ldrop, cs_ldrop, v_idxl, h_idxl, cs_idxl, v_idxr, h_idxr, cs_idxr,
+      h_deidx, cs_deidx, ev_ldrop, ev_idxl, ev_idxr, ev_deidx, sub_deidx,
+      v_tyr_ren, h_tyr_ren, cs_tyr_ren, v_dt1, h_dt1, cs_dt1,
+      ev_tyr_ren, ev_dt1, sub_dt1,
+      v_tty_rp, h_tty_rp, cs_tty_rp, v_ctx_rp, h_ctx_rp, cs_ctx_rp,
+      v_dt2, h_dt2, cs_dt2, ev_tty_rp, ev_ctx_rp, ev_dt2, sub_dt2,
+      w_pbody, ctx_p, h_ctxp, cs_ctxp, ev_ctxp,
+      crest_p, h_crestp, cs_crestp, ev_crestp, sub_crestp,
+      rhs_rp, lctx, h_lt1, cs_lt1, ev_lt1, sub_lt1,
+      w_lt2a, w_lt2b, h_lt2, cs_lt2, ev_lt2, sub_lt2,
+      v_rhs_ren, h_rhs_ren, cs_rhs_ren, v_bvd3, h_bvd3, cs_bvd3,
+      rhs_app, h_rhsapp, cs_rhsapp, h_derhs, cs_derhs,
+      ev_rhs_ren, ev_bvd3, ev_rhsapp, ev_derhs, sub_derhs,
+      tl, h_tl, cs_tl, h_detl, cs_detl, tr, h_tr, cs_tr, h_detr, cs_detr,
+      ta, h_ta, cs_ta, h_deta, cs_deta,
+      ev_tl, sub_tl, ev_detl, sub_detl, ev_tr, sub_tr, ev_detr, sub_detr,
       ev_ta, sub_ta, ev_deta, sub_deta }⟩
 
 /-! ## Algebraic & address-set helpers for `check_iota_rule_vm_spec` -/
@@ -2834,10 +2833,13 @@ theorem check_iota_rule_vm_spec
   obtain ⟨inv⟩ := check_iota_rule_inv ev
   have hmi_eq : inv.mi = .field (mI : F) := by
     rw [SubstAux.add_ok inv.op_mi]; congr 1
-    exact ZMod.val_injective _ (by rw [SubstAux.val_add (by omega), hrp_val, hni_val, hmi_val]; omega)
+    exact ZMod.val_injective _ (by
+      rw [SubstAux.val_add (by rw [hrp_val, hni_val]; omega), hrp_val, hni_val, hmi_val]
+      omega)
   have hd_eq : inv.d = .field (depth : F) := by
     rw [SubstAux.add_ok inv.op_d]; congr 1
-    exact ZMod.val_injective _ (by rw [SubstAux.val_add (by omega), hrp_val, hcnf_val, hd_val])
+    exact ZMod.val_injective _ (by
+      rw [SubstAux.val_add (by rw [hrp_val, hcnf_val]; omega), hrp_val, hcnf_val, hd_val])
   -- 1. `pins.length = cnP`
   have hpins_lt : (pins_lps.map (posOf lps)).length < 2 ^ 39 :=
     IxVM.Refinement.RomBound.bounded_length_lt hgood_pub.2 inv.call_plen (by simp) hpins_rep
@@ -2901,7 +2903,7 @@ theorem check_iota_rule_vm_spec
   have hadv_t : advSet a_t :=
     addr_set_member_one (c := c_adv) hroles hef_adv.tableWf
       (Bytes.repAddressRef_heapMono₂ addrTy ext_rhs_inf ha_t)
-      (haset.mono ext_rhs_inf) inv.ev_aset
+      (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_rhs_inf haset) inv.ev_aset
   have ext_aset := ext_rhs_inf.trans inv.ev_aset.heap_extends
   obtain ⟨ci_t, hfind_t0, _, hthm_range, v_tci, ld_tci', hcir_t⟩ :=
     hexact_adv a_t t_addr inv.p_tci inv.h_aset inv.h_tci inv.cs_tci inv.ev_tci
@@ -3816,23 +3818,23 @@ theorem check_iota_rule_vm_spec
         hef_adv hlf_adv (hgood_adv.sub inv.sub_deta) inv.ev_deta
         (hta_tm.mono ext_srt) hsrt_tm
     exact ⟨
-      { a_t, hadv_t, cvt, vt, hfind_t := hfind_t0, ht_lps
-        cvj, cnP, cnF, hfind_ctor, hlvls_len, hpins_len, hnfields
-        hrhs_bvars, hrhs_nofvar, hrhs_lvls, hrhs_lams, hrhs_noproj, hrhs_cr, hrhs_typed
-        hctor_tele, hctor_head
-        ell_lps, fvs, tbody, hopen_t, heq_head, htargs_len
-        hlhs_fn, hlargs_len, hlargs_pre, hmajor_eq
-        cdoms, cres, hinst_c, hcres_len
-        rdoms, lrest, hinst_r
-        fvsP, crest2, hopen_p
-        cdomsP, crestP, hinst_p
-        xFvsP, ldoms, hopen_cf, hldoms_len
-        hlam_walk, hpins_typed
+      { a_t, hadv_t, cvt, vt, hfind_t := hfind_t0, ht_lps,
+        cvj, cnP, cnF, hfind_ctor, hlvls_len, hpins_len, hnfields,
+        hrhs_bvars, hrhs_nofvar, hrhs_lvls, hrhs_lams, hrhs_noproj, hrhs_cr, hrhs_typed,
+        hctor_tele, hctor_head,
+        ell_lps, fvs, tbody, hopen_t, heq_head, htargs_len,
+        hlhs_fn, hlargs_len, hlargs_pre, hmajor_eq,
+        cdoms, cres, hinst_c, hcres_len,
+        rdoms, lrest, hinst_r,
+        fvsP, crest2, hopen_p,
+        cdomsP, crestP, hinst_p,
+        xFvsP, ldoms, hopen_cf, hldoms_len,
+        hlam_walk, hpins_typed,
         hruns := ⟨hde_idx, hde_dom, hde_pre, hde_rhs,
           ⟨invPosOf lps tl_pos, posRulesJ_infer_of_pos hlps_perm htl_inf,
             posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩,
           ⟨invPosOf lps tr_pos, posRulesJ_infer_of_pos hlps_perm htr_inf,
-            posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩⟩
+            posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩⟩,
         halpha_sort := ⟨invPosOf lps ta_pos, posRulesJ_infer_of_pos hlps_perm hta_inf,
           posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩ }⟩
 
@@ -3921,8 +3923,9 @@ theorem check_rules_go_vm_spec
         injection heq_cons with hmk hrest_eq
         injection hrest_eq with hrest_eq; subst hrest_eq
         obtain ⟨rhs_ptr, hmk_eq, hnf_lt, hrhs_rep⟩ := hrl_rep
+        unfold krrEnum at hmk_eq
         rw [hmk_eq] at hmk
-        injection hmk with _ hmk_args
+        injection hmk with hmk_args
         injection hmk_args with _ hmk_args2
         injection hmk_args2 with hrnf_eq hmk_args3
         injection hmk_args3 with hrhs_eq _
@@ -3946,6 +3949,7 @@ theorem check_rules_go_vm_spec
           hexact_pub a_cprj v_cprj p163 m117 m155 cs169 ev_ci
             (hg_pub.sub fun _ hx => by simp [hx]) ha_cprj
             (not_rec_or_quot_of_load ld_ci (by decide) (by decide))
+        change loadValue _ _ = .ok (.construct kciEnum "Ctor" _) at ld_ci
         rw [ld_ci] at ld_ci'; injection ld_ci' with hv_ci; subst hv_ci
         rw [hcprj_key] at hfind_c0
         cases hcir_c with
@@ -3970,7 +3974,7 @@ theorem check_rules_go_vm_spec
               (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m155 hrm) hrm_key
               (Bytes.repAddressRef_heapMono₂ addrTy ev_ci.heap_extends ha_cprj) hcprj_key
               (Bytes.repAddressRef_heapMono₂ addrTy (ev_cprj.heap_extends.trans ev_ci.heap_extends) ha_t)
-              (haset.mono ext_h_m155) (hren.mono ext_h_m155)
+              (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m155 haset) (hren.mono ext_h_m155)
               (hty_rep.mono ext_h_m155) (hrhs_rep.mono ext_h_m155) hv_c.2.2.2
               (hilvls_rep.mono ext_h_m155)
               (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m155 hpins_rep)
@@ -3995,7 +3999,7 @@ theorem check_rules_go_vm_spec
               (hrc.mono ext_h_m77)
               (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hrm) hrm_key
               (Bytes.repAddressRef_heapMono₂ addrTy ext_h_m77 hiblock)
-              (haset.mono ext_h_m77) (hren.mono ext_h_m77)
+              (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_h_m77 haset) (hren.mono ext_h_m77)
               (hty_rep.mono ext_h_m77) (hilvls_rep.mono ext_h_m77)
               (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_m77 hpins_rep)
               (hrls_rest.mono ext_h_m77) (hstr_mid.mono ext_m42_m77) ev_rec
@@ -4138,6 +4142,7 @@ theorem check_rules_vm_spec
       hexact_pub a_ind x_iaddr p66 m2 m58 cs72 ev_ci
         (hg_pub.sub fun _ hx => by simp [hx]) ha_ind
         (not_rec_or_quot_of_load ld_ci (by decide) (by decide))
+    change loadValue _ _ = .ok (.construct kciEnum "Induct" _) at ld_ci
     rw [ld_ci] at ld_ind'; injection ld_ind' with hv_ind; subst hv_ind
     cases hcir_ind with
     | @induct _ _ _ _ _ _ _ _ cv_ind caps_ind _ hcounts_i hkey_i =>
@@ -4224,7 +4229,7 @@ theorem check_rules_vm_spec
           (hrc.mono ext_rmp_ci)
           (Bytes.repAddressRef_heapMono₂ addrTy ext_rmp_ci hrm) hrm_key
           hb_ind
-          (haset.mono ext_rmp_ci) (hren.mono ext_rmp_ci)
+          (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_rmp_ci haset) (hren.mono ext_rmp_ci)
           (hty_rep.mono ext_rmp_ci)
           (by rw [hlvls_pos_eq]; exact hilvls_rep.mono ev_ci.heap_extends)
           (by rw [hpins_pos_eq]
