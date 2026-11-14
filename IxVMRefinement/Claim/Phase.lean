@@ -30,12 +30,19 @@ set_option linter.unnecessarySimpa false
 /-! ## Walked-closure seam for L6 -/
 
 /-- Walked-closure predicate established by `IxVM::verify_claim`:
-guards role-table evidence proof seeds by `E₀.consts.contains a = true` (matching
-`IxVM.Consistency.ReadIn` and `Ix.Cert.CompiledReachAt.seed`, since evidence theorems of unused
-roles are not loaded during `verify_claim`), and records record presence plus
-`muts ∨ S0.CheckedAt` on the `S0.usedRefIdxs` closure. -/
+* records `E₀`'s role-binding and `LazyConstant` raw-bytes / exact-decode agreement;
+* guards role-table evidence proof seeds by `E₀.consts.contains a = true` (matching
+  `IxVM.Consistency.ReadIn` and `Ix.Cert.CompiledReachAt.seed`, since evidence theorems of unused
+  roles are not loaded during `verify_claim`);
+* records record presence plus `muts ∨ S0.CheckedAt` on the `S0.usedRefIdxs` closure. -/
 def WalkedL6 (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (seeds : List _root_.Address) : Prop :=
+  (∀ rb, E₀.roleBinding = some rb → Ix.Kernel.RoleTable.ofBytes rb.bytes = some t) ∧
+  (∀ a lc, E₀.consts.get? a = some lc →
+    lc.rawBytes.size < 4294967296 ∧
+    ∃ c, lc.get? = some c ∧
+      Ixon.deConstant lc.rawBytes = .ok c ∧
+      Ixon.deConstantExact lc.rawBytes = .ok c) ∧
   ∃ Wk : _root_.Address → Prop,
     (∀ a, (a ∈ seeds ∨ (E₀.consts.contains a = true ∧
         ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList)) → Wk a) ∧
@@ -145,21 +152,25 @@ theorem buildBlobs_get?_some_inv (calls : List (Call F)) {a : _root_.Address} {b
     · obtain ⟨hh, ha⟩ := ih h
       exact ⟨hashed_mono (fun _ hm => List.mem_cons_of_mem _ hm) hh, ha⟩
 
-/-- Witness environment `E₀` built from the walked records `recs` and hashed blobs of `calls`. -/
-noncomputable def envOfRecs {t : Ix.Kernel.RoleTable} (calls : List (Call F))
-    (recs : List (WalkedRec calls t)) : Ixon.Env :=
-  { consts := buildConsts recs, blobs := buildBlobs calls }
+/-- Witness environment `E₀` built from the role binding `b`, walked records `recs`, and hashed
+blobs of `calls`. -/
+noncomputable def envOfRecs {t : Ix.Kernel.RoleTable} (b : Ix.Kernel.Admission.Binding)
+    (calls : List (Call F)) (recs : List (WalkedRec calls t)) : Ixon.Env :=
+  { consts := buildConsts recs
+    blobs := buildBlobs calls
+    roleBinding := some { address := b.address, bytes := b.bytes } }
 
-theorem envOfRecs_loadedBy {t : Ix.Kernel.RoleTable} (calls : List (Call F))
-    (recs : List (WalkedRec calls t)) :
-    IxVM.Consistency.LoadedBy calls (envOfRecs calls recs) := by
+theorem envOfRecs_loadedBy {t : Ix.Kernel.RoleTable} (b : Ix.Kernel.Admission.Binding)
+    (calls : List (Call F)) (recs : List (WalkedRec calls t)) :
+    IxVM.Consistency.LoadedBy calls (envOfRecs b calls recs) := by
   refine ⟨fun a lc hget => ?_, fun a bytes hget => buildBlobs_get?_some_inv calls hget⟩
   obtain ⟨r, -, rfl, rfl⟩ := buildConsts_get?_some_inv recs hget
   simpa using ⟨r.hhashed, r.hblake⟩
 
 theorem recordAt_envOfRecs_inv {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {b : Ix.Kernel.Admission.Binding}
     (recs : List (WalkedRec calls t)) {a : _root_.Address} {c : Ixon.Constant}
-    (hrec : Ix.Cert.recordAt (envOfRecs calls recs) a = some c) :
+    (hrec : Ix.Cert.recordAt (envOfRecs b calls recs) a = some c) :
     ∃ r ∈ recs, r.addr = a ∧ r.c = c := by
   unfold Ix.Cert.recordAt envOfRecs at hrec
   dsimp only at hrec
@@ -191,11 +202,12 @@ theorem noColl_or_hashedCollision (V : View) (extra : List ByteArray) (calls : L
     exact hcoll ⟨b₁, b₂, hh₁, hh₂, hblk, hne⟩
 
 theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {b : Ix.Kernel.Admission.Binding}
     (hnoColl : ∀ b₁ b₂ : ByteArray, Hashed calls b₁ → Hashed calls b₂ →
       Address.blake3Pure b₁ = Address.blake3Pure b₂ → b₁ = b₂)
     (recs : List (WalkedRec calls t)) {a : _root_.Address}
     (hs : ClaimableSeed calls t a) :
-    ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs calls recs) a := by
+    ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs b calls recs) a := by
   rintro ⟨c, hrec_a, hbad⟩
   obtain ⟨r, -, hr_addr, rfl⟩ := recordAt_envOfRecs_inv recs hrec_a
   obtain ⟨raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ := hs.selfSafe
@@ -236,26 +248,38 @@ theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.
       rw [hcb_eq] at hnot_cb
       exact hnot_cb hlB
 
-theorem walkedL6_envOfRecs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+theorem walkedL6_envOfRecs {calls : List (Call F)} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable}
     {seeds : List _root_.Address} (recs : List (WalkedRec calls t))
+    (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hseeds : ∀ a ∈ seeds, a ∈ recs.map (·.addr))
     (hcl : RecsClosed recs) :
-    WalkedL6 calls t (envOfRecs calls recs) seeds := by
-  refine ⟨fun a => (envOfRecs calls recs).consts.contains a = true, ?_, ?_, ?_⟩
+    WalkedL6 calls t (envOfRecs b calls recs) seeds := by
+  obtain ⟨_, hwf_wire, hto, _, _, _⟩ := admitBinding_inv hadm
+  have hof : Ix.Kernel.RoleTable.ofBytes b.bytes = some t :=
+    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff b.bytes t).mpr ⟨hwf_wire, hto⟩
+  refine ⟨?_, ?_, fun a => (envOfRecs b calls recs).consts.contains a = true, ?_, ?_, ?_⟩
+  · intro rb hrb
+    simp only [envOfRecs, Option.some.injEq] at hrb
+    rw [← hrb]
+    exact hof
+  · intro a lc hget
+    obtain ⟨r, -, rfl, rfl⟩ := buildConsts_get?_some_inv recs hget
+    simpa only [mkLazy_rawBytes, mkLazy_get?] using ⟨r.hsz, r.c, rfl, r.hde, r.hdeExact⟩
   · intro a hseed
     rcases hseed with ha | ⟨hcont, -⟩
     · change (buildConsts recs).contains a = true
       exact (buildConsts_contains_iff recs a).mpr (hseeds a ha)
     · exact hcont
-  · intro a b _ hedge
+  · intro a b' _ hedge
     rcases hedge with ⟨c, hrec, hstep⟩ | hground
     · obtain ⟨r, hr, rfl, rfl⟩ := recordAt_envOfRecs_inv recs hrec
       obtain ⟨hown, hrefs⟩ := hcl r hr
-      change (buildConsts recs).contains b = true
+      change (buildConsts recs).contains b' = true
       rw [buildConsts_contains_iff]
       rcases hstep with ⟨rfl, hne⟩ | ⟨i, hi, hb⟩
       · exact hown hne
-      · exact hrefs i hi b hb
+      · exact hrefs i hi b' hb
     · exact hground.1
   · intro a hwk
     change (buildConsts recs).contains a = true at hwk
@@ -298,14 +322,14 @@ theorem claimPhase_L6 (hDef : Ix.Cert.RoleClosure.DefaultAdmits) :
       rcases List.mem_singleton.mp hx with rfl
       simpa only [recs, map_addr_walkedRec_mono] using hmem_a
     have hseeds_ok : ∀ x ∈ [a],
-        ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs calls recs) x ∧
+        ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs b calls recs) x ∧
         ¬ IxVM.Consistency.InertAt t x := by
       intro x hx
       rcases List.mem_singleton.mp hx with rfl
       exact ⟨claimableSeed_not_outsideLogicAt hnoColl recs hseed_a, hseed_a.notInert⟩
-    exact .inr ⟨t, envOfRecs calls recs, hadm,
-      envOfRecs_loadedBy calls recs, hseeds_ok,
-      walkedL6_envOfRecs recs hseeds_mem (hcl_cs2.mono hsub₂)⟩
+    exact .inr ⟨t, envOfRecs b calls recs, hadm,
+      envOfRecs_loadedBy b calls recs, hseeds_ok,
+      walkedL6_envOfRecs recs hadm hseeds_mem (hcl_cs2.mono hsub₂)⟩
   · rcases walk_leaves_owned_spec (V := V)
         (extra := bytes :: b.bytes :: IxVM.Consistency.committedImages)
         hadm (by simp) as hrc₁ hl₁ ev_wlo with
@@ -317,14 +341,14 @@ theorem claimPhase_L6 (hDef : Ix.Cert.RoleClosure.DefaultAdmits) :
         intro x hx
         simpa only [recs, map_addr_walkedRec_mono] using hmem_cs1 x hx
       have hseeds_ok : ∀ x ∈ seeds,
-          ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs calls recs) x ∧
+          ¬ IxVM.Consistency.OutsideLogicAt (envOfRecs b calls recs) x ∧
           ¬ IxVM.Consistency.InertAt t x := by
         intro x hx
         have hs : ClaimableSeed calls t x := (hseeds_cs1 x hx).mono hsub₁
         exact ⟨claimableSeed_not_outsideLogicAt hnoColl recs hs, hs.notInert⟩
-      exact .inr ⟨t, envOfRecs calls recs, hadm,
-        envOfRecs_loadedBy calls recs, hseeds_ok,
-        walkedL6_envOfRecs recs hseeds_mem (hcl_cs1.mono hsub₁)⟩
+      exact .inr ⟨t, envOfRecs b calls recs, hadm,
+        envOfRecs_loadedBy b calls recs, hseeds_ok,
+        walkedL6_envOfRecs recs hadm hseeds_mem (hcl_cs1.mono hsub₁)⟩
 
 /-- **Obligation `L6` at `S_L6`**. -/
 theorem l6_L6 (hDef : Ix.Cert.RoleClosure.DefaultAdmits) :
@@ -372,7 +396,7 @@ theorem walked_S₀_of_walkedL6
     (hwalk : WalkedL6 calls t E₀ seeds) :
     S0.Walked calls t E₀ seeds := by
   have hev := hExtra.evidenceStored calls b t E₀ seeds hadm hload hwalk
-  obtain ⟨Wk, hwk_seed, hwk_edge, hwk_node⟩ := hwalk
+  obtain ⟨_, _, Wk, hwk_seed, hwk_edge, hwk_node⟩ := hwalk
   refine ⟨Wk, ?_, hwk_edge, ?_⟩
   · intro a h
     rcases h with ha | hev_a

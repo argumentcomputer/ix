@@ -44,9 +44,11 @@ structure WalkedRec (calls : List (Call F)) (t : Ix.Kernel.RoleTable) where
   addr : _root_.Address
   rawBytes : ByteArray
   c : Ixon.Constant
+  hsz : rawBytes.size < 4294967296
   hhashed : Hashed calls rawBytes
   hblake : Address.blake3Pure rawBytes = addr
   hde : Ixon.deConstant rawBytes = .ok c
+  hdeExact : Ixon.deConstantExact rawBytes = .ok c
   hchecked : (∃ ms, c.info = .muts ms) ∨ S0.CheckedAt calls t addr
 
 /-- Lift a `WalkedRec` along call-list inclusion. -/
@@ -55,9 +57,11 @@ def WalkedRec.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable}
   addr := r.addr
   rawBytes := r.rawBytes
   c := r.c
+  hsz := r.hsz
   hhashed := hashed_mono hsub r.hhashed
   hblake := r.hblake
   hde := r.hde
+  hdeExact := r.hdeExact
   hchecked := r.hchecked.elim .inl (fun hc => .inr (checkedAt_mono hsub hc))
 
 @[simp]
@@ -186,9 +190,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
   | var idx =>
     intro h h' x_e r calls rep ev
@@ -200,9 +204,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
   | ref idx univs =>
     intro h h' x_e r calls rep ev
@@ -214,7 +218,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, hne75, -⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -222,8 +226,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         simp only [List.cons.injEq] at hargs
         obtain ⟨hxi, -⟩ := hargs
         rw [← hxi] at ev52
-        obtain ⟨hlt, rfl, rfl⟩ :=
+        obtain ⟨hlt, hv39, hm42⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value h idx) ev52
+        rw [hv39, hm42]
         have ext1 := Heap.Extends.snoc h
           (.construct Obs.Names.«Lists::Node<Field>» "Nil" [])
         have ext2 := Heap.Extends.snoc
@@ -232,7 +237,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
             [.field (idx.toNat : F), .ptr (.enum Obs.Names.«Lists::Node<Field>») h.length])
         exact ⟨ext1.trans ext2,
           Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ (Lib.rep_store_nil h)⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         exact absurd hv.symm (hne75 [_, _] rfl)
@@ -246,9 +251,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
   | prj tIdx fIdx val ih =>
     intro h h' x_e r calls rep ev
@@ -261,9 +266,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, hne149, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         injection hv with _ _ hargs
@@ -271,8 +276,10 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨hxi, _, hxinner⟩ := hargs
         rw [← hxi] at ev119
         rw [← hxinner] at ev139
-        obtain ⟨hlt, rfl, rfl⟩ :=
+        obtain ⟨hlt, hv106, hm109⟩ :=
           Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tIdx) ev119
+        rw [hm109] at ev139
+        rw [hv106]
         obtain ⟨ext_in, hrep_in⟩ := ih valRep ev139
         exact ⟨ext_in.trans (Heap.Extends.snoc m129 _),
           Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ hrep_in⟩
@@ -289,9 +296,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
   | nat idx =>
     intro h h' x_e r calls rep ev
@@ -303,9 +310,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
   | app fnE arg ih1 ih2 =>
     intro h h' x_e r calls rep ev
@@ -318,9 +325,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
           ld12, ev185, ev205, ev171, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, hne215, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         injection hv with _ _ hargs
@@ -345,9 +352,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨x_t, x_b, cs235, v238, v239, m241, cs249, m261, cs269,
           ld12, ev251, ev271, ev237, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, hne281, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         injection hv with _ _ hargs
@@ -372,9 +379,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨x_t, x_b, cs301, v304, v305, m307, cs315, m327, cs335,
           ld12, ev317, ev337, ev303, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, hne347, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         injection hv with _ _ hargs
@@ -402,7 +409,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
           v415, v416, m418, cs426, m438, cs446,
           ld12, ev394, ev428, ev448, ev414, ev380, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, hne458, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         injection hv with _ _ hargs
@@ -431,9 +438,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
-      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12)
+      all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
 
 theorem const_idxs_exprs_spec (es : List Ixon.Expr) :
@@ -492,7 +499,7 @@ theorem const_idxs_rules_spec (rs : List Ixon.RecursorRule) :
       obtain ⟨rhsPtr, hv, hrhs⟩ := hrl
       injection hv with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
-      rw [hargs.2] at hrhs
+      rw [← hargs.2] at hrhs
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec rl.rhs hrhs ev92
       obtain ⟨ext2, h2⟩ :=
         ih (repList_heapMono₂ _ repRecursorRule_heapMono₂ ext1 hrest) ev112
@@ -528,7 +535,7 @@ theorem const_idxs_ctors_spec (cs : List Ixon.Constructor) :
       obtain ⟨uVal, modesPtr, tPtr, hv, _, _, htyp⟩ := hctor
       injection hv with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
-      rw [hargs.2.2.2.2.2.2] at htyp
+      rw [← hargs.2.2.2.2.2.2] at htyp
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec ctor.typ htyp ev122
       obtain ⟨ext2, h2⟩ :=
         ih (repList_heapMono₂ _ repConstructor_heapMono₂ ext1 hrest) ev142
@@ -579,8 +586,8 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         simp only [List.cons.injEq, and_true] at hargs
         injection hargs with _ _ hdargs
         simp only [List.cons.injEq, and_true] at hdargs
-        rw [hdargs.2.2.2.2.1] at htyp
-        rw [hdargs.2.2.2.2.2] at hval
+        rw [← hdargs.2.2.2.2.1] at htyp
+        rw [← hdargs.2.2.2.2.2] at hval
         obtain ⟨ext1, h1⟩ := const_idxs_expr_spec d.typ htyp ev150
         obtain ⟨ext2, h2⟩ := const_idxs_expr_spec d.value (hval.mono ext1) ev170
         obtain ⟨ext3, h12⟩ :=
@@ -605,8 +612,8 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         simp only [List.cons.injEq, and_true] at hargs
         injection hargs with _ _ hiargs
         simp only [List.cons.injEq, and_true] at hiargs
-        rw [hiargs.2.2.2.2.1] at htyp
-        rw [hiargs.2.2.2.2.2] at hctors
+        rw [← hiargs.2.2.2.2.1] at htyp
+        rw [← hiargs.2.2.2.2.2] at hctors
         obtain ⟨ext1, h1⟩ := const_idxs_expr_spec ind.typ htyp ev296
         obtain ⟨ext2, h2⟩ :=
           const_idxs_ctors_spec ind.ctors.toList
@@ -633,8 +640,8 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         simp only [List.cons.injEq, and_true] at hargs
         injection hargs with _ _ hrargs
         simp only [List.cons.injEq, and_true] at hrargs
-        rw [hrargs.2.2.2.2.2.2.2.1] at htyp
-        rw [hrargs.2.2.2.2.2.2.2.2] at hrules
+        rw [← hrargs.2.2.2.2.2.2.2.1] at htyp
+        rw [← hrargs.2.2.2.2.2.2.2.2] at hrules
         obtain ⟨ext1, h1⟩ := const_idxs_expr_spec rc.typ htyp ev460
         obtain ⟨ext2, h2⟩ :=
           const_idxs_rules_spec rc.rules.toList
@@ -686,8 +693,8 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hdargs
       simp only [List.cons.injEq, and_true] at hdargs
-      rw [hdargs.2.2.2.2.1] at htyp
-      rw [hdargs.2.2.2.2.2] at hval
+      rw [← hdargs.2.2.2.2.1] at htyp
+      rw [← hdargs.2.2.2.2.2] at hval
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec d.typ (htyp.mono extS) ev178
       obtain ⟨ext2, h2⟩ := const_idxs_expr_spec d.value (hval.mono (extS.trans ext1)) ev198
@@ -711,8 +718,8 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hrargs
       simp only [List.cons.injEq, and_true] at hrargs
-      rw [hrargs.2.2.2.2.2.2.2.1] at htyp
-      rw [hrargs.2.2.2.2.2.2.2.2] at hrules
+      rw [← hrargs.2.2.2.2.2.2.2.1] at htyp
+      rw [← hrargs.2.2.2.2.2.2.2.2] at hrules
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec rc.typ (htyp.mono extS) ev329
       obtain ⟨ext2, h2⟩ :=
@@ -738,7 +745,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ haargs
       simp only [List.cons.injEq, and_true] at haargs
-      rw [haargs.2.2] at htyp
+      rw [← haargs.2.2] at htyp
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec a.typ (htyp.mono extS) ev431
       obtain ⟨ext2, hcat⟩ :=
@@ -757,7 +764,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hqargs
       simp only [List.cons.injEq, and_true] at hqargs
-      rw [hqargs.2.2] at htyp
+      rw [← hqargs.2.2] at htyp
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec q.typ (htyp.mono extS) ev513
       obtain ⟨ext2, hcat⟩ :=
@@ -836,6 +843,12 @@ theorem g_list_has_spec (idxs : List Nat) {i : Nat} (hi : i < 72057594037927936)
 
 /-! ## `defn_is_unsafe_ci`, `ctors_unsafe`, `muts_unsafe`, `record_unsafe`, `assert_claimable` -/
 
+private theorem repBool_eq_false_of_field_zero {b : Bool} {uVal : SourceValue F}
+    (hu : RepBool b uVal) (hu0 : uVal = .field 0) : b = false := by
+  cases b with
+  | false => rfl
+  | true => exact absurd (hu.symm.trans hu0) (fun h => one_ne_zero (Value.field.inj h))
+
 theorem defn_is_unsafe_ci_zero_spec {kind : Ix.DefKind} {safety : Ix.DefinitionSafety}
     {x_kind x_safety : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hk : RepDefKind kind x_kind)
@@ -848,9 +861,10 @@ theorem defn_is_unsafe_ci_zero_spec {kind : Ix.DefKind} {safety : Ix.DefinitionS
     ⟨_, hv25, hne46, _, rfl, -⟩ |
     ⟨_, _, hv58, hv74, _, rfl, -⟩ |
     ⟨_, _, _, _, he83, -⟩
-  · cases kind <;> simp [RepDefKind] at hk
-    subst hk
-    exact ⟨rfl, rfl⟩
+  · cases kind with
+    | defn => rw [RepDefKind] at hk; rw [hk] at hv15; simp at hv15
+    | opaq => rw [RepDefKind] at hk; rw [hk] at hv15; simp at hv15
+    | thm => exact ⟨rfl, rfl⟩
   · simp at he43
   · cases kind <;> simp [RepDefKind] at hk
     · rw [hk] at hv25; simp at hv25
@@ -895,10 +909,7 @@ theorem ctors_unsafe_zero_spec (cs : List Ixon.Constructor) :
       injection hv with _ _ hargs
       simp only [List.cons.injEq] at hargs
       have hu0 : uVal = .field 0 := hargs.1.symm
-      have hfalse : ctor.isUnsafe = false := by
-        cases hc : ctor.isUnsafe <;> simp [RepBool, hc] at hu
-        rw [hu] at hu0
-        simp at hu0
+      have hfalse : ctor.isUnsafe = false := repBool_eq_false_of_field_zero hu hu0
       obtain ⟨hh, hrest_ok⟩ := ih hrest ev116
       refine ⟨hh, fun c hc => ?_⟩
       rcases List.mem_cons.mp hc with rfl | hmem
@@ -945,8 +956,8 @@ theorem muts_unsafe_zero_spec (ms : List Ixon.MutConst) :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hdargs
             simp only [List.cons.injEq] at hdargs
-            rw [hdargs.1] at hk
-            rw [hdargs.2.1] at hs
+            rw [← hdargs.1] at hk
+            rw [← hdargs.2.1] at hs
             obtain ⟨hh, hdecl⟩ := defn_is_unsafe_ci_zero_spec hk hs ev116
             exact ⟨hh, hdecl⟩
         · cases mc with
@@ -959,11 +970,9 @@ theorem muts_unsafe_zero_spec (ms : List Ixon.MutConst) :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hiargs
             simp only [List.cons.injEq, and_true] at hiargs
-            have hu0 : uVal = .field 0 := hiargs.1
-            rw [hiargs.2.2.2.2.2] at hctors
-            have hfalse : ind.isUnsafe = false := by
-              cases hc : ind.isUnsafe <;> simp [RepBool, hc] at hu
-              rw [hu] at hu0; simp at hu0
+            have hu0 : uVal = .field 0 := hiargs.1.symm
+            rw [← hiargs.2.2.2.2.2] at hctors
+            have hfalse : ind.isUnsafe = false := repBool_eq_false_of_field_zero hu hu0
             obtain ⟨hh, hct_ok⟩ := ctors_unsafe_zero_spec ind.ctors.toList hctors ev216
             exact ⟨hh, hfalse, hct_ok⟩
         · simp at he230
@@ -977,10 +986,8 @@ theorem muts_unsafe_zero_spec (ms : List Ixon.MutConst) :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hrargs
             simp only [List.cons.injEq] at hrargs
-            have hu0 : uVal = .field 0 := hrargs.2.1.trans he316.symm
-            have hfalse : rc.isUnsafe = false := by
-              cases hc : rc.isUnsafe <;> simp [RepBool, hc] at hu
-              rw [hu] at hu0; simp at hu0
+            have hu0 : uVal = .field 0 := hrargs.2.1.symm.trans he316.symm
+            have hfalse : rc.isUnsafe = false := repBool_eq_false_of_field_zero hu hu0
             exact ⟨rfl, hfalse⟩
       obtain ⟨rfl, hmc_ok⟩ := hseg
       obtain ⟨hh, hrest_ok⟩ := ih hrest ev349
@@ -1019,8 +1026,8 @@ theorem record_unsafe_zero_spec {x_addr : SourceValue F} {addr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hdargs
       simp only [List.cons.injEq] at hdargs
-      rw [hdargs.1] at hk
-      rw [hdargs.2.1] at hs
+      rw [← hdargs.1] at hk
+      rw [← hdargs.2.1] at hs
       obtain ⟨rfl, hdecl⟩ := defn_is_unsafe_ci_zero_spec hk hs ev144
       refine ⟨ext1, rawBytes, c, hashed_mono (fun cl hcl => by rw [hc161]; simp [hcl]) hh,
         hblk, hde, ?_⟩
@@ -1039,10 +1046,8 @@ theorem record_unsafe_zero_spec {x_addr : SourceValue F} {addr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hrargs
       simp only [List.cons.injEq] at hrargs
-      have hu0 : uVal = .field 0 := hrargs.2.1.trans he245.symm
-      have hfalse : rc.isUnsafe = false := by
-        cases hb : rc.isUnsafe <;> simp [RepBool, hb] at hu
-        rw [hu] at hu0; simp at hu0
+      have hu0 : uVal = .field 0 := hrargs.2.1.symm.trans he245.symm
+      have hfalse : rc.isUnsafe = false := repBool_eq_false_of_field_zero hu hu0
       refine ⟨ext1, rawBytes, c, hashed_mono (fun cl hcl => by rw [hc247]; simp [hcl]) hh,
         hblk, hde, ?_⟩
       simpa only [IxVM.Consistency.InLogic, hc] using hfalse
@@ -1060,10 +1065,8 @@ theorem record_unsafe_zero_spec {x_addr : SourceValue F} {addr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ haargs
       simp only [List.cons.injEq] at haargs
-      have hu0 : uVal = .field 0 := haargs.1.trans he295.symm
-      have hfalse : a.isUnsafe = false := by
-        cases hb : a.isUnsafe <;> simp [RepBool, hb] at hu
-        rw [hu] at hu0; simp at hu0
+      have hu0 : uVal = .field 0 := haargs.1.symm.trans he295.symm
+      have hfalse : a.isUnsafe = false := repBool_eq_false_of_field_zero hu hu0
       refine ⟨ext1, rawBytes, c, hashed_mono (fun cl hcl => by rw [hc297]; simp [hcl]) hh,
         hblk, hde, ?_⟩
       simpa only [IxVM.Consistency.InLogic, hc] using hfalse
@@ -1129,7 +1132,7 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hpargs
       simp only [List.cons.injEq, and_true] at hpargs
-      rw [hpargs.2] at hblk_addr
+      rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
         record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev149
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
@@ -1156,7 +1159,7 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hpargs
       simp only [List.cons.injEq, and_true] at hpargs
-      rw [hpargs.2] at hblk_addr
+      rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
         record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev323
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
@@ -1183,7 +1186,7 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hpargs
       simp only [List.cons.injEq, and_true] at hpargs
-      rw [hpargs.2.2] at hblk_addr
+      rw [← hpargs.2.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
         record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev503
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
@@ -1210,7 +1213,7 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hpargs
       simp only [List.cons.injEq, and_true] at hpargs
-      rw [hpargs.2] at hblk_addr
+      rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
         record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev677
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
@@ -1337,7 +1340,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
             have hlt_sub : cs206.length < fuel := by
               rw [hc598, hc225] at hfuel
@@ -1364,7 +1367,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev279
             have hlt_sub : cs299.length < fuel := by
               rw [hc598, hc318] at hfuel
@@ -1391,7 +1394,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2.2] at hblk_addr
+            rw [← hpargs.2.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev378
             have hlt_sub : cs398.length < fuel := by
               rw [hc598, hc417] at hfuel
@@ -1418,7 +1421,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev471
             have hlt_sub : cs491.length < fuel := by
               rw [hc598, hc510] at hfuel
@@ -1473,9 +1476,11 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
         addr := addr
         rawBytes := rawBytes
         c := c
+        hsz := hsz
         hhashed := hashed_mono (fun cl hcl => by rw [hc598]; simp [hcl]) hh_load
         hblake := hblk
         hde := hde
+        hdeExact := hdeExact
         hchecked := hchk_self
       }
       let recs_tail := recs_blk ++ recs_r.map (WalkedRec.mono hsub_r)
@@ -1710,7 +1715,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev226
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld220
@@ -1742,7 +1747,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev319
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev359
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld353
@@ -1774,7 +1779,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2.2] at hblk_addr
+            rw [← hpargs.2.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev458
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev498
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld492
@@ -1806,7 +1811,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at h1
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
-            rw [hpargs.2] at hblk_addr
+            rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev591
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev631
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld625
@@ -1868,9 +1873,11 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
         addr := addr
         rawBytes := rawBytes
         c := c
+        hsz := hsz
         hhashed := hashed_mono (fun cl hcl => by rw [hc758]; simp [hcl]) hh_load
         hblake := hblk
         hde := hde
+        hdeExact := hdeExact
         hchecked := hchk_self
       }
       let recs_tail := recs_blk ++ recs_r.map (WalkedRec.mono hsub_r)
