@@ -937,7 +937,10 @@ theorem preludeRowsHashed :
 theorem evidenceBlobs_eq : Ix.Kernel.Reader.evidenceBlobs = .ok committedBlobs := by
   unfold Ix.Kernel.Reader.evidenceBlobs committedBlobs
   rw [roleData_blobs_eq, List.toList_toArray]
-  apply evidenceBlobs_of_forall₂
+  refine except_mapM_forall₂
+    (R := fun row p =>
+      Ix.Kernel.Reader.addressOfHex row.1 = some p.1 ∧ bytesOfHex row.2 = some p.2)
+    (fun row p ⟨ha, hb⟩ => by simp [ha, hb, bind, Except.bind, pure, Except.pure]) ?_
   unfold rawBlobRows List.map
   refine .cons ⟨by unfold hexRowOfChunks Ix.Kernel.Reader.addressOfHex; rw [Claim.bytesOfHex_ofList_hexChars]; rfl, by unfold hexRowOfChunks; exact Claim.bytesOfHex_ofList_hexChars _⟩ ?_
   refine .cons ⟨by unfold hexRowOfChunks Ix.Kernel.Reader.addressOfHex; rw [Claim.bytesOfHex_ofList_hexChars]; rfl, by unfold hexRowOfChunks; exact Claim.bytesOfHex_ofList_hexChars _⟩ ?_

@@ -1159,7 +1159,7 @@ private theorem forIn_recRules_append {src : Ixon.Constant} {param : Nat → Ix.
     {mb : _root_.Address} {mi : Nat} :
     ∀ (l : List (Ixon.RecursorRule × Nat)) (acc tail : List (Ix.Kernel.RecRule .anon)),
       pureReadRecRules src param pself mb mi l = .ok tail →
-      forIn l acc (fun (rule, k) rules => do
+      forIn (m := ReadM) l acc (fun (rule, k) rules => do
         let ck ← (defCx ev).memberKey (.ctor mb mi k)
         let rhs ← (MemberReader.mk' (defCx ev) src param rself).read rule.rhs
         pure (.yield (rules ++ [Ix.Kernel.RecRule.mk ck rule.fields.toNat 0 .inert rhs false false false]))) =
@@ -1291,7 +1291,7 @@ private theorem forIn_ctors_sound {owner : _root_.Address} {src : Ixon.Constant}
       (accC : Array (CVal .anon × Nat × Nat)) (accN : List (CName .anon))
       (outC : List (CVal .anon × Nat × Nat)) (outN : List (CName .anon)),
       pureReadCtorList owner src pself nPd l = .ok (outC, outN) →
-      forIn l ⟨accC, accN⟩ (fun (ctor, j) s => do
+      forIn (m := ReadM) l ⟨accC, accN⟩ (fun (ctor, j) s => do
         unless ctor.cidx.toNat == j do malformed "constructor index differs from its position"
         if ctor.isUnsafe then declined "unsafe inductive declaration"
         let cv : CVal .anon :=
@@ -1517,7 +1517,7 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
               dsimp only
               -- Evaluate 1-element types loop, 1-element outer ctors loop, 1-element recs loop
               have htypes_loop :
-                  (forIn (#[(0, ind)] : Array (Nat × Ixon.Inductive)) (#[] : Array (CVal .anon × Nat × Nat))
+                  (forIn (m := ReadM) (#[(0, ind)] : Array (Nat × Ixon.Inductive)) (#[] : Array (CVal .anon × Nat × Nat))
                     fun (i, ind) types => do
                       pure (.yield (types.push (⟨← (defCx ev).memberKey (.member owner i),
                         List.range ind.lvls.toNat,
@@ -1527,10 +1527,10 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
                 rw [← Array.forIn_toList]
                 simp [htk', htty', bind, Except.bind, pure, Except.pure]
               have hctors_loop :
-                  (forIn (#[(0, ind)] : Array (Nat × Ixon.Inductive))
+                  (forIn (m := ReadM) (#[(0, ind)] : Array (Nat × Ixon.Inductive))
                     (⟨#[], #[]⟩ : MProd (Array (CVal .anon × Nat × Nat)) (Array (List (CName .anon))))
                     fun (i, ind) acc => do
-                      let r ← forIn ind.ctors.zipIdx (⟨acc.1, []⟩ : MProd (Array (CVal .anon × Nat × Nat)) (List (CName .anon)))
+                      let r ← forIn (m := ReadM) ind.ctors.zipIdx (⟨acc.1, []⟩ : MProd (Array (CVal .anon × Nat × Nat)) (List (CName .anon)))
                         fun (ctor, j) s => do
                           unless ctor.cidx.toNat == j do malformed "constructor index differs from its position"
                           if ctor.isUnsafe then declined "unsafe inductive declaration"
@@ -1547,7 +1547,7 @@ private theorem pureReadInductive1_sound {owner : _root_.Address} {c : Ixon.Cons
                 rw [← Array.forIn_toList, hctors']
                 simp [bind, Except.bind, pure, Except.pure]
               have hrecs_loop :
-                  (forIn (#[recRef] : Array (ConstRef _root_.Address))
+                  (forIn (m := ReadM) (#[recRef] : Array (ConstRef _root_.Address))
                     (#[] : Array (CVal .anon × RecCounts × List (Ix.Kernel.RecRule .anon)))
                     fun ref recs => do
                       let some entry := (defCx ev).index.recs[ref]? | malformed "unindexed recursor"
@@ -1837,38 +1837,6 @@ private theorem preludeFor_blobs {md : Ix.Kernel.Mode} {t : Ix.Kernel.RoleTable}
     cases hp
     exact hblobs
 
-private theorem evidenceBlobs_rows :
-    ∀ {rows : List (String × String)} {out : List (_root_.Address × ByteArray)},
-      (rows.mapM fun (hex, bytes) => do
-        let some a := addressOfHex hex | throw s!"evidence blob: bad address {hex}"
-        let some b := bytesOfHex bytes | throw s!"evidence blob: bad bytes at {hex}"
-        pure (a, b)) = .ok out →
-      ∀ p ∈ out, ∃ row ∈ rows, addressOfHex row.1 = some p.1 ∧ bytesOfHex row.2 = some p.2
-  | [], _, h, p, hp => by
-    injection h with ho; subst ho; cases hp
-  | (hex, bytes) :: rs, out, h, p, hp => by
-    rw [List.mapM_cons] at h
-    cases ha : addressOfHex hex with
-    | none => simp [ha, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
-    | some a =>
-      simp only [ha, bind, Except.bind] at h
-      cases hb : bytesOfHex bytes with
-      | none => simp [hb, throw, throwThe, MonadExceptOf.throw] at h
-      | some b =>
-        simp only [hb, pure, Except.pure] at h
-        cases htl : (rs.mapM fun (hex, bytes) => do
-            let some a := addressOfHex hex | throw s!"evidence blob: bad address {hex}"
-            let some b := bytesOfHex bytes | throw s!"evidence blob: bad bytes at {hex}"
-            pure (a, b)) with
-        | error _ => rw [htl] at h; cases h
-        | ok tail =>
-          rw [htl] at h
-          injection h with ho; subst ho
-          rcases List.mem_cons.mp hp with rfl | hmem
-          · exact ⟨(hex, bytes), List.mem_cons_self, ha, hb⟩
-          · obtain ⟨row, hr, ha', hb'⟩ := evidenceBlobs_rows htl p hmem
-            exact ⟨row, List.mem_cons_of_mem _ hr, ha', hb'⟩
-
 theorem blob_mem_committedImages_of_fallback {md : Ix.Kernel.Mode}
     {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     (hpre : preludeFor t = .ok pre) {a : _root_.Address} {blob : ByteArray}
@@ -1876,7 +1844,17 @@ theorem blob_mem_committedImages_of_fallback {md : Ix.Kernel.Mode}
     blob ∈ IxVM.Consistency.committedImages ∧ Address.blake3Pure blob = a := by
   have heb := preludeFor_blobs hpre
   unfold evidenceBlobs at heb
-  obtain ⟨row, hrow, ha, hb⟩ := evidenceBlobs_rows heb (a, blob) hmem
+  obtain ⟨row, hrow, hrow_ok⟩ := except_mapM_rows heb (a, blob) hmem
+  have ⟨ha, hb⟩ : addressOfHex row.1 = some a ∧ bytesOfHex row.2 = some blob := by
+    cases ha : addressOfHex row.1 with
+    | none => simp [ha, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hrow_ok
+    | some a' =>
+      cases hb : bytesOfHex row.2 with
+      | none => simp [ha, hb, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hrow_ok
+      | some b' =>
+        simp [ha, hb, bind, Except.bind, pure, Except.pure] at hrow_ok
+        obtain ⟨rfl, rfl⟩ := hrow_ok
+        exact ⟨rfl, rfl⟩
   have hhash := blobsHashed row hrow
   rw [hb, ha, Option.map_some, Option.some.injEq, Address.admissionHash_eq] at hhash
   refine ⟨?_, hhash⟩

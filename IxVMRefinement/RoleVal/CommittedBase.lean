@@ -1170,17 +1170,17 @@ private def chunkLoopCVN : Nat → Nat → CV8 → Bool → List UInt8 → CV8
       bindCV8 (compressN cv (blockWordsN (input.take 64)) counter 64 (if start then 1 else 0))
         fun next => chunkLoopCVN fuel counter next false (input.drop 64)
 
-private def chunkLoopRootCVN : Nat → Nat → CV8 → Bool → List UInt8 → CV8
-  | 0, counter, cv, start, input =>
-    compressN cv (blockWordsN input) counter (input.length % 4294967296)
+private def chunkLoopRootCVN : Nat → CV8 → Bool → List UInt8 → CV8
+  | 0, cv, start, input =>
+    compressN cv (blockWordsN input) 0 (input.length % 4294967296)
       ((if start then 1 else 0) ||| 10)
-  | fuel + 1, counter, cv, start, input =>
+  | fuel + 1, cv, start, input =>
     if input.length ≤ 64 then
-      compressN cv (blockWordsN input) counter (input.length % 4294967296)
+      compressN cv (blockWordsN input) 0 (input.length % 4294967296)
         ((if start then 1 else 0) ||| 10)
     else
-      bindCV8 (compressN cv (blockWordsN (input.take 64)) counter 64 (if start then 1 else 0))
-        fun next => chunkLoopRootCVN fuel counter next false (input.drop 64)
+      bindCV8 (compressN cv (blockWordsN (input.take 64)) 0 64 (if start then 1 else 0))
+        fun next => chunkLoopRootCVN fuel next false (input.drop 64)
 
 private theorem chunkLoopCVN_eq :
     ∀ (fuel : Nat) (counter : UInt64) (cv : Blake3.Pure.CV) (start : Bool) (input : List UInt8),
@@ -1223,55 +1223,69 @@ private theorem chunkLoopCVN_eq :
       exact chunkLoopCVN_eq fuel counter _ false (input.drop 64) (by rw [List.length_drop]; omega)
 
 private theorem chunkLoopRootCVN_eq :
-    ∀ (fuel : Nat) (counter : UInt64) (cv : Blake3.Pure.CV) (start : Bool) (input : List UInt8),
+    ∀ (fuel : Nat) (cv : Blake3.Pure.CV) (start : Bool) (input : List UInt8),
       input.length ≤ 64 * (fuel + 1) →
-      Blake3.Pure.cvBytes (chunkLoopRootCVN fuel counter.toNat (CV8.ofCV cv) start input).toCV =
-        (Blake3.Pure.chunkLoop counter cv start input).rootHash
-  | 0, counter, cv, start, input, hlen => by
+      Blake3.Pure.cvBytes (chunkLoopRootCVN fuel (CV8.ofCV cv) start input).toCV =
+        (Blake3.Pure.chunkLoop 0 cv start input).rootHash
+  | 0, cv, start, input, hlen => by
     have hle : input.length ≤ 64 := by omega
     have hblen : input.length % 4294967296 = input.length.toUInt32.toNat := by
       change input.length % 4294967296 = (UInt32.ofNat input.length).toNat
       rw [UInt32.toNat_ofNat']
     have hfl : ((if start then 1 else 0) ||| 10) =
         ((((if start then (1 : UInt32) else 0) ||| 2) ||| 8)).toNat := by cases start <;> decide
-    rw [Blake3.Pure.chunkLoop_of_le counter cv start input hle]
+    have hc := congrArg (fun x => Blake3.Pure.cvBytes x.toCV)
+      (compressN_eq cv (Blake3.Pure.blockWords input) 0 input.length.toUInt32
+        (((if start then (1 : UInt32) else 0) ||| 2) ||| 8))
+    rw [toCV_ofCV] at hc
+    rw [Blake3.Pure.chunkLoop_of_le 0 cv start input hle]
     unfold chunkLoopRootCVN Blake3.Pure.Output.rootHash
     dsimp only
-    rw [blockWordsN_eq, hblen, hfl, compressN_eq, toCV_ofCV]
-  | fuel + 1, counter, cv, start, input, hlen => by
+    rw [blockWordsN_eq, hblen, hfl]
+    exact hc
+  | fuel + 1, cv, start, input, hlen => by
     by_cases hle : input.length ≤ 64
     · have hblen : input.length % 4294967296 = input.length.toUInt32.toNat := by
         change input.length % 4294967296 = (UInt32.ofNat input.length).toNat
         rw [UInt32.toNat_ofNat']
       have hfl : ((if start then 1 else 0) ||| 10) =
           ((((if start then (1 : UInt32) else 0) ||| 2) ||| 8)).toNat := by cases start <;> decide
-      rw [Blake3.Pure.chunkLoop_of_le counter cv start input hle, chunkLoopRootCVN, ite_eq_left hle]
+      have hc := congrArg (fun x => Blake3.Pure.cvBytes x.toCV)
+        (compressN_eq cv (Blake3.Pure.blockWords input) 0 input.length.toUInt32
+          (((if start then (1 : UInt32) else 0) ||| 2) ||| 8))
+      rw [toCV_ofCV] at hc
+      rw [Blake3.Pure.chunkLoop_of_le 0 cv start input hle, chunkLoopRootCVN, ite_eq_left hle]
       unfold Blake3.Pure.Output.rootHash
       dsimp only
-      rw [blockWordsN_eq, hblen, hfl, compressN_eq, toCV_ofCV]
+      rw [blockWordsN_eq, hblen, hfl]
+      exact hc
     · have hgt : 64 < input.length := by omega
       have hfl : (if start then 1 else 0) = (if start then (1 : UInt32) else 0).toNat := by
         cases start <;> decide
       have hstep :
-          compressN (CV8.ofCV cv) (blockWordsN (input.take 64)) counter.toNat 64
+          compressN (CV8.ofCV cv) (blockWordsN (input.take 64)) 0 64
               (if start then 1 else 0) =
-            CV8.ofCV (Blake3.Pure.compress cv (Blake3.Pure.blockWords (input.take 64)) counter 64
+            CV8.ofCV (Blake3.Pure.compress cv (Blake3.Pure.blockWords (input.take 64)) 0 64
               (if start then 1 else 0)) := by
         rw [blockWordsN_eq, hfl]
-        exact compressN_eq cv (Blake3.Pure.blockWords (input.take 64)) counter 64
+        exact compressN_eq cv (Blake3.Pure.blockWords (input.take 64)) 0 64
           (if start then 1 else 0)
-      rw [Blake3.Pure.chunkLoop_of_gt counter cv start input hgt, chunkLoopRootCVN, ite_eq_right hle,
+      rw [Blake3.Pure.chunkLoop_of_gt 0 cv start input hgt, chunkLoopRootCVN, ite_eq_right hle,
           bindCV8_eq, hstep]
-      exact chunkLoopRootCVN_eq fuel counter _ false (input.drop 64)
+      exact chunkLoopRootCVN_eq fuel _ false (input.drop 64)
         (by rw [List.length_drop]; omega)
 
-private theorem single_chunk_digest_eq (input : List UInt8) (hlen : input.length ≤ 1024) :
-    Blake3.Pure.cvBytes (chunkLoopRootCVN 15 0 ivN true input).toCV =
+private theorem single_chunk_digest_eq_gen (fuel : Nat) (input : List UInt8)
+    (hfuel : input.length ≤ 64 * (fuel + 1)) (hlen : input.length ≤ 1024) :
+    Blake3.Pure.cvBytes (chunkLoopRootCVN fuel ivN true input).toCV =
       Blake3.Pure.digest input := by
-  have hr := chunkLoopRootCVN_eq 15 0 Blake3.Pure.iv true input (by omega)
-  have h0 : (0 : UInt64).toNat = 0 := rfl
-  rw [h0, ← ivN_eq] at hr
-  exact hr.trans (Aiur.Library.Blake3.chunk_single_root_spec input hlen)
+  rw [ivN_eq, chunkLoopRootCVN_eq fuel Blake3.Pure.iv true input hfuel]
+  exact Aiur.Library.Blake3.chunk_single_root_spec input hlen
+
+private theorem single_chunk_digest_eq (input : List UInt8) (hlen : input.length ≤ 1024) :
+    Blake3.Pure.cvBytes (chunkLoopRootCVN 15 ivN true input).toCV =
+      Blake3.Pure.digest input :=
+  single_chunk_digest_eq_gen 15 input (by omega) hlen
 
 private theorem cv_toList_eight (v : Vector UInt32 8) :
     v.toList = [v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]] := by
@@ -1388,9 +1402,9 @@ private theorem chunks_flatten_pos :
     ∀ {c : List UInt8} {cs : List (List UInt8)}, 0 < c.length → 0 < (c :: cs).flatten.length
   | c, cs, hc => by simp only [List.flatten_cons, List.length_append]; omega
 
-private theorem chunkLoopCVN_iv_eq (ctr : Nat) (c : List UInt8)
-    (hctr : ctr < 18446744073709551616) (hc : c.length ≤ 1024) :
-    chunkLoopCVN 15 ctr ivN true c =
+private theorem chunkLoopCVN_iv_eq_gen (fuel ctr : Nat) (c : List UInt8)
+    (hctr : ctr < 18446744073709551616) (hfuel : c.length ≤ 64 * (fuel + 1)) :
+    chunkLoopCVN fuel ctr ivN true c =
       CV8.ofCV (Blake3.Pure.chunkOutput ctr.toUInt64 c).chainingValue := by
   have hto : ctr.toUInt64.toNat = ctr := by
     change (UInt64.ofNat ctr).toNat = ctr
@@ -1398,7 +1412,13 @@ private theorem chunkLoopCVN_iv_eq (ctr : Nat) (c : List UInt8)
     exact Nat.mod_eq_of_lt hctr
   unfold Blake3.Pure.chunkOutput
   rw [ivN_eq, ← hto]
-  exact chunkLoopCVN_eq 15 ctr.toUInt64 Blake3.Pure.iv true c (by omega)
+  exact chunkLoopCVN_eq fuel ctr.toUInt64 Blake3.Pure.iv true c hfuel
+
+private theorem chunkLoopCVN_iv_eq (ctr : Nat) (c : List UInt8)
+    (hctr : ctr < 18446744073709551616) (hc : c.length ≤ 1024) :
+    chunkLoopCVN 15 ctr ivN true c =
+      CV8.ofCV (Blake3.Pure.chunkOutput ctr.toUInt64 c).chainingValue :=
+  chunkLoopCVN_iv_eq_gen 15 ctr c hctr (by omega)
 
 private theorem chunksCV8_eq :
     ∀ (chunks : List (List UInt8)) (ctr : Nat),
@@ -1413,22 +1433,23 @@ private theorem chunksCV8_eq :
     have hflat : [c].flatten = c := List.append_nil c
     rw [hflat, Blake3.Pure.chunkOutputs_small ctr c hc]
     simp only [chunksCV8, bindCV8_eq, List.map_cons, List.map_nil]
-    rw [chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons, List.length_nil] at hctr; omega) hc]
+    exact congrArg (· :: [])
+      (chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons, List.length_nil] at hctr; omega) hc)
   | c :: d :: cs, ctr, hv, hctr => by
     simp only [validChunksBool, Bool.and_eq_true, decide_eq_true_eq] at hv
     obtain ⟨⟨hclen, hdpos⟩, htail⟩ := hv
     have hpos : 0 < (d :: cs).flatten.length := chunks_flatten_pos hdpos
-    simp only [List.flatten_cons]
-    rw [Blake3.Pure.chunkOutputs_append ctr 1 c (d :: cs).flatten (by omega) (by omega) hpos,
+    rw [List.flatten_cons,
+        Blake3.Pure.chunkOutputs_append ctr 1 c (d :: cs).flatten (by omega) (by omega) hpos,
         Blake3.Pure.chunkOutputs_small ctr c (by omega)]
     simp only [chunksCV8, bindCV8_eq, List.singleton_append, List.map_cons]
-    rw [chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons] at hctr; omega) (by omega)]
-    congr 1
-    exact chunksCV8_eq (d :: cs) (ctr + 1) htail (by simp only [List.length_cons] at hctr ⊢; omega)
+    exact congrArg₂ List.cons
+      (chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons] at hctr; omega) (by omega))
+      (chunksCV8_eq (d :: cs) (ctr + 1) htail (by simp only [List.length_cons] at hctr ⊢; omega))
 
 private def digestCV8 : List (List UInt8) → CV8
   | [] => ivN
-  | [c] => chunkLoopRootCVN 15 0 ivN true c
+  | [c] => chunkLoopRootCVN 15 ivN true c
   | c0 :: c1 :: cs =>
     let cvs := chunksCV8 0 (c0 :: c1 :: cs)
     mergeRootCV8 cvs.length cvs
@@ -1477,15 +1498,18 @@ def checkHashChunks (chunks : List (List UInt8)) (addrBytes : List UInt8) : Bool
   decide (chunks.length < 18446744073709551616) &&
   ((Blake3.Pure.cvBytes (digestCV8 chunks).toCV).toList == addrBytes)
 
+private theorem ixAddr_eq_mkAddr_toList (d : Vector UInt8 32) :
+    L1.ixAddr d = mkAddr d.toList := by
+  rcases d with ⟨arr, _⟩
+  simp [L1.ixAddr, mkAddr]
+
 theorem admissionHash_of_checkHashChunks {chunks : List (List UInt8)} {addrBytes : List UInt8}
     (h : checkHashChunks chunks addrBytes = true) :
     Address.admissionHash ⟨chunks.flatten.toArray⟩ = mkAddr addrBytes := by
   simp only [checkHashChunks, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
   obtain ⟨⟨hv, hctr⟩, hbytes⟩ := h
-  rw [Address.admissionHash_eq, L1.blake3Pure_eq, ← digestCV8_spec chunks hv hctr]
-  unfold L1.ixAddr mkAddr
-  rw [← hbytes]
-  rfl
+  rw [Address.admissionHash_eq, L1.blake3Pure_eq, ← digestCV8_spec chunks hv hctr,
+      ixAddr_eq_mkAddr_toList, hbytes]
 
 /-! ## Proof-free structural `wireWF` checker (`validConstantFast`) -/
 
@@ -1510,11 +1534,11 @@ private theorem checkUnivFast_spec :
   | .zero, _, h => by injection h with hc; subst hc; exact ⟨rfl, trivial⟩
   | .var _, _, h => by injection h with hc; subst hc; exact ⟨rfl, trivial⟩
   | .succ inner, cnt, h => by
-    unfold checkUnivFast at h
+    unfold checkUnivFast at h; dsimp only at h
     cases hi : checkUnivFast inner with
     | none => rw [hi] at h; cases h
     | some ic =>
-      rw [hi] at h
+      rw [hi] at h; dsimp only at h
       by_cases hlt : 1 + ic < UInt64.size
       · rw [decide_eq_true hlt, if_pos rfl] at h
         injection h with hc; subst hc
@@ -1557,8 +1581,8 @@ private def checkExprFast : Ixon.Expr → Option ECounts
     match checkExprFast val with
     | some _ => some (.mk 0 0 0)
     | none => none
-  | .app fn arg =>
-    match checkExprFast fn, checkExprFast arg with
+  | .app f arg =>
+    match checkExprFast f, checkExprFast arg with
     | some (.mk apps _ _), some _ =>
       if decide (apps + 1 < UInt64.size) then some (.mk (apps + 1) 0 0) else none
     | _, _ => none
@@ -1601,32 +1625,32 @@ private theorem checkExprFast_spec :
       exact ⟨rfl, rfl, rfl, hlt⟩
     · rw [decide_eq_false hlt, Bool.false_eq_true, if_neg (by decide)] at h; cases h
   | .prj _ _ val, _, _, _, h => by
-    unfold checkExprFast at h
+    unfold checkExprFast at h; dsimp only at h
     cases hv : checkExprFast val with
     | none => rw [hv] at h; cases h
     | some c =>
-      cases c; rw [hv] at h
+      cases c; rw [hv] at h; dsimp only at h
       injection h with hk; injection hk with h1 h2 h3; subst h1 h2 h3
       exact ⟨rfl, rfl, rfl, (checkExprFast_spec val hv).2.2.2⟩
-  | .app fn arg, _, _, _, h => by
-    unfold checkExprFast at h
-    cases hf : checkExprFast fn with
+  | .app f arg, _, _, _, h => by
+    unfold checkExprFast at h; dsimp only at h
+    cases hf : checkExprFast f with
     | none => rw [hf] at h; cases h
     | some cf =>
       rcases cf with ⟨apps, _, _⟩
       cases ha : checkExprFast arg with
       | none => rw [hf, ha] at h; cases h
       | some ca =>
-        cases ca; rw [hf, ha] at h
+        cases ca; rw [hf, ha] at h; dsimp only at h
         by_cases hlt : apps + 1 < UInt64.size
         · rw [decide_eq_true hlt, if_pos rfl] at h
           injection h with hk; injection hk with h1 h2 h3; subst h1 h2 h3
-          obtain ⟨hae, _, _, hwff⟩ := checkExprFast_spec fn hf
+          obtain ⟨hae, _, _, hwff⟩ := checkExprFast_spec f hf
           subst hae
           exact ⟨rfl, rfl, rfl, hwff, (checkExprFast_spec arg ha).2.2.2, hlt⟩
         · rw [decide_eq_false hlt, Bool.false_eq_true, if_neg (by decide)] at h; cases h
   | .lam ty body, _, _, _, h => by
-    unfold checkExprFast at h
+    unfold checkExprFast at h; dsimp only at h
     cases ht : checkExprFast ty with
     | none => rw [ht] at h; cases h
     | some ct =>
@@ -1634,7 +1658,7 @@ private theorem checkExprFast_spec :
       cases hb : checkExprFast body with
       | none => rw [ht, hb] at h; cases h
       | some cb =>
-        rcases cb with ⟨_, lams, _⟩; rw [ht, hb] at h
+        rcases cb with ⟨_, lams, _⟩; rw [ht, hb] at h; dsimp only at h
         by_cases hlt : lams + 1 < UInt64.size
         · rw [decide_eq_true hlt, if_pos rfl] at h
           injection h with hk; injection hk with h1 h2 h3; subst h1 h2 h3
@@ -1643,7 +1667,7 @@ private theorem checkExprFast_spec :
           exact ⟨rfl, rfl, rfl, (checkExprFast_spec ty ht).2.2.2, hwfb, hlt⟩
         · rw [decide_eq_false hlt, Bool.false_eq_true, if_neg (by decide)] at h; cases h
   | .all ty body, _, _, _, h => by
-    unfold checkExprFast at h
+    unfold checkExprFast at h; dsimp only at h
     cases ht : checkExprFast ty with
     | none => rw [ht] at h; cases h
     | some ct =>
@@ -1651,7 +1675,7 @@ private theorem checkExprFast_spec :
       cases hb : checkExprFast body with
       | none => rw [ht, hb] at h; cases h
       | some cb =>
-        rcases cb with ⟨_, _, alls⟩; rw [ht, hb] at h
+        rcases cb with ⟨_, _, alls⟩; rw [ht, hb] at h; dsimp only at h
         by_cases hlt : alls + 1 < UInt64.size
         · rw [decide_eq_true hlt, if_pos rfl] at h
           injection h with hk; injection hk with h1 h2 h3; subst h1 h2 h3
@@ -1660,7 +1684,7 @@ private theorem checkExprFast_spec :
           exact ⟨rfl, rfl, rfl, (checkExprFast_spec ty ht).2.2.2, hwfb, hlt⟩
         · rw [decide_eq_false hlt, Bool.false_eq_true, if_neg (by decide)] at h; cases h
   | .letE _ _ ty val body, _, _, _, h => by
-    unfold checkExprFast at h
+    unfold checkExprFast at h; dsimp only at h
     cases ht : checkExprFast ty with
     | none => rw [ht] at h; cases h
     | some ct =>
@@ -1672,7 +1696,7 @@ private theorem checkExprFast_spec :
         cases hb : checkExprFast body with
         | none => rw [ht, hv, hb] at h; cases h
         | some cb =>
-          cases cb; rw [ht, hv, hb] at h
+          cases cb; rw [ht, hv, hb] at h; dsimp only at h
           injection h with hk; injection hk with h1 h2 h3; subst h1 h2 h3
           exact ⟨rfl, rfl, rfl, (checkExprFast_spec ty ht).2.2.2,
             (checkExprFast_spec val hv).2.2.2, (checkExprFast_spec body hb).2.2.2⟩
@@ -1771,8 +1795,8 @@ private theorem validConstantFast_ok {c : Ixon.Constant} (h : validConstantFast 
   obtain ⟨hsh_sz, hsh_wf⟩ := validArrayFast_ok (fun _ he => validExprFast_ok he) hsh
   obtain ⟨hrefs_sz, hrefs_wf⟩ := validArrayFast_ok (fun _ ha => beq_iff_eq.mp ha) hrefs
   obtain ⟨hunivs_sz, hunivs_wf⟩ := validArrayFast_ok (fun _ hu => validUnivFast_ok hu) hunivs
-  obtain ⟨hbind_sz, hbind_wf⟩ := validArrayFast_ok
-    (fun b hb => validArrayFast_ok
+  obtain ⟨hbind_sz, hbind_wf⟩ := validArrayFast_ok (P := Ixon.BinderBlock.wireWF)
+    (fun b hb => validArrayFast_ok (P := Ixon.BinderNode.wireWF)
       (fun n hn => by cases n <;> simp_all [validBinderNodeFast, Ixon.BinderNode.wireWF]) hb)
     hbind
   exact ⟨validInfoFast_ok hinfo, hsh_sz, hsh_wf, hrefs_sz, hrefs_wf, hunivs_sz, hunivs_wf,
@@ -2019,11 +2043,11 @@ private theorem encUnivFuel_spec :
       rw [Ixon.putUniv]
       exact EncodesTo.bindUnit (encTagN_spec 2 _ _ rest) (encUnivFuel_spec fuel _ hr)
   | fuel + 1, .max a b, k, _, h => by
-    unfold encUnivFuel at h
+    unfold encUnivFuel at h; dsimp only at h
     cases hb : encUnivFuel fuel b k with
     | none => rw [hb] at h; cases h
     | some rb =>
-      rw [hb] at h
+      rw [hb] at h; dsimp only at h
       cases ha : encUnivFuel fuel a rb with
       | none => rw [ha] at h; cases h
       | some ra =>
@@ -2032,11 +2056,11 @@ private theorem encUnivFuel_spec :
         exact EncodesTo.bindUnit (encTagN_spec 2 _ 0 ra)
           (EncodesTo.bindUnit (encUnivFuel_spec fuel a ha) (encUnivFuel_spec fuel b hb))
   | fuel + 1, .imax a b, k, _, h => by
-    unfold encUnivFuel at h
+    unfold encUnivFuel at h; dsimp only at h
     cases hb : encUnivFuel fuel b k with
     | none => rw [hb] at h; cases h
     | some rb =>
-      rw [hb] at h
+      rw [hb] at h; dsimp only at h
       cases ha : encUnivFuel fuel a rb with
       | none => rw [ha] at h; cases h
       | some ra =>
@@ -2130,13 +2154,13 @@ private theorem encExprFuel_spec :
     injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ refIdx k
   | _ + 1, .nat refIdx, k, _, h => by
     injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ refIdx k
-  | fuel + 1, .app fn arg, k, _, h => by
+  | fuel + 1, .app f arg, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
-    cases ha : encManyOpt (encExprFuel fuel) (Ixon.Expr.app fn arg).collectAppArgs.1 k with
+    cases ha : encManyOpt (encExprFuel fuel) (Ixon.Expr.app f arg).collectAppArgs.1 k with
     | none => rw [ha] at h; cases h
     | some rargs =>
-      rw [ha] at h
-      cases hf : encExprFuel fuel (Ixon.Expr.app fn arg).collectAppArgs.2 rargs with
+      rw [ha] at h; dsimp only at h
+      cases hf : encExprFuel fuel (Ixon.Expr.app f arg).collectAppArgs.2 rargs with
       | none => rw [hf] at h; cases h
       | some rfn =>
         rw [hf] at h; injection h with ho; subst ho
@@ -2149,7 +2173,7 @@ private theorem encExprFuel_spec :
     cases hb : encExprFuel fuel (Ixon.Expr.lam ty body).collectLamBinders.2 k with
     | none => rw [hb] at h; cases h
     | some rbody =>
-      rw [hb] at h
+      rw [hb] at h; dsimp only at h
       cases ht : encManyOpt (encExprFuel fuel) (Ixon.Expr.lam ty body).collectLamBinders.1 rbody with
       | none => rw [ht] at h; cases h
       | some rtys =>
@@ -2163,7 +2187,7 @@ private theorem encExprFuel_spec :
     cases hb : encExprFuel fuel (Ixon.Expr.all ty body).collectAllBinders.2 k with
     | none => rw [hb] at h; cases h
     | some rbody =>
-      rw [hb] at h
+      rw [hb] at h; dsimp only at h
       cases ht : encManyOpt (encExprFuel fuel) (Ixon.Expr.all ty body).collectAllBinders.1 rbody with
       | none => rw [ht] at h; cases h
       | some rtys =>
@@ -2173,15 +2197,15 @@ private theorem encExprFuel_spec :
           (forList_bind_encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) ht
             (encExprFuel_spec fuel _ hb))
   | fuel + 1, .letE nonDep mode ty val body, k, _, h => by
-    unfold encExprFuel at h
+    unfold encExprFuel at h; dsimp only at h
     cases hb : encExprFuel fuel body k with
     | none => rw [hb] at h; cases h
     | some rb =>
-      rw [hb] at h
+      rw [hb] at h; dsimp only at h
       cases hv : encExprFuel fuel val rb with
       | none => rw [hv] at h; cases h
       | some rv =>
-        rw [hv] at h
+        rw [hv] at h; dsimp only at h
         cases ht : encExprFuel fuel ty rv with
         | none => rw [ht] at h; cases h
         | some rt =>
@@ -2212,11 +2236,11 @@ private def encDefFuel (fuel : Nat) (d : Ixon.Definition) (k : List UInt8) : Opt
 private theorem encDefFuel_spec (fuel : Nat) (d : Ixon.Definition) {k out : List UInt8}
     (h : encDefFuel fuel d k = some out) :
     EncodesTo (Ixon.putDefinition d) k out := by
-  unfold encDefFuel at h
+  unfold encDefFuel at h; dsimp only at h
   cases hv : encExprFuel fuel d.value k with
   | none => rw [hv] at h; cases h
   | some rv =>
-    rw [hv] at h
+    rw [hv] at h; dsimp only at h
     cases ht : encExprFuel fuel d.typ rv with
     | none => rw [ht] at h; cases h
     | some rt =>
@@ -2254,11 +2278,11 @@ private def encRecFuel (fuel : Nat) (r : Ixon.Recursor) (k : List UInt8) : Optio
 private theorem encRecFuel_spec (fuel : Nat) (r : Ixon.Recursor) {k out : List UInt8}
     (h : encRecFuel fuel r k = some out) :
     EncodesTo (Ixon.putRecursor r) k out := by
-  unfold encRecFuel at h
+  unfold encRecFuel at h; dsimp only at h
   cases hrl : encManyOpt (encRecRuleFuel fuel) r.rules.toList k with
   | none => rw [hrl] at h; cases h
   | some rrules =>
-    rw [hrl] at h
+    rw [hrl] at h; dsimp only at h
     cases ht : encExprFuel fuel r.typ (encTagN 0 0 r.rules.size.toUInt64 rrules) with
     | none => rw [ht] at h; cases h
     | some rt =>
@@ -2345,11 +2369,11 @@ private def encIndFuel (fuel : Nat) (i : Ixon.Inductive) (k : List UInt8) : Opti
 private theorem encIndFuel_spec (fuel : Nat) (i : Ixon.Inductive) {k out : List UInt8}
     (h : encIndFuel fuel i k = some out) :
     EncodesTo (Ixon.putInductive i) k out := by
-  unfold encIndFuel at h
+  unfold encIndFuel at h; dsimp only at h
   cases hc : encManyOpt (encCtorFuel fuel) i.ctors.toList k with
   | none => rw [hc] at h; cases h
   | some rctors =>
-    rw [hc] at h
+    rw [hc] at h; dsimp only at h
     cases ht : encExprFuel fuel i.typ (encTagN 0 0 i.ctors.size.toUInt64 rctors) with
     | none => rw [ht] at h; cases h
     | some rt =>
@@ -2371,20 +2395,20 @@ private theorem encMutFuel_spec (fuel : Nat) :
     ∀ (m : Ixon.MutConst) {k out : List UInt8},
       encMutFuel fuel m k = some out → EncodesTo (Ixon.putMutConst m) k out
   | .defn d, k, _, h => by
-    unfold encMutFuel at h
+    unfold encMutFuel at h; dsimp only at h
     cases hd : encDefFuel fuel d k with
     | none => rw [hd] at h; cases h
-    | some rd => rw [hd] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 0 _) (encDefFuel_spec fuel d hd)
+    | some rd => rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 0 _) (encDefFuel_spec fuel d hd)
   | .indc i, k, _, h => by
-    unfold encMutFuel at h
+    unfold encMutFuel at h; dsimp only at h
     cases hi : encIndFuel fuel i k with
     | none => rw [hi] at h; cases h
-    | some ri => rw [hi] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 1 _) (encIndFuel_spec fuel i hi)
+    | some ri => rw [hi] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 1 _) (encIndFuel_spec fuel i hi)
   | .recr r, k, _, h => by
-    unfold encMutFuel at h
+    unfold encMutFuel at h; dsimp only at h
     cases hr : encRecFuel fuel r k with
     | none => rw [hr] at h; cases h
-    | some rr => rw [hr] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 2 _) (encRecFuel_spec fuel r hr)
+    | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 2 _) (encRecFuel_spec fuel r hr)
 
 private def encInfoFuel (fuel : Nat) : Ixon.ConstantInfo → List UInt8 → Option (List UInt8)
   | .defn d, k => (encDefFuel fuel d k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DEFN)
@@ -2407,25 +2431,25 @@ private theorem encInfoFuel_spec (fuel : Nat) :
     ∀ (ci : Ixon.ConstantInfo) {k out : List UInt8},
       encInfoFuel fuel ci k = some out → EncodesTo (Ixon.putConstantInfo ci) k out
   | .defn d, k, _, h => by
-    unfold encInfoFuel at h
+    unfold encInfoFuel at h; dsimp only at h
     cases hd : encDefFuel fuel d k with
     | none => rw [hd] at h; cases h
-    | some rd => rw [hd] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encDefFuel_spec fuel d hd)
+    | some rd => rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encDefFuel_spec fuel d hd)
   | .recr r, k, _, h => by
-    unfold encInfoFuel at h
+    unfold encInfoFuel at h; dsimp only at h
     cases hr : encRecFuel fuel r k with
     | none => rw [hr] at h; cases h
-    | some rr => rw [hr] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encRecFuel_spec fuel r hr)
+    | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encRecFuel_spec fuel r hr)
   | .axio a, k, _, h => by
-    unfold encInfoFuel at h
+    unfold encInfoFuel at h; dsimp only at h
     cases ha : encAxioFuel fuel a k with
     | none => rw [ha] at h; cases h
-    | some ra => rw [ha] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encAxioFuel_spec fuel a ha)
+    | some ra => rw [ha] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encAxioFuel_spec fuel a ha)
   | .quot q, k, _, h => by
-    unfold encInfoFuel at h
+    unfold encInfoFuel at h; dsimp only at h
     cases hq : encQuotFuel fuel q k with
     | none => rw [hq] at h; cases h
-    | some rq => rw [hq] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encQuotFuel_spec fuel q hq)
+    | some rq => rw [hq] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encQuotFuel_spec fuel q hq)
   | .cPrj p, k, _, h => by
     injection h with ho; subst ho
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
@@ -2444,11 +2468,11 @@ private theorem encInfoFuel_spec (fuel : Nat) :
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _) (encAddress_spec p.block k))
   | .muts ms, k, _, h => by
-    unfold encInfoFuel at h
+    unfold encInfoFuel at h; dsimp only at h
     cases hm : encManyOpt (encMutFuel fuel) ms.toList k with
     | none => rw [hm] at h; cases h
     | some rm =>
-      rw [hm] at h; injection h with ho; subst ho
+      rw [hm] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
       exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
         (forArray_encManyOpt_spec (fun x hx => encMutFuel_spec fuel x hx) hm)
 
@@ -2513,13 +2537,13 @@ private theorem encConstantFuel_spec (fuel : Nat) (c : Ixon.Constant) {k out : L
   cases hu : encManyOpt (encUnivFuel fuel) c.univs.toList (encBinders c.binders k) with
   | none => rw [hu] at h; cases h
   | some runivs =>
-    rw [hu] at h
+    rw [hu] at h; dsimp only at h
     cases hs : encManyOpt (encExprFuel fuel) c.sharing.toList
         (encTagN 0 0 c.refs.size.toUInt64
           (encList encAddress c.refs.toList (encTagN 0 0 c.univs.size.toUInt64 runivs))) with
     | none => rw [hs] at h; cases h
     | some rsh =>
-      rw [hs] at h
+      rw [hs] at h; dsimp only at h
       exact EncodesTo.bindUnit (encInfoFuel_spec fuel c.info h)
         (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
           (forArray_bind_encManyOpt_spec (fun x hx => encExprFuel_spec fuel x hx) hs
@@ -2540,7 +2564,7 @@ private theorem serConstant_of_encConstantFuel {fuel : Nat} {c : Ixon.Constant} 
   | mk arr =>
     rw [hr] at henc
     dsimp only at henc
-    rw [← henc, List.toArray_toList]
+    rw [← henc, Array.toArray_toList]
 
 def checkConstBytesFast (c : Ixon.Constant) (bs : List UInt8) : Bool :=
   validConstantFast c &&
@@ -2663,9 +2687,9 @@ private def deExprFuel : Nat → List UInt8 → Option (Ixon.Expr × List UInt8)
     | 0x5 => pure (.str val, bs)
     | 0x6 => pure (.nat val, bs)
     | 0x7 =>
-      let (fn, bs) ← deExprFuel fuel bs
+      let (f, bs) ← deExprFuel fuel bs
       let (args, bs) ← deMany (deExprFuel fuel) val.toNat bs
-      pure (args.foldl Ixon.Expr.app fn, bs)
+      pure (args.foldl Ixon.Expr.app f, bs)
     | 0x8 =>
       let (tys, bs) ← deMany (deExprFuel fuel) val.toNat bs
       let (body, bs) ← deExprFuel fuel bs
@@ -2798,10 +2822,10 @@ theorem evRow_spec {ab : List UInt8} {chunks : List (List UInt8)}
   cases hd : listDeDefnConstant chunks.flatten with
   | none => rw [hd] at hdec; cases hdec
   | some c =>
-    rw [hd] at hdec
+    rw [hd] at hdec; dsimp only at hdec
     cases hci : c.info with
     | defn d =>
-      rw [hci] at hdec
+      rw [hci] at hdec; dsimp only at hdec
       refine ⟨c, ⟨d, hci⟩, ?_, ⟨chunks.flatten.toArray⟩, ?_, deConstant_of_checkConstBytesFast hdec⟩
       · unfold hexRowOfChunks Ix.Kernel.Reader.addressOfHex
         rw [Claim.bytesOfHex_ofList_hexChars ab]; rfl
@@ -2810,68 +2834,71 @@ theorem evRow_spec {ab : List UInt8} {chunks : List (List UInt8)}
     | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
       rw [hci] at hdec; cases hdec
 
+theorem except_mapM_forall₂ {ε α β : Type} {f : α → Except ε β} {R : α → β → Prop}
+    (hf : ∀ x y, R x y → f x = Except.ok y) :
+    ∀ {xs : List α} {ys : List β}, List.Forall₂ R xs ys → xs.mapM f = Except.ok ys
+  | _, _, .nil => rfl
+  | x :: _, y :: _, .cons hxy htl => by
+    rw [List.mapM_cons, hf x y hxy, except_mapM_forall₂ hf htl]
+    rfl
+
+theorem except_mapM_rows {ε α β : Type} {f : α → Except ε β} :
+    ∀ {xs : List α} {ys : List β},
+      xs.mapM f = Except.ok ys →
+      ∀ y ∈ ys, ∃ x ∈ xs, f x = Except.ok y
+  | [], _, h, y, hy => by injection h with ho; subst ho; cases hy
+  | x :: xs, _, h, y, hy => by
+    rw [List.mapM_cons] at h
+    cases hfx : f x with
+    | error _ => rw [hfx] at h; cases h
+    | ok y0 =>
+      rw [hfx] at h; dsimp only [bind, Except.bind] at h
+      cases htl : xs.mapM f with
+      | error _ => rw [htl] at h; cases h
+      | ok tail =>
+        rw [htl] at h
+        injection h with ho; subst ho
+        rcases List.mem_cons.mp hy with rfl | hmem
+        · exact ⟨x, List.mem_cons_self, hfx⟩
+        · obtain ⟨x', hx', hfx'⟩ := except_mapM_rows htl y hmem
+          exact ⟨x', List.mem_cons_of_mem _ hx', hfx'⟩
+
 theorem decodeCommitted_of_forall₂ (what : String) :
     ∀ {rows : List (String × String)} {out : List (_root_.Address × Ixon.Constant)},
       List.Forall₂ (fun row p =>
         Ix.Kernel.Reader.addressOfHex row.1 = some p.1 ∧
         ∃ b, bytesOfHex row.2 = some b ∧
           Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
-            Ix.Kernel.Reader.preludeMaxUnivNodes b = .ok p.2) rows out →
-      Ix.Kernel.Reader.decodeCommitted what rows.toArray = .ok out.toArray := by
+            Ix.Kernel.Reader.preludeMaxUnivNodes b = Except.ok p.2) rows out →
+      Ix.Kernel.Reader.decodeCommitted what rows.toArray = Except.ok out.toArray := by
   intro rows out hf
   unfold Ix.Kernel.Reader.decodeCommitted
   rw [Array.mapM_eq_mapM_toList, List.toList_toArray]
-  suffices hm : (rows.mapM fun (hex, bytes) => do
-      let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"{what}: bad address {hex}"
-      let some b := bytesOfHex bytes | throw s!"{what}: bad bytes at {hex}"
-      let c ← (Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
-        Ix.Kernel.Reader.preludeMaxUnivNodes b).mapError (s!"{what}: record {hex}: " ++ ·)
-      pure (a, c)) = .ok out by
-    simp [hm, Functor.map, Except.map, List.toArray]
-  induction hf with
-  | nil => rfl
-  | @cons row p rs ps hhead _ ih =>
-    obtain ⟨ha, b, hb, hc⟩ := hhead
-    rcases row with ⟨hex, bytes⟩
-    rcases p with ⟨a, c⟩
-    dsimp only at ha hb hc
-    simp only [List.mapM_cons, ha, hb, hc, Except.mapError, bind, Except.bind, pure, Except.pure, ih]
+  rw [except_mapM_forall₂ (fun row p ⟨ha, b, hb, hc⟩ => by
+    simp [ha, hb, hc, Except.mapError, bind, Except.bind, pure, Except.pure]) hf]
+  rfl
 
-theorem evidenceBlobs_of_forall₂ :
-    ∀ {rows : List (String × String)} {out : List (_root_.Address × ByteArray)},
+theorem evRows_spec_of_forall {rows : List (List UInt8 × List (List UInt8))}
+    (hall : ∀ r ∈ rows, EvRowSpec r) :
+    (∀ row ∈ rows.map (fun p => hexRowOfChunks p.1 p.2),
+      (bytesOfHex row.2).map Address.admissionHash = Ix.Kernel.Reader.addressOfHex row.1) ∧
+    ∃ out : List (_root_.Address × Ixon.Constant),
       List.Forall₂ (fun row p =>
         Ix.Kernel.Reader.addressOfHex row.1 = some p.1 ∧
-        bytesOfHex row.2 = some p.2) rows out →
-      (rows.mapM fun (hex, bytes) => do
-        let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"evidence blob: bad address {hex}"
-        let some b := bytesOfHex bytes | throw s!"evidence blob: bad bytes at {hex}"
-        pure (a, b)) = .ok out
-  | _, _, .nil => rfl
-  | (hex, bytes) :: _, (a, b) :: _, .cons ⟨ha, hb⟩ tail => by
-    dsimp only at ha hb
-    simp only [List.mapM_cons, ha, hb, bind, Except.bind, pure, Except.pure,
-      evidenceBlobs_of_forall₂ tail]
-
-theorem evRows_spec_of_forall :
-    ∀ {rows : List (List UInt8 × List (List UInt8))},
-      (∀ r ∈ rows, EvRowSpec r) →
-      (∀ row ∈ rows.map (fun p => hexRowOfChunks p.1 p.2),
-        (bytesOfHex row.2).map Address.admissionHash = Ix.Kernel.Reader.addressOfHex row.1) ∧
-      ∃ out : List (_root_.Address × Ixon.Constant),
-        List.Forall₂ (fun row p =>
-          Ix.Kernel.Reader.addressOfHex row.1 = some p.1 ∧
-          ∃ b, bytesOfHex row.2 = some b ∧
-            Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
-              Ix.Kernel.Reader.preludeMaxUnivNodes b = .ok p.2)
-          (rows.map fun p => hexRowOfChunks p.1 p.2) out ∧
-        out.map Prod.fst = rows.map (fun p => mkAddr p.1) ∧
-        ∀ p ∈ out, ∃ d, p.2.info = .defn d
-  | [], _ => ⟨fun _ hm => nomatch hm, [], .nil, rfl, fun _ hm => nomatch hm⟩
-  | r :: rs, hall => by
+        ∃ b, bytesOfHex row.2 = some b ∧
+          Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
+            Ix.Kernel.Reader.preludeMaxUnivNodes b = Except.ok p.2)
+        (rows.map fun p => hexRowOfChunks p.1 p.2) out ∧
+      out.map Prod.fst = rows.map (fun p => mkAddr p.1) ∧
+      ∀ p ∈ out, ∃ d, p.2.info = .defn d := by
+  induction rows with
+  | nil =>
+    exact ⟨fun _ hm => nomatch hm, [], List.Forall₂.nil, rfl, fun _ hm => nomatch hm⟩
+  | cons r rs ih =>
     obtain ⟨hhash, c, hd, ha, hb⟩ := hall r List.mem_cons_self
     obtain ⟨hhash_tl, out_tl, hf_tl, hfst_tl, hdefn_tl⟩ :=
-      evRows_spec_of_forall (fun x hx => hall x (List.mem_cons_of_mem _ hx))
-    refine ⟨?_, (mkAddr r.1, c) :: out_tl, .cons ⟨ha, hb⟩ hf_tl, by simp [hfst_tl], ?_⟩
+      ih (fun x hx => hall x (List.mem_cons_of_mem _ hx))
+    refine ⟨?_, (mkAddr r.1, c) :: out_tl, List.Forall₂.cons ⟨ha, hb⟩ hf_tl, by simp [hfst_tl], ?_⟩
     · intro row hmem
       rcases List.mem_cons.mp hmem with rfl | htl
       · exact hhash
