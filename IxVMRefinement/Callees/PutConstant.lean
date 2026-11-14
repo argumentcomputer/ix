@@ -100,11 +100,12 @@ theorem put_sharing_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Expr" [])]).symbol
       (fun _ (_ : Unit) _ => True) h [] x_list := by
     rwa [Obs.Names.«Lists::Node<&Ixon::Expr>».symbol]
-  obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
+  obtain ⟨rfl, hm2⟩ := length_u64_nil_spec ev14 hl'
+  rw [hm2] at ev49
   cases Obs.«IxonSerialize::put_expr_list».obs ev49 with
   | Nil _ hr hh _ =>
-    subst hr hh
-    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
+    rw [hr, hh] at ev28
+    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ _ ld12 _ _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -120,11 +121,12 @@ theorem put_refs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
       (fun _ (_ : Unit) _ => True) h [] x_list := by
     rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]
-  obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
+  obtain ⟨rfl, hm2⟩ := length_u64_nil_spec ev14 hl'
+  rw [hm2] at ev49
   cases Obs.«IxonSerialize::put_address_list».obs ev49 with
   | Nil _ hr hh _ =>
-    subst hr hh
-    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
+    rw [hr, hh] at ev28
+    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ ld12 _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -140,11 +142,12 @@ theorem put_univs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Univ" [])]).symbol
       (fun _ (_ : Unit) _ => True) h [] x_list := by
     rwa [Obs.Names.«Lists::Node<&Ixon::Univ>».symbol]
-  obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
+  obtain ⟨rfl, hm2⟩ := length_u64_nil_spec ev14 hl'
+  rw [hm2] at ev49
   cases Obs.«IxonSerialize::put_univ_list».obs ev49 with
   | Nil _ hr hh _ =>
-    subst hr hh
-    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
+    rw [hr, hh] at ev28
+    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ _ ld12 _ _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
@@ -161,11 +164,12 @@ theorem put_binders_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
   have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::BinderBlock" []]).symbol
       (fun _ (_ : Unit) _ => True) h [] x_list := by
     rwa [Obs.Names.«Lists::Node<Ixon::BinderBlock>».symbol]
-  obtain ⟨rfl, rfl⟩ := length_u64_nil_spec ev14 hl'
+  obtain ⟨rfl, hm2⟩ := length_u64_nil_spec ev14 hl'
+  rw [hm2] at ev49
   cases Obs.«IxonSerialize::put_binder_block_list».obs ev49 with
   | Nil _ hr hh _ =>
-    subst hr hh
-    exact put_tagn0_spec (Lib.repU64_ofNatLT _ (m := 0) (by omega)) ev28 hrest
+    rw [hr, hh] at ev28
+    exact put_tagn0_spec (Lib.repU64_ofNatLT h (m := 0) (by omega)) ev28 hrest
   | Cons _ _ _ _ _ _ ld12 _ _ _ =>
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he

@@ -168,11 +168,11 @@ theorem muts_indc_count_spec :
       | indc _ =>
         exact (hne86 [x] rfl hmc).elim
       | defn _ =>
-        have hi : ¬ Specs.Callees.isIndc (.defn ‹_›) = true := by decide
+        have hi : ¬ Specs.Callees.isIndc (.defn ‹_›) = true := fun h => Bool.noConfusion h
         rw [List.filter_cons_of_neg hi]
         exact ⟨rfl, rfl⟩
       | recr _ =>
-        have hi : ¬ Specs.Callees.isIndc (.recr ‹_›) = true := by decide
+        have hi : ¬ Specs.Callees.isIndc (.recr ‹_›) = true := fun h => Bool.noConfusion h
         rw [List.filter_cons_of_neg hi]
         exact ⟨rfl, rfl⟩
 
@@ -202,8 +202,8 @@ theorem infoShape_not_muts {h : Heap F} {info : Ixon.ConstantInfo} {x_info : Sou
   exact hne [lp] rfl rfl
 
 theorem fewInductives_of_modeled_zero (c : Ctx) {bp : SourceValue F} {b : Bytes.Address}
-    {h h' : Heap F} {cs : List (Call F)}
-    (hbim : Specs.Callees.block_is_modeled c [bp] h (.field 0) h' cs)
+    {h : Heap F} {cs : List (Call F)}
+    (hbim : Specs.Callees.block_is_modeled c [bp] h (.field 0) h cs)
     (good : Good c cs) (hb : RepAddr h b bp) :
     FewInductives c (ixAddr b) := by
   intro cst ms hcst hinfo
@@ -475,7 +475,8 @@ theorem defeq_list_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     subst heA heB
     have hgood1 : Good c cs117 := good.sub (by rw [hc194]; intro z hz; simp [hz])
     have hde := ih.get (.defEq .k_is_def_eq) (by rw [hc194]; callees_lt) ev119
-      rc x_x x_y types rfl hgood1 hrc d Γ htypes A B hA hB (by decide)
+      rc x_x x_y types rfl hgood1 hrc d Γ htypes A B hA hB
+      (fun e => absurd (Value.field.inj e) (by decide))
     have ext := ev119.heap_extends
     have hgood2 : Good c cs159 := good.sub (by rw [hc194]; intro z hz; simp [hz])
     have hrest := ih.get (.callees .defeq_list_ok) (by rw [hc194]; callees_lt) ev161

@@ -209,7 +209,6 @@ theorem toUInt64_shift8 {d : Nat} (hd : d < 18446744073709551616) :
 
 theorem toNat_toUInt8_mod (w : UInt64) : w.toUInt8.toNat = w.toNat % 256 := by
   simp only [UInt64.toUInt8, Nat.toUInt8, UInt8.toNat_ofNat']
-  rfl
 
 theorem toUInt64_lowByte {d : Nat} (hd : d < 18446744073709551616) :
     d.toUInt64.toUInt8.toNat = d % 256 := by
@@ -512,8 +511,8 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 0) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev941
-    have hd_rep := Lib.repU64_ofNatLT _ hd
-    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT m758 hd
+    have hsub_rep := Lib.repU64_ofNatLT m758 hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev941
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -619,8 +618,8 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
         (b0 := 0) (b1 := 0) (b2 := 0) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev626
-    have hd_rep := Lib.repU64_ofNatLT _ hd
-    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT m421 hd
+    have hsub_rep := Lib.repU64_ofNatLT m421 hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev626
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -732,8 +731,8 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
         (b0 := 0) (b1 := 0) (b2 := 255) (b3 := 255) (b4 := 255) (b5 := 255) (b6 := 255) (b7 := 255)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).symm
     rw [hsub_tup] at ev289
-    have hd_rep := Lib.repU64_ofNatLT _ hd
-    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
+    have hd_rep := Lib.repU64_ofNatLT m70 hd
+    have hsub_rep := Lib.repU64_ofNatLT m70 hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hd_rep hsub_rep ev289
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_next, -⟩
@@ -775,8 +774,8 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     subst hv88
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev87
     rw [hsub_tup] at ev14
-    have hw_rep := Lib.repU64_ofNatLT _ hw_lt
-    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
+    have hw_rep := Lib.repU64_ofNatLT m77 hw_lt
+    have hsub_rep := Lib.repU64_ofNatLT m77 hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hw_rep hsub_rep ev14
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨-, hcarry⟩
@@ -848,7 +847,7 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
           [((w.toNat - 128) % 256).toUInt8] := by
       unfold tag0Bytes tagNBytes
       dsimp only []
-      rw [he1, if_neg hw128, he2, if_pos hw_r2]
+      rw [he1, ite_eq_right hw128, he2, ite_eq_left hw_r2]
       have hp2 : 2 ^ (8 - 0 - 1) = 128 := rfl
       rw [hp2, data_toList_append, data_toList_singleton, data_toList_singleton]
       rfl
@@ -865,8 +864,8 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     subst hv88
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev87
     rw [hsub_tup] at ev14
-    have hw_rep := Lib.repU64_ofNatLT _ hw_lt
-    have hsub_rep := Lib.repU64_ofNatLT _ hsub_lt
+    have hw_rep := Lib.repU64_ofNatLT m77 hw_lt
+    have hsub_rep := Lib.repU64_ofNatLT m77 hsub_lt
     obtain ⟨hadd, rfl⟩ := Lib.u64_add_spec hw_rep hsub_rep ev14
     simp only [Value.tuple.injEq, List.cons.injEq, and_true, UInt64.toNat_ofNatLT] at hadd
     rcases hadd with ⟨hx_d, hcarry⟩
@@ -916,28 +915,28 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
               (w.toNat - 16512 - 65536 - 16777216 - 4294967296).toUInt64 8).data.toList) := by
       unfold tag0Bytes tagNBytes
       dsimp only []
-      rw [he1, if_neg hw128, he2, if_neg hw_ge2, he3, he4, he5, hh0, hh1, hh2, hh3]
+      rw [he1, ite_eq_right hw128, he2, ite_eq_right hw_ge2, he3, he4, he5, hh0, hh1, hh2, hh3]
       by_cases h3 : w.toNat < 82048
       · have hd3 : w.toNat - 16512 < 65536 := by omega
-        rw [if_pos h3, if_pos hd3, data_toList_append, data_toList_singleton]
+        rw [ite_eq_left h3, ite_eq_left hd3, data_toList_append, data_toList_singleton]
         rfl
       · have hd3 : ¬ w.toNat - 16512 < 65536 := by omega
         have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 := by omega
-        rw [if_neg h3, if_neg hd3, hs3]
+        rw [ite_eq_right h3, ite_eq_right hd3, hs3]
         by_cases h4 : w.toNat < 16859264
         · have hd4 : w.toNat - 82048 < 16777216 := by omega
-          rw [if_pos h4, if_pos hd4, data_toList_append, data_toList_singleton]
+          rw [ite_eq_left h4, ite_eq_left hd4, data_toList_append, data_toList_singleton]
           rfl
         · have hd4 : ¬ w.toNat - 82048 < 16777216 := by omega
           have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 := by omega
-          rw [if_neg h4, if_neg hd4, hs4]
+          rw [ite_eq_right h4, ite_eq_right hd4, hs4]
           by_cases h5 : w.toNat < 4311826560
           · have hd5 : w.toNat - 16859264 < 4294967296 := by omega
-            rw [if_pos h5, if_pos hd5, data_toList_append, data_toList_singleton]
+            rw [ite_eq_left h5, ite_eq_left hd5, data_toList_append, data_toList_singleton]
             rfl
           · have hd5 : ¬ w.toNat - 16859264 < 4294967296 := by omega
             have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 := by omega
-            rw [if_neg h5, if_neg hd5, hs5, data_toList_append, data_toList_singleton]
+            rw [ite_eq_right h5, ite_eq_right hd5, hs5, data_toList_append, data_toList_singleton]
             rfl
     rw [hbytes]
     exact hwide
@@ -978,10 +977,10 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [e1, e2, e3, e4, e5, e6, e7] at hb
       rw [← hb]
       exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
-    have hv0_rep : RepU8 _ w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
+    have hv0_rep : RepU8 m54 w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
       rw [toNat_toUInt8_mod]
-    have h128_rep : RepU8 _ (128 : UInt8) (.field 128) := by
+    have h128_rep : RepU8 m54 (128 : UInt8) (.field 128) := by
       show (.field 128 : SourceValue F) = .field ((128 : UInt8).toNat : F)
       simp only [show (128 : UInt8).toNat = 128 from rfl, Nat.cast_ofNat]
     obtain ⟨hltF, rfl⟩ := Lib.u8_less_than_spec hv0_rep h128_rep ev226
@@ -1002,7 +1001,7 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
     have hbytes : (tag0Bytes w).data.toList = [w.toUInt8] := by
       unfold tag0Bytes tagNBytes
       dsimp only []
-      rw [he1, if_pos hw128, hhdr, data_toList_singleton]
+      rw [he1, ite_eq_left hw128, hhdr, data_toList_singleton]
     rw [hbytes, List.singleton_append]
     exact hcons
   | n0_n0 x_v0 x_v1 x_v2 x_v3 x_v4 x_v5 x_v6 x_v7 m54 x62 y63 m64 x70 y71 m72 x78 y79 m80 x86 y87
@@ -1033,10 +1032,10 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [e1, e2, e3, e4, e5, e6, e7] at hb
       rw [← hb]
       exact leBytes8_lt_256 (Nat.mod_lt _ (by decide))
-    have hv0_rep : RepU8 _ w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
+    have hv0_rep : RepU8 m54 w.toUInt8 (.field ((w.toNat % 256 : Nat) : F)) := by
       show (.field ((w.toNat % 256 : Nat) : F) : SourceValue F) = .field (w.toUInt8.toNat : F)
       rw [toNat_toUInt8_mod]
-    have h128_rep : RepU8 _ (128 : UInt8) (.field 128) := by
+    have h128_rep : RepU8 m54 (128 : UInt8) (.field 128) := by
       show (.field 128 : SourceValue F) = .field ((128 : UInt8).toNat : F)
       simp only [show (128 : UInt8).toNat = 128 from rfl, Nat.cast_ofNat]
     obtain ⟨hltF, rfl⟩ := Lib.u8_less_than_spec hv0_rep h128_rep ev226
@@ -1143,14 +1142,15 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev171
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev185
     obtain ⟨-, rfl⟩ := Lib.u8_to_field_spec ev199
-    obtain ⟨-, rfl⟩ := Lib.u8_less_than_spec (hk_rep _) (h8_rep _) ev226
+    obtain ⟨-, rfl⟩ := Lib.u8_less_than_spec (hk_rep m54) (h8_rep m54) ev226
     have hx275 : x275 = .field 208 := by rw [mul_field_inv op290]; rfl
     subst hx275
     obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev297
     have hv268 := add_field_inv op282; subst hv268
     obtain ⟨rfl, rfl, -⟩ := Lib.u8_from_field_spec ev267
     have hk_u64 : k.toUInt64.toNat = k := by
-      simp [Nat.toUInt64, UInt64.toNat_ofNat', Nat.mod_eq_of_lt (Nat.lt_trans hk (by decide))]
+      simp [Nat.toUInt64, UInt64.toNat_ofNat',
+        Nat.mod_eq_of_lt (show k < 18446744073709551616 by omega)]
     have he1 : Ixon.tagNEnd1 4 = 8 := rfl
     have hhdr : (.field (208 + (k : F)) : SourceValue F) =
         .field ((Ixon.tagNHeader 4 Ixon.Constant.FLAG k).toNat : F) := by
@@ -1159,16 +1159,15 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
         rw [hflag]
         simp [Ixon.tagNHeader, Nat.toUInt8, UInt8.toNat_ofNat',
           Nat.mod_eq_of_lt (show 13 * 16 + k < 256 by omega)]
-        omega
       rw [hval]
       push_cast
-      ring
+      rfl
     have hcons := repBytes_cons hhdr hrest hm249 he250
     have hbytes : (tag4Bytes Ixon.Constant.FLAG k.toUInt64).data.toList =
         [Ixon.tagNHeader 4 Ixon.Constant.FLAG k] := by
       unfold tag4Bytes tagNBytes
       dsimp only []
-      rw [hk_u64, he1, if_pos hk, data_toList_singleton]
+      rw [hk_u64, he1, ite_eq_left hk, data_toList_singleton]
     rw [hbytes, List.singleton_append]
     exact hcons
 

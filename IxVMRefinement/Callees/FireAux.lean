@@ -141,10 +141,10 @@ theorem subst_go_range_shift :
       by_cases h1 : k + 1 ≤ i ∧ i - (k + 1) < vs.length
       · have h0 : k ≤ i ∧ i - k < (v :: vs).length := by simp; omega
         have hidx : i - k = (i - (k + 1)) + 1 := by omega
-        rw [dif_pos h1, dif_pos h0]
+        rw [dite_eq_left h1, dite_eq_left h0]
         simp [hidx]
       · have h0 : ¬(k ≤ i ∧ i - k < (v :: vs).length) := by simp; omega
-        rw [dif_neg h1, dif_neg h0]
+        rw [dite_eq_right h1, dite_eq_right h0]
 
 theorem subst_go_range (vs : List KLevel) (i : Nat) :
     Ix.Kernel.Level.subst.go (List.range vs.length) vs i =
@@ -209,13 +209,13 @@ theorem subst_go_posLevels_perm {ps : List Ix.Kernel.LevelParam} {us : List KLev
   rw [hpos]
   refine subst_go_posLevels_aux 0 ps us n hlen ?_ ?_
   · intro j hj
-    rw [Nat.add_zero, subst_go_range, dif_pos hj]
+    rw [Nat.add_zero, subst_go_range, dite_eq_left hj]
   · intro hn
     have hnr : n ∉ List.range ps.length := fun hr => hn (hperm.mem_iff.mpr hr)
     have hge : ¬(n < us.length) := by
       rw [hlen]
       simpa [List.mem_range] using hnr
-    rw [subst_go_range, dif_neg hge]
+    rw [subst_go_range, dite_eq_right hge]
 
 theorem subst_posLevels_perm {ps : List Ix.Kernel.LevelParam} {us : List KLevel}
     (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length) :
@@ -954,7 +954,7 @@ theorem nestedPins_of_parts {tyA dom body : KExpr}
   refine ⟨hplen, ?_⟩
   rw [hplen]
   unfold Ix.Kernel.Tier.nestedPins
-  rw [if_pos hle, hstrip, hfn]
+  rw [ite_eq_left hle, hstrip, hfn]
   have htake_eq : dom.getAppArgs.take cnP =
       ((dom.getAppArgs.take cnP).map (Ix.Kernel.Expr.lowerBVars (mI - rP) 0)).map
         (Ix.Kernel.Expr.liftLooseBVars (mI - rP) 0) := by
