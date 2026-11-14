@@ -1170,11 +1170,23 @@ private theorem inv_var_find {locals : Environment F Nat} {name : String} {v exp
     {h h' : Heap F} {cs : List (Call F)}
     (hlkp : locals.find? (·.1 == name) = some (name, expected))
     (ev : ObsExpr W [] locals (.var name) h v h' cs) :
-    v = expected ∧ h' = h ∧ cs = [] := by
+    expected = v ∧ h = h' ∧ cs = [] := by
   obtain ⟨l, hh, hc⟩ := ev.var_inv
   rw [hlkp] at l
   injection l with l; injection l with _ hv
-  exact ⟨hv.symm, hh, hc⟩
+  exact ⟨hv, hh.symm, hc⟩
+
+private theorem inv_lit {locals : Environment F Nat} {x : F} {v : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsExpr W [] locals (.literal x) h v h' cs) :
+    v = .field x ∧ h = h' ∧ cs = [] :=
+  let ⟨hv, hh, hc⟩ := ev.literal_inv; ⟨hv, hh.symm, hc⟩
+
+private theorem inv_nil {locals : Environment F Nat} {vs : List (SourceValue F)}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsArgs W [] locals [] h vs h' cs) :
+    vs = [] ∧ h = h' ∧ cs = [] :=
+  let ⟨hv, hh, hc⟩ := ev.nil_inv; ⟨hv, hh.symm, hc⟩
 
 private theorem inv_store_nil_kexpr {locals : Environment F Nat} {v : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
@@ -1598,7 +1610,7 @@ private theorem inv_match_kexpr_const_unit {locals : Environment F Nat} {scr : S
     obtain rfl := matchPattern_wildcard_inv mtw₂
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml₃
     obtain ⟨_, a_tup, rfl⟩ := darm.tuple_inv
-    obtain ⟨rfl, rfl, _⟩ := a_tup.nil_inv
+    obtain ⟨rfl, rfl, _⟩ := inv_nil a_tup
     exact ⟨w₁, w₂, cs_rest, ld, sc.append_right, drest⟩
   · exact (selectArm_nil_inv sel_nil).elim
 
@@ -1654,7 +1666,7 @@ theorem check_iota_rule_inv
   rw [instanceName_plain_some] at ev_sc hc_sc
   obtain ⟨_, _, _, m4_1, m4_2, _, _, _, rfl, hc4_args, d4_1, d4_2, d4_3⟩ := inv_args3 a4
   obtain ⟨rfl, hm4_1, rfl⟩ := inv_var_find (by rfl) d4_1; subst m4_1
-  obtain ⟨rfl, hm4_2, rfl⟩ := d4_2.literal_inv; subst m4_2
+  obtain ⟨rfl, hm4_2, rfl⟩ := inv_lit d4_2; subst m4_2
   obtain ⟨rfl, hm4_3, rfl⟩ := inv_var_find (by rfl) d4_3; subst m4_3
   obtain rfl := matchPattern_wildcard_inv mt4
   rw [hc_sc, hc4_args] at sc4_l
@@ -1668,7 +1680,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, d5_1, d5_2, d5_3, d5_4⟩ := inv_args4 a5
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d5_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d5_2
-  obtain ⟨rfl, rfl, _⟩ := d5_3.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d5_3
   obtain ⟨rfl, rfl, _⟩ := inv_store_nil_kexpr d5_4
   obtain ⟨_, hv5, -, ml5a⟩ := matchPattern_tuple_inv mt5; subst hv5
   obtain ⟨r_peel_e, _, _, _, rfl, mt5_1, ml5b, rfl⟩ := matchListWith_cons_inv ml5a
@@ -1685,7 +1697,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d6_1, d6_2⟩ := inv_args2 a6
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_2
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap6
+  obtain ⟨heq6, rfl⟩ := Builtin.assertEq_inv ap6; subst peeled_v
   obtain rfl := matchPattern_wildcard_inv mt6
   -- 7. `KernelInfer::k_infer(rc, rhs, (&(Lists::Node::Nil)))`
   obtain ⟨v_rhs_ty, h_rhs_inf, _, c7a, _, d7, mt7, rest7, hc7⟩ := rest6.letValue_inv; clear rest6
@@ -1710,7 +1722,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, hc8_cargs, d8_c1, d8_c2⟩ := inv_args2 a8_c
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d8_c1
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d8_c2
-  obtain ⟨rfl, rfl, rfl⟩ := d8_2.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := inv_lit d8_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap8
   obtain rfl := matchPattern_wildcard_inv mt8
   rw [hc8_args, hc_aset, hc8_cargs] at sc8_l
@@ -1745,7 +1757,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d10_1, d10_2⟩ := inv_args2 a10
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_2
-  obtain ⟨heq10, rfl⟩ := Builtin.assertEq_inv ap10; subst heq10
+  obtain ⟨heq10, rfl⟩ := Builtin.assertEq_inv ap10; subst tnl
   obtain rfl := matchPattern_wildcard_inv mt10
   -- 11. `let (tbody, ctx) = peel_collect(tty, d, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_open, _, _, _, d11, mt11, rest11, hc11⟩ := rest10.letValue_inv; clear rest10
@@ -1804,8 +1816,8 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d14_rc
   obtain ⟨_, _, _, cs_req, a14_req, ev_req, _⟩ := d14_req.call_inv
   rw [instanceName_plain_some] at ev_req
-  obtain ⟨rfl, rfl, rfl⟩ := a14_req.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d14_2.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := inv_nil a14_req
+  obtain ⟨rfl, rfl, rfl⟩ := inv_lit d14_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap14
   obtain rfl := matchPattern_wildcard_inv mt14
   rw [hc14_args, hc_eqa, hc14_ea, hc_raddr] at sc14_l
@@ -1841,7 +1853,7 @@ theorem check_iota_rule_inv
   rw [Obs.Names.n6682477127133607924] at ev_tlen hc_tlen
   obtain ⟨_, rfl, d17_v⟩ := inv_args1 a17_c
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d17_v
-  obtain ⟨rfl, rfl, rfl⟩ := d17_2.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := inv_lit d17_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap17
   obtain rfl := matchPattern_wildcard_inv mt17
   rw [hc17_args, hc_tlen] at sc17_l
@@ -1854,7 +1866,7 @@ theorem check_iota_rule_inv
   rw [Obs.Names.n11123572196661760086] at ev_a0
   obtain ⟨_, _, _, _, _, rfl, _, d18_1, d18_2⟩ := inv_args2 a18
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d18_1
-  obtain ⟨rfl, rfl, _⟩ := d18_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d18_2
   obtain rfl := matchPattern_bind_inv mt18
   -- 19. `let lhs = Lists::lookup(targs, 1)`
   obtain ⟨lhs, h_a1, _, _, _, d19, mt19, rest19, hc19⟩ := rest18.letValue_inv; clear rest18
@@ -1863,7 +1875,7 @@ theorem check_iota_rule_inv
   rw [Obs.Names.n11123572196661760086] at ev_a1
   obtain ⟨_, _, _, _, _, rfl, _, d19_1, d19_2⟩ := inv_args2 a19
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d19_1
-  obtain ⟨rfl, rfl, _⟩ := d19_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d19_2
   obtain rfl := matchPattern_bind_inv mt19
   -- 20. `let rhs_s = Lists::lookup(targs, 2)`
   obtain ⟨rhs_s, h_a2, _, _, _, d20, mt20, rest20, hc20⟩ := rest19.letValue_inv; clear rest19
@@ -1872,7 +1884,7 @@ theorem check_iota_rule_inv
   rw [Obs.Names.n11123572196661760086] at ev_a2
   obtain ⟨_, _, _, _, _, rfl, _, d20_1, d20_2⟩ := inv_args2 a20
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d20_1
-  obtain ⟨rfl, rfl, _⟩ := d20_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d20_2
   obtain rfl := matchPattern_bind_inv mt20
   -- 21. `let (lh, largs) = KernelTypes::collect_spine(lhs)`
   obtain ⟨_, h_lsp, _, _, _, d21, mt21, rest21, hc21⟩ := rest20.letValue_inv; clear rest20
@@ -1898,9 +1910,9 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, cs_plvls, a22_pl, ev_plvls, _⟩ := d22_pl.call_inv
   rw [instanceName_plain_some] at ev_plvls
   obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d22_p1, d22_p2, d22_p3⟩ := inv_args3 a22_pl
-  obtain ⟨rfl, rfl, _⟩ := d22_p1.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d22_p1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d22_p2
-  obtain ⟨rfl, rfl, _⟩ := d22_p3.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d22_p3
   obtain rfl := matchPattern_bind_inv mt22
   -- 23. `assert_eq!(KernelCheck::kexpr_struct_eq(lh, rhead), 1)`
   obtain ⟨_, h_lheq, _, _, _, d23, mt23, rest23, hc23⟩ := rest22.letValue_inv; clear rest22
@@ -1912,7 +1924,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d23_c1, d23_c2⟩ := inv_args2 a23_c
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d23_c1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d23_c2
-  obtain ⟨rfl, rfl, _⟩ := d23_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d23_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap23
   simp only [Value.type] at ev_lheq
   obtain rfl := matchPattern_wildcard_inv mt23
@@ -1927,8 +1939,8 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d24_v
   obtain ⟨_, _, _, _, _, d24_b1, d24_b2, op_mi1, _⟩ := d24_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d24_b1
-  obtain ⟨rfl, rfl, _⟩ := d24_b2.literal_inv
-  obtain ⟨heq24, rfl⟩ := Builtin.assertEq_inv ap24; subst heq24
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d24_b2
+  obtain ⟨heq24, rfl⟩ := Builtin.assertEq_inv ap24; subst v_llen
   obtain rfl := matchPattern_wildcard_inv mt24
   rw [hc24_args, hc_llen] at sc24_l
   have call_llen := sc24_l.append_left.append_right.cons_head
@@ -1951,7 +1963,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d25_bv1, d25_bv2⟩ := inv_args2 a25_bv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d25_bv1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d25_bv2
-  obtain ⟨rfl, rfl, _⟩ := d25_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d25_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap25
   obtain rfl := matchPattern_wildcard_inv mt25
   -- 26. `let major = Lists::lookup(largs, mi)`
@@ -2028,7 +2040,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d31_c1, d31_c2⟩ := inv_args2 a31_c
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d31_c1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d31_c2
-  obtain ⟨rfl, rfl, _⟩ := d31_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d31_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap31
   obtain rfl := matchPattern_wildcard_inv mt31
   -- 32. `let cty_l = KernelLevels::expr_inst_levels(cty, ilvls)`
@@ -2131,7 +2143,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, d39_b1, d39_b2, op_cnp_ni, _⟩ := d39_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b2
-  obtain ⟨heq39, rfl⟩ := Builtin.assertEq_inv ap39; subst heq39
+  obtain ⟨heq39, rfl⟩ := Builtin.assertEq_inv ap39; subst v39_l
   obtain rfl := matchPattern_wildcard_inv mt39
   rw [hc39_args, hc_clen] at sc39_l
   have call_clen := sc39_l.append_left.append_right.cons_head
@@ -2161,7 +2173,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d40_ca
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d40_cp
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d40_c4
-  obtain ⟨rfl, rfl, _⟩ := d40_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d40_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap40
   obtain rfl := matchPattern_wildcard_inv mt40
   rw [hc40_args, hc_deidx] at sc40_l
@@ -2313,7 +2325,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d48_c2
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d48_c3
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d48_c4
-  obtain ⟨rfl, rfl, _⟩ := d48_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d48_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap48
   obtain rfl := matchPattern_wildcard_inv mt48
   rw [hc48_args, hc_derhs] at sc48_l
@@ -2344,7 +2356,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d50_c2
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d50_c3
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d50_c4
-  obtain ⟨rfl, rfl, _⟩ := d50_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d50_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap50
   obtain rfl := matchPattern_wildcard_inv mt50
   rw [hc50_args, hc_detl] at sc50_l
@@ -2375,7 +2387,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d52_c2
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d52_c3
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d52_c4
-  obtain ⟨rfl, rfl, _⟩ := d52_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d52_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap52
   obtain rfl := matchPattern_wildcard_inv mt52
   rw [hc52_args, hc_detr] at sc52_l
@@ -2410,14 +2422,14 @@ theorem check_iota_rule_inv
   obtain ⟨_, rfl, d54_ell⟩ := inv_args1 a54_srt
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d54_ell
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d54_c4
-  obtain ⟨rfl, rfl, _⟩ := d54_2.literal_inv
+  obtain ⟨rfl, rfl, _⟩ := inv_lit d54_2
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap54
   simp only [Value.type] at ev_deta
   rw [hc54_args, hc_deta] at sc54_l
   have sub_deta := sc54_l.append_left.append_right.cons_tail
   subst hcalls₀_eq
   exact ⟨
-    { mi, d, op_mi, op_d, h_plen, cs_plen, call_plen, ev_plen,
+    { mi := mi, d, op_mi, op_d, h_plen, cs_plen, call_plen, ev_plen,
       v_sc, h_sc, cs_sc, ev_sc, sub_sc,
       r_peel_e, r_peel_acc, h_peel, cs_peel, ev_peel,
       v_rhs_ty, h_rhs_inf, cs_rhs_inf, ev_rhs_inf, sub_rhs_inf,
@@ -3561,7 +3573,7 @@ theorem check_iota_rule_vm_spec
     exact Option.some.inj h1
   obtain ⟨_, remA1_inst, hinst_tty_rp, htty_rp_dt1, _⟩ :=
     peel_n_foralls_inst_exact htake_fvs_len htake_fvs_Γ inv.ev_tty_rp
-      ((htty_rep 0 zeroGhost).mono ext_tci_dt1)
+      ((htty_rep 0 Γ_t).mono ext_tci_dt1)
   rw [← htake_fvs_len, hrp_val, Nat.zero_add] at htty_rp_dt1
   have hremA1_eq : remA1_inst = posOf lps remA1 := by
     rw [hfvs_take_eq] at hinst_tty_rp
