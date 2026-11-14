@@ -2848,11 +2848,13 @@ theorem nativeParts?_withRec_inv {nPd : Nat} {block : List KConstantInfo}
         | some q =>
           obtain ⟨cs, cvR, mI, rP, rules⟩ := q
           rw [hsp] at hs
+          dsimp only at hs
           cases hcnt : Ix.Kernel.nativeCounts? nPd cvT cs mI rP with
           | none => rw [hcnt] at hs; exact nomatch hs
           | some pair =>
             obtain ⟨nP, nIdx⟩ := pair
             rw [hcnt] at hs
+            dsimp only at hs
             have hnP_eq : nP = nPd := by
               unfold Ix.Kernel.nativeCounts? at hcnt
               split at hcnt
@@ -2921,7 +2923,7 @@ theorem nativeParts?_withRec_inv {nPd : Nat} {block : List KConstantInfo}
                   let q := hall j hj rule c hr hc
                   ⟨q.1, q.2.1⟩⟩
             · have hcondF := Bool.eq_false_iff.mpr hcond
-              rw [hcondF] at hs
+              simp only [hcondF, Bool.false_eq_true, ↓reduceIte] at hs
               exact nomatch hs
 
 /-! ### `instantiateLevelParams` / `posOf` commutation with recursor & rule generators -/
@@ -3395,25 +3397,31 @@ theorem GenScoped.mono_b {env : Ix.Kernel.Env .anon} {rlps : List LevelParam} {b
 
 theorem constsResolve_mono_env {env₁ env₂ : Ix.Kernel.Env .anon}
     (hsub : ∀ k ci, env₁.find? k = some ci → env₂.find? k = some ci) :
-    ∀ {e : KExpr}, e.constsResolve env₁ = true → e.constsResolve env₂ = true
-  | .bvar _ | .sort _ | .lit _ => fun _ => by simp [Expr.constsResolve]
-  | .fvar _ _ => fun h => constsResolve_mono_env hsub h
-  | .const n _ => fun h => by
+    ∀ {e : KExpr}, e.constsResolve env₁ = true → e.constsResolve env₂ = true := by
+  intro e
+  induction e with
+  | bvar _ | sort _ | lit _ => intro _; rfl
+  | fvar _ _ ih => exact ih
+  | const n _ =>
+    intro h
     have hc : (env₁.find? n).isSome = true := h
     rw [Option.isSome_iff_exists] at hc
     obtain ⟨ci, hci⟩ := hc
-    simp [Expr.constsResolve, hsub n ci hci]
-  | .app _ _ => fun h => by
-    simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
-    exact ⟨constsResolve_mono_env hsub h.1, constsResolve_mono_env hsub h.2⟩
-  | .lam _ _ _ | .forallE _ _ _ => fun h => by
-    simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
-    exact ⟨constsResolve_mono_env hsub h.1, constsResolve_mono_env hsub h.2⟩
-  | .letE _ _ _ _ => fun h => by
-    simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
-    exact ⟨⟨constsResolve_mono_env hsub h.1.1, constsResolve_mono_env hsub h.1.2⟩,
-      constsResolve_mono_env hsub h.2⟩
-  | .proj _ _ _ => fun h => constsResolve_mono_env hsub h
+    change (env₂.find? n).isSome = true
+    rw [hsub n ci hci]; rfl
+  | app _ _ ihf iha =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h ⊢
+    exact ⟨ihf h.1, iha h.2⟩
+  | lam _ _ _ iht ihb | forallE _ _ _ iht ihb =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h ⊢
+    exact ⟨iht h.1, ihb h.2⟩
+  | letE _ _ _ _ iht ihv ihb =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h ⊢
+    exact ⟨⟨iht h.1.1, ihv h.1.2⟩, ihb h.2⟩
+  | proj _ _ _ ih => exact ih
 
 theorem GenScoped.mono_env {env₁ env₂ : Ix.Kernel.Env .anon} {rlps : List LevelParam} {b : Nat}
     {e : KExpr}
@@ -3864,7 +3872,7 @@ theorem GenScoped.mkPisOf_structTeleAt {env : Ix.Kernel.Env .anon} {rlps : List 
       injection hrem with _ htl
       rw [htl]
       simp only [List.length_map, List.length_range]
-      apply List.map_congr_left; intro x _; omega
+      apply List.map_congr_left; intro x _; dsimp only [Function.comp_apply]; omega
     simp only [List.map_cons, Ix.Kernel.Expr.mkPisOf]
     refine GenScoped.forallE hpw (GenScoped.structIdxAt hi (htele k (by simp at hsum; omega))) ?_
     exact ih (k + 1) (by simp at hsum; omega) hks
@@ -3907,7 +3915,7 @@ theorem GenScoped.mkLamsOf_structTeleAt {env : Ix.Kernel.Env .anon} {rlps : List
       injection hrem with _ htl
       rw [htl]
       simp only [List.length_map, List.length_range]
-      apply List.map_congr_left; intro x _; omega
+      apply List.map_congr_left; intro x _; dsimp only [Function.comp_apply]; omega
     simp only [List.map_cons, Ix.Kernel.Expr.mkLamsOf]
     refine GenScoped.lam hpw (GenScoped.structIdxAt hi (htele k (by simp at hsum; omega))) ?_
     exact ih (k + 1) (by simp at hsum; omega) hks
@@ -4201,7 +4209,7 @@ theorem GenScoped.structRecRhsR {envR : Ix.Kernel.Env .anon} {rlps lps : List Le
         exact hpb_doms k hk
       unfold Ix.Kernel.structIhApp
       have happ_body : GenScoped envR rlps (nP + (ctors.length + 1) + nF + 0 + tele_i.length)
-          (Expr.mkAppN (.const recC (rlvls.map .param))
+          (Expr.mkAppN (.const recC (rlps.map .param))
             (Ix.Kernel.structRecPrefixAt nP ctors.length nF tele_i.length ++
               (Ix.Kernel.structFieldIdxOf cty nP nF i).map
                 (Ix.Kernel.structIdxAt nF (ctors.length + 1) i 0 tele_i.length) ++
@@ -4625,8 +4633,8 @@ theorem expr_inst_levels_rawTm_aux (κ : _root_.Address → KKey) :
         injection hxs with h1 hxs; injection hxs with h2; subst h1 h2
         obtain ⟨-, rls'', ext⟩ := IxVM.Refinement.Levels.levelListInst_obs e1
           (RomBound.bounded_mono bd (fun x hx => List.mem_cons_of_mem _ hx)) rls hls
-        have ext_end := ext.trans (Heap.Extends.snoc _ _)
-        exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy ext_end ra)
+        exact .const (by simp)
+          (Bytes.repAddressRef_heapMono₂ addrTy (ext.trans (Heap.Extends.snoc _ _)) ra)
           (rls''.mono (Heap.Extends.snoc _ _))
           (SubstAux.lvEqList_subst eq hul)
       | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | app cell _ _
@@ -4810,13 +4818,13 @@ theorem peel_n_foralls_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ :
       exact absurd hv (succ_field_ne_zero (by omega))
     | .other (ld34 := ld34) (op87 := op87) (ev64 := ev64) .. =>
       cases hRE with
-      | forallE cell rt rb rl =>
+      | forallE (Rt := Rt) (T := T) (ℓ := ℓ) (mR := mR) cell rt rb rl =>
         obtain ⟨-, hxs⟩ := load_cell cell ld34
         injection hxs with h1 hxs; injection hxs with h2 hxs; injection hxs with h3; subst h1 h2 h3
         rw [evalBinOp_sub_succ m op87] at ev64
         obtain ⟨hh, rbs, ebs, rbody, ebody, hsR, hsE, hbody⟩ :=
           peel_n_foralls_rawTm_spec m (by omega) rb ev64
-        refine ⟨hh, (_, _) :: rbs, (_, _) :: ebs, rbody, ebody,
+        refine ⟨hh, (Rt, mR) :: rbs, (T, bmeta ℓ) :: ebs, rbody, ebody,
           by simp [Expr.stripPis, hsR], by simp [Expr.stripPis, hsE], ?_⟩
         rwa [show k + (m + 1) = k + 1 + m by omega]
       | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
@@ -4850,8 +4858,8 @@ theorem collect_spine_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : 
       exact ⟨_, _, Rh, Eh, Ras ++ [_], Eas ++ [_], rfl, hH.mono e2.heap_extends,
         SubstAux.ksnoc (R := fun h E p => Tm κ d Γ h k E p)
           (fun _ _ _ _ ext r => Tm.mono ext r) e2 hAs (ra.toTm.mono e1.heap_extends),
-        by simp [hlen], by rw [hR]; exact (mkAppN_snoc Ras Rh _).symm,
-        by rw [hE]; exact (mkAppN_snoc Eas Eh _).symm, hnot_app⟩
+        by simp [hlen], by rw [hR, Expr.mkAppN_append]; rfl,
+        by rw [hE, Expr.mkAppN_append]; rfl, hnot_app⟩
     | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
     | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
     | litStr cell _ _ | proj cell _ _ =>
@@ -4952,7 +4960,8 @@ theorem build_param_lvls_range_go :
   | rem + 1, start, i, r, h, h', cs, hlt, ev => by
     have hdiff_ne : ((i + (rem + 1) : Nat) : F) - (i : F) ≠ 0 := by
       rw [Nat.cast_add, add_sub_cancel_left]
-      exact succ_field_ne_zero (by omega)
+      intro heq
+      exact succ_field_ne_zero (m := rem) (by omega) (congrArg Value.field heq)
     match Obs.«KernelCheck::build_param_lvls_range».obs ev with
     | .n0 (op17 := op17) .. =>
       simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op17
@@ -4979,7 +4988,7 @@ theorem build_param_lvls_range_go :
       have hmap_eq :
           List.map ((fun k => Level.param (start + (i + k))) ∘ (· + 1)) (List.range rem) =
           List.map (fun k => Level.param (start + (i + 1 + k))) (List.range rem) := by
-        apply List.map_congr_left; intro k _; simp [Function.comp_def, Nat.add_assoc]
+        apply List.map_congr_left; intro k _; dsimp only [Function.comp_apply]; congr 1; omega
       rw [Nat.add_zero, hmap_eq]
       have hcons : RepKLevelList
           (m78 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons"
@@ -5021,7 +5030,8 @@ theorem build_rec_lvls_list_go :
   | rem + 1, i, r, h, h', cs, hlt, ev => by
     have hdiff_ne : ((i + (rem + 1) : Nat) : F) - (i : F) ≠ 0 := by
       rw [Nat.cast_add, add_sub_cancel_left]
-      exact succ_field_ne_zero (by omega)
+      intro heq
+      exact succ_field_ne_zero (m := rem) (by omega) (congrArg Value.field heq)
     match Obs.«KernelCheck::build_rec_lvls_list».obs ev with
     | .n0 (op17 := op17) .. =>
       simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op17
@@ -5043,7 +5053,7 @@ theorem build_rec_lvls_list_go :
       have hmap_eq :
           List.map ((fun k => Level.param (i + k)) ∘ (· + 1)) (List.range rem) =
           List.map (fun k => Level.param (i + 1 + k)) (List.range rem) := by
-        apply List.map_congr_left; intro k _; simp [Function.comp_def, Nat.add_assoc]
+        apply List.map_congr_left; intro k _; dsimp only [Function.comp_apply]; congr 1; omega
       rw [Nat.add_zero, hmap_eq]
       have hcons : RepKLevelList
           (m69 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons"
@@ -5194,14 +5204,9 @@ theorem nat_ps_at_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KE
         (he32 := hr) (hm31 := hh) (hm47 := hm47) (op73 := op73) (op65 := op65)
         (op110 := op110) (ev87 := ev87) .. =>
       subst hr hh
-      have hx58 : x58 = .field ((o + (m + 1) : Nat) : F) := by
-        simp only [evalBinOp, Except.ok.injEq] at op73
-        rw [← op73, Nat.cast_add]
-      rw [hx58] at op65
-      have hv51 : v51 = .field ((o + m : Nat) : F) := by
-        simp only [evalBinOp, Except.ok.injEq] at op65
-        rw [← op65, show o + (m + 1) = (o + m) + 1 by omega, Nat.cast_add, Nat.cast_one,
-          add_sub_cancel_right]
+      have hx58 : x58 = .field ((o + (m + 1) : Nat) : F) := evalBinOp_add_nat o (m + 1) op73
+      rw [hx58, show o + (m + 1) = (o + m) + 1 by omega] at op65
+      have hv51 : v51 = .field ((o + m : Nat) : F) := evalBinOp_sub_succ (o + m) op65
       have hv89 : v89 = .field (m : F) := evalBinOp_sub_succ m op110
       rw [hv89] at ev87
       have htl := nat_ps_at_spec m o k (by omega) hk ev87
@@ -5216,9 +5221,10 @@ theorem nat_ps_at_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KE
         simp only [Ix.Kernel.structPsAt, List.range_succ_eq_map, List.map_cons, List.map_map]
         rw [show o + (m + 1) - 1 - 0 = o + m by omega]
         congr 1
-        apply List.map_congr_left; intro j _; simp [Function.comp_def]; omega
+        apply List.map_congr_left; intro j _; dsimp only [Function.comp_apply]; congr 1; omega
       rw [hstruct]
-      exact .cons (by simp) ((hhd_m39.mono ev87.heap_extends).mono ext_end) (htl.mono ext_end)
+      exact .cons (by simp) ((hhd_m39.mono ev87.heap_extends).mono ext_end)
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ext_end htl)
 
 /-- `KernelCheck::nat_app_n(f, args)` builds `Expr.mkAppN F Args`. -/
 theorem nat_app_n_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
@@ -5250,8 +5256,10 @@ theorem nat_app_n_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KE
       injection heq with h1 h2; subst h1 h2
       have ext50 : Heap.Extends h m50 := by rw [hm58]; exact Heap.Extends.snoc _ _
       have happ : Tm κ d Γ m50 k (.app Ef Ea) (.ptr (.enum kexprEnum) h.length) := by
-        rw [hm58]; exact .app (by simp) (hf.mono ext50) (ha.mono ext50)
-      exact ih happ (has.mono ext50) ev46
+        rw [hm58]
+        exact .app (by simp) (hf.mono (Heap.Extends.snoc _ _)) (ha.mono (Heap.Extends.snoc _ _))
+      exact ih happ
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ext50 has) ev46
 
 private theorem mentionsConst_mkAppN_of_head {T : KKey} :
     ∀ (as : List KExpr) {f : KExpr}, f.mentionsConst T = true →
@@ -5458,9 +5466,10 @@ theorem nat_mentions_zero_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
       | zero => simp at hlen
       | succ n' =>
         obtain ⟨a, _, Es, _, rfl, _, hes⟩ := hE.proj_of_load ld
-        simp only [noProjAt, Bool.and_eq_true, bne_iff_ne] at hnoProj
+        simp only [noProjAt, Bool.and_eq_true] at hnoProj
+        have hneq : (κ (ixAddr a) == T) = false := by simpa using hnoProj.1
         obtain ⟨hs0, rfl⟩ := nat_mentions_zero_spec hκ_inj n' (by simp at hlen; omega) hes hpt hnoProj.2 hΓ ev1
-        exact ⟨by simp [Ix.Kernel.Expr.mentionsConst, beq_eq_false_iff_ne.mpr hnoProj.1, hs0], rfl⟩
+        exact ⟨by simp [Ix.Kernel.Expr.mentionsConst, hneq, hs0], rfl⟩
     | .other (ld12 := ld) (hne54 := hneC) (hne136 := hneA) (hne224 := hneL)
         (hne312 := hneF) (hne441 := hneLet) (hne488 := hneP) (he493 := hh) .. =>
       refine ⟨?_, hh⟩
@@ -5518,7 +5527,8 @@ theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
         obtain ⟨_, rfl⟩ := nat_mentions_ret_bit n' (by simp at hlen; omega) hd.toTm hpt ev_m
         obtain ⟨hr12, hmen⟩ := nat_positivity_ok_spec hT n' (by simp at hlen; omega) hr3 hb hpt ev_p
         exact ⟨hr12, by simp [Ix.Kernel.Expr.mentionsConst, hmen]⟩
-    | .other_Const_n1_n1_n0 (ev166 := ev_sp) (ld199 := ld_h) (ev246 := ev_eq)
+    | .other_Const_n1_n1_n0 (y226 := y226) (y234 := y234)
+        (ev166 := ev_sp) (ld199 := ld_h) (ev246 := ev_eq)
         (op240 := op_m1) (op232 := op_m2) (he495 := hr) .. =>
       obtain ⟨hd, _, _, Eh, _, Eas, htup, hH, _, _, _, hE_eq, _⟩ := collect_spine_rawTm_spec hRE ev_sp
       injection htup with hl; injection hl with h1 _; subst h1
@@ -5530,14 +5540,17 @@ theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
         · exact h_eq
         · rw [ite_eq_right h_eq] at hx233
           rw [hx233] at op_m1
-          simp only [evalBinOp, zero_mul, Except.ok.injEq] at op_m1
-          rw [← op_m1] at op_m2
-          simp only [evalBinOp, zero_mul, Except.ok.injEq, Value.field.injEq] at op_m2
+          have hx225 : _ = SourceValue.field 0 := by
+            cases y234 <;> simp only [evalBinOp, zero_mul, Except.ok.injEq] at op_m1
+            exact op_m1.symm
+          rw [hx225] at op_m2
+          cases y226 <;> simp only [evalBinOp, zero_mul, Except.ok.injEq, Value.field.injEq] at op_m2
           exact (zero_ne_one op_m2).elim
       subst hab
       rw [hE_eq, hEh, hT]
       exact ⟨Or.inl hr, mentionsConst_mkAppN_of_head Eas (by simp [Ix.Kernel.Expr.mentionsConst])⟩
-    | .other_Const_n1_n1_other (ev166 := ev_sp) (ld199 := ld_h) (ev246 := ev_eq)
+    | .other_Const_n1_n1_other (y226 := y226) (y234 := y234)
+        (ev166 := ev_sp) (ld199 := ld_h) (ev246 := ev_eq)
         (op240 := op_m1) (op232 := op_m2) (he502 := hr) .. =>
       obtain ⟨hd, _, _, Eh, _, Eas, htup, hH, _, _, _, hE_eq, _⟩ := collect_spine_rawTm_spec hRE ev_sp
       injection htup with hl; injection hl with h1 _; subst h1
@@ -5549,9 +5562,11 @@ theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : B
         · exact h_eq
         · rw [ite_eq_right h_eq] at hx233
           rw [hx233] at op_m1
-          simp only [evalBinOp, zero_mul, Except.ok.injEq] at op_m1
-          rw [← op_m1] at op_m2
-          simp only [evalBinOp, zero_mul, Except.ok.injEq, Value.field.injEq] at op_m2
+          have hx225 : _ = SourceValue.field 0 := by
+            cases y234 <;> simp only [evalBinOp, zero_mul, Except.ok.injEq] at op_m1
+            exact op_m1.symm
+          rw [hx225] at op_m2
+          cases y226 <;> simp only [evalBinOp, zero_mul, Except.ok.injEq, Value.field.injEq] at op_m2
           exact (zero_ne_one op_m2).elim
       subst hab
       rw [hE_eq, hEh, hT]
@@ -5741,11 +5756,10 @@ theorem nat_pi_binders_rawRecSpine_spec {κ : _root_.Address → KKey} {d : Nat}
           (m1 ++ [.construct teleListEnum "Cons" [.tuple [xd, xm], xbs]]) := Heap.Extends.snoc _ _
       have hpb_cons : (Expr.forallE ed eb m).piBinders =
           ((ed, m) :: eb.piBinders.1, Expr.mkAppN (.const T us) eAs) := by
-        unfold Ix.Kernel.Expr.piBinders
-        rw [hpb_sub]
+        simp only [Ix.Kernel.Expr.piBinders, hpb_sub]
       rw [hpb_cons]
       refine ⟨us, rAs, eAs, rfl, ?_, ?_⟩
-      · rw [← hm_eq]
+      · rw [hm_eq]
         exact .cons (by simp) ((ht.toTm.mono ev'.heap_extends).mono ext_end)
           (repKLevel_heapMono₂ (ev'.heap_extends.trans ext_end) hl_rep)
           (htele_sub.mono ext_end)
@@ -5785,7 +5799,8 @@ theorem nat_mk_binders_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
         subst hlam0 hr hm
         obtain ⟨-, hxs⟩ := load_cell cell ld
         injection hxs with htup hxs; injection hxs with hrest_eq
-        injection htup with h1 htup; injection htup with h2
+        injection htup with hlist
+        injection hlist with h1 hlist; injection hlist with h2
         subst h1 h2 hrest_eq
         have hsub := ih hrest hbody' ev'
         simp only [↓reduceIte] at hsub ⊢
@@ -5798,7 +5813,8 @@ theorem nat_mk_binders_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
         subst hr hm
         obtain ⟨-, hxs⟩ := load_cell cell ld
         injection hxs with htup hxs; injection hxs with hrest_eq
-        injection htup with h1 htup; injection htup with h2
+        injection htup with hlist
+        injection hlist with h1 hlist; injection hlist with h2
         subst h1 h2 hrest_eq
         have hsub := ih hrest hbody' ev'
         simp only [ite_eq_right hlam_ne] at hsub ⊢
@@ -5944,10 +5960,13 @@ theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExp
       have hbnd2 : IxVM.Consistency.Bounded cs2 :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have hhd := nat_idx_at_spec hi hlt hbnd1 ha ev1
-      have htl := ih hbnd2 (has.mono ev1.heap_extends) ev2
+      have htl := ih hbnd2
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ev1.heap_extends has)
+        ev2
       have ext_end : Heap.Extends m117
           (m117 ++ [.construct kexprListEnum "Cons" [v54, v55]]) := Heap.Extends.snoc _ _
-      exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end) (htl.mono ext_end)
+      exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ext_end htl)
 
 theorem nat_map_lift_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k shift cut : Nat} (hcut_le : cut ≤ k)
@@ -5987,10 +6006,13 @@ theorem nat_map_lift_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       have hbnd2 : IxVM.Consistency.Bounded cs2 :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have hhd := expr_lift_local_spec hcut_le hshift_lt hcut_lt hbnd1 ha ev1
-      have htl := ih hbnd2 (has.mono ev1.heap_extends) ev2
+      have htl := ih hbnd2
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ev1.heap_extends has)
+        ev2
       have ext_end : Heap.Extends m93
           (m93 ++ [.construct kexprListEnum "Cons" [v54, v55]]) := Heap.Extends.snoc _ _
-      exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end) (htl.mono ext_end)
+      exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
+        (repList_heapMono₂ kexprListEnum (fun _ _ _ _ ext r => Tm.mono ext r) ext_end htl)
 
 theorem nat_tele_at_go {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k_base nF o i l : Nat} {ℓ : KLevel} (hi : i ≤ nF) :
