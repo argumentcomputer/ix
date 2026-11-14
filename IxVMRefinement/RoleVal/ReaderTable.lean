@@ -2039,7 +2039,37 @@ theorem preludeFor_defaultRoleTable :
     rw [hread]
     simp only [bind, Except.bind, pure, Except.pure, hcs, hcfr]
 
-/-! ## `ReaderTable` consequences: `preludeFor` and `LiteralSupportBound` -/
+/-! ## `ReaderTable` and `TableAdmitted` consequences: `preludeFor` and `LiteralSupportBound` -/
+
+/-- Under `TableAdmitted V b` and `admitBinding Address.admissionHash b = .ok t`,
+`preludeFor (md := .anon) t` succeeds. -/
+theorem preludeFor_of_tableAdmitted {V : View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable}
+    (htab : IxVM.Refinement.TableAdmitted V b)
+    (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
+    ∃ pre, Ix.Kernel.Reader.preludeFor (md := .anon) t = .ok pre := by
+  obtain ⟨t', hadm', _, hacc⟩ := htab
+  rw [hadm] at hadm'
+  injection hadm' with ht_eq
+  subst ht_eq
+  obtain ⟨_, _, _, _, -, -, t'', pre, _, _, hadm'', -, -, hpre, -⟩ := hacc
+  rw [hadm] at hadm''
+  injection hadm'' with ht_eq'
+  subst ht_eq'
+  exact ⟨pre, hpre⟩
+
+/-- Under `TableAdmitted V b` and `admitBinding Address.admissionHash b = .ok t`,
+`LiteralSupportBound t` holds. -/
+theorem literalSupportBound_of_tableAdmitted {V : View} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable}
+    (htab : IxVM.Refinement.TableAdmitted V b)
+    (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
+    IxVM.Refinement.LiteralSupportBound t := by
+  obtain ⟨t', hadm', hlit, _⟩ := htab
+  rw [hadm] at hadm'
+  injection hadm' with ht_eq
+  subst ht_eq
+  exact hlit
 
 /-- Under `ReaderTable clm V b` and `admitBinding Address.admissionHash b = .ok t`,
 `preludeFor (md := .anon) t` succeeds. -/
@@ -2052,15 +2082,7 @@ theorem preludeFor_of_readerTable {clm : Ix.Claim} {V : View} {b : Ix.Kernel.Adm
   · have ht := admitBinding_committedDefault hdef hadm
     subst ht
     exact preludeFor_defaultRoleTable
-  · obtain ⟨t', hadm', _, hacc⟩ := htab
-    rw [hadm] at hadm'
-    injection hadm' with ht_eq
-    subst ht_eq
-    obtain ⟨_, _, _, _, -, -, t'', pre, _, _, hadm'', -, -, hpre, -⟩ := hacc
-    rw [hadm] at hadm''
-    injection hadm'' with ht_eq'
-    subst ht_eq'
-    exact ⟨pre, hpre⟩
+  · exact preludeFor_of_tableAdmitted htab hadm
 
 /-- Under `ReaderTable clm V b` and `admitBinding Address.admissionHash b = .ok t`,
 `LiteralSupportBound t` holds. -/
@@ -2073,11 +2095,7 @@ theorem literalSupportBound_of_readerTable {clm : Ix.Claim} {V : View}
   · have ht := admitBinding_committedDefault hdef hadm
     subst ht
     exact committedDefaultRoleTable_literalSupportBound
-  · obtain ⟨t', hadm', hlit, _⟩ := htab
-    rw [hadm] at hadm'
-    injection hadm' with ht_eq
-    subst ht_eq
-    exact hlit
+  · exact literalSupportBound_of_tableAdmitted htab hadm
 
 /-! ## Collision-free agreement between `committedImages` / `pre` fallback and `LoadedBy calls E₀` -/
 

@@ -11,7 +11,7 @@ import IxVMRefinement.RoleVal.CommittedEv4
 Umbrella module combining `CommittedBase`, `CommittedPrelude`, and `CommittedEv0..4`. -/
 
 set_option maxHeartbeats 8000000
-set_option maxRecDepth 100000
+set_option maxRecDepth 500000
 
 namespace IxVM.Refinement.RoleVal
 
@@ -22,8 +22,8 @@ def committedEvAddrs : List _root_.Address :=
   rawEvRows.map fun p => mkAddr p.1
 
 private theorem roleData_evidence_eq :
-    Ix.Kernel.Reader.RoleData.evidence = (rawEvRows.map fun p => hexRowOfChunks p.1 p.2).toArray := by
-  decide +kernel
+    Ix.Kernel.Reader.RoleData.evidence = (rawEvRows.map fun p => hexRowOfChunks p.1 p.2).toArray :=
+  Eq.refl Ix.Kernel.Reader.RoleData.evidence
 
 private theorem rawEvRows_all_spec : ∀ r ∈ rawEvRows, EvRowSpec r := by
   intro r hr
