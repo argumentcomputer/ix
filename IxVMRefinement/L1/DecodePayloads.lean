@@ -52,6 +52,13 @@ abbrev constructorListEnum : String := Names.«Lists::Node<Ixon::Constructor>»
 abbrev mutConstListEnum : String := Names.«Lists::Node<Ixon::MutConst>»
 abbrev fieldModeListEnum : String := Names.«Lists::Node<Field>»
 
+theorem addressListEnum_eq : addressListEnum = Names.«Lists::Node<&[Field; 32]>» := by decide +kernel
+theorem u64ListEnum_eq : u64ListEnum = Names.«Lists::Node<[Field; 8]>» := by decide +kernel
+theorem univListEnum_eq : univListEnum = Names.«Lists::Node<&Ixon::Univ>» := by decide +kernel
+theorem exprListEnum_eq : exprListEnum = Names.«Lists::Node<&Ixon::Expr>» := by decide +kernel
+theorem binderNodeListEnum_eq : binderNodeListEnum = Names.«Lists::Node<Ixon::BinderNode>» := by decide +kernel
+theorem binderBlockListEnum_eq : binderBlockListEnum = Names.«Lists::Node<Ixon::BinderBlock>» := by decide +kernel
+
 /-! ## Value encodings and heap representations -/
 
 /-- Boolean value encoded as a field element `0` or `1`. -/
@@ -433,7 +440,7 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
       r = .tuple [listPtr, restPtr] ∧
       Aiur.Library.List.RepList addressListEnum RepIxonAddressRef h' addrs.toList listPtr ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
-  have had_sym : addressListEnum = Names.«Lists::Node<&[Field; 32]>» := rfl
+  have had_sym : addressListEnum = Names.«Lists::Node<&[Field; 32]>» := addressListEnum_eq
   induction count generalizing i stream r h h' cs with
   | zero =>
     cases «IxonDeserialize::get_address_list».obs ev with
@@ -1504,13 +1511,8 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
       apply checkCount_ok
       simpa [UInt64.ofNat_toNat] using hlen
     let fm : Ixon.FieldModes fields.toNat := .listed ⟨modes, hsz⟩ hany
-    have hlisted_eq : Ixon.FieldModes.listed? (n := fields.toNat) modes = some fm := by
-      unfold Ixon.FieldModes.listed?
-      split
-      · split
-        · rfl
-        · rename_i hnot; exact absurd hany hnot
-      · rename_i hnot; exact absurd hsz hnot
+    have hlisted_eq : Ixon.FieldModes.listed? (n := fields.toNat) modes = some fm :=
+      Ixon.FieldModes.listed?_toArray fm rfl
     refine ⟨ext, fm, fields.toNat, modesPtr, restPtr, ?_, rfl,
       by simpa [fm, Ixon.FieldModes.toArray] using modesRep, dropRep⟩
     unfold Ixon.getConstructorFieldModes Ixon.getFieldModes

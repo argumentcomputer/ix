@@ -574,6 +574,11 @@ theorem assert_prj_empty_tables_spec {c : Ixon.Constant}
     (ev : ObsFn W "IxonDeserialize::assert_prj_empty_tables"
       [infoVal, sharingPtr, refsPtr, univsPtr, bindersPtr] h r h' cs) :
     h' = h ∧ ConstantTablesValid c := by
+  unfold RepShareVec at hsh
+  rw [exprListEnum_eq] at hsh
+  rw [addressListEnum_eq] at hrefs
+  rw [univListEnum_eq] at hunivs
+  rw [binderBlockListEnum_eq] at hbinders
   cases «IxonDeserialize::assert_prj_empty_tables».obs ev with
   | DPrj w17 hv15 ld33 ld48 ld63 ld78 _ he86 _ =>
     subst he86
@@ -735,6 +740,7 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
     (ev : ObsFn W "IxonDeserialize::assert_params_canonical"
       [ptr, .field ((bound : Nat) : F)] h r h' cs) :
     h' = h ∧ ∀ p ∈ params, p.toNat < bound := by
+  rw [u64ListEnum_eq] at rep
   induction params generalizing ptr r h h' cs with
   | nil =>
     cases rep with
