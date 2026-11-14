@@ -459,10 +459,13 @@ installed prefix (universe-independent; `ReadIn`, `DeclNonAux`, `SeedStored`, an
 model restriction are all discharged automatically from this witness). -/
 def WalkedBareBridge
     (Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop) : Prop :=
-  ∀ {calls : List (Call F)} {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {seeds : List _root_.Address}
+  ∀ {calls : List (Call F)} {clm : Ix.Claim} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {seeds : List _root_.Address}
     {V : IxVM.Refinement.View} {extra : List ByteArray},
     IxVM.Consistency.Bounded calls →
+    IxVM.Consistency.InScope clm →
+    IxVM.Consistency.ClaimSeeds clm V seeds →
+    IxVM.Consistency.ReaderTable clm V b →
     Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t →
     IxVM.Consistency.LoadedBy calls E₀ →
     (∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a) →
@@ -594,10 +597,13 @@ theorem consistentRead_of_declsStrong
     {Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop}
     (hStrong : DeclsStrong.{u} Checked)
     (hBridge : WalkedBareBridge Checked)
-    {calls : List (Call F)} {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {seeds : List _root_.Address}
+    {calls : List (Call F)} {clm : Ix.Claim} {b : Ix.Kernel.Admission.Binding}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {seeds : List _root_.Address}
     {V : IxVM.Refinement.View} {extra : List ByteArray}
     (hbound : IxVM.Consistency.Bounded calls)
+    (hscope : IxVM.Consistency.InScope clm)
+    (hseeds_clm : IxVM.Consistency.ClaimSeeds clm V seeds)
+    (hrt : IxVM.Consistency.ReaderTable clm V b)
     (hadm : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
     (hseedOk : ∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a)
@@ -609,7 +615,7 @@ theorem consistentRead_of_declsStrong
   obtain ⟨Inv, hemp, hok, hstep⟩ := hStrong
   obtain ⟨E, order, pre, st', decls, hdraws, hord, hpre, hauth_rec, hauth_blob, hdec,
     hreads, hkeeps, hchk, hseeds⟩ :=
-    hBridge hbound hadm hload hseedOk hwalk hb_extra hcomm_extra hnoCol
+    hBridge hbound hscope hseeds_clm hrt hadm hload hseedOk hwalk hb_extra hcomm_extra hnoCol
   let cx := Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
     (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)
   let ev := Ix.Kernel.Reader.evidenceOf cx st' t
@@ -645,7 +651,8 @@ theorem l7_of_declsStrong
   · exact Or.inl hcol
   · by_cases hcol : V.HashedCollision (bytes :: b.bytes :: IxVM.Consistency.committedImages) calls
     · exact Or.inl hcol
-    · exact Or.inr (consistentRead_of_declsStrong hStrong hBridge hbound hadm hload hseedOk hwalk
+    · exact Or.inr (consistentRead_of_declsStrong hStrong hBridge hbound hscope hseeds hRT
+        hadm hload hseedOk hwalk
         (List.mem_cons_of_mem _ List.mem_cons_self)
         (fun img hm => List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hm))
         hcol)
