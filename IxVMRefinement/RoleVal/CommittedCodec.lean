@@ -1801,6 +1801,7 @@ private theorem isEmpty_eq_foldl_isEmpty {α : Type} (xs : List α)
   cases xs with
   | nil => rfl
   | cons x rest =>
+    rw [List.foldl_cons]
     have hne := foldl_nonempty f hf rest (f #[] x) (hf #[] x)
     cases hfl : (rest.foldl f (f #[] x)).toList with
     | nil => exact absurd hfl hne
