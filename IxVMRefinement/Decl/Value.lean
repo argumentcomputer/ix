@@ -1011,9 +1011,11 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
   | projInfo _ => cases hstored.2
   | defnInfo cvA value' hint' =>
     have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val, hhint_eq⟩ := hstored
-    subst hhint_eq
+    change hint' = hint at hhint_eq
+    subst hint'
     change cvA.name = cv.name at hcv_name
     change cvA.levelParams = cv.levelParams at hcv_lps
+    change cv.levelParams = List.range cv.levelParams.length at hrange
     cases hexact with
     | quot _ hk =>
       rcases hk with ⟨_, _, _, h⟩ | ⟨_, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ <;>
@@ -1117,6 +1119,7 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
     have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, hann_val⟩ := hstored
     change cvA.name = cv.name at hcv_name
     change cvA.levelParams = cv.levelParams at hcv_lps
+    change cv.levelParams = List.range cv.levelParams.length at hrange
     cases hexact with
     | quot _ hk =>
       rcases hk with ⟨_, _, _, h⟩ | ⟨_, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ | ⟨_, _, _, _, _, h⟩ <;>
@@ -1223,6 +1226,7 @@ theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
     have ⟨⟨hcv_name, hcv_lps, hann_ty⟩, _⟩ := hstored
     change cvA.name = cv.name at hcv_name
     change cvA.levelParams = cv.levelParams at hcv_lps
+    change cv.levelParams = List.range cv.levelParams.length at hrange
     dsimp only [ConstantInfo.toConstantVal] at hval hV
     let c : Ctx := ⟨E, env, t, lim⟩
     have hgood_c : Good c calls := hgood
