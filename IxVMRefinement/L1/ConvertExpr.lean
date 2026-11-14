@@ -1748,8 +1748,9 @@ local macro "ca_let_annot_branch" d:ident xsub:ident xk:ident xb:ident xnodes:id
   `(tactic| (
     obtain ⟨_, $mout, _, _, _, d_ab, mt_ab, $drest, rfl⟩ := ObsExpr.letValue_inv $d
     ca_tuple2_pat mt_ab $xk2 $xn
-    obtain ⟨_, _, _, _, _, $cs, d_sc, sel_ab, d_body_ab, rfl⟩ := ObsExpr.matchValue_inv d_ab
-    ca_var d_sc
+    obtain ⟨_, m_sc, _, _, _, $cs, d_sc, sel_ab, d_body_ab, rfl⟩ := ObsExpr.matchValue_inv d_ab
+    obtain ⟨l_sc, hm_sc, rfl⟩ := ObsExpr.var_inv d_sc
+    simp at l_sc; subst l_sc; subst m_sc
     have $br : AnnotBranch $xsub x_sharing x_bound x_refs x_recur_addrs x_univs x_tbl
         $xk $xb $xnodes $min $xk2 $xn $mout $cs := by
       rcases selectArm_cons_inv sel_ab with ⟨mt_ab0, rfl⟩ | ⟨nm_ab0, sel_ab1⟩
