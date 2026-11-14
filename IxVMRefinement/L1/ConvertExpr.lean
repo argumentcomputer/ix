@@ -1760,7 +1760,7 @@ local macro "ca_let_annot_branch" d:ident xsub:ident xk:ident xb:ident xnodes:id
         ca_arg_var a_ab1 a_ab2
         obtain ⟨rfl, hm_ab, hcs_ab⟩ := ObsArgs.nil_inv a_ab2
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq_ab0
-        exact AnnotBranch.n0 hv_ab0 heq_ab0.1.symm heq_ab0.2.symm hm_ab hcs_ab
+        exact AnnotBranch.n0 hv_ab0 heq_ab0.1 heq_ab0.2 hm_ab hcs_ab
       · have hne_ab0 := MatchesConst.none_inv (MatchesConst.literal 0) nm_ab0
         rcases selectArm_cons_inv sel_ab1 with ⟨mt_ab1, rfl⟩ | ⟨nm_ab1, _⟩
         · obtain rfl := matchPattern_wildcard_inv mt_ab1
@@ -1776,7 +1776,7 @@ local macro "ca_let_annot_branch" d:ident xsub:ident xk:ident xb:ident xnodes:id
           ca_arg_var a_abr7 a_abr8
           obtain ⟨rfl, rfl, rfl⟩ := ObsArgs.nil_inv a_abr8
           exact AnnotBranch.other cs_abr hne_ab0 ev_abr
-            (by rw [hcs_ab]; simp only [List.nil_append])
+            (by rw [hcs_ab]; simp only [List.nil_append, instanceName_plain_some])
         · exact (matchPattern_wildcard_none nm_ab1).elim
     clear d_ab mt_ab d_sc sel_ab d_body_ab))
 
@@ -1821,7 +1821,8 @@ theorem convert_annotated_obs
     obtain ⟨rfl, rfl, rfl⟩ := a_ret2.nil_inv
     exact ConvertAnnotatedPath.App _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ ld_e ev_f ev_a br_f br_a (by simp [Value.type]) hm_st
-      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
+      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil,
+        instanceName_plain_some])
   -- Arm 2: Lam(ty, body)
   rcases selectArm_cons_inv sel1 with ⟨mt1, rfl⟩ | ⟨_, sel2⟩
   · obtain ⟨_, hv1, -, ml1⟩ := matchPattern_construct_inv mt1
@@ -1865,7 +1866,8 @@ theorem convert_annotated_obs
     exact ConvertAnnotatedPath.Lam _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _
       ld_e ld_nodes ev_l ev_t ev_b br_t br_b (by simp [Value.type]) hm_st
-      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
+      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil,
+        instanceName_plain_some])
   -- Arm 3: All(ty, body)
   rcases selectArm_cons_inv sel2 with ⟨mt2, rfl⟩ | ⟨_, sel3⟩
   · obtain ⟨_, hv2, -, ml2⟩ := matchPattern_construct_inv mt2
@@ -1909,7 +1911,8 @@ theorem convert_annotated_obs
     exact ConvertAnnotatedPath.All _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _
       ld_e ld_nodes ev_l ev_t ev_b br_t br_b (by simp [Value.type]) hm_st
-      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
+      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil,
+        instanceName_plain_some])
   -- Arm 4: Let(_, ty, val, body)
   rcases selectArm_cons_inv sel3 with ⟨mt3, rfl⟩ | ⟨_, sel4⟩
   · obtain ⟨_, hv3, -, ml3⟩ := matchPattern_construct_inv mt3
@@ -1943,7 +1946,8 @@ theorem convert_annotated_obs
     exact ConvertAnnotatedPath.Let _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       ld_e ev_t ev_v ev_b br_t br_v br_b (by simp [Value.type]) hm_st
-      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil])
+      (by simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil,
+        instanceName_plain_some])
   -- Arm 5: Prj(type_ref_idx, field_idx, inner)
   rcases selectArm_cons_inv sel4 with ⟨mt4, rfl⟩ | ⟨_, sel5⟩
   · obtain ⟨_, hv4, -, ml4⟩ := matchPattern_construct_inv mt4
