@@ -21,9 +21,12 @@ set_option linter.unreachableTactic false
 
 namespace ProjAddrAux
 
-theorem proj_addr_get {h : Heap F} {b : Bytes.Address} {x_a v1 v : SourceValue F}
+theorem repU64_mono {h h' : Heap F} {w : UInt64} {v : SourceValue F}
+    (_ : Heap.Extends h h') (hr : RepU64 h w v) : RepU64 h' w v := hr
+
+theorem proj_addr_get {h : Heap F} {b : Bytes.Address} {x_a v1 : SourceValue F}
     (ha : RepAddr h b x_a) (ld : loadValue h x_a = .ok v1)
-    (i : Nat) (hi : i < 32) (hp : projectValue v1 i = .ok v) :
+    (i : Nat) (hi : i < 32) {v : SourceValue F} (hp : projectValue v1 i = .ok v) :
     v = .field (b[i].toNat : F) := by
   obtain ⟨addr, v0, rfl, cell, hv⟩ := ha
   have hv1 : v1 = .tuple (b.toList.map fun c => Value.field (c.toNat : F)) :=
@@ -215,12 +218,9 @@ theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : Sourc
     injection hargs with ha2 hargs; subst ha2
     injection hargs with ha3 _; subst ha3
     have s1 := put_address_spec hb ev79 hrest
-    have hvj' : RepU64 m69 p.cidx vj := U64.repU64_heapMono₂ ev79.heap_extends hvj
-    have s2 := put_tagn0_spec hvj' ev58 s1
-    have hvi' : RepU64 m48 p.idx vi :=
-      U64.repU64_heapMono₂ (ev79.heap_extends.trans ev58.heap_extends) hvi
-    have s3 := put_tagn0_spec hvi' ev37 s2
-    subst hblk
+    have s2 := put_tagn0_spec hvj ev58 s1
+    have s3 := put_tagn0_spec hvi ev37 s2
+    rw [hblk] at s3
     simpa [constructorProjBytes, List.append_assoc]
       using s3
 
@@ -251,9 +251,8 @@ theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
-    have s2 := put_tagn0_spec hvi' ev32 s1
-    subst hblk
+    have s2 := put_tagn0_spec hvi ev32 s1
+    rw [hblk] at s2
     simpa [recursorProjBytes, List.append_assoc]
       using s2
 
@@ -284,9 +283,8 @@ theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValu
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
-    have s2 := put_tagn0_spec hvi' ev32 s1
-    subst hblk
+    have s2 := put_tagn0_spec hvi ev32 s1
+    rw [hblk] at s2
     simpa [inductiveProjBytes, List.append_assoc]
       using s2
 
@@ -317,9 +315,8 @@ theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceVal
     injection hargs with ha1 hargs; subst ha1
     injection hargs with ha2 _; subst ha2
     have s1 := put_address_spec hb ev53 hrest
-    have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
-    have s2 := put_tagn0_spec hvi' ev32 s1
-    subst hblk
+    have s2 := put_tagn0_spec hvi ev32 s1
+    rw [hblk] at s2
     simpa [definitionProjBytes, List.append_assoc]
       using s2
 
@@ -355,7 +352,7 @@ theorem serConstant_empty_tables_eq {info : Ixon.ConstantInfo} {binfo : ByteArra
         ((putTagN_writes 0 0 0).bind
           ((arrayPut_empty_writes Ixon.putExpr).bind
             ((putTagN_writes 0 0 0).bind
-              ((arrayPut_empty_writes Ixon.Serialize.put).bind
+              ((arrayPut_empty_writes (Ixon.Serialize.put (α := Address))).bind
                 ((putTagN_writes 0 0 0).bind
                   ((arrayPut_empty_writes Ixon.putUniv).bind
                     putBinders_empty_writes))))))
@@ -439,10 +436,10 @@ theorem projInfoRep_not_nonproj {h : Heap F} {info : Ixon.ConstantInfo} {cn : St
     {w : SourceValue F} (hcn : cn ≠ "CPrj" ∧ cn ≠ "IPrj" ∧ cn ≠ "RPrj" ∧ cn ≠ "DPrj")
     (hi : Specs.Callees.ProjInfoRep h info (.construct "Ixon::ConstantInfo" cn [w])) : False := by
   cases info <;> simp only [Specs.Callees.ProjInfoRep] at hi
-  · rcases hi with ⟨_, _, _, _, he, -⟩; injection he with _ hc _; exact hcn.1 hc.symm
-  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.2.1 hc.symm
-  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.1 hc.symm
-  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.2.2 hc.symm
+  · rcases hi with ⟨_, _, _, _, he, -⟩; injection he with _ hc _; exact hcn.1 hc
+  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.2.1 hc
+  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.1 hc
+  · rcases hi with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact hcn.2.2.2 hc
 
 end ProjAddrAux
 
@@ -476,7 +473,7 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       obtain ⟨etab, stab⟩ :=
         ProjAddrAux.put_empty_tables_spec hp1 hp2 hp3 hp4 ev118 ev97 ev76 ev55 hrest
       have sinfo := ProjAddrAux.put_cprj_info_spec
-        (U64.repU64_heapMono₂ etab hvi) (U64.repU64_heapMono₂ etab hvj)
+        (ProjAddrAux.repU64_mono etab hvi) (ProjAddrAux.repU64_mono etab hvj)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev760 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 4) (by omega) ev675 sinfo
       rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_cPrj_writes p)]
@@ -499,7 +496,7 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       obtain ⟨etab, stab⟩ :=
         ProjAddrAux.put_empty_tables_spec hp1 hp2 hp3 hp4 ev118 ev97 ev76 ev55 hrest
       have sinfo := ProjAddrAux.put_rprj_info_spec
-        (U64.repU64_heapMono₂ etab hvi)
+        (ProjAddrAux.repU64_mono etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev881 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 5) (by omega) ev796 sinfo
       rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_rPrj_writes p)]
@@ -524,7 +521,7 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       obtain ⟨etab, stab⟩ :=
         ProjAddrAux.put_empty_tables_spec hp1 hp2 hp3 hp4 ev118 ev97 ev76 ev55 hrest
       have sinfo := ProjAddrAux.put_iprj_info_spec
-        (U64.repU64_heapMono₂ etab hvi)
+        (ProjAddrAux.repU64_mono etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev1002 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 6) (by omega) ev917 sinfo
       rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_iPrj_writes p)]
@@ -549,7 +546,7 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
       obtain ⟨etab, stab⟩ :=
         ProjAddrAux.put_empty_tables_spec hp1 hp2 hp3 hp4 ev118 ev97 ev76 ev55 hrest
       have sinfo := ProjAddrAux.put_dprj_info_spec
-        (U64.repU64_heapMono₂ etab hvi)
+        (ProjAddrAux.repU64_mono etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev1123 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 7) (by omega) ev1038 sinfo
       rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_dPrj_writes p)]

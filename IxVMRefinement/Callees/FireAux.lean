@@ -42,7 +42,8 @@ theorem natCast_inj_lt59 {a b : Nat} (ha : a < 2 ^ 59) (hb : b < 2 ^ 59)
 theorem env_find?_name {env : Ix.Kernel.Env .anon} {k : KKey}
     {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
   unfold Ix.Kernel.Env.find? at h
-  exact eq_of_beq (List.find?_some h)
+  have hbeq : (ci.name == k) = true := List.find?_some h
+  exact eq_of_beq hbeq
 
 theorem ciRep_rec_inv {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F}
@@ -53,9 +54,21 @@ theorem ciRep_rec_inv {κ : _root_.Address → KKey} {h : Heap F}
       np = .field p ∧ ni = .field i ∧ nm = .field m ∧ nmi = .field mi ∧
       (rP : F) = p + m + mi ∧ (mI : F) = p + m + mi + i ∧
       rP ≤ mI ∧ mI < 288230376151711744 := by
+  generalize hv_eq :
+    (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx] : SourceValue F) =
+      v0 at hci
+  generalize hc_eq :
+    (.recInfo cv mI rP rls : Ix.Kernel.ConstantInfo .anon) = ci0 at hci
   cases hci with
   | recr hv hnp hni hnm hnmi hrP hmI hcounts _ _ _ =>
+    simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv_eq
+    rcases hv_eq with ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    injection hc_eq with hcv hmI' hrP' _
+    subst hcv hmI' hrP'
     exact ⟨_, _, _, _, hv, hnp, hni, hnm, hnmi, hrP, hmI, hcounts.1, hcounts.2⟩
+  | _ =>
+    injection hv_eq with _ hcn _
+    exact absurd hcn (by decide)
 
 theorem ciRep_induct_inv {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nc u blk idx : SourceValue F} {ci : Ix.Kernel.ConstantInfo .anon}
@@ -67,11 +80,18 @@ theorem ciRep_induct_inv {κ : _root_.Address → KKey} {h : Heap F}
       nP < 72057594037927936 ∧ nI < 72057594037927936 ∧ nC < 72057594037927936 ∧
       Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i_idx ∧
       cv.name = κ (iprjAddr (ixAddr b) (ZMod.val i_idx)) := by
+  generalize hv_eq :
+    (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] : SourceValue F) = v0 at hci
   cases hci with
   | induct _ hcounts hkey =>
+    simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv_eq
+    rcases hv_eq with ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     obtain ⟨nP, nI, nC, hnp, hni, hnc, hbP, hbI, hbC⟩ := hcounts
     obtain ⟨b, i_idx, hb, hidx, hname⟩ := hkey
     exact ⟨_, _, nP, nI, nC, b, i_idx, rfl, hnp, hni, hnc, hbP, hbI, hbC, hb, hidx, hname⟩
+  | _ =>
+    injection hv_eq with _ hcn _
+    exact absurd hcn (by decide)
 
 /-! ## `Lists::*<&KernelTypes::KExprNode>` wrappers -/
 
@@ -129,10 +149,10 @@ theorem subst_go_range_shift :
   | nil =>
     simp [Ix.Kernel.Level.subst.go]
   | cons v vs ih =>
-    rw [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map]
+    conv => lhs; rw [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map]
     have hfn : ((· + k) ∘ Nat.succ) = (· + (k + 1)) := by
       funext x; simp [Function.comp]; omega
-    rw [hfn, Nat.zero_add]
+    conv => lhs; rw [hfn, Nat.zero_add]
     simp only [Ix.Kernel.Level.subst.go]
     by_cases hki : k = i
     · subst hki
@@ -179,12 +199,12 @@ theorem subst_go_posLevels_aux {us : List KLevel} :
       rw [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map]
       have hfn : ((fun j => Ix.Kernel.Level.param (j + k)) ∘ Nat.succ) =
           (fun j => Ix.Kernel.Level.param (j + (k + 1))) := by
-        funext x; simp [Function.comp]; omega
+        funext x; simp only [Function.comp]; congr 1; omega
       rw [hfn, Nat.zero_add]
       simp only [Ix.Kernel.Level.subst.go]
       by_cases hqn : q = n
       · simp only [hqn, ↓reduceIte, Ix.Kernel.Level.subst]
-        simpa using hget 0 (by simp)
+        simpa [List.getElem_cons_zero] using hget 0 (by simp)
       · simp only [hqn, ↓reduceIte]
         refine ih (k + 1) vs n (by simpa using hlen) ?_ ?_
         · intro j hj
@@ -382,11 +402,11 @@ theorem piDomAt_of_posOf {ps : List Ix.Kernel.LevelParam} :
       exact piDomAt_of_posOf n h
     | _ => simp [posOf, Ix.Kernel.Expr.instantiateLevelParams, piDomAt] at h
 
-theorem const_of_posOf {ps : List Ix.Kernel.LevelParam} {fn : KExpr} {key : KKey}
-    {lsPos : List KLevel} (h : posOf ps fn = .const key lsPos) :
-    ∃ lvls, fn = .const key lvls ∧
+theorem const_of_posOf {ps : List Ix.Kernel.LevelParam} {f : KExpr} {key : KKey}
+    {lsPos : List KLevel} (h : posOf ps f = .const key lsPos) :
+    ∃ lvls, f = .const key lvls ∧
       lsPos = lvls.map (Ix.Kernel.Level.subst ps (posLevels ps)) := by
-  cases fn with
+  cases f with
   | const k lvls =>
     simp only [posOf, Ix.Kernel.Expr.instantiateLevelParams,
       Ix.Kernel.Expr.const.injEq] at h
@@ -546,13 +566,13 @@ theorem openZero_liftLooseBVars (d j : Nat) :
     · simp only [hic, ↓reduceIte]
       by_cases hik : i < k - j
       · have hij : i + j < k := by omega
-        simp [hik, hij, Ix.Kernel.Expr.liftLooseBVars, hic]
+        simp [openZero, hik, hij, Ix.Kernel.Expr.liftLooseBVars, hic]
       · have hij : ¬(i + j < k) := by omega
         have hsub : i + j - k = i - (k - j) := by omega
-        simp [hik, hij, hsub, Ix.Kernel.Expr.liftLooseBVars]
+        simp [openZero, hik, hij, hsub, Ix.Kernel.Expr.liftLooseBVars]
     · have hik : i < k - j := by omega
       have hij : i < k := by omega
-      simp [hic, hik, hij, Ix.Kernel.Expr.liftLooseBVars]
+      simp [openZero, hic, hik, hij, Ix.Kernel.Expr.liftLooseBVars]
   | app f a ihf iha =>
     intro c k hck
     simp [Ix.Kernel.Expr.liftLooseBVars, openZero, ihf c k hck, iha c k hck]
@@ -786,10 +806,10 @@ theorem tm_closeZero {κ : _root_.Address → KKey} {h : Heap F} {d : Nat}
   | sort cell rl hu => exact .sort cell rl hu
   | const cell ra rls hus => exact .const cell ra rls hus
   | app cell _ _ ihf iha => exact .app cell ihf iha
-  | lam cell _ _ rl iht ihb =>
-    exact .lam cell iht (by rwa [show k + d + 1 = k + 1 + d by omega]) rl
-  | forallE cell _ _ rl iht ihb =>
-    exact .forallE cell iht (by rwa [show k + d + 1 = k + 1 + d by omega]) rl
+  | @lam k₁ addr tp bp lp T B ℓ cell _ _ rl iht ihb =>
+    exact .lam cell iht (by rwa [show k₁ + d + 1 = k₁ + 1 + d by omega]) rl
+  | @forallE k₁ addr tp bp lp T B ℓ cell _ _ rl iht ihb =>
+    exact .forallE cell iht (by rwa [show k₁ + d + 1 = k₁ + 1 + d by omega]) rl
   | @letE k₁ addr tp vp bp T V B cell _ _ _ iht ihv ihb =>
     have hcomm := closeZero_instantiate1Lift d V B 0 k₁ (Nat.zero_le k₁)
     simp only [Nat.sub_zero] at hcomm
@@ -885,7 +905,7 @@ theorem lowerBVars_of_openZero_wscopedB {rP nI : Nat} :
     simp only [Bool.and_eq_true] at hwsc
     obtain ⟨ct, lt, ft, bt⟩ := iht k hfv.1 hbnd.1 hwsc.1
     obtain ⟨cb, lb, fb, bb⟩ := ihb (k + 1) hfv.2
-      (by rwa [show k + 1 + rP + nI = k + rP + nI + 1 by omega]) hwsc.2
+      (by rw [show k + 1 + rP + nI = k + rP + nI + 1 by omega]; exact hbnd.2) hwsc.2
     refine ⟨?_, ?_, ?_, ?_⟩
     · simp [openZero, closeZero, Ix.Kernel.Expr.lowerBVars, ct, cb]
     · simp [Ix.Kernel.Expr.lowerBVars, Ix.Kernel.Expr.liftLooseBVars, lt, lb]
@@ -900,7 +920,7 @@ theorem lowerBVars_of_openZero_wscopedB {rP nI : Nat} :
     simp only [Bool.and_eq_true] at hwsc
     obtain ⟨ct, lt, ft, bt⟩ := iht k hfv.1 hbnd.1 hwsc.1
     obtain ⟨cb, lb, fb, bb⟩ := ihb (k + 1) hfv.2
-      (by rwa [show k + 1 + rP + nI = k + rP + nI + 1 by omega]) hwsc.2
+      (by rw [show k + 1 + rP + nI = k + rP + nI + 1 by omega]; exact hbnd.2) hwsc.2
     refine ⟨?_, ?_, ?_, ?_⟩
     · simp [openZero, closeZero, Ix.Kernel.Expr.lowerBVars, ct, cb]
     · simp [Ix.Kernel.Expr.lowerBVars, Ix.Kernel.Expr.liftLooseBVars, lt, lb]
@@ -916,7 +936,7 @@ theorem lowerBVars_of_openZero_wscopedB {rP nI : Nat} :
     obtain ⟨ct, lt, ft, bt⟩ := iht k hfv.1.1 hbnd.1.1 hwsc.1.1
     obtain ⟨cv, lv, fv, bv⟩ := ihv k hfv.1.2 hbnd.1.2 hwsc.1.2
     obtain ⟨cb, lb, fb, bb⟩ := ihb (k + 1) hfv.2
-      (by rwa [show k + 1 + rP + nI = k + rP + nI + 1 by omega]) hwsc.2
+      (by rw [show k + 1 + rP + nI = k + rP + nI + 1 by omega]; exact hbnd.2) hwsc.2
     refine ⟨?_, ?_, ?_, ?_⟩
     · simp [openZero, closeZero, Ix.Kernel.Expr.lowerBVars, ct, cv, cb]
     · simp [Ix.Kernel.Expr.lowerBVars, Ix.Kernel.Expr.liftLooseBVars, lt, lv, lb]
@@ -954,7 +974,10 @@ theorem nestedPins_of_parts {tyA dom body : KExpr}
   refine ⟨hplen, ?_⟩
   rw [hplen]
   unfold Ix.Kernel.Tier.nestedPins
-  rw [ite_eq_left hle, hstrip, hfn]
+  rw [ite_eq_left hle, hstrip]
+  dsimp only []
+  rw [hfn]
+  dsimp only []
   have htake_eq : dom.getAppArgs.take cnP =
       ((dom.getAppArgs.take cnP).map (Ix.Kernel.Expr.lowerBVars (mI - rP) 0)).map
         (Ix.Kernel.Expr.liftLooseBVars (mI - rP) 0) := by
