@@ -831,10 +831,12 @@ theorem committedDefaultRoleTable_literalSupportBound :
 
 private inductive CV8 where
   | mk : Nat → Nat → Nat → Nat → Nat → Nat → Nat → Nat → CV8
+  deriving DecidableEq
 
 private inductive W16 where
   | mk : Nat → Nat → Nat → Nat → Nat → Nat → Nat → Nat →
          Nat → Nat → Nat → Nat → Nat → Nat → Nat → Nat → W16
+  deriving DecidableEq
 
 private def letN {α : Type} (x : Nat) (k : Nat → α) : α :=
   Nat.casesOn (motive := fun _ => α) x (k 0) (fun n => k (Nat.succ n))
@@ -1223,13 +1225,8 @@ private theorem chunkLoopCVN_eq :
 private theorem chunkLoopRootCVN_eq :
     ∀ (fuel : Nat) (counter : UInt64) (cv : Blake3.Pure.CV) (start : Bool) (input : List UInt8),
       input.length ≤ 64 * (fuel + 1) →
-      (chunkLoopRootCVN fuel counter.toNat (CV8.ofCV cv) start input).toCV =
-        Blake3.Pure.compress
-          (Blake3.Pure.chunkLoop counter cv start input).inputCV
-          (Blake3.Pure.chunkLoop counter cv start input).blockWords
-          (Blake3.Pure.chunkLoop counter cv start input).counter
-          (Blake3.Pure.chunkLoop counter cv start input).blockLen
-          ((Blake3.Pure.chunkLoop counter cv start input).flags ||| 8)
+      Blake3.Pure.cvBytes (chunkLoopRootCVN fuel counter.toNat (CV8.ofCV cv) start input).toCV =
+        (Blake3.Pure.chunkLoop counter cv start input).rootHash
   | 0, counter, cv, start, input, hlen => by
     have hle : input.length ≤ 64 := by omega
     have hblen : input.length % 4294967296 = input.length.toUInt32.toNat := by
@@ -1238,7 +1235,8 @@ private theorem chunkLoopRootCVN_eq :
     have hfl : ((if start then 1 else 0) ||| 10) =
         ((((if start then (1 : UInt32) else 0) ||| 2) ||| 8)).toNat := by cases start <;> decide
     rw [Blake3.Pure.chunkLoop_of_le counter cv start input hle]
-    unfold chunkLoopRootCVN
+    unfold chunkLoopRootCVN Blake3.Pure.Output.rootHash
+    dsimp only
     rw [blockWordsN_eq, hblen, hfl, compressN_eq, toCV_ofCV]
   | fuel + 1, counter, cv, start, input, hlen => by
     by_cases hle : input.length ≤ 64
@@ -1247,8 +1245,10 @@ private theorem chunkLoopRootCVN_eq :
         rw [UInt32.toNat_ofNat']
       have hfl : ((if start then 1 else 0) ||| 10) =
           ((((if start then (1 : UInt32) else 0) ||| 2) ||| 8)).toNat := by cases start <;> decide
-      rw [Blake3.Pure.chunkLoop_of_le counter cv start input hle, chunkLoopRootCVN, ite_eq_left hle,
-          blockWordsN_eq, hblen, hfl, compressN_eq, toCV_ofCV]
+      rw [Blake3.Pure.chunkLoop_of_le counter cv start input hle, chunkLoopRootCVN, ite_eq_left hle]
+      unfold Blake3.Pure.Output.rootHash
+      dsimp only
+      rw [blockWordsN_eq, hblen, hfl, compressN_eq, toCV_ofCV]
     · have hgt : 64 < input.length := by omega
       have hfl : (if start then 1 else 0) = (if start then (1 : UInt32) else 0).toNat := by
         cases start <;> decide
@@ -1268,18 +1268,10 @@ private theorem chunkLoopRootCVN_eq :
 private theorem single_chunk_digest_eq (input : List UInt8) (hlen : input.length ≤ 1024) :
     Blake3.Pure.cvBytes (chunkLoopRootCVN 15 0 ivN true input).toCV =
       Blake3.Pure.digest input := by
-  have hr : (chunkLoopRootCVN 15 (0 : UInt64).toNat (CV8.ofCV Blake3.Pure.iv) true input).toCV =
-      Blake3.Pure.compress
-        (Blake3.Pure.chunkOutput 0 input).inputCV
-        (Blake3.Pure.chunkOutput 0 input).blockWords
-        (Blake3.Pure.chunkOutput 0 input).counter
-        (Blake3.Pure.chunkOutput 0 input).blockLen
-        ((Blake3.Pure.chunkOutput 0 input).flags ||| 8) :=
-    chunkLoopRootCVN_eq 15 0 Blake3.Pure.iv true input (by omega)
-  rw [ivN_eq]
-  change Blake3.Pure.cvBytes (chunkLoopRootCVN 15 (0 : UInt64).toNat (CV8.ofCV Blake3.Pure.iv) true input).toCV = _
-  rw [hr]
-  exact Aiur.Library.Blake3.chunk_single_root_spec input hlen
+  have hr := chunkLoopRootCVN_eq 15 0 Blake3.Pure.iv true input (by omega)
+  have h0 : (0 : UInt64).toNat = 0 := rfl
+  rw [h0, ← ivN_eq] at hr
+  exact hr.trans (Aiur.Library.Blake3.chunk_single_root_spec input hlen)
 
 private theorem cv_toList_eight (v : Vector UInt32 8) :
     v.toList = [v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]] := by
@@ -1333,9 +1325,12 @@ private theorem parentRootCVN_toCV_eq (l r : Blake3.Pure.CV) :
     (parentRootCVN (CV8.ofCV l) (CV8.ofCV r)).toCV =
       Aiur.Library.Blake3.compressLayer [l, r] := by
   unfold parentRootCVN
-  rw [ivN_eq, concatCV8_eq]
+  rw [ivN_eq, concatCV8_eq, Aiur.Library.Blake3.compressLayer]
   have hc := congrArg CV8.toCV (compressN_eq Blake3.Pure.iv (l ++ r) 0 64 12)
-  rw [toCV_ofCV] at hc
+  have h0 : (0 : UInt64).toNat = 0 := rfl
+  have h64 : (64 : UInt32).toNat = 64 := rfl
+  have h12 : (12 : UInt32).toNat = 12 := rfl
+  rw [toCV_ofCV, h0, h64, h12] at hc
   exact hc
 
 private def nextLayerCV8 : List CV8 → List CV8
@@ -1368,7 +1363,7 @@ private theorem mergeRootCV8_eq :
   | _, [_], _, h2 => absurd h2 (by simp)
   | fuel, [l, r], _, _ => by
     cases fuel <;> exact parentRootCVN_toCV_eq l r
-  | 0, _ :: _ :: _ :: _, hle, _ => by simp at hle; omega
+  | 0, _ :: _ :: _ :: _, hle, _ => by simp at hle
   | fuel + 1, l :: r :: c :: rest, hle, _ => by
     have hlt := Aiur.Library.Blake3.next_layer_length_lt (cvs := l :: r :: c :: rest) (by simp)
     have h2' : 2 ≤ (Aiur.Library.Blake3.nextLayer (l :: r :: c :: rest)).length := by
@@ -1393,38 +1388,43 @@ private theorem chunks_flatten_pos :
     ∀ {c : List UInt8} {cs : List (List UInt8)}, 0 < c.length → 0 < (c :: cs).flatten.length
   | c, cs, hc => by simp only [List.flatten_cons, List.length_append]; omega
 
+private theorem chunkLoopCVN_iv_eq (ctr : Nat) (c : List UInt8)
+    (hctr : ctr < 18446744073709551616) (hc : c.length ≤ 1024) :
+    chunkLoopCVN 15 ctr ivN true c =
+      CV8.ofCV (Blake3.Pure.chunkOutput ctr.toUInt64 c).chainingValue := by
+  have hto : ctr.toUInt64.toNat = ctr := by
+    change (UInt64.ofNat ctr).toNat = ctr
+    rw [UInt64.toNat_ofNat']
+    exact Nat.mod_eq_of_lt hctr
+  unfold Blake3.Pure.chunkOutput
+  rw [ivN_eq, ← hto]
+  exact chunkLoopCVN_eq 15 ctr.toUInt64 Blake3.Pure.iv true c (by omega)
+
 private theorem chunksCV8_eq :
-    ∀ (ctr : Nat) (chunks : List (List UInt8)),
+    ∀ (chunks : List (List UInt8)) (ctr : Nat),
       validChunksBool chunks = true →
       ctr + chunks.length < 18446744073709551616 →
       chunksCV8 ctr chunks =
         ((Blake3.Pure.chunkOutputs ctr chunks.flatten).map Blake3.Pure.Output.chainingValue).map
           CV8.ofCV
-  | _, [], hv, _ => by cases hv
-  | ctr, [c], hv, hctr => by
+  | [], _, hv, _ => by cases hv
+  | [c], ctr, hv, hctr => by
     have hc : c.length ≤ 1024 := of_decide_eq_true hv
     have hflat : [c].flatten = c := List.append_nil c
-    have hto : ctr.toUInt64.toNat = ctr := by
-      change (UInt64.ofNat ctr).toNat = ctr
-      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by simp at hctr; omega)
     rw [hflat, Blake3.Pure.chunkOutputs_small ctr c hc]
-    simp only [chunksCV8, bindCV8_eq, List.map_cons, List.map_nil, ivN_eq]
-    rw [← hto, chunkLoopCVN_eq 15 ctr.toUInt64 Blake3.Pure.iv true c (by omega)]
-    rfl
-  | ctr, c :: d :: cs, hv, hctr => by
+    simp only [chunksCV8, bindCV8_eq, List.map_cons, List.map_nil]
+    rw [chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons, List.length_nil] at hctr; omega) hc]
+  | c :: d :: cs, ctr, hv, hctr => by
     simp only [validChunksBool, Bool.and_eq_true, decide_eq_true_eq] at hv
     obtain ⟨⟨hclen, hdpos⟩, htail⟩ := hv
     have hpos : 0 < (d :: cs).flatten.length := chunks_flatten_pos hdpos
-    have hto : ctr.toUInt64.toNat = ctr := by
-      change (UInt64.ofNat ctr).toNat = ctr
-      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by simp at hctr; omega)
     simp only [List.flatten_cons]
     rw [Blake3.Pure.chunkOutputs_append ctr 1 c (d :: cs).flatten (by omega) (by omega) hpos,
         Blake3.Pure.chunkOutputs_small ctr c (by omega)]
-    simp only [chunksCV8, bindCV8_eq, List.singleton_append, List.map_cons, ivN_eq]
-    rw [← hto, chunkLoopCVN_eq 15 ctr.toUInt64 Blake3.Pure.iv true c (by omega)]
+    simp only [chunksCV8, bindCV8_eq, List.singleton_append, List.map_cons]
+    rw [chunkLoopCVN_iv_eq ctr c (by simp only [List.length_cons] at hctr; omega) (by omega)]
     congr 1
-    exact chunksCV8_eq (ctr + 1) (d :: cs) htail (by simp only [List.length_cons] at hctr ⊢; omega)
+    exact chunksCV8_eq (d :: cs) (ctr + 1) htail (by simp only [List.length_cons] at hctr ⊢; omega)
 
 private def digestCV8 : List (List UInt8) → CV8
   | [] => ivN
@@ -1436,7 +1436,7 @@ private def digestCV8 : List (List UInt8) → CV8
 private theorem chunksCV8_length (ctr : Nat) :
     ∀ chunks : List (List UInt8), (chunksCV8 ctr chunks).length = chunks.length
   | [] => rfl
-  | c :: cs => by simp [chunksCV8, bindCV8_eq, chunksCV8_length (ctr + 1) cs]
+  | c :: cs => by simp only [chunksCV8, bindCV8_eq, List.length_cons, chunksCV8_length (ctr + 1) cs]
 
 private theorem digestCV8_spec (chunks : List (List UInt8))
     (hv : validChunksBool chunks = true)
@@ -1446,22 +1446,29 @@ private theorem digestCV8_spec (chunks : List (List UInt8))
   | [] => cases hv
   | [c] =>
     have hc : c.length ≤ 1024 := of_decide_eq_true hv
-    simpa [digestCV8, List.append_nil] using single_chunk_digest_eq c hc
+    unfold digestCV8
+    rw [show [c].flatten = c from List.append_nil c]
+    exact single_chunk_digest_eq c hc
   | c0 :: c1 :: cs =>
-    have hcveq := chunksCV8_eq 0 (c0 :: c1 :: cs) hv (by omega)
+    have hcveq := chunksCV8_eq (c0 :: c1 :: cs) 0 hv (by omega)
     have hlen_out :
         ((Blake3.Pure.chunkOutputs 0 (c0 :: c1 :: cs).flatten).map
           Blake3.Pure.Output.chainingValue).length = (c0 :: c1 :: cs).length := by
       have h1 := congrArg List.length hcveq
       rw [chunksCV8_length, List.length_map] at h1
       exact h1.symm
-    have hlen_raw : 2 ≤ (Blake3.Pure.chunkOutputs 0 (c0 :: c1 :: cs).flatten).length := by
-      rw [List.length_map] at hlen_out
-      simp only [List.length_cons] at hlen_out
+    have hlen_map :
+        2 ≤ ((Blake3.Pure.chunkOutputs 0 (c0 :: c1 :: cs).flatten).map
+          Blake3.Pure.Output.chainingValue).length := by
+      rw [hlen_out]
+      simp only [List.length_cons]
       omega
+    have hlen_raw : 2 ≤ (Blake3.Pure.chunkOutputs 0 (c0 :: c1 :: cs).flatten).length := by
+      simpa only [List.length_map] using hlen_map
     show Blake3.Pure.cvBytes
       (mergeRootCV8 (chunksCV8 0 (c0 :: c1 :: cs)).length (chunksCV8 0 (c0 :: c1 :: cs))).toCV = _
-    rw [chunksCV8_length, hcveq, mergeRootCV8_eq _ _ (by omega) (by omega),
+    rw [chunksCV8_length, hcveq,
+        mergeRootCV8_eq _ _ (by rw [hlen_out]; omega) hlen_map,
         Aiur.Library.Blake3.compress_layer_spec _ hlen_raw,
         ← Blake3.Pure.digest_eq_mergeLevels]
 
