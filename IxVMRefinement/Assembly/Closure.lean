@@ -428,13 +428,17 @@ theorem usedCompiledReachAt_contains {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   | ground _ hg => exact hg.1
   | recursor _ hr => exact hr.1
 
+/-- Reachable stored addresses of `E`, filtered from `E.consts.keys`. -/
+noncomputable def closureReachKeys (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
+    (S : _root_.Address → Prop) : List _root_.Address :=
+  E.consts.keys.filter fun a =>
+    @decide (IxVM.Consistency.UsedCompiledReachAt t E S a) (Classical.propDecidable _)
+
 /-- Explicit topological closure order obtained by filtering `E.consts.keys` to
 `UsedCompiledReachAt t E S` and sorting ascending by `rk`. -/
 noncomputable def closureOrderByRank (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
     (S : _root_.Address → Prop) (rk : _root_.Address → Nat) : List _root_.Address :=
-  haveI := Classical.propDecidable
-  let reachKeys := E.consts.keys.filter fun a => decide (IxVM.Consistency.UsedCompiledReachAt t E S a)
-  reachKeys.mergeSort fun a b => decide (rk a ≤ rk b)
+  (closureReachKeys t E S).mergeSort fun a b => decide (rk a ≤ rk b)
 
 /-- Sorting the reachable keys of an owner-closed store `E` by any rank `rk` that strictly
 decreases along `UsedRecordRef` satisfies `IxVM.Consistency.UsedClosureOrderAt`. -/
@@ -448,15 +452,14 @@ theorem usedClosureOrderAt_closureOrderByRank {t : Ix.Kernel.RoleTable} {E : Ixo
       IxVM.Consistency.UsedRecordRef E a b →
       rk b < rk a) :
     IxVM.Consistency.UsedClosureOrderAt t E S (closureOrderByRank t E S rk) := by
-  classical
-  let reachKeys :=
-    E.consts.keys.filter fun a => decide (IxVM.Consistency.UsedCompiledReachAt t E S a)
+  let reachKeys := closureReachKeys t E S
   have hnd_reach : reachKeys.Nodup :=
     List.Pairwise.filter _ Std.HashMap.nodup_keys
   have perm := List.mergeSort_perm reachKeys fun a b => decide (rk a ≤ rk b)
   have hmem_reach : ∀ a, a ∈ reachKeys ↔ IxVM.Consistency.UsedCompiledReachAt t E S a := by
     intro a
-    simp only [reachKeys, List.mem_filter, decide_eq_true_eq]
+    simp only [reachKeys, closureReachKeys, List.mem_filter,
+      @decide_eq_true_eq _ (Classical.propDecidable _)]
     constructor
     · exact fun h => h.2
     · intro hr
@@ -464,12 +467,12 @@ theorem usedClosureOrderAt_closureOrderByRank {t : Ix.Kernel.RoleTable} {E : Ixo
       rw [Std.HashMap.mem_keys, Std.HashMap.mem_iff_contains]
       exact usedCompiledReachAt_contains hown hr
   refine ⟨?_, ?_, ?_⟩
-  · show (closureOrderByRank t E S rk).Nodup
+  · change ((closureReachKeys t E S).mergeSort fun a b => decide (rk a ≤ rk b)).Nodup
     exact perm.nodup_iff.mpr hnd_reach
   · intro a
-    show a ∈ closureOrderByRank t E S rk ↔ _
+    change a ∈ (closureReachKeys t E S).mergeSort (fun a b => decide (rk a ≤ rk b)) ↔ _
     exact perm.mem_iff.trans (hmem_reach a)
-  · show (closureOrderByRank t E S rk).Pairwise _
+  · change ((closureReachKeys t E S).mergeSort fun a b => decide (rk a ≤ rk b)).Pairwise _
     have sorted := List.pairwise_mergeSort (le := fun a b => decide (rk a ≤ rk b))
       (fun a b c h1 h2 => by simp only [decide_eq_true_eq] at *; omega)
       (fun a b => by simp only [Bool.or_eq_true, decide_eq_true_eq]; omega) reachKeys
