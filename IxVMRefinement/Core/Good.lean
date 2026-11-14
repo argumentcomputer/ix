@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Ctx
 import Ix.IxVM.Consistency.Statement
+import IxC.Ixon.Wire
 import IxC.Kernel.Inductives.StructParts
 import IxC.Kernel.Verify.EnvPreds
 
@@ -86,6 +87,51 @@ def piSortAt : Nat → KExpr → Option KLevel
   | 0, .sort l => some l
   | n + 1, .forallE _ b _ => piSortAt n b
   | _, _ => none
+
+namespace Specs.Callees
+
+abbrev ixConstEnum : String := "Ixon::Constant"
+abbrev ixInfoEnum : String := "Ixon::ConstantInfo"
+abbrev ixMutEnum : String := "Ixon::MutConst"
+/-- `Lists::Node<Ixon::MutConst>`: a block's members. -/
+abbrev mutListEnum : String := Obs.Names.«Lists::Node<Ixon::MutConst>»
+
+/-- The constructor of `Ixon::MutConst` a block member is. -/
+def mutCtor : Ixon.MutConst → String
+  | .defn _ => "Defn"
+  | .indc _ => "Indc"
+  | .recr _ => "Recr"
+
+/-- The constructor of `Ixon::ConstantInfo` a record's info is. -/
+def infoCtor : Ixon.ConstantInfo → String
+  | .defn _ => "Defn"
+  | .recr _ => "Recr"
+  | .axio _ => "Axio"
+  | .quot _ => "Quot"
+  | .cPrj _ => "CPrj"
+  | .rPrj _ => "RPrj"
+  | .iPrj _ => "IPrj"
+  | .dPrj _ => "DPrj"
+  | .muts _ => "Muts"
+
+/-- **A block member, by kind**: an `Ixon::MutConst` of the member's constructor. -/
+def MutShape (_h : Heap F) (m : Ixon.MutConst) (v : SourceValue F) : Prop :=
+  ∃ x, v = .construct ixMutEnum (mutCtor m) [x]
+
+/-- **A block's members, by kind, in order.** -/
+abbrev MembersRep (h : Heap F) (ms : List Ixon.MutConst) (p : SourceValue F) : Prop :=
+  RepList mutListEnum MutShape h ms p
+
+/-- **A record's info, shallowly**: its constructor, and for a block its members by kind. -/
+def InfoShape (h : Heap F) : Ixon.ConstantInfo → SourceValue F → Prop
+  | .muts ms, v => ∃ lp, v = .construct ixInfoEnum "Muts" [lp] ∧ MembersRep h ms.toList lp
+  | info, v => ∃ x, v = .construct ixInfoEnum (infoCtor info) [x]
+
+/-- **A decoded record, shallowly** (`Ixon::Constant::Mk(info, sharing, refs, univs, binders)`). -/
+def ConstShapeRep (h : Heap F) (cst : Ixon.Constant) (v : SourceValue F) : Prop :=
+  ∃ info sh rf un bd, v = .construct ixConstEnum "Mk" [info, sh, rf, un, bd] ∧ InfoShape h cst.info info
+
+end Specs.Callees
 
 /-- **The loads read the environment** (module docstring): every good derivation of
 `Ingress::get_ci` at an address `a` returns a constant representing `env`'s constant at
@@ -293,13 +339,61 @@ structure LoadFacts (c : Ctx) : Prop where
     caps.eta = true ∧
       caps.etaCtor = some (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) ∧ caps.etaFields = cnF ∧
       caps.etaParams = cnP ∧ cnP = ZMod.val m ∧ cvc.levelParams = cvT.levelParams
+  /-- (L1) **A loaded record's shallow shape**: `Ingress::load_verified_constant` at an address
+  whose record in `c.E` is `cst` returns an `Ixon::Constant` matching `cst`'s constructor and
+  block-member kinds (`Specs.Callees.ConstShapeRep`). -/
+  recordShape : ∀ (ap r : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (a : Bytes.Address) (cst : Ixon.Constant),
+    ObsFn W "Ingress::load_verified_constant" [ap] h r h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h a ap →
+    Ix.Cert.recordAt c.E (ixAddr a) = some cst →
+    Specs.Callees.ConstShapeRep h' cst r
+  /-- (L1, L6, L7) **A loaded inductive's parent block**: the block `blk` named by an inductive
+  `get_ci` returns is stored in `c.E` as a mutual block whose member `i` is an inductive. -/
+  inductBlock : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (a b : Bytes.Address) (nl ty np ni nc u blk : SourceValue F) (i : F),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h a addr →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h' b blk →
+    ∃ (cb : Ixon.Constant) (xs : Array Ixon.MutConst) (ind : Ixon.Inductive),
+      Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts xs ∧
+      xs[ZMod.val i]? = some (.indc ind)
+  /-- (L5, L7) **A native structure's constructor telescope and `Prop`-projection guard**:
+  companion to `projTables` for `Infer.proj`. Supplies constructor-telescope shape
+  (`ctorTeleOk`) at `nP + nF` and, when the structure's sort is `Prop`
+  (`Level.isEquiv tbl.structSort .zero = some true`), zero-preservation from
+  `KernelInfer::proj_guard`'s computed positional guard level `g` instantiated at `us` to the
+  table entry's `fieldSort` instantiated at `us`. -/
+  projTablesGuard : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (b : Bytes.Address) (i : F),
+    ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c cs →
+    Bytes.RepAddressRef addrTy h b bp → ip = .field i →
+    ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat)
+      (tbl : Ix.Kernel.ProjTable .anon),
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
+        some (.projInfo tbl) →
+      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
+      (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
+        ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
+          (g : KLevel) (us : List KLevel),
+          ZMod.val f < nF → us.length = tbl.levelParams.length →
+          ObsFn W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
+          Good c csg → RCRep c.t c.lim hg rc → Bytes.RepAddressRef addrTy hg b bp' →
+          IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
+          (∀ φ, Ix.Kernel.Level.eval φ
+            (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
+          ∀ φ, Ix.Kernel.Level.eval φ
+            (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0)
   /-- (L1) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
-  whose raw bytes are the serialization of a constant with empty tables (any kind) reads as
-  that constant's payload. `Good` gives only the raw bytes (a held record at an address the run
-  hashed has the hashed bytes, `load_escape`); `LazyConstant.get?` reads the cache and its byte
-  window, which the loader layer builds by decoding those bytes: the claim's canonical store
+  whose raw bytes are the serialization of a wire-valid constant with empty tables (any kind)
+  reads as that constant's payload. `Good` gives only the raw bytes (a held record at an address
+  the run hashed has the hashed bytes, `load_escape`); `LazyConstant.get?` reads the cache and its
+  byte window, which the loader layer builds by decoding those bytes: the claim's canonical store
   (`Ix.Cert.Stream.StoredCanonical`) and `serConstant`'s injectivity on wire-valid constants. -/
   canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
+    (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF →
     c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ →
       ∀ cm, lc.get? = some cm → cm.info = info
 

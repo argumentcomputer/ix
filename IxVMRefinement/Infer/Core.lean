@@ -283,7 +283,7 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
       (good.sub fun x hx => by simp [hx]) hrc i rfl d Γ htypes a Es ha hEs
 
 /-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node. -/
-theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c) (hp : InferProjFacts c)
+theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_only_core c args h r h' calls := by
@@ -475,7 +475,7 @@ theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c) (hp : InferProjFacts
     have g1191 : Good c cs1191 := good.sub fun x hx => by rw [hc1886]; simp [hx]
     have hlt1699 : cs1699.length < calls.length := by rw [hc1886]; lt_calls
     have g1699 : Good c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
-    refine infer_proj_common c hc hp ih good hrc rfl htypes ha hPE hc1886 ?_ ev1231 ev1270 ld1306
+    refine infer_proj_common c hc ih good hrc rfl htypes ha hPE hc1886 ?_ ev1231 ev1270 ld1306
       ev1348 heq1371 ev1388 ld1382 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
       ev1792 he1884 he1885
     · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer_only) hlt1191 ev1193 rc x_e1 types rfl

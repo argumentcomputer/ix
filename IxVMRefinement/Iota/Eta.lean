@@ -25,30 +25,6 @@ open Ix.Kernel.Rules (Red DefEq Infer Certs DefEqList)
 
 set_option linter.unusedVariables false
 
-/-! ## Additional context facts for standalone `eta_iota_fab` -/
-
-/-- **Store and loader capabilities of an η-capable inductive**, at the inputs `eta_iota_fab`
-receives directly (`rl.eta = true` and `c.ci h (.construct kciEnum "Induct" …) (.indInfo cvT caps)`
-without `try_struct_eta_iota`'s `get_ci` / `block_is_multi` / `struct_is_rec` observations):
-its η constructor is the first constructor projection of its block/member, its η parameter and
-field counts match that constructor's and the loaded parameter count, and a zero-field η-capable
-inductive carries the unit-like capability (either non-reserved, or the zero-parameter basis
-unit `PUnit`). -/
-structure IotaExtraFacts (c : Ctx) : Prop where
-  etaCaps : ∀ (h : Heap F) (inl ity nix nc u blk : SourceValue F) (nPT : Nat) (i : F)
-      (b : Bytes.Address) (T kc : KKey) (cvT cvc : Ix.Kernel.ConstantVal .anon)
-      (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat),
-    c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
-    c.env.find? kc = some (.ctorInfo cvc cnP cnF) →
-    c.ci h (.construct kciEnum "Induct" [inl, ity, .field (nPT : F), nix, nc, u, blk, .field i])
-      (.indInfo cvT caps) →
-    Bytes.RepAddressRef addrTy h b blk →
-    kc = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) ∧
-    caps.etaParams = cnP ∧ caps.etaFields = cnF ∧ cnP = nPT ∧
-    (cnF = 0 → caps.unitlike = true ∧ caps.unitParams = cnP ∧
-      (Ix.Kernel.reservedBasisNames.contains T = false ∨
-        (cnP = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const T us) = true)))
-
 /-! ## Helpers -/
 
 private theorem ixAddr_inj {a b : Bytes.Address} (h : ixAddr a = ixAddr b) : a = b := by
@@ -58,6 +34,9 @@ private theorem ixAddr_inj {a b : Bytes.Address} (h : ixAddr a = ixAddr b) : a =
   injection h1 with h2
   subst h2
   rfl
+
+private theorem isIndc_callees_eq : Specs.Callees.isIndc = isIndc := by
+  funext m; cases m <;> rfl
 
 private theorem certs_lic_true {env : Ix.Kernel.Env .anon} {d : Nat} :
     ∀ {T : KExpr} {As : List KExpr}, Certs env d false T As → Certs env d true T As
@@ -244,13 +223,13 @@ private theorem red_rec_seg1_ext {rc nl rt lvls hd sp np ni nm nmi rules kf type
 /-- **`KernelWhnf::eta_iota_fab`**: fabricates the constructor of the major's projections,
 certifies the family's and constructor's telescopes (`certs_all`), and establishes `Red.rescueEta`
 via `DefEq.structEtaTy` (at `0 < cnF`) or `DefEq.unitLikeTy` (at `cnF = 0`). -/
-theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
+theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::eta_iota_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.eta_iota_fab c args h r h' calls := by
   intro rc inl ity inp blk idx par major types hargs good hrc d Γ htypes
     k nl rt np ni nm nmi rules kf cv mI rP rl p ici nix nc u M
-    hrec hrleta hp hmh hfindI hciI hM x hr
+    hrec hrleta hp hmh hfindI hciI hetaCaps hM x hr
   subst hargs
   match Obs.«KernelWhnf::eta_iota_fab».obs ev with
   | .Const_n1_n1_n1_Ctor_other (he777 := he0) .. =>
@@ -291,8 +270,8 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     rw [hfindI] at hT'
     obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hT')
     subst hinl
-    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0⟩ := hex.etaCaps h _ ity _ _ u blk nPT i b
-      (c.κ (ixAddr p)) rl.ctor cvT cvj caps cnP cnF hfindI heta hetaCtor hcj hciI' hb
+    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0⟩ :=
+      hetaCaps b nPT i cvT cvj caps cnP cnF rfl rfl (Nat.lt_of_lt_of_le hnPT (by decide)) rfl hb hcj
     -- heap extensions
     have e36 := ObsFn.heap_extends ev36
     have e14 := ObsFn.heap_extends ev14
@@ -571,6 +550,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
 
 /-! ## `try_struct_eta_iota` -/
 
+set_option maxHeartbeats 400000 in
 /-- **`KernelWhnf::try_struct_eta_iota`**: verifies the single-rule non-recursive structure guards,
 derives `rl.eta = true` via `LoadFacts.etaIota` and `EnvFacts.recEta`, fabricates the constructor
 application (`eta_iota_fab`), and runs `red_iota`. -/
@@ -675,9 +655,10 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     -- unpack ev422 (struct_is_rec) to extract block_is_multi = 0
     have ev422_keep := ev422
     have hgood420 : Good c cs420 := good.sub fun z hz => by simp [hz]
-    have hbm : ∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
+    have ih420 : IH c cs420 := ih.mono (by simp only [List.length_cons, List.length_append]; omega)
+    have hbm_few : (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
         ObsFn W "KernelModeled::block_is_multi" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
-          Bytes.RepAddressRef addrTy h3 b bq := by
+          Bytes.RepAddressRef addrTy h3 b bq) ∧ FewInductives c (ixAddr b) := by
       match Obs.«KernelWhnf::struct_is_rec».obs ev422 with
       | .Induct_other (he173 := he1) .. => exact (NatAux.field_one_ne_zero he1.symm).elim
       | .other (he180 := he1) .. => exact (NatAux.field_one_ne_zero he1.symm).elim
@@ -694,8 +675,18 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         rw [hinfo] at hinfo_sr
         injection hinfo_sr with hip_eq
         injection hip_eq with _ hb_eq
-        obtain rfl := ixAddr_inj hb_eq.symm
-        exact ⟨x_block_sr, m2_sr, m90_sr, cs101_sr, ev103_sr, hgood101, hb_sr⟩
+        have hb_sr_eq : b_sr = b := ixAddr_inj hb_eq.symm
+        subst b_sr
+        obtain ⟨-, hbm_iff⟩ := ih420.get (.callees .block_is_multi)
+          (by rw [hc168_sr]; simp only [List.length_cons, List.length_append]; omega)
+          ev103_sr x_block_sr b rfl hgood101 hb_sr
+        refine ⟨⟨x_block_sr, m2_sr, m90_sr, cs101_sr, ev103_sr, hgood101, hb_sr⟩,
+          fun cst ms hcst hmuts => ?_⟩
+        by_contra hgt
+        have hbm_iff' := hbm_iff cst hcst
+        rw [isIndc_callees_eq] at hbm_iff'
+        exact NatAux.field_one_ne_zero (hbm_iff'.mpr ⟨ms, hmuts, Nat.lt_of_not_ge hgt⟩).symm
+    obtain ⟨hbm, hfew⟩ := hbm_few
     -- major lookup
     obtain ⟨⟨A, hAs_idx, hAs_get⟩, -⟩ := Lib.Lists.lookup_spec
       (t := .ptr (.named "KernelTypes::KExprNode" [])) (R := TmE c.κ d Γ)
@@ -755,7 +746,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     have hcj_cprj : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
         some (.ctorInfo cvj rl.ctorParams cnF) := by
       rw [← hctor]; exact hcj
-    obtain ⟨heta, hetaCtor_cprj, -, -, -, hlp_eq⟩ := hc.loads.etaIota
+    obtain ⟨heta, hetaCtor_cprj, hetaF, hetaP, hnP_val, hlp_eq⟩ := hc.loads.etaIota
       x_parent p287 x_ind_nl x_ind_ty w310 x_block m179 m279 cs293 p b i (nPT : F)
       cvT cvj caps rl.ctorParams cnF ust_f l_f
       ev295 (good.sub fun z hz => by simp [hz]) hp ld289' hb hfindI hcj_cprj hbm
@@ -763,14 +754,15 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         fun h01 => NatAux.field_one_ne_zero h01.symm, hgood420,
         Bytes.repAddressRef_heapMono₂ addrTy Y352 hp⟩
       hl_f hnz_f
-    rw [← hctor] at hetaCtor_cprj
+    have hetaCtor_rl : caps.etaCtor = some rl.ctor := by
+      rw [← hctor] at hetaCtor_cprj; exact hetaCtor_cprj
     obtain ⟨a_rec, hcv_key⟩ := recr_key hci
     have hk_name : cv.name = k := WhnfAux.name_of_find hfind
     have hk_nproj : Ix.Kernel.Key.isProjFnShape k = false := by
       rw [← hk_name, hcv_key]; exact isProjFnShape_keyOf c.t a_rec
     have hrleta : rl.eta = true := by
       rw [hc.env.recEta k cv mI rP rl hfind]
-      simp [Ix.Kernel.recRuleEtaOf, hcj, htus, hfindI, heta, hetaCtor_cprj, hk_nproj, hlp_eq]
+      simp [Ix.Kernel.recRuleEtaOf, hcj, htus, hfindI, heta, hetaCtor_rl, hk_nproj, hlp_eq]
     -- fire eta_iota_fab, then red_iota
     obtain ⟨FAB, hFAB, hredM⟩ := ih.get (.whnf .eta_iota_fab) (by lt_calls) ev577_keep
       rc x_ind_nl x_ind_ty (.field (nPT : F)) x_block (.field i) x_parent v435 types rfl
@@ -779,6 +771,30 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       (.field (nCT : F)) w310 A (RecRedHyps.mono X466 hrr').1 hrleta
       (Bytes.repAddressRef_heapMono₂ addrTy (e295.trans Y466) hp) hmh hfindI
       (CIRep.mono Y466 hciI')
+      (fun b' nPT' i' cvT' cvc' caps' cnP' cnF' hici hinp hnPT' hidx hb' hcj' => by
+        obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hici
+        have hnPT_eq : nPT = nPT' :=
+          (NatAux.natCast_inj (Nat.lt_trans hnPT (by decide))
+            (Nat.lt_trans hnPT' (by decide))).mp (NatAux.field_inj hinp)
+        subst nPT'
+        have hi'_eq : i' = i := (NatAux.field_inj hidx).symm
+        subst i'
+        have hb'_eq : b' = b := addr_det hb' (Bytes.repAddressRef_heapMono₂ addrTy Y466 hb)
+        subst b'
+        rw [hcj] at hcj'
+        obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hcj')
+        have hnP_eq : rl.ctorParams = nPT :=
+          hnP_val.trans (NatAux.val_natCast (Nat.lt_trans hnPT (by decide)))
+        refine ⟨hctor, hetaP, hetaF, hnP_eq, fun hcnF0 => ?_⟩
+        have hcj0 : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
+            some (.ctorInfo cvj rl.ctorParams 0) :=
+          hcj_cprj.trans (congrArg (fun n => some (Ix.Kernel.ConstantInfo.ctorInfo cvj rl.ctorParams n)) hcnF0)
+        obtain ⟨hul, huP, hresU⟩ := hc.loads.unitLike
+          x_parent p287 m179 m279 cs293 p x_ind_nl x_ind_ty w310 x_block (nPT : F) i b
+          cvT caps cvj rl.ctorParams ev295 (good.sub fun z hz => by simp [hz]) hp ld289' hb
+          hfindI hfew hcj0
+        rw [← hnP_val] at huP hresU
+        exact ⟨hul, huP, hresU⟩)
       (Tm.mono (e448.trans (e493.trans (e513.trans e479))) hAs_get) x_fab rfl
     have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hAs_idx]; rfl
     exact ih.get (.whnf .red_iota) (by lt_calls) ev673

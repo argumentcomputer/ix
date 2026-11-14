@@ -15,7 +15,7 @@ import IxVMRefinement.Core.Whnf
 
 /-! # The `Whnf` family's steps
 
-`whnf_family_step c hc hex`: the registry's `Steps` restricted to the `Whnf` family
+`whnf_family_step c hc`: the registry's `Steps` restricted to the `Whnf` family
 (`Core/Specs/Whnf.lean`): every function of `KernelWhnf` meets its registered spec, from the
 induction hypothesis at its derivation's calls. The step lemmas are the slice's
 (`Core/Whnf.lean`, `Core/Steps/Whnf.lean`), `Whnf/{Norm,Scans,Beta,Prim,Heads,Delta,Proj}.lean`,
@@ -26,7 +26,7 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- **One step per function of the `Whnf` family.** -/
-theorem whnf_family_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c) :
+theorem whnf_family_step (c : Ctx) (hc : CoreFacts c) :
     ∀ (f : Specs.Whnf.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.whnf f).name args h r h' cs → IH c cs →
       (Fn.whnf f).spec c args h r h' cs
@@ -71,7 +71,7 @@ theorem whnf_family_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c) :
   | .pi_residual, _, _, _, _, _, ev, ih => pi_residual_step c ev ih
   | .k_synth_fab, _, _, _, _, _, ev, ih => k_synth_fab_step c hc ev ih
   | .try_k_synth_iota, _, _, _, _, _, ev, ih => try_k_synth_iota_step c ev ih
-  | .eta_iota_fab, _, _, _, _, _, ev, ih => eta_iota_fab_step c hc hex ev ih
+  | .eta_iota_fab, _, _, _, _, _, ev, ih => eta_iota_fab_step c hc ev ih
   | .try_struct_eta_iota, _, _, _, _, _, ev, ih => try_struct_eta_iota_step c hc ev ih
   | .struct_is_rec, _, _, _, _, _, ev, ih => struct_is_rec_step c hc ev ih
   | .struct_scan_members, _, _, _, _, _, ev, ih => struct_scan_members_step c hc ev ih

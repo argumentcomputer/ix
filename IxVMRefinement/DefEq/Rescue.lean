@@ -638,7 +638,8 @@ theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
       exact ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
         RepLinkedList.nil c3, RepLinkedList.nil c4⟩)
     (RepLinkedList.nil c5)
-  obtain ⟨a, ha, haddr⟩ := ih.get (.callees .bytes_to_addr) (by lt_calls) ev176 v135 _ rfl hbytes
+  obtain ⟨a, ha, haddr⟩ := ih.get (.callees .bytes_to_addr) (by lt_calls) ev176 v135 _ rfl
+    (good.sub fun x hx => by simp [hx]) hbytes
   refine ⟨a, ha, ?_, ?_⟩
   · rw [haddr, bytes_mk_toList]
     rfl
@@ -654,7 +655,14 @@ theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
     have hraw := load_escape hlc good.1 _
       (hashed_of_bytes_to_addr ev176 (fun x hx => by simp [hx]) hbytes) haddr.symm
     rw [bytes_mk_toList] at hraw
-    exact hc.loads.canonical _ lc _ hlc hraw.symm cm hget
+    have hwf : (⟨.iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩, #[], #[], #[], #[]⟩ :
+        Ixon.Constant).wireWF :=
+      ⟨by show b.toArray.size = 32; exact b.size_toArray,
+        by change 0 < UInt64.size; decide, by simp,
+        by change 0 < UInt64.size; decide, by simp,
+        by change 0 < UInt64.size; decide, by simp,
+        Ixon.bindersWireWF_empty⟩
+    exact hc.loads.canonical _ lc _ hwf hlc hraw.symm cm hget
 
 /-! ## A family's parameters -/
 

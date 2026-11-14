@@ -6,8 +6,8 @@ import IxVMRefinement.L1.Hashed
 Step lemmas for the four record-load functions of `Specs.Callees.Fn`.
 * `get_ci`, `get_ci_cprj`, `get_ci_iprj`: discharged directly from `hc.loads` (`LoadFacts`).
 * `load_verified_constant`: combines `L1.load_verified_constant_addr` (giving `Hashed` and the
-  `Address.blake3Pure` identity) with `CalleesExtraFacts.recordShape` (the shallow decoded record
-  shape `ConstShapeRep` at `Ix.Cert.recordAt c.E`). -/
+  `Address.blake3Pure` identity) with `LoadFacts.recordShape` (the shallow decoded record shape
+  `ConstShapeRep` at `Ix.Cert.recordAt c.E`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -15,17 +15,6 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 
 set_option linter.unusedVariables false
-
-/-- **Decoded record shape** (L1): `Ingress::load_verified_constant` at a represented address
-holding a record `cst` of `c.E` returns a shallowly represented `Ixon::Constant` matching `cst`
-(`ConstShapeRep`). -/
-structure CalleesExtraFacts (c : Ctx) : Prop where
-  recordShape : ∀ (ap r : SourceValue F) (h h' : Heap F) (cs : List (Call F))
-      (a : Bytes.Address) (cst : Ixon.Constant),
-    ObsFn W "Ingress::load_verified_constant" [ap] h r h' cs → Good c cs →
-    Bytes.RepAddressRef addrTy h a ap →
-    Ix.Cert.recordAt c.E (ixAddr a) = some cst →
-    Specs.Callees.ConstShapeRep h' cst r
 
 /-- `Ingress::get_ci`: discharged from `LoadFacts.getCI`. -/
 theorem get_ci_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
@@ -55,8 +44,8 @@ theorem get_ci_iprj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
   exact hc.loads.getIprj bp r i h h' calls b ev good hb
 
 /-- `Ingress::load_verified_constant`: combines `L1.load_verified_constant_addr` with
-`CalleesExtraFacts.recordShape`. -/
-theorem load_verified_constant_step (c : Ctx) (hce : CalleesExtraFacts c)
+`LoadFacts.recordShape`. -/
+theorem load_verified_constant_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "Ingress::load_verified_constant" args h r h' calls) :
     Specs.Callees.load_verified_constant c args h r h' calls := by
@@ -64,6 +53,6 @@ theorem load_verified_constant_step (c : Ctx) (hce : CalleesExtraFacts c)
   subst hargs
   obtain ⟨bytes, _, _, _, _, -, -, hashed, hblake, -⟩ := L1.load_verified_constant_addr ha ev
   exact ⟨⟨bytes, hashed, hblake⟩,
-    fun cst hcst => hce.recordShape ap r h h' calls a cst ev good ha hcst⟩
+    fun cst hcst => hc.loads.recordShape ap r h h' calls a cst ev good ha hcst⟩
 
 end IxVM.Refinement.Core

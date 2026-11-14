@@ -441,6 +441,15 @@ def eta_iota_fab : SpecFn := fun c args h r h' calls =>
         RepAddr h p par → MajorHead c cv mI p →
         c.env.find? (c.κ (ixAddr p)) = some ici →
         c.ci h (.construct kciEnum "Induct" [inl, ity, inp, nix, nc, u, blk, idx]) ici →
+        (∀ (b : Bytes.Address) (nPT : Nat) (i : F) (cvT cvc : Ix.Kernel.ConstantVal .anon)
+            (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat),
+          ici = .indInfo cvT caps → inp = .field (nPT : F) → nPT < 2 ^ 56 → idx = .field i →
+          RepAddr h b blk → c.env.find? rl.ctor = some (.ctorInfo cvc cnP cnF) →
+          rl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) ∧
+          caps.etaParams = cnP ∧ caps.etaFields = cnF ∧ cnP = nPT ∧
+          (cnF = 0 → caps.unitlike = true ∧ caps.unitParams = cnP ∧
+            (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr p)) = false ∨
+              (cnP = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr p)) us) = true)))) →
         c.tm d Γ h M major →
         ∀ x, r = .tuple [.field 1, x] →
           ∃ FAB, c.tm d Γ h' FAB x ∧ Red c.env d M FAB

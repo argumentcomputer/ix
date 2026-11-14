@@ -27,52 +27,12 @@ set_option linter.unusedVariables false
 
 /-! ## Decoded records, shallowly -/
 
-abbrev ixConstEnum : String := "Ixon::Constant"
-abbrev ixInfoEnum : String := "Ixon::ConstantInfo"
-abbrev ixMutEnum : String := "Ixon::MutConst"
-/-- `Lists::Node<Ixon::MutConst>`: a block's members. -/
-abbrev mutListEnum : String := Obs.Names.«Lists::Node<Ixon::MutConst>»
 /-- `Lists::Node<&Ixon::Expr>`: a record's sharing table. -/
 abbrev ixExprListEnum : String := Obs.Names.«Lists::Node<&Ixon::Expr>»
 /-- `Lists::Node<&Ixon::Univ>`: a record's universe table. -/
 abbrev ixUnivListEnum : String := Obs.Names.«Lists::Node<&Ixon::Univ>»
 /-- `Lists::Node<Ixon::BinderBlock>`: a record's binder-data table. -/
 abbrev ixBinderListEnum : String := Obs.Names.«Lists::Node<Ixon::BinderBlock>»
-
-/-- The constructor of `Ixon::MutConst` a block member is. -/
-def mutCtor : Ixon.MutConst → String
-  | .defn _ => "Defn"
-  | .indc _ => "Indc"
-  | .recr _ => "Recr"
-
-/-- The constructor of `Ixon::ConstantInfo` a record's info is. -/
-def infoCtor : Ixon.ConstantInfo → String
-  | .defn _ => "Defn"
-  | .recr _ => "Recr"
-  | .axio _ => "Axio"
-  | .quot _ => "Quot"
-  | .cPrj _ => "CPrj"
-  | .rPrj _ => "RPrj"
-  | .iPrj _ => "IPrj"
-  | .dPrj _ => "DPrj"
-  | .muts _ => "Muts"
-
-/-- **A block member, by kind**: an `Ixon::MutConst` of the member's constructor. -/
-def MutShape (_h : Heap F) (m : Ixon.MutConst) (v : SourceValue F) : Prop :=
-  ∃ x, v = .construct ixMutEnum (mutCtor m) [x]
-
-/-- **A block's members, by kind, in order.** -/
-abbrev MembersRep (h : Heap F) (ms : List Ixon.MutConst) (p : SourceValue F) : Prop :=
-  RepList mutListEnum MutShape h ms p
-
-/-- **A record's info, shallowly**: its constructor, and for a block its members by kind. -/
-def InfoShape (h : Heap F) : Ixon.ConstantInfo → SourceValue F → Prop
-  | .muts ms, v => ∃ lp, v = .construct ixInfoEnum "Muts" [lp] ∧ MembersRep h ms.toList lp
-  | info, v => ∃ x, v = .construct ixInfoEnum (infoCtor info) [x]
-
-/-- **A decoded record, shallowly** (`Ixon::Constant::Mk(info, sharing, refs, univs, binders)`). -/
-def ConstShapeRep (h : Heap F) (cst : Ixon.Constant) (v : SourceValue F) : Prop :=
-  ∃ info sh rf un bd, v = .construct ixConstEnum "Mk" [info, sh, rf, un, bd] ∧ InfoShape h cst.info info
 
 /-- An inductive block member (`Core.isIndc`). -/
 abbrev isIndc : Ixon.MutConst → Bool := IxVM.Refinement.Core.isIndc
@@ -208,7 +168,7 @@ def put_constant : SpecFn := fun c args h r h' calls =>
 
 /-- `Blake3::bytes_to_addr(bytes)`: the BLAKE3 address of the bytes (`Address.blake3Pure`). -/
 def bytes_to_addr : SpecFn := fun c args h r h' calls =>
-  ∀ bp (bytes : List UInt8), args = [bp] → RepBytes h bytes bp →
+  ∀ bp (bytes : List UInt8), args = [bp] → Good c calls → RepBytes h bytes bp →
     ∃ a : Bytes.Address, RepAddr h' a r ∧ ixAddr a = Address.blake3Pure ⟨bytes.toArray⟩
 
 /-! ## The modeled route's gates -/

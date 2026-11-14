@@ -14,13 +14,8 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 set_option linter.unusedVariables false
 
-/-- Every function in `Specs.Callees.Fn` satisfies its specification under `CoreFacts c`,
-`CalleesExtraFacts c` (`load_verified_constant` record-shape link), and the `bytes_to_addr`
-arm hypothesis (`bytes_to_addr_step` proves the `Good c calls →`-guarded form directly). -/
-theorem callees_step (c : Ctx) (hc : CoreFacts c) (hce : CalleesExtraFacts c)
-    (hbta : ∀ args h r h' cs,
-      ObsFn W "Blake3::bytes_to_addr" args h r h' cs → IH c cs →
-        Specs.Callees.bytes_to_addr c args h r h' cs) :
+/-- **One step per function of the `Callees` family.** -/
+theorem callees_step (c : Ctx) (hc : CoreFacts c) :
     ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W (Fn.callees f).name args h r h' cs → IH c cs →
@@ -28,12 +23,12 @@ theorem callees_step (c : Ctx) (hc : CoreFacts c) (hce : CalleesExtraFacts c)
   | .get_ci, _, _, _, _, _, ev, _ => get_ci_step c hc ev
   | .get_ci_cprj, _, _, _, _, _, ev, _ => get_ci_cprj_step c hc ev
   | .get_ci_iprj, _, _, _, _, _, ev, _ => get_ci_iprj_step c hc ev
-  | .load_verified_constant, _, _, _, _, _, ev, _ => load_verified_constant_step c hce ev
+  | .load_verified_constant, _, _, _, _, _, ev, _ => load_verified_constant_step c hc ev
   | .build_recur_addrs, _, _, _, _, _, ev, _ => build_recur_addrs_step c ev
   | .rec_to_parent_addr, _, _, _, _, _, ev, ih => rec_to_parent_addr_step c ev ih
   | .projection_addr_ctor, _, _, _, _, _, ev, _ => projection_addr_ctor_step c ev
   | .put_constant, _, _, _, _, _, ev, _ => put_constant_step c ev
-  | .bytes_to_addr, args, h, r, h', cs, ev, ih => hbta args h r h' cs ev ih
+  | .bytes_to_addr, _, _, _, _, _, ev, _ => bytes_to_addr_step c ev
   | .block_is_multi, _, _, _, _, _, ev, ih => block_is_multi_step c ev ih
   | .block_is_modeled, _, _, _, _, _, ev, ih => block_is_modeled_step c ev ih
   | .proj_ctor, _, _, _, _, _, ev, ih => proj_ctor_step c ev ih
