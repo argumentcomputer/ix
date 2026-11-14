@@ -1088,8 +1088,8 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
       refine ⟨⟨.defnInfo cvA value' hint :: env.consts⟩,
         installStep_single hinst_eq hstored hfresh_ci, ?_⟩
       show DeclDefnRunJ rulesJ env cv value hint ⟨.defnInfo cvA value' hint :: env.consts⟩
-      refine ⟨cvA.type, value', hcv_run, hv_run, ?_, hop, hdm⟩
-      rw [← hcvA_eq]
+      rw [hcvA_eq]
+      exact ⟨cvA.type, value', hcv_run, hv_run, rfl, hop, hdm⟩
 
 /-- Step preservation for `.thmDecl cv value`, storing the annotated theorem value `value'` so
 `ThmValOk` and `IxVM.Consistency.ThmVal` hold. -/
