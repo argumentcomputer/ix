@@ -2,7 +2,8 @@ module
 public import Cli
 public import Ix.Cli.Compression
 public import Ix.Cli.CompressionCmd
-public import Ix.Aggr.Backend
+public import Ix.Cli.FormalAggregate
+public import Ix.Cli.ClaimPolicy
 
 public section
 namespace Ix.Cli.CompressCmd
@@ -27,23 +28,27 @@ def finalOf : String → Except String UInt8
 
 /-- Check what can be checked before proving: the setup is configured and
 authenticates, and the options are consistent. Returns the setup description. -/
-def preflight (opts : Options) : IO String := do
+def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
   if let some path := opts.fixedRoot then
     unless ← System.FilePath.pathExists path do
       throw <| IO.userError s!"fixed root layout {path} does not exist"
   Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
-/-- Compress the aggregate root `addr`, persist the compressed proof under the
-same claim and return its address. -/
-private def compressProof (addr : Address) (wrapper : Ixon.Proof)
-    (opts : Options) (setup : String) : IO Address := do
+/-- Refuse an input other than an uncompressed proof of a `CheckEnv` claim. -/
+private def checkInput (wrapper : Ixon.Proof) : IO Unit := do
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError "proof is already compressed"
   let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
+
+/-- Compress the aggregate root `addr`, persist the compressed proof under the
+same claim and return its address. -/
+private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proof)
+    (opts : Options) (setup : String) : IO Address := do
+  checkInput wrapper
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
-  let backend ← IO.ofExcept (← Aggr.buildVerificationBackend Aggr.defaultRecursionParameters)
-  let statement := Compression.statementBytes backend wrapper.claim
+  let ctx ← FormalAggregate.context p
+  let statement := FormalAggregate.statementBytes ctx wrapper.claim
   Compression.checkClaim (Ix.Claim.ser wrapper.claim) statement
   let out ← match opts.out with
     | some path => pure path
@@ -53,12 +58,17 @@ private def compressProof (addr : Address) (wrapper : Ixon.Proof)
   if opts.fresh then IO.eprintln s!"[compress] fresh: replacing stage artifacts in {out}"
   let vk ← match opts.rootVk with
     | some path => IO.FS.readBinFile path
-    | none => pure backend.system.vkBytes
+    | none => pure ctx.aggr.key
+  -- Without an override the bundled keys apply: the backend must be theirs,
+  -- or compression would fail only after proving.
   let layout ← match opts.fixedRoot with
-    | some path => IO.FS.readFile path
-    | none => Compression.releaseRootLayout vk
+    | some path => IO.FS.readBinFile path
+    | none => do
+      let layout ← Compression.releaseRootLayout vk
+      Compression.checkReleaseStatement (Ix.Claim.ser wrapper.claim) statement
+      pure layout
   IO.eprintln s!"Normalizing aggregate root {addr} for compression."
-  let root ← Compression.normalize backend wrapper layout
+  let root ← FormalAggregate.normalize ctx wrapper layout
   Compression.releaseGpuMemory
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
   let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
@@ -68,9 +78,9 @@ private def compressProof (addr : Address) (wrapper : Ixon.Proof)
   StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
 
 /-- Compress a stored aggregate proof and return the compressed proof address. -/
-def compressRoot (addr : Address) (opts : Options) : IO Address := do
-  let setup ← preflight opts
-  compressProof addr (← Compression.readProof addr) opts setup
+def compressRoot (p : Cli.Parsed) (addr : Address) (opts : Options) : IO Address := do
+  let setup ← preflight p opts
+  compressProof p addr (← Compression.readProof addr) opts setup
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
@@ -86,10 +96,15 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
       out := (p.flag? "out").map (·.as! String)
       rootVk := (p.flag? "root-vk").map (·.as! String)
       fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
-    let setup ← preflight opts
+    let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
     let (addr, wrapper) ← Compression.readProofInput input
-    let result ← compressProof addr wrapper opts setup
+    -- the input's shape before the policy, which then sees only `CheckEnv` claims
+    checkInput wrapper
+    let statement ← ClaimPolicy.admit p wrapper.claim
+    IO.eprintln s!"Compressing a proof of claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}:\n\
+      {statement}"
+    let result ← compressProof p addr wrapper opts setup
     IO.println (toString result)
     return 0
   catch e =>
@@ -103,6 +118,10 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
@@ -111,6 +130,11 @@ def compressCmd : Cli.Cmd := `[Cli|
     "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
     "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."
     "groth16"; "Add a final BN254 Groth16 proof using prepared, independently admitted circuit keys."
+    "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`)."
+    "allow-custom-binding"; "Compress a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."
+    "allow-axioms"; "Compress a claim that depends on axioms beyond the standard three."
+    "allow-assumed-binding"; "Compress a claim that assumes its role binding meets the specifications."
+    "allow-assumptions"; "Compress a claim conditional on typing assumptions (assumed leaves)."
   ARGS:
     proof : String; "Aggregate Ixon.Proof file (including its claim), or its 64-character content address in the ix store. A hexadecimal filename needs a ./ prefix."
 

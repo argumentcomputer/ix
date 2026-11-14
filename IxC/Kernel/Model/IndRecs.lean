@@ -5,6 +5,7 @@ public import IxC.Kernel.Semantics.IndRecsCore
 public import IxC.Kernel.Model.Swap
 import IxC.Kernel.Model.IndMembers
 import IxC.Kernel.Model.Capstone
+import IxC.Kernel.Model.JudgeSound
 public section
 
 /-!
@@ -66,9 +67,9 @@ reading** (`indRecsFoldS`'s P half).  The conclusion is the single row
 `EnvModelM.swapP` consumes: every recursor stored at the fold's output
 either sits unchanged in the self environment — where `rec_rules`
 already covers it — or carries the rules `iotaRules` fired. -/
-theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
+theorem indRecsFold {J : Judgements md}
     {blockNames : List (Key md)} {envSelf envBase : Env md}
-    (mp : EnvModelM V μ envSelf)
+    (mp : EnvModelM V μ envSelf) (hJ : JudgeSound J mp.base2)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hroT : RenameOk mp.base2.acval envSelf (fun n =>
       if blockNames.contains n then auxKey n .model else n))
@@ -82,23 +83,14 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
         RecLawsAt mp.base2 cv mI rP rules) →
       (∀ ci ∈ recs, blockNames.contains ci.name = true) →
-      ProvisionRecsRun μ F blockNames envP recs envSelf checked →
-      IndRecsRun.IndRecsFoldRun μ F blockNames envBase envSelf
+      ProvisionRecsRunJ J blockNames envP recs envSelf checked →
+      IndRecsFoldRunJ J blockNames envBase envSelf
         envF checked env₃ →
       ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
         (rules : List (RecRule md)),
         env₃.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
         RecLawsAt mp.base2 cv mI rP rules := by
-  -- the four claims and the reads, at every assignment (`hμ` + `mp`)
-  have hclaims := fun ψ =>
-    checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
-    fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
-    fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
-    fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
   intro recs
   induction recs with
   | nil =>
@@ -121,7 +113,7 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
     -- this recursor's rules, fired
     have hfacts : RecLawsAt mp.base2 cvA mI rP rules' :=
       fun rl hrl hfire φ =>
-        iotaRules mp hdeq hinf hreadsP rfl hroT hIS hupB hbnA hselfA
+        iotaRules mp hJ rfl hroT hIS hupB hbnA hselfA
           heqfB 0 rules rules' hiot rl hrl hfire φ
     refine ih ?_ (fun ci hci => hbn ci (List.mem_cons_of_mem _ hci))
       hprov' hfold'
@@ -153,8 +145,10 @@ set_option maxHeartbeats 1600000 in
 The v1 carrier at the group's output is a premise — the install runs
 `indRecsS` for it anyway, and taking it here keeps `EnvWF`,
 `RecCtorsStored` and `RecRulesV` out of the P lane entirely. -/
-theorem indRecs (hμ : μ.verifiedChecks = true)
-    (hetaP : (MemberEtaLaw (md := md)) V) (hunitP : (MemberUnitLaw (md := md)) V) {F : Nat}
+theorem indRecs
+    (hetaP : (MemberEtaLaw (md := md)) V) (hunitP : (MemberUnitLaw (md := md)) V)
+    {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
+    (hJ : ∀ {e : Env md} (m : EnvModelM V μ e), JudgeSound J m.base2)
     {blockNames : List (Key md)} {env₂ env₃ : Env md}
     {recs : List (ConstantInfo md)}
     (mp : EnvModelM V μ env₂)
@@ -165,16 +159,17 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
       (env₂.find? n).isSome = true ∨ ∃ ci ∈ recs, ci.name = n)
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env₂)
     (hBP : Ix.Kernel.BlockEtaPinned μ blockNames env₂)
-    (h : IndRecsRun μ F blockNames env₂ recs env₃) :
+    (h : IndRecsRunJ J blockNames env₂ recs env₃) :
     ∃ mp₃ : EnvModelM V μ env₃,
       BlockInstalledTT blockNames env₃ mp₃.base2.cvalE ∧
-      BlockAcvalInstalled blockNames env₃ mp₃.base2.acval := by
+      BlockAcvalInstalled blockNames env₃ mp₃.base2.acval ∧
+      ModelExt mp mp₃ := by
   rcases h with ⟨rfl, rfl⟩ | ⟨-, heqf, envSelf, checked,
     hprov, hfold⟩
-  · exact ⟨mp, hI, hIA⟩
+  · exact ⟨mp, hI, hIA, .refl⟩
   -- the provisioning, at both tiers
-  obtain ⟨mS, hIS, hIAS, hECS, hBPS⟩ :=
-    provisionRecsPM hetaP hunitP recs mp hbn hprov hI hIA hEC hBP
+  obtain ⟨mS, hIS, hIAS, hECS, hBPS, hextS⟩ :=
+    provisionRecsPM hetaP hunitP hfr recs mp hbn hprov hI hIA hEC hBP
   -- every block member is stored in the provisional environment
   have hnames : ∀ n, blockNames.contains n = true →
       (envSelf.find? n).isSome = true := by
@@ -201,13 +196,13 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
   -- `iotaRulesFactsRun`'s `hden` premise.
   have hdenS : ∀ e : Expr md, e.hasFvar = false →
       e.looseBVarsBounded 0 = true →
-      (∃ t', inferTypeCore μ envSelf F 0 e = .ok t') →
+      (∃ t', J.infer envSelf 0 e t') →
       ∀ φ : LevelParam → Nat,
         ∃ Rv, denoteClosed mS.base2.cvalE envSelf φ e = some Rv := by
     intro e hef heb hrun φ
     obtain ⟨t', hrun'⟩ := hrun
     obtain ⟨ea, hea⟩ :=
-      acceptedReads_of mS.base2 φ hrun'
+      (hJ mS).accepted φ hrun'
         (Expr.WScoped.of_not_hasFvar hef) heb
         (fun l hl => absurd hl (fun h' => by
           rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hef] at h'
@@ -220,7 +215,7 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
         iotaRulesFactsRun
           (fun n ci hf =>
             Or.inl (provisionRecsRunS_mono recs hprov n ci hf))
-          hdenS 0 rules rules' hiot)
+          hdenS (hfr envSelf).annot_syntax 0 rules rules' hiot)
       recs (SwapShList.of_eq env₂.consts)
       (SwapNResS.of_eq env₂)
       (fun n ci hf =>
@@ -232,7 +227,7 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
       hbn hprov hfold
   have hcg : Ix.Kernel.SwapCongr envSelf env₃ := SwapShList.congr hswR
   -- the P rows at the group's output
-  have hentF := indRecsFold (V := V) hμ mS hIS hroP
+  have hentF := indRecsFold (V := V) mS (hJ mS) hIS hroP
     (fun n ci hf => Or.inl (provisionRecsRunS_mono recs hprov n ci hf))
     heqf recs
     (fun n cv mI rP rules hf =>
@@ -253,7 +248,15 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
       mS.base2.proj_ok hswR hnresR hentR hentFR
   obtain ⟨mp₃, hacc, hcval₃⟩ :=
     EnvModelM.swapP mS hswR hwf₃ hctors₃ hbp₃ hproj₃ hrecP
-  refine ⟨mp₃, ?_, by rw [hacc]; exact blockAcvalInstalled_swap hcg hIAS⟩
+  -- the swap keeps every leaf, every stored name and every stored theorem
+  have hext₃ : ModelExt mp mp₃ :=
+    ModelExt.swap hextS (fun n hn => by rw [← hcg.isSomeEq n]; exact hn)
+      (fun cv v hmem => by
+        rcases hentR _ hmem with h | ⟨_, _, _, _, heq, -⟩
+        · exact h
+        · exact nomatch heq)
+      (fun ψ d e => denoteMeta_swap hcg ψ d e) hacc
+  refine ⟨mp₃, ?_, by rw [hacc]; exact blockAcvalInstalled_swap hcg hIAS, hext₃⟩
   -- the block invariant survives the swap (`indRecsCoreR`'s own
   -- argument, at the P carrier's valuation)
   rw [hcval₃]

@@ -7,12 +7,52 @@
 //! which fields are present, followed by only the present field values in bit
 //! order. This enables revealing specific fields of a committed constant without
 //! exposing the full structure.
+//!
+//! # Tag registry
+//!
+//! The registry of record is `Ix/Claim.lean`; this table mirrors it. It lists
+//! every number in use under the claim flag `0xE`, the proof flag `0xF` and
+//! the validator byte of a claim's scope, in this tree and in the IxCC and
+//! frontend trees, with this tree's allocation. Under `0xE` and `0xF` a
+//! value below 8 is the one byte `E0`–`E7` (`F0`–`F7`); from 8 on the TagN
+//! header is two bytes (`E8 00` is 8). A claim's scope is two bytes: the
+//! object format's version (`Env::OBJECT_FORMAT`) first, then the validator byte.
+//!
+//! | Space | Value (bytes) | Allocation |
+//! |---|---|---|
+//! | 0xE | 0 (`E0`) | reserved |
+//! | 0xE | 1 (`E1`) | commitment ([`crate::comm`]) |
+//! | 0xE | 2–7 (`E2`–`E7`) | assumption tree, eval, check, checkEnv, reveal, contains |
+//! | 0xE | 4, 5 (`E4`, `E5`) also | `.ixe` header: envelope version 4 / 5 (the same bytes as check / checkEnv, told apart by position; a version reset of the header moves them) |
+//! | 0xE | 8 (`E8 00`) | catalog claim |
+//! | 0xE | 9 (`E8 01`) | **retired** (resource claim): refused |
+//! | 0xE | 10 (`E8 02`) | binding claim |
+//! | 0xE | 11 (`E8 03`) | role-table section preimage ([`crate::role_table`]) |
+//! | 0xE | 12 (`E8 04`) | literal-class preimage |
+//! | 0xE | 13 (`E8 05`) | reserved: IxCC compile claim (not implemented here) |
+//! | 0xE | 14 (`E8 06`) | reserved: frontend `.ixsp` header |
+//! | 0xE | 15–18 (`E8 07`–`E8 0A`) | reserved: frontend `.ixc`, `.ixes`, `.ixprof` and host-admission tags (this tree's files of those kinds use ASCII magic) |
+//! | 0xE | 19 (`E8 0B`) | reserved: frontend elaboration claim |
+//! | 0xE | 20 (`E8 0C`) | reserved: frontend `.ixs` header |
+//! | 0xF | 0–5, 7 (`F0`–`F5`, `F7`) | eval, check, checkEnv, reveal, contains, catalog, binding proofs |
+//! | 0xF | 6 (`F6`) | **retired** (resource proof): refused |
+//! | 0xF | 8 (`F8 00`) | reserved: IxCC compile proof |
+//! | validator | 0, 3, 4, 5 | structural-v1, erased-lean-v2, erased-lean-v2-assumed, erased-lean-v2-class |
+//! | validator | 1 | retired (erased-lean-v1): refused |
+//! | validator | 2 | **retired** (resource-v1): refused |
+//! | validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
+//! | validator | 7 | reserved: IxCC compile-v2: refused |
+//! | validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
+//! | validator | 9 | reserved: IxCC compile-v3 (its next compile-claim version): refused |
+//!
+//! `E9` is not a tag value: under TagN `E9` opens a two-byte header.
 
 use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
 use super::env::Env;
+use super::modes::{DefAsserts, FieldMode};
 use super::tag::TagN;
 
 // ============================================================================
@@ -29,6 +69,8 @@ pub struct RevealConstructorInfo {
   pub fields: Option<u64>,
   /// blake3(serialized typ Expr)
   pub typ: Option<Address>,
+  /// `[]` when all fields are inherited, else `fields` entries.
+  pub field_modes: Option<Vec<FieldMode>>,
 }
 
 /// Revealed fields of a RecursorRule.
@@ -49,6 +91,7 @@ pub enum RevealMutConstInfo {
     lvls: Option<u64>,
     typ: Option<Address>,
     value: Option<Address>,
+    asserts: Option<DefAsserts>,
   },
   Indc {
     is_unsafe: Option<bool>,
@@ -80,6 +123,7 @@ pub enum RevealConstantInfo {
     lvls: Option<u64>,
     typ: Option<Address>,
     value: Option<Address>,
+    asserts: Option<DefAsserts>,
   },
   Recr {
     k: Option<bool>,
@@ -218,8 +262,9 @@ pub enum Claim {
   /// optionally modulo `assumptions` (typically the env's axiom
   /// leaves).
   CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
-  /// Selective field revelation of a committed constant.
-  Reveal { comm: Address, info: RevealConstantInfo },
+  /// Selective field revelation of a committed constant, optionally committing
+  /// to `blake3(put_binders(c.binders))`.
+  Reveal { comm: Address, info: RevealConstantInfo, binders: Option<Address> },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
   Contains { tree: Address, const_addr: Address },
   /// A conjunction of unconditional `CheckEnv` claims, each under its own
@@ -230,8 +275,6 @@ pub enum Claim {
   /// unconditional `CheckEnv` claims (validator 3 or 5) and other catalogs;
   /// there is no whole-catalog interpreter arm.
   Catalog { members: Address },
-  /// Combined erased typing and resource admission of a complete addressed closure.
-  Resource { root: Address, profile: Address },
   /// The role table with hash `binding` binds every role, and each bound
   /// constant meets its specification in the set with digest `spec`. It
   /// discharges the condition of the typing claims that assume their binding
@@ -256,7 +299,8 @@ pub struct Proof {
 ///
 /// The header is `TagN(4, 0xE, variant)`. Variants 0–7 are in rung 1, the
 /// single bytes `0xE0`–`0xE7`; from 8 on the header is two bytes (rung 2),
-/// so Catalog is `E8 00`, Resource `E8 01` and Binding `E8 02`.
+/// so Catalog is `E8 00` and Binding `E8 02` (`E8 01` is retired). The full
+/// registry is in the module documentation.
 ///
 /// - 1: Comm (commitment, handled in `comm.rs`)
 /// - 2: AssumptionTree (recursive merkle-tree data, see `assumption_tree.rs`)
@@ -266,7 +310,7 @@ pub struct Proof {
 /// - 6: Reveal claim
 /// - 7: Contains claim
 /// - 8: Catalog claim (`E8 00`)
-/// - 9: Resource claim (`E8 01`)
+/// - 9: retired (the resource claim, `E8 01`), refused
 /// - 10: Binding claim (`E8 02`)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
@@ -283,7 +327,8 @@ pub const VARIANT_CHECK_ENV_CLAIM: u64 = 5;
 pub const VARIANT_REVEAL_CLAIM: u64 = 6;
 pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
-pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
+/// Retired: the resource claim. Its tag is refused.
+pub const VARIANT_RESOURCE_CLAIM_RETIRED: u64 = 9;
 pub const VARIANT_BINDING_CLAIM: u64 = 10;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
@@ -300,7 +345,7 @@ pub const VARIANT_BINDING_CLAIM: u64 = 10;
 /// - 3: Reveal proof
 /// - 4: Contains proof
 /// - 5: Catalog proof
-/// - 6: Resource proof
+/// - 6: retired (the resource proof), refused
 /// - 7: Binding proof
 pub const FLAG_PROOF: u8 = 0xF;
 
@@ -310,7 +355,8 @@ pub const VARIANT_CHECK_ENV_PROOF: u64 = 2;
 pub const VARIANT_REVEAL_PROOF: u64 = 3;
 pub const VARIANT_CONTAINS_PROOF: u64 = 4;
 pub const VARIANT_CATALOG_PROOF: u64 = 5;
-pub const VARIANT_RESOURCE_PROOF: u64 = 6;
+/// Retired: the resource proof. Its tag is refused.
+pub const VARIANT_RESOURCE_PROOF_RETIRED: u64 = 6;
 pub const VARIANT_BINDING_PROOF: u64 = 7;
 
 // Backwards-compatibility re-export: many call sites refer to FLAG.
@@ -426,6 +472,41 @@ fn get_bool_field(buf: &mut &[u8]) -> Result<bool, String> {
   }
 }
 
+fn put_def_asserts(a: DefAsserts, buf: &mut Vec<u8>) {
+  buf.push(a.to_code());
+}
+
+fn get_def_asserts(buf: &mut &[u8]) -> Result<DefAsserts, String> {
+  let b = get_u8(buf)?;
+  DefAsserts::of_code(b).ok_or_else(|| format!("get_def_asserts: invalid {b}"))
+}
+
+fn put_field_modes(modes: &[FieldMode], buf: &mut Vec<u8>) {
+  TagN::put(0, 0, modes.len() as u64, buf);
+  for m in modes {
+    buf.push(m.to_code());
+  }
+}
+
+fn get_field_modes(buf: &mut &[u8]) -> Result<Vec<FieldMode>, String> {
+  let count =
+    usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
+  if count > buf.len() {
+    return Err(format!(
+      "get_field_modes: count {count} exceeds remaining {} bytes",
+      buf.len()
+    ));
+  }
+  let mut modes = Vec::with_capacity(count);
+  for _ in 0..count {
+    let b = get_u8(buf)?;
+    let mode = FieldMode::of_code(b)
+      .ok_or_else(|| format!("get_field_modes: invalid {b}"))?;
+    modes.push(mode);
+  }
+  Ok(modes)
+}
+
 // ============================================================================
 // RevealConstructorInfo serialization
 // ============================================================================
@@ -440,6 +521,7 @@ impl RevealConstructorInfo {
       self.params.is_some(),
       self.fields.is_some(),
       self.typ.is_some(),
+      self.field_modes.is_some(),
     ]);
     TagN::put(0, 0, mask, buf);
     if let Some(u) = self.is_unsafe {
@@ -460,11 +542,14 @@ impl RevealConstructorInfo {
     if let Some(t) = &self.typ {
       buf.extend_from_slice(t.as_bytes());
     }
+    if let Some(modes) = &self.field_modes {
+      put_field_modes(modes, buf);
+    }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let mask = TagN::get(0, buf)?.value;
-    require_mask(mask, 6)?;
+    require_mask(mask, 7)?;
     let is_unsafe =
       if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
     let lvls =
@@ -476,7 +561,17 @@ impl RevealConstructorInfo {
     let fields =
       if mask & 16 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
     let typ = if mask & 32 != 0 { Some(get_address(buf)?) } else { None };
-    Ok(RevealConstructorInfo { is_unsafe, lvls, cidx, params, fields, typ })
+    let field_modes =
+      if mask & 64 != 0 { Some(get_field_modes(buf)?) } else { None };
+    Ok(RevealConstructorInfo {
+      is_unsafe,
+      lvls,
+      cidx,
+      params,
+      fields,
+      typ,
+      field_modes,
+    })
   }
 }
 
@@ -549,7 +644,7 @@ fn get_ctors(
 impl RevealMutConstInfo {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      Self::Defn { kind, safety, lvls, typ, value } => {
+      Self::Defn { kind, safety, lvls, typ, value, asserts } => {
         buf.push(0);
         let mask = compute_mask(&[
           kind.is_some(),
@@ -557,6 +652,7 @@ impl RevealMutConstInfo {
           lvls.is_some(),
           typ.is_some(),
           value.is_some(),
+          asserts.is_some(),
         ]);
         TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
@@ -573,6 +669,9 @@ impl RevealMutConstInfo {
         }
         if let Some(v) = value {
           buf.extend_from_slice(v.as_bytes());
+        }
+        if let Some(a) = asserts {
+          put_def_asserts(*a, buf);
         }
       },
       Self::Indc { is_unsafe, lvls, params, indices, typ, ctors } => {
@@ -666,8 +765,7 @@ impl RevealMutConstInfo {
     require_mask(
       mask,
       match variant {
-        0 => 5,
-        1 => 6,
+        0 | 1 => 6,
         2 => 9,
         _ => 64,
       },
@@ -681,7 +779,9 @@ impl RevealMutConstInfo {
           if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
-        Ok(Self::Defn { kind, safety, lvls, typ, value })
+        let asserts =
+          if mask & 32 != 0 { Some(get_def_asserts(buf)?) } else { None };
+        Ok(Self::Defn { kind, safety, lvls, typ, value, asserts })
       },
       1 => {
         let is_unsafe =
@@ -737,7 +837,7 @@ impl RevealConstantInfo {
   /// Serialize: variant byte + mask (TagN) + field values in mask order.
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      Self::Defn { kind, safety, lvls, typ, value } => {
+      Self::Defn { kind, safety, lvls, typ, value, asserts } => {
         buf.push(0);
         let mask = compute_mask(&[
           kind.is_some(),
@@ -745,6 +845,7 @@ impl RevealConstantInfo {
           lvls.is_some(),
           typ.is_some(),
           value.is_some(),
+          asserts.is_some(),
         ]);
         TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
@@ -761,6 +862,9 @@ impl RevealConstantInfo {
         }
         if let Some(v) = value {
           buf.extend_from_slice(v.as_bytes());
+        }
+        if let Some(a) = asserts {
+          put_def_asserts(*a, buf);
         }
       },
       Self::Recr {
@@ -914,7 +1018,7 @@ impl RevealConstantInfo {
     require_mask(
       mask,
       match variant {
-        0 => 5,
+        0 => 6,
         1 => 9,
         2..=4 => 3,
         5..=7 => 2,
@@ -932,7 +1036,9 @@ impl RevealConstantInfo {
           if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
-        Ok(Self::Defn { kind, safety, lvls, typ, value })
+        let asserts =
+          if mask & 32 != 0 { Some(get_def_asserts(buf)?) } else { None };
+        Ok(Self::Defn { kind, safety, lvls, typ, value, asserts })
       },
       1 => {
         // Recr
@@ -1063,7 +1169,7 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 /// - `1`, erased-lean-v1: retired. It named typing claims whose primitives
 ///   were recognized by fixed addresses and which admitted any axiom; readers
 ///   refuse it rather than read such a claim as a newer one.
-/// - `2`, resource-v1: `Resource`.
+/// - `2`, resource-v1: retired with the resource claim; refused.
 /// - `3`, erased-lean-v2: the typing claims, relative to their
 ///   [`ClaimContext`], and `Binding`.
 /// - `4`, erased-lean-v2-assumed: a `Check` or `CheckEnv` claim that assumes
@@ -1074,19 +1180,38 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 ///   class instead of one binding ([`ClaimContext::literal_class`]); its
 ///   typing holds under every binding of that class that meets the
 ///   specifications.
+/// - `6`, `7`: reserved for IxCC's compile-v1 (retired there) and
+///   compile-v2; refused.
+/// - `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
+///   refused until a validator for it exists.
 pub const VALIDATOR_STRUCTURAL: u8 = 0;
 pub const VALIDATOR_ERASED_LEAN_RETIRED: u8 = 1;
-pub const VALIDATOR_RESOURCE: u8 = 2;
+pub const VALIDATOR_RESOURCE_RETIRED: u8 = 2;
 pub const VALIDATOR_ERASED_LEAN: u8 = 3;
 pub const VALIDATOR_ERASED_LEAN_ASSUMED: u8 = 4;
 pub const VALIDATOR_ERASED_LEAN_CLASS: u8 = 5;
+pub const VALIDATOR_COMPILE_V1_RESERVED: u8 = 6;
+pub const VALIDATOR_COMPILE_V2_RESERVED: u8 = 7;
+pub const VALIDATOR_ERASED_LEAN_MODES_RESERVED: u8 = 8;
 
 fn validator_for_variant(variant: u64) -> u8 {
   match variant {
     VARIANT_REVEAL_CLAIM | VARIANT_CONTAINS_CLAIM => VALIDATOR_STRUCTURAL,
-    VARIANT_RESOURCE_CLAIM => VALIDATOR_RESOURCE,
     _ => VALIDATOR_ERASED_LEAN,
   }
+}
+
+/// The refusal of a retired claim variant.
+fn retired_claim(variant: u64) -> String {
+  format!("claim: variant {variant} (the resource claim) is retired")
+}
+
+/// Refuse a retired claim variant before reading anything after its tag.
+fn refuse_retired_claim(variant: u64) -> Result<(), String> {
+  if variant == VARIANT_RESOURCE_CLAIM_RETIRED {
+    return Err(retired_claim(variant));
+  }
+  Ok(())
 }
 /// Whether claims of variant `variant` may assume their binding: `Check`
 /// and `CheckEnv`.
@@ -1125,6 +1250,17 @@ fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<u8, String> {
       "claim: validator erased-lean-v1 is retired — regenerate the claim"
         .into(),
     );
+  }
+  if found == VALIDATOR_RESOURCE_RETIRED {
+    return Err("claim: validator resource-v1 is retired".into());
+  }
+  if matches!(
+    found,
+    VALIDATOR_COMPILE_V1_RESERVED
+      | VALIDATOR_COMPILE_V2_RESERVED
+      | VALIDATOR_ERASED_LEAN_MODES_RESERVED
+  ) {
+    return Err(format!("claim: validator {found} is reserved, not read"));
   }
   Err("claim: wrong validator identity".into())
 }
@@ -1224,7 +1360,7 @@ impl ClaimContext {
 /// canonical encoding of the role specifications. Pinned here and checked
 /// against the Lean value by the `claim` test suite.
 pub const SPEC_DIGEST_HEX: &str =
-  "6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33";
+  "04794ebf18e57a04d6e2239b97b0ca28139e6c4c7e2acb0a068b47ccaac67111";
 
 /// [`SPEC_DIGEST_HEX`] as an address.
 pub fn spec_digest() -> Address {
@@ -1251,9 +1387,10 @@ impl Claim {
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::Reveal { comm, info } => {
+      Claim::Reveal { comm, info, binders } => {
         buf.extend_from_slice(comm.as_bytes());
         info.put(buf);
+        put_opt_addr(binders, buf);
       },
       Claim::Contains { tree, const_addr } => {
         buf.extend_from_slice(tree.as_bytes());
@@ -1262,10 +1399,6 @@ impl Claim {
       Claim::Catalog { members } => {
         // A two-byte claim tag: `E8 00` on the wire.
         buf.extend_from_slice(members.as_bytes());
-      },
-      Claim::Resource { root, profile } => {
-        buf.extend_from_slice(root.as_bytes());
-        buf.extend_from_slice(profile.as_bytes());
       },
       Claim::Binding { spec, binding } => {
         // A two-byte claim tag: `E8 02` on the wire.
@@ -1309,7 +1442,8 @@ impl Claim {
       VARIANT_REVEAL_CLAIM => {
         let comm = get_address(buf)?;
         let info = RevealConstantInfo::get(buf)?;
-        Ok(Claim::Reveal { comm, info })
+        let binders = get_opt_addr(buf)?;
+        Ok(Claim::Reveal { comm, info, binders })
       },
       VARIANT_CONTAINS_CLAIM => {
         let tree = get_address(buf)?;
@@ -1319,10 +1453,7 @@ impl Claim {
       VARIANT_CATALOG_CLAIM => {
         Ok(Claim::Catalog { members: get_address(buf)? })
       },
-      VARIANT_RESOURCE_CLAIM => Ok(Claim::Resource {
-        root: get_address(buf)?,
-        profile: get_address(buf)?,
-      }),
+      VARIANT_RESOURCE_CLAIM_RETIRED => Err(retired_claim(variant)),
       VARIANT_BINDING_CLAIM => Ok(Claim::Binding {
         spec: get_address(buf)?,
         binding: get_address(buf)?,
@@ -1366,6 +1497,7 @@ impl Claim {
         FLAG_CLAIM, tag.flag
       ));
     }
+    refuse_retired_claim(tag.value)?;
     let validator = get_scope(tag.value, buf)?;
     Self::get_payload(tag.value, validator, buf)
   }
@@ -1396,7 +1528,6 @@ impl Claim {
       Claim::Reveal { .. }
       | Claim::Contains { .. }
       | Claim::Catalog { .. }
-      | Claim::Resource { .. }
       | Claim::Binding { .. } => None,
     }
   }
@@ -1410,7 +1541,6 @@ impl Claim {
       Claim::Reveal { .. } => VARIANT_REVEAL_PROOF,
       Claim::Contains { .. } => VARIANT_CONTAINS_PROOF,
       Claim::Catalog { .. } => VARIANT_CATALOG_PROOF,
-      Claim::Resource { .. } => VARIANT_RESOURCE_PROOF,
       Claim::Binding { .. } => VARIANT_BINDING_PROOF,
     }
   }
@@ -1451,6 +1581,12 @@ impl Proof {
         tag.value
       ));
     }
+    if tag.value == VARIANT_RESOURCE_PROOF_RETIRED {
+      return Err(format!(
+        "proof: variant {} (the resource proof) is retired",
+        tag.value
+      ));
+    }
     let validator = get_scope(tag.value + 3, buf)?;
     let claim = Claim::get_payload(tag.value + 3, validator, buf)?;
 
@@ -1487,10 +1623,26 @@ impl Proof {
 mod tests {
   use super::*;
   use crate::merkle::{merkle_join, merkle_root_canonical};
+  use crate::modes::AllocAssert;
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
   // ========== Arbitrary impls ==========
+
+  fn gen_opt_field_modes(g: &mut Gen) -> Option<Vec<FieldMode>> {
+    match u8::arbitrary(g) % 3 {
+      0 => None,
+      1 => Some(Vec::new()),
+      _ => {
+        let n = (u8::arbitrary(g) % 5) as usize;
+        Some((0..n).map(|_| FieldMode::arbitrary(g)).collect())
+      },
+    }
+  }
+
+  fn gen_opt_def_asserts(g: &mut Gen) -> Option<DefAsserts> {
+    if bool::arbitrary(g) { Some(DefAsserts::arbitrary(g)) } else { None }
+  }
 
   impl Arbitrary for RevealConstructorInfo {
     fn arbitrary(g: &mut Gen) -> Self {
@@ -1525,6 +1677,7 @@ mod tests {
         } else {
           None
         },
+        field_modes: gen_opt_field_modes(g),
       }
     }
   }
@@ -1592,6 +1745,7 @@ mod tests {
           lvls: gen_opt_u64(g),
           typ: gen_opt_addr(g),
           value: gen_opt_addr(g),
+          asserts: gen_opt_def_asserts(g),
         },
         1 => Self::Indc {
           is_unsafe: gen_opt_bool(g),
@@ -1633,6 +1787,7 @@ mod tests {
           lvls: gen_opt_u64(g),
           typ: gen_opt_addr(g),
           value: gen_opt_addr(g),
+          asserts: gen_opt_def_asserts(g),
         },
         1 => Self::Recr {
           k: gen_opt_bool(g),
@@ -1726,7 +1881,7 @@ mod tests {
 
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 8 {
+      match u8::arbitrary(g) % 7 {
         0 => Claim::Eval {
           ctx: ClaimContext::arbitrary(g),
           input: Address::arbitrary(g),
@@ -1750,12 +1905,9 @@ mod tests {
         3 => Claim::Reveal {
           comm: Address::arbitrary(g),
           info: RevealConstantInfo::arbitrary(g),
+          binders: gen_opt_addr(g),
         },
         4 => Claim::Catalog { members: Address::arbitrary(g) },
-        5 => Claim::Resource {
-          root: Address::arbitrary(g),
-          profile: Address::arbitrary(g),
-        },
         _ => Claim::Contains {
           tree: Address::arbitrary(g),
           const_addr: Address::arbitrary(g),
@@ -1801,20 +1953,42 @@ mod tests {
   /// A reveal mask bit beyond the variant's fields is refused, so one claim
   /// has one encoding. The Lean reader refuses the same bytes
   /// (`Tests/Ix/Claim.lean`, `revealMaskTests`): a Reveal claim over the zero
-  /// commitment, its variant byte, then the one-byte mask.
+  /// commitment, its variant byte, the one-byte mask, then `0x00` (`binders =
+  /// None`).
   #[test]
   fn reveal_mask_refuses_unknown_bits() {
     let mut header = vec![0xE6, 0x04, 0x00];
     header.extend_from_slice(&[0u8; 32]);
-    for (variant, unknown) in [(0u8, 0x20u8), (2, 0x08), (7, 0x04)] {
+    for (variant, unknown) in [(0u8, 0x40u8), (2, 0x08), (7, 0x04)] {
       let mut bytes = header.clone();
-      bytes.extend_from_slice(&[variant, 0x00]);
+      bytes.extend_from_slice(&[variant, 0x00, 0x00]);
       assert!(Claim::from_bytes(&bytes).is_ok(), "variant {variant}");
-      let last = bytes.len() - 1;
-      bytes[last] = unknown;
+      let mask_idx = bytes.len() - 2;
+      bytes[mask_idx] = unknown;
       let err = Claim::from_bytes(&bytes).unwrap_err();
       assert!(err.contains("reveal mask"), "{err}");
     }
+    // MutConst::Defn bit 6 (0x40) and Constructor bit 7 (0x80) are refused.
+    let mut mut_defn = header.clone();
+    mut_defn.extend_from_slice(&[0x08, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    assert!(Claim::from_bytes(&mut_defn).is_ok());
+    let idx = mut_defn.len() - 2;
+    mut_defn[idx] = 0x40;
+    let err = Claim::from_bytes(&mut_defn).unwrap_err();
+    assert!(err.contains("reveal mask"), "{err}");
+
+    let mut ctor = header.clone();
+    ctor.extend_from_slice(&[
+      0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x00, 0x00, 0x00,
+    ]);
+    assert!(Claim::from_bytes(&ctor).is_ok());
+    // In TagN(f = 0), 128 (bit 7) is rung 2: two bytes `0x80, 0x00`.
+    let mut ctor_bad = header;
+    ctor_bad.extend_from_slice(&[
+      0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x00, 0x80, 0x00, 0x00,
+    ]);
+    let err = Claim::from_bytes(&ctor_bad).unwrap_err();
+    assert!(err.contains("reveal mask"), "{err}");
   }
 
   /// The catalog claim's exact wire form is a cross-serializer
@@ -1865,6 +2039,80 @@ mod tests {
     bytes[2] = VALIDATOR_ERASED_LEAN_RETIRED;
     let err = Claim::from_bytes(&bytes).unwrap_err();
     assert!(err.contains("erased-lean-v1 is retired"), "{err}");
+  }
+
+  /// The retired resource claim (`E8 01`) and proof (`F6`) are refused as
+  /// retired, whatever follows their tag, and so are the retired and reserved
+  /// validators 2 and 6 to 8 on every claim and proof.
+  #[test]
+  fn retired_resource_claim_and_reserved_validators_refused() {
+    let root = Address::hash(b"root");
+    // The resource claim as it was written: tag, scope (object format,
+    // resource-v1), root, profile.
+    let mut claim = vec![0xE8, 0x01, Env::OBJECT_FORMAT, 2];
+    claim.extend_from_slice(root.as_bytes());
+    claim.extend_from_slice(root.as_bytes());
+    let err = Claim::from_bytes(&claim).unwrap_err();
+    assert!(err.contains("resource claim) is retired"), "{err}");
+    for len in 0..claim.len() {
+      assert!(Claim::from_bytes(&claim[..len]).is_err());
+    }
+    let mut proof = vec![0xF6, Env::OBJECT_FORMAT, 2];
+    proof.extend_from_slice(root.as_bytes());
+    proof.extend_from_slice(root.as_bytes());
+    proof.push(0);
+    let err = Proof::get(&mut proof.as_slice()).unwrap_err();
+    assert!(err.contains("resource proof) is retired"), "{err}");
+
+    let ctx = test_ctx();
+    let claims = [
+      Claim::Eval {
+        ctx: ctx.clone(),
+        input: root.clone(),
+        output: root.clone(),
+        assumptions: None,
+      },
+      Claim::Check {
+        ctx: ctx.clone(),
+        const_addr: root.clone(),
+        assumptions: None,
+      },
+      Claim::CheckEnv {
+        ctx: ctx.clone(),
+        root: root.clone(),
+        assumptions: None,
+      },
+      Claim::Reveal {
+        comm: root.clone(),
+        info: RevealConstantInfo::DPrj { idx: Some(0), block: None },
+        binders: None,
+      },
+      Claim::Contains { tree: root.clone(), const_addr: root.clone() },
+      Claim::Catalog { members: root.clone() },
+      Claim::Binding { spec: ctx.spec.clone(), binding: ctx.binding.clone() },
+    ];
+    for claim in claims {
+      let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
+      let (_, bytes) = claim.commit();
+      assert_eq!(Claim::from_bytes(&bytes).unwrap(), claim);
+      let mut proof_bytes = Vec::new();
+      Proof::new(claim.clone(), vec![]).put(&mut proof_bytes);
+      for (validator, text) in [
+        (VALIDATOR_RESOURCE_RETIRED, "resource-v1 is retired"),
+        (VALIDATOR_COMPILE_V1_RESERVED, "reserved"),
+        (VALIDATOR_COMPILE_V2_RESERVED, "reserved"),
+        (VALIDATOR_ERASED_LEAN_MODES_RESERVED, "reserved"),
+      ] {
+        let mut bad = bytes.clone();
+        bad[header + 1] = validator;
+        let err = Claim::from_bytes(&bad).unwrap_err();
+        assert!(err.contains(text), "{claim:?} {validator}: {err}");
+        let mut bad = proof_bytes.clone();
+        bad[2] = validator;
+        let err = Proof::get(&mut bad.as_slice()).unwrap_err();
+        assert!(err.contains(text), "{claim:?} {validator}: {err}");
+      }
+    }
   }
 
   fn reveal_info_roundtrip(info: &RevealConstantInfo) -> bool {
@@ -2081,7 +2329,12 @@ mod tests {
         lvls: Some(0),
         typ: None,
         value: None,
+        asserts: Some(DefAsserts {
+          alloc: AllocAssert::NoAlloc,
+          bounded_stack: true,
+        }),
       },
+      binders: Some(Address::hash(b"binders")),
     };
     assert!(claim_roundtrip(&claim));
   }
@@ -2096,6 +2349,7 @@ mod tests {
           lvls: None,
           typ: Some(Address::hash(b"typ")),
         },
+        binders: None,
       },
       vec![0xAB, 0xCD],
     );
@@ -2130,6 +2384,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u64)> = vec![
@@ -2155,7 +2410,7 @@ mod tests {
         VARIANT_CHECK_ENV_CLAIM,
       ),
       (
-        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
         VARIANT_REVEAL_CLAIM,
       ),
       (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_CLAIM),
@@ -2178,6 +2433,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u64)> = vec![
@@ -2203,7 +2459,7 @@ mod tests {
         VARIANT_CHECK_ENV_PROOF,
       ),
       (
-        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
         VARIANT_REVEAL_PROOF,
       ),
       (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_PROOF),
@@ -2303,6 +2559,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
 
     let cases: Vec<(Claim, u8)> = vec![
@@ -2327,7 +2584,10 @@ mod tests {
         Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         0xE5,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
+        0xE6,
+      ),
       (Claim::Contains { tree: a, const_addr: b }, 0xE7),
     ];
     for (claim, expected_byte) in cases {
@@ -2346,6 +2606,7 @@ mod tests {
       lvls: None,
       typ: None,
       value: None,
+      asserts: None,
     };
     let cases: Vec<(Claim, u8)> = vec![
       (
@@ -2369,7 +2630,10 @@ mod tests {
         Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         0xF2,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info, binders: None },
+        0xF3,
+      ),
       (Claim::Contains { tree: a, const_addr: b }, 0xF4),
     ];
     for (claim, expected_byte) in cases {
@@ -2385,7 +2649,7 @@ mod tests {
 
   #[test]
   fn test_reveal_defn_safety() {
-    // 0xE6 <32 bytes comm> 0x00 0x02 0x01
+    // 0xE6 0x04 0x00 <32 bytes comm> 0x00 0x02 0x01 0x00
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Defn {
@@ -2394,7 +2658,9 @@ mod tests {
         lvls: None,
         typ: None,
         value: None,
+        asserts: None,
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
@@ -2403,12 +2669,13 @@ mod tests {
     assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[36], 0x02); // mask: bit 1 (safety)
     assert_eq!(buf[37], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 38); // Total: 1 + 2 + 32 + 1 + 1 + 1 = 38 bytes
+    assert_eq!(buf[38], 0x00); // binders: None
+    assert_eq!(buf.len(), 39); // Total: 1 + 2 + 32 + 1 + 1 + 1 + 1 = 39 bytes
   }
 
   #[test]
   fn test_reveal_defn_typ() {
-    // 0xE6 <32 bytes comm> 0x00 0x08 <32 bytes typ>
+    // 0xE6 0x04 0x00 <32 bytes comm> 0x00 0x08 <32 bytes typ> 0x00
     let typ_addr = Address::hash(b"serialized typ expr");
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
@@ -2418,20 +2685,23 @@ mod tests {
         lvls: None,
         typ: Some(typ_addr),
         value: None,
+        asserts: None,
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE6);
     assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[36], 0x08); // mask: bit 3 (typ)
-    // buf[35..67] = typ address (32 bytes)
-    assert_eq!(buf.len(), 69); // Total: 1 + 2 + 32 + 1 + 1 + 32 = 69 bytes
+    // buf[37..69] = typ address (32 bytes)
+    assert_eq!(buf[69], 0x00); // binders: None
+    assert_eq!(buf.len(), 70); // Total: 1 + 2 + 32 + 1 + 1 + 32 + 1 = 70 bytes
   }
 
   #[test]
   fn test_reveal_muts_component_safety() {
-    // 0xE6 <32 comm> 0x08 0x01 0x01 0x02 0x00 0x02 0x01
+    // 0xE6 0x04 0x00 <32 comm> 0x08 0x01 0x01 0x02 0x00 0x02 0x01 0x00
     let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Muts {
@@ -2443,9 +2713,11 @@ mod tests {
             lvls: None,
             typ: None,
             value: None,
+            asserts: None,
           },
         )],
       },
+      binders: None,
     };
     let mut buf = Vec::new();
     claim.put(&mut buf);
@@ -2457,7 +2729,122 @@ mod tests {
     assert_eq!(buf[39], 0x00); // RevealMutConstInfo variant: Definition
     assert_eq!(buf[40], 0x02); // mask: bit 1 (safety)
     assert_eq!(buf[41], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 42); // Total: 1 + 32 + 7 = 40 bytes
+    assert_eq!(buf[42], 0x00); // binders: None
+    assert_eq!(buf.len(), 43); // Total: 1 + 2 + 32 + 7 + 1 = 43 bytes
+  }
+
+  #[test]
+  fn test_reveal_mode_commitments_wire_and_rejects() {
+    let comm = Address::hash(b"comm");
+    let binders = Address::hash(b"binders");
+
+    // Every legal DefAsserts code (0, 1, 2, 4, 5, 6) round-trips; illegal codes
+    // (3, 7, >= 8) are refused on both standalone and mutual definitions.
+    for code in 0..=16u8 {
+      let mut bytes = vec![0xE6, 0x04, 0x00];
+      bytes.extend_from_slice(comm.as_bytes());
+      bytes.extend_from_slice(&[0x00, 0x20, code, 0x01]);
+      bytes.extend_from_slice(binders.as_bytes());
+      match DefAsserts::of_code(code) {
+        Some(expected) => {
+          let claim = Claim::from_bytes(&bytes).unwrap();
+          assert_eq!(
+            claim,
+            Claim::Reveal {
+              comm: comm.clone(),
+              info: RevealConstantInfo::Defn {
+                kind: None,
+                safety: None,
+                lvls: None,
+                typ: None,
+                value: None,
+                asserts: Some(expected),
+              },
+              binders: Some(binders.clone()),
+            }
+          );
+          assert_eq!(claim.commit().1, bytes);
+        },
+        None => {
+          let err = Claim::from_bytes(&bytes).unwrap_err();
+          assert!(err.contains("get_def_asserts"), "{code}: {err}");
+        },
+      }
+    }
+
+    // Constructor field_modes: empty (all inherited) and listed round-trip;
+    // mode byte >= 2 and count > remaining bytes are refused.
+    let ctor_inherited = RevealConstantInfo::Muts {
+      components: vec![(
+        0,
+        RevealMutConstInfo::Indc {
+          is_unsafe: None,
+          lvls: None,
+          params: None,
+          indices: None,
+          typ: None,
+          ctors: Some(vec![(
+            0,
+            RevealConstructorInfo {
+              is_unsafe: None,
+              lvls: None,
+              cidx: None,
+              params: None,
+              fields: None,
+              typ: None,
+              field_modes: Some(vec![]),
+            },
+          )]),
+        },
+      )],
+    };
+    assert!(reveal_info_roundtrip(&ctor_inherited));
+
+    let mut bad_mode = Vec::new();
+    Claim::Reveal {
+      comm: comm.clone(),
+      info: RevealConstantInfo::Muts {
+        components: vec![(
+          0,
+          RevealMutConstInfo::Indc {
+            is_unsafe: None,
+            lvls: None,
+            params: None,
+            indices: None,
+            typ: None,
+            ctors: Some(vec![(
+              0,
+              RevealConstructorInfo {
+                is_unsafe: None,
+                lvls: None,
+                cidx: None,
+                params: None,
+                fields: None,
+                typ: None,
+                field_modes: Some(vec![
+                  FieldMode::Inherited,
+                  FieldMode::Shared,
+                ]),
+              },
+            )]),
+          },
+        )],
+      },
+      binders: None,
+    }
+    .put(&mut bad_mode);
+    assert!(Claim::from_bytes(&bad_mode).is_ok());
+    let mode_idx = bad_mode.len() - 2;
+    bad_mode[mode_idx] = 2;
+    let err = Claim::from_bytes(&bad_mode).unwrap_err();
+    assert!(err.contains("get_field_modes"), "{err}");
+
+    // Binders option tag >= 2 is refused.
+    let mut bad_binders = vec![0xE6, 0x04, 0x00];
+    bad_binders.extend_from_slice(comm.as_bytes());
+    bad_binders.extend_from_slice(&[0x00, 0x00, 0x02]);
+    let err = Claim::from_bytes(&bad_binders).unwrap_err();
+    assert!(err.contains("get_opt_addr"), "{err}");
   }
 
   // ========== All RevealConstantInfo variant roundtrips ==========
@@ -2472,6 +2859,10 @@ mod tests {
         lvls: Some(3),
         typ: Some(Address::hash(b"typ")),
         value: Some(Address::hash(b"val")),
+        asserts: Some(DefAsserts {
+          alloc: AllocAssert::NoRc,
+          bounded_stack: true,
+        }),
       },
       // Defn with no fields
       RevealConstantInfo::Defn {
@@ -2480,6 +2871,7 @@ mod tests {
         lvls: None,
         typ: None,
         value: None,
+        asserts: None,
       },
       // Recr with rules
       RevealConstantInfo::Recr {
@@ -2547,6 +2939,11 @@ mod tests {
                   params: None,
                   fields: Some(3),
                   typ: None,
+                  field_modes: Some(vec![
+                    FieldMode::Inherited,
+                    FieldMode::Shared,
+                    FieldMode::Inherited,
+                  ]),
                 },
               )]),
             },
@@ -2563,6 +2960,20 @@ mod tests {
               minors: None,
               typ: None,
               rules: None,
+            },
+          ),
+          (
+            2,
+            RevealMutConstInfo::Defn {
+              kind: Some(DefKind::Definition),
+              safety: Some(DefinitionSafety::Safe),
+              lvls: Some(0),
+              typ: None,
+              value: None,
+              asserts: Some(DefAsserts {
+                alloc: AllocAssert::NoAlloc,
+                bounded_stack: false,
+              }),
             },
           ),
         ],
@@ -2719,6 +3130,6 @@ mod tests {
     incomplete.bound.pop();
     assert!(incomplete.literal_class().is_err());
     let indices: Vec<u8> = CLASS_ROLES.iter().map(|r| r.index()).collect();
-    assert_eq!(indices, [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57]);
+    assert_eq!(indices, [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57]);
   }
 }

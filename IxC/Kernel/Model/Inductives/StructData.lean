@@ -5,6 +5,8 @@ import IxC.Kernel.Model.Inductives.StructRows
 import IxC.Kernel.Verify.InstLevels
 public import IxC.Kernel.Semantics.Tower.TowerWire
 import IxC.Kernel.Model.Annot.BitLevels
+public import IxC.Kernel.Model.Inductives.NativeJudge
+public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 public section
 
 /-!
@@ -91,19 +93,25 @@ structure FormerData {env : Env md} (m : EnvModel V env) (cvT : ConstantVal md)
   below : ∀ ψ : LevelParam → Nat, DomsBelow 0 (pps ψ)
   params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ p ∈ cvT.levelParams, ψ₁ p = ψ₂ p) →
     pps ψ₁ = pps ψ₂ ∧ resSort.eval ψ₁ = resSort.eval ψ₂
+  /-- the type is closed -/
+  tf : cvT.type.hasFvar = false
+  tb : cvT.type.looseBVarsBounded 0 = true
+  /-- the type's constants resolve -/
+  cr : cvT.type.constsResolve env = true
 
-/-- The former's data, from its `checkConstantVal` run at the
-pre-block environment and the annotated telescope shape. -/
-theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {cvT cvTa : ConstantVal md} {nP : Nat} {resSort : Level}
+/-- The former's data, from its constant check at the pre-block
+environment (over a judgement package) and the annotated telescope
+shape. -/
+theorem formerDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hI : JudgeInv J) {cvT cvTa : ConstantVal md} {nP : Nat} {resSort : Level}
     {bs : List (Expr md × Ix.Kernel.BinderMeta)}
-    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hccv : ConstantValCheckJ J env cvT cvTa)
     (hstrip : cvTa.type.stripPis nP = some (bs, .sort resSort)) :
     ∃ pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm),
-      FormerData mp.base2 cvTa nP resSort pps := by
-  obtain ⟨-, -, -, -, hlbt, hitf, type', stype, u, hann', htp', htr', hst,
-    hens, rfl⟩ := Ix.Kernel.checkConstantVal_inv hccv
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann' hitf hlbt
+      FormerData m cvTa nP resSort pps := by
+  obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann', htp', htr', stype, u, hst, hens⟩, rfl⟩ :=
+    hccv
+  obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann' hitf hlbt
   simp only at htf' hbt' htp' htr' hst hens hstrip
   have hw : Expr.WScoped 0 type' := Expr.WScoped.of_not_hasFvar htf'
   have hL : Expr.LeavesBounded type' := Expr.LeavesBounded.of_not_hasFvar htf'
@@ -111,22 +119,20 @@ theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     Expr.fvarLeaves_eq_nil_of_not_hasFvar htf'
   obtain ⟨fvs, hop⟩ := openPisAtFvars_of_stripPis_sort nP 0 hstrip
   -- the bits: the opened body is `Sort resSort`, of sort `succ resSort`
-  obtain ⟨F', tb, vb, hib, hensb, -, hbits⟩ :=
-    piBits_of_infer hμ nP hop hst hens
-  obtain rfl := inferTypeCore_sort_inv hib
-  obtain rfl := ensureSortCore_sort_eq hensb
+  obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI nP hop hst hens
+  obtain rfl := hI.infer_sort hib
+  obtain rfl := hI.sort_sort hensb
   -- per assignment: the reading, its peel, its grading
   have hper : ∀ ψ : LevelParam → Nat, ∃ pps : List (Nat × Nat × AnnotTerm),
-      denoteMeta mp.base2.acval env ψ 0 type'
+      denoteMeta m.acval env ψ 0 type'
         = some (mkPisAV pps (.sort (resSort.eval ψ))) ∧
       pps.length = nP ∧
       (∀ d ∈ pps, d.2.1 ≠ 0) ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ (mkPisAV pps (.sort (resSort.eval ψ)))) ∧
       DomsBelow 0 pps := by
     intro ψ
-    have hc := claimsAt_of hμ mp ψ F
-    obtain ⟨Ta, hTa⟩ := acceptedReads_of mp.base2 ψ hst hw hbt' hL
-    obtain ⟨-, -, hokT, -, -⟩ := hc.inferRow hst hw hbt' hL (CtxOk.nil hnil) hTa
+    obtain ⟨Ta, hTa⟩ := hJ.accepted ψ hst hw hbt' hL
+    obtain ⟨-, -, hokT, -, -⟩ := inferRowJ hJ hst hw hbt' hL (CtxOk.nil hnil) hTa
     have hokT' : ∀ ρ : Nat → V, WellDenotedV V ρ Ta := fun ρ =>
       hokT ρ (Sat_nil V ρ)
     obtain ⟨Γ, R, htele, hop'⟩ := opened_of hop htf' hbt' hTa hokT'
@@ -144,7 +150,7 @@ theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       simp only [Level.eval, Nat.succ_ne_zero, iff_false] at this
       exact this
     · exact (stripPisAV_below hst' (bvarsBelow_of_reading hw hbt' hTa)).1
-  refine ⟨fun ψ => Classical.choose (hper ψ), ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨fun ψ => Classical.choose (hper ψ), ?_, ?_, ?_, ?_, ?_, ?_, htf', hbt', htr'⟩
   · exact fun ψ => (Classical.choose_spec (hper ψ)).1
   · exact fun ψ => (Classical.choose_spec (hper ψ)).2.1
   · exact fun ψ => (Classical.choose_spec (hper ψ)).2.2.1
@@ -152,16 +158,29 @@ theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   · exact fun ψ => (Classical.choose_spec (hper ψ)).2.2.2.2
   · intro ψ₁ ψ₂ hφ
     have h2 := (Classical.choose_spec (hper ψ₂)).1
-    have h1 : denoteMeta mp.base2.acval env ψ₂ 0 type'
+    have h1 : denoteMeta m.acval env ψ₂ 0 type'
         = some (mkPisAV (Classical.choose (hper ψ₁))
           (.sort (resSort.eval ψ₁))) := by
-      rw [← denoteMeta_params_ext mp.base2 hφ 0 type' htp']
+      rw [← denoteMeta_params_ext m hφ 0 type' htp']
       exact (Classical.choose_spec (hper ψ₁)).1
     obtain ⟨hp, hb⟩ := mkPisAV_inj
       (by rw [(Classical.choose_spec (hper ψ₁)).2.1,
         (Classical.choose_spec (hper ψ₂)).2.1])
       (Option.some.inj (h1.symm.trans h2))
     exact ⟨hp, AnnotTerm.sort.inj hb⟩
+
+/-- The former's data, from its `checkConstantVal` run at the
+pre-block environment and the annotated telescope shape: `formerDataJ`
+at the kernel's runs. -/
+theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {cvT cvTa : ConstantVal md} {nP : Nat} {resSort : Level}
+    {bs : List (Expr md × Ix.Kernel.BinderMeta)}
+    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hstrip : cvTa.type.stripPis nP = some (bs, .sort resSort)) :
+    ∃ pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm),
+      FormerData mp.base2 cvTa nP resSort pps :=
+  formerDataJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F)
+    (Ix.Kernel.Semantics.constantValCheckJ_of_run hccv) hstrip
 
 /-- The former's data crosses a cons whose slot does not mention the
 stored type (any block cons after the former's). -/
@@ -183,5 +202,8 @@ theorem FormerData.cross {m : EnvModel V env} {cvT : ConstantVal md}
   okTy := h.okTy
   below := h.below
   params := h.params
+  tf := h.tf
+  tb := h.tb
+  cr := Ix.Kernel.Expr.constsResolve_mono h.cr
 
 end Ix.Kernel.Model

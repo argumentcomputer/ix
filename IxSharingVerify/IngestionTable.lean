@@ -42,8 +42,8 @@ theorem SharesValid.context {before after : ShareCtx} (growth : ContextExtends b
   induction source with
   | share index => obtain ⟨id, found⟩ := valid; exact ⟨id, growth index id found⟩
   | prj _ _ _ ih => exact ih valid
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha => exact ⟨ihf valid.1, iha valid.2⟩
-  | letE _ _ _ _ iht ihv ihb => exact ⟨iht valid.1, ihv valid.2.1, ihb valid.2.2⟩
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha => exact ⟨ihf valid.1, iha valid.2⟩
+  | letE _ _ _ _ _ iht ihv ihb => exact ⟨iht valid.1, ihv valid.2.1, ihb valid.2.2⟩
   | _ => trivial
 
 theorem SharesValid.expansion_context {before after : ShareCtx} (growth : ContextExtends before after)
@@ -55,9 +55,9 @@ theorem SharesValid.expansion_context {before after : ShareCtx} (growth : Contex
     simp only [substShares, expansion, resolveShare_slot before index id found,
       resolveShare_slot after index id (growth index id found)]
   | prj _ _ _ ih => simp only [substShares, ih valid]
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha =>
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha =>
     simp only [substShares, ihf valid.1, iha valid.2]
-  | letE _ _ _ _ iht ihv ihb => simp only [substShares, iht valid.1, ihv valid.2.1, ihb valid.2.2]
+  | letE _ _ _ _ _ iht ihv ihb => simp only [substShares, iht valid.1, ihv valid.2.1, ihb valid.2.2]
   | _ => rfl
 
 theorem Represents.context {before after : ShareCtx} (growth : ContextExtends before after)
@@ -150,8 +150,8 @@ theorem SharesValid.bounded (context : ShareCtx) (source : Ixon.Expr) (valid : S
     obtain ⟨id, found⟩ := valid
     exact (Array.getElem?_eq_some_iff.mp (resolveShare_slot context index id found)).1
   | prj _ _ _ ih => exact ih valid
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha => exact ⟨ihf valid.1, iha valid.2⟩
-  | letE _ _ _ _ iht ihv ihb => exact ⟨iht valid.1, ihv valid.2.1, ihb valid.2.2⟩
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha => exact ⟨ihf valid.1, iha valid.2⟩
+  | letE _ _ _ _ _ iht ihv ihb => exact ⟨iht valid.1, ihv valid.2.1, ihb valid.2.2⟩
   | _ => trivial
 
 /-- Proof view of the production indexed for-loop; no algorithm changes. -/

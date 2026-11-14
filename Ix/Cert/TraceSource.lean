@@ -192,7 +192,9 @@ theorem withContract_defined {ps : List LevelParam} {c : Ix.SemanticContract.Con
     {x x' : Ix.Kernel.Expr .source} (h : withContract c e x = .ok x') :
     x'.allLevelParamsDefined ps = x.allLevelParamsDefined ps := by
   unfold withContract at h
-  split at h <;> first | (cases h; rfl) | simp [throw, throwThe, MonadExceptOf.throw] at h
+  split at h
+  · cases h; rfl
+  · split at h <;> cases h
 
 /-- **A term converted under `σ` has its level parameters among `ps`** when every position of
 `σ` is. -/

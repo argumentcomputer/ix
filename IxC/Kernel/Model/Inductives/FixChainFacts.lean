@@ -62,26 +62,23 @@ theorem eval_le_idxUniv {ψ : LevelParam → Nat} {isorts : List Level} {j : Nat
 
 /-- **The former's index telescope**, graded and bounded by the tuple
 universe at every parameter frame. -/
-theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md} {T : Key md}
-    {caps : IndCaps md} (hfT : env.find? T = some (.indInfo cvTa caps))
+theorem idxOkJ {J : Judgements md} {m : EnvModel V env} (hS : ∀ ψ, SortClaimJ J m ψ)
+    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md}
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
     {isorts : List Level}
-    (hsorts : Ix.Kernel.checkStructFieldSortsI (Ix.Kernel.fueledOps μ F) env true false resSort nP
-      (tfvs.drop nP) [] nIdx = .ok isorts)
+    (hsorts : FieldSortsJ J env true false resSort nP (tfvs.drop nP) [] nIdx isorts)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
-    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
     (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     IdxOk (idxUniv ψ isorts) ρp (((ppsAll ψ).drop nP).map (·.2.2)) := by
-  obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf hTb
-  have hT : Opened mp.base2 ψ (nP + nIdx) cvTa.type tfvs trest
+  have hTf := hFD.tf
+  have hTb := hFD.tb
+  have hT : Opened m ψ (nP + nIdx) cvTa.type tfvs trest
       (((ppsAll ψ).map (·.2.2)).reverse) (.sort (resSort.eval ψ)) :=
     opened_of_peel hopT hTf hTb (hFD.read ψ) (hFD.len ψ) (hFD.okTy ψ)
-  have hc := claimsAt_of hμ mp ψ F
-  obtain ⟨-, hrows⟩ := Ix.Kernel.checkStructFieldSortsI_inv hsorts
+  obtain ⟨-, hrows⟩ := hsorts
   have hlenT : tfvs.length = nP + nIdx := openPisAtFvars_length _ hopT
   have hΓ : (((ppsAll ψ).map (·.2.2)).reverse).length = nP + nIdx := by simp [hFD.len ψ]
   -- the index binders' universes at their frames
@@ -96,7 +93,7 @@ theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     obtain ⟨-, hws, hb, hL, hleaf⟩ := hT.var (nP + j) fv hfvT
     have hCtx := hT.ctx (i := nP + j) (by omega) hws hleaf
     have hread := hT.doms (nP + j) fv hfvT
-    have hrow := hc.sortRow hi hens hws hb hL hCtx hread ρ hρ
+    have hrow := sortRowJ (hS ψ) hi hens hws hb hL hCtx hread ρ hρ
     exact univ_mono (eval_le_idxUniv (ψ := ψ) hu) _ hrow.2
   have hρp' : Sat V ((((ppsAll ψ).map (·.2.2)).reverse).drop (nP + nIdx - (nP + 0))) ρp := by
     rw [Nat.add_zero, drop_fields_eq (hFD.len ψ) nP (Nat.le_refl _), Nat.sub_self, List.drop_zero]
@@ -171,22 +168,21 @@ theorem openPisAtFvars_leaf_bound {n : Nat} {e : Expr md} {d : Nat} {fvs : List 
 set_option maxHeartbeats 1600000 in
 /-- **The walk's inputs**, from a recursive constructor's data at a
 carrier storing the former as a λ-tower over the parameters. -/
-theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+theorem fixChainFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
-    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
-    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
-    (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B)
+    (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
+    (hleafT : ∀ ψ, ∃ B, m.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B)
     {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
     {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
     {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
-    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+    (hD : FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
     (u : Nat) (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
@@ -194,21 +190,22 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
       (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) := by
   -- the openings, the opened record
   obtain ⟨crest, hopP, hopX⟩ := hD.opens
-  obtain ⟨hcf, -, -, hcb⟩ := Ix.Kernel.direct_sum_ctor_typeWF hCtor
+  obtain ⟨_, hccvW⟩ := hCtor.check
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   have hopAll : openPisAtFvars (nP + nF) cvCa.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopX)
-  have hO : Opened mp.base2 ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
-      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ)) :=
+  have hO : Opened m ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
+      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI m T nP nF ψ (Es ψ)) :=
     opened_of_peel hopAll hcf hcb (hD.read ψ) (hD.len ψ) (hD.okTy ψ)
   have hlenDs := hD.len ψ
   have hlenFs : ((((ds ψ).drop nP).map (·.2.2))).length = nF := by simp [hlenDs]
   have hlenIds : ((((ppsAll ψ).drop nP).map (·.2.2))).length = nIdx := by
     simp [hFD.len ψ]
   -- the parameter frames identified
-  have hiff := (ctorFramesGen hμ mp hCtor hfT hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
+  have hiff := (ctorFramesGenJ hJ hS hCtor hProp hFD hD.toCtorDataI hleafT).1 ψ ρp
   have hρp' : Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρp := hiff.mp hρp
   -- the shadow gradings
-  obtain ⟨hkey, hkeyR⟩ := fixShadowGrading hμ mp hCtor hProp hD ψ
+  obtain ⟨hkey, hkeyR⟩ := fixShadowGradingJ hJ hI hS hCtor hProp hD ψ
   -- a recursive variable is a leaf of no later domain nor of the residual
   have hrecGet : ∀ i, recAt nP ks (nP + i) → i < nF → ∃ x, xFvs[i]? = some x ∧
       (∀ y ∈ xFvs.drop (i + 1), y.fvarTypeD.mentionsFvar (nP + i) = false) ∧
@@ -252,11 +249,11 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
         openPisAtFvars ((tss ψ).getD i []).length x.fvarTypeD (nP + i) = some (afvs, body) ∧
         (∀ k a, afvs[k]? = some a → Expr.WScoped (nP + i + k) a.fvarTypeD ∧
           (∀ l ∈ a.fvarTypeD.fvarLeaves, ¬ (recAt nP ks l.1 ∧ l.1 < nP + i)) ∧
-          denoteMeta mp.base2.acval env ψ (nP + i + k) a.fvarTypeD
+          denoteMeta m.acval env ψ (nP + i + k) a.fvarTypeD
             = some (((tss ψ).getD i []).getD k default).2.2) ∧
         Expr.WScoped (nP + i + ((tss ψ).getD i []).length) body ∧
         (∀ l ∈ body.fvarLeaves, ¬ (recAt nP ks l.1 ∧ l.1 < nP + i)) ∧
-        DenoteMetaSpine mp.base2.acval env ψ (nP + i + ((tss ψ).getD i []).length)
+        DenoteMetaSpine m.acval env ψ (nP + i + ((tss ψ).getD i []).length)
           (body.getAppArgs.drop nP) ((Eiss ψ).getD i []) := by
     intro i x hx hk hi
     obtain ⟨afvs, body, hop, -, hdoms, hsp⟩ := hD.reflOpen ψ i x hx hk
@@ -283,7 +280,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     intro i hi
     obtain ⟨x, hx, hws, hlf⟩ := hdom i hi
     rw [drop_map_getD hlenDs hi]
-    exact noBVar_of_leaf_free mp.base2 (nP + i) x.fvarTypeD hws (hQlt i) hlf (hD.domRead ψ i x hx)
+    exact noBVar_of_leaf_free m (nP + i) x.fvarTypeD hws (hQlt i) hlf (hD.domRead ψ i x hx)
   · -- nor do a reflexive field's telescope domains
     intro i hi hr k d hkd
     have hk := hr.2
@@ -300,7 +297,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
       have hd : d.2.2 = (((tss ψ).getD i []).getD k default).2.2 := by
         rw [List.getD_eq_getElem?_getD, hkd]; rfl
       rw [hd]
-      exact noBVar_of_leaf_free mp.base2 (nP + i + k) _ hws (fun q h => by have := h.2; omega)
+      exact noBVar_of_leaf_free m (nP + i + k) _ hws (fun q h => by have := h.2; omega)
         hlf hread
   · -- nor do the recursive slots' index expressions
     intro i hi hr E hE
@@ -311,12 +308,12 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     · rw [hD.tssNone ψ i (hne_refl i hk), List.length_nil, Nat.add_zero]
       obtain ⟨a, ha, hra⟩ := DenoteMetaSpine.mem_inv (hD.eisRead ψ i x hx hk) E hE
       have ha' : a ∈ x.fvarTypeD.getAppArgs := List.mem_of_mem_drop ha
-      exact noBVar_of_leaf_free mp.base2 (nP + i) a (WScoped_of_mem_getAppArgs _ a hws ha')
+      exact noBVar_of_leaf_free m (nP + i) a (WScoped_of_mem_getAppArgs _ a hws ha')
         (hQlt i) (fun l hl => hlf l (mem_fvarLeaves_of_getAppArgs _ a ha' l hl)) hra
     · obtain ⟨afvs, body, hop, -, hwsB, hlfB, hspB⟩ := hreflGet i x hx hk hi
       obtain ⟨a, ha, hra⟩ := DenoteMetaSpine.mem_inv hspB E hE
       have ha' : a ∈ body.getAppArgs := List.mem_of_mem_drop ha
-      exact noBVar_of_leaf_free mp.base2 _ a (WScoped_of_mem_getAppArgs _ a hwsB ha')
+      exact noBVar_of_leaf_free m _ a (WScoped_of_mem_getAppArgs _ a hwsB ha')
         (fun q h => by have := h.2; omega)
         (fun l hl => hlfB l (mem_fvarLeaves_of_getAppArgs _ a ha' l hl)) hra
   · -- nor do the residual's index readings
@@ -324,7 +321,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     obtain ⟨a, ha, hra⟩ := DenoteMetaSpine.mem_inv (hD.idxRead ψ) E hE
     rw [hD.idxEq] at ha
     have ha' : a ∈ xrest.getAppArgs := List.mem_of_mem_drop ha
-    refine noBVar_of_leaf_free mp.base2 (nP + nF) a
+    refine noBVar_of_leaf_free m (nP + nF) a
       (WScoped_of_mem_getAppArgs _ a hO.bodyScoped.1 ha') (hQlt nF) ?_ hra
     intro l hl ⟨hr, hlt⟩
     have hge := hr.1
@@ -345,7 +342,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     -- the fit, through the family's λ-tower, at a frame reading the
     -- parameters below `e` field-and-telescope values
     have fitAt : ∀ (σas : List V) (e : Nat), σas.length = e →
-        WellDenoted V (consList σas ρp) (AnnotTerm.mkAppN (mp.base2.acval T ψ)
+        WellDenoted V (consList σas ρp) (AnnotTerm.mkAppN (m.acval T ψ)
           (paramBvarsAt nP (nP + e) ++ (Eiss ψ).getD i [])) →
         ((Eiss ψ).getD i []).length = nIdx →
         (∀ E ∈ (Eiss ψ).getD i [], WellDenoted V (consList σas ρp) E) ∧
@@ -355,9 +352,9 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
       obtain ⟨-, hargs⟩ := WellDenoted.mkAppN_inv hokA
       refine ⟨fun E hE => hargs E (List.mem_append_right _ hE), ?_⟩
       obtain ⟨B, hB⟩ := hleafT ψ
-      have hK : Term.bvarsBelow 0 (mp.base2.acval T ψ).erase := mp.base2.cval_closedL T ψ
+      have hK : Term.bvarsBelow 0 (m.acval T ψ).erase := m.cval_closedL T ψ
       rw [hB] at hK
-      have hf : interp V (consList σas ρp) (mp.base2.acval T ψ)
+      have hf : interp V (consList σas ρp) (m.acval T ψ)
           = interp V (fun j => ρp (j + nP)) (mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B) := by
         rw [hB]; exact interp_closed (V := V) hK _ _
       have hlenArgs : (paramBvarsAt nP (nP + e) ++ (Eiss ψ).getD i []).length = nP + nIdx := by
@@ -365,7 +362,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
         simp [paramBvarsAt, hEl]
       have hfit := spineFit_of_wellDenoted_lams (u := resSort.eval ψ + 1) (Nat.succ_ne_zero _) (b := B)
         (args := paramBvarsAt nP (nP + e) ++ (Eiss ψ).getD i []) (ds := ppsAll ψ)
-        (σ := fun j => ρp (j + nP)) (ρ := consList σas ρp) (f := mp.base2.acval T ψ)
+        (σ := fun j => ρp (j + nP)) (ρ := consList σas ρp) (f := m.acval T ψ)
         (by rw [hlenArgs, hFD.len ψ]; exact Nat.le_refl _) hokA hf
       rw [hlenArgs, List.take_of_length_le (by rw [hFD.len ψ]; exact Nat.le_refl _),
         ← List.take_append_drop nP (ppsAll ψ), List.map_append, List.map_append] at hfit
@@ -401,7 +398,7 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
         rw [getD_map_snd hkT]
         have hbs' : SpineFit (consList as' ρp) ((((tss ψ).getD i []).take k).map (·.2.2)) bs := by
           rw [List.map_take]; exact hbs
-        refine ⟨?_, fun hw => (fixTeleBound_of hμ mp hCtor hProp hD ψ hw hi hk hρp' hsp' k hkT bs hbs').2⟩
+        refine ⟨?_, fun hw => (fixTeleBoundJ hJ hI hS hCtor hProp hD ψ hw hi hk hρp' hsp' k hkT bs hbs').2⟩
         have := hF.wellDenoted_at k (by rw [List.length_map]; exact hkT) bs hbs
         rwa [getD_map_snd hkT] at this
       · have hokB := hB bs hsp
@@ -423,5 +420,45 @@ theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
     unfold ctorBodyAVI at hokR
     obtain ⟨-, hargs⟩ := WellDenoted.mkAppN_inv hokR.1
     exact hargs E (List.mem_append_right _ hE)
+
+
+/-- The former's index telescope from its sort runs: `idxOkJ` at the kernel's runs. -/
+theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md}
+    {tfvs : List (Expr md)} {trest : Expr md}
+    (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
+    {isorts : List Level}
+    (hsorts : Ix.Kernel.checkStructFieldSortsI (Ix.Kernel.fueledOps μ F) env true false resSort nP
+      (tfvs.drop nP) [] nIdx = .ok isorts)
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    (ψ : LevelParam → Nat) (ρp : Nat → V)
+    (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
+    IdxOk (idxUniv ψ isorts) ρp (((ppsAll ψ).drop nP).map (·.2.2)) :=
+  idxOkJ (sortClaim_runJ hμ mp F) hopT (Ix.Kernel.Semantics.fieldSortsJ_of_run hsorts) hFD ψ ρp hρp
+
+/-- The walk's inputs from the constructor's stage run: `fixChainFactsJ` at the kernel's runs. -/
+theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B)
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+      srcs ks fvsP xFvs xrest Eiss tss)
+    (u : Nat) (ψ : LevelParam → Nat) (ρp : Nat → V)
+    (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
+    ChainFacts u (resSort.eval ψ) nP nF ρp (((ppsAll ψ).drop nP).map (·.2.2)) ks (tss ψ)
+      (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) :=
+  fixChainFactsJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hFD hleafT hD u ψ ρp hρp
 
 end Ix.Kernel.Model

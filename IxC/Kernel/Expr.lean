@@ -3,7 +3,7 @@ module
 public import IxC.Kernel.Key
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
-public import IxC.Ixon.Types.Contract
+public import IxC.Ixon.Types.Modes
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
 is that it is *definitionally* `k ()` — which is what
 `Level.beqPtr_eq` and `Expr.beqMemo_eq` prove.  `import all` makes that
@@ -159,31 +159,15 @@ sit beside it is gone (task #205): the official kernel's equality and
 hash ignore it, so it was never data the checker held — the frontend
 validates a stream's spelling and drops it (`parseBinderInfo`).
 
-The binder also carries Ixon's binder contracts
-(`IxC/Ixon/Types/Contract.lean`). They are committed content (they move
-a constant's address), so they are identity data, not display data:
-* `contract`: the bound variable's usage, ownership and locality (Ixon's
-  `lam` and `all` input contract);
-* `result`: the value contract of a `forallE`'s result (Ixon's `all`
-  result contract). A `lam` has none and carries `shared`.
-
-Lean has no contracts: Lean-fragment binders carry the defaults, `many`,
-`shared`, `unrestricted` in and `shared`, `unrestricted` out, which is
-what `{ pw := … }` builds. Conversion compares input contracts: the
-binder congruences and η require equal `contract`s besides equal `pw`s
-(`Rules/Rel.lean`; `defeqStep` and `etaCert` in `Core.lean`). It never
-compares `result`s: a `lam` has none, so the type inferred for one carries
-the default. The model reads only `pw`. Structural `=` and the packed
-hash (`BinderMeta.hashData`) see all the contracts, so terms that differ
-only in contracts are different terms, as their Ixon addresses are; basis
-and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too.
+Kernel terms carry no resource modes: a binder's and a let's mode stay in the
+Ixon record (its binder-data section and let header), which the reader does
+not read, so the checker and the model are mode-blind. Structural `=` and the
+packed hash (`BinderMeta.hashData`) see `pw`.
 
 `display` is the binder's display annotation (step 6b, above): a
 subsingleton, so none of the above sees it. -/
 structure BinderMeta where
   pw : PropWhen
-  contract : Ixon.BinderContract := .many
-  result : Ixon.ValueContract := .shared
   display : Squash BinderDisplay := BinderDisplay.anon
   deriving DecidableEq, Repr
 
@@ -193,8 +177,8 @@ instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
 
 A `BinderMeta` is an object of its own, so building one per binder — in the
 reader, in the annotation pass, at each level instantiation — allocates one
-per binder. Nearly every binder of a Lean-compiled term has the Lean
-fragment's contracts and a parameter-free datum, so the builders below return
+per binder. Nearly every binder of a Lean-compiled term has a parameter-free
+datum, so the builders below return
 one of two shared closed objects, or the metadata they were given, where the
 value is the same. Each is proved equal to the plain structure update it
 replaces. -/
@@ -207,33 +191,16 @@ def BinderMeta.leanNever : BinderMeta := { pw := .never }
 codomain sort is zero at every valuation): one shared object. -/
 def BinderMeta.leanAlways : BinderMeta := { pw := .ifAllZero [] }
 
-/-- An input binder's metadata, `{ pw := .never, contract := c, result := r }`:
-the shared `leanNever` for the Lean fragment's contracts
-(`BinderMeta.ofContracts_eq`). -/
-@[inline] def BinderMeta.ofContracts (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
-    BinderMeta :=
-  if c = .many ∧ r = .shared then BinderMeta.leanNever
-  else { pw := .never, contract := c, result := r }
-
-theorem BinderMeta.ofContracts_eq (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
-    BinderMeta.ofContracts c r = { pw := .never, contract := c, result := r } := by
-  unfold BinderMeta.ofContracts
-  split
-  · next h => obtain ⟨rfl, rfl⟩ := h; rfl
-  · rfl
-
 /-- `{ mb with pw := .ifAllZero [] }`; at run time the shared `leanAlways`
 when that is the same binder, display included (`shareAlwaysImpl`). -/
 def BinderMeta.shareAlways (mb : BinderMeta) : BinderMeta := { mb with pw := .ifAllZero [] }
 
-/-- A Lean-fragment binder at the datum `ifAllZero []` is `leanAlways`,
-whatever its display: the annotation is a subsingleton. -/
-theorem BinderMeta.leanAlways_eq (mb : BinderMeta)
-    (h : mb.contract = .many ∧ mb.result = .shared) :
+/-- A binder at the datum `ifAllZero []` is `leanAlways`, whatever its display:
+the annotation is a subsingleton. -/
+theorem BinderMeta.leanAlways_eq (mb : BinderMeta) :
     BinderMeta.leanAlways = { mb with pw := .ifAllZero [] } := by
-  obtain ⟨p, c, r, d⟩ := mb
-  obtain ⟨rfl, rfl⟩ := h
-  show BinderMeta.mk _ _ _ BinderDisplay.anon = BinderMeta.mk _ _ _ d
+  obtain ⟨p, d⟩ := mb
+  show BinderMeta.mk _ BinderDisplay.anon = BinderMeta.mk _ d
   rw [Subsingleton.elim BinderDisplay.anon d]
 
 /-- `withPtrAddr` into the subsingleton `{ m // m = c }`: its side condition
@@ -243,17 +210,14 @@ holds because both results are `c`. -/
   withPtrAddr a k (fun u₁ u₂ => Subtype.ext ((k u₁).2.trans (k u₂).2.symm))
 
 /-- The run-time `shareAlways` (PERF P14, step 6b): the shared `leanAlways` for
-a Lean-fragment binder whose display is the shared anonymous object, and a copy
+a binder whose display is the shared anonymous object, and a copy
 otherwise, so that a binder with a name keeps it. The display test reads the
 annotation's address, never its value: each branch is the same binder (the
 annotation is a subsingleton), so the result is a subsingleton and does not
 depend on the address (`withPtrAddr`'s side condition). -/
 def BinderMeta.shareAlwaysImpl (mb : BinderMeta) : BinderMeta :=
   (BinderMeta.withAddrEq mb.display fun a => BinderMeta.withAddrEq BinderDisplay.anon fun b =>
-    if h : a == b && decide (mb.contract = .many) && decide (mb.result = .shared) then
-      ⟨BinderMeta.leanAlways, BinderMeta.leanAlways_eq mb (by
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-        exact ⟨h.1.2, h.2⟩)⟩
+    if a == b then ⟨BinderMeta.leanAlways, BinderMeta.leanAlways_eq mb⟩
     else ⟨{ mb with pw := .ifAllZero [] }, rfl⟩).1
 
 /-- The compiler runs `shareAlwaysImpl` for `shareAlways`: the same binder. -/
@@ -266,17 +230,16 @@ def BinderMeta.shareAlwaysImpl (mb : BinderMeta) : BinderMeta :=
 
 /-- `{ mb with pw }`, without a new object where an equal one exists: `mb`
 itself when both data are `never`, the shared `leanAlways` for a
-Lean-fragment binder whose new datum is `ifAllZero []` and which carries no
+binder whose new datum is `ifAllZero []` and which carries no
 name (`shareAlways`; `BinderMeta.withPw_eq`). -/
 @[inline] def BinderMeta.withPw (mb : BinderMeta) (pw : PropWhen) : BinderMeta :=
   if pw.isNever && mb.pw.isNever then mb
-  else if !pw.hasParams && !pw.isNever && decide (mb.contract = .many) &&
-      decide (mb.result = .shared) then BinderMeta.shareAlways mb
+  else if !pw.hasParams && !pw.isNever then BinderMeta.shareAlways mb
   else { mb with pw }
 
 theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
     mb.withPw pw = { mb with pw } := by
-  obtain ⟨p, c, r⟩ := mb
+  obtain ⟨p, d⟩ := mb
   unfold BinderMeta.withPw
   split
   · next h =>
@@ -285,9 +248,8 @@ theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
     rfl
   · split
     · next h =>
-      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
-        decide_eq_true_eq] at h
-      obtain ⟨⟨⟨hp, hn⟩, rfl⟩, rfl⟩ := h
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+      obtain ⟨hp, hn⟩ := h
       cases pw with
       | never => simp at hn
       | ifAllZero ps =>
@@ -296,38 +258,27 @@ theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
         | cons q qs => simp at hp
     · rfl
 
-/-- A binder's share of its node's hash: the hash of `pw`, mixed with the
-contracts' hashes unless they are the Lean fragment's. So the hash is a
-function of all of the binder's identity data, and a Lean-fragment binder
-hashes by `pw` alone. -/
+/-- A binder's share of its node's hash: the hash of `pw`. -/
 @[inline] def BinderMeta.hashData (m : BinderMeta) : UInt64 :=
-  if m.contract == .many && m.result == .shared then Hashable.hash m.pw
-  else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
+  Hashable.hash m.pw
 
-/-- Metadata carried by a `letE`: Ixon's let contract (`Ixon.LetContract`,
-`IxC/Ixon/Types/Contract.lean`): the `nonDep` flag, whether the let binds a
-value or a shared borrow, and the bound variable's contract. Like a binder's
-contracts it is committed content (it moves a constant's address), so it is
-identity data: structural `=` sees it. Lean's lets carry `LetContract.lean
-nonDep`. Conversion never compares it: the annotation pass substitutes every
-let away before a term is inferred or compared, and the model reads none of
-it. The packed hash mixes it in only off the Lean fragment (a value let at the
-default binder contract), so a Lean let hashes as before.
+/-- Metadata carried by a `letE`: Lean's `nonDep` flag. A let's resource mode
+stays in its record's let header, which the reader does not keep: kernel terms
+carry no modes. Conversion never compares the metadata: the annotation pass
+substitutes every let away before a term is inferred or compared, and the
+model reads none of it.
 
 `display` is the let's display annotation, its Lean name (step 6b): a
 subsingleton, so none of the above sees it. -/
 structure LetMeta where
-  contract : Ixon.LetContract := .lean false
+  nonDep : Bool := false
   display : Squash Name := LetDisplay.anon
   deriving DecidableEq, Repr
 
 instance : Inhabited LetMeta := ⟨{}⟩
 
-/-- A let's share of its node's hash: none on the Lean fragment, else the
-contract's hash. -/
-@[inline] def LetMeta.hashData (l : LetMeta) : UInt64 :=
-  if l.contract.kind == .value && l.contract.binder == .many then 0
-  else hash l.contract
+/-- A let's share of its node's hash: none. -/
+@[inline] def LetMeta.hashData (_l : LetMeta) : UInt64 := 0
 
 /-- Literals. -/
 inductive Literal where
@@ -645,7 +596,7 @@ namespace Expr
 
 /-- The node's 32-bit hash (`O(1)`).  The recurrence reads exactly
 what `is_equal` in the official kernel reads (`expr_eq_fn.cpp`) plus
-the validated `pw` datum and the binder contracts
+the validated `pw` datum and the binder modes
 (`BinderMeta.hashData`); there is no display data in a node (task #205),
 so hashing and `DecidableEq` are α-equivalence outright. -/
 @[inline] def hash (e : Expr md) : UInt64 := hashOfData e.data

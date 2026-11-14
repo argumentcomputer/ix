@@ -267,6 +267,19 @@ theorem Red.natLit_sound {d n : Nat} (h : Ix.Kernel.natLitSupported env = true) 
     rw [Ix.Kernel.natLitToConstructor_fvarLeaves] at hl; exact nomatch hl
   · rw [denoteMeta_natLitToConstructor h]; exact hea
 
+/-- `Nat.zero` and the literal `0` read alike (`denoteMeta_natLitToConstructor` at `0`). -/
+theorem Red.natZeroLit_sound {d : Nat} (h : Ix.Kernel.natLitSupported env = true) :
+    RedSem m φ d (.const natZeroName []) (.lit (.natVal 0)) := by
+  intro _ Δa ea _ hea hg
+  have h0 : denoteMeta m.acval env φ d (.lit (.natVal 0)) = some ea := by
+    rw [← denoteMeta_natLitToConstructor h d 0]; exact hea
+  have hnf : (Expr.lit (.natVal 0) : Expr md).hasFvar = false := rfl
+  refine ⟨⟨Ix.Kernel.Expr.WScoped.of_not_hasFvar hnf, rfl,
+      Ix.Kernel.Expr.LeavesBounded.of_not_hasFvar hnf⟩, fun l hl => ?_, ea, h0, hg,
+    fun _ _ => rfl⟩
+  rw [Ix.Kernel.Expr.fvarLeaves_eq_nil_of_not_hasFvar hnf] at hl
+  exact nomatch hl
+
 /-- `denotePStrLit_of_guard` (`Steps/Stuck.lean:540`). -/
 theorem Red.strLit_sound {d : Nat} {s : String}
     (h : Ix.Kernel.strLitSupported env = true) :
@@ -365,7 +378,8 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     (hi : i < entry.numFields)
     (hlen : e.getAppArgs.length = entry.numParams + entry.numFields)
     (hus : us.length = entry.levelParams.length)
-    (hfire : entry.fireOk us = true)
+    (hfire : Level.isEquiv entry.structSort .zero = some true →
+      ∀ ψ, Level.eval ψ (Level.subst entry.levelParams us entry.fieldSort) = 0)
     (hctor : env.find? entry.ctor = some (.ctorInfo cvC nP nF))
     (hcerts : CertsSem m φ d true
       (cvC.type.instantiateLevelParams cvC.levelParams us) e.getAppArgs) :
@@ -446,9 +460,7 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     rw [← hlpsC]
     exact hmemC0 σ
   -- the ∀-chain, off the head data's arity pin
-  obtain ⟨cvC'', hfC'', -, hstrip⟩ := (m.proj_ok.towerHead hent).2.2.2.2
-  obtain ⟨rfl, -, -⟩ :=
-    ConstantInfo.ctorInfo.inj (Option.some.inj (hfC.symm.trans hfC''))
+  have hstrip := (m.proj_ok.towerHead hent).ctor_stripPis_isSome hfC
   have hpc : PiChain e.getAppArgs.length TCa := by
     rw [hlen]
     exact piChain_of_stripPis (entry.numParams + entry.numFields)
@@ -465,6 +477,6 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     vs.getD (entry.numParams + i) default, hfvd, hokArg, fun σ hσ => ?_⟩
   have hfit : TeleFit V σ TCa (vs.map (interp V σ)) (interp V σ resta) :=
     teleFit_of_teleFitPA (by rw [← hspa.length]; exact hpc) (hfitA σ hσ)
-  rw [hveq, hB (towerGuardAt_of_fireOk hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
+  rw [hveq, hB (towerGuardAt_of_sem hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
 
 end Ix.Kernel.Model.Rules

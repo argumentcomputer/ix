@@ -36,23 +36,20 @@ public section
 namespace Tests.Aggr.BindingReuse
 
 /-- The closures of `names` and of the constants the kernel fabricates
-    during reduction, compiled, with the default role binding's section and
-    nothing else: no role records or evidence, which a claim that assumes
-    its binding never reads. -/
+    during reduction, with every inductive's recursors
+    (`IxVM.ClaimHarness.collectCertifiedClosure`: the binder-data annotator
+    installs an inductive block only with its recursor, and leaves undecided
+    data, which IxVM refuses, over a block it could not install), compiled,
+    with the default role binding's section and nothing else: no role records
+    or evidence, which a claim that assumes its binding never reads. -/
 private def boundClosure (leanEnv : Lean.Environment) (names : Array Lean.Name) :
     IO Ixon.Env := do
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
   for n in names do
     unless leanEnv.constants.contains n do
       throw (IO.userError s!"{n} is not in the test environment")
-  for n in names ++ IxVM.ClaimHarness.synthesizedPrimNames do
-    if leanEnv.constants.contains n then
-      for entry in Lean.collectDependencies n leanEnv.constants do
-        if !seen.contains entry.fst then
-          seen := seen.insert entry.fst
-          deduped := deduped.push entry
-  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv deduped.toList)
+  let closure := IxVM.ClaimHarness.collectCertifiedClosure
+    (names ++ IxVM.ClaimHarness.synthesizedPrimNames) leanEnv
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv closure)
   let bytes ← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes
   let address ← IO.ofExcept Ix.Kernel.Reader.defaultTableAddress
   pure { out.env with roleBinding := some { address, bytes } }

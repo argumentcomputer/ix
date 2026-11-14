@@ -1,0 +1,465 @@
+{
+  "base_revision": "5de73a2353f593ec0d9c4b2bf657f6a39da84081",
+  "cpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63
+  ],
+  "threads": [
+    8,
+    64,
+    1,
+    32
+  ],
+  "samples": 3,
+  "warmups": 2,
+  "lscpu": {
+    "lscpu": [
+      {
+        "field": "Architecture:",
+        "data": "x86_64"
+      },
+      {
+        "field": "CPU op-mode(s):",
+        "data": "32-bit, 64-bit"
+      },
+      {
+        "field": "Address sizes:",
+        "data": "48 bits physical, 48 bits virtual"
+      },
+      {
+        "field": "Byte Order:",
+        "data": "Little Endian"
+      },
+      {
+        "field": "CPU(s):",
+        "data": "64"
+      },
+      {
+        "field": "On-line CPU(s) list:",
+        "data": "0-63"
+      },
+      {
+        "field": "Vendor ID:",
+        "data": "GenuineIntel"
+      },
+      {
+        "field": "Model name:",
+        "data": "Intel(R) Xeon(R) 6975P-C"
+      },
+      {
+        "field": "CPU family:",
+        "data": "6"
+      },
+      {
+        "field": "Model:",
+        "data": "173"
+      },
+      {
+        "field": "Thread(s) per core:",
+        "data": "2"
+      },
+      {
+        "field": "Core(s) per socket:",
+        "data": "32"
+      },
+      {
+        "field": "Socket(s):",
+        "data": "1"
+      },
+      {
+        "field": "Stepping:",
+        "data": "1"
+      },
+      {
+        "field": "BogoMIPS:",
+        "data": "5400.00"
+      },
+      {
+        "field": "Flags:",
+        "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd ida arat avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq rdpid bus_lock_detect cldemote movdiri movdir64b md_clear serialize amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities"
+      },
+      {
+        "field": "Hypervisor vendor:",
+        "data": "KVM"
+      },
+      {
+        "field": "Virtualization type:",
+        "data": "full"
+      },
+      {
+        "field": "L1d cache:",
+        "data": "1.5 MiB (32 instances)"
+      },
+      {
+        "field": "L1i cache:",
+        "data": "2 MiB (32 instances)"
+      },
+      {
+        "field": "L2 cache:",
+        "data": "64 MiB (32 instances)"
+      },
+      {
+        "field": "L3 cache:",
+        "data": "480 MiB (1 instance)"
+      },
+      {
+        "field": "NUMA node(s):",
+        "data": "1"
+      },
+      {
+        "field": "NUMA node0 CPU(s):",
+        "data": "0-63"
+      },
+      {
+        "field": "Vulnerability Gather data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Ghostwrite:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Indirect target selection:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Itlb multihit:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability L1tf:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Meltdown:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mmio stale data:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Old microcode:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Reg file data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Retbleed:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec rstack overflow:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec store bypass:",
+        "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+      },
+      {
+        "field": "Vulnerability Spectre v1:",
+        "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+      },
+      {
+        "field": "Vulnerability Spectre v2:",
+        "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS Not affected; BHI BHI_DIS_S"
+      },
+      {
+        "field": "Vulnerability Srbds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsa:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsx async abort:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Vmscape:",
+        "data": "Not affected"
+      }
+    ]
+  },
+  "reused_execution": true,
+  "host_lookups": true,
+  "thp_disabled": true,
+  "artifact_input_sha256": {
+    ".lake/formal-integration/ixvm-tuned.json": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a",
+    ".lake/formal-comparison/final/environment-input.json": "14a147c1d6141721547092a9a835249969aa1f82c8f57f9ed0a2b0522f7aaa56",
+    ".lake/formal-integration/recursion-tuned.json": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+    ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a",
+    ".lake/formal-integration/ixvm-checked.json": "114311f43f6fb39a2d5ccc5c4e6fb279d4eb6c08655cd08731c949e7e537fabf",
+    ".lake/formal-integration/recursion-checked.json": "ae96efa2ce33a07bd79fc5100395aa09a7f3d5f436ae04ee7be2f6bcd71e2afa"
+  },
+  "binary_sha256": {
+    "legacy": "becd57658a2d232dc158fada7fc977bdff27ae8834e6a80f5db82f18dea05024",
+    "new": "19c3e08f05bbe44f1ec217829c0f62d3c11c032dc89760fe394dfa7ece71bb5d"
+  },
+  "commands": [
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7",
+      ".lake/build/bin/bench-compare-aiur",
+      "ixvm",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-legacy-8.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7",
+      "target/release/examples/compare",
+      ".lake/formal-integration/ixvm-tuned.json",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-new-8.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7",
+      "target/release/examples/compare",
+      ".lake/formal-integration/recursion-tuned.json",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-new-8.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7",
+      ".lake/build/bin/bench-compare-aiur",
+      "recursion",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-legacy-8.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+      "target/release/examples/compare",
+      ".lake/formal-integration/ixvm-tuned.json",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-new-64.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+      ".lake/build/bin/bench-compare-aiur",
+      "ixvm",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-legacy-64.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+      ".lake/build/bin/bench-compare-aiur",
+      "recursion",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-legacy-64.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+      "target/release/examples/compare",
+      ".lake/formal-integration/recursion-tuned.json",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-new-64.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0",
+      ".lake/build/bin/bench-compare-aiur",
+      "ixvm",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-legacy-1.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0",
+      "target/release/examples/compare",
+      ".lake/formal-integration/ixvm-tuned.json",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-new-1.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0",
+      "target/release/examples/compare",
+      ".lake/formal-integration/recursion-tuned.json",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-new-1.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0",
+      ".lake/build/bin/bench-compare-aiur",
+      "recursion",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-legacy-1.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31",
+      "target/release/examples/compare",
+      ".lake/formal-integration/ixvm-tuned.json",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-new-32.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31",
+      ".lake/build/bin/bench-compare-aiur",
+      "ixvm",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-legacy-32.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31",
+      ".lake/build/bin/bench-compare-aiur",
+      "recursion",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-legacy-32.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31",
+      "target/release/examples/compare",
+      ".lake/formal-integration/recursion-tuned.json",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-new-32.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0-63",
+      "target/release/examples/compare",
+      ".lake/formal-integration/ixvm-checked.json",
+      ".lake/formal-comparison/final/environment-input.json",
+      ".lake/trace-scaling/sweep/environment-new-before-64.json",
+      "3"
+    ],
+    [
+      "taskset",
+      "-c",
+      "0-63",
+      "target/release/examples/compare",
+      ".lake/formal-integration/recursion-checked.json",
+      ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json",
+      ".lake/trace-scaling/sweep/recursion-real-new-before-64.json",
+      "3"
+    ]
+  ],
+  "date": "2026-10-28",
+  "cpu_quota": "No quota: cpu.max is max 100000 at the session and both parent cgroups",
+  "timing_scope": "Trace planning, main rows and host lookup buffers; excludes execution, compilation, key/setup and destruction. Reuses one immutable execution record per process; still regenerates every trace.",
+  "validation": [
+    "Both record-reuse smoke proofs verify with the same circuit shapes as normal execution",
+    "Circuit heights, widths and cell counts invariant under thread count for each backend/workload",
+    "Nullable execution sample summaries supported",
+    "Clippy passes with warnings denied for the new comparison example and legacy FFI library"
+  ],
+  "source_sha256": {
+    "crates/ffi/src/aiur/benchmark.rs": "1a9008c899ef6dea39d298e2728c709298d3265532b9a1fa6d42dfbb43256fb5",
+    "crates/stark-verifier/examples/compare.rs": "2b3522f834df44149a50088631656859a02659198d12aa4a3771b4113f60f4c0",
+    "tools/ixvm/compare-results.py": "b640f1a1ff0ad339c60ac39ffca1fd04635f283da0c31c5e4f39605a48de0645",
+    "tools/ixvm/trace-scaling.py": "cbf37fd568710e30893e925f89b21914824daa8a5a603ab002f4a964ad63a7ff"
+  }
+}

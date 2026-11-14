@@ -184,7 +184,7 @@ the driver itself fails (a refused input, or a condensation it cannot
 schedule). -/
 @[expose] def compileUnchecked (env : Ix.Environment) :
     Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
-  let env : Ix.Environment := { consts := env.consts }
+  let env : Ix.Environment := env.materialized
   let split := groundSplit env
   let blocks := Ix.CondenseM.run split.1
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
@@ -198,7 +198,7 @@ grounded reference graph of the input's map). `compileUnchecked` compiles
 exactly these blocks (its `blocks`, by `rfl`; it computes the ground split
 once, for its failures too). -/
 @[expose] def compileBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
-  Ix.CondenseM.run (groundSplit { consts := env.consts }).1
+  Ix.CondenseM.run (groundSplit env.materialized).1
 
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
@@ -285,7 +285,6 @@ inductive Head where
 @[expose] def skipLamBinders (recur : GetM Head) : Nat → GetM Bool
   | 0 => pure true
   | count + 1 => do
-    let _ ← getBinderContract
     let _ ← recur
     let _ ← skipLamBinders recur count
     pure false
@@ -294,13 +293,9 @@ inductive Head where
 @[expose] def skipAllBinders (recur : GetM Head) : Nat → GetM Bool
   | 0 => pure true
   | count + 1 => do
-    let bits ← getU8
-    match unpackAllContract? bits with
-    | some _ =>
-      let _ ← recur
-      let _ ← skipAllBinders recur count
-      pure false
-    | none => throw s!"getExpr: invalid forall contract {bits}"
+    let _ ← recur
+    let _ ← skipAllBinders recur count
+    pure false
 
 /-- `Ixon.getExprFromTag`, keeping the head. -/
 @[expose] def skipExprFromTag (recur : GetM Head) (tag : TagN) : GetM Head := do
@@ -335,7 +330,7 @@ inductive Head where
   | 0x8 => do
     if tag.value == 0 then
       throw "getExpr: Lam with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let empty ← skipLamBinders recur tag.value.toNat
     let body ← recur
     match body with
@@ -345,7 +340,7 @@ inductive Head where
   | 0x9 => do
     if tag.value == 0 then
       throw "getExpr: All with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let empty ← skipAllBinders recur tag.value.toNat
     let body ← recur
     match body with
@@ -353,16 +348,12 @@ inductive Head where
     | _ => pure ()
     return if empty then body else .all
   | 0xA => do
-    if tag.value > 3 then
-      throw s!"getExpr: invalid let flags {tag.value}"
-    let binder ← getBinderContract
-    match LetContract.ofFlags? tag.value binder with
-    | some _ =>
-      let _ ← recur
-      let _ ← recur
-      let _ ← recur
-      return .other
-    | none => throw "getExpr: invalid let flags"
+    let some _ := LetMode.ofHeader? tag.value
+      | throw s!"getExpr: invalid let header {tag.value}"
+    let _ ← recur
+    let _ ← recur
+    let _ ← recur
+    return .other
   | 0xB => return .other
   | f => throw s!"getExpr: invalid flag {f}"
 
@@ -416,8 +407,10 @@ inductive Head where
 /-- `Ixon.getDefinition`, keeping nothing. -/
 @[expose] def skipDefinition : GetM Unit := do
   let flags ← getU8
-  if flags >>> 2 > 2 || (flags &&& 3) > 2 then
+  if (flags >>> 2) &&& 3 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
+  let some _ := DefAsserts.ofCode? (flags >>> 4)
+    | throw s!"invalid definition assertions {flags >>> 4}"
   let _ ← getTagN 0
   skipExpr
   skipExpr
@@ -458,11 +451,13 @@ inductive Head where
 
 /-- `Ixon.getConstructor`, keeping nothing. -/
 @[expose] def skipConstructor : GetM Unit := do
-  let _ ← (Serialize.get : GetM Bool)
+  let flags ← getU8
+  if flags > 3 then throw s!"invalid constructor flags {flags}"
   let _ ← getTagN 0
   let _ ← getTagN 0
   let _ ← getTagN 0
-  let _ ← getTagN 0
+  let fields := (← getTagN 0).value
+  let _ ← getConstructorFieldModes (flags &&& 2 == 2) fields.toNat
   skipExpr
 
 /-- `Ixon.getInductive`, keeping nothing. -/
@@ -505,7 +500,8 @@ inductive Head where
     throw s!"getConstantInfo: invalid flag {tag.flag}"
 
 /-- **A record's `refs` table and its projection block**, read by
-`Ixon.Bounded.getConstant`'s grammar without keeping its expressions or universes. -/
+`Ixon.Bounded.getConstant`'s grammar without keeping its expressions, universes or
+binder data. -/
 @[expose] def getRefs (maxUnivNodes : Nat := loadMaxUnivNodes) :
     GetM (Array Address × Option Address) := do
   let block ← skipInfo
@@ -515,6 +511,7 @@ inductive Head where
   let refs ← getArray Serialize.get numRefs
   let numUnivs := (← getTagN 0).value.toNat
   let _ ← skipUnivArray numUnivs maxUnivNodes
+  let _ ← getBinders
   return (refs, block)
 
 /-- `getRefs` over exactly the window `buf[off, off + len)`, as
@@ -899,6 +896,7 @@ private theorem getRefs_some_header {buf : ByteArray} {off maxUnivNodes : Nat}
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
+  obtain ⟨_, _, _, h⟩ := bind_ok h
   simp only [pure, EStateM.pure, EStateM.Result.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨⟨_, rfl⟩, _⟩ := h
   exact skipInfo_some_header hinfo
@@ -1090,7 +1088,7 @@ theorem unownedRecursorWith_eq (env : Ix.Environment) (ixe : Ixon.Env) :
   | .iff | .iffIntro | .iffRec | .nonempty | .nonemptyIntro | .nonemptyRec => .block
   | .natPred | .natAdd | .natSub | .natMul | .natPow | .natBeq | .natBle | .natDiv | .natMod
   | .natGcd | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight => .ops
-  | .propext | .choice | .sorryAx => .axiom
+  | .propext | .choice | .sorryAx | .trustCompiler | .ofReduceBool | .ofReduceNat => .axiom
   | .decidableDecide | .natDecEq | .natDecLe | .natDecLt | .intNegOfNat | .intSubNatNat | .intNeg
   | .intAdd | .intSub | .intMul | .intNatAbs | .intEdiv | .intEmod | .intPow | .bitVecToNat
   | .bitVecUlt | .stringDecEq | .stringToByteArray | .listAppend | .stringAppend | .ifThenElse
@@ -1101,7 +1099,8 @@ theorem unownedRecursorWith_eq (env : Ix.Environment) (ixe : Ixon.Env) :
 /-- Whether the record `c` has the kind the specification of the role `r` asks
 of the record stored at its bound address: a standalone definition for a `Nat`
 operation (an `ops` specification), an axiom for an axiom role (`propext`,
-`Classical.choice`, `sorryAx`); any kind for every other role. -/
+`Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`); any kind for every other role. -/
 @[expose] def roleRecordKindOk (r : Ix.Kernel.Role) (c : Ixon.Constant) : Bool :=
   match roleKind r, c.info with
   | .ops, .defn d => decide (d.kind = .defn)
@@ -2526,7 +2525,7 @@ that split's condensation (`compileBlocks env`). -/
     (split : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError)
     (blocks : Ix.CondensedBlocks) :
     Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
-  let env : Ix.Environment := { consts := env.consts }
+  let env : Ix.Environment := env.materialized
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
@@ -2537,7 +2536,7 @@ its checks read the compile's condensation (`compileBlocks env`, the default
 of `checkReport`), which the compile has computed already. -/
 @[expose] def compileReportShared (env : Ix.Environment) :
     Except String (Ixon.Env × Failures) := do
-  let split := groundSplit { consts := env.consts }
+  let split := groundSplit env.materialized
   let blocks := Ix.CondenseM.run split.1
   let (ixe, failures, cenv) ← compileUncheckedWith env split blocks
   checkReport env cenv (ixe, failures) blocks

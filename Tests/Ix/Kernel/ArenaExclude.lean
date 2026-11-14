@@ -5,7 +5,7 @@
     - Constants registered under a `.bad` test-case outcome (intentional
       kernel rejections).
     - Constants in `Tests.Ix.Kernel.Arena.knownIncompatible` (cases the
-      Aiur kernel structurally cannot adjudicate — see comments there).
+      IxVM kernel structurally cannot adjudicate — see comments there).
     - Constants whose test case carries a non-empty `renamings` field
       (collision tests, not single-constant typechecks).
 

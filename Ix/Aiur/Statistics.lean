@@ -1,17 +1,14 @@
 module
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Semantics.BytecodeFfi
+public import Lean.Data.Json
+public import Lean.Data.Json.FromToJson
 public import Ix.Aiur.Protocol
 
 /-!
 Circuit statistics for Aiur executions.
 
-Given a `CompiledToplevel`, the per-circuit `QueryCount`s returned by
-`execute`, and the per-circuit `CircuitShape`s read off the compiled Rust
-`System`, computes per-circuit committed width, height (the unique-row
-count), cache hits (sum of multiplicities), and the FFT cost for every
-system circuit — constrained functions, memories, and the fixed-height
-`Bytes1`/`Bytes2` byte gadgets.
+Execution stays in Rust. The host returns raw circuit shapes, unpadded row
+counts and cache hits; Lean computes costs, reports them and checks pins.
+The same input schema is used by test cases and CLI execution reports.
 
 The FFT cost counts the transforms the pinned prover actually runs, per
 committed column, using the raw (unpadded) height `h` so the statistic
@@ -45,6 +42,7 @@ structure CircuitStats where
   /-- FFT cost at the uncached height `height + cacheHits` (fixed-height
   gadget circuits keep their normal cost). Feeds `totalUncachedFftCost`. -/
   uncachedFftCost : Float
+  deriving Inhabited
 
 structure ExecutionStats where
   circuits : Array CircuitStats
@@ -76,49 +74,72 @@ def fftCost (shape : CircuitShape) (h : Nat) (logBlowup : Nat) : Float :=
 def CircuitShape.committedWidth (shape : CircuitShape) : Nat :=
   shape.mainWidth + shape.stage2Width + shape.quotientDegree * G.extensionDegree
 
-def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount)
-    (shapes : Array CircuitShape)
-    (logBlowup : Nat := defaultCommitmentParameters.logBlowup) :
-    ExecutionStats :=
-  let t := compiled.bytecode
-  let nAllFuns := t.functions.size
-  -- Shapes arrive in canonical system order: function circuits (grouped;
-  -- singletons for ungrouped functions, in ascending member index),
-  -- memories, `Bytes1`, `Bytes2`. A mismatch means the shapes were built
-  -- from a different toplevel; misindexing would silently attribute costs
-  -- to the wrong circuits.
-  if shapes.size != t.circuits.size + t.memorySizes.size + 2 then
-    panic! s!"computeStats: {shapes.size} circuit shapes for \
-      {t.circuits.size} function circuits + {t.memorySizes.size} memories + 2 gadgets"
-  else
-  let mkStats (name : String) (shape : CircuitShape) (h hits : Nat) : CircuitStats :=
-    { name, width := shape.committedWidth, height := h, cacheHits := hits,
-      fftCost := fftCost shape h logBlowup,
-      uncachedFftCost := fftCost shape (h + hits) logBlowup }
-  -- One row per function circuit: heights and cache hits are summed over
-  -- the circuit's member functions (singletons sum over one).
-  let functionCircuits := t.circuits.mapIdx fun cIdx c =>
-    let shape := shapes[cIdx]!
-    let (h, hits) := c.members.foldl (init := (0, 0)) fun (h, hits) i =>
-      let qc := queryCounts[i]!
-      (h + qc.uniqueRows, hits + (qc.totalHits - qc.uniqueRows))
-    mkStats c.name shape h hits
-  let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    let shape := shapes[t.circuits.size + i]!
-    let qc := queryCounts[nAllFuns + i]!
-    mkStats s!"memory[{size}]" shape qc.uniqueRows (qc.totalHits - qc.uniqueRows)
-  -- The byte gadgets commit full-table traces in every proof: their height
-  -- is the (fixed) preprocessed height, independent of the query set, so
-  -- they carry no cache-hit counterfactual.
-  let gadgetCircuits := #["Bytes1", "Bytes2"].mapIdx fun i name =>
-    let shape := shapes[t.circuits.size + t.memorySizes.size + i]!
-    mkStats name shape shape.preprocessedHeight 0
-  let circuits := (functionCircuits ++ memoryCircuits ++ gadgetCircuits).qsort
-    (·.fftCost > ·.fftCost)
+/-- One circuit measured by the Rust executor, already grouped in backend order.
+Fixed tables use their full height and zero cache hits. -/
+structure CircuitMeasurement where
+  name : String
+  shape : CircuitShape
+  height : Nat
+  cacheHits : Nat
+  deriving Inhabited
+
+/-- Raw execution feedback. No cost calculation is delegated to the host. -/
+structure ExecutionMeasurements where
+  logBlowup : Nat
+  circuits : Array CircuitMeasurement
+  deriving Inhabited
+
+/-- Decode the host's raw statistics, failing if any measurement is absent. -/
+def ExecutionMeasurements.fromJson (j : Lean.Json) : Except String ExecutionMeasurements := do
+  let logBlowup ← j.getObjValAs? Nat "log_blowup"
+  let extensionDegree ← j.getObjValAs? Nat "extension_degree"
+  unless extensionDegree == G.extensionDegree do
+    throw "FFT statistics require the Goldilocks extension degree"
+  let circuits ← (← j.getObjValAs? (Array Lean.Json) "circuits").mapM fun c => do
+    let name ← c.getObjValAs? String "name"
+    let shape : CircuitShape := {
+      mainWidth := ← c.getObjValAs? Nat "stage1_width"
+      stage2Width := ← c.getObjValAs? Nat "stage2_width"
+      quotientDegree := ← c.getObjValAs? Nat "quotient_degree"
+      preprocessedWidth := ← c.getObjValAs? Nat "preprocessed_width"
+      preprocessedHeight := ← c.getObjValAs? Nat "preprocessed_height" }
+    let height ← c.getObjValAs? Nat "rows"
+    let cacheHits ← c.getObjValAs? Nat "cache_hits"
+    if shape.preprocessedHeight != 0 then
+      unless height == shape.preprocessedHeight && cacheHits == 0 do
+        throw s!"invalid fixed-table statistics for {name}"
+    return { name, shape, height, cacheHits : CircuitMeasurement }
+  return { logBlowup, circuits }
+
+def computeStats (measurements : ExecutionMeasurements) : ExecutionStats :=
+  let circuits := measurements.circuits.map fun c => {
+    name := c.name, width := c.shape.committedWidth, height := c.height,
+    cacheHits := c.cacheHits,
+    fftCost := fftCost c.shape c.height measurements.logBlowup,
+    uncachedFftCost := fftCost c.shape (c.height + c.cacheHits) measurements.logBlowup
+    : CircuitStats }
+  -- Sum in canonical backend order, before sorting for display.
   let totalFftCost := circuits.foldl (· + ·.fftCost) 0.0
   let totalUncachedFftCost := circuits.foldl (· + ·.uncachedFftCost) 0.0
   let totalCacheHits := circuits.foldl (· + ·.cacheHits) 0
-  { circuits, totalFftCost, totalUncachedFftCost, totalCacheHits }
+  { circuits := circuits.qsort (·.fftCost > ·.fftCost),
+    totalFftCost, totalUncachedFftCost, totalCacheHits }
+
+def ExecutionStats.roundedFftCost (stats : ExecutionStats) : Nat :=
+  stats.totalFftCost.round.toUInt64.toNat
+
+/-- Add Lean-computed costs to a raw host report, retaining the planning data.
+A report without an execution (for example a fixed-floor refusal) has no cost. -/
+def enrichExecutionReport (report : Lean.Json) : Except String Lean.Json := do
+  match report.getObjVal? "execution_statistics" with
+  | .error _ => return report
+  | .ok raw =>
+    let stats := computeStats (← ExecutionMeasurements.fromJson raw)
+    let fields ← report.getObj?
+    return Lean.Json.mkObj (fields.toList ++ [
+      ("fft-cost", Lean.toJson stats.roundedFftCost),
+      ("uncached-fft-cost", Lean.toJson stats.totalUncachedFftCost.round.toUInt64.toNat),
+      ("cache-hits", Lean.toJson stats.totalCacheHits)])
 
 private def padLeft (s : String) (n : Nat) : String :=
   let pad := n - s.length

@@ -77,7 +77,7 @@ fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
   for original in INPUTS {
     let mut input = original;
     let mut env = Env::get(&mut input).unwrap();
-    assert_eq!(original.len(), 122);
+    assert_eq!(original.len(), 131);
     assert_eq!(env.role_binding, None);
     assert_eq!(encode(&env), original);
     assert_eq!(env.envelope_version(), 4);

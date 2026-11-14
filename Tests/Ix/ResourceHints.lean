@@ -2,18 +2,17 @@ import LSpec
 import Ix.Meta
 import Ix.CompileCertified
 import Ix.EnvScope
-import Ix.Resource.Validate
+import Ix.Typing
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.ContractPipeline
-import Tests.Ix.SourceContract.SyntaxFixture
 import Tests.Ix.Kernel.TierIndDefs
 
 /-! # The resource validator's typing half on compiled closures (`resource-hints`)
 
-Actual typing verdicts (`Ix.Resource.typeCheck`) on compiled closures the typing
+Actual typing verdicts (`Ix.Typing.typeCheck`) on compiled closures the typing
 half accepts: the reader-fidelity and Source-ingress fixtures (with assumption
-axioms), the source-contract syntax fixture (a contract input), the contract
-pipeline's input (an assumption axiom, `ContractA`) and the typing tier's
+axioms), the contract pipeline's input (an assumption axiom, `ContractA`, and an
+identity under the ordinary contract) and the typing tier's
 inductive fixtures (unsafe inductives, `kernel-tier-ind`). Each reports the
 size of its uncertified part. -/
 
@@ -39,15 +38,15 @@ def closureOf (leanEnv : Lean.Environment) (modules : Array Lean.Name) (extra : 
 /-- Size of the initial uncertified split. The typing fallback may expand
 this set to include all tier owners; this helper does not observe that path. -/
 def uncertifiedSize (ixe : Ixon.Env) : Nat :=
-  match Ix.Resource.typingInput ixe with
+  match Ix.Typing.typingInput ixe with
   | .error _ => 0
   | .ok input =>
-    let unc := Ix.Resource.splitOf input
+    let unc := Ix.Typing.splitOf input
     (input.ordered.filter fun (a, c, _) => unc.contains (Ixon.CheckOrder.owner a c)).size
 
 /-- The typing half must accept the actual compiled `ixe`. -/
 def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
-  let ixc := Ix.Resource.typeCheck ixe
+  let ixc := Ix.Typing.typeCheck ixe
   let named (e : String) : List String := ixe.named.toList.filterMap fun (n, nd) =>
     if (e.splitOn (toString nd.addr)).length > 1 then some (toString n) else none
   let errors := match ixc with
@@ -67,25 +66,9 @@ def fixtureVerdict : IO (Array String × Array String) := do
 def compiledVerdicts : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
-  -- the source-contract syntax fixture: a contract input, in the closure
-  -- `compile-lean --local` takes (`collectSelectedDeps`: recursors, logical
-  -- units, checker and string-literal support)
-  let syntaxModule := `Tests.Ix.SourceContract.SyntaxFixture
-  let leanEnv ← getCompileEnv #[syntaxModule]
-  let some syntaxIdx := leanEnv.getModuleIdx? syntaxModule | throw (IO.userError "fixture module not loaded")
-  let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
-    if leanEnv.getModuleIdxFor? n == some syntaxIdx then some n else none
-  match Ix.CompileM.prepareCertified leanEnv (Ix.EnvScope.collectSelectedDeps leanEnv seeds) with
-  | .error e => errors := errors.push s!"source-contract syntax fixture: prepare: {e}"
-  | .ok (prepared, _) =>
-    match ← Ix.CompileM.compileCertifiedPrepared prepared false 4 with
-    | .error e => errors := errors.push s!"source-contract syntax fixture: compile: {e}"
-    | .ok out =>
-      let (es, ls) := verdict "source-contract syntax fixture" out.env
-      errors := errors ++ es
-      lines := lines ++ ls
-  -- the contract pipeline's input: an assumption axiom and a contracted identity
-  match Tests.ContractPipeline.input with
+  -- the contract pipeline's input: an assumption axiom and an identity under the
+  -- ordinary contract
+  match Tests.ContractPipeline.input .many .shared .shared with
   | .error e => errors := errors.push s!"contract pipeline: input: {e}"
   | .ok input =>
     match ← Tests.ContractPipeline.compileInput input with
@@ -115,7 +98,7 @@ def report (name : String) (action : IO (Array String × Array String)) : TestSe
 
 def suite : List TestSeq := [
   report "the typing half's verdict on the compiled fixtures" fixtureVerdict,
-  report "actual typing verdicts: a contract input, an assumption axiom, unsafe inductives"
+  report "actual typing verdicts: an ordinary contract input, an assumption axiom, unsafe inductives"
     compiledVerdicts]
 
 end Tests.ResourceHints

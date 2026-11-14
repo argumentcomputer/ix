@@ -411,19 +411,17 @@ fun ixe sub =>
 /-- info: structure Ix.Cert.ValueModel.{w} {md : Ix.Kernel.Mode} (V : Type w) [Ix.Kernel.SetTheory V] (env : Ix.Kernel.Env md) :
   Type w
 number of parameters: 4
-parents:
-  Ix.Cert.ValueModel.toModel : Ix.Kernel.Model V env
 fields:
-  Ix.Kernel.Model.cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V
-  Ix.Kernel.Model.mem : ∀ (c : Ix.Kernel.ConstantInfo md),
+  Ix.Cert.ValueModel.cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V
+  Ix.Cert.ValueModel.mem : ∀ (c : Ix.Kernel.ConstantInfo md),
       c ∈ env.consts →
         ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
           ∃ T,
             Ix.Kernel.Denotes self.cval env φ ρ c.toConstantVal.type T ∧ Ix.Kernel.SetTheory.Mem (self.cval c.name φ) T
-  Ix.Kernel.Model.false_empty : ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
+  Ix.Cert.ValueModel.false_empty : ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
       Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.falseName []) F →
         F = Ix.Kernel.SetTheory.empty
-  Ix.Kernel.Model.eq_equality : ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V)
+  Ix.Cert.ValueModel.eq_equality : ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V)
       (E A a b : V),
       Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.eqName [u]) E →
         Ix.Kernel.SetTheory.Mem A (Ix.Kernel.SetTheory.univ (Ix.Kernel.Level.eval φ u)) →
@@ -438,15 +436,29 @@ fields:
           Ix.Kernel.Denotes self.cval env φ ρ value (self.cval cv.name φ)
 constructor:
   Ix.Cert.ValueModel.mk.{w} {md : Ix.Kernel.Mode} {V : Type w} [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env md}
-    (toModel : Ix.Kernel.Model V env)
+    (cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V)
+    (mem :
+      ∀ (c : Ix.Kernel.ConstantInfo md),
+        c ∈ env.consts →
+          ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+            ∃ T, Ix.Kernel.Denotes cval env φ ρ c.toConstantVal.type T ∧ Ix.Kernel.SetTheory.Mem (cval c.name φ) T)
+    (false_empty :
+      ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
+        Ix.Kernel.Denotes cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.falseName []) F → F = Ix.Kernel.SetTheory.empty)
+    (eq_equality :
+      ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (E A a b : V),
+        Ix.Kernel.Denotes cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.eqName [u]) E →
+          Ix.Kernel.SetTheory.Mem A (Ix.Kernel.SetTheory.univ (Ix.Kernel.Level.eval φ u)) →
+            Ix.Kernel.SetTheory.Mem a A →
+              Ix.Kernel.SetTheory.Mem b A →
+                Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app E A) a) b =
+                  Ix.Kernel.SetTheory.eqv a b)
     (defn_value :
       ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md) (hint : Ix.Kernel.ReducibilityHint),
         Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
           ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
-            Ix.Kernel.Denotes toModel.cval env φ ρ value (toModel.cval cv.name φ)) :
-    Ix.Cert.ValueModel V env
-field notation resolution order:
-  Ix.Cert.ValueModel, Ix.Kernel.Model -/
+            Ix.Kernel.Denotes cval env φ ρ value (cval cv.name φ)) :
+    Ix.Cert.ValueModel V env -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ValueModel
 
@@ -881,7 +893,7 @@ constructor:
 -- environment and failures it returns are the same.
 /-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures × Ix.CompileM.CompileEnv) :=
 fun env =>
-  have env := { consts := env.consts };
+  have env := env.materialized;
   have split := Ix.Cert.groundSplit env;
   have blocks := Ix.CondenseM.run split.fst;
   do
@@ -990,6 +1002,7 @@ fun maxUnivNodes => do
   let __do_lift ← Ixon.getTagN 0
   have numUnivs : Nat := __do_lift.value.toNat
   let _ ← Ix.Cert.RecordRefs.skipUnivArray numUnivs maxUnivNodes
+  let _ ← Ixon.getBinders
   pure (refs, block) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.getRefs
@@ -1805,7 +1818,7 @@ fun x =>
       let __do_lift ← Ix.Cert.Canon.leanExpr σ t
       let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ v
       let __do_lift_2 ← Ix.Cert.Canon.leanExpr σ b
-      pure (Ix.Kernel.Expr.letE __do_lift __do_lift_1 __do_lift_2 { contract := Ixon.LetContract.lean nd })
+      pure (Ix.Kernel.Expr.letE __do_lift __do_lift_1 __do_lift_2 { nonDep := nd })
     | Lean.Expr.lit (Lean.Literal.natVal n) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.natVal n))
     | Lean.Expr.lit (Lean.Literal.strVal s) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.strVal s))
     | Lean.Expr.mdata d e => Ix.Cert.Canon.leanMData d e (Ix.Cert.Canon.leanExpr σ e)
@@ -2310,7 +2323,7 @@ Ix.CompileCert.ExpressionState.Related.letE : ∀ {md : Ix.Kernel.Mode}
     Ix.CompileCert.ExpressionState.Related names levels value targetValue →
       Ix.CompileCert.ExpressionState.Related names levels body targetBody →
         Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.letE name type value body nonDep hash)
-          (Ix.Kernel.Expr.letE targetType targetValue targetBody { contract := Ixon.LetContract.lean nonDep })
+          (Ix.Kernel.Expr.letE targetType targetValue targetBody { nonDep := nonDep })
 Ix.CompileCert.ExpressionState.Related.nat : ∀ {md : Ix.Kernel.Mode}
   {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} (value : Nat)
   (hash : Address),
@@ -3357,11 +3370,11 @@ fun constructors =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.InductiveReading.inductive_reads_indexed
 
-/-- info: 'Ix.CompileCert.InductiveReading.inductive_declines_unindexed' depends on axioms: [propext,
+/-- info: 'Ix.CompileCert.InductiveReading.inductive_unindexed_shape' depends on axioms: [propext,
  Classical.choice,
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.InductiveReading.inductive_declines_unindexed
+#print axioms Ix.CompileCert.InductiveReading.inductive_unindexed_shape
 
 /-! ## Component theorems: what Source mode admits of an inductive block
 
@@ -3609,10 +3622,12 @@ fun codeConsts leanByIx =>
 
 /-- info: @Ix.Cert.Hybrid.compileEnvFold_lookups : ∀ {e₁ e₂ : Ix.Environment},
   (∀ (n : Ix.Name), e₁.get? n = e₂.get? n) →
-    Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
-      ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
-        Ix.CompileM.compileEnvFold e₁ blocks dbg sharingLimits width =
-          Ix.Cert.Hybrid.restore e₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' sharingLimits width' -/
+    e₁.binderAnnotator? = e₂.binderAnnotator? →
+      Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
+        ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits)
+          (width width' : Nat),
+          Ix.CompileM.compileEnvFold e₁ blocks dbg sharingLimits width =
+            Ix.Cert.Hybrid.restore e₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' sharingLimits width' -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.compileEnvFold_lookups
 
@@ -3627,10 +3642,11 @@ fun codeConsts leanByIx =>
       (∀ (n : Ix.Name) (v : Ix.InductiveVal),
           (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
             (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) →
-        ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
-          Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
-            Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) <$>
-              Ix.CompileM.compileEnvFold full blocks false sharingLimits -/
+        full.binderAnnotator? = none →
+          ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+            Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
+              Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) <$>
+                Ix.CompileM.compileEnvFold full blocks false sharingLimits -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.pipeline_fold
 
@@ -3685,7 +3701,11 @@ fun ixe order =>
   ∀ (a : Address),
     a ∈ order →
       ∀ (lc : Ixon.LazyConstant),
-        ixe.consts.get? a = some lc → ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes -/
+        ixe.consts.get? a = some lc →
+          ∃ c,
+            lc.get? = some c ∧
+              c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true ∧ c.bindersComplete = true ∧
+                c.modesCanonical = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Stream.StoredCanonical
 
@@ -4205,7 +4225,7 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceAcceptsQ_addrAt
 
-/-- info: [cert-audit] quotient addresses: 36 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] quotient addresses: 35 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -4215,7 +4235,7 @@ run_cmd do
       `reading_id, `sourceAcceptsQ_addrAt, `LawModel.Rel, `ValueModel.comp, `LawModel.comp,
       `ValueModel.pullback_rel, `substCval, `EnvSubstRel, `EnvSubstRel.find_some,
       `EnvSubstRel.findProj?, `Denotes.substPullback, `Denotes.subst_const_push,
-      `Model.substPullback, `defn_value_substPullback, `ValueModel.substPullback,
+      `defn_value_substPullback, `ValueModel.substPullback,
       `ValueModel.substPullback_rel, `EnvSubstModelPullback, `EnvSubstRel.toModelPullback,
       `EnvSubstModelPullback.comp_envRel_valueModel, `EnvSubstPullback,
       `EnvSubstModelPullback.toPullback, `EnvSubstRel.toPullback,
@@ -4674,7 +4694,7 @@ fun env ixe =>
 The default role table binds each role to an address. `compileReport` refuses an
 artifact in which the stored record at a bound `Nat` operation's address is not a
 standalone definition, or at a bound axiom role's address (`propext`,
-`Classical.choice`, `sorryAx`) not an axiom (`checkReport`'s sixteenth check,
+`Classical.choice`, the inert `sorryAx` and compiler-trust axioms) not an axiom (`checkReport`'s sixteenth check,
 `roleRecordKind`, over every bound entry of the decoded table, `roleTableBound`). Its meaning, `RoleRecordKinds`, holds of
 every artifact `compileReport` returns (`roleRecordKinds`). -/
 
@@ -5746,16 +5766,16 @@ number of parameters: 4
 parents:
   Ix.Cert.LawModel.toValueModel : Ix.Cert.ValueModel V env
 fields:
-  Ix.Kernel.Model.cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V
-  Ix.Kernel.Model.mem : ∀ (c : Ix.Kernel.ConstantInfo md),
+  Ix.Cert.ValueModel.cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V
+  Ix.Cert.ValueModel.mem : ∀ (c : Ix.Kernel.ConstantInfo md),
       c ∈ env.consts →
         ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
           ∃ T,
             Ix.Kernel.Denotes self.cval env φ ρ c.toConstantVal.type T ∧ Ix.Kernel.SetTheory.Mem (self.cval c.name φ) T
-  Ix.Kernel.Model.false_empty : ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
+  Ix.Cert.ValueModel.false_empty : ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
       Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.falseName []) F →
         F = Ix.Kernel.SetTheory.empty
-  Ix.Kernel.Model.eq_equality : ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V)
+  Ix.Cert.ValueModel.eq_equality : ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V)
       (E A a b : V),
       Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.eqName [u]) E →
         Ix.Kernel.SetTheory.Mem A (Ix.Kernel.SetTheory.univ (Ix.Kernel.Level.eval φ u)) →
@@ -5775,7 +5795,7 @@ constructor:
     (toValueModel : Ix.Cert.ValueModel V env) (rec_rule : Ix.Cert.RecRuleLaws toValueModel.cval env)
     (caps : Ix.Cert.CapabilityLaws toValueModel.cval env) : Ix.Cert.LawModel V env
 field notation resolution order:
-  Ix.Cert.LawModel, Ix.Cert.ValueModel, Ix.Kernel.Model -/
+  Ix.Cert.LawModel, Ix.Cert.ValueModel -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.LawModel
 
@@ -6292,7 +6312,7 @@ fun env ixe failures sub =>
 fun env blocks cenv cenv₀ sched =>
   ∃ st,
     cenv₀.nameToAddr = ∅ ∧
-      (Ix.CompileM.FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := ∅, fallback? := some env.get? } ∧
+      (Ix.CompileM.FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
         Ix.Cert.Schedule.foldWavesSeq blocks sched (Std.HashMap.size blocks.blocks + 1)
               (Ix.CompileM.FoldState.init cenv₀ blocks sched) =
             Except.ok st ∧
@@ -6417,7 +6437,7 @@ fun blocks sched st₀ acc =>
   (sched : Ix.CompileM.FoldSchedule),
   Ix.Cert.compileReport env = Except.ok (ixe, failures) →
     Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) →
-      Ix.Cert.Resolution.FoldRun { consts := env.consts } (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
+      Ix.Cert.Resolution.FoldRun env.materialized (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
         ∀ (snap : Ix.CompileM.DriverAcc),
           Ix.Cert.Resolution.OnRun (Ix.Cert.compileBlocks env) sched
               (Ix.CompileM.FoldState.init cenv₀ (Ix.Cert.compileBlocks env) sched) snap →

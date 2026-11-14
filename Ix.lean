@@ -22,7 +22,10 @@ public import Ix.AssumptionTree
 public import Ix.Commit
 public import Ix.Watchdog
 public import Ix.Benchmark.Bench
-public import Ix.Aiur
+public import Ix.Aiur.Protocol
+public import Ix.IxVM.ClaimHarness
+public import Ix.IxVM.RoleSpecGen
+public import Ix.MultiStark.Wire
 public import Ix.TracingTexray
 
 /-! This module serves as the root of the `Ix` library.

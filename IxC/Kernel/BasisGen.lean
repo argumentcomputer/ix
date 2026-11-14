@@ -201,42 +201,14 @@ private def qPropWhen (pw : Ix.Kernel.PropWhen) : Lean.Expr :=
   | none => mkConst ``Ix.Kernel.PropWhen.never
   | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qLevelParams ps)
 
-private def qUses : Ixon.Uses → Lean.Expr
-  | .erased => mkConst ``Ixon.Uses.erased
-  | .linear => mkConst ``Ixon.Uses.linear
-  | .affine => mkConst ``Ixon.Uses.affine
-  | .many => mkConst ``Ixon.Uses.many
-
-private def qValueContract (v : Ixon.ValueContract) : Lean.Expr :=
-  mkApp2 (mkConst ``Ixon.ValueContract.mk)
-    (match v.owned with
-      | .unique => mkConst ``Ixon.Owned.unique
-      | .shared => mkConst ``Ixon.Owned.shared)
-    (match v.locality with
-      | .unrestricted => mkConst ``Ixon.Locality.unrestricted
-      | .local => mkConst ``Ixon.Locality.local)
-
-/-- Defaults are quoted as the default constants, so a quoted pin is the
-same term `{ pw := … }` elaborates to. -/
-private def qBinderContract (c : Ixon.BinderContract) : Lean.Expr :=
-  if c == .many then mkConst ``Ixon.BinderContract.many else
-    mkApp2 (mkConst ``Ixon.BinderContract.mk) (qUses c.uses) (qValueContract c.value)
-
-/-- A let's metadata: its contract, field by field. -/
+/-- A let's metadata: its `nonDep` flag. -/
 private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
-  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk)
-    (mkApp3 (mkConst ``Ixon.LetContract.mk) (qBool l.contract.nonDep)
-      (match l.contract.kind with
-        | .value => mkConst ``Ixon.LetKind.value
-        | .borrowShared => mkConst ``Ixon.LetKind.borrowShared)
-      (qBinderContract l.contract.binder))
+  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk) (qBool l.nonDep)
     (mkConst ``Ix.Kernel.LetDisplay.anon)
 
 /-- A pin's binders carry no name (the default, `BinderDisplay.anon`). -/
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp4 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderContract m.contract)
-    (if m.result == .shared then mkConst ``Ixon.ValueContract.shared else
-      qValueContract m.result)
+  mkApp2 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
     (mkConst ``Ix.Kernel.BinderDisplay.anon)
 
 private def qLiteral : Ix.Kernel.Literal → Lean.Expr
@@ -340,12 +312,13 @@ def annotateInfo (env : Ix.Kernel.Env .anon) (ci : Ix.Kernel.ConstantInfo .anon)
   | .projInfo tbl => return .projInfo tbl
   | .recInfo _ mI rP rules =>
     let rules := rules.map fun r =>
-      let cnP := match env.find? r.ctor with
-        | some (.ctorInfo _ nP _) => nP
-        | _ => 0
+      let (cnP, cjLps) := match env.find? r.ctor with
+        | some (.ctorInfo cvj nP _) => (nP, cvj.levelParams)
+        | _ => (0, ([] : List LevelParam))
       Ix.Kernel.recRuleBits env.find? cv'.name
         { r with ctorParams := cnP,
-                 fire := if Ix.Kernel.Expr.recRulePlain ty' mI rP cnP then .plain else .inert,
+                 fire := if Ix.Kernel.Expr.recRulePlain ty' mI rP cnP cjLps then .plain
+                   else .inert,
                  paramsBlind := true }
     let envSelf : Ix.Kernel.Env .anon := ⟨.recInfo cv' mI rP rules :: env.consts⟩
     let mut out : List (Ix.Kernel.RecRule .anon) := []

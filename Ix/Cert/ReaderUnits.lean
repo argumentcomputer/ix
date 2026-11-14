@@ -157,9 +157,7 @@ theorem lowerInductive_decls {st : State md} {rb : BlockRead md} {r : Read md}
   split at h
   all_goals
     rcases ite_ok h with h | h
-    all_goals first
-      | (obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h)
-      | skip
+    all_goals obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
     all_goals
       rcases ite_ok h with h | h
       · split at h
@@ -200,6 +198,109 @@ def KeyedBy (cx : Ctx md) (R : ConstRef Address → Prop) {β : Type} (name : β
 /-- A failing reader step fails. -/
 theorem throw_ok {α : Type} {e : ReadError} {r : α} (h : (throw e : ReadM α) = .ok r) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
+
+/-- **A read recursor carries its reference's key.** -/
+theorem readRecursor_key {cx : Ctx md} {blockLps : List Ix.Kernel.LevelParam}
+    {ref : ConstRef Address} {entry : RecEntry}
+    {res : CVal md × RecCounts × List (Ix.Kernel.RecRule md)}
+    (h : readRecursor cx blockLps ref entry = .ok res) :
+    cx.memberKey ref = .ok res.1.name := by
+  unfold readRecursor at h
+  split at h
+  · split at h
+    · split at h
+      · rcases ite_ok h with h | h
+        · exact (fail_bind h).elim
+        · obtain ⟨key, hkey, h⟩ := except_bind_ok.mp h
+          obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+          split at h
+          · rcases ite_ok h with h | h
+            · split at h
+              · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                simp only [pure, Except.pure, Except.ok.injEq] at h
+                subst h
+                exact hkey
+              · exact (throw_ok h).elim
+            · exact (fail_bind h).elim
+          · exact (throw_ok h).elim
+      · exact (throw_ok h).elim
+    · exact (throw_ok h).elim
+  · exact (throw_ok h).elim
+
+/-- **A twin recursor record's lowering**: no generated declarations, and either
+nothing or one `indDecl` naming only keys of references in `twins`. -/
+theorem lowerTwin_spec {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwin cx twins = .ok r) :
+    r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names,
+      ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k := by
+  unfold lowerTwin at h
+  split at h
+  · dsimp only at h
+    rcases ite_ok h with h | h
+    · split at h
+      · split at h
+        · split at h
+          · rcases ite_ok h with h | h
+            · split at h
+              · rcases ite_ok h with h | h
+                · exact (fail_bind h).elim
+                · rcases ite_ok h with h | h
+                  · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                    obtain ⟨recs, hrecs, h⟩ := except_bind_ok.mp h
+                    have rk := forIn_pushes (fun s => s)
+                      (fun e => ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok e.1.name) _ _
+                      (fun x hx s q hq => by
+                        obtain ⟨rv, hrv, hq⟩ := except_bind_ok.mp hq
+                        simp only [pure, Except.pure, Except.ok.injEq] at hq
+                        subst hq
+                        refine ⟨_, rfl, fun e he => ?_⟩
+                        rcases Array.mem_push.mp he with he | rfl
+                        · exact .inl he
+                        · exact .inr ⟨x, hx, readRecursor_key hrv⟩)
+                      (fun e he => by simp at he) hrecs
+                    simp only [ite_not, bne_iff_ne, ne_eq] at h
+                    split at h
+                    all_goals
+                      rcases ite_ok h with h | h
+                      all_goals obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                      all_goals
+                        split at h
+                        · exact (fail_bind h).elim
+                        · simp only [pure, Except.pure, Except.ok.injEq] at h
+                          subst h
+                          refine ⟨rfl, fun d hd k hk => ?_⟩
+                          simp at hd
+                          subst hd
+                          simp only [Ix.Kernel.Declaration.names, List.map_map, List.mem_map] at hk
+                          obtain ⟨e, he, rfl⟩ := hk
+                          exact rk e (Array.mem_def.mpr he)
+                  · exact (fail_bind h).elim
+              · exact (throw_ok h).elim
+            · exact (fail_bind h).elim
+          · exact (throw_ok h).elim
+        · exact (throw_ok h).elim
+      · exact (throw_ok h).elim
+    · exact (fail_bind h).elim
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact ⟨rfl, fun d hd => by simp at hd⟩
+
+/-- A recursor of the shape a block reads at (`blockShapeOf`) is one the index
+files for the block: the default shape of a block no recursor eliminates has
+none. -/
+theorem blockShapeOf_recs {index : RecIndex} {owner : Address} {ms : Array Ixon.MutConst}
+    {shape : BlockShape} (h : blockShapeOf index owner ms = some shape) {ref : ConstRef Address}
+    (hr : ref ∈ shape.recs) : ∃ s, index.blocks[owner]? = some s ∧ ref ∈ s.recs := by
+  unfold blockShapeOf at h
+  split at h
+  · next s hs =>
+    obtain rfl := Option.some.inj h
+    exact ⟨_, hs, hr⟩
+  · unfold unindexedShape at h
+    split at h
+    · obtain rfl := Option.some.inj h
+      simp at hr
+    · exact nomatch h
 
 /-- **An inductive block's lowering, per record**: the modeller's records (as
 many as `generated` says), then one declaration every name of which is a
@@ -261,29 +362,13 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
             have rk := forIn_pushes (fun s => s) (KeyedBy cx (· ∈ shape.recs) (·.1.name)) _ _
               (fun x hx s r hf => by
                 split at hf
-                · split at hf
-                  · split at hf
-                    · split at hf
-                      · rcases ite_ok hf with hf | hf
-                        · exact (fail_bind hf).elim
-                        · obtain ⟨key, hkey, hf⟩ := except_bind_ok.mp hf
-                          obtain ⟨_, -, hf⟩ := except_bind_ok.mp hf
-                          split at hf
-                          · rcases ite_ok hf with hf | hf
-                            · split at hf
-                              · obtain ⟨_, -, hf⟩ := except_bind_ok.mp hf
-                                simp only [pure, Except.pure, Except.ok.injEq] at hf
-                                subst hf
-                                refine ⟨_, rfl, fun e he => ?_⟩
-                                rcases Array.mem_push.mp he with he | rfl
-                                · exact .inl he
-                                · exact .inr ⟨_, Array.mem_def.mpr hx, hkey⟩
-                              · exact (fail_bind hf).elim
-                            · exact (fail_bind hf).elim
-                          · exact (fail_bind hf).elim
-                      · exact (throw_ok hf).elim
-                    · exact (throw_ok hf).elim
-                  · exact (throw_ok hf).elim
+                · obtain ⟨rv, hrv, hf⟩ := except_bind_ok.mp hf
+                  simp only [pure, Except.pure, Except.ok.injEq] at hf
+                  subst hf
+                  refine ⟨_, rfl, fun e he => ?_⟩
+                  rcases Array.mem_push.mp he with he | rfl
+                  · exact .inl he
+                  · exact .inr ⟨_, Array.mem_def.mpr hx, readRecursor_key hrv⟩
                 · exact (throw_ok hf).elim)
               (fun e he => by simp at he) hrecs
             obtain ⟨gens, d, hd, hg, hnames⟩ := lowerInductive_decls h
@@ -296,7 +381,7 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
             · obtain ⟨ref, hb, hk⟩ := ck e (Array.mem_def.mpr he)
               exact ⟨ref, .inl hb, hk⟩
             · obtain ⟨ref, hb, hk⟩ := rk e (Array.mem_def.mpr he)
-              exact ⟨ref, .inr ⟨shape, hshape, hb⟩, hk⟩
+              exact ⟨ref, .inr (blockShapeOf_recs hshape hb), hk⟩
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim
@@ -352,12 +437,18 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
     subst hd'
     exact member_names hk hn
   case h_6 =>
-    dsimp only at h
     rcases ite_ok h with h | h
     · simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
       exact LoweringBy.empty
-    · exact (fail_bind h).elim
+    · split at h
+      · obtain ⟨hg, hk⟩ := lowerTwin_spec h
+        refine .inl ⟨hg, fun d hd k hk' => ?_⟩
+        obtain ⟨x, hx, hkx⟩ := hk d hd k hk'
+        simp at hx
+        subst hx
+        exact ⟨_, .inl rfl, hkx⟩
+      · exact (throw_ok h).elim
   case h_7 =>
     dsimp only at h
     rcases ite_ok h with h | h
@@ -387,10 +478,30 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
       · obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering h
         exact .inr ⟨gens, d, hd, hg, hk⟩
     · rcases ite_ok h with h | h
-      · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        exact LoweringBy.empty
+      · rcases ite_ok h with h | h
+        · simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          exact LoweringBy.empty
+        · obtain ⟨twins, htw, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+          have twk := forIn_pushes (fun s => s) (fun x => x.1.block = owner) _ _
+            (fun j _ s q hq => by
+              split at hq
+              · simp only [pure, Except.pure, Except.ok.injEq] at hq
+                subst hq
+                refine ⟨_, rfl, fun e he => ?_⟩
+                rcases Array.mem_push.mp he with he | rfl
+                · exact .inl he
+                · exact .inr rfl
+              · rcases ite_ok hq with hq | hq
+                · simp only [pure, Except.pure, Except.ok.injEq] at hq
+                  subst hq
+                  exact ⟨_, rfl, fun e he => .inl he⟩
+                · exact (fail_bind hq).elim)
+            (fun e he => by simp at he) htw
+          obtain ⟨hg, hk⟩ := lowerTwin_spec h
+          refine .inl ⟨hg, fun d hd k hk' => ?_⟩
+          obtain ⟨x, hx, hkx⟩ := hk d hd k hk'
+          exact ⟨x.1, .inl (twk x (Array.mem_def.mpr hx)), hkx⟩
       · rcases ite_ok h with h | h
         · split at h
           · exact (fail_bind h).elim

@@ -70,7 +70,7 @@ theorem definition_rows {context : CompileEnv × BlockEnv} {before after : Block
     · simp at size; omega
     · rfl
   rw [none] at built
-  obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+  obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
   cases Except.ok.inj returned
   dsimp only [BlockResult.mk']
   rw [MutualProjections.build_rows]

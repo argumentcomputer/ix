@@ -285,19 +285,19 @@ theorem iotaRuleRun_of {env' envSelf : Env md}
     hann0, hrlp, hrres, (by rw [hstripEq]; rfl),
     ⟨rhsTy, hity⟩, fire0, rfl, ?_⟩
   by_cases hplain :
-      Expr.recRulePlain cvA.type mI rP cnP0 = true
+      Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams = true
   · exact Or.inl ⟨hplain, hplainIff.mpr hplain,
       iotaThmRun_of (hplainKit hplain)⟩
-  · have hplainF : Expr.recRulePlain cvA.type mI rP cnP0 = false := by
+  · have hplainF : Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams = false := by
       revert hplain
-      cases Expr.recRulePlain cvA.type mI rP cnP0 <;> simp
+      cases Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams <;> simp
     refine Or.inr ⟨hplainF, ?_⟩
     cases hf : fire0 with
     | plain =>
       exact absurd (hplainIff.mp hf) (by rw [hplainF]; simp)
-    | inert => exact Or.inl ⟨rfl, hinert hf⟩
+    | inert => exact absurd hf hinert
     | nested lvls pins =>
-      refine Or.inr ⟨lvls, pins, rfl, ?_⟩
+      refine ⟨lvls, pins, rfl, ?_⟩
       obtain ⟨-, -, -, -, -, hkitN⟩ := hnested lvls pins hf
       exact iotaThmNRun_of (hnestShape lvls pins hf) hkitN
 
@@ -434,7 +434,7 @@ theorem projFnRun_of {env' env₁ : Env md} {μ : CheckMode}
     checkProjLookups_inv hlk
   obtain ⟨hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1⟩ :=
     checkProjTy_inv hty
-  obtain ⟨abinders, arest, cbindersR, cbody, hstripP, hCstrip,
+  obtain ⟨hplP, abinders, arest, cbindersR, cbody, hstripP, hCstrip,
     hcbodyHead, hcbodyArity⟩ := checkProjShape_inv hshape
   obtain ⟨raw, rbinders, cbindersR2, cbody2, hraw, hrawnf, hrawb,
     hrawann, hrlp, hrres, hrhsb, hrhsnf, hrhsAstrip, hCstrip2,
@@ -453,7 +453,7 @@ theorem projFnRun_of {env' env₁ : Env md} {μ : CheckMode}
   refine ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
     (by rw [hpnone]; rfl), hTf, heqf, hptyB, (by rw [hround]; simp),
     hptyres, hptyb, hptyf, hptylp, hstrip1, hilt,
-    (by rw [hstripP]; rfl),
+    (by rw [hstripP]; rfl), hplP,
     ⟨cbindersR, cbody, hCstrip, hcbodyArity, hcbodyHead, hrhsnf,
       hrhsb, hrlp, hrres, ⟨rbinders, hrhsAstrip, ?_⟩,
       ⟨rhsTy, hity⟩,

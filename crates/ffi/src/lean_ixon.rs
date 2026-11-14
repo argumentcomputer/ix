@@ -4,27 +4,122 @@
 //! cross-implementation compatibility testing and serialization.
 
 pub mod constant;
-pub mod contract;
 pub mod diff;
 pub mod enums;
 pub mod env;
 pub mod expr;
 pub mod meta;
+pub mod modes;
 pub mod pack;
 #[cfg(feature = "test-ffi")]
 pub mod serialize;
 pub mod univ;
 
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use ix_common::address::Address;
 use ix_common::env::normalize_displayed_name;
 use ixon::env::Env as IxonEnv;
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult,
-  LeanOwned, LeanString,
+  ExternalClass, LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept,
+  LeanExternal, LeanIOResult, LeanOwned, LeanString,
 };
 use rustc_hash::FxHashMap;
+
+/// A Rust-owned [`IxonEnv`] exposed to Lean as an opaque external handle.
+pub struct EnvHandle {
+  pub env: IxonEnv,
+}
+
+impl EnvHandle {
+  /// Load via [`IxonEnv::get_anon_mmap`] (zero-copy mmap of the `.ixe` file).
+  pub fn from_ixe_path(path: &std::path::Path) -> Result<Self, String> {
+    let env = IxonEnv::get_anon_mmap(path)?;
+    Ok(Self { env })
+  }
+
+  /// Decode a serialized env blob (`Ixon.serEnv` output) via [`IxonEnv::get`].
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    let mut cursor: &[u8] = bytes;
+    let env = IxonEnv::get(&mut cursor)?;
+    Ok(Self { env })
+  }
+}
+
+static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<EnvHandle>);
+
+/// `Aiur.EnvHandle.fromIxe`: open and parse a `.ixe` file once, returning an
+/// opaque Rust-owned handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_aiur_env_handle_from_ixe(
+  path_bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let path_str = String::from_utf8_lossy(path_bytes.as_bytes()).into_owned();
+  match EnvHandle::from_ixe_path(std::path::Path::new(&path_str)) {
+    Ok(h) => {
+      let lean_handle: LeanOwned =
+        LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
+      LeanExcept::ok(lean_handle)
+    },
+    Err(e) => LeanExcept::error_string(&format!("env handle from_ixe: {e}")),
+  }
+}
+
+/// `Aiur.EnvHandle.fromBytes`: decode a serialized env blob (`Ixon.serEnv`
+/// output) into an opaque Rust-owned handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_aiur_env_handle_from_bytes(
+  bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  match EnvHandle::from_bytes(bytes.as_bytes()) {
+    Ok(h) => {
+      let lean_handle: LeanOwned =
+        LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
+      LeanExcept::ok(lean_handle)
+    },
+    Err(e) => LeanExcept::error_string(&format!("env handle from_bytes: {e}")),
+  }
+}
+
+/// FFI: the detected prover/execution RAM budget in bytes
+/// ([`ixon::shard::RAM_USABLE_FRAC`] of `MemAvailable`), or `0` when
+/// `/proc/meminfo` is unreadable.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_aiur_detected_ram_budget() -> LeanIOResult<LeanOwned> {
+  let bytes = detected_ram_budget().unwrap_or(0);
+  LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
+}
+
+fn trace_shard_max_cells() -> usize {
+  std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .unwrap_or(0)
+}
+
+fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
+  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
+}
+
+fn record_share(max_ram_bytes: usize, cells: usize, in_flight: usize) -> usize {
+  record_budget(max_ram_bytes, cells) / in_flight.max(1)
+}
+
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+fn detected_ram_budget() -> Option<usize> {
+  available_ram_bytes()
+    .map(|b| (b as f64 * ixon::shard::RAM_USABLE_FRAC) as usize)
+}
+
+fn available_ram_bytes() -> Option<usize> {
+  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+  let rest = s.lines().find_map(|l| l.strip_prefix("MemAvailable:"))?;
+  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+  Some(kib * 1024)
+}
 
 /// FFI: extract the named constants' dependency closure from a serialized
 /// env into a standalone `.ixe` — genuine constant bytes, blobs, and
@@ -215,10 +310,9 @@ pub extern "C" fn rs_shard_env_static(
   } else if cfg!(feature = "cuda") {
     // The trace-shard prover: seed against one execution's record share,
     // computed as `ix prove --lanes` computes it.
-    let cells = crate::aiur::protocol::trace_shard_max_cells();
+    let cells = trace_shard_max_cells();
     let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
-    let share =
-      crate::aiur::protocol::record_share(budget, cells, exec_ahead + 2);
+    let share = record_share(budget, cells, exec_ahead + 2);
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;
@@ -338,10 +432,7 @@ fn decode_refinements(
 #[allow(clippy::cast_possible_truncation)] // ids and counts are u32 by construction
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_manifest_refine(
-  env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
-    LeanBorrowed<'_>,
-  >,
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
   source_path: LeanString<LeanBorrowed<'_>>,
   refinements_blob: LeanByteArray<LeanBorrowed<'_>>,
   measured_blob: LeanByteArray<LeanBorrowed<'_>>,

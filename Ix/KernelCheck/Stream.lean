@@ -260,9 +260,10 @@ With `persistent`, the setup is marked persistent before the pre-read: the
 pre-read workers then read its reader context without thread-shared reference
 counting, and the setup is never freed. A caller that keeps the setup to the
 end of its process sets it (`kernel-check-ixe`); without it, the setup is
-freed as usual once its last reference is dropped. -/
+freed as usual once its last reference is dropped. `log` is told when each
+step ends. -/
 def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
-    (persistent : Bool := false) : IO Loaded := do
+    (persistent : Bool := false) (log : String → IO Unit := fun _ => pure ()) : IO Loaded := do
   -- Input theorem records shadow fallback evidence at the same address.
   -- Preserve their real values, including a projected theorem's owner.
   let mut proofRecords : Std.HashSet Address := {}
@@ -294,12 +295,18 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
       if Ix.Kernel.Admission.isTierInfo sk.info then
         tierAddresses := tierAddresses.insert address
       store := store.insert address (if proofRecords.contains address then c else sk)
+  log s!"decoded {store.size} records in {chunks.size} chunks"
   let preludeOnly := pre.records.foldl (init := {}) fun (acc : Std.HashSet Address) (a, _) =>
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) table pre hints.lookup (literalFlags := some litFlags)
+  -- the setup's blob lookup holds the blobs only, not the environment (its
+  -- names), which marking the setup persistent would otherwise walk and keep
+  let blobs := env.blobs
+  let s := setup store (blobs[·]?) table pre hints.lookup (literalFlags := some litFlags)
+  log s!"setup: {s.ordered.size} primary records, {s.cx.index.recs.size} recursors indexed"
   -- `markPersistent` is `unsafe`: a persistent object is never freed.
   let s ← if persistent then unsafe Runtime.markPersistent s else pure s
+  if persistent then log "setup marked persistent"
   let preTasks := chunks.map fun chunk => Task.spawn fun () => preReadChunk s.cx chunk
   let mut preReads : Std.HashMap Address PreRead := Std.HashMap.emptyWithCapacity entries.size
   let mut decoded : Std.HashMap Address Ixon.Constant := {}
@@ -308,6 +315,7 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     for (address, pr?, c?) in preChunk do
       if let some pr := pr? then preReads := preReads.insert address pr
       if let some c := c? then decoded := decoded.insert address c
+  log s!"pre-read {preReads.size} records, {decoded.size} kept decoded"
   return {
     env
     setup := s

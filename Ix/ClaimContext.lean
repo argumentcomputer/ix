@@ -40,12 +40,14 @@ namespace Ix.ClaimContext
 open Ix.Kernel (Role RoleTable)
 
 /-- The context of a claim over the role binding with hash `binding`. -/
-def ofBinding (binding : Address) : Except String ClaimContext := do
-  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none }
+def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- Safe axioms in `env` not bound by its role binding (`propext`,
-    `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is a `.quot`
-    record). Mirrors `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
+/-- Safe axioms in `env` not bound by its role binding. The default table binds
+    `propext` and `Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
+    `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a claim over Lean's `Init` lists
+    none of them; it binds `Quot.sound`, an axiom record, as its role. Mirrors
+    `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
 def userAxioms (env : Ixon.Env) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
   let some table := RoleTable.ofBytes binding.bytes | return #[]
@@ -65,12 +67,13 @@ def userAxiomTree (env : Ixon.Env) : Option AssumptionTree :=
 
 /-- The context of a claim over an environment's own role binding and user
     axioms. -/
-def ofEnv (env : Ixon.Env) : Except String ClaimContext := do
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   let some binding := env.roleBinding
     | throw "claim context: the environment carries no role binding"
   return { spec := ← Ix.SpecDigest.specDigest
            binding := binding.address
-           axioms := (userAxiomTree env).map (·.root) }
+           axioms := (userAxiomTree env).map (·.root)
+           bindingAssumed }
 
 /-- The context of a claim over the default role table
 (`Ix.Kernel.Reader.defaultTable`), the generated table of the compiled
@@ -84,17 +87,18 @@ def ofDefaultTable : Except String ClaimContext := do
 - `List`, `List.nil`, `List.cons`, `String`, `String.ofList`, `Char` and
   `Char.ofNat`: a `String` literal's type and constructor form (IxVM
   `str_lit_to_ctor`; IxC `litStrKeys`);
-- `propext` and `Classical.choice`: the standard axioms the axiom policy
-  admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
-`Quot.sound` and the quotient block are fixed by their specifications. -/
+- `Quot.sound`, `propext` and `Classical.choice`: the standard axioms the axiom
+  policy admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
+  `Quot.sound` is an axiom record, not a quotient record.
+The quotient block's other members are fixed by their specifications. -/
 def classRoles : List Role :=
-  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .string, .stringOfList,
-   .char, .charOfNat, .propext, .choice]
+  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .quotSound, .string,
+   .stringOfList, .char, .charOfNat, .propext, .choice]
 
 /-- The class roles' indices in a binding section: `ix_aggr` reads a complete
 table's entries for them at these positions. -/
 theorem classRoles_idx :
-    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57] := by
+    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57] := by
   decide
 
 /-- The tag of a literal class preimage: `N4(0xE, 12)`, after the binding

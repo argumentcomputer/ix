@@ -1,4 +1,5 @@
 import IxC.Kernel.Rules.Rel
+import IxC.Kernel.Rules.NatOffset
 import IxC.Kernel.Verify.Rename.Core7
 import IxC.Kernel.Verify.Rename.Native3
 import IxC.Kernel.Verify.Leaves
@@ -82,6 +83,137 @@ theorem natBinOpNames_mem_map {k : Key md} (h : k ∈ (natBinOpNames (md := md))
   rw [← List.contains_iff_mem, natBinOpNames_contains_map, List.contains_iff_mem]
   exact h
 
+/-! ## The `Nat` offset helpers, renamed -/
+
+theorem natAddLit_mapKeys (b : Expr md) (k : Nat) :
+    (natAddLit b k).mapKeys f = natAddLit (b.mapKeys f) k := by
+  unfold natAddLit
+  by_cases hk : k = 0
+  · rw [ite_eq_left hk, ite_eq_left hk]
+  · rw [ite_eq_right hk, ite_eq_right hk]
+    rfl
+
+theorem natAddLit_good {b : Expr md} (hadd : (natAddName : Key md).Good P) (hb : b.Good P)
+    (k : Nat) : (natAddLit b k).Good P := by
+  unfold natAddLit
+  by_cases hk : k = 0
+  · rw [ite_eq_left hk]
+    exact hb
+  · rw [ite_eq_right hk]
+    exact ⟨⟨hadd, hb⟩, trivial⟩
+
+theorem natAddTyOk_map (o : Option (ConstantInfo md)) :
+    natAddTyOk (o.map (ConstantInfo.mapKeys f)) = natAddTyOk o := by
+  rcases o with _ | ⟨_ | ⟨⟨n, lps, t⟩, v, h⟩ | _ | _ | _ | _ | _⟩ <;> try rfl
+  simp only [Option.map_some, ConstantInfo.mapKeys, natAddTyOk, ConstantVal.mapKeys]
+  rcases t with _ | _ | _ | _ | _ | _ |
+    ⟨d₁, _ | _ | _ | _ | _ | _ | ⟨d₂, c, mb₂⟩ | _ | _ | _, mb₁⟩ | _ | _ | _ <;>
+    simp
+
+theorem natAddTyOk_ren (hR : Renaming P f env env') :
+    natAddTyOk (env'.find? natAddName) = natAddTyOk (env.find? natAddName) := by
+  have h : env'.find? natAddName = (env.find? natAddName).map (ConstantInfo.mapKeys f) :=
+    hR.rel.find natAddName (hR.roles .natAdd)
+  rw [h, natAddTyOk_map]
+
+/-- `natOffsetOf` commutes with the renaming. -/
+theorem natOffsetOf_mapKeys : ∀ e : Expr md,
+    natOffsetOf (e.mapKeys f) = (natOffsetOf e).map (fun p => (p.1.mapKeys f, p.2)) := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | lit l => cases l <;> rfl
+  | app g x =>
+    cases g with
+    | const c us =>
+      show natOffsetOf (.app (.const (c.map f) us) (x.mapKeys f)) = _
+      rw [natOffsetOf_succ, natOffsetOf_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+        cases natOffsetOf x with
+        | none => rfl
+        | some p => obtain ⟨b, k⟩ := p; rfl
+      · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
+        rw [ite_eq_right hc', ite_eq_right hc]
+        rfl
+    | app g' y =>
+      cases g' with
+      | const c us =>
+        cases x with
+        | lit l =>
+          cases l with
+          | natVal m =>
+            show natOffsetOf (.app (.app (.const (c.map f) us) (y.mapKeys f))
+              (.lit (.natVal m))) = _
+            rw [natOffsetOf_add, natOffsetOf_add]
+            by_cases hc : c = natAddName
+            · subst hc
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl, ih y (Or.inr ⟨us, m, rfl⟩)]
+              cases natOffsetOf y with
+              | none => rfl
+              | some p => obtain ⟨b, k⟩ := p; rfl
+            · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
+              rw [ite_eq_right hc', ite_eq_right hc]
+              rfl
+          | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
+/-- `natOffsetAdd` is blind to the renaming. -/
+theorem natOffsetAdd_mapKeys : ∀ e : Expr md, natOffsetAdd (e.mapKeys f) = natOffsetAdd e := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | app g x =>
+    cases g with
+    | const c us =>
+      show natOffsetAdd (.app (.const (c.map f) us) (x.mapKeys f)) = _
+      rw [natOffsetAdd_succ, natOffsetAdd_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+      · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
+        rw [ite_eq_right hc', ite_eq_right hc]
+    | app g' y =>
+      cases g' with
+      | const c us =>
+        cases x with
+        | lit l =>
+          cases l with
+          | natVal m =>
+            show natOffsetAdd (.app (.app (.const (c.map f) us) (y.mapKeys f))
+              (.lit (.natVal m))) = _
+            rw [natOffsetAdd_add, natOffsetAdd_add]
+            by_cases hc : c = natAddName
+            · subst hc
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl]
+            · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
+              rw [ite_eq_right hc', ite_eq_right hc]
+          | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
+/-- An offset's base of a good term is good: a subterm, or the literal `0`. -/
+theorem natOffsetOf_good : ∀ (e : Expr md) {b : Expr md} {k : Nat},
+    natOffsetOf e = some (b, k) → e.Good P → b.Good P := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  intro b k h he
+  rcases natOffsetOf_some h with ⟨rfl, rfl⟩ | ⟨us, x, rfl, hx⟩ | ⟨us, x, n, rfl, hx⟩
+  · trivial
+  · rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
+    · exact ih x (Or.inl ⟨us, rfl⟩) hx' he.2
+    · exact he.2
+  · rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
+    · exact ih x (Or.inr ⟨us, n, rfl⟩) hx' he.1.2
+    · exact he.1.2
+
 /-- The parameter comparands of a fired rule are good. -/
 theorem comparands_good {rl : RecRule md} (hrl : rl.Good P) (lps : List LevelParam)
     (us : List Level) (cvjLps : List LevelParam) {args : List (Expr md)}
@@ -100,6 +232,127 @@ theorem comparands_good {rl : RecRule md} (hrl : rl.Good P) (lps : List LevelPar
     exact Expr.Good.instSpine (hargs.take rP) (Expr.Good.instantiateLevelParams (hp p hp') _ _)
   | inert => exact hargs.take _
   | plain => exact hargs.take _
+
+/-! ## A typed subject is good
+
+The equality-reflection rule (`Red.eqProof`) types a proof term its subject does not
+contain; its renaming needs that term's goodness: `infer_good` below (moved here,
+ahead of the renaming), with the subject's leaves (`leaves_good`). -/
+
+/-- A good term's leaves carry good types. -/
+theorem leaves_good : ∀ {e : Expr md}, e.Good P → ∀ l ∈ e.fvarLeaves, l.2.Good P := by
+  intro e
+  induction e with
+  | fvar idx ty ih =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_cons] at hl
+    rcases hl with rfl | hl
+    · exact he
+    · exact ih he l hl
+  | app f a ihf iha =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with hl | hl
+    · exact ihf he.1 l hl
+    · exact iha he.2 l hl
+  | lam ty b _ iht ihb | forallE ty b _ iht ihb =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with hl | hl
+    · exact iht he.1 l hl
+    · exact ihb he.2 l hl
+  | letE t v b _ iht ihv ihb =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with (hl | hl) | hl
+    · exact iht he.1 l hl
+    · exact ihv he.2.1 l hl
+    · exact ihb he.2.2 l hl
+  | proj _ _ e ih =>
+    intro he l hl
+    simp only [Expr.fvarLeaves] at hl
+    exact ih he.2 l hl
+  | bvar | sort | const | lit => intro _ l hl; simp [Expr.fvarLeaves] at hl
+
+
+/-- Instantiation keeps every key of the instantiated term. -/
+theorem good_of_instantiate1 {v : Expr md} :
+    ∀ (e : Expr md) (k : Nat), (e.instantiate1 v k).Good P → e.Good P := by
+  intro e
+  induction e with
+  | bvar => intros; trivial
+  | fvar i t _ => intro k h; simpa [Expr.instantiate1] using h
+  | sort => intros; trivial
+  | const n us => intro k h; simpa [Expr.instantiate1] using h
+  | app a b iha ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iha k h.1, ihb k h.2⟩
+  | lam t b m iht ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
+  | forallE t b m iht ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
+  | letE t v' b l iht ihv ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihv k h.2.1, ihb (k + 1) h.2.2⟩
+  | lit l => intro k h; simpa [Expr.instantiate1] using h
+  | proj s i e ih =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨h.1, ih k h.2⟩
+
+/-- **A term typed at the full grade is good**, when every key the environment
+answers is good, every role is allowed, and the term's free variables carry good
+types. Full-grade typing checks every subterm: constants are found, projections
+go through a stored table, and binder domains are typed. -/
+theorem infer_good (found : ∀ (k : Key md) (c : ConstantInfo md), env.find? k = some c → k.Good P)
+    (roles : P.All) :
+    ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → g = .full →
+      (∀ l ∈ e.fvarLeaves, l.2.Good P) → e.Good P
+  | _, _, _, _, .sort, _, _ => trivial
+  | _, _, _, _, .fvar (idx := idx) (ty := ty) _, _, hl => hl (idx, ty) (by simp [Expr.fvarLeaves])
+  | _, _, _, _, .const hf _ _, _, _ => found _ _ hf
+  | _, _, _, _, .natLit _, _, _ => trivial
+  | _, _, _, _, .strLit _, _, _ => roles.str
+  | _, _, _, _, .forallE hs _ hbs _ _, hg, hl => by
+    have hty := infer_good found roles hs hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
+    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbs hg fun l h => ?_)⟩
+    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
+    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
+      rcases h' with rfl | h'
+      · exact hty
+      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
+  | _, _, _, _, .lam hs _ hbt _ _ _ _, hg, hl => by
+    have hty := infer_good found roles (hs hg) rfl
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
+    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbt hg fun l h => ?_)⟩
+    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
+    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
+      rcases h' with rfl | h'
+      · exact hty
+      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
+  | _, _, _, _, .app htf _ hta _, hg, hl =>
+    ⟨infer_good found roles htf hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h)),
+     infer_good found roles hta hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h))⟩
+  | _, _, _, _, .appSkip _ _ _, hg, _ => nomatch hg
+  | _, _, _, _, .proj htpe _ _ hent _ _ _, hg, hl => by
+    refine ⟨?_, infer_good found roles htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
+    unfold Env.findProj? at hent
+    split at hent
+    · rename_i tbl htbl
+      simpa [projTableName, auxKey] using found _ _ htbl
+    · exact nomatch hent
+
 
 /-! ## The renaming -/
 
@@ -121,6 +374,9 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .projArg h, he => by
     obtain ⟨g, r⟩ := red_rename hR h he.2
     exact ⟨⟨he.1, g⟩, .projArg r⟩
+  | _, _, _, .appArg h, he => by
+    obtain ⟨g, r⟩ := red_rename hR h he.2
+    exact ⟨⟨he.1, g⟩, .appArg r⟩
   | _, _, _, .betaGate hnev, he => by
     refine ⟨Expr.Good.instantiate1 he.1.2 he.2 0, ?_⟩
     rw [Expr.mapKeys_instantiate1]
@@ -133,10 +389,56 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .delta hu, he =>
     ⟨unfoldDefinition_good hR.rel he hu,
       .delta (by rw [unfoldDefinition_ren hR.rel he, hu]; rfl)⟩
+  | d, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
+      hf hlen hvf hvb hinf hde hinfT hred hz, _ => by
+    have hci := hR.good hf
+    simp only [ConstantInfo.Good] at hci
+    have hvg : (value.instantiateLevelParams cv.levelParams us).Good P :=
+      Expr.Good.instantiateLevelParams hci.2 _ _
+    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hci.2
+    obtain ⟨gs, its⟩ := infer_rename hR hinfT hci.1.2
+    obtain ⟨-, rs⟩ := red_rename hR hred gs
+    have dvt := defEq_rename hR hde gvt hci.1.2
+    refine ⟨hvg, ?_⟩
+    have key := Red.deltaThm (env := env') (d := d) (n := n.map f) (us := us)
+      (cv := cv.mapKeys f) (value := value.mapKeys f)
+      (by rw [hR.find hf]; rfl)
+      (by rw [ConstantVal.mapKeys_levelParams]; exact hlen)
+      (by rw [Expr.hasFvar_mapKeys]; exact hvf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hvb)
+      ivt (by rw [ConstantVal.mapKeys_type]; exact dvt)
+      (by rw [ConstantVal.mapKeys_type]; exact its)
+      rs hz
+    rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams] at key
+    exact key
+  | _, _, _, .eqProof (b := b) (p := p) (T := T) hhead hfE hp hwp hbp hlp ha hda hb hdb hT
+      hred hv, he => by
+    have hpg : p.Good P :=
+      infer_good hR.found hR.roles hp rfl (fun l hl => leaves_good he l (hlp l hl))
+    obtain ⟨gS, iS⟩ := infer_rename hR hp hpg
+    have hTg : T.Good P := gS.1.1.2
+    have hbg : b.Good P := gS.2
+    obtain ⟨gta, ita⟩ := infer_rename hR ha he
+    obtain ⟨gtb, itb⟩ := infer_rename hR hb hbg
+    obtain ⟨gsT, itT⟩ := infer_rename hR hT hTg
+    obtain ⟨-, rs⟩ := red_rename hR hred gsT
+    refine ⟨hbg, .eqProof (head_map hhead) (hR.find hfE) iS
+      (by rw [Expr.wscopedB_mapKeys]; exact hwp)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbp) ?_
+      ita (defEq_rename hR hda gta hTg) itb (defEq_rename hR hdb gtb hTg) itT rs hv⟩
+    rw [Expr.fvarLeaves_mapKeys, Expr.fvarLeaves_mapKeys]
+    intro l hl
+    obtain ⟨l', hl', rfl⟩ := List.mem_map.mp hl
+    exact List.mem_map.mpr ⟨l', hlp l' hl', rfl⟩
   | _, _, _, .natLit h, _ => by
     refine ⟨natLitToConstructor_good hR.roles.pre _, ?_⟩
     rw [natLitToConstructor_mapKeys]
     exact .natLit (by rw [natLitSupported_ren hR.rel]; exact h)
+  | _, _, _, .natZeroLit h, _ => by
+    refine ⟨trivial, ?_⟩
+    rw [show (Expr.const natZeroName [] : Expr md) = natLitToConstructor 0 from rfl,
+      natLitToConstructor_mapKeys]
+    exact .natZeroLit (by rw [natLitSupported_ren hR.rel]; exact h)
   | _, _, _, .strLit h, _ => by
     refine ⟨strLitToConstructor_good hR.roles.pre hR.roles.str _, ?_⟩
     rw [strLitToConstructor_mapKeys]
@@ -153,6 +455,17 @@ theorem red_rename (hR : Renaming P f env env') :
     exact .natOp (natBinOpNames_mem_map hc) (by rw [natOpStored_ren hR.rel hcg]; exact hst) rwa
       (by rw [rawNatLit?_mapKeys]; exact hn₁) rwb (by rw [rawNatLit?_mapKeys]; exact hn₂)
       (by rw [natOpResult_map, hr]; rfl)
+  | _, _, _, .natAddSucc (us := us) (b := b) (k := k) hs ht, he => by
+    refine ⟨⟨hR.roles .natSucc, natAddLit_good (hR.roles .natAdd) he.1.2 k⟩, ?_⟩
+    show Red env' _ (.app (.app (.const natAddName us) (b.mapKeys f)) (.lit (.natVal (k + 1))))
+      (.app (.const natSuccName []) ((natAddLit b k).mapKeys f))
+    rw [natAddLit_mapKeys]
+    exact .natAddSucc (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (by rw [natAddTyOk_ren hR]; exact ht)
+  | _, _, _, .natAddZero hs ht hw hn, he => by
+    obtain ⟨-, rw'⟩ := red_rename hR hw he.2
+    exact ⟨he.1.2, .natAddZero (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (by rw [natAddTyOk_ren hR]; exact ht) rw' (by rw [rawNatLit?_mapKeys]; exact hn)⟩
   | _, _, _, .proj (sn := sn) (e := u) (entry := entry) (cvC := cvC) hent hhead hi hlen hus hfire
       hctor hcerts, he => by
     obtain ⟨hsn, hu⟩ := he
@@ -164,7 +477,7 @@ theorem red_rename (hR : Renaming P f env env') :
       (entry := entry.mapKeys f) (cvC := cvC.mapKeys f)
       (by rw [hR.rel.findProj? hsn, hent]; rfl) (head_map hhead) hi
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus
-      (by rw [ProjEntry.fireOk_mapKeys]; exact hfire) (hR.find hctor)
+      hfire (hR.find hctor)
       (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
     rw [Expr.getAppArgs_mapKeys, List.getD_map_bvar] at key
     exact key
@@ -309,7 +622,13 @@ theorem red_rename (hR : Renaming P f env env') :
       (by rw [ConstantVal.mapKeys_type, ← Expr.mapKeys_piResult, ← Expr.mapKeys_getAppFn, hres]; rfl)
       (hR.find hind) itm rtmaj (head_map hthead)
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hlv
-      (by rw [RecRule.mapKeys_ctor, andRescueSlots_ren hR.rel hrlG.1]; exact hslots)
+      (fun j hj => by
+        obtain ⟨e, hfe, hct, hnP, hnF, hfire⟩ := hslots j hj
+        have h := hR.rel.findProj? (T := andName) hand j
+        simp only [Key.map_role] at h
+        refine ⟨e.mapKeys f, by rw [h, hfe]; rfl, ?_, hnP, hnF, hfire⟩
+        rw [RecRule.mapKeys_ctor, ← hct]
+        rfl)
       (by rw [hfab, Expr.mapKeys_mkAppN, List.map_append, Expr.getAppArgs_mapKeys]; rfl)
       (by rw [Expr.wscopedB_mapKeys]; exact hws) (by rw [Expr.looseBVarsBounded_mapKeys]; exact hb)
       (by rw [fvarLeaves_all_contains_ren hR.rel.inj hfabG he]; exact hlv')
@@ -331,27 +650,35 @@ theorem defEq_rename (hR : Renaming P f env env') :
   | _, _, _, .const h, _, _ => .const h
   | _, _, _, .natZero, _, _ => .natZero
   | _, _, _, .natSucc h, _, hb => .natSucc (defEq_rename hR h trivial hb.2)
-  | _, _, _, .forallE hty hbody hpw hc, ha, hb => by
+  | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb' h, hga, hgb =>
+    .natOffset (ba := ba.mapKeys f) (bb := bb.mapKeys f) (k := k)
+      (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (fun h' => by
+        rw [natAddTyOk_ren hR]
+        exact ht (by simp only [natOffsetAdd_mapKeys] at h'; exact h'))
+      (by rw [natOffsetOf_mapKeys, ha]; rfl) (by rw [natOffsetOf_mapKeys, hb']; rfl)
+      (defEq_rename hR h (natOffsetOf_good _ ha hga) (natOffsetOf_good _ hb' hgb))
+  | _, _, _, .forallE hty hbody hpw, ha, hb => by
     have h1 := defEq_rename hR hty ha.1 hb.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 hb.1)
       (good_inst_fvar hb.2 hb.1)
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .forallE h1 h2 hpw hc
-  | _, _, _, .lam hty hbody hpw hc, ha, hb => by
+    exact .forallE h1 h2 hpw
+  | _, _, _, .lam hty hbody hpw, ha, hb => by
     have h1 := defEq_rename hR hty ha.1 hb.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 hb.1)
       (good_inst_fvar hb.2 hb.1)
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .lam h1 h2 hpw hc
+    exact .lam h1 h2 hpw
   | _, _, _, .app hf ha', ha, hb => .app (defEq_rename hR hf ha.1 hb.1) (defEq_rename hR ha' ha.2 hb.2)
   | _, _, _, .proj h, ha, hb => .proj (defEq_rename hR h ha.2 hb.2)
-  | _, _, _, .eta htb hwtb hty hbody hpw hc, ha, hb => by
+  | _, _, _, .eta htb hwtb hty hbody hpw, ha, hb => by
     obtain ⟨gtb, itb⟩ := infer_rename hR htb hb
     obtain ⟨gw, rw'⟩ := red_rename hR hwtb gtb
     have h1 := defEq_rename hR hty gw.1 ha.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 ha.1) ⟨hb, ha.1⟩
     simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at h2
-    exact .eta itb rw' h1 h2 hpw hc
+    exact .eta itb rw' h1 h2 hpw
   | _, _, _, .proofFast h₁ h₂, ha, hb =>
     .proofFast (by rw [isProofFast_ren hR.rel ha]; exact h₁) (by rw [isProofFast_ren hR.rel hb]; exact h₂)
   | _, _, _, .proofIrrel hta htta hu hu0 htb httb hv hv0, ha, hb => by
@@ -411,6 +738,48 @@ theorem defEq_rename (hR : Renaming P f env env') :
       (by rw [reservedBasisNames_contains_map]; exact hresT)
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen) hlv i3 r2
       (defEq_rename hR hd g2 g4) (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, i2⟩ := infer_rename hR htta g1
+    obtain ⟨-, r1⟩ := red_rename hR hu g2
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    exact .proofIrrelTy i1 i2 r1 hu0 i3 (defEq_rename hR hd g1 g3)
+  | _, _, _, .unitLikeTy hta hwta hthead hind hunit htlen hcerts hkind htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, r1⟩ := red_rename hR hwta g1
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    have hcerts' := certs_rename hR hcerts
+      (Expr.Good.instantiateLevelParams (hR.good hind).1.2 _ _) (Expr.Good.getAppArgs g2)
+    exact .unitLikeTy i1 r1 (head_map hthead) (hR.find hind) hunit
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen)
+      (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+      (hkind.imp (fun h => by rw [reservedBasisNames_contains_map]; exact h)
+        (fun h => by rw [isUnitLikeTy_ren hR.rel g2]; exact h))
+      i3 (defEq_rename hR hd g1 g3)
+  | _, _, _, .structEtaTy (b := b) (cnF := cnF) (T := T) (caps := caps) hhead hctor hlen hind
+      heta hetaCtor hpos htow hta hwta hcerts htb hd hfields, hgb, hga => by
+    obtain ⟨gta, ita⟩ := infer_rename hR hta hga
+    obtain ⟨-, rw'⟩ := red_rename hR hwta gta
+    obtain ⟨gtb, itb⟩ := infer_rename hR htb hgb
+    have hT : T.Good P := hR.found _ _ hind
+    have haargs := Expr.Good.getAppArgs hga
+    have hcerts' := certs_rename hR hcerts
+      (Expr.Good.instantiateLevelParams (hR.good hind).1.2 _ _) (haargs.take _)
+    have hprojs : Expr.GoodList P ((List.range cnF).map fun i => Expr.proj T i b) := by
+      intro x hx
+      simp only [List.mem_map] at hx
+      obtain ⟨_, _, rfl⟩ := hx
+      exact ⟨hT, hgb⟩
+    have hfields' := defEqList_rename hR hfields hprojs (haargs.drop _)
+    rw [List.map_map, List.map_drop, ← Expr.getAppArgs_mapKeys] at hfields'
+    rw [Expr.mapKeys_mkAppN, List.map_take, ← Expr.getAppArgs_mapKeys] at rw'
+    exact .structEtaTy (head_map hhead) (hR.find hctor)
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) (hR.find hind) heta
+      (by show caps.etaCtor.map (Key.map f) = _; rw [hetaCtor]; rfl) hpos
+      (by rw [towerSlotsAll_ren hR.rel hT]; exact htow) ita rw'
+      (by simpa only [Expr.getAppArgs_mapKeys, List.map_take, ConstantVal.mapKeys_type,
+            ConstantVal.mapKeys_levelParams, Expr.mapKeys_instantiateLevelParams] using hcerts')
+      itb (defEq_rename hR hd gtb gta) hfields'
 
 /-- **An inference, renamed**: a good subject has a good type, and the renamed
 subject infers the renamed type. -/
@@ -474,7 +843,7 @@ theorem infer_rename (hR : Renaming P f env env') :
       (Expr.Good.getAppArgs gte) hpe, ?_⟩
     have key := Infer.proj (env := env') it rte (head_map hhead)
       (by rw [hR.rel.findProj? hsn, hent]; rfl)
-      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus hprop
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus (by exact hprop)
     simpa [Expr.getAppArgs_mapKeys] using key
 
 /-- **A telescope certificate, renamed.** -/
@@ -519,85 +888,5 @@ theorem etaProjCerts_rename (hR : Renaming P f env env') :
       (by simpa using hcerts') (etaProjCerts_rename hR hrest hT ht hb)
 
 end
-
-/-! ## Typed terms are good -/
-
-/-- Instantiation keeps every key of the instantiated term. -/
-theorem good_of_instantiate1 {v : Expr md} :
-    ∀ (e : Expr md) (k : Nat), (e.instantiate1 v k).Good P → e.Good P := by
-  intro e
-  induction e with
-  | bvar => intros; trivial
-  | fvar i t _ => intro k h; simpa [Expr.instantiate1] using h
-  | sort => intros; trivial
-  | const n us => intro k h; simpa [Expr.instantiate1] using h
-  | app a b iha ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iha k h.1, ihb k h.2⟩
-  | lam t b m iht ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
-  | forallE t b m iht ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
-  | letE t v' b l iht ihv ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihv k h.2.1, ihb (k + 1) h.2.2⟩
-  | lit l => intro k h; simpa [Expr.instantiate1] using h
-  | proj s i e ih =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨h.1, ih k h.2⟩
-
-/-- **A term typed at the full grade is good**, when every key the environment
-answers is good, every role is allowed, and the term's free variables carry good
-types. Full-grade typing checks every subterm: constants are found, projections
-go through a stored table, and binder domains are typed. -/
-theorem infer_good (found : ∀ (k : Key md) (c : ConstantInfo md), env.find? k = some c → k.Good P)
-    (roles : P.All) :
-    ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → g = .full →
-      (∀ l ∈ e.fvarLeaves, l.2.Good P) → e.Good P
-  | _, _, _, _, .sort, _, _ => trivial
-  | _, _, _, _, .fvar (idx := idx) (ty := ty) _, _, hl => hl (idx, ty) (by simp [Expr.fvarLeaves])
-  | _, _, _, _, .const hf _ _, _, _ => found _ _ hf
-  | _, _, _, _, .natLit _, _, _ => trivial
-  | _, _, _, _, .strLit _, _, _ => roles.str
-  | _, _, _, _, .forallE hs _ hbs _ _, hg, hl => by
-    have hty := infer_good found roles hs hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
-    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbs hg fun l h => ?_)⟩
-    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
-    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
-      rcases h' with rfl | h'
-      · exact hty
-      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
-  | _, _, _, _, .lam hs _ hbt _ _ _ _, hg, hl => by
-    have hty := infer_good found roles (hs hg) rfl
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
-    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbt hg fun l h => ?_)⟩
-    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
-    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
-      rcases h' with rfl | h'
-      · exact hty
-      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
-  | _, _, _, _, .app htf _ hta _, hg, hl =>
-    ⟨infer_good found roles htf hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h)),
-     infer_good found roles hta hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h))⟩
-  | _, _, _, _, .appSkip _ _ _, hg, _ => nomatch hg
-  | _, _, _, _, .proj htpe _ _ hent _ _ _, hg, hl => by
-    refine ⟨?_, infer_good found roles htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
-    unfold Env.findProj? at hent
-    split at hent
-    · rename_i tbl htbl
-      simpa [projTableName, auxKey] using found _ _ htbl
-    · exact nomatch hent
 
 end Ix.Cert.RulesRename

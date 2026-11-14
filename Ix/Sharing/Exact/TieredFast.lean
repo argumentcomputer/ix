@@ -51,9 +51,9 @@ def countShares : Ixon.Expr → Array Nat → Array Nat
     if idx < refs.size then refs.modify idx (· + 1) else refs
   | .prj _ _ v, refs => countShares v refs
   | .app f a, refs => countShares a (countShares f refs)
-  | .lam _ t b, refs => countShares b (countShares t refs)
-  | .all _ _ t b, refs => countShares b (countShares t refs)
-  | .letE _ t v b, refs => countShares b (countShares v (countShares t refs))
+  | .lam t b, refs => countShares b (countShares t refs)
+  | .all t b, refs => countShares b (countShares t refs)
+  | .letE _ _ t v b, refs => countShares b (countShares v (countShares t refs))
   | _, refs => refs
 
 private theorem shareIndices_foldl (e : Ixon.Expr) (acc refs : Array Nat) :
@@ -72,13 +72,13 @@ private theorem shareIndices_foldl (e : Ixon.Expr) (acc refs : Array Nat) :
   | app f a ihf iha =>
     unfold shareIndices countShares
     rw [iha, ihf]
-  | lam _ t b iht ihb =>
+  | lam t b iht ihb =>
     unfold shareIndices countShares
     rw [ihb, iht]
-  | all _ _ t b iht ihb =>
+  | all t b iht ihb =>
     unfold shareIndices countShares
     rw [ihb, iht]
-  | letE _ t v b iht ihv ihb =>
+  | letE _ _ t v b iht ihv ihb =>
     unfold shareIndices countShares
     rw [ihb, ihv, iht]
   | _ => rfl

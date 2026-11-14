@@ -137,11 +137,31 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps).
 -- This independent byte-entry census leaves every other field unchanged.
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The canonical rule's level link and the declines of rules that would not fire add
+-- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
+-- Modes in records (the section nodes' modes, let headers, definition assertions and
+-- constructor field modes, `Constant.modesCanonical`) take the closure from 6984 compiled
+-- functions and 113 inherited externs to 7003 and 114 (`IxC/Kernel/Audit/Roots.lean`).
+-- The reader's canonical natural-literal check (`ECx.natAt`) adds 5.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6850 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkBytes]: 7067 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

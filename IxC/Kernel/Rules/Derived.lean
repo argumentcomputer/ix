@@ -171,9 +171,9 @@ theorem DefEq.etaR {d : Nat} {a ta ty₁ B ty₂ body₂ : Expr md} {m₁ m₂ :
     (hty : DefEq env d ty₁ ty₂)
     (hbody : DefEq env (d + 1) (body₂.instantiate1 (.fvar d ty₂))
       (.app a (.fvar d ty₂)))
-    (hpw : m₂.pw = m₁.pw) (hc : m₂.contract = m₁.contract) :
+    (hpw : m₂.pw = m₁.pw) :
     DefEq env d a (.lam ty₂ body₂ m₂) :=
-  .symm (.eta hi hr hty hbody hpw hc)
+  .symm (.eta hi hr hty hbody hpw)
 
 /-- Congruence along a spine: the head and the arguments pairwise. -/
 theorem DefEq.mkAppN {d : Nat} : ∀ {as bs : List (Expr md)} {f g : Expr md},
@@ -200,7 +200,7 @@ official `try_eq_const_app`): both heads the same constant at
 equivalent levels, the spines pairwise. -/
 theorem DefEq.constSpine {d : Nat} {a b : Expr md} {n : Key md} {us us' : List Level}
     (ha : a.getAppFn = .const n us) (hb : b.getAppFn = .const n us')
-    (hus : Level.isEquivList us us' = some true)
+    (hus : ∀ φ, Level.EvalEqList φ us us')
     (hargs : DefEqList env d a.getAppArgs b.getAppArgs) :
     DefEq env d a b :=
   .spine (by rw [ha, hb]; exact .const hus) hargs

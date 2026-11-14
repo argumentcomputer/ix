@@ -1629,21 +1629,67 @@ def instSpine : List (Expr md) → Nat → Expr md → Expr md
   | a :: as, t, e => instSpine as (t - 1) (e.instantiate1 a t)
 
 /-- A recursor rule is *canonical* when its constructor's parameters
-are exactly the recursor's own leading arguments: the major premise's
-type applies the eliminated family to the first `cnP` telescope
-variables.  Rules for nested auxiliary constructors (whose parameters
-are instantiations like `Array Syntax`) are not canonical; they are
-stored `.nested` when the certification against the model's `iota_j`
-theorem succeeds (see `checkIotaThmN`) and `.inert` otherwise —
-`iotaRec` never fires an inert rule, so it carries no fold
-obligation. -/
-def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) : Bool :=
+and levels are exactly the recursor's own: the major premise's type
+applies the eliminated family, at the constructor's own level
+parameters `cjLps`, to the first `cnP` telescope variables.  (A
+canonical rule's level comparands link the constructor's level
+parameters to the recursor's by name, `recFireComparands`; the major
+premise at those parameters is what makes the comparison say that the
+constructor is used at the major premise's levels.)  Rules for nested
+auxiliary constructors (whose parameters are instantiations like
+`Array Syntax`) are not canonical; they are stored `.nested` when the
+certification against the model's `iota_j` theorem succeeds (see
+`checkIotaThmN`) and `.inert` otherwise — `iotaRec` never fires an
+inert rule, so it carries no fold obligation. -/
+def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) (cjLps : List LevelParam) : Bool :=
   decide (cnP ≤ rP) && decide (rP ≤ mI) &&
   match recTy.stripPis mI with
   | some (_, .forallE dom _ _) =>
+    (match dom.getAppFn with
+     | .const _ ls => decide (ls = cjLps.map Level.param)
+     | _ => false) &&
     dom.getAppArgs.take cnP ==
       (List.range cnP).map (fun k => Expr.bvar (mI - 1 - k))
   | _ => false
+
+/-- **A constructor's telescope, as a rule fires it**: the constructor's type has `k`
+syntactic binders (its parameters and fields), and the residual is headed by a constant
+(the family former), so substituting the major premise's arguments for the binders leaves
+the residual's arguments where they were. -/
+def ctorTeleOk (ty : Expr md) (k : Nat) : Bool :=
+  match ty.stripPis k with
+  | some (_, body) =>
+    match body.getAppFn with
+    | .const _ _ => true
+    | _ => false
+  | none => false
+
+theorem ctorTeleOk_isSome {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    (ty.stripPis k).isSome = true := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i hs
+    rw [hs]
+    rfl
+  · exact nomatch h
+
+theorem ctorTeleOk_head {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    ∃ bs body c us, ty.stripPis k = some (bs, body) ∧ body.getAppFn = .const c us := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i bs body hs
+    split at h
+    · rename_i c us hb
+      exact ⟨bs, body, c, us, hs, hb⟩
+    · exact nomatch h
+  · exact nomatch h
+
+theorem ctorTeleOk_of {ty body : Expr md} {k : Nat} {bs : List (Expr md × BinderMeta)}
+    {c : Key md} {us : List Level} (hs : ty.stripPis k = some (bs, body))
+    (hb : body.getAppFn = .const c us) : ctorTeleOk ty k = true := by
+  unfold ctorTeleOk
+  rw [hs]
+  simp only [hb]
 
 /-- Convert the first `k` `∀`-binders into `λ`-binders over a body.
 

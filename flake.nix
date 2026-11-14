@@ -220,6 +220,28 @@
           # Local packages build in the workspace; buildDeps only supports Git sources.
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
+            # Formal Aiur's proofs require mathlib, which brings these packages
+            # into the workspace. Nothing the flake builds (the Ix library, the
+            # CLI and the test binary) imports them, so Lake needs only their
+            # sources to resolve the workspace. Building them would compile all
+            # of Mathlib and its shared library, and lean4-nix's library target
+            # guess (`Proofwidgets`) does not exist.
+            depOverride =
+              pkgs.lib.genAttrs
+                [
+                  "mathlib"
+                  "proofwidgets"
+                  "LeanSearchClient"
+                  "importGraph"
+                  "aesop"
+                  "Qq"
+                ]
+                (_: {
+                  buildPhase = ''
+                    runHook preBuild
+                    runHook postBuild
+                  '';
+                });
             depOverrideDeriv = {
               # Blake3.lean's `rust` package builds only its `Blake3Rust`
               # library (`Blake3.Rust` and the `Blake3` root). Ix also imports
@@ -371,6 +393,10 @@
               # with writable copies of all artifacts that Lake may rebuild.
               cp -rP ${ixTestArtifacts}/.lake src/.lake
               chmod -R u+w src/.lake
+              # Mathlib is in the workspace only through formal Aiur and is
+              # left unbuilt (`lakeDeps`). Mark it present, or the source-mode
+              # commands try to download its cache (`Ix.fetchMathlibCache`).
+              mkdir -p src/.lake/packages/mathlib/.lake/build
               cp ${ixTestArtifacts}/lakefile.lean src/lakefile.lean
               # The configured lakefile delegates Cargo to Crane; preserve
               # its prebuilt archive input if a Lake target needs refreshing.

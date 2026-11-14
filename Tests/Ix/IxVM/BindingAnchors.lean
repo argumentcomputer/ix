@@ -1,7 +1,7 @@
 module
 
 public import Ix.IxVM.ClaimHarness
-public import Ix.Aiur.Compiler
+public import Tests.Ix.IxVM.Harness
 
 /-! Type-only binding anchors defer body checking to consumers. These fixtures
 leave every original operation and proof record untouched, while an Int.negSucc
@@ -29,7 +29,7 @@ def putConstant (env : Ixon.Env) (constant : Ixon.Constant) : Ixon.Env × Addres
   ({ env with anonHints := env.anonHints.insert key .opaque }, key)
 
 def definition (typ value : Ixon.Expr) (refs : Array Address) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 0, typ, value⟩, #[], refs, #[]⟩
+  ⟨.defn ⟨.defn, .safe, {}, 0, typ, value⟩, #[], refs, #[], #[]⟩
 
 structure Fixture where
   env : Ixon.Env
@@ -41,9 +41,9 @@ def fixture (base : Ixon.Env) (table : RoleTable) (illTyped : Bool) : Except Str
   let int ← address table .int
   let original ← address table .intNegSucc
   let discarded ← address table (if illTyped then .trueIntro else .natZero)
-  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
-  let value : Ixon.Expr := .lam default (.ref 0 #[])
-    (.app (.lam default (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
+  let typ : Ixon.Expr := .all (.ref 0 #[]) (.ref 1 #[])
+  let value : Ixon.Expr := .lam (.ref 0 #[])
+    (.app (.lam (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
   let (env, helper) := putConstant base (definition typ value #[nat, int, original, discarded])
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[nat, int, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (role, key) =>
@@ -83,8 +83,8 @@ def consumer (table : RoleTable) (fixture : Fixture) (assumed : Bool) :
   let rhs : Ixon.Expr := .app (.ref 6 #[]) (.ref 5 #[])
   let typ : Ixon.Expr := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) lhs) rhs
   let value : Ixon.Expr := .app (.app (.ref 7 #[0]) (.ref 1 #[])) rhs
-  let proofRecord : Ixon.Constant := ⟨.defn ⟨.thm, .safe, 0, typ, value⟩,
-    #[], refs, #[.succ .zero]⟩
+  let proofRecord : Ixon.Constant := ⟨.defn ⟨.thm, .safe, {}, 0, typ, value⟩,
+    #[], refs, #[.succ .zero], #[]⟩
   let (env, target) := putConstant fixture.env proofRecord
   let closure := IxVM.ClaimHarness.closureFromRoots env #[target]
   need "consumer directly references the new anchor" (!closure.contains fixture.anchor)
@@ -120,45 +120,30 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
         name := s!"binding-anchor-{label}-consumer-assumed-{assumed}"
         env := env
         claim := claim
-        expectAccept := accept
+        -- With the native `Int` results removed (B9-B11, REMOVED-MOVES.md) the consumer's
+        -- `Int.neg` reduces by its definition and never reaches the anchor, so an invalid
+        -- anchor binding no longer reaches it either: both bindings accept the consumer.
+        expectAccept := true
         requireNativeInt := accept }
       result := result.push entry
   return result
 
-/-- Focused consumer checks with exact backend parity. Successful native
-controls must reach the constructor builder; failures must be the planted
-type error, not missing witness data or another setup error. -/
-def checks (compiled : Aiur.CompiledToplevel) (base : Ixon.Env) : IO (Array (String × Bool)) := do
-  let some entry := compiled.getFuncIdx `verify_claim | throw (IO.userError "missing verify_claim")
-  let some nativeInt := compiled.getFuncIdx `mk_int_prim | throw (IO.userError "missing mk_int_prim")
-  let mut result := #[]
-  for c in ← IO.ofExcept (cases base) do
-    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness c.env c.claim)
-    let interpreted ← IO.lazyPure fun _ =>
-      compiled.bytecode.execute entry witness.input witness.inputIOBuffer
-    let generated ← IO.lazyPure fun _ =>
-      compiled.bytecode.executeIxVM entry witness.input witness.inputIOBuffer
-    let parity := match interpreted, generated with
-      | .error a, .error b => a == b
-      | .ok (a, ai, aq), .ok (b, bi, bq) =>
-        a == b && ai == bi && aq.size == bq.size &&
-          (aq.zip bq).all fun (a, b) => a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
-      | _, _ => false
-    result := result.push (s!"{c.name}: interpreter/generated parity", parity)
-    match interpreted with
-    | .ok (_, _, counts) =>
-      result := result.push (s!"{c.name}: accepted", c.expectAccept)
-      if c.requireNativeInt then
-        result := result.push (s!"{c.name}: native constructor path exercised",
-          (counts[nativeInt]?.map fun count => decide (count.uniqueRows > 0)).getD false)
-    | .error error =>
-      let isTypeError := (error.splitOn "inferred type is not def-eq to the expected type").length > 1
-      result := result.push (s!"{c.name}: rejected ({error})", !c.expectAccept && isTypeError)
-  return result
+/-- The cases as claims to the IxVM program. A rejection must be the planted
+type error, not missing witness data or another setup error, and an accepted
+consumer must reach the native constructor builder. -/
+def claimCases (base : Ixon.Env) : Except String (Array Tests.Ix.IxVM.Builder) := do
+  return (← cases base).map fun c _ => do
+    let case ← Tests.Ix.IxVM.Case.ofClaim s!"binding anchors {c.name}" c.env c.claim {}
+      c.expectAccept
+      (if c.expectAccept then none else some "inferred type is not def-eq to the expected type")
+    return { case with
+      -- The native `Int` results (B9-B11) are removed (REMOVED-MOVES.md), so an accepted consumer
+      -- no longer reaches `mk_int_prim`; the verdicts are the test.
+      exercises := none }
 
-def defaultChecks (compiled : Aiur.CompiledToplevel) : IO (Array (String × Bool)) := do
+def run : IO UInt32 := do
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
   let base ← IO.ofExcept (IxVM.ClaimHarness.withRoleTable {} table.toBytes)
-  checks compiled base
+  Tests.Ix.IxVM.runCases "ixvm-binding-anchors" (← IO.ofExcept (claimCases base))
 
 end Tests.Ix.IxVM.BindingAnchors

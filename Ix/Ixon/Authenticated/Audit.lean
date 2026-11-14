@@ -102,9 +102,31 @@ end Ixon.Authenticated.Audit
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
 -- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
 -- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records (the section nodes' modes, let headers, definition assertions and
+-- constructor field modes, `Constant.modesCanonical`) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) take the closure from 7025 compiled functions and 116
+-- inherited externs to 7049 and 117, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 6891 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7108 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -254,7 +276,24 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the same four compiled functions,
 -- measured with the fallback-record guard. Execution allowances are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6973 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Specification version 5 adds the tiered entry's 49.
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records and the reader's canonical natural-literal check take the closure from
+-- 7107 compiled functions and 116 inherited externs to 7131 and 117.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7190 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

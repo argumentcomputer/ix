@@ -6,8 +6,11 @@ Ordinary Lean declarations that `kernel-entry-cases`
 (`Tests.Ix.Kernel.EntryCases`) loads from this module's `.olean`, compiles
 with Ix's compiler and submits, as canonical record bytes, to the certified
 entry `Ix.Kernel.Admission.checkBytes`. Lean's kernel checked every
-declaration here except `falseThm`, whose value is `True.intro` installed
-unchecked (`TutorialMeta.bad_thm`): it is the one input of the wrong type.
+declaration here except the ones installed unchecked
+(`TutorialMeta.bad_thm`, `bad_decl`), the inputs of the wrong type:
+`levelWrong`, `falseThm` (its value is `True.intro`) and the false ι and
+constructor equations at the nested blocks (`nb4IotaFalse`, `ra1IotaFalse`,
+`bd2CtorFalse`, ...). `BD1` and `BD2` are declared through Lean's kernel.
 -/
 
 open Tests.Ix.Kernel.TutorialMeta
@@ -64,18 +67,22 @@ inductive LNode (α : Type) where
   | node : List (LNode α) → LNode α
   | leaf : α → LNode α
 
-/-- A block nested through a container that is itself nested. Ix's compiler
-orders `LTree.rec`'s auxiliary motives canonically, as
-`[List (LNode LTree), LNode LTree]`: the container family's instance before
+/-- A block nested through a container that is itself nested, reached through
+an instance of the container's own container: `LTree.rec`'s auxiliary motives
+are `[List (LNode LTree), LNode LTree]`, the container family's instance before
 its head, an order in which the in-process modeller must still emit each
-`pack_i` once. -/
+`pack_i` once. Ix's compiler keeps Lean's recursor, whose auxiliary motives are
+in the order Lean's kernel discovers the nested occurrences (from `LTree.node`'s
+field `List (LNode LTree)`, then from that auxiliary's constructor `cons`,
+`LNode LTree`), so the order does not depend on addresses. -/
 inductive LTree where
-  | node : LNode LTree → LTree
+  | node : List (LNode LTree) → LTree
 
 /-- The shape of `Lean.Elab.InfoTree`: nested through a structure whose field
 is nested through `Array` (`PersistentArray` → `PersistentArrayNode`). Its
-auxiliary motives are compiled as `[Array ITree, Array (PNode ITree), PArr
-ITree, List (PNode ITree), List ITree, PNode ITree]`, as `InfoTree`'s are. -/
+auxiliary motives are in Lean's discovery order, which the compiler keeps:
+`[PArr ITree, PNode ITree, Array ITree, Array (PNode ITree), List ITree,
+List (PNode ITree)]`. -/
 inductive PNode (α : Type) where
   | node : Array (PNode α) → PNode α
   | leaf : Array α → PNode α
@@ -122,6 +129,151 @@ inductive MArg where
   | pos : MTm → MArg
   | named : Nat → MTm → MArg
 end
+
+/-- Nested blocks whose index domain mentions a parameter: the nested
+occurrences' index arguments (`a₀`, `[]`) mention the parameters too. -/
+inductive NB (α : Type) (a₀ : α) : α → Type where
+  | base : NB α a₀ a₀
+  | mk : List (NB α a₀ a₀) → NB α a₀ a₀
+
+inductive NB4 (α : Type) : List α → Type where
+  | nil : NB4 α []
+  | mk : List (NB4 α []) → NB4 α []
+
+/-- A value by `NB4`'s recursors (both motives), and its ι reduction. -/
+noncomputable def nb4Val (t : NB4 Nat []) : Nat :=
+  NB4.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 0 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2 + 1) t
+
+theorem nb4Iota : nb4Val (NB4.mk [NB4.nil]) = 2 := rfl
+
+/-- Nested blocks with a reflexive field into a member: in a constructor of
+the block (`RA1`), and in a container pinned at a function into the block
+(`RA3`: the container's own field, `Option.some`'s, is reflexive). -/
+inductive RA1 where
+  | leaf : RA1
+  | mk : (Nat → RA1) → List RA1 → RA1
+
+inductive RA3 where
+  | leaf : RA3
+  | mk : Option (Nat → RA3) → RA3
+
+/-- Values by the blocks' recursors, and ι reductions through the
+reflexive fields' hypotheses. -/
+noncomputable def ra1Val (t : RA1) : Nat :=
+  RA1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ ihf ihl => ihf 0 + ihl + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem ra1Iota : ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf]) = 3 := rfl
+
+noncomputable def ra3Val (t : RA3) : Nat :=
+  RA3.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ ih => ih 0 + 5) t
+
+theorem ra3Iota : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 7 := rfl
+
+/-- Nested blocks with a recursive occurrence behind a definition (`Id' T`,
+which Lean's kernel reads after whnf): in a constructor of the block (`BD1`)
+and in a container's (`BD2`, through `List (Id' BD2)`). Declared through
+Lean's kernel: the elaborator's `SizeOf` generation fails on them. -/
+def Id' (α : Type) : Type := α
+
+open Lean in
+run_cmd Elab.Command.liftCoreM do
+  let ns := `Tests.Ix.Kernel.EntryCaseDefs
+  let idT (t : Expr) := mkApp (mkConst (ns ++ `Id')) t
+  let list (t : Expr) := mkApp (mkConst ``List [Level.zero]) t
+  let bd1 := mkConst (ns ++ `BD1)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD1, mkSort Level.one,
+    [⟨ns ++ `BD1.leaf, bd1⟩,
+     ⟨ns ++ `BD1.mk, mkForall `a .default (idT bd1) (mkForall `b .default (list bd1) bd1)⟩]⟩] false)
+  let bd2 := mkConst (ns ++ `BD2)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD2, mkSort Level.one,
+    [⟨ns ++ `BD2.leaf, bd2⟩, ⟨ns ++ `BD2.mk, mkForall `a .default (list (idT bd2)) bd2⟩]⟩] false)
+
+/-- Values by the blocks' recursors, and ι reductions through the
+hypotheses of the fields behind `Id'`. -/
+noncomputable def bd1Val (t : BD1) : Nat :=
+  BD1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ iha ihb => iha + ihb + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+-- Honest-case claims Lean's elaborator cannot check (it does not find the auxiliary
+-- recursors a kernel-declared nested block's rules name), so installed unchecked and
+-- checked by Ix; the false-claim and forged-record cases carry the defensive side.
+bad_thm bd1Iota : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 3 :=
+  unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
+
+noncomputable def bd2Val (t : BD2) : Nat :=
+  BD2.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+bad_thm bd2Iota : bd2Val (BD2.mk [BD2.leaf]) = 2 := unchecked (Eq.refl (bd2Val (BD2.mk [BD2.leaf])))
+
+/-- A nested block whose field mentions a member only where whnf erases it:
+`KE Nat (EA α)`, with `KE a _ := a`, at the under-applied `EA α : Nat → Type`. -/
+def KE (a : Type) (_ : Nat → Type) : Type := a
+
+inductive EA (α : Type) : Nat → Type where
+  | base : EA α 0
+  | mk : KE Nat (EA α) → List (EA α 0) → EA α 1
+
+/-- A value by `EA`'s recursors, and an ι reduction through the erasing field. -/
+noncomputable def eaVal (t : EA Nat 1) : Nat :=
+  EA.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 0 (fun (n : Nat) _ ih => n + ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem eaIota : eaVal (EA.mk (5 : Nat) [EA.base]) = 6 := rfl
+
+/-- Blocks whose formers are declared at a definition, which Lean's kernel reads
+after whnf: a nested block's sort (`GA : GType`, `GType := Type`, nested through
+`List`), a nested block's index telescope (`GI : GFam`, `GFam := Nat → Type`) and a
+mutual block's sorts (`GE`, `GO : GType`). Declared through Lean's kernel. (Lean
+counts a block's parameters on the declared type, so a parameter telescope behind a
+definition is not a Lean shape.) -/
+def GType : Type 1 := Type
+
+def GFam : Type 1 := Nat → Type
+
+open Lean in
+run_cmd Elab.Command.liftCoreM do
+  let ns := `Tests.Ix.Kernel.EntryCaseDefs
+  let list (t : Expr) := mkApp (mkConst ``List [Level.zero]) t
+  let ga := mkConst (ns ++ `GA)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `GA, mkConst (ns ++ `GType),
+    [⟨ns ++ `GA.leaf, ga⟩, ⟨ns ++ `GA.mk, mkForall `a .default (list ga) ga⟩]⟩] false)
+  let gi (n : Expr) := mkApp (mkConst (ns ++ `GI)) n
+  let z := mkConst ``Nat.zero
+  addDecl (.inductDecl [] 0 [⟨ns ++ `GI, mkConst (ns ++ `GFam),
+    [⟨ns ++ `GI.leaf, gi z⟩,
+     ⟨ns ++ `GI.mk, mkForall `a .default (list (gi z)) (gi (mkApp (mkConst ``Nat.succ) z))⟩]⟩] false)
+  let ge := mkConst (ns ++ `GE)
+  let go := mkConst (ns ++ `GO)
+  addDecl (.inductDecl [] 0 [
+    ⟨ns ++ `GE, mkConst (ns ++ `GType),
+      [⟨ns ++ `GE.zero, ge⟩, ⟨ns ++ `GE.succ, mkForall `o .default go ge⟩]⟩,
+    ⟨ns ++ `GO, mkConst (ns ++ `GType), [⟨ns ++ `GO.succ, mkForall `e .default ge go⟩]⟩] false)
+
+/-- Values by the blocks' recursors, and ι reductions through them. -/
+noncomputable def gaVal (t : GA) : Nat :=
+  GA.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+noncomputable def giVal (t : GI 1) : Nat :=
+  GI.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+noncomputable def geVal (t : GE) : Nat :=
+  GE.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 0 (fun _ ih => ih + 1) (fun _ ih => ih + 1) t
+
+-- Honest-case claims installed unchecked, as `bd1Iota`'s (Lean's elaborator does not
+-- unfold a kernel-declared block's formers or find its auxiliary recursors), and
+-- checked by Ix.
+bad_thm gaIota : gaVal (GA.mk [GA.leaf]) = 2 := unchecked (Eq.refl (gaVal (GA.mk [GA.leaf])))
+
+bad_thm giIota : giVal (GI.mk [GI.leaf]) = 2 := unchecked (Eq.refl (giVal (GI.mk [GI.leaf])))
+
+bad_thm geIota : geVal (GE.succ (GO.succ GE.zero)) = 2 :=
+  unchecked (Eq.refl (geVal (GE.succ (GO.succ GE.zero))))
 
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
@@ -210,5 +362,33 @@ bad_decl .thmDecl {
 
 -- A theorem of `False`, installed in Lean unchecked.
 bad_thm falseThm : False := unchecked True.intro
+
+-- A false ι equation and a false constructor equation at `NB4`, installed in
+-- Lean unchecked: the modeled route's recursor and constructors must not
+-- equate them.
+bad_thm nb4IotaFalse : nb4Val (NB4.mk [NB4.nil]) = 3 := unchecked (Eq.refl (nb4Val (NB4.mk [NB4.nil])))
+
+bad_thm nb4CtorFalse : NB4.nil (α := Nat) = NB4.mk [] := unchecked (Eq.refl (NB4.nil (α := Nat)))
+
+-- False ι equations through the reflexive fields of `RA1` and `RA3`, and a
+-- false constructor equation at `RA3`, installed in Lean unchecked.
+bad_thm ra1IotaFalse : ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf]) = 4 :=
+  unchecked (Eq.refl (ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf])))
+
+bad_thm ra3IotaFalse : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 6 :=
+  unchecked (Eq.refl (ra3Val (RA3.mk (some fun _ => RA3.leaf))))
+
+bad_thm ra3CtorFalse : RA3.mk none = RA3.leaf := unchecked (Eq.refl (RA3.mk none))
+
+-- A false ι equation through `BD1`'s field behind `Id'`, and a false
+-- constructor equation at `BD2`, installed in Lean unchecked.
+bad_thm bd1IotaFalse : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 4 :=
+  unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
+
+bad_thm bd2CtorFalse : BD2.mk [] = BD2.leaf := unchecked (Eq.refl (BD2.mk []))
+
+-- A false ι equation through `EA`'s erasing field, installed in Lean unchecked.
+bad_thm eaIotaFalse : eaVal (EA.mk (5 : Nat) [EA.base]) = 7 :=
+  unchecked (Eq.refl (eaVal (EA.mk (5 : Nat) [EA.base])))
 
 end Tests.Ix.Kernel.EntryCaseDefs

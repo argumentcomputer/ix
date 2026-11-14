@@ -289,38 +289,39 @@ theorem bvarsBelow_mkPisAV_inv {k : Nat} :
 
 /-- **The recursive constructor's data**, from its stage run at the
 environment holding the former and the opened-form guard. -/
-theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
-    {bs : List (Expr md × BinderMeta)} {ks : List RecFieldKind}
+    {cvS : ConstantVal md} {ks : List RecFieldKind}
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
-    (hfT : env.find? T = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = lps)
-    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
+    (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
+    (hfT : env.find? T = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = lps)
+    (hZ : FormerZeroSrc T nP nIdx resSort cvTa cvS cvCa.type)
     (hks : ks.length = nF)
     (hopened : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cvCa.type nF ks = true) :
     ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
       (Es : (LevelParam → Nat) → List AnnotTerm) (srcs : List (Option Nat))
       (fvsP xFvs : List (Expr md)) (xrest : Expr md) (Eiss : (LevelParam → Nat) → List (List AnnotTerm))
       (tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))),
-      FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
+      FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
         ks fvsP xFvs xrest Eiss tss := by
   obtain ⟨idxArgs, ds, Es, srcs, -, ⟨fvsP, crest, xFvs, xrest, hopP, hopX, hidxEq⟩, hCD⟩ :=
-    sumCtorData_of hμ mp hCtor hfT hlpsT hstripT
+    sumCtorDataJ hJ hI hS hCtor hfT hlpsS hZ
   obtain ⟨fvsP', crest', xFvs', xrest', hopP', hopX', hO⟩ := fixOpened_of hopened
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopP'))
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopX.symm.trans hopX'))
-  obtain ⟨hcf, -, -, hcb⟩ := Ix.Kernel.direct_sum_ctor_typeWF hCtor
+  obtain ⟨_, hccvW⟩ := hCtor.check
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   obtain ⟨hlenP, hidxP, -⟩ := opening_vars_at hopP
   obtain ⟨hlenX, hidxX, -⟩ := opening_vars_at hopX
   -- the fields' sort rows (task #202: the reflexive telescopes' bits)
   obtain ⟨-, -, fvsP₂, crest₂, tfvs, trest, xFvs₂, idxArgs₂, hopC, -, -, hopX₂, -, -, -, hsorts⟩ :=
-    Ix.Kernel.checkSumCtor_shape hCtor
+    hCtor
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopC))
   obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj (hopX.symm.trans hopX₂))
-  obtain ⟨-, hrows⟩ := Ix.Kernel.checkStructFieldSortsI_inv hsorts
+  obtain ⟨-, hrows⟩ := hsorts
   have hidxX' : ∀ k x, xFvs[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty := hidxX
   have hidxP' : ∀ k x, fvsP[k]? = some x → ∃ ty, x = Expr.fvar k ty := fun k x hx => by
     obtain ⟨ty, h⟩ := hidxP k x hx
@@ -329,7 +330,7 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopX)
   -- every field's opened domain reads to its entry
   have hdomRead : ∀ ψ i x, xFvs[i]? = some x →
-      denoteMeta mp.base2.acval env ψ (nP + i) x.fvarTypeD
+      denoteMeta m.acval env ψ (nP + i) x.fvarTypeD
         = some ((ds ψ).getD (nP + i) default).2.2 := by
     intro ψ i x hx
     have hO := opened_of_peel hopAll hcf hcb (hCD.read ψ) (hCD.len ψ) (hCD.okTy ψ)
@@ -351,10 +352,10 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
   -- the former at the parameter variables followed by the index expressions
   have hfamRead : ∀ ψ (d : Nat) (body : Expr md), body.getAppFn = Expr.const T (lps.map .param) →
       body.getAppArgs.take nP = fvsP → body.getAppArgs.length = nP + nIdx →
-      ∀ R, denoteMeta mp.base2.acval env ψ d body = some R →
+      ∀ R, denoteMeta m.acval env ψ d body = some R →
       ∃ Eis : List AnnotTerm, Eis.length = nIdx ∧
-        DenoteMetaSpine mp.base2.acval env ψ d (body.getAppArgs.drop nP) Eis ∧
-        R = AnnotTerm.mkAppN (mp.base2.acval T ψ) (paramBvarsAt nP d ++ Eis) := by
+        DenoteMetaSpine m.acval env ψ d (body.getAppArgs.drop nP) Eis ∧
+        R = AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP d ++ Eis) := by
     intro ψ d body hfn htake hlenA R hread
     have hshape : body
         = Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ body.getAppArgs.drop nP) := by
@@ -362,9 +363,9 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
       rw [hfn, ← htake, List.take_append_drop]
     rw [hshape] at hread
     obtain ⟨fa, vs, hfa, hsp, hea⟩ := denoteMeta_mkAppN_inv hread
-    have hlpsT' : (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams = lps := by
-      simpa [ConstantInfo.toConstantVal] using hlpsT
-    have hfa' : fa = mp.base2.acval T ψ := by
+    have hlpsT' : (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams = lps := by
+      simpa [ConstantInfo.toConstantVal] using hlpsS
+    have hfa' : fa = m.acval T ψ := by
       rw [denoteMeta_const hfT (by rw [hlpsT']; simp), hlpsT', Level.substFn_param_self] at hfa
       exact (Option.some.inj hfa).symm
     obtain ⟨vs₁, vs₂, rfl, hsp₁, hsp₂⟩ := DenoteMetaSpine.append_inv hsp
@@ -377,9 +378,9 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
   have hex : ∀ (ψ : LevelParam → Nat) (i : Nat), ks.getD i .ordinary = .recursive → i < nF →
       ∃ Eis : List AnnotTerm, Eis.length = nIdx ∧
         (∀ x, xFvs[i]? = some x →
-          DenoteMetaSpine mp.base2.acval env ψ (nP + i) (x.fvarTypeD.getAppArgs.drop nP) Eis) ∧
+          DenoteMetaSpine m.acval env ψ (nP + i) (x.fvarTypeD.getAppArgs.drop nP) Eis) ∧
         ((ds ψ).getD (nP + i) default).2.2
-          = AnnotTerm.mkAppN (mp.base2.acval T ψ) (paramBvarsAt nP (nP + i) ++ Eis) := by
+          = AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + i) ++ Eis) := by
     intro ψ i hk hi
     have hil : i < xFvs.length := by omega
     obtain ⟨x, hx⟩ : ∃ x, xFvs[i]? = some x := ⟨_, List.getElem?_eq_getElem hil⟩
@@ -396,10 +397,10 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
         (∀ x, xFvs[i]? = some x → ∃ afvs body,
           openPisAtFvars tl.length x.fvarTypeD (nP + i) = some (afvs, body) ∧
           (∀ k a, afvs[k]? = some a →
-            denoteMeta mp.base2.acval env ψ (nP + i + k) a.fvarTypeD = some (tl.getD k default).2.2) ∧
-          DenoteMetaSpine mp.base2.acval env ψ (nP + i + tl.length) (body.getAppArgs.drop nP) Eis) ∧
+            denoteMeta m.acval env ψ (nP + i + k) a.fvarTypeD = some (tl.getD k default).2.2) ∧
+          DenoteMetaSpine m.acval env ψ (nP + i + tl.length) (body.getAppArgs.drop nP) Eis) ∧
         ((ds ψ).getD (nP + i) default).2.2
-          = mkPisAV tl (AnnotTerm.mkAppN (mp.base2.acval T ψ) (paramBvarsAt nP (nP + i + tl.length) ++ Eis)) ∧
+          = mkPisAV tl (AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + i + tl.length) ++ Eis)) ∧
         (∀ d ∈ tl, (d.2.1 = 0 ↔ resSort.eval ψ = 0)) ∧
         (∀ d ∈ tl, d.1 = 0 ∧ d.2.1 ≤ 1) := by
     intro ψ i hk hi
@@ -413,25 +414,29 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
     -- the telescope's bits: the field's sort row, walked through the binders
     obtain ⟨fv, ty, u, hfv, -, hinf, hens, -, -⟩ := hrows i hi
     obtain rfl := Option.some.inj (hx.symm.trans hfv)
-    obtain ⟨F', tb, vb, hib, hensb, -, hbits⟩ := piBits_of_infer hμ _ hopA hinf hens
-    have hshape : body
-        = Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ body.getAppArgs.drop nP) := by
-      conv => lhs; rw [← Expr.mkAppN_getApp body]
-      rw [hfn, ← htake, List.take_append_drop]
-    rw [hshape] at hib
-    obtain ⟨tf, htf⟩ := inferTypeCore_mkAppN_fn_inv (fvsP ++ body.getAppArgs.drop nP) hib
-    obtain ⟨ci, hfci, -, rfl⟩ := Ix.Kernel.inferTypeCore_const_inv htf
-    obtain rfl : ci = .indInfo cvTa caps := Option.some.inj (hfci.symm.trans hfT)
-    have htfT : Ix.Kernel.inferTypeCore μ env F' (nP + i + (x.fvarTypeD.piBinders).1.length)
-        (.const T (lps.map .param)) = .ok cvTa.type := by
-      have := htf
-      rw [show (ConstantInfo.indInfo cvTa caps).toConstantVal = cvTa from rfl,
-        hlpsT, Expr.instantiateLevelParams_self] at this
-      exact this
-    obtain rfl := inferTypeCore_mkAppN_sort (fvsP ++ body.getAppArgs.drop nP) htfT
-      (by rw [List.length_append, hlenP, List.length_drop, hlenA, Nat.add_sub_cancel_left]; exact hstripT) hib
-    have hvb := ensureSortCore_sort_eq hensb
-    rw [hvb] at hbits
+    -- the bits: read off the stored telescope's typing, or carried by the constructor
+    have hbits : ∀ φ, PiBitsOpen φ (Level.eval φ resSort = 0)
+        (x.fvarTypeD.piBinders).1.length (nP + i) x.fvarTypeD := by
+      rcases hZ with ⟨rfl, bs, hstripT⟩ | hz
+      · obtain ⟨tb, vb, hib, hensb, -, hbits⟩ := piBitsJ hI _ hopA hinf hens
+        have hshape : body
+            = Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ body.getAppArgs.drop nP) := by
+          conv => lhs; rw [← Expr.mkAppN_getApp body]
+          rw [hfn, ← htake, List.take_append_drop]
+        rw [hshape] at hib
+        have hstripI : ((ConstantInfo.indInfo cvS caps).toConstantVal.type.instantiateLevelParams
+            (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams (lps.map .param)).stripPis
+            (fvsP ++ body.getAppArgs.drop nP).length = some (bs, .sort resSort) := by
+          rw [show (ConstantInfo.indInfo cvS caps).toConstantVal = cvS from rfl,
+            hlpsS, Expr.instantiateLevelParams_self, List.length_append, hlenP, List.length_drop,
+            hlenA, Nat.add_sub_cancel_left]
+          exact hstripT
+        obtain rfl := hI.infer_spine_sort hib hfT hstripI
+        have hvb := hI.sort_sort hensb
+        rw [hvb] at hbits
+        exact hbits
+      · exact famDomOk_open ((ctorZeroOk_open (nP + nF) hz hopAll).1 x
+          (List.mem_append_right _ (List.mem_of_getElem? hx))) hopA hfn
     refine ⟨tl, Eis, hlen, fun x' hx' => ?_, fun x' hx' => ?_, by rw [hentry, hR, hlenT], ?_,
       stripPisAV_denoteMeta_bits _ hopA (hdomRead ψ i x hx) hst⟩
     · obtain rfl := Option.some.inj (hx.symm.trans hx')
@@ -457,9 +462,9 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
   have hEis : ∀ ψ i (h : ks.getD i .ordinary = .recursive ∧ i < nF),
       (Eis ψ i).length = nIdx ∧
       (∀ x, xFvs[i]? = some x →
-        DenoteMetaSpine mp.base2.acval env ψ (nP + i) (x.fvarTypeD.getAppArgs.drop nP) (Eis ψ i)) ∧
+        DenoteMetaSpine m.acval env ψ (nP + i) (x.fvarTypeD.getAppArgs.drop nP) (Eis ψ i)) ∧
       ((ds ψ).getD (nP + i) default).2.2
-        = AnnotTerm.mkAppN (mp.base2.acval T ψ) (paramBvarsAt nP (nP + i) ++ Eis ψ i) := by
+        = AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + i) ++ Eis ψ i) := by
     intro ψ i h
     simp only [Eis, dif_pos h]
     exact Classical.choose_spec (hex ψ i h.1 h.2)
@@ -469,10 +474,10 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
       (∀ x, xFvs[i]? = some x → ∃ afvs body,
         openPisAtFvars (Tl ψ i).length x.fvarTypeD (nP + i) = some (afvs, body) ∧
         (∀ k a, afvs[k]? = some a →
-          denoteMeta mp.base2.acval env ψ (nP + i + k) a.fvarTypeD = some ((Tl ψ i).getD k default).2.2) ∧
-        DenoteMetaSpine mp.base2.acval env ψ (nP + i + (Tl ψ i).length) (body.getAppArgs.drop nP) (Eis ψ i)) ∧
+          denoteMeta m.acval env ψ (nP + i + k) a.fvarTypeD = some ((Tl ψ i).getD k default).2.2) ∧
+        DenoteMetaSpine m.acval env ψ (nP + i + (Tl ψ i).length) (body.getAppArgs.drop nP) (Eis ψ i)) ∧
       ((ds ψ).getD (nP + i) default).2.2
-        = mkPisAV (Tl ψ i) (AnnotTerm.mkAppN (mp.base2.acval T ψ) (paramBvarsAt nP (nP + i + (Tl ψ i).length) ++ Eis ψ i)) ∧
+        = mkPisAV (Tl ψ i) (AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + i + (Tl ψ i).length) ++ Eis ψ i)) ∧
       (∀ d ∈ Tl ψ i, (d.2.1 = 0 ↔ resSort.eval ψ = 0)) ∧
       (∀ d ∈ Tl ψ i, d.1 = 0 ∧ d.2.1 ≤ 1) := by
     intro ψ i h
@@ -650,5 +655,28 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
   · intro ψ i hk hi
     rw [hTssGet ψ i hi, hEissGet ψ i hi]
     exact (hEisR ψ i ⟨hk, hi⟩).2.2.2.1
+
+
+/-- The recursive constructor's data from its stage run: `fixCtorDataJ` at the kernel's runs. -/
+theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {bs : List (Expr md × BinderMeta)} {ks : List RecFieldKind}
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hlpsT : cvTa.levelParams = lps)
+    (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
+    (hks : ks.length = nF)
+    (hopened : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cvCa.type nF ks = true) :
+    ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+      (Es : (LevelParam → Nat) → List AnnotTerm) (srcs : List (Option Nat))
+      (fvsP xFvs : List (Expr md)) (xrest : Expr md) (Eiss : (LevelParam → Nat) → List (List AnnotTerm))
+      (tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))),
+      FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
+        ks fvsP xFvs xrest Eiss tss :=
+  fixCtorDataJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hlpsT (Or.inl ⟨rfl, _, hstripT⟩) hks hopened
 
 end Ix.Kernel.Model

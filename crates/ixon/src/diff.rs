@@ -345,26 +345,14 @@ impl<'a> ExprCmp<'a> {
           }
           stack.push((va, vb));
         },
-        (Expr::App(f1, x1), Expr::App(f2, x2)) => {
+        (Expr::App(f1, x1), Expr::App(f2, x2))
+        | (Expr::Lam(f1, x1), Expr::Lam(f2, x2))
+        | (Expr::All(f1, x1), Expr::All(f2, x2)) => {
           stack.push((f1, f2));
           stack.push((x1, x2));
         },
-        (Expr::Lam(u1, t1, b1), Expr::Lam(u2, t2, b2)) => {
-          if u1 != u2 {
-            return Ok(false);
-          }
-          stack.push((t1, t2));
-          stack.push((b1, b2));
-        },
-        (Expr::All(u1, o1, t1, b1), Expr::All(u2, o2, t2, b2)) => {
-          if u1 != u2 || o1 != o2 {
-            return Ok(false);
-          }
-          stack.push((t1, t2));
-          stack.push((b1, b2));
-        },
-        (Expr::Let(n1, t1, v1, b1), Expr::Let(n2, t2, v2, b2)) => {
-          if n1 != n2 {
+        (Expr::Let(n1, m1, t1, v1, b1), Expr::Let(n2, m2, t2, v2, b2)) => {
+          if n1 != n2 || m1 != m2 {
             return Ok(false);
           }
           stack.push((t1, t2));
@@ -421,6 +409,9 @@ fn classify_defn<'x>(
   }
   if a.safety != b.safety {
     out.push(format!("{prefix}safety"));
+  }
+  if a.asserts != b.asserts {
+    out.push(format!("{prefix}asserts"));
   }
   if a.lvls != b.lvls {
     out.push(format!("{prefix}lvls"));
@@ -500,6 +491,9 @@ fn classify_ctor<'x>(
   }
   if a.fields != b.fields {
     out.push(format!("{prefix}fields"));
+  }
+  if a.field_modes != b.field_modes {
+    out.push(format!("{prefix}field-modes"));
   }
   if !cmp.eq(&a.typ, &b.typ)? {
     out.push(format!("{prefix}type"));
@@ -1344,6 +1338,7 @@ mod tests {
     Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls,
       typ,
       value,
@@ -1459,6 +1454,7 @@ mod tests {
     let ca = Constant::new(ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::var(3),
       value: Expr::var(0),
@@ -1466,6 +1462,7 @@ mod tests {
     let cb = Constant::new(ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Partial,
+      asserts: Default::default(),
       lvls: 1,
       typ: Expr::var(3),
       value: Expr::var(0),
@@ -1982,6 +1979,7 @@ mod tests {
             cidx: 0,
             params: 0,
             fields: 0,
+            field_modes: Default::default(),
             typ: Expr::var(1),
           },
           Constructor {
@@ -1990,6 +1988,7 @@ mod tests {
             cidx: 1,
             params: 0,
             fields: 0,
+            field_modes: Default::default(),
             typ: c1_typ,
           },
         ],

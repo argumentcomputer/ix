@@ -11,6 +11,10 @@ package ix where
   moreLinkArgs := if System.Platform.isLinux then
     #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
+require aiur from "Aiur"
+require ixvm from "IxVM"
+require multiStark from "MultiStark"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -59,8 +63,7 @@ def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
-enables generated trace kernels and implies CUDA. For `net` (the `ix` CLI),
+IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA. For `net` (the `ix` CLI),
 IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
 end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
 library. -/
@@ -70,7 +73,6 @@ def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array St
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
   if ← enabled "IX_CUDA" then features := features.push "cuda"
-  if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
@@ -175,9 +177,6 @@ target ix_rs_net pkg : FilePath := do
 
 end FFI
 
-lean_lib MultiStark where
-  moreLinkObjs := #[ix_rs]
-
 /-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
@@ -203,6 +202,10 @@ lean_exe ix where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_net]
 
+/-- FRI soundness estimates for a key's instance (`docs/stark-parameters.md`). -/
+lean_exe «fri-security» where
+  root := `Scripts.FriSecurity
+
 section Tests
 
 lean_lib Tests
@@ -212,6 +215,19 @@ library of their own so that suites can import them at run time (some host cases
 are installed unchecked on purpose). -/
 lean_lib EntryCaseFixtures where
   roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
+
+lean_exe «formal-aiur-tests» where
+  root := `Tests.FormalAiur
+  supportInterpreter := true
+
+lean_exe «formal-aggregate-tests» where
+  root := `Tests.FormalAggregate
+  supportInterpreter := true
+
+/-- The formal backend's check drivers (`controller`, `cuda`, `ranges`), run by
+`tools/ixvm/check-formal.sh`. -/
+lean_exe «formal-checks» where
+  root := `Tests.FormalChecks
 
 @[test_driver]
 lean_exe IxTests where
@@ -231,20 +247,13 @@ lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
 
-/-- Regenerates, or with `--check` verifies, the trace-codegen test fixtures:
-the Rust writers, CUDA units and manifest the `aiur` parity tests compile
-against. -/
-lean_exe «trace-fixtures» where
-  root := `Tests.Aiur.TraceFixtures
-  supportInterpreter := true
-
 /-- Focused source-contract checks, including fresh-module registration export. -/
 lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
   supportInterpreter := true
 
 /-- Focused Ixon v4 codec, locality, and cross-language transport checks;
-`--export-fixtures` and `--export-handoff` regenerate the generated fixtures.
+`--export-fixtures` regenerates the generated text fixtures.
 Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
 lean_exe «ixon-v4-tests» where
   root := `Tests.IxonV4Main
@@ -277,45 +286,6 @@ lean_exe «sharing-family-normalize» where
 lean_exe «sharing-scratch» where
   root := `Benchmarks.SharingScratch
 
-lean_exe «bench-aiur» where
-  root := `Benchmarks.Aiur
-
-lean_exe «bench-blake3» where
-  root := `Benchmarks.Blake3
-
-lean_exe «bench-sha256» where
-  root := `Benchmarks.Sha256
-
-lean_exe «bench-ixvm» where
-  root := `Benchmarks.IxVM
-  supportInterpreter := true
-
-lean_exe «bench-typecheck» where
-  root := `Benchmarks.Typecheck
-  supportInterpreter := true
-
-/-- Generic execution profiles for full-closure proving workloads. -/
-lean_exe «proving-profile» where
-  root := `Scripts.Performance.ProvingProfile
-  moreLinkObjs := #[ix_rs]
-
-/-- Validate and compare circuit partitions against measured query heights. -/
-lean_exe «function-grouping» where
-  root := `Scripts.Performance.FunctionGrouping
-  moreLinkObjs := #[ix_rs]
-
-lean_exe «bench-recursion-debug» where
-  root := `Benchmarks.RecursionDebug
-  supportInterpreter := true
-
-lean_exe «bench-aggregate-policy» where
-  root := `Benchmarks.AggregatePolicy
-  supportInterpreter := true
-  -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
-  -- aggregator makes both archives direct dependencies; Rust allocator
-  -- symbols are then resolved from ix_ffi and not pulled twice.
-  moreLinkObjs := #[ix_rs]
-
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -327,6 +297,10 @@ expands every stored sharing table in an `.ixe`, checks the production
 rebuild and reports subterm, candidate and MSS statistics. -/
 lean_exe «sharing-study» where
   root := `Benchmarks.SharingStudy
+
+/-- The binder-data sections of compiled environments: sizes, and two compiles compared. -/
+lean_exe «binder-data-stats» where
+  root := `Benchmarks.BinderDataStats
 
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,
@@ -415,11 +389,14 @@ def moduleExclusions : Array ModuleExclusion := #[
 /-- The directories whose modules `check-modules` builds, with the root files.
 `IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
-their own targets; `Models/` and every directory with its own lakefile are
-other workspaces. -/
-def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps", "MultiStark"]
+their own targets, and `IxVMRefinement/` (a globbed library) by the refinement
+step only; `Models/` and every directory with its own lakefile are
+other workspaces. The nested Aiur, IxVM and MultiStark packages are built
+with `--wfail` by their own CI step (`aiur/Aiur` globs every module; every
+IxVM and MultiStark module is reachable from its library or executable root). -/
+def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
-  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean"]
+  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]
 
 /-- Whether `dir` is a nested Lake workspace (it has its own lakefile). -/
 def isNestedWorkspace (dir : FilePath) : IO Bool := do
@@ -523,10 +500,14 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
+/-- Libraries `build-all` leaves to their own step (see each library's comment). -/
+def separateLibs : List String := ["IxVMRefinement"]
+
 @[lint_driver]
 script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
+    |>.filter (!separateLibs.contains ·)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
   let allNames := (libNames ++ exeNames).toList
   let mut failed : Array String := #[]
@@ -561,6 +542,13 @@ runs it too, with the lint arguments. -/
 script "check-modules" (args) := do
   return ← checkModules ("--wfail" :: args)
 
+/-- Check the `IxTests` registry against CI workflows and required entries. -/
+script "check-ixtests-registry" := do
+  let child ← IO.Process.spawn {
+    cmd := ".lake/build/bin/IxTests", args := #["ixtests-registry"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
 end Scripts
 
 section IxSharingVerify
@@ -581,6 +569,20 @@ lean_lib IxSharingVerify where
   globs := #[.andSubmodules `IxSharingVerify]
 
 end IxSharingVerify
+
+section IxVMRefinement
+
+/-- **The IxVM refinement core and its generated path lemmas**: every module under
+`IxVMRefinement/` — the path lemmas `lake exe ixvm/ixvm-proof-gen` writes under
+`IxVMRefinement/Obs/` (about 100 modules, 11 MB, about 50 minutes of CPU) and the
+hand-written proofs that use them (`IxVMRefinement/Core/`). Built only by the
+refinement step, `lake build --wfail IxVMRefinement`: it is not a default target,
+its directory is not one of `coveredDirs`, and `build-all` (the lint driver) skips
+it (`separateLibs`). -/
+lean_lib IxVMRefinement where
+  globs := #[.submodules `IxVMRefinement]
+
+end IxVMRefinement
 
 section IxC
 
@@ -671,7 +673,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ModelLaws", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   -- The certification statements' freeze, which no test binary imports.

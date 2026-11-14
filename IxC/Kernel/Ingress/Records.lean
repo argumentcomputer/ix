@@ -37,9 +37,10 @@ Canonical byte spelling is a separate condition (the canonical decoder). -/
 def natural (bytes : ByteArray) : Nat :=
   bytes.data.toList.foldr (fun byte rest => byte.toNat + 256 * rest) 0
 
-/-- A projection constant carries no expression tables. -/
+/-- A projection constant carries no expression tables and no binder data. -/
 def emptyTables (source : Ixon.Constant) : Bool :=
-  source.sharing.isEmpty && source.refs.isEmpty && source.univs.isEmpty
+  source.sharing.isEmpty && source.refs.isEmpty && source.univs.isEmpty &&
+    source.binders.isEmpty
 
 /-! ## Key equality
 

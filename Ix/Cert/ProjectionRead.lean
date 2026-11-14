@@ -34,6 +34,7 @@ theorem constant_info {start finish : GetState} {c : Constant}
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
+  obtain ⟨_, _, _, h⟩ := bind_ok h
   simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
   obtain ⟨rfl, rfl⟩ := h
   exact ⟨state, hi⟩

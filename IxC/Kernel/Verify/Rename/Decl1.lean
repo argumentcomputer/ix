@@ -488,11 +488,12 @@ theorem checkDefEqList_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' :
     exact checkDefEqList_sim hops hE d as bs has.2 hbs.2
 
 theorem checkProjShape_sim (pty ctorTy : Expr md)
-    (nP nF : Nat) :
-    SimV (checkProjShape pty ctorTy nP nF : CheckM md Unit)
-      (checkProjShape (pty.mapKeys f) (ctorTy.mapKeys f) nP nF : CheckM md' Unit) := by
+    (nP nF : Nat) (cjLps : List LevelParam) :
+    SimV (checkProjShape pty ctorTy nP nF cjLps : CheckM md Unit)
+      (checkProjShape (pty.mapKeys f) (ctorTy.mapKeys f) nP nF cjLps : CheckM md' Unit) := by
   unfold checkProjShape
-  simp only [Expr.stripPis_mapKeys]
+  simp only [Expr.stripPis_mapKeys, Expr.recRulePlain_mapKeys]
+  refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
   cases h₁ : Expr.stripPis nP pty with
   | none => exact SimE.throw'
   | some p =>

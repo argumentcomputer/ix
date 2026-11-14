@@ -1,5 +1,6 @@
 module
 
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public import IxC.Kernel.Model.Inductives.FixRecData
 public section
 
@@ -136,11 +137,11 @@ theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key
 /-- **Rule `j`'s reading** at the recursor's cons: the rule's λ-data
 over the rule's core with the stored recursor leaf. -/
 theorem fixRuleData_of (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
-    {rhss : List (Expr md)} {caps : IndCaps md}
-    (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
-    (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
-    (hlpsT : cvTa.levelParams = p.cvT.levelParams)
+    {J : Judgements md} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} {caps : IndCaps md} {cvS : ConstantVal md}
+    (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
+    (hfT : env.find? p.cvT.name = some (.indInfo cvS caps))
+    (hlpsS : cvS.levelParams = p.cvT.levelParams)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {tfvs : List (Expr md)} {trest : Expr md}
@@ -172,10 +173,10 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
             (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
           (fixRuleCoreAV (pwBit ψ (Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large))) (A ψ)
             p.nP cA.2 ctorsA.length j (Ix.Kernel.recIdxOf (ksF j)) (tssF j ψ) (eissF j ψ))) := by
-  obtain ⟨cvRi, recTy, sty, u, -, -, -, -, -, -, -, -, -, hrules, rfl⟩ :=
-    Ix.Kernel.checkNativeRec_shape hRec
-  obtain ⟨hTf, -, -, -, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
-  simp only [ConstantInfo.toConstantVal] at hTf
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, -, -, -, -, -, -, -, hrules, hstR⟩ :=
+    hRec
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
+  have hTf := hFD.tf
   have hjn : j < ctorsA.length := (List.getElem?_eq_some_iff.mp hj).1
   obtain ⟨-, hall⟩ := Ix.Kernel.checkNativeRules_inv hrules
   have hlen4 : (Ix.Kernel.nativeCtors4 ctorsA p.kinds).length = ctorsA.length :=
@@ -204,12 +205,12 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
     fun ψ => CtorReadsR.cross hfresh hT hcross m₂ hac (fixCtorReadsR_of ψ hlenK hks hcf) hcbC
   -- the former and the recursor at the cons
   have hcbT : ConstsBound env cvTa.type := by
-    obtain ⟨-, -, hTres, -, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
+    have hTres := hFD.cr
     exact constsBound_of_constsResolve _ hTres
   have hFD₂ := hFD.cross (c₀ := .recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) hfresh
     (hcross _) hcbT m₂ hac
   have hfT₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env md).find?
-      p.cvT.name = some (.indInfo cvTa caps) :=
+      p.cvT.name = some (.indInfo cvS caps) :=
     Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT
   have hfR₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env md).find?
       p.cvR.name = some (.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) :=
@@ -221,7 +222,7 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
     rfl
   refine ⟨rhs, hrhs, hres, hrf, hbr, fun ψ => ?_⟩
   have := denoteMeta_structRecRhsR (m := m₂) hfT₂
-    (show (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams = p.cvT.levelParams from hlpsT)
+    (show (ConstantInfo.indInfo cvS caps).toConstantVal.levelParams = p.cvT.levelParams from hlpsS)
     (hcr₂ ψ) hfR₂ rfl hgen hTf (by rw [hstripT]; rfl) hopT (hFD₂.read ψ) (hFD₂.len ψ) (hjd ψ)
   rw [fixCtorDataList_length] at this
   rw [this, hac]

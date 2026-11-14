@@ -1,45 +1,36 @@
 import Ix.Meta
 import Ix.CompileCertified
-import Ix.Aiur.Protocol
-import Ix.Aiur.Compiler
-import Ix.IxVM
 import Ix.IxVM.ClaimHarness
-import Tests.Aiur.Common
+import Tests.Ix.IxVM.Harness
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import Tests.Ix.Kernel.NatReduction
-import LSpec
 
 /-!
-  Drives the Aiur kernel through every lean-kernel-arena tutorial
-  fixture (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`) using the
-  shared `IxVM.ixVMFull` toplevel + `verify_const` entrypoint.
+  Drives the IxVM program through every lean-kernel-arena tutorial fixture
+  (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`): each good fixture must be
+  accepted, and each `bad_*` fixture rejected by the program.
 
-  Each fixture's outcome is classified against the test case's expected
-  outcome (good must typecheck; bad must be rejected via Aiur execution
-  error, where the error originates from an `assert_eq!` failure inside
-  the Aiur kernel source).
+  Each fixture is a production `Check` claim on its constant whose assumption
+  set is the rest of its closure: the claim checks the subject (and the block
+  it belongs to) and assumes its dependencies, as the legacy suite's
+  subject-only `verify_const` entry point did, so shared dependencies are not
+  revalidated per fixture and a `bad_*` fixture is rejected for itself, not for
+  a dependency. A rejection must come from the program's logic: a witness that
+  lacks data the program asks for (`missing hint`) is not a verdict.
 
-  `verify_const` is a DEBUG entrypoint, not a claim — it
-  type-checks only the target and trusts transitive deps. Arena uses
-  it for the per-fixture speed advantage (shared deps would otherwise
-  be revalidated N times). Verifier policy must never accept this
-  funcidx as a production claim.
-
-  Raw-const fixtures (`good_raw_consts` / `bad_raw_consts`, whose decls
-  live in `TutorialMeta.rawConstsExt` rather than `env.constants`) are
-  compiled into the shared Ixon env via `collectDepsWithExtras`, same
-  as the Rust tutorial suite.
+  Raw-const fixtures (`good_raw_consts` / `bad_raw_consts`, whose decls live in
+  `TutorialMeta.rawConstsExt` rather than `env.constants`) are compiled into
+  the shared Ixon env via `collectDepsWithExtras`, as the Rust tutorial suite
+  does.
 
   Skips:
-  - renaming test cases (collision tests, not single-constant
-    typechecks);
-  - constants filtered by `compile_env` (ungrounded blocks);
-  - constants in `knownIncompatible` (meta-only Lean kernel checks the
-    Aiur kernel structurally cannot see).
+  - renaming test cases (collision tests, not single-constant typechecks);
+  - constants filtered by the compile (ungrounded blocks);
+  - constants in `knownIncompatible` (meta-only Lean kernel checks the IxVM
+    kernel structurally cannot see).
 -/
 
-open LSpec
 open Tests.Ix.Kernel.TutorialMeta
 open IxVM.ClaimHarness
 
@@ -49,43 +40,51 @@ structure ArenaCheck where
   name : Lean.Name
   expectPass : Bool
 
-/-- Constants the Aiur kernel structurally cannot adjudicate. Skipped
-    rather than counted as pass/fail. -/
+/-- Constants the IxVM kernel structurally cannot adjudicate. Skipped rather
+than counted as pass/fail. -/
 def knownIncompatible : Array (Lean.Name × String) := #[
   -- Duplicate `levelParams` is a meta-mode hygiene check (Lean's
   -- `Level.Param` is name-keyed). Ixon Anon erases the structural
   -- duplication pattern (only `lvls : UInt64` count survives) and the
   -- Ixon compiler resolves `Param u` via first-occurrence, silently
-  -- making the second binder dead. Rejection happens only in the Rust
-  -- kernel via `has_duplicate_level_params` (Meta-mode only).
-  (`tut06_bad01,
-   "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107"),
+  -- making the second binder dead.
+  (`tut06_bad01, "duplicate levelParams: Anon-mode hygiene check"),
   -- AdvNat.rec is a malformed raw recursor payload. Tests.Ix.Kernel.Tutorial
-  -- checks it through a dedicated path (`rsCheckMalformedRecRuleIxonFFI`)
-  -- that injects the bad rule into Ixon.
-  (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
-   "malformed rec rule; Tutorial uses bespoke FFI"),
-  -- Same reason as tut06_bad01: duplicate levelParams is Meta-mode
-  -- hygiene; Ixon Anon stores only the `lvls` COUNT, so the duplication
-  -- pattern is erased before the Aiur kernel can see it.
-  (`inductLevelParam,
-   "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107")
+  -- checks it through a dedicated path that injects the bad rule into Ixon.
+  (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec, "malformed rec rule; Tutorial uses bespoke FFI"),
+  -- Same reason as tut06_bad01.
+  (`inductLevelParam, "duplicate levelParams: Anon-mode hygiene check")
 ]
 
 /-- Fixtures proved by `native_decide`, which the tutorial expects Lean's kernel
-    to accept by native evaluation. A claim's theory has none: `Lean.reduceBool`
-    never reduces, so IxVM rejects them. -/
+to accept by native evaluation. A claim's theory has none: `Lean.reduceBool`
+never reduces, so IxVM rejects them. -/
 def nativeEvaluationFixtures : Array Lean.Name := #[
+  `natBleTrue, `natBleFalse, `natBeqTrue, `natBeqFalse,
   `Tests.Ix.Kernel.TutorialDefs.natBleTrue, `Tests.Ix.Kernel.TutorialDefs.natBleFalse,
   `Tests.Ix.Kernel.TutorialDefs.natBeqTrue, `Tests.Ix.Kernel.TutorialDefs.natBeqFalse]
+
+/-- Fixtures the modeled route refuses because the kernel's modeller has no
+model for them (decision D7). `nestedSpecLocalF`'s nested occurrence takes a
+constructor field as its parametric argument, so no auxiliary type can be formed:
+IxC declines it (`Tests.Ix.Kernel.Tutorial.cornerCases`), and IxVM, which checks a
+nested block against a model, finds none ("no model advice"). Lean's elaborator
+rejects the declaration; the arena's outcome for its nearest test is `either`. -/
+def modeledDeclines : Array Lean.Name :=
+  #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
+
+/-- Fixtures the native route declines because a constructor field domain
+mentions the block in a non-syntactic occurrence (`id (reduceCtorParam A)`
+and its reflexive variants), which would require rewriting the stored
+constructor's field domains to classify positivity. -/
+def nativeDeclines : Array Lean.Name := #[
+  `reduceCtorParam, `reduceCtorParam.mk, `reduceCtorParam.rec,
+  `reduceCtorParamRefl, `reduceCtorParamRefl.mk, `reduceCtorParamRefl.rec,
+  `reduceCtorParamRefl2, `reduceCtorParamRefl2.mk, `reduceCtorParamRefl2.rec]
 
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
   let skipSet : Std.HashSet Lean.Name :=
     knownIncompatible.foldl (init := {}) (fun s (n, _) => s.insert n)
-  -- Raw consts (`good_raw_consts` / `bad_raw_consts`) never enter
-  -- `env.constants` (the Lean kernel refused them); they are compiled
-  -- into the shared Ixon env via `collectDepsWithExtras` below. Consts
-  -- `compile_env` refuses to ground surface as skips in `buildInput`.
   let rawNames : Std.HashSet Lean.Name :=
     (getRawConsts env).foldl (fun s ci => s.insert ci.name) {}
   let mut out : Array ArenaCheck := #[]
@@ -98,36 +97,38 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       seen := seen.insert n
       if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
-      out := out.push { name := n, expectPass := pass && !nativeEvaluationFixtures.contains n }
+      let expectPass := pass && !nativeEvaluationFixtures.contains n &&
+        !modeledDeclines.contains n && !nativeDeclines.contains n
+      out := out.push { name := n, expectPass := expectPass }
   return out
 
-/-- Build the `verify_const` input for `name` against the shared
-    `ixonEnv`. Returns `error` when `compile_env` filtered the
-    constant (no Ixon address) — caller treats that as a skip. -/
-private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
-    Except String (Array Aiur.G × Aiur.IOBuffer) :=
-  match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
-  | none => .error "ungrounded by compile_env"
-  | some addr =>
-    -- Subject-only check via `verify_const`. Each fixture runs in
-    -- isolation; we don't revalidate transitive deps N times.
-    match buildVerifyConst ixonEnv addr with
-    | .ok witness => .ok (witness.input, witness.inputIOBuffer)
-    | .error e => .error e
+/-- The block a projection names. -/
+private def blockOf : Ixon.ConstantInfo → Option Address
+  | .iPrj p => some p.block
+  | .cPrj p => some p.block
+  | .rPrj p => some p.block
+  | .dPrj p => some p.block
+  | _ => none
 
-/-- Run the arena suite against `compiled` (already-compiled Aiur
-    `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
-    `TestSeq` entry per fixture. -/
-def arenaTests (env : Lean.Environment)
-    (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
-  let funIdx ← match compiled.getFuncIdx `verify_const with
-    | some i => pure i
-    | none => throw <| IO.userError "verify_const entrypoint missing"
+/-- The subject-only claim on `target`: its closure is assumed, except the
+target, the block it projects from, and that block's other projections. -/
+private def subjectClaim (env : Ixon.Env) (ctx : Ix.ClaimContext) (target : Address) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let some c := env.getConst? target | throw s!"{target} is not in the environment"
+  let block := blockOf c.info
+  let isSubject (a : Address) : Bool :=
+    a == target || some a == block ||
+      (block.isSome && ((env.getConst? a).bind (blockOf ·.info)) == block)
+  let deps := (closureFromRoots env #[target]).toArray.filter fun a =>
+    env.consts.contains a && !isSubject a
+  match Ix.AssumptionTree.canonical deps with
+  | none => return (.check ctx target none, {})
+  | some tree => return (.check ctx target (some tree.root), ({} : Std.HashMap _ _).insert tree.root tree)
+
+/-- Every fixture as a claim over one shared Ixon env. A fixture the compile
+filtered (no Ixon address) is reported and skipped. -/
+def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let checks := collectChecks env
-  -- Raw fixtures don't live in `env.constants`; close over the check
-  -- names with the raw consts as extra lookups, then append the raw
-  -- consts themselves so `compile_env` grounds them (mirrors the Rust
-  -- tutorial suite's env build).
   let rawConsts := getRawConsts env
   let rawMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
     rawConsts.foldl (fun m ci => m.insert ci.name ci)
@@ -135,35 +136,36 @@ def arenaTests (env : Lean.Environment)
   let (_, closed) := collectDepsWithExtras env rawMap
     ((checks.map (·.name)).toList ++ (rawConsts.toList.map (·.name)))
   let allConsts := closed ++ rawConsts.toList.map fun ci => (ci.name, ci)
-  let (rawEnv, _, _) ← IO.ofExcept <|
-    Ix.Cert.compileUnchecked (Ix.CompileM.canonInput allConsts.toArray 32)
-  let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv)
-  let mut tests : TestSeq := .done
+  -- with the compile's binder-data annotator, so that each record carries its data
+  let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput allConsts.toArray 32)
+  let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked input
+  let ixonEnv ← IO.ofExcept (withDefaultRoleBinding rawEnv)
+  -- The fixtures' own axioms are assumed like any other dependency, so the
+  -- claims carry no user axioms; and the claims assume their role binding
+  -- (validator 4), as an aggregate's claims do, which keeps the witnesses to
+  -- the fixtures' closures and the bound roles.
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv (bindingAssumed := true))
+  let ctx := { ctx with axioms := none }
+  let mut out : Array Tests.Ix.IxVM.Builder := #[]
   for c in checks do
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"
-    match buildInput ixonEnv c.name with
-    | .error reason => tests := tests ++ test s!"{label}: skipped ({reason})" true
-    | .ok (input, ioBuffer) =>
-      match compiled.bytecode.execute funIdx input ioBuffer with
-      | .ok _ =>
-        tests := tests ++
-          test label (c.expectPass)
-      | .error e =>
-        -- A `bad_*` fixture counts as correctly rejected only when the
-        -- kernel actually REFUSED it. `assert_eq!` failures qualify, and
-        -- so do unmatched-match aborts: this kernel deliberately relies
-        -- on an unmatched runtime value aborting rather than spending
-        -- circuit width on `_ => assert_eq!(0, 1)` arms, so "no match
-        -- case for value N" is a verdict too.
-        --
-        -- `invalid IO key` is NOT. It means the witness never supplied
-        -- the bytes, so execution died before reaching the logic under
-        -- test — scoring it as a rejection is how a fixture rots into a
-        -- green test that checks nothing. No fixture currently relies on
-        -- it; this keeps it that way.
-        let refused := (e.splitOn "invalid IO key").length == 1
-        tests := tests ++
-          test s!"{label} ({e})" (!c.expectPass && refused)
-  return tests
+    match ixonEnv.getAddr? (Ix.Name.fromLeanName c.name) with
+    | none => IO.println s!"{label}: skipped (ungrounded by the compile)"
+    | some addr =>
+      -- A `native_decide` proof cites an auxiliary axiom asserting the native
+      -- result: assumed, it makes the claim a vacuous conditional one, so the
+      -- claim checks the closure and the axiom policy must refuse it.
+      if nativeEvaluationFixtures.contains c.name then
+        out := out.push fun _ =>
+          Tests.Ix.IxVM.Case.ofClaim s!"{label}, its closure checked" ixonEnv (.check ctx addr none)
+            {} false (some "an axiom that is not one of Lean's standard axioms")
+      else
+        out := out.push fun _ => do
+          let (claim, trees) ← subjectClaim ixonEnv ctx addr
+          Tests.Ix.IxVM.Case.ofClaim label ixonEnv claim trees c.expectPass
+  return out
+
+def run (env : Lean.Environment) : IO UInt32 := do
+  Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env)
 
 end Tests.Ix.Kernel.Arena

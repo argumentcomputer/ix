@@ -449,8 +449,8 @@ def validateMetaSharing (p : Nat) (metaSharing : Array Ixon.Expr)
         if i.toNat ≥ p + j then
           throw (.invalidMetaShareIndex i j.toUInt64 p metaSharing.size label)
       | .app f a => stack := stack.push a |>.push f
-      | .lam _ t b | .all _ _ t b => stack := stack.push b |>.push t
-      | .letE _ t v b => stack := stack.push b |>.push v |>.push t
+      | .lam t b | .all t b => stack := stack.push b |>.push t
+      | .letE _ _ t v b => stack := stack.push b |>.push v |>.push t
       | .prj _ _ v => stack := stack.push v
       | .sort _ | .var _ | .ref .. | .recur .. | .str _ | .nat _ => pure ()
 
@@ -485,9 +485,6 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
     | _ => done := true
 
   let node ← getArenaNode currentIdx
-
-  if let some contract := Ix.SemanticContract.ofIxon? e then
-    mdataLayers := mdataLayers.push contract.ixMetadata
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
@@ -558,42 +555,42 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
     pure (applyMdata (Ix.Expr.mkApp fnExpr argExpr) mdataLayers)
 
   -- Lam with arena metadata
-  | .binder nameAddr info tyChild bodyChild, .lam _ ty body => do
+  | .binder nameAddr info tyChild bodyChild, .lam ty body => do
     let binderName ← lookupNameAddrOrAnon nameAddr
     let tyExpr ← decompileExprIn scope ty tyChild
     let bodyExpr ← decompileExprIn scope body bodyChild
     pure (applyMdata (Ix.Expr.mkLam binderName tyExpr bodyExpr info) mdataLayers)
 
-  | _, .lam _ ty body => do
+  | _, .lam ty body => do
     let tyExpr ← decompileExprIn scope ty UInt64.MAX
     let bodyExpr ← decompileExprIn scope body UInt64.MAX
     pure (applyMdata (Ix.Expr.mkLam Ix.Name.mkAnon tyExpr bodyExpr .default) mdataLayers)
 
   -- ForallE with arena metadata
-  | .binder nameAddr info tyChild bodyChild, .all _ _ ty body => do
+  | .binder nameAddr info tyChild bodyChild, .all ty body => do
     let binderName ← lookupNameAddrOrAnon nameAddr
     let tyExpr ← decompileExprIn scope ty tyChild
     let bodyExpr ← decompileExprIn scope body bodyChild
     pure (applyMdata (Ix.Expr.mkForallE binderName tyExpr bodyExpr info) mdataLayers)
 
-  | _, .all _ _ ty body => do
+  | _, .all ty body => do
     let tyExpr ← decompileExprIn scope ty UInt64.MAX
     let bodyExpr ← decompileExprIn scope body UInt64.MAX
     pure (applyMdata (Ix.Expr.mkForallE Ix.Name.mkAnon tyExpr bodyExpr .default) mdataLayers)
 
   -- Let with arena metadata
-  | .letBinder nameAddr tyChild valChild bodyChild, .letE nonDep ty val body => do
+  | .letBinder nameAddr tyChild valChild bodyChild, .letE nonDep _ ty val body => do
     let letName ← lookupNameAddrOrAnon nameAddr
     let tyExpr ← decompileExprIn scope ty tyChild
     let valExpr ← decompileExprIn scope val valChild
     let bodyExpr ← decompileExprIn scope body bodyChild
-    pure (applyMdata (Ix.Expr.mkLetE letName tyExpr valExpr bodyExpr nonDep.nonDep) mdataLayers)
+    pure (applyMdata (Ix.Expr.mkLetE letName tyExpr valExpr bodyExpr nonDep) mdataLayers)
 
-  | _, .letE nonDep ty val body => do
+  | _, .letE nonDep _ ty val body => do
     let tyExpr ← decompileExprIn scope ty UInt64.MAX
     let valExpr ← decompileExprIn scope val UInt64.MAX
     let bodyExpr ← decompileExprIn scope body UInt64.MAX
-    pure (applyMdata (Ix.Expr.mkLetE Ix.Name.mkAnon tyExpr valExpr bodyExpr nonDep.nonDep) mdataLayers)
+    pure (applyMdata (Ix.Expr.mkLetE Ix.Name.mkAnon tyExpr valExpr bodyExpr nonDep) mdataLayers)
 
   -- Prj with arena metadata
   | .prj structNameAddr child, .prj _typeRefIdx fieldIdx val => do
@@ -952,7 +949,7 @@ def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
         pure #[(info.getCnst.name, info)]
       | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ =>
         match block? with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
+        | some { info := .muts mutuals, sharing, refs, univs, .. } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
         | _ => throw (DecompileError.badConstantFormat "projection block is not a mutual block")
       | .muts mutuals =>

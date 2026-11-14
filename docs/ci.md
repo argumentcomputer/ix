@@ -6,6 +6,14 @@ which does not run on a GPU. Future GPU benchmarks should explicitly request
 `spot=false`. RunsOn may fall back to on-demand capacity when Spot is
 unavailable or when provisioning an automatic recovery attempt.
 
+Formal Aiur's CPU integration job exercises the CPU controls of
+`formal-checks cuda` (`Tests/FormalChecks/Cuda.lean`). Actual CPU/CUDA proof and key parity, including
+sharded IxVM, recursion, and aggregation, requires a GPU host running
+`IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh`. The
+[migration guide](formal-aiur-migration.md#cuda-and-native-builds)
+documents the retained logs and report; the CUDA compilation job does not
+provide hardware validation.
+
 CI jobs request the `r7i+r8i+r7a+r8a` families and let RunsOn pick the size
 from `cpu=`, so a Spot request can draw from several pools; exact r8i types
 alone had no Spot capacity. Their Rust builds use the `portable` codegen mode
@@ -44,20 +52,22 @@ the entry runs:
 | --- | --- | --- |
 | `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
+| `ci:ixvm` | a step of the `lean-test` job, after `tools/ixvm/check-formal.sh`, on its claim artifact | claims through the formal IxVM program (`ixvm-proof test`) under the circuit verdict (every assertion checked, `IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution): kernel verdicts, the exploit, arena, TagN, evaluation, binding, IO-ingress and circuit-verdict suites |
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, catalog and commit I/O, and the IxVM suite |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, catalog and commit I/O |
 | `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; the Rust, pure and admission BLAKE3 on every record, blob and binding of that artifact; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
-The manual runners that prove through the production `ix_aggr` circuit,
-`aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
-about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
-stay manual. `binding-proof-cli` (`ci:compiler-closures`) runs
-`aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
-the shard proofs that assume it, their composition with it, and the refusals
-without it; the aggregation circuit's handling of the binding is tested in
-`ix-aggr` (primary). Its proving budget is 64 GiB, so it runs in the merge
-queue, on a 32-CPU runner, rather than in every pull request's `lean-test`.
+The manual runner that proves through the production `ix_aggr` circuit,
+`aggregate-binding-reuse`, takes minutes of recursion and about 190 GB, three
+quarters of a 32-CPU merge-tests runner's memory, so it stays manual.
+`binding-proof-cli` (`ci:compiler-closures`) runs `aggregate-binding-reuse`'s
+flow without its two aggregates: the binding proof, the shard proofs that
+assume it, their composition with it, and the refusals without it; the
+aggregation circuit's handling of the binding is tested in
+`formal-aggregate-tests` (`tools/ixvm/check-formal.sh`). Its proving budget is
+64 GiB, so it runs in the merge queue, on a 32-CPU runner, rather than in every
+pull request's `lean-test`.
 
 `aggregate-toolchains` is also manual: it proves the committed library fixtures
 from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
@@ -198,3 +208,4 @@ Each entry below says what replaced the suite, or why it was dropped.
 **Replaced:**
 
 - **`record-decoding`.** Its refusals moved into `kernel-record-check` (primary): orphan, noncanonical and oversized records, phase precedence, and a cache beside bad bytes. `kernel-check-ixe` passes host-decoded records straight to the certified step, so these refusals aren't covered by a proof. The parallel decoder's agreement with the serial one is proved (`Ix.RoleBinding.RecordDecoding.parallel_eq`, `recordStore_eq_parallel`).
+- **`aiur-hashes`, `multi-stark`, `recursive-verifier`, and `ixvm-subst-boundaries`.** These drove the retired `Ix.Aiur.Protocol` in-Lean bytecode interpreter and legacy `aiur_circuit%` generated Rust modules. Their coverage moved to `u32_tests`, `library_tests` + `library_check` (BLAKE3 0..4097 bytes, U64 and byte gadgets), `formal-aggregate-tests`, `stark-verifier test` (digest, truncation, opening, width, claim, row-bound and fixed-height rejections), and the `ci:ixvm` suites against the compiled formal IxVM artifact.

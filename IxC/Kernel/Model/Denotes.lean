@@ -28,7 +28,8 @@ this module builds one from the graded invariant `EnvModelM`
   relation reads) at the interpreted leaves.  The regime premises of
   the two binder rules are exactly the invariant's sort facts:
   `AnnotValid`'s `pi` clause and `WellDenoted`'s `lam` clause.
-* **the model** `Model.ofEnvModelM`: `mem` from `type_reads` and
+* **the model** `Model.ofEnvModelM` (built in `Model/Iota.lean`, after
+  ι is derived there): `mem` from `type_reads` and
   `mem_type` at depth `0` (a stored type has no `fvar`, so it is its
   own closure); `false_empty` from the pinned `False` leaf
   (`EnvModel.cvalE_pinned`: the leaf is `.const .empty [0]`, whose
@@ -38,7 +39,12 @@ this module builds one from the graded invariant `EnvModelM`
   *pinned* `Eq` being stored, and the `Denotes` hypothesis supplies
   only that *something* is stored at `eqName`; the two are joined by
   `basis_pinnedL`'s declaration clause, which since task #283 holds of
-  a stored reserved name whatever its kind.
+  a stored reserved name whatever its kind.  `defn_value` from the
+  invariant's `defn_reads`: a stored definition's value reads to the
+  constant's own leaf, and a stored value is closed, so the bridge at
+  depth `0` gives the value the leaf's interpretation as denotation.
+  `iota_rule` from the invariant's `rec_rules`, through the readings
+  of the arguments as bound variables (`iotaLaw_of_envModelM`).
 -/
 
 namespace Ix.Kernel.Model
@@ -55,7 +61,7 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- The set-valued leaf of an annotated valuation. -/
-noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+@[expose] noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
     (n : Key md) (ψ : LevelParam → Nat) : V :=
   interp V (fun _ => SetTheory.empty) (acval n ψ)
 
@@ -373,56 +379,134 @@ theorem Denotes_of_denoteMeta {acval : Key md → (LevelParam → Nat) → Annot
       | natVal k => exact absurd rfl (hnat k)
       | strVal s => exact absurd rfl (hstr s)
 
-/-! ### The model -/
-
-/-- **The model, read off the invariant**: `Model V env` from
-`EnvModelM V μ env`. -/
-noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
-    (m : EnvModelM V μ env) : Ix.Kernel.Model V env where
-  cval := cvalOf m.base2.acval
-  mem := by
-    intro c hc φ ρ
-    obtain ⟨ta, hta⟩ := m.type_reads c hc φ
-    have hwf := m.base2.wf c hc
-    have hnf : c.toConstantVal.type.hasFvar = false := hwf.1
-    have hlb : c.toConstantVal.type.looseBVarsBounded 0 = true := hwf.2.2.2.1
-    have hbr := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0
-      c.toConstantVal.type hta (fvarsBelow_zero_of_not_hasFvar hnf) hlb ρ
-      (m.type_wellDenotedV c hc φ ta hta ρ)
-    rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
-    refine ⟨interp V ρ ta, hbr, ?_⟩
-    rw [← interp_cvalOf m.base2.cval_closedL]
-    exact m.mem_type c hc φ ta hta ρ
-  false_empty := by
-    intro φ ρ F h
-    suffices hs : ∀ (ψ : LevelParam → Nat) (ci : ConstantInfo md),
-        env.find? falseName = some ci →
-        cvalOf (V := V) m.base2.acval falseName ψ = SetTheory.empty by
-      cases h with
-      | const hf hlen => exact hs _ _ hf
-    intro ψ ci hf
-    have hpd : Ix.Kernel.Verify.pinnedStructT (md := md) falseName ψ
-        = some (Term.const .empty [0]) := by
-      cases md <;> simp +decide [Ix.Kernel.Verify.pinnedStructT]
-    have he : (m.base2.acval falseName ψ).erase = Term.const .empty [0] :=
-      m.base2.cvalE_pinned (n := falseName) (by (cases md <;> decide)) (by rw [hf]; rfl) ψ hpd
-    rw [cvalOf, erase_eq_const he, interp_const]
-    rfl
-  eq_equality := by
-    intro u φ ρ E A a b h hA ha hb
-    cases h with
-    | const hf hlen =>
-      have hpin := (m.base2.basis_pinned _ _ hf (by (cases md <;> decide))).1
-      rw [show Ix.Kernel.pinnedInfo Ix.Kernel.eqName = Ix.Kernel.eqA from rfl]
-        at hpin
-      subst hpin
-      rw [show (Ix.Kernel.eqA : ConstantInfo md).toConstantVal.levelParams
-        = [Ix.Kernel.uN] from rfl]
-      have hψ : Level.substFn φ [Ix.Kernel.uN] [u] Ix.Kernel.uN = Level.eval φ u := by
-        simp [Level.substFn]
-      have hlaw := (m.eq_law hf (Level.substFn φ [Ix.Kernel.uN] [u])).1 ρ A a b
-        (by rw [hψ]; exact hA) ha hb
-      rw [interp_cvalOf m.base2.cval_closedL] at hlaw
-      exact hlaw
+/-- **The grading bridge**: wherever `denoteMeta` reads a term whose reading is graded and
+bit-valid, the term's closure has a graded `Denotes` reading (`GradedBy`): the invariant's
+`WellDenoted` grades every application of the reading, and `Denotes_of_denoteMeta` reads the
+function and the argument at the interpreted sets. -/
+theorem GradedBy_of_denoteMeta {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env md} {φ : LevelParam → Nat} :
+    ∀ (d : Nat) (e : Expr md) {ta : AnnotTerm},
+      denoteMeta acval env φ d e = some ta →
+      Expr.fvarsBelow d e → e.looseBVarsBounded 0 = true →
+      ∀ ρ : Nat → V, WellDenotedV V ρ ta →
+        Ix.Kernel.GradedBy (Denotes (cvalOf (V := V) acval) env φ) ρ (closeN d e) := by
+  intro d e
+  induction d, e using denoteMeta.induct (env := env) with
+  | case1 d u => intro _ _ _ _ _ _; exact True.intro
+  | case2 d idx ty => intro _ _ _ _ _ _; exact True.intro
+  | case3 d n us ci hf hlen => intro _ _ _ _ _ _; exact True.intro
+  | case4 d n us ci hf hlen =>
+    intro ta h
+    rw [denoteMeta, hf] at h
+    dsimp only at h
+    rw [if_neg hlen] at h
+    exact nomatch h
+  | case5 d n us hf =>
+    intro ta h
+    rw [denoteMeta, hf] at h
+    exact nomatch h
+  | case6 d ty body mb ihty ihbody =>
+    intro ta h hfb hlb ρ hw
+    obtain ⟨tA, bA, hta, hba, rfl⟩ := denoteMeta_forallE_inv h
+    have hfb' : Expr.fvarsBelow d ty ∧ Expr.fvarsBelow d body := hfb
+    have hlb' : (ty.looseBVarsBounded 0 && body.looseBVarsBounded 1) = true := hlb
+    rw [Bool.and_eq_true] at hlb'
+    obtain ⟨hw1, hw2⟩ := hw
+    rw [WellDenoted_pi] at hw1
+    rw [AnnotValid_pi] at hw2
+    have hden := Denotes_of_denoteMeta (V := V) hcl d ty hta hfb'.1 hlb'.1 ρ ⟨hw1.1, hw2.1⟩
+    show Ix.Kernel.GradedBy _ ρ (Expr.forallE (closeN d ty 0) (closeN d body 1) mb)
+    simp only [Ix.Kernel.GradedBy]
+    refine ⟨ihty hta hfb'.1 hlb'.1 ρ ⟨hw1.1, hw2.1⟩, fun A hA x hx => ?_⟩
+    obtain rfl := Denotes_functional hA hden
+    rw [push_eq_cons]
+    have hb := ihbody hba (Expr.fvarsBelow_instantiate1 0 hfb'.2)
+      (Ix.Kernel.looseBVarsBounded_instantiate1 body 0 hlb'.2) (cons x ρ)
+      ⟨hw1.2 x hx, hw2.2.1 x hx⟩
+    rwa [Expr.closeN_instantiate1 body 0 hlb'.2 hfb'.2] at hb
+  | case7 d ty body mb ihty ihbody =>
+    intro ta h hfb hlb ρ hw
+    obtain ⟨tA, bA, hta, hba, rfl⟩ := denoteMeta_lam_inv h
+    have hfb' : Expr.fvarsBelow d ty ∧ Expr.fvarsBelow d body := hfb
+    have hlb' : (ty.looseBVarsBounded 0 && body.looseBVarsBounded 1) = true := hlb
+    rw [Bool.and_eq_true] at hlb'
+    obtain ⟨hw1, hw2⟩ := hw
+    rw [WellDenoted_lam] at hw1
+    rw [AnnotValid_lam] at hw2
+    obtain ⟨hwA, hwb, -⟩ := hw1
+    have hden := Denotes_of_denoteMeta (V := V) hcl d ty hta hfb'.1 hlb'.1 ρ ⟨hwA, hw2.1⟩
+    show Ix.Kernel.GradedBy _ ρ (Expr.lam (closeN d ty 0) (closeN d body 1) mb)
+    simp only [Ix.Kernel.GradedBy]
+    refine ⟨ihty hta hfb'.1 hlb'.1 ρ ⟨hwA, hw2.1⟩, fun A hA x hx => ?_⟩
+    obtain rfl := Denotes_functional hA hden
+    rw [push_eq_cons]
+    have hb := ihbody hba (Expr.fvarsBelow_instantiate1 0 hfb'.2)
+      (Ix.Kernel.looseBVarsBounded_instantiate1 body 0 hlb'.2) (cons x ρ)
+      ⟨hwb x hx, hw2.2 x hx⟩
+    rwa [Expr.closeN_instantiate1 body 0 hlb'.2 hfb'.2] at hb
+  | case8 d fe a ihf iha =>
+    intro ta h hfb hlb ρ hw
+    obtain ⟨fA, aA, hfa, haa, rfl⟩ := denoteMeta_app_inv h
+    have hfb' : Expr.fvarsBelow d fe ∧ Expr.fvarsBelow d a := hfb
+    have hlb' : (fe.looseBVarsBounded 0 && a.looseBVarsBounded 0) = true := hlb
+    rw [Bool.and_eq_true] at hlb'
+    obtain ⟨hw1, hw2⟩ := hw
+    rw [WellDenoted_app] at hw1
+    rw [AnnotValid_app] at hw2
+    obtain ⟨hwf, hwa, v, A, B, hmem, hx, h0⟩ := hw1
+    show Ix.Kernel.GradedBy _ ρ (Expr.app (closeN d fe 0) (closeN d a 0))
+    simp only [Ix.Kernel.GradedBy]
+    exact ⟨ihf hfa hfb'.1 hlb'.1 ρ ⟨hwf, hw2.1⟩, iha haa hfb'.2 hlb'.2 ρ ⟨hwa, hw2.2⟩,
+      v, A, interp V ρ fA, interp V ρ aA, B,
+      Denotes_of_denoteMeta (V := V) hcl d fe hfa hfb'.1 hlb'.1 ρ ⟨hwf, hw2.1⟩,
+      Denotes_of_denoteMeta (V := V) hcl d a haa hfb'.2 hlb'.2 ρ ⟨hwa, hw2.2⟩,
+      hmem, hx, fun hv0 y hy => by rw [univ_zero]; exact h0 hv0 y hy⟩
+  | case9 d ty val body =>
+    intro ta h
+    rw [denoteMeta] at h
+    exact nomatch h
+  | case10 d sn i e ihe =>
+    intro ta h hfb hlb ρ hw
+    obtain ⟨ia, hia, hcase⟩ := denoteMeta_proj_inv h
+    have hfb' : Expr.fvarsBelow d e := hfb
+    have hlb' : e.looseBVarsBounded 0 = true := hlb
+    show Ix.Kernel.GradedBy _ ρ (Expr.proj sn i (closeN d e 0))
+    simp only [Ix.Kernel.GradedBy]
+    rcases hcase with ⟨entry, hfp, rfl⟩ | ⟨hfp, hdec⟩
+    · exact ihe hia hfb' hlb' ρ (wellDenotedV_of_projAV _ _ hw)
+    · match i, hdec with
+      | 0, hdec =>
+        obtain rfl := Option.some.inj hdec
+        exact ihe hia hfb' hlb' ρ (wellDenotedV_of_fst hw)
+      | 1, hdec =>
+        obtain rfl := Option.some.inj hdec
+        exact ihe hia hfb' hlb' ρ (wellDenotedV_of_snd hw)
+      | _ + 2, hdec => exact nomatch hdec
+  | case11 d k hsup => intro _ _ _ _ _ _; exact True.intro
+  | case12 d k hsup =>
+    intro ta h
+    rw [denoteMeta, if_neg hsup] at h
+    exact nomatch h
+  | case13 d s hsup => intro _ _ _ _ _ _; exact True.intro
+  | case14 d s hsup =>
+    intro ta h
+    rw [denoteMeta, if_neg hsup] at h
+    exact nomatch h
+  | case15 d x hxs hfv hc hpi hlam happ hlet hproj hnat hstr =>
+    intro ta h
+    cases x with
+    | bvar i => rw [denoteMeta.eq_def] at h; exact nomatch h
+    | sort u => exact absurd rfl (hxs u)
+    | fvar i ty => exact absurd rfl (hfv i ty)
+    | const n vs => exact absurd rfl (hc n vs)
+    | forallE ty b mb => exact absurd rfl (hpi ty b mb)
+    | lam ty b mb => exact absurd rfl (hlam ty b mb)
+    | app fe a => exact absurd rfl (happ fe a)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
+    | proj sn i e => exact absurd rfl (hproj sn i e)
+    | lit l =>
+      cases l with
+      | natVal k => exact absurd rfl (hnat k)
+      | strVal s => exact absurd rfl (hstr s)
 
 end Ix.Kernel.Model

@@ -35,13 +35,17 @@ import edges:
   6. THE ANSWERS FENCE (M7 Q1): `IxC.Kernel.Tier.Answer`, the typing tier's
      answer view (δ and ι on tier constants), is imported by no module
      under `IxC/Kernel/` (its boundary part included), `Ix/Cert/`,
-     `Ix/CompileCert/` or `Ix/Resource/`, and by no `Ix.LeanIngress` module,
-     with one exception, `Ix.Resource.Typing` (`answersAllowed`): resource-v1's
+     `Ix/CompileCert/` or `IxC/Resource/`, and by no `Ix.LeanIngress` module,
+     with one exception, `Ix.Typing` (`answersAllowed`): the artifact typing's
      uncertified part checks unsafe and assumption-axiom records
      transparently, as Lean and `Ix.Tc` do (owner, step 10d: no divergence
      from `Ix.Tc`); its certified part never reads the view. A self-test
-     plants an import from a certified module and from a resource module
+     plants an import from a certified module and from a mode-checker module
      beside the exception, and requires the scan to find both.
+  7. THE MODE FENCE: the resource-mode library (`IxC.Resource`, uncertified
+     checker included) and its host entry (`Ix.ModeCheck`) are in no import
+     closure of a trusted root (`trustedRoots`: the kernel, the consistency
+     statement, `ix verify`).
 
 Every import kind is an edge: `public`, `private`, `meta`, `import all`.
 Lake gives no import barrier between `lean_lib`s of one package, so this
@@ -241,7 +245,7 @@ def chainTo (par : Parents) (m t : String) : String := Id.run do
 definitions unfold and a tier block's recursors fire: what a question
 about an unsafe block needs, and what no check may see. It is a leaf of the
 kernel and of every checking and certified path: no module under
-`IxC/Kernel/`, `Ix/Cert/`, `Ix/CompileCert/` or `Ix/Resource/`, and no
+`IxC/Kernel/`, `Ix/Cert/`, `Ix/CompileCert/` or `IxC/Resource/`, and no
 `Ix.LeanIngress` module, imports it (by any import kind), except the one
 module `answersAllowed` names. Its consumers are that one module and the
 tests. -/
@@ -251,23 +255,23 @@ def answersModule : String := "IxC.Kernel.Tier.Answer"
 
 /-- The directories and files whose modules may not import it. -/
 def answersFenced : List String :=
-  ["IxC/Kernel", "Ix/Cert", "Ix/CompileCert", "Ix/LeanIngress", "Ix/Resource"]
+  ["IxC/Kernel", "Ix/Cert", "Ix/CompileCert", "Ix/LeanIngress", "IxC/Resource"]
 
-/-- **The one exception** (owner, step 10d: resource-v1 with no divergence
-from `Ix.Tc`): `Ix.Resource.Typing`, whose uncertified part (unsafe
+/-- **The one exception** (owner, step 10d: no divergence from `Ix.Tc`):
+`Ix.Typing`, the typing of a compiled artifact, whose uncertified part (unsafe
 inductives, assumption axioms and the records that depend on them) is
 checked transparently, with δ on tier definitions and ι on unsafe
 recursors, as Lean and `Ix.Tc` check it. Its certified part
-(`Ix.Kernel.Admission.checkBytesTiered`) never reads the view, and no other
-resource module may import it. -/
-def answersAllowed : List String := ["Ix.Resource.Typing"]
+(`Ix.Kernel.Admission.checkBytesTiered`) never reads the view, and no mode
+checker module may import it. -/
+def answersAllowed : List String := ["Ix.Typing"]
 
 /-- Whether a module may not import the answers module. -/
 def answersBarred (m : String) : Bool :=
   m != answersModule && !answersAllowed.contains m &&
     (m.startsWith "IxC.Kernel." || m.startsWith "Ix.Cert." || m.startsWith "Ix.CompileCert." ||
       m == "Ix.LeanIngress" || m.startsWith "Ix.LeanIngress." ||
-      m == "Ix.Resource" || m.startsWith "Ix.Resource.")
+      m == "IxC.Resource" || m.startsWith "IxC.Resource.")
 
 /-- **The answers fence's findings**: each barred module that imports the
 answers module, with it. -/
@@ -276,15 +280,54 @@ def answersFence (imports : Array (String × Array String)) : Array (String × S
     if answersBarred m && is.contains answersModule then acc.push (m, answersModule) else acc
 
 /-- **The fence's self-test**: a planted import from a certified module and
-one from a resource module beside the exception are found; the allowed ones
+one from a mode-checker module beside the exception are found; the allowed ones
 (a test's, the exception's) are not. -/
 def answersFenceSelfTest : Bool :=
   answersFence #[("Ix.Cert.Planted", #["Init", answersModule]),
       ("Tests.Ix.Kernel.Planted", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"]),
-      ("Ix.Resource.Typing", #[answersModule]), ("Ix.Resource.Validate", #[answersModule])] ==
-    #[("Ix.Cert.Planted", answersModule), ("Ix.Resource.Validate", answersModule)]
+      ("Ix.Typing", #[answersModule]), ("IxC.Resource.Check", #[answersModule])] ==
+    #[("Ix.Cert.Planted", answersModule), ("IxC.Resource.Check", answersModule)]
 
 def pairLt (a b : String × String) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
+
+/-! ## The mode fence
+
+The resource-mode library (`IxC.Resource`) and its host entry (`Ix.ModeCheck`)
+are uncertified: no trusted root reaches them. -/
+
+/-- The trusted roots: the kernel, the consistency statement, `ix verify`. -/
+def trustedRoots : List String := ["IxC.Kernel", "Ix.IxVM.Consistency.Statement", "Ix.Cli.VerifyCmd"]
+
+/-- The mode library and its host entry. -/
+def modeModule (m : String) : Bool :=
+  m == "IxC.Resource" || m.startsWith "IxC.Resource." || m == "Ix.ModeCheck"
+
+/-- A module's source in this repository: at its path from the root, or under
+its package's directory; `none` for an external module. -/
+def sourceOf (m : String) : IO (Option String) := do
+  let rel := m.replace "." "/" ++ ".lean"
+  if ← System.FilePath.pathExists rel then return some rel
+  let under := (m.splitOn ".").headD "" ++ "/" ++ rel
+  if ← System.FilePath.pathExists under then return some under
+  return none
+
+/-- The import closure of `roots` over this repository's sources, each module
+with the module that first imported it (external modules are leaves). -/
+def importClosure (roots : List String) : IO (Std.HashMap String String) := do
+  let mut seen : Std.HashMap String String := {}
+  let mut todo : List (String × String) := roots.map (·, "")
+  for _ in [0:1 <<< 20] do
+    match todo with
+    | [] => break
+    | (m, parent) :: rest =>
+      todo := rest
+      if seen.contains m then continue
+      seen := seen.insert m parent
+      let some rel ← sourceOf m | continue
+      let src := stripBlockComments (← readText rel).toList.toArray
+      for i in findImports src ["public", "private", "meta"] false do
+        unless seen.contains i do todo := (i, m) :: todo
+  return seen
 
 def run (args : List String) : IO UInt32 := do
   let (tree, unclassified) ← covered
@@ -390,7 +433,13 @@ def run (args : List String) : IO UInt32 := do
   fail := (← report "a checking or certified module importing the answer view" answersv
     s!"{answersModule} (δ and ι on tier constants) serves tier answers outside checking only; \
     no module under {", ".intercalate answersFenced} may import it, except \
-    {", ".intercalate answersAllowed} (resource-v1's uncertified part).") || fail
+    {", ".intercalate answersAllowed} (the typing of unsafe and assumption records).") || fail
+  -- the mode fence: no trusted root reaches the uncertified mode checker
+  let trusted ← importClosure trustedRoots
+  let modev := (trusted.toArray.filter (modeModule ·.1)).qsort pairLt
+  fail := (← report "a trusted root reaching the uncertified mode checker" modev
+    "IxC.Resource and Ix.ModeCheck are uncertified: no module in the import closure of the kernel, \
+    the consistency statement or ix verify may import them (each pair: the module, its importer).") || fail
   if fail then return 1
   let count (l : String) := (mods.filter (laneOf · == l)).size
   let doors := if rulesMods.isEmpty then " (no rules module yet)" else " as listed"
@@ -399,7 +448,8 @@ def run (args : List String) : IO UInt32 := do
     ({checker} of the checker); {basev.size} base->model edges, {implv.size} impl->theory, \
     {rulesv.size} rules->impl, {boundv.size} outside the boundary; rules closure: \
     {rulesMods.size} modules, {doorsSeen.size} doors{doors}; answers fence: {fenced.size} fenced modules, \
-    {answersv.size} importing {answersModule} (self-test: a planted import found)"
+    {answersv.size} importing {answersModule} (self-test: a planted import found); mode fence: \
+    {trusted.size} modules from the trusted roots, {modev.size} of the mode checker"
   return 0
 
 end Tests.Ix.Kernel.Layering

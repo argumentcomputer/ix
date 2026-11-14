@@ -64,8 +64,11 @@ def candidate (store : Store) (owner : Address) (constant : Ixon.Constant) (memb
   let some (_, first) := indcs[0]? | return .yield (idx, found)
   let order := orderFor carriers block indcs.size
   unless orderValid firstIndex indcs order do return .yield (idx, found)
-  if (found.getD block #[]).any (·.1 == motive) then return .yield (idx, found)
   let large := recursor.lvls.toNat == first.lvls.toNat + 1
+  if (found.getD block #[]).any (·.1 == motive) then
+    let idx := if idx.twins.contains ref then idx
+      else { idx with twins := idx.twins.insert ref ⟨block, motive, major, large⟩ }
+    return .yield (idx, found)
   let idx := { idx with recs := idx.recs.insert ref ⟨block, motive, major, large⟩ }
   let found := found.insert block ((found.getD block #[]).push (motive, ref))
   if idx.blocks.contains block then return .yield (idx, found)
@@ -103,11 +106,14 @@ def added (owner : Address) (member : Nat × Ixon.Recursor) (before : BuildState
   if idx.blocks.contains block then (idx, found)
   else ({ idx with blocks := idx.blocks.insert block ⟨order, #[]⟩ }, found)
 
-/-- What a candidate step does: keep the state, or index an eligible
-recursor under its own reference. -/
+/-- What a candidate step does: keep the state, record a twin under its own
+reference, or index an eligible recursor under its own reference. -/
 inductive Step (store : Store) (owner : Address) (constant : Ixon.Constant) (member : Nat × Ixon.Recursor)
     (before : BuildState) : BuildState → Prop
   | keep : Step store owner constant member before before
+  | twin (entry : RecEntry) :
+      Step store owner constant member before
+        ({ before.1 with twins := before.1.twins.insert (.member owner member.1) entry }, before.2)
   | add (motive : Nat) (carriers : Array (ConstRef Address)) (major : ConstRef Address) (block : Address)
       (firstIndex : Nat) (blockRecord : Ixon.Constant) (members : Array Ixon.MutConst) (slot : Nat)
       (first : Ixon.Inductive)
@@ -139,7 +145,11 @@ theorem candidate_step (store : Store) (owner : Address) (constant : Ixon.Consta
           · split
             · split
               · split
-                · exact ⟨_, rfl, .keep⟩
+                · by_cases htw : idx.twins.contains (.member owner position) = true
+                  · simp only [htw, ↓reduceIte]
+                    exact ⟨_, rfl, .keep⟩
+                  · simp only [htw, Bool.false_eq_true, ↓reduceIte]
+                    exact ⟨_, rfl, .twin _⟩
                 · rename_i fresh _ motive carriers major analysed _ block firstIndex carrier _ blockRecord stored _
                     members kind _ slot first firstFound guarded unused
                   refine ⟨_, ?_, .add motive carriers major block firstIndex blockRecord members slot first
@@ -244,6 +254,7 @@ theorem candidate_valid (store : Store) (owner : Address) (constant : Ixon.Const
   rw [ran]
   cases step with
   | keep => exact valid
+  | twin => exact valid
   | add motive carriers major block firstIndex blockRecord members slot first _ _ _ stored kind firstFound
       guarded _ =>
     exact added_valid store owner member before motive major block _ first valid
@@ -487,6 +498,7 @@ theorem candidate_origins (store : Store) (records : Array (Address × Ixon.Cons
   rw [ran]
   cases step with
   | keep => exact valid
+  | twin => exact valid
   | add motive carriers major block firstIndex blockRecord members slot first fresh analysed carrier stored
       kind firstFound guarded _ =>
     exact added_origins store records owner member before motive major block _ first valid fresh

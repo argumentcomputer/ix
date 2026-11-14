@@ -47,12 +47,12 @@ fuel.**  Recomposed from the bridge and the rules soundness; the
 statement is the one the declaration fold and the install rows have
 always consumed. -/
 theorem checkSoundAtP5 (hμ : μ.verifiedChecks = true)
-    {m : EnvModel V env} (h : RulesInputs V m φ) :
+    {m : EnvModel V env} (h : ∀ ψ, RulesInputs V m ψ) :
     ∀ fuel : Nat,
       WhnfCoreClaim μ m φ fuel ∧ WhnfClaim μ m φ fuel ∧
         DefEqClaim μ m φ fuel ∧ InferClaim μ m φ fuel ∧
           InferClaimIO μ m φ fuel := by
-  have hin : RulesInputs V m φ := h
+  have hin : ∀ ψ, RulesInputs V m ψ := h
   obtain rfl : μ = .verified := CheckMode.eq_verified hμ
   intro fuel
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -88,7 +88,7 @@ theorem checkSoundAtP5 (hμ : μ.verifiedChecks = true)
 first four conjuncts, kept under the landed name so every consumer
 stands verbatim. -/
 theorem checkSoundAt (hμ : μ.verifiedChecks = true)
-    {m : EnvModel V env} (h : RulesInputs V m φ) :
+    {m : EnvModel V env} (h : ∀ ψ, RulesInputs V m ψ) :
     ∀ fuel : Nat,
       WhnfCoreClaim μ m φ fuel ∧ WhnfClaim μ m φ fuel ∧
         DefEqClaim μ m φ fuel ∧ InferClaim μ m φ fuel := fun fuel =>

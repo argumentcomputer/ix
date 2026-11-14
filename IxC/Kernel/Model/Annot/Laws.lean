@@ -636,6 +636,22 @@ theorem towerGuardAt_of_fireOk {entry : ProjEntry md} {us : List Level}
   rw [hp] at hfire
   simpa using hfire
 
+/-- **The guard at a valuation, from the semantic guard**
+(`Rules.FireSem`, the premise of the rules tier's `Red.proj`,
+`Red.rescueAnd` and `Infer.proj`): `towerGuardAt_of` with the field's zero
+value read directly instead of through the checker's zero test. -/
+theorem towerGuardAt_of_sem {entry : ProjEntry md} {us : List Level}
+    {φ : LevelParam → Nat} (hO5 : TowerO5 entry)
+    (hg : Level.isEquiv entry.structSort .zero = some true →
+      ∀ ψ, Level.eval ψ (Level.subst entry.levelParams us entry.fieldSort) = 0) :
+    TowerGuardAt φ entry us := by
+  intro hs
+  by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
+  · have h1 := hg (beq_iff_eq.mp hp) φ
+    rw [Level.eval_subst] at h1
+    exact h1
+  · exact hO5 (by simpa using hp) _ hs
+
 /-- **One tower-backed entry's projection law** (see the section
 docstring): the entry's stored data agrees with the stored former and
 constructor (whose η capability is the entry's at a non-`Prop` family

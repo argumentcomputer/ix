@@ -13,7 +13,7 @@ two environments related key by key (`Ix.Kernel.EnvRel`). This module supplies w
 the statements need around it:
 
 * `ValueModel.pullback`: a value model of the renamed environment is one of the
-  quotient environment (IxC's `Model.pullback` and `defn_value_pullback`);
+  quotient environment (IxC's `Denotes.pullback` and `defn_value_pullback`);
 * `PublishedRolesBound`, decided: every published name whose ingress name is a role's
   Lean name sits at the table's address for that role. It is B5a's role binding, by
   ingress name over every published name, so no stored name hash is trusted. It gives
@@ -53,13 +53,25 @@ universe w
 /-! ## Value models pull back along a renaming -/
 
 /-- **A value model pulls back along a renaming**: under `EnvRel P f env env'`, a value
-model of `env'` gives one of `env` (`Ix.Kernel.Model.pullback`, with the definitions'
-values through `Ix.Kernel.defn_value_pullback`). -/
+model of `env'` gives one of `env` (the denotations through `Ix.Kernel.Denotes.pullback`
+and `Denotes.const_push`, the definitions' values through
+`Ix.Kernel.defn_value_pullback`). -/
 def ValueModel.pullback {md md' : Ix.Kernel.Mode} {V : Type w} [SetTheory V]
     {P : md.Id → Prop} {f : md.Id → md'.Id} {env : Env md} {env' : Env md'}
-    (h : Ix.Kernel.EnvRel P f env env') (N : ValueModel V env') : ValueModel V env :=
-  { Ix.Kernel.Model.pullback h N.toModel with
-    defn_value := Ix.Kernel.defn_value_pullback h N.defn_value }
+    (h : Ix.Kernel.EnvRel P f env env') (N : ValueModel V env') : ValueModel V env where
+  cval := Ix.Kernel.pullCval f N.cval
+  mem c hc φ ρ := by
+    obtain ⟨T, hT, hmem⟩ := N.mem _ (h.mem hc) φ ρ
+    have hty : (c.mapKeys f).toConstantVal.type = c.toConstantVal.type.mapKeys f := by
+      simp [Ix.Kernel.ConstantInfo.mapKeys_toConstantVal]
+    rw [hty] at hT
+    refine ⟨T, Ix.Kernel.Denotes.pullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
+    have hn : (c.mapKeys f).name = c.name.map f := Ix.Kernel.ConstantInfo.mapKeys_name f c
+    rw [hn] at hmem
+    exact hmem
+  false_empty φ ρ F hF := N.false_empty φ ρ F (Ix.Kernel.Denotes.const_push h hF)
+  eq_equality u φ ρ E A a b hE := N.eq_equality u φ ρ E A a b (Ix.Kernel.Denotes.const_push h hE)
+  defn_value := Ix.Kernel.defn_value_pullback h N.defn_value
 
 /-! ## Every published role name sits at its role's address -/
 
@@ -538,28 +550,6 @@ theorem Denotes.subst_const_push {P : Ix.Kernel.Mode.Id .source → Prop}
     rw [hlps] at hd'
     exact hd'
 
-/-- **A model of the quotient environment pulls back to the nominal environment**
-along `Key.subst ρf`. -/
-def Model.substPullback {P : Ix.Kernel.Mode.Id .source → Prop}
-    {ρf : Ix.LeanIngress.FiberMap} {envS envQ : Env .source}
-    (h : EnvSubstRel P ρf envS envQ)
-    {V : Type w} [SetTheory V] (M : Ix.Kernel.Model V envQ) :
-    Ix.Kernel.Model V envS where
-  cval := substCval ρf M.cval
-  mem c hc φ ρ := by
-    obtain ⟨T, hT, hmem⟩ := M.mem _ (h.mem hc) φ ρ
-    have hty : (Ix.LeanIngress.ConstantInfo.substKeys ρf c).toConstantVal.type =
-        Ix.LeanIngress.Expr.substKeys ρf c.toConstantVal.type := by
-      simp [Ix.LeanIngress.ConstantInfo.substKeys_toConstantVal, Ix.LeanIngress.ConstantVal.substKeys_type]
-    rw [hty] at hT
-    refine ⟨T, Denotes.substPullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
-    have hn : (Ix.LeanIngress.ConstantInfo.substKeys ρf c).name =
-        Ix.LeanIngress.Key.subst ρf c.name := Ix.LeanIngress.ConstantInfo.substKeys_name ρf c
-    rw [hn] at hmem
-    exact hmem
-  false_empty φ ρ F hF := M.false_empty φ ρ F (Denotes.subst_const_push h hF)
-  eq_equality u φ ρ E A a b hE := M.eq_equality u φ ρ E A a b (Denotes.subst_const_push h hE)
-
 /-- **The definition-value clause pulls back along `Key.subst ρf`**. -/
 theorem defn_value_substPullback {P : Ix.Kernel.Mode.Id .source → Prop}
     {ρf : Ix.LeanIngress.FiberMap} {envS envQ : Env .source}
@@ -586,9 +576,22 @@ theorem defn_value_substPullback {P : Ix.Kernel.Mode.Id .source → Prop}
 def ValueModel.substPullback {P : Ix.Kernel.Mode.Id .source → Prop}
     {ρf : Ix.LeanIngress.FiberMap} {envS envQ : Env .source}
     {V : Type w} [SetTheory V]
-    (h : EnvSubstRel P ρf envS envQ) (N : ValueModel V envQ) : ValueModel V envS :=
-  { Model.substPullback h N.toModel with
-    defn_value := defn_value_substPullback h N.defn_value }
+    (h : EnvSubstRel P ρf envS envQ) (N : ValueModel V envQ) : ValueModel V envS where
+  cval := substCval ρf N.cval
+  mem c hc φ ρ := by
+    obtain ⟨T, hT, hmem⟩ := N.mem _ (h.mem hc) φ ρ
+    have hty : (Ix.LeanIngress.ConstantInfo.substKeys ρf c).toConstantVal.type =
+        Ix.LeanIngress.Expr.substKeys ρf c.toConstantVal.type := by
+      simp [Ix.LeanIngress.ConstantInfo.substKeys_toConstantVal, Ix.LeanIngress.ConstantVal.substKeys_type]
+    rw [hty] at hT
+    refine ⟨T, Denotes.substPullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
+    have hn : (Ix.LeanIngress.ConstantInfo.substKeys ρf c).name =
+        Ix.LeanIngress.Key.subst ρf c.name := Ix.LeanIngress.ConstantInfo.substKeys_name ρf c
+    rw [hn] at hmem
+    exact hmem
+  false_empty φ ρ F hF := N.false_empty φ ρ F (Denotes.subst_const_push h hF)
+  eq_equality u φ ρ E A a b hE := N.eq_equality u φ ρ E A a b (Denotes.subst_const_push h hE)
+  defn_value := defn_value_substPullback h N.defn_value
 
 theorem ValueModel.substPullback_rel {P : Ix.Kernel.Mode.Id .source → Prop}
     {ρf : Ix.LeanIngress.FiberMap} {envS envQ : Env .source}

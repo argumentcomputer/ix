@@ -1188,10 +1188,12 @@ theorem extendEqRec (mp : EnvModelM V μ env)
         exact nomatch hp)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hR⟩, fun _ => recRuleKOf_of hR rfl hE rfl,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hR rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun _ => recRuleKOf_of hR rfl hE rfl,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun ψ k => AnnotTerm.liftN_eq_self _
@@ -1229,7 +1231,7 @@ so the one that consumes the install's exposed `acval`. -/
 theorem declBasisPB_eqK {env₁ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env
       Ix.Kernel.BasisKind.eqK.declsA env₁) :
-    Nonempty (EnvModelM V μ env₁) := by
+    ∃ mp₂ : EnvModelM V μ env₁, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.eqK.declsA = [eqA, eqReflA, eqRecA]
     from rfl] at h
   obtain ⟨h1, h2, h3, hnil⟩ := h
@@ -1342,8 +1344,8 @@ theorem declBasisPB_eqK {env₁ : Env md} (mp : EnvModelM V μ env)
           simp [Expr.constsResolve, eqRecRule, hfE, hfR], rfl,
           fun lvls pins heqf => nomatch heqf⟩
       · exact nomatch hr'
-  obtain ⟨mp3, -⟩ := extendEqRec mp2 hE2 hR2 hEv2 hRv2 hf3 hwf3
-  exact ⟨mp3⟩
+  obtain ⟨mp3, hac3⟩ := extendEqRec mp2 hE2 hR2 hEv2 hRv2 hf3 hwf3
+  exact ⟨mp3, ((((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2).plain hac3 hf3)⟩
 
 end Eq
 

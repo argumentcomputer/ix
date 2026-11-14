@@ -191,7 +191,7 @@ def ScheduleOwnership : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (cenv cenv₀ : Ix.CompileM.CompileEnv)
     (sched : Ix.CompileM.FoldSchedule),
     compileReport env = .ok (ixe, failures) → compileUnchecked env = .ok (ixe, failures, cenv) →
-    Resolution.FoldRun { consts := env.consts } (compileBlocks env) cenv cenv₀ sched →
+    Resolution.FoldRun env.materialized (compileBlocks env) cenv cenv₀ sched →
     ∀ snap, Resolution.OnRun (compileBlocks env) sched
       (Ix.CompileM.FoldState.init cenv₀ (compileBlocks env) sched) snap → Owned ixe failures snap.cenv
 

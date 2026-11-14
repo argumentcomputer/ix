@@ -209,15 +209,83 @@ theorem genNested_safe (ctx : Ix.Kernel.Frontend.InModel.Ctx md) (b : BlockRec m
     | (split)
 
 end Generated
+
+/-- A member read at its telescope keeps its name (`readFormer` changes only its type). -/
+theorem readFormer_name {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {t t' : IndTypeRec md}
+    (h : readFormer ctx t = .ok t') : t'.cv.name = t.cv.name := by
+  unfold readFormer at h
+  split at h
+  · split at h
+    · cases h; rfl
+    · exact nomatch h
+  · exact nomatch h
+
+theorem mapM_readFormer_names {ctx : Ix.Kernel.Frontend.InModel.Ctx md} :
+    ∀ {ts ts' : List (IndTypeRec md)}, ts.mapM (readFormer ctx) = .ok ts' →
+      ts'.map (·.cv.name) = ts.map (·.cv.name)
+  | [], ts', h => by
+    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h; rfl
+  | t :: ts, ts', h => by
+    rw [List.mapM_cons] at h
+    obtain ⟨t', ht', h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+    obtain ⟨ts'', hts'', h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    simp only [List.map_cons, readFormer_name ht', mapM_readFormer_names hts'']
+
+/-- A member model's type put back keeps every name (`restoreAt` changes only a
+definition's type). -/
+theorem restoreAt_names (b : BlockRec md) (i : Nat) (d : Declaration md) :
+    (restoreAt b i d).names = d.names := by
+  cases d with
+  | defnDecl cv v h =>
+    simp only [restoreAt]
+    split
+    · split <;> rfl
+    · rfl
+  | _ => rfl
+
+theorem mem_restoreFrom {b : BlockRec md} :
+    ∀ {i : Nat} {ds : List (Declaration md)} {d : Declaration md},
+      d ∈ restoreFrom b i ds → ∃ d0 ∈ ds, d.names = d0.names
+  | _, [], _, h => by simp [restoreFrom] at h
+  | i, d0 :: ds, d, h => by
+    simp only [restoreFrom, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact ⟨d0, List.mem_cons_self, restoreAt_names b i d0⟩
+    · obtain ⟨d1, hd1, he⟩ := mem_restoreFrom h
+      exact ⟨d1, List.mem_cons_of_mem _ hd1, he⟩
+
+/-- **A successful generation** is a rung's run at the block with its formers read at
+their telescopes (`readFormers`, which keeps every name), its member models' types
+put back (`restoreModelTypes`, which keeps every name). -/
+theorem generate_ok_rung {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {b : BlockRec md}
+    {ds : List (Declaration md)} (h : generate ctx b = .ok ds) :
+    ∃ b' ds0, b'.types.map (·.cv.name) = b.types.map (·.cv.name) ∧ b'.ctors = b.ctors ∧
+      b'.recs = b.recs ∧ (genNested ctx b' = .ok ds0 ∨ genMutual ctx b' = .ok ds0) ∧
+      ∀ d ∈ ds, ∃ d0 ∈ ds0, d.names = d0.names := by
+  obtain ⟨b', ds0, hb', hrun, rfl⟩ := generate_eq_ok h
+  unfold readFormers at hb'
+  obtain ⟨ts, hts, hb'⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hb'
+  simp only [pure, Except.pure, Except.ok.injEq] at hb'
+  subst hb'
+  exact ⟨{ b with types := ts }, ds0, mapM_readFormer_names hts, rfl, rfl, hrun,
+    fun d hd => mem_restoreFrom hd⟩
+
 /-- Every successful generator result consists of nonempty, all-derived
 declarations; this says nothing about distinctness between declarations. -/
 theorem generate_generated {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {b : BlockRec md}
     {ds : List (Declaration md)} (h : generate ctx b = .ok ds) :
     ∀ d ∈ ds, d.isGenerated = true := by
-  unfold generate at h
-  split at h
-  · exact Generated.genNested_safe ctx b ds h
-  · exact Generated.genMutual_safe ctx b ds h
+  obtain ⟨b', ds0, -, -, -, hrun, hnames⟩ := generate_ok_rung h
+  intro d hd
+  obtain ⟨d0, hd0, he⟩ := hnames d hd
+  have h0 : d0.isGenerated = true := by
+    rcases hrun with hrun | hrun
+    · exact Generated.genNested_safe ctx b' ds0 hrun d0 hd0
+    · exact Generated.genMutual_safe ctx b' ds0 hrun d0 hd0
+  simpa only [Declaration.isGenerated, he] using h0
 
 theorem generate_names {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {b : BlockRec md}
     {ds : List (Declaration md)} (h : generate ctx b = .ok ds) {d : Declaration md} (hd : d ∈ ds) :

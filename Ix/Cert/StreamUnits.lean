@@ -71,7 +71,16 @@ theorem StateRen.commit {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P
     intro e he
     obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
     exact hs.names d hd e he
-  refine ⟨fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_⟩
+  have hvals : rA.decls.toList.flatMap CtxAgree.valEntries =
+      (rS.decls.toList.flatMap CtxAgree.valEntries).map (CtxAgree.renV f) := by
+    rw [hdecls, Array.toList_map, List.flatMap_map, List.map_flatMap]
+    exact CtxAgree.flatMap_congr' fun d _ => CtxAgree.valEntries_mapKeys d
+  have hvkeys : ∀ e ∈ rS.decls.toList.flatMap CtxAgree.valEntries, e.1.Good P := by
+    intro e he
+    obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
+    obtain ⟨e', he', hn⟩ := CtxAgree.valEntries_name he
+    exact hn ▸ hs.names d hd e' he'
+  refine ⟨fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_⟩
   · rw [CtxAgree.commit_constTypes, CtxAgree.commit_constTypes, hentries]
     exact foldl_insOpt_ren hf tyOf tyOf (renE f) (fun v => (v.1, v.2.mapKeys f))
       (fun e => rfl) _ (fun e he p hp => by
@@ -101,6 +110,9 @@ theorem StateRen.commit {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P
       (fun x => rfl) _ (fun x hx p hp => by cases hp; exact levelEntries_good hs x hx)
       stS.projLevels stA.projLevels (fun k hk => by rw [h.levels k hk, Option.map_id']) k hk
     rw [this, Option.map_id']
+  · rw [CtxAgree.commit_defValues, CtxAgree.commit_defValues, hvals]
+    exact foldl_insOpt_ren hf some some (CtxAgree.renV f) (fun v => (v.1, v.2.mapKeys f))
+      (fun e => rfl) _ (fun e he p hp => by cases hp; exact hvkeys e he) _ _ h.values k hk
 
 /-! ## Streams of units -/
 

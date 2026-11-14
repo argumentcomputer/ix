@@ -215,6 +215,7 @@ theorem candidate_inv (store : Store) (records : Array (Address × Ixon.Constant
   rw [ran]
   cases step with
   | keep => exact valid
+  | twin => exact valid
   | add motive carriers major block firstIndex blockRecord members slot first fresh analysed carrier stored
       kind firstFound guarded unused =>
     refine ⟨?_, ?_⟩
@@ -614,14 +615,14 @@ theorem block_headers {ms : List MutConst} {context : CompileEnv × BlockEnv} {b
   cases hs : standaloneMutConstInfo? ps.toArray with
   | some info =>
     rw [hs] at built
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     have hinfo : BlockEmission.blockInfo ps = info := by unfold BlockEmission.blockInfo; rw [hs]
     rw [hinfo]
     exact (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
   | none =>
     rw [hs] at built
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     have hinfo : BlockEmission.blockInfo ps = .muts ps.toArray := by unfold BlockEmission.blockInfo; rw [hs]
     rw [hinfo]

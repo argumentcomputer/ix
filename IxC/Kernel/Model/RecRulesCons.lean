@@ -157,7 +157,7 @@ theorem recRuleLaw_cons_prefix (mp : EnvModelM V μ env)
     -- **the environment invariant, not the cons's kind**: the rule's
     -- constructor is stored, and the cons is fresh
     have hnC : RecRule.ctor rl ≠ c₀.name := by
-      obtain ⟨⟨cvj', cnP', cnF', hst⟩, -, -⟩ :=
+      obtain ⟨⟨cvj', hst, -⟩, -, -⟩ :=
         mp.base2.rec_ctors n cv mI rP rules hfE rl hmem
       intro hh
       rw [hh, hfresh] at hst

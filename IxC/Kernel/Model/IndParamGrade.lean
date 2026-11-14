@@ -59,8 +59,8 @@ run's `q`-th parameter domain reads to a *graded* annotation whose
 value contains the frame's own `q`-th slot value.  Both conclusions
 come out of one strong induction, because the membership at `q` is the
 `instPisAt` descent's premise at `q + 1`. -/
-theorem paramGradeFire {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem paramGradeFire {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {K rP cnP : Nat} (hcnP : cnP ≤ rP) (hrPK : rP ≤ K)
     -- the public (recursor) frame
     {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
@@ -86,7 +86,7 @@ theorem paramGradeFire {m : EnvModel V env} {F : Nat}
     (hcinstP : Expr.instPisAt (fvsP.take cnP) ctyP
       = some (cdomsP, crestP))
     -- the recorded run (the second widening's first row)
-    (hdePars : DefEqListOk μ F env K
+    (hdePars : DefEqListJ J env K
       ((fvsP.take cnP).map Expr.fvarTypeD) cdomsP)
     -- the recursor-frame context
     {Δb : List AnnotTerm} (hΔblen : Δb.length = K)
@@ -287,8 +287,7 @@ theorem paramGradeFire {m : EnvModel V env} {F : Nat}
   intro ρ' hsat dw hdw
   refine ⟨hgbAll ρ' hsat dw hdw, ?_⟩
   -- the equality: fire the recorded run at the recursor frame
-  have hrun : isDefEqCore μ env F K tyP (cdomsP.getD q default)
-      = .ok true := by
+  have hrun : J.defeq env K tyP (cdomsP.getD q default) := by
     have h := defEqListOk_getD hdePars q (by
       rw [List.length_map]; omega)
     rw [show ((fvsP.take cnP).map Expr.fvarTypeD).getD q default

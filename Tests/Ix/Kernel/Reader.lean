@@ -22,8 +22,8 @@ structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
 literal against its `String.ofList` expansion (over test constants bound as
 the string-literal support), a compiled block nested through a container
-that is itself nested, whose auxiliary motives Ix's compiler orders with the
-container family's instance before its head, and a compiled theorem
+that is itself nested, whose auxiliary motives come with the container
+family's instance before its head, and a compiled theorem
 whose universe levels Ix's compiler stored in canonical form, which only the
 Géran fallback of the level comparison equates (the `RatFunc.liftOn_def`
 shape).
@@ -64,11 +64,11 @@ def sort (i : Nat) : E := .sort i.toUInt64
 def one : Ixon.Univ := .succ .zero
 
 def const (info : Ixon.ConstantInfo) (refs : List Address) (univs : List Ixon.Univ) : Ixon.Constant :=
-  ⟨info, #[], refs.toArray, univs.toArray⟩
+  ⟨info, #[], refs.toArray, univs.toArray, #[]⟩
 
 def defn (kind : Ix.DefKind) (typ value : E) (refs : List Address) (univs : List Ixon.Univ := [])
     (lvls : Nat := 0) (safety : Ix.DefinitionSafety := .safe) : Ixon.Constant :=
-  const (.defn ⟨kind, safety, lvls.toUInt64, typ, value⟩) refs univs
+  const (.defn ⟨kind, safety, {}, lvls.toUInt64, typ, value⟩) refs univs
 
 def iPrj (block : Address) (i : Nat := 0) : Ixon.Constant := const (.iPrj ⟨i.toUInt64, block⟩) [] []
 def cPrj (block : Address) (c : Nat) (i : Nat := 0) : Ixon.Constant :=
@@ -149,8 +149,38 @@ def quotLift := bound .quotLift
 #guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
 -- the default table: every role bound, well formed, its section canonical and
 -- committed under its BLAKE3 hash
-#guard builtinTable.bound.size == 103 && builtinTable.check.isOk
+#guard builtinTable.bound.size == 108 && builtinTable.check.isOk
 #guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
+
+/-- **The committed prelude holds one recursor per block and motive** (as `buildIndex`
+files them: the block of the first motive's carrier, and the motive the recursor
+eliminates), and every recursor a role of the default table binds is one of them, at
+the bound address (its record's, or its projection's). -/
+def preludeRecursorsUnique : Except String Unit := do
+  let recs ← preludeRecords
+  let t ← defaultTable
+  let store : Store := fun a => (recs.find? (·.1 == a)).map (·.2)
+  let mut filed : Array (Address × Nat × Address) := #[]
+  for (owner, c) in recs do
+    for (j, r) in recursorMembers c do
+      let some (m, carriers, _) := analyseRecursor store owner c r | continue
+      let some (ConstRef.member b _) := carriers[0]? | continue
+      if filed.any (fun (b', m', _) => b' == b && m' == m) then
+        throw s!"two prelude recursors for block {b} at motive {m}"
+      let prj : Ixon.Constant := ⟨.rPrj ⟨j.toUInt64, owner⟩, #[], #[], #[], #[]⟩
+      let at_ := match c.info with
+        | .recr _ => owner
+        | _ => Address.blake3 (Ixon.ser prj)
+      filed := filed.push (b, m, at_)
+  for (r, a) in t.bound do
+    match store a with
+    | some { info := .recr _, .. } | some { info := .rPrj _, .. } =>
+      unless filed.any (·.2.2 == a) do
+        throw s!"the recursor role {repr r} is bound to {a}, which is no filed prelude recursor"
+    | _ => pure ()
+  pure ()
+
+#guard preludeRecursorsUnique.isOk
 #guard match defaultBinding with
   | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
   | .error _ => false
@@ -241,7 +271,7 @@ follows the members it names by `recur`. Here the block stores
 def dPrj (block : Address) (i : Nat) : Ixon.Constant := const (.dPrj ⟨i.toUInt64, block⟩) [] []
 
 def member (typ value : E) (safety : Ix.DefinitionSafety := .safe) : Ixon.MutConst :=
-  .defn ⟨.defn, safety, 0, typ, value⟩
+  .defn ⟨.defn, safety, {}, 0, typ, value⟩
 
 def natToNat : E := all (ref 0) (ref 0)
 
@@ -258,7 +288,7 @@ def abFixture (block : Ixon.Constant := abBlock) : List (Address × Ixon.Constan
   [(address 100, block), (address 101, dPrj (address 100) 0), (address 102, dPrj (address 100) 1),
    (address 103, bEq)]
 
-#guard (recurDeps abBlock ⟨.defn, .safe, 0, ref 0, .app (recur 1) (ref 1)⟩).toList == [1]
+#guard (recurDeps abBlock ⟨.defn, .safe, {}, 0, ref 0, .app (recur 1) (ref 1)⟩).toList == [1]
 #guard defOrder #[Std.HashSet.ofList [1], {}] == some #[1, 0]
 #guard defOrder #[Std.HashSet.ofList [0], {}] == some #[0, 1]
 #guard defOrder #[Std.HashSet.ofList [1], Std.HashSet.ofList [0]] == none
@@ -308,7 +338,7 @@ prelude's `Bool` under its content address.) -/
 
 def twoBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [.succ one]
+    #[⟨false, 0, 0, 0, 0, .inherited, recur 0⟩, ⟨false, 0, 1, 0, 0, .inherited, recur 0⟩]⟩]) [] [.succ one]
 
 def twoMotive : E := all (ref 0) (sort 0)
 def twoRec : Ixon.Constant :=
@@ -344,9 +374,36 @@ def twoFixture : List (Address × Ixon.Constant) :=
     (apps (ref 0 [0]) [ref 1, apps (ref 2 [0]) [lam (ref 6) (ref 1), ref 3, sz, ref 5], ref 3])
     (apps (ref 7 [0]) [ref 1, ref 3])
     [eq, nat, address 24, natZero, natSucc, address 23, address 21, eqRefl] [one])])
--- a block without its recursor declines at the reader
+-- a one-type block without its recursor reads, and the checker declines it
+-- (no route of the executable checker installs a block without a recursor)
 #guard match run (twoFixture.take 4) with
-  | .error (.read _ (.declined _)) => true
+  | .error (.kernel _ _) => true
+  | _ => false
+
+/-- A second recursor record for `Two`, byte-distinct from `twoRec` (an unused
+entry in its universe table gives it its own content address): `buildIndex`
+files it in `RecIndex.twins`, and `readRecord` emits `indDecl [twin] 0`. -/
+def twoRecTwin : Ixon.Constant := { twoRec with univs := #[.var 0, .zero] }
+
+def twoRecTwinBadK : Ixon.Constant :=
+  match twoRecTwin.info with
+  | .recr r => { twoRecTwin with info := .recr { r with k := true } }
+  | _ => twoRecTwin
+
+#guard
+  let r := rekeyed (twoFixture.take 5 ++ [(address 26, twoRecTwin)])
+  match readStream hash (renameTable r builtinTable) builtinPre r.records r.blobs with
+  | .ok (_, decls) =>
+    let twinKey : Ix.Kernel.Key .anon := .id (r.rename (address 26))
+    decls.any fun
+      | .indDecl [.recInfo cv 3 3 [_, _]] 0 => cv.name == twinKey
+      | _ => false
+  | .error _ => false
+#guard match run (twoFixture.take 5 ++ [(address 26, twoRecTwin)]) with
+  | .error (.kernel _ _) => true
+  | _ => false
+#guard match run (twoFixture.take 5 ++ [(address 26, twoRecTwinBadK)]) with
+  | .error (.read _ (.malformed _)) => true
   | _ => false
 
 /-! ## A structure with a projection function
@@ -357,7 +414,7 @@ reduction. -/
 
 def pBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 2, all (ref 0) (all (ref 0) (recur 0))⟩]⟩]) [nat] [one]
+    #[⟨false, 0, 0, 0, 2, .inherited, all (ref 0) (all (ref 0) (recur 0))⟩]⟩]) [nat] [one]
 
 def pMotive : E := all (ref 0) (sort 0)
 def pMinor : E := all (ref 1) (all (ref 1) (.app (var 2) (apps (ref 2) [var 1, var 0])))
@@ -423,8 +480,8 @@ place of the committed table's Init entries. Then `"ab"` is its
 
 def listBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 1, 1, 0, all (sort 0) (sort 0),
-    #[⟨false, 1, 0, 1, 0, all (sort 0) (.app (recur 0 [1]) (var 0))⟩,
-      ⟨false, 1, 1, 1, 2, all (sort 0) (all (var 0) (all (.app (recur 0 [1]) (var 1))
+    #[⟨false, 1, 0, 1, 0, .inherited, all (sort 0) (.app (recur 0 [1]) (var 0))⟩,
+      ⟨false, 1, 1, 1, 2, .inherited, all (sort 0) (all (var 0) (all (.app (recur 0 [1]) (var 1))
         (.app (recur 0 [1]) (var 2))))⟩]⟩]) [] [.succ (.var 0), .var 0]
 
 /-- `List.rec.{u_1, u}`: universe table `[Type u, u_1, u]`, refs `[List, nil, cons]`. -/
@@ -442,7 +499,7 @@ def listRec : Ixon.Constant :=
     [address 51, address 52, address 53] [.succ (.var 1), .var 0, .var 1]
 
 def unitBlock : Ixon.Constant :=
-  const (.muts #[.indc ⟨false, 0, 0, 0, sort 0, #[⟨false, 0, 0, 0, 0, recur 0⟩]⟩]) [] [one]
+  const (.muts #[.indc ⟨false, 0, 0, 0, sort 0, #[⟨false, 0, 0, 0, 0, .inherited, recur 0⟩]⟩]) [] [one]
 
 /-- The recursor of a one-constructor, no-field type at `refs = [T, mk]`. -/
 def unitRec (t mk : Address) : Ixon.Constant :=
@@ -457,7 +514,7 @@ def charOfNat : Ixon.Constant :=
 /-- `String : Type`, `String.mk : List.{0} Char → String`. -/
 def stringBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 1, all (.app (ref 0 [1]) (ref 1)) (recur 0)⟩]⟩])
+    #[⟨false, 0, 0, 0, 1, .inherited, all (.app (ref 0 [1]) (ref 1)) (recur 0)⟩]⟩])
     [address 51, address 61] [one, .zero]
 
 def stringRec : Ixon.Constant :=
@@ -534,18 +591,20 @@ The records Ix's compiler produces for `Tests.Ix.Kernel.EntryCaseDefs.LTree`
 environment check order with the projections last: the records
 `kernel-entry-cases` submits for its `nested-through-nested` case, as
 `lake exe kernel-entry-cases --records nested-through-nested` prints them
-(Ixon v4):
+(Ixon v5):
 
     inductive LNode (α : Type) where
       | node : List (LNode α) → LNode α
       | leaf : α → LNode α
     inductive LTree where
-      | node : LNode LTree → LTree
+      | node : List (LNode LTree) → LTree
 
-The compiler orders `LTree.rec`'s auxiliary motives canonically, as
-`[List (LNode LTree), LNode LTree]`: an instance of the container family before
-the family's head. The kernel's discovery order, and so every lean4export
-stream, has the head first. Container groups formed in motive order would
+`LTree.rec`'s auxiliary motives are `[List (LNode LTree), LNode LTree]`: an
+instance of the container family before the family's head. The compiler keeps
+Lean's recursor, so this is the order in which Lean's kernel discovers the
+nested occurrences (`LTree.node`'s field, then that auxiliary's `cons`), and it
+does not depend on addresses; a block nested through the head itself
+(`node : LNode LTree → LTree`) has the head first. Container groups formed in motive order would
 both claim motive 1 here (`List`'s singleton group and `LNode`'s family), and
 the block would be rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as Mathlib's `Lean.Elab.InfoTree` would
@@ -554,103 +613,121 @@ be (with `pack_1`). The modeller forms the groups largest family first
 
 /-- (address, canonical record bytes) -/
 def lTreeRecords : List (String × String) := [
-  ("6cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab",
-    "c101000101009117000002000100010091170071b010000101010293170017101771b011" ++
-    "71b01201310001000201c0c0"),
-  ("0e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc9461381",
-    "c1010000010091170101020000000101921701177121000071300010b000000101019217" ++
-    "011710b00171300011014fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63" ++
-    "f7ec277aaf0102000100"),
-  ("5c64a1eaefe7d090652c9d320a47017ff7d635948bdc0c8017a3852779ab8858",
-    "c2020001010002049800170117b117b517b617b317b217b80317b7711610020188000701" ++
-    "07b107b507b607b307b207b80307b8007214107800b80117161514131211100188000701" ++
-    "07b107b507b607b307b207b8030716711310020001010002049800170117b117b517b617" ++
-    "b317b217b80317b800711510020087070107b107b507b607b307b207b803110288010701" ++
-    "07b107b507b607b307b207b80307b70771b471b017741211107800310002180017161514" ++
-    "1312117800b8011800171615141312100c2002911771b0100271127121000071b0149117" ++
-    "1371137220031410210100911771b471b01102921771b471b01217711110711372200514" ++
-    "1171b01671b4b7310102711611941771b01517b80017b80217b80271177321040071b018" ++
-    "011312063994bc51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f302" ++
-    "4fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf016eaf403f" ++
-    "8fd3b1744bce4c85304e753070afd4c7a7d08d9a0ee40d22524316949b2c8cdd74f95d03" ++
-    "33fee6a26dc42e70733616715a8970b189a1e57043ef44a8b3a7d80249fd823100ee0362" ++
-    "6232d1412a0e8335275d5df53b92943887b650f7c2bd290574a0cee7dae2c2b1684447ca" ++
-    "3125f6a62700a2513b42875ead493da103000100c0"),
-  ("504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df8",
-    "c101000000000001000000000191177120003000300000016eaf403f8fd3b1744bce4c85" ++
-    "304e753070afd4c7a7d08d9a0ee40d2252431694010100"),
-  ("b81d95c27ffbb521960326725b16612fbb3135bb247adf12b23da6dd1babbc9c",
-    "c302000100000305980117b117b717b217b417b317b80117b80017b51720017118001001" ++
-    "01880107b107b707b207b407b307b80107b80007b507b072151078013102011800171615" ++
-    "141312111002000100000305980117b117b717b217b417b317b80117b80017b517b67117" ++
-    "100200880007b107b707b207b407b307b80107b80007b51302880207b107b707b207b407" ++
-    "b307b80107b80007b507b007b67414111078013102011801180017161514131211780131" ++
-    "0101180118001716151413121002000100000305980117b117b717b217b417b317b80117" ++
-    "b80017b517b07116100201880107b107b707b207b407b307b80107b80007b507b6721210" ++
-    "78013101011800171615141312111001880107b107b707b207b407b307b80107b80007b5" ++
-    "0720017211107801310001180017161514131211100a712003200191172001019117b001" ++
-    "711271210000b09217b01771111071147120071192172001177117107116722004200111" ++
-    "71210200b09117b6019217b61771151071157220062001119417b017b617711411177116" ++
-    "11711773210500b01312083994bc51e3686f30a1d483d69d0a835a7b484d892393c084f8" ++
-    "7a5849de54f30247da68b3481ffac01cf75c0be83d9db7e65e07fd43a5438491966ea868" ++
-    "2651834fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf016e" ++
-    "af403f8fd3b1744bce4c85304e753070afd4c7a7d08d9a0ee40d22524316949b2c8cdd74" ++
-    "f95d0333fee6a26dc42e70733616715a8970b189a1e57043ef44a8b3a7d80249fd823100" ++
-    "ee03626232d1412a0e8335275d5df53b92943887b650f7c2bd290574a0cee7dae2c2b168" ++
-    "4447ca3125f6a62700a2513b42875ead493da1d58847778edd28e859fd5a7f6acb42b5f9" ++
-    "a281b56ac7ca4e8e8a5c7bda1e59620200c0"),
-  ("c97d72825e7174357a69f7d7104f4ea61941d6df5c1884fc57c1b6ad13fea4c6",
-    "d100020100010295170017b217b117b517b4b3020084070007b207b107b5110286070007" ++
-    "b207b107b507130771b01473121110753200010215141312100621010271107121000211" ++
-    "911771b0100171131071b01393171217b417b3711473210202151211033994bc51e3686f" ++
-    "30a1d483d69d0a835a7b484d892393c084f87a5849de54f3024fb6b41c30532e6ab4acb4" ++
-    "eefe01da1314ee7f2129af8989fd63f7ec277aaf01b3a7d80249fd823100ee03626232d1" ++
-    "412a0e8335275d5df53b92943887b650f70301c1c0c1"),
-  ("05d43ee4bd85781088dbeb426d7ae5cba00c1673d1806e4550db2922fa990638",
-    "d5005c64a1eaefe7d090652c9d320a47017ff7d635948bdc0c8017a3852779ab88580000" ++
-    "00"),
-  ("2703b83cf302c0fc3960231706617966a80c32f8cdedf179f2c9973d2f2555de",
-    "d5015c64a1eaefe7d090652c9d320a47017ff7d635948bdc0c8017a3852779ab88580000" ++
-    "00"),
-  ("3994bc51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f302",
-    "d400006cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab00" ++
+  ("0bdb5fabb1be6c48976ff4d61f3bc58625d243679ae47426caef366b853a246e",
+    "c10100010100910000020001000100910071b010000101010293001071b01171b0120131" ++
+    "0001000201c0c0030000000100000100010000020003000000"),
+  ("596eb9e8fc4ad54152e94895873e08302eee617e4b90a1187bfd3eb25d10dc3b",
+    "c1010000010091010102000000010192017121000071300010b00000010101920110b001" ++
+    "7130001101487a90b33c7dcd5f3434aa04338e1a5b290552cbe922eeb59b025b1dcdbf5d" ++
+    "e002000100030000000100000100020000000200020000"),
+  ("79b4065e8b2074d44d012ace5d98db9928a7393e8290ed9bd1d492e5c295e0e6",
+    "c10100000000010100000000019171210000712001300030000002487a90b33c7dcd5f34" ++
+    "34aa04338e1a5b290552cbe922eeb59b025b1dcdbf5de049be024a6d47ba31711fe2b696" ++
+    "63238912874a1372fdac57efa1cada7196368902000100010001000100"),
+  ("2891eaf9458f3e1886691768cf583cc3a917d32aa947ec4ea5643127db118533",
+    "c3020001000003059801b0b6b4b7b5b801b800b120007118001001018801b0b6b4b7b5b8" ++
+    "01b800b1b3721510b802020001000003059801b0b6b4b7b5b801b800b1b3711710020088" ++
+    "00b0b6b4b7b5b801b800b113028802b0b6b4b7b5b801b800b1b2b3741411107801310201" ++
+    "180118001716151413121178013101011801180017161514131210020001000003059801" ++
+    "b0b6b4b7b5b801b800b1b271161002018801b0b6b4b7b5b801b800b1b3721210b8020188" ++
+    "01b0b6b4b7b5b801b800b120007211107801310001180017161514131211100b91200001" ++
+    "9220007117107116722006200011712002200071210100b291b201711271210500b291b3" ++
+    "0192b371121071147120031192b3711510711572200720001194b2b37114117116117117" ++
+    "73210400b2131278013101011800171615141312111008414f5c25fa6fb91079fecf8a54" ++
+    "f670e1d6344ac838c0d8c7f73707c911ff4761487a90b33c7dcd5f3434aa04338e1a5b29" ++
+    "0552cbe922eeb59b025b1dcdbf5de049be024a6d47ba31711fe2b69663238912874a1372" ++
+    "fdac57efa1cada7196368957bf90f1f654269bf21ff68568ed3f5cbef1780891ea489b93" ++
+    "e2de6b866a41d963cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bfca4fd007" ++
+    "3e01abacc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a9711786818faea" ++
+    "8b1112eb84cd2b6249f4a27f10f654649c7d645cdb9bbc7ef1e59ae2924c34fd9d7d381e" ++
+    "9c4e7865b0580b7ed09851e19d983d8a80d896f3bb360d373b6b4e0200c00f0000001002" ++
+    "010003000201000300020100030002010003000201000201000300020100030002010003" ++
+    "000201000001001002010003000201000300020100030002010003000201000201000300" ++
+    "020100030002010003000201000002001002010003000201000300020100030002010003" ++
+    "000201000201000300020100030002010003000201000003000f02010003000201000300" ++
+    "020100030002010003000201000201000300020100030002010003000004001102010003" ++
+    "000201000300020100030002010003000201000201000300020100030002010003000201" ++
+    "000201000005001002010003000201000300020100030002010003000201000201000300" ++
+    "020100030002010003000201000006001002010003000201000300020100030002010003" ++
+    "000201000201000300020100030002010003000201000007001002010003000201000300" ++
+    "020100030002010003000201000201000300020100030002010003000201000100000100" ++
+    "010100020201000201000104000100010600010001070002020100020100010800020201" ++
+    "0002010001090004020100020100020100020100"),
+  ("39a6c6927ab95fb25de0100f88b1dea2f8291f2169968638f720e3da52197c0e",
+    "d10002010001029500b2b1b5b4b302008400b2b1b511028600b2b1b51371b01473121110" ++
+    "7532000102151413121006210002711071210202119171b0100171131071b0139312b4b3" ++
+    "71147321010215121103487a90b33c7dcd5f3434aa04338e1a5b290552cbe922eeb59b02" ++
+    "5b1dcdbf5de063cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bfca4fd0073e" ++
+    "01abacc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a9711786818fa0301" ++
+    "c1c0c1050000000702010002010003000201000201000300020100000100060201000201" ++
+    "000300020100020100030000020008020100020100030002010002010003000201000201" ++
+    "00010200010001050003020100020100020100"),
+  ("bfb31e00437a03eb08616348710e586b68e0df38309d224781a3b542d5627737",
+    "c202000101000204980001b1b5b6b3b2b803b77116100201880001b1b5b6b3b2b803b800" ++
+    "7214107800b801171615141312111001880001b1b5b6b3b2b80316711310020001010002" ++
+    "04980001b1b5b6b3b2b803b80071151002008701b1b5b6b3b2b8031102880101b1b5b6b3" ++
+    "b2b803b771b471b0177412111078003100021800171615141312117800b8011800171615" ++
+    "141312100c20019171b0100271127121030071b0149113711372200414102100009171b4" ++
+    "71b011029271b471b0127111107113722005141171b01671b4b73101027116119471b015" ++
+    "b800b802b80271177321020071b01801131206487a90b33c7dcd5f3434aa04338e1a5b29" ++
+    "0552cbe922eeb59b025b1dcdbf5de049be024a6d47ba31711fe2b69663238912874a1372" ++
+    "fdac57efa1cada7196368963cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bf" ++
+    "ca4fd0073e01abacc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a971178" ++
+    "6818faea8b1112eb84cd2b6249f4a27f10f654649c7d645cdb9bbc7ef1e59ae2924c34fd" ++
+    "9d7d381e9c4e7865b0580b7ed09851e19d983d8a80d896f3bb360d373b6b4e03000100c0" ++
+    "0b0000000d02010002010003000201000300020100030002010003000201000201000300" ++
+    "0201000001000d0201000201000300020100030002010003000201000300020100020100" ++
+    "03000201000002000d020100020100030002010003000201000300020100030002010002" ++
+    "010003000201000003000d02010002010003000201000300020100030002010003000201" ++
+    "0002010003000201000004000c0201000201000300020100030002010003000201000300" ++
+    "02010002010003000005000e020100020100030002010003000201000300020100030002" ++
+    "010002010003000201000201000101000100010300010201000105000100010600020201" ++
+    "00020100010b0004020100020100020100020100"),
+  ("15b637b3ace8c59237c26f1db0aa5e48bac097b8bd0220f875ffe1932bbabc22",
+    "d5012891eaf9458f3e1886691768cf583cc3a917d32aa947ec4ea5643127db1185330000" ++
     "0000"),
-  ("47da68b3481ffac01cf75c0be83d9db7e65e07fd43a5438491966ea868265183",
-    "d600504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df80000" ++
-    "00"),
-  ("4fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf01",
-    "d6006cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab0000" ++
-    "00"),
-  ("6eaf403f8fd3b1744bce4c85304e753070afd4c7a7d08d9a0ee40d2252431694",
-    "d6000e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc94613810000" ++
-    "00"),
-  ("7b36f0fe1d430323bb8651b30406f4650c8b7a3c840037cb3a426b6790f3f609",
-    "d502b81d95c27ffbb521960326725b16612fbb3135bb247adf12b23da6dd1babbc9c0000" ++
-    "00"),
-  ("90b99aab5b8118f4b577382fa73176422b3ecc525d0e15df8c844ad87e02224b",
-    "d501b81d95c27ffbb521960326725b16612fbb3135bb247adf12b23da6dd1babbc9c0000" ++
-    "00"),
-  ("95dba895ccc497f8cbd4bf65d7b0bae0a1a9a8b506112c4f4ce65ae67bbfd5f1",
-    "d500b81d95c27ffbb521960326725b16612fbb3135bb247adf12b23da6dd1babbc9c0000" ++
-    "00"),
-  ("9b2c8cdd74f95d0333fee6a26dc42e70733616715a8970b189a1e57043ef44a8",
-    "d400010e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc946138100" ++
+  ("29d8b49e0eeac51da491b43c7766020444e64da585208a27c30db03840aed069",
+    "d5022891eaf9458f3e1886691768cf583cc3a917d32aa947ec4ea5643127db1185330000" ++
     "0000"),
-  ("b3a7d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650f7",
-    "d400016cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab00" ++
+  ("414f5c25fa6fb91079fecf8a54f670e1d6344ac838c0d8c7f73707c911ff4761",
+    "d60079b4065e8b2074d44d012ace5d98db9928a7393e8290ed9bd1d492e5c295e0e60000" ++
     "0000"),
-  ("c2bd290574a0cee7dae2c2b1684447ca3125f6a62700a2513b42875ead493da1",
-    "d400000e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc946138100" ++
+  ("487a90b33c7dcd5f3434aa04338e1a5b290552cbe922eeb59b025b1dcdbf5de0",
+    "d6000bdb5fabb1be6c48976ff4d61f3bc58625d243679ae47426caef366b853a246e0000" ++
     "0000"),
-  ("d58847778edd28e859fd5a7f6acb42b5f9a281b56ac7ca4e8e8a5c7bda1e5962",
-    "d40000504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df800" ++
-    "0000")]
+  ("49be024a6d47ba31711fe2b69663238912874a1372fdac57efa1cada71963689",
+    "d600596eb9e8fc4ad54152e94895873e08302eee617e4b90a1187bfd3eb25d10dc3b0000" ++
+    "0000"),
+  ("57bf90f1f654269bf21ff68568ed3f5cbef1780891ea489b93e2de6b866a41d9",
+    "d4000079b4065e8b2074d44d012ace5d98db9928a7393e8290ed9bd1d492e5c295e0e600" ++
+    "000000"),
+  ("5f8684a7536dc6b8412e27da2364ed74f00e4c3e276f5f31e3274adc5002b699",
+    "d5002891eaf9458f3e1886691768cf583cc3a917d32aa947ec4ea5643127db1185330000" ++
+    "0000"),
+  ("63cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bfca4fd0073e01ab",
+    "d400010bdb5fabb1be6c48976ff4d61f3bc58625d243679ae47426caef366b853a246e00" ++
+    "000000"),
+  ("70a0538d9954719a509dfd5171d70813b3e258f46439775503a8809c38e04c19",
+    "d501bfb31e00437a03eb08616348710e586b68e0df38309d224781a3b542d56277370000" ++
+    "0000"),
+  ("acc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a9711786818fa",
+    "d400000bdb5fabb1be6c48976ff4d61f3bc58625d243679ae47426caef366b853a246e00" ++
+    "000000"),
+  ("ea8b1112eb84cd2b6249f4a27f10f654649c7d645cdb9bbc7ef1e59ae2924c34",
+    "d40001596eb9e8fc4ad54152e94895873e08302eee617e4b90a1187bfd3eb25d10dc3b00" ++
+    "000000"),
+  ("f77412ab1008e2db606af0861e63b97e825215809f7f95cdd2ce60f06523cbfe",
+    "d500bfb31e00437a03eb08616348710e586b68e0df38309d224781a3b542d56277370000" ++
+    "0000"),
+  ("fd9d7d381e9c4e7865b0580b7ed09851e19d983d8a80d896f3bb360d373b6b4e",
+    "d40000596eb9e8fc4ad54152e94895873e08302eee617e4b90a1187bfd3eb25d10dc3b00" ++
+    "000000")]
 
 def lTreeStream : Ix.Kernel.Admission.Records :=
   lTreeRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
-def lTreeBlock : Address := (addressOfHex "504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df8").getD (address 0)
-def lNodeBlock : Address := (addressOfHex "0e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc9461381").getD (address 0)
+def lTreeBlock : Address := (addressOfHex "79b4065e8b2074d44d012ace5d98db9928a7393e8290ed9bd1d492e5c295e0e6").getD (address 0)
+def lNodeBlock : Address := (addressOfHex "596eb9e8fc4ad54152e94895873e08302eee617e4b90a1187bfd3eb25d10dc3b").getD (address 0)
 
 /-- The stream's records and its reading context, as the entry builds them. -/
 def lTreeContext : Option (List (Address × Ixon.Constant) × Ctx .anon) := do
@@ -719,7 +796,7 @@ def lTreeNames : List String :=
 The records Ix's compiler produces for
 `Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (with `Subtype.rec` and `True.rec`),
 in the check order with the projections last, without the prelude's `Eq`
-records: `lake exe kernel-entry-cases --records level-comparison` (Ixon v4):
+records: `lake exe kernel-entry-cases --records level-comparison` (Ixon v5):
 
     theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}}
         (h : a = b) : a = b := h
@@ -743,42 +820,45 @@ converts levels as stored. -/
 
 /-- (address, canonical record bytes) -/
 def levelRecords : List (String × String) := [
-  ("34447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d",
-    "c1010001020092170217b00101000100020294170217b017111771111072310002131201" ++
-    "9117100000030040c00100c0"),
-  ("2a08130a72d9e633ed86a434335bba6a415c2370ed44c1eec5d0d0aa9dd236b1",
-    "d100020200010195170217b217b317b41772b01312b1010286070207b207b307b4071307" ++
-    "711310721211100521000271121091171000911772b011100192171217b1711274210102" ++
-    "14131110026620bf274c4c89870476888d228d0b43af0ddcc856cfa7b006fb5a979d12eb" ++
-    "899e92d21510c29302dae3880e11eb53a149d96c49662a866d86b080c41f8f45510300c0" ++
-    "c1"),
-  ("cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede75171",
-    "c1010000000000010000000000300000000100"),
-  ("85f326c3eb67b413b645fd59e81934002f99067c8991600d2977004c7a113b09",
-    "d10101000001019317b117b017200071121001008207b107b01002711020019117200000" ++
-    "02e35ab17358fae7a81efb3d94a164fd3f85ab8b0c888aaa071cfe0d60ffbc1cacf4bc2a" ++
-    "9e8e268eb352f719657d8806b072a555a29f2eb85e72805fddc9cd019101c0"),
-  ("9ba138c292613a142ae19b183bcda2530ea8a96905139bce044461f2fbe71c77",
-    "d009029317b117b117b372b212118307b107b107b3100492170017031072210002b08107" ++
-    "b0200271210101b172b21110036620bf274c4c89870476888d228d0b43af0ddcc856cfa7" ++
-    "b006fb5a979d12eb89c37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea" ++
-    "9f7578a207e35ab17358fae7a81efb3d94a164fd3f85ab8b0c888aaa071cfe0d60ffbc1c" ++
-    "ac0401c04001c18002c0c1804002c001c1c1c1"),
-  ("6620bf274c4c89870476888d228d0b43af0ddcc856cfa7b006fb5a979d12eb89",
-    "d60034447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d0000" ++
-    "00"),
-  ("9e92d21510c29302dae3880e11eb53a149d96c49662a866d86b080c41f8f4551",
-    "d4000034447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d00" ++
+  ("09f6413b8ec5c2472bba0c0994e5299bdcc5e88d5ab76a7c7c762251cfbcac49",
+    "c101000000000001000000000030000000010000"),
+  ("8aa2daf017aa6ec909bf429e62d95082ad09ad64646d02fea36ea66aa85522a9",
+    "c101000102009202b0010100010002029402b01171111072310002131201911000000300" ++
+    "40c00100c0030000000300000300000100050000030000000100000100"),
+  ("1780b7e5408ad328b414d3c74059c84310a820b99155e515dcda5a49d1d76ab1",
+    "d0090293b1b1b372b2121183b1b1b310049200031072210102b081b0200071210201b172" ++
+    "b2111003251883bf2eea40cd0b067b2e897533e149dfb82f82cb0cc45990157226cb8cda" ++
+    "6920881fa6260902eda1fad260df22a267b39817ba9e3426254984c5bfa587e29d3c7bcf" ++
+    "cc8f1f1661bce87d371a5da0d5188c1bc05def21d4aa176138c91b100401c04001c18002" ++
+    "c0c1804002c001c1c1c10600000007010300010300010300030000010006010300010300" ++
+    "01030001000002020101020101010100030300000300010200010300010300010300"),
+  ("78f7145fbf5cdfed9b00cc64af0548ef0406093ae7358e744f27906da42041ce",
+    "d10002020001019502b2b3b472b01312b101028602b2b3b4137113107212111005210002" ++
+    "7112109110009172b01110019212b171127421010214131110026920881fa6260902eda1" ++
+    "fad260df22a267b39817ba9e3426254984c5bfa587e2a71ae4b11356c10cab01e7115363" ++
+    "a7a03c41da063313cf7353e54a0579dabe470300c0c10500000008020100020100030002" ++
+    "010003000201000300020100000100090201000201000300020100030002010003000201" ++
+    "000201000102000100010300010001040002020100020100"),
+  ("b01e04997b6e892e62d98ec1ea03d9563a1fddd04f8389fddb9a8a7d23228f79",
+    "d101010000010193b1b02000711210010082b1b01002711020019120000002251883bf2e" ++
+    "ea40cd0b067b2e897533e149dfb82f82cb0cc45990157226cb8cda99329f6422ed47ec7c" ++
+    "6fa53674e43b2d439367baf8dbff1a8e98a3243dc3ce4801c00300000004020100030002" ++
+    "01000201000001000302010003000201000101000100"),
+  ("251883bf2eea40cd0b067b2e897533e149dfb82f82cb0cc45990157226cb8cda",
+    "d60009f6413b8ec5c2472bba0c0994e5299bdcc5e88d5ab76a7c7c762251cfbcac490000" ++
     "0000"),
-  ("e35ab17358fae7a81efb3d94a164fd3f85ab8b0c888aaa071cfe0d60ffbc1cac",
-    "d600cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede751710000" ++
-    "00"),
-  ("f4bc2a9e8e268eb352f719657d8806b072a555a29f2eb85e72805fddc9cd0191",
-    "d40000cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede7517100" ++
-    "0000")]
+  ("6920881fa6260902eda1fad260df22a267b39817ba9e3426254984c5bfa587e2",
+    "d6008aa2daf017aa6ec909bf429e62d95082ad09ad64646d02fea36ea66aa85522a90000" ++
+    "0000"),
+  ("99329f6422ed47ec7c6fa53674e43b2d439367baf8dbff1a8e98a3243dc3ce48",
+    "d4000009f6413b8ec5c2472bba0c0994e5299bdcc5e88d5ab76a7c7c762251cfbcac4900" ++
+    "000000"),
+  ("a71ae4b11356c10cab01e7115363a7a03c41da063313cf7353e54a0579dabe47",
+    "d400008aa2daf017aa6ec909bf429e62d95082ad09ad64646d02fea36ea66aa85522a900" ++
+    "000000")]
 
 /-- The theorem's record. -/
-def levelTheorem : String := "9ba138c292613a142ae19b183bcda2530ea8a96905139bce044461f2fbe71c77"
+def levelTheorem : String := "1780b7e5408ad328b414d3c74059c84310a820b99155e515dcda5a49d1d76ab1"
 
 def levelStream : Ix.Kernel.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
@@ -896,15 +976,16 @@ def natCopy (withRec : Bool) : List (Address × Ixon.Constant) :=
   | .ok _ => true
   | .error _ => false
 -- without it, the prelude's recursor, which the analysis files under the copied block, is left out of
--- the index (`fallbackIndexed`): the copied block declines instead of reading with the prelude's
--- recursor
+-- the index (`fallbackIndexed`): the copied block does not read with the prelude's recursor; it
+-- reads without one (`unindexedShape`), which is not what the prelude read, so the copy declines
+-- (`preludeCopy`)
 #guard
   let cx := contextOf (md := .anon) builtinTable (natCopy false).toArray [] builtinPre.records
   match boundRef .nat with
   | some r => (buildIndex cx.store builtinPre.records).blocks.contains r.block && !cx.index.blocks.contains r.block
   | none => false
 #guard match readStream hash builtinTable builtinPre (natCopy false) [] with
-  | .error (.read _ (.declined _)) => true
+  | .error .preludeCopy => true
   | _ => false
 
 /-! ## A recursor of a block only the fallback supplies
@@ -1003,7 +1084,8 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
   | .error e => (e.splitOn why).length > 1
   | .ok () => false
 
-#guard refuses { builtinTable with version := 4 } "version 4"
+#guard refuses { builtinTable with version := Ix.Kernel.specVersion + 1 }
+  s!"version {Ix.Kernel.specVersion + 1}"
 #guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
 #guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
 #guard refuses (drop builtinTable [.eqRefl]) "its block's"

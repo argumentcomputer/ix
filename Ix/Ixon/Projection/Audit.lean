@@ -136,9 +136,33 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps; see
 -- `IxC/Kernel/Audit/Roots.lean`).
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The canonical rule's level link and the declines of rules that would not fire add
+-- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records (the section nodes' modes, let headers, definition assertions and
+-- constructor field modes, `Constant.modesCanonical`) take the closure from 7009 compiled
+-- functions and 113 inherited externs to 7028 and 114, as for `Admission.checkBytes`.
+-- The reader's canonical natural-literal check (`ECx.natAt`) adds 5.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6875 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 7092 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

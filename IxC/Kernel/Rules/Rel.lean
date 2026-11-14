@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.CoreDefs
+public import IxC.Kernel.Verify.Level
 
 @[expose] public section
 
@@ -53,6 +54,22 @@ the `.verified` checker (`betaGate = verifiedChecks = true`), so the
 β gate reads `mb.pw.isNever` outright and every telescope walk the
 fire paths run is licensed.
 
+**Level premises are semantic.**  Where the checker runs its fixed-fuel
+level test (`Level.isEquiv`/`isEquivList … = some true`, which answers
+`none` on deep levels it cannot decide in `defaultFuel` steps), the rule
+asks for what the soundness proof reads off that test: equality of the
+levels' values under every assignment (`Level.eval`, `Level.EvalEqList`),
+or a value of `0`.  The bridge derives each from the checker's test
+(`Level.isEquiv_sound`, `Level.isEquivList_sound`), so the relation stays
+a superset of the run, and a producer that decides levels another way
+(a complete procedure) can supply the premise directly.  The tower
+guard (`ProjEntry.fireOk`, read by `Red.proj`, and through
+`andRescueSlots` by `Red.rescueAnd`; `Infer.proj`'s own guard is the same
+test) is `FireSem`: its positive test is semantic, and its one remaining
+fueled test, the stored entry's `Level.isEquiv entry.structSort .zero =
+some true`, sits in negative position, so a producer only assumes it;
+its other case is the entry's O5 bound.
+
 Scoping (`WScoped`, `looseBVarsBounded`, `LeavesBounded`, `CtxOk`) and
 readability (`denoteMeta … = some _`) are NOT part of the inductive;
 they are premises of the semantic soundness theorems
@@ -82,12 +99,82 @@ inductive Grade where
   | io
   deriving DecidableEq, Repr
 
+/-- **A tower entry's `Prop` guard, read semantically** (`ProjEntry.fireOk`,
+`CoreDefs.lean:1044`, with its positive test semantic): if the stored
+structure sort passes the checker's zero test, the field's guard level at
+the use's levels is zero under every assignment.  The negative-position
+test is the stored entry's; its other case is the entry's O5 bound
+(`TowerO5`). -/
+def FireSem (entry : ProjEntry md) (us : List Level) : Prop :=
+  Level.isEquiv entry.structSort .zero = some true →
+    ∀ φ, Level.eval φ (Level.subst entry.levelParams us entry.fieldSort) = 0
+
+/-- **`andRescueSlots`, with each slot's guard read semantically**
+(`CoreDefs.lean:1056-1066`): the two tower entries of `And` are stored,
+name the rule's constructor at the major's parameter count, and pass
+`FireSem` at the levels `ust`. -/
+def AndRescueSlotsSem (env : Env md) (ctor : Key md) (nP : Nat) (ust : List Level) : Prop :=
+  ∀ j, j < 2 → ∃ e : ProjEntry md, env.findProj? andName j = some e ∧
+    e.ctor = ctor ∧ e.numParams = nP ∧ e.numFields = 2 ∧ FireSem e ust
+
 /-- The fourteen binary `Nat` operations `reduceNat` accelerates
 (`Core.lean:180-183`; official `reduce_nat`, `type_checker.cpp:639-668`):
 the six structural ones and the eight pin-certified WF ones. -/
 def natBinOpNames : List (Key md) :=
   [natAddName, natSubName, natMulName, natPowName, natBeqName, natBleName] ++
     natDivModNames
+
+/-! ## `Nat` offsets
+
+IxVM reads a `Nat` term as an offset `base + k` through literals, `Nat.succ` and
+`Nat.add _ (lit m)`, and keeps `Nat.add b (lit k)` stuck rather than unfolding
+`Nat.add`. The rules `Red.natAddSucc`, `Red.natAddZero` and `DefEq.natOffset`
+describe those moves; the definitions below are what they read. -/
+
+/-- **The stored `Nat.add`, as the offset rules read it**: a level-monomorphic
+definition of type `Nat → Nat → Nat` whose outer binder's datum is `never` (its
+codomain `Nat → Nat` is never a proposition). The rules read the first argument's
+membership in `Nat` off that binder. -/
+def natAddTyOk : Option (ConstantInfo md) → Bool
+  | some (.defnInfo cv _ _) =>
+    cv.levelParams.isEmpty &&
+    (match cv.type with
+     | .forallE d₁ (.forallE d₂ c _) mb =>
+       d₁ == .const natName [] && d₂ == .const natName [] && c == .const natName [] &&
+         mb.pw.isNever
+     | _ => false)
+  | _ => false
+
+/-- `b + k` as the offset moves write it: `b` itself at `k = 0`, else
+`Nat.add b (lit k)`. -/
+def natAddLit (b : Expr md) (k : Nat) : Expr md :=
+  if k = 0 then b else .app (.app (.const natAddName []) b) (.lit (.natVal k))
+
+/-- One offset step over `x`, whose own offset is `o`: `(bₓ, kₓ + n)` when `x` has
+the offset `(bₓ, kₓ)`, else `(x, n)`. -/
+def natOffsetStep (x : Expr md) (o : Option (Expr md × Nat)) (n : Nat) : Expr md × Nat :=
+  match o with
+  | some (b, k) => (b, k + n)
+  | none => (x, n)
+
+/-- **The `Nat` offset of a term**, a split `(base, k)` read syntactically: a literal
+`n` is `(lit 0, n)`; `Nat.succ x` is one step of `1` over `x`, and
+`Nat.add x (lit m)` one step of `m` (`natOffsetStep`). Any other term has none.
+The heads' level lists are not read. -/
+def natOffsetOf : Expr md → Option (Expr md × Nat)
+  | .lit (.natVal n) => some (.lit (.natVal 0), n)
+  | .app (.const c _) x =>
+    if c = natSuccName then some (natOffsetStep x (natOffsetOf x) 1) else none
+  | .app (.app (.const c _) x) (.lit (.natVal m)) =>
+    if c = natAddName then some (natOffsetStep x (natOffsetOf x) m) else none
+  | _ => none
+
+/-- **Whether `natOffsetOf`'s split passes through a `Nat.add` application**: along
+`Nat.succ` steps to a `Nat.add _ (lit m)` step. Only such a split reads `Nat.add`. -/
+def natOffsetAdd : Expr md → Bool
+  | .app (.const c _) x => if c = natSuccName then natOffsetAdd x else false
+  | .app (.app (.const c _) _) (.lit (.natVal _)) => if c = natAddName then true else false
+  | _ => false
 
 mutual
 
@@ -114,6 +201,11 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   clause, `Core.lean:1004-1006`: `whnf pe`). -/
   | projArg {d : Nat} {sn : Key md} {i : Nat} {e e' : Expr md} :
       Red env d e e' → Red env d (.proj sn i e) (.proj sn i e')
+  /-- **Reduction of an application's argument.** Not a move of the checker,
+  whose head steps never enter an argument; IxVM's stuck forms keep reduced
+  arguments (the stuck `Nat.add x (lit k)` keeps `x` head-normalized). -/
+  | appArg {d : Nat} {f a a' : Expr md} :
+      Red env d a a' → Red env d (.app f a) (.app f a')
   /-- **β at a fired gate** (`Core.lean:989-990`, `betaGateFires` at
   `.verified`): a λ whose validated annotation datum is `.never`
   reduces with no certificate — the graph-regime licence
@@ -131,11 +223,59 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   at the head.  A theorem never unfolds (`unfoldDefinition`). -/
   | delta {d : Nat} {e e' : Expr md} :
       unfoldDefinition env e = some e' → Red env d e e'
+  /-- **A theorem unfolds** (IxVM unfolds theorems in lazy δ and
+  at ι majors, the checker does not): a stored theorem constant becomes its
+  stored value at the use's levels. The rule carries the theorem's own check,
+  at the theorem's level parameters and in the empty context: the value is
+  closed and has the theorem's type at this environment, and that type is a
+  proposition at every assignment. Read at the assignment the use's levels
+  induce, value and constant are then the one proof (proof irrelevance).
+
+  The check is stated at the theorem's own levels because a derivation is not
+  closed under level instantiation (a binder's datum is the zero-ness of a level,
+  which instantiation can change). It is the check the theorem's declaration
+  ran, carried from the environment that declaration was checked in to this one
+  by `Transport.weaken` (`Rules/Transport.lean`). The rest of a spine unfolds by
+  `appFn`. -/
+  | deltaThm {d : Nat} {n : Key md} {us : List Level} {cv : ConstantVal md}
+      {value vt s : Expr md} {u : Level} :
+      env.find? n = some (.thmInfo cv value) →
+      us.length = cv.levelParams.length →
+      value.hasFvar = false → value.looseBVarsBounded 0 = true →
+      Infer env .full 0 value vt →
+      DefEq env 0 vt cv.type →
+      Infer env .full 0 cv.type s →
+      Red env 0 s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
+      Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
+  /-- **An equation's proof rewrites its left side** (equality reflection): a
+  constant application `a` reduces to `b` given a proof
+  `p` of `@Eq.{u} T a b` at this environment (its leaves among `a`'s), the
+  typings of `a` and `b` at `T`, and `T`'s sort at `u`. Sound because `Eq`
+  denotes equality (`eq_law`). IxVM's native results reduce through the role
+  equations' evidence, instantiated at the arguments. The constant head keeps a
+  sort or a `∀` reducing only to itself. -/
+  | eqProof {d : Nat} {a b p T ta tb sT : Expr md} {c : Key md} {ua : List Level}
+      {u v : Level} {ci : ConstantInfo md} :
+      a.getAppFn = .const c ua →
+      env.find? eqName = some ci →
+      Infer env .full d p (.app (.app (.app (.const eqName [u]) T) a) b) →
+      p.wscopedB d = true → p.looseBVarsBounded 0 = true →
+      (∀ l ∈ p.fvarLeaves, l ∈ a.fvarLeaves) →
+      Infer env .full d a ta → DefEq env d ta T →
+      Infer env .full d b tb → DefEq env d tb T →
+      Infer env .full d T sT → Red env d sT (.sort v) →
+      (∀ φ : LevelParam → Nat, Level.eval φ v = Level.eval φ u) →
+      Red env d a b
   /-- A `Nat`-literal major converts to constructor form, one layer
   (`litMajorToCtor`'s `litToCtorIfNat` arm, `Core.lean:739`). -/
   | natLit {d : Nat} {n : Nat} :
       natLitSupported env = true →
       Red env d (.lit (.natVal n)) (natLitToConstructor n)
+  /-- **`Nat.zero` as the literal `0`**, `natLit`'s converse at `0`: IxVM's stuck
+  `Nat` operations keep an argument they read as a literal in literal form. -/
+  | natZeroLit {d : Nat} :
+      natLitSupported env = true →
+      Red env d (.const natZeroName []) (.lit (.natVal 0))
   /-- A `String` literal expands to its constructor form
   (`litMajorToCtor`, `Core.lean:736-738`; `projLitToCtor`, `:752-754`;
   `defeqStep`'s string arms, `:1610-1617` — one rule for the three
@@ -158,6 +298,21 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       Red env d b wb → rawNatLit? wb = some n₂ →
       natOpResult c n₁ n₂ = some r →
       Red env d (.app (.app (.const c []) a) b) r
+  /-- **An offset's successor step**: `Nat.add b (lit (k + 1))` is the successor
+  of `b + k` (`natAddLit`). IxVM rewrites a recursor's major this way, before and
+  after head-normalizing it, so that ι meets `Nat.succ`. The head's level list
+  is not read. -/
+  | natAddSucc {d : Nat} {us : List Level} {b : Expr md} {k : Nat} :
+      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      Red env d (.app (.app (.const natAddName us) b) (.lit (.natVal (k + 1))))
+        (.app (.const natSuccName []) (natAddLit b k))
+  /-- **Adding zero**: `Nat.add b a`, with `a` reducing to a zero reading, is
+  `b`. IxVM's stuck `Nat.add` form at a zero offset. The head's level list is
+  not read. -/
+  | natAddZero {d : Nat} {us : List Level} {b a w : Expr md} :
+      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      Red env d a w → rawNatLit? w = some 0 →
+      Red env d (.app (.app (.const natAddName us) b) a) b
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
   (`whnfCoreBody`'s `.proj` clause, `Core.lean:1013-1030`), driven by
   the projection table, fired under the entry's guard, and certified
@@ -170,7 +325,7 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       i < entry.numFields →
       e.getAppArgs.length = entry.numParams + entry.numFields →
       us.length = entry.levelParams.length →
-      entry.fireOk us = true →
+      FireSem entry us →
       env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
       Certs env d true (cvC.type.instantiateLevelParams cvC.levelParams us)
         e.getAppArgs →
@@ -195,9 +350,9 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       rules.find? (fun r' => r'.ctor == cj) = some rl →
       major.getAppArgs.length = rl.ctorParams + rl.nfields →
       rl.fire ≠ .inert →
-      Level.isEquivList usj
+      (∀ φ, Level.EvalEqList φ usj
         (recFireComparands rl cv.levelParams us cvj.levelParams
-          e.getAppArgs rP).1 = some true →
+          e.getAppArgs rP).1) →
       (rl.compareParams = true →
         DefEqList env d (major.getAppArgs.take rl.ctorParams)
           (recFireComparands rl cv.levelParams us cvj.levelParams
@@ -296,7 +451,7 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       tmaj.getAppFn = .const andName ust →
       tmaj.getAppArgs.length = cnP →
       cvj.levelParams.length = ust.length →
-      andRescueSlots env rl.ctor cnP ust = true →
+      AndRescueSlotsSem env rl.ctor cnP ust →
       fab = Expr.mkAppN (.const rl.ctor ust)
         (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]) →
       fab.wscopedB d = true → fab.looseBVarsBounded 0 = true →
@@ -345,9 +500,11 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   continuation (`:1537-1577`), and the string-literal expansion. -/
   | redL {d : Nat} {a a' b : Expr md} :
       Red env d a a' → DefEq env d a' b → DefEq env d a b
-  /-- Two sorts (`Core.lean:1581`). -/
+  /-- Two sorts (`Core.lean:1581`) at levels equal under every assignment
+  (the checker's `Level.isEquiv u v = some true`, read by
+  `Level.isEquiv_sound`). -/
   | sort {d : Nat} {u v : Level} :
-      Level.isEquiv u v = some true → DefEq env d (.sort u) (.sort v)
+      (∀ φ, Level.eval φ u = Level.eval φ v) → DefEq env d (.sort u) (.sort v)
   /-- Two free variables of the same index (`Core.lean:1618-1620`).  The
   annotations are NOT compared, as the checker does not compare them:
   at a well-formed call `CtxOk` pins every opened variable's
@@ -355,10 +512,11 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   the relation has no `trans` (see the inductive's docstring). -/
   | fvar {d i : Nat} {ty₁ ty₂ : Expr md} :
       DefEq env d (.fvar i ty₁) (.fvar i ty₂)
-  /-- Two constants of the same name at equivalent levels
-  (`Core.lean:1621-1626`). -/
+  /-- Two constants of the same name at levels pointwise equal under every
+  assignment (`Core.lean:1621-1626`; the checker's
+  `Level.isEquivList us us' = some true`, read by `Level.isEquivList_sound`). -/
   | const {d : Nat} {n : Key md} {us us' : List Level} :
-      Level.isEquivList us us' = some true →
+      (∀ φ, Level.EvalEqList φ us us') →
       DefEq env d (.const n us) (.const n us')
   /-- The packed zero against `Nat.zero` (`Core.lean:1586-1591`; no
   support guard is read there). -/
@@ -368,21 +526,30 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   | natSucc {d : Nat} {k : Nat} {x : Expr md} :
       DefEq env d (.lit (.natVal k)) x →
       DefEq env d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x)
+  /-- **Equal offsets** (`natOffsetOf`): both sides split as `base + k` at the
+  same `k`, and the bases are definitionally equal. IxVM's offset test in
+  conversion. A base is a subterm of its side, or the closed literal `0`. The
+  stored `Nat.add` is read only when a split passes through it (`natOffsetAdd`). -/
+  | natOffset {d : Nat} {a b ba bb : Expr md} {k : Nat} :
+      natLitSupported env = true →
+      (natOffsetAdd a = true ∨ natOffsetAdd b = true →
+        natAddTyOk (env.find? natAddName) = true) →
+      natOffsetOf a = some (ba, k) → natOffsetOf b = some (bb, k) →
+      DefEq env d ba bb → DefEq env d a b
   /-- ∀-congruence (`Core.lean:1627-1643`): domains, then bodies opened
-  with the RIGHT domain, then the annotation agreement and equal input
-  contracts. The result contracts are not compared. -/
+  with the RIGHT domain, then the annotation agreement. -/
   | forallE {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr md} {m₁ m₂ : BinderMeta} :
       DefEq env d ty₁ ty₂ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
         (body₂.instantiate1 (.fvar d ty₂)) →
-      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
+      m₁.pw = m₂.pw →
       DefEq env d (.forallE ty₁ body₁ m₁) (.forallE ty₂ body₂ m₂)
   /-- λ-congruence (`Core.lean:1644-1651`), as for ∀. -/
   | lam {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr md} {m₁ m₂ : BinderMeta} :
       DefEq env d ty₁ ty₂ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
         (body₂.instantiate1 (.fvar d ty₂)) →
-      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
+      m₁.pw = m₂.pw →
       DefEq env d (.lam ty₁ body₁ m₁) (.lam ty₂ body₂ m₂)
   /-- Per-node application congruence.  The checker's spine-wise
   congruence (`Core.lean:1652-1678`) and the same-head short-circuit
@@ -397,14 +564,13 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   /-- **η** (`etaCert`, `Core.lean:508-534`, at the one-sided λ arm
   `:1690-1692`): `b`'s io-inferred type head-normalises to a ∀ whose
   domain is definitionally equal to the λ's, the body is pointwise
-  `b` applied, the annotations agree and the input contracts are
-  equal. -/
+  `b` applied and the annotations agree. -/
   | eta {d : Nat} {ty₁ body₁ b tb ty₂ B : Expr md} {m₁ m₂ : BinderMeta} :
       Infer env .io d b tb → Red env d tb (.forallE ty₂ B m₂) →
       DefEq env d ty₂ ty₁ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₁))
         (.app b (.fvar d ty₁)) →
-      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
+      m₁.pw = m₂.pw →
       DefEq env d (.lam ty₁ body₁ m₁) b
   /-- **The `isProofFast` yes-arm** (`propIrrel`, `Core.lean:331-332`):
   both heads' validated data say "a proposition at every valuation" —
@@ -418,9 +584,9 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   model licenses that (every proof is the point). -/
   | proofIrrel {d : Nat} {a ta tta b tb ttb : Expr md} {u v : Level} :
       Infer env .io d a ta → Infer env .io d ta tta →
-      Red env d tta (.sort u) → Level.isEquiv u .zero = some true →
+      Red env d tta (.sort u) → (∀ φ, Level.eval φ u = 0) →
       Infer env .io d b tb → Infer env .io d tb ttb →
-      Red env d ttb (.sort v) → Level.isEquiv v .zero = some true →
+      Red env d ttb (.sort v) → (∀ φ, Level.eval φ v = 0) →
       DefEq env d a b
   /-- **Unit-likeness** (`proofIrrel`'s first arm, `Core.lean:287-294`):
   both sides' io-inferred types head-normalise to the basis unit type. -/
@@ -454,7 +620,7 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       cvc.levelParams = cvT.levelParams →
       (towerSlotsAll env T caps.etaFields ||
         recSlotsAll env T caps.etaFields) = true →
-      Level.isEquivList us us' = some true →
+      (∀ φ, Level.EvalEqList φ us us') →
       Certs env d false (cvT.type.instantiateLevelParams cvT.levelParams us')
         wtb.getAppArgs →
       (towerSlotsAll env T caps.etaFields = false →
@@ -483,6 +649,57 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       Certs env d false (cvT.type.instantiateLevelParams cvT.levelParams us')
         wta.getAppArgs →
       DefEq env d a b
+  /-- **Proof irrelevance at a compared type** (IxVM's proof-irrelevance test):
+  `a`'s io-inferred type has a sort that is `Prop` at every assignment, and `b`'s
+  io-inferred type is definitionally equal to `a`'s. Unlike `proofIrrel`, one
+  sort is inferred and the two types are compared. -/
+  | proofIrrelTy {d : Nat} {a ta tta b tb : Expr md} {u : Level} :
+      Infer env .io d a ta → Infer env .io d ta tta →
+      Red env d tta (.sort u) → (∀ φ, Level.eval φ u = 0) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
+  /-- **Unit-likeness at a compared type** (IxVM's unit-like test): `a`'s
+  io-inferred type head-normalises to a unit-like family at its parameter count,
+  with the family's telescope certified against the parameters (licensed: a
+  `.never` slot skips), and `b`'s io-inferred type is definitionally equal to `a`'s.
+  The family is a stored one, or the basis `PUnit` (`isUnitLikeTy`). Unlike
+  `structUnit`, the types are compared before normalisation. -/
+  | unitLikeTy {d : Nat} {a ta wta b tb : Expr md} {T : Key md} {us : List Level}
+      {cvT : ConstantVal md} {caps : IndCaps md} :
+      Infer env .io d a ta → Red env d ta wta →
+      wta.getAppFn = .const T us →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.unitlike = true →
+      wta.getAppArgs.length = caps.unitParams →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        wta.getAppArgs →
+      (reservedBasisNames.contains T = false ∨ isUnitLikeTy env wta = true) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
+  /-- **Structure η at a compared type** (IxVM's structure-η test), at a structure
+  whose fields are projection-table entries: `a` is a fully applied constructor of an
+  η-capable stored structure with at least one field; `a`'s io-inferred type reduces to
+  the structure at `a`'s levels and parameters, which the structure's telescope
+  certifies (licensed: a `.never` slot skips); `b`'s io-inferred type is definitionally
+  equal to `a`'s; and each `.proj` of `b` is definitionally equal to the corresponding
+  field of `a`. Unlike `structEta`, the two types are compared and the parameters are
+  `a`'s own. -/
+  | structEtaTy {d : Nat} {a b ta tb : Expr md} {c : Key md} {us : List Level}
+      {cvc : ConstantVal md} {cnP cnF : Nat} {T : Key md} {cvT : ConstantVal md}
+      {caps : IndCaps md} :
+      a.getAppFn = .const c us →
+      env.find? c = some (.ctorInfo cvc cnP cnF) →
+      a.getAppArgs.length = cnP + cnF →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.eta = true → caps.etaCtor = some c →
+      0 < cnF → towerSlotsAll env T cnF = true →
+      Infer env .io d a ta →
+      Red env d ta (Expr.mkAppN (.const T us) (a.getAppArgs.take cnP)) →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        (a.getAppArgs.take cnP) →
+      Infer env .io d b tb → DefEq env d tb ta →
+      DefEqList env d ((List.range cnF).map fun i => .proj T i b) (a.getAppArgs.drop cnP) →
+      DefEq env d b a
 
 /-- **Type inference** at a grade. -/
 inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop where
@@ -566,9 +783,7 @@ inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop 
       env.findProj? sn i = some entry →
       te.getAppArgs.length = entry.numParams →
       us.length = entry.levelParams.length →
-      (Level.isEquiv entry.structSort .zero = some true →
-        Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
-          = some true) →
+      FireSem entry us →
       Infer env g d (.proj sn i pe) (entry.typeAt us te.getAppArgs pe)
 
 /-- **The telescope certificate** (`iotaCerts`, `Core.lean:230-244`):

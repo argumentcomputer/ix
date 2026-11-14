@@ -157,7 +157,7 @@ def checkProjFnS (fe : FEnv md) (T ctorName : Key md) (lps : List LevelParam)
   let (cvj, mcv) ← checkProjLookupsF (m := CheckCM md) fe T ctorName lps
     nP nF i
   let pty ← checkProjTyF (m := CheckCM md) fe T ctorName lps mcv.type nP nF
-  checkProjShape (m := CheckCM md) pty cvj.type nP nF
+  checkProjShape (m := CheckCM md) pty cvj.type nP nF cvj.levelParams
   unless i < nF do
     throw (.invalid "projection index out of range")
   let rhsA ← checkProjRuleF (sharedOpsC mode fe) fe pty cvj lps nP nF i
@@ -209,6 +209,9 @@ def checkNativeTailS (fe : FEnv md) (q : (NativePass md) (FEnv md)) : (CheckCM m
   let fe₂ := consSumCtorsF p.nP q.ctorsA q.env₁
   flushC
   let (cvRa, rhss) ← checkNativeRecF (sharedOpsC mode fe₂) structWalkersC fe₂ p q.cvTa q.ctorsA
+  unless q.ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) do
+    throw (.notImplemented "direct rec: the recursor's major premise is not canonical")
   -- the projection table at a structure-like block (task #210 Part A)
   checkNativeTableF (m := CheckCM md) structWalkersC p q.ctorsA q.sortss (fe₂.push (.recInfo cvRa
     p.majorIdx p.rulePrefix (sumRules fe₂.find? cvRa.name p.nP p.majorIdx p.rulePrefix

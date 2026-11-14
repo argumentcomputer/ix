@@ -72,11 +72,11 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-- The inference and comparison runs at one index of a recorded typed
 walk. -/
-theorem typedListOk_getD {F : Nat} {d : Nat} :
-    ∀ {as bs : List (Expr md)}, TypedListOk μ F env d as bs →
+theorem typedListOk_getD {J : Judgements md} {d : Nat} :
+    ∀ {as bs : List (Expr md)}, TypedListJ J env d as bs →
       ∀ i, i < as.length →
-        ∃ ty, inferTypeCore μ env F d (as.getD i default) = .ok ty ∧
-          isDefEqCore μ env F d ty (bs.getD i default) = .ok true := by
+        ∃ ty, J.infer env d (as.getD i default) ty ∧
+          J.defeq env d ty (bs.getD i default) := by
   intro as
   induction as with
   | nil =>
@@ -102,10 +102,11 @@ set_option maxHeartbeats 3200000 in
 At every `ρ'` satisfying the recursor-frame context, the `q`-th
 instantiated pin reads to a *graded* annotation whose value inhabits
 the constructor run's `q`-th parameter domain. -/
-theorem nestedPinFire {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
-    (hinfC : InferClaim μ m φ F)
-    (hreads : InferReads m μ φ F)
+theorem nestedPinFire {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
+    (hinfC : InferClaimJ J m φ)
+    (hreads : InferReadsJ J m φ)
+    (hframe : InferFrameJ J m φ)
     {K rP cnP : Nat} (hrPK : rP ≤ K)
     -- the public (recursor) frame
     {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
@@ -135,7 +136,7 @@ theorem nestedPinFire {m : EnvModel V env} {F : Nat}
     (hcinstP : Expr.instPisAt
       (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))) ctyP
       = some (cdomsP, crestP))
-    (hTyped : TypedListOk μ F env K
+    (hTyped : TypedListJ J env K
       (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))) cdomsP)
     -- the pins' readings (a run carries none; the statement's own
     -- major supplies them — see the module docstring)
@@ -342,19 +343,14 @@ theorem nestedPinFire {m : EnvModel V env} {F : Nat}
     (hpinB _ (hpinMem q hq))
     (fun l hl => hlbFvsP l.1 l.2 (hpinLeaf _ (hpinMem q hq) l hl).1)
     (hctxPin q hq) hw hta
-  -- the inferred type's syntactic frame (a run's tax, part 4's lesson)
-  have hwsTy : Expr.WScoped K ty :=
-    inferTypeCore_WScoped m.wf F hInf (hpinWs _ (hpinMem q hq))
+  -- the inferred type's syntactic frame, where the pin reads
+  obtain ⟨hwsTy, hbTy, hsubTy⟩ := hframe hInf (hpinWs _ (hpinMem q hq))
+    (hpinB _ (hpinMem q hq))
+    (fun l hl => hlbFvsP l.1 l.2 (hpinLeaf _ (hpinMem q hq) l hl).1)
+    (hctxPin q hq) hw
   have hleafTy : ∀ l ∈ ty.fvarLeaves,
       Expr.fvar l.1 l.2 ∈ fvsP ∧ l.1 < rP := fun l hl =>
-    hpinLeaf _ (hpinMem q hq) l
-      (inferTypeCore_fvarLeaves m.wf F hInf
-        (hpinWs _ (hpinMem q hq)) l hl)
-  have hbTy : ty.looseBVarsBounded 0 = true :=
-    inferTypeCore_looseBVars m.wf F hInf (hpinWs _ (hpinMem q hq))
-      (hpinB _ (hpinMem q hq))
-      (fun l hl => hlbFvsP l.1 l.2
-        (hpinLeaf _ (hpinMem q hq) l hl).1)
+    hpinLeaf _ (hpinMem q hq) l (hsubTy l hl)
   intro ρ' hsat
   refine ⟨w, hw, hgw ρ' hsat, ?_⟩
   intro dw hdw
@@ -400,10 +396,11 @@ the context swap onto the recursor frame (`Δb`, on the prefix
 equalities), `nestedPinFire` there, and the renaming bridge back —
 which here carries the *subjects* too, since the statement frame's
 pins are the public frame's renamed. -/
-theorem nestedParamSupply {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
-    (hinfC : InferClaim μ m φ F)
-    (hreads : InferReads m μ φ F)
+theorem nestedParamSupply {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
+    (hinfC : InferClaimJ J m φ)
+    (hreads : InferReadsJ J m φ)
+    (hframe : InferFrameJ J m φ)
     {f : Key md → Key md} (hro : RenameOk m.acval env f)
     {rP cnP cnF N : Nat} (hrPN : rP ≤ N)
     -- the statement frame
@@ -452,7 +449,7 @@ theorem nestedParamSupply {m : EnvModel V env} {F : Nat}
     (hpsPdef : psP = pins.map (Expr.instSpine (fvsP.take rP) (rP - 1)))
     {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt psP ctyP = some (cdomsP, crestP))
-    (hTyped : TypedListOk μ F env (rP + cnF) psP cdomsP)
+    (hTyped : TypedListJ J env (rP + cnF) psP cdomsP)
     -- the statement-frame run, whose parameter spine is the renamed pins
     {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)
     (hspPar : ∀ q, q < cnP → sp[q]?
@@ -547,7 +544,7 @@ theorem nestedParamSupply {m : EnvModel V env} {F : Nat}
       rw [← heq]
       exact hsatA
   -- the ladder at the recursor frame
-  have hladder := nestedPinFire (m := m) hclaims hinfC hreads
+  have hladder := nestedPinFire (m := m) hclaims hinfC hreads hframe
     (K := rP + cnF) (by omega) hfvsPlen hshapeP hwsFvsP hleafClosedP
     hlbFvsP htowerP hokTV hdomsP0 hpinsLen hpinsWf hCw hCb hTVjP hokTVjP
     hcinstP hTyped

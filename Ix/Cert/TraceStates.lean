@@ -164,16 +164,28 @@ theorem noted_good_of_fix {Q : md.Id → Prop} (hQ : ∀ i, f i = i → Q i) {d 
     rw [ConstantInfo.mapKeys_toConstantVal] at this
     exact expr_good_of_fix hQ (cv_fix this)
 
+/-- **A declaration a renaming fixes records a value naming only ids it fixes.** -/
+theorem valued_good_of_fix {Q : md.Id → Prop} (hQ : ∀ i, f i = i → Q i) {d : Declaration md}
+    (h : d.mapKeys f = d) : ∀ e ∈ CtxAgree.valEntries d, e.2.2.Good (KeyScope.ofId Q) := by
+  cases d with
+  | defnDecl v e₀ h₀ =>
+    have h2 := (Declaration.defnDecl.inj h).2.1
+    simp only [CtxAgree.valEntries, List.mem_singleton]
+    rintro e rfl
+    exact expr_good_of_fix hQ h2
+  | _ => simp [CtxAgree.valEntries]
+
 end Fix
 
 /-! ## Commits keep the states good -/
 
-/-- **What a read records lies in a scope**: its projection owners, its blocks and the types
-its declarations note. -/
+/-- **What a read records lies in a scope**: its projection owners, its blocks, and the types
+and values its declarations note. -/
 structure ReadGood (Q : KeyScope .source) (r : Read .source) : Prop where
   owners : ∀ o ∈ r.owners, o.Good Q
   blocks : ∀ x ∈ r.blocks, x.2.Good Q
   types : ∀ d ∈ r.decls.toList, ∀ e ∈ CtxAgree.noteEntries d, e.2.2.1.Good Q
+  values : ∀ d ∈ r.decls.toList, ∀ e ∈ CtxAgree.valEntries d, e.2.2.Good Q
 
 theorem foldl_insOpt_val {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
     (g : γ → Option (α × β)) (V : β → Prop) :
@@ -196,7 +208,7 @@ theorem foldl_insOpt_val {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α]
 /-- **A commit of a good read keeps a state good.** -/
 theorem commit_good {Q : KeyScope .source} {st : State .source} {r : Read .source} (hst : StateGood Q st)
     (hr : ReadGood Q r) : StateGood Q (st.commit r) := by
-  refine ⟨fun k hk o ho => ?_, fun k hk p hp => ?_, fun k hk b hb => ?_⟩
+  refine ⟨fun k hk o ho => ?_, fun k hk p hp => ?_, fun k hk b hb => ?_, fun k hk p hp => ?_⟩
   · rw [CtxAgree.commit_projOwners] at ho
     rcases foldl_insOpt_val some (fun o : ProjRecOwner .source => o.Good Q) _ _
       (fun e he a b hab => by
@@ -223,6 +235,15 @@ theorem commit_good {Q : KeyScope .source} {st : State .source} {r : Read .sourc
         exact hr.blocks _ he) k b hb with h | h
     · exact hst.blocks k hk b h
     · exact h
+  · rw [CtxAgree.commit_defValues] at hp
+    rcases foldl_insOpt_val some (fun p : List LevelParam × Ix.Kernel.Expr .source => p.2.Good Q) _ _
+      (fun e he a b hab => by
+        obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
+        simp only [Option.some.injEq] at hab
+        subst hab
+        exact hr.values d hd _ he) k p hp with h | h
+    · exact hst.values k hk p h
+    · exact h
 
 /-- **A read the collapse keeps from a good lowering is good.** -/
 theorem collapse_good {Q : KeyScope .source} {s s' : Ix.LeanIngress.CollapseState} {first : SourcePrelude.SKey}
@@ -230,7 +251,8 @@ theorem collapse_good {Q : KeyScope .source} {s s' : Ix.LeanIngress.CollapseStat
     (h : Ix.LeanIngress.collapseRead s first raw = (s', .ok (r, dropped))) (hraw : ReadGood Q raw) :
     ReadGood Q r := by
   obtain ⟨-, -, -, sub, -, howners, hblocks⟩ := SourcePrelude.collapseRead_facts h
-  exact ⟨howners ▸ hraw.owners, hblocks ▸ hraw.blocks, fun d hd => hraw.types d (sub d hd)⟩
+  exact ⟨howners ▸ hraw.owners, hblocks ▸ hraw.blocks, fun d hd => hraw.types d (sub d hd),
+    fun d hd => hraw.values d (sub d hd)⟩
 
 /-! ## Lowerings lie in the scope -/
 
@@ -254,7 +276,8 @@ theorem stateAgree_self {f : Ix.Kernel.Name → Ix.Kernel.Name} (hf : ∀ i, P i
   have hf' : ∀ i, (KeyScope.ofId (md := .source) P) i → f i = i := hf
   refine ⟨fun k hk => ?_, fun k hk p hp => hst.types k hk p hp,
     fun k hk => by rw [key_fix hf' hk],
-    fun k hk => ?_, fun k hk b hb => hst.blocks k hk b hb⟩
+    fun k hk => ?_, fun k hk b hb => hst.blocks k hk b hb,
+    fun k hk _ => ?_, fun k hk _ p hp => hst.values k hk p hp⟩
   · rw [key_fix hf' hk]
     cases hp : st.constTypes[k]? with
     | none => rfl
@@ -263,6 +286,10 @@ theorem stateAgree_self {f : Ix.Kernel.Name → Ix.Kernel.Name} (hf : ∀ i, P i
     cases hb : st.indBlocks[k]? with
     | none => rfl
     | some b => simp only [Option.map_some, block_fix hf' (hst.blocks k hk b hb)]
+  · rw [key_fix hf' hk]
+    cases hp : st.defValues[k]? with
+    | none => rfl
+    | some p => simp only [Option.map_some, expr_fix hf' (hst.values k hk p hp)]
 
 /-- A definition's lowering keeps its header. -/
 theorem lowerDefinition_cv {hint : Option ReducibilityHint} {st : State .source}
@@ -278,6 +305,41 @@ theorem lowerDefinition_cv {hint : Option ReducibilityHint} {st : State .source}
     obtain ⟨rfl, -⟩ := h
     cases kind <;> simp [CtxAgree.noteEntries]
 
+/-- **The projection rewrite at a state good in a scope gives a value in the scope.** -/
+theorem projRewrite_good {st : State .source} (hst : StateGood (KeyScope.ofId P) st) {cv : CVal .source}
+    {value : CExpr .source} (htype : cv.type.Good (KeyScope.ofId P)) (hvalue : value.Good (KeyScope.ofId P)) :
+    ∀ v, projRewrite st cv value = some v → v.Good (KeyScope.ofId P) := by
+  have ownerId : ∀ o : Ix.Kernel.Frontend.ProjRecOwner .source, o.mapKeys (fun i => i) = o := fun o => by
+    cases o; simp [Ix.Kernel.Frontend.ProjRecOwner.mapKeys, Key.map_id]
+  have agree : CtxAgree.ProjectionAgree (fun i => i) (KeyScope.ofId P) st st :=
+    ⟨fun k _ => by
+        rw [Key.map_id]
+        cases st.projOwners[k]? <;> simp [ownerId],
+      hst.owners, fun k _ => by rw [Key.map_id]⟩
+  exact (CtxAgree.projRewrite_mapKeys (fun _ _ => trivial) (fun _ _ _ _ h => h) agree htype hvalue).2
+
+/-- **A definition's lowering records a value in the scope**, from a state good there. -/
+theorem lowerDefinition_value {hint : Option ReducibilityHint} {st : State .source}
+    (hst : StateGood (KeyScope.ofId P) st) {heights : CName .source → Nat} {cv : CVal .source}
+    {value : CExpr .source} {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {decl : CDecl .source}
+    {rw : Bool} (htype : cv.type.Good (KeyScope.ofId P)) (hvalue : value.Good (KeyScope.ofId P))
+    (h : lowerDefinition hint st heights cv value kind safety = .ok (decl, rw)) :
+    ∀ e ∈ CtxAgree.valEntries decl, e.2.2.Good (KeyScope.ofId P) := by
+  have hv : ((projRewrite st cv value).getD value).Good (KeyScope.ofId P) := by
+    cases hr : projRewrite st cv value with
+    | none => exact hvalue
+    | some v => exact projRewrite_good hst htype hvalue v hr
+  unfold lowerDefinition at h
+  dsimp only at h
+  split at h
+  · simp [declined, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    intro e he
+    cases kind <;> simp only [CtxAgree.valEntries, List.mem_singleton, List.not_mem_nil] at he
+    subst he
+    exact hv
+
 /-- **A lowering of a group whose terms lie in the scope lies in the scope**, from a state good
 there. -/
 theorem lower_good {st : State .source} (hst : StateGood (KeyScope.ofId P) st) {c : Converted}
@@ -286,46 +348,58 @@ theorem lower_good {st : State .source} (hst : StateGood (KeyScope.ofId P) st) {
   cases c with
   | definitions ms =>
     obtain ⟨ds, hds, plain, hF⟩ := DefinitionBlockReads.lower_defs hl
-    refine ⟨by simp [plain.owners], by simp [plain.blocks], fun d hd e he => ?_⟩
-    rw [hds, List.toList_toArray] at hd
-    obtain ⟨m, hm, b, hlow⟩ := ReaderUnits.forall₂_mem_right hF d hd
-    rw [lowerDefinition_cv hlow e he]
-    exact (hc m (by simpa using hm)).1
+    refine ⟨by simp [plain.owners], by simp [plain.blocks], fun d hd e he => ?_, fun d hd e he => ?_⟩
+    · rw [hds, List.toList_toArray] at hd
+      obtain ⟨m, hm, b, hlow⟩ := ReaderUnits.forall₂_mem_right hF d hd
+      rw [lowerDefinition_cv hlow e he]
+      exact (hc m (by simpa using hm)).1
+    · rw [hds, List.toList_toArray] at hd
+      obtain ⟨m, hm, b, hlow⟩ := ReaderUnits.forall₂_mem_right hF d hd
+      have hmg := hc m (by simpa using hm)
+      exact lowerDefinition_value hst hmg.1 hmg.2 hlow e he
   | «axiom» cv =>
     simp only [Ix.LeanIngress.lower, pure, Except.pure, Except.ok.injEq] at hl
     subst hl
-    refine ⟨by simp, by simp, fun d hd e he => ?_⟩
-    simp only [List.mem_singleton] at hd
-    subst hd
-    simp only [CtxAgree.noteEntries, List.mem_singleton] at he
-    subst he
-    exact hc
+    refine ⟨by simp, by simp, fun d hd e he => ?_, fun d hd e he => ?_⟩
+    · simp only [List.mem_singleton] at hd
+      subst hd
+      simp only [CtxAgree.noteEntries, List.mem_singleton] at he
+      subst he
+      exact hc
+    · simp only [List.mem_singleton] at hd
+      subst hd
+      simp [CtxAgree.valEntries] at he
   | quot k cv =>
     simp only [Ix.LeanIngress.lower, pure, Except.pure, Except.ok.injEq] at hl
     subst hl
-    refine ⟨by simp, by simp, fun d hd e he => ?_⟩
-    simp only [List.mem_singleton] at hd
-    subst hd
-    simp only [CtxAgree.noteEntries, List.mem_singleton] at he
-    subst he
-    exact hc
+    refine ⟨by simp, by simp, fun d hd e he => ?_, fun d hd e he => ?_⟩
+    · simp only [List.mem_singleton] at hd
+      subst hd
+      simp only [CtxAgree.noteEntries, List.mem_singleton] at he
+      subst he
+      exact hc
+    · simp only [List.mem_singleton] at hd
+      subst hd
+      simp [CtxAgree.valEntries] at he
   | «inductive» rb =>
     have hl' : lowerInductive st rb = .ok raw := hl
     obtain ⟨gens, -, -, hblocks, -⟩ := CtxAgree.lowerInductiveDecls_ok (LowerDistinct.lowerInductiveDecls_of_ok hl')
+    -- a renaming fixing the scope fixes the lowering
+    obtain ⟨f, hfix, hmove⟩ := moveOff (P := P)
+    have hfix' : ∀ i, (KeyScope.ofId (md := .source) P) i → f i = i := hfix
+    have hrb : rb.Good (KeyScope.ofId P) := hc
+    have hA : lowerInductive st (rb.mapKeys f) = .ok raw := by rw [blockRead_fix hfix' hrb]; exact hl'
+    obtain ⟨hdecls, -, -⟩ := CtxAgree.lowerInductive_mapKeys (P := KeyScope.ofId P) (fun _ _ => trivial)
+      (by intro a b ha hb e; rw [hfix a ha, hfix b hb] at e; exact e) (stateAgree_self hfix hst) hrb hl' hA
+    have hfixd : ∀ d ∈ raw.decls.toList, d.mapKeys f = d :=
+      fixed_of_map (by rw [← Array.toList_map, ← hdecls])
     refine ⟨CtxAgree.lowerInductive_owners_good (P := KeyScope.ofId (md := .source) P) hc hl',
-      fun x hx => ?_, fun d hd => ?_⟩
+      fun x hx => ?_, fun d hd => ?_, fun d hd => ?_⟩
     · rw [hblocks] at hx
       obtain ⟨t, -, rfl⟩ := List.mem_map.mp hx
       exact CtxAgree.blockRecOf_good (P := KeyScope.ofId (md := .source) P) hc
-    · -- a renaming fixing the scope fixes the lowering
-      obtain ⟨f, hfix, hmove⟩ := moveOff (P := P)
-      have hfix' : ∀ i, (KeyScope.ofId (md := .source) P) i → f i = i := hfix
-      have hrb : rb.Good (KeyScope.ofId P) := hc
-      have hA : lowerInductive st (rb.mapKeys f) = .ok raw := by rw [blockRead_fix hfix' hrb]; exact hl'
-      obtain ⟨hdecls, -, -⟩ := CtxAgree.lowerInductive_mapKeys (P := KeyScope.ofId P) (fun _ _ => trivial)
-        (by intro a b ha hb e; rw [hfix a ha, hfix b hb] at e; exact e) (stateAgree_self hfix hst) hrb hl' hA
-      have hd' := fixed_of_map (by rw [← Array.toList_map, ← hdecls]) d hd
-      exact noted_good_of_fix hmove hd' (SourcePrelude.lower_noBasis st _ raw hl d hd)
+    · exact noted_good_of_fix hmove (hfixd d hd) (SourcePrelude.lower_noBasis st _ raw hl d hd)
+    · exact valued_good_of_fix hmove (hfixd d hd)
 
 end Lower
 
@@ -346,7 +420,7 @@ entry name no input. -/
 theorem prelude_good {P : Ix.Kernel.Name → Prop} {pre : Prelude .source} {preA : Prelude .anon}
     (h : PreludeAgree.preludeAgreeB pre preA = true) : StateGood (KeyScope.ofId P) pre.state := by
   simp only [PreludeAgree.preludeAgreeB, PreludeAgree.stateAgreeB, Bool.and_eq_true] at h
-  obtain ⟨-, ⟨⟨⟨⟨hT, -⟩, hB⟩, hO⟩, -⟩⟩ := h
+  obtain ⟨-, ⟨⟨⟨⟨⟨hT, -⟩, hB⟩, hO⟩, -⟩, hV⟩⟩ := h
   have none : ∀ i, PreludeAgree.NoIds i → (KeyScope.ofId P) i := fun i hi => by
     simp [PreludeAgree.NoIds, PreludeAgree.noId] at hi
   have expr : ∀ {e : Ix.Kernel.Expr .source}, e.Good PreludeAgree.NoIds → e.Good (KeyScope.ofId P) :=
@@ -355,7 +429,8 @@ theorem prelude_good {P : Ix.Kernel.Name → Prop} {pre : Prelude .source} {preA
     fun hk => Key.Good.mono none (fun _ _ => trivial) hk
   have le : PreludeAgree.NoIds.Le (KeyScope.ofId P) := ⟨none, fun _ _ => trivial⟩
   refine ⟨fun k _ o ho => ?_, fun k _ p hp => expr (PreludeAgree.exprOk_good (fieldAgree_ok hT k p hp)),
-    fun k _ b hb => ?_⟩
+    fun k _ b hb => ?_,
+    fun k _ p hp => expr (PreludeAgree.exprOk_good (fieldAgree_ok hV k p hp))⟩
   · obtain ⟨hT', hc, hr, ht⟩ := PreludeAgree.ownerOk_good (fieldAgree_ok hO k o ho)
     exact ⟨key hT', key hc, key hr, expr ht⟩
   · obtain ⟨ht, hc, hr⟩ := PreludeAgree.blockOk_good (fieldAgree_ok hB k b hb)

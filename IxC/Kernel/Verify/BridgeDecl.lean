@@ -294,9 +294,9 @@ theorem checkProjTy_datF (env' : Env md) (T ctorName : Key md) (lps : List Level
   unfold checkProjTy
   datF_tac
 
-theorem checkProjShape_datF (pty cty : Expr md) (nP nF : Nat) (F : Nat) :
-    (checkProjShape pty cty nP nF : FueledM md _).val F =
-      checkProjShape (m := CheckM md) pty cty nP nF := by
+theorem checkProjShape_datF (pty cty : Expr md) (nP nF : Nat) (cjLps : List LevelParam) (F : Nat) :
+    (checkProjShape pty cty nP nF cjLps : FueledM md _).val F =
+      checkProjShape (m := CheckM md) pty cty nP nF cjLps := by
   unfold checkProjShape
   datF_tac
 

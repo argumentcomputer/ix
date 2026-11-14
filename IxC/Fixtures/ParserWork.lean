@@ -43,11 +43,11 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
 #guard [1, 2, 7].all fun n =>
   exactExprCost ((List.range n).foldl (fun e _ => .app e (.var 0)) (.var 0)) (5 + 5 * n)
 #guard [1, 2, 7].all fun n =>
-  exactExprCost ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) (5 + 8 * n)
+  exactExprCost ((List.range n).foldl (fun e _ => .lam (.sort 0) e) (.var 0)) (5 + 7 * n)
 #guard [1, 2, 7].all fun n =>
-  exactExprCost ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0)) (5 + 9 * n)
--- A let reads one binder-contract byte after its flags.
-#guard exactExprCost (.letE (.lean false) (.sort 0) (.var 0) (.var 0)) 13
+  exactExprCost ((List.range n).foldl (fun e _ => .all (.sort 0) e) (.var 0)) (5 + 7 * n)
+-- A let's mode is in its header: no byte follows it.
+#guard exactExprCost (.letE false (.value .many) (.sort 0) (.var 0) (.var 0)) 12
 
 -- The metered TagN reader (`Work.tagN`): one unit per byte read, plus one
 -- per byte of a 2-, 3-, 4- or 8-byte payload and one for the construction.
@@ -77,16 +77,20 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
   | _ => false
 
 -- The first array element is complete. The second fails inside a let after
--- parsing its binder contract and type. Its work must be retained, and the
+-- parsing its header, type and value. Its work must be retained, and the
 -- claimed array count must not cause extra iterations or allocation.
-#guard [2, 64, 18446744073709551615].all fun count =>
+/-- info: [("EOF", 4, 14), ("EOF", 4, 14), ("EOF", 4, 14)] -/
+#guard_msgs in
+#eval [2, 64, 18446744073709551615].map fun count =>
   match Work.array Work.expr count { bytes := ⟨#[0x10, 0xA0, 0x03, 0x10]⟩ } with
-  | (.error reason stop, work) => reason == "EOF" && stop.idx == 4 && work == 12
-  | _ => false
--- A let binder byte outside the sixteen binder contracts fails before its type.
-#guard match Work.array Work.expr 2 { bytes := ⟨#[0x10, 0xA0, 0x10]⟩ } with
-  | (.error reason stop, work) => reason == "invalid binder contract 16" && stop.idx == 3 && work == 8
-  | _ => false
+  | (.error reason stop, work) => (reason, stop.idx, work)
+  | _ => ("accepted", 0, 0)
+-- A let header outside the sixteen (nonDep, mode) values fails before its type.
+/-- info: ("getExpr: invalid let header 16", 3, 8) -/
+#guard_msgs in
+#eval match Work.array Work.expr 2 { bytes := ⟨#[0x10, 0xA8, 0x08, 0x10]⟩ } with
+  | (.error reason stop, work) => (reason, stop.idx, work)
+  | _ => ("accepted", 0, 0)
 -- A claimed spine length is checked against the remaining bytes first.
 #guard match Work.expr { bytes := ⟨#[0x72, 0x10]⟩ } with
   | (.error reason stop, work) =>
@@ -119,9 +123,10 @@ def expressionCountBombs : List (ByteArray × Nat × Nat) :=
 def expressionCases : List Ixon.Expr := [
   .var 18446744073709551615, .ref 2 #[0, 1, 127, 128], .recur 3 #[7, 8],
   .prj 2 1 (.var 0), .app (.app (.var 0) (.var 1)) (.var 2),
-  .lam .linear (.sort 0) (.lam .affine (.var 0) (.var 1)),
-  .all .many .unique (.sort 0) (.all .erased .shared (.var 0) (.var 1)),
-  .letE (.lean true) (.sort 0) (.var 0) (.letE (.borrow false .linear) (.var 0) (.var 0) (.var 0))]
+  .lam (.sort 0) (.lam (.var 0) (.var 1)),
+  .all (.sort 0) (.all (.var 0) (.var 1)),
+  .letE true (.value .many) (.sort 0) (.var 0) (.letE false .borrow (.var 0) (.var 0) (.var 0)),
+  .letE false (.value .erased) (.sort 0) (.var 0) (.var 0)]
 
 -- Check every truncation from a nonzero cursor, including complete reads
 -- with an untouched suffix, and all single-byte tags/malformed branches.
@@ -174,12 +179,12 @@ def recordChecked (maxBytes budget : Nat) (input : ByteArray) : Bool :=
     parsed.2 ≤ 16 * input.size + 2 * budget + 3
 
 def recordCases : List Ixon.Constant := variants.map Prod.snd ++
-  [sharedIdentity, Codec.sharedUniverseBudget, ⟨.muts #[], #[], #[], #[]⟩]
+  [sharedIdentity, Codec.sharedUniverseBudget, ⟨.muts #[], #[], #[], #[], #[]⟩]
 
 #guard (Work.record 0 0 ⟨#[]⟩).2 == 3
 #guard (Work.record 0 0 ⟨#[0]⟩).2 == 1
-#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[]⟩)).2 == 13
-#guard [(0, 14), (16, 54), (31, 86), (32, 93)].all fun (budget, work) =>
+#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[], #[]⟩)).2 == 15
+#guard [(0, 14), (16, 54), (31, 86), (32, 95)].all fun (budget, work) =>
   (Work.record 256 budget (Ixon.serConstant Codec.sharedUniverseBudget)).2 == work
 #guard recordCases.all fun value =>
   let input := Ixon.serConstant value

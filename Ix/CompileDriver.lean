@@ -14,7 +14,6 @@ import Std.Data.HashSet.Lemmas
 public import Ix.IndFlags
 public import Ix.Compile.Publication
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Resource.Addressed
 
 /-!
   Ix.CompileDriver: the compile-env driver.
@@ -859,7 +858,7 @@ def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
-  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let view : Ix.Environment := env.lookupView
   let sched := FoldSchedule.of blocks
   let cenv₀ := { CompileEnv.new view with sharingLimits }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)

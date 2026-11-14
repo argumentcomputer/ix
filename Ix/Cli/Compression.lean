@@ -1,6 +1,5 @@
 module
 public import Ix.Aggr.Verification
-public import Ix.Aggr.Backend
 public import Ix.Store
 
 public section
@@ -20,41 +19,42 @@ opaque describeSetup (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) : IO St
 
 /-- Run the stages in `dir`, resuming checked proofs unless `fresh` replaces
 them. Fixed preprocessing, parameters and proving keys under `cacheRoot`
-remain reusable. A nonempty `fixedRoot` is the JSON layout of `proof`. -/
+remain reusable. A nonempty `fixedRoot` is the layout (`.ixl` bytes) of `proof`. -/
 @[extern "rs_compression_run"]
-opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
+opaque compress (vk proof claim statement fixedRoot : @& ByteArray) (dir cacheRoot : @& String)
   (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) (fresh : Bool := false) : IO ByteArray
 
-/-- The versioned normalization layout for the aggregation backend's key. -/
+/-- The versioned normalization layout (`.ixl` bytes) for the aggregation
+backend's key. -/
 @[extern "rs_compression_release_root_layout"]
-opaque releaseRootLayout (vk : @& ByteArray) : IO String
+opaque releaseRootLayout (vk : @& ByteArray) : IO ByteArray
 
-/-- Per-circuit rows of one root wrap execution of `proof`, as a JSON array. -/
+/-- Check that `statement` belongs to `claim` and to the aggregation backend the
+bundled verifying keys were derived for, as the default verifier requires. -/
+@[extern "rs_compression_check_release_statement"]
+opaque checkReleaseStatement (claim statement : @& ByteArray) : IO Unit
+
+/-- Per-circuit rows of one root wrap execution of `rawProof`, as a JSON array.
+`invocation` is in Ixon (`Ix.AiurInvocation`). -/
 @[extern "rs_compression_root_rows"]
-opaque rootRows (system : @& Aiur.AiurSystem) (aggrIdx : @& Nat)
-  (allowed ixvmVk claim proof : @& ByteArray) : IO String
+opaque rootRows (aggrArtifact : @& String) (invocation : @& ByteArray)
+  (rawProof : @& ByteArray) : IO String
 
-/-- The fixed root layout holding every row-count array in the JSON array
+/-- The fixed root layout (`.ixl` bytes) holding every row-count array in the JSON array
 `rows`, with `headroom` extra doublings per circuit. -/
 @[extern "rs_compression_root_layout"]
-opaque rootLayout (system : @& Aiur.AiurSystem) (rows : @& String)
-  (headroom claimLen : UInt32) : IO String
+opaque rootLayout (aggrArtifact rows : @& String)
+  (headroom claimLen : UInt32) : IO ByteArray
 
-/-- Wrap the aggregate root `proof` once more and prove the wrap in the fixed
+/-- Wrap the aggregate root `rawProof` once more and prove the wrap in the fixed
 shape of `layout`; returns the normalized proof bytes. -/
 @[extern "rs_compression_normalize_root"]
-opaque normalizeRoot (system : @& Aiur.AiurSystem) (aggrIdx : @& Nat)
-  (allowed ixvmVk claim proof : @& ByteArray) (layout : @& String) : IO ByteArray
+opaque normalizeRoot (aggrArtifact : @& String) (invocation : @& ByteArray)
+  (rawProof layout : @& ByteArray) : IO ByteArray
 
 /-- Write the FRI worker's root input directory `dir` without compressing. -/
 @[extern "rs_compression_write_root"]
-opaque writeRoot (vk proof claim statement : @& ByteArray) (fixedRoot dir : @& String) : IO Unit
-
-/-- Normalize `wrapper`'s aggregate root to `layout` under `backend`. -/
-def normalize (backend : Aggr.VerificationBackend) (wrapper : Ixon.Proof)
-    (layout : String) : IO ByteArray :=
-  normalizeRoot backend.system backend.aggrIdx backend.allowed backend.ixvmVk
-    (Ix.Claim.ser wrapper.claim) wrapper.proof layout
+opaque writeRoot (vk proof claim statement fixedRoot : @& ByteArray) (dir : @& String) : IO Unit
 
 /-- Verify a compressed proof under the bundled release keys. Development
 proofs require `devSrs`; verification needs no proving setup or GPU. -/
@@ -103,13 +103,11 @@ def readProofInput (input : String) : IO (Address × Ixon.Proof) := do
   let wrapper ← IO.ofExcept (Aggr.decodeAggregateWrapperAt addr bytes)
   return (addr, wrapper)
 
-/-- The root statement a compressed proof of `claim` must expose: the public
-claim of the backend's `ix_aggr` entrypoint, serialized as one batch claim. -/
-def statementBytes (backend : Aggr.VerificationBackend) (claim : Ix.Claim) : ByteArray :=
-  MultiStark.serializeClaims
-    #[Aggr.aggregateOuterClaim backend.allowed backend.aggrIdx claim]
-
-def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UInt32 := do
+/-- Verify the compressed proof `wrapper`, stored at `addr`, and print what its
+claim states: `statement`, the claim's kind, subject and conditions
+(`Ix.Cli.ClaimPolicy.statement`). -/
+def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) (statement : String) :
+    IO UInt32 := do
   let claim := Ix.Claim.ser wrapper.claim
   let setup ← verify wrapper.proof claim devSrs
   match setup with
@@ -121,6 +119,7 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UIn
     IO.println s!"ok: Groth16 proof {addr} verifies claim {Address.blake3 claim} under the admitted circuit-specific setup"
   | _ =>
     throw <| IO.userError s!"unsupported compression setup: {setup}"
+  IO.println statement
   return 0
 
 end Ix.Cli.Compression

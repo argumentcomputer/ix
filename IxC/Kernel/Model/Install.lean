@@ -201,9 +201,7 @@ structure ConsHead (env : Env md) (c₀ : ConstantInfo md)
   rescue bits are the store's own verdict (`RecCtorsStored`'s head) -/
   ctorsHead : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
     ∀ r ∈ rules,
-      (∃ cvj cnP cnF,
-        env.find? (Ix.Kernel.RecRule.ctor r)
-          = some (.ctorInfo cvj cnP cnF)) ∧
+      Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
       (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
       (r.eta = true →
         Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)
@@ -221,9 +219,7 @@ theorem ConsHead.ofBasis {c₀ : ConstantInfo md}
     (hnotproj : ∀ tbl, c₀ ≠ .projInfo tbl)
     (hctors : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
-        (∃ cvj cnP cnF,
-          env.find? (Ix.Kernel.RecRule.ctor r)
-            = some (.ctorInfo cvj cnP cnF)) ∧
+        Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
         (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true →
           Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)) :
@@ -242,9 +238,7 @@ theorem ConsHead.ofFresh {c₀ : ConstantInfo md}
     (hprojTower : ∀ tbl, c₀ ≠ .projInfo tbl)
     (hctors : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
-        (∃ cvj cnP cnF,
-          env.find? (Ix.Kernel.RecRule.ctor r)
-            = some (.ctorInfo cvj cnP cnF)) ∧
+        Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
         (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true →
           Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)) :

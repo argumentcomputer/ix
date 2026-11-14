@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Model.Inductives.SumStageFormer
 import IxC.Kernel.Model.Inductives.StructStageCtor
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public section
 
 /-!
@@ -173,19 +174,18 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Key md} {lps : List LevelParam} {
     rwa [consList_range_reverse] at this
 
 /-- **The P step at a sum-shaped constructor's cons**, for a given fibre fold. -/
-theorem stageCtorGen {T : Key md}
+theorem stageCtorGenJ {T : Key md}
     (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
-    {F : Nat} {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
-    (mp : EnvModelM V μ env)
+    {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa cvS : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    (mp : EnvModelM V μ env) {J : Judgements md} (hfr : JudgeFrames J env₁)
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env₁ T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hCtor : SumCtorRunJ J env₀ env₁ T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     -- the constructor is fresh at the cons's environment and its type
     -- resolves there
     (hfresh : env.find? cvCa.name = none)
     (htr : cvCa.type.constsResolve env = true)
-    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hfT : env.find? T = some (.indInfo cvS caps))
     (hlpsT : cvTa.levelParams = lps)
     (hlpsC : cvCa.levelParams = lps)
     {idxArgs : List (Expr md)}
@@ -199,7 +199,7 @@ theorem stageCtorGen {T : Key md}
       (∀ n, n ≠ cvCa.name → m₂.acval n = mp.base2.acval n) →
       (∀ ψ, m₂.acval cvCa.name ψ
         = sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP).map (·.2.2)) (uChains (Fss ψ))) →
-      CapsLawsAt m₂ T cvTa caps)
+      CapsLawsAt m₂ T cvS caps)
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
     (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
     (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -227,10 +227,10 @@ theorem stageCtorGen {T : Key md}
       mp'.base2.acval = acvalWith mp.base2.acval cvCa.name
         (fun ψ => sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP).map (·.2.2))
           (uChains (Fss ψ))) := by
-  obtain ⟨⟨_, hccv⟩, -, -⟩ := Ix.Kernel.checkSumCtor_shape hCtor
-  obtain ⟨-, hnres, hpshape, -, hlbt, hitf, type', -, -, hann', htp, -, -, -, hty⟩ :=
-    Ix.Kernel.checkConstantVal_inv hccv
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann' hitf hlbt
+  obtain ⟨_, hccv⟩ := hCtor.check
+  obtain ⟨type', ⟨-, hnres, hpshape, -, hlbt, hitf, hann', htp, -, -⟩, hty⟩ :=
+    hccv
+  obtain ⟨htf', hbt'⟩ := hfr.annot_syntax hann' hitf hlbt
   have hCname : cvCa.name = cvC.name := by rw [hty]
   have hcb : ConstsBound env cvCa.type := constsBound_of_constsResolve _ htr
   have hTC : T ≠ cvCa.name := by
@@ -309,7 +309,7 @@ theorem stageCtorGen {T : Key md}
       exact hE T' cvT' caps' hf hne hcape hres
     · intro cvT caps' hf _
       have hfT' : (⟨.ctorInfo cvCa nP nF :: env.consts⟩ : Env md).find? T
-          = some (.indInfo cvTa caps) := by
+          = some (.indInfo cvS caps) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hTC h.symm)]
         exact hfT
       obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj (hfT'.symm.trans hf))
@@ -318,5 +318,64 @@ theorem stageCtorGen {T : Key md}
         exact acvalWith_ne hn
       · rw [hac]
         exact congrFun acvalWith_self ψ
+
+
+/-- The constructor's cons from its stage run: `stageCtorGenJ` at the kernel's runs. -/
+theorem stageCtorGen {T : Key md}
+    (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
+    {F : Nat} {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    (mp : EnvModelM V μ env)
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env₁ T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    -- the constructor is fresh at the cons's environment and its type
+    -- resolves there
+    (hfresh : env.find? cvCa.name = none)
+    (htr : cvCa.type.constsResolve env = true)
+    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hlpsT : cvTa.levelParams = lps)
+    (hlpsC : cvCa.levelParams = lps)
+    {idxArgs : List (Expr md)}
+    {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
+    {srcs : List (Option Nat)}
+    {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
+    -- the block's own capability laws at the cons (task #210 Parts A
+    -- and B), at any carrier agreeing with this one off the
+    -- constructor's name and storing the constructor's leaf there
+    (hTlaws : ∀ m₂ : EnvModel V ⟨.ctorInfo cvCa nP nF :: env.consts⟩,
+      (∀ n, n ≠ cvCa.name → m₂.acval n = mp.base2.acval n) →
+      (∀ ψ, m₂.acval cvCa.name ψ
+        = sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP).map (·.2.2)) (uChains (Fss ψ))) →
+      CapsLawsAt m₂ T cvTa caps)
+    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ →
+      ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
+        interp V (consList bs ρ) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))
+          = sumSet (resSort.eval ψ) (sumFibre (resSort.eval ψ) (consList (idxValsAt ρ (Es ψ) bs) ρ)
+              (rChains nIdx nIdx (Fss ψ) (Ess ψ))))
+    (hFsj : ∀ ψ, (Fss ψ)[j]? = some (((ds ψ).drop nP).map (·.2.2)))
+    (hEsj : ∀ ψ, (Ess ψ)[j]? = some (Es ψ))
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
+      (∀ q ∈ lps, ψ₁ q = ψ₂ q) → Fss ψ₁ = Fss ψ₂)
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow nP Fs)
+    (hiff : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
+        Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ)
+    (hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
+      SumFieldsOkB (resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
+      ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
+        SpineFit ρ (((ppsAll ψ).drop nP).map (·.2.2)) (idxValsAt ρ (Es ψ) bs)) :
+    ∃ mp' : EnvModelM V μ ⟨.ctorInfo cvCa nP nF :: env.consts⟩,
+      mp'.base2.acval = acvalWith mp.base2.acval cvCa.name
+        (fun ψ => sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP).map (·.2.2))
+          (uChains (Fss ψ))) :=
+  stageCtorGenJ hE mp (judgeFrames_runJ F) (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfresh htr
+    hfT hlpsT hlpsC hTlaws hFD hCD hfold hFsj hEsj hFssParams hFssBelow hiff hFssOkP hIdx
 
 end Ix.Kernel.Model

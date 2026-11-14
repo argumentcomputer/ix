@@ -76,7 +76,7 @@ private def vectors : IO Unit := do
 private def checks : IO Nat := do
   IO.ofExcept codecChecks
   vectors
-  let limits := _root_.Ix.Resource.typingLimits
+  let limits := _root_.Ix.Typing.typingLimits
   let (source, generated) ← IO.ofExcept (Tests.Ix.RoleGeneration.completeArtifact .natDiv)
   let some main := generated.table.addressOf? .natDiv | throw (IO.userError "fixture has no main")
   let artifact := { source with main := some main }

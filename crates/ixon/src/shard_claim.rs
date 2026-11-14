@@ -1,8 +1,7 @@
-//! Shard `CheckEnv` claim convention — the single source of truth shared
-//! by every builder (Lean `IxVM.ClaimHarness.shardCheckEnvClaim`,
-//! `ixvm-codegen::aiur_ixvm_witness::build_shard_check_env_witness`,
-//! `ix-kernel::claim`). Any change here changes claim digests; keep the
-//! Lean mirror in lockstep.
+//! Shard `CheckEnv` claim convention, shared by the Rust shard planner
+//! (`crate::shard`) and the Lean claim builder
+//! (`IxVM.ClaimHarness.shardCheckEnvClaim`). Any change here changes claim
+//! digests; keep the Lean mirror in lockstep.
 //!
 //! Semantics (mirrors the Aiur kernel's `env_walk`):
 //!
@@ -33,16 +32,17 @@
 //!   full dependency closure of `owned` — see `Env::bfs_closure` — even
 //!   though only the strict-membership set gets checked.
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::constant::{
-  Constant, ConstantInfo, Definition, Inductive, MutConst, Recursor,
+  Constant, ConstantInfo, DefKind, Definition, Inductive, MutConst, Recursor,
 };
 use crate::env::Env;
 use crate::expr::Expr;
 use crate::merkle::merkle_root_canonical;
 use crate::proof::{Claim, ClaimContext};
 use ix_common::address::Address;
+use ix_common::env::DefinitionSafety;
 
 /// Collect the `refs` indices this Expr uses as a CONSTANT: `Ref(i, _)`
 /// and the type index of `Prj(i, _, _)`. `Str`/`Nat` index blob payloads
@@ -51,7 +51,7 @@ use ix_common::address::Address;
 /// itself an entry of `Constant.sharing`, which is walked separately, so
 /// coverage is complete and the traversal stays linear.
 ///
-/// Mirror of `const_idxs_expr` in `Ix/IxVM/Kernel/Claim.lean`.
+/// Mirror of `const_idxs_expr` in `IxVM/IxVM/Source/KernelClaim.lean`.
 fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
   match e {
     Expr::Ref(i, _) => {
@@ -61,11 +61,11 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
       out.insert(*i);
       const_idxs_expr(inner, out);
     },
-    Expr::App(a, b) | Expr::Lam(_, a, b) | Expr::All(_, _, a, b) => {
+    Expr::App(a, b) | Expr::Lam(a, b) | Expr::All(a, b) => {
       const_idxs_expr(a, out);
       const_idxs_expr(b, out);
     },
-    Expr::Let(_, t, v, b) => {
+    Expr::Let(_, _, t, v, b) => {
       const_idxs_expr(t, out);
       const_idxs_expr(v, out);
       const_idxs_expr(b, out);
@@ -77,7 +77,7 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
 /// The `refs` indices a constant uses as constants, over its `sharing`
 /// table and every Expr its `ConstantInfo` carries.
 ///
-/// Mirror of `const_idxs_of` in `Ix/IxVM/Kernel/Claim.lean`.
+/// Mirror of `const_idxs_of` in `IxVM/IxVM/Source/KernelClaim.lean`.
 fn const_idxs_of(c: &Constant) -> FxHashSet<u64> {
   let mut out = FxHashSet::default();
   for e in &c.sharing {
@@ -169,19 +169,135 @@ pub fn thin_frontier(env: &Env, owned: &[Address]) -> Vec<Address> {
   v
 }
 
+/// Whether a record is outside Lean's logic (decision D20): an unsafe or
+/// partial definition, an unsafe opaque, axiom or recursor, or a block holding
+/// a member outside it (an unsafe inductive or constructor among them). A
+/// theorem never is, and a partial opaque (the face of a `partial def`) is
+/// not. A projection record never is by itself; its block is tested
+/// ([`outside_logic_at`]).
+///
+/// Mirror of `Ixon.Constant.outsideLogic` (`Ix/Claim.lean`) and of the
+/// circuit's `KernelClaim::record_unsafe`.
+pub fn record_outside_logic(c: &Constant) -> bool {
+  fn defn(d: &Definition) -> bool {
+    match d.kind {
+      DefKind::Definition => d.safety != DefinitionSafety::Safe,
+      DefKind::Opaque => d.safety == DefinitionSafety::Unsafe,
+      DefKind::Theorem => false,
+    }
+  }
+  match &c.info {
+    ConstantInfo::Defn(d) => defn(d),
+    ConstantInfo::Recr(r) => r.is_unsafe,
+    ConstantInfo::Axio(a) => a.is_unsafe,
+    ConstantInfo::Muts(members) => members.iter().any(|m| match m {
+      MutConst::Defn(d) => defn(d),
+      MutConst::Indc(i) => i.is_unsafe || i.ctors.iter().any(|k| k.is_unsafe),
+      MutConst::Recr(r) => r.is_unsafe,
+    }),
+    _ => false,
+  }
+}
+
+/// Whether `addr`'s record, or the block it projects from, is outside Lean's
+/// logic: a seed no typing claim may name (`KernelClaim::assert_claimable`
+/// refuses it). An address without a record in `env` is not.
+///
+/// Mirror of `Ixon.Env.outsideLogicAt` (`Ix/Claim.lean`).
+pub fn outside_logic_at(env: &Env, addr: &Address) -> bool {
+  let Some(c) = env.get_const(addr) else {
+    return false;
+  };
+  if record_outside_logic(&c) {
+    return true;
+  }
+  let block = match &c.info {
+    ConstantInfo::IPrj(p) => &p.block,
+    ConstantInfo::CPrj(p) => &p.block,
+    ConstantInfo::RPrj(p) => &p.block,
+    ConstantInfo::DPrj(p) => &p.block,
+    _ => return false,
+  };
+  env.get_const(block).is_some_and(|b| record_outside_logic(&b))
+}
+
+/// The constants of `env` that use an inert axiom: the axioms its role binding
+/// binds to inert roles ([`crate::role_table::Role::is_inert`]: `sorryAx` and
+/// Lean's compiler-trust axioms), and every constant whose walk edges
+/// ([`walk_edges`]) reach one, transitively. IxVM refuses each as a claim
+/// seed: an inert axiom itself (`KernelClaim::assert_claimable`), any other
+/// because its walk meets a use (`KernelRoles::assert_ref_allowed`). Empty
+/// when `env` carries no binding, one that does not decode, or none of the
+/// inert axioms.
+///
+/// Mirror of `IxVM.ClaimHarness.inertUsers` (`Ix/IxVM/ClaimHarness.lean`),
+/// which reads the default table when `env` carries no binding.
+pub fn inert_users(env: &Env) -> FxHashSet<Address> {
+  let Some(binding) = &env.role_binding else {
+    return FxHashSet::default();
+  };
+  let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+  else {
+    return FxHashSet::default();
+  };
+  let roots: Vec<Address> = table
+    .bound
+    .iter()
+    .filter(|(r, a)| r.is_inert() && env.consts.get(a).is_some())
+    .map(|(_, a)| a.clone())
+    .collect();
+  if roots.is_empty() {
+    return FxHashSet::default();
+  }
+  let mut users: FxHashMap<Address, Vec<Address>> = FxHashMap::default();
+  for entry in &env.consts {
+    let a = entry.key().clone();
+    let Ok(c) = entry.value().get() else {
+      continue;
+    };
+    let mut edges = Vec::new();
+    walk_edges(&c, &mut edges);
+    for e in edges {
+      users.entry(e).or_default().push(a.clone());
+    }
+  }
+  let mut seen: FxHashSet<Address> = roots.iter().cloned().collect();
+  let mut stack = roots;
+  while let Some(a) = stack.pop() {
+    if let Some(us) = users.get(&a) {
+      for u in us {
+        if seen.insert(u.clone()) {
+          stack.push(u.clone());
+        }
+      }
+    }
+  }
+  seen
+}
+
 /// Build the shard `CheckEnv` claim under `ctx`: root over the (sorted) owned
 /// set, assumptions over the thin frontier. Returns the claim plus the
 /// frontier leaves (the caller ships the asm tree it commits to).
-/// `None` on an empty owned set.
+/// The owned constants outside Lean's logic ([`outside_logic_at`]) and those
+/// that use an inert axiom ([`inert_users`]) are left out, as the Lean builder
+/// (`IxVM.ClaimHarness.claimableOwned`) leaves them: IxVM refuses them, and no
+/// constant left in references one, so the rest stays walk-closed. `None` when
+/// no owned constant is left.
 pub fn shard_check_env_claim(
   ctx: &ClaimContext,
   env: &Env,
   owned: &[Address],
 ) -> Option<(Claim, Vec<Address>)> {
-  let mut owned_sorted: Vec<Address> = owned.to_vec();
+  let inert = inert_users(env);
+  let owned: Vec<Address> = owned
+    .iter()
+    .filter(|a| !outside_logic_at(env, a) && !inert.contains(*a))
+    .cloned()
+    .collect();
+  let mut owned_sorted: Vec<Address> = owned.clone();
   owned_sorted.sort_unstable();
   let root = merkle_root_canonical(&owned_sorted)?;
-  let frontier = thin_frontier(env, owned);
+  let frontier = thin_frontier(env, &owned);
   let assumptions = merkle_root_canonical(&frontier);
   Some((Claim::CheckEnv { ctx: ctx.clone(), root, assumptions }, frontier))
 }
@@ -253,7 +369,7 @@ pub fn walk_check_set(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::constant::{Axiom, Constant, ConstantInfo};
+  use crate::constant::{Axiom, Constant, ConstantInfo, DefinitionProj};
   use crate::expr::Expr;
   use std::sync::Arc;
 
@@ -392,6 +508,128 @@ mod tests {
     assert_eq!(claim1, claim2);
     assert_eq!(f1, f2);
     assert_eq!(f1, vec![b]);
+  }
+
+  /// A one-member partial definition block, the shape of Lean's
+  /// `_unsafe_rec` companions, and a projection into it.
+  fn partial_block(env: &Env) -> (Address, Address) {
+    let block = Address::hash(b"partial-block");
+    let member = Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Partial,
+      asserts: Default::default(),
+      lvls: 0,
+      typ: Arc::new(Expr::Sort(0)),
+      value: Arc::new(Expr::Sort(0)),
+    };
+    env.store_const(
+      block.clone(),
+      Constant::with_tables(
+        ConstantInfo::Muts(vec![MutConst::Defn(member)]),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+      ),
+    );
+    let proj = Address::hash(b"partial-proj");
+    env.store_const(
+      proj.clone(),
+      Constant::with_tables(
+        ConstantInfo::DPrj(DefinitionProj { idx: 0, block: block.clone() }),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+      ),
+    );
+    (block, proj)
+  }
+
+  /// Decision D20: the owned constants outside Lean's logic (an unsafe axiom,
+  /// a partial block and its projection) are left out of the owned tree, as
+  /// the Lean builder leaves them; a set of only those has no claim.
+  #[test]
+  fn claim_leaves_out_constants_outside_logic() {
+    let (env, a, b, _, _) = chain_env();
+    let ax = Address::hash(b"unsafe-axiom");
+    env.store_const(
+      ax.clone(),
+      Constant::with_tables(
+        ConstantInfo::Axio(Axiom {
+          is_unsafe: true,
+          lvls: 0,
+          typ: Arc::new(Expr::Sort(0)),
+        }),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+      ),
+    );
+    let (block, proj) = partial_block(&env);
+    for outside in [&ax, &block, &proj] {
+      assert!(outside_logic_at(&env, outside));
+    }
+    assert!(!outside_logic_at(&env, &a));
+    assert!(!outside_logic_at(&env, &Address::hash(b"absent")));
+    let ctx = ClaimContext {
+      spec: crate::proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+      binding_assumed: false,
+      literal_class: false,
+    };
+    let (with_outside, f1) = shard_check_env_claim(
+      &ctx,
+      &env,
+      &[a.clone(), ax.clone(), block.clone(), proj.clone()],
+    )
+    .unwrap();
+    let (safe_only, f2) =
+      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+    assert_eq!(with_outside, safe_only);
+    assert_eq!(f1, f2);
+    assert_eq!(f1, vec![b]);
+    assert!(shard_check_env_claim(&ctx, &env, &[ax, block, proj]).is_none());
+  }
+
+  /// The constants that use an inert axiom (the axiom the binding binds to
+  /// `sorryAx`, and `u`, which references it) are left out of the owned tree;
+  /// a set of only those has no claim.
+  #[test]
+  fn claim_leaves_out_inert_axiom_users() {
+    use crate::env::RoleBinding;
+    use crate::role_table::{Role, RoleTable};
+    let (mut env, a, b, _, _) = chain_env();
+    let ax = Address::hash(b"sorry-axiom");
+    env.store_const(ax.clone(), const_with_refs(vec![]));
+    let u = Address::hash(b"uses-sorry");
+    env.store_const(u.clone(), const_with_refs(vec![ax.clone()]));
+    let bytes = RoleTable {
+      version: 5,
+      bound: vec![(Role::SorryAx, ax.clone())],
+      evidence: vec![],
+    }
+    .to_bytes()
+    .unwrap();
+    env.role_binding =
+      Some(RoleBinding { address: Address::hash(&bytes), bytes: bytes.into() });
+    let inert = inert_users(&env);
+    assert!(inert.contains(&ax) && inert.contains(&u));
+    assert!(!inert.contains(&a) && !inert.contains(&b));
+    let ctx = ClaimContext {
+      spec: crate::proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+      binding_assumed: false,
+      literal_class: false,
+    };
+    let (with_inert, f1) =
+      shard_check_env_claim(&ctx, &env, &[a.clone(), ax.clone(), u.clone()])
+        .unwrap();
+    let (without, f2) =
+      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+    assert_eq!(with_inert, without);
+    assert_eq!(f1, f2);
+    assert!(shard_check_env_claim(&ctx, &env, &[ax, u]).is_none());
   }
 
   #[test]

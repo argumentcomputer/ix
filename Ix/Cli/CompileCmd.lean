@@ -2,6 +2,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.CompileM
+public import Ix.ModeCheck
 public import Ix.RoleBinding.Compile
 public import Ix.CompileCertified
 public import Ix.Meta
@@ -200,7 +201,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
   let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv) with
+      allowPartial log (strip := strip) (prefetch := wholeEnv) (modeCheck := Ix.ModeCheck.checkArtifact) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
@@ -208,6 +209,9 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     | .refused => pure status
     | .failed e => throw (IO.userError e)
     | .done artifact bytes =>
+      if out.annotated then
+        IO.println "[compile] mode checking: accepted by IxC.Resource.check, which is uncertified \
+          (nothing proves it sound)"
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
       pure { status with
         bytes := bytes.size.toUInt64

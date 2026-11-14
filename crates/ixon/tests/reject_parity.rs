@@ -62,15 +62,10 @@ fn constant(bytes: &[u8]) -> Result<Constant, String> {
   Ok(constant)
 }
 
-/// A constant whose bytes are its canonical encoding.
+/// A constant whose bytes are its canonical encoding, read by the canonical
+/// decoder (`Constant::get_canonical`, Lean's `Canonical.deConstant`).
 fn canonical(bytes: &[u8]) -> Result<Constant, String> {
-  let constant = constant(bytes)?;
-  let mut encoded = Vec::new();
-  constant.put(&mut encoded);
-  if encoded != bytes {
-    return Err("noncanonical encoding".into());
-  }
-  Ok(constant)
+  Constant::get_canonical(bytes)
 }
 
 fn environment(bytes: &[u8]) -> [(&'static str, Result<(), String>); 2] {
@@ -105,6 +100,19 @@ fn noncanonical_records_are_refused() {
     assert!(canonical(&bytes).is_err(), "{name} accepted");
     // Refused by the decoder itself, not only by the re-encoding.
     assert!(constant(&bytes).is_err(), "{name} decoded");
+  }
+}
+
+/// Records a rule beyond the codec refuses (a theorem with assertions): the
+/// codec reads them, the canonical decoder refuses them.
+#[test]
+fn rule_refused_records_are_read_by_the_codec_only() {
+  for (name, bytes) in of_kind("canonical-rule-accept") {
+    canonical(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+  }
+  for (name, bytes) in of_kind("canonical-rule") {
+    assert!(canonical(&bytes).is_err(), "{name} accepted");
+    constant(&bytes).unwrap_or_else(|e| panic!("{name}: codec refused: {e}"));
   }
 }
 
@@ -151,6 +159,9 @@ fn assumption_trees_are_refused() {
 
 #[test]
 fn claims_are_refused() {
+  for (name, bytes) in of_kind("claim-accept") {
+    Claim::from_bytes(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+  }
   for (name, bytes) in of_kind("claim") {
     assert!(Claim::from_bytes(&bytes).is_err(), "{name} accepted");
   }

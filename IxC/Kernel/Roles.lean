@@ -26,9 +26,9 @@ taken from where it lives (`Role.spec_*` below are `rfl`):
 | --- | --- | --- |
 | `block` | the basis blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False`, `Quot` (every member) | `basisPinHit`/`quotPinHit`: the stream's declarations equal these up to `ConstantInfo.canon`; the block installed is their annotation (`BasisKind.declsA`) |
 | `block` | the standard axioms' families `Iff` and `Nonempty` (every member: the inductive, its constructor and its recursor) | `stdAxiomOk` (`stdAxiomOkF`), before `propext` or `Classical.choice` is installed: each member is stored as a kernel-checked inductive, constructor or recursor with these parameter, field and binder counts and this type, up to binder data and level-parameter names (`ConstantVal.matchesPin`); the constructors and the recursor's rules are then the kernel's own for that inductive |
-| `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true`, `Bool.rec`, `And`, `And.intro`, `And.rec` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
+| `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true`, `Bool.rec`, `And`, `And.intro`, `And.rec`, `Lean.reduceBool`, `Lean.reduceNat` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
 | `ops` | the certified `Nat` operations | the type (`natOpTyPinned`) and the characterizing equations (`natOpEquations`, `divModCertStmts`), each certified by its evidence in the pre-insertion environment with the operation's self-references replaced by its value |
-| `axiom` | `propext`, `Classical.choice`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); the inert `sorryAx` is matched at install, installs nothing, and any use of it declines |
+| `axiom` | `propext`, `Classical.choice`; `sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); the inert `sorryAx` is matched at install, installs nothing, and any use of it declines; the checker declines the other inert axioms' declarations as non-standard axioms (below) |
 
 **The standard axioms' families are blocks, never anchors.** Every role that
 occurs in a standard axiom's type, transitively, is a `block` role: an
@@ -59,6 +59,21 @@ over one is certified against the bound constants themselves.
   validates them either; a table may bind them to anything of their types.
 - `sorryAx`'s type mentions `Bool`. `sorryAx` is inert, never installed and
   never usable, so its type only fixes which declaration is tolerated.
+- `Lean.reduceBool`, `Lean.reduceNat`: nothing in the checker reads them, and
+  no rule reduces them. They are roles because the types of the inert
+  `Lean.ofReduceBool` and `Lean.ofReduceNat` mention them, and a specified
+  type is closed over role keys.
+
+**The compiler-trust axioms.** `Lean.trustCompiler`, `Lean.ofReduceBool` and
+`Lean.ofReduceNat` are inert roles (`Role.inert`), so that a role
+binding names them and a claim over Lean's `Init` lists no user axiom for
+them. Native evaluation is outside the certified theory: IxVM, as for
+`sorryAx`, refuses every constant that uses one and refuses each as a claim's
+seed, so none enters an environment a claim certifies. This checker declines
+their declarations as non-standard axioms. In
+Lean's `Init`, `Lean.reduceBool` and `Lean.reduceNat` use
+`Lean.trustCompiler`, so neither checker accepts them, nor the two axioms
+whose types mention them.
 
 **`sorryAx` in the fold.** The record at `sorryAx`'s key installs nothing,
 and every use of the key declines (`unknownConstError`,
@@ -127,7 +142,8 @@ inductive Spec (md : Mode) where
   /-- An axiom of the given type (`none`: of any type, which no role has since
   version 3). Whether it is installed is the role's: `propext` and
   `Classical.choice` are, while `sorryAx` is inert: tolerated as a
-  declaration, it installs nothing, and any use declines. -/
+  declaration, it installs nothing, and any use declines. The other inert
+  axioms, Lean's compiler-trust axioms, are declined as declarations here. -/
   | axiom (levels : Nat) (type : Option (Expr md))
   /-- A definition of `levels` universe parameters whose type is `type` up to
   definitional equality, and whose equations hold: an unconditional one by
@@ -383,6 +399,34 @@ def boolCvA : ConstantVal md := ⟨boolName, [], .sort (.succ .zero)⟩
 
 /-- `sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`. -/
 def sorryAxSpecTy : Expr md := pi "α" (srt u) <| pi "synthetic" (cnst boolName) (bv 1)
+
+/-! ## Lean's compiler-trust constants
+
+The three inert axioms of native evaluation and the two opaques their types
+mention (`Lean.reduceBool`, `Lean.reduceNat`), specified by their types. -/
+
+/-- `Lean.trustCompiler : True`. -/
+def trustCompilerSpecTy : Expr md := cnst trueName
+
+/-- `Lean.reduceBool (b : Bool) : Bool`. -/
+def reduceBoolSpecTy : Expr md := pi "b" (cnst boolName) (cnst boolName)
+
+/-- `Lean.reduceNat (n : Nat) : Nat`. -/
+def reduceNatSpecTy : Expr md := pi "n" (cnst natName) (cnst natName)
+
+/-- `∀ (a b : α), @Eq.{1} α (f a) b → @Eq.{1} α a b`, the type of
+`Lean.ofReduceBool` (`α := Bool`, `f := Lean.reduceBool`) and of
+`Lean.ofReduceNat` (`α := Nat`, `f := Lean.reduceNat`). -/
+def ofReduceSpecTy (α f : Expr md) : Expr md :=
+  pi "a" α <| pi "b" α <|
+  pi "h" (ap3 (cnst eqName [.succ .zero]) α (.app f (bv 1)) (bv 0)) <|
+  ap3 (cnst eqName [.succ .zero]) α (bv 2) (bv 1)
+
+/-- `Lean.ofReduceBool (a b : Bool) (h : Lean.reduceBool a = b) : a = b`. -/
+def ofReduceBoolSpecTy : Expr md := ofReduceSpecTy (cnst boolName) (cnst (roleKey .reduceBool))
+
+/-- `Lean.ofReduceNat (a b : Nat) (h : Lean.reduceNat a = b) : a = b`. -/
+def ofReduceNatSpecTy : Expr md := ofReduceSpecTy (cnst natName) (cnst (roleKey .reduceNat))
 
 /-! ## The definitions specified by their equations (version 3)
 
@@ -915,6 +959,11 @@ def Role.spec : Role → Spec md
   | .charUtf8Size => .eqns 0 (piA specChar specNat) charUtf8SizeEqns
   | .stringUtf8ByteSize => .eqns 0 (piA specString specNat) stringUtf8ByteSizeEqns
   | .stringBack => .eqns 0 (piA specString specChar) stringBackEqns
+  | .trustCompiler => .axiom 0 (some trustCompilerSpecTy)
+  | .reduceBool => .anchor 0 reduceBoolSpecTy
+  | .reduceNat => .anchor 0 reduceNatSpecTy
+  | .ofReduceBool => .axiom 0 (some ofReduceBoolSpecTy)
+  | .ofReduceNat => .axiom 0 (some ofReduceNatSpecTy)
 
 /-- **The roles bound together with `r`**: the members of its block (itself
 included), in the block's order. A role table binds all of them or none. -/
@@ -941,7 +990,13 @@ def Role.block : Role → List Role
 
 /-- **The roles `r`'s specification mentions and its validation needs**,
 outside its own block. A role table that binds `r` binds these (and their
-blocks). -/
+blocks).
+
+They include the roles a native rule on `r` puts into its result. No native
+rule answers a decision procedure (`Nat.decEq`, `Nat.decLe`, `Int.decEq`,
+`Int.decLe`, `String.decEq`) with a constructor of `Decidable`, so a decision
+needs only the roles its equations are spelled over; `Nat.decLt` and
+`Int.decLt` rewrite to `Nat.decLe` and `Int.decLe`, which carry the rest. -/
 def Role.deps : Role → List Role
   | .quot | .quotMk | .quotLift | .quotInd | .quotSound => [.eq]
   | .stringOfList => [.list, .char, .string]
@@ -1001,6 +1056,11 @@ def Role.deps : Role → List Role
   | .charUtf8Size => [.nat, .char, .charOfNat, .bool, .eq, .natMul, .natBle]
   | .stringUtf8ByteSize => [.nat, .string, .list, .char, .stringOfList, .eq, .natAdd, .charUtf8Size]
   | .stringBack => [.nat, .string, .list, .char, .charOfNat, .stringOfList, .eq, .natMul]
+  | .trustCompiler => [.true]
+  | .reduceBool => [.bool]
+  | .reduceNat => [.nat]
+  | .ofReduceBool => [.bool, .eq, .reduceBool]
+  | .ofReduceNat => [.nat, .eq, .reduceNat]
   | _ => []
 
 /-- **The version of the specification set.** It changes exactly when
@@ -1018,8 +1078,13 @@ with `Int.bmod` and `Int.bdiv`; `BitVec.toNat` and `BitVec.ult`; and `String.app
 `String.toByteArray`, `String.utf8ByteSize` with `Char.utf8Size`, and `String.back`)
 are roles, specified by their equations (`Spec.eqns`), with the anchors those
 equations need; and each role records whether the checker uses
-it implicitly (`Role.usedImplicitly`). -/
-def specVersion : Nat := 3
+it implicitly (`Role.usedImplicitly`). Version 4 adds Lean's compiler-trust axioms
+(`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) as inert axioms of their
+exact types, like `sorryAx`, and the opaques their types mention (`Lean.reduceBool`,
+`Lean.reduceNat`) as type-only anchors. Native evaluation stays outside the certified theory;
+the roles let a binding name the three axioms, so that a claim over Lean's `Init` need not
+list them as user axioms. -/
+def specVersion : Nat := 4
 
 /-- **The roles the checker uses implicitly**: those it introduces into a term
 with no referenced constant that determines them. They are the literals' types
@@ -1035,6 +1100,23 @@ def Role.usedImplicitly : Role → Bool
   | .nat | .natZero | .natSucc | .string | .stringOfList | .list | .listNil | .listCons
   | .char | .charOfNat | .propext | .choice => Bool.true
   | _ => Bool.false
+
+/-- **The inert axiom roles**: `sorryAx` and Lean's compiler-trust axioms
+(`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`). A binding
+names each, so a stream may declare it, but it installs nothing and no
+accepted constant uses it. This checker tolerates `sorryAx`'s declaration and
+declines the others' (non-standard axioms); IxVM refuses each as a claim's
+seed (`KernelClaim::assert_claimable`) and refuses every use
+(`KernelRoles::axiom_standing`). The
+specification digest commits to this flag (`Ix.SpecDigest.inert`). -/
+def Role.inert : Role → Bool
+  | .sorryAx | .trustCompiler | .ofReduceBool | .ofReduceNat => Bool.true
+  | _ => Bool.false
+
+/-- Every inert role is a typed axiom. -/
+theorem Role.inert_typed_axiom (r : Role) (h : r.inert = Bool.true) :
+    ∃ n ty, (Role.spec (md := md)) r = .axiom n (some ty) := by
+  cases r <;> first | exact absurd h (by decide) | exact ⟨_, _, rfl⟩
 
 /-! ## The evidence of an operation, as the fold reads it -/
 

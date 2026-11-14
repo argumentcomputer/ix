@@ -64,7 +64,33 @@ private def getQuotKind : GetM QuotKind := do
   | 0 => return .type | 1 => return .ctor | 2 => return .lift | 3 => return .ind
   | v => throw s!"getQuotKind: invalid {v}"
 
+private def putDefAsserts (a : DefAsserts) : PutM Unit :=
+  putU8 a.toCode
+
+private def getDefAsserts : GetM DefAsserts := do
+  let v ← getU8
+  match DefAsserts.ofCode? v with
+  | some a => return a
+  | none => throw s!"getDefAsserts: invalid {v}"
+
 private def getTagN0Value : GetM UInt64 := return (← getTagN 0).value
+
+private def putRevealFieldModes (modes : Array FieldMode) : PutM Unit := do
+  putTagN 0 0 modes.size.toUInt64
+  for m in modes do putU8 m.toCode
+
+private def getRevealFieldModes : GetM (Array FieldMode) := do
+  let count ← getTagN0Value
+  let st ← get
+  if count.toNat > st.bytes.size - st.idx then
+    throw "getRevealFieldModes: count exceeds remaining bytes"
+  let mut modes := #[]
+  for _ in [:count.toNat] do
+    let b ← getU8
+    match FieldMode.ofCode? b with
+    | some m => modes := modes.push m
+    | none => throw s!"getRevealFieldModes: invalid field mode {b}"
+  return modes
 
 private def getOpt (mask : UInt64) (bit : UInt64) (read : GetM α) : GetM (Option α) :=
   if mask &&& bit != 0 then some <$> read else pure none
@@ -87,6 +113,7 @@ structure RevealConstructorInfo where
   params : Option UInt64 := none
   fields : Option UInt64 := none
   typ : Option Address := none
+  fieldModes : Option (Array FieldMode) := none
   deriving BEq, Repr, Inhabited
 
 /-- Revealed fields of a RecursorRule. -/
@@ -100,6 +127,7 @@ structure RevealRecursorRule where
 inductive RevealMutConstInfo where
   | defn (kind : Option DefKind) (safety : Option DefinitionSafety)
          (lvls : Option UInt64) (typ : Option Address) (value : Option Address)
+         (asserts : Option DefAsserts)
   | indc (isUnsafe : Option Bool) (lvls : Option UInt64) (params : Option UInt64)
          (indices : Option UInt64) (typ : Option Address)
          (ctors : Option (Array (UInt64 × RevealConstructorInfo)))
@@ -113,6 +141,7 @@ inductive RevealMutConstInfo where
 inductive RevealConstantInfo where
   | defn (kind : Option DefKind) (safety : Option DefinitionSafety)
          (lvls : Option UInt64) (typ : Option Address) (value : Option Address)
+         (asserts : Option DefAsserts)
   | recr (k : Option Bool) (isUnsafe : Option Bool) (lvls : Option UInt64)
          (params : Option UInt64) (indices : Option UInt64)
          (motives : Option UInt64) (minors : Option UInt64)
@@ -136,10 +165,12 @@ primitives read through a role binding, and these three fields say which:
   bytes (`Ixon.RoleBinding.address`), naming which constant plays each role;
 - `axioms`: the axioms the claim depends on beyond the standard three
   (`propext`, `Classical.choice`, `Quot.sound`), as the canonical merkle root
-  of their sorted addresses. `none` means the standard three only. No checker
-  admits another axiom yet, so every claim made today carries `none`; the
-  field is reserved so that admitting declared axioms later needs no second
-  format change.
+  of their sorted addresses. `none` means the standard three only. A claim
+  built from an environment with user axioms names their tree
+  (`Ix.ClaimContext.ofEnv`); IxVM admits exactly the tree's leaves, each a
+  safe axiom the role table does not bind (`KernelRoles::load_role_ctx`), and
+  IxC states such a claim with its fold under `allowUser`
+  (`Ix.Kernel.Cached.AcceptsRefUnder`, `Ix.Cert.IxonAcceptsRefUnder`).
 
 Typing assumptions (`assumptions` on the claims themselves) are a different
 thing: constants assumed well-typed and discharged by other claims. An axiom
@@ -197,8 +228,6 @@ Eight variants in five families:
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
-- **`resource`**: combined erased typing and resource admission, validated
-  natively.
 - **`binding`**: the role table with hash `binding` binds every role, and
   each bound constant meets its specification in `spec`. It discharges the
   condition of the typing claims that assume their binding
@@ -217,14 +246,11 @@ inductive Claim where
   | eval     (ctx : ClaimContext) (input output : Address) (assumptions : Option Address)
   | check    (ctx : ClaimContext) (const : Address) (assumptions : Option Address)
   | checkEnv (ctx : ClaimContext) (root : Address) (assumptions : Option Address)
-  | reveal   (comm : Address) (info : RevealConstantInfo)
+  | reveal   (comm : Address) (info : RevealConstantInfo) (binders : Option Address)
   | contains (tree : Address) (const : Address)
   /-- Every claim whose digest is a leaf of the canonical merkle tree `members`
   holds: each an unconditional `checkEnv`. -/
   | catalog  (members : Address)
-  /-- Combined erased typing and resource admission of the complete addressed
-  environment under the profile committed by `profile`. -/
-  | resource (root profile : Address)
   /-- The role table with hash `binding` binds every role, and each bound
   constant meets its specification in the set with digest `spec`. -/
   | binding (spec binding : Address)
@@ -238,7 +264,8 @@ namespace RevealConstructorInfo
 
 def put (info : RevealConstructorInfo) : PutM Unit := do
   let mask := computeMask [info.isUnsafe.isSome, info.lvls.isSome, info.cidx.isSome,
-                           info.params.isSome, info.fields.isSome, info.typ.isSome]
+                           info.params.isSome, info.fields.isSome, info.typ.isSome,
+                           info.fieldModes.isSome]
   putTagN 0 0 mask
   match info.isUnsafe with | some b => putBoolField b | none => pure ()
   match info.lvls with | some n => putTagN 0 0 n | none => pure ()
@@ -246,17 +273,19 @@ def put (info : RevealConstructorInfo) : PutM Unit := do
   match info.params with | some n => putTagN 0 0 n | none => pure ()
   match info.fields with | some n => putTagN 0 0 n | none => pure ()
   match info.typ with | some a => Serialize.put a | none => pure ()
+  match info.fieldModes with | some ms => putRevealFieldModes ms | none => pure ()
 
 def get : GetM RevealConstructorInfo := do
   let mask := (← getTagN 0).value
-  requireMask mask 6
+  requireMask mask 7
   let isUnsafe ← getOpt mask 1 getBoolField
   let lvls ← getOpt mask 2 getTagN0Value
   let cidx ← getOpt mask 4 getTagN0Value
   let params ← getOpt mask 8 getTagN0Value
   let fields ← getOpt mask 16 getTagN0Value
   let typ ← getOpt mask 32 Serialize.get
-  return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
+  let fieldModes ← getOpt mask 64 getRevealFieldModes
+  return ⟨isUnsafe, lvls, cidx, params, fields, typ, fieldModes⟩
 
 end RevealConstructorInfo
 
@@ -315,15 +344,17 @@ private def getCtors : GetM (Array (UInt64 × RevealConstructorInfo)) := do
 namespace RevealMutConstInfo
 
 def put : RevealMutConstInfo → PutM Unit
-  | .defn kind safety lvls typ value => do
+  | .defn kind safety lvls typ value asserts => do
     putU8 0
-    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
+    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome,
+                             asserts.isSome]
     putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
     match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
+    match asserts with | some a => putDefAsserts a | none => pure ()
   | .indc isUnsafe lvls params indices typ ctors => do
     putU8 1
     let mask := computeMask [isUnsafe.isSome, lvls.isSome, params.isSome, 
@@ -354,7 +385,7 @@ def put : RevealMutConstInfo → PutM Unit
 def get : GetM RevealMutConstInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
-  requireMask mask (match variant with | 0 => 5 | 1 => 6 | 2 => 9 | _ => 64)
+  requireMask mask (match variant with | 0 => 6 | 1 => 6 | 2 => 9 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -362,7 +393,8 @@ def get : GetM RevealMutConstInfo := do
     let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
-    return .defn kind safety lvls typ value
+    let asserts ← getOpt mask 32 getDefAsserts
+    return .defn kind safety lvls typ value asserts
   | 1 => do -- Indc
     let isUnsafe ← getOpt mask 1 getBoolField
     let lvls ← getOpt mask 2 getTagN0Value
@@ -393,15 +425,17 @@ end RevealMutConstInfo
 namespace RevealConstantInfo
 
 def put : RevealConstantInfo → PutM Unit
-  | .defn kind safety lvls typ value => do
+  | .defn kind safety lvls typ value asserts => do
     putU8 0
-    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
+    let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome,
+                             asserts.isSome]
     putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
     match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
+    match asserts with | some a => putDefAsserts a | none => pure ()
   | .recr k isUnsafe lvls params indices motives minors typ rules => do
     putU8 1
     let mask := computeMask [k.isSome, isUnsafe.isSome, lvls.isSome,
@@ -470,7 +504,7 @@ def get : GetM RevealConstantInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
   requireMask mask (match variant with
-    | 0 => 5 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
+    | 0 => 6 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -478,7 +512,8 @@ def get : GetM RevealConstantInfo := do
     let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
-    return .defn kind safety lvls typ value
+    let asserts ← getOpt mask 32 getDefAsserts
+    return .defn kind safety lvls typ value asserts
   | 1 => do -- Recr
     let k ← getOpt mask 1 getBoolField
     let isUnsafe ← getOpt mask 2 getBoolField
@@ -538,13 +573,53 @@ end RevealConstantInfo
 
 namespace Claim
 
+/-! ## Tag registry
+
+This table is the registry of record (`crates/ixon/src/proof.rs` mirrors it). It
+lists every number in use under the claim flag `0xE`, the proof flag `0xF` and
+the validator byte of a claim's scope, in this tree and in the IxCC and frontend
+trees, with this tree's allocation. Under `0xE` and `0xF` a value below 8 is the
+one byte `E0`–`E7` (`F0`–`F7`); from 8 on the TagN header is two bytes (`E8 00`
+is 8). A claim's scope is two bytes: the object format's version
+(`Ixon.Env.OBJECT_FORMAT`) first, then the validator byte.
+
+| Space | Value (bytes) | Allocation |
+|---|---|---|
+| 0xE | 0 (`E0`) | reserved |
+| 0xE | 1 (`E1`) | commitment (`Ixon.Comm`) |
+| 0xE | 2–7 (`E2`–`E7`) | assumption tree, eval, check, checkEnv, reveal, contains |
+| 0xE | 4, 5 (`E4`, `E5`) also | `.ixe` header: envelope version 4 / 5 (the same bytes as check / checkEnv, told apart by position; a version reset of the header moves them) |
+| 0xE | 8 (`E8 00`) | catalog claim |
+| 0xE | 9 (`E8 01`) | **retired** (resource claim): refused |
+| 0xE | 10 (`E8 02`) | binding claim |
+| 0xE | 11 (`E8 03`) | role-table section preimage |
+| 0xE | 12 (`E8 04`) | literal-class preimage (`Ix.ClaimContext`) |
+| 0xE | 13 (`E8 05`) | reserved: IxCC compile claim (not implemented here) |
+| 0xE | 14 (`E8 06`) | reserved: frontend `.ixsp` header |
+| 0xE | 15–18 (`E8 07`–`E8 0A`) | reserved: frontend `.ixc`, `.ixes`, `.ixprof` and host-admission tags (this tree's files of those kinds use ASCII magic) |
+| 0xE | 19 (`E8 0B`) | reserved: frontend elaboration claim |
+| 0xE | 20 (`E8 0C`) | reserved: frontend `.ixs` header |
+| 0xF | 0–5, 7 (`F0`–`F5`, `F7`) | eval, check, checkEnv, reveal, contains, catalog, binding proofs |
+| 0xF | 6 (`F6`) | **retired** (resource proof): refused |
+| 0xF | 8 (`F8 00`) | reserved: IxCC compile proof |
+| validator | 0, 3, 4, 5 | structural-v1, erased-lean-v2, erased-lean-v2-assumed, erased-lean-v2-class |
+| validator | 1 | retired (erased-lean-v1): refused |
+| validator | 2 | **retired** (resource-v1): refused |
+| validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
+| validator | 7 | reserved: IxCC compile-v2: refused |
+| validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
+| validator | 9 | reserved: IxCC compile-v3 (its next compile-claim version): refused |
+
+`E9` is not a tag value: under TagN `E9` opens a two-byte header. -/
+
 -- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
--- so catalog is `E8 00`, resource `E8 01` and binding `E8 02` on the
--- wire. The `.ixe` header also uses flag 0xE, with the format version as the value
+-- so catalog is `E8 00` and binding `E8 02` on the wire (`E8 01`, the
+-- resource claim, is retired: refused). The `.ixe` header also uses flag 0xE, with the format version as the value
 -- (`0xE4` for version 4, the same byte as the check claim tag).
--- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7).
+-- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7; 0xF6, the resource
+-- proof, is retired: refused).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -557,7 +632,7 @@ def VARIANT_CHECK_ENV_CLAIM  : UInt64 := 5
 def VARIANT_REVEAL_CLAIM     : UInt64 := 6
 def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
-def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
+def VARIANT_RESOURCE_CLAIM_RETIRED : UInt64 := 9
 def VARIANT_BINDING_CLAIM    : UInt64 := 10
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
@@ -566,7 +641,7 @@ def VARIANT_CHECK_ENV_PROOF  : UInt64 := 2
 def VARIANT_REVEAL_PROOF     : UInt64 := 3
 def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
-def VARIANT_RESOURCE_PROOF   : UInt64 := 6
+def VARIANT_RESOURCE_PROOF_RETIRED : UInt64 := 6
 def VARIANT_BINDING_PROOF    : UInt64 := 7
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
@@ -587,7 +662,7 @@ def getOptAddr : GetM (Option Address) := do
 - `1`, erased-lean-v1: retired. It named typing claims whose primitives were
   recognized by fixed addresses and which admitted any axiom; new readers
   refuse it rather than read such a claim as a newer one;
-- `2`, resource-v1: `resource`;
+- `2`, resource-v1: retired with the resource claim; refused;
 - `3`, erased-lean-v2: the typing claims, relative to their `ClaimContext`
   (Lean's theory over the standard axioms, primitives read through the
   committed role binding and validated against the committed
@@ -598,10 +673,14 @@ def getOptAddr : GetM (Option Address) := do
   for its context does;
 - `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
   instead of one binding (`ClaimContext.literalClass`): its typing holds
-  under every binding of that class that meets the specifications. -/
+  under every binding of that class that meets the specifications;
+- `6`, `7`: reserved for IxCC's compile-v1 (retired there) and compile-v2;
+  refused;
+- `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
+  refused until a validator for it exists. -/
 def VALIDATOR_STRUCTURAL : UInt8 := 0
 def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
-def VALIDATOR_RESOURCE : UInt8 := 2
+def VALIDATOR_RESOURCE_RETIRED : UInt8 := 2
 def VALIDATOR_ERASED_LEAN : UInt8 := 3
 def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
 def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
@@ -609,7 +688,6 @@ def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
     VALIDATOR_STRUCTURAL
-  else if variant == VARIANT_RESOURCE_CLAIM then VALIDATOR_RESOURCE
   else VALIDATOR_ERASED_LEAN
 
 /-- Whether claims of variant `variant` may assume their binding: `check`
@@ -624,7 +702,6 @@ def variantOf : Claim → UInt64
   | .reveal .. => VARIANT_REVEAL_CLAIM
   | .contains .. => VARIANT_CONTAINS_CLAIM
   | .catalog .. => VARIANT_CATALOG_CLAIM
-  | .resource .. => VARIANT_RESOURCE_CLAIM
   | .binding .. => VARIANT_BINDING_CLAIM
 
 /-- The validator a claim's scope names: its variant's,
@@ -687,18 +764,16 @@ def putPayload : Claim → PutM Unit
     putContext ctx
     Serialize.put root
     putOptAddr assumptions
-  | .reveal comm info => do
+  | .reveal comm info binders => do
     Serialize.put comm
     RevealConstantInfo.put info
+    putOptAddr binders
   | .contains tree const => do
     Serialize.put tree
     Serialize.put const
   | .catalog members => do
     -- A two-byte claim tag: `E8 00` on the wire.
     Serialize.put members
-  | .resource root profile => do
-    Serialize.put root
-    Serialize.put profile
   | .binding spec bound => do
     -- A two-byte claim tag: `E8 02` on the wire.
     Serialize.put spec
@@ -726,13 +801,11 @@ def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
     let literalClass := validator == VALIDATOR_ERASED_LEAN_CLASS
     return .checkEnv { ctx with bindingAssumed := assumed, literalClass } root asm
   else if variant == VARIANT_REVEAL_CLAIM then
-    return .reveal (← Serialize.get) (← RevealConstantInfo.get)
+    return .reveal (← Serialize.get) (← RevealConstantInfo.get) (← getOptAddr)
   else if variant == VARIANT_CONTAINS_CLAIM then
     return .contains (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_CATALOG_CLAIM then
     return .catalog (← Serialize.get)
-  else if variant == VARIANT_RESOURCE_CLAIM then
-    return .resource (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_BINDING_CLAIM then
     return .binding (← Serialize.get) (← Serialize.get)
   else
@@ -747,6 +820,8 @@ def get : GetM Claim := do
   let tag ← getTagN 4
   if tag.flag != FLAG_CLAIM then
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
+  if tag.value == VARIANT_RESOURCE_CLAIM_RETIRED then
+    throw s!"claim: variant {tag.value} (the resource claim) is retired"
   let validator ← getScope tag.value
   getPayload tag.value validator
 
@@ -780,15 +855,123 @@ instance : ToString Claim where
     | .eval ctx i o asm => s!"Eval({i}, {o}, {asm}; {ctx})"
     | .check ctx v asm => s!"Check({v}, {asm}; {ctx})"
     | .checkEnv ctx r asm => s!"CheckEnv({r}, {asm}; {ctx})"
-    | .reveal comm info => s!"Reveal({comm}, {repr info})"
+    | .reveal comm info binders => s!"Reveal({comm}, {repr info}, {binders})"
     | .contains t c => s!"Contains({t}, {c})"
     | .catalog m => s!"Catalog({m})"
-    | .resource root profile => s!"Resource({root}, {profile})"
     | .binding spec bound => s!"Binding({bound} meets spec {spec})"
 
 end Claim
 
 end Ix
+
+/-! ## Seeds in Lean's logic
+
+A typing claim (`check`, `checkEnv`) certifies its seeds, the `check` target
+and the `checkEnv` owned leaves, only in Lean's logic. IxVM
+refuses a seed whose record, or the block it projects from, is unsafe or
+partial (`KernelClaim::assert_claimable`): Lean's kernel accepts an unsafe
+constant of any type, `False` included, and a `partial` block (Lean's
+`_unsafe_rec` companions) may refer to itself. The test is the reader's safety
+policy (`Ix.Kernel.Reader.safetyDeclineOf`, `readInductive`, `readRecord`).
+The claim builders leave such constants out of seed and owned lists. A safe
+constant never references one (`KernelCheck::assert_safety`), so an owned set
+stays closed under the claim walk when they are left out. They also leave out
+the inert axioms and every constant that uses one (`IxVM.ClaimHarness.inertUsers`),
+which IxVM refuses as seeds or on their walks. -/
+
+namespace Ixon
+
+/-- A definition record outside Lean's logic: an unsafe or partial `def`, or an
+unsafe opaque. A theorem never is, and a `partial` opaque (the face of a
+`partial def`) is not (`Ingress::defn_is_unsafe_ci`). -/
+def Definition.outsideLogic (d : Definition) : Bool :=
+  match d.kind with
+  | .defn => d.safety != .safe
+  | .opaq => d.safety == .unsaf
+  | .thm => false
+
+/-- A block member outside Lean's logic: such a definition, an unsafe inductive
+or one with an unsafe constructor, or an unsafe recursor. -/
+def MutConst.outsideLogic : MutConst → Bool
+  | .defn d => d.outsideLogic
+  | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+  | .recr r => r.isUnsafe
+
+/-- A record outside Lean's logic (`KernelClaim::record_unsafe`): such a
+definition, an unsafe axiom or recursor, or a block holding a member outside
+it. A projection record never is by itself; its block is tested
+(`Env.outsideLogicAt`). -/
+def Constant.outsideLogic (c : Constant) : Bool :=
+  match c.info with
+  | .defn d => d.outsideLogic
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any (·.outsideLogic)
+  | _ => false
+
+/-- The block a projection record at `addr` projects from; `addr` for any other
+record. -/
+def Constant.ownerAt (addr : Address) (c : Constant) : Address :=
+  match c.info with
+  | .iPrj p => p.block
+  | .cPrj p => p.block
+  | .rPrj p => p.block
+  | .dPrj p => p.block
+  | _ => addr
+
+/-- `addr` is a seed no typing claim may name (`KernelClaim::assert_claimable`):
+its record, or the block it projects from, is outside Lean's logic. An address
+`env` holds no record for is not; IxVM refuses it when it loads it. -/
+def Env.outsideLogicAt (env : Env) (addr : Address) : Bool :=
+  match env.getConst? addr with
+  | none => false
+  | some c =>
+    c.outsideLogic || ((env.getConst? (c.ownerAt addr)).map (·.outsideLogic)).getD false
+
+/-- The addresses of `env`'s records outside Lean's logic
+(`Constant.outsideLogic`), each record parsed once. The constant `c` at `a` is
+outside it (`outsideLogicAt`) exactly when this set holds `c.ownerAt a`. -/
+def Env.outsideLogicRecords (env : Env) : Std.HashSet Address :=
+  env.consts.fold (init := {}) fun s addr lc =>
+    match lc.get? with
+    | some c => if c.outsideLogic then s.insert addr else s
+    | none => s
+
+/-- `addrs` without the constants outside Lean's logic (`outsideLogicAt`), in
+order; each block record is parsed once. -/
+def Env.dropOutsideLogic (env : Env) (addrs : Array Address) : Array Address := Id.run do
+  let mut blocks : Std.HashMap Address Bool := {}
+  let mut out : Array Address := #[]
+  for a in addrs do
+    match env.getConst? a with
+    | none => out := out.push a
+    | some c =>
+      let o := c.ownerAt a
+      let mut outside := c.outsideLogic
+      if !outside && o != a then
+        match blocks.get? o with
+        | some v => outside := v
+        | none =>
+          let v := ((env.getConst? o).map (·.outsideLogic)).getD false
+          blocks := blocks.insert o v
+          outside := v
+      unless outside do out := out.push a
+  return out
+
+/-- The addresses of `env`'s constants in Lean's logic, in `env.consts` order:
+all but those `outsideLogicAt` sets aside, each record parsed once. -/
+def Env.inLogicConsts (env : Env) : Array Address := Id.run do
+  let mut aside : Std.HashSet Address := {}
+  let mut entries : Array (Address × Address) := #[]
+  for (addr, lc) in env.consts do
+    match lc.get? with
+    | none => entries := entries.push (addr, addr)
+    | some c =>
+      if c.outsideLogic then aside := aside.insert addr
+      entries := entries.push (addr, c.ownerAt addr)
+  return entries.filterMap fun (a, o) => if aside.contains o then none else some a
+
+end Ixon
 
 -- ============================================================================
 -- Ixon.Proof — wraps a Claim with its opaque ZK proof bytes.
@@ -814,7 +997,6 @@ def variantOf : Ix.Claim → UInt64
   | .reveal ..   => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains .. => Ix.Claim.VARIANT_CONTAINS_PROOF
   | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
-  | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF
   | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
 
 def put (p : Proof) : PutM Unit := do
@@ -830,6 +1012,8 @@ def get : GetM Proof := do
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
   if tag.value > Ix.Claim.VARIANT_BINDING_PROOF then
     throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
+  if tag.value == Ix.Claim.VARIANT_RESOURCE_PROOF_RETIRED then
+    throw s!"proof: variant {tag.value} (the resource proof) is retired"
   let validator ← Ix.Claim.getScope (tag.value + 3)
   let claim ← Ix.Claim.getPayload (tag.value + 3) validator
   let lenTag ← getTagN 0

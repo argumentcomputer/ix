@@ -197,11 +197,15 @@ def sameTree : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
   | .ok [a], .ok b => decide (a = b)
   | _, _ => false
 
-/-- Binder contracts: a plain binder carries the Lean fragment's, and a
-contract frame puts its contract on the binder it wraps, as the compiler
-lowers it; a plain `let` carries Lean's let contract and a `let` frame puts
-its binder contract and kind on the let it wraps; a frame the compiler
-refuses is refused. -/
+/-- A contract refusal whose message starts with `message`. -/
+def refusedWith (message : String) : Except ExprError (List KExpr) → Bool
+  | .error (.contract m) => m.startsWith message
+  | _ => false
+
+/-- Contract frames: kernel terms carry no modes; a valid frame lowers to
+the binder it wraps, as the compiler lowers it; an unsupported contract mode,
+a frame not directly around a binder of its kind, or a malformed frame is
+refused. -/
 def contractFrames : TestSeq :=
   let nat := Ix.Expr.mkConst (nm "Nat") #[]
   let lam := Ix.Expr.mkLam (nm "x") nat (.mkBVar 0) .default
@@ -209,29 +213,41 @@ def contractFrames : TestSeq :=
   let letE := Ix.Expr.mkLetE (nm "y") nat (Ix.Expr.mkConst (nm "Nat.zero") #[]) (.mkBVar 0) false
   let plain (e : Ix.Expr) := Ix.Expr.mkMData #[(nm "k", .ofBool true)] e
   let conv (e : Ix.Expr) := ingressExprs noParams.pos [e]
+  let lamO : Ix.SemanticContract.Contract := { kind := .lam, binder := .many }
+  let allO : Ix.SemanticContract.Contract := { kind := .all, binder := .many }
+  let letO : Ix.SemanticContract.Contract := { kind := .letE, binder := .many }
   let lamC : Ix.SemanticContract.Contract := { kind := .lam, binder := .linear }
   let allC : Ix.SemanticContract.Contract :=
     { kind := .all, binder := .erased, result := .localUnique }
   let letC : Ix.SemanticContract.Contract := { kind := .letE, binder := .affine }
+  let badMode : Ix.SemanticContract.Contract :=
+    { kind := .lam, binder := ⟨.erased, .localShared⟩ }
+  let unsupported := "unsupported semantic contract mode"
+  let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
   let dag := Ix.Expr.mkApp (framed allC pi) (plain (framed lamC lam))
-  test "a plain binder carries the Lean fragment's contracts"
-    (binderOf (conv lam) == some { pw := .never, contract := .many, result := .shared }) ++
-  test "a lam frame's contract is the binder's"
-    (binderOf (conv (framed lamC lam)) == some { pw := .never, contract := .linear }) ++
-  test "an all frame's input and result contracts are the binder's"
-    (binderOf (conv (framed allC pi)) ==
-      some { pw := .never, contract := .erased, result := .localUnique }) ++
-  test "a plain let carries Lean's let contract"
-    (letOf (conv letE) == some { contract := .lean false }) ++
-  test "a let frame's contract is the let's"
-    (letOf (conv (framed letC letE)) ==
-      some { contract := { nonDep := false, kind := letC.letKind, binder := .affine } }) ++
-  test "plain metadata around a frame is erased"
-    (binderOf (conv (plain (framed lamC lam))) == some { pw := .never, contract := .linear }) ++
+  test "a plain binder carries the never datum"
+    (binderOf (conv lam) == some { pw := .never }) ++
+  test "an ordinary lam frame lowers to the plain binder"
+    (binderOf (conv (framed lamO lam)) == some { pw := .never }) ++
+  test "an ordinary all frame lowers to the plain binder"
+    (binderOf (conv (framed allO pi)) == some { pw := .never }) ++
+  test "a plain let carries Lean's nonDep"
+    (letOf (conv letE) == some { nonDep := false }) ++
+  test "an ordinary let frame lowers to the plain let"
+    (letOf (conv (framed letO letE)) == some { nonDep := false }) ++
+  test "plain metadata around an ordinary frame is erased"
+    (binderOf (conv (plain (framed lamO lam))) == some { pw := .never }) ++
+  test "a valid annotated lam, all or let frame lowers to the kernel binder or let"
+    (binderOf (conv (framed lamC lam)) == some { pw := .never } &&
+      binderOf (conv (framed allC pi)) == some { pw := .never } &&
+      letOf (conv (framed letC letE)) == some { nonDep := false } &&
+      binderOf (conv (plain (framed lamC lam))) == some { pw := .never }) ++
+  test "an unsupported semantic contract mode is refused"
+    (refusedWith unsupported (conv (framed badMode lam))) ++
   test "a frame not directly around a binder of its kind is refused"
-    (frameRefused (conv (framed lamC (plain lam))) && frameRefused (conv (framed lamC pi)) &&
-      frameRefused (conv (framed allC nat))) ++
+    (refusedWith misplaced (conv (framed lamO (plain lam))) &&
+      refusedWith misplaced (conv (framed lamC pi)) && refusedWith misplaced (conv (framed allC nat))) ++
   test "a malformed frame is refused"
     (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 3)] lam)) &&
       frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 2), (Ix.Name.mkStr key "kind", .ofNat 0),

@@ -6,12 +6,12 @@ The gnark key fixes the complete wrapper circuit, including both inner pairing
 obligations. BN254 uses Ethereum's BN254 precompiles.
 
 `src/PlonkVerifier.sol` is gnark's own Solidity export of the bundled release
-key, `crates/proof-compression/verifying-keys/0.1/plonk-verifying-key.bin`.
+key, `crates/proof-compression/verifying-keys/0.3/plonk-verifying-key.bin`.
 Regenerate it from the repository root whenever that key changes:
 
 ```sh
 go -C tools/gnark run ./cmd/solidity -system plonk \
-  -key ../../crates/proof-compression/verifying-keys/0.1/plonk-verifying-key.bin \
+  -key ../../crates/proof-compression/verifying-keys/0.3/plonk-verifying-key.bin \
   -out ../../contracts/plonk/src/PlonkVerifier.sol
 ```
 
@@ -21,9 +21,13 @@ expected digest independently of the proof. Proofs use gnark's
 `MarshalSolidity` encoding; the native and envelope encodings are rejected. A
 successful call must return `true`.
 
-The tests use the proof in `testdata/init.json`, whose `verifyingKeySHA256`
-must match the release key. They cover acceptance, changed digests, malformed
-proofs and deployment-size limits:
+The tests use the proof in `testdata/nat-add-comm.json`, whose
+`verifyingKeySHA256` must match the release key. It is the PLONK proof of
+`Nat.add_comm`'s aggregate root that `ix compress --plonk` produced under that
+key: `proof` is its `plonk/proof.solidity.bin`, and `claimDigest` the BLAKE3
+digest of the claim, which `ix verify` prints. Replace it whenever the key
+changes. The tests cover acceptance, changed digests, malformed proofs and
+deployment-size limits:
 
 ```sh
 forge test --root contracts/plonk -vv

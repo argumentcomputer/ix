@@ -97,7 +97,7 @@ def block (d : E) : BlockRec .source :=
   ⟨[member "T0" (.forallE d type0 default) 1, member "T1" type0 0], [],
    [recOf "T0.rec" 1, recOf "T1.rec" 0]⟩
 
-def ctx : Ctx .source := ⟨tbl, fun _ => 0, fun _ => none⟩
+def ctx : Ctx .source := ⟨tbl, fun _ => 0, fun _ => none, fun _ => none⟩
 
 #guard wants (block (.const (key "c") []))
 -- the block's decline is the fuel-out

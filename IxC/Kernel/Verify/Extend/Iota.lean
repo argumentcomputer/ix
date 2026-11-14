@@ -59,7 +59,7 @@ rule-less recursors (the definitional-equality checks ran there). -/
     lhsS.getAppArgs.getLastD (.bvar 0) =
       Expr.mkAppN (.const (f (RecRule.ctor r)) (cvj.levelParams.map .param))
         (fvs.take cnP ++ fvs.drop rP) ∧
-    (cvj.type.stripPis (cnP + cnF)).isSome = true ∧
+    Expr.ctorTeleOk cvj.type (cnP + cnF) = true ∧
     Expr.instPisAt (fvs.take cnP ++ fvs.drop rP)
       (cvj.type.renameConsts f) = some (cdoms, cres) ∧
     cres.getAppArgs.length = cnP + (mI - rP) ∧
@@ -244,7 +244,7 @@ theorem checkIotaThm_inv {env' env₀ : Env md} {f : Key md → Key md}
   case neg => rw [if_neg hmaj] at h; exact nomatch h
   rw [if_pos hmaj] at h
   try dsimp only at h
-  by_cases hcstrip : (cvj.type.stripPis (cnP + cnF)).isSome = true
+  by_cases hcstrip : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   case neg => rw [if_neg hcstrip] at h; exact nomatch h
   rw [if_pos hcstrip] at h
   try dsimp only at h
@@ -500,17 +500,14 @@ theorem nestedRuleShape_inv {env' envSelf : Env md} {cvName : Key md}
     · exact eq_of_beq hdrop
 
 /-- Invert a `checkIotaThmN` run (on the rule as returned, whose `rhs`
-is the annotated right-hand side): either the rule was stored inert,
-or the returned flag carries the certified shape and the full
-`NestedChecked` hypothesis kit. -/
+is the annotated right-hand side): the returned flag carries the
+certified shape and the full `NestedChecked` hypothesis kit (a rule
+outside the shape is declined). -/
 theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
     {cvA cvj : ConstantVal md} {mI rP j cnP cnF : Nat}
     {r : RecRule md} {rhsA : Expr md} {fire : RecRuleFire md}
     (h : checkIotaThmN mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j r cvj cnP cnF rhsA = .ok fire) :
-    (fire = .inert ∧
-      nestedRuleShape env' env₀ cvA.name cvA.levelParams cvA.type
-        mI rP cnP j = none) ∨
     ∃ lvls pins, fire = .nested lvls pins ∧
       nestedRuleShape env' env₀ cvA.name cvA.levelParams cvA.type
         mI rP cnP j = some (lvls, pins) ∧
@@ -521,9 +518,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
   cases hshape : nestedRuleShape env' env₀ cvA.name cvA.levelParams
       cvA.type mI rP cnP j with
   | none =>
-    intro h
-    simp only [pure, Except.pure, Except.ok.injEq] at h
-    exact Or.inl ⟨h.symm, rfl⟩
+    intro h; exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
   | some q => ?_
   obtain ⟨lvls, pins⟩ := q
   intro h
@@ -758,7 +753,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
     rw [htt] at h
     simp only [Bool.false_eq_true, if_false, if_true, ite_true, pure,
       Except.pure, Bind.bind, Except.bind, Except.ok.injEq] at h
-    exact Or.inr ⟨lvls, pins, h.symm, rfl,
+    exact ⟨lvls, pins, h.symm, rfl,
           auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
           tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
           restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
@@ -792,7 +787,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
   rw [hheadEq] at hdα
   intro h
   simp only [if_true, Except.ok.injEq] at h
-  exact Or.inr ⟨lvls, pins, h.symm, rfl,
+  exact ⟨lvls, pins, h.symm, rfl,
         auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
         tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
         restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
@@ -820,7 +815,7 @@ side was annotated). -/
     RecRule.nfields r = cnF ∧
     RecRule.ctorParams r = cnP ∧
     (RecRule.fire r = .plain ↔
-      Expr.recRulePlain cvA.type mI rP cnP = true) ∧
+      Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true) ∧
     (∀ lvls pins, RecRule.fire r = .nested lvls pins →
       rP ≤ mI ∧
       (∀ l ∈ lvls, l.allParamsDefined cvA.levelParams = true) ∧
@@ -847,7 +842,7 @@ side was annotated). -/
     (RecRule.rhs r).stripLams (rP + cnF) =
       some (rbinders, rbody) ∧
     inferTypeCore mode env₀ F 0 (RecRule.rhs r) = .ok rhsTy ∧
-    (Expr.recRulePlain cvA.type mI rP cnP = true →
+    (Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true →
       PlainChecked mode F env env₀ f cvA mI rP cnP cnF j r cvj)
 
 /-- Invert one `checkIotaRule` run. -/
@@ -870,9 +865,7 @@ theorem checkIotaRule_inv {env' env₀ : Env md} {f : Key md → Key md}
         r' = recRuleBits env'.find? cvA.name
           {r with rhs := rhsA, ctorParams := cnP, fire := fire,
                   paramsBlind := false} ∧
-        (fire = .inert →
-          nestedRuleShape env' env₀ cvA.name cvA.levelParams
-            cvA.type mI rP cnP j = none) ∧
+        fire ≠ .inert ∧
         (∀ lvls pins, fire = .nested lvls pins →
           nestedRuleShape env' env₀ cvA.name cvA.levelParams
             cvA.type mI rP cnP j = some (lvls, pins))) := by
@@ -929,7 +922,7 @@ theorem checkIotaRule_inv {env' env₀ : Env md} {f : Key md → Key md}
   | ok rhsTy =>
   rw [hity] at h
   try dsimp only at h
-  by_cases hplain : Expr.recRulePlain cvA.type mI rP cnP = true
+  by_cases hplain : Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true
   case pos =>
     rw [if_pos hplain] at h
     revert h
@@ -964,45 +957,30 @@ theorem checkIotaRule_inv {env' env₀ : Env md} {f : Key md → Key md}
       try dsimp only at h
       simp only [Except.ok.injEq] at h
       subst h
-      rcases checkIotaThmN_inv (cvA := cvA) hthmN with ⟨hinert, hnone⟩ |
-        ⟨lvls, pins, hfe, hshape, hkit⟩
-      · subst hinert
-        exact ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
-          hfc, hnf, rfl,
-          ⟨fun hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
-            fun hc => absurd hc hplain⟩,
-          fun lvls pins hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
-          hrfF, hrb, hann,
-          not_hasFvar_of_fvarsBelow_zero
-            ((annotateCore_WScoped F _ hann
-              (WScoped.of_not_hasFvar hrfF)).fvarsBelow),
-          annotateCore_looseBVars F _ hann hrb, hrlp, hrres, hstripEq,
-          hity, fun hc => absurd hc hplain⟩, hrfF, hrb,
-          ⟨cnP, RecRuleFire.inert, rhsA, rfl, rfl,
-          ⟨(fun _ => hnone), (fun _ _ hc => nomatch hc)⟩⟩⟩
-      · subst hfe
-        refine ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
-          hfc, hnf, rfl,
-          ⟨fun hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
-            fun hc => absurd hc hplain⟩,
-          ?_, hrfF, hrb, hann,
-          not_hasFvar_of_fvarsBelow_zero
-            ((annotateCore_WScoped F _ hann
-              (WScoped.of_not_hasFvar hrfF)).fvarsBelow),
-          annotateCore_looseBVars F _ hann hrb, hrlp, hrres, hstripEq,
-          hity, fun hc => absurd hc hplain⟩, hrfF, hrb,
-          ⟨cnP, RecRuleFire.nested lvls pins, rhsA, rfl, rfl,
-          ⟨(fun hc => nomatch hc), (fun lvls' pins' hc => by
-            obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hc
-            exact hshape)⟩⟩⟩
-        intro lvls' pins' hf
-        obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj
-          (hf : RecRuleFire.nested lvls pins = .nested lvls' pins')
-        obtain ⟨hmi, hlvls, hpins, pre, dom, body, bm, D, hstrip,
-          hfn, hpinsEq, hpinsLen⟩ := nestedRuleShape_inv hshape
-        exact ⟨hmi, hlvls, hpins,
-          ⟨pre, dom, body, bm, D, hstrip, hfn, hpinsEq⟩, hpinsLen,
-          hkit⟩
+      obtain ⟨lvls, pins, hfe, hshape, hkit⟩ := checkIotaThmN_inv (cvA := cvA) hthmN
+      subst hfe
+      refine ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
+        hfc, hnf, rfl,
+        ⟨fun hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
+          fun hc => absurd hc hplain⟩,
+        ?_, hrfF, hrb, hann,
+        not_hasFvar_of_fvarsBelow_zero
+          ((annotateCore_WScoped F _ hann
+            (WScoped.of_not_hasFvar hrfF)).fvarsBelow),
+        annotateCore_looseBVars F _ hann hrb, hrlp, hrres, hstripEq,
+        hity, fun hc => absurd hc hplain⟩, hrfF, hrb,
+        ⟨cnP, RecRuleFire.nested lvls pins, rhsA, rfl, rfl,
+        ⟨(fun hc => nomatch hc), (fun lvls' pins' hc => by
+          obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hc
+          exact hshape)⟩⟩⟩
+      intro lvls' pins' hf
+      obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj
+        (hf : RecRuleFire.nested lvls pins = .nested lvls' pins')
+      obtain ⟨hmi, hlvls, hpins, pre, dom, body, bm, D, hstrip,
+        hfn, hpinsEq, hpinsLen⟩ := nestedRuleShape_inv hshape
+      exact ⟨hmi, hlvls, hpins,
+        ⟨pre, dom, body, bm, D, hstrip, hfn, hpinsEq⟩, hpinsLen,
+        hkit⟩
 
 /-- Invert a successful `checkIotaRules` run: every returned rule
 carries the full `RuleChecked` hypothesis kit. -/

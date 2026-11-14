@@ -63,7 +63,7 @@ This separation means cosmetic changes (renaming variables) don't change the con
 Every variable-length integer in the Ixon grammar uses one code, **TagN**.
 That includes expression, constant, environment, claim and proof headers,
 universe terms, counts, indices and lengths. Fixed-width fields are raw bytes,
-unchanged: packed flag bytes, contract bytes, option bytes, variant tags and
+unchanged: packed flag bytes, mode bytes, option bytes, variant tags and
 32-byte addresses. A TagN integer carries a flag of `f ∈ {0, 2, 4}` bits:
 
 | `f` | Used for | Notation in this document |
@@ -146,12 +146,12 @@ All four are roots of the sharing proofs' audit manifest
 | 0x7 | Expr | App | Application count (telescoped) |
 | 0x8 | Expr | Lam | Binder count (telescoped) |
 | 0x9 | Expr | All | Binder count (telescoped) |
-| 0xA | Expr | Let | Bit 0 non-dependent, bit 1 shared borrow (values 0–3) |
+| 0xA | Expr | Let | `nonDep + 2 · LetMode` code (values 0–15) |
 | 0xB | Expr | Share | Sharing table index |
 | 0xC | Constant | Muts | Entry count |
 | 0xD | Constant | Non-Muts | Variant (0-7) |
 | 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | `.ixe` header: format version (4, byte `0xE4`); Comm/AssumptionTree/Claim: variant |
-| 0xF | Proof | ZK proofs | Variant (0-6) |
+| 0xF | Proof | ZK proofs | Variant (0–7; 6 retired) |
 
 ### Examples
 
@@ -170,7 +170,7 @@ value with `Ixon.getTagN`:
 | `N4(0xB, 4311811080)` | `BF 00 00 00 00 00 00 00 00` | 9 |
 | `N4(0x2, 256)` (`Ref` with 256 universe arguments) | `28 F8` | 2 |
 | `N4(0xE, 4)` (the version-4 `.ixe` header) | `E4` | 1 |
-| `N4(0xE, 9)` (Resource claim) | `E8 01` | 2 |
+| `N4(0xE, 9)` (the retired resource claim tag) | `E8 01` | 2 |
 | `N4(0xE, 10)` (Binding claim) | `E8 02` | 2 |
 | `N2(3, 100)` (`Univ::Var(100)`) | `E0 44` | 2 |
 | `N0(42)` | `2A` | 1 |
@@ -259,9 +259,9 @@ pub enum Expr {
     Str(u64),                               // String literal (refs index to blob)
     Nat(u64),                               // Natural literal (refs index to blob)
     App(Arc<Expr>, Arc<Expr>),              // Application
-    Lam(BinderContract, Arc<Expr>, Arc<Expr>), // Lambda (input contract, type, body)
-    All(BinderContract, ValueContract, Arc<Expr>, Arc<Expr>), // Forall/Pi
-    Let(LetContract, Arc<Expr>, Arc<Expr>, Arc<Expr>), // Let/borrow (contract, type, value, body)
+    Lam(Arc<Expr>, Arc<Expr>),              // Lambda (type, body)
+    All(Arc<Expr>, Arc<Expr>),              // Forall/Pi (domain, body)
+    Let(bool, LetMode, Arc<Expr>, Arc<Expr>, Arc<Expr>), // Let (non-dependent, mode, type, value, body)
     Share(u64),                             // Reference to sharing vector
 }
 ```
@@ -270,15 +270,15 @@ pub enum Expr {
 
 1. **No names**: Binders have no names—they use de Bruijn indices. Names are stored in metadata.
 
-2. **Independent contracts** (introduced in v3, unchanged in v4): `BinderContract { uses, value }` separates
-   quantity (`erased`, `linear`, `affine`, `many`) from the
-   `ValueContract { owned, locality }` axes. Both bound and returned values
-   can be unique/shared and local/unrestricted. Foralls carry an independent
-   result contract. `LetContract { nonDep, kind, binder }` distinguishes
-   ordinary binding from a scoped shared borrow. Ordinary Lean compilation
-   uses many/shared/unrestricted inputs and shared/unrestricted results.
-   Names and implicit/explicit binder information remain metadata.
-   See [the v4 specification](Ixon-v4.md) for the resource semantics.
+2. **Modes live in the record, not in `lam` and `all`**: a `lam` or `all`
+   binder's resource mode is in the record's
+   [binder-data section](#the-binder-data-section) (the high five bits of its
+   node byte), so an expression carries only the `let`'s mode (in its header).
+   A constructor's field modes and a definition's assertions are fields of
+   their records. See [Resource modes](#resource-modes) for the types and
+   codes. Lean source compiles to the default mode everywhere (code 0), so a
+   plain Lean record writes no mode bytes beyond zero bits. Names and
+   implicit/explicit binder information remain metadata.
 
 3. **Indirection tables**: `Ref`, `Str`, `Nat` store indices into the constant's `refs` table, not raw addresses. `Sort` stores an index into the `univs` table.
 
@@ -296,9 +296,9 @@ pub enum Expr {
 | 0x5 | Str | Refs index | None |
 | 0x6 | Nat | Refs index | None |
 | 0x7 | App | App count | Function + args (telescoped) |
-| 0x8 | Lam | Binder count | `(input-contract byte + type)` per binder + body |
-| 0x9 | All | Binder count | `(input/result-contract byte + type)` per binder + body |
-| 0xA | Let | Non-dependent flag in bit 0; borrow flag in bit 1 | Binder-contract byte + type + value + body |
+| 0x8 | Lam | Binder count | Type per binder + body |
+| 0x9 | All | Binder count | Domain per binder + body |
+| 0xA | Let | `nonDep + 2 · LetMode` code (below 16) | Type + value + body |
 | 0xB | Share | Sharing table index | None |
 
 ### Telescope Compression
@@ -314,21 +314,21 @@ N4(0x7, 3)  // 3 applications
 **Lambdas**: `Lam(t1, Lam(t2, Lam(t3, body)))` becomes:
 ```
 N4(0x8, 3)  // 3 binders
-+ contract1 + t1 + contract2 + t2 + contract3 + t3 + body
++ t1 + t2 + t3 + body
 ```
 
-Value codes are `0 = !`, `1 = unmarked`, `2 = ~!`, `3 = ~`.
-The binder byte is `uses | (value << 2)`, with quantity codes
-`0 = erased`, `1 = linear`, `2 = affine`, `3 = many`.
-Foralls store `input | (result << 4)`. Bits above bit 3 on lambdas
-or bit 5 on foralls are invalid. The ordinary lambda byte is `0x07`;
-the ordinary forall byte is `0x17`.
+Foralls use the same telescope layout with flag 0x9. A binder writes no mode
+byte: its mode is its node in the record's
+[binder-data section](#the-binder-data-section). Readers require nonempty,
+maximal telescopes and reject a nested constructor of the same kind as the
+decoded base/body, and a telescope count above the bytes left.
 
-Foralls use the same telescope layout with flag 0x9. Readers require
-nonempty, maximal telescopes and reject a nested constructor of the same
-kind as the decoded base/body. Let header values above 3 and invalid TagN codes
-are rejected. TagN has no non-minimal encodings to reject. A syntactically valid borrow record is still subject
-to the separate owner-place and resource checks.
+**Let header**: the header value is `nonDep + 2 · LetMode` code, where
+`nonDep` is 1 for a non-dependent `let`. The 16 values below 16 are exactly
+the 16 pairs of a flag and a [`LetMode`](#resource-modes); readers reject 16
+and above. A default `let` (`value many`) has header value 0 or 1, one byte
+(`A0`, `A1`); values 8 to 15 take TagN's two-byte rung (`A8 00` to `A8 07`).
+Invalid TagN codes are rejected; TagN has no non-minimal encodings to reject.
 
 ### Expression Examples
 
@@ -348,9 +348,17 @@ N4(0x2, 2)
 + N0(1)  // second univ index
 Bytes: 0x22 0x00 0x00 0x01
 
-Expr::Lam(many_shared, type_expr, Lam(affine_shared, type_expr2, body))
-N4(0x8, 2)
-+ 0x07 + type_expr + 0x06 + type_expr2 + body
+Expr::Lam(Sort(0), Lam(Sort(0), Var(0)))
+N4(0x8, 2) + Sort(0) + Sort(0) + Var(0)
+Bytes: 0x82 0x00 0x00 0x10
+
+Expr::Let(true, LetMode::Value(Many), Sort(0), Nat(1), Var(0))  // default mode
+N4(0xA, 1) + Sort(0) + Nat(1) + Var(0)
+Bytes: 0xA1 0x00 0x61 0x10
+
+Expr::Let(false, LetMode::Borrow, Sort(0), Var(1), Var(0))  // header 2·7 = 14
+N4(0xA, 14) + Sort(0) + Var(1) + Var(0)
+Bytes: 0xA8 0x06 0x00 0x11 0x10
 
 Expr::Share(5)  // Reference to sharing[5]
 N4(0xB, 5)
@@ -377,6 +385,7 @@ pub struct Constant {
     pub sharing: Vec<Arc<Expr>>,  // Shared subexpressions
     pub refs: Vec<Address>,       // Referenced constant addresses
     pub univs: Vec<Arc<Univ>>,    // Referenced universes
+    pub binders: Vec<BinderBlock>, // Binder-data section: data and modes
 }
 ```
 
@@ -411,6 +420,7 @@ N4(0xD, variant)  // Always 1 byte (variant 0-7)
 + sharing vector (N0 length + expressions)
 + refs vector (N0 length + 32-byte addresses)
 + univs vector (N0 length + universes)
++ binder-data section (see below)
 ```
 
 **Muts format:**
@@ -420,7 +430,13 @@ N4(0xC, entry_count)
 + sharing vector
 + refs vector
 + univs vector
++ binder-data section
 ```
+
+Format version 5 (`ixon-v5`, Lean `Ixon.wireFormatId`, Rust
+`WIRE_FORMAT_ID`) is v4's TagN integers plus the binder-data section, with a
+record's resource modes in that section and in its definition and constructor
+records (below).
 
 ### ConstantInfo Variants
 
@@ -458,6 +474,7 @@ Covers definitions, theorems, and opaques.
 pub struct Definition {
     pub kind: DefKind,           // Definition | Opaque | Theorem
     pub safety: DefinitionSafety, // Safe | Unsafe | Partial
+    pub asserts: DefAsserts,     // Allocation and stack assertions
     pub lvls: u64,               // Universe parameter count
     pub typ: Arc<Expr>,          // Type expression
     pub value: Arc<Expr>,        // Value expression
@@ -466,13 +483,20 @@ pub struct Definition {
 
 **Serialization**:
 ```
-DefKind+Safety packed (1 byte): (kind << 2) | safety
-  - kind: 0=Definition, 1=Opaque, 2=Theorem
-  - safety: 0=Unsafe, 1=Safe, 2=Partial
+flags (1 byte): (kind << 2) | safety | (DefAsserts code << 4)
+  - kind: 0=Definition, 1=Opaque, 2=Theorem (3 rejected)
+  - safety: 0=Unsafe, 1=Safe, 2=Partial (3 rejected)
+  - high nibble: DefAsserts code = alloc + 4·boundedStack, below 8
+    (bit 7 rejected; alloc code 3 rejected)
 + lvls (N0)
 + typ (Expr)
 + value (Expr)
 ```
+
+A definition that asserts nothing writes high nibble 0, so its first byte is
+v4's. A theorem asserts nothing: its high nibble must be 0, which the
+canonical decoders check (the codec reads the byte; see
+[Canonical form](#canonical-form)).
 
 #### Recursor (variant 1)
 
@@ -618,19 +642,113 @@ pub struct Constructor {
     pub cidx: u64,         // Constructor index
     pub params: u64,       // Number of parameters
     pub fields: u64,       // Number of fields
+    pub field_modes: FieldModes, // Inherited, or one mode per field
     pub typ: Arc<Expr>,    // Type expression
 }
 ```
 
 **Serialization**:
 ```
-is_unsafe (1 byte: 0 or 1)
+flags (1 byte): bit 0 is_unsafe, bit 1 field modes listed (bits 2-7 rejected)
 + lvls (N0)
 + cidx (N0)
 + params (N0)
 + fields (N0)
++ field modes: if bit 1 is set, `fields` bytes, each a FieldMode code
+  (0 inherited, 1 shared; 2 and above rejected), at least one 1
 + typ (Expr)
 ```
+
+The flag is set exactly when some field is `shared`: a listed set with no
+`shared` field is rejected (its constructor writes the flag clear and no mode
+bytes instead). The count is checked against the bytes left before any mode
+byte is read. A constructor whose fields all inherit writes v4's bytes.
+
+### The binder-data section
+
+Every record ends with its binder-data section (Lean `Ixon.putBinders`, Rust
+`serialize::put_binders`): for every `lam` and `all` binder of the record's
+expressions, the zero-ness of its codomain sort (its datum) and its resource
+mode.
+
+```
+section := nblocks:N0 block[nblocks]
+block   := shared:u8 index:N0 variant:N0 nnodes:N0 node[nnodes]
+node    := tag | mode << 3                (tag 0 never, 1 zero, 4 undecided)
+         | tag | mode << 3  k:N0 p[k]:N0  (tag 2 ifAllZero p)
+         | 0x03 v:N0                      (share of variant v)
+```
+
+A block holds the nodes of one expression: a root (`shared = 0`, `index` the
+root's number, `variant = 0`) or one variant of a sharing entry (`shared = 1`,
+`index` the entry). A record's roots, in order, are a definition's type and
+value; an axiom's or quotient's type; a recursor's type and its rules'
+right-hand sides; an inductive's type and its constructors' types; a block's
+members in order. A block's nodes follow its expression's numbered nodes in
+pre-order (type before body, function before argument, a `let`'s type, value,
+then body): every `lam` and `all`, and every `Share` of an entry that has a
+binder. A share node names the entry's variant there.
+
+**The node byte.** A binder node's low three bits are its tag and its high
+five bits its mode's code (`AllMode`: the bound variable's `BinderMode` plus 8
+times its arrow's `ResultMode`; a `lam`'s result is its own arrow's, so a
+definition's `lam` telescope agrees with its type's `all` telescope node for
+node). The undecided node carries a mode too: a mode is not a datum. A node at
+the default mode is its tag alone. A share node's byte is exactly `0x03`.
+Readers reject tags 5 to 7, a share byte with mode bits (tag 3 with any high
+bit set), and an input code of 7.
+
+A record with no root (a projection) has the empty section, the single byte
+`00`, and so does a record whose roots have no numbered node.
+
+### Resource modes
+
+The modes a record gives its binders, its `let`s, its constructors' fields and
+its definitions (Lean `IxC/Ixon/Types/Modes.lean`, Rust `ixon::modes`). Each
+type is exactly its legal set, with a code that is a bijection onto its legal
+codes and the default at code 0.
+
+| Type | Values | Code | Where |
+|---|---|---|---|
+| `BinderMode` | `many` (default), `borrowed`, `unique`, `uniqueBorrowed`, `once`, `onceBorrowed`, `erased` | 0–6 in that order (bit 0 borrowed, bit 1 unique or erased, bit 2 once or erased); 7 rejected | a binder node's input; a value `let`'s mode |
+| `ResultMode` | `shared` (default), `borrowed`, `unique`, `uniqueBorrowed` | 0–3 | a binder node's result |
+| `AllMode` | `BinderMode × ResultMode` (28 values) | input + 8·result (5 bits) | a binder node's high five bits |
+| `LetMode` | `value m` (7 values), `borrow` | `m`'s code, or 7 for `borrow` | a `let` header: `nonDep + 2·code` |
+| `FieldMode` | `inherited` (default), `shared` | 0, 1 | one byte per field when listed |
+| `FieldModes n` | `inherited`, or `n` modes with one `shared` | constructor flag bit 1, then the bytes | a constructor |
+| `AllocAssert` | `unrestricted` (default), `noRc`, `noAlloc` | 0–2; 3 rejected | `DefAsserts.alloc` |
+| `DefAsserts` | `AllocAssert × Bool` (6 values) | alloc + 4·boundedStack (4 bits) | a definition's high nibble |
+
+A `borrow` `let` binds its variable `borrowed`. An erased field is erased by
+its binder's mode in the constructor's type: `FieldMode` has no erased value.
+Modes are data of the record, hashed into its address. Lean source compiles
+to the default modes everywhere. Kernel terms carry no modes, and typing
+claims say nothing about them.
+
+### Canonical form
+
+Every byte that is no mode is rejected by the codec itself, so each choice of
+modes has one encoding. The canonical decoders (Lean
+`Ixon.Canonical.deConstant`, Rust `Constant::get_canonical`) take a record
+that the codec reads whole and that re-encodes to exactly its bytes, and add
+two record-level checks:
+
+| Rule | Checked by |
+|---|---|
+| Node tag at most 4, share byte exactly `0x03`, input code not 7 | codec (`getBinderNode`, `BinderNode::get`) |
+| `let` header below 16 | codec (`getExprFromTag`, `get_expr`) |
+| Definition byte: kind and safety at most 2, high nibble below 8, alloc code not 3 | codec (`getDefinition`, `Definition::get`) |
+| Constructor byte at most 3; field-mode bytes 0 or 1, at least one 1 | codec (`getConstructor`, `Constructor::get`) |
+| Level count below 2^32; blocks strictly sorted by (shared, index, variant); a root block at variant 0; no empty block; every `ifAllZero` list nonempty, strictly ascending and below the level count; the empty section without a root | canonical decoder (`Constant.bindersCanonical`, `binders_canonical`) |
+| A theorem, standalone or in a block, asserts nothing | canonical decoder (`Constant.modesCanonical`, `modes_canonical`) |
+
+The complete form (`Constant.bindersComplete`, `binders_complete`), which a
+checker of binder data reads, further requires exactly the blocks the
+record's expressions call for, one node per numbered node of the matching
+kind, the variants of an entry numbered in order of first occurrence and
+pairwise distinct as whole node lists (data and modes), and every binder of an
+unsafe or partial record undecided (at any mode). No reader matches modes
+against expressions: binder nodes are uniform for `lam` and `all`.
 
 ---
 
@@ -960,31 +1078,46 @@ Not claimed:
 
 `T2 → T2`, where `T2 = Prop → Prop → Prop`, is a fixture from
 `docs/sharing-minimum.md` §2. As an axiom with `univs = [Zero]`, so that
-`Sort(0)` is `Prop`, the unshared constant is 20 bytes:
+`Sort(0)` is `Prop`, the unshared constant is 15 bytes before its binder-data
+section:
 
 ```
 D2 00 00                    -- N4(0xD, 2) Axiom, not unsafe, lvls = 0
-93 17 92 17 00 17 00 00 17  -- typ: one All telescope of 3 binders
-   00 17 00 00
+93 92 00 00 00 00 00 00     -- typ: one All telescope of 3 binders: domains
+                            --   T2 = All(Sort 0, All(Sort 0, Sort 0)),
+                            --   Sort 0, Sort 0; body Sort 0
 00                          -- sharing: N0(0)
 00                          -- refs: N0(0)
 01 00                       -- univs: N0(1), Zero
+01                          -- binder data: one block
+00 00 00 05                 --   root 0, variant 0, 5 nodes
+00 00 00 00 00              --   one `never` node per binder, default mode
 ```
 
-The canonical construction stores `T2` once and gives 17 bytes:
+The canonical construction stores `T2` once and gives 14 bytes before the
+section:
 
 ```
 D2 00 00                    -- N4(0xD, 2) Axiom, not unsafe, lvls = 0
-91 17 B0 B0                 -- typ: All(Share(0), Share(0)); the body Share
+91 B0 B0                    -- typ: All(Share(0), Share(0)); the body Share
                             --   ends the telescope
 01                          -- sharing: N0(1)
-92 17 00 17 00 00           --   entry 0 = T2 = All(Sort 0, All(Sort 0, Sort 0))
+92 00 00 00                 --   entry 0 = T2 = All(Sort 0, All(Sort 0, Sort 0))
 00                          -- refs: N0(0)
 01 00                       -- univs: N0(1), Zero
+02                          -- binder data: two blocks
+00 00 00 03 00 03 00 03 00  --   root 0: the All's node, then a share node
+                            --     (entry 0, variant 0) for each Share
+01 00 00 02 00 00           --   entry 0, variant 0: T2's two binders
 ```
 
-The bytes were produced by `normalizeConstantSharingTiered .tagN`, and the
-`exact-sharing` suite checks them. The compiler's sharing builder
+The construction compares records without their sections (`Ix.Sharing.Exact`
+builds them with `binders := #[]`); the section follows the shared result, and
+here it costs more than sharing saves (30 bytes in all against 25), since every
+`Share` of an entry with a binder takes a node. The expression and table bytes
+are `normalizeConstantSharingTiered .tagN`'s with the v5 binder encoding; the
+sections follow from the complete-form rules, with every datum `never`. The
+compiler's sharing builder
 (`Ix.CompileM.buildConstantWithSharing`) runs the same construction on the
 unshared constant's roots and writes them back in place. Every integer here is below the first TagN
 rung end, so v3's integer codes would write the same bytes for this table.
@@ -1698,19 +1831,28 @@ the `Catalog` claim (below) names member claims, not these roots.
 
 Envs, commitments, the AssumptionTree data type, and all claims share
 the `f = 4` flag 0xE. Proofs (opaque ZK bytes) share flag 0xF. Values
-0..=7 fit in single-byte headers. Catalog (variant 8) and Resource
-(variant 9) are in TagN's two-byte rung: `0xE8 0x00` and `0xE8 0x01`.
+0..=7 fit in single-byte headers. Catalog (variant 8) and Binding
+(variant 10) are in TagN's two-byte rung: `0xE8 0x00` and `0xE8 0x02`.
+Variant 9 (`0xE8 0x01`, the resource claim) and proof variant 6 (`0xF6`)
+are retired: every reader refuses them as retired before reading the scope.
+The registry of every value in use under `0xE`, `0xF` and the validator byte,
+across the Ix trees, is `Ix/Claim.lean`'s, mirrored in the module
+documentation of `crates/ixon/src/proof.rs`.
 Environment headers are interpreted in the `.ixe` context: the v4
 environment header is `0xE4`, the same byte as the Check claim tag. The
 enclosing protocol must identify the object kind.
 
 Every claim and proof payload starts with two bytes immediately after its
-header: object format `4`, then validator `0` (structural-v1), `2`
-(resource-v1) or `3` (erased-lean-v2). Readers require the validator
-assigned to that variant. Validator `1` (erased-lean-v1) is retired: it named
-typing claims whose primitives were recognized by fixed addresses and which
-admitted any axiom, and readers refuse it (`claim: validator erased-lean-v1 is
-retired — regenerate the claim`) rather than read it as erased-lean-v2. Whole-object readers reject trailing bytes and
+header: object format `4`, then validator `0` (structural-v1) or `3`
+(erased-lean-v2), or for some claims `4` or `5` (below). Readers require the
+validator assigned to that variant. Validator `1` (erased-lean-v1) is retired:
+it named typing claims whose primitives were recognized by fixed addresses and
+which admitted any axiom, and readers refuse it (`claim: validator
+erased-lean-v1 is retired — regenerate the claim`) rather than read it as
+erased-lean-v2. Validator `2` (resource-v1) is retired with the resource claim
+and refused. Validators `6` and `7` are reserved for IxCC's compile-v1 (retired
+there) and compile-v2, and `8` (erased-lean-v2-modes) for claims about a
+record's modes; every reader refuses them until a validator exists. Whole-object readers reject trailing bytes and
 earlier unscoped encodings. These bytes are included in the claim digest
 and proof statement. A claim with another object format is rejected with
 `claim: unsupported object format N, expected 4 — regenerate the claim`
@@ -1728,16 +1870,15 @@ and proof statement. A claim with another object format is rejected with
 | 3 | `0xE3` | Eval claim | context + 2 addr (input, output) + opt assumptions |
 | 4 | `0xE4` | Check claim | context + 1 addr (const) + opt assumptions |
 | 5 | `0xE5` | CheckEnv claim | context + 1 addr (env root) + opt assumptions |
-| 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
+| 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo + opt binders |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
 | 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
-| 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
+| 9 | `0xE8 0x01` | retired (resource claim) | refused |
 | 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Catalog and Binding require validator
-`3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`;
-Resource requires validator `2`.
+`3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
@@ -1755,11 +1896,34 @@ The typing claims (Eval, Check, CheckEnv) are relative to a
 The claim states that its constants are well-typed in Lean's theory over
 the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with the
 primitives read through the bound roles, each validated against the named
-specifications. The axioms field is reserved: no checker admits another axiom
-yet, and IxVM refuses a claim that lists any. It is a separate commitment from
-`assumptions`, which names constants assumed well-typed and discharged by
-other claims; an axiom is never discharged by typing. A context is 65 bytes
-when there are no further axioms.
+specifications. The axioms field names further axioms, the leaves of a merkle
+tree, and the claim then holds in that theory extended by them. IxVM accepts
+a leaf only if it is a stored safe axiom record that the role table does not
+bind, and it typechecks every leaf with its closure, whether or not the
+claim's constants use it, under the claim's assumptions: a leaf the assumption
+tree also names is not checked, and the claim is conditional on it like on
+any assumption. The field is a
+separate commitment from `assumptions`, which names constants assumed
+well-typed and discharged by other claims; an axiom is never discharged by
+typing. A context is 65 bytes when there are no further axioms.
+
+A Check or CheckEnv claim certifies only constants in Lean's logic. Its
+seeds, the Check constant and the leaves of the CheckEnv tree, must be safe:
+IxVM refuses a seed whose record, or the block it projects from, is an unsafe
+or `partial` definition, an unsafe opaque, axiom or recursor, an unsafe
+inductive or constructor, or a block holding one (`KernelClaim::assert_claimable`,
+`claim seed is unsafe or partial`). Lean's kernel accepts an unsafe constant of
+any type, `False` included, and a `partial` block (the `_unsafe_rec`
+companions) may refer to itself, so "checked" says nothing about them. The face
+of a `partial def` is a safe opaque, and a claim may name it. A theorem is
+never unsafe, and a `partial` opaque is not. A safe constant never references
+an unsafe one, so a seed's closure holds none. The claim builders leave the
+unsafe and partial constants out of seed and owned lists: `ix check` refuses
+one by name and skips them when it checks a whole environment, a shard owns
+none (`Ix.Shard.ownedConstsPer`, `IxVM.ClaimHarness.claimableOwned`), and the
+canonical tree of an environment (`ix tree env`, an aggregate's subjects)
+holds the constants in Lean's logic only. An Eval claim's input and output
+are safe declarations too.
 
 A Check or CheckEnv claim with validator `4` (erased-lean-v2-assumed) has the
 same payload but assumes its binding instead of validating it: it states its
@@ -1769,7 +1933,7 @@ the table binds every role and each bound constant meets its specification.
 Its proof validates every role once, and aggregation discharges the condition
 of a whole aggregate with it (`ix_aggr` shapes 13 and 14), which yields the
 same claim bytes with validator `3`. Validator `4` names no axiom and no
-typing assumption: the reserved axioms field and `assumptions` keep their
+typing assumption: the axioms field and `assumptions` keep their
 meaning.
 
 A CheckEnv claim with validator `5` (erased-lean-v2-class) names a **literal
@@ -1806,15 +1970,13 @@ the multi-byte-tag path.
 | 3 | `0xF3` | Reveal proof | claim payload + N0 length + opaque ZK bytes |
 | 4 | `0xF4` | Contains proof | claim payload + N0 length + opaque ZK bytes |
 | 5 | `0xF5` | Catalog proof | claim payload + N0 length + opaque ZK bytes |
-| 6 | `0xF6` | Resource proof wrapper | claim payload + N0 length + opaque proof bytes |
+| 6 | `0xF6` | retired (resource proof) | refused |
 | 7 | `0xF7` | Binding proof | claim payload + N0 length + opaque ZK bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
-IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
-validated natively (`Ix.Resource.validate`) and is explicitly rejected as an
-IxVM proof request. Aggregation folds only children whose contexts are equal,
+IxVM supports Eval, Check, CheckEnv, Reveal, and Contains. Aggregation folds only children whose contexts are equal,
 except for shape 15, which joins claims whose bindings share a literal class,
 and shape 16, which collects member claims under any contexts into a Catalog.
 
@@ -1838,15 +2000,14 @@ pub enum Claim {
     /// Every constant in the env merkle-rooted at `root` is well-typed,
     /// optionally modulo `assumptions`.
     CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
-    /// Selective field revelation of a committed constant.
-    Reveal { comm: Address, info: RevealConstantInfo },
+    /// Selective field revelation of a committed constant, optionally
+    /// committing to `blake3(put_binders(c.binders))`.
+    Reveal { comm: Address, info: RevealConstantInfo, binders: Option<Address> },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
     Contains { tree: Address, const_addr: Address },
     /// Every unconditional CheckEnv claim whose digest is a leaf of the
     /// canonical tree `members` holds. Formed only by aggregation.
     Catalog { members: Address },
-    /// Complete closure passes resource-v1 under the committed profile.
-    Resource { root: Address, profile: Address },
     /// The role table with hash `binding` binds every role and each bound
     /// constant meets its specification in the set with digest `spec`.
     Binding { spec: Address, binding: Address },
@@ -1890,12 +2051,19 @@ Two commitments to the same constant share the same payload address.
 ### RevealConstantInfo Format
 
 The Reveal claim allows selective revelation of constant metadata fields
-(kind, safety, idx, etc.) without opening the full commitment.
-Serialization: `variant (1 byte) + field_mask (N0) + field values...`
+(kind, safety, assertions, constructor field modes, idx, etc.) and, optionally,
+the constant's binder-data section (`opt binders = blake3(put_binders(c.binders))`)
+without opening the full commitment.
+Serialization: `variant (1 byte) + field_mask (N0) + field values...` followed
+by `0x00` (`binders = None`) or `0x01` + 32-byte section digest (`binders = Some`).
 
 The field_mask is an `N0` integer (1 byte for masks < 128). Fields are
 serialized in mask bit order. Expression fields are revealed as `Address
-= blake3(serialized Expr bytes)`.
+= blake3(serialized Expr bytes)`. Standalone and mutual definitions carry
+`asserts` (`DefAsserts::to_code`, 1 byte) at mask bit 5 (`0x20`, 6-bit mask);
+constructors carry `field_modes` (`N0` count + 1 byte `FieldMode::to_code` per
+entry; `[]` when all fields are `inherited`, else `fields` entries) at mask bit
+6 (`0x40`, 7-bit mask).
 
 ### Proof Structure
 
@@ -1946,7 +2114,8 @@ E4                    -- N4(0xE, 4) (Check)
 00                    -- assumptions = None
 ```
 
-**Reveal claim** — reveal that a committed Definition has `safety = Safe`:
+**Reveal claim** — reveal that a committed Definition has `safety = Safe`
+(without revealing its binder-data section):
 ```
 E6                    -- N4(0xE, 6) (Reveal)
 04 00                 -- object format 4, structural-v1
@@ -1954,8 +2123,9 @@ E6                    -- N4(0xE, 6) (Reveal)
 00                    -- variant: Definition
 02                    -- mask: bit 1 (safety) [N0]
 01                    -- DefinitionSafety::Safe
+00                    -- binders = None (or 01 + [32 bytes] for Some)
 ```
-Total: 38 bytes.
+Total: 39 bytes.
 
 **Contains claim** (0xE7, 2 addresses):
 ```
@@ -1966,14 +2136,10 @@ E7                    -- N4(0xE, 7) (Contains)
 ```
 Total: 67 bytes.
 
-**Resource claim** (`0xE8 0x01`, 2 addresses):
-```
-E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
-04 02                 -- object format 4, resource-v1
-[32 bytes]            -- complete env root
-[32 bytes]            -- resource profile address
-```
-Total: 68 bytes.
+**The retired resource claim**: the bytes `E8 01` (and the proof byte `F6`)
+are refused whatever follows (`claim: variant 9 (the resource claim) is
+retired`), and so is the scope byte `02` on any claim (`claim: validator
+resource-v1 is retired`).
 
 **Binding claim** (`0xE8 0x02`, 2 addresses):
 ```
@@ -2021,18 +2187,18 @@ The `compile_expr` function transforms Lean expressions:
 | `Sort(level)` | `Sort(idx)` | Level added to univs table |
 | `Const(name, levels)` | `Ref(idx, univ_idxs)` | Name resolved to address |
 | `Const(name, levels)` in mutual | `Rec(ctx_idx, univ_idxs)` | Uses mutual context |
-| `Lam(name, ty, body, info)` | `Lam(many_shared, ty, body)` | Ordinary contract; name/info to metadata |
-| `ForallE(name, ty, body, info)` | `All(many_shared, shared, ty, body)` | Ordinary contracts; name/info to metadata |
-| `LetE(name, ty, val, body, nd)` | `Let({nonDep: nd, kind: value, binder: many_shared}, ty, val, body)` | Name to metadata; ordinary let contract |
+| `Lam(name, ty, body, info)` | `Lam(ty, body)` | Name/info to metadata; a default-mode node in the section |
+| `ForallE(name, ty, body, info)` | `All(ty, body)` | Name/info to metadata; a default-mode node in the section |
+| `LetE(name, ty, val, body, nd)` | `Let(nd, value many, ty, val, body)` | Name to metadata; the default let mode |
 | `Proj(type, idx, val)` | `Prj(type_idx, idx, val)` | Type name resolved |
 | `Lit(Nat n)` | `Nat(idx)` | Bytes stored in blobs |
 | `Lit(Str s)` | `Str(idx)` | Bytes stored in blobs |
 
-This table describes unannotated source. The source-contract frontend resolves
-annotations before canonicalization and sharing, then transports their exact
-contracts through the reserved semantic metadata frame. Both production
-compilers validate resources and erased typing before emitting annotated
-artifacts. Unsupported transformations reject explicitly.
+Lean source carries no modes: the compiler writes the default mode on every
+binder node, `let` header, constructor and definition, so its records hold
+only zero mode codes. Source that carries contract annotations (the reserved
+`ix.contract` metadata frame) is refused until a mode checker lands.
+Unsupported transformations reject explicitly.
 
 ### Metadata Extraction
 
@@ -2058,7 +2224,9 @@ Every block, whether a single constant or a mutual block, gets its
 `refs` and `univs` are allocated. The metadata arena follows the unshared
 expression tree, and a `Share` is transparent to it. Re-sharing a constant
 therefore leaves its metadata valid. A construction failure is a compile
-error for that block.
+error for that block. The construction compares records without their binder-data
+sections; the compiler writes the section for the shared result, where a
+`Share` of an entry with a binder takes a share node.
 
 ---
 
@@ -2071,13 +2239,12 @@ Decompilation reconstructs Lean constants from Ixon format.
 1. **Load constant** from `env.consts` by address
 2. **Initialize tables** from `sharing`, `refs`, `univs`
 3. **Load metadata** from `env.named`
-4. **Reconstruct expressions** with committed contracts, and names/binder info from metadata
+4. **Reconstruct expressions**, with names and binder info from metadata
 5. **Resolve references**: `Ref(idx, _)` → lookup `refs[idx]`, get name from `addr_to_name`
 6. **Expand shares**: `Share(idx)` → inline `sharing[idx]` (or cache result). Inside a `meta_sharing` entry, indices at or above the primary table size resolve into earlier `meta_sharing` entries (see [Sharing in metadata expressions](#sharing-in-metadata-expressions))
 
-Nondefault contracts are reconstructed from semantic bytes even without names
-or optional metadata. Optional metadata cannot inject contracts or replay an
-unsupported rewrite that would erase them.
+Lean expressions carry no modes, so decompilation reads none of the record's
+modes; they stay in the record, which the address covers.
 
 ### Roundtrip Verification
 
@@ -2125,15 +2292,17 @@ value: Lam("n", Const(`Nat, []),
 
 **Compile type**:
 ```
-All(many_shared, shared, Ref(0, []), Ref(0, []))
+All(Ref(0, []), Ref(0, []))
 ```
-Binary: `0x91 0x17` (All, 1 ordinary binder/result) + `0x20 0x00` (Ref, 0 univs, idx 0) + `0x20 0x00`
+Binary: `0x91` (All, 1 binder) + `0x20 0x00` (Ref, 0 univs, idx 0) + `0x20 0x00`
 
 **Compile value**:
 ```
-Lam(many_shared, Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0)))
+Lam(Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0)))
 ```
-Binary: `0x81 0x07` (Lam, 1 ordinary binder) + `0x20 0x00` (Ref 0) + `0x72` (App, 2 apps) + `0x20 0x01` (Ref 1) + `0x10` (Var 0) + `0x10` (Var 0)
+Binary: `0x81` (Lam, 1 binder) + `0x20 0x00` (Ref 0) + `0x72` (App, 2 apps) + `0x20 0x01` (Ref 1) + `0x10` (Var 0) + `0x10` (Var 0)
+
+Each binder's mode is the default, in its node of the binder-data section.
 
 **Canonical sharing**: the two roots are the type and the value.
 - `Ref(0, [])` is 2 bytes and occurs three times. Written inline that is
@@ -2143,8 +2312,9 @@ Binary: `0x81 0x07` (Lam, 1 ordinary binder) + `0x20 0x00` (Ref 0) + `0x72` (App
 - `Var(0)` occurs twice but is one byte, and a `Share` costs at least one
   byte, so storing it never pays.
 
-The canonical table is therefore `[Ref(0, [])]`, and the constant is 84
-bytes instead of the 85 it would take unshared.
+The canonical table is therefore `[Ref(0, [])]`, and the constant is 82
+bytes before its section instead of the 83 it would take unshared. The entry
+`Ref(0, [])` has no binder, so its shares take no node in the section.
 
 **Build Constant**:
 ```rust
@@ -2152,13 +2322,18 @@ Constant {
   info: Defn(Definition {
     kind: Definition,
     safety: Safe,
+    asserts: DefAsserts::default(),  // asserts nothing
     lvls: 0,
-    typ: All(many_shared, shared, Share(0), Share(0)),
-    value: Lam(many_shared, Share(0), App(App(Ref(1, []), Var(0)), Var(0))),
+    typ: All(Share(0), Share(0)),
+    value: Lam(Share(0), App(App(Ref(1, []), Var(0)), Var(0))),
   }),
   sharing: [Ref(0, [])],
   refs: [addr_of_Nat, addr_of_Nat_add],
   univs: [],
+  binders: [
+    BinderBlock { shared: false, index: 0, variant: 0, nodes: [Never(default)] },
+    BinderBlock { shared: false, index: 1, variant: 0, nodes: [Never(default)] },
+  ],
 }
 ```
 
@@ -2166,35 +2341,42 @@ Constant {
 
 ```
 D0                    -- N4(0xD, 0) (Constant, Defn variant)
-01                    -- DefKind+Safety packed: (Definition=0 << 2) | Safe=1
+01                    -- flags: (Definition=0 << 2) | Safe=1, asserts nothing
 00                    -- lvls = 0 (N0)
-91 17 B0 B0           -- type: All(Share(0), Share(0))
-81 07 B0 72 20 01     -- value: Lam(Share(0), App(App(Ref(1,[])...
-   10 10              --        ...Var(0)), Var(0)))
+91 B0 B0              -- type: All(Share(0), Share(0))
+81 B0 72 20 01 10 10  -- value: Lam(Share(0), App(App(Ref(1,[]), Var(0)), Var(0)))
 01                    -- sharing.len = 1
 20 00                 --   sharing[0] = Ref(0, [])
 02                    -- refs.len = 2
 [32 bytes]            -- refs[0] = addr_of_Nat
 [32 bytes]            -- refs[1] = addr_of_Nat_add
 00                    -- univs.len = 0
+02                    -- binder data: two blocks
+00 00 00 01 00        --   root 0 (type): one node, never, default mode
+00 01 00 01 00        --   root 1 (value): one node, never, default mode
 ```
 
-Total: 20 bytes for the scalar/expression data, table counts and table
-entry, plus 64 bytes for the two addresses: **84 bytes**.
+Total: 18 bytes for the scalar/expression data, table counts and table
+entry, 11 for the binder-data section, plus 64 bytes for the two addresses:
+**93 bytes**. Each binder's datum is `never`: the codomain `Nat` lives in
+`Type`, never in `Prop`.
 
 Note: The constant header is always 1 byte (0xD0) since every non-Muts
 variant (0-7) is below TagN's first rung end of 8.
 
-`ix compile` writes exactly these bytes. For a file `Double.lean` that
-contains only the definition above, `ix compile Double.lean --no-build
---consts double --out double.ixe` stores this 84-byte constant, in hex:
+`ix compile` writes these bytes. For a file `Double.lean` that contains only
+the definition above, `ix compile Double.lean --no-build --consts double --out
+double.ixe` stores this constant, in hex:
 
 ```
-d0 01 00 91 17 b0 b0 81 07 b0 72 20 01 10 10 01 20 00 02
-35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc   -- Nat
-3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8   -- Nat.add
-00
+d0 01 00 91 b0 b0 81 b0 72 20 01 10 10 01 20 00 02
+<32 bytes: the address of Nat>
+<32 bytes: the address of Nat.add>
+00 02 00 00 00 01 00 00 01 00 01 00
 ```
+
+The two addresses are those of the `Nat` and `Nat.add` records compiled from
+the same toolchain, so they change with the format and the Lean version.
 
 ### Step 4: Content Address
 
@@ -2202,10 +2384,8 @@ d0 01 00 91 17 b0 b0 81 07 b0 72 20 01 10 10 01 20 00 02
 address = blake3(serialized_constant)
 ```
 
-This address is how `double` is referenced by other constants. For the
-bytes above it is
-`eefff4002f029ee49aa94e8e9127b0b1664c86fec956e62332fd3be1672d0cef`
-(`ix addr-of double --ixe double.ixe`).
+This address is how `double` is referenced by other constants;
+`ix addr-of double --ixe double.ixe` prints it.
 
 ### Step 5: Metadata
 
@@ -2295,6 +2475,7 @@ Constructor {
   cidx: 0,           // First constructor
   params: 0,
   fields: 0,         // No fields
+  field_modes: Inherited, // no field modes listed
   typ: Rec(0, []),   // : Bool (mutual reference to inductive at index 0)
 }
 ```
@@ -2307,6 +2488,7 @@ Constructor {
   cidx: 1,           // Second constructor
   params: 0,
   fields: 0,
+  field_modes: Inherited,
   typ: Rec(0, []),   // : Bool (mutual reference to inductive at index 0)
 }
 ```
@@ -2327,14 +2509,14 @@ C1                    -- N4(0xC, 1) (Muts, 1 entry)
 00                    -- typ: Sort(0)
 02                    -- ctors.len = 2
   -- ctor_false
-  00                  -- is_unsafe = false
+  00                  -- flags: not unsafe, field modes inherited
   00                  -- lvls = 0
   00                  -- cidx = 0
   00                  -- params = 0
   00                  -- fields = 0
   30 00               -- typ: Rec(0, []) - mutual reference to Bool at index 0
   -- ctor_true
-  00                  -- is_unsafe = false
+  00                  -- flags: not unsafe, field modes inherited
   00                  -- lvls = 0
   01                  -- cidx = 1
   00                  -- params = 0
@@ -2346,6 +2528,7 @@ C1                    -- N4(0xC, 1) (Muts, 1 entry)
 00                    -- refs.len = 0 (no external references needed)
 01                    -- univs.len = 1
 01 00                 -- univs[0] = Succ(Zero)
+00                    -- binder data: no block (no root has a binder)
 ```
 
 ### Projections

@@ -4,6 +4,8 @@ public import Blake3.Rust
 public import Std.Data.HashMap
 public import Std.Data.TreeMap
 public import Ix.Address
+public import IxC.Ixon.Types
+public import Lean.Declaration
 
 /-!
   Canonical Lean types with embedded content-addressed hashes.
@@ -666,6 +668,24 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
+/-- A binder-data annotator: a block record's binder-data section, from the
+block's member names (in the record's member order) and its record, with the
+source constants its input lacks (`extra`: a definition compiled outside it,
+which the compile adds here itself). -/
+structure BinderAnnotator where
+  run : Array (Name × ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
+  extra : Array (Name × ConstantInfo) := #[]
+  /-- Whether safe records must carry decided (`pw`) binder data rather than
+  `0x04` undecided nodes (`true` for full binder-data annotation, `false` for
+  a mode-only annotator used when `binderData` is off). -/
+  requireDecided : Bool := true
+
+/-- `a` with the source constant `ci` of `n` added, replacing an earlier source of
+`n` (successive anonymous definitions share the name). -/
+def BinderAnnotator.withSource (a : BinderAnnotator) (n : Name) (ci : ConstantInfo) :
+    BinderAnnotator :=
+  { a with extra := (a.extra.filter fun (m, _) => !Name.beqRaw m n).push (n, ci) }
+
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 
     `fallback?` supports STREAMING consumers (the pure-Lean compile
@@ -679,6 +699,10 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 structure Environment where
   consts : HashMap Name ConstantInfo
   fallback? : Option (Name → Option ConstantInfo) := none
+  /-- The compiler's binder-data annotator for this environment's constants
+  (`Ix.CompileM.sectionFor`), part of the compile's input. Without one, every
+  record with a binder carries the undecided section. -/
+  binderAnnotator? : Option BinderAnnotator := none
 
 /-- Constant lookup: the materialized map first, then the lazy fallback. -/
 def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
@@ -688,6 +712,15 @@ def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
     match env.fallback? with
     | some f => f n
     | none => none
+
+/-- The environment's map and annotator, without its lazy fallback. -/
+abbrev Environment.materialized (env : Environment) : Environment :=
+  { consts := env.consts, binderAnnotator? := env.binderAnnotator? }
+
+/-- The environment's lookup view: an empty map, the environment's lookup, and its
+annotator. -/
+abbrev Environment.lookupView (env : Environment) : Environment :=
+  { consts := {}, fallback? := some env.get?, binderAnnotator? := env.binderAnnotator? }
 
 /-! ## Context Types for Compilation -/
 

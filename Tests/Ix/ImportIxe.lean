@@ -418,6 +418,24 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
           work := work.push r
     let phases ← Ix.CompileM.compilePhasesOf env closure
     let compileEnv := Ix.Commit.mkCompileEnv phases
+    -- A definition compiled over the input gets its binder data from the
+    -- compile's annotator, and in a chain of anonymous definitions each one is
+    -- annotated from its own source: compiled after another, a definition has
+    -- the address it has alone.
+    let idTy := Lean.mkForall `n .default cN cN
+    let idVal := Lean.mkLambda `n .default cN (.bvar 0)
+    let k2Ty := Lean.mkForall `n .default cN (Lean.mkForall `m .default cN cN)
+    let k2Val := Lean.mkLambda `n .default cN (Lean.mkLambda `m .default cN (.bvar 0))
+    let (_, env1) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] idTy idVal)
+    let (chained, env2) ← IO.ofExcept (Ix.Commit.compileDef env1 [] k2Ty k2Val)
+    let (alone, _) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] k2Ty k2Val)
+    unless chained == alone do
+      return (false, 0, 0, some "a chained anonymous definition has another address than alone")
+    let some bytes := env2.constants.get? chained
+      | return (false, 0, 0, some "compileDef stored no record")
+    let defn ← IO.ofExcept (Ixon.deConstantAt bytes 0 bytes.size)
+    if defn.binders.isEmpty || defn.binders.any (·.nodes.any (·.isUndecided)) then
+      return (false, 0, 0, some "a definition compiled over the input has no decided binder data")
     -- Commit a private value of the imported type.
     let voteType := Lean.Expr.const nN []
     let vote := Lean.Expr.app (.const nSucc []) (.const nZero [])

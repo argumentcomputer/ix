@@ -47,9 +47,9 @@ private def ctx : Ix.ClaimContext :=
 def claimCommitTests : TestSeq :=
   let evalClaim := Claim.eval ctx payload1 payload2 none
   let checkClaim := Claim.check ctx payload1 none
-  let revealSafety := Claim.reveal payload1 (.defn none (some .safe) none none none)
-  let revealKind := Claim.reveal payload1 (.defn (some .defn) none none none none)
-  let revealBoth := Claim.reveal payload1 (.defn (some .defn) (some .safe) none none none)
+  let revealSafety := Claim.reveal payload1 (.defn none (some .safe) none none none none) none
+  let revealKind := Claim.reveal payload1 (.defn (some .defn) none none none none none) none
+  let revealBoth := Claim.reveal payload1 (.defn (some .defn) (some .safe) none none none none) none
   -- Claim.commit is deterministic
   test "Claim.commit deterministic" (Claim.commit evalClaim == Claim.commit evalClaim)
   -- Different claim types → different addresses
@@ -72,23 +72,28 @@ private def claimRoundtrips (c : Claim) : Bool :=
   | .error _ => false
 
 private def allNoneClaim : Claim :=
-  Claim.reveal payload1 (.defn none none none none none)
+  Claim.reveal payload1 (.defn none none none none none none) none
 
 private def allFieldsClaim : Claim :=
   Claim.reveal payload1
-    (.defn (some .defn) (some .safe) (some 3) (some payload2) (some payload1))
+    (.defn (some .defn) (some .safe) (some 3) (some payload2) (some payload1)
+      (some { alloc := .noAlloc, boundedStack := true }))
+    (some secret1)
 
 private def singleFieldAddrsDistinct : Bool :=
   let comm := payload1
-  let addrK := Claim.commit (.reveal comm (.defn (some .defn) none none none none))
-  let addrS := Claim.commit (.reveal comm (.defn none (some .safe) none none none))
-  let addrL := Claim.commit (.reveal comm (.defn none none (some 1) none none))
-  let addrT := Claim.commit (.reveal comm (.defn none none none (some payload2) none))
-  let addrV := Claim.commit (.reveal comm (.defn none none none none (some payload2)))
-  addrK != addrS && addrK != addrL && addrK != addrT && addrK != addrV &&
-  addrS != addrL && addrS != addrT && addrS != addrV &&
-  addrL != addrT && addrL != addrV &&
-  addrT != addrV
+  let addrK := Claim.commit (.reveal comm (.defn (some .defn) none none none none none) none)
+  let addrS := Claim.commit (.reveal comm (.defn none (some .safe) none none none none) none)
+  let addrL := Claim.commit (.reveal comm (.defn none none (some 1) none none none) none)
+  let addrT := Claim.commit (.reveal comm (.defn none none none (some payload2) none none) none)
+  let addrV := Claim.commit (.reveal comm (.defn none none none none (some payload2) none) none)
+  let addrA := Claim.commit (.reveal comm (.defn none none none none none
+    (some { alloc := .noRc, boundedStack := false })) none)
+  let addrB := Claim.commit (.reveal comm (.defn none none none none none none) (some payload2))
+  let addrs := #[addrK, addrS, addrL, addrT, addrV, addrA, addrB]
+  (List.range addrs.size).all fun i =>
+    (List.range addrs.size).all fun j =>
+      i == j || addrs[i]! != addrs[j]!
 
 def fieldCombinationTests : TestSeq :=
   -- All-none fields still produce a valid claim
@@ -196,7 +201,7 @@ private def openConstantInfoDefn : Bool :=
           let info := Ix.Commit.openConstantInfo constant.info
           -- Should be a defn variant with all fields some
           match info with
-          | .defn (some _) (some .safe) (some _) (some _) (some _) => true
+          | .defn (some _) (some .safe) (some _) (some _) (some _) (some _) => true
           | _ => false
         | .error _ => false
       | none => false
@@ -214,17 +219,20 @@ private def openConstantInfoRoundtrips : Bool :=
         match Ixon.deConstantAt bytes 0 bytes.size with
         | .ok constant =>
           let info := Ix.Commit.openConstantInfo constant.info
-          -- The fully-revealed RevealConstantInfo should serde roundtrip
-          claimRoundtrips (.reveal payload1 info)
+          let bAddr := Ix.Commit.sectionAddr constant.binders
+          -- The fully-revealed RevealConstantInfo and sectionAddr should serde roundtrip
+          claimRoundtrips (.reveal payload1 info (some bAddr))
         | .error _ => false
       | none => false
     | none => false
   | .error _ => false
 
 private def revealClaimWrapper : Bool :=
-  let info : RevealConstantInfo := .defn (some .defn) none none none none
+  let info : RevealConstantInfo := .defn (some .defn) none none none none none
   let claim := Ix.Commit.revealClaim payload1 info
-  claim == Claim.reveal payload1 info
+  let claimWithBinders := Ix.Commit.revealClaim payload1 info (some payload2)
+  claim == Claim.reveal payload1 info none &&
+    claimWithBinders == Claim.reveal payload1 info (some payload2)
 
 def claimConstructorTests : TestSeq :=
   test "checkClaim succeeds" checkClaimSucceeds

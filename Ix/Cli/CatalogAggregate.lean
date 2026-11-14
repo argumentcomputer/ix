@@ -14,14 +14,14 @@
 module
 public import Cli
 public import Ix.Aggr
-public import Ix.Aggr.Backend
 public import Ix.Aggr.CatalogPlan
 public import Ix.Aggr.Verification
 public import Ix.Catalog
 public import Ix.Cli.CatalogCmd
+public import Ix.Cli.FormalAggregate
+public import Ix.Cli.ClaimPolicy
 public import Ix.IxVM.ClaimHarness
 public import Ix.Store
-public import MultiStark
 
 public section
 
@@ -60,16 +60,17 @@ def catalogMembers (ixc : String) (structuralAbove : Nat) :
       else pure none
     let ixes := dir / s!"{m.label}.ixes"
     let (claim, count) ← if ← ixes.pathExists then
-        let handle ← match ← IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe piece.toString with
-          | .ok handle => pure handle
-          | .error e => return .error s!"{piece}: {e}"
-        let expected ← match ← IO.lazyPure fun _ =>
-            Aiur.AiurSystem.aggregateExpected handle ixes.toString structuralAbove with
-          | .ok expected => pure expected
+        let view ← match Ix.Shard.parseIxesManifest (← IO.FS.readBinFile ixes) with
+          | .ok v => pure v
           | .error e => return .error s!"{ixes}: {e}"
-        match Ix.Claim.de expected.claimBytes with
-        | .ok claim => pure (claim, expected.constantCount)
-        | .error e => return .error s!"{ixes}: the expected claim does not decode: {e}"
+        unless ← Ix.Shard.shardsCover env view.shards do
+          return .error s!"{ixes}: invalid manifest coverage"
+        let statement ← match Reference.expectedFromManifest env view structuralAbove with
+          | .ok s => pure s
+          | .error e => return .error s!"{ixes}: {e}"
+        match auditAggregateConstants env statement with
+        | .ok count => pure (statement.claim, count)
+        | .error e => return .error s!"{ixes}: {e}"
       else
         let some tree := IxVM.ClaimHarness.envCanonicalTree env
           | return .error s!"{piece}: the piece has no constants"
@@ -111,11 +112,11 @@ def printStatements (members : Array (CatalogMember × Ix.Catalog.Member × Nat)
     | .member _ => pure ()
   IO.println s!"[catalog] root: {plan.statements[plan.root]!.claim}"
 
-/-- A proven node: its claim, its `ix_aggr` proof and the address of its proof
+/-- A proven node: its claim, its `ix_aggr` wrapper and the address of its proof
 wrapper in the store. -/
 structure Proven where
   claim : Ix.Claim
-  proof : Aiur.Proof
+  wrapper : Ixon.Proof
   address : Address
 
 private def addressOfHex (hex : String) : Except String Address :=
@@ -129,15 +130,13 @@ def readProven (address : Address) : IO (Except String Proven) := do
   let wrapper ← match decodeAggregateWrapperAt address bytes with
     | .ok wrapper => pure wrapper
     | .error e => return .error e
-  match Aiur.Proof.ofBytesChecked wrapper.proof with
-  | .ok proof => return .ok { claim := wrapper.claim, proof, address }
-  | .error e => return .error s!"aggregate proof {address} does not decode: {e}"
+  return .ok { claim := wrapper.claim, wrapper, address }
 
 /-- `ix aggregate --ixc <cat.ixc> <member-root>…`: prove every join of the
-plan, each within `maxRamBytes`, persist each proof wrapper, and print the
-root's address. -/
-def aggregateCatalog (ixc : String) (hexes : Array String) (maxRamBytes structuralAbove : Nat)
-    (recursionParameters : RecursionParameters) : IO UInt32 := do
+plan, persist each proof wrapper, and print the root's address. -/
+def aggregateCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
+  let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+    defaultStructuralAbove
   let members ← match ← catalogMembers ixc structuralAbove with
     | .ok members => pure members
     | .error e => IO.eprintln s!"error: {e}"; return 1
@@ -145,6 +144,7 @@ def aggregateCatalog (ixc : String) (hexes : Array String) (maxRamBytes structur
     | .ok r => pure r
     | .error e => IO.eprintln s!"error: {e}"; return 1
   printStatements members plan
+  let hexes := p.variableArgsAs! String
   let mut roots : Array Proven := #[]
   for hex in hexes do
     let address ← match addressOfHex hex with
@@ -169,62 +169,58 @@ def aggregateCatalog (ixc : String) (hexes : Array String) (maxRamBytes structur
     unless members.any (·.1.claim == root.claim) do
       IO.eprintln s!"error: aggregate root {root.address} states no member's claim: {root.claim}"
       return 1
-  let started ← IO.monoMsNow
-  let ixvmTask ← IO.asTask (prio := .dedicated) do
-    compileBackend "IxVM" (fun _ => IxVM.ixVM) IxVM.functionGroups
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let aggrTask ← IO.asTask (prio := .dedicated) do
-    compileBackend "ixAggr recursion" (fun _ => Aggr.ixAggr) Aggr.functionGroups
-      recursionParameters.commitment recursionParameters.fri
-  let ixvm ← match ← IO.ofExcept ixvmTask.get with
-    | .ok backend => pure backend
-    | .error e => IO.eprintln e; return 1
-  let aggr ← match ← IO.ofExcept aggrTask.get with
-    | .ok backend => pure backend
-    | .error e => IO.eprintln e; return 1
-  let verifyIdx := ixvm.compiled.getFuncIdx `verify_claim |>.get!
-  let aggrIdx := aggr.compiled.getFuncIdx `ix_aggr |>.get!
-  let allowed := Aggr.allowedBlob ixvm.vk verifyIdx aggr.vk aggrIdx
-  IO.eprintln s!"[aggregate] backends: {(← IO.monoMsNow) - started} ms; every node verifies its \
-    children under one identity: IxVM key {Address.blake3 ixvm.vk}, ix_aggr key \
-    {Address.blake3 aggr.vk}"
-  for i in [0:plan.nodes.size] do
-    let some (shape, preimages, trees) := plan.advice (members.map (·.1)) i | continue
-    let mut advice : Array (ByteArray × ByteArray) := #[]
-    for c in plan.nodes[i]!.children do
-      let some child := proven[c]!
-        | IO.eprintln s!"error: node {c} has no proof"; return 1
-      let outer := aggregateOuterClaim allowed aggrIdx child.claim
-      match aggr.system.proofToAdviceBytes outer child.proof with
-      | .ok bytes => advice := advice.push (bytes, MultiStark.serializeClaims #[outer])
-      | .error e => IO.eprintln s!"error: node {c}'s proof does not verify: {e}"; return 1
-    let claim := plan.statements[i]!.claim
-    let outBytes := Ix.Claim.ser claim
-    let stepStarted ← IO.monoMsNow
-    let result ← IO.lazyPure fun _ =>
-      aggr.system.proveIxAggrWithin aggrIdx (pubInput allowed outBytes) shape
-        advice[0]!.1 advice[1]!.1 ixvm.vk aggr.vk advice[0]!.2 advice[1]!.2 outBytes allowed
-        (preimagesBlob preimages) (treesBlob trees) (pathsBlob #[]) maxRamBytes
-    let (outer, proof) ← match result with
-      | .ok r => pure r
-      | .error e => IO.eprintln s!"error: node {i} (shape {shape}): {e}"; return 1
-    unless outer == aggregateOuterClaim allowed aggrIdx claim do
-      IO.eprintln s!"error: node {i}: the proof's claim is not the node's"
+  let options ← FormalAiur.hostOptions p
+  let ctx ← FormalAggregate.context p
+  for root in roots do
+    try
+      FormalAggregate.verifyWrapper ctx .aggr root.wrapper
+    catch e =>
+      IO.eprintln s!"error: member root {root.address} does not verify: {e}"
       return 1
-    let address ← StoreIO.toIO (Store.write (Ixon.Proof.ser { claim, proof := proof.toBytes }))
-    IO.eprintln s!"[aggregate] node {i} (shape {shape}, {proof.shardCount} trace shards) \
-      proved in {(← IO.monoMsNow) - stepStarted} ms: {address}"
-    proven := proven.set! i (some { claim, proof, address })
-  let some root := proven[plan.root]!
-    | IO.eprintln "error: the root has no proof"; return 1
-  IO.println root.address
-  return 0
+  FormalAiur.withController p #[(ctx.ixvmArtifact, "ixvm"), (ctx.aggrArtifact, "recursion")] options 1 fun options => do
+    let mut proven := proven
+    for i in [0:plan.nodes.size] do
+      let some (shape, preimages, trees) := plan.advice (members.map (·.1)) i | continue
+      let mut io := extendIdentity default ctx.allowed shape
+      for (c, slot) in plan.nodes[i]!.children.zipIdx do
+        let some child := proven[c]!
+          | IO.eprintln s!"error: node {c} has no proof"; return 1
+        io := extendVk io .aggr ctx.aggr.key
+        io := extendChild io slot (← FormalAggregate.rawProof .aggr child.wrapper.proof)
+          (MultiStark.serializeClaims #[FormalAggregate.outerClaim ctx .aggr child.wrapper.claim])
+      let claim := plan.statements[i]!.claim
+      let outBytes := Ix.Claim.ser claim
+      io := extendOutputClaim io outBytes
+      for pre in preimages do
+        io := extendPreimage io pre
+      for tree in trees do
+        io := extendTree io tree
+      let stepStarted ← IO.monoMsNow
+      let proof ← FormalAggregate.proveAdvice ctx outBytes io options
+      let wrapper : Ixon.Proof := { claim, proof := "IXAGGR2\x00".toUTF8 ++ proof }
+      FormalAggregate.verifyWrapper ctx .aggr wrapper
+      let address ← FormalAggregate.persist wrapper
+      IO.eprintln s!"[aggregate] node {i} (shape {shape}) \
+        proved in {(← IO.monoMsNow) - stepStarted} ms: {address}"
+      proven := proven.set! i (some { claim, wrapper, address })
+    let some root := proven[plan.root]!
+      | IO.eprintln "error: the root has no proof"; return 1
+    IO.println root.address
+    return 0
 
 /-- `ix verify --aggregate <root> --ixc <cat.ixc>`: recompute the catalog's
 root claim from its manifest and pieces, check that each proof states it, and
 verify each proof. -/
-def verifyCatalog (ixc : String) (hexes : List String) (structuralAbove : Nat)
-    (backend : VerificationBackend) : IO UInt32 := do
+def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
+  if p.hasFlag "ixe" then
+    IO.eprintln "error: --ixc takes the members from the catalog; drop --ixe"
+    return 1
+  let hexes := (p.variableArgsAs! String).toList
+  if hexes.isEmpty then
+    IO.eprintln "error: --aggregate requires at least one aggregate proof address"
+    return 1
+  let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+    defaultStructuralAbove
   let members ← match ← catalogMembers ixc structuralAbove with
     | .ok members => pure members
     | .error e => IO.eprintln s!"error: {e}"; return 1
@@ -232,15 +228,27 @@ def verifyCatalog (ixc : String) (hexes : List String) (structuralAbove : Nat)
     | .ok r => pure r
     | .error e => IO.eprintln s!"error: {e}"; return 1
   printStatements members plan
+  -- The root's conditions are its members': each is admitted under the claim
+  -- policy, its table over the member's own piece, read only if needed.
+  for (m, _, _) in members do
+    let piece := (System.FilePath.mk ixc / s!"{m.label}.ixe").toString
+    try
+      let statement ← ClaimPolicy.admit p m.claim
+        (envs := do return [← TableAdmission.readEnv piece])
+      IO.println s!"[catalog] member {m.label} admitted, claim {Ix.Claim.commit m.claim}:\n{statement}"
+    catch e =>
+      IO.eprintln s!"error: member {m.label}: {e}"
+      return 1
+  let ctx ← FormalAggregate.context p
   let constants := members.foldl (fun n m => n + m.2.2) 0
   let mut rc : UInt32 := 0
   for hex in hexes do
-    match ← verifyOne backend expected constants members.size hex with
+    match ← verifyOne ctx expected constants members.size hex with
     | .ok message => IO.println message
     | .error e => IO.eprintln s!"error: {e}"; rc := 1
   return rc
 where
-  verifyOne (backend : VerificationBackend) (expected : Ix.Claim) (constants count : Nat)
+  verifyOne (ctx : FormalAggregate.Context) (expected : Ix.Claim) (constants count : Nat)
       (hex : String) :
       IO (Except String String) := do
     let address ← match addressOfHex hex with
@@ -252,13 +260,16 @@ where
     if root.claim != expected then
       return .error s!"aggregate proof {address} states {root.claim}, not the catalog's \
         root {expected}"
-    match backend.system.verify (aggregateOuterClaim backend.allowed backend.aggrIdx expected)
-        root.proof with
-    | .ok () =>
+    try
+      FormalAggregate.verifyWrapper ctx .aggr root.wrapper
       return .ok s!"ok: aggregate proof {address} verifies the catalog's root {expected}: \
         {count} members, all {constants} of their constants well-typed, each member's under \
-        its own role binding"
-    | .error e => return .error s!"aggregate verification of {address} failed: {e}"
+        its own role binding\n  \
+        kind: {ClaimPolicy.kind expected} (the catalog's root, claim {Ix.Claim.commit expected})\n  \
+        subject: the {count} members' claims, as admitted above\n  \
+        conditions: each member's, as admitted above"
+    catch e =>
+      return .error s!"aggregate verification of {address} failed: {e}"
 
 end Ix.Cli.CatalogAggregate
 

@@ -147,8 +147,7 @@ record's is BLAKE3 of its complete serialization (`Ixon.serConstant`, the
 bytes an `.ixe` stores for it after its length prefix), a projection
 record's likewise, and a blob's is BLAKE3 of its payload. The compiler
 addresses them so (`Address::hash` over `Constant::put`), the `.ixe` loaders
-verify them so, and the resource adapter commits them so
-(`Ix.Resource.Addressed.commit`).
+verify them so.
 
 Each entry has one runnable module, which holds definitions only, and its
 theorems and audit beside it: `IxC/Kernel/Admission.lean` (the entry, its
@@ -284,16 +283,22 @@ Authentic Address.blake3Pure records blobs`).
 `Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`) assigns a set
 `cval c φ` to every constant at every level assignment such that every
 stored constant is a member of what its type denotes (`mem`), what the
-built-in `False` denotes is empty (`false_empty`), and what the built-in `Eq`
-denotes is set equality (`eq_equality`). Definitional equalities need no
-clause: an accepted `rfl` theorem's two sides denote the same set. The
+built-in `False` denotes is empty (`false_empty`), what the built-in `Eq`
+denotes is set equality (`eq_equality`), every stored definition denotes
+what its value denotes (`defn_value`, δ), and every stored recursor rule
+computes as Lean's does (`iota_rule`, ι). Membership alone would let a
+constant denote any inhabitant of its type (`def P : Prop := False` with a
+theorem of type `P` would have a model in which `P` is true); the δ law rules
+that out (`Tests/Ix/Kernel/ModelLaws.lean`). β, function η, proof
+irrelevance and the literals' constructor forms hold in every model by the
+reading itself; the structure's docstring lists the definitional equalities
+that are not yet laws of it. The
 model theorem is `Ix.Kernel.model_exists` (`IxC/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
-consistency. Definition values come from the kernel's model invariant
-`defn_reads` through `Ix.Kernel.Cached.checkDecls_model_defn_values`
-(`IxC/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
-equation, by upstream's design.
+consistency. The definition values come from the kernel's model invariant
+`defn_reads` (`Model.ofEnvModelM`, `IxC/Kernel/Model/Denotes.lean`). Theorem
+and opaque bodies have no value equation, by upstream's design.
 
 **The reference level** (`IxC/Kernel/Verify/Cached/Reference.lean`,
 `PerBlock.lean`, `IxC/Kernel/Admission/Reference.lean`): an accept of the fold
@@ -385,20 +390,25 @@ and no checker outside its closure ("Trust surface") is consulted. The certified
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
 `Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
-decline. There are no native-evaluation roles for these declarations or for
-`Lean.reduceBool` and `Lean.reduceNat`; opaque definitions follow the ordinary
+decline. They are roles, inert ones, so that a role binding names them and a
+claim over Lean's `Init` lists no user axiom for them, and `Lean.reduceBool` and
+`Lean.reduceNat` are type-only anchors because those axioms' types mention
+them; no rule reduces either, and opaque definitions follow the ordinary
 checking rules. Native evaluation is outside this certified theory.
 `sorryAx` is tolerated as a declaration of its own type and installs
 nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
-**User axioms (uncertified).** Every other safe axiom, the three compiler-trust
-axioms among them, declines at the certified entry and in every host driver
-by default. A real Lean library therefore does not check whole: strict checking
-of Init+Std declines `Lean.trustCompiler` and blocks the four native-evaluation
-constants that depend on it, the other two axioms among them
-(`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
+**User axioms (uncertified).** Every other safe axiom declines at the
+certified entry and in every host driver by default. A real Lean library
+therefore does not check whole: strict checking of Init+Std declines
+`Lean.trustCompiler` and blocks the four native-evaluation constants that
+depend on it, the other two axioms among them
+(`Tests/Fixtures/initstd-reference.txt`). A binding that binds the
+compiler-trust axioms as their roles keys them by role, so no axiom policy
+admits them: they are user axioms only under a binding that leaves them
+unbound. The host drivers can opt in with
 `--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
 checks then install a safe axiom whose key is an input constant's
 (`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run runs,
@@ -618,8 +628,9 @@ its recursors in motive order, and the stream's index-count check pairs the
 recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`).
-`Ix.Kernel.Role` has 103 roles for basis blocks, literal support, verified
-operations, the standard axioms and the inert `sorryAx` role. This includes
+`Ix.Kernel.Role` has 108 roles for basis blocks, literal support, verified
+operations, the standard axioms, the inert axioms (`sorryAx` and Lean's
+compiler-trust axioms) and the two opaques the latter's types mention. This includes
 the fifteen Nat operations and the typed anchors/equations for decision
 procedures, Int, BitVec and String operations. `Role.all`, `Role.spec`,
 `Role.block` and `Role.deps` define the exact catalog. A specification and
@@ -636,8 +647,8 @@ groups roles bound together, `Role.deps` records required groups, and
 `Role.usedImplicitly` identifies roles the checker introduces into terms.
 
 The specifications carry no toolchain address. Standard axioms' supporting
-families, including Iff and Nonempty, are validated as whole blocks. The
-inert `sorryAx` role has an exact type and supplies no usable proof. The
+families, including Iff and Nonempty, are validated as whole blocks. Each
+inert axiom role has an exact type and supplies no usable proof. The
 specification version, encoding and digest are pinned in
 `IxC/Kernel/Roles.lean`, `Ix/SpecDigest.lean` and
 `IxC/Kernel/Audit/Roles.lean`; those sources define the current values.
@@ -769,15 +780,23 @@ Init's addresses requires regeneration; the specifications, `specVersion`
 and the digest stay. Soundness does not depend on the table.
 
 **In IxVM.** The circuit reads a typing claim's roles through the binding its
-context names (`Ix/IxVM/Kernel/Roles.lean`) and validates each against the
-same specifications, rendered as circuit terms (`Ix/IxVM/Kernel/RoleSpec.lean`,
-generated by `Ix/IxVM/RoleSpecGen.lean`). Groups follow `Role.block`, in an
+context names (`IxVM/IxVM/Source/KernelRoles.lean`) and validates each against the
+same specifications, rendered as circuit terms (`IxVM/IxVM/Source/KernelRoleSpec.lean`,
+rendered by `Ix/IxVM/RoleSpecGen.lean`). Groups follow `Role.block`, in an
 order where every `Role.deps` precedes, and a group is validated the first
 time a claim uses one of its roles, under a context that admits only the
 groups before it, so an operation's fast path never takes part in its own
 validation. The well-founded operations' groups come last and share the
 context before the first of them, so their common dependencies are checked
-once. A claim's walk checks a constant bound to a basis member or an
+once. The specification digest commits to this order and its two boundaries
+(`Ix/SpecDigest/Schedule.lean`), and to what the circuit reads off a role's
+identity (its name, inertness, quotient kind and native rule). `ix codegen`
+renders `KernelRoleSpec.lean` from the digest's bytes alone, read back and
+checked to re-encode to themselves (`IxVM.RoleSpecGen.renderFromBytes`), so
+every table the circuit holds is a function of those bytes; `ix codegen
+--check`, run on every PR by `tools/ixvm/check-formal.sh`, fails when the file
+and the digest drift apart, and the `spec-digest-rendering` test shows that
+mutated bytes or a mutated file are refused. A claim's walk checks a constant bound to a basis member or an
 operation under the context its group is validated in, whether or not the
 claim uses the role: the check is the group's own when it does, and admits
 nothing when it does not. Under the standard axiom policy this declines a
@@ -796,11 +815,23 @@ the `Int`, `BitVec`, `String` and decision rules on definitions validated
 against their `eqns` specifications, each result an instance of the head's
 equations.
 The axiom policy is IxC's: a safe axiom is declared only when the binding
-binds it as `propext`, `Classical.choice` or `Quot.sound`, or as `sorryAx`,
-which no constant may use (`axiom_standing`, the one place a standard axiom
-is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
-`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
-claim that uses them depends on `Lean.trustCompiler`, which is declined.
+binds it as `propext`, `Classical.choice` or `Quot.sound`, or as an inert
+axiom (`sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`,
+`Lean.ofReduceNat`), which no constant may use (`axiom_standing`, the one
+place a standard or inert axiom is recognized), and an unsafe axiom is typed
+only. No claim names an inert axiom as a seed: it installs nothing and may
+have no model (`sorryAx`'s type has none), so it is tolerated only as a
+declaration no accepted constant uses. Nothing reduces natively:
+`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and they
+use `Lean.trustCompiler`, so a claim that uses them is refused.
+As IxC's logical tier checks only safe declarations, a `check` or `checkEnv`
+claim certifies only constants in Lean's logic: IxVM refuses a seed (the
+target, an owned leaf) whose record, or the block it projects from, is unsafe
+or `partial`, or is an inert axiom (`KernelClaim::assert_claimable`), and no
+safe constant references an unsafe one (`assert_safety`). The claim builders
+leave such constants out of their seed and owned lists, and with them every
+constant that uses an inert axiom (`IxVM.ClaimHarness.inertUsers`); see the
+claim formats in [Ixon](Ixon.md).
 A `check` or `checkEnv` claim may instead assume its binding (validator
 `4`, `ClaimContext.bindingAssumed`): it reads roles through the same table
 but validates no group, and a walk leaves a bound basis member or operation
@@ -1059,14 +1090,13 @@ interleaved:
    `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
-3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
-   `crates/ixvm-codegen/src/*.rs` from the IxVM sources and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
-   rendered as circuit terms (`Ix/IxVM/RoleSpecGen.lean`), which also
-   changes with `specVersion` or the specification digest; `lake exe ix
-   codegen --check` must pass.
-4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
-   writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
-   to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
+3. **The rendered role specifications.** `lake exe ix codegen` rewrites
+   `IxVM/IxVM/Source/KernelRoleSpec.lean`, the role specifications rendered as
+   circuit terms by `Ix/IxVM/RoleSpecGen.lean`, which change with `specVersion`
+   or the specification digest; `lake exe ix codegen --check` must pass. The
+   other IxVM modules (`IxVM/IxVM/Source/*.lean`) are source, written by hand.
+4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures`
+   writes `claims.tsv` to `$IX_IXON_V4_DIR`; copy it into `Tests/Fixtures/ixon-v4/` after
    `lake exe ixon-v4-tests` validates them. If they moved, so did the
    catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);
    re-pin it from the serializers' output. The independent expression vectors
@@ -1085,7 +1115,7 @@ interleaved:
    are the codec's: rewrite them for the new grammar (their `#guard`s run
    when `lake -d IxC build --wfail` elaborates them).
 7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
-   kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
+   kernel-check FFT-cost pin of `Tests/Ix/LegacyIxVM.lean` and the shard pin in
    `Tests/Main.lean` that moved; set each to the measured value.
 8. **Frozen audit records**, as step 3 of a toolchain bump, including the
    codec's own closure in `IxC/Ixon/Audit.lean`.

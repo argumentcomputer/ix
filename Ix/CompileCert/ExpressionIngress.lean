@@ -62,12 +62,12 @@ theorem withContract_matches {c : Ix.SemanticContract.Contract} {e : Ix.Expr}
     {source : Ix.Kernel.Expr .source} {target result : CExpr md}
     (lowered : withContract c e target = some result) (agree : Matches keys levels source target) :
     ∃ source', Ix.LeanIngress.withContract c e source = .ok source' ∧ Matches keys levels source' result := by
-  obtain ⟨kind, binder, valueContract, letKind⟩ := c
-  cases kind <;> cases e <;> cases agree <;>
-    simp only [withContract, Option.some.injEq, reduceCtorEq] at lowered
-  all_goals
-    subst lowered
-    exact ⟨_, rfl, by constructor <;> assumption⟩
+  unfold withContract at lowered
+  split at lowered
+  · rename_i admits
+    cases lowered
+    exact ⟨source, by rw [Ix.LeanIngress.withContract, ite_eq_left admits]; rfl, agree⟩
+  · cases lowered
 
 end Ingress
 

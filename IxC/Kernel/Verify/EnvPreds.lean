@@ -52,9 +52,60 @@ uses it to resolve the constants a rule right-hand side mentions. -/
     env.find? punitName = some punitA ∧
     env.find? punitUnitName = some punitUnitA)
 
+/-- **A recursor rule's constructor, against the store** (`find?`): the
+rule fires (the install stores no rule it cannot certify); its
+constructor is stored with the rule's own parameter and field counts; a
+canonical (`.plain`) rule has the shape its install tested
+(`Expr.recRulePlain`: the recursor's major premise is the family at the
+constructor's own level parameters, applied first to the recursor's
+leading variables); a certified nested rule stores one instantiation
+per constructor parameter; and the constructor's stored type has a
+binder for each of its parameters and fields, and a residual headed by
+a constant (`Expr.ctorTeleOk`; the install reads the constructor's
+telescope at that arity before it fires the rule).  These are what
+Lean's reading of the rule needs beyond the rule's firing law: that the
+constructor the law fires at is the one the major premise's type names,
+at its levels and parameters, and that its arguments fit its type binder
+by binder, with the residual's arguments where substitution leaves them. -/
+@[expose] def RuleCtorOk (find? : Key md → Option (ConstantInfo md)) (cv : ConstantVal md)
+    (mI rP : Nat) (r : RecRule md) : Prop :=
+  ∃ cvj, find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields) ∧
+    (RecRule.fire r = .plain →
+      Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) ∧
+    (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams) ∧
+    RecRule.fire r ≠ .inert ∧
+    Expr.ctorTeleOk cvj.type (r.ctorParams + r.nfields) = true
+
+/-- The rule's constructor is stored. -/
+theorem RuleCtorOk.stored {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md} (h : RuleCtorOk find? cv mI rP r) :
+    ∃ cvj cnP cnF, find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF) :=
+  let ⟨cvj, hf, _⟩ := h; ⟨cvj, _, _, hf⟩
+
+/-- The record survives any extension that keeps the stored constructors. -/
+theorem RuleCtorOk.mono {f g : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md}
+    (hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
+      (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) → f m = some ci → g m = some ci)
+    (h : RuleCtorOk f cv mI rP r) : RuleCtorOk g cv mI rP r :=
+  let ⟨cvj, hf, hp, hn, hi⟩ := h
+  ⟨cvj, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf, hp, hn, hi⟩
+
+/-- The record at a canonical rule. -/
+theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md} {cvj : ConstantVal md}
+    (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
+    (hfire : RecRule.fire r = .plain)
+    (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true)
+    (hstrip : Expr.ctorTeleOk cvj.type (r.ctorParams + r.nfields) = true) :
+    RuleCtorOk find? cv mI rP r :=
+  ⟨cvj, hf, fun _ => hpl, fun _ _ h => (by rw [hfire] at h; exact nomatch h),
+    (by rw [hfire]; exact fun h => nomatch h), hstrip⟩
+
 /-- **A stored recursor's rules against the store**: every rule's
 constructor is itself stored (blocks carry their constructors, and the
-recursor is installed after them), and each of the two rescue bits, if
+recursor is installed after them) as the rule records it
+(`RuleCtorOk`), and each of the two rescue bits, if
 set, is the *lookup's own* verdict — the K bit is `recRuleKOf` and the
 η-rescue bit is `recRuleEtaOf` at the recursor's stored name.  The
 bits are decided once, at the block's install (`recRuleBits`); this is
@@ -65,8 +116,7 @@ constructor's level parameters — at every recursor application. -/
   ∀ n cv mI rP rules,
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ r ∈ rules,
-      (∃ cvj cnP cnF,
-        env.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF)) ∧
+      RuleCtorOk env.find? cv mI rP r ∧
       (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
       (r.eta = true → recRuleEtaOf env.find? n r.ctor = true)
 
@@ -264,19 +314,38 @@ constructor are unreserved names (the recogniser's own guards, so a
 tower entry never sits at a pinned basis family);
 the index is in range; the former is stored as an inductive and the
 constructor as a constructor at the entry's own arities and level
-parameters.  (Task #175 S1: the entry carries a *body*, not a type;
-the bodies' scoping is `EnvWF`'s table clause.) -/
+parameters; the former's type is `∀ (params), Sort structSort` and the
+constructor's is `∀ (params) (fields), T.{lps} params` (the structure at
+its own level parameters and parameters, no index), so the table's
+structure sort and constructor are the stored structure's.  (Task #175
+S1: the entry carries a *body*, not a type; the bodies' scoping is
+`EnvWF`'s table clause.) -/
 @[expose] def TowerHead (env : Env md) (entry : ProjEntry md) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
   entry.idx < entry.numFields ∧
   (∃ (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? entry.structName = some (.indInfo cvT caps) ∧
-    cvT.levelParams = entry.levelParams) ∧
+    cvT.levelParams = entry.levelParams ∧
+    ∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
   (∃ cvC : ConstantVal md,
     env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
     cvC.levelParams = entry.levelParams ∧
-    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true)
+    ∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
+      Expr.mkAppN (.const entry.structName (entry.levelParams.map .param))
+        ((List.range entry.numParams).map fun k =>
+          .bvar (entry.numFields + entry.numParams - 1 - k))))
+
+/-- A table entry's constructor type is a `∀`-telescope at the entry's
+arities. -/
+theorem TowerHead.ctor_stripPis_isSome {env : Env md} {entry : ProjEntry md}
+    {cvC : ConstantVal md} (h : TowerHead env entry)
+    (hC : env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields)) :
+    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true := by
+  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩⟩ := h
+  rw [hC] at hC'
+  obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hC')
+  rw [hs]; rfl
 
 /-- The head data survives any extension that keeps the two lookups. -/
 theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
@@ -284,9 +353,9 @@ theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
-  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
+  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT, hsT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
   exact ⟨h2, h4, h5,
-    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT⟩,
+    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT, hsT⟩,
     ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩⟩
 
 /-- **The projection-table discipline**: every stored table carries,
@@ -359,6 +428,75 @@ theorem BasisBlocks.empty : (BasisBlocks (md := md)) Env.empty := by
   else if n = quotIndName then quotIndA
   else if n = quotSoundName then quotSoundA
   else .axiomInfo ⟨n, [], .sort .zero⟩
+
+/-- The unit-like flag of a stored inductive (`false` at any other constant). -/
+@[expose] def ConstantInfo.unitlikeCap : ConstantInfo md → Bool
+  | .indInfo _ caps => caps.unitlike
+  | _ => false
+
+/-- **Among the pinned declarations only `PUnit` is unit-like.** -/
+theorem pinnedInfo_unitlike {n : Key md} {cv : ConstantVal md} {caps : IndCaps md}
+    (h : pinnedInfo n = .indInfo cv caps) (hu : caps.unitlike = true) : n = punitName := by
+  have hf : (pinnedInfo n).unitlikeCap = true := by rw [h]; exact hu
+  by_cases hp : n = punitName
+  · exact hp
+  exfalso
+  delta pinnedInfo at hf
+  by_cases h1 : n = eqName
+  · rw [if_pos h1] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h1] at hf
+  by_cases h2 : n = eqReflName
+  · rw [if_pos h2] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h2] at hf
+  by_cases h3 : n = eqRecName
+  · rw [if_pos h3] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h3] at hf
+  by_cases h4 : n = natName
+  · rw [if_pos h4] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h4] at hf
+  by_cases h5 : n = natZeroName
+  · rw [if_pos h5] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h5] at hf
+  by_cases h6 : n = natSuccName
+  · rw [if_pos h6] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h6] at hf
+  by_cases h7 : n = natRecName
+  · rw [if_pos h7] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h7, if_neg hp] at hf
+  by_cases h12 : n = punitUnitName
+  · rw [if_pos h12] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h12] at hf
+  by_cases h13 : n = punitRecName
+  · rw [if_pos h13] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h13] at hf
+  by_cases h14 : n = emptyName
+  · rw [if_pos h14] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h14] at hf
+  by_cases h15 : n = emptyRecName
+  · rw [if_pos h15] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15] at hf
+  by_cases h15a : n = falseName
+  · rw [if_pos h15a] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15a] at hf
+  by_cases h15b : n = falseRecName
+  · rw [if_pos h15b] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15b] at hf
+  by_cases h16 : n = quotName
+  · rw [if_pos h16] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h16] at hf
+  by_cases h17 : n = quotMkName
+  · rw [if_pos h17] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h17] at hf
+  by_cases h18 : n = quotLiftName
+  · rw [if_pos h18] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h18] at hf
+  by_cases h19 : n = quotIndName
+  · rw [if_pos h19] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h19] at hf
+  by_cases h20 : n = quotSoundName
+  · rw [if_pos h20] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h20] at hf
+  exact absurd hf (by simp [ConstantInfo.unitlikeCap])
 
 /-- Which names carry constructor-shaped pinned declarations. -/
 theorem pinnedInfo_ctorInfo_cases {n : Key md} {cv : ConstantVal md} {nP nF : Nat}

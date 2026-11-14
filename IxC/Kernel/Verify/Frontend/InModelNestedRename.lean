@@ -37,7 +37,7 @@ def Mem.Good (mem : Mem md) : Prop :=
 
 /-- Rename a constructor of the auxiliary family. -/
 def ACtor.mapKeys (c : ACtor md) : ACtor md' :=
-  ⟨c.mem, c.cname.map f, c.clv, c.nF, c.doms.map (Expr.mapKeys f), c.kinds,
+  ⟨c.mem, c.cname.map f, c.clv, c.nF, c.doms.map (Expr.mapKeys f), c.kinds, c.teles,
    c.idx.map (Expr.mapKeys f), c.J, c.jIn⟩
 
 /-- A good constructor: its name, field domains and index expressions. -/
@@ -83,6 +83,7 @@ variable {P : KeyScope md} {f : md.Id → md'.Id}
 @[simp] theorem ACtor.mapKeys_doms (c : ACtor md) :
     (c.mapKeys f).doms = c.doms.map (Expr.mapKeys f) := rfl
 @[simp] theorem ACtor.mapKeys_kinds (c : ACtor md) : (c.mapKeys f).kinds = c.kinds := rfl
+@[simp] theorem ACtor.mapKeys_teles (c : ACtor md) : (c.mapKeys f).teles = c.teles := rfl
 @[simp] theorem ACtor.mapKeys_idx (c : ACtor md) :
     (c.mapKeys f).idx = c.idx.map (Expr.mapKeys f) := rfl
 @[simp] theorem ACtor.mapKeys_J (c : ACtor md) : (c.mapKeys f).J = c.J := rfl
@@ -346,6 +347,162 @@ theorem stripAllPis_good : ∀ {e : Expr md}, e.Good P →
   | .bvar _, he | .fvar _ _, he | .sort _, he | .const _ _, he | .app _ _, he | .lam _ _ _, he
   | .letE _ _ _ _, he | .lit _, he | .proj _ _ _, he => ⟨(fun _ h => nomatch h), he⟩
 
+@[simp] theorem fieldTele_mapKeys (e : Expr md) : fieldTele (e.mapKeys f) = fieldTele e := by
+  simp only [fieldTele, stripAllPis_mapKeys, Expr.mapTele, Expr.mapBinders, List.length_map]
+
+/-- A telescope's mention of the members, renamed. -/
+theorem any_mapBinders_mentions (hf : InjOn f P) {ns : List (Key md)} (hns : ∀ n ∈ ns, n.Good P) :
+    ∀ {bs : List (Expr md × BinderMeta)}, Expr.BindersGood P bs →
+      (Expr.mapBinders f bs).any (fun b => mentionsAny (ns.map (Key.map f)) b.1) =
+        bs.any (fun b => mentionsAny ns b.1)
+  | [], _ => rfl
+  | (d, m) :: bs, hbs => by
+    simp only [Expr.mapBinders_cons, List.any_cons]
+    rw [mentionsAny_mapKeys (e := d) hf hns (hbs (d, m) List.mem_cons_self),
+      any_mapBinders_mentions hf hns (fun x hx => hbs x (List.mem_cons_of_mem _ hx))]
+
+/-- **A field's kind, renamed** (`fieldKind`). -/
+theorem fieldKind_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
+    (hns : ∀ n ∈ ns, n.Good P) (i : Nat) {e : Expr md} (he : e.Good P) :
+    fieldKind (fam.mapKeys f) (ns.map (Key.map f)) i (e.mapKeys f) = fieldKind fam ns i e := by
+  have hs := stripAllPis_good he
+  have h1 : (stripAllPis (e.mapKeys f)).1.any (fun b => mentionsAny (ns.map (Key.map f)) b.1) =
+      (stripAllPis e).1.any (fun b => mentionsAny ns b.1) := by
+    rw [stripAllPis_mapKeys]; exact any_mapBinders_mentions hf hns hs.1
+  have h2 : (matchCarrier (fam.mapKeys f) (i + fieldTele (e.mapKeys f)) (stripAllPis (e.mapKeys f)).2).map
+      (·.1) = (matchCarrier fam (i + fieldTele e) (stripAllPis e).2).map (·.1) := by
+    simp only [fieldTele_mapKeys, stripAllPis_mapKeys, Expr.mapTele]
+    rw [matchCarrier_mapKeys hf hfam _ hs.2, Option.map_map]
+    rfl
+  simp only [fieldKind, h1, h2]
+
+/-- **A field's normal form, renamed** (`fieldNormIH`). -/
+theorem fieldNormIH_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
+    (hns : ∀ n ∈ ns, n.Good P) (M J nF i : Nat) {minor d : Expr md} (hmin : minor.Good P)
+    (hd : d.Good P) :
+    fieldNormIH (fam.mapKeys f) (ns.map (Key.map f)) M J nF i (minor.mapKeys f) (d.mapKeys f) =
+      (fieldNormIH fam ns M J nF i minor d).mapKeys f := by
+  simp only [fieldNormIH, fieldKind_mapKeys hf hfam hns i hd, mentionsAny_mapKeys hf hns hd,
+    minorIH?_mapKeys hf M J nF i hmin]
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns d) = true
+  · rw [if_pos hc, if_pos hc]
+    cases minorIH? M J nF i minor with
+    | none => rfl
+    | some p =>
+      obtain ⟨t, idx⟩ := p
+      simp only [Option.map_some, Family.mapKeys_mems, List.length_map]
+      by_cases ht : t < fam.mems.length
+      · have hmem : (fam.mems.getD t default).Good P := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
+          exact hfam.2.2.1 _ (List.getElem_mem ht)
+        have hget : (fam.mems.map (Mem.mapKeys f)).getD t default =
+            (fam.mems.getD t default).mapKeys f := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem ht,
+            Option.map_some, Option.getD_some]
+        rw [if_pos ht, if_pos ht, hget]
+        exact carrierAt_mapKeys hf hfam hmem i idx false
+      · rw [if_neg ht, if_neg ht]
+  · rw [if_neg hc, if_neg hc]
+
+/-- A field's normal form is good. -/
+theorem fieldNormIH_good {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)} (M J nF i : Nat)
+    {minor d : Expr md} (hmin : minor.Good P) (hd : d.Good P) :
+    (fieldNormIH fam ns M J nF i minor d).Good P := by
+  unfold fieldNormIH
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns d) = true
+  · rw [if_pos hc]
+    cases hm : minorIH? M J nF i minor with
+    | none => exact hd
+    | some p =>
+      obtain ⟨t, idx⟩ := p
+      dsimp only
+      by_cases ht : t < fam.mems.length
+      · have hmem : (fam.mems.getD t default).Good P := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
+          exact hfam.2.2.1 _ (List.getElem_mem ht)
+        rw [if_pos ht]
+        exact carrierAt_good hmem (minorIH?_good M J nF i hmin hm) false
+      · rw [if_neg ht]; exact hd
+  · rw [if_neg hc]; exact hd
+
+/-- **The members spelled out as their models, renamed** (`substMembers`). -/
+theorem substMembers_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) :
+    ∀ {e : Expr md}, e.Good P → substMembers (fam.mapKeys f) (e.mapKeys f) = (substMembers fam e).mapKeys f
+  | .const x us, he => by
+    simp only [Expr.mapKeys, substMembers, Family.mapKeys_mems]
+    rw [find?_map_congr (p := fun m => m.real?.isSome && m.I == x) fun m hm => by
+      simp only [Mem.mapKeys_real?, Mem.mapKeys_I, Key.map_beq hf (hfam.2.2.1 m hm).1 he]]
+    cases hfd : fam.mems.find? (fun m => m.real?.isSome && m.I == x) with
+    | none => rfl
+    | some mem =>
+      have ha := auxAt_mapKeys (f := f) fam mem.tag mem.nIdx (varsAt 0 mem.nIdx)
+      rw [varsAt_mapKeys] at ha
+      simp only [Option.map_some, Mem.mapKeys_tag, Mem.mapKeys_nIdx, Mem.mapKeys_idxBs, Family.mapKeys_pbs,
+        Family.mapKeys_lps, Expr.mapKeys_instantiateLevelParams, mkLams_mapKeys, List.map_append, ← ha]
+  | .app g a, he => by
+    simp only [Expr.mapKeys, substMembers, substMembers_mapKeys hf hfam he.1, substMembers_mapKeys hf hfam he.2]
+  | .lam d b m, he => by
+    simp only [Expr.mapKeys, substMembers, substMembers_mapKeys hf hfam he.1, substMembers_mapKeys hf hfam he.2]
+  | .forallE d b m, he => by
+    simp only [Expr.mapKeys, substMembers, substMembers_mapKeys hf hfam he.1, substMembers_mapKeys hf hfam he.2]
+  | .letE t v b lm, he => by
+    simp only [Expr.mapKeys, substMembers, substMembers_mapKeys hf hfam he.1,
+      substMembers_mapKeys hf hfam he.2.1, substMembers_mapKeys hf hfam he.2.2]
+  | .proj s k x, he => by
+    simp only [Expr.mapKeys, substMembers, substMembers_mapKeys hf hfam he.2]
+  | .bvar _, _ | .sort _, _ | .fvar _ _, _ | .lit _, _ => rfl
+
+theorem substMembers_good {fam : Family md} (hfam : fam.Good P) :
+    ∀ {e : Expr md}, e.Good P → (substMembers fam e).Good P
+  | .const x us, he => by
+    unfold substMembers
+    cases hfd : fam.mems.find? (fun m => m.real?.isSome && m.I == x) with
+    | none => exact he
+    | some mem =>
+      have hmem := hfam.2.2.1 mem (List.mem_of_find?_eq_some hfd)
+      exact Expr.Good.instantiateLevelParams (Expr.good_mkLams (Expr.goodList_append.2 ⟨hfam.2.1, hmem.2.2⟩)
+        (auxAt_good hfam (Expr.goodList_varsAt' _ _))) _ _
+  | .app g a, he => ⟨substMembers_good hfam he.1, substMembers_good hfam he.2⟩
+  | .lam d b m, he => ⟨substMembers_good hfam he.1, substMembers_good hfam he.2⟩
+  | .forallE d b m, he => ⟨substMembers_good hfam he.1, substMembers_good hfam he.2⟩
+  | .letE t v b lm, he => ⟨substMembers_good hfam he.1, substMembers_good hfam he.2.1,
+      substMembers_good hfam he.2.2⟩
+  | .proj s k x, he => ⟨he.1, substMembers_good hfam he.2⟩
+  | .bvar _, he | .sort _, he | .fvar _ _, he | .lit _, he => he
+
+/-- **An erasing field, renamed** (`fieldErase`). -/
+theorem fieldErase_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
+    (hns : ∀ n ∈ ns, n.Good P) (i : Nat) {d : Expr md} (hd : d.Good P) :
+    fieldErase (fam.mapKeys f) (ns.map (Key.map f)) i (d.mapKeys f) = (fieldErase fam ns i d).mapKeys f := by
+  have hs := specAll_good hfam i hd
+  simp only [fieldErase, fieldKind_mapKeys hf hfam hns i hd, specAll_mapKeys hf hfam i hd,
+    mentionsAny_mapKeys hf hns hs]
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns (specAll fam i d)) = true
+  · rw [if_pos hc, if_pos hc]; exact substMembers_mapKeys hf hfam hs
+  · rw [if_neg hc, if_neg hc]
+
+theorem fieldErase_good {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)} (i : Nat) {d : Expr md}
+    (hd : d.Good P) : (fieldErase fam ns i d).Good P := by
+  unfold fieldErase
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns (specAll fam i d)) = true
+  · rw [if_pos hc]; exact substMembers_good hfam (specAll_good hfam i hd)
+  · rw [if_neg hc]; exact hd
+
+/-- **A field's domain as Lean's kernel reads it, renamed** (`fieldNorm`). -/
+theorem fieldNorm_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
+    (hns : ∀ n ∈ ns, n.Good P) (M J nF i : Nat) {minor d : Expr md} (hmin : minor.Good P)
+    (hd : d.Good P) :
+    fieldNorm (fam.mapKeys f) (ns.map (Key.map f)) M J nF i (minor.mapKeys f) (d.mapKeys f) =
+      (fieldNorm fam ns M J nF i minor d).mapKeys f := by
+  unfold fieldNorm
+  rw [fieldNormIH_mapKeys hf hfam hns M J nF i hmin hd]
+  exact fieldErase_mapKeys hf hfam hns i (fieldNormIH_good hfam M J nF i hmin hd)
+
+theorem fieldNorm_good {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)} (M J nF i : Nat)
+    {minor d : Expr md} (hmin : minor.Good P) (hd : d.Good P) :
+    (fieldNorm fam ns M J nF i minor d).Good P :=
+  fieldErase_good hfam i (fieldNormIH_good hfam M J nF i hmin hd)
+
 theorem optKey_map_beq (hf : InjOn f P) {o : Option (Key md)} (ho : ∀ k, o = some k → k.Good P)
     {k : Key md} (hk : k.Good P) : (o.map (Key.map f) == some (k.map f)) = (o == some k) := by
   cases o with
@@ -544,17 +701,23 @@ theorem readCtors_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
       simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
       cases bs[i]? <;> rfl
     rw [hgd, ← Expr.mapKeys_lowerBVars, betaHeadE_mapKeys]
-    exact ExRel.of_map rfl fun a ha =>
-      betaHeadE_good (Expr.Good.lowerBVars (Expr.BindersGood.getD_fst hsp.1 i) _ _) ha
+    refine ExRel.bind (S := fun a b => b = a.mapKeys f ∧ a.Good P) (ExRel.of_map rfl fun a ha =>
+      betaHeadE_good (Expr.Good.lowerBVars (Expr.BindersGood.getD_fst hsp.1 i) _ _) ha) fun a a' ha => ?_
+    obtain ⟨rfl, haG⟩ := ha
+    refine ExRel.pure' ⟨?_, fieldNorm_good hfam M J nF i (Expr.GoodList.getD_default hmin J) haG⟩
+    rw [← Family.mapKeys_mems, memberNames_map]
+    exact fieldNorm_mapKeys hf hfam hmN M J nF i (Expr.GoodList.getD_default hmin J) haG
   obtain ⟨rfl, hdG⟩ := forall₂_map_eq hd
   have hdG' : Expr.GoodList P doms := hdG
-  have hk : ∀ i, Option.map (fun x => x.1)
-      (matchCarrier (fam.mapKeys f) i ((doms.map (Expr.mapKeys f)).getD i default)) =
-      Option.map (fun x => x.1) (matchCarrier fam i (doms.getD i default)) := by
+  have hk : ∀ i, fieldKind (fam.mapKeys f) ((fam.mapKeys f).mems.filterMap
+        (fun m => bif m.real?.isSome then some m.I else none)) i ((doms.map (Expr.mapKeys f)).getD i default) =
+      fieldKind fam (fam.mems.filterMap (fun m => bif m.real?.isSome then some m.I else none)) i
+        (doms.getD i default) := by
     intro i
-    rw [getD_mapKeys_default, matchCarrier_mapKeys hf hfam i (Expr.GoodList.getD_default hdG' i),
-      Option.map_map]
-    rfl
+    rw [memberNames_map, getD_mapKeys_default,
+      fieldKind_mapKeys hf hfam hmN i (Expr.GoodList.getD_default hdG' i)]
+  have ht : (doms.map (Expr.mapKeys f)).map fieldTele = doms.map fieldTele := by
+    simp only [List.map_map, Function.comp_def, fieldTele_mapKeys]
   have hm1 : ∀ i, mentionsAny ((fam.mapKeys f).mems.filterMap
         (fun m => bif m.real?.isSome then some m.I else none)) ((doms.map (Expr.mapKeys f)).getD i default) =
       mentionsAny (fam.mems.filterMap (fun m => bif m.real?.isSome then some m.I else none))
@@ -569,8 +732,12 @@ theorem readCtors_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
     intro i
     rw [memberNames_map, getD_mapKeys_default, specAll_mapKeys hf hfam i (Expr.GoodList.getD_default hdG' i),
       mentionsAny_mapKeys hf hmN (specAll_good hfam i (Expr.GoodList.getD_default hdG' i))]
-  simp only [← Family.mapKeys_mems, hk, hm1, hm2]
+  simp only [← Family.mapKeys_mems, hk, ht, hm1, hm2]
   refine ExRel.cond rfl (fun _ => ?_) (fun _ => ExRel.throw_bind)
+  -- the reflexive container occurrences' decline, then the mention check
+  refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_same trivial fun i _ _ _ _ => ?_)
+    fun _ _ _ => ?_
+  · exact ExRel.cond rfl (fun _ => ExRel.throw_bind) (fun _ => ExRel.pure' trivial)
   refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_same trivial fun i _ _ _ _ => ?_)
     fun _ _ _ => ?_
   · exact ExRel.cond rfl (fun _ => ExRel.throw_bind) (fun _ => ExRel.pure' trivial)

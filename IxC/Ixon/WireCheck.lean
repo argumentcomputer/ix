@@ -64,21 +64,21 @@ def checkExpr : (e : Expr) → Option (ExprSummary e)
       return ⟨fn.apps + 1, 0, 0, by simp [Expr.appCount, fn.apps_eq], rfl, rfl,
         fn.valid, arg.valid, by simpa [fn.apps_eq] using h⟩
     else none
-  | .lam _ ty body => do
+  | .lam ty body => do
     let ty ← checkExpr ty
     let body ← checkExpr body
     if h : body.lams + 1 < UInt64.size then
       return ⟨0, body.lams + 1, 0, rfl, by simp [Expr.lamCount, body.lams_eq], rfl,
         ty.valid, body.valid, by simpa [body.lams_eq] using h⟩
     else none
-  | .all _ _ ty body => do
+  | .all ty body => do
     let ty ← checkExpr ty
     let body ← checkExpr body
     if h : body.alls + 1 < UInt64.size then
       return ⟨0, 0, body.alls + 1, rfl, rfl, by simp [Expr.allCount, body.alls_eq],
         ty.valid, body.valid, by simpa [body.alls_eq] using h⟩
     else none
-  | .letE _ ty value body => do
+  | .letE _ _ ty value body => do
     let ty ← checkExpr ty
     let value ← checkExpr value
     let body ← checkExpr body
@@ -114,11 +114,281 @@ def validInfo : ConstantInfo → Bool
   | .dPrj p => p.block.hash.size == 32
   | .muts members => validArray members validMutConst
 
+def validBinderNode : BinderNode → Bool
+  | .ifAllZero params _ => decide (params.size < UInt64.size)
+  | _ => true
+
+def validBinderBlock (block : BinderBlock) : Bool :=
+  validArray block.nodes validBinderNode
+
 /-- Decide exactly the production wire domain, including all side tables.
-This checks representation; it does not assert typing or canonical block order. -/
+This checks representation; it does not assert typing, canonical block order,
+or the binder data's canonical form (`Constant.bindersCanonical`). -/
 def validConstant (constant : Constant) : Bool :=
   validInfo constant.info && validArray constant.sharing validExpr &&
     validArray constant.refs (fun address => address.hash.size == 32) &&
-    validArray constant.univs validUniv
+    validArray constant.univs validUniv &&
+    validArray constant.binders validBinderBlock
 
 end Ixon.WireCheck
+
+namespace Ixon
+
+/-! ## The binder data's canonical form
+
+Two forms. The **canonical** form (`Constant.bindersCanonical`) is local, and is
+what every reader checks: the record's level count below `maxLevelCount`
+(`2^32`), blocks strictly sorted by `(shared, index, variant)`, a
+root block at variant 0, no empty block, every `ifAllZero` parameter list
+nonempty, strictly ascending and below the record's level count, and the empty
+section for a record with no root (a projection). The **complete** form
+(`Constant.bindersComplete`) is what the compiler writes: the canonical form,
+with exactly the blocks and nodes the record's expressions call for. The
+compiler's records are complete, so their addresses are a function of the data;
+a record with an incomplete section is another record, at another address, and a
+checker validates every datum it reads. -/
+
+/-- The bound on a record's level count: every reader refuses a record with
+`2^32` universe parameters or more (`Constant.bindersCanonical`), and the
+compiler writes none. Mirrors Rust `MAX_LEVEL_COUNT` and IxVM's range check in
+`IxonDeserialize::max_lvls`. -/
+def maxLevelCount : Nat := 2 ^ 32
+
+/-- The level count bounding a record's binder data: the largest level count
+of its members (0 for a projection). -/
+def ConstantInfo.maxLvls : ConstantInfo → Nat
+  | .defn d => d.lvls.toNat
+  | .recr r => r.lvls.toNat
+  | .axio a => a.lvls.toNat
+  | .quot q => q.lvls.toNat
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => 0
+  | .muts ms => ms.foldl (init := 0) fun acc m => max acc <| match m with
+    | .defn d => d.lvls.toNat
+    | .indc i => i.lvls.toNat
+    | .recr r => r.lvls.toNat
+
+/-- Strictly ascending. -/
+def paramsAscending : List UInt64 → Bool
+  | a :: tail@(b :: _) => a < b && paramsAscending tail
+  | _ => true
+
+/-- A node's canonical form: an `ifAllZero` parameter list is nonempty,
+strictly ascending and below `lvls`. -/
+def BinderNode.canonical (lvls : Nat) : BinderNode → Bool
+  | .ifAllZero params _ =>
+    !params.isEmpty && paramsAscending params.toList && params.all (·.toNat < lvls)
+  | _ => true
+
+/-- The strict `(shared, index, variant)` order of blocks (a root before a
+sharing entry). -/
+def BinderBlock.keyLt (a b : BinderBlock) : Bool :=
+  (!a.shared && b.shared) ||
+    (a.shared == b.shared &&
+      (a.index < b.index || (a.index == b.index && a.variant < b.variant)))
+
+def blocksAscending : List BinderBlock → Bool
+  | a :: tail@(b :: _) => a.keyLt b && blocksAscending tail
+  | _ => true
+
+/-! ### The complete form
+
+A record's section is complete when it holds exactly
+the blocks the record's expressions call for, each with exactly one node per
+numbered node, its kind matching, every share node naming a variant that the
+section holds, and each sharing entry's variants pairwise distinct and
+numbered in order of first occurrence. A record with no numbered node has the
+empty section, and a record with one cannot: a binder whose datum is not
+decided carries the undecided node, and so does every binder of an unsafe or
+partial constant. So a record has one complete section for
+each choice of data, and the data are the only freedom left: a checker
+validates every datum it uses. -/
+
+/-- A record's root expressions, in the order the section numbers them: a
+definition's type and value; an axiom's or quotient's type; a recursor's type
+and its rules' right-hand sides; an inductive's type and its constructors'
+types; a block's members in order, each contributing its roots. A projection
+has none. -/
+def ConstantInfo.binderRoots : ConstantInfo → Array Expr
+  | .defn d => #[d.typ, d.value]
+  | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+  | .axio a => #[a.typ]
+  | .quot q => #[q.typ]
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => #[]
+  | .muts ms => ms.foldl (init := #[]) fun acc m => acc ++ match m with
+    | .defn d => #[d.typ, d.value]
+    | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
+    | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+
+/-- Whether the record's constants are unsafe or partial: their every binder
+carries the undecided node, whether or not a datum could be decided (a checker
+never checks such a constant). A block's members share their safety. -/
+def ConstantInfo.uncheckedSafety : ConstantInfo → Bool
+  | .defn d => d.safety != .safe
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .quot _ => false
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => false
+  | .muts ms => ms.any fun m => match m with
+    | .defn d => d.safety != .safe
+    | .indc i => i.isUnsafe
+    | .recr r => r.isUnsafe
+
+/-- Whether `e` has a binder, directly or through the sharing entries before
+it (`full`, one flag per earlier entry). -/
+def Expr.hasBinderUnder (full : Array Bool) : Expr → Bool
+  | .lam .. | .all .. => true
+  | .app f a => f.hasBinderUnder full || a.hasBinderUnder full
+  | .letE _ _ t v b => t.hasBinderUnder full || v.hasBinderUnder full || b.hasBinderUnder full
+  | .prj _ _ v => v.hasBinderUnder full
+  | .share n => full[n.toNat]?.getD false
+  | _ => false
+
+/-- Whether each sharing entry has a binder (an entry reads the entries before
+it). -/
+def binderfulEntries (sharing : Array Expr) : Array Bool :=
+  sharing.foldl (fun out e => out.push (e.hasBinderUnder out)) #[]
+
+/-- The numbered nodes of `e`, in pre-order (type before body, function before
+argument, a `let`'s type, value, then body), appended to `acc`: `none` for a
+`lam` or `all`, `some n` for a `share` of an entry `n` with a binder. A share
+is not entered. -/
+def Expr.numberedNodes (full : Array Bool) : Expr → Array (Option Nat) → Array (Option Nat)
+  | .lam t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .all t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .app f a, acc => a.numberedNodes full (f.numberedNodes full acc)
+  | .letE _ _ t v b, acc => b.numberedNodes full (v.numberedNodes full (t.numberedNodes full acc))
+  | .prj _ _ v, acc => v.numberedNodes full acc
+  | .share n, acc => if full[n.toNat]?.getD false then acc.push (some n.toNat) else acc
+  | _, acc => acc
+
+/-- The position of the block `(shared, index, variant)` in `blocks`, which
+`blocksAscending` has found strictly sorted by `BinderBlock.keyLt`: a binary
+search (65 halvings cover every array size). -/
+def findBlock (blocks : Array BinderBlock) (shared : Bool) (index variant : UInt64) :
+    Option Nat := Id.run do
+  let key : BinderBlock := ⟨shared, index, variant, #[]⟩
+  let mut lo := 0
+  let mut hi := blocks.size
+  for _ in [:65] do
+    if lo < hi then
+      let mid := (lo + hi) / 2
+      match blocks[mid]? with
+      | none => return none
+      | some b =>
+        if b.shared == shared && b.index == index && b.variant == variant then return some mid
+        if b.keyLt key then lo := mid + 1 else hi := mid
+  return none
+
+/-- The traversal state of the structure check: per block (by its position)
+whether the traversal visited it, how many it visited, and per sharing entry the
+number of its variants met so far. -/
+structure BinderWalk where
+  visited : Array Bool
+  count : Nat := 0
+  variants : Array Nat
+
+/-- Check `nodes` against the numbered nodes `shape` of their expression,
+visiting each share node's variant at its first occurrence (`fuel` bounds the
+nesting by the number of blocks). -/
+def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sharing : Array Expr)
+    (blocks : Array BinderBlock) :
+    Nat → Array (Option Nat) → Array BinderNode → BinderWalk → Option BinderWalk
+  | 0, _, _, _ => none
+  | fuel + 1, shape, nodes, walk => do
+    if shape.size != nodes.size then none
+    let mut walk := walk
+    for (kind, node) in shape.zip nodes do
+      match kind, node with
+      | none, .share _ => none
+      | none, node =>
+        if undecidedOnly then
+          unless (node matches .undecided _) do none
+        else if !node.canonical lvls then none
+      | some _, .never _ | some _, .zero _ | some _, .ifAllZero _ _ | some _, .undecided _ => none
+      | some n, .share v =>
+        let some i := findBlock blocks true n.toUInt64 v | none
+        if walk.visited[i]?.getD false then continue
+        -- a new variant is the next one: variants are numbered in order of first occurrence
+        if v.toNat != walk.variants[n]?.getD 0 then none
+        let some entry := sharing[n]? | none
+        let some sub := blocks[i]? | none
+        walk := { visited := walk.visited.set! i true, count := walk.count + 1,
+                  variants := walk.variants.set! n (v.toNat + 1) }
+        walk ← checkBinderNodes lvls undecidedOnly full sharing blocks fuel (entry.numberedNodes full #[]) sub.nodes walk
+    return walk
+
+/-- The section of `c` is complete: blocks strictly sorted, exactly one per
+root with a numbered node (variant 0) and per sharing entry and variant a share
+node names, each matching its expression, variants numbered in order of first
+occurrence and pairwise distinct. -/
+def Constant.bindersCompleteRooted (c : Constant) : Bool := Id.run do
+  unless blocksAscending c.binders.toList do return false
+  let lvls := c.info.maxLvls
+  let full := binderfulEntries c.sharing
+  let roots := c.info.binderRoots
+  let mut walk : BinderWalk :=
+    { visited := Array.replicate c.binders.size false, variants := Array.replicate c.sharing.size 0 }
+  for h : r in [:roots.size] do
+    let shape := roots[r].numberedNodes full #[]
+    if shape.isEmpty then continue
+    let some i := findBlock c.binders false r.toUInt64 0 | return false
+    let some root := c.binders[i]? | return false
+    walk := { walk with visited := walk.visited.set! i true, count := walk.count + 1 }
+    match checkBinderNodes lvls c.info.uncheckedSafety full c.sharing c.binders (c.binders.size + 1)
+        shape root.nodes walk with
+    | some w => walk := w
+    | none => return false
+  -- no block outside the traversal
+  unless walk.count == c.binders.size do return false
+  -- an entry's variants are distinct node lists
+  for b in c.binders do
+    if b.shared then
+      for b' in c.binders do
+        if b'.shared && b'.index == b.index && b'.variant < b.variant && b'.nodes == b.nodes then
+          return false
+  return true
+
+/-- The section of `c` is complete; for a record with no root, the empty one. -/
+def Constant.bindersComplete (c : Constant) : Bool :=
+  if c.info.binderRoots.isEmpty then c.binders.isEmpty else c.bindersCompleteRooted
+
+/-- The binder data of `c` are in canonical form (local): the empty section
+for a record with no root (whose level count is 0); otherwise the level count
+below `maxLevelCount`, blocks strictly sorted, a root block at variant 0, no
+empty block, and canonical nodes. -/
+def Constant.bindersCanonical (c : Constant) : Bool :=
+  if c.info.binderRoots.isEmpty then c.binders.isEmpty
+  else
+    decide (c.info.maxLvls < maxLevelCount) &&
+    blocksAscending c.binders.toList &&
+      c.binders.all fun block =>
+        (block.shared || block.variant == 0) && !block.nodes.isEmpty &&
+          block.nodes.all (BinderNode.canonical c.info.maxLvls)
+
+end Ixon
+
+namespace Ixon
+
+/-! ## Modes outside the section
+
+Every mode type is exactly its legal set, so the codec refuses every mode byte
+that is no mode. One rule is about a record rather than a byte: a theorem
+asserts nothing (`DefAsserts`). Every reader checks it beside the binder data's
+canonical form. -/
+
+/-- A definition's assertions are canonical: none on a theorem. -/
+def Definition.assertsCanonical (d : Definition) : Bool :=
+  d.kind != .thm || d.asserts == {}
+
+/-- The record's modes outside its section are canonical: no theorem, standalone
+or in a block, asserts anything. -/
+def Constant.modesCanonical (c : Constant) : Bool :=
+  match c.info with
+  | .defn d => d.assertsCanonical
+  | .muts ms => ms.all fun
+    | .defn d => d.assertsCanonical
+    | _ => true
+  | _ => true
+
+end Ixon
+
