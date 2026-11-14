@@ -39,16 +39,19 @@ theorem natCast_inj_lt59 {a b : Nat} (ha : a < 2 ^ 59) (hb : b < 2 ^ 59)
   have hv := congrArg ZMod.val h
   rwa [val_natCast_lt59 ha, val_natCast_lt59 hb] at hv
 
-theorem env_find?_name {env : Ix.Kernel.Env .anon} {k : KKey}
-    {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
-  unfold Ix.Kernel.Env.find? at h
-  induction env.consts with
-  | nil => cases h
-  | cons x xs ih =>
+theorem find?_name_aux {k : KKey} {ci : Ix.Kernel.ConstantInfo .anon} :
+    ∀ (cs : List (Ix.Kernel.ConstantInfo .anon)),
+      cs.find? (fun x => x.name == k) = some ci → ci.name = k
+  | [], h => by cases h
+  | x :: xs, h => by
     unfold List.find? at h
     cases hxk : x.name == k
-    · rw [hxk] at h; exact ih h
+    · rw [hxk] at h; exact find?_name_aux xs h
     · rw [hxk] at h; injection h with h; subst h; exact eq_of_beq hxk
+
+theorem env_find?_name {env : Ix.Kernel.Env .anon} {k : KKey}
+    {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k :=
+  find?_name_aux env.consts h
 
 theorem ciRep_rec_inv {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty np ni nm nmi rules k u blk idx : SourceValue F}

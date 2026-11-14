@@ -224,8 +224,9 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       Specs.Callees.ProjInfoRep m306
         (Specs.Callees.memberProjInfo (ixAddr b) i ms[i]) v198 := by
     rcases hmem with ⟨x, hmc⟩
-    cases ms[i] with
+    cases hm_eq : ms[i] with
     | defn d =>
+      rw [hm_eq] at hmc
       simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ _ hv1 hm1 _ =>
@@ -240,6 +241,7 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       | Recr _ _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
     | indc d =>
+      rw [hm_eq] at hmc
       simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ hv _ _ _ =>
@@ -254,6 +256,7 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
       | Recr _ _ _ hv _ _ _ =>
         rw [hmc] at hv; injection hv with _ hc _; exact absurd hc (by decide)
     | recr d =>
+      rw [hm_eq] at hmc
       simp only [Specs.Callees.mutCtor] at hmc
       cases sg206 with
       | Defn _ hv _ _ _ =>
@@ -368,7 +371,7 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
           (fun k y => projAddr (Specs.Callees.memberProjInfo (ixAddr b) (i + (k + 1)) y)) := by
         funext k y
         rw [show i + 1 + k = i + (k + 1) by omega]
-      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, Nat.add_zero, hfn]
+      rw [List.map_cons, ha_addr, hmap_tail, mapIdx_cons_eq, hfn]
 
 end ProjAddrAux
 
