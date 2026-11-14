@@ -240,7 +240,8 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
     simp only [evalBinOp, Except.ok.injEq] at op197; subst x182
     simp only [evalBinOp, Except.ok.injEq] at op189; subst x174
     simp only [evalBinOp, Except.ok.injEq] at op181; subst x166
-    simp only [evalBinOp, Except.ok.injEq] at op173; subst v158
+    simp only [evalBinOp, Except.ok.injEq] at op173
+    rw [← op173] at heq318
     have hsum_cast :
         (((t.value.toNat / 256 % 256 + t.value.toNat / 65536 % 256 +
            t.value.toNat / 16777216 % 256 + t.value.toNat / 4294967296 % 256 +
@@ -256,6 +257,25 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
       natCast_inj_56 (by omega) (by omega) hsum_cast
     have hv_lt256 : t.value.toNat < 256 := by
       have hlt64 := t.value.toNat_lt
+      let v := t.value.toNat
+      have hv_lt : v < 18446744073709551616 := hlt64
+      have hz : v / 256 % 256 + v / 65536 % 256 + v / 16777216 % 256 +
+          v / 4294967296 % 256 + v / 1099511627776 % 256 +
+          v / 281474976710656 % 256 + v / 72057594037927936 % 256 = 0 := hsum_zero
+      have hq7 : v / 72057594037927936 < 256 := by omega
+      have h7 : v / 72057594037927936 = 0 := by omega
+      have hq6 : v / 281474976710656 < 256 := by omega
+      have h6 : v / 281474976710656 = 0 := by omega
+      have hq5 : v / 1099511627776 < 256 := by omega
+      have h5 : v / 1099511627776 = 0 := by omega
+      have hq4 : v / 4294967296 < 256 := by omega
+      have h4 : v / 4294967296 = 0 := by omega
+      have hq3 : v / 16777216 < 256 := by omega
+      have h3 : v / 16777216 = 0 := by omega
+      have hq2 : v / 65536 < 256 := by omega
+      have h2 : v / 65536 = 0 := by omega
+      have hq1 : v / 256 < 256 := by omega
+      have h1 : v / 256 = 0 := by omega
       omega
     simp only [u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure, Except.ok.injEq] at pr348
     subst v339
@@ -491,13 +511,13 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
         simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv293
         subst x_members
         have ev305' : ObsFn W "IxonDeserialize::muts_max_lvls"
-            [msPtr, .field ((0 : Nat) : F)] h v329 m330 cs303 := by
+            [msPtr, .field ((0 : Nat) : F)] h r h' cs303 := by
           simpa using ev305
         obtain ⟨hall, hfold_lt, hv_eq, hm330⟩ := muts_max_lvls_spec (by omega) hms ev305'
         have hfold_eq :
             ms.toList.foldl (fun a m => max a (mutConstLvls m)) 0 = (Ixon.ConstantInfo.muts ms).maxLvls := by
-          rw [← Array.foldl_toList]
           unfold Ixon.ConstantInfo.maxLvls
+          rw [← Array.foldl_toList]
           congr 1
           funext acc m
           cases m <;> rfl
@@ -514,7 +534,8 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
       | Muts _ _ _ _ _ _ hv293 _ _ => simp at hv293
       | other _ _ _ _ _ he326 he327 _ =>
         subst he327 he326
-        exact ⟨by decide, trivial, by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
+        exact ⟨by simp [Ixon.ConstantInfo.maxLvls, Ixon.maxLevelCount], trivial,
+          by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
     | rPrj p =>
       obtain ⟨pv, rfl, _⟩ := rep
       cases sg337 with
@@ -525,7 +546,8 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
       | Muts _ _ _ _ _ _ hv293 _ _ => simp at hv293
       | other _ _ _ _ _ he326 he327 _ =>
         subst he327 he326
-        exact ⟨by decide, trivial, by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
+        exact ⟨by simp [Ixon.ConstantInfo.maxLvls, Ixon.maxLevelCount], trivial,
+          by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
     | iPrj p =>
       obtain ⟨pv, rfl, _⟩ := rep
       cases sg337 with
@@ -536,7 +558,8 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
       | Muts _ _ _ _ _ _ hv293 _ _ => simp at hv293
       | other _ _ _ _ _ he326 he327 _ =>
         subst he327 he326
-        exact ⟨by decide, trivial, by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
+        exact ⟨by simp [Ixon.ConstantInfo.maxLvls, Ixon.maxLevelCount], trivial,
+          by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
     | dPrj p =>
       obtain ⟨pv, rfl, _⟩ := rep
       cases sg337 with
@@ -547,7 +570,8 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
       | Muts _ _ _ _ _ _ hv293 _ _ => simp at hv293
       | other _ _ _ _ _ he326 he327 _ =>
         subst he327 he326
-        exact ⟨by decide, trivial, by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
+        exact ⟨by simp [Ixon.ConstantInfo.maxLvls, Ixon.maxLevelCount], trivial,
+          by simp [Ixon.ConstantInfo.maxLvls], rfl⟩
 
 /-! ## `IxonDeserialize::assert_prj_empty_tables` -/
 
@@ -761,8 +785,9 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
         obtain ⟨_, hxs⟩ := Core.load_cell cell ld12
         simp only [List.cons.injEq, and_true] at hxs; obtain ⟨_, _⟩ := hxs; subst x_p x_rest
         rw [Lib.repU64_eq hp] at ev55
-        obtain ⟨hp56, _, _⟩ := u64ToField_refines p.toNat_lt ev55.erase; subst v42 m43
-        obtain ⟨a, b, ha, hb, ha_eq, hb_eq, hcmp, _⟩ := lt_fields_both_spec ev88; subst m78
+        obtain ⟨hp56, hv42, hm43⟩ := u64ToField_refines p.toNat_lt ev55.erase; subst hv42 hm43
+        obtain ⟨a, b, ha, hb, ha_eq, hb_eq, hcmp, hm78⟩ := lt_fields_both_spec ev88
+        subst hm78 he134
         have hp_eq : p.toNat = a := natCast_inj_56 (by omega) (by omega) (Value.field.inj ha_eq)
         have hbd_eq : bound = b := natCast_inj_56 (by omega) (by omega) (Value.field.inj hb_eq)
         subst a b
@@ -771,15 +796,15 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
           · exact hlt'
           · simp [hlt'] at hcmp; rw [hcmp] at heq111; simp at heq111
         have htail_nil : tail = [] := repList_nil_of_load htail ld123
-        subst htail_nil he134
+        subst htail_nil
         exact ⟨rfl, by simp [hlt]⟩
       | Cons_Cons x_p x_rest v42 m43 cs53 v75 m78 cs86 x_q w143 v165 m168 cs176 v180 m189 cs197 cs218
           ld12 ev55 ev88 heq111 ld123 ev199 ev178 _ ev220 _ =>
         obtain ⟨_, hxs⟩ := Core.load_cell cell ld12
         simp only [List.cons.injEq, and_true] at hxs; obtain ⟨_, _⟩ := hxs; subst x_p x_rest
         rw [Lib.repU64_eq hp] at ev55
-        obtain ⟨hp56, _, _⟩ := u64ToField_refines p.toNat_lt ev55.erase; subst v42 m43
-        obtain ⟨a, b, ha, hb, ha_eq, hb_eq, hcmp, _⟩ := lt_fields_both_spec ev88; subst m78
+        obtain ⟨hp56, hv42, hm43⟩ := u64ToField_refines p.toNat_lt ev55.erase; subst hv42 hm43
+        obtain ⟨a, b, ha, hb, ha_eq, hb_eq, hcmp, hm78⟩ := lt_fields_both_spec ev88; subst hm78
         have hp_eq : p.toNat = a := natCast_inj_56 (by omega) (by omega) (Value.field.inj ha_eq)
         have hbd_eq : bound = b := natCast_inj_56 (by omega) (by omega) (Value.field.inj hb_eq)
         subst a b
@@ -790,13 +815,12 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
         cases htail with
         | nil cell2 =>
           exact (Core.load_cell_ne cell2 ld123 (by decide)).elim
-        | cons cell2 hq htail2 =>
-          rename_i q tail2
+        | @cons q tail2 addr2 tailPtr2 cell2 hq htail2 =>
           obtain ⟨_, hxs2⟩ := Core.load_cell cell2 ld123
           simp only [List.cons.injEq, and_true] at hxs2; obtain ⟨_, _⟩ := hxs2; subst x_q w143
           rw [Lib.repU64_eq hq] at ev199
-          obtain ⟨_, _, _⟩ := u64ToField_refines q.toNat_lt ev199.erase; subst m189
-          obtain ⟨_, _, _, _, _, _, _, _⟩ := lt_fields_both_spec ev178; subst m168
+          obtain ⟨_, _, hm189⟩ := u64ToField_refines q.toNat_lt ev199.erase; subst hm189
+          obtain ⟨_, _, _, _, _, _, _, hm168⟩ := lt_fields_both_spec ev178; subst hm168
           obtain ⟨hh', hall_tail⟩ := ih (.cons cell2 hq htail2) ev220
           refine ⟨hh', fun x hx => ?_⟩
           rcases List.mem_cons.mp hx with rfl | hmem
@@ -885,9 +909,9 @@ private theorem get_moded_binder_node_params_lt {bound : Nat} (hbound : bound < 
     have hp_eq := repList_u64_unique rep0 listRep'
     subst hp_eq
     refine ⟨?_, ?_⟩
-    · simp only [Array.toList_toArray]
+    · simp only [List.toList_toArray]
       intro hnil; rw [hnil, List.length_nil] at hlen'; exact hcnt_ne hlen'.symm
-    · simpa only [Array.toList_toArray] using hall'
+    · simpa only [List.toList_toArray] using hall'
 
 private theorem get_binder_node_params_lt {bound : Nat} (hbound : bound < 4294967296)
     {bytes : List UInt8} {i : Nat} {stream r : SourceValue F}
@@ -941,9 +965,9 @@ private theorem get_binder_node_params_lt {bound : Nat} (hbound : bound < 429496
     have hp_eq := repList_u64_unique rep0 listRep'
     subst hp_eq
     refine ⟨?_, ?_⟩
-    · simp only [Array.toList_toArray]
+    · simp only [List.toList_toArray]
       intro hnil; rw [hnil, List.length_nil] at hlen'; exact hcnt_ne hlen'.symm
-    · simpa only [Array.toList_toArray] using hall'
+    · simpa only [List.toList_toArray] using hall'
   | other m2 _ x_tag x_s v36 m37 _ _ ev14 ev50 hne93 hne128 hne319 hne390 hne425 ev434 _ =>
     obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
     subst m2; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; obtain ⟨_, _⟩ := heq0; subst x_tag x_s
@@ -960,7 +984,8 @@ private theorem get_binder_node_params_lt {bound : Nat} (hbound : bound < 429496
     obtain ⟨_, nd', _, _, _, hok', _, hnd'_lt, _, _⟩ :=
       get_moded_binder_node_params_lt hbound hu8 hb5 hrep0 ev434
     rw [hok] at hok'
-    cases hok'
+    injection hok' with hnd_eq _
+    subst hnd_eq
     exact hnd'_lt
 
 private theorem get_binder_node_list_params_lt {bound : Nat} (hbound : bound < 4294967296)
@@ -1013,9 +1038,10 @@ private theorem get_binder_node_list_params_lt {bound : Nat} (hbound : bound < 4
       rw [hsucc] at hok; injection hok with hnodes _
       subst hnodes
       intro x hx
-      simp only [Array.toList_append, List.mem_append, Array.toList_eq] at hx
+      simp only [Array.toList_append, List.mem_append] at hx
       rcases hx with hx1 | hxt
-      · simp only [List.mem_singleton] at hx1; subst hx1; exact hnd1_lt
+      · have hx_eq : x = nd1 := by simpa using hx1
+        subst hx_eq; exact hnd1_lt
       · exact htail_lt x hxt
 
 private theorem get_binder_block_params_lt {bound : Nat} (hbound : bound < 4294967296)
@@ -1121,9 +1147,10 @@ private theorem get_binder_block_list_params_lt {bound : Nat} (hbound : bound < 
       rw [hsucc] at hok; injection hok with hblks _
       subst hblks
       intro b hb nd hnd
-      simp only [Array.toList_append, List.mem_append, Array.toList_eq] at hb
+      simp only [Array.toList_append, List.mem_append] at hb
       rcases hb with hb1 | hbt
-      · simp only [List.mem_singleton] at hb1; subst hb1; exact hblk1_lt nd hnd
+      · have hb_eq : b = blk1 := by simpa using hb1
+        subst hb_eq; exact hblk1_lt nd hnd
       · exact htail_lt b hbt nd hnd
 
 /-- `IxonDeserialize::get_binders` refines `Ixon.getBinders` AND establishes
@@ -1347,14 +1374,16 @@ theorem EnvDecoded.recordAt_deConstantExact {E : Ixon.Env} (hdec : EnvDecoded E)
       Ixon.deConstantExact lc.rawBytes = .ok cst ∧
       Ixon.deConstant lc.rawBytes = .ok cst := by
   unfold Ix.Cert.recordAt at hrec
+  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   cases hget : E.consts.get? x with
   | none => simp [hget] at hrec
   | some lc =>
     simp only [hget, Option.bind_some] at hrec
     obtain ⟨c', hc', hexact⟩ := hdec x lc hget
     rw [hrec] at hc'
-    injection hc' with rfl
-    exact ⟨lc, hget, hrec, hexact, deConstant_of_deConstantExact hexact⟩
+    injection hc' with hc_eq
+    subst hc_eq
+    exact ⟨lc, rfl, hrec, hexact, deConstant_of_deConstantExact hexact⟩
 
 /-- Pointwise `recordShape` companion: whenever the stored record `lc` at `ixAddr a` in `c.E`
 decodes (`Ixon.deConstant lc.rawBytes = .ok cst`), `load_verified_constant` under `Good c cs`
@@ -1371,6 +1400,7 @@ theorem recordShape_of_deConstant {c : Core.Ctx}
   obtain ⟨_, bytes, c', hashed, haddr, _, hde, _, _, _, _, _, cRep⟩ :=
     load_verified_constant_decode ha ev
   unfold Ix.Cert.recordAt at hrec
+  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   cases hlc : c.E.consts.get? (Core.ixAddr a) with
   | none => simp [hlc] at hrec
   | some lc =>
@@ -1379,7 +1409,8 @@ theorem recordShape_of_deConstant {c : Core.Ctx}
     have hbytes_eq : (⟨bytes.toArray⟩ : ByteArray) = lc.rawBytes :=
       Core.load_escape hlc hg.1 ⟨bytes.toArray⟩ hashed haddr'
     rw [hbytes_eq, hde_lc] at hde
-    injection hde with rfl
+    injection hde with hc_eq
+    subst hc_eq
     exact cRep.toConstShapeRep
 
 /-- `LoadFacts` / `Specs.Callees.load_verified_constant` companion: under `Good c cs` and
@@ -1398,7 +1429,8 @@ theorem recordShape_of_load_verified_constant {c : Core.Ctx}
   refine recordShape_of_deConstant ?_ ev hg ha hrec
   intro lc' hlc'
   rw [hlc] at hlc'
-  injection hlc' with rfl
+  injection hlc' with hlc_eq
+  subst hlc_eq
   exact hde_lc
 
 /-- Standalone-buffer uncached `recordShape` companion: when `lc.cache = none`, `lc.off = 0`, and
@@ -1418,6 +1450,7 @@ theorem recordShape_of_load_verified_constant_uncached {c : Core.Ctx}
   intro lc hlc
   obtain ⟨hnone, hoff, hlen⟩ := huncached lc hlc
   unfold Ix.Cert.recordAt at hrec
+  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   rw [hlc] at hrec
   simp only [Option.bind_some, Ixon.LazyConstant.get?, hnone, hoff, hlen] at hrec
   have hraw : lc.rawBytes = lc.buf := by
