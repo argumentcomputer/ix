@@ -317,7 +317,7 @@ private theorem count_halves {count : Nat} (hpos : 0 < count) (hlt : count < 256
     have e := congrArg (Nat.cast : Nat → F) (Nat.sub_add_cancel hle)
     push_cast at e
     linear_combination -e
-  exact ⟨hm59, rfl, hrem.symm⟩
+  exact ⟨hm59, rfl, congrArg Value.field hrem⟩
 
 private theorem mem_insSorted_of_ne {a b : Bytes.Address} {v w : SourceValue F}
     {es : List (Bytes.Address × SourceValue F)}
@@ -484,9 +484,9 @@ theorem read_evidence_entries_spec (es : List (Ix.Kernel.Evidence _root_.Address
             (Deserialize.takeAddress _ hlen) x_a :=
           Bytes.repAddressRef_heapMono₂ addrTy (ext_rec.trans ext2) haddr_rep
         refine ⟨ext_addr.trans (ext_rec.trans ext2), _, x_s_288, rfl, ?_, hs'.mono ext2⟩
-        refine .cons (by simp [node, List.getElem?_concat_length]) ?_
+        exact .cons List.getElem?_concat_length
+          (.inr ⟨_, x_a, by rw [hix], rfl, haddr_rep'⟩)
           (repList_heapMono₂ evListEnum evRep_heapMono₂ ext2 hrep')
-        exact .inr ⟨_, x_a, by rw [hix], rfl, haddr_rep'⟩
 
 private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
     ∀ (n : Nat) (l : List (Ix.Kernel.Role × Array (Ix.Kernel.Evidence _root_.Address))),
@@ -544,16 +544,12 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
       · exact absurd hv14 hcnt_ne
       · obtain ⟨rfl, rfl, hv473⟩ := count_halves (by omega) hn ev63 op145 op137 op504 op495
         subst hv473
-        have hs_split : L1.Stream _
-            (l₁.flatMap Ix.Kernel.RoleTable.encEntry ++
-              (Ix.Kernel.RoleTable.encEntry p ++
-                (l₂.flatMap Ix.Kernel.RoleTable.encEntry ++ rest))) x_s := by
-          simpa [hl_split, List.flatMap_append, List.flatMap_cons, List.append_assoc] using hs
         obtain ⟨extL, evL, nextL, sL, htupL, hmapL, hsL⟩ :=
           ih m (by omega) l₁ hl1_len (by omega)
             (fun q hq => hsub q (by rw [hl_split]; simp [hq]))
             (fun q hq => hok q (by rw [hl_split]; simp [hq]))
-            hs_split ev161
+            (by simpa [hl_split, List.flatMap_append, List.flatMap_cons, List.append_assoc] using hs)
+            ev161
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupL
         obtain ⟨rfl, rfl, rfl⟩ := htupL
         rcases p with ⟨ro, arr⟩
@@ -677,16 +673,13 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
       · exact absurd hv14 hcnt_ne
       · obtain ⟨rfl, rfl, hv539⟩ := count_halves (by omega) hn ev71 op153 op145 op571 op562
         subst hv539
-        have hs_split : L1.Stream _
-            (l₁.flatMap Ix.Kernel.RoleTable.encBound ++
-              (Ix.Kernel.RoleTable.encBound p ++
-                (l₂.flatMap Ix.Kernel.RoleTable.encBound ++ rest))) x_s := by
-          simpa [hl_split, List.flatMap_append, List.flatMap_cons, List.append_assoc] using hs
         obtain ⟨extL, roleL, byAddrL, nextL, sL, htupL, hmapL, hinvL, hsL⟩ :=
           ih m (by omega) l₁ hl1_len (by omega)
             (fun q hq => hsub q (by rw [hl_split]; simp [hq]))
             (fun q hq => hsz q (by rw [hl_split]; simp [hq]))
-            seen hinv hs_split ev169
+            seen hinv
+            (by simpa [hl_split, List.flatMap_append, List.flatMap_cons, List.append_assoc] using hs)
+            ev169
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupL
         obtain ⟨rfl, rfl, rfl, rfl⟩ := htupL
         rcases p with ⟨ro, a⟩
@@ -840,14 +833,11 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
   simp only [List.cons.injEq] at hb3; obtain ⟨rfl, rfl⟩ := hb3
   rw [toUInt8_toNat_of_lt hn_lt] at ev427
   obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev427
-  have hinv0 : ByAddrInv t [] m14 (.construct addrMapEnum "Nil" []) := by
-    refine ⟨[], ?_, by simp, by simp⟩
-    rw [← rbtreeEnum_field]
-    exact RBTreeBST.nil .field m14
-  have hinv0' := hinv0.mono (ext1.trans ext2)
   obtain ⟨extB, roleMap, byAddr', nextB, sB, htupB, hmapRole, hinvB, hst5⟩ :=
     read_role_bindings_aux t hchk t.bound.size t.bound.toList Array.length_toList hn_lt
-      (fun _ hp => hp) hb_sz [] hinv0' hst4 ev404
+      (fun _ hp => hp) hb_sz []
+      ⟨[], by rw [← rbtreeEnum_field]; exact RBTreeBST.nil .field _, by simp, by simp⟩
+      hst4 ev404
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupB
   obtain ⟨rfl, rfl, rfl, rfl⟩ := htupB
   simp only [List.nil_append] at hinvB
@@ -856,9 +846,6 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
   simp only [List.cons.injEq] at hb4; obtain ⟨rfl, rfl⟩ := hb4
   rw [toUInt8_toNat_of_lt hm_lt] at ev546
   obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev546
-  have hst6' : L1.Stream _ (t.evidence.toList.flatMap Ix.Kernel.RoleTable.encEntry ++ [])
-      x_s_500 := by
-    simpa using hst6
   have he_ok' : ∀ p ∈ t.evidence.toList,
       p.2.size < 256 ∧ ∀ e ∈ p.2.toList, Ix.Kernel.RoleTable.Evidence.wide e = true := by
     intro p hp
@@ -866,7 +853,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     simpa [Ix.Kernel.RoleTable.EntryOk] using this
   obtain ⟨extE, evMap, nextE, sE, htupE, hmapEv, hst7⟩ :=
     read_role_evidence_aux t t.evidence.size t.evidence.toList Array.length_toList hm_lt
-      (fun _ hp => hp) he_ok' hst6' ev524
+      (fun _ hp => hp) he_ok' (by simpa using hst6) ev524
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupE
   obtain ⟨rfl, rfl, rfl⟩ := htupE
   let rtNode := Value.construct rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence]
@@ -1057,37 +1044,40 @@ theorem role_index_of_full_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
 
 /-! ## `role_spec_kind` on inert roles and `role_is_inert` -/
 
-private def findLitArm (x : F) : List (Generic.Pattern F × Generic.Expr F) → Option (Generic.Expr F)
-  | (.literal k, b) :: rest => if ZMod.val x == ZMod.val k then some b else findLitArm x rest
+private def findLitArm (x : F) : List (Generic.Pattern F × Generic.Expr F) → Option F
+  | (.literal k, .literal v) :: rest => if ZMod.val x == ZMod.val k then some v else findLitArm x rest
   | _ => none
 
 private theorem findLitArm_sound {x : F} {arms : List (Generic.Pattern F × Generic.Expr F)}
-    {res : Generic.Expr F}
+    {res : F}
     (hf : findLitArm x arms = some res)
     {h : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
     (hsel : SourceSemantics.selectArm W [] h (.field x) arms = Except.ok (some (bs, body))) :
-    body = res := by
+    body = .literal res := by
   induction arms with
   | nil => simp [findLitArm] at hf
   | cons arm rest ih =>
     rcases arm with ⟨pat, b⟩
     cases pat with
     | literal k =>
-      simp only [findLitArm] at hf
-      by_cases hxk : (ZMod.val x == ZMod.val k) = true
-      · rw [ite_eq_left hxk] at hf
-        injection hf with hf
-        have hx_eq : x = k := ZMod.val_injective (beq_iff_eq.mp hxk)
-        subst hx_eq hf
-        rcases selectArm_cons_inv hsel with ⟨_, rfl⟩ | ⟨nm, _⟩
-        · rfl
-        · exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal x) nm)
-      · rw [ite_eq_right hxk] at hf
-        have hx_ne : x ≠ k := fun e => hxk (beq_iff_eq.mpr (congrArg ZMod.val e))
-        rcases selectArm_cons_inv hsel with ⟨mt, _⟩ | ⟨_, hsel'⟩
-        · obtain ⟨hv, _⟩ := MatchesConst.some_inv (MatchesConst.literal k) mt
-          exact absurd (Value.field.inj hv) hx_ne
-        · exact ih hf hsel'
+      cases b with
+      | literal v =>
+        simp only [findLitArm] at hf
+        by_cases hxk : (ZMod.val x == ZMod.val k) = true
+        · rw [ite_eq_left hxk] at hf
+          injection hf with hf
+          have hx_eq : x = k := ZMod.val_injective _ (beq_iff_eq.mp hxk)
+          subst hx_eq hf
+          rcases selectArm_cons_inv hsel with ⟨_, rfl⟩ | ⟨nm, _⟩
+          · rfl
+          · exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal x) nm)
+        · rw [ite_eq_right hxk] at hf
+          have hx_ne : x ≠ k := fun e => hxk (beq_iff_eq.mpr (congrArg ZMod.val e))
+          rcases selectArm_cons_inv hsel with ⟨mt, _⟩ | ⟨_, hsel'⟩
+          · obtain ⟨hv, _⟩ := MatchesConst.some_inv (MatchesConst.literal k) mt
+            exact absurd (Value.field.inj hv) hx_ne
+          · exact ih hf hsel'
+      | _ => simp [findLitArm] at hf
     | _ => simp [findLitArm] at hf
 
 private theorem inert_idx_cases {ro : Ix.Kernel.Role} (hinert : ro.inert = true) :
