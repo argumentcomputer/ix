@@ -1313,8 +1313,9 @@ theorem verify_claim_decode_spec
   · -- Variant 4 (`Claim.check`)
     rw [htv4] at pr_sz0 hok_payload
     change projectValue (TagN.u64Value 4) 0 = .ok x_variant at pr_sz0
-    simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, Except.ok.injEq] at pr_sz0
-    subst pr_sz0
+    simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure,
+      Except.ok.injEq] at pr_sz0
+    subst x_variant
     -- Select arm `4`: skip `3`, match `4`
     rcases selectArm_cons_inv sel_arm with ⟨mt3, _⟩ | ⟨_, sel_arm1⟩
     · obtain ⟨heq34, _⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt3
@@ -1476,8 +1477,9 @@ theorem verify_claim_decode_spec
   · -- Variant 5 (`Claim.checkEnv`)
     rw [htv5] at pr_sz0 hok_payload
     change projectValue (TagN.u64Value 5) 0 = .ok x_variant at pr_sz0
-    simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, Except.ok.injEq] at pr_sz0
-    subst pr_sz0
+    simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure,
+      Except.ok.injEq] at pr_sz0
+    subst x_variant
     -- Select arm `5`: skip `3`, skip `4`, match `5`
     rcases selectArm_cons_inv sel_arm with ⟨mt3, _⟩ | ⟨_, sel_arm1⟩
     · obtain ⟨heq35, _⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt3
