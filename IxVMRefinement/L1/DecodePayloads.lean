@@ -2,6 +2,7 @@ import Ix.IxVM.Refinement.DeserializeBinders
 import IxC.Ixon.Verify.BoundedConstant
 import IxC.Ixon.Verify.Framing
 import IxVMRefinement.Obs.IxonDeserialize
+import IxVMRefinement.Lib.Words
 import IxVMRefinement.L1.Hashed
 
 /-! # Payload and side-table deserialization specs for `IxonDeserialize`
@@ -162,6 +163,10 @@ def RepFieldMode (_h : Heap F) (m : Ixon.FieldMode) (v : SourceValue F) : Prop :
 
 theorem repFieldMode_heapMono₂ : HeapMono₂ RepFieldMode :=
   fun _ _ _ _ _ rep => rep
+
+theorem repFieldMode_inherited (h : Heap F) : RepFieldMode h .inherited (.field 0) := rfl
+
+theorem repFieldMode_shared (h : Heap F) : RepFieldMode h .shared (.field 1) := rfl
 
 /-- Heap representation of `Ixon.Constructor`. -/
 def RepConstructor (h : Heap F) (ct : Ixon.Constructor) (v : SourceValue F) : Prop :=
@@ -329,8 +334,16 @@ theorem u64ToField_refines {n : Nat} (hn : n < 18446744073709551616)
 
 /-- Natural numbers below `2^56` (hence `< P = 2^64 - 2^32 + 1`) embed injectively into `F`. -/
 theorem natCast_inj_56 {a b : Nat} (ha : a < 72057594037927936) (hb : b < 72057594037927936)
-    (h : (a : F) = (b : F)) : a = b :=
-  IxVM.natCast_inj (by omega) (by omega) h
+    (h : (a : F) = (b : F)) : a = b := by
+  have hv := congrArg ZMod.val h
+  rwa [ZMod.val_natCast_of_lt (show a < 18446744069414584321 by omega),
+       ZMod.val_natCast_of_lt (show b < 18446744069414584321 by omega)] at hv
+
+theorem natCast_eq_zero_56 {a : Nat} (ha : a < 72057594037927936) : (a : F) = 0 ↔ a = 0 := by
+  constructor
+  · intro h
+    exact natCast_inj_56 ha (by decide) (by simpa using h)
+  · rintro rfl; simp
 
 theorem getArray_getExpr_of_children (count : Nat) {s s' : Ixon.GetState} {xs : List Ixon.Expr}
     (h : getExprChildren count s = .ok xs s') :
@@ -385,14 +398,16 @@ theorem getAddress_codec_at {bytes : List UInt8} {i : Nat}
   let b3 : ByteArray := ⟨((bytes.drop i).drop 32).toArray⟩
   have hi_le : i ≤ bytes.length := by
     rw [List.length_drop] at hlen; omega
+  have hlen_sub : 32 ≤ bytes.length - i := by
+    simpa [List.length_drop] using hlen
   have hb1_sz : b1.size = i := by
     simp [b1, ByteArray.size, Nat.min_eq_left hi_le]
   have hb2_sz : b2.size = 32 := by
-    simp [b2, ByteArray.size, Nat.min_eq_left hlen]
+    simp [b2, ByteArray.size, Nat.min_eq_left hlen_sub]
   have happ : b1 ++ b2 ++ b3 = ⟨bytes.toArray⟩ := by
     apply ByteArray.ext
-    simp only [b1, b2, b3, ByteArray.data_append, ← List.toArray_append]
-    congr 1
+    apply Array.toList_inj.mp
+    simp only [b1, b2, b3, ByteArray.data_append, Array.toList_append, List.toList_toArray]
     rw [List.append_assoc, List.take_append_drop, List.take_append_drop]
   have hread := Ixon.Verify.Codec.ConstantTables.getBytes_reads b2 b1 b3
   rw [hb2_sz, hb1_sz, happ] at hread
@@ -420,8 +435,8 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
   | zero =>
     cases «IxonDeserialize::get_address_list».obs ev with
     | n1 m2 cs12 m43 ev14 he41 hm51 he62 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      subst he62 hm51 he41
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
+      subst m2 he62 hm51 he41
       have ext := Aiur.Library.List.allocNil_extends addressListEnum h
       refine ⟨ext, #[], 0, (Aiur.Library.List.allocNil addressListEnum h).1, stream,
         by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure], rfl,
@@ -437,17 +452,17 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
       simp [Nat.succ_ne_zero] at hiz
     | n0 m2 cs12 m70 cs80 x_addr x_s m105 cs115 v119 m128 cs136 x_rest x_s2 m166
         ev14 ev82 ev138 ev117 he164 hm174 he201 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
       obtain ⟨ext1, a, addrPtr, restPtr1, hok1, heq1, aRep, hrep1⟩ :=
         getAddress_codec_at rep ev82.erase
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-      rcases heq1 with ⟨rfl, rfl⟩
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev138.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨_, _⟩ := heq1; subst x_addr x_s
+      obtain ⟨hsp, hm128⟩ := u64SaturatingPred_refines hcount ev138.erase; subst m128
+      simp only [Nat.add_sub_cancel] at hsp; subst v119
       obtain ⟨ext2, tailAddrs, n2, tailPtr, restPtr2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep1 ev117
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq2; subst x_rest x_s2
       subst he201 hm174 he164
       have ext3 := Aiur.Library.List.allocCons_extends addressListEnum addrPtr tailPtr m105
       refine ⟨(ext1.trans ext2).trans ext3, #[a] ++ tailAddrs, 32 + n2,
@@ -456,8 +471,10 @@ theorem getAddressList_codec_at (count : Nat) (hcount : count < 1844674407370955
         by rw [← Nat.add_assoc]; exact Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext3 hrep2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure, Nat.add_assoc]
-      · simpa using Aiur.Library.List.allocCons_rep addressListEnum repIxonAddressRef_heapMono₂
+      · have consRep := Aiur.Library.List.allocCons_rep addressListEnum repIxonAddressRef_heapMono₂
           (aRep.mono ext2) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
 
 /-- `IxonDeserialize::get_refs` at offset `i` refines the refs side-table read. -/
 theorem getRefs_codec_at {bytes : List UInt8} {i : Nat}
@@ -550,13 +567,14 @@ theorem getDefinitionProj_codec_at {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_definition_proj».obs ev with
   | run m2 cs12 x_idx x_s m37 cs47 x_block x_s2 ev14 ev49 he75 he108 _ =>
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    obtain ⟨hm2, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq1; subst x_idx x_s
     obtain ⟨ext2, a, addrPtr, restPtr2, hok2, heq2, aRep, hrep2⟩ :=
       getAddress_codec_at hrep1 ev49.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_block x_s2
     subst he108 he75
     refine ⟨ext2, ⟨t.value, a⟩, n1 + 32, _, restPtr2, ?_, rfl, ⟨addrPtr, rfl, aRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
@@ -577,13 +595,14 @@ theorem getInductiveProj_codec_at {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_inductive_proj».obs ev with
   | run m2 cs12 x_idx x_s m37 cs47 x_block x_s2 ev14 ev49 he75 he108 _ =>
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    obtain ⟨hm2, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq1; subst x_idx x_s
     obtain ⟨ext2, a, addrPtr, restPtr2, hok2, heq2, aRep, hrep2⟩ :=
       getAddress_codec_at hrep1 ev49.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_block x_s2
     subst he108 he75
     refine ⟨ext2, ⟨t.value, a⟩, n1 + 32, _, restPtr2, ?_, rfl, ⟨addrPtr, rfl, aRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
@@ -604,13 +623,14 @@ theorem getRecursorProj_codec_at {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_recursor_proj».obs ev with
   | run m2 cs12 x_idx x_s m37 cs47 x_block x_s2 ev14 ev49 he75 he108 _ =>
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    obtain ⟨hm2, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq1; subst x_idx x_s
     obtain ⟨ext2, a, addrPtr, restPtr2, hok2, heq2, aRep, hrep2⟩ :=
       getAddress_codec_at hrep1 ev49.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_block x_s2
     subst he108 he75
     refine ⟨ext2, ⟨t.value, a⟩, n1 + 32, _, restPtr2, ?_, rfl, ⟨addrPtr, rfl, aRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
@@ -631,16 +651,18 @@ theorem getConstructorProj_codec_at {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_constructor_proj».obs ev with
   | run m2 cs12 x_idx x_s m37 cs47 x_cidx x_s2 m72 cs82 x_block x_s3 ev14 ev49 ev84 he110 he151 _ =>
-    obtain ⟨rfl, t1, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    obtain ⟨hm2, t1, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, t2, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev49.erase
+    obtain ⟨_, _⟩ := heq1; subst x_idx x_s
+    obtain ⟨hm37, t2, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev49.erase
+    subst m37
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_cidx x_s2
     obtain ⟨ext3, a, addrPtr, restPtr3, hok3, heq3, aRep, hrep3⟩ :=
       getAddress_codec_at hrep2 ev84.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3
-    rcases heq3 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq3; subst x_block x_s3
     subst he151 he110
     refine ⟨ext3, ⟨t1.value, t2.value, a⟩, n1 + n2 + 32, _, restPtr3, ?_, rfl,
       ⟨addrPtr, rfl, aRep⟩, by rw [← Nat.add_assoc, ← Nat.add_assoc]; exact hrep3⟩
@@ -654,19 +676,27 @@ private def allocAssertOfCode : Nat → Ixon.AllocAssert
   | 1 => .noRc
   | _ => .noAlloc
 
-private def defAssertsOfByte (n : Nat) : Ixon.DefAsserts :=
-  ⟨allocAssertOfCode (n / 16 % 4), decide (n / 64 % 2 = 1)⟩
+private def defAssertsOfCode (c : Nat) : Ixon.DefAsserts :=
+  ⟨allocAssertOfCode (c % 4), decide (c / 4 = 1)⟩
 
-private theorem defFlags_decode_nat :
+private theorem highNibble_eq_nat : ∀ n, n < 256 → (UInt8.ofNat n >>> 4) = (n / 16).toUInt8 := by
+  decide +kernel
+
+private theorem lowNibble_eq_nat : ∀ n, n < 256 → (UInt8.ofNat n &&& 15) = (n % 16).toUInt8 := by
+  decide +kernel
+
+private theorem lowNibble_eq (b : UInt8) : (b &&& 15) = (b.toNat % 16).toUInt8 := by
+  have h := lowNibble_eq_nat b.toNat b.toNat_lt
+  rwa [UInt8.ofNat_toNat] at h
+
+private theorem highNibble_eq (b : UInt8) : (b >>> 4) = (b.toNat / 16).toUInt8 := by
+  have h := highNibble_eq_nat b.toNat b.toNat_lt
+  rwa [UInt8.ofNat_toNat] at h
+
+private theorem lowBits_mask15_nat :
     ∀ n, n < 256 →
-      n / 128 = 0 →
-      (n / 16 % 2) * (n / 32 % 2) = 0 →
-      (n % 16 = 0 ∨ n % 16 = 1 ∨ n % 16 = 2 ∨
-       n % 16 = 4 ∨ n % 16 = 5 ∨ n % 16 = 6 ∨
-       n % 16 = 8 ∨ n % 16 = 9 ∨ n % 16 = 10) →
-      (((UInt8.ofNat n >>> 2) &&& 3 > 2 || (UInt8.ofNat n &&& 3) > 2) = false) ∧
-      Ixon.DefAsserts.ofCode? (UInt8.ofNat n >>> 4) = some (defAssertsOfByte n) ∧
-      (defAssertsOfByte n).toCode.toNat = n / 16 := by
+      ((UInt8.ofNat n >>> 2) &&& 3) = (((UInt8.ofNat n &&& 15) >>> 2) &&& 3) ∧
+      (UInt8.ofNat n &&& 3) = ((UInt8.ofNat n &&& 15) &&& 3) := by
   decide +kernel
 
 private theorem defFlags_decode (b : UInt8)
@@ -679,9 +709,25 @@ private theorem defFlags_decode (b : UInt8)
     ∃ a : Ixon.DefAsserts,
       Ixon.DefAsserts.ofCode? (b >>> 4) = some a ∧
       a.toCode.toNat = b.toNat / 16 := by
-  have h := defFlags_decode_nat b.toNat b.toNat_lt h7 h45 hlo
-  rw [UInt8.ofNat_toNat] at h
-  exact ⟨h.1, defAssertsOfByte b.toNat, h.2.1, h.2.2⟩
+  have hb : b.toNat < 256 := b.toNat_lt
+  refine ⟨?_, ?_⟩
+  · have hm := lowBits_mask15_nat b.toNat hb
+    rw [UInt8.ofNat_toNat] at hm
+    rw [hm.1, hm.2, lowNibble_eq]
+    rcases hlo with h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
+  · rw [highNibble_eq]
+    have hc_lt : b.toNat / 16 < 8 := by omega
+    have hc_ok : (b.toNat / 16) ≠ 3 ∧ (b.toNat / 16) ≠ 7 := by omega
+    rcases hc : b.toNat / 16 with _ | _ | _ | _ | _ | _ | _ | _ | c
+    · exact ⟨defAssertsOfCode 0, rfl, rfl⟩
+    · exact ⟨defAssertsOfCode 1, rfl, rfl⟩
+    · exact ⟨defAssertsOfCode 2, rfl, rfl⟩
+    · exact absurd rfl hc_ok.1
+    · exact ⟨defAssertsOfCode 4, rfl, rfl⟩
+    · exact ⟨defAssertsOfCode 5, rfl, rfl⟩
+    · exact ⟨defAssertsOfCode 6, rfl, rfl⟩
+    · exact absurd rfl hc_ok.2
+    · omega
 
 private theorem defKindSafety_table :
     ∀ n : Nat,
@@ -696,13 +742,6 @@ private theorem defKindSafety_table :
       (n = 10 → Ixon.unpackDefKindSafety n.toUInt8 = (.thm, .part)) := by
   intro n
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; rfl)
-
-private theorem lowNibble_eq_nat : ∀ n, n < 256 → (UInt8.ofNat n &&& 15) = (n % 16).toUInt8 := by
-  decide +kernel
-
-private theorem lowNibble_eq (b : UInt8) : (b &&& 15) = (b.toNat % 16).toUInt8 := by
-  have h := lowNibble_eq_nat b.toNat b.toNat_lt
-  rwa [UInt8.ofNat_toNat] at h
 
 private theorem unpack_bits_helper {b : UInt8} {m2 : Heap F} {cs12 : List (Call F)}
     {x_b0 x_b1 x_b2 x_b3 x_b4 x_b5 x_b6 x_b7 v104 v129 x137 y138 y146 x181 y182 x189 y190 y198 : SourceValue F}
@@ -726,21 +765,29 @@ private theorem unpack_bits_helper {b : UInt8} {m2 : Heap F} {cs12 : List (Call 
     m2 = h ∧ b.toNat / 128 = 0 ∧ (b.toNat / 16 % 2) * (b.toNat / 32 % 2) = 0 ∧
     v129 = .field ((b.toNat / 16 : Nat) : F) ∧ b.toNat % 16 = low := by
   have hb : b.toNat < 256 := b.toNat_lt
-  obtain ⟨hbits, rfl⟩ := u8BitDecomposition_refines hb ev14.erase
+  obtain ⟨hbits, hm2⟩ := u8BitDecomposition_refines hb ev14.erase
+  subst m2
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbits
   rcases hbits with ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  have hb7 : b.toNat / 128 = 0 := by
-    simp only [Value.field.injEq, natCast_eq_zero_iff (by omega)] at heq92
-    omega
-  subst heq128
+  have hb7_mod : b.toNat / 128 % 2 = 0 :=
+    (natCast_eq_zero_56 (by omega)).mp (Value.field.inj heq92)
+  have hb7 : b.toNat / 128 = 0 := by omega
+  subst v104
   simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op119
   have h45_cast : (((b.toNat / 16 % 2) * (b.toNat / 32 % 2) : Nat) : F) = 0 := by
     push_cast; exact op119
   have h45 : (b.toNat / 16 % 2) * (b.toNat / 32 % 2) = 0 :=
-    (natCast_eq_zero_iff (by omega)).mp h45_cast
-  simp only [evalBinOp, Except.ok.injEq] at op161 op152 op170 op144 op213 op204 op222 op196 op231 op188
-  subst op161 op152 op170 op144 op213 op204 op222 op196 op231
-  simp only [Value.field.injEq] at op188
+    (natCast_eq_zero_56 (by omega)).mp h45_cast
+  simp only [evalBinOp, Except.ok.injEq] at op161; subst y146
+  simp only [evalBinOp, Except.ok.injEq] at op152; subst x137
+  simp only [evalBinOp, Except.ok.injEq] at op170; subst y138
+  simp only [evalBinOp, Except.ok.injEq] at op144; subst v129
+  simp only [evalBinOp, Except.ok.injEq] at op213; subst y198
+  simp only [evalBinOp, Except.ok.injEq] at op204; subst x189
+  simp only [evalBinOp, Except.ok.injEq] at op222; subst y190
+  simp only [evalBinOp, Except.ok.injEq] at op196; subst x181
+  simp only [evalBinOp, Except.ok.injEq] at op231; subst y182
+  simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op188
   have hhi_sum : b.toNat / 16 % 2 + 2 * (b.toNat / 32 % 2) + 4 * (b.toNat / 64 % 2) = b.toNat / 16 := by
     omega
   have hhi_val : (.field (((b.toNat / 16 % 2 : Nat) : F) + (2 : F) * ((b.toNat / 32 % 2 : Nat) : F) +
@@ -756,7 +803,7 @@ private theorem unpack_bits_helper {b : UInt8} {m2 : Heap F} {cs12 : List (Call 
     have hc := congrArg (Nat.cast (R := F)) hlo_sum
     push_cast at hc
     exact hc.symm.trans op188
-  have hlo_eq : b.toNat % 16 = low := (natCast_eq_iff (by omega) (by omega)).mp hlo_cast
+  have hlo_eq : b.toNat % 16 = low := natCast_inj_56 (by omega) (by omega) hlo_cast
   exact ⟨rfl, hb7, h45, hhi_val, hlo_eq⟩
 
 /-- `IxonDeserialize::unpack_def_asserts` decodes a packed definition flags byte. -/
@@ -909,25 +956,28 @@ theorem get_definition_spec {bytes : List UInt8} {i : Nat}
   | run m2 cs12 x_packed x_s m37 cs47 x_kind x_safety x_asserts m77 cs87 x_lvls x_s2
       m112 cs122 x_typ x_s3 m147 cs157 x_value x_s4
       ev14 ev49 ev89 ev124 ev159 he185 he250 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq0; subst x_packed x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    obtain ⟨rfl, hvalid, k, s, a, hof, hunpack, heq_ks⟩ := unpack_def_kind_safety_spec ev49
+    obtain ⟨hm37, hvalid, k, s, a, hof, hunpack, heq_ks⟩ := unpack_def_kind_safety_spec ev49
+    subst m37
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq_ks
-    rcases heq_ks with ⟨rfl, rfl, rfl⟩
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev89.erase
+    obtain ⟨_, _, _⟩ := heq_ks; subst x_kind x_safety x_asserts
+    obtain ⟨hm77, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev89.erase
+    subst m77
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
     obtain ⟨ext2, typ, n2, typPtr, restPtr2, hn2, _, hok2, heq2, typRep, hrep2⟩ :=
       getExpr_refines_at hrep1 ev124.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_typ x_s3
     obtain ⟨ext3, val, n3, valPtr, restPtr3, hn3, _, hok3, heq3, valRep, hrep3⟩ :=
       getExpr_refines_at hrep2 ev159.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3
-    rcases heq3 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq3; subst x_value x_s4
     subst he250 he185
     refine ⟨ext2.trans ext3, ⟨k, s, a, t.value, typ, val⟩, 1 + n1 + n2 + n3, _, restPtr3,
       by omega, ?_, rfl, ⟨typPtr, valPtr, rfl, typRep.mono ext3, valRep⟩,
@@ -953,17 +1003,18 @@ theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_recursor_rule».obs ev with
   | run m2 cs12 x_fields x_s m37 cs47 x_rhs x_s2 ev14 ev49 he75 he108 _ =>
-    obtain ⟨rfl, t, n1, restPtr1, hok0, _, hrep1, heq1⟩ := getTag0_refines rep ev14.erase
+    obtain ⟨hm2, t, n1, restPtr1, hok0, _, hrep1, heq1⟩ := getTag0_refines rep ev14.erase
+    subst m2
     have hok1 : Ixon.getTagN 0 { idx := i, bytes := ⟨bytes.toArray⟩ } =
         .ok t { idx := i + n1, bytes := ⟨bytes.toArray⟩ } := getTagN_drop hok0
     obtain ⟨hn1, hlen1⟩ := getTagN_pos hok0
     rw [List.drop_drop] at hrep1
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-    rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq1; subst x_fields x_s
     obtain ⟨ext2, rhs, n2, rhsPtr, restPtr2, hn2, hdrop2, hok2, heq2, rhsRep, hrep2⟩ :=
       getExpr_refines_at hrep1 ev49.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-    rcases heq2 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq2; subst x_rhs x_s2
     subst he108 he75
     have hlen_bound : (bytes.drop (i + (n1 + n2))).length + 2 ≤ (bytes.drop i).length := by
       rw [← Nat.add_assoc]
@@ -993,8 +1044,8 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
   | zero =>
     cases «IxonDeserialize::get_recursor_rule_list».obs ev with
     | n1 m2 cs12 m43 ev14 he41 hm51 he62 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      subst he62 hm51 he41
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
+      subst m2 he62 hm51 he41
       have ext := Aiur.Library.List.allocNil_extends recursorRuleListEnum h
       refine ⟨ext, #[], 0, (Aiur.Library.List.allocNil recursorRuleListEnum h).1, stream,
         by omega, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure], rfl,
@@ -1010,17 +1061,17 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
       simp [Nat.succ_ne_zero] at hiz
     | n0 m2 cs12 m70 cs80 x_rule x_s m105 cs115 v119 m128 cs136 x_rest x_s2 m166
         ev14 ev82 ev138 ev117 he164 hm174 he201 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
       obtain ⟨ext1, ru, n1, ruVal, restPtr1, _, hlen1, hok1, heq1, ruRep, hrep1⟩ :=
         get_recursor_rule_spec rep ev82
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-      rcases heq1 with ⟨rfl, rfl⟩
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev138.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨_, _⟩ := heq1; subst x_rule x_s
+      obtain ⟨hsp, hm128⟩ := u64SaturatingPred_refines hcount ev138.erase; subst m128
+      simp only [Nat.add_sub_cancel] at hsp; subst v119
       obtain ⟨ext2, tailRules, n2, tailPtr, restPtr2, hlen2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep1 ev117
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq2; subst x_rest x_s2
       subst he201 hm174 he164
       have ext3 := Aiur.Library.List.allocCons_extends recursorRuleListEnum ruVal tailPtr m105
       refine ⟨(ext1.trans ext2).trans ext3, #[ru] ++ tailRules, n1 + n2,
@@ -1029,8 +1080,10 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
         by rw [← Nat.add_assoc]; exact Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext3 hrep2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure, Nat.add_assoc]
-      · simpa using Aiur.Library.List.allocCons_rep recursorRuleListEnum repRecursorRule_heapMono₂
+      · have consRep := Aiur.Library.List.allocCons_rep recursorRuleListEnum repRecursorRule_heapMono₂
           (ruRep.mono ext2) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
 
 private theorem recursorFlags_decode :
     ∀ b : UInt8, b.toNat < 4 →
@@ -1039,15 +1092,21 @@ private theorem recursorFlags_decode :
       repBoolField (Ixon.unpackBools 2 b)[1]! = .field ((b.toNat / 2 % 2 : Nat) : F) := by
   intro b hb
   have h0123 : b = 0 ∨ b = 1 ∨ b = 2 ∨ b = 3 := by
-    have hv := b.toNat_lt
     rcases h : b.toNat with _ | _ | _ | _ | n
     · exact Or.inl (UInt8.ext h)
     · exact Or.inr (Or.inl (UInt8.ext h))
     · exact Or.inr (Or.inr (Or.inl (UInt8.ext h)))
     · exact Or.inr (Or.inr (Or.inr (UInt8.ext h)))
     · omega
-  rcases h0123 with rfl | rfl | rfl | rfl <;>
-    exact ⟨by decide, by simp [Ixon.unpackBools, repBoolField], by simp [Ixon.unpackBools, repBoolField]⟩
+  rcases h0123 with rfl | rfl | rfl | rfl
+  · exact ⟨by decide, by rw [show (Ixon.unpackBools 2 0)[0]! = false by decide]; rfl,
+      by rw [show (Ixon.unpackBools 2 0)[1]! = false by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show (Ixon.unpackBools 2 1)[0]! = true by decide]; rfl,
+      by rw [show (Ixon.unpackBools 2 1)[1]! = false by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show (Ixon.unpackBools 2 2)[0]! = false by decide]; rfl,
+      by rw [show (Ixon.unpackBools 2 2)[1]! = true by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show (Ixon.unpackBools 2 3)[0]! = true by decide]; rfl,
+      by rw [show (Ixon.unpackBools 2 3)[1]! = true by decide]; rfl⟩
 
 /-- `IxonDeserialize::get_recursor` at offset `i` refines `Ixon.getRecursor`. -/
 theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
@@ -1068,43 +1127,43 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
       m340 cs350 x_rules_len x_s8 m375 cs385 x_rules x_s9
       ev14 ev60 heq82 ev96 pr115 pr127 ev142 ev177 ev212 ev247 ev282 ev317 ev352 ev387
       he421 he510 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq0; subst x_bools_byte x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    have ev60' : EvalFn W "UInt8::less_than" [.field (b.toNat : F), .field ((4 : Nat) : F)] h v47 m50 := by
-      simpa using ev60.erase
-    obtain ⟨hlt_val, rfl⟩ := u8LessThan_refines b.toNat_lt (by omega) ev60'
-    subst heq82
+    obtain ⟨hlt_val, hm50⟩ := Lib.u8_less_than_spec (a := b) (b := 4) rfl rfl ev60
+    subst m50 heq82
     have hb4 : b.toNat < 4 := by
       by_cases hlt : b.toNat < 4
       · exact hlt
       · simp [hlt] at hlt_val
-    obtain ⟨hbits, rfl⟩ := u8BitDecomposition_refines b.toNat_lt ev96.erase
-    subst hbits
-    simp only [projectValue, List.getElem?_cons_zero, List.getElem?_cons_succ, Except.ok.injEq] at pr115 pr127
-    subst pr115 pr127
+    obtain ⟨hbits, hm84⟩ := u8BitDecomposition_refines b.toNat_lt ev96.erase
+    subst m84 v83
+    simp only [projectValue, List.getElem?_cons_zero, List.getElem?_cons_succ,
+      pure, Except.pure, Except.ok.injEq] at pr115 pr127
+    subst v105 v117
     obtain ⟨hflags_ok, hk_rep, hu_rep⟩ := recursorFlags_decode b hb4
-    obtain ⟨rfl, tLvls, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev142.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; rcases heq1 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tParams, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev177.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tIndices, n3, restPtr3, hok3, _, hrep3, heq3⟩ := getTag0_refines_at hrep2 ev212.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; rcases heq3 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tMotives, n4, restPtr4, hok4, _, hrep4, heq4⟩ := getTag0_refines_at hrep3 ev247.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; rcases heq4 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tMinors, n5, restPtr5, hok5, _, hrep5, heq5⟩ := getTag0_refines_at hrep4 ev282.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; rcases heq5 with ⟨rfl, rfl⟩
+    obtain ⟨hm130, tLvls, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev142.erase
+    subst m130; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
+    obtain ⟨hm165, tParams, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev177.erase
+    subst m165; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_params x_s3
+    obtain ⟨hm200, tIndices, n3, restPtr3, hok3, _, hrep3, heq3⟩ := getTag0_refines_at hrep2 ev212.erase
+    subst m200; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; obtain ⟨_, _⟩ := heq3; subst x_indices x_s4
+    obtain ⟨hm235, tMotives, n4, restPtr4, hok4, _, hrep4, heq4⟩ := getTag0_refines_at hrep3 ev247.erase
+    subst m235; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; obtain ⟨_, _⟩ := heq4; subst x_motives x_s5
+    obtain ⟨hm270, tMinors, n5, restPtr5, hok5, _, hrep5, heq5⟩ := getTag0_refines_at hrep4 ev282.erase
+    subst m270; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; obtain ⟨_, _⟩ := heq5; subst x_minors x_s6
     obtain ⟨ext6, typ, n6, typPtr, restPtr6, _, _, hok6, heq6, typRep, hrep6⟩ :=
       getExpr_refines_at hrep5 ev317.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; rcases heq6 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tRules, n7, restPtr7, hok7, _, hrules_lt, hrep7, heq7⟩ :=
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; obtain ⟨_, _⟩ := heq6; subst x_typ x_s7
+    obtain ⟨hm340, tRules, n7, restPtr7, hok7, _, hrules_lt, hrep7, heq7⟩ :=
       getVecLen_refines_at hrep6 ev352.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq7; rcases heq7 with ⟨rfl, rfl⟩
+    subst m340; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq7; obtain ⟨_, _⟩ := heq7; subst x_rules_len x_s8
     obtain ⟨ext8, rules, n8, rulesPtr, restPtr8, hlen_rules, hok8, heq8, rulesRep, hrep8⟩ :=
       get_recursor_rule_list_spec tRules.value.toNat hrules_lt hrep7 ev387
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq8; rcases heq8 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq8; obtain ⟨_, _⟩ := heq8; subst x_rules x_s9
     subst he510 he421
     have hchk : Ixon.checkCount tRules.value.toNat.toUInt64 2
         { idx := i + 1 + n1 + n2 + n3 + n4 + n5 + n6 + n7, bytes := ⟨bytes.toArray⟩ } =
@@ -1153,10 +1212,12 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
   cases «IxonDeserialize::get_axiom».obs ev with
   | run m2 cs12 x_is_unsafe x_s v36 m37 cs47 m59 cs69 x_lvls x_s2 m94 cs104 x_typ x_s3
       v142 m146 cs154 ev14 ev49 ev71 ev106 he132 ev156 he186 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
-    obtain ⟨hb2, _, rfl⟩ := assertWireBool_refines b.toNat_lt ev49.erase
+    obtain ⟨_, _⟩ := heq0; subst x_is_unsafe x_s
+    obtain ⟨hb2, _, hm37⟩ := assertWireBool_refines b.toNat_lt ev49.erase
+    subst m37
     obtain ⟨_, hdrop1, _⟩ := getU8_of_drop_cons hcons
     have hbeq : decide (b.toNat = 1) = (b == 1) := by
       rcases h : b.toNat with _ | _ | n
@@ -1167,12 +1228,13 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
         .ok (b == 1) { idx := i + 1, bytes := ⟨bytes.toArray⟩ } := by
       rw [← hbeq]; exact getBool_of_drop_cons hcons hb2
     rw [← hdrop1] at hrep0
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev71.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨hm59, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev71.erase
+    subst m59; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
     obtain ⟨ext2, typ, n2, typPtr, restPtr2, _, _, hok2, heq2, typRep, hrep2⟩ :=
       getExpr_refines_at hrep1 ev106.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, rfl⟩ := u8ToField_refines ev156.erase
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_typ x_s3
+    obtain ⟨hv142, hm146⟩ := u8ToField_refines ev156.erase
+    subst v142 m146
     subst he186 he132
     have hbf : (.field (b.toNat : F) : SourceValue F) = repBoolField (b == 1) := by
       rcases h : b.toNat with _ | _ | n
@@ -1199,18 +1261,21 @@ theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
   cases «IxonDeserialize::get_quotient».obs ev with
   | run m2 cs12 x_kind_byte x_s v36 m37 cs47 m59 cs69 x_lvls x_s2 m94 cs104 x_typ x_s3
       ev14 ev49 ev71 ev106 he132 he173 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq0; subst x_kind_byte x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    obtain ⟨hb4, rfl, hqk_val⟩ := getQuotKind_refines b.toNat_lt ev49.erase
-    obtain ⟨rfl, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev71.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; rcases heq1 with ⟨rfl, rfl⟩
+    obtain ⟨hb4, hm37, hqk_val⟩ := getQuotKind_refines b.toNat_lt ev49.erase
+    subst m37
+    obtain ⟨hm59, t, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev71.erase
+    subst m59; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
     obtain ⟨ext2, typ, n2, typPtr, restPtr2, _, _, hok2, heq2, typRep, hrep2⟩ :=
       getExpr_refines_at hrep1 ev106.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
-    subst he173 he132 hqk_val
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_typ x_s3
+    subst he173 he132
+    rw [hqk_val]
     have hcases : b = 0 ∨ b = 1 ∨ b = 2 ∨ b = 3 := by
       rcases h : b.toNat with _ | _ | _ | _ | n
       · exact Or.inl (UInt8.ext h)
@@ -1256,8 +1321,8 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
   | zero =>
     cases «IxonDeserialize::get_field_mode_list».obs ev with
     | n1 m2 cs12 m44 ev14 he42 hm52 he69 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      subst he69 hm52 he42
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
+      subst m2 he69 hm52 he42
       have ext := Aiur.Library.List.allocNil_extends fieldModeListEnum h
       refine ⟨ext, #[], (Aiur.Library.List.allocNil fieldModeListEnum h).1, stream,
         by omega, rfl, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure],
@@ -1274,19 +1339,20 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       simp [Nat.succ_ne_zero] at hiz
     | n0_n0 m2 cs12 m77 cs87 x_mode x_s m112 cs122 v126 m135 cs143 x_rest x_shared x_s2 m173 cs184 m206
         ev14 ev89 ev145 ev124 ev186 he204 hm214 he247 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev89.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
+      obtain ⟨hm77, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev89.erase
+      subst m77
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-      rcases heq0 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq0; subst x_mode x_s
       obtain ⟨hu8, hdrop1, hlt1⟩ := getU8_of_drop_cons hcons
       rw [← hdrop1] at hrep0
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev145.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨hsp, hm135⟩ := u64SaturatingPred_refines hcount ev145.erase; subst m135
+      simp only [Nat.add_sub_cancel] at hsp; subst v126
       obtain ⟨ext2, tailModes, tailPtr, restPtr2, hlen2, hsz2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep0 ev124
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl, rfl⟩
-      obtain ⟨heq_b, rfl⟩ := u8ToField_refines ev186.erase
+      obtain ⟨_, _, _⟩ := heq2; subst x_rest x_shared x_s2
+      obtain ⟨heq_b, hm173⟩ := u8ToField_refines ev186.erase; subst m173
       have hb0 : b = 0 := UInt8.ext ((natCast_eq_zero_iff b.toNat_lt).mp (Value.field.inj heq_b).symm)
       subst hb0 he247 hm214 he204
       have hfm : Ixon.getFieldMode { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1306,23 +1372,26 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hfm, hok2, pure, EStateM.pure]
         rw [show i + 1 + count = i + (count + 1) by omega]
-      · simpa using Aiur.Library.List.allocCons_rep fieldModeListEnum repFieldMode_heapMono₂
-          (rfl : RepFieldMode m112 .inherited (.field 0)) tailRep
+      · have consRep := Aiur.Library.List.allocCons_rep fieldModeListEnum repFieldMode_heapMono₂
+          (repFieldMode_inherited m112) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
     | n0_n1 m2 cs12 m77 cs87 x_mode x_s m112 cs122 v126 m135 cs143 x_rest x_shared x_s2 m173 cs184 m261
         ev14 ev89 ev145 ev124 ev186 he259 hm269 he301 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev89.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
+      obtain ⟨hm77, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev89.erase
+      subst m77
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-      rcases heq0 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq0; subst x_mode x_s
       obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
       rw [← hdrop1] at hrep0
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev145.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨hsp, hm135⟩ := u64SaturatingPred_refines hcount ev145.erase; subst m135
+      simp only [Nat.add_sub_cancel] at hsp; subst v126
       obtain ⟨ext2, tailModes, tailPtr, restPtr2, hlen2, hsz2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep0 ev124
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl, rfl⟩
-      obtain ⟨heq_b, rfl⟩ := u8ToField_refines ev186.erase
+      obtain ⟨_, _, _⟩ := heq2; subst x_rest x_shared x_s2
+      obtain ⟨heq_b, hm173⟩ := u8ToField_refines ev186.erase; subst m173
       have hb1 : b = 1 := UInt8.ext ((natCast_eq_one_iff b.toNat_lt).mp (Value.field.inj heq_b).symm)
       subst hb1 he301 hm269 he259
       have hfm : Ixon.getFieldMode { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -1341,8 +1410,10 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hfm, hok2, pure, EStateM.pure]
         rw [show i + 1 + count = i + (count + 1) by omega]
-      · simpa using Aiur.Library.List.allocCons_rep fieldModeListEnum repFieldMode_heapMono₂
-          (rfl : RepFieldMode m112 .shared (.field 1)) tailRep
+      · have consRep := Aiur.Library.List.allocCons_rep fieldModeListEnum repFieldMode_heapMono₂
+          (repFieldMode_shared m112) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
 
 /-- `IxonDeserialize::get_constructor_modes` refines `Ixon.getConstructorFieldModes`. -/
 theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
@@ -1366,20 +1437,23 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
       | true => simp [repBoolField] at hv14
     subst hlisted he40 hm29 he19
     have ext := Aiur.Library.List.allocNil_extends fieldModeListEnum h
+    have nilRep := Aiur.Library.List.allocNil_rep fieldModeListEnum RepFieldMode h
+    simp only [Aiur.Library.List.allocNil] at nilRep
     refine ⟨ext, .inherited, 0, (Aiur.Library.List.allocNil fieldModeListEnum h).1, stream,
       by simp [Ixon.getConstructorFieldModes, pure, EStateM.pure], rfl,
-      by simpa [Ixon.FieldModes.toArray] using Aiur.Library.List.allocNil_rep fieldModeListEnum RepFieldMode h,
+      by simpa [Ixon.FieldModes.toArray, Aiur.Library.List.allocNil] using nilRep,
       Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext rep⟩
   | n1 m48 cs58 x_modes x_shared x_s2 _ hv46 ev60 heq121 he126 he141 _ =>
     have hlisted : listed = true := by
       cases listed with
       | false => simp [repBoolField] at hv46
       | true => rfl
-    subst hlisted he141 he126 heq121
+    subst hlisted he141 he126
     obtain ⟨ext, modes, modesPtr, restPtr, hlen, hsz, hok, heq, modesRep, dropRep⟩ :=
       get_field_mode_list_spec fields.toNat fields.toNat_lt rep ev60
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq
-    rcases heq with ⟨rfl, hsh, rfl⟩
+    obtain ⟨_, hsh, _⟩ := heq; subst x_modes x_s2
+    rw [heq121] at hsh
     have hany : modes.any (· == .shared) = true := by
       cases h : modes.any (· == .shared) with
       | true => rfl
@@ -1410,8 +1484,15 @@ private theorem ctorFlags_decode :
     · exact Or.inr (Or.inr (Or.inl (UInt8.ext h)))
     · exact Or.inr (Or.inr (Or.inr (UInt8.ext h)))
     · omega
-  rcases h0123 with rfl | rfl | rfl | rfl <;>
-    exact ⟨by decide, by simp [repBoolField], by simp [repBoolField]⟩
+  rcases h0123 with rfl | rfl | rfl | rfl
+  · exact ⟨by decide, by rw [show ((0 : UInt8) &&& 1 == 1) = false by decide]; rfl,
+      by rw [show ((0 : UInt8) &&& 2 == 2) = false by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show ((1 : UInt8) &&& 1 == 1) = true by decide]; rfl,
+      by rw [show ((1 : UInt8) &&& 2 == 2) = false by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show ((2 : UInt8) &&& 1 == 1) = false by decide]; rfl,
+      by rw [show ((2 : UInt8) &&& 2 == 2) = true by decide]; rfl⟩
+  · exact ⟨by decide, by rw [show ((3 : UInt8) &&& 1 == 1) = true by decide]; rfl,
+      by rw [show ((3 : UInt8) &&& 2 == 2) = true by decide]; rfl⟩
 
 /-- `IxonDeserialize::get_constructor` at offset `i` refines `Ixon.getConstructor` and consumes at
 least 6 bytes. -/
@@ -1433,50 +1514,54 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
       m106 cs116 x_lvls x_s2 m141 cs151 x_cidx x_s3 m176 cs186 x_params x_s4
       m211 cs221 x_fields x_s5 m246 cs256 v259 x_modes x_s6 m300 cs310 x_typ x_s7 v348
       ev14 ev60 heq82 ev96 ev118 ev153 ev188 ev223 pr270 ev258 ev312 he338 pr363 he414 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨_, _⟩ := heq0; subst x_flags x_s
     obtain ⟨hu8, hdrop0, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop0] at hrep0
-    have ev60' : EvalFn W "UInt8::less_than" [.field (b.toNat : F), .field ((4 : Nat) : F)] h v47 m50 := by
-      simpa using ev60.erase
-    obtain ⟨hlt_val, rfl⟩ := u8LessThan_refines b.toNat_lt (by omega) ev60'
-    subst heq82
+    obtain ⟨hlt_val, hm50⟩ := Lib.u8_less_than_spec (a := b) (b := 4) rfl rfl ev60
+    subst m50 heq82
     have hb4 : b.toNat < 4 := by
       by_cases hlt : b.toNat < 4
       · exact hlt
       · simp [hlt] at hlt_val
-    obtain ⟨hbits, rfl⟩ := u8BitDecomposition_refines b.toNat_lt ev96.erase
-    subst hbits
-    simp only [projectValue, List.getElem?_cons_zero, List.getElem?_cons_succ, Except.ok.injEq] at pr270 pr363
-    subst pr270 pr363
+    obtain ⟨hbits, hm84⟩ := u8BitDecomposition_refines b.toNat_lt ev96.erase
+    subst m84 v83
+    simp only [projectValue, List.getElem?_cons_zero, List.getElem?_cons_succ,
+      pure, Except.pure, Except.ok.injEq] at pr270 pr363
+    subst v259 v348
     obtain ⟨hflags_ok, hu_rep, hl_rep⟩ := ctorFlags_decode b hb4
-    obtain ⟨rfl, tLvls, n1, restPtr1, hok1_0, _, hrep1, heq1⟩ := getTag0_refines hrep0 ev118.erase
+    obtain ⟨hm106, tLvls, n1, restPtr1, hok1_0, _, hrep1, heq1⟩ := getTag0_refines hrep0 ev118.erase
+    subst m106
     have hok1 := getTagN_drop hok1_0; obtain ⟨hn1, _⟩ := getTagN_pos hok1_0
     rw [List.drop_drop] at hrep1
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; rcases heq1 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tCidx, n2, restPtr2, hok2_0, _, hrep2, heq2⟩ := getTag0_refines hrep1 ev153.erase
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
+    obtain ⟨hm141, tCidx, n2, restPtr2, hok2_0, _, hrep2, heq2⟩ := getTag0_refines hrep1 ev153.erase
+    subst m141
     have hok2 := getTagN_drop hok2_0; obtain ⟨hn2, _⟩ := getTagN_pos hok2_0
     rw [List.drop_drop] at hrep2
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tParams, n3, restPtr3, hok3_0, _, hrep3, heq3⟩ := getTag0_refines hrep2 ev188.erase
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_cidx x_s3
+    obtain ⟨hm176, tParams, n3, restPtr3, hok3_0, _, hrep3, heq3⟩ := getTag0_refines hrep2 ev188.erase
+    subst m176
     have hok3 := getTagN_drop hok3_0; obtain ⟨hn3, _⟩ := getTagN_pos hok3_0
     rw [List.drop_drop] at hrep3
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; rcases heq3 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tFields, n4, restPtr4, hok4_0, _, hrep4, heq4⟩ := getTag0_refines hrep3 ev223.erase
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; obtain ⟨_, _⟩ := heq3; subst x_params x_s4
+    obtain ⟨hm211, tFields, n4, restPtr4, hok4_0, _, hrep4, heq4⟩ := getTag0_refines hrep3 ev223.erase
+    subst m211
     have hok4 := getTagN_drop hok4_0; obtain ⟨hn4, _⟩ := getTagN_pos hok4_0
     rw [List.drop_drop] at hrep4
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; rcases heq4 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; obtain ⟨_, _⟩ := heq4; subst x_fields x_s5
     have ev258' : ObsFn W "IxonDeserialize::get_constructor_modes"
         [repBoolField (b &&& 2 == 2), u64Value tFields.value.toNat, restPtr4] h
         (.tuple [x_modes, x_s6]) m246 cs256 := by
       rw [hl_rep]; exact ev258
     obtain ⟨ext5, fm, n5, modesPtr, restPtr5, hok5, heq5, modesRep, hrep5⟩ :=
       get_constructor_modes_spec hrep4 ev258'
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; rcases heq5 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; obtain ⟨_, _⟩ := heq5; subst x_modes x_s6
     obtain ⟨ext6, typ, n6, typPtr, restPtr6, hn6, hdrop6, hok6, heq6, typRep, hrep6⟩ :=
       getExpr_refines_at hrep5 ev312.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; rcases heq6 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; obtain ⟨_, _⟩ := heq6; subst x_typ x_s7
     subst he414 he338
     have hi_len : 0 < (bytes.drop i).length := by rw [hcons]; simp
     have hlen_bound :
@@ -1513,8 +1598,8 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
   | zero =>
     cases «IxonDeserialize::get_constructor_list».obs ev with
     | n1 m2 cs12 m43 ev14 he41 hm51 he62 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      subst he62 hm51 he41
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
+      subst m2 he62 hm51 he41
       have ext := Aiur.Library.List.allocNil_extends constructorListEnum h
       refine ⟨ext, #[], 0, (Aiur.Library.List.allocNil constructorListEnum h).1, stream,
         by omega, by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure], rfl,
@@ -1529,17 +1614,17 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
       simp [Nat.succ_ne_zero] at hiz
     | n0 m2 cs12 m70 cs80 x_ctor x_s m105 cs115 v119 m128 cs136 x_rest x_s2 m166
         ev14 ev82 ev138 ev117 he164 hm174 he201 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
       obtain ⟨ext1, ct, n1, ctVal, restPtr1, _, hlen1, hok1, heq1, ctRep, hrep1⟩ :=
         get_constructor_spec rep ev82
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-      rcases heq1 with ⟨rfl, rfl⟩
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev138.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨_, _⟩ := heq1; subst x_ctor x_s
+      obtain ⟨hsp, hm128⟩ := u64SaturatingPred_refines hcount ev138.erase; subst m128
+      simp only [Nat.add_sub_cancel] at hsp; subst v119
       obtain ⟨ext2, tailCtors, n2, tailPtr, restPtr2, hlen2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep1 ev117
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq2; subst x_rest x_s2
       subst he201 hm174 he164
       have ext3 := Aiur.Library.List.allocCons_extends constructorListEnum ctVal tailPtr m105
       refine ⟨(ext1.trans ext2).trans ext3, #[ct] ++ tailCtors, n1 + n2,
@@ -1548,8 +1633,10 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
         by rw [← Nat.add_assoc]; exact Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext3 hrep2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure, Nat.add_assoc]
-      · simpa using Aiur.Library.List.allocCons_rep constructorListEnum repConstructor_heapMono₂
+      · have consRep := Aiur.Library.List.allocCons_rep constructorListEnum repConstructor_heapMono₂
           (ctRep.mono ext2) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
 
 /-- `IxonDeserialize::get_inductive` at offset `i` refines `Ixon.getInductive`. -/
 theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
@@ -1568,10 +1655,12 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
       m93 cs103 x_lvls x_s2 m128 cs138 x_params x_s3 m163 cs173 x_indices x_s4
       m198 cs208 x_typ x_s5 m233 cs243 x_ctors_len x_s6 m268 cs278 x_ctors x_s7
       ev14 ev49 ev71 pr90 ev105 ev140 ev175 ev210 ev245 ev280 he314 he379 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0
-    rcases heq0 with ⟨rfl, rfl⟩
-    obtain ⟨hb2, _, rfl⟩ := assertWireBool_refines b.toNat_lt ev49.erase
+    obtain ⟨_, _⟩ := heq0; subst x_bools_byte x_s
+    obtain ⟨hb2, _, hm37⟩ := assertWireBool_refines b.toNat_lt ev49.erase
+    subst m37
     obtain ⟨_, hdrop1, _⟩ := getU8_of_drop_cons hcons
     have hbeq : decide (b.toNat = 1) = (b == 1) := by
       rcases h : b.toNat with _ | _ | n
@@ -1582,30 +1671,30 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
         .ok (b == 1) { idx := i + 1, bytes := ⟨bytes.toArray⟩ } := by
       rw [← hbeq]; exact getBool_of_drop_cons hcons hb2
     rw [← hdrop1] at hrep0
-    obtain ⟨hbits, rfl⟩ := u8BitDecomposition_refines b.toNat_lt ev71.erase
-    subst hbits
-    simp only [projectValue, List.getElem?_cons_zero, Except.ok.injEq] at pr90
-    subst pr90
+    obtain ⟨hbits, hm59⟩ := u8BitDecomposition_refines b.toNat_lt ev71.erase
+    subst m59 v58
+    simp only [projectValue, List.getElem?_cons_zero, pure, Except.pure, Except.ok.injEq] at pr90
+    subst v80
     have hbf : (.field ((b.toNat % 2 : Nat) : F) : SourceValue F) = repBoolField (b == 1) := by
       rcases h : b.toNat with _ | _ | n
       · have hb0 : b = 0 := UInt8.ext h; subst hb0; rfl
       · have hb1 : b = 1 := UInt8.ext h; subst hb1; rfl
       · omega
-    obtain ⟨rfl, tLvls, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev105.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; rcases heq1 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tParams, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev140.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tIndices, n3, restPtr3, hok3, _, hrep3, heq3⟩ := getTag0_refines_at hrep2 ev175.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; rcases heq3 with ⟨rfl, rfl⟩
+    obtain ⟨hm93, tLvls, n1, restPtr1, hok1, _, hrep1, heq1⟩ := getTag0_refines_at hrep0 ev105.erase
+    subst m93; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1; obtain ⟨_, _⟩ := heq1; subst x_lvls x_s2
+    obtain ⟨hm128, tParams, n2, restPtr2, hok2, _, hrep2, heq2⟩ := getTag0_refines_at hrep1 ev140.erase
+    subst m128; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_params x_s3
+    obtain ⟨hm163, tIndices, n3, restPtr3, hok3, _, hrep3, heq3⟩ := getTag0_refines_at hrep2 ev175.erase
+    subst m163; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq3; obtain ⟨_, _⟩ := heq3; subst x_indices x_s4
     obtain ⟨ext4, typ, n4, typPtr, restPtr4, _, _, hok4, heq4, typRep, hrep4⟩ :=
       getExpr_refines_at hrep3 ev210.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; rcases heq4 with ⟨rfl, rfl⟩
-    obtain ⟨rfl, tCtors, n5, restPtr5, hok5, _, hctors_lt, hrep5, heq5⟩ :=
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq4; obtain ⟨_, _⟩ := heq4; subst x_typ x_s5
+    obtain ⟨hm233, tCtors, n5, restPtr5, hok5, _, hctors_lt, hrep5, heq5⟩ :=
       getVecLen_refines_at hrep4 ev245.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; rcases heq5 with ⟨rfl, rfl⟩
+    subst m233; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq5; obtain ⟨_, _⟩ := heq5; subst x_ctors_len x_s6
     obtain ⟨ext6, ctors, n6, ctorsPtr, restPtr6, hlen_ctors, hok6, heq6, ctorsRep, hrep6⟩ :=
       get_constructor_list_spec tCtors.value.toNat hctors_lt hrep5 ev280
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; rcases heq6 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq6; obtain ⟨_, _⟩ := heq6; subst x_ctors x_s7
     subst he379 he314
     have hchk : Ixon.checkCount tCtors.value.toNat.toUInt64 6
         { idx := i + 1 + n1 + n2 + n3 + n4 + n5, bytes := ⟨bytes.toArray⟩ } =
@@ -1645,45 +1734,45 @@ theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   cases «IxonDeserialize::get_mut_const».obs ev with
   | n0 m2 cs12 x_tag x_s m37 cs48 m64 cs74 x_defn x_s2 ev14 ev50 ev76 he102 he127 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; obtain ⟨_, _⟩ := heq0; subst x_tag x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    obtain ⟨heq_b, rfl⟩ := u8ToField_refines ev50.erase
+    obtain ⟨heq_b, hm37⟩ := u8ToField_refines ev50.erase; subst m37
     have hb0 : b = 0 := UInt8.ext ((natCast_eq_zero_iff b.toNat_lt).mp (Value.field.inj heq_b).symm)
     subst hb0
     obtain ⟨ext2, d, n2, dVal, restPtr2, _, hok2, heq2, dRep, hrep2⟩ := get_definition_spec hrep0 ev76
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_defn x_s2
     subst he127 he102
     refine ⟨ext2, .defn d, 1 + n2, _, restPtr2, ?_, rfl, ⟨dVal, rfl, dRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
     unfold Ixon.getMutConst
     simp [bind, EStateM.bind, hu8, Functor.map, EStateM.map, hok2, Nat.add_assoc]
   | n1 m2 cs12 x_tag x_s m37 cs48 m135 cs145 x_indc x_s2 ev14 ev50 ev147 he173 he198 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; obtain ⟨_, _⟩ := heq0; subst x_tag x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    obtain ⟨heq_b, rfl⟩ := u8ToField_refines ev50.erase
+    obtain ⟨heq_b, hm37⟩ := u8ToField_refines ev50.erase; subst m37
     have hb1 : b = 1 := UInt8.ext ((natCast_eq_one_iff b.toNat_lt).mp (Value.field.inj heq_b).symm)
     subst hb1
     obtain ⟨ext2, ind, n2, indVal, restPtr2, hok2, heq2, indRep, hrep2⟩ := get_inductive_spec hrep0 ev147
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_indc x_s2
     subst he198 he173
     refine ⟨ext2, .indc ind, 1 + n2, _, restPtr2, ?_, rfl, ⟨indVal, rfl, indRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
     unfold Ixon.getMutConst
     simp [bind, EStateM.bind, hu8, Functor.map, EStateM.map, hok2, Nat.add_assoc]
   | n2 m2 cs12 x_tag x_s m37 cs48 m206 cs216 x_recr x_s2 ev14 ev50 ev218 he244 he269 _ =>
-    obtain ⟨rfl, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; rcases heq0 with ⟨rfl, rfl⟩
+    obtain ⟨hm2, b, rest0, restPtr0, hcons, hrep0, heq0⟩ := readByte_refines rep ev14.erase
+    subst m2; simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq0; obtain ⟨_, _⟩ := heq0; subst x_tag x_s
     obtain ⟨hu8, hdrop1, _⟩ := getU8_of_drop_cons hcons
     rw [← hdrop1] at hrep0
-    obtain ⟨heq_b, rfl⟩ := u8ToField_refines ev50.erase
+    obtain ⟨heq_b, hm37⟩ := u8ToField_refines ev50.erase; subst m37
     have hb2 : b = 2 := UInt8.ext ((natCast_eq_ofNat_iff (n := 2) b.toNat_lt (by omega)).mp (Value.field.inj heq_b).symm)
     subst hb2
     obtain ⟨ext2, rc, n2, rcVal, restPtr2, hok2, heq2, rcRep, hrep2⟩ := get_recursor_spec hrep0 ev218
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; rcases heq2 with ⟨rfl, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2; obtain ⟨_, _⟩ := heq2; subst x_recr x_s2
     subst he269 he244
     refine ⟨ext2, .recr rc, 1 + n2, _, restPtr2, ?_, rfl, ⟨rcVal, rfl, rcRep⟩,
       by rw [← Nat.add_assoc]; exact hrep2⟩
@@ -1708,8 +1797,8 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
   | zero =>
     cases «IxonDeserialize::get_mut_const_list».obs ev with
     | n1 m2 cs12 m43 ev14 he41 hm51 he62 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
-      subst he62 hm51 he41
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase
+      subst m2 he62 hm51 he41
       have ext := Aiur.Library.List.allocNil_extends mutConstListEnum h
       refine ⟨ext, #[], 0, (Aiur.Library.List.allocNil mutConstListEnum h).1, stream,
         by simp [Ixon.Verify.BoundedConstant.getArray_zero, pure, EStateM.pure], rfl,
@@ -1724,17 +1813,17 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
       simp [Nat.succ_ne_zero] at hiz
     | n0 m2 cs12 m70 cs80 x_mc x_s m105 cs115 v119 m128 cs136 x_rest x_s2 m166
         ev14 ev82 ev138 ev117 he164 hm174 he201 _ =>
-      obtain ⟨_, rfl⟩ := u64IsZero_refines hcount ev14.erase
+      obtain ⟨_, hm2⟩ := u64IsZero_refines hcount ev14.erase; subst m2
       obtain ⟨ext1, mc, n1, mcVal, restPtr1, hok1, heq1, mcRep, hrep1⟩ :=
         get_mut_const_spec rep ev82
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq1
-      rcases heq1 with ⟨rfl, rfl⟩
-      obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount ev138.erase
-      simp only [Nat.add_sub_cancel] at hsp; subst hsp
+      obtain ⟨_, _⟩ := heq1; subst x_mc x_s
+      obtain ⟨hsp, hm128⟩ := u64SaturatingPred_refines hcount ev138.erase; subst m128
+      simp only [Nat.add_sub_cancel] at hsp; subst v119
       obtain ⟨ext2, tailMs, n2, tailPtr, restPtr2, hok2, heq2, tailRep, hrep2⟩ :=
         ih (by omega) hrep1 ev117
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq2
-      rcases heq2 with ⟨rfl, rfl⟩
+      obtain ⟨_, _⟩ := heq2; subst x_rest x_s2
       subst he201 hm174 he164
       have ext3 := Aiur.Library.List.allocCons_extends mutConstListEnum mcVal tailPtr m105
       refine ⟨(ext1.trans ext2).trans ext3, #[mc] ++ tailMs, n1 + n2,
@@ -1743,7 +1832,9 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
         by rw [← Nat.add_assoc]; exact Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext3 hrep2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure, Nat.add_assoc]
-      · simpa using Aiur.Library.List.allocCons_rep mutConstListEnum repMutConst_heapMono₂
+      · have consRep := Aiur.Library.List.allocCons_rep mutConstListEnum repMutConst_heapMono₂
           (mcRep.mono ext2) tailRep
+        simp only [Aiur.Library.List.allocCons] at consRep
+        simpa using consRep
 
 end IxVM.Refinement.L1
