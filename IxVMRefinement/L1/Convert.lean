@@ -588,12 +588,12 @@ theorem convert_definition_spec {d : Ixon.Definition} {sharing : List Ixon.Expr}
       rcases sg321 with ⟨hv301, rfl, rfl, _⟩ | ⟨hne306, rfl, rfl, _⟩
       · refine ⟨?_, rfl⟩
         cases hs : d.safety <;> simp [repDefSafetyVal, hs] at hv301
-        simp [hs, repBoolField]
+        rw [hs]; rfl
       · refine ⟨?_, rfl⟩
         cases hs : d.safety
         · exact (hne306 [] rfl (by simp [repDefSafetyVal, hs])).elim
-        · simp [hs, repBoolField]
-        · simp [hs, repBoolField]
+        · rw [hs]; rfl
+        · rw [hs]; rfl
     rcases hv313 with ⟨hv313_eq, hm314⟩
     rw [he358, hm314]; subst v313
     refine ⟨ext1.trans ext2, blobs1 ++ blobs2,
