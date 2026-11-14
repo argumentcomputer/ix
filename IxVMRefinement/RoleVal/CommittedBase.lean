@@ -739,7 +739,7 @@ private theorem check_of_nodupNat {t : Ix.Kernel.RoleTable}
   have hceq : t.check = checkWithRepeat t true true none := by
     delta Ix.Kernel.RoleTable.check checkWithRepeat
     rw [firstRepeat_eq_none_of_nodup hnd]
-    simp only [← Array.forIn_toList, decide_eq_true hnd_r, decide_eq_true hnd_e]
+    simp only [← Array.forIn_toList, hnd_r, hnd_e, ↓reduceIte]
   rw [hceq]
   exact eq_ok_of_isOkUnit hok
 

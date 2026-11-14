@@ -42,8 +42,52 @@ set_option linter.unnecessarySimpa false
 def committedPreAddrs : List _root_.Address :=
   committedPreludeList.map Prod.fst
 
+private def beqAddrFast (a b : _root_.Address) : Bool :=
+  a.hash.data.toList == b.hash.data.toList
+
+private theorem beqAddrFast_eq (a b : _root_.Address) :
+    beqAddrFast a b = (a == b) := by
+  apply Bool.eq_iff_iff.mpr
+  rw [beqAddrFast, beq_iff_eq, beq_iff_eq]
+  rcases a with ⟨⟨la⟩⟩
+  rcases b with ⟨⟨lb⟩⟩
+  simp
+
+private def containsAddrFast (l : List _root_.Address) (a : _root_.Address) : Bool :=
+  l.any (beqAddrFast · a)
+
+private theorem containsAddrFast_eq (l : List _root_.Address) (a : _root_.Address) :
+    containsAddrFast l a = l.contains a := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp [containsAddrFast, List.contains, BEq.beq, beqAddrFast_eq, ih]
+    by_cases h : a == hd
+    · have hs : (hd == a) = true := beq_iff_eq.mpr (beq_iff_eq.mp h).symm
+      simp [h, hs]
+    · have hs : (hd == a) = false := beq_eq_false_iff_ne.mpr fun he => h (beq_iff_eq.mpr he.symm)
+      simp [Bool.not_eq_true _ |>.mp h, hs]
+
+private def lookupAddrFast {β : Type} (a : _root_.Address) :
+    List (_root_.Address × β) → Option β
+  | [] => none
+  | (k, v) :: rest => if beqAddrFast a k then some v else lookupAddrFast a rest
+
+private theorem lookupAddrFast_eq {β : Type} (a : _root_.Address)
+    (l : List (_root_.Address × β)) :
+    lookupAddrFast a l = l.lookup a := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    rcases hd with ⟨k, v⟩
+    simp only [lookupAddrFast, List.lookup_cons, beqAddrFast_eq, ih]
+
 private def preStorePure (a : _root_.Address) : Option Ixon.Constant :=
-  committedPreludeList.lookup a
+  lookupAddrFast a committedPreludeList
+
+private theorem preStorePure_eq (a : _root_.Address) :
+    preStorePure a = committedPreludeList.lookup a :=
+  lookupAddrFast_eq a committedPreludeList
 
 private def constRefBlock : ConstRef _root_.Address → _root_.Address
   | .member b _ => b
@@ -131,12 +175,12 @@ private theorem lookup_eq_some_of_mem_nodup {α β : Type} [BEq α] [LawfulBEq �
 
 private def preRefsAndProjClosedBool : Bool :=
   committedPreludeList.all fun (_, c) =>
-    c.refs.toList.all committedPreAddrs.contains &&
+    c.refs.toList.all (containsAddrFast committedPreAddrs) &&
     match c.info with
-    | .cPrj p => committedPreAddrs.contains p.block
-    | .rPrj p => committedPreAddrs.contains p.block
-    | .iPrj p => committedPreAddrs.contains p.block
-    | .dPrj p => committedPreAddrs.contains p.block
+    | .cPrj p => containsAddrFast committedPreAddrs p.block
+    | .rPrj p => containsAddrFast committedPreAddrs p.block
+    | .iPrj p => containsAddrFast committedPreAddrs p.block
+    | .dPrj p => containsAddrFast committedPreAddrs p.block
     | _ => true
 
 private theorem preRefsAndProjClosed : preRefsAndProjClosedBool = true := by
@@ -147,7 +191,9 @@ private theorem pre_refs_mem {a : _root_.Address} {c : Ixon.Constant}
     r ∈ committedPreAddrs := by
   have hall := List.all_eq_true.mp preRefsAndProjClosed (a, c) hc
   rw [Bool.and_eq_true, List.all_eq_true] at hall
-  simpa [List.contains_iff_mem] using hall.1 r hr
+  have hr' := hall.1 r hr
+  rw [containsAddrFast_eq, List.contains_iff_mem] at hr'
+  exact hr'
 
 private theorem pre_proj_block_mem {a : _root_.Address} {c : Ixon.Constant}
     (hc : (a, c) ∈ committedPreludeList) :
@@ -156,7 +202,9 @@ private theorem pre_proj_block_mem {a : _root_.Address} {c : Ixon.Constant}
     (∀ p, c.info = .iPrj p → p.block ∈ committedPreAddrs) ∧
     (∀ p, c.info = .dPrj p → p.block ∈ committedPreAddrs) := by
   have hall := (Bool.and_eq_true.mp (List.all_eq_true.mp preRefsAndProjClosed (a, c) hc)).2
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro p hp; rw [hp] at hall; simpa [List.contains_iff_mem] using hall)
+  refine ⟨?_, ?_, ?_, ?_⟩ <;>
+    (intro p hp; rw [hp] at hall; dsimp only at hall;
+     rw [containsAddrFast_eq, List.contains_iff_mem] at hall; exact hall)
 
 section WithEv
 
@@ -169,6 +217,7 @@ private abbrev defCx : Ctx .anon :=
 
 private theorem defCx_store_of_mem_pre {a : _root_.Address} (ha : a ∈ committedPreAddrs) :
     (defCx ev).store a = preStorePure a := by
+  rw [preStorePure_eq]
   show (recordMap committedPrelude)[a]? <|> ((recordMap ev)[a]? <|> none) =
     committedPreludeList.lookup a
   rw [Ix.Cert.ReaderClosureKeys.recordMap_get, show committedPrelude.toList = committedPreludeList from rfl]
@@ -197,6 +246,7 @@ private theorem resolve_defCx_of_mem_pre {a : _root_.Address} (ha : a ∈ commit
   | none => rfl
   | some c =>
     simp only [bind, Option.bind]
+    rw [preStorePure_eq] at hl
     exact resolveSource_defCx_eq_pure ev (mem_of_lookup_eq_some hl)
 
 private theorem resolve_defCx_not_mem_pre {a : _root_.Address}
@@ -225,18 +275,18 @@ private theorem resolve_defCx_not_mem_pre {a : _root_.Address}
 
 private def pureRolesList : List (ConstRef _root_.Address × CName .anon) :=
   committedDefaultRoleTable.bound.toList.filterMap fun (ro, a) =>
-    if committedPreAddrs.contains a then
+    if containsAddrFast committedPreAddrs a then
       (resolve preStorePure a).map fun ref => (ref, Ix.Kernel.roleKey ro)
     else none
 
 private def beqConstRefFast : ConstRef _root_.Address → ConstRef _root_.Address → Bool
-  | .member b1 i1, .member b2 i2 => b1 == b2 && i1 == i2
-  | .ctor b1 i1 c1, .ctor b2 i2 c2 => b1 == b2 && i1 == i2 && c1 == c2
+  | .member b1 i1, .member b2 i2 => beqAddrFast b1 b2 && i1 == i2
+  | .ctor b1 i1 c1, .ctor b2 i2 c2 => beqAddrFast b1 b2 && i1 == i2 && c1 == c2
   | _, _ => false
 
 private theorem beqConstRefFast_eq (x y : ConstRef _root_.Address) :
     beqConstRefFast x y = (x == y) := by
-  cases x <;> cases y <;> simp [beqConstRefFast, BEq.beq, Bool.and_assoc]
+  cases x <;> cases y <;> simp [beqConstRefFast, beqAddrFast_eq, BEq.beq, Bool.and_assoc]
 
 private def lookupConstRefFast {β : Type} (k : ConstRef _root_.Address) :
     List (ConstRef _root_.Address × β) → Option β
@@ -261,10 +311,12 @@ private theorem pureRolesList_nodup : (pureRolesList.map Prod.fst).Nodup := by
 
 private theorem pureRolesList_block_mem :
     ∀ p ∈ pureRolesList, constRefBlock p.1 ∈ committedPreAddrs := by
-  have hb : (pureRolesList.all fun p => committedPreAddrs.contains (constRefBlock p.1)) = true := by
+  have hb : (pureRolesList.all fun p => containsAddrFast committedPreAddrs (constRefBlock p.1)) = true := by
     decide +kernel
   intro p hp
-  simpa [List.contains_iff_mem] using List.all_eq_true.mp hb p hp
+  have h1 := List.all_eq_true.mp hb p hp
+  rw [containsAddrFast_eq, List.contains_iff_mem] at h1
+  exact h1
 
 private def bindingsStep (store : Store) (m : Std.HashMap (ConstRef _root_.Address) (CName .anon))
     (p : Ix.Kernel.Role × _root_.Address) : Std.HashMap (ConstRef _root_.Address) (CName .anon) :=
@@ -373,6 +425,18 @@ private theorem defCx_roles_of_pure {ref : ConstRef _root_.Address} {k : CName .
   rw [lookupConstRefFast_eq] at h
   have hblk : constRefBlock ref ∈ committedPreAddrs :=
     pureRolesList_block_mem (ref, k) (mem_of_lookup_eq_some h)
+  have hfn : (fun (p : Ix.Kernel.Role × _root_.Address) =>
+      if containsAddrFast committedPreAddrs p.2 then
+        (resolve preStorePure p.2).map fun ref => (ref, Ix.Kernel.roleKey (md := .anon) p.1)
+      else none) =
+    (fun (p : Ix.Kernel.Role × _root_.Address) =>
+      if committedPreAddrs.contains p.2 then
+        (resolve preStorePure p.2).map fun ref => (ref, Ix.Kernel.roleKey (md := .anon) p.1)
+      else none) := by
+    funext ⟨ro, a⟩
+    rw [containsAddrFast_eq]
+  unfold pureRolesList at h
+  rw [hfn] at h
   show (committedDefaultRoleTable.bound.foldl (bindingsStep (defCx ev).store) {})[ref]? = some k
   rw [← Array.foldl_toList]
   exact foldl_bindingsStep_lookup ev hev_defn hblk
@@ -443,7 +507,7 @@ private theorem inductivesFast_eq (members : Array Ixon.MutConst) :
 private def orderForFast (carriers : Array (ConstRef _root_.Address)) (owner : _root_.Address)
     (count : Nat) : Array Nat :=
   ((carriers.toList.take count).filterMap fun
-    | .member block index => if block == owner then some index else none
+    | .member block index => if beqAddrFast block owner then some index else none
     | .ctor .. => none).toArray
 
 private theorem orderForFast_eq (carriers : Array (ConstRef _root_.Address))
@@ -451,8 +515,16 @@ private theorem orderForFast_eq (carriers : Array (ConstRef _root_.Address))
     orderForFast carriers owner count =
       Ix.CompileCert.ReaderIndex.orderFor carriers owner count := by
   apply Array.ext'
+  have hfn : (fun (c : ConstRef _root_.Address) => match c with
+      | .member block index => if beqAddrFast block owner then some index else none
+      | .ctor .. => none) =
+    (fun (c : ConstRef _root_.Address) => match c with
+      | .member block index => if block == owner then some index else none
+      | .ctor .. => none) := by
+    funext c
+    cases c <;> simp [beqAddrFast_eq]
   rw [orderForFast, Ix.CompileCert.ReaderIndex.orderFor, List.toList_toArray,
-      Array.toList_filterMap, Array.toList_extract, List.extract_eq_take_drop, List.drop_zero]
+      Array.toList_filterMap, Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, hfn]
 
 private def orderValidFast (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive))
     (order : Array Nat) : Bool :=
@@ -482,18 +554,18 @@ private def pureCandStep (owner : _root_.Address) (c : Ixon.Constant)
   let (pos, rec) := member
   let ref : ConstRef _root_.Address := .member owner pos
   guard (lookupConstRefFast ref s.recs).isNone
-  guard (c.refs.toList.all committedPreAddrs.contains)
+  guard (c.refs.toList.all (containsAddrFast committedPreAddrs))
   let (motive, carriers, major) ← analyseRecursorFast preStorePure owner c rec
   let .member block firstIdx ← carriers[0]? | none
-  guard (committedPreAddrs.contains block)
+  guard (containsAddrFast committedPreAddrs block)
   let blockRec ← preStorePure block
   let .muts members := blockRec.info | none
   let indcs := inductivesFast members
   let (_, first) ← indcs[0]?
   let order := orderForFast carriers block indcs.size
   guard (orderValidFast firstIdx indcs order)
-  guard (s.found.lookup block).isNone
-  guard (s.blocks.lookup block).isNone
+  guard (lookupAddrFast block s.found).isNone
+  guard (lookupAddrFast block s.blocks).isNone
   let large := rec.lvls.toNat == first.lvls.toNat + 1
   let entry : RecEntry := ⟨block, motive, major, large⟩
   pure {
@@ -524,8 +596,8 @@ private def pureRecsLookup (ref : ConstRef _root_.Address) : Option RecEntry := 
 
 private def pureBlocksLookup (b : _root_.Address) : Option BlockShape := do
   let s ← purePreIdx?
-  let order ← s.blocks.lookup b
-  let foundArr ← s.found.lookup b
+  let order ← lookupAddrFast b s.blocks
+  let foundArr ← lookupAddrFast b s.found
   pure ⟨order, (foundArr.toList.map (·.2)).toArray⟩
 
 private def IdxMatches (bs : Ix.CompileCert.ReaderIndex.BuildState) (s : PureIdx) : Prop :=
@@ -578,7 +650,7 @@ private def preInputIndexedBool : Bool :=
       match analyseRecursorFast preStorePure a c r with
       | some (_, carriers, _) =>
         match carriers[0]? with
-        | some (.member b _) => committedPreAddrs.contains b
+        | some (.member b _) => containsAddrFast committedPreAddrs b
         | _ => true
       | none => true
 
@@ -600,8 +672,12 @@ private theorem filter_committedPrelude_inputIndexed :
   rw [Array.toList_filter, List.filter_eq_self]
   intro ⟨a, c⟩ hmem
   have hmem' : (a, c) ∈ committedPreludeList := hmem
-  have hrefs : c.refs.toList.all committedPreAddrs.contains = true :=
-    (Bool.and_eq_true.mp (List.all_eq_true.mp preRefsAndProjClosed (a, c) hmem')).1
+  have hrefs : c.refs.toList.all committedPreAddrs.contains = true := by
+    have h1 := (Bool.and_eq_true.mp (List.all_eq_true.mp preRefsAndProjClosed (a, c) hmem')).1
+    rw [List.all_eq_true] at h1 ⊢
+    intro r hr
+    have h2 := h1 r hr
+    rwa [containsAddrFast_eq] at h2
   have hpure := List.all_eq_true.mp preInputIndexed_true (a, c) hmem'
   rw [recursorMembersFast_eq, List.all_eq_true] at hpure
   unfold inputIndexed
@@ -624,6 +700,7 @@ private theorem filter_committedPrelude_inputIndexed :
       | ctor _ _ _ => rfl
       | member b idx =>
         dsimp only at hp ⊢
+        rw [containsAddrFast_eq] at hp
         exact (hknown b).mpr (List.contains_iff_mem.mp hp)
 
 private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : Ixon.Constant}
@@ -637,7 +714,10 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
   obtain ⟨hrecs, hblocks, hfound⟩ := hm
   unfold pureCandStep at hp
   dsimp only at hp
-  rw [analyseRecursorFast_eq, lookupConstRefFast_eq] at hp
+  have hcfn : containsAddrFast committedPreAddrs = committedPreAddrs.contains := by
+    funext x; exact containsAddrFast_eq committedPreAddrs x
+  rw [analyseRecursorFast_eq, lookupConstRefFast_eq, hcfn] at hp
+  simp only [lookupAddrFast_eq] at hp
   cases hrnone : (s.recs.lookup (.member owner pos)).isNone with
   | false => simp [hrnone, guard] at hp
   | true =>
@@ -938,7 +1018,7 @@ private theorem defCx_index_blocks_of_pure {b : _root_.Address} {sh : BlockShape
   cases hs : purePreIdx? with
   | none => simp [hs] at h
   | some s =>
-    simp only [hs, bind, Option.bind] at h
+    simp only [hs, bind, Option.bind, lookupAddrFast_eq] at h
     cases hob : s.blocks.lookup b with
     | none => simp [hob] at h
     | some order =>
@@ -1001,7 +1081,7 @@ private theorem pureMemberKey_sound {r : ConstRef _root_.Address} {k : CName .an
     exact Ctx.memberKey_of_role (defCx_roles_of_pure ev hev_defn hp)
 
 private def pureKeyAt (a : _root_.Address) : ReadM (CName .anon) := do
-  if committedPreAddrs.contains a then
+  if containsAddrFast committedPreAddrs a then
     match resolve preStorePure a with
     | some r =>
       match pureRolesLookup r with
@@ -1014,6 +1094,7 @@ private theorem pureKeyAt_sound {a : _root_.Address} {k : CName .anon}
     (h : pureKeyAt a = .ok k) :
     (defCx ev).keyAt a = .ok k := by
   unfold pureKeyAt at h
+  rw [containsAddrFast_eq] at h
   split at h
   · rename_i hpa
     have ha_mem : a ∈ committedPreAddrs := List.contains_iff_mem.mp hpa
@@ -1055,7 +1136,7 @@ private def PureECx.keyAt (pe : PureECx) (i : UInt64) : ReadM (CName .anon) := d
 
 private def pureConvExpr (pe : PureECx) (tbl : Array (ReadM (CExpr .anon))) :
     Ixon.Expr → ReadM (CExpr .anon)
-  | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
+  | .var i => pure (.bvar i.toNat)
   | .sort i => do pure (.sort (← pe.level i))
   | .ref i us => do
     let k ← pe.keyAt i
@@ -1094,7 +1175,7 @@ private theorem pureConvExpr_sound {pe : PureECx}
     ∀ (expr : Ixon.Expr) {out : CExpr .anon},
       pureConvExpr pe ptbl expr = .ok out →
       convExpr (pe.toECx ev realSelf) rtbl expr = .ok out
-  | .var i, _, h => h
+  | .var i, _, h => by rw [convExpr, Ix.Kernel.Expr.mkBvar_eq]; exact h
   | .sort i, _, h => h
   | .ref i us, _, h => by
     unfold pureConvExpr at h
@@ -1266,7 +1347,7 @@ private def pureReadRecRules (src : Ixon.Constant) (param : Nat → Ix.Kernel.Le
 private def pureReadRecursor (blockLps : List Ix.Kernel.LevelParam) (ref : ConstRef _root_.Address)
     (entry : RecEntry) : ReadM (CVal .anon × RecCounts × List (Ix.Kernel.RecRule .anon)) := do
   let .member rOwner j := ref | malformed "recursor reference is a constructor"
-  if !committedPreAddrs.contains rOwner then malformed "recursor outside prelude"
+  if !containsAddrFast committedPreAddrs rOwner then malformed "recursor outside prelude"
   let some rc := preStorePure rOwner | malformed "recursor record is missing"
   let some (_, r) := (recursorMembersFast rc).find? (·.1 == j) | malformed "recursor member is missing"
   if r.isUnsafe then declined "unsafe inductive declaration"
@@ -1278,7 +1359,7 @@ private def pureReadRecursor (blockLps : List Ix.Kernel.LevelParam) (ref : Const
   let typ ← pureReadExpr rc (recParam lps) pself r.typ
   let cv : CVal .anon := ⟨key, lps, typ⟩
   let .member mb mi := entry.major | malformed "recursor major is a constructor"
-  if !committedPreAddrs.contains mb then malformed "major outside prelude"
+  if !containsAddrFast committedPreAddrs mb then malformed "major outside prelude"
   let some major := inductiveAt preStorePure entry.major | declined "major not ind"
   unless major.ctors.size == r.rules.size do malformed "rule count"
   let rules ← pureReadRecRules rc (recParam lps) pself mb mi r.rules.toList.zipIdx
@@ -1321,6 +1402,7 @@ private theorem pureReadRecursor_sound {blockLps : List Ix.Kernel.LevelParam}
   | ctor _ _ _ => cases h
   | member rOwner j =>
     dsimp only at h
+    rw [containsAddrFast_eq] at h
     cases hro : committedPreAddrs.contains rOwner with
     | false => simp [hro] at h
     | true =>
@@ -1348,6 +1430,7 @@ private theorem pureReadRecursor_sound {blockLps : List Ix.Kernel.LevelParam}
             | member mb mi =>
               rw [hmaj] at hr2
               dsimp only at hr2
+              rw [containsAddrFast_eq] at hr2
               cases hmb : committedPreAddrs.contains mb with
               | false => simp [hmb] at hr2
               | true =>
