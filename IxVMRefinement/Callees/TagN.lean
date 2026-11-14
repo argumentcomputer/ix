@@ -53,6 +53,14 @@ theorem sub_field_inv {a b : F} {v : SourceValue F}
 theorem div_mod_zero {d p : Nat} (h : d < p) : d / p % 256 = 0 := by
   rw [Nat.div_eq_of_lt h]
 
+theorem sub_lt_iff_lt {n a b c : Nat} (hge : ¬ n < a) (hc : a + b = c) :
+    n - a < b ↔ n < c := by
+  subst hc; omega
+
+theorem sub_sub_eq {n a b c : Nat} (hc : a + b = c) :
+    n - a - b = n - c := by
+  subst hc; exact Nat.sub_sub n a b
+
 theorem sum_eq_zero_4 {a b c e : Nat}
     (ha : a < 256) (hb : b < 256) (hc : c < 256) (he : e < 256)
     (h : ((a + b + c + e : Nat) : F) = 0) :
@@ -783,7 +791,7 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     obtain ⟨hcF, rfl⟩ := Lib.u8_to_field_spec ev167
     have hlt2 := wrap_div_lt_two hw_lt hsub_lt
     have hdiv0 : (w.toNat + subVal) / 18446744073709551616 = 0 :=
-      natCast_eq_zero_of_lt (Nat.lt_trans hlt2 (by decide)) (Value.field.inj hcF)
+      natCast_eq_zero_of_lt (Nat.lt_trans hlt2 (by decide)) (Value.field.inj hcF).symm
     have hw_r2 : w.toNat < 16512 := by
       rw [hsub_val] at hdiv0
       exact wrap_div_zero (by decide) (by decide) hdiv0
@@ -917,25 +925,34 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
       dsimp only []
       rw [he1, ite_eq_right hw128, he2, ite_eq_right hw_ge2, he3, he4, he5, hh0, hh1, hh2, hh3]
       by_cases h3 : w.toNat < 82048
-      · have hd3 : w.toNat - 16512 < 65536 := by omega
+      · have hd3 : w.toNat - 16512 < 65536 :=
+          (sub_lt_iff_lt hw_ge2 (by decide)).mpr h3
         rw [ite_eq_left h3, ite_eq_left hd3, data_toList_append, data_toList_singleton]
         rfl
-      · have hd3 : ¬ w.toNat - 16512 < 65536 := by omega
-        have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 := by omega
+      · have hd3 : ¬ w.toNat - 16512 < 65536 :=
+          mt (sub_lt_iff_lt hw_ge2 (by decide)).mp h3
+        have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 :=
+          sub_sub_eq (by decide)
         rw [ite_eq_right h3, ite_eq_right hd3, hs3]
         by_cases h4 : w.toNat < 16859264
-        · have hd4 : w.toNat - 82048 < 16777216 := by omega
+        · have hd4 : w.toNat - 82048 < 16777216 :=
+            (sub_lt_iff_lt h3 (by decide)).mpr h4
           rw [ite_eq_left h4, ite_eq_left hd4, data_toList_append, data_toList_singleton]
           rfl
-        · have hd4 : ¬ w.toNat - 82048 < 16777216 := by omega
-          have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 := by omega
+        · have hd4 : ¬ w.toNat - 82048 < 16777216 :=
+            mt (sub_lt_iff_lt h3 (by decide)).mp h4
+          have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 :=
+            sub_sub_eq (by decide)
           rw [ite_eq_right h4, ite_eq_right hd4, hs4]
           by_cases h5 : w.toNat < 4311826560
-          · have hd5 : w.toNat - 16859264 < 4294967296 := by omega
+          · have hd5 : w.toNat - 16859264 < 4294967296 :=
+              (sub_lt_iff_lt h4 (by decide)).mpr h5
             rw [ite_eq_left h5, ite_eq_left hd5, data_toList_append, data_toList_singleton]
             rfl
-          · have hd5 : ¬ w.toNat - 16859264 < 4294967296 := by omega
-            have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 := by omega
+          · have hd5 : ¬ w.toNat - 16859264 < 4294967296 :=
+              mt (sub_lt_iff_lt h4 (by decide)).mp h5
+            have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 :=
+              sub_sub_eq (by decide)
             rw [ite_eq_right h5, ite_eq_right hd5, hs5, data_toList_append, data_toList_singleton]
             rfl
     rw [hbytes]

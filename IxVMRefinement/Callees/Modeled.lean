@@ -442,7 +442,7 @@ theorem proj_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
   have hgood2 : Good c cs26 :=
     good.sub (by rw [hc52]; intro z hz; simp [hz])
-  have hb' : RepAddr m15 b bp := Bytes.repAddressRef_heapMono₂ addrTy ev25.heap_extends hb
+  have hb' : RepAddr m2 b bp := Bytes.repAddressRef_heapMono₂ addrTy ev25.heap_extends hb
   obtain ⟨ci, hfind, hci⟩ :=
     ih.get (.callees .get_ci_cprj) (by rw [hc52]; callees_lt) ev28
       bp i 0 b rfl hgood2 hb'

@@ -62,7 +62,7 @@ theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     RomBound.bounded_length_lt good.2 hcall (by simp) hbytes
   have hnat : Blake3.Pure.NativeInput bytes := by
     show bytes.length < 2 ^ 64
-    omega
+    exact Nat.lt_trans hlen (by decide)
   let d : Bytes.Address := Blake3.Pure.cvBytes (Aiur.Library.Blake3.hashModel bytes)
   have hd_eq : d = Blake3.Pure.digest bytes :=
     Aiur.Library.Blake3.hash_model_spec bytes hnat
@@ -91,9 +91,9 @@ theorem projection_addr_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' 
   injection hxi with hxi
   injection hxj with hxj
   have hvali : ZMod.val i = ni := by
-    rw [hxi]; exact ProjAddrAux.val_natCast_small (by omega)
+    rw [hxi]; exact ProjAddrAux.val_natCast_small (Nat.lt_trans hni (by decide))
   have hvalj : ZMod.val j = nj := by
-    rw [hxj]; exact ProjAddrAux.val_natCast_small (by omega)
+    rw [hxj]; exact ProjAddrAux.val_natCast_small (Nat.lt_trans hnj (by decide))
   have e1 : Heap.Extends m24 m114 := by rw [hm122]; exact Heap.Extends.snoc _ _
   have e2 : Heap.Extends m114 m127 := by rw [hm135]; exact Heap.Extends.snoc _ _
   have e3 : Heap.Extends m127 m140 := by rw [hm148]; exact Heap.Extends.snoc _ _
@@ -114,11 +114,11 @@ theorem projection_addr_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' 
     rw [hm197]; simp
   have hrepi : RepU64 m189 (ZMod.val i).toUInt64 (TagN.u64Value ni) := by
     rw [hvali]
-    have e := Lib.repU64_ofNatLT m189 (m := ni) (by omega)
+    have e := Lib.repU64_ofNatLT m189 (m := ni) (Nat.lt_trans hni (by decide))
     rwa [UInt64.ofNatLT_eq_ofNat] at e
   have hrepj : RepU64 m189 (ZMod.val j).toUInt64 (TagN.u64Value nj) := by
     rw [hvalj]
-    have e := Lib.repU64_ofNatLT m189 (m := nj) (by omega)
+    have e := Lib.repU64_ofNatLT m189 (m := nj) (Nat.lt_trans hnj (by decide))
     rwa [UInt64.ofNatLT_eq_ofNat] at e
   have hinfo : Specs.Callees.ProjInfoRep m189
       (.cPrj ⟨(ZMod.val i).toUInt64, (ZMod.val j).toUInt64, ixAddr b⟩)
@@ -164,8 +164,9 @@ theorem muts_member_at_spec :
     intro ms lp r h h' calls hk hlen hms ev
     cases Obs.«Ingress::muts_member_at».obs ev with
     | n0 _ _ _ hv43 _ _ _ =>
-      have hk0 := natCast_eq_zero_of_lt (m := k + 1) (by omega) (Value.field.inj hv43)
-      omega
+      have hk0 := natCast_eq_zero_of_lt (m := k + 1)
+        (Nat.lt_trans hk (Nat.lt_trans hlen (by decide))) (Value.field.inj hv43)
+      cases hk0
     | other x_m x_rest cs55 v59 ld12 _ op80 ev57 _ =>
       obtain ⟨z, zs, he, -, hzs⟩ := Lib.rep_cons_of_load hms ld12
       subst he
@@ -175,7 +176,7 @@ theorem muts_member_at_spec :
         ring_nf
       rw [hv59] at ev57
       simp only [List.length_cons] at hk hlen
-      exact ih (by omega) (by omega) hzs ev57
+      exact ih (Nat.lt_of_succ_lt_succ hk) (Nat.lt_trans (Nat.lt_succ_self _) hlen) hzs ev57
 
 theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Address}
     {i : Nat} {lp bp r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -194,7 +195,8 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
   injection hxi with hxi
   have hni_eq : ni = i := by
     have hv := congrArg ZMod.val hxi
-    rw [val_natCast_small (by omega), val_natCast_small (by omega)] at hv
+    rw [val_natCast_small (Nat.lt_trans hni (by decide)),
+      val_natCast_small (Nat.lt_trans hi (Nat.lt_trans hlen (by decide)))] at hv
     exact hv.symm
   subst hni_eq
   have e1 : Heap.Extends m199 m231 := by rw [hm239]; exact Heap.Extends.snoc _ _
@@ -213,7 +215,7 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
   have c5 : m306[m270.length]? = some (.construct byteListEnum "Nil" []) := by
     rw [hm314]; simp
   have hrepi : RepU64 m306 i.toUInt64 (TagN.u64Value i) := by
-    have e := Lib.repU64_ofNatLT m306 (m := i) (by omega)
+    have e := Lib.repU64_ofNatLT m306 (m := i) (Nat.lt_trans hi (Nat.lt_trans hlen (by decide)))
     rwa [UInt64.ofNatLT_eq_ofNat] at e
   have hseg : m199 = h ∧
       Specs.Callees.ProjInfoRep m306

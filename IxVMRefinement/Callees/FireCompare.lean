@@ -248,7 +248,7 @@ theorem lower_pins_spec (c : Ctx) {ps : List Ix.Kernel.LevelParam} {rP nI : Nat}
         FireAux.tm_openZero hx_p 0 (by omega)
       have hgood2 : Good c cs120 := good.sub (by rw [hc174]; intro z hz; simp [hz])
       have hlow0 := ih.get (.subst .expr_lower) (by rw [hc174]; callees_lt) ev122
-        x_p (nI : F) 0 rfl hgood2 0 nI (by rw [hnI_val]; omega) (Nat.zero_le _)
+        x_p (nI : F) 0 rfl hgood2 0 nI hnI_val (Nat.zero_le _)
         (rP + nI) FireAux.Γ₀ (FireAux.openZero (rP + nI) 0 (posOf ps x)) (by omega)
         (by rw [ZMod.val_zero]; exact hopen) (by rw [ZMod.val_zero]; exact hno)
       rw [ZMod.val_zero, show rP + nI - nI = rP by omega] at hlow0
