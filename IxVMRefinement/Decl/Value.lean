@@ -3,7 +3,6 @@ import IxVMRefinement.Core.Roles
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.KernelRoleSpec
-import IxVMRefinement.Obs.RBTreeMap
 
 /-! # Value, Axiom, Opaque, Theorem, Quotient, and Basis Declarations
 
@@ -18,12 +17,15 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 open Ix.Kernel (ConstantInfo ConstantVal Declaration RecRule BasisKind LevelParam Level Expr)
-open Ix.Kernel.Rules (Annot Infer DefEq Red LvEq)
+open Ix.Kernel.Rules (Annot Infer DefEq Red)
 open Ix.Kernel.Semantics (ConstantValRunJ ValueFrontRunJ DeclDefnRunJ DeclThmRunJ
-  DeclOpaqueRunJ DeclAxiomRunJ DeclBasisRun DeclRunJ)
-open Ix.Kernel.Model (rulesJ IndRoutesJ EnvModelT EnvModelOk)
+  DeclOpaqueRunJ DeclAxiomRunJ DeclBasisRun DeclRunJ IndRoutesJ)
+open Ix.Kernel.Model (rulesJ EnvModelT EnvModelOk)
 
 universe u
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
 
 /-! ## `ThmVal` extraction from `DeclInv` -/
 
@@ -89,11 +91,13 @@ theorem levelParam_nodup_of_perm_range {ps : List LevelParam} {n : Nat}
 
 /-! ## Safety tag and `KernelCheck::is_unsafe_ci` -/
 
-/-- The loaded `KConstantInfo` value carries safety flag `0` (`safe`), as holds of every constant
-in Lean's logic (`IxVM.Consistency.InLogic`). -/
+/-- The loaded `KConstantInfo` value carries the safe tag/flag (`Ixon::DefinitionSafety::Safe`
+on `Defn`, `.field 0` on `Axiom`/`Opaque`/`Induct`/`Ctor`/`Rec`), as holds of every constant in
+Lean's logic (`IxVM.Consistency.InLogic`). -/
 def CISafe : SourceValue F → Prop
   | .construct en "Axiom" [_, _, u] => en = kciEnum → u = .field 0
-  | .construct en "Defn" [_, _, _, u, _] => en = kciEnum → u = .field 0
+  | .construct en "Defn" [_, _, _, s, _] =>
+    en = kciEnum → s = .construct "Ixon::DefinitionSafety" "Safe" []
   | .construct en "Opaque" [_, _, _, u] => en = kciEnum → u = .field 0
   | .construct en "Induct" [_, _, _, _, _, u, _, _] => en = kciEnum → u = .field 0
   | .construct en "Ctor" [_, _, _, _, _, _, _, u] => en = kciEnum → u = .field 0
@@ -105,23 +109,25 @@ modifying the heap or making calls. -/
 theorem is_unsafe_ci_zero {v r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W "KernelCheck::is_unsafe_ci" [v] h r h' cs) (hsafe : CISafe v) :
     r = .field 0 ∧ h' = h ∧ cs = [] := by
-  rcases Obs.«KernelCheck::is_unsafe_ci».obs ev with
-    ⟨_, _, x_u, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, x_u, _, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, x_u, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, _, _, x_u, _, _, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, _, _, _, _, x_u, _, hv, rfl, rfl, rfl⟩ |
-    ⟨_, _, _, _, _, _, _, _, x_u, _, _, _, hv, rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
-  · subst hv; exact ⟨hsafe rfl, rfl, rfl⟩
+  cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
+  | Axiom _ _ _ hv hr hh hc =>
+    subst hv; exact ⟨hr.trans (hsafe rfl), hh, hc⟩
+  | Defn_Safe _ _ _ _ _ _ hr hh hc =>
+    exact ⟨hr, hh, hc⟩
+  | Defn_other _ _ _ x_s _ _ hv hne _ _ _ =>
+    subst hv; exact absurd (hsafe rfl) (hne [] rfl)
+  | Thm _ _ _ _ _ _ hr hh hc =>
+    exact ⟨hr, hh, hc⟩
+  | Opaque _ _ _ _ _ _ _ hv hr hh hc =>
+    subst hv; exact ⟨hr.trans (hsafe rfl), hh, hc⟩
+  | Quot _ _ _ _ _ _ _ _ hr hh hc =>
+    exact ⟨hr, hh, hc⟩
+  | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv hr hh hc =>
+    subst hv; exact ⟨hr.trans (hsafe rfl), hh, hc⟩
+  | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv hr hh hc =>
+    subst hv; exact ⟨hr.trans (hsafe rfl), hh, hc⟩
+  | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv hr hh hc =>
+    subst hv; exact ⟨hr.trans (hsafe rfl), hh, hc⟩
 
 /-! ## Role-context, standing, and quotient specs -/
 
@@ -150,19 +156,27 @@ theorem role_ctx_table_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     (ev : ObsFn W "KernelRoles::role_ctx_table" [rc] h r h' cs) :
     h' = h ∧ TableRep t h r ∧ cs = [] := by
   obtain ⟨tbl, ax, node, hl, hn, htbl⟩ := hrc
-  rcases Obs.«KernelRoles::role_ctx_table».obs ev with
-    ⟨x_t, w13, w14, ld, rfl, rfl, rfl⟩ |
-    ⟨x_t, w25, _, ld, rfl, rfl, rfl⟩
-  · rw [hl] at ld
+  cases Obs.«KernelRoles::role_ctx_table».obs ev with
+  | Mk x_t w20 w21 ld hr hh hc =>
+    rw [hl] at ld
     rcases hn with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩
-    · injection ld with hnode; injection hnode with ht _; subst ht
-      exact ⟨rfl, htbl, rfl⟩
-    · injection ld with hnode; cases hnode
-  · rw [hl] at ld
+    · injection ld with hnode
+      injection hnode with _ _ hargs
+      injection hargs with htbl_eq _
+      exact ⟨hh, hr ▸ htbl_eq ▸ htbl, hc⟩
+    · injection ld with hnode
+      injection hnode with _ htag _
+      exact absurd htag (by decide)
+  | Assumed x_t w48 ld hr hh hc =>
+    rw [hl] at ld
     rcases hn with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩
-    · injection ld with hnode; cases hnode
-    · injection ld with hnode; injection hnode with ht _; subst ht
-      exact ⟨rfl, htbl, rfl⟩
+    · injection ld with hnode
+      injection hnode with _ htag _
+      exact absurd htag (by decide)
+    · injection ld with hnode
+      injection hnode with _ _ hargs
+      injection hargs with htbl_eq _
+      exact ⟨hh, hr ▸ htbl_eq ▸ htbl, hc⟩
 
 /-- Direct proof of `KernelRoles::role_addr_index` from its observed path. -/
 theorem role_addr_index_spec {t : Ix.Kernel.RoleTable} {tbl r : SourceValue F}
@@ -171,15 +185,15 @@ theorem role_addr_index_spec {t : Ix.Kernel.RoleTable} {tbl r : SourceValue F}
     (ev : ObsFn W "KernelRoles::role_addr_index" [tbl] h r h' cs) :
     h' = h ∧ AddrMapAll addrMapEnum (IndexEntry t) h r ∧ cs = [] := by
   obtain ⟨bp, byRole, byAddr, evm, hl, -, hidx, -⟩ := htbl
-  obtain ⟨w13, w14, x_by_addr, w15, ld, rfl, rfl, rfl⟩ :=
-    Obs.«KernelRoles::role_addr_index».obs ev
-  rw [hl] at ld
-  injection ld with hmk
-  injection hmk with _ h1
-  injection h1 with _ h2
-  injection h2 with hba _
-  subst hba
-  exact ⟨rfl, hidx, rfl⟩
+  cases Obs.«KernelRoles::role_addr_index».obs ev with
+  | run w20 w21 x_by_addr w22 ld hr hh hc =>
+    rw [hl] at ld
+    injection ld with hmk
+    injection hmk with _ _ hargs
+    injection hargs with _ h1
+    injection h1 with _ h2
+    injection h2 with hba _
+    exact ⟨hh, hr ▸ hba ▸ hidx, hc⟩
 
 /-- Direct proof of `KernelRoles::role_ctx_axioms` on a role context with empty user-axiom map. -/
 theorem role_ctx_axioms_nil {rc r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -187,37 +201,41 @@ theorem role_ctx_axioms_nil {rc r : SourceValue F} {h h' : Heap F} {cs : List (C
     (ev : ObsFn W "KernelRoles::role_ctx_axioms" [rc] h r h' cs) :
     r = .construct addrMapEnum "Nil" [] ∧ h' = h ∧ cs = [] := by
   obtain ⟨node, hl, hshape⟩ := hnil
-  rcases Obs.«KernelRoles::role_ctx_axioms».obs ev with
-    ⟨w12, w13, x_ax, ld, rfl, rfl, rfl⟩ |
-    ⟨w24, x_ax, _, ld, rfl, rfl, rfl⟩
-  · rw [hl] at ld
+  cases Obs.«KernelRoles::role_ctx_axioms».obs ev with
+  | Mk w20 w21 x_ax ld hr hh hc =>
+    rw [hl] at ld
     rcases hshape with ⟨tbl, lim, rfl⟩ | ⟨tbl, rfl⟩
     · injection ld with hnode
-      injection hnode with _ h1
+      injection hnode with _ _ hargs
+      injection hargs with _ h1
       injection h1 with _ h2
       injection h2 with hax _
-      exact ⟨hax.symm, rfl, rfl⟩
-    · injection ld with hnode; cases hnode
-  · rw [hl] at ld
-    rcases hshape with ⟨tbl, lim, rfl⟩ | ⟨tbl, rfl⟩
-    · injection ld with hnode; cases hnode
+      exact ⟨hr.trans hax.symm, hh, hc⟩
     · injection ld with hnode
-      injection hnode with _ h1
+      injection hnode with _ htag _
+      exact absurd htag (by decide)
+  | Assumed w48 x_ax ld hr hh hc =>
+    rw [hl] at ld
+    rcases hshape with ⟨tbl, lim, rfl⟩ | ⟨tbl, rfl⟩
+    · injection ld with hnode
+      injection hnode with _ htag _
+      exact absurd htag (by decide)
+    · injection ld with hnode
+      injection hnode with _ _ hargs
+      injection hargs with _ h1
       injection h1 with hax _
-      exact ⟨hax.symm, rfl, rfl⟩
-
-private theorem role_idx_lt_p (ro : Ix.Kernel.Role) : ro.idx < Aiur.P := by
-  have h : ro.idx < 200 := by cases ro <;> decide
-  have hp : 200 < Aiur.P := by decide
-  exact Nat.lt_trans h hp
+      exact ⟨hr.trans hax.symm, hh, hc⟩
 
 private theorem role_idx_of_roleNum_eq {ro : Ix.Kernel.Role} {k : Nat} (hk : k < 200)
     (h : roleNum ro = (k : F)) : ro.idx = k := by
-  have hp : 200 < Aiur.P := by decide
+  have hro : ro.idx < 200 := by cases ro <;> decide
   have hv := congrArg ZMod.val h
-  rw [ZMod.val_natCast_of_lt (role_idx_lt_p ro),
-      ZMod.val_natCast_of_lt (Nat.lt_trans hk hp)] at hv
-  exact hv
+  have h1 : ((ro.idx : F)).val = ro.idx :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans hro (by decide))
+  have h2 : ((k : F)).val = k :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans hk (by decide))
+  change ((ro.idx : F)).val = ((k : F)).val at hv
+  rwa [h1, h2] at hv
 
 private theorem evalBinOp_sub_field (a b : F) {v : SourceValue F}
     (hop : evalBinOp .sub (.field a) (.field b) = .ok v) : v = .field (a - b) := by
@@ -230,7 +248,7 @@ private theorem evalBinOp_sub_eq_zero_inv {x : SourceValue F} {b : F}
   | field a =>
     simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at hop
     exact congrArg Value.field (sub_eq_zero.mp hop)
-  | tuple _ | array _ | construct _ _ _ | ptr _ _ | function _ _ _ =>
+  | _ =>
     simp [evalBinOp] at hop
 
 /-- `KernelRoleSpec::role_spec_kind` answers `.field 4` only on inert roles (`sorryAx`,
@@ -276,50 +294,49 @@ theorem axiom_role_standing_spec {ro : Ix.Kernel.Role} {r : SourceValue F} {h h'
     (ev : ObsFn W "KernelRoles::axiom_role_standing" [.field (roleNum ro + 1)] h r h' cs)
     (hne : r ≠ .field 0) :
     ro = .propext ∨ ro = .choice ∨ ro = .quotSound ∨ ro.inert = true := by
-  rcases Obs.«KernelRoles::axiom_role_standing».obs ev with
-    ⟨_, rfl, _, _⟩ |
-    ⟨v22, m40, y49, cs60, _, op37, ev62, op55, _, _, _⟩ |
-    ⟨v22, v39, m40, y49, cs60, m75, y84, cs95, _, op37, _, _, _, ev97, op90, _, _, _⟩ |
-    ⟨v22, v39, m40, y49, cs60, v74, m75, y84, cs95, m110, y119, cs130, _, op37, _, _, _, _, _, _,
-      ev132, op125, _, _, _⟩ |
-    ⟨v22, v39, m40, y49, cs60, v74, m75, y84, cs95, v109, m110, y119, cs130, x153, m155, cs164,
-      _, op37, _, _, _, _, _, _, _, _, _, ev166, op160, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      rfl, _, _⟩
-  · exact absurd rfl hne
-  · have hv22 : v22 = .field (roleNum ro) := by
+  cases Obs.«KernelRoles::axiom_role_standing».obs ev with
+  | n0 _ hr _ _ => exact absurd hr hne
+  | other_n0 v22 m40 y49 cs60 _ op37 ev62 op55 _ _ _ =>
+    have hv22 : v22 = .field (roleNum ro) := by
       rw [evalBinOp_sub_field _ _ op37, add_sub_cancel_right]
-    obtain ⟨rfl, _, _⟩ := Obs.«KernelRoleSpec::role_propext».obs ev62
-    rw [hv22] at op55
+    obtain ⟨hy, _, _⟩ := Obs.«KernelRoleSpec::role_propext».obs ev62
+    rw [hv22, hy] at op55
     have heq := evalBinOp_sub_eq_zero_inv op55
     injection heq with hf
     have hi : ro.idx = 56 := role_idx_of_roleNum_eq (by decide) hf
     left
     cases ro <;> first | exact absurd hi (by decide) | rfl
-  · have hv22 : v22 = .field (roleNum ro) := by
+  | other_other_n0 v22 v39 m40 y49 cs60 m75 y84 cs95 _ op37 _ _ _ ev97 op90 _ _ _ =>
+    have hv22 : v22 = .field (roleNum ro) := by
       rw [evalBinOp_sub_field _ _ op37, add_sub_cancel_right]
-    obtain ⟨rfl, _, _⟩ := Obs.«KernelRoleSpec::role_choice».obs ev97
-    rw [hv22] at op90
+    obtain ⟨hy, _, _⟩ := Obs.«KernelRoleSpec::role_choice».obs ev97
+    rw [hv22, hy] at op90
     have heq := evalBinOp_sub_eq_zero_inv op90
     injection heq with hf
     have hi : ro.idx = 57 := role_idx_of_roleNum_eq (by decide) hf
     right; left
     cases ro <;> first | exact absurd hi (by decide) | rfl
-  · have hv22 : v22 = .field (roleNum ro) := by
+  | other_other_other_n0 v22 v39 m40 y49 cs60 v74 m75 y84 cs95 m110 y119 cs130
+      _ op37 _ _ _ _ _ _ ev132 op125 _ _ _ =>
+    have hv22 : v22 = .field (roleNum ro) := by
       rw [evalBinOp_sub_field _ _ op37, add_sub_cancel_right]
-    obtain ⟨rfl, _, _⟩ := Obs.«KernelRoleSpec::role_quot_sound».obs ev132
-    rw [hv22] at op125
+    obtain ⟨hy, _, _⟩ := Obs.«KernelRoleSpec::role_quot_sound».obs ev132
+    rw [hv22, hy] at op125
     have heq := evalBinOp_sub_eq_zero_inv op125
     injection heq with hf
     have hi : ro.idx = 36 := role_idx_of_roleNum_eq (by decide) hf
     right; right; left
     cases ro <;> first | exact absurd hi (by decide) | rfl
-  · have hv22 : v22 = .field (roleNum ro) := by
+  | other_other_other_other_n0 v22 v39 m40 y49 cs60 v74 m75 y84 cs95 v109 m110 y119 cs130
+      x153 m155 cs164 _ op37 _ _ _ _ _ _ _ _ _ ev166 op160 _ _ _ =>
+    have hv22 : v22 = .field (roleNum ro) := by
       rw [evalBinOp_sub_field _ _ op37, add_sub_cancel_right]
     have hx153 : x153 = .field 4 := evalBinOp_sub_eq_zero_inv op160
     rw [hv22, hx153] at ev166
     exact Or.inr (Or.inr (Or.inr (role_spec_kind_four_inert ev166)))
-  · exact absurd rfl hne
+  | other_other_other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      hr _ _ =>
+    exact absurd hr hne
 
 /-- `KernelRoles::axiom_standing` answers nonzero under a context with no user axioms only when
 the address is bound to an in-force role among `propext`, `choice`, `quotSound`, or an inert
@@ -334,41 +351,46 @@ theorem axiom_standing_spec {c : Ctx} {rc ap r : SourceValue F} {a : Bytes.Addre
     ∃ ro : Ix.Kernel.Role,
       c.t.addressOf? ro = some (ixAddr a) ∧ c.inForce ro ∧
       (ro = .propext ∨ ro = .choice ∨ ro = .quotSound ∨ ro.inert = true) := by
-  rcases Obs.«KernelRoles::axiom_standing».obs ev with
-    ⟨v1, m2, cs12, m24, cs34, v38, m48, cs56, cs90, v94, m104, cs112,
-      ev14, ev58, ev36, ev114, ev92, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ |
-    ⟨v1, m2, cs12, v23, m24, cs34, v38, m48, cs56, v134, m135, cs145, v177, m178, cs189,
-      ev14, ev58, ev36, hne130, ev147, hne173, ev191, hne215, _, _, hc222⟩
-  · obtain ⟨rfl, htbl, _⟩ := role_ctx_table_spec hrc ev14
-    obtain ⟨rfl, _, _⟩ := role_addr_index_spec htbl ev58
+  cases Obs.«KernelRoles::axiom_standing».obs ev with
+  | n0 v1 m2 cs12 m24 cs34 v38 m48 cs56 cs90 v94 m104 cs112 ev14 ev58 ev36 ev114 ev92 _ =>
+    obtain ⟨hm2, htbl, _⟩ := role_ctx_table_spec hrc ev14
+    rw [hm2] at ev58
+    obtain ⟨hm48, _, _⟩ := role_addr_index_spec htbl ev58
+    rw [hm48] at ev36
     have e36 := ObsFn.heap_extends ev36
-    obtain ⟨rfl, rfl, _⟩ := role_ctx_axioms_nil (hnil.mono e36) ev114
-    rcases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev92 with
-      ⟨_, rfl, _, _⟩ | ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, _⟩
-    · exact absurd rfl hne
-    · injection hv26 with _ htag; exact absurd htag (by decide)
-    · injection hv26 with _ htag; exact absurd htag (by decide)
-    · injection hv26 with _ htag; exact absurd htag (by decide)
-  · exact absurd rfl hne
-  · exact absurd rfl hne
-  · subst hc222
-    obtain ⟨rfl, htbl, _⟩ := role_ctx_table_spec hrc ev14
-    obtain ⟨rfl, hidx, _⟩ := role_addr_index_spec htbl ev58
-    have hlkp := hroles c .rbtree_map_lookup_or_default_field [ap, v38, .field 0] h v23 m24 cs34
-      ev36 ap v38 (.field 0) rfl a ha (IndexEntry c.t) hidx
-    rcases hlkp with rfl | ⟨ro, rfl, hro_addr⟩
-    · exact absurd rfl hne130
-    · have hstand := axiom_role_standing_spec ev147 hne173
+    obtain ⟨hv94, hm104, _⟩ := role_ctx_axioms_nil (hnil.mono e36) ev114
+    rw [hv94, hm104] at ev92
+    have hlkp : Specs.Roles.rbtree_map_lookup_or_default_field c
+        [ap, .construct addrMapEnum "Nil" [], .field 0] m24 r h' cs90 :=
+      hroles c .rbtree_map_lookup_or_default_field _ _ _ _ _ ev92
+    rcases hlkp ap _ (.field 0) rfl a (Bytes.repAddressRef_heapMono₂ addrTy e36 ha)
+        (fun _ _ _ => False) .nil with hr | hfalse
+    · exact absurd hr hne
+    · exact hfalse.elim
+  | other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hr _ _ =>
+    exact absurd hr hne
+  | other_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hr _ _ =>
+    exact absurd hr hne
+  | other_other_other v1 m2 cs12 v23 m24 cs34 v38 m48 cs56 v134 m135 cs145 v177 m178 cs189
+      ev14 ev58 ev36 hne130 ev147 hne173 ev191 hne215 _ _ hc222 =>
+    subst hc222
+    obtain ⟨hm2, htbl, _⟩ := role_ctx_table_spec hrc ev14
+    rw [hm2] at ev58
+    obtain ⟨hm48, hidx, _⟩ := role_addr_index_spec htbl ev58
+    rw [hm48] at ev36
+    have hlkp_fn : Specs.Roles.rbtree_map_lookup_or_default_field c
+        [ap, v38, .field 0] h v23 m24 cs34 :=
+      hroles c .rbtree_map_lookup_or_default_field _ _ _ _ _ ev36
+    rcases hlkp_fn ap v38 (.field 0) rfl a ha (IndexEntry c.t) hidx with hv23 | ⟨ro, hv23, hro_addr⟩
+    · exact absurd hv23 hne130
+    · rw [hv23] at ev147
+      have hstand := axiom_role_standing_spec ev147 hne173
       have e_pre := (ObsFn.heap_extends ev36).trans (ObsFn.heap_extends ev147)
-      have hof := hroles c .role_of [rc, ap] m135 v177 m178 cs189 ev191 rc ap a rfl
-        (hgood.sub fun x hx => by simp [hx]) (hrc.mono e_pre)
-        (Bytes.repAddressRef_heapMono₂ addrTy e_pre ha)
-      rcases hof with rfl | ⟨ro', _, hro'_addr, hin⟩
-      · exact absurd rfl hne215
+      have hof_fn : Specs.Roles.role_of c [rc, ap] m135 v177 m178 cs189 :=
+        hroles c .role_of _ _ _ _ _ ev191
+      rcases hof_fn rc ap a rfl (hgood.sub fun x hx => by simp [hx]) (hrc.mono e_pre)
+          (Bytes.repAddressRef_heapMono₂ addrTy e_pre ha) with hv177 | ⟨ro', _, hro'_addr, hin⟩
+      · exact absurd hv177 hne215
       · have hk1 : keyOf c.t (ixAddr a) = .role ro := keyOf_of_addressOf hwf hro_addr
         have hk2 : keyOf c.t (ixAddr a) = .role ro' := keyOf_of_addressOf hwf hro'_addr
         have hro_eq : ro = ro' := by
@@ -394,12 +416,14 @@ theorem check_quot_typ_spec {c : Ctx} {rc ap r : SourceValue F} {a : Bytes.Addre
     ⟨_, hne24, _, _, _⟩ |
     ⟨_, hne24, _, _, _, _⟩ |
     ⟨_, hne24, _, _, _, _, _⟩
-  · obtain ⟨rfl, rfl, _⟩ := Obs.«KernelRoleSpec::role_quot».obs ev22
+  · obtain ⟨hv67, hm68, _⟩ := Obs.«KernelRoleSpec::role_quot».obs ev22
+    rw [hv67, hm68] at ev100
     have hnum : (32 : F) = roleNum .quot := rfl
     rw [hnum] at ev100
-    have his := hroles c .role_is [rc, ap, .field (roleNum .quot)] h (.field 1) m90 cs98 ev100
-      rc ap a .quot rfl (hgood.sub fun x hx => by simp [hx]) hrc ha (by
-        intro h0; injection h0 with hf; exact one_ne_zero hf)
+    have his_fn : Specs.Roles.role_is c [rc, ap, .field (roleNum .quot)] h (.field 1) m90 cs98 :=
+      hroles c .role_is _ _ _ _ _ ev100
+    have his := his_fn rc ap a .quot rfl (hgood.sub fun x hx => by simp [hx]) hrc ha (by
+      intro h0; injection h0 with hf; exact one_ne_zero hf)
     exact ⟨his.1, his.2,
       Ctx.inForce_of_block_or_dep hwf his.2 (.inr (by decide : .eq ∈ Ix.Kernel.Role.deps .quot))⟩
   · exact absurd rfl (hne24 [] rfl)
@@ -426,18 +450,20 @@ theorem check_const_axiom_inv {rc nl ty ap r : SourceValue F} {h h' : Heap F}
       (∀ x ∈ cs147, x ∈ calls) ∧ (∀ x ∈ cs201, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
-  | Axiom_n1 m2 cs12 ev14 _ _ _ =>
+  | Axiom_n1 m2 cs12 _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ _ _ _ _ =>
     obtain ⟨h0, _, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
     injection h0 with hf
     exact absurd hf one_ne_zero
-  | Axiom_other_n0 v1 m2 cs12 x_nlvls x_ty w40 v55 m56 cs66 v92 m93 cs103 m124 v136 m137 cs147
-      m190 cs201 ev14 _ hv39 _ _ _ _ _ heq249 _ =>
+  | Axiom_other_n0 v1 m2 cs12 x_nlvls x_ty w39 v55 m56 cs66 v92 m93 cs103 m124 v136 m137 cs147
+      m190 cs201 ev14 _ _ _ _ _ _ _ heq249 _ _ _ =>
     injection heq249 with hf
     exact absurd hf zero_ne_one
-  | Axiom_other_other v1 m2 cs12 x_nlvls x_ty w40 v55 m56 cs66 v92 m93 cs103 m124 v136 m137 cs147
-      v189 m190 cs201 ev14 _ hv39 ev68 hm132 ev105 ev149 ev203 hne255 _ _ hc263 =>
-    obtain ⟨rfl, rfl, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
-    injection hv39 with _ hargs
+  | Axiom_other_other v1 m2 cs12 x_nlvls x_ty w39 v55 m56 cs66 v92 m93 cs103 m124 v136 m137 cs147
+      v189 m190 cs201 ev14 hv37 ev68 hm132 ev105 ev149 _ ev203 hne255 _ _ hc263 =>
+    obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
+    rw [hm2] at ev68
+    rw [hv1] at ev149
+    injection hv37 with _ _ hargs
     injection hargs with hnl h1
     injection h1 with hty _
     subst hnl hty hc263
@@ -445,34 +471,18 @@ theorem check_const_axiom_inv {rc nl ty ap r : SourceValue F} {h h' : Heap F}
       ev68, hm132, ev105, ev149, ev203, hne255,
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
+  | _ =>
+    have hv : Value.construct kciEnum "Axiom" [nl, ty, .field 0] =
+        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
+    injection hv with _ htag _
+    exact absurd htag (by decide)
 
 /-- Inversion of `KernelCheck::check_const` on a safe `"Defn"` constant. -/
 theorem check_const_defn_inv {rc nl ty val hint ap r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::check_const"
-      [rc, .construct kciEnum "Defn" [nl, ty, val, .field 0, hint], ap] h r h' calls) :
+      [rc, .construct kciEnum "Defn"
+        [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint], ap] h r h' calls) :
     ∃ (v298 v335 v372 v416 v446 : SourceValue F)
       (m299 m336 m373 m404 m417 m447 m508 : Heap F)
       (cs309 cs346 cs383 cs427 cs457 cs479 : List (Call F)),
@@ -490,56 +500,37 @@ theorem check_const_defn_inv {rc nl ty val hint ap r : SourceValue F} {h h' : He
       (∀ x ∈ cs383, x ∈ calls) ∧ (∀ x ∈ cs479, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
-  | Axiom_n1 m2 cs12 ev14 _ _ _ =>
-    obtain ⟨h0, _, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
-    injection h0 with hf; exact absurd hf one_ne_zero
-  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
   | Defn v1 m2 cs12 x_nlvls x_ty x_val w271 w272 v298 m299 cs309 v335 m336 cs346 v372 m373 cs383
       m404 v416 m417 cs427 v446 m447 cs457 cs479 m508
-      ev14 _ _ hv269 ev311 ev348 hm404 ev385 ev429 ev459 hm508 ev481 hc519 =>
-    obtain ⟨rfl, rfl, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
-    injection hv269 with _ hargs
+      ev14 _ hv269 ev311 ev348 hm404 ev385 ev429 ev459 hm508 ev481 hc520 =>
+    obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
+    rw [hm2] at ev311
+    rw [hv1] at ev429 ev459
+    injection hv269 with _ _ hargs
     injection hargs with hnl h1
     injection h1 with hty h2
     injection h2 with hval _
-    subst hnl hty hval hc519
+    subst hnl hty hval hc520
     exact ⟨v298, v335, v372, v416, v446, m299, m336, m373, m404, m417, m447, m508,
       cs309, cs346, cs383, cs427, cs457, cs479,
       ev311, ev348, hm404, ev385, ev429, ev459, hm508, ev481,
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
+  | _ =>
+    have hv : Value.construct kciEnum "Defn"
+        [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint] =
+        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
+    injection hv with _ htag _
+    exact absurd htag (by decide)
 
 /-- Inversion of `KernelCheck::check_const` on a `"Thm"` constant. -/
 theorem check_const_thm_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::check_const"
       [rc, .construct kciEnum "Thm" [nl, ty, val], ap] h r h' calls) :
-    ∃ (v543 v580 v617 v724 v754 : SourceValue F)
-      (m544 m581 m618 m649 m675 m696 m725 m755 m807 : Heap F)
-      (cs554 cs591 cs628 cs683 cs735 cs765 cs778 : List (Call F)),
+    ∃ (v543 v580 v617 v715 v745 : SourceValue F)
+      (m544 m581 m618 m649 m675 m696 m716 m746 m807 : Heap F)
+      (cs554 cs591 cs628 cs683 cs726 cs756 cs778 : List (Call F)),
       ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h v543 m544 cs554 ∧
       ObsFn W "KernelCheck::validate_expr_well_scoped" [val, .field 0, nl] m544 v580 m581 cs591 ∧
       m649 = m581 ++ [.construct kexprListEnum "Nil" []] ∧
@@ -548,57 +539,37 @@ theorem check_const_thm_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
       m696 = m618 ++ [.construct "KernelTypes::KLevelNode" "Zero" []] ∧
       ObsFn W "KernelLevels::level_equal"
         [v617, .ptr (.enum "KernelTypes::KLevelNode") m618.length] m696 (.field 1) m675 cs683 ∧
-      ObsFn W "KernelCheck::assert_safety" [.field 0, ty] m675 v724 m725 cs735 ∧
-      ObsFn W "KernelCheck::assert_safety" [.field 0, val] m725 v754 m755 cs765 ∧
-      m807 = m755 ++ [.construct kexprListEnum "Nil" []] ∧
+      ObsFn W "KernelCheck::assert_safety" [.field 0, ty] m675 v715 m716 cs726 ∧
+      ObsFn W "KernelCheck::assert_safety" [.field 0, val] m716 v745 m746 cs756 ∧
+      m807 = m746 ++ [.construct kexprListEnum "Nil" []] ∧
       ObsFn W "KernelInfer::k_check"
-        [rc, val, ty, .ptr (.enum kexprListEnum) m755.length] m807 r h' cs778 ∧
+        [rc, val, ty, .ptr (.enum kexprListEnum) m746.length] m807 r h' cs778 ∧
       (∀ x ∈ cs554, x ∈ calls) ∧ (∀ x ∈ cs591, x ∈ calls) ∧
       (∀ x ∈ cs628, x ∈ calls) ∧ (∀ x ∈ cs683, x ∈ calls) ∧ (∀ x ∈ cs778, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
-  | Axiom_n1 m2 cs12 ev14 _ _ _ =>
-    obtain ⟨h0, _, _⟩ := is_unsafe_ci_zero ev14 trivial
-    injection h0 with hf; exact absurd hf one_ne_zero
-  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
   | Thm v1 m2 cs12 x_nlvls x_ty x_val v543 m544 cs554 v580 m581 cs591 v617 m618 cs628 m649
-      v672 m675 cs683 m696 v724 m725 cs735 v754 m755 cs765 cs778 m807
-      ev14 _ _ _ hv526 ev556 ev593 hm649 ev630 hm704 ev685 heq714 ev737 ev767 hm807 ev780 hc818 =>
-    obtain ⟨rfl, rfl, _⟩ := is_unsafe_ci_zero ev14 trivial
-    subst heq714
-    injection hv526 with _ hargs
+      v672 m675 cs683 m696 v715 m716 cs726 v745 m746 cs756 cs778 m807
+      ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
+    obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 trivial
+    rw [hm2] at ev556
+    rw [hv1] at ev728 ev758
+    rw [heq714] at ev685
+    injection hv526 with _ _ hargs
     injection hargs with hnl h1
     injection h1 with hty h2
     injection h2 with hval _
-    subst hnl hty hval hc818
-    exact ⟨v543, v580, v617, v724, v754, m544, m581, m618, m649, m675, m696, m725, m755, m807,
-      cs554, cs591, cs628, cs683, cs735, cs765, cs778,
-      ev556, ev593, hm649, ev630, hm704, ev685, ev737, ev767, hm807, ev780,
+    subst hnl hty hval hc819
+    exact ⟨v543, v580, v617, v715, v745, m544, m581, m618, m649, m675, m696, m716, m746, m807,
+      cs554, cs591, cs628, cs683, cs726, cs756, cs778,
+      ev556, ev593, hm657, ev630, hm704, ev685, ev728, ev758, hm815, ev780,
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
+  | _ =>
+    have hv : Value.construct kciEnum "Thm" [nl, ty, val] =
+        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
+    injection hv with _ htag _
+    exact absurd htag (by decide)
 
 /-- Inversion of `KernelCheck::check_const` on a safe `"Opaque"` constant. -/
 theorem check_const_opaque_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap F}
@@ -622,47 +593,27 @@ theorem check_const_opaque_inv {rc nl ty val ap r : SourceValue F} {h h' : Heap 
       (∀ x ∈ cs933, x ∈ calls) ∧ (∀ x ∈ cs1029, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
-  | Axiom_n1 m2 cs12 ev14 _ _ _ =>
-    obtain ⟨h0, _, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
-    injection h0 with hf; exact absurd hf one_ne_zero
-  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
   | Opaque v1 m2 cs12 x_nlvls x_ty x_val w827 v848 m849 cs859 v885 m886 cs896 v922 m923 cs933
       m954 v966 m967 cs977 v996 m997 cs1007 cs1029 m1058
-      ev14 _ _ _ _ hv825 ev861 ev898 hm954 ev935 ev979 ev1009 hm1058 ev1031 hc1069 =>
-    obtain ⟨rfl, rfl, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
-    injection hv825 with _ hargs
+      ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
+    obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 (fun _ => rfl)
+    rw [hm2] at ev861
+    rw [hv1] at ev979 ev1009
+    injection hv825 with _ _ hargs
     injection hargs with hnl h1
     injection h1 with hty h2
     injection h2 with hval _
-    subst hnl hty hval hc1069
+    subst hnl hty hval hc1070
     exact ⟨v848, v885, v922, v966, v996, m849, m886, m923, m954, m967, m997, m1058,
       cs859, cs896, cs933, cs977, cs1007, cs1029,
-      ev861, ev898, hm954, ev935, ev979, ev1009, hm1058, ev1031,
+      ev861, ev898, hm962, ev935, ev979, ev1009, hm1066, ev1031,
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
+  | _ =>
+    have hv : Value.construct kciEnum "Opaque" [nl, ty, val, .field 0] =
+        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
+    injection hv with _ htag _
+    exact absurd htag (by decide)
 
 /-- Inversion of `KernelCheck::check_const` on a `"Quot"` constant. -/
 theorem check_const_quot_inv {rc nl ty kind ap r : SourceValue F} {h h' : Heap F}
@@ -682,45 +633,25 @@ theorem check_const_quot_inv {rc nl ty kind ap r : SourceValue F} {h h' : Heap F
       (∀ x ∈ cs1185, x ∈ calls) ∧ (∀ x ∈ cs1207, x ∈ calls) := by
   have p := Obs.«KernelCheck::check_const».obs ev
   cases p with
-  | Axiom_n1 m2 cs12 ev14 _ _ _ =>
-    obtain ⟨h0, _, _⟩ := is_unsafe_ci_zero ev14 trivial
-    injection h0 with hf; exact absurd hf one_ne_zero
-  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
   | Quot v1 m2 cs12 x_nlvls x_ty x_kind v1093 m1094 cs1104 v1130 m1131 cs1141 m1162 v1174 m1175
-      cs1185 cs1207 ev14 _ _ _ _ hv1076 ev1106 hm1162 ev1143 ev1187 ev1209 hc1217 =>
-    obtain ⟨rfl, rfl, _⟩ := is_unsafe_ci_zero ev14 trivial
-    injection hv1076 with _ hargs
+      cs1185 cs1207 ev14 _ _ _ _ hv1076 ev1106 hm1170 ev1143 ev1187 ev1209 hc1234 =>
+    obtain ⟨hv1, hm2, _⟩ := is_unsafe_ci_zero ev14 trivial
+    rw [hm2] at ev1106
+    rw [hv1] at ev1187
+    injection hv1076 with _ _ hargs
     injection hargs with hnl h1
     injection h1 with hty h2
     injection h2 with hkind _
-    subst hnl hty hkind hc1217
+    subst hnl hty hkind hc1234
     exact ⟨v1093, v1130, v1174, m1094, m1131, m1162, m1175, cs1104, cs1141, cs1185, cs1207,
-      ev1106, hm1162, ev1143, ev1187, ev1209,
+      ev1106, hm1170, ev1143, ev1187, ev1209,
       fun x hx => by simp [hx], fun x hx => by simp [hx],
       fun x hx => by simp [hx], fun x hx => by simp [hx]⟩
-  | Induct_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag; exact absurd htag (by decide)
+  | _ =>
+    have hv : Value.construct kciEnum "Quot" [nl, ty, kind] =
+        Value.construct "KernelTypes::KConstantInfo" _ _ := by assumption
+    injection hv with _ htag _
+    exact absurd htag (by decide)
 
 /-! ## Shared front-end assembly (`ConstantValRunJ`, `ValueFrontRunJ`, `rulesJ.isZero`) -/
 
@@ -1043,7 +974,7 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
         cases h
     | defn hval hV =>
       rename_i nl ty val sf hn_v
-      have hsf0 : sf = .field 0 := hsafe rfl
+      have hsf0 : sf = .construct "Ixon::DefinitionSafety" "Safe" [] := hsafe rfl
       subst hsf0
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
