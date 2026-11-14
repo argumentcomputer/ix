@@ -66,8 +66,10 @@ structure RolePreludeInputs : Prop where
 
 private def fallbackRowsNotPaddingBool : Bool :=
   (Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence).all fun row =>
-    addressOfHex row.1 != some Ix.HostAdmission.Merkle.padding
+    Ix.Kernel.Reader.addressOfHex row.1 != some Ix.HostAdmission.Merkle.padding
 
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 8000 in
 private theorem fallbackRowsNotPadding_ok : fallbackRowsNotPaddingBool = true := by
   decide +kernel
 
@@ -88,7 +90,7 @@ theorem RolePreludeInputs.serConstant_mem_committedImages (hRP : RolePreludeInpu
   obtain ⟨hr, he⟩ := Ix.Cert.ReaderFallback.preludeFor_records hpre
   have hrow : ∃ row ∈ (Ix.Kernel.Reader.RoleData.prelude ++
       Ix.Kernel.Reader.RoleData.evidence).toList,
-      addressOfHex row.1 = some a ∧
+      Ix.Kernel.Reader.addressOfHex row.1 = some a ∧
       ∃ raw, bytesOfHex row.2 = some raw ∧
         Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
           Ix.Kernel.Reader.preludeMaxUnivNodes raw = .ok c := by
@@ -514,6 +516,22 @@ theorem walkedBareWitness_of_subEnv_withProj
 
 /-! ## Prelude standalone recursor supplements (`preludeRecSupp`) -/
 
+private theorem mem_of_lookup_some {α β : Type} [BEq α] [LawfulBEq α] :
+    ∀ {ls : List (α × β)} {k : α} {v : β}, ls.lookup k = some v → (k, v) ∈ ls
+  | [], _, _, h => nomatch h
+  | (a, b) :: tl, k, v, h => by
+    simp only [List.lookup] at h
+    cases hbeq : (k == a) with
+    | true =>
+      rw [hbeq] at h
+      injection h with hbv
+      subst hbv
+      rw [beq_iff_eq.mp hbeq]
+      exact List.mem_cons_self
+    | false =>
+      rw [hbeq] at h
+      exact List.mem_cons_of_mem _ (mem_of_lookup_some h)
+
 /-- For a `.recr` constant `c` in `records`, extract the inductive block owning `c.refs[0]?`. -/
 def preludeRecOwner? (records : List (_root_.Address × Ixon.Constant))
     (c : Ixon.Constant) : Option _root_.Address :=
@@ -524,11 +542,74 @@ def preludeRecOwner? (records : List (_root_.Address × Ixon.Constant))
     | none => none
   | _ => none
 
+private def decodeRawPreludeRow (row : String × String) :
+    Option (_root_.Address × Ixon.Constant) := do
+  let a ← Ix.Kernel.Reader.addressOfHex row.1
+  let b ← bytesOfHex row.2
+  match Ixon.deConstantExact b with
+  | .ok c => some (a, c)
+  | .error _ => none
+
+private def decodeRawPrelude : Option (List (_root_.Address × Ixon.Constant)) :=
+  Ix.Kernel.Reader.RoleData.prelude.toList.mapM decodeRawPreludeRow
+
+private theorem decodeRawPrelude_of_forall₂ :
+    ∀ {rows : List (String × String)} {out : List (_root_.Address × Ixon.Constant)},
+      List.Forall₂ (fun row (p : _root_.Address × Ixon.Constant) =>
+        (do
+          let some a := Ix.Kernel.Reader.addressOfHex row.1
+            | throw s!"prelude: bad address {row.1}"
+          let some b := bytesOfHex row.2
+            | throw s!"prelude: bad bytes at {row.1}"
+          let c ← (Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
+            Ix.Kernel.Reader.preludeMaxUnivNodes b).mapError
+            (s!"prelude: record {row.1}: " ++ ·)
+          pure (a, c) : Except String (_root_.Address × Ixon.Constant)) = .ok p) rows out →
+      rows.mapM decodeRawPreludeRow = some out
+  | [], [], .nil => rfl
+  | row :: rrest, p :: prest, .cons hhd htl => by
+    have ih := decodeRawPrelude_of_forall₂ htl
+    have hrow : decodeRawPreludeRow row = some p := by
+      unfold decodeRawPreludeRow
+      cases ha : Ix.Kernel.Reader.addressOfHex row.1 with
+      | none => simp [ha] at hhd
+      | some a =>
+        cases hb : bytesOfHex row.2 with
+        | none => simp [ha, hb] at hhd
+        | some b =>
+          simp only [ha, hb] at hhd
+          obtain ⟨c, hdc, hpure⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hhd
+          cases hpure
+          cases hcan : Ixon.Canonical.deConstant Ix.Kernel.Reader.preludeMaxBytes
+              Ix.Kernel.Reader.preludeMaxUnivNodes b with
+          | error e => simp [hcan, Except.mapError] at hdc
+          | ok c' =>
+            simp only [hcan, Except.mapError, Except.ok.injEq] at hdc
+            subst hdc
+            have hbd := (Ixon.Verify.Canonical.deConstant_spec _ _ _ _ hcan).1
+            have hex := (Ixon.Verify.BoundedConstant.deConstant_spec _ _ _ _ hbd).2.2
+            simp [bind, Option.bind, hex]
+    simp [List.mapM_cons, hrow, ih, bind, Option.bind, pure]
+
+private theorem decodeRawPrelude_eq_of_preludeFor {t : Ix.Kernel.RoleTable}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre) :
+    decodeRawPrelude = some pre.records.toList := by
+  obtain ⟨hpr, _⟩ := Ix.Cert.ReaderFallback.preludeFor_records hpre
+  unfold Ix.Kernel.Reader.preludeRecords Ix.Kernel.Reader.decodeCommitted at hpr
+  rw [Array.mapM_eq_mapM_toList] at hpr
+  simp only [Functor.map, Except.map] at hpr
+  split at hpr
+  · cases hpr
+  · rename_i ys hr
+    cases hpr
+    simpa [decodeRawPrelude] using
+      decodeRawPrelude_of_forall₂ (Ix.CompileCert.Loop.mapM_forall₂ _ hr)
+
 private def preludeRecsSelfContainedBool : Bool :=
-  match Ix.Kernel.Reader.preludeRecords with
-  | .error _ => false
-  | .ok recs =>
-    let ls := recs.toList
+  match decodeRawPrelude with
+  | none => false
+  | some ls =>
     ls.all fun (a, c) =>
       match c.info with
       | .recr _ =>
@@ -543,6 +624,8 @@ private def preludeRecsSelfContainedBool : Bool :=
         | none => false
       | _ => true
 
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 8000 in
 private theorem preludeRecsSelfContained_ok : preludeRecsSelfContainedBool = true := by
   decide +kernel
 
@@ -557,10 +640,10 @@ theorem preludeRecOwner_spec {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.P
       b ≠ a ∧
       (b, cb) ∈ pre.records.toList ∧
       ∀ r ∈ c.refs.toList, ∃ cr, (r, cr) ∈ pre.records.toList ∧ Ix.Cert.ownerOf r cr = b := by
-  obtain ⟨hpr, _⟩ := Ix.Cert.ReaderFallback.preludeFor_records hpre
+  have hdec := decodeRawPrelude_eq_of_preludeFor hpre
   have hchk := preludeRecsSelfContained_ok
   unfold preludeRecsSelfContainedBool at hchk
-  rw [hpr] at hchk
+  rw [hdec] at hchk
   have hrow := List.all_eq_true.mp hchk (a, c) hmem
   simp only [hinfo] at hrow
   cases hown : preludeRecOwner? pre.records.toList c with
@@ -569,13 +652,13 @@ theorem preludeRecOwner_spec {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.P
     rw [hown, Bool.and_eq_true, Bool.and_eq_true, bne_iff_ne] at hrow
     obtain ⟨⟨hne, hisSome⟩, hall_refs⟩ := hrow
     obtain ⟨cb, hlookup_b⟩ := Option.isSome_iff_exists.mp hisSome
-    refine ⟨b, cb, rfl, hne, List.mem_of_lookup_eq_some hlookup_b, fun r hr => ?_⟩
+    refine ⟨b, cb, rfl, hne, mem_of_lookup_some hlookup_b, fun r hr => ?_⟩
     have hr_ok := List.all_eq_true.mp hall_refs r hr
     cases hlr : pre.records.toList.lookup r with
     | none => rw [hlr] at hr_ok; cases hr_ok
     | some cr =>
       rw [hlr, beq_iff_eq] at hr_ok
-      exact ⟨cr, List.mem_of_lookup_eq_some hlr, hr_ok⟩
+      exact ⟨cr, mem_of_lookup_some hlr, hr_ok⟩
 
 /-- Supplement list supplying committed prelude `.recr` records `(a, serConstant c, c)` whose
 prelude inductive block satisfies `KeepBlock`. -/
@@ -599,9 +682,9 @@ theorem mem_preludeRecSupp_iff {pre : Ix.Kernel.Reader.Prelude .anon}
   constructor
   · rintro ⟨a', c', hm, hfn⟩
     cases hown : preludeRecOwner? pre.records.toList c' with
-    | none => rw [hown] at hfn; cases hfn
+    | none => simp [hown] at hfn
     | some b =>
-      rw [hown] at hfn
+      simp only [hown] at hfn
       split_ifs at hfn with hkb
       · injection hfn with htuple
         injection htuple with ha hrest
@@ -642,20 +725,23 @@ theorem preludeRecSupp_nodup {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.P
     | cons hd tl ih =>
       rcases hd with ⟨a, c⟩
       rw [List.map_cons, List.nodup_cons] at hnd
-      simp only [List.filterMap_cons]
-      cases preludeRecOwner? pre.records.toList c with
-      | none => exact ih hnd.2
+      cases hown : preludeRecOwner? pre.records.toList c with
+      | none =>
+        simp only [List.filterMap_cons, hown]
+        exact ih hnd.2
       | some b =>
+        simp only [List.filterMap_cons, hown]
         split_ifs
         · rw [List.map_cons, List.nodup_cons]
           refine ⟨?_, ih hnd.2⟩
           intro hmem
           obtain ⟨⟨a', _, c'⟩, hm_fm, rfl⟩ := List.mem_map.mp hmem
-          obtain ⟨a'', c'', hm_tl, hfn⟩ := List.mem_filterMap.mp hm_fm
+          obtain ⟨⟨a'', c''⟩, hm_tl, hfn⟩ := List.mem_filterMap.mp hm_fm
+          dsimp only at hfn
           cases hown' : preludeRecOwner? pre.records.toList c'' with
-          | none => rw [hown'] at hfn; cases hfn
+          | none => simp [hown'] at hfn
           | some b' =>
-            rw [hown'] at hfn
+            simp only [hown'] at hfn
             split_ifs at hfn
             injection hfn with ht
             injection ht with ha_eq _
@@ -742,7 +828,8 @@ theorem coreEnv_envDecoded (hRP : RolePreludeInputs)
 
 private theorem addSupplements_append_left
     (m₀ base : Std.HashMap _root_.Address Ixon.LazyConstant) :
-    ∀ {supp₁ supp₂ : List SuppEntry} {x : _root_.Address} {raw : ByteArray} {c : Ixon.Constant},
+    ∀ {supp₁ : List SuppEntry} (supp₂ : List SuppEntry)
+      {x : _root_.Address} {raw : ByteArray} {c : Ixon.Constant},
       (supp₁.map (·.1)).Nodup → (x, raw, c) ∈ supp₁ → m₀.contains x = false →
       (addSupplements m₀ base (supp₁ ++ supp₂)).get? x = some (Claim.mkLazy raw c)
   | [], _, _, _, _, _, hm, _ => nomatch hm
@@ -756,7 +843,7 @@ private theorem addSupplements_append_left
         intro heq
         subst heq
         exact hnd.1 (List.mem_map.mpr ⟨(a, raw, c), htl, rfl⟩)
-      have ih := addSupplements_append_left m₀ base hnd.2 htl hnc
+      have ih := addSupplements_append_left m₀ base supp₂ hnd.2 htl hnc
       simp only [List.cons_append, addSupplements]
       split
       · exact ih
@@ -777,7 +864,7 @@ theorem recordAt_coreEnv_of_subEnv {E₀ : Ixon.Env} {Keep : _root_.Address → 
   · exact recordAt_subEnv_of_keep E₀ _ _ (Or.inl hk) hrec₀
   · unfold coreEnv subEnv Ix.Cert.recordAt
     dsimp only
-    rw [addSupplements_append_left E₀.consts _ hnd hm hnc]
+    rw [addSupplements_append_left E₀.consts _ (fallbackSupp pre) hnd hm hnc]
     rfl
 
 /-- Every committed fallback record `(a, c) ∈ pre.records ++ pre.evidence` is stored at `a` in
