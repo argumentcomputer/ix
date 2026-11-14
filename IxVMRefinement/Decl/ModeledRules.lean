@@ -4003,7 +4003,7 @@ theorem check_rules_go_vm_spec
           hcir_c.ctor_of_eq hv_ci.symm
         subst hci_c_eq hcnp_f hcnf_f
         have hnfields : rl.nfields = cnF := by
-          have hrnf_cnf := hrnf_eq.symm.trans heq_rnf
+          have hrnf_cnf := hrnf_eq.trans heq_rnf
           injection hrnf_cnf with hf
           have hv := congrArg ZMod.val hf
           rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
