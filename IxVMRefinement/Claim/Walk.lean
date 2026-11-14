@@ -1031,7 +1031,7 @@ theorem record_unsafe_zero_spec {x_addr : SourceValue F} {addr : _root_.Address}
       obtain ⟨rfl, hdecl⟩ := defn_is_unsafe_ci_zero_spec hk hs ev144
       refine ⟨ext1, rawBytes, c, hashed_mono (fun cl hcl => by rw [hc161]; simp [hcl]) hh,
         hblk, hde, ?_⟩
-      simpa only [IxVM.Consistency.InLogic, hc] using hdecl
+      simpa only [IxVM.Consistency.InLogic, Ix.Kernel.Reader.safetyDecline, hc] using hdecl
     all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
   · obtain ⟨ext1, rawBytes, c, _, hh, hblk, hde, _, hrep, _⟩ := load_verified_constant_de ha ev14
     obtain ⟨infoVal, _, _, _, _, hv, hinfo, _, _, _, _⟩ := hrep
