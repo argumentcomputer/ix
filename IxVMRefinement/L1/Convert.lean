@@ -1305,7 +1305,7 @@ theorem RawRulesRep.toRulesRep {κ : _root_.Address → Core.KKey}
     cases hfa with
     | nil =>
       exact ⟨[], .nil, .nil cell, fun _ hm => nomatch hm⟩
-  | cons cell hr _ ih =>
+  | @cons j addr v rest ru rus cell hr _ ih =>
     intro rules₀ hfa
     cases hfa with
     | @cons _ rl₀ _ rest₀ hhd htl =>
@@ -1316,8 +1316,8 @@ theorem RawRulesRep.toRulesRep {κ : _root_.Address → Core.KKey}
       obtain ⟨rls_tl, hfa_tl, hrep_tl, hprops_tl⟩ := ih htl
       let rl' : Ix.Kernel.RecRule .anon :=
         { rl₀ with rhs := rhs', k := kFlag, ctorParams := cParams }
-      have hrule_rep : Core.RuleRep κ h ps _
-          (.construct Core.krrEnum "Mk" [.field (_ : F), .field (_ : F), rhsPtr]) rl' := by
+      have hrule_rep : Core.RuleRep κ h ps j
+          (.construct Core.krrEnum "Mk" [.field (j : F), .field (ru.fields.toNat : F), rhsPtr]) rl' := by
         refine ⟨rhsPtr, ?_, ?_, hTm_rhs⟩
         · simp [rl', hnf]
         · simp [rl', hnf]; exact hf56
@@ -1376,7 +1376,7 @@ theorem RawRecrValRep.toCIRep {κ : _root_.Address → Core.KKey}
   let rP := rc.params.toNat + rc.motives.toNat + rc.minors.toNat
   let mI := rP + rc.indices.toNat
   refine ⟨.recInfo ⟨name, ps, ty'⟩ mI rP rls, ⟨hvs, rfl, rfl, hfa_stored⟩,
-    .recr hvr rfl rfl rfl rfl (by simp [rP]; push_cast; ring) (by simp [mI, rP]; push_cast; ring)
+    .recr hvr rfl rfl rfl rfl (by simp only [rP]; push_cast; ring) (by simp only [mI, rP]; push_cast; ring)
       ⟨by omega, by omega⟩ hrep_rls ?_ ⟨b, (recIdx : F), hb_rep, rfl, ?_⟩⟩
   · intro hk1
     have hrck : rc.k = true := by
