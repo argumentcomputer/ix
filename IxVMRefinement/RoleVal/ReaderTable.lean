@@ -229,8 +229,31 @@ private def pureRolesList : List (ConstRef _root_.Address × CName .anon) :=
       (resolve preStorePure a).map fun ref => (ref, Ix.Kernel.roleKey ro)
     else none
 
+private def beqConstRefFast : ConstRef _root_.Address → ConstRef _root_.Address → Bool
+  | .member b1 i1, .member b2 i2 => b1 == b2 && i1 == i2
+  | .ctor b1 i1 c1, .ctor b2 i2 c2 => b1 == b2 && i1 == i2 && c1 == c2
+  | _, _ => false
+
+private theorem beqConstRefFast_eq (x y : ConstRef _root_.Address) :
+    beqConstRefFast x y = (x == y) := by
+  cases x <;> cases y <;> simp [beqConstRefFast, BEq.beq, Bool.and_assoc]
+
+private def lookupConstRefFast {β : Type} (k : ConstRef _root_.Address) :
+    List (ConstRef _root_.Address × β) → Option β
+  | [] => none
+  | (k', v) :: rest => if beqConstRefFast k k' then some v else lookupConstRefFast k rest
+
+private theorem lookupConstRefFast_eq {β : Type} (k : ConstRef _root_.Address)
+    (l : List (ConstRef _root_.Address × β)) :
+    lookupConstRefFast k l = l.lookup k := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    rcases hd with ⟨k', v⟩
+    simp only [lookupConstRefFast, List.lookup_cons, beqConstRefFast_eq, ih]
+
 private def pureRolesLookup (ref : ConstRef _root_.Address) : Option (CName .anon) :=
-  pureRolesList.lookup ref
+  lookupConstRefFast ref pureRolesList
 
 private theorem pureRolesList_nodup : (pureRolesList.map Prod.fst).Nodup := by
   apply nodup_of_nodup_map constRefCode
@@ -346,6 +369,8 @@ private theorem foldl_bindingsStep_lookup
 private theorem defCx_roles_of_pure {ref : ConstRef _root_.Address} {k : CName .anon}
     (h : pureRolesLookup ref = some k) :
     (defCx ev).roles.names[ref]? = some k := by
+  unfold pureRolesLookup at h
+  rw [lookupConstRefFast_eq] at h
   have hblk : constRefBlock ref ∈ committedPreAddrs :=
     pureRolesList_block_mem (ref, k) (mem_of_lookup_eq_some h)
   show (committedDefaultRoleTable.bound.foldl (bindingsStep (defCx ev).store) {})[ref]? = some k
@@ -456,7 +481,7 @@ private def pureCandStep (owner : _root_.Address) (c : Ixon.Constant)
     (member : Nat × Ixon.Recursor) (s : PureIdx) : Option PureIdx := do
   let (pos, rec) := member
   let ref : ConstRef _root_.Address := .member owner pos
-  guard (s.recs.lookup ref).isNone
+  guard (lookupConstRefFast ref s.recs).isNone
   guard (c.refs.toList.all committedPreAddrs.contains)
   let (motive, carriers, major) ← analyseRecursorFast preStorePure owner c rec
   let .member block firstIdx ← carriers[0]? | none
@@ -495,7 +520,7 @@ private def purePreIdx? : Option PureIdx :=
 
 private def pureRecsLookup (ref : ConstRef _root_.Address) : Option RecEntry := do
   let s ← purePreIdx?
-  s.recs.lookup ref
+  lookupConstRefFast ref s.recs
 
 private def pureBlocksLookup (b : _root_.Address) : Option BlockShape := do
   let s ← purePreIdx?
@@ -612,7 +637,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
   obtain ⟨hrecs, hblocks, hfound⟩ := hm
   unfold pureCandStep at hp
   dsimp only at hp
-  rw [analyseRecursorFast_eq] at hp
+  rw [analyseRecursorFast_eq, lookupConstRefFast_eq] at hp
   cases hrnone : (s.recs.lookup (.member owner pos)).isNone with
   | false => simp [hrnone, guard] at hp
   | true =>
@@ -898,7 +923,7 @@ private theorem defCx_index_recs_of_pure {ref : ConstRef _root_.Address} {entry 
   cases hs : purePreIdx? with
   | none => simp [hs] at h
   | some s =>
-    simp only [hs, bind, Option.bind] at h
+    simp only [hs, bind, Option.bind, lookupConstRefFast_eq] at h
     show (buildIndex (defCx ev).store
       (indexedRecords (defCx ev).store committedPrelude ev)).recs[ref]? = some entry
     rw [← Ix.CompileCert.ReaderIndex.run_eq]

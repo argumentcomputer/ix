@@ -696,12 +696,12 @@ private theorem eq_ok_of_isOkUnit {e : Except String Unit} (h : isOkUnit e = tru
   | error _ => cases h
   | ok u => cases u; rfl
 
-private def checkWithRepeat (t : Ix.Kernel.RoleTable) (rep : Option _root_.Address) :
-    Except String Unit := do
+private def checkWithRepeat (t : Ix.Kernel.RoleTable) (rolesNodup evRolesNodup : Bool)
+    (rep : Option _root_.Address) : Except String Unit := do
   unless t.version == Ix.Kernel.specVersion do
     throw s!"role table version {t.version}, the specification set is version {Ix.Kernel.specVersion}"
   let roles := t.bound.toList.map (·.1)
-  unless roles.Nodup do throw "a role is bound twice"
+  unless rolesNodup do throw "a role is bound twice"
   if let some a := rep then
     throw s!"address {a} is bound to two roles"
   for (r, _) in t.bound.toList do
@@ -710,7 +710,7 @@ private def checkWithRepeat (t : Ix.Kernel.RoleTable) (rep : Option _root_.Addre
     for d in r.deps do
       unless roles.contains d do throw s!"{repr r} is bound without {repr d}, a dependency"
   let evRoles := t.evidence.toList.map (·.1)
-  unless evRoles.Nodup do throw "a role has two evidence entries"
+  unless evRolesNodup do throw "a role has two evidence entries"
   for (r, es) in t.evidence.toList do
     unless roles.contains r do throw s!"evidence for {repr r}, which is not bound"
     let kinds := ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed
@@ -722,49 +722,51 @@ private def checkWithRepeat (t : Ix.Kernel.RoleTable) (rep : Option _root_.Addre
       throw s!"{repr r} is bound without evidence for its equations"
 
 private theorem check_of_nodupNat {t : Ix.Kernel.RoleTable}
+    (hnd_roles : nodupNat (t.bound.toList.map (fun p => p.1.idx)) = true)
+    (hnd_ev : nodupNat (t.evidence.toList.map (fun p => p.1.idx)) = true)
     (hnd_nat : nodupNat (t.bound.toList.map (fun p => addrHead32 p.2)) = true)
-    (hok : isOkUnit (checkWithRepeat t none) = true) :
+    (hok : isOkUnit (checkWithRepeat t true true none) = true) :
     t.check = .ok () := by
+  have hnd_r : (t.bound.toList.map (·.1)).Nodup := by
+    apply nodup_of_nodup_map Ix.Kernel.Role.idx
+    simpa only [List.map_map, Function.comp_def] using nodup_of_nodupNat hnd_roles
+  have hnd_e : (t.evidence.toList.map (·.1)).Nodup := by
+    apply nodup_of_nodup_map Ix.Kernel.Role.idx
+    simpa only [List.map_map, Function.comp_def] using nodup_of_nodupNat hnd_ev
   have hnd : (t.bound.toList.map (·.2)).Nodup := by
     apply nodup_of_nodup_map addrHead32
     simpa only [List.map_map, Function.comp_def] using nodup_of_nodupNat hnd_nat
-  have hceq : t.check = checkWithRepeat t none := by
+  have hceq : t.check = checkWithRepeat t true true none := by
     delta Ix.Kernel.RoleTable.check checkWithRepeat
     rw [firstRepeat_eq_none_of_nodup hnd]
-    simp only [← Array.forIn_toList]
+    simp only [← Array.forIn_toList, decide_eq_true hnd_r, decide_eq_true hnd_e]
   rw [hceq]
   exact eq_ok_of_isOkUnit hok
 
 theorem committedDefaultRoleTable_check : committedDefaultRoleTable.check = .ok () :=
-  check_of_nodupNat (by decide +kernel) (by decide +kernel)
+  check_of_nodupNat (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
 
 private def defaultTableAddrBytes : List UInt8 :=
   [0xc6, 0x0d, 0xd3, 0x12, 0x6e, 0x86, 0xfe, 0x6d, 0x52, 0x21, 0xf5, 0x14, 0xa2, 0x29, 0x56, 0x9a,
    0x30, 0xd1, 0xc1, 0x07, 0x5f, 0x88, 0xf3, 0xb2, 0x32, 0x43, 0xdf, 0x82, 0xda, 0x81, 0x94, 0xb7]
 
-private def isExpectedTableAddr : Except String _root_.Address → Bool
-  | .ok a => a.hash.data.toList == defaultTableAddrBytes
-  | .error _ => false
+private theorem roleData_tableAddress_eq :
+    Ix.Kernel.Reader.RoleData.tableAddress =
+      String.ofList (Claim.hexCharsOfBytes defaultTableAddrBytes) :=
+  Eq.refl Ix.Kernel.Reader.RoleData.tableAddress
 
-private theorem eq_ok_of_isExpectedTableAddr {e : Except String _root_.Address}
-    (h : isExpectedTableAddr e = true) :
-    e = .ok (mkAddr defaultTableAddrBytes) := by
-  cases e with
-  | error _ => cases h
-  | ok a =>
-    cases a with
-    | mk hsh =>
-      cases hsh with
-      | mk arr =>
-        cases arr with
-        | mk bs =>
-          simp only [isExpectedTableAddr, beq_iff_eq] at h
-          subst h
-          rfl
+private theorem bytesOfHex_roleData_tableAddress :
+    bytesOfHex Ix.Kernel.Reader.RoleData.tableAddress =
+      some ⟨defaultTableAddrBytes.toArray⟩ :=
+  Eq.trans
+    (congrArg bytesOfHex roleData_tableAddress_eq)
+    (Claim.bytesOfHex_ofList_hexChars defaultTableAddrBytes)
 
 private theorem defaultTableAddress_eq :
-    Ix.Kernel.Reader.defaultTableAddress = .ok (mkAddr defaultTableAddrBytes) :=
-  eq_ok_of_isExpectedTableAddr (by decide +kernel)
+    Ix.Kernel.Reader.defaultTableAddress = .ok (mkAddr defaultTableAddrBytes) := by
+  unfold Ix.Kernel.Reader.defaultTableAddress Ix.Kernel.Reader.addressOfHex
+  rw [bytesOfHex_roleData_tableAddress]
+  rfl
 
 private theorem mkDefaultBinding {ea : Except String _root_.Address} {eb : Except String ByteArray}
     {a : _root_.Address} {b : ByteArray}

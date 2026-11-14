@@ -1182,32 +1182,41 @@ private theorem encU64TrimmedLEAux_spec (x : UInt64) :
   | len + 1, k =>
     EncodesTo.bindUnit (EncodesTo.putU8 x.toUInt8 _) (encU64TrimmedLEAux_spec (x >>> 8) len k)
 
+private def tagNEnd1Fast (f : Nat) : Nat := 2 ^ (8 - f - 1)
+private def tagNEnd2Fast (f : Nat) : Nat := tagNEnd1Fast f + 2 ^ (8 - f - 2 + 8)
+private def tagNEnd3Fast (f : Nat) : Nat := tagNEnd2Fast f + 2 ^ 16
+private def tagNEnd4Fast (f : Nat) : Nat := tagNEnd3Fast f + 2 ^ 24
+private def tagNEnd5Fast (f : Nat) : Nat := tagNEnd4Fast f + 2 ^ 32
+private def tagNHeaderFast (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+  (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
+
 private def encTagN (f : Nat) (flag : UInt8) (value : UInt64) (k : List UInt8) : List UInt8 :=
   let v := value.toNat
   let lead := 2 ^ (8 - f - 1)
   let mbit := 2 ^ (8 - f - 2)
-  if v < Ixon.tagNEnd1 f then
-    Ixon.tagNHeader f flag v :: k
-  else if v < Ixon.tagNEnd2 f then
-    Ixon.tagNHeader f flag (lead + (v - Ixon.tagNEnd1 f) / 256) ::
-      ((v - Ixon.tagNEnd1 f) % 256).toUInt8 :: k
-  else if v < Ixon.tagNEnd3 f then
-    Ixon.tagNHeader f flag (lead + mbit) ::
-      encU64TrimmedLEAux (v - Ixon.tagNEnd2 f).toUInt64 2 k
-  else if v < Ixon.tagNEnd4 f then
-    Ixon.tagNHeader f flag (lead + mbit + 1) ::
-      encU64TrimmedLEAux (v - Ixon.tagNEnd3 f).toUInt64 3 k
-  else if v < Ixon.tagNEnd5 f then
-    Ixon.tagNHeader f flag (lead + mbit + 2) ::
-      encU64TrimmedLEAux (v - Ixon.tagNEnd4 f).toUInt64 4 k
+  if v < tagNEnd1Fast f then
+    tagNHeaderFast f flag v :: k
+  else if v < tagNEnd2Fast f then
+    tagNHeaderFast f flag (lead + (v - tagNEnd1Fast f) / 256) ::
+      ((v - tagNEnd1Fast f) % 256).toUInt8 :: k
+  else if v < tagNEnd3Fast f then
+    tagNHeaderFast f flag (lead + mbit) ::
+      encU64TrimmedLEAux (v - tagNEnd2Fast f).toUInt64 2 k
+  else if v < tagNEnd4Fast f then
+    tagNHeaderFast f flag (lead + mbit + 1) ::
+      encU64TrimmedLEAux (v - tagNEnd3Fast f).toUInt64 3 k
+  else if v < tagNEnd5Fast f then
+    tagNHeaderFast f flag (lead + mbit + 2) ::
+      encU64TrimmedLEAux (v - tagNEnd4Fast f).toUInt64 4 k
   else
-    Ixon.tagNHeader f flag (lead + mbit + 3) ::
-      encU64TrimmedLEAux (v - Ixon.tagNEnd5 f).toUInt64 8 k
+    tagNHeaderFast f flag (lead + mbit + 3) ::
+      encU64TrimmedLEAux (v - tagNEnd5Fast f).toUInt64 8 k
 
 private theorem encTagN_spec (f : Nat) (flag : UInt8) (value : UInt64) (k : List UInt8) :
     EncodesTo (Ixon.putTagN f flag value) k (encTagN f flag value k) := by
-  unfold Ixon.putTagN encTagN
-  dsimp only
+  simp only [Ixon.putTagN, encTagN,
+    Ixon.tagNEnd5, Ixon.tagNEnd4, Ixon.tagNEnd3, Ixon.tagNEnd2, Ixon.tagNEnd1, Ixon.tagNHeader,
+    tagNEnd5Fast, tagNEnd4Fast, tagNEnd3Fast, tagNEnd2Fast, tagNEnd1Fast, tagNHeaderFast]
   split
   · exact EncodesTo.putU8 _ _
   · split
@@ -1220,43 +1229,103 @@ private theorem encTagN_spec (f : Nat) (flag : UInt8) (value : UInt64) (k : List
           · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 4 _)
           · exact EncodesTo.bindUnit (EncodesTo.putU8 _ _) (encU64TrimmedLEAux_spec _ 8 _)
 
+private def encUnivSuccCountNatFast : Ixon.Univ → Nat
+  | .succ inner => 1 + encUnivSuccCountNatFast inner
+  | _ => 0
+
+private theorem encUnivSuccCountNatFast_eq :
+    ∀ (u : Ixon.Univ), encUnivSuccCountNatFast u = u.succCountNat
+  | .zero | .var _ | .max _ _ | .imax _ _ => rfl
+  | .succ inner => by
+    simp only [encUnivSuccCountNatFast, Ixon.Univ.succCountNat, encUnivSuccCountNatFast_eq inner]
+
+private def encUnivSuccBaseFast : Ixon.Univ → Ixon.Univ
+  | .succ inner => encUnivSuccBaseFast inner
+  | u => u
+
+private theorem encUnivSuccBaseFast_eq :
+    ∀ (u : Ixon.Univ), encUnivSuccBaseFast u = u.succBase
+  | .zero | .var _ | .max _ _ | .imax _ _ => rfl
+  | .succ inner => by
+    simp only [encUnivSuccBaseFast, Ixon.Univ.succBase, encUnivSuccBaseFast_eq inner]
+
+private def collectLamBindersFast : Ixon.Expr → List Ixon.Expr × Ixon.Expr
+  | .lam ty body =>
+    let (binders, base) := collectLamBindersFast body
+    (ty :: binders, base)
+  | e => ([], e)
+
+private theorem collectLamBindersFast_eq :
+    ∀ (e : Ixon.Expr), collectLamBindersFast e = e.collectLamBinders
+  | .lam ty body => by
+    simp only [collectLamBindersFast, Ixon.Expr.collectLamBinders, collectLamBindersFast_eq body]
+  | .sort _ | .var _ | .ref _ _ | .recur _ _ | .prj _ _ _ | .str _ | .nat _
+  | .app _ _ | .all _ _ | .letE _ _ _ _ _ | .share _ => rfl
+
+private def collectAllBindersFast : Ixon.Expr → List Ixon.Expr × Ixon.Expr
+  | .all ty body =>
+    let (binders, base) := collectAllBindersFast body
+    (ty :: binders, base)
+  | e => ([], e)
+
+private theorem collectAllBindersFast_eq :
+    ∀ (e : Ixon.Expr), collectAllBindersFast e = e.collectAllBinders
+  | .all ty body => by
+    simp only [collectAllBindersFast, Ixon.Expr.collectAllBinders, collectAllBindersFast_eq body]
+  | .sort _ | .var _ | .ref _ _ | .recur _ _ | .prj _ _ _ | .str _ | .nat _
+  | .app _ _ | .lam _ _ | .letE _ _ _ _ _ | .share _ => rfl
+
+private def collectAppArgsFast : Ixon.Expr → List Ixon.Expr × Ixon.Expr
+  | .app f a =>
+    let (args, base) := collectAppArgsFast f
+    (args ++ [a], base)
+  | e => ([], e)
+
+private theorem collectAppArgsFast_eq :
+    ∀ (e : Ixon.Expr), collectAppArgsFast e = e.collectAppArgs
+  | .app f a => by
+    simp only [collectAppArgsFast, Ixon.Expr.collectAppArgs, collectAppArgsFast_eq f]
+  | .sort _ | .var _ | .ref _ _ | .recur _ _ | .prj _ _ _ | .str _ | .nat _
+  | .lam _ _ | .all _ _ | .letE _ _ _ _ _ | .share _ => rfl
+
 private def encUnivFuel : Nat → Ixon.Univ → List UInt8 → Option (List UInt8)
   | 0, _, _ => none
-  | _ + 1, .zero, k => some (encTagN 2 Ixon.Univ.FLAG_ZERO_SUCC 0 k)
+  | _ + 1, .zero, k => some (encTagN 2 0 0 k)
   | fuel + 1, u@(.succ _), k =>
-    match encUnivFuel fuel u.succBase k with
-    | some rest => some (encTagN 2 Ixon.Univ.FLAG_ZERO_SUCC u.succCount rest)
+    match encUnivFuel fuel (encUnivSuccBaseFast u) k with
+    | some rest => some (encTagN 2 0 (encUnivSuccCountNatFast u).toUInt64 rest)
     | none => none
   | fuel + 1, .max a b, k =>
     match encUnivFuel fuel b k with
     | some rb =>
       match encUnivFuel fuel a rb with
-      | some ra => some (encTagN 2 Ixon.Univ.FLAG_MAX 0 ra)
+      | some ra => some (encTagN 2 1 0 ra)
       | none => none
     | none => none
   | fuel + 1, .imax a b, k =>
     match encUnivFuel fuel b k with
     | some rb =>
       match encUnivFuel fuel a rb with
-      | some ra => some (encTagN 2 Ixon.Univ.FLAG_IMAX 0 ra)
+      | some ra => some (encTagN 2 2 0 ra)
       | none => none
     | none => none
-  | _ + 1, .var idx, k => some (encTagN 2 Ixon.Univ.FLAG_VAR idx k)
+  | _ + 1, .var idx, k => some (encTagN 2 3 idx k)
 
 private theorem encUnivFuel_spec :
     ∀ (fuel : Nat) (u : Ixon.Univ) {k out : List UInt8},
       encUnivFuel fuel u k = some out → EncodesTo (Ixon.putUniv u) k out
   | 0, _, _, _, h => nomatch h
   | _ + 1, .zero, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putUniv]; exact encTagN_spec 2 _ 0 k
+    injection h with ho; subst ho; rw [Ixon.putUniv]; exact encTagN_spec 2 0 0 k
   | fuel + 1, .succ inner, k, _, h => by
     unfold encUnivFuel at h
+    rw [encUnivSuccBaseFast_eq, encUnivSuccCountNatFast_eq] at h
     cases hr : encUnivFuel fuel (Ixon.Univ.succ inner).succBase k with
     | none => rw [hr] at h; cases h
     | some rest =>
       rw [hr] at h; injection h with ho; subst ho
       rw [Ixon.putUniv]
-      exact EncodesTo.bindUnit (encTagN_spec 2 _ _ rest) (encUnivFuel_spec fuel _ hr)
+      exact EncodesTo.bindUnit (encTagN_spec 2 0 _ rest) (encUnivFuel_spec fuel _ hr)
   | fuel + 1, .max a b, k, _, h => by
     unfold encUnivFuel at h
     cases hb : encUnivFuel fuel b k with
@@ -1268,7 +1337,7 @@ private theorem encUnivFuel_spec :
       | some ra =>
         rw [ha] at h; injection h with ho; subst ho
         rw [Ixon.putUniv]
-        exact EncodesTo.bindUnit (encTagN_spec 2 _ 0 ra)
+        exact EncodesTo.bindUnit (encTagN_spec 2 1 0 ra)
           (EncodesTo.bindUnit (encUnivFuel_spec fuel a ha) (encUnivFuel_spec fuel b hb))
   | fuel + 1, .imax a b, k, _, h => by
     unfold encUnivFuel at h
@@ -1281,49 +1350,49 @@ private theorem encUnivFuel_spec :
       | some ra =>
         rw [ha] at h; injection h with ho; subst ho
         rw [Ixon.putUniv]
-        exact EncodesTo.bindUnit (encTagN_spec 2 _ 0 ra)
+        exact EncodesTo.bindUnit (encTagN_spec 2 2 0 ra)
           (EncodesTo.bindUnit (encUnivFuel_spec fuel a ha) (encUnivFuel_spec fuel b hb))
   | _ + 1, .var idx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putUniv]; exact encTagN_spec 2 _ idx k
+    injection h with ho; subst ho; rw [Ixon.putUniv]; exact encTagN_spec 2 3 idx k
 
 private def encExprFuel : Nat → Ixon.Expr → List UInt8 → Option (List UInt8)
   | 0, _, _ => none
-  | _ + 1, .sort idx, k => some (encTagN 4 Ixon.Expr.FLAG_SORT idx k)
-  | _ + 1, .var idx, k => some (encTagN 4 Ixon.Expr.FLAG_VAR idx k)
+  | _ + 1, .sort idx, k => some (encTagN 4 0x0 idx k)
+  | _ + 1, .var idx, k => some (encTagN 4 0x1 idx k)
   | _ + 1, .ref refIdx univIdxs, k =>
-    some (encTagN 4 Ixon.Expr.FLAG_REF univIdxs.size.toUInt64
+    some (encTagN 4 0x2 univIdxs.size.toUInt64
       (encTagN 0 0 refIdx (encList (encTagN 0 0) univIdxs.toList k)))
   | _ + 1, .recur recIdx univIdxs, k =>
-    some (encTagN 4 Ixon.Expr.FLAG_REC univIdxs.size.toUInt64
+    some (encTagN 4 0x3 univIdxs.size.toUInt64
       (encTagN 0 0 recIdx (encList (encTagN 0 0) univIdxs.toList k)))
   | fuel + 1, .prj typeRefIdx fieldIdx val, k =>
     match encExprFuel fuel val k with
-    | some rv => some (encTagN 4 Ixon.Expr.FLAG_PRJ fieldIdx (encTagN 0 0 typeRefIdx rv))
+    | some rv => some (encTagN 4 0x4 fieldIdx (encTagN 0 0 typeRefIdx rv))
     | none => none
-  | _ + 1, .str refIdx, k => some (encTagN 4 Ixon.Expr.FLAG_STR refIdx k)
-  | _ + 1, .nat refIdx, k => some (encTagN 4 Ixon.Expr.FLAG_NAT refIdx k)
+  | _ + 1, .str refIdx, k => some (encTagN 4 0x5 refIdx k)
+  | _ + 1, .nat refIdx, k => some (encTagN 4 0x6 refIdx k)
   | fuel + 1, e@(.app _ _), k =>
-    let p := e.collectAppArgs
+    let p := collectAppArgsFast e
     match encManyOpt (encExprFuel fuel) p.1 k with
     | some rargs =>
       match encExprFuel fuel p.2 rargs with
-      | some rfn => some (encTagN 4 Ixon.Expr.FLAG_APP p.1.length.toUInt64 rfn)
+      | some rfn => some (encTagN 4 0x7 p.1.length.toUInt64 rfn)
       | none => none
     | none => none
   | fuel + 1, e@(.lam _ _), k =>
-    let p := e.collectLamBinders
+    let p := collectLamBindersFast e
     match encExprFuel fuel p.2 k with
     | some rbody =>
       match encManyOpt (encExprFuel fuel) p.1 rbody with
-      | some rtys => some (encTagN 4 Ixon.Expr.FLAG_LAM p.1.length.toUInt64 rtys)
+      | some rtys => some (encTagN 4 0x8 p.1.length.toUInt64 rtys)
       | none => none
     | none => none
   | fuel + 1, e@(.all _ _), k =>
-    let p := e.collectAllBinders
+    let p := collectAllBindersFast e
     match encExprFuel fuel p.2 k with
     | some rbody =>
       match encManyOpt (encExprFuel fuel) p.1 rbody with
-      | some rtys => some (encTagN 4 Ixon.Expr.FLAG_ALL p.1.length.toUInt64 rtys)
+      | some rtys => some (encTagN 4 0x9 p.1.length.toUInt64 rtys)
       | none => none
     | none => none
   | fuel + 1, .letE nonDep mode ty val body, k =>
@@ -1332,28 +1401,28 @@ private def encExprFuel : Nat → Ixon.Expr → List UInt8 → Option (List UInt
       match encExprFuel fuel val rb with
       | some rv =>
         match encExprFuel fuel ty rv with
-        | some rt => some (encTagN 4 Ixon.Expr.FLAG_LET (Ixon.LetMode.header nonDep mode) rt)
+        | some rt => some (encTagN 4 0xA (Ixon.LetMode.header nonDep mode) rt)
         | none => none
       | none => none
     | none => none
-  | _ + 1, .share idx, k => some (encTagN 4 Ixon.Expr.FLAG_SHARE idx k)
+  | _ + 1, .share idx, k => some (encTagN 4 0xB idx k)
 
 private theorem encExprFuel_spec :
     ∀ (fuel : Nat) (e : Ixon.Expr) {k out : List UInt8},
       encExprFuel fuel e k = some out → EncodesTo (Ixon.putExpr e) k out
   | 0, _, _, _, h => nomatch h
   | _ + 1, .sort idx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ idx k
+    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 0x0 idx k
   | _ + 1, .var idx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ idx k
+    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 0x1 idx k
   | _ + 1, .ref refIdx univIdxs, k, _, h => by
     injection h with ho; subst ho; rw [Ixon.putExpr]
-    exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+    exact EncodesTo.bindUnit (encTagN_spec 4 0x2 _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 refIdx _)
         (forArray_encList_spec (fun u ku => encTagN_spec 0 0 u ku)))
   | _ + 1, .recur recIdx univIdxs, k, _, h => by
     injection h with ho; subst ho; rw [Ixon.putExpr]
-    exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+    exact EncodesTo.bindUnit (encTagN_spec 4 0x3 _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 recIdx _)
         (forArray_encList_spec (fun u ku => encTagN_spec 0 0 u ku)))
   | fuel + 1, .prj typeRefIdx fieldIdx val, k, _, h => by
@@ -1363,14 +1432,15 @@ private theorem encExprFuel_spec :
     | some rv =>
       rw [hv] at h; injection h with ho; subst ho
       rw [Ixon.putExpr]
-      exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+      exact EncodesTo.bindUnit (encTagN_spec 4 0x4 _ _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 typeRefIdx _) (encExprFuel_spec fuel val hv))
   | _ + 1, .str refIdx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ refIdx k
+    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 0x5 refIdx k
   | _ + 1, .nat refIdx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ refIdx k
+    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 0x6 refIdx k
   | fuel + 1, .app f arg, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
+    rw [collectAppArgsFast_eq] at h
     cases ha : encManyOpt (encExprFuel fuel) (Ixon.Expr.app f arg).collectAppArgs.1 k with
     | none => rw [ha] at h; cases h
     | some rargs =>
@@ -1380,11 +1450,12 @@ private theorem encExprFuel_spec :
       | some rfn =>
         rw [hf] at h; injection h with ho; subst ho
         rw [Ixon.putExpr, listPut_eq_putMany]
-        exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+        exact EncodesTo.bindUnit (encTagN_spec 4 0x7 _ _)
           (EncodesTo.bindUnit (encExprFuel_spec fuel _ hf)
             (encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) _ ha))
   | fuel + 1, .lam ty body, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
+    rw [collectLamBindersFast_eq] at h
     cases hb : encExprFuel fuel (Ixon.Expr.lam ty body).collectLamBinders.2 k with
     | none => rw [hb] at h; cases h
     | some rbody =>
@@ -1394,11 +1465,12 @@ private theorem encExprFuel_spec :
       | some rtys =>
         rw [ht] at h; injection h with ho; subst ho
         rw [Ixon.putExpr]
-        exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+        exact EncodesTo.bindUnit (encTagN_spec 4 0x8 _ _)
           (forList_bind_encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) ht
             (encExprFuel_spec fuel _ hb))
   | fuel + 1, .all ty body, k, _, h => by
     unfold encExprFuel at h; dsimp only at h
+    rw [collectAllBindersFast_eq] at h
     cases hb : encExprFuel fuel (Ixon.Expr.all ty body).collectAllBinders.2 k with
     | none => rw [hb] at h; cases h
     | some rbody =>
@@ -1408,7 +1480,7 @@ private theorem encExprFuel_spec :
       | some rtys =>
         rw [ht] at h; injection h with ho; subst ho
         rw [Ixon.putExpr]
-        exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+        exact EncodesTo.bindUnit (encTagN_spec 4 0x9 _ _)
           (forList_bind_encManyOpt_spec (fun x _ _ hx => encExprFuel_spec fuel x hx) ht
             (encExprFuel_spec fuel _ hb))
   | fuel + 1, .letE nonDep mode ty val body, k, _, h => by
@@ -1426,12 +1498,12 @@ private theorem encExprFuel_spec :
         | some rt =>
           rw [ht] at h; injection h with ho; subst ho
           rw [Ixon.putExpr]
-          exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
+          exact EncodesTo.bindUnit (encTagN_spec 4 0xA _ _)
             (EncodesTo.bindUnit (encExprFuel_spec fuel ty ht)
               (EncodesTo.bindUnit (encExprFuel_spec fuel val hv)
                 (encExprFuel_spec fuel body hb)))
   | _ + 1, .share idx, k, _, h => by
-    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 _ idx k
+    injection h with ho; subst ho; rw [Ixon.putExpr]; exact encTagN_spec 4 0xB idx k
 
 private def encAddress (a : _root_.Address) (k : List UInt8) : List UInt8 :=
   a.hash.data.toList ++ k
@@ -1440,11 +1512,25 @@ private theorem encAddress_spec (a : _root_.Address) (k : List UInt8) :
     EncodesTo (Ixon.Serialize.put a) k (encAddress a k) :=
   EncodesTo.putBytes a.hash k
 
+private def packDefKindSafetyFast (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) : UInt8 :=
+  let k : UInt8 := match kind with | .defn => 0 | .opaq => 1 | .thm => 2
+  let s : UInt8 := match safety with | .unsaf => 0 | .safe => 1 | .part => 2
+  (k <<< 2) ||| s
+
+private def packDefinitionFlagsFast (d : Ixon.Definition) : UInt8 :=
+  packDefKindSafetyFast d.kind d.safety ||| (d.asserts.toCode <<< 4)
+
+private theorem packDefinitionFlagsFast_eq (d : Ixon.Definition) :
+    packDefinitionFlagsFast d = Ixon.packDefinitionFlags d := by
+  rcases d with ⟨kind, safety, asserts, lvls, typ, value⟩
+  cases kind <;> cases safety <;>
+    simp [packDefinitionFlagsFast, packDefKindSafetyFast, Ixon.packDefinitionFlags, Ixon.packDefKindSafety]
+
 private def encDefFuel (fuel : Nat) (d : Ixon.Definition) (k : List UInt8) : Option (List UInt8) :=
   match encExprFuel fuel d.value k with
   | some rv =>
     match encExprFuel fuel d.typ rv with
-    | some rt => some (Ixon.packDefinitionFlags d :: encTagN 0 0 d.lvls rt)
+    | some rt => some (packDefinitionFlagsFast d :: encTagN 0 0 d.lvls rt)
     | none => none
   | none => none
 
@@ -1460,6 +1546,7 @@ private theorem encDefFuel_spec (fuel : Nat) (d : Ixon.Definition) {k out : List
     | none => rw [ht] at h; cases h
     | some rt =>
       rw [ht] at h; injection h with ho; subst ho
+      rw [packDefinitionFlagsFast_eq]
       exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 d.lvls _)
           (EncodesTo.bindUnit (encExprFuel_spec fuel d.typ ht) (encExprFuel_spec fuel d.value hv)))
@@ -1479,12 +1566,26 @@ private theorem encRecRuleFuel_spec (fuel : Nat) (r : Ixon.RecursorRule) {k out 
     rw [hr] at h; injection h with ho; subst ho
     exact EncodesTo.bindUnit (encTagN_spec 0 0 r.fields _) (encExprFuel_spec fuel r.rhs hr)
 
+private def packBools2Fast (b0 b1 : Bool) : UInt8 :=
+  (if b0 then (1 : UInt8) else 0) ||| (if b1 then (2 : UInt8) else 0)
+
+private theorem packBools2Fast_eq (b0 b1 : Bool) :
+    packBools2Fast b0 b1 = Ixon.packBools [b0, b1] := by
+  cases b0 <;> cases b1 <;> (simp [packBools2Fast, Ixon.packBools]; try decide)
+
+private def packBool1Fast (b0 : Bool) : UInt8 :=
+  if b0 then 1 else 0
+
+private theorem packBool1Fast_eq (b0 : Bool) :
+    packBool1Fast b0 = Ixon.packBools [b0] := by
+  cases b0 <;> (simp [packBool1Fast, Ixon.packBools]; try decide)
+
 private def encRecFuel (fuel : Nat) (r : Ixon.Recursor) (k : List UInt8) : Option (List UInt8) :=
   match encManyOpt (encRecRuleFuel fuel) r.rules.toList k with
   | some rrules =>
     match encExprFuel fuel r.typ (encTagN 0 0 r.rules.size.toUInt64 rrules) with
     | some rt =>
-      some (Ixon.packBools [r.k, r.isUnsafe] ::
+      some (packBools2Fast r.k r.isUnsafe ::
         encTagN 0 0 r.lvls (encTagN 0 0 r.params (encTagN 0 0 r.indices
           (encTagN 0 0 r.motives (encTagN 0 0 r.minors rt)))))
     | none => none
@@ -1502,6 +1603,7 @@ private theorem encRecFuel_spec (fuel : Nat) (r : Ixon.Recursor) {k out : List U
     | none => rw [ht] at h; cases h
     | some rt =>
       rw [ht] at h; injection h with ho; subst ho
+      rw [packBools2Fast_eq]
       exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 r.lvls _)
           (EncodesTo.bindUnit (encTagN_spec 0 0 r.params _)
@@ -1546,10 +1648,17 @@ private theorem encQuotFuel_spec (fuel : Nat) (q : Ixon.Quotient) {k out : List 
     exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 q.lvls _) (encExprFuel_spec fuel q.typ ht))
 
+private def packConstructorFlagsFast (c : Ixon.Constructor) : UInt8 :=
+  (if c.isUnsafe then 1 else 0) ||| (if c.fieldModes.isInherited then 0 else 2)
+
+private theorem packConstructorFlagsFast_eq (c : Ixon.Constructor) :
+    packConstructorFlagsFast c = Ixon.packConstructorFlags c := by
+  simp [packConstructorFlagsFast, Ixon.packConstructorFlags]
+
 private def encCtorFuel (fuel : Nat) (c : Ixon.Constructor) (k : List UInt8) : Option (List UInt8) :=
   match encExprFuel fuel c.typ k with
   | some rt =>
-    some (Ixon.packConstructorFlags c ::
+    some (packConstructorFlagsFast c ::
       encTagN 0 0 c.lvls (encTagN 0 0 c.cidx (encTagN 0 0 c.params
         (encTagN 0 0 c.fields
           (encList (fun (m : Ixon.FieldMode) acc => m.toCode :: acc) c.fieldModes.toArray.toList rt)))))
@@ -1563,6 +1672,7 @@ private theorem encCtorFuel_spec (fuel : Nat) (c : Ixon.Constructor) {k out : Li
   | none => rw [ht] at h; cases h
   | some rt =>
     rw [ht] at h; injection h with ho; subst ho
+    rw [packConstructorFlagsFast_eq]
     exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 c.lvls _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 c.cidx _)
@@ -1576,7 +1686,7 @@ private def encIndFuel (fuel : Nat) (i : Ixon.Inductive) (k : List UInt8) : Opti
   | some rctors =>
     match encExprFuel fuel i.typ (encTagN 0 0 i.ctors.size.toUInt64 rctors) with
     | some rt =>
-      some (Ixon.packBools [i.isUnsafe] ::
+      some (packBool1Fast i.isUnsafe ::
         encTagN 0 0 i.lvls (encTagN 0 0 i.params (encTagN 0 0 i.indices rt)))
     | none => none
   | none => none
@@ -1593,6 +1703,7 @@ private theorem encIndFuel_spec (fuel : Nat) (i : Ixon.Inductive) {k out : List 
     | none => rw [ht] at h; cases h
     | some rt =>
       rw [ht] at h; injection h with ho; subst ho
+      rw [packBool1Fast_eq]
       exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 i.lvls _)
           (EncodesTo.bindUnit (encTagN_spec 0 0 i.params _)
@@ -1626,91 +1737,131 @@ private theorem encMutFuel_spec (fuel : Nat) :
     | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (EncodesTo.putU8 2 _) (encRecFuel_spec fuel r hr)
 
 private def encInfoFuel (fuel : Nat) : Ixon.ConstantInfo → List UInt8 → Option (List UInt8)
-  | .defn d, k => (encDefFuel fuel d k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DEFN)
-  | .recr r, k => (encRecFuel fuel r k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RECR)
-  | .axio a, k => (encAxioFuel fuel a k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_AXIO)
-  | .quot q, k => (encQuotFuel fuel q k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_QUOT)
-  | .cPrj p, k => some (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_CPRJ
+  | .defn d, k => (encDefFuel fuel d k).map (encTagN 4 0xD 0)
+  | .recr r, k => (encRecFuel fuel r k).map (encTagN 4 0xD 1)
+  | .axio a, k => (encAxioFuel fuel a k).map (encTagN 4 0xD 2)
+  | .quot q, k => (encQuotFuel fuel q k).map (encTagN 4 0xD 3)
+  | .cPrj p, k => some (encTagN 4 0xD 4
       (encTagN 0 0 p.idx (encTagN 0 0 p.cidx (encAddress p.block k))))
-  | .rPrj p, k => some (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RPRJ
+  | .rPrj p, k => some (encTagN 4 0xD 5
       (encTagN 0 0 p.idx (encAddress p.block k)))
-  | .iPrj p, k => some (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_IPRJ
+  | .iPrj p, k => some (encTagN 4 0xD 6
       (encTagN 0 0 p.idx (encAddress p.block k)))
-  | .dPrj p, k => some (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DPRJ
+  | .dPrj p, k => some (encTagN 4 0xD 7
       (encTagN 0 0 p.idx (encAddress p.block k)))
   | .muts ms, k =>
     (encManyOpt (encMutFuel fuel) ms.toList k).map
-      (encTagN 4 Ixon.Constant.FLAG_MUTS ms.size.toUInt64)
+      (encTagN 4 0xC ms.size.toUInt64)
 
 private theorem encInfoFuel_spec (fuel : Nat) :
     ∀ (ci : Ixon.ConstantInfo) {k out : List UInt8},
       encInfoFuel fuel ci k = some out → EncodesTo (Ixon.putConstantInfo ci) k out
   | .defn d, k, out, h => by
-    change (encDefFuel fuel d k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DEFN) = some out at h
+    change (encDefFuel fuel d k).map (encTagN 4 0xD 0) = some out at h
     cases hd : encDefFuel fuel d k with
     | none => rw [hd] at h; cases h
-    | some rd => rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encDefFuel_spec fuel d hd)
+    | some rd =>
+      rw [hd] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
+      rw [Ixon.putConstantInfo]
+      simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_DEFN]
+      exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encDefFuel_spec fuel d hd)
   | .recr r, k, out, h => by
-    change (encRecFuel fuel r k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RECR) = some out at h
+    change (encRecFuel fuel r k).map (encTagN 4 0xD 1) = some out at h
     cases hr : encRecFuel fuel r k with
     | none => rw [hr] at h; cases h
-    | some rr => rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encRecFuel_spec fuel r hr)
+    | some rr =>
+      rw [hr] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
+      rw [Ixon.putConstantInfo]
+      simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_RECR]
+      exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encRecFuel_spec fuel r hr)
   | .axio a, k, out, h => by
-    change (encAxioFuel fuel a k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_AXIO) = some out at h
+    change (encAxioFuel fuel a k).map (encTagN 4 0xD 2) = some out at h
     cases ha : encAxioFuel fuel a k with
     | none => rw [ha] at h; cases h
-    | some ra => rw [ha] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encAxioFuel_spec fuel a ha)
+    | some ra =>
+      rw [ha] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
+      rw [Ixon.putConstantInfo]
+      simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_AXIO]
+      exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encAxioFuel_spec fuel a ha)
   | .quot q, k, out, h => by
-    change (encQuotFuel fuel q k).map (encTagN 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_QUOT) = some out at h
+    change (encQuotFuel fuel q k).map (encTagN 4 0xD 3) = some out at h
     cases hq : encQuotFuel fuel q k with
     | none => rw [hq] at h; cases h
-    | some rq => rw [hq] at h; dsimp only [Option.map] at h; injection h with ho; subst ho; exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encQuotFuel_spec fuel q hq)
+    | some rq =>
+      rw [hq] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
+      rw [Ixon.putConstantInfo]
+      simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_QUOT]
+      exact EncodesTo.seqRight (encTagN_spec 4 _ _ _) (encQuotFuel_spec fuel q hq)
   | .cPrj p, k, _, h => by
     injection h with ho; subst ho
+    rw [Ixon.putConstantInfo]
+    simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_CPRJ]
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _)
         (EncodesTo.bindUnit (encTagN_spec 0 0 p.cidx _) (encAddress_spec p.block k)))
   | .rPrj p, k, _, h => by
     injection h with ho; subst ho
+    rw [Ixon.putConstantInfo]
+    simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_RPRJ]
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _) (encAddress_spec p.block k))
   | .iPrj p, k, _, h => by
     injection h with ho; subst ho
+    rw [Ixon.putConstantInfo]
+    simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_IPRJ]
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _) (encAddress_spec p.block k))
   | .dPrj p, k, _, h => by
     injection h with ho; subst ho
+    rw [Ixon.putConstantInfo]
+    simp only [Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_DPRJ]
     exact EncodesTo.seqRight (encTagN_spec 4 _ _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 p.idx _) (encAddress_spec p.block k))
   | .muts ms, k, out, h => by
     change (encManyOpt (encMutFuel fuel) ms.toList k).map
-      (encTagN 4 Ixon.Constant.FLAG_MUTS ms.size.toUInt64) = some out at h
+      (encTagN 4 0xC ms.size.toUInt64) = some out at h
     cases hm : encManyOpt (encMutFuel fuel) ms.toList k with
     | none => rw [hm] at h; cases h
     | some rm =>
       rw [hm] at h; dsimp only [Option.map] at h; injection h with ho; subst ho
+      rw [Ixon.putConstantInfo]
+      simp only [Ixon.Constant.FLAG_MUTS]
       exact EncodesTo.bindUnit (encTagN_spec 4 _ _ _)
         (forArray_encManyOpt_spec (fun x _ _ hx => encMutFuel_spec fuel x hx) hm)
 
+private def binderNodeByteFast (tag : UInt8) (mode : Ixon.AllMode) : UInt8 :=
+  tag ||| (mode.toCode <<< 3)
+
+private theorem binderNodeByteFast_eq (tag : UInt8) (mode : Ixon.AllMode) :
+    binderNodeByteFast tag mode = Ixon.binderNodeByte tag mode := by
+  simp [binderNodeByteFast, Ixon.binderNodeByte]
+
 private def encBinderNode : Ixon.BinderNode → List UInt8 → List UInt8
-  | .never m, k => Ixon.binderNodeByte 0 m :: k
-  | .zero m, k => Ixon.binderNodeByte 1 m :: k
+  | .never m, k => binderNodeByteFast 0 m :: k
+  | .zero m, k => binderNodeByteFast 1 m :: k
   | .ifAllZero params m, k =>
-    Ixon.binderNodeByte 2 m ::
+    binderNodeByteFast 2 m ::
       encTagN 0 0 params.size.toUInt64 (encList (encTagN 0 0) params.toList k)
   | .share variant, k => 3 :: encTagN 0 0 variant k
-  | .undecided m, k => Ixon.binderNodeByte 4 m :: k
+  | .undecided m, k => binderNodeByteFast 4 m :: k
 
 private theorem encBinderNode_spec :
     ∀ (n : Ixon.BinderNode) (k : List UInt8), EncodesTo (Ixon.putBinderNode n) k (encBinderNode n k)
-  | .never _, _ => EncodesTo.putU8 _ _
-  | .zero _, _ => EncodesTo.putU8 _ _
-  | .ifAllZero _ _, _ =>
-    EncodesTo.bindUnit (EncodesTo.putU8 _ _)
+  | .never m, k => by
+    rw [Ixon.putBinderNode, encBinderNode, binderNodeByteFast_eq]
+    exact EncodesTo.putU8 _ k
+  | .zero m, k => by
+    rw [Ixon.putBinderNode, encBinderNode, binderNodeByteFast_eq]
+    exact EncodesTo.putU8 _ k
+  | .ifAllZero _ m, _ => by
+    rw [Ixon.putBinderNode, encBinderNode, binderNodeByteFast_eq]
+    exact EncodesTo.bindUnit (EncodesTo.putU8 _ _)
       (EncodesTo.bindUnit (encTagN_spec 0 0 _ _)
         (forArray_encList_spec (fun p kp => encTagN_spec 0 0 p kp)))
   | .share variant, _ => EncodesTo.bindUnit (EncodesTo.putU8 3 _) (encTagN_spec 0 0 variant _)
-  | .undecided _, _ => EncodesTo.putU8 _ _
+  | .undecided m, k => by
+    rw [Ixon.putBinderNode, encBinderNode, binderNodeByteFast_eq]
+    exact EncodesTo.putU8 _ k
 
 private def encBinderBlock (b : Ixon.BinderBlock) (k : List UInt8) : List UInt8 :=
   (if b.shared then 1 else 0) ::
@@ -1848,9 +1999,20 @@ private theorem maxLvlsFast_eq : ∀ (ci : Ixon.ConstantInfo), maxLvlsFast ci = 
     funext acc m
     cases m <;> rfl
 
+private def paramsAscendingFast : List UInt64 → Bool
+  | a :: b :: rest => decide (a < b) && paramsAscendingFast (b :: rest)
+  | _ => true
+
+private theorem paramsAscendingFast_eq :
+    ∀ (xs : List UInt64), paramsAscendingFast xs = Ixon.paramsAscending xs
+  | [] => by simp [paramsAscendingFast, Ixon.paramsAscending]
+  | [_] => by simp [paramsAscendingFast, Ixon.paramsAscending]
+  | a :: b :: rest => by
+    simp only [paramsAscendingFast, Ixon.paramsAscending, paramsAscendingFast_eq (b :: rest)]
+
 private def binderNodeCanonicalFast (lvls : Nat) : Ixon.BinderNode → Bool
   | .ifAllZero params _ =>
-    !params.toList.isEmpty && Ixon.paramsAscending params.toList &&
+    !params.toList.isEmpty && paramsAscendingFast params.toList &&
       params.toList.all (·.toNat < lvls)
   | _ => true
 
@@ -1859,13 +2021,37 @@ private theorem binderNodeCanonicalFast_eq (lvls : Nat) :
   | .never _ | .zero _ | .undecided _ | .share _ => rfl
   | .ifAllZero params _ => by
     dsimp only [binderNodeCanonicalFast, Ixon.BinderNode.canonical]
-    rw [array_isEmpty_eq_toList_isEmpty, ← Array.all_toList]
+    rw [array_isEmpty_eq_toList_isEmpty, paramsAscendingFast_eq, ← Array.all_toList]
+
+private def binderBlockKeyLtFast (a b : Ixon.BinderBlock) : Bool :=
+  (!a.shared && b.shared) ||
+    (a.shared == b.shared &&
+      (decide (a.index < b.index) || (a.index == b.index && decide (a.variant < b.variant))))
+
+private theorem binderBlockKeyLtFast_eq (a b : Ixon.BinderBlock) :
+    binderBlockKeyLtFast a b = a.keyLt b := by
+  simp [binderBlockKeyLtFast, Ixon.BinderBlock.keyLt]
+
+private def blocksAscendingFast : List Ixon.BinderBlock → Bool
+  | a :: b :: rest => binderBlockKeyLtFast a b && blocksAscendingFast (b :: rest)
+  | _ => true
+
+private theorem blocksAscendingFast_eq :
+    ∀ (xs : List Ixon.BinderBlock), blocksAscendingFast xs = Ixon.blocksAscending xs
+  | [] => by simp [blocksAscendingFast, Ixon.blocksAscending]
+  | [_] => by simp [blocksAscendingFast, Ixon.blocksAscending]
+  | a :: b :: rest => by
+    simp only [blocksAscendingFast, Ixon.blocksAscending, binderBlockKeyLtFast_eq,
+      blocksAscendingFast_eq (b :: rest)]
+
+private theorem maxLevelCount_eq : (4294967296 : Nat) = Ixon.maxLevelCount := by
+  simp [Ixon.maxLevelCount]
 
 private def bindersCanonicalFast (c : Ixon.Constant) : Bool :=
   if binderRootsEmptyFast c.info then c.binders.toList.isEmpty
   else
-    decide (maxLvlsFast c.info < Ixon.maxLevelCount) &&
-    Ixon.blocksAscending c.binders.toList &&
+    decide (maxLvlsFast c.info < 4294967296) &&
+    blocksAscendingFast c.binders.toList &&
       c.binders.toList.all fun block =>
         (block.shared || block.variant == 0) && !block.nodes.toList.isEmpty &&
           block.nodes.toList.all (binderNodeCanonicalFast (maxLvlsFast c.info))
@@ -1873,7 +2059,8 @@ private def bindersCanonicalFast (c : Ixon.Constant) : Bool :=
 private theorem bindersCanonicalFast_eq (c : Ixon.Constant) :
     bindersCanonicalFast c = c.bindersCanonical := by
   unfold bindersCanonicalFast Ixon.Constant.bindersCanonical
-  rw [binderRootsEmptyFast_eq, array_isEmpty_eq_toList_isEmpty c.binders, maxLvlsFast_eq, ← Array.all_toList]
+  rw [binderRootsEmptyFast_eq, array_isEmpty_eq_toList_isEmpty c.binders,
+      maxLvlsFast_eq, maxLevelCount_eq, blocksAscendingFast_eq, ← Array.all_toList]
   have hfun :
       (fun (block : Ixon.BinderBlock) =>
         (block.shared || block.variant == 0) && !block.nodes.toList.isEmpty &&
@@ -1888,11 +2075,27 @@ private theorem bindersCanonicalFast_eq (c : Ixon.Constant) :
     rw [hnd]
   rw [hfun]
 
+private def isNotThmFast : Ix.DefKind → Bool
+  | .thm => false
+  | .defn | .opaq => true
+
+private theorem isNotThmFast_eq : ∀ (k : Ix.DefKind), isNotThmFast k = (k != .thm)
+  | .defn => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
+  | .opaq => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
+  | .thm => by simp [isNotThmFast, bne, BEq.beq, Ix.instBEqDefKind, Ix.instBEqDefKind.beq]
+
+private def assertsCanonicalFast (d : Ixon.Definition) : Bool :=
+  isNotThmFast d.kind || d.asserts == {}
+
+private theorem assertsCanonicalFast_eq (d : Ixon.Definition) :
+    assertsCanonicalFast d = d.assertsCanonical := by
+  simp [assertsCanonicalFast, Ixon.Definition.assertsCanonical, isNotThmFast_eq]
+
 private def modesCanonicalFast (c : Ixon.Constant) : Bool :=
   match c.info with
-  | .defn d => d.assertsCanonical
+  | .defn d => assertsCanonicalFast d
   | .muts ms => ms.toList.all fun
-    | .defn d => d.assertsCanonical
+    | .defn d => assertsCanonicalFast d
     | _ => true
   | _ => true
 
@@ -1902,7 +2105,7 @@ private theorem list_all_congr {α : Type} {xs : List α} {p q : α → Bool}
   rw [hfun]
 
 private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalFast c = c.modesCanonical
-  | ⟨.defn _, _, _, _, _⟩
+  | ⟨.defn d, _, _, _, _⟩ => assertsCanonicalFast_eq d
   | ⟨.recr _, _, _, _, _⟩
   | ⟨.axio _, _, _, _, _⟩
   | ⟨.quot _, _, _, _, _⟩
@@ -1914,13 +2117,36 @@ private theorem modesCanonicalFast_eq : ∀ (c : Ixon.Constant), modesCanonicalF
     unfold modesCanonicalFast Ixon.Constant.modesCanonical
     dsimp only
     rw [← Array.all_toList]
-    exact list_all_congr fun m => by cases m <;> rfl
+    exact list_all_congr fun m => by
+      cases m with
+      | defn d => exact assertsCanonicalFast_eq d
+      | indc _ | recr _ => rfl
+
+private def univNodeCountFast : Ixon.Univ → Nat
+  | .zero | .var _ => 1
+  | .succ inner => univNodeCountFast inner + 1
+  | .max left right | .imax left right => univNodeCountFast left + univNodeCountFast right + 1
+
+private theorem univNodeCountFast_eq : ∀ (u : Ixon.Univ), univNodeCountFast u = u.nodeCount
+  | .zero | .var _ => by simp [univNodeCountFast, Ixon.Univ.nodeCount]
+  | .succ inner => by simp [univNodeCountFast, Ixon.Univ.nodeCount, univNodeCountFast_eq inner]
+  | .max l r => by simp [univNodeCountFast, Ixon.Univ.nodeCount, univNodeCountFast_eq l, univNodeCountFast_eq r]
+  | .imax l r => by simp [univNodeCountFast, Ixon.Univ.nodeCount, univNodeCountFast_eq l, univNodeCountFast_eq r]
+
+private def univNodesFast (values : Array Ixon.Univ) : Nat :=
+  (values.toList.map univNodeCountFast).sum
+
+private theorem univNodesFast_eq (values : Array Ixon.Univ) :
+    univNodesFast values = Ixon.Bounded.univNodes values := by
+  simp only [univNodesFast, Ixon.Bounded.univNodes]
+  have hfun : univNodeCountFast = Ixon.Univ.nodeCount := funext univNodeCountFast_eq
+  rw [hfun]
 
 def checkConstBytesFast (c : Ixon.Constant) (bs : List UInt8) : Bool :=
   validConstantFast c &&
   (encConstantFuel (bs.length + 1) c [] == some bs) &&
   decide (bs.length ≤ Ix.Kernel.Reader.preludeMaxBytes) &&
-  decide (Ixon.Bounded.univNodes c.univs ≤ Ix.Kernel.Reader.preludeMaxUnivNodes) &&
+  decide (univNodesFast c.univs ≤ Ix.Kernel.Reader.preludeMaxUnivNodes) &&
   bindersCanonicalFast c &&
   modesCanonicalFast c
 
@@ -1930,6 +2156,7 @@ theorem deConstant_of_checkConstBytesFast {c : Ixon.Constant} {bs : List UInt8}
       Ix.Kernel.Reader.preludeMaxUnivNodes ⟨bs.toArray⟩ = .ok c := by
   simp only [checkConstBytesFast, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
   obtain ⟨⟨⟨⟨⟨hval, henc⟩, hbytes⟩, huniv⟩, hbind⟩, hmodes⟩ := h
+  rw [univNodesFast_eq] at huniv
   rw [bindersCanonicalFast_eq] at hbind
   rw [modesCanonicalFast_eq] at hmodes
   rw [Ixon.Verify.Canonical.deConstant_ok_iff]
@@ -1996,6 +2223,10 @@ private def deTagN0Val (bs : List UInt8) : Option (UInt64 × List UInt8) := do
   let ((_, v), bs) ← deTagN 0 bs
   pure (v, bs)
 
+private def univAddSuccFast : Nat → Ixon.Univ → Ixon.Univ
+  | 0, base => base
+  | count + 1, base => .succ (univAddSuccFast count base)
+
 private def deUnivFuel : Nat → List UInt8 → Option (Ixon.Univ × List UInt8)
   | 0, _ => none
   | fuel + 1, bs => do
@@ -2005,7 +2236,7 @@ private def deUnivFuel : Nat → List UInt8 → Option (Ixon.Univ × List UInt8)
       if val == 0 then pure (.zero, bs)
       else
         let (u, bs) ← deUnivFuel fuel bs
-        pure (u.addSucc val.toNat, bs)
+        pure (univAddSuccFast val.toNat u, bs)
     | 1 =>
       let (a, bs) ← deUnivFuel fuel bs
       let (b, bs) ← deUnivFuel fuel bs
@@ -2084,13 +2315,18 @@ private def deBinderBlock (bs : List UInt8) : Option (Ixon.BinderBlock × List U
   let (nodes, bs) ← deMany deBinderNode cnt.toNat bs
   pure (⟨sh != 0, index, variant, nodes.toArray⟩, bs)
 
+private def unpackDefKindSafetyFast (b : UInt8) : Ix.DefKind × Ix.DefinitionSafety :=
+  let kind := match b >>> 2 with | 0 => .defn | 1 => .opaq | _ => .thm
+  let safety := match b &&& 0x3 with | 0 => .unsaf | 1 => .safe | _ => .part
+  (kind, safety)
+
 def listDeDefnConstant (bs : List UInt8) : Option Ixon.Constant := do
   let fuel := bs.length + 1
   let ((fl, val), bs) ← deTagN 4 bs
-  guard (fl == Ixon.Constant.FLAG && val == Ixon.ConstantInfo.CONST_DEFN)
+  guard (fl == 0xD && val == 0)
   let (dfl, bs) ← deU8 bs
   let asserts ← Ixon.DefAsserts.ofCode? (dfl >>> 4)
-  let (kind, safety) := Ixon.unpackDefKindSafety (dfl &&& 15)
+  let (kind, safety) := unpackDefKindSafetyFast (dfl &&& 15)
   let (lvls, bs) ← deTagN0Val bs
   let (typ, bs) ← deExprFuel fuel bs
   let (value, bs) ← deExprFuel fuel bs
