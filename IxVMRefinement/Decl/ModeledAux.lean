@@ -240,21 +240,22 @@ theorem envExt_shared_prefix {ms : List (ConstantInfo .anon)} {env₁ env₂ : E
   find {k c} hf := by
     unfold Env.find? at hf ⊢
     rw [List.find?_append] at hf ⊢
-    cases hm : ms.find? (·.name == k) with
+    cases hm : ms.find? (fun x : ConstantInfo .anon => x.name == k) with
     | some cm =>
-      rw [hm] at hf ⊢
+      rw [hm] at hf
       exact hf
     | none =>
-      rw [hm] at hf ⊢
+      rw [hm] at hf
       exact hext.find hf
   tables {T cv caps} hf := by
     rw [find?_prepend_nonProjTable hnpt T, find?_prepend_nonProjTable hnpt T]
     unfold Env.find? at hf
     rw [List.find?_append] at hf
-    cases hm : ms.find? (·.name == T) with
+    cases hm : ms.find? (fun x : ConstantInfo .anon => x.name == T) with
     | some cm =>
       have hmem : cm ∈ ms := List.mem_of_find?_eq_some hm
-      have hbeq : (cm.name == T) = true := List.find?_some (p := (·.name == T)) hm
+      have hbeq : (cm.name == T) = true :=
+        List.find?_some (p := fun x : ConstantInfo .anon => x.name == T) hm
       have hname : cm.name = T := eq_of_beq hbeq
       rw [← hname]
       obtain ⟨h1, h2⟩ := hms_pt cm hmem
@@ -1867,7 +1868,7 @@ theorem rawIotaRule_to_posNVmRun
     have hlast : lhsS_pos.getAppArgs.getLastD (.bvar 0) =
         posOf lps (lhsS.getAppArgs.getLastD (.bvar 0)) := by
       rw [hlargs_pos]
-      exact getLastD_map_of_ne_nil (posOf lps) (.bvar 0) (.bvar 0) hne
+      exact getLastD_map_of_ne_nil (posOf lps) (.bvar 0) (.bvar 0) lhsS.getAppArgs hne
     rw [hlast, hraw.hmajor_eq]
     show ((Expr.mkAppN (.const (f_id r.ctor) lvls_lps) _).instantiateLevelParams lps (posLevels lps)) = _
     rw [mkAppN_instantiateLevelParams, fold_posOf lps, hpinsF_pos]
