@@ -256,26 +256,30 @@ theorem get_constant_info_spec {t : Ixon.TagN} {n1 : Nat}
           t.value.toNat / 72057594037927936 % 256 = 0 :=
       natCast_inj_56 (by omega) (by omega) hsum_cast
     have hv_lt256 : t.value.toNat < 256 := by
-      have hlt64 := t.value.toNat_lt
       let v := t.value.toNat
-      have hv_lt : v < 18446744073709551616 := hlt64
-      have hz : v / 256 % 256 + v / 65536 % 256 + v / 16777216 % 256 +
-          v / 4294967296 % 256 + v / 1099511627776 % 256 +
-          v / 281474976710656 % 256 + v / 72057594037927936 % 256 = 0 := hsum_zero
-      have hq7 : v / 72057594037927936 < 256 := by omega
-      have h7 : v / 72057594037927936 = 0 := by omega
-      have hq6 : v / 281474976710656 < 256 := by omega
-      have h6 : v / 281474976710656 = 0 := by omega
-      have hq5 : v / 1099511627776 < 256 := by omega
-      have h5 : v / 1099511627776 = 0 := by omega
-      have hq4 : v / 4294967296 < 256 := by omega
-      have h4 : v / 4294967296 = 0 := by omega
-      have hq3 : v / 16777216 < 256 := by omega
-      have h3 : v / 16777216 = 0 := by omega
-      have hq2 : v / 65536 < 256 := by omega
-      have h2 : v / 65536 = 0 := by omega
-      have hq1 : v / 256 < 256 := by omega
-      have h1 : v / 256 = 0 := by omega
+      let v1 := v / 256
+      let v2 := v1 / 256
+      let v3 := v2 / 256
+      let v4 := v3 / 256
+      let v5 := v4 / 256
+      let v6 := v5 / 256
+      let v7 := v6 / 256
+      have hv_lt : v < 18446744073709551616 := t.value.toNat_lt
+      have hv2 : v / 65536 = v2 := by
+        rw [← (by decide : 256 * 256 = 65536), ← Nat.div_div_eq_div_mul]
+      have hv3 : v / 16777216 = v3 := by
+        rw [← (by decide : 65536 * 256 = 16777216), ← Nat.div_div_eq_div_mul, hv2]
+      have hv4 : v / 4294967296 = v4 := by
+        rw [← (by decide : 16777216 * 256 = 4294967296), ← Nat.div_div_eq_div_mul, hv3]
+      have hv5 : v / 1099511627776 = v5 := by
+        rw [← (by decide : 4294967296 * 256 = 1099511627776), ← Nat.div_div_eq_div_mul, hv4]
+      have hv6 : v / 281474976710656 = v6 := by
+        rw [← (by decide : 1099511627776 * 256 = 281474976710656), ← Nat.div_div_eq_div_mul, hv5]
+      have hv7 : v / 72057594037927936 = v7 := by
+        rw [← (by decide : 281474976710656 * 256 = 72057594037927936), ← Nat.div_div_eq_div_mul, hv6]
+      have hlt7 : v7 < 256 := by rw [← hv7]; omega
+      have hz : v1 % 256 + v2 % 256 + v3 % 256 + v4 % 256 + v5 % 256 + v6 % 256 + v7 % 256 = 0 := by
+        simpa only [v, v1, hv2, hv3, hv4, hv5, hv6, hv7] using hsum_zero
       omega
     simp only [u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure, Except.ok.injEq] at pr348
     subst v339
@@ -516,7 +520,7 @@ theorem max_lvls_spec {info : Ixon.ConstantInfo} {infoVal r : SourceValue F}
         obtain ⟨hall, hfold_lt, hv_eq, hm330⟩ := muts_max_lvls_spec (by omega) hms ev305'
         have hfold_eq :
             ms.toList.foldl (fun a m => max a (mutConstLvls m)) 0 = (Ixon.ConstantInfo.muts ms).maxLvls := by
-          unfold Ixon.ConstantInfo.maxLvls
+          simp only [Ixon.ConstantInfo.maxLvls]
           rw [← Array.foldl_toList]
           congr 1
           funext acc m
@@ -815,7 +819,7 @@ theorem assert_params_canonical_spec {bound : Nat} (hbound : bound < 4294967296)
         cases htail with
         | nil cell2 =>
           exact (Core.load_cell_ne cell2 ld123 (by decide)).elim
-        | @cons q tail2 addr2 tailPtr2 cell2 hq htail2 =>
+        | cons (x := q) (xs := tail2) cell2 hq htail2 =>
           obtain ⟨_, hxs2⟩ := Core.load_cell cell2 ld123
           simp only [List.cons.injEq, and_true] at hxs2; obtain ⟨_, _⟩ := hxs2; subst x_q w143
           rw [Lib.repU64_eq hq] at ev199
@@ -1374,11 +1378,11 @@ theorem EnvDecoded.recordAt_deConstantExact {E : Ixon.Env} (hdec : EnvDecoded E)
       Ixon.deConstantExact lc.rawBytes = .ok cst ∧
       Ixon.deConstant lc.rawBytes = .ok cst := by
   unfold Ix.Cert.recordAt at hrec
-  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   cases hget : E.consts.get? x with
-  | none => simp [hget] at hrec
+  | none => rw [hget] at hrec; simp at hrec
   | some lc =>
-    simp only [hget, Option.bind_some] at hrec
+    rw [hget] at hrec
+    simp only [Option.bind_some] at hrec
     obtain ⟨c', hc', hexact⟩ := hdec x lc hget
     rw [hrec] at hc'
     injection hc' with hc_eq
@@ -1400,9 +1404,8 @@ theorem recordShape_of_deConstant {c : Core.Ctx}
   obtain ⟨_, bytes, c', hashed, haddr, _, hde, _, _, _, _, _, cRep⟩ :=
     load_verified_constant_decode ha ev
   unfold Ix.Cert.recordAt at hrec
-  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   cases hlc : c.E.consts.get? (Core.ixAddr a) with
-  | none => simp [hlc] at hrec
+  | none => rw [hlc] at hrec; simp at hrec
   | some lc =>
     have hde_lc := hdec_a lc hlc
     have haddr' : Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr a := haddr
@@ -1450,7 +1453,6 @@ theorem recordShape_of_load_verified_constant_uncached {c : Core.Ctx}
   intro lc hlc
   obtain ⟨hnone, hoff, hlen⟩ := huncached lc hlc
   unfold Ix.Cert.recordAt at hrec
-  rw [← Std.HashMap.get?_eq_getElem?] at hrec
   rw [hlc] at hrec
   simp only [Option.bind_some, Ixon.LazyConstant.get?, hnone, hoff, hlen] at hrec
   have hraw : lc.rawBytes = lc.buf := by
