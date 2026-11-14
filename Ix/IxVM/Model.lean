@@ -600,7 +600,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     if w.2.1 == 2 then deps := deps.push x
   -- the references of a container's recursor family that the circuit cannot place by
   -- the container's block alone (`KernelModeled::container_refs_ok`: the block's
-  -- references, its members, members of the blocks its used references project
+  -- used references, its members, members of the blocks its used references project
   -- from) are witnessed too (Array.mk's List under a nested container)
   let mut extra : Array Address := #[]
   for (x, k, _, _) in witnesses do
@@ -620,7 +620,8 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     let used := usedIdxs fam
     for (r, j) in fam.refs.zipIdx do
       unless used.contains j do continue
-      if ibc.refs.contains r || outside.contains r || extra.contains r then continue
+      if ibc.refs.zipIdx.any (fun (q, i) => q == r && iused.contains i) then continue
+      if outside.contains r || extra.contains r then continue
       let rc? := look r
       if (rc?.bind projectionBlock?) == some entry.block then continue
       let icBlock : Option Address := rc?.bind fun c => match c.info with

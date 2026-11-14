@@ -18,7 +18,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.Obs (W matchPattern_tuple_inv matchPattern_construct_inv)
+open IxVM.Refinement.Obs (W)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open Ix.Kernel (ConstantInfo ConstantVal Declaration RecRule RecRuleFire LevelParam Level Expr
   auxKey eqName eqA isEqHead recRuleBits openPisAtFvars)
@@ -64,9 +64,9 @@ theorem SubCalls.cons_tail {cs : List (Call F)} {hd : Call F} {tl : List (Call F
 /-- Universal soundness of the `Specs.Callees` specification family (`projection_addr_ctor`,
 `check_recursor_canonical_at`, etc.). -/
 def CalleesSpec : Prop :=
-  ∀ (c : Ctx) (fn : Specs.Callees.Fn) (args : List (SourceValue F))
+  ∀ (c : Ctx) (f : Specs.Callees.Fn) (args : List (SourceValue F))
     (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
-    ObsFn W fn.name args h r h' calls → fn.spec c args h r h' calls
+    ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
 
 /-- Strengthening of `LoadFacts.getCI` for non-recursor/non-quotient records yielding
 `CIPtrRepExact` (exact `RepKLevel` / `RepKLevelList` on freshly loaded constant records, before
@@ -82,7 +82,7 @@ def ExactGetCI (c : Ctx) : Prop :=
       (∀ cv v, ci = .thmInfo cv v → cv.levelParams = List.range cv.levelParams.length) ∧
       CIPtrRepExact c.κ h' ptr ci
 
-theorem ExactGetCI.mono_envExt {c : Ctx} {env' : Env}
+theorem ExactGetCI.mono_envExt {c : Ctx} {env' : Ix.Kernel.Env .anon}
     (hext : ∀ k ci, c.env.find? k = some ci → env'.find? k = some ci)
     (hget : ExactGetCI c) :
     ExactGetCI { c with env := env' } := by
@@ -139,10 +139,10 @@ theorem eq_addr_key_spec {c : Ctx} {rc eqa v_role v_raddr : SourceValue F} {a_eq
     c.κ (ixAddr a_eq) = Ix.Kernel.eqName ∧ h₃ = h₂ := by
   obtain ⟨hv_role, _, _⟩ := Obs.«KernelRoleSpec::role_eq».obs ev_role
   rw [hv_role] at ev_raddr
-  have hnum : (0 : F) = roleNum .eq := rfl
+  have hnum : (8 : F) = roleNum .eq := rfl
   rw [hnum] at ev_raddr
   have hra_fn : Specs.Roles.role_addr c [rc, .field (roleNum .eq)] h₁ v_raddr h₂ cs_raddr :=
-    hroles c .role_addr _ _ _ _ _ ev_raddr
+    hroles c hwf .role_addr _ _ _ _ _ ev_raddr
   obtain ⟨a_tbl, ha_tbl, haddr_of, _⟩ := hra_fn rc .eq rfl hg_raddr hrc
   obtain ⟨heq_f, hh₃⟩ := Lib.address_eq_spec ev_eq ha_eq ha_tbl
   have ha_same : a_eq = a_tbl := by
@@ -208,8 +208,9 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
     (hs : locals.find? (·.1 == "s") = some ("s", s_ptr))
     {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)}
     (ev : ObsExpr W [] locals gaEnd h r h' cs) :
-    let a : Bytes.Address := ⟨xs.toArray, by simp [hxlen]⟩
-    ∃ x_t, r = .tuple [x_t, s_ptr] ∧
+    ∃ (a : Bytes.Address) (x_t : SourceValue F),
+      a.toList = xs ∧
+      r = .tuple [x_t, s_ptr] ∧
       Bytes.RepAddressRef addrTy h' a x_t ∧
       Heap.Extends h h' ∧ cs = [] := by
   dsimp only [gaEnd] at ev
@@ -225,60 +226,53 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
   subst hxs
   obtain ⟨rfl, rfl, rfl⟩ := anil.nil_inv
   subst hm₁
+  let bfn : UInt8 → SourceValue F := fun b => .field (b.toNat : F)
   let a : Bytes.Address := ⟨xs.toArray, by simp [hxlen]⟩
-  have hty : (Value.tuple (xs.map fun b => Value.field (b.toNat : F))).type = addrTy := by
-    have hmap_len : (xs.map fun b => (Value.field (b.toNat : F)).type).length = 32 := by
-      simp [hxlen]
-    have hrep : (xs.map fun b => (Value.field (b.toNat : F)).type) = List.replicate 32 .field := by
+  have halist : a.toList = xs := by simp [a, Vector.toList]
+  have hty : (Value.tuple (xs.map bfn) : SourceValue F).type = addrTy := by
+    have hrep : (xs.map fun b => (bfn b).type) = List.replicate 32 .field := by
       apply List.ext_getElem (by simp [hxlen])
       intro k hk₁ hk₂
-      simp [Value.type]
-    show Ty.tuple ((xs.map fun b => Value.field (b.toNat : F)).map Value.type) = addrTy
+      simp [bfn, Value.type]
+    show Ty.tuple ((xs.map bfn).map Value.type) = addrTy
     rw [List.map_map]
     exact congrArg Ty.tuple hrep
-  refine ⟨.ptr (Value.tuple bvals).type h.length, rfl, ?_, Heap.Extends.snoc h _, rfl⟩
+  refine ⟨a, .ptr (Value.tuple bvals).type h.length, halist, rfl, ?_, Heap.Extends.snoc h _, rfl⟩
   subst hbvals
+  change Bytes.RepAddressRef addrTy (h ++ [Value.tuple (xs.map bfn)]) a
+    (.ptr (Value.tuple (xs.map bfn) : SourceValue F).type h.length)
   rw [hty]
-  refine ⟨Value.tuple (xs.map fun b => Value.field (b.toNat : F)), ?_, ?_⟩
+  refine ⟨Value.tuple (xs.map bfn), ?_, ?_⟩
   · simp [loadValue, hty, bind, Except.bind, pure, Except.pure]
-  · show Value.tuple (xs.map fun b => Value.field (b.toNat : F)) =
-      Value.tuple (a.toList.map fun b => Value.field (b.toNat : F))
-    have halist : a.toList = xs := Array.toList_toArray xs
+  · show Value.tuple (xs.map bfn) = Value.tuple (a.toList.map bfn)
     rw [halist]
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
       {locals : Environment F Nat} {scr : String} {ptr : SourceValue F}
       {bytes : List UInt8} {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)},
-      (pre.reverse ++ bs).Nodup →
-      "s" ∉ pre → "s" ∉ bs →
       pre.reverse ++ bs = gaNames →
-      L1.Bound locals pre.reverse ys →
+      L1.Bound locals pre ys →
       (bs = [] → locals.find? (·.1 == "s") = some ("s", ptr)) →
       (bs ≠ [] → locals.find? (·.1 == scr) = some (scr, ptr)) →
       L1.Stream h bytes ptr →
       ObsExpr W [] locals (gaFrom bs scr) h r h' cs →
-      ∃ (xs rem : List UInt8) (x_t x_s2 : SourceValue F),
+      ∃ (a : Bytes.Address) (xs rem : List UInt8) (x_t x_s2 : SourceValue F),
         xs.length = bs.length ∧
         bytes = xs ++ rem ∧
-        (let full := ys ++ xs
-         ∃ hfull : full.length = 32,
-           r = .tuple [x_t, x_s2] ∧
-           Bytes.RepAddressRef addrTy h' ⟨full.toArray, by simp [hfull]⟩ x_t ∧
-           L1.Stream h' rem x_s2 ∧
-           Heap.Extends h h' ∧ cs = [])
-  | [], pre, ys, locals, _, ptr, bytes, h, h', r, cs, _, _, _, hga, hb, hs0, _, hstr, ev => by
+        a.toList = ys.reverse ++ xs ∧
+        r = .tuple [x_t, x_s2] ∧
+        Bytes.RepAddressRef addrTy h' a x_t ∧
+        L1.Stream h' rem x_s2 ∧
+        Heap.Extends h h' ∧ cs = []
+  | [], pre, ys, locals, _, ptr, bytes, h, h', r, cs, hga, hb, hs0, _, hstr, ev => by
     rw [List.append_nil] at hga
-    have hylen : ys.length = 32 := by
-      have hlen := hb.length_eq
-      rw [hga] at hlen
-      exact hlen.symm
-    subst hga
-    obtain ⟨x_t, hr, hrep, ext, hcs⟩ := gaEnd_inv hylen hb (hs0 rfl) ev
-    exact ⟨[], bytes, x_t, ptr, rfl, rfl, by simpa using hylen, hr,
-      by simpa using hrep, hstr.mono ext, ext, hcs⟩
-  | b :: bs, pre, ys, locals, scr, ptr, bytes, h, h', r, cs, hnd, hs_pre, hs_bs, hga, hb, _,
-      hscr, hstr, ev => by
+    have hb_rev : L1.Bound locals gaNames ys.reverse :=
+      hga ▸ List.forall₂_reverse_iff.mpr hb
+    have hylen : ys.reverse.length = 32 := hb_rev.length_eq.symm
+    obtain ⟨a, x_t, halist, hr, hrep, ext, hcs⟩ := gaEnd_inv hylen hb_rev (hs0 rfl) ev
+    exact ⟨a, [], bytes, x_t, ptr, rfl, rfl, by simpa using halist, hr, hrep, hstr.mono ext, ext, hcs⟩
+  | b :: bs, pre, ys, locals, scr, ptr, bytes, h, h', r, cs, hga, hb, _, hscr, hstr, ev => by
     simp only [gaFrom] at ev
     obtain ⟨v, m₁, bnd, c₁, c₂, dx, mt, db, rfl⟩ := ev.letValue_inv
     obtain ⟨p, dp, ld⟩ := dx.load_inv
@@ -291,42 +285,35 @@ private theorem gaFrom_inv :
     · rw [L1.consPat, L1.match_cons_cons] at mt
       injection mt with mt; injection mt with hbnd
       subst hbnd
-      have hb_not_pre : b ∉ pre.reverse := by
+      have hnd : (pre.reverse ++ b :: bs).Nodup := hga ▸ gaNames_nodup
+      have hb_not_pre : b ∉ pre := by
         intro hm
-        have hnd' := List.nodup_append.mp hnd
-        exact hnd'.2.2 b hm b (List.mem_cons_self ..) rfl
-      have hs_ne_b : "s" ≠ b := fun heq => hs_bs (heq ▸ List.mem_cons_self ..)
-      have hb_next : L1.Bound ([(b, L1.bv x), ("s", tail)] ++ locals) (b :: pre).reverse (ys ++ [x]) := by
-        rw [List.reverse_cons]
-        have hb_skip : L1.Bound ([(b, L1.bv x), ("s", tail)] ++ locals) pre.reverse ys := by
-          refine L1.bound_skip [(b, L1.bv x), ("s", tail)] ?_ hb
-          intro n hn e he
-          simp only [List.mem_cons, List.not_mem_nil, or_false] at he
-          rcases he with rfl | rfl
-          · exact fun h_eq => hb_not_pre (h_eq ▸ hn)
-          · exact fun h_eq => hs_pre (List.mem_reverse.mp (h_eq ▸ hn))
-        refine List.Forall₂.append hb_skip (.cons ?_ .nil)
-        simp [List.find?_cons]
+        exact (List.nodup_append.mp hnd).2.2 b (List.mem_reverse.mpr hm) b
+          (List.mem_cons_self ..) rfl
+      have hb_in_ga : b ∈ gaNames := by rw [← hga]; simp
+      have hs_ne_b : "s" ≠ b := fun heq => s_notMem_gaNames (heq ▸ hb_in_ga)
+      have hs_not_pre : "s" ∉ pre := by
+        intro hm
+        apply s_notMem_gaNames
+        rw [← hga]
+        exact List.mem_append_left _ (List.mem_reverse.mpr hm)
+      have hb_next : L1.Bound ([(b, L1.bv x), ("s", tail)] ++ locals) (b :: pre) (x :: ys) := by
+        refine .cons (by simp [List.find?_cons]) (L1.bound_skip _ ?_ hb)
+        intro n hn e he
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+        rcases he with rfl | rfl
+        · intro heq; simp only at heq; exact hb_not_pre (heq ▸ hn)
+        · intro heq; simp only at heq; exact hs_not_pre (heq ▸ hn)
       have hs_find : ([(b, L1.bv x), ("s", tail)] ++ locals).find? (·.1 == "s") = some ("s", tail) := by
         have hbn : (b == "s") = false := beq_false_of_ne hs_ne_b.symm
         simp [List.find?_cons, hbn]
       have hga' : (b :: pre).reverse ++ bs = gaNames := by
         rw [List.reverse_cons, List.append_assoc, List.singleton_append]
         exact hga
-      obtain ⟨xs', rem, x_t, x_s2, hxslen, hrem_eq, hfull, hr, hrep, hstr', ext, hcs⟩ :=
-        gaFrom_inv bs (b :: pre) (ys ++ [x])
-          (by rw [hga']; exact gaNames_nodup)
-          (by
-            intro hm
-            rcases List.mem_cons.mp hm with rfl | hm'
-            · exact hs_bs (List.mem_cons_self ..)
-            · exact hs_pre hm')
-          (fun hm => hs_bs (List.mem_cons_of_mem _ hm))
-          hga' hb_next (fun _ => hs_find) (fun _ => hs_find) htail db
-      refine ⟨x :: xs', rem, x_t, x_s2, by simp [hxslen], by simp [hrem_eq], ?_⟩
-      have hassoc : (ys ++ [x]) ++ xs' = ys ++ (x :: xs') := by simp
-      rw [hassoc] at hfull hrep
-      exact ⟨hfull, hr, hrep, hstr', ext, by simp [hcs]⟩
+      obtain ⟨a, xs', rem, x_t, x_s2, hxslen, hrem_eq, halist, hr, hrep, hstr', ext, hcs⟩ :=
+        gaFrom_inv bs (b :: pre) (x :: ys) hga' hb_next (fun _ => hs_find) (fun _ => hs_find) htail db
+      exact ⟨a, x :: xs', rem, x_t, x_s2, by simp [hxslen], by simp [hrem_eq],
+        by simpa using halist, hr, hrep, hstr', ext, by simp [hcs]⟩
 
 /-- **`IxonDeserialize::get_address`** peels 32 bytes off an `L1.Stream`, allocates their
 `Bytes.RepAddressRef`, and returns `(addr_ptr, rest_stream)`. -/
@@ -344,14 +331,9 @@ theorem get_address_spec {s_ptr r : SourceValue F} {bytes : List UInt8}
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonDeserialize.get_address.lookup
     (by simp [IxVM.IxonDeserialize.get_address, ControlLower.hasControl]) ev
   rw [get_address_body] at d0
-  obtain ⟨xs, rem, x_t, x_s2, hxslen, hbytes, hfull, hr, hrep, hstr', ext, hcs⟩ :=
-    gaFrom_inv gaNames [] [] gaNames_nodup (by simp) s_notMem_gaNames rfl .nil
-      (fun h => nomatch h)
-      (fun _ => by rfl)
-      hs d0
-  simp only [List.nil_append] at hfull hrep
-  let a : Bytes.Address := ⟨xs.toArray, by simp [hfull]⟩
-  have halist : a.toList = xs := Array.toList_toArray xs
+  obtain ⟨a, xs, rem, x_t, x_s2, _, hbytes, halist, hr, hrep, hstr', ext, hcs⟩ :=
+    gaFrom_inv gaNames [] [] rfl .nil (fun h => nomatch h) (fun _ => by rfl) hs d0
+  simp only [List.reverse_nil, List.nil_append] at halist
   exact ⟨a, rem, x_t, x_s2, by rw [halist]; exact hbytes, hr, hrep, hstr', ext, hcs⟩
 
 /-! ## Widened `< 4611686018427387904` (`2 ^ 62`) telescope wrappers -/
@@ -574,13 +556,16 @@ private theorem bvars_desc_go_wide (rem : Nat) :
       have hcnt1 := Lib.val_sub_one (fun (e : cnt = 0) => hne (by rw [e]))
       have htop_ne : top ≠ 0 := by intro e; subst e; simp at hle_top
       have htop1 := Lib.val_sub_one htop_ne
+      have hhead0 : TmExact κ d Γ (h ++ [.construct kexprEnum "BVar" [.field (top - 1)]]) 0
+          (.fvar (fvIdx d 0 (ZMod.val (top - 1))) (Γ (fvIdx d 0 (ZMod.val (top - 1)))))
+          (.ptr (.enum kexprEnum) h.length) :=
+        .bvarFree (by simp) (by omega) (by omega) (by omega)
+      have hfv_eq : fvIdx d 0 (ZMod.val (top - 1)) = d - ZMod.val top := by
+        unfold fvIdx; omega
       have hhead : TmExact κ d Γ (h ++ [.construct kexprEnum "BVar" [.field (top - 1)]]) 0
           (.fvar (d - ZMod.val top) (Γ (d - ZMod.val top)))
           (.ptr (.enum kexprEnum) h.length) := by
-        refine .bvarFree (by simp) (by omega) (by omega) (by omega)
-      have hfv_eq : fvIdx d 0 (ZMod.val (top - 1)) = d - ZMod.val top := by
-        unfold fvIdx; omega
-      rw [hfv_eq] at hhead
+        rwa [hfv_eq] at hhead0
       have htail := ih (κ := κ) (Γ := Γ) (top := top - 1) (cnt := cnt - 1)
         (by omega) (by omega) (by omega) hd_lt ev_rec
       rw [List.range_succ_eq_map, List.map_cons, List.map_map, Nat.add_zero]
@@ -657,11 +642,15 @@ private theorem stripPis_forall_instantiate1 (v : KExpr) (k : KKey) (us : List K
         stripPis_forall_instantiate1 v k us m b (c + 1) hsb hfn
       exact ⟨(ty.instantiate1 v c, mb₀) :: bs', dom', body',
         by simp [Expr.instantiate1, Expr.stripPis, ihs], ihfn⟩
-  | _ + 1, .bvar _, _, _, _, _, _, hs, _ | _ + 1, .fvar _ _, _, _, _, _, _, hs, _
-  | _ + 1, .sort _, _, _, _, _, _, hs, _ | _ + 1, .const _ _, _, _, _, _, _, hs, _
-  | _ + 1, .app _ _, _, _, _, _, _, hs, _ | _ + 1, .lam _ _ _, _, _, _, _, hs, _
-  | _ + 1, .letE _ _ _ _, _, _, _, _, hs, _ | _ + 1, .lit _, _, _, _, _, _, hs, _
-  | _ + 1, .proj _ _ _, _, _, _, _, hs, _ => nomatch hs
+  | _ + 1, .bvar _, _, _, _, _, _, hs, _
+  | _ + 1, .fvar _ _, _, _, _, _, _, hs, _
+  | _ + 1, .sort _, _, _, _, _, _, hs, _
+  | _ + 1, .const _ _, _, _, _, _, _, hs, _
+  | _ + 1, .app _ _, _, _, _, _, _, hs, _
+  | _ + 1, .lam _ _ _, _, _, _, _, _, hs, _
+  | _ + 1, .letE _ _ _ _, _, _, _, _, _, hs, _
+  | _ + 1, .lit _, _, _, _, _, _, hs, _
+  | _ + 1, .proj _ _ _, _, _, _, _, _, hs, _ => nomatch hs
 
 /-- From `Infer env .full d E ty`, `E.stripPis m = some (bs, .forallE dom body mb)`, and
 `dom.getAppFn = .const k us`, extract `us.length = ci.toConstantVal.levelParams.length`. -/
@@ -693,14 +682,14 @@ theorem infer_stripPis_dom_const_lvls :
           stripPis_forall_instantiate1 (.fvar d tyB) k us m b 0 hsb hfn
         exact infer_stripPis_dom_const_lvls m hb hs' hfn'
   | _ + 1, _, _, .bvar _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .fvar _ _, _, _, _, _, _, _, _, _, hs, _
+  | _ + 1, _, _, .fvar _ _, _, _, _, _, _, _, _, hs, _
   | _ + 1, _, _, .sort _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .const _ _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .app _ _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .lam _ _ _, _, _, _, _, _, _, _, _, _, hs, _
+  | _ + 1, _, _, .const _ _, _, _, _, _, _, _, _, hs, _
+  | _ + 1, _, _, .app _ _, _, _, _, _, _, _, _, hs, _
+  | _ + 1, _, _, .lam _ _ _, _, _, _, _, _, _, _, _, hs, _
   | _ + 1, _, _, .letE _ _ _ _, _, _, _, _, _, _, _, _, hs, _
   | _ + 1, _, _, .lit _, _, _, _, _, _, _, _, _, hs, _
-  | _ + 1, _, _, .proj _ _ _, _, _, _, _, _, _, _, _, _, hs, _ => nomatch hs
+  | _ + 1, _, _, .proj _ _ _, _, _, _, _, _, _, _, _, hs, _ => nomatch hs
 
 theorem noLooseIn_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) (n : Nat) :
     ∀ (e : KExpr) (lo : Nat),
@@ -762,10 +751,10 @@ private theorem instantiate1_eq_self_of_bounded (v : KExpr) :
     simp [Expr.instantiate1, ihf hb.1 hle, iha hb.2 hle]
   | lam t b _ iht ihb | forallE t b _ iht ihb =>
     intro k c hb hle; simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp [Expr.instantiate1, iht hb.1 hle, ihb hb.2 (by omega)]
+    simp [Expr.instantiate1, iht hb.1 hle, ihb (c := c + 1) hb.2 (by omega)]
   | letE t val b _ iht ihv ihb =>
     intro k c hb hle; simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp [Expr.instantiate1, iht hb.1.1 hle, ihv hb.1.2 hle, ihb hb.2 (by omega)]
+    simp [Expr.instantiate1, iht hb.1.1 hle, ihv hb.1.2 hle, ihb (c := c + 1) hb.2 (by omega)]
   | proj _ _ x ih =>
     intro k c hb hle; simp only [Expr.looseBVarsBounded] at hb
     simp [Expr.instantiate1, ih hb hle]
@@ -826,7 +815,7 @@ theorem openPisAtFvars_fvars_closed :
   | 0, _, _, _, _, hb, hop => by
     simp only [openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, rfl⟩ := hop
-    exact ⟨hb, fun _ hm => nomatch hm, fun _ hk => nomatch hk⟩
+    exact ⟨hb, fun _ hm => absurd hm List.not_mem_nil, fun _ hk => absurd hk (Nat.not_lt_zero _)⟩
   | m + 1, .forallE ty body _, i, _, _, hb, hop => by
     simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
     simp only [openPisAtFvars] at hop
@@ -837,8 +826,8 @@ theorem openPisAtFvars_fvars_closed :
       simp only [Option.some.injEq, Prod.mk.injEq] at hop
       rcases p with ⟨fvs', rem'⟩
       obtain ⟨rfl, rfl⟩ := hop
-      have hb_open : (body.instantiate1 (.fvar i ty)).looseBVarsBounded 0 = true := by
-        simpa using Ix.Kernel.Expr.looseBVarsBounded_instantiate1 body (.fvar i ty) 0 hb.2 rfl
+      have hb_open : (body.instantiate1 (.fvar i ty)).looseBVarsBounded 0 = true :=
+        Expr.looseBVarsBounded_instantiate1_gen (a := .fvar i ty) rfl hb.2
       obtain ⟨hrem, hfvs', hshape⟩ := openPisAtFvars_fvars_closed m hb_open hop'
       refine ⟨hrem, fun x hx => ?_, fun k hk => ?_⟩
       · rcases List.mem_cons.mp hx with rfl | hx'
@@ -850,94 +839,20 @@ theorem openPisAtFvars_fvars_closed :
           have hk' : k' < fvs'.length := Nat.lt_of_succ_lt_succ hk
           obtain ⟨ty', hty'⟩ := hshape k' hk'
           exact ⟨ty', by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hty'⟩
-  | _ + 1, .bvar _, _, _, _, _, hop | _ + 1, .fvar _ _, _, _, _, _, hop
-  | _ + 1, .sort _, _, _, _, _, hop | _ + 1, .const _ _, _, _, _, _, hop
-  | _ + 1, .app _ _, _, _, _, _, hop | _ + 1, .lam _ _ _, _, _, _, _, hop
-  | _ + 1, .letE _ _ _ _, _, _, _, _, hop | _ + 1, .lit _, _, _, _, _, _, hop
-  | _ + 1, .proj _ _ _, _, _, _, _, hop => nomatch hop
+  | _ + 1, .bvar _, _, _, _, _, hop
+  | _ + 1, .fvar _ _, _, _, _, _, hop
+  | _ + 1, .sort _, _, _, _, _, hop
+  | _ + 1, .const _ _, _, _, _, _, hop
+  | _ + 1, .app _ _, _, _, _, _, hop
+  | _ + 1, .lam _ _ _, _, _, _, hop
+  | _ + 1, .letE _ _ _ _, _, _, _, hop
+  | _ + 1, .lit _, _, _, _, _, hop
+  | _ + 1, .proj _ _ _, _, _, _, hop => nomatch hop
 
-private theorem subst_self_param {ps : List LevelParam} (hnd : ps.Nodup) :
-    ∀ (u : KLevel), Level.allParamsDefined ps u = true →
-      Level.subst ps (ps.map .param) u = u := by
-  have hgo : ∀ (ks : List LevelParam) (p : LevelParam),
-      p ∈ ks → Level.subst.go ks (ks.map .param) p = .param p := by
-    intro ks p hp
-    induction ks with
-    | nil => nomatch hp
-    | cons k ks ih =>
-      by_cases hkp : k = p
-      · subst hkp
-        show (if k = k then Level.param k else Level.subst.go ks (ks.map .param) k) = .param k
-        exact ite_eq_left rfl
-      · rcases List.mem_cons.mp hp with rfl | hp'
-        · exact absurd rfl hkp
-        · show (if k = p then Level.param k else Level.subst.go ks (ks.map .param) p) = .param p
-          rw [ite_eq_right hkp]
-          exact ih hp'
-  intro u
-  induction u with
-  | zero => intro _; rfl
-  | succ u ih =>
-    intro h; simp only [Level.allParamsDefined] at h
-    exact congrArg Level.succ (ih h)
-  | max u v ihu ihv =>
-    intro h; simp only [Level.allParamsDefined, Bool.and_eq_true] at h
-    rw [Level.subst, ihu h.1, ihv h.2]
-    exact Level.mkMax_eq u v
-  | imax u v ihu ihv =>
-    intro h; simp only [Level.allParamsDefined, Bool.and_eq_true] at h
-    rw [Level.subst, ihu h.1, ihv h.2]
-    exact Level.mkIMax_eq u v
-  | param p =>
-    intro h; simp only [Level.allParamsDefined, List.contains_iff_mem] at h
-    exact hgo ps p h
-
-private theorem substPW_self_param {ps : List LevelParam} (hnd : ps.Nodup) :
-    ∀ (pw : Ix.Kernel.PropWhen), Ix.Kernel.Level.allParamsDefinedPW ps pw = true →
-      Ix.Kernel.Level.substPW ps (ps.map .param) pw = pw
-  | .never, _ | .always, _ => rfl
-  | .atZero u, h => congrArg Ix.Kernel.PropWhen.atZero (subst_self_param hnd u h)
-
-/-- Instantiating `e` at its own level parameter list `ps.map .param` is the identity when
-`e.allLevelParamsDefined ps = true` and `ps.Nodup`. -/
-theorem instantiateLevelParams_self_eq {ps : List LevelParam} (hnd : ps.Nodup) :
-    ∀ {e : KExpr}, e.allLevelParamsDefined ps = true →
-      e.instantiateLevelParams ps (ps.map .param) = e := by
-  intro e
-  induction e with
-  | bvar _ | lit _ => intro _; rfl
-  | fvar i ty ih =>
-    intro h; simp only [Expr.allLevelParamsDefined] at h
-    exact congrArg (Expr.fvar i) (ih h)
-  | sort u =>
-    intro h; simp only [Expr.allLevelParamsDefined] at h
-    exact congrArg Expr.sort (subst_self_param hnd u h)
-  | const n us =>
-    intro h; simp only [Expr.allLevelParamsDefined, List.all_eq_true] at h
-    refine congrArg (Expr.const n) ?_
-    induction us with
-    | nil => rfl
-    | cons u us ih =>
-      simp only [List.map_cons, List.cons.injEq]
-      exact ⟨subst_self_param hnd u (h u (List.mem_cons_self ..)),
-        ih (fun v hv => h v (List.mem_cons_of_mem _ hv))⟩
-  | app f a ihf iha =>
-    intro h; simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    exact congrArg₂ Expr.app (ihf h.1) (iha h.2)
-  | lam t b m iht ihb =>
-    intro h; simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    cases m
-    simp [Expr.instantiateLevelParams, iht h.1.1, ihb h.1.2, substPW_self_param hnd _ h.2]
-  | forallE t b m iht ihb =>
-    intro h; simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    cases m
-    simp [Expr.instantiateLevelParams, iht h.1.1, ihb h.1.2, substPW_self_param hnd _ h.2]
-  | letE t v b m iht ihv ihb =>
-    intro h; simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp [Expr.instantiateLevelParams, iht h.1.1, ihv h.1.2, ihb h.2]
-  | proj s i x ih =>
-    intro h; simp only [Expr.allLevelParamsDefined] at h
-    exact congrArg (Expr.proj s i) (ih h)
+/-- Instantiating `e` at its own level parameter list `ps.map .param` is the identity. -/
+theorem instantiateLevelParams_self_eq {ps : List LevelParam} {e : KExpr} :
+    e.instantiateLevelParams ps (ps.map .param) = e :=
+  instantiateLevelParams_self ps e
 
 /-- Convert `TypedListJ posRulesJ` on opened free variables `.fvar idx ty` into `DefEqListJ posRulesJ`
 on their `.fvarTypeD` annotations via `Infer.fvar` inversion. -/
@@ -953,13 +868,14 @@ theorem typedListJ_fvars_to_defEqListJ {env : Ix.Kernel.Env .anon} {d : Nat} :
     change Infer env .full d (.fvar idx (posOf ps ty_x)) (posOf ps ty_inf) at hinf_pos
     generalize hin : (Expr.fvar idx (posOf ps ty_x) : KExpr) = e_in at hinf_pos
     generalize hout : posOf ps ty_inf = out_ty at hinf_pos
-    cases hinf_pos
-    all_goals try exact nomatch hin
-    injection hin with _ hty_pos
-    have hty_eq : ty_inf = ty_x := posOf_inj hperm (hout.trans hty_pos.symm)
-    subst hty_eq
-    exact ⟨hde, typedListJ_fvars_to_defEqListJ
-      (fun y hy => hfvs y (List.mem_cons_of_mem _ hy)) hrest⟩
+    cases hinf_pos with
+    | fvar =>
+      injection hin with _ hty_pos
+      have hty_eq : ty_inf = ty_x := posOf_inj hperm (hout.trans hty_pos.symm)
+      subst hty_eq
+      exact ⟨hde, typedListJ_fvars_to_defEqListJ
+        (fun y hy => hfvs y (List.mem_cons_of_mem _ hy)) hrest⟩
+    | _ => exact nomatch hin
 
 private theorem stripPis_wellFormed :
     ∀ (m : Nat) {e : KExpr} {c : Nat} {env : Ix.Kernel.Env .anon} {lps : List LevelParam}
@@ -993,18 +909,22 @@ private theorem stripPis_wellFormed :
       have ih := stripPis_wellFormed m hfv.2 hb.2 hcr.2 hlps.1.2 hsb
       rw [show c + 1 + m = c + (m + 1) by omega] at ih
       exact ih
-  | _ + 1, .bvar _, _, _, _, _, _, _, _, _, _, hs | _ + 1, .fvar _ _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .sort _, _, _, _, _, _, _, _, _, _, hs | _ + 1, .const _ _, _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .app _ _, _, _, _, _, _, _, _, _, _, hs | _ + 1, .lam _ _ _, _, _, _, _, _, _, _, _, hs
-  | _ + 1, .letE _ _ _ _, _, _, _, _, _, _, _, _, hs | _ + 1, .lit _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .bvar _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .fvar _ _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .sort _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .const _ _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .app _ _, _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .lam _ _ _, _, _, _, _, _, _, _, _, hs
+  | _ + 1, .letE _ _ _ _, _, _, _, _, _, _, _, hs
+  | _ + 1, .lit _, _, _, _, _, _, _, _, _, _, hs
   | _ + 1, .proj _ _ _, _, _, _, _, _, _, _, _, hs => nomatch hs
 
-private theorem getAppFn_wellFormed {env : Ix.Kernel.Env .anon} {lps : List LevelParam} :
+private theorem getAppFn_wellFormed {lps : List LevelParam} :
     ∀ {e : KExpr}, e.allLevelParamsDefined lps = true →
       (e.getAppFn).allLevelParamsDefined lps = true
   | .app f _, h => by
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    exact getAppFn_wellFormed h.1
+    exact getAppFn_wellFormed (e := f) h.1
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .lam _ _ _, h
   | .forallE _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => h
 
@@ -1027,13 +947,18 @@ private theorem getAppArgs_wellFormed {c : Nat} {env : Ix.Kernel.Env .anon} {lps
     have hargs : (Expr.app f x).getAppArgs = f.getAppArgs ++ [x] := getAppArgs_mkAppN [x] f
     rw [hargs] at ha
     rcases List.mem_append.mp ha with ha' | ha'
-    · exact getAppArgs_wellFormed hfv.1 hb.1 hcr.1 hlps.1 ha'
+    · exact getAppArgs_wellFormed (e := f) hfv.1 hb.1 hcr.1 hlps.1 a ha'
     · obtain rfl := List.mem_singleton.mp ha'
       exact ⟨hfv.2, hb.2, hcr.2, hlps.2⟩
-  | .bvar _, _, _, _, _, _, ha | .fvar _ _, _, _, _, _, _, ha | .sort _, _, _, _, _, _, ha
-  | .const _ _, _, _, _, _, _, ha | .lam _ _ _, _, _, _, _, _, ha
-  | .forallE _ _ _, _, _, _, _, _, ha | .letE _ _ _ _, _, _, _, _, _, ha
-  | .lit _, _, _, _, _, _, ha | .proj _ _ _, _, _, _, _, _, ha => nomatch ha
+  | .bvar _, _, _, _, _, _, ha
+  | .fvar _ _, _, _, _, _, ha
+  | .sort _, _, _, _, _, _, ha
+  | .const _ _, _, _, _, _, ha
+  | .lam _ _ _, _, _, _, _, ha
+  | .forallE _ _ _, _, _, _, _, ha
+  | .letE _ _ _ _, _, _, _, _, ha
+  | .lit _, _, _, _, _, _, ha
+  | .proj _ _ _, _, _, _, _, ha => nomatch ha
 
 /-- Assemble `Ix.Kernel.nestedRuleShape` from the major-premise domain decomposition proved by
 `rec_major_pins_spec_wide` together with well-formedness of `tyA` in `envSelf`. -/
@@ -1093,9 +1018,11 @@ theorem nestedRuleShape_of_major_pins {env' envSelf : Ix.Kernel.Env .anon}
       (allLevelParamsDefined_lowerBVars (mI - rP) lps a 0).trans ha_lps
     simp [hp_fv, hp_bvs, hp_cr, hp_lps]
   unfold Ix.Kernel.nestedRuleShape
-  rw [hcvt, hstrip, hfn]
+  rw [hcvt, hstrip]
   simp only [Option.isSome_some, true_and, hle]
   rw [ite_eq_left trivial]
+  dsimp only
+  rw [hfn]
   have hcond :
       dom.getAppArgs.length = cnP + (mI - rP) ∧
       (dom.getAppArgs.take cnP ==
@@ -1122,7 +1049,9 @@ theorem recRulePlain_pins_lvls {tyA dom body : KExpr}
       (dom.getAppArgs.take cnP).map (Expr.lowerBVars (mI - rP) 0) =
         (List.range cnP).map (fun k => Expr.bvar (rP - 1 - k)) := by
   unfold Expr.recRulePlain at hplain
-  rw [hstrip, hfn] at hplain
+  rw [hstrip] at hplain
+  dsimp only at hplain
+  rw [hfn] at hplain
   simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hplain
   obtain ⟨⟨⟨hcnp_le, hrp_le⟩, hlvls⟩, htake⟩ := hplain
   refine ⟨hcnp_le, hlvls, ?_⟩
@@ -1145,8 +1074,9 @@ theorem openPisAtFvars_renameConsts (π : KKey → KKey) :
   | m + 1, .forallE ty body _, i => by
     simp only [Expr.renameConsts, openPisAtFvars]
     have hinst : (body.renameConsts π).instantiate1 (.fvar i (ty.renameConsts π)) =
-        (body.instantiate1 (.fvar i ty)).renameConsts π :=
-      (Ix.Kernel.Expr.renameConsts_instantiate1 π body (.fvar i ty) 0).symm
+        (body.instantiate1 (.fvar i ty)).renameConsts π := by
+      rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
+      rfl
     rw [hinst, openPisAtFvars_renameConsts π m _ (i + 1)]
     cases openPisAtFvars m (body.instantiate1 (.fvar i ty)) (i + 1) <;> rfl
   | _ + 1, .bvar _, _ | _ + 1, .fvar _ _, _ | _ + 1, .sort _, _ | _ + 1, .const _ _, _
@@ -1161,8 +1091,8 @@ theorem instPisAt_renameConsts (π : KKey → KKey) :
   | x :: xs, .forallE ty body _ => by
     simp only [List.map_cons, Expr.renameConsts, Expr.instPisAt]
     have hinst : (body.renameConsts π).instantiate1 (x.renameConsts π) =
-        (body.instantiate1 x).renameConsts π :=
-      (Ix.Kernel.Expr.renameConsts_instantiate1 π body x 0).symm
+        (body.instantiate1 x).renameConsts π := by
+      rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
     rw [hinst, instPisAt_renameConsts π xs (body.instantiate1 x)]
     cases Expr.instPisAt xs (body.instantiate1 x) <;> rfl
   | _ :: _, .bvar _ | _ :: _, .fvar _ _ | _ :: _, .sort _ | _ :: _, .const _ _
@@ -1176,7 +1106,7 @@ theorem instSpine_renameConsts (π : KKey → KKey) :
   | [], _, _ => rfl
   | x :: xs, t, e => by
     simp only [List.map_cons, Expr.instSpine]
-    rw [← Ix.Kernel.Expr.renameConsts_instantiate1 π e x t]
+    rw [← Ix.Kernel.Expr.renameConsts_instantiate1]
     exact instSpine_renameConsts π xs (t - 1) (e.instantiate1 x t)
 
 theorem mkAppN_renameConsts (π : KKey → KKey) :
@@ -1237,8 +1167,8 @@ theorem renameConsts_comp_eq_of_constsResolve {env : Ix.Kernel.Env .anon}
     intro h; simp only [Expr.constsResolve, Bool.and_eq_true] at h
     simp [Expr.renameConsts, iht h.1.1, ihv h.1.2, ihb h.2]
   | proj s i x ih =>
-    intro h; simp only [Expr.constsResolve] at h
-    exact congrArg (Expr.proj s i) (ih h)
+    intro h; simp only [Expr.constsResolve, Bool.and_eq_true] at h
+    exact congrArg (Expr.proj s i) (ih h.2)
 
 /-! ## Direct inversion of `KernelModeled::check_iota_rule` -/
 
@@ -1246,11 +1176,11 @@ private theorem inv_var_find {locals : Environment F Nat} {name : String} {v exp
     {h h' : Heap F} {cs : List (Call F)}
     (hlkp : locals.find? (·.1 == name) = some (name, expected))
     (ev : ObsExpr W [] locals (.var name) h v h' cs) :
-    v = expected ∧ h' = h ∧ cs = [] := by
+    expected = v ∧ h = h' ∧ cs = [] := by
   obtain ⟨l, hh, hc⟩ := ev.var_inv
   rw [hlkp] at l
   injection l with l; injection l with _ hv
-  exact ⟨hv.symm, hh, hc⟩
+  exact ⟨hv, hh.symm, hc⟩
 
 private theorem inv_store_nil_kexpr {locals : Environment F Nat} {v : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
@@ -1264,13 +1194,13 @@ private theorem inv_store_nil_kexpr {locals : Environment F Nat} {v : SourceValu
   rw [kexprList_inst] at hres
   subst hres
   obtain ⟨rfl, rfl, rfl⟩ := a.nil_inv
-  exact ⟨rfl, rfl, rfl⟩
+  exact ⟨by simp [Value.type], rfl, rfl⟩
 
 /-- Structured record of all intermediate heaps, values, call slices, and sub-derivations extracted
 from `ObsFn W "KernelModeled::check_iota_rule"`. -/
 structure CheckIotaRuleInv
     (rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset : SourceValue F)
-    (h : Heap F) (calls : List (Call F)) : Prop where
+    (h : Heap F) (calls : List (Call F)) where
   mi : SourceValue F
   d : SourceValue F
   op_mi : evalBinOp .add rp ni = .ok mi
@@ -1687,11 +1617,13 @@ theorem check_iota_rule_inv
     (ev : ObsFn W "KernelModeled::check_iota_rule"
       [rc, rm, nl, ty_r, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins, t_addr, src, dst, aset]
       h r h' calls) :
-    CheckIotaRuleInv rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset h calls := by
+    Nonempty (CheckIotaRuleInv rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset h calls) := by
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelModeled.check_iota_rule.lookup
     (by simp [IxVM.KernelModeled.check_iota_rule, ControlLower.hasControl]) ev
   simp only [IxVM.KernelModeled.check_iota_rule] at d0
-  have sc0 : SubCalls calls calls := SubCalls.refl calls
+  have hcalls₀ : ∃ calls₀, calls₀ = calls ∧ SubCalls calls₀ calls :=
+    ⟨calls, rfl, SubCalls.refl calls⟩
+  obtain ⟨calls₀, hcalls₀_eq, sc0⟩ := hcalls₀
   -- 1. `let mi = rp + ni`
   obtain ⟨mi, _, _, _, _, d1, mt1, rest1, hc1⟩ := d0.letValue_inv; clear d0
   rw [hc1] at sc0; have sc1 := sc0.append_right; clear sc0 hc1
@@ -1707,20 +1639,19 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) dr2
   obtain rfl := matchPattern_bind_inv mt2
   -- 3. `assert_eq!(Lists::length(pins), cnp)`
-  obtain ⟨_, h_plen, _, c3a, _, d3, mt3, rest3, hc3⟩ := rest2.letValue_inv; clear rest2
+  obtain ⟨_, _, _, c3a, _, d3, mt3, rest3, hc3⟩ := rest2.letValue_inv; clear rest2
   rw [hc3] at sc2; have sc3_l := sc2.append_left; have sc3 := sc2.append_right; clear sc2 hc3
   obtain ⟨_, a3, ap3⟩ := d3.builtin_inv
-  obtain ⟨v3_l, v3_r, _, c3_l, c3_r, rfl, hc3_args, d3_l, d3_r⟩ := inv_args2 a3
+  obtain ⟨v3_l, v3_r, h_plen, c3_l, c3_r, rfl, hc3_args, d3_l, d3_r⟩ := inv_args2 a3
   obtain ⟨_, _, _, cs_plen, a3_la, ev_plen, hc_plen⟩ := d3_l.call_inv
   rw [Obs.Names.n6682477127133607924] at ev_plen hc_plen
   obtain ⟨_, rfl, d3_lv⟩ := inv_args1 a3_la
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d3_lv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d3_r
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap3
+  obtain ⟨heq3, rfl⟩ := Builtin.assertEq_inv ap3; subst v3_l
   obtain rfl := matchPattern_wildcard_inv mt3
   rw [hc3_args, hc_plen] at sc3_l
-  have call_plen : (⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [pins], h⟩ : Call F) ∈ calls :=
-    sc3_l.append_left.append_right.cons_head
+  have call_plen := sc3_l.append_left.append_right.cons_head
   clear sc3_l hc3_args hc_plen
   -- 4. `KernelCheck::validate_expr_well_scoped(rhs, 0, nl)`
   obtain ⟨v_sc, h_sc, _, c4a, _, d4, mt4, rest4, hc4⟩ := rest3.letValue_inv; clear rest3
@@ -1733,7 +1664,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d4_3
   obtain rfl := matchPattern_wildcard_inv mt4
   rw [hc_sc, hc4_args] at sc4_l
-  have sub_sc : SubCalls calls cs_sc := sc4_l.append_right.cons_tail
+  have sub_sc := sc4_l.append_right.cons_tail
   clear sc4_l hc_sc hc4_args
   -- 5. `let (_, peeled, _) = KernelCheck::peel_n_lams_collect(rhs, d, 0, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_peel, _, _, _, d5, mt5, rest5, hc5⟩ := rest4.letValue_inv; clear rest4
@@ -1760,7 +1691,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d6_1, d6_2⟩ := inv_args2 a6
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d6_2
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap6
+  obtain ⟨heq6, rfl⟩ := Builtin.assertEq_inv ap6; subst peeled_v
   obtain rfl := matchPattern_wildcard_inv mt6
   -- 7. `KernelInfer::k_infer(rc, rhs, (&(Lists::Node::Nil)))`
   obtain ⟨v_rhs_ty, h_rhs_inf, _, c7a, _, d7, mt7, rest7, hc7⟩ := rest6.letValue_inv; clear rest6
@@ -1773,7 +1704,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_store_nil_kexpr d7_3
   obtain rfl := matchPattern_wildcard_inv mt7
   rw [hc_rhs_inf, hc7_args] at sc7_l
-  have sub_rhs_inf : SubCalls calls cs_rhs_inf := sc7_l.append_right.cons_tail
+  have sub_rhs_inf := sc7_l.append_right.cons_tail
   clear sc7_l hc_rhs_inf hc7_args
   -- 8. `assert_eq!(KernelClaim::addr_set_member(t, aset), 1)`
   obtain ⟨_, h_aset, _, c8a, _, d8, mt8, rest8, hc8⟩ := rest7.letValue_inv; clear rest7
@@ -1789,7 +1720,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap8
   obtain rfl := matchPattern_wildcard_inv mt8
   rw [hc8_args, hc_aset, hc8_cargs] at sc8_l
-  have sub_aset : SubCalls calls cs_aset := sc8_l.append_left.append_right.cons_tail
+  have sub_aset := sc8_l.append_left.append_right.cons_tail
   clear sc8_l hc8_args hc_aset hc8_cargs
   -- 9. `match (*(Ingress::get_ci(t))) { KernelTypes::KConstantInfo::Thm(tnl, tty, _) => { ... } }`
   obtain ⟨_, h_tci, _, _, c9a, c9b, d9_scr, sel9, rest9, hc9⟩ := rest8.matchValue_inv; clear rest8
@@ -1800,7 +1731,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, rfl, d9_t⟩ := inv_args1 a9
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d9_t
   rw [hc_tci] at sc9_l
-  have sub_tci : SubCalls calls cs_tci := sc9_l.append_right.cons_tail
+  have sub_tci := sc9_l.append_right.cons_tail
   clear sc9_l hc_tci
   rcases selectArm_cons_inv sel9 with ⟨mt9, rfl⟩ | ⟨_, sel9_nil⟩
   swap; · exact (selectArm_nil_inv sel9_nil).elim
@@ -1820,7 +1751,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d10_1, d10_2⟩ := inv_args2 a10
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d10_2
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap10
+  obtain ⟨heq10, rfl⟩ := Builtin.assertEq_inv ap10; subst tnl
   obtain rfl := matchPattern_wildcard_inv mt10
   -- 11. `let (tbody, ctx) = peel_collect(tty, d, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_open, _, _, _, d11, mt11, rest11, hc11⟩ := rest10.letValue_inv; clear rest10
@@ -1884,7 +1815,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap14
   obtain rfl := matchPattern_wildcard_inv mt14
   rw [hc14_args, hc_eqa, hc14_ea, hc_raddr] at sc14_l
-  have sub_raddr : SubCalls calls cs_raddr :=
+  have sub_raddr :=
     sc14_l.append_left.append_left.append_right.append_right.cons_tail
   clear sc14_l hc14_args hc_eqa hc14_ea hc_raddr hc14_raa
   -- 15. `let Lists::Node::Cons(ell, eqrest) = (*(eqls))`
@@ -1920,8 +1851,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap17
   obtain rfl := matchPattern_wildcard_inv mt17
   rw [hc17_args, hc_tlen] at sc17_l
-  have call_tlen : (⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [targs], h_eqa⟩ : Call F) ∈ calls :=
-    sc17_l.append_left.append_right.cons_head
+  have call_tlen := sc17_l.append_left.append_right.cons_head
   clear sc17_l hc17_args hc_tlen
   -- 18. `let alpha = Lists::lookup(targs, 0)`
   obtain ⟨alpha, h_a0, _, _, _, d18, mt18, rest18, hc18⟩ := rest17.letValue_inv; clear rest17
@@ -1966,12 +1896,12 @@ theorem check_iota_rule_inv
   -- 22. `let rhead = (&(KernelTypes::KExprNode::Const(rm, KernelCheck::build_param_lvls_range(0, nl, 0))))`
   obtain ⟨_, _, _, _, _, d22, mt22, rest22, hc22⟩ := rest21.letValue_inv; clear rest21
   rw [hc22] at sc21; have sc22 := sc21.append_right; clear sc21 hc22
-  obtain ⟨inp22, mid22, d22_c, rfl, rfl⟩ := d22.store_inv
+  obtain ⟨inp22, h_plvls, d22_c, rfl, rfl⟩ := d22.store_inv
   obtain ⟨_, a22_c, hres22⟩ := d22_c.construct_inv
   rw [instanceName_plain_some] at hres22; subst hres22
   obtain ⟨_, v_plvls, _, _, _, rfl, _, d22_rm, d22_pl⟩ := inv_args2 a22_c
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d22_rm
-  obtain ⟨_, h_plvls, _, cs_plvls, a22_pl, ev_plvls, _⟩ := d22_pl.call_inv
+  obtain ⟨_, _, _, cs_plvls, a22_pl, ev_plvls, _⟩ := d22_pl.call_inv
   rw [instanceName_plain_some] at ev_plvls
   obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d22_p1, d22_p2, d22_p3⟩ := inv_args3 a22_pl
   obtain ⟨rfl, rfl, _⟩ := d22_p1.literal_inv
@@ -1990,6 +1920,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d23_c2
   obtain ⟨rfl, rfl, _⟩ := d23_2.literal_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap23
+  simp only [Value.type] at ev_lheq
   obtain rfl := matchPattern_wildcard_inv mt23
   -- 24. `assert_eq!(Lists::length(largs), mi + 1)`
   obtain ⟨_, h_llen, _, c24a, _, d24, mt24, rest24, hc24⟩ := rest23.letValue_inv; clear rest23
@@ -2003,11 +1934,10 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, d24_b1, d24_b2, op_mi1, _⟩ := d24_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d24_b1
   obtain ⟨rfl, rfl, _⟩ := d24_b2.literal_inv
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap24
+  obtain ⟨heq24, rfl⟩ := Builtin.assertEq_inv ap24; subst v_llen
   obtain rfl := matchPattern_wildcard_inv mt24
   rw [hc24_args, hc_llen] at sc24_l
-  have call_llen : (⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [largs], h_lheq⟩ : Call F) ∈ calls :=
-    sc24_l.append_left.append_right.cons_head
+  have call_llen := sc24_l.append_left.append_right.cons_head
   clear sc24_l hc24_args hc_llen
   -- 25. `assert_eq!(KernelCheck::spec_params_ptr_eq(Lists::take(largs, rp), bvars_desc(d, rp)), 1)`
   obtain ⟨_, h_pref, _, _, _, d25, mt25, rest25, hc25⟩ := rest24.letValue_inv; clear rest24
@@ -2069,7 +1999,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d29_2
   obtain rfl := matchPattern_bind_inv mt29
   rw [hc_pd, hc29_args] at sc29_l
-  have sub_pd : SubCalls calls cs_pd := sc29_l.append_right.cons_tail
+  have sub_pd := sc29_l.append_right.cons_tail
   clear sc29_l hc_pd hc29_args
   -- 30. `let expected = KernelWhnf::apply_spine((&(Const(cren, ilvls))), Lists::concat(pins_d, bvars_desc(cnf, cnf)))`
   obtain ⟨expected, h_exp, _, _, _, d30, mt30, rest30, hc30⟩ := rest29.letValue_inv; clear rest29
@@ -2083,6 +2013,7 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, rfl, _, d30_c1, d30_c2⟩ := inv_args2 a30_c
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d30_c1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d30_c2
+  simp only [Value.type] at ev_exp
   obtain ⟨_, h_bvd2, _, cs_cat, a30_cat, ev_cat, _⟩ := d30_2.call_inv
   rw [Obs.Names.n7100276142009841923] at ev_cat
   obtain ⟨_, v_bvd2, _, _, _, rfl, _, d30_pd, d30_bv⟩ := inv_args2 a30_cat
@@ -2116,7 +2047,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, rfl⟩ := inv_var_find (by rfl) d32_2
   obtain rfl := matchPattern_bind_inv mt32
   rw [hc_ctyl, hc32_args] at sc32_l
-  have sub_ctyl : SubCalls calls cs_ctyl := sc32_l.append_right.cons_tail
+  have sub_ctyl := sc32_l.append_right.cons_tail
   clear sc32_l hc_ctyl hc32_args
   -- 33. `let (chead0, _) = KernelTypes::collect_spine(KernelCheck::peel_n_foralls(cty_l, cnp + cnf))`
   obtain ⟨_, h_csp0, _, c33a, _, d33, mt33, rest33, hc33⟩ := rest32.letValue_inv; clear rest32
@@ -2138,7 +2069,7 @@ theorem check_iota_rule_inv
   obtain rfl := matchPattern_wildcard_inv mt33_2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml33c
   rw [hc_csp0] at sc33_l
-  have sub_csp0 : SubCalls calls cs_csp0 := sc33_l.append_right.cons_tail
+  have sub_csp0 := sc33_l.append_right.cons_tail
   clear sc33_l hc_csp0
   -- 34. `match (*(chead0)) { Const(_, _) => { () } };`
   obtain ⟨w_ch0a, w_ch0b, _, ld_chead0, sc34, rest34⟩ :=
@@ -2146,9 +2077,9 @@ theorem check_iota_rule_inv
   -- 35. `let crest = inst_params(rename(cty_l, src, dst), pins_ren)`
   obtain ⟨crest, h_crest, _, c35a, _, d35, mt35, rest35, hc35⟩ := rest34.letValue_inv; clear rest34
   rw [hc35] at sc34; have sc35_l := sc34.append_left; have sc35 := sc34.append_right; clear sc34 hc35
-  obtain ⟨_, h_cty_ren, c35_args, cs_crest, a35, ev_crest, hc_crest⟩ := d35.call_inv
+  obtain ⟨_, _, c35_args, cs_crest, a35, ev_crest, hc_crest⟩ := d35.call_inv
   rw [instanceName_plain_some] at ev_crest hc_crest
-  obtain ⟨v_cty_ren, _, _, _, _, rfl, _, d35_1, d35_2⟩ := inv_args2 a35
+  obtain ⟨v_cty_ren, _, h_cty_ren, _, _, rfl, _, d35_1, d35_2⟩ := inv_args2 a35
   obtain ⟨_, _, _, cs_cty_ren, a35_r, ev_cty_ren, _⟩ := d35_1.call_inv
   rw [instanceName_plain_some] at ev_cty_ren
   obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d35_r1, d35_r2, d35_r3⟩ := inv_args3 a35_r
@@ -2158,7 +2089,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d35_2
   obtain rfl := matchPattern_bind_inv mt35
   rw [hc_crest] at sc35_l
-  have sub_crest : SubCalls calls cs_crest := sc35_l.append_right.cons_tail
+  have sub_crest := sc35_l.append_right.cons_tail
   clear sc35_l hc_crest
   -- 36. `let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_cres, _, _, _, d36, mt36, rest36, hc36⟩ := rest35.letValue_inv; clear rest35
@@ -2189,16 +2120,16 @@ theorem check_iota_rule_inv
   obtain rfl := matchPattern_bind_inv mt37_2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml37c
   rw [hc_csp] at sc37_l
-  have sub_csp : SubCalls calls cs_csp := sc37_l.append_right.cons_tail
+  have sub_csp := sc37_l.append_right.cons_tail
   clear sc37_l hc_csp
   -- 38. `match (*(chead)) { Const(_, _) => { () } };`
   obtain ⟨w_cha, w_chb, _, ld_chead, sc38, rest38⟩ :=
     inv_match_kexpr_const_unit (by rfl) sc37 rest37; clear sc37 rest37
   -- 39. `assert_eq!(Lists::length(cargs), cnp + ni)`
-  obtain ⟨_, h_clen, _, c39a, _, d39, mt39, rest39, hc39⟩ := rest38.letValue_inv; clear rest38
+  obtain ⟨_, _, _, c39a, _, d39, mt39, rest39, hc39⟩ := rest38.letValue_inv; clear rest38
   rw [hc39] at sc38; have sc39_l := sc38.append_left; have sc39 := sc38.append_right; clear sc38 hc39
   obtain ⟨_, a39, ap39⟩ := d39.builtin_inv
-  obtain ⟨_, cnp_ni, _, c39_l, _, rfl, hc39_args, d39_1, d39_2⟩ := inv_args2 a39
+  obtain ⟨v39_l, cnp_ni, h_clen, c39_l, _, rfl, hc39_args, d39_1, d39_2⟩ := inv_args2 a39
   obtain ⟨_, _, _, cs_clen, a39_c, ev_clen, hc_clen⟩ := d39_1.call_inv
   rw [Obs.Names.n6682477127133607924] at ev_clen hc_clen
   obtain ⟨_, rfl, d39_v⟩ := inv_args1 a39_c
@@ -2206,25 +2137,24 @@ theorem check_iota_rule_inv
   obtain ⟨_, _, _, _, _, d39_b1, d39_b2, op_cnp_ni, _⟩ := d39_2.binary_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b1
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d39_b2
-  obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap39
+  obtain ⟨heq39, rfl⟩ := Builtin.assertEq_inv ap39; subst v39_l
   obtain rfl := matchPattern_wildcard_inv mt39
   rw [hc39_args, hc_clen] at sc39_l
-  have call_clen : (⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [cargs], h_csp⟩ : Call F) ∈ calls :=
-    sc39_l.append_left.append_right.cons_head
+  have call_clen := sc39_l.append_left.append_right.cons_head
   clear sc39_l hc39_args hc_clen
   -- 40. `assert_eq!(defeq_list_ok(rc, Lists::take(Lists::drop(largs, rp), ni), Lists::drop(cargs, cnp), ctx), 1)`
   obtain ⟨_, h_deidx, _, c40a, _, d40, mt40, rest40, hc40⟩ := rest39.letValue_inv; clear rest39
   rw [hc40] at sc39; have sc40_l := sc39.append_left; have sc40 := sc39.append_right; clear sc39 hc40
   obtain ⟨_, a40, ap40⟩ := d40.builtin_inv
   obtain ⟨_, _, _, c40_l, _, rfl, hc40_args, d40_1, d40_2⟩ := inv_args2 a40
-  obtain ⟨_, h_idxr, _, cs_deidx, a40_c, ev_deidx, hc_deidx⟩ := d40_1.call_inv
+  obtain ⟨_, _, _, cs_deidx, a40_c, ev_deidx, hc_deidx⟩ := d40_1.call_inv
   rw [instanceName_plain_some] at ev_deidx hc_deidx
-  obtain ⟨_, v_idxl, v_idxr, _, _, h_idxl, _, _, _, _, _, rfl, _, d40_c1, d40_c2, d40_c3, d40_c4⟩ :=
+  obtain ⟨_, v_idxl, v_idxr, _, _, h_idxl, h_idxr, _, _, _, _, rfl, _, d40_c1, d40_c2, d40_c3, d40_c4⟩ :=
     inv_args4 a40_c
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d40_c1
-  obtain ⟨_, h_ldrop, _, cs_idxl, a40_tk, ev_idxl, _⟩ := d40_c2.call_inv
+  obtain ⟨_, _, _, cs_idxl, a40_tk, ev_idxl, _⟩ := d40_c2.call_inv
   rw [Obs.Names.n3863982424408310192] at ev_idxl
-  obtain ⟨v_ldrop, _, _, _, _, rfl, _, d40_dr1, d40_ni⟩ := inv_args2 a40_tk
+  obtain ⟨v_ldrop, _, h_ldrop, _, _, rfl, _, d40_dr1, d40_ni⟩ := inv_args2 a40_tk
   obtain ⟨_, _, _, cs_ldrop, a40_dr1, ev_ldrop, _⟩ := d40_dr1.call_inv
   rw [Obs.Names.n4825454920124213627] at ev_ldrop
   obtain ⟨_, _, _, _, _, rfl, _, d40_la, d40_rp⟩ := inv_args2 a40_dr1
@@ -2241,7 +2171,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap40
   obtain rfl := matchPattern_wildcard_inv mt40
   rw [hc40_args, hc_deidx] at sc40_l
-  have sub_deidx : SubCalls calls cs_deidx := sc40_l.append_left.append_right.cons_tail
+  have sub_deidx := sc40_l.append_left.append_right.cons_tail
   clear sc40_l hc40_args hc_deidx
   -- 41. `defeq_tele(rc, tty, rename(ty_r, src, dst), rp, (&(Lists::Node::Nil)))`
   obtain ⟨v_dt1, h_dt1, _, c41a, _, d41, mt41, rest41, hc41⟩ := rest40.letValue_inv; clear rest40
@@ -2262,7 +2192,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_store_nil_kexpr d41_5
   obtain rfl := matchPattern_wildcard_inv mt41
   rw [hc_dt1] at sc41_l
-  have sub_dt1 : SubCalls calls cs_dt1 := sc41_l.append_right.cons_tail
+  have sub_dt1 := sc41_l.append_right.cons_tail
   clear sc41_l hc_dt1
   -- 42. `defeq_tele(rc, KernelCheck::peel_n_foralls(tty, rp), crest, cnf, Lists::drop(ctx, cnf))`
   obtain ⟨v_dt2, h_dt2, _, c42a, _, d42, mt42, rest42, hc42⟩ := rest41.letValue_inv; clear rest41
@@ -2286,7 +2216,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d42_dr2
   obtain rfl := matchPattern_wildcard_inv mt42
   rw [hc_dt2] at sc42_l
-  have sub_dt2 : SubCalls calls cs_dt2 := sc42_l.append_right.cons_tail
+  have sub_dt2 := sc42_l.append_right.cons_tail
   clear sc42_l hc_dt2
   -- 43. `let (_, ctx_p) = peel_collect(ty_r, rp, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_ctxp, _, _, _, d43, mt43, rest43, hc43⟩ := rest42.letValue_inv; clear rest42
@@ -2315,7 +2245,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d44_4
   obtain rfl := matchPattern_bind_inv mt44
   rw [hc_crestp] at sc44_l
-  have sub_crestp : SubCalls calls cs_crestp := sc44_l.append_right.cons_tail
+  have sub_crestp := sc44_l.append_right.cons_tail
   clear sc44_l hc_crestp
   -- 45. `let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs, ty_r, rp, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_lt1, _, c45a, _, d45, mt45, rest45, hc45⟩ := rest44.letValue_inv; clear rest44
@@ -2336,7 +2266,7 @@ theorem check_iota_rule_inv
   obtain rfl := matchPattern_bind_inv mt45_2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml45c
   rw [hc_lt1] at sc45_l
-  have sub_lt1 : SubCalls calls cs_lt1 := sc45_l.append_right.cons_tail
+  have sub_lt1 := sc45_l.append_right.cons_tail
   clear sc45_l hc_lt1
   -- 46. `let (_, _) = defeq_lam_tele(rc, rhs_rp, crest_p, cnf, lctx)`
   obtain ⟨_, h_lt2, _, c46a, _, d46, mt46, rest46, hc46⟩ := rest45.letValue_inv; clear rest45
@@ -2357,7 +2287,7 @@ theorem check_iota_rule_inv
   obtain rfl := matchPattern_wildcard_inv mt46_2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml46c
   rw [hc_lt2] at sc46_l
-  have sub_lt2 : SubCalls calls cs_lt2 := sc46_l.append_right.cons_tail
+  have sub_lt2 := sc46_l.append_right.cons_tail
   clear sc46_l hc_lt2
   -- 47. `let rhs_app = KernelWhnf::apply_spine(rename(rhs, src, dst), bvars_desc(d, d))`
   obtain ⟨rhs_app, h_rhsapp, _, _, _, d47, mt47, rest47, hc47⟩ := rest46.letValue_inv; clear rest46
@@ -2393,7 +2323,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap48
   obtain rfl := matchPattern_wildcard_inv mt48
   rw [hc48_args, hc_derhs] at sc48_l
-  have sub_derhs : SubCalls calls cs_derhs := sc48_l.append_left.append_right.cons_tail
+  have sub_derhs := sc48_l.append_left.append_right.cons_tail
   clear sc48_l hc48_args hc_derhs
   -- 49. `let tl = KernelInfer::k_infer(rc, lhs, ctx)`
   obtain ⟨tl, h_tl, _, c49a, _, d49, mt49, rest49, hc49⟩ := rest48.letValue_inv; clear rest48
@@ -2406,7 +2336,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d49_3
   obtain rfl := matchPattern_bind_inv mt49
   rw [hc_tl] at sc49_l
-  have sub_tl : SubCalls calls cs_tl := sc49_l.append_right.cons_tail
+  have sub_tl := sc49_l.append_right.cons_tail
   clear sc49_l hc_tl
   -- 50. `assert_eq!(KernelDefEq::k_is_def_eq(rc, tl, alpha, ctx), 1)`
   obtain ⟨_, h_detl, _, c50a, _, d50, mt50, rest50, hc50⟩ := rest49.letValue_inv; clear rest49
@@ -2424,7 +2354,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap50
   obtain rfl := matchPattern_wildcard_inv mt50
   rw [hc50_args, hc_detl] at sc50_l
-  have sub_detl : SubCalls calls cs_detl := sc50_l.append_left.append_right.cons_tail
+  have sub_detl := sc50_l.append_left.append_right.cons_tail
   clear sc50_l hc50_args hc_detl
   -- 51. `let tr = KernelInfer::k_infer(rc, rhs_s, ctx)`
   obtain ⟨tr, h_tr, _, c51a, _, d51, mt51, rest51, hc51⟩ := rest50.letValue_inv; clear rest50
@@ -2437,7 +2367,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d51_3
   obtain rfl := matchPattern_bind_inv mt51
   rw [hc_tr] at sc51_l
-  have sub_tr : SubCalls calls cs_tr := sc51_l.append_right.cons_tail
+  have sub_tr := sc51_l.append_right.cons_tail
   clear sc51_l hc_tr
   -- 52. `assert_eq!(KernelDefEq::k_is_def_eq(rc, tr, alpha, ctx), 1)`
   obtain ⟨_, h_detr, _, c52a, _, d52, mt52, rest52, hc52⟩ := rest51.letValue_inv; clear rest51
@@ -2455,7 +2385,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap52
   obtain rfl := matchPattern_wildcard_inv mt52
   rw [hc52_args, hc_detr] at sc52_l
-  have sub_detr : SubCalls calls cs_detr := sc52_l.append_left.append_right.cons_tail
+  have sub_detr := sc52_l.append_left.append_right.cons_tail
   clear sc52_l hc52_args hc_detr
   -- 53. `let ta = KernelInfer::k_infer(rc, alpha, ctx)`
   obtain ⟨ta, h_ta, _, c53a, _, d53, mt53, rest53, hc53⟩ := rest52.letValue_inv; clear rest52
@@ -2468,7 +2398,7 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d53_3
   obtain rfl := matchPattern_bind_inv mt53
   rw [hc_ta] at sc53_l
-  have sub_ta : SubCalls calls cs_ta := sc53_l.append_right.cons_tail
+  have sub_ta := sc53_l.append_right.cons_tail
   clear sc53_l hc_ta
   -- 54. `assert_eq!(KernelDefEq::k_is_def_eq(rc, ta, (&(KernelTypes::KExprNode::Srt(ell))), ctx), 1)`
   obtain ⟨_, h_deta, _, c54a, _, d54, _, _, hc54⟩ := rest53.letValue_inv; clear rest53
@@ -2488,9 +2418,11 @@ theorem check_iota_rule_inv
   obtain ⟨rfl, rfl, _⟩ := inv_var_find (by rfl) d54_c4
   obtain ⟨rfl, rfl, _⟩ := d54_2.literal_inv
   obtain ⟨rfl, rfl⟩ := Builtin.assertEq_inv ap54
+  simp only [Value.type] at ev_deta
   rw [hc54_args, hc_deta] at sc54_l
-  have sub_deta : SubCalls calls cs_deta := sc54_l.append_left.append_right.cons_tail
-  exact
+  have sub_deta := sc54_l.append_left.append_right.cons_tail
+  subst hcalls₀_eq
+  exact ⟨
     { mi, d, op_mi, op_d, h_plen, cs_plen, call_plen, ev_plen
       v_sc, h_sc, cs_sc, ev_sc, sub_sc
       r_peel_e, r_peel_acc, h_peel, cs_peel, ev_peel
@@ -2543,7 +2475,7 @@ theorem check_iota_rule_inv
       tl, h_tl, cs_tl, h_detl, cs_detl, tr, h_tr, cs_tr, h_detr, cs_detr
       ta, h_ta, cs_ta, h_deta, cs_deta
       ev_tl, sub_tl, ev_detl, sub_detl, ev_tr, sub_tr, ev_detr, sub_detr
-      ev_ta, sub_ta, ev_deta, sub_deta }
+      ev_ta, sub_ta, ev_deta, sub_deta }⟩
 
 /-! ## Algebraic & address-set helpers for `check_iota_rule_vm_spec` -/
 
@@ -2551,16 +2483,18 @@ theorem check_iota_rule_inv
 in the underlying `advSet` predicate via `RolesSpec.rbtree_map_lookup_or_default_field`. -/
 theorem addr_set_member_one {c : Ctx} {advSet : Bytes.Address → Prop} {a : Bytes.Address}
     {t_addr aset : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hroles : RolesSpec)
+    (hroles : RolesSpec) (hwf : c.t.wf = true)
     (ha : Bytes.RepAddressRef addrTy h a t_addr)
-    (haset : AddrMapAll Specs.Roles.addrMapEnum (fun _ k _ => advSet k) h aset)
+    (haset : AddrMapAll addrMapEnum (fun _ k _ => advSet k) h aset)
     (ev : ObsFn W "KernelClaim::addr_set_member" [t_addr, aset] h (.field 1) h' cs) :
     advSet a := by
   obtain ⟨_, ev_lkp, _⟩ := Obs.«KernelClaim::addr_set_member».obs ev
-  have hfn := hroles c .rbtree_map_lookup_or_default_field _ _ _ _ _ ev_lkp
-  obtain ⟨_, hcases, _⟩ := hfn t_addr aset (.field 0) rfl a ha (fun _ k _ => advSet k) haset
-  rcases hcases with h01 | hadv
-  · exact absurd h01 one_ne_zero
+  have hfn : Specs.Roles.rbtree_map_lookup_or_default_field c
+      [t_addr, aset, .field 0] h (.field 1) h' _ :=
+    hroles c hwf .rbtree_map_lookup_or_default_field _ _ _ _ _ ev_lkp
+  rcases hfn t_addr aset (.field 0) rfl a ha (fun _ k _ => advSet k) haset with h01 | hadv
+  · injection h01 with hf
+    exact absurd hf one_ne_zero
   · exact hadv
 
 private theorem stripPis_constHead_of_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
@@ -2596,7 +2530,7 @@ private theorem stripPis_constHead_of_instantiateLevelParams (ks : List LevelPar
   | _ + 1, .sort _, _, _, _, _, hs, _ | _ + 1, .const _ _, _, _, _, _, hs, _
   | _ + 1, .app _ _, _, _, _, _, hs, _ | _ + 1, .lam _ _ _, _, _, _, hs, _
   | _ + 1, .letE _ _ _ _, _, _, _, hs, _ | _ + 1, .lit _, _, _, _, _, hs, _
-  | _ + 1, .proj _ _ _, _, _, _, hs, _ =>
+  | _ + 1, .proj _ _ _, _, _, _, hs, _ => by
     simp [Expr.instantiateLevelParams, Expr.stripPis] at hs
 
 private theorem stripPis_renameConsts (π : KKey → KKey) :
@@ -2719,7 +2653,7 @@ structure RawIotaRuleVmRun
     (blockNames : List KKey) (f_id : KKey → KKey) (advSet : Bytes.Address → Prop)
     (cvName : KKey) (lps : List LevelParam) (tyA : KExpr) (mI rP : Nat)
     (lvls_lps : List KLevel) (pins_lps : List KExpr)
-    (j : Nat) (r : RecRule .anon) : Prop where
+    (j : Nat) (r : RecRule .anon) where
   a_t : Bytes.Address
   hadv_t : advSet a_t
   cvt : ConstantVal .anon
@@ -2808,7 +2742,8 @@ def RawIotaRulesVmRun
     Nat → List (RecRule .anon) → Prop
   | _, [] => True
   | j, r :: rest =>
-    RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP lvls_lps pins_lps j r ∧
+    Nonempty (RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+      lvls_lps pins_lps j r) ∧
       RawIotaRulesVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP lvls_lps pins_lps
         (j + 1) rest
 
@@ -2852,7 +2787,7 @@ theorem check_iota_rule_vm_spec
     (hcprj : Bytes.RepAddressRef addrTy h a_cprj cprj)
     (hcprj_key : c_pub.κ (ixAddr a_cprj) = r.ctor)
     (ha_t : Bytes.RepAddressRef addrTy h a_t t_addr)
-    (haset : AddrMapAll Specs.Roles.addrMapEnum (fun _ k _ => advSet k) h aset)
+    (haset : AddrMapAll addrMapEnum (fun _ k _ => advSet k) h aset)
     (hren : RenameMap c_pub.κ c_pub.κ f_id h src dst)
     (hty_rep : TmCExact c_pub.κ h (posOf lps tyA) ty_r)
     (hrhs_rep : TmCExact c_pub.κ h (posOf lps r.rhs) rhs)
@@ -2864,7 +2799,8 @@ theorem check_iota_rule_vm_spec
       [rc, rm, .field (lps.length : F), ty_r, .field (rP : F), .field ((mI - rP) : F),
        rhs, cprj, cty, .field (cnP : F), .field (cnF : F), ilvls, pins, t_addr, src, dst, aset]
       h v_ret h' calls) :
-    RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP lvls_lps pins_lps j r := by
+    Nonempty (RawIotaRuleVmRun c_pub c_adv blockNames f_id advSet cvName lps tyA mI rP
+      lvls_lps pins_lps j r) := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   have hval0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
   have hval1 : ZMod.val (1 : F) = 1 := rfl
@@ -2882,7 +2818,7 @@ theorem check_iota_rule_vm_spec
   have hnl_val : ZMod.val (lps.length : F) = lps.length := SubstAux.val_natCast (by omega)
   have hmi_val : ZMod.val (mI : F) = mI := SubstAux.val_natCast (by omega)
   have hd_val : ZMod.val (depth : F) = depth := SubstAux.val_natCast (by omega)
-  have inv := check_iota_rule_inv ev
+  obtain ⟨inv⟩ := check_iota_rule_inv ev
   have hmi_eq : inv.mi = .field (mI : F) := by
     rw [SubstAux.add_ok inv.op_mi]; congr 1
     exact ZMod.val_injective _ (by rw [SubstAux.val_add (by omega), hrp_val, hni_val, hmi_val]; omega)
@@ -2947,7 +2883,7 @@ theorem check_iota_rule_vm_spec
   have ext_rhs_inf := ext_rhs_in.trans inv.ev_rhs_inf.heap_extends
   -- 3. Advice membership & theorem lookup `Ingress::get_ci(t_addr)`
   have hadv_t : advSet a_t :=
-    addr_set_member_one (c := c_adv) hroles
+    addr_set_member_one (c := c_adv) hroles hef_adv.tableWf
       (Bytes.repAddressRef_heapMono₂ addrTy ext_rhs_inf ha_t)
       (haset.mono ext_rhs_inf) inv.ev_aset
   have ext_aset := ext_rhs_inf.trans inv.ev_aset.heap_extends
@@ -3863,7 +3799,7 @@ theorem check_iota_rule_vm_spec
         (by rw [hκ_eq]; exact hctx_rep.mono (ext_open_derhs.trans (e_ta.trans ext_srt))) hsc_t
         hef_adv hlf_adv (hgood_adv.sub inv.sub_deta) inv.ev_deta
         (hta_tm.mono ext_srt) hsrt_tm
-    exact
+    exact ⟨
       { a_t, hadv_t, cvt, vt, hfind_t := hfind_t0, ht_lps
         cvj, cnP, cnF, hfind_ctor, hlvls_len, hpins_len, hnfields
         hrhs_bvars, hrhs_nofvar, hrhs_lvls, hrhs_lams, hrhs_noproj, hrhs_cr, hrhs_typed
@@ -3882,7 +3818,7 @@ theorem check_iota_rule_vm_spec
           ⟨invPosOf lps tr_pos, posRulesJ_infer_of_pos hlps_perm htr_inf,
             posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩⟩
         halpha_sort := ⟨invPosOf lps ta_pos, posRulesJ_infer_of_pos hlps_perm hta_inf,
-          posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩ }
+          posRulesJ_defeq_of_pos hlps_perm (by rwa [posOf_invPosOf hlps_perm])⟩ }⟩
 
 /-- **Refinement of `KernelModeled::check_rules_go`** over a `RulesRepExact` list and `L1.Stream`. -/
 theorem check_rules_go_vm_spec
@@ -3919,7 +3855,7 @@ theorem check_rules_go_vm_spec
       Bytes.RepAddressRef addrTy h a_rm rm →
       c_pub.κ (ixAddr a_rm) = f_id cvName →
       Bytes.RepAddressRef addrTy h b_ind iblock →
-      AddrMapAll Specs.Roles.addrMapEnum (fun _ k _ => advSet k) h aset →
+      AddrMapAll addrMapEnum (fun _ k _ => advSet k) h aset →
       RenameMap c_pub.κ c_pub.κ f_id h src dst →
       TmCExact c_pub.κ h (posOf lps tyA) ty_r →
       RepKLevelList h (lvls_lps.map (Level.subst lps (posLevels lps))) ilvls →
@@ -4084,7 +4020,7 @@ theorem check_rules_vm_spec
     (hrc : RCRep c_pub.t c_pub.lim h rc)
     (hrm : Bytes.RepAddressRef addrTy h a_rm rm)
     (hrm_key : c_pub.κ (ixAddr a_rm) = f_id cvName)
-    (haset : AddrMapAll Specs.Roles.addrMapEnum (fun _ k _ => advSet k) h aset)
+    (haset : AddrMapAll addrMapEnum (fun _ k _ => advSet k) h aset)
     (hren : RenameMap c_pub.κ c_pub.κ f_id h src dst)
     (hty_rep : TmCExact c_pub.κ h (posOf lps tyA) ty_r)
     (hrls : RulesRepExact c_pub.κ h lps 0 rules_ptr rls)
@@ -4190,7 +4126,7 @@ theorem check_rules_vm_spec
       subst hinp_f hinct_f hiidx_f
       -- `rls.length = nC_ind`
       have ext_rmp_ci := ev_rmp.heap_extends.trans ev_ci.heap_extends
-      obtain ⟨hrlen_f, _, hm147_eq⟩ :=
+      obtain ⟨hrlen_f, hrlen_lt, hm147_eq⟩ :=
         rulesRepExact_length hg_pub.2 (by simp) ev_rlen (hrls.mono ext_rmp_ci)
       subst hm147_eq
       have hrls_len : rls.length = nC_ind := by
@@ -4200,12 +4136,12 @@ theorem check_rules_vm_spec
         rwa [SubstAux.val_natCast (by omega), SubstAux.val_natCast (by omega)] at hv
       -- Level parameter count of `lvls_lps` from `hty_inf` + `infer_stripPis_dom_const_lvls`
       obtain ⟨u_rec, hinf_ty⟩ := hty_inf
-      obtain ⟨cv_ind', hfind_ind_cv, hlvls_pos_len⟩ :=
+      obtain ⟨ci_ind', hfind_ind_ci, hlvls_pos_len⟩ :=
         infer_stripPis_dom_const_lvls mI hinf_ty hstrip_pos hfn_pos
-      simp only [Env.findCV?, hfind_ind, Option.map_some, Option.some.injEq] at hfind_ind_cv
-      subst hfind_ind_cv
+      rw [hfind_ind] at hfind_ind_ci
+      injection hfind_ind_ci with hci_eq; subst hci_eq
       have hlvls_lps_len : lvls_lps.length = cv_ind.levelParams.length := by
-        simp [lvls_lps, hlvls_pos_len]
+        simp [lvls_lps, hlvls_pos_len, ConstantInfo.toConstantVal]
       let cnP_rmp : Nat := ZMod.val inp_rmp
       have hdom_args_len : dom.getAppArgs.length = cnP_rmp + nI := by
         have hlen := hAs_len

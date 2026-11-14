@@ -134,9 +134,10 @@ theorem is_unsafe_ci_zero {v r : SourceValue F} {h h' : Heap F} {cs : List (Call
 
 /-- The role-lookup family specifications (`Core.Specs.Roles.Fn.spec`). -/
 def RolesSpec : Prop :=
-  ∀ (c : Ctx) (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F)
-    (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
-    ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
+  ∀ (c : Ctx), c.t.wf = true →
+    ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F)
+      (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
+      ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
 
 /-- A role context whose user-axiom tree is empty (`Nil`), as built by `verify_claim` when the
 claim allows no uncertified user axioms. -/
@@ -363,7 +364,7 @@ theorem axiom_standing_spec {c : Ctx} {rc ap r : SourceValue F} {a : Bytes.Addre
     rw [hv94, hm104] at ev92
     have hlkp : Specs.Roles.rbtree_map_lookup_or_default_field c
         [ap, .construct addrMapEnum "Nil" [], .field 0] m24 r h' cs90 :=
-      hroles c .rbtree_map_lookup_or_default_field _ _ _ _ _ ev92
+      hroles c hwf .rbtree_map_lookup_or_default_field _ _ _ _ _ ev92
     rcases hlkp ap _ (.field 0) rfl a (Bytes.repAddressRef_heapMono₂ addrTy e36 ha)
         (fun _ _ _ => False) .nil with hr | hfalse
     · exact absurd hr hne
@@ -381,14 +382,14 @@ theorem axiom_standing_spec {c : Ctx} {rc ap r : SourceValue F} {a : Bytes.Addre
     rw [hm48] at ev36
     have hlkp_fn : Specs.Roles.rbtree_map_lookup_or_default_field c
         [ap, v38, .field 0] h v23 m24 cs34 :=
-      hroles c .rbtree_map_lookup_or_default_field _ _ _ _ _ ev36
+      hroles c hwf .rbtree_map_lookup_or_default_field _ _ _ _ _ ev36
     rcases hlkp_fn ap v38 (.field 0) rfl a ha (IndexEntry c.t) hidx with hv23 | ⟨ro, hv23, hro_addr⟩
     · exact absurd hv23 hne130
     · rw [hv23] at ev147
       have hstand := axiom_role_standing_spec ev147 hne173
       have e_pre := (ObsFn.heap_extends ev36).trans (ObsFn.heap_extends ev147)
       have hof_fn : Specs.Roles.role_of c [rc, ap] m135 v177 m178 cs189 :=
-        hroles c .role_of _ _ _ _ _ ev191
+        hroles c hwf .role_of _ _ _ _ _ ev191
       rcases hof_fn rc ap a rfl (hgood.sub fun x hx => by simp [hx]) (hrc.mono e_pre)
           (Bytes.repAddressRef_heapMono₂ addrTy e_pre ha) with hv177 | ⟨ro', _, hro'_addr, hin⟩
       · exact absurd hv177 hne215
@@ -422,7 +423,7 @@ theorem check_quot_typ_spec {c : Ctx} {rc ap r : SourceValue F} {a : Bytes.Addre
     have hnum : (32 : F) = roleNum .quot := rfl
     rw [hnum] at ev100
     have his_fn : Specs.Roles.role_is c [rc, ap, .field (roleNum .quot)] h (.field 1) m90 cs98 :=
-      hroles c .role_is _ _ _ _ _ ev100
+      hroles c hwf .role_is _ _ _ _ _ ev100
     have his := his_fn rc ap a .quot rfl (hgood.sub fun x hx => by simp [hx]) hrc ha (by
       intro h0; injection h0 with hf; exact one_ne_zero hf)
     exact ⟨his.1, his.2,

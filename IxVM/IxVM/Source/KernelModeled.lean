@@ -713,7 +713,7 @@ def container_refs_ok := aiur_fn⟦
         Lists::Node::Cons(r, rest) => {
           match KernelClaim::g_list_has(used, i) {
             1 => {
-              let ok = match KernelCheck::addr_list_contains(irefs, r) {
+              let ok = match used_ref_has(irefs, iused, 0, r) {
                 1 => {  1 } ,
                 _ => {
                   match is_projection_of(r, iblock) {
@@ -788,20 +788,23 @@ def is_projection_of := aiur_fn⟦
 
 def check_advice_records := aiur_fn⟦
   fn check_advice_records(rc: KernelRoles::RoleCtx, advice: Lists::List<Bytes::AddressRef>,
-                          aset: RBTreeMap::RBTreeMap<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+                          seen: RBTreeMap::RBTreeMap<Field>, wset: RBTreeMap::RBTreeMap<Field>)
+        -> RBTreeMap::RBTreeMap<Field> {
       match (*(advice)) {
-        Lists::Node::Nil => {  () } ,
+        Lists::Node::Nil => {  seen } ,
         Lists::Node::Cons(a, rest) => {
-          check_advice_record(rc, a, aset, wset);
-          check_advice_records(rc, rest, aset, wset) } ,
+          assert_eq!(KernelClaim::addr_set_member(a, seen), 0,
+            "model advice: duplicate advice record");
+          check_advice_record(rc, a, seen, wset);
+          check_advice_records(rc, rest, RBTreeMap::rbtree_map_insert(a, 1, seen), wset) } ,
       }
     }
 ⟧
 
   -- One advice record, as an ordinary declaration of the kinds the modeller emits: a safe
   -- definition, a theorem, a native inductive block or its recursor, or a projection of
-  -- an advice block. Every reference it uses is advice, a projection of an advice block,
-  -- or a witnessed outside reference.
+  -- an earlier advice block. Every reference it uses is earlier advice, a projection of an
+  -- earlier advice block, or a witnessed outside reference.
 
 def check_advice_record := aiur_fn⟦
   fn check_advice_record(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef,
@@ -947,12 +950,11 @@ def check_family := aiur_fn⟦
         "model advice: the payload names another recursor family");
       let (n_a, s2) = get_count(s1);
       let (advice, s3) = get_addrs(s2, n_a);
-      let aset = KernelClaim::addr_set_build(advice, RBTreeMap::RBTreeMap::Nil);
       let (n_w, s4) = get_count(s3);
       let (outside, s5) = check_witnesses(rc, block, s4, n_w);
       let wset = KernelClaim::addr_set_build(outside, RBTreeMap::RBTreeMap::Nil);
       container_recs_refs(outside, wset);
-      check_advice_records(rc, advice, aset, wset);
+      let aset = check_advice_records(rc, advice, RBTreeMap::RBTreeMap::Nil, wset);
       let bc = Ingress::load_verified_constant(block);
       match bc {
         Ixon::Constant::Mk(binfo, _, _, _, _) => {
