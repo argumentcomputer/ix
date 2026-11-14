@@ -192,6 +192,32 @@ def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelud
   let (ev, decls) ← readStream hash t pre constants blobs hint
   pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
+/-- `readStream` without generating in-process inductive models (`readRecordsBare`). -/
+def readStreamBare (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Evidences .anon × Array (Ix.Kernel.Declaration .anon)) := do
+  let cx := streamContext hash t pre constants blobs hint
+  match readRecordsBare cx pre.state constants.toArray with
+  | .ok (st, decls) =>
+    if State.keepsPrelude pre.state st then pure (evidenceOf cx st t, decls) else throw .preludeCopy
+  | .error (e, i) => throw (.read i e)
+
+/-- `prepareWith` without generating in-process inductive models (`readStreamBare`):
+each inductive block lowers directly to its own declaration, so an external check
+that brings its own model advice supplies the model declarations separately. -/
+def prepareBare (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Evidences .anon × Array (Ix.Kernel.Declaration .anon)) := do
+  (preflight limits records blobs).mapError Error.ofBytes
+  (uniqueKeys records blobs).mapError Error.ofBytes
+  (authenticate hash records blobs).mapError Error.ofBytes
+  let t ← (admitBinding hash binding).mapError .binding
+  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  let (ev, decls) ← readStreamBare hash t pre constants blobs hint
+  pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
+
 /-- The entry over an explicit prelude (tests inject one). -/
 def checkBytesWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)

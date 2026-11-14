@@ -31,7 +31,7 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   byte string the run hashed, under its BLAKE3 address; `Draws` lets the reading
   add recursor records the run did not load, as `AcceptsIn` does), through the
   kernel's own reading of Ixon records (`ReadIn`: `admitBinding`,
-  `ClosureOrderAt`, `preludeFor`, `prepareWith`: the statement trusts the kernel's
+  `UsedClosureOrderAt`, `preludeFor`, `prepareBare`: the statement trusts the kernel's
   reader), installed declaration by declaration (`Installs`, `InstallStep`),
   each constant stored as the reader declares it: of the declared kind, with an
   annotation of its type, and with the declaration's own value, counts and
@@ -239,22 +239,86 @@ def LoadedBy (calls : List (Call IxVM.F)) (E : Ixon.Env) : Prop :=
     Hashed calls lc.rawBytes ∧ Address.blake3Pure lc.rawBytes = a) ∧
   (∀ a bytes, E.blobs.get? a = some bytes → Hashed calls bytes ∧ Address.blake3Pure bytes = a)
 
+/-- The reference-table indices an expression names as constants (`KernelClaim::const_idxs_expr`):
+those of `ref` and `prj` nodes; literal indices name blobs and `share` nodes are read through the
+sharing table. -/
+def exprRefIdxs : Ixon.Expr → List Nat
+  | .ref i _ => [i.toNat]
+  | .prj i _ e => i.toNat :: exprRefIdxs e
+  | .app f a => exprRefIdxs f ++ exprRefIdxs a
+  | .lam t b => exprRefIdxs t ++ exprRefIdxs b
+  | .all t b => exprRefIdxs t ++ exprRefIdxs b
+  | .letE _ _ t v b => exprRefIdxs t ++ exprRefIdxs v ++ exprRefIdxs b
+  | _ => []
+
+/-- The reference-table indices a block member names (`KernelClaim::const_idxs_muts`). -/
+def mutRefIdxs : Ixon.MutConst → List Nat
+  | .defn d => exprRefIdxs d.typ ++ exprRefIdxs d.value
+  | .indc i => exprRefIdxs i.typ ++ (i.ctors.toList.flatMap fun c => exprRefIdxs c.typ)
+  | .recr r => exprRefIdxs r.typ ++ (r.rules.toList.flatMap fun rl => exprRefIdxs rl.rhs)
+
+/-- **The reference-table indices a record uses as constants** (`KernelClaim::const_idxs_of`):
+those of its sharing table and of the expressions of its payload. -/
+def usedRefIdxs (c : Ixon.Constant) : List Nat :=
+  (c.sharing.toList.flatMap exprRefIdxs) ++
+    match c.info with
+    | .defn d => exprRefIdxs d.typ ++ exprRefIdxs d.value
+    | .recr r => exprRefIdxs r.typ ++ (r.rules.toList.flatMap fun rl => exprRefIdxs rl.rhs)
+    | .axio a => exprRefIdxs a.typ
+    | .quot q => exprRefIdxs q.typ
+    | .muts ms => ms.toList.flatMap mutRefIdxs
+    | _ => []
+
+/-- `b` is a record that the record at `a` uses: its block, if `a` is a projection, or a
+stored record at a constant-reference index of `a` (`usedRefIdxs`). -/
+def UsedRecordEdge (ixe : Ixon.Env) (a b : Address) : Prop :=
+  ∃ c, Ix.Cert.recordAt ixe a = some c ∧
+    ((Ix.Cert.ownerOf a c = b ∧ b ≠ a) ∨
+      ((∃ i ∈ usedRefIdxs c, c.refs[i]? = some b) ∧ ixe.consts.contains b = true))
+
+/-- `a` is in the used-reference closure of `S` in `ixe` under the role table `t`. -/
+inductive UsedCompiledReachAt (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) (S : Address → Prop) :
+    Address → Prop
+  | seed {a : Address} : S a → ixe.consts.contains a = true → UsedCompiledReachAt t ixe S a
+  | step {a b : Address} : UsedCompiledReachAt t ixe S a → UsedRecordEdge ixe a b →
+      UsedCompiledReachAt t ixe S b
+  | ground {a b : Address} : UsedCompiledReachAt t ixe S a → Ix.Cert.GroundEdgeAt t ixe a b →
+      UsedCompiledReachAt t ixe S b
+  | recursor {a b : Address} : UsedCompiledReachAt t ixe S a → Ix.Cert.RecursorEdge ixe a b →
+      UsedCompiledReachAt t ixe S b
+
+/-- The record at `a` must follow `b`: a used constant reference of `a` resolves to `b`,
+another record. -/
+def UsedRecordRef (ixe : Ixon.Env) (a b : Address) : Prop :=
+  ∃ c, Ix.Cert.recordAt ixe a = some c ∧
+    ∃ i ∈ usedRefIdxs c, ∃ r, c.refs[i]? = some r ∧
+      ∃ cr, Ix.Cert.recordAt ixe r = some cr ∧ Ix.Cert.ownerOf r cr = b ∧ b ≠ a
+
+/-- `order` lists the used-reference closure of `S` under the role table `t`, each record once,
+and no record before one a used constant reference of it resolves to. -/
+structure UsedClosureOrderAt (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) : Prop where
+  nodup : order.Nodup
+  complete : ∀ a, a ∈ order ↔ UsedCompiledReachAt t ixe S a
+  ordered : order.Pairwise fun a b => ¬ UsedRecordRef ixe a b
+
 /-- **The kernel's reading of the closure of `seeds` in `E`** under the role
 table `b` (the trusted component, as `AcceptsIn` uses it): the table
-admitted, the compiled closure in an order with no record before one it
-references, the table's prelude, and `prepareWith`'s evidence and declarations.
-The closure also starts from the theorems the table's evidence names that `E`
-holds, so that an operation's evidence reads from the records the run loaded (a
-table's evidence theorems need not be among the claim's references). -/
+admitted, the used-reference closure in an order with no record before one it
+references, the table's prelude, and `prepareBare`'s evidence and declarations
+(inductive blocks lowered directly to their declarations, without generated
+models). The closure also starts from the theorems the table's evidence names
+that `E` holds, so that an operation's evidence reads from the records the run
+loaded (a table's evidence theorems need not be among the claim's references). -/
 def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
     (ev : Ix.Kernel.Evidences .anon) (ds : Array (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (t : Ix.Kernel.RoleTable) (order : List Address) (pre : Ix.Kernel.Reader.Prelude .anon)
     (limits : Ix.Kernel.Admission.Limits),
     Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-    Ix.Cert.ClosureOrderAt t E
+    UsedClosureOrderAt t E
       (fun a => seeds a ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) order ∧
     Ix.Kernel.Reader.preludeFor t = .ok pre ∧
-    Ix.Kernel.Admission.prepareWith Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
+    Ix.Kernel.Admission.prepareBare Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
       (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
 
 /-- **`t'` is an annotation of `t`**: the same term up to binder metadata (the

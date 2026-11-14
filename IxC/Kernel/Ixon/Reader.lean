@@ -1044,6 +1044,77 @@ def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
     declined s!"inductive block {(rb.types[0]?.map (toString ·.1.name)).getD "[anonymous]"} declares {k} twice"
   pure r
 
+/-- An inductive block's bare declaration, without running the in-process modeller:
+`lowerInductiveDecls`'s consistency checks and block assembly, emitting only `#[decl]`. -/
+def lowerInductiveDeclsBare (rb : BlockRead md) : ReadM (Read md) := do
+  let ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
+  let nTypes := types.size
+  let nCtors := ctors.size
+  let numNested := match recs[0]? with
+    | some (_, r, _) => r.motives - nTypes
+    | none => 0
+  let nested := numNested != 0
+  let kExpected? : Option Bool :=
+    match types.toList, ctorNames.toList, ctors.toList with
+    | [(ty, _, _)], [[_]], [(_, _, nF)] =>
+      match ty.type.piResult with
+      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+      | _ => none
+    | _, _, _ => some false
+  if nested then
+    for (cv, r, _) in recs do
+      if r.k then malformed s!"recursor {cv.name} of a nested block declares k := true"
+  else
+    for (cv, r, _) in recs do
+      unless r.params == nPd do
+        malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"
+      unless r.motives == nTypes do
+        malformed s!"recursor {cv.name} declares {r.motives} motives; the block has {nTypes} types"
+      unless r.minors == nCtors do
+        malformed s!"recursor {cv.name} declares {r.minors} minor premises; the block has {nCtors} constructors"
+      if let some kE := kExpected? then
+        unless r.k == kE do
+          malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
+      if let some m := r.motive then
+        if let some (ty, _, _) := types[m]? then
+          if let some n := ty.type.piSortTeleLen? then
+            unless nPd + r.indices == n do
+              malformed s!"recursor {cv.name} declares {r.indices} indices; {ty.name} has {n - nPd}"
+  let typeInfos : List (CInfo md) := types.toList.map fun (cv, _, _) => .indInfo cv {}
+  let ctorInfos : List (CInfo md) := ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF
+  let recInfos : List (CInfo md) := recs.toList.map fun (cv, r, rules) =>
+    .recInfo cv (r.params + r.motives + r.minors + r.indices) (r.params + r.motives + r.minors) rules
+  let block := typeInfos ++ ctorInfos ++ recInfos
+  let memberNames := types.toList.map (·.1.name)
+  let fieldDoms := ctors.toList.flatMap fun (cv, _, _) =>
+    (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)
+  let isRec := fieldDoms.any fun d => memberNames.any (Ix.Kernel.Frontend.occursConstFast · d)
+  let isReflexive := fieldDoms.any fun d =>
+    let (bs, body) := Ix.Kernel.Frontend.stripPisAll d
+    !bs.isEmpty && memberNames.any (Ix.Kernel.Frontend.headIs · body)
+  let ownerTypes := types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
+    (cv.name, cv.levelParams, cv.type, nP, nIdx, cs, isRec)
+  let ownerCtors := ctors.toList.map fun (cv, _, nF) => (cv.name, nF, cv.type)
+  let ownerRecs := recs.toList.map fun (cv, r, _) =>
+    (cv.name, cv.levelParams, cv.type, r.motives, r.minors)
+  let owners := Ix.Kernel.Frontend.projRecOwners block ownerTypes ownerCtors ownerRecs
+  let b : Ix.Kernel.Frontend.InModel.BlockRec md :=
+    ⟨types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
+        { cv, nP, nIdx, ctors := cs, isRec, isReflexive, numNested },
+     ctors.toList.map fun (cv, nP, nF) => { cv, nP, nF },
+     recs.toList.map fun (cv, r, rules) =>
+       { cv, nP := r.params, nM := r.motives, nm := r.minors, nI := r.indices, rules }⟩
+  let blocks := b.types.map (·.cv.name, b)
+  let decl := Ix.Kernel.Declaration.indDecl block nPd
+  pure { decls := #[decl], owners, blocks }
+
+/-- `lowerInductive` without running the in-process modeller (`lowerInductiveDeclsBare`). -/
+def lowerInductiveBare (rb : BlockRead md) : ReadM (Read md) := do
+  let r ← lowerInductiveDeclsBare rb
+  if let some k := firstRepeatedKey (r.decls.toList.flatMap (·.names)) then
+    declined s!"inductive block {(rb.types[0]?.map (toString ·.1.name)).getD "[anonymous]"} declares {k} twice"
+  pure r
+
 /-- **The shape of a block no recursor of the input eliminates**
 (`buildIndex` filed none under it): a block of exactly one inductive reads
 with that member and no recursor, and lowers to an `indDecl` of the type
@@ -1288,6 +1359,71 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
       pure { decls := out, projRewrites := rewrites }
     else malformed "a block mixes recursors and definitions"
 
+/-- `readInductive` lowered through `lowerInductiveBare` (no generated models). -/
+def readInductiveBare (cx : Ctx md) (owner : Address) (c : Ixon.Constant)
+    (ms : Array Ixon.MutConst) : ReadM (Read md) := do
+  let some shape := blockShapeOf cx.index owner ms
+    | declined "inductive block without a recursor in the input"
+  let self : Nat → Option (ReadM (CName md)) := fun i =>
+    if i < ms.size then some (cx.memberKey (.member owner i)) else none
+  let indcs : Array (Nat × Ixon.Inductive) :=
+    shape.order.filterMap fun i => match (ms[i]? : Option Ixon.MutConst) with
+      | some (.indc ind) => some (i, ind)
+      | _ => none
+  unless indcs.size == shape.order.size do malformed "recursor motive is not a member of its block"
+  let some (_, first) := indcs[0]? | malformed "empty inductive block"
+  if indcs.any (·.2.isUnsafe) then declined "unsafe inductive declaration"
+  let nPd := first.params.toNat
+  unless indcs.all (·.2.params.toNat == nPd) do
+    declined "inductive block whose type records disagree on numParams"
+  let blockLps := List.range first.lvls.toNat
+  let mrInd := MemberReader.mk' cx c id self
+  let mut types : Array (CVal md × Nat × Nat) := #[]
+  for (i, ind) in indcs do
+    types := types.push (⟨← cx.memberKey (.member owner i), List.range ind.lvls.toNat,
+      ← mrInd.read ind.typ⟩,
+      ind.params.toNat, ind.indices.toNat)
+  let mut ctors : Array (CVal md × Nat × Nat) := #[]
+  let mut ctorNames : Array (List (CName md)) := #[]
+  for (i, ind) in indcs do
+    let mut names : List (CName md) := []
+    for (ctor, j) in ind.ctors.zipIdx do
+      unless ctor.cidx.toNat == j do malformed "constructor index differs from its position"
+      if ctor.isUnsafe then declined "unsafe inductive declaration"
+      let cv : CVal md :=
+        ⟨← cx.memberKey (.ctor owner i j), List.range ctor.lvls.toNat, ← mrInd.read ctor.typ⟩
+      unless nPd + ctor.fields.toNat == piTeleLen cv.type do
+        malformed s!"constructor {cv.name} declares {ctor.fields} fields at {nPd} parameters; \
+          its type has {piTeleLen cv.type} binders"
+      ctors := ctors.push (cv, ctor.params.toNat, ctor.fields.toNat)
+      names := names ++ [cv.name]
+    ctorNames := ctorNames.push names
+  let mut recs : Array (CVal md × RecCounts × List (Ix.Kernel.RecRule md)) := #[]
+  for ref in shape.recs do
+    let some entry := cx.index.recs[ref]? | malformed "unindexed recursor"
+    recs := recs.push (← readRecursor cx blockLps ref entry)
+  lowerInductiveBare ⟨nPd, types, ctors, ctorNames, recs⟩
+
+/-- `readRecord` without running the in-process modeller on inductive blocks. -/
+def readRecordBare (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant) : ReadM (Read md) := do
+  match c.info with
+  | .muts ms =>
+    if ms.any (fun | .indc _ => true | _ => false) then
+      if ms.any (fun | .defn _ => true | _ => false) then
+        malformed "a block mixes inductives and definitions"
+      let rInd ← readInductiveBare cx owner c ms
+      let mut twins : Array (ConstRef Address × RecEntry) := #[]
+      for j in (List.range ms.size).toArray do
+        let ref : ConstRef Address := .member owner j
+        if let some entry := cx.index.twins[ref]? then
+          twins := twins.push (ref, entry)
+      if twins.isEmpty then pure rInd
+      else
+        let rTwin ← lowerTwin cx twins
+        pure { rInd with decls := rInd.decls ++ rTwin.decls }
+    else readRecord cx st owner c
+  | _ => readRecord cx st owner c
+
 /-! ## The constants a literal references
 
 `Ix.Kernel.Expr.constsResolve` counts a `Nat` literal as a reference to the
@@ -1391,6 +1527,22 @@ def readRecords (cx : Ctx md) (st : State md) (records : Array (Address × Ixon.
     if seen.contains a then throw (.malformed s!"duplicate record address {a}", i)
     seen := seen.insert a
     match readRecord cx st a c with
+    | .ok r =>
+      st := st.commit r
+      out := out ++ r.decls
+    | .error e => throw (e, i)
+  return (st, out)
+
+/-- `readRecords` without running the in-process modeller on inductive blocks. -/
+def readRecordsBare (cx : Ctx md) (st : State md) (records : Array (Address × Ixon.Constant)) :
+    Except (ReadError × Nat) (State md × Array (CDecl md)) := do
+  let mut seen : Std.HashSet Address := {}
+  let mut st := st
+  let mut out : Array (CDecl md) := #[]
+  for ((a, c), i) in records.zipIdx do
+    if seen.contains a then throw (.malformed s!"duplicate record address {a}", i)
+    seen := seen.insert a
+    match readRecordBare cx st a c with
     | .ok r =>
       st := st.commit r
       out := out ++ r.decls
