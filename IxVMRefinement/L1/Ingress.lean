@@ -1,5 +1,6 @@
 import IxVMRefinement.L1.Decode
 import IxVMRefinement.L1.Convert
+import IxVMRefinement.Lib.WordHints
 import IxVMRefinement.Obs.IxonSerialize
 import IxVMRefinement.Obs.Ingress
 
@@ -33,7 +34,7 @@ namespace IxVM.Refinement.L1
 
 open IxVM (F)
 open IxVM.Refinement.Obs
-open IxVM.Refinement.TagN
+open IxVM.Refinement.TagN (u64Value)
 open IxVM.Refinement.Deserialize
 open Ixon.Verify.Codec
 open Ixon.Verify.Codec.ConstantTables
@@ -86,7 +87,7 @@ theorem u8_raw_add_spec {a b : Nat} {r : SourceValue F} {h h' : Heap F} {cs : Li
       h' = h := by
   have hm := ev.erase.map_row Mirrors.«UInt8::raw_add».none
   simp only [mapCall, TagN.rawAdd_row ha hb, Constant.toValue, Value.mapAddress,
-    Option.some.injEq, Prod.mk.injEq] at hm
+    List.map_cons, List.map_nil, Option.some.injEq, Prod.mk.injEq] at hm
   exact ⟨hm.1.symm, hm.2.symm⟩
 
 /-- `WordLists::length_u64<T>` on an empty list returns `u64Value 0` without allocation. -/
@@ -108,13 +109,14 @@ theorem length_u64_nil_eval {t_T : Generic.Ty} {x_list r : SourceValue F} {h h' 
   subst v1
   have hctor : constructorName [("T", t_T)] (.named "Lists::Node" [.param "T"]) =
       (Instance.mk "Lists::Node" [t_T]).symbol := by
-    simp [constructorName, Generic.Ty.subst, Instance.symbol]
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton]
   rcases selectArm_cons_inv sel6 with ⟨mt12, rfl⟩ | ⟨nm12, _⟩
   · obtain ⟨vs13, _, _, ml14⟩ := matchPattern_construct_inv mt12
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml14
     obtain ⟨v15, d16, rfl⟩ := d7.repeat_inv
-    have hbyte0 : W.constant "UInt8::BYTE_0" (Generic.Ty.subst [("T", t_T)] .field) =
-        .ok (.literal (0 : F)) := Names.c9173999864893739538
+    have hbyte0 : IxVM.source.world.constant "UInt8::BYTE_0"
+        (Generic.Ty.subst [("T", t_T)] .field) = Except.ok (.literal (0 : F)) :=
+      Names.c9173999864893739538
     obtain ⟨rfl, rfl⟩ := d16.global_literal_inv hbyte0
     exact ⟨by simp [u64Value, List.replicate], rfl⟩
   · have hne := matchPattern_construct_none (by trivial) nm12
@@ -129,11 +131,8 @@ theorem length_u64_nil_spec {α : Type*} {t_T : Generic.Ty}
     (ev : ObsFn W (Instance.mk "WordLists::length_u64" [t_T]).symbol [x_list] h r h' cs) :
     r = u64Value 0 ∧ h' = h := by
   cases hrep with
-  | nil cell =>
-    have hload : loadValue h (.ptr (.enum (Instance.mk "Lists::Node" [t_T]).symbol) _) =
-        .ok (.construct (Instance.mk "Lists::Node" [t_T]).symbol "Nil" []) := by
-      simp [loadValue, cell, Value.type, bind, Except.bind, pure, Except.pure]
-    exact length_u64_nil_eval hload ev.erase
+  | @nil addr cell =>
+    exact length_u64_nil_eval (load_cell cell) ev.erase
 
 /-- `digestV d` has `Value.type = Core.addrTy`. -/
 theorem digestV_type (d : Vector UInt8 32) : (digestV d).type = Core.addrTy := by
@@ -161,12 +160,13 @@ theorem repAddressRef_of_load_digestV {h : Heap F} {d : Vector UInt8 32} {r : So
     | some v =>
       simp only [hcell, bind, Except.bind] at hload
       by_cases hty : v.type = ty
-      · simp only [hty, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at hload
+      · simp only [hty, ne_eq, not_true_eq_false, ↓reduceIte, pure, Except.pure,
+          Except.ok.injEq] at hload
         subst v
         rw [digestV_type d] at hty
         subst ty
         exact ⟨n, digestV d, rfl, hcell, rfl⟩
-      · simp [hty] at hload
+      · simp [hty, throw, Except.error] at hload
 
 /-! ## `IxonSerialize`: TagN, address, and projection-record serialization -/
 
@@ -201,7 +201,7 @@ private theorem trimmedBytes_zero_toList (x : UInt64) :
 private theorem trimmedBytes_succ_toList (x : UInt64) (k : Nat) :
     (trimmedBytes x (k + 1)).data.toList =
       x.toUInt8 :: (trimmedBytes (x >>> 8) k).data.toList := by
-  simp [trimmedBytes, ByteArray.data_append, Array.toList_append, List.toByteArray]
+  simp [trimmedBytes, ByteArray.data_append, Array.toList_append]
 
 /-- `IxonSerialize::put_u64_le` prepends `trimmedBytes x k` (`k ≤ 8`) before `rest`. -/
 theorem put_u64_le_spec (k : Nat) :
@@ -240,7 +240,7 @@ theorem put_u64_le_spec (k : Nat) :
       obtain ⟨ext1, htail⟩ := ih (by omega) hrest ev176
       have hb1_u8 : RepU8 m166 x.toUInt8 (.field ((x.toNat % 256 : Nat) : F)) := by
         show (.field ((x.toNat % 256 : Nat) : F) : SourceValue F) = .field (x.toUInt8.toNat : F)
-        simp [UInt64.toUInt8, UInt8.toNat_ofNat']
+        simp only [UInt64.toUInt8, Nat.toUInt8_eq, UInt8.toNat_ofNat']
       obtain ⟨ext2, hcons⟩ := snoc_byte hm151 hb1_u8 htail
       rw [he152, trimmedBytes_succ_toList, List.cons_append]
       exact ⟨ext1.trans ext2, hcons⟩
@@ -248,22 +248,22 @@ theorem put_u64_le_spec (k : Nat) :
 private theorem u64Value_neg_pow16 :
     (.tuple [.field 0, .field 0, .field 255, .field 255, .field 255, .field 255, .field 255, .field 255] :
       SourceValue F) = u64Value 18446744073709486080 := by
-  decide
+  unfold u64Value; norm_num
 
 private theorem u64Value_neg_pow24 :
     (.tuple [.field 0, .field 0, .field 0, .field 255, .field 255, .field 255, .field 255, .field 255] :
       SourceValue F) = u64Value 18446744073692774400 := by
-  decide
+  unfold u64Value; norm_num
 
 private theorem u64Value_neg_pow32 :
     (.tuple [.field 0, .field 0, .field 0, .field 0, .field 255, .field 255, .field 255, .field 255] :
       SourceValue F) = u64Value 18446744069414584320 := by
-  decide
+  unfold u64Value; norm_num
 
 private theorem u64Value_neg_end2_0 :
     (.tuple [.field 128, .field 191, .field 255, .field 255, .field 255, .field 255, .field 255, .field 255] :
       SourceValue F) = u64Value 18446744073709535104 := by
-  decide
+  unfold u64Value; norm_num
 
 /-- `put_tagn_wide` at rung code `3` (`8` trailing bytes). -/
 private theorem put_tagn_wide_3_spec {d : Nat} {rest : List UInt8}
@@ -275,28 +275,22 @@ private theorem put_tagn_wide_3_spec {d : Nat} {rest : List UInt8}
     Heap.Extends h h' ∧
       Bytes.RepByteStream Core.byteListEnum h'
         (Ixon.tagNHeader 0 0 (128 + 64 + 3) :: (trimmedBytes d.toUInt64 8).data.toList ++ rest) r := by
-  rcases «IxonSerialize::put_tagn_wide».obs ev with
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hv419, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hv419, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, hv756, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, hv756, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, v1080, v1081, m1083, cs1091, v1094, m1111, cs1119,
-      _, _, _, _, _, he1076, hm1075, op1108, ev1093, ev1121, _⟩
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · exact absurd (Value.field.inj hv419) (by decide)
-  · exact absurd (Value.field.inj hv419) (by decide)
-  · exact absurd (Value.field.inj hv756) (by decide)
-  · exact absurd (Value.field.inj hv756) (by decide)
-  · simp only [evalBinOp, Except.ok.injEq] at op1108
+  cases «IxonSerialize::put_tagn_wide».obs ev with
+  | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
+    exact absurd (Value.field.inj hv419) (by norm_num)
+  | n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
+    exact absurd (Value.field.inj hv419) (by norm_num)
+  | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv756 =>
+    exact absurd (Value.field.inj hv756) (by norm_num)
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv756 =>
+    exact absurd (Value.field.inj hv756) (by norm_num)
+  | n3 _ _ _ _ _ _ _ _ v1080 v1081 m1083 cs1091 v1094 m1111 cs1119
+      _ _ _ _ _ he1076 hm1075 op1108 ev1093 ev1121 _ =>
+    simp only [evalBinOp, Except.ok.injEq] at op1108
     have hv1094 : v1094 = .field (195 : F) := by rw [← op1108]; norm_num
     rw [hv1094] at ev1093
     obtain ⟨hv1080, hm1083, _⟩ := Lib.u8_from_field_spec ev1093
@@ -305,7 +299,9 @@ private theorem put_tagn_wide_3_spec {d : Nat} {rest : List UInt8}
     rw [← hd_u64] at ev1121
     obtain ⟨ext1, htail⟩ := put_u64_le_spec 8 (Nat.le_refl _) hrest ev1121
     have hhdr : RepU8 m1111 (Ixon.tagNHeader 0 0 (128 + 64 + 3)) (.field (195 : F)) := by
-      decide
+      show (.field (195 : F) : SourceValue F) =
+        .field ((Ixon.tagNHeader 0 0 (128 + 64 + 3)).toNat : F)
+      norm_num [Ixon.tagNHeader]
     obtain ⟨ext2, hcons⟩ := snoc_byte hm1075 hhdr htail
     rw [he1076, List.cons_append]
     exact ⟨ext1.trans ext2, hcons⟩
@@ -324,32 +320,21 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
           else
             Ixon.tagNHeader 0 0 (128 + 64 + 3) ::
               (trimmedBytes (d - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
-  rcases «IxonSerialize::put_tagn_wide».obs ev with
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hv419, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hv419, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      m758, x766, y767, m768, x774, y775, m776, x782, y783, m784,
-      cs793, cs807, cs821, cs835, v858, v859, m861, cs869, v872, m889, cs897,
-      hv11, _, _, _, ev795, ev809, op789, ev823, op781, ev837, op773,
-      he854, hm853, op886, ev871, ev899, _⟩ |
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      v757, m758, x766, y767, m768, x774, y775, m776, x782, y783, m784,
-      cs793, cs807, cs821, cs835, m929, cs939, x_next, w1018, cs1032,
-      hv11, _, _, _, ev795, ev809, op789, ev823, op781, ev837, op773,
-      hne924, ev941, ev1034, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, hne1067, _, _, _, _, _, _, _⟩
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · exact absurd (Value.field.inj hv419) (by decide)
-  · exact absurd (Value.field.inj hv419) (by decide)
-  · -- `d < 2^32`
+  cases «IxonSerialize::put_tagn_wide».obs ev with
+  | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
+    exact absurd (Value.field.inj hv419) (by norm_num)
+  | n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
+    exact absurd (Value.field.inj hv419) (by norm_num)
+  | n2_n0 w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      m758 x766 y767 m768 x774 y775 m776 x782 y783 m784
+      cs793 cs807 cs821 cs835 v858 v859 m861 cs869 v872 m889 cs897
+      hv11 _ _ _ ev795 ev809 op789 ev823 op781 ev837 op773
+      he854 hm853 op886 ev871 ev899 _ =>
+    -- `d < 2^32`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -359,8 +344,9 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy783, hm776⟩ := Lib.u8_to_field_spec ev809; subst y783 m776
     obtain ⟨hy775, hm768⟩ := Lib.u8_to_field_spec ev823; subst y775 m768
     obtain ⟨hy767, hm758⟩ := Lib.u8_to_field_spec ev837; subst y767 m758
-    simp only [evalBinOp, Except.ok.injEq] at op789 op781 op773
-    subst x774 x766
+    simp only [evalBinOp, Except.ok.injEq] at op789; subst x774
+    simp only [evalBinOp, Except.ok.injEq] at op781; subst x766
+    simp only [evalBinOp, Except.ok.injEq] at op773
     have hsum_cast : ((((d / 4294967296 % 256 + d / 1099511627776 % 256 +
         d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op773
@@ -374,11 +360,19 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
     have hd_u64 : d.toUInt64.toNat = d := UInt64.toNat_ofNat_of_lt hd
     rw [← hd_u64] at ev899
     obtain ⟨ext1, htail⟩ := put_u64_le_spec 4 (by decide) hrest ev899
-    have hhdr : RepU8 m889 (Ixon.tagNHeader 0 0 (128 + 64 + 2)) (.field (194 : F)) := by decide
+    have hhdr : RepU8 m889 (Ixon.tagNHeader 0 0 (128 + 64 + 2)) (.field (194 : F)) := by
+      show (.field (194 : F) : SourceValue F) =
+        .field ((Ixon.tagNHeader 0 0 (128 + 64 + 2)).toNat : F)
+      norm_num [Ixon.tagNHeader]
     obtain ⟨ext2, hcons⟩ := snoc_byte hm853 hhdr htail
-    rw [if_pos hd_lt, he854, List.cons_append]
+    rw [ite_eq_left hd_lt, he854, List.cons_append]
     exact ⟨ext1.trans ext2, hcons⟩
-  · -- `2^32 ≤ d`
+  | n2_other w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      v757 m758 x766 y767 m768 x774 y775 m776 x782 y783 m784
+      cs793 cs807 cs821 cs835 m929 cs939 x_next w1018 cs1032
+      hv11 _ _ _ ev795 ev809 op789 ev823 op781 ev837 op773
+      hne924 ev941 ev1034 _ =>
+    -- `2^32 ≤ d`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -388,8 +382,9 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy783, hm776⟩ := Lib.u8_to_field_spec ev809; subst y783 m776
     obtain ⟨hy775, hm768⟩ := Lib.u8_to_field_spec ev823; subst y775 m768
     obtain ⟨hy767, hm758⟩ := Lib.u8_to_field_spec ev837; subst y767 m758
-    simp only [evalBinOp, Except.ok.injEq] at op789 op781 op773
-    subst x774 x766 v757
+    simp only [evalBinOp, Except.ok.injEq] at op789; subst x774
+    simp only [evalBinOp, Except.ok.injEq] at op781; subst x766
+    simp only [evalBinOp, Except.ok.injEq] at op773; subst v757
     have hd_nlt : ¬ d < 4294967296 := by
       intro hlt
       apply hne924
@@ -403,10 +398,12 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
     subst m929
     simp only [UInt64.toNat_ofNatLT, Value.tuple.injEq, List.cons.injEq, and_true] at hadd
     have hmod : (d + 18446744069414584320) % 18446744073709551616 = d - 4294967296 := by omega
-    have hnext : x_next = u64Value (d - 4294967296) := by rw [← hadd.1, hmod]
-    rw [hnext, if_neg hd_nlt] at ev1034 ⊢
+    have hnext : x_next = u64Value (d - 4294967296) := by rw [hadd.1, hmod]
+    rw [hnext] at ev1034
+    rw [ite_eq_right hd_nlt]
     exact put_tagn_wide_3_spec (by omega) hrest ev1034
-  · exact (hne1067 rfl).elim
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne1067 =>
+    exact (hne1067 rfl).elim
 
 /-- `put_tagn_wide` at rung code `1` (`3`, `4`, or `8` trailing bytes). -/
 private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
@@ -425,30 +422,17 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
           else
             Ixon.tagNHeader 0 0 (128 + 64 + 3) ::
               (trimmedBytes (d - 16777216 - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
-  rcases «IxonSerialize::put_tagn_wide».obs ev with
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hv68, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      m421, x429, y430, m431, x437, y438, m439, x445, y446, m447, x453, y454, m455,
-      cs464, cs478, cs492, cs506, cs520, v543, v544, m546, cs554, v557, m574, cs582,
-      hv11, _, _, ev466, ev480, op460, ev494, op452, ev508, op444, ev522, op436,
-      he539, hm538, op571, ev556, ev584, _⟩ |
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      v420, m421, x429, y430, m431, x437, y438, m439, x445, y446, m447, x453, y454, m455,
-      cs464, cs478, cs492, cs506, cs520, m614, cs624, x_next, w703, cs717,
-      hv11, _, _, ev466, ev480, op460, ev494, op452, ev508, op444, ev522, op436,
-      hne609, ev626, ev719, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hne752, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hne752, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, hne752, _, _, _, _, _, _, _, _⟩
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · exact absurd (Value.field.inj hv68) (by decide)
-  · -- `d < 2^24`
+  cases «IxonSerialize::put_tagn_wide».obs ev with
+  | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
+    exact absurd (Value.field.inj hv68) (by norm_num)
+  | n1_n0 w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      m421 x429 y430 m431 x437 y438 m439 x445 y446 m447 x453 y454 m455
+      cs464 cs478 cs492 cs506 cs520 v543 v544 m546 cs554 v557 m574 cs582
+      hv11 _ _ ev466 ev480 op460 ev494 op452 ev508 op444 ev522 op436
+      he539 hm538 op571 ev556 ev584 _ =>
+    -- `d < 2^24`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -459,8 +443,10 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy446, hm439⟩ := Lib.u8_to_field_spec ev494; subst y446 m439
     obtain ⟨hy438, hm431⟩ := Lib.u8_to_field_spec ev508; subst y438 m431
     obtain ⟨hy430, hm421⟩ := Lib.u8_to_field_spec ev522; subst y430 m421
-    simp only [evalBinOp, Except.ok.injEq] at op460 op452 op444 op436
-    subst x445 x437 x429
+    simp only [evalBinOp, Except.ok.injEq] at op460; subst x445
+    simp only [evalBinOp, Except.ok.injEq] at op452; subst x437
+    simp only [evalBinOp, Except.ok.injEq] at op444; subst x429
+    simp only [evalBinOp, Except.ok.injEq] at op436
     have hsum_cast : ((((d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
         d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op436
@@ -474,11 +460,19 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
     have hd_u64 : d.toUInt64.toNat = d := UInt64.toNat_ofNat_of_lt hd
     rw [← hd_u64] at ev584
     obtain ⟨ext1, htail⟩ := put_u64_le_spec 3 (by decide) hrest ev584
-    have hhdr : RepU8 m574 (Ixon.tagNHeader 0 0 (128 + 64 + 1)) (.field (193 : F)) := by decide
+    have hhdr : RepU8 m574 (Ixon.tagNHeader 0 0 (128 + 64 + 1)) (.field (193 : F)) := by
+      show (.field (193 : F) : SourceValue F) =
+        .field ((Ixon.tagNHeader 0 0 (128 + 64 + 1)).toNat : F)
+      norm_num [Ixon.tagNHeader]
     obtain ⟨ext2, hcons⟩ := snoc_byte hm538 hhdr htail
-    rw [if_pos hd_lt, he539, List.cons_append]
+    rw [ite_eq_left hd_lt, he539, List.cons_append]
     exact ⟨ext1.trans ext2, hcons⟩
-  · -- `2^24 ≤ d`
+  | n1_other w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      v420 m421 x429 y430 m431 x437 y438 m439 x445 y446 m447 x453 y454 m455
+      cs464 cs478 cs492 cs506 cs520 m614 cs624 x_next w703 cs717
+      hv11 _ _ ev466 ev480 op460 ev494 op452 ev508 op444 ev522 op436
+      hne609 ev626 ev719 _ =>
+    -- `2^24 ≤ d`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -489,8 +483,10 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy446, hm439⟩ := Lib.u8_to_field_spec ev494; subst y446 m439
     obtain ⟨hy438, hm431⟩ := Lib.u8_to_field_spec ev508; subst y438 m431
     obtain ⟨hy430, hm421⟩ := Lib.u8_to_field_spec ev522; subst y430 m421
-    simp only [evalBinOp, Except.ok.injEq] at op460 op452 op444 op436
-    subst x445 x437 x429 v420
+    simp only [evalBinOp, Except.ok.injEq] at op460; subst x445
+    simp only [evalBinOp, Except.ok.injEq] at op452; subst x437
+    simp only [evalBinOp, Except.ok.injEq] at op444; subst x429
+    simp only [evalBinOp, Except.ok.injEq] at op436; subst v420
     have hd_nlt : ¬ d < 16777216 := by
       intro hlt
       apply hne609
@@ -505,12 +501,16 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
     subst m614
     simp only [UInt64.toNat_ofNatLT, Value.tuple.injEq, List.cons.injEq, and_true] at hadd
     have hmod : (d + 18446744073692774400) % 18446744073709551616 = d - 16777216 := by omega
-    have hnext : x_next = u64Value (d - 16777216) := by rw [← hadd.1, hmod]
-    rw [hnext, if_neg hd_nlt] at ev719 ⊢
+    have hnext : x_next = u64Value (d - 16777216) := by rw [hadd.1, hmod]
+    rw [hnext] at ev719
+    rw [ite_eq_right hd_nlt]
     exact put_tagn_wide_2_spec (by omega) hrest ev719
-  · exact (hne752 rfl).elim
-  · exact (hne752 rfl).elim
-  · exact (hne752 rfl).elim
+  | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne752 =>
+    exact (hne752 rfl).elim
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne752 =>
+    exact (hne752 rfl).elim
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne752 =>
+    exact (hne752 rfl).elim
 
 /-- `put_tagn_wide` at rung code `0` (`2`, `3`, `4`, or `8` trailing bytes). -/
 private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
@@ -533,28 +533,13 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
             Ixon.tagNHeader 0 0 (128 + 64 + 3) ::
               (trimmedBytes (d - 65536 - 16777216 - 4294967296).toUInt64 8).data.toList) ++
           rest) r := by
-  rcases «IxonSerialize::put_tagn_wide».obs ev with
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      m70, x78, y79, m80, x86, y87, m88, x94, y95, m96, x102, y103, m104, x110, y111, m112,
-      cs121, cs135, cs149, cs163, cs177, cs191, v214, v215, m217, cs225, m237, cs245,
-      hv11, _, ev123, ev137, op117, ev151, op109, ev165, op101, ev179, op93, ev193, op85,
-      he210, hm209, ev227, ev247, _⟩ |
-    ⟨w13, w14, x_d2, x_d3, x_d4, x_d5, x_d6, x_d7,
-      v69, m70, x78, y79, m80, x86, y87, m88, x94, y95, m96, x102, y103, m104, x110, y111, m112,
-      cs121, cs135, cs149, cs163, cs177, cs191, m277, cs287, x_next, w366, cs380,
-      hv11, _, ev123, ev137, op117, ev151, op109, ev165, op101, ev179, op93, ev193, op85,
-      hne272, ev289, ev382, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hne415, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hne415, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hne415, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hne415, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, hne415, _, _, _, _, _, _, _, _, _⟩
-  · -- `d < 65536`
+  cases «IxonSerialize::put_tagn_wide».obs ev with
+  | n0_n0 w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      m70 x78 y79 m80 x86 y87 m88 x94 y95 m96 x102 y103 m104 x110 y111 m112
+      cs121 cs135 cs149 cs163 cs177 cs191 v214 v215 m217 cs225 m237 cs245
+      hv11 _ ev123 ev137 op117 ev151 op109 ev165 op101 ev179 op93 ev193 op85
+      he210 hm209 ev227 ev247 _ =>
+    -- `d < 65536`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -566,8 +551,11 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy95, hm88⟩ := Lib.u8_to_field_spec ev165; subst y95 m88
     obtain ⟨hy87, hm80⟩ := Lib.u8_to_field_spec ev179; subst y87 m80
     obtain ⟨hy79, hm70⟩ := Lib.u8_to_field_spec ev193; subst y79 m70
-    simp only [evalBinOp, Except.ok.injEq] at op117 op109 op101 op93 op85
-    subst x102 x94 x86 x78
+    simp only [evalBinOp, Except.ok.injEq] at op117; subst x102
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85
     have hsum_cast : ((((d / 65536 % 256 + d / 16777216 % 256 + d / 4294967296 % 256 +
         d / 1099511627776 % 256 + d / 281474976710656 % 256 +
         d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
@@ -579,11 +567,19 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
     have hd_u64 : d.toUInt64.toNat = d := UInt64.toNat_ofNat_of_lt hd
     rw [← hd_u64] at ev247
     obtain ⟨ext1, htail⟩ := put_u64_le_spec 2 (by decide) hrest ev247
-    have hhdr : RepU8 m237 (Ixon.tagNHeader 0 0 (128 + 64)) (.field (192 : F)) := by decide
+    have hhdr : RepU8 m237 (Ixon.tagNHeader 0 0 (128 + 64)) (.field (192 : F)) := by
+      show (.field (192 : F) : SourceValue F) =
+        .field ((Ixon.tagNHeader 0 0 (128 + 64)).toNat : F)
+      norm_num [Ixon.tagNHeader]
     obtain ⟨ext2, hcons⟩ := snoc_byte hm209 hhdr htail
-    rw [if_pos hd_lt, he210, List.cons_append]
+    rw [ite_eq_left hd_lt, he210, List.cons_append]
     exact ⟨ext1.trans ext2, hcons⟩
-  · -- `65536 ≤ d`
+  | n0_other w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
+      v69 m70 x78 y79 m80 x86 y87 m88 x94 y95 m96 x102 y103 m104 x110 y111 m112
+      cs121 cs135 cs149 cs163 cs177 cs191 m277 cs287 x_next w366 cs380
+      hv11 _ ev123 ev137 op117 ev151 op109 ev165 op101 ev179 op93 ev193 op85
+      hne272 ev289 ev382 _ =>
+    -- `65536 ≤ d`
     have hv11' := hv11
     unfold u64Value at hv11'
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
@@ -595,8 +591,11 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
     obtain ⟨hy95, hm88⟩ := Lib.u8_to_field_spec ev165; subst y95 m88
     obtain ⟨hy87, hm80⟩ := Lib.u8_to_field_spec ev179; subst y87 m80
     obtain ⟨hy79, hm70⟩ := Lib.u8_to_field_spec ev193; subst y79 m70
-    simp only [evalBinOp, Except.ok.injEq] at op117 op109 op101 op93 op85
-    subst x102 x94 x86 x78 v69
+    simp only [evalBinOp, Except.ok.injEq] at op117; subst x102
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85; subst v69
     have hd_nlt : ¬ d < 65536 := by
       intro hlt
       apply hne272
@@ -611,14 +610,20 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
     subst m277
     simp only [UInt64.toNat_ofNatLT, Value.tuple.injEq, List.cons.injEq, and_true] at hadd
     have hmod : (d + 18446744073709486080) % 18446744073709551616 = d - 65536 := by omega
-    have hnext : x_next = u64Value (d - 65536) := by rw [← hadd.1, hmod]
-    rw [hnext, if_neg hd_nlt] at ev382 ⊢
+    have hnext : x_next = u64Value (d - 65536) := by rw [hadd.1, hmod]
+    rw [hnext] at ev382
+    rw [ite_eq_right hd_nlt]
     exact put_tagn_wide_1_spec (by omega) hrest ev382
-  · exact (hne415 rfl).elim
-  · exact (hne415 rfl).elim
-  · exact (hne415 rfl).elim
-  · exact (hne415 rfl).elim
-  · exact (hne415 rfl).elim
+  | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
+    exact (hne415 rfl).elim
+  | n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
+    exact (hne415 rfl).elim
+  | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
+    exact (hne415 rfl).elim
+  | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
+    exact (hne415 rfl).elim
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne415 =>
+    exact (hne415 rfl).elim
 
 private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128) :
     (tag0Bytes val).data.toList =
@@ -645,27 +650,32 @@ private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128)
   unfold tag0Bytes tagNBytes
   simp only [Nat.reduceSub, Nat.reducePow, h1, h2, h3, h4, h5, hge, ↓reduceIte]
   by_cases c2 : val.toNat < 16512
-  · simp [c2, ByteArray.data_append, Array.toList_append, List.toByteArray]
+  · simp only [c2, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+      List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
   · simp only [c2, ↓reduceIte]
     by_cases c3 : val.toNat < 82048
     · have c3' : val.toNat - 16512 < 65536 := by omega
-      simp [c3, c3', ByteArray.data_append, Array.toList_append, List.toByteArray]
+      simp only [c3, c3', ↓reduceIte, ByteArray.data_append, Array.toList_append,
+        List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
     · have c3' : ¬ val.toNat - 16512 < 65536 := by omega
       simp only [c3, c3', ↓reduceIte]
       by_cases c4 : val.toNat < 16859264
       · have c4' : val.toNat - 16512 - 65536 < 16777216 := by omega
         have esub : val.toNat - 82048 = val.toNat - 16512 - 65536 := by omega
-        simp [c4, c4', esub, ByteArray.data_append, Array.toList_append, List.toByteArray]
+        simp only [c4, c4', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+          List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
       · have c4' : ¬ val.toNat - 16512 - 65536 < 16777216 := by omega
         simp only [c4, c4', ↓reduceIte]
         by_cases c5 : val.toNat < 4311826560
         · have c5' : val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
           have esub : val.toNat - 16859264 = val.toNat - 16512 - 65536 - 16777216 := by omega
-          simp [c5, c5', esub, ByteArray.data_append, Array.toList_append, List.toByteArray]
+          simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+            List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
         · have c5' : ¬ val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
           have esub : val.toNat - 4311826560 =
               val.toNat - 16512 - 65536 - 16777216 - 4294967296 := by omega
-          simp [c5, c5', esub, ByteArray.data_append, Array.toList_append, List.toByteArray]
+          simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
+            List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
 
 /-- `IxonSerialize::put_tagn_tail` on `f = 0` (`x_base = 0`, `x_h = 64`) for `128 ≤ val.toNat`. -/
 private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
@@ -690,8 +700,9 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
       m154, cs165, cs404, v407, y418,
       op74, op66, ev51, op102, ev87, ev14, ev167, op433, op424, ev406, _⟩
   · -- Rung 2 (`128 ≤ val.toNat < 16512`)
-    simp only [evalBinOp, Except.ok.injEq] at op74 op66 op102
-    have hv52 : v52 = .field (128 : F) := by rw [← op66, ← op74]; norm_num
+    simp only [evalBinOp, Except.ok.injEq] at op74; subst y60
+    simp only [evalBinOp, Except.ok.injEq] at op66 op102
+    have hv52 : v52 = .field (128 : F) := by rw [← op66]; norm_num
     have hv88 : v88 = .field (191 : F) := by rw [← op102]; norm_num
     rw [hv52] at ev51
     obtain ⟨hv32, hm41, _⟩ := Lib.u8_from_field_spec ev51; subst v32 m41
@@ -706,7 +717,7 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
     subst m154
     have hdiv0 : (val.toNat + 18446744073709535104) / 18446744073709551616 = 0 := by
       have hc : ((((val.toNat + 18446744073709535104) / 18446744073709551616 : Nat)) : F) = 0 :=
-        Value.field.inj (hcarry0.symm.trans hadd.2).symm
+        Value.field.inj (hcarry0.trans hadd.2).symm
       exact (natCast_eq_zero_iff (by omega)).mp hc
     have hlt2 : val.toNat < 16512 := by omega
     have hpr0 : projectValue (u64Value val.toNat : SourceValue F) 0 =
@@ -716,8 +727,9 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
       ok_inj (pr217.symm.trans hpr0)
     subst v208
     obtain ⟨hv194, hm197⟩ := Lib.u8_to_field_spec ev207; subst v194 m197
-    simp only [evalBinOp, Except.ok.injEq] at op240 op232
-    have hv195 : v195 = .field ((128 : Nat) : F) := by rw [← op232, ← op240]; norm_num
+    simp only [evalBinOp, Except.ok.injEq] at op240; subst y226
+    simp only [evalBinOp, Except.ok.injEq] at op232
+    have hv195 : v195 = .field ((128 : Nat) : F) := by rw [← op232]; norm_num
     rw [hv195] at ev193
     obtain ⟨hraw, hm181⟩ := u8_raw_add_spec (a := val.toNat % 256) (b := 128)
       (by omega) (by decide) ev193
@@ -733,12 +745,11 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
     subst v285
     obtain ⟨hx271, hm273⟩ := Lib.u8_to_field_spec ev284; subst x271 m273
     obtain ⟨hy272, hm265⟩ := Lib.u8_to_field_spec ev301; subst y272 m265
-    simp only [evalBinOp, Except.ok.injEq] at op278 op270 op363 op354 op346
-    subst x263 v255 y348 x339
-    have hhi_nat :
-        1 ≤ val.toNat / 256 % 256 + (val.toNat % 256 + 128) / 256 ∧
-        val.toNat / 256 % 256 + (val.toNat % 256 + 128) / 256 - 1 =
-          (val.toNat - 128) / 256 := by omega
+    simp only [evalBinOp, Except.ok.injEq] at op278; subst x263
+    simp only [evalBinOp, Except.ok.injEq] at op270; subst v255
+    simp only [evalBinOp, Except.ok.injEq] at op363; subst y348
+    simp only [evalBinOp, Except.ok.injEq] at op354; subst x339
+    simp only [evalBinOp, Except.ok.injEq] at op346
     have hlo_nat : (val.toNat % 256 + 128) % 256 = (val.toNat - 128) % 256 := by omega
     have hv332 : v332 = .field (((128 + (val.toNat - 128) / 256 : Nat)) : F) := by
       rw [← op346]
@@ -763,11 +774,12 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
       simp only [UInt8.reduceToNat, Nat.zero_mul, Nat.zero_add]
       exact repU8_ofNatLT m367 hhdr_lt
     obtain ⟨ext2, hcons2⟩ := snoc_byte hm313 hhdr_u8 hcons1
-    rw [if_pos hlt2, he314]
+    rw [ite_eq_left hlt2, he314]
     simpa [List.cons_append] using And.intro (ext1.trans ext2) hcons2
   · -- Wide rungs (`16512 ≤ val.toNat`)
-    simp only [evalBinOp, Except.ok.injEq] at op74 op66 op102
-    have hv52 : v52 = .field (128 : F) := by rw [← op66, ← op74]; norm_num
+    simp only [evalBinOp, Except.ok.injEq] at op74; subst y60
+    simp only [evalBinOp, Except.ok.injEq] at op66 op102
+    have hv52 : v52 = .field (128 : F) := by rw [← op66]; norm_num
     have hv88 : v88 = .field (191 : F) := by rw [← op102]; norm_num
     rw [hv52] at ev51
     obtain ⟨hv32, hm41, _⟩ := Lib.u8_from_field_spec ev51; subst v32 m41
@@ -783,15 +795,17 @@ private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
     have hdiv1 : (val.toNat + 18446744073709535104) / 18446744073709551616 = 1 := by
       have hc : ((((val.toNat + 18446744073709535104) / 18446744073709551616 : Nat)) : F) =
           ((1 : Nat) : F) := by
-        simpa using Value.field.inj (hcarry1.symm.trans hadd.2).symm
+        simpa using Value.field.inj (hcarry1.trans hadd.2).symm
       exact (natCast_eq_iff (by omega) (by decide)).mp hc
     have hnlt2 : ¬ val.toNat < 16512 := by omega
     have hmod : (val.toNat + 18446744073709535104) % 18446744073709551616 =
         val.toNat - 16512 := by omega
-    have hxd : x_d = u64Value (val.toNat - 16512) := by rw [← hadd.1, hmod]
-    simp only [evalBinOp, Except.ok.injEq] at op433 op424
-    have hv407 : v407 = .field (192 : F) := by rw [← op424, ← op433]; norm_num
-    rw [hv407, hxd, if_neg hnlt2] at ev406 ⊢
+    have hxd : x_d = u64Value (val.toNat - 16512) := by rw [hadd.1, hmod]
+    simp only [evalBinOp, Except.ok.injEq] at op433; subst y418
+    simp only [evalBinOp, Except.ok.injEq] at op424
+    have hv407 : v407 = .field (192 : F) := by rw [← op424]; norm_num
+    rw [hv407, hxd] at ev406
+    rw [ite_eq_right hnlt2]
     exact put_tagn_wide_0_spec (by omega) hrest ev406
 
 /-- `IxonSerialize::put_tagn0` prepends `tag0Bytes val` before `rest`. -/
@@ -831,8 +845,12 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
     obtain ⟨hy79, hm72⟩ := Lib.u8_to_field_spec ev171; subst y79 m72
     obtain ⟨hy71, hm64⟩ := Lib.u8_to_field_spec ev185; subst y71 m64
     obtain ⟨hy63, hm54⟩ := Lib.u8_to_field_spec ev199; subst y63 m54
-    simp only [evalBinOp, Except.ok.injEq] at op109 op101 op93 op85 op77 op69
-    subst x94 x86 x78 x70 x62
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85; subst x70
+    simp only [evalBinOp, Except.ok.injEq] at op77; subst x62
+    simp only [evalBinOp, Except.ok.injEq] at op69
     have hsum_cast : ((((val.toNat / 256 % 256 + val.toNat / 65536 % 256 +
         val.toNat / 16777216 % 256 + val.toNat / 4294967296 % 256 +
         val.toNat / 1099511627776 % 256 + val.toNat / 281474976710656 % 256 +
@@ -850,12 +868,12 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
       have hb128 : (128 : Nat).toUInt8.toNat = 128 := by decide
       rw [hb0, hb128] at hlt_eq
       by_contra hge
-      rw [if_neg hge] at hlt_eq
-      exact absurd (Value.field.inj hlt_eq) (by decide)
+      rw [ite_eq_right hge] at hlt_eq
+      exact absurd (Value.field.inj hlt_eq) (by norm_num)
     have htag0 : (tag0Bytes val).data.toList = [Ixon.tagNHeader 0 0 val.toNat] := by
       have h1 : Ixon.tagNEnd1 0 = 128 := by decide
       unfold tag0Bytes tagNBytes
-      simp [h1, hv0_lt128, List.toByteArray]
+      simp only [h1, hv0_lt128, ↓reduceIte, List.data_toByteArray, Array.toList_toArray]
     have hhdr_u8 : RepU8 h (Ixon.tagNHeader 0 0 val.toNat)
         (.field ((val.toNat % 256 : Nat) : F)) := by
       unfold Ixon.tagNHeader
@@ -870,13 +888,26 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11'
     rcases hv11' with ⟨hv0, hv1, hv2, hv3, hv4, hv5, hv6, hv7⟩
     subst x_v0 x_v1 x_v2 x_v3 x_v4 x_v5 x_v6 x_v7
-    obtain ⟨_, hm104⟩ := Lib.u8_to_field_spec ev115; subst m104
-    obtain ⟨_, hm96⟩ := Lib.u8_to_field_spec ev129; subst m96
-    obtain ⟨_, hm88⟩ := Lib.u8_to_field_spec ev143; subst m88
-    obtain ⟨_, hm80⟩ := Lib.u8_to_field_spec ev157; subst m80
-    obtain ⟨_, hm72⟩ := Lib.u8_to_field_spec ev171; subst m72
-    obtain ⟨_, hm64⟩ := Lib.u8_to_field_spec ev185; subst m64
-    obtain ⟨_, hm54⟩ := Lib.u8_to_field_spec ev199; subst m54
+    obtain ⟨hx102, hm104⟩ := Lib.u8_to_field_spec ev115; subst x102 m104
+    obtain ⟨hy103, hm96⟩ := Lib.u8_to_field_spec ev129; subst y103 m96
+    obtain ⟨hy95, hm88⟩ := Lib.u8_to_field_spec ev143; subst y95 m88
+    obtain ⟨hy87, hm80⟩ := Lib.u8_to_field_spec ev157; subst y87 m80
+    obtain ⟨hy79, hm72⟩ := Lib.u8_to_field_spec ev171; subst y79 m72
+    obtain ⟨hy71, hm64⟩ := Lib.u8_to_field_spec ev185; subst y71 m64
+    obtain ⟨hy63, hm54⟩ := Lib.u8_to_field_spec ev199; subst y63 m54
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85; subst x70
+    simp only [evalBinOp, Except.ok.injEq] at op77; subst x62
+    simp only [evalBinOp, Except.ok.injEq] at op69
+    have hsum_cast : ((((val.toNat / 256 % 256 + val.toNat / 65536 % 256 +
+        val.toNat / 16777216 % 256 + val.toNat / 4294967296 % 256 +
+        val.toNat / 1099511627776 % 256 + val.toNat / 281474976710656 % 256 +
+        val.toNat / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
+      push_cast; exact Value.field.inj op69
+    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
+    have hv_lt256 : val.toNat < 256 := by omega
     obtain ⟨hlt_eq, hm213⟩ := Lib.u8_less_than_spec
       (repU8_ofNatLT h (n := val.toNat % 256) (by omega))
       (repU8_ofNatLT h (n := 128) (by decide)) ev226
@@ -884,10 +915,10 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
     have hge128 : ¬ val.toNat < 128 := by
       intro hlt128
       have hb0 : (val.toNat % 256).toUInt8.toNat = val.toNat := by
-        simp [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega : val.toNat < 256)]
+        simp [UInt8.toNat_ofNat', Nat.mod_eq_of_lt hv_lt256]
       have hb128 : (128 : Nat).toUInt8.toNat = 128 := by decide
-      rw [hb0, hb128, if_pos hlt128] at hlt_eq
-      exact absurd (Value.field.inj hlt_eq) (by decide)
+      rw [hb0, hb128, ite_eq_left hlt128] at hlt_eq
+      exact absurd (Value.field.inj hlt_eq) (by norm_num)
     exact put_tagn_tail_0_spec hge128 hrest ev281
   · -- `256 ≤ val.toNat`
     have hv11' := hv11
@@ -902,8 +933,12 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
     obtain ⟨hy79, hm72⟩ := Lib.u8_to_field_spec ev171; subst y79 m72
     obtain ⟨hy71, hm64⟩ := Lib.u8_to_field_spec ev185; subst y71 m64
     obtain ⟨hy63, hm54⟩ := Lib.u8_to_field_spec ev199; subst y63 m54
-    simp only [evalBinOp, Except.ok.injEq] at op109 op101 op93 op85 op77 op69
-    subst x94 x86 x78 x70 x62 v53
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85; subst x70
+    simp only [evalBinOp, Except.ok.injEq] at op77; subst x62
+    simp only [evalBinOp, Except.ok.injEq] at op69; subst v53
     have hge128 : ¬ val.toNat < 128 := by
       intro hlt128
       apply hne314
@@ -957,15 +992,15 @@ theorem put_tagn4_13_small_spec {k : Nat} {rest : List UInt8}
       (repU8_ofNatLT h (n := 8) (by decide)) ev226
     subst m213
     obtain ⟨hy276, hm270⟩ := Lib.u8_to_field_spec ev297; subst y276 m270
-    simp only [evalBinOp, Except.ok.injEq] at op290 op282
-    subst x275 v268
+    simp only [evalBinOp, Except.ok.injEq] at op290; subst x275
+    simp only [evalBinOp, Except.ok.injEq] at op282; subst v268
     obtain ⟨hv254, hm257, _⟩ := Lib.u8_from_field_spec ev267; subst v254 m257
     have hk_mod : k % 256 = k := Nat.mod_eq_of_lt (by omega)
     have hk_u64 : k.toUInt64.toNat = k := UInt64.toNat_ofNat_of_lt (by omega)
     have htag4 : (tag4Bytes 13 k.toUInt64).data.toList = [Ixon.tagNHeader 4 13 k] := by
       have h1 : Ixon.tagNEnd1 4 = 8 := by decide
       unfold tag4Bytes tagNBytes
-      simp [h1, hk_u64, hk, List.toByteArray]
+      simp only [h1, hk_u64, hk, ↓reduceIte, List.data_toByteArray, Array.toList_toArray]
     have hhdr_val : (16 * (13 : F) + ((k % 256 : Nat) : F)) = (((208 + k : Nat)) : F) := by
       rw [hk_mod]; push_cast; ring_nf
     have hhdr_u8 : RepU8 h (Ixon.tagNHeader 4 13 k)
@@ -996,8 +1031,8 @@ theorem put_tagn4_13_small_spec {k : Nat} {rest : List UInt8}
     have hb0 : (k % 256).toUInt8.toNat = k := by
       simp [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega : k < 256)]
     have hb8 : (8 : Nat).toUInt8.toNat = 8 := by decide
-    rw [hb0, hb8, if_pos hk] at hlt_eq
-    exact absurd (Value.field.inj hlt_eq) (by decide)
+    rw [hb0, hb8, ite_eq_left hk] at hlt_eq
+    exact absurd (Value.field.inj hlt_eq) (by norm_num)
   · unfold u64Value at hv11
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
     rcases hv11 with ⟨_, hv1, hv2, hv3, hv4, hv5, hv6, hv7⟩
@@ -1009,8 +1044,12 @@ theorem put_tagn4_13_small_spec {k : Nat} {rest : List UInt8}
     obtain ⟨hy79, hm72⟩ := Lib.u8_to_field_spec ev171; subst y79 m72
     obtain ⟨hy71, hm64⟩ := Lib.u8_to_field_spec ev185; subst y71 m64
     obtain ⟨hy63, hm54⟩ := Lib.u8_to_field_spec ev199; subst y63 m54
-    simp only [evalBinOp, Except.ok.injEq] at op109 op101 op93 op85 op77 op69
-    subst x94 x86 x78 x70 x62 v53
+    simp only [evalBinOp, Except.ok.injEq] at op109; subst x94
+    simp only [evalBinOp, Except.ok.injEq] at op101; subst x86
+    simp only [evalBinOp, Except.ok.injEq] at op93; subst x78
+    simp only [evalBinOp, Except.ok.injEq] at op85; subst x70
+    simp only [evalBinOp, Except.ok.injEq] at op77; subst x62
+    simp only [evalBinOp, Except.ok.injEq] at op69; subst v53
     have h0 : k / 256 % 256 = 0 ∧ k / 65536 % 256 = 0 ∧ k / 16777216 % 256 = 0 ∧
         k / 4294967296 % 256 = 0 ∧ k / 1099511627776 % 256 = 0 ∧
         k / 281474976710656 % 256 = 0 ∧ k / 72057594037927936 % 256 = 0 := by omega
@@ -1116,11 +1155,11 @@ theorem put_address_spec {b : Bytes.Address} {rest : List UInt8}
     have hhash : (Core.ixAddr b).hash.data.toList = b.toList := by
       simp [Core.ixAddr, Vector.toArray]
     rw [he1071, hhash, vector32_toList_eq b]
-    refine ⟨(((((((((((((((((((((((((((((((e31.trans e30).trans e29).trans e28).trans e27).trans
-      e26).trans e25).trans e24).trans e23).trans e22).trans e21).trans e20).trans e19).trans
-      e18).trans e17).trans e16).trans e15).trans e14).trans e13).trans e12).trans e11).trans
-      e10).trans e9).trans e8).trans e7).trans e6).trans e5).trans e4).trans e3).trans e2).trans
-      e1).trans e0, ?_⟩
+    have g3 := ((((((e31.trans e30).trans e29).trans e28).trans e27).trans e26).trans e25).trans e24
+    have g2 := ((((((e23.trans e22).trans e21).trans e20).trans e19).trans e18).trans e17).trans e16
+    have g1 := ((((((e15.trans e14).trans e13).trans e12).trans e11).trans e10).trans e9).trans e8
+    have g0 := ((((((e7.trans e6).trans e5).trans e4).trans e3).trans e2).trans e1).trans e0
+    refine ⟨((g3.trans g2).trans g1).trans g0, ?_⟩
     simpa [List.cons_append] using s0
 
 private theorem put_sharing_nil_spec {rest : List UInt8}
@@ -1261,11 +1300,11 @@ private theorem serConstant_proj_eq {info : Ixon.ConstantInfo} (hwf : Nonrecursi
         (tag0Bytes 0).data.toList ++ (bindersBytes #[]).data.toList := by
   have hcwf : NonrecursiveConstantWireWF ⟨info, #[], #[], #[], #[]⟩ :=
     { info := hwf
-      sharingCount := by decide
+      sharingCount := by show ArrayCountWF (#[] : Array Ixon.Expr); decide
       sharingEntries := by simp
-      refsCount := by decide
+      refsCount := by show ArrayCountWF (#[] : Array _root_.Address); decide
       refsEntries := by simp
-      univsCount := by decide
+      univsCount := by show ArrayCountWF (#[] : Array Ixon.Univ); decide
       univsEntries := by simp
       binders := by simp [Ixon.bindersWireWF] }
   have hser : Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ =
@@ -1294,229 +1333,264 @@ theorem put_constant_proj_spec {info : Ixon.ConstantInfo} {rest : List UInt8}
   | defn _ | recr _ | axio _ | quot _ | muts _ => cases hinfo
   | cPrj p =>
     obtain ⟨vi, vj, bp, b, rfl, hvi, hvj, hbp, hblk⟩ := hinfo
-    rcases «IxonSerialize::put_constant».obs ev with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨x_sh, x_rf, x_un, x_bd, v42, m43, cs53, v57, m66, cs74, v78, m87, cs95,
-        v99, m108, cs116, w664, cs673, v678, m750, cs758,
-        hv15, ev118, ev97, ev76, ev55, ev760, ev675, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩
-    any_goals simp at hv15
-    simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨⟨_, _, hw⟩, rfl, rfl, rfl, rfl⟩
-    subst w664
-    obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
-    obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
-    obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
-    obtain ⟨e4, s4⟩ := put_sharing_nil_spec
-      (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
-    have e14 := ((e1.trans e2).trans e3).trans e4
-    rcases «IxonSerialize::put_constant_info».obs ev760 with
-      ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, hv, _, _⟩ |
-      ⟨x_prj, _, _, _, _, _, hv, ev167, _⟩ |
-      ⟨_, _, _, _, _, _, hne, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, hne, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, hne, _, _, _, _, _⟩
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
-      rcases hv with ⟨_, _, rfl⟩
-      obtain ⟨x_idx, x_cidx, x_block, _, v39, m48, _, v60, m69, _, hv_p, ev79, ev58, ev37, _⟩ :=
-        «IxonSerialize::put_constructor_proj».obs ev167
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv_p
-      rcases hv_p with ⟨_, _, rfl, rfl, rfl⟩
-      obtain ⟨e5, s5⟩ := put_address_spec
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev79
-      rw [Lib.repU64_eq hvj] at ev58
-      obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev58
-      rw [Lib.repU64_eq hvi] at ev37
-      obtain ⟨e7, s7⟩ := put_tagn0_spec s6 ev37
-      obtain ⟨e8, s8⟩ := put_tagn4_13_small_spec (k := 4) (by decide)
-        (by decide) s7 ev675
-      refine ⟨((((e14.trans e5).trans e6).trans e7).trans e8), ?_⟩
-      rw [hblk] at s8
-      simpa [nonrecursiveInfoBytes, constructorProjBytes, Ixon.Constant.FLAG,
-        Ixon.ConstantInfo.CONST_CPRJ, ByteArray.data_append, Array.toList_append,
-        List.append_assoc] using s8
-    · exact (hne [_] rfl rfl).elim
-    · exact (hne [_] rfl rfl).elim
-    · exact (hne [_] rfl rfl).elim
+    cases «IxonSerialize::put_constant».obs ev with
+    | Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ _ => simp at hv15
+    | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | RPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | IPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | DPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | CPrj x_sh x_rf x_un x_bd v42 m43 cs53 v57 m66 cs74 v78 m87 cs95
+        v99 m108 cs116 w664 cs673 v678 m750 cs758
+        hv15 ev118 ev97 ev76 ev55 ev760 ev675 _ =>
+      injection hv15 with _ _ hls
+      injection hls with hiv hls1
+      injection hiv with _ _ hws
+      injection hws with hw _
+      injection hls1 with hp1_eq hls2
+      injection hls2 with hp2_eq hls3
+      injection hls3 with hp3_eq hls4
+      injection hls4 with hp4_eq _
+      subst hw hp1_eq hp2_eq hp3_eq hp4_eq
+      obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
+      obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
+      obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
+      obtain ⟨e4, s4⟩ := put_sharing_nil_spec
+        (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
+      have e14 := ((e1.trans e2).trans e3).trans e4
+      rcases «IxonSerialize::put_constant_info».obs ev760 with
+        ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, hv, _, _⟩ |
+        ⟨x_prj, _, _, _, _, _, hv, ev167, _⟩ |
+        ⟨_, _, _, _, _, _, hne, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, hne, _, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, hne, _, _, _, _, _⟩
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · injection hv with _ _ hls_p
+        injection hls_p with hx_prj _
+        subst hx_prj
+        obtain ⟨x_idx, x_cidx, x_block, _, v39, m48, _, v60, m69, _, hv_p, ev79, ev58, ev37, _⟩ :=
+          «IxonSerialize::put_constructor_proj».obs ev167
+        injection hv_p with _ _ hls_m
+        injection hls_m with hi_eq hls_m1
+        injection hls_m1 with hj_eq hls_m2
+        injection hls_m2 with hb_eq _
+        subst hi_eq hj_eq hb_eq
+        obtain ⟨e5, s5⟩ := put_address_spec
+          (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev79
+        rw [Lib.repU64_eq hvj] at ev58
+        obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev58
+        rw [Lib.repU64_eq hvi] at ev37
+        obtain ⟨e7, s7⟩ := put_tagn0_spec s6 ev37
+        obtain ⟨e8, s8⟩ := put_tagn4_13_small_spec (k := 4) (by decide)
+          (by decide) s7 ev675
+        refine ⟨((((e14.trans e5).trans e6).trans e7).trans e8), ?_⟩
+        rw [hblk] at s8
+        simpa [nonrecursiveInfoBytes, constructorProjBytes, Ixon.Constant.FLAG,
+          Ixon.ConstantInfo.CONST_CPRJ, ByteArray.data_append, Array.toList_append,
+          List.append_assoc] using s8
+      · exact (hne [_] rfl rfl).elim
+      · exact (hne [_] rfl rfl).elim
+      · exact (hne [_] rfl rfl).elim
   | rPrj p =>
     obtain ⟨vi, bp, b, rfl, hvi, hbp, hblk⟩ := hinfo
-    rcases «IxonSerialize::put_constant».obs ev with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨x_sh, x_rf, x_un, x_bd, v42, m43, cs53, v57, m66, cs74, v78, m87, cs95,
-        v99, m108, cs116, w785, cs794, v799, m871, cs879,
-        hv15, ev118, ev97, ev76, ev55, ev881, ev796, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩
-    any_goals simp at hv15
-    simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨⟨_, _, hw⟩, rfl, rfl, rfl, rfl⟩
-    subst w785
-    obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
-    obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
-    obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
-    obtain ⟨e4, s4⟩ := put_sharing_nil_spec
-      (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
-    have e14 := ((e1.trans e2).trans e3).trans e4
-    rcases «IxonSerialize::put_constant_info».obs ev881 with
-      ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
-      ⟨x_prj, _, _, _, _, _, _, hv, ev202, _⟩ |
-      ⟨_, _, _, _, _, _, _, hne, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, hne, _, _, _, _⟩
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
-      rcases hv with ⟨_, _, rfl⟩
-      obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
-        «IxonSerialize::put_recursor_proj».obs ev202
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv_p
-      rcases hv_p with ⟨_, _, rfl, rfl⟩
-      obtain ⟨e5, s5⟩ := put_address_spec
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
-      rw [Lib.repU64_eq hvi] at ev32
-      obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
-      obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 5) (by decide)
-        (by decide) s6 ev796
-      refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
-      rw [hblk] at s7
-      simpa [nonrecursiveInfoBytes, recursorProjBytes, Ixon.Constant.FLAG,
-        Ixon.ConstantInfo.CONST_RPRJ, ByteArray.data_append, Array.toList_append,
-        List.append_assoc] using s7
-    · exact (hne [_] rfl rfl).elim
-    · exact (hne [_] rfl rfl).elim
+    cases «IxonSerialize::put_constant».obs ev with
+    | Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ _ => simp at hv15
+    | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | CPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | IPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | DPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | RPrj x_sh x_rf x_un x_bd v42 m43 cs53 v57 m66 cs74 v78 m87 cs95
+        v99 m108 cs116 w785 cs794 v799 m871 cs879
+        hv15 ev118 ev97 ev76 ev55 ev881 ev796 _ =>
+      injection hv15 with _ _ hls
+      injection hls with hiv hls1
+      injection hiv with _ _ hws
+      injection hws with hw _
+      injection hls1 with hp1_eq hls2
+      injection hls2 with hp2_eq hls3
+      injection hls3 with hp3_eq hls4
+      injection hls4 with hp4_eq _
+      subst hw hp1_eq hp2_eq hp3_eq hp4_eq
+      obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
+      obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
+      obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
+      obtain ⟨e4, s4⟩ := put_sharing_nil_spec
+        (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
+      have e14 := ((e1.trans e2).trans e3).trans e4
+      rcases «IxonSerialize::put_constant_info».obs ev881 with
+        ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
+        ⟨x_prj, _, _, _, _, _, _, hv, ev202, _⟩ |
+        ⟨_, _, _, _, _, _, _, hne, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, hne, _, _, _, _⟩
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · injection hv with _ _ hls_p
+        injection hls_p with hx_prj _
+        subst hx_prj
+        obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
+          «IxonSerialize::put_recursor_proj».obs ev202
+        injection hv_p with _ _ hls_m
+        injection hls_m with hi_eq hls_m1
+        injection hls_m1 with hb_eq _
+        subst hi_eq hb_eq
+        obtain ⟨e5, s5⟩ := put_address_spec
+          (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
+        rw [Lib.repU64_eq hvi] at ev32
+        obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
+        obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 5) (by decide)
+          (by decide) s6 ev796
+        refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
+        rw [hblk] at s7
+        simpa [nonrecursiveInfoBytes, recursorProjBytes, Ixon.Constant.FLAG,
+          Ixon.ConstantInfo.CONST_RPRJ, ByteArray.data_append, Array.toList_append,
+          List.append_assoc] using s7
+      · exact (hne [_] rfl rfl).elim
+      · exact (hne [_] rfl rfl).elim
   | iPrj p =>
     obtain ⟨vi, bp, b, rfl, hvi, hbp, hblk⟩ := hinfo
-    rcases «IxonSerialize::put_constant».obs ev with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨x_sh, x_rf, x_un, x_bd, v42, m43, cs53, v57, m66, cs74, v78, m87, cs95,
-        v99, m108, cs116, w906, cs915, v920, m992, cs1000,
-        hv15, ev118, ev97, ev76, ev55, ev1002, ev917, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩
-    any_goals simp at hv15
-    simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨⟨_, _, hw⟩, rfl, rfl, rfl, rfl⟩
-    subst w906
-    obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
-    obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
-    obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
-    obtain ⟨e4, s4⟩ := put_sharing_nil_spec
-      (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
-    have e14 := ((e1.trans e2).trans e3).trans e4
-    rcases «IxonSerialize::put_constant_info».obs ev1002 with
-      ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, hv, _, _⟩ |
-      ⟨x_prj, _, _, _, _, _, _, _, hv, ev237, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, hne, _, _, _⟩
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
-      rcases hv with ⟨_, _, rfl⟩
-      obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
-        «IxonSerialize::put_inductive_proj».obs ev237
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv_p
-      rcases hv_p with ⟨_, _, rfl, rfl⟩
-      obtain ⟨e5, s5⟩ := put_address_spec
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
-      rw [Lib.repU64_eq hvi] at ev32
-      obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
-      obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 6) (by decide)
-        (by decide) s6 ev917
-      refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
-      rw [hblk] at s7
-      simpa [nonrecursiveInfoBytes, inductiveProjBytes, Ixon.Constant.FLAG,
-        Ixon.ConstantInfo.CONST_IPRJ, ByteArray.data_append, Array.toList_append,
-        List.append_assoc] using s7
-    · exact (hne [_] rfl rfl).elim
+    cases «IxonSerialize::put_constant».obs ev with
+    | Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ _ => simp at hv15
+    | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | CPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | RPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | DPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | IPrj x_sh x_rf x_un x_bd v42 m43 cs53 v57 m66 cs74 v78 m87 cs95
+        v99 m108 cs116 w906 cs915 v920 m992 cs1000
+        hv15 ev118 ev97 ev76 ev55 ev1002 ev917 _ =>
+      injection hv15 with _ _ hls
+      injection hls with hiv hls1
+      injection hiv with _ _ hws
+      injection hws with hw _
+      injection hls1 with hp1_eq hls2
+      injection hls2 with hp2_eq hls3
+      injection hls3 with hp3_eq hls4
+      injection hls4 with hp4_eq _
+      subst hw hp1_eq hp2_eq hp3_eq hp4_eq
+      obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
+      obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
+      obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
+      obtain ⟨e4, s4⟩ := put_sharing_nil_spec
+        (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
+      have e14 := ((e1.trans e2).trans e3).trans e4
+      rcases «IxonSerialize::put_constant_info».obs ev1002 with
+        ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, hv, _, _⟩ |
+        ⟨x_prj, _, _, _, _, _, _, _, hv, ev237, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, hne, _, _, _⟩
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · injection hv with _ _ hls_p
+        injection hls_p with hx_prj _
+        subst hx_prj
+        obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
+          «IxonSerialize::put_inductive_proj».obs ev237
+        injection hv_p with _ _ hls_m
+        injection hls_m with hi_eq hls_m1
+        injection hls_m1 with hb_eq _
+        subst hi_eq hb_eq
+        obtain ⟨e5, s5⟩ := put_address_spec
+          (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
+        rw [Lib.repU64_eq hvi] at ev32
+        obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
+        obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 6) (by decide)
+          (by decide) s6 ev917
+        refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
+        rw [hblk] at s7
+        simpa [nonrecursiveInfoBytes, inductiveProjBytes, Ixon.Constant.FLAG,
+          Ixon.ConstantInfo.CONST_IPRJ, ByteArray.data_append, Array.toList_append,
+          List.append_assoc] using s7
+      · exact (hne [_] rfl rfl).elim
   | dPrj p =>
     obtain ⟨vi, bp, b, rfl, hvi, hbp, hblk⟩ := hinfo
-    rcases «IxonSerialize::put_constant».obs ev with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv15, _, _, _, _, _, _, _⟩ |
-      ⟨x_sh, x_rf, x_un, x_bd, v42, m43, cs53, v57, m66, cs74, v78, m87, cs95,
-        v99, m108, cs116, w1027, cs1036, v1041, m1113, cs1121,
-        hv15, ev118, ev97, ev76, ev55, ev1123, ev1038, _⟩
-    any_goals simp at hv15
-    simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
-    rcases hv15 with ⟨⟨_, _, hw⟩, rfl, rfl, rfl, rfl⟩
-    subst w1027
-    obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
-    obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
-    obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
-    obtain ⟨e4, s4⟩ := put_sharing_nil_spec
-      (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
-    have e14 := ((e1.trans e2).trans e3).trans e4
-    rcases «IxonSerialize::put_constant_info».obs ev1123 with
-      ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, _, _, hv, _, _⟩ |
-      ⟨x_prj, _, _, _, _, _, _, _, _, hv, ev272, _⟩
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp at hv
-    · simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
-      rcases hv with ⟨_, _, rfl⟩
-      obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
-        «IxonSerialize::put_definition_proj».obs ev272
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv_p
-      rcases hv_p with ⟨_, _, rfl, rfl⟩
-      obtain ⟨e5, s5⟩ := put_address_spec
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
-      rw [Lib.repU64_eq hvi] at ev32
-      obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
-      obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 7) (by decide)
-        (by decide) s6 ev1038
-      refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
-      rw [hblk] at s7
-      simpa [nonrecursiveInfoBytes, definitionProjBytes, Ixon.Constant.FLAG,
-        Ixon.ConstantInfo.CONST_DPRJ, ByteArray.data_append, Array.toList_append,
-        List.append_assoc] using s7
+    cases «IxonSerialize::put_constant».obs ev with
+    | Muts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ _ => simp at hv15
+    | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Axio _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | CPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | RPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | IPrj _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 _ _ _ _ _ _ _ => simp at hv15
+    | DPrj x_sh x_rf x_un x_bd v42 m43 cs53 v57 m66 cs74 v78 m87 cs95
+        v99 m108 cs116 w1027 cs1036 v1041 m1113 cs1121
+        hv15 ev118 ev97 ev76 ev55 ev1123 ev1038 _ =>
+      injection hv15 with _ _ hls
+      injection hls with hiv hls1
+      injection hiv with _ _ hws
+      injection hws with hw _
+      injection hls1 with hp1_eq hls2
+      injection hls2 with hp2_eq hls3
+      injection hls3 with hp3_eq hls4
+      injection hls4 with hp4_eq _
+      subst hw hp1_eq hp2_eq hp3_eq hp4_eq
+      obtain ⟨e1, s1⟩ := put_binders_nil_spec hp4 hrest ev118
+      obtain ⟨e2, s2⟩ := put_univs_nil_spec (hp3.mono (fun _ _ _ _ _ t => t) e1) s1 ev97
+      obtain ⟨e3, s3⟩ := put_refs_nil_spec (hp2.mono (fun _ _ _ _ _ t => t) (e1.trans e2)) s2 ev76
+      obtain ⟨e4, s4⟩ := put_sharing_nil_spec
+        (hp1.mono (fun _ _ _ _ _ t => t) ((e1.trans e2).trans e3)) s3 ev55
+      have e14 := ((e1.trans e2).trans e3).trans e4
+      rcases «IxonSerialize::put_constant_info».obs ev1123 with
+        ⟨_, _, hv, _, _⟩ | ⟨_, _, _, hv, _, _⟩ | ⟨_, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, hv, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, hv, _, _⟩ | ⟨_, _, _, _, _, _, _, _, hv, _, _⟩ |
+        ⟨x_prj, _, _, _, _, _, _, _, _, hv, ev272, _⟩
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · simp at hv
+      · injection hv with _ _ hls_p
+        injection hls_p with hx_prj _
+        subst hx_prj
+        obtain ⟨x_idx, x_block, _, v34, m43', _, hv_p, ev53, ev32, _⟩ :=
+          «IxonSerialize::put_definition_proj».obs ev272
+        injection hv_p with _ _ hls_m
+        injection hls_m with hi_eq hls_m1
+        injection hls_m1 with hb_eq _
+        subst hi_eq hb_eq
+        obtain ⟨e5, s5⟩ := put_address_spec
+          (Bytes.repAddressRef_heapMono₂ Core.addrTy e14 hbp) s4 ev53
+        rw [Lib.repU64_eq hvi] at ev32
+        obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
+        obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 7) (by decide)
+          (by decide) s6 ev1038
+        refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
+        rw [hblk] at s7
+        simpa [nonrecursiveInfoBytes, definitionProjBytes, Ixon.Constant.FLAG,
+          Ixon.ConstantInfo.CONST_DPRJ, ByteArray.data_append, Array.toList_append,
+          List.append_assoc] using s7
 
 /-! ## `Blake3::bytes_to_addr` and mutual-block projection addresses -/
 
 private theorem tag0Bytes_size_le (v : UInt64) : (tag0Bytes v).size ≤ 9 := by
-  unfold tag0Bytes tagNBytes
-  simp only
-  split_ifs <;> simp [ByteArray.size_append, trimmedBytes_size, List.toByteArray]
+  unfold tag0Bytes
+  rw [tagNBytes_size]
+  unfold Ixon.tagNByteWidth
+  repeat' split
+  all_goals omega
 
 private theorem serConstant_proj_length_lt {h : Heap F} {info : Ixon.ConstantInfo}
     {iv : SourceValue F} (hinfo : Core.Specs.Callees.ProjInfoRep h info iv) :
@@ -1557,8 +1631,8 @@ private theorem serConstant_proj_length_lt {h : Heap F} {info : Ixon.ConstantInf
   rw [serConstant_proj_eq hwf]
   have ht0 : (tag0Bytes 0).data.toList.length = 1 := by decide
   have hbd0 : (bindersBytes #[]).data.toList.length = 1 := by decide
-  have hisz : (nonrecursiveInfoBytes info).data.toList.length = (nonrecursiveInfoBytes info).size := by
-    simp [ByteArray.size]
+  have hisz : (nonrecursiveInfoBytes info).data.toList.length = (nonrecursiveInfoBytes info).size :=
+    Array.length_toList
   simp only [List.length_append, ht0, hbd0, hisz]
   omega
 
@@ -1786,8 +1860,9 @@ theorem blockRecurAddrs_eq_mapIdx (b : _root_.Address) (ms : List Ixon.MutConst)
   · simp [blockRecurAddrs, blockRecurAddrsAux_length]
   · intro i h1 h2
     have hi : i < ms.length := by simpa [blockRecurAddrs, blockRecurAddrsAux_length] using h1
-    simp only [blockRecurAddrs, blockRecurAddrsAux_getElem b 0 ms i h1 hi, Nat.zero_add,
-      List.getElem_mapIdx]
+    have h1' : i < (blockRecurAddrsAux b 0 ms).length := h1
+    change (blockRecurAddrsAux b 0 ms)[i]'h1' = _
+    rw [blockRecurAddrsAux_getElem b 0 ms i h1' hi, Nat.zero_add, List.getElem_mapIdx]
 
 /-- `Ingress::build_recur_addrs_walk` builds the list of projection addresses for suffix `cur`
 starting at index `k ≤ 2^56`. -/
@@ -1889,6 +1964,24 @@ private theorem repList_core_to_ixon {h : Heap F} {as : List Bytes.Address} {ptr
   | nil cell => exact .nil cell
   | cons cell hhd _ ih => exact .cons cell (core_to_repIxonAddressRef hhd) ih
 
+private theorem repList_mutShape_of_repMutConst_ing {h : Heap F} {ms : List Ixon.MutConst}
+    {ptr : SourceValue F}
+    (rep : RepList mutConstListEnum RepMutConst h ms ptr) :
+    Core.Specs.Callees.MembersRep h ms ptr := by
+  induction rep with
+  | nil cell => exact .nil cell
+  | cons cell hhead _ ih => exact .cons cell hhead.toMutShape ih
+
+private theorem repIxonAddressRef_to_core_ing {h : Heap F} {a : _root_.Address} {ptr : SourceValue F}
+    (rep : RepIxonAddressRef h a ptr) :
+    ∃ b : Bytes.Address, Core.ixAddr b = a ∧ Bytes.RepAddressRef Core.addrTy h b ptr := by
+  obtain ⟨b, rfl, hb⟩ := rep
+  exact ⟨b, rfl, hb⟩
+
+private theorem hashed_sub {calls₁ calls₂ : List (Call F)} {b : ByteArray}
+    (h : Hashed calls₁ b) (hsub : ∀ x ∈ calls₁, x ∈ calls₂) : Hashed calls₂ b :=
+  Core.hashed_mono hsub h
+
 /-- `Ingress::build_recur_addrs` in `RepIxonAddressRef` form for `Convert::convert_*` callers. -/
 theorem build_recur_addrs_ixon_spec {ms : List Ixon.MutConst} {b : Bytes.Address}
     {x_members x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1898,7 +1991,7 @@ theorem build_recur_addrs_ixon_spec {ms : List Ixon.MutConst} {b : Bytes.Address
     Heap.Extends h h' ∧
       RepList addressListEnum RepIxonAddressRef h' (blockRecurAddrs (Core.ixAddr b) ms) r := by
   obtain ⟨ext, as, has, hmap⟩ :=
-    build_recur_addrs_spec (repList_mutShape_of_repMutConst hms) hb ev
+    build_recur_addrs_spec (repList_mutShape_of_repMutConst_ing hms) hb ev
   rw [← blockRecurAddrs_eq_mapIdx] at hmap
   have hix := repList_core_to_ixon has
   rw [hmap] at hix
@@ -1908,12 +2001,18 @@ theorem build_recur_addrs_ixon_spec {ms : List Ixon.MutConst} {b : Bytes.Address
 
 /-- Whether `Ingress::defn_is_unsafe_ci(d.kind, d.safety)` returns `1` (`true`) or `0` (`false`).
 Matches `!InLogic (.defn d)` for `.thm` and `.opaq`, and returns `true` for both `.part` and
-`.unsaf` `.defn`s (all potentially self-/mutually-recursive definitions). -/
+`.unsaf` `.defn`s (all potentially self- or mutually-recursive definitions). -/
 def defnIsUnsafeCI (d : Ixon.Definition) : Bool :=
   match d.kind with
   | .thm => false
-  | .opaq => d.safety == .unsaf
-  | .defn => d.safety != .safe
+  | .opaq =>
+    match d.safety with
+    | .unsaf => true
+    | .safe | .part => false
+  | .defn =>
+    match d.safety with
+    | .safe => false
+    | .unsaf | .part => true
 
 /-- Recursive-address table passed to `Convert::convert_definition` for a standalone `.defn` at `a`. -/
 def defnRecurAddrs (d : Ixon.Definition) (a : _root_.Address) : List _root_.Address :=
@@ -2003,6 +2102,149 @@ theorem defn_member_recur_addrs_spec {d : Ixon.Definition} {ms : List Ixon.MutCo
 
 /-! ## Top-level constant ingress (`get_ci_dprj`, `get_ci_iprj`, `get_ci_cprj`, `get_ci_rprj`, `get_ci`) -/
 
+private theorem repConstantInfo_muts_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {x_members : SourceValue F}
+    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Muts" [x_members])) :
+    ∃ ms : Array Ixon.MutConst,
+      info = .muts ms ∧ RepList mutConstListEnum RepMutConst h ms.toList x_members := by
+  cases info with
+  | muts ms =>
+    obtain ⟨msPtr, hmk, hms⟩ := hinfo
+    injection hmk with _ _ hls
+    injection hls with hptr _
+    subst hptr
+    exact ⟨ms, rfl, hms⟩
+  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_defn_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {dv : SourceValue F}
+    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Defn" [dv])) :
+    ∃ d : Ixon.Definition, info = .defn d ∧ RepDefinition h d dv := by
+  cases info with
+  | defn d =>
+    obtain ⟨dv', hmk, hdv⟩ := hinfo
+    injection hmk with _ _ hls
+    injection hls with heq _
+    subst heq
+    exact ⟨d, rfl, hdv⟩
+  | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_axio_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {av : SourceValue F}
+    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Axio" [av])) :
+    ∃ ax : Ixon.Axiom, info = .axio ax ∧ RepAxiom h ax av := by
+  cases info with
+  | axio ax =>
+    obtain ⟨av', hmk, hav⟩ := hinfo
+    injection hmk with _ _ hls
+    injection hls with heq _
+    subst heq
+    exact ⟨ax, rfl, hav⟩
+  | defn _ | recr _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_quot_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {qv : SourceValue F}
+    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Quot" [qv])) :
+    ∃ q : Ixon.Quotient, info = .quot q ∧ RepQuotient h q qv := by
+  cases info with
+  | quot q =>
+    obtain ⟨qv', hmk, hqv⟩ := hinfo
+    injection hmk with _ _ hls
+    injection hls with heq _
+    subst heq
+    exact ⟨q, rfl, hqv⟩
+  | defn _ | recr _ | axio _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_recr_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {rv : SourceValue F}
+    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Recr" [rv])) :
+    ∃ rc : Ixon.Recursor, info = .recr rc ∧ RepRecursor h rc rv := by
+  cases info with
+  | recr rc =>
+    obtain ⟨rv', hmk, hrv⟩ := hinfo
+    injection hmk with _ _ hls
+    injection hls with heq _
+    subst heq
+    exact ⟨rc, rfl, hrv⟩
+  | defn _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_dPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {x_idx x_block_addr : SourceValue F}
+    (hinfo : RepConstantInfo h info
+      (.construct "Ixon::ConstantInfo" "DPrj"
+        [.construct "Ixon::DefinitionProj" "Mk" [x_idx, x_block_addr]])) :
+    ∃ p : Ixon.DefinitionProj, info = .dPrj p ∧
+      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
+  cases info with
+  | dPrj p =>
+    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
+    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
+    injection hmk2 with _ _ hls2
+    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
+    exact ⟨p, rfl, hidx, hblk⟩
+  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_iPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {x_idx x_block_addr : SourceValue F}
+    (hinfo : RepConstantInfo h info
+      (.construct "Ixon::ConstantInfo" "IPrj"
+        [.construct "Ixon::InductiveProj" "Mk" [x_idx, x_block_addr]])) :
+    ∃ p : Ixon.InductiveProj, info = .iPrj p ∧
+      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
+  cases info with
+  | iPrj p =>
+    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
+    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
+    injection hmk2 with _ _ hls2
+    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
+    exact ⟨p, rfl, hidx, hblk⟩
+  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_cPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {x_idx x_cidx x_block_addr : SourceValue F}
+    (hinfo : RepConstantInfo h info
+      (.construct "Ixon::ConstantInfo" "CPrj"
+        [.construct "Ixon::ConstructorProj" "Mk" [x_idx, x_cidx, x_block_addr]])) :
+    ∃ p : Ixon.ConstructorProj, info = .cPrj p ∧
+      x_idx = u64Value p.idx.toNat ∧ x_cidx = u64Value p.cidx.toNat ∧
+      RepIxonAddressRef h p.block x_block_addr := by
+  cases info with
+  | cPrj p =>
+    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
+    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
+    injection hmk2 with _ _ hls2
+    injection hls2 with hidx hls3
+    injection hls3 with hcidx hls4
+    injection hls4 with hbp _
+    subst hbp
+    exact ⟨p, rfl, hidx, hcidx, hblk⟩
+  | defn _ | recr _ | axio _ | quot _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
+private theorem repConstantInfo_rPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+    {x_idx x_block_addr : SourceValue F}
+    (hinfo : RepConstantInfo h info
+      (.construct "Ixon::ConstantInfo" "RPrj"
+        [.construct "Ixon::RecursorProj" "Mk" [x_idx, x_block_addr]])) :
+    ∃ p : Ixon.RecursorProj, info = .rPrj p ∧
+      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
+  cases info with
+  | rPrj p =>
+    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
+    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
+    injection hmk2 with _ _ hls2
+    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
+    exact ⟨p, rfl, hidx, hblk⟩
+  | defn _ | recr _ | axio _ | quot _ | cPrj _ | iPrj _ | dPrj _ | muts _ =>
+    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
+
 /-- `Ingress::get_ci_dprj` specification: loads parent mutual block `cb` at `ixAddr b`, extracts
 member `idx` as `.defn d`, converts `d`, and stores the resulting `KConstantInfo` cell at `r`. -/
 theorem get_ci_dprj_spec {b : Bytes.Address} {idx : Nat}
@@ -2040,13 +2282,7 @@ theorem get_ci_dprj_spec {b : Bytes.Address} {idx : Nat}
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  have hmuts : ∃ ms : Array Ixon.MutConst,
-      cb.info = .muts ms ∧ RepList mutConstListEnum RepMutConst m24 ms.toList x_members := by
-    cases hci : cb.info <;> simp [RepConstantInfo, hci] at hinfo
-    obtain ⟨msPtr, hms_eq, hms⟩ := hinfo
-    subst msPtr
-    exact ⟨_, rfl, hms⟩
-  obtain ⟨ms, hcb_info, hms⟩ := hmuts
+  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv hinfo
   rw [← Names.«WordLists::lookup_u64<Ixon::MutConst>».symbol] at ev120
   have hms_inst : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
       RepMutConst m24 ms.toList x_members := by
@@ -2089,7 +2325,7 @@ theorem get_ci_dprj_spec {b : Bytes.Address} {idx : Nat}
   have ext_snoc := Heap.Extends.snoc m227 v226
   have ext_all := (((ext0.trans ext1).trans ext24).trans ext5).trans ext_snoc
   refine ⟨ext_all, hidx56, ⟨blkList.toArray⟩, cb, ms, d, blobs, v226,
-    Hashed.mono hhash_blk (by rw [hc348]; intro c hc; simp [hc]),
+    hashed_sub hhash_blk (by rw [hc348]; intro c hc; simp [hc]),
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get,
     hhp.sub (by rw [hc348]; intro c hc; simp [hc]),
     loadValue_snoc m227 v226,
@@ -2127,13 +2363,7 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  have hmuts : ∃ ms : Array Ixon.MutConst,
-      cb.info = .muts ms ∧ RepList mutConstListEnum RepMutConst m2 ms.toList x_members := by
-    cases hci : cb.info <;> simp [RepConstantInfo, hci] at hinfo
-    obtain ⟨msPtr, hms_eq, hms⟩ := hinfo
-    subst msPtr
-    exact ⟨_, rfl, hms⟩
-  obtain ⟨ms, hcb_info, hms⟩ := hmuts
+  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv hinfo
   obtain ⟨hm86, hidx_lt_ms, mc, hmc_get, hmc_rep⟩ := muts_member_at_spec hms ev98
   subst m86
   have hcall_muts : (⟨"Ingress::muts_member_at", [x_members, .field idx], m2⟩ : Call F) ∈ calls := by
@@ -2177,7 +2407,7 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
   have ext_snoc := Heap.Extends.snoc m167 v166
   refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), hidx56,
     ⟨blkList.toArray⟩, cb, ms, ind, blobs, v166,
-    Hashed.mono hhash_blk (by rw [hc283]; intro c hc; simp [hc]),
+    hashed_sub hhash_blk (by rw [hc283]; intro c hc; simp [hc]),
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get,
     hhp.sub (by rw [hc283]; intro c hc; simp [hc]),
     loadValue_snoc m167 v166,
@@ -2218,13 +2448,7 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  have hmuts : ∃ ms : Array Ixon.MutConst,
-      cb.info = .muts ms ∧ RepList mutConstListEnum RepMutConst m2 ms.toList x_members := by
-    cases hci : cb.info <;> simp [RepConstantInfo, hci] at hinfo
-    obtain ⟨msPtr, hms_eq, hms⟩ := hinfo
-    subst msPtr
-    exact ⟨_, rfl, hms⟩
-  obtain ⟨ms, hcb_info, hms⟩ := hmuts
+  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv hinfo
   obtain ⟨hm86, hidx_lt_ms, mc, hmc_get, hmc_rep⟩ := muts_member_at_spec hms ev98
   subst m86
   have hcall_muts : (⟨"Ingress::muts_member_at", [x_members, .field idx], m2⟩ : Call F) ∈ calls := by
@@ -2278,7 +2502,7 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
   have ext_snoc := Heap.Extends.snoc m248 v247
   refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), hidx56, hcidx56,
     ⟨blkList.toArray⟩, cb, ms, ind, ct, blobs, v247,
-    Hashed.mono hhash_blk (by rw [hc381]; intro c hc; simp [hc]),
+    hashed_sub hhash_blk (by rw [hc381]; intro c hc; simp [hc]),
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hct_get,
     hhp.sub (by rw [hc381]; intro c hc; simp [hc]),
     loadValue_snoc m248 v247,
@@ -2315,13 +2539,7 @@ theorem get_ci_rprj_spec {b : Bytes.Address} {idx : F}
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  have hmuts : ∃ ms : Array Ixon.MutConst,
-      cb.info = .muts ms ∧ RepList mutConstListEnum RepMutConst m2 ms.toList x_members := by
-    cases hci : cb.info <;> simp [RepConstantInfo, hci] at hinfo
-    obtain ⟨msPtr, hms_eq, hms⟩ := hinfo
-    subst msPtr
-    exact ⟨_, rfl, hms⟩
-  obtain ⟨ms, hcb_info, hms⟩ := hmuts
+  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv hinfo
   obtain ⟨hm86, hidx_lt_ms, mc, hmc_get, hmc_rep⟩ := muts_member_at_spec hms ev98
   subst m86
   have hcall_muts : (⟨"Ingress::muts_member_at", [x_members, .field idx], m2⟩ : Call F) ∈ calls := by
@@ -2363,7 +2581,7 @@ theorem get_ci_rprj_spec {b : Bytes.Address} {idx : F}
   have ext_snoc := Heap.Extends.snoc m167 v166
   refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), hidx56,
     ⟨blkList.toArray⟩, cb, ms, rc, blobs, v166,
-    Hashed.mono hhash_blk (by rw [hc283]; intro c hc; simp [hc]),
+    hashed_sub hhash_blk (by rw [hc283]; intro c hc; simp [hc]),
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get,
     hhp.sub (by rw [hc283]; intro c hc; simp [hc]),
     loadValue_snoc m167 v166,
@@ -2493,13 +2711,8 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
     let dv := Value.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w139, w140, w141, w142]
-    have hdefn : ∃ d : Ixon.Definition, c.info = .defn d ∧ RepDefinition m2 d dv := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨dv', hdv_eq, hdv⟩ := hinfo
-      subst dv'
-      exact ⟨_, rfl, hdv⟩
-    obtain ⟨d, hc_info, hd_rep⟩ := hdefn
-    obtain ⟨_, _, hd_mk, _, _⟩ := hd_rep
+    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv hinfo
+    have ⟨_, _, hd_mk, _, _⟩ := hd_rep
     have hks : x_kind = repDefKindVal d.kind ∧ x_safety = repDefSafetyVal d.safety := by
       simp only [dv, Value.construct.injEq, List.cons.injEq, and_true] at hd_mk
       rcases hd_mk with ⟨_, _, hk_eq, hs_eq, _, _, _, _⟩
@@ -2532,7 +2745,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he219, hm218]
     have ext_snoc := Heap.Extends.snoc m216 v215
     refine ⟨(((ext1.trans ext24).trans ext5).trans ext_snoc), ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc302]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc302]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc302]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
@@ -2545,13 +2758,8 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
     let dv := Value.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w139, w140, w141, w142]
-    have hdefn : ∃ d : Ixon.Definition, c.info = .defn d ∧ RepDefinition m2 d dv := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨dv', hdv_eq, hdv⟩ := hinfo
-      subst dv'
-      exact ⟨_, rfl, hdv⟩
-    obtain ⟨d, hc_info, hd_rep⟩ := hdefn
-    obtain ⟨_, _, hd_mk, _, _⟩ := hd_rep
+    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv hinfo
+    have ⟨_, _, hd_mk, _, _⟩ := hd_rep
     have hks : x_kind = repDefKindVal d.kind ∧ x_safety = repDefSafetyVal d.safety := by
       simp only [dv, Value.construct.injEq, List.cons.injEq, and_true] at hd_mk
       rcases hd_mk with ⟨_, _, hk_eq, hs_eq, _, _, _, _⟩
@@ -2593,7 +2801,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he340, hm339]
     have ext_snoc := Heap.Extends.snoc m337 v336
     refine ⟨(((ext1.trans ext24).trans ext5).trans ext_snoc), ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc423]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc423]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc423]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
@@ -2605,12 +2813,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    have haxio : ∃ ax : Ixon.Axiom, c.info = .axio ax ∧ RepAxiom m2 ax x_axio := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨av, hav_eq, hav⟩ := hinfo
-      subst av
-      exact ⟨_, rfl, hav⟩
-    obtain ⟨ax, hc_info, hax_rep⟩ := haxio
+    obtain ⟨ax, hc_info, hax_rep⟩ := repConstantInfo_axio_inv hinfo
     have ext2 : Heap.Extends m2 m476 := by rw [hm484]; exact Heap.Extends.snoc m2 _
     have hrecs : RepList addressListEnum RepIxonAddressRef m476 []
         (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m2.length) := by
@@ -2629,7 +2832,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he441, hm440]
     have ext_snoc := Heap.Extends.snoc m438 v437
     refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc515]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc515]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc515]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
@@ -2641,12 +2844,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    have hquot : ∃ q : Ixon.Quotient, c.info = .quot q ∧ RepQuotient m2 q x_quot := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨qv, hqv_eq, hqv⟩ := hinfo
-      subst qv
-      exact ⟨_, rfl, hqv⟩
-    obtain ⟨q, hc_info, hq_rep⟩ := hquot
+    obtain ⟨q, hc_info, hq_rep⟩ := repConstantInfo_quot_inv hinfo
     have ext2 : Heap.Extends m2 m567 := by rw [hm575]; exact Heap.Extends.snoc m2 _
     have hrecs : RepList addressListEnum RepIxonAddressRef m567 []
         (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m2.length) := by
@@ -2665,7 +2863,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he532, hm531]
     have ext_snoc := Heap.Extends.snoc m529 v528
     refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc606]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc606]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc606]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
@@ -2677,28 +2875,19 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    have hdprj : ∃ p : Ixon.DefinitionProj, c.info = .dPrj p ∧
-        x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef m2 p.block x_block_addr := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨pv, hpv_eq, blkPtr, hmk, hblk⟩ := hinfo
-      subst pv
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hmk
-      rcases hmk with ⟨_, _, hidx_eq, hbp_eq⟩
-      subst blkPtr
-      exact ⟨_, rfl, hidx_eq, hblk⟩
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := hdprj
-    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core hblk_ix
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_dPrj_inv hinfo
+    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨ext2, hidx56, blkBytes, cb, ms, d, blobs, v,
         hhash_blk, haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hhp, hld, hraw⟩ :=
       get_ci_dprj_spec p.idx.toNat_lt hx_idx hb_rep ev650
     rw [hb_eq] at haddr_blk hraw
     refine ⟨ext1.trans ext2, ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc675]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc675]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc675]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
     exact ⟨hidx56, blkBytes, cb, ms, d, v,
-      Hashed.mono hhash_blk (by rw [hc675]; intro x hx; simp [hx]),
+      hashed_sub hhash_blk (by rw [hc675]; intro x hx; simp [hx]),
       haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hld, hraw⟩
   · -- `IPrj`
     obtain ⟨ext1, rawList, c, hhash, haddr, hexact, hde, _, _, _, _, htables, cRep⟩ :=
@@ -2707,21 +2896,12 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    have hiprj : ∃ p : Ixon.InductiveProj, c.info = .iPrj p ∧
-        x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef m2 p.block x_block_addr := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨pv, hpv_eq, blkPtr, hmk, hblk⟩ := hinfo
-      subst pv
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hmk
-      rcases hmk with ⟨_, _, hidx_eq, hbp_eq⟩
-      subst blkPtr
-      exact ⟨_, rfl, hidx_eq, hblk⟩
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := hiprj
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_iPrj_inv hinfo
     subst x_idx
     obtain ⟨hidx56, hv722, hm731⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 p.idx) ev741
     subst v722 m731
-    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_ing hblk_ix
     have hbounded718 : IxVM.Consistency.Bounded cs718 :=
       RomBound.bounded_mono hbounded (by rw [hc750]; intro x hx; simp [hx])
     obtain ⟨ext2, _, blkBytes, cb, ms, ind, blobs, v,
@@ -2730,12 +2910,12 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [val_cast_u56_ing hidx56] at hmc_get hraw
     rw [hb_eq] at haddr_blk hraw
     refine ⟨ext1.trans ext2, ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc750]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc750]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc750]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
     exact ⟨hidx56, blkBytes, cb, ms, ind, v,
-      Hashed.mono hhash_blk (by rw [hc750]; intro x hx; simp [hx]),
+      hashed_sub hhash_blk (by rw [hc750]; intro x hx; simp [hx]),
       haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hld, hraw⟩
   · -- `CPrj`
     obtain ⟨ext1, rawList, c, hhash, haddr, hexact, hde, _, _, _, _, htables, cRep⟩ :=
@@ -2744,17 +2924,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    have hcprj : ∃ p : Ixon.ConstructorProj, c.info = .cPrj p ∧
-        x_idx = u64Value p.idx.toNat ∧ x_cidx = u64Value p.cidx.toNat ∧
-        RepIxonAddressRef m2 p.block x_block_addr := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨pv, hpv_eq, blkPtr, hmk, hblk⟩ := hinfo
-      subst pv
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hmk
-      rcases hmk with ⟨_, _, hidx_eq, hcidx_eq, hbp_eq⟩
-      subst blkPtr
-      exact ⟨_, rfl, hidx_eq, hcidx_eq, hblk⟩
-    obtain ⟨p, hc_info, hx_idx, hx_cidx, hblk_ix⟩ := hcprj
+    obtain ⟨p, hc_info, hx_idx, hx_cidx, hblk_ix⟩ := repConstantInfo_cPrj_inv hinfo
     subst x_idx x_cidx
     obtain ⟨hidx56, hv802, hm812⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 p.idx) ev822
@@ -2762,7 +2932,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     obtain ⟨hcidx56, hv803, hm832⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 p.cidx) ev842
     subst v803 m832
-    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_ing hblk_ix
     have hbounded798 : IxVM.Consistency.Bounded cs798 :=
       RomBound.bounded_mono hbounded (by rw [hc851]; intro x hx; simp [hx])
     obtain ⟨ext2, _, _, blkBytes, cb, ms, ind, ct, blobs, v,
@@ -2772,12 +2942,12 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [val_cast_u56_ing hcidx56] at hct_get
     rw [hb_eq] at haddr_blk hraw
     refine ⟨ext1.trans ext2, ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc851]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc851]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc851]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
     exact ⟨hidx56, hcidx56, blkBytes, cb, ms, ind, ct, v,
-      Hashed.mono hhash_blk (by rw [hc851]; intro x hx; simp [hx]),
+      hashed_sub hhash_blk (by rw [hc851]; intro x hx; simp [hx]),
       haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hct_get, hld, hraw⟩
   · -- `RPrj`
     obtain ⟨ext1, rawList, c, hhash, haddr, hexact, hde, _, _, _, _, htables, cRep⟩ :=
@@ -2786,21 +2956,12 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    have hrprj : ∃ p : Ixon.RecursorProj, c.info = .rPrj p ∧
-        x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef m2 p.block x_block_addr := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨pv, hpv_eq, blkPtr, hmk, hblk⟩ := hinfo
-      subst pv
-      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hmk
-      rcases hmk with ⟨_, _, hidx_eq, hbp_eq⟩
-      subst blkPtr
-      exact ⟨_, rfl, hidx_eq, hblk⟩
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := hrprj
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_rPrj_inv hinfo
     subst x_idx
     obtain ⟨hidx56, hv898, hm907⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 p.idx) ev917
     subst v898 m907
-    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_ing hblk_ix
     have hbounded894 : IxVM.Consistency.Bounded cs894 :=
       RomBound.bounded_mono hbounded (by rw [hc926]; intro x hx; simp [hx])
     obtain ⟨ext2, _, blkBytes, cb, ms, rc, blobs, v,
@@ -2809,12 +2970,12 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [val_cast_u56_ing hidx56] at hmc_get hraw
     rw [hb_eq] at haddr_blk hraw
     refine ⟨ext1.trans ext2, ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc926]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc926]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc926]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
     exact ⟨hidx56, blkBytes, cb, ms, rc, v,
-      Hashed.mono hhash_blk (by rw [hc926]; intro x hx; simp [hx]),
+      hashed_sub hhash_blk (by rw [hc926]; intro x hx; simp [hx]),
       haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hld, hraw⟩
   · -- `Recr`
     obtain ⟨ext1, rawList, c, hhash, haddr, hexact, hde, _, _, _, hbd32, htables, cRep⟩ :=
@@ -2823,12 +2984,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    have hrecr : ∃ rc : Ixon.Recursor, c.info = .recr rc ∧ RepRecursor m2 rc x_recr := by
-      cases hci : c.info <;> simp [RepConstantInfo, hci] at hinfo
-      obtain ⟨rv, hrv_eq, hrv⟩ := hinfo
-      subst rv
-      exact ⟨_, rfl, hrv⟩
-    obtain ⟨rc, hc_info, hrc_rep⟩ := hrecr
+    obtain ⟨rc, hc_info, hrc_rep⟩ := repConstantInfo_recr_inv hinfo
     have ext2a : Heap.Extends m2 m965 := by rw [hm973]; exact Heap.Extends.snoc m2 _
     have ext2b : Heap.Extends m965 m941 := by rw [hm951]; exact Heap.Extends.snoc m965 _
     have ext2 := ext2a.trans ext2b
@@ -2861,7 +3017,7 @@ theorem get_ci_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he981, hm980]
     have ext_snoc := Heap.Extends.snoc m978 v977
     refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), ⟨rawList.toArray⟩, c, blobs,
-      Hashed.mono hhash (by rw [hc1071]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc1071]; intro x hx; simp [hx]),
       haddr, hexact, hde, htables,
       hhp.sub (by rw [hc1071]; intro x hx; simp [hx]), ?_⟩
     simp only [GetCIRawResult, hc_info]
