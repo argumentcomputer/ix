@@ -115,8 +115,11 @@ theorem length_u64_nil_eval {t_T : Generic.Ty} {x_list r : SourceValue F} {h h' 
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml14
     obtain ⟨v15, d16, rfl⟩ := d7.repeat_inv
     have hbyte0 : IxVM.source.world.constant "UInt8::BYTE_0"
-        (Generic.Ty.subst [("T", t_T)] .field) = Except.ok (.literal (0 : F)) :=
-      Names.c9173999864893739538
+        (Generic.Ty.subst [("T", t_T)] .field) = Except.ok (.literal (0 : F)) := by
+      have hty : Generic.Ty.subst [("T", t_T)] .field = Generic.Ty.subst [] .field := by
+        simp [Generic.Ty.subst]
+      rw [hty]
+      exact Names.c9173999864893739538
     obtain ⟨rfl, rfl⟩ := d16.global_literal_inv hbyte0
     exact ⟨by simp [u64Value, List.replicate], rfl⟩
   · have hne := matchPattern_construct_none (by trivial) nm12
@@ -265,6 +268,110 @@ private theorem u64Value_neg_end2_0 :
       SourceValue F) = u64Value 18446744073709535104 := by
   unfold u64Value; norm_num
 
+private theorem field_3_ne_0 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 0) : α := by
+  have h' : ((3 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem field_3_ne_1 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 1) : α := by
+  have h' : ((3 : Nat) : F) = ((1 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem field_3_ne_2 {α : Sort*} (h : (Value.field 3 : SourceValue F) = .field 2) : α := by
+  have h' : ((3 : Nat) : F) = ((2 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem field_2_ne_0 {α : Sort*} (h : (Value.field 2 : SourceValue F) = .field 0) : α := by
+  have h' : ((2 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem field_2_ne_1 {α : Sort*} (h : (Value.field 2 : SourceValue F) = .field 1) : α := by
+  have h' : ((2 : Nat) : F) = ((1 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem field_1_ne_0 {α : Sort*} (h : (Value.field 1 : SourceValue F) = .field 0) : α := by
+  have h' : ((1 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact Value.field.inj h
+  exact absurd (natCast_inj3 (by decide) (by decide) h') (by decide)
+
+private theorem u64_lt_pow32_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
+    (h : (((d / 4294967296 % 256 + d / 1099511627776 % 256 +
+      d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F) = 0) :
+    d < 4294967296 := by
+  have h0 : d / 4294967296 % 256 + d / 1099511627776 % 256 +
+      d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 :=
+    natCast_inj3 (by omega) (by decide) (by simpa using h)
+  have b7 : d / 72057594037927936 = 0 := by omega
+  have d7 : d < 72057594037927936 := by omega
+  have b6 : d / 281474976710656 = 0 := by omega
+  have d6 : d < 281474976710656 := by omega
+  have b5 : d / 1099511627776 = 0 := by omega
+  have d5 : d < 1099511627776 := by omega
+  have b4 : d / 4294967296 = 0 := by omega
+  omega
+
+private theorem u64_lt_pow24_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
+    (h : (((d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
+      d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F) = 0) :
+    d < 16777216 := by
+  have h0 : d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
+      d / 281474976710656 % 256 + d / 72057594037927936 % 256 = 0 :=
+    natCast_inj3 (by omega) (by decide) (by simpa using h)
+  have b7 : d / 72057594037927936 = 0 := by omega
+  have d7 : d < 72057594037927936 := by omega
+  have b6 : d / 281474976710656 = 0 := by omega
+  have d6 : d < 281474976710656 := by omega
+  have b5 : d / 1099511627776 = 0 := by omega
+  have d5 : d < 1099511627776 := by omega
+  have b4 : d / 4294967296 = 0 := by omega
+  have d4 : d < 4294967296 := by omega
+  have b3 : d / 16777216 = 0 := by omega
+  omega
+
+private theorem u64_lt_pow16_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
+    (h : (((d / 65536 % 256 + d / 16777216 % 256 + d / 4294967296 % 256 +
+      d / 1099511627776 % 256 + d / 281474976710656 % 256 +
+      d / 72057594037927936 % 256 : Nat)) : F) = 0) :
+    d < 65536 := by
+  have h0 : d / 65536 % 256 + d / 16777216 % 256 + d / 4294967296 % 256 +
+      d / 1099511627776 % 256 + d / 281474976710656 % 256 +
+      d / 72057594037927936 % 256 = 0 :=
+    natCast_inj3 (by omega) (by decide) (by simpa using h)
+  have b7 : d / 72057594037927936 = 0 := by omega
+  have d7 : d < 72057594037927936 := by omega
+  have b6 : d / 281474976710656 = 0 := by omega
+  have d6 : d < 281474976710656 := by omega
+  have b5 : d / 1099511627776 = 0 := by omega
+  have d5 : d < 1099511627776 := by omega
+  have b4 : d / 4294967296 = 0 := by omega
+  have d4 : d < 4294967296 := by omega
+  have b3 : d / 16777216 = 0 := by omega
+  have d3 : d < 16777216 := by omega
+  have b2 : d / 65536 = 0 := by omega
+  omega
+
+private theorem u64_lt_256_of_bytes_zero {d : Nat} (hd : d < 18446744073709551616)
+    (h : (((d / 256 % 256 + d / 65536 % 256 + d / 16777216 % 256 +
+      d / 4294967296 % 256 + d / 1099511627776 % 256 + d / 281474976710656 % 256 +
+      d / 72057594037927936 % 256 : Nat)) : F) = 0) :
+    d < 256 := by
+  have h0 : d / 256 % 256 + d / 65536 % 256 + d / 16777216 % 256 +
+      d / 4294967296 % 256 + d / 1099511627776 % 256 + d / 281474976710656 % 256 +
+      d / 72057594037927936 % 256 = 0 :=
+    natCast_inj3 (by omega) (by decide) (by simpa using h)
+  have b7 : d / 72057594037927936 = 0 := by omega
+  have d7 : d < 72057594037927936 := by omega
+  have b6 : d / 281474976710656 = 0 := by omega
+  have d6 : d < 281474976710656 := by omega
+  have b5 : d / 1099511627776 = 0 := by omega
+  have d5 : d < 1099511627776 := by omega
+  have b4 : d / 4294967296 = 0 := by omega
+  have d4 : d < 4294967296 := by omega
+  have b3 : d / 16777216 = 0 := by omega
+  have d3 : d < 16777216 := by omega
+  have b2 : d / 65536 = 0 := by omega
+  have d2 : d < 65536 := by omega
+  have b1 : d / 256 = 0 := by omega
+  omega
+
 /-- `put_tagn_wide` at rung code `3` (`8` trailing bytes). -/
 private theorem put_tagn_wide_3_spec {d : Nat} {rest : List UInt8}
     {x_rest r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -277,17 +384,17 @@ private theorem put_tagn_wide_3_spec {d : Nat} {rest : List UInt8}
         (Ixon.tagNHeader 0 0 (128 + 64 + 3) :: (trimmedBytes d.toUInt64 8).data.toList ++ rest) r := by
   cases «IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_3_ne_0 hv68
   | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_3_ne_0 hv68
   | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
-    exact absurd (Value.field.inj hv419) (by norm_num)
+    exact field_3_ne_1 hv419
   | n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
-    exact absurd (Value.field.inj hv419) (by norm_num)
+    exact field_3_ne_1 hv419
   | n2_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv756 =>
-    exact absurd (Value.field.inj hv756) (by norm_num)
+    exact field_3_ne_2 hv756
   | n2_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv756 =>
-    exact absurd (Value.field.inj hv756) (by norm_num)
+    exact field_3_ne_2 hv756
   | n3 _ _ _ _ _ _ _ _ v1080 v1081 m1083 cs1091 v1094 m1111 cs1119
       _ _ _ _ _ he1076 hm1075 op1108 ev1093 ev1121 _ =>
     simp only [evalBinOp, Except.ok.injEq] at op1108
@@ -322,13 +429,13 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
               (trimmedBytes (d - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
   cases «IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_2_ne_0 hv68
   | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_2_ne_0 hv68
   | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
-    exact absurd (Value.field.inj hv419) (by norm_num)
+    exact field_2_ne_1 hv419
   | n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv419 =>
-    exact absurd (Value.field.inj hv419) (by norm_num)
+    exact field_2_ne_1 hv419
   | n2_n0 w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
       m758 x766 y767 m768 x774 y775 m776 x782 y783 m784
       cs793 cs807 cs821 cs835 v858 v859 m861 cs869 v872 m889 cs897
@@ -350,8 +457,7 @@ private theorem put_tagn_wide_2_spec {d : Nat} {rest : List UInt8}
     have hsum_cast : ((((d / 4294967296 % 256 + d / 1099511627776 % 256 +
         d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op773
-    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
-    have hd_lt : d < 4294967296 := by omega
+    have hd_lt : d < 4294967296 := u64_lt_pow32_of_bytes_zero hd hsum_cast
     simp only [evalBinOp, Except.ok.injEq] at op886
     have hv872 : v872 = .field (194 : F) := by rw [← op886]; norm_num
     rw [hv872] at ev871
@@ -424,9 +530,9 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
               (trimmedBytes (d - 16777216 - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
   cases «IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_1_ne_0 hv68
   | n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv68 =>
-    exact absurd (Value.field.inj hv68) (by norm_num)
+    exact field_1_ne_0 hv68
   | n1_n0 w13 w14 x_d2 x_d3 x_d4 x_d5 x_d6 x_d7
       m421 x429 y430 m431 x437 y438 m439 x445 y446 m447 x453 y454 m455
       cs464 cs478 cs492 cs506 cs520 v543 v544 m546 cs554 v557 m574 cs582
@@ -450,8 +556,7 @@ private theorem put_tagn_wide_1_spec {d : Nat} {rest : List UInt8}
     have hsum_cast : ((((d / 16777216 % 256 + d / 4294967296 % 256 + d / 1099511627776 % 256 +
         d / 281474976710656 % 256 + d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op436
-    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
-    have hd_lt : d < 16777216 := by omega
+    have hd_lt : d < 16777216 := u64_lt_pow24_of_bytes_zero hd hsum_cast
     simp only [evalBinOp, Except.ok.injEq] at op571
     have hv557 : v557 = .field (193 : F) := by rw [← op571]; norm_num
     rw [hv557] at ev556
@@ -560,8 +665,7 @@ private theorem put_tagn_wide_0_spec {d : Nat} {rest : List UInt8}
         d / 1099511627776 % 256 + d / 281474976710656 % 256 +
         d / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op85
-    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
-    have hd_lt : d < 65536 := by omega
+    have hd_lt : d < 65536 := u64_lt_pow16_of_bytes_zero hd hsum_cast
     obtain ⟨hv214, hm217, _⟩ := Lib.u8_from_field_spec ev227
     subst v214 m217
     have hd_u64 : d.toUInt64.toNat = d := UInt64.toNat_ofNat_of_lt hd
@@ -651,31 +755,31 @@ private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128)
   simp only [Nat.reduceSub, Nat.reducePow, h1, h2, h3, h4, h5, hge, ↓reduceIte]
   by_cases c2 : val.toNat < 16512
   · simp only [c2, ↓reduceIte, ByteArray.data_append, Array.toList_append,
-      List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
+      List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
   · simp only [c2, ↓reduceIte]
     by_cases c3 : val.toNat < 82048
     · have c3' : val.toNat - 16512 < 65536 := by omega
       simp only [c3, c3', ↓reduceIte, ByteArray.data_append, Array.toList_append,
-        List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
+        List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
     · have c3' : ¬ val.toNat - 16512 < 65536 := by omega
       simp only [c3, c3', ↓reduceIte]
       by_cases c4 : val.toNat < 16859264
       · have c4' : val.toNat - 16512 - 65536 < 16777216 := by omega
         have esub : val.toNat - 82048 = val.toNat - 16512 - 65536 := by omega
         simp only [c4, c4', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
-          List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
+          List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
       · have c4' : ¬ val.toNat - 16512 - 65536 < 16777216 := by omega
         simp only [c4, c4', ↓reduceIte]
         by_cases c5 : val.toNat < 4311826560
         · have c5' : val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
           have esub : val.toNat - 16859264 = val.toNat - 16512 - 65536 - 16777216 := by omega
           simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
-            List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
+            List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
         · have c5' : ¬ val.toNat - 16512 - 65536 - 16777216 < 4294967296 := by omega
           have esub : val.toNat - 4311826560 =
               val.toNat - 16512 - 65536 - 16777216 - 4294967296 := by omega
           simp only [c5, c5', esub, ↓reduceIte, ByteArray.data_append, Array.toList_append,
-            List.data_toByteArray, Array.toList_toArray, List.cons_append, List.nil_append]
+            List.data_toByteArray, List.toList_toArray, List.cons_append, List.nil_append]
 
 /-- `IxonSerialize::put_tagn_tail` on `f = 0` (`x_base = 0`, `x_h = 64`) for `128 ≤ val.toNat`. -/
 private theorem put_tagn_tail_0_spec {val : UInt64} {rest : List UInt8}
@@ -856,8 +960,7 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
         val.toNat / 1099511627776 % 256 + val.toNat / 281474976710656 % 256 +
         val.toNat / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op69
-    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
-    have hv_lt256 : val.toNat < 256 := by omega
+    have hv_lt256 : val.toNat < 256 := u64_lt_256_of_bytes_zero val.toNat_lt hsum_cast
     obtain ⟨hlt_eq, hm213⟩ := Lib.u8_less_than_spec
       (repU8_ofNatLT h (n := val.toNat % 256) (by omega))
       (repU8_ofNatLT h (n := 128) (by decide)) ev226
@@ -873,7 +976,7 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
     have htag0 : (tag0Bytes val).data.toList = [Ixon.tagNHeader 0 0 val.toNat] := by
       have h1 : Ixon.tagNEnd1 0 = 128 := by decide
       unfold tag0Bytes tagNBytes
-      simp only [h1, hv0_lt128, ↓reduceIte, List.data_toByteArray, Array.toList_toArray]
+      simp only [h1, hv0_lt128, ↓reduceIte, List.data_toByteArray, List.toList_toArray]
     have hhdr_u8 : RepU8 h (Ixon.tagNHeader 0 0 val.toNat)
         (.field ((val.toNat % 256 : Nat) : F)) := by
       unfold Ixon.tagNHeader
@@ -906,8 +1009,7 @@ theorem put_tagn0_spec {val : UInt64} {rest : List UInt8}
         val.toNat / 1099511627776 % 256 + val.toNat / 281474976710656 % 256 +
         val.toNat / 72057594037927936 % 256 : Nat)) : F)) = 0 := by
       push_cast; exact Value.field.inj op69
-    have hsum0 := (natCast_eq_zero_iff (by omega)).mp hsum_cast
-    have hv_lt256 : val.toNat < 256 := by omega
+    have hv_lt256 : val.toNat < 256 := u64_lt_256_of_bytes_zero val.toNat_lt hsum_cast
     obtain ⟨hlt_eq, hm213⟩ := Lib.u8_less_than_spec
       (repU8_ofNatLT h (n := val.toNat % 256) (by omega))
       (repU8_ofNatLT h (n := 128) (by decide)) ev226
@@ -996,11 +1098,12 @@ theorem put_tagn4_13_small_spec {k : Nat} {rest : List UInt8}
     simp only [evalBinOp, Except.ok.injEq] at op282; subst v268
     obtain ⟨hv254, hm257, _⟩ := Lib.u8_from_field_spec ev267; subst v254 m257
     have hk_mod : k % 256 = k := Nat.mod_eq_of_lt (by omega)
+    have hu64_sz : UInt64.size = 18446744073709551616 := by decide
     have hk_u64 : k.toUInt64.toNat = k := UInt64.toNat_ofNat_of_lt (by omega)
     have htag4 : (tag4Bytes 13 k.toUInt64).data.toList = [Ixon.tagNHeader 4 13 k] := by
       have h1 : Ixon.tagNEnd1 4 = 8 := by decide
       unfold tag4Bytes tagNBytes
-      simp only [h1, hk_u64, hk, ↓reduceIte, List.data_toByteArray, Array.toList_toArray]
+      simp only [h1, hk_u64, hk, ↓reduceIte, List.data_toByteArray, List.toList_toArray]
     have hhdr_val : (16 * (13 : F) + ((k % 256 : Nat) : F)) = (((208 + k : Nat)) : F) := by
       rw [hk_mod]; push_cast; ring_nf
     have hhdr_u8 : RepU8 h (Ixon.tagNHeader 4 13 k)
@@ -1008,7 +1111,7 @@ theorem put_tagn4_13_small_spec {k : Nat} {rest : List UInt8}
       rw [hhdr_val]
       unfold Ixon.tagNHeader
       have h208 : (13 : UInt8).toNat * 2 ^ (8 - 4) + k = 208 + k := by
-        simp [UInt8.reduceToNat]; omega
+        simp [UInt8.reduceToNat]
       rw [h208]
       exact repU8_ofNatLT h (by omega)
     obtain ⟨ext1, hcons⟩ := snoc_byte hm249 hhdr_u8 hrest
@@ -1153,7 +1256,7 @@ theorem put_address_spec {b : Bytes.Address} {rest : List UInt8}
     obtain ⟨e1, s1⟩ := snoc_byte hm1044 (repU8_bv _ b[1]) s2
     obtain ⟨e0, s0⟩ := snoc_byte hm1070 (repU8_bv _ b[0]) s1
     have hhash : (Core.ixAddr b).hash.data.toList = b.toList := by
-      simp [Core.ixAddr, Vector.toArray]
+      simp [Core.ixAddr]
     rw [he1071, hhash, vector32_toList_eq b]
     have g3 := ((((((e31.trans e30).trans e29).trans e28).trans e27).trans e26).trans e25).trans e24
     have g2 := ((((((e23.trans e22).trans e21).trans e20).trans e19).trans e18).trans e17).trans e16
@@ -1300,11 +1403,11 @@ private theorem serConstant_proj_eq {info : Ixon.ConstantInfo} (hwf : Nonrecursi
         (tag0Bytes 0).data.toList ++ (bindersBytes #[]).data.toList := by
   have hcwf : NonrecursiveConstantWireWF ⟨info, #[], #[], #[], #[]⟩ :=
     { info := hwf
-      sharingCount := by show ArrayCountWF (#[] : Array Ixon.Expr); decide
+      sharingCount := by show (#[] : Array Ixon.Expr).size < UInt64.size; decide
       sharingEntries := by simp
-      refsCount := by show ArrayCountWF (#[] : Array _root_.Address); decide
+      refsCount := by show (#[] : Array _root_.Address).size < UInt64.size; decide
       refsEntries := by simp
-      univsCount := by show ArrayCountWF (#[] : Array Ixon.Univ); decide
+      univsCount := by show (#[] : Array Ixon.Univ).size < UInt64.size; decide
       univsEntries := by simp
       binders := by simp [Ixon.bindersWireWF] }
   have hser : Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ =
@@ -1388,7 +1491,7 @@ theorem put_constant_proj_spec {info : Ixon.ConstantInfo} {rest : List UInt8}
         rw [Lib.repU64_eq hvi] at ev37
         obtain ⟨e7, s7⟩ := put_tagn0_spec s6 ev37
         obtain ⟨e8, s8⟩ := put_tagn4_13_small_spec (k := 4) (by decide)
-          (by decide) s7 ev675
+          (by unfold u64Value; norm_num) s7 ev675
         refine ⟨((((e14.trans e5).trans e6).trans e7).trans e8), ?_⟩
         rw [hblk] at s8
         simpa [nonrecursiveInfoBytes, constructorProjBytes, Ixon.Constant.FLAG,
@@ -1451,7 +1554,7 @@ theorem put_constant_proj_spec {info : Ixon.ConstantInfo} {rest : List UInt8}
         rw [Lib.repU64_eq hvi] at ev32
         obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
         obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 5) (by decide)
-          (by decide) s6 ev796
+          (by unfold u64Value; norm_num) s6 ev796
         refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
         rw [hblk] at s7
         simpa [nonrecursiveInfoBytes, recursorProjBytes, Ixon.Constant.FLAG,
@@ -1514,7 +1617,7 @@ theorem put_constant_proj_spec {info : Ixon.ConstantInfo} {rest : List UInt8}
         rw [Lib.repU64_eq hvi] at ev32
         obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
         obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 6) (by decide)
-          (by decide) s6 ev917
+          (by unfold u64Value; norm_num) s6 ev917
         refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
         rw [hblk] at s7
         simpa [nonrecursiveInfoBytes, inductiveProjBytes, Ixon.Constant.FLAG,
@@ -1576,7 +1679,7 @@ theorem put_constant_proj_spec {info : Ixon.ConstantInfo} {rest : List UInt8}
         rw [Lib.repU64_eq hvi] at ev32
         obtain ⟨e6, s6⟩ := put_tagn0_spec s5 ev32
         obtain ⟨e7, s7⟩ := put_tagn4_13_small_spec (k := 7) (by decide)
-          (by decide) s6 ev1038
+          (by unfold u64Value; norm_num) s6 ev1038
         refine ⟨(((e14.trans e5).trans e6).trans e7), ?_⟩
         rw [hblk] at s7
         simpa [nonrecursiveInfoBytes, definitionProjBytes, Ixon.Constant.FLAG,
@@ -1749,9 +1852,11 @@ theorem projection_addr_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx 
     rw [Value.field.inj hidx_eq, val_cast_u56_ing hn56]
   have hidx56 : idx.val < 72057594037927936 := by omega
   have hrep_u64 : RepU64 h idx.val.toUInt64 v31 := by
-    rw [hv31, ← hn_val]
+    have hu64_sz : UInt64.size = 18446744073709551616 := by decide
     have hu64 : idx.val.toUInt64.toNat = idx.val := UInt64.toNat_ofNat_of_lt (by omega)
-    rw [← hu64]
+    have hv31_eq : v31 = u64Value idx.val.toUInt64.toNat := by
+      rw [hv31, ← hn_val, hu64]
+    rw [hv31_eq]
     exact Deserialize.repU64_u64Value h idx.val.toUInt64
   let info := Core.Specs.Callees.memberProjInfo (Core.ixAddr b) idx.val mc
   have hinfo_step : m199 = h ∧ Core.Specs.Callees.ProjInfoRep h info v198 := by
