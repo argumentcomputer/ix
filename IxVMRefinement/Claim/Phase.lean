@@ -139,7 +139,6 @@ theorem buildBlobs_get?_some_inv (calls : List (Call F)) {a : _root_.Address} {b
     simp only [buildBlobs] at h
     split at h
     · rename_i hex
-      dsimp only at h
       rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
       split at h
       · rename_i heq
@@ -216,7 +215,7 @@ theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.
   have hrc₁ : r.c = c₁ := by
     have h := r.hde
     rw [heq₁, hd₁] at h
-    injection h
+    exact (Except.ok.inj h).symm
   rw [hrc₁] at hbad
   rcases hbad with hnot_c1 | ⟨cb, hrec_own, hnot_cb⟩
   · exact hnot_c1 hl₁
@@ -227,7 +226,7 @@ theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.
     have hc10 : c₁ = c₀ := by
       have h := r.hde
       rw [hrc₁, heq₀, hd₀] at h
-      injection h
+      exact (Except.ok.inj h).symm
     rw [← hc10] at hown
     rcases hown with hself | ⟨rawB, cb', hhB, hbB, hdB, hlB⟩
     · rw [hself] at hrb_addr
@@ -236,7 +235,7 @@ theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.
       have hcb_eq : rb.c = c₁ := by
         have h := rb.hde
         rw [heqB, hd₁] at h
-        injection h
+        exact (Except.ok.inj h).symm
       rw [hcb_eq] at hnot_cb
       exact hnot_cb hl₁
     · have heqB : rb.rawBytes = rawB :=
@@ -244,7 +243,7 @@ theorem claimableSeed_not_outsideLogicAt {calls : List (Call F)} {t : Ix.Kernel.
       have hcb_eq : rb.c = cb' := by
         have h := rb.hde
         rw [heqB, hdB] at h
-        injection h
+        exact (Except.ok.inj h).symm
       rw [hcb_eq] at hnot_cb
       exact hnot_cb hlB
 
@@ -257,7 +256,7 @@ theorem walkedL6_envOfRecs {calls : List (Call F)} {b : Ix.Kernel.Admission.Bind
     WalkedL6 calls t (envOfRecs b calls recs) seeds := by
   obtain ⟨_, hwf_wire, hto, _, _, _⟩ := admitBinding_inv hadm
   have hof : Ix.Kernel.RoleTable.ofBytes b.bytes = some t :=
-    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff b.bytes t).mpr ⟨hwf_wire, hto⟩
+    (Ix.Kernel.RoleTable.ofBytes_eq_some_iff b.bytes t).mpr ⟨hwf_wire, hto.symm⟩
   refine ⟨?_, ?_, fun a => (envOfRecs b calls recs).consts.contains a = true, ?_, ?_, ?_⟩
   · intro rb hrb
     simp only [envOfRecs, Option.some.injEq] at hrb
