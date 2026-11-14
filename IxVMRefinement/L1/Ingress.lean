@@ -771,7 +771,7 @@ private theorem tag0Bytes_ge128_toList {val : UInt64} (hge : ¬ val.toNat < 128)
     rw [esub3, Nat.sub_sub]
   have esub5 : val.toNat - 16512 - 65536 - 16777216 - 4294967296 = val.toNat - 4311826560 := by
     rw [esub4, Nat.sub_sub]
-  rw [esub3, esub4, esub5]
+  rw [esub5, esub4, esub3]
   unfold tag0Bytes tagNBytes
   simp only [Nat.reduceSub, Nat.reducePow, h1, h2, h3, h4, h5, hge, ↓reduceIte]
   by_cases c2 : val.toNat < 16512
