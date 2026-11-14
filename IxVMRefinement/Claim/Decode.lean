@@ -635,7 +635,7 @@ theorem addr_set_build_spec {as : List Bytes.Address} {S : List _root_.Address}
   | nil =>
     rcases Obs.«KernelClaim::addr_set_build».obs ev with
       ⟨_, rfl, rfl, _⟩ | ⟨_, _, _, _, _, _, ld12, _⟩
-    · refine ⟨Heap.Extends.refl h, ?_⟩
+    · refine ⟨Heap.Extends.refl _, ?_⟩
       simpa using hacc
     · cases Lib.rep_cons_of_load hl ld12 with
       | intro _ h' => rcases h' with ⟨_, he, _⟩; cases he
@@ -645,9 +645,7 @@ theorem addr_set_build_spec {as : List Bytes.Address} {S : List _root_.Address}
     · cases Lib.rep_nil_of_load hl ld12
     · obtain ⟨a', as'', he, ha, hrest⟩ := Lib.rep_cons_of_load hl ld12
       injection he with h1 h2; subst h1 h2
-      have hsym_ins : (Instance.mk "RBTreeMap::rbtree_map_insert" [.field]).symbol =
-          Obs.Names.«RBTreeMap::rbtree_map_insert<Field>» := rfl
-      rw [← hsym_ins] at ev67
+      rw [← Obs.Names.«RBTreeMap::rbtree_map_insert<Field>».symbol] at ev67
       obtain ⟨ext1, hacc1⟩ := rbtree_set_insert_spec ha hacc ev67
       obtain ⟨ext2, hres⟩ := ih
         (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext1 hrest) hacc1 ev46
@@ -846,7 +844,7 @@ theorem get_opt_addr_spec {bytes : List UInt8} {i : Nat}
       exact UInt8.ext (natCast_inj_of_lt_u32 (by have := b.toNat_lt; omega) (by decide) h0)
     subst hb0
     obtain ⟨hu8, hdrop1, -⟩ := Deserialize.getU8_of_drop_cons hb
-    refine ⟨Heap.Extends.refl h, none, 1, _, x_s, ?_, rfl, rfl, by rwa [hdrop1]⟩
+    refine ⟨Heap.Extends.refl _, none, 1, _, x_s, ?_, rfl, rfl, by rwa [hdrop1]⟩
     simp [Claim.getOptAddr, bind, EStateM.bind, pure, EStateM.pure, hu8]
   · obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
     injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'

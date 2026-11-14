@@ -32,6 +32,12 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySimpa false
+
 /-! ## Call-list monotonicity for `Hashed` and `View.HashedCollision` -/
 
 theorem hashed_mono {cs₁ cs₂ : List (Call F)} (hsub : ∀ c ∈ cs₁, c ∈ cs₂) {bytes : ByteArray}
@@ -67,7 +73,7 @@ theorem admitBinding_inv {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTa
   by_cases hh : Address.admissionHash b.bytes = b.address
   case neg =>
     simp [hh, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at hadm
-  simp only [hh, decide_true, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
+  simp only [hh, decide_true, ↓reduceIte, pure, Except.pure,
     bind, Except.bind] at hadm
   cases hof : Ix.Kernel.RoleTable.ofBytes b.bytes with
   | none =>
@@ -90,7 +96,7 @@ theorem admitBinding_inv {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTa
         rfl
       exact ⟨hh, hwf_wire, hto.symm, hlist, hchk, hwf⟩
 
-theorem readerTable_admits {c : Claim} {V : View} {b : Ix.Kernel.Admission.Binding}
+theorem readerTable_admits {c : _root_.Ix.Claim} {V : View} {b : Ix.Kernel.Admission.Binding}
     (hDef : Ix.Cert.RoleClosure.DefaultAdmits)
     (hRT : IxVM.Consistency.ReaderTable c V b) :
     ∃ t : Ix.Kernel.RoleTable,
@@ -102,20 +108,6 @@ theorem readerTable_admits {c : Claim} {V : View} {b : Ix.Kernel.Admission.Bindi
     subst hb
     exact ⟨t, hadm⟩
   · exact ⟨t, hadm⟩
-
-theorem check_roles_nodup {t : Ix.Kernel.RoleTable} (hchk : t.check = .ok ()) :
-    (t.bound.toList.map (·.1)).Nodup := by
-  unfold Ix.Kernel.RoleTable.check at hchk
-  by_cases hv : (t.version == Ix.SpecDigest.specVersion) = true
-  case neg =>
-    simp only [hv, Bool.false_eq_true, ↓reduceIte] at hchk
-    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
-    simp [throw, throwThe, MonadExceptOf.throw] at h1
-  by_cases hn : (List.map (fun x => x.fst) t.bound.toList).Nodup
-  · exact hn
-  · simp only [hv, hn, ↓reduceIte] at hchk
-    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
-    simp [throw, throwThe, MonadExceptOf.throw] at h1
 
 private theorem find_fst_of_mem_nodup {l : List (Ix.Kernel.Role × _root_.Address)}
     (hnd : (l.map (·.1)).Nodup) {ro : Ix.Kernel.Role} {a : _root_.Address}
@@ -141,7 +133,7 @@ private theorem find_fst_of_mem_nodup {l : List (Ix.Kernel.Role × _root_.Addres
       rcases List.mem_cons.mp hm with hhead | htail
       · injection hhead with hr _
         subst hr
-        exact absurd (beq_self_eq_true r') heq
+        exact absurd (beq_self_eq_true ro) heq
       · exact ih hnd.2 htail
 
 theorem addressOf_eq_some_of_mem_bound {t : Ix.Kernel.RoleTable}
@@ -150,7 +142,7 @@ theorem addressOf_eq_some_of_mem_bound {t : Ix.Kernel.RoleTable}
     t.addressOf? ro = some a := by
   unfold Ix.Kernel.RoleTable.addressOf?
   rw [← Array.find?_toList]
-  exact find_fst_of_mem_nodup (check_roles_nodup hchk) hm
+  exact find_fst_of_mem_nodup (Ix.Kernel.RoleTable.check_nodup hchk).1 hm
 
 theorem mem_bound_of_addressOf_eq_some {t : Ix.Kernel.RoleTable}
     {ro : Ix.Kernel.Role} {a : _root_.Address}
@@ -166,7 +158,7 @@ theorem mem_bound_of_addressOf_eq_some {t : Ix.Kernel.RoleTable}
     simp only [Option.map, Option.some.injEq] at ha
     subst ha
     have hmem := List.mem_of_find?_eq_some hf
-    have heq : (r' == ro) = true := List.find?_some hf
+    have heq : (r' == ro) = true := by simpa using List.find?_some hf
     have hr : r' = ro := beq_iff_eq.mp heq
     subst hr
     exact hmem
@@ -262,7 +254,8 @@ private theorem toUInt8_toNat_of_lt {n : Nat} (hn : n < 256) : n.toUInt8.toNat =
 private theorem encAddr_length {a : _root_.Address} (hsz : a.hash.size = 32) :
     (Ix.Kernel.RoleTable.encAddr a).length = 32 := by
   unfold Ix.Kernel.RoleTable.encAddr
-  simpa [ByteArray.size] using hsz
+  rw [Array.length_toList]
+  exact hsz
 
 private theorem drop32_encAddr_append {a : _root_.Address} (hsz : a.hash.size = 32)
     (tail : List UInt8) :
@@ -282,11 +275,6 @@ private theorem ixAddr_takeAddress_encAddr {a : _root_.Address} (hsz : a.hash.si
     rw [← hl, List.take_left' rfl]
     rfl
   rw [htake]
-  cases a with
-  | mk bs =>
-    cases bs with
-    | mk arr =>
-      simp
 
 private theorem count_halves {count : Nat} (hpos : 0 < count) (hlt : count < 256)
     {h m59 : Heap F} {cs69 : List (Call F)}
@@ -301,11 +289,13 @@ private theorem count_halves {count : Nat} (hpos : 0 < count) (hlt : count < 256
     v130 = .field ((count / 2 : Nat) : F) ∧
     v539 = .field ((count - (count / 2 + 1) : Nat) : F) := by
   let b : UInt8 := UInt8.ofNatLT count hlt
-  have hrep : Lib.RepU8 h b (.field (count : F)) := by
+  have hrep : RepU8 h b (.field (count : F)) := by
     show Value.field (count : F) = .field (b.toNat : F)
     rw [UInt8.toNat_ofNatLT]
   obtain ⟨htup, hm59⟩ := Lib.u8_raw_bit_decomposition_spec hrep ev71
-  simp only [b, UInt8.toNat_ofNatLT, Value.tuple.injEq, List.cons.injEq] at htup
+  dsimp only [b] at htup
+  rw [UInt8.toNat_ofNatLT] at htup
+  simp only [Value.tuple.injEq, List.cons.injEq] at htup
   obtain ⟨rfl, -⟩ := htup
   simp only [evalBinOp, Except.ok.injEq] at op153
   subst op153
@@ -389,12 +379,12 @@ theorem read_evidence_entries_spec (es : List (Ix.Kernel.Evidence _root_.Address
       ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hne42, -⟩
     · simp only [List.flatMap_nil, List.nil_append] at hs
       have ext := Heap.Extends.snoc h (.construct evListEnum "Nil" [])
-      exact ⟨ext, _, x_s, rfl, .nil (by simp [List.getElem?_concat_length]), hs.mono ext⟩
+      exact ⟨ext, _, x_s, rfl, .nil (by simp), hs.mono ext⟩
     · simp at hne42
     · simp at hne42
   | cons e es' ih =>
-    have hwide_e : e.wide = true := hwide e List.mem_cons_self
-    have hwide_es' : ∀ e' ∈ es', e'.wide = true :=
+    have hwide_e : Ix.Kernel.RoleTable.Evidence.wide e = true := hwide e List.mem_cons_self
+    have hwide_es' : ∀ e' ∈ es', Ix.Kernel.RoleTable.Evidence.wide e' = true :=
       fun e' hm => hwide e' (List.mem_cons_of_mem _ hm)
     have hlt' : es'.length < 256 := by simp at hlt; omega
     have hcnt_ne : (.field ((es'.length + 1 : Nat) : F) : SourceValue F) ≠ .field 0 := by
@@ -405,7 +395,7 @@ theorem read_evidence_entries_spec (es : List (Ix.Kernel.Evidence _root_.Address
     cases e with
     | defeq =>
       simp only [List.flatMap_cons, Ix.Kernel.RoleTable.encEvidence, List.singleton_append,
-        List.length_cons] at hs ev
+        List.cons_append, List.length_cons] at hs ev
       rcases Obs.«KernelRoles::read_evidence_entries».obs ev with
         ⟨_, hv14, -⟩ |
         ⟨m47, cs57, x_tag, x_s_71, m83, cs94, m110, cs120, v124, x_rest, x_s_150, m167,
@@ -447,7 +437,7 @@ theorem read_evidence_entries_spec (es : List (Ix.Kernel.Evidence _root_.Address
       have hsz : a.hash.size = 32 := by
         simpa [Ix.Kernel.RoleTable.Evidence.wide] using hwide_e
       simp only [List.flatMap_cons, Ix.Kernel.RoleTable.encEvidence, List.cons_append,
-        List.length_cons] at hs ev
+        List.append_assoc, List.length_cons] at hs ev
       rcases Obs.«KernelRoles::read_evidence_entries».obs ev with
         ⟨_, hv14, -⟩ |
         ⟨m47, cs57, x_tag, x_s_71, m83, cs94, _, _, _, _, _, _,
@@ -502,7 +492,7 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
     ∀ (n : Nat) (l : List (Ix.Kernel.Role × Array (Ix.Kernel.Evidence _root_.Address))),
       l.length = n → n < 256 →
       (∀ p ∈ l, p ∈ t.evidence.toList) →
-      (∀ p ∈ l, p.2.size < 256 ∧ ∀ e ∈ p.2.toList, e.wide = true) →
+      (∀ p ∈ l, p.2.size < 256 ∧ ∀ e ∈ p.2.toList, Ix.Kernel.RoleTable.Evidence.wide e = true) →
       ∀ {rest : List UInt8} {x_s x_next r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
         L1.Stream h (l.flatMap Ix.Kernel.RoleTable.encEntry ++ rest) x_s →
         ObsFn W "KernelRoles::read_role_evidence" [x_s, .field (n : F), x_next] h r h' calls →
@@ -524,7 +514,7 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
         ⟨_, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
           _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
           hne46, -⟩
-      · exact ⟨Heap.Extends.refl h, _, x_next, x_s, rfl, .nil, hs⟩
+      · exact ⟨Heap.Extends.refl _, _, x_next, x_s, rfl, .nil, hs⟩
       · simp at hne46
     | succ n' =>
       let m := (n' + 1) / 2
@@ -554,7 +544,7 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
       · exact absurd hv14 hcnt_ne
       · obtain ⟨rfl, rfl, hv473⟩ := count_halves (by omega) hn ev63 op145 op137 op504 op495
         subst hv473
-        have hs_split : L1.Stream h
+        have hs_split : L1.Stream _
             (l₁.flatMap Ix.Kernel.RoleTable.encEntry ++
               (Ix.Kernel.RoleTable.encEntry p ++
                 (l₂.flatMap Ix.Kernel.RoleTable.encEntry ++ rest))) x_s := by
@@ -568,7 +558,7 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
         obtain ⟨rfl, rfl, rfl⟩ := htupL
         rcases p with ⟨ro, arr⟩
         obtain ⟨harr_sz, harr_wide⟩ := hok (ro, arr) hp_mem
-        simp only [Ix.Kernel.RoleTable.encEntry, List.cons_append] at hsL
+        simp only [Ix.Kernel.RoleTable.encEntry, List.cons_append, List.append_assoc] at hsL
         obtain ⟨rfl, rb, _, _, hrb, hs_rb, htag_rb⟩ := Deserialize.readByte_refines hsL ev219.erase
         injection htag_rb with htag_rb'
         simp only [List.cons.injEq, and_true] at htag_rb'
@@ -655,7 +645,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
         ⟨_, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
           _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
           _, _, hne54, -⟩
-      · exact ⟨Heap.Extends.refl h, _, x_by_addr, x_next, x_s, rfl, .nil, hinv, hs⟩
+      · exact ⟨Heap.Extends.refl _, _, x_by_addr, x_next, x_s, rfl, .nil, hinv, hs⟩
       · simp at hne54
     | succ n' =>
       let m := (n' + 1) / 2
@@ -687,7 +677,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
       · exact absurd hv14 hcnt_ne
       · obtain ⟨rfl, rfl, hv539⟩ := count_halves (by omega) hn ev71 op153 op145 op571 op562
         subst hv539
-        have hs_split : L1.Stream h
+        have hs_split : L1.Stream _
             (l₁.flatMap Ix.Kernel.RoleTable.encBound ++
               (Ix.Kernel.RoleTable.encBound p ++
                 (l₂.flatMap Ix.Kernel.RoleTable.encBound ++ rest))) x_s := by
@@ -703,7 +693,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
         have ha_sz : a.hash.size = 32 := hsz (ro, a) hp_mem
         have ha_of : t.addressOf? ro = some a :=
           addressOf_eq_some_of_mem_bound hchk (hsub (ro, a) hp_mem)
-        simp only [Ix.Kernel.RoleTable.encBound, List.cons_append] at hsL
+        simp only [Ix.Kernel.RoleTable.encBound, List.cons_append, List.append_assoc] at hsL
         obtain ⟨rfl, rb, _, _, hrb, hs_rb, htag_rb⟩ := Deserialize.readByte_refines hsL ev241.erase
         injection htag_rb with htag_rb'
         simp only [List.cons.injEq, and_true] at htag_rb'
@@ -724,9 +714,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
         have hix : ixAddr a' = a := ixAddr_takeAddress_encAddr ha_sz _ hlen_a
         have hinvL' : ByAddrInv t (seen ++ l₁) m388 x_by_addr_205 := hinvL.mono ext_addr
         obtain ⟨esL, hbstL, hieL, hmemL⟩ := hinvL'
-        have hsym_lk : (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [.field]).symbol =
-            Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>» := rfl
-        rw [← hsym_lk] at ev447
+        rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev447
         obtain ⟨hlk_eq, rfl⟩ := rbtree_map_lookup_or_default_spec haddr_rep hbstL ev447
         rw [heq477] at hlk_eq
         have hnot_in : ∀ w, (a', w) ∉ esL := by
@@ -738,9 +726,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
           exact roleNum_add_one_ne_zero r' (Value.field.inj hwf).symm
         simp only [evalBinOp, Except.ok.injEq] at op515
         subst op515
-        have hsym_ins : (Instance.mk "RBTreeMap::rbtree_map_insert" [.field]).symbol =
-            Obs.Names.«RBTreeMap::rbtree_map_insert<Field>» := rfl
-        rw [← hsym_ins] at ev491
+        rw [← Obs.Names.«RBTreeMap::rbtree_map_insert<Field>».symbol] at ev491
         obtain ⟨ext_ins, hbstM⟩ := rbtree_map_insert_spec haddr_rep hbstL ev491
         have hinvM : ByAddrInv t (seen ++ l₁ ++ [(ro, a)]) m479 v478 := by
           refine ⟨insSorted a' (.field (roleNum ro + 1)) esL, hbstM, ?_, ?_⟩
@@ -858,8 +844,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     refine ⟨[], ?_, by simp, by simp⟩
     rw [← rbtreeEnum_field]
     exact RBTreeBST.nil .field m14
-  have hinv0' : ByAddrInv t [] m93 (.construct addrMapEnum "Nil" []) :=
-    hinv0.mono (ext1.trans ext2)
+  have hinv0' := hinv0.mono (ext1.trans ext2)
   obtain ⟨extB, roleMap, byAddr', nextB, sB, htupB, hmapRole, hinvB, hst5⟩ :=
     read_role_bindings_aux t hchk t.bound.size t.bound.toList Array.length_toList hn_lt
       (fun _ hp => hp) hb_sz [] hinv0' hst4 ev404
@@ -871,10 +856,11 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
   simp only [List.cons.injEq] at hb4; obtain ⟨rfl, rfl⟩ := hb4
   rw [toUInt8_toNat_of_lt hm_lt] at ev546
   obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev546
-  have hst6' : L1.Stream m392 (t.evidence.toList.flatMap Ix.Kernel.RoleTable.encEntry ++ [])
+  have hst6' : L1.Stream _ (t.evidence.toList.flatMap Ix.Kernel.RoleTable.encEntry ++ [])
       x_s_500 := by
     simpa using hst6
-  have he_ok' : ∀ p ∈ t.evidence.toList, p.2.size < 256 ∧ ∀ e ∈ p.2.toList, e.wide = true := by
+  have he_ok' : ∀ p ∈ t.evidence.toList,
+      p.2.size < 256 ∧ ∀ e ∈ p.2.toList, Ix.Kernel.RoleTable.Evidence.wide e = true := by
     intro p hp
     have := he_ok p hp
     simpa [Ix.Kernel.RoleTable.EntryOk] using this
@@ -915,15 +901,14 @@ theorem load_role_ctx_spec {V : View} {extra : List ByteArray}
     ⟨_, _, _, _, _, _, _, _, _, _, _, hne187, -⟩
   · rcases load_role_table_spec (V := V) hadm hb_extra hb ev14 with hcoll | ⟨ext1, htbl⟩
     · exact .inl (hashedCollision_mono (by intro c hc; rw [hc186]; simp [hc]) hcoll)
-    · rcases sg134 with ⟨_, rfl, hm_sg, _⟩ | ⟨_, hne45, -⟩
-      · subst hm_sg
-        obtain ⟨rfl, hm_gc, -⟩ := Obs.«KernelRoleSpec::group_count».obs ev178
-        subst hm_gc
+    · rcases sg134 with ⟨_, rfl, hm_sg, _⟩ | ⟨_, _, _, _, _, _, _, _, hne45, -⟩
+      · obtain ⟨rfl, hm_gc, -⟩ := Obs.«KernelRoleSpec::group_count».obs ev178
+        rw [← hm_sg, ← hm_gc] at ext1 htbl
         let rcNode := Value.construct rcEnum "Mk"
           [v1, .field (77 : F), .construct addrMapEnum "Nil" []]
-        have extSnoc := Heap.Extends.snoc m2 rcNode
+        have extSnoc := Heap.Extends.snoc m168 rcNode
         exact .inr ⟨ext1.trans extSnoc, by decide, v1,
-          loadValue_snoc_construct m2 rcEnum "Mk"
+          loadValue_snoc_construct m168 rcEnum "Mk"
             [v1, .field (77 : F), .construct addrMapEnum "Nil" []],
           htbl.mono extSnoc⟩
       · exact absurd rfl (hne45 [] rfl)
@@ -1051,9 +1036,7 @@ theorem role_index_of_full_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
     Obs.«KernelRoles::role_index_of».obs ev
   obtain ⟨rfl, htbl⟩ := role_ctx_table_full_spec hrc ev41
   obtain ⟨rfl, ⟨es, hbst, hie, hmem⟩⟩ := role_addr_index_full_spec htbl ev28
-  have hsym_lk : (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [.field]).symbol =
-      Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>» := rfl
-  rw [← hsym_lk] at ev6
+  rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev6
   obtain ⟨hlk, rfl⟩ := rbtree_map_lookup_or_default_spec hab hbst ev6
   refine ⟨rfl, ?_⟩
   by_cases hex : ∃ w, (ab, w) ∈ es
@@ -1074,14 +1057,15 @@ theorem role_index_of_full_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
 
 /-! ## `role_spec_kind` on inert roles and `role_is_inert` -/
 
-private def findLitArm (x : F) : List (Pattern F × Expr F) → Option (Expr F)
+private def findLitArm (x : F) : List (Generic.Pattern F × Generic.Expr F) → Option (Generic.Expr F)
   | (.literal k, b) :: rest => if ZMod.val x == ZMod.val k then some b else findLitArm x rest
   | _ => none
 
-private theorem findLitArm_sound {x : F} {arms : List (Pattern F × Expr F)} {res : Expr F}
+private theorem findLitArm_sound {x : F} {arms : List (Generic.Pattern F × Generic.Expr F)}
+    {res : Generic.Expr F}
     (hf : findLitArm x arms = some res)
-    {h : Heap F} {bs : Environment F Nat} {body : Expr F}
-    (hsel : selectArm W [] h (.field x) arms = .ok (some (bs, body))) :
+    {h : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
+    (hsel : SourceSemantics.selectArm W [] h (.field x) arms = Except.ok (some (bs, body))) :
     body = res := by
   induction arms with
   | nil => simp [findLitArm] at hf
@@ -1132,17 +1116,19 @@ theorem role_spec_kind_inert_eq {ro : Ix.Kernel.Role} (hinert : ro.inert = true)
   obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
   exact ⟨rfl, rfl⟩
 
-private def allBodiesLit : List (Pattern F × Expr F) → Bool
+private def allBodiesLit : List (Generic.Pattern F × Generic.Expr F) → Bool
   | [] => true
   | (_, .literal _) :: rest => allBodiesLit rest
   | _ => false
 
-private theorem selectArm_all_lit {arms : List (Pattern F × Expr F)} (hall : allBodiesLit arms = true)
-    {env : Environment F Nat} {h : Heap F} {v : SourceValue F} {bs : Environment F Nat} {body : Expr F}
-    (hsel : selectArm W env h v arms = .ok (some (bs, body))) :
+private theorem selectArm_all_lit {arms : List (Generic.Pattern F × Generic.Expr F)}
+    (hall : allBodiesLit arms = true)
+    {tctx : Types} {h : Heap F} {v : SourceValue F} {bs : Environment F Nat}
+    {body : Generic.Expr F}
+    (hsel : SourceSemantics.selectArm W tctx h v arms = Except.ok (some (bs, body))) :
     ∃ k : F, body = .literal k := by
   induction arms with
-  | nil => simp [selectArm] at hsel
+  | nil => simp [SourceSemantics.selectArm] at hsel
   | cons arm rest ih =>
     rcases arm with ⟨pat, b⟩
     cases b with
@@ -1225,7 +1211,7 @@ theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
     have hlt38 : g.val < 38 := by
       have h38 : (38 : F).val = 38 := ZMod.val_natCast_of_lt (by decide)
       simpa [h38] using hlt_iff.mp rfl
-    exact ⟨rfl, g.val, by omega, by simp [ZMod.natCast_zmod_val]⟩
+    exact ⟨rfl, g.val, by omega, by simp⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
@@ -1258,12 +1244,11 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
     injection ld12 with hv
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
-    obtain ⟨rfl, _, _⟩ := hargs
+    rw [hargs.1] at htbl
     obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev160
-    obtain ⟨hm_gvl, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
-    subst hm_gvl
+    obtain ⟨_, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
     exact ⟨ext, lim', by omega, x_tbl,
-      loadValue_snoc_construct m139 rcEnum "Mk"
+      loadValue_snoc_construct m230 rcEnum "Mk"
         [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
       htbl.mono ext⟩
   · rw [hl_rc] at ld12
