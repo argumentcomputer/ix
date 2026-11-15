@@ -38,17 +38,18 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The opened-form guard, positionally -/
 
-/-- `nativeOpenedOk`, read positionally. -/
+/-- `nativeOpenedOk`, read positionally. Pre-block resolution ignores free-variable
+type annotations; the constructor's stage retains their original typing and scope. -/
 structure FixOpened (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx nF : Nat)
     (ks : List RecFieldKind) (fvsP xFvs : List (Expr md)) (xrest : Expr md) : Prop where
-  residRes : ∀ e ∈ xrest.getAppArgs.drop nP, e.constsResolve env₀ = true
+  residRes : ∀ e ∈ xrest.getAppArgs.drop nP, e.constsResolveShallow env₀ = true
   ord : ∀ i x, xFvs[i]? = some x → ks.getD i .ordinary = .ordinary →
-    x.fvarTypeD.constsResolve env₀ = true
+    x.fvarTypeD.constsResolveShallow env₀ = true
   recF : ∀ i x, xFvs[i]? = some x → ks.getD i .ordinary = .recursive →
     x.fvarTypeD.getAppFn = Expr.const T (lps.map .param) ∧
     x.fvarTypeD.getAppArgs.take nP = fvsP ∧
     x.fvarTypeD.getAppArgs.length = nP + nIdx ∧
-    (∀ e ∈ x.fvarTypeD.getAppArgs.drop nP, e.constsResolve env₀ = true) ∧
+    (∀ e ∈ x.fvarTypeD.getAppArgs.drop nP, e.constsResolveShallow env₀ = true) ∧
     (∀ y ∈ xFvs.drop (i + 1), y.fvarTypeD.mentionsFvar (nP + i) = false) ∧
     xrest.mentionsFvar (nP + i) = false
   /-- a REFLEXIVE field (task #202): its own telescope opened at
@@ -60,11 +61,11 @@ structure FixOpened (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP n
     ∃ afvs body,
       openPisAtFvars (x.fvarTypeD.piBinders).1.length x.fvarTypeD (nP + i) = some (afvs, body) ∧
       afvs.length ≠ 0 ∧
-      (∀ a ∈ afvs, a.fvarTypeD.constsResolve env₀ = true) ∧
+      (∀ a ∈ afvs, a.fvarTypeD.constsResolveShallow env₀ = true) ∧
       body.getAppFn = Expr.const T (lps.map .param) ∧
       body.getAppArgs.take nP = fvsP ∧
       body.getAppArgs.length = nP + nIdx ∧
-      (∀ e ∈ body.getAppArgs.drop nP, e.constsResolve env₀ = true) ∧
+      (∀ e ∈ body.getAppArgs.drop nP, e.constsResolveShallow env₀ = true) ∧
       (∀ y ∈ xFvs.drop (i + 1), y.fvarTypeD.mentionsFvar (nP + i) = false) ∧
       xrest.mentionsFvar (nP + i) = false
   kinds : ∀ i, i < nF → ks.getD i .ordinary = .ordinary ∨ ks.getD i .ordinary = .recursive ∨

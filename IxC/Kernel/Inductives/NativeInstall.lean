@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Inductives.SumInstall
 public import IxC.Kernel.Inductives.NativeParts
+public import IxC.Kernel.Inductives.Scope
 
 @[expose] public section
 
@@ -393,22 +394,24 @@ opened parameter variables followed by `nIdx` index expressions
 resolving in `env₀`, and the variable occurs in no later field's
 domain nor in the residual (the model reads those at a frame whose
 recursive slots hold an arbitrary member of the family being defined);
-the residual's index expressions resolve in `env₀`. -/
+the residual's index expressions resolve in `env₀`. These resolution
+tests ignore free-variable type annotations, whose original typing
+is checked in the environment containing the former. -/
 def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with
   | some (fvsP, crest) =>
     match openPisAtFvars nF crest nP with
     | some (xFvs, xrest) =>
-      (xrest.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+      (xrest.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
       (List.range nF).all fun i =>
         match xFvs[i]?, ks.getD i .ordinary with
-        | some x, .ordinary => x.fvarTypeD.constsResolve env₀
+        | some x, .ordinary => x.fvarTypeD.constsResolveShallow env₀
         | some x, .recursive =>
           x.fvarTypeD.getAppFn == Expr.const T (lps.map .param) &&
           x.fvarTypeD.getAppArgs.take nP == fvsP &&
           x.fvarTypeD.getAppArgs.length == nP + nIdx &&
-          (x.fvarTypeD.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+          (x.fvarTypeD.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
           !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
           !xrest.mentionsFvar (nP + i)
         | some x, .reflexive =>
@@ -420,11 +423,11 @@ def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nI
           match openPisAtFvars (x.fvarTypeD.piBinders).1.length x.fvarTypeD (nP + i) with
           | some (afvs, body) =>
             afvs.length != 0 &&
-            afvs.all (fun a => a.fvarTypeD.constsResolve env₀) &&
+            afvs.all (fun a => a.fvarTypeD.constsResolveShallow env₀) &&
             body.getAppFn == Expr.const T (lps.map .param) &&
             body.getAppArgs.take nP == fvsP &&
             body.getAppArgs.length == nP + nIdx &&
-            (body.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+            (body.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
             !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
             !xrest.mentionsFvar (nP + i)
           | none => false

@@ -26,15 +26,15 @@ def nativeOpenedOkF (w : StructWalkers md) (fe₀ : FEnv md) (T : Key md) (lps :
   | some (fvsP, crest) =>
     match openPisAtFvars nF crest nP with
     | some (xFvs, xrest) =>
-      (xrest.getAppArgs.drop nP).all (w.resolve fe₀) &&
+      (xrest.getAppArgs.drop nP).all (fun e => w.resolve fe₀ e.eraseFvarTypes) &&
       (List.range nF).all fun i =>
         match xFvs[i]?, ks.getD i .ordinary with
-        | some x, .ordinary => w.resolve fe₀ x.fvarTypeD
+        | some x, .ordinary => w.resolve fe₀ x.fvarTypeD.eraseFvarTypes
         | some x, .recursive =>
           x.fvarTypeD.getAppFn == Expr.const T (lps.map .param) &&
           x.fvarTypeD.getAppArgs.take nP == fvsP &&
           x.fvarTypeD.getAppArgs.length == nP + nIdx &&
-          (x.fvarTypeD.getAppArgs.drop nP).all (w.resolve fe₀) &&
+          (x.fvarTypeD.getAppArgs.drop nP).all (fun e => w.resolve fe₀ e.eraseFvarTypes) &&
           !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
           !xrest.mentionsFvar (nP + i)
         | some x, .reflexive =>
@@ -46,11 +46,11 @@ def nativeOpenedOkF (w : StructWalkers md) (fe₀ : FEnv md) (T : Key md) (lps :
           match openPisAtFvars (x.fvarTypeD.piBinders).1.length x.fvarTypeD (nP + i) with
           | some (afvs, body) =>
             afvs.length != 0 &&
-            afvs.all (fun a => w.resolve fe₀ a.fvarTypeD) &&
+            afvs.all (fun a => w.resolve fe₀ a.fvarTypeD.eraseFvarTypes) &&
             body.getAppFn == Expr.const T (lps.map .param) &&
             body.getAppArgs.take nP == fvsP &&
             body.getAppArgs.length == nP + nIdx &&
-            (body.getAppArgs.drop nP).all (w.resolve fe₀) &&
+            (body.getAppArgs.drop nP).all (fun e => w.resolve fe₀ e.eraseFvarTypes) &&
             !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
             !xrest.mentionsFvar (nP + i)
           | none => false
