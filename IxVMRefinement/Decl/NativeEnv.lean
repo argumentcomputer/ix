@@ -1407,7 +1407,8 @@ private theorem constsResolveShallow_opened {env env₁ : Ix.Kernel.Env .anon}
   exact constsResolve_of_cons_not_mentionsConst
     (litResolve_eraseFvarTypes _ hlit)
     (by rw [hci]; exact mentionsConst_erase_instOpen hvs he)
-    (by simpa only [← henv₁] using Expr.constsResolve_shallow_of env₁ _ hres)
+    (by simpa only [Expr.constsResolveShallow, ← henv₁] using
+      Expr.constsResolve_shallow_of env₁ _ hres)
 
 theorem OpenFreeAt.forallE {T : KKey} {vs : List KExpr} {j : Nat}
     {dom bo : KExpr} {mb : Ix.Kernel.BinderMeta}
