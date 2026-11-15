@@ -41,7 +41,8 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
         exact ⟨wScope, wBounded, wLeaves, .redL red .refl⟩
       · cases w with
         | forallE dom body bm =>
-          dsimp only at rest wScope wLeaves red
+          dsimp only at rest wLeaves red
+          simp only [Expr.WScoped] at wScope
           simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at wBounded
           split at rest
           · cases rest
