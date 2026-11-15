@@ -66,8 +66,9 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
             have consistent := Expr.fvarConsistent_of_leafCond bodyOut
               (fun leaf present => leafCondition leaf (outLeaves leaf present))
             have roundTrip := abstract1_instantiate1 bodyOut 0 consistent outBounded
-            refine ⟨⟨wScope.1, WScoped.abstract1 0 outScope⟩,
-              ?_, ?_, .redL red (.forallE .refl ?_ rfl)⟩
+            refine ⟨?_, ?_, ?_, .redL red (.forallE .refl ?_ rfl)⟩
+            · simp only [Expr.WScoped]
+              exact ⟨wScope.1, WScoped.abstract1 0 outScope⟩
             · simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
               exact ⟨wBounded.1, looseBVarsBounded_abstract1 bodyOut 0 outBounded⟩
             · intro leaf present
