@@ -55,6 +55,28 @@ set_option linter.unusedSimpArgs false
 
 /-! ## Store invariant and fold invariant -/
 
+/-- A reference prefix model already supplies the unchanged model-free store invariant.
+No global eta-table companion is required for this projection. -/
+theorem storeInv_of_envModelT {V : Type u} [Ix.Kernel.SetTheory V]
+    {μ : Ix.Kernel.CheckMode} {env : Ix.Kernel.Env .anon} (h : EnvModelT V μ env) :
+    Ix.Kernel.Open.StoreInv env := by
+  obtain ⟨⟨mp, _⟩, _⟩ := h
+  exact ⟨mp.base2.wf, mp.base2.rec_ctors, mp.base2.proj_ok⟩
+
+/-- Staging actual inductive capabilities preserves StoreInv once their parameter arities
+are checked. It does not assume that fresh constructors or projection tables are installed. -/
+theorem storeInv_consIndCaps {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon} (hS : Ix.Kernel.Open.StoreInv env)
+    (hfresh : env.find? cv.name = none)
+    (hty : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (hunit : caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true)
+    (heta : caps.eta = true → (cv.type.stripPis caps.etaParams).isSome = true) :
+    Ix.Kernel.Open.StoreInv ⟨.indInfo cv caps :: env.consts⟩ :=
+  Ix.Kernel.Model.storeInv_consTyped hS hfresh hty
+    (fun _ _ _ h => nomatch h) (fun _ _ _ _ h => nomatch h) (fun _ h => nomatch h)
+    (Ix.Kernel.IndCapsWF.of_caps hunit heta)
+
 /-- **Store-level companion invariants** carried alongside `EnvModelT` across declarations. -/
 structure DeclStoreInv (env : Ix.Kernel.Env .anon) : Prop where
   store : Ix.Kernel.Open.StoreInv env
