@@ -320,7 +320,7 @@ private theorem validate_binder_params_aux {κ : _root_.Address → KKey} {Γ : 
         have hb_def := ih _ _ _ _ _ _ (by scope_lt_calls) ev688 rfl (k + 1) nl B x_b v690 rfl hnl
           (hb.mono (e1.trans e2))
         exact propWhenDefined_instantiate1Lift hv_def B 0 hb_def
-      · rcases hE.lit_of_load ld12 with ⟨_, _, _, rfl, _⟩ | ⟨_, _, _, _, rfl, _, _⟩ <;> rfl
+      · rcases hE.lit_of_load ld12 with ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, _, rfl⟩ <;> rfl
       · obtain ⟨a, i, E₁, _, rfl, _, he₁⟩ := hE.proj_of_load ld12
         subst hc794
         exact ih _ _ _ _ _ _ (by scope_lt_calls) ev769 rfl k nl E₁ x_e1 pdepth rfl hnl he₁)
