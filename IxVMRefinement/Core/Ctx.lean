@@ -74,8 +74,26 @@ structure Ctx where
   t : Ix.Kernel.RoleTable
   lim : Option Nat := none
 
+/-- A core run selects the exact function, arguments, and input heap of its allowed calls.
+The underlying context remains available to raw declaration and record traversal. -/
+structure ScopedCtx extends Ctx where
+  allowed : Call F → Prop
+
+/-- Explicit compatibility with the historical unrestricted context. Actual declaration
+origins supply their own selected-call predicate. -/
+def ScopedCtx.unrestricted (c : Ctx) : ScopedCtx :=
+  { toCtx := c, allowed := fun _ => True }
+
+instance : Coe ScopedCtx Ctx := ⟨ScopedCtx.toCtx⟩
+
+abbrev ScopedCtx.allowedTop (c : ScopedCtx) (fname : String)
+    (args : List (SourceValue F)) (h : Heap F) : Prop :=
+  c.allowed ⟨fname, args, h⟩
+
 /-- The keying of addresses: the table's. -/
 abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
+
+abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := c.toCtx.κ
 
 /-! ## The role context -/
 
