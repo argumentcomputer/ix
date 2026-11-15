@@ -1,4 +1,5 @@
 import Ix.CompileCert.ReaderIndex
+import Ix.Cert.ReaderFallback
 import IxC.Kernel.Ixon.ReaderSpec
 
 /-! # Same-record twin provenance
@@ -97,5 +98,54 @@ theorem computed_twin_mem_recordTwins (store : Store)
   refine ⟨(.recr rc, j), ?_, ?_⟩
   · exact List.mem_zipIdx_iff_getElem?.mpr (by simpa using hmember)
   · simp [hget]
+
+/-- In a real prelude-backed context, every indexed twin at an input record's address
+comes from that input's actual recursor payload. Scanned-store agreement is derived from
+the prelude and input key uniqueness. -/
+theorem contextOf_twin_is_rec_member {md : Mode} (table : RoleTable) (prelude : Prelude md)
+    (records : Array (_root_.Address × Ixon.Constant)) (blobs : List (_root_.Address × ByteArray))
+    (hint : ConstRef _root_.Address → Option ReducibilityHint)
+    (reconstruct : Store → ConstRef _root_.Address → Option _root_.Address)
+    (hpre : preludeFor table = .ok prelude) (hkeys : (records.toList.map Prod.fst).Nodup)
+    {owner : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    (hc : (owner, c) ∈ records) (hinfo : c.info = .muts ms) {j : Nat} {entry : RecEntry}
+    (hget : (contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
+      prelude.blobs hint reconstruct).index.twins[ConstRef.member owner j]? = some entry) :
+    ∃ rc, ms[j]? = some (.recr rc) := by
+  let cx := contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
+    prelude.blobs hint reconstruct
+  have hcoherent := Ix.Cert.ReaderFallback.context_coherent table prelude records blobs hint
+    reconstruct hpre hkeys
+  change (buildIndex cx.store (indexedRecords cx.store records
+    (prelude.records ++ prelude.evidence))).twins[ConstRef.member owner j]? = some entry at hget
+  obtain ⟨owner', c', j', rc, href, hsource, hmember⟩ :=
+    buildIndex_twinSources cx.store _ _ _ hget
+  cases href
+  have hsourceStored := hcoherent owner c' (Ix.Cert.ReaderClosureKeys.mem_indexed_scanned hsource)
+  have hinputStored := Ix.Cert.ReaderClosureKeys.context_input (md := md) table records
+    (prelude.records ++ prelude.evidence) blobs prelude.blobs hint reconstruct hkeys hc
+  have heq := Option.some.inj (hinputStored.symm.trans hsourceStored)
+  subst c'
+  exact ⟨rc, by simpa only [hinfo] using member_source c j rc hmember⟩
+
+theorem contextOf_twin_mem_recordTwins {md : Mode} (table : RoleTable) (prelude : Prelude md)
+    (records : Array (_root_.Address × Ixon.Constant)) (blobs : List (_root_.Address × ByteArray))
+    (hint : ConstRef _root_.Address → Option ReducibilityHint)
+    (reconstruct : Store → ConstRef _root_.Address → Option _root_.Address)
+    (hpre : preludeFor table = .ok prelude) (hkeys : (records.toList.map Prod.fst).Nodup)
+    {owner : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    (hc : (owner, c) ∈ records) (hinfo : c.info = .muts ms) {j : Nat} {entry : RecEntry}
+    (hget : (contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
+      prelude.blobs hint reconstruct).index.twins[ConstRef.member owner j]? = some entry) :
+    (ConstRef.member owner j, entry) ∈ recordTwins
+      (contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
+        prelude.blobs hint reconstruct).index owner ms := by
+  obtain ⟨rc, hmember⟩ := contextOf_twin_is_rec_member table prelude records blobs hint reconstruct
+    hpre hkeys hc hinfo hget
+  apply Array.mem_toList_iff.mp
+  simp only [recordTwins, List.toList_toArray]
+  apply List.mem_filterMap.mpr
+  refine ⟨(.recr rc, j), List.mem_zipIdx_iff_getElem?.mpr (by simpa using hmember), ?_⟩
+  simp [hget]
 
 end IxVM.Refinement.Assembly
