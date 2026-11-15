@@ -30,9 +30,9 @@ theorem whnfTelescope_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
     | sort s =>
       have same := Except.ok.inj rest
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
-      refine ⟨rfl, by trivial, rfl, ?_, .redL (Ix.Kernel.Rules.whnf_bridge reduced) .refl⟩
+      refine ⟨rfl, by simp only [closeTelescope, Expr.WScoped], rfl, ?_, .redL (Ix.Kernel.Rules.whnf_bridge reduced) .refl⟩
       intro leaf present
-      cases present
+      simpa only [closeTelescope, Expr.fvarLeaves, List.not_mem_nil] using present
     | _ => cases rest
   | succ count ih =>
     simp only [whnfTelescope] at run

@@ -1,9 +1,9 @@
 import IxVMRefinement.Decl.NativeFormerRestore
 import IxVMRefinement.Decl.TheoremRestoreInstall
 
-/-! # Reader storage after restoring a declared aliasKey former
+/-! # Reader storage after restoring a declared alias former
 
-The original name and universe parameters stay exact. A constant aliasKey node needs no new
+The original name and universe parameters stay exact. A constant alias node needs no new
 annotation, so the restored former has the reader's required storage shape.
 -/
 
@@ -12,13 +12,14 @@ namespace IxVM.Refinement.Decl.NativeFormerRestore
 open Ix.Kernel
 open IxVM.Consistency (StoredAs)
 
-/-- Restoring the declared aliasKey type recovers the original reader-shaped inductive entry. -/
+/-- Restoring the declared alias type recovers the original reader-shaped inductive entry. -/
 theorem storedAlias {checked raw : ConstantVal .anon} {caps rawCaps : IndCaps .anon}
     {aliasKey : Key .anon} {levels : List Level}
     (name : checked.name = raw.name) (params : checked.levelParams = raw.levelParams)
     (declared : raw.type = .const aliasKey levels) :
     StoredAs (.indInfo { checked with type := .const aliasKey levels } caps) (.indInfo raw rawCaps) := by
   refine ⟨⟨name, params, ?_⟩, trivial⟩
+  change IxVM.Consistency.Annotates (.const aliasKey levels) raw.type
   rw [declared]
   exact .const
 
