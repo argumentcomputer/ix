@@ -132,7 +132,9 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       have next := congrArg (fun action : CheckM md PropWhen =>
         action >>= fun newPw => (pure (Expr.forallE ty' (body'.abstract1 d) { bm with pw := newPw }) :
           CheckM md (Expr md))) (choosePw_idempotent hpw)
-      simpa only [← choice_bind, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      by_cases written : (!pwWritten pw) = true
+      · simpa only [ite_eq_left written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      · simpa only [ite_eq_right written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
     | lam ty body bm =>
       simp only [Expr.WScoped] at scope
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
@@ -154,13 +156,15 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       have next := congrArg (fun action : CheckM md PropWhen =>
         action >>= fun newPw => (pure (Expr.lam ty' (body'.abstract1 d) { bm with pw := newPw }) :
           CheckM md (Expr md))) (choosePw_idempotent hpw)
-      simpa only [← choice_bind, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      by_cases written : (!pwWritten pw) = true
+      · simpa only [ite_eq_left written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      · simpa only [ite_eq_right written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
     | letE ty value body lmeta =>
       obtain ⟨_, _, _, _, hbody, _⟩ := annotateCore_letE_inv run
       simp only [Expr.WScoped] at scope
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
       have fixed := ih hbody (Expr.WScoped.instantiate1_gen scope.2.1 0 scope.2.2)
-        (looseBVarsBounded_instantiate1_gen bounded.1.2 bounded.2)
+        (Expr.looseBVarsBounded_instantiate1_gen bounded.1.2 bounded.2)
       exact annotateCore_mono (Nat.le_succ fuel) fixed
     | proj T i e =>
       obtain ⟨e', tt, te, he, ht, hw, sn, us, entry, hhead, hentry, hparams, rfl⟩ :=
