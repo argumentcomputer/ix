@@ -437,11 +437,11 @@ and blobs, `StreamRead` over `decodedOf E_role' order_role`, `keepsPrelude`, `Ac
 theorem tableAdmitted_unpack_normalized
     {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
     (hadmV : IxVM.Refinement.TableAdmitted V b) :
-    ∃ (t : Ix.Kernel.RoleTable) (E_raw : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    ∃ (t : Ix.Kernel.RoleTable) (E_raw E_role' : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
       (order_role : List _root_.Address) (envA : Ix.Kernel.Env .anon)
       (pre : Ix.Kernel.Reader.Prelude .anon) (st_role : Ix.Kernel.Reader.State .anon)
       (decls_role : Array (Ix.Kernel.Reader.CDecl .anon)),
-      let E_role' := normalizeRoleEnv E_raw order_role
+      E_role' = normalizeRoleEnv E_raw order_role ∧
       Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t ∧
       IxVM.Refinement.LiteralSupportBound t ∧
       IxVM.Refinement.Draws E_raw V.env ∧
@@ -478,6 +478,7 @@ theorem tableAdmitted_unpack_normalized
         (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList := by
   obtain ⟨t, hadm, hlit, E_raw, limits, order_role, envA, hdraws, hseeds,
     t', pre, ev, ds, hadm', hclos, _, hpre, hprep, hacc_u, hthms, _, hspecs⟩ := hadmV
+  dsimp only [IxVM.Refinement.Scope.strict] at hadm' hprep hacc_u hspecs
   have ht_eq : t' = t := Except.ok.inj (hadm'.symm.trans hadm)
   rw [ht_eq] at hclos
   obtain ⟨hwit, huniq, hauth, t'', constants, st_role, decls_role,
@@ -487,22 +488,36 @@ theorem tableAdmitted_unpack_normalized
   have hconst_eq : constants =
       Ix.Cert.Stream.decodedOf (normalizeRoleEnv E_raw order_role) order_role :=
     recordsRead_decodedOf_normalizeRoleEnv hreads_rec
+  generalize hE_def : normalizeRoleEnv E_raw order_role = E_role'
+  rw [hE_def] at hconst_eq
   rw [hconst_eq] at hstream hev_eq
   rw [hev_eq, hds_eq] at hacc_u
   rw [hds_eq] at hthms hspecs
-  have hrec_eq : Ix.Cert.recordsOf (normalizeRoleEnv E_raw order_role) order_role =
-      Ix.Cert.recordsOf E_raw order_role :=
-    normalizeRoleEnv_recordsOf E_raw order_role order_role
-  refine ⟨t, E_raw, limits, order_role, envA, pre, st_role, decls_role,
-    hadm, hlit, hdraws, ?_, hclos, hpre, hrec_eq, ?_, ?_, ?_, ?_,
-    hstream, hkeeps, Ix.Kernel.Cached.acceptsRefUnder_strict.mp hacc_u, hthms, hspecs⟩
+  have hrec_eq : Ix.Cert.recordsOf E_role' order_role =
+      Ix.Cert.recordsOf E_raw order_role := by
+    rw [← hE_def]
+    exact normalizeRoleEnv_recordsOf E_raw order_role order_role
+  have hacc : Ix.Kernel.Cached.AcceptsRef .verified
+      (Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E_role' order_role)
+          (Ix.Cert.blobsOf E_raw order_role) (Ix.Cert.hintsOf E_raw))
+        st_role t)
+      ((Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList.map
+        IxVM.Refinement.thmToOpaqueDefn)
+      envA :=
+    Ix.Kernel.Cached.acceptsRefUnder_strict.mp hacc_u
+  refine ⟨t, E_raw, E_role', limits, order_role, envA, pre, st_role, decls_role,
+    hE_def.symm, hadm, hlit, hdraws, ?_, hclos, hpre, hrec_eq, ?_, ?_, ?_, ?_,
+    hstream, hkeeps, hacc, hthms, hspecs⟩
   · intro a hsa
-    rw [normalizeRoleEnv_contains]
+    rw [← hE_def, normalizeRoleEnv_contains]
     exact hseeds a hsa
   · rw [hrec_eq]; exact hwit
   · rw [hrec_eq]; exact huniq
   · rw [hrec_eq]; exact hauth
   · intro a ha lc' hget c hdec
+    rw [← hE_def] at hget
     exact normalizeRoleEnv_exact_on_keys E_raw order_role ha hget hdec
 
 /-! ## Section 4: Custom-Table Companion, Boundary Isolation, and Top-Level `L7` / `CircuitConsistent` -/
