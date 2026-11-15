@@ -13,7 +13,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.L1
+open IxVM.Refinement.L1 (blockRecurAddrs blockRecurAddrsAux)
 open IxVM.Refinement.KernelLevels (RepKLevelList)
 
 set_option maxHeartbeats 2000000
