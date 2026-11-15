@@ -19,6 +19,10 @@ open IxVM.Consistency (ReaderAdmissionWitness ReaderCacheCoherent)
 
 namespace ReaderAdmission
 
+private theorem bytes_eq_of_beq {a b : ByteArray} (h : (a == b) = true) : a = b := by
+  have hdata : (a.data == b.data) = true := h
+  exact ByteArray.ext (eq_of_beq hdata)
+
 private def fallbackAgrees (E : Ixon.Env) (order : List _root_.Address)
     (pre : Reader.Prelude .anon) : Bool :=
   let selected := Ix.Cert.TableAdmission.setOf order
@@ -51,22 +55,24 @@ private theorem fallbackAgrees_records {E : Ixon.Env} {order : List _root_.Addre
     {a : _root_.Address} (ha : a ∈ order) {lc : Ixon.LazyConstant}
     (hget : E.consts.get? a = some lc) {c : Ixon.Constant}
     (hc : (a, c) ∈ pre.records ++ pre.evidence) : lc.rawBytes = Ixon.serConstant c := by
+  dsimp only [fallbackAgrees] at h
   have hrow := List.all_eq_true.mp h (a, c) hc
   have hselected := Ix.Cert.TableAdmission.contains_setOf.mpr ha
   simp only [hselected, ↓reduceIte, hget, Bool.and_eq_true] at hrow
-  exact beq_iff_eq.mp hrow.1
+  exact bytes_eq_of_beq hrow.1
 
 private theorem fallbackAgrees_blobs {E : Ixon.Env} {order : List _root_.Address}
     {pre : Reader.Prelude .anon} (h : fallbackAgrees E order pre = true)
     {a : _root_.Address} {bytes : ByteArray} (hb : (a, bytes) ∈ Ix.Cert.blobsOf E order)
     {c : Ixon.Constant} (hc : (a, c) ∈ pre.records ++ pre.evidence) :
     bytes = Ixon.serConstant c := by
+  dsimp only [fallbackAgrees] at h
   have hrow := List.all_eq_true.mp h (a, c) hc
   have hselected := Ix.Cert.TableAdmission.contains_setOf.mpr
     (List.mem_map.mpr ⟨(a, bytes), hb, rfl⟩ : a ∈ (Ix.Cert.blobsOf E order).map Prod.fst)
   have hget := Ix.Cert.Stream.mem_blobsOf hb
   simp only [hselected, ↓reduceIte, hget, Bool.and_eq_true] at hrow
-  exact beq_iff_eq.mp hrow.2
+  exact bytes_eq_of_beq hrow.2
 
 private theorem selectedAgrees_sound {E : Ixon.Env} {order : List _root_.Address}
     (h : selectedAgrees E order = true) {a : _root_.Address} (ha : a ∈ order)
@@ -75,7 +81,7 @@ private theorem selectedAgrees_sound {E : Ixon.Env} {order : List _root_.Address
   have hrow := List.all_eq_true.mp h (a, bytes) hb
   have hselected := Ix.Cert.TableAdmission.contains_setOf.mpr ha
   simp only [hselected, ↓reduceIte, hget] at hrow
-  exact beq_iff_eq.mp hrow
+  exact bytes_eq_of_beq hrow
 
 /-- Byte preparation retaining the full reader's state and declarations. -/
 def read (t : RoleTable) (E : Ixon.Env) (order : List _root_.Address)
@@ -148,7 +154,7 @@ private theorem read_spec {b : Binding} {t : RoleTable} {E : Ixon.Env}
               simp only [hpf, huq, hau, hdec, hr, hk, ↓reduceIte, Except.mapError,
                 bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
               obtain ⟨rfl, rfl⟩ := h
-              refine ⟨hr, ?_⟩
+              refine ⟨rfl, ?_⟩
               unfold Admission.prepareWith Admission.readStream
               simp only [hpf, huq, hau, hadm, hdec, hr, hk, ↓reduceIte,
                 Except.mapError, bind, Except.bind, pure, Except.pure]
@@ -177,10 +183,11 @@ def preparedCheck (t : RoleTable) (E : Ixon.Env) (order : List _root_.Address)
 def checkAt (t : RoleTable) (E : Ixon.Env)
     (wit : List (_root_.Address × Option _root_.Address)) (order : List _root_.Address) : Bool :=
   let seeds := Ix.Cert.TableAdmission.seedList t
+  let idx := Ix.Cert.artifactRecIndex E
   Ix.Cert.TableAdmission.literalSupportOk t && seeds.all E.consts.contains &&
     Ix.Cert.TableAdmission.orderedCheck E order &&
-    Ix.Cert.TableAdmission.closedCheck t E (Ix.Cert.artifactRecIndex E) seeds order &&
-    Ix.Cert.TableAdmission.reachCheck t E (Ix.Cert.artifactRecIndex E) seeds wit order &&
+    Ix.Cert.TableAdmission.closedCheck t E idx seeds order &&
+    Ix.Cert.TableAdmission.reachCheck t E idx seeds wit order &&
     match Reader.preludeFor t with
     | .error _ => false
     | .ok pre => preparedCheck t E order pre
