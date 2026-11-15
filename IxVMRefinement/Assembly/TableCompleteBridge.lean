@@ -45,7 +45,8 @@ Bridges the `IxVMRefinement.Assembly` role-aware verification chain to the publi
 
 namespace IxVM.Refinement.Assembly
 
-open Aiur
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open IxVM (F)
 
 universe u
 
@@ -435,7 +436,10 @@ and blobs, `StreamRead` over `decodedOf E_role' order_role`, `keepsPrelude`, `Ac
 theorem tableAdmitted_unpack_normalized
     {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
     (hadmV : IxVM.Refinement.TableAdmitted V b) :
-    ∃ t E_raw limits order_role envA pre st_role decls_role,
+    ∃ (t : Ix.Kernel.RoleTable) (E_raw : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+      (order_role : List _root_.Address) (envA : Ix.Kernel.Env .anon)
+      (pre : Ix.Kernel.Reader.Prelude .anon) (st_role : Ix.Kernel.Reader.State .anon)
+      (decls_role : Array (Ix.Kernel.Reader.CDecl .anon)),
       let E_role' := normalizeRoleEnv E_raw order_role
       Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t ∧
       IxVM.Refinement.LiteralSupportBound t ∧
@@ -444,6 +448,8 @@ theorem tableAdmitted_unpack_normalized
       Ix.Cert.ClosureOrderAt t E_raw (IxVM.Refinement.BindingSeeds t) order_role ∧
       Ix.Kernel.Reader.preludeFor t = .ok pre ∧
       Ix.Cert.recordsOf E_role' order_role = Ix.Cert.recordsOf E_raw order_role ∧
+      Ix.Kernel.Admission.WithinBatch limits (Ix.Cert.recordsOf E_role' order_role)
+        (Ix.Cert.blobsOf E_raw order_role) ∧
       Ix.Kernel.Admission.UniqueKeys (Ix.Cert.recordsOf E_role' order_role)
         (Ix.Cert.blobsOf E_raw order_role) ∧
       Ix.Kernel.Admission.Authentic _root_.Address.admissionHash
@@ -473,7 +479,7 @@ theorem tableAdmitted_unpack_normalized
     t', pre, ev, ds, hadm', hclos, _, hpre, hprep, hacc_u, hthms, _, hspecs⟩ := hadmV
   have ht_eq : t' = t := Except.ok.inj (hadm'.symm.trans hadm)
   subst ht_eq
-  obtain ⟨_, huniq, hauth, t'', constants, st_role, decls_role,
+  obtain ⟨hwit, huniq, hauth, t'', constants, st_role, decls_role,
     hadm'', hreads_rec, hstream, hev_eq, hkeeps, hds_eq⟩ := prepareWith_unpack hprep
   have ht''_eq : t'' = t := Except.ok.inj (hadm''.symm.trans hadm)
   subst ht''_eq
@@ -487,11 +493,12 @@ theorem tableAdmitted_unpack_normalized
       Ix.Cert.recordsOf E_raw order_role :=
     normalizeRoleEnv_recordsOf E_raw order_role order_role
   refine ⟨t, E_raw, limits, order_role, envA, pre, st_role, decls_role,
-    hadm, hlit, hdraws, ?_, hclos, hpre, hrec_eq, ?_, ?_, ?_,
+    hadm, hlit, hdraws, ?_, hclos, hpre, hrec_eq, ?_, ?_, ?_, ?_,
     hstream, hkeeps, Ix.Kernel.Cached.acceptsRefUnder_strict.mp hacc_u, hthms, hspecs⟩
   · intro a hsa
     rw [normalizeRoleEnv_contains]
     exact hseeds a hsa
+  · rw [hrec_eq]; exact hwit
   · rw [hrec_eq]; exact huniq
   · rw [hrec_eq]; exact hauth
   · intro a ha lc' hget c hdec
@@ -573,6 +580,7 @@ theorem consistentRead_of_consistentReadRole
 `RolePreludeBridge.rolePreludeInputs`, `SafeRefsBridge.safeRefsInputs`, and
 `Bridge.consistentReadRole_of_rolePrelude_declsStrong`. -/
 theorem l7_mkSeams_of_declsStrong
+    (hPrelGap : UncheckedPreludeTableGap)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
@@ -587,7 +595,7 @@ theorem l7_mkSeams_of_declsStrong
         tableAdmittedComplete_of_tableAdmitted hBoundGap hRT.2 hcol
       have hRole : ConsistentReadRole.{u} V calls b seeds :=
         consistentReadRole_of_rolePrelude_declsStrong
-          rolePreludeInputs
+          (rolePreludeInputs hPrelGap)
           (safeRefsInputs hSafeGap)
           hStrong
           hbound hscope hseeds hRT hadmV hadm hload hseedOk hwalk
@@ -599,11 +607,12 @@ theorem l7_mkSeams_of_declsStrong
 /-- **Circuit-level consistency (`IxVM.Consistency.CircuitConsistent`)** at `mkSeams DeclOrigin`
 from `DeclsStrong DeclOrigin`, wiring `L0`–`L7` through `ClaimsL1L6.consistent_of_decls_l7`. -/
 theorem consistent_mkSeams_of_declsStrong
+    (hPrelGap : UncheckedPreludeTableGap)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
     IxVM.Consistency.CircuitConsistent.{u} :=
   consistent_of_decls_l7 DeclOrigin hStrong.toDecls
-    (l7_mkSeams_of_declsStrong hSafeGap hBoundGap hStrong)
+    (l7_mkSeams_of_declsStrong hPrelGap hSafeGap hBoundGap hStrong)
 
 end IxVM.Refinement.Assembly
