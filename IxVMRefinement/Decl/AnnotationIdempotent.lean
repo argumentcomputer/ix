@@ -13,17 +13,23 @@ namespace IxVM.Refinement.Decl
 
 open Ix.Kernel
 
+private theorem choice_bind {md : Mode} {α β : Type} {condition : Prop} [Decidable condition]
+    (left right : CheckM md α) (continuation : α → CheckM md β) :
+    (if condition then left >>= continuation else right >>= continuation) =
+      ((if condition then left else right) >>= continuation) := by
+  by_cases h : condition <;> simp only [h, ↓reduceIte]
+
 private theorem choosePw_idempotent {md : Mode} {old written : PropWhen} {compute : CheckM md PropWhen}
     (checked : (if !pwWritten old then compute else pure old) = .ok written) :
     (if !pwWritten written then compute else pure written) = .ok written := by
   by_cases before : pwWritten old = true
   · have same : old = written := by
-      simpa only [before, Bool.not_true, ↓reduceIte, Pure.pure, Except.pure, Except.ok.injEq] using checked
+      simpa only [before, Bool.not_true, Bool.false_eq_true, ↓reduceIte, Pure.pure, Except.pure, Except.ok.injEq] using checked
     subst written
     exact checked
   · have computed : compute = .ok written := by simpa [before] using checked
     by_cases after : pwWritten written = true
-    · simp only [after, Bool.not_true, ↓reduceIte]
+    · simp only [after, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
       rfl
     · simpa [after] using computed
 
@@ -112,6 +118,7 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       simp only [annotateBody, annotate_def] at run
       obtain ⟨ty', hty, rest⟩ := exceptBind_ok run
       obtain ⟨body', hbody, rest⟩ := exceptBind_ok rest
+      rw [choice_bind] at rest
       obtain ⟨pw, hpw, result⟩ := exceptBind_ok rest
       have same := Except.ok.inj result
       subst out
@@ -122,8 +129,10 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       have round := annotation_reclose htyScope scope.2 bounded.2 hbody
       rw [annotateCore_succ]
       simp only [annotateBody, annotate_def, hty', round, hbody', Bind.bind, Except.bind]
-      rw [choosePw_idempotent hpw]
-      rfl
+      have next := congrArg (fun action : CheckM md PropWhen =>
+        action >>= fun newPw => (pure (Expr.forallE ty' (body'.abstract1 d) { bm with pw := newPw }) :
+          CheckM md (Expr md))) (choosePw_idempotent hpw)
+      simpa only [← choice_bind, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
     | lam ty body bm =>
       simp only [Expr.WScoped] at scope
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
@@ -131,6 +140,7 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       simp only [annotateBody, annotate_def] at run
       obtain ⟨ty', hty, rest⟩ := exceptBind_ok run
       obtain ⟨body', hbody, rest⟩ := exceptBind_ok rest
+      rw [choice_bind] at rest
       obtain ⟨pw, hpw, result⟩ := exceptBind_ok rest
       have same := Except.ok.inj result
       subst out
@@ -141,9 +151,11 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
       have round := annotation_reclose htyScope scope.2 bounded.2 hbody
       rw [annotateCore_succ]
       simp only [annotateBody, annotate_def, hty', round, hbody', Bind.bind, Except.bind]
-      rw [choosePw_idempotent hpw]
-      rfl
-    | letE ty value body meta =>
+      have next := congrArg (fun action : CheckM md PropWhen =>
+        action >>= fun newPw => (pure (Expr.lam ty' (body'.abstract1 d) { bm with pw := newPw }) :
+          CheckM md (Expr md))) (choosePw_idempotent hpw)
+      simpa only [← choice_bind, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+    | letE ty value body lmeta =>
       obtain ⟨_, _, _, _, hbody, _⟩ := annotateCore_letE_inv run
       simp only [Expr.WScoped] at scope
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
