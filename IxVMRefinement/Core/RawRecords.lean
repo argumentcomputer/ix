@@ -13,6 +13,20 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 
+/-- Every raw `get_ci` invocation in this trace belongs to the selected record scope.
+Other calls retain ordinary weak goodness and need no semantic-load permission. -/
+def RawRecordCoverage (c : ScopedCtx) (calls : List (Call F)) : Prop :=
+  ∀ addr heap, (⟨"Ingress::get_ci", [addr], heap⟩ : Call F) ∈ calls →
+    c.allowedTop "Ingress::get_ci" [addr] heap
+
+theorem RawRecordCoverage.sub {c : ScopedCtx} {calls children : List (Call F)}
+    (covered : RawRecordCoverage c calls) (sub : ∀ cl ∈ children, cl ∈ calls) :
+    RawRecordCoverage c children :=
+  fun addr heap member => covered addr heap (sub _ member)
+
+theorem RawRecordCoverage.unrestricted (c : Ctx) (calls : List (Call F)) :
+    RawRecordCoverage (ScopedCtx.unrestricted c) calls := fun _ _ _ => trivial
+
 /-- Canonical record identities at selected successful inductive metadata queries. -/
 structure RawRecordFacts (c : ScopedCtx) : Prop where
   inductiveRead : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
@@ -73,6 +87,19 @@ theorem ScopedLoadFacts.rawRecords {c : ScopedCtx} (facts : ScopedLoadFacts c) :
     cases hi
     obtain ⟨cb, xs, ind, hcb, hxs, hind⟩ :=
       facts.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev allowed good ha loaded hb
+    exact ⟨cm, cb, xs, ind, b, i, hcm, hb, rfl, hp, hcb, hxs, hind⟩
+
+/-- Explicit compatibility for callers that still carry the historical unrestricted load
+contract. Actual raw scopes are produced from canonical observed queries in L1. -/
+theorem RawRecordFacts.ofUnrestricted {c : ScopedCtx} (facts : LoadFacts c.toCtx) :
+    RawRecordFacts c where
+  inductiveRead := by
+    intro addr ptr h h' cs a nl ty np ni nc u blk idx ev _ good ha loaded
+    obtain ⟨cm, b, i, hcm, hb, hi, hp⟩ :=
+      facts.inductRecord addr ptr h h' cs a nl ty np ni nc u blk idx ev good ha loaded
+    cases hi
+    obtain ⟨cb, xs, ind, hcb, hxs, hind⟩ :=
+      facts.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev good ha loaded hb
     exact ⟨cm, cb, xs, ind, b, i, hcm, hb, rfl, hp, hcb, hxs, hind⟩
 
 end IxVM.Refinement.Core

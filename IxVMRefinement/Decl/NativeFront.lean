@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.RawRecords
 import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Subst.Spine
@@ -1101,11 +1102,12 @@ theorem addr_list_contains_singleton_spec {b₀ b' : Bytes.Address} {bas tgt r :
         | .Cons_n1 (ld12 := ld') .. | .Cons_other (ld12 := ld') .. =>
           exact (load_cell_ne cell_nil ld' (by decide)).elim
 
-theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKey}
+theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c b₀ T nl nP nIdx nCtors)
-    (hlf : LoadFacts c)
-    (hgood : Good c cs)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
     (hca : Bytes.RepAddressRef addrTy h a ca)
     (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
     (ev : ObsFn W "KernelCheck::caddr_is_peer" [ca, bas] h r h' cs) :
@@ -1114,9 +1116,9 @@ theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKe
   | .Induct (m2 := m2) (p9 := p9) (cs15 := cs15) (x_ba := xba) (ev17 := ev_ci)
       (ld11 := ld) (ev94 := ev_in) (hc111 := hc) .. =>
     subst hc
-    have hg1 : Good c cs15 := hgood.sub (fun x hx => by simp [hx])
+    have hg1 : Good c.toCtx cs15 := hgood.sub (fun x hx => by simp [hx])
     obtain ⟨cm, b', idx, hcm, hb', rfl, hinfo⟩ :=
-      hlf.inductRecord ca p9 h m2 cs15 a _ _ _ _ _ _ _ _ ev_ci hg1 hca ld
+      hlf.inductRecord ca p9 h m2 cs15 a _ _ _ _ _ _ _ _ ev_ci (hscope _ _ (by simp)) hg1 hca ld
     have hbas' := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
       ev_ci.heap_extends hbas
     obtain ⟨_, hres⟩ := addr_list_contains_singleton_spec hbas' hb' ev_in
@@ -1133,19 +1135,20 @@ theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKe
   | .other (v1 := v1) (m2 := m2) (p9 := p9) (cs15 := cs15) (ev17 := ev_ci)
       (ld11 := ld) (hne112 := hne_ind) (he116 := hr) (hc118 := hc) .. =>
     subst hc
-    have hg1 : Good c cs15 := hgood.sub (fun x hx => by simp [hx])
+    have hg1 : Good c.toCtx cs15 := hgood.sub (fun x hx => by simp [hx])
     refine Or.inr ⟨hr, fun hT => ?_⟩
     obtain ⟨ty', u', blk', b'', ld', _, _⟩ := hpeer.self_ind ca p9 h m2 cs15 a ev_ci hg1 hca hT
     rw [ld] at ld'
     injection ld' with hv1
     exact hne_ind [_, ty', _, _, _, u', blk', _] rfl hv1
 
-theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
     {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c b₀ T nl nP nIdx nCtors)
-    (hlf : LoadFacts c)
-    (hgood : Good c cs)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
     (hE : TmExact c.κ 0 Γ h k E pe)
     (hnp : noProjAt T E = true)
     (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
@@ -1165,8 +1168,9 @@ theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey
     | .Const (cs66 := cs66) (ld12 := ld) (ev68 := ev_peer) (hc85 := hc) .. =>
       subst hc
       obtain ⟨a, ls, rfl, ha, _⟩ := hE.const_of_load ld
-      have hg1 : Good c cs66 := hgood.sub (fun x hx => by simp [hx])
-      rcases caddr_is_peer_singleton_spec hpeer hlf hg1 ha hbas ev_peer with
+      have hg1 : Good c.toCtx cs66 := hgood.sub (fun x hx => by simp [hx])
+      have hs1 : RawRecordCoverage c cs66 := hscope.sub (fun x hx => by simp [hx])
+      rcases caddr_is_peer_singleton_raw_spec hpeer hlf hg1 hs1 ha hbas ev_peer with
         ⟨h01, _⟩ | ⟨_, hne⟩
       · exact nomatch h01
       · simp [Expr.mentionsConst, hne]
@@ -1179,10 +1183,12 @@ theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey
       simp only [noProjAt, Bool.and_eq_true] at hnp
       rcases expr_mentions_block_ret_bit ev1 with hv0 | hv1
       · rw [hv0] at ev1
-        have hg1 : Good c cs1 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hmf := expr_mentions_block_zero_spec hpeer hlf hg1 hf hnp.1 hbas ev1
-        have hma := expr_mentions_block_zero_spec hpeer hlf hg2 (ha.mono ev1.heap_extends) hnp.2
+        have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hmf := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 hf hnp.1 hbas ev1
+        have hma := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (ha.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmf, hma]
@@ -1193,10 +1199,12 @@ theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey
       simp only [noProjAt, Bool.and_eq_true] at hnp
       rcases expr_mentions_block_ret_bit ev1 with hv0 | hv1
       · rw [hv0] at ev1
-        have hg1 : Good c cs1 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hmt := expr_mentions_block_zero_spec hpeer hlf hg1 ht hnp.1 hbas ev1
-        have hmb := expr_mentions_block_zero_spec hpeer hlf hg2 (hb.mono ev1.heap_extends) hnp.2
+        have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hmt := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
+        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmt, hmb]
@@ -1207,10 +1215,12 @@ theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey
       simp only [noProjAt, Bool.and_eq_true] at hnp
       rcases expr_mentions_block_ret_bit ev1 with hv0 | hv1
       · rw [hv0] at ev1
-        have hg1 : Good c cs1 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hmt := expr_mentions_block_zero_spec hpeer hlf hg1 ht hnp.1 hbas ev1
-        have hmb := expr_mentions_block_zero_spec hpeer hlf hg2 (hb.mono ev1.heap_extends) hnp.2
+        have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hmt := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
+        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmt, hmb]
@@ -1221,23 +1231,26 @@ theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey
       obtain ⟨hnp_b, hnp_v⟩ := noProjAt_of_instantiate1Lift hnp
       rcases expr_mentions_block_ret_bit ev2 with hv2_0 | hv2_1
       · rw [hv2_0] at ev2
-        have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hc, hx])
-        have hg3 : Good c cs3 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
+        have hg3 : Good c.toCtx cs3 := hgood.sub (fun x hx => by simp [hc, hx])
+        have hs3 : RawRecordCoverage c cs3 := hscope.sub (fun x hx => by simp [hc, hx])
         have ext12 := ev1.heap_extends.trans ev2.heap_extends
         have hbas1 := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
           ev1.heap_extends hbas
         have hbas2 := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
           ext12 hbas
-        have hmb := expr_mentions_block_zero_spec hpeer hlf hg3 (hb.mono ext12) hnp_b hbas2 ev3
+        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg3 hs3 (hb.mono ext12) hnp_b hbas2 ev3
         exact mentionsConst_instantiate1Lift_false hmb fun hloose =>
-          expr_mentions_block_zero_spec hpeer hlf hg2 (hv.mono ev1.heap_extends)
+          expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hv.mono ev1.heap_extends)
             (hnp_v hloose) hbas1 ev2
       · exact absurd hv2_1 hne2
     | .Proj (cs516 := cs1) (ld12 := ld) (ev518 := ev1) (hc535 := hc) .. =>
       obtain ⟨a, i, E1, _, rfl, _, he1⟩ := hE.proj_of_load ld
       simp only [noProjAt, Bool.and_eq_true, Bool.not_eq_true'] at hnp
-      have hg1 : Good c cs1 := hgood.sub (fun x hx => by simp [hc, hx])
-      have hm1 := expr_mentions_block_zero_spec hpeer hlf hg1 he1 hnp.2 hbas ev1
+      have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hc, hx])
+      have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
+      have hm1 := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 he1 hnp.2 hbas ev1
       simp [Expr.mentionsConst, hnp.1, hm1]
 termination_by cs.length
 decreasing_by
@@ -1245,20 +1258,21 @@ decreasing_by
     simp only [hc, List.length_cons, List.length_append]
     omega
 
-theorem list_any_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      OneTypePeerFacts c b₀ T nl nP nIdx nCtors →
-      LoadFacts c →
-      Good c cs →
+      OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors →
+      RawRecordFacts c →
+      Good c.toCtx cs →
+      RawRecordCoverage c cs →
       RepList kexprListEnum (fun h₀ X p₀ => TmExact c.κ 0 Γ h₀ k X p₀) h Es pes →
       (∀ e ∈ Es, noProjAt T e = true) →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas →
       ObsFn W "KernelCheck::list_any_mentions_block" [pes, bas] h (.field 0) h' cs →
       ∀ e ∈ Es, e.mentionsConst T = false
-  | _, _, _, _, _, _, _, _, _, .nil cell, _, _, ev => by
+  | _, _, _, _, _, _, _, _, _, _, .nil cell, _, _, ev => by
     intro _ hm; exact nomatch hm
-  | _, _, bas, h, h', cs, hpeer, hlf, hgood, .cons cell he hes, hnp, hbas, ev => by
+  | _, _, bas, h, h', cs, hpeer, hlf, hgood, hscope, .cons cell he hes, hnp, hbas, ev => by
     match Obs.«KernelCheck::list_any_mentions_block».obs ev with
     | .Nil (ld12 := ld) .. =>
       exact (load_cell_ne cell ld (by decide)).elim
@@ -1271,11 +1285,13 @@ theorem list_any_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : 
       injection hxs with h1 h2; injection h2 with h2; subst h1 h2
       rcases expr_mentions_block_ret_bit ev1 with hv0 | hv1
       · rw [hv0] at ev1
-        have hg1 : Good c cs1 := hgood.sub (fun x hx => by simp [hx])
-        have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hx])
-        have hm_hd := expr_mentions_block_zero_spec hpeer hlf hg1 he
+        have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hx])
+        have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hx])
+        have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hx])
+        have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hx])
+        have hm_hd := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 he
           (hnp _ List.mem_cons_self) hbas ev1
-        have hm_tl := list_any_mentions_block_zero_spec hpeer hlf hg2
+        have hm_tl := list_any_mentions_block_zero_raw_spec hpeer hlf hg2 hs2
           (repList_heapMono₂ kexprListEnum tmExact_heapMono₂ ev1.heap_extends hes)
           (fun x hx => hnp x (List.mem_cons_of_mem _ hx))
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
@@ -1285,6 +1301,49 @@ theorem list_any_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : 
         · exact hm_hd
         · exact hm_tl x hxtl
       · exact absurd hv1 hne1
+
+theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hpeer : OneTypePeerFacts c b₀ T nl nP nIdx nCtors)
+    (hlf : LoadFacts c)
+    (hgood : Good c cs)
+    (hca : Bytes.RepAddressRef addrTy h a ca)
+    (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
+    (ev : ObsFn W "KernelCheck::caddr_is_peer" [ca, bas] h r h' cs) :
+    (r = .field 1 ∧ c.κ (ixAddr a) = T) ∨ (r = .field 0 ∧ c.κ (ixAddr a) ≠ T) := by
+  exact caddr_is_peer_singleton_raw_spec (c := ScopedCtx.unrestricted c) hpeer
+    (RawRecordFacts.ofUnrestricted hlf) hgood (RawRecordCoverage.unrestricted c cs) hca hbas ev
+
+theorem expr_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
+    {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hpeer : OneTypePeerFacts c b₀ T nl nP nIdx nCtors)
+    (hlf : LoadFacts c)
+    (hgood : Good c cs)
+    (hE : TmExact c.κ 0 Γ h k E pe)
+    (hnp : noProjAt T E = true)
+    (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
+    (ev : ObsFn W "KernelCheck::expr_mentions_block" [pe, bas] h (.field 0) h' cs) :
+    E.mentionsConst T = false := by
+  exact expr_mentions_block_zero_raw_spec (c := ScopedCtx.unrestricted c) hpeer
+    (RawRecordFacts.ofUnrestricted hlf) hgood (RawRecordCoverage.unrestricted c cs)
+    hE hnp hbas ev
+
+theorem list_any_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
+    ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      OneTypePeerFacts c b₀ T nl nP nIdx nCtors →
+      LoadFacts c →
+      Good c cs →
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact c.κ 0 Γ h₀ k X p₀) h Es pes →
+      (∀ e ∈ Es, noProjAt T e = true) →
+      RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas →
+      ObsFn W "KernelCheck::list_any_mentions_block" [pes, bas] h (.field 0) h' cs →
+      ∀ e ∈ Es, e.mentionsConst T = false := by
+  intro Es pes bas h h' cs hpeer hlf hgood hEs hnp hbas ev
+  exact list_any_mentions_block_zero_raw_spec (c := ScopedCtx.unrestricted c) hpeer
+    (RawRecordFacts.ofUnrestricted hlf) hgood (RawRecordCoverage.unrestricted c cs)
+    hEs hnp hbas ev
 
 /-! ## Former checks (`former_is_tele`, `get_result_sort_level`, `nat_pi_binders`,
 `dom_zero_ok`, `ctor_zero_ok`, `ctor_zero_all`, `former_decl_ok`) -/
