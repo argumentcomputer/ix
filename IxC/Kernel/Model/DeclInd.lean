@@ -46,11 +46,11 @@ set_option maxHeartbeats 3200000 in
 /-- **The modeled-inductive block install, P tier.**  The v1 carriers
 are taken from the v1 phases (`indRecsS` at the group), which the
 install runs anyway; the P phases carry the annotated invariants. -/
-theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
+theorem declIndExt (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
     {block : List (ConstantInfo md)} (mp : EnvModelM V μ env)
     (hE : Ix.Kernel.EtaFamiliesClosed env)
     (h : DeclIndRun μ F env block env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   obtain ⟨hsplit, hmain⟩ := h
   -- list bookkeeping about the block's split (v1's, verbatim)
   have hbnAll : ∀ ci ∈ block,
@@ -194,7 +194,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       fun n cvS capsS hnb hf _ =>
         absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
     -- the member fold, both tiers
-    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, -⟩ :=
+    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, hext₁⟩ :=
       indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
         (fun cv caps₂ hmm => by
           obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj
@@ -205,7 +205,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
             fun _ h0 => hpf0 h0⟩)
         hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     -- the recursor group
-    obtain ⟨mp₂, hI₂, hIA₂, -⟩ :=
+    obtain ⟨mp₂, hI₂, hIA₂, hext₂⟩ :=
       indRecs memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F)
         (fun m => judgeSound_runJ hμ m F) mp₁ hI₁ hIA₁
         hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs
@@ -282,14 +282,23 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       obtain ⟨-, rfl⟩ := hidR cvT' capsT' hf
       rfl
     -- the projection fold
-    obtain ⟨mp₃, -, -, -, -⟩ :=
-      projInstall hμ hTblock hbshape _ mp₂ hproj hinvR
+    obtain ⟨mp₃, -, -, -, -, hext₃⟩ :=
+      projInstallExt hμ hTblock hbshape _ mp₂ hproj hinvR
         hinvAR hI₂ hIA₂ hpinsR hCblockR hFieldsR
-    exact ⟨mp₃⟩
+    exact ⟨mp₃, hext₁.trans (hext₂.trans hext₃)⟩
   · -- the generic arm: the modeled record at the kernel's runs
-    obtain ⟨mp₂, -⟩ := declIndJ (fun _ => judgeFrames_runJ F)
+    obtain ⟨mp₂, hext⟩ := declIndJ (fun _ => judgeFrames_runJ F)
       (fun m => judgeSound_runJ hμ m F) mp hE
       ⟨hsplit, envM, indMembersRun_runJ hmem, indRecsRun_runJ hrecs⟩
-    exact ⟨mp₂⟩
+    exact ⟨mp₂, hext⟩
+
+/-- The complete modeled-inductive block preserves the model. -/
+theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} (mp : EnvModelM V μ env)
+    (hE : Ix.Kernel.EtaFamiliesClosed env)
+    (h : DeclIndRun μ F env block env₂) :
+    Nonempty (EnvModelM V μ env₂) := by
+  obtain ⟨mp₂, _⟩ := declIndExt hμ mp hE h
+  exact ⟨mp₂⟩
 
 end Ix.Kernel.Model
