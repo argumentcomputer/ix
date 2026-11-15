@@ -125,9 +125,9 @@ theorem ReferenceTrace.find {fuel : Nat} {env out : Env .anon} {ds : List (Decla
   rw [List.find?_append]
   have missing : new.find? (·.name == name) = none := by
     apply List.find?_eq_none.mpr
-    intro entry present matches
+    intro entry present nameMatches
     have fresh := chain.fresh entry present
-    rw [eq_of_beq matches, found] at fresh
+    rw [eq_of_beq nameMatches, found] at fresh
     cases fresh
   rw [missing]
   exact found
