@@ -152,7 +152,7 @@ theorem projection_addr_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} 
     projection_addr_ctor_bytes c ev hb
   obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c hhash hashPtr _ rfl (good.sub hsub) hbytes
   refine ⟨a, ha, ?_⟩
-  rw [haddr, ProjAddrAux.bytes_mk_toList]
+  rw [haddr, Array.toArray_toList]
   rfl
 
 /-- The exact constructor wrapper is part of the actual hash trace, independently of
