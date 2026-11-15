@@ -117,8 +117,10 @@ private def ruleSafetyFixture (unsafeDependency projection : Bool) :
   let value : Ixon.Expr := if projection then .prj index 0 ty else .ref index #[]
   let rule := { rule with rhs := Ixon.Expr.leanLet false ty value rule.rhs }
   let recursor := { recursor with rules := recursor.rules.set! 0 rule }
-  let c := { c with info := .recr recursor,
-    refs := c.refs.push dependencyAddr, univs := c.univs.push (.succ .zero) }
+  let c := { c with
+    info := .recr recursor
+    refs := c.refs.push dependencyAddr
+    univs := c.univs.push (.succ .zero) }
   let (env, target) := storeSafetyRecord env c
   return (env, target, dependencyAddr)
 
