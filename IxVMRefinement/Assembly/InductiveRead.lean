@@ -100,4 +100,79 @@ theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
     · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
   · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
 
+/-- Appending the same checked twin payloads preserves the full-to-bare declaration split. -/
+theorem finishInductiveRead_full_bare {md : Mode} {cx : Ctx md}
+    {owner : _root_.Address} {ms : Array Ixon.MutConst}
+    {fullInd bareInd full : Read md} {generated : List (Declaration md)}
+    (h : finishInductiveRead cx owner ms fullInd = .ok full)
+    (hdecls : fullInd.decls.toList = generated ++ bareInd.decls.toList)
+    (hcount : fullInd.generated = generated.length) (hzero : bareInd.generated = 0) :
+    ∃ bare, finishInductiveRead cx owner ms bareInd = .ok bare ∧
+      full.decls.toList = generated ++ bare.decls.toList ∧
+      full.generated = generated.length ∧ bare.generated = 0 := by
+  unfold finishInductiveRead at h ⊢
+  dsimp only at h ⊢
+  split at h
+  · rename_i hempty
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst full
+    exact ⟨bareInd, by simp [hempty, pure, Except.pure], hdecls, hcount, hzero⟩
+  · rename_i hnonempty
+    obtain ⟨rTwin, hTwin, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst full
+    refine ⟨{ bareInd with decls := bareInd.decls ++ rTwin.decls }, ?_, ?_, hcount, hzero⟩
+    · simp [hnonempty, hTwin, bind, Except.bind, pure, Except.pure]
+    · simp only [Array.toList_append, hdecls, List.append_assoc]
+
+/-- A successful full record read has a concrete bare read at the same context and state.
+Its generated prefix is removed, and same-record twins remain in both declaration arrays. -/
+theorem readRecord_full_bare {md : Mode} {cx : Ctx md} {st : State md}
+    {owner : _root_.Address} {c : Ixon.Constant} {full : Read md}
+    (h : readRecord cx st owner c = .ok full) :
+    ∃ (generated : List (Declaration md)) (bare : Read md),
+      readRecordBare cx st owner c = .ok bare ∧
+      full.decls.toList = generated ++ bare.decls.toList ∧
+      full.generated = generated.length ∧ bare.generated = 0 ∧
+      (∀ d ∈ generated, d.isGenerated = true) := by
+  have same (hbare : readRecordBare cx st owner c = .ok full) :
+      ∃ (generated : List (Declaration md)) (bare : Read md),
+        readRecordBare cx st owner c = .ok bare ∧
+        full.decls.toList = generated ++ bare.decls.toList ∧
+        full.generated = generated.length ∧ bare.generated = 0 ∧
+        (∀ d ∈ generated, d.isGenerated = true) := by
+    have hzero := readRecordBare_generated_zero hbare
+    exact ⟨[], full, hbare, by simp, hzero, hzero, by simp⟩
+  cases hinfo : c.info with
+  | muts ms =>
+    have hread := h
+    unfold readRecord at hread
+    simp only [hinfo] at hread
+    rcases Ix.Cert.CtxAgree.ite_ok' hread with ⟨hind, hread⟩ | ⟨hind, _⟩
+    · rcases Ix.Cert.CtxAgree.ite_ok' hread with ⟨_, hread⟩ | ⟨hdefs, hread⟩
+      · exact (Ix.Cert.ReaderUnits.fail_bind hread).elim
+      · obtain ⟨fullInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hread
+        obtain ⟨generated, bareInd, hbareInd, hdecls, hcount, hzero, hgenerated⟩ :=
+          readInductive_full_bare hInd
+        obtain ⟨bare, hbare, hdecls', hcount', hzero'⟩ :=
+          finishInductiveRead_full_bare hfinish hdecls hcount hzero
+        refine ⟨generated, bare, ?_, hdecls', hcount', hzero', hgenerated⟩
+        unfold readRecordBare
+        simp only [hinfo]
+        split
+        · rw [hbareInd]
+          exact hbare
+        · rename_i hind'
+          exact (hind' hind).elim
+    · apply same
+      unfold readRecordBare
+      simp only [hinfo]
+      split
+      · rename_i hind'
+        exact (hind hind').elim
+      · exact h
+  | _ =>
+    apply same
+    simpa only [readRecordBare, hinfo] using h
+
 end IxVM.Refinement.Assembly
