@@ -24,6 +24,7 @@ theorem mem_selectEnv {env : Env .anon} {K : Key .anon → Prop}
 
 theorem selectEnv_find {env : Env .anon} {K : Key .anon → Prop}
     {n : Key .anon} (hn : K n) : (selectEnv env K).find? n = env.find? n := by
+  classical
   unfold selectEnv Env.find?
   apply IxVM.Consistency.find?_filter_kept
   intro ci hci
@@ -46,7 +47,7 @@ theorem selectEnv_nodup {env : Env .anon} {K : Key .anon → Prop}
 
 /-- The selected model uses support proved for the constants actually selected. It places no
 support requirement on constants omitted from the final environment. -/
-def selectEnv_model {W : Type u} [SetTheory W] {env : Env .anon} {K : Key .anon → Prop}
+noncomputable def selectEnv_model {W : Type u} [SetTheory W] {env : Env .anon} {K : Key .anon → Prop}
     (M : Model W env) (htables : ∀ T, K (projTableName T))
     (hnat : K natZeroName ∧ K natSuccName)
     (hsupported : ∀ ci ∈ env.consts, K ci.name → SupportedConstant K ci)
