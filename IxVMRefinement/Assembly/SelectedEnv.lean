@@ -180,4 +180,61 @@ noncomputable def selectEnv_model_of_tableBodies
     (fun _ _ _ he hT => projection_body_supported htables
       (fun ci hc hk => (hsupported ci hc hk).2.1) hctor he hT)
 
+/-- Preserving the actual stored projection tables suffices; absent table keys and keys
+holding another kind of constant need not be selected. -/
+theorem selectEnv_findProj_stored {env : Env .anon} {K : Key .anon → Prop}
+    (hnd : (env.consts.map (·.name)).Nodup)
+    (htables : ∀ n tbl, env.find? n = some (.projInfo tbl) → K n)
+    (T : Key .anon) (i : Nat) : (selectEnv env K).findProj? T i = env.findProj? T i := by
+  unfold Env.findProj?
+  cases hsource : env.find? (projTableName T) with
+  | none =>
+    have hnone : (selectEnv env K).find? (projTableName T) = none := by
+      apply List.find?_eq_none.mpr
+      intro ci hci hname
+      exact List.find?_eq_none.mp hsource ci (mem_selectEnv.mp hci).1 hname
+    rw [hnone]
+  | some ci =>
+    by_cases hp : ∃ tbl, ci = .projInfo tbl
+    · obtain ⟨tbl, rfl⟩ := hp
+      rw [selectEnv_find (htables _ tbl hsource), hsource]
+    · have hone : ∀ x, (selectEnv env K).find? (projTableName T) = some x → x = ci := by
+        intro x hx
+        exact IxVM.Consistency.eq_of_name_eq hnd
+          (mem_selectEnv.mp (Semantics.Env.find?_mem hx)).1
+          (Semantics.Env.find?_mem hsource)
+          ((Semantics.Env.find?_name hx).trans (Semantics.Env.find?_name hsource).symm)
+      cases htarget : (selectEnv env K).find? (projTableName T) with
+      | none => cases ci <;> first | rfl | exact absurd ⟨_, rfl⟩ hp
+      | some x => obtain rfl := hone x htarget; rfl
+
+/-- Select a model while retaining exactly the stored projection-table keys. -/
+noncomputable def selectEnv_model_stored_tables {W : Type u} [SetTheory W] {env : Env .anon} {K : Key .anon → Prop}
+    (M : Model W env) (hnd : (env.consts.map (·.name)).Nodup)
+    (htables : ∀ n tbl, env.find? n = some (.projInfo tbl) → K n)
+    (hnat : K natZeroName ∧ K natSuccName)
+    (hsupported : ∀ ci ∈ env.consts, K ci.name → SupportedConstant K ci)
+    (hfalse : K falseName) (heq : K eqName) (hbool : K boolTrueName ∧ K boolFalseName)
+    (hctor : ∀ T i entry, env.findProj? T i = some entry → K T → K entry.ctor)
+    (hbody : ∀ T i entry, env.findProj? T i = some entry → K T → entry.body.Supports K) :
+    Model W (selectEnv env K) := by
+  have hs : ∀ ci ∈ (selectEnv env K).consts, SupportedConstant K ci := by
+    intro ci hci
+    obtain ⟨hmem, hkey⟩ := mem_selectEnv.mp hci
+    exact hsupported ci hmem hkey
+  apply M.restrict_supported
+    (fun _ hk => selectEnv_find hk) (selectEnv_findProj_stored hnd htables) hnat
+    (fun _ hc => (mem_selectEnv.mp hc).1)
+    (fun _ hc => (mem_selectEnv.mp hc).2)
+    (fun ci hc => (hs ci hc).2.1)
+    (fun cv value hint hc => (hs (.defnInfo cv value hint) hc).2.2)
+    (fun cv mI rP rules hc => (hs (.recInfo cv mI rP rules) hc).2.2)
+    hfalse heq hbool
+  · intro T i entry hentry hT
+    rw [selectEnv_findProj_stored hnd htables] at hentry
+    exact hctor T i entry hentry hT
+  · intro T i entry hentry hT
+    rw [selectEnv_findProj_stored hnd htables] at hentry
+    exact hbody T i entry hentry hT
+
 end IxVM.Refinement.Assembly
