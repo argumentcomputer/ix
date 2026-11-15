@@ -143,4 +143,104 @@ theorem installs_readerChunks {env : Env .anon} {ds : List (Declaration .anon)}
     IxVM.Consistency.Installs ds ⟨(readerChunks env ds).reverse.flatten⟩ :=
   installs_of_chunks (readerChunks_spec hcoverage) (readerChunks_nodup henv hds hnonaux)
 
+def readerSelectionKey (env : Env .anon) (ds : List (Declaration .anon)) (k : Key .anon) : Prop :=
+  k ∈ publicReaderKeys ds ∨ ∃ tbl, env.find? k = some (.projInfo tbl)
+
+def readerChunkEnv (env : Env .anon) (ds : List (Declaration .anon)) : Env .anon :=
+  ⟨(readerChunks env ds).reverse.flatten⟩
+
+theorem mem_plainChunks {env : Env .anon} {ds : List (Declaration .anon)}
+    {ci : ConstantInfo .anon} :
+    ci ∈ (ds.map (declarationChunk env)).flatten ↔
+      ci ∈ env.consts ∧ ci.name ∈ publicReaderKeys ds := by
+  constructor
+  · intro hm
+    obtain ⟨chunk, hchunk, hci⟩ := List.mem_flatten.mp hm
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hchunk
+    exact ⟨(mem_declarationChunk.mp hci).1,
+      List.mem_flatMap.mpr ⟨d, hd, (mem_declarationChunk.mp hci).2⟩⟩
+  · rintro ⟨hci, hname⟩
+    obtain ⟨d, hd, hkey⟩ := List.mem_flatMap.mp hname
+    exact List.mem_flatten.mpr ⟨declarationChunk env d, List.mem_map.mpr ⟨d, hd, rfl⟩,
+      mem_declarationChunk.mpr ⟨hci, hkey⟩⟩
+
+theorem mem_readerChunkEnv {env : Env .anon} {ds : List (Declaration .anon)}
+    (hne : ds ≠ []) {ci : ConstantInfo .anon} :
+    ci ∈ (readerChunkEnv env ds).consts ↔
+      ci ∈ env.consts ∧ ((∃ tbl, ci = .projInfo tbl) ∨ ci.name ∈ publicReaderKeys ds) := by
+  have hreverse : ci ∈ (readerChunks env ds).reverse.flatten ↔
+      ci ∈ (readerChunks env ds).flatten := by
+    simp only [List.mem_flatten, List.mem_reverse]
+  change ci ∈ (readerChunks env ds).reverse.flatten ↔ _
+  rw [hreverse, readerChunks_flatten hne, List.mem_append, mem_tableChunk, mem_plainChunks]
+  constructor
+  · rintro (⟨hm, hp⟩ | ⟨hm, hn⟩)
+    · exact ⟨hm, .inl hp⟩
+    · exact ⟨hm, .inr hn⟩
+  · rintro ⟨hm, hp | hn⟩
+    · exact .inl ⟨hm, hp⟩
+    · exact .inr ⟨hm, hn⟩
+
+private theorem reader_find_of_mem {env : Env .anon}
+    (hnd : (env.consts.map (·.name)).Nodup) {ci : ConstantInfo .anon}
+    (hci : ci ∈ env.consts) : env.find? ci.name = some ci := by
+  cases hf : env.find? ci.name with
+  | none => exact (List.find?_eq_none.mp hf ci hci (beq_self_eq_true _)).elim
+  | some ci' =>
+    have heq := IxVM.Consistency.eq_of_name_eq hnd
+      (Semantics.Env.find?_mem hf) hci (Semantics.Env.find?_name hf)
+    exact congrArg some heq
+
+theorem readerSelectionKey_of_mem {env : Env .anon} {ds : List (Declaration .anon)}
+    (hnd : (env.consts.map (·.name)).Nodup) {ci : ConstantInfo .anon}
+    (hci : ci ∈ env.consts) :
+    readerSelectionKey env ds ci.name ↔
+      ci.name ∈ publicReaderKeys ds ∨ ∃ tbl, ci = .projInfo tbl := by
+  constructor
+  · rintro (hname | ⟨tbl, hf⟩)
+    · exact .inl hname
+    · exact .inr ⟨tbl, IxVM.Consistency.eq_of_name_eq hnd hci
+        (Semantics.Env.find?_mem hf) (Semantics.Env.find?_name hf).symm⟩
+  · rintro (hname | ⟨tbl, rfl⟩)
+    · exact .inl hname
+    · exact .inr ⟨tbl, reader_find_of_mem hnd hci⟩
+
+theorem readerChunkEnv_members_select {env : Env .anon} {ds : List (Declaration .anon)}
+    (hnd : (env.consts.map (·.name)).Nodup) (hne : ds ≠ []) (ci : ConstantInfo .anon) :
+    ci ∈ (readerChunkEnv env ds).consts ↔
+      ci ∈ (selectEnv env (readerSelectionKey env ds)).consts := by
+  rw [mem_readerChunkEnv hne, mem_selectEnv]
+  constructor
+  · rintro ⟨hm, hp | hn⟩
+    · exact ⟨hm, (readerSelectionKey_of_mem hnd hm).mpr (.inr hp)⟩
+    · exact ⟨hm, .inl hn⟩
+  · rintro ⟨hm, hk⟩
+    rcases (readerSelectionKey_of_mem hnd hm).mp hk with hn | hp
+    · exact ⟨hm, .inr hn⟩
+    · exact ⟨hm, .inl hp⟩
+
+/-- The actual final stored annotations inherit support from the reader declarations.
+Projection tables have closed sort types and require no additional constant support here. -/
+theorem readerSelection_supported {env : Env .anon} {ds : List (Declaration .anon)}
+    (hnd : (env.consts.map (·.name)).Nodup)
+    (hcoverage : ∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+      ∃ ci ∈ env.consts, IxVM.Consistency.StoredAs ci ci₀)
+    (hreader : ∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+      SupportedConstant (readerSelectionKey env ds) ci₀) :
+    ∀ ci ∈ env.consts, readerSelectionKey env ds ci.name →
+      SupportedConstant (readerSelectionKey env ds) ci := by
+  intro ci hci hkey
+  rcases hkey with hname | ⟨tbl, hf⟩
+  · obtain ⟨d, hd, hname⟩ := List.mem_flatMap.mp hname
+    obtain ⟨ci₀, hci₀, hname⟩ := List.mem_map.mp hname
+    obtain ⟨stored, hstored_mem, hstored⟩ := hcoverage d hd ci₀ hci₀
+    have heq : ci = stored := IxVM.Consistency.eq_of_name_eq hnd hci hstored_mem
+      (hname.symm.trans hstored.name_eq.symm)
+    rw [heq]
+    exact storedAs_supports hstored (hreader d hd ci₀ hci₀)
+  · have heq : ci = .projInfo tbl := IxVM.Consistency.eq_of_name_eq hnd hci
+      (Semantics.Env.find?_mem hf) (Semantics.Env.find?_name hf).symm
+    subst ci
+    exact ⟨.inr ⟨tbl, hf⟩, trivial, trivial⟩
+
 end IxVM.Refinement.Assembly
