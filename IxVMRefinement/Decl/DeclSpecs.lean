@@ -42,7 +42,11 @@ set_option linter.unusedSimpArgs false
 /-- `RolesSpec` holds unconditionally whenever `c.t.wf = true`. -/
 theorem rolesSpec : RolesSpec :=
   fun c hwf f args h r h' calls ev =>
-    IxVM.Refinement.RoleVal.roles_fn_spec c hwf f args h r h' calls ev
+    IxVM.Refinement.RoleVal.roles_fn_spec (ScopedCtx.unrestricted c) hwf f args h r h' calls ev
+
+/-- Role lookup at an actual selected-call context. -/
+theorem scopedRolesSpec : ScopedRolesSpec :=
+  IxVM.Refinement.RoleVal.roles_fn_spec
 
 /-- `CalleesSpec` holds unconditionally from `Core.all_steps` and `Registry.induction`. -/
 theorem calleesSpec : CalleesSpec :=

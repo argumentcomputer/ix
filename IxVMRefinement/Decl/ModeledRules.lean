@@ -148,9 +148,10 @@ theorem eq_addr_key_spec {c : Ctx} {rc eqa v_role v_raddr : SourceValue F} {a_eq
   rw [hv_role] at ev_raddr
   have hnum : (8 : F) = roleNum .eq := rfl
   rw [hnum] at ev_raddr
-  have hra_fn : Specs.Roles.role_addr c [rc, .field (roleNum .eq)] h₁ v_raddr h₂ cs_raddr :=
+  have hra_fn : Specs.Roles.role_addr (ScopedCtx.unrestricted c)
+      [rc, .field (roleNum .eq)] h₁ v_raddr h₂ cs_raddr :=
     hroles c hwf .role_addr _ _ _ _ _ ev_raddr
-  obtain ⟨a_tbl, ha_tbl, haddr_of, _⟩ := hra_fn rc .eq rfl hg_raddr hrc
+  obtain ⟨a_tbl, ha_tbl, haddr_of, _⟩ := hra_fn rc .eq rfl (CoreGood.unrestricted hg_raddr) hrc
   obtain ⟨heq_f, hh₃⟩ := Lib.address_eq_spec ev_eq ha_eq ha_tbl
   have ha_same : a_eq = a_tbl := by
     by_cases h : a_eq = a_tbl
