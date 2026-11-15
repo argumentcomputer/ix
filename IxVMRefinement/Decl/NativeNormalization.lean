@@ -42,16 +42,17 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
         exact ⟨wScope, wBounded, wLeaves, .redL red .refl⟩
       · cases w with
         | forallE dom body bm =>
-          dsimp only at rest wScope wBounded wLeaves red
+          dsimp only at rest wScope wLeaves red
+          simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at wBounded
           split at rest
           · cases rest
-          · obtain ⟨bodyOut, recursive, resultEq⟩ := exceptBind_ok rest
+          · obtain ⟨bodyOut, recRun, resultEq⟩ := exceptBind_ok rest
             have resultEq := Except.ok.inj resultEq
             subst out
             have openScope := wScope.1.instantiate1 0 wScope.2
             have openBounded : (body.instantiate1 (.fvar d dom)).looseBVarsBounded 0 = true :=
               looseBVarsBounded_instantiate1 _ 0 wBounded.2
-            obtain ⟨outScope, outBounded, outLeaves, outEq⟩ := ih recursive openScope openBounded
+            obtain ⟨outScope, outBounded, outLeaves, outEq⟩ := ih recRun openScope openBounded
             have leafCondition : Expr.LeafCond d dom (body.instantiate1 (.fvar d dom)) := by
               intro leaf present sameIndex
               rcases Expr.fvarLeaves_instantiate1 body 0 present with inBody | inVar
