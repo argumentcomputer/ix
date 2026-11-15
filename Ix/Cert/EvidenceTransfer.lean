@@ -624,7 +624,14 @@ theorem readRecord_generated {cx : Ctx md} {st : State md} {owner : Address} {c 
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
-      · obtain ⟨_, _, hl⟩ := readInductive_lower h
+      · obtain ⟨rInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+        obtain ⟨gens, d, hd, hg, _⟩ := readInductive_lowering hInd
+        have hlenList : rInd.generated ≤ rInd.decls.toList.length := by
+          rw [hd, hg]
+          simp
+        have hlen : rInd.generated ≤ rInd.decls.size := by simpa using hlenList
+        rw [finishInductiveRead_take_generated hfinish hlen]
+        obtain ⟨_, _, hl⟩ := readInductive_lower hInd
         exact Ix.Cert.SourceNames.lowerInductive_generated hl
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h

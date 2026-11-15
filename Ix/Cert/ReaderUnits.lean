@@ -445,6 +445,18 @@ theorem member_names {cx : Ctx md} {owner : Address} {i : Nat} {k : CName md} {d
   subst hk'
   exact ⟨_, .inl rfl, hk⟩
 
+/-- Same-record twins append declarations whose names remain keys of that record. -/
+theorem finishInductiveRead_lowering {cx : Ctx md} {owner : Address}
+    {ms : Array Ixon.MutConst} {rInd r : Read md}
+    (hInd : Lowering cx owner rInd)
+    (h : finishInductiveRead cx owner ms rInd = .ok r) : Lowering cx owner r := by
+  rcases finishInductiveRead_spec h with rfl | ⟨rTwin, hTwin, rfl⟩
+  · exact hInd
+  · apply LoweringBy.append hInd
+    intro d hd k hk
+    obtain ⟨entry, hentry, hkey⟩ := (lowerTwin_spec hTwin).2 d hd k hk
+    exact ⟨entry.1, .inl (recordTwins_member_block (Array.mem_toList_iff.mp hentry)), hkey⟩
+
 /-- **Every record's lowering has its shape**, whatever the record. -/
 theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c : Ixon.Constant}
     {r : Read md} (h : readRecord cx st owner c = .ok r) : Lowering cx owner r := by
@@ -505,8 +517,9 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
-      · obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering h
-        exact LoweringBy.single hd hg hk
+      · obtain ⟨rInd, hInd, hfinish⟩ := except_bind_ok.mp h
+        obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering hInd
+        exact finishInductiveRead_lowering (LoweringBy.single hd hg hk) hfinish
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h
