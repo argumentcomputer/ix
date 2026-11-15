@@ -88,4 +88,40 @@ theorem usedClosureOrderAt_readSeeds {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   · exact .inl hseed
   · exact .inr (.inr hevidence)
 
+/-- Reading the constructed smaller order gives the public `ReadIn` relation directly.
+Its declarations and evidence are those of the new reading, with no equality to the larger
+role-aware stream's output required. -/
+theorem readIn_of_prunedStream
+    {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {S : _root_.Address → Prop} {order : List _root_.Address}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st' : Ix.Kernel.Reader.State .anon}
+    {decls : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
+    (horder : UsedClosureOrderAt t E (fun a => S a ∨ IxVM.Refinement.BindingSeeds t a) order)
+    (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
+    (hauth_rec : ∀ a lc, E.consts.get? a = some lc → _root_.Address.blake3Pure lc.rawBytes = a)
+    (hauth_blob : ∀ a bytes, E.blobs.get? a = some bytes → _root_.Address.blake3Pure bytes = a)
+    (hdec : ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+      ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
+    (hreads :
+      let selected := pruneClosureOrder t E
+        (fun a => S a ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) order
+      StreamReadBare
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E selected) (Ix.Cert.blobsOf E selected) (Ix.Cert.hintsOf E))
+        pre.state (Ix.Cert.Stream.decodedOf E selected) st' decls)
+    (hkeeps : Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true) :
+    let selected := pruneClosureOrder t E
+      (fun a => S a ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) order
+    ReadIn b E S
+      (Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E selected) (Ix.Cert.blobsOf E selected) (Ix.Cert.hintsOf E))
+        st' t)
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) := by
+  apply readIn_of_streamReadBare hadm (usedClosureOrderAt_readSeeds horder) hpre
+    hauth_rec hauth_blob _ hreads hkeeps
+  intro a ha lc hget
+  exact hdec a (mem_pruneClosureOrder.mp ha).1 lc hget
+
 end IxVM.Refinement.Assembly
