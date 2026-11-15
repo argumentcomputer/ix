@@ -26,7 +26,7 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- **One step per function of the `Whnf` family.** -/
-theorem whnf_family_step (c : Ctx) (hc : CoreFacts c) :
+theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.Whnf.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.whnf f).name args h r h' cs → IH c cs →
       (Fn.whnf f).spec c args h r h' cs

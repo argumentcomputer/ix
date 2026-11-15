@@ -54,7 +54,7 @@ private theorem repKLevel_store_zero (h : Heap F) :
   RepKLevel.zero (by simp)
 
 /-- A `Proj` cell of a represented address and term, stored at the end of the heap. -/
-private theorem tm_store_proj {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
+private theorem tm_store_proj {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
     {a : Bytes.Address} {i : F} {E : KExpr} {ap ep : SourceValue F} (ha : RepAddr h a ap)
     (hE : c.tmk d Γ k h E ep) :
     c.tmk d Γ k (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]])
@@ -64,7 +64,7 @@ private theorem tm_store_proj {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap
   exact Tm.proj (by simp) (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hE)
 
 /-- `Lists::lookup` on a list of top-level terms: the term at the index; no allocation. -/
-private theorem tml_lookup {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
+private theorem tml_lookup {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
     {l r : SourceValue F} {i : F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>» [l, .field i] h r h' cs)
     (hl : c.tml d Γ h As l) :
@@ -76,7 +76,7 @@ private theorem tml_lookup {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List K
 /-! ## Lists, counts, products -/
 
 /-- `Lists::length` on a list of top-level terms. -/
-private theorem tml_length {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
+private theorem tml_length {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
     {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KExprNode>» [l] h r h' cs)
     (hl : c.tml d Γ h As l) : r = .field (As.length : F) ∧ h' = h :=
@@ -97,7 +97,7 @@ private theorem lvl_length {ls : List KLevel} {l r : SourceValue F} {h h' : Heap
     (by rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, e]; exact hl)
 
 /-- `Lists::take` on a list of top-level terms. -/
-private theorem tml_take {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
+private theorem tml_take {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
     {l r : SourceValue F} {n : F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::take<&KernelTypes::KExprNode>» [l, .field n] h r h' cs)
     (hl : c.tml d Γ h As l) :
@@ -427,7 +427,7 @@ set_option linter.unusedVariables false
 
 /-- `KernelDefEq::is_prop_type`: the io-inferred type (`k_infer_only`) head-normalizes (`whnf`)
 to a sort whose level `level_equal` equates with `Zero`, so it is `0` at every assignment. -/
-theorem is_prop_type_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem is_prop_type_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_prop_type" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_prop_type c args h r h' calls := by
@@ -455,7 +455,7 @@ theorem is_prop_type_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
 /-! ## Telescopes -/
 
 /-- `KernelDefEq::leading_foralls`: one `∀` node per unit of the counter. -/
-theorem leading_foralls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem leading_foralls_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::leading_foralls" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.leading_foralls c args h r h' calls := by
@@ -484,7 +484,7 @@ theorem leading_foralls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 /-- `KernelDefEq::compare_struct_fields`: from `i` up to `nfields`, each projection of `t`
 (the stored `Proj` cell) against the argument of `s_args` at `nparams + j` (`Lists::lookup`).
 The counter stays below `nfields`, so `i + 1` reads as the next natural. -/
-theorem compare_struct_fields_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem compare_struct_fields_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compare_struct_fields" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compare_struct_fields c args h r h' calls := by
@@ -541,7 +541,7 @@ theorem compare_struct_fields_step (c : Ctx) {args : List (SourceValue F)} {h h'
 /-- `KernelDefEq::de_rescue_tier`: a decided answer `1` is the `DefEq` of the tier that decided
 it: proof irrelevance, unit-like types, structure η (`try_eta_struct(bw, aw)` by `DefEq.symm`),
 or the `Nat` offsets' pair. -/
-theorem de_rescue_tier_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem de_rescue_tier_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::de_rescue_tier" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.de_rescue_tier c args h r h' calls := by
@@ -587,9 +587,9 @@ theorem de_rescue_tier_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 /-- `KernelDefEq::compute_iprj_addr`: the inductive-projection record built from the index's
 bytes (`UInt64::from_field`) and the block address, with empty tables, serialized
 (`put_constant`) and hashed (`bytes_to_addr`): its address is `iprjAddr`. The run hashed those
-bytes, so a record of `c.E` there has them as its bytes (`load_escape`, under `Good`), and
+bytes, so a record of `c.E` there has them as its bytes (`load_escape`, under `CoreGood`), and
 decodes to that record (`LoadFacts.canonical`). -/
-theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem compute_iprj_addr_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compute_iprj_addr" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compute_iprj_addr c args h r h' calls := by
@@ -669,7 +669,7 @@ theorem compute_iprj_addr_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
 /-- The counts `family_params` compares: the argument and level lists have the given lengths
 (`Lists::length`, then `Fields::is_zero` of the differences; the lists have fewer than `2^39`
 elements, so the field equations are equations of naturals). No allocation. -/
-private theorem fp_counts {c : Ctx} {calls : List (Call F)} (good : Good c calls) {d : Nat}
+private theorem fp_counts {c : ScopedCtx} {calls : List (Call F)} (good : CoreGood c calls) {d : Nat}
     {Γ : Nat → KExpr} {h m33 m12 m69 m2 : Heap F}
     {xs lvls x31 x67 v24 v60 x10 y11 : SourceValue F} {n p : F} {As : List KExpr}
     {us : List KLevel} {cs42 cs21 cs78 cs57 : List (Call F)}
@@ -710,7 +710,7 @@ closed type (`expr_inst_levels`, at depth `0`, which reads at every depth) and i
 certificate: all slots `never` (`slots_never`, `Certs.skip`), or `n` syntactic `∀`s
 (`leading_foralls`) and the unlicensed walk (`certs_all`, read as `Certs` by
 `CertsR.toCerts`). -/
-theorem family_params_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem family_params_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::family_params" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.family_params c args h r h' calls := by
@@ -774,7 +774,7 @@ loaded constant is an inductive (`get_ci`) with no index, at a block with at mos
 field) and not recursive (`struct_is_rec`); its parameters are certified (`family_params`). The
 capabilities are the install's (`LoadFacts.unitLike`); the family's telescope at the
 positional levels is its type at its own parameters, which permute the positions (`ValRep`). -/
-theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem is_unit_like_type_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_unit_like_type" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_unit_like_type c args h r h' calls := by
@@ -799,7 +799,7 @@ theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
     obtain ⟨rfl, rfl⟩ := he
     obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld51
     -- the loaded inductive
-    obtain ⟨ci, hfind, v, hv, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev85 x_addr a rfl
+    obtain ⟨ci, hfind, v, hv, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev85 x_addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld79] at hv
     injection hv with hv
@@ -834,7 +834,7 @@ theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
     subst hnC'
     have hb152 : RepAddr m152 b x_block := Bytes.repAddressRef_heapMono₂ addrTy e174 hb
     obtain ⟨ciC, hfindC, vC, hvC, hrepC⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev225
-      x_block i 0 b rfl (good.sub fun x hx => by simp [hx]) hb152
+      x_block i 0 b rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hb152
     rw [ld219] at hvC
     injection hvC with hvC
     subst hvC
@@ -857,7 +857,7 @@ theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
     -- the capabilities
     rw [Nat.cast_zero, Nat.cast_one] at ld79
     obtain ⟨hul, hup, hbasis⟩ := hc.loads.unitLike x_addr p77 m2 m70 cs83 a _ x_ind_ty w110 x_block
-      (nP : F) i b cvT caps cvC nPc ev85 (good.sub fun x hx => by simp [hx]) ha ld79 hb hfind
+      (nP : F) i b cvT caps cvC nPc ev85 (good.sub fun x hx => by simp [hx]).raw ha ld79 hb hfind
       hfew hfindC
     rw [val_natCast_small (m := nP) (by omega)] at hup hbasis
     have hargs' : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr a)) us) As).getAppArgs = As := by
@@ -877,7 +877,7 @@ theorem is_unit_like_type_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
 /-- `KernelDefEq::try_unit_like`: `DefEq.unitLikeTy`. `a`'s io-inferred type head-normalizes to a
 unit-like family at its parameters (`is_unit_like_type`), and the two io-inferred types compare
 (`k_is_def_eq`). -/
-theorem try_unit_like_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_unit_like_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_unit_like" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_unit_like c args h r h' calls := by
@@ -923,7 +923,7 @@ for, with at least one field and a never-zero sort (`type_sort_never`), not recu
 field compares with its projection of `t` (`compare_struct_fields`). The capabilities, the
 projection table and the constructor application's type are the install's (`LoadFacts.eta`,
 `EnvFacts.etaTowers`, `EnvFacts.etaType`). -/
-theorem try_eta_struct_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_eta_struct" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_eta_struct c args h r h' calls := by
@@ -977,7 +977,7 @@ theorem try_eta_struct_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVal
     obtain ⟨ac, us, rfl, hac, hus⟩ := hH.const_of_load ld51
     -- the loaded constructor
     obtain ⟨ciC, hfindC, vC, hvC, hrepC⟩ := ih.get (.callees .get_ci) (by lt_calls) ev85
-      x_ctor_addr ac rfl (good.sub fun x hx => by simp [hx]) hac
+      x_ctor_addr ac rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hac
     rw [ld79] at hvC
     injection hvC with hvC
     subst hvC
@@ -999,7 +999,7 @@ theorem try_eta_struct_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVal
     -- the loaded inductive
     have hb165 : RepAddr m165 b x_ind_block_addr := Bytes.repAddressRef_heapMono₂ addrTy e176 hb
     obtain ⟨ciT, hfindT, vT, hvT, hrepT⟩ := ih.get (.callees .get_ci_iprj) (by lt_calls) ev215
-      x_ind_block_addr i b rfl (good.sub fun x hx => by simp [hx]) hb165
+      x_ind_block_addr i b rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hb165
     rw [ld209] at hvT
     injection hvT with hvT
     subst hvT
@@ -1086,19 +1086,18 @@ theorem try_eta_struct_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVal
       rfl rfl rfl (by simp) d Γ (types_mono E712 htypes) T Ss (Tm.mono E712 hT)
       (tml_mono E70_712 hSs70) hr
     -- the install facts
-    obtain ⟨heta, hctor, hetaF, -, -⟩ := hc.loads.eta ac b sa i (ZMod.val j) cvc cvT caps cnP cnF
+    obtain ⟨⟨heta, hctor, hetaF, -, -⟩, hetaUse⟩ := hc.loads.eta ac b sa i (ZMod.val j) cvc cvT caps cnP cnF
       us l
       x_ind_block_addr p207 _ _ _ _ _ _ m165 m200 cs213 hfindC hcname hnf0 ev215
-      (good.sub fun x hx => by simp [hx]) hb165 ld209 hfindT
-      ⟨x_ind_block_addr, m310, m368, cs376, ev378, good.sub fun x hx => by simp [hx],
+      (good.sub fun x hx => by simp [hx]).raw hb165 ld209 hfindT
+      ⟨x_ind_block_addr, m310, m368, cs376, ev378, (good.sub fun x hx => by simp [hx]).raw,
         Bytes.repAddressRef_heapMono₂ addrTy (e215.trans E310) hb165⟩
       hpi hnz
-      ⟨v468, v498, m469, m499, cs510, ev512, hne528, good.sub fun x hx => by simp [hx], hsa⟩
+      ⟨v468, v498, m469, m499, cs510, ev512, hne528, (good.sub fun x hx => by simp [hx]).raw, hsa⟩
       hsaddr
-    have htower := hc.env.etaTowers _ cvT caps hfindT heta
+    have htower := hetaUse.towers
     rw [hetaF] at htower
-    have hred := hc.env.etaType _ _ cvT cvc caps cnP cnF hfindT heta hctor hfindC d us Ss TS hSlen
-      hinfS
+    have hred := hetaUse.type d us Ss TS hSlen hinfS
     -- the rule
     have hargs' : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr ac)) us) Ss).getAppArgs = Ss := by
       rw [getAppArgs_mkAppN]; rfl

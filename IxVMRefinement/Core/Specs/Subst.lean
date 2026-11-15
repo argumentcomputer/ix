@@ -122,7 +122,7 @@ def NoIdxF (h : Heap F) (lo hi : Nat) (p : SourceValue F) : Prop :=
 /-- **`b` bounds the indices of the heap term `p`** read at local depth `k` as `E`: when
 `b ≤ k`, the image has no loose `bvar` at or above `b`, no opened variable, and the heap term
 reads as the same `E` at every opening depth and context and every local depth `≥ b`. -/
-def LbrLe (c : Ctx) (h : Heap F) (p : SourceValue F) (k : Nat) (E : KExpr) (b : Nat) : Prop :=
+def LbrLe (c : ScopedCtx) (h : Heap F) (p : SourceValue F) (k : Nat) (E : KExpr) (b : Nat) : Prop :=
   b ≤ k → E.looseBVarsBounded b = true ∧ E.hasFvar = false ∧
     ∀ d' Γ' k', b ≤ k' → c.tmk d' Γ' k' h E p
 
@@ -134,7 +134,7 @@ natural `b` (`r = b`, `b ≤ 2^63`, no wrap: the term seam's bound): every index
 Read by the rebases (`k_infer`, `k_is_def_eq`: `0` runs under an empty context), by `ctx_trim`,
 by the closedness assertions of inference, and by the early exits of this module's walkers. -/
 def expr_lbr : SpecFn := fun c args h r h' calls =>
-  ∀ e, args = [e] → Good c calls → h' = h ∧
+  ∀ e, args = [e] → CoreGood c calls → h' = h ∧
     ∀ d Γ k E, c.tmk d Γ k h E e →
       ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧ IdxLt h b e ∧
         (∀ b', b' < b → ¬ IdxLt h b' e) ∧ LbrLe c h e k E b
@@ -143,7 +143,7 @@ def expr_lbr : SpecFn := fun c args h r h' calls =>
 components (the body under one more binder): the least `b` bounding the type's and the value's
 indices, and the body's by `b + 1`. -/
 def expr_lbr_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body, args = [ty, val, body] → Good c calls → h' = h ∧
+  ∀ ty val body, args = [ty, val, body] → CoreGood c calls → h' = h ∧
     ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val → c.tmk d Γ (k + 1) h B body →
       ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧
         IdxLt h b ty ∧ IdxLt h b val ∧ IdxLt h (b + 1) body ∧
@@ -152,17 +152,17 @@ def expr_lbr_let : SpecFn := fun c args h r h' calls =>
 /-- `KernelSubst::lbr_max(a, b)`: the maximum of two counts below `2^32` (the comparison fails
 otherwise). -/
 def lbr_max : SpecFn := fun c args h r h' calls =>
-  ∀ x y : F, args = [.field x, .field y] → Good c calls → h' = h ∧
+  ∀ x y : F, args = [.field x, .field y] → CoreGood c calls → h' = h ∧
     ZMod.val x < 4294967296 ∧ ZMod.val y < 4294967296 ∧
     r = .field (if ZMod.val x < ZMod.val y then y else x)
 
 /-- `KernelSubst::lbr_dec(n)`: the predecessor, truncated at `0`. -/
 def lbr_dec : SpecFn := fun c args h r h' calls =>
-  ∀ x : F, args = [.field x] → Good c calls → h' = h ∧ r = .field ((ZMod.val x - 1 : Nat) : F)
+  ∀ x : F, args = [.field x] → CoreGood c calls → h' = h ∧ r = .field ((ZMod.val x - 1 : Nat) : F)
 
 /-- `KernelSubst::lbr_min(a, b)`: the minimum of two counts below `2^32`. -/
 def lbr_min : SpecFn := fun c args h r h' calls =>
-  ∀ x y : F, args = [.field x, .field y] → Good c calls → h' = h ∧
+  ∀ x y : F, args = [.field x, .field y] → CoreGood c calls → h' = h ∧
     ZMod.val x < 4294967296 ∧ ZMod.val y < 4294967296 ∧
     r = .field (if ZMod.val x < ZMod.val y then x else y)
 
@@ -174,21 +174,21 @@ field's size under the term's binders); `1` claims nothing. Reads only. `expr_in
 instead of substituting on `0`; the declaration checks assert `0` of terms that must not mention
 the first indices. -/
 def has_bvar_in_range : SpecFn := fun c args h r h' calls =>
-  ∀ e (lo hi : F), args = [e, .field lo, .field hi] → Good c calls → h' = h ∧
+  ∀ e (lo hi : F), args = [e, .field lo, .field hi] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → NoIdxF h (ZMod.val lo) (ZMod.val hi) e)
 
 /-- `KernelSubst::has_bvar_in_range_bvar(i, lo, hi)`: `0` claims `i ∉ [lo, hi)` (all three
 below `2^32`: the comparisons fail otherwise). -/
 def has_bvar_in_range_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ i lo hi : F, args = [.field i, .field lo, .field hi] → Good c calls → h' = h ∧
+  ∀ i lo hi : F, args = [.field i, .field lo, .field hi] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ZMod.val i < ZMod.val lo ∨ ZMod.val hi ≤ ZMod.val i)
 
 /-- `KernelSubst::has_bvar_in_range_binder(ty, body, lo, hi)`: `has_bvar_in_range` of a binder
 node from its components (the body one binder deeper, at `[lo + 1, hi + 1)`). -/
 def has_bvar_in_range_binder : SpecFn := fun c args h r h' calls =>
-  ∀ ty body (lo hi : F), args = [ty, body, .field lo, .field hi] → Good c calls → h' = h ∧
+  ∀ ty body (lo hi : F), args = [ty, body, .field lo, .field hi] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T B, c.tmk d Γ k h T ty → c.tmk d Γ (k + 1) h B body →
       NoIdxF h (ZMod.val lo) (ZMod.val hi) ty ∧
@@ -196,7 +196,7 @@ def has_bvar_in_range_binder : SpecFn := fun c args h r h' calls =>
 
 /-- `KernelSubst::has_bvar_in_range_let(ty, val, body, lo, hi)`: from the let's components. -/
 def has_bvar_in_range_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (lo hi : F), args = [ty, val, body, .field lo, .field hi] → Good c calls →
+  ∀ ty val body (lo hi : F), args = [ty, val, body, .field lo, .field hi] → CoreGood c calls →
     h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val →
       c.tmk d Γ (k + 1) h B body →
@@ -208,13 +208,13 @@ def has_bvar_in_range_let : SpecFn := fun c args h r h' calls =>
 nesting: an index is below the field's size); `1` claims nothing. Reads only. `expr_inst1`
 lowers instead of substituting on `0`. -/
 def expr_has_bvar_at : SpecFn := fun c args h r h' calls =>
-  ∀ e (j : F), args = [e, .field j] → Good c calls → h' = h ∧
+  ∀ e (j : F), args = [e, .field j] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → NoIdx h (ZMod.val j) (ZMod.val j + 1) e)
 
 /-- `KernelSubst::expr_has_bvar_at_binder(ty, body, depth)`: from a binder's components. -/
 def expr_has_bvar_at_binder : SpecFn := fun c args h r h' calls =>
-  ∀ ty body (j : F), args = [ty, body, .field j] → Good c calls → h' = h ∧
+  ∀ ty body (j : F), args = [ty, body, .field j] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T B, c.tmk d Γ k h T ty → c.tmk d Γ (k + 1) h B body →
       NoIdx h (ZMod.val j) (ZMod.val j + 1) ty ∧
@@ -222,7 +222,7 @@ def expr_has_bvar_at_binder : SpecFn := fun c args h r h' calls =>
 
 /-- `KernelSubst::expr_has_bvar_at_let(ty, val, body, depth)`: from a let's components. -/
 def expr_has_bvar_at_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (j : F), args = [ty, val, body, .field j] → Good c calls → h' = h ∧
+  ∀ ty val body (j : F), args = [ty, val, body, .field j] → CoreGood c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val →
       c.tmk d Γ (k + 1) h B body →
@@ -237,21 +237,21 @@ the heap term is in `[cutoff, cutoff + g)` (`NoIdx`), so the `g` innermost varia
 cutoff do not occur (what `k_infer_rebase` and `k_def_eq_rebase` lower by). `g < 2^32`. Reads
 only. -/
 def expr_glb : SpecFn := fun c args h r h' calls =>
-  ∀ e (cut : F), args = [e, .field cut] → Good c calls → ZMod.val cut < 4294967296 → h' = h ∧
+  ∀ e (cut : F), args = [e, .field cut] → CoreGood c calls → ZMod.val cut < 4294967296 → h' = h ∧
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
 
 /-- `KernelSubst::expr_glb_walk(e, cutoff)`: as `expr_glb`, without the early exit, at a cutoff
 whose successor is below `2^32` (`expr_glb`'s comparison establishes it). -/
 def expr_glb_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (cut : F), args = [e, .field cut] → Good c calls → ZMod.val cut + 1 < 4294967296 →
+  ∀ e (cut : F), args = [e, .field cut] → CoreGood c calls → ZMod.val cut + 1 < 4294967296 →
     h' = h ∧ ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
 
 /-- `KernelSubst::expr_glb_binder(ty, body, cutoff)`: from a binder's components (the body at
 `cutoff + 1`). -/
 def expr_glb_binder : SpecFn := fun c args h r h' calls =>
-  ∀ ty body (cut : F), args = [ty, body, .field cut] → Good c calls →
+  ∀ ty body (cut : F), args = [ty, body, .field cut] → CoreGood c calls →
     ZMod.val cut + 1 < 4294967296 → h' = h ∧
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ T B, c.tmk d Γ (ZMod.val cut) h T ty → c.tmk d Γ (ZMod.val cut + 1) h B body →
@@ -260,7 +260,7 @@ def expr_glb_binder : SpecFn := fun c args h r h' calls =>
 
 /-- `KernelSubst::expr_glb_let(ty, val, body, cutoff)`: from a let's components. -/
 def expr_glb_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → Good c calls →
+  ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → CoreGood c calls →
     ZMod.val cut + 1 < 4294967296 → h' = h ∧
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ T V B, c.tmk d Γ (ZMod.val cut) h T ty → c.tmk d Γ (ZMod.val cut) h V val →
@@ -277,7 +277,7 @@ under `s` more binders**, split as `s₁` local and `s₂` opened ones (module d
 below the seam's bound; the callers lift by a context index plus one, a depth below `2^32`, or
 `1`. -/
 def expr_lift : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Good c calls →
+  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
     ZMod.val s < 4611686018427387904 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e →
       c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
@@ -285,14 +285,14 @@ def expr_lift : SpecFn := fun c args h r h' calls =>
 /-- `KernelSubst::expr_lift_walk(e, shift, cutoff)`: as `expr_lift`, without the early exits, at
 a cutoff below `2^32` (`expr_lift`'s comparison establishes it). -/
 def expr_lift_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Good c calls →
+  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
     ZMod.val s < 4611686018427387904 → ZMod.val cut < 4294967296 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e →
       c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
 
 /-- `KernelSubst::expr_lift_bvar(i, shift, cutoff)`: the index `i`, lifted. -/
 def expr_lift_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ i s cut : F, args = [.field i, .field s, .field cut] → Good c calls →
+  ∀ i s cut : F, args = [.field i, .field s, .field cut] → CoreGood c calls →
     ZMod.val s < 4611686018427387904 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, BVarIm d Γ (ZMod.val cut) (ZMod.val i) E →
       c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
@@ -300,7 +300,7 @@ def expr_lift_bvar : SpecFn := fun c args h r h' calls =>
 /-- `KernelSubst::expr_lift_let(ty, val, body, shift, cutoff)`: the lifted let, whose image is
 the ζ-reduct of its components' (`instShift`), at a cutoff below `2^32`. -/
 def expr_lift_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (s cut : F), args = [ty, val, body, .field s, .field cut] → Good c calls →
+  ∀ ty val body (s cut : F), args = [ty, val, body, .field s, .field cut] → CoreGood c calls →
     ZMod.val s < 4611686018427387904 → ZMod.val cut < 4294967296 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ T V B, c.tmk d Γ (ZMod.val cut) h T ty →
       c.tmk d Γ (ZMod.val cut) h V val → c.tmk d Γ (ZMod.val cut + 1) h B body →
@@ -312,7 +312,7 @@ heap term is in the removed window `[cutoff - s₁, cutoff + s₂)` (`NoIdx`: `e
 `expr_inst_many` remove local binders, after `expr_has_bvar_at` / `has_bvar_in_range` answered
 `0`; the rebases remove opened variables, after `expr_glb`). -/
 def expr_lower : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Good c calls →
+  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
       c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
       c.tmk (d - s₂) Γ (ZMod.val cut - s₁) h' E r
@@ -321,7 +321,7 @@ def expr_lower : SpecFn := fun c args h r h' calls =>
 at a cutoff below `2^32` that does not bound the term's indices (`expr_lower` walks only when
 the cutoff is below `expr_lbr(e)`; the walk lowers a variable node without comparing it). -/
 def expr_lower_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Good c calls →
+  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
     ZMod.val cut < 4294967296 → ¬ IdxLt h (ZMod.val cut) e →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
       c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
@@ -331,7 +331,7 @@ def expr_lower_walk : SpecFn := fun c args h r h' calls =>
 components, under the same hypothesis on each (the body one binder deeper), at a cutoff below
 `2^32`. -/
 def expr_lower_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (s cut : F), args = [ty, val, body, .field s, .field cut] → Good c calls →
+  ∀ ty val body (s cut : F), args = [ty, val, body, .field s, .field cut] → CoreGood c calls →
     ZMod.val cut < 4294967296 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ T V B, s₂ ≤ d →
       c.tmk d Γ (ZMod.val cut) h T ty → c.tmk d Γ (ZMod.val cut) h V val →
@@ -348,27 +348,27 @@ def expr_lower_let : SpecFn := fun c args h r h' calls =>
 (L3's `Terms` is the case `depth = 0`). No hypothesis on indices: the function compares its
 depth first (so it is below `2^32`), and lifts the argument by it. -/
 def expr_inst1 : SpecFn := fun c args h r h' calls =>
-  ∀ e arg (j : F), args = [e, arg, .field j] → Good c calls →
+  ∀ e arg (j : F), args = [e, arg, .field j] → CoreGood c calls →
     ∀ d Γ B A, c.tmk d Γ (ZMod.val j + 1) h B e → c.tm d Γ h A arg →
       c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
 
 /-- `KernelSubst::expr_inst1_walk(e, arg, depth)`: as `expr_inst1`, without the early exits, at a
 depth below `2^32`. -/
 def expr_inst1_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e arg (j : F), args = [e, arg, .field j] → Good c calls → ZMod.val j < 4294967296 →
+  ∀ e arg (j : F), args = [e, arg, .field j] → CoreGood c calls → ZMod.val j < 4294967296 →
     ∀ d Γ B A, c.tmk d Γ (ZMod.val j + 1) h B e → c.tm d Γ h A arg →
       c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
 
 /-- `KernelSubst::expr_inst1_bvar(i, arg, depth)`: the index `i`, instantiated. -/
 def expr_inst1_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ (i : F) arg (j : F), args = [.field i, arg, .field j] → Good c calls →
+  ∀ (i : F) arg (j : F), args = [.field i, arg, .field j] → CoreGood c calls →
     ∀ d Γ B A, BVarIm d Γ (ZMod.val j + 1) (ZMod.val i) B → c.tm d Γ h A arg →
       c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
 
 /-- `KernelSubst::expr_inst1_let(ty, val, body, arg, depth)`: the instantiated let, whose image
 is the ζ-reduct of its components' (`instShift`), instantiated; at a depth below `2^32`. -/
 def expr_inst1_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body arg (j : F), args = [ty, val, body, arg, .field j] → Good c calls →
+  ∀ ty val body arg (j : F), args = [ty, val, body, arg, .field j] → CoreGood c calls →
     ZMod.val j < 4294967296 →
     ∀ d Γ T V B A, c.tmk d Γ (ZMod.val j + 1) h T ty → c.tmk d Γ (ZMod.val j + 1) h V val →
       c.tmk d Γ (ZMod.val j + 2) h B body → c.tm d Γ h A arg →
@@ -378,14 +378,14 @@ def expr_inst1_let : SpecFn := fun c args h r h' calls =>
 `depth`** (`substs[0]` replaces the innermost index `depth`): `e` read at local depth
 `depth + |substs|`, the top-level arguments, the result at local depth `depth`. -/
 def expr_inst_many : SpecFn := fun c args h r h' calls =>
-  ∀ e substs (j : F), args = [e, substs, .field j] → Good c calls →
+  ∀ e substs (j : F), args = [e, substs, .field j] → CoreGood c calls →
     ∀ d Γ B As, c.tmk d Γ (ZMod.val j + As.length) h B e → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
 
 /-- `KernelSubst::expr_inst_many_bvar(i, substs, depth)`: the index `i`, instantiated, at a depth
 below `2^32` (the function subtracts the depth from the index before it compares). -/
 def expr_inst_many_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ (i : F) substs (j : F), args = [.field i, substs, .field j] → Good c calls →
+  ∀ (i : F) substs (j : F), args = [.field i, substs, .field j] → CoreGood c calls →
     ZMod.val j < 4294967296 →
     ∀ d Γ B As, BVarIm d Γ (ZMod.val j + As.length) (ZMod.val i) B → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
@@ -393,14 +393,14 @@ def expr_inst_many_bvar : SpecFn := fun c args h r h' calls =>
 /-- `KernelSubst::expr_inst_many_walk(e, substs, depth)`: as `expr_inst_many`, without the early
 exits, at a depth below `2^32`. -/
 def expr_inst_many_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e substs (j : F), args = [e, substs, .field j] → Good c calls → ZMod.val j < 4294967296 →
+  ∀ e substs (j : F), args = [e, substs, .field j] → CoreGood c calls → ZMod.val j < 4294967296 →
     ∀ d Γ B As, c.tmk d Γ (ZMod.val j + As.length) h B e → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
 
 /-- `KernelSubst::expr_inst_many_let(ty, val, body, substs, depth)`: the instantiated let, at a
 depth below `2^32`. -/
 def expr_inst_many_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body substs (j : F), args = [ty, val, body, substs, .field j] → Good c calls →
+  ∀ ty val body substs (j : F), args = [ty, val, body, substs, .field j] → CoreGood c calls →
     ZMod.val j < 4294967296 →
     ∀ d Γ T V B As, c.tmk d Γ (ZMod.val j + As.length) h T ty →
       c.tmk d Γ (ZMod.val j + As.length) h V val →
@@ -413,25 +413,25 @@ def expr_inst_many_let : SpecFn := fun c args h r h' calls =>
 same depth** (the innermost entries of `types`, or none). What it keeps is chosen for the
 inference to succeed; nothing else is claimed. -/
 def ctx_trim : SpecFn := fun c args h r h' calls =>
-  ∀ types base, args = [types, base] → Good c calls →
+  ∀ types base, args = [types, base] → CoreGood c calls →
     ∀ Γ d, c.types Γ h d types → c.types Γ h' d r
 
 /-- `KernelSubst::ctx_reachable(types, base)`: a count (a field element; its value is read only
 by `Lists::take`, which fails beyond the list). -/
 def ctx_reachable : SpecFn := fun c args h r h' calls =>
-  ∀ types base, args = [types, base] → Good c calls → ∃ x : F, r = .field x
+  ∀ types base, args = [types, base] → CoreGood c calls → ∃ x : F, r = .field x
 
 /-- `KernelSubst::ctx_seek_cut(types, need)`: a count. -/
 def ctx_seek_cut : SpecFn := fun c args h r h' calls =>
-  ∀ types need, args = [types, need] → Good c calls → ∃ x : F, r = .field x
+  ∀ types need, args = [types, need] → CoreGood c calls → ∃ x : F, r = .field x
 
 /-- `KernelSubst::ctx_next_cut(types)`: a count. -/
 def ctx_next_cut : SpecFn := fun c args h r h' calls =>
-  ∀ types, args = [types] → Good c calls → ∃ x : F, r = .field x
+  ∀ types, args = [types] → CoreGood c calls → ∃ x : F, r = .field x
 
 /-- `KernelSubst::ctx_close_cut(rest, l)`: a count. -/
 def ctx_close_cut : SpecFn := fun c args h r h' calls =>
-  ∀ rest l, args = [rest, l] → Good c calls → ∃ x : F, r = .field x
+  ∀ rest l, args = [rest, l] → CoreGood c calls → ∃ x : F, r = .field x
 
 /-! ## Spines and level instantiation -/
 
@@ -439,7 +439,7 @@ def ctx_close_cut : SpecFn := fun c args h r h' calls =>
 of local binders, `E = mkAppN H As` (its callers include walks under binders:
 `KernelCheck::rec_to_parent_addr`, `KernelModeled::rec_major_pins`). -/
 def collect_spine : SpecFn := fun c args h r h' calls =>
-  ∀ e, args = [e] → Good c calls → ∀ d Γ k E, c.tmk d Γ k h E e →
+  ∀ e, args = [e] → CoreGood c calls → ∀ d Γ k E, c.tmk d Γ k h E e →
     ∃ hd sp H As, r = .tuple [hd, sp] ∧ c.tmk d Γ k h' H hd ∧ c.tmlk d Γ k h' As sp ∧
       E = Ix.Kernel.Expr.mkAppN H As
 
@@ -451,14 +451,14 @@ instantiates a stored constant's closed type, value or rule). The levels of the 
 related up to semantic equality, as the term seam relates every level; the binder data are
 exactly the kernel's (zero-ness commutes with substitution). -/
 def expr_inst_levels : SpecFn := fun c args h r h' calls =>
-  ∀ e params, args = [e, params] → Good c calls →
+  ∀ e params, args = [e, params] → CoreGood c calls →
     ∀ Γ k E us, c.tmk 0 Γ k h E e → LvListRep h us params →
       c.tmk 0 Γ k h' (E.instantiateLevelParams (List.range us.length) us) r
 
 /-- `KernelLevels::expr_inst_levels_walk(e, params)`: as `expr_inst_levels`, at a nonempty
 list. -/
 def expr_inst_levels_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e params, args = [e, params] → Good c calls →
+  ∀ e params, args = [e, params] → CoreGood c calls →
     ∀ Γ k E us, c.tmk 0 Γ k h E e → LvListRep h us params →
       c.tmk 0 Γ k h' (E.instantiateLevelParams (List.range us.length) us) r
 

@@ -40,7 +40,7 @@ private theorem strLitToConstructor_app (s : String) :
 /-- **The new opened variable as IxVM stores it**: a `BVar 0` cell stored at the end of the heap
 reads, one depth further in under the ghost context extended at `d`, as the opened variable
 `d`. -/
-private theorem tm_store_bvar0 {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {T : KExpr} (h : Heap F) :
+private theorem tm_store_bvar0 {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {T : KExpr} (h : Heap F) :
     c.tm (d + 1) (Ghost.extend Γ d T) (h ++ [.construct kexprEnum "BVar" [.field 0]])
       (.fvar d T) (.ptr (.enum kexprEnum) h.length) := by
   have hv : Tm c.κ (d + 1) (Ghost.extend Γ d T) (h ++ [.construct kexprEnum "BVar" [.field 0]]) 0
@@ -172,31 +172,31 @@ private theorem split_cases {ps pa : Prop} {E B : KExpr} {k : Nat}
   | add ha _ => exact .inr (.inr ha)
 
 /-- `natLitSupported` from a role in force whose block holds `Nat`, `Nat.zero` and `Nat.succ`. -/
-private theorem natLit_of_natBlock {c : Ctx} (hc : CoreFacts c) {r : Ix.Kernel.Role}
+private theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreFacts c) {r : Ix.Kernel.Role}
     (hr : c.inForce r) (h0 : Ix.Kernel.Role.nat ∈ r.block)
     (h1 : Ix.Kernel.Role.natZero ∈ r.block) (h2 : Ix.Kernel.Role.natSucc ∈ r.block) :
     Ix.Kernel.natLitSupported c.env = true :=
-  hc.env.natLit (Ctx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h0))
-    (Ctx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h1))
-    (Ctx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h2))
+  hc.env.natLit (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h0))
+    (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h1))
+    (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h2))
 
-private theorem natLit_of_natAdd {c : Ctx} (hc : CoreFacts c) (hr : c.inForce .natAdd) :
+private theorem natLit_of_natAdd {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr : c.inForce .natAdd) :
     Ix.Kernel.natLitSupported c.env = true :=
   natLit_of_natBlock hc
-    (Ctx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inr (by decide)))
+    (ScopedCtx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inr (by decide)))
     (by decide) (by decide) (by decide)
 
-private theorem natLit_of_natSucc {c : Ctx} (hc : CoreFacts c) (hr : c.inForce .natSucc) :
+private theorem natLit_of_natSucc {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr : c.inForce .natSucc) :
     Ix.Kernel.natLitSupported c.env = true :=
   natLit_of_natBlock hc
-    (Ctx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inl (by decide)))
+    (ScopedCtx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inl (by decide)))
     (by decide) (by decide) (by decide)
 
 /-- **Two splits at one offset with definitionally equal bases are definitionally equal**: two
 literals at one offset are one term; otherwise a step's role is in force, which gives the
 guards, and both sides reduce to successor towers over their bases (`DefEq.redBoth`), which
 compare by congruence. -/
-private theorem defEq_of_offsets {c : Ctx} (hc : CoreFacts c) {d : Nat} {A B BA BB : KExpr}
+private theorem defEq_of_offsets {c : ScopedCtx} (hc : ScopedCoreFacts c) {d : Nat} {A B BA BB : KExpr}
     {k : Nat} (ha : Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) A BA k)
     (hb : Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) B BB k)
     (hab : DefEq c.env d BA BB) : DefEq c.env d A B := by
@@ -226,7 +226,7 @@ private theorem repLimbsC_store_nil (h : Heap F) :
       (.ptr (.enum limbListEnum) h.length) :=
   ⟨[], .nil (by simp), rfl, by simp⟩
 
-private theorem nat_offset_tag0 {c : Ctx} {h : Heap F} {e : SourceValue F} (m : Heap F) :
+private theorem nat_offset_tag0 {c : ScopedCtx} {h : Heap F} {e : SourceValue F} (m : Heap F) :
     (∀ x y, (Value.tuple [.field 0, e, .ptr (.enum limbListEnum) m.length] : SourceValue F) =
         .tuple [.field 0, x, y] →
       x = e ∧ RepLimbs (m ++ [.construct limbListEnum "Nil" []]) 0 y) ∧
@@ -246,7 +246,7 @@ private theorem nat_offset_tag0 {c : Ctx} {h : Heap F} {e : SourceValue F} (m : 
     injection hl with htag
     exact absurd htag.symm hne
 
-private theorem nat_offset_tag1 {c : Ctx} {h h' : Heap F} {e xb xo : SourceValue F}
+private theorem nat_offset_tag1 {c : ScopedCtx} {h h' : Heap F} {e xb xo : SourceValue F}
     (h1 : ∀ d Γ E, c.tm d Γ h E e →
       ∃ B k, Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) E B k ∧
         c.tm d Γ h' B xb ∧ RepLimbs h' k xo) :
@@ -283,7 +283,7 @@ set_option linter.unusedVariables false
 
 /-- `KernelDefEq::try_string_lit_one`: a string literal `t`, expanded to its constructor form and
 δ-reduced once, compared with `s` (`Red.strLit`, the δ step, `DefEq.redL`). -/
-theorem try_string_lit_one_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_string_lit_one_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_string_lit_one" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_string_lit_one c args h r h' calls := by
@@ -321,7 +321,7 @@ theorem try_string_lit_one_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 
 /-- `KernelDefEq::try_string_lit_pair`: `try_string_lit_one` both ways (the second by
 `DefEq.symm`). -/
-theorem try_string_lit_pair_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_string_lit_pair_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_string_lit_pair" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_string_lit_pair c args h r h' calls := by
@@ -344,7 +344,7 @@ theorem try_string_lit_pair_step (c : Ctx) {args : List (SourceValue F)} {h h' :
 of the same binder datum (`pw_eq`) whose domain compares with the `λ`'s; the `λ`'s body, opened
 under the left domain, compares with `b` applied to the opened variable (the stored
 `App(lift(b, 1, 0), BVar 0)` under the context list with the left domain pushed). -/
-theorem try_eta_expand_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_eta_expand_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_eta_expand" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_eta_expand c args h r h' calls := by
@@ -417,7 +417,7 @@ theorem try_eta_expand_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelDefEq::try_eta_swap`: exactly one side a `λ`, η-expanded against the other
 (`try_eta_expand`; `DefEq.symm` when the `λ` is on the right). -/
-theorem try_eta_swap_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_eta_swap_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_eta_swap" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_eta_swap c args h r h' calls := by
@@ -444,7 +444,7 @@ theorem try_eta_swap_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
 /-- `KernelDefEq::is_nat_zero`: a literal whose limbs are zero (`klimbs_is_zero`), or a
 constant at an address the table binds to `Nat.zero`, in force (`role_is`), at no levels
 (`lvls_empty`); the key of that address is the role's (`keyOf_of_addressOf`). -/
-theorem is_nat_zero_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem is_nat_zero_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_nat_zero" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_nat_zero c args h r h' calls := by
@@ -490,7 +490,7 @@ theorem is_nat_zero_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
 `klimbs_succ`), and a `Nat.add` application with a `Nat` literal right-hand side peels that
 literal (`role_is`, `klimbs_add`). Every `0`-tagged path returns the input and the empty limb
 list. -/
-theorem nat_offset_of_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::nat_offset_of" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.nat_offset_of c args h r h' calls := by
@@ -628,7 +628,7 @@ theorem nat_offset_of_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValu
 /-- `KernelDefEq::try_def_eq_nat`: both sides zero readings (`DefEq.refl`, `DefEq.natZero`,
 `DefEq.symm`), or both split at one offset (`nat_offset_of`, `klimbs_eq`) with definitionally
 equal bases, carried back through successor towers (`defEq_of_offsets`). -/
-theorem try_def_eq_nat_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem try_def_eq_nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_def_eq_nat" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_def_eq_nat c args h r h' calls := by

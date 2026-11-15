@@ -62,7 +62,7 @@ theorem typesRep_congr_ghost {κ : _root_.Address → KKey} {Γ Γ' : Nat → KE
 /-- **Pushing the left domain**: the context list with a represented domain pushed (the `Cons`
 cell IxVM stores at the end of the heap) is a context list one depth further in, under the
 ghost context giving the new opened variable that domain, which stays scoped. -/
-theorem types_store_cons {c : Ctx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
+theorem types_store_cons {c : ScopedCtx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
     {types ta : SourceValue F} {TA : KExpr} (ht : c.types Γ h d types) (hTA : c.tm d Γ h TA ta) :
     c.types (Ghost.extend Γ d TA) (h ++ [.construct kexprListEnum "Cons" [ta, types]]) (d + 1)
       (.ptr (.enum kexprListEnum) h.length) := by
@@ -76,18 +76,18 @@ theorem types_store_cons {c : Ctx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
 
 /-- **A body read under the opened variable**: a term under one local binder at depth `d` reads,
 one depth further in under the extended ghost context, as its instantiation at `.fvar d T`. -/
-theorem tmk_open {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {T B : KExpr}
+theorem tmk_open {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {T B : KExpr}
     {p : SourceValue F} (hB : c.tmk d Γ 1 h B p) :
     c.tm (d + 1) (Ghost.extend Γ d T) h (B.instantiate1 (.fvar d T)) p :=
   Tm.open_body (Ghost.extend_at Γ d T) (Ghost.extend_below Γ d T) hB
 
 /-- A term at depth `d` reads the same under the ghost context extended at `d`. -/
-theorem tm_extend {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat} {T E : KExpr}
+theorem tm_extend {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat} {T E : KExpr}
     {p : SourceValue F} (hE : c.tmk d Γ k h E p) : c.tmk d (Ghost.extend Γ d T) k h E p :=
   hE.congr_ghost (Ghost.extend_below Γ d T)
 
 /-- The context list at depth `d` reads the same under the ghost context extended at `d`. -/
-theorem types_extend {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {T : KExpr}
+theorem types_extend {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {T : KExpr}
     {types : SourceValue F} (ht : c.types Γ h d types) (hT : T.wscopedB d = true) :
     TypesRep c.κ (Ghost.extend Γ d T) h d types ∧ GhostScoped (Ghost.extend Γ d T) d :=
   ⟨typesRep_congr_ghost ht.1 (Ghost.extend_below Γ d T),

@@ -16,7 +16,7 @@ import IxC.Kernel.Tier.Ind
 * the modeled route's gates (`KernelModeled::block_is_modeled`, `block_is_multi`, `proj_ctor`,
   `fire_ok`, `fire_compare`, `defeq_list_ok`).
 
-A load's result is related to `c.E` under `Good` (no hashed collision with `c.E`). -/
+A load's result is related to `c.E` under `CoreGood` (no hashed collision with `c.E`). -/
 
 namespace IxVM.Refinement.Core.Specs.Callees
 
@@ -39,7 +39,7 @@ abbrev isIndc : Ixon.MutConst → Bool := IxVM.Refinement.Core.isIndc
 
 /-- **The record at `a` in `c.E` is no block of two or more inductives** (`Core.FewInductives`,
 which the load facts also read). -/
-abbrev FewInductives (c : Ctx) (a : _root_.Address) : Prop := IxVM.Refinement.Core.FewInductives c a
+abbrev FewInductives (c : ScopedCtx) (a : _root_.Address) : Prop := IxVM.Refinement.Core.FewInductives c a
 
 /-- The projection record of member `i` (of the given kind) of the block `b`. -/
 def memberProjInfo (b : _root_.Address) (i : Nat) : Ixon.MutConst → Ixon.ConstantInfo
@@ -80,7 +80,7 @@ def ProjConstRep (h : Heap F) (info : Ixon.ConstantInfo) (v : SourceValue F) : P
 first exit: `block_is_modeled(rec_family_block(r)) = 0`): after the recursor's parameters, the
 first motive's type has a binder domain (IxVM reads its last one: `last_binder_dom`) headed by member
 `i` of a block `b` that is no block of two or more inductives. -/
-def FamilyFew (c : Ctx) (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
+def FamilyFew (c : ScopedCtx) (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
   ∃ (np k : Nat) (mdom dom : KExpr) (b : _root_.Address) (i : Nat) (us : List KLevel),
     piDomAt np cv.type = some mdom ∧ piDomAt k mdom = some dom ∧
     dom.getAppFn = .const (c.κ (iprjAddr b i)) us ∧ FewInductives c b
@@ -90,7 +90,7 @@ comparison, against the kernel's nested-rule instantiations `Tier.nestedPins` an
 `recFireComparands`' `.nested` arm): the major's constructor levels are the pinned levels at the
 use's levels, and its leading arguments are definitionally equal to the pins at the use's levels
 and the recursor's parameters. -/
-def FireCompared (c : Ctx) (d : Nat) (cv : Ix.Kernel.ConstantVal .anon) (mI rP : Nat)
+def FireCompared (c : ScopedCtx) (d : Nat) (cv : Ix.Kernel.ConstantVal .anon) (mI rP : Nat)
     (usK : List KLevel) (As : List KExpr) (M : KExpr) : Prop :=
   ∃ (lvls : List KLevel) (pins : List KExpr) (cj : KKey) (usj : List KLevel),
     Ix.Kernel.Tier.nestedPins cv.type mI rP pins.length = some (lvls, pins) ∧
@@ -104,13 +104,15 @@ def FireCompared (c : Ctx) (d : Nat) (cv : Ix.Kernel.ConstantVal .anon) (mI rP :
 
 /-- `Ingress::get_ci(addr)`: the constant at the address's key (`LoadFacts.getCI`). -/
 def get_ci : SpecFn := fun c args h r h' calls =>
-  ∀ ap (a : Bytes.Address), args = [ap] → Good c calls → RepAddr h a ap →
+  ∀ ap (a : Bytes.Address), args = [ap] →
+    c.allowedTop "Ingress::get_ci" [ap] h → CoreGood c calls → RepAddr h a ap →
     ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' r ci
 
 /-- `Ingress::get_ci_cprj(block, i, j)`: the constant at the key of the constructor projection
 record `(i, j, block)` (`LoadFacts.getCprj`). -/
 def get_ci_cprj : SpecFn := fun c args h r h' calls =>
-  ∀ bp (i j : F) (b : Bytes.Address), args = [bp, .field i, .field j] → Good c calls →
+  ∀ bp (i j : F) (b : Bytes.Address), args = [bp, .field i, .field j] →
+    c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → CoreGood c calls →
     RepAddr h b bp →
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci ∧
         CIPtrRep c.κ h' r ci
@@ -118,14 +120,15 @@ def get_ci_cprj : SpecFn := fun c args h r h' calls =>
 /-- `Ingress::get_ci_iprj(block, i)`: the constant at the key of the inductive projection record
 `(i, block)` (`LoadFacts.getIprj`). -/
 def get_ci_iprj : SpecFn := fun c args h r h' calls =>
-  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] → Good c calls → RepAddr h b bp →
+  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
+    c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h → CoreGood c calls → RepAddr h b bp →
     ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' r ci
 
 /-- `Ingress::load_verified_constant(addr)`: the derivation hashed bytes whose BLAKE3 address is
 the address (whether or not `c.E` holds a record there: the loader verifies the hint against the
 address), and the result is the record of `c.E` at the address, decoded, shallowly. -/
 def load_verified_constant : SpecFn := fun c args h r h' calls =>
-  ∀ ap (a : Bytes.Address), args = [ap] → Good c calls → RepAddr h a ap →
+  ∀ ap (a : Bytes.Address), args = [ap] → CoreGood c calls → RepAddr h a ap →
     (∃ bytes : List UInt8, Hashed calls ⟨bytes.toArray⟩ ∧
       Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr a) ∧
     ∀ cst, Ix.Cert.recordAt c.E (ixAddr a) = some cst → ConstShapeRep h' cst r
@@ -133,7 +136,7 @@ def load_verified_constant : SpecFn := fun c args h r h' calls =>
 /-- `Ingress::build_recur_addrs(members, block)`: the projection-record addresses of the block's
 members, in order. -/
 def build_recur_addrs : SpecFn := fun c args h r h' calls =>
-  ∀ lp bp (ms : List Ixon.MutConst) (b : Bytes.Address), args = [lp, bp] → Good c calls →
+  ∀ lp bp (ms : List Ixon.MutConst) (b : Bytes.Address), args = [lp, bp] → CoreGood c calls →
     MembersRep h ms lp → RepAddr h b bp →
       ∃ as : List Bytes.Address, RepList addrListEnum RepAddr h' as r ∧
         as.map ixAddr = ms.mapIdx fun i m => projAddr (memberProjInfo (ixAddr b) i m)
@@ -144,7 +147,7 @@ def build_recur_addrs : SpecFn := fun c args h r h' calls =>
 the address of the constant heading its major premise's type (the binder after the
 `np + nm + nmi + ni` leading ones). -/
 def rec_to_parent_addr : SpecFn := fun c args h r h' calls =>
-  ∀ ty (p m mi i : F), args = [ty, .field p, .field m, .field mi, .field i] → Good c calls →
+  ∀ ty (p m mi i : F), args = [ty, .field p, .field m, .field mi, .field i] → CoreGood c calls →
     ∀ T, c.tmc h T ty →
       ∃ (a : Bytes.Address) (dom : KExpr) (us : List KLevel), RepAddr h' a r ∧
         piDomAt (ZMod.val (p + m + mi + i)) T = some dom ∧
@@ -153,7 +156,7 @@ def rec_to_parent_addr : SpecFn := fun c args h r h' calls =>
 /-- `KernelCheck::projection_addr_ctor(i, j, block)`: the address of the constructor projection
 record `(i, j, block)`. -/
 def projection_addr_ctor : SpecFn := fun c args h r h' calls =>
-  ∀ (i j : F) bp (b : Bytes.Address), args = [.field i, .field j, bp] → Good c calls →
+  ∀ (i j : F) bp (b : Bytes.Address), args = [.field i, .field j, bp] → CoreGood c calls →
     RepAddr h b bp →
       ∃ a : Bytes.Address, RepAddr h' a r ∧
         ixAddr a = cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)
@@ -168,7 +171,7 @@ def put_constant : SpecFn := fun c args h r h' calls =>
 
 /-- `Blake3::bytes_to_addr(bytes)`: the BLAKE3 address of the bytes (`Address.blake3Pure`). -/
 def bytes_to_addr : SpecFn := fun c args h r h' calls =>
-  ∀ bp (bytes : List UInt8), args = [bp] → Good c calls → RepBytes h bytes bp →
+  ∀ bp (bytes : List UInt8), args = [bp] → CoreGood c calls → RepBytes h bytes bp →
     ∃ a : Bytes.Address, RepAddr h' a r ∧ ixAddr a = Address.blake3Pure ⟨bytes.toArray⟩
 
 /-! ## The modeled route's gates -/
@@ -177,7 +180,7 @@ def bytes_to_addr : SpecFn := fun c args h r h' calls =>
 count), and for a record of `c.E` at the block address it is exact: `1` exactly when the record is
 a block of two or more inductives (`FewInductives` at `0`). -/
 def block_is_multi : SpecFn := fun c args h r h' calls =>
-  ∀ bp (b : Bytes.Address), args = [bp] → Good c calls → RepAddr h b bp →
+  ∀ bp (b : Bytes.Address), args = [bp] → CoreGood c calls → RepAddr h b bp →
     (r = .field 0 ∨ r = .field 1) ∧
       ∀ cst, Ix.Cert.recordAt c.E (ixAddr b) = some cst →
         (r = .field 1 ↔ ∃ ms, cst.info = .muts ms ∧ 2 ≤ (ms.toList.filter isIndc).length)
@@ -188,7 +191,7 @@ no block). So an answer `0` gives `FewInductives`. At a block of exactly one ind
 is the circuit's scan of its constructors for a nested occurrence, which is not described here
 (nothing is claimed for either answer there). -/
 def block_is_modeled : SpecFn := fun c args h r h' calls =>
-  ∀ bp (b : Bytes.Address), args = [bp] → Good c calls → RepAddr h b bp →
+  ∀ bp (b : Bytes.Address), args = [bp] → CoreGood c calls → RepAddr h b bp →
     ∀ cst, Ix.Cert.recordAt c.E (ixAddr b) = some cst →
       ((∃ ms, cst.info = .muts ms ∧ 2 ≤ (ms.toList.filter isIndc).length) → r = .field 1) ∧
       ((∀ ms, cst.info = .muts ms → (ms.toList.filter isIndc).length = 0) → r = .field 0)
@@ -197,7 +200,7 @@ def block_is_modeled : SpecFn := fun c args h r h' calls =>
 has at most one inductive, and the result is the constant at the key of the constructor
 projection record `(i, 0, block)`. -/
 def proj_ctor : SpecFn := fun c args h r h' calls =>
-  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] → Good c calls → RepAddr h b bp →
+  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] → CoreGood c calls → RepAddr h b bp →
     FewInductives c (ixAddr b) ∧
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
         CIPtrRep c.κ h' r ci
@@ -206,7 +209,7 @@ def proj_ctor : SpecFn := fun c args h r h' calls =>
 `1`) means the two lists are pairwise definitionally equal (`DefEqList`). Nothing is claimed
 for `0`. -/
 def defeq_list_ok : SpecFn := fun c args h r h' calls =>
-  ∀ rc xs ys types, args = [rc, xs, ys, types] → Good c calls → c.rc h rc →
+  ∀ rc xs ys types, args = [rc, xs, ys, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ As Bs, c.tml d Γ h As xs → c.tml d Γ h Bs ys →
       r ≠ .field 0 → Ix.Kernel.Rules.DefEqList c.env d As Bs
 
@@ -215,7 +218,7 @@ def defeq_list_ok : SpecFn := fun c args h r h' calls =>
 (`FamilyFew`), or the major's comparands are the rule's pinned ones (`FireCompared`). Nothing
 is claimed for `0`. -/
 def fire_compare : SpecFn := fun c args h r h' calls =>
-  ∀ rc head us spine major types, args = [rc, head, us, spine, major, types] → Good c calls →
+  ∀ rc head us spine major types, args = [rc, head, us, spine, major, types] → CoreGood c calls →
     c.rc h rc → ∀ ap lp, loadValue h head = .ok (.construct kexprEnum "Const" [ap, lp]) →
     ∀ (a : Bytes.Address) cv mI rP rls, RepAddr h a ap →
       c.env.find? (c.κ (ixAddr a)) = some (.recInfo cv mI rP rls) →
@@ -229,7 +232,7 @@ def fire_compare : SpecFn := fun c args h r h' calls =>
 Nothing is claimed for `0`. -/
 def fire_ok : SpecFn := fun c args h r h' calls =>
   ∀ rc nmot head us spine major types, args = [rc, nmot, head, us, spine, major, types] →
-    Good c calls → c.rc h rc → ∀ ap lp, loadValue h head = .ok (.construct kexprEnum "Const" [ap, lp]) →
+    CoreGood c calls → c.rc h rc → ∀ ap lp, loadValue h head = .ok (.construct kexprEnum "Const" [ap, lp]) →
     ∀ (a : Bytes.Address) cv mI rP rls, RepAddr h a ap →
       c.env.find? (c.κ (ixAddr a)) = some (.recInfo cv mI rP rls) →
     ∀ usK, LvListRep h usK us → usK.length = cv.levelParams.length →

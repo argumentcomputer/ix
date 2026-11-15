@@ -214,7 +214,7 @@ end RolesAux
 
 /-! ## Step lemmas for `KernelRoleSpec` -/
 
-theorem role_nat_step (c : Ctx) {args h r h' calls}
+theorem role_nat_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat" args h r h' calls) :
     Specs.Roles.role_nat c args h r h' calls := by
   intro hargs; subst hargs
@@ -224,7 +224,7 @@ theorem role_nat_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_nat_zero_step (c : Ctx) {args h r h' calls}
+theorem role_nat_zero_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_zero" args h r h' calls) :
     Specs.Roles.role_nat_zero c args h r h' calls := by
   intro hargs; subst hargs
@@ -234,7 +234,7 @@ theorem role_nat_zero_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_nat_succ_step (c : Ctx) {args h r h' calls}
+theorem role_nat_succ_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_succ" args h r h' calls) :
     Specs.Roles.role_nat_succ c args h r h' calls := by
   intro hargs; subst hargs
@@ -244,7 +244,7 @@ theorem role_nat_succ_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_nat_add_step (c : Ctx) {args h r h' calls}
+theorem role_nat_add_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_nat_add" args h r h' calls) :
     Specs.Roles.role_nat_add c args h r h' calls := by
   intro hargs; subst hargs
@@ -254,7 +254,7 @@ theorem role_nat_add_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_bool_true_step (c : Ctx) {args h r h' calls}
+theorem role_bool_true_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_bool_true" args h r h' calls) :
     Specs.Roles.role_bool_true c args h r h' calls := by
   intro hargs; subst hargs
@@ -264,7 +264,7 @@ theorem role_bool_true_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_bool_false_step (c : Ctx) {args h r h' calls}
+theorem role_bool_false_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_bool_false" args h r h' calls) :
     Specs.Roles.role_bool_false c args h r h' calls := by
   intro hargs; subst hargs
@@ -274,7 +274,7 @@ theorem role_bool_false_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_char_step (c : Ctx) {args h r h' calls}
+theorem role_char_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_char" args h r h' calls) :
     Specs.Roles.role_char c args h r h' calls := by
   intro hargs; subst hargs
@@ -284,7 +284,7 @@ theorem role_char_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_char_of_nat_step (c : Ctx) {args h r h' calls}
+theorem role_char_of_nat_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_char_of_nat" args h r h' calls) :
     Specs.Roles.role_char_of_nat c args h r h' calls := by
   intro hargs; subst hargs
@@ -294,7 +294,7 @@ theorem role_char_of_nat_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_list_nil_step (c : Ctx) {args h r h' calls}
+theorem role_list_nil_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_list_nil" args h r h' calls) :
     Specs.Roles.role_list_nil c args h r h' calls := by
   intro hargs; subst hargs
@@ -304,7 +304,7 @@ theorem role_list_nil_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_list_cons_step (c : Ctx) {args h r h' calls}
+theorem role_list_cons_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_list_cons" args h r h' calls) :
     Specs.Roles.role_list_cons c args h r h' calls := by
   intro hargs; subst hargs
@@ -314,7 +314,7 @@ theorem role_list_cons_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_string_step (c : Ctx) {args h r h' calls}
+theorem role_string_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_string" args h r h' calls) :
     Specs.Roles.role_string c args h r h' calls := by
   intro hargs; subst hargs
@@ -324,7 +324,7 @@ theorem role_string_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_string_of_list_step (c : Ctx) {args h r h' calls}
+theorem role_string_of_list_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_string_of_list" args h r h' calls) :
     Specs.Roles.role_string_of_list c args h r h' calls := by
   intro hargs; subst hargs
@@ -334,7 +334,7 @@ theorem role_string_of_list_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_quot_mk_step (c : Ctx) {args h r h' calls}
+theorem role_quot_mk_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_mk" args h r h' calls) :
     Specs.Roles.role_quot_mk c args h r h' calls := by
   intro hargs; subst hargs
@@ -344,7 +344,7 @@ theorem role_quot_mk_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_quot_lift_step (c : Ctx) {args h r h' calls}
+theorem role_quot_lift_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_lift" args h r h' calls) :
     Specs.Roles.role_quot_lift c args h r h' calls := by
   intro hargs; subst hargs
@@ -354,7 +354,7 @@ theorem role_quot_lift_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_quot_ind_step (c : Ctx) {args h r h' calls}
+theorem role_quot_ind_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_quot_ind" args h r h' calls) :
     Specs.Roles.role_quot_ind c args h r h' calls := by
   intro hargs; subst hargs
@@ -364,7 +364,7 @@ theorem role_quot_ind_step (c : Ctx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
-theorem role_prim_family_step (c : Ctx) {args h r h' calls}
+theorem role_prim_family_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_prim_family" args h r h' calls) :
     Specs.Roles.role_prim_family c args h r h' calls := by
   intro ro hargs; subst hargs

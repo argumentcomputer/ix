@@ -302,7 +302,7 @@ macro "utf8_lt_calls" : tactic =>
 
 /-- `KernelNatPrim::utf8_cont`: a continuation byte (`128 ≤ b < 192`) and its six payload bits;
 no allocation. -/
-theorem utf8_cont_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem utf8_cont_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::utf8_cont" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.utf8_cont c args h r h' calls := by
@@ -326,7 +326,7 @@ theorem utf8_cont_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelNatPrim::utf8_decode_one`: the bytes start with the encoding of the character whose
 code point the result is (one to four bytes, by the lead byte's range), and the rest is returned;
 no allocation. -/
-theorem utf8_decode_one_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem utf8_decode_one_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::utf8_decode_one" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.utf8_decode_one c args h r h' calls := by
@@ -509,7 +509,7 @@ theorem utf8_decode_one_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 
 /-- `KernelNatPrim::utf8_validate`: the bytes are a concatenation of characters' encodings, so
 they decode to a string (`StrBytes`). -/
-theorem utf8_validate_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem utf8_validate_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::utf8_validate" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.utf8_validate c args h r h' calls := by
@@ -537,7 +537,7 @@ theorem utf8_validate_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 
 /-- `KernelNatPrim::build_char_list`: the character list of the bytes' decoding, one
 `List.cons Char (Char.ofNat (lit cp))` node per character, over the given `List.nil Char`. -/
-theorem build_char_list_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem build_char_list_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::build_char_list" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.build_char_list c args h r h' calls := by

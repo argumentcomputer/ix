@@ -61,7 +61,7 @@ end NatAux
 
 /-- `klimbs_mul_outer(a, b, acc, shift)`: `acc + a * b * 2^(64 * shift)`, at a shift plus the
 multiplicand's length below `2^40`. -/
-theorem klimbs_mul_outer_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_mul_outer_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_mul_outer" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_mul_outer c args h r h' calls := by
@@ -102,7 +102,7 @@ theorem klimbs_mul_outer_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     rwa [e] at h4
 
 /-- `klimbs_mul(a, b)`: `a * b`. -/
-theorem klimbs_mul_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_mul_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_mul" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_mul c args h r h' calls := by
@@ -124,7 +124,7 @@ theorem klimbs_mul_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## Division -/
 
 /-- `klimbs_div_mod(a, b)`: `(a / b, a % b)`, both canonical. -/
-theorem klimbs_div_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_div_mod_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_div_mod" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_div_mod c args h r h' calls := by
@@ -170,7 +170,7 @@ theorem klimbs_div_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       repLimbsC_mono ext hr'⟩
 
 /-- `klimbs_div(a, b)`: `a / b`, canonical. -/
-theorem klimbs_div_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_div_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_div" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_div c args h r h' calls := by
@@ -185,7 +185,7 @@ theorem klimbs_div_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   exact hq
 
 /-- `klimbs_mod(a, b)`: `a % b`, canonical. -/
-theorem klimbs_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_mod_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_mod" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_mod c args h r h' calls := by
@@ -200,7 +200,7 @@ theorem klimbs_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   exact hrr
 
 /-- `klimbs_gcd(a, b)`: `Nat.gcd a b`. -/
-theorem klimbs_gcd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_gcd_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_gcd" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_gcd c args h r h' calls := by
@@ -237,7 +237,7 @@ theorem klimbs_gcd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## Powers and shifts -/
 
 /-- `klimbs_pow(base, exp)`: `base ^ exp`. -/
-theorem klimbs_pow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_pow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_pow" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_pow c args h r h' calls := by
@@ -320,7 +320,7 @@ theorem klimbs_pow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     rwa [pow_odd hm2] at hm
 
 /-- `klimbs_shl(a, n)`: `a * 2^n`. -/
-theorem klimbs_shl_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_shl_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_shl" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_shl c args h r h' calls := by
@@ -345,7 +345,7 @@ theorem klimbs_shl_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   exact hm
 
 /-- `klimbs_shr(a, n)`: `a / 2^n`. -/
-theorem klimbs_shr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_shr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_shr" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_shr c args h r h' calls := by
@@ -372,7 +372,7 @@ theorem klimbs_shr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## The division helpers (`IxVMCompat`) -/
 
 /-- `IxVMCompat::divide_grow(a, b)` at a nonzero divisor: `(a / b, a % b)`. -/
-theorem divide_grow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem divide_grow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "IxVMCompat::divide_grow" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.divide_grow c args h r h' calls := by
@@ -446,7 +446,7 @@ theorem divide_grow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     · rw [hr']; exact RepLimbsC.toRepLimbs hd
 
 /-- `IxVMCompat::ordinary_div_mod(a, b)`: `(a / b, a % b)`, `(0, a)` at `b = 0`. -/
-theorem ordinary_div_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem ordinary_div_mod_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "IxVMCompat::ordinary_div_mod" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.ordinary_div_mod c args h r h' calls := by
@@ -496,7 +496,7 @@ theorem ordinary_div_mod_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `klimbs_mul_single(a_limb, b, carry)`: `a_limb * b + carry`. The high word of each limb
 product plus a carry never wraps (`x * z / 2^64 ≤ 2^64 - 2`). -/
-theorem klimbs_mul_single_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_mul_single_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_mul_single" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_mul_single c args h r h' calls := by

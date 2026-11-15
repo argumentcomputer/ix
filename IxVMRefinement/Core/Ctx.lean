@@ -216,6 +216,10 @@ roles of that group and later ones are bound but not in force (nor installed). -
 def Ctx.inForce (c : Ctx) (r : Ix.Kernel.Role) : Prop :=
   c.binds r ∧ ∀ n, c.lim = some n → Ix.SpecDigest.groupOf r < n
 
+abbrev ScopedCtx.binds (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop := c.toCtx.binds r
+
+abbrev ScopedCtx.inForce (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop := c.toCtx.inForce r
+
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where

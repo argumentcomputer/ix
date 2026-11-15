@@ -15,7 +15,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 set_option linter.unusedVariables false
 
 /-- **One step per function of the `Roles` family.** -/
-theorem roles_step (c : Ctx) (hc : CoreFacts c) :
+theorem roles_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.roles f).name args h r h' cs → IH c cs →
       (Fn.roles f).spec c args h r h' cs

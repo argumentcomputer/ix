@@ -72,7 +72,7 @@ theorem RulesRep.cons_of_load {κ : _root_.Address → KKey} {h : Heap F}
 /-! ## `find_rule` -/
 
 /-- `KernelWhnf::find_rule` walks the rule list until the rule's index is the one sought. -/
-theorem find_rule_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem find_rule_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::find_rule" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.find_rule c args h r h' calls := by
@@ -106,7 +106,7 @@ theorem find_rule_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::pi_peel` walks the telescope to binder `n`, pushing the arguments it passes onto
 the substitution. -/
-theorem pi_peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem pi_peel_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::pi_peel" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.pi_peel c args h r h' calls := by
@@ -145,7 +145,7 @@ theorem pi_peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::pi_residual` walks the telescope along all the arguments, pushing each onto the
 substitution, and instantiates what is left. -/
-theorem pi_residual_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem pi_residual_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::pi_residual" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.pi_residual c args h r h' calls := by
@@ -178,7 +178,7 @@ theorem pi_residual_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## `se_addr_in`, `se_parent_addr` -/
 
 /-- `KernelWhnf::se_addr_in` compares the address with each entry (`Bytes::address_eq`). -/
-theorem se_addr_in_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem se_addr_in_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_addr_in" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.se_addr_in c args h r h' calls := by
@@ -213,7 +213,7 @@ theorem se_addr_in_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::se_parent_addr` walks `skip` binders down the telescope and reads the head
 constant of the next binder's domain. -/
-theorem se_parent_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem se_parent_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_parent_addr" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.se_parent_addr c args h r h' calls := by

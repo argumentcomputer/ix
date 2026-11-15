@@ -446,7 +446,7 @@ end ProjAddrAux
 
 /-- `IxonSerialize::put_constant`: serializes a projection record with empty side tables
 (`ProjConstRep`) in front of `rest`. -/
-theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem put_constant_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "IxonSerialize::put_constant" args h r h' calls) :
     Specs.Callees.put_constant c args h r h' calls := by

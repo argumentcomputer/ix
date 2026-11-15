@@ -84,10 +84,10 @@ theorem lvListRep_nil {h : Heap F} {us : List KLevel} {lp : SourceValue F} (hus 
 
 /-- **`prim_family`, with its result's shape**: a pair of field elements, and the registered
 claim. -/
-theorem prim_family_full (c : Ctx) (hc : CoreFacts c) {rc ap : SourceValue F} {a : Bytes.Address}
+theorem prim_family_full (c : ScopedCtx) (hc : ScopedCoreFacts c) {rc ap : SourceValue F} {a : Bytes.Address}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::prim_family" [rc, ap] h r h' calls) (ih : IH c calls)
-    (good : Good c calls) (hrc : c.rc h rc) (ha : RepAddr h a ap) :
+    (good : CoreGood c calls) (hrc : c.rc h rc) (ha : RepAddr h a ap) :
     ∃ f o : F, r = .tuple [.field f, .field o] ∧ (f ≠ 0 →
       (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
       (f = 1 → ∃ role, Specs.Whnf.natOpOf (ZMod.val o) = some role ∧
@@ -136,7 +136,7 @@ end WhnfAux
 
 /-- `KernelWhnf::prim_family`: a nonzero family is a role bound to the address and in force;
 family `1` is the `Nat` operation `natOpOf op`. -/
-theorem prim_family_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::prim_family" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.prim_family c args h r h' calls := by
@@ -150,7 +150,7 @@ theorem prim_family_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
 
 /-- `KernelWhnf::try_nat_dispatch_prewhnf`: the spine head-normalized (`whnf_spine`, a reduct
 argument by argument), then `KernelNatPrim::try_nat_dispatch`. -/
-theorem try_nat_dispatch_prewhnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_nat_dispatch_prewhnf_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_nat_dispatch_prewhnf" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_nat_dispatch_prewhnf c args h r h' calls := by
@@ -172,7 +172,7 @@ theorem try_nat_dispatch_prewhnf_step (c : Ctx) {args : List (SourceValue F)} {h
 /-- `KernelWhnf::try_prim_dispatch`: at an empty level list, a head the role table binds to a
 `Nat` operation in force (`prim_family`'s family `1`) goes to `try_nat_dispatch_prewhnf`; any
 other head answers `0`. -/
-theorem try_prim_dispatch_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem try_prim_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_prim_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_prim_dispatch c args h r h' calls := by
@@ -201,7 +201,7 @@ theorem try_prim_dispatch_step (c : Ctx) (hc : CoreFacts c) {args : List (Source
 
 /-- `KernelWhnf::nat_lit_to_ctor_or_self`: a `Nat` literal becomes `Nat.zero` or `Nat.succ` of
 its predecessor (`Red.natLit`); any other term is returned. -/
-theorem nat_lit_to_ctor_or_self_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem nat_lit_to_ctor_or_self_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.nat_lit_to_ctor_or_self c args h r h' calls := by

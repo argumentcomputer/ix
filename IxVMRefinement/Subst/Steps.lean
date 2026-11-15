@@ -4,9 +4,9 @@ import IxVMRefinement.Subst.Spine
 
 `gall κ`: every observed derivation of a function of the family meets its spec at the keying
 `κ` (`Subst/Spec.lean`), by the family's own induction over the step lemmas of
-`Subst/{Lbr,Occ,Glb,Lift,Inst,Ctx,Spine}.lean`.
+`Subst/{Lbr,Occ,Glb,Lift,Inst,ScopedCtx,Spine}.lean`.
 
-**Registry steps.** At `κ = c.κ` and with `Good c calls` weakened to its bound, `gall` is each
+**Registry steps.** At `κ = c.κ` and with `CoreGood c calls` weakened to its bound, `gall` is each
 registry spec of the family (`Core/Specs/Subst.lean`): `<f>_step` for each of the 39 functions,
 and `subst_step`, the family's part of the registry harness's `Steps`.
 
@@ -81,7 +81,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 set_option linter.unusedVariables false
 
 section Steps
-variable (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
+variable (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
   {calls : List (Call F)}
 
 theorem expr_lbr_step (ev : ObsFn W "KernelSubst::expr_lbr" args h r h' calls) (ih : IH c calls) :
@@ -260,7 +260,7 @@ theorem expr_inst_levels_walk_step
 end Steps
 
 /-- **The substitution family's part of the registry harness** (`Steps c` at `.subst f`). -/
-theorem subst_step (c : Ctx) :
+theorem subst_step (c : ScopedCtx) :
     ∀ (f : Specs.Subst.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.subst f).name args h r h' cs → IH c cs →
       (Fn.subst f).spec c args h r h' cs

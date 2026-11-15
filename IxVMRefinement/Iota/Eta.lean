@@ -223,7 +223,7 @@ private theorem red_rec_seg1_ext {rc nl rt lvls hd sp np ni nm nmi rules kf type
 /-- **`KernelWhnf::eta_iota_fab`**: fabricates the constructor of the major's projections,
 certifies the family's and constructor's telescopes (`certs_all`), and establishes `Red.rescueEta`
 via `DefEq.structEtaTy` (at `0 < cnF`) or `DefEq.unitLikeTy` (at `cnF = 0`). -/
-theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
+theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::eta_iota_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.eta_iota_fab c args h r h' calls := by
@@ -270,7 +270,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
     rw [hfindI] at hT'
     obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hT')
     subst hinl
-    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0⟩ :=
+    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0, hetaUse⟩ :=
       hetaCaps b nPT i cvT cvj caps cnP cnF rfl rfl (Nat.lt_of_lt_of_le hnPT (by decide)) rfl hb hcj
     -- heap extensions
     have e36 := ObsFn.heap_extends ev36
@@ -353,7 +353,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
     rw [hnPTv, ← hnP_eq, ← hetaP] at hl'
     obtain ⟨-, halpdT, -⟩ := hc.env.store.wf _ (List.mem_of_find?_eq_some hfindI)
     have halpdT' : cvT.type.allLevelParamsDefined cvT.levelParams = true := halpdT
-    obtain ⟨bsT, lT, hsT, hzT⟩ := hc.env.etaSort (c.κ (ixAddr p)) cvT caps hfindI heta
+    obtain ⟨bsT, lT, hsT, hzT⟩ := hetaUse.sort
     have hcapsNZ : Ix.Kernel.capsNeverZero cvT.levelParams ust caps = true :=
       capsNeverZero_of_test hustlen halpdT' hsT hzT hl' hnz'
     -- family telescope certificate
@@ -378,7 +378,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
       certs_lic_true hcertT0
     -- constructor load & projection address
     obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev405
-      blk i 0 b rfl (good.sub fun z hz => by simp [hz])
+      blk i 0 b rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz])
       (Bytes.repAddressRef_heapMono₂ addrTy X303 hb)
     rw [ZMod.val_zero, ← hctor, hcj] at hfindC
     injection hfindC with hciC_eq
@@ -474,7 +474,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
           (by rw [← hFAslen] at harityC; exact harityC))
     -- tower slots, etaFabArgsE, and inferred type of FAB
     have htower : Ix.Kernel.towerSlotsAll c.env (c.κ (ixAddr p)) caps.etaFields = true :=
-      hc.env.etaTowers (c.κ (ixAddr p)) cvT caps hfindI heta
+      hetaUse.towers
     have hargsTW : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr p)) ust) TA).getAppArgs = TA := by
       rw [getAppArgs_mkAppN]; rfl
     have hetaFab : Ix.Kernel.etaFabArgsE c.env (c.κ (ixAddr p)) ust
@@ -483,8 +483,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c)
       rw [hargsTW, Ix.Kernel.etaFabArgsE, Ix.Kernel.etaProjs, ite_eq_left htower, hetaF, hFAs_eq]
     obtain ⟨tf, hinfFAB⟩ := infer_io_of_certs _ _ _
       (Infer.const (ci := .ctorInfo cvj cnP m) hcj rfl hustlenC) hcertFAB
-    have hredFAB := hc.env.etaType (c.κ (ixAddr p)) rl.ctor cvT cvj caps cnP m
-      hfindI heta hetaCtor hcj d ust FAs tf hFAslen hinfFAB
+    have hredFAB := hetaUse.type d ust FAs tf hFAslen hinfFAB
     have htakeFAs : FAs.take cnP = TA := by
       rw [hFAs_eq, List.take_left' (by omega)]
     have hdropFAs : FAs.drop cnP =
@@ -554,7 +553,7 @@ set_option maxHeartbeats 400000 in
 /-- **`KernelWhnf::try_struct_eta_iota`**: verifies the single-rule non-recursive structure guards,
 derives `rl.eta = true` via `LoadFacts.etaIota` and `EnvFacts.recEta`, fabricates the constructor
 application (`eta_iota_fab`), and runs `red_iota`. -/
-theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
+theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_struct_eta_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_struct_eta_iota c args h r h' calls := by
@@ -622,7 +621,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     have X466 : Heap.Extends h m466 := e192.trans (e295.trans Y466)
     have X564 : Heap.Extends h m564 := X466.trans e577
     obtain ⟨ici, hfindI, vI, hldI, hciI⟩ := ih.get (.callees .get_ci) (by lt_calls) ev295
-      x_parent p rfl (good.sub fun z hz => by simp [hz]) hp
+      x_parent p rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hp
     rw [ld289] at hldI
     injection hldI with hvI
     subst hvI
@@ -639,7 +638,8 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     -- inductRecord & recRules
     obtain ⟨cm, b0, i0, hcm, hb0, hidx0, hinfo⟩ := hc.loads.inductRecord
       x_parent p287 m179 m279 cs293 p x_ind_nl x_ind_ty (.field (nPT : F)) (.field (nIT : F))
-      (.field (nCT : F)) w310 x_block (.field i) ev295 (good.sub fun z hz => by simp [hz]) hp ld289
+      (.field (nCT : F)) w310 x_block (.field i) ev295 (good.allowedTop (by simp))
+      (good.sub fun z hz => by simp [hz]).raw hp ld289
     injection hidx0 with hi0
     subst hi0
     have hb0_eq := addr_det hb0 hb
@@ -654,21 +654,22 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         hfind hrl hcj hmh0
     -- unpack ev422 (struct_is_rec) to extract block_is_multi = 0
     have ev422_keep := ev422
-    have hgood420 : Good c cs420 := good.sub fun z hz => by simp [hz]
+    have hgood420 : CoreGood c cs420 := good.sub fun z hz => by simp [hz]
     have ih420 : IH c cs420 := ih.mono (by simp only [List.length_cons, List.length_append]; omega)
     have hbm_few : (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
-        ObsFn W "KernelModeled::block_is_multi" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
+        ObsFn W "KernelModeled::block_is_multi" [bq] h3 (.field 0) h4 cs3 ∧ CoreGood c cs3 ∧
           Bytes.RepAddressRef addrTy h3 b bq) ∧ FewInductives c (ixAddr b) := by
       match Obs.«KernelWhnf::struct_is_rec».obs ev422 with
       | .Induct_other (he173 := he1) .. => exact (NatAux.field_one_ne_zero he1.symm).elim
       | .other (he180 := he1) .. => exact (NatAux.field_one_ne_zero he1.symm).elim
       | .Induct_n0 m2_sr p9_sr cs15_sr w42 w43 w44 w45 w46 w47 x_block_sr w48 m90_sr cs101_sr
           _ _ _ _ ev17_sr ld11_sr ev103_sr _ _ hc168_sr =>
-        have hgood15 : Good c cs15_sr := hgood420.sub fun z hz => by rw [hc168_sr]; simp [hz]
-        have hgood101 : Good c cs101_sr := hgood420.sub fun z hz => by rw [hc168_sr]; simp [hz]
+        have hgood15 : CoreGood c cs15_sr := hgood420.sub fun z hz => by rw [hc168_sr]; simp [hz]
+        have hgood101 : CoreGood c cs101_sr := hgood420.sub fun z hz => by rw [hc168_sr]; simp [hz]
         obtain ⟨cm_sr, b_sr, _, hcm_sr, hb_sr, -, hinfo_sr⟩ := hc.loads.inductRecord
           x_parent p9_sr m352 m2_sr cs15_sr p w42 w43 w44 w45 w46 w47 x_block_sr w48
-          ev17_sr hgood15 (Bytes.repAddressRef_heapMono₂ addrTy Y352 hp) ld11_sr
+          ev17_sr (hgood420.allowedTop (by rw [hc168_sr]; simp)) hgood15.raw
+          (Bytes.repAddressRef_heapMono₂ addrTy Y352 hp) ld11_sr
         rw [hcm] at hcm_sr
         injection hcm_sr with hcm_eq
         subst hcm_eq
@@ -695,7 +696,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     rw [hmIv] at hAs_idx
     -- unpack ev577 (eta_iota_fab) to extract type_sort_never = 1
     have ev577_keep := ev577
-    have hgood575 : Good c cs575 := good.sub fun z hz => by simp [hz]
+    have hgood575 : CoreGood c cs575 := good.sub fun z hz => by simp [hz]
     have ih575 : IH c cs575 := ih.mono (by simp only [List.length_cons, List.length_append]; omega)
     have hsort_obs : ∃ (ust : List KLevel) (l : KLevel),
         piSortAt (ZMod.val (nPT : F)) (posOf cvT.levelParams cvT.type) = some l ∧
@@ -746,12 +747,15 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
     have hcj_cprj : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
         some (.ctorInfo cvj rl.ctorParams cnF) := by
       rw [← hctor]; exact hcj
-    obtain ⟨heta, hetaCtor_cprj, hetaF, hetaP, hnP_val, hlp_eq⟩ := hc.loads.etaIota
+    obtain ⟨⟨heta, hetaCtor_cprj, hetaF, hetaP, hnP_val, hlp_eq⟩, hetaUse⟩ := hc.loads.etaIota
       x_parent p287 x_ind_nl x_ind_ty w310 x_block m179 m279 cs293 p b i (nPT : F)
       cvT cvj caps rl.ctorParams cnF ust_f l_f
-      ev295 (good.sub fun z hz => by simp [hz]) hp ld289' hb hfindI hcj_cprj hbm
+      ev295 (good.sub fun z hz => by simp [hz]).raw hp ld289' hb hfindI hcj_cprj
+      (by
+        obtain ⟨bq, h3, h4, cs3, ev3, hg3, hb3⟩ := hbm
+        exact ⟨bq, h3, h4, cs3, ev3, hg3.raw, hb3⟩)
       ⟨x_parent, .field 0, m352, m409, cs420, ev422_keep,
-        fun h01 => NatAux.field_one_ne_zero h01.symm, hgood420,
+        fun h01 => NatAux.field_one_ne_zero h01.symm, hgood420.raw,
         Bytes.repAddressRef_heapMono₂ addrTy Y352 hp⟩
       hl_f hnz_f
     have hetaCtor_rl : caps.etaCtor = some rl.ctor := by
@@ -785,16 +789,19 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
         obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hcj')
         have hnP_eq : rl.ctorParams = nPT :=
           hnP_val.trans (NatAux.val_natCast (Nat.lt_trans hnPT (by decide)))
-        refine ⟨hctor, hetaP, hetaF, hnP_eq, fun hcnF0 => ?_⟩
-        have hcj0 : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
-            some (.ctorInfo cvj rl.ctorParams 0) :=
-          hcj_cprj.trans (congrArg (fun n => some (Ix.Kernel.ConstantInfo.ctorInfo cvj rl.ctorParams n)) hcnF0)
-        obtain ⟨hul, huP, hresU⟩ := hc.loads.unitLike
-          x_parent p287 m179 m279 cs293 p x_ind_nl x_ind_ty w310 x_block (nPT : F) i b
-          cvT caps cvj rl.ctorParams ev295 (good.sub fun z hz => by simp [hz]) hp ld289' hb
-          hfindI hfew hcj0
-        rw [← hnP_val] at huP hresU
-        exact ⟨hul, huP, hresU⟩)
+        refine ⟨hctor, hetaP, hetaF, hnP_eq, ?_, ?_⟩
+        · intro hcnF0
+          have hcj0 : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
+              some (.ctorInfo cvj rl.ctorParams 0) :=
+            hcj_cprj.trans (congrArg
+              (fun n => some (Ix.Kernel.ConstantInfo.ctorInfo cvj rl.ctorParams n)) hcnF0)
+          obtain ⟨hul, huP, hresU⟩ := hc.loads.unitLike
+            x_parent p287 m179 m279 cs293 p x_ind_nl x_ind_ty w310 x_block (nPT : F) i b
+            cvT caps cvj rl.ctorParams ev295 (good.sub fun z hz => by simp [hz]).raw hp ld289' hb
+            hfindI hfew hcj0
+          rw [← hnP_val] at huP hresU
+          exact ⟨hul, huP, hresU⟩
+        · simpa only [← hctor] using hetaUse)
       (Tm.mono (e448.trans (e493.trans (e513.trans e479))) hAs_get) x_fab rfl
     have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hAs_idx]; rfl
     exact ih.get (.whnf .red_iota) (by lt_calls) ev673
@@ -809,7 +816,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
 /-- **`KernelWhnf::red_rec`**: checks the recursor's level count and dispatches to K-like ι
 (`try_k_synth_iota`, tag `3`), ordinary ι (`try_iota`, tag `1` or stuck tag `2`), or structure-η ι
 (`try_struct_eta_iota`, tag `1`). -/
-theorem red_rec_step (c : Ctx)
+theorem red_rec_step (c : ScopedCtx)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_rec" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_rec c args h r h' calls := by
@@ -841,7 +848,7 @@ theorem red_rec_step (c : Ctx)
       Heap.Extends h m286 →
       ObsFn W "KernelCheck::rec_to_parent_addr" [rt, np, nm, nmi, ni] m286 v370 m449 cs457 →
       cs457.length < calls.length →
-      Good c cs457 →
+      CoreGood c cs457 →
       ∃ p : Bytes.Address, RepAddr m449 p v370 ∧ Specs.Whnf.MajorHead c cv mI p := by
     intro m286 m449 v370 cs457 ext286 ev459 hlt457 hgood457
     obtain ⟨p, dom, us_p, hp, hdom, hfn⟩ := ih.get (.callees .rec_to_parent_addr) hlt457 ev459

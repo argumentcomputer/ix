@@ -165,7 +165,7 @@ set_option linter.unusedVariables false
 /-! ## Level lists, binders, projections -/
 
 /-- `KernelDefEq::level_list_eq`: pointwise `level_equal`, of equal lengths. -/
-theorem level_list_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem level_list_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::level_list_eq" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.level_list_eq c args h r h' calls := by
@@ -201,7 +201,7 @@ theorem level_list_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 
 /-- `KernelDefEq::de_binder`: equal binder data (`pw_eq`), equal domains, equal bodies under
 the left domain pushed on the context list. -/
-theorem de_binder_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem de_binder_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::de_binder" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.de_binder c args h r h' calls := by
@@ -231,7 +231,7 @@ theorem de_binder_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · exact absurd he159 hr
 
 /-- `KernelDefEq::de_proj`: one structure address, one field, equal scrutinees. -/
-theorem de_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem de_proj_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::de_proj" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.de_proj c args h r h' calls := by
@@ -258,7 +258,7 @@ theorem de_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelDefEq::try_same_proj_head_app`: projection heads compared by `de_proj`, then the
 arguments pairwise (`DefEq.app` along the spine). -/
-theorem try_same_proj_head_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_same_proj_head_app_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_same_proj_head_app" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_same_proj_head_app c args h r h' calls := by
@@ -316,7 +316,7 @@ theorem try_same_proj_head_app_step (c : Ctx) {args : List (SourceValue F)} {h h
 list; otherwise the inputs lowered past their unused innermost `g` opened variables, compared
 at depth `d - g` under the trimmed shorter list, and the `DefEq` moved back to `d`
 (`DefEq.lift`, which fixes the scoped images). -/
-theorem k_def_eq_rebase_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem k_def_eq_rebase_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_def_eq_rebase" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_def_eq_rebase c args h r h' calls := by
@@ -399,7 +399,7 @@ theorem k_def_eq_rebase_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVa
 /-! ## Node by node -/
 
 /-- `KernelDefEq::k_is_def_eq_struct_safe`: equal variables, sorts, binders. -/
-theorem k_is_def_eq_struct_safe_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_struct_safe_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_safe" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_struct_safe c args h r h' calls := by
@@ -446,7 +446,7 @@ theorem k_is_def_eq_struct_safe_step (c : Ctx) {args : List (SourceValue F)} {h 
   · exact absurd he418 hr
 
 /-- `KernelDefEq::k_is_def_eq_struct`: `k_is_def_eq_struct_go`. -/
-theorem k_is_def_eq_struct_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_struct_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_struct c args h r h' calls := by
@@ -460,7 +460,7 @@ theorem k_is_def_eq_struct_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 /-- `KernelDefEq::k_is_def_eq_struct_go`: node by node; a constant or application pair that
 does not compare falls back to the lazy-δ application comparison; a `λ` against another node is
 η-expanded; a `Nat` literal against another node is expanded one layer (`Red.natLit`). -/
-theorem k_is_def_eq_struct_go_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_struct_go_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_go" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_struct_go c args h r h' calls := by
@@ -589,7 +589,7 @@ theorem k_is_def_eq_struct_go_step (c : Ctx) {args : List (SourceValue F)} {h h'
 /-- `KernelDefEq::k_is_def_eq_struct_bounded`: node by node with a credit of head
 normalizations (`k_is_def_eq_struct_spend` where the nodes do not match); binder bodies under
 the left domain pushed on the context list. -/
-theorem k_is_def_eq_struct_bounded_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_struct_bounded_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_bounded" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.k_is_def_eq_struct_bounded c args h r h' calls := by
@@ -780,7 +780,7 @@ theorem k_is_def_eq_struct_bounded_step (c : Ctx) {args : List (SourceValue F)} 
 /-- `KernelDefEq::k_is_def_eq_struct_spend`: one credit spent on head-normalizing both sides,
 then `Nat` offsets, the lazy-δ loop, or the bounded structural comparison of the loop's
 reducts. -/
-theorem k_is_def_eq_struct_spend_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_struct_spend_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_spend" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_struct_spend c args h r h' calls := by
@@ -832,7 +832,7 @@ theorem k_is_def_eq_struct_spend_step (c : Ctx) {args : List (SourceValue F)} {h
 
 /-- `KernelDefEq::k_is_def_eq_structure_tree_app`: two applications, function and argument
 compared by the structure tree (`DefEq.app`). -/
-theorem k_is_def_eq_structure_tree_app_step (c : Ctx) {args : List (SourceValue F)}
+theorem k_is_def_eq_structure_tree_app_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_structure_tree_app" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.k_is_def_eq_structure_tree_app c args h r h' calls := by
@@ -858,7 +858,7 @@ theorem k_is_def_eq_structure_tree_app_step (c : Ctx) {args : List (SourceValue 
 
 /-- `KernelDefEq::k_is_def_eq_structure_tree`: the bounded structural tier, projection-headed
 spines, then application nodes. -/
-theorem k_is_def_eq_structure_tree_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_structure_tree_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_structure_tree" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_structure_tree c args h r h' calls := by
@@ -886,7 +886,7 @@ theorem k_is_def_eq_structure_tree_step (c : Ctx) {args : List (SourceValue F)} 
 /-! ## The slow tiers -/
 
 /-- `KernelDefEq::k_is_def_eq_slow`: string literals, then `k_is_def_eq_slow_nd`. -/
-theorem k_is_def_eq_slow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_slow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_slow c args h r h' calls := by
@@ -905,7 +905,7 @@ theorem k_is_def_eq_slow_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `KernelDefEq::k_is_def_eq_slow_nd`: both sides head-normalized by `whnf_struct_core`,
 compared structurally and by spines, then `k_is_def_eq_slow_nd_after_core`. -/
-theorem k_is_def_eq_slow_nd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_slow_nd_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow_nd" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_slow_nd c args h r h' calls := by
@@ -944,7 +944,7 @@ theorem k_is_def_eq_slow_nd_step (c : Ctx) {args : List (SourceValue F)} {h h' :
 
 /-- `KernelDefEq::k_is_def_eq_slow_nd_after_core`: the reducts head-normalized further
 (`whnf_nd`), compared structurally and by spines, then `k_is_def_eq_slow2`. -/
-theorem k_is_def_eq_slow_nd_after_core_step (c : Ctx) {args : List (SourceValue F)}
+theorem k_is_def_eq_slow_nd_after_core_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow_nd_after_core" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.k_is_def_eq_slow_nd_after_core c args h r h' calls := by
@@ -984,7 +984,7 @@ theorem k_is_def_eq_slow_nd_after_core_step (c : Ctx) {args : List (SourceValue 
 
 /-- `KernelDefEq::k_is_def_eq_slow2`: the rescue tier, the lazy-δ loop, then
 `slow2_after_delta` on the loop's reducts. -/
-theorem k_is_def_eq_slow2_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_slow2_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow2" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_slow2 c args h r h' calls := by
@@ -1015,7 +1015,7 @@ theorem k_is_def_eq_slow2_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 
 /-- `KernelDefEq::slow2_after_delta`: the bounded structural tier and the structure tree on the
 lazy-δ reducts, then the eager fallback on the originals. -/
-theorem slow2_after_delta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem slow2_after_delta_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::slow2_after_delta" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.slow2_after_delta c args h r h' calls := by
@@ -1042,7 +1042,7 @@ theorem slow2_after_delta_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 
 /-- `KernelDefEq::slow2_eager_fallback`: both sides head-normalized (`whnf`), the rescue tier,
 η both ways, then the structural comparison. -/
-theorem slow2_eager_fallback_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem slow2_eager_fallback_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::slow2_eager_fallback" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.slow2_eager_fallback c args h r h' calls := by

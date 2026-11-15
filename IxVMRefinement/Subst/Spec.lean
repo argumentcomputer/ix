@@ -5,11 +5,11 @@ import IxVMRefinement.Subst.Basic
 The substitution family's functions never read a constant's key, and never hash: their specs
 hold at every keying `κ` of addresses and need only the calls' ROM bound. This file restates
 each registry spec of the family (`Core/Specs/Subst.lean`) at a keying `κ` and with `Bounded`
-in place of `Good` (`G.<f>`), and closes the family's own induction (`gall`): the family's
+in place of `CoreGood` (`G.<f>`), and closes the family's own induction (`gall`): the family's
 functions call one another, and outside the family only library functions with lemmas of their
 own (`UInt32::less_than_fields`, `Lists`, the level operations).
 
-At `κ = c.κ` each `G.<f>` is the registry spec with `Good c calls` weakened to its bound, so the
+At `κ = c.κ` each `G.<f>` is the registry spec with `CoreGood c calls` weakened to its bound, so the
 registry step lemmas are instances (`Subst/Steps.lean`); at the keying of a ghost it gives the
 statement's `Terms`. -/
 

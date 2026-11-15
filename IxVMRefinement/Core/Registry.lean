@@ -34,7 +34,7 @@ import IxVMRefinement.Core.Registry
 namespace IxVM.Refinement.Core
 open Aiur.Generic.SourceSemantics
 
-theorem whnf_core_step (c : Ctx) (hc : CoreFacts c) {args h r h' calls}
+theorem whnf_core_step (c : ScopedCtx) (hc : CoreFacts c) {args h r h' calls}
     (ev : ObsFn W "KernelWhnf::whnf_core" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_core c args h r h' calls := by
   intro rc e types hargs good hrc d Γ htypes E hE
@@ -92,32 +92,32 @@ def Spec (n : String) : SpecFn :=
 
 /-- **The induction hypothesis**: every registered spec holds of every observed derivation with
 fewer calls. -/
-def IH (c : Ctx) (calls : List (Call F)) : Prop :=
+def IH (c : ScopedCtx) (calls : List (Call F)) : Prop :=
   ∀ (f : Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (cs : List (Call F)), cs.length < calls.length → ObsFn W f.name args h r h' cs →
       f.spec c args h r h' cs
 
 /-- A callee's spec, from the induction hypothesis. -/
-theorem IH.get {c : Ctx} {calls : List (Call F)} (ih : IH c calls) (f : Fn)
+theorem IH.get {c : ScopedCtx} {calls : List (Call F)} (ih : IH c calls) (f : Fn)
     {args : List (SourceValue F)} {h : Heap F} {r : SourceValue F} {h' : Heap F}
     {cs : List (Call F)} (hlt : cs.length < calls.length) (ev : ObsFn W f.name args h r h' cs) :
     f.spec c args h r h' cs :=
   ih f args h r h' cs hlt ev
 
 /-- The induction hypothesis at more calls gives it at fewer. -/
-theorem IH.mono {c : Ctx} {calls₁ calls₂ : List (Call F)} (ih : IH c calls₂)
+theorem IH.mono {c : ScopedCtx} {calls₁ calls₂ : List (Call F)} (ih : IH c calls₂)
     (hle : calls₁.length ≤ calls₂.length) : IH c calls₁ :=
   fun f args h r h' cs hlt ev => ih f args h r h' cs (Nat.lt_of_lt_of_le hlt hle) ev
 
 /-- **One step per registered function**: its spec, from the induction hypothesis at its
 derivation's calls. -/
-def Steps (c : Ctx) : Prop :=
+def Steps (c : ScopedCtx) : Prop :=
   ∀ (f : Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (cs : List (Call F)), ObsFn W f.name args h r h' cs → IH c cs → f.spec c args h r h' cs
 
 /-- **The harness**: the steps give every registered spec, for every observed derivation (one
 strong induction on the number of calls, `ObsFn.strong_induction`). -/
-theorem Registry.induction (c : Ctx) (step : Steps c) :
+theorem Registry.induction (c : ScopedCtx) (step : Steps c) :
     ∀ (f : Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
       (cs : List (Call F)), ObsFn W f.name args h r h' cs → f.spec c args h r h' cs := by
   have key := ObsFn.strong_induction (world := W)
@@ -129,7 +129,7 @@ theorem Registry.induction (c : Ctx) (step : Steps c) :
   exact fun f args h r h' cs ev => key _ _ _ _ _ _ ev f rfl
 
 /-- **The harness, by symbol.** -/
-theorem Registry.spec (c : Ctx) (step : Steps c) :
+theorem Registry.spec (c : ScopedCtx) (step : Steps c) :
     ∀ (n : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
       (cs : List (Call F)), ObsFn W n args h r h' cs → Spec n c args h r h' cs := by
   intro n args h r h' cs ev f hf

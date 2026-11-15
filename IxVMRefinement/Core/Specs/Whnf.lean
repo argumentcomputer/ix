@@ -30,7 +30,7 @@ set_option linter.unusedVariables false
 abbrev mkAppN (f : KExpr) (zs : List KExpr) : KExpr := Ix.Kernel.Expr.mkAppN f zs
 
 /-- A list of terms under `k` local binders. -/
-abbrev TmLk (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F) (Es : List KExpr)
+abbrev TmLk (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F) (Es : List KExpr)
     (p : SourceValue F) : Prop :=
   RepList kexprListEnum (fun h E p => Tm c.κ d Γ h k E p) h Es p
 
@@ -114,7 +114,7 @@ inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
 /-- **A recursor's loaded data**: the environment stores the recursor `ci` at `k`, and a loaded
 `Rec` value with these fields represents it (`CIRep.recr`: level count, closed type, the
 counts, the rules one for one). -/
-def RecInfoAt (c : Ctx) (h : Heap F) (k : KKey)
+def RecInfoAt (c : ScopedCtx) (h : Heap F) (k : KKey)
     (nl recTy np ni nm nmi rules kf : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon) : Prop :=
   c.env.find? k = some ci ∧
     ∃ u blk idx : SourceValue F,
@@ -122,13 +122,13 @@ def RecInfoAt (c : Ctx) (h : Heap F) (k : KKey)
 
 /-- **`p` is the address of the recursor's major inductive**: the head of the domain of the
 major premise (binder `mI`) of the recursor's type is the constant at `p`. -/
-def MajorHead (c : Ctx) (cv : Ix.Kernel.ConstantVal .anon) (mI : Nat) (p : Bytes.Address) :
+def MajorHead (c : ScopedCtx) (cv : Ix.Kernel.ConstantVal .anon) (mI : Nat) (p : Bytes.Address) :
     Prop :=
   ∃ us, (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ (ixAddr p)) us)
 
 /-- The common hypotheses of a recursor reduction: the head `.const k us` and the spine, the
 recursor stored at `k` and loaded with these fields, a level count that fits. -/
-def RecRedHyps (c : Ctx) (h : Heap F) (k : KKey) (us : List KLevel) (lvls : SourceValue F)
+def RecRedHyps (c : ScopedCtx) (h : Heap F) (k : KKey) (us : List KLevel) (lvls : SourceValue F)
     (nl recTy np ni nm nmi rules kf : SourceValue F) (cv : Ix.Kernel.ConstantVal .anon)
     (mI rP : Nat) (rls : List (Ix.Kernel.RecRule .anon)) : Prop :=
   RecInfoAt c h k nl recTy np ni nm nmi rules kf (.recInfo cv mI rP rls) ∧
@@ -139,7 +139,7 @@ def RecRedHyps (c : Ctx) (h : Heap F) (k : KKey) (us : List KLevel) (lvls : Sour
 /-- `apply_spine(head, spine)`: the application, at any local depth (no claim beyond the
 image; allocates `App` nodes). -/
 def apply_spine : SpecFn := fun c args h r h' calls =>
-  ∀ hd sp, args = [hd, sp] → Good c calls →
+  ∀ hd sp, args = [hd, sp] → CoreGood c calls →
     ∀ d Γ k H As, c.tmk d Γ k h H hd → TmLk c d Γ k h As sp →
       c.tmk d Γ k h' (mkAppN H As) r
 
@@ -148,7 +148,7 @@ datum `never` (a binder is consumed only where `level_is_not_zero` answers `1`) 
 `D` at `|Ts|` more local binders; the consumed arguments, reversed, go onto `acc`; the rest of
 the spine is returned. -/
 def peel_beta : SpecFn := fun c args h r h' calls =>
-  ∀ lam sp acc, args = [lam, sp, acc] → Good c calls →
+  ∀ lam sp acc, args = [lam, sp, acc] → CoreGood c calls →
     ∀ d Γ k L As Cs, c.tmk d Γ k h L lam → c.tml d Γ h As sp → c.tml d Γ h Cs acc →
       ∃ deep cons rest Ts D, r = .tuple [deep, cons, rest] ∧ L = lamsNb Ts D ∧
         Ts.length ≤ As.length ∧ c.tmk d Γ (k + Ts.length) h' D deep ∧
@@ -162,7 +162,7 @@ stand for, applied to the spine `As`: `m` more arguments are consumed (`Red.beta
 domain otherwise), leaving the body `D` under `|Cs| + m` binders. It stops at the first
 certificate that fails; nothing more is claimed. -/
 def peel_beta_cert : SpecFn := fun c args h r h' calls =>
-  ∀ rc lam sp acc types, args = [rc, lam, sp, acc, types] → Good c calls → c.rc h rc →
+  ∀ rc lam sp acc types, args = [rc, lam, sp, acc, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ L Cs As, c.tmk d Γ Cs.length h L lam → c.tml d Γ h Cs acc → c.tml d Γ h As sp →
         ∃ deep cons rest m D, r = .tuple [deep, cons, rest] ∧ m ≤ As.length ∧
@@ -174,7 +174,7 @@ def peel_beta_cert : SpecFn := fun c args h r h' calls =>
 /-- `beta_more(rc, deep, rest, consumed, types)`: `peel_beta_cert` where arguments remain and
 the body is a `λ`, else no move; the same claim (note the argument order). -/
 def beta_more : SpecFn := fun c args h r h' calls =>
-  ∀ rc deep rest cons types, args = [rc, deep, rest, cons, types] → Good c calls → c.rc h rc →
+  ∀ rc deep rest cons types, args = [rc, deep, rest, cons, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ L Cs As, c.tmk d Γ Cs.length h L deep → c.tml d Γ h Cs cons → c.tml d Γ h As rest →
         ∃ deep' cons' rest' m D, r = .tuple [deep', cons', rest'] ∧ m ≤ As.length ∧
@@ -187,7 +187,7 @@ def beta_more : SpecFn := fun c args h r h' calls =>
 applied to the rest of the spine (`Red.betaGate` and `Red.beta`, one per consumed argument).
 Tag `0`: no move, no claim. -/
 def red_beta : SpecFn := fun c args h r h' calls =>
-  ∀ rc lam sp types, args = [rc, lam, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc lam sp types, args = [rc, lam, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ L As, c.tm d Γ h L lam → c.tml d Γ h As sp →
       ∀ x y, r = .tuple [.field 1, x, y] →
         ∃ E Bs, c.tm d Γ h' E x ∧ c.tml d Γ h' Bs y ∧ Red c.env d (mkAppN L As) (mkAppN E Bs)
@@ -200,7 +200,7 @@ no move. (The circuit fires only at a native structure with one constructor, no 
 never-zero sort at the constructor's levels; `Red.proj`'s `FireSem` is then vacuous and its
 licensed `Certs` is all `never` skips, which the proof reads off the stored types.) -/
 def red_proj : SpecFn := fun c args h r h' calls =>
-  ∀ rc sa fidx scrut types, args = [rc, sa, fidx, scrut, types] → Good c calls → c.rc h rc →
+  ∀ rc sa fidx scrut types, args = [rc, sa, fidx, scrut, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ (s : Bytes.Address) (i : F) S,
       RepAddr h s sa → fidx = .field i → c.tm d Γ h S scrut →
       ∀ x, r = .tuple [.field 1, x] →
@@ -211,7 +211,7 @@ def red_proj : SpecFn := fun c args h r h' calls =>
 `.proj (κ s) f (.bvar (n - 1 - j))` with `n = arity + m` and `j < n`, for an arity below `2^32`
 (the counter is a field element). Tag `0`: no claim. -/
 def projection_definition_info : SpecFn := fun c args h r h' calls =>
-  ∀ val arity, args = [val, arity] → Good c calls →
+  ∀ val arity, args = [val, arity] → CoreGood c calls →
     ∀ d Γ (a : F) V, arity = .field a → ZMod.val a < 4294967296 →
       c.tmk d Γ (ZMod.val a) h V val →
       ∀ (n f j : F) sp, r = .tuple [.field 1, .field n, sp, .field f, .field j] →
@@ -223,7 +223,7 @@ def projection_definition_info : SpecFn := fun c args h r h' calls =>
 /-- `lams_never(v, n, lvls)`: a nonzero answer means the first `n` binders of the value are
 `λ`s whose datum, at the levels `lvls` (positional parameters), is `never`. Answer `0`: no claim. -/
 def lams_never : SpecFn := fun c args h r h' calls =>
-  ∀ v n lvls, args = [v, n, lvls] → Good c calls →
+  ∀ v n lvls, args = [v, n, lvls] → CoreGood c calls →
     ∀ d Γ k V (m : F) us, c.tmk d Γ k h V v → n = .field m → LvListRep h us lvls →
       r ≠ .field 0 → lamsNeverAt (List.range us.length) us (ZMod.val m) V
 
@@ -234,7 +234,7 @@ it) and level count, tag `1` is `Red` of the
 applied constant (`Red.delta`, then `Red.betaGate` at each of the value's `λ`s, whose
 data are `never` at the use's levels) to the result. Tag `0`: no claim. -/
 def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
-  ∀ value nl lvls sp, args = [value, nl, lvls, sp] → Good c calls →
+  ∀ value nl lvls sp, args = [value, nl, lvls, sp] → CoreGood c calls →
     ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
       c.tmc h (posOf cv.levelParams V) value →
       cv.levelParams.Perm (List.range cv.levelParams.length) →
@@ -251,7 +251,7 @@ constant is a definition and the result represents its value at the levels `lvls
 Tag `2`: the same for a theorem: the reduct of `Red.deltaThm`, whose premises come from
 `EnvFacts.thmTyped`. Tag `0`: no claim. -/
 def red_unfold : SpecFn := fun c args h r h' calls =>
-  ∀ v lvls, args = [v, lvls] → Good c calls → ∀ ci us, c.ci h v ci → LvListRep h us lvls →
+  ∀ v lvls, args = [v, lvls] → CoreGood c calls → ∀ ci us, c.ci h v ci → LvListRep h us lvls →
     ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
       (t = 1 ∧ ∃ cv V hn, ci = .defnInfo cv V hn ∧ us.length = cv.levelParams.length ∧
         c.tmc h' (V.instantiateLevelParams cv.levelParams us) x) ∨
@@ -262,7 +262,7 @@ def red_unfold : SpecFn := fun c args h r h' calls =>
 ending in a sort `l` that is never zero at the levels `lvls` (`Level.isNeverZero` of the
 substitution). Answer `0`: no claim. -/
 def type_sort_never : SpecFn := fun c args h r h' calls =>
-  ∀ ty n lvls, args = [ty, n, lvls] → Good c calls →
+  ∀ ty n lvls, args = [ty, n, lvls] → CoreGood c calls →
     ∀ d Γ k T (m : F) us, c.tmk d Γ k h T ty → n = .field m → LvListRep h us lvls →
       r ≠ .field 0 → ∃ l, piSortAt (ZMod.val m) T = some l ∧
         (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true
@@ -270,7 +270,7 @@ def type_sort_never : SpecFn := fun c args h r h' calls =>
 /-- `slots_never(t, n)`: a nonzero answer means the first `n` binders of the telescope are
 `∀`s with the datum `never` (`Certs.skip`'s premise at each slot). Answer `0`: no claim. -/
 def slots_never : SpecFn := fun c args h r h' calls =>
-  ∀ t n, args = [t, n] → Good c calls →
+  ∀ t n, args = [t, n] → CoreGood c calls →
     ∀ d Γ k T (m : F), c.tmk d Γ k h T t → n = .field m → r ≠ .field 0 →
       forallsNever (ZMod.val m) T
 
@@ -278,7 +278,7 @@ def slots_never : SpecFn := fun c args h r h' calls =>
 the telescope's bound variables instantiated by `subs_rev` (innermost first) and the binders
 before `n` by `args` in order. Tag `0`: no claim. -/
 def pi_peel : SpecFn := fun c args h r h' calls =>
-  ∀ t zs subs n, args = [t, zs, subs, n] → Good c calls →
+  ∀ t zs subs n, args = [t, zs, subs, n] → CoreGood c calls →
     ∀ d Γ T Cs As (m : F), c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs →
       c.tml d Γ h As zs → n = .field m →
       ∀ x, r = .tuple [.field 1, x] →
@@ -288,7 +288,7 @@ def pi_peel : SpecFn := fun c args h r h' calls =>
 `args` (`Ix.Kernel.piResidual`), its bound variables instantiated by `subs_rev` first. Tag `0`:
 no claim. -/
 def pi_residual : SpecFn := fun c args h r h' calls =>
-  ∀ t zs subs, args = [t, zs, subs] → Good c calls →
+  ∀ t zs subs, args = [t, zs, subs] → CoreGood c calls →
     ∀ d Γ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ R, c.tm d Γ h' R x ∧ Ix.Kernel.piResidual (T.instantiateList Cs 0) As = some R
@@ -296,7 +296,7 @@ def pi_residual : SpecFn := fun c args h r h' calls =>
 /-- `find_rule(rules, cidx)`: tag `1` finds the rule whose position (counted from `j`, the
 first rule's) is `cidx`: its field count and closed right-hand side. Tag `0`: no claim. -/
 def find_rule : SpecFn := fun c args h r h' calls =>
-  ∀ rules cidx, args = [rules, cidx] → Good c calls →
+  ∀ rules cidx, args = [rules, cidx] → CoreGood c calls →
     ∀ ps j rls, RulesRep c.κ h ps j rules rls →
       ∀ nf rhs, r = .tuple [.field 1, nf, rhs] →
         ∃ i rl, rls[i]? = some rl ∧ cidx = .field ((j + i : Nat) : F) ∧
@@ -308,7 +308,7 @@ def find_rule : SpecFn := fun c args h r h' calls =>
 certificate of `args` against the telescope (its bound variables instantiated by `subs_rev`
 first; `CertsR … false`: up to reduction of the telescope). Answer `0`: no claim. -/
 def certs_all : SpecFn := fun c args h r h' calls =>
-  ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → Good c calls → c.rc h rc →
+  ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
         r ≠ .field 0 → CertsR c.env d false (T.instantiateList Cs 0) As
@@ -320,7 +320,7 @@ constructor's type at the levels `clvls` over the major's arguments. `n_rec`, `n
 walks' lengths. Answer `0`: no claim. -/
 def iota_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc rt ra nr cty clvls ma nc types,
-    args = [rc, rt, ra, nr, cty, clvls, ma, nc, types] → Good c calls → c.rc h rc →
+    args = [rc, rt, ra, nr, cty, clvls, ma, nc, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
         c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
@@ -339,7 +339,7 @@ compares the indices only when the residual's heap head is a constant (so its ar
 image's). -/
 def iota_cmp : SpecFn := fun c args h r h' calls =>
   ∀ rc rt pre mi cty clvls cnp ma ni types,
-    args = [rc, rt, pre, mi, cty, clvls, cnp, ma, ni, types] → Good c calls → c.rc h rc →
+    args = [rc, rt, pre, mi, cty, clvls, cnp, ma, ni, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ RT PRE (m : F) CT cus (np : F) MA (nix : F), c.tmc h RT rt → c.tml d Γ h PRE pre →
         mi = .field m → c.tmc h CT cty → LvListRep h cus clvls → cnp = .field np →
@@ -363,7 +363,7 @@ recursor to the result. Tag `0`: no claim. The proof reads `EnvFacts.recRules` f
 lookup and the circuit's guard `compute_iprj_addr(cblock, cind) = rec_parent`. -/
 def red_iota : SpecFn := fun c args h r h' calls =>
   ∀ rc rt lvls sp np nm nmi ni rules rp major types,
-    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, rp, major, types] → Good c calls →
+    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, rp, major, types] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k us nl kf cv mI rP rls (p : Bytes.Address) As M,
@@ -376,7 +376,7 @@ def red_iota : SpecFn := fun c args h r h' calls =>
 /-- `whnf_iota_major(rc, e, types)`: `Red` (whnf, then theorem heads unfolded at the major,
 `Red.deltaThm`). -/
 def whnf_iota_major : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
 
@@ -386,7 +386,7 @@ levels of the right count: tags `1` (the reduct) and `2` (the application itself
 the applied recursor to the result. Tag `0`: no claim. -/
 def try_iota : SpecFn := fun c args h r h' calls =>
   ∀ rc rt lvls sp np nm nmi ni rules types hd rp,
-    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, types, hd, rp] → Good c calls →
+    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, types, hd, rp] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k us nl kf cv mI rP rls (p : Bytes.Address) As,
@@ -402,7 +402,7 @@ which the caller reads off the record's K flag), whose major inductive is at `re
 with the rule's index `cidx` and parameter count `nparams`: tag `1` gives `fab` with
 `Red.rescueK`: the major reduces to it. Tag `0`: no claim. -/
 def k_synth_fab : SpecFn := fun c args h r h' calls =>
-  ∀ rc maj cidx np rp types, args = [rc, maj, cidx, np, rp, types] → Good c calls → c.rc h rc →
+  ∀ rc maj cidx np rp types, args = [rc, maj, cidx, np, rp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k nl rt ni nm nmi rules cv mI rP rl (p : Bytes.Address) M,
         RecInfoAt c h k nl rt np ni nm nmi rules (.field 1) (.recInfo cv mI rP [rl]) →
@@ -417,7 +417,7 @@ stored at `k` with the K flag set in its record, at levels of the right count: t
 `Red` of the applied recursor to the result. Tag `0`: no claim. -/
 def try_k_synth_iota : SpecFn := fun c args h r h' calls =>
   ∀ rc rt lvls sp np nm nmi ni rules rp types,
-    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, rp, types] → Good c calls → c.rc h rc →
+    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, rp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k us nl cv mI rP rls (p : Bytes.Address) As,
         RecRedHyps c h k us lvls nl rt np ni nm nmi rules (.field 1) cv mI rP rls →
@@ -433,7 +433,7 @@ inductive, at `parent`, is loaded with these fields: tag `1` gives `fab` with
 `Red.rescueEta`: the major reduces to it. Tag `0`: no claim. -/
 def eta_iota_fab : SpecFn := fun c args h r h' calls =>
   ∀ rc inl ity inp blk idx par major types,
-    args = [rc, inl, ity, inp, blk, idx, par, major, types] → Good c calls → c.rc h rc →
+    args = [rc, inl, ity, inp, blk, idx, par, major, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k nl rt np ni nm nmi rules kf cv mI rP rl (p : Bytes.Address) ici nix nc u M,
         RecInfoAt c h k nl rt np ni nm nmi rules kf (.recInfo cv mI rP [rl]) →
@@ -449,7 +449,8 @@ def eta_iota_fab : SpecFn := fun c args h r h' calls =>
           caps.etaParams = cnP ∧ caps.etaFields = cnF ∧ cnP = nPT ∧
           (cnF = 0 → caps.unitlike = true ∧ caps.unitParams = cnP ∧
             (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr p)) = false ∨
-              (cnP = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr p)) us) = true)))) →
+              (cnP = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr p)) us) = true))) ∧
+          EtaUseFacts c.env (c.κ (ixAddr p)) rl.ctor cvT caps cnP cnF) →
         c.tm d Γ h M major →
         ∀ x, r = .tuple [.field 1, x] →
           ∃ FAB, c.tm d Γ h' FAB x ∧ Red c.env d M FAB
@@ -460,7 +461,7 @@ types)`: structure-η ι: the η rescue then ι on the fabricated major. For a r
 `0`: no claim. -/
 def try_struct_eta_iota : SpecFn := fun c args h r h' calls =>
   ∀ rc rt lvls sp np nm nmi ni rules types,
-    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, types] → Good c calls → c.rc h rc →
+    args = [rc, rt, lvls, sp, np, nm, nmi, ni, rules, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k us nl kf cv mI rP rls As,
         RecRedHyps c h k us lvls nl rt np ni nm nmi rules kf cv mI rP rls →
@@ -476,7 +477,7 @@ no claim. The K branch runs only where `se_parent_addr` answers a nonzero tag (w
 gives `MajorHead` for `try_k_synth_iota`). -/
 def red_rec : SpecFn := fun c args h r h' calls =>
   ∀ rc nl rt lvls hd sp np ni nm nmi rules kf types,
-    args = [rc, nl, rt, lvls, hd, sp, np, ni, nm, nmi, rules, kf, types] → Good c calls →
+    args = [rc, nl, rt, lvls, hd, sp, np, ni, nm, nmi, rules, kf, types] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k us cv mI rP rls As,
@@ -501,7 +502,7 @@ of `Quot.mk`'s third argument is definitionally equal to the eliminator's first.
 claim. -/
 def quot_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc il addr lvls ra mk mklvls ma types,
-    args = [rc, il, addr, lvls, ra, mk, mklvls, ma, types] → Good c calls → c.rc h rc →
+    args = [rc, il, addr, lvls, ra, mk, mklvls, ma, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a b : Bytes.Address) us mus RA MA, RepAddr h a addr → LvListRep h us lvls →
         c.tml d Γ h RA ra → RepAddr h b mk → LvListRep h mus mklvls → c.tml d Γ h MA ma →
@@ -527,7 +528,7 @@ table binds at `addr` (`Quot.lift` when `is_lift = 1`, `Quot.ind` when `0`, in f
 caller has checked it with `role_is`): tag `1` is `Red` of the applied eliminator to the
 result. Tag `0`: no claim. -/
 def red_quot : SpecFn := fun c args h r h' calls =>
-  ∀ rc il addr lvls sp types, args = [rc, il, addr, lvls, sp, types] → Good c calls →
+  ∀ rc il addr lvls sp types, args = [rc, il, addr, lvls, sp, types] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) us As,
@@ -541,7 +542,7 @@ def red_quot : SpecFn := fun c args h r h' calls =>
 binds to `Quot.lift` or `Quot.ind`: tag `1` is `Red` of the applied constant to the result.
 Tag `0`: no claim. -/
 def try_quot_iota : SpecFn := fun c args h r h' calls =>
-  ∀ rc addr lvls sp types, args = [rc, addr, lvls, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc addr lvls sp types, args = [rc, addr, lvls, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) us As, RepAddr h a addr → LvListRep h us lvls → c.tml d Γ h As sp →
         ∀ x, r = .tuple [.field 1, x] →
@@ -553,7 +554,7 @@ def try_quot_iota : SpecFn := fun c args h r h' calls =>
 force under the role context); family `1` means it is the `Nat` operation `natOpOf op`. A zero
 family: no claim. -/
 def prim_family : SpecFn := fun c args h r h' calls =>
-  ∀ rc ap, args = [rc, ap] → Good c calls → c.rc h rc →
+  ∀ rc ap, args = [rc, ap] → CoreGood c calls → c.rc h rc →
     ∀ (a : Bytes.Address) (f op : F), RepAddr h a ap → r = .tuple [.field f, .field op] →
       f ≠ 0 →
         (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
@@ -566,7 +567,7 @@ force (`prim_family`'s group test),
 applied to `As` with an empty level list: tags `1` (the result) and `2` (a stuck form with
 reduced arguments) are `Red` of the application to the result. Tag `0`: no claim. -/
 def try_nat_dispatch_prewhnf : SpecFn := fun c args h r h' calls =>
-  ∀ rc ha op sp types, args = [rc, ha, op, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc ha op sp types, args = [rc, ha, op, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) (o : F) role As, RepAddr h a ha → op = .field o →
         natOpOf (ZMod.val o) = some role → c.t.addressOf? role = some (ixAddr a) →
@@ -578,7 +579,7 @@ def try_nat_dispatch_prewhnf : SpecFn := fun c args h r h' calls =>
 tags `1` (the result, which the caller normalizes) and `2` (a stuck form with reduced
 arguments, final) are `Red` of the applied constant to the result. Tag `0`: no claim. -/
 def try_prim_dispatch : SpecFn := fun c args h r h' calls =>
-  ∀ rc addr lvls sp types, args = [rc, addr, lvls, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc addr lvls sp types, args = [rc, addr, lvls, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) us As, RepAddr h a addr → LvListRep h us lvls → c.tml d Γ h As sp →
         ∀ (t : F) x, r = .tuple [.field t, x] → (t = 1 ∨ t = 2) →
@@ -588,7 +589,7 @@ def try_prim_dispatch : SpecFn := fun c args h r h' calls =>
 (`Red.natLit`: `Nat.zero`, or `Nat.succ` of the predecessor literal); any other term is
 returned. `Red`. -/
 def nat_lit_to_ctor_or_self : SpecFn := fun c args h r h' calls =>
-  ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc →
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
     ∀ d Γ E, c.tm d Γ h E e → ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
 
 /-! ## The normalizers -/
@@ -596,7 +597,7 @@ def nat_lit_to_ctor_or_self : SpecFn := fun c args h r h' calls =>
 /-- The common spec of a head normalizer `f(rc, e, types)`: `Red` of the input to the
 result. -/
 def NormSpec : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
 
@@ -618,7 +619,7 @@ def whnf_struct_core : SpecFn := NormSpec
 /-- The common spec of a spine normalizer `f(rc, head, spine, types)`: `Red` of the applied
 head to the result. -/
 def SpineSpec : SpecFn := fun c args h r h' calls =>
-  ∀ rc hd sp types, args = [rc, hd, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc hd sp types, args = [rc, hd, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ H As, c.tm d Γ h H hd → c.tml d Γ h As sp →
       ∃ E', c.tm d Γ h' E' r ∧ Red c.env d (mkAppN H As) E'
 
@@ -634,7 +635,7 @@ def whnf_struct_core_spine : SpecFn := SpineSpec
 /-- The common spec of a constant-head normalizer `f(rc, addr, lvls, head, spine, types)`: the
 head is the constant at `addr` at the levels `lvls`; `Red` of the applied constant. -/
 def ConstHeadSpec : SpecFn := fun c args h r h' calls =>
-  ∀ rc addr lvls hd sp types, args = [rc, addr, lvls, hd, sp, types] → Good c calls →
+  ∀ rc addr lvls hd sp types, args = [rc, addr, lvls, hd, sp, types] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) us As, RepAddr h a addr → LvListRep h us lvls →
@@ -655,7 +656,7 @@ def whnf_struct_core_const : SpecFn := ConstHeadSpec
 /-- The common spec of a projection-head normalizer
 `f(rc, struct_addr, fidx, inner, spine, types)`: `Red` of the applied projection. -/
 def ProjHeadSpec : SpecFn := fun c args h r h' calls =>
-  ∀ rc sa fidx inner sp types, args = [rc, sa, fidx, inner, sp, types] → Good c calls →
+  ∀ rc sa fidx inner sp types, args = [rc, sa, fidx, inner, sp, types] → CoreGood c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (s : Bytes.Address) (i : F) S As, RepAddr h s sa → fidx = .field i →
@@ -675,7 +676,7 @@ def whnf_nd_proj_head : SpecFn := ProjHeadSpec
 is the projection node itself; `Red` of the applied projection. -/
 def whnf_struct_core_proj : SpecFn := fun c args h r h' calls =>
   ∀ rc sa fidx inner sp types orig, args = [rc, sa, fidx, inner, sp, types, orig] →
-    Good c calls → c.rc h rc →
+    CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (s : Bytes.Address) (i : F) S As, RepAddr h s sa → fidx = .field i →
         c.tm d Γ h S inner → c.tm d Γ h (.proj (c.κ (ixAddr s)) (ZMod.val i) S) orig →
@@ -685,7 +686,7 @@ def whnf_struct_core_proj : SpecFn := fun c args h r h' calls =>
 
 /-- `whnf_spine(rc, spine, types)`: each argument head-normalized: pointwise `Red`. -/
 def whnf_spine : SpecFn := fun c args h r h' calls =>
-  ∀ rc sp types, args = [rc, sp, types] → Good c calls → c.rc h rc →
+  ∀ rc sp types, args = [rc, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
       ∃ Bs, c.tml d Γ h' Bs r ∧ List.Forall₂ (Red c.env d) As Bs
 
@@ -695,7 +696,7 @@ def whnf_spine : SpecFn := fun c args h r h' calls =>
 constant of the domain of binder `skip` of the telescope (`MajorHead` at the major premise).
 Tag `0`: no claim. -/
 def se_parent_addr : SpecFn := fun c args h r h' calls =>
-  ∀ rt skip, args = [rt, skip] → Good c calls →
+  ∀ rt skip, args = [rt, skip] → CoreGood c calls →
     ∀ d Γ k RT (n : F), c.tmk d Γ k h RT rt → skip = .field n →
       ∀ (t : F) pa, r = .tuple [.field t, pa] → t ≠ 0 →
         ∃ (p : Bytes.Address) (us : List KLevel), RepAddr h' p pa ∧
@@ -704,7 +705,7 @@ def se_parent_addr : SpecFn := fun c args h r h' calls =>
 /-- `apply_n_projs(head, parent, major, n_fields, i)`: the head applied to the projections
 `i, i + 1, …` of the major out of the structure at `parent`, up to `n_fields`. -/
 def apply_n_projs : SpecFn := fun c args h r h' calls =>
-  ∀ hd par major nf i, args = [hd, par, major, nf, i] → Good c calls →
+  ∀ hd par major nf i, args = [hd, par, major, nf, i] → CoreGood c calls →
     ∀ d Γ H (p : Bytes.Address) M (n j : F), c.tm d Γ h H hd → RepAddr h p par →
       c.tm d Γ h M major → nf = .field n → i = .field j →
       ∃ m : Nat, j + (m : F) = n ∧
@@ -713,7 +714,7 @@ def apply_n_projs : SpecFn := fun c args h r h' calls =>
 
 /-- `se_addr_in(a, xs)`: exact membership (`Bytes::address_eq` decides). -/
 def se_addr_in : SpecFn := fun c args h r h' calls =>
-  ∀ ap xs, args = [ap, xs] → Good c calls →
+  ∀ ap xs, args = [ap, xs] → CoreGood c calls →
     ∀ (a : Bytes.Address) ms, RepAddr h a ap → RepList addrListEnum RepAddr h ms xs →
       r = .field (if a ∈ ms then 1 else 0) ∧ h' = h
 
@@ -787,7 +788,7 @@ def FieldsClean (h : Heap F) (p : Nat) (membs : List Bytes.Address) (ty : Source
 member `ind`, every constructor of `ind` (`0, …, ctors.size - 1`, the constant at the key of its
 projection record) is loaded with a type whose fields, after `ind`'s parameters, mention no
 address of `membs` (`FieldsClean`, on the loaded heap term). -/
-def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :=
+def MembersClean (c : ScopedCtx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :=
   ∀ m ∈ ms, ∀ (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
       (ind : Ixon.Inductive),
     Ix.Cert.recordAt c.E (ixAddr m) = some cm → cm.info = .iPrj p →
@@ -801,14 +802,14 @@ def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :
 /-- `se_mentions(e, members)`: an answer other than `1` means the heap term mentions no
 address of `members` (`HeapClean`). Answer `1`: no claim. -/
 def se_mentions : SpecFn := fun c args h r h' calls =>
-  ∀ e xs, args = [e, xs] → Good c calls →
+  ∀ e xs, args = [e, xs] → CoreGood c calls →
     ∀ ms, RepList addrListEnum RepAddr h ms xs → (∃ d Γ k E, c.tmk d Γ k h E e) →
       r ≠ .field 1 → HeapClean (· ∈ ms) h e
 
 /-- `se_peel_tol(ty, n)`: the term after up to `n` leading `∀` nodes (fewer where the chain ends
 at another node); nothing is allocated. -/
 def se_peel_tol : SpecFn := fun c args h r h' calls =>
-  ∀ ty n, args = [ty, n] → Good c calls → ∀ m : F, n = .field m →
+  ∀ ty n, args = [ty, n] → CoreGood c calls → ∀ m : F, n = .field m →
     (∃ d Γ k T, c.tmk d Γ k h T ty) →
     h' = h ∧ ∃ ds, ForallChain h ty ds r ∧ ds.length ≤ ZMod.val m ∧
       (ds.length < ZMod.val m → NotForallNode h r)
@@ -817,7 +818,7 @@ def se_peel_tol : SpecFn := fun c args h r h' calls =>
 heap term ends at a node other than a `∀` or a `Let` (`ChainEnd`) and has only domains that
 mention no address of `members`. Answer `1`: no claim. -/
 def se_scan_fields : SpecFn := fun c args h r h' calls =>
-  ∀ ty xs, args = [ty, xs] → Good c calls →
+  ∀ ty xs, args = [ty, xs] → CoreGood c calls →
     ∀ ms, RepList addrListEnum RepAddr h ms xs → (∃ d Γ k T, c.tmk d Γ k h T ty) →
       r ≠ .field 1 →
       ∃ ds q, ForallChain h ty ds q ∧ ChainEnd h q ∧ ∀ dp ∈ ds, HeapClean (· ∈ ms) h dp
@@ -826,7 +827,7 @@ def se_scan_fields : SpecFn := fun c args h r h' calls =>
 the addresses of its members' projection records (`Ingress::build_recur_addrs`), every
 inductive member's among them, when it is a block, and `[parent]` otherwise. -/
 def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
-  ∀ par blk, args = [par, blk] → Good c calls →
+  ∀ par blk, args = [par, blk] → CoreGood c calls →
     ∀ (p b : Bytes.Address), RepAddr h p par → RepAddr h b blk →
       ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
         ∃ xs, RepList addrListEnum RepAddr h' xs r ∧
@@ -839,7 +840,7 @@ means the constructors `c, …, num_ctors - 1` of member `idx` of the block (the
 keys of their projection records) are loaded with types whose fields, after `n_params`
 binders, mention no address of `members` (`FieldsClean`). Answer `1`: no claim. -/
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
-  ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
+  ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → CoreGood c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
       np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r ≠ .field 1 →
       ∀ t < ZMod.val (n - j),
@@ -852,7 +853,7 @@ def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
 /-- `struct_scan_members(ms, members)`: an answer other than `1` is `MembersClean ms members`.
 Answer `1`: no claim. -/
 def struct_scan_members : SpecFn := fun c args h r h' calls =>
-  ∀ msp xs, args = [msp, xs] → Good c calls →
+  ∀ msp xs, args = [msp, xs] → CoreGood c calls →
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
       r ≠ .field 1 → MembersClean c h' ms membs
 
@@ -863,7 +864,7 @@ at `b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`
 parent's record is the inductive projection of a member of a block, `b` is that block. Answer
 `1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
-  ∀ par, args = [par] → Good c calls →
+  ∀ par, args = [par] → CoreGood c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
       ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c h' ms ms ∧
         (∀ (cm cb : Ixon.Constant) (pp : Ixon.InductiveProj) (xs : Array Ixon.MutConst)

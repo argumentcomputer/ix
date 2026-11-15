@@ -58,7 +58,7 @@ theorem typesRep_congr_ghost {κ : _root_.Address → KKey} {Γ Γ' : Nat → KE
     exact Tm.congr_ghost hΓ' rt
 
 /-- `Lists::length` of a represented term list. -/
-theorem exprs_length {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr} {l r : SourceValue F}
+theorem exprs_length {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr} {l r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KExprNode>» [l] h r h' cs)
     (hl : c.tml d Γ h As l) : r = .field (As.length : F) ∧ h' = h :=
@@ -186,7 +186,7 @@ theorem eval_zero_of_answer {u l : KLevel} (hul : LvEq u l)
 
 /-- **`level_equal(p, Zero) = 1` at a freshly stored `Zero` cell**: the level `p` represents is
 zero at every assignment. -/
-theorem zero_of_level_equal {c : Ctx} {calls : List (Call F)} (ih : IH c calls) {m m' : Heap F}
+theorem zero_of_level_equal {c : ScopedCtx} {calls : List (Call F)} (ih : IH c calls) {m m' : Heap F}
     {u : KLevel} {p : SourceValue F} {cs : List (Call F)} (hu : LvRep m u p)
     (ev : ObsFn W "KernelLevels::level_equal" [p, .ptr (.enum "KernelTypes::KLevelNode") m.length]
       (m ++ [.construct "KernelTypes::KLevelNode" "Zero" []]) (.field 1) m' cs)
@@ -221,7 +221,7 @@ end ProjAux
 /-! ## `peel_params_subst` -/
 
 /-- `KernelInfer::peel_params_subst` instantiates the first `n` binders by the parameters. -/
-theorem peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem peel_params_subst_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_params_subst" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_params_subst c args h r h' calls := by
@@ -255,7 +255,7 @@ theorem peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     exact hpi
 
 /-- `KernelInferOnly::io_peel_params_subst`: as `peel_params_subst`. -/
-theorem io_peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem io_peel_params_subst_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::io_peel_params_subst" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.io_peel_params_subst c args h r h' calls := by
@@ -289,7 +289,7 @@ theorem io_peel_params_subst_step (c : Ctx) {args : List (SourceValue F)} {h h' 
 /-! ## `proj_shape_ok` -/
 
 /-- `KernelInfer::proj_shape_ok` asserts no indices and the two counts. -/
-theorem proj_shape_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem proj_shape_ok_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::proj_shape_ok" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.proj_shape_ok c args h r h' calls := by
@@ -305,7 +305,7 @@ theorem proj_shape_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 /-! ## `level_may_be_nonzero` -/
 
 /-- `KernelInfer::level_may_be_nonzero` answers `1` only on a level nonzero at some assignment. -/
-theorem level_may_be_nonzero_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem level_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::level_may_be_nonzero" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.level_may_be_nonzero c args h r h' calls := by
@@ -361,7 +361,7 @@ theorem level_may_be_nonzero_step (c : Ctx) {args : List (SourceValue F)} {h h' 
 /-! ## `peel_n_alls_whnf` -/
 
 /-- `KernelInfer::peel_n_alls_whnf` head-normalizes and opens at most `n` `∀`-binders. -/
-theorem peel_n_alls_whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem peel_n_alls_whnf_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_n_alls_whnf" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_n_alls_whnf c args h r h' calls := by
@@ -424,7 +424,7 @@ theorem peel_n_alls_whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `KernelInfer::is_inductive_prop` decides whether the inductive's declared sort is zero, both
 ways. -/
-theorem is_inductive_prop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem is_inductive_prop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::is_inductive_prop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.is_inductive_prop c args h r h' calls := by
@@ -445,7 +445,7 @@ theorem is_inductive_prop_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
       _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) _ rfl 0
       (fun _ => .sort .zero) hnil I (Tm.mono ext (hI 0 (fun _ => .sort .zero)))
     obtain ⟨u, rfl, hu⟩ := hR.sort_of_load ld64
-    have g89 : Good c cs89 := good.sub fun x hx => by simp [hx]
+    have g89 : CoreGood c cs89 := good.sub fun x hx => by simp [hx]
     exact ⟨k, Γ', u, hk, hpeel, .inl rfl,
       fun _ => ProjAux.zero_of_level_equal ih hu ev91 (by lt_calls) g89.2,
       fun h0 => absurd h0 field_one_ne_zero⟩
@@ -466,7 +466,7 @@ theorem is_inductive_prop_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 
 /-- `KernelInfer::peel_field_loop`: the projected field's type, the fields passed instantiated by
 their projections. -/
-theorem peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem peel_field_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_field_loop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_field_loop c args h r h' calls := by
@@ -527,7 +527,7 @@ theorem tml_lbb {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h
     · exact Tm.looseBVarsBounded hx
     · exact ih a ha
 
-theorem types_extend {c : Ctx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
+theorem types_extend {c : ScopedCtx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
     {types tp : SourceValue F} {T : KExpr}
     (htypes : c.types Γ h d types) (hT : c.tm d Γ h T tp) :
     c.types (Ghost.extend Γ d T) (h ++ [.construct kexprListEnum "Cons" [tp, types]]) (d + 1)
@@ -558,10 +558,11 @@ theorem lv_snoc {ls : List KLevel} {l : KLevel} {lp vp r : SourceValue F} {h h' 
   rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, klevel_node_eq] at hres
   exact hres
 
-theorem ind_params_eq (c : Ctx) (hc : CoreFacts c)
+theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {addr ptr nl ty ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
     {s b : Bytes.Address} {nPS nP : Nat} {i : F}
-    (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs) (good : Good c cs)
+    (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
+    (allowed : c.allowedTop "Ingress::get_ci" [addr] h1) (good : CoreGood c cs)
     (hs : Bytes.RepAddressRef addrTy h1 s addr)
     (ld : loadValue h2 ptr = .ok (.construct kciEnum "Induct"
       [nl, ty, .field (nPS : F), ni, nc, u, blk, .field i]))
@@ -572,17 +573,18 @@ theorem ind_params_eq (c : Ctx) (hc : CoreFacts c)
     nPS = nP := by
   obtain ⟨cm, b', i', hcm, hb', hi', hinfo⟩ :=
     hc.loads.inductRecord addr ptr h1 h2 cs s nl ty (.field (nPS : F)) ni nc u blk (.field i)
-      ev good hs ld
+      ev allowed good.raw hs ld
   have hi_eq : i' = i := (NatAux.field_inj hi').symm
   subst i'
   have hb_eq : b' = b := IxVMRep.repAddressRef_det U32.Goldilocks.compatible hb' hb
   subst b'
   obtain ⟨cb, xs, ind, hcb, hmuts, hindc⟩ :=
-    hc.loads.inductBlock addr ptr h1 h2 cs s b nl ty (.field (nPS : F)) ni nc u blk i ev good hs ld hb
+    hc.loads.inductBlock addr ptr h1 h2 cs s b nl ty (.field (nPS : F)) ni nc u blk i
+      ev allowed good.raw hs ld hb
   have hidx : ((ZMod.val i).toUInt64).toNat = ZMod.val i := val_toUInt64_toNat i
   obtain ⟨nl', ty', u', blk', b'', hld', -, -, -, -⟩ :=
     hc.loads.indRecord addr ptr h1 h2 cs s cm cb ⟨(ZMod.val i).toUInt64, ixAddr b⟩ xs ind
-      ev good hs hcm hinfo hcb hmuts (by simpa [hidx] using hindc)
+      ev good.raw hs hcm hinfo hcb hmuts (by simpa [hidx] using hindc)
   rw [ld] at hld'
   injection hld' with hld'
   injection hld' with _ _ hxs
@@ -592,7 +594,7 @@ theorem ind_params_eq (c : Ctx) (hc : CoreFacts c)
   rw [← hnP_eq] at hnp_eq
   exact (NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj hnp_eq)
 
-theorem peel_n_foralls_with_types_rep (c : Ctx) (N : Nat) :
+theorem peel_n_foralls_with_types_rep (c : ScopedCtx) (N : Nat) :
     ∀ {x_e x_n x_types r x_after x_ctx : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       calls.length < N →
       ObsFn W "KernelCheck::peel_n_foralls_with_types" [x_e, x_n, x_types] h r h' calls →
@@ -663,9 +665,9 @@ theorem proj_guard_fold_rep {ls : List KLevel} :
         .max List.getElem?_concat_length (hacc.mono ext) (hd.mono ext)
       exact ih ev46 hmax (RepKLevelList.mono hrest ext)
 
-theorem proj_guard_walk_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0) (N : Nat) :
+theorem proj_guard_walk_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0) (N : Nat) :
     ∀ {x_rc x_ty x_ctx x_k x_deps r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
-      calls.length < N → calls.length < calls0.length → Good c calls →
+      calls.length < N → calls.length < calls0.length → CoreGood c calls →
       ObsFn W "KernelInfer::proj_guard_walk" [x_rc, x_ty, x_ctx, x_k, x_deps] h r h' calls →
       ∀ (k : F) (d : Nat) (Γ : Nat → KExpr) (T : KExpr) (ls : List KLevel),
         x_k = .field k → c.rc h x_rc → c.types Γ h d x_ctx → c.tm d Γ h T x_ty →
@@ -682,7 +684,7 @@ theorem proj_guard_walk_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0
         ld11, ev45, _, sg184, hm219, op252, ev190, hc261⟩
     · subst hc106
       obtain ⟨D, B, ℓ, rfl, hD, -, -⟩ := hT.forallE_of_load ld11
-      have g43 : Good c cs43 := good.sub fun x hx => by simp [hx]
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
       obtain ⟨_, u, -, -, lu, hlu, -⟩ := ih.get (.infer .k_ensure_sort)
         (by simp only [List.length_cons, List.length_append] at hlt0; omega)
         ev45 x_rc x_dom x_ctx rfl g43 hrc d Γ htypes D hD
@@ -690,7 +692,7 @@ theorem proj_guard_walk_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0
       exact proj_guard_fold_rep ev89 hlu (RepKLevelList.mono hls e45)
     · subst hc261
       obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld11
-      have g43 : Good c cs43 := good.sub fun x hx => by simp [hx]
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
       obtain ⟨_, u, -, -, lu, hlu, -⟩ := ih.get (.infer .k_ensure_sort)
         (by simp only [List.length_cons, List.length_append] at hlt0; omega)
         ev45 x_rc x_dom x_ctx rfl g43 hrc d Γ htypes D hD
@@ -716,16 +718,16 @@ theorem proj_guard_walk_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0
       have htypes211 := types_extend (types_mono E177 htypes) (Tm.mono E177 hD)
       have hbody211 := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)
         (Tm.mono E211 hB)
-      have g188 : Good c cs188 := good.sub fun x hx => by simp [hx]
+      have g188 : CoreGood c cs188 := good.sub fun x hx => by simp [hx]
       exact ihN
         (by simp only [List.length_cons, List.length_append] at hlt; omega)
         (by simp only [List.length_cons, List.length_append] at hlt0; omega)
         g188 ev190 (k - 1) (d + 1) _ _ ls' hv194
         (RCRep.mono E211 hrc) htypes211 hbody211 (RepKLevelList.mono hls177 e211)
 
-theorem proj_guard_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0)
+theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0)
     {x_rc x_block x_idx x_fidx r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hlt0 : calls.length < calls0.length) (good : Good c calls)
+    (hlt0 : calls.length < calls0.length) (good : CoreGood c calls)
     (ev : ObsFn W "KernelInfer::proj_guard" [x_rc, x_block, x_idx, x_fidx] h r h' calls)
     {b : Bytes.Address} {i f : F} (hrc : c.rc h x_rc)
     (hb : Bytes.RepAddressRef addrTy h b x_block) (hi : x_idx = .field i)
@@ -736,10 +738,10 @@ theorem proj_guard_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0)
     ⟨m2, p9, cs15, w44, x_cty, w45, w46, w47, x_np, w48, w49, m91, cs101, m122,
       x_after, x_ctx, cs150, m187, ev17, ld11, hm130, ev103, hm195, ev152, hc199⟩
   subst hc199 hm130 hm195
-  have g15 : Good c cs15 := good.sub fun x hx => by simp [hx]
+  have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
   obtain ⟨ci, -, v, hld, hci⟩ := ih.get (.callees .get_ci_cprj)
     (by simp only [List.length_cons, List.length_append] at hlt0; omega)
-    ev17 x_block i 0 b rfl g15 hb
+    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) g15 hb
   rw [ld11] at hld
   injection hld with hv
   subst hv
@@ -762,15 +764,15 @@ theorem proj_guard_rep (c : Ctx) {calls0 : List (Call F)} (ih : IH c calls0)
     rw [klevel_node_eq]
     exact .nil List.getElem?_concat_length
   have E187 : Heap.Extends h _ := e17.trans (e122.trans (e103.trans e187))
-  have g150 : Good c cs150 := good.sub fun x hx => by simp [hx]
+  have g150 : CoreGood c cs150 := good.sub fun x hx => by simp [hx]
   exact proj_guard_walk_rep c ih (cs150.length + 1) (Nat.lt_succ_self _)
     (by simp only [List.length_cons, List.length_append] at hlt0; omega)
     g150 ev152 f d' Γ' T_after [] rfl (RCRep.mono E187 hrc)
     (types_mono e187 htypes91) (Tm.mono e187 hT91) hnil_deps
 
-theorem prop_guard_ok_zero {c : Ctx} {calls0 : List (Call F)} (ih : IH c calls0)
+theorem prop_guard_ok_zero {c : ScopedCtx} {calls0 : List (Call F)} (ih : IH c calls0)
     {x_guard x_lvls x_is_prop r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hlt0 : calls.length < calls0.length) (good : Good c calls)
+    (hlt0 : calls.length < calls0.length) (good : CoreGood c calls)
     (ev : ObsFn W "KernelInfer::prop_guard_ok" [x_guard, x_lvls, x_is_prop] h r h' calls)
     {g : KLevel} {ls : List KLevel}
     (hg : RepKLevel h g x_guard) (hls : RepKLevelList h ls x_lvls)
@@ -781,8 +783,8 @@ theorem prop_guard_ok_zero {c : Ctx} {calls0 : List (Call F)} (ih : IH c calls0)
     ⟨v35, m38, cs46, v49, m52, cs60, m80, _, ev62, hm88, ev48, heq98, _, _, hc103⟩
   · exact absurd hv14 hprop
   · subst hc103 hm88 heq98
-    have g60 : Good c cs60 := good.sub fun x hx => by simp [hx]
-    have g46 : Good c cs46 := good.sub fun x hx => by simp [hx]
+    have g60 : CoreGood c cs60 := good.sub fun x hx => by simp [hx]
+    have g46 : CoreGood c cs46 := good.sub fun x hx => by simp [hx]
     obtain ⟨-, hinst, -⟩ := ih.get (.levelOps .level_inst_params)
       (by simp only [List.length_cons, List.length_append] at hlt0; omega)
       ev62 x_guard x_lvls rfl g60.2 g ls hg hls
@@ -793,8 +795,8 @@ end ProjAux
 
 /-- **Shared projection inference step** at grade `g` (`.full` for `k_infer_proj`, `.io` for
 `k_infer_only_core`'s `.Proj` arm). -/
-theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
-    {g : Ix.Kernel.Rules.Grade} {calls : List (Call F)} (ih : IH c calls) (good : Good c calls)
+theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
+    {g : Ix.Kernel.Rules.Grade} {calls : List (Call F)} (ih : IH c calls) (good : CoreGood c calls)
     {x_rc x_struct_addr x_fidx x_e1 x_types r : SourceValue F} {h h' : Heap F}
     {d : Nat} {Γ : Nat → KExpr} {s : Bytes.Address} {fi : F} {PE : KExpr}
     (hrc : c.rc h x_rc) (hfi : x_fidx = .field fi) (htypes : c.types Γ h d x_types)
@@ -884,11 +886,11 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
   subst ha_addr
   have e169 := ObsFn.heap_extends ev169
   -- 3. Load the structure inductive
-  have g207 : Good c cs207 := good.sub fun x hx => by simp [hx]
+  have g207 : CoreGood c cs207 := good.sub fun x hx => by simp [hx]
   have hs159 : Bytes.RepAddressRef addrTy m159 s x_head_addr :=
     Bytes.repAddressRef_heapMono₂ addrTy e169 hha
   obtain ⟨ciS, hfindS, vS, hldS, hciS⟩ := ih.get (.callees .get_ci) (by lt_calls) ev209
-    x_head_addr s rfl g207 hs159
+    x_head_addr s rfl (good.allowedTop (by simp_all)) g207 hs159
   rw [ld203] at hldS
   injection hldS with hvS
   subst hvS
@@ -917,7 +919,7 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
   have hus_nlS : us.length = cvS.levelParams.length :=
     ((NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj (hsnl.symm.trans hnlU))).symm
   -- 5. Load the structure's constructor via `proj_ctor` and projection table
-  have g370 : Good c cs370 := good.sub fun x hx => by simp [hx]
+  have g370 : CoreGood c cs370 := good.sub fun x hx => by simp [hx]
   have ev372' : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, .field iS] m194 p364 m357 cs370 :=
     hidx_eq ▸ ev372
   obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
@@ -936,17 +938,18 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
     hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 g370 hbS hidx_eq 0 cvC nP nF hfindC
+      ev372 g370.raw hbS hidx_eq 0 cvC nP nF hfindC
   obtain ⟨hteleC, hguard_eq⟩ :=
     hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 g370 hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
+      ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
   have ld203' : loadValue m194 p201 = .ok (.construct kciEnum "Induct"
       [x_ind_nlvls, x_ind_ty, .field (nPS : F), x_n_indices, x_num_ctors, w234,
         x_block_addr, .field iS]) := by
     rw [← hp_eq, ← hidx_eq]
     exact ld203
   have hnPS_eq : nPS = nP :=
-    ProjAux.ind_params_eq c hc ev209 g207 hs159 ld203' hbS hnPS hnP hnP_ind
+    ProjAux.ind_params_eq c hc ev209 (good.allowedTop (by simp_all)) g207
+      hs159 ld203' hbS hnPS hnP hnP_ind
   rw [hnPS_eq] at hp_eq hArgs_nPS
   -- 6. Level instantiation, parameter substitution, and field peeling
   have hls357 : RepKLevelList m357 ls x_lvls := RepKLevelList.mono hls194 e372
@@ -985,7 +988,7 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
       (ProjAux.tml_lbb hArgs) hPE.looseBVarsBounded (by rwa [hlpt]) (by rwa [hsn_s])
   -- 8. Projection guard and Prop guard (`FireSem`)
   have e194_548 : Heap.Extends m194 m548 := e372.trans (e492.trans (e522.trans e560))
-  have g626 : Good c cs626 := good.sub fun x hx => by simp [hx]
+  have g626 : CoreGood c cs626 := good.sub fun x hx => by simp [hx]
   have hrc548 : c.rc m548 x_rc := RCRep.mono E548 hrc
   have hbS548 : Bytes.RepAddressRef addrTy m548 bS x_block_addr :=
     Bytes.repAddressRef_heapMono₂ addrTy e194_548 hbS
@@ -1040,7 +1043,7 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
       refine hnz_p hv0 (fun ψ => ?_)
       rw [hu_eq, Ix.Kernel.Level.eval_subst]
       exact hz0 _
-    have g611 : Good c cs611 := good.sub fun x hx => by simp [hx]
+    have g611 : CoreGood c cs611 := good.sub fun x hx => by simp [hx]
     have hg669 : RepKLevel m669 g_lvl v614 := hg_lvl.mono e679
     have hls669 : RepKLevelList m669 ls x_lvls :=
       RepKLevelList.mono hls357 (e492.trans (e522.trans (e560.trans (e628.trans e679))))
@@ -1054,7 +1057,7 @@ theorem infer_proj_common (c : Ctx) (hc : CoreFacts c)
       ev628' g626 hrc548 hbS548 hg_lvl hg0_us φ
 
 /-- `KernelInfer::k_infer_proj`: full-grade projection inference (`Infer.proj`). -/
-theorem k_infer_proj_step (c : Ctx) (hc : CoreFacts c)
+theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_proj c args h r h' calls := by
@@ -1070,9 +1073,9 @@ theorem k_infer_proj_step (c : Ctx) (hc : CoreFacts c)
       ev14, ev52, ev91, ld127, ev169, heq192, ev209, ld203, _, ev315, ev372, ld366, heq478,
       ev492, ev522, ev560, ev628, op710, ev679, ev613, he714, he715, hc716⟩
   have hlt12 : cs12.length < calls.length := by rw [hc716]; lt_calls
-  have g12 : Good c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
+  have g12 : CoreGood c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
   have hlt520 : cs520.length < calls.length := by rw [hc716]; lt_calls
-  have g520 : Good c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
+  have g520 : CoreGood c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
   refine infer_proj_common c hc ih good hrc hfi htypes ha hPE hc716 ?_ ev52 ev91 ld127
     ev169 heq192 ev209 ld203 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
     he714 he715

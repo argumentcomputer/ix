@@ -57,7 +57,7 @@ theorem typesRep_congr {κ : _root_.Address → KKey} {Γ Γ' : Nat → KExpr} {
 
 /-- **Opening a binder extends the context list**: a fresh `Cons(ty, types)` cell is the context
 list at depth `d + 1` of the ghost context extended by the domain's image. -/
-theorem types_extend {c : Ctx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
+theorem types_extend {c : ScopedCtx} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
     {types tp : SourceValue F} {T : KExpr} (htypes : c.types Γ h d types) (hT : c.tm d Γ h T tp) :
     c.types (Ghost.extend Γ d T) (h ++ [.construct kexprListEnum "Cons" [tp, types]]) (d + 1)
       (.ptr (.enum kexprListEnum) h.length) := by
@@ -131,7 +131,7 @@ end InferBase
 open InferBase
 
 /-- `KernelInfer::k_infer_core`: one step of full-grade inference by the head node. -/
-theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
+theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_core c args h r h' calls := by
@@ -161,7 +161,7 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
       cs243 ld12 ev137 ld131 ev159 ev181 heq217 ev231 ev245 hc262 =>
     subst hc262
     obtain ⟨a, us, rfl, ha, ls, hls, hus⟩ := hE.const_of_load ld12
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld131] at hld
     injection hld with hv
@@ -283,7 +283,7 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
       (good.sub fun x hx => by simp [hx]) hrc i rfl d Γ htypes a Es ha hEs
 
 /-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node. -/
-theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c)
+theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_only_core c args h r h' calls := by
@@ -313,7 +313,7 @@ theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c)
       cs234 ld12 ev137 ld131 ev159 ev192 heq208 ev222 ev236 hc253 =>
     subst hc253
     obtain ⟨a, us, rfl, ha, ls, hls, hus⟩ := hE.const_of_load ld12
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld131] at hld
     injection hld with hv
@@ -472,9 +472,9 @@ theorem k_infer_only_core_step (c : Ctx) (hc : CoreFacts c)
       heq1657 ev1671 ev1701 ev1739 ev1807 ev1858 ev1792 he1884 he1885 hc1886 =>
     obtain ⟨a, i, PE, rfl, rfl, ha, hPE⟩ := hE.proj_of_load ld12
     have hlt1191 : cs1191.length < calls.length := by rw [hc1886]; lt_calls
-    have g1191 : Good c cs1191 := good.sub fun x hx => by rw [hc1886]; simp [hx]
+    have g1191 : CoreGood c cs1191 := good.sub fun x hx => by rw [hc1886]; simp [hx]
     have hlt1699 : cs1699.length < calls.length := by rw [hc1886]; lt_calls
-    have g1699 : Good c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
+    have g1699 : CoreGood c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
     refine infer_proj_common c hc ih good hrc rfl htypes ha hPE hc1886 ?_ ev1231 ev1270 ld1306
       ev1348 heq1371 ev1388 ld1382 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
       ev1792 he1884 he1885

@@ -80,7 +80,7 @@ theorem const_of_ilp (ks : List Ix.Kernel.LevelParam) (vs : List KLevel) {k : KK
 
 /-- **The major's inductive, read off the positional recursor type**: the head constant of the
 domain of binder `mI` of `posOf ps T` is that of `T`'s. -/
-theorem majorHead_of_pos {c : Ctx} {cv : Ix.Kernel.ConstantVal .anon} {mI : Nat}
+theorem majorHead_of_pos {c : ScopedCtx} {cv : Ix.Kernel.ConstantVal .anon} {mI : Nat}
     {a : Bytes.Address} {dom : KExpr} {us' : List KLevel}
     (hdom : piDomAt mI (posOf cv.levelParams cv.type) = some dom)
     (hfn : dom.getAppFn = .const (c.κ (ixAddr a)) us') : Specs.Whnf.MajorHead c cv mI a := by
@@ -134,11 +134,11 @@ theorem nd_seg_ext {fam op rc addr lvls hd sp types : SourceValue F} {h h' : Hea
   · exact ObsFn.heap_extends ev246
 
 /-- The native segment's tags `1` and `2` are `try_prim_dispatch`'s. -/
-theorem nd_seg_prim (c : Ctx) {fam op rc addr lvls hd sp types : SourceValue F} {h h' : Heap F}
+theorem nd_seg_prim (c : ScopedCtx) {fam op rc addr lvls hd sp types : SourceValue F} {h h' : Heap F}
     {t : F} {x : SourceValue F} {cs : List (Call F)}
     (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg1 fam op rc addr lvls hd sp types h
       (.tuple [.field t, x]) h' cs)
-    (ht : t = 1 ∨ t = 2) (ih : IH c cs) (good : Good c cs) (hrc : c.rc h rc) {d : Nat}
+    (ht : t = 1 ∨ t = 2) (ih : IH c cs) (good : CoreGood c cs) (hrc : c.rc h rc) {d : Nat}
     {Γ : Nat → KExpr} (htypes : c.types Γ h d types) {a : Bytes.Address} {us : List KLevel}
     {As : List KExpr} (ha : RepAddr h a addr) (hus : LvListRep h us lvls)
     (hAs : c.tml d Γ h As sp) :
@@ -168,7 +168,7 @@ end WhnfAux
 /-- `KernelWhnf::whnf_struct_core_const`: at a recursor of the right level count, ι
 (`try_iota`, the major's inductive from `rec_to_parent_addr`) continued by `whnf_struct_core`;
 any other head is stuck. -/
-theorem whnf_struct_core_const_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_struct_core_const_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_struct_core_const" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_struct_core_const c args h r h' calls := by
@@ -188,7 +188,7 @@ theorem whnf_struct_core_const_step (c : Ctx) {args : List (SourceValue F)} {h h
   · -- ι, continued
     subst hc332
     have e0 := ObsFn.heap_extends ev18
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev18 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev18 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld12] at hld
     injection hld with hv
@@ -251,7 +251,7 @@ theorem whnf_struct_core_const_step (c : Ctx) {args : List (SourceValue F)} {h h
 where the whole application is closed), then by the loaded constant: a definition's projection
 shortcut; quotient ι; the recursor dispatch; each continued by `whnf_nd` (the K reduct by
 `whnf`); any other head is stuck. -/
-theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_const_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_const_head c args h r h' calls := by
@@ -279,7 +279,7 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
       w423 w424 m451 cs461 x_reduced cs527 ev14 sg296 ev397 ld391 ev463 ev529 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext ha)
     rw [ld391] at hld
     injection hld with hv
@@ -325,7 +325,7 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
       x_reduced cs950 ev14 sg296 ev397 ld391 ev824 ev952 hc =>
     subst hc
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -346,7 +346,7 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
       ev14 sg296 ev397 ld391 ev824 he997 he998 hc =>
     subst hc he997 he998
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -363,7 +363,7 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
       x_k_reduct cs1021 ev14 sg296 ev397 ld391 ev824 ev1023 hc =>
     subst hc
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -399,7 +399,7 @@ theorem whnf_nd_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 
 /-- `KernelWhnf::apply_n_projs`: the head applied to the projections `i, …, n_fields - 1` of the
 major. -/
-theorem apply_n_projs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem apply_n_projs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::apply_n_projs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.apply_n_projs c args h r h' calls := by

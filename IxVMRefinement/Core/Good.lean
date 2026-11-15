@@ -9,15 +9,16 @@ import IxC.Kernel.Verify.EnvPreds
 `Good c calls`: the calls hashed no collision with the records `c.E` (the escape of the
 statement's `Core`, `View.HashedCollision { env := c.E } [] calls`), and they are **bounded**:
 some valid ROM of at most `2^39` addresses carries them (the statement's `Bounded`, which L0
-provides), so every list their arguments hold is shorter than `2^39`. Every registry spec is conditional on `Good` of its own calls, and `Good`
-passes to sub-derivations (`Good.sub`): a callee's calls are among its caller's.
+provides), so every list their arguments hold is shorter than `2^39`. Raw declaration traversal
+uses this weak predicate. Registry specs use `CoreGood` from `CallScope.lean`, which also records
+coverage of child calls; installed loads separately require the exact top invocation.
 
 `LoadFacts c`: the record loads the core makes read the environment: a load at an address the
 table keys as `k` returns a constant representing `env`'s constant at `k`. This is the
 L1 ↔ L7 interface: L1 (`Records`) says what a load returns in terms of the bytes it hashed;
 L7 (with L5) says the environment stores, at each record's key, the constant those bytes read
-as. The registry specs of `Ingress::get_ci`, `get_ci_cprj` and `get_ci_iprj` are discharged from
-it. -/
+as. This unrestricted interface is retained for compatibility. Actual registry runs use
+`ScopedLoadFacts`, whose installed-lookup claims apply only to selected invocations. -/
 
 namespace IxVM.Refinement.Core
 
@@ -141,6 +142,8 @@ projection record loads as its block member, with the member's counts (`indRecor
 inductive loads only from such a record (`inductRecord`). A native structure IxVM projects from
 has its projection table (`projTables`).
 Owed by the record conversion and the assembly. -/
+/-- Historical unrestricted load facts. Actual scoped runs keep raw declaration loading
+separate from installed-environment lookup through `ScopedLoadFacts`. -/
 structure LoadFacts (c : Ctx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs →
@@ -403,10 +406,10 @@ structure LoadFacts (c : Ctx) : Prop where
 before, the result, the heap after, its calls), relative to a context. Every function of the
 registry has one (`Registry.lean`). -/
 abbrev SpecFn : Type :=
-  Ctx → List (SourceValue F) → Heap F → SourceValue F → Heap F → List (Call F) → Prop
+  ScopedCtx → List (SourceValue F) → Heap F → SourceValue F → Heap F → List (Call F) → Prop
 
-/-- **The facts a step lemma may use about its context**: the environment invariant and the
-loads. `S0.ctx` gives both. -/
+/-- Unrestricted compatibility facts supplied by `S0.ctx`. Actual registry steps use
+`ScopedCoreFacts`, including selected calls and observation-specific native eta evidence. -/
 structure CoreFacts (c : Ctx) : Prop where
   env : EnvFacts c
   loads : LoadFacts c

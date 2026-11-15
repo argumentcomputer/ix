@@ -79,8 +79,8 @@ theorem segEntries_getElem? {Γ : Nat → KExpr} {d n i : Nat} {x : Nat × KExpr
 /-- **A context lookup, lifted to the current depth**: the shared body of `types_lookup` and
 `io_types_lookup`. The entry is represented at the depth its variable was opened at, `d - 1 - i`;
 lifting it by `i + 1` opened variables reads it at `d`. -/
-theorem lookup_lift (c : Ctx) {calls cs12 cs34 : List (Call F)} (ih : IH c calls)
-    {types v1 v38 r : SourceValue F} {i : F} {h m2 h' : Heap F} (good : Good c calls)
+theorem lookup_lift (c : ScopedCtx) {calls cs12 cs34 : List (Call F)} (ih : IH c calls)
+    {types v1 v38 r : SourceValue F} {i : F} {h m2 h' : Heap F} (good : CoreGood c calls)
     (ev14 : ObsFn W Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>» [types, .field i] h v1 m2
       cs12)
     (op60 : evalBinOp .add (.field i : SourceValue F) (.field 1) = .ok v38)

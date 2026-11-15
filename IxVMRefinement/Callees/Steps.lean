@@ -15,7 +15,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 set_option linter.unusedVariables false
 
 /-- **One step per function of the `Callees` family.** -/
-theorem callees_step (c : Ctx) (hc : CoreFacts c) :
+theorem callees_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W (Fn.callees f).name args h r h' cs → IH c cs →

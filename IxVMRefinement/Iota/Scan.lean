@@ -137,7 +137,7 @@ theorem fieldsClean_mono {h₁ h₂ : Heap F} {p : Nat} {ms : List Bytes.Address
   exact ⟨ds, q, forallChain_mono ext hch, chainEnd_mono ext hq,
     fun dp hdp => heapClean_mono ext (hcl dp hdp)⟩
 
-theorem membersClean_mono {c : Ctx} {h₁ h₂ : Heap F} {ms membs : List Bytes.Address}
+theorem membersClean_mono {c : ScopedCtx} {h₁ h₂ : Heap F} {ms membs : List Bytes.Address}
     (ext : Heap.Extends h₁ h₂) (mc : MembersClean c h₁ ms membs) : MembersClean c h₂ ms membs := by
   intro m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
   obtain ⟨cicon, w, nl, ty, rest, hf, hci, hw, hfc⟩ := mc m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
@@ -262,7 +262,7 @@ theorem heapClean_of_extends {P : Bytes.Address → Prop} {κ : _root_.Address �
 /-! ## `se_mentions` -/
 
 /-- `KernelWhnf::se_mentions` walks the heap term, asking `se_addr_in` at each constant. -/
-theorem se_mentions_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem se_mentions_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_mentions" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.se_mentions c args h r h' calls := by
@@ -384,7 +384,7 @@ theorem se_mentions_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 member's parameters (`se_peel_tol`) and scans the remaining fields (`se_scan_fields`), then
 moves to `c + 1`. The chain before the parameters and the chain the field scan reads are one
 chain; the parameters cover at least the first. -/
-theorem struct_scan_ctors_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_scan_ctors" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_scan_ctors c args h r h' calls := by
@@ -412,7 +412,7 @@ theorem struct_scan_ctors_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     have e2 := ObsFn.heap_extends ev179
     have e3 := ObsFn.heap_extends ev212
     obtain ⟨ci0, hfind, v, hv, hci⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev47 blk i j b
-      rfl (good.sub fun z hz => by simp [hz]) hb
+      rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hb
     rw [ld41] at hv
     injection hv with hv
     subst hv
@@ -453,7 +453,7 @@ theorem struct_scan_ctors_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 constructors of an inductive (`struct_scan_ctors`); `LoadFacts.indRecord` ties the loaded
 inductive's counts, block and index to the records, and its bounds read the field elements back
 as the records' numbers. -/
-theorem struct_scan_members_step (c : Ctx) (hc : CoreFacts c)
+theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_scan_members" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_scan_members c args h r h' calls := by
@@ -481,7 +481,7 @@ theorem struct_scan_members_step (c : Ctx) (hc : CoreFacts c)
     intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
     rcases List.mem_cons.mp hm with rfl | hm'
     · obtain ⟨nl, ty, u, blk, b, hl, hb, hbb, hidx, hsize⟩ := hc.loads.indRecord x_m p49 h m41
-        cs55 m cm cb pp ys ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
+        cs55 m cm cb pp ys ind ev57 (good.sub fun z hz => by simp [hz]).raw ha h1 h2 h3 h4 h5
       have hidx' : pp.idx.toNat < 18446744069414584321 := lt_trans hidx (by norm_num)
       have hsize' : ind.ctors.size < 18446744069414584321 := lt_trans hsize (by norm_num)
       rw [ld51] at hl
@@ -513,7 +513,7 @@ theorem struct_scan_members_step (c : Ctx) (hc : CoreFacts c)
     intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
     rcases List.mem_cons.mp hm with rfl | hm'
     · obtain ⟨nl, ty, u, blk, b, hl, -, -, -, -⟩ := hc.loads.indRecord x_m p49 h m41 cs55 m cm cb
-        pp ys ind ev57 (good.sub fun z hz => by simp [hz]) ha h1 h2 h3 h4 h5
+        pp ys ind ev57 (good.sub fun z hz => by simp [hz]).raw ha h1 h2 h3 h4 h5
       rw [ld51] at hl
       injection hl with hl
       exact (hne212 _ (by rfl) hl).elim
@@ -541,7 +541,7 @@ theorem infoShape_muts {h : Heap F} {info : Ixon.ConstantInfo} {x : SourceValue 
 /-- `KernelWhnf::struct_block_member_addrs` loads the record at the block
 (`Ingress::load_verified_constant`): at a block it builds the members' projection-record
 addresses (`Ingress::build_recur_addrs`), otherwise the one-element list of the parent. -/
-theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem struct_block_member_addrs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_block_member_addrs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_block_member_addrs c args h r h' calls := by
@@ -600,7 +600,7 @@ theorem struct_block_member_addrs_step (c : Ctx) {args : List (SourceValue F)} {
 block scans the block's member list against itself. The block IxVM loaded is the parent's block
 in the records (`LoadFacts.indRecord`, `addr_det`); with no record at the block the member list
 is taken empty. -/
-theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem struct_is_rec_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_is_rec" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_is_rec c args h r h' calls := by
@@ -615,7 +615,7 @@ theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValu
   · subst hc168
     have e1 := ObsFn.heap_extends ev17
     have e2 := ObsFn.heap_extends ev103
-    obtain ⟨ci, -, v, hv, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev17 par p rfl
+    obtain ⟨ci, -, v, hv, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev17 par p rfl (good.allowedTop (by simp_all))
       (good.sub fun z hz => by simp [hz]) hp
     rw [ld11] at hv
     injection hv with hv
@@ -631,7 +631,7 @@ theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValu
         ys[pp.idx.toNat]? = some (.indc ind) → ixAddr b = pp.block := by
       intro cm cb pp ys ind h1 h2 h3 h4 h5
       obtain ⟨nl, ty, u, blk, b', hl, hb', hbb, -, -⟩ := hc.loads.indRecord par p9 h m2 cs15 p cm
-        cb pp ys ind ev17 (good.sub fun z hz => by simp [hz]) hp h1 h2 h3 h4 h5
+        cb pp ys ind ev17 (good.sub fun z hz => by simp [hz]).raw hp h1 h2 h3 h4 h5
       rw [ld11] at hl
       injection hl with hl
       injection hl with _ _ hl
@@ -659,7 +659,7 @@ theorem struct_is_rec_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValu
 
 /-! ## `se_peel_tol` -/
 
-theorem se_peel_tol_aux (c : Ctx) (N : Nat) :
+theorem se_peel_tol_aux (c : ScopedCtx) (N : Nat) :
     ∀ {ty n : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)},
       calls.length < N → ObsFn W "KernelWhnf::se_peel_tol" [ty, n] h r h' calls →
       ∀ m : F, n = .field m → ∀ d Γ k T, c.tmk d Γ k h T ty →
@@ -703,7 +703,7 @@ theorem se_peel_tol_aux (c : Ctx) (N : Nat) :
 
 /-- `KernelWhnf::se_peel_tol` walks up to `n` `∀` nodes of the represented type; at a node other
 than a `∀` node the walk stops, and that node is a term node. -/
-theorem se_peel_tol_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem se_peel_tol_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_peel_tol" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.se_peel_tol c args h r h' calls := by
@@ -755,7 +755,7 @@ theorem forallChain_of_extends {P : Bytes.Address → Prop} {κ : _root_.Address
 /-- `KernelWhnf::se_scan_fields` walks every remaining `∀` node of the represented type, scanning
 each domain with `se_mentions`, and rejects `let` nodes (`1`); on any other return (`r ≠ 1`),
 the chain of `∀` domains is clean and ends at a node that is neither `∀` nor `let`. -/
-theorem se_scan_fields_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem se_scan_fields_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::se_scan_fields" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.se_scan_fields c args h r h' calls := by

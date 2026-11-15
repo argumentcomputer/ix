@@ -255,7 +255,7 @@ theorem quotLift_substPW (u0 u1 : KLevel) :
 
 /-- **`Quot.lift`'s ι**: `Red.iota` at the stored `Quot.lift`, then the right-hand side's six
 `β`s. -/
-theorem quot_lift_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Address}
+theorem quot_lift_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : Bytes.Address}
     {us mus : List KLevel} {As QA : List KExpr} {a3 q2 : KExpr}
     (haddr : c.t.addressOf? .quotLift = some (ixAddr a)) (hin : c.inForce .quotLift)
     (hmk : c.t.addressOf? .quotMk = some (ixAddr b))
@@ -282,7 +282,7 @@ theorem quot_lift_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Addres
   have hwf := hc.env.tableWf
   have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
   have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
-  have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+  have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
   have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
     hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
   have hfM : c.env.find? Ix.Kernel.quotMkName = some Ix.Kernel.quotMkA :=
@@ -371,7 +371,7 @@ theorem quot_lift_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Addres
 
 /-- **`Quot.ind`'s ι**: `Red.iota` at the stored `Quot.ind`, then the right-hand side's five
 `β`s. -/
-theorem quot_ind_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Address}
+theorem quot_ind_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : Bytes.Address}
     {us mus : List KLevel} {As QA : List KExpr} {a3 q2 : KExpr}
     (haddr : c.t.addressOf? .quotInd = some (ixAddr a)) (hin : c.inForce .quotInd)
     (hmk : c.t.addressOf? .quotMk = some (ixAddr b))
@@ -397,7 +397,7 @@ theorem quot_ind_red (c : Ctx) (hc : CoreFacts c) {d : Nat} {a b : Bytes.Address
   have hwf := hc.env.tableWf
   have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := keyOf_of_addressOf hwf haddr
   have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
-  have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+  have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
   have hfI : c.env.find? Ix.Kernel.quotIndName = some Ix.Kernel.quotIndA :=
     hc.env.quotBasis hq Ix.Kernel.quotIndA (by simp [Ix.Kernel.BasisKind.declsA])
   have hfM : c.env.find? Ix.Kernel.quotMkName = some Ix.Kernel.quotMkA :=
@@ -480,7 +480,7 @@ eliminator's count, the major is head-normalized (`whnf`) to `Quot.mk` (by its r
 arguments at the eliminator's first level, `quot_certs` certifies the walks, and the result is
 the function (`Quot.lift`) or the minor premise (`Quot.ind`) applied to the packed element and
 the rest of the spine. -/
-theorem red_quot_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem red_quot_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_quot" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_quot c args h r h' calls := by
@@ -866,7 +866,7 @@ theorem quotMk_forallsNever (m0 : KLevel) (mrest : List KLevel) (h : m0.isNeverZ
     exact h
   exact ⟨hpw, hpw, hpw, trivial⟩
 
-private theorem quot_certs_seg1 {c : Ctx} {calls cs60 : List (Call F)} (ih : IH c calls)
+private theorem quot_certs_seg1 {c : ScopedCtx} {calls cs60 : List (Call F)} (ih : IH c calls)
     (hle : cs60.length ≤ calls.length)
     {rc il addr lvls ra mk mklvls ma types v57 : SourceValue F} {h m58 : Heap F}
     {us : List KLevel}
@@ -899,8 +899,8 @@ private theorem quot_certs_seg1 {c : Ctx} {calls cs60 : List (Call F)} (ih : IH 
   · subst he55
     exact ⟨Heap.Extends.refl _, fun hv => absurd (he54.symm.trans hv) (by simp)⟩
 
-private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List (Call F)}
-    (ih : IH c calls) (good : Good c calls) (hsub : ∀ z ∈ cs320, z ∈ calls)
+private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls cs320 : List (Call F)}
+    (ih : IH c calls) (good : CoreGood c calls) (hsub : ∀ z ∈ cs320, z ∈ calls)
     (hle : cs320.length ≤ calls.length)
     {v57 rc il addr lvls ra mk mklvls ma types : SourceValue F} {m58 m318 : Heap F}
     {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {us : List KLevel} {RA MA : List KExpr}
@@ -931,7 +931,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
     obtain ⟨hil1, v, hv, hvnz⟩ := hsg1 hv79
     rcases hrole with ⟨-, haddr, hin, hRA6, hus2⟩ | ⟨hil0, -⟩
     · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
-      have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+      have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
       have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
         hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
       obtain ⟨u0, u1, rfl⟩ := quot_list2 hus2
@@ -960,7 +960,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
     have E220 := E242.trans e230
     have E276 := E220.trans e286
     obtain ⟨ci0, hfind0, v0, hv0, hrep0⟩ := ih.get (.callees .get_ci)
-      (by simp only [List.length_cons, List.length_append] at hle; omega) ev155 addr a rfl
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun z hz => hsub z (by simp [hz])) ha
     rw [ld149] at hv0
     injection hv0 with hv0
@@ -977,14 +977,14 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
     have huslen0 : us.length = ci0.toConstantVal.levelParams.length := by
       rcases hrole with ⟨-, haddr, hin, -, hus2⟩ | ⟨-, haddr, hin, -, hus1⟩
       · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
-        have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+        have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
         have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
           hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
         rw [hka, hfL] at hfind0
         obtain rfl := Option.some.inj hfind0
         exact hus2
       · have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := keyOf_of_addressOf hwf haddr
-        have hq : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+        have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
         have hfI : c.env.find? Ix.Kernel.quotIndName = some Ix.Kernel.quotIndA :=
           hc.env.quotBasis hq Ix.Kernel.quotIndA (by simp [Ix.Kernel.BasisKind.declsA])
         rw [hka, hfI] at hfind0
@@ -1030,7 +1030,7 @@ private theorem quot_certs_seg2 (c : Ctx) (hc : CoreFacts c) {calls cs320 : List
 /-- **`KernelWhnf::quot_certs`**: the eliminator's walk (gated by `Quot.lift`'s never-zero motive
 level, or certified together with the last `β`'s conversion), then `Quot.mk`'s walk (gated by its
 never-zero level, or certified). -/
-theorem quot_certs_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem quot_certs_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::quot_certs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.quot_certs c args h r h' calls := by
@@ -1039,7 +1039,7 @@ theorem quot_certs_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F
   subst hargs
   have hwf := hc.env.tableWf
   have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
-  have hqM : c.inForce .quot := Ctx.inForce_of_block_or_dep hwf hmkin (.inl (by decide))
+  have hqM : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hmkin (.inl (by decide))
   have hfM : c.env.find? Ix.Kernel.quotMkName = some Ix.Kernel.quotMkA :=
     hc.env.quotBasis hqM Ix.Kernel.quotMkA (by simp [Ix.Kernel.BasisKind.declsA])
   rcases Obs.«KernelWhnf::quot_certs».obs ev with
@@ -1105,7 +1105,7 @@ theorem quot_certs_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F
     · simp at hm0
     · have hm0eq : m0' = m0 := by simpa using hm0
       subst hm0eq
-      obtain ⟨ciM, hfindM, vM, hvM, hrepM⟩ := ih.get (.callees .get_ci) (by lt_calls) ev453 mk b rfl
+      obtain ⟨ciM, hfindM, vM, hvM, hrepM⟩ := ih.get (.callees .get_ci) (by lt_calls) ev453 mk b rfl (good.allowedTop (by simp_all))
         (good.sub fun z hz => by simp [hz]) (Bytes.repAddressRef_heapMono₂ addrTy E341 hb)
       rw [ld447] at hvM
       injection hvM with hvM

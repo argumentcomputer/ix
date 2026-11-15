@@ -70,7 +70,7 @@ theorem piDomAt_of_stripPis :
       exact ih hstrip
     | _ => simp [Ix.Kernel.Expr.stripPis] at h
 
-theorem peel_n_foralls_aux (c : Ctx) :
+theorem peel_n_foralls_aux (c : ScopedCtx) :
     ∀ (m : Nat) {n : F} {x_e r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
       {d k : Nat} {Γ : Nat → KExpr} {T : KExpr},
       ZMod.val n = m →
@@ -201,10 +201,10 @@ theorem infoShape_not_muts {h : Heap F} {info : Ixon.ConstantInfo} {x_info : Sou
   rcases hi with ⟨lp, rfl, -⟩
   exact hne [lp] rfl rfl
 
-theorem fewInductives_of_modeled_zero (c : Ctx) {bp : SourceValue F} {b : Bytes.Address}
+theorem fewInductives_of_modeled_zero (c : ScopedCtx) {bp : SourceValue F} {b : Bytes.Address}
     {h : Heap F} {cs : List (Call F)}
     (hbim : Specs.Callees.block_is_modeled c [bp] h (.field 0) h cs)
-    (good : Good c cs) (hb : RepAddr h b bp) :
+    (good : CoreGood c cs) (hb : RepAddr h b bp) :
     FewInductives c (ixAddr b) := by
   intro cst ms hcst hinfo
   by_contra hgt
@@ -216,7 +216,7 @@ end ModeledAux
 
 /-- `KernelCheck::rec_to_parent_addr`: peels `p + m + mi + i` leading binders of a closed recursor
 type and returns the head constant address of the next binder's domain. -/
-theorem rec_to_parent_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem rec_to_parent_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::rec_to_parent_addr" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.rec_to_parent_addr c args h r h' calls := by
@@ -252,7 +252,7 @@ theorem rec_to_parent_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 
 /-- `KernelModeled::block_is_multi`: returns `0` or `1`, and for a record of `c.E` at `b`, returns
 `1` iff the record is a mutual block with at least two inductive members. -/
-theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem block_is_multi_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::block_is_multi" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.block_is_multi c args h r h' calls := by
@@ -262,7 +262,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   | Muts_n0 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 ev14 ev103 he116 he117 hc118 =>
     subst he116 he117
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
-    have hgood1 : Good c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc118]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -286,7 +286,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   | Muts_n1 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 ev14 ev103 he124 he125 hc126 =>
     subst he124 he125
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
-    have hgood1 : Good c cs12 := good.sub (by rw [hc126]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc126]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc126]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -311,7 +311,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       he131 he132 hc133 =>
     subst he131 he132
     refine ⟨.inr rfl, fun cst hcst => ?_⟩
-    have hgood1 : Good c cs12 := good.sub (by rw [hc133]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc133]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc133]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -328,7 +328,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   | other m2 cs12 x_info w39 w40 w41 w42 ev14 hne134 he138 he139 hc140 =>
     subst he138 he139
     refine ⟨.inl rfl, fun cst hcst => ?_⟩
-    have hgood1 : Good c cs12 := good.sub (by rw [hc140]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc140]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc140]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -341,7 +341,7 @@ theorem block_is_multi_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelModeled::block_is_modeled`: returns `1` at a block of two or more inductives and `0` at
 a record with zero inductive members. -/
-theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem block_is_modeled_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::block_is_modeled" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.block_is_modeled c args h r h' calls := by
@@ -350,7 +350,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   cases Obs.«KernelModeled::block_is_modeled».obs ev with
   | Muts_n0 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 ev14 ev103 he116 he117 hc118 =>
     subst he116 he117
-    have hgood1 : Good c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc118]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc118]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -371,7 +371,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     rw [hms_eq] at hms'; injection hms' with hms_eq'; subst hms_eq'
     omega
   | Muts_n1 m2 cs12 w39 w40 w41 w42 x_members m90 cs101 _ _ _ _ _ _ _ _ ev14 ev103 _ _ _ hc241 =>
-    have hgood1 : Good c cs12 := good.sub (by rw [hc241]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc241]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc241]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -397,7 +397,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   | Muts_other m2 cs12 w39 w40 w41 w42 x_members v89 m90 cs101 ev14 ev103 hne119 hne242
       he246 he247 hc248 =>
     subst he246 he247
-    have hgood1 : Good c cs12 := good.sub (by rw [hc248]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc248]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc248]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -411,7 +411,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     exact absurd (by simp [h0 ms hms_eq]) hne119
   | other m2 cs12 x_info w39 w40 w41 w42 ev14 hne249 he253 he254 hc255 =>
     subst he253 he254
-    have hgood1 : Good c cs12 := good.sub (by rw [hc255]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs12 := good.sub (by rw [hc255]; intro z hz; simp [hz])
     obtain ⟨-, hshape⟩ :=
       ih.get (.callees .load_verified_constant) (by rw [hc255]; callees_lt)
         ev14 bp b rfl hgood1 hb
@@ -424,7 +424,7 @@ theorem block_is_modeled_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `KernelModeled::proj_ctor`: asserts `block_is_modeled(block) = 0` (`FewInductives`) and loads
 the constructor projection record `(i, 0, block)`. -/
-theorem proj_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem proj_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.proj_ctor c args h r h' calls := by
@@ -434,24 +434,24 @@ theorem proj_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   obtain ⟨v12, m15, cs23, ev25, heq40, -, hm2, hc45⟩ :=
     Obs.«KernelModeled::assert_proj_allowed».obs ev14
   subst heq40 hm2
-  have hgood1 : Good c cs23 :=
+  have hgood1 : CoreGood c cs23 :=
     good.sub (by rw [hc52, hc45]; intro z hz; simp [hz])
   have hbim := ih.get (.callees .block_is_modeled)
     (by rw [hc52, hc45]; callees_lt) ev25
   have hfew : FewInductives c (ixAddr b) :=
     ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
-  have hgood2 : Good c cs26 :=
+  have hgood2 : CoreGood c cs26 :=
     good.sub (by rw [hc52]; intro z hz; simp [hz])
   have hb' : RepAddr m2 b bp := Bytes.repAddressRef_heapMono₂ addrTy ev25.heap_extends hb
   obtain ⟨ci, hfind, hci⟩ :=
     ih.get (.callees .get_ci_cprj) (by rw [hc52]; callees_lt) ev28
-      bp i 0 b rfl hgood2 hb'
+      bp i 0 b rfl (good.allowedTop (by simp_all)) hgood2 hb'
   rw [ZMod.val_zero] at hfind
   exact ⟨hfew, ci, hfind, hci⟩
 
 /-- `KernelModeled::defeq_list_ok`: pairwise `DefEq` on two represented term lists when the answer
 is nonzero. -/
-theorem defeq_list_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem defeq_list_ok_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::defeq_list_ok" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.defeq_list_ok c args h r h' calls := by
@@ -473,12 +473,12 @@ theorem defeq_list_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     obtain ⟨A, As', heA, hA, hAs'⟩ := Lib.rep_cons_of_load hAs ld12
     obtain ⟨B, Bs', heB, hB, hBs'⟩ := Lib.rep_cons_of_load hBs ld77
     subst heA heB
-    have hgood1 : Good c cs117 := good.sub (by rw [hc194]; intro z hz; simp [hz])
+    have hgood1 : CoreGood c cs117 := good.sub (by rw [hc194]; intro z hz; simp [hz])
     have hde := ih.get (.defEq .k_is_def_eq) (by rw [hc194]; callees_lt) ev119
       rc x_x x_y types rfl hgood1 hrc d Γ htypes A B hA hB
       (fun e => absurd (Value.field.inj e) (by decide))
     have ext := ev119.heap_extends
-    have hgood2 : Good c cs159 := good.sub (by rw [hc194]; intro z hz; simp [hz])
+    have hgood2 : CoreGood c cs159 := good.sub (by rw [hc194]; intro z hz; simp [hz])
     have hrest := ih.get (.callees .defeq_list_ok) (by rw [hc194]; callees_lt) ev161
       rc x_xr x_yr types rfl hgood2 (RCRep.mono ext hrc) d Γ ⟨htypes.1.mono ext, htypes.2⟩
       As' Bs' (TmL.mono ext hAs') (TmL.mono ext hBs') hr
