@@ -186,8 +186,18 @@ theorem rawRecordFacts_of_trace {base : Ctx} {name : String} {args : List (Sourc
     intro addr heap member
     obtain ⟨value, after, children, obs, _⟩ := observed.call_observed member
     obtain ⟨a, source, ha, parents⟩ := known addr heap member
-    exact ⟨{ addr, result := value, before := heap, after, calls := children, address := a,
-      observed := obs, addressRep := ha, source, parents }, rfl⟩
+    let q : RawRecordQuery base.E :=
+      { addr := addr
+        result := value
+        before := heap
+        after := after
+        calls := children
+        address := a
+        observed := obs
+        addressRep := ha
+        source := source
+        parents := parents }
+    exact ⟨q, rfl⟩
   obtain ⟨queries, covered⟩ := queryList_of_cover base calls each
   exact ⟨queries, rawRecordFacts_of_queries base queries, covered⟩
 
