@@ -1209,14 +1209,33 @@ theorem WrapRelSem.refl (find? : KKey → Option (ConstantInfo .anon)) (e : KExp
     WrapRelSem find? e e :=
   (ExprSemEq.refl e).toWrapRelSem find?
 
+private theorem lvEqList_of_forall₂ :
+    ∀ {us vs : List KLevel},
+      Ix.Kernel.Semantics.Forall₂ (fun u v : KLevel => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ)
+        us vs →
+      LvEqList us vs
+  | [], [], .nil => fun _ => trivial
+  | _ :: _, _ :: _, .cons h1 h2 => fun φ => ⟨h1 φ, lvEqList_of_forall₂ h2 φ⟩
+
+private theorem forall₂_of_lvEqList :
+    ∀ {us vs : List KLevel},
+      LvEqList us vs →
+      Ix.Kernel.Semantics.Forall₂ (fun u v : KLevel => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ)
+        us vs
+  | [], [], _ => .nil
+  | [], _ :: _, h => False.elim (h fun _ => 0)
+  | _ :: _, [], h => False.elim (h fun _ => 0)
+  | _ :: _, _ :: _, h =>
+    .cons (fun φ => (h φ).1) (forall₂_of_lvEqList fun φ => (h φ).2)
+
 mutual
 
 theorem WrapRel.toWrapRelSem {find? : KKey → Option (ConstantInfo .anon)} :
     ∀ {g d : KExpr}, Ix.Kernel.Semantics.WrapRel find? g d → WrapRelSem find? g d
   | _, _, .bvar i => .bvar i
   | _, _, .fvar ht => .fvar (WrapRel.toWrapRelSem ht)
-  | _, _, .sort u => .sort (LvEq.refl u)
-  | _, _, .const _ us => .const (LvEqList.refl us)
+  | _, _, .sort h => .sort h
+  | _, _, .const h => .const (lvEqList_of_forall₂ h)
   | _, _, .lit l => .lit l
   | _, _, .app hf ha => .app (WrapRel.toWrapRelSem hf) (WrapRel.toWrapRelSem ha)
   | _, _, .lam hpw hd hb => .lam hpw (WrapDom.toWrapDomSem hd) (WrapRel.toWrapRelSem hb)
@@ -1230,6 +1249,30 @@ theorem WrapDom.toWrapDomSem {find? : KKey → Option (ConstantInfo .anon)} :
     ∀ {t t' : KExpr}, Ix.Kernel.Semantics.WrapDom find? t t' → WrapDomSem find? t t'
   | _, _, .keep hr => .keep (WrapRel.toWrapRelSem hr)
   | _, _, .consume hc hd => .consume hc (WrapDom.toWrapDomSem hd)
+
+end
+
+mutual
+
+theorem WrapRelSem.toWrapRel {find? : KKey → Option (ConstantInfo .anon)} :
+    ∀ {g d : KExpr}, WrapRelSem find? g d → Ix.Kernel.Semantics.WrapRel find? g d
+  | _, _, .bvar i => .bvar i
+  | _, _, .fvar ht => .fvar (WrapRelSem.toWrapRel ht)
+  | _, _, .sort h => .sort h
+  | _, _, .const h => .const (forall₂_of_lvEqList h)
+  | _, _, .lit l => .lit l
+  | _, _, .app hf ha => .app (WrapRelSem.toWrapRel hf) (WrapRelSem.toWrapRel ha)
+  | _, _, .lam hpw hd hb => .lam hpw (WrapDomSem.toWrapDom hd) (WrapRelSem.toWrapRel hb)
+  | _, _, .forallE hpw hd hb => .forallE hpw (WrapDomSem.toWrapDom hd) (WrapRelSem.toWrapRel hb)
+  | _, _, .letE ht hv hb =>
+    .letE (WrapRelSem.toWrapRel ht) (WrapRelSem.toWrapRel hv) (WrapRelSem.toWrapRel hb)
+  | _, _, .proj he => .proj (WrapRelSem.toWrapRel he)
+  | _, _, .zeta hz => .zeta (WrapRelSem.toWrapRel hz)
+
+theorem WrapDomSem.toWrapDom {find? : KKey → Option (ConstantInfo .anon)} :
+    ∀ {t t' : KExpr}, WrapDomSem find? t t' → Ix.Kernel.Semantics.WrapDom find? t t'
+  | _, _, .keep hr => .keep (WrapRelSem.toWrapRel hr)
+  | _, _, .consume hc hd => .consume hc (WrapDomSem.toWrapDom hd)
 
 end
 

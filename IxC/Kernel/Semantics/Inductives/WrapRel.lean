@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Env
 public import IxC.Kernel.ExprOps
+public import IxC.Kernel.Verify.Level
 
 @[expose] public section
 
@@ -36,7 +37,18 @@ those wrappers.
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Key Expr Level ConstantInfo Literal)
+open Ix.Kernel (Key Expr Level LevelParam ConstantInfo Literal)
+
+/-- Two lists related position by position. -/
+inductive Forall₂ {α β : Type} (R : α → β → Prop) : List α → List β → Prop
+  | nil : Forall₂ R [] []
+  | cons {a : α} {b : β} {l₁ : List α} {l₂ : List β} :
+      R a b → Forall₂ R l₁ l₂ → Forall₂ R (a :: l₁) (b :: l₂)
+
+theorem Forall₂.refl {α : Type} {R : α → α → Prop} (hR : ∀ x, R x x) :
+    ∀ xs : List α, Forall₂ R xs xs
+  | [] => .nil
+  | x :: xs => .cons (hR x) (Forall₂.refl hR xs)
 
 /-- The arity of a value `λ x₁ … xₖ, x₁` (`k ≥ 1`) whose binders' zero-ness data are all `never`
 (the λs are functions, never proofs), after `n` binders already passed. -/
@@ -63,8 +75,11 @@ mutual
 inductive WrapRel (find? : Key md → Option (ConstantInfo md)) : Expr md → Expr md → Prop
   | bvar (i : Nat) : WrapRel find? (.bvar i) (.bvar i)
   | fvar {i : Nat} {t t' : Expr md} : WrapRel find? t t' → WrapRel find? (.fvar i t) (.fvar i t')
-  | sort (u : Level) : WrapRel find? (.sort u) (.sort u)
-  | const (n : Key md) (us : List Level) : WrapRel find? (.const n us) (.const n us)
+  | sort {u v : Level} :
+      (∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) → WrapRel find? (.sort u) (.sort v)
+  | const {n : Key md} {us vs : List Level} :
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs →
+      WrapRel find? (.const n us) (.const n vs)
   | lit (l : Literal) : WrapRel find? (.lit l) (.lit l)
   | app {f a f' a' : Expr md} :
       WrapRel find? f f' → WrapRel find? a a' → WrapRel find? (.app f a) (.app f' a')
@@ -96,8 +111,8 @@ theorem WrapRel.refl (find? : Key md → Option (ConstantInfo md)) :
     ∀ e : Expr md, WrapRel find? e e
   | .bvar i => .bvar i
   | .fvar _ t => .fvar (WrapRel.refl find? t)
-  | .sort u => .sort u
-  | .const n us => .const n us
+  | .sort _ => .sort (fun _ => rfl)
+  | .const _ us => .const (Forall₂.refl (fun _ _ => rfl) us)
   | .lit l => .lit l
   | .app f a => .app (WrapRel.refl find? f) (WrapRel.refl find? a)
   | .lam t b _ => .lam rfl (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
@@ -176,10 +191,10 @@ theorem wrapRelB_sound (find? : Key md → Option (ConstantInfo md)) :
              (wrapRelB_sound find? fuel _ _ h3)
          · exact .zeta (wrapRelB_sound find? fuel _ _ h))
       | (subst h; exact .bvar _)
-      | (subst h; exact .sort _)
+      | (subst h; exact .sort (fun _ => rfl))
       | (subst h; exact .lit _)
       | (obtain ⟨rfl, h⟩ := h; exact .fvar (wrapRelB_sound find? fuel _ _ h))
-      | (obtain ⟨rfl, rfl⟩ := h; exact .const _ _)
+      | (obtain ⟨rfl, rfl⟩ := h; exact .const (Forall₂.refl (fun _ _ => rfl) _))
       | exact .app (wrapRelB_sound find? fuel _ _ h.1) (wrapRelB_sound find? fuel _ _ h.2)
       | exact .lam h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2) (wrapRelB_sound find? fuel _ _ h.2)
       | exact .forallE h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2)

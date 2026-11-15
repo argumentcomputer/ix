@@ -241,7 +241,10 @@ def RecStoredJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (∀ r ∈ rhss, letFree r = true) ∧
     Forall₂ (J.annot ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ 0) p.rhss
       rhss ∧
-    letFree cvRi.type = true
+    letFree cvRi.type = true ∧
+    (∀ r ∈ rhss, r.allLevelParamsDefined p.cvR.levelParams = true) ∧
+    (∀ bs dom B m, cvRi.type.stripPis p.majorIdx = some (bs, .forallE dom B m) →
+      ∃ K, dom.getAppFn = .const K (p.cvT.levelParams.map .param))
 
 /-- **The recursor's stage and the recursor stored**: the stage's generated recursor and
 rules, and the recursor and rules the block stores. -/
@@ -795,25 +798,22 @@ theorem NativeRecJ.facts {J : Judgements md} {env : Env md} {p : NativeParts md}
       rhs.looseBVarsBounded 0 = true := by
   obtain ⟨cvRg, rhsG, hR, hst⟩ := h
   have hF := hR.facts
-  rcases hst with ⟨rfl, rfl⟩ | ⟨cvRi, hccv, rfl, -, hWr, hlf, -, -⟩
+  rcases hst with ⟨rfl, rfl⟩ | ⟨cvRi, hccv, rfl, -, hWr, hlf, -, -, hrlp, -⟩
   · exact hF
-  · obtain ⟨hnR, hlR, -, hlen, hall⟩ := hF
+  · obtain ⟨hnR, -, -, hlen, hall⟩ := hF
     obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann, htp, htr, -⟩, rfl⟩ := hccv
     obtain ⟨htf, hbt⟩ := hsyn hann hitf hlbt
     refine ⟨rfl, rfl, ⟨htf, htp, htr, hbt⟩, by rw [← forall₂_length hWr]; exact hlen,
       fun rhs hrhs => ?_⟩
     obtain ⟨g, hg, hW⟩ := forall₂_mem_right hWr rhs hrhs
-    obtain ⟨hgf, hglp, hgres, hgbv⟩ := hall g hg
+    obtain ⟨hgf, -, hgres, hgbv⟩ := hall g hg
     have hT := hW.toWrapT (hlf rhs hrhs)
-    refine ⟨hT.hasFvar hgf, ?_, ?_, hT.looseBVarsBounded 0 hgbv⟩
-    · have h1 := hT.allLevelParamsDefined _ hgf hglp
-      rw [hlR] at h1
-      exact h1
-    · exact Ix.Kernel.Expr.constsResolve_of_find
-        (Ix.Kernel.find?_isSome_cons_same (c := .recInfo cvRg p.majorIdx p.rulePrefix [])
-          (c' := .recInfo ⟨p.cvR.name, p.cvR.levelParams, type'⟩ p.majorIdx p.rulePrefix [])
-          hnR)
-        (hT.constsResolve _ hgf hgres)
+    refine ⟨hT.hasFvar hgf, hrlp rhs hrhs, ?_, hT.looseBVarsBounded 0 hgbv⟩
+    exact Ix.Kernel.Expr.constsResolve_of_find
+      (Ix.Kernel.find?_isSome_cons_same (c := .recInfo cvRg p.majorIdx p.rulePrefix [])
+        (c' := .recInfo ⟨p.cvR.name, p.cvR.levelParams, type'⟩ p.majorIdx p.rulePrefix [])
+        hnR)
+      (hT.constsResolve _ hgf hgres)
 
 /-- **The stored recursor's cons keeps the environment well-formed** (`NativeRecRunJ.recWF`). -/
 theorem NativeRecJ.recWF {J : Judgements md} {env : Env md} (henv : Ix.Kernel.EnvWF env)
@@ -859,9 +859,9 @@ theorem NativeRecJ.major {J : Judgements md} {env : Env md} {p : NativeParts md}
   obtain ⟨-, -, cvRi, recTy, sty, u, -, hty, -, -, -, -, -, -, -, -, rfl⟩ := hR
   obtain ⟨bs, B, m, hg⟩ := structRecTyR_major hty
   rw [hlen] at hg
-  rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf⟩
+  rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf, -, hlvls⟩
   · exact ⟨bs, B, m, hg⟩
-  · exact WrapRel.major_structFamI hW hlf hT hg
+  · exact WrapRel.major_structFamI hW hlf hT hlvls hg
 
 /-- The kinds the block re-checks are one list per constructor. -/
 theorem nativeFieldsOk_length {env₀ : Env md} {T : Key md} {lps : List LevelParam}

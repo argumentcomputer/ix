@@ -754,6 +754,464 @@ theorem nat_check_rules_spec {c : Ctx}
           simp only [List.getElem_cons_succ, hadd]
           exact ⟨hnf', rhsG', hrhsG', hwrap'⟩
 
+/-- Heap witness that `p` is a literal `"App"`-spine over a literal `"Const" [ap, lsp]` cell
+representing address `a` and exact level list `ls`. -/
+inductive AppHeadConstLvls (h : Heap F) (a : Bytes.Address) (ls : List KLevel) :
+    SourceValue F → Prop where
+  | const {addr : Nat} {ap lsp : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
+      (ra : Bytes.RepAddressRef addrTy h a ap)
+      (rls : RepKLevelList h ls lsp) :
+      AppHeadConstLvls h a ls (.ptr (.enum kexprEnum) addr)
+  | app {addr : Nat} {fp ap : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
+      (rf : AppHeadConstLvls h a ls fp) :
+      AppHeadConstLvls h a ls (.ptr (.enum kexprEnum) addr)
+
+theorem AppHeadConstLvls.mono {h₁ h₂ : Heap F} {a : Bytes.Address} {ls : List KLevel}
+    {p : SourceValue F} (ext : Heap.Extends h₁ h₂) (hp : AppHeadConstLvls h₁ a ls p) :
+    AppHeadConstLvls h₂ a ls p := by
+  induction hp with
+  | const cell ra rls =>
+    exact .const (ext.getElem?_eq cell)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext)
+  | app cell _ ih =>
+    exact .app (ext.getElem?_eq cell) ih
+
+/-- Heap witness on the generated left-hand side of `wrap_rel` that `p` starts with `m` literal
+`"Forall"` cells followed by `"Forall" [xd, xb, xm]` whose domain `xd` represents `dom` at depth `k`
+with `dom.getAppFn = .const T ls` and `AppHeadConstLvls h a ls xd`. -/
+inductive ForallDomHeadLvls (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr)
+    (h : Heap F) (T : KKey) (a : Bytes.Address) (ls : List KLevel) :
+    Nat → Nat → SourceValue F → Prop where
+  | zero {k addr : Nat} {xd xb xm : SourceValue F} {dom : KExpr}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [xd, xb, xm]))
+      (hdom : Tm κ d Γ h k dom xd)
+      (hfn : dom.getAppFn = .const T ls)
+      (hhead : AppHeadConstLvls h a ls xd) :
+      ForallDomHeadLvls κ d Γ h T a ls 0 k (.ptr (.enum kexprEnum) addr)
+  | succ {m k addr : Nat} {xt xb xm : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [xt, xb, xm]))
+      (hrest : ForallDomHeadLvls κ d Γ h T a ls m (k + 1) xb) :
+      ForallDomHeadLvls κ d Γ h T a ls (m + 1) k (.ptr (.enum kexprEnum) addr)
+
+theorem ForallDomHeadLvls.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h₁ h₂ : Heap F} {T : KKey} {a : Bytes.Address} {ls : List KLevel}
+    {m k : Nat} {p : SourceValue F}
+    (ext : Heap.Extends h₁ h₂) (hp : ForallDomHeadLvls κ d Γ h₁ T a ls m k p) :
+    ForallDomHeadLvls κ d Γ h₂ T a ls m k p := by
+  induction hp with
+  | zero cell hdom hfn hhead =>
+    exact .zero (ext.getElem?_eq cell) (hdom.mono ext) hfn (hhead.mono ext)
+  | succ cell _ ih =>
+    exact .succ (ext.getElem?_eq cell) ih
+
+/-- Pure heap witness on the declared right-hand side of `wrap_rel` (certified by
+`rec_to_parent_addr`) that `p` starts with `m` literal `"Forall"` cells followed by
+`"Forall" [xd, xb, xm]` with `AppHeadConstLvls h a ls xd`. -/
+inductive ForallRightHeadLvls (h : Heap F) (a : Bytes.Address) (ls : List KLevel) :
+    Nat → SourceValue F → Prop where
+  | zero {addr : Nat} {xd xb xm : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [xd, xb, xm]))
+      (hhead : AppHeadConstLvls h a ls xd) :
+      ForallRightHeadLvls h a ls 0 (.ptr (.enum kexprEnum) addr)
+  | succ {m addr : Nat} {xt xb xm : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [xt, xb, xm]))
+      (hrest : ForallRightHeadLvls h a ls m xb) :
+      ForallRightHeadLvls h a ls (m + 1) (.ptr (.enum kexprEnum) addr)
+
+theorem ForallRightHeadLvls.mono {h₁ h₂ : Heap F} {a : Bytes.Address} {ls : List KLevel}
+    {m : Nat} {p : SourceValue F}
+    (ext : Heap.Extends h₁ h₂) (hp : ForallRightHeadLvls h₁ a ls m p) :
+    ForallRightHeadLvls h₂ a ls m p := by
+  induction hp with
+  | zero cell hhead => exact .zero (ext.getElem?_eq cell) (hhead.mono ext)
+  | succ cell _ ih => exact .succ (ext.getElem?_eq cell) ih
+
+private theorem getAppFn_mkAppN_eq : ∀ (As : List KExpr) (f : KExpr),
+    (Expr.mkAppN f As).getAppFn = f.getAppFn
+  | [], _ => rfl
+  | a :: As, f => by
+    show (Expr.mkAppN (.app f a) As).getAppFn = f.getAppFn
+    rw [getAppFn_mkAppN_eq As (.app f a)]
+    rfl
+
+private theorem nat_app_n_head {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
+    ∀ {Args : List KExpr} {a : Bytes.Address} {ls : List KLevel} {pf pargs r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
+      AppHeadConstLvls h a ls pf →
+      RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h Args pargs →
+      ObsFn W "KernelCheck::nat_app_n" [pf, pargs] h r h' cs →
+      AppHeadConstLvls h' a ls r := by
+  intro Args
+  induction Args with
+  | nil =>
+    intro a ls pf pargs r h h' cs hf hargs ev
+    match Obs.«KernelCheck::nat_app_n».obs ev with
+    | .Nil (he21 := hr) (he22 := hh) .. =>
+      subst hr hh; exact hf
+    | .Cons (ld12 := ld12) .. =>
+      have ld12' : loadValue h pargs = .ok (.construct kexprListEnum "Cons" [_, _]) := ld12
+      cases hargs with | nil cell => exact (load_cell_ne cell ld12' (by decide)).elim
+  | cons _ _ ih =>
+    intro a ls pf pargs r h h' cs hf hargs ev
+    match Obs.«KernelCheck::nat_app_n».obs ev with
+    | .Nil (ld12 := ld12) .. =>
+      have ld12' : loadValue h pargs = .ok (.construct kexprListEnum "Nil" []) := ld12
+      cases hargs with | cons cell _ _ => exact (load_cell_ne cell ld12' (by decide)).elim
+    | .Cons (m50 := m50) (ld12 := ld12) (hm58 := hm58) (ev46 := ev46) .. =>
+      obtain ⟨_, _, heq, _, has⟩ := RepList.cons_of_load hargs ld12
+      injection heq with h1 h2; subst h1 h2
+      have ext50 : Heap.Extends h m50 := by rw [hm58]; exact Heap.Extends.snoc _ _
+      have happ : AppHeadConstLvls m50 a ls (.ptr (.enum kexprEnum) h.length) := by
+        rw [hm58]
+        exact .app (by simp; rfl) (hf.mono (Heap.Extends.snoc _ _))
+      exact ih happ (tmRepList_mono ext50 has) ev46
+
+private theorem forallDomHeadLvls_replace_pis
+    {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {T : KKey} {a : Bytes.Address} {ls : List KLevel} {m : Nat} :
+    ∀ (cnt : Nat) {k : Nat} {tele : KExpr} {ppw ptele pb r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
+      cnt < 2147483648 →
+      Tm κ d Γ h k tele ptele →
+      ForallDomHeadLvls κ d Γ h T a ls m (k + cnt) pb →
+      ObsFn W "KernelCheck::nat_replace_pis"
+        [ppw, .field (cnt : F), ptele, pb, .field 0] h r h' cs →
+      ForallDomHeadLvls κ d Γ h' T a ls (cnt + m) k r
+  | 0, k, _, _, _, _, _, _, _, _, _, _, hpb, ev => by
+    match Obs.«KernelCheck::nat_replace_pis».obs ev with
+    | .n0 (he16 := hr) (he17 := hh) .. =>
+      subst hr hh
+      simpa [Nat.zero_add] using hpb
+    | .other_n0 (hne19 := hne) .. => exact (hne rfl).elim
+    | .other_other (hne19 := hne) .. => exact (hne rfl).elim
+  | cnt + 1, k, tele, ppw, ptele, pb, r, h, h', cs, hcnt, htele, hpb, ev => by
+    have hne0 : (.field ((cnt + 1 : Nat) : F) : SourceValue F) ≠ .field 0 :=
+      succ_field_ne_zero (by omega)
+    match Obs.«KernelCheck::nat_replace_pis».obs ev with
+    | .n0 (hv14 := hv) .. =>
+      exact absurd hv hne0
+    | .other_other (hne163 := hne) .. =>
+      exact (hne rfl).elim
+    | .other_n0 (x_ty := xty) (v54 := v54) (m55 := m55) (ld33 := ld) (op93 := op) (ev67 := ev')
+        (he134 := hr) (hm133 := hm) .. =>
+      subst hr hm
+      obtain ⟨_, B, _, rfl, _, hb, _⟩ := htele.forallE_of_load ld
+      rw [evalBinOp_sub_succ cnt op] at ev'
+      have hpb' : ForallDomHeadLvls κ d Γ h T a ls m ((k + 1) + cnt) pb := by
+        rwa [show (k + 1) + cnt = k + (cnt + 1) by omega]
+      have ih_out := forallDomHeadLvls_replace_pis cnt (by omega) hb hpb' ev'
+      have hsucc :
+          ForallDomHeadLvls κ d Γ
+            (m55 ++ [.construct kexprEnum "Forall" [xty, v54, ppw]])
+            T a ls ((cnt + m) + 1) k (.ptr (.enum kexprEnum) m55.length) :=
+        .succ (by simp; exact ⟨rfl, rfl⟩) (ih_out.mono (Heap.Extends.snoc _ _))
+      rwa [show (cnt + 1) + m = (cnt + m) + 1 by omega]
+
+private theorem forallDomHeadLvls_nat_minors
+    {c : Ctx} {T : KKey} {bT : Bytes.Address} {nP nIdx m : Nat} {large : Bool}
+    {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)}
+    {ls : List KLevel}
+    (hnCtors_lt : ctors_info.length < 2147483648) :
+    ∀ (rem j : Nat) {x_block x_t x_lps x_pw x_body r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
+      j + rem = ctors_info.length →
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) h
+        T bT ls m (nP + 1 + ctors_info.length) x_body →
+      ObsFn W "KernelCheck::nat_minors"
+        [x_block, .field 0, x_t, x_lps, .field (nP : F), .field (nIdx : F), x_pw,
+          .field (ctors_info.length : F),
+          .field ((if large then 1 else 0 : Nat) : F),
+          .field (j : F), x_body, .field 0]
+        h r h' cs →
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) h' T bT ls (rem + m) (nP + j + 1) r
+  | 0, j, _, _, _, _, _, _, _, _, _, hjr, hbody, ev => by
+    have hj_eq : j = ctors_info.length := by omega
+    subst hj_eq
+    match Obs.«KernelCheck::nat_minors».obs ev with
+    | .n0 (he25 := hr) (he26 := hh) .. =>
+      subst hr hh
+      simpa [Nat.add_assoc, Nat.add_comm 1] using hbody
+    | .other_n0 (op17 := op17) (hne28 := hne28) .. =>
+      rw [evalBinOp_sub_nat (Nat.le_refl ctors_info.length) op17] at hne28
+      simp only [Nat.sub_self, Nat.cast_zero] at hne28
+      exact (hne28 rfl).elim
+    | .other_other (op17 := op17) (hne28 := hne28) .. =>
+      rw [evalBinOp_sub_nat (Nat.le_refl ctors_info.length) op17] at hne28
+      simp only [Nat.sub_self, Nat.cast_zero] at hne28
+      exact (hne28 rfl).elim
+  | rem + 1, j, _, _, _, x_pw, _, _, _, _, _, hjr, hbody, ev => by
+    match Obs.«KernelCheck::nat_minors».obs ev with
+    | .n0 (op17 := op17) .. =>
+      have hsub := evalBinOp_sub_nat (by omega : j ≤ ctors_info.length) op17
+      have hval := congrArg ZMod.val (Value.field.inj hsub.symm)
+      have h1 : ZMod.val ((ctors_info.length - j : Nat) : F) = ctors_info.length - j :=
+        ZMod.val_natCast_of_lt (Nat.lt_trans (by omega : ctors_info.length - j < 4294967296) (by decide))
+      rw [h1, ZMod.val_zero] at hval
+      omega
+    | .other_other (hne408 := hne_lam) .. =>
+      exact absurd rfl hne_lam
+    | .other_n0 (v128 := v128) (v243 := v243) (m244 := m244)
+        (ev45 := ev_ctor) (ev161 := ev_proj) (ev141 := ev_mty)
+        (op345 := op345) (ev256 := ev_rec) (he379 := hr) (hm378 := hm_end) .. =>
+      subst hr hm_end
+      rw [evalBinOp_add_one j op345] at ev_rec
+      have ext_h_129 := ev_ctor.heap_extends.trans
+        (ev_proj.heap_extends.trans ev_mty.heap_extends)
+      have ih_out := forallDomHeadLvls_nat_minors hnCtors_lt rem (j + 1) (by omega)
+        (hbody.mono ext_h_129) ev_rec
+      have ih_out' :
+          ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) m244
+            T bT ls (rem + m) ((nP + j + 1) + 1) v243 := by
+        rwa [show (nP + j + 1) + 1 = nP + (j + 1) + 1 by omega]
+      have hsucc :
+          ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default)
+            (m244 ++ [.construct kexprEnum "Forall" [v128, v243, x_pw]])
+            T bT ls ((rem + m) + 1) (nP + j + 1) (.ptr (.enum kexprEnum) m244.length) :=
+        .succ (by simp; exact ⟨rfl, rfl⟩) (ih_out'.mono (Heap.Extends.snoc _ _))
+      rwa [show (rem + 1) + m = (rem + m) + 1 by omega]
+
+private theorem wrap_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d : List KLevel} :
+    ∀ {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      AppHeadConstLvls h a_g ls_g xg →
+      AppHeadConstLvls h a_d ls_d xd →
+      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ls_g = ls_d := by
+  intro xg xd h h' cs hg hd ev
+  induction hg generalizing xd h' cs with
+  | const cell_g _ rls_g =>
+    match Obs.«KernelCheck::wrap_rel».obs ev with
+    | .other_other_App_App_other (he301 := he) ..
+    | .other_other_App_other (he308 := he) ..
+    | .other_other_Lam_other (he426 := he) ..
+    | .other_other_Forall_other (he544 := he) ..
+    | .other_other_Proj_Proj_other (he696 := he) ..
+    | .other_other_Proj_other (he703 := he) .. =>
+      exact absurd (Value.field.inj he) one_ne_zero
+    | .Let (ld12 := ld) ..
+    | .other_other_App_App_n1 (ld192 := ld) ..
+    | .other_other_Lam_Lam (ld192 := ld) ..
+    | .other_other_Forall_Forall (ld192 := ld) ..
+    | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+      exact (load_cell_ne cell_g ld (by decide)).elim
+    | .other_Let (ld102 := ld) .. =>
+      cases hd with
+      | const cell_d _ _ | app cell_d _ =>
+        exact (load_cell_ne cell_d ld (by decide)).elim
+    | .other_other_other (ev715 := ev715) .. =>
+      rcases Obs.«KernelCheck::kexpr_struct_eq».obs ev715 with
+        ⟨_, _, ld12, _, _, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, ld12, _, _, _⟩ |
+        ⟨_, _, _, _, _, he, _, _⟩ |
+        ⟨x_ca, x_lsa, x_cb, x_lsb, m202, _, _, ld12, ld183, ev215, ev241, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, ld12, _, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, ld12, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, ld12, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, ld12, _, _, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, ld12, _, _, _⟩ |
+        ⟨_, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, ld12, _, _, _, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+        ⟨_, _, _, _, _, _, _, he, _, _⟩
+      all_goals try exact absurd (Value.field.inj he) one_ne_zero
+      all_goals try exact (load_cell_ne cell_g ld12 (by decide)).elim
+      · obtain ⟨-, hxs1⟩ := load_cell cell_g ld12
+        injection hxs1 with _ hxs1
+        injection hxs1 with hlsa
+        rw [hlsa] at rls_g
+        cases hd with
+        | app cell_d _ => exact (load_cell_ne cell_d ld183 (by decide)).elim
+        | const cell_d _ rls_d =>
+          obtain ⟨-, hxs2⟩ := load_cell cell_d ld183
+          injection hxs2 with _ hxs2
+          injection hxs2 with hlsb
+          rw [hlsb] at rls_d
+          exact (level_list_struct_eq_one
+            (rls_g.mono ev215.heap_extends) (rls_d.mono ev215.heap_extends) ev241).1
+  | app cell_g rf_g ih =>
+    match Obs.«KernelCheck::wrap_rel».obs ev with
+    | .other_other_App_App_other (he301 := he) ..
+    | .other_other_App_other (he308 := he) ..
+    | .other_other_Lam_other (he426 := he) ..
+    | .other_other_Forall_other (he544 := he) ..
+    | .other_other_Proj_Proj_other (he696 := he) ..
+    | .other_other_Proj_other (he703 := he) .. =>
+      exact absurd (Value.field.inj he) one_ne_zero
+    | .Let (ld12 := ld) ..
+    | .other_other_Lam_Lam (ld192 := ld) ..
+    | .other_other_Forall_Forall (ld192 := ld) ..
+    | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+      exact (load_cell_ne cell_g ld (by decide)).elim
+    | .other_Let (ld102 := ld) .. =>
+      cases hd with
+      | const cell_d _ _ | app cell_d _ =>
+        exact (load_cell_ne cell_d ld (by decide)).elim
+    | .other_other_other (ld192 := ld192) (hne311 := hne311) .. =>
+      rw [loadValue_enum_cell cell_g] at ld192
+      injection ld192 with hv
+      exact (hne311 [_, _] rfl hv.symm).elim
+    | .other_other_App_App_n1 (ld192 := ld192) (ld221 := ld221) (ev253 := ev253) .. =>
+      obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
+      injection hxs1 with hfg _
+      cases hd with
+      | const cell_d _ _ => exact (load_cell_ne cell_d ld221 (by decide)).elim
+      | app cell_d rf_d =>
+        obtain ⟨-, hxs2⟩ := load_cell cell_d ld221
+        injection hxs2 with hfd _
+        rw [← hfg, ← hfd] at ev253
+        exact ih rf_d ev253
+
+private theorem wrap_rel_forallDomHeadLvls
+    {c : Ctx} {T : KKey} {a_g a_d : Bytes.Address} {ls_g ls_d : List KLevel}
+    (hlf : LoadFacts c)
+    (hT_ind : ∃ cv caps, c.env.find? T = some (.indInfo cv caps)) :
+    ∀ (m : Nat) {k : Nat} {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      Good c cs →
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) h T a_g ls_g m k xg →
+      ForallRightHeadLvls h a_d ls_d m xd →
+      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ls_g = ls_d
+  | 0, k, xg, xd, h, h', cs, hgood, hg, hd, ev => by
+    cases hg with
+    | @zero _ _ _ _ _ dom cell_g hdom hfn hhead_g =>
+      cases hd with
+      | zero cell_d hhead_d =>
+        match Obs.«KernelCheck::wrap_rel».obs ev with
+        | .other_other_App_App_other (he301 := he) ..
+        | .other_other_App_other (he308 := he) ..
+        | .other_other_Lam_other (he426 := he) ..
+        | .other_other_Forall_other (he544 := he) ..
+        | .other_other_Proj_Proj_other (he696 := he) ..
+        | .other_other_Proj_other (he703 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .Let (ld12 := ld) ..
+        | .other_other_App_App_n1 (ld192 := ld) ..
+        | .other_other_Lam_Lam (ld192 := ld) ..
+        | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+          exact (load_cell_ne cell_g ld (by decide)).elim
+        | .other_Let (ld102 := ld) .. =>
+          exact (load_cell_ne cell_d ld (by decide)).elim
+        | .other_other_other (ld192 := ld192) (hne547 := hne547) .. =>
+          rw [loadValue_enum_cell cell_g] at ld192
+          injection ld192 with hv
+          exact (hne547 [_, _, _] rfl hv.symm).elim
+        | .other_other_Forall_Forall (ld192 := ld192) (ld462 := ld462)
+            (ev490 := ev490) (hc539 := hc539) .. =>
+          obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
+          injection hxs1 with htg _
+          obtain ⟨-, hxs2⟩ := load_cell cell_d ld462
+          injection hxs2 with htd _
+          rw [htg] at hdom hhead_g
+          rw [htd] at hhead_d
+          match Obs.«KernelCheck::wrap_binder».obs ev490 with
+          | .n1_other (he98 := he) .. | .other (he105 := he) .. =>
+            exact absurd (Value.field.inj he) one_ne_zero
+          | .n1_n1 (m2 := m2) (cs48 := cs48) (ev15 := ev15) (ev50 := ev50) (hc93 := hc93) .. =>
+            have e1 := ev15.heap_extends
+            match Obs.«KernelCheck::wrap_dom».obsx ev50 with
+            | .other_other_other (he200 := he) .. =>
+              exact absurd (Value.field.inj he) one_ne_zero
+            | .Let (ld12 := ld12) .. =>
+              cases hhead_g with
+              | const cg _ _ | app cg _ =>
+                exact (load_cell_ne (e1.getElem?_eq cg) ld12 (by decide)).elim
+            | .other_n1 (ev105 := ev105) .. =>
+              exact wrap_rel_appHeadConstLvls (hhead_g.mono e1) (hhead_d.mono e1) ev105
+            | .other_other_n1_bind (m92 := m92) (cs145 := cs145)
+                (ev105 := ev105) (ev147 := ev147) (hc196 := hc196) .. =>
+              have hgood_cw : Good c cs145 :=
+                hgood.sub (fun z hz => by subst hc539 hc93 hc196; simp [hz])
+              match Obs.«KernelCheck::consume_wrapper».obsx ev147 with
+              | .Const_Cons_Defn_n1_bind_other (he276 := he) ..
+              | .Const_Cons_Defn_other (he299 := he) ..
+              | .Const_Cons_other (he323 := he) ..
+              | .Const_other (he347 := he) ..
+              | .other (he371 := he) .. =>
+                injection he with hxs; injection hxs with h10 _
+                exact absurd (Value.field.inj h10) one_ne_zero
+              | .Const_Cons_Defn_n1_bind_n0 (m2 := mc2) (cs12 := cs12)
+                  (x_w := xw) (m96 := m96) (p104 := p104) (cs110 := cs110)
+                  (ev14 := ev14) (ld47 := ld47) (ev112 := ev112) (ld106 := ld106)
+                  (hc267 := hc267) .. =>
+                have hbnd_sp : IxVM.Consistency.Bounded cs12 :=
+                  RomBound.bounded_mono hgood_cw.2 (fun z hz => by subst hc267; simp [hz])
+                have hdom_92 : Tm c.κ 0 (fun _ => default) m92 k dom _ :=
+                  (hdom.mono e1).mono ev105.heap_extends
+                obtain ⟨hd_sp, sp, H, As, hpair, hH, _, heq_dom⟩ :=
+                  SubstAux.gall c.κ .collect_spine _ _ _ _ _ ev14 _ rfl hbnd_sp
+                    0 (fun _ => default) k dom hdom_92
+                injection hpair with hlist; injection hlist with hhd _
+                subst hhd
+                obtain ⟨aw, us, rfl, haw, _, _, _⟩ := hH.const_of_load ld47
+                have hg_ci : Good c cs110 :=
+                  hgood_cw.sub (fun z hz => by subst hc267; simp [hz])
+                obtain ⟨ci, hfind, p_v, hp_ld, hci_rep⟩ :=
+                  hlf.getCI xw p104 mc2 m96 cs110 aw ev112 hg_ci haw
+                rw [hp_ld] at ld106
+                injection ld106 with hv_eq; subst hv_eq
+                obtain ⟨_, _, _, rfl, _, _⟩ := CIRep.defn_inv hci_rep
+                rw [heq_dom, getAppFn_mkAppN_eq] at hfn
+                injection hfn with hkey_eq _
+                rw [hkey_eq] at hfind
+                obtain ⟨_, _, hfind_ind⟩ := hT_ind
+                rw [hfind] at hfind_ind
+                cases hfind_ind
+  | m + 1, k, xg, xd, h, h', cs, hgood, hg, hd, ev => by
+    cases hg with
+    | succ cell_g hrest_g =>
+      cases hd with
+      | succ cell_d hrest_d =>
+        match Obs.«KernelCheck::wrap_rel».obs ev with
+        | .other_other_App_App_other (he301 := he) ..
+        | .other_other_App_other (he308 := he) ..
+        | .other_other_Lam_other (he426 := he) ..
+        | .other_other_Forall_other (he544 := he) ..
+        | .other_other_Proj_Proj_other (he696 := he) ..
+        | .other_other_Proj_other (he703 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .Let (ld12 := ld) ..
+        | .other_other_App_App_n1 (ld192 := ld) ..
+        | .other_other_Lam_Lam (ld192 := ld) ..
+        | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+          exact (load_cell_ne cell_g ld (by decide)).elim
+        | .other_Let (ld102 := ld) .. =>
+          exact (load_cell_ne cell_d ld (by decide)).elim
+        | .other_other_other (ld192 := ld192) (hne547 := hne547) .. =>
+          rw [loadValue_enum_cell cell_g] at ld192
+          injection ld192 with hv
+          exact (hne547 [_, _, _] rfl hv.symm).elim
+        | .other_other_Forall_Forall (ld192 := ld192) (ld462 := ld462)
+            (ev490 := ev490) (hc539 := hc539) .. =>
+          obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
+          injection hxs1 with _ hxs1; injection hxs1 with hbg _
+          obtain ⟨-, hxs2⟩ := load_cell cell_d ld462
+          injection hxs2 with _ hxs2; injection hxs2 with hbd _
+          rw [hbg] at hrest_g
+          rw [hbd] at hrest_d
+          match Obs.«KernelCheck::wrap_binder».obs ev490 with
+          | .n1_other (he98 := he) .. | .other (he105 := he) .. =>
+            exact absurd (Value.field.inj he) one_ne_zero
+          | .n1_n1 (ev15 := ev15) (ev50 := ev50) (cs74 := cs74) (ev76 := ev76) (hc93 := hc93) .. =>
+            have e12 := ev15.heap_extends.trans ev50.heap_extends
+            have hgood76 : Good c cs74 :=
+              hgood.sub (fun z hz => by subst hc539 hc93; simp [hz])
+            exact wrap_rel_forallDomHeadLvls hlf hT_ind m hgood76
+              (hrest_g.mono e12) (hrest_d.mono e12) ev76
+
+
 /-- `KernelCheck::nat_rec_check` verifies the recursor's level count, motive/minor counts,
 canonical generated recursor type `structRecTyR` up to `WrapRelSem`, and all constructor
 computation rules `structRecRhsR` up to `WrapRelSem` on a 2-member block `[.indc ind, .recr rec_m]`
@@ -770,6 +1228,7 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
     {x_addr x_parent_addr r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hlf : LoadFacts c)
+    (hT_ind : ∃ cv caps, c.env.find? T = some (.indInfo cv caps))
     (hrec_at : Ix.Cert.recordAt c.E (ixAddr b₀) = some cst)
     (hcst_info : cst.info = .muts #[.indc ind, .recr rec_m])
     (hbRec_addr : ixAddr bRec = rprjAddr (ixAddr b₀) 1)
@@ -822,6 +1281,9 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
     (∃ recTy,
       Ix.Kernel.structRecTyR T (List.range k) elim large nP nIdx tty₀ ctors₀ = some recTy ∧
       WrapRelSem c.env.find? recTy rec_ty₀) ∧
+    (∀ a_d ls_d,
+      ForallRightHeadLvls h a_d ls_d (nP + 1 + ctors_info.length + nIdx) x_ty →
+      ls_d = (List.range k).map (fun idx => Level.param ((if large then 1 else 0) + idx))) ∧
     ∀ idx (hlt : idx < rls.length) (hidx : idx < ctors_info.length),
       (rls[idx]'hlt).nfields = (ctors_info[idx]'hidx).2.1 ∧
       ∃ rhsG,
@@ -1029,6 +1491,13 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
           (ext_308_452.trans (ext_452_482.trans ext_482_725))))))
       (LvEqList.refl _)
   have hfam_j := nat_app_n_spec hT_const2 hcat_j ev714
+  have hT_head2 : AppHeadConstLvls m725 bT clvls (.ptr (.enum kexprEnum) m452.length) :=
+    .const (ext_482_725.getElem?_eq (by rw [hm492]; simp))
+      (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_482.trans ext_482_725) hbT)
+      (RepKLevelList.mono hlps_219
+        (ext_219_299.trans (ext_299_324.trans (ext_324_308.trans
+          (ext_308_452.trans (ext_452_482.trans ext_482_725))))))
+  have hfam_head := nat_app_n_head hT_head2 hcat_j ev714
   have hfam_j' : Tm (keyOf c.t) 0 (fun _ => default) m702 (nP + (n + 1) + nIdx)
       (cFamI T clvls nP nIdx (n + 1) 0) v701 := by
     simpa [cFamI] using hfam_j
@@ -1075,12 +1544,26 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
       (hfam_j'.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
       (hmot_app_j.mono (ev969.heap_extends.trans ext_959_1002))
       hpw_1002
+  have hmaj_core_head :
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) m1002
+        T bT clvls 0 ((nP + (n + 1)) + nIdx) (.ptr (.enum kexprEnum) m959.length) :=
+    .zero (by rw [hm1010]; simp; exact ⟨rfl, rfl⟩)
+      (hfam_j'.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
+      (by simp [cFamI, getAppFn_mkAppN_eq]; rfl)
+      (hfam_head.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
   obtain ⟨major, hmaj_ite, hmaj_tm⟩ :=
     nat_replace_pis_spec nIdx (by omega) hpw_1002
       (hitele_lift.mono ext_959_1002) hmaj_core ev938
+  have hmaj_head :=
+    forallDomHeadLvls_replace_pis nIdx (by omega)
+      (hitele_lift.mono ext_959_1002) hmaj_core_head ev938
   simp only [↓reduceIte] at hmaj_ite
   have hmaj_tm' : Tm (keyOf c.t) 0 (fun _ => default) m926 (nP + 1 + n) major v925 := by
     rwa [show nP + 1 + n = nP + (n + 1) by omega]
+  have hmaj_head' :
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) m926
+        T bT clvls nIdx (nP + 1 + n) v925 := by
+    rwa [show nIdx = nIdx + 0 by omega, show nP + 1 + n = nP + (n + 1) by omega]
   -- Step 5: `nat_minors` (`isLam = false`) + outer `Forall` + `nat_replace_pis` (`recTy_c`)
   have ext_299_926 := ext_299_1002.trans ev938.heap_extends
   have ext_h_926 := ev231.heap_extends.trans (ext_219_299.trans ext_299_926)
@@ -1103,7 +1586,10 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
       (RepKLevelList.mono hlps_219 (ext_219_299.trans ext_299_926))
       (repKLevel_heapMono₂ ext_299_926 hpw_299)
       hmaj_tm' ev1057'
-  simp only [Bool.false_eq_true, ↓reduceIte, List.drop_zero, Nat.add_zero] at hmin_eq hmin_tm
+  have hmin_head :=
+    forallDomHeadLvls_nat_minors (c := c) (large := large) hnCtors_lt n 0 (by omega) hmaj_head'
+      (by simpa using ev1057)
+  simp only [Bool.false_eq_true, ↓reduceIte, List.drop_zero, Nat.add_zero] at hmin_eq hmin_tm hmin_head
   have ext_1045_1193 : Heap.Extends m1045 m1193 := by rw [hm1201]; exact Heap.Extends.snoc _ _
   have ext_605_1193 := ev749.heap_extends.trans (ev794.heap_extends.trans
     (ev735.heap_extends.trans (ev714.heap_extends.trans (ext_702_811.trans
@@ -1119,12 +1605,24 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
       (hmot_tm.mono ext_605_1193)
       (hmin_tm.mono ext_1045_1193)
       hpw_1193
+  have hforall_mot_head :
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) m1193
+        T bT clvls ((n + nIdx) + 1) (0 + nP) (.ptr (.enum kexprEnum) m1045.length) := by
+    rw [Nat.zero_add]
+    exact .succ (by rw [hm1201]; simp; exact ⟨rfl, rfl⟩) (hmin_head.mono ext_1045_1193)
   have ext_391_1193 : Heap.Extends m391 m1193 := by
     rw [← hm452_eq]
     exact ext_452_645.trans (ev617.heap_extends.trans ext_605_1193)
   obtain ⟨recTy_c, hrecTy_ite, hrecTy_tm⟩ :=
     nat_replace_pis_spec nP (by omega) hpw_1193
       (htty_390.mono ext_391_1193) hforall_mot ev1165
+  have hrecTy_head :=
+    forallDomHeadLvls_replace_pis nP (by omega)
+      (htty_390.mono ext_391_1193) hforall_mot_head ev1165
+  have hrecTy_head' :
+      ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) m1153
+        T bT clvls (nP + 1 + n + nIdx) 0 v1152 := by
+    rwa [show nP + 1 + n + nIdx = nP + ((n + nIdx) + 1) by omega]
   simp only [↓reduceIte] at hrecTy_ite
   -- Connect `recTy_c` to `posOf rlps' recTy` via `posOf_structRecTyR`
   have hcRecTy_eq :
@@ -1219,7 +1717,14 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
     (htty_390.mono ext_391_1455)
     (hmot_tm.mono ext_605_1455)
     ev1347'
-  refine ⟨hnlvls_eq, heq189, heq217, ⟨recTy, hrecTy, hwrap_ty⟩, ?_⟩
+  have hhead_eq :
+      ∀ a_d ls_d,
+        ForallRightHeadLvls h a_d ls_d (nP + 1 + n + nIdx) x_ty →
+        ls_d = clvls := by
+    intro a_d ls_d hright
+    exact (wrap_rel_forallDomHeadLvls hlf hT_ind (nP + 1 + n + nIdx)
+      hgood_wty hrecTy_head' (hright.mono ext_h_1153) ev1259).symm
+  refine ⟨hnlvls_eq, heq189, heq217, ⟨recTy, hrecTy, hwrap_ty⟩, hhead_eq, ?_⟩
   intro idx hlt hidx
   have h0_idx : 0 + idx < ctors_info.length := by simpa using hidx
   simpa using hrules_ok idx hlt h0_idx
@@ -1785,7 +2290,7 @@ structure NativeWithRecWitness (calls : List (Call F)) (env : Ix.Kernel.Env .ano
       front.t, front.lim₀⟩ cs_rec
 
 /-- Hypothesis & specification-bridge bundle for native one-type inductive blocks with recursor.
-Isolates `wrap_bridge` and `gen_recTy_sort_bridge` alongside the shared
+Isolates `gen_recTy_sort_bridge` alongside the shared
 front-end parameter/positivity obligations. -/
 structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (block : List KConstantInfo) (p₀ : Ix.Kernel.NativeParts .anon) where
@@ -1818,9 +2323,6 @@ structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
         (Ix.Kernel.consSumCtors p₀.nP witness.front.ctorsA
           ⟨.indInfo witness.front.cvTa₀ {} :: env.consts⟩)
         witness.cvRa₀
-  wrap_bridge :
-    ∀ (find? : KKey → Option KConstantInfo) (g d_e : KExpr),
-      WrapRelSem find? g d_e → Ix.Kernel.Semantics.WrapRel find? g d_e
   gen_recTy_sort_bridge :
     ∀ (env_base : Ix.Kernel.Env .anon) (recTy : KExpr),
       GenScoped env_base p₀.cvR.levelParams 0 recTy →
@@ -1850,6 +2352,7 @@ theorem check_recursor_canonical_full_spec
     (hg₁ : Good ⟨E₁, envI₀, t, lim₀⟩ cs)
     (hc_rec : CoreFacts ⟨E_rec, env_base₀, t, lim₀⟩)
     (hg_rec : Good ⟨E_rec, env_base₀, t, lim₀⟩ cs)
+    (hT_ind : ∃ cv caps, env_base₀.find? T = some (.indInfo cv caps))
     (hrec_at : Ix.Cert.recordAt E_rec (ixAddr b₀) = some cst)
     (hcst_info : cst.info = .muts #[.indc ind, .recr rec_m])
     (hbRec_addr : ixAddr bRec = rprjAddr (ixAddr b₀) 1)
@@ -1910,6 +2413,9 @@ theorem check_recursor_canonical_full_spec
     (∃ recTy,
       Ix.Kernel.structRecTyR T (List.range k) elim large nP nIdx cvTa.type ctors4 = some recTy ∧
       WrapRelSem env_base₀.find? recTy rec_ty₀) ∧
+    (∀ a_d ls_d,
+      ForallRightHeadLvls h a_d ls_d (nP + 1 + ctors.length + nIdx) x_ty →
+      ls_d = (List.range k).map (fun idx => Level.param ((if large then 1 else 0) + idx))) ∧
     ∀ idx (hlt : idx < rls.length) (hidx : idx < ctors4.length),
       (rls[idx]'hlt).nfields = (ctors4[idx]'hidx).2.1 ∧
       ∃ rhsG,
@@ -2086,8 +2592,8 @@ theorem check_recursor_canonical_full_spec
           .field ((if large then 1 else 0 : Nat) : F)]
         m417 r h' cs516 := by
       rwa [hinfo_len]
-    obtain ⟨_, hmot_eq, hmin_eq, ⟨recTy, hrecTy, hwrap_ty⟩, hrules_out⟩ :=
-      nat_rec_check_spec (c := c_rec) hc_rec hc_rec.loads
+    obtain ⟨_, hmot_eq, hmin_eq, ⟨recTy, hrecTy, hwrap_ty⟩, hhead_eq, hrules_out⟩ :=
+      nat_rec_check_spec (c := c_rec) hc_rec hc_rec.loads hT_ind
         hrec_at hcst_info hbRec_addr hT hκ_inj hRec
         hk_lt hnP_lt hnIdx_lt (by rw [hinfo_len]; exact hnCtors_lt)
         (by rw [hinfo_len]; exact hnall_lt)
@@ -2100,13 +2606,18 @@ theorem check_recursor_canonical_full_spec
         (Bytes.repAddressRef_heapMono₂ addrTy e_h_417 hbT)
         (Bytes.repAddressRef_heapMono₂ addrTy e_h_417 hbRec)
         hpty_417 (hrec_ty.mono e_h_417) (hrules.mono e_h_417) ev518'
-    rw [hinfo_len] at hmin_eq
+    rw [hinfo_len] at hmin_eq hhead_eq
     have hmap_ctors4 :
         ctors_info.map (fun info => (info.1, info.2.1, info.2.2.2.1, info.2.2.2.2)) =
         Ix.Kernel.nativeCtors4 ctorsA kinds :=
       buildCtorsInfo_map_eq_nativeCtors4 hk_len
     rw [hmap_ctors4] at hrecTy
-    refine ⟨hmot_eq, hmin_eq, hlarge_res.1, hlarge_res.2, ⟨recTy, hrecTy, hwrap_ty⟩, ?_⟩
+    have hhead_h :
+        ∀ a_d ls_d,
+          ForallRightHeadLvls h a_d ls_d (nP + 1 + ctors.length + nIdx) x_ty →
+          ls_d = (List.range k).map (fun idx => Level.param ((if large then 1 else 0) + idx)) :=
+      fun a_d ls_d hr => hhead_eq a_d ls_d (hr.mono e_h_417)
+    refine ⟨hmot_eq, hmin_eq, hlarge_res.1, hlarge_res.2, ⟨recTy, hrecTy, hwrap_ty⟩, hhead_h, ?_⟩
     intro idx hlt hidx4
     have hidx_info : idx < ctors_info.length := by
       have hlen4 : (Ix.Kernel.nativeCtors4 ctorsA kinds).length = ctors_info.length := by
@@ -2123,6 +2634,223 @@ theorem check_recursor_canonical_full_spec
       exact congrArg (fun x => x.2.1) hget
     rw [h21_eq] at hnf_idx
     exact ⟨hnf_idx, rhsG, hrhsG, hwrap_rhs⟩
+
+private theorem check_rec_rules_wellscoped_spec {κ : _root_.Address → KKey}
+    {rlps : List LevelParam} (hnl : rlps.length < 4294967296)
+    (hperm : rlps.Perm (List.range rlps.length)) :
+    ∀ {j : Nat} {x_rules x_depth r : SourceValue F} {rls : List (RecRule .anon)}
+      {h h' : Heap F} {cs : List (Call F)},
+      RulesRepExact κ h rlps j x_rules rls →
+      ObsFn W "KernelCheck::check_rec_rules_wellscoped"
+        [x_rules, x_depth, .field (rlps.length : F)] h r h' cs →
+      ∀ rl ∈ rls, rl.rhs.allLevelParamsDefined rlps = true
+  | _, _, _, _, [], _, _, _, .nil _, _ => by
+    intro _ hmem; cases hmem
+  | _, _, _, _, rl :: _, h, _, _, .cons cell hr hrs, ev => by
+    match Obs.«KernelCheck::check_rec_rules_wellscoped».obs ev with
+    | .Nil (ld12 := ld12) .. =>
+      have ld12' : loadValue h _ = .ok (.construct krrListEnum "Nil" []) := ld12
+      exact (load_cell_ne cell ld12' (by decide)).elim
+    | .Cons (x_rhs := x_rhs) (x_rest := x_rest) (ld12 := ld12)
+        (ev87 := ev87) (ev116 := ev116) .. =>
+      have ld12' : loadValue h _ = .ok (.construct krrListEnum "Cons" [_, x_rest]) := ld12
+      obtain ⟨-, hxs⟩ := load_cell cell ld12'
+      injection hxs with hmk hxs; injection hxs with hrest_eq; subst hrest_eq
+      obtain ⟨rhs_p, hmk_eq, _, hrhs_tmC⟩ := hr
+      rw [hmk] at hmk_eq
+      injection hmk_eq with _ _ hmk_args
+      injection hmk_args with _ hmk_args
+      injection hmk_args with _ hmk_args
+      injection hmk_args with hrhs_eq
+      subst hrhs_eq
+      have hlpd_pos := validate_expr_well_scoped_spec hnl
+        (hrhs_tmC 0 (fun _ => default)) ev87
+      have hlpd_rl : rl.rhs.allLevelParamsDefined rlps = true :=
+        allLevelParamsDefined_of_posOf_perm hperm hlpd_pos
+      have ih_rest := check_rec_rules_wellscoped_spec hnl hperm
+        (hrs.mono ev87.heap_extends) ev116
+      intro rl' hmem
+      rcases List.mem_cons.mp hmem with rfl | hmem'
+      · exact hlpd_rl
+      · exact ih_rest rl' hmem'
+
+private theorem collect_spine_exact_head {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
+      (h' : Heap F) (cs : List (Call F)),
+      ObsFn W fname args h r h' cs → fname = "KernelTypes::collect_spine" →
+      ∀ (k : Nat) (E : KExpr) (x_e x_head x_sp : SourceValue F),
+        args = [x_e] → r = .tuple [x_head, x_sp] →
+        TmExact κ d Γ h k E x_e →
+        ∃ H,
+          E.getAppFn = H.getAppFn ∧
+          TmExact κ d Γ h' k H x_head ∧
+          (∀ h₂ a ls, Heap.Extends h' h₂ →
+            AppHeadConstLvls h₂ a ls x_head → AppHeadConstLvls h₂ a ls x_e) :=
+  ObsFn.strong_induction (world := W)
+    (fun fname args h r h' _ => fname = "KernelTypes::collect_spine" →
+      ∀ (k : Nat) (E : KExpr) (x_e x_head x_sp : SourceValue F),
+        args = [x_e] → r = .tuple [x_head, x_sp] →
+        TmExact κ d Γ h k E x_e →
+        ∃ H,
+          E.getAppFn = H.getAppFn ∧
+          TmExact κ d Γ h' k H x_head ∧
+          (∀ h₂ a ls, Heap.Extends h' h₂ →
+            AppHeadConstLvls h₂ a ls x_head → AppHeadConstLvls h₂ a ls x_e))
+    (fun fname args h r h' _ ev ih hfn k E x_e x_head x_sp hargs hr htm => by
+      subst hfn hargs
+      match Obs.«KernelTypes::collect_spine».obs ev with
+      | .other (he115 := hr') (hm132 := hm) (he136 := he) .. =>
+        subst he hm
+        rw [hr'] at hr
+        injection hr with hlist; injection hlist with hhead _
+        subst hhead
+        exact ⟨E, rfl, htm.mono (Heap.Extends.snoc _ _), fun _ _ _ _ hh => hh⟩
+      | .App (x_f := xf) (x_a := xa) (m31 := m31) (cs41 := cs41)
+          (x_head := xh) (x_args := xargs) (cs86 := cs86) (ld12 := ld) (ev43 := e1)
+          (he69 := hr') (ev88 := e2) (he105 := he) (hc106 := hc) .. =>
+        subst he hc
+        rw [hr'] at hr
+        injection hr with hlist; injection hlist with hhead _
+        subst hhead
+        cases htm with
+        | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
+        | const cell _ _ | lam cell _ _ _ | forallE cell _ _ _
+        | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+        | proj cell _ _ =>
+          exact (load_cell_ne cell ld (by decide)).elim
+        | app cell rf _ =>
+          obtain ⟨-, hxs⟩ := load_cell cell ld
+          injection hxs with hxf _
+          rw [hxf] at rf
+          have hlt : cs41.length <
+              (((⟨"KernelTypes::collect_spine", [xf], h⟩ : Call F) ::
+                (cs41 ++ ((⟨Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>», [xargs, xa], m31⟩ : Call F) :: cs86)))).length := by
+            simp only [List.length_cons, List.length_append]; omega
+          obtain ⟨H, hfn_f, hH, hwrap⟩ := ih _ _ _ _ _ _ hlt e1 rfl k _ xf xh xargs rfl rfl rf
+          exact ⟨H, hfn_f, hH.mono e2.heap_extends,
+            fun h₂ a ls ext₂ hh =>
+              .app ((e1.heap_extends.trans (e2.heap_extends.trans ext₂)).getElem?_eq cell)
+                (by rw [hxf]; exact hwrap h₂ a ls (e2.heap_extends.trans ext₂) hh)⟩)
+
+private theorem peel_n_foralls_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (m : Nat) {n : F} {x_e r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+      {k : Nat} {T : KExpr},
+      ZMod.val n = m →
+      TmExact κ d Γ h k T x_e →
+      ObsFn W "KernelCheck::peel_n_foralls" [x_e, .field n] h r h' calls →
+      h' = h ∧ ∃ (bs : List (KExpr × Ix.Kernel.BinderMeta)) (B : KExpr),
+        T.stripPis m = some (bs, B) ∧ TmExact κ d Γ h (k + m) B r ∧
+        (∀ h₂ a ls, Heap.Extends h h₂ →
+          ForallRightHeadLvls h₂ a ls 0 r → ForallRightHeadLvls h₂ a ls m x_e)
+  | 0, n, x_e, r, h, h', _, k, T, hval, hT, ev => by
+    have hn0 : n = 0 := (ZMod.val_eq_zero n).mp hval
+    rw [hn0] at ev
+    cases Obs.«KernelCheck::peel_n_foralls».obs ev with
+    | n0 _ hr hh _ =>
+      subst hr hh
+      exact ⟨rfl, [], T, rfl, by simpa using hT, fun _ _ _ _ hh => hh⟩
+    | other _ _ _ _ _ hne19 _ _ _ _ =>
+      exact (hne19 rfl).elim
+  | m + 1, n, x_e, r, h, h', _, k, T, hval, hT, ev => by
+    have hn0 : n ≠ 0 := by intro e; rw [e] at hval; simp at hval
+    cases Obs.«KernelCheck::peel_n_foralls».obs ev with
+    | n0 hv14 _ _ _ =>
+      exact (hn0 (Value.field.inj hv14)).elim
+    | other _ x_body _ _ v66 _ ld34 op87 ev64 _ =>
+      cases hT with
+      | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
+      | const cell _ _ | app cell _ _ | lam cell _ _ _
+      | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+      | proj cell _ _ =>
+        exact (load_cell_ne cell ld34 (by decide)).elim
+      | @forallE _ _ _ _ _ T_p _ ℓ_p cell _ rb _ =>
+        obtain ⟨-, hxs⟩ := load_cell cell ld34
+        injection hxs with _ hxs; injection hxs with hxb _
+        rw [hxb] at rb
+        have hv66 : v66 = .field (n - 1) := by
+          simp only [evalBinOp, Except.ok.injEq] at op87
+          exact op87.symm
+        rw [hv66] at ev64
+        have hval' : ZMod.val (n - 1) = m := by
+          have hs := Lib.val_sub_one hn0
+          omega
+        obtain ⟨rfl, bs, B, hstrip, hB, hwrap⟩ := peel_n_foralls_exact m hval' rb ev64
+        refine ⟨rfl, (T_p, bmeta ℓ_p) :: bs, B, ?_, ?_, fun h₂ a ls ext₂ hh =>
+          .succ (ext₂.getElem?_eq cell) (by rw [hxb]; exact hwrap h₂ a ls ext₂ hh)⟩
+        · simp [Ix.Kernel.Expr.stripPis, hstrip]
+        · rwa [show k + (m + 1) = k + 1 + m by omega]
+
+private theorem getAppFn_instantiateLevelParams (ks : List LevelParam) (us : List KLevel) :
+    ∀ (e : KExpr),
+      (e.instantiateLevelParams ks us).getAppFn =
+        e.getAppFn.instantiateLevelParams ks us
+  | .bvar _ | .fvar _ _ | .sort _ | .const _ _
+  | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ => rfl
+  | .app f _ => getAppFn_instantiateLevelParams ks us f
+
+private theorem rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
+    {np nm nmi ni : Nat} {E : KExpr} {x_ty r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hsum_lt : np + nm + nmi + ni < 4294967296)
+    (hT : TmExact κ 0 (fun _ => default) h 0 E x_ty)
+    (ev : ObsFn W "KernelCheck::rec_to_parent_addr"
+      [x_ty, .field (np : F), .field (nm : F), .field (nmi : F), .field (ni : F)]
+      h r h' calls) :
+    ∃ a_d ls_d,
+      ForallRightHeadLvls h' a_d ls_d (np + nm + nmi + ni) x_ty ∧
+      ∀ bs dom B bm,
+        E.stripPis (np + nm + nmi + ni) = some (bs, .forallE dom B bm) →
+        dom.getAppFn = .const (κ (ixAddr a_d)) ls_d := by
+  obtain ⟨v1, x9, x17, v37, m38, _, x_major_ty, _, _, m104, _, x_head, w132, x_caddr,
+    w162, op32, op24, op16, ev50, ld78, ev117, ld154, _, he175, _⟩ :=
+    Obs.«KernelCheck::rec_to_parent_addr».obs ev
+  have hx17 : x17 = .field ((np + nm : Nat) : F) := by
+    simp only [evalBinOp, Except.ok.injEq, Nat.cast_add] at op32 ⊢; exact op32.symm
+  rw [hx17] at op24
+  have hx9 : x9 = .field ((np + nm + nmi : Nat) : F) := by
+    simp only [evalBinOp, Except.ok.injEq, Nat.cast_add] at op24 ⊢; exact op24.symm
+  rw [hx9] at op16
+  have hv1 : v1 = .field ((np + nm + nmi + ni : Nat) : F) := by
+    simp only [evalBinOp, Except.ok.injEq, Nat.cast_add] at op16 ⊢; exact op16.symm
+  rw [hv1] at ev50
+  have hval : ZMod.val (((np + nm + nmi + ni : Nat) : F)) = np + nm + nmi + ni :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans hsum_lt (by decide))
+  obtain ⟨rfl, bs₀, B_peel, hstrip₀, hB_peel, hwrap_peel⟩ :=
+    peel_n_foralls_exact (np + nm + nmi + ni) hval hT ev50
+  cases hB_peel with
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
+  | const cell _ _ | app cell _ _ | lam cell _ _ _
+  | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+  | proj cell _ _ =>
+    exact (load_cell_ne cell ld78 (by decide)).elim
+  | forallE cell_maj rt_maj _ _ =>
+    obtain ⟨-, hxs⟩ := load_cell cell_maj ld78
+    injection hxs with hxm _
+    rw [hxm] at rt_maj
+    obtain ⟨H, hfn_dom, hH, hwrap_sp⟩ :=
+      collect_spine_exact_head _ _ _ _ _ _ ev117 rfl _ _ x_major_ty x_head w132 rfl rfl rt_maj
+    cases hH with
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
+    | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
+    | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+    | proj cell _ _ =>
+      exact (load_cell_ne cell ld154 (by decide)).elim
+    | const cell_c ra_c rls_c =>
+      have hhead_m104 : AppHeadConstLvls m104 _ _ x_major_ty :=
+        hwrap_sp m104 _ _ (Heap.Extends.refl _) (.const cell_c ra_c rls_c)
+      have hzero_m104 : ForallRightHeadLvls m104 _ _ 0 (.ptr (.enum kexprEnum) _) :=
+        .zero (ev117.heap_extends.getElem?_eq cell_maj) (by rwa [hxm])
+      have hpeel_m104 := hwrap_peel m104 _ _ ev117.heap_extends hzero_m104
+      rw [← he175] at hpeel_m104
+      refine ⟨_, _, hpeel_m104, ?_⟩
+      intro bs dom B bm hs
+      rw [hstrip₀] at hs
+      injection hs with hp_eq
+      have hB_eq := congrArg Prod.snd hp_eq
+      dsimp only at hB_eq
+      injection hB_eq with hdom_eq _ _
+      rw [← hdom_eq]
+      exact hfn_dom
 
 /-- `KernelCheck::check_recursor_member` resolves the parent `Induct` record via `rec_to_parent_addr`
 + `Ingress::get_ci`, verifies rule count and non-aux parameter/index counts (`Seg1.other`), and
@@ -2147,6 +2875,7 @@ theorem check_recursor_member_spec
     (hg₁ : Good ⟨E₁, envI₀, t, lim₀⟩ cs)
     (hc_rec : CoreFacts ⟨E_rec, env_base₀, t, lim₀⟩)
     (hg_rec : Good ⟨E_rec, env_base₀, t, lim₀⟩ cs)
+    (hT_ind : ∃ cv caps, env_base₀.find? T = some (.indInfo cv caps))
     (hrec_at : Ix.Cert.recordAt E_rec (ixAddr b₀) = some cst)
     (hcst_info : cst.info = .muts #[.indc ind, .recr rec_m])
     (hbT_addr : ixAddr bT = iprjAddr (ixAddr b₀) 0)
@@ -2198,7 +2927,7 @@ theorem check_recursor_member_spec
     (hrc : RCRep t lim₀ h x_rc)
     (hb₀_rec_blk : Bytes.RepAddressRef addrTy h b₀ x_rec_blk)
     (hbRec : Bytes.RepAddressRef addrTy h bRec x_addr)
-    (hrec_ty : Tm (keyOf t) 0 (fun _ => default) h 0
+    (hrec_ty : TmExact (keyOf t) 0 (fun _ => default) h 0
       (posOf (if large then k :: List.range k else List.range k) rec_ty₀) x_ty)
     (hrules : RulesRepExact (keyOf t) h
       (if large then k :: List.range k else List.range k) 0 x_rules rls)
@@ -2228,6 +2957,10 @@ theorem check_recursor_member_spec
     (∃ recTy,
       Ix.Kernel.structRecTyR T (List.range k) elim large nP nIdx cvTa.type ctors4 = some recTy ∧
       WrapRelSem env_base₀.find? recTy rec_ty₀) ∧
+    (∀ rl ∈ rls, rl.rhs.allLevelParamsDefined rlps = true) ∧
+    (∀ bs dom B bm,
+      rec_ty₀.stripPis (nP + 1 + ctors.length + nIdx) = some (bs, .forallE dom B bm) →
+      ∃ K, dom.getAppFn = .const K ((List.range k).map .param)) ∧
     ∀ idx (hlt : idx < rls.length) (hidx : idx < ctors4.length),
       (rls[idx]'hlt).nfields = (ctors4[idx]'hidx).2.1 ∧
       ∃ rhsG,
@@ -2303,9 +3036,16 @@ theorem check_recursor_member_spec
       hg_rec.sub (fun x hx => by simp [hc, hx])
     have hsub_731 : ∀ x ∈ cs731, x ∈ cs_root := fun x hx =>
       hsub x (by simp [hc, hx])
-    obtain ⟨hmot_f, hmin_f, hlg_guard, hsum_out, hrecTy_out, hrules_out⟩ :=
+    let rlps' := if large then k :: List.range k else List.range k
+    have hnl_lt : rlps'.length < 4294967296 := by
+      dsimp only [rlps']
+      cases large <;> simp <;> omega
+    have hrls_lpd : ∀ rl ∈ rls, rl.rhs.allLevelParamsDefined rlps' = true :=
+      check_rec_rules_wellscoped_spec hnl_lt (rlps_perm k large)
+        (hrules.mono (e_h_210.trans (e_210_332.trans ev372.heap_extends))) ev437
+    obtain ⟨hmot_f, hmin_f, hlg_guard, hsum_out, hrecTy_out, hhead_f, hrules_out⟩ :=
       check_recursor_canonical_full_spec hLevels hCore
-        hef₁ hlf₁ hg₁_731 hc_rec hg_rec_731
+        hef₁ hlf₁ hg₁_731 hc_rec hg_rec_731 hT_ind
         hrec_at hcst_info hbRec_addr hT hκ_inj hRec
         hk_lt hnP_lt hnIdx_lt hnCtors_lt hnall_lt hnPF_lt
         hlps_ctors hlps_rawT hlps_tty hsR_tty₀ hsT₀ hk_len hwf_all hrls_len
@@ -2316,7 +3056,7 @@ theorem check_recursor_member_spec
         (Bytes.repAddressRef_heapMono₂ addrTy e_73_699 hbT'_73)
         (Bytes.repAddressRef_heapMono₂ addrTy e_h_699 hbRec)
         ((hpty_127 0 (fun _ => default)).mono e_127_699)
-        (hrec_ty.mono e_h_699)
+        (hrec_ty.toTm.mono e_h_699)
         (hrules.toRulesRep.mono e_h_699)
         ev733
     have hnm_eq : rec_nm = 1 :=
@@ -2325,7 +3065,34 @@ theorem check_recursor_member_spec
     have hnmi_eq : rec_nmi = ctors.length :=
       nat_eq_of_field_eq (Nat.lt_trans hrec_nmi_lt (by decide))
         (Nat.lt_trans hnCtors_lt (by decide)) hmin_f
-    exact ⟨rfl, rfl, hnm_eq, hnmi_eq, hrls_len, hlg_guard, hsum_out, hrecTy_out, hrules_out⟩
+    have hmaj_lvls :
+        ∀ bs dom B bm,
+          rec_ty₀.stripPis (rec_np + 1 + ctors.length + rec_ni) = some (bs, .forallE dom B bm) →
+          ∃ K, dom.getAppFn = .const K ((List.range k).map .param) := by
+      have ev85' : ObsFn W "KernelCheck::rec_to_parent_addr"
+          [x_ty, .field (rec_np : F), .field ((1 : Nat) : F),
+            .field (ctors.length : F), .field (rec_ni : F)]
+          h v72 m73 cs83 := by
+        rwa [hnm_eq, hnmi_eq] at ev85
+      obtain ⟨a_d, ls_d, hright_73, hdom_pos⟩ :=
+        rec_to_parent_addr_head_lvls (by omega) hrec_ty ev85'
+      have hls_d := hhead_f a_d ls_d (hright_73.mono e_73_699)
+      intro bs dom B bm hs
+      have hs_pos := ilp_stripPis rlps' (posLevels rlps') (rec_np + 1 + ctors.length + rec_ni) hs
+      have hfn_pos := hdom_pos _ (posOf rlps' dom) (posOf rlps' B) _ hs_pos
+      have hfn_pos' : posOf rlps' dom.getAppFn =
+          posOf rlps' (.const (keyOf t (ixAddr a_d)) ((List.range k).map .param)) := by
+        unfold posOf at hfn_pos ⊢
+        rw [← getAppFn_instantiateLevelParams, hfn_pos, hls_d]
+        simpa [rlps', Expr.instantiateLevelParams] using
+          congrArg (Expr.const (keyOf t (ixAddr a_d))) (clvls_eq_subst_params k large)
+      have hinv := congrArg
+        (fun e => e.instantiateLevelParams (List.range rlps'.length) (rlps'.map .param))
+        hfn_pos'
+      rw [posOf_perm_inv (rlps_perm k large), posOf_perm_inv (rlps_perm k large)] at hinv
+      exact ⟨keyOf t (ixAddr a_d), hinv⟩
+    exact ⟨rfl, rfl, hnm_eq, hnmi_eq, hrls_len, hlg_guard, hsum_out, hrecTy_out,
+      hrls_lpd, hmaj_lvls, hrules_out⟩
 
 private theorem no_new_defn_consSumCtors (nP : Nat) :
     ∀ (ctorsA : List (KConstantVal × Nat)) {envₐ : Ix.Kernel.Env .anon}
@@ -2726,6 +3493,16 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
       exact PosSortLift.of_range hrng
     | true =>
       exact extra.pos_sort_lift hlg
+  have hT_ind_base₀ : ∃ cv caps, env_base₀.find? p₀.cvT.name = some (.indInfo cv caps) := by
+    have hT_ne_ctorsA₀ : ∀ cA ∈ wf.ctorsA, cA.1.name ≠ p₀.cvT.name := by
+      intro cA hcA heq
+      have hm : p₀.cvT.name ∈ p₀.ctors.map (·.1.name) := by
+        rw [← hctorsA_names, ← heq]
+        exact List.mem_map.mpr ⟨cA, hcA, rfl⟩
+      exact wf.T_not_in_ctors hm
+    refine ⟨wf.cvTa₀, {}, ?_⟩
+    rw [find?_consSumCtors_ne p₀.nP wf.ctorsA envI₀ hT_ne_ctorsA₀, ← wf.valStored_T.1]
+    exact Ix.Kernel.Env.find?_cons_self (.indInfo wf.cvTa₀ {}) env
   -- Invert `Obs.«KernelCheck::check_const».obs w.ev_rec`
   have hrec_pass :
       ConstantValCheckJ rulesJ env_base₀ p₀.cvR w.cvRa₀ ∧
@@ -2744,6 +3521,13 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
           (if p₀.large then k else 0) p₀.large p₀.nP p₀.nIdx wf.cvTa₀.type
           (Ix.Kernel.nativeCtors4 wf.ctorsA kinds) = some recTy ∧
         WrapRelSem env_base₀.find? recTy w.cvRa₀.type) ∧
+      (∀ rl ∈ w.rulesA,
+        rl.rhs.allLevelParamsDefined
+          (if p₀.large then k :: List.range k else List.range k) = true) ∧
+      (∀ bs dom B bm,
+        w.cvRa₀.type.stripPis (p₀.nP + 1 + p₀.ctors.length + p₀.nIdx) =
+          some (bs, .forallE dom B bm) →
+        ∃ K, dom.getAppFn = .const K ((List.range k).map .param)) ∧
       ∀ idx (hlt : idx < w.rulesA.length)
         (hidx : idx < (Ix.Kernel.nativeCtors4 wf.ctorsA kinds).length),
         (w.rulesA[idx]'hlt).nfields =
@@ -2849,11 +3633,10 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
             .field (((if p₀.large then k :: List.range k else List.range k).length : Nat) : F) := by
         rw [w.valRep_R.1, hlps_Ra₀]
       have hrec_ty_2792 :
-          Tm (keyOf wf.t) 0 (fun _ => default) m2792 0
+          TmExact (keyOf wf.t) 0 (fun _ => default) m2792 0
             (posOf (if p₀.large then k :: List.range k else List.range k) w.cvRa₀.type) w.ty_rec := by
         have h0 := (w.valRep_R.2.2.2 0 (fun _ => default)).mono e_to_2792
-        rw [hlps_Ra₀] at h0
-        exact h0.toTm
+        rwa [hlps_Ra₀] at h0
       have hrules_2792 :
           RulesRepExact (keyOf wf.t) m2792
             (if p₀.large then k :: List.range k else List.range k) 0 w.rules_rec w.rulesA := by
@@ -2862,9 +3645,10 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
         rw [w.rules_stored.length_eq]; exact hrls₀_lt
       rw [hnl_rec_eq] at ev2850
       obtain ⟨hnp_eq, hni_eq, hnm_eq, hnmi_eq, hrlsA_len, hlg_guard,
-        ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩, hrules_out⟩ :=
+        ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩,
+        hrlsA_lpd, hmaj_lvls₀, hrules_out⟩ :=
         check_recursor_member_spec hLevels hCore
-          hef₁ wf.lf₁ hg₁_2848 hc_rec hg_rec_2848
+          hef₁ wf.lf₁ hg₁_2848 hc_rec hg_rec_2848 hT_ind_base₀
           w.record_b₀ w.cst_muts w.bT_addr w.bRec_addr hT_key w.key_bT_inj hRec_key
           hk_lt hnP_lt hnIdx_lt hnCtors_lt hrec_np_lt hrec_ni_lt hrec_nm_lt hrec_nmi_lt
           hnall_lt (fun cA hcA => (hcA_bounds cA hcA).1)
@@ -2875,9 +3659,11 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
           (Bytes.repAddressRef_heapMono₂ addrTy e_to_2792 w.apRep_rec)
           hrec_ty_2792 hrules_2792 hrlsA_lt ev2850
       exact ⟨hcvR_chk₀, hnp_eq, hni_eq, hnm_eq, hnmi_eq, hrlsA_len,
-        hlg_guard, ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩, hrules_out⟩
+        hlg_guard, ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩,
+        hrlsA_lpd, hmaj_lvls₀, hrules_out⟩
   obtain ⟨hcvR_chk₀, hnp_eq, hni_eq, hnm_eq, hnmi_eq, hrlsA_len,
-    hlg_guard, ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩, hrules_out⟩ := hrec_pass
+    hlg_guard, ⟨sortss, hsum_ctors_lg₀⟩, ⟨recTy, hrecTy, hwrap_ty₀⟩,
+    hrlsA_lpd, hmaj_lvls₀, hrules_out⟩ := hrec_pass
   -- Establish `p₀.recPinned = true`
   have hmap_ctors4 :
       (buildCtorsInfo wf.ctorsA wf.ctorRawTypes kinds).map
@@ -3218,7 +4004,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     rw [hrhsG'] at hrhs_eq₀
     injection hrhs_eq₀ with heq_rhs
     subst heq_rhs
-    exact extra.wrap_bridge env_base.find? _ _ (hwrap_i₀.congr_defn hup_base.defnInfo_iff)
+    exact (hwrap_i₀.congr_defn hup_base.defnInfo_iff).toWrapRel
   have hlf_rhssA : ∀ r ∈ rhssA, letFree r = true := by
     intro r hr
     obtain ⟨rlA, hrlA_mem, rfl⟩ := List.mem_map.mp hr
@@ -3248,14 +4034,31 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
       have hn : nm = p.cvR.name := by rw [hpR_eq]; simpa [h_cv] using w.valStored_R.1
       have hl : lps = p.cvR.levelParams := by rw [hpR_eq]; simpa [h_cv] using w.valStored_R.2.1
       simp [hn, hl]
+  have hrhssA_lpd : ∀ r ∈ rhssA, r.allLevelParamsDefined p.cvR.levelParams = true := by
+    intro r hr
+    obtain ⟨rlA, hrlA_mem, rfl⟩ := List.mem_map.mp hr
+    have hpR : p.cvR.levelParams = p₀.cvR.levelParams := rfl
+    rw [hpR, hlps_R]
+    exact hrlsA_lpd rlA hrlA_mem
+  have hmaj_lvls_p :
+      ∀ bs dom B bm,
+        w.cvRa₀.type.stripPis p.majorIdx = some (bs, .forallE dom B bm) →
+        ∃ K, dom.getAppFn = .const K (p.cvT.levelParams.map .param) := by
+    intro bs dom B bm hs
+    change w.cvRa₀.type.stripPis (p₀.nP + 1 + p₀.ctors.length + p₀.nIdx) =
+      some (bs, .forallE dom B bm) at hs
+    have hpT : p.cvT.levelParams = p₀.cvT.levelParams := rfl
+    rw [hpT, wf.lps_T]
+    exact hmaj_lvls₀ bs dom B bm hs
   have hRecRun : NativeRecRunJ rulesJ env_base p wf.cvTa₀ wf.ctorsA cvRg rhsG :=
     ⟨hlps_ok, hpinned, w.cvRa₀, recTy, sty_rec, u_rec, hcvR_chk, hrecTy_p,
       hsc_recTy.2.1, hsc_recTy.2.2.1, hsc_recTy.1, hsc_recTy.2.2.2.1,
       hinf_recTy, hred_recTy, hdefeq_recTy, hchk_rules, rfl⟩
   have hRecStored : RecStoredJ rulesJ env_base p cvRg rhsG w.cvRa₀ rhssA :=
     Or.inr ⟨w.cvRa₀, hcvR_chk, hcvRa₀_eta,
-      extra.wrap_bridge env_base.find? _ _ hwrap_ty,
-      toSemanticsForall₂ hwrap_rhss, hlf_rhssA, toSemanticsForall₂ hannot_rhss, hlf_Ra₀⟩
+      hwrap_ty.toWrapRel,
+      toSemanticsForall₂ hwrap_rhss, hlf_rhssA, toSemanticsForall₂ hannot_rhss, hlf_Ra₀,
+      hrhssA_lpd, hmaj_lvls_p⟩
   have hNativeRec : NativeRecJ rulesJ env_base p wf.cvTa₀ wf.ctorsA w.cvRa₀ rhssA :=
     ⟨cvRg, rhsG, hRecRun, hRecStored⟩
   -- Run `checkNativeTable_ok` on `env_rec`

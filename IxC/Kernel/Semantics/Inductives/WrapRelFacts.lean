@@ -29,13 +29,7 @@ application, is true of what it leaves.
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Key Expr Level ConstantInfo ConstantVal Literal Env RecRule)
-
-/-- Two lists related position by position. -/
-inductive Forall₂ {α β : Type} (R : α → β → Prop) : List α → List β → Prop
-  | nil : Forall₂ R [] []
-  | cons {a : α} {b : β} {l₁ : List α} {l₂ : List β} :
-      R a b → Forall₂ R l₁ l₂ → Forall₂ R (a :: l₁) (b :: l₂)
+open Ix.Kernel (Key Expr Level LevelParam ConstantInfo ConstantVal Literal Env RecRule)
 
 /-- No `let` node (a free variable's type is not looked into). -/
 def letFree : Expr md → Bool
@@ -150,8 +144,11 @@ types. -/
 inductive WrapT (find? : Key md → Option (ConstantInfo md)) : Expr md → Expr md → Prop
   | bvar (i : Nat) : WrapT find? (.bvar i) (.bvar i)
   | fvar (i : Nat) (t t' : Expr md) : WrapT find? (.fvar i t) (.fvar i t')
-  | sort (u : Level) : WrapT find? (.sort u) (.sort u)
-  | const (n : Key md) (us : List Level) : WrapT find? (.const n us) (.const n us)
+  | sort {u v : Level} :
+      (∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) → WrapT find? (.sort u) (.sort v)
+  | const {n : Key md} {us vs : List Level} :
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs →
+      WrapT find? (.const n us) (.const n vs)
   | lit (l : Literal) : WrapT find? (.lit l) (.lit l)
   | app {f a f' a' : Expr md} :
       WrapT find? f f' → WrapT find? a a' → WrapT find? (.app f a) (.app f' a')
@@ -177,8 +174,8 @@ theorem WrapRel.toWrapT {g d : Expr md} (h : WrapRel find? g d) (hd : letFree d 
       ∃ a, ConsumeStar find? t a ∧ WrapT find? a t')
     (bvar := fun i _ => .bvar i)
     (fvar := fun _ _ _ => .fvar _ _ _)
-    (sort := fun u _ => .sort u)
-    (const := fun n us _ => .const n us)
+    (sort := fun h _ => .sort h)
+    (const := fun h _ => .const h)
     (lit := fun l _ => .lit l)
     (app := fun _ _ ihf iha hl => by
       simp only [letFree, Bool.and_eq_true] at hl
@@ -221,8 +218,8 @@ theorem WrapT.instantiate1 {v v' : Expr md} (hv : WrapT find? v v') {g d : Expr 
       · rw [if_pos h2]; exact .bvar _
       · rw [if_neg h2]; exact .bvar _
   | fvar i t t' => intro j; exact .fvar i t t'
-  | sort u => intro j; exact .sort u
-  | const n us => intro j; exact .const n us
+  | sort h => intro _; exact .sort h
+  | const h => intro _; exact .const h
   | lit l => intro j; exact .lit l
   | app _ _ ihf iha => intro j; exact .app (ihf j) (iha j)
   | lam hpw hs _ _ ihw ihb => intro j; exact .lam hpw (hs.instantiate1 v j) (ihw j) (ihb (j + 1))
@@ -249,7 +246,8 @@ theorem WrapT.hasFvar {g d : Expr md} (h : WrapT find? g d) (hg : g.hasFvar = fa
       f.hasFvar = false ∧ x.hasFvar = false := by
     intro f x h; simpa [Ix.Kernel.Expr.hasFvar] using h
   induction h with
-  | bvar | sort | const | lit => exact hg
+  | bvar | lit => exact hg
+  | sort | const => rfl
   | fvar => simp [Ix.Kernel.Expr.hasFvar] at hg
   | app _ _ ihf iha =>
     simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hg ⊢
@@ -265,7 +263,8 @@ theorem WrapT.hasFvar {g d : Expr md} (h : WrapT find? g d) (hg : g.hasFvar = fa
 theorem WrapT.looseBVarsBounded {g d : Expr md} (h : WrapT find? g d) :
     ∀ k, g.looseBVarsBounded k = true → d.looseBVarsBounded k = true := by
   induction h with
-  | bvar | fvar | sort | const | lit => intro k hg; exact hg
+  | bvar | fvar | lit => intro k hg; exact hg
+  | sort | const => intro _ _; rfl
   | app _ _ ihf iha =>
     intro k hg
     simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hg ⊢
@@ -282,40 +281,6 @@ theorem WrapT.looseBVarsBounded {g d : Expr md} (h : WrapT find? g d) :
     intro f x h; simpa [Ix.Kernel.Expr.looseBVarsBounded] using h
   | proj _ ih => intro k hg; exact ih k hg
 
-theorem WrapT.allLevelParamsDefined {g d : Expr md} (h : WrapT find? g d)
-    (ps : List LevelParam) (hf : g.hasFvar = false)
-    (hg : g.allLevelParamsDefined ps = true) : d.allLevelParamsDefined ps = true := by
-  have hP : ∀ f x : Expr md,
-      (fun e : Expr md => e.hasFvar = false ∧ e.allLevelParamsDefined ps = true) (.app f x) →
-      (fun e : Expr md => e.hasFvar = false ∧ e.allLevelParamsDefined ps = true) f ∧
-      (fun e : Expr md => e.hasFvar = false ∧ e.allLevelParamsDefined ps = true) x := by
-    intro f x h
-    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff,
-      Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    exact ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩
-  induction h with
-  | bvar | sort | const | lit => exact hg
-  | fvar => simp [Ix.Kernel.Expr.hasFvar] at hf
-  | app _ _ ihf iha =>
-    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hg ⊢
-    exact ⟨ihf hf.1 hg.1, iha hf.2 hg.2⟩
-  | lam hpw hs _ _ ihw ihb =>
-    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hg ⊢
-    obtain ⟨hfa, hga⟩ := hs.of
-      (P := fun e : Expr md => e.hasFvar = false ∧ e.allLevelParamsDefined ps = true) hP
-      ⟨hf.1, hg.1.1⟩
-    exact ⟨⟨ihw hfa hga, ihb hf.2 hg.1.2⟩, by rw [← hpw]; exact hg.2⟩
-  | forallE hpw hs _ _ ihw ihb =>
-    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hg ⊢
-    obtain ⟨hfa, hga⟩ := hs.of
-      (P := fun e : Expr md => e.hasFvar = false ∧ e.allLevelParamsDefined ps = true) hP
-      ⟨hf.1, hg.1.1⟩
-    exact ⟨⟨ihw hfa hga, ihb hf.2 hg.1.2⟩, by rw [← hpw]; exact hg.2⟩
-  | proj _ ih => exact ih hf hg
-
 theorem WrapT.constsResolve {g d : Expr md} (h : WrapT find? g d) (E : Env md)
     (hf : g.hasFvar = false) (hg : g.constsResolve E = true) : d.constsResolve E = true := by
   have hP : ∀ f x : Expr md,
@@ -327,7 +292,9 @@ theorem WrapT.constsResolve {g d : Expr md} (h : WrapT find? g d) (E : Env md)
       Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
     exact ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩
   induction h with
-  | bvar | sort | const | lit => exact hg
+  | bvar | lit => exact hg
+  | sort => rfl
+  | const => simpa [Ix.Kernel.Expr.constsResolve] using hg
   | fvar => simp [Ix.Kernel.Expr.hasFvar] at hf
   | app _ _ ihf iha =>
     simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
@@ -718,23 +685,31 @@ theorem structFamI_args_drop {T : Key md} {lps : List LevelParam} {nP nIdx e : N
   rw [structFamI_getAppArgs, List.drop_left' length_structPsAt]
   simp [Ix.Kernel.structPsAt]
 
-/-- Built of applications, constants and bound variables only. -/
-def appBC : Expr md → Bool
-  | .app f a => appBC f && appBC a
+/-- A spine of bound-variable applications over a constant. -/
+def appBVC : Expr md → Bool
+  | .app f (.bvar _) => appBVC f
   | .const _ _ => true
+  | _ => false
+
+def isBVar : Expr md → Bool
   | .bvar _ => true
   | _ => false
 
-theorem appBC_mkAppN : ∀ (args : List (Expr md)) (f : Expr md),
-    appBC (Expr.mkAppN f args) = (appBC f && args.all appBC)
-  | [], f => by simp [Expr.mkAppN]
-  | a :: as, f => by
-    rw [show Expr.mkAppN f (a :: as) = Expr.mkAppN (.app f a) as from rfl, appBC_mkAppN as]
-    simp only [appBC, List.all_cons, Bool.and_assoc]
+theorem appBVC_mkAppN : ∀ (args : List (Expr md)) (f : Expr md),
+    appBVC f = true → args.all isBVar = true → appBVC (Expr.mkAppN f args) = true
+  | [], _, hf, _ => hf
+  | .bvar _ :: as, f, hf, ha => by
+    simp only [List.all_cons, Bool.and_eq_true] at ha
+    exact appBVC_mkAppN as (.app f (.bvar _)) hf ha.2
+  | .fvar _ _ :: _, _, _, ha | .sort _ :: _, _, _, ha | .const _ _ :: _, _, _, ha
+  | .app _ _ :: _, _, _, ha | .lam _ _ _ :: _, _, _, ha | .forallE _ _ _ :: _, _, _, ha
+  | .letE _ _ _ _ :: _, _, _, ha | .lit _ :: _, _, _, ha | .proj _ _ _ :: _, _, _, ha => by
+    simp [isBVar] at ha
 
-theorem appBC_structFamI {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat} :
-    appBC (Ix.Kernel.structFamI T lps nP nIdx e o) = true := by
-  simp [Ix.Kernel.structFamI, appBC_mkAppN, appBC, Ix.Kernel.structPsAt]
+theorem appBVC_structFamI {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat} :
+    appBVC (Ix.Kernel.structFamI T lps nP nIdx e o) = true := by
+  apply appBVC_mkAppN _ _ rfl
+  simp [Ix.Kernel.structPsAt, isBVar]
 
 /-- The family stored as an inductive type heads no wrapper. -/
 theorem consumeWrapper_structFamI {find? : Key md → Option (ConstantInfo md)} {T : Key md}
@@ -761,16 +736,26 @@ theorem ConsumeStar.eq_of_none {t a : Expr md} (h : ConsumeStar find? t a)
   | refl => rfl
   | step hc _ => rw [hn] at hc; exact nomatch hc
 
-/-- A related term built of applications, constants and bound variables is the term itself. -/
-theorem WrapT.eq_of_appBC {g d : Expr md} (h : WrapT find? g d) (hg : appBC g = true) :
+/-- A related bound-variable application spine over a constant with matching head levels is
+the term itself. -/
+theorem WrapT.eq_of_appBVC_head {g d : Expr md} {ls : List Level}
+    (h : WrapT find? g d) (hg : appBVC g = true)
+    (hd : ∃ K, d.getAppFn = .const K ls) (hgfn : ∃ T, g.getAppFn = .const T ls) :
     d = g := by
   induction h with
-  | bvar => rfl
-  | const => rfl
-  | app _ _ ihf iha =>
-    simp only [appBC, Bool.and_eq_true] at hg
-    rw [ihf hg.1, iha hg.2]
-  | _ => simp [appBC] at hg
+  | const _ =>
+    obtain ⟨K, hd⟩ := hd
+    obtain ⟨T, hgfn⟩ := hgfn
+    simp only [Ix.Kernel.Expr.getAppFn, Expr.const.injEq] at hd hgfn
+    rw [hd.2, hgfn.2]
+  | app _ ha ihf _ =>
+    cases ha with
+    | bvar _ =>
+      simp only [appBVC] at hg
+      simp only [Ix.Kernel.Expr.getAppFn] at hd hgfn
+      rw [ihf hg hd hgfn]
+    | _ => simp [appBVC] at hg
+  | _ => simp [appBVC] at hg
 
 /-- The strip moves to a related term, its body related. -/
 theorem WrapT.stripPis : ∀ (k : Nat) {g d : Expr md} {bs : List (Expr md × Ix.Kernel.BinderMeta)}
@@ -788,11 +773,13 @@ theorem WrapT.stripPis : ∀ (k : Nat) {g d : Expr md} {bs : List (Expr md × Ix
       exact ⟨_, body', stripPis_succ_forallE h1, h2⟩
 
 /-- **A declared type without `let` carries the generated major premise verbatim**, when the
-family is stored as an inductive type. -/
+family is stored as an inductive type and the major head carries the family's level parameters. -/
 theorem WrapRel.major_structFamI {g d : Expr md} (h : WrapRel find? g d) (hd : letFree d = true)
     {k : Nat} {bs : List (Expr md × Ix.Kernel.BinderMeta)} {B : Expr md}
     {m : Ix.Kernel.BinderMeta} {T : Key md} {lps : List LevelParam} {nP nIdx e o : Nat}
     (hT : ∃ cv caps, find? T = some (.indInfo cv caps))
+    (hlvls : ∀ bs' dom' B' m', d.stripPis k = some (bs', .forallE dom' B' m') →
+      ∃ K, dom'.getAppFn = .const K (lps.map .param))
     (hs : g.stripPis k = some (bs, .forallE (Ix.Kernel.structFamI T lps nP nIdx e o) B m)) :
     ∃ bs' B' m', d.stripPis k =
       some (bs', .forallE (Ix.Kernel.structFamI T lps nP nIdx e o) B' m') := by
@@ -800,7 +787,7 @@ theorem WrapRel.major_structFamI {g d : Expr md} (h : WrapRel find? g d) (hd : l
   cases h2 with
   | forallE _ hc hdom _ =>
     rw [ConsumeStar.eq_of_none hc (consumeWrapper_structFamI hT)] at hdom
-    rw [hdom.eq_of_appBC appBC_structFamI] at h1
+    rw [hdom.eq_of_appBVC_head appBVC_structFamI (hlvls _ _ _ _ h1) ⟨T, structFamI_getAppFn⟩] at h1
     exact ⟨_, _, _, h1⟩
 
 end Major
