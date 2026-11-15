@@ -150,6 +150,45 @@ private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
       Tests.Ix.IxVM.Case.ofClaim "refuse the unsafe rule dependency as a direct claim"
         env (.check ctx dependency none) {} false (some seedMessage)]
 
+/-- A constructor parameter either uses the former's domain directly or contains the family
+inside an argument erased by beta reduction. The eta variant fully applies the family. -/
+private def nativeParameterBlock (betaDomain etaArgument : Bool) : Ixon.Constant :=
+  let former : Ixon.Expr := .all (.sort 1) (.sort 1)
+  let argument : Ixon.Expr := if etaArgument then
+    .lam (.sort 1) (.app (.recur 0 #[]) (.var 0)) else .recur 0 #[]
+  let domain : Ixon.Expr := if betaDomain then
+    .app (.lam former (.sort 1)) argument else .sort 1
+  let constructor : Ixon.Constructor :=
+    ⟨false, 0, 0, 1, 0, .inherited, .all domain (.app (.recur 0 #[]) (.var 0))⟩
+  let ind : Ixon.Inductive := ⟨false, 0, 1, 0, former, #[constructor]⟩
+  { info := .muts #[.indc ind]
+    sharing := #[]
+    refs := #[]
+    univs := #[.zero, .succ .zero]
+    binders := #[⟨false, 0, 0, #[.never {}]⟩,
+      ⟨false, 1, 0, if betaDomain then
+        (if etaArgument then #[.never {}, .never {}, .never {}, .never {}]
+          else #[.never {}, .never {}, .never {}]) else #[.never {}]⟩] }
+
+private def nativeParameterFixture (betaDomain etaArgument : Bool) :
+    Except String (Ixon.Env × Address) := do
+  let base ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let (env, block) := storeSafetyRecord base (nativeParameterBlock betaDomain etaArgument)
+  let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, block⟩, #[], #[], #[], #[]⟩
+  let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, block⟩, #[], #[], #[], #[]⟩
+  return (env, target)
+
+private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
+  [(false, false), (true, false), (true, true)].toArray.map fun (betaDomain, etaArgument) _ => do
+    let (env, target) ← nativeParameterFixture betaDomain etaArgument
+    let ctx ← Ix.ClaimContext.ofDefaultTable
+    let c ← Tests.Ix.IxVM.Case.ofClaim
+      s!"native parameter domain: beta={betaDomain}, eta={etaArgument}"
+      env (.check ctx target none) {} (!betaDomain)
+      (if betaDomain then some "native constructor: parameter domain mentions the inductive block"
+        else none)
+    return { c with exercises := if betaDomain then none else some "KernelCheck::check_param_agreement" }
+
 /-- The walk edges of `env` from a constant in Lean's logic to one outside it,
 with the number of constants outside it. None means that an owned set without
 the constants outside Lean's logic loses nothing its claim walk reaches. -/
@@ -302,7 +341,7 @@ def run : IO UInt32 := do
     let (_, witness) ← buildShardCheckEnvWitness env #[loopA, trustA] (assumeBinding := true)
     return { label := "accept the builder's shard over loop and Lean.trustCompiler", accept := true,
              witness }
-  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases)
+  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases ++ nativeParameterCases)
 
 /-- The closure of what stays owned on a compiled corpus (`IX_SAFETY_IXE`, an
 `.ixe`): every walk edge from a constant in Lean's logic lands on one, so a

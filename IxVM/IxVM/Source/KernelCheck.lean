@@ -553,6 +553,25 @@ def check_positivity := aiur_fn⟦
     }
 ⟧
 
+def check_parameter_occurrences := aiur_fn⟦
+  fn check_parameter_occurrences(ty: KernelTypes::KExpr, n_params: Field,
+                                 block_addr: Bytes::AddressRef) -> () {
+      match n_params {
+        0 => { () },
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
+              let peers = (&(Lists::Node::Cons(block_addr, (&(Lists::Node::Nil)))));
+              assert_eq!(expr_mentions_block(dom, peers), 0,
+                "native constructor: parameter domain mentions the inductive block");
+              check_parameter_occurrences(body, n_params - 1, block_addr)
+            },
+          }
+        },
+      }
+    }
+⟧
+
   -- A family whose declared type is not syntactically its telescope (`∀` parameters and
   -- indices, then a sort), a former declared at a definition: the telescope is read by head-
   -- normalizing it (`get_result_sort_level`), so the declared type is convertible with it. Such
@@ -683,7 +702,9 @@ def check_inductive_shape_ctors := aiur_fn⟦
               check_field_universes(rc, cty, c_np, ind_level);
 
               match is_unsafe {
-                0 => {  check_positivity(cty, c_np, block_addr) } ,
+                0 => {
+                  check_parameter_occurrences(cty, c_np, block_addr);
+                  check_positivity(cty, c_np, block_addr) } ,
                 _ => {  () } ,
               };
               check_inductive_shape_ctors(rc, ind_ty, n_params, n_indices,
@@ -3774,7 +3795,9 @@ def check_const := aiur_fn⟦
                   check_field_universes(rc, ty, num_params, ind_level);
 
                   match ind_is_unsafe {
-                    0 => {  check_positivity(ty, num_params, block_addr) } ,
+                    0 => {
+                      check_parameter_occurrences(ty, num_params, block_addr);
+                      check_positivity(ty, num_params, block_addr) } ,
                     _ => {  () } ,
                   } } ,
                 _ => {
