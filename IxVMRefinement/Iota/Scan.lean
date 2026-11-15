@@ -141,7 +141,8 @@ theorem membersClean_mono {c : ScopedCtx} {h₁ h₂ : Heap F} {ms membs : List 
     (ext : Heap.Extends h₁ h₂) (mc : MembersClean c h₁ ms membs) : MembersClean c h₂ ms membs := by
   intro m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
   obtain ⟨cicon, w, nl, ty, rest, hf, hci, hw, hfc⟩ := mc m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
-  exact ⟨cicon, w, nl, ty, rest, hf, CIRep.mono ext hci, hw, fieldsClean_mono ext hfc⟩
+  exact ⟨cicon, w, nl, ty, rest, fun ci hfind => CIRep.mono ext (hf ci hfind),
+    CIRep.mono ext hci, hw, fieldsClean_mono ext hfc⟩
 
 /-- Skipping more binders keeps the fields clean. -/
 theorem fieldsClean_le {h : Heap F} {p p' : Nat} {ms : List Bytes.Address} {ty : SourceValue F}
@@ -431,7 +432,13 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     rcases Nat.eq_zero_or_pos t with rfl | htpos
     · refine ⟨ci0, _, w88, x_cty, [w89, w90, w91, w92, w93, w94], ?_,
         CIRep.mono (e2.trans e3) hci, rfl, ?_⟩
-      · simpa using hfind
+      · intro ci hfind
+        obtain ⟨v', hload', hrep'⟩ := hctorLoad.2 ci
+          (by simpa only [Nat.cast_zero, add_zero] using hfind)
+        rw [ld41] at hload'
+        injection hload' with heq
+        subst v'
+        exact CIRep.mono (e2.trans e3) hrep'
       · refine ⟨ds1 ++ ds2, q, forallChain_mono (e2.trans e3) (forallChain_append hch1 hch2),
           chainEnd_mono (e2.trans e3) hq, ?_⟩
         intro dp hdp
@@ -503,7 +510,7 @@ theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       refine ⟨cicon, w, nl', ty', rest, ?_, CIRep.mono e3 hci, hw,
         fieldsClean_le (se_val_natCast_le _) (fieldsClean_mono e3 hfc)⟩
       rw [zero_add, NatAux.val_natCast (n := t) (by omega), NatAux.val_natCast hidx', hbb] at hf
-      exact hf
+      exact fun ci hfind => CIRep.mono e3 (hf ci hfind)
     · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5
   · obtain ⟨a, ms', rfl, ha, hms'⟩ := RepList.cons_of_load hms ld12
     subst hc238

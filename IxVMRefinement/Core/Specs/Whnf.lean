@@ -796,7 +796,8 @@ def MembersClean (c : ScopedCtx) (h : Heap F) (ms membs : List Bytes.Address) : 
     xs[p.idx.toNat]? = some (.indc ind) →
     ∀ t < ind.ctors.size, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl ty : SourceValue F)
         (rest : List (SourceValue F)),
-      c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some cicon ∧ c.ci h w cicon ∧
+      (∀ ci, c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some ci → c.ci h w ci) ∧
+      c.ci h w cicon ∧
       w = .construct kciEnum "Ctor" (nl :: ty :: rest) ∧ FieldsClean h ind.params.toNat membs ty
 
 /-- `se_mentions(e, members)`: an answer other than `1` means the heap term mentions no
@@ -846,8 +847,9 @@ def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
       ∀ t < ZMod.val (n - j),
         ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
           (rest : List (SourceValue F)),
-          c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
-            some cicon ∧ c.ci h' w cicon ∧ w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧
+          (∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
+            some ci → c.ci h' w ci) ∧
+          c.ci h' w cicon ∧ w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧
           FieldsClean h' (ZMod.val p) ms ty'
 
 /-- `struct_scan_members(ms, members)`: an answer other than `1` is `MembersClean ms members`.

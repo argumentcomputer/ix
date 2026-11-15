@@ -650,6 +650,8 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     obtain ⟨-, cvj, cnF, hcj⟩ := hfire rl hrl
     have hctor := hkeys (ixAddr p) cm _ us_m hmh0 hcm hinfo 0 rl rfl
     simp only [val_toUInt64_toNat] at hctor
+    have hctorScoped : rl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) := by
+      simpa only [ScopedCtx.κ, Ctx.κ] using hctor
     obtain ⟨tus, htus⟩ :=
       hc.env.ruleCtorHead k cv mI rP [rl] rl cvj rl.ctorParams cnF (c.κ (ixAddr p)) us_m
         hfind hrl hcj hmh0
@@ -747,7 +749,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       rw [← hni0, ← hnc1]; exact ld289
     have hcj_cprj : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
         some (.ctorInfo cvj rl.ctorParams cnF) := by
-      rw [← hctor]; exact hcj
+      rw [← hctorScoped]; exact hcj
     obtain ⟨⟨heta, hetaCtor_cprj, hetaF, hetaP, hnP_val, hlp_eq⟩, hetaUse⟩ := hc.loads.etaIota
       x_parent p287 x_ind_nl x_ind_ty w310 x_block m179 m279 cs293 p b i (nPT : F)
       cvT cvj caps rl.ctorParams cnF ust_f l_f
@@ -760,7 +762,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
         Bytes.repAddressRef_heapMono₂ addrTy Y352 hp⟩
       hl_f hnz_f
     have hetaCtor_rl : caps.etaCtor = some rl.ctor := by
-      rw [← hctor] at hetaCtor_cprj; exact hetaCtor_cprj
+      rw [← hctorScoped] at hetaCtor_cprj; exact hetaCtor_cprj
     obtain ⟨a_rec, hcv_key⟩ := recr_key hci
     have hk_name : cv.name = k := WhnfAux.name_of_find hfind
     have hk_nproj : Ix.Kernel.Key.isProjFnShape k = false := by
@@ -790,7 +792,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
         obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hcj')
         have hnP_eq : rl.ctorParams = nPT :=
           hnP_val.trans (NatAux.val_natCast (Nat.lt_trans hnPT (by decide)))
-        refine ⟨hctor, hetaP, hetaF, hnP_eq, ?_, ?_⟩
+        refine ⟨hctorScoped, hetaP, hetaF, hnP_eq, ?_, ?_⟩
         · intro hcnF0
           have hcj0 : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
               some (.ctorInfo cvj rl.ctorParams 0) :=
@@ -802,7 +804,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
             hfindI hfew hcj0
           rw [← hnP_val] at huP hresU
           exact ⟨hul, huP, hresU⟩
-        · simpa only [← hctor] using hetaUse)
+        · simpa only [← hctorScoped] using hetaUse)
       (Tm.mono (e448.trans (e493.trans (e513.trans e479))) hAs_get) x_fab rfl
     have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hAs_idx]; rfl
     exact ih.get (.whnf .red_iota) (by lt_calls) ev673
