@@ -82,15 +82,15 @@ theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
       split at h
       · rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsafe, h⟩ | ⟨hsafe, h⟩
         · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
-        · simp only [hsafe, ↓reduceIte]
+        · simp only [hsafe]
           rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hparams, h⟩ | ⟨hparams, h⟩
           · simp only [hparams, ↓reduceIte]
             obtain ⟨types, htypes, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
             rw [htypes]
-            dsimp only [bind, Except.bind]
+            dsimp only [bind, Except.bind] at h ⊢
             obtain ⟨ctors, hctors, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
             rw [hctors]
-            dsimp only [bind, Except.bind]
+            dsimp only [bind, Except.bind] at h ⊢
             obtain ⟨recs, hrecs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
             rw [hrecs]
             dsimp only [bind, Except.bind]
