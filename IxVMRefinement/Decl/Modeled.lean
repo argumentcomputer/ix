@@ -1394,7 +1394,15 @@ theorem check_recs_spec
     | Nil _ he21 he22 _ =>
       rw [he21, he22]
       exact ⟨[], bytes_in, rfl, rfl, rfl, .nil, (fun _ hm => nomatch hm), hstr, Heap.Extends.refl h⟩
-1
+    | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _
+        _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _
+        ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       cases he
   | cons e₀ rawRest ih =>
