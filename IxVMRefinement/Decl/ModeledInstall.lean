@@ -187,7 +187,7 @@ theorem defnDecl_step_M (hCore : IxVM.Consistency.Core S₀)
   have hbase_cv : isBaseKey cv.name = true :=
     s0Checked_installs_isBaseKey hchk (.defnInfo cv value hint) (List.mem_singleton.mpr rfl)
   refine declsM_step_of_store hchk hx.installsNodup hx.installsFresh fun hS => ?_
-  obtain ⟨E, t, htwf, hloads, hgood, hall⟩ := hchk
+  obtain ⟨E, t, htwf, _, hgood, hall⟩ := hchk
   have hmem : ConstantInfo.defnInfo cv value hint ∈
       IxVM.Consistency.installs (.defnDecl cv value hint) := List.mem_singleton.mpr rfl
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
@@ -217,8 +217,8 @@ theorem defnDecl_step_M (hCore : IxVM.Consistency.Core S₀)
       subst hsf0
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.defnInfo cv value hint) hmem
       have hnoprj : cv.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase_cv
       have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
@@ -287,7 +287,7 @@ theorem thmDecl_step_M (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consist
   have hbase_cv : isBaseKey cv.name = true :=
     s0Checked_installs_isBaseKey hchk (.thmInfo cv value) (List.mem_singleton.mpr rfl)
   refine declsM_step_of_store hchk hx.installsNodup hx.installsFresh fun hS => ?_
-  obtain ⟨E, t, htwf, hloads, hgood, hall⟩ := hchk
+  obtain ⟨E, t, htwf, _, hgood, hall⟩ := hchk
   have hmem : ConstantInfo.thmInfo cv value ∈
       IxVM.Consistency.installs (.thmDecl cv value) := List.mem_singleton.mpr rfl
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
@@ -313,8 +313,8 @@ theorem thmDecl_step_M (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consist
       rename_i nl ty val
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.thmInfo cv value) hmem
       have hnoprj : cv.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase_cv
       have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
@@ -397,7 +397,7 @@ theorem axiomDecl_step_M (hCore : IxVM.Consistency.Core S₀)
     have hbase_cv : isBaseKey cv.name = true :=
       s0Checked_installs_isBaseKey hchk (.axiomInfo cv) hmem
     refine declsM_step_of_store hchk hx.installsNodup hx.installsFresh fun hS => ?_
-    obtain ⟨E, t, htwf, hloads, hgood, hall⟩ := hchk
+    obtain ⟨E, t, htwf, _, hgood, hall⟩ := hchk
     obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
       hall (.axiomInfo cv) hmem
     obtain ⟨hR_fn, hsafe, hnil, hres, hcv_bvs, hcv_nfv, hrange,
@@ -417,8 +417,8 @@ theorem axiomDecl_step_M (hCore : IxVM.Consistency.Core S₀)
       dsimp only [ConstantInfo.toConstantVal] at hval
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.axiomInfo cv) hmem
       have hnoprj : cv.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase_cv
       have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
@@ -480,7 +480,7 @@ theorem opaqueDecl_step_M (hCore : IxVM.Consistency.Core S₀)
   have hbase_cv : isBaseKey cv.name = true :=
     s0Checked_installs_isBaseKey hchk (.axiomInfo cv) hmem
   refine declsM_step_of_store hchk hx.installsNodup hx.installsFresh fun hS => ?_
-  obtain ⟨E, t, htwf, hloads, hgood, hall⟩ := hchk
+  obtain ⟨E, t, htwf, _, hgood, hall⟩ := hchk
   obtain ⟨cl, hcl, hname, rc, v, ap, lim, a, ci, hargs, hrc, hadr, hkey, hci, hstored⟩ :=
     hall (.axiomInfo cv) hmem
   obtain ⟨hR_fn, hsafe, -, hres, hcv_bvs, hcv_nfv, hrange,
@@ -502,8 +502,8 @@ theorem opaqueDecl_step_M (hCore : IxVM.Consistency.Core S₀)
     dsimp only [ConstantInfo.toConstantVal] at hval hV
     let c : Ctx := ⟨E, env, t, lim⟩
     have hgood_c : Good c calls := hgood
-    have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-    have hlf : LoadFacts c := hloads.withLim
+    have ⟨hR_c, hlf⟩ := hR_fn hS
+    have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
     have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.axiomInfo cv) hmem
     have hnoprj : cv.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase_cv
     have hcvA_eq : cvA = ⟨cv.name, cv.levelParams, cvA.type⟩ := by
