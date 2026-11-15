@@ -48,7 +48,7 @@ theorem pruneClosureOrder_append (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
     (S : _root_.Address → Prop) (xs ys : List _root_.Address) :
     pruneClosureOrder t E S (xs ++ ys) =
       pruneClosureOrder t E S xs ++ pruneClosureOrder t E S ys := by
-  exact List.filter_append
+  simp only [pruneClosureOrder, List.filter_append]
 
 /-- The retained part of an original prefix remains a prefix of the pruned order. -/
 theorem pruneClosureOrder_prefix {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
