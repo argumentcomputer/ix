@@ -205,4 +205,75 @@ theorem readDefinition_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKey
   simp only [bind, Except.bind]
   exact lowerDefinition_without_rewrite h hempty (memberReader_hintFor_eq hrk hself hh hval)
 
+private theorem fold_insert_agrees_at {md : Mode} {α β : Type}
+    (g : α → Option (Key md × β)) (k : Key md) :
+    ∀ (xs : List α) (left right : Std.HashMap (Key md) β),
+      left[k]? = right[k]? →
+      (xs.foldl (Ix.Cert.CtxAgree.insOpt g) left)[k]? =
+        (xs.foldl (Ix.Cert.CtxAgree.insOpt g) right)[k]?
+  | [], _, _, h => h
+  | x :: xs, left, right, h => by
+    simp only [List.foldl_cons]
+    apply fold_insert_agrees_at g k xs
+    unfold Ix.Cert.CtxAgree.insOpt
+    cases g x with
+    | none => exact h
+    | some pair => simp only [Std.HashMap.getElem?_insert, h]
+
+private theorem fold_insert_unchanged_at {md : Mode} {α β : Type}
+    (g : α → Option (Key md × β)) (k : Key md) :
+    ∀ (xs : List α) (table : Std.HashMap (Key md) β),
+      (∀ x ∈ xs, ∀ pair, g x = some pair → pair.1 ≠ k) →
+      (xs.foldl (Ix.Cert.CtxAgree.insOpt g) table)[k]? = table[k]?
+  | [], _, _ => rfl
+  | x :: xs, table, h => by
+    rw [List.foldl_cons, fold_insert_unchanged_at g k xs _
+      (fun y hy => h y (List.mem_cons_of_mem _ hy))]
+    unfold Ix.Cert.CtxAgree.insOpt
+    cases hx : g x with
+    | none => rfl
+    | some pair => simp [Std.HashMap.getElem?_insert, h x List.mem_cons_self pair hx]
+
+private theorem generated_noteEntry_aux {md : Mode} {d : CDecl md}
+    (hg : d.isGenerated = true) {e : Ix.Cert.CtxAgree.Entry md}
+    (he : e ∈ Ix.Cert.CtxAgree.noteEntries d) : e.1.isAux = true := by
+  have hname : e.1 ∈ d.names := by
+    cases d with
+    | basisDecl kind => simp [Declaration.isGenerated, Declaration.names] at hg
+    | indDecl block nP =>
+      obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp he
+      exact List.mem_map.mpr ⟨ci, hci, rfl⟩
+    | _ =>
+      simp only [Ix.Cert.CtxAgree.noteEntries, List.mem_singleton] at he
+      subst e
+      exact List.mem_cons_self
+  exact List.all_eq_true.mp (Bool.and_eq_true.mp hg).2 e.1 hname
+
+/-- Removing a generated declaration prefix preserves every public constant's height
+after committing the common bare suffix. No reader-state equality is assumed. -/
+theorem commit_heights_after_generated_prefix {md : Mode}
+    {source target : State md} {full bare : Read md} {generated : List (CDecl md)}
+    (hdecls : full.decls.toList = generated ++ bare.decls.toList)
+    (hgenerated : ∀ d ∈ generated, d.isGenerated = true)
+    (hheight : ∀ k, NonAuxKey k → target.heights[k]? = source.heights[k]?) :
+    ∀ k, NonAuxKey k → (target.commit bare).heights[k]? = (source.commit full).heights[k]? := by
+  intro k hk
+  rw [Ix.Cert.CtxAgree.commit_heights, Ix.Cert.CtxAgree.commit_heights, hdecls,
+    List.flatMap_append, List.foldl_append]
+  apply fold_insert_agrees_at Ix.Cert.CtxAgree.htOf k
+  rw [fold_insert_unchanged_at Ix.Cert.CtxAgree.htOf k _ _ ?_]
+  · exact hheight k hk
+  · intro e he pair hp heq
+    obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
+    have heaux := generated_noteEntry_aux (hgenerated d hd) he
+    unfold Ix.Cert.CtxAgree.htOf at hp
+    cases hh : e.2.2.2 with
+    | none => simp [hh] at hp
+    | some n =>
+      simp only [hh, Option.map_some, Option.some.injEq] at hp
+      subst pair
+      dsimp only at heq
+      rw [heq, (isAux_eq_false_iff.mpr hk)] at heaux
+      cases heaux
+
 end IxVM.Refinement.Assembly
