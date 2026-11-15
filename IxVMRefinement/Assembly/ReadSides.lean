@@ -14,9 +14,8 @@ private theorem lowerInductiveDeclsBare_sides {md : Mode} {rb : BlockRead md} {r
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   unfold lowerInductiveDeclsBare at h
   simp only [ite_not, bne_iff_ne, ne_eq] at h
-  split at h
   all_goals
-    rcases ite_ok h with h | h
+    rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨_, h⟩ | ⟨_, h⟩
     all_goals obtain ⟨_, _, h⟩ := except_bind_ok.mp h
     all_goals
       simp only [pure, Except.pure, Except.ok.injEq] at h
