@@ -187,7 +187,8 @@ private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
       let c ← Tests.Ix.IxVM.Case.ofClaim
         s!"accept native parameter domain: beta={betaDomain}, field={withField}"
         env (.check ctx target none)
-      return { c with exercises := some "KernelCheck::check_param_agreement" }
+      return { c with exercises := some (if !betaDomain && !withField then
+        "KernelCheck::projection_addr_ctor" else "KernelCheck::check_param_agreement") }
 
 /-- Checking the beta-erased argument of the second parameter requires the unit-like
 capability of `T A B`, whose only constructor has no fields. -/
