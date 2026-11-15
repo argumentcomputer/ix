@@ -285,20 +285,83 @@ theorem checkEtaThm (mode : CheckMode) (T ctorName : Key md) (lps : List LevelPa
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (source.find? (auxKey T .model))
         (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read q (source.find? (auxKey T .model))
-        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by
+          intro cv v w
+          dsimp only [read]
+          cases source.find? (auxKey T .model) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | defnInfo _ _ _ =>
+              cases source.find? (auxKey ctorName .model) with
+              | none => rfl
+              | some ci =>
+                cases ci with
+                | defnInfo _ _ _ =>
+                  cases source.find? eqName with
+                  | none => rfl
+                  | some ci =>
+                    rfl
+                | _ => rfl
+            | _ => rfl)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta)) q
-        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by
+          intro cv v w
+          dsimp only [read]
+          cases target.find? (auxKey (auxKey T .model) .eta) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | thmInfo _ _ =>
+              rfl
+            | _ => rfl)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (target.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
-        (target.find? (auxKey T .model)) q (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (target.find? (auxKey T .model)) q (source.find? eqName) sourceSlots) (by
+          intro cv v w
+          dsimp only [read]
+          cases target.find? (auxKey (auxKey T .model) .eta) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | thmInfo _ _ =>
+              cases target.find? (auxKey T .model) with
+              | none => rfl
+              | some ci =>
+                cases ci with
+                | defnInfo _ _ _ =>
+                  rfl
+                | _ => rfl
+            | _ => rfl)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (target.find? (auxKey ctorName .model)) (target.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
         (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model)) q sourceSlots)
-        (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (by
+          intro cv v w
+          dsimp only [read]
+          cases target.find? (auxKey (auxKey T .model) .eta) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | thmInfo _ _ =>
+              cases target.find? (auxKey T .model) with
+              | none => rfl
+              | some ci =>
+                cases ci with
+                | defnInfo _ _ _ =>
+                  cases target.find? (auxKey ctorName .model) with
+                  | none => rfl
+                  | some ci =>
+                    cases ci with
+                    | defnInfo _ _ _ =>
+                      rfl
+                    | _ => rfl
+                | _ => rfl
+            | _ => rfl)
     _ = _ := congrArg (read (target.find? (auxKey (auxKey T .model) .eta))
       (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model))
       (target.find? eqName)) slots
@@ -342,13 +405,49 @@ theorem checkUnitThm (mode : CheckMode) (T : Key md) (lps : List LevelParam) (nP
     _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
         (source.find? (auxKey T .model)) (source.find? eqName) :=
       h.observe _ (fun q => read q (source.find? (auxKey T .model)) (source.find? eqName))
-        (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (by
+          intro cv v w
+          dsimp only [read]
+          cases source.find? (auxKey T .model) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | defnInfo _ _ _ =>
+              cases source.find? eqName with
+              | none => rfl
+              | some ci =>
+                rfl
+            | _ => rfl)
     _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
         (target.find? (auxKey T .model)) (source.find? eqName) :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike)) q
-        (source.find? eqName)) (by intros; dsimp only [read]; repeat' first | rfl | split)
+        (source.find? eqName)) (by
+          intro cv v w
+          dsimp only [read]
+          cases target.find? (auxKey (auxKey T .model) .unitlike) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | thmInfo _ _ =>
+              rfl
+            | _ => rfl)
     _ = _ := h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike))
-      (target.find? (auxKey T .model)) q) (by intros; dsimp only [read]; repeat' first | rfl | split)
+      (target.find? (auxKey T .model)) q) (by
+          intro cv v w
+          dsimp only [read]
+          cases target.find? (auxKey (auxKey T .model) .unitlike) with
+          | none => rfl
+          | some ci =>
+            cases ci with
+            | thmInfo _ _ =>
+              cases target.find? (auxKey T .model) with
+              | none => rfl
+              | some ci =>
+                cases ci with
+                | defnInfo _ _ _ =>
+                  rfl
+                | _ => rfl
+            | _ => rfl)
 
 theorem indBlockCaps (mode : CheckMode) (cvT cvC : ConstantVal md) (nP nF : Nat) :
     Ix.Kernel.indBlockCaps mode source cvT cvC nP nF =
