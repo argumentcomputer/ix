@@ -383,6 +383,7 @@ private theorem resolve_preStorePure_eq_context {t : Ix.Kernel.RoleTable}
   | defn _ | recr _ | axio _ | quot _ | muts _ => rfl
   | dPrj p | iPrj p | rPrj p | cPrj p =>
     rw [hci] at hproj_closed
+    dsimp only at hproj_closed
     rw [IxVM.Refinement.RoleVal.containsAddrFast_eq, List.contains_iff_mem] at hproj_closed
     simp only [hstore_eq hproj_closed]
 
@@ -406,15 +407,21 @@ private theorem mem_validPreRefs_indc {owner : _root_.Address} {c : Ixon.Constan
   refine ⟨?_, fun j hj => ?_⟩
   · unfold validPreRefs
     refine List.mem_flatMap.mpr ⟨(owner, c), hc, ?_⟩
+    dsimp only
     rw [hci]
+    dsimp only
     refine List.mem_flatMap.mpr ⟨i, List.mem_range.mpr hi_lt, ?_⟩
+    dsimp only
     rw [hnth]
     exact List.mem_cons_self
   · have hj_lt : j < ind.ctors.toList.length := by rwa [Array.length_toList]
     unfold validPreRefs
     refine List.mem_flatMap.mpr ⟨(owner, c), hc, ?_⟩
+    dsimp only
     rw [hci]
+    dsimp only
     refine List.mem_flatMap.mpr ⟨i, List.mem_range.mpr hi_lt, ?_⟩
+    dsimp only
     rw [hnth]
     exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨j, List.mem_range.mpr hj_lt, rfl⟩)
 
@@ -653,22 +660,25 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
       · exact (Ix.Cert.ReaderUnits.throw_ok h0).elim
   | muts ms =>
     simp only [preConstShapeOk, hci, Bool.and_eq_true, Bool.not_eq_true'] at hsh_ok
-    obtain ⟨⟨hindc_any, hno_defn⟩, _⟩ := hsh_ok
+    obtain ⟨⟨hindc_any, _⟩, _⟩ := hsh_ok
     unfold readRecord at hread
     rw [hci] at hread
-    simp only [hindc_any, hno_defn, ↓reduceIte, Bool.false_eq_true] at hread
-    obtain ⟨gens, d', hdecls, hg, hk_fn⟩ :=
-      readInductive_validPreRefs hrecs_list hev_defn hc_list hci hread
-    rw [hdecls] at hdl
-    rcases List.mem_append.mp hdl with hgen_mem | hlast
-    · exfalso
-      have hgd : d.isGenerated = true := hgen d (by rw [hdecls, hg, List.take_left]; exact hgen_mem)
-      unfold Ix.Kernel.Declaration.isGenerated at hgd
-      have haux := (List.all_eq_true.mp (Bool.and_eq_true_iff.mp hgd).2) _ hs
-      cases haux
-    · rw [List.mem_singleton] at hlast
-      subst hlast
-      exact hk_fn _ hs
+    dsimp only at hread
+    rw [if_pos hindc_any] at hread
+    rcases Ix.Cert.ReaderUnits.ite_ok hread with h0 | h0
+    · exact (Ix.Cert.ReaderUnits.fail_bind h0).elim
+    · obtain ⟨gens, d', hdecls, hg, hk_fn⟩ :=
+        readInductive_validPreRefs hrecs_list hev_defn hc_list hci h0
+      rw [hdecls] at hdl
+      rcases List.mem_append.mp hdl with hgen_mem | hlast
+      · exfalso
+        have hgd : d.isGenerated = true := hgen d (by rw [hdecls, hg, List.take_left]; exact hgen_mem)
+        unfold Ix.Kernel.Declaration.isGenerated at hgd
+        have haux := (List.all_eq_true.mp (Bool.and_eq_true_iff.mp hgd).2) _ hs
+        cases haux
+      · rw [List.mem_singleton] at hlast
+        subst hlast
+        exact hk_fn _ hs
 
 /-! ## Unconditional `t.bound` coverage and `t.check = .ok ()` upgrade to `BindingSeeds` -/
 
