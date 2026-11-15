@@ -144,6 +144,7 @@ theorem readRecord_inductive (cx : Ctx md) (st : State md) (owner : Address) (c 
   unfold readRecord
   rw [info]
   simp [finish]
+  exact bind_pure _
 
 theorem indcs_singleton (target : Ixon.Inductive) :
     (#[0] : Array Nat).filterMap (indcAt #[.indc target]) = #[(0, target)] := rfl

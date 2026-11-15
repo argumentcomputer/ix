@@ -160,6 +160,7 @@ theorem readRecord_muts_indc (cx : Ctx md) (st : State md) (owner : Address) (c 
   rw [info]
   obtain ⟨t, rest, rfl⟩ := List.exists_cons_of_ne_nil hne
   simp [finish]
+  exact bind_pure _
 
 /-- **The reader on an inductive block laid out in Lean's order**: given every type's key,
 type reading, safety and parameter count and its constructors' checks and readings, the
