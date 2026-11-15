@@ -145,22 +145,35 @@ theorem readRecord_full_bare {md : Mode} {cx : Ctx md} {st : State md}
     exact ⟨[], full, hbare, by simp, hzero, hzero, by simp⟩
   cases hinfo : c.info with
   | muts ms =>
-    by_cases hind : ms.any (fun | .indc _ => true | _ => false) = true
-    · unfold readRecord at h
-      simp only [hinfo, hind, ↓reduceIte] at h
-      rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hdefs, h⟩ | ⟨hdefs, h⟩
-      · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
-      · obtain ⟨fullInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+    have hread := h
+    unfold readRecord at hread
+    simp only [hinfo] at hread
+    rcases Ix.Cert.CtxAgree.ite_ok' hread with ⟨hind, hread⟩ | ⟨hind, _⟩
+    · rcases Ix.Cert.CtxAgree.ite_ok' hread with ⟨_, hread⟩ | ⟨hdefs, hread⟩
+      · exact (Ix.Cert.ReaderUnits.fail_bind hread).elim
+      · obtain ⟨fullInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hread
         obtain ⟨generated, bareInd, hbareInd, hdecls, hcount, hzero, hgenerated⟩ :=
           readInductive_full_bare hInd
         obtain ⟨bare, hbare, hdecls', hcount', hzero'⟩ :=
           finishInductiveRead_full_bare hfinish hdecls hcount hzero
         refine ⟨generated, bare, ?_, hdecls', hcount', hzero', hgenerated⟩
-        simp only [readRecordBare, hinfo, hind, hdefs, ↓reduceIte, hbareInd,
-          bind, Except.bind]
-        exact hbare
+        unfold readRecordBare
+        simp only [hinfo]
+        split
+        · split
+          · rename_i hdefs'
+            exact (hdefs hdefs').elim
+          · rw [hbareInd]
+            exact hbare
+        · rename_i hind'
+          exact (hind' hind).elim
     · apply same
-      simpa only [readRecordBare, hinfo, hind, ↓reduceIte] using h
+      unfold readRecordBare
+      simp only [hinfo]
+      split
+      · rename_i hind'
+        exact (hind hind').elim
+      · exact h
   | _ =>
     apply same
     simpa only [readRecordBare, hinfo] using h
