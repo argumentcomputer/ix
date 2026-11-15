@@ -135,6 +135,25 @@ private theorem contextOf_index (t : Ix.Kernel.RoleTable)
           records fallback) :=
   rfl
 
+private theorem option_bind_eq_some {α β : Type} {x : Option α} {f : α → Option β} {b : β}
+    (h : (x >>= f) = some b) : ∃ a, x = some a ∧ f a = some b := by
+  cases x with
+  | none => cases h
+  | some a => exact ⟨a, rfl, h⟩
+
+private theorem of_not_bnot_eq_true {b : Bool} (h : ¬ ((!b) = true)) : b = true := by
+  cases b
+  · exact absurd rfl h
+  · rfl
+
+private theorem option_some_bind {α β : Type} (a : α) (f : α → Option β) :
+    (some a >>= f) = f a :=
+  rfl
+
+private theorem except_ok_bind {ε α β : Type} (a : α) (f : α → Except ε β) :
+    (Except.ok a >>= f) = f a :=
+  rfl
+
 private theorem readPrelude_eq (t : Ix.Kernel.RoleTable)
     (records extra : Array (_root_.Address × Ixon.Constant))
     (extraBlobs : List (_root_.Address × ByteArray)) :
@@ -143,8 +162,12 @@ private theorem readPrelude_eq (t : Ix.Kernel.RoleTable)
       | .ok (state, decls) =>
         Except.ok ⟨records, extra, extraBlobs, ⟨decls⟩, state⟩
       | .error (e, i) =>
-        throw s!"prelude record {i}: {e}" :=
-  rfl
+        throw s!"prelude record {i}: {e}" := by
+  unfold readPrelude
+  dsimp only
+  cases readRecords (contextOf t records [] extra extraBlobs) {} records with
+  | ok p => rcases p with ⟨_, _⟩; rfl
+  | error e => rcases e with ⟨_, _⟩; rfl
 
 section WithEv
 
@@ -364,17 +387,17 @@ private theorem defCx_roles_of_pure {ref : ConstRef _root_.Address} {k : CName .
     rw [containsAddrFast_eq]
   unfold pureRolesList at h
   rw [hfn] at h
-  have hstep_eq : (fun (m : Std.HashMap (ConstRef _root_.Address) (CName .anon))
-      (x : Ix.Kernel.Role × _root_.Address) =>
-      match resolve (defCx ev).store x.2 with
-      | some ref => if m.contains ref then m else m.insert ref (Ix.Kernel.roleKey x.1)
-      | none => m) = bindingsStep (defCx ev).store := rfl
   rw [defCx_roles_eq ev]
   unfold bindingsOf
   dsimp only
-  rw [← Array.foldl_toList, hstep_eq]
-  exact foldl_bindingsStep_lookup ev hev_defn hblk
-    committedDefaultRoleTable.bound.toList {} Std.HashMap.getElem?_empty h
+  rw [← Array.foldl_toList]
+  refine Eq.trans ?_ (foldl_bindingsStep_lookup ev hev_defn hblk
+    committedDefaultRoleTable.bound.toList {} Std.HashMap.getElem?_empty h)
+  congr 1
+  congr 1
+  funext m ⟨r, a⟩
+  unfold bindingsStep
+  cases resolve (defCx ev).store a <;> rfl
 
 /-! ### Recursor index agreement -/
 
@@ -484,8 +507,8 @@ private theorem headRefChecked_sound (store : Store) (owner : _root_.Address)
     | recur i us =>
       dsimp only at h ⊢
       cases hci : c.info with
-      | muts ms => dsimp only at h ⊢; rw [Array.length_toList] at h; exact h
-      | _ => exact h
+      | muts ms => rw [hci] at h; dsimp only at h ⊢; rw [Array.length_toList] at h; exact h
+      | _ => rw [hci] at h; dsimp only at h ⊢; exact h
     | _ => cases h
 
 private theorem mapM_option_imp {α β : Type} {f g : α → Option β}
@@ -512,80 +535,49 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
     (h : analyseRecursorChecked store owner c r = some (motive, carriersL, major)) :
     analyseRecursor store owner c r = some (motive, carriersL.toArray, major) := by
   unfold analyseRecursorChecked at h
-  unfold analyseRecursor
-  dsimp only at h ⊢
-  rw [stripAllFast_eq] at h
-  let depth := r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat + 1
-  cases hsa : stripAll c depth r.typ with
-  | none => rw [hsa] at h; cases h
-  | some pair =>
-    rcases pair with ⟨doms, body⟩
-    rw [hsa] at h
-    dsimp only [bind, Option.bind] at h ⊢
-    cases hah : appHeadChecked c 64 body with
-    | none => rw [hah] at h; cases h
-    | some bhd =>
-      rw [hah] at h
-      dsimp only at h
-      have hah' := appHeadChecked_sound c 64 spineFuel body (by decide) hah
+  dsimp only at h
+  obtain ⟨⟨doms, body⟩, hsa0, h⟩ := option_bind_eq_some h
+  have hsa : stripAll c _ r.typ = some (doms, body) := by rwa [stripAllFast_eq] at hsa0
+  dsimp only at h
+  obtain ⟨bhd, hah, h⟩ := option_bind_eq_some h
+  have hah' := appHeadChecked_sound c 64 spineFuel body (by decide) hah
+  cases bhd with
+  | var k =>
+    dsimp only at h
+    split at h
+    · cases h
+    · rename_i hnot_cond
+      have hcond := of_not_bnot_eq_true hnot_cond
+      have hg := (congrArg (fun b => (guard (b = true) : Option Unit)) hcond).trans rfl
+      obtain ⟨csL, hcar, h⟩ := option_bind_eq_some h
+      obtain ⟨ld, hlast, h⟩ := option_bind_eq_some h
+      obtain ⟨maj, hmaj, h⟩ := option_bind_eq_some h
+      injection h with htuple
+      rcases Prod.mk.inj htuple with ⟨rfl, hcm⟩
+      rcases Prod.mk.inj hcm with ⟨rfl, rfl⟩
+      have hcar' : ((doms.drop r.params.toNat).take r.motives.toNat).mapM
+          (fun dom => do
+            let (bs, _) := stripAllFull c spineFuel dom
+            headRef store owner c (← bs.getLast?)) = some csL := by
+        refine mapM_option_imp (fun dom cr hd => ?_) _ hcar
+        obtain ⟨bsp, hsf, hd⟩ := option_bind_eq_some hd
+        obtain ⟨lb, hlb, hd⟩ := option_bind_eq_some hd
+        rw [stripAllFullChecked_sound c 64 spineFuel dom (by decide) hsf]
+        dsimp only
+        simp only [hlb, bind, Option.bind]
+        exact headRefChecked_sound store owner c lb hd
+      unfold analyseRecursor
+      dsimp only
+      rw [hsa, option_some_bind]
+      dsimp only
       rw [hah']
-      cases bhd with
-      | var k =>
-        dsimp only at h ⊢
-        let pos := depth - 1 - k.toNat
-        let cond : Bool :=
-          k.toNat < depth && r.params.toNat ≤ pos && pos < r.params.toNat + r.motives.toNat
-        cases hcond : cond with
-        | false =>
-          change (if (!cond) = true then none else _) = _ at h
-          rw [hcond] at h; cases h
-        | true =>
-          change (if (!cond) = true then none else _) = _ at h
-          simp only [hcond, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-          have hg : (guard (cond = true) : Option Unit) = some () := by
-            rw [hcond]; rfl
-          rw [hg]
-          dsimp only
-          cases hcar : List.mapM (m := Option)
-              (fun dom => do
-                let (bs, _) ← stripAllFullChecked c 64 dom
-                headRefChecked store owner c (← bs.getLast?))
-              ((doms.drop r.params.toNat).take r.motives.toNat) with
-          | none => rw [hcar] at h; cases h
-          | some csL =>
-            rw [hcar] at h
-            dsimp only at h
-            have hcar' : ((doms.drop r.params.toNat).take r.motives.toNat).mapM
-                (fun dom => do
-                  let (bs, _) := stripAllFull c spineFuel dom
-                  headRef store owner c (← bs.getLast?)) = some csL := by
-              refine mapM_option_imp (fun dom cr hd => ?_) _ hcar
-              dsimp only [bind, Option.bind] at hd ⊢
-              cases hsf : stripAllFullChecked c 64 dom with
-              | none => rw [hsf] at hd; cases hd
-              | some bsp =>
-                rcases bsp with ⟨bs, rdom⟩
-                rw [hsf] at hd
-                dsimp only at hd
-                rw [stripAllFullChecked_sound c 64 spineFuel dom (by decide) hsf]
-                cases bs.getLast? with
-                | none => cases hd
-                | some lb => exact headRefChecked_sound store owner c lb hd
-            rw [Array.mapM_eq_mapM_toList, List.toList_toArray]
-            simp only [Functor.map, Option.map, hcar']
-            cases doms.getLast? with
-            | none => cases h
-            | some ld =>
-              dsimp only at h ⊢
-              cases hmaj : headRefChecked store owner c ld with
-              | none => rw [hmaj] at h; cases h
-              | some maj =>
-                rw [hmaj] at h
-                rw [headRefChecked_sound store owner c ld hmaj]
-                dsimp only [pure]
-                injection h with heq
-                rw [← heq]
-      | _ => cases h
+      dsimp only
+      rw [hg, option_some_bind]
+      dsimp only
+      rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hcar']
+      simp only [hlast, headRefChecked_sound store owner c ld hmaj,
+        Functor.map, Option.map, bind, Option.bind, pure]
+  | _ => cases h
 
 private theorem inductivesList_eq (members : Array Ixon.MutConst) :
     (inductivesList members.toList).toArray = Ix.CompileCert.ReaderIndex.inductives members := by
@@ -697,6 +689,7 @@ private theorem filter_committedPrelude_inputIndexed :
   left
   rw [Array.all_eq_true_iff_forall_mem]
   intro ⟨j, r⟩ hjr
+  dsimp only
   have hp := hpure (j, r) (Array.mem_toList_iff.mpr hjr)
   dsimp only at hp
   rw [analyseRecursor_defCx_eq_pure ev (owner := a) hrefs r]
@@ -837,8 +830,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                           have hany_empty : (#[] : Array (Nat × ConstRef _root_.Address)).any
                               (·.1 == motive) = false := by
                             rw [← Array.any_toList]; rfl
-                          rw [hany_empty]
-                          dsimp only
+                          simp only [hany_empty, Bool.false_eq_true, ↓reduceIte]
                           refine ⟨?_, ?_, ?_⟩
                           · intro r
                             rw [Std.HashMap.getElem?_insert, List.lookup_cons]
@@ -1469,20 +1461,9 @@ private theorem pureReadRecRulesOk_sound {src : Ixon.Constant}
           simp only [hck', hrhs', bind, Except.bind, pure, Except.pure, r0]
         rw [List.forIn_cons]
         dsimp only
-        rw [hstep]
-        dsimp only [bind, Except.bind]
+        rw [hstep, except_ok_bind]
+        dsimp only
         rw [htail, List.append_assoc, List.singleton_append]
-
-private theorem option_bind_eq_some {α β : Type} {x : Option α} {f : α → Option β} {b : β}
-    (h : (x >>= f) = some b) : ∃ a, x = some a ∧ f a = some b := by
-  cases x with
-  | none => cases h
-  | some a => exact ⟨a, rfl, h⟩
-
-private theorem of_not_bnot_eq_true {b : Bool} (h : ¬ ((!b) = true)) : b = true := by
-  cases b
-  · exact absurd rfl h
-  · rfl
 
 include hev_defn in
 private theorem pureReadRecursorKeyCounts_sound {blockLps : List Ix.Kernel.LevelParam}
@@ -1512,7 +1493,6 @@ private theorem pureReadRecursorKeyCounts_sound {blockLps : List Ix.Kernel.Level
       | false =>
         simp only [hu, Bool.false_eq_true, ↓reduceIte] at h
         obtain ⟨rkey, hkey, h⟩ := option_bind_eq_some h
-        dsimp only at h
         obtain ⟨tsh, htyp, h⟩ := option_bind_eq_some h
         cases hmaj : entry.major with
         | ctor _ _ _ => rw [hmaj] at h; cases h
@@ -1795,7 +1775,6 @@ private theorem checkSingleRecShape_sound {nPd indIndices : Nat}
       injection hty_get with hty_eq
       rcases Prod.mk.inj hty_eq with ⟨rfl, _⟩
       rw [hm_eq] at htele
-      dsimp only at htele
       obtain ⟨_, hsort_sh⟩ := htsh
       cases hps : tsh.piSort? with
       | none =>
