@@ -1539,6 +1539,7 @@ private theorem safe_rawConvExpr_ctx_ready
             | none => rw [hrc] at hq; simp at hq
             | some cb =>
               rw [hrc] at hq
+              dsimp only [bind, Option.bind] at hq
               cases hcb_i : cb.info with
               | muts ms => exact ⟨cb, ms, rfl, hcb_i⟩
               | _ => rw [hcb_i] at hq; simp at hq
@@ -2153,7 +2154,7 @@ private theorem checkedDefnCore
           ext_373_508 hm516 (Core.TmC.mono ext_404_508 hty_tmc_404) hval_tmc_508
           (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc
       exact ⟨.defnDecl cv val₀ hn, .defnInfo cv val₀ hn, hn, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
+        rfl, rfl, rfl, (fun _ h => nomatch h), rfl⟩
   | thm =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
@@ -2289,7 +2290,7 @@ private theorem checkedDefnCore
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
           (hrc_m.mono ext_m_807) ev780 hcl_kc hsub_kc
       exact ⟨.thmDecl cv val₀, .thmInfo cv val₀, .opaque, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
+        rfl, rfl, rfl, (fun _ h => nomatch h), rfl⟩
   | opaq =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
@@ -2418,7 +2419,7 @@ private theorem checkedDefnCore
           ext_923_1058 hm1066 (Core.TmC.mono ext_954_1058 hty_tmc_954) hval_tmc_1058
           (hrc_m.mono ext_m_1058) ev1031 hcl_kc hsub_kc
       exact ⟨.opaqueDecl cv val₀, .axiomInfo cv, .opaque, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
+        rfl, rfl, rfl, (fun _ h => nomatch h), rfl⟩
 
 
 /-- No address `x ∉ order_role` can have `Core.keyOf t x = .role s` for a non-`compilerTrust` role `s`. -/
@@ -3331,7 +3332,7 @@ private theorem walkedProjResolveOk
       cb.info = .muts ms ∧
       WkSafe calls b.address t E₀ (Ix.Cert.ownerOf a c) ∧
       rankAll calls b.address t E₀ (Ix.Cert.ownerOf a c) < rankAll calls b.address t E₀ a ∧
-      (∀ d_all : ms.all (fun | .defn _ => true | _ => false) = true,
+      (∀ _d_all : ms.all (fun | .defn _ => true | _ => false) = true,
         ∃ (i : Nat) (d_m : Ixon.Definition),
           i < ms.size ∧ i < UInt64.size ∧
           ms[i]? = some (.defn d_m) ∧
@@ -3392,7 +3393,7 @@ private theorem walkedProjResolveOk
       rw [hcc] at hlc₀_b
       exact Option.some.inj (hlc₀_b.symm.trans hrec₀_own)
   have hres_ok : (Ix.Kernel.Reader.resolveSource cx.store a c).isNone = false ∧
-      (∀ d_all : ms.all (fun | .defn _ => true | _ => false) = true,
+      (∀ _d_all : ms.all (fun | .defn _ => true | _ => false) = true,
         ∃ (i : Nat) (d_m : Ixon.Definition),
           i < ms.size ∧ i < UInt64.size ∧
           ms[i]? = some (.defn d_m) ∧
@@ -3634,30 +3635,22 @@ private theorem readRecordBare_muts_defn
   have hany_eq : ∀ p : Ixon.MutConst → Bool,
       (∀ x, p x = match x with | .indc _ => true | _ => false) → ms.any p = false := by
     intro p hp
-    have hpeq : p = (fun | .indc _ => true | _ => false) := funext fun x => by
-      rw [hp x]; cases x <;> rfl
-    rw [hpeq]
+    rw [funext hp]
     exact hany_indc
   have hall_recr_eq : ∀ p : Ixon.MutConst → Bool,
       (∀ x, p x = match x with | .recr _ => true | _ => false) → ms.all p = false := by
     intro p hp
-    have hpeq : p = (fun | .recr _ => true | _ => false) := funext fun x => by
-      rw [hp x]; cases x <;> rfl
-    rw [hpeq]
+    rw [funext hp]
     exact hall_recr
   have hall_defn_eq : ∀ p : Ixon.MutConst → Bool,
       (∀ x, p x = match x with | .defn _ => true | _ => false) → ms.all p = true := by
     intro p hp
-    have hpeq : p = (fun | .defn _ => true | _ => false) := funext fun x => by
-      rw [hp x]; cases x <;> rfl
-    rw [hpeq]
+    rw [funext hp]
     exact hall_defn
   have hdefs_eq : ∀ p : Ixon.MutConst → Option Ixon.Definition,
       (∀ x, p x = match x with | .defn d => some d | _ => none) → ms.filterMap p = defs := by
     intro p hp
-    have hpeq : p = (fun | .defn d => some d | _ => none) := funext fun x => by
-      rw [hp x]; cases x <;> rfl
-    rw [hpeq]
+    rw [funext hp]
     exact hdefs
   have hb : Ix.Kernel.Reader.readRecordBare cx st owner c =
       Ix.Kernel.Reader.readRecord cx st owner c := by
@@ -3665,7 +3658,6 @@ private theorem readRecordBare_muts_defn
     rw [hinfo]
     dsimp only
     rw [hany_eq _ (fun x => by cases x <;> rfl)]
-    dsimp only [Bool.false_eq_true, ↓reduceIte]
   rw [hb]
   unfold Ix.Kernel.Reader.readRecord
   rw [hinfo]
@@ -3673,7 +3665,6 @@ private theorem readRecordBare_muts_defn
   rw [hany_eq _ (fun x => by cases x <;> rfl),
       hall_recr_eq _ (fun x => by cases x <;> rfl),
       hall_defn_eq _ (fun x => by cases x <;> rfl)]
-  dsimp only [Bool.false_eq_true, ↓reduceIte]
   rw [hdefs_eq _ (fun x => by cases x <;> rfl), hsafe, hord]
   dsimp only
   refine ⟨_, rfl, ?_⟩
