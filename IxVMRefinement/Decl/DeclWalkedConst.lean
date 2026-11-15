@@ -179,7 +179,7 @@ theorem checkedConstOrigin_step
       hnot_role _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrc_ax ha_ax ev_ax hne_ax _ hsub_ax =>
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
     by_cases hskip : cv₀.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv₀.name = true
-    · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := if_pos hskip
+    · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := ite_eq_left hskip
       exact ⟨env, CleanInstallStep.empty hempty, fun _ _ h => h⟩
     · obtain ⟨a', ha'_ref, heq_a⟩ := ha_ax
       let c : Ctx := ⟨E_core, env, t, some lim⟩
