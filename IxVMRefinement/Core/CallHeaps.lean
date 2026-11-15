@@ -8,7 +8,7 @@ representations move to a selected subcall without rebuilding the whole allocati
 
 namespace Aiur.Generic.SourceSemantics
 
-variable {F : Type} [Field F] [DecidableEq F]
+variable {F : Type}
 
 private def HeapTrace (before after : Heap F) (calls : List (Call F)) : Prop :=
   Heap.Extends before after ∧
@@ -32,6 +32,8 @@ private theorem HeapTrace.extend {before middle after : Heap F} {calls : List (C
     (h : HeapTrace before middle calls) (hext : Heap.Extends middle after) :
     HeapTrace before after calls :=
   ⟨h.1.trans hext, fun cl hm => ⟨(h.2 cl hm).1, (h.2 cl hm).2.trans hext⟩⟩
+
+variable [Field F] [DecidableEq F]
 
 private theorem ObsFn.heap_trace {world : World F} {name : String}
     {args : List (SourceValue F)} {before after : Heap F}
