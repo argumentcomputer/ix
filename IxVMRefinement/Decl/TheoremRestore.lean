@@ -24,12 +24,18 @@ variable {md : Mode} (selected : Key md → Bool)
 
 theorem info_cv (ci : ConstantInfo md) : (info selected ci).toConstantVal = ci.toConstantVal := by
   cases ci with
-  | defnInfo cv value hint => cases hint <;> simp [info]
+  | defnInfo cv value hint =>
+    cases hint with
+    | «opaque» => simp only [info]; split <;> rfl
+    | «abbrev» | regular => rfl
   | _ => rfl
 
 theorem info_name (ci : ConstantInfo md) : (info selected ci).name = ci.name := by
   cases ci with
-  | defnInfo cv value hint => cases hint <;> simp [info]
+  | defnInfo cv value hint =>
+    cases hint with
+    | «opaque» => simp only [info]; split <;> rfl
+    | «abbrev» | regular => rfl
   | _ => rfl
 
 theorem info_eq_back {ci out : ConstantInfo md} (same : info selected ci = out)
@@ -37,12 +43,12 @@ theorem info_eq_back {ci out : ConstantInfo md} (same : info selected ci = out)
   cases ci with
   | defnInfo cv value hint =>
     cases hint with
-    | opaque =>
+    | «opaque» =>
       simp only [info] at same
       split at same
       · exact (notTheorem cv value same.symm).elim
       · exact same
-    | abbrev | regular => exact same
+    | «abbrev» | regular => exact same
   | _ => exact same
 
 theorem info_nonValue {ci : ConstantInfo md}
@@ -105,7 +111,10 @@ theorem findProj (env : Env md) (T : Key md) (i : Nat) :
   | none => rfl
   | some ci =>
     cases ci with
-    | defnInfo cv value hint => cases hint <;> simp [info]
+    | defnInfo cv value hint =>
+      cases hint with
+      | «opaque» => simp only [info]; split <;> rfl
+      | «abbrev» | regular => rfl
     | _ => rfl
 
 variable {V : Type u} [SetTheory V]
