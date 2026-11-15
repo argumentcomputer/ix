@@ -4060,19 +4060,6 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
 structure NativeNoRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (p₀ : Ix.Kernel.NativeParts .anon) where
   witness : OneTypeBlockWitness calls env p₀
-  doms_bridge :
-    ∀ cA ∈ witness.ctorsA,
-      StructDomsShared ⟨.indInfo witness.cvTa₀ {} :: env.consts⟩
-        witness.cvTa₀.type cA.1.type p₀.nP →
-      ∀ fvsP crest tfvs trest cbs cbody tbs tbody,
-        Ix.Kernel.openPisAtFvars p₀.nP cA.1.type 0 = some (fvsP, crest) →
-        Ix.Kernel.openPisAtFvars p₀.nP witness.cvTa₀.type 0 = some (tfvs, trest) →
-        witness.cvTa₀.type.stripPis p₀.nP = some (tbs, tbody) →
-        cA.1.type.stripPis p₀.nP = some (cbs, cbody) →
-        (¬ ∀ i < p₀.nP, (cbs.getD i default).1 = (tbs.getD i default).1) →
-        StructDomsJ rulesJ ⟨.indInfo witness.cvTa₀ {} :: env.consts⟩
-          0 fvsP (tfvs.map Expr.fvarTypeD) p₀.nP ∧
-          (∀ p < p₀.nP, (cbs.getD p default).1.mentionsConst p₀.cvT.name = false)
   unused_later :
     ∀ cA ∈ witness.ctorsA, ∀ cbs body,
       cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
@@ -4135,32 +4122,6 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hidx_len, hxFvs_res, hidx_res, hfsorts₀⟩ :=
       hout.opened
     obtain ⟨cbsP, cbodyP, _, hst_c_P, _, _, _⟩ := stripPis_split p₀.nP c.2 hstrip_c
-    have hcbs_get_eq : ∀ i < p₀.nP, (cbsP.getD i default).1 = (cbs.getD i default).1 := by
-      obtain ⟨cbs₁, _, cbs₂, hstP₁, _, hcbs_app, hlen₁⟩ := stripPis_split p₀.nP c.2 hstrip_c
-      rw [hst_c_P] at hstP₁; injection hstP₁ with h1
-      simp only [Prod.mk.injEq] at h1
-      rcases h1 with ⟨rfl, _⟩
-      intro i hi
-      have hi₁ : i < cbsP.length := by omega
-      have hi₂ : i < cbs.length := by omega
-      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi₁,
-        List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi₂]
-      simp only [Option.getD_some]
-      have hq : cbs[i]? = cbsP[i]? := by
-        rw [← hcbs_app, List.getElem?_append_left hi₁]
-      rw [List.getElem?_eq_getElem hi₂, List.getElem?_eq_getElem hi₁, Option.some.injEq] at hq
-      exact congrArg Prod.fst hq.symm
-    have hdoms_and_noT :
-        StructDomsJ rulesJ envI₀ 0 fvsP (tfvsP.map Expr.fvarTypeD) p₀.nP ∧
-          (∀ p < p₀.nP, (cbs.getD p default).1.mentionsConst p₀.cvT.name = false) := by
-      by_cases hsame : ∀ i < p₀.nP, (cbsP.getD i default).1 = (tbs.getD i default).1
-      · obtain ⟨hdj, hnoT⟩ :=
-          structDomsJ_and_noT_of_same_doms hopP hopT_P hst_Ta₀_P hst_c_P fout.ta_noT hsame
-        exact ⟨hdj, fun p hp => by rw [← hcbs_get_eq p hp]; exact hnoT p hp⟩
-      · obtain ⟨hdj, hnoT⟩ :=
-          extra.doms_bridge cA hcA_mem hout.domsShared fvsP crest tfvsP trestP cbsP cbodyP
-            tbs tbody hopP hopT_P hst_Ta₀_P hst_c_P hsame
-        exact ⟨hdj, fun p hp => by rw [← hcbs_get_eq p hp]; exact hnoT p hp⟩
     have hfsorts :
         FieldSortsJ rulesJ envI₀ p₀.isProp false p₀.resSort p₀.nP xFvs idxArgs c.2 sorts := by
       rw [hisProp]
@@ -4199,7 +4160,7 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     obtain ⟨ks, hrck, hks_len, hks_ok, hopen_ok⟩ :=
       recCtorKinds_and_nativeOpenedOk (ci := .indInfo w.cvTa₀ {})
         rfl w.valStored_T.1 hstrip_c' hes_len hes_noT hfv_c hres_c hlit_c
-        hdoms_and_noT.2 hpos_c' hunused_c
+        hpos_c' hunused_c
     exact ⟨hout.nF_eq, sorts, ks, hsorts, hsum_c, hrck, hks_len, hks_ok, hopen_ok⟩
   -- Build `kinds` list via `Fin w.ctorsA.length`
   have hk_ex : ∀ idx : Fin w.ctorsA.length, ∃ ks,
