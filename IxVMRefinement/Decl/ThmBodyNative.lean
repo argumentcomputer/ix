@@ -135,4 +135,112 @@ theorem checkNativeRec (mode : CheckMode) (fuel : Nat) (p : NativeParts md)
     h.inferTypeCore, h.ensureSortCore, h.isDefEqCore,
     (h.cons _).checkNativeRules]
 
+/-- The former stage returns the same checked signature and completed record over the new prefix. -/
+theorem checkSumInd {mode : CheckMode} {fuel : Nat} {p p' : InductiveShape md}
+    {capsOf : InductiveShape md → IndCaps md} {cvTa : ConstantVal md} {sourceOut : Env md}
+    (checked : Ix.Kernel.checkSumInd (fueledOps mode fuel) source p capsOf = .ok (sourceOut, cvTa, p')) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧
+      Ix.Kernel.checkSumInd (fueledOps mode fuel) target p capsOf = .ok (targetOut, cvTa, p') := by
+  unfold Ix.Kernel.checkSumInd at checked
+  obtain ⟨cv₀, hcv, rest⟩ := exceptBind_ok checked
+  obtain ⟨pair, htele, rest⟩ := exceptBind_ok rest
+  obtain ⟨cvA, level⟩ := pair
+  dsimp only at rest
+  obtain ⟨pair, hstrip, rest⟩ := exceptBind_ok rest
+  obtain ⟨binders, body⟩ := pair
+  dsimp only at rest
+  by_cases shape : (body == Expr.sort level) = true
+  · rw [if_pos shape] at rest
+    simp only [Pure.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at rest
+    obtain ⟨rfl, rfl, rfl⟩ := rest
+    have hcv' := hcv
+    have htele' := htele
+    rw [h.checkConstantVal] at hcv'
+    rw [h.checkSumTele] at htele'
+    refine ⟨_, h.cons _, ?_⟩
+    simp only [Ix.Kernel.checkSumInd, hcv', htele', hstrip,
+      Bind.bind, Except.bind, shape, ↓reduceIte, Pure.pure, Except.pure]
+  · rw [if_neg shape] at rest
+    cases rest
+
+/-- A structure table is installed with the same generated bodies and guards. -/
+theorem checkStructProjTable {T C : Key md} {lps : List LevelParam} {nP nF off : Nat}
+    {resSort : Level} {guards : List Level} {cvCa : ConstantVal md} {sourceOut : Env md}
+    (checked : Ix.Kernel.checkStructProjTable (m := CheckM md)
+      T C lps nP nF resSort guards off cvCa source = .ok sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧
+      Ix.Kernel.checkStructProjTable (m := CheckM md)
+        T C lps nP nF resSort guards off cvCa target = .ok targetOut := by
+  obtain ⟨bodies, hb, scoped, names, fresh, rfl⟩ := checkStructProjTable_inv checked
+  have scoped' : bodies.size = nF ∧ bodies.all (fun b => !b.hasFvar &&
+      b.allLevelParamsDefined lps && b.constsResolve target && b.looseBVarsBounded (nP + 1)) = true := by
+    simpa only [h.constsResolve] using scoped
+  have names' : (List.range nF).all (fun j => (target.find? (projFnName T j)).isNone) = true := by
+    simpa only [h.isNone] using names
+  have fresh' : (target.find? (projTableName T)).isNone = true := by
+    rw [← h.isNone, fresh]
+    rfl
+  refine ⟨_, h.cons _, ?_⟩
+  simp only [Ix.Kernel.checkStructProjTable, hb, unwrapOr, Pure.pure, Except.pure,
+    Bind.bind, Except.bind, scoped', names', fresh', ↓reduceIte]
+
+private theorem returnEnvironment {sourceOut : Env md}
+    (checked : (pure source : CheckM md (Env md)) = .ok sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ (pure target : CheckM md (Env md)) = .ok targetOut := by
+  cases checked
+  exact ⟨target, h, rfl⟩
+
+theorem checkNativeTable {p : NativeParts md} {ctors : List (ConstantVal md × Nat)}
+    {sortss : List (List Level)} {sourceOut : Env md}
+    (checked : Ix.Kernel.checkNativeTable (m := CheckM md) p ctors sortss source = .ok sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧
+      Ix.Kernel.checkNativeTable (m := CheckM md) p ctors sortss target = .ok targetOut := by
+  cases ctors with
+  | nil => exact returnEnvironment h checked
+  | cons ctor rest =>
+    cases rest with
+    | cons => exact returnEnvironment h checked
+    | nil =>
+      cases sortss with
+      | nil => exact returnEnvironment h checked
+      | cons sorts rest =>
+        cases rest with
+        | cons => exact returnEnvironment h checked
+        | nil =>
+          by_cases noIndices : (p.nIdx == 0) = true
+          · simp only [Ix.Kernel.checkNativeTable, noIndices, ↓reduceIte] at checked ⊢
+            exact h.checkStructProjTable checked
+          · simp only [Ix.Kernel.checkNativeTable, noIndices, ↓reduceIte] at checked ⊢
+            exact returnEnvironment h checked
+
+/-- The complete native run replays with the same normalized constants and generated rules. -/
+theorem nativeRun {mode : CheckMode} {fuel : Nat} {p₀ : NativeParts md} {sourceOut : Env md}
+    (run : DeclNativeRun mode fuel source p₀ sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ DeclNativeRun mode fuel target p₀ targetOut := by
+  obtain ⟨distinct, isRec, source₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest,
+    isorts, former, completed, ctors, classified, caps, elimination, opened, sorts,
+    fields, rules, recursor, plain, table⟩ := run
+  obtain ⟨target₁, h₁, former'⟩ := h.checkSumInd former
+  have h₂ := h₁.consSumCtors p.nP ctorsA
+  have hrules := h₂.sumRules cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss
+  have hR : Agrees
+      ⟨.recInfo cvRa p.majorIdx p.rulePrefix
+        (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA source₁).find? cvRa.name
+          p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss) ::
+          (Ix.Kernel.consSumCtors p.nP ctorsA source₁).consts⟩
+      ⟨.recInfo cvRa p.majorIdx p.rulePrefix
+        (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA target₁).find? cvRa.name
+          p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss) ::
+          (Ix.Kernel.consSumCtors p.nP ctorsA target₁).consts⟩ := by
+    rw [← hrules]
+    exact h₂.cons _
+  obtain ⟨targetOut, agreement, table'⟩ := hR.checkNativeTable table
+  refine ⟨targetOut, agreement, distinct, isRec, target₁, cvTa, p₁, p, ctorsA, sortss, kinds,
+    cvRa, rhss, tfvs, trest, isorts, former', completed, ?_, classified, caps,
+    elimination, opened, ?_, ?_, rules, ?_, plain, table'⟩
+  · simpa only [h₁.checkSumCtors h₁] using ctors
+  · simpa only [h₁.checkStructFieldSortsI] using sorts
+  · simpa only [h.nativeFieldsOk] using fields
+  · simpa only [h₂.checkNativeRec] using recursor
+
 end IxVM.Refinement.Decl.ThmBodyView.Agrees
