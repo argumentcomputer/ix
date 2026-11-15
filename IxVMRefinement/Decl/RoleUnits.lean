@@ -28,24 +28,29 @@ private theorem refDecl_isGenerated (d : Declaration .anon) :
 private theorem refDecl_isBasis (d : Declaration .anon) :
     (refDecl d).isBasis = d.isBasis := by
   cases d with
-  | thmDecl cv value => cases cv.name <;> rfl
+  | thmDecl cv value =>
+    cases hn : cv.name <;> simp [refDecl, IxVM.Refinement.thmToOpaqueDefn, hn, Declaration.isBasis]
   | _ => rfl
 
 private theorem names_refDecl (ds : List (Declaration .anon)) :
     (ds.map refDecl).flatMap Declaration.names = ds.flatMap Declaration.names := by
   induction ds with
   | nil => rfl
-  | cons d ds ih => simp [List.flatMap, refDecl, thmToOpaqueDefn_names, ih]
+  | cons d ds ih =>
+    change (refDecl d).names ++ (ds.map refDecl).flatMap Declaration.names =
+      d.names ++ ds.flatMap Declaration.names
+    rw [thmToOpaqueDefn_names, ih]
 
 private theorem unitsGo_refDecl (ds acc : List (Declaration .anon)) :
     unitsGo (acc.map refDecl) (ds.map refDecl) = (unitsGo acc ds).map (List.map refDecl) := by
   induction ds generalizing acc with
-  | nil => simp [unitsGo, List.map_reverse]
+  | nil => cases acc <;> simp [unitsGo]
   | cons d ds ih =>
     simp only [List.map_cons, unitsGo, refDecl_isGenerated]
     split
     · exact ih (d :: acc)
-    · simp only [List.map_cons, List.map_reverse, ih []]
+    · simp only [List.map_cons, List.map_reverse]
+      exact congrArg (List.cons _) (ih [])
 
 private theorem unitSplit_refDecl : ∀ (ds : List (Declaration .anon)),
     unitSplit (ds.map refDecl) =
@@ -53,8 +58,10 @@ private theorem unitSplit_refDecl : ∀ (ds : List (Declaration .anon)),
   | [] => rfl
   | [_] => rfl
   | d :: e :: ds => by
-    simp only [List.map_cons, unitSplit, unitSplit_refDecl (e :: ds), Option.map_map]
-    cases unitSplit (e :: ds) <;> rfl
+    change (unitSplit ((e :: ds).map refDecl)).map (fun p => (refDecl d :: p.1, p.2)) =
+      ((unitSplit (e :: ds)).map (fun p => (d :: p.1, p.2))).map
+        (fun p => (p.1.map refDecl, refDecl p.2))
+    simp only [unitSplit_refDecl (e :: ds), Option.map_map, Function.comp_def, List.map_cons]
 
 private theorem unitBases_refDecl (ds : List (Declaration .anon)) :
     unitBases (ds.map refDecl) = unitBases ds := by
