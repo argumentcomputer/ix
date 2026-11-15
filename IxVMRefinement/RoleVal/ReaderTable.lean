@@ -106,6 +106,46 @@ private theorem pre_proj_block_mem {a : _root_.Address} {c : Ixon.Constant}
     (intro p hp; rw [hp] at hall; dsimp only at hall;
      rw [containsAddrFast_eq, List.contains_iff_mem] at hall; exact hall)
 
+private theorem contextOf_store (t : Ix.Kernel.RoleTable)
+    (records : Array (_root_.Address × Ixon.Constant))
+    (blobs : List (_root_.Address × ByteArray))
+    (fallback : Array (_root_.Address × Ixon.Constant))
+    (fallbackBlobs : List (_root_.Address × ByteArray)) (a : _root_.Address) :
+    (contextOf (md := .anon) t records blobs fallback fallbackBlobs).store a =
+      ((recordMap records)[a]? <|> ((recordMap fallback)[a]? <|> none)) :=
+  rfl
+
+private theorem contextOf_roles (t : Ix.Kernel.RoleTable)
+    (records : Array (_root_.Address × Ixon.Constant))
+    (blobs : List (_root_.Address × ByteArray))
+    (fallback : Array (_root_.Address × Ixon.Constant))
+    (fallbackBlobs : List (_root_.Address × ByteArray)) :
+    (contextOf (md := .anon) t records blobs fallback fallbackBlobs).roles =
+      bindingsOf (contextOf (md := .anon) t records blobs fallback fallbackBlobs).store t :=
+  rfl
+
+private theorem contextOf_index (t : Ix.Kernel.RoleTable)
+    (records : Array (_root_.Address × Ixon.Constant))
+    (blobs : List (_root_.Address × ByteArray))
+    (fallback : Array (_root_.Address × Ixon.Constant))
+    (fallbackBlobs : List (_root_.Address × ByteArray)) :
+    (contextOf (md := .anon) t records blobs fallback fallbackBlobs).index =
+      buildIndex (contextOf (md := .anon) t records blobs fallback fallbackBlobs).store
+        (indexedRecords (contextOf (md := .anon) t records blobs fallback fallbackBlobs).store
+          records fallback) :=
+  rfl
+
+private theorem readPrelude_eq (t : Ix.Kernel.RoleTable)
+    (records extra : Array (_root_.Address × Ixon.Constant))
+    (extraBlobs : List (_root_.Address × ByteArray)) :
+    readPrelude (md := .anon) t records extra extraBlobs =
+      match readRecords (contextOf t records [] extra extraBlobs) {} records with
+      | .ok (state, decls) =>
+        Except.ok ⟨records, extra, extraBlobs, ⟨decls⟩, state⟩
+      | .error (e, i) =>
+        throw s!"prelude record {i}: {e}" :=
+  rfl
+
 section WithEv
 
 variable (ev : Array (_root_.Address × Ixon.Constant))
@@ -115,17 +155,32 @@ private def defCx : Ctx .anon :=
   contextOf committedDefaultRoleTable committedPrelude [] ev committedBlobs
 
 private theorem defCx_store_eq (a : _root_.Address) :
-    (defCx ev).store a = ((recordMap committedPrelude)[a]? <|> ((recordMap ev)[a]? <|> none)) :=
-  rfl
+    (defCx ev).store a = ((recordMap committedPrelude)[a]? <|> ((recordMap ev)[a]? <|> none)) := by
+  unfold defCx
+  exact contextOf_store committedDefaultRoleTable committedPrelude [] ev committedBlobs a
 
 private theorem defCx_roles_eq :
-    (defCx ev).roles = bindingsOf (defCx ev).store committedDefaultRoleTable :=
-  rfl
+    (defCx ev).roles = bindingsOf (defCx ev).store committedDefaultRoleTable := by
+  unfold defCx
+  exact contextOf_roles committedDefaultRoleTable committedPrelude [] ev committedBlobs
 
 private theorem defCx_index_eq :
     (defCx ev).index =
-      buildIndex (defCx ev).store (indexedRecords (defCx ev).store committedPrelude ev) :=
-  rfl
+      buildIndex (defCx ev).store (indexedRecords (defCx ev).store committedPrelude ev) := by
+  unfold defCx
+  exact contextOf_index committedDefaultRoleTable committedPrelude [] ev committedBlobs
+
+private theorem readPrelude_defCx_eq :
+    readPrelude (md := .anon) committedDefaultRoleTable committedPrelude ev committedBlobs =
+      match readRecords (defCx ev) {} committedPrelude with
+      | .ok (state, decls) =>
+        Except.ok ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, state⟩
+      | .error (e, i) =>
+        throw s!"prelude record {i}: {e}" := by
+  unfold defCx
+  exact readPrelude_eq committedDefaultRoleTable committedPrelude ev committedBlobs
+
+attribute [irreducible] defCx
 
 private theorem defCx_store_of_mem_pre {a : _root_.Address} (ha : a ∈ committedPreAddrs) :
     (defCx ev).store a = preStorePure a := by
@@ -309,13 +364,11 @@ private theorem defCx_roles_of_pure {ref : ConstRef _root_.Address} {k : CName .
     rw [containsAddrFast_eq]
   unfold pureRolesList at h
   rw [hfn] at h
-  have hstep_eq : (fun m (p : Ix.Kernel.Role × _root_.Address) =>
-      match p with
-      | (r, a) =>
-        match resolve (defCx ev).store a with
-        | some ref => if m.contains ref then m else m.insert ref (Ix.Kernel.roleKey r)
-        | none => m) = bindingsStep (defCx ev).store := by
-    funext m ⟨r, a⟩; rfl
+  have hstep_eq : (fun (m : Std.HashMap (ConstRef _root_.Address) (CName .anon))
+      (x : Ix.Kernel.Role × _root_.Address) =>
+      match resolve (defCx ev).store x.2 with
+      | some ref => if m.contains ref then m else m.insert ref (Ix.Kernel.roleKey x.1)
+      | none => m) = bindingsStep (defCx ev).store := rfl
   rw [defCx_roles_eq ev]
   unfold bindingsOf
   dsimp only
@@ -333,7 +386,7 @@ private theorem recursorMembersFast_eq (c : Ixon.Constant) :
   | muts ms =>
     dsimp only
     rw [Array.toList_filterMap, Array.toList_zipIdx]
-    congr 1; funext ⟨m, j⟩; cases m <;> rfl
+    congr 1
   | _ => rfl
 
 private theorem unshareGoFast_eq (c : Ixon.Constant) :
@@ -390,7 +443,7 @@ private theorem stripAllFullChecked_sound (c : Ixon.Constant) :
         rw [stripAllFullChecked_sound c k m b (Nat.le_of_succ_le_succ hle) hs]
     | _ =>
       rw [hu] at h
-      injection h with hres; subst hres
+      exact Option.some.inj h
 
 private theorem appHeadChecked_sound (c : Ixon.Constant) :
     ∀ (k m : Nat) (e : Ixon.Expr) {res : Ixon.Expr},
@@ -408,7 +461,7 @@ private theorem appHeadChecked_sound (c : Ixon.Constant) :
       exact appHeadChecked_sound c k m f (Nat.le_of_succ_le_succ hle) h
     | _ =>
       rw [hu] at h
-      injection h with hres; subst hres
+      exact Option.some.inj h
 
 private theorem headRefChecked_sound (store : Store) (owner : _root_.Address)
     (c : Ixon.Constant) (e : Ixon.Expr) {cr : ConstRef _root_.Address}
@@ -431,8 +484,8 @@ private theorem headRefChecked_sound (store : Store) (owner : _root_.Address)
     | recur i us =>
       dsimp only at h ⊢
       cases hci : c.info with
-      | muts ms => rw [hci, Array.length_toList] at h; exact h
-      | _ => rw [hci] at h; exact h
+      | muts ms => dsimp only at h ⊢; rw [Array.length_toList] at h; exact h
+      | _ => exact h
     | _ => cases h
 
 private theorem mapM_option_imp {α β : Type} {f g : α → Option β}
@@ -493,7 +546,11 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
             rw [hcond]; rfl
           rw [hg]
           dsimp only
-          cases hcar : ((doms.drop r.params.toNat).take r.motives.toNat).mapM _ with
+          cases hcar : List.mapM (m := Option)
+              (fun dom => do
+                let (bs, _) ← stripAllFullChecked c 64 dom
+                headRefChecked store owner c (← bs.getLast?))
+              ((doms.drop r.params.toNat).take r.motives.toNat) with
           | none => rw [hcar] at h; cases h
           | some csL =>
             rw [hcar] at h
@@ -535,7 +592,7 @@ private theorem inductivesList_eq (members : Array Ixon.MutConst) :
   apply Array.ext'
   rw [inductivesList, Ix.CompileCert.ReaderIndex.inductives, List.toList_toArray,
       Array.toList_filterMap, Array.toList_zipIdx]
-  congr 1; funext ⟨m, idx⟩; cases m <;> rfl
+  congr 1
 
 private theorem orderForList_eq (carriersL : List (ConstRef _root_.Address))
     (owner : _root_.Address) (count : Nat) :
@@ -573,9 +630,8 @@ private theorem headRef_defCx_eq_pure {owner : _root_.Address} {c : Ixon.Constan
   | ref i _ =>
     dsimp only
     cases hget : c.refs[i.toNat]? with
-    | none => dsimp only
+    | none => rfl
     | some a =>
-      dsimp only
       have hmem : a ∈ c.refs.toList := Array.mem_toList_iff.mpr (Array.mem_of_getElem? hget)
       have hpa : a ∈ committedPreAddrs :=
         List.contains_iff_mem.mp (List.all_eq_true.mp hrefs a hmem)
@@ -637,7 +693,7 @@ private theorem filter_committedPrelude_inputIndexed :
   dsimp only at hpure
   rw [recursorMembersFast_eq, List.all_eq_true] at hpure
   unfold inputIndexed
-  apply Bool.or_eq_true.mpr
+  rw [Bool.or_eq_true]
   left
   rw [Array.all_eq_true_iff_forall_mem]
   intro ⟨j, r⟩ hjr
@@ -765,8 +821,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                           have hst_blk := defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hblk)
                           unfold Ix.CompileCert.ReaderIndex.candidate
                           dsimp only
-                          rw [hr_cont]
-                          dsimp only
+                          simp only [hr_cont, Bool.false_eq_true, ↓reduceIte]
                           rw [han_cx, han]
                           dsimp only
                           rw [hc0]
@@ -960,7 +1015,7 @@ private theorem forIn_completeStep_block
       let idx' : RecIndex := { idx with blocks := idx.blocks.insert k shape' }
       have hsame : idx'.blocks[b]? = idx.blocks[b]? := by
         show (idx.blocks.insert k shape')[b]? = _
-        rw [Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hkb]
+        simp [Std.HashMap.getElem?_insert, beq_eq_false_iff_ne.mpr hkb]
       have hord' : (idx'.blocks.getD b default).order = order := by
         rw [Std.HashMap.getD_eq_getD_getElem?, hsame, ← Std.HashMap.getD_eq_getD_getElem?]
         exact hord
@@ -988,11 +1043,9 @@ private theorem collected_matches_purePreIdx {s : PureIdx} (hs : purePreIdx? = s
      fun _ => Std.HashMap.getElem?_empty,
      fun _ => Std.HashMap.getElem?_empty⟩
   have hpre := forIn_recordStep_pre ev committedPreludeList (PureIdx.mk [] [] []) s _ hinit hs
-  have hev_filt : ∀ p ∈ (ev.filter _).toList, ∃ d, p.2.info = .defn d := by
-    intro p hp
+  rw [forIn_recordStep_ev_noop ev _ _ (fun p hp => by
     rw [Array.toList_filter] at hp
-    exact hev_defn p (List.mem_of_mem_filter hp)
-  rw [forIn_recordStep_ev_noop ev _ _ hev_filt]
+    exact hev_defn p (List.mem_of_mem_filter hp))]
   exact hpre
 
 include hev_defn in
@@ -1413,10 +1466,23 @@ private theorem pureReadRecRulesOk_sound {src : Ixon.Constant}
             pure (f := ReadM) (ForInStep.yield (acc ++
               [Ix.Kernel.RecRule.mk ck' rule.fields.toNat 0 .inert rhs' false false false]))) =
             Except.ok (ForInStep.yield (acc ++ [r0])) := by
-          simp only [hck', hrhs', bind, Except.bind, pure, Except.pure]
-        rw [List.forIn_cons, hstep]
+          simp only [hck', hrhs', bind, Except.bind, pure, Except.pure, r0]
+        rw [List.forIn_cons]
+        dsimp only
+        rw [hstep]
         dsimp only [bind, Except.bind]
         rw [htail, List.append_assoc, List.singleton_append]
+
+private theorem option_bind_eq_some {α β : Type} {x : Option α} {f : α → Option β} {b : β}
+    (h : (x >>= f) = some b) : ∃ a, x = some a ∧ f a = some b := by
+  cases x with
+  | none => cases h
+  | some a => exact ⟨a, rfl, h⟩
+
+private theorem of_not_bnot_eq_true {b : Bool} (h : ¬ ((!b) = true)) : b = true := by
+  cases b
+  · exact absurd rfl h
+  · rfl
 
 include hev_defn in
 private theorem pureReadRecursorKeyCounts_sound {blockLps : List Ix.Kernel.LevelParam}
@@ -1430,132 +1496,95 @@ private theorem pureReadRecursorKeyCounts_sound {blockLps : List Ix.Kernel.Level
   cases ref with
   | ctor _ _ _ => cases h
   | member rOwner j =>
-    dsimp only [bind, Option.bind] at h
+    dsimp only at h
     rw [containsAddrFast_eq] at h
     cases hro : committedPreAddrs.contains rOwner with
     | false => rw [hro] at h; cases h
     | true =>
       simp only [hro, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-      cases hrc : preStorePure rOwner with
-      | none => rw [hrc] at h; cases h
-      | some rc =>
-        rw [hrc] at h
+      obtain ⟨rc, hrc, h⟩ := option_bind_eq_some h
+      obtain ⟨⟨fstIdx, r⟩, hfind0, h⟩ := option_bind_eq_some h
+      have hfind : (recursorMembers rc).find? (·.1 == j) = some (fstIdx, r) := by
+        rwa [recursorMembersFast_eq, Array.find?_toList] at hfind0
+      dsimp only at h
+      cases hu : r.isUnsafe with
+      | true => rw [hu] at h; cases h
+      | false =>
+        simp only [hu, Bool.false_eq_true, ↓reduceIte] at h
+        obtain ⟨rkey, hkey, h⟩ := option_bind_eq_some h
         dsimp only at h
-        rw [recursorMembersFast_eq, Array.find?_toList] at h
-        cases hfind : (recursorMembers rc).find? (·.1 == j) with
-        | none => rw [hfind] at h; cases h
-        | some jr =>
-          rcases jr with ⟨_, r⟩
-          rw [hfind] at h
+        obtain ⟨tsh, htyp, h⟩ := option_bind_eq_some h
+        cases hmaj : entry.major with
+        | ctor _ _ _ => rw [hmaj] at h; cases h
+        | member mb mi =>
+          rw [hmaj] at h
           dsimp only at h
-          cases hu : r.isUnsafe with
-          | true => rw [hu] at h; cases h
-          | false =>
-            simp only [hu, Bool.false_eq_true, ↓reduceIte] at h
-            cases hkey : pureMemberKeyOpt (.member rOwner j) with
-            | none => rw [hkey] at h; cases h
-            | some rkey =>
-              rw [hkey] at h
-              dsimp only at h
-              let selfOk : Nat → Bool := fun i => match rc.info with
-                | .muts rms => i < rms.toList.length && (pureMemberKeyOpt (.member rOwner i)).isSome
-                | _ => i == 0
-              change (match
-                  pureReadExprShape rc (recParam (recLps entry.large blockLps)) selfOk r.typ,
-                  fun _ =>
-                  match entry.major with
-                  | ConstRef.member mb mi =>
-                    if (!containsAddrFast committedPreAddrs mb) = true then none
-                    else
-                      match inductiveAt preStorePure entry.major, fun major =>
-                        if (!(major.ctors.toList.length == r.rules.toList.length)) = true then none
-                        else
-                          if (!pureReadRecRulesOk rc (recParam (recLps entry.large blockLps))
-                                selfOk mb mi r.rules.toList.zipIdx) = true then none
-                          else
-                            some (rkey,
-                              { params := r.params.toNat, motives := r.motives.toNat,
-                                minors := r.minors.toNat, indices := r.indices.toNat,
-                                k := r.k, motive := some entry.motive }) with
-                      | none, _ => none
-                      | some a, f => f a
-                  | _ => none with
-                | none, _ => none
-                | some a, f => f a) = some (key, rcounts) at h
-              cases htyp : pureReadExprShape rc (recParam (recLps entry.large blockLps)) selfOk r.typ with
-              | none => rw [htyp] at h; cases h
-              | some tsh =>
-                rw [htyp] at h
-                dsimp only at h
-                cases hmaj : entry.major with
-                | ctor _ _ _ => rw [hmaj] at h; cases h
-                | member mb mi =>
-                  rw [hmaj] at h
-                  dsimp only at h
-                  rw [containsAddrFast_eq] at h
-                  cases hmb : committedPreAddrs.contains mb with
-                  | false => rw [hmb] at h; cases h
-                  | true =>
-                    simp only [hmb, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-                    cases hind : inductiveAt preStorePure (.member mb mi) with
-                    | none => rw [hind] at h; cases h
-                    | some major =>
-                      rw [hind] at h
-                      dsimp only at h
-                      rw [Array.length_toList, Array.length_toList] at h
-                      cases hsz : (major.ctors.size == r.rules.size) with
-                      | false => rw [hsz] at h; cases h
-                      | true =>
-                        simp only [hsz, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-                        rw [← Array.toList_zipIdx] at h
-                        cases hrok : pureReadRecRulesOk rc (recParam (recLps entry.large blockLps))
-                            selfOk mb mi r.rules.zipIdx.toList with
-                        | false => rw [hrok] at h; cases h
-                        | true =>
-                          simp only [hrok, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
-                            Option.some.injEq, Prod.mk.injEq] at h
-                          rcases h with ⟨rfl, rfl⟩
-                          have hkey' := pureMemberKeyOpt_sound ev hev_defn hkey
-                          let rself : Nat → Option (ReadM (CName .anon)) := fun i => match rc.info with
-                            | .muts rms =>
-                              if i < rms.size then some ((defCx ev).memberKey (.member rOwner i))
-                              else none
-                            | _ => if i == 0 then some (pure rkey) else none
-                          have hself : ∀ i, selfOk i = true → ∃ rm k, rself i = some rm ∧ rm = .ok k := by
-                            intro i hso
-                            dsimp only [selfOk, rself] at hso ⊢
-                            cases hinfo : rc.info with
-                            | muts rms =>
-                              rw [hinfo] at hso
-                              dsimp only at hso
-                              rw [Array.length_toList, Bool.and_eq_true, decide_eq_true_eq] at hso
-                              simp only [hso.1, ↓reduceIte]
-                              cases hmki : pureMemberKeyOpt (.member rOwner i) with
-                              | none => rw [hmki] at hso; cases hso.2
-                              | some ki =>
-                                exact ⟨_, ki, rfl, pureMemberKeyOpt_sound ev hev_defn hmki⟩
-                            | _ =>
-                              rw [hinfo] at hso
-                              dsimp only at hso
-                              simp only [hso, ↓reduceIte]
-                              exact ⟨_, rkey, rfl, rfl⟩
-                          obtain ⟨typ, htyp', -⟩ := pureReadExprShape_sound ev hev_defn hself htyp
-                          obtain ⟨rules, hloop⟩ := pureReadRecRulesOk_sound ev hev_defn hself
-                            r.rules.zipIdx.toList [] hrok
-                          dsimp only [rself] at htyp' hloop
-                          have hst_ro := defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hro)
-                          have hind_cx : inductiveAt (defCx ev).store (.member mb mi) = some major := by
-                            unfold inductiveAt at hind ⊢
-                            rw [defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hmb)]
-                            exact hind
-                          refine ⟨typ, rules, ?_⟩
-                          unfold readRecursor
-                          simp only [hst_ro, hrc, hfind, hu, Bool.false_eq_true, ↓reduceIte]
-                          simp only [hkey', bind, Except.bind]
-                          rw [hmaj]
-                          simp only [htyp', hind_cx, hsz, ↓reduceIte, bind, Except.bind, pure, Except.pure]
-                          rw [← Array.forIn_toList, hloop, List.nil_append]
-                          rfl
+          rw [containsAddrFast_eq] at h
+          cases hmb : committedPreAddrs.contains mb with
+          | false => rw [hmb] at h; cases h
+          | true =>
+            simp only [hmb, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+            obtain ⟨major, hind, h⟩ := option_bind_eq_some h
+            rw [Array.length_toList, Array.length_toList] at h
+            cases hsz : (major.ctors.size == r.rules.size) with
+            | false => rw [hsz] at h; cases h
+            | true =>
+              simp only [hsz, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+              rw [← Array.toList_zipIdx] at h
+              split at h
+              · cases h
+              · rename_i hnot_rok
+                have hrok := of_not_bnot_eq_true hnot_rok
+                injection h with hpair
+                rcases Prod.mk.inj hpair with ⟨rfl, rfl⟩
+                have hkey' := pureMemberKeyOpt_sound ev hev_defn hkey
+                let rself : Nat → Option (ReadM (CName .anon)) := fun i => match rc.info with
+                  | .muts rms =>
+                    if i < rms.size then some ((defCx ev).memberKey (.member rOwner i))
+                    else none
+                  | _ => if i == 0 then some (pure rkey) else none
+                have h_both :
+                    (∃ out, (MemberReader.mk' (defCx ev) rc (recParam (recLps entry.large blockLps)) rself).read r.typ = .ok out) ∧
+                    (∃ tail, forIn (m := ReadM) r.rules.zipIdx.toList [] (fun (rule, k) rules => do
+                      let ck ← (defCx ev).memberKey (.ctor mb mi k)
+                      let rhs ← (MemberReader.mk' (defCx ev) rc (recParam (recLps entry.large blockLps)) rself).read rule.rhs
+                      pure (.yield (rules ++ [Ix.Kernel.RecRule.mk ck rule.fields.toNat 0 .inert rhs false false false]))) =
+                        .ok ([] ++ tail)) := by
+                  refine ⟨let ⟨o, ho, _⟩ := pureReadExprShape_sound ev hev_defn ?hself htyp; ⟨o, ho⟩,
+                          pureReadRecRulesOk_sound ev hev_defn ?hself r.rules.zipIdx.toList [] hrok⟩
+                  case hself =>
+                    intro i hso
+                    dsimp only [rself]
+                    cases hinfo : rc.info with
+                    | muts rms =>
+                      rw [hinfo] at hso
+                      dsimp only at hso
+                      rw [Array.length_toList, Bool.and_eq_true, decide_eq_true_eq] at hso
+                      simp only [hso.1, ↓reduceIte]
+                      cases hmki : pureMemberKeyOpt (.member rOwner i) with
+                      | none => rw [hmki] at hso; cases hso.2
+                      | some ki =>
+                        exact ⟨_, ki, rfl, pureMemberKeyOpt_sound ev hev_defn hmki⟩
+                    | _ =>
+                      rw [hinfo] at hso
+                      dsimp only at hso
+                      simp only [hso, ↓reduceIte]
+                      exact ⟨_, rkey, rfl, rfl⟩
+                obtain ⟨⟨typ, htyp'⟩, ⟨rules, hloop⟩⟩ := h_both
+                dsimp only [rself] at htyp' hloop
+                have hst_ro := defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hro)
+                have hind_cx : inductiveAt (defCx ev).store (.member mb mi) = some major := by
+                  unfold inductiveAt at hind ⊢
+                  rw [defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hmb)]
+                  exact hind
+                refine ⟨typ, rules, ?_⟩
+                unfold readRecursor
+                simp only [hst_ro, hrc, hfind, hu, Bool.false_eq_true, ↓reduceIte]
+                simp only [hkey', bind, Except.bind]
+                rw [hmaj]
+                simp only [htyp', hind_cx, hsz, ↓reduceIte, bind, Except.bind, pure, Except.pure]
+                rw [← Array.forIn_toList, hloop, List.nil_append]
+                rfl
 
 include hev_defn in
 private theorem pureReadCtorShapes_sound {owner : _root_.Address} {src : Ixon.Constant}
@@ -1659,7 +1688,6 @@ private theorem levelIsZeroFast_sound {s : Ix.Kernel.Level} {b : Bool}
       have hlt0 : ¬ ((0 : Int) < 0) := by decide
       simp only [Ix.Kernel.Level.simplify, reduceCtorEq, false_and, ↓reduceIte, hlt0, and_false]
       unfold Ix.Kernel.Level.rest
-      dsimp only
       unfold Ix.Kernel.Level.leqCore
       have hge1 : ¬ ((0 - 1 : Int) ≥ 0) := by decide
       have hlt1 : (0 - 1 : Int) < 0 := by decide
@@ -1728,7 +1756,7 @@ private theorem checkSingleRecShape_sound {nPd indIndices : Nat}
       | nil =>
         simp only [List.map_cons, List.map_nil] at hpairs
         subst hpairs
-        dsimp only [List.map_cons, List.map_nil] at hkchk hkE
+        simp only [List.map_cons, List.map_nil] at hkchk hkE
         obtain ⟨_, hsort_sh⟩ := htsh
         cases hps : tsh.piSort? with
         | none =>
@@ -1764,7 +1792,6 @@ private theorem checkSingleRecShape_sound {nPd indIndices : Nat}
     cases m with
     | succ m' => cases hty_get
     | zero =>
-      dsimp only at hty_get
       injection hty_get with hty_eq
       rcases Prod.mk.inj hty_eq with ⟨rfl, _⟩
       rw [hm_eq] at htele
@@ -1886,19 +1913,18 @@ private theorem pureReadInductive1Names_sound {owner : _root_.Address} {c : Ixon
                               (tk :: pairs.map Prod.fst) ++ [rkey] := by
                             unfold Ix.Cert.CtxAgree.indDeclOf
                             dsimp only [rb, tcv, rcv, List.toList_toArray, Ix.Kernel.Declaration.names]
-                            rw [List.map_append, List.map_append, List.map_map]
                             have hcnames : outC.map ((fun x => x.name) ∘ fun x => Ix.Kernel.ConstantInfo.ctorInfo x.1 x.2.1 x.2.2) =
                                 pairs.map Prod.fst := by
                               rw [← hmap_c, List.map_map]
                               rfl
+                            simp only [List.map_append, List.map_cons, List.map_nil, List.map_map]
                             rw [hcnames]
                             rfl
                           have hlow' : lowerInductive st rb = .ok rOut := by
                             rw [Ix.Cert.LowerTransfer.lowerInductive_iff]
                             refine ⟨hChecks, .inr ⟨hwants, rfl⟩, ?_⟩
-                            dsimp only [rOut, List.toList_toArray, List.flatMap_cons,
-                              List.flatMap_nil, List.append_nil]
-                            rw [hd_names]
+                            simp only [rOut, List.toList_toArray, List.flatMap_cons,
+                              List.flatMap_nil, List.append_nil, hd_names]
                             exact nodup_of_nodup_map cnameCode (nodup_of_nodupNat hnd)
                           have htypes_loop :=
                             Ix.CompileCert.InductiveReading.typeLoop (defCx ev) owner mrInd ind htk' htty'
@@ -1940,7 +1966,6 @@ private theorem pureReadInductive1Names_sound {owner : _root_.Address} {c : Ixon
                           have hshaped : blockShapeOf (defCx ev).index owner #[.indc ind] =
                               some ⟨#[0], #[recRef]⟩ := by
                             simp only [blockShapeOf, hsh_cx]
-                            rfl
                           dsimp only [mrInd, rself] at htypes_loop hctors_loop
                           refine ⟨rOut, Ix.Cert.CtxAgree.indDeclOf rb, ?_, rfl, hd_names⟩
                           rw [Ix.CompileCert.InductiveReading.readInductive_eq]
@@ -2052,12 +2077,12 @@ private theorem pureReadRecordNames_sound {owner : _root_.Address} {c : Ixon.Con
     cases hms : ms.toList with
     | nil => rw [hms] at h; cases h
     | cons m0 tl =>
-      cases tl with
-      | cons _ _ => rw [hms] at h; cases h
-      | nil =>
-        cases m0 with
-        | defn _ | recr _ => rw [hms] at h; cases h
-        | indc ind =>
+      cases m0 with
+      | defn _ | recr _ => rw [hms] at h; cases h
+      | indc ind =>
+        cases tl with
+        | cons _ _ => rw [hms] at h; cases h
+        | nil =>
           rw [hms] at h
           dsimp only at h
           cases hind : pureReadInductive1Names owner c ind with
@@ -2146,16 +2171,6 @@ private theorem eqRoleGroups_sound :
     unfold eqRoleGroups at h
     rw [Bool.and_eq_true] at h
     rw [eqRoleGroup_sound g r h.1, eqRoleGroups_sound gs rs h.2, List.map_cons]
-
-private theorem readPrelude_defCx_eq
-    (ev : Array (_root_.Address × Ixon.Constant)) :
-    readPrelude (md := .anon) committedDefaultRoleTable committedPrelude ev committedBlobs =
-      match readRecords (defCx ev) {} committedPrelude with
-      | .ok (state, decls) =>
-        Except.ok ⟨committedPrelude, ev, committedBlobs, ⟨decls⟩, state⟩
-      | .error (e, i) =>
-        throw s!"prelude record {i}: {e}" :=
-  rfl
 
 /-- The committed prelude succeeds under `committedDefaultRoleTable` in `.anon` mode. -/
 theorem preludeFor_defaultRoleTable :
