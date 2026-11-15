@@ -36,11 +36,35 @@ theorem Entry.inspect {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a 
   | same => exact hrefl _
   | thm cv v w => exact hthm cv v w
 
+theorem Entry.find_nonThm {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a b)
+    {ci : ConstantInfo md} (found : a = some ci)
+    (kind : ∀ cv value, ci ≠ .thmInfo cv value) : b = some ci := by
+  cases h with
+  | same => exact found
+  | thm cv value _ => exact (kind cv value (Option.some.inj found).symm).elim
+
+theorem Entry.find_thm {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a b)
+    {cv : ConstantVal md} {value : Expr md} (found : a = some (.thmInfo cv value)) :
+    ∃ value', b = some (.thmInfo cv value') := by
+  cases h with
+  | same => exact ⟨value, found⟩
+  | thm cv' old value' =>
+    obtain ⟨rfl, rfl⟩ := ConstantInfo.thmInfo.inj (Option.some.inj found)
+    exact ⟨value', rfl⟩
+
 namespace Agrees
 
 variable {md : Mode} {source target : Env md} (h : Agrees source target)
 
 include h
+
+theorem find_nonThm {name : Key md} {ci : ConstantInfo md}
+    (found : source.find? name = some ci) (kind : ∀ cv value, ci ≠ .thmInfo cv value) :
+    target.find? name = some ci := (h name).find_nonThm found kind
+
+theorem find_thm {name : Key md} {cv : ConstantVal md} {value : Expr md}
+    (found : source.find? name = some (.thmInfo cv value)) :
+    ∃ value', target.find? name = some (.thmInfo cv value') := (h name).find_thm found
 
 theorem observe (name : Key md) {α : Type u} (read : Option (ConstantInfo md) → α)
     (hthm : ∀ cv v w, read (some (.thmInfo cv v)) = read (some (.thmInfo cv w))) :

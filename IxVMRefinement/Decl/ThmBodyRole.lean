@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.ThmBodyDecl
+import IxVMRefinement.Decl.DeclRoleStep
 
 /-! # Annotated role stores from accepted reference checks
 

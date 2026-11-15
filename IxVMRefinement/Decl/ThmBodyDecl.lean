@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.ThmBodyCore
-import IxVMRefinement.Decl.DeclRoleStep
+import IxC.Kernel.Semantics.DeclRun
 
 /-! # Declaration fronts under opaque theorem-body changes
 
@@ -181,5 +181,26 @@ theorem declAxiomRun {mode : CheckMode} {fuel : Nat} {cv : ConstantVal md} {sour
         Or.inl ⟨by simpa only [h.stdAxiomOk] using hstd, rfl⟩⟩⟩
     · exact ⟨target, h, Or.inr ⟨ty, h.constantValRun hcv,
         Or.inr ⟨by simpa only [h.stdAxiomOk] using hstd, hprop, hchoice, hsorry, rfl⟩⟩⟩
+
+theorem basisInstallRun {entries : List (ConstantInfo md)} {sourceOut : Env md}
+    (run : BasisInstallRun source entries sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ BasisInstallRun target entries targetOut := by
+  induction entries generalizing source target with
+  | nil =>
+    change sourceOut = source at run
+    subst sourceOut
+    exact ⟨target, h, rfl⟩
+  | cons ci rest ih =>
+    obtain ⟨fresh, restRun⟩ := run
+    obtain ⟨targetOut, agreement, targetRun⟩ := ih (h.cons ci) restRun
+    exact ⟨targetOut, agreement, by simpa only [h.isNone] using fresh, targetRun⟩
+
+/-- Pinned blocks preserve exact installed entries and the pinned equality prerequisite. -/
+theorem declBasisRun {kind : BasisKind} {sourceOut : Env md}
+    (run : DeclBasisRun source kind sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ DeclBasisRun target kind targetOut := by
+  obtain ⟨targetOut, agreement, installed⟩ := h.basisInstallRun run.2
+  exact ⟨targetOut, agreement,
+    (fun hk => h.find_nonThm (run.1 hk) (by intros; intro heq; cases heq)), installed⟩
 
 end IxVM.Refinement.Decl.ThmBodyView.Agrees
