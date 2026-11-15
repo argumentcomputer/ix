@@ -52,10 +52,10 @@ theorem pruneClosureOrder_append (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
 
 /-- The retained part of an original prefix remains a prefix of the pruned order. -/
 theorem pruneClosureOrder_prefix {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {S : _root_.Address → Prop} {order prefix suffix : List _root_.Address}
-    (hsplit : order = prefix ++ suffix) :
+    {S : _root_.Address → Prop} {order front suffix : List _root_.Address}
+    (hsplit : order = front ++ suffix) :
     pruneClosureOrder t E S order =
-      pruneClosureOrder t E S prefix ++ pruneClosureOrder t E S suffix := by
+      pruneClosureOrder t E S front ++ pruneClosureOrder t E S suffix := by
   rw [hsplit, pruneClosureOrder_append]
 
 /-- An edge out of the pruned closure remains in it, whether it is an explicit reference,

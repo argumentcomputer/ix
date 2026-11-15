@@ -136,7 +136,7 @@ inductive AuxGrouped : List (Ix.Kernel.Declaration .anon) →
     List (Ix.Kernel.Declaration .anon) → Prop where
   | nil : AuxGrouped [] []
   | snoc {full bare : List (Ix.Kernel.Declaration .anon)}
-      (prefix : AuxGrouped full bare) (auxs : List (Ix.Kernel.Declaration .anon))
+      (prior : AuxGrouped full bare) (auxs : List (Ix.Kernel.Declaration .anon))
       (d : Ix.Kernel.Declaration .anon) (auxiliary : ∀ a ∈ auxs, DeclAllAux a) :
       AuxGrouped ((full ++ auxs) ++ [d]) (bare ++ [d])
 
@@ -151,7 +151,7 @@ theorem AuxGrouped.append {full₁ bare₁ full₂ bare₂ : List (Ix.Kernel.Dec
     AuxGrouped (full₁ ++ full₂) (bare₁ ++ bare₂) := by
   induction h₂ with
   | nil => simpa using h₁
-  | snoc prefix auxs d haux ih =>
+  | snoc _prior auxs d haux ih =>
     simpa [List.append_assoc] using AuxGrouped.snoc ih auxs d haux
 
 /-- Auxiliary grouping preserves the final environment, including its model artifacts. -/
@@ -160,7 +160,7 @@ theorem AuxGrouped.installs {full bare : List (Ix.Kernel.Declaration .anon)}
     (hinst : IxVM.Consistency.Installs full env) : IxVM.Consistency.Installs bare env := by
   induction hgroup generalizing env with
   | nil => exact hinst
-  | snoc prefix auxs d haux ih =>
+  | snoc _prior auxs d haux ih =>
     obtain ⟨env₀, hpre, hstep⟩ := installs_snoc_inv (installs_absorb_aux_block auxs haux hinst)
     exact .snoc (ih hpre) hstep
 
