@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.RecordState
+import IxVMRefinement.Assembly.ReadSides
 
 /-! # Constructing a bare stream from its full reader run
 
@@ -149,5 +149,34 @@ theorem admitted_streamReadBare {V : IxVM.Refinement.View} {b : Ix.Kernel.Admiss
   have hlevels := preludeFor_projLevels_empty w.preludeRead
   obtain ⟨final, decls, hbare, _, _⟩ := streamRead_full_bare hrk hstream w.noProjRewrites hheight hlevels
   exact ⟨final, decls, hbare, streamReadBare_filter_full hrk hstream w.noProjRewrites hheight hlevels hbare⟩
+
+/-- The full-to-bare construction preserves all public reader lookups, including the
+owner and block data used to check the prelude's retained copies. -/
+theorem streamRead_full_bare_sameAt {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
+    {source final target : State md} {records : List (_root_.Address × Ixon.Constant)}
+    {fullDecls : Array (CDecl md)} (h : StreamRead cx source records final fullDecls)
+    (hzero : final.projRewrites = 0)
+    (hstate : ∀ (k : CName md), NonAuxKey k → target.SameAt source k)
+    (hempty : ∀ (k : CName md), target.projLevels[k]? = none) :
+    ∃ bareFinal bareDecls, StreamReadBare cx target records bareFinal bareDecls ∧
+      (∀ (k : CName md), NonAuxKey k → bareFinal.SameAt final k) ∧
+      fullDecls.toList.filter (fun d => !d.isGenerated) = bareDecls.toList := by
+  induction h generalizing target with
+  | nil => exact ⟨target, #[], .nil, hstate, rfl⟩
+  | @cons source final owner c full rest fullTail hread htail ih =>
+    have hcounter := streamRead_projRewrites_le htail
+    rw [commit_projRewrites, hzero] at hcounter
+    have hrecordZero : full.projRewrites = 0 := by omega
+    obtain ⟨generated, bare, hbare, hdecls, hcount, hbareGen, hgenerated, howners, hblocks⟩ :=
+      readRecord_full_bare_replay_sides hrk hread hrecordZero (fun k hk => (hstate k hk).2.1) hempty
+    have hnext := commit_sameAt_after_generated_prefix hdecls hgenerated howners hblocks hstate
+    have hlevels : ∀ (k : CName md), (target.commit bare).projLevels[k]? = none := by
+      intro k
+      rw [projLevels_commit_of_generated_zero target hbareGen]
+      exact hempty k
+    obtain ⟨bareFinal, bareTail, htailBare, hfinal, hfilter⟩ := ih hzero hnext hlevels
+    refine ⟨bareFinal, bare.decls ++ bareTail, .cons hbare htailBare, hfinal, ?_⟩
+    rw [Array.toList_append, List.filter_append, Array.toList_append,
+      readRecord_bare_filter hrk hread hdecls hcount hgenerated, hfilter]
 
 end IxVM.Refinement.Assembly
