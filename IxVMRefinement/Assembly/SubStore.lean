@@ -5,7 +5,7 @@ import Ix.Cert.FallbackStore
 
 Provides the Phase-2 store infrastructure backing `WalkedBareBridgeRole`:
 
-* `RolePreludeInputs`: parametric role-table / committed-fallback interface matching `W4-Roles`'s
+* `RolePreludeInputs`: parametric role-table / committed-fallback interface matching `RoleVal`'s
   proven exports (`fallbackHashed`, `preludeFor_of_readerTable`,
   `literalSupportBound_of_readerTable`, `fallback_record_agree`, `fallback_blob_agree`,
   `fallback_not_padding`, `prelude_in_bindingSeeds`);

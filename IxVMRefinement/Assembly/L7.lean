@@ -475,7 +475,7 @@ def WalkedBareBridge
     ¬ V.HashedCollision extra calls →
     ∃ (E : Ixon.Env) (order : List _root_.Address) (pre : Ix.Kernel.Reader.Prelude .anon)
       (st' : Ix.Kernel.Reader.State .anon) (decls : Array (Ix.Kernel.Reader.CDecl .anon)),
-      IxVM.Refinement.Draws E E₀ ∧
+      IxVM.Consistency.DrawsRole E E₀ V.env ∧
       IxVM.Consistency.UsedClosureOrderAt t E
         (fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList)
         order ∧
@@ -611,7 +611,7 @@ theorem consistentRead_of_declsStrong
     (hb_extra : b.bytes ∈ extra)
     (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hnoCol : ¬ V.HashedCollision extra calls) :
-    IxVM.Consistency.ConsistentRead.{u} calls b seeds := by
+    IxVM.Consistency.ConsistentRead.{u} V calls b seeds := by
   obtain ⟨Inv, hemp, hok, hstep⟩ := hStrong
   obtain ⟨E, order, pre, st', decls, hdraws, hord, hpre, hauth_rec, hauth_blob, hdec,
     hreads, hkeeps, hchk, hseeds⟩ :=
