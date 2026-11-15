@@ -1331,7 +1331,7 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
         ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ := by
   intro n d Γ E rc pe types r h h' cs hlt hrc hty hsc hef hlf hg hE ev
   exact get_result_sort_level_scoped_spec (c := ScopedCtx.unrestricted c) n hlt hrc hty hsc
-    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) hg.unrestricted hE ev
+    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hg) hE ev
 
 theorem mkAppN_not_forallE :
     ∀ (H : KExpr), (∀ d b m, H ≠ .forallE d b m) →
@@ -2341,7 +2341,7 @@ theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
     StructDomsShared c.env ta tb n := by
   exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) hn hrc
-    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) hgood.unrestricted hta htb ev
+    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hta htb ev
 
 /-! ## Constructor residual opening and `check_field_universes` -/
 
@@ -2713,7 +2713,7 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
         nP xFvs idxArgs nF sorts := by
   exact check_field_universes_scoped_spec hLevels (c := ScopedCtx.unrestricted c)
     hnP hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
-    (ScopedLoadFacts.ofUnrestricted hef hlf) hgood.unrestricted hpind hcty hnt ev
+    (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hpind hcty hnt ev
 
 /-! ## Strict positivity (`check_positivity` → `recFieldKind ≠ .negative ∧ ≠ .unsupported`) -/
 
