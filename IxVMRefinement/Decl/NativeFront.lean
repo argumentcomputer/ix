@@ -197,6 +197,27 @@ theorem stripPis_split :
       rw [Nat.add_right_comm a 1 b] at h
       simp [Expr.stripPis] at h
 
+/-- The checked former telescope supplies the arities of its actual native capabilities
+before any constructor is installed or field kinds are classified. -/
+theorem storeInv_consNativeCapsAt {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon}
+    {p : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
+    {bs : List (KExpr × Ix.Kernel.BinderMeta)} {body : KExpr}
+    (hS : Ix.Kernel.Open.StoreInv env) (hfresh : env.find? cv.name = none)
+    (hty : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (htele : cv.type.stripPis (p.nP + p.nIdx) = some (bs, body)) :
+    Ix.Kernel.Open.StoreInv ⟨.indInfo cv (Ix.Kernel.nativeCapsAt p isRec) :: env.consts⟩ := by
+  obtain ⟨pre, mid, _, hpre, _⟩ := stripPis_split p.nP p.nIdx htele
+  have harity : (cv.type.stripPis p.nP).isSome = true := by rw [hpre]; rfl
+  apply storeInv_consIndCaps hS hfresh hty
+  all_goals
+    cases hctors : p.ctors with
+    | nil => simp [Ix.Kernel.nativeCapsAt, hctors]
+    | cons ctor rest =>
+      cases rest with
+      | nil => simpa only [Ix.Kernel.nativeCapsAt, hctors] using fun _ => harity
+      | cons next rest => simp [Ix.Kernel.nativeCapsAt, hctors]
+
 theorem sumSplit_append_recStub :
     ∀ (rest : List KConstantInfo) (cvR : KConstantVal),
       rest.all (fun | .ctorInfo .. => true | _ => false) = true →
