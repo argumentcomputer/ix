@@ -109,8 +109,8 @@ theorem theoremsInProp {declarations : List (Declaration .anon)}
     (checked : IxVM.Refinement.TheoremsInProp source declarations) :
     IxVM.Refinement.TheoremsInProp target declarations := by
   intro cv value member
-  obtain ⟨fuel, ty, sort, level, annotated, inferred, checkedSort, zero⟩ := checked cv value member
-  refine ⟨fuel, ty, sort, level, ?_, ?_, ?_, zero⟩
+  obtain ⟨fuel, ty, stype, level, annotated, inferred, checkedSort, zero⟩ := checked cv value member
+  refine ⟨fuel, ty, stype, level, ?_, ?_, ?_, zero⟩
   · simpa only [fueledOps, h.annotateCore] using annotated
   · simpa only [fueledOps, h.inferTypeCore] using inferred
   · simpa only [fueledOps, h.ensureSortCore] using checkedSort
