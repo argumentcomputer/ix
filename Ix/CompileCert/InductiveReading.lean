@@ -138,9 +138,12 @@ theorem blockSelf_blobs (cx : Ctx md) (state : BlockState) (owner : Address) (ms
 theorem readRecord_inductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant)
     (target : Ixon.Inductive) (info : c.info = .muts #[.indc target]) :
     readRecord cx st owner c = readInductive cx st owner c #[.indc target] := by
+  have finish (rInd : Read md) :
+      finishInductiveRead cx owner #[.indc target] rInd = .ok rInd := by
+    simpa using finishInductiveRead_indcs cx owner #[target] rInd
   unfold readRecord
   rw [info]
-  simp
+  simp [finish]
 
 theorem indcs_singleton (target : Ixon.Inductive) :
     (#[0] : Array Nat).filterMap (indcAt #[.indc target]) = #[(0, target)] := rfl

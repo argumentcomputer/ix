@@ -149,10 +149,17 @@ theorem readRecord_muts_indc (cx : Ctx md) (st : State md) (owner : Address) (c 
     (targets : List Ixon.Inductive) (hne : targets ≠ [])
     (info : c.info = .muts (targets.map Ixon.MutConst.indc).toArray) :
     readRecord cx st owner c = readInductive cx st owner c (targets.map Ixon.MutConst.indc).toArray := by
+  have finish (rInd : Read md) :
+      finishInductiveRead cx owner (targets.map Ixon.MutConst.indc).toArray rInd = .ok rInd := by
+    apply finishInductiveRead_eq_of_no_recursors
+    intro m hm rc heq
+    simp only [List.toList_toArray, List.mem_map] at hm
+    obtain ⟨ind, _, rfl⟩ := hm
+    cases heq
   unfold readRecord
   rw [info]
   obtain ⟨t, rest, rfl⟩ := List.exists_cons_of_ne_nil hne
-  simp
+  simp [finish]
 
 /-- **The reader on an inductive block laid out in Lean's order**: given every type's key,
 type reading, safety and parameter count and its constructors' checks and readings, the
