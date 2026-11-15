@@ -29,8 +29,8 @@ theorem indMembersRun {blockNames : List (Key md)} {caps : IndCaps md} :
     obtain ⟨cvA, hmv, hm⟩ := h
     refine ⟨cvA, M.memberValRun hmv, ?_⟩
     cases ci with
-    | indInfo _ _ => exact M.indMembersRun hm
-    | ctorInfo _ _ _ => exact M.indMembersRun hm
+    | indInfo _ _ => exact indMembersRun hm
+    | ctorInfo _ _ _ => exact indMembersRun hm
     | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _ | recInfo _ _ _ _ | projInfo _ => exact hm
 
 theorem provisionRecsRun {blockNames : List (Key md)} :
@@ -42,7 +42,7 @@ theorem provisionRecsRun {blockNames : List (Key md)} :
   | _, _ :: _, _, _, h => by
     obtain ⟨cvA, mI, rP, rules, rest, hci, hmv, hrec, hchecked⟩ := h
     exact ⟨cvA, mI, rP, rules, rest, hci, M.memberValRun hmv,
-      M.provisionRecsRun hrec, hchecked⟩
+      provisionRecsRun hrec, hchecked⟩
 
 theorem iotaThmRun {env envSelf : Env md} {f : Key md → Key md}
     {cvName : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat}
@@ -94,7 +94,7 @@ theorem iotaRulesRun {env envSelf : Env md} {f : Key md → Key md}
   | _, [], _, h => h
   | _, _ :: _, _, h => by
     obtain ⟨r', rest, hr, hrest, hout⟩ := h
-    exact ⟨r', rest, M.iotaRuleRun hr, M.iotaRulesRun hrest, hout⟩
+    exact ⟨r', rest, M.iotaRuleRun hr, iotaRulesRun hrest, hout⟩
 
 theorem indRecsFoldRun {blockNames : List (Key md)} {envBase envSelf : Env md} :
     ∀ {acc : Env md} {checked : List (ConstantVal md × Nat × Nat × List (RecRule md))}
@@ -104,7 +104,7 @@ theorem indRecsFoldRun {blockNames : List (Key md)} {envBase envSelf : Env md} :
   | _, [], _, h => h
   | _, _ :: _, _, h => by
     obtain ⟨rules, hrules, hrest⟩ := h
-    exact ⟨rules, M.iotaRulesRun hrules, M.indRecsFoldRun hrest⟩
+    exact ⟨rules, M.iotaRulesRun hrules, indRecsFoldRun hrest⟩
 
 theorem indRecsRun {blockNames : List (Key md)} {env : Env md}
     {recs : List (ConstantInfo md)} {env₂ : Env md}
@@ -118,6 +118,6 @@ theorem indRecsRun {blockNames : List (Key md)} {env : Env md}
 theorem modeled {env env₂ : Env md} {block : List (ConstantInfo md)}
     (h : DeclIndRunJ J env block env₂) : DeclIndRunJ K env block env₂ := by
   obtain ⟨hshape, envM, hmembers, hrecs⟩ := h
-  exact ⟨hshape, envM, M.indMembersRun hmembers, M.indRecsRun hrecs⟩
+  exact ⟨hshape, envM, indMembersRun hmembers, M.indRecsRun hrecs⟩
 
 end IxVM.Refinement.Decl.JudgementsMap
