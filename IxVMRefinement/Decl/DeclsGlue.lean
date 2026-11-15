@@ -2197,7 +2197,7 @@ theorem installStep_glue_quot {env env₂ : Ix.Kernel.Env .anon} {k : QuotKind} 
 
 /-! ### Route 7: Modeled inductives (`DeclIndRunJ`) -/
 
-private theorem indMembersRunJ_freshChain {J : Judgements .anon} {blockNames : List KKey}
+theorem indMembersRunJ_freshChain {J : Judgements .anon} {blockNames : List KKey}
     {caps : IndCaps .anon} {env : Ix.Kernel.Env .anon} :
     ∀ (ms : List (ConstantInfo .anon)) {acc envM : Ix.Kernel.Env .anon} {new₀ : List (ConstantInfo .anon)},
       FreshChain env new₀ acc →
@@ -2226,7 +2226,7 @@ private theorem indMembersRunJ_freshChain {J : Judgements .anon} {blockNames : L
     | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _ | recInfo _ _ _ _ | projInfo _ =>
       exact hrest.elim
 
-private theorem provisionRecsRunJ_fresh {J : Judgements .anon} {blockNames : List KKey} :
+theorem provisionRecsRunJ_fresh {J : Judgements .anon} {blockNames : List KKey} :
     ∀ (recs : List (ConstantInfo .anon)) {acc envSelf : Ix.Kernel.Env .anon}
       {checked : List (ConstantVal .anon × Nat × Nat × List (RecRule .anon))},
       ProvisionRecsRunJ J blockNames acc recs envSelf checked →
@@ -2259,7 +2259,7 @@ private theorem provisionRecsRunJ_fresh {J : Judgements .anon} {blockNames : Lis
         · cases hnone
         · exact hnone
 
-private theorem indRecsFoldRunJ_prefix {J : Judgements .anon} {blockNames : List KKey}
+theorem indRecsFoldRunJ_prefix {J : Judgements .anon} {blockNames : List KKey}
     {envBase envSelf : Ix.Kernel.Env .anon} :
     ∀ (checked : List (ConstantVal .anon × Nat × Nat × List (RecRule .anon)))
       {acc out : Ix.Kernel.Env .anon} {done : List (ConstantInfo .anon)},
@@ -2292,14 +2292,17 @@ theorem foldInv_step_indModeled {env env₂ : Ix.Kernel.Env .anon}
   exact foldInv_step_declRunJ
     (fun blk _ heq _ => by injection heq with hblk _; subst hblk; exact hna) hd
 
-theorem installStep_glue_indModeled {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
-    {block : List (ConstantInfo .anon)} {nP : Nat}
+/-- The checked member and recursor phases install the declared block at arbitrary capabilities. -/
+theorem installStep_glue_indPhases {J : Judgements .anon} {env envM env₂ : Ix.Kernel.Env .anon}
+    {block members recs : List (ConstantInfo .anon)} {nP : Nat} {caps : IndCaps .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
-    (hM : DeclIndRunJ J env block env₂)
+    (hblk_split : block = members ++ recs)
+    (hmem : IndMembersRunJ J (block.map (·.name)) caps env members envM)
+    (hrecs : IndRecsRunJ J (block.map (·.name)) envM recs env₂)
     (hstored : ∀ ci₀ ∈ block,
       ∃ ci, env₂.find? ci₀.name = some ci ∧ IxVM.Consistency.StoredAs ci ci₀) :
-    IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ := by
-  obtain ⟨hblk_split, envM, hmem, hrecs⟩ := hM
+    IxVM.Consistency.InstallStep env (.indDecl block nP) env₂
+ := by
   obtain ⟨newM, hcM, hnamesM⟩ := indMembersRunJ_freshChain _ (freshChain_nil env) hmem
   simp only [List.map_nil, List.append_nil] at hnamesM
   have hinst : IxVM.Consistency.installs (.indDecl block nP) = block := by
@@ -2366,6 +2369,17 @@ theorem installStep_glue_indModeled {J : Judgements .anon} {env env₂ : Ix.Kern
     · intro ci₀ hci₀
       rw [hinst] at hci₀
       exact hstored ci₀ hci₀
+
+/-- The empty-capability modeled relation is a specialization of the checked phase installation. -/
+theorem installStep_glue_indModeled {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
+    {block : List (ConstantInfo .anon)} {nP : Nat}
+    (hpin : Ix.Kernel.basisPinHit block = none)
+    (hM : DeclIndRunJ J env block env₂)
+    (hstored : ∀ ci₀ ∈ block,
+      ∃ ci, env₂.find? ci₀.name = some ci ∧ IxVM.Consistency.StoredAs ci ci₀) :
+    IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ := by
+  obtain ⟨split, envM, members, recs⟩ := hM
+  exact installStep_glue_indPhases hpin split members recs hstored
 
 /-! ### Routes 8 & 9: Native inductives (`DeclNativeRunJ`, `DeclNativeNoRecRunJ`) -/
 
