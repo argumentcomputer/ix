@@ -76,12 +76,18 @@ theorem readRecord_noInd_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesK
         · split at hread
           · exact (Ix.Cert.ReaderUnits.fail_bind hread).elim
           · rename_i hsafe
+            have hsafe' : (ms.filterMap (fun | .defn d => some d | _ => none)).findSome?
+                safetyDecline = none := by
+              cases hs : (ms.filterMap (fun | .defn d => some d | _ => none)).findSome?
+                  safetyDecline with
+              | none => rfl
+              | some reason => exact (hsafe reason hs).elim
             split at hread
             · rename_i order horder
               have hsource := readRecord_mutDefns_eq cx source owner c ms _ order hinfo hinds
-                (Bool.eq_false_iff.mpr hrecs) hdefs rfl hsafe horder
+                (Bool.eq_false_iff.mpr hrecs) hdefs rfl hsafe' horder
               have htarget := readRecord_mutDefns_eq cx target owner c ms _ order hinfo hinds
-                (Bool.eq_false_iff.mpr hrecs) hdefs rfl hsafe horder
+                (Bool.eq_false_iff.mpr hrecs) hdefs rfl hsafe' horder
               rw [htarget]
               exact readDefinitionBlock_without_rewrite hrk (hsource.symm.trans h) hzero hh hempty
             · exact (Ix.Cert.ReaderUnits.throw_ok hread).elim
