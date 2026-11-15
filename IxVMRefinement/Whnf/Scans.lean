@@ -17,7 +17,7 @@ set_option linter.unusedVariables false
 
 /-- `KernelWhnf::type_sort_never`: a nonzero answer is a telescope of exactly `n` `∀`s ending
 in a sort that is never zero at the levels. -/
-theorem type_sort_never_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem type_sort_never_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::type_sort_never" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.type_sort_never c args h r h' calls := by
@@ -55,7 +55,7 @@ theorem type_sort_never_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
   · exact (hr he170).elim
 
 /-- `KernelWhnf::slots_never`: a nonzero answer is `n` leading `∀`s whose data are `never`. -/
-theorem slots_never_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem slots_never_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::slots_never" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.slots_never c args h r h' calls := by
@@ -86,7 +86,7 @@ theorem slots_never_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelWhnf::lams_never`: a nonzero answer is `n` leading `λ`s whose data, at the levels
 (positional parameters), are `never`: either the stored level is never zero (so is every
 substitution of it) or its instantiation at the levels is. -/
-theorem lams_never_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lams_never_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::lams_never" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.lams_never c args h r h' calls := by

@@ -59,7 +59,7 @@ def ByRole (h : Heap F) (tbl byRole : SourceValue F) : Prop :=
 /-- **The outcome of the role → address search binds the role**: a found value is an address the
 table binds to the role; a failed search means the table binds the role to the zero address
 (what `role_is_bound`'s index test establishes for the default). -/
-def BoundAt (c : Ctx) (h : Heap F) (ro : Ix.Kernel.Role) : Option (SourceValue F) → Prop
+def BoundAt (c : ScopedCtx) (h : Heap F) (ro : Ix.Kernel.Role) : Option (SourceValue F) → Prop
   | some v => ∃ a : Bytes.Address, RepAddr h a v ∧ c.t.addressOf? ro = some (ixAddr a)
   | none => c.t.addressOf? ro = some (ixAddr zeroAddr)
 
@@ -111,51 +111,51 @@ for the role in the table's role → address map has an outcome that binds the r
 the address found, or the zero address where nothing is found. In particular the table binds the
 role. Nothing is claimed for `0`. -/
 def role_is_bound : SpecFn := fun c args h r h' calls =>
-  ∀ tbl (ro : Ix.Kernel.Role), args = [tbl, .field (roleNum ro)] → Good c calls →
+  ∀ tbl (ro : Ix.Kernel.Role), args = [tbl, .field (roleNum ro)] → CoreGood c calls →
     TableRep c.t h tbl → r ≠ .field 0 → ∀ byRole, ByRole h tbl byRole →
       ∃ res, RoleMapSearch roleAddrMapEnum h (roleNum ro) byRole res ∧ BoundAt c h ro res
 
 /-- `KernelRoles::role_bound_addr(tbl, r)` at a role's number (it asserts `role_is_bound`): an
 address the table binds to the role. -/
 def role_bound_addr : SpecFn := fun c args h r h' calls =>
-  ∀ tbl (ro : Ix.Kernel.Role), args = [tbl, .field (roleNum ro)] → Good c calls →
+  ∀ tbl (ro : Ix.Kernel.Role), args = [tbl, .field (roleNum ro)] → CoreGood c calls →
     TableRep c.t h tbl →
       ∃ a : Bytes.Address, RepAddr h' a r ∧ c.t.addressOf? ro = some (ixAddr a)
 
 /-- `KernelRoles::role_index_of(rc, a)`: `0`, or one more than the number of a role the table
 binds to `a`. -/
 def role_index_of : SpecFn := fun c args h r h' calls =>
-  ∀ rc ap (a : Bytes.Address), args = [rc, ap] → Good c calls → c.rc h rc → RepAddr h a ap →
+  ∀ rc ap (a : Bytes.Address), args = [rc, ap] → CoreGood c calls → c.rc h rc → RepAddr h a ap →
     r = .field 0 ∨
       ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ c.t.addressOf? ro = some (ixAddr a)
 
 /-- `KernelRoles::role_of(rc, a)`: `0` (no role, or one whose group is not yet in force), or one
 more than the number of a role the table binds to `a` and in force. -/
 def role_of : SpecFn := fun c args h r h' calls =>
-  ∀ rc ap (a : Bytes.Address), args = [rc, ap] → Good c calls → c.rc h rc → RepAddr h a ap →
+  ∀ rc ap (a : Bytes.Address), args = [rc, ap] → CoreGood c calls → c.rc h rc → RepAddr h a ap →
     r = .field 0 ∨
       ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ c.t.addressOf? ro = some (ixAddr a) ∧
         c.inForce ro
 
 /-- `KernelRoles::role_is(rc, a, r)` at a role's number: a nonzero answer (the code answers `0`
-or `1`) means the table binds the role to `a` (`Ctx.κ (ixAddr a) = .role ro` given
+or `1`) means the table binds the role to `a` (`ScopedCtx.κ (ixAddr a) = .role ro` given
 `EnvFacts.tableWf`) and the role is in force (`role_of`'s group test: its group is below the
 context's limit). Nothing is claimed for `0`. -/
 def role_is : SpecFn := fun c args h r h' calls =>
   ∀ rc ap (a : Bytes.Address) (ro : Ix.Kernel.Role), args = [rc, ap, .field (roleNum ro)] →
-    Good c calls → c.rc h rc → RepAddr h a ap → r ≠ .field 0 →
+    CoreGood c calls → c.rc h rc → RepAddr h a ap → r ≠ .field 0 →
       c.t.addressOf? ro = some (ixAddr a) ∧ c.inForce ro
 
 /-- `KernelRoles::role_addr(rc, r)` at a role's number: an address the table binds to the role
 (the derivation exists only if the table binds it and its group is in force). -/
 def role_addr : SpecFn := fun c args h r h' calls =>
-  ∀ rc (ro : Ix.Kernel.Role), args = [rc, .field (roleNum ro)] → Good c calls → c.rc h rc →
+  ∀ rc (ro : Ix.Kernel.Role), args = [rc, .field (roleNum ro)] → CoreGood c calls → c.rc h rc →
     ∃ a : Bytes.Address, RepAddr h' a r ∧ c.t.addressOf? ro = some (ixAddr a) ∧ c.inForce ro
 
 /-- `KernelRoles::role_used_implicitly(rc, r)` at a role's number: `role_addr`'s address (the
 call also checks the constant there; the core reads only the address). -/
 def role_used_implicitly : SpecFn := fun c args h r h' calls =>
-  ∀ rc (ro : Ix.Kernel.Role), args = [rc, .field (roleNum ro)] → Good c calls → c.rc h rc →
+  ∀ rc (ro : Ix.Kernel.Role), args = [rc, .field (roleNum ro)] → CoreGood c calls → c.rc h rc →
     ∃ a : Bytes.Address, RepAddr h' a r ∧ c.t.addressOf? ro = some (ixAddr a) ∧ c.inForce ro
 
 /-- `KernelRoles::role_evidence(tbl, r)` at a role's number: the table's evidence of the role, one

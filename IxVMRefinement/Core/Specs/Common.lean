@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.Seams
+import IxVMRefinement.Core.CallScope
 import IxC.Kernel.Rules.Rel
 
 /-! # The spec vocabulary, and the conventions every spec statement follows
@@ -11,7 +12,7 @@ function.
 
 **Conventions.**
 
-1. A spec is `fun c args h r h' calls => ∀ <arguments>, args = [<arguments>] → Good c calls →
+1. A spec is `fun c args h r h' calls => ∀ <arguments>, args = [<arguments>] → CoreGood c calls →
    <hypotheses on the inputs, at the heap h> → <claim on the result r, at the heap h'>`.
 2. A role context `rc` is related by `c.rc h rc` (`RCRep c.t c.lim h rc`); a context list
    `types` by `c.types Γ h d types` (`TypesRep`), for the same `d Γ` as the terms. A function
@@ -82,6 +83,30 @@ abbrev Ctx.types (c : Ctx) (Γ : Nat → KExpr) (h : Heap F) (d : Nat) (types : 
 abbrev Ctx.ci (c : Ctx) (h : Heap F) (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon) :
     Prop :=
   CIRep c.κ h v ci
+
+abbrev ScopedCtx.tm (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (h : Heap F) (E : KExpr)
+    (p : SourceValue F) : Prop := Tm c.κ d Γ h 0 E p
+
+abbrev ScopedCtx.tmk (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F)
+    (E : KExpr) (p : SourceValue F) : Prop := Tm c.κ d Γ h k E p
+
+abbrev ScopedCtx.tml (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (h : Heap F)
+    (Es : List KExpr) (p : SourceValue F) : Prop := TmL c.κ d Γ h Es p
+
+abbrev ScopedCtx.tmlk (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F)
+    (Es : List KExpr) (p : SourceValue F) : Prop :=
+  RepList kexprListEnum (fun h E p => Tm c.κ d Γ h k E p) h Es p
+
+abbrev ScopedCtx.tmc (c : ScopedCtx) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
+  TmC c.κ h E p
+
+abbrev ScopedCtx.rc (c : ScopedCtx) (h : Heap F) (rc : SourceValue F) : Prop := RCRep c.t c.lim h rc
+
+abbrev ScopedCtx.types (c : ScopedCtx) (Γ : Nat → KExpr) (h : Heap F) (d : Nat)
+    (types : SourceValue F) : Prop := TypesRep c.κ Γ h d types ∧ GhostScoped Γ d
+
+abbrev ScopedCtx.ci (c : ScopedCtx) (h : Heap F) (v : SourceValue F)
+    (ci : Ix.Kernel.ConstantInfo .anon) : Prop := CIRep c.κ h v ci
 
 /-- An address. -/
 abbrev RepAddr (h : Heap F) (a : Bytes.Address) (p : SourceValue F) : Prop :=

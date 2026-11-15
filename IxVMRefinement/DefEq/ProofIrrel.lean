@@ -103,7 +103,7 @@ private theorem repKLevel_store_zero (h : Heap F) :
       (.ptr (.enum IxVM.Refinement.KernelLevels.klevelEnum) h.length) :=
   RepKLevel.zero (by simp)
 
-theorem pi_tml_length {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
+theorem pi_tml_length {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExpr}
     {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KExprNode>» [l] h r h' cs)
     (hl : c.tml d Γ h As l) : r = .field (As.length : F) ∧ h' = h :=
@@ -514,11 +514,11 @@ private theorem residual_class_inst {κ : _root_.Address → KKey} {d j : Nat} {
   · subst he81
     exact ⟨.inr (.inr rfl), fun hr1 => absurd hr1 field_two_ne_one⟩
 
-private theorem type_sort_class_zero (c : Ctx) {x_t x_types x_us : SourceValue F}
+private theorem type_sort_class_zero (c : ScopedCtx) {x_t x_types x_us : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     {d : Nat} {Γ : Nat → KExpr} {T : KExpr}
     (ev : ObsFn W "KernelDefEq::type_sort_class" [x_t, x_types, .field 0, x_us] h r h' calls)
-    (ih : IH c calls) (good : Good c calls)
+    (ih : IH c calls) (good : CoreGood c calls)
     (htypes : c.types Γ h d x_types) (hT : c.tm d Γ h T x_t) :
     IsClassVal r ∧
       (r = .field 1 → ∃ pw, Ix.Kernel.typeSortPW c.env.find? T = some pw ∧ pw.isProp = true) := by
@@ -559,7 +559,7 @@ private theorem type_sort_class_zero (c : Ctx) {x_t x_types x_us : SourceValue F
       obtain ⟨rfl, rfl⟩ := htup
       obtain ⟨a, cus, rfl, ha, hcus⟩ := hH.const_of_load ld134
       obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev168 x_c a
-        rfl (good.sub fun x hx => by simp [hx]) ha
+        rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) ha
       rw [ld162] at hvci
       injection hvci with hvci
       subst hvci
@@ -668,11 +668,11 @@ private theorem type_sort_class_zero (c : Ctx) {x_t x_types x_us : SourceValue F
     subst he552
     exact ⟨.inr (.inr rfl), fun hr1 => absurd hr1 field_two_ne_one⟩
 
-private theorem type_sort_class_inst (c : Ctx) {x_t x_types x_us : SourceValue F}
+private theorem type_sort_class_inst (c : ScopedCtx) {x_t x_types x_us : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     {ps : List Ix.Kernel.LevelParam} {T : KExpr} {us : List KLevel}
     (ev : ObsFn W "KernelDefEq::type_sort_class" [x_t, x_types, .field 1, x_us] h r h' calls)
-    (ih : IH c calls) (good : Good c calls)
+    (ih : IH c calls) (good : CoreGood c calls)
     (hperm : ps.Perm (List.range ps.length)) (hlen : us.length = ps.length)
     (hT : c.tmc h (posOf ps T) x_t) (hus : LvListRep h us x_us) :
     IsClassVal r ∧
@@ -727,7 +727,7 @@ private theorem type_sort_class_inst (c : Ctx) {x_t x_types x_us : SourceValue F
       obtain ⟨a, cus', rfl, ha, hcus'⟩ := hH.const_of_load ld134
       obtain ⟨cus, hT_fn, rfl, hT_num⟩ := posOf_eq_mkAppN_const_inv heq_pos
       obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev168 x_c a
-        rfl (good.sub fun x hx => by simp [hx]) ha
+        rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) ha
       rw [ld162] at hvci
       injection hvci with hvci
       subst hvci
@@ -822,11 +822,11 @@ private theorem type_sort_class_inst (c : Ctx) {x_t x_types x_us : SourceValue F
     subst he552
     exact ⟨.inr (.inr rfl), fun hr1 => absurd hr1 field_two_ne_one⟩
 
-private theorem proof_class_spec (c : Ctx) {x_a x_types : SourceValue F}
+private theorem proof_class_spec (c : ScopedCtx) {x_a x_types : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     {d : Nat} {Γ : Nat → KExpr} {A : KExpr}
     (ev : ObsFn W "KernelDefEq::proof_class" [x_a, x_types] h r h' calls)
-    (ih : IH c calls) (good : Good c calls)
+    (ih : IH c calls) (good : CoreGood c calls)
     (htypes : c.types Γ h d x_types) (hA : c.tm d Γ h A x_a) :
     IsClassVal r ∧ (r = .field 1 → Ix.Kernel.isProofFast c.env.find? A = true) := by
   rcases Obs.«KernelDefEq::proof_class».obs ev with
@@ -864,7 +864,7 @@ private theorem proof_class_spec (c : Ctx) {x_a x_types : SourceValue F}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
     obtain ⟨rfl, rfl⟩ := htup
     obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld117
-    obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev151 x_c a rfl
+    obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev151 x_c a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld145] at hvci
     injection hvci with hvci
@@ -942,11 +942,11 @@ private theorem proof_class_spec (c : Ctx) {x_a x_types : SourceValue F}
     subst he408
     exact ⟨.inr (.inr rfl), fun hr1 => absurd hr1 field_two_ne_one⟩
 
-private theorem try_proof_irrel_slow_spec (c : Ctx) {rc a b types : SourceValue F}
+private theorem try_proof_irrel_slow_spec (c : ScopedCtx) {rc a b types : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     {d : Nat} {Γ : Nat → KExpr} {A B : KExpr}
     (ev : ObsFn W "KernelDefEq::try_proof_irrel_slow" [rc, a, b, types] h r h' calls)
-    (ih : IH c calls) (good : Good c calls) (hrc : c.rc h rc)
+    (ih : IH c calls) (good : CoreGood c calls) (hrc : c.rc h rc)
     (htypes : c.types Γ h d types) (hA : c.tm d Γ h A a) (hB : c.tm d Γ h B b)
     (hr : r ≠ .field 0) :
     DefEq c.env d A B := by
@@ -978,7 +978,7 @@ private theorem try_proof_irrel_slow_spec (c : Ctx) {rc a b types : SourceValue 
 
 /-- `KernelDefEq::try_proof_irrel`: fast proof-class multiplication (`DefEq.proofFast`), falling
 back to io-grade inference and `is_prop_type` (`DefEq.proofIrrelTy`). -/
-theorem try_proof_irrel_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem try_proof_irrel_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h : Heap F} {r : SourceValue F} {h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_proof_irrel" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_proof_irrel c args h r h' calls := by

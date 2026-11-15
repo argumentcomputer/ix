@@ -686,6 +686,7 @@ def check_inductive_shape_ctors := aiur_fn⟦
                 0 => {  check_positivity(cty, c_np, block_addr) } ,
                 _ => {  () } ,
               };
+              projection_addr_ctor(ind_idx, cidx, block_addr);
               check_inductive_shape_ctors(rc, ind_ty, n_params, n_indices,
                                                num_ctors, num_lvls,
                                                block_addr, ind_idx,
@@ -728,6 +729,7 @@ def check_modeled_ctors := aiur_fn⟦
               assert_safety(is_unsafe, cty);
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
+              projection_addr_ctor(ind_idx, cidx, block_addr);
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, num_lvls,
                                   block_addr, ind_idx, is_unsafe, cidx + 1) } ,
           } } ,

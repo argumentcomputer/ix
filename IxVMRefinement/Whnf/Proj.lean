@@ -144,7 +144,7 @@ theorem pisNv_of_strip (ks : List Ix.Kernel.LevelParam) (vs : List KLevel) :
 end WhnfAux
 
 /-- `KernelWhnf::red_proj`: tag `1` is `Red.proj` at the structure's projection table. -/
-theorem red_proj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_proj c args h r h' calls := by
@@ -173,7 +173,7 @@ theorem red_proj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     have e15 := ObsFn.heap_extends ev15
     -- the constructor
     obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci) (by lt_calls) ev86 x_caddr
-      ca rfl (good.sub fun x hx => by simp [hx]) hca
+      ca rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hca
     rw [ld80] at hldC
     injection hldC with hvC
     subst hvC
@@ -184,7 +184,7 @@ theorem red_proj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     have ext70 := e15.trans e86
     -- the structure
     obtain ⟨ciS, hfindS, vS, hldS, hciS⟩ := ih.get (.callees .get_ci) (by lt_calls) ev161 sa s
-      rfl (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs)
+      rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs)
     rw [ld155] at hldS
     injection hldS with hvS
     subst hvS
@@ -286,9 +286,9 @@ theorem red_proj_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
     rw [hkC] at hfindC'
     obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, -, hent, -, -, bsC, bodyC, hstripC, hbm⟩ :=
       hc.loads.projTablesAt x_sblock sa p153 _ x_sty _ w176 x_sblock m490 m552 m70 m145 cs563
-        cs159 bS s iS ev565 (good.sub fun x hx => by simp [hx])
+        cs159 bS s iS ev565 (good.sub fun x hx => by simp [hx]).raw
         (Bytes.repAddressRef_heapMono₂ addrTy ext490' hbS) ev161
-        (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs) ld155
+        (good.sub fun x hx => by simp [hx]).raw (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs) ld155
         hbS (ZMod.val jC) cvC nP nF hfindC'
     obtain ⟨hfp, -, -, -, ⟨cvT, capsT, hT, hlT, bsT, hsT⟩, -⟩ := hent (ZMod.val fi) hltF
     have hT' := hT

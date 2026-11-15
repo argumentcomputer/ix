@@ -36,7 +36,7 @@ theorem field_ne_zero_of_eq_one {r : SourceValue F} (h : r = .field 1) : r ≠ .
 /-! ## The ordered tiers' entry -/
 
 /-- `KernelDefEq::k_is_def_eq_core` is `k_is_def_eq_ordered`. -/
-theorem k_is_def_eq_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_core_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_core" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_core c args h r h' calls := by
@@ -48,7 +48,7 @@ theorem k_is_def_eq_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     (good.sub fun x hx => by simp [hx])
 
 /-- `KernelDefEq::k_is_def_eq_ordered`: spine congruence, then the slow tiers. -/
-theorem k_is_def_eq_ordered_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_ordered_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_ordered" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_ordered c args h r h' calls := by
@@ -66,7 +66,7 @@ theorem k_is_def_eq_ordered_step (c : Ctx) {args : List (SourceValue F)} {h h' :
       (Tm.mono ext hA) (Tm.mono ext hB) hr
 
 /-- `KernelDefEq::de_args`: pairwise definitional equality of two argument lists. -/
-theorem de_args_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem de_args_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::de_args" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.de_args c args h r h' calls := by
@@ -98,7 +98,7 @@ theorem de_args_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelDefEq::try_def_eq_app`: the same variable head, or the same constant at equal
 levels, with pairwise equal arguments (`DefEq.app` along the spine). -/
-theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_def_eq_app_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_def_eq_app" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_def_eq_app c args h r h' calls := by
@@ -109,9 +109,9 @@ theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   case BVar_BVar_n0 m2 cs13 x_ah x_aa m41 cs52 x_bh x_bb x_i x_j cs153 ev15 ev54 ld90 ld114 op143
       ev155 hc188 =>
     subst hc188
-    have g1 : Good c cs13 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs52 := good.sub fun x hx => by simp [hx]
-    have g3 : Good c cs153 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs13 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs52 := good.sub fun x hx => by simp [hx]
+    have g3 : CoreGood c cs153 := good.sub fun x hx => by simp [hx]
     have e0 := ObsFn.heap_extends ev15
     have e1 := ObsFn.heap_extends ev54
     obtain ⟨ah, aa, H, As, he1, hH, hAs, rfl⟩ :=
@@ -145,10 +145,10 @@ theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       m250 y259 cs269 v292 m293 cs304 m335 x343 y344 m345 cs354 cs368 cs386 ev15 ev54 ld90 ld231
       ev271 op265 ev306 hne330 ev356 ev370 op350 ev388 hc421 =>
     subst hc421
-    have g1 : Good c cs13 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs52 := good.sub fun x hx => by simp [hx]
-    have g3 : Good c cs304 := good.sub fun x hx => by simp [hx]
-    have g4 : Good c cs386 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs13 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs52 := good.sub fun x hx => by simp [hx]
+    have g3 : CoreGood c cs304 := good.sub fun x hx => by simp [hx]
+    have g4 : CoreGood c cs386 := good.sub fun x hx => by simp [hx]
     have e0 := ObsFn.heap_extends ev15
     have e1 := ObsFn.heap_extends ev54
     have e2 := ObsFn.heap_extends ev271
@@ -193,7 +193,7 @@ theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelDefEq::k_is_def_eq`: closed sides are compared under the empty context list (a
 segment of the same ghost context); otherwise under the rebased context (`k_def_eq_rebase`). -/
-theorem k_is_def_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_is_def_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq c args h r h' calls := by

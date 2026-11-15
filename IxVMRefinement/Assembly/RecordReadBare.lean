@@ -1380,13 +1380,13 @@ theorem not_quot_of_nonRole_checked
             obtain ⟨hv, hm⟩ := role_quot_step_local ev22
             exact ⟨.quot, rfl, hv, hm⟩
           | Ctor _ _ _ ev36 _ =>
-            obtain ⟨hv, hm⟩ := Core.role_quot_mk_step ⟨{}, .empty, t, none⟩ ev36 rfl
+            obtain ⟨hv, hm⟩ := Core.role_quot_mk_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev36 rfl
             exact ⟨.quotMk, rfl, hv, hm⟩
           | Lift _ _ _ _ ev50 _ =>
-            obtain ⟨hv, hm⟩ := Core.role_quot_lift_step ⟨{}, .empty, t, none⟩ ev50 rfl
+            obtain ⟨hv, hm⟩ := Core.role_quot_lift_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev50 rfl
             exact ⟨.quotLift, rfl, hv, hm⟩
           | Ind _ _ _ _ _ ev64 _ =>
-            obtain ⟨hv, hm⟩ := Core.role_quot_ind_step ⟨{}, .empty, t, none⟩ ev64 rfl
+            obtain ⟨hv, hm⟩ := Core.role_quot_ind_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev64 rfl
             exact ⟨.quotInd, rfl, hv, hm⟩
         obtain ⟨ro, hct, rfl, rfl⟩ := hro_spec
         cases «KernelRoles::role_is».obs ev100 with

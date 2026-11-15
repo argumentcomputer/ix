@@ -2,9 +2,9 @@ import IxVMRefinement.Roles.Steps
 
 /-! # Standalone role-lookup specifications (`RolesSpec`)
 
-Proves `roles_spec : RolesSpec`: for every `c : Ctx` with `c.t.wf = true`, every function
+Proves `roles_spec : RolesSpec`: for every `c : ScopedCtx` with `c.t.wf = true`, every function
 `f : Core.Specs.Roles.Fn` and observed derivation `ObsFn W f.name args h r h' calls` satisfies
-`f.spec c args h r h' calls`, without requiring `CoreFacts c`.
+`f.spec c args h r h' calls`, without requiring `ScopedCoreFacts c`.
 
 Within `Roles/Steps.lean`, 23 of the 30 `Specs.Roles.Fn` constructors already hold unconditionally,
 6 (`role_is_bound`, `role_bound_addr`, `role_index_of`, `role_of`, `role_addr`,
@@ -18,10 +18,10 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM.Refinement.Core
 
-/-- **Standalone role-lookup family specifications**: for every `c : Ctx` with `c.t.wf = true`,
+/-- **Standalone role-lookup family specifications**: for every `c : ScopedCtx` with `c.t.wf = true`,
 every `f : Specs.Roles.Fn` satisfies `f.spec` on every observed derivation. -/
 def RolesSpec : Prop :=
-  ∀ (c : Ctx), c.t.wf = true →
+  ∀ (c : ScopedCtx), c.t.wf = true →
     ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F)
       (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
       ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
@@ -32,12 +32,12 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
 /-- Induction hypothesis restricted to `Specs.Roles.Fn` on derivations with fewer calls. -/
-private def RolesIH (c : Ctx) (calls : List (Call F)) : Prop :=
+private def RolesIH (c : ScopedCtx) (calls : List (Call F)) : Prop :=
   ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
     (h' : Heap F) (cs : List (Call F)),
     cs.length < calls.length → ObsFn W f.name args h r h' cs → f.spec c args h r h' cs
 
-private theorem RolesIH.get {c : Ctx} {calls : List (Call F)} (ih : RolesIH c calls)
+private theorem RolesIH.get {c : ScopedCtx} {calls : List (Call F)} (ih : RolesIH c calls)
     (f : Specs.Roles.Fn) {args : List (SourceValue F)} {h : Heap F} {r : SourceValue F}
     {h' : Heap F} {cs : List (Call F)} (hlt : cs.length < calls.length)
     (ev : ObsFn W f.name args h r h' cs) : f.spec c args h r h' cs :=
@@ -46,7 +46,7 @@ private theorem RolesIH.get {c : Ctx} {calls : List (Call F)} (ih : RolesIH c ca
 local macro "roles_lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
 
-private theorem role_is_bound_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_is_bound_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_is_bound" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_is_bound c args h r h' calls := by
   intro tbl ro hargs good htbl hr_ne byRole hby
@@ -95,7 +95,7 @@ private theorem role_is_bound_roles_step (c : Ctx) {args h r h' calls}
         obtain rfl := RolesAux.roleNum_add_one_inj hre
         exact ⟨none, hs, haddr⟩
 
-private theorem role_bound_addr_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_bound_addr_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_bound_addr" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_bound_addr c args h r h' calls := by
   intro tbl ro hargs good htbl
@@ -105,7 +105,7 @@ private theorem role_bound_addr_roles_step (c : Ctx) {args h r h' calls}
   have htbl' := htbl
   obtain ⟨bp, byRole, byAddr, evMap, hload, _, _, _⟩ := htbl'
   have hby : Specs.Roles.ByRole h tbl byRole := ⟨bp, byAddr, evMap, hload⟩
-  have good1 : Good c cs23 := good.sub (by rw [hc71]; intro x hx; simp [hx])
+  have good1 : CoreGood c cs23 := good.sub (by rw [hc71]; intro x hx; simp [hx])
   have hv12_ne : v12 ≠ .field 0 := by
     rw [heq48]
     exact fun e => one_ne_zero (Value.field.inj e)
@@ -133,7 +133,7 @@ private theorem role_bound_addr_roles_step (c : Ctx) {args h r h' calls}
     · cases hsome
     · exact ⟨Specs.Roles.zeroAddr, ha_zero, hbound⟩
 
-private theorem role_index_of_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_index_of_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_index_of" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_index_of c args h r h' calls := by
   intro rc ap a hargs good hrc ha
@@ -147,7 +147,7 @@ private theorem role_index_of_roles_step (c : Ctx) {args h r h' calls}
   exact ih.get .rbtree_map_lookup_or_default_field
     (by rw [hc56]; roles_lt_calls) ev6 ap v8 (.field 0) rfl a ha (IndexEntry c.t) hIdx
 
-private theorem role_of_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_of_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_of" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_of c args h r h' calls := by
   intro rc ap a hargs good hrc ha
@@ -184,7 +184,7 @@ private theorem role_of_roles_step (c : Ctx) {args h r h' calls}
         obtain ⟨_, _, hlt_iff, _, -⟩ := Lib.less_than_fields_field ev121
         have hlt_val : ZMod.val (Ix.SpecDigest.groupOf ro : F) < ZMod.val (n : F) := hlt_iff.mp rfl
         rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn_lt (by decide))] at hlt_val
-        have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
+        have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
         have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by
           rw [hlim] at hm
           injection hm with hnm
@@ -206,11 +206,11 @@ private theorem role_of_roles_step (c : Ctx) {args h r h' calls}
           (by rw [hc285]; roles_lt_calls) ev248 ap v250 (.field 0) rfl a ha (IndexEntry c.t) hIdx
       rcases hlookup with hr0 | ⟨ro, hr, haddr⟩
       · exact .inl hr0
-      · have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
+      · have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
         have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
         exact .inr ⟨ro, hr, haddr, hinForce⟩
 
-private theorem role_is_roles_step (c : Ctx) (hwf : c.t.wf = true) {args h r h' calls}
+private theorem role_is_roles_step (c : ScopedCtx) (hwf : c.t.wf = true) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_is" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_is c args h r h' calls := by
   intro rc ap a ro hargs good hrc ha hr_ne
@@ -221,7 +221,7 @@ private theorem role_is_roles_step (c : Ctx) (hwf : c.t.wf = true) {args h r h' 
   | other _ _ _ _ _ _ _ _ _ he102 _ _ =>
     exact absurd he102 hr_ne
   | n0_other x10 y11 m12 cs21 v53 m54 cs65 ev23 op47 op17 ev67 hne91 _ _ hc97 =>
-    have good1 : Good c cs21 := good.sub (by rw [hc97]; intro x hx; simp [hx])
+    have good1 : CoreGood c cs21 := good.sub (by rw [hc97]; intro x hx; simp [hx])
     have hidx :=
       ih.get .role_index_of (by rw [hc97]; roles_lt_calls) ev23
         rc ap a rfl good1 hrc ha
@@ -235,7 +235,7 @@ private theorem role_is_roles_step (c : Ctx) (hwf : c.t.wf = true) {args h r h' 
       · obtain rfl := RolesAux.roleNum_add_one_inj (Value.field.inj (hx10.symm.trans hxr))
         exact haddr₁
     have ext1 : Heap.Extends h m12 := ev23.heap_extends
-    have good2 : Good c cs65 := good.sub (by rw [hc97]; intro x hx; simp [hx])
+    have good2 : CoreGood c cs65 := good.sub (by rw [hc97]; intro x hx; simp [hx])
     have hof :=
       ih.get .role_of (by rw [hc97]; roles_lt_calls) ev67
         rc ap a rfl good2 (hrc.mono ext1) (Bytes.repAddressRef_heapMono₂ addrTy ext1 ha)
@@ -248,7 +248,7 @@ private theorem role_is_roles_step (c : Ctx) (hwf : c.t.wf = true) {args h r h' 
       subst hro
       exact ⟨haddr, hinForce₂⟩
 
-private theorem role_addr_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_addr_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_addr" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_addr c args h r h' calls := by
   intro rc ro hargs good hrc
@@ -269,7 +269,7 @@ private theorem role_addr_roles_step (c : Ctx) {args h r h' calls}
       obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev60
       have hlt_val : ZMod.val (Ix.SpecDigest.groupOf ro : F) < ZMod.val (n : F) := hlt_iff.mp rfl
       rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn_lt (by decide))] at hlt_val
-      have good_ba : Good c cs108 := good.sub (by rw [hc173]; intro x hx; simp [hx])
+      have good_ba : CoreGood c cs108 := good.sub (by rw [hc173]; intro x hx; simp [hx])
       obtain ⟨a, ha_m98, haddr⟩ :=
         ih.get .role_bound_addr (by rw [hc173]; roles_lt_calls) ev110
           tbl ro rfl good_ba htbl
@@ -277,7 +277,7 @@ private theorem role_addr_roles_step (c : Ctx) {args h r h' calls}
         rw [he172]
         exact ev161.heap_extends.trans ev140.heap_extends
       subst he171
-      have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
+      have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
       have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by
         rw [hlim] at hm
         injection hm with hnm
@@ -292,27 +292,27 @@ private theorem role_addr_roles_step (c : Ctx) {args h r h' calls}
       injection hv with _ _ hxs
       injection hxs with hxt
       subst hxt
-      have good_ba : Good c cs195 := good.sub (by rw [hc214]; intro x hx; simp [hx])
+      have good_ba : CoreGood c cs195 := good.sub (by rw [hc214]; intro x hx; simp [hx])
       obtain ⟨a, ha_h', haddr⟩ :=
         ih.get .role_bound_addr (by rw [hc214]; roles_lt_calls) ev197
           tbl ro rfl good_ba htbl
-      have hbinds : c.binds ro := by simp [Ctx.binds, haddr]
+      have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
       have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
       exact ⟨a, ha_h', haddr, hinForce⟩
 
-private theorem role_used_implicitly_roles_step (c : Ctx) {args h r h' calls}
+private theorem role_used_implicitly_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_used_implicitly" args h r h' calls) (ih : RolesIH c calls) :
     Specs.Roles.role_used_implicitly c args h r h' calls := by
   intro rc ro hargs good hrc
   subst hargs
   obtain ⟨v1, m2, cs12, v31, m32, cs42, ev14, ev44, rfl, rfl, hc64⟩ :=
     Obs.«KernelRoles::role_used_implicitly».obs ev
-  have good1 : Good c cs12 := good.sub (by rw [hc64]; intro x hx; simp [hx])
+  have good1 : CoreGood c cs12 := good.sub (by rw [hc64]; intro x hx; simp [hx])
   obtain ⟨a, ha_m2, haddr, hinForce⟩ :=
     ih.get .role_addr (by rw [hc64]; roles_lt_calls) ev14 rc ro rfl good1 hrc
   exact ⟨a, Bytes.repAddressRef_heapMono₂ addrTy ev44.heap_extends ha_m2, haddr, hinForce⟩
 
-private theorem roles_only_step (c : Ctx) (hwf : c.t.wf = true) :
+private theorem roles_only_step (c : ScopedCtx) (hwf : c.t.wf = true) :
     ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W f.name args h r h' cs → RolesIH c cs →
       f.spec c args h r h' cs
@@ -353,7 +353,7 @@ private theorem roles_only_step (c : Ctx) (hwf : c.t.wf = true) :
 end Steps
 
 /-- **Every function in `Specs.Roles.Fn` meets its spec** whenever `c.t.wf = true`. -/
-theorem roles_fn_spec (c : Ctx) (hwf : c.t.wf = true) :
+theorem roles_fn_spec (c : ScopedCtx) (hwf : c.t.wf = true) :
     ∀ (f : Specs.Roles.Fn) (args : List (SourceValue F)) (h : Heap F)
       (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
       ObsFn W f.name args h r h' calls → f.spec c args h r h' calls := by

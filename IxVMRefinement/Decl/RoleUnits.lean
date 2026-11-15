@@ -119,4 +119,18 @@ theorem checkUnits_thmToOpaqueDefn (ds : Array (Declaration .anon)) :
   simp only [List.map_nil] at h
   rw [h, checkUnitsGo_refDecl]
 
+
+/-- Reference theorem storage preserves the actual unit decomposition. -/
+theorem unitsOf_thmToOpaqueDefn (ds : List (Declaration .anon)) :
+    unitsOf (ds.map IxVM.Refinement.thmToOpaqueDefn) =
+      (unitsOf ds).map (List.map IxVM.Refinement.thmToOpaqueDefn) := by
+  exact unitsGo_refDecl ds []
+
+/-- Reference theorem storage preserves each unit's generated prefix and closer. -/
+theorem unitSplit_thmToOpaqueDefn (ds : List (Declaration .anon)) :
+    unitSplit (ds.map IxVM.Refinement.thmToOpaqueDefn) =
+      (unitSplit ds).map (fun pair =>
+        (pair.1.map IxVM.Refinement.thmToOpaqueDefn, IxVM.Refinement.thmToOpaqueDefn pair.2)) :=
+  unitSplit_refDecl ds
+
 end IxVM.Refinement.Decl

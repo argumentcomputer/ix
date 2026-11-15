@@ -38,26 +38,26 @@ def LitRep (h : Heap F) (ld : LitData) (v : SourceValue F) : Prop :=
 (`bmeta`: the binder data agree, as `DefEq.lam`/`forallE`/`eta` and inference's datum checks
 require). Exact: IxVM's zero sets are sorted without repetition, as the datum's canonical form. -/
 def pw_eq : SpecFn := fun c args h r h' calls =>
-  ∀ a b, args = [a, b] → Good c calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+  ∀ a b, args = [a, b] → CoreGood c calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
     r = .field (if la.zeronessOf = lb.zeronessOf then 1 else 0) ∧ Heap.Extends h h'
 
 /-- `KernelLevels::literal_eq(a, b)`: **whether the two literals hold the same data** (a limb
 list is compared limb by limb, so two limb lists of one value with different lengths answer
 `0`; equal data read as the same kernel literal, `DefEq.refl`). Reads only. -/
 def literal_eq : SpecFn := fun c args h r h' calls =>
-  ∀ a b, args = [a, b] → Good c calls → ∀ la lb, LitRep h la a → LitRep h lb b →
+  ∀ a b, args = [a, b] → CoreGood c calls → ∀ la lb, LitRep h la a → LitRep h lb b →
     r = .field (if la = lb then 1 else 0) ∧ h' = h
 
 /-- `KernelLevels::klimbs_eq(a, b)`: **whether the two limb lists are equal** (so their values
 are). Reads only. -/
 def klimbs_eq : SpecFn := fun c args h r h' calls =>
-  ∀ a b, args = [a, b] → Good c calls → ∀ la lb, RepList limbListEnum RepU64 h la a →
+  ∀ a b, args = [a, b] → CoreGood c calls → ∀ la lb, RepList limbListEnum RepU64 h la a →
     RepList limbListEnum RepU64 h lb b → r = .field (if la = lb then 1 else 0) ∧ h' = h
 
 /-- `KernelLevels::bytestream_eq(a, b)`: **whether the two byte strings are equal**. Reads
 only. -/
 def bytestream_eq : SpecFn := fun c args h r h' calls =>
-  ∀ a b, args = [a, b] → Good c calls → ∀ xs ys, RepBytes h xs a → RepBytes h ys b →
+  ∀ a b, args = [a, b] → CoreGood c calls → ∀ xs ys, RepBytes h xs a → RepBytes h ys b →
     r = .field (if xs = ys then 1 else 0) ∧ h' = h
 
 /-! ## The family -/

@@ -23,7 +23,7 @@ open Ix.Kernel.Rules (Red DefEq Infer)
 set_option linter.unusedVariables false
 
 /-- `KernelInfer::k_infer_app_spine_loop`: `Infer.app` once per argument. -/
-theorem k_infer_app_spine_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_infer_app_spine_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_app_spine_loop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_app_spine_loop c args h r h' calls := by
