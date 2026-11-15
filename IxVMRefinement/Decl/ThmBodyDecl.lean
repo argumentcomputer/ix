@@ -37,19 +37,22 @@ theorem natOpGuard (c : Key md) : Ix.Kernel.natOpGuard source c = Ix.Kernel.natO
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
       | _ => false) = (fun n => match target.find? n with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
-      | _ => false) := funext fun n => h.observe n _ (by intros; rfl)
+      | _ => false) := funext fun n => h.observe n
+    (fun (q : Option (ConstantInfo md)) => match q with
+      | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
+      | _ => false) (by intros; rfl)
   simp only [Ix.Kernel.natOpGuard, h.natLitSupported, deps]
   rw [h.observe boolTrueName
-    (fun q => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
+    (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
     (by intros; rfl), h.observe boolFalseName
-    (fun q => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
+    (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
     (by intros; rfl)]
 
 theorem natOpCod (c : Key md) (e : Expr md) :
     Ix.Kernel.natOpCod source c e = Ix.Kernel.natOpCod target c e := by
   unfold Ix.Kernel.natOpCod
   rw [h.observe boolName
-    (fun q => match q with
+    (fun (q : Option (ConstantInfo md)) => match q with
       | some ci => ci.toConstantVal.levelParams.isEmpty &&
           ci.toConstantVal.type == .sort (.succ .zero)
       | none => false) (by intros; rfl)]
@@ -62,10 +65,10 @@ theorem natOpTyPinned (c : Key md) (ty : Expr md) :
 theorem natOpStoredOk (n : Key md) :
     Ix.Kernel.natOpStoredOk source n = Ix.Kernel.natOpStoredOk target n := by
   apply h.inspect n
-    (fun q => match q with
+    (fun (q : Option (ConstantInfo md)) => match q with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty && Ix.Kernel.natOpTyPinned source n cv.type
       | _ => false)
-    (fun q => match q with
+    (fun (q : Option (ConstantInfo md)) => match q with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty && Ix.Kernel.natOpTyPinned target n cv.type
       | _ => false)
   · intro q
@@ -77,12 +80,12 @@ theorem natOpStoredOk (n : Key md) :
 theorem divModEnvGuard (c : Key md) :
     Ix.Kernel.divModEnvGuard source c = Ix.Kernel.divModEnvGuard target c := by
   simp only [Ix.Kernel.divModEnvGuard, h.natOpGuard, funext h.natOpStoredOk]
-  rw [h.observe eqName (fun q => q == some eqA) (by intros; rfl),
+  rw [h.observe eqName (fun (q : Option (ConstantInfo md)) => q == some eqA) (by intros; rfl),
     h.observe boolTrueName
-      (fun q => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
+      (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
       (by intros; rfl),
     h.observe boolFalseName
-      (fun q => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
+      (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
       (by intros; rfl)]
 
 theorem divModCertGuard (c : Key md) (value : Expr md) (hyps : List (Expr md))
@@ -107,35 +110,37 @@ theorem checkDivModCerts (mode : CheckMode) (fuel : Nat) (c : Key md) (value : E
     | nil => rfl
     | cons proof proofs =>
       cases stmt
+      have restEq := ih proofs
+      dsimp only [fueledOps] at restEq
       simp only [Ix.Kernel.checkDivModCerts, fueledOps, h.divModCertGuard,
-        h.annotateCore, h.inferTypeCore, h.isDefEqCore, ih]
+        h.annotateCore, h.inferTypeCore, h.isDefEqCore, restEq]
 
 theorem stdAxiomOk (cv : ConstantVal md) :
     Ix.Kernel.stdAxiomOk source cv = Ix.Kernel.stdAxiomOk target cv := by
   unfold Ix.Kernel.stdAxiomOk
-  rw [h.observe eqName (fun q => decide (q = some eqA)) (by intros; rfl),
+  rw [h.observe eqName (fun (q : Option (ConstantInfo md)) => decide (q = some eqA)) (by intros; rfl),
     h.observe iffName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.indInfo cvI _) => ConstantVal.matchesPin cvI iffA.toConstantVal
         | _ => false) (by intros; rfl),
     h.observe iffIntroName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.ctorInfo cvI 2 2) => ConstantVal.matchesPin cvI iffIntroA.toConstantVal
         | _ => false) (by intros; rfl),
     h.observe iffRecName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.recInfo cvI 4 4 _) => ConstantVal.matchesPin cvI iffRecA.toConstantVal
         | _ => false) (by intros; rfl),
     h.observe nonemptyName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.indInfo cvN _) => ConstantVal.matchesPin cvN nonemptyA.toConstantVal
         | _ => false) (by intros; rfl),
     h.observe nonemptyIntroName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.ctorInfo cvN 1 1) => ConstantVal.matchesPin cvN nonemptyIntroA.toConstantVal
         | _ => false) (by intros; rfl),
     h.observe nonemptyRecName
-      (fun q => match q with
+      (fun (q : Option (ConstantInfo md)) => match q with
         | some (.recInfo cvN 3 3 _) => ConstantVal.matchesPin cvN nonemptyRecA.toConstantVal
         | _ => false) (by intros; rfl)]
 
@@ -151,14 +156,17 @@ theorem declDefnRun {mode : CheckMode} {fuel : Nat} {cv : ConstantVal md}
   · intro hn
     obtain ⟨guard, deps, eqns⟩ := hnat hn
     refine ⟨?_, ?_, ?_⟩
-    · simpa only [(h.cons ci).natOpGuard] using guard
-    · simpa only [funext (h.cons ci).natOpStoredOk] using deps
+    · rw [← (h.cons ci).natOpGuard]
+      exact guard
+    · rw [← funext (h.cons ci).natOpStoredOk]
+      exact deps
     · intro eq mem
       simpa only [h.isDefEqCore] using eqns eq mem
   · intro hd
     obtain ⟨guard, proofs, guarded, checked⟩ := hdiv hd
     refine ⟨?_, proofs, ?_, ?_⟩
-    · simpa only [(h.cons ci).divModEnvGuard] using guard
+    · rw [← (h.cons ci).divModEnvGuard]
+      exact guard
     · simpa only [h.divModCertsGuard] using guarded
     · simpa only [h.checkDivModCerts] using checked
 

@@ -33,7 +33,7 @@ theorem recRuleKOf (ctor : Key md) :
         cases cv.type.piResult.getAppFn with
         | const T levels =>
           exact h.observe T
-            (fun q => match q with | some (.indInfo _ caps) => caps.ruleK && nF == 0 | _ => false)
+            (fun (q : Option (ConstantInfo md)) => match q with | some (.indInfo _ caps) => caps.ruleK && nF == 0 | _ => false)
             (by intros; rfl)
         | _ => rfl
       | _ => rfl
@@ -57,7 +57,7 @@ theorem recRuleEtaOf (recName ctor : Key md) :
         cases cv.type.piResult.getAppFn with
         | const T levels =>
           exact h.observe T
-            (fun q => match q with
+            (fun (q : Option (ConstantInfo md)) => match q with
               | some (.indInfo cvT caps) =>
                 caps.eta && caps.etaCtor == some ctor && !Key.isProjFnShape recName &&
                   cv.levelParams == cvT.levelParams
