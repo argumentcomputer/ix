@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.RolePreludeBridge
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Assembly.RecordReadBare
+import IxVMRefinement.Assembly.ConstructorHashes
 import IxVMRefinement.Obs.KernelCheck11
 import IxC.Kernel.Verify.Frontend.Prepare
 import IxC.Ixon.Verify.ConstantBounds
@@ -499,11 +500,11 @@ theorem check_modeled_ctors_cidx
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
             (e_all.trans ev_hash.heap_extends) hbp) ev504
 
-/-- **Unconditional constructor index consistency**: on any safe walked mutual inductive block in
-an exact-decoded collision-free store `E₀`, `ct.cidx.toNat = j` for `ind.ctors[j]? = some ct`.
+/-- Constructor indices and exact projection hashes on a safe walked mutual inductive block in
+an exact-decoded collision-free store `E₀`.
 (`ProjSafe.SafeRefsInputs.indBlockCtorIdx` omits `L1.EnvDecoded E₀` and `¬ V.HashedCollision`,
 both of which are in context at its sole call site in `RecordReadBare`.) -/
-theorem indBlockCtorIdx_of_exact_noCollision
+theorem indBlockCtorIdx_and_hashed_of_exact_noCollision
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
     {blk : _root_.Address} {cb : Ixon.Constant}
@@ -518,7 +519,8 @@ theorem indBlockCtorIdx_of_exact_noCollision
     (hcb : cb.info = .muts ms)
     (hms_i : ms[i]? = some (.indc ind))
     (hct_j : ind.ctors[j]? = some ct) :
-    ct.cidx.toNat = j := by
+    ct.cidx.toNat = j ∧ Hashed calls
+      (Ixon.serConstant (IxVM.Consistency.constructorProjection blk i j)) := by
   obtain ⟨cb₀, hrec₀, hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked blk hwk
   have hcb_eq₀ : cb₀ = cb := Option.some.inj (hrec₀.symm.trans hrec_blk)
   subst cb₀
@@ -621,10 +623,15 @@ theorem indBlockCtorIdx_of_exact_noCollision
         e_to_1492.trans (e_50.trans (ev14_sh.heap_extends.trans ev75_sh.heap_extends))
       have hsub_ctors : ∀ cl ∈ cs135, cl ∈ calls := fun cl hcl =>
         hsub_sh cl (by rw [hc225]; simp [hcl])
-      exact check_inductive_shape_ctors_cidx hbound hload₀ hexact₀ hnoCol
+      have hbp := Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_63 hbp_m
+      refine ⟨check_inductive_shape_ctors_cidx hbound hload₀ hexact₀ hnoCol
         hrec_blk hcb hms_i hct_j hi_lt hnc_lt hb_eq
-        ind.ctors.size 0 (by omega) (Nat.zero_le _) hsub_ctors
-        (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_63 hbp_m) ev137
+        ind.ctors.size 0 (by omega) (Nat.zero_le _) hsub_ctors hbp ev137, ?_⟩
+      have hashed := native_constructor_hashed
+        (Core.ScopedCtx.unrestricted ⟨E₀, .empty, t, none⟩) hnc_lt hi_lt
+        (Array.getElem?_eq_some_iff.mp hct_j).1 ind.ctors.size 0
+        (by omega) (Nat.zero_le _) hbp ev137
+      simpa only [hb_eq] using Core.hashed_mono hsub_ctors hashed
   | .Induct_other_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
       (x_ind_block := xblk) (x_ind_idx := xidx)
@@ -655,10 +662,56 @@ theorem indBlockCtorIdx_of_exact_noCollision
               (ev_fa.heap_extends.trans (e_1736.trans ev_rsl.heap_extends)))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ calls := fun cl hcl =>
       hsub_chk cl (by rw [hc]; simp [hcl])
-    exact check_modeled_ctors_cidx hbound hload₀ hexact₀ hnoCol
+    have hbp := Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_1688 hbp_m
+    refine ⟨check_modeled_ctors_cidx hbound hload₀ hexact₀ hnoCol
       hrec_blk hcb hms_i hct_j hi_lt hnc_lt hb_eq
-      ind.ctors.size 0 (by omega) (Nat.zero_le _) hsub_mc
-      (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_1688 hbp_m) ev_mc
+      ind.ctors.size 0 (by omega) (Nat.zero_le _) hsub_mc hbp ev_mc, ?_⟩
+    have hashed := modeled_constructor_hashed
+      (Core.ScopedCtx.unrestricted ⟨E₀, .empty, t, none⟩) hnc_lt hi_lt
+      (Array.getElem?_eq_some_iff.mp hct_j).1 ind.ctors.size 0
+      (by omega) (Nat.zero_le _) hbp ev_mc
+    simpa only [hb_eq] using Core.hashed_mono hsub_mc hashed
+
+/-- Every constructor index in a safe walked block agrees with its array position. -/
+theorem indBlockCtorIdx_of_exact_noCollision
+    {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {blk : _root_.Address} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst} {i j : Nat} {ind : Ixon.Inductive} {ct : Ixon.Constructor}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hwk : WkAll calls bAddr t E₀ blk)
+    (hsafe : ¬ IxVM.Consistency.OutsideLogicAt E₀ blk)
+    (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
+    (hcb : cb.info = .muts ms)
+    (hms_i : ms[i]? = some (.indc ind))
+    (hct_j : ind.ctors[j]? = some ct) :
+    ct.cidx.toNat = j :=
+  (indBlockCtorIdx_and_hashed_of_exact_noCollision hbound hload₀ hexact₀ hnoCol
+    hwk hsafe hrec_blk hcb hms_i hct_j).1
+
+/-- Every constructor of a safe walked block contributes its exact projection bytes to the
+actual trace, whether or not an expression or recursor mentions that constructor. -/
+theorem indBlockCtor_hashed_of_exact_noCollision
+    {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {blk : _root_.Address} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst} {i j : Nat} {ind : Ixon.Inductive} {ct : Ixon.Constructor}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hwk : WkAll calls bAddr t E₀ blk)
+    (hsafe : ¬ IxVM.Consistency.OutsideLogicAt E₀ blk)
+    (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
+    (hcb : cb.info = .muts ms)
+    (hms_i : ms[i]? = some (.indc ind))
+    (hct_j : ind.ctors[j]? = some ct) :
+    Hashed calls (Ixon.serConstant (IxVM.Consistency.constructorProjection blk i j)) :=
+  (indBlockCtorIdx_and_hashed_of_exact_noCollision hbound hload₀ hexact₀ hnoCol
+    hwk hsafe hrec_blk hcb hms_i hct_j).2
 
 /-! ## Section 2: `KernelCheck::safe_refs_only` Unconditional Theorems -/
 
