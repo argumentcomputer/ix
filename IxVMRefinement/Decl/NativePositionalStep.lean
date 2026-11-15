@@ -67,7 +67,7 @@ theorem DeclInv.step_nativePos {V : Type u} [SetTheory V]
 /-- The actual native observations yield an invariant-preserving install without an extra
 universe-renaming premise. Raw load and constructor-use evidence remains in `NativeWithRecData`. -/
 theorem nativeWithRec_declInv_step_pos
-    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core Core.S₀)
     {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {env : Env .anon}
     {block : List KConstantInfo} {nP : Nat} {parts : NativeParts .anon}
     (hpin : basisPinHit block = none) (hparts : nativeParts? nP block = some parts)
