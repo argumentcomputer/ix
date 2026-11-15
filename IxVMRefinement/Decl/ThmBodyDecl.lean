@@ -11,6 +11,12 @@ namespace IxVM.Refinement.Decl.ThmBodyView.Agrees
 
 open Ix.Kernel Ix.Kernel.Semantics
 
+private theorem and_eq_of_eq {a b c d : Bool} (hab : a = b) (hcd : c = d) :
+    (a && c) = (b && d) := by
+  cases hab
+  cases hcd
+  rfl
+
 variable {md : Mode} {source target : Env md} (h : Agrees source target)
 
 include h
@@ -38,25 +44,32 @@ theorem natOpGuard (c : Key md) : Ix.Kernel.natOpGuard source c = Ix.Kernel.natO
       | _ => false) = (fun n => match target.find? n with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
       | _ => false) := funext fun n => h.observe n (α := Bool)
-    (fun (q : Option (ConstantInfo md)) => match q with
+    (fun q => match q with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
       | _ => false) (by intros; rfl)
-  simp only [Ix.Kernel.natOpGuard, h.natLitSupported]
-  rw [deps]
-  rw [h.observe boolTrueName (α := Bool)
-    (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
-    (by intros; rfl), h.observe boolFalseName (α := Bool)
-    (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
-    (by intros; rfl)]
+  unfold Ix.Kernel.natOpGuard
+  refine and_eq_of_eq (and_eq_of_eq h.natLitSupported
+    (congrArg (List.all (natOpDeps c)) deps)) ?_
+  split
+  · exact and_eq_of_eq
+      (h.observe boolTrueName (α := Bool)
+        (fun q => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
+        (by intros; rfl))
+      (h.observe boolFalseName (α := Bool)
+        (fun q => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
+        (by intros; rfl))
+  · rfl
 
 theorem natOpCod (c : Key md) (e : Expr md) :
     Ix.Kernel.natOpCod source c e = Ix.Kernel.natOpCod target c e := by
   unfold Ix.Kernel.natOpCod
-  rw [h.observe boolName (α := Bool)
-    (fun (q : Option (ConstantInfo md)) => match q with
-      | some ci => ci.toConstantVal.levelParams.isEmpty &&
-          ci.toConstantVal.type == .sort (.succ .zero)
-      | none => false) (by intros; rfl)]
+  split
+  · exact and_eq_of_eq rfl (h.observe boolName (α := Bool)
+      (fun q => match q with
+        | some ci => ci.toConstantVal.levelParams.isEmpty &&
+            ci.toConstantVal.type == .sort (.succ .zero)
+        | none => false) (by intros; rfl))
+  · rfl
 
 theorem natOpTyPinned (c : Key md) (ty : Expr md) :
     Ix.Kernel.natOpTyPinned source c ty = Ix.Kernel.natOpTyPinned target c ty := by
@@ -80,14 +93,17 @@ theorem natOpStoredOk (n : Key md) :
 
 theorem divModEnvGuard (c : Key md) :
     Ix.Kernel.divModEnvGuard source c = Ix.Kernel.divModEnvGuard target c := by
-  simp only [Ix.Kernel.divModEnvGuard, h.natOpGuard, funext h.natOpStoredOk]
-  rw [h.observe eqName (α := Bool) (fun (q : Option (ConstantInfo md)) => q == some eqA) (by intros; rfl),
-    h.observe boolTrueName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
-      (by intros; rfl),
-    h.observe boolFalseName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
-      (by intros; rfl)]
+  unfold Ix.Kernel.divModEnvGuard
+  exact and_eq_of_eq (and_eq_of_eq
+    (and_eq_of_eq (and_eq_of_eq (h.natOpGuard c)
+      (congrArg (List.all (natOpDeps c)) (funext h.natOpStoredOk)))
+      (h.observe eqName (α := Bool) (fun q => q == some eqA) (by intros; rfl)))
+    (h.observe boolTrueName (α := Bool)
+      (fun q => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
+      (by intros; rfl)))
+    (h.observe boolFalseName (α := Bool)
+      (fun q => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
+      (by intros; rfl))
 
 theorem divModCertGuard (c : Key md) (value : Expr md) (hyps : List (Expr md))
     (eqE proof : Expr md) :
@@ -119,31 +135,37 @@ theorem checkDivModCerts (mode : CheckMode) (fuel : Nat) (c : Key md) (value : E
 theorem stdAxiomOk (cv : ConstantVal md) :
     Ix.Kernel.stdAxiomOk source cv = Ix.Kernel.stdAxiomOk target cv := by
   unfold Ix.Kernel.stdAxiomOk
-  rw [h.observe eqName (α := Bool) (fun (q : Option (ConstantInfo md)) => decide (q = some eqA)) (by intros; rfl),
-    h.observe iffName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.indInfo cvI _) => ConstantVal.matchesPin cvI iffA.toConstantVal
-        | _ => false) (by intros; rfl),
-    h.observe iffIntroName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.ctorInfo cvI 2 2) => ConstantVal.matchesPin cvI iffIntroA.toConstantVal
-        | _ => false) (by intros; rfl),
-    h.observe iffRecName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.recInfo cvI 4 4 _) => ConstantVal.matchesPin cvI iffRecA.toConstantVal
-        | _ => false) (by intros; rfl),
-    h.observe nonemptyName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.indInfo cvN _) => ConstantVal.matchesPin cvN nonemptyA.toConstantVal
-        | _ => false) (by intros; rfl),
-    h.observe nonemptyIntroName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.ctorInfo cvN 1 1) => ConstantVal.matchesPin cvN nonemptyIntroA.toConstantVal
-        | _ => false) (by intros; rfl),
-    h.observe nonemptyRecName (α := Bool)
-      (fun (q : Option (ConstantInfo md)) => match q with
-        | some (.recInfo cvN 3 3 _) => ConstantVal.matchesPin cvN nonemptyRecA.toConstantVal
-        | _ => false) (by intros; rfl)]
+  split
+  · exact and_eq_of_eq (and_eq_of_eq (and_eq_of_eq
+      (and_eq_of_eq
+        (h.observe eqName (α := Bool) (fun q => decide (q = some eqA)) (by intros; rfl))
+        (h.observe iffName (α := Bool)
+          (fun q => match q with
+            | some (.indInfo cvI _) => ConstantVal.matchesPin cvI iffA.toConstantVal
+            | _ => false) (by intros; rfl)))
+      (h.observe iffIntroName (α := Bool)
+        (fun q => match q with
+          | some (.ctorInfo cvI 2 2) => ConstantVal.matchesPin cvI iffIntroA.toConstantVal
+          | _ => false) (by intros; rfl)))
+      (h.observe iffRecName (α := Bool)
+        (fun q => match q with
+          | some (.recInfo cvI 4 4 _) => ConstantVal.matchesPin cvI iffRecA.toConstantVal
+          | _ => false) (by intros; rfl))) rfl
+  · split
+    · exact and_eq_of_eq (and_eq_of_eq (and_eq_of_eq
+        (h.observe nonemptyName (α := Bool)
+          (fun q => match q with
+            | some (.indInfo cvN _) => ConstantVal.matchesPin cvN nonemptyA.toConstantVal
+            | _ => false) (by intros; rfl))
+        (h.observe nonemptyIntroName (α := Bool)
+          (fun q => match q with
+            | some (.ctorInfo cvN 1 1) => ConstantVal.matchesPin cvN nonemptyIntroA.toConstantVal
+            | _ => false) (by intros; rfl)))
+        (h.observe nonemptyRecName (α := Bool)
+          (fun q => match q with
+            | some (.recInfo cvN 3 3 _) => ConstantVal.matchesPin cvN nonemptyRecA.toConstantVal
+            | _ => false) (by intros; rfl))) rfl
+    · rfl
 
 /-- A successful definition run can be replayed with the same annotated type, value, and hint. -/
 theorem declDefnRun {mode : CheckMode} {fuel : Nat} {cv : ConstantVal md}
