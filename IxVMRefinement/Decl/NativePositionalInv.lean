@@ -2,6 +2,8 @@ import IxVMRefinement.Decl.NativePositional
 
 /-! # Structural inversions for positional native typing -/
 
+universe u
+
 namespace IxVM.Refinement.Decl
 
 open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
@@ -115,5 +117,18 @@ theorem judgeInv_nativePosRulesJ : JudgeInv nativePosRulesJ where
       have slots := infer_projSlots hi rfl (Expr.FvarTysOk.of_not_hasFvar _ hnfPos)
       exact Expr.ProjSlotsOk.noProjAt hslot e'
         ((projSlots_inst env ps (posLevels ps) e').mp slots)
+
+/-- The existing native model accepts the guarded positional certificates directly. -/
+theorem envModelT_step_nativePos {V : Type u} [SetTheory V]
+    {mode : CheckMode} {env after : Env .anon} {block : List (ConstantInfo .anon)}
+    {nP : Nat} {parts : NativeParts .anon}
+    (hparts : nativeParts? nP block = some parts)
+    (run : DeclNativeRunJ nativePosRulesJ env parts after)
+    (model : EnvModelT V mode env) : EnvModelT V mode after := by
+  obtain ⟨⟨m, hT⟩, hE⟩ := model
+  obtain ⟨m', hext⟩ := declNativeJ judgeFrames_nativePosRulesJ
+    (fun m => judgeSound_nativePosRulesJ_of m) judgeInv_nativePosRulesJ
+    (fun m φ => sortClaim_nativePosRulesJ_of m φ) m hE hparts run
+  exact ⟨⟨m', hT.of_ext (hext hT)⟩, declNativeRunJ_etaClosed hE run⟩
 
 end IxVM.Refinement.Decl
