@@ -30,8 +30,8 @@ noncomputable def admittedWalkOrder {V : IxVM.Refinement.View} {b : Admission.Bi
     (w : ReaderAdmissionWitness V b) (calls : List (Call F)) (trace : Ixon.Env)
     (seeds : _root_.Address → Prop) : List _root_.Address :=
   letI := Classical.propDecidable
-  let universe := (w.order ++ trace.consts.keys).eraseDups
-  let reachable := universe.filter fun a => decide (UsedCompiledReachAt w.table
+  let allKeys := (w.order ++ trace.consts.keys).eraseDups
+  let reachable := allKeys.filter fun a => decide (UsedCompiledReachAt w.table
     (admittedWalkEnv w calls trace) seeds a)
   reachable.mergeSort fun a b => decide (admittedWalkRank w calls trace a ≤ admittedWalkRank w calls trace b)
 
@@ -86,7 +86,8 @@ theorem admittedWalkOrder_spec {V : IxVM.Refinement.View} {b : Admission.Binding
   let Wk := WkAll calls b.address w.table trace
   let rank := rankAll calls b.address w.table trace
   let E := admittedWalkEnv w calls trace
-  have hclosed := wkAll_closedSubwalk calls b.address w.table trace
+  have hclosed : ClosedSubwalk calls b.address w.table trace Wk rank :=
+    wkAll_closedSubwalk calls b.address w.table trace
   have traceAt {a : _root_.Address} (ha : Wk a) {c : Ixon.Constant}
       (hc : Ix.Cert.recordAt E a = some c) : Ix.Cert.recordAt trace a = some c := by
     obtain ⟨c', htrace, _⟩ := hclosed.checked a ha
@@ -127,14 +128,15 @@ theorem admittedWalkOrder_spec {V : IxVM.Refinement.View} {b : Admission.Binding
   have rankBound {a : _root_.Address} (ha : Wk a) : rank a < (trace.consts.keys.map rank).sum + 1 := by
     obtain ⟨c, hc, _⟩ := hclosed.checked a ha
     have hkeys := Ix.Cert.Order.mem_keys_of_stored trace hc
-    have hsum := le_sum_of_mem (List.mem_map.mpr ⟨a, hkeys, rfl⟩)
+    have hsum : rank a ≤ (trace.consts.keys.map rank).sum :=
+      le_sum_of_mem (List.mem_map.mpr ⟨a, hkeys, rfl⟩)
     omega
   have rankDecreases {a target : _root_.Address} (href : IxVM.Consistency.UsedRecordRef E a target) :
       admittedWalkRank w calls trace target < admittedWalkRank w calls trace a := by
     obtain ⟨c, hc, i, hi, ref, href, cr, hcr, howner, hne⟩ := href
     have walkOwner (hr : Wk ref) : Wk target ∧ rank target ≤ rank ref := by
       by_cases heq : target = ref
-      · subst target; exact ⟨hr, Nat.le_refl _⟩
+      · rw [heq]; exact ⟨hr, Nat.le_refl _⟩
       · obtain ⟨ht, hlt⟩ := hclosed.step ref target hr
           ⟨cr, traceAt hr hcr, .inl ⟨howner, heq⟩⟩
         exact ⟨ht, Nat.le_of_lt hlt⟩
@@ -168,17 +170,17 @@ theorem admittedWalkOrder_spec {V : IxVM.Refinement.View} {b : Admission.Binding
         simp only [admittedWalkRank, show ¬ WkAll calls b.address w.table trace a from ha,
           show ¬ WkAll calls b.address w.table trace target from ht, ↓reduceIte]
         omega
-  let universe := (w.order ++ trace.consts.keys).eraseDups
-  let selected := universe.filter fun a => decide (UsedCompiledReachAt w.table E seeds a)
+  let allKeys := (w.order ++ trace.consts.keys).eraseDups
+  let selected := allKeys.filter fun a => decide (UsedCompiledReachAt w.table E seeds a)
   have hnd : selected.Nodup := List.nodup_eraseDups.filter _
   have members (a : _root_.Address) : a ∈ selected ↔ UsedCompiledReachAt w.table E seeds a := by
     simp only [selected, List.mem_filter, decide_eq_true_eq]
     refine ⟨And.right, fun ha => ⟨?_, ha⟩⟩
     rcases reachable ha with role | walked
-    · simp [universe, role]
+    · simp [allKeys, role]
     · obtain ⟨c, hc, _⟩ := hclosed.checked a walked
       have hk := Ix.Cert.Order.mem_keys_of_stored trace hc
-      simp [universe, hk]
+      simp [allKeys, hk]
   have perm := List.mergeSort_perm selected fun a b =>
     decide (admittedWalkRank w calls trace a ≤ admittedWalkRank w calls trace b)
   refine ⟨perm.nodup_iff.mpr hnd, fun a => perm.mem_iff.trans (members a), ?_⟩
