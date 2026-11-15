@@ -624,7 +624,14 @@ theorem readRecord_generated {cx : Ctx md} {st : State md} {owner : Address} {c 
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
-      · obtain ⟨_, _, hl⟩ := readInductive_lower h
+      · obtain ⟨rInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+        obtain ⟨gens, d, hd, hg, _⟩ := readInductive_lowering hInd
+        have hlenList : rInd.generated ≤ rInd.decls.toList.length := by
+          rw [hd, hg]
+          simp
+        have hlen : rInd.generated ≤ rInd.decls.size := by simpa using hlenList
+        rw [finishInductiveRead_take_generated hfinish hlen]
+        obtain ⟨_, _, hl⟩ := readInductive_lower hInd
         exact Ix.Cert.SourceNames.lowerInductive_generated hl
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
@@ -696,7 +703,8 @@ theorem roleKey_origin {cx : Ctx md} {st st' : State md} {records : List (Addres
   obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hl
   obtain ⟨x, -, st₀, hread⟩ := Ix.Cert.FallbackStore.forall₂_mem_right hall r hr
   have gen := readRecord_generated hread
-  rcases Ix.Cert.ReaderUnits.readRecord_lowering hread with ⟨-, hk⟩ | ⟨gens, d', hdecls, hg, hk⟩
+  rcases Ix.Cert.ReaderUnits.readRecord_lowering hread with
+    ⟨-, hk⟩ | ⟨gens, suffix, hdecls, hg, -, hk⟩
   · obtain ⟨ref, -, hm⟩ := hk d hdl _ hs
     exact memberKey_role hm
   · rw [hdecls] at hdl
@@ -706,9 +714,7 @@ theorem roleKey_origin {cx : Ctx md} {st st' : State md} {records : List (Addres
       unfold Declaration.isGenerated at hgd
       have := (List.all_eq_true.mp (Bool.and_eq_true_iff.mp hgd).2) _ hs
       cases this
-    · rw [List.mem_singleton] at hlast
-      subst hlast
-      obtain ⟨ref, -, hm⟩ := hk _ hs
+    · obtain ⟨ref, -, hm⟩ := hk d hlast _ hs
       exact memberKey_role hm
 
 end Origin

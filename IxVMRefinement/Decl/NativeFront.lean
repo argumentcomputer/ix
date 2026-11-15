@@ -2027,6 +2027,94 @@ theorem structDomsJ_and_noT_of_same_doms {env : Ix.Kernel.Env .anon} {T : KKey}
     rw [hdoms_eq p hp]
     exact mentionsConst_stripPis_false n hta_noT hstT p hp
 
+private theorem instOpen_erasedEq :
+    ∀ {vs ws : List KExpr}, List.Forall₂ Expr.ErasedEq vs ws →
+      ∀ {e e' : KExpr}, Expr.ErasedEq e e' → ∀ j,
+        Expr.ErasedEq (instOpen vs j e) (instOpen ws j e')
+  | [], [], .nil, _, _, he, _ => he
+  | _ :: _, _ :: _, .cons hv hs, _, _, he, j => by
+    simp only [instOpen]
+    rw [← hs.length_eq]
+    exact instOpen_erasedEq hs (Expr.ErasedEq.instantiate1 he hv) j
+
+private theorem instOpen_leaves :
+    ∀ (vs : List KExpr) (j : Nat) (e : KExpr) (l : Nat × KExpr),
+      l ∈ (instOpen vs j e).fvarLeaves →
+      l ∈ e.fvarLeaves ∨ ∃ v ∈ vs, l ∈ v.fvarLeaves
+  | [], _, _, _, hl => Or.inl hl
+  | v :: vs, j, e, l, hl => by
+    rcases instOpen_leaves vs j (e.instantiate1 v (j + vs.length)) l hl with h | h
+    · rcases Expr.fvarLeaves_instantiate1 e (j + vs.length) h with h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨v, List.mem_cons_self, h⟩
+    · obtain ⟨w, hw, hlw⟩ := h
+      exact Or.inr ⟨w, List.mem_cons_of_mem _ hw, hlw⟩
+
+/-- The comparison performed by parameter agreement differs from the constructor's own
+opened domain only in free-variable annotations, all drawn from earlier former variables. -/
+theorem StructDomsShared.toSharedPins {env : Ix.Kernel.Env .anon} {ta tb : KExpr} {n : Nat}
+    {tfvs cfvs : List KExpr} {trest crest tbody cbody : KExpr}
+    {tbs cbs : List (KExpr × Ix.Kernel.BinderMeta)}
+    (hshared : StructDomsShared env ta tb n)
+    (hopT : Ix.Kernel.openPisAtFvars n ta 0 = some (tfvs, trest))
+    (hopC : Ix.Kernel.openPisAtFvars n tb 0 = some (cfvs, crest))
+    (hstT : ta.stripPis n = some (tbs, tbody))
+    (hstC : tb.stripPis n = some (cbs, cbody))
+    (hclosed : tb.hasFvar = false) :
+    Ix.Kernel.Semantics.SharedStructDomsJ rulesJ env cfvs tfvs n := by
+  unfold Ix.Kernel.Semantics.SharedStructDomsJ
+  obtain ⟨sfvs, srest, hsop, hcomp⟩ := hshared
+  have hsOpen : (sfvs, srest) = (tfvs, trest) := Option.some.inj (hsop.symm.trans hopT)
+  obtain ⟨hsFvs, hsRest⟩ := Prod.mk.inj hsOpen
+  subst sfvs srest
+  have hlenC := openPisAtFvars_len n hopC
+  have hlenT := openPisAtFvars_len n hopT
+  have hlenCB := Expr.stripPis_length n hstC
+  have hlenTB := Expr.stripPis_length n hstT
+  have hcharC := (openPisAtFvars_eq_instOpen n hstC hopC).2.2
+  have hcharT := (openPisAtFvars_eq_instOpen n hstT hopT).2.2
+  intro i hi
+  obtain ⟨cbs', cbody', b, hsC, hb, hde⟩ := hcomp i hi
+  have hsBody : (cbs', cbody') = (cbs, cbody) := Option.some.inj (hsC.symm.trans hstC)
+  obtain ⟨hsBinders, hsResult⟩ := Prod.mk.inj hsBody
+  subst cbs' cbody'
+  have hiC : i < cfvs.length := by omega
+  have hiCB : i < cbs.length := by omega
+  have hgetCB : cbs[i]? = some (cbs.getD i default) := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hiCB]
+    rfl
+  have hprefix : List.Forall₂ Expr.ErasedEq (cfvs.take i) (tfvs.take i) := by
+    refine List.forall₂_iff_get.mpr ⟨?_, ?_⟩
+    · simp only [List.length_take, hlenC, hlenT]
+    · intro j hjC hjT
+      have hjn : j < n := by
+        have hbound : j < min i cfvs.length := by simpa only [List.length_take] using hjC
+        omega
+      have hjc : j < cfvs.length := by omega
+      have hjt : j < tfvs.length := by omega
+      have hjcb : j < cbs.length := by omega
+      have hjtb : j < tbs.length := by omega
+      have hcj := hcharC j cbs[j] cfvs[j] (List.getElem?_eq_getElem hjcb)
+        (List.getElem?_eq_getElem hjc)
+      have htj := hcharT j tbs[j] tfvs[j] (List.getElem?_eq_getElem hjtb)
+        (List.getElem?_eq_getElem hjt)
+      simp only [List.get_eq_getElem, List.getElem_take]
+      rw [hcj, htj]
+      rfl
+  refine ⟨cfvs[i], b, instOpen (tfvs.take i) 0 (cbs.getD i default).1,
+    List.getElem?_eq_getElem hiC, hb, ?_, hde.symm, ?_⟩
+  · rw [hcharC i (cbs.getD i default) cfvs[i] hgetCB (List.getElem?_eq_getElem hiC)]
+    exact instOpen_erasedEq hprefix (Expr.ErasedEq.rfl _) 0
+  · intro l hl
+    rcases instOpen_leaves (tfvs.take i) 0 (cbs.getD i default).1 l hl with h | h
+    · have hnf := (Ix.Kernel.stripPis_not_hasFvar n hstC hclosed).1
+        (cbs.getD i default) (List.mem_of_getElem? hgetCB)
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hnf] at h
+      exact nomatch h
+    · exact h
+
+
+
 private def isForallE : KExpr → Bool
   | .forallE _ _ _ => true
   | _ => false
@@ -3972,19 +4060,6 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
 structure NativeNoRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (p₀ : Ix.Kernel.NativeParts .anon) where
   witness : OneTypeBlockWitness calls env p₀
-  doms_bridge :
-    ∀ cA ∈ witness.ctorsA,
-      StructDomsShared ⟨.indInfo witness.cvTa₀ {} :: env.consts⟩
-        witness.cvTa₀.type cA.1.type p₀.nP →
-      ∀ fvsP crest tfvs trest cbs cbody tbs tbody,
-        Ix.Kernel.openPisAtFvars p₀.nP cA.1.type 0 = some (fvsP, crest) →
-        Ix.Kernel.openPisAtFvars p₀.nP witness.cvTa₀.type 0 = some (tfvs, trest) →
-        witness.cvTa₀.type.stripPis p₀.nP = some (tbs, tbody) →
-        cA.1.type.stripPis p₀.nP = some (cbs, cbody) →
-        (¬ ∀ i < p₀.nP, (cbs.getD i default).1 = (tbs.getD i default).1) →
-        StructDomsJ rulesJ ⟨.indInfo witness.cvTa₀ {} :: env.consts⟩
-          0 fvsP (tfvs.map Expr.fvarTypeD) p₀.nP ∧
-          (∀ p < p₀.nP, (cbs.getD p default).1.mentionsConst p₀.cvT.name = false)
   unused_later :
     ∀ cA ∈ witness.ctorsA, ∀ cbs body,
       cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
@@ -4047,32 +4122,6 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hidx_len, hxFvs_res, hidx_res, hfsorts₀⟩ :=
       hout.opened
     obtain ⟨cbsP, cbodyP, _, hst_c_P, _, _, _⟩ := stripPis_split p₀.nP c.2 hstrip_c
-    have hcbs_get_eq : ∀ i < p₀.nP, (cbsP.getD i default).1 = (cbs.getD i default).1 := by
-      obtain ⟨cbs₁, _, cbs₂, hstP₁, _, hcbs_app, hlen₁⟩ := stripPis_split p₀.nP c.2 hstrip_c
-      rw [hst_c_P] at hstP₁; injection hstP₁ with h1
-      simp only [Prod.mk.injEq] at h1
-      rcases h1 with ⟨rfl, _⟩
-      intro i hi
-      have hi₁ : i < cbsP.length := by omega
-      have hi₂ : i < cbs.length := by omega
-      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi₁,
-        List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi₂]
-      simp only [Option.getD_some]
-      have hq : cbs[i]? = cbsP[i]? := by
-        rw [← hcbs_app, List.getElem?_append_left hi₁]
-      rw [List.getElem?_eq_getElem hi₂, List.getElem?_eq_getElem hi₁, Option.some.injEq] at hq
-      exact congrArg Prod.fst hq.symm
-    have hdoms_and_noT :
-        StructDomsJ rulesJ envI₀ 0 fvsP (tfvsP.map Expr.fvarTypeD) p₀.nP ∧
-          (∀ p < p₀.nP, (cbs.getD p default).1.mentionsConst p₀.cvT.name = false) := by
-      by_cases hsame : ∀ i < p₀.nP, (cbsP.getD i default).1 = (tbs.getD i default).1
-      · obtain ⟨hdj, hnoT⟩ :=
-          structDomsJ_and_noT_of_same_doms hopP hopT_P hst_Ta₀_P hst_c_P fout.ta_noT hsame
-        exact ⟨hdj, fun p hp => by rw [← hcbs_get_eq p hp]; exact hnoT p hp⟩
-      · obtain ⟨hdj, hnoT⟩ :=
-          extra.doms_bridge cA hcA_mem hout.domsShared fvsP crest tfvsP trestP cbsP cbodyP
-            tbs tbody hopP hopT_P hst_Ta₀_P hst_c_P hsame
-        exact ⟨hdj, fun p hp => by rw [← hcbs_get_eq p hp]; exact hnoT p hp⟩
     have hfsorts :
         FieldSortsJ rulesJ envI₀ p₀.isProp false p₀.resSort p₀.nP xFvs idxArgs c.2 sorts := by
       rw [hisProp]
@@ -4083,7 +4132,9 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
       ⟨⟨cA.1, hout.cvCheck, Or.inl rfl⟩,
         ⟨cbs, es, hstrip_c, hes_len⟩,
         fvsP, crest, tfvsP, trestP, xFvs, idxArgs,
-        hopP, hopT_P, hdoms_and_noT.1, hopF, hidx_len, hxFvs_res, hidx_res, hfsorts⟩
+        hopP, hopT_P, Or.inr (hout.domsShared.toSharedPins hopT_P hopP hst_Ta₀_P hst_c_P
+          (annotates_hasFvar_false hout.stored.2.2 (w.fv_ctors c (List.mem_of_getElem? hc)))),
+        hopF, hidx_len, hxFvs_res, hidx_res, hfsorts⟩
     obtain ⟨sty_c, _, hinf_c, _⟩ := hout.inferSort
     have hfv_c : cA.1.type.hasFvar = false :=
       annotates_hasFvar_false hout.stored.2.2 (w.fv_ctors c (List.mem_of_getElem? hc))
@@ -4109,7 +4160,7 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     obtain ⟨ks, hrck, hks_len, hks_ok, hopen_ok⟩ :=
       recCtorKinds_and_nativeOpenedOk (ci := .indInfo w.cvTa₀ {})
         rfl w.valStored_T.1 hstrip_c' hes_len hes_noT hfv_c hres_c hlit_c
-        hdoms_and_noT.2 hpos_c' hunused_c
+        hpos_c' hunused_c
     exact ⟨hout.nF_eq, sorts, ks, hsorts, hsum_c, hrck, hks_len, hks_ok, hopen_ok⟩
   -- Build `kinds` list via `Fin w.ctorsA.length`
   have hk_ex : ∀ idx : Fin w.ctorsA.length, ∃ ks,

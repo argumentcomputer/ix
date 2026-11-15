@@ -1,6 +1,7 @@
 module
 
 import IxC.Kernel.Model.Inductives.StructCtorFrames
+import IxC.Kernel.Model.Inductives.SharedParams
 public import IxC.Kernel.Model.Inductives.SumIntro
 public import IxC.Kernel.Model.Inductives.SumRecRead
 public import IxC.Kernel.Verify.Inductives.SumInv
@@ -712,12 +713,17 @@ theorem ctorFramesGenJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
         (Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ idxArgs'))
         ((ds ψ).map (·.2.2)).reverse (ctorBodyAVI m T nP nF ψ (Es ψ)) :=
       opened_of_peel hopAll htf' hbt' (hCD.read ψ) (hCD.len ψ) (hCD.okTy ψ)
-    have hpf := paramFrames hJ hT hC (fun i hi => by
-      obtain ⟨a, b, ha, hb, hdeq⟩ := hpins i hi
-      rw [List.getElem?_map] at hb
-      obtain ⟨b', hb', rfl⟩ := Option.map_eq_some_iff.mp hb
-      exact ⟨a, b', by rw [List.getElem?_append_left (by omega)]; exact ha, hb',
-        by rw [Nat.zero_add] at hdeq; exact hdeq⟩)
+    have hpf := hpins.elim
+      (fun hown => paramFrames hJ hT hC (fun i hi => by
+        obtain ⟨a, b, ha, hb, hdeq⟩ := hown i hi
+        rw [List.getElem?_map] at hb
+        obtain ⟨b', hb', rfl⟩ := Option.map_eq_some_iff.mp hb
+        exact ⟨a, b', by rw [List.getElem?_append_left (by omega)]; exact ha, hb',
+          by rw [Nat.zero_add] at hdeq; exact hdeq⟩))
+      (fun hshared => paramFramesShared hJ hT hC (fun i hi => by
+        obtain ⟨a, b, a', ha, hb, heq, hde, hleaves⟩ := hshared i hi
+        exact ⟨a, b, a', by rw [List.getElem?_append_left (by omega)]; exact ha,
+          hb, heq, hde, hleaves⟩))
     have hlenDs := hCD.len ψ
     have hlenF : ((((ds ψ).drop nP).map (·.2.2))).length = nF := by simp [hlenDs]
     have hiff : ∀ ρ : Nat → V, Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔

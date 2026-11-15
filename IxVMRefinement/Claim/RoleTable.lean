@@ -101,8 +101,8 @@ theorem readerTable_admits {c : _root_.Ix.Claim} {V : View} {b : Ix.Kernel.Admis
     (hRT : IxVM.Consistency.ReaderTable c V b) :
     ∃ t : Ix.Kernel.RoleTable,
       Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t := by
-  obtain ⟨t, hadm, -, -⟩ := hRT.2
-  exact ⟨t, hadm⟩
+  obtain ⟨w⟩ := hRT.2
+  exact ⟨w.table, w.admitted⟩
 
 private theorem find_fst_of_mem_nodup {l : List (Ix.Kernel.Role × _root_.Address)}
     (hnd : (l.map (·.1)).Nodup) {ro : Ix.Kernel.Role} {a : _root_.Address}

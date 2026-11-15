@@ -1224,6 +1224,35 @@ theorem nat_rec_idx_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       · exact ⟨ebs₁, emid, hsE₁, hbvarF⟩
       · exact hunused_tl idx hmem_tl
 
+/-- An observed recursive-index scan supplies the unused-later condition directly for every
+field whose unopened domain mentions the former. This extraction precedes field classification. -/
+theorem nat_rec_idx_unused_later {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {T : KKey} {bT : Bytes.Address} {nP nIdx nF : Nat}
+    {Rcty Ecty rbody ebody : KExpr} {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
+    {pcty pt plps r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hT : κ (ixAddr bT) = T)
+    (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
+    (hnPF_lt : nP + nF < 2147483648)
+    (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
+    (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
+    (hnp_dom : ∀ i < nF, noProjAt T (ecbs.getD (nP + i) default).1 = true)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hcty : RawTm κ 0 Γ₀ h 0 Rcty Ecty pcty)
+    (ht : Bytes.RepAddressRef addrTy h bT pt)
+    (ev : ObsFn W "KernelCheck::nat_rec_idx"
+      [pcty, pt, plps, .field (nP : F), .field (nIdx : F), .field (nF : F), .field 0]
+      h r h' cs) :
+    ∀ i < nF, (ecbs.getD (nP + i) default).1.mentionsConst T = true →
+      Ix.Kernel.structUsedLater Ecty nP i = false := by
+  obtain ⟨_, hunused⟩ := nat_rec_idx_spec hT hκ_inj hnPF_lt hsR hsE hnp_dom
+    nF 0 (Nat.zero_add nF) hbnd hcty ht ev
+  intro i hi hmentions
+  have hmem : i ∈ recIdxFrom ecbs T nP nF 0 := by
+    rw [recIdxFrom_eq_filter_drop nF 0 (Nat.zero_add nF), List.drop_zero]
+    exact List.mem_filter.mpr ⟨List.mem_range.mpr hi, hmentions⟩
+  obtain ⟨bs, rest, hstrip, hfree⟩ := hunused i hmem
+  simp only [Ix.Kernel.structUsedLater, hstrip, Expr.hasLooseBVarB_eq, hfree]
+
 /-- Per-constructor `get_ci_cprj` load witness for native recursor checking (`nat_ctor`, `nat_minors`,
 `nat_rule_rhs`, `nat_check_rules`). Each entry `(C, nF, R₀, C₀, recIdx)` carries the constructor key,
 field count, raw constructor type `R₀`, annotated constructor type `C₀`, and recursive field indices. -/

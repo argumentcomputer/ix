@@ -3,6 +3,7 @@ import IxC.Kernel.Model.Inductives.StructRecKit2
 import IxC.Kernel.Model.Inductives.StructEntryFree
 import IxC.Kernel.Semantics.Inductives.DeclStructEta
 import IxC.Kernel.Verify.Rename.Native1
+import IxC.Kernel.Model.Inductives.Scope
 
 namespace IxVM.Refinement.Decl
 
@@ -1028,6 +1029,14 @@ theorem structDomsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
   obtain ⟨a, b, ha, hb, hde⟩ := hd i hi
   exact ⟨a, b, ha, hb, h.upgradeDefEq hde⟩
 
+theorem sharedStructDomsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
+    {fvs tfvs : List KExpr} {n : Nat}
+    (hd : Ix.Kernel.Semantics.SharedStructDomsJ rulesJ envₐ fvs tfvs n) :
+    Ix.Kernel.Semantics.SharedStructDomsJ rulesJ envᵦ fvs tfvs n := by
+  intro i hi
+  obtain ⟨a, b, a', ha, hb, heq, hde, hleaves⟩ := hd i hi
+  exact ⟨a, b, a', ha, hb, heq, h.upgradeDefEq hde, hleaves⟩
+
 theorem fieldSortsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
     {isProp large : Bool} {s : KLevel} {nP : Nat} {fvs idxArgs : List KExpr}
     {n : Nat} {sorts : List KLevel}
@@ -1047,7 +1056,8 @@ theorem sumCtorRunJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
     hopP, hopT, hdoms, hopF, hilen, hxres, hires, hfsorts⟩ := hc
   refine ⟨⟨cvCa₀, h.constantValCheckJ hc₀, ?_⟩, hres_sh,
     fvsP, crest, tfvs, trest, xFvs, idxArgs,
-    hopP, hopT, h.structDomsJ hdoms, hopF, hilen, ?_, ?_, h.fieldSortsJ hfsorts⟩
+    hopP, hopT, hdoms.elim (fun hd => Or.inl (h.structDomsJ hd))
+      (fun hd => Or.inr (h.sharedStructDomsJ hd)), hopF, hilen, ?_, ?_, h.fieldSortsJ hfsorts⟩
   · rcases halt with rfl | ⟨ty', hc'⟩
     · exact Or.inl rfl
     · exact Or.inr ⟨ty', h.constantValCheckJ hc'⟩
@@ -1344,6 +1354,61 @@ theorem OpenFreeAt.mentionsConst_instOpen {T : KKey} :
   | v :: vs, j, e, h => by
     obtain ⟨hmc, h'⟩ := h.step
     rw [instOpen, h'.mentionsConst_instOpen, hmc]
+
+private theorem eraseFvarTypes_instantiate1 (e v : KExpr) (d : Nat) :
+    (e.instantiate1 v d).eraseFvarTypes =
+      e.eraseFvarTypes.instantiate1 v.eraseFvarTypes d := by
+  induction e generalizing d with
+  | bvar i =>
+    by_cases he : i = d <;> by_cases hlt : i > d <;>
+      simp [Expr.instantiate1, Expr.eraseFvarTypes, he, hlt]
+  | _ => simp_all [Expr.instantiate1, Expr.eraseFvarTypes]
+
+private theorem eraseFvarTypes_instOpen : ∀ (vs : List KExpr) (j : Nat) (e : KExpr),
+    (instOpen vs j e).eraseFvarTypes =
+      instOpen (vs.map Expr.eraseFvarTypes) j e.eraseFvarTypes
+  | [], _, _ => rfl
+  | _ :: vs, j, e => by
+    simp only [instOpen, List.map_cons, List.length_map]
+    rw [eraseFvarTypes_instOpen, eraseFvarTypes_instantiate1]
+
+private theorem mentionsConst_eraseFvarTypes {T : KKey} (e : KExpr)
+    (h : e.mentionsConst T = false) : e.eraseFvarTypes.mentionsConst T = false := by
+  induction e <;> simp_all [Expr.eraseFvarTypes, Expr.mentionsConst, Bool.or_eq_false_iff]
+
+private theorem mentionsConst_erase_instOpen {T : KKey} {vs : List KExpr} {j : Nat} {e : KExpr}
+    (hvs : ∀ v ∈ vs, ∃ q ty, v = .fvar q ty) (he : e.mentionsConst T = false) :
+    (instOpen vs j e).eraseFvarTypes.mentionsConst T = false := by
+  rw [eraseFvarTypes_instOpen]
+  have hof : OpenFreeAt T (vs.map Expr.eraseFvarTypes) j e.eraseFvarTypes := by
+    refine ⟨?_, fun r v hr => Or.inl ?_⟩
+    · intro v hv k
+      obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hv
+      obtain ⟨q, ty, rfl⟩ := hvs w hw
+      rfl
+    · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp (List.mem_of_getElem? hr)
+      obtain ⟨q, ty, rfl⟩ := hvs w hw
+      rfl
+  rw [hof.mentionsConst_instOpen]
+  exact mentionsConst_eraseFvarTypes e he
+
+private theorem litResolve_eraseFvarTypes {env : Ix.Kernel.Env .anon} (e : KExpr)
+    (h : litResolve env e = true) : litResolve env e.eraseFvarTypes = true := by
+  induction e <;> simp_all [Expr.eraseFvarTypes, litResolve, Bool.and_eq_true]
+
+private theorem constsResolveShallow_opened {env env₁ : Ix.Kernel.Env .anon}
+    {ci : KConstantInfo} {T : KKey} {vs : List KExpr} {j : Nat} {e : KExpr}
+    (henv₁ : env₁ = ⟨ci :: env.consts⟩) (hci : ci.name = T)
+    (hvs : ∀ v ∈ vs, ∃ q ty, v = .fvar q ty) (he : e.mentionsConst T = false)
+    (hres : (instOpen vs j e).constsResolve env₁ = true)
+    (hlit : litResolve env (instOpen vs j e) = true) :
+    (instOpen vs j e).constsResolveShallow env = true := by
+  unfold Expr.constsResolveShallow
+  exact constsResolve_of_cons_not_mentionsConst
+    (litResolve_eraseFvarTypes _ hlit)
+    (by rw [hci]; exact mentionsConst_erase_instOpen hvs he)
+    (by simpa only [Expr.constsResolveShallow, ← henv₁] using
+      Expr.constsResolve_shallow_of env₁ _ hres)
 
 theorem OpenFreeAt.forallE {T : KKey} {vs : List KExpr} {j : Nat}
     {dom bo : KExpr} {mb : Ix.Kernel.BinderMeta}
@@ -1709,14 +1774,14 @@ private theorem recFamOk_opened {env env₁ : Ix.Kernel.Env .anon} {ci : KConsta
     (hfvsP_len : fvsP.length = nP)
     (hfvsP_fv : ∀ v ∈ fvsP, ∃ q ty, v = .fvar q ty)
     (hfam : Ix.Kernel.recFamOk T lps nP nIdx (fieldFvs.length + k) abody = true)
-    (hof : OpenFreeAt T (fvsP ++ fieldFvs) k abody)
+    (hvars : ∀ v ∈ fvsP ++ fieldFvs, ∃ q ty, v = .fvar q ty)
     (hres : (instOpen (fvsP ++ fieldFvs) k abody).constsResolve env₁ = true)
     (hlit : litResolve env (instOpen (fvsP ++ fieldFvs) k abody) = true) :
     let body := instOpen (fvsP ++ fieldFvs) k abody
     body.getAppFn = .const T (lps.map .param) ∧
     body.getAppArgs.take nP = fvsP ∧
     body.getAppArgs.length = nP + nIdx ∧
-    ∀ e ∈ body.getAppArgs.drop nP, e.constsResolve env = true := by
+    ∀ e ∈ body.getAppArgs.drop nP, e.constsResolveShallow env = true := by
   simp only [Ix.Kernel.recFamOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
     Bool.not_eq_true'] at hfam
   obtain ⟨⟨⟨hfn, hlen⟩, htake⟩, hdrop_noT⟩ := hfam
@@ -1758,15 +1823,11 @@ private theorem recFamOk_opened {env env₁ : Ix.Kernel.Env .anon} {ci : KConsta
     intro e he
     obtain ⟨a, ha_mem, rfl⟩ := List.mem_map.mp he
     have ha_noT : a.mentionsConst T = false := hdrop_noT a ha_mem
-    have ha_of : OpenFreeAt T (fvsP ++ fieldFvs) k a :=
-      hof.getAppArgs a (List.mem_of_mem_drop ha_mem)
-    have he_noT : (instOpen (fvsP ++ fieldFvs) k a).mentionsConst ci.name = false := by
-      rw [hci, ha_of.mentionsConst_instOpen]; exact ha_noT
     have he_res₁ : (instOpen (fvsP ++ fieldFvs) k a).constsResolve env₁ = true :=
       (constsResolve_getApp hres).2 _ (by rw [hargs]; exact List.mem_append_right _ he)
     have he_lit : litResolve env (instOpen (fvsP ++ fieldFvs) k a) = true :=
       (litResolve_getApp hlit).2 _ (by rw [hargs]; exact List.mem_append_right _ he)
-    exact constsResolve_of_cons_not_mentionsConst he_lit he_noT (by rwa [← henv₁])
+    exact constsResolveShallow_opened henv₁ hci hvars ha_noT he_res₁ he_lit
 
 private theorem mentionsConst_false_of_recPositivity_ordinary {T : KKey} {lps : List LevelParam}
     {nP nIdx o : Nat} :
@@ -1842,7 +1903,6 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
     (hfv : cA.1.type.hasFvar = false)
     (hres : cA.1.type.constsResolve env₁ = true)
     (hlit : litResolve env cA.1.type = true)
-    (hpdom_noT : ∀ p < nP, (cbs.getD p default).1.mentionsConst T = false)
     (hpos : ∀ i < cA.2,
       Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .negative ∧
       Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported)
@@ -1954,122 +2014,6 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
   obtain ⟨hlit_all, hxrest_lit⟩ := openPisAtFvars_litResolve (nP + nF) hlit hopAll
   have hfvsP_fv : ∀ v ∈ fvsP, ∃ q ty, v = .fvar q ty :=
     fun v hv => hall_fv v (List.mem_append_left _ hv)
-  have hall_nolb : ∀ v ∈ fvsP ++ xFvs, ∀ k, v.hasLooseBVar k = false := by
-    intro v hv k
-    obtain ⟨q, ty, rfl⟩ := hall_fv v hv
-    rfl
-  -- Unused recursive fields give `hasLooseBVar = false` on all later binders and on `cbody`
-  have hunused_bvar :
-      ∀ (m : Nat), m < nF →
-        (Ix.Kernel.recFieldKind T lps nP nIdx m (cbs.getD (nP + m) default).1 = .recursive ∨
-         Ix.Kernel.recFieldKind T lps nP nIdx m (cbs.getD (nP + m) default).1 = .reflexive) →
-        cbody.hasLooseBVar (nP + nF - 1 - (nP + m)) = false ∧
-        ∀ (t : Nat) (ht₁ : nP + m < t) (ht₂ : t < nP + nF),
-          (cbs[t]'(by rw [hcbs_len]; exact ht₂)).1.hasLooseBVar (t - 1 - (nP + m)) = false := by
-    intro m hm hkind
-    have hun := hunused m hm hkind
-    obtain ⟨cbs_pre, rest_m, cbs_post, hst_m, hst_post, hcbs_app, hpre_len⟩ :=
-      stripPis_split (nP + m + 1) (nP + nF - (nP + m + 1))
-        (by rw [show nP + m + 1 + (nP + nF - (nP + m + 1)) = nP + nF by omega]; exact hstrip)
-    have hrest_lb : rest_m.hasLooseBVar 0 = false := by
-      simp only [Ix.Kernel.structUsedLater, hst_m, Expr.hasLooseBVarB_eq] at hun
-      exact hun
-    obtain ⟨hcbody_lb, hpost_lb⟩ := hasLooseBVar_stripPis _ 0 hst_post hrest_lb
-    refine ⟨?_, fun t ht₁ ht₂ => ?_⟩
-    · simpa [show 0 + (nP + nF - (nP + m + 1)) = nP + nF - 1 - (nP + m) by omega] using hcbody_lb
-    · have hcbs_t : (cbs_pre ++ cbs_post)[t]? = some (cbs[t]'(by rw [hcbs_len]; exact ht₂)) := by
-        rw [← hcbs_app]
-        exact List.getElem?_eq_getElem (by rw [hcbs_len]; exact ht₂)
-      rw [List.getElem?_append_right (by omega), hpre_len] at hcbs_t
-      have h := hpost_lb (t - (nP + m + 1)) (cbs[t]'(by rw [hcbs_len]; exact ht₂)) hcbs_t
-      simpa [show 0 + (t - (nP + m + 1)) = t - 1 - (nP + m) by omega] using h
-  -- Strong induction on `t < nP + nF` establishing `OpenFreeAt` and `mentionsConst T = false`
-  -- on parameter slots and ordinary field slots
-  have hslot :
-      ∀ (t : Nat) (ht : t < nP + nF),
-        OpenFreeAt T ((fvsP ++ xFvs).take t) 0 (cbs[t]'(by omega)).1 ∧
-        ((t < nP ∨
-          Ix.Kernel.recFieldKind T lps nP nIdx (t - nP) (cbs.getD t default).1 = .ordinary) →
-          ((fvsP ++ xFvs)[t]'(by rw [List.length_append, hfvsP_len, hxFvs_len]; exact ht)).mentionsConst T = false) := by
-    intro t
-    induction t using Nat.strong_induction_on with
-    | h t iht =>
-      intro ht
-      have hof_t : OpenFreeAt T ((fvsP ++ xFvs).take t) 0 (cbs[t]'(by omega)).1 := by
-        refine ⟨fun v hv => hall_nolb v (List.mem_of_mem_take hv), fun r v hr => ?_⟩
-        have htake_len : ((fvsP ++ xFvs).take t).length = t := by
-          rw [List.length_take, List.length_append, hfvsP_len, hxFvs_len]; omega
-        have hr_lt : r < t := by
-          have := (List.getElem?_eq_some_iff.mp hr).1; omega
-        rw [List.getElem?_take_of_lt hr_lt] at hr
-        have hv_eq : v = (fvsP ++ xFvs)[r]'(by rw [List.length_append, hfvsP_len, hxFvs_len]; omega) := by
-          rw [List.getElem?_eq_getElem] at hr
-          exact (Option.some.inj hr).symm
-        subst hv_eq
-        by_cases hrP : r < nP
-        · exact Or.inl ((iht r hr_lt (by omega)).2 (Or.inl hrP))
-        · have hm_lt : r - nP < nF := by omega
-          have hr_eq : nP + (r - nP) = r := by omega
-          have hgetD_r : cbs.getD r default = cbs.getD (nP + (r - nP)) default := by rw [hr_eq]
-          cases hkr : Ix.Kernel.recFieldKind T lps nP nIdx (r - nP)
-              (cbs.getD (nP + (r - nP)) default).1 with
-          | ordinary =>
-            rw [← hgetD_r] at hkr
-            exact Or.inl ((iht r hr_lt (by omega)).2 (Or.inr hkr))
-          | recursive =>
-            right
-            rw [htake_len, Nat.zero_add, ← hr_eq]
-            exact (hunused_bvar (r - nP) hm_lt (Or.inl hkr)).2 t (by omega) ht
-          | reflexive =>
-            right
-            rw [htake_len, Nat.zero_add, ← hr_eq]
-            exact (hunused_bvar (r - nP) hm_lt (Or.inr hkr)).2 t (by omega) ht
-          | negative => exact absurd hkr (hpos (r - nP) hm_lt).1
-          | unsupported => exact absurd hkr (hpos (r - nP) hm_lt).2
-      refine ⟨hof_t, fun hcase => ?_⟩
-      have hfv_eq := hpos_fv t (cbs[t]'(by omega))
-        ((fvsP ++ xFvs)[t]'(by rw [List.length_append, hfvsP_len, hxFvs_len]; exact ht))
-        (List.getElem?_eq_getElem (by omega))
-        (List.getElem?_eq_getElem (by rw [List.length_append, hfvsP_len, hxFvs_len]; exact ht))
-      have hdom_noT : (cbs[t]'(by omega)).1.mentionsConst T = false := by
-        have hgetD : cbs.getD t default = cbs[t]'(by omega) := by
-          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega), Option.getD_some]
-        rcases hcase with htP | hord
-        · rw [← hgetD]; exact hpdom_noT t htP
-        · rw [← hgetD]
-          exact mentionsConst_false_of_recFieldKind_ordinary hord
-      rw [hfv_eq, Expr.mentionsConst, hof_t.mentionsConst_instOpen]
-      exact hdom_noT
-  have hof_cbody : OpenFreeAt T (fvsP ++ xFvs) 0 cbody := by
-    refine ⟨hall_nolb, fun r v hr => ?_⟩
-    have hall_len : (fvsP ++ xFvs).length = nP + nF := by
-      rw [List.length_append, hfvsP_len, hxFvs_len]
-    have hr_lt : r < nP + nF := by
-      have := (List.getElem?_eq_some_iff.mp hr).1; omega
-    have hv_eq : v = (fvsP ++ xFvs)[r]'(by omega) := by
-      rw [List.getElem?_eq_getElem] at hr
-      exact (Option.some.inj hr).symm
-    subst hv_eq
-    by_cases hrP : r < nP
-    · exact Or.inl ((hslot r hr_lt).2 (Or.inl hrP))
-    · have hm_lt : r - nP < nF := by omega
-      have hr_eq : nP + (r - nP) = r := by omega
-      have hgetD_r : cbs.getD r default = cbs.getD (nP + (r - nP)) default := by rw [hr_eq]
-      cases hkr : Ix.Kernel.recFieldKind T lps nP nIdx (r - nP)
-          (cbs.getD (nP + (r - nP)) default).1 with
-      | ordinary =>
-        rw [← hgetD_r] at hkr
-        exact Or.inl ((hslot r hr_lt).2 (Or.inr hkr))
-      | recursive =>
-        right
-        rw [hall_len, Nat.zero_add, ← hr_eq]
-        exact (hunused_bvar (r - nP) hm_lt (Or.inl hkr)).1
-      | reflexive =>
-        right
-        rw [hall_len, Nat.zero_add, ← hr_eq]
-        exact (hunused_bvar (r - nP) hm_lt (Or.inr hkr)).1
-      | negative => exact absurd hkr (hpos (r - nP) hm_lt).1
-      | unsupported => exact absurd hkr (hpos (r - nP) hm_lt).2
   -- Now prove `nativeOpenedOk`
   unfold Ix.Kernel.nativeOpenedOk
   rw [hopP]
@@ -2089,7 +2033,7 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
           List.take_of_length_le (by omega)]
     rw [hxrest_eq] at hxrest_res₁ hxrest_lit ⊢
     obtain ⟨_, _, _, hdrop_res⟩ :=
-      recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hcbody_fam hof_cbody hxrest_res₁ hxrest_lit
+      recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hcbody_fam hall_fv hxrest_res₁ hxrest_lit
     rw [List.all_eq_true]
     exact hdrop_res
   · -- Each field `i < nF`
@@ -2119,9 +2063,11 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
       rw [hxi_eq]; rfl
     have hgetD_i : cbs.getD (nP + i) default = cbs[nP + i]'(by rw [hcbs_len]; omega) := by
       rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by rw [hcbs_len]; omega), Option.getD_some]
-    have hof_i : OpenFreeAt T (fvsP ++ xFvs.take i) 0 (cbs[nP + i]'(by rw [hcbs_len]; omega)).1 := by
-      rw [← htake_eq]
-      exact (hslot (nP + i) (by omega)).1
+    have hvars_i : ∀ v ∈ fvsP ++ xFvs.take i, ∃ q ty, v = .fvar q ty := by
+      intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · exact hfvsP_fv v hv
+      · exact hall_fv v (List.mem_append_right _ (List.mem_of_mem_take hv))
     have hxi_res₁ : (xFvs[i]'hi_x).fvarTypeD.constsResolve env₁ = true :=
       hres_all (xFvs[i]'hi_x) (List.mem_append_right _ (List.getElem_mem hi_x))
     have hxi_lit : litResolve env (xFvs[i]'hi_x).fvarTypeD = true :=
@@ -2170,10 +2116,8 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
       dsimp only
       have hdom_noT := mentionsConst_false_of_recFieldKind_ordinary hkind
       rw [hgetD_i] at hdom_noT
-      have hxi_noT : (xFvs[i]'hi_x).fvarTypeD.mentionsConst ci.name = false := by
-        rw [hci, hxi_fvarTypeD, hof_i.mentionsConst_instOpen]
-        exact hdom_noT
-      exact constsResolve_of_cons_not_mentionsConst hxi_lit hxi_noT (by rwa [← henv₁])
+      rw [hxi_fvarTypeD] at hxi_res₁ hxi_lit ⊢
+      exact constsResolveShallow_opened henv₁ hci hvars_i hdom_noT hxi_res₁ hxi_lit
     | recursive =>
       dsimp only
       have hkind' := hkind
@@ -2192,7 +2136,7 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
         simpa [htake_i_len] using hfam
       rw [hxi_fvarTypeD] at hxi_res₁ hxi_lit ⊢
       obtain ⟨hfn', htake', hlen', hdrop'⟩ :=
-        recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hfam' hof_i hxi_res₁ hxi_lit
+        recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hfam' hvars_i hxi_res₁ hxi_lit
       have hun_ok := hleaf_unused (Or.inl hkind)
       simp only [Bool.and_eq_true] at hun_ok
       simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true]
@@ -2240,71 +2184,49 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
           openPisAtFvars_constsResolve abs.length hxi_res₁ hopA
         obtain ⟨hafvs_lit, hbody'_lit⟩ :=
           openPisAtFvars_litResolve abs.length hxi_lit hopA
-        obtain ⟨hof_abody, hof_abs⟩ := openFree_piBinders (cbs[nP + i]'(by rw [hcbs_len]; omega)).1 0 hof_i
-        simp only [hpb, Nat.zero_add] at hof_abody hof_abs
-        -- Every `a ∈ afvs` has `mentionsConst T = false`
-        have hafvs_noT : ∀ (r : Nat) (hr : r < abs.length),
-            (afvs[r]'(by rw [hafvs_len]; exact hr)).mentionsConst T = false := by
-          intro r
-          induction r using Nat.strong_induction_on with
-          | h r ihr =>
-            intro hr
-            have hzip_r :
-                ((abs.zipIdx).map (fun ⟨b, u⟩ =>
-                  (instOpen (fvsP ++ xFvs.take i) u b.1, b.2)))[r]? =
-                  some (instOpen (fvsP ++ xFvs.take i) r (abs[r]'hr).1, (abs[r]'hr).2) := by
-              rw [List.getElem?_map, List.getElem?_zipIdx, List.getElem?_eq_getElem hr]
-              simp
-            have ha_eq := hafvs_pos r _ (afvs[r]'(by rw [hafvs_len]; exact hr)) hzip_r
-              (List.getElem?_eq_getElem (by rw [hafvs_len]; exact hr))
-            have htake_r_len : (afvs.take r).length = r := by
-              rw [List.length_take, hafvs_len]; omega
-            have hcomb :
-                instOpen (afvs.take r) 0 (instOpen (fvsP ++ xFvs.take i) r (abs[r]'hr).1) =
-                  instOpen ((fvsP ++ xFvs.take i) ++ afvs.take r) 0 (abs[r]'hr).1 := by
-              have h := instOpen_append (fvsP ++ xFvs.take i) (afvs.take r) 0 (abs[r]'hr).1
-              rw [Nat.zero_add, htake_r_len] at h
-              exact h.symm
-            have hof_r : OpenFreeAt T ((fvsP ++ xFvs.take i) ++ afvs.take r) 0 (abs[r]'hr).1 := by
-              refine openFreeAt_append_extra (afvs.take r) (fun w hw => ?_) ?_
-              · have hw_idx := List.getElem_of_mem hw
-                obtain ⟨u, hu_lt, rfl⟩ := hw_idx
-                rw [htake_r_len] at hu_lt
-                have hfv_u := hafvs_fv _ (List.mem_of_mem_take hw)
-                obtain ⟨q, ty, hq⟩ := hfv_u
-                refine ⟨fun k => by rw [hq]; rfl, ?_⟩
-                rw [List.getElem_take]
-                exact ihr u hu_lt (by omega)
-              · rw [htake_r_len]
-                exact hof_abs r (abs[r]'hr) (List.getElem?_eq_getElem hr)
-            rw [ha_eq, Expr.mentionsConst, hcomb, hof_r.mentionsConst_instOpen]
-            exact habs_noT (abs[r]'hr) (List.getElem_mem hr)
-        have hafvs_res_env : ∀ a ∈ afvs, a.fvarTypeD.constsResolve env = true := by
+        have hafvs_res_env : ∀ a ∈ afvs, a.fvarTypeD.constsResolveShallow env = true := by
           intro a ha
           obtain ⟨r, hr, rfl⟩ := List.getElem_of_mem ha
-          have ha_fv := hafvs_fv _ ha
-          obtain ⟨q, ty, hq⟩ := ha_fv
-          have hnoT : (afvs[r]'hr).fvarTypeD.mentionsConst ci.name = false := by
-            have := hafvs_noT r (by rw [← hafvs_len]; exact hr)
-            rw [hq, Expr.mentionsConst] at this
-            rw [hq, Expr.fvarTypeD, hci]
-            exact this
-          have hr₁ := hafvs_res₁ _ ha
-          have hlit_a := hafvs_lit _ ha
-          exact constsResolve_of_cons_not_mentionsConst hlit_a hnoT (by rwa [← henv₁])
+          have hrabs : r < abs.length := by rwa [← hafvs_len]
+          have hzip_r :
+              ((abs.zipIdx).map (fun ⟨b, u⟩ =>
+                (instOpen (fvsP ++ xFvs.take i) u b.1, b.2)))[r]? =
+                some (instOpen (fvsP ++ xFvs.take i) r (abs[r]'hrabs).1,
+                  (abs[r]'hrabs).2) := by
+            rw [List.getElem?_map, List.getElem?_zipIdx, List.getElem?_eq_getElem hrabs]
+            simp
+          have ha_eq := hafvs_pos r _ (afvs[r]'hr) hzip_r (List.getElem?_eq_getElem hr)
+          have htake_r_len : (afvs.take r).length = r := by
+            rw [List.length_take]; omega
+          have hdom : (afvs[r]'hr).fvarTypeD =
+              instOpen ((fvsP ++ xFvs.take i) ++ afvs.take r) 0 (abs[r]'hrabs).1 := by
+            rw [ha_eq, Expr.fvarTypeD]
+            have h := instOpen_append (fvsP ++ xFvs.take i) (afvs.take r) 0
+              (abs[r]'hrabs).1
+            rw [Nat.zero_add, htake_r_len] at h
+            exact h.symm
+          have hvars : ∀ v ∈ (fvsP ++ xFvs.take i) ++ afvs.take r,
+              ∃ q ty, v = .fvar q ty := by
+            intro v hv
+            rcases List.mem_append.mp hv with hv | hv
+            · exact hvars_i v hv
+            · exact hafvs_fv v (List.mem_of_mem_take hv)
+          rw [hdom]
+          exact constsResolveShallow_opened henv₁ hci hvars
+            (habs_noT _ (List.getElem_mem hrabs))
+            (by rw [← hdom]; exact hafvs_res₁ _ ha)
+            (by rw [← hdom]; exact hafvs_lit _ ha)
         have hbody'_comb :
             body' = instOpen (fvsP ++ (xFvs.take i ++ afvs)) 0 abody := by
           have h := instOpen_append (fvsP ++ xFvs.take i) afvs 0 abody
           rw [Nat.zero_add, hafvs_len, List.append_assoc] at h
           rw [hbody'_eq, ← h]
-        have hof_body' :
-            OpenFreeAt T (fvsP ++ (xFvs.take i ++ afvs)) 0 abody := by
-          rw [← List.append_assoc]
-          refine openFreeAt_append_extra afvs (fun w hw => ?_) ?_
-          · obtain ⟨r, hr, rfl⟩ := List.getElem_of_mem hw
-            obtain ⟨q, ty, hq⟩ := hafvs_fv _ hw
-            exact ⟨fun k => by rw [hq]; rfl, hafvs_noT r (by rw [← hafvs_len]; exact hr)⟩
-          · rw [hafvs_len]; exact hof_abody
+        have hvars_body : ∀ v ∈ fvsP ++ (xFvs.take i ++ afvs), ∃ q ty, v = .fvar q ty := by
+          intro v hv
+          rw [← List.append_assoc] at hv
+          rcases List.mem_append.mp hv with hv | hv
+          · exact hvars_i v hv
+          · exact hafvs_fv v hv
         have htake_i_len : (xFvs.take i).length = i := by
           rw [List.length_take, hxFvs_len]; omega
         have hfam' :
@@ -2312,7 +2234,7 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
           simpa [List.length_append, htake_i_len, hafvs_len] using hfam
         rw [hbody'_comb] at hbody'_res₁ hbody'_lit ⊢
         obtain ⟨hfn', htake', hlen', hdrop'⟩ :=
-          recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hfam' hof_body' hbody'_res₁ hbody'_lit
+          recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hfam' hvars_body hbody'_res₁ hbody'_lit
         have hun_ok := hleaf_unused (Or.inr hkind)
         simp only [Bool.and_eq_true] at hun_ok
         simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, List.all_eq_true]

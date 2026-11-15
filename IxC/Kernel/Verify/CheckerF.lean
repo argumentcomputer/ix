@@ -350,7 +350,8 @@ theorem nativeOpenedOkF_eq (env₀ : Env md) (T : Key md) (lps : List LevelParam
     (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) :
     nativeOpenedOkF .plain (mkFEnv env₀) T lps nP nIdx cty nF ks
       = nativeOpenedOk env₀ T lps nP nIdx cty nF ks := by
-  simp only [nativeOpenedOkF, nativeOpenedOk, StructWalkers.plain, constsResolveF_eq]
+  simp only [nativeOpenedOkF, nativeOpenedOk, Expr.constsResolveShallow,
+    StructWalkers.plain, constsResolveF_eq]
     <;> rfl
 
 theorem nativeFieldsOkF_eq (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
