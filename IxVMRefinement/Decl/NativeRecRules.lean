@@ -2289,9 +2289,8 @@ structure NativeWithRecWitness (calls : List (Call F)) (env : Ix.Kernel.Env .ano
     ⟨E_rec, Ix.Kernel.consSumCtors p₀.nP front.ctorsA ⟨.indInfo front.cvTa₀ {} :: env.consts⟩,
       front.t, front.lim₀⟩ cs_rec
 
-/-- Hypothesis & specification-bridge bundle for native one-type inductive blocks with recursor.
-Isolates `gen_recTy_sort_bridge` alongside the shared
-front-end parameter/positivity obligations. -/
+/-- Hypothesis bundle for native one-type inductive blocks with recursor,
+collecting the shared front-end parameter/positivity obligations and `PosSortLift`. -/
 structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (block : List KConstantInfo) (p₀ : Ix.Kernel.NativeParts .anon) where
   witness : NativeWithRecWitness calls env block p₀
@@ -2323,11 +2322,6 @@ structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
         (Ix.Kernel.consSumCtors p₀.nP witness.front.ctorsA
           ⟨.indInfo witness.front.cvTa₀ {} :: env.consts⟩)
         witness.cvRa₀
-  gen_recTy_sort_bridge :
-    ∀ (env_base : Ix.Kernel.Env .anon) (recTy : KExpr),
-      GenScoped env_base p₀.cvR.levelParams 0 recTy →
-      DefEq env_base 0 witness.cvRa₀.type recTy →
-      ∃ sty u, Infer env_base .full 0 recTy sty ∧ Red env_base 0 sty (.sort u)
 
 /-- `KernelCheck::check_recursor_canonical_full` certifies the large-eliminator guard + field-sort
 upgrade (`is_large_eliminator_one_spec` when `large = true`) and delegates to `nat_rec_check_spec`
@@ -3901,8 +3895,6 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
   have hlf_Ra₀ : letFree w.cvRa₀.type = true := annotates_letFree w.valStored_R.2.2
   have hdefeq_recTy : DefEq env_base 0 w.cvRa₀.type recTy :=
     hwrap_ty.defeq hlf_Ra₀ hsc_recTy.2.2.2.2 hsc_recTy.1
-  obtain ⟨sty_rec, u_rec, hinf_recTy, hred_recTy⟩ :=
-    extra.gen_recTy_sort_bridge env_base recTy hsc_recTy hdefeq_recTy
   -- Run `checkNativeRules_ok_go` in `env_rec₀`
   let cvRg : KConstantVal := ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
   let env_rec₀ : Ix.Kernel.Env .anon :=
@@ -4051,9 +4043,9 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     rw [hpT, wf.lps_T]
     exact hmaj_lvls₀ bs dom B bm hs
   have hRecRun : NativeRecRunJ rulesJ env_base p wf.cvTa₀ wf.ctorsA cvRg rhsG :=
-    ⟨hlps_ok, hpinned, w.cvRa₀, recTy, sty_rec, u_rec, hcvR_chk, hrecTy_p,
+    ⟨hlps_ok, hpinned, w.cvRa₀, recTy, hcvR_chk, hrecTy_p,
       hsc_recTy.2.1, hsc_recTy.2.2.1, hsc_recTy.1, hsc_recTy.2.2.2.1,
-      hinf_recTy, hred_recTy, hdefeq_recTy, hchk_rules, rfl⟩
+      hdefeq_recTy, hchk_rules, rfl⟩
   have hRecStored : RecStoredJ rulesJ env_base p cvRg rhsG w.cvRa₀ rhssA :=
     Or.inr ⟨w.cvRa₀, hcvR_chk, hcvRa₀_eta,
       hwrap_ty.toWrapRel,

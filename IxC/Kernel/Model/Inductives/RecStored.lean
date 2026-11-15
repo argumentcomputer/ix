@@ -114,7 +114,7 @@ theorem recStoredStep {μ : CheckMode} {J : Judgements md} {E : Env md} (mpC : E
       mpd.base2.acval = acvalWith mpC.base2.acval cvRa.name A := by
   have hstored : NativeRecJ J E p cvTa ctorsA cvRa rhss := ⟨cvRg, rhsG, hRecG, Or.inr hdecl⟩
   obtain ⟨cvRi, hccv, hcvRa, hW, hWr, hlf, -, -⟩ := hdecl
-  obtain ⟨-, -, cvRi₀, recTy, sty, u, hccv₀, hgenR, -, -, -, hfvR, -, -, -, -, hcvRg⟩ := id hRecG
+  obtain ⟨-, -, cvRi₀, recTy, hccv₀, hgenR, -, -, -, hfvR, -, -, hcvRg⟩ := id hRecG
   have hcvRg : cvRg = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hcvRg
   obtain ⟨hnG, hlG, hfreshP, -⟩ := hRecG.recursor
   have hfresh : E.find? cvRg.name = none := by rw [hnG]; exact hfreshP

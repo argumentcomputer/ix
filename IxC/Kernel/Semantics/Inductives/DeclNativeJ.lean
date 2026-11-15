@@ -194,22 +194,20 @@ def FormerReadJ (env₁ : Env md) (p : NativeParts md) (cvTa : ConstantVal md)
 /-- **The recursor's stage** (`checkNativeRec`) over a package: the record's pins
 (its level parameters are the generated ones; its rule count, rules' constructors
 and field counts and argument sums are the generated ones), the declared recursor
-checked, the generated type scoped, typed at a sort and convertible with the
-declared one, the generated rules scoped at the environment holding the
-recursor; the recursor `cvRa` carries the generated type and `rhss` are the
-generated rules. -/
+checked, the generated type scoped and convertible with the declared one, the
+generated rules scoped at the environment holding the recursor; the recursor
+`cvRa` carries the generated type and `rhss` are the generated rules. -/
 def NativeRecRunJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) (cvRa : ConstantVal md)
     (rhss : List (Expr md)) : Prop :=
   Ix.Kernel.nativeRecLpsOk p.toInductiveShape = true ∧ p.recPinned = true ∧
-  ∃ (cvRi : ConstantVal md) (recTy sty : Expr md) (u : Level),
+  ∃ (cvRi : ConstantVal md) (recTy : Expr md),
     ConstantValCheckJ J env p.cvR cvRi ∧
     Ix.Kernel.structRecTyR p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) = some recTy ∧
     recTy.allLevelParamsDefined p.cvR.levelParams = true ∧
     recTy.constsResolve env = true ∧
     recTy.looseBVarsBounded 0 = true ∧ recTy.hasFvar = false ∧
-    J.infer env 0 recTy sty ∧ J.sort env 0 sty u ∧
     J.defeq env 0 cvRi.type recTy ∧
     Ix.Kernel.checkNativeRules (m := Ix.Kernel.CheckM md)
       ⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ p.majorIdx p.rulePrefix []
@@ -650,7 +648,7 @@ theorem NativeRecRunJ.recursor {J : Judgements md} {env : Env md} {p : NativePar
     {rhss : List (Expr md)} (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
     cvRa.name = p.cvR.name ∧ cvRa.levelParams = p.cvR.levelParams ∧
       env.find? p.cvR.name = none ∧ p.cvR.name.isProjFnShape = false := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, hcv, -, -, -, -, -, -, -, -, -, hstR⟩ := h
+  obtain ⟨-, -, cvRi, recTy, hcv, -, -, -, -, -, -, -, hstR⟩ := h
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   exact ⟨rfl, rfl, hcv.fresh, hcv.shape⟩
 
@@ -670,7 +668,7 @@ theorem NativeRecRunJ.facts {J : Judgements md} {env : Env md} {p : NativeParts 
       rhs.allLevelParamsDefined cvRa.levelParams = true ∧
       rhs.constsResolve ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ = true ∧
       rhs.looseBVarsBounded 0 = true := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, hlp, hres, hbv, hfv, -, -, -, hrules, hstR⟩ := h
+  obtain ⟨-, -, cvRi, recTy, -, -, hlp, hres, hbv, hfv, -, hrules, hstR⟩ := h
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   obtain ⟨hlen, hall⟩ := Ix.Kernel.checkNativeRules_inv hrules
   refine ⟨rfl, rfl, ⟨hfv, hlp, hres, hbv⟩, hlen, ?_⟩
@@ -856,7 +854,7 @@ theorem NativeRecJ.major {J : Judgements md} {env : Env md} {p : NativeParts md}
       .forallE (Ix.Kernel.structFamI p.cvT.name p.cvT.levelParams p.nP p.nIdx
         (p.ctors.length + 1) 0) B m) := by
   obtain ⟨cvRg, rhsG, hR, hst⟩ := h
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, hty, -, -, -, -, -, -, -, -, rfl⟩ := hR
+  obtain ⟨-, -, cvRi, recTy, -, hty, -, -, -, -, -, -, rfl⟩ := hR
   obtain ⟨bs, B, m, hg⟩ := structRecTyR_major hty
   rw [hlen] at hg
   rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf, -, hlvls⟩
@@ -1051,10 +1049,10 @@ theorem nativeRecRunJ_of_run {env : Env md} {p : NativeParts md} {cvTa cvRa : Co
     {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
     (h : checkNativeRec (fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss)) :
     NativeRecRunJ (runJ μ F) env p cvTa ctorsA cvRa rhss := by
-  obtain ⟨cvRi, recTy, sty, u, hcv, hrt, h1, h2, h3, h4, hsty, hu, hb, hrules, hR⟩ :=
+  obtain ⟨cvRi, recTy, _, _, hcv, hrt, h1, h2, h3, h4, _, _, hb, hrules, hR⟩ :=
     Ix.Kernel.checkNativeRec_shape h
-  refine ⟨?_, ?_, cvRi, recTy, sty, u, constantValCheckJ_of_run hcv, hrt, h1, h2, h3, h4,
-    hsty, hu, hb, hrules, hR⟩
+  refine ⟨?_, ?_, cvRi, recTy, constantValCheckJ_of_run hcv, hrt, h1, h2, h3, h4,
+    hb, hrules, hR⟩
   · unfold Ix.Kernel.checkNativeRec at h
     by_cases hlp : Ix.Kernel.nativeRecLpsOk p.toInductiveShape = true
     · exact hlp
