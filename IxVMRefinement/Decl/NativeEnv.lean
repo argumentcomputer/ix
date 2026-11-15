@@ -3,6 +3,7 @@ import IxC.Kernel.Model.Inductives.StructRecKit2
 import IxC.Kernel.Model.Inductives.StructEntryFree
 import IxC.Kernel.Semantics.Inductives.DeclStructEta
 import IxC.Kernel.Verify.Rename.Native1
+import IxC.Kernel.Model.Inductives.Scope
 
 namespace IxVM.Refinement.Decl
 
@@ -2100,7 +2101,7 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
     obtain ⟨_, _, _, hdrop_res⟩ :=
       recFamOk_opened henv₁ hci hfvsP_len hfvsP_fv hcbody_fam hof_cbody hxrest_res₁ hxrest_lit
     rw [List.all_eq_true]
-    exact hdrop_res
+    exact fun e he => Expr.constsResolve_shallow_of env e (hdrop_res e he)
   · -- Each field `i < nF`
     rw [List.all_eq_true]
     intro i hi_mem
@@ -2182,7 +2183,8 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
       have hxi_noT : (xFvs[i]'hi_x).fvarTypeD.mentionsConst ci.name = false := by
         rw [hci, hxi_fvarTypeD, hof_i.mentionsConst_instOpen]
         exact hdom_noT
-      exact constsResolve_of_cons_not_mentionsConst hxi_lit hxi_noT (by rwa [← henv₁])
+      exact Expr.constsResolve_shallow_of env _
+        (constsResolve_of_cons_not_mentionsConst hxi_lit hxi_noT (by rwa [← henv₁]))
     | recursive =>
       dsimp only
       have hkind' := hkind
@@ -2205,7 +2207,8 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
       have hun_ok := hleaf_unused (Or.inl hkind)
       simp only [Bool.and_eq_true] at hun_ok
       simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true]
-      exact ⟨⟨⟨⟨⟨hfn', htake'⟩, hlen'⟩, hdrop'⟩, hun_ok.1⟩, hun_ok.2⟩
+      exact ⟨⟨⟨⟨⟨hfn', htake'⟩, hlen'⟩,
+        fun e he => Expr.constsResolve_shallow_of env e (hdrop' e he)⟩, hun_ok.1⟩, hun_ok.2⟩
     | reflexive =>
       dsimp only
       have hkind' := hkind
@@ -2325,8 +2328,10 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
         have hun_ok := hleaf_unused (Or.inr hkind)
         simp only [Bool.and_eq_true] at hun_ok
         simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, List.all_eq_true]
-        exact ⟨⟨⟨⟨⟨⟨⟨by rw [hafvs_len]; exact habs_ne, hafvs_res_env⟩, hfn'⟩, htake'⟩,
-          hlen'⟩, hdrop'⟩, hun_ok.1⟩, hun_ok.2⟩
+        exact ⟨⟨⟨⟨⟨⟨⟨by rw [hafvs_len]; exact habs_ne,
+          fun a ha => Expr.constsResolve_shallow_of env _ (hafvs_res_env a ha)⟩, hfn'⟩, htake'⟩,
+          hlen'⟩, fun e he => Expr.constsResolve_shallow_of env e (hdrop' e he)⟩,
+          hun_ok.1⟩, hun_ok.2⟩
     | negative => exact absurd hkind (hpos i hi).1
     | unsupported => exact absurd hkind (hpos i hi).2
 
