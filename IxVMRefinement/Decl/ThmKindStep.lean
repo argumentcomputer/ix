@@ -38,7 +38,7 @@ theorem of_envExt {before after : Env .anon} (extension : EnvExt before after) :
 theorem value_typed {before after : Env .anon} (simulation : ThmSimAt before after)
     {cv : ConstantVal .anon} {rawValue type value : Expr .anon}
     (checked : ValueFrontRunJ rulesJ before cv rawValue type value)
-    (proposition : ∃ st u, rulesJ.infer before 0 type st ∧ rulesJ.sort before 0 st u ∧ rulesJ.isZero u) :
+    (proposition : ∃ st u, rulesJ.infer before 0 type st ∧ rulesJ.sort before 0 st u ∧ (rulesJ (md := .anon)).isZero u) :
     ThmValueTyped after { cv with type } value := by
   obtain ⟨bounded, closed, annotated, _, _, vt, inferred, converted⟩ := checked
   obtain ⟨outputClosed, outputBounded⟩ := (judgeFrames_rulesJ before).annot_syntax annotated closed bounded
@@ -102,12 +102,18 @@ theorem cons_theorem {before after : Env .anon} (simulation : ThmSimAt before af
       · simpa only [← same] using allowed.2.1
       · simpa only [← same] using allowed.2.2.1
       · simpa only [← same] using allowed.2.2.2
-      · simpa only [ConstantInfo.name, ConstantInfo.toConstantVal, same, ↓reduceIte]
+      · simp only [ConstantInfo.name, ConstantInfo.toConstantVal, same, ↓reduceIte]
     · rw [ite_eq_right same] at original
       rcases simulation.find_sim original with unchanged | ⟨val, body, kind, hn, hs, hp, hr, found⟩
-      · exact .inl (by simpa only [ConstantInfo.name, ConstantInfo.toConstantVal, ite_eq_right same] using unchanged)
-      · exact .inr ⟨val, body, kind, hn, hs, hp, hr,
-          by simpa only [ConstantInfo.name, ConstantInfo.toConstantVal, ite_eq_right same] using found⟩
+      · refine .inl ?_
+        change (if cv.name = name then some (.thmInfo cv value) else after.find? name) = some ci
+        rw [ite_eq_right same]
+        exact unchanged
+      · refine .inr ⟨val, body, kind, hn, hs, hp, hr, ?_⟩
+        change (if cv.name = name then some (.thmInfo cv value) else after.find? name) =
+          some (.thmInfo val body)
+        rw [ite_eq_right same]
+        exact found
   · intro T val flags found
     rw [Env.find?_cons] at found
     split at found
@@ -115,7 +121,10 @@ theorem cons_theorem {before after : Env .anon} (simulation : ThmSimAt before af
     · have oldTable := simulation.tables_eq found
       rw [Env.find?_cons, Env.find?_cons]
       have different := not_table (T := T) allowed.2.1
-      simpa only [ConstantInfo.name, ConstantInfo.toConstantVal, ite_eq_right different] using oldTable
+      change (if cv.name = projTableName T then some (.thmInfo cv value) else after.find? (projTableName T)) =
+        (if cv.name = projTableName T then some (.defnInfo cv value .opaque) else before.find? (projTableName T))
+      rw [ite_eq_right different]
+      exact oldTable
 
 end ThmKind
 end IxVM.Refinement.Decl
