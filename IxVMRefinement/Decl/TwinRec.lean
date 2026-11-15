@@ -1847,7 +1847,8 @@ theorem check_muts_member_at_inv (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.
     have hg12 : Good c cs12 := hgood.sub (by rw [hc94]; intro x hx; simp [hx])
     have hg53 : Good c cs53 := hgood.sub (by rw [hc94]; intro x hx; simp [hx])
     have hg67 : Good c cs67 := hgood.sub (by rw [hc94]; intro x hx; simp [hx])
-    obtain ⟨a, ha, ha_addr⟩ := ProjAddrAux.projection_addr_spec c hpos hlen hg12 hms hb ev14
+    obtain ⟨a, ha, ha_addr⟩ := ProjAddrAux.projection_addr_spec (ScopedCtx.unrestricted c)
+      hpos hlen (CoreGood.unrestricted hg12) hms hb ev14
     refine ⟨a, v1, p47, v39, m2, m40, cs53, cs67,
       ObsFn.heap_extends ev14, ObsFn.heap_extends ev55,
       ha, ha_addr, ev55, ld49, ev69,
