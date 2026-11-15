@@ -434,7 +434,6 @@ raw drawn store `E_raw`, locally exact-decoded role environment
 `E_role' := normalizeRoleEnv E_raw order_role`, pure hash authenticity on all role-closure records
 and blobs, `StreamRead` over `decodedOf E_role' order_role`, `keepsPrelude`, `AcceptsRef`,
 `TheoremsInProp`, and `BindingSpecs`. -/
-set_option maxHeartbeats 800000 in
 theorem tableAdmitted_unpack_normalized
     {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
     (hadmV : IxVM.Refinement.TableAdmitted V b) :
@@ -483,6 +482,8 @@ theorem tableAdmitted_unpack_normalized
   have hclos' : Ix.Cert.ClosureOrderAt t E_raw (IxVM.Refinement.BindingSeeds t) order_role :=
     Eq.mp (congrArg (fun x =>
       Ix.Cert.ClosureOrderAt x E_raw (IxVM.Refinement.BindingSeeds t) order_role) ht_eq) hclos
+  have hpre' : Ix.Kernel.Reader.preludeFor t = .ok pre :=
+    Eq.mp (congrArg (fun x => Ix.Kernel.Reader.preludeFor x = .ok pre) ht_eq) hpre
   obtain ⟨hwit, huniq, hauth, t'', constants, st_role, decls_role,
     hadm'', hreads_rec, hstream, hev_eq, hkeeps, hds_eq⟩ := prepareWith_unpack hprep
   have ht''_eq : t'' = t := Except.ok.inj (hadm''.symm.trans hadm)
@@ -521,7 +522,7 @@ theorem tableAdmitted_unpack_normalized
   have hrec_eq : Ix.Cert.recordsOf E_role' order_role = Ix.Cert.recordsOf E_raw order_role :=
     normalizeRoleEnv_recordsOf E_raw order_role order_role
   refine ⟨t, E_raw, E_role', limits, order_role, envA, pre, st_role, decls_role,
-    rfl, hadm, hlit, hdraws, ?_, hclos', hpre, hrec_eq, ?_, ?_, ?_, ?_,
+    rfl, hadm, hlit, hdraws, ?_, hclos', hpre', hrec_eq, ?_, ?_, ?_, ?_,
     hstream', hkeeps, hacc, hthms', hspecs'⟩
   · intro a hsa
     exact (normalizeRoleEnv_contains E_raw order_role a).trans (hseeds a hsa)
