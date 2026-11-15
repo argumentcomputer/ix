@@ -83,9 +83,9 @@ theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env 
   obtain ⟨stype, level, hi, hs, hz⟩ := hprop
   have targetCV := h.constantValRun hcv
   have targetValue := h.valueFrontRun hv
-  have targetInfer : inferTypeCore .verified target fuel 0 ty = .ok stype := by
+  have targetInfer : Ix.Kernel.inferTypeCore .verified target fuel 0 ty = .ok stype := by
     simpa only [h.inferTypeCore] using hi
-  have targetSort : ensureSortCore .verified target fuel 0 stype = .ok level := by
+  have targetSort : Ix.Kernel.ensureSortCore .verified target fuel 0 stype = .ok level := by
     simpa only [h.ensureSortCore] using hs
   have rules : DeclThmRunJ rulesJ target cv value
       ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: target.consts⟩ :=
