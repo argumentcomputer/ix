@@ -11,6 +11,8 @@ projection-function phase extends the installation without changing its declared
 namespace IxVM.Refinement.Decl
 
 open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
+
+universe u
 open IxVM.Consistency (StoredAs ValStored RuleStored InstallStep)
 
 private theorem modeledMember_valStored {fuel : Nat} {env : Env .anon}
@@ -35,14 +37,16 @@ private theorem modeledMembers_stored {fuel : Nat} {names : List (Key .anon)}
       rcases List.mem_cons.mp mem with rfl | mem
       · refine ⟨.indInfo cvA caps, ?_, hs, trivial⟩
         change out.find? cv.name = _
-        rw [← hs.1]
+        have name : cvA.name = cv.name := hs.1
+        rw [← name]
         exact indMembersRun_mono rest (indMembersRun_runJ tail) _ _ (Env.find?_cons_self _ _)
       · exact ih tail raw mem
     | ctorInfo cv nP nF =>
       rcases List.mem_cons.mp mem with rfl | mem
       · refine ⟨.ctorInfo cvA nP nF, ?_, hs, rfl, rfl⟩
         change out.find? cv.name = _
-        rw [← hs.1]
+        have name : cvA.name = cv.name := hs.1
+        rw [← name]
         exact indMembersRun_mono rest (indMembersRun_runJ tail) _ _ (Env.find?_cons_self _ _)
       · exact ih tail raw mem
     | _ => exact tail.elim
@@ -103,11 +107,23 @@ private theorem modeledRecFold_stored {fuel : Nat} {names : List (Key .anon)}
     intro entry mem
     rcases List.mem_cons.mp mem with rfl | mem
     · refine ⟨rules, ?_, modeledIotaRules_stored hRules⟩
-      rw [indRecsFoldRun_keep rest (indRecsFoldRun_runJ hrest) c.1.name ?_]
+      rw [indRecsFoldRun_keep rest (indRecsFoldRun_runJ hrest) entry.1.name ?_]
       · exact Env.find?_cons_self _ _
       · intro other hother heq
         exact nodup.1 (List.mem_map.mpr ⟨other, hother, heq⟩)
     · exact ih hrest nodup.2 entry mem
+
+private theorem preparedRec_mem_right {checked : List (ConstantVal .anon × Nat × Nat × List (RecRule .anon))}
+    {recs : List (ConstantInfo .anon)} (prepared : List.Forall₂ PreparedRec checked recs) :
+    ∀ raw ∈ recs, ∃ entry ∈ checked, PreparedRec entry raw := by
+  induction prepared with
+  | nil => intro _ h; cases h
+  | @cons entry raw checked recs hentry _ ih =>
+    intro other mem
+    rcases List.mem_cons.mp mem with rfl | mem
+    · exact ⟨entry, List.mem_cons_self, hentry⟩
+    · obtain ⟨found, hfound, shape⟩ := ih other mem
+      exact ⟨found, List.mem_cons_of_mem entry hfound, shape⟩
 
 private theorem modeledRecs_stored {fuel : Nat} {names : List (Key .anon)}
     {env out : Env .anon} {recs : List (ConstantInfo .anon)}
@@ -118,7 +134,7 @@ private theorem modeledRecs_stored {fuel : Nat} {names : List (Key .anon)}
   · have prepared := modeledProvision_annotations provision
     obtain ⟨_, nodup, _⟩ := provisionRecsRunJ_fresh _ (provisionRecsRun_runJ provision)
     intro raw mem
-    obtain ⟨entry, hentry, hshape, hcv⟩ := Ix.Kernel.Semantics.forall₂_mem_right prepared raw mem
+    obtain ⟨entry, hentry, hshape, hcv⟩ := preparedRec_mem_right prepared raw mem
     obtain ⟨rules, found, hRules⟩ := modeledRecFold_stored installed nodup entry hentry
     refine ⟨.recInfo entry.1 entry.2.1 entry.2.2.1 rules, ?_, ?_⟩
     · change out.find? raw.toConstantVal.name = _
@@ -142,7 +158,7 @@ private theorem modeledPhases_stored {fuel : Nat} {env envM out : Env .anon}
 
 private theorem installStep_cons_aux {env acc : Env .anon} {d : Declaration .anon}
     (installed : InstallStep env d acc) {ci : ConstantInfo .anon}
-    (fresh : acc.find? ci.name = none) (aux : ∃ root tag, ci.name = .aux root tag) :
+    (fresh : acc.find? ci.name = none) (aux : ∃ root deriv, ci.name = .aux root deriv) :
     InstallStep env d ⟨ci :: acc.consts⟩ := by
   obtain ⟨new, heq, hn, hf, stored, shape⟩ := installed
   have chain : FreshChain env new acc := ⟨heq, hn, hf⟩
@@ -185,11 +201,38 @@ theorem modeledRun_installStep {fuel : Nat} {env out : Env .anon}
   obtain ⟨split, branch⟩ := run
   rcases branch with ⟨cvT, capsT, cvC, cnP, cnF, _, _, envM, envR, members, recs,
     _, _, projections⟩ | ⟨_, envM, members, recs⟩
-  · have prefix : InstallStep env (.indDecl block nP) envR :=
+  · have installedMembers : InstallStep env (.indDecl block nP) envR :=
       installStep_glue_indPhases notPinned split (indMembersRun_runJ members) (indRecsRun_runJ recs)
         (modeledPhases_stored split members recs)
-    exact installStep_modeledProjections prefix projections
+    exact installStep_modeledProjections installedMembers projections
   · exact installStep_glue_indPhases notPinned split (indMembersRun_runJ members) (indRecsRun_runJ recs)
       (modeledPhases_stored split members recs)
+
+/-- A modeled checker success supplies both the concrete installation and the reference model step. -/
+theorem checkedModeled_referenceStep {source target referenceOut : Env .anon}
+    (agreement : ThmBodyView.Agrees source target) {fuel nP : Nat}
+    {block : List (ConstantInfo .anon)} (notPinned : basisPinHit block = none)
+    (checked : checkModeled .verified (fueledOps .verified fuel) source block = .ok referenceOut) :
+    ∃ targetOut, ThmBodyView.Agrees referenceOut targetOut ∧
+      InstallStep target (.indDecl block nP) targetOut ∧
+      ∀ (V : Type u) [SetTheory V], EnvModelT V .verified target → EnvModelT V .verified targetOut := by
+  obtain ⟨targetOut, outAgreement, run, preserved⟩ := agreement.checkedModeled_modelStep checked
+  exact ⟨targetOut, outAgreement, modeledRun_installStep notPinned run, preserved⟩
+
+/-- The actual declaration dispatch supplies the modeled run after its shape and parameter checks. -/
+theorem checkedDecl_modeled_referenceStep {source target referenceOut : Env .anon}
+    (agreement : ThmBodyView.Agrees source target) {fuel nP : Nat} {ev : Evidences .anon}
+    {block : List (ConstantInfo .anon)} (notPinned : basisPinHit block = none)
+    (modeled : nativeParts? nP block = none)
+    (checked : checkDecl .verified (fueledOps .verified fuel) ev source (.indDecl block nP)
+      = .ok referenceOut) :
+    ∃ targetOut, ThmBodyView.Agrees referenceOut targetOut ∧
+      InstallStep target (.indDecl block nP) targetOut ∧
+      ∀ (V : Type u) [SetTheory V], EnvModelT V .verified target → EnvModelT V .verified targetOut := by
+  simp only [checkDecl, notPinned, modeled] at checked
+  have rest := (checkIndShape_bind_ok checked).2
+  split at rest
+  · exact checkedModeled_referenceStep agreement notPinned rest
+  · cases rest
 
 end IxVM.Refinement.Decl
