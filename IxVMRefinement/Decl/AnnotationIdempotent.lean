@@ -134,7 +134,7 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
           CheckM md (Expr md))) (choosePw_idempotent hpw)
       by_cases written : (!pwWritten pw) = true
       · simpa only [ite_eq_left written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
-      · simpa only [ite_eq_right written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      · simp only [ite_eq_right written, Pure.pure, Except.pure]
     | lam ty body bm =>
       simp only [Expr.WScoped] at scope
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
@@ -158,7 +158,7 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
           CheckM md (Expr md))) (choosePw_idempotent hpw)
       by_cases written : (!pwWritten pw) = true
       · simpa only [ite_eq_left written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
-      · simpa only [ite_eq_right written, Bind.bind, Except.bind, Pure.pure, Except.pure] using next
+      · simp only [ite_eq_right written, Pure.pure, Except.pure]
     | letE ty value body lmeta =>
       obtain ⟨_, _, _, _, hbody, _⟩ := annotateCore_letE_inv run
       simp only [Expr.WScoped] at scope
