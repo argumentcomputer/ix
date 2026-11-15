@@ -1,4 +1,7 @@
 import IxVMRefinement.Decl.ModeledInstall
+import IxVMRefinement.Obs.RBTreeMap
+import IxVMRefinement.Obs.KernelCheck
+import IxVMRefinement.Obs.KernelModeled
 
 /-! # Modeled Inductive Block Dispatch & Top-Level `L5` Assembly (`Modeled.lean`)
 
@@ -35,14 +38,12 @@ Completes the modeled-inductive slice (`L5-M`) and joins it with `L5-V` (`Value.
 namespace IxVM.Refinement.Decl
 
 open Aiur Aiur.Library Aiur.Library.List Aiur.Generic Aiur.Generic.SourceSemantics
-open IxVM (F)
 open IxVM.Refinement.Core
-open IxVM.Refinement.Obs (W)
 open Ix.Kernel.Semantics
 open Ix.Kernel.Model
 open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal BinderMeta RecRule
   RecRuleFire IndCaps BasisKind Declaration LevelParam EnvExt ReducibilityHint Derived
-  auxKey projTableName recRuleBits)
+  auxKey projTableName recRuleBits hasFvar_renameConsts)
 open Ix.Kernel.Rules (Annot Red DefEq Infer)
 
 set_option linter.unusedVariables false
@@ -61,7 +62,7 @@ theorem AddrMapAll.valueType_eq {en : String}
     {P : Heap F → Bytes.Address → SourceValue F → Prop}
     {h : Heap F} {t : SourceValue F} (ht : AddrMapAll en P h t) :
     Value.type t = .enum en := by
-  cases ht <;> rfl
+  cases ht <;> simp [Value.type]
 
 private theorem addrMapAll_mono_pred {en : String}
     {P₁ P₂ : Heap F → Bytes.Address → SourceValue F → Prop}
@@ -93,7 +94,7 @@ private theorem load_stored_addrMapAll_type {en : String}
     (ht : AddrMapAll en P h₀ t)
     (ext : Heap.Extends (h₀ ++ [t]) h') :
     loadValue h' (.ptr (Value.type t) h₀.length) = .ok t := by
-  rw [ht.valueType_eq]
+  rw [AddrMapAll.valueType_eq ht]
   exact load_stored_addrMapAll_enum ht ext
 
 private theorem addrMapAll_node_inv {en : String}
@@ -108,8 +109,19 @@ private theorem addrMapAll_node_inv {en : String}
       loadValue h x_r = .ok rv ∧
       AddrMapAll en P h lv ∧
       AddrMapAll en P h rv := by
+  generalize hv : Value.construct en "Node" [x_c, x_k, x_v, x_l, x_r] = t at ht
   cases ht with
-  | node (c := c) (a := a) (lv := lv) (rv := rv) hk hP hl hr rl rr =>
+  | nil =>
+    injection hv with _ htag _
+    exact absurd htag (by decide)
+  | @node _ c _ _ _ _ lv rv a hk hP hl hr rl rr =>
+    injection hv with _ _ hargs
+    injection hargs with h1 h2
+    injection h2 with h3 h4
+    injection h4 with h5 h6
+    injection h6 with h7 h8
+    injection h8 with h9 _
+    subst h1 h3 h5 h7 h9
     exact ⟨c, a, lv, rv, rfl, hk, hP, hl, hr, rl, rr⟩
 
 private theorem rbtree_map_balance_fix_addrMapAll {t_V : Generic.Ty}
@@ -124,7 +136,7 @@ private theorem rbtree_map_balance_fix_addrMapAll {t_V : Generic.Ty}
       [x_key, x_value, x_left, x_right] h r h' cs) :
     let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
     AddrMapAll en (fun _ a v => P a v) h' r ∧
-    (∃ (c_out : F) k_out v_out l_out r_out,
+    (∃ (c_out : F) (k_out v_out l_out r_out : SourceValue F),
       r = .construct en "Node" [.field c_out, k_out, v_out, l_out, r_out]) ∧
     Heap.Extends h h' := by
   let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
@@ -322,7 +334,7 @@ private theorem rbtree_map_balance_addrMapAll {t_V : Generic.Ty}
       [.field c_in, x_key, x_value, x_left, x_right] h r h' cs) :
     let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
     AddrMapAll en (fun _ a v => P a v) h' r ∧
-    (∃ (c_out : F) k_out v_out l_out r_out,
+    (∃ (c_out : F) (k_out v_out l_out r_out : SourceValue F),
       r = .construct en "Node" [.field c_out, k_out, v_out, l_out, r_out]) ∧
     Heap.Extends h h' := by
   let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
@@ -360,7 +372,7 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
         [x_key, x_value, x_tree] h r h' cs →
       let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
       AddrMapAll en (fun _ a v => P a v) h' r ∧
-      (∃ (c_out : F) k_out v_out l_out r_out,
+      (∃ (c_out : F) (k_out v_out l_out r_out : SourceValue F),
         r = .construct en "Node" [.field c_out, k_out, v_out, l_out, r_out]) ∧
       Heap.Extends h h' := by
   let en := (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol
@@ -533,7 +545,7 @@ private theorem get_addrs_go :
       rw [he40, hm29]
       exact Lib.rep_store_nil h
     | other _ _ _ _ _ _ _ _ _ _ hne42 _ _ _ _ _ _ _ =>
-      have hn0 : n_f = 0 := ZMod.val_eq_zero.mp hcnt
+      have hn0 : n_f = 0 := by rwa [ZMod.val_eq_zero] at hcnt
       exact absurd (congrArg Value.field hn0) hne42
   | cnt + 1, n_f, x_s, r, bytes_in, h, h', cs, hcnt, hs, ev => by
     cases Obs.«KernelModeled::get_addrs».obs ev with
@@ -593,10 +605,10 @@ theorem addrList_length_spec {as_ : List Bytes.Address} {l r : SourceValue F}
     (hl : RepList addrListEnum (Bytes.RepAddressRef addrTy) h as_ l)
     (ev : ObsFn W Obs.Names.«Lists::length<&[Field; 32]>» [l] h r h' cs) :
     r = .field (as_.length : F) ∧ h' = h := by
-  have ev' : ObsFn W (Instance.mk "Lists::length" [.ref (.array .field 32)]).symbol
+  have ev' : ObsFn W (Instance.mk "Lists::length" [.ptr (.array .field 32)]).symbol
       [l] h r h' cs := by
     rw [Obs.Names.«Lists::length<&[Field; 32]>».symbol]; exact ev
-  have hl' : RepList (Instance.mk "Lists::Node" [.ref (.array .field 32)]).symbol
+  have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
       (Bytes.RepAddressRef addrTy) h as_ l := by
     rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact hl
   exact Lib.Lists.length_spec ev' hl'
@@ -608,13 +620,13 @@ theorem addrList_concat_spec {xs ys : List Bytes.Address} {a b r : SourceValue F
     (hb : RepList addrListEnum (Bytes.RepAddressRef addrTy) h ys b)
     (ev : ObsFn W Obs.Names.«Lists::concat<&[Field; 32]>» [a, b] h r h' cs) :
     RepList addrListEnum (Bytes.RepAddressRef addrTy) h' (xs ++ ys) r := by
-  have ev' : ObsFn W (Instance.mk "Lists::concat" [.ref (.array .field 32)]).symbol
+  have ev' : ObsFn W (Instance.mk "Lists::concat" [.ptr (.array .field 32)]).symbol
       [a, b] h r h' cs := by
     rw [Obs.Names.«Lists::concat<&[Field; 32]>».symbol]; exact ev
-  have ha' : RepList (Instance.mk "Lists::Node" [.ref (.array .field 32)]).symbol
+  have ha' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
       (Bytes.RepAddressRef addrTy) h xs a := by
     rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact ha
-  have hb' : RepList (Instance.mk "Lists::Node" [.ref (.array .field 32)]).symbol
+  have hb' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
       (Bytes.RepAddressRef addrTy) h ys b := by
     rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact hb
   have hout := Lib.Lists.concat_spec (Bytes.repAddressRef_heapMono₂ addrTy) ev' ha' hb'
@@ -778,7 +790,7 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
     injection hv526 with _ htag _; exact absurd htag (by decide)
   | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv825 _ _ _ _ _ _ _ _ _ =>
     injection hv825 with _ htag _; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv1076 _ _ _ _ _ _ =>
+  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv1076 _ _ _ _ _ _ =>
     injection hv1076 with _ htag _; exact absurd htag (by decide)
   | Induct_n0 v1 m2 cs12 x_nlvls x_ty x_n_params x_n_indices x_num_ctors x_ind_is_unsafe
       x_ind_block x_ind_idx v1282 m1283 cs1293 v1330 m1333 cs1341 m1354 m1376 v1395 m1396 cs1406
@@ -980,7 +992,7 @@ theorem check_advice_records_spec {calls : List (Call F)} {blockNames : List KKe
         rcases hb with hs | rfl
         · obtain ⟨cvm, mval, hint, hf⟩ := hdefs b hs
           rw [hκ_eq]
-          exact ⟨cvm, mval, hint, hstep1.ext.consts hf⟩
+          exact ⟨cvm, mval, hint, hstep1.ext.find hf⟩
         · exact ⟨cvm_a, mval_a, hint_a, hdef_a⟩
       have hrc1 : RCRep c_next.t c_next.lim m160 rc := by
         rw [ht_eq, hlim_eq]; exact hrc.mono ext_h_160
@@ -1038,28 +1050,6 @@ theorem ci_lvls_type_spec {κ : _root_.Address → KKey} {v_ci x_nl x_ty : Sourc
       injection hv163 with _ _ hc; injection hc with hnl h4; injection h4 with hty _
       subst hnl hty; exact ⟨hv, rfl⟩
     | _ => injection hv163 with _ htag _; exact absurd htag (by decide)
-
-theorem noProjIn_instantiateLevelParams (bad : List KKey) (ks : List LevelParam)
-    (us : List KLevel) :
-    ∀ e : KExpr, NoProjIn bad (e.instantiateLevelParams ks us) = NoProjIn bad e
-  | .bvar _ | .sort _ | .const _ _ | .lit _ => rfl
-  | .fvar _ ty => noProjIn_instantiateLevelParams bad ks us ty
-  | .app f a => by
-    simp only [Expr.instantiateLevelParams, NoProjIn,
-      noProjIn_instantiateLevelParams bad ks us f,
-      noProjIn_instantiateLevelParams bad ks us a]
-  | .lam ty b _ | .forallE ty b _ => by
-    simp only [Expr.instantiateLevelParams, NoProjIn,
-      noProjIn_instantiateLevelParams bad ks us ty,
-      noProjIn_instantiateLevelParams bad ks us b]
-  | .letE ty v b _ => by
-    simp only [Expr.instantiateLevelParams, NoProjIn,
-      noProjIn_instantiateLevelParams bad ks us ty,
-      noProjIn_instantiateLevelParams bad ks us v,
-      noProjIn_instantiateLevelParams bad ks us b]
-  | .proj sn _ e => by
-    simp only [Expr.instantiateLevelParams, NoProjIn,
-      noProjIn_instantiateLevelParams bad ks us e]
 
 /-- **`KernelModeled::member_val`** verifies that `a_md` is in `advSet`, loads `ci_m` at `a_m`,
 loads a `.defnInfo cvm_f mval_f hint_f` at `a_md` in `c_adv.env`, and checks syntactic equality of
@@ -1192,8 +1182,8 @@ theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     ∀ (memAs mdAs : List Bytes.Address) (cis : List (ConstantInfo .anon))
       {x_members x_models x_src x_dst x_aset r : SourceValue F}
       {h h' : Heap F} {calls : List (Call F)},
-      memAs.length = mdAs.length →
-      memAs.length = cis.length →
+      (hlen1 : memAs.length = mdAs.length) →
+      (hlen2 : memAs.length = cis.length) →
       Good c_adv calls →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h memAs x_members →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h mdAs x_models →
@@ -1573,13 +1563,13 @@ private theorem storedAs_checked_r {find? : KKey → Option (ConstantInfo .anon)
     (hs : IxVM.Consistency.StoredAs (.recInfo w.cv w.mI w.rP w.rawRules) ci₀) :
     IxVM.Consistency.StoredAs (w.checked_r find?) ci₀ := by
   cases ci₀ with
-  | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _ | opaqueInfo _ _
+  | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _
   | indInfo _ _ | ctorInfo _ _ _ | projInfo _ => cases hs.2
   | recInfo cv₀ mI₀ rP₀ rules₀ =>
     obtain ⟨hval, hmI, hrP, hrules⟩ := hs
     refine ⟨hval, hmI, hrP, ?_⟩
     dsimp only [RecInstallEntry.checked_r, RecInstallEntry.rules_r]
-    clear hval hmI hrP hs
+    clear hval hmI hrP
     induction hrules with
     | nil => exact .nil
     | cons hhd _ ih =>
@@ -1592,31 +1582,48 @@ private theorem envExt_pushList_shared :
       (∀ c ∈ cs, E₁.find? c.name = none) →
       (∀ c ∈ cs, E₂.find? c.name = none) →
       (∀ c ∈ cs, ∀ T, c.name ≠ projTableName T) →
+      (∀ c ∈ cs, (∀ cv caps, c ≠ .indInfo cv caps) ∨
+        (E₁.find? (projTableName c.name) = none ∧ E₂.find? (projTableName c.name) = none)) →
       (∀ k ci, (pushList cs E₁).find? k = some ci → (pushList cs E₂).find? k = some ci) ∧
       EnvExt (pushList cs E₁) (pushList cs E₂)
-  | [], _, _, hext, _, _, _, _ => ⟨fun _ _ hf => hext.consts hf, hext⟩
-  | c :: rest, E₁, E₂, hext, hnd, hfr₁, hfr₂, hnpt => by
+  | [], _, _, hext, _, _, _, _, _ => ⟨fun _ _ hf => hext.find hf, hext⟩
+  | c :: rest, E₁, E₂, hext, hnd, hfr₁, hfr₂, hnpt, hpt => by
     obtain ⟨hcnin, hnd'⟩ := List.nodup_cons.mp hnd
     have hc_ne_rest : ∀ c' ∈ rest, c.name ≠ c'.name :=
-      fun c' hc' heq => hcnin (heq ▸ List.mem_map.mpr ⟨c', hc', rfl⟩)
+      fun c' hc' heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
     have hext₁ : EnvExt ⟨c :: E₁.consts⟩ ⟨c :: E₂.consts⟩ := by
-      refine ⟨?_, ?_⟩
+      refine { find := ?_, tables := ?_ }
       · intro k ci hf
         rw [Env.find?_cons] at hf ⊢
         by_cases hk : c.name = k
         · rw [ite_eq_left hk] at hf ⊢; exact hf
-        · rw [ite_eq_right hk] at hf ⊢; exact hext.consts hf
-      · intro T tbl hf
+        · rw [ite_eq_right hk] at hf ⊢; exact hext.find hf
+      · intro T cv caps hf
         have hne : c.name ≠ projTableName T := hnpt c List.mem_cons_self T
-        rw [EnvExt.find?_cons_ne hne] at hf ⊢
-        exact hext.tables hf
-    refine envExt_pushList_shared rest hext₁ hnd' ?_ ?_ (fun c' hc' => hnpt c' (List.mem_cons_of_mem c hc'))
+        rw [EnvExt.find?_cons_ne hne, EnvExt.find?_cons_ne hne]
+        rw [Env.find?_cons] at hf
+        by_cases hk : c.name = T
+        · rw [ite_eq_left hk] at hf
+          injection hf with hc_ind
+          rcases hpt c List.mem_cons_self with hno_ind | ⟨h1, h2⟩
+          · exact absurd hc_ind (hno_ind cv caps)
+          · rw [← hk, h1, h2]
+        · rw [ite_eq_right hk] at hf
+          exact hext.tables hf
+    refine envExt_pushList_shared rest hext₁ hnd' ?_ ?_
+      (fun c' hc' => hnpt c' (List.mem_cons_of_mem c hc')) ?_
     · intro c' hc'
       rw [EnvExt.find?_cons_ne (hc_ne_rest c' hc')]
       exact hfr₁ c' (List.mem_cons_of_mem c hc')
     · intro c' hc'
       rw [EnvExt.find?_cons_ne (hc_ne_rest c' hc')]
       exact hfr₂ c' (List.mem_cons_of_mem c hc')
+    · intro c' hc'
+      rcases hpt c' (List.mem_cons_of_mem c hc') with hno_ind | ⟨h1, h2⟩
+      · exact Or.inl hno_ind
+      · have hne' : c.name ≠ projTableName c'.name := hnpt c List.mem_cons_self c'.name
+        exact Or.inr ⟨by rw [EnvExt.find?_cons_ne hne']; exact h1,
+          by rw [EnvExt.find?_cons_ne hne']; exact h2⟩
 
 private theorem envExt_pushList_fresh_base :
     ∀ (cs : List (ConstantInfo .anon)) {E : Env .anon},
@@ -1628,11 +1635,11 @@ private theorem envExt_pushList_fresh_base :
   | c :: rest, E, hnd, hfr, hnpt => by
     obtain ⟨hcnin, hnd'⟩ := List.nodup_cons.mp hnd
     have hext₁ : EnvExt E ⟨c :: E.consts⟩ :=
-      EnvExt.cons_fresh (hfr c List.mem_cons_self) (hnpt c List.mem_cons_self)
+      envExt_cons_fresh (hfr c List.mem_cons_self) (hnpt c List.mem_cons_self)
     have hfr' : ∀ c' ∈ rest, (⟨c :: E.consts⟩ : Env .anon).find? c'.name = none := by
       intro c' hc'
       have hne : c.name ≠ c'.name :=
-        fun heq => hcnin (heq ▸ List.mem_map.mpr ⟨c', hc', rfl⟩)
+        fun heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
       rw [EnvExt.find?_cons_ne hne]
       exact hfr c' (List.mem_cons_of_mem c hc')
     exact hext₁.trans
@@ -1776,7 +1783,7 @@ private theorem build_nonRecChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.env
       rwa [looseBVarsBounded_renameConsts, Expr.looseBVarsBounded_instantiateLevelParams] at h1
     have htr : c.toConstantVal.type.constsResolve E_r = true := hcr [] rest c rfl
     have hc_ne_rest : ∀ c' ∈ rest, c.name ≠ c'.name :=
-      fun c' hc' heq => hcnin (heq ▸ List.mem_map.mpr ⟨c', hc', rfl⟩)
+      fun c' hc' heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
     refine ⟨hfr_r c List.mem_cons_self, hfr_p c List.mem_cons_self,
       hbase, hnres, hperm, hknd, htf, htp, htr, htb,
       ⟨cvm_f, mval_f, hint_f, hf_p, hlps_f, by rw [hpos_ty_eq]; exact hty_f⟩, ?_⟩
@@ -1843,17 +1850,17 @@ private theorem build_recProvChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.en
       unfold posOf at h1
       rwa [looseBVarsBounded_renameConsts, Expr.looseBVarsBounded_instantiateLevelParams] at h1
     have hw_ne_rest : ∀ w' ∈ rest, w.cv.name ≠ w'.cv.name :=
-      fun w' hw' heq => hwnin (heq ▸ List.mem_map.mpr ⟨w', hw', rfl⟩)
+      fun w' hw' heq => hwnin (by rw [heq]; exact List.mem_map_of_mem hw')
     refine ⟨hfr_r w List.mem_cons_self, hfr_p w List.mem_cons_self,
       hbase, hnres, hperm, htf, htp, htr, htb,
       ⟨cvm_f, mval_f, hint_f, hf_p, hlps_f, hty_f⟩, ?_⟩
     refine build_recProvChain hS_adv rest ⟨w.prov_r :: E_r.consts⟩ ⟨w.prov_p :: E_p₀.consts⟩
       hnd' ?_ ?_ ?_
     · intro w' hw'
-      rw [EnvExt.find?_cons_ne (hw_ne_rest w' hw')]
+      rw [EnvExt.find?_cons_ne (show w.prov_r.name ≠ w'.cv.name from hw_ne_rest w' hw')]
       exact hfr_r w' (List.mem_cons_of_mem w hw')
     · intro w' hw'
-      rw [EnvExt.find?_cons_ne (hw_ne_rest w' hw')]
+      rw [EnvExt.find?_cons_ne (show w.prov_p.name ≠ w'.cv.name from hw_ne_rest w' hw')]
       exact hfr_p w' (List.mem_cons_of_mem w hw')
     · intro w' hw'
       obtain ⟨hb', hnr', hp', htr', cvm', mval', hint', hfa', hfp', hl', ht'⟩ :=
@@ -1943,7 +1950,10 @@ private theorem declStoreInv_push_pos_nonrecs :
     have hfr_rest : ∀ c' ∈ rest, (⟨posCI c :: E_p.consts⟩ : Env .anon).find? c'.name = none := by
       intro c' hc'
       have hne : (posCI c).name ≠ c'.name :=
-        fun heq => hcnin ((hname_p ▸ heq) ▸ List.mem_map.mpr ⟨c', hc', rfl⟩)
+        fun heq => hcnin (by
+          have hc_eq : c.name = c'.name := hname_p.symm.trans heq
+          rw [hc_eq]
+          exact List.mem_map_of_mem hc')
       rw [EnvExt.find?_cons_ne hne]
       exact hfr_p c' (List.mem_cons_of_mem c hc')
     exact declStoreInv_push_pos_nonrecs rest hnd' hSp₁ hsome₁ hfr_rest hrest
@@ -2061,7 +2071,10 @@ private theorem declStoreInv_push_pos_specs_prov :
     have hfr_rest : ∀ s' ∈ rest, (⟨s.prov_p :: E_p.consts⟩ : Env .anon).find? s'.cv.name = none := by
       intro s' hs'
       have hne : s.prov_p.name ≠ s'.cv.name :=
-        fun heq => hsnin (heq ▸ List.mem_map.mpr ⟨s', hs', rfl⟩)
+        fun heq => hsnin (by
+          change s.cv.name = s'.cv.name at heq
+          rw [heq]
+          exact List.mem_map_of_mem hs')
       rw [EnvExt.find?_cons_ne hne]
       exact hfr s' (List.mem_cons_of_mem s hs')
     refine declStoreInv_push_pos_specs_prov rest hnd' hSp₁ hfr_rest ?_
@@ -2322,7 +2335,7 @@ theorem modeledBlockWitness_of_check_family
     obtain ⟨hR₀, hlf₀, hex₀, hg₀⟩ := bridge.baseCtxFacts hS₀
     let c₀ : Ctx := ⟨E, env, t, lim⟩
     have hef₀ : EnvFacts c₀ := hS₀.toEnvFacts htwf hR₀
-    obtain ⟨c_adv, hE_adv, ht_adv, hlim_adv, hadv_step, hS_adv, _, hfr_inst_adv,
+    obtain ⟨c_adv, hE_adv, ht_adv, hlim_adv, hadv_step, hS_adv, hAux_adv, hfr_inst_adv,
         hef_adv, hlf_adv, hex_adv, hg_adv, haset_raw, _, ext_453⟩ :=
       check_advice_records_spec (bridge.adviceOracle instNames v390)
         advAs (fun _ => False) c₀ hS₀ hAux₀ hfr_inst0
@@ -2626,7 +2639,7 @@ theorem modeledBlockWitness_of_check_family
         obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hcp
         rw [hpos_nr_names c hc]
         exact fun heq => hdisj_nr_sp c.name (List.mem_map_of_mem hc)
-          (heq ▸ List.mem_map_of_mem hs)]
+          (by rw [heq]; exact List.mem_map_of_mem hs)]
       exact hfr_env_sp s hs
     have hsome_nr_pos : ∀ k,
         ((pushList nonrecs env).find? k).isSome = (c_pub.env.find? k).isSome :=
@@ -2808,7 +2821,7 @@ theorem modeledBlockWitness_of_check_family
           (fun c hc => by
             obtain ⟨hb, hnres, hk, _, _⟩ := hnr_info c hc
             obtain ⟨hp, cvm_f, mval_f, hint_f, hfa, hlf, htf⟩ := hmv_nonrec c hc
-            exact ⟨hb, hnres, hk, hp, cvm_f, mval_f, hint_f, hfa, hext_iota.consts hfa, hlf, htf⟩)
+            exact ⟨hb, hnres, hk, hp, cvm_f, mval_f, hint_f, hfa, hext_iota.find hfa, hlf, htf⟩)
           hcr_nr
       have hnd_pos_nr : ((nonrecs.map posCI).map (·.name)).Nodup := by
         have hmap : (nonrecs.map posCI).map (·.name) = nonrecs.map (·.name) := by
@@ -2826,12 +2839,20 @@ theorem modeledBlockWitness_of_check_family
           (fun cp hcp T => by
             obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hcp
             rw [hpos_nr_names c hc]; exact ne_projTableName_of_isBaseKey (hnr_info c hc).1)
+          (fun cp hcp => Or.inr (by
+            obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hcp
+            rw [hpos_nr_names c hc]
+            have hb : isBaseKey c.name = true := (hnr_info c hc).1
+            refine ⟨hAux₀.fresh_projTable hb (hfr_env_nr c hc), ?_⟩
+            rw [hout_iota (projTableName c.name) fun _ _ _ heq => by
+              unfold projTableName auxKey at heq; cases heq]
+            exact hAux_adv.fresh_projTable hb (hfr_adv_nr c hc)))
       have hnd_rec : (recs.map (·.cv.name)).Nodup := hrec_names_eq ▸ hnd_sp
       have hfr_M_r : ∀ w ∈ recs, (pushList nonrecs env).find? w.cv.name = none := by
         intro w hw
         obtain ⟨s, hs, hcv_eq, _, _, _⟩ := hrec_to_spec w hw
         rw [hcv_eq, find?_pushList_of_ne nonrecs env s.cv.name fun c hc heq =>
-          hdisj_nr_sp c.name (List.mem_map_of_mem hc) (heq ▸ List.mem_map_of_mem hs)]
+          hdisj_nr_sp c.name (List.mem_map_of_mem hc) (by rw [heq]; exact List.mem_map_of_mem hs)]
         exact hfr_env_sp s hs
       have hfr_M_p : ∀ w ∈ recs,
           (pushList (nonrecs.map posCI) env_iota).find? w.cv.name = none := by
@@ -2841,7 +2862,7 @@ theorem modeledBlockWitness_of_check_family
           obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hcp
           rw [hpos_nr_names c hc, hcv_eq]
           exact fun heq => hdisj_nr_sp c.name (List.mem_map_of_mem hc)
-            (heq ▸ List.mem_map_of_mem hs)]
+            (by rw [heq]; exact List.mem_map_of_mem hs)]
         exact hfr_iota_rec w hw
       have hrec_chain :
           RecProvChain (pushList nonrecs env) (pushList (nonrecs.map posCI) env_iota) f_id recs :=
@@ -2860,7 +2881,7 @@ theorem modeledBlockWitness_of_check_family
               have hnone := hfr_adv_nr c hc
               rw [heq, hfa] at hnone
               exact nomatch hnone]
-            exact hext_iota.consts hfa
+            exact hext_iota.find hfa
           exact ⟨hb, hnres, hp, hcr_s, cvm_f, mval_f, hint_f, hfa, hfp, hlf, htf⟩
       have hnd_prov_p : ((recs.map (·.prov_p)).map (·.name)).Nodup := by
         have hmap : (recs.map (·.prov_p)).map (·.name) = recs.map (·.cv.name) := by
@@ -2893,6 +2914,9 @@ theorem modeledBlockWitness_of_check_family
             obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hcp
             exact hfr_M_p w hw)
           hnpt_prov_p
+          (fun cp hcp => by
+            obtain ⟨w, _, rfl⟩ := List.mem_map.mp hcp
+            exact Or.inl fun _ _ h => nomatch h)
       have hrhs_recs_eq : c_rhs.env = pushList (recs.map (·.prov_p)) c_pub.env := by
         dsimp only [c_rhs]; rw [hpp_map]
       exact ⟨hnr_chain, hrec_chain, hfind_pub_Mp, hext_pub_Mp.trans hext_Mp_Sp,
