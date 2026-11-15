@@ -47,7 +47,7 @@ theorem normCtorVal_origin {md : Mode} {env : Env md} (wellFormed : EnvWF env)
   obtain ⟨pair, fieldsRun, rest⟩ := exceptBind_ok rest
   obtain ⟨fieldBinders, residual⟩ := pair
   obtain ⟨closed, _, _, bounded⟩ := checkConstantVal_typeWF first
-  have initialScope := Expr.WScoped.of_not_hasFvar closed
+  have initialScope : Expr.WScoped 0 initial.type := Expr.WScoped.of_not_hasFvar closed
   have residualScope : Expr.WScoped nP openedResidual := by
     simpa only [Nat.zero_add] using (openPisAtFvars_WScoped nP initial.type 0 opened initialScope).2
   have residualBounded := (Ix.Kernel.Verify.openPisAtFvars_bounded nP opened bounded).1
@@ -56,6 +56,7 @@ theorem normCtorVal_origin {md : Mode} {env : Env md} (wellFormed : EnvWF env)
   refine ⟨parameterBinders, closedResidual, parameterVars, openedResidual, fieldBinders,
     residual, fieldVars, stripped, opened, fieldsRun, fieldsOpen, openPisAtFvars_length _ opened,
     fieldCount, binderCount, fieldFacts, ?_⟩
+  dsimp only at rest
   split at rest
   · exact Or.inl (Except.ok.inj rest).symm
   · exact Or.inr rest

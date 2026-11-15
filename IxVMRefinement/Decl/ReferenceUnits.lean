@@ -88,4 +88,30 @@ theorem ReferenceTrace.unit_roots {fuel : Nat} {env out : Env .anon}
   rw [rootName]
   exact trace.declared closerMember installed
 
+
+/-- The reader's generated roots are present in the accepted reference theorem-storage view. -/
+theorem ReferenceTrace.raw_unit_roots {fuel : Nat} {env out : Env .anon}
+    {ds unit generated : List (Declaration .anon)} {block : List (ConstantInfo .anon)} {nP : Nat}
+    (trace : ReferenceTrace fuel env (ds.map IxVM.Refinement.thmToOpaqueDefn) out)
+    (units : checkUnits ds.toArray = .ok ())
+    (inUnits : unit ∈ unitsOf ds)
+    (split : unitSplit unit = some (generated, .indDecl block nP))
+    (underived : DeclNonAux (.indDecl block nP)) :
+    ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true := by
+  have mappedUnits : checkUnits (ds.map IxVM.Refinement.thmToOpaqueDefn).toArray = .ok () := by
+    rw [List.map_toArray, checkUnits_thmToOpaqueDefn]
+    exact units
+  have mappedMember : unit.map IxVM.Refinement.thmToOpaqueDefn ∈
+      unitsOf (ds.map IxVM.Refinement.thmToOpaqueDefn) := by
+    rw [unitsOf_thmToOpaqueDefn]
+    exact List.mem_map_of_mem inUnits
+  have mappedSplit : unitSplit (unit.map IxVM.Refinement.thmToOpaqueDefn) =
+      some (generated.map IxVM.Refinement.thmToOpaqueDefn, .indDecl block nP) := by
+    rw [unitSplit_thmToOpaqueDefn, split]
+    rfl
+  have roots := trace.unit_roots mappedUnits mappedMember mappedSplit underived
+  intro d hd name hn
+  exact roots (IxVM.Refinement.thmToOpaqueDefn d) (List.mem_map_of_mem hd) name
+    (by rw [thmToOpaqueDefn_names]; exact hn)
+
 end IxVM.Refinement.Decl
