@@ -19,14 +19,16 @@ theorem reduceNat (r : CoreFns md (CheckM md)) (d : Nat) (e : Expr md) :
     Ix.Kernel.reduceNat r source d e = Ix.Kernel.reduceNat r target d e := by
   simp only [Ix.Kernel.reduceNat, _h.natLitSupported, _h.natOpStored]
 
-theorem iotaCerts (r : CoreFns md (CheckM md)) (d : Nat) (lic : Bool)
+omit _h in
+theorem iotaCerts (_h : Agrees source target) (r : CoreFns md (CheckM md)) (d : Nat) (lic : Bool)
     (e : Expr md) (args : List (Expr md)) :
     Ix.Kernel.iotaCerts r source d lic e args = Ix.Kernel.iotaCerts r target d lic e args := by
   induction args generalizing e with
   | nil => rfl
   | cons arg rest ih => cases e <;> simp only [Ix.Kernel.iotaCerts, ih]
 
-theorem defEqList (r : CoreFns md (CheckM md)) (d : Nat) (as bs : List (Expr md)) :
+omit _h in
+theorem defEqList (_h : Agrees source target) (r : CoreFns md (CheckM md)) (d : Nat) (as bs : List (Expr md)) :
     Ix.Kernel.defEqList r source d as bs = Ix.Kernel.defEqList r target d as bs := by
   induction as generalizing bs with
   | nil => cases bs <;> rfl
@@ -55,6 +57,7 @@ theorem structEtaProjCerts (r : CoreFns md (CheckM md)) (d : Nat)
   | nil => rfl
   | cons i fields ih =>
     simp only [Ix.Kernel.structEtaProjCerts, _h.iotaCerts r, ih]
+    dsimp only
     have rel := _h (projFnName T i)
     generalize hs : source.find? (projFnName T i) = left at rel ⊢
     generalize ht : target.find? (projFnName T i) = right at rel ⊢
@@ -68,13 +71,14 @@ theorem structEtaCertWith (mode : CheckMode) (r : CoreFns md (CheckM md))
     _h.iotaCerts r, _h.structEtaProjCerts r, _h.defEqList r, _h.etaProjs]
   cases a.getAppFn with
   | const c us =>
+    dsimp only
     have rel := _h c
     generalize hs : source.find? c = left at rel ⊢
     generalize ht : target.find? c = right at rel ⊢
     cases rel with
     | thm => rfl
-    | @same ci =>
-      cases ci with
+    | same =>
+      cases left with
       | none => rfl
       | some ci =>
         cases ci with
@@ -83,6 +87,7 @@ theorem structEtaCertWith (mode : CheckMode) (r : CoreFns md (CheckM md))
           split
           · cases ty.getAppFn with
             | const T levels =>
+              dsimp only
               have rel := _h T
               generalize hs : source.find? T = left at rel ⊢
               generalize ht : target.find? T = right at rel ⊢
@@ -106,13 +111,15 @@ theorem structUnitCert (r : CoreFns md (CheckM md)) (d : Nat) (a b : Expr md) :
   funext reduced
   cases reduced.getAppFn with
   | const T levels =>
+    dsimp only
     have rel := _h T
     generalize hs : source.find? T = left at rel ⊢
     generalize ht : target.find? T = right at rel ⊢
     cases rel <;> rfl
   | _ => rfl
 
-theorem etaCert (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat)
+omit _h in
+theorem etaCert (_h : Agrees source target) (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat)
     (ty body : Expr md) (bm : BinderMeta) (b : Expr md) :
     Ix.Kernel.etaCert mode r source d ty body bm b =
       Ix.Kernel.etaCert mode r target d ty body bm b := rfl
@@ -125,8 +132,8 @@ theorem majorToCtor (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat)
     (name : Key md) (rules : List (RecRule md)) (major : Expr md) :
     Ix.Kernel.majorToCtor mode r source d name rules major =
       Ix.Kernel.majorToCtor mode r target d name rules major := by
-  simp only [Ix.Kernel.majorToCtor, _h.isCtorApp, _h.iotaCerts r, _h.proofIrrel r,
-    _h.structEtaCertWith mode r, _h.etaFabArgsE, _h.andRescueSlots]
+  unfold Ix.Kernel.majorToCtor
+  rw [_h.isCtorApp]
   split
   · rfl
   · cases rules with
@@ -135,23 +142,27 @@ theorem majorToCtor (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat)
       cases rest with
       | cons => rfl
       | nil =>
+        dsimp only
         have rel := _h rule.ctor
         generalize hs : source.find? rule.ctor = left at rel ⊢
         generalize ht : target.find? rule.ctor = right at rel ⊢
         cases rel with
         | thm => rfl
-        | @same ci =>
-          cases ci with
+        | same =>
+          cases left with
           | none => rfl
           | some ci =>
             cases ci with
             | ctorInfo cv nP nF =>
               cases cv.type.piResult.getAppFn with
               | const T levels =>
+                dsimp only
                 have rel := _h T
                 generalize hs : source.find? T = left at rel ⊢
                 generalize ht : target.find? T = right at rel ⊢
-                cases rel <;> rfl
+                cases rel <;>
+                  simp only [_h.iotaCerts r, _h.proofIrrel r,
+                    _h.structEtaCertWith mode r, _h.etaFabArgsE, _h.andRescueSlots]
               | _ => rfl
             | _ => rfl
 
@@ -176,13 +187,14 @@ theorem iotaRec (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat) (e : E
     _h.iotaIndexOk r, _h.defEqList r]
   cases e.getAppFn with
   | const c levels =>
+    dsimp only
     have rel := _h c
     generalize hs : source.find? c = left at rel ⊢
     generalize ht : target.find? c = right at rel ⊢
     cases rel with
     | thm => rfl
-    | @same ci =>
-      cases ci with
+    | same =>
+      cases left with
       | none => rfl
       | some ci =>
         cases ci with
@@ -193,6 +205,7 @@ theorem iotaRec (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat) (e : E
             funext major
             cases major.getAppFn with
             | const ctor ctorLevels =>
+              dsimp only
               have rel := _h ctor
               generalize hs : source.find? ctor = left at rel ⊢
               generalize ht : target.find? ctor = right at rel ⊢
@@ -206,6 +219,7 @@ theorem projCert (r : CoreFns md (CheckM md)) (d : Nat) (lic : Bool)
     (c : Key md) (levels : List Level) (args : List (Expr md)) :
     Ix.Kernel.projCert r source d lic c levels args = Ix.Kernel.projCert r target d lic c levels args := by
   simp only [Ix.Kernel.projCert, _h.iotaCerts r]
+  dsimp only
   have rel := _h c
   generalize hs : source.find? c = left at rel ⊢
   generalize ht : target.find? c = right at rel ⊢
@@ -245,10 +259,12 @@ theorem inferBody (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat) (e :
     _h.natLitSupported, _h.strLitSupported, _h.findProj]
   cases e with
   | const name levels =>
+    dsimp only
     have rel := _h name
     generalize hs : source.find? name = left at rel ⊢
     generalize ht : target.find? name = right at rel ⊢
     cases rel <;> rfl
+  | lit literal => cases literal <;> rfl
   | _ => rfl
 
 theorem inferBodyIO (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat) (e : Expr md) :
@@ -257,10 +273,12 @@ theorem inferBodyIO (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat) (e
     _h.natLitSupported, _h.strLitSupported, _h.findProj]
   cases e with
   | const name levels =>
+    dsimp only
     have rel := _h name
     generalize hs : source.find? name = left at rel ⊢
     generalize ht : target.find? name = right at rel ⊢
     cases rel <;> rfl
+  | lit literal => cases literal <;> rfl
   | _ => rfl
 
 theorem defeqSpine (r : CoreFns md (CheckM md)) (d : Nat) (a b : Expr md) :
