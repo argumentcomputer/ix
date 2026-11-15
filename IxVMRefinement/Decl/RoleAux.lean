@@ -17,12 +17,12 @@ universe u
 
 private theorem auxiliary_ind_not_kept {env : Env .anon} {k : KKey}
     {cv : ConstantVal .anon} {caps : IndCaps .anon}
-    (haux : ∃ root tag, k = .aux root tag)
+    (haux : ∃ root deriv, k = .aux root deriv)
     (hf : env.find? k = some (.indInfo cv caps)) :
     ¬ IxVM.Consistency.KeptKey env k := by
-  obtain ⟨root, tag, rfl⟩ := haux
+  obtain ⟨root, deriv, rfl⟩ := haux
   intro hk
-  have hname : cv.name = .aux root tag := Ix.Kernel.Semantics.Env.find?_name hf
+  have hname : cv.name = .aux root deriv := Ix.Kernel.Semantics.Env.find?_name hf
   have hkept := hk (.indInfo cv caps) hf
   simp [IxVM.Consistency.isModelAux, ConstantInfo.name, ConstantInfo.toConstantVal, hname] at hkept
 
@@ -30,7 +30,7 @@ private theorem nativeTable_newProj_not_kept
     {env₀ X env₂ : Env .anon} {p : NativeParts .anon}
     {ctorsA : List (ConstantVal .anon × Nat)} {sortss : List (List KLevel)}
     (hX : NewSat env₀ X NotProj)
-    (haux : ∃ root tag, p.cvT.name = .aux root tag)
+    (haux : ∃ root deriv, p.cvT.name = .aux root deriv)
     (hformer : ∃ cv caps, X.find? p.cvT.name = some (.indInfo cv caps))
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss X = .ok env₂) :
     ∀ n tbl, env₂.find? n = some (.projInfo tbl) → env₀.find? n = none →
@@ -58,7 +58,7 @@ private theorem nativeTable_newProj_not_kept
 theorem strongEnvProps_auxIndRunJ {env env₂ : Env .anon}
     {block : List (ConstantInfo .anon)} {nP : Nat}
     (hS : Ix.Kernel.Open.StoreInv env) (h : StrongEnvProps env)
-    (haux : ∀ ci ∈ block, ∃ root tag, ci.name = .aux root tag)
+    (haux : ∀ ci ∈ block, ∃ root deriv, ci.name = .aux root deriv)
     (hpin : Ix.Kernel.basisPinHit block = none)
     (hrun : IndRoutesJ rulesJ env block nP env₂) :
     StrongEnvProps env₂ := by
@@ -68,7 +68,7 @@ theorem strongEnvProps_auxIndRunJ {env env₂ : Env .anon}
   have htb := Ix.Kernel.Model.tableBodies_declRunJ hS h.1 hdecl
   rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
   · obtain ⟨caps₀, cs, mI₀, rP₀, rules₀, hblk, _⟩ := nativeParts?_block_eq hdp
-    have haux₀ : ∃ root tag, p₀.cvT.name = .aux root tag :=
+    have haux₀ : ∃ root deriv, p₀.cvT.name = .aux root deriv :=
       haux (.indInfo p₀.cvT caps₀) (by rw [hblk]; exact List.mem_cons_self)
     obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
       hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
@@ -95,7 +95,7 @@ theorem strongEnvProps_auxIndRunJ {env env₂ : Env .anon}
       (Ix.Kernel.Model.modeled_newSat (fun _ _ heq => nomatch heq)
         (fun _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq) hM)
   · obtain ⟨caps₀, cs, hblk, _⟩ := nativePartsNoRec?_block_eq hdp
-    have haux₀ : ∃ root tag, p₀.cvT.name = .aux root tag :=
+    have haux₀ : ∃ root deriv, p₀.cvT.name = .aux root deriv :=
       haux (.indInfo p₀.cvT caps₀) (by rw [hblk]; exact List.mem_cons_self)
     obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, _, _, _, hInd,
       hp, hCtors, _, _, _, _, _, hTbl, _⟩ := hN
@@ -120,14 +120,14 @@ theorem strongEnvProps_auxIndRunJ {env env₂ : Env .anon}
 native auxiliary inductives with their own projection tables. -/
 theorem strongEnvProps_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .anon}
     (hS : Ix.Kernel.Open.StoreInv env) (h : StrongEnvProps env)
-    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root tag, ci.name = .aux root tag)
+    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root deriv, ci.name = .aux root deriv)
     (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
     StrongEnvProps env₂ := by
   cases d with
   | indDecl block nP =>
     cases hpin : Ix.Kernel.basisPinHit block with
     | none =>
-      have hblock : ∀ ci ∈ block, ∃ root tag, ci.name = .aux root tag := by
+      have hblock : ∀ ci ∈ block, ∃ root deriv, ci.name = .aux root deriv := by
         simpa only [IxVM.Consistency.installs, hpin] using haux
       have hroutes : IndRoutesJ rulesJ env block nP env₂ := by
         simpa only [DeclRunJ, hpin] using hrun
@@ -167,7 +167,7 @@ theorem strongEnvProps_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .an
 constant has been installed; auxiliary-root synchronization is not needed at this stage. -/
 theorem foldStoreInv_step_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .anon}
     (h : FoldStoreInv env)
-    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root tag, ci.name = .aux root tag)
+    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root deriv, ci.name = .aux root deriv)
     (hd : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
     FoldStoreInv env₂ := by
   have heta := etaShape_declRunJ h.store h.etaCtorStored h.etaShape hd
@@ -187,7 +187,7 @@ theorem foldStoreInv_step_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration 
 
 /-- Auxiliary model declarations preserve the semantic fold invariant. -/
 theorem foldInv_step_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .anon}
-    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root tag, ci.name = .aux root tag)
+    (haux : ∀ ci ∈ IxVM.Consistency.installs d, ∃ root deriv, ci.name = .aux root deriv)
     (hd : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
     ∀ (V : Type u) [SetTheory V], FoldInv V env → FoldInv V env₂ :=
   fun _ _ h => ⟨Ix.Kernel.Model.foldRulesRoutes (.cons hd .nil) h.model,
@@ -196,7 +196,7 @@ theorem foldInv_step_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .anon
 /-- A complete auxiliary prefix preserves the fold invariant before the bare declaration. -/
 theorem foldInv_auxDeclsRunJ {env env₂ : Env .anon} {ds : List (Declaration .anon)}
     (haux : ∀ d ∈ ds, ∀ ci ∈ IxVM.Consistency.installs d,
-      ∃ root tag, ci.name = .aux root tag)
+      ∃ root deriv, ci.name = .aux root deriv)
     (run : DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env₂) :
     ∀ (V : Type u) [SetTheory V], FoldInv V env → FoldInv V env₂ := by
   revert haux

@@ -18,7 +18,9 @@ private abbrev refDecl : Declaration .anon → Declaration .anon :=
 theorem thmToOpaqueDefn_names (d : Declaration .anon) :
     (IxVM.Refinement.thmToOpaqueDefn d).names = d.names := by
   cases d with
-  | thmDecl cv value => cases cv.name <;> rfl
+  | thmDecl cv value =>
+    cases hn : cv.name <;>
+      simp [IxVM.Refinement.thmToOpaqueDefn, hn, Declaration.names]
   | _ => rfl
 
 private theorem refDecl_isGenerated (d : Declaration .anon) :
@@ -61,7 +63,9 @@ private theorem unitSplit_refDecl : ∀ (ds : List (Declaration .anon)),
     change (unitSplit ((e :: ds).map refDecl)).map (fun p => (refDecl d :: p.1, p.2)) =
       ((unitSplit (e :: ds)).map (fun p => (d :: p.1, p.2))).map
         (fun p => (p.1.map refDecl, refDecl p.2))
-    simp only [unitSplit_refDecl (e :: ds), Option.map_map, Function.comp_def, List.map_cons]
+    have mapped := congrArg (Option.map (fun p => (refDecl d :: p.1, p.2)))
+      (unitSplit_refDecl (e :: ds))
+    simpa only [Option.map_map, Function.comp_def, List.map_cons] using mapped
 
 private theorem unitBases_refDecl (ds : List (Declaration .anon)) :
     unitBases (ds.map refDecl) = unitBases ds := by
