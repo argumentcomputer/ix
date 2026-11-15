@@ -76,18 +76,13 @@ theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
   unfold readInductive at h
   unfold readInductiveBare
   split at h
-  · rename_i shape hshape
-    simp only [hshape]
-    dsimp only at h ⊢
+  · dsimp only at h ⊢
     rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsize, h⟩ | ⟨hsize, h⟩
     · simp only [hsize, ↓reduceIte]
       split at h
-      · rename_i first hfirst
-        simp only [hfirst]
-        dsimp only at h ⊢
+      · dsimp only at h ⊢
         rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsafe, h⟩ | ⟨hsafe, h⟩
-        · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
-            bind, Except.bind] at h
+        · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
         · simp only [hsafe, ↓reduceIte]
           rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hparams, h⟩ | ⟨hparams, h⟩
           · simp only [hparams, ↓reduceIte]
@@ -101,13 +96,9 @@ theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
             rw [hrecs]
             dsimp only [bind, Except.bind]
             exact lowerInductive_full_bare h
-          · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
-              bind, Except.bind] at h
-      · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
-          bind, Except.bind] at h
-    · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
-        bind, Except.bind] at h
-  · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
-      bind, Except.bind] at h
+          · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
+      · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
+    · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
+  · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
 
 end IxVM.Refinement.Assembly
