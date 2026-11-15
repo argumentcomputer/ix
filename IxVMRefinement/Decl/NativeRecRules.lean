@@ -203,7 +203,7 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
   | .other (cs12 := cs12) (ev14 := ev_ld) (hne159 := hne) (hc166 := hc_cs) .. =>
     subst hc_cs
     have hgood_ld : Good c cs12 := hgood.sub (fun x hx => by simp [hx])
-    have hshape := (load_verified_constant_step c hc ev_ld _ b₀ rfl hgood_ld hb₀).2 cst hrec_at
+    have hshape := hc.loads.recordShape _ _ _ _ cs12 b₀ cst ev_ld hgood_ld hb₀ hrec_at
     rcases hshape with ⟨info_v, sh, rf, un, bd, hv_mk, hinfo⟩
     injection hv_mk with _ _ hv_args
     injection hv_args with hinfo_eq _
@@ -215,7 +215,7 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
       (ev14 := ev_ld) (ev94 := ev_walk) (hc158 := hc_cs) .. =>
     subst hc_cs
     have hgood_ld : Good c cs12 := hgood.sub (fun x hx => by simp [hx])
-    have hshape := (load_verified_constant_step c hc ev_ld _ b₀ rfl hgood_ld hb₀).2 cst hrec_at
+    have hshape := hc.loads.recordShape _ _ _ _ cs12 b₀ cst ev_ld hgood_ld hb₀ hrec_at
     rcases hshape with ⟨info_v, sh, rf, un, bd, hv_mk, hinfo⟩
     injection hv_mk with _ _ hv_args
     injection hv_args with hinfo_eq _
@@ -269,8 +269,9 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
         have hgood_pa : Good c cs_pa := hgood_w1.sub (fun x hx => by simp [hx])
         have hb₀_m2 := Bytes.repAddressRef_heapMono₂ addrTy ev_ld.heap_extends hb₀
         obtain ⟨bOut, hbOut, hbOut_addr⟩ :=
-          ProjAddrAux.projection_addr_spec c (ms := [.indc ind, .recr rec_m]) (i := 1)
-            (by simp) (by simp) hgood_pa hms hb₀_m2 ev_pa
+          ProjAddrAux.projection_addr_spec (ScopedCtx.unrestricted c)
+            (ms := [.indc ind, .recr rec_m]) (i := 1)
+            (by simp) (by simp) (CoreGood.unrestricted hgood_pa) hms hb₀_m2 ev_pa
         have ext_64_680 := ev_gci.heap_extends.trans (find_peer_rec_seg1_heap_extends sg1)
         refine ⟨bOut, Bytes.repAddressRef_heapMono₂ addrTy ext_64_680 hbOut, ?_⟩
         rw [hbRec_addr]
