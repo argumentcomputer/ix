@@ -3220,6 +3220,26 @@ def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
             [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0])
           (.ctorInfo cvCa₀ nP c.2)
 
+/-- A real constructor metadata observation supplies the scoped read result even while the
+constructor is fresh. This uses the raw declaration loader witness, not installed-load facts. -/
+theorem CtorLoadAt.fresh_read {c : ScopedCtx} {b₀ : Bytes.Address} {nP j : Nat}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr} {bp ptr : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (hload : CtorLoadAt c.t b₀ nP cs_root ctors ctorsA ctorRawTypes)
+    (hj : j < ctors.length) (hsub : ∀ cl ∈ cs, cl ∈ cs_root)
+    (hbp : Bytes.RepAddressRef addrTy h b₀ bp)
+    (ev : ObsFn W "Ingress::get_ci_cprj" [bp, .field 0, .field (j : F)] h ptr h' cs)
+    (hfresh : c.env.find? (c.κ (cprjAddr (ixAddr b₀) 0 (ZMod.val (j : F)))) = none) :
+    (∃ ci₀, CIPtrRep c.κ h' ptr ci₀) ∧
+    ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b₀) 0 (ZMod.val (j : F)))) = some ci →
+      CIPtrRep c.κ h' ptr ci := by
+  obtain ⟨ctor, cvCa, -, -, -, hraw⟩ := hload.2 j hj
+  obtain ⟨nl, ty, blk, np, nf, b_c, hld, -, -, -, hrep⟩ := hraw bp ptr h h' cs hsub hbp ev
+  refine ⟨⟨.ctorInfo cvCa nP ctor.2, _, hld, hrep.toCIRep⟩, fun ci hfind => ?_⟩
+  rw [hfresh] at hfind
+  exact nomatch hfind
+
 private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
     {b₀ a_t : Bytes.Address} {T : KKey} {nP : Nat} {ind_lvl : KLevel}
     {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
