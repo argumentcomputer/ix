@@ -228,7 +228,7 @@ theorem iprj_store_eq_of_mutsMemberChecked
           simp only [Core.Specs.Callees.mutCtor] at hv157
           injection hv157 with _ hc _
           exact absurd hc (by decide)
-      have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
+      have hbytes := Core.put_constant_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev295 _ _
         (.iPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
         ⟨_, _, _, _, _, rfl, hinfo_rep,
           Aiur.RepLinkedList.nil c1, Aiur.RepLinkedList.nil c2,
@@ -320,10 +320,14 @@ theorem check_inductive_shape_ctors_cidx
         have hv := congrArg ZMod.val heq_f
         rwa [hnc_val, hk_val] at hv
       omega
-    | other _ m34 p41 cs47 _ _ _ _ x_c_cidx _ _ _ _ m144 _ _ m319 _ _ m356 _ m387 _ m400 _ _ m430
-        _ _ m476 _ _ m546 _ _ m646 _ cs657 v670
-        _ _ ev49 ld43 ev154 _ _ heq233 _ _ _ ev331 hm395 ev368 ev412 ev442 ev488 ev558
-        sg653 op754 ev659 hc756 =>
+    | other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
+        (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
+        (m400 := m400) (m430 := m430) (m476 := m476) (m546 := m546)
+        (m646 := m646) (m655 := m655) (cs695 := cs657) (v708 := v670)
+        (ev49 := ev49) (ld43 := ld43) (ev154 := ev154) (heq233 := heq233)
+        (ev331 := ev331) (hm395 := hm395) (ev368 := ev368) (ev412 := ev412)
+        (ev442 := ev442) (ev488 := ev488) (ev558 := ev558) (sg653 := sg653)
+        (ev667 := ev_hash) (op792 := op754) (ev697 := ev659) (hc794 := hc756) .. =>
       have hsub47 : ∀ cl ∈ cs47, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc756]; simp [hcl])
       obtain ⟨e_cprj, _, _, blkBytes, cb', ms', ind', ct', _, v_c,
         hhash_blk, hblake_blk, hexact_blk, _, hcb'_info, hms'_i, hct'_k, _, hld_vc, hraw_ct⟩ :=
@@ -380,7 +384,8 @@ theorem check_inductive_shape_ctors_cidx
           rfl
         rw [hv670] at ev659
         exact ih (k + 1) (by omega) (by omega) hsub657
-          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_all hbp) ev659
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
+            (e_all.trans ev_hash.heap_extends) hbp) ev659
 
 /-- Along `KernelCheck::check_modeled_ctors` on a safe inductive member `i`, every
 constructor at `k ≤ j < ind.ctors.size` satisfies `ct.cidx.toNat = j`. -/
@@ -433,9 +438,13 @@ theorem check_modeled_ctors_cidx
         have hv := congrArg ZMod.val heq_f
         rwa [hnc_val, hk_val] at hv
       omega
-    | other _ m34 p41 cs47 _ _ _ _ x_c_cidx _ _ _ _ m144 _ _ m319 _ _ m356 _ m387 _ m400 _ _ m430
-        _ cs502 v513
-        _ _ ev49 ld43 ev154 _ _ heq233 _ _ _ ev331 hm395 ev368 ev412 ev442 op583 ev504 hc585 =>
+    | other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
+        (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
+        (m400 := m400) (m430 := m430) (cs540 := cs502) (v551 := v513)
+        (ev49 := ev49) (ld43 := ld43) (ev154 := ev154) (heq233 := heq233)
+        (ev331 := ev331) (hm395 := hm395) (ev368 := ev368) (ev412 := ev412)
+        (ev442 := ev442) (ev512 := ev_hash) (op621 := op583) (ev542 := ev504)
+        (hc623 := hc585) .. =>
       have hsub47 : ∀ cl ∈ cs47, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc585]; simp [hcl])
       obtain ⟨e_cprj, _, _, blkBytes, cb', ms', ind', ct', _, v_c,
         hhash_blk, hblake_blk, hexact_blk, _, hcb'_info, hms'_i, hct'_k, _, hld_vc, hraw_ct⟩ :=
@@ -487,7 +496,8 @@ theorem check_modeled_ctors_cidx
           rfl
         rw [hv513] at ev504
         exact ih (k + 1) (by omega) (by omega) hsub502
-          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_all hbp) ev504
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
+            (e_all.trans ev_hash.heap_extends) hbp) ev504
 
 /-- **Unconditional constructor index consistency**: on any safe walked mutual inductive block in
 an exact-decoded collision-free store `E₀`, `ct.cidx.toNat = j` for `ind.ctors[j]? = some ct`.
@@ -1272,7 +1282,7 @@ theorem rprj_store_eq_of_mutsMemberChecked
           exact ⟨TagN.u64Value i, _, b_arr, rfl, hrepi,
             Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
               (e1.trans (e2.trans (e3.trans (e4.trans e5)))) hb_ref, rfl⟩
-      have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
+      have hbytes := Core.put_constant_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev295 _ _
         (.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
         ⟨_, _, _, _, _, rfl, hinfo_rep,
           Aiur.RepLinkedList.nil c1, Aiur.RepLinkedList.nil c2,
