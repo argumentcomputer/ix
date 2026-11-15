@@ -708,9 +708,9 @@ theorem LoweringBy.map {K : CName md → Prop} {f : CDecl md → CDecl md} (hf :
   · refine .inr ⟨gens.map f, suffix.map f, ?_, by simp [hg], by simpa using hne, ?_⟩
     · simp [hd]
     · intro d' hd'
-      obtain ⟨d, hd', rfl⟩ := List.mem_map.mp hd'
+      obtain ⟨d, hmem, rfl⟩ := List.mem_map.mp hd'
       rw [hf]
-      exact hall d hd'
+      exact hall d hmem
 
 /-- An invariant of an `Id` loop over `[:n]` holds of its result, so of what
 follows it. -/
