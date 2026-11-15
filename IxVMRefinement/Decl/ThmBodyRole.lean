@@ -79,7 +79,8 @@ theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env 
     ∃ targetOut, Agrees referenceOut targetOut ∧
       IxVM.Consistency.InstallStep target (.thmDecl cv value) targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
-  obtain ⟨ty, value', hcv, stype, level, hi, hs, hz, hv, rfl⟩ := declThmRun_of checked
+  obtain ⟨ty, value', hcv, hprop, hv, rfl⟩ := declThmRun_of checked
+  obtain ⟨stype, level, hi, hs, hz⟩ := hprop
   have targetCV := h.constantValRun hcv
   have targetValue := h.valueFrontRun hv
   have targetInfer : inferTypeCore .verified target fuel 0 ty = .ok stype := by

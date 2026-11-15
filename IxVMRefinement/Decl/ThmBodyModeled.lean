@@ -226,48 +226,129 @@ theorem projFnRule (T ctor : Key md) (pty : Expr md) (nP nF i : Nat) (rhs : Expr
       Ix.Kernel.projFnRule target.find? T ctor pty nP nF i rhs := by
   simp only [Ix.Kernel.projFnRule, h.ctorLevelParamsOf, h.recRuleBits]
 
-theorem checkEtaThm (mode : CheckMode) (T ctor : Key md) (lps : List LevelParam) (nP nF : Nat) :
-    Ix.Kernel.checkEtaThm mode source T ctor lps nP nF =
-      Ix.Kernel.checkEtaThm mode target T ctor lps nP nF := by
-  have slots : (List.range nF).all (fun j => match source.find? (projModelName T j) with
-      | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false) =
-      (List.range nF).all (fun j => match target.find? (projModelName T j) with
-      | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false) := by
+theorem checkEtaThm (mode : CheckMode) (T ctorName : Key md) (lps : List LevelParam) (nP nF : Nat) :
+    Ix.Kernel.checkEtaThm mode source T ctorName lps nP nF =
+      Ix.Kernel.checkEtaThm mode target T ctorName lps nP nF := by
+  let read (theoremInfo modelT modelC equalInfo : Option (ConstantInfo md)) (slots : Bool) : Bool :=
+    match theoremInfo,
+        modelT,
+        modelC, equalInfo with
+    | some (.thmInfo tcv _), some (.defnInfo cvmT _ _),
+        some (.defnInfo cvmC _ _), some eqStored =>
+      eqStored == eqA && tcv.levelParams == lps &&
+      cvmT.levelParams == lps && cvmC.levelParams == lps &&
+      slots &&
+      (match tcv.type.stripPis (nP + 1), cvmT.type.stripPis nP with
+       | some (sbinders, sbody), some (tbindersM, tbodyM) =>
+         domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
+         (match sbinders[nP]? with
+          | some (xdom, _) =>
+            xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
+              ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
+          | none => false) &&
+         (match sbody with
+          | .app (.app (.app (.const c [ℓA]) tySlot) lhsC) rhsC =>
+            c == eqName && lhsC == Expr.bvar 0 &&
+            tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
+              ((List.range nP).map fun k => Expr.bvar (nP - k)) &&
+            rhsC == Expr.mkAppN
+              (.const (auxKey ctorName .model) (lps.map .param))
+              (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
+               (List.range nF).map fun j => Expr.mkAppN
+                 (.const (projModelName T j) (lps.map .param))
+                 (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
+                  [Expr.bvar 0])) &&
+            (!mode.ttChecks || tbodyM == Expr.sort ℓA)
+          | _ => false)
+       | _, _ => false)
+    | _, _, _, _ => false
+
+  let sourceSlots := (List.range nF).all (fun j =>
+      match source.find? (projModelName T j) with
+      | some (.defnInfo cvmj _ _) => cvmj.levelParams == lps
+      | _ => false)
+  let targetSlots := (List.range nF).all (fun j =>
+      match target.find? (projModelName T j) with
+      | some (.defnInfo cvmj _ _) => cvmj.levelParams == lps
+      | _ => false)
+  have slots : sourceSlots = targetSlots := by
     apply congrArg (List.all (List.range nF))
     funext j
     exact h.observe (projModelName T j) (α := Bool)
       (fun q => match q with | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false)
       (by intros; rfl)
-  unfold Ix.Kernel.checkEtaThm
-  have he := h (auxKey (auxKey T .model) .eta)
-  have ht := h (auxKey T .model)
-  have hc := h (auxKey ctor .model)
-  have hq := h eqName
-  generalize source.find? (auxKey (auxKey T .model) .eta) = e₁ at he ⊢
-  generalize target.find? (auxKey (auxKey T .model) .eta) = e₂ at he ⊢
-  generalize source.find? (auxKey T .model) = t₁ at ht ⊢
-  generalize target.find? (auxKey T .model) = t₂ at ht ⊢
-  generalize source.find? (auxKey ctor .model) = c₁ at hc ⊢
-  generalize target.find? (auxKey ctor .model) = c₂ at hc ⊢
-  generalize source.find? eqName = q₁ at hq ⊢
-  generalize target.find? eqName = q₂ at hq ⊢
-  cases he <;> cases ht <;> cases hc <;> cases hq
-  all_goals repeat' first | exact slots | rfl | split | congr 1
+  change read (source.find? (auxKey (auxKey T .model) .eta)) (source.find? (auxKey T .model))
+      (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots =
+    read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
+      (target.find? (auxKey ctorName .model)) (target.find? eqName) targetSlots
+  calc
+    _ = read (target.find? (auxKey (auxKey T .model) .eta)) (source.find? (auxKey T .model))
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
+      h.observe _ (fun q => read q (source.find? (auxKey T .model))
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; rfl)
+    _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
+      h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta)) q
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; rfl)
+    _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
+        (target.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
+      h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
+        (target.find? (auxKey T .model)) q (source.find? eqName) sourceSlots) (by intros; rfl)
+    _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
+        (target.find? (auxKey ctorName .model)) (target.find? eqName) sourceSlots :=
+      h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
+        (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model)) q sourceSlots)
+        (by intros; rfl)
+    _ = _ := congrArg (read (target.find? (auxKey (auxKey T .model) .eta))
+      (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model))
+      (target.find? eqName)) slots
 
 theorem checkUnitThm (mode : CheckMode) (T : Key md) (lps : List LevelParam) (nP : Nat) :
     Ix.Kernel.checkUnitThm mode source T lps nP = Ix.Kernel.checkUnitThm mode target T lps nP := by
-  unfold Ix.Kernel.checkUnitThm
-  have hu := h (auxKey (auxKey T .model) .unitlike)
-  have ht := h (auxKey T .model)
-  have hq := h eqName
-  generalize source.find? (auxKey (auxKey T .model) .unitlike) = u₁ at hu ⊢
-  generalize target.find? (auxKey (auxKey T .model) .unitlike) = u₂ at hu ⊢
-  generalize source.find? (auxKey T .model) = t₁ at ht ⊢
-  generalize target.find? (auxKey T .model) = t₂ at ht ⊢
-  generalize source.find? eqName = q₁ at hq ⊢
-  generalize target.find? eqName = q₂ at hq ⊢
-  cases hu <;> cases ht <;> cases hq
-  all_goals repeat' first | rfl | split | congr 1
+  let read (theoremInfo modelT equalInfo : Option (ConstantInfo md)) : Bool :=
+    match theoremInfo,
+        modelT, equalInfo with
+    | some (.thmInfo tcv _), some (.defnInfo cvmT _ _), some eqStored =>
+      eqStored == eqA && tcv.levelParams == lps &&
+      cvmT.levelParams == lps &&
+      (match tcv.type.stripPis (nP + 2), cvmT.type.stripPis nP with
+       | some (sbinders, sbody), some (tbindersM, tbodyM) =>
+         domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
+         (match sbinders[nP]? with
+          | some (xdom, _) =>
+            xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
+              ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
+          | none => false) &&
+         (match sbinders[nP + 1]? with
+          | some (ydom, _) =>
+            ydom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
+              ((List.range nP).map fun k => Expr.bvar (nP - k))
+          | none => false) &&
+         (match sbody with
+          | .app (.app (.app (.const c [ℓA]) tySlot) lhsC) rhsC =>
+            c == eqName && lhsC == Expr.bvar 1 && rhsC == Expr.bvar 0 &&
+            tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
+              ((List.range nP).map fun k => Expr.bvar (nP + 1 - k)) &&
+            (!mode.ttChecks || tbodyM == Expr.sort ℓA)
+          | _ => false)
+       | _, _ => false)
+    | _, _, _ => false
+
+  change read (source.find? (auxKey (auxKey T .model) .unitlike))
+      (source.find? (auxKey T .model)) (source.find? eqName) =
+    read (target.find? (auxKey (auxKey T .model) .unitlike))
+      (target.find? (auxKey T .model)) (target.find? eqName)
+  calc
+    _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
+        (source.find? (auxKey T .model)) (source.find? eqName) :=
+      h.observe _ (fun q => read q (source.find? (auxKey T .model)) (source.find? eqName))
+        (by intros; rfl)
+    _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
+        (target.find? (auxKey T .model)) (source.find? eqName) :=
+      h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike)) q
+        (source.find? eqName)) (by intros; rfl)
+    _ = _ := h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike))
+      (target.find? (auxKey T .model)) q) (by intros; rfl)
 
 theorem indBlockCaps (mode : CheckMode) (cvT cvC : ConstantVal md) (nP nF : Nat) :
     Ix.Kernel.indBlockCaps mode source cvT cvC nP nF =
@@ -342,10 +423,8 @@ theorem modeledRun {mode : CheckMode} {fuel : Nat} {block : List (ConstantInfo m
   rcases branch with ⟨cvT, capsT, cvC, nP, nF, hIfilt, hCfilt, envM, envR,
     members, recs, residual, fresh, projections⟩ | ⟨nonsingle, envM, members, recs⟩
   · obtain ⟨targetM, hM, targetMembers⟩ := h.indMembersRun members
-    have targetMembers' : IndMembersRun mode fuel (block.map (·.name))
-        (Ix.Kernel.indBlockCaps mode target cvT cvC nP nF) target
-        (block.filter fun ci => match ci with | .recInfo _ _ _ _ => false | _ => true) targetM := by
-      simpa only [h.indBlockCaps] using targetMembers
+    have targetMembers' := targetMembers
+    rw [h.indBlockCaps] at targetMembers'
     obtain ⟨targetR, hR, targetRecs⟩ := hM.indRecsRun recs
     obtain ⟨targetOut, outAgreement, targetProjections⟩ := hR.projInstallRun projections
     refine ⟨targetOut, outAgreement, splitBlock, Or.inl
