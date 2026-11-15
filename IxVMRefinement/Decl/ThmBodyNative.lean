@@ -150,7 +150,7 @@ theorem checkSumInd {mode : CheckMode} {fuel : Nat} {p p' : InductiveShape md}
   obtain ⟨binders, body⟩ := pair
   dsimp only at rest
   by_cases shape : (body == Expr.sort level) = true
-  · rw [if_pos shape] at rest
+  · rw [ite_eq_left shape] at rest
     simp only [Pure.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at rest
     obtain ⟨rfl, rfl, rfl⟩ := rest
     have hcv' := hcv
@@ -160,7 +160,7 @@ theorem checkSumInd {mode : CheckMode} {fuel : Nat} {p p' : InductiveShape md}
     refine ⟨_, h.cons _, ?_⟩
     simp only [Ix.Kernel.checkSumInd, hcv', htele', hstrip,
       Bind.bind, Except.bind, shape, ↓reduceIte, Pure.pure, Except.pure]
-  · rw [if_neg shape] at rest
+  · rw [ite_eq_right shape] at rest
     cases rest
 
 /-- A structure table is installed with the same generated bodies and guards. -/
@@ -171,10 +171,10 @@ theorem checkStructProjTable {T C : Key md} {lps : List LevelParam} {nP nF off :
     ∃ targetOut, Agrees sourceOut targetOut ∧
       Ix.Kernel.checkStructProjTable (m := CheckM md)
         T C lps nP nF resSort guards off cvCa target = .ok targetOut := by
-  obtain ⟨bodies, hb, scoped, names, fresh, rfl⟩ := checkStructProjTable_inv checked
-  have scoped' : bodies.size = nF ∧ bodies.all (fun b => !b.hasFvar &&
+  obtain ⟨bodies, hb, wellScoped, names, fresh, rfl⟩ := checkStructProjTable_inv checked
+  have wellScoped' : bodies.size = nF ∧ bodies.all (fun b => !b.hasFvar &&
       b.allLevelParamsDefined lps && b.constsResolve target && b.looseBVarsBounded (nP + 1)) = true := by
-    simpa only [h.constsResolve] using scoped
+    simpa only [h.constsResolve] using wellScoped
   have names' : (List.range nF).all (fun j => (target.find? (projFnName T j)).isNone) = true := by
     simpa only [h.isNone] using names
   have fresh' : (target.find? (projTableName T)).isNone = true := by
@@ -182,7 +182,7 @@ theorem checkStructProjTable {T C : Key md} {lps : List LevelParam} {nP nF off :
     rfl
   refine ⟨_, h.cons _, ?_⟩
   simp only [Ix.Kernel.checkStructProjTable, hb, unwrapOr, Pure.pure, Except.pure,
-    Bind.bind, Except.bind, scoped', names', fresh', ↓reduceIte]
+    Bind.bind, Except.bind, wellScoped', names', fresh', ↓reduceIte]
 
 private theorem returnEnvironment {sourceOut : Env md}
     (checked : (pure source : CheckM md (Env md)) = .ok sourceOut) :
@@ -210,7 +210,7 @@ theorem checkNativeTable {p : NativeParts md} {ctors : List (ConstantVal md × N
           by_cases noIndices : (p.nIdx == 0) = true
           · simp only [Ix.Kernel.checkNativeTable, noIndices, ↓reduceIte] at checked ⊢
             exact h.checkStructProjTable checked
-          · simp only [Ix.Kernel.checkNativeTable, noIndices, ↓reduceIte] at checked ⊢
+          · simp only [Ix.Kernel.checkNativeTable, noIndices] at checked ⊢
             exact returnEnvironment h checked
 
 /-- The complete native run replays with the same normalized constants and generated rules. -/
