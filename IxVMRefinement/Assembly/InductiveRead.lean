@@ -80,8 +80,7 @@ theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
     rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsize, h⟩ | ⟨hsize, h⟩
     · simp only [hsize, ↓reduceIte]
       split at h
-      · dsimp only at h ⊢
-        rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsafe, h⟩ | ⟨hsafe, h⟩
+      · rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsafe, h⟩ | ⟨hsafe, h⟩
         · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
         · simp only [hsafe, ↓reduceIte]
           rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hparams, h⟩ | ⟨hparams, h⟩

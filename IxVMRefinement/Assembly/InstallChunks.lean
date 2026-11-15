@@ -64,6 +64,6 @@ theorem installs_of_chunks
     IxVM.Consistency.Installs ds ⟨chunks.reverse.flatten⟩ := by
   have h := installs_append_chunks hchunks IxVM.Consistency.Installs.nil hnd
     (fun _ _ => rfl)
-  simpa using h
+  simpa [Ix.Kernel.Env.empty] using h
 
 end IxVM.Refinement.Assembly
