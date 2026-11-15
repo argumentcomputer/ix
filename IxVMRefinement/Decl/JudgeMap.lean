@@ -43,14 +43,14 @@ theorem defEqList {env : Env md} {d : Nat} :
   | [], [], _ => trivial
   | [], _ :: _, h => h.elim
   | _ :: _, [], h => h.elim
-  | _ :: as, _ :: bs, h => ⟨M.defeq h.1, defEqList h.2⟩
+  | _ :: _, _ :: _, h => ⟨M.defeq h.1, defEqList h.2⟩
 
 theorem typedList {env : Env md} {d : Nat} :
     ∀ {as bs : List (Expr md)}, TypedListJ J env d as bs → TypedListJ K env d as bs
   | [], [], _ => trivial
   | [], _ :: _, h => h.elim
   | _ :: _, [], h => h.elim
-  | _ :: as, _ :: bs, ⟨⟨ty, hi, hd⟩, rest⟩ =>
+  | _ :: _, _ :: _, ⟨⟨ty, hi, hd⟩, rest⟩ =>
     ⟨⟨ty, M.infer hi, M.defeq hd⟩, typedList rest⟩
 
 theorem iotaRuns {env : Env md} {d : Nat}

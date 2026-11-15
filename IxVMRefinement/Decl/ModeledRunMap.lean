@@ -25,7 +25,7 @@ theorem indMembersRun {blockNames : List (Key md)} {caps : IndCaps md} :
       IndMembersRunJ J blockNames caps env members env₂ →
       IndMembersRunJ K blockNames caps env members env₂
   | _, [], _, h => h
-  | _, ci :: rest, _, h => by
+  | _, ci :: _, _, h => by
     obtain ⟨cvA, hmv, hm⟩ := h
     refine ⟨cvA, M.memberValRun hmv, ?_⟩
     cases ci with
