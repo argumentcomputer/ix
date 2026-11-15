@@ -9,9 +9,8 @@ Provides the foundational specifications and combined invariant for the declarat
 
 * **`rolesSpec`**: discharges `RolesSpec` unconditionally from `IxVMRefinement.RoleVal.LookupSpec`
   (backed by `IxVMRefinement.Roles.Steps`).
-* **`calleesCoreSpec` and `projectionAddrCtorSpec`**: discharges all 15 functions of
-  `Specs.Callees.Fn` under `CoreFacts c` from `IxVMRefinement.Core.AllSteps`, and discharges
-  `KernelCheck::projection_addr_ctor` unconditionally.
+* **`calleesSpec`**: discharges `CalleesSpec` (all 15 functions of `Specs.Callees.Fn` under
+  `CoreFacts c`) unconditionally from `IxVMRefinement.Core.AllSteps`.
 * **`FullDeclInv`**: combines `DeclInvM` (`DeclInv` + `AuxRootSynced`) with `StrongEnvProps`,
   `EtaCtorStored`, and `EtaShape` (`FoldInv`), proving initialization on `Env.empty`, projection to
   `EnvModelOk V .verified env ∧ StrongEnvProps env`, conversions to/from `FoldInv`, and uniform
@@ -38,22 +37,15 @@ set_option maxHeartbeats 800000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
-/-! ## Section 1: Unconditional `RolesSpec` and `Specs.Callees` specifications -/
+/-! ## Section 1: Unconditional `RolesSpec` and `CalleesSpec` -/
 
 /-- `RolesSpec` holds unconditionally whenever `c.t.wf = true`. -/
 theorem rolesSpec : RolesSpec :=
   fun c hwf f args h r h' calls ev =>
     IxVM.Refinement.RoleVal.roles_fn_spec c hwf f args h r h' calls ev
 
-/-- Soundness of the `Specs.Callees` family under `CoreFacts c` (`EnvFacts c` and `LoadFacts c`). -/
-def CalleesCoreSpec : Prop :=
-  ∀ (c : Ctx), CoreFacts c →
-    ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
-      (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
-      ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
-
-/-- `CalleesCoreSpec` holds unconditionally from `Core.all_steps` and `Registry.induction`. -/
-theorem calleesCoreSpec : CalleesCoreSpec :=
+/-- `CalleesSpec` holds unconditionally from `Core.all_steps` and `Registry.induction`. -/
+theorem calleesSpec : CalleesSpec :=
   fun c hc f args h r h' calls ev =>
     Registry.induction c (all_steps c hc) (.callees f) args h r h' calls ev
 
@@ -171,14 +163,16 @@ private theorem auxRootSynced_of_base_prepend {env : Env .anon} {new : List (Con
     rw [base_of_isBaseKey (hbase ci hci)]
     exact env_find?_isSome_of_mem_prefix hci
 
-private theorem indMembersRunJ_consts_eq {J : Judgements .anon} :
+private theorem indMembersRunJ_consts_eq {J : Judgements .anon} {blockNames : List KKey}
+    {caps : IndCaps .anon} :
     ∀ (ms : List (ConstantInfo .anon)) {acc envM : Env .anon},
-      IndMembersRunJ J acc ms envM →
+      IndMembersRunJ J blockNames caps acc ms envM →
       ∃ newM, envM = ⟨newM ++ acc.consts⟩ ∧ newM.map (·.name) = ms.reverse.map (·.name)
-  | [], acc, envM, h => ⟨[], by simpa using h, rfl⟩
-  | ci :: rest, acc, envM, ⟨type', hcv, hrest⟩ => by
+  | [], acc, envM, h => ⟨[], by subst h; rfl, rfl⟩
+  | ci :: rest, acc, envM, ⟨cvA, hmv, hrest⟩ => by
+    obtain ⟨type', _, rfl, _⟩ := hmv
     cases ci with
-    | indInfo cvI caps =>
+    | indInfo cvI _ =>
       obtain ⟨newM, heq, hnames⟩ := indMembersRunJ_consts_eq rest hrest
       refine ⟨newM ++ [.indInfo ⟨cvI.name, cvI.levelParams, type'⟩ caps], ?_, ?_⟩
       · simpa [List.append_assoc] using heq
@@ -199,7 +193,7 @@ private theorem provisionRecsRunJ_names_eq {J : Judgements .anon} {blockNames : 
       ProvisionRecsRunJ J blockNames acc recs envSelf checked →
       checked.map (·.1.name) = recs.map (·.name)
   | [], _, _, _, ⟨_, hchk⟩ => by subst hchk; rfl
-  | ci :: rest, _, _, _, ⟨_, _, _, _, _, _, ⟨_, _, rfl, -⟩, hprov, hchk⟩ => by
+  | ci :: rest, _, _, _, ⟨_, _, _, _, _, _, ⟨_, _, rfl, _⟩, hprov, hchk⟩ => by
     subst hchk
     have hci_name : ci.name = ci.toConstantVal.name := by cases ci <;> rfl
     simp [provisionRecsRunJ_names_eq rest hprov, hci_name]
@@ -222,22 +216,24 @@ private theorem indRecsFoldRunJ_consts_eq {J : Judgements .anon} {blockNames : L
     · rw [List.map_append, List.reverse_cons, List.map_append, hnames]
       rfl
 
-private theorem sumCtorsRunJ_names_eq {J : Judgements .anon} {env : Env .anon}
-    {p : NativeParts .anon} {isRec : Bool} :
-    ∀ {cs : List (ConstantVal .anon × Nat)} {acc : List (ConstantVal .anon × Nat)}
-      {sacc : List (List KLevel)} {ctorsA : List (ConstantVal .anon × Nat)}
-      {sortss : List (List KLevel)},
-      SumCtorsRunJ J env p isRec cs acc sacc ctorsA sortss →
-      ctorsA.map (·.1.name) = acc.reverse.map (·.1.name) ++ cs.map (·.1.name)
-  | [], acc, _, _, _, ⟨rfl, rfl⟩ => by simp [List.map_reverse]
-  | c :: cs, acc, _, _, _, ⟨cvCa, sorts, hCtor, hRest⟩ => by
-    obtain ⟨⟨_, ⟨_, _, hcv₀⟩, hca_or⟩, _, _⟩ := hCtor
-    have hname : cvCa.name = c.1.name := by
-      rcases hca_or with rfl | ⟨_, _, _, hcv₁⟩
-      · rw [hcv₀]
-      · rw [hcv₁]
-    rw [sumCtorsRunJ_names_eq hRest]
-    simp [List.reverse_cons, List.map_append, hname]
+private theorem sumCtorsRunJ_names_eq {J : Judgements .anon}
+    {env env₁ : Env .anon} {T : KKey} {lps : List LevelParam} {nP nIdx : Nat}
+    {resSort : KLevel} {isProp large : Bool} {cvTa : ConstantVal .anon}
+    {ctors ctorsA : List (ConstantVal .anon × Nat)} {sortss : List (List KLevel)}
+    (hCtors : SumCtorsRunJ J env env₁ T lps nP nIdx resSort isProp large cvTa ctors ctorsA sortss) :
+    ctorsA.map (·.1.name) = ctors.map (·.1.name) := by
+  obtain ⟨hlA, -, hall⟩ := id hCtors
+  apply List.ext_getElem
+  · simp [hlA]
+  · intro j h1 h2
+    simp only [List.length_map] at h1 h2
+    obtain ⟨_, _, _, hC⟩ := hall j ctors[j] ctorsA[j] (List.getElem?_eq_getElem h2)
+      (List.getElem?_eq_getElem h1)
+    obtain ⟨cvCa₀, hcc₀, hcc⟩ := hC.1
+    simp only [List.getElem_map]
+    rcases hcc with rfl | ⟨_, hcc'⟩
+    · exact hcc₀.name_eq
+    · exact hcc'.name_eq
 
 private theorem consSumCtors_consts_append (nP : Nat) :
     ∀ (cs : List (ConstantVal .anon × Nat)) (consts : List (ConstantInfo .anon)),
@@ -360,8 +356,8 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
           rw [hp, hp₁]; simp [NativeParts.withKinds, NativeParts.complete, InductiveShape.withSort]
         have hp_cvR : p.cvR = p₀.cvR := by
           rw [hp, hp₁]; simp [NativeParts.withKinds, NativeParts.complete, InductiveShape.withSort]
-        have hctorsA_names := sumCtorsRunJ_names_eq hCtors
-        simp only [List.reverse_nil, List.map_nil, List.nil_append, hp_ctors] at hctorsA_names
+        have hctorsA_names : ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name) := by
+          rw [sumCtorsRunJ_names_eq hCtors, hp_ctors]
         obtain ⟨hnR, -, -, -⟩ := hRec.recursor
         let indCI : ConstantInfo .anon := .indInfo cvS (Ix.Kernel.nativeCapsAt p₁ isRec)
         let newCtors : List (ConstantInfo .anon) :=
@@ -468,8 +464,8 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
           rw [hp, hp₁]; simp [NativeParts.withKinds, NativeParts.complete, InductiveShape.withSort]
         have hp_ctors : p.ctors = p₀.ctors := by
           rw [hp, hp₁]; simp [NativeParts.withKinds, NativeParts.complete, InductiveShape.withSort]
-        have hctorsA_names := sumCtorsRunJ_names_eq hCtors
-        simp only [List.reverse_nil, List.map_nil, List.nil_append, hp_ctors] at hctorsA_names
+        have hctorsA_names : ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name) := by
+          rw [sumCtorsRunJ_names_eq hCtors, hp_ctors]
         let indCI : ConstantInfo .anon := .indInfo cvS (Ix.Kernel.nativeCapsAt p₁ isRec)
         let newCtors : List (ConstantInfo .anon) :=
           ctorsA.reverse.map fun c => .ctorInfo c.1 p.nP c.2

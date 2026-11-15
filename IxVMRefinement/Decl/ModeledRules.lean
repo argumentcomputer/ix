@@ -61,11 +61,12 @@ theorem SubCalls.cons_tail {cs : List (Call F)} {hd : Call F} {tl : List (Call F
 /-! ## Exact loader, callees, and `Eq` role-address companions -/
 
 /-- Universal soundness of the `Specs.Callees` specification family (`projection_addr_ctor`,
-`check_recursor_canonical_at`, etc.). -/
+`check_recursor_canonical_at`, etc.) under `CoreFacts c`. -/
 def CalleesSpec : Prop :=
-  ∀ (c : Ctx) (f : Specs.Callees.Fn) (args : List (SourceValue F))
-    (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
-    ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
+  ∀ (c : Ctx), CoreFacts c →
+    ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
+      (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
+      ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
 
 /-- Strengthening of `LoadFacts.getCI` for non-recursor/non-quotient records yielding
 `CIPtrRepExact` (exact `RepKLevel` / `RepKLevelList` on freshly loaded constant records, before
@@ -4034,7 +4035,7 @@ theorem check_rules_go_vm_spec
           get_address_spec hstr ev_ga
         injection htup_ga with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
         -- `projection_addr_ctor`
-        have hcprj_spec := hcallees c_pub .projection_addr_ctor _ _ _ _ _ ev_cprj
+        have hcprj_spec := hcallees c_pub ⟨hef_pub, hlf_pub⟩ .projection_addr_ctor _ _ _ _ _ ev_cprj
         obtain ⟨a_cprj, ha_cprj, haddr_cprj⟩ :=
           hcprj_spec i_ind (j : F) iblock b_ind rfl
             (hg_pub.sub fun _ hx => by simp [hx])
