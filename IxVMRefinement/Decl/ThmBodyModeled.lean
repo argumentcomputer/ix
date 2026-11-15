@@ -216,4 +216,146 @@ theorem indRecsRun {mode : CheckMode} {fuel : Nat} {blockNames : List (Key md)}
       h.find_nonThm eq (by intros; intro heq; cases heq),
       targetSelf, checked, targetProvision, targetInstalled⟩⟩
 
+theorem ctorLevelParamsOf (ctor : Key md) :
+    Ix.Kernel.ctorLevelParamsOf source.find? ctor = Ix.Kernel.ctorLevelParamsOf target.find? ctor :=
+  h.observe ctor (fun q => match q with | some (.ctorInfo cv _ _) => cv.levelParams | _ => [])
+    (by intros; rfl)
+
+theorem projFnRule (T ctor : Key md) (pty : Expr md) (nP nF i : Nat) (rhs : Expr md) :
+    Ix.Kernel.projFnRule source.find? T ctor pty nP nF i rhs =
+      Ix.Kernel.projFnRule target.find? T ctor pty nP nF i rhs := by
+  simp only [Ix.Kernel.projFnRule, h.ctorLevelParamsOf, h.recRuleBits]
+
+theorem checkEtaThm (mode : CheckMode) (T ctor : Key md) (lps : List LevelParam) (nP nF : Nat) :
+    Ix.Kernel.checkEtaThm mode source T ctor lps nP nF =
+      Ix.Kernel.checkEtaThm mode target T ctor lps nP nF := by
+  have slots : (List.range nF).all (fun j => match source.find? (projModelName T j) with
+      | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false) =
+      (List.range nF).all (fun j => match target.find? (projModelName T j) with
+      | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false) := by
+    apply congrArg (List.all (List.range nF))
+    funext j
+    exact h.observe (projModelName T j) (α := Bool)
+      (fun q => match q with | some (.defnInfo cv _ _) => cv.levelParams == lps | _ => false)
+      (by intros; rfl)
+  unfold Ix.Kernel.checkEtaThm
+  have he := h (auxKey (auxKey T .model) .eta)
+  have ht := h (auxKey T .model)
+  have hc := h (auxKey ctor .model)
+  have hq := h eqName
+  generalize source.find? (auxKey (auxKey T .model) .eta) = e₁ at he ⊢
+  generalize target.find? (auxKey (auxKey T .model) .eta) = e₂ at he ⊢
+  generalize source.find? (auxKey T .model) = t₁ at ht ⊢
+  generalize target.find? (auxKey T .model) = t₂ at ht ⊢
+  generalize source.find? (auxKey ctor .model) = c₁ at hc ⊢
+  generalize target.find? (auxKey ctor .model) = c₂ at hc ⊢
+  generalize source.find? eqName = q₁ at hq ⊢
+  generalize target.find? eqName = q₂ at hq ⊢
+  cases he <;> cases ht <;> cases hc <;> cases hq
+  all_goals repeat' first | exact slots | rfl | split | congr 1
+
+theorem checkUnitThm (mode : CheckMode) (T : Key md) (lps : List LevelParam) (nP : Nat) :
+    Ix.Kernel.checkUnitThm mode source T lps nP = Ix.Kernel.checkUnitThm mode target T lps nP := by
+  unfold Ix.Kernel.checkUnitThm
+  have hu := h (auxKey (auxKey T .model) .unitlike)
+  have ht := h (auxKey T .model)
+  have hq := h eqName
+  generalize source.find? (auxKey (auxKey T .model) .unitlike) = u₁ at hu ⊢
+  generalize target.find? (auxKey (auxKey T .model) .unitlike) = u₂ at hu ⊢
+  generalize source.find? (auxKey T .model) = t₁ at ht ⊢
+  generalize target.find? (auxKey T .model) = t₂ at ht ⊢
+  generalize source.find? eqName = q₁ at hq ⊢
+  generalize target.find? eqName = q₂ at hq ⊢
+  cases hu <;> cases ht <;> cases hq
+  all_goals repeat' first | rfl | split | congr 1
+
+theorem indBlockCaps (mode : CheckMode) (cvT cvC : ConstantVal md) (nP nF : Nat) :
+    Ix.Kernel.indBlockCaps mode source cvT cvC nP nF =
+      Ix.Kernel.indBlockCaps mode target cvT cvC nP nF := by
+  simp only [Ix.Kernel.indBlockCaps, h.checkEtaThm, h.checkUnitThm]
+
+theorem ctorResidualOk (mode : CheckMode) (T ctor : Key md) (lps : List LevelParam)
+    (nP nF : Nat) (eta : Bool) :
+    Ix.Kernel.ctorResidualOk mode source T ctor lps nP nF eta =
+      Ix.Kernel.ctorResidualOk mode target T ctor lps nP nF eta := by
+  unfold Ix.Kernel.ctorResidualOk
+  have rel := h ctor
+  generalize source.find? ctor = left at rel ⊢
+  generalize target.find? ctor = right at rel ⊢
+  cases rel <;> rfl
+
+/-- Projection-function checks retain the theorem's signature while its unread body may differ. -/
+theorem projFnRun {mode : CheckMode} {fuel : Nat} {T ctor : Key md}
+    {lps : List LevelParam} {nP nF i : Nat} {sourceOut : Env md}
+    (run : ProjFnRun mode fuel source T ctor lps nP nF i sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ ProjFnRun mode fuel target T ctor lps nP nF i targetOut := by
+  obtain ⟨cvj, mcv, mval, mhint, pty, rhs, hc, hm, hmlps, hfresh,
+    hT, hEq, hpty, hround, hres, hbound, hclosed, hlps, hstrip1,
+    hlt, hstripP, hplain, hbig, rfl⟩ := run
+  obtain ⟨cbinders, cbody, hCstrip, hcargs, hchead, hrclosed, hrbound, hrlps,
+    hrres, hrstrip, hri, tcv, tval, hthm, htlps, hpin, fvs, sbody,
+    hopen, hleft, hright⟩ := hbig
+  obtain ⟨tval', hthm'⟩ := h.find_thm hthm
+  let ci : ConstantInfo md := .recInfo ⟨projFnName T i, lps, pty⟩ nP nP
+    [Ix.Kernel.projFnRule source.find? T ctor pty nP nF i rhs]
+  refine ⟨⟨ci :: target.consts⟩, h.cons ci, cvj, mcv, mval, mhint, pty, rhs,
+    h.find_nonThm hc (by intros; intro heq; cases heq),
+    h.find_nonThm hm (by intros; intro heq; cases heq), hmlps,
+    ?_, ?_, h.find_nonThm hEq (by intros; intro heq; cases heq), hpty, hround,
+    ?_, hbound, hclosed, hlps, hstrip1, hlt, hstripP, hplain, ?_, ?_⟩
+  · simpa only [h.isNone] using hfresh
+  · simpa only [h.isSome] using hT
+  · simpa only [h.constsResolve] using hres
+  · refine ⟨cbinders, cbody, hCstrip, hcargs, hchead, hrclosed, hrbound, hrlps,
+      ?_, hrstrip, ?_, tcv, tval', hthm', htlps, hpin, fvs, sbody, hopen, ?_, ?_⟩
+    · simpa only [h.constsResolve] using hrres
+    · simpa only [h.inferTypeCore] using hri
+    · simpa only [h.inferTypeCore, h.isDefEqCore] using hleft
+    · simpa only [h.inferTypeCore, h.isDefEqCore] using hright
+  · simp only [ci, h.projFnRule]
+
+theorem projInstallRun {mode : CheckMode} {fuel : Nat} {T ctor : Key md}
+    {lps : List LevelParam} {nP nF : Nat} {fields : List Nat} {sourceOut : Env md}
+    (run : ProjInstallRun mode fuel T ctor lps nP nF source fields sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧
+      ProjInstallRun mode fuel T ctor lps nP nF target fields targetOut := by
+  induction fields generalizing source target with
+  | nil =>
+    change sourceOut = source at run
+    subst sourceOut
+    exact ⟨target, h, rfl⟩
+  | cons i rest ih =>
+    obtain ⟨sourceNext, hstep, hrest⟩ := run
+    rcases hstep with installed | ⟨missing, rfl⟩
+    · obtain ⟨targetNext, agreement, targetStep⟩ := h.projFnRun installed
+      obtain ⟨targetOut, outAgreement, targetRest⟩ := ih agreement hrest
+      exact ⟨targetOut, outAgreement, targetNext, Or.inl targetStep, targetRest⟩
+    · obtain ⟨targetOut, outAgreement, targetRest⟩ := ih h hrest
+      exact ⟨targetOut, outAgreement, target,
+        Or.inr ⟨by simpa only [h.isNone] using missing, rfl⟩, targetRest⟩
+
+/-- Both actual modeled branches replay with identical capabilities and stored rule data. -/
+theorem modeledRun {mode : CheckMode} {fuel : Nat} {block : List (ConstantInfo md)}
+    {sourceOut : Env md} (run : DeclIndRun mode fuel source block sourceOut) :
+    ∃ targetOut, Agrees sourceOut targetOut ∧ DeclIndRun mode fuel target block targetOut := by
+  obtain ⟨splitBlock, branch⟩ := run
+  rcases branch with ⟨cvT, capsT, cvC, nP, nF, hIfilt, hCfilt, envM, envR,
+    members, recs, residual, fresh, projections⟩ | ⟨nonsingle, envM, members, recs⟩
+  · obtain ⟨targetM, hM, targetMembers⟩ := h.indMembersRun members
+    have targetMembers' : IndMembersRun mode fuel (block.map (·.name))
+        (Ix.Kernel.indBlockCaps mode target cvT cvC nP nF) target
+        (block.filter fun ci => match ci with | .recInfo _ _ _ _ => false | _ => true) targetM := by
+      simpa only [h.indBlockCaps] using targetMembers
+    obtain ⟨targetR, hR, targetRecs⟩ := hM.indRecsRun recs
+    obtain ⟨targetOut, outAgreement, targetProjections⟩ := hR.projInstallRun projections
+    refine ⟨targetOut, outAgreement, splitBlock, Or.inl
+      ⟨cvT, capsT, cvC, nP, nF, hIfilt, hCfilt, targetM, targetR,
+        targetMembers', targetRecs, ?_, ?_, targetProjections⟩⟩
+    · simpa only [h.indBlockCaps, hR.ctorResidualOk] using residual
+    · simpa only [hR.isNone] using fresh
+  · obtain ⟨targetM, hM, targetMembers⟩ := h.indMembersRun members
+    obtain ⟨targetOut, outAgreement, targetRecs⟩ := hM.indRecsRun recs
+    exact ⟨targetOut, outAgreement, splitBlock,
+      Or.inr ⟨nonsingle, targetM, targetMembers, targetRecs⟩⟩
+
 end IxVM.Refinement.Decl.ThmBodyView.Agrees
