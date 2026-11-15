@@ -37,7 +37,7 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
 | `storeClosed` | moving a derivation between depths (`Rules.Transport`), for the context-lowering rebases | L5 (every installed term is closed), L7 |
 | `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | L5 (each theorem's own check, carried along the fold by `Transport.weaken`) |
 | `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (the constants of the roles in force installed as their specifications), L6 (a group is admitted before its roles are in force) |
-| `eqStored`, `evidence` | `Red.eqProof`: `Eq` is stored; each evidence theorem the table names is stored at its key, its type definitionally equal to the role equation's statement | L5 (evidence theorems checked like any theorem), L6 (the table's evidence matches its roles) |
+| `eqStored` | `Red.eqProof`: `Eq` is stored when it is in force | L5 (roles in force installed as their specifications), L6 (group admission) |
 | `recRules` | `Red.iota`'s rule lookup (the firing conjunct is `Ix.Kernel.Open.recRules_fire`): distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
 | `recPlain` | a plain rule's comparands are the major premise's domain | L5 (recursor install) |
 | `recArity`, `ruleCtorArity`, `tableCtorArity`, `familyArity` | the stored telescopes the walks read have a binder for every argument (`CertsR.toCerts`): a recursor with a rule, a rule's or a projection table entry's constructor, a unit-like or η-capable family | L5 (the fold's invariants `EnvWF`, `RecCtorsStored`, `ProjOkT`; `Ix.Kernel.Open.StoredFacts`) |
@@ -227,12 +227,6 @@ structure EnvFacts (c : Ctx) : Prop where
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   /-- (L5, L6) `Red.eqProof`: `Eq` is stored when it is in force. -/
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
-  /-- (L5, L6) `Red.eqProof`: each evidence theorem the table names for the equation of a
-  definition in force is a stored theorem at its key, whose type is definitionally equal to
-  the equation's statement at the theorem's levels. -/
-  evidence : ∀ r es i a, c.inForce r → (r, es) ∈ c.t.evidence.toList → es[i]? = some (.proof a) →
-    ∀ stmt, roleStatement r i = some stmt →
-      ∃ cv v, c.env.find? (c.κ a) = some (.thmInfo cv v) ∧ DefEq c.env 0 cv.type stmt
   /-- (L5, L7) `Red.iota`'s rule lookup: the rules of a stored recursor have distinct constructor
   keys; each fires (`.plain` or `.nested`, never `.inert`) at a stored constructor with the rule's
   parameter count; and when the head of the major premise's domain is the key of an address whose

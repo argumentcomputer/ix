@@ -65,7 +65,9 @@ structure RolePreludeInputs : Prop where
       ∀ {a : _root_.Address} {c : Ixon.Constant}, (a, c) ∈ pre.records ++ pre.evidence →
         a ≠ Ix.HostAdmission.Merkle.padding
   prelude_in_bindingSeeds :
-    ∀ {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude .anon},
+    ∀ {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+      {pre : Ix.Kernel.Reader.Prelude .anon},
+      Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t →
       Ix.Kernel.Reader.preludeFor t = .ok pre →
       ∀ {a : _root_.Address} {c : Ixon.Constant}, (a, c) ∈ pre.records →
         IxVM.Refinement.BindingSeeds t a ∨
@@ -300,7 +302,8 @@ theorem TableAdmittedAt.prelude_mem_orderRole (hRP : RolePreludeInputs)
     {a : _root_.Address} {c : Ixon.Constant} (hmem : (a, c) ∈ pre.records) :
     a ∈ order_role ∧ Ix.Cert.recordAt E_role a = some c := by
   have ha_ord : a ∈ order_role := by
-    rcases hRP.prelude_in_bindingSeeds hadm.preludeFor hmem with hb | ⟨a', c', hm', hb', hown, hne⟩
+    rcases hRP.prelude_in_bindingSeeds hadm.admitBinding hadm.preludeFor hmem with
+      hb | ⟨a', c', hm', hb', hown, hne⟩
     · exact (hadm.closureOrder.complete a).mpr (.seed hb (hadm.seeds_in a hb))
     · have ha'_reach : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) a' :=
         .seed hb' (hadm.seeds_in a' hb')

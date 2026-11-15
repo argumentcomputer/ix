@@ -995,19 +995,23 @@ structure SafeRefsInputs : Prop where
   accepted by `KernelCheck::safe_refs_only` resolves in `E₀` to an in-logic record
   (`¬ OutsideLogicAt E₀ a` and `(resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true`). -/
   safe_expr_refs_resolve :
-    ∀ {calls : List (Call F)} {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+      {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
       {c : Ixon.Constant} {recurAddrs : List _root_.Address}
       {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
       {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
       IxVM.Consistency.Bounded calls →
       IxVM.Consistency.LoadedBy calls E₀ →
+      L1.EnvDecoded E₀ →
       ¬ V.HashedCollision extra calls →
+      (bound ≤ c.sharing.toList.length ∨ bound = 4294967295) →
       ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ∀ {i : Nat} {a : _root_.Address},
         i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
         c.refs[i]? = some a →
+        WkAll calls bAddr t E₀ a →
         ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
           ∀ c_a, Ix.Cert.recordAt E₀ a = some c_a →
             (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true
@@ -1158,11 +1162,14 @@ structure SafeRefsInputs : Prop where
   /-- Constructor index consistency on safe walked mutual inductive blocks: `ct.cidx.toNat = j`
   for `ind.ctors[j]? = some ct`. -/
   indBlockCtorIdx :
-    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+    ∀ {V : IxVM.Refinement.View} {extra : List ByteArray}
+      {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
       {E₀ : Ixon.Env} {blk : _root_.Address} {cb : Ixon.Constant}
       {ms : Array Ixon.MutConst} {i j : Nat} {ind : Ixon.Inductive} {ct : Ixon.Constructor},
       IxVM.Consistency.Bounded calls →
       IxVM.Consistency.LoadedBy calls E₀ →
+      L1.EnvDecoded E₀ →
+      ¬ V.HashedCollision extra calls →
       WkAll calls bAddr t E₀ blk →
       ¬ IxVM.Consistency.OutsideLogicAt E₀ blk →
       Ix.Cert.recordAt E₀ blk = some cb →

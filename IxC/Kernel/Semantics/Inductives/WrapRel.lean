@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Env
 public import IxC.Kernel.ExprOps
+public import IxC.Kernel.Verify.Level
 
 @[expose] public section
 
@@ -27,16 +28,29 @@ those wrappers.
   `λ x₁ … xₖ, x₁` with every λ's zero-ness datum `never` (`wrapperArity`), applied to exactly `k`
   arguments; consuming it leaves its first argument (`consumeWrapper`). No name is read. The datum
   makes each λ a function in the model, so its application to an argument in its domain reduces.
-* **Everything else is equal**: every binder's zero-ness datum (`pw`, which the model reads) is
-  equal; the rest of the binder and `let` metadata is free, and a `let` of the declared term is
+* **Levels and binder data.** Sort and constant levels agree under every valuation; every
+  binder's zero-ness datum (`pw`, which the model reads) is equal. The rest of the binder and
+  `let` metadata is free, and a `let` of the declared term is
   expanded (`WrapRel.zeta`), as the statement's `Annotates` expands it.
 
-`wrapRelOk` decides it, with a budget no derivation needs to exceed (`wrapRelOk_sound`).
+`wrapRelOk` is a sound incomplete recognizer: it requires syntactic level equality
+(`wrapRelOk_sound`).
 -/
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Key Expr Level ConstantInfo Literal)
+open Ix.Kernel (Key Expr Level LevelParam ConstantInfo Literal)
+
+/-- Two lists related position by position. -/
+inductive Forall₂ {α β : Type} (R : α → β → Prop) : List α → List β → Prop
+  | nil : Forall₂ R [] []
+  | cons {a : α} {b : β} {l₁ : List α} {l₂ : List β} :
+      R a b → Forall₂ R l₁ l₂ → Forall₂ R (a :: l₁) (b :: l₂)
+
+theorem Forall₂.refl {α : Type} {R : α → α → Prop} (hR : ∀ x, R x x) :
+    ∀ xs : List α, Forall₂ R xs xs
+  | [] => .nil
+  | x :: xs => .cons (hR x) (Forall₂.refl hR xs)
 
 /-- The arity of a value `λ x₁ … xₖ, x₁` (`k ≥ 1`) whose binders' zero-ness data are all `never`
 (the λs are functions, never proofs), after `n` binders already passed. -/
@@ -59,12 +73,15 @@ def consumeWrapper (find? : Key md → Option (ConstantInfo md)) (t : Expr md) :
 
 mutual
 
-/-- **`g` is `d` with wrappers consumed at binder domains.** -/
+/-- **`g` and `d` have equivalent levels and wrappers consumed at binder domains.** -/
 inductive WrapRel (find? : Key md → Option (ConstantInfo md)) : Expr md → Expr md → Prop
   | bvar (i : Nat) : WrapRel find? (.bvar i) (.bvar i)
   | fvar {i : Nat} {t t' : Expr md} : WrapRel find? t t' → WrapRel find? (.fvar i t) (.fvar i t')
-  | sort (u : Level) : WrapRel find? (.sort u) (.sort u)
-  | const (n : Key md) (us : List Level) : WrapRel find? (.const n us) (.const n us)
+  | sort {u v : Level} :
+      (∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) → WrapRel find? (.sort u) (.sort v)
+  | const {n : Key md} {us vs : List Level} :
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs →
+      WrapRel find? (.const n us) (.const n vs)
   | lit (l : Literal) : WrapRel find? (.lit l) (.lit l)
   | app {f a f' a' : Expr md} :
       WrapRel find? f f' → WrapRel find? a a' → WrapRel find? (.app f a) (.app f' a')
@@ -96,8 +113,8 @@ theorem WrapRel.refl (find? : Key md → Option (ConstantInfo md)) :
     ∀ e : Expr md, WrapRel find? e e
   | .bvar i => .bvar i
   | .fvar _ t => .fvar (WrapRel.refl find? t)
-  | .sort u => .sort u
-  | .const n us => .const n us
+  | .sort _ => .sort (fun _ => rfl)
+  | .const _ us => .const (Forall₂.refl (fun _ _ => rfl) us)
   | .lit l => .lit l
   | .app f a => .app (WrapRel.refl find? f) (WrapRel.refl find? a)
   | .lam t b _ => .lam rfl (.keep (WrapRel.refl find? t)) (WrapRel.refl find? b)
@@ -109,7 +126,7 @@ theorem WrapDom.refl (find? : Key md → Option (ConstantInfo md)) (e : Expr md)
     WrapDom find? e e :=
   .keep (WrapRel.refl find? e)
 
-/-! ## The decision -/
+/-! ## A syntactic recognizer -/
 
 /-- The number of nodes of a term. -/
 def exprSize : Expr md → Nat
@@ -156,8 +173,8 @@ def wrapDomB (find? : Key md → Option (ConstantInfo md)) : Nat → Expr md →
 
 end
 
-/-- **The decision**: `WrapRel` at a budget of twice the generated term's size, enough for every
-step of the walk and every consumption (each consumption leaves a strict subterm). -/
+/-- A sound incomplete recognizer for `WrapRel`, requiring syntactic level equality and using
+a budget based on both terms' sizes. -/
 def wrapRelOk (find? : Key md → Option (ConstantInfo md)) (g d : Expr md) : Bool :=
   wrapRelB find? (2 * (exprSize g + exprSize d) + 2) g d
 
@@ -176,10 +193,10 @@ theorem wrapRelB_sound (find? : Key md → Option (ConstantInfo md)) :
              (wrapRelB_sound find? fuel _ _ h3)
          · exact .zeta (wrapRelB_sound find? fuel _ _ h))
       | (subst h; exact .bvar _)
-      | (subst h; exact .sort _)
+      | (subst h; exact .sort (fun _ => rfl))
       | (subst h; exact .lit _)
       | (obtain ⟨rfl, h⟩ := h; exact .fvar (wrapRelB_sound find? fuel _ _ h))
-      | (obtain ⟨rfl, rfl⟩ := h; exact .const _ _)
+      | (obtain ⟨rfl, rfl⟩ := h; exact .const (Forall₂.refl (fun _ _ => rfl) _))
       | exact .app (wrapRelB_sound find? fuel _ _ h.1) (wrapRelB_sound find? fuel _ _ h.2)
       | exact .lam h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2) (wrapRelB_sound find? fuel _ _ h.2)
       | exact .forallE h.1.1 (wrapDomB_sound find? fuel _ _ h.1.2)
@@ -201,7 +218,7 @@ theorem wrapDomB_sound (find? : Key md → Option (ConstantInfo md)) :
 
 end
 
-/-- **The decision is sound.** -/
+/-- **The recognizer is sound.** -/
 theorem wrapRelOk_sound {find? : Key md → Option (ConstantInfo md)} {g d : Expr md}
     (h : wrapRelOk find? g d = true) : WrapRel find? g d :=
   wrapRelB_sound find? _ g d h

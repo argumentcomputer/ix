@@ -1715,7 +1715,7 @@ theorem constantValCheckJ_twinPos_of_checked (hCore : IxVM.Consistency.Core S₀
   obtain ⟨hnl_eq, hnl, hperm, hty_rep⟩ := hv
   have hnd_cv : LevelParam.nodup cv.levelParams = true := by
     rw [← hvs.2.1]
-    exact levelParam_nodup_of_nodup (hperm.nodup_iff.mpr List.nodup_range)
+    exact nat_levelParam_nodup_of_nodup (hperm.nodup_iff.mpr List.nodup_range)
   have ev_sc' : ObsFn W "KernelCheck::validate_expr_well_scoped"
       [ty, .field 0, .field (cv'.levelParams.length : F)] h v_sc m_sc cs_sc := by
     rwa [← hnl_eq]
@@ -2327,7 +2327,7 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
     let c : Ctx := ⟨wb.E, env, wb.t, lim⟩
     have hgood_cs : Good c cs := (show Good c calls from wb.good).sub hsub
     have hshape : d.cvW.name.isProjFnShape = false := by
-      rw [← hkey]; exact keyOf_isProjFnShape_false wb.t a
+      rw [← hkey]; exact nat_keyOf_isProjFnShape_false wb.t a
     have hnot_aux : ∀ k tk, d.cvW.name ≠ .aux k tk := by
       intro k tk; rw [← hkey]; exact keyOf_not_aux wb.t a k tk
     obtain ⟨hcv_pos, _, hlf_ty, hlf_rls, hlen_eq, hrs_stored, _⟩ :=
@@ -2363,7 +2363,7 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
     let c : Ctx := ⟨wb.E, env, wb.t, lim⟩
     have hgood_cs : Good c cs := (show Good c calls from wb.good).sub hsub
     have hshape : d.cvW.name.isProjFnShape = false := by
-      rw [← hkey]; exact keyOf_isProjFnShape_false wb.t a
+      rw [← hkey]; exact nat_keyOf_isProjFnShape_false wb.t a
     have hef : EnvFacts c := hS.toEnvFacts wb.tableWf (wb.roleFacts lim hS)
     have hlf_c : LoadFacts c := wb.loads lim
     obtain ⟨hcv_pos, _, hlf_ty, hlf_rls, hlen_eq, hrs_stored, hroute⟩ :=
@@ -2475,7 +2475,7 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
     let c : Ctx := ⟨wb.E, env, wb.t, lim⟩
     have hgood_cs : Good c cs := (show Good c calls from wb.good).sub hsub
     have hshape : d.cvW.name.isProjFnShape = false := by
-      rw [← hkey]; exact keyOf_isProjFnShape_false wb.t a
+      rw [← hkey]; exact nat_keyOf_isProjFnShape_false wb.t a
     have hnot_aux : ∀ k tk, d.cvW.name ≠ .aux k tk := by
       intro k tk; rw [← hkey]; exact keyOf_not_aux wb.t a k tk
     obtain ⟨_, hcv_rules, hlf_ty, hlf_rls, hlen_eq, hrs_stored, _⟩ :=
@@ -2509,7 +2509,7 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
     let c : Ctx := ⟨wb.E, env, wb.t, lim⟩
     have hgood_cs : Good c cs := (show Good c calls from wb.good).sub hsub
     have hshape : d.cvW.name.isProjFnShape = false := by
-      rw [← hkey]; exact keyOf_isProjFnShape_false wb.t a
+      rw [← hkey]; exact nat_keyOf_isProjFnShape_false wb.t a
     have hef : EnvFacts c := hS.toEnvFacts wb.tableWf (wb.roleFacts lim hS)
     have hlf_c : LoadFacts c := wb.loads lim
     obtain ⟨_, hcv_rules_fn, hlf_ty, hlf_rls, hlen_eq, hrs_stored, hroute⟩ :=

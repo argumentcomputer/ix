@@ -714,7 +714,7 @@ theorem strongEnvProps_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declarat
       rcases hroutes with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine strongEnvProps_step hext.find h htb fun n tbl hf hn => Or.inl ?_
         obtain ⟨_, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
-          hp, hCtors, _, _, _, _, _, _, _, _, hTbl, _⟩ := hN
+          hp, hCtors, _, _, _, _, _, _, _, hTbl, _⟩ := hN
         obtain ⟨_, _, _, _, _, _, _, _, hp₁, henv₁⟩ := hInd
         have h1 : NewSat env env₁ NotProj := by
           rw [henv₁]; exact NewSat.cons (fun _ heq => nomatch heq)
@@ -1115,7 +1115,7 @@ theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .a
     · exact hbasis_step hrun
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
-          hp, hCtors, _, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
+          hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
         have hF := Ix.Kernel.Model.nativeFront hfr hS (Ix.Kernel.Model.nativeRecog_of hdp)
           hnd hInd hp hCtors
         obtain ⟨hnR, _, hfR, _⟩ := hRec.recursor
@@ -1669,10 +1669,6 @@ structure FoldEnvCompanions (c : Ctx) : Prop where
     Ix.Kernel.natOpStored c.env (.role r) = true
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
-  evidence : ∀ r es i a, c.inForce r → (r, es) ∈ c.t.evidence.toList →
-    es[i]? = some (Ix.Kernel.Evidence.proof a) →
-    ∀ stmt, roleStatement r i = some stmt →
-      ∃ cv v, c.env.find? (c.κ a) = some (.thmInfo cv v) ∧ DefEq c.env 0 cv.type stmt
   quotBasis : c.inForce .quot → ∀ ci ∈ BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
@@ -1715,7 +1711,6 @@ theorem FoldStoreInv.toEnvFacts {c : Ctx} (hS : FoldStoreInv c.env) (htwf : c.t.
   natOps := hR.natOps
   natAdd := hR.natAdd
   eqStored := hR.eqStored
-  evidence := hR.evidence
   recRules := fun k cv mI rP rls hf =>
     let ⟨hnodup, hprj⟩ := hR.recRulesNodupAndProj k cv mI rP rls hf
     ⟨hnodup, fun rl hrl => hS.store.recRules_fire hf hrl, hprj⟩
@@ -2464,7 +2459,7 @@ theorem installStep_glue_indNative {J : Judgements .anon} {env env₂ : Ix.Kerne
     IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ := by
   obtain ⟨caps₀, cs, mI₀, rP₀, rules₀, hblk_eq, hctors₀⟩ := nativeParts?_block_eq hdp
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
-    hp, hCtors, _, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
+    hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
   obtain ⟨cvTa₀, s, bs, cvS, hchkT, hTa_cases, _, hFS, hp₁, henv₁⟩ := hInd
   have hcvS_name : cvS.name = p₀.cvT.name := by
     have hTa_name : cvTa.name = p₀.cvT.name := by

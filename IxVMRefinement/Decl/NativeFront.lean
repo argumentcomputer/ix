@@ -1486,7 +1486,7 @@ theorem ctor_zero_ok_raw_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
               injection htup with hl; injection hl with hxh hl; injection hl with _; subst hxh
               have hRH_eq : RH = .const T us := by
                 have hfn := congrArg Expr.getAppFn hlast_eq
-                rw [getAppFn_mkAppN, getAppFn_mkAppN] at hfn
+                rw [nat_getAppFn_mkAppN, nat_getAppFn_mkAppN] at hfn
                 cases RH with
                 | app rf ra => exact (hna rf ra rfl).elim
                 | _ => exact hfn.symm
@@ -2226,7 +2226,7 @@ theorem instOpen_bvar_at :
       ite_eq_right (show ¬ (j + rest.length < j + (rest.length - 1 - r)) by omega)]
     exact instOpen_bvar_at rest (fun x hx => hvs x (List.mem_cons_of_mem _ hx)) hr
 
-theorem openPisAtFvars_split :
+theorem nat_openPisAtFvars_split :
     ∀ (a b : Nat) {e : KExpr} {d : Nat} {fvsA : List KExpr} {oA : KExpr}
       {fvs₁ : List KExpr} {r₁ : KExpr},
       Ix.Kernel.openPisAtFvars (a + b) e d = some (fvsA, oA) →
@@ -2253,7 +2253,7 @@ theorem openPisAtFvars_split :
         · exact nomatch ha
         · simp only [Option.some.injEq, Prod.mk.injEq] at ha
           obtain ⟨rfl, rfl⟩ := ha
-          obtain ⟨fvs₂, hb', happ⟩ := openPisAtFvars_split a b h1 h2
+          obtain ⟨fvs₂, hb', happ⟩ := nat_openPisAtFvars_split a b h1 h2
           rw [show d + (a + 1) = d + 1 + a by omega]
           exact ⟨fvs₂, hb', by simp [happ]⟩
     | _ => simp [Ix.Kernel.openPisAtFvars] at ha
@@ -2277,7 +2277,7 @@ theorem ctor_openPis_residual {T : KKey} {lps : List LevelParam} {nP nIdx nF : N
     Ix.Kernel.Model.openPisAtFvars_of_stripPis_isSome nP 0 (by rw [hstP]; rfl)
   obtain ⟨fvsAll, xrest, hopAll⟩ :=
     Ix.Kernel.Model.openPisAtFvars_of_stripPis_isSome (nP + nF) 0 (by rw [hstrip]; rfl)
-  obtain ⟨xFvs, hopF, rfl⟩ := openPisAtFvars_split nP nF hopAll hopP
+  obtain ⟨xFvs, hopF, rfl⟩ := nat_openPisAtFvars_split nP nF hopAll hopP
   rw [Nat.zero_add] at hopF
   obtain ⟨hxrest_eq, hall_fv, _⟩ := openPisAtFvars_eq_instOpen (nP + nF) hstrip hopAll
   have hfvsP_len : fvsP.length = nP := openPisAtFvars_len nP hopP
@@ -2792,7 +2792,7 @@ private theorem check_positivity_aug_go {c : Ctx} {b₀ : Bytes.Address} {T : KK
     have hnot_fa : ∀ d b m, E ≠ .forallE d b m := by
       rw [hE_app]; exact mkAppN_const_not_forallE _ _ _
     have hfn : E.getAppFn = .const (c.κ (ixAddr a)) us := by
-      rw [hE_app, getAppFn_mkAppN]; rfl
+      rw [hE_app, nat_getAppFn_mkAppN]; rfl
     have hga : E.getAppArgs = args_expr := by
       rw [hE_app, getAppArgs_mkAppN_const]
     have hnp_args : ∀ x ∈ args_expr, noProjAt T x = true := by
@@ -3089,7 +3089,7 @@ theorem check_positivity_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
 
 /-! ## `former_decl_ok`, `OneTypeBlockWitness`, `nativeFront_pass`, and `DeclNativeNoRecRunJ` -/
 
-theorem keyOf_injective {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
+theorem nat_keyOf_injective {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     {a₁ a₂ : _root_.Address} (heq : keyOf t a₁ = keyOf t a₂) : a₁ = a₂ := by
   cases hq₁ : t.bound.find? (·.2 == a₁) with
   | some q₁ =>
@@ -3202,7 +3202,7 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
         have hκ_inj : ∀ a : Bytes.Address, keyOf t (ixAddr a) = T → ixAddr a = ixAddr a_t := by
           intro a ha
           rw [hT_eq] at ha
-          exact keyOf_injective hwf ha
+          exact nat_keyOf_injective hwf ha
         exact ctor_zero_ok_raw_go hκ_inj (nP + c_j.2) hstR hstE hdoms hcty_raw
           (Bytes.repAddressRef_heapMono₂ addrTy e1 hpt)
           (repKLevel_heapMono₂ e1 hpind) ev_cz
@@ -3726,7 +3726,7 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
   obtain ⟨hlps_lt, hnP_lt, hnIdx_lt, hnCtors_lt, hnF_lt⟩ := w.counts_lt
   have hshape_T : p₀.cvT.name.isProjFnShape = false := by
     rw [w.T_iprj]
-    exact keyOf_isProjFnShape_false w.t _
+    exact nat_keyOf_isProjFnShape_false w.t _
   have hlps_Ta₀ : w.cvTa₀.levelParams = List.range p₀.cvT.levelParams.length := by
     rw [w.valStored_T.1 |> fun _ => w.valStored_T.2.1]
     exact w.lps_T
@@ -4166,7 +4166,7 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     simpa [p, p₁, hlarge, hisProp] using hup_sc
   have hshape_Ta₀ : w.cvTa₀.name.isProjFnShape = false := by
     rw [w.valStored_T.1, w.T_iprj]
-    exact keyOf_isProjFnShape_false w.t _
+    exact nat_keyOf_isProjFnShape_false w.t _
   have hext_env₁ : Ix.Kernel.EnvExt env env₁ :=
     envExt_cons_nonProj hfresh_Ta₀ (ne_projTableName_of_isProjFnShape_false hshape_Ta₀)
   obtain ⟨tfvs_all, isorts, hop_all, hisorts⟩ :=

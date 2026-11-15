@@ -218,9 +218,11 @@ for `prepareBare`. -/
 def decodeRecordsBare (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
   decodeLoopBare limits 0 records []
 
-/-- `prepareWith` without generating in-process inductive models (`readStreamBare`):
-each inductive block lowers directly to its own declaration, so an external check
-that brings its own model advice supplies the model declarations separately. -/
+/-- `prepareWith` without generating in-process inductive models (`readStreamBare`),
+using bounded exact per-record decoding (`decodeRecordsBare` / `Ixon.Bounded.deConstant`,
+retaining exact record layouts under `limits` rather than `prepareWith`'s canonical-only
+`decodeRecords`): each inductive block lowers directly to its own declaration, so an
+external check that brings its own model advice supplies the model declarations separately. -/
 def prepareBare (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :

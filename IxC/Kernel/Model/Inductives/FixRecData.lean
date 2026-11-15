@@ -121,15 +121,25 @@ theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J 
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
       FixCtorFactsAt m env₀ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
-        p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA) :
+        p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA)
+    (hokTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      WellDenotedV V ρ (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
+        (recConcAV ctorsA.length p.nIdx))) :
     SumRecData m cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
         (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA) ∧
       ∃ u : Level, ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         interp V ρ (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) ∈ˢ (univ (u.eval ψ) : V) := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, hgen, htp, -, hbt, hRf, hsty, hens, -, -, hstR⟩ :=
+  obtain ⟨-, -, cvRi, recTy, hccv, hgen, htp, -, hbt, hRf, hdefeq, -, hstR⟩ :=
     hRec
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
+  obtain ⟨htf_i, -, -, hbt_i⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccv
+  obtain ⟨type_i, ⟨-, -, -, -, -, -, -, -, -, sty_i, u_i, hinf_i, hens_i⟩, hcvRi⟩ := hccv
+  have hty_i : cvRi.type = type_i := by rw [hcvRi]
+  rw [← hty_i] at hinf_i
+  have hw_i : Expr.WScoped 0 cvRi.type := Expr.WScoped.of_not_hasFvar htf_i
+  have hL_i : Expr.LeavesBounded cvRi.type := Expr.LeavesBounded.of_not_hasFvar htf_i
+  have hnil_i : cvRi.type.fvarLeaves = [] := Expr.fvarLeaves_eq_nil_of_not_hasFvar htf_i
   have hTf := hFD.tf
   have hTb := hFD.tb
   have hcr : ∀ ψ, CtorReadsR m ψ p.cvT.name p.cvT.levelParams p.nP p.nIdx
@@ -145,13 +155,10 @@ theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J 
   have hw : Expr.WScoped 0 recTy := Expr.WScoped.of_not_hasFvar hRf
   have hL : Expr.LeavesBounded recTy := Expr.LeavesBounded.of_not_hasFvar hRf
   have hnil : recTy.fvarLeaves = [] := Expr.fvarLeaves_eq_nil_of_not_hasFvar hRf
-  refine ⟨⟨hread, fun ψ => fixRdsAV_length hFD ψ, ?_, ?_, ?_, ?_⟩, u, fun ψ ρ => ?_⟩
+  refine ⟨⟨hread, fun ψ => fixRdsAV_length hFD ψ, ?_, hokTy, ?_, ?_⟩, u_i, fun ψ ρ => ?_⟩
   · intro ψ d hd
     unfold fixRdsAV at hd
     rw [mem_fixRecDataAV hd, pwBit_eq_zero_iff, Ix.Kernel.PropWhen.zeronessOf_sound, beq_iff_eq]
-  · intro ψ ρ
-    obtain ⟨-, -, hokT, -, -⟩ := inferRowJ hJ hsty hw hbt hL (CtxOk.nil hnil) (hread ψ)
-    exact hokT ρ (Sat_nil V ρ)
   · intro ψ
     have hst := stripPisAV_mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
       (recConcAV ctorsA.length p.nIdx)
@@ -165,7 +172,13 @@ theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J 
       exact hread ψ₁
     exact (mkPisAV_inj (by rw [fixRdsAV_length hFD ψ₁, fixRdsAV_length hFD ψ₂])
       (Option.some.inj (h1.symm.trans h2))).1
-  · exact (sortRowJ (hS ψ) hsty hens hw hbt hL (CtxOk.nil hnil) (hread ψ) ρ (Sat_nil V ρ)).2
+  · obtain ⟨ea_i, hea_i⟩ := hJ.accepted ψ hinf_i hw_i hbt_i hL_i
+    have hs_i := sortRowJ (hS ψ) hinf_i hens_i hw_i hbt_i hL_i (CtxOk.nil hnil_i) hea_i
+    have hde := defEqRowJ hJ hdefeq hw_i hbt_i hL_i hw hbt hL
+      (CtxOk.nil hnil_i) (CtxOk.nil hnil) hea_i (hread ψ)
+      (fun ρ' hρ' => (hs_i ρ' hρ').1) (fun ρ' _ => hokTy ψ ρ') ρ (Sat_nil V ρ)
+    have hmem := (hs_i ρ (Sat_nil V ρ)).2
+    rwa [hde] at hmem
 
 /-! ## The opening -/
 
@@ -184,7 +197,7 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
     ∃ (fvsR : List (Expr md)) (oR : Expr md), ∀ ψ : LevelParam → Nat,
       Opened mp.base2 ψ (p.nP + ctorsA.length + p.nIdx + 2) cvRa.type fvsR oR
         (((rds ψ).map (·.2.2)).reverse) (recConcAV ctorsA.length p.nIdx) := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, hgen, -, -, hbt, hRf, -, -, -, -, hstR⟩ :=
+  obtain ⟨-, -, cvRi, recTy, -, hgen, -, -, hbt, hRf, -, -, hstR⟩ :=
     hRec
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   obtain ⟨tbs, itele, motiveTy, major, minors, hsT, -, hmaj, hmin, hrec⟩ :=

@@ -173,7 +173,7 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
             (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
           (fixRuleCoreAV (pwBit ψ (Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large))) (A ψ)
             p.nP cA.2 ctorsA.length j (Ix.Kernel.recIdxOf (ksF j)) (tssF j ψ) (eissF j ψ))) := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, -, -, -, -, -, -, -, hrules, hstR⟩ :=
+  obtain ⟨-, -, cvRi, recTy, -, -, -, -, -, -, -, hrules, hstR⟩ :=
     hRec
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   have hTf := hFD.tf

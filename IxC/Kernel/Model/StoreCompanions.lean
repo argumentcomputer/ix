@@ -100,7 +100,7 @@ theorem native_newSat {J : Judgements md} {env env₂ : Env md} {p₀ : NativePa
     (hQr : ∀ cv a b rs, Q (.recInfo cv a b rs)) (hQp : ∀ t, Q (.projInfo t))
     (hrun : DeclNativeRunJ J env p₀ env₂) : NewSat env env₂ Q := by
   obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, -,
-    -, -, -, -, -, -, -, -, -, hTbl, -⟩ := hrun
+    -, -, -, -, -, -, -, -, hTbl, -⟩ := hrun
   obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   subst henv₁
   exact (NewSat.cons (hQi _ _)).trans ((consSumCtors_newSat hQc).trans
@@ -518,7 +518,7 @@ theorem native_recK_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J
       (∀ r ∈ rules, r.k = Ix.Kernel.recRuleKOf env₂.find? r.ctor) ∧
       (∀ r ∈ rules, r.k = true → rules = [r]) := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hrun
+    hCtors, -, -, -, -, -, -, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   obtain ⟨_, s, _, _, _, hp₁, ⟨cvS, henv₁, hS⟩, _, _⟩ := hInd.shape
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
@@ -1042,7 +1042,7 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine etaTowers_step hext h ?_
         obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-          hCtors, -, -, -, -, -, -, -, -, hTbl, -⟩ := hN
+          hCtors, -, -, -, -, -, -, -, hTbl, -⟩ := hN
         exact nativeFormer_towers hInd hp hCtors
           ((consSumCtors_newSat (fun _ _ _ _ _ heq => nomatch heq)).trans
             (NewSat.cons (c := .recInfo _ _ _ _) (fun _ _ heq => nomatch heq))) hTbl
@@ -1204,7 +1204,7 @@ theorem tableBodies_declRunJ {env env₂ : Env md} {d : Declaration md} (hS : St
     · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine tableBodies_step hext.find h ?_
         obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd,
-          hp, hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hN
+          hp, hCtors, -, -, -, -, -, -, hRec, hTbl, -⟩ := hN
         have hF := nativeFront hfr hS (nativeRecog_of hdp) hnd hInd hp hCtors
         obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
         have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by

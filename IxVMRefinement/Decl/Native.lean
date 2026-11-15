@@ -157,7 +157,7 @@ theorem ctorTeleOk_of_stripPis_mkAppN_const {ty : KExpr} {k : Nat}
   unfold Expr.ctorTeleOk
   rw [hst]
   dsimp only
-  rw [getAppFn_mkAppN]
+  rw [nat_getAppFn_mkAppN]
   rfl
 
 /-- Along any prefix peeled by `Expr.stripPis k`, `ctorZeroOk T z ty = true` forces every peeled
