@@ -65,9 +65,17 @@ def candidate (find? : Key md → Option (ConstantInfo md))
     | some (.defnInfo cv value hint) => some (cv, value, hint)
     | _ => none
   unless model?.isSome || majorAgrees majorIndex canonical.type annotated.type do none
-  pure { raw := raw, annotated := annotated, canonical := canonical, canonicalKey := key,
-    majorIndex := majorIndex, rulePrefix := rulePrefix, rawRules := rules,
-    canonicalRules := canonicalRules, model? := model? }
+  pure {
+    raw := raw
+    annotated := annotated
+    canonical := canonical
+    canonicalKey := key
+    majorIndex := majorIndex
+    rulePrefix := rulePrefix
+    rawRules := rules
+    canonicalRules := canonicalRules
+    model? := model?
+  }
 
 def findCanonical (find? : Key md → Option (ConstantInfo md))
     (raw annotated : ConstantVal md) (majorIndex rulePrefix : Nat) (rules : List (RecRule md)) :
