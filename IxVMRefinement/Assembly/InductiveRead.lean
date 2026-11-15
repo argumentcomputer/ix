@@ -160,11 +160,8 @@ theorem readRecord_full_bare {md : Mode} {cx : Ctx md} {st : State md}
         unfold readRecordBare
         simp only [hinfo]
         split
-        · split
-          · rename_i hdefs'
-            exact (hdefs hdefs').elim
-          · rw [hbareInd]
-            exact hbare
+        · rw [hbareInd]
+          exact hbare
         · rename_i hind'
           exact (hind' hind).elim
     · apply same

@@ -48,7 +48,7 @@ private theorem record_twinSources (store : Store)
     (hpresent : record ∈ records) (before : BuildState) (hbefore : TwinSources records before.1) :
     StepHolds (fun after => TwinSources records after.1) (recordStep store record before) :=
   Ix.CompileCert.CanonUnivEmit.arrayLoop_preserves
-    (fun state => TwinSources records state.1) (recursorMembers record.2) before
+    (fun state : BuildState => TwinSources records state.1) (recursorMembers record.2) before
     (candidate store record.1 record.2) hbefore
     (fun member hm state hs => candidate_twinSources store records record.1 record.2
       hpresent member hm state hs)
@@ -60,7 +60,7 @@ theorem buildIndex_twinSources (store : Store) (records : Array (_root_.Address 
   let collected := forIn (m := Id) records (({} : RecIndex), ({} : Found)) (recordStep store)
   have hcollected : TwinSources records collected.1 :=
     Ix.CompileCert.CanonUnivEmit.arrayLoop_preserves
-      (fun state => TwinSources records state.1) records ({}, {}) (recordStep store)
+      (fun state : BuildState => TwinSources records state.1) records ({}, {}) (recordStep store)
       (by intro ref entry h; simp at h)
       (fun record hm state hs => record_twinSources store records record hm state hs)
   exact Ix.CompileCert.CanonUnivMeaning.listLoop_preserves
