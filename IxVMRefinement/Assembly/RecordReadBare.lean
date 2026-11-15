@@ -1411,10 +1411,10 @@ private theorem safe_rawConvExpr_ctx_ready
     {E_ld : Ixon.Env} {cs_load cs_sr : List (Call F)}
     {h₀ h_sr h'_sr : Heap F} {e : Ixon.Expr} {kp : SourceValue F}
     (hbound : IxVM.Consistency.Bounded calls)
-    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    (_hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
     (hba : Ix.Kernel.Admission.BindingAdmitted _root_.Address.admissionHash b t)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
-    (hexact₀ : ∀ x lc, E₀.consts.get? x = some lc →
+    (_hexact₀ : ∀ x lc, E₀.consts.get? x = some lc →
       ∃ c', lc.get? = some c' ∧ Ixon.deConstantExact lc.rawBytes = .ok c')
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
@@ -3658,6 +3658,7 @@ private theorem readRecordBare_muts_defn
     rw [hinfo]
     dsimp only
     rw [hany_eq _ (fun x => by cases x <;> rfl)]
+    rfl
   rw [hb]
   unfold Ix.Kernel.Reader.readRecord
   rw [hinfo]
