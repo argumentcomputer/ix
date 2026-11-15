@@ -104,4 +104,15 @@ theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env 
   exact ⟨_, Env.find?_cons_self _ _, ⟨⟨rfl, rfl, annotateCore_to_annotates hat htf htb⟩,
     annotateCore_to_annotates hav hvf hvb⟩⟩
 
+/-- The admission witness's proposition checks transport through the same exact checker view. -/
+theorem theoremsInProp {declarations : List (Declaration .anon)}
+    (checked : IxVM.Refinement.TheoremsInProp source declarations) :
+    IxVM.Refinement.TheoremsInProp target declarations := by
+  intro cv value member
+  obtain ⟨fuel, ty, stype, level, annotated, inferred, checkedSort, zero⟩ := checked cv value member
+  refine ⟨fuel, ty, stype, level, ?_, ?_, ?_, zero⟩
+  · simpa only [fueledOps, h.annotateCore] using annotated
+  · simpa only [fueledOps, h.inferTypeCore] using inferred
+  · simpa only [fueledOps, h.ensureSortCore] using checkedSort
+
 end IxVM.Refinement.Decl.ThmBodyView.Agrees
