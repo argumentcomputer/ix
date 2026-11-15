@@ -32,7 +32,7 @@ set_option linter.unusedVariables false
 /-! ## Context lookups -/
 
 /-- `KernelInfer::types_lookup`: the type of the opened variable `BVar i` stands for. -/
-theorem types_lookup_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem types_lookup_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::types_lookup" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.types_lookup c args h r h' calls := by
@@ -42,7 +42,7 @@ theorem types_lookup_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
   exact lookup_lift c ih good ev14 op60 ev36 hc68
 
 /-- `KernelInferOnly::io_types_lookup`: as `types_lookup`. -/
-theorem io_types_lookup_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem io_types_lookup_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::io_types_lookup" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.io_types_lookup c args h r h' calls := by
@@ -55,7 +55,7 @@ theorem io_types_lookup_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 /-! ## A loaded constant's level count and type -/
 
 /-- `KernelInfer::const_num_lvls`: the first field, whatever the kind. -/
-theorem const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem const_num_lvls_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::const_num_lvls" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.const_num_lvls c args h r h' calls := by
@@ -73,7 +73,7 @@ theorem const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   all_goals exact ⟨he.trans (hci.nl_of_eq hv), hh⟩
 
 /-- `KernelInferOnly::io_const_num_lvls`: as `const_num_lvls`. -/
-theorem io_const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem io_const_num_lvls_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::io_const_num_lvls" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.io_const_num_lvls c args h r h' calls := by
@@ -91,7 +91,7 @@ theorem io_const_num_lvls_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
   all_goals exact ⟨he.trans (hci.nl_of_eq hv), hh⟩
 
 /-- `KernelInfer::const_type_of`: the second field, whatever the kind. -/
-theorem const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem const_type_of_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::const_type_of" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.const_type_of c args h r h' calls := by
@@ -109,7 +109,7 @@ theorem const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   all_goals (rw [he, hh]; exact ⟨hci.ty_of_eq hv, rfl⟩)
 
 /-- `KernelInferOnly::io_const_type_of`: as `const_type_of`. -/
-theorem io_const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem io_const_type_of_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::io_const_type_of" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.io_const_type_of c args h r h' calls := by
@@ -130,7 +130,7 @@ theorem io_const_type_of_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `KernelInferOnly::forall_datum_ok`: `pw_eq(v, bl) = 1`, so the ∀'s datum is the zero-ness of
 the body's sort. -/
-theorem forall_datum_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem forall_datum_ok_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::forall_datum_ok" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.forall_datum_ok c args h r h' calls := by
@@ -146,7 +146,7 @@ theorem forall_datum_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 /-- `KernelInferOnly::lam_datum_ok`: at a `λ` body the two data agree (`pw_eq(bl, inner) = 1`);
 otherwise the datum is the zero-ness of the io-grade sort of the body's type
 (`ensure_sort_only`, then `pw_eq`). -/
-theorem lam_datum_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lam_datum_ok_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::lam_datum_ok" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.lam_datum_ok c args h r h' calls := by
@@ -171,7 +171,7 @@ theorem lam_datum_ok_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
 /-! ## The delayed substitution of a spine -/
 
 /-- `KernelInfer::inst_subs`: nothing to substitute, or `expr_inst_many` at `0`. -/
-theorem inst_subs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem inst_subs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::inst_subs" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.inst_subs c args h r h' calls := by
@@ -195,7 +195,7 @@ theorem inst_subs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelInfer::k_infer_lit`: the constant of the bound `Nat` role (`role_addr`) or `String`
 role (`role_used_implicitly`) at no levels; `Infer.natLit`/`Infer.strLit` with the literal
 support of the roles in force. -/
-theorem k_infer_lit_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_lit" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_lit c args h r h' calls := by
@@ -232,7 +232,7 @@ theorem k_infer_lit_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
 /-! ## One inference, then a normalization, a conversion or a cut -/
 
 /-- `KernelInfer::k_ensure_sort`: `k_infer`, then `whnf` to a sort. -/
-theorem k_ensure_sort_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_ensure_sort_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_ensure_sort" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_ensure_sort c args h r h' calls := by
@@ -252,7 +252,7 @@ theorem k_ensure_sort_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 
 /-- `KernelInferOnly::ensure_sort_only`: `k_infer_only`, then (unless it is already a sort)
 `whnf` to a sort. -/
-theorem ensure_sort_only_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem ensure_sort_only_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::ensure_sort_only" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.ensure_sort_only c args h r h' calls := by
@@ -279,7 +279,7 @@ theorem ensure_sort_only_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-- `KernelInfer::k_check`: `k_infer`, then `k_is_def_eq` against the expected type, asserted
 `1`. -/
-theorem k_check_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_check_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_check" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_check c args h r h' calls := by
@@ -298,7 +298,7 @@ theorem k_check_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelInferOnly::io_app_cod`: the codomain instantiated by the argument (`expr_inst1` at
 `0`); at a datum the never-zero test does not accept, the argument's io-grade type is
 `k_is_def_eq` to the domain. -/
-theorem io_app_cod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem io_app_cod_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::io_app_cod" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.io_app_cod c args h r h' calls := by
@@ -341,7 +341,7 @@ theorem io_app_cod_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelInfer::k_infer_let_start`: the type's sort and the value's type are checked
 (`k_ensure_sort`, `k_check`, which no rule reads); the result is the type of the body instantiated
 by the value, the image of the `let`. -/
-theorem k_infer_let_start_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_infer_let_start_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_let_start" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_let_start c args h r h' calls := by
@@ -367,7 +367,7 @@ theorem k_infer_let_start_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 /-- `KernelInfer::k_infer`: a term with no loose bound variable (`expr_lbr = 0`) is inferred under
 the empty context list, which is a segment at the same depth; any other through
 `k_infer_rebase`. -/
-theorem k_infer_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_infer_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer c args h r h' calls := by
@@ -395,7 +395,7 @@ theorem k_infer_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelInferOnly::k_infer_only`: the core under the context cut to the term's loose bound
 variables (`ctx_trim`, a segment at the same depth). -/
-theorem k_infer_only_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem k_infer_only_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_only c args h r h' calls := by

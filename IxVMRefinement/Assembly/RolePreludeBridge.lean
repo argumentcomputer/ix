@@ -657,7 +657,14 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
       · exact (Ix.Cert.ReaderUnits.throw_ok h0).elim
   | muts ms =>
     simp only [preConstShapeOk, hci, Bool.and_eq_true, Bool.not_eq_true'] at hsh_ok
-    obtain ⟨⟨hindc_any, _⟩, _⟩ := hsh_ok
+    obtain ⟨⟨hindc_any, _⟩, hnoRec⟩ := hsh_ok
+    have hno_recursors : ∀ m ∈ ms.toList, ∀ rc, m ≠ .recr rc := by
+      intro m hm rc heq
+      subst m
+      have hasRec : ms.any (fun | .recr _ => true | _ => false) = true :=
+        Array.any_eq_true'.mpr ⟨.recr rc, Array.mem_toList_iff.mp hm, rfl⟩
+      rw [hnoRec] at hasRec
+      cases hasRec
     unfold readRecord at hread
     rw [hci] at hread
     dsimp only at hread
@@ -670,8 +677,12 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
     rcases hite hread with ⟨_, h0⟩ | ⟨hnot, _⟩
     · rcases Ix.Cert.ReaderUnits.ite_ok h0 with h1 | h1
       · exact (Ix.Cert.ReaderUnits.fail_bind h1).elim
-      · obtain ⟨gens, d', hdecls, hg, hk_fn⟩ :=
-          readInductive_validPreRefs hrecs_list hev_defn hc_list hci h1
+      · obtain ⟨rInd, hInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+        rw [finishInductiveRead_eq_of_no_recursors _ _ _ _ hno_recursors] at hfinish
+        have heq := Except.ok.inj hfinish
+        subst r
+        obtain ⟨gens, d', hdecls, hg, hk_fn⟩ :=
+          readInductive_validPreRefs hrecs_list hev_defn hc_list hci hInd
         rw [hdecls] at hdl
         rcases List.mem_append.mp hdl with hgen_mem | hlast
         · exfalso

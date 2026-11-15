@@ -66,6 +66,13 @@ def CalleesSpec : Prop :=
   ∀ (c : Ctx), CoreFacts c →
     ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
       (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
+      ObsFn W f.name args h r h' calls → f.spec (ScopedCtx.unrestricted c) args h r h' calls
+
+/-- Callee specifications at an actual selected-call context. -/
+def ScopedCalleesSpec : Prop :=
+  ∀ (c : ScopedCtx), ScopedCoreFacts c →
+    ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
+      (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
       ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
 
 /-- Strengthening of `LoadFacts.getCI` for non-recursor/non-quotient records yielding
@@ -141,9 +148,10 @@ theorem eq_addr_key_spec {c : Ctx} {rc eqa v_role v_raddr : SourceValue F} {a_eq
   rw [hv_role] at ev_raddr
   have hnum : (8 : F) = roleNum .eq := rfl
   rw [hnum] at ev_raddr
-  have hra_fn : Specs.Roles.role_addr c [rc, .field (roleNum .eq)] h₁ v_raddr h₂ cs_raddr :=
+  have hra_fn : Specs.Roles.role_addr (ScopedCtx.unrestricted c)
+      [rc, .field (roleNum .eq)] h₁ v_raddr h₂ cs_raddr :=
     hroles c hwf .role_addr _ _ _ _ _ ev_raddr
-  obtain ⟨a_tbl, ha_tbl, haddr_of, _⟩ := hra_fn rc .eq rfl hg_raddr hrc
+  obtain ⟨a_tbl, ha_tbl, haddr_of, _⟩ := hra_fn rc .eq rfl (CoreGood.unrestricted hg_raddr) hrc
   obtain ⟨heq_f, hh₃⟩ := Lib.address_eq_spec ev_eq ha_eq ha_tbl
   have ha_same : a_eq = a_tbl := by
     by_cases h : a_eq = a_tbl
@@ -2496,7 +2504,7 @@ theorem addr_set_member_one {c : Ctx} {advSet : Bytes.Address → Prop} {a : Byt
     (ev : ObsFn W "KernelClaim::addr_set_member" [t_addr, aset] h (.field 1) h' cs) :
     advSet a := by
   obtain ⟨cs4, ev_lkp, _⟩ := Obs.«KernelClaim::addr_set_member».obs ev
-  have hfn : Specs.Roles.rbtree_map_lookup_or_default_field c
+  have hfn : Specs.Roles.rbtree_map_lookup_or_default_field (ScopedCtx.unrestricted c)
       [t_addr, aset, .field 0] h (.field 1) h' cs4 :=
     hroles c hwf .rbtree_map_lookup_or_default_field _ _ _ _ _ ev_lkp
   rcases hfn t_addr aset (.field 0) rfl a ha (fun _ k _ => advSet k) haset with h01 | hadv
@@ -4038,7 +4046,7 @@ theorem check_rules_go_vm_spec
         have hcprj_spec := hcallees c_pub ⟨hef_pub, hlf_pub⟩ .projection_addr_ctor _ _ _ _ _ ev_cprj
         obtain ⟨a_cprj, ha_cprj, haddr_cprj⟩ :=
           hcprj_spec i_ind (j : F) iblock b_ind rfl
-            (hg_pub.sub fun _ hx => by simp [hx])
+            (CoreGood.unrestricted (hg_pub.sub fun _ hx => by simp [hx]))
             (Bytes.repAddressRef_heapMono₂ addrTy ext_ga hiblock)
         have hj_val : ZMod.val (j : F) = j := SubstAux.val_natCast (by simp at hj_lt; omega)
         rw [hj_val] at haddr_cprj

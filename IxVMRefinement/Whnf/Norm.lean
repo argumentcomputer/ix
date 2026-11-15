@@ -22,7 +22,7 @@ set_option linter.unusedVariables false
 /-! ## The normalizer without δ -/
 
 /-- `KernelWhnf::whnf_nd_core` is `whnf_nd_with_spine` at the empty spine. -/
-theorem whnf_nd_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_core_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_core" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_core c args h r h' calls := by
@@ -38,7 +38,7 @@ theorem whnf_nd_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
 
 /-- `KernelWhnf::whnf_nd`: a value form is its own normal form; any other term is
 head-normalized under the context cut to its loose bound variables (`ctx_trim`). -/
-theorem whnf_nd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd c args h r h' calls := by
@@ -56,9 +56,9 @@ theorem whnf_nd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · subst he102 he103; exact ⟨E, hE, .refl⟩
   · subst he119 he120; exact ⟨E, hE, .refl⟩
   · subst hc190
-    have g1 : Good c cs179 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs158 := good.sub fun x hx => by simp [hx]
-    have g3 : Good c cs129 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs179 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs158 := good.sub fun x hx => by simp [hx]
+    have g3 : CoreGood c cs129 := good.sub fun x hx => by simp [hx]
     obtain ⟨hm171, -⟩ := ih.get (.subst .expr_lbr) (by lt_calls) ev181 e rfl g1
     subst m171
     have htr := ih.get (.subst .ctx_trim) (by lt_calls) ev160 types v162 rfl g2 Γ d htypes
@@ -68,7 +68,7 @@ theorem whnf_nd_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::whnf_nd_with_spine`: as `whnf_with_spine`, with `whnf_nd_const_head` and
 `whnf_nd_proj_head` at constant and projection heads. -/
-theorem whnf_nd_with_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_with_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_with_spine c args h r h' calls := by
@@ -152,7 +152,7 @@ theorem whnf_nd_with_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 /-- `KernelWhnf::whnf_struct_core`: a value form is its own normal form; any other term goes to
 `whnf_struct_core_spine` at the empty spine, under the context cut to its loose bound
 variables. -/
-theorem whnf_struct_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_struct_core_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_struct_core" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_struct_core c args h r h' calls := by
@@ -170,9 +170,9 @@ theorem whnf_struct_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   · subst he102 he103; exact ⟨E, hE, .refl⟩
   · subst he119 he120; exact ⟨E, hE, .refl⟩
   · subst hc204 hm159
-    have g1 : Good c cs193 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs172 := good.sub fun x hx => by simp [hx]
-    have g3 : Good c cs129 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs193 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs172 := good.sub fun x hx => by simp [hx]
+    have g3 : CoreGood c cs129 := good.sub fun x hx => by simp [hx]
     have e0 : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
     obtain ⟨hm185, -⟩ := ih.get (.subst .expr_lbr) (by lt_calls) ev195 e rfl g1
     subst m185
@@ -189,7 +189,7 @@ theorem whnf_struct_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 `λ` head takes a β step (`red_beta`); a `let` head is replaced by its instantiation, which is
 its image; a projection head goes to `whnf_struct_core_proj`, a constant head to
 `whnf_struct_core_const`; any other head is stuck. -/
-theorem whnf_struct_core_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_struct_core_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_struct_core_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_struct_core_spine c args h r h' calls := by
@@ -273,7 +273,7 @@ theorem whnf_struct_core_spine_step (c : Ctx) {args : List (SourceValue F)} {h h
 /-- `KernelWhnf::whnf_struct_core_proj`: the scrutinee is normalized by `whnf_struct_core`
 (`Red.projArg`); where `red_proj` takes its step (`Red.proj`) the field goes on with the spine;
 otherwise the original projection, applied to the spine, is stuck. -/
-theorem whnf_struct_core_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_struct_core_proj_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_struct_core_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_struct_core_proj c args h r h' calls := by
@@ -304,9 +304,9 @@ theorem whnf_struct_core_proj_step (c : Ctx) {args : List (SourceValue F)} {h h'
 expanded where it is a string literal (`str_lit_to_ctor_app_or_self`), then `red_proj`'s step and
 `cont` (`whnf_with_spine` or `whnf_nd_with_spine`) on the field; otherwise the projection of the
 normalized scrutinee, applied to the spine, is stuck. -/
-theorem proj_head_step (c : Ctx) (norm cont : Specs.Whnf.Fn)
+theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
     (hnorm : norm.spec = Specs.Whnf.NormSpec) (hcont : cont.spec = Specs.Whnf.SpineSpec)
-    {calls : List (Call F)} (ih : IH c calls) (good : Good c calls)
+    {calls : List (Call F)} (ih : IH c calls) (good : CoreGood c calls)
     {rc sa inner sp types : SourceValue F} {i : F} {h h' : Heap F} {r : SourceValue F}
     (path :
       (∃ (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (v39 : SourceValue F)
@@ -378,7 +378,7 @@ theorem proj_head_step (c : Ctx) (norm cont : Specs.Whnf.Fn)
 expanded where it is a string literal (`Red.strLit`); where `red_proj` takes its step
 (`Red.proj`) the field goes on with the spine (`whnf_with_spine`); otherwise the projection of
 the normalized scrutinee, applied to the spine, is stuck. -/
-theorem whnf_proj_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_proj_head c args h r h' calls := by
@@ -400,7 +400,7 @@ theorem whnf_proj_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelWhnf::whnf_nd_proj_head`: as `whnf_proj_head`, with `whnf_nd` and
 `whnf_nd_with_spine`. -/
-theorem whnf_nd_proj_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_proj_head c args h r h' calls := by

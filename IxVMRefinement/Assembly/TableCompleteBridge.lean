@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.ReaderFootprint
 import IxVMRefinement.Assembly.ReaderDecode
 import IxVMRefinement.Assembly.GroupedInstall
 import IxVMRefinement.Assembly.RolePreludeBridge
@@ -528,9 +529,11 @@ theorem l7_mkSeams_of_declsStrong
   intro _h1 _hDecls hClaim d value heap calls ev hbound bytes clm hde hpack hscope V seeds b hseeds hRT
   rcases hClaim d value heap calls ev hbound bytes clm hde hpack hscope V seeds b hseeds hRT with
     hcol | ⟨t, E₀, hadm, hload, hseedOk, hwalk⟩
-  · exact Or.inl hcol
+  · exact Or.inl (ReaderFootprint.collision_into_readerImages
+      (V := V) (claimBytes := bytes) (bindingBytes := b.bytes) (calls := calls) hcol)
   · by_cases hcol : V.HashedCollision (bytes :: b.bytes :: IxVM.Consistency.committedImages) calls
-    · exact Or.inl hcol
+    · exact Or.inl (ReaderFootprint.collision_into_readerImages
+        (V := V) (claimBytes := bytes) (bindingBytes := b.bytes) (calls := calls) hcol)
     · have hadmV : TableAdmittedComplete V b :=
         tableAdmittedComplete_of_tableAdmitted hBoundGap hRT.tableAdmitted hcol
       have hRole : ConsistentReadRole.{u} V calls b seeds :=

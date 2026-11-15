@@ -38,7 +38,7 @@ private theorem tag_contra {r x y : SourceValue F} (h0 : r = .tuple [.field 0, y
   field_one_ne_zero (tuple2_inj (h1.symm.trans h0)).1
 
 /-- **A lazy-δ result returning the inputs**: its tag, where not `0`, comes with `DefEq`. -/
-theorem loopResult_same {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h' : Heap F}
+theorem loopResult_same {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h' : Heap F}
     {t a b : SourceValue F} {A B : KExpr} (hA : c.tm d Γ h' A a) (hB : c.tm d Γ h' B b)
     (hd : t ≠ .field 0 → DefEq c.env d A B) :
     Specs.DefEq.LoopResult c d Γ h' (.tuple [t, a, b]) A B := by
@@ -47,13 +47,13 @@ theorem loopResult_same {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h' : Heap F}
   exact ⟨A, B, hA, hB, .refl, .refl, hd⟩
 
 /-- **The exit `(0, a, b)`**: the inputs, unreduced. -/
-theorem loopResult_zero {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h h' : Heap F}
+theorem loopResult_zero {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h h' : Heap F}
     {a b : SourceValue F} {A B : KExpr} (ext : Heap.Extends h h') (hA : c.tm d Γ h A a)
     (hB : c.tm d Γ h B b) : Specs.DefEq.LoopResult c d Γ h' (.tuple [.field 0, a, b]) A B :=
   loopResult_same (Tm.mono ext hA) (Tm.mono ext hB) fun ht => absurd rfl ht
 
 /-- **A lazy-δ result on reducts is one on the originals** (`Red.trans`, `DefEq.redBoth`). -/
-theorem loopResult_red {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h' : Heap F} {r : SourceValue F}
+theorem loopResult_red {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h' : Heap F} {r : SourceValue F}
     {A B A' B' : KExpr} (hl : Specs.DefEq.LoopResult c d Γ h' r A' B')
     (ha : Red c.env d A A') (hb : Red c.env d B B') :
     Specs.DefEq.LoopResult c d Γ h' r A B := by
@@ -275,7 +275,7 @@ set_option linter.unusedVariables false
 
 /-- `KernelDefEq::is_defn_or_thm`: `1` at a `Defn` or `Thm` value, which represents a definition
 or a theorem; `0` otherwise. -/
-theorem is_defn_or_thm_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem is_defn_or_thm_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_defn_or_thm" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_defn_or_thm c args h r h' calls := by
@@ -294,7 +294,7 @@ theorem is_defn_or_thm_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
   · exact ⟨he83, fun hne => absurd he82 hne⟩
 
 /-- `KernelDefEq::delta_rank`: a `Defn` value's hint field, else `0`. -/
-theorem delta_rank_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem delta_rank_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::delta_rank" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.delta_rank c args h r h' calls := by
@@ -308,7 +308,7 @@ theorem delta_rank_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelDefEq::head_addr`: at a constant head, its address (the image is that constant
 applied to the spine, `collect_spine`). -/
-theorem head_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem head_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::head_addr" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.head_addr c args h r h' calls := by
@@ -333,7 +333,7 @@ theorem head_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelDefEq::delta_unfold`: at a constant head, the stored definition's value
 (`Red.delta`) or the stored theorem's (`Red.deltaThm`, with `EnvFacts.thmTyped`) at the head's
 levels, applied to the spine. -/
-theorem delta_unfold_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem delta_unfold_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::delta_unfold" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.delta_unfold c args h r h' calls := by
@@ -351,7 +351,7 @@ theorem delta_unfold_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue
     e rfl (good.sub fun x hx => by simp [hx]) d Γ 0 E hE
   obtain ⟨rfl, rfl⟩ := tuple2_inj he1
   obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld51
-  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev100 x_addr a rfl
+  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev100 x_addr a rfl (good.allowedTop (by simp_all))
     (good.sub fun x hx => by simp [hx]) ha
   rw [ld94] at hld
   injection hld with hv
@@ -373,7 +373,7 @@ theorem delta_unfold_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue
 
 /-- `KernelDefEq::try_unfold_head`: at a definition or theorem, one δ step (`delta_unfold`),
 head-normalized (`whnf_nd`). -/
-theorem try_unfold_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_unfold_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_unfold_head" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_unfold_head c args h r h' calls := by
@@ -410,7 +410,7 @@ theorem try_unfold_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 /-- `KernelDefEq::try_unfold_proj_app`: at a projection-headed spine, `whnf_nd`'s reduct, or,
 where that is still projection-headed, the spine with the projection's scrutinee unfolded one
 δ step (`Red.projArg` under `Red.appFn`). -/
-theorem try_unfold_proj_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_unfold_proj_app_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_unfold_proj_app" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_unfold_proj_app c args h r h' calls := by
@@ -465,7 +465,7 @@ theorem try_unfold_proj_app_step (c : Ctx) {args : List (SourceValue F)} {h h' :
 /-! ## The loop and its steps -/
 
 /-- `KernelDefEq::unfold_a_and_loop`: one δ step on `a`, head-normalized, then the loop. -/
-theorem unfold_a_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem unfold_a_and_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::unfold_a_and_loop" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.unfold_a_and_loop c args h r h' calls := by
@@ -489,7 +489,7 @@ theorem unfold_a_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     exact loopResult_zero (ObsFn.heap_extends ev15) hA hB
 
 /-- `KernelDefEq::unfold_b_and_loop`: one δ step on `b`, head-normalized, then the loop. -/
-theorem unfold_b_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem unfold_b_and_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::unfold_b_and_loop" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.unfold_b_and_loop c args h r h' calls := by
@@ -514,7 +514,7 @@ theorem unfold_b_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 
 /-- `KernelDefEq::unfold_both_and_loop`: one δ step on each side, head-normalized, then the
 loop. -/
-theorem unfold_both_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem unfold_both_and_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::unfold_both_and_loop" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.unfold_both_and_loop c args h r h' calls := by
@@ -553,7 +553,7 @@ theorem unfold_both_and_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' 
 
 /-- `KernelDefEq::lazy_delta_step_const_const`: both heads constants; unfold the side(s) whose
 loaded constant is a definition or a theorem, by rank. -/
-theorem lazy_delta_step_const_const_step (c : Ctx) {args : List (SourceValue F)}
+theorem lazy_delta_step_const_const_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_step_const_const" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.lazy_delta_step_const_const c args h r h' calls := by
@@ -621,7 +621,7 @@ theorem lazy_delta_step_const_const_step (c : Ctx) {args : List (SourceValue F)}
 
 /-- `KernelDefEq::lazy_delta_a_const_b_proj`: unfold the projection-headed `b`, else the
 constant head of `a`, then the loop. -/
-theorem lazy_delta_a_const_b_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lazy_delta_a_const_b_proj_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_a_const_b_proj" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.lazy_delta_a_const_b_proj c args h r h' calls := by
@@ -660,7 +660,7 @@ theorem lazy_delta_a_const_b_proj_step (c : Ctx) {args : List (SourceValue F)} {
       ((ObsFn.heap_extends ev155).trans (ObsFn.heap_extends ev213)))) hA hB
 
 /-- `KernelDefEq::lazy_delta_b_const_a_proj`: the mirror image. -/
-theorem lazy_delta_b_const_a_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lazy_delta_b_const_a_proj_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_b_const_a_proj" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.lazy_delta_b_const_a_proj c args h r h' calls := by
@@ -699,7 +699,7 @@ theorem lazy_delta_b_const_a_proj_step (c : Ctx) {args : List (SourceValue F)} {
       ((ObsFn.heap_extends ev155).trans (ObsFn.heap_extends ev213)))) hA hB
 
 /-- `KernelDefEq::lazy_delta_both_proj`: unfold the projection-headed side(s), then the loop. -/
-theorem lazy_delta_both_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lazy_delta_both_proj_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_both_proj" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.lazy_delta_both_proj c args h r h' calls := by
@@ -746,7 +746,7 @@ theorem lazy_delta_both_proj_step (c : Ctx) {args : List (SourceValue F)} {h h' 
 
 /-- `KernelDefEq::lazy_delta_loop`: out of fuel, the inputs; a decided `Nat` comparison
 (`try_def_eq_nat`) on the inputs; otherwise one δ step chosen by the heads. -/
-theorem lazy_delta_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lazy_delta_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_loop" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.lazy_delta_loop c args h r h' calls := by
@@ -799,7 +799,7 @@ theorem lazy_delta_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
 
 /-- `KernelDefEq::try_lazy_delta_app`: both heads constants; unfold each definition or theorem
 head and compare what was unfolded with the other side (`DefEq.redBoth`, `redL`, `redR`). -/
-theorem try_lazy_delta_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_lazy_delta_app_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_lazy_delta_app" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_lazy_delta_app c args h r h' calls := by

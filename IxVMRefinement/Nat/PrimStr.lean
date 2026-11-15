@@ -91,7 +91,7 @@ theorem repKLevelList_zero_of {h m2 m41 m17 : Heap F}
 
 /-- **A role's constant**, stored as a `Const` node of the address a role lookup returned: closed,
 keyed by the role (the address is bound to it, and the table binds no address twice). -/
-theorem tmc_role_const {c : Ctx} (hc : CoreFacts c) {ro : Ix.Kernel.Role} {m h₂ : Heap F}
+theorem tmc_role_const {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m h₂ : Heap F}
     {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
     (rls : RepKLevelList m ls lsp)
@@ -107,7 +107,7 @@ theorem tmc_role_const {c : Ctx} (hc : CoreFacts c) {ro : Ix.Kernel.Role} {m h�
 
 /-- **A role's constant at the empty level list**: a stored `Nil` level list, then the `Const`
 node. -/
-theorem tmc_role_const_nil {c : Ctx} (hc : CoreFacts c) {ro : Ix.Kernel.Role} {m m₁ h₂ : Heap F}
+theorem tmc_role_const_nil {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m m₁ h₂ : Heap F}
     {ap : SourceValue F} {a : Bytes.Address}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
     (hm₁ : m₁ = m ++ [.construct klevelListEnum "Nil" []])
@@ -169,12 +169,13 @@ theorem app_const_of_load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat →
 /-- **δ at `String.ofList`**: the constant `get_ci` loads at its key is its stored definition, its
 value instantiated at no levels is the value itself (it is level-free under the string support),
 and `String.ofList L` unfolds to the value applied to `L`. -/
-theorem delta_prefix (c : Ctx) {calls : List (Call F)} (ih : IH c calls)
+theorem delta_prefix (c : ScopedCtx) {calls : List (Call F)} (ih : IH c calls)
     (hsup : Ix.Kernel.strLitSupported c.env = true)
     {h m61 m154 m131 : Heap F} {ap p68 x_value v130 w101 w102 w103 w104 : SourceValue F}
     {a : Bytes.Address} {cs74 cs141 : List (Call F)}
     (hlt1 : cs74.length < calls.length) (hlt2 : cs141.length < calls.length)
-    (g1 : Good c cs74) (g2 : Good c cs141)
+    (g1 : CoreGood c cs74) (g2 : CoreGood c cs141)
+    (allowed : c.allowedTop "Ingress::get_ci" [ap] h)
     (hkey : Ix.Kernel.stringOfListName = c.κ (ixAddr a)) (ha : RepAddr h a ap)
     (ev76 : ObsFn W "Ingress::get_ci" [ap] h p68 m61 cs74)
     (ld70 : loadValue m61 p68 = .ok (.construct kciEnum "Defn" [w101, w102, x_value, w103, w104]))
@@ -183,7 +184,7 @@ theorem delta_prefix (c : Ctx) {calls : List (Call F)} (ih : IH c calls)
       [x_value, .ptr (.enum klevelListEnum) m61.length] m154 v130 m131 cs141) :
     ∃ V : KExpr, (∀ Γ, Tm c.κ 0 Γ m131 0 V v130) ∧
       ∀ d L, Red c.env d (.app (.const Ix.Kernel.stringOfListName []) L) (.app V L) := by
-  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) hlt1 ev76 ap a rfl g1 ha
+  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) hlt1 ev76 ap a rfl allowed g1 ha
   rw [ld70] at hld
   injection hld with hv
   subst hv
@@ -214,7 +215,7 @@ end PrimStrAux
 
 /-- `KernelNatPrim::mk_bool`: the constant of `Bool.false` at `g = 0`, else of `Bool.true`, at
 the address `role_addr` returns (keyed by the role), at an empty level list. -/
-theorem mk_bool_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem mk_bool_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::mk_bool" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.mk_bool c args h r h' calls := by
@@ -243,7 +244,7 @@ theorem mk_bool_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)} 
     exact PrimStrAux.tmc_role_const_nil hc ha hb hm128 hm79
 
 /-- `KernelNatPrim::mk_nat_lit`: a literal node of the (canonical) limbs. -/
-theorem mk_nat_lit_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem mk_nat_lit_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::mk_nat_lit" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.mk_nat_lit c args h r h' calls := by
@@ -258,7 +259,7 @@ theorem mk_nat_lit_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelNatPrim::np_apply_spine`: the head applied to the spine, one `App` node per
 argument. -/
-theorem np_apply_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem np_apply_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::np_apply_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.np_apply_spine c args h r h' calls := by
@@ -279,7 +280,7 @@ theorem np_apply_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelNatPrim::lvls_empty`: `1` exactly at the empty level list (a list semantically equal
 to the empty one is empty); nothing allocated. -/
-theorem lvls_empty_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem lvls_empty_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::lvls_empty" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.lvls_empty c args h r h' calls := by
@@ -316,7 +317,7 @@ theorem lvls_empty_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelNatPrim::split_u32`: the four base-256 digits, least significant first (a derivation
 exists only below `2^32`, by the first `divmod_256`); nothing allocated. -/
-theorem split_u32_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem split_u32_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::split_u32" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.split_u32 c args h r h' calls := by
@@ -351,7 +352,7 @@ theorem split_u32_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelNatPrim::klimbs_from_g`: the canonical limbs of the value (below `2^32`): the four
 digits are the low bytes of one limb holding the value, normalized. -/
-theorem klimbs_from_g_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_from_g_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::klimbs_from_g" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_from_g c args h r h' calls := by
@@ -386,7 +387,7 @@ theorem klimbs_from_g_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 /-- `KernelNatPrim::str_lit_to_ctor`: the closed constructor form of the string the bytes decode
 to, over the constants of the roles `role_used_implicitly` returns; `String.ofList` in force
 brings `String` into force, hence the string support. -/
-theorem str_lit_to_ctor_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::str_lit_to_ctor" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.str_lit_to_ctor c args h r h' calls := by
@@ -461,7 +462,7 @@ theorem str_lit_to_ctor_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVa
     (good.sub fun x hx => by simp [hx]) bs (Bytes.repByteStream_heapMono₂ _ E388 hbs)
   have e19 := ObsFn.heap_extends ev431
   obtain rfl := Utf8Aux.strBytes_eq_ofList hs hcs
-  refine ⟨hc.env.strLit (Ctx.inForce_of_block_or_dep hc.env.tableWf hfS (.inr (by decide))), ?_⟩
+  refine ⟨hc.env.strLit (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hfS (.inr (by decide))), ?_⟩
   rw [Utf8Aux.strLitToConstructor_ofList, he468]
   intro d Γ
   have X168 : Heap.Extends m168 m294 :=
@@ -482,7 +483,7 @@ theorem str_lit_to_ctor_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVa
 
 /-- `KernelNatPrim::str_lit_delta_step` on `String.ofList L`: δ at its stored definition, a β
 step at a binder whose level the never-zero test accepts (or none), then `whnf_nd`'s reduct. -/
-theorem str_lit_delta_step_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem str_lit_delta_step_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::str_lit_delta_step" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.str_lit_delta_step c args h r h' calls := by
@@ -506,7 +507,8 @@ theorem str_lit_delta_step_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     subst hc286
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
-      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx]) hk ha ev76 ld70
+      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
+      (good.allowedTop (by simp)) hk ha ev76 ld70
       hm162 ev143
     obtain ⟨T, B, ℓ, rfl, -, hB, hℓ⟩ := (hV Γ).lam_of_load ld177
     obtain ⟨hr1, hm202⟩ := ih.get (.levelOps .level_is_not_zero) (by nat_lt_calls) ev215 x_bl rfl
@@ -534,7 +536,8 @@ theorem str_lit_delta_step_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     subst hc343
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
-      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx]) hk ha ev76 ld70
+      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
+      (good.allowedTop (by simp)) hk ha ev76 ld70
       hm162 ev143
     have e3 := ObsFn.heap_extends ev215
     have ext : Heap.Extends h m202 := (ObsFn.heap_extends ev76).trans
@@ -550,7 +553,8 @@ theorem str_lit_delta_step_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     subst hc400
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
-      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx]) hk ha ev76 ld70
+      (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
+      (good.allowedTop (by simp)) hk ha ev76 ld70
       hm162 ev143
     have ext : Heap.Extends h m131 := (ObsFn.heap_extends ev76).trans
       ((PrimStrAux.ext_of_eq_snoc hm162).trans (ObsFn.heap_extends ev143))
@@ -574,7 +578,7 @@ theorem str_lit_delta_step_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
 /-- `KernelNatPrim::str_lit_to_ctor_app_or_self`: a string literal expands to its constructor form
 (`Red.strLit`, under the support `str_lit_to_ctor` gives), then `str_lit_delta_step`'s reduct;
 any other term is itself. -/
-theorem str_lit_to_ctor_app_or_self_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem str_lit_to_ctor_app_or_self_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" args h r h' calls)
     (ih : IH c calls) :

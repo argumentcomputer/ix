@@ -165,4 +165,9 @@ theorem Ctx.inForce_of_block_or_dep {c : Ctx} (hwf : c.t.wf = true) {r s : Ix.Ke
     exact hg n hn
   · exact Nat.lt_trans (RoleClosure.groupOf_dep r s hs) (hg n hn)
 
+theorem ScopedCtx.inForce_of_block_or_dep {c : ScopedCtx} (hwf : c.t.wf = true)
+    {r s : Ix.Kernel.Role} (hr : c.inForce r) (hs : s ∈ r.block ∨ s ∈ r.deps) :
+    c.inForce s :=
+  Ctx.inForce_of_block_or_dep (c := c.toCtx) hwf hr hs
+
 end IxVM.Refinement.Core

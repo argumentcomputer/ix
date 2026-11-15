@@ -56,8 +56,8 @@ theorem CertsR.lic_true {env : Ix.Kernel.Env .anon} {d : Nat} {T : KExpr} {As : 
   | red hr _ ih => exact .red hr ih
 
 /-- The first walk of `iota_certs` (the recursor's), from its `let`-bound segment. -/
-theorem iota_certs_seg {c : Ctx} {calls cs99 : List (Call F)} (ih : IH c calls)
-    (good : Good c calls) (hsub : ∀ z ∈ cs99, z ∈ calls) (hle : cs99.length ≤ calls.length)
+theorem iota_certs_seg {c : ScopedCtx} {calls cs99 : List (Call F)} (ih : IH c calls)
+    (good : CoreGood c calls) (hsub : ∀ z ∈ cs99, z ∈ calls) (hle : cs99.length ≤ calls.length)
     {rc rt ra cty clvls ma nc types : SourceValue F} {h m97 : Heap F} {d : Nat}
     {Γ : Nat → KExpr} {RT : KExpr} {RA : List KExpr}
     (sg : Obs.«KernelWhnf::iota_certs».Seg1 rc rt ra (.field (RA.length : F)) cty clvls ma nc
@@ -86,7 +86,7 @@ theorem iota_certs_seg {c : Ctx} {calls cs99 : List (Call F)} (ih : IH c calls)
     exact ⟨CertsR.lic_true hcr, ext.trans (ObsFn.heap_extends ev48)⟩
 
 /-- **`KernelWhnf::iota_certs`**: the recursor's walk, then the constructor's, each all skips at `never` slots or certified. -/
-theorem iota_certs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem iota_certs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::iota_certs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.iota_certs c args h r h' calls := by
@@ -131,7 +131,7 @@ its levels (`level_list_eq`) and the constructor's parameters against its leadin
 (`de_args`), and when the family has indices (`nix ≠ 0`), computes the constructor's residual type
 (`expr_inst_levels`, `pi_residual`), reads its constant head, and compares the trailing index
 arguments (`de_args`). -/
-theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem iota_cmp_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::iota_cmp" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.iota_cmp c args h r h' calls := by

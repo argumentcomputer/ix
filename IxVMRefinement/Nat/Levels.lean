@@ -472,7 +472,7 @@ set_option linter.unusedSimpArgs false
 
 /-- `KernelLevels::pw_eq` decides whether two levels have the same zero-ness datum: equal
 flags, and at flag `0` equal lists (`glist_cmp`). -/
-theorem pw_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
+theorem pw_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelLevels::pw_eq" args h r h' calls) (ih : IH c calls) :
     Specs.Levels.pw_eq c args h r h' calls := by
   intro a b hargs good la lb ha hb
@@ -529,7 +529,7 @@ theorem pw_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F} {r : 
 /-! ## Literals -/
 
 /-- `KernelLevels::klimbs_eq` compares two limb lists limb by limb. -/
-theorem klimbs_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelLevels::klimbs_eq" args h r h' calls) (ih : IH c calls) :
     Specs.Levels.klimbs_eq c args h r h' calls := by
@@ -583,7 +583,7 @@ theorem klimbs_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     rw [he177, ite_eq_right (fun e => hxy (List.cons.inj e).1)]
 
 /-- `KernelLevels::bytestream_eq` compares two byte strings byte by byte. -/
-theorem bytestream_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem bytestream_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelLevels::bytestream_eq" args h r h' calls) (ih : IH c calls) :
     Specs.Levels.bytestream_eq c args h r h' calls := by
@@ -641,7 +641,7 @@ theorem bytestream_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 
 /-- `KernelLevels::literal_eq` compares two literals of the same kind by their data, and answers
 `0` across kinds. -/
-theorem literal_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem literal_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelLevels::literal_eq" args h r h' calls) (ih : IH c calls) :
     Specs.Levels.literal_eq c args h r h' calls := by
@@ -690,7 +690,7 @@ theorem literal_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## The family -/
 
 /-- **The family's steps**, for the registry harness. -/
-theorem levels_step (c : Ctx) :
+theorem levels_step (c : ScopedCtx) :
     ∀ (f : Specs.Levels.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.levels f).name args h r h' cs → IH c cs →
       (Fn.levels f).spec c args h r h' cs

@@ -26,11 +26,11 @@ set_option linter.unusedVariables false
 macro "lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
 
-theorem types_mono {c : Ctx} {Γ : Nat → KExpr} {h₁ h₂ : Heap F} {d : Nat} {p : SourceValue F}
+theorem types_mono {c : ScopedCtx} {Γ : Nat → KExpr} {h₁ h₂ : Heap F} {d : Nat} {p : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : c.types Γ h₁ d p) : c.types Γ h₂ d p :=
   ⟨r.1.mono ext, r.2⟩
 
-theorem tml_mono {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h₁ h₂ : Heap F} {Es : List KExpr}
+theorem tml_mono {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h₁ h₂ : Heap F} {Es : List KExpr}
     {p : SourceValue F} (ext : Heap.Extends h₁ h₂) (r : c.tml d Γ h₁ Es p) : c.tml d Γ h₂ Es p :=
   TmL.mono ext r
 
@@ -51,7 +51,7 @@ theorem field_one_ne_zero : (Value.field (1 : F) : SourceValue F) ≠ .field 0 :
 
 /-- `KernelWhnf::peel_beta` consumes the arguments of the `λ`s whose level the never-zero test
 accepts. -/
-theorem peel_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem peel_beta_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::peel_beta" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.peel_beta c args h r h' calls := by
@@ -107,7 +107,7 @@ theorem peel_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## The normalizers -/
 
 /-- `KernelWhnf::whnf_core` is `whnf_with_spine` at the empty spine. -/
-theorem whnf_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_core_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_core" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_core c args h r h' calls := by
@@ -124,7 +124,7 @@ theorem whnf_core_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-- `KernelWhnf::whnf`: a value form is its own normal form; any other term is head-normalized
 under the context cut to its loose bound variables (`ctx_trim`), which keeps the depth and the
 ghost context. -/
-theorem whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf c args h r h' calls := by
@@ -142,9 +142,9 @@ theorem whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · subst he102 he103; exact ⟨E, hE, .refl⟩
   · subst he119 he120; exact ⟨E, hE, .refl⟩
   · subst hc190
-    have g1 : Good c cs179 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs158 := good.sub fun x hx => by simp [hx]
-    have g3 : Good c cs129 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs179 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs158 := good.sub fun x hx => by simp [hx]
+    have g3 : CoreGood c cs129 := good.sub fun x hx => by simp [hx]
     obtain ⟨hm171, -⟩ := ih.get (.subst .expr_lbr) (by lt_calls) ev181 e rfl g1
     subst m171
     have htr := ih.get (.subst .ctx_trim) (by lt_calls) ev160 types v162 rfl g2 Γ d htypes
@@ -153,7 +153,7 @@ theorem whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       htr E (Tm.mono ext hE)
 
 /-- `KernelWhnf::whnf_spine` head-normalizes each argument. -/
-theorem whnf_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_spine c args h r h' calls := by
@@ -167,8 +167,8 @@ theorem whnf_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact ⟨[], TmL.store_nil h, .nil⟩
   · obtain ⟨A, As', rfl, hA, hAs'⟩ := RepList.cons_of_load hAs ld12
     subst hc137 he88 hm87
-    have g1 : Good c cs57 := good.sub fun x hx => by simp [hx]
-    have g2 : Good c cs110 := good.sub fun x hx => by simp [hx]
+    have g1 : CoreGood c cs57 := good.sub fun x hx => by simp [hx]
+    have g2 : CoreGood c cs110 := good.sub fun x hx => by simp [hx]
     obtain ⟨A', hA', hred⟩ := ih.get (.whnf .whnf) (by lt_calls) ev59 rc x_a types rfl g1 hrc d Γ
       htypes A hA
     have ext1 := ObsFn.heap_extends ev59
@@ -189,7 +189,7 @@ theorem mkAppN_mkAppN (H : KExpr) :
 takes a β step (`red_beta`); a constant head goes to `whnf_const_head`; a `let` head is
 replaced by its instantiation, which is its image; a projection head goes to `whnf_proj_head`;
 any other head is stuck. `Red` of the applied head throughout. -/
-theorem whnf_with_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_with_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_with_spine c args h r h' calls := by
@@ -333,7 +333,7 @@ theorem red_beta_chain {env : Ix.Kernel.Env .anon} {d : Nat} :
 `beta_more`; the reduct to substitute, the consumed arguments (innermost first) and the rest
 of the spine, with the `Red` chain from the applied `λ` to the substituted body applied to the
 rest. -/
-theorem red_beta_common (c : Ctx) {calls : List (Call F)} (ih : IH c calls) (good : Good c calls)
+theorem red_beta_common (c : ScopedCtx) {calls : List (Call F)} (ih : IH c calls) (good : CoreGood c calls)
     {rc lam sp types deep cons rest deep2 cons2 rest2 : SourceValue F} {h m2 m68 : Heap F}
     {cs13 cs79 : List (Call F)}
     (ev15 : ObsFn W "KernelWhnf::peel_beta" [lam, sp, .ptr (.enum kexprListEnum) h.length]
@@ -390,7 +390,7 @@ theorem red_beta_common (c : Ctx) {calls : List (Call F)} (ih : IH c calls) (goo
 /-- `KernelWhnf::red_beta`: the `never`-datum binders (`peel_beta`), then the certified ones
 (`beta_more`), the consumed arguments substituted at once; tag `1` is a `Red` of the applied
 `λ` to the applied reduct. -/
-theorem red_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem red_beta_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_beta" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_beta c args h r h' calls := by
@@ -518,7 +518,7 @@ theorem field_one_ne_two : (1 : F) ≠ 2 := by
 /-- `KernelWhnf::whnf_const_head`: the natives (`try_prim_dispatch`), then by the loaded
 constant: a definition's projection shortcut, then δ (`Red.delta`, continued by
 `whnf_with_spine`); quotient ι; the recursor dispatch; any other head is stuck. -/
-theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_const_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_const_head c args h r h' calls := by
@@ -546,7 +546,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
     have e1 := ObsFn.heap_extends ev155
     have e2 := ObsFn.heap_extends ev221
     have ext := e0.trans e1
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy e0 ha)
     rw [ld149] at hld
     injection hld with hv
@@ -567,7 +567,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
     have e2 := ObsFn.heap_extends ev221
     have e3 := ObsFn.heap_extends ev330
     have ext := e0.trans e1
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy e0 ha)
     rw [ld149] at hld
     injection hld with hv
@@ -622,7 +622,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
       ld149 ev721 ev849 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld
@@ -643,7 +643,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
       ev721 he894 he895 hc =>
     subst hc he894 he895
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld
@@ -660,7 +660,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
       ld149 ev721 ev920 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld

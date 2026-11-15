@@ -10,7 +10,7 @@ import IxVMRefinement.Nat.Levels
 every function of `KernelKlimbs`, `KernelNatPrim` and the two `IxVMCompat` division helpers
 meets its registered spec, from the induction hypothesis at its derivation's calls. The step
 lemmas are in `Nat/{Klimbs,KlimbsMul,Utf8,PrimStr,PrimNat}.lean`; those that read the role table
-or the environment take the context's facts (`CoreFacts c`), so the family's share does too. The
+or the environment take the context's facts (`ScopedCoreFacts c`), so the family's share does too. The
 `Levels` family's share is `levels_step` (`Nat/Levels.lean`). -/
 
 namespace IxVM.Refinement.Core
@@ -18,7 +18,7 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- **One step per function of the `Nat` family.** -/
-theorem nat_step (c : Ctx) (hc : CoreFacts c) :
+theorem nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.Nat.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.nat f).name args h r h' cs → IH c cs →
       (Fn.nat f).spec c args h r h' cs

@@ -21,7 +21,7 @@ set_option linter.unusedVariables false
 namespace WhnfAux
 
 /-- **No argument consumed**: the walk's claim at `m = 0`, returning its inputs. -/
-theorem cert_stop {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {lam acc sp : SourceValue F}
+theorem cert_stop {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {lam acc sp : SourceValue F}
     {L : KExpr} {Cs As : List KExpr} (hL : c.tmk d Γ Cs.length h L lam)
     (hCs : c.tml d Γ h Cs acc) (hAs : c.tml d Γ h As sp) :
     ∃ deep cons rest m D, (Value.tuple [lam, acc, sp] : SourceValue F) = .tuple [deep, cons, rest] ∧
@@ -52,7 +52,7 @@ end WhnfAux
 /-- `KernelWhnf::peel_beta_cert`: the certified β walk (`Red.betaGate` at a `never` level,
 `Red.beta` with the argument's io-grade type definitionally equal to the domain otherwise); it
 stops at the first certificate that fails. -/
-theorem peel_beta_cert_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem peel_beta_cert_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::peel_beta_cert" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.peel_beta_cert c args h r h' calls := by
@@ -127,7 +127,7 @@ theorem peel_beta_cert_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 
 /-- `KernelWhnf::beta_more`: `peel_beta_cert` where arguments remain and the body is a `λ`;
 otherwise no argument is consumed. -/
-theorem beta_more_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem beta_more_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::beta_more" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.beta_more c args h r h' calls := by
@@ -147,7 +147,7 @@ theorem beta_more_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::certs_all`: a nonzero answer is the unlicensed telescope certificate, up to
 reduction of the telescope (`CertsR … false`). -/
-theorem certs_all_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem certs_all_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::certs_all" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.certs_all c args h r h' calls := by

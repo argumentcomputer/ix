@@ -10,7 +10,7 @@ import IxVMRefinement.DefEq.ProofIrrel
 every function of `KernelDefEq` meets its registered spec, from the induction hypothesis at its
 derivation's calls. The step lemmas are in `Core/Steps/DefEq.lean` (the ordered tiers' entry and
 spine congruence) and `DefEq/{Delta,Tiers,Offsets,Rescue,ProofIrrel}.lean`; those that read the
-role table, the environment or the loads take the context's facts (`CoreFacts c`). -/
+role table, the environment or the loads take the context's facts (`ScopedCoreFacts c`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -18,13 +18,13 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- **The step of one function of the family**: its spec, for every observed derivation, from the
 induction hypothesis at the derivation's calls. -/
-def DefEqStepAt (c : Ctx) (f : Specs.DefEq.Fn) : Prop :=
+def DefEqStepAt (c : ScopedCtx) (f : Specs.DefEq.Fn) : Prop :=
   ∀ (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (cs : List (Call F)), ObsFn W (Fn.defEq f).name args h r h' cs → IH c cs →
       (Fn.defEq f).spec c args h r h' cs
 
 /-- **One step per function of the `DefEq` family.** -/
-theorem defEq_step (c : Ctx) (hc : CoreFacts c) :
+theorem defEq_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.DefEq.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.defEq f).name args h r h' cs → IH c cs →
       (Fn.defEq f).spec c args h r h' cs

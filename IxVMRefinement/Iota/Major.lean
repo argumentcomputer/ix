@@ -45,7 +45,7 @@ theorem CIRep.recr_fields {κ : _root_.Address → KKey} {h : Heap F}
     exact ⟨_, _, _, _, hvr, hnp, hni, hnm, hnmi, hrP, hmI, hcounts.1, hcounts.2, hrules⟩
   all_goals (injection hv with _ hc' _; exact absurd hc' (by decide))
 
-theorem RecRedHyps.mono {c : Ctx} {h₁ h₂ : Heap F} {k : KKey} {us : List KLevel}
+theorem RecRedHyps.mono {c : ScopedCtx} {h₁ h₂ : Heap F} {k : KKey} {us : List KLevel}
     {lvls nl rt np ni nm nmi rules kf : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)} (ext : Heap.Extends h₁ h₂)
     (hr : Specs.Whnf.RecRedHyps c h₁ k us lvls nl rt np ni nm nmi rules kf cv mI rP rls) :
@@ -71,7 +71,7 @@ theorem major_idx_field {np nm nmi ni x17 x9 v1 : SourceValue F} {p i m mi : F} 
 
 /-- `KernelWhnf::whnf_iota_major`: `whnf`, then, at a theorem head, its unfolding
 (`Red.deltaThm`, premises from `EnvFacts.thmTyped`) and again. -/
-theorem whnf_iota_major_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue F)}
+theorem whnf_iota_major_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_iota_major" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_iota_major c args h r h' calls := by
@@ -93,7 +93,7 @@ theorem whnf_iota_major_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVa
     obtain ⟨rfl, rfl⟩ := tuple2_inj he
     obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld89
     have e1 := ObsFn.heap_extends ev53
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev138 x_addr a rfl
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev138 x_addr a rfl (good.allowedTop (by simp_all))
       (good.sub fun z hz => by simp [hz]) ha
     rw [ld132] at hld
     injection hld with hv
@@ -131,7 +131,7 @@ theorem whnf_iota_major_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVa
 
 /-- `KernelWhnf::try_quot_iota`: `red_quot` at the eliminator the table binds the head to
 (`role_is`, whose answer `1` gives the binding and the role in force). -/
-theorem try_quot_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_quot_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_quot_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_quot_iota c args h r h' calls := by
@@ -172,7 +172,7 @@ theorem try_quot_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 (a chain of `Red` steps: the offset rewrite, `whnf_iota_major`, the offset rewrite again, the
 literal-to-constructor step) and `red_iota` fires on it; the modeled route's comparands gate
 (`fire_ok`) answers whether the reduct is taken. Tag `2` is the application itself. -/
-theorem try_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_iota c args h r h' calls := by

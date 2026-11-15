@@ -945,6 +945,31 @@ theorem convert_recursor_spec {rc : Ixon.Recursor} {blkAddr : _root_.Address} {r
 /-! ## Bridges from `Raw*ValRep` to `StoredAs` and `Core.CIRep` -/
 
 /-- Helper constructing `Core.ValRep` and `ValStored` from a converted root type expression. -/
+theorem rawConvExpr_to_valRepExact {κ : _root_.Address → Core.KKey}
+    {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {nl : Nat}
+    (hnl : ps.length = nl) (hperm : ps.Perm (List.range ps.length)) (hlt32 : nl < 4294967296)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs)
+    {h : Heap F} {tyExpr : Ixon.Expr} {tyPtr : SourceValue F} {ty₀ : Core.KExpr}
+    (raw : RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h 4294967295 tyExpr tyPtr)
+    (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read
+      tyExpr = .ok ty₀)
+    (hlbb : ty₀.looseBVarsBounded 0 = true)
+    (hdef : ty₀.allLevelParamsDefined ps = true) :
+    ∃ ty' : Core.KExpr,
+      IxVM.Consistency.ValStored ⟨name, ps, ty'⟩ ⟨name, ps, ty₀⟩ ∧
+      Decl.ValRepExact κ h (.field (nl : F)) tyPtr ⟨name, ps, ty'⟩ := by
+  have hps_lt : ps.length < 4294967296 := by omega
+  obtain ⟨ty', hA, hTm⟩ := raw.toTmCExact hperm hps_lt hkeyAt hself hblob hread hlbb hdef
+  refine ⟨ty', ⟨rfl, rfl, hA⟩, ?_⟩
+  refine ⟨?_, hps_lt, hperm, hTm⟩
+  exact congrArg (fun n : Nat => Value.field (n : F)) hnl.symm
+
 theorem rawConvExpr_to_valRep {κ : _root_.Address → Core.KKey}
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {nl : Nat}
     (hnl : ps.length = nl) (hperm : ps.Perm (List.range ps.length)) (hlt32 : nl < 4294967296)
@@ -964,11 +989,9 @@ theorem rawConvExpr_to_valRep {κ : _root_.Address → Core.KKey}
     ∃ ty' : Core.KExpr,
       IxVM.Consistency.ValStored ⟨name, ps, ty'⟩ ⟨name, ps, ty₀⟩ ∧
       Core.ValRep κ h (.field (nl : F)) tyPtr ⟨name, ps, ty'⟩ := by
-  have hps_lt : ps.length < 4294967296 := by omega
-  obtain ⟨ty', hA, hTm⟩ := raw.toTmC hperm hps_lt hkeyAt hself hblob hread hlbb hdef
-  refine ⟨ty', ⟨rfl, rfl, hA⟩, ?_⟩
-  refine ⟨?_, hps_lt, hperm, hTm⟩
-  exact congrArg (fun n : Nat => Value.field (n : F)) hnl.symm
+  obtain ⟨ty', hvs, hvr⟩ := rawConvExpr_to_valRepExact hnl hperm hlt32 hkeyAt hself hblob
+    raw hread hlbb hdef
+  exact ⟨ty', hvs, hvr.toValRep⟩
 
 /-- Bridge from `RawDefnValRep` on `.defn` to `StoredAs` and `Core.CIRep`. -/
 theorem RawDefnValRep.toCIRep_defn {κ : _root_.Address → Core.KKey}
@@ -1209,6 +1232,36 @@ theorem RawQuotValRep.toCIRep_stored {κ : _root_.Address → Core.KKey}
       .quot hvr (.inr (.inr (.inr ⟨hk_eq, _, _, _, _, rfl⟩)))⟩
 
 /-- Bridge from `RawInductValRep` to `StoredAs` and `Core.CIRep`. -/
+theorem RawInductValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
+    {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
+    {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
+    (hname : name = κ (Core.iprjAddr blkAddr indIdx))
+    (hnl : ps.length = ind.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs)
+    {h : Heap F} {v : SourceValue F} {ty₀ : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (raw : RawInductValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h ind blkAddr indIdx v)
+    (hty_rd : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read
+      ind.typ = .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true) (hty_def : ty₀.allLevelParamsDefined ps = true) :
+    ∃ ci : Ix.Kernel.ConstantInfo .anon,
+      IxVM.Consistency.StoredAs ci (.indInfo ⟨name, ps, ty₀⟩ caps) ∧
+      Decl.CIRepExact κ h v ci := by
+  obtain ⟨hlvls, hp56, hi56, hc56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, rfl, hty_raw⟩ := raw
+  obtain ⟨ty', hvs, hvr⟩ :=
+    rawConvExpr_to_valRepExact hnl hperm hlvls hkeyAt hself hblob hty_raw hty_rd hty_lbb hty_def
+  refine ⟨.indInfo ⟨name, ps, ty'⟩ caps, ⟨hvs, trivial⟩,
+    .induct hvr ⟨ind.params.toNat, ind.indices.toNat, ind.ctors.size, rfl, rfl, rfl, hp56, hi56, hc56⟩
+      ⟨b, (indIdx : F), hb_rep, rfl, ?_⟩⟩
+  rw [hb_eq, val_cast_u56_conv hidx56]
+  exact hname
+
 theorem RawInductValRep.toCIRep {κ : _root_.Address → Core.KKey}
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
@@ -1230,16 +1283,39 @@ theorem RawInductValRep.toCIRep {κ : _root_.Address → Core.KKey}
     ∃ ci : Ix.Kernel.ConstantInfo .anon,
       IxVM.Consistency.StoredAs ci (.indInfo ⟨name, ps, ty₀⟩ caps) ∧
       Core.CIRep κ h v ci := by
-  obtain ⟨hlvls, hp56, hi56, hc56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, rfl, hty_raw⟩ := raw
-  obtain ⟨ty', hvs, hvr⟩ :=
-    rawConvExpr_to_valRep hnl hperm hlvls hkeyAt hself hblob hty_raw hty_rd hty_lbb hty_def
-  refine ⟨.indInfo ⟨name, ps, ty'⟩ caps, ⟨hvs, trivial⟩,
-    .induct hvr ⟨ind.params.toNat, ind.indices.toNat, ind.ctors.size, rfl, rfl, rfl, hp56, hi56, hc56⟩
-      ⟨b, (indIdx : F), hb_rep, rfl, ?_⟩⟩
-  rw [hb_eq, val_cast_u56_conv hidx56]
-  exact hname
+  obtain ⟨ci, hst, hrep⟩ := RawInductValRep.toCIRepExact hname hnl hperm hkeyAt hself hblob
+    caps raw hty_rd hty_lbb hty_def
+  exact ⟨ci, hst, hrep.toCIRep⟩
 
 /-- Bridge from `RawCtorValRep` to `StoredAs` and `Core.CIRep`. -/
+theorem RawCtorValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
+    {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
+    {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
+    (hname : name = κ (Core.cprjAddr blkAddr indIdx ct.cidx.toNat))
+    (hnl : ps.length = ct.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs)
+    {h : Heap F} {v : SourceValue F} {ty₀ : Core.KExpr}
+    (raw : RawCtorValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h ct blkAddr indIdx v)
+    (hty_rd : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read
+      ct.typ = .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true) (hty_def : ty₀.allLevelParamsDefined ps = true) :
+    ∃ ci : Ix.Kernel.ConstantInfo .anon,
+      IxVM.Consistency.StoredAs ci (.ctorInfo ⟨name, ps, ty₀⟩ ct.params.toNat ct.fields.toNat) ∧
+      Decl.CIRepExact κ h v ci := by
+  obtain ⟨hlvls, hcidx56, hp56, hf56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, rfl, hty_raw⟩ := raw
+  obtain ⟨ty', hvs, hvr⟩ :=
+    rawConvExpr_to_valRepExact hnl hperm hlvls hkeyAt hself hblob hty_raw hty_rd hty_lbb hty_def
+  refine ⟨.ctorInfo ⟨name, ps, ty'⟩ ct.params.toNat ct.fields.toNat, ⟨hvs, rfl, rfl⟩,
+    .ctor hvr rfl rfl ⟨hp56, hf56⟩ ⟨b, (indIdx : F), (ct.cidx.toNat : F), hb_rep, rfl, rfl, ?_⟩⟩
+  rw [hb_eq, val_cast_u56_conv hidx56, val_cast_u56_conv hcidx56]
+  exact hname
+
 theorem RawCtorValRep.toCIRep {κ : _root_.Address → Core.KKey}
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
@@ -1260,13 +1336,9 @@ theorem RawCtorValRep.toCIRep {κ : _root_.Address → Core.KKey}
     ∃ ci : Ix.Kernel.ConstantInfo .anon,
       IxVM.Consistency.StoredAs ci (.ctorInfo ⟨name, ps, ty₀⟩ ct.params.toNat ct.fields.toNat) ∧
       Core.CIRep κ h v ci := by
-  obtain ⟨hlvls, hcidx56, hp56, hf56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, rfl, hty_raw⟩ := raw
-  obtain ⟨ty', hvs, hvr⟩ :=
-    rawConvExpr_to_valRep hnl hperm hlvls hkeyAt hself hblob hty_raw hty_rd hty_lbb hty_def
-  refine ⟨.ctorInfo ⟨name, ps, ty'⟩ ct.params.toNat ct.fields.toNat, ⟨hvs, rfl, rfl⟩,
-    .ctor hvr rfl rfl ⟨hp56, hf56⟩ ⟨b, (indIdx : F), (ct.cidx.toNat : F), hb_rep, rfl, rfl, ?_⟩⟩
-  rw [hb_eq, val_cast_u56_conv hidx56, val_cast_u56_conv hcidx56]
-  exact hname
+  obtain ⟨ci, hst, hrep⟩ := RawCtorValRep.toCIRepExact hname hnl hperm hkeyAt hself hblob
+    raw hty_rd hty_lbb hty_def
+  exact ⟨ci, hst, hrep.toCIRep⟩
 
 /-- Bridge from `RawRulesRep` and a one-for-one list of read `RecRule`s to `RuleStored` and
 `Core.RulesRep`. -/

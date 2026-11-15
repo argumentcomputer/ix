@@ -16,7 +16,7 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- **One step per function of the `Infer` family**. -/
-theorem infer_step (c : Ctx) (hc : CoreFacts c) :
+theorem infer_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
     ∀ (f : Specs.Infer.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.infer f).name args h r h' cs → IH c cs →
       (Fn.infer f).spec c args h r h' cs
