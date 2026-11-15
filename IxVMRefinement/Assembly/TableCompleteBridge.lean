@@ -142,6 +142,79 @@ theorem prepareWith_unpack
                 (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hde,
                 hstream, hev_eq, hkeeps, rfl⟩
 
+/-- Canonical byte admission agrees with a cache-coherent store on the participating order.
+The store, its closure graph, and its blob selection are unchanged. -/
+theorem recordsRead_decodedOf_coherent
+    (E : Ixon.Env) {limits : Ix.Kernel.Admission.Limits} :
+    ∀ (order : List _root_.Address) {constants : List (_root_.Address × Ixon.Constant)},
+      (∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+        ∀ c, Ixon.deConstantExact lc.rawBytes = .ok c → lc.get? = some c) →
+      Ix.Kernel.Admission.RecordsRead limits (Ix.Cert.recordsOf E order) constants →
+      constants = Ix.Cert.Stream.decodedOf E order
+  | [], _, _, hread => by
+    change Ix.Kernel.Admission.RecordsRead limits [] _ at hread
+    cases hread
+    rfl
+  | a :: rest, _, hcoherent, hread => by
+    rw [Ix.Cert.Stream.recordsOf_cons] at hread
+    rw [Ix.Cert.Stream.decodedOf_cons]
+    cases hget : E.consts.get? a with
+    | none =>
+      rw [hget] at hread
+      dsimp only [Option.map, Option.toList, List.nil_append] at hread
+      have hrec : Ix.Cert.recordAt E a = none := by
+        simp only [Ix.Cert.recordAt, hget, Option.bind_none]
+      rw [hrec]
+      simpa using recordsRead_decodedOf_coherent E rest
+        (fun x hx => hcoherent x (List.mem_cons_of_mem a hx)) hread
+    | some lc =>
+      rw [hget] at hread
+      dsimp only [Option.map, Option.toList, List.cons_append, List.nil_append] at hread
+      cases hread with
+      | cons reads tail =>
+        rename_i c tail_constants
+        have hdec : Ixon.deConstantExact lc.rawBytes = .ok c := by
+          rw [← reads.encoded]
+          exact Ixon.Verify.deConstantExact_serConstant c reads.wire
+        have hrec : Ix.Cert.recordAt E a = some c := by
+          simp only [Ix.Cert.recordAt, hget, Option.bind_some]
+          exact hcoherent a List.mem_cons_self lc hget c hdec
+        rw [hrec]
+        dsimp only [Option.map, Option.toList, List.cons_append, List.nil_append]
+        exact congrArg ((a, c) :: ·) (recordsRead_decodedOf_coherent E rest
+          (fun x hx => hcoherent x (List.mem_cons_of_mem a hx)) tail)
+
+/-- A checked byte reading of a coherent witness is already a reading of that witness's
+decoded records. This needs neither a globally authentic view nor cache normalization. -/
+theorem prepareWith_unpack_coherent
+    {hash : ByteArray → _root_.Address} {b : Ix.Kernel.Admission.Binding}
+    {E : Ixon.Env} {order : List _root_.Address}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {limits : Ix.Kernel.Admission.Limits}
+    {ev : Ix.Kernel.Evidences .anon} {ds : Array (Ix.Kernel.Declaration .anon)}
+    (hcoherent : ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+      ∀ c, Ixon.deConstantExact lc.rawBytes = .ok c → lc.get? = some c)
+    (hprep : Ix.Kernel.Admission.prepareWith hash b pre limits
+      (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)) :
+    Ix.Kernel.Admission.WithinBatch limits (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    Ix.Kernel.Admission.UniqueKeys (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    Ix.Kernel.Admission.Authentic hash (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    ∃ t st' decls,
+      Ix.Kernel.Admission.admitBinding hash b = .ok t ∧
+      Ix.Kernel.Reader.StreamRead
+        (Ix.Kernel.Admission.streamContext hash t pre (Ix.Cert.Stream.decodedOf E order)
+          (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+        pre.state (Ix.Cert.Stream.decodedOf E order) st' decls ∧
+      ev = Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext hash t pre (Ix.Cert.Stream.decodedOf E order)
+          (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)) st' t ∧
+      Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true ∧
+      ds = Ix.Kernel.Frontend.preparePrelude pre.ix decls := by
+  obtain ⟨hbatch, hkeys, hauth, t, constants, st', decls, hadm, hread, hstream,
+    hevidence, hkeeps, hdecls⟩ := prepareWith_unpack hprep
+  have hdecoded := recordsRead_decodedOf_coherent E order hcoherent hread
+  subst constants
+  exact ⟨hbatch, hkeys, hauth, t, st', decls, hadm, hstream, hevidence, hkeeps, hdecls⟩
+
 /-- Re-materializes a `LazyConstant` from `Ixon.deConstantExact lc.rawBytes` whenever exact
 decoding succeeds, preserving `rawBytes` unconditionally. -/
 def normalizeLazyConst (lc : Ixon.LazyConstant) : Ixon.LazyConstant :=
