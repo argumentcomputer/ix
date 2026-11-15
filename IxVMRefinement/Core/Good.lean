@@ -141,8 +141,7 @@ end Specs.Callees
 projection record loads as its block member, with the member's counts (`indRecord`), and an
 inductive loads only from such a record (`inductRecord`). A native structure IxVM projects from
 has its projection table (`projTables`).
-Owed by the record conversion and the assembly. -/
-/-- Historical unrestricted load facts. Actual scoped runs keep raw declaration loading
+This is the historical unrestricted contract. Actual scoped runs keep raw declaration loading
 separate from installed-environment lookup through `ScopedLoadFacts`. -/
 structure LoadFacts (c : Ctx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
