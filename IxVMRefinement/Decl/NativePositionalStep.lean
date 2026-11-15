@@ -7,7 +7,6 @@ universe u
 namespace IxVM.Refinement.Decl
 
 open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
-open Core (KConstantInfo)
 
 /-- Native storage companions depend on the checked stages and annotation frames, so they
 also hold for the positional judgement package. -/
