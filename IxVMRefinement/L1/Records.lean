@@ -1398,6 +1398,58 @@ theorem get_ci_iprj_toCIPtrRep {c : Core.Ctx} {bp ptr : SourceValue F} {i : F}
     exact ⟨ci, hst, v, hld, hrep⟩
 
 /-- Direct `Core.CIPtrRep` bridge for `Ingress::get_ci_cprj` (`LoadFacts.getCprj`). -/
+theorem get_ci_cprj_toCIPtrRepExact {c : Core.Ctx} {bp ptr : SourceValue F} {i j : F}
+    {h h' : Heap F} {cs : List (Call F)} {b : Bytes.Address}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {ind : Ixon.Inductive} {ct : Ixon.Constructor}
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {ps : List Ix.Kernel.LevelParam} {ty₀ : Core.KExpr}
+    (hdecB : ∀ lc, c.E.consts.get? (Core.ixAddr b) = some lc →
+      Ixon.deConstantExact lc.rawBytes = .ok cb)
+    (ev : ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs)
+    (hg : Core.Good c cs)
+    (hb : Bytes.RepAddressRef Core.addrTy h b bp)
+    (hrecB : Ix.Cert.recordAt c.E (Core.ixAddr b) = some cb)
+    (hcb : cb.info = .muts ms)
+    (hms : ms.toList[ZMod.val i]? = some (.indc ind))
+    (hct : ind.ctors.toList[ZMod.val j]? = some ct)
+    (hcidx_eq : ct.cidx.toNat = ZMod.val j)
+    (hnl : ps.length = ct.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
+    (hkey : ∀ x k, cx.keyAt x = .ok k → k = c.κ x)
+    (hself : ∀ idx x m k, (blockRecurAddrs (Core.ixAddr b) ms.toList)[idx]? = some x →
+      self idx = some m → m = .ok k → k = c.κ x)
+    (hblob : ∀ x bs, Hashed cs bs → Address.blake3Pure bs = x → cx.blob x = some bs)
+    (hty_rd : (Ix.Kernel.Reader.MemberReader.mk' cx cb (Ix.Kernel.Reader.recParam ps) self).read
+      ct.typ = .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+    (hty_def : ty₀.allLevelParamsDefined ps = true) :
+    ∃ ci : Ix.Kernel.ConstantInfo .anon,
+      IxVM.Consistency.StoredAs ci
+        (.ctorInfo ⟨c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j)), ps, ty₀⟩
+          ct.params.toNat ct.fields.toNat) ∧
+      Decl.CIPtrRepExact c.κ h' ptr ci := by
+  obtain ⟨_, _, _, blkBytes, cb', ms', ind', ct', blobs, v,
+    hhB, haB, hexB, _, hcb', hms', hct', hhp, hld, raw⟩ := get_ci_cprj_spec hg.2 hb ev
+  unfold Ix.Cert.recordAt at hrecB
+  cases hgetB : c.E.consts.get? (Core.ixAddr b) with
+  | none => rw [hgetB] at hrecB; cases hrecB
+  | some lcB =>
+    have hesc := Core.load_escape hgetB hg.1 blkBytes hhB haB
+    rw [hesc, hdecB lcB hgetB] at hexB
+    injection hexB with hcb_eq; subst hcb_eq
+    rw [hcb] at hcb'; injection hcb' with hms_eq; subst hms_eq
+    rw [hms] at hms'; injection hms' with hind_eq1; injection hind_eq1 with hind_eq; subst hind_eq
+    rw [hct] at hct'; injection hct' with hct_eq; subst hct_eq
+    have hname : c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j)) =
+        c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) ct.cidx.toNat) := by
+      rw [hcidx_eq]
+    obtain ⟨ci, hst, hrep⟩ :=
+      raw.toCIRepExact hname hnl hperm hkey hself
+        (fun x bs hm => hblob x bs (hhp (x, bs) hm).1 (hhp (x, bs) hm).2)
+        hty_rd hty_lbb hty_def
+    exact ⟨ci, hst, v, hld, hrep⟩
+
 theorem get_ci_cprj_toCIPtrRep {c : Core.Ctx} {bp ptr : SourceValue F} {i j : F}
     {h h' : Heap F} {cs : List (Call F)} {b : Bytes.Address}
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
@@ -1429,26 +1481,9 @@ theorem get_ci_cprj_toCIPtrRep {c : Core.Ctx} {bp ptr : SourceValue F} {i j : F}
         (.ctorInfo ⟨c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j)), ps, ty₀⟩
           ct.params.toNat ct.fields.toNat) ∧
       Core.CIPtrRep c.κ h' ptr ci := by
-  obtain ⟨_, _, _, blkBytes, cb', ms', ind', ct', blobs, v,
-    hhB, haB, hexB, _, hcb', hms', hct', hhp, hld, raw⟩ := get_ci_cprj_spec hg.2 hb ev
-  unfold Ix.Cert.recordAt at hrecB
-  cases hgetB : c.E.consts.get? (Core.ixAddr b) with
-  | none => rw [hgetB] at hrecB; cases hrecB
-  | some lcB =>
-    have hesc := Core.load_escape hgetB hg.1 blkBytes hhB haB
-    rw [hesc, hdecB lcB hgetB] at hexB
-    injection hexB with hcb_eq; subst hcb_eq
-    rw [hcb] at hcb'; injection hcb' with hms_eq; subst hms_eq
-    rw [hms] at hms'; injection hms' with hind_eq1; injection hind_eq1 with hind_eq; subst hind_eq
-    rw [hct] at hct'; injection hct' with hct_eq; subst hct_eq
-    have hname : c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j)) =
-        c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) ct.cidx.toNat) := by
-      rw [hcidx_eq]
-    obtain ⟨ci, hst, hrep⟩ :=
-      raw.toCIRep hname hnl hperm hkey hself
-        (fun x bs hm => hblob x bs (hhp (x, bs) hm).1 (hhp (x, bs) hm).2)
-        hty_rd hty_lbb hty_def
-    exact ⟨ci, hst, v, hld, hrep⟩
+  obtain ⟨ci, hst, hrep⟩ := get_ci_cprj_toCIPtrRepExact hdecB ev hg hb hrecB hcb hms hct
+    hcidx_eq hnl hperm hkey hself hblob hty_rd hty_lbb hty_def
+  exact ⟨ci, hst, hrep.toCIPtrRep⟩
 
 /-! ## Section 5: `LoadFacts` Companions (`indRecord`, `inductRecord`, `canonical`) -/
 
