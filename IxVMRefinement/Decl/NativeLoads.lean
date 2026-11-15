@@ -52,7 +52,7 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
   cases hget : c.E.consts.get? (ixAddr b₀) with
   | none => rw [hget] at hrec; cases hrec
   | some lc =>
-    have hlc : lc.get? = some cb := by simpa [hget] using hrec
+    have hlc : lc.get? = some cb := by rw [hget] at hrec; exact hrec
     have hdec := L1.deConstantExact_of_storedCanonical hcan horder hget hlc
     have hbytes := load_escape hget hg.1 bytes hh ha
     rw [hbytes, hdec] at hex
@@ -92,7 +92,7 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
       hrawTy, ?_⟩
     refine .ctor ⟨rfl, by change 0 < 4294967296; decide, .refl [], fun d Γ => (hrawTy d Γ).toTmExact⟩
       rfl rfl ⟨by decide, by change 0 < 72057594037927936; decide⟩ ⟨b, 0, 0, hblk, rfl, rfl, ?_⟩
-    simpa only [nullaryVal, ZMod.val_zero, hb]
+    simp only [nullaryVal, ZMod.val_zero, hb]
 
 /-- The scoped raw constructor-load result is constructible at a fresh constructor of the
 canonical nullary family. Installed agreement is vacuous exactly because the key is fresh. -/
@@ -112,7 +112,7 @@ theorem nullary_fresh {c : ScopedCtx} {b₀ : Bytes.Address} {cb : Ixon.Constant
     ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b₀) 0 0)) = some ci →
       CIPtrRep c.κ h' ptr ci := by
   exact (nullary_of_record hcan horder hrec hblock hctors hgood).fresh_read
-    (c := c) (j := 0) (by decide) hsub hbp ev (by simpa using hfresh)
+    (c := c) (j := 0) (by simp) hsub hbp ev (by simpa using hfresh)
 
 end NativeCtorLoad
 
