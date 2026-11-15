@@ -1414,7 +1414,7 @@ private theorem safe_rawConvExpr_ctx_ready
     (_hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
     (hba : Ix.Kernel.Admission.BindingAdmitted _root_.Address.admissionHash b t)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
-    (_hexact₀ : ∀ x lc, E₀.consts.get? x = some lc →
+    (hexact₀ : ∀ x lc, E₀.consts.get? x = some lc →
       ∃ c', lc.get? = some c' ∧ Ixon.deConstantExact lc.rawBytes = .ok c')
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
@@ -1498,13 +1498,14 @@ private theorem safe_rawConvExpr_ctx_ready
       ∀ r, src.refs[idx]? = some r → cx.keyAt r = .ok (Core.keyOf t r) := by
     intro idx hidx r hr
     have raw_sr := raw.mono hext_sr (fun _ hm => hm)
-    obtain ⟨hnot_out_r, hres₀_r⟩ :=
-      hSR.safe_expr_refs_resolve hbound hload hnoCol ev_sr hsub_sr raw_sr hidx hr
     have hidx_used : idx ∈ IxVM.Consistency.usedRefIdxs src :=
       reachRefs_subset_usedRefIdxs hdir idx hidx
     have hidx_s0 : idx ∈ Core.S0.usedRefIdxs src := by rwa [usedRefIdxs_eq]
     have hedge_r : Core.S0.WalkEdge E₀ src_addr r := ⟨src, hsrc_rec₀, Or.inr ⟨idx, hidx_s0, hr⟩⟩
     obtain ⟨hwk_r, _⟩ := (wkAll_closedSubwalk calls b.address t E₀).step src_addr r hsrc_wk hedge_r
+    obtain ⟨hnot_out_r, hres₀_r⟩ :=
+      hSR.safe_expr_refs_resolve hbound hload hexact₀ hnoCol (Or.inr rfl) ev_sr hsub_sr raw_sr
+        hidx hr hwk_r
     obtain ⟨c_r, hrec₀_r, hchk_r⟩ := (wkAll_closedSubwalk calls b.address t E₀).checked r hwk_r
     have hkeep_r : Keep r := Or.inr ⟨hwk_r, hnot_out_r⟩
     have hrecE_r : Ix.Cert.recordAt E r = some c_r :=
@@ -3491,7 +3492,8 @@ private theorem walkedProjResolveOk
       have hms_arr : ms[p.idx.toNat]? = some (.indc ind) := by simpa using hms'
       have hct_arr : ind.ctors[p.cidx.toNat]? = some ct := by simpa using hct'
       have hcidx_nat : ct.cidx.toNat = p.cidx.toNat :=
-        hSR.indBlockCtorIdx hbound hload hwkSafe_own.1 hwkSafe_own.2 hrec₀_own hcb_info hms_arr hct_arr
+        hSR.indBlockCtorIdx hbound hload hexact₀ hnoCol
+          hwkSafe_own.1 hwkSafe_own.2 hrec₀_own hcb_info hms_arr hct_arr
       have hcidx_eq : ct.cidx = p.cidx := UInt64.toNat_inj.mp hcidx_nat
       have hres : Ix.Kernel.Reader.resolveSource cx.store a c =
           some (.ctor p.block p.idx.toNat p.cidx.toNat) := by

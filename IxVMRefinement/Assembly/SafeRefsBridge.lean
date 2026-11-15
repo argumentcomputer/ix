@@ -1597,45 +1597,36 @@ theorem preparePrelude_append_of_hoist_id
 
 /-! ## Section 4: Minimal Residual Isolation (`SafeExprRefsGap`, `safeRefsInputs`) -/
 
-/-- Minimal residual obligations separating the unowned `ProjSafe.SafeRefsInputs` interface from the
-unconditional theorems proved in Sections 1–3:
+/-- Minimal residual obligations on `SafeRefsInputs` beyond the unconditional theorems in
+Sections 1–3:
 1. **`safe_expr_refs_resolve`**:
-   - Circuit expression/recursor safety in `IxVM/IxVM/Source/KernelCheck.lean:49`:
+   - Circuit expression safety in `IxVM/IxVM/Source/KernelCheck.lean:49`:
      `KExprNode::Proj(_, _, e1)` recurses only on `e1` without calling `get_ci`/`is_unsafe_ci` on
      the projection type address `taddr` (`.prj idx _ inner`, whereas `reachRefsExpr` includes
-     `idx.toNat`); similarly `check_const`'s `Rec` arm checks rule RHSs only via ζ-normalizing
-     def-eq rather than `assert_safety_rules`, and `KernelModeled::check_recs` omits `assert_safety`
-     on recursor types/rules.
-   - Interface omission in `ProjSafe.lean:997-1013`: omits `L1.EnvDecoded E₀` and walked-owner
-     safety (`WkAll` / `¬ OutsideLogicAt` on `ownerOf a c_a` for projection constants), both of
-     which hold at the sole call site (`RecordReadBare.lean:1502-1507`); `.ref`-only indices are
-     proved unconditionally under those hypotheses in `safe_refs_only_refOnly_resolve`.
-2. **`indBlockCtorIdx_sig`**:
-   - Interface omission in `ProjSafe.lean:1160-1172`: omits `L1.EnvDecoded E₀` and
-     `¬ V.HashedCollision extra calls` (both in context at `RecordReadBare.lean:3494`); proved
-     unconditionally with those two hypotheses in `indBlockCtorIdx_of_exact_noCollision`.
-3. **`rolePrefixStreamReadBare` & `indRecRecordReadBare`**:
-   - `TableAdmittedAt.streamRead` (`prepareWith`) runs full `Reader.StreamRead`, emitting generated
-     `.aux` model declarations (`decls_role_full`) for modeled inductives and hoisting `Nat` op
-     grounds, whereas `ProjSafe.rolePrefixStreamReadBare` equates `decls_role` directly with
-     `StreamReadBare` (`decls_role_bare`, which emits only bare `.indDecl`s; `.aux` declarations
-     group into `.indDecl` steps via `IxVM.Consistency.InstallStep`), together with bare `.recr` /
+     `idx.toNat`).
+2. **`rolePrefixStreamReadBare_rest` & `indRecRecordReadBare`**:
+   - Separating `decls_role_full` (`StreamRead` / `prepareWith`) from `decls_role_bare`
+     (`StreamReadBare` / `prepareBare` on the pruned role prefix), together with bare `.recr` /
      inductive `.muts` `L1.RecordReadsAs` lowering. -/
 structure SafeExprRefsGap : Prop where
   safe_expr_refs_resolve :
-    ∀ {calls : List (Call F)} {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+      {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
       {c : Ixon.Constant} {recurAddrs : List _root_.Address}
       {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
       {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
       IxVM.Consistency.Bounded calls →
       IxVM.Consistency.LoadedBy calls E₀ →
+      L1.EnvDecoded E₀ →
       ¬ V.HashedCollision extra calls →
+      (bound ≤ c.sharing.toList.length ∨ bound = 4294967295) →
       ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ∀ {i : Nat} {a : _root_.Address},
         i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
         c.refs[i]? = some a →
+        WkAll calls bAddr t E₀ a →
         ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
           ∀ c_a, Ix.Cert.recordAt E₀ a = some c_a →
             (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true
@@ -1774,20 +1765,6 @@ structure SafeExprRefsGap : Prop where
             ci₀ ∈ IxVM.Consistency.installs d ∧
             ci₀.name = Core.keyOf t x ∧
             L1.RecordReadsAs t E_core x c_x ci₀)
-  indBlockCtorIdx_sig :
-    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
-      {E₀ : Ixon.Env} {blk : _root_.Address} {cb : Ixon.Constant}
-      {ms : Array Ixon.MutConst} {i j : Nat} {ind : Ixon.Inductive} {ct : Ixon.Constructor},
-      IxVM.Consistency.Bounded calls →
-      IxVM.Consistency.LoadedBy calls E₀ →
-      WkAll calls bAddr t E₀ blk →
-      ¬ IxVM.Consistency.OutsideLogicAt E₀ blk →
-      Ix.Cert.recordAt E₀ blk = some cb →
-      cb.info = .muts ms →
-      ms[i]? = some (.indc ind) →
-      ind.ctors[j]? = some ct →
-      ct.cidx.toNat = j
-
 /-- Assemble `SafeRefsInputs` from the unconditional theorems in Sections 1–3 and `SafeExprRefsGap`. -/
 theorem safeRefsInputs (hGap : SafeExprRefsGap) : SafeRefsInputs where
   safe_expr_refs_resolve := hGap.safe_expr_refs_resolve
@@ -1801,7 +1778,7 @@ theorem safeRefsInputs (hGap : SafeExprRefsGap) : SafeRefsInputs where
     exact ⟨order_filter_role_eq_of_subset huord.nodup hadm.usedClosureOrder.nodup hsub_r hsplit hmono,
       hrest⟩
   indRecRecordReadBare := hGap.indRecRecordReadBare
-  indBlockCtorIdx := hGap.indBlockCtorIdx_sig
+  indBlockCtorIdx := indBlockCtorIdx_of_exact_noCollision
 
 end IxVM.Refinement.Assembly
 
