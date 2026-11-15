@@ -123,7 +123,8 @@ theorem definitionBlockStep_without_rewrite {md : Mode} {cx : Ctx md} (hrk : Rol
         simp only [Std.HashMap.getD_eq_getD_getElem?, hh k hk]) hempty hdef
     cases decl <;> simp [pure, Except.pure] at h <;> subst q <;>
       refine ⟨_, rfl, Nat.le_refl _, fun _ => ?_⟩ <;>
-      simp only [definitionBlockStep, hdef', bind, Except.bind, pure, Except.pure]
+      simp only [definitionBlockStep, hdef', bind, Except.bind, pure, Except.pure,
+        Bool.false_eq_true, ↓reduceIte]
 
 theorem readDefinitionBlock_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
     {source target : State md} {owner : _root_.Address} {c : Ixon.Constant}
