@@ -365,4 +365,194 @@ theorem checkRule_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
     have hfire' : canonical.fire = .nested levels pins := by simpa only [hout] using hfire
     exact ruleShape_nested hshape hfire'
 
+theorem checkRules_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {part : Part md} (rename : Key md → Key md) :
+    ∀ (raws canonicals : List (RecRule md)) {checked : List (RecRule md)},
+      checkRules (fueledOps mode fuel) env envSelf part raws canonicals = .ok checked →
+      (checked.zip canonicals).all
+        (fun (w, c) => wrapRelOk env.find? (c.rhs.renameConsts rename) w.rhs) = true →
+      raws.length = checked.length ∧
+        Forall₂ (fun (pair : RecRule md × RecRule md) canonical =>
+          TwinRuleJ (runJ mode fuel) env envSelf rename part.raw.name part.canonical.levelParams
+            part.annotated part.majorIndex part.rulePrefix pair.1 pair.2 canonical)
+          (raws.zip checked) canonicals
+  | [], [], checked, h, _ => by
+    have hout : checked = [] := (Except.ok.inj h).symm
+    subst checked
+    exact ⟨rfl, .nil⟩
+  | [], _ :: _, _, h, _ => by cases h
+  | _ :: _, [], _, h, _ => by cases h
+  | raw :: raws, canonical :: canonicals, checked, h, hwrap => by
+    rw [checkRules] at h
+    obtain ⟨first, hfirst, h⟩ := check_bind_ok h
+    obtain ⟨rest, hrest, h⟩ := check_bind_ok h
+    have hout : first :: rest = checked := Except.ok.inj h
+    subst checked
+    simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hwrap
+    obtain ⟨hlen, htail⟩ := checkRules_twin rename raws canonicals hrest hwrap.2
+    exact ⟨by simp only [List.length_cons, hlen],
+      .cons (checkRule_twin hfirst (wrapRelOk_sound hwrap.1)) htail⟩
+
+def Part.header (part : Part md) : Part md := { part with checkedRules := [] }
+
+structure RulesChecked (mode : CheckMode) (fuel : Nat) (env envSelf : Env md)
+    (before after : Part md) : Prop where
+  shape : after = { before with checkedRules := after.checkedRules }
+  run : checkRules (fueledOps mode fuel) env envSelf before before.rawRules before.canonicalRules =
+    .ok after.checkedRules
+
+theorem checkPartsRules_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md} :
+    ∀ (parts : List (Part md)) {checked : List (Part md)},
+      checkPartsRules (fueledOps mode fuel) env envSelf parts = .ok checked →
+      Forall₂ (RulesChecked mode fuel env envSelf) parts checked
+  | [], checked, h => by
+    have hout : checked = [] := (Except.ok.inj h).symm
+    subst checked
+    exact .nil
+  | part :: parts, checked, h => by
+    rw [checkPartsRules] at h
+    obtain ⟨rules, hrules, h⟩ := check_bind_ok h
+    obtain ⟨rest, hrest, h⟩ := check_bind_ok h
+    have hout : { part with checkedRules := rules } :: rest = checked := Except.ok.inj h
+    subst checked
+    exact .cons ⟨rfl, hrules⟩ (checkPartsRules_spec parts hrest)
+
+theorem RulesChecked.headers {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {before after : Part md} (h : RulesChecked mode fuel env envSelf before after) :
+    before.header = after.header := by
+  rw [h.shape]
+
+theorem checkedParts_headers {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {parts checked : List (Part md)}
+    (h : Forall₂ (RulesChecked mode fuel env envSelf) parts checked) :
+    parts.map Part.header = checked.map Part.header := by
+  induction h with
+  | nil => rfl
+  | cons hp _ ih => simp only [List.map_cons, hp.headers, ih]
+
+theorem checkedParts_member {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {parts checked : List (Part md)}
+    (h : Forall₂ (RulesChecked mode fuel env envSelf) parts checked) :
+    ∀ part ∈ checked, ∃ original ∈ parts, RulesChecked mode fuel env envSelf original part := by
+  induction h with
+  | nil => intro part hpart; cases hpart
+  | @cons original part originals parts hhead htail ih =>
+    intro found hfound
+    rcases List.mem_cons.mp hfound with rfl | hfound
+    · exact ⟨original, List.mem_cons_self, hhead⟩
+    · obtain ⟨original', hmem, hrun⟩ := ih found hfound
+      exact ⟨original', List.mem_cons_of_mem _ hmem, hrun⟩
+
+theorem models_of_headers {parts checked : List (Part md)}
+    (h : parts.map Part.header = checked.map Part.header) : models parts = models checked := by
+  have h' := congrArg models h
+  simpa only [models, List.filterMap_map, modelInfo?, Part.header, Function.comp_apply] using h'
+
+theorem provision_of_headers {parts checked : List (Part md)}
+    (h : parts.map Part.header = checked.map Part.header) : provision parts = provision checked := by
+  have h' := congrArg provision h
+  simpa only [provision, List.map_map, Part.header, Function.comp_apply] using h'
+
+theorem declared_of_headers {parts checked : List (Part md)}
+    (h : parts.map Part.header = checked.map Part.header) :
+    parts.map (fun part => ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) =
+      checked.map (fun part => ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) := by
+  have h' := congrArg (List.map fun part =>
+    ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) h
+  simpa only [List.map_map, Part.header, Function.comp_apply] using h'
+
+theorem HeaderChecked.of_headers {mode : CheckMode} {fuel : Nat} {env : Env md}
+    {before after : Part md} (h : before.header = after.header)
+    (checked : HeaderChecked mode fuel env before) : HeaderChecked mode fuel env after := by
+  change HeaderChecked mode fuel env before.header at checked
+  rw [h] at checked
+  exact checked
+
+theorem checkRule_header (ops : CheckerOps md (CheckM md)) (env envSelf : Env md)
+    (part : Part md) (raw canonical : RecRule md) :
+    checkRule ops env envSelf part.header raw canonical = checkRule ops env envSelf part raw canonical := rfl
+
+theorem checkRules_header (ops : CheckerOps md (CheckM md)) (env envSelf : Env md)
+    (part : Part md) : ∀ raws canonicals,
+    checkRules ops env envSelf part.header raws canonicals = checkRules ops env envSelf part raws canonicals
+  | [], [] => rfl
+  | [], _ :: _ => rfl
+  | _ :: _, [] => rfl
+  | _ :: raws, _ :: canonicals => by
+    simp only [checkRules, checkRule_header, checkRules_header ops env envSelf part raws canonicals]
+
+theorem RulesChecked.run_after {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {before after : Part md} (h : RulesChecked mode fuel env envSelf before after) :
+    checkRules (fueledOps mode fuel) env envSelf after after.rawRules after.canonicalRules =
+      .ok after.checkedRules := by
+  have hraw : before.rawRules = after.rawRules := congrArg Part.rawRules h.headers
+  have hcanonical : before.canonicalRules = after.canonicalRules := congrArg Part.canonicalRules h.headers
+  calc
+    checkRules (fueledOps mode fuel) env envSelf after after.rawRules after.canonicalRules =
+        checkRules (fueledOps mode fuel) env envSelf after.header after.rawRules after.canonicalRules :=
+      (checkRules_header _ _ _ _ _ _).symm
+    _ = checkRules (fueledOps mode fuel) env envSelf before.header before.rawRules before.canonicalRules := by
+      rw [h.headers, hraw, hcanonical]
+    _ = checkRules (fueledOps mode fuel) env envSelf before before.rawRules before.canonicalRules :=
+      checkRules_header _ _ _ _ _ _
+    _ = .ok after.checkedRules := h.run
+
+/-- A successful pure twin check supplies the existing semantic declaration certificate.
+Every header and rule judgement comes from its actual checking phase. -/
+theorem check_semantic {mode : CheckMode} {fuel : Nat} {env output : Env md}
+    {block : List (ConstantInfo md)}
+    (h : check (fueledOps mode fuel) env block = .ok output) :
+    DeclRecTwinRunJ (runJ mode fuel) env block output := by
+  rw [check] at h
+  obtain ⟨parts, hprepare, h⟩ := check_bind_ok h
+  obtain ⟨checked, hchecked, hfinish⟩ := check_bind_ok h
+  obtain ⟨hne, hblock, hdistinct, hfresh, hheaders⟩ := prepare_spec hprepare
+  have hparts := checkPartsRules_spec parts hchecked
+  have heq := checkedParts_headers hparts
+  have hmodels := models_of_headers heq
+  have hprovision := provision_of_headers heq
+  obtain ⟨rename, hrename, hwrap, houtput⟩ := finish_spec hfinish
+  have hnonempty : checked ≠ [] := by
+    intro hempty
+    have hpartsEmpty : parts.map Part.header = [] := by rw [heq, hempty]; rfl
+    exact hne (List.map_eq_nil_iff.mp hpartsEmpty)
+  have hnames : ((recursors checked ++ models checked).map (·.name)) =
+      ((provision parts ++ models parts).map (·.name)) := by
+    have hrec : (recursors checked).map (·.name) = (provision checked).map (·.name) := by
+      simp only [recursors, provision, List.map_map]
+    rw [List.map_append, List.map_append, hrec, ← hprovision, ← hmodels]
+  have hself : selfEnv env parts =
+      ⟨twinProv (checked.map Part.semantic) ++ (twinModels (checked.map Part.semantic) ++ env.consts)⟩ := by
+    simp only [selfEnv, semantic_provision, semantic_models, hmodels, hprovision]
+  refine ⟨checked.map Part.semantic, rename, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro hempty
+    exact hnonempty (List.map_eq_nil_iff.mp hempty)
+  · simpa only [List.map_map, Part.semantic, Function.comp_apply] using
+      hblock.trans (declared_of_headers heq)
+  · simpa only [semantic_recursors, semantic_models] using houtput
+  · simp only [semantic_recursors, semantic_models, hnames]
+    exact hdistinct
+  · intro ci hci
+    simp only [semantic_recursors, semantic_models] at hci
+    have hname : ci.name ∈ (recursors checked ++ models checked).map (·.name) :=
+      List.mem_map.mpr ⟨ci, hci, rfl⟩
+    rw [hnames] at hname
+    obtain ⟨original, hmem, hname⟩ := List.mem_map.mp hname
+    rw [← hname]
+    exact hfresh original hmem
+  · intro key
+    rcases hrename key with fixed | ⟨part, hpart, hkey, hrenamed⟩
+    · exact .inl fixed
+    · exact .inr ⟨part.semantic, List.mem_map.mpr ⟨part, hpart, rfl⟩, hkey, hrenamed⟩
+  · intro part hpart
+    obtain ⟨part, hpart, rfl⟩ := List.mem_map.mp hpart
+    obtain ⟨original, horiginal, hrun⟩ := checkedParts_member hparts part hpart
+    obtain ⟨hheader, hfree, hcanonical⟩ :=
+      HeaderChecked.of_headers hrun.headers (hheaders original horiginal)
+    have hrules := checkRules_twin rename part.rawRules part.canonicalRules hrun.run_after
+      (List.all_eq_true.mp hwrap part hpart)
+    refine ⟨hheader, hfree, hcanonical.stored, hcanonical.levels, hcanonical.model,
+      ⟨part.canonical.type, WrapRel.refl _ _, hcanonical.typeWrap, .inl rfl⟩, hrules.1, ?_⟩
+    simpa only [hself, Part.semantic] using hrules.2
+
 end Ix.Kernel.NativeTwin
