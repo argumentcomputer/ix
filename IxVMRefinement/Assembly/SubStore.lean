@@ -1283,7 +1283,7 @@ theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
         obtain ⟨⟨x', c'⟩, hm_fb, heq⟩ := List.mem_map.mp h2
         injection heq with hx_eq hrest
         injection hrest with hraw_eq _
-        subst hx_eq; subst hraw_eq
+        subst x'; subst raw
         obtain ⟨himg, hbl_c, _, _⟩ :=
           hRP.serConstant_mem_committedImages hadm.preludeFor (Array.mem_toList_iff.mp hm_fb)
         exact hnoCol (Or.inl ⟨x, Ixon.serConstant c', d,
@@ -1300,7 +1300,7 @@ theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
         obtain ⟨⟨x', c'⟩, hm_fb, heq⟩ := List.mem_map.mp h2
         injection heq with hx_eq hrest
         injection hrest with hraw_eq _
-        subst hx_eq; subst hraw_eq
+        subst x'; subst raw
         obtain ⟨himg, hbl_c, _, _⟩ :=
           hRP.serConstant_mem_committedImages hadm.preludeFor (Array.mem_toList_iff.mp hm_fb)
         exact hne (hadm.noCommittedCollision x d (Ixon.serConstant c') hpre_d himg hbl_d hbl_c)
