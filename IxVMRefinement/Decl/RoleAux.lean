@@ -199,10 +199,11 @@ theorem foldInv_auxDeclsRunJ {env env₂ : Env .anon} {ds : List (Declaration .a
       ∃ root tag, ci.name = .aux root tag)
     (run : DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env₂) :
     ∀ (V : Type u) [SetTheory V], FoldInv V env → FoldInv V env₂ := by
+  revert haux
   induction run with
-  | nil => exact fun _ _ h => h
+  | nil => exact fun _ _ _ h => h
   | cons step _ ih =>
-    intro V _ h
+    intro haux V _ h
     apply ih (fun d hd => haux d (List.mem_cons_of_mem _ hd)) V
     exact foldInv_step_auxDeclRunJ (haux _ List.mem_cons_self) step V h
 
