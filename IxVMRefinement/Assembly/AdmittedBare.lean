@@ -78,4 +78,62 @@ theorem admitted_streamReadBare_keepsPrelude
   exact ⟨hb.1.trans hf.1, hb.2.1.trans hf.2.1, hb.2.2.1.trans hf.2.2.1,
     hb.2.2.2.1.trans hf.2.2.2.1, hb.2.2.2.2.trans hf.2.2.2.2⟩
 
+private theorem mapError_ok {ε δ α : Type} {f : ε → δ} {result : Except ε α} {a : α}
+    (h : result.mapError f = .ok a) : result = .ok a := by
+  cases result with
+  | error e => cases h
+  | ok value => cases h; rfl
+
+theorem recordsReadBare_of_recordsRead {limits : Admission.Limits}
+    {records : Admission.Records} {constants : Ingress.Constants}
+    (h : Admission.RecordsRead limits records constants) : RecordsReadBare limits records constants := by
+  induction h with
+  | nil => exact .nil
+  | cons reads _ ih =>
+    refine .cons ⟨rfl, reads.bytesFit, reads.nodesFit, ?_⟩ ih
+    rw [← reads.encoded]
+    exact Ixon.Verify.deConstantExact_serConstant _ reads.wire
+
+theorem admitted_bare_byteFacts {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : IxVM.Consistency.ReaderAdmissionWitness V b) :
+    Admission.WithinBatch w.limits (Ix.Cert.recordsOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) ∧
+      Admission.UniqueKeys (Ix.Cert.recordsOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) ∧
+      Admission.Authentic _root_.Address.admissionHash
+        (Ix.Cert.recordsOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) ∧
+      RecordsReadBare w.limits (Ix.Cert.recordsOf w.env w.order) (Ix.Cert.Stream.decodedOf w.env w.order) := by
+  have h := w.prepared
+  unfold Admission.prepareWith at h
+  obtain ⟨batchResult, hbatch, h⟩ := except_bind_ok.mp h
+  cases batchResult
+  obtain ⟨uniqueResult, hunique, h⟩ := except_bind_ok.mp h
+  cases uniqueResult
+  obtain ⟨authResult, hauth, h⟩ := except_bind_ok.mp h
+  cases authResult
+  obtain ⟨_, _, h⟩ := except_bind_ok.mp h
+  obtain ⟨constants, hdecode, _⟩ := except_bind_ok.mp h
+  have hreading := (Admission.decodeRecords_ok_iff _ _ _).mp (mapError_ok hdecode)
+  have hconstants := recordsRead_decodedOf_coherent w.env w.order
+    (fun a _ lc hget c hdec => by rw [w.coherent a lc hget, hdec]; rfl) hreading
+  refine ⟨(Admission.preflight_ok_iff _ _ _).mp (mapError_ok hbatch),
+    (Admission.uniqueKeys_ok_iff _ _).mp (mapError_ok hunique),
+    (Admission.authenticate_ok_iff _ _ _).mp (mapError_ok hauth), ?_⟩
+  rw [← hconstants]
+  exact recordsReadBare_of_recordsRead hreading
+
+/-- The approved witness admits the concrete bare role preparation at the same bytes,
+order, and limits. Its output array is separate from the accepted full array. -/
+theorem admitted_prepareBare {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : IxVM.Consistency.ReaderAdmissionWitness V b) :
+    let cx := Admission.streamContext _root_.Address.admissionHash w.table w.prelude
+      (Ix.Cert.Stream.decodedOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) (Ix.Cert.hintsOf w.env)
+    ∃ final decls,
+      w.fullDecls.toList.filter (fun d => !d.isGenerated) = decls.toList ∧
+      Admission.prepareBare _root_.Address.admissionHash b w.prelude w.limits
+        (Ix.Cert.recordsOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) (Ix.Cert.hintsOf w.env) =
+        .ok (evidenceOf cx final w.table, Frontend.preparePrelude w.prelude.ix decls) := by
+  dsimp only
+  obtain ⟨final, decls, hbare, hfilter, hkeeps⟩ := admitted_streamReadBare_keepsPrelude w
+  obtain ⟨hbatch, hunique, hauth, hdecode⟩ := admitted_bare_byteFacts w
+  exact ⟨final, decls, hfilter, prepareBare_ok hbatch hunique hauth w.admitted hdecode hbare hkeeps⟩
+
 end IxVM.Refinement.Assembly
