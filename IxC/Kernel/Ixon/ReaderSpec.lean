@@ -97,6 +97,95 @@ private theorem bind_ok_pure {ε α β : Type _} {x : Except ε α} {g : α → 
   | error e => simp [bind, Except.bind] at h
   | ok a => exact ⟨a, rfl, by simpa [bind, Except.bind, pure, Except.pure] using h⟩
 
+/-! ## Same-record twin payloads -/
+
+theorem recordTwins_member_spec {index : RecIndex} {owner : Address}
+    {ms : Array Ixon.MutConst} {ref : ConstRef Address} {entry : RecEntry}
+    (hmem : (ref, entry) ∈ recordTwins index owner ms) :
+    ∃ j rc, ref = .member owner j ∧ ms[j]? = some (.recr rc) ∧
+      index.twins[ref]? = some entry := by
+  have hm := Array.mem_toList_iff.mpr hmem
+  simp only [recordTwins, List.toList_toArray] at hm
+  obtain ⟨⟨m, j⟩, hposition, hresult⟩ := List.mem_filterMap.mp hm
+  cases m with
+  | defn _ => cases hresult
+  | indc _ => cases hresult
+  | recr rc =>
+    dsimp only at hresult
+    cases hlookup : index.twins[ConstRef.member owner j]? with
+    | none => rw [hlookup] at hresult; cases hresult
+    | some entry' =>
+      rw [hlookup] at hresult
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hresult
+      obtain ⟨rfl, rfl⟩ := hresult
+      exact ⟨j, rc, rfl, by simpa using List.mem_zipIdx_iff_getElem?.mp hposition, hlookup⟩
+
+theorem recordTwins_member_block {index : RecIndex} {owner : Address}
+    {ms : Array Ixon.MutConst} {ref : ConstRef Address} {entry : RecEntry}
+    (hmem : (ref, entry) ∈ recordTwins index owner ms) : ref.block = owner := by
+  obtain ⟨j, _, rfl, _, _⟩ := recordTwins_member_spec hmem
+  rfl
+
+theorem recordTwins_empty_of_no_recursors (index : RecIndex) (owner : Address)
+    (ms : Array Ixon.MutConst)
+    (h : ∀ m ∈ ms.toList, ∀ rc, m ≠ .recr rc) : recordTwins index owner ms = #[] := by
+  unfold recordTwins
+  apply congrArg List.toArray
+  apply List.filterMap_eq_nil_iff.mpr
+  rintro ⟨m, j⟩ hm
+  cases m with
+  | defn _ => rfl
+  | indc _ => rfl
+  | recr rc => exact (h (.recr rc) (List.fst_mem_of_mem_zipIdx hm) rc rfl).elim
+
+theorem finishInductiveRead_eq_of_no_recursors (cx : Ctx md) (owner : Address)
+    (ms : Array Ixon.MutConst) (rInd : Read md)
+    (h : ∀ m ∈ ms.toList, ∀ rc, m ≠ .recr rc) :
+    finishInductiveRead cx owner ms rInd = .ok rInd := by
+  simp [finishInductiveRead, recordTwins_empty_of_no_recursors cx.index owner ms h]
+
+@[simp] theorem finishInductiveRead_indcs (cx : Ctx md) (owner : Address)
+    (inds : Array Ixon.Inductive) (rInd : Read md) :
+    finishInductiveRead cx owner (inds.map Ixon.MutConst.indc) rInd = .ok rInd := by
+  apply finishInductiveRead_eq_of_no_recursors
+  intro m hm rc heq
+  simp only [Array.toList_map, List.mem_map] at hm
+  obtain ⟨ind, _, rfl⟩ := hm
+  cases heq
+
+/-- Finishing preserves the inductive result, or appends the successfully read twin declarations. -/
+theorem finishInductiveRead_spec {cx : Ctx md} {owner : Address}
+    {ms : Array Ixon.MutConst} {rInd r : Read md}
+    (h : finishInductiveRead cx owner ms rInd = .ok r) :
+    r = rInd ∨ ∃ rTwin, lowerTwin cx (recordTwins cx.index owner ms) = .ok rTwin ∧
+      r = { rInd with decls := rInd.decls ++ rTwin.decls } := by
+  unfold finishInductiveRead at h
+  split at h
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    exact .inl h.symm
+  · obtain ⟨rTwin, hTwin, heq⟩ := bind_ok_pure h
+    exact .inr ⟨rTwin, hTwin, heq.symm⟩
+
+theorem finishInductiveRead_data {cx : Ctx md} {owner : Address}
+    {ms : Array Ixon.MutConst} {rInd r : Read md}
+    (h : finishInductiveRead cx owner ms rInd = .ok r) :
+    r.generated = rInd.generated ∧ r.projRewrites = rInd.projRewrites ∧
+      r.owners = rInd.owners ∧ r.blocks = rInd.blocks := by
+  rcases finishInductiveRead_spec h with rfl | ⟨rTwin, _, rfl⟩ <;>
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem finishInductiveRead_take_generated {cx : Ctx md} {owner : Address}
+    {ms : Array Ixon.MutConst} {rInd r : Read md}
+    (h : finishInductiveRead cx owner ms rInd = .ok r)
+    (hlen : rInd.generated ≤ rInd.decls.size) :
+    r.decls.toList.take r.generated = rInd.decls.toList.take rInd.generated := by
+  rcases finishInductiveRead_spec h with rfl | ⟨rTwin, _, rfl⟩
+  · rfl
+  · change (rInd.decls ++ rTwin.decls).toList.take rInd.generated = _
+    have hlen' : rInd.generated ≤ rInd.decls.toList.length := by simpa using hlen
+    rw [Array.toList_append, List.take_append, Nat.sub_eq_zero_of_le hlen',
+      List.take_zero, List.append_nil]
+
 /-- **The stream reading.** An accepted `readRecords` is a record-by-record
 reading of the records, in their order. -/
 theorem readRecords_spec {cx : Ctx md} {st st' : State md} {records : Array (Address × Ixon.Constant)}
