@@ -513,6 +513,21 @@ theorem consumeStar_read {k : Nat} : ∀ {t a : Expr md}, ConsumeStar find? t a 
         rw [← hsp'.length]; exact hwr
       · exact nomatch hw
 
+private theorem forall₂_length_eq {α β : Type} {R : α → β → Prop} :
+    ∀ {xs : List α} {ys : List β}, Forall₂ R xs ys → xs.length = ys.length
+  | [], [], .nil => rfl
+  | _ :: _, _ :: _, .cons _ h => congrArg (· + 1) (forall₂_length_eq h)
+
+private theorem substFn_eq_of_forall₂ (φ : LevelParam → Nat) :
+    ∀ (ks : List LevelParam) {us vs : List Level},
+      Forall₂ (fun u v => ∀ ψ : LevelParam → Nat, u.eval ψ = v.eval ψ) us vs →
+      Level.substFn φ ks us = Level.substFn φ ks vs
+  | [], _, _, _ => rfl
+  | _ :: _, [], [], .nil => rfl
+  | _ :: ks, _ :: _, _ :: _, .cons huv hrest => by
+    funext n
+    simp only [Level.substFn, huv φ, substFn_eq_of_forall₂ φ ks hrest]
+
 include hfind hdef in
 /-- **The declared reading, from the generated one**, along `WrapT`. -/
 theorem wrapT_read : ∀ (n : Nat) (g d : Expr md), g.sizeB < n → WrapT find? g d →
@@ -529,8 +544,18 @@ theorem wrapT_read : ∀ (n : Nat) (g d : Expr md), g.sizeB < n → WrapT find? 
       rw [denoteMeta_fvar] at hg
       obtain rfl := Option.some.inj hg
       exact ⟨_, denoteMeta_fvar acval k i t', .refl _⟩
-    | sort u => exact ⟨ga, hg, .refl _⟩
-    | const n us => exact ⟨ga, hg, .refl _⟩
+    | @sort u v huv =>
+      refine ⟨ga, ?_, .refl _⟩
+      simpa only [denoteMeta, huv φ] using hg
+    | @const nm us vs huvs =>
+      refine ⟨ga, ?_, .refl _⟩
+      simp only [denoteMeta] at hg ⊢
+      cases hf : env.find? nm with
+      | none => simp only [hf] at hg; exact nomatch hg
+      | some ci =>
+        simp only [hf] at hg ⊢
+        rw [← forall₂_length_eq huvs, ← substFn_eq_of_forall₂ φ ci.toConstantVal.levelParams huvs]
+        exact hg
     | lit l => exact ⟨ga, hg, .refl _⟩
     | @app f a f' a' hf ha =>
       obtain ⟨fa, aa, hfa, haa, rfl⟩ := denoteMeta_app_inv hg

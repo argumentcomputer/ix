@@ -238,7 +238,7 @@ theorem keyOf_not_aux (t : Ix.Kernel.RoleTable) (a : _root_.Address)
   unfold keyOf
   split <;> intro h <;> nomatch h
 
-theorem keyOf_isProjFnShape_false (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
+theorem nat_keyOf_isProjFnShape_false (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
     (keyOf t a).isProjFnShape = false := by
   unfold keyOf
   split <;> rfl
@@ -976,7 +976,7 @@ theorem CapsUpgradeAt.consSumCtors (nP : Nat) {T : KKey} {cvS : ConstantVal .ano
 
 /-! ## `ConstantValCheckJ` from `validate_expr_well_scoped` + `k_ensure_sort` -/
 
-theorem levelParam_nodup_of_nodup :
+theorem nat_levelParam_nodup_of_nodup :
     ∀ {ps : List LevelParam}, ps.Nodup → LevelParam.nodup ps = true
   | [], _ => rfl
   | p :: ps, h => by
@@ -986,7 +986,7 @@ theorem levelParam_nodup_of_nodup :
       · rfl
       · exact absurd (List.contains_iff_mem.mp hc') hnot
     simp only [LevelParam.nodup, hc, Bool.not_false, Bool.true_and]
-    exact levelParam_nodup_of_nodup hnd
+    exact nat_levelParam_nodup_of_nodup hnd
 
 /-- Lifting a sort typing derivation from `posOf cv'.levelParams cv'.type` back to `cv'.type`.
 Holds by `rfl` (`posOf_range`) whenever `cv'.levelParams = List.range n` (all `Induct`, `Ctor`,
@@ -1032,7 +1032,7 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
   have hnd_cv' : cv'.levelParams.Nodup := hv.2.2.1.nodup_iff.mpr List.nodup_range
   have hnd_cv : LevelParam.nodup cv.levelParams = true := by
     rw [← hvs.2.1]
-    exact levelParam_nodup_of_nodup hnd_cv'
+    exact nat_levelParam_nodup_of_nodup hnd_cv'
   have ev_ws' : ObsFn W "KernelCheck::validate_expr_well_scoped"
       [ty, .field 0, .field (cv'.levelParams.length : F)] h r₁ h₁ cs₁ := by
     rwa [← hv.1]
@@ -1153,9 +1153,8 @@ theorem ExprSemEq.instantiate1Lift {v v' : KExpr} (hv : ExprSemEq v v') {b b' : 
 
 mutual
 
-/-- Circuit-exact semantic counterpart of `Ix.Kernel.Semantics.WrapRel`, relaxing `.sort` and
-`.const` levels to semantic equivalence (`LvEq` / `LvEqList`) as produced by `Tm` and
-`KernelSubst::expr_inst_levels`. -/
+/-- Circuit representation of `Ix.Kernel.Semantics.WrapRel`, using `LvEq` and `LvEqList`
+for the semantic level equivalence produced by `Tm` and `KernelSubst::expr_inst_levels`. -/
 inductive WrapRelSem (find? : KKey → Option (ConstantInfo .anon)) : KExpr → KExpr → Prop
   | bvar (i : Nat) : WrapRelSem find? (.bvar i) (.bvar i)
   | fvar {i : Nat} {t t' : KExpr} :
@@ -1209,14 +1208,33 @@ theorem WrapRelSem.refl (find? : KKey → Option (ConstantInfo .anon)) (e : KExp
     WrapRelSem find? e e :=
   (ExprSemEq.refl e).toWrapRelSem find?
 
+private theorem lvEqList_of_forall₂ :
+    ∀ {us vs : List KLevel},
+      Ix.Kernel.Semantics.Forall₂ (fun u v : KLevel => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ)
+        us vs →
+      LvEqList us vs
+  | [], [], .nil => fun _ => trivial
+  | _ :: _, _ :: _, .cons h1 h2 => fun φ => ⟨h1 φ, lvEqList_of_forall₂ h2 φ⟩
+
+private theorem forall₂_of_lvEqList :
+    ∀ {us vs : List KLevel},
+      LvEqList us vs →
+      Ix.Kernel.Semantics.Forall₂ (fun u v : KLevel => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ)
+        us vs
+  | [], [], _ => .nil
+  | [], _ :: _, h => False.elim (h fun _ => 0)
+  | _ :: _, [], h => False.elim (h fun _ => 0)
+  | _ :: _, _ :: _, h =>
+    .cons (fun φ => (h φ).1) (forall₂_of_lvEqList fun φ => (h φ).2)
+
 mutual
 
 theorem WrapRel.toWrapRelSem {find? : KKey → Option (ConstantInfo .anon)} :
     ∀ {g d : KExpr}, Ix.Kernel.Semantics.WrapRel find? g d → WrapRelSem find? g d
   | _, _, .bvar i => .bvar i
   | _, _, .fvar ht => .fvar (WrapRel.toWrapRelSem ht)
-  | _, _, .sort u => .sort (LvEq.refl u)
-  | _, _, .const _ us => .const (LvEqList.refl us)
+  | _, _, .sort h => .sort h
+  | _, _, .const h => .const (lvEqList_of_forall₂ h)
   | _, _, .lit l => .lit l
   | _, _, .app hf ha => .app (WrapRel.toWrapRelSem hf) (WrapRel.toWrapRelSem ha)
   | _, _, .lam hpw hd hb => .lam hpw (WrapDom.toWrapDomSem hd) (WrapRel.toWrapRelSem hb)
@@ -1230,6 +1248,30 @@ theorem WrapDom.toWrapDomSem {find? : KKey → Option (ConstantInfo .anon)} :
     ∀ {t t' : KExpr}, Ix.Kernel.Semantics.WrapDom find? t t' → WrapDomSem find? t t'
   | _, _, .keep hr => .keep (WrapRel.toWrapRelSem hr)
   | _, _, .consume hc hd => .consume hc (WrapDom.toWrapDomSem hd)
+
+end
+
+mutual
+
+theorem WrapRelSem.toWrapRel {find? : KKey → Option (ConstantInfo .anon)} :
+    ∀ {g d : KExpr}, WrapRelSem find? g d → Ix.Kernel.Semantics.WrapRel find? g d
+  | _, _, .bvar i => .bvar i
+  | _, _, .fvar ht => .fvar (WrapRelSem.toWrapRel ht)
+  | _, _, .sort h => .sort h
+  | _, _, .const h => .const (forall₂_of_lvEqList h)
+  | _, _, .lit l => .lit l
+  | _, _, .app hf ha => .app (WrapRelSem.toWrapRel hf) (WrapRelSem.toWrapRel ha)
+  | _, _, .lam hpw hd hb => .lam hpw (WrapDomSem.toWrapDom hd) (WrapRelSem.toWrapRel hb)
+  | _, _, .forallE hpw hd hb => .forallE hpw (WrapDomSem.toWrapDom hd) (WrapRelSem.toWrapRel hb)
+  | _, _, .letE ht hv hb =>
+    .letE (WrapRelSem.toWrapRel ht) (WrapRelSem.toWrapRel hv) (WrapRelSem.toWrapRel hb)
+  | _, _, .proj he => .proj (WrapRelSem.toWrapRel he)
+  | _, _, .zeta hz => .zeta (WrapRelSem.toWrapRel hz)
+
+theorem WrapDomSem.toWrapDom {find? : KKey → Option (ConstantInfo .anon)} :
+    ∀ {t t' : KExpr}, WrapDomSem find? t t' → Ix.Kernel.Semantics.WrapDom find? t t'
+  | _, _, .keep hr => .keep (WrapRelSem.toWrapRel hr)
+  | _, _, .consume hc hd => .consume hc (WrapDomSem.toWrapDom hd)
 
 end
 
