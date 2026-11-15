@@ -46,7 +46,9 @@ def safe_refs_only := aiur_fn⟦
         KernelTypes::KExprNode::Let(t, v, b) => {
           safe_refs_only(t) * safe_refs_only(v) * safe_refs_only(b) } ,
         KernelTypes::KExprNode::Lit(_) => {  1 } ,
-        KernelTypes::KExprNode::Proj(_, _, e1) => {  safe_refs_only(e1) } ,
+        KernelTypes::KExprNode::Proj(taddr, _, e1) => {
+          let ci = (*(Ingress::get_ci(taddr)));
+          (1 - is_unsafe_ci(ci)) * safe_refs_only(e1) } ,
       }
     }
 ⟧
@@ -59,6 +61,18 @@ def assert_safety := aiur_fn⟦
           assert_eq!(safe_refs_only(e), 1,
             "safe constant references an unsafe constant");
           () } ,
+      }
+    }
+⟧
+
+def assert_safety_rules := aiur_fn⟦
+  fn assert_safety_rules(self_unsafe: Field, rules: Lists::List<KernelTypes::KRecRule>) -> () {
+      match (*(rules)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(rule, rest) => {
+          let KernelTypes::KRecRule::Mk(_, _, rhs) = rule;
+          assert_safety(self_unsafe, rhs);
+          assert_safety_rules(self_unsafe, rest) } ,
       }
     }
 ⟧
@@ -3770,10 +3784,11 @@ def check_const := aiur_fn⟦
                   } } ,
               } } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(nlvls, ty, _, _, n_mot, _, _, k_flag, rec_uns, rec_block, _) => {
+        KernelTypes::KConstantInfo::Rec(nlvls, ty, _, _, n_mot, _, rules, k_flag, rec_uns, rec_block, _) => {
           validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
           assert_safety(u, ty);
+          assert_safety_rules(u, rules);
           check_block_member_kinds(rec_block);
           let family = KernelModeled::rec_family_block(addr);
           match KernelModeled::block_is_modeled(family) {
