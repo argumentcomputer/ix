@@ -977,7 +977,7 @@ or `c_x` is the canonical empty-tables `.dPrj` / `.iPrj` / `.cPrj` projection re
 definition, inductive, or constructor member of a `.muts` block `cb` stored at `blk` in `E`. -/
 def OwnedOrProjOf (E : Ixon.Env) (blk x : _root_.Address) (c_x : Ixon.Constant) : Prop :=
   (Ix.Cert.recordAt E x = some c_x ∧ x ≠ blk ∧ Ix.Cert.ownerOf x c_x = blk) ∨
-  ∃ cb ms (i : Nat),
+  ∃ cb ms i,
     Ix.Cert.recordAt E blk = some cb ∧ cb.info = .muts ms ∧ i < UInt64.size ∧
     ((∃ d, ms[i]? = some (.defn d) ∧ x = Core.dprjAddr blk i ∧
         c_x = ⟨.dPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩) ∨
@@ -1057,7 +1057,7 @@ structure SafeRefsInputs : Prop where
             x ∈ order_role ∨
             ∀ c_x,
               (Ix.Cert.recordAt E₀ x = some c_x ∨
-                (∃ owner ms (i : Nat) d_m,
+                (∃ owner ms i d_m,
                   x = Core.dprjAddr owner i ∧ i < UInt64.size ∧
                   c_x = ⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩ ∧
                   Claim.MutsMemberCheckedAtFull calls b.address t owner ms i ∧

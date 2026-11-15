@@ -3806,7 +3806,7 @@ private def WalkedKeyOrigin (calls : List (Call F)) (bAddr : _root_.Address)
   (∃ a' ∈ pre_w, n = Core.keyOf t a' ∧
     ∃ c', Ix.Cert.recordAt E₀ a' = some c' ∧
       ((∃ ax, c'.info = .axio ax) ∨ (∃ df, c'.info = .defn df))) ∨
-  (∃ a' ∈ pre_w, ∃ ms' (i' : Nat) d_m',
+  (∃ a' ∈ pre_w, ∃ ms' i' d_m',
     n = Core.keyOf t (Core.dprjAddr a' i') ∧
     Claim.MutsMemberCheckedAtFull calls bAddr t a' ms' i' ∧
     ms'[i']? = some (.defn d_m')) ∨
