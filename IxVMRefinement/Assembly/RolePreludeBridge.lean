@@ -15,8 +15,7 @@ Discharges the committed-fallback and role-table obligations of `RolePreludeInpu
 * `prelude_in_bindingSeeds_of_check` and `prelude_in_bindingSeeds_of_admitBinding`: upgrades
   `prelude_in_bound_of_preludeFor` unconditionally to `BindingSeeds t` whenever `t.check = .ok ()`
   (in particular under `admitBinding _ b = .ok t`);
-* `UncheckedPreludeTableGap` and `rolePreludeInputs`: isolates the single missing `t.check = .ok ()`
-  premise on `RolePreludeInputs.prelude_in_bindingSeeds`. -/
+* `rolePreludeInputs`: assembles `RolePreludeInputs` unconditionally with zero residual premises. -/
 
 namespace IxVM.Refinement.Assembly
 
@@ -861,39 +860,15 @@ theorem prelude_in_bindingSeeds_of_admitBinding
       Ix.Cert.ownerOf a' c' = a ∧ a ≠ a' :=
   prelude_in_bindingSeeds_of_check (check_of_admitBinding hadm) hpre hmem
 
-/-- Minimal boundary hypothesis for `RolePreludeInputs.prelude_in_bindingSeeds` when `t` is not
-assumed well-formed (`t.check = .ok ()`): `bindingsOf` skips unresolved entries (`resolve = none`),
-whereas `RoleTable.addressOf?` picks the first matching role entry in `t.bound`. Under
-`t.check = .ok ()` (available at `TableAdmittedAt.admitBinding`), `RoleTable.check_nodup` makes
-`t.bound` role-unique and `prelude_in_bindingSeeds_of_check` holds unconditionally. -/
-structure UncheckedPreludeTableGap : Prop where
-  addressOf_of_prelude_bound :
-    ∀ {t : Ix.Kernel.RoleTable} {pre : Prelude .anon},
-      preludeFor t = .ok pre →
-      ∀ {r : Role} {a : _root_.Address},
-        r ∈ Ix.Kernel.preludeShape.flatten →
-        a ∈ pre.records.toList.map Prod.fst →
-        (r, a) ∈ t.bound.toList →
-        t.addressOf? r = some a
-
-/-- Assemble `RolePreludeInputs` from the proven `RoleVal` theorems and `fallback_not_padding` /
-`prelude_in_bound_of_preludeFor`. -/
-theorem rolePreludeInputs (hGap : UncheckedPreludeTableGap) : RolePreludeInputs where
+/-- Assemble `RolePreludeInputs` unconditionally from the proven `RoleVal` theorems together with
+`fallback_not_padding` and `prelude_in_bindingSeeds_of_admitBinding`. -/
+theorem rolePreludeInputs : RolePreludeInputs where
   fallbackHashed := IxVM.Refinement.RoleVal.fallbackHashed
   preludeFor_of_readerTable := IxVM.Refinement.RoleVal.preludeFor_of_readerTable
   literalSupportBound_of_readerTable := IxVM.Refinement.RoleVal.literalSupportBound_of_readerTable
   fallback_record_agree := IxVM.Refinement.RoleVal.fallback_record_agree_of_loadedBy
   fallback_blob_agree := IxVM.Refinement.RoleVal.fallback_blob_agree_of_loadedBy
   fallback_not_padding := fallback_not_padding
-  prelude_in_bindingSeeds := fun {_} {pre} hpre {a} {c} hmem => by
-    rcases prelude_in_bound_of_preludeFor hpre hmem with
-      ⟨r, hr, hnt, hbound⟩ | ⟨a', c', hm', ⟨r, hr, hnt, hbound'⟩, hown, hne⟩
-    · have ha_fst : a ∈ pre.records.toList.map Prod.fst :=
-        List.mem_map.mpr ⟨(a, c), Array.mem_toList_iff.mpr hmem, rfl⟩
-      exact .inl (.inl ⟨r, hnt, hGap.addressOf_of_prelude_bound hpre hr ha_fst hbound⟩)
-    · have ha'_fst : a' ∈ pre.records.toList.map Prod.fst :=
-        List.mem_map.mpr ⟨(a', c'), Array.mem_toList_iff.mpr hm', rfl⟩
-      exact .inr ⟨a', c', hm',
-        .inl ⟨r, hnt, hGap.addressOf_of_prelude_bound hpre hr ha'_fst hbound'⟩, hown, hne⟩
+  prelude_in_bindingSeeds := prelude_in_bindingSeeds_of_admitBinding
 
 end IxVM.Refinement.Assembly

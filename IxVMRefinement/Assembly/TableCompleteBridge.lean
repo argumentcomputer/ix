@@ -608,7 +608,7 @@ theorem consistentRead_of_consistentReadRole
 `RolePreludeBridge.rolePreludeInputs`, `SafeRefsBridge.safeRefsInputs`, and
 `Bridge.consistentReadRole_of_rolePrelude_declsStrong`. -/
 theorem l7_mkSeams_of_declsStrong
-    (hPrelGap : UncheckedPreludeTableGap)
+    (hCircuit : CircuitExprSafeRefs)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
@@ -623,8 +623,8 @@ theorem l7_mkSeams_of_declsStrong
         tableAdmittedComplete_of_tableAdmitted hBoundGap hRT.2 hcol
       have hRole : ConsistentReadRole.{u} V calls b seeds :=
         consistentReadRole_of_rolePrelude_declsStrong
-          (rolePreludeInputs hPrelGap)
-          (safeRefsInputs hSafeGap)
+          rolePreludeInputs
+          (safeRefsInputs hCircuit hSafeGap)
           hStrong
           hbound hscope hseeds hRT hadmV hadm hload hseedOk hwalk
           (List.mem_cons_of_mem _ List.mem_cons_self)
@@ -635,12 +635,12 @@ theorem l7_mkSeams_of_declsStrong
 /-- **Circuit-level consistency (`IxVM.Consistency.CircuitConsistent`)** at `mkSeams DeclOrigin`
 from `DeclsStrong DeclOrigin`, wiring `L0`–`L7` through `ClaimsL1L6.consistent_of_decls_l7`. -/
 theorem consistent_mkSeams_of_declsStrong
-    (hPrelGap : UncheckedPreludeTableGap)
+    (hCircuit : CircuitExprSafeRefs)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
     IxVM.Consistency.CircuitConsistent.{u} :=
   consistent_of_decls_l7 DeclOrigin hStrong.toDecls
-    (l7_mkSeams_of_declsStrong hPrelGap hSafeGap hBoundGap hStrong)
+    (l7_mkSeams_of_declsStrong hCircuit hSafeGap hBoundGap hStrong)
 
 end IxVM.Refinement.Assembly
