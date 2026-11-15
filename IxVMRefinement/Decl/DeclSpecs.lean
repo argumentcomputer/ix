@@ -47,14 +47,19 @@ theorem rolesSpec : RolesSpec :=
 /-- `CalleesSpec` holds unconditionally from `Core.all_steps` and `Registry.induction`. -/
 theorem calleesSpec : CalleesSpec :=
   fun c hc f args h r h' calls ev =>
-    Registry.induction c (all_steps c hc) (.callees f) args h r h' calls ev
+    Registry.induction (ScopedCtx.unrestricted c) (all_steps c hc) (.callees f) args h r h' calls ev
+
+/-- Actual scoped callee specifications, with no unrestricted load premise. -/
+theorem scopedCalleesSpec : ScopedCalleesSpec :=
+  fun c hc f args h r h' calls ev =>
+    Registry.induction c (scoped_steps c hc) (.callees f) args h r h' calls ev
 
 /-- Unconditional soundness of `KernelCheck::projection_addr_ctor` (independent of `CoreFacts c`). -/
 theorem projectionAddrCtorSpec (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::projection_addr_ctor" args h r h' calls) :
-    Specs.Callees.projection_addr_ctor c args h r h' calls :=
-  projection_addr_ctor_step c ev
+    Specs.Callees.projection_addr_ctor (ScopedCtx.unrestricted c) args h r h' calls :=
+  projection_addr_ctor_step (ScopedCtx.unrestricted c) ev
 
 /-! ## Section 2: `FullDeclInv` and `FoldInv` / `DeclInvM` bridges -/
 

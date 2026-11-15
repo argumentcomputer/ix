@@ -66,6 +66,13 @@ def CalleesSpec : Prop :=
   ∀ (c : Ctx), CoreFacts c →
     ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
       (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
+      ObsFn W f.name args h r h' calls → f.spec (ScopedCtx.unrestricted c) args h r h' calls
+
+/-- Callee specifications at an actual selected-call context. -/
+def ScopedCalleesSpec : Prop :=
+  ∀ (c : ScopedCtx), ScopedCoreFacts c →
+    ∀ (f : Specs.Callees.Fn) (args : List (SourceValue F))
+      (h : Heap F) (r : SourceValue F) (h' : Heap F) (calls : List (Call F)),
       ObsFn W f.name args h r h' calls → f.spec c args h r h' calls
 
 /-- Strengthening of `LoadFacts.getCI` for non-recursor/non-quotient records yielding
