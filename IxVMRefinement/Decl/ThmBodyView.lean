@@ -1,9 +1,10 @@
 import IxC.Kernel.Core
+import IxC.Kernel.CheckerBase
 import IxC.Kernel.Verify.EnvWF
 
-/-! # The checker view of hthm theorem bodies
+/-! # The checker view of opaque theorem bodies
 
-The theorem's constant value and every non-theorem entry are exact. Only the hthm stored
+The theorem's constant value and every non-theorem entry are exact. Only the opaque stored
 body of a theorem can differ. This relation is internal to the role-checking fold.
 -/
 
@@ -26,6 +27,15 @@ theorem Entry.observe {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a 
   | same => rfl
   | thm cv v w => exact hthm cv v w
 
+theorem Entry.inspect {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a b)
+    {α : Type u} (read₁ read₂ : Option (ConstantInfo md) → α)
+    (hrefl : ∀ value, read₁ value = read₂ value)
+    (hthm : ∀ cv v w, read₁ (some (.thmInfo cv v)) = read₂ (some (.thmInfo cv w))) :
+    read₁ a = read₂ b := by
+  cases h with
+  | same value => exact hrefl value
+  | thm cv v w => exact hthm cv v w
+
 namespace Agrees
 
 variable {md : Mode} {source target : Env md} (h : Agrees source target)
@@ -36,6 +46,12 @@ theorem observe (name : Key md) {α : Type u} (read : Option (ConstantInfo md) �
     (hthm : ∀ cv v w, read (some (.thmInfo cv v)) = read (some (.thmInfo cv w))) :
     read (source.find? name) = read (target.find? name) :=
   (h name).observe read hthm
+
+theorem inspect (name : Key md) {α : Type u} (read₁ read₂ : Option (ConstantInfo md) → α)
+    (hrefl : ∀ value, read₁ value = read₂ value)
+    (hthm : ∀ cv v w, read₁ (some (.thmInfo cv v)) = read₂ (some (.thmInfo cv w))) :
+    read₁ (source.find? name) = read₂ (target.find? name) :=
+  (h name).inspect read₁ read₂ hrefl hthm
 
 theorem cons (ci : ConstantInfo md) :
     Agrees ⟨ci :: source.consts⟩ ⟨ci :: target.consts⟩ := by
@@ -70,33 +86,51 @@ theorem findProj (T : Key md) (i : Nat) : source.findProj? T i = target.findProj
 theorem isCtorApp (e : Expr md) : Ix.Kernel.isCtorApp source e = Ix.Kernel.isCtorApp target e := by
   unfold Ix.Kernel.isCtorApp
   cases e.getAppFn with
-  | const c us => exact h.observe c _ (by intros; rfl)
+  | const c us =>
+    exact h.observe c (fun q => match q with
+      | some (.ctorInfo _ _ _) => true
+      | _ => false) (by intros; rfl)
   | _ => rfl
 
 theorem etaCtorShape (e : Expr md) : Ix.Kernel.etaCtorShape source e = Ix.Kernel.etaCtorShape target e := by
   unfold Ix.Kernel.etaCtorShape
   cases e.getAppFn with
-  | const c us => exact h.observe c _ (by intros; rfl)
+  | const c us =>
+    exact h.observe c (fun q => match q with
+      | some (.ctorInfo _ nP nF) => e.getAppArgs.length == nP + nF
+      | _ => false) (by intros; rfl)
   | _ => rfl
 
 theorem unfoldDefinition (e : Expr md) :
     Ix.Kernel.unfoldDefinition source e = Ix.Kernel.unfoldDefinition target e := by
   unfold Ix.Kernel.unfoldDefinition
   cases e.getAppFn with
-  | const c us => exact h.observe c _ (by intros; rfl)
+  | const c us =>
+    exact h.observe c (fun q => match q with
+      | some (.defnInfo cv value _) =>
+        if us.length = cv.levelParams.length then
+          some (Expr.mkAppN (value.instantiateLevelParams cv.levelParams us) e.getAppArgs)
+        else none
+      | _ => none) (by intros; rfl)
   | _ => rfl
 
 theorem unfoldableHead (e : Expr md) :
     Ix.Kernel.unfoldableHead source e = Ix.Kernel.unfoldableHead target e := by
   unfold Ix.Kernel.unfoldableHead
   cases e.getAppFn with
-  | const c us => exact h.observe c _ (by intros; rfl)
+  | const c us =>
+    exact h.observe c (fun q => match q with
+      | some (.defnInfo cv _ _) => us.length == cv.levelParams.length
+      | _ => false) (by intros; rfl)
   | _ => rfl
 
 theorem headHint (e : Expr md) : Ix.Kernel.headHint source e = Ix.Kernel.headHint target e := by
   unfold Ix.Kernel.headHint
   cases e.getAppFn with
-  | const c us => exact h.observe c _ (by intros; rfl)
+  | const c us =>
+    exact h.observe c (fun q => match q with
+      | some (.defnInfo _ _ hint) => hint
+      | _ => .opaque) (by intros; rfl)
   | _ => rfl
 
 theorem natLitSupported : Ix.Kernel.natLitSupported source = Ix.Kernel.natLitSupported target := by
@@ -129,7 +163,8 @@ theorem isUnitLikeTy (e : Expr md) :
     have hi := h.observe punitName
       (fun c => match c with | some (.indInfo _ _) => true | _ => false) (by intros; rfl)
     have hr := h.observe punitRecName
-      (fun c => match c with | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
+      (fun c => match c with
+        | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
         | _ => false) (by intros; rfl)
     rw [hi, hr]
   | _ => rfl
@@ -146,7 +181,8 @@ theorem recSlotsAll (T : Key md) (n : Nat) :
   unfold Ix.Kernel.recSlotsAll
   congr 1
   funext i
-  exact h.observe (projFnName T i) _ (by intros; rfl)
+  exact h.observe (projFnName T i)
+    (fun c => match c with | some (.recInfo _ _ _ _) => true | _ => false) (by intros; rfl)
 
 theorem etaProjs (T : Key md) (us : List Level) (args : List (Expr md)) (b : Expr md) (n : Nat) :
     Ix.Kernel.etaProjs source T us args b n = Ix.Kernel.etaProjs target T us args b n := by
@@ -167,7 +203,15 @@ theorem andRescueSlots (ctor : Key md) (nP : Nat) (us : List Level) :
 theorem headTypePW (e : Expr md) (n : Nat) :
     Ix.Kernel.headTypePW source.find? e n = Ix.Kernel.headTypePW target.find? e n := by
   cases e with
-  | const name levels => exact h.observe name _ (by intros; rfl)
+  | const name levels =>
+    exact h.observe name (fun q => match q with
+      | some ci =>
+        if ci.isTowerEntry then none else
+        let cv := ci.toConstantVal
+        if levels.length = cv.levelParams.length then
+          (residualPW (cv.type.peelNeverPis n)).map (Level.substPW cv.levelParams levels)
+        else none
+      | none => none) (by intros; rfl)
   | _ => rfl
 
 theorem typeSortPW (e : Expr md) :
@@ -185,7 +229,14 @@ theorem headProofPW (e : Expr md) :
   | const name levels =>
     unfold Ix.Kernel.headProofPW
     rw [← ht]
-    exact h.observe name _ (by intros; rfl)
+    exact h.observe name (fun q => match q with
+      | some ci =>
+        if ci.isTowerEntry then none else
+        let cv := ci.toConstantVal
+        if levels.length = cv.levelParams.length then
+          (Ix.Kernel.typeSortPW source.find? cv.type).map (Level.substPW cv.levelParams levels)
+        else none
+      | none => none) (by intros; rfl)
   | fvar _ _ => exact h.typeSortPW _
   | _ => rfl
 
