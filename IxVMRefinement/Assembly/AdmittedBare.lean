@@ -42,6 +42,7 @@ theorem admitted_keepsPrelude {V : IxVM.Refinement.View} {b : Ix.Kernel.Admissio
   unfold Admission.readStream at hstream
   dsimp only at hstream
   rw [w.read] at hstream
+  dsimp only at hstream
   split at hstream
   · rename_i hkeeps
     exact hkeeps
