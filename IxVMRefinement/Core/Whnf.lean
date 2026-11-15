@@ -15,7 +15,7 @@ open Aiur.Library Aiur.Library.List
 
 /-- `KernelWhnf::apply_spine` applies the head to the spine, one stored `App` node per
 argument. -/
-theorem apply_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem apply_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::apply_spine" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.apply_spine c args h r h' calls := by

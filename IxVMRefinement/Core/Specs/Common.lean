@@ -85,27 +85,28 @@ abbrev Ctx.ci (c : Ctx) (h : Heap F) (v : SourceValue F) (ci : Ix.Kernel.Constan
   CIRep c.κ h v ci
 
 abbrev ScopedCtx.tm (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (h : Heap F) (E : KExpr)
-    (p : SourceValue F) : Prop := c.toCtx.tm d Γ h E p
+    (p : SourceValue F) : Prop := Tm c.κ d Γ h 0 E p
 
 abbrev ScopedCtx.tmk (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F)
-    (E : KExpr) (p : SourceValue F) : Prop := c.toCtx.tmk d Γ k h E p
+    (E : KExpr) (p : SourceValue F) : Prop := Tm c.κ d Γ h k E p
 
 abbrev ScopedCtx.tml (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (h : Heap F)
-    (Es : List KExpr) (p : SourceValue F) : Prop := c.toCtx.tml d Γ h Es p
+    (Es : List KExpr) (p : SourceValue F) : Prop := TmL c.κ d Γ h Es p
 
 abbrev ScopedCtx.tmlk (c : ScopedCtx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F)
-    (Es : List KExpr) (p : SourceValue F) : Prop := c.toCtx.tmlk d Γ k h Es p
+    (Es : List KExpr) (p : SourceValue F) : Prop :=
+  RepList kexprListEnum (fun h E p => Tm c.κ d Γ h k E p) h Es p
 
 abbrev ScopedCtx.tmc (c : ScopedCtx) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
-  c.toCtx.tmc h E p
+  TmC c.κ h E p
 
-abbrev ScopedCtx.rc (c : ScopedCtx) (h : Heap F) (rc : SourceValue F) : Prop := c.toCtx.rc h rc
+abbrev ScopedCtx.rc (c : ScopedCtx) (h : Heap F) (rc : SourceValue F) : Prop := RCRep c.t c.lim h rc
 
 abbrev ScopedCtx.types (c : ScopedCtx) (Γ : Nat → KExpr) (h : Heap F) (d : Nat)
-    (types : SourceValue F) : Prop := c.toCtx.types Γ h d types
+    (types : SourceValue F) : Prop := TypesRep c.κ Γ h d types ∧ GhostScoped Γ d
 
 abbrev ScopedCtx.ci (c : ScopedCtx) (h : Heap F) (v : SourceValue F)
-    (ci : Ix.Kernel.ConstantInfo .anon) : Prop := c.toCtx.ci h v ci
+    (ci : Ix.Kernel.ConstantInfo .anon) : Prop := CIRep c.κ h v ci
 
 /-- An address. -/
 abbrev RepAddr (h : Heap F) (a : Bytes.Address) (p : SourceValue F) : Prop :=
