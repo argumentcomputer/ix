@@ -1,6 +1,5 @@
 import IxVMRefinement.Decl.ReferenceStorage
 import IxVMRefinement.Decl.RoleUnits
-import Ix.Cert.SourceInstalls
 import IxC.Kernel.Verify.Rename.UnionUnits
 
 /-! # Declared auxiliary roots at accepted unit endpoints
@@ -22,8 +21,14 @@ theorem indDecl_installs_names (block : List (ConstantInfo .anon)) (nP : Nat) :
   cases pinned : basisPinHit block with
   | none => rfl
   | some kind =>
-    exact (Ix.Cert.SourceInstalls.declsA_names kind).trans
-      (Ix.Cert.SourceInstalls.basisPinHit_names pinned).symm
+    have rawNames : block.map (·.name) = kind.decls.map (·.name) := by
+      unfold basisPinHit at pinned
+      have selected := (Option.filter_eq_some_iff.mp pinned).1
+      exact (eq_of_beq (List.find?_some selected)).symm
+    have annotatedNames : (kind.declsA (md := .anon)).map (·.name) =
+        (kind.decls (md := .anon)).map (·.name) := by
+      cases kind <;> decide
+    exact annotatedNames.trans rawNames.symm
 
 private theorem unitSplit_append {md : Mode} :
     ∀ {unit generated : List (Declaration md)} {closer : Declaration md},
