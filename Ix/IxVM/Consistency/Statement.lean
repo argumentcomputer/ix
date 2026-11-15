@@ -1,6 +1,7 @@
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.KernelLevels
 import Ix.IxVM.Consistency.ReaderAdmission
+import Ix.IxVM.Consistency.ReaderFootprint
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Model.Fold
 import IxC.Kernel.Model.Denotes
@@ -227,7 +228,8 @@ def ClaimSeeds : Claim → View → List Address → Prop
 
 /-- **The role table the reader reads a claim under**: a binding `b` at the
 claim's address with a concrete accepted reader run over one coherent store drawn
-from the reader's view. The same witness contract applies to the default table. -/
+from the reader's view, with every selected record held there. The same witness contract
+applies to the default table. -/
 def ReaderTable (c : Claim) (V : View) (b : Binding) : Prop :=
   (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧
     Nonempty (ReaderAdmissionWitness V b)
@@ -562,17 +564,23 @@ def committedImages : List ByteArray :=
   ((Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence ++
       Ix.Kernel.Reader.RoleData.blobs).toList.map (·.2)).filterMap bytesOfHex
 
+/-- The fixed images backing a reader: committed bytes, and projection wrappers derived
+from exact raw decoding of the view's records and the committed records. -/
+def readerImages (V : View) : List ByteArray :=
+  committedImages ++ derivedProjImages V ++ committedProjImages
+
 /-- **What a verify_claim derivation establishes**: for every claim byte string
 whose digest packs to `d` and decodes to an in-scope claim, every reader's view of
 its seeds and every role table the reader reads it under (`ReaderTable`), the run
 hashed a collision (with the claim's bytes, the table's, the view's data or the
-committed images the reading uses, `committedImages`), or `ConsistentRead`. -/
+committed images and reconstructed projection images the reading uses, `readerImages V`),
+or `ConsistentRead`. -/
 def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
   ∀ (bytes : ByteArray) (c : Claim), Claim.de bytes = .ok c →
     packDigest (Address.blake3Pure bytes) = d → InScope c →
       ∀ (V : View) (seeds : List Address) (b : Binding), ClaimSeeds c V seeds →
         ReaderTable c V b →
-        V.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
+        V.HashedCollision (bytes :: b.bytes :: readerImages V) calls ∨
           ConsistentRead.{u} V calls b seeds
 
 /-- **The deployed IxVM circuit accepts only claims whose claimed environment has a
@@ -624,7 +632,7 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
     (hd : packDigest (Address.blake3Pure bytes) = d) (hc : InScope c)
     {W : View} {seeds : List Address} {b : Binding} (hs : ClaimSeeds c W seeds)
     (hb : ReaderTable c W b) :
-    W.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
+    W.HashedCollision (bytes :: b.bytes :: readerImages W) calls ∨
       ∃ (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
         (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
         ∀ a ∈ seeds, IsBlockAt E a ∨

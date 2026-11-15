@@ -201,11 +201,21 @@ def check (b : Binding) (source : Ixon.Env) : Bool :=
     let (wit, order) := Ix.Cert.TableAdmission.candidate t E (Ix.Cert.artifactRecIndex E)
     checkAt t E wit order
 
+/-- The decoded-first store retains the view's bytes at the same record addresses. -/
+private theorem decoded_recordsInView (E : Ixon.Env) {owner : _root_.Address}
+    {lc : Ixon.LazyConstant} (hget : (decodeReaderEnv E).consts.get? owner = some lc) :
+    ∃ original, E.consts.get? owner = some original ∧ original.rawBytes = lc.rawBytes := by
+  obtain ⟨original, constant, hmem, _, rfl⟩ := decodeReaderConsts_get?_inv E.consts.toList hget
+  exact ⟨original, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hmem,
+    (L1.mkLazyConst_rawBytes _ _).symm⟩
+
 theorem checkAt_sound (W : Type u) [SetTheory W]
     {V : IxVM.Refinement.View} {b : Binding} {t : RoleTable} {E : Ixon.Env}
     {wit : List (_root_.Address × Option _root_.Address)} {order : List _root_.Address}
     (hadm : Admission.admitBinding _root_.Address.admissionHash b = .ok t)
     (hdraws : IxVM.Refinement.Draws E V.env) (hcoherent : ReaderCacheCoherent E)
+    (hrecordsInView : ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+      ∃ lcV, V.env.consts.get? a = some lcV ∧ lcV.rawBytes = lc.rawBytes)
     (h : checkAt t E wit order = true) : Nonempty (ReaderAdmissionWitness V b) := by
   unfold checkAt at h
   simp only [Bool.and_eq_true] at h
@@ -239,6 +249,7 @@ theorem checkAt_sound (W : Type u) [SetTheory W]
       admitted := hadm
       literalSupport := Ix.Cert.TableAdmission.literalSupportBound_of hlit
       draws := hdraws
+      selectedRecordsInView := hrecordsInView
       coherent := hcoherent
       seedsStored := fun a ha => List.all_eq_true.mp hseeds a (Ix.Cert.TableAdmission.mem_seedList.mpr ha)
       closure := Ix.Cert.TableAdmission.closureOrderAt_of_checks
@@ -266,7 +277,8 @@ theorem check_sound (W : Type u) [SetTheory W] {V : IxVM.Refinement.View} {b : B
   | ok t =>
     simp only [hadm] at h
     exact checkAt_sound W hadm (decodeReaderEnv_draws V.env)
-      (fun _ _ hg => decodeReaderEnv_coherent V.env hg) h
+      (fun _ _ hg => decodeReaderEnv_coherent V.env hg)
+      (fun _ _ _ hg => decoded_recordsInView V.env hg) h
 
 end ReaderAdmission
 

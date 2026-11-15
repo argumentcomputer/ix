@@ -438,22 +438,36 @@ private theorem readRecord_sideNames_any {md : Ix.Kernel.Mode}
     rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
     · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
       · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
-      · unfold Ix.Kernel.Reader.readInductive at h
-        split at h
-        · dsimp only at h
-          rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
-          · split at h
-            · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
-              · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
+      · obtain ⟨rInd, hrInd, hfinish⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+        have hInd :
+            (∀ o ∈ rInd.owners, ∃ d ∈ rInd.decls.toList, o.T ∈ d.names) ∧
+            (∀ b ∈ rInd.blocks, ∃ d ∈ rInd.decls.toList, b.1 ∈ d.names) := by
+          have h := hrInd
+          unfold Ix.Kernel.Reader.readInductive at h
+          split at h
+          · dsimp only at h
+            rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
+            · split at h
               · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
-                · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-                  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-                  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-                  exact lowerInductive_sideNames_decls h
                 · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
-            · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
-          · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
-        · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
+                · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
+                  · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+                    obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+                    obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+                    exact lowerInductive_sideNames_decls h
+                  · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
+              · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
+            · exact (Ix.Cert.ReaderUnits.fail_bind h).elim
+          · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
+        rcases Ix.Kernel.Reader.finishInductiveRead_spec hfinish with rfl | ⟨rTwin, _, rfl⟩
+        · exact hInd
+        · constructor
+          · intro o ho
+            obtain ⟨d, hd, hname⟩ := hInd.1 o ho
+            exact ⟨d, by rw [Array.toList_append]; exact List.mem_append_left _ hd, hname⟩
+          · intro b hb
+            obtain ⟨d, hd, hname⟩ := hInd.2 b hb
+            exact ⟨d, by rw [Array.toList_append]; exact List.mem_append_left _ hd, hname⟩
     · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
       · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact ⟨by simp, by simp⟩
