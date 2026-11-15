@@ -32,7 +32,7 @@ theorem recRuleKOf (ctor : Key md) :
         dsimp only
         cases cv.type.piResult.getAppFn with
         | const T levels =>
-          exact h.observe T
+          exact h.observe T (α := Bool)
             (fun (q : Option (ConstantInfo md)) => match q with | some (.indInfo _ caps) => caps.ruleK && nF == 0 | _ => false)
             (by intros; rfl)
         | _ => rfl
@@ -56,7 +56,7 @@ theorem recRuleEtaOf (recName ctor : Key md) :
         dsimp only
         cases cv.type.piResult.getAppFn with
         | const T levels =>
-          exact h.observe T
+          exact h.observe T (α := Bool)
             (fun (q : Option (ConstantInfo md)) => match q with
               | some (.indInfo cvT caps) =>
                 caps.eta && caps.etaCtor == some ctor && !Key.isProjFnShape recName &&

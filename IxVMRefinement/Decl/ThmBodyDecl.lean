@@ -37,21 +37,22 @@ theorem natOpGuard (c : Key md) : Ix.Kernel.natOpGuard source c = Ix.Kernel.natO
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
       | _ => false) = (fun n => match target.find? n with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
-      | _ => false) := funext fun n => h.observe n
+      | _ => false) := funext fun n => h.observe n (α := Bool)
     (fun (q : Option (ConstantInfo md)) => match q with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
       | _ => false) (by intros; rfl)
-  simp only [Ix.Kernel.natOpGuard, h.natLitSupported, deps]
-  rw [h.observe boolTrueName
+  simp only [Ix.Kernel.natOpGuard, h.natLitSupported]
+  rw [deps]
+  rw [h.observe boolTrueName (α := Bool)
     (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
-    (by intros; rfl), h.observe boolFalseName
+    (by intros; rfl), h.observe boolFalseName (α := Bool)
     (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.levelParams.isEmpty | none => false)
     (by intros; rfl)]
 
 theorem natOpCod (c : Key md) (e : Expr md) :
     Ix.Kernel.natOpCod source c e = Ix.Kernel.natOpCod target c e := by
   unfold Ix.Kernel.natOpCod
-  rw [h.observe boolName
+  rw [h.observe boolName (α := Bool)
     (fun (q : Option (ConstantInfo md)) => match q with
       | some ci => ci.toConstantVal.levelParams.isEmpty &&
           ci.toConstantVal.type == .sort (.succ .zero)
@@ -64,7 +65,7 @@ theorem natOpTyPinned (c : Key md) (ty : Expr md) :
 
 theorem natOpStoredOk (n : Key md) :
     Ix.Kernel.natOpStoredOk source n = Ix.Kernel.natOpStoredOk target n := by
-  apply h.inspect n
+  apply h.inspect n (α := Bool)
     (fun (q : Option (ConstantInfo md)) => match q with
       | some (.defnInfo cv _ _) => cv.levelParams.isEmpty && Ix.Kernel.natOpTyPinned source n cv.type
       | _ => false)
@@ -80,11 +81,11 @@ theorem natOpStoredOk (n : Key md) :
 theorem divModEnvGuard (c : Key md) :
     Ix.Kernel.divModEnvGuard source c = Ix.Kernel.divModEnvGuard target c := by
   simp only [Ix.Kernel.divModEnvGuard, h.natOpGuard, funext h.natOpStoredOk]
-  rw [h.observe eqName (fun (q : Option (ConstantInfo md)) => q == some eqA) (by intros; rfl),
-    h.observe boolTrueName
+  rw [h.observe eqName (α := Bool) (fun (q : Option (ConstantInfo md)) => q == some eqA) (by intros; rfl),
+    h.observe boolTrueName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
       (by intros; rfl),
-    h.observe boolFalseName
+    h.observe boolFalseName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with | some ci => ci.toConstantVal.type == .const boolName [] | none => false)
       (by intros; rfl)]
 
@@ -118,28 +119,28 @@ theorem checkDivModCerts (mode : CheckMode) (fuel : Nat) (c : Key md) (value : E
 theorem stdAxiomOk (cv : ConstantVal md) :
     Ix.Kernel.stdAxiomOk source cv = Ix.Kernel.stdAxiomOk target cv := by
   unfold Ix.Kernel.stdAxiomOk
-  rw [h.observe eqName (fun (q : Option (ConstantInfo md)) => decide (q = some eqA)) (by intros; rfl),
-    h.observe iffName
+  rw [h.observe eqName (α := Bool) (fun (q : Option (ConstantInfo md)) => decide (q = some eqA)) (by intros; rfl),
+    h.observe iffName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.indInfo cvI _) => ConstantVal.matchesPin cvI iffA.toConstantVal
         | _ => false) (by intros; rfl),
-    h.observe iffIntroName
+    h.observe iffIntroName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.ctorInfo cvI 2 2) => ConstantVal.matchesPin cvI iffIntroA.toConstantVal
         | _ => false) (by intros; rfl),
-    h.observe iffRecName
+    h.observe iffRecName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.recInfo cvI 4 4 _) => ConstantVal.matchesPin cvI iffRecA.toConstantVal
         | _ => false) (by intros; rfl),
-    h.observe nonemptyName
+    h.observe nonemptyName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.indInfo cvN _) => ConstantVal.matchesPin cvN nonemptyA.toConstantVal
         | _ => false) (by intros; rfl),
-    h.observe nonemptyIntroName
+    h.observe nonemptyIntroName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.ctorInfo cvN 1 1) => ConstantVal.matchesPin cvN nonemptyIntroA.toConstantVal
         | _ => false) (by intros; rfl),
-    h.observe nonemptyRecName
+    h.observe nonemptyRecName (α := Bool)
       (fun (q : Option (ConstantInfo md)) => match q with
         | some (.recInfo cvN 3 3 _) => ConstantVal.matchesPin cvN nonemptyRecA.toConstantVal
         | _ => false) (by intros; rfl)]
