@@ -151,43 +151,43 @@ private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
         env (.check ctx dependency none) {} false (some seedMessage)]
 
 /-- A constructor parameter either uses the former's domain directly or contains the family
-inside an argument erased by beta reduction. The eta variant fully applies the family. -/
-private def nativeParameterBlock (betaDomain etaArgument : Bool) : Ixon.Constant :=
+inside an argument erased by beta reduction. The family is fully applied under a lambda. -/
+private def nativeParameterBlock (betaDomain withField : Bool) : Ixon.Constant :=
   let former : Ixon.Expr := .all (.sort 1) (.sort 1)
-  let argument : Ixon.Expr := if etaArgument then
-    .lam (.sort 1) (.app (.recur 0 #[]) (.var 0)) else .recur 0 #[]
+  let argument : Ixon.Expr := .lam (.sort 1) (.app (.recur 0 #[]) (.var 0))
   let domain : Ixon.Expr := if betaDomain then
     .app (.lam former (.sort 1)) argument else .sort 1
+  let result : Ixon.Expr := if withField then
+    .all (.var 0) (.app (.recur 0 #[]) (.var 1)) else .app (.recur 0 #[]) (.var 0)
   let constructor : Ixon.Constructor :=
-    ⟨false, 0, 0, 1, 0, .inherited, .all domain (.app (.recur 0 #[]) (.var 0))⟩
+    ⟨false, 0, 0, 1, (if withField then 1 else 0), .inherited, .all domain result⟩
   let ind : Ixon.Inductive := ⟨false, 0, 1, 0, former, #[constructor]⟩
+  let nodes : Array Ixon.BinderNode := if betaDomain then
+    #[.never {}, .never {}, .never {}, .never {}] else #[.never {}]
+  let nodes := if withField then nodes.push (.never {}) else nodes
   { info := .muts #[.indc ind]
     sharing := #[]
     refs := #[]
     univs := #[.zero, .succ .zero]
-    binders := #[⟨false, 0, 0, #[.never {}]⟩,
-      ⟨false, 1, 0, if betaDomain then
-        (if etaArgument then #[.never {}, .never {}, .never {}, .never {}]
-          else #[.never {}, .never {}, .never {}]) else #[.never {}]⟩] }
+    binders := #[⟨false, 0, 0, #[.never {}]⟩, ⟨false, 1, 0, nodes⟩] }
 
-private def nativeParameterFixture (betaDomain etaArgument : Bool) :
+private def nativeParameterFixture (betaDomain withField : Bool) :
     Except String (Ixon.Env × Address) := do
   let base ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
-  let (env, block) := storeSafetyRecord base (nativeParameterBlock betaDomain etaArgument)
+  let (env, block) := storeSafetyRecord base (nativeParameterBlock betaDomain withField)
   let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, block⟩, #[], #[], #[], #[]⟩
   let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, block⟩, #[], #[], #[], #[]⟩
   return (env, target)
 
 private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
-  [(false, false), (true, false), (true, true)].toArray.map fun (betaDomain, etaArgument) _ => do
-    let (env, target) ← nativeParameterFixture betaDomain etaArgument
-    let ctx ← Ix.ClaimContext.ofDefaultTable
-    let c ← Tests.Ix.IxVM.Case.ofClaim
-      s!"native parameter domain: beta={betaDomain}, eta={etaArgument}"
-      env (.check ctx target none) {} (!betaDomain)
-      (if betaDomain then some "native constructor: parameter domain mentions the inductive block"
-        else none)
-    return { c with exercises := if betaDomain then none else some "KernelCheck::check_param_agreement" }
+  [(false, false), (true, false), (false, true), (true, true)].toArray.map
+    fun (betaDomain, withField) _ => do
+      let (env, target) ← nativeParameterFixture betaDomain withField
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let c ← Tests.Ix.IxVM.Case.ofClaim
+        s!"accept native parameter domain: beta={betaDomain}, field={withField}"
+        env (.check ctx target none)
+      return { c with exercises := some "KernelCheck::check_param_agreement" }
 
 /-- Focused reference-safety cases, usable with a verdict-only execution artifact. -/
 def runReferenceSafety : IO UInt32 :=
