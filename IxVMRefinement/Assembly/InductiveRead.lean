@@ -45,7 +45,7 @@ theorem lowerInductive_full_bare {md : Mode} {st : State md}
   have hbare_eq : bare.decls = #[Ix.Cert.CtxAgree.indDeclOf rb] := hbare_decls
   have hnames := Ix.Cert.LowerDistinct.lowerInductive_names_nodup h
   rw [hdecls] at hnames
-  simp only [Array.toList_push, List.toList_toArray, List.flatMap_append,
+  simp only [Array.toList_push, List.flatMap_append,
     List.flatMap_cons, List.flatMap_nil, List.append_nil, List.nodup_append] at hnames
   have hbare_names : (bare.decls.toList.flatMap Declaration.names).Nodup := by
     rw [hbare_eq]
