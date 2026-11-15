@@ -86,7 +86,7 @@ a budget based on both terms' sizes. -/
 def wrapRelOk (find? : Key md → Option (ConstantInfo md)) (g d : Expr md) : Bool :=
   wrapRelB find? (2 * (exprSize g + exprSize d) + 2) g d
 
-
+/-- No `let` node (a free variable's type is not looked into). -/
 def letFree : Expr md → Bool
   | .letE .. => false
   | .app f a => letFree f && letFree a

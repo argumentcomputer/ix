@@ -65,8 +65,9 @@ def candidate (find? : Key md → Option (ConstantInfo md))
     | some (.defnInfo cv value hint) => some (cv, value, hint)
     | _ => none
   unless model?.isSome || majorAgrees majorIndex canonical.type annotated.type do none
-  pure { raw, annotated, canonical, canonicalKey := key, majorIndex, rulePrefix,
-    rawRules := rules, canonicalRules, model? }
+  pure { raw := raw, annotated := annotated, canonical := canonical, canonicalKey := key,
+    majorIndex := majorIndex, rulePrefix := rulePrefix, rawRules := rules,
+    canonicalRules := canonicalRules, model? := model? }
 
 def findCanonical (find? : Key md → Option (ConstantInfo md))
     (raw annotated : ConstantVal md) (majorIndex rulePrefix : Nat) (rules : List (RecRule md)) :
@@ -131,7 +132,7 @@ def checkRule (ops : CheckerOps md m) (env envSelf : Env md) (part : Part md)
   unless rhs.allLevelParamsDefined part.canonical.levelParams && rhs.constsResolve envSelf && letFree rhs do
     throw (.invalid "unscoped annotated twin recursor rule")
   unless ruleShape env part canonical do throw (.notImplemented "twin rule major-premise shape mismatch")
-  pure { canonical with rhs, eta := recRuleEtaOf env.find? part.raw.name canonical.ctor }
+  pure { canonical with rhs := rhs, eta := recRuleEtaOf env.find? part.raw.name canonical.ctor }
 
 def checkRules (ops : CheckerOps md m) (env envSelf : Env md) (part : Part md) :
     List (RecRule md) → List (RecRule md) → m (List (RecRule md))
@@ -147,7 +148,7 @@ def checkPartsRules (ops : CheckerOps md m) (env envSelf : Env md) : List (Part 
   | part :: parts => do
     let checkedRules ← checkRules ops env envSelf part part.rawRules part.canonicalRules
     let rest ← checkPartsRules ops env envSelf parts
-    pure ({ part with checkedRules } :: rest)
+    pure ({ part with checkedRules := checkedRules } :: rest)
 
 def peerRename (parts : List (Part md)) (key : Key md) : Key md :=
   match parts.find? (fun part => part.canonicalKey == key) with
