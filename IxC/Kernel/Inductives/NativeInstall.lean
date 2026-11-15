@@ -388,13 +388,15 @@ def Expr.mentionsFvarFast (q : Nat) (e : Expr md) : Bool :=
 
 /-- The kinds the recogniser computed, re-checked on the annotated
 constructor type OPENED at variables (`openPisAtFvars`, as the stage
-read it): an ordinary field's domain, ignoring free-variable type annotations, resolves in the pre-block
+read it): an ordinary field's domain resolves in the pre-block
 environment `env₀`; a recursive field's domain is the family at the
 opened parameter variables followed by `nIdx` index expressions
 resolving in `env₀`, and the variable occurs in no later field's
 domain nor in the residual (the model reads those at a frame whose
 recursive slots hold an arbitrary member of the family being defined);
-the residual's index expressions resolve in `env₀`. -/
+the residual's index expressions resolve in `env₀`. These resolution
+tests ignore free-variable type annotations, whose original typing
+is checked in the environment containing the former. -/
 def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with

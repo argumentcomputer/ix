@@ -38,7 +38,8 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The opened-form guard, positionally -/
 
-/-- `nativeOpenedOk`, read positionally. -/
+/-- `nativeOpenedOk`, read positionally. Pre-block resolution ignores free-variable
+type annotations; the constructor's stage retains their original typing and scope. -/
 structure FixOpened (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx nF : Nat)
     (ks : List RecFieldKind) (fvsP xFvs : List (Expr md)) (xrest : Expr md) : Prop where
   residRes : ∀ e ∈ xrest.getAppArgs.drop nP, e.constsResolveShallow env₀ = true
