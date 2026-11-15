@@ -99,7 +99,6 @@ theorem loaded_recordAt_eq_of_exact_noCollision
     c₀ = c_ld := by
   have ⟨lc₀, hget₀, hlc₀⟩ : ∃ lc₀, E₀.consts.get? x = some lc₀ ∧ lc₀.get? = some c₀ := by
     unfold Ix.Cert.recordAt at hrec₀
-    rw [← Std.HashMap.get?_eq_getElem?] at hrec₀
     cases hg : E₀.consts.get? x with
     | none => rw [hg] at hrec₀; cases hrec₀
     | some lc₀ => rw [hg] at hrec₀; exact ⟨lc₀, rfl, hrec₀⟩
@@ -564,7 +563,7 @@ theorem indBlockCtorIdx_of_exact_noCollision
     exact (hinl (.indc ind) (List.mem_of_getElem? hms_list)).1
   obtain ⟨_, _, _, hnc_lt, _, tyPtr, blkPtr, b_arr, hb_eq, hbp_m, rfl, _⟩ := hraw_ind
   simp only [L1.repBoolField, hind_safe, Bool.false_eq_true, ↓reduceIte] at ev_chk
-  cases Obs.«KernelCheck::check_const».obs ev_chk with
+  match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
@@ -852,7 +851,7 @@ theorem safe_refs_only_raw_spec
       subst a'
       have hc_eq : c_a = c_ld := loaded_recordAt_eq_of_exact_noCollision
         hexact₀ hload₀ hnoCol hrec_a hhash_ld hsub77 hblake_ld hexact_ld
-      subst c_ld
+      rw [← hc_eq] at htv_ld hraw_ld hinlogic
       have hno_muts : ∀ ms, c_a.info ≠ .muts ms := by
         intro ms hms
         simp only [L1.RawCIRep, hms] at hraw_ld
@@ -865,8 +864,7 @@ theorem safe_refs_only_raw_spec
             rw [hcx] at hnot_c
             exact hnot_c hinl
           · have hcx : c_x = c_a := Option.some.inj (hrec_x.symm.trans hrec_a)
-            subst hcx
-            rw [hown] at hrec_cb
+            rw [hcx, hown] at hrec_cb
             have hcb : cb_x = c_a := Option.some.inj (hrec_cb.symm.trans hrec_a)
             rw [hcb] at hnot_cb
             exact hnot_cb hinl
@@ -884,7 +882,7 @@ theorem safe_refs_only_raw_spec
           rw [hp_eq] at hblake_B
           have hcb_eq : c_a = cb_ld := loaded_recordAt_eq_of_exact_noCollision
             hexact₀ hload₀ hnoCol hrec_a hhash_B hsub77 hblake_B hexact_B
-          exact absurd (hcb_eq.trans hcb_ld) (hno_muts ms_ld)
+          exact absurd ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld) (hno_muts ms_ld)
         | iPrj p =>
           simp only [L1.RawCIRep, hinfo] at hraw_ld
           obtain ⟨_, lcB, cb_ld, ms_ld, _, _, hget_B, _, _, hexact_B, _, hcb_ld, _, _, _⟩ := hraw_ld
@@ -893,7 +891,7 @@ theorem safe_refs_only_raw_spec
           rw [hp_eq] at hblake_B
           have hcb_eq : c_a = cb_ld := loaded_recordAt_eq_of_exact_noCollision
             hexact₀ hload₀ hnoCol hrec_a hhash_B hsub77 hblake_B hexact_B
-          exact absurd (hcb_eq.trans hcb_ld) (hno_muts ms_ld)
+          exact absurd ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld) (hno_muts ms_ld)
         | rPrj p =>
           simp only [L1.RawCIRep, hinfo] at hraw_ld
           obtain ⟨_, lcB, cb_ld, ms_ld, _, _, hget_B, _, _, hexact_B, _, hcb_ld, _, _, _⟩ := hraw_ld
@@ -902,7 +900,7 @@ theorem safe_refs_only_raw_spec
           rw [hp_eq] at hblake_B
           have hcb_eq : c_a = cb_ld := loaded_recordAt_eq_of_exact_noCollision
             hexact₀ hload₀ hnoCol hrec_a hhash_B hsub77 hblake_B hexact_B
-          exact absurd (hcb_eq.trans hcb_ld) (hno_muts ms_ld)
+          exact absurd ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld) (hno_muts ms_ld)
         | cPrj p =>
           simp only [L1.RawCIRep, hinfo] at hraw_ld
           obtain ⟨_, _, lcB, cb_ld, ms_ld, _, _, _, hget_B, _, _, hexact_B, _, hcb_ld, _, _, _, _⟩ := hraw_ld
@@ -911,7 +909,7 @@ theorem safe_refs_only_raw_spec
           rw [hp_eq] at hblake_B
           have hcb_eq : c_a = cb_ld := loaded_recordAt_eq_of_exact_noCollision
             hexact₀ hload₀ hnoCol hrec_a hhash_B hsub77 hblake_B hexact_B
-          exact absurd (hcb_eq.trans hcb_ld) (hno_muts ms_ld)
+          exact absurd ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld) (hno_muts ms_ld)
       · intro hprj hown_some
         obtain ⟨cb₀, hrec_cb₀⟩ := Option.isSome_iff_exists.mp hown_some
         rcases hprj with ⟨p, hinfo⟩ | ⟨p, hinfo⟩ | ⟨p, hinfo⟩
@@ -961,20 +959,19 @@ theorem safe_refs_only_raw_spec
         have hcidx_eq_nat : ct_ld.cidx.toNat = p.cidx.toNat :=
           indBlockCtorIdx_of_exact_noCollision hbound hload₀ hexact₀ hnoCol
             hwk_own hsafe_own hrec_cb₀ hcb_ld hms_arr hct_arr
-        have hcidx_beq : (ct_ld.cidx == p.cidx) = true :=
-          beq_iff_eq.mpr (UInt64.toNat_inj.mp hcidx_eq_nat)
+        have hcidx_eq : ct_ld.cidx = p.cidx := UInt64.toNat_inj.mp hcidx_eq_nat
         have hnot_out_a : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
           rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
           · have hcx : c_x = c_a := Option.some.inj (hrec_x.symm.trans hrec_a)
-            subst hcx
+            rw [hcx] at hnot_c
             exact hnot_c (by simp [IxVM.Consistency.InLogic, hinfo])
           · have hcx : c_x = c_a := Option.some.inj (hrec_x.symm.trans hrec_a)
-            subst hcx
+            rw [hcx] at hrec_cbx
             simp only [Ix.Cert.ownerOf, hinfo] at hrec_cbx
             exact hsafe_own ⟨cb_x, hrec_cbx, .inl hnot_cbx⟩
         exact ⟨hnot_out_a,
           by simp [Ix.Kernel.Reader.resolveSource, hinfo, hemp, hrec_cb₀,
-            hcb_ld, hms_arr, hct_arr, hcidx_beq]⟩
+            hcb_ld, hms_arr, hct_arr, hcidx_eq, guard, pure]⟩
     | BVar _ ld _ _ _ | Srt _ ld _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -1170,25 +1167,47 @@ private theorem idxOf_append_left [BEq α] [LawfulBEq α] :
     cases hxa : x == a with
     | true => rfl
     | false =>
-      rcases List.mem_cons.mp ha with rfl | ha'
-      · exact absurd (beq_self_eq_true x) (by simp [hxa])
+      simp only [cond_false]
+      rcases List.mem_cons.mp ha with h_ax | ha'
+      · rw [h_ax] at hxa
+        exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
       · exact congrArg Nat.succ (idxOf_append_left ha')
 
-private theorem idxOf_lt_and_getElem [BEq α] [LawfulBEq α] :
-    ∀ {xs : List α} {a : α}, a ∈ xs → ∃ (hlt : xs.idxOf a < xs.length), xs[xs.idxOf a] = a
+private theorem idxOf_lt_length [BEq α] [LawfulBEq α] :
+    ∀ {xs : List α} {a : α}, a ∈ xs → xs.idxOf a < xs.length
+  | [], _, ha => nomatch ha
+  | x :: xs, a, ha => by
+    simp only [List.idxOf_cons, List.length_cons]
+    cases hxa : x == a with
+    | true => simp
+    | false =>
+      simp only [cond_false]
+      rcases List.mem_cons.mp ha with h_ax | ha'
+      · rw [h_ax] at hxa
+        exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
+      · exact Nat.succ_lt_succ (idxOf_lt_length ha')
+
+private theorem getElem?_idxOf [BEq α] [LawfulBEq α] :
+    ∀ {xs : List α} {a : α}, a ∈ xs → xs[xs.idxOf a]? = some a
   | [], _, ha => nomatch ha
   | x :: xs, a, ha => by
     simp only [List.idxOf_cons]
     cases hxa : x == a with
     | true =>
-      have h_eq : x = a := beq_iff_eq.mp hxa
-      subst h_eq
-      exact ⟨Nat.zero_lt_succ _, rfl⟩
+      simp only [cond_true, List.getElem?_cons_zero]
+      exact congrArg some (beq_iff_eq.mp hxa)
     | false =>
-      rcases List.mem_cons.mp ha with rfl | ha'
-      · exact absurd (beq_self_eq_true x) (by simp [hxa])
-      · obtain ⟨hlt, hget⟩ := idxOf_lt_and_getElem ha'
-        exact ⟨Nat.succ_lt_succ hlt, hget⟩
+      simp only [cond_false, List.getElem?_cons_succ]
+      rcases List.mem_cons.mp ha with h_ax | ha'
+      · rw [h_ax] at hxa
+        exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
+      · exact getElem?_idxOf ha'
+
+private theorem getElem_idxOf [BEq α] [LawfulBEq α] {xs : List α} {a : α}
+    (ha : a ∈ xs) : xs[xs.idxOf a]'(idxOf_lt_length ha) = a := by
+  have h := getElem?_idxOf ha
+  rw [List.getElem?_eq_getElem (idxOf_lt_length ha)] at h
+  exact Option.some.inj h
 
 private theorem idxOf_getElem_of_nodup [BEq α] [LawfulBEq α] :
     ∀ {xs : List α}, xs.Nodup → ∀ (i : Nat) (hi : i < xs.length), xs.idxOf xs[i] = i
@@ -1223,17 +1242,18 @@ theorem order_filter_role_eq_of_subset
   have hmem : ∀ a, a ∈ xs ↔ a ∈ order_role := fun a =>
     ⟨fun h => of_decide_eq_true (List.mem_filter.mp h).2,
      fun h => List.mem_filter.mpr ⟨hsub a h, decide_eq_true h⟩⟩
-  let f : Nat → Nat := fun i => if hi : i < xs.length then order_role.idxOf xs[i] else 0
+  let f : Nat → Nat := fun i => match xs[i]? with | some x => order_role.idxOf x | none => 0
+  have hf_eq : ∀ i (hi : i < xs.length), f i = order_role.idxOf (xs[i]'hi) := by
+    intro i hi
+    simp only [f, List.getElem?_eq_getElem hi]
   have hf_lt : ∀ i (hi : i < xs.length), f i < order_role.length := by
     intro i hi
-    dsimp only [f]
-    rw [dif_pos hi]
-    exact (idxOf_lt_and_getElem ((hmem xs[i]).mp (List.getElem_mem hi))).1
+    rw [hf_eq i hi]
+    exact idxOf_lt_length ((hmem xs[i]).mp (List.getElem_mem hi))
   have hf_mono : ∀ i₁ i₂, i₁ < i₂ → (hi₂ : i₂ < xs.length) → f i₁ < f i₂ := by
     intro i₁ i₂ hlt hi₂
     have hi₁ : i₁ < xs.length := Nat.lt_trans hlt hi₂
-    dsimp only [f]
-    rw [dif_pos hi₁, dif_pos hi₂]
+    rw [hf_eq i₁ hi₁, hf_eq i₂ hi₂]
     have hm₁ : xs[i₁] ∈ xs := List.getElem_mem hi₁
     have hm₂ : xs[i₂] ∈ xs := List.getElem_mem hi₂
     have hidx₁ : order.idxOf xs[i₁] = i₁ := by
@@ -1246,10 +1266,10 @@ theorem order_filter_role_eq_of_subset
   have hsurj : ∀ j (hj : j < order_role.length), ∃ i, i < xs.length ∧ f i = j := by
     intro j hj
     have hy_mem : order_role[j] ∈ xs := (hmem order_role[j]).mpr (List.getElem_mem hj)
-    obtain ⟨hi, hget⟩ := idxOf_lt_and_getElem hy_mem
+    have hi : xs.idxOf order_role[j] < xs.length := idxOf_lt_length hy_mem
+    have hget : xs[xs.idxOf order_role[j]]'hi = order_role[j] := getElem_idxOf hy_mem
     refine ⟨xs.idxOf order_role[j], hi, ?_⟩
-    dsimp only [f]
-    rw [dif_pos hi, hget]
+    rw [hf_eq _ hi, hget]
     exact idxOf_getElem_of_nodup hnd_r j hj
   have hstep : ∀ j, j < order_role.length → j < xs.length ∧ f j = j := by
     intro j
@@ -1299,29 +1319,121 @@ theorem order_filter_role_eq_of_subset
   apply List.ext_getElem hlen_eq
   intro j hj₁ hj₂
   obtain ⟨_, hfj⟩ := hstep j hj₂
-  dsimp only [f] at hfj
-  rw [dif_pos hj₁] at hfj
-  obtain ⟨hlt_idx, hget⟩ := idxOf_lt_and_getElem ((hmem xs[j]).mp (List.getElem_mem hj₁))
+  rw [hf_eq j hj₁] at hfj
+  have hmem_j : xs[j] ∈ order_role := (hmem xs[j]).mp (List.getElem_mem hj₁)
+  have hlt_idx : order_role.idxOf xs[j] < order_role.length := idxOf_lt_length hmem_j
+  have hget : order_role[order_role.idxOf xs[j]]'hlt_idx = xs[j] := getElem_idxOf hmem_j
   have heq_elem : order_role[order_role.idxOf xs[j]]'hlt_idx = order_role[j]'hj₂ := by
     congr 1
   exact (heq_elem.symm.trans hget).symm
+
+private theorem idxOf_filter_lt_of_idxOf_lt [BEq α] [LawfulBEq α] :
+    ∀ {xs : List α} {p : α → Bool} {a b : α},
+      xs.Nodup → a ∈ xs.filter p → b ∈ xs.filter p →
+      xs.idxOf a < xs.idxOf b →
+      (xs.filter p).idxOf a < (xs.filter p).idxOf b
+  | [], _, _, _, _, ha, _, _ => nomatch ha
+  | x :: xs, p, a, b, hnd, ha, hb, hlt => by
+    rw [List.nodup_cons] at hnd
+    simp only [List.filter_cons] at ha hb ⊢
+    cases hpx : p x with
+    | true =>
+      simp only [hpx, ↓reduceIte, List.idxOf_cons] at ha hb ⊢
+      simp only [List.idxOf_cons] at hlt
+      cases hxa : x == a with
+      | true =>
+        simp only [hxa, cond_true] at hlt ⊢
+        cases hxb : x == b with
+        | true => simp only [hxb, cond_true] at hlt; omega
+        | false => simp only [cond_false]; exact Nat.zero_lt_succ _
+      | false =>
+        simp only [hxa, cond_false] at hlt ⊢
+        have ha' : a ∈ xs.filter p := by
+          rcases List.mem_cons.mp ha with h_ax | ha'
+          · rw [h_ax] at hxa; exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
+          · exact ha'
+        cases hxb : x == b with
+        | true => simp only [hxb, cond_true] at hlt; omega
+        | false =>
+          simp only [hxb, cond_false] at hlt ⊢
+          have hb' : b ∈ xs.filter p := by
+            rcases List.mem_cons.mp hb with h_bx | hb'
+            · rw [h_bx] at hxb; exact absurd (beq_self_eq_true x) (by rw [hxb]; decide)
+            · exact hb'
+          exact Nat.succ_lt_succ (idxOf_filter_lt_of_idxOf_lt hnd.2 ha' hb' (Nat.lt_of_succ_lt_succ hlt))
+    | false =>
+      simp only [hpx, Bool.false_eq_true, ↓reduceIte] at ha hb ⊢
+      have hxa : (x == a) = false :=
+        beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp ha).1))
+      have hxb : (x == b) = false :=
+        beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp hb).1))
+      simp only [List.idxOf_cons, hxa, hxb, cond_false] at hlt
+      exact idxOf_filter_lt_of_idxOf_lt hnd.2 ha hb (Nat.lt_of_succ_lt_succ hlt)
+
+/-- **Unconditional pruned role-prefix identity**: even without `order_role ⊆ order` (e.g. when
+`order` is `UsedClosureOrderAt` for `ReadIn`'s `seeds ∨ evidence` rather than `seeds ∨ BindingSeeds`),
+the role slice `order.filter (· ∈ order_role)` equals the downward-closed pruned role prefix
+`order_role.filter (· ∈ order)`. -/
+theorem order_filter_eq_pruned_role_prefix
+    {order order_role : List _root_.Address}
+    (hnd : order.Nodup)
+    (hnd_r : order_role.Nodup)
+    (hsplit : order = order.filter (· ∈ order_role) ++ order.filter (· ∉ order_role))
+    (hmono : ∀ a b, a ∈ order.filter (· ∈ order_role) → b ∈ order.filter (· ∈ order_role) →
+      order.idxOf a < order.idxOf b → order_role.idxOf a < order_role.idxOf b) :
+    order.filter (· ∈ order_role) = order_role.filter (· ∈ order) := by
+  let order_role' := order_role.filter (· ∈ order)
+  have hfilt_eq : order.filter (· ∈ order_role) = order.filter (· ∈ order_role') := by
+    apply List.filter_congr
+    intro x hx
+    by_cases hxr : x ∈ order_role
+    · have hxr' : x ∈ order_role' := List.mem_filter.mpr ⟨hxr, decide_eq_true hx⟩
+      simp [hxr, hxr']
+    · have hxr' : x ∉ order_role' := fun h => hxr (List.mem_filter.mp h).1
+      simp [hxr, hxr']
+  have hnot_eq : order.filter (· ∉ order_role) = order.filter (· ∉ order_role') := by
+    apply List.filter_congr
+    intro x hx
+    by_cases hxr : x ∈ order_role
+    · have hxr' : x ∈ order_role' := List.mem_filter.mpr ⟨hxr, decide_eq_true hx⟩
+      simp [hxr, hxr']
+    · have hxr' : x ∉ order_role' := fun h => hxr (List.mem_filter.mp h).1
+      simp [hxr, hxr']
+  rw [hfilt_eq]
+  apply order_filter_role_eq_of_subset hnd (hnd_r.filter _)
+  · intro a ha
+    exact of_decide_eq_true (List.mem_filter.mp ha).2
+  · rw [← hfilt_eq, ← hnot_eq]
+    exact hsplit
+  · intro a b ha hb hlt
+    rw [← hfilt_eq] at ha hb
+    have ha_r' : a ∈ order_role' := List.mem_filter.mpr
+      ⟨of_decide_eq_true (List.mem_filter.mp ha).2, decide_eq_true (List.mem_filter.mp ha).1⟩
+    have hb_r' : b ∈ order_role' := List.mem_filter.mpr
+      ⟨of_decide_eq_true (List.mem_filter.mp hb).2, decide_eq_true (List.mem_filter.mp hb).1⟩
+    exact idxOf_filter_lt_of_idxOf_lt hnd_r ha_r' hb_r' (hmono a b ha hb hlt)
 
 private theorem compilerTrust_false_of_groundRoles_mem {r s : Ix.Kernel.Role}
     (hs : s ∈ Ix.Cert.groundRoles r) : IxVM.Refinement.compilerTrust r = false := by
   unfold IxVM.Refinement.compilerTrust
   split
-  · exact absurd hs (by decide)
-  · exact absurd hs (by decide)
-  · exact absurd hs (by decide)
-  · exact absurd hs (by decide)
-  · exact absurd hs (by decide)
+  · have h : Ix.Cert.groundRoles .trustCompiler = [] := by decide
+    rw [h] at hs; nomatch hs
+  · have h : Ix.Cert.groundRoles .lcProof = [] := by decide
+    rw [h] at hs; nomatch hs
+  · have h : Ix.Cert.groundRoles .lcUnreachable = [] := by decide
+    rw [h] at hs; nomatch hs
+  · have h : Ix.Cert.groundRoles .lcErased = [] := by decide
+    rw [h] at hs; nomatch hs
+  · have h : Ix.Cert.groundRoles .lcAny = [] := by decide
+    rw [h] at hs; nomatch hs
   · rfl
 
 private theorem contains_of_recordAt_some {E : Ixon.Env} {x : _root_.Address} {c : Ixon.Constant}
     (hrec : Ix.Cert.recordAt E x = some c) : E.consts.contains x = true := by
   unfold Ix.Cert.recordAt at hrec
-  rw [Std.HashMap.contains_eq_isSome_getElem?]
-  cases hg : E.consts[x]? with
+  rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?]
+  cases hg : E.consts.get? x with
   | none => rw [hg] at hrec; cases hrec
   | some _ => rfl
 
@@ -1493,9 +1605,12 @@ theorem preparePrelude_append_of_hoist_id
 /-- Minimal residual obligations separating the unowned `ProjSafe.SafeRefsInputs` interface from the
 unconditional theorems proved in Sections 1–3:
 1. **`safe_expr_refs_resolve`**:
-   - Circuit gap in `IxVM/IxVM/Source/KernelCheck.lean:49`: `KExprNode::Proj(_, _, e1)` recurses
-     only on `e1` without calling `get_ci`/`is_unsafe_ci` on the projection type address `taddr`
-     (`.prj idx _ inner`), whereas `reachRefsExpr` includes `idx.toNat`.
+   - Circuit expression/recursor safety in `IxVM/IxVM/Source/KernelCheck.lean:49`:
+     `KExprNode::Proj(_, _, e1)` recurses only on `e1` without calling `get_ci`/`is_unsafe_ci` on
+     the projection type address `taddr` (`.prj idx _ inner`, whereas `reachRefsExpr` includes
+     `idx.toNat`); similarly `check_const`'s `Rec` arm checks rule RHSs only via ζ-normalizing
+     def-eq rather than `assert_safety_rules`, and `KernelModeled::check_recs` omits `assert_safety`
+     on recursor types/rules.
    - Interface omission in `ProjSafe.lean:997-1013`: omits `L1.EnvDecoded E₀` and walked-owner
      safety (`WkAll` / `¬ OutsideLogicAt` on `ownerOf a c_a` for projection constants), both of
      which hold at the sole call site (`RecordReadBare.lean:1502-1507`); `.ref`-only indices are
@@ -1505,9 +1620,12 @@ unconditional theorems proved in Sections 1–3:
      `¬ V.HashedCollision extra calls` (both in context at `RecordReadBare.lean:3494`); proved
      unconditionally with those two hypotheses in `indBlockCtorIdx_of_exact_noCollision`.
 3. **`rolePrefixStreamReadBare` & `indRecRecordReadBare`**:
-   - Transfer of `TableAdmittedAt`'s `StreamRead` (which may emit `InModel.generate` `.aux`
-     declarations and hoist `Nat` op grounds) to `StreamReadBare` on `subEnvRole`, together with
-     bare `.recr` / inductive `.muts` `L1.RecordReadsAs` lowering. -/
+   - `TableAdmittedAt.streamRead` (`prepareWith`) runs full `Reader.StreamRead`, emitting generated
+     `.aux` model declarations (`decls_role_full`) for modeled inductives and hoisting `Nat` op
+     grounds, whereas `ProjSafe.rolePrefixStreamReadBare` equates `decls_role` directly with
+     `StreamReadBare` (`decls_role_bare`, which emits only bare `.indDecl`s; `.aux` declarations
+     group into `.indDecl` steps via `IxVM.Consistency.InstallStep`), together with bare `.recr` /
+     inductive `.muts` `L1.RecordReadsAs` lowering. -/
 structure SafeExprRefsGap : Prop where
   safe_expr_refs_resolve :
     ∀ {calls : List (Call F)} {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
