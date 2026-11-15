@@ -891,11 +891,11 @@ theorem dprj_store_eq_of_mutsMemberChecked
           Core.Specs.Callees.ProjInfoRep m306 (.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) v198 := by
         cases sg206 with
         | Defn _ _ hv1 hm1 _ =>
-          have E_ext : Heap.Extends _ m306 := by
-            rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+          subst m199
           rw [hv1]
           exact ⟨TagN.u64Value i, _, b_arr, rfl, hrepi,
-            Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy E_ext hb_ref, rfl⟩
+            Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
+              (e1.trans (e2.trans (e3.trans (e4.trans e5)))) hb_ref, rfl⟩
         | Indc _ _ hv67 _ _ _ =>
           simp only [Core.Specs.Callees.mutCtor] at hv67
           injection hv67 with _ hc _
