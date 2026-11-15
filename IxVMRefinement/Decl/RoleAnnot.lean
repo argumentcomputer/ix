@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.ModeledAux
-import IxVMRefinement.Core.Infer.Close
+import IxVMRefinement.Infer.Close
 import IxC.Kernel.Verify.Abstract
 
 /-! # Reader-shape correspondence for checked kernel annotations
