@@ -167,7 +167,7 @@ theorem isUnitLikeTy (e : Expr md) :
         | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
         | _ => false) (by intros; rfl)
     have combine {a b c d : Bool} (hab : a = b) (hcd : c = d) :
-        (name == punitName && a) && c = (name == punitName && b) && d := by
+        ((name == punitName && a) && c) = ((name == punitName && b) && d) := by
       cases hab; cases hcd; rfl
     exact combine hi hr
   | _ => rfl
