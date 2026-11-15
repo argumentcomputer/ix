@@ -372,48 +372,6 @@ def IndRoutesJ (J : Judgements md) (env : Env md) (block : List (ConstantInfo md
 
 /-! ## Facts the records carry -/
 
-theorem ConstantValCheckJ.fresh {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
-    (h : ConstantValCheckJ J env cv cv') : env.find? cv.name = none := by
-  obtain ⟨_, hrun, -⟩ := h
-  exact Option.isNone_iff_eq_none.mp hrun.1
-
-theorem ConstantValCheckJ.shape {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
-    (h : ConstantValCheckJ J env cv cv') : cv.name.isProjFnShape = false := by
-  obtain ⟨_, hrun, -⟩ := h
-  exact hrun.2.2.1
-
-theorem ConstantValCheckJ.name_eq {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
-    (h : ConstantValCheckJ J env cv cv') : cv'.name = cv.name := by
-  obtain ⟨_, -, rfl⟩ := h
-  rfl
-
-theorem ConstantValCheckJ.levelParams_eq {J : Judgements md} {env : Env md}
-    {cv cv' : ConstantVal md} (h : ConstantValCheckJ J env cv cv') :
-    cv'.levelParams = cv.levelParams := by
-  obtain ⟨_, -, rfl⟩ := h
-  rfl
-
-/-- **A constant check's facts** (`checkConstantVal_inv` over a package), in the
-kernel inversion's order. -/
-theorem ConstantValCheckJ.inv {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
-    (h : ConstantValCheckJ J env cv cv') :
-    env.find? cv.name = none ∧
-    reservedBasisNames.contains cv.name = false ∧
-    cv.name.isProjFnShape = false ∧
-    LevelParam.nodup cv.levelParams = true ∧
-    cv.type.looseBVarsBounded 0 = true ∧
-    cv.type.hasFvar = false ∧
-    ∃ type stype u,
-      J.annot env 0 cv.type type ∧
-      type.allLevelParamsDefined cv.levelParams = true ∧
-      type.constsResolve env = true ∧
-      J.infer env 0 type stype ∧
-      J.sort env 0 stype u ∧
-      cv' = { cv with type := type } := by
-  obtain ⟨type, ⟨hf, hres, hpsh, hnd, hlbt, hitf, hann, htp, htr, stype, u, hst, hsort⟩, rfl⟩ := h
-  exact ⟨Option.isNone_iff_eq_none.mp hf, hres, hpsh, hnd, hlbt, hitf, type, stype, u, hann,
-    htp, htr, hst, hsort, rfl⟩
-
 /-- A stored constructor keeps the declared name and level parameters; its name is
 fresh where it is checked and passes the front door's shape test. -/
 theorem SumCtorRunJ.names {J : Judgements md} {env₀ env : Env md} {T : Key md}
@@ -798,13 +756,6 @@ local macro_rules
         | (exfalso; exact throw_ne_ok
             (by simpa [bind, Except.bind] using ‹_›)))
 
-theorem constantValCheckJ_of_run {env : Env md} {cv cv' : ConstantVal md}
-    (h : Ix.Kernel.checkConstantVal (fueledOps μ F) env cv = .ok cv') :
-    ConstantValCheckJ (runJ μ F) env cv cv' := by
-  obtain ⟨hfind, hres, hpsh, hnd, hlbt, hitf, type, stype, u, hann, htp,
-    htr, hst, hsort, rfl⟩ := Ix.Kernel.checkConstantVal_inv h
-  exact ⟨type, ⟨Option.isNone_iff_eq_none.mpr hfind, hres, hpsh, hnd, hlbt, hitf,
-    hann, htp, htr, ⟨stype, u, hst, hsort⟩⟩, rfl⟩
 
 theorem sumIndRunJ_of_run {env envI : Env md} {p p' : InductiveShape md}
     {cvTa : ConstantVal md} {capsOf : InductiveShape md → IndCaps md}

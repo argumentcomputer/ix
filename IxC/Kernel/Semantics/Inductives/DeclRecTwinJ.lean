@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Semantics.DeclJ
 public import IxC.Kernel.Semantics.Inductives.WrapRel
+import IxC.Kernel.Verify.Extend.Inversions
 
 @[expose] public section
 
@@ -13,7 +14,8 @@ can enter that dispatch without creating an import cycle.
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Env Expr Key Level LevelParam ConstantInfo ConstantVal RecRule)
+open Ix.Kernel (CheckMode Env Expr Key Level LevelParam ConstantInfo ConstantVal RecRule
+  reservedBasisNames fueledOps)
 
 /-- **`checkConstantVal` over a package**: the front door's guards, the type's
 annotation, its scoping, and its typing at a sort; the checked constant carries
@@ -143,5 +145,56 @@ def DeclRecTwinRunJ (J : Judgements md) (env : Env md) (block : List (ConstantIn
       Forall₂ (fun (p : RecRule md × RecRule md) rC =>
         TwinRuleJ J env envSelf f w.cvW.name w.cvC.levelParams w.cvW' w.mI w.rP p.1 p.2 rC)
         (w.rulesW.zip w.rulesW') w.rulesC
+
+theorem ConstantValCheckJ.fresh {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (h : ConstantValCheckJ J env cv cv') : env.find? cv.name = none := by
+  obtain ⟨_, hrun, -⟩ := h
+  exact Option.isNone_iff_eq_none.mp hrun.1
+
+theorem ConstantValCheckJ.shape {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (h : ConstantValCheckJ J env cv cv') : cv.name.isProjFnShape = false := by
+  obtain ⟨_, hrun, -⟩ := h
+  exact hrun.2.2.1
+
+theorem ConstantValCheckJ.name_eq {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (h : ConstantValCheckJ J env cv cv') : cv'.name = cv.name := by
+  obtain ⟨_, -, rfl⟩ := h
+  rfl
+
+theorem ConstantValCheckJ.levelParams_eq {J : Judgements md} {env : Env md}
+    {cv cv' : ConstantVal md} (h : ConstantValCheckJ J env cv cv') :
+    cv'.levelParams = cv.levelParams := by
+  obtain ⟨_, -, rfl⟩ := h
+  rfl
+
+/-- **A constant check's facts** (`checkConstantVal_inv` over a package), in the
+kernel inversion's order. -/
+theorem ConstantValCheckJ.inv {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (h : ConstantValCheckJ J env cv cv') :
+    env.find? cv.name = none ∧
+    reservedBasisNames.contains cv.name = false ∧
+    cv.name.isProjFnShape = false ∧
+    LevelParam.nodup cv.levelParams = true ∧
+    cv.type.looseBVarsBounded 0 = true ∧
+    cv.type.hasFvar = false ∧
+    ∃ type stype u,
+      J.annot env 0 cv.type type ∧
+      type.allLevelParamsDefined cv.levelParams = true ∧
+      type.constsResolve env = true ∧
+      J.infer env 0 type stype ∧
+      J.sort env 0 stype u ∧
+      cv' = { cv with type := type } := by
+  obtain ⟨type, ⟨hf, hres, hpsh, hnd, hlbt, hitf, hann, htp, htr, stype, u, hst, hsort⟩, rfl⟩ := h
+  exact ⟨Option.isNone_iff_eq_none.mp hf, hres, hpsh, hnd, hlbt, hitf, type, stype, u, hann,
+    htp, htr, hst, hsort, rfl⟩
+
+
+theorem constantValCheckJ_of_run {μ : CheckMode} {F : Nat} {env : Env md} {cv cv' : ConstantVal md}
+    (h : Ix.Kernel.checkConstantVal (fueledOps μ F) env cv = .ok cv') :
+    ConstantValCheckJ (runJ μ F) env cv cv' := by
+  obtain ⟨hfind, hres, hpsh, hnd, hlbt, hitf, type, stype, u, hann, htp,
+    htr, hst, hsort, rfl⟩ := Ix.Kernel.checkConstantVal_inv h
+  exact ⟨type, ⟨Option.isNone_iff_eq_none.mpr hfind, hres, hpsh, hnd, hlbt, hitf,
+    hann, htp, htr, ⟨stype, u, hst, hsort⟩⟩, rfl⟩
 
 end Ix.Kernel.Semantics
