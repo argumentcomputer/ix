@@ -55,7 +55,7 @@ private theorem readRecord_inductive_layout {md : Mode} {cx : Ctx md} {st : Stat
       rcases finishInductiveRead_spec hfinish with rfl | ⟨twins, _, rfl⟩
       · exact ⟨generated, block, nP, [], hlist, hcount⟩
       · exact ⟨generated, block, nP, twins.decls.toList,
-          by simpa only [Array.toList_append, hlist, List.append_assoc, List.singleton_append], hcount⟩
+          by simp only [Array.toList_append, hlist, List.append_assoc, List.singleton_append], hcount⟩
   · exact (hind hinds).elim
 
 /-- An actual record that generates declarations closes that prefix with its inductive
