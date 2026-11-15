@@ -402,7 +402,7 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
         ⟨0, x_key, x_value, _, _, rfl⟩, ext_all⟩
     | Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
-    | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
     | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
@@ -1221,7 +1221,7 @@ theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     cases Obs.«KernelModeled::members_val».obs ev with
     | Nil _ _ he23 _ =>
       rw [he23]
-      exact ⟨fun _ hm => nomatch hm, Heap.Extends.refl h⟩
+      exact ⟨(fun _ hm => nomatch hm), Heap.Extends.refl h⟩
     | Cons _ _ _ _ _ _ _ _ ld12 _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hmem_rep ld12
       cases he
@@ -1299,6 +1299,16 @@ def RawRecEntry.prov_p (e : RawRecEntry) : ConstantInfo .anon :=
 def RawRecEntry.toCI (e : RawRecEntry) : ConstantInfo .anon :=
   .recInfo e.cv e.mI e.rP e.rawRules
 
+private theorem mem_tail_step {α : Type _} {a b : List α} {c x : α} (h : x ∈ b) :
+    x ∈ a ++ (c :: b) :=
+  List.mem_append_right a (List.mem_cons_of_mem c h)
+
+private theorem mem_head_step {α : Type _} {a b : List α} {x : α} (h : x ∈ a) :
+    x ∈ a ++ b :=
+  List.mem_append_left b h
+
+set_option maxRecDepth 4096 in
+set_option maxHeartbeats 1600000 in
 /-- **`KernelModeled::check_recs`** refines a list of `RawRecEntry`s into a matching list of
 `RecInstallEntry`s carrying `RawIotaRulesVmRun` and telescope/pin decompositions. -/
 theorem check_recs_spec
@@ -1374,22 +1384,25 @@ theorem check_recs_spec
           RawIotaRulesVmRun c_pub c_rhs c_adv blockNames f_id advSet
             w.cv.name w.cv.levelParams w.cv.type w.mI w.rP w.lvls_lps w.pins_lps 0 w.rawRules) ∧
         L1.Stream h' bytes_out s_out ∧
-        Heap.Extends h h'
-  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, _, bytes_in, h, h', _,
-      _, _, _, _, hrecs_rep, _, _, _, hstr, _, ev => by
+        Heap.Extends h h' := by
+  intro raws
+  induction raws with
+  | nil =>
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ bytes_in h h' _
+      _ _ _ _ hrecs_rep _ _ _ hstr _ ev
     cases Obs.«KernelModeled::check_recs».obs ev with
     | Nil _ he21 he22 _ =>
       rw [he21, he22]
-      exact ⟨[], bytes_in, rfl, rfl, rfl, .nil, fun _ hm => nomatch hm, hstr, Heap.Extends.refl h⟩
+      exact ⟨[], bytes_in, rfl, rfl, rfl, .nil, (fun _ hm => nomatch hm), hstr, Heap.Extends.refl h⟩
     | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
         _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
         _ _ _ _ _ _ _ _ _ _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       cases he
-  | e₀ :: rawRest,
-      x_rc, x_type_addrs, x_recs, x_models, x_src, x_dst, x_aset, x_s, x_n_recs, x_k, x_np,
-      x_univ_offset, x_bnl, s_out, bytes_in, h, h', calls,
-      hg_pub, hg_rhs, hg_adv, hrc, hrecs_rep, hmd_rep, haset, hren, hstr, hraw_info, ev => by
+  | cons e₀ rawRest ih =>
+    intro x_rc x_type_addrs x_recs x_models x_src x_dst x_aset x_s x_n_recs x_k x_np
+      x_univ_offset x_bnl s_out bytes_in h h' calls
+      hg_pub hg_rhs hg_adv hrc hrecs_rep hmd_rep haset hren hstr hraw_info ev
     cases Obs.«KernelModeled::check_recs».obs ev with
     | Nil ld12 _ _ _ =>
       cases Lib.rep_nil_of_load hrecs_rep ld12
@@ -1400,14 +1413,21 @@ theorem check_recs_spec
         v731 m732 cs742 v749 x790 cs854 v866
         ld12 ld51 ev82 ld76 _ _ _ _ ev298 _ ev359 _ ev345 _ _ _ _ _ _ ev403 ev485
         ev523 hm587 ev560 ev604 ev701 _ ev658 op805 op797 ev744 _ ev856 hc969 =>
-      subst hc969
+      have hsub80 : ∀ x ∈ cs80, x ∈ calls := fun x hx => by
+        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+      have hsub558 : ∀ x ∈ cs558, x ∈ calls := fun x hx => by
+        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+      have hsub742 : ∀ x ∈ cs742, x ∈ calls := fun x hx => by
+        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+      have hsub854 : ∀ x ∈ cs854, x ∈ calls := fun x hx => by
+        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
       obtain ⟨a_r', rRest, hr_eq, hr_head, hr_tail⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       obtain ⟨a_rm', rmRest, hrm_eq, hrm_head, hrm_tail⟩ := Lib.rep_cons_of_load hmd_rep ld51
       injection hr_eq with h1 h2; subst h1
       injection hrm_eq with h3 h4; subst h3
       obtain ⟨hrm_key0, hnp_ty0, hrule_ctor0, hci0⟩ := hraw_info e₀ List.mem_cons_self
       have hptr0 : CIPtrRepExact c_pub.κ m67 p74 e₀.toCI :=
-        hci0 (Heap.Extends.refl h) (fun x hx => by simp [hx]) hr_head ev82
+        hci0 (Heap.Extends.refl h) hsub80 hr_head ev82
       obtain ⟨v_rec, hld_rec, hci_rec⟩ := hptr0
       rw [ld76] at hld_rec; injection hld_rec with hv_rec
       generalize hci_rec_eq : e₀.toCI = ci_rec_g at hci_rec
@@ -1422,10 +1442,10 @@ theorem check_recs_spec
         injection hrec_4 with h5_r hrec_5
         injection hrec_5 with h6_r hrec_6
         injection hrec_6 with h7_r _
-        subst nl_r ty_r np_r ni_r nm_r nmi_r rules_r
+        subst h1_r h2_r h3_r h4_r h5_r h6_r h7_r
         dsimp only [RawRecEntry.toCI] at hci_rec_eq
         injection hci_rec_eq with hcv_g hmI_g hrP_g hrls_g
-        subst cv_g mI_g rP_g rls_g
+        subst hcv_g hmI_g hrP_g hrls_g
         obtain ⟨hnl0, hlps_lt0, hperm0, hty_rep0⟩ := hval0
         obtain ⟨hrp_le0, hmi_lt0⟩ := hcounts0
         have e82 := ObsFn.heap_extends ev82
@@ -1444,13 +1464,13 @@ theorem check_recs_spec
           hm587 ▸ typesRep_alloc_nil c_pub.κ zg m511
         obtain ⟨stype0, _, _, hinf_ty0, _, _, _⟩ :=
           core_ensure_sort hCore (hrc.mono e_h_579) htypes579 (ghostScoped_zero zg)
-            hef_pub hlf_pub (hg_pub.sub fun x hx => by simp [hx]) ev560
+            hef_pub hlf_pub (hg_pub.sub hsub558) ev560
             ((hty_rep0 0 zg).toTm.mono (e_67_511.trans e_511_579))
         have hty_nfv0 : (posOf e₀.cv.levelParams e₀.cv.type).hasFvar = false :=
           Tm.hasFvar_false (hty_rep0 0 zg).toTm
         have hty_cr_pos0 :
             (posOf e₀.cv.levelParams e₀.cv.type).constsResolve c_pub.env = true :=
-          infer_constsResolve hinf_ty0 hef_pub.closed hty_nfv0
+          infer_constsResolve hinf_ty0 hef_pub.store hty_nfv0
         have hty_cr0 : e₀.cv.type.constsResolve c_pub.env = true := by
           rwa [constsResolve_posOf] at hty_cr_pos0
         have e560 := ObsFn.heap_extends ev560
@@ -1485,9 +1505,9 @@ theorem check_recs_spec
             ht_rhs hlim_rhs ht_eq hlim_eq
             hef_pub hlf_pub hexact_pub hef_rhs hlf_rhs hef_adv hlf_adv hexact_adv
             hf_out hproj_rhs
-            (hg_pub.sub fun x hx => by simp [hx])
-            (hg_rhs.sub fun x hx => by simp [hx])
-            (hg_adv.sub fun x hx => by simp [hx])
+            (hg_pub.sub hsub742)
+            (hg_rhs.sub hsub742)
+            (hg_adv.sub hsub742)
             hlps_lt0 hperm0 hrp_le0 hmi_lt0
             ⟨stype0, hinf_ty0⟩ hnp_ty0 hnp_ctor hrule_ctor0
             (hrc.mono e_h_646)
@@ -1510,12 +1530,15 @@ theorem check_recs_spec
               RawIotaRulesVmRun c_pub c_rhs c_adv blockNames f_id advSet
                 e₀.cv.name e₀.cv.levelParams e₀.cv.type e₀.mI e₀.rP lvls0 pins0 j rls →
               ∀ r ∈ rls, r.rhs.constsResolve c_rhs.env = true ∧
-                ∃ t', posRulesJ.infer c_rhs.env 0 r.rhs t'
-            | _, [], _, _, hr => nomatch hr
-            | j, r₀ :: rt, ⟨⟨hcert⟩, hrt⟩, r, hr => by
+                ∃ t', posRulesJ.infer c_rhs.env 0 r.rhs t' := by
+            intro j rls hrun r hr
+            induction rls generalizing j with
+            | nil => cases hr
+            | cons r₀ rt ih_rls =>
+              obtain ⟨⟨hcert⟩, hrt⟩ := hrun
               rcases List.mem_cons.mp hr with rfl | htl
               · exact ⟨hcert.hrhs_cr, hcert.hrhs_typed⟩
-              · exact hwalk (j + 1) rt hrt r htl
+              · exact ih_rls (j + 1) hrt htl
           intro r hr
           obtain ⟨hcr, hinf⟩ := hwalk 0 e₀.rawRules hraw_rules0 r hr
           exact ⟨hrls_nolet0 r hr, hcr, hinf⟩
@@ -1549,13 +1572,10 @@ theorem check_recs_spec
           exact RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) e_h_732 hrm_tail
         obtain ⟨recsRest, bytes_out, hcv_map, hpr_map, hpp_map, hf2_rest,
             hw_rest, hstr_out, ext_rest⟩ :=
-          check_recs_spec hCore hroles hcallees
-            ht_rhs hlim_rhs ht_eq hlim_eq
-            hef_pub hlf_pub hexact_pub hef_rhs hlf_rhs hef_adv hlf_adv hexact_adv
-            hf_out hproj_rhs hnp_ctor rawRest
-            (hg_pub.sub fun x hx => by simp [hx])
-            (hg_rhs.sub fun x hx => by simp [hx])
-            (hg_adv.sub fun x hx => by simp [hx])
+          ih
+            (hg_pub.sub hsub854)
+            (hg_rhs.sub hsub854)
+            (hg_adv.sub hsub854)
             (hrc.mono e_h_732) hr_tail' hrm_tail'
             (addrSet_mono e_h_732 haset)
             hren732 hstr_mid
@@ -1563,12 +1583,12 @@ theorem check_recs_spec
               obtain ⟨hk_e, hnp_e, hrc_e, hci_e⟩ :=
                 hraw_info e (List.mem_cons_of_mem e₀ he)
               exact ⟨hk_e, hnp_e, hrc_e, fun ext1 hsub1 hrep1 ev1 =>
-                hci_e (e_h_732.trans ext1) (fun x hx => by simp [hsub1 x hx]) hrep1 ev1⟩)
+                hci_e (e_h_732.trans ext1) (fun x hx => hsub854 x (hsub1 x hx)) hrep1 ev1⟩)
             ev856
         refine ⟨w₀ :: recsRest, bytes_out,
-          by simp [w₀, hcv_map],
-          by simp [w₀, RecInstallEntry.prov_r, RawRecEntry.prov_r, hpr_map],
-          by simp [w₀, RecInstallEntry.prov_p, RawRecEntry.prov_p, hpp_map],
+          congrArg (e₀.cv :: ·) hcv_map,
+          congrArg (e₀.prov_r :: ·) hpr_map,
+          congrArg (e₀.prov_p :: ·) hpp_map,
           .cons ⟨rfl, rfl, rfl, rfl⟩ hf2_rest,
           ?_, hstr_out, e_h_732.trans ext_rest⟩
         intro w hw
@@ -1918,14 +1938,6 @@ private theorem find?_pushList_of_ne :
       (fun c' hc' => hne c' (List.mem_cons_of_mem c hc'))]
     exact EnvExt.find?_cons_ne (hne c List.mem_cons_self)
 
-private theorem mem_tail_step {α : Type _} {a b : List α} {c x : α} (h : x ∈ b) :
-    x ∈ a ++ (c :: b) :=
-  List.mem_append_right a (List.mem_cons_of_mem c h)
-
-private theorem mem_head_step {α : Type _} {a b : List α} {x : α} (h : x ∈ a) :
-    x ∈ a ++ b :=
-  List.mem_append_left b h
-
 private theorem declStoreInv_push_pos_nonrecs :
     ∀ (nonrecs : List (ConstantInfo .anon)) {E_r E_p : Env .anon}
       {E_adv : Env .anon} {f_id : KKey → KKey},
@@ -2261,6 +2273,24 @@ structure ModeledFamilyBridge (calls : List (Call F)) (env : Env .anon)
             ⟨E, pushList (rawSpecs.map RawRecSpec.prov_p) (pushList (nonrecs.map posCI) env),
              t, lim⟩ calls)
 
+private theorem forall₂_mem_right {α β : Type _} {R : α → β → Prop} :
+    ∀ {xs : List α} {ys : List β}, List.Forall₂ R xs ys → ∀ y ∈ ys, ∃ x ∈ xs, R x y
+  | _, _, .nil, _, hy => nomatch hy
+  | a :: _, _ :: _, .cons hhd htl, _, hy => by
+    rcases List.mem_cons.mp hy with rfl | hm
+    · exact ⟨a, List.mem_cons_self, hhd⟩
+    · obtain ⟨x, hx, hr⟩ := forall₂_mem_right htl _ hm
+      exact ⟨x, List.mem_cons_of_mem a hx, hr⟩
+
+private theorem forall₂_mem_left {α β : Type _} {R : α → β → Prop} :
+    ∀ {xs : List α} {ys : List β}, List.Forall₂ R xs ys → ∀ x ∈ xs, ∃ y ∈ ys, R x y
+  | _, _, .nil, _, hx => nomatch hx
+  | _ :: _, b :: _, .cons hhd htl, _, hx => by
+    rcases List.mem_cons.mp hx with rfl | hm
+    · exact ⟨b, List.mem_cons_self, hhd⟩
+    · obtain ⟨y, hy, hr⟩ := forall₂_mem_left htl _ hm
+      exact ⟨y, List.mem_cons_of_mem b hy, hr⟩
+
 set_option maxHeartbeats 6400000 in
 /-- **End-to-end `KernelModeled::check_modeled_block` / `check_family` refinement**: constructs
 `Nonempty (ModeledBlockWitness.{u} env block₀ nP)` from an observed `check_modeled_block` run and
@@ -2588,13 +2618,16 @@ theorem modeledBlockWitness_of_check_family
         (fun i hi => by
           have hi_s : i < rawSpecs.length := by simpa [recAs] using hi
           have hs_mem : rawSpecs[i] ∈ rawSpecs := List.getElem_mem hi_s
-          refine ⟨by rw [hκ_adv]; simpa [RawRecSpec.toCI] using hf_spec i hi_s,
-            by simpa [RawRecSpec.toCI] using (hspec_info _ hs_mem).2.2.1,
+          refine ⟨by rw [hκ_adv, List.getElem_map]; exact hf_spec i hi_s,
+            by rw [List.getElem_map]; exact (hspec_info _ hs_mem).2.2.1,
             fun ext1 hsub1 hrep1 ev1 => ?_⟩
-          rw [hκ_adv]
-          simpa using (hspec_idx i hi_s).2
+          rw [hκ_adv, List.getElem_map]
+          have hrep1' : Bytes.RepAddressRef addrTy _ rawSpecs[i].a_rec _ := by
+            dsimp only [recAs] at hrep1
+            rwa [List.getElem_map] at hrep1
+          exact (hspec_idx i hi_s).2
             (ext_840_978.trans (ext_1029.trans (ext_1083.trans ext1)))
-            (fun x hx => hsub1147 x (hsub1 x hx)) hrep1 ev1)
+            (fun x hx => hsub1147 x (hsub1 x hx)) hrep1' ev1)
         (addrSet_mono (ext_1029.trans ext_1083) haset_978)
         hren_adv_1083 ev1149
     have hmv_nonrec : ∀ c ∈ nonrecs,
@@ -2761,7 +2794,8 @@ theorem modeledBlockWitness_of_check_family
       rw [zipRawSpecs_map_a_rm rawSpecs rmAs hrm_len]
       exact RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_884_1293 hrm_rep_884
     obtain ⟨recs, _, hcv_map, hpr_map, hpp_map, hf2_recs, hw_all, _, _⟩ :=
-      check_recs_spec hCore bridge.rolesSpec bridge.calleesSpec
+      check_recs_spec (c_pub := c_pub) (c_rhs := c_rhs) (c_adv := c_adv)
+        hCore bridge.rolesSpec bridge.calleesSpec
         rfl rfl ht_adv hlim_adv
         hef_pub hlf_pub hex_pub hef_rhs hlf_rhs hef_adv hlf_adv hex_adv
         hf_out hproj_rhs
@@ -2791,13 +2825,13 @@ theorem modeledBlockWitness_of_check_family
       hcv_map.trans (zipRawSpecs_map_cv rawSpecs rmAs hrm_len)
     have hrec_names_eq : recs.map (·.cv.name) = rawSpecs.map (·.cv.name) := by
       have h1 := congrArg (List.map (·.name)) hrec_cvs_eq
-      simpa [List.map_map] using h1
+      simpa [List.map_map, Function.comp_def] using h1
     have hbn_recs_eq : (nonrecs.map (·.name)) ++ (recs.map (·.cv.name)) = blockNames := by
       simp only [blockNames, hrec_names_eq]
     have hrec_to_spec : ∀ w ∈ recs, ∃ s ∈ rawSpecs,
         w.cv = s.cv ∧ w.mI = s.mI ∧ w.rP = s.rP ∧ w.rawRules = s.rawRules := by
       intro w hw
-      obtain ⟨e, he_mem, hw_eq⟩ := List.Forall₂.mem_iff_right hf2_recs |>.mp hw
+      obtain ⟨e, he_mem, hw_eq⟩ := forall₂_mem_right hf2_recs w hw
       obtain ⟨i, hi_r, he_eq⟩ := List.mem_iff_getElem.mp he_mem
       have hi_s : i < rawSpecs.length := by
         simpa [rawRecs, zipRawSpecs_length rawSpecs rmAs hrm_len] using hi_r
@@ -2811,7 +2845,7 @@ theorem modeledBlockWitness_of_check_family
       have he_mem : (zipRawSpecs rawSpecs rmAs)[i]'(by
           rw [zipRawSpecs_length rawSpecs rmAs hrm_len]; exact hi_s) ∈ rawRecs :=
         List.getElem_mem _
-      obtain ⟨w, hw_mem, hw_eq⟩ := List.Forall₂.mem_iff_left hf2_recs |>.mp he_mem
+      obtain ⟨w, hw_mem, hw_eq⟩ := forall₂_mem_left hf2_recs _ he_mem
       rw [zipRawSpecs_getElem rawSpecs rmAs hrm_len i hi_s] at hw_eq
       exact ⟨w, hw_mem, hw_eq⟩
     -- Shared helper for `env_iota` bridges (`hchains`, `hfind_pub_M`, `hrecs_rules`)
@@ -2865,8 +2899,8 @@ theorem modeledBlockWitness_of_check_family
             rw [hpos_nr_names c hc]
             have hb : isBaseKey c.name = true := (hnr_info c hc).1
             refine ⟨hAux₀.fresh_projTable hb (hfr_env_nr c hc), ?_⟩
-            rw [hout_iota (projTableName c.name) fun _ _ _ heq => by
-              unfold projTableName auxKey at heq; cases heq]
+            rw [hout_iota (projTableName c.name) fun w _ j =>
+              (ne_projTableName_auxKey_iota (auxKey w.cv.name .model) c.name j).symm]
             exact hAux_adv.fresh_projTable hb (hfr_adv_nr c hc)))
       have hnd_rec : (recs.map (·.cv.name)).Nodup := hrec_names_eq ▸ hnd_sp
       have hfr_M_r : ∀ w ∈ recs, (pushList nonrecs env).find? w.cv.name = none := by
