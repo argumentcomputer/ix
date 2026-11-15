@@ -285,20 +285,20 @@ theorem checkEtaThm (mode : CheckMode) (T ctorName : Key md) (lps : List LevelPa
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (source.find? (auxKey T .model))
         (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read q (source.find? (auxKey T .model))
-        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; rfl)
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta)) q
-        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; rfl)
+        (source.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (target.find? (auxKey ctorName .model)) (source.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
-        (target.find? (auxKey T .model)) q (source.find? eqName) sourceSlots) (by intros; rfl)
+        (target.find? (auxKey T .model)) q (source.find? eqName) sourceSlots) (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = read (target.find? (auxKey (auxKey T .model) .eta)) (target.find? (auxKey T .model))
         (target.find? (auxKey ctorName .model)) (target.find? eqName) sourceSlots :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .eta))
         (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model)) q sourceSlots)
-        (by intros; rfl)
+        (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = _ := congrArg (read (target.find? (auxKey (auxKey T .model) .eta))
       (target.find? (auxKey T .model)) (target.find? (auxKey ctorName .model))
       (target.find? eqName)) slots
@@ -342,13 +342,13 @@ theorem checkUnitThm (mode : CheckMode) (T : Key md) (lps : List LevelParam) (nP
     _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
         (source.find? (auxKey T .model)) (source.find? eqName) :=
       h.observe _ (fun q => read q (source.find? (auxKey T .model)) (source.find? eqName))
-        (by intros; rfl)
+        (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = read (target.find? (auxKey (auxKey T .model) .unitlike))
         (target.find? (auxKey T .model)) (source.find? eqName) :=
       h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike)) q
-        (source.find? eqName)) (by intros; rfl)
+        (source.find? eqName)) (by intros; dsimp only [read]; repeat' first | rfl | split)
     _ = _ := h.observe _ (fun q => read (target.find? (auxKey (auxKey T .model) .unitlike))
-      (target.find? (auxKey T .model)) q) (by intros; rfl)
+      (target.find? (auxKey T .model)) q) (by intros; dsimp only [read]; repeat' first | rfl | split)
 
 theorem indBlockCaps (mode : CheckMode) (cvT cvC : ConstantVal md) (nP nF : Nat) :
     Ix.Kernel.indBlockCaps mode source cvT cvC nP nF =
