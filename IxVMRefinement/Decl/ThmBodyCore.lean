@@ -57,7 +57,6 @@ theorem structEtaProjCerts (r : CoreFns md (CheckM md)) (d : Nat)
   | nil => rfl
   | cons i fields ih =>
     simp only [Ix.Kernel.structEtaProjCerts, _h.iotaCerts r, ih]
-    dsimp only
     have rel := _h (projFnName T i)
     generalize hs : source.find? (projFnName T i) = left at rel ⊢
     generalize ht : target.find? (projFnName T i) = right at rel ⊢
@@ -154,6 +153,7 @@ theorem majorToCtor (mode : CheckMode) (r : CoreFns md (CheckM md)) (d : Nat)
           | some ci =>
             cases ci with
             | ctorInfo cv nP nF =>
+              dsimp only
               cases cv.type.piResult.getAppFn with
               | const T levels =>
                 dsimp only
@@ -219,7 +219,6 @@ theorem projCert (r : CoreFns md (CheckM md)) (d : Nat) (lic : Bool)
     (c : Key md) (levels : List Level) (args : List (Expr md)) :
     Ix.Kernel.projCert r source d lic c levels args = Ix.Kernel.projCert r target d lic c levels args := by
   simp only [Ix.Kernel.projCert, _h.iotaCerts r]
-  dsimp only
   have rel := _h c
   generalize hs : source.find? c = left at rel ⊢
   generalize ht : target.find? c = right at rel ⊢
