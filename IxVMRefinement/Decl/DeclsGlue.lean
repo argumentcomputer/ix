@@ -2463,14 +2463,14 @@ theorem foldInv_step_indNative {env env₂ : Ix.Kernel.Env .anon}
   exact foldInv_step_declRunJ
     (fun blk _ heq _ => by injection heq with hblk _; subst hblk; exact hna) hd
 
-theorem installStep_glue_indNative {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
+/-- Native checking adds fresh constants with exactly the declared names and its derived table. -/
+theorem nativeRunJ_freshChain {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
     {block : List (ConstantInfo .anon)} {nP : Nat} {p₀ : NativeParts .anon}
-    (hpin : Ix.Kernel.basisPinHit block = none)
     (hdp : Ix.Kernel.nativeParts? nP block = some p₀)
-    (hN : DeclNativeRunJ J env p₀ env₂)
-    (hstored : ∀ ci₀ ∈ block,
-      ∃ ci, env₂.find? ci₀.name = some ci ∧ IxVM.Consistency.StoredAs ci ci₀) :
-    IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ := by
+    (hN : DeclNativeRunJ J env p₀ env₂) :
+    ∃ new, FreshChain env new env₂ ∧
+      (∀ c ∈ new, (∃ ci₀ ∈ block, ci₀.name = c.name) ∨ ∃ k t, c.name = .aux k t) ∧
+      (∀ ci₀ ∈ block, ci₀.name ∈ new.map (·.name)) := by
   obtain ⟨caps₀, cs, mI₀, rP₀, rules₀, hblk_eq, hctors₀⟩ := nativeParts?_block_eq hdp
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
     hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
@@ -2514,8 +2514,6 @@ theorem installStep_glue_indNative {J : Judgements .anon} {env env₂ : Ix.Kerne
       ⟨recCI :: (Ix.Kernel.consSumCtors p.nP ctorsA env₁).consts⟩ :=
     freshChain_cons hcCtors (by show _ = none; rw [hrec_name, ← hp_cvR]; exact hfR)
   obtain ⟨new₂, hc₂, htbl_cases⟩ := checkNativeTable_freshChain hcRec hTbl
-  have hinst : IxVM.Consistency.installs (.indDecl block nP) = block := by
-    simp [IxVM.Consistency.installs, hpin]
   have hcore_cov : ∀ c ∈ (recCI :: newCtors ++ [.indInfo cvS (Ix.Kernel.nativeCapsAt p₁ isRec)]),
       ∃ ci₀ ∈ block, ci₀.name = c.name := by
     intro c hc_mem
@@ -2553,23 +2551,36 @@ theorem installStep_glue_indNative {J : Judgements .anon} {env env₂ : Ix.Kerne
       · obtain rfl := List.mem_singleton.mp hrec_mem
         rw [List.map_append, List.map_cons, List.cons_append, hrec_name]
         exact List.mem_cons_self
-  refine installStep_glue_of_freshChain hc₂ ?_ ?_ ?_
+  refine ⟨new₂, hc₂, ?_, ?_⟩
   · intro c hc_mem
     rcases htbl_cases with rfl | ⟨tbl, rfl, htbl_name⟩
     · obtain ⟨ci₀, hci₀, hnm⟩ := hcore_cov c hc_mem
-      exact Or.inl ⟨ci₀, by rw [hinst]; exact hci₀, hnm⟩
+      exact Or.inl ⟨ci₀, hci₀, hnm⟩
     · rcases List.mem_cons.mp hc_mem with rfl | hc_old
       · exact Or.inr ⟨_, _, htbl_name⟩
       · obtain ⟨ci₀, hci₀, hnm⟩ := hcore_cov c hc_old
-        exact Or.inl ⟨ci₀, by rw [hinst]; exact hci₀, hnm⟩
+        exact Or.inl ⟨ci₀, hci₀, hnm⟩
   · intro ci₀ hci₀
-    rw [hinst] at hci₀
     rcases htbl_cases with rfl | ⟨tbl, rfl, -⟩
     · exact hcore_names ci₀ hci₀
     · exact List.mem_cons_of_mem _ (hcore_names ci₀ hci₀)
-  · intro ci₀ hci₀
-    rw [hinst] at hci₀
-    exact hstored ci₀ hci₀
+
+/-- Native storage evidence completes the actual fresh installation produced by the checker. -/
+theorem installStep_glue_indNative {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
+    {block : List (ConstantInfo .anon)} {nP : Nat} {p₀ : NativeParts .anon}
+    (hpin : Ix.Kernel.basisPinHit block = none)
+    (hdp : Ix.Kernel.nativeParts? nP block = some p₀)
+    (hN : DeclNativeRunJ J env p₀ env₂)
+    (hstored : ∀ ci₀ ∈ block,
+      ∃ ci, env₂.find? ci₀.name = some ci ∧ IxVM.Consistency.StoredAs ci ci₀) :
+    IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ := by
+  obtain ⟨new, chain, covered, names⟩ := nativeRunJ_freshChain hdp hN
+  have hinst : IxVM.Consistency.installs (.indDecl block nP) = block := by
+    simp [IxVM.Consistency.installs, hpin]
+  apply installStep_glue_of_freshChain chain
+  · simpa only [hinst] using covered
+  · simpa only [hinst] using names
+  · simpa only [hinst] using hstored
 
 theorem foldInv_step_indNativeNoRec {env env₂ : Ix.Kernel.Env .anon}
     {block : List (ConstantInfo .anon)} {nP : Nat} {p₀ : NativeParts .anon}
