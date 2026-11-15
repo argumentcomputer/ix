@@ -122,7 +122,7 @@ theorem contextOf_twin_is_rec_member {md : Mode} (table : RoleTable) (prelude : 
     buildIndex_twinSources cx.store _ _ _ hget
   cases href
   have hsourceStored := hcoherent owner c' (Ix.Cert.ReaderClosureKeys.mem_indexed_scanned hsource)
-  have hinputStored := Ix.Cert.ReaderClosureKeys.context_input table records
+  have hinputStored := Ix.Cert.ReaderClosureKeys.context_input (md := md) table records
     (prelude.records ++ prelude.evidence) blobs prelude.blobs hint reconstruct hkeys hc
   have heq := Option.some.inj (hinputStored.symm.trans hsourceStored)
   subst c'
