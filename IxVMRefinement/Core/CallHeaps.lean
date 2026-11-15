@@ -33,14 +33,14 @@ private theorem HeapTrace.extend {before middle after : Heap F} {calls : List (C
     HeapTrace before after calls :=
   ⟨h.1.trans hext, fun cl hm => ⟨(h.2 cl hm).1, (h.2 cl hm).2.trans hext⟩⟩
 
-private theorem ObsExpr.heap_trace {world : World F} {types : Types}
-    {locals : Environment F Nat} {expr : Expr F} {before after : Heap F}
+private theorem ObsFn.heap_trace {world : World F} {name : String}
+    {args : List (SourceValue F)} {before after : Heap F}
     {result : SourceValue F} {calls : List (Call F)}
-    (evaluated : ObsExpr world types locals expr before result after calls) :
+    (evaluated : ObsFn world name args before result after calls) :
     HeapTrace before after calls := by
-  induction evaluated using ObsExpr.rec
+  induction evaluated using ObsFn.rec
+    (motive_1 := fun _ _ _ before _ after calls _ => HeapTrace before after calls)
     (motive_2 := fun _ _ _ before _ after calls _ => HeapTrace before after calls)
-    (motive_3 := fun _ _ before _ after calls _ => HeapTrace before after calls)
     (motive_4 := fun _ _ _ before _ _ after calls _ => HeapTrace before after calls)
     (motive_5 := fun _ _ _ before _ _ after calls _ => HeapTrace before after calls) with
   | literal | var | nil => exact HeapTrace.refl _
@@ -115,9 +115,7 @@ theorem ObsFn.call_heap_bounds {world : World F} {name : String}
     {args : List (SourceValue F)} {before after : Heap F} {result : SourceValue F}
     {calls : List (Call F)} (evaluated : ObsFn world name args before result after calls)
     {cl : Call F} (hmem : cl ∈ calls) :
-    Heap.Extends before cl.heap ∧ Heap.Extends cl.heap after := by
-  cases evaluated with
-  | intro _ body => exact body.heap_trace.2 cl hmem
-  | returned _ body => exact (ObsExpr.blockExit body).heap_trace.2 cl hmem
+    Heap.Extends before cl.heap ∧ Heap.Extends cl.heap after :=
+  evaluated.heap_trace.2 cl hmem
 
 end Aiur.Generic.SourceSemantics
