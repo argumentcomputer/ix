@@ -795,9 +795,12 @@ structure TableAdmittedAt (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Bi
     ∀ a ∈ order_role, ∀ c, Ix.Cert.recordAt E_role a = some c →
       ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r, c.refs[i]? = some r →
         E_role.consts.contains r = true
-  noCommittedCollision :
-    ∀ x held img, V.Preimage x held → img ∈ IxVM.Consistency.committedImages →
-      _root_.Address.blake3Pure held = x → _root_.Address.blake3Pure img = x → held = img
+  fallbackRecordsAgree :
+    ∀ a ∈ order_role, ∀ lc, E_role.consts.get? a = some lc →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → lc.rawBytes = Ixon.serConstant c
+  fallbackRecordBlobsAgree :
+    ∀ a bytes, (a, bytes) ∈ Ix.Cert.blobsOf E_role order_role →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → bytes = Ixon.serConstant c
   usedClosureOrder :
     IxVM.Consistency.UsedClosureOrderAt t E_role (IxVM.Refinement.BindingSeeds t) order_role
   boundConsistent :

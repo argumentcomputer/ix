@@ -35,7 +35,7 @@ Bridges the `IxVMRefinement.Assembly` role-aware verification chain to the publi
 
 4. **Custom-Table Companion, Minimal Boundary Isolation, and End-to-End Assembly**:
    * `CustomTableCompanion`: isolates the custom-table properties (`noProjRewrites`,
-     `singleRecBlock`, role collision-freeness against `committedImages` and internal blobs).
+     `singleRecBlock`, and local agreement of selected records and blobs with committed fallback).
    * `StatementBoundaryGap`, `tableAdmittedComplete_of_tableAdmitted`,
      `consistentRead_of_consistentReadRole`, `l7_mkSeams_of_declsStrong`, and
      `consistent_mkSeams_of_declsStrong`: wires `RolePreludeBridge.rolePreludeInputs`,
@@ -490,20 +490,23 @@ theorem tableAdmitted_unpack_normalized
 on the committed default role table):
 1. `noProjRewrites`: direct projections only (`st_role.projRewrites = 0`),
 2. `singleRecBlock`: at most one external recursor block per mutual block in `artifactRecIndex`,
-3. `noCommittedCollision`: no BLAKE3 collision between `V.Preimage` and `committedImages`, and
-4. `noRoleInternalCollision`: no address collision between a role-closure record and blob. -/
-structure CustomTableCompanion (V : IxVM.Refinement.View)
+3. agreement of selected role records and blobs with committed fallback records, and
+4. `noRoleInternalCollision`: agreement of a role-closure record and blob at a shared address. -/
+structure CustomTableCompanion
     (E_role : Ixon.Env) (order_role : List _root_.Address)
-    (st_role : Ix.Kernel.Reader.State .anon) : Prop where
+    (st_role : Ix.Kernel.Reader.State .anon) (pre : Ix.Kernel.Reader.Prelude .anon) : Prop where
   noProjRewrites : st_role.projRewrites = 0
   singleRecBlock :
     ∀ a ∈ order_role, ∀ shape,
       (Ix.Cert.artifactRecIndex E_role).blocks[a]? = some shape →
       ∀ r₁ ∈ shape.recs, ∀ r₂ ∈ shape.recs,
         r₁.block ≠ a → r₂.block ≠ a → r₁.block = r₂.block
-  noCommittedCollision :
-    ∀ x held img, V.Preimage x held → img ∈ IxVM.Consistency.committedImages →
-      _root_.Address.blake3Pure held = x → _root_.Address.blake3Pure img = x → held = img
+  fallbackRecordsAgree :
+    ∀ a ∈ order_role, ∀ lc, E_role.consts.get? a = some lc →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → lc.rawBytes = Ixon.serConstant c
+  fallbackRecordBlobsAgree :
+    ∀ a bytes, (a, bytes) ∈ Ix.Cert.blobsOf E_role order_role →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → bytes = Ixon.serConstant c
   noRoleInternalCollision :
     ∀ x lc d, x ∈ order_role → E_role.consts.get? x = some lc →
       (x, d) ∈ Ix.Cert.blobsOf E_role order_role → d = lc.rawBytes
