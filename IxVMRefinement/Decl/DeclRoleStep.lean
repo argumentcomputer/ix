@@ -27,7 +27,7 @@ theorem constantValRun_rulesJ {fuel : Nat} {env : Env .anon}
   obtain ⟨hfresh, hres, hshape, hnd, hlbb, hnfv, hann, hdef, hresolve, stype, level, hi, hs⟩ := h
   exact ⟨hfresh, hres, hshape, hnd, hlbb, hnfv, Assembly.annotateCore_to_annot hann,
     hdef, hresolve, stype, level, Rules.inferTypeCore_bridge hi,
-    Rules.whnf_bridge (Verify.ensureSortCore_inv hs)⟩
+    Rules.whnf_bridge (Ix.Kernel.ensureSortCore_inv hs)⟩
 
 /-- A checked value front yields its rules-tier front in the same environment. -/
 theorem valueFrontRun_rulesJ {fuel : Nat} {env : Env .anon}
@@ -51,7 +51,7 @@ theorem constantValRun_rulesJ_of_thmSim {fuel : Nat} {reference target : Env .an
   have closed := (annotate_syntax hann hnfv hlbb).1
   exact ⟨by rw [fresh]; rfl, hres, hshape, hnd, hlbb, hnfv,
     Assembly.annotateCore_to_annot hann, hdef, infer_constsResolve inferred store closed,
-    stype, level, inferred, sim.red (Rules.whnf_bridge (Verify.ensureSortCore_inv hs))⟩
+    stype, level, inferred, sim.red (Rules.whnf_bridge (Ix.Kernel.ensureSortCore_inv hs))⟩
 
 /-- Checked value-front transport under the same lookup agreement. -/
 theorem valueFrontRun_rulesJ_of_thmSim {fuel : Nat} {reference target : Env .anon}
