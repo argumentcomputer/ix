@@ -76,6 +76,13 @@ private theorem addrMapAll_mono_pred {en : String}
     exact .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk) (himp hP)
       (ext.loadValue_eq hl) (ext.loadValue_eq hr) ihl ihr
 
+private theorem addrSet_mono {S : Bytes.Address → Prop}
+    {h₁ h₂ : Heap F} {t : SourceValue F}
+    (ext : Heap.Extends h₁ h₂)
+    (ht : AddrMapAll addrMapEnum (fun _ a _ => S a) h₁ t) :
+    AddrMapAll addrMapEnum (fun _ a _ => S a) h₂ t :=
+  addrMapAll_mono_pred (P₂ := fun _ a _ => S a) ext (fun hp => hp) ht
+
 private theorem load_stored_addrMapAll_enum {en : String}
     {P : Heap F → Bytes.Address → SourceValue F → Prop}
     {h₀ h' : Heap F} {t : SourceValue F}
@@ -114,7 +121,7 @@ private theorem addrMapAll_node_inv {en : String}
   | nil =>
     injection hv with _ htag _
     exact absurd htag (by decide)
-  | @node _ c _ _ _ _ lv rv a hk hP hl hr rl rr =>
+  | @node c _ _ _ _ lv rv a hk hP hl hr rl rr =>
     injection hv with _ _ hargs
     injection hargs with h1 h2
     injection h2 with h3 h4
@@ -395,11 +402,11 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
         ⟨0, x_key, x_value, _, _, rfl⟩, ext_all⟩
     | Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
-    | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
     | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
-  | @node h_base c_t kp vp lp rp lv rv a_t hk_t hP_t hl_t hr_t rl_t rr_t ihl ihr =>
+  | @node c_t kp vp lp rp lv rv _ hk_t hP_t hl_t hr_t rl_t rr_t ihl ihr =>
     intro a_key x_key x_value r h h' cs ext0 hk hv ev
     cases Obs.«RBTreeMap::rbtree_map_ins».obs ev with
     | Nil _ _ hv15 _ _ _ _ _ =>
@@ -422,11 +429,11 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       obtain ⟨hv180, _, ext_204⟩ :=
         ihl (ext0.trans ext_115) (Bytes.repAddressRef_heapMono₂ addrTy ext_115 hk) hv ev214
       have ext_h_204 : Heap.Extends h m204 := ext_115.trans ext_204
-      have ext_b_204 : Heap.Extends h_base m204 := ext0.trans ext_h_204
+      have ext_b_204 : Heap.Extends h₀ m204 := ext0.trans ext_h_204
       obtain ⟨hout, hshape, ext_bal⟩ :=
         rbtree_map_balance_addrMapAll
           (Bytes.repAddressRef_heapMono₂ addrTy ext_b_204 hk_t) hP_t
-          hv180 (addrMapAll_mono_pred ext_b_204 (fun hp => hp) rr_t) ev176
+          hv180 (addrMapAll_mono_pred (P₂ := Pm) ext_b_204 (fun hp => hp) rr_t) ev176
       exact ⟨hout, hshape, ext_h_204.trans ext_bal⟩
     | Node_other_n0 x_color x_k x_v w81 w82 y103 y111 _ m115 _ _ m130 _ _ m261 _ m334 m345
         _ hv79 ld104 ld112 ev140 ev127 _ ev272 _ he311 hm342 hm353 he355 _ =>
@@ -448,17 +455,17 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       have ext_345 : Heap.Extends m334 m345 := hm353 ▸ heap_extends_append m334 [rv]
       have ext_all : Heap.Extends h h' := he355 ▸ ext_261.trans (ext_334.trans ext_345)
       have hlv_261 : AddrMapAll en Pm m261 lv :=
-        addrMapAll_mono_pred (ext0.trans ext_261) (fun hp => hp) rl_t
+        addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_261) (fun hp => hp) rl_t
       have hrv_334 : AddrMapAll en Pm m334 rv :=
-        addrMapAll_mono_pred (ext0.trans (ext_261.trans ext_334)) (fun hp => hp) rr_t
+        addrMapAll_mono_pred (P₂ := Pm) (ext0.trans (ext_261.trans ext_334)) (fun hp => hp) rr_t
       have ld_lv : loadValue h' (.ptr (Value.type lv) m261.length) = .ok lv :=
         load_stored_addrMapAll_type hlv_261 (hm342 ▸ he355 ▸ ext_345)
       have ld_rv : loadValue h' (.ptr (Value.type rv) m334.length) = .ok rv :=
         load_stored_addrMapAll_type hrv_334 (hm353 ▸ he355 ▸ Heap.Extends.refl _)
       rw [he311]
       exact ⟨.node (Bytes.repAddressRef_heapMono₂ addrTy ext_all hk) hv ld_lv ld_rv
-        (addrMapAll_mono_pred (ext0.trans ext_all) (fun hp => hp) rl_t)
-        (addrMapAll_mono_pred (ext0.trans ext_all) (fun hp => hp) rr_t),
+        (addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_all) (fun hp => hp) rl_t)
+        (addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_all) (fun hp => hp) rr_t),
         ⟨c_t, x_key, x_value, _, _, rfl⟩, ext_all⟩
     | Node_other_other x_color x_k x_v w81 w82 y103 y111 _ m115 _ _ m130 _ _ _ m261 _ _
         v371 m401 _ _ hv79 ld104 ld112 ev140 ev127 _ ev272 _ _ ev411 ev366 _ =>
@@ -479,11 +486,11 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       obtain ⟨hv371, _, ext_401⟩ :=
         ihr (ext0.trans ext_261) (Bytes.repAddressRef_heapMono₂ addrTy ext_261 hk) hv ev411
       have ext_h_401 : Heap.Extends h m401 := ext_261.trans ext_401
-      have ext_b_401 : Heap.Extends h_base m401 := ext0.trans ext_h_401
+      have ext_b_401 : Heap.Extends h₀ m401 := ext0.trans ext_h_401
       obtain ⟨hout, hshape, ext_bal⟩ :=
         rbtree_map_balance_addrMapAll
           (Bytes.repAddressRef_heapMono₂ addrTy ext_b_401 hk_t) hP_t
-          (addrMapAll_mono_pred ext_b_401 (fun hp => hp) rl_t) hv371 ev366
+          (addrMapAll_mono_pred (P₂ := Pm) ext_b_401 (fun hp => hp) rl_t) hv371 ev366
       exact ⟨hout, hshape, ext_h_401.trans ext_bal⟩
 
 /-- Inserting `(x_key, .field 1)` into an `AddrMapAll addrMapEnum` set extends its membership
@@ -763,11 +770,11 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
     (ev : ObsFn W "KernelCheck::check_const"
       [rc, .construct kciEnum "Induct" [nl, ty, np, ni, nct, .field 0, iblk, iidx], ap]
       h r h' calls) :
-    (∃ (v_sc v_sort : SourceValue F) (m_sc m_sort m_nil : Heap F) (cs_sc cs_sort : List (Call F)),
+    ((∃ (v_sc v_sort : SourceValue F) (m_sc m_sort m_nil : Heap F) (cs_sc cs_sort : List (Call F)),
       ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h v_sc m_sc cs_sc ∧
       Heap.Extends m_sc m_nil ∧
       TypesRep (fun _ => .role .nat) zg m_nil 0
-        (.ptr (.enum kexprListEnum) (m_nil.length - 1)) ∨ True) ∧
+        (.ptr (.enum kexprListEnum) (m_nil.length - 1))) ∨ True) ∧
     ((∃ (m_bm1 m_bm2 : Heap F) (cs_bm : List (Call F)),
         Heap.Extends h m_bm1 ∧
         ObsFn W "KernelModeled::block_is_modeled" [iblk] m_bm1 (.field 0) m_bm2 cs_bm ∧
@@ -947,7 +954,7 @@ theorem check_advice_records_spec {calls : List (Call F)} {blockNames : List KKe
       hS, hAux, hfr, hdefs, _, hef, hlf, hex, hg, hadv_rep, hseen, ev, _ => by
     cases Obs.«KernelModeled::check_advice_records».obs ev with
     | Nil _ he21 he22 _ =>
-      subst he21 he22
+      rw [he21, he22]
       refine ⟨c_cur, rfl, rfl, rfl, ModelExtStep.refl c_cur.env, hS, hAux, hfr,
         hef, hlf, hex, hg, ?_, ?_, Heap.Extends.refl h⟩
       · exact addrMapAll_mono_pred (Heap.Extends.refl h) (fun hp => Or.inl hp) hseen
@@ -985,7 +992,7 @@ theorem check_advice_records_spec {calls : List (Call F)} {blockNames : List KKe
       have hseen1 : AddrMapAll addrMapEnum (fun _ b _ => seenSet b ∨ b = a) m160 v143 :=
         rbtree_map_insert_field_addrMapAll
           (Bytes.repAddressRef_heapMono₂ addrTy ext_90 ha_rep)
-          (addrMapAll_mono_pred ext_90 (fun hp => hp) hseen) ev170
+          (addrSet_mono ext_90 hseen) ev170
       have hdefs1 : ∀ b, seenSet b ∨ b = a → ∃ cvm mval hint,
           c_next.env.find? (c_next.κ (ixAddr b)) = some (.defnInfo cvm mval hint) := by
         intro b hb
@@ -1098,7 +1105,7 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     obtain ⟨v_m, hld_m, hci_m⟩ := hptr_m
     rw [ld72] at hld_m; injection hld_m with hv_m; subst hv_m
     obtain ⟨hval_m, hm50_eq⟩ := ci_lvls_type_spec hci_m ev62
-    subst hm50_eq
+    rw [hm50_eq] at ev117
     obtain ⟨hnl_m, hlps_lt_m, hperm_m, hty_m_rep⟩ := hval_m
     have e78 := ObsFn.heap_extends ev78
     have e_h_65 : Heap.Extends h m65 := e25.trans e78
@@ -1114,9 +1121,13 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
         (hg_adv.sub fun x hx => by simp [hx])
         (Bytes.repAddressRef_heapMono₂ addrTy e_h_65 hmd_rep) hnot_rq
     obtain ⟨v_md, hld_md, hci_md⟩ := hptr_md
-    rw [ld111] at hld_md; injection hld_md with hv_md; subst hv_md
+    rw [ld111] at hld_md; injection hld_md with hv_md
     cases hci_md with
-    | @defn _ _ _ _ _ cvm_f mval_f hint_f hval_md _ =>
+    | @defn nl_d ty_d _ _ _ cvm_f mval_f hint_f hval_md _ =>
+      injection hv_md with _ _ hdef_args
+      injection hdef_args with h1_d h2_d
+      injection h2_d with h3_d _
+      subst h1_d h3_d
       have hlps_md_range : cvm_f.levelParams = List.range cvm_f.levelParams.length :=
         hnr_md rfl
       obtain ⟨hnl_md, hlps_lt_md, _, hty_md_rep⟩ := hval_md
@@ -1127,9 +1138,9 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
           injection h1
         have hv1 : ZMod.val (ci_m.toConstantVal.levelParams.length : F) =
             ci_m.toConstantVal.levelParams.length :=
-          SubstAux.val_natCast (by omega)
+          SubstAux.val_natCast (Nat.lt_trans hlps_lt_m (by decide))
         have hv2 : ZMod.val (cvm_f.levelParams.length : F) = cvm_f.levelParams.length :=
-          SubstAux.val_natCast (by omega)
+          SubstAux.val_natCast (Nat.lt_trans hlps_lt_md (by decide))
         rw [← hv2, ← hfeq, hv1]
       have hlps_f : cvm_f.levelParams = List.range ci_m.toConstantVal.levelParams.length := by
         rw [hlps_md_range, hlen_eq]
@@ -1167,11 +1178,9 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
       exact ⟨hadv_md, hperm_m,
         ⟨cvm_f, mval_f, hint_f, hfind_md, hlps_f, hstruct_eq.symm.trans hren_eq⟩,
         e_h_101.trans (e226.trans e212)⟩
-    | @axio _ _ _ _ _ _ | @opaq _ _ _ _ _ _ _ _ | @thm _ _ _ _ _ _ _
-    | @quot _ _ _ _ _ _ _ | @induct _ _ _ _ _ _ _ _ _ _ _ _
-    | @ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ | @recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-      exfalso
-      cases hci_md <;> contradiction
+    | _ =>
+      injection hv_md with _ htag _
+      exact absurd htag (by decide)
 
 /-- **`KernelModeled::members_val`** lifts `member_val_spec` pairwise across equal-length lists of
 member addresses, model addresses, and member `ConstantInfo`s. -/
@@ -1211,7 +1220,7 @@ theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
   | [], [], [], _, _, _, _, _, _, h, h', calls, _, _, _, hmem_rep, _, _, _, _, ev => by
     cases Obs.«KernelModeled::members_val».obs ev with
     | Nil _ _ he23 _ =>
-      subst he23
+      rw [he23]
       exact ⟨fun _ hm => nomatch hm, Heap.Extends.refl h⟩
     | Cons _ _ _ _ _ _ _ _ ld12 _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hmem_rep ld12
@@ -1254,7 +1263,7 @@ theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
             obtain ⟨hfi, hnpi, hcii⟩ := hidx (i + 1) (Nat.succ_lt_succ hi)
             exact ⟨hfi, hnpi, fun ext1 hsub1 hrep1 ev1 =>
               hcii (ext68.trans ext1) (fun x hx => by simp [hsub1 x hx]) hrep1 ev1⟩)
-          (addrMapAll_mono_pred ext68 (fun hp => hp) haset)
+          (addrSet_mono ext68 haset)
           hren68 ev126
       refine ⟨?_, ext68.trans ext_rest⟩
       intro ci hci
@@ -1370,7 +1379,7 @@ theorem check_recs_spec
       _, _, _, _, hrecs_rep, _, _, _, hstr, _, ev => by
     cases Obs.«KernelModeled::check_recs».obs ev with
     | Nil _ he21 he22 _ =>
-      subst he21 he22
+      rw [he21, he22]
       exact ⟨[], bytes_in, rfl, rfl, rfl, .nil, fun _ hm => nomatch hm, hstr, Heap.Extends.refl h⟩
     | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
         _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -1400,11 +1409,23 @@ theorem check_recs_spec
       have hptr0 : CIPtrRepExact c_pub.κ m67 p74 e₀.toCI :=
         hci0 (Heap.Extends.refl h) (fun x hx => by simp [hx]) hr_head ev82
       obtain ⟨v_rec, hld_rec, hci_rec⟩ := hptr0
-      rw [ld76] at hld_rec; injection hld_rec with hv_rec; subst hv_rec
-      dsimp only [RawRecEntry.toCI] at hci_rec
+      rw [ld76] at hld_rec; injection hld_rec with hv_rec
+      generalize hci_rec_eq : e₀.toCI = ci_rec_g at hci_rec
       cases hci_rec with
-      | @recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ p_f i_f m_f mi_f
+      | @recr nl_r ty_r np_r ni_r nm_r nmi_r rules_r _ _ _ _ cv_g mI_g rP_g rls_g p_f i_f m_f mi_f
           hval0 hnp_f hni_f hnm_f hnmi_f hrP_f hmI_f hcounts0 hrules0 _ _ =>
+        injection hv_rec with _ _ hrec_args
+        injection hrec_args with h1_r hrec_1
+        injection hrec_1 with h2_r hrec_2
+        injection hrec_2 with h3_r hrec_3
+        injection hrec_3 with h4_r hrec_4
+        injection hrec_4 with h5_r hrec_5
+        injection hrec_5 with h6_r hrec_6
+        injection hrec_6 with h7_r _
+        subst nl_r ty_r np_r ni_r nm_r nmi_r rules_r
+        dsimp only [RawRecEntry.toCI] at hci_rec_eq
+        injection hci_rec_eq with hcv_g hmI_g hrP_g hrls_g
+        subst cv_g mI_g rP_g rls_g
         obtain ⟨hnl0, hlps_lt0, hperm0, hty_rep0⟩ := hval0
         obtain ⟨hrp_le0, hmi_lt0⟩ := hcounts0
         have e82 := ObsFn.heap_extends ev82
@@ -1472,7 +1493,7 @@ theorem check_recs_spec
             (hrc.mono e_h_646)
             (Bytes.repAddressRef_heapMono₂ addrTy e_h_646 hrm_head)
             hrm_key0
-            (addrMapAll_mono_pred e_h_646 (fun hp => hp) haset)
+            (addrSet_mono e_h_646 haset)
             hren646
             (hty_rep0.mono e_67_646)
             (hrules0.mono e_67_646)
@@ -1536,7 +1557,7 @@ theorem check_recs_spec
             (hg_rhs.sub fun x hx => by simp [hx])
             (hg_adv.sub fun x hx => by simp [hx])
             (hrc.mono e_h_732) hr_tail' hrm_tail'
-            (addrMapAll_mono_pred e_h_732 (fun hp => hp) haset)
+            (addrSet_mono e_h_732 haset)
             hren732 hstr_mid
             (fun e he => by
               obtain ⟨hk_e, hnp_e, hrc_e, hci_e⟩ :=
@@ -1555,6 +1576,9 @@ theorem check_recs_spec
         · exact ⟨hty_cr0, hrp_le0, hstrip0, hdom_fn0, hdom_len0, hdom_nli0,
             hdom_drop0, hpins0, hrls_facts0, hraw_rules0⟩
         · exact hw_rest w htl
+      | _ =>
+        injection hv_rec with _ htag _
+        exact absurd htag (by decide)
 
 /-! ## Section 4: `ModeledFamilyBridge`, `ModeledBlockWitness` Construction, & `modeledIndDecl_step` -/
 
@@ -1570,6 +1594,7 @@ private theorem storedAs_checked_r {find? : KKey → Option (ConstantInfo .anon)
     refine ⟨hval, hmI, hrP, ?_⟩
     dsimp only [RecInstallEntry.checked_r, RecInstallEntry.rules_r]
     clear hval hmI hrP
+    generalize w.rawRules = rls at hrules ⊢
     induction hrules with
     | nil => exact .nil
     | cons hhd _ ih =>
@@ -1590,7 +1615,7 @@ private theorem envExt_pushList_shared :
   | c :: rest, E₁, E₂, hext, hnd, hfr₁, hfr₂, hnpt, hpt => by
     obtain ⟨hcnin, hnd'⟩ := List.nodup_cons.mp hnd
     have hc_ne_rest : ∀ c' ∈ rest, c.name ≠ c'.name :=
-      fun c' hc' heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
+      fun c' hc' heq => hcnin (List.mem_map.mpr ⟨c', hc', heq.symm⟩)
     have hext₁ : EnvExt ⟨c :: E₁.consts⟩ ⟨c :: E₂.consts⟩ := by
       refine { find := ?_, tables := ?_ }
       · intro k ci hf
@@ -1639,7 +1664,7 @@ private theorem envExt_pushList_fresh_base :
     have hfr' : ∀ c' ∈ rest, (⟨c :: E.consts⟩ : Env .anon).find? c'.name = none := by
       intro c' hc'
       have hne : c.name ≠ c'.name :=
-        fun heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
+        fun heq => hcnin (List.mem_map.mpr ⟨c', hc', heq.symm⟩)
       rw [EnvExt.find?_cons_ne hne]
       exact hfr c' (List.mem_cons_of_mem c hc')
     exact hext₁.trans
@@ -1767,6 +1792,7 @@ private theorem build_nonRecChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.env
     have htf : c.toConstantVal.type.hasFvar = false := by
       have h1 : ((posOf c.toConstantVal.levelParams c.toConstantVal.type).renameConsts f_id).hasFvar =
           false := hty_f ▸ hwf_f.1
+      unfold posOf at h1
       rwa [hasFvar_renameConsts, hasFvar_instantiateLevelParams] at h1
     have htp : c.toConstantVal.type.allLevelParamsDefined c.toConstantVal.levelParams = true := by
       have h1 :
@@ -1783,7 +1809,7 @@ private theorem build_nonRecChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.env
       rwa [looseBVarsBounded_renameConsts, Expr.looseBVarsBounded_instantiateLevelParams] at h1
     have htr : c.toConstantVal.type.constsResolve E_r = true := hcr [] rest c rfl
     have hc_ne_rest : ∀ c' ∈ rest, c.name ≠ c'.name :=
-      fun c' hc' heq => hcnin (by rw [heq]; exact List.mem_map_of_mem hc')
+      fun c' hc' heq => hcnin (List.mem_map.mpr ⟨c', hc', heq.symm⟩)
     refine ⟨hfr_r c List.mem_cons_self, hfr_p c List.mem_cons_self,
       hbase, hnres, hperm, hknd, htf, htp, htr, htb,
       ⟨cvm_f, mval_f, hint_f, hf_p, hlps_f, by rw [hpos_ty_eq]; exact hty_f⟩, ?_⟩
@@ -1835,6 +1861,7 @@ private theorem build_recProvChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.en
     have htf : w.cv.type.hasFvar = false := by
       have h1 : ((posOf w.cv.levelParams w.cv.type).renameConsts f_id).hasFvar = false :=
         hty_f ▸ hwf_f.1
+      unfold posOf at h1
       rwa [hasFvar_renameConsts, hasFvar_instantiateLevelParams] at h1
     have htp : w.cv.type.allLevelParamsDefined w.cv.levelParams = true := by
       have h1 :
@@ -1850,7 +1877,7 @@ private theorem build_recProvChain {c_adv : Ctx} (hS_adv : DeclStoreInv c_adv.en
       unfold posOf at h1
       rwa [looseBVarsBounded_renameConsts, Expr.looseBVarsBounded_instantiateLevelParams] at h1
     have hw_ne_rest : ∀ w' ∈ rest, w.cv.name ≠ w'.cv.name :=
-      fun w' hw' heq => hwnin (by rw [heq]; exact List.mem_map_of_mem hw')
+      fun w' hw' heq => hwnin (List.mem_map.mpr ⟨w', hw', heq.symm⟩)
     refine ⟨hfr_r w List.mem_cons_self, hfr_p w List.mem_cons_self,
       hbase, hnres, hperm, htf, htp, htr, htb,
       ⟨cvm_f, mval_f, hint_f, hf_p, hlps_f, hty_f⟩, ?_⟩
@@ -1950,10 +1977,7 @@ private theorem declStoreInv_push_pos_nonrecs :
     have hfr_rest : ∀ c' ∈ rest, (⟨posCI c :: E_p.consts⟩ : Env .anon).find? c'.name = none := by
       intro c' hc'
       have hne : (posCI c).name ≠ c'.name :=
-        fun heq => hcnin (by
-          have hc_eq : c.name = c'.name := hname_p.symm.trans heq
-          rw [hc_eq]
-          exact List.mem_map_of_mem hc')
+        fun heq => hcnin (List.mem_map.mpr ⟨c', hc', heq.symm.trans hname_p⟩)
       rw [EnvExt.find?_cons_ne hne]
       exact hfr_p c' (List.mem_cons_of_mem c hc')
     exact declStoreInv_push_pos_nonrecs rest hnd' hSp₁ hsome₁ hfr_rest hrest
@@ -2071,10 +2095,7 @@ private theorem declStoreInv_push_pos_specs_prov :
     have hfr_rest : ∀ s' ∈ rest, (⟨s.prov_p :: E_p.consts⟩ : Env .anon).find? s'.cv.name = none := by
       intro s' hs'
       have hne : s.prov_p.name ≠ s'.cv.name :=
-        fun heq => hsnin (by
-          change s.cv.name = s'.cv.name at heq
-          rw [heq]
-          exact List.mem_map_of_mem hs')
+        fun heq => hsnin (List.mem_map.mpr ⟨s', hs', heq.symm⟩)
       rw [EnvExt.find?_cons_ne hne]
       exact hfr s' (List.mem_cons_of_mem s hs')
     refine declStoreInv_push_pos_specs_prov rest hnd' hSp₁ hfr_rest ?_
@@ -2152,7 +2173,9 @@ structure ModeledFamilyBridge (calls : List (Call F)) (env : Env .anon)
         m1234 v1292 m1293 cs1303 →
       ∃ (indAs ctorAs : List Bytes.Address)
         (inds ctors : List (ConstantInfo .anon))
-        (rawSpecs : List RawRecSpec),
+        (rawSpecs : List RawRecSpec)
+        (_hind_len : indAs.length = inds.length)
+        (_hctor_len : ctorAs.length = ctors.length),
         let nonrecs := inds ++ ctors
         let blockNames := (nonrecs.map (·.name)) ++ (rawSpecs.map (·.cv.name))
         v588 = .field (indAs.length : F) ∧
@@ -2162,8 +2185,6 @@ structure ModeledFamilyBridge (calls : List (Call F)) (env : Env .anon)
         RepList addrListEnum (Bytes.RepAddressRef addrTy) m674 indAs v673 ∧
         RepList addrListEnum (Bytes.RepAddressRef addrTy) m747 ctorAs v746 ∧
         RepList addrListEnum (Bytes.RepAddressRef addrTy) m840 (rawSpecs.map (·.a_rec)) v839 ∧
-        indAs.length = inds.length ∧
-        ctorAs.length = ctors.length ∧
         blockNames.Nodup ∧
         (∀ c ∈ nonrecs,
           isBaseKey c.name = true ∧
@@ -2289,10 +2310,10 @@ theorem modeledBlockWitness_of_check_family
     have hsub1341 : ∀ x ∈ cs1341, x ∈ calls := fun x hx => hsub_fam x (by
       rw [hc1466]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step)
     -- 1. Extract family member lists and L1/L7 invariants
-    obtain ⟨indAs, ctorAs, inds, ctors, rawSpecs,
+    obtain ⟨indAs, ctorAs, inds, ctors, rawSpecs, hind_len, hctor_len,
         hv588_eq, hind_lt, hctor_lt, hspec_lt,
         hind_rep_674, hctor_rep_747, hrec_rep_840,
-        hind_len, hctor_len, hbn_nd,
+        hbn_nd,
         hnr_info, hspec_info, hcov_raw,
         hind_idx, hctor_idx, hspec_idx,
         hcr_nr, hc_wf, hspec_canonical, hctx_pub_fn, hctx_rhs_fn⟩ :=
@@ -2344,7 +2365,7 @@ theorem modeledBlockWitness_of_check_family
         hadv_rep_423 .nil ev465 hsub463
     have haset_453 : AddrMapAll addrMapEnum (fun _ b _ => b ∈ advAs) m453 v452 :=
       addrMapAll_mono_pred (Heap.Extends.refl m453) (fun hp => hp.elim False.elim id) haset_raw
-    have hκ_adv : c_adv.κ = keyOf t := by simp [Ctx.κ, ht_adv]
+    have hκ_adv : c_adv.κ = keyOf t := by simp [Ctx.κ, ht_adv, c₀]
     have htwf_adv : c_adv.t.wf = true := ht_adv ▸ htwf
     -- 4. Deserialized model address lists (`ev716`, `ev817`, `ev796`, `ev874`, `ev896`)
     have ext_453_674 : Heap.Extends m453 m674 :=
@@ -2358,7 +2379,7 @@ theorem modeledBlockWitness_of_check_family
       get_addrs_spec hs5_674 ev716
     have htm_len : tmAs.length = indAs.length := by
       have hf : n_tm_f = (indAs.length : F) := Value.field.inj (hv588_f.symm.trans hv588_eq)
-      rw [htm_len0, hf, SubstAux.val_natCast hind_lt]
+      rw [htm_len0, hf, SubstAux.val_natCast (Nat.lt_trans hind_lt (by decide))]
     have ext_747 := ObsFn.heap_extends ev759
     obtain ⟨hv798_eq, hm807_eq⟩ := addrList_length_spec hctor_rep_747 ev817
     have ext_807 : Heap.Extends m747 m807 := hm807_eq ▸ Heap.Extends.refl m747
@@ -2366,7 +2387,7 @@ theorem modeledBlockWitness_of_check_family
       get_addrs_spec (hs6.mono (ext_747.trans ext_807)) ev796
     have hcm_len : cmAs.length = ctorAs.length := by
       have hf : n_cm_f = (ctorAs.length : F) := Value.field.inj (hv798_f.symm.trans hv798_eq)
-      rw [hcm_len0, hf, SubstAux.val_natCast hctor_lt]
+      rw [hcm_len0, hf, SubstAux.val_natCast (Nat.lt_trans hctor_lt (by decide))]
     have ext_840 := ObsFn.heap_extends ev852
     obtain ⟨hv861_eq, hm862_eq⟩ := addrList_length_spec hrec_rep_840 ev874
     have ext_862 : Heap.Extends m840 m862 := hm862_eq ▸ Heap.Extends.refl m840
@@ -2375,7 +2396,7 @@ theorem modeledBlockWitness_of_check_family
     have hrm_len : rmAs.length = rawSpecs.length := by
       have hf : n_rm_f = ((rawSpecs.map (·.a_rec)).length : F) :=
         Value.field.inj (hv861_f.symm.trans hv861_eq)
-      rw [hrm_len0, hf, List.length_map, SubstAux.val_natCast hspec_lt]
+      rw [hrm_len0, hf, List.length_map, SubstAux.val_natCast (Nat.lt_trans hspec_lt (by decide))]
     -- 5. Build `RenameMap` (`ev960`, `ev939`, `ev1011`, `ev990`)
     have ext_840_884 : Heap.Extends m840 m884 := ext_862.trans ext_884
     have ext_784_884 : Heap.Extends m784 m884 := ext_840.trans ext_840_884
@@ -2511,7 +2532,7 @@ theorem modeledBlockWitness_of_check_family
     have ext_453_978 : Heap.Extends m453 m978 :=
       ext_453_674.trans (ext_674_884.trans ext_884_978)
     have haset_978 : AddrMapAll addrMapEnum (fun _ b _ => b ∈ advAs) m978 v452 :=
-      addrMapAll_mono_pred ext_453_978 (fun hp => hp) haset_453
+      addrSet_mono ext_453_978 haset_453
     have hren_adv_978 : RenameMap c_adv.κ c_adv.κ f_id m978 v926 v977 := hκ_adv.symm ▸ hren_978
     obtain ⟨hmv_inds, ext_1029⟩ :=
       members_val_spec bridge.rolesSpec htwf_adv hex_adv hf_out indAs tmAs inds
@@ -2549,7 +2570,7 @@ theorem modeledBlockWitness_of_check_family
           rw [hκ_adv]
           exact (hctor_idx i hi).2 (ext_840_978.trans (ext_1029.trans ext1))
             (fun x hx => hsub1093 x (hsub1 x hx)) hrep1 ev1)
-        (addrMapAll_mono_pred ext_1029 (fun hp => hp) haset_978)
+        (addrSet_mono ext_1029 haset_978)
         hren_adv_1029 ev1095
     have hren_adv_1083 : RenameMap c_adv.κ c_adv.κ f_id m1083 v926 v977 := by
       obtain ⟨sAs, dAs, hs, hd, hl, hm⟩ := hren_adv_1029
@@ -2574,7 +2595,7 @@ theorem modeledBlockWitness_of_check_family
           simpa using (hspec_idx i hi_s).2
             (ext_840_978.trans (ext_1029.trans (ext_1083.trans ext1)))
             (fun x hx => hsub1147 x (hsub1 x hx)) hrep1 ev1)
-        (addrMapAll_mono_pred (ext_1029.trans ext_1083) (fun hp => hp) haset_978)
+        (addrSet_mono (ext_1029.trans ext_1083) haset_978)
         hren_adv_1083 ev1149
     have hmv_nonrec : ∀ c ∈ nonrecs,
         c.toConstantVal.levelParams.Perm (List.range c.toConstantVal.levelParams.length) ∧
@@ -2749,7 +2770,7 @@ theorem modeledBlockWitness_of_check_family
         (hg_pub.sub hsub1341) (hg_rhs.sub hsub1341) (hg_adv.sub hsub1341)
         (hrc_mb.mono ext_mb_1293)
         hraws_rec_rep hraws_rm_rep
-        (addrMapAll_mono_pred ext_978_1293 (fun hp => hp) haset_978)
+        (addrSet_mono ext_978_1293 haset_978)
         hren_1293
         (hs8.mono ext_884_1293)
         (fun e he => by
