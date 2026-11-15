@@ -780,19 +780,25 @@ theorem streamContext_authenticExactStore (hRP : RolePreludeInputs)
       hRP.serConstant_mem_committedImages hpre hmem_fb
     exact ⟨Ixon.serConstant c, hbl, Ixon.Verify.deConstantExact_serConstant c hwf⟩
 
-private theorem blobFold_get_of_mem :
-    ∀ (xs : List (_root_.Address × ByteArray)) (m : Std.HashMap _root_.Address ByteArray)
-      {a : _root_.Address} {bs : ByteArray},
+private theorem blobFold_get_of_mem {a : _root_.Address} {bs : ByteArray} :
+    ∀ (xs : List (_root_.Address × ByteArray)) (m : Std.HashMap _root_.Address ByteArray),
       (xs.map Prod.fst).Nodup →
       (a, bs) ∈ xs →
       m.contains a = false →
-      (xs.foldl (fun acc (k, v) => if acc.contains k then acc else acc.insert k v) m)[a]? = some bs
-  | [], _, _, hm, _ => nomatch hm
-  | (k, v) :: tl, m, hnd, hm, hnc => by
+      (xs.foldl (fun acc (k, v) => if acc.contains k then acc else acc.insert k v) m)[a]? = some bs := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro _ _ hm _
+    nomatch hm
+  | cons hd tl ih =>
+    rcases hd with ⟨k, v⟩
+    intro m hnd hm hnc
     rw [List.map_cons, List.nodup_cons] at hnd
     simp only [List.foldl_cons]
     rcases List.mem_cons.mp hm with hhd | htl
-    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj hhd
+    · obtain ⟨hk_eq, hv_eq⟩ := Prod.mk.inj hhd
+      subst k; subst v
       simp only [hnc, Bool.false_eq_true, ↓reduceIte]
       have hpres : ∀ (ys : List (_root_.Address × ByteArray))
           (acc : Std.HashMap _root_.Address ByteArray),
@@ -811,18 +817,18 @@ private theorem blobFold_get_of_mem :
           · rename_i hnk'
             apply ihy
             have hne : k' ≠ a := by
-              intro heq; subst heq
+              intro heq; subst k'
               rw [Std.HashMap.contains_eq_isSome_getElem?, hacc] at hnk'
               exact hnk' rfl
             rw [Std.HashMap.getElem?_insert]
             simp [hne, hacc]
       exact hpres tl (m.insert a bs) (by simp)
     · have hne : k ≠ a := fun heq => by
-        subst heq
-        exact hnd.1 (List.mem_map.mpr ⟨(k, bs), htl, rfl⟩)
+        subst k
+        exact hnd.1 (List.mem_map.mpr ⟨(a, bs), htl, rfl⟩)
       split
-      · exact blobFold_get_of_mem tl m hnd.2 htl hnc
-      · apply blobFold_get_of_mem tl (m.insert k v) hnd.2 htl
+      · exact ih m hnd.2 htl hnc
+      · apply ih (m.insert k v) hnd.2 htl
         rw [Std.HashMap.contains_insert]
         simp [hne, hnc]
 
@@ -1122,6 +1128,29 @@ theorem memberReader_read_congr_of_rawConvExpr
       rw [L1.buildShareTbl_take_getElem? ecx₂ src.sharing.toList hi_n hsh2]
       exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _)) h1
   exact hgo raw (Nat.le_refl _) (Or.inr rfl) hrd₁
+
+private theorem ctx_with_blob_keyAt (cx : Ix.Kernel.Reader.Ctx .anon)
+    (b' : _root_.Address → Option ByteArray) (a : _root_.Address) :
+    ({ cx with blob := b' } : Ix.Kernel.Reader.Ctx .anon).keyAt a = cx.keyAt a := by
+  cases cx
+  rfl
+
+private theorem memberReader_read_with_blob
+    (cx : Ix.Kernel.Reader.Ctx .anon) (b' : _root_.Address → Option ByteArray)
+    {src : Ixon.Constant} {param : Nat → Ix.Kernel.LevelParam}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {blobs : List (_root_.Address × ByteArray)}
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs ∧ b' a = some bs)
+    {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
+    (raw : L1.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs
+      h 4294967295 e kp)
+    (hrd : (Ix.Kernel.Reader.MemberReader.mk' cx src param self).read e = .ok E_rd) :
+    (Ix.Kernel.Reader.MemberReader.mk' { cx with blob := b' } src param self).read e = .ok E_rd :=
+  memberReader_read_congr_of_rawConvExpr (cx₁ := cx) (cx₂ := { cx with blob := b' })
+    (self₁ := self) (self₂ := self) (recurAddrs := [])
+    (fun a => (ctx_with_blob_keyAt cx b' a).symm)
+    (fun _ _ h => nomatch h)
+    hblob raw hrd
 
 /-- Pointwise-at-`Core.dprjAddr owner i` version of `streamContext_memberKey_dprj`: only requires
 `cx.store` presence if `Core.dprjAddr owner i` itself is bound in `t.bound` (which follows from
@@ -1495,10 +1524,10 @@ private theorem safe_rawConvExpr_ctx_ready
       unfold Ix.Kernel.Reader.resolveSource at hq ⊢
       cases hi_r : c_r.info with
       | defn _ | recr _ | axio _ | quot _ | muts _ =>
-        rw [hi_r] at hq ⊢
+        dsimp only at hq ⊢
         exact hq
       | dPrj p | iPrj p | rPrj p | cPrj p =>
-        rw [hi_r] at hq ⊢
+        dsimp only at hq ⊢
         have hblk_some : ∃ cb ms, Ix.Cert.recordAt E₀ p.block = some cb ∧ cb.info = .muts ms := by
           cases hgb : Ix.Cert.recordAt E₀ p.block with
           | none =>
@@ -1600,8 +1629,8 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
   cases hk : d.kind with
   | defn =>
     have hs : d.safety = .safe := by
-      simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] at hsafe
-      exact beq_iff_eq.mp hsafe
+      cases hds : d.safety <;>
+        simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk, hds] at hsafe ⊢
     simp only [L1.defnValShape, hk, hs] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
@@ -1857,14 +1886,15 @@ private theorem checkedAxiom_of_checkedAtFull
         (Ix.Kernel.Reader.MemberReader.mk' cx' c
           (Ix.Kernel.Reader.recParam (List.range ax.lvls.toNat)) (fun _ => none)).read ax.typ =
           .ok ty₀ :=
-      memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok raw_ty' hrd_ty_rp
+      memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok raw_ty' hrd_ty_rp
     have hrra : L1.RecordReadsAs t E_core a c
         (.axiomInfo ⟨Core.keyOf t a, List.range ax.lvls.toNat, ty₀⟩) := by
       refine ⟨hnoInt_core, ?_⟩
       rw [hinfo]
       exact ⟨cx', fun _ => none, Core.keyOf t a, List.range ax.lvls.toNat, ty₀,
         by simp, by simp,
-        fun _ _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed hk,
+        fun x' _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed
+          ((ctx_with_blob_keyAt cx E_core.blobs.get? x').symm.trans hk),
         fun _ _ hb => hb, hrd_ty_cx', hty_lbb, hty_def, rfl⟩
     have hinst_ax : IxVM.Consistency.inertKey (Core.keyOf t a) = false →
         (.axiomInfo ⟨Core.keyOf t a, List.range ax.lvls.toNat, ty₀⟩ :
@@ -2089,11 +2119,11 @@ private theorem checkedDefnCore
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok1 raw_ty' hrd_ty_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok1 raw_ty' hrd_ty_rp
       have hrd_val_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.value = .ok val₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok2 raw_val' hrd_val_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok2 raw_val' hrd_val_rp
       refine ⟨hrecDeps, ty₀, val₀, hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def,
         fun heights => ?_⟩
       let cv : Ix.Kernel.ConstantVal .anon := ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩
@@ -2226,11 +2256,11 @@ private theorem checkedDefnCore
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok1 raw_ty' hrd_ty_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok1 raw_ty' hrd_ty_rp
       have hrd_val_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.value = .ok val₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok2 raw_val' hrd_val_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok2 raw_val' hrd_val_rp
       refine ⟨hrecDeps, ty₀, val₀, hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def,
         fun heights => ?_⟩
       let cv : Ix.Kernel.ConstantVal .anon := ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩
@@ -2356,11 +2386,11 @@ private theorem checkedDefnCore
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok1 raw_ty' hrd_ty_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok1 raw_ty' hrd_ty_rp
       have hrd_val_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.value = .ok val₀ :=
-        memberReader_read_congr_of_rawConvExpr (fun _ => rfl) (by simp) hblobs_ok2 raw_val' hrd_val_rp
+        memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok2 raw_val' hrd_val_rp
       refine ⟨hrecDeps, ty₀, val₀, hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def,
         fun heights => ?_⟩
       let cv : Ix.Kernel.ConstantVal .anon := ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩
@@ -2760,25 +2790,42 @@ private theorem checkedDefn_standalone
     intro x hx; simp [IxVM.Consistency.usedRefIdxs, hinfo, hx]
   have hdir_val : ∀ x ∈ IxVM.Consistency.exprRefIdxs d.value, x ∈ IxVM.Consistency.usedRefIdxs c := by
     intro x hx; simp [IxVM.Consistency.usedRefIdxs, hinfo, hx]
+  let self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey) :=
+    fun i => if i == 0 then some (cx.memberKey (.member a 0)) else none
   obtain ⟨_, ty₀, val₀, hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def, hheights⟩ :=
-    checkedDefnCore hSR (ref := .member a 0) (self := fun _ => none)
+    checkedDefnCore hSR (ref := .member a 0) (self := self)
       hbound hadm hba hload hexact₀ hblobs₀ hnoCol hord hauth hproj_emp ha_ord ha_not_role
       hrec₀ hrecE hwk hsafe hdir_ty hdir_val hmkey hrc_m hload_ld hsub_ld hb_ld hraw_d ev_chk hsub_chk
   obtain ⟨decl, ci₀, hn, hrd_def, hcco, hinst, hname, hdnames, hnb, hci₀_eq⟩ :=
     hheights (st.heights.getD · 0)
   have hread_rec : Ix.Kernel.Reader.readRecordBare cx st a c = .ok { decls := #[decl] } := by
-    unfold Ix.Kernel.Reader.readRecordBare Ix.Kernel.Reader.readRecord
-    rw [hinfo]
-    dsimp only [bind, Except.bind, pure, Except.pure]
-    rw [hrd_def]
-    rfl
+    have haux : ∀ (cx₀ : Ix.Kernel.Reader.Ctx .anon) (st₀ : Ix.Kernel.Reader.State .anon)
+        (owner : _root_.Address) (c₀ : Ixon.Constant) (d₀ : Ixon.Definition)
+        (decl₀ : Ix.Kernel.Declaration .anon),
+        c₀.info = .defn d₀ →
+        Ix.Kernel.Reader.readDefinition cx₀ st₀ (st₀.heights.getD · 0) (.member owner 0)
+          (List.range d₀.lvls.toNat)
+          (Ix.Kernel.Reader.MemberReader.mk' cx₀ c₀ id
+            (fun i => if i == 0 then some (cx₀.memberKey (.member owner 0)) else none))
+          d₀ = .ok (decl₀, false) →
+        Ix.Kernel.Reader.readRecordBare cx₀ st₀ owner c₀ = .ok { decls := #[decl₀] } := by
+      intro cx₀ st₀ owner c₀ d₀ decl₀ hi₀ hrd₀
+      unfold Ix.Kernel.Reader.readRecordBare
+      rw [hi₀]
+      unfold Ix.Kernel.Reader.readRecord
+      rw [hi₀]
+      dsimp only
+      rw [hrd₀]
+      rfl
+    exact haux cx st a c d decl hinfo hrd_def
   have hrra : L1.RecordReadsAs t E_core a c ci₀ := by
     refine ⟨hnoInt_core, ?_⟩
     rw [hinfo]
-    exact ⟨{ cx with blob := E_core.blobs.get? }, fun _ => none,
+    exact ⟨{ cx with blob := E_core.blobs.get? }, self,
       Core.keyOf t a, List.range d.lvls.toNat, ty₀, val₀, hn,
       by simp, by simp,
-      fun _ _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed hk,
+      fun x' _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed
+        ((ctx_with_blob_keyAt cx E_core.blobs.get? x').symm.trans hk),
       by simp [hrec_nil],
       fun _ _ hb => hb,
       hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def, hci₀_eq⟩
@@ -2961,7 +3008,8 @@ private theorem checkedMutsDefn_member
     exact ⟨{ cx with blob := E_core.blobs.get? }, self,
       Core.keyOf t (Core.dprjAddr a i), List.range d.lvls.toNat, ty₀, val₀, hn,
       by simp, by simp,
-      fun _ _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed hk,
+      fun x' _ hk => streamContext_keyAt_ok_inv hauth hba.wellFormed
+        ((ctx_with_blob_keyAt cx E_core.blobs.get? x').symm.trans hk),
       by simp [hrec_nil],
       fun _ _ hb => hb,
       hrd_ty_cx', hty_lbb, hty_def, hrd_val_cx', hval_lbb, hval_def, hci₀_eq⟩
@@ -3135,12 +3183,14 @@ private theorem proj_ownerOf_ne_self
       simp [IsProjInfo, hc] at hprojInfo
     | dPrj p | iPrj p | rPrj p =>
       have hp : p.block = a := by simpa [Ix.Cert.ownerOf, hc] using heq
-      rw [hc, hp] at hraw
+      dsimp only at hraw
+      rw [hp] at hraw
       obtain ⟨_, lcB, cb, ms, _, _, hgetB, _, _, hexB, _, hcb_info, _, _, _⟩ := hraw
       exact hblk_false lcB cb ms hgetB hexB hcb_info
     | cPrj p =>
       have hp : p.block = a := by simpa [Ix.Cert.ownerOf, hc] using heq
-      rw [hc, hp] at hraw
+      dsimp only at hraw
+      rw [hp] at hraw
       obtain ⟨_, _, lcB, cb, ms, _, _, _, hgetB, _, _, hexB, _, hcb_info, _, _, _, _⟩ := hraw
       exact hblk_false lcB cb ms hgetB hexB hcb_info
 
@@ -3173,7 +3223,7 @@ private theorem wkSafe_owner_of_proj
   obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
     bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
     hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
-  obtain ⟨c_ld, hdec_ld, _, _, _, hld', hraw⟩ := hL1
+  obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst v'
   have hc_ld_eq : c_ld = c := by
     unfold Ix.Cert.recordAt at hrec₀
@@ -3363,11 +3413,11 @@ private theorem walkedProjResolveOk
       have hc_form : c = ⟨.dPrj ⟨(p.idx.toNat).toUInt64, Ix.Cert.ownerOf a c⟩, #[], #[], #[], #[]⟩ := by
         rw [hp_eq, ← hc]
         exact hc_emp
-      refine ⟨by simp [hres], fun _ => ⟨p.idx.toNat, d_m, ?_, p.idx.isLt, hms_arr, ?_, hc_form⟩⟩
+      refine ⟨by simp [hres], fun _ => ⟨p.idx.toNat, d_m, ?_, p.idx.toNat_lt, hms_arr, ?_, hc_form⟩⟩
       · exact (Array.getElem?_eq_some_iff.mp hms_arr).1
       · have hser := (deConstantExact_proj_eq_serConstant hdec_ld hemp (by simp [IsProjInfo, hc])).1
-        rw [← hblake_ld, hser, hc_form]
-        rfl
+        exact hblake_ld.symm.trans ((congrArg _root_.Address.blake3Pure hser).trans
+          (congrArg (fun x => _root_.Address.blake3Pure (Ixon.serConstant x)) hc_form))
     | iPrj p =>
       rw [hc] at htv hraw
       obtain ⟨hsh, hrefs, hunivs, hbind⟩ := htv
@@ -3492,7 +3542,7 @@ private theorem ownedOrProjOf_inv
         (hagree x hx_role).symm.trans hrecE_x
       have hreach_x := (hadm.closureOrder.complete x).mp hx_role
       have hreach_a : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) a :=
-        .step hreach_x ⟨c_x, hrec_role_x, Or.inl ⟨hown_xa, hne_xa⟩⟩
+        .step hreach_x ⟨c_x, hrec_role_x, Or.inl ⟨hown_xa, hne_xa.symm⟩⟩
       exact ha_not_role ((hadm.closureOrder.complete a).mpr hreach_a)
     obtain ⟨hkeep_x, hrec₀_x⟩ : Keep x ∧ Ix.Cert.recordAt E₀ x = some c_x := by
       rcases recordAt_subEnv_some_inv E₀ Keep (roleSuppOf E_role order_role) hrecE_x with
@@ -3531,6 +3581,59 @@ private theorem ownedOrProjOf_inv
         List.mem_of_getElem? (by simpa using hms_i)
       rw [← Array.all_toList, List.all_eq_true] at hall
       cases hall _ hmem_ind
+
+private def updateBlockHeights (bh : Std.HashMap Core.KKey Nat)
+    (decl : Ix.Kernel.Declaration .anon) : Std.HashMap Core.KKey Nat :=
+  match decl with
+  | .defnDecl cv _ h => bh.insert cv.name (Ix.Kernel.Frontend.InModel.hintHeight h)
+  | _ => bh
+
+private theorem readRecordBare_muts_defn
+    (cx : Ix.Kernel.Reader.Ctx .anon) (st : Ix.Kernel.Reader.State .anon)
+    (owner : _root_.Address) (c : Ixon.Constant) (ms : Array Ixon.MutConst)
+    (defs : Array Ixon.Definition) (ord : Array Nat)
+    (hinfo : c.info = .muts ms)
+    (hany_indc : ms.any (fun | .indc _ => true | _ => false) = false)
+    (hall_recr : ms.all (fun | .recr _ => true | _ => false) = false)
+    (hall_defn : ms.all (fun | .defn _ => true | _ => false) = true)
+    (hdefs : (ms.filterMap fun | .defn d => some d | _ => none) = defs)
+    (hsafe : defs.findSome? Ix.Kernel.Reader.safetyDecline = none)
+    (hord : Ix.Kernel.Reader.defOrder (defs.map (Ix.Kernel.Reader.recurDeps c)) = some ord) :
+    ∃ f : Nat →
+        Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat →
+        Ix.Kernel.Reader.ReadM
+          (ForInStep (Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat)),
+      Ix.Kernel.Reader.readRecordBare cx st owner c =
+        (forIn ord ({}, #[], 0) f >>= fun s' =>
+          pure ({ decls := s'.2.1, projRewrites := s'.2.2 } : Ix.Kernel.Reader.Read .anon)) ∧
+      (∀ (i : Nat)
+        (s : Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat)
+        (decl : Ix.Kernel.Declaration .anon),
+        Ix.Kernel.Reader.readDefinition cx st (fun n => s.1.getD n (st.heights.getD n 0))
+          (.member owner i) (List.range defs[i]!.lvls.toNat)
+          (Ix.Kernel.Reader.MemberReader.mk' cx c id
+            (fun j => if j < ms.size then some (cx.memberKey (.member owner j)) else none))
+          defs[i]! = .ok (decl, false) →
+        f i s = .ok (.yield (updateBlockHeights s.1 decl, s.2.1.push decl, s.2.2))) := by
+  have hb : Ix.Kernel.Reader.readRecordBare cx st owner c =
+      Ix.Kernel.Reader.readRecord cx st owner c := by
+    unfold Ix.Kernel.Reader.readRecordBare
+    rw [hinfo]
+    dsimp only
+    rw [hany_indc]
+    rfl
+  rw [hb]
+  unfold Ix.Kernel.Reader.readRecord
+  rw [hinfo]
+  dsimp only
+  rw [hany_indc, hall_recr, hall_defn]
+  dsimp only [Bool.false_eq_true, ↓reduceIte]
+  rw [hdefs, hsafe, hord]
+  refine ⟨_, rfl, ?_⟩
+  intro i s decl hrd
+  dsimp only
+  rw [hrd]
+  cases decl <;> rfl
 
 /-- Full `.muts ms` definition block (`ms.all (.defn) = true`) bare reading at `a ∉ order_role`:
 `readRecordBare cx st a c` succeeds with `owners = []`, `blocks = []`, `generated = 0`,
@@ -3631,16 +3734,18 @@ private theorem checkedMutsDefn_block
       simp [pure, Except.pure]
     exact ⟨{}, hread, rfl, rfl, by simp, by simp, fun k hk => by rw [hms_emp] at hk; simp at hk⟩
   | cons d₀ ts' =>
+    have hall_recr : ms.all (fun | .recr _ => true | _ => false) = false := by
+      rw [hms_arr]; simp
     let ts := d₀ :: ts'
+    change ms.toList = ts.map Ixon.MutConst.defn at hts
+    change ms = (ts.map Ixon.MutConst.defn).toArray at hms_arr
     have hsz : ms.size = ts.length := by rw [hms_arr]; simp
     have hany_indc : ms.any (fun | .indc _ => true | _ => false) = false := by
       rw [hms_arr]; simp
-    have hall_recr : ms.all (fun | .recr _ => true | _ => false) = false := by
-      rw [hms_arr]; simp [ts]
     have hdefs : ms.filterMap (fun | .defn d => some d | _ => none) = ts.toArray := by
       apply Array.ext'
       rw [hms_arr]
-      simp [Function.comp_def]
+      simp
     have hinLogic : IxVM.Consistency.InLogic c := by
       by_contra hnin
       exact hnot_out ⟨c, hrec₀, Or.inl hnin⟩
@@ -3652,8 +3757,10 @@ private theorem checkedMutsDefn_block
       Array.findSome?_eq_none_iff.mpr (fun d_t hdt => hsafe_ts d_t (by simpa using hdt))
     have hms_k : ∀ (k : Nat) (hk : k < ts.length), ms[k]? = some (.defn ts[k]) := by
       intro k hk
-      rw [hms_arr]
-      simp [hk]
+      have h1 : ms.toList[k]? = some (.defn ts[k]) := by
+        rw [hts, List.getElem?_map, List.getElem?_eq_getElem hk]
+        rfl
+      simpa using h1
     have hempty_deps :
         ∀ k : Nat, k < (ts.toArray.map (Ix.Kernel.Reader.recurDeps c)).size →
           ((ts.toArray.map (Ix.Kernel.Reader.recurDeps c))[k]!).toList = [] := by
@@ -3662,7 +3769,7 @@ private theorem checkedMutsDefn_block
       have hbang : (ts.toArray.map (Ix.Kernel.Reader.recurDeps c))[k]! =
           Ix.Kernel.Reader.recurDeps c ts[k] := by
         rw [getElem!_pos _ k hk]
-        simp [hk_len]
+        simp
       rw [hbang]
       exact (checkedMutsDefn_member hRP hSR (st := st) hbound hadm hba hcomm_extra hload hexact₀
         hblobs₀ hnoCol hnoInt_core hsub_rec hord hauth hproj_emp ha_ord ha_not_role hrec₀ hrecE
@@ -3671,23 +3778,9 @@ private theorem checkedMutsDefn_block
         some (Array.range ts.length) := by
       have h0 := defOrder_all_empty (ts.toArray.map (Ix.Kernel.Reader.recurDeps c)) hempty_deps
       simpa using h0
-    let self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey) :=
-      fun j => if j < ms.size then some (cx.memberKey (.member a j)) else none
-    let mr := Ix.Kernel.Reader.MemberReader.mk' cx c id self
-    let F_step : Nat →
-        Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat →
-        Except Ix.Kernel.Reader.ReadError
-          (ForInStep (Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat)) :=
-      fun i s => do
-        let heights : Core.KKey → Nat := fun n => s.1.getD n (st.heights.getD n 0)
-        let (decl, rw) ← Ix.Kernel.Reader.readDefinition cx st heights (.member a i)
-          (List.range ts.toArray[i]!.lvls.toNat) mr ts.toArray[i]!
-        let bh' :=
-          if let .defnDecl cv _ h := decl then
-            s.1.insert cv.name (Ix.Kernel.Frontend.InModel.hintHeight h)
-          else s.1
-        let rw' := if rw then s.2.2 + 1 else s.2.2
-        pure (.yield (bh', s.2.1.push decl, rw'))
+    obtain ⟨F_step, hread_eq, hF_step⟩ :=
+      readRecordBare_muts_defn cx st a c ms ts.toArray (Array.range ts.length)
+        hinfo hany_indc hall_recr hall hdefs hfind hdefOrd
     let Inv : List Nat →
         Std.HashMap Core.KKey Nat × Array (Ix.Kernel.Declaration .anon) × Nat → Prop :=
       fun pre_idx s =>
@@ -3726,21 +3819,25 @@ private theorem checkedMutsDefn_block
       subst i
       have hbang_i : ts.toArray[s.2.1.size]! = ts[s.2.1.size] := by
         rw [getElem!_pos ts.toArray s.2.1.size (by simp [hlen_lt])]
-        simp [hlen_lt]
+        simp
       obtain ⟨_, hd_not_role, _, hheights⟩ :=
         checkedMutsDefn_member hRP hSR (st := st) hbound hadm hba hcomm_extra hload hexact₀
           hblobs₀ hnoCol hnoInt_core hsub_rec hord hauth hproj_emp ha_ord ha_not_role hrec₀ hrecE
           hwk hnot_out hinfo (hms_k s.2.1.size hlen_lt) (hm_all s.2.1.size (by omega))
       obtain ⟨decl, ci₀, hrd_def, hcco, hinst, hname, hdnames, hnb, hrra⟩ :=
         hheights (fun n => s.1.getD n (st.heights.getD n 0))
-      have hf : F_step s.2.1.size s = .ok (.yield (
-          (if let .defnDecl cv _ h := decl then
-            s.1.insert cv.name (Ix.Kernel.Frontend.InModel.hintHeight h)
-          else s.1),
-          s.2.1.push decl, 0)) := by
-        dsimp only [F_step]
-        rw [hbang_i, hrd_def, hrw0]
-        rfl
+      have hrd_def' :
+          Ix.Kernel.Reader.readDefinition cx st (fun n => s.1.getD n (st.heights.getD n 0))
+            (.member a s.2.1.size) (List.range ts.toArray[s.2.1.size]!.lvls.toNat)
+            (Ix.Kernel.Reader.MemberReader.mk' cx c id
+              (fun j => if j < ms.size then some (cx.memberKey (.member a j)) else none))
+            ts.toArray[s.2.1.size]! = .ok (decl, false) := by
+        rw [hbang_i]
+        exact hrd_def
+      have hf : F_step s.2.1.size s =
+          .ok (.yield (updateBlockHeights s.1 decl, s.2.1.push decl, 0)) := by
+        have h0 := hF_step s.2.1.size s decl hrd_def'
+        rwa [hrw0] at h0
       refine ⟨_, hf, ?_, rfl, ?_⟩
       · rw [hpre_eq, Array.size_push, List.range_succ]
       · intro k hk_push
@@ -3749,7 +3846,7 @@ private theorem checkedMutsDefn_block
         · obtain ⟨hk_ts, decl_k, ci_k, hget_k, hrest_k⟩ := hinv k hk_lt
           refine ⟨hk_ts, decl_k, ci_k, ?_, hrest_k⟩
           rw [Array.getElem?_push]
-          simp [show s.2.1.size ≠ k by omega, hget_k]
+          simp [Nat.ne_of_lt hk_lt, hget_k]
         · have hk_eq : k = s.2.1.size := by omega
           subst k
           refine ⟨hlen_lt, decl, ci₀, ?_, hcco, hinst, hname, hdnames, hd_not_role, hnb, hrra⟩
@@ -3762,13 +3859,7 @@ private theorem checkedMutsDefn_block
       simpa using hlen.symm
     have hread : Ix.Kernel.Reader.readRecordBare cx st a c =
         .ok { decls := res.2.1, projRewrites := 0 } := by
-      unfold Ix.Kernel.Reader.readRecordBare Ix.Kernel.Reader.readRecord
-      rw [hinfo]
-      simp only [hany_indc, Bool.false_eq_true, ↓reduceIte, hall_recr, hall, hdefs, hfind, hdefOrd]
-      change (forIn (Array.range ts.length) ({}, #[], 0) F_step >>= fun s' =>
-        pure { decls := s'.2.1, projRewrites := s'.2.2 }) =
-        .ok { decls := res.2.1, projRewrites := 0 }
-      rw [hfor, hres_rw]
+      rw [hread_eq, hfor, hres_rw]
       rfl
     have hflat :
         res.2.1.toList.flatMap (fun d => (IxVM.Consistency.installs d).map (·.name)) =
@@ -4045,14 +4136,14 @@ private theorem usedRef_mem_prev_of_nonRole
         have hrec_role_r : Ix.Cert.recordAt E_role r = some c_r := hagree.1.symm.trans hrecE_r
         have hreach_r := (hadm.closureOrder.complete r).mp hr_role
         have hreach_a : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) a :=
-          .step hreach_r ⟨c_r, hrec_role_r, Or.inl ⟨heq, hr_eq_a⟩⟩
+          .step hreach_r ⟨c_r, hrec_role_r, Or.inl ⟨heq, hr_eq_a.symm⟩⟩
         exact ha_not_role ((hadm.closureOrder.complete a).mpr hreach_a)
       · have hrec₀_r : Ix.Cert.recordAt E₀ r = some c_r := by
           rcases recordAt_subEnv_some_inv E₀ Keep (roleSuppOf E_role order_role) hrecE_r with
             hkp | ⟨_, _, hm_supp⟩
           · exact hkp.2
           · exact absurd (mem_roleSuppOf_iff.mp hm_supp).1 hr_role
-        have hedge_ra : Core.S0.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, hr_eq_a⟩⟩
+        have hedge_ra : Core.S0.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, hr_eq_a.symm⟩⟩
         obtain ⟨_, hlt_ar⟩ := (wkAll_closedSubwalk calls b.address t E₀).step r a hwk_r hedge_ra
         exact Nat.lt_asymm hlt_ra hlt_ar
   have href_blk : IxVM.Consistency.UsedRecordRef E a blk :=
@@ -4061,7 +4152,7 @@ private theorem usedRef_mem_prev_of_nonRole
   have hreach_a := (hord.complete a).mp ha_ord
   have hreach_r : IxVM.Consistency.UsedCompiledReachAt t E
       (fun x => x ∈ seeds ∨ IxVM.Refinement.BindingSeeds t x) r :=
-    .step hreach_a ⟨c, hrecE, Or.inr ⟨i, hi, hr, contains_of_recordAt hrecE_r⟩⟩
+    .step hreach_a ⟨c, hrecE, Or.inr ⟨⟨i, hi, hr⟩, contains_of_recordAt hrecE_r⟩⟩
   have hreach_blk : IxVM.Consistency.UsedCompiledReachAt t E
       (fun x => x ∈ seeds ∨ IxVM.Refinement.BindingSeeds t x) blk := by
     by_cases hbr : blk = r
@@ -4141,8 +4232,11 @@ theorem walkedStreamReadBare
   subst t'
   have hba := (Ix.Kernel.Admission.admitBinding_ok_iff _root_.Address.admissionHash b t).mp hadm_b
   have hwalk_orig := hwalk
-  obtain ⟨bAddr, ⟨rb, _, rfl, hadm_rb⟩, _, hexact₀, hblobs₀, _, Wk, rank,
+  obtain ⟨bAddr, ⟨rb, _, rfl, hadm_rb⟩, _, hexact₀_full, hblobs₀, _, Wk, rank,
     hwk_seeds, hwk_step, hwk_chk⟩ := hwalk
+  have hexact₀ : ∀ x lc, E₀.consts.get? x = some lc →
+      ∃ c', lc.get? = some c' ∧ Ixon.deConstantExact lc.rawBytes = .ok c' :=
+    fun x lc h => let ⟨_, c', h1, _, h3⟩ := hexact₀_full x lc h; ⟨c', h1, h3⟩
   have hba_rb := (Ix.Kernel.Admission.admitBinding_ok_iff _root_.Address.admissionHash _ t).mp hadm_rb
   have hbAddr_eq : rb.address = b.address :=
     hba_rb.authentic.symm.trans (by rw [hba_rb.canonical.2.symm.trans hba.canonical.2]; exact hba.authentic)
@@ -4150,7 +4244,7 @@ theorem walkedStreamReadBare
   have hcsw_wk : ClosedSubwalk calls b.address t E₀ Wk rank :=
     closedSubwalk_of_walked hwk_step hwk_chk
   have hwkSafe_seeds : ∀ a ∈ seeds, WkSafe calls b.address t E₀ a :=
-    fun a ha => ⟨wkAll_of_closedSubwalk hcsw_wk a (hwk_seeds a ha), (hseedOk a ha).1⟩
+    fun a ha => ⟨wkAll_of_closedSubwalk hcsw_wk (hwk_seeds a ha), (hseedOk a ha).1⟩
   let Keep : _root_.Address → Prop := fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x
   let supp : List SuppEntry := roleSuppOf E_role order_role
   let roleBlobs : List (_root_.Address × ByteArray) := Ix.Cert.blobsOf E_role order_role
@@ -4171,7 +4265,10 @@ theorem walkedStreamReadBare
     obtain ⟨lc_r', c_r, hget_r', hlc_r', _, hblk_r, _, _, hex_r, hpreV⟩ := hadm.order_record_spec ha
     rw [hget_r] at hget_r'; injection hget_r' with hlceq; subst lc_r'
     unfold Ix.Cert.recordAt at hrec_r
-    rw [hget_r, hlc_r'] at hrec_r; injection hrec_r with hceq; subst c_r
+    rw [hget_r] at hrec_r
+    dsimp only [bind, Option.bind] at hrec_r
+    rw [hlc_r'] at hrec_r
+    injection hrec_r with hceq; subst c_r
     obtain ⟨⟨lcV, hgetV, hrawV⟩, _⟩ := hadm.viewConsts a ha lc_r hget_r
     exact ⟨ha, hblk_r, hex_r, hpreV, lcV, hgetV, hrawV⟩
   have hdraws : DrawsRoleLocal E E₀ V.env :=
@@ -4219,7 +4316,7 @@ theorem walkedStreamReadBare
   have hord_filter : order = order.filter (· ∈ order_role) ++ order.filter (· ∉ order_role) := by
     refine pairwise_eq_filter_append (· ∈ order_role) (· ∉ order_role) rk
       (fun x => by by_cases hx : x ∈ order_role <;> simp [hx])
-      (fun x y hx hy => ?_) hsorted
+      (fun x y hx hy => ?_) order hsorted
     have hx' : x ∉ order_role := by simpa using hx
     have hy' : y ∈ order_role := by simpa using hy
     have hlt_len : order_role.idxOf y < order_role.length := List.idxOf_lt_length_iff.mpr hy'
@@ -4234,7 +4331,8 @@ theorem walkedStreamReadBare
     have ha_r : a ∈ order_role := of_decide_eq_true ha_role
     have hb_r : b' ∈ order_role := of_decide_eq_true hb_role
     have hne : a ≠ b' := fun heq => by subst heq; exact Nat.lt_irrefl _ hlt
-    have hrk_le : rk a ≤ rk b' := pairwise_of_idxOf_lt hsorted ha_ord hb_ord hlt
+    have hrk_le : rk a ≤ rk b' :=
+      pairwise_of_idxOf_lt (R := fun x y => rk x ≤ rk y) hsorted ha_ord hb_ord hlt
     simp only [rk, roleTwoTierRank, ha_r, hb_r, ↓reduceIte] at hrk_le
     have hidx_ne : order_role.idxOf a ≠ order_role.idxOf b' := by
       intro heq_i
@@ -4441,7 +4539,9 @@ theorem walkedStreamReadBare
           · exact ha_not_role ha_r
           · have hown_a := hown_r c (Or.inl hrec₀)
             have hown_self : Ix.Cert.ownerOf a c = a := by
-              rcases hkind with ⟨ax, hax⟩ | ⟨df, hdf⟩ <;> simp [Ix.Cert.ownerOf, hax, hdf]
+              rcases hkind with ⟨ax, hax⟩ | ⟨df, hdf⟩
+              · simp [Ix.Cert.ownerOf, hax]
+              · simp [Ix.Cert.ownerOf, hdf]
             rw [hown_self] at hown_a
             exact ha_not_role hown_a
         · rcases hkeys d₀ hd_w ci₁ hci₁ with
@@ -4519,10 +4619,14 @@ theorem walkedStreamReadBare
           obtain ⟨hres_ok, _, _, _, _, _, hws_own, hrk_lt, _⟩ :=
             walkedProjResolveOk hSR hbound hadm hload hexact₀ hnoCol hord hown_ord_a
               hrec₀ hwkSafe_a.1 hwkSafe_a.2 hproj_a hchk
+          have hres_cx : (Ix.Kernel.Reader.resolveSource cx.store a c).isNone = false := hres_ok
           have hread : Ix.Kernel.Reader.readRecordBare cx st a c = .ok {} := by
             unfold Ix.Kernel.Reader.readRecordBare Ix.Kernel.Reader.readRecord
-            simp [hinfo, hres_ok, pure, Except.pure]
-          have hsame' := commit_sameAt_of_nonRole hadm hba hsame rfl rfl (by simp) (by simp)
+            rw [hinfo]
+            dsimp only
+            rw [hres_cx]
+            rfl
+          have hsame' := commit_sameAt_of_nonRole hadm hba hsame (r := {}) rfl rfl (by simp) (by simp)
           have hown_prev : Ix.Cert.ownerOf a c ∈ order_role ++ pre_w := by
             have hrk_own_lt : rk (Ix.Cert.ownerOf a c) < rk a := by
               by_cases ho_r : Ix.Cert.ownerOf a c ∈ order_role
@@ -4577,9 +4681,11 @@ theorem walkedStreamReadBare
             · cases hci'
             · simp [cv] at hci'
               rw [hci']
+              rfl
           have hnd_ax :
               ((#[decl].toList.flatMap (fun d => (IxVM.Consistency.installs d).map (·.name))).Nodup) := by
-            simp only [Array.toList_eq, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+            change ((([decl]).flatMap (fun d => (IxVM.Consistency.installs d).map (·.name))).Nodup)
+            simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil]
             unfold IxVM.Consistency.installs
             dsimp only [decl]
             split <;> simp
@@ -4931,7 +5037,7 @@ theorem walkedStreamReadBare
     hnd_final, hpref_final, horig_final⟩ :=
     hstep_loop order_w [] st_r #[] rfl .nil hsame_role (by simp) (by simp)
       (by simpa using hnd_role)
-      (by intro x c_x hx; simpa using hrole_rra x c_x (by simpa using hx))
+      (by intro x c_x hx; rw [List.append_nil] at hx; rw [Array.toList_empty, List.append_nil]; exact hrole_rra x c_x hx)
       (by intro ds_pre d ds_suf _ hsplit_ds _; simp only [Array.toList_empty, List.append_nil] at hsplit_ds;
           exact Or.inl ⟨ds_suf, hsplit_ds⟩)
   let decls := decls_role ++ decls_w_final
