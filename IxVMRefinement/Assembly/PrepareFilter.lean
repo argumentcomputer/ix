@@ -116,7 +116,7 @@ theorem preparePrelude_filter_nodup {α : Type} (keys : Declaration md → List 
         (frontSpec pre.decls.toList full.toList).2) := by
     rw [← hfilter, hfront]
     exact (List.Sublist.refl _).append List.filter_sublist
-  apply ((perm bare).flatMap keys).nodup_iff.mpr
-  exact (((perm full).flatMap keys).nodup_iff.mp hfull).sublist (hsub.flatMap keys)
+  apply (List.Perm.flatMap_right keys (perm bare)).nodup_iff.mpr
+  exact ((List.Perm.flatMap_right keys (perm full)).nodup_iff.mp hfull).sublist (hsub.flatMap keys)
 
 end IxVM.Refinement.Assembly
