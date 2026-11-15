@@ -1246,4 +1246,63 @@ theorem blobs_coreEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
       (subEnvRole E₀ Keep supp roleBlobs).blobs :=
   rfl
 
+/-- **`¬ L1.EnvInternalCollision` on `coreEnvRole`** from `RolePreludeInputs`, `TableAdmittedAt`,
+and `¬ V.HashedCollision extra calls`. -/
+theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
+    {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)} {E₀ : Ixon.Env}
+    {Keep : _root_.Address → Prop}
+    {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+    {E_role : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    {order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {st_role : Ix.Kernel.Reader.State .anon}
+    {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
+    (hadm : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role)
+    (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
+    (hload : IxVM.Consistency.LoadedBy calls E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls) :
+    ¬ L1.EnvInternalCollision
+        (coreEnvRole E₀ Keep (roleSuppOf E_role order_role)
+          (Ix.Cert.blobsOf E_role order_role) pre) := by
+  rintro ⟨x, d, lc, hblob, hconst, hne⟩
+  rw [blobs_coreEnvRole] at hblob
+  rcases addBlobSupplements_get?_some_inv E₀.blobs (Ix.Cert.blobsOf E_role order_role) hblob with
+    hblob₀ | ⟨_, hm_blob⟩
+  · obtain ⟨hh_d, hbl_d⟩ := hload.2 x d hblob₀
+    rcases subEnv_get?_some_inv E₀ _ _ hconst with ⟨_, hconst₀⟩ | ⟨_, raw, c, hm_supp, rfl⟩
+    · obtain ⟨hh_c, hbl_c⟩ := hload.1 x lc hconst₀
+      exact hnoCol (Or.inl ⟨x, d, lc.rawBytes, Or.inr (Or.inr ⟨hh_d, hbl_d⟩), hh_c, hne.symm, hbl_c⟩)
+    · simp only [Claim.mkLazy_rawBytes] at hne
+      rcases List.mem_append.mp hm_supp with h1 | h2
+      · obtain ⟨hx_role, lc_r, hget_r, _, rfl⟩ := mem_roleSuppOf_iff.mp h1
+        obtain ⟨lc_r', _, hget_r', _, _, _, _, _, _, hpreV⟩ := hadm.order_record_spec hx_role
+        rw [hget_r] at hget_r'
+        injection hget_r' with hlceq
+        subst hlceq
+        exact hnoCol (Or.inl ⟨x, lc_r.rawBytes, d, Or.inl hpreV, hh_d, hne, hbl_d⟩)
+      · unfold fallbackSupp at h2
+        obtain ⟨⟨x', c'⟩, hm_fb, heq⟩ := List.mem_map.mp h2
+        injection heq with hx_eq hrest
+        injection hrest with hraw_eq _
+        subst hx_eq; subst hraw_eq
+        obtain ⟨himg, hbl_c, _, _⟩ :=
+          hRP.serConstant_mem_committedImages hadm.preludeFor (Array.mem_toList_iff.mp hm_fb)
+        exact hnoCol (Or.inl ⟨x, Ixon.serConstant c', d,
+          Or.inr (Or.inl ⟨hcomm_extra _ himg, hbl_c⟩), hh_d, hne, hbl_d⟩)
+  · obtain ⟨hbl_d, _, _, hpre_d⟩ := hadm.blobs_spec.2 x d hm_blob
+    rcases subEnv_get?_some_inv E₀ _ _ hconst with ⟨_, hconst₀⟩ | ⟨_, raw, c, hm_supp, rfl⟩
+    · obtain ⟨hh_c, hbl_c⟩ := hload.1 x lc hconst₀
+      exact hnoCol (Or.inl ⟨x, d, lc.rawBytes, Or.inl hpre_d, hh_c, hne.symm, hbl_c⟩)
+    · simp only [Claim.mkLazy_rawBytes] at hne
+      rcases List.mem_append.mp hm_supp with h1 | h2
+      · obtain ⟨hx_role, lc_r, hget_r, _, rfl⟩ := mem_roleSuppOf_iff.mp h1
+        exact hne (hadm.noRoleInternalCollision x lc_r d hx_role hget_r hm_blob)
+      · unfold fallbackSupp at h2
+        obtain ⟨⟨x', c'⟩, hm_fb, heq⟩ := List.mem_map.mp h2
+        injection heq with hx_eq hrest
+        injection hrest with hraw_eq _
+        subst hx_eq; subst hraw_eq
+        obtain ⟨himg, hbl_c, _, _⟩ :=
+          hRP.serConstant_mem_committedImages hadm.preludeFor (Array.mem_toList_iff.mp hm_fb)
+        exact hne (hadm.noCommittedCollision x d (Ixon.serConstant c') hpre_d himg hbl_d hbl_c)
+
 end IxVM.Refinement.Assembly

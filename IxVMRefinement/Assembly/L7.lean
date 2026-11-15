@@ -811,6 +811,9 @@ structure TableAdmittedAt (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Bi
       (Ix.Cert.artifactRecIndex E_role).blocks[a]? = some shape →
       ∀ r₁ ∈ shape.recs, ∀ r₂ ∈ shape.recs,
         r₁.block ≠ a → r₂.block ≠ a → r₁.block = r₂.block
+  noRoleInternalCollision :
+    ∀ x lc d, x ∈ order_role → E_role.consts.get? x = some lc →
+      (x, d) ∈ Ix.Cert.blobsOf E_role order_role → d = lc.rawBytes
 
 /-- Existential form of `TableAdmittedAt`. -/
 def TableAdmittedComplete (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Binding) : Prop :=

@@ -274,8 +274,7 @@ private theorem getConstantInfo_proj_consumed {s s' : Ixon.GetState} {info : Ixo
           have hne6 : tag.value ≠ 6 := by intro he; rw [he] at hv; simp at hv
           have hne7 : tag.value ≠ 7 := by intro he; rw [he] at hv; simp at hv
           split <;> first | contradiction | rfl
-        rw [hbad] at hinfo
-        exact (throw_ok_false hinfo).elim
+        exact (throw_ok_false ((congrFun hbad s1).symm.trans hinfo)).elim
     · simp only [hflag, Bool.false_eq_true, ↓reduceIte] at hinfo
       exact (throw_ok_false hinfo).elim
 
@@ -883,7 +882,7 @@ theorem dprj_store_eq_of_mutsMemberChecked
         e5.getElem?_eq (by rw [hm278]; simp)
       have c5 : m306[m270.length]? = some (.construct Core.byteListEnum "Nil" []) := by
         rw [hm314]; simp
-      have hrepi : Aiur.Library.RepU64 m306 i.toUInt64 (Core.TagN.u64Value i) := by
+      have hrepi : Aiur.Library.RepU64 m306 i.toUInt64 (TagN.u64Value i) := by
         have e := Lib.repU64_ofNatLT m306 (m := i)
           (Nat.lt_trans hi_len (Nat.lt_trans hlen (by decide)))
         rwa [UInt64.ofNatLT_eq_ofNat] at e
@@ -895,16 +894,22 @@ theorem dprj_store_eq_of_mutsMemberChecked
           have E_ext : Heap.Extends _ m306 := by
             rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
           rw [hv1]
-          exact ⟨Core.TagN.u64Value i, _, b_arr, rfl, hrepi,
+          exact ⟨TagN.u64Value i, _, b_arr, rfl, hrepi,
             Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy E_ext hb_ref, rfl⟩
-        | Indc _ hv67 _ _ _ _ => simp [Core.Specs.Callees.mutCtor] at hv67
-        | Recr _ _ hv67 _ _ _ _ => simp [Core.Specs.Callees.mutCtor] at hv67
+        | Indc _ _ hv67 _ _ _ =>
+          simp only [Core.Specs.Callees.mutCtor] at hv67
+          injection hv67 with _ hc _
+          exact absurd hc (by decide)
+        | Recr _ _ _ hv67 _ _ _ =>
+          simp only [Core.Specs.Callees.mutCtor] at hv67
+          injection hv67 with _ hc _
+          exact absurd hc (by decide)
       have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
         (.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
         ⟨_, _, _, _, _, rfl, hinfo_rep,
-          Aiur.Library.List.RepLinkedList.nil c1, Aiur.Library.List.RepLinkedList.nil c2,
-          Aiur.Library.List.RepLinkedList.nil c3, Aiur.Library.List.RepLinkedList.nil c4⟩
-        (Aiur.Library.List.RepLinkedList.nil c5)
+          Aiur.RepLinkedList.nil c1, Aiur.RepLinkedList.nil c2,
+          Aiur.RepLinkedList.nil c3, Aiur.RepLinkedList.nil c4⟩
+        (Aiur.RepLinkedList.nil c5)
       rw [List.append_nil] at hbytes
       have hstream : L1.Stream m283
           (Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩).data.toList
