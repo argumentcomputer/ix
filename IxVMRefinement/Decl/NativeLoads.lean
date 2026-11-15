@@ -61,12 +61,12 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
     rw [hblock] at hcb
     injection hcb with heq
     subst ms
-    simp only [Array.toList_toArray, List.getElem?_cons_zero, ZMod.val_zero] at hms
+    simp only [List.getElem?_cons_zero, ZMod.val_zero] at hms
     injection hms with heq
     injection heq with heq
     subst ind'
     rw [hctors] at hct
-    simp only [Array.toList_toArray, List.getElem?_cons_zero, ZMod.val_zero] at hct
+    simp only [List.getElem?_cons_zero, ZMod.val_zero] at hct
     injection hct with heq
     subst ct
     obtain ⟨_, _, _, _, _, ty, blk, b, hb, hblk, hv, hty⟩ := hraw
@@ -79,10 +79,10 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
       cases hty with
       | recur _ hself hd ra hls rls cell =>
         simp only [blockRecurAddrs, blockRecurAddrsAux, Specs.Callees.memberProjInfo,
-          Array.toList_toArray, List.getElem?_cons_zero] at hself
+          List.getElem?_cons_zero] at hself
         injection hself with heq
         subst heq
-        simp only [Array.toList_empty, List.mapM_nil, Option.some.injEq] at hls
+        simp only [Array.toList_empty, List.mapM_nil, Option.pure_def, Option.some.injEq] at hls
         subst hls
         have levels : RepKLevelList h' [] _ := rls.toRepKLevelList (by simp)
         intro d Γ
@@ -90,8 +90,8 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
         simpa only [hd, iprjAddr] using rep
     refine ⟨.field 0, ty, blk, .field 0, .field 0, b, hld, hblk, hb,
       hrawTy, ?_⟩
-    refine .ctor ⟨rfl, by decide, .refl [], fun d Γ => (hrawTy d Γ).toTmExact⟩
-      rfl rfl ⟨by decide, by decide⟩ ⟨b, 0, 0, hblk, rfl, rfl, ?_⟩
+    refine .ctor ⟨rfl, by change 0 < 4294967296; decide, .refl [], fun d Γ => (hrawTy d Γ).toTmExact⟩
+      rfl rfl ⟨by decide, by change 0 < 72057594037927936; decide⟩ ⟨b, 0, 0, hblk, rfl, rfl, ?_⟩
     simpa only [nullaryVal, ZMod.val_zero, hb]
 
 /-- The scoped raw constructor-load result is constructible at a fresh constructor of the
