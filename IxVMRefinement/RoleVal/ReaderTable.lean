@@ -843,7 +843,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                               simp [he, hsym]
                             · have hsym : (ConstRef.member owner pos == r) = false :=
                                 beq_eq_false_iff_ne.mpr fun h => he (beq_iff_eq.mpr h.symm)
-                              rw [Bool.not_eq_true _ |>.mp he, hsym, hrecs r]
+                              rw [Bool.not_eq_true _ |>.mp he, hsym, hrecs r]; rfl
                           · intro b
                             rw [Std.HashMap.getElem?_insert, List.lookup_cons]
                             by_cases he : b == block
@@ -852,7 +852,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                               simp [he, hsym, orderForList_eq, hsz_ind]
                             · have hsym : (block == b) = false :=
                                 beq_eq_false_iff_ne.mpr fun h => he (beq_iff_eq.mpr h.symm)
-                              rw [Bool.not_eq_true _ |>.mp he, hsym, hblocks b]
+                              rw [Bool.not_eq_true _ |>.mp he, hsym, hblocks b]; rfl
                           · intro b
                             rw [Std.HashMap.getElem?_insert, List.lookup_cons]
                             by_cases he : b == block
@@ -864,7 +864,7 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                               simp [he, hsym, hpush]
                             · have hsym : (block == b) = false :=
                                 beq_eq_false_iff_ne.mpr fun h => he (beq_iff_eq.mpr h.symm)
-                              rw [Bool.not_eq_true _ |>.mp he, hsym, hfound b]
+                              rw [Bool.not_eq_true _ |>.mp he, hsym, hfound b]; rfl
 
 private theorem id_forIn_nil {α β : Type} (b : β) (f : α → β → Id (ForInStep β)) :
     forIn (m := Id) ([] : List α) b f = b := by
