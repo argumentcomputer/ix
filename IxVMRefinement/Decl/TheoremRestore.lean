@@ -26,7 +26,7 @@ theorem info_cv (ci : ConstantInfo md) : (info selected ci).toConstantVal = ci.t
   cases ci with
   | defnInfo cv value hint =>
     cases hint with
-    | «opaque» => by_cases chosen : selected cv.name = true <;> simp [info, chosen]
+    | «opaque» => simp only [info]; split <;> rfl
     | «abbrev» | regular => rfl
   | _ => rfl
 
@@ -34,7 +34,7 @@ theorem info_name (ci : ConstantInfo md) : (info selected ci).name = ci.name := 
   cases ci with
   | defnInfo cv value hint =>
     cases hint with
-    | «opaque» => by_cases chosen : selected cv.name = true <;> simp [info, chosen]
+    | «opaque» => simp only [info]; split <;> rfl
     | «abbrev» | regular => rfl
   | _ => rfl
 
