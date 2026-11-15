@@ -394,10 +394,12 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
 generated records, and every declaration names only `K`-keys (a definition,
 axiom or quotient record's one declaration, a definition block's one per
 member, or nothing); or the modeller's records, as many as `generated` says,
-then one declaration naming only `K`-keys (an inductive block). -/
+then a nonempty suffix of declarations naming only `K`-keys (an inductive block
+and any additional same-record recursors). -/
 def LoweringBy (K : CName md → Prop) (r : Read md) : Prop :=
   (r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names, K k) ∨
-    ∃ gens d, r.decls.toList = gens ++ [d] ∧ r.generated = gens.length ∧ ∀ k ∈ d.names, K k
+    ∃ gens suffix, r.decls.toList = gens ++ suffix ∧ r.generated = gens.length ∧
+      suffix ≠ [] ∧ ∀ d ∈ suffix, ∀ k ∈ d.names, K k
 
 /-- **One record's lowering**: its keys are the record's member keys. -/
 abbrev Lowering (cx : Ctx md) (owner : Address) : Read md → Prop :=
@@ -405,6 +407,34 @@ abbrev Lowering (cx : Ctx md) (owner : Address) : Read md → Prop :=
 
 theorem LoweringBy.empty {K : CName md → Prop} : LoweringBy K ({} : Read md) :=
   .inl ⟨rfl, fun d hd => by simp at hd⟩
+
+/-- A generated prefix followed by one public declaration is a lowering. -/
+theorem LoweringBy.single {K : CName md → Prop} {r : Read md}
+    {gens : List (CDecl md)} {d : CDecl md}
+    (hd : r.decls.toList = gens ++ [d]) (hg : r.generated = gens.length)
+    (hk : ∀ k ∈ d.names, K k) : LoweringBy K r := by
+  refine .inr ⟨gens, [d], hd, hg, by simp, ?_⟩
+  intro d' hd'
+  rw [List.mem_singleton] at hd'
+  subst d'
+  exact hk
+
+/-- Appending public declarations preserves the generated prefix and lowering shape. -/
+theorem LoweringBy.append {K : CName md → Prop} {r : Read md}
+    (h : LoweringBy K r) {tail : Array (CDecl md)}
+    (htail : ∀ d ∈ tail.toList, ∀ k ∈ d.names, K k) :
+    LoweringBy K { r with decls := r.decls ++ tail } := by
+  rcases h with ⟨hg, hall⟩ | ⟨gens, suffix, hd, hg, hne, hall⟩
+  · refine .inl ⟨hg, ?_⟩
+    intro d hd'
+    simp only [Array.toList_append, List.mem_append] at hd'
+    exact hd'.elim (hall d) (htail d)
+  · refine .inr ⟨gens, suffix ++ tail.toList, ?_, hg, ?_, ?_⟩
+    · simp only [Array.toList_append, hd, List.append_assoc]
+    · intro hempty
+      exact hne (List.append_eq_nil_iff.mp hempty).1
+    · intro d hd'
+      exact (List.mem_append.mp hd').elim (hall d) (htail d)
 
 /-- A declaration naming exactly the key of member `i` names only member keys. -/
 theorem member_names {cx : Ctx md} {owner : Address} {i : Nat} {k : CName md} {d : CDecl md}
@@ -476,7 +506,7 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering h
-        exact .inr ⟨gens, d, hd, hg, hk⟩
+        exact LoweringBy.single hd hg hk
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h
@@ -645,13 +675,18 @@ theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → Ix.Kernel
     (h : LoweringBy K r) :
     r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ Ix.Kernel.Declaration.isGenerated d = false ∧
       ∀ k ∈ d.names, K k := by
-  rcases h with ⟨-, hall⟩ | ⟨gens, d, hd, -, hk⟩
+  rcases h with ⟨-, hall⟩ | ⟨gens, suffix, hd, -, hne, hall⟩
   · rcases List.eq_nil_or_concat r.decls.toList with he | ⟨ds, d, hd⟩
     · exact .inl he
     · rw [List.concat_eq_append] at hd
       have hk := hall d (by simp [hd])
       exact .inr ⟨ds, d, hd, isGenerated_false fun k h => hK k (hk k h), hk⟩
-  · exact .inr ⟨gens, d, hd, isGenerated_false fun k h => hK k (hk k h), hk⟩
+  · rcases List.eq_nil_or_concat suffix with he | ⟨ds, d, hs⟩
+    · exact (hne he).elim
+    · rw [List.concat_eq_append] at hs
+      have hk := hall d (by simp [hs])
+      exact .inr ⟨gens ++ ds, d, by simpa only [hs, List.append_assoc] using hd,
+        isGenerated_false fun k h => hK k (hk k h), hk⟩
 
 /-- `LoweringBy.closed` for a record, under `RolesKeyed`. -/
 theorem Lowering.closed {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {r : Read md}
@@ -664,14 +699,18 @@ theorem Lowering.closed {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {r 
 shape (the ingress's `canonDecl`). -/
 theorem LoweringBy.map {K : CName md → Prop} {f : CDecl md → CDecl md} (hf : ∀ d, (f d).names = d.names)
     {r : Read md} (h : LoweringBy K r) : LoweringBy K { r with decls := r.decls.map f } := by
-  rcases h with ⟨hg, hall⟩ | ⟨gens, d, hd, hg, hk⟩
+  rcases h with ⟨hg, hall⟩ | ⟨gens, suffix, hd, hg, hne, hall⟩
   · refine .inl ⟨hg, fun d' hd' => ?_⟩
     simp only [Array.toList_map, List.mem_map] at hd'
     obtain ⟨d, hd, rfl⟩ := hd'
     rw [hf]
     exact hall d hd
-  · refine .inr ⟨gens.map f, f d, ?_, by simp [hg], fun k hk' => hk k (by rwa [hf] at hk')⟩
-    simp [hd]
+  · refine .inr ⟨gens.map f, suffix.map f, ?_, by simp [hg], by simpa using hne, ?_⟩
+    · simp [hd]
+    · intro d' hd'
+      obtain ⟨d, hd', rfl⟩ := List.mem_map.mp hd'
+      rw [hf]
+      exact hall d hd'
 
 /-- An invariant of an `Id` loop over `[:n]` holds of its result, so of what
 follows it. -/
@@ -944,7 +983,7 @@ theorem lower_lowering {K : CName .source → Prop} {st : State .source} {c : Co
   | «inductive» rb =>
     obtain ⟨tk, ck, rk⟩ := hk
     obtain ⟨gens, d, hd, hg, hn⟩ := lowerInductive_decls h
-    refine .inr ⟨gens, d, hd, hg, fun k hk' => ?_⟩
+    refine LoweringBy.single hd hg (fun k hk' => ?_)
     rw [hn] at hk'
     simp only [List.mem_append, List.mem_map] at hk'
     rcases hk' with (⟨e, he, rfl⟩ | ⟨e, he, rfl⟩) | ⟨e, he, rfl⟩

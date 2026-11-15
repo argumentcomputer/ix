@@ -696,7 +696,8 @@ theorem roleKey_origin {cx : Ctx md} {st st' : State md} {records : List (Addres
   obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hl
   obtain ⟨x, -, st₀, hread⟩ := Ix.Cert.FallbackStore.forall₂_mem_right hall r hr
   have gen := readRecord_generated hread
-  rcases Ix.Cert.ReaderUnits.readRecord_lowering hread with ⟨-, hk⟩ | ⟨gens, d', hdecls, hg, hk⟩
+  rcases Ix.Cert.ReaderUnits.readRecord_lowering hread with
+    ⟨-, hk⟩ | ⟨gens, suffix, hdecls, hg, -, hk⟩
   · obtain ⟨ref, -, hm⟩ := hk d hdl _ hs
     exact memberKey_role hm
   · rw [hdecls] at hdl
@@ -706,9 +707,7 @@ theorem roleKey_origin {cx : Ctx md} {st st' : State md} {records : List (Addres
       unfold Declaration.isGenerated at hgd
       have := (List.all_eq_true.mp (Bool.and_eq_true_iff.mp hgd).2) _ hs
       cases this
-    · rw [List.mem_singleton] at hlast
-      subst hlast
-      obtain ⟨ref, -, hm⟩ := hk _ hs
+    · obtain ⟨ref, -, hm⟩ := hk d hlast _ hs
       exact memberKey_role hm
 
 end Origin
