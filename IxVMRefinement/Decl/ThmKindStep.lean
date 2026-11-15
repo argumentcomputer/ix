@@ -56,7 +56,11 @@ theorem value_typed_of_runs {before after : Env .anon} (simulation : ThmSimAt be
     ThmValueTyped after { cv with type } value :=
   value_typed simulation (valueFrontRun_rulesJ checked)
     ⟨st, u, (verifiedRunMap propFuel).infer typeInferred,
-      (verifiedRunMap propFuel).sort sorted, (verifiedRunMap propFuel).isZero zero⟩
+      (verifiedRunMap propFuel).sort sorted, by
+        intro φ
+        have simplified : Level.simplify u = .zero := of_decide_eq_true zero
+        rw [← Level.eval_simplify φ u, simplified]
+        rfl⟩
 
 /-- The keys whose opaque definitions may be viewed as theorem entries by the core transfer. -/
 def AllowedKey (name : Key .anon) : Prop :=
@@ -123,7 +127,7 @@ theorem cons_theorem {before after : Env .anon} (simulation : ThmSimAt before af
       have different := not_table (T := T) allowed.2.1
       change (if cv.name = projTableName T then some (.thmInfo cv value) else after.find? (projTableName T)) =
         (if cv.name = projTableName T then some (.defnInfo cv value .opaque) else before.find? (projTableName T))
-      rw [ite_eq_right different]
+      rw [ite_eq_right different, ite_eq_right different]
       exact oldTable
 
 end ThmKind
