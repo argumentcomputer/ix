@@ -159,7 +159,9 @@ theorem readRecord_muts_indc (cx : Ctx md) (st : State md) (owner : Address) (c 
   have finishFun : finishInductiveRead cx owner (targets.map Ixon.MutConst.indc).toArray =
       (pure : Read md → ReadM (Read md)) := funext finish
   unfold readRecord
-  rw [info, finishFun]
+  rw [info]
+  dsimp only
+  rw [finishFun]
   obtain ⟨t, rest, rfl⟩ := List.exists_cons_of_ne_nil hne
   simp
 
