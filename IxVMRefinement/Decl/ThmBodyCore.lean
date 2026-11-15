@@ -333,4 +333,35 @@ theorem pureFns (mode : CheckMode) (fuel : Nat) :
     Ix.Kernel.pureFns mode source fuel = Ix.Kernel.pureFns mode target fuel :=
   _h.coreKnot mode id fuel
 
+theorem whnfCore (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.whnfCore mode source fuel depth e = Ix.Kernel.whnfCore mode target fuel depth e := by
+  simp only [Ix.Kernel.whnfCore, _h.pureFns]
+
+theorem whnf (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.whnf mode source fuel depth e = Ix.Kernel.whnf mode target fuel depth e := by
+  simp only [Ix.Kernel.whnf, _h.pureFns]
+
+theorem inferTypeCore (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.inferTypeCore mode source fuel depth e =
+      Ix.Kernel.inferTypeCore mode target fuel depth e := by
+  simp only [Ix.Kernel.inferTypeCore, _h.pureFns]
+
+theorem inferTypeIO (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.inferTypeIO mode source fuel depth e = Ix.Kernel.inferTypeIO mode target fuel depth e := by
+  simp only [Ix.Kernel.inferTypeIO, _h.pureFns]
+
+theorem isDefEqCore (mode : CheckMode) (fuel depth : Nat) (a b : Expr md) :
+    Ix.Kernel.isDefEqCore mode source fuel depth a b =
+      Ix.Kernel.isDefEqCore mode target fuel depth a b := by
+  simp only [Ix.Kernel.isDefEqCore, _h.pureFns]
+
+theorem annotateCore (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.annotateCore mode source fuel depth e = Ix.Kernel.annotateCore mode target fuel depth e := by
+  simp only [Ix.Kernel.annotateCore, _h.pureFns]
+
+theorem ensureSortCore (mode : CheckMode) (fuel depth : Nat) (e : Expr md) :
+    Ix.Kernel.ensureSortCore mode source fuel depth e =
+      Ix.Kernel.ensureSortCore mode target fuel depth e := by
+  simp only [Ix.Kernel.ensureSortCore, Ix.Kernel.ensureSort, _h.pureFns]
+
 end IxVM.Refinement.Decl.ThmBodyView.Agrees

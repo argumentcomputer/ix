@@ -77,6 +77,12 @@ theorem findCV (name : Key md) : source.findCV? name = target.findCV? name :=
 theorem isSome (name : Key md) : (source.find? name).isSome = (target.find? name).isSome :=
   h.observe name Option.isSome (by intros; rfl)
 
+theorem isNone (name : Key md) : (source.find? name).isNone = (target.find? name).isNone :=
+  h.observe name Option.isNone (by intros; rfl)
+
+theorem constsResolve (e : Expr md) : e.constsResolve source = e.constsResolve target :=
+  Expr.constsResolve_congr h.isSome e
+
 theorem findProj (T : Key md) (i : Nat) : source.findProj? T i = target.findProj? T i :=
   h.observe (projTableName T)
     (fun c => match c with
