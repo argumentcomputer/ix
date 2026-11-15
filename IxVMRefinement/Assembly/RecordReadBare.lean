@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.Scope
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Roles.Tables
 import IxVMRefinement.Roles.Lookups
@@ -93,6 +94,8 @@ inductive CheckedConstOrigin (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
       (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
       (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
       (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
       (hm_es : m_es = m_pre1 ++
         [.construct Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
       (hty_tmc_es : Core.TmC (Core.keyOf t) m_es (Core.posOf (List.range nlvls) ty') x_ty)
@@ -134,6 +137,8 @@ inductive CheckedConstOrigin (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
       (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
       (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
       (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
       (hm_es : m_es = m_pre1 ++
         [.construct Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
       (hty_tmc_es : Core.TmC (Core.keyOf t) m_es (Core.posOf (List.range nlvls) ty') x_ty)
@@ -183,6 +188,8 @@ inductive CheckedConstOrigin (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
       (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
       (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
       (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
       (hm_es : m_es = m_pre1 ++
         [.construct Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
       (hty_tmc_es : Core.TmC (Core.keyOf t) m_es (Core.posOf (List.range nlvls) ty') x_ty)
@@ -2110,20 +2117,26 @@ private theorem checkedDefnCore
         ev_sr1.heap_extends.trans (ev_sr2.heap_extends.trans ext_447_508)
       have ext_404_508 : Heap.Extends m404 m508 := ev385.heap_extends.trans ext_373_508
       have ext_m_508 : Heap.Extends m_chk m508 := ext_m_404.trans ext_404_508
-      obtain ⟨ty', hty_ann, hty_tmc_404⟩ :=
-        (raw_ty'.mono ext_m_404 (fun _ hm => hm)).toTmC
+      obtain ⟨ty', hty_ann, hty_tmc_m⟩ :=
+        raw_ty'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok1 x bs hm).1)
           hrd_ty_rp hty_lbb hty_def
-      obtain ⟨val', hval_ann, hval_tmc_508⟩ :=
-        (raw_val'.mono ext_m_508 (fun _ hm => hm)).toTmC
+      obtain ⟨val', hval_ann, hval_tmc_m⟩ :=
+        raw_val'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok2 x bs hm).1)
           hrd_val_rp hval_lbb hval_def
+      have hty_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls hty_tmc_m hty_ann hty_def ev311
+      have hval_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls (Core.TmC.mono ev311.heap_extends hval_tmc_m) hval_ann hval_def ev348
+      have hty_tmc_404 := Core.TmC.mono ext_m_404 hty_tmc_m
+      have hval_tmc_508 := Core.TmC.mono ext_m_508 hval_tmc_m
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
@@ -2151,6 +2164,7 @@ private theorem checkedDefnCore
           Bool.false_and, pure, Except.pure, hn]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.defnDecl cv val₀ hn) :=
         .defnDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+          hty_out_def hval_out_def
           hm412 hty_tmc_404 (hrc_m.mono ext_m_404) ev385 hcl_es hsub_es
           ext_373_508 hm516 (Core.TmC.mono ext_404_508 hty_tmc_404) hval_tmc_508
           (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc
@@ -2247,20 +2261,26 @@ private theorem checkedDefnCore
         ev_sr1.heap_extends.trans (ev_sr2.heap_extends.trans ext_746_807)
       have ext_649_807 : Heap.Extends m649 m807 := ext_649_675.trans ext_675_807
       have ext_m_807 : Heap.Extends m_chk m807 := ext_m_649.trans ext_649_807
-      obtain ⟨ty', hty_ann, hty_tmc_649⟩ :=
-        (raw_ty'.mono ext_m_649 (fun _ hm => hm)).toTmC
+      obtain ⟨ty', hty_ann, hty_tmc_m⟩ :=
+        raw_ty'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok1 x bs hm).1)
           hrd_ty_rp hty_lbb hty_def
-      obtain ⟨val', hval_ann, hval_tmc_807⟩ :=
-        (raw_val'.mono ext_m_807 (fun _ hm => hm)).toTmC
+      obtain ⟨val', hval_ann, hval_tmc_m⟩ :=
+        raw_val'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok2 x bs hm).1)
           hrd_val_rp hval_lbb hval_def
+      have hty_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls hty_tmc_m hty_ann hty_def ev556
+      have hval_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls (Core.TmC.mono ev556.heap_extends hval_tmc_m) hval_ann hval_def ev593
+      have hty_tmc_649 := Core.TmC.mono ext_m_649 hty_tmc_m
+      have hval_tmc_807 := Core.TmC.mono ext_m_807 hval_tmc_m
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
@@ -2286,6 +2306,7 @@ private theorem checkedDefnCore
           Bool.false_and, pure, Except.pure]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.thmDecl cv val₀) :=
         .thmDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+          hty_out_def hval_out_def
           hm657 hty_tmc_649 (hrc_m.mono ext_m_649) ev630 hcl_es hsub_es
           hm704 ev685 hcl_le hsub_le
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
@@ -2377,20 +2398,26 @@ private theorem checkedDefnCore
         ev_sr1.heap_extends.trans (ev_sr2.heap_extends.trans ext_997_1058)
       have ext_954_1058 : Heap.Extends m954 m1058 := ev935.heap_extends.trans ext_923_1058
       have ext_m_1058 : Heap.Extends m_chk m1058 := ext_m_954.trans ext_954_1058
-      obtain ⟨ty', hty_ann, hty_tmc_954⟩ :=
-        (raw_ty'.mono ext_m_954 (fun _ hm => hm)).toTmC
+      obtain ⟨ty', hty_ann, hty_tmc_m⟩ :=
+        raw_ty'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok1 x bs hm).1)
           hrd_ty_rp hty_lbb hty_def
-      obtain ⟨val', hval_ann, hval_tmc_1058⟩ :=
-        (raw_val'.mono ext_m_1058 (fun _ hm => hm)).toTmC
+      obtain ⟨val', hval_ann, hval_tmc_m⟩ :=
+        raw_val'.toTmC
           (recurAddrs := []) (κ := Core.keyOf t) (ps := List.range d.lvls.toNat)
           (by simp) (by simpa using hnlvls)
           (fun _ _ hk' => streamContext_keyAt_ok_inv hauth hba.wellFormed hk')
           (fun _ _ _ _ h => nomatch h) (fun x bs hm => (hblobs_ok2 x bs hm).1)
           hrd_val_rp hval_lbb hval_def
+      have hty_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls hty_tmc_m hty_ann hty_def ev861
+      have hval_out_def := Core.Scope.validatedAnnotation_positional
+        hnlvls (Core.TmC.mono ev861.heap_extends hval_tmc_m) hval_ann hval_def ev898
+      have hty_tmc_954 := Core.TmC.mono ext_m_954 hty_tmc_m
+      have hval_tmc_1058 := Core.TmC.mono ext_m_1058 hval_tmc_m
       have hrd_ty_cx' :
           (Ix.Kernel.Reader.MemberReader.mk' cx' src
             (Ix.Kernel.Reader.recParam (List.range d.lvls.toNat)) self).read d.typ = .ok ty₀ :=
@@ -2416,6 +2443,7 @@ private theorem checkedDefnCore
           Bool.false_and, pure, Except.pure]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.opaqueDecl cv val₀) :=
         .opaqueDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+          hty_out_def hval_out_def
           hm962 hty_tmc_954 (hrc_m.mono ext_m_954) ev935 hcl_es hsub_es
           ext_923_1058 hm1066 (Core.TmC.mono ext_954_1058 hty_tmc_954) hval_tmc_1058
           (hrc_m.mono ext_m_1058) ev1031 hcl_kc hsub_kc
