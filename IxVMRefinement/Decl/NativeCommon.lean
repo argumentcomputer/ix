@@ -238,7 +238,7 @@ theorem keyOf_not_aux (t : Ix.Kernel.RoleTable) (a : _root_.Address)
   unfold keyOf
   split <;> intro h <;> nomatch h
 
-theorem keyOf_isProjFnShape_false (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
+theorem nat_keyOf_isProjFnShape_false (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
     (keyOf t a).isProjFnShape = false := by
   unfold keyOf
   split <;> rfl
@@ -976,7 +976,7 @@ theorem CapsUpgradeAt.consSumCtors (nP : Nat) {T : KKey} {cvS : ConstantVal .ano
 
 /-! ## `ConstantValCheckJ` from `validate_expr_well_scoped` + `k_ensure_sort` -/
 
-theorem levelParam_nodup_of_nodup :
+theorem nat_levelParam_nodup_of_nodup :
     ∀ {ps : List LevelParam}, ps.Nodup → LevelParam.nodup ps = true
   | [], _ => rfl
   | p :: ps, h => by
@@ -986,7 +986,7 @@ theorem levelParam_nodup_of_nodup :
       · rfl
       · exact absurd (List.contains_iff_mem.mp hc') hnot
     simp only [LevelParam.nodup, hc, Bool.not_false, Bool.true_and]
-    exact levelParam_nodup_of_nodup hnd
+    exact nat_levelParam_nodup_of_nodup hnd
 
 /-- Lifting a sort typing derivation from `posOf cv'.levelParams cv'.type` back to `cv'.type`.
 Holds by `rfl` (`posOf_range`) whenever `cv'.levelParams = List.range n` (all `Induct`, `Ctor`,
@@ -1032,7 +1032,7 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
   have hnd_cv' : cv'.levelParams.Nodup := hv.2.2.1.nodup_iff.mpr List.nodup_range
   have hnd_cv : LevelParam.nodup cv.levelParams = true := by
     rw [← hvs.2.1]
-    exact levelParam_nodup_of_nodup hnd_cv'
+    exact nat_levelParam_nodup_of_nodup hnd_cv'
   have ev_ws' : ObsFn W "KernelCheck::validate_expr_well_scoped"
       [ty, .field 0, .field (cv'.levelParams.length : F)] h r₁ h₁ cs₁ := by
     rwa [← hv.1]

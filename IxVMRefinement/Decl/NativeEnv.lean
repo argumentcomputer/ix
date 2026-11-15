@@ -1161,22 +1161,22 @@ theorem eq_mkAppN_getApp :
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _
   | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ => rfl
 
-theorem getAppFn_mkAppN :
+theorem nat_getAppFn_mkAppN :
     ∀ (args : List KExpr) (hd : KExpr),
       (Expr.mkAppN hd args).getAppFn = hd.getAppFn
   | [], _ => rfl
-  | a :: args, hd => getAppFn_mkAppN args (.app hd a)
+  | a :: args, hd => nat_getAppFn_mkAppN args (.app hd a)
 
-theorem getAppArgs_mkAppN :
+theorem nat_getAppArgs_mkAppN :
     ∀ (args : List KExpr) (hd : KExpr),
       (Expr.mkAppN hd args).getAppArgs = hd.getAppArgs ++ args
   | [], _ => by simp [Expr.mkAppN]
   | a :: args, hd => by
-    simp [Expr.mkAppN, getAppArgs_mkAppN args (.app hd a), Expr.getAppArgs, List.append_assoc]
+    simp [Expr.mkAppN, nat_getAppArgs_mkAppN args (.app hd a), Expr.getAppArgs, List.append_assoc]
 
 theorem getAppArgs_mkAppN_const (c : KKey) (us : List KLevel) (args : List KExpr) :
     (Expr.mkAppN (.const c us) args).getAppArgs = args := by
-  rw [getAppArgs_mkAppN]
+  rw [nat_getAppArgs_mkAppN]
   rfl
 
 /-- Sequential instantiation of an opened free-variable prefix `vs` at binder depth `j`. -/
@@ -1742,7 +1742,7 @@ private theorem recFamOk_opened {env env₁ : Ix.Kernel.Env .anon} {ci : KConsta
         fvsP ++ (abody.getAppArgs.drop nP).map (instOpen (fvsP ++ fieldFvs) k) := by
     rw [hbody_eq, getAppArgs_mkAppN_const]
   have hfn' : (instOpen (fvsP ++ fieldFvs) k abody).getAppFn = .const T (lps.map .param) := by
-    rw [hbody_eq, getAppFn_mkAppN]; rfl
+    rw [hbody_eq, nat_getAppFn_mkAppN]; rfl
   have hdrop_len : (abody.getAppArgs.drop nP).length = nIdx := by
     rw [List.length_drop, hlen]; omega
   refine ⟨hfn', ?_, ?_, ?_⟩
@@ -2083,7 +2083,7 @@ theorem recCtorKinds_and_nativeOpenedOk {env env₁ : Ix.Kernel.Env .anon} {ci :
       simp only [Ix.Kernel.recFamOk, Nat.add_zero, hxFvs_len, Bool.and_eq_true, beq_iff_eq]
       refine ⟨⟨⟨?_, ?_⟩, ?_⟩, hcbody_all_noT⟩
       · show (Expr.mkAppN (.const T (lps.map .param)) _).getAppFn = _
-        rw [getAppFn_mkAppN]; rfl
+        rw [nat_getAppFn_mkAppN]; rfl
       · rw [hcbody_args, List.length_append, hps_len, hes_len]
       · rw [hcbody_args, List.take_append_of_le_length (by omega),
           List.take_of_length_le (by omega)]

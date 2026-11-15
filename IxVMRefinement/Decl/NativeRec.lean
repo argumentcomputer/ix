@@ -2315,8 +2315,8 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
       have hAs_sub : ∀ e ∈ As, e ∈ fvsP ++ idxArgs := by
         have h1 : (Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ idxArgs)).getAppArgs =
             fvsP ++ idxArgs := by
-          rw [getAppArgs_mkAppN]; rfl
-        have h2 : (Expr.mkAppN H As).getAppArgs = H.getAppArgs ++ As := getAppArgs_mkAppN As H
+          rw [nat_getAppArgs_mkAppN]; rfl
+        have h2 : (Expr.mkAppN H As).getAppArgs = H.getAppArgs ++ As := nat_getAppArgs_mkAppN As H
         have h3 : fvsP ++ idxArgs = H.getAppArgs ++ As := by
           rw [← h1, ← h2, heq_app]
         intro e he
@@ -4936,7 +4936,7 @@ theorem mkAppN_const_inj {T₁ T₂ : KKey} {us₁ us₂ : List KLevel} {as₁ a
     (h : Expr.mkAppN (.const T₁ us₁) as₁ = Expr.mkAppN (.const T₂ us₂) as₂) :
     T₁ = T₂ ∧ us₁ = us₂ ∧ as₁ = as₂ := by
   have hfn := congrArg Expr.getAppFn h
-  rw [getAppFn_mkAppN, getAppFn_mkAppN] at hfn
+  rw [nat_getAppFn_mkAppN, nat_getAppFn_mkAppN] at hfn
   simp only [Expr.getAppFn] at hfn
   injection hfn with hT hus
   have hargs := congrArg Expr.getAppArgs h
@@ -5057,7 +5057,7 @@ theorem build_param_lvls_range_go :
           (htl.mono ext_end)
       rwa [← klevelListEnum_eq] at hcons
 
-theorem build_param_lvls_range_spec {start count : Nat} {r : SourceValue F}
+theorem nat_build_param_lvls_range_spec {start count : Nat} {r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} (hlt : start + count < 4294967296)
     (ev : ObsFn W "KernelCheck::build_param_lvls_range"
       [.field (start : F), .field (count : F), .field 0] h r h' cs) :
@@ -6204,7 +6204,7 @@ theorem nat_field_tele_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
     | lit _ | proj _ _ _ => rfl
   have hRh_fn : Rh = .const T us := by
     have hfn := congrArg Expr.getAppFn hR_eq
-    rw [getAppFn_mkAppN, getAppFn_mkAppN] at hfn
+    rw [nat_getAppFn_mkAppN, nat_getAppFn_mkAppN] at hfn
     cases Rh with
     | app f a => exact (hnot_app f a rfl).elim
     | bvar _ | fvar _ _ | sort _ | const _ _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ _
@@ -6541,7 +6541,7 @@ theorem nat_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
   subst h1 h2
   have hRh_fn : Rh = .const T rus := by
     have hfn := congrArg Expr.getAppFn hR_sp
-    rw [getAppFn_mkAppN, getAppFn_mkAppN] at hfn
+    rw [nat_getAppFn_mkAppN, nat_getAppFn_mkAppN] at hfn
     cases Rh with
     | app f a => exact (hnot_app f a rfl).elim
     | bvar _ | fvar _ _ | sort _ | const _ _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ _

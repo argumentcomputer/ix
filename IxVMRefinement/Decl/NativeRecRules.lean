@@ -1337,7 +1337,7 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
   have hnlvls_eq : x_nlvls = .field (rlps'.length : F) := heq162.trans hv138_eq
   -- Step 1: `clvls`, `pw` (`Seg1`), `never = .succ .zero`, and `Seg2` (`v381`)
   have hlps_219 : RepKLevelList m219 clvls v218 :=
-    build_param_lvls_range_spec
+    nat_build_param_lvls_range_spec
       (by dsimp only [uoff]; cases large <;> simp only [Bool.false_eq_true, ↓reduceIte] <;>
         have := hk_lt <;> omega)
       ev231
@@ -3479,7 +3479,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     rw [env_find?_cons_ne (c := .indInfo wf.cvTa₀ {}) hne_TR]
     exact w.fresh_R
   have hshape_R : p₀.cvR.name.isProjFnShape = false := by
-    rw [w.R_rprj]; exact keyOf_isProjFnShape_false wf.t _
+    rw [w.R_rprj]; exact nat_keyOf_isProjFnShape_false wf.t _
   have hpos_lift_R : PosSortLift env_base₀ w.cvRa₀ := by
     cases hlg : p₀.large with
     | false =>
@@ -3730,7 +3730,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     simpa [p, p₁, isProp₀] using hup_sc
   have hshape_Ta₀ : wf.cvTa₀.name.isProjFnShape = false := by
     rw [wf.valStored_T.1, wf.T_iprj]
-    exact keyOf_isProjFnShape_false wf.t _
+    exact nat_keyOf_isProjFnShape_false wf.t _
   have hext_env₁ : Ix.Kernel.EnvExt env env₁ :=
     envExt_cons_nonProj hfresh_Ta₀ (ne_projTableName_of_isProjFnShape_false hshape_Ta₀)
   obtain ⟨tfvs_all, isorts, hop_all, hisorts⟩ :=
