@@ -1324,7 +1324,7 @@ private theorem sum_ctorUnsafeBit_le_length :
   | ct :: rest => by
     have hih := sum_ctorUnsafeBit_le_length rest
     simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit]
-    cases h : ct.isUnsafe <;> simp [h] <;> omega
+    cases ct.isUnsafe <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
 
 private theorem sum_ctorUnsafeBit_eq_zero_iff :
     ∀ (cs : List Ixon.Constructor),
@@ -1353,21 +1353,21 @@ private theorem sum_ctorUnsafeBit_lt_length_of_mem :
       simp [ctorUnsafeBit, hsafe]; omega
     · have hlt := sum_ctorUnsafeBit_lt_length_of_mem hmem hsafe
       simp only [ctorUnsafeBit]
-      cases h : c.isUnsafe <;> simp [h] <;> omega
+      cases c.isUnsafe <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
 
 private theorem mutUnsafeCount_le_mutConstCount (m : Ixon.MutConst) :
     mutUnsafeCount m ≤ mutConstCount m := by
   cases m with
   | defn d =>
     simp only [mutUnsafeCount, mutConstCount]
-    cases h : (Ix.Kernel.Reader.safetyDecline d).isNone <;> simp [h] <;> omega
+    cases (Ix.Kernel.Reader.safetyDecline d).isNone <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
   | indc ind =>
     have hle := sum_ctorUnsafeBit_le_length ind.ctors.toList
     simp only [mutUnsafeCount, mutConstCount]
-    cases h : ind.isUnsafe <;> simp [h] <;> omega
+    cases ind.isUnsafe <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
   | recr rc =>
     simp only [mutUnsafeCount, mutConstCount]
-    cases h : rc.isUnsafe <;> simp [h] <;> omega
+    cases rc.isUnsafe <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
 
 private theorem mutUnsafeCount_eq_zero_iff (m : Ixon.MutConst) :
     mutUnsafeCount m = 0 ↔ IxVM.Consistency.InLogicMut m := by
@@ -1507,39 +1507,39 @@ private theorem defn_is_unsafe_ci_count_spec {kind : Ix.DefKind} {safety : Ix.De
     · refine ⟨rfl, ?_⟩
       have hd : (Ix.Kernel.Reader.safetyDeclineOf .thm safety).isNone = true := by
         cases safety <;> decide
-      simp [hd]
+      rw [hd]; simp
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · rw [hk] at hv25; simp at hv25
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+      · rw [hs] at hv41; simp at hv41
+      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .unsaf).isNone = false := by decide
+        exact ⟨rfl, by rw [hd]; simp⟩
+      · rw [hs] at hv41; simp at hv41
+    · rw [hk] at hv25; simp at hv25
   · cases kind <;> simp [Claim.RepDefKind] at hk
     · rw [hk] at hv25; simp at hv25
     · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
       · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .safe).isNone = true := by decide
-        exact ⟨rfl, by simp [hd]⟩
-      · rw [hs] at hv41; simp at hv41
-      · rw [hs] at hv41; simp at hv41
-    · rw [hk] at hv25; simp at hv25
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · rw [hk] at hv25; simp at hv25
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+        exact ⟨rfl, by rw [hd]; simp⟩
       · exact absurd hs (hne46 [] rfl)
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .unsaf).isNone = false := by decide
-        exact ⟨rfl, by simp [hd]⟩
       · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .part).isNone = true := by decide
-        exact ⟨rfl, by simp [hd]⟩
+        exact ⟨rfl, by rw [hd]; simp⟩
     · rw [hk] at hv25; simp at hv25
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
-      · rw [hs] at hv74; simp at hv74
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .unsaf).isNone = false := by decide
-        exact ⟨rfl, by simp [hd]⟩
-      · rw [hs] at hv74; simp at hv74
-    · rw [hk] at hv58; simp at hv58
-    · rw [hk] at hv58; simp at hv58
   · cases kind <;> simp [Claim.RepDefKind] at hk
     · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
       · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .safe).isNone = true := by decide
-        exact ⟨rfl, by simp [hd]⟩
+        exact ⟨rfl, by rw [hd]; simp⟩
+      · rw [hs] at hv74; simp at hv74
+      · rw [hs] at hv74; simp at hv74
+    · rw [hk] at hv58; simp at hv58
+    · rw [hk] at hv58; simp at hv58
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
       · exact absurd hs (hne79 [] rfl)
+      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .unsaf).isNone = false := by decide
+        exact ⟨rfl, by rw [hd]; simp⟩
       · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .part).isNone = false := by decide
-        exact ⟨rfl, by simp [hd]⟩
+        exact ⟨rfl, by rw [hd]; simp⟩
     · rw [hk] at hv58; simp at hv58
     · rw [hk] at hv58; simp at hv58
 
@@ -1574,14 +1574,13 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
       injection hv with _ _ hargs
       simp only [List.cons.injEq] at hargs
       have hu_eq : uVal = x_is_unsafe := hargs.1.symm
-      subst uVal
       have hv156 : v156 = .field (((n + 1 : Nat) : F)) := by
         simpa [Nat.cast_add] using L1.binop_add op193
       subst v156
       cases sg147 with
       | n0 hv128 he129 he130 _ =>
         subst he130 he129
-        have hfalse := repBool_false_of_zero hu hv128
+        have hfalse := repBool_false_of_zero hu (hu_eq.trans hv128)
         have hv155 : v155 = .field (((u + 0 : Nat) : F)) := by
           simpa [Nat.cast_add] using L1.binop_add op177
         subst v155
@@ -1592,7 +1591,7 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
         congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
       | other hne132 he136 he137 _ =>
         subst he137 he136
-        have htrue := repBool_true_of_ne_zero hu hne132
+        have htrue := repBool_true_of_ne_zero hu (fun h0 => hne132 (hu_eq.symm.trans h0))
         have hv155 : v155 = .field (((u + 1 : Nat) : F)) := by
           simpa [Nat.cast_add] using L1.binop_add op177
         subst v155
@@ -1687,12 +1686,14 @@ private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
           simpa [Nat.cast_add] using L1.binop_add op380
         subst hx365
         have hv350 : v350 = .field (((u + mutUnsafeCount (.indc ind) : Nat) : F)) := by
-          simpa [mutUnsafeCount, Nat.add_assoc, Nat.cast_add] using L1.binop_add op372
+          rw [L1.binop_add op372]
+          simp only [mutUnsafeCount, Nat.cast_add, add_assoc]
         have hx390 : x390 = .field (((n + 1 : Nat) : F)) := by
           simpa [Nat.cast_add] using L1.binop_add op405
         subst hx390
         have hv351 : v351 = .field (((n + mutConstCount (.indc ind) : Nat) : F)) := by
-          simpa [mutConstCount, Nat.add_assoc, Nat.cast_add] using L1.binop_add op397
+          rw [L1.binop_add op397]
+          simp only [mutConstCount, Nat.cast_add, Nat.cast_one, add_assoc]
         subst hv350 hv351
         obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.indc ind)) (n + mutConstCount (.indc ind)) hrest ev348
         refine ⟨hext, ?_⟩
@@ -1830,7 +1831,10 @@ private theorem safetyDecline_eq_none_of_is_unsafe_ci_zero {d : Ixon.Definition}
       rcases hv with ⟨_, _, _, _, _, hu_eq⟩
       have hf := bool_false_of_repBoolField_zero (hu_eq.trans he.symm)
       rw [Ix.Kernel.Reader.safetyDecline, hk]
-      cases hs : d.safety <;> rw [hs] at hf ⊢ <;> first | decide | exact absurd hf (by decide)
+      cases d.safety with
+      | safe => decide
+      | unsaf => exact absurd hf (by decide)
+      | part => decide
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
     | Thm _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
@@ -2215,7 +2219,7 @@ theorem safeRefTargetChecked_resolve_and_not_outside
           simp [Core.kciEnum] at hv
       have hlt_ind : mutUnsafeCount (.indc ind_ld) < mutConstCount (.indc ind_ld) := by
         have hle := sum_ctorUnsafeBit_le_length ind_ld.ctors.toList
-        simp [mutUnsafeCount, mutConstCount, hind_safe]
+        simp only [mutUnsafeCount, mutConstCount, hind_safe, Bool.false_eq_true, ↓reduceIte]
         omega
       obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ :=
         ind_block_checked_member_kinds hbound hload₀ hexact₀ hnoCol hrec_cb₀ hcb_ld hms_arr hm_i
@@ -2334,7 +2338,7 @@ theorem safeRefTargetChecked_resolve_and_not_outside
       have hlt_ind : mutUnsafeCount (.indc ind_ld) < mutConstCount (.indc ind_ld) := by
         have hlt_ct := sum_ctorUnsafeBit_lt_length_of_mem (List.mem_of_getElem? hct_ld) hct_safe
         simp only [mutUnsafeCount, mutConstCount]
-        cases h : ind_ld.isUnsafe <;> simp [h] <;> omega
+        cases ind_ld.isUnsafe <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> omega
       obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ :=
         ind_block_checked_member_kinds hbound hload₀ hexact₀ hnoCol hrec_cb₀ hcb_ld hms_arr hm_i
       have hinl_cb : IxVM.Consistency.InLogic cb₀ :=
