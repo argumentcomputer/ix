@@ -194,22 +194,20 @@ def FormerReadJ (env₁ : Env md) (p : NativeParts md) (cvTa : ConstantVal md)
 /-- **The recursor's stage** (`checkNativeRec`) over a package: the record's pins
 (its level parameters are the generated ones; its rule count, rules' constructors
 and field counts and argument sums are the generated ones), the declared recursor
-checked, the generated type scoped, typed at a sort and convertible with the
-declared one, the generated rules scoped at the environment holding the
-recursor; the recursor `cvRa` carries the generated type and `rhss` are the
-generated rules. -/
+checked, the generated type scoped and convertible with the declared one, the
+generated rules scoped at the environment holding the recursor; the recursor
+`cvRa` carries the generated type and `rhss` are the generated rules. -/
 def NativeRecRunJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) (cvRa : ConstantVal md)
     (rhss : List (Expr md)) : Prop :=
   Ix.Kernel.nativeRecLpsOk p.toInductiveShape = true ∧ p.recPinned = true ∧
-  ∃ (cvRi : ConstantVal md) (recTy sty : Expr md) (u : Level),
+  ∃ (cvRi : ConstantVal md) (recTy : Expr md),
     ConstantValCheckJ J env p.cvR cvRi ∧
     Ix.Kernel.structRecTyR p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) = some recTy ∧
     recTy.allLevelParamsDefined p.cvR.levelParams = true ∧
     recTy.constsResolve env = true ∧
     recTy.looseBVarsBounded 0 = true ∧ recTy.hasFvar = false ∧
-    J.infer env 0 recTy sty ∧ J.sort env 0 sty u ∧
     J.defeq env 0 cvRi.type recTy ∧
     Ix.Kernel.checkNativeRules (m := Ix.Kernel.CheckM md)
       ⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ p.majorIdx p.rulePrefix []
@@ -241,7 +239,10 @@ def RecStoredJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (∀ r ∈ rhss, letFree r = true) ∧
     Forall₂ (J.annot ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ 0) p.rhss
       rhss ∧
-    letFree cvRi.type = true
+    letFree cvRi.type = true ∧
+    (∀ r ∈ rhss, r.allLevelParamsDefined p.cvR.levelParams = true) ∧
+    (∀ bs dom B m, cvRi.type.stripPis p.majorIdx = some (bs, .forallE dom B m) →
+      ∃ K, dom.getAppFn = .const K (p.cvT.levelParams.map .param))
 
 /-- **The recursor's stage and the recursor stored**: the stage's generated recursor and
 rules, and the recursor and rules the block stores. -/
@@ -284,9 +285,6 @@ def DeclNativeRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
     FieldSortsJ J env₁ true false p.resSort p.nP (tfvs.drop p.nP) [] p.nIdx isorts ∧
     -- the kinds re-checked on the stored constructors
     nativeFieldsOk env p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA p.kinds = true ∧
-    -- the declared rules are the generated ones
-    nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP p.ctors.length
-      ctorsA p.kinds p.rhss p.cvR.type = true ∧
     -- the recursor; every stored rule fires (`NativeRecJ.plain`: the kernel's test of the
     -- stored type's major premise holds of every recursor this relation stores)
     NativeRecJ J (consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
@@ -650,7 +648,7 @@ theorem NativeRecRunJ.recursor {J : Judgements md} {env : Env md} {p : NativePar
     {rhss : List (Expr md)} (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
     cvRa.name = p.cvR.name ∧ cvRa.levelParams = p.cvR.levelParams ∧
       env.find? p.cvR.name = none ∧ p.cvR.name.isProjFnShape = false := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, hcv, -, -, -, -, -, -, -, -, -, hstR⟩ := h
+  obtain ⟨-, -, cvRi, recTy, hcv, -, -, -, -, -, -, -, hstR⟩ := h
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   exact ⟨rfl, rfl, hcv.fresh, hcv.shape⟩
 
@@ -670,7 +668,7 @@ theorem NativeRecRunJ.facts {J : Judgements md} {env : Env md} {p : NativeParts 
       rhs.allLevelParamsDefined cvRa.levelParams = true ∧
       rhs.constsResolve ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ = true ∧
       rhs.looseBVarsBounded 0 = true := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, hlp, hres, hbv, hfv, -, -, -, hrules, hstR⟩ := h
+  obtain ⟨-, -, cvRi, recTy, -, -, hlp, hres, hbv, hfv, -, hrules, hstR⟩ := h
   obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   obtain ⟨hlen, hall⟩ := Ix.Kernel.checkNativeRules_inv hrules
   refine ⟨rfl, rfl, ⟨hfv, hlp, hres, hbv⟩, hlen, ?_⟩
@@ -798,25 +796,22 @@ theorem NativeRecJ.facts {J : Judgements md} {env : Env md} {p : NativeParts md}
       rhs.looseBVarsBounded 0 = true := by
   obtain ⟨cvRg, rhsG, hR, hst⟩ := h
   have hF := hR.facts
-  rcases hst with ⟨rfl, rfl⟩ | ⟨cvRi, hccv, rfl, -, hWr, hlf, -, -⟩
+  rcases hst with ⟨rfl, rfl⟩ | ⟨cvRi, hccv, rfl, -, hWr, hlf, -, -, hrlp, -⟩
   · exact hF
-  · obtain ⟨hnR, hlR, -, hlen, hall⟩ := hF
+  · obtain ⟨hnR, -, -, hlen, hall⟩ := hF
     obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann, htp, htr, -⟩, rfl⟩ := hccv
     obtain ⟨htf, hbt⟩ := hsyn hann hitf hlbt
     refine ⟨rfl, rfl, ⟨htf, htp, htr, hbt⟩, by rw [← forall₂_length hWr]; exact hlen,
       fun rhs hrhs => ?_⟩
     obtain ⟨g, hg, hW⟩ := forall₂_mem_right hWr rhs hrhs
-    obtain ⟨hgf, hglp, hgres, hgbv⟩ := hall g hg
+    obtain ⟨hgf, -, hgres, hgbv⟩ := hall g hg
     have hT := hW.toWrapT (hlf rhs hrhs)
-    refine ⟨hT.hasFvar hgf, ?_, ?_, hT.looseBVarsBounded 0 hgbv⟩
-    · have h1 := hT.allLevelParamsDefined _ hgf hglp
-      rw [hlR] at h1
-      exact h1
-    · exact Ix.Kernel.Expr.constsResolve_of_find
-        (Ix.Kernel.find?_isSome_cons_same (c := .recInfo cvRg p.majorIdx p.rulePrefix [])
-          (c' := .recInfo ⟨p.cvR.name, p.cvR.levelParams, type'⟩ p.majorIdx p.rulePrefix [])
-          hnR)
-        (hT.constsResolve _ hgf hgres)
+    refine ⟨hT.hasFvar hgf, hrlp rhs hrhs, ?_, hT.looseBVarsBounded 0 hgbv⟩
+    exact Ix.Kernel.Expr.constsResolve_of_find
+      (Ix.Kernel.find?_isSome_cons_same (c := .recInfo cvRg p.majorIdx p.rulePrefix [])
+        (c' := .recInfo ⟨p.cvR.name, p.cvR.levelParams, type'⟩ p.majorIdx p.rulePrefix [])
+        hnR)
+      (hT.constsResolve _ hgf hgres)
 
 /-- **The stored recursor's cons keeps the environment well-formed** (`NativeRecRunJ.recWF`). -/
 theorem NativeRecJ.recWF {J : Judgements md} {env : Env md} (henv : Ix.Kernel.EnvWF env)
@@ -859,12 +854,12 @@ theorem NativeRecJ.major {J : Judgements md} {env : Env md} {p : NativeParts md}
       .forallE (Ix.Kernel.structFamI p.cvT.name p.cvT.levelParams p.nP p.nIdx
         (p.ctors.length + 1) 0) B m) := by
   obtain ⟨cvRg, rhsG, hR, hst⟩ := h
-  obtain ⟨-, -, cvRi, recTy, sty, u, -, hty, -, -, -, -, -, -, -, -, rfl⟩ := hR
+  obtain ⟨-, -, cvRi, recTy, -, hty, -, -, -, -, -, -, rfl⟩ := hR
   obtain ⟨bs, B, m, hg⟩ := structRecTyR_major hty
   rw [hlen] at hg
-  rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf⟩
+  rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf, -, hlvls⟩
   · exact ⟨bs, B, m, hg⟩
-  · exact WrapRel.major_structFamI hW hlf hT hg
+  · exact WrapRel.major_structFamI hW hlf hT hlvls hg
 
 /-- The kinds the block re-checks are one list per constructor. -/
 theorem nativeFieldsOk_length {env₀ : Env md} {T : Key md} {lps : List LevelParam}
@@ -1054,10 +1049,10 @@ theorem nativeRecRunJ_of_run {env : Env md} {p : NativeParts md} {cvTa cvRa : Co
     {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
     (h : checkNativeRec (fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss)) :
     NativeRecRunJ (runJ μ F) env p cvTa ctorsA cvRa rhss := by
-  obtain ⟨cvRi, recTy, sty, u, hcv, hrt, h1, h2, h3, h4, hsty, hu, hb, hrules, hR⟩ :=
+  obtain ⟨cvRi, recTy, _, _, hcv, hrt, h1, h2, h3, h4, _, _, hb, hrules, hR⟩ :=
     Ix.Kernel.checkNativeRec_shape h
-  refine ⟨?_, ?_, cvRi, recTy, sty, u, constantValCheckJ_of_run hcv, hrt, h1, h2, h3, h4,
-    hsty, hu, hb, hrules, hR⟩
+  refine ⟨?_, ?_, cvRi, recTy, constantValCheckJ_of_run hcv, hrt, h1, h2, h3, h4,
+    hb, hrules, hR⟩
   · unfold Ix.Kernel.checkNativeRec at h
     by_cases hlp : Ix.Kernel.nativeRecLpsOk p.toInductiveShape = true
     · exact hlp
@@ -1078,7 +1073,7 @@ theorem nativeRecRunJ_of_run {env : Env md} {p : NativeParts md} {cvTa cvRa : Co
 theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRun μ F env p₀ env₂) : DeclNativeRunJ (runJ μ F) env p₀ env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest,
-    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, hROk, hRec, -, hTbl⟩ := h
+    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, -, hRec, -, hTbl⟩ := h
   -- the kernel stores the telescope constant
   have hFR : FormerReadJ env₁ p cvTa ctorsA := by
     obtain ⟨cvT, s, -, -, -, hp₁, henv₁, -⟩ := Ix.Kernel.checkSumInd_shape hInd
@@ -1091,7 +1086,7 @@ theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
   exact ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     sumIndRunJ_of_run hInd, hp, sumCtorsRunJ_of_run hCtors, hK, hcaps,
     fun hl => (hwl hl).imp_left fun hnz φ => Ix.Kernel.Level.isNeverZero_sound φ _ hnz,
-    hopT, fieldSortsJ_of_run hsorts, hFOk, hROk,
+    hopT, fieldSortsJ_of_run hsorts, hFOk,
     ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩, hTbl, hFR⟩
 
 end RunInstance

@@ -659,7 +659,7 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
       -- the recursor's constant and its freshness: the stage's generated recursor and
       -- rules, and the stored ones
       obtain ⟨cvRg, rhsG, hRecG, hst⟩ := id hRec
-      obtain ⟨-, -, cvRi, recTy, sty, u, hccvR, hgenR, -, -, -, hfvR, -, -, -, hrules, hcvRg⟩ :=
+      obtain ⟨-, -, cvRi, recTy, hccvR, hgenR, -, -, -, hfvR, -, hrules, hcvRg⟩ :=
         id hRecG
       have hcvRg : cvRg = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hcvRg
       obtain ⟨hRname', -, hRfresh₀, -⟩ := hRec.recursor

@@ -50,7 +50,6 @@ theorem envFacts₀ : EnvFacts c₀ where
   natOps := fun _ h => absurd h (not_inForce _)
   natAdd := fun h => absurd h (not_inForce _)
   eqStored := fun h => absurd h (not_inForce _)
-  evidence := fun _ _ _ _ h => absurd h (not_inForce _)
   recRules := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
   recPlain := by intro k cv mI rP rls rl cvj nP nF h; simp [c₀, env₀_find] at h
   recArity := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h

@@ -171,7 +171,7 @@ theorem native_recShape_new {J : Judgements md} (hfr : ∀ e : Env md, JudgeFram
     ∀ n cv mI rP rules, env₂.find? n = some (.recInfo cv mI rP rules) → env.find? n = none →
       RecAt env₂ n cv mI rP rules := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl, -⟩ := hrun
+    hCtors, -, -, -, -, -, hFOk, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   obtain ⟨_, s, _, _, _, hp₁, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor

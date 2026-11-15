@@ -615,12 +615,18 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     let some entry := cx.index.recs[ref]? | continue
     let some ibc := look entry.block | continue
     let iused := usedIdxs ibc
-    let irefBlocks : Array Address := ibc.refs.zipIdx.filterMap fun (q, j) =>
-      if iused.contains j then (look q).bind projectionBlock? else none
+    let (iusedRefs, irefBlocks) : Std.HashSet Address × Std.HashSet Address :=
+      ibc.refs.zipIdx.foldl (fun (ur, ib) (q, j) =>
+        if iused.contains j then
+          let ib := match (look q).bind projectionBlock? with
+            | some pb => ib.insert pb
+            | none => ib
+          (ur.insert q, ib)
+        else (ur, ib)) ({}, {})
     let used := usedIdxs fam
     for (r, j) in fam.refs.zipIdx do
       unless used.contains j do continue
-      if ibc.refs.zipIdx.any (fun (q, i) => q == r && iused.contains i) then continue
+      if iusedRefs.contains r then continue
       if outside.contains r || extra.contains r then continue
       let rc? := look r
       if (rc?.bind projectionBlock?) == some entry.block then continue
@@ -641,12 +647,18 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       | .cPrj p => some p.block
       | .rPrj p => some p.block
       | _ => none
-    let brefBlocks : Array Address := bc.refs.zipIdx.filterMap fun (q, j) =>
-      if bused.contains j then (look q).bind typeCtorRecBlock else none
+    let (busedRefs, brefBlocks) : Std.HashSet Address × Std.HashSet Address :=
+      bc.refs.zipIdx.foldl (fun (br, bb) (q, j) =>
+        if bused.contains j then
+          let bb := match (look q).bind typeCtorRecBlock with
+            | some pb => bb.insert pb
+            | none => bb
+          (br.insert q, bb)
+        else (br, bb)) ({}, {})
     let used := usedIdxs fam
     for (r, j) in fam.refs.zipIdx do
       unless used.contains j do continue
-      if bc.refs.zipIdx.any (fun (q, i) => q == r && bused.contains i) then continue
+      if busedRefs.contains r then continue
       if outside.contains r || extra.contains r then continue
       let rc? := look r
       if (rc?.bind typeCtorRecBlock) == some b then continue
