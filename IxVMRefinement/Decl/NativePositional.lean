@@ -104,7 +104,7 @@ theorem CapsUpgradeAt.nativePos_constantValCheckJ {name : KKey} {cv : ConstantVa
   · rwa [change.constsResolve_eq]
   · rcases hi with hi | ⟨scope, ps, hp, hi⟩
     · exact Or.inl (change.upgradeInfer hi)
-    · exact Or.inr ⟨scope.upgrade change, ps, hp, change.upgradeInfer hi⟩
+    · exact Or.inr ⟨StoredTypeLevels.upgrade change scope, ps, hp, change.upgradeInfer hi⟩
   · obtain ⟨ps, hp, hr⟩ := hr
     exact ⟨ps, hp, change.upgradeRed hr⟩
 
