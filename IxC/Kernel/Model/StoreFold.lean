@@ -1106,7 +1106,7 @@ theorem storeInv_declNativeRunJ {J : Judgements md} (hfr : ∀ e : Env md, Judge
     {env env₂ : Env md} {p₀ : NativeParts md} (hrc : NativeRecog p₀) (h : StoreInv env)
     (hrun : DeclNativeRunJ J env p₀ env₂) : StoreInv env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl, -⟩ := hrun
+    hCtors, -, -, -, -, -, hFOk, hRec, hTbl, -⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   have hplAll := hF.plain hRec (nativeFieldsOk_length hFOk) hCtors.1
   -- the recursor

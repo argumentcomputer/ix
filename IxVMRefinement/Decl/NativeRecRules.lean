@@ -1785,7 +1785,7 @@ structure NativeWithRecWitness (calls : List (Call F)) (env : Ix.Kernel.Env .ano
       front.t, front.lim₀⟩ cs_rec
 
 /-- Hypothesis & specification-bridge bundle for native one-type inductive blocks with recursor.
-Isolates `nativeRulesOk_bridge`, `wrap_bridge`, and `gen_recTy_sort_bridge` alongside the shared
+Isolates `wrap_bridge` and `gen_recTy_sort_bridge` alongside the shared
 front-end parameter/positivity obligations. -/
 structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (block : List KConstantInfo) (p₀ : Ix.Kernel.NativeParts .anon) where
@@ -1818,10 +1818,6 @@ structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
         (Ix.Kernel.consSumCtors p₀.nP witness.front.ctorsA
           ⟨.indInfo witness.front.cvTa₀ {} :: env.consts⟩)
         witness.cvRa₀
-  nativeRulesOk_bridge :
-    ∀ kinds,
-      Ix.Kernel.nativeRulesOk p₀.cvR.name (p₀.cvR.levelParams.map .param) .never
-        p₀.nP p₀.ctors.length witness.front.ctorsA kinds p₀.rhss p₀.cvR.type = true
   wrap_bridge :
     ∀ (find? : KKey → Option KConstantInfo) (g d_e : KExpr),
       WrapRelSem find? g d_e → Ix.Kernel.Semantics.WrapRel find? g d_e
@@ -3358,13 +3354,12 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
       w.cvRa₀, rhssA, tfvs_all, .sort s₀, isorts,
       ⟨wf.cvTa₀, s₀, bsT, wf.cvTa₀, fout.cvT_check, Or.inl rfl, hst_Ta₀,
         Or.inl rfl, rfl, rfl⟩,
-      rfl, hsum_ctors₁, ?_, rfl, ?_, ?_, ?_, ?_, ?_, hNativeRec, htable_ok, ?_⟩
+      rfl, hsum_ctors₁, ?_, rfl, ?_, ?_, ?_, ?_, hNativeRec, htable_ok, ?_⟩
     · simpa [p, p₁] using hclassify
     · simpa [p, p₁] using hlg_guard
     · simpa [p, p₁] using hop_all
     · simpa [p, p₁] using hisorts
     · simpa [p, p₁] using hfields_ok
-    · exact extra.nativeRulesOk_bridge kinds
     · refine Or.inl ⟨caps, ?_⟩
       have hpT : p.cvT.name = wf.cvTa₀.name := wf.valStored_T.1.symm
       rw [hpT]; exact hup₀.find_self_b

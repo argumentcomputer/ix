@@ -284,9 +284,6 @@ def DeclNativeRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
     FieldSortsJ J env₁ true false p.resSort p.nP (tfvs.drop p.nP) [] p.nIdx isorts ∧
     -- the kinds re-checked on the stored constructors
     nativeFieldsOk env p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA p.kinds = true ∧
-    -- the declared rules are the generated ones
-    nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP p.ctors.length
-      ctorsA p.kinds p.rhss p.cvR.type = true ∧
     -- the recursor; every stored rule fires (`NativeRecJ.plain`: the kernel's test of the
     -- stored type's major premise holds of every recursor this relation stores)
     NativeRecJ J (consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
@@ -1078,7 +1075,7 @@ theorem nativeRecRunJ_of_run {env : Env md} {p : NativeParts md} {cvTa cvRa : Co
 theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRun μ F env p₀ env₂) : DeclNativeRunJ (runJ μ F) env p₀ env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest,
-    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, hROk, hRec, -, hTbl⟩ := h
+    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, -, hRec, -, hTbl⟩ := h
   -- the kernel stores the telescope constant
   have hFR : FormerReadJ env₁ p cvTa ctorsA := by
     obtain ⟨cvT, s, -, -, -, hp₁, henv₁, -⟩ := Ix.Kernel.checkSumInd_shape hInd
@@ -1091,7 +1088,7 @@ theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
   exact ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     sumIndRunJ_of_run hInd, hp, sumCtorsRunJ_of_run hCtors, hK, hcaps,
     fun hl => (hwl hl).imp_left fun hnz φ => Ix.Kernel.Level.isNeverZero_sound φ _ hnz,
-    hopT, fieldSortsJ_of_run hsorts, hFOk, hROk,
+    hopT, fieldSortsJ_of_run hsorts, hFOk,
     ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩, hTbl, hFR⟩
 
 end RunInstance
