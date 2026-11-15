@@ -125,8 +125,22 @@ def beqConstRefFast : ConstRef _root_.Address → ConstRef _root_.Address → Bo
 theorem beqConstRefFast_eq (x y : ConstRef _root_.Address) :
     beqConstRefFast x y = (x == y) := by
   apply Bool.eq_iff_iff.mpr
-  cases x <;> cases y <;>
-    simp [beqConstRefFast, beqAddrFast_eq, BEq.beq, Bool.and_eq_true, beq_iff_eq]
+  rw [beq_iff_eq]
+  cases x with
+  | member b1 i1 =>
+    cases y with
+    | member b2 i2 =>
+      rw [beqConstRefFast, Bool.and_eq_true, beqAddrFast_eq, beq_iff_eq, beq_iff_eq,
+        ConstRef.member.injEq]
+    | ctor b2 i2 c2 =>
+      simp [beqConstRefFast]
+  | ctor b1 i1 c1 =>
+    cases y with
+    | member b2 i2 =>
+      simp [beqConstRefFast]
+    | ctor b2 i2 c2 =>
+      rw [beqConstRefFast, Bool.and_eq_true, Bool.and_eq_true, beqAddrFast_eq,
+        beq_iff_eq, beq_iff_eq, beq_iff_eq, and_assoc, ConstRef.ctor.injEq]
 
 def lookupConstRefFast {β : Type} (k : ConstRef _root_.Address) :
     List (ConstRef _root_.Address × β) → Option β

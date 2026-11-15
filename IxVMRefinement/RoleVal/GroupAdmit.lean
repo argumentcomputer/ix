@@ -267,7 +267,7 @@ theorem check_evidence_nodup_and_eqns {t : Ix.Kernel.RoleTable} (hchk : t.check 
         obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
         first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
       simp only [hrc, ↓reduceIte] at hst
-      by_cases hke : r.spec.evidenceAllowed.isEmpty = true
+      by_cases hke : ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed.isEmpty = true
       case pos =>
         simp only [hke, ↓reduceIte] at hst
         obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
@@ -649,6 +649,7 @@ private theorem decodeNatListExpr_sound :
           obtain ⟨vs, a, hvin⟩ := isFieldListCtor_sound hnil din
           obtain ⟨rfl, rfl, _⟩ := a.nil_inv
           subst hvin
+          rw [Value.type]
           exact ⟨Heap.Extends.snoc _ _,
             Lib.rep_store_nil (en := Obs.Names.«Lists::Node<Field>») (R := repRoleIdx) min⟩
         | cons _ _ =>
@@ -682,6 +683,7 @@ private theorem decodeNatListExpr_sound :
                   obtain ⟨vt, vs2, m2, _, _, rfl, dt, a2, _⟩ := a1.cons_inv
                   obtain ⟨rfl, rfl, _⟩ := a2.nil_inv
                   subst hvin
+                  rw [Value.type]
                   obtain ⟨ext_t, hrep_t⟩ := decodeNatListExpr_sound fuel htail dt
                   have hhead : repRoleIdx _ (ZMod.val x) (.field x) :=
                     congrArg Value.field (natCast_val_eq x).symm
