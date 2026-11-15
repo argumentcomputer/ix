@@ -166,8 +166,7 @@ theorem isUnitLikeTy (e : Expr md) :
       (fun c => match c with
         | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
         | _ => false) (by intros; rfl)
-    dsimp only
-    rw [hi, hr]
+    exact congrArg₂ (fun left right : Bool => (name == punitName && left) && right) hi hr
   | _ => rfl
 
 theorem towerSlotsAll (T : Key md) (n : Nat) :
