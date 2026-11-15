@@ -88,11 +88,13 @@ private theorem noLetExpr_abstract1 {e : KExpr} (h : noLetExpr e = true) :
   | app f a ihf iha =>
     intro d k
     simp only [noLetExpr, Bool.and_eq_true] at h
-    exact Bool.and_eq_true.mpr ⟨ihf h.1 d k, iha h.2 d k⟩
+    simp only [Expr.abstract1, noLetExpr, Bool.and_eq_true]
+    exact ⟨ihf h.1 d k, iha h.2 d k⟩
   | lam ty b m iht ihb | forallE ty b m iht ihb =>
     intro d k
     simp only [noLetExpr, Bool.and_eq_true] at h
-    exact Bool.and_eq_true.mpr ⟨iht h.1 d k, ihb h.2 d (k + 1)⟩
+    simp only [Expr.abstract1, noLetExpr, Bool.and_eq_true]
+    exact ⟨iht h.1 d k, ihb h.2 d (k + 1)⟩
   | letE _ _ _ _ => cases h
   | proj s i e ih => exact fun d k => ih h d k
 
@@ -164,7 +166,8 @@ private theorem annotateCore_proj_shape {env : Env .anon} {fuel d : Nat}
   have heq : T = sn := by
     by_contra hne
     rw [annotateCore_succ] at h
-    simp [annotateBody, annotate_def, inferTypeIO_def, whnf_def, he, hi, hw, hfn, hfp, hne] at h
+    simp [annotateBody, Bind.bind, Except.bind, annotate_def, inferTypeIO_def, whnf_def,
+      he, hi, hw, hfn, hfp, hne] at h
   exact ⟨e₂, he, by rw [heq] at hout; exact hout⟩
 
 private theorem annotateCore_shape_aux {env : Env .anon} :
@@ -182,6 +185,7 @@ private theorem annotateCore_shape_aux {env : Env .anon} :
     cases e with
     | bvar i => simp [Expr.looseBVarsBounded] at hb
     | fvar i ty =>
+      simp only [Expr.WScoped] at hw
       rw [annotateCore_succ] at h
       simp [annotateBody, hw.1] at h
       subst e'
@@ -211,7 +215,7 @@ private theorem annotateCore_shape_aux {env : Env .anon} :
       simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
       obtain ⟨hfshape, hfno⟩ := ih f hf hw.1 hb.1 hn.1
       obtain ⟨hashape, hano⟩ := ih a ha hw.2 hb.2 hn.2
-      exact ⟨.app hfshape hashape, Bool.and_eq_true.mpr ⟨hfno, hano⟩⟩
+      exact ⟨.app hfshape hashape, by simp only [noLetExpr, hfno, hano, Bool.and_self]⟩
     | lam ty body bm =>
       obtain ⟨ty', body', pw, hty, hbody, rfl⟩ := annotateCore_lam_inv h
       simp only [Expr.WScoped] at hw
@@ -220,11 +224,11 @@ private theorem annotateCore_shape_aux {env : Env .anon} :
       have hwty' := annotateCore_WScoped fuel ty hty hw.1
       obtain ⟨hbshape, hbno⟩ := ih (body.instantiate1 (.fvar d ty')) hbody
         (hwty'.instantiate1 0 hw.2) (looseBVarsBounded_instantiate1 body 0 hb.2)
-        (fvarTypesNormalized_instantiate1 htyno body 0 hn.2)
+        (fvarTypesNormalized_instantiate1 (v := .fvar d ty') htyno body 0 hn.2)
       have hclosed := annotates_abstract1 hbshape d 0
       rw [abstract1_instantiate1_scoped ty' 0 hw.2.fvarsBelow hb.2] at hclosed
       exact ⟨.lam htyshape hclosed,
-        Bool.and_eq_true.mpr ⟨htyno, noLetExpr_abstract1 hbno d 0⟩⟩
+        by simp only [noLetExpr, Bool.and_eq_true]; exact ⟨htyno, noLetExpr_abstract1 hbno d 0⟩⟩
     | forallE ty body bm =>
       obtain ⟨ty', body', pw, hty, hbody, rfl⟩ := annotateCore_forallE_inv h
       simp only [Expr.WScoped] at hw
@@ -233,11 +237,11 @@ private theorem annotateCore_shape_aux {env : Env .anon} :
       have hwty' := annotateCore_WScoped fuel ty hty hw.1
       obtain ⟨hbshape, hbno⟩ := ih (body.instantiate1 (.fvar d ty')) hbody
         (hwty'.instantiate1 0 hw.2) (looseBVarsBounded_instantiate1 body 0 hb.2)
-        (fvarTypesNormalized_instantiate1 htyno body 0 hn.2)
+        (fvarTypesNormalized_instantiate1 (v := .fvar d ty') htyno body 0 hn.2)
       have hclosed := annotates_abstract1 hbshape d 0
       rw [abstract1_instantiate1_scoped ty' 0 hw.2.fvarsBelow hb.2] at hclosed
       exact ⟨.forallE htyshape hclosed,
-        Bool.and_eq_true.mpr ⟨htyno, noLetExpr_abstract1 hbno d 0⟩⟩
+        by simp only [noLetExpr, Bool.and_eq_true]; exact ⟨htyno, noLetExpr_abstract1 hbno d 0⟩⟩
     | letE ty value body lm =>
       obtain ⟨_, _, _, _, hbody, _⟩ := annotateCore_letE_inv h
       simp only [Expr.WScoped] at hw
@@ -250,6 +254,7 @@ private theorem annotateCore_shape_aux {env : Env .anon} :
       rw [Expr.instantiate1Lift_eq_instantiate1 hb.1.2]
       exact hshape
     | proj sn idx inner =>
+      simp only [Expr.WScoped] at hw
       obtain ⟨inner', hi, rfl⟩ := annotateCore_proj_shape h
       obtain ⟨hshape, hno⟩ := ih inner hi hw hb hn
       exact ⟨.proj hshape, hno⟩
