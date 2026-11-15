@@ -344,19 +344,19 @@ def Model.restrict_supported {env env' : Env md} (M : Model V env) {K : Key md �
     refine ⟨fun cv v hint hf φ ρ a X h => ?_, fun c f hc cv v hint hf φ ρ a b X h => ?_,
       fun c f hc cv v hint hf φ ρ a b X h => ?_⟩
     · have hK := hKof hf
-      exact Denotes.mono_env_supported hfind hproj hlit
+      exact Denotes.mono_env_supported hfind hproj
         (hpred cv v hint (by rw [← hfind _ hK]; exact hf) φ ρ a X
           (Denotes.mono_env_supported hfind' hproj' h
             (by exact ⟨hK, hnat⟩)))
         (by exact hnat)
     · have hK := hKof hf
-      exact Denotes.mono_env_supported hfind hproj hlit
+      exact Denotes.mono_env_supported hfind hproj
         (harith c f hc cv v hint (by rw [← hfind _ hK]; exact hf) φ ρ a b X
           (Denotes.mono_env_supported hfind' hproj' h
             (by exact ⟨⟨hK, hnat⟩, hnat⟩)))
         (by exact hnat)
     · have hK := hKof hf
-      refine Denotes.mono_env_supported hfind hproj hlit
+      refine Denotes.mono_env_supported hfind hproj
         (hcmp c f hc cv v hint (by rw [← hfind _ hK]; exact hf) φ ρ a b X
           (Denotes.mono_env_supported hfind' hproj' h
             (by exact ⟨⟨hK, hnat⟩, hnat⟩))) ?_
