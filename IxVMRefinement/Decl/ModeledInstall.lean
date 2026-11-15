@@ -3153,6 +3153,8 @@ structure ModeledBlockWitness (env : Env .anon) (block₀ : List (ConstantInfo .
       cbody0.getAppFn = .const Dc usc)
   hfind_pub_M : ∀ (env_iota : Env .anon),
     EnvExt c_adv.env env_iota →
+    (∀ k, (∀ w ∈ recs, ∀ j, k ≠ auxKey (auxKey w.cv.name .model) (.iota j)) →
+      env_iota.find? k = c_adv.env.find? k) →
     (∀ k ci, c_pub.env.find? k = some ci →
       (pushList (nonrecs.map posCI) env_iota).find? k = some ci) ∧
     EnvExt c_pub.env
@@ -3170,6 +3172,8 @@ structure ModeledBlockWitness (env : Env .anon) (block₀ : List (ConstantInfo .
       noLetExpr (posOf w.cv.levelParams r.rhs) = true ∧
       r.rhs.constsResolve (pushList (recs.map (·.prov_r)) (pushList nonrecs env)) = true) ∧
     (∀ (env_iota : Env .anon), EnvExt c_adv.env env_iota →
+      (∀ k, (∀ w' ∈ recs, ∀ j, k ≠ auxKey (auxKey w'.cv.name .model) (.iota j)) →
+        env_iota.find? k = c_adv.env.find? k) →
       ∀ r ∈ w.rawRules, ∀ t', posRulesJ.infer c_rhs.env 0 r.rhs t' →
         ∃ t'', posRulesJ.infer
           (pushList (recs.map (·.prov_p)) (pushList (nonrecs.map posCI) env_iota))
@@ -3649,7 +3653,7 @@ theorem modeledBlock_install_step {calls : List (Call F)} {env : Env .anon}
         · show (w.cv.type.instantiateLevelParams _ _).constsResolve envSelf_p = true
           rw [constsResolve_instantiateLevelParams]
           exact Ix.Kernel.Expr.constsResolve_le hsome_r_to_p hw_tr
-      obtain ⟨hfind_pub_Mp, hext_pub_Sp⟩ := W.hfind_pub_M env_iota hext_iota
+      obtain ⟨hfind_pub_Mp, hext_pub_Sp⟩ := W.hfind_pub_M env_iota hext_iota hout_iota
       have hext_adv_Sp : EnvExt W.c_adv.env envSelf_p :=
         hext_iota.trans (hext_iota_M_p.trans hext_M_Self_p)
       have hiot_p := rawIotaRules_to_posNVmRun hw_perm hrp_le hty_pos_wf
@@ -3661,7 +3665,7 @@ theorem modeledBlock_install_step {calls : List (Call F)} {env : Env .anon}
           ⟨by show (r.rhs.instantiateLevelParams _ _).constsResolve envSelf_p = true
               rw [constsResolve_instantiateLevelParams]
               exact Ix.Kernel.Expr.constsResolve_le hsome_r_to_p (hr_nolet_cr r hr).2,
-           hr_inf_self env_iota hext_iota r hr⟩)
+           hr_inf_self env_iota hext_iota hout_iota r hr⟩)
         ((hready_all w hw).mono fun _ _ hf => hext_iota_M_p.find hf)
       have heq_Mp : (w.rawRules.map fun r =>
           RecRule.mk r.ctor r.nfields r.ctorParams r.fire
