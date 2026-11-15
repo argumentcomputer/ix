@@ -29,10 +29,9 @@ noncomputable def admittedWalkRank {V : IxVM.Refinement.View} {b : Admission.Bin
 noncomputable def admittedWalkOrder {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) (calls : List (Call F)) (trace : Ixon.Env)
     (seeds : _root_.Address → Prop) : List _root_.Address :=
-  letI := Classical.propDecidable
   let allKeys := (w.order ++ trace.consts.keys).eraseDups
-  let reachable := allKeys.filter fun a => decide (UsedCompiledReachAt w.table
-    (admittedWalkEnv w calls trace) seeds a)
+  let reachable := allKeys.filter fun a => @decide (UsedCompiledReachAt w.table
+    (admittedWalkEnv w calls trace) seeds a) (Classical.propDecidable _)
   reachable.mergeSort fun a b => decide (admittedWalkRank w calls trace a ≤ admittedWalkRank w calls trace b)
 
 private theorem le_sum_of_mem {xs : List Nat} {n : Nat} (h : n ∈ xs) : n ≤ xs.sum := by
@@ -171,8 +170,10 @@ theorem admittedWalkOrder_spec {V : IxVM.Refinement.View} {b : Admission.Binding
           show ¬ WkAll calls b.address w.table trace target from ht, ↓reduceIte]
         omega
   let allKeys := (w.order ++ trace.consts.keys).eraseDups
-  let selected := allKeys.filter fun a => decide (UsedCompiledReachAt w.table E seeds a)
-  have hnd : selected.Nodup := List.nodup_eraseDups.filter _
+  let selected := allKeys.filter fun a => @decide (UsedCompiledReachAt w.table E seeds a)
+    (Classical.propDecidable _)
+  have hallKeys : allKeys.Nodup := List.nodup_eraseDups _
+  have hnd : selected.Nodup := hallKeys.filter _
   have members (a : _root_.Address) : a ∈ selected ↔ UsedCompiledReachAt w.table E seeds a := by
     simp only [selected, List.mem_filter, decide_eq_true_eq]
     refine ⟨And.right, fun ha => ⟨?_, ha⟩⟩
