@@ -58,7 +58,7 @@ private theorem preparePrelude_mem_spec (pre : PreludeIx md) (ds : Array (Declar
       (hoistNatOpGround_perm (frontOf #[] pre.decls.toList ds).2)
     obtain ⟨hfront, hrest⟩ := frontOf_toList pre.decls.toList #[] ds
     rw [hfront, hrest] at hh
-    simpa using hh
+    simpa [hfront] using hh
   exact hperm.mem_iff
 
 /-- Filtering generated declarations leaves the prelude's selected copies unchanged;
