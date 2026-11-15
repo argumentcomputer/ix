@@ -141,7 +141,7 @@ theorem admitted_trace_recordAt {V : IxVM.Refinement.View} {b : Admission.Bindin
       (hload.1 a found hget).1 (hload.1 a found hget).2
     rw [hraw] at hexact
     rw [hrole]
-    simpa only [Option.bind_some, w.coherent a role hrole, hexact, Except.toOption]
+    simp only [Option.bind_some, w.coherent a role hrole, hexact, Except.toOption]
 
 /-- Every decoded record of the union comes from a selected stored role record or a
 retained trace record. Missing role-order owners do not retain unrelated trace records. -/
@@ -210,11 +210,13 @@ theorem admittedCore_decoded {V : IxVM.Refinement.View} {b : Admission.Binding}
   rcases List.mem_append.mp hm with role | fallback
   · exact (admitted_role_entry w role).2.1
   · unfold fallbackSupp at fallback
-    obtain ⟨⟨a', c'⟩, hmember, heq⟩ := List.mem_map.mp fallback
-    cases heq
+    obtain ⟨⟨a', c'⟩, hfb, heq⟩ := List.mem_map.mp fallback
+    injection heq with haddr hpair
+    injection hpair with hraw hconst
+    subst a'; subst raw; subst c'
     have hwire := (rolePreludeInputs.serConstant_mem_committedImages w.preludeRead
-      (Array.mem_toList_iff.mp hmember)).2.2.1
-    exact Ixon.Verify.deConstantExact_serConstant c' hwire
+      (Array.mem_toList_iff.mp hfb)).2.2.1
+    exact Ixon.Verify.deConstantExact_serConstant c hwire
 
 /-- Record/blob overlaps in the concrete union are controlled by actual trace hashes and
 the admission witness's local selected and fallback agreements. -/
@@ -238,11 +240,13 @@ theorem admittedCore_not_internalCollision {V : IxVM.Refinement.View} {b : Admis
       · exact hno (.inl ⟨a, raw, bytes, .inl (admitted_role_entry w hrole).2.2,
           hhashed, hdifferent, hhash⟩)
       · unfold fallbackSupp at hfallback
-        obtain ⟨⟨a', c'⟩, hmember, heq⟩ := List.mem_map.mp hfallback
-        cases heq
+        obtain ⟨⟨a', c'⟩, hfb, heq⟩ := List.mem_map.mp hfallback
+        injection heq with haddr hpair
+        injection hpair with hraw hconst
+        subst a'; subst raw; subst c'
         obtain ⟨himage, hhash', _, _⟩ := rolePreludeInputs.serConstant_mem_committedImages
-          w.preludeRead (Array.mem_toList_iff.mp hmember)
-        exact hno (.inl ⟨a', Ixon.serConstant c', bytes,
+          w.preludeRead (Array.mem_toList_iff.mp hfb)
+        exact hno (.inl ⟨a, Ixon.serConstant c, bytes,
           .inr (.inl ⟨by simp [IxVM.Consistency.readerImages, himage], hhash'⟩),
           hhashed, hdifferent, hhash⟩)
   · rcases subEnv_get?_some_inv trace _ _ hconst with ⟨_, htraceConst⟩ |
@@ -255,9 +259,11 @@ theorem admittedCore_not_internalCollision {V : IxVM.Refinement.View} {b : Admis
       · obtain ⟨ha, role, hget, _, rfl⟩ := mem_roleSuppOf_iff.mp hrole
         exact hdifferent (w.selectedRecordBlobsAgree a ha role hget bytes hroleBlob)
       · unfold fallbackSupp at hfallback
-        obtain ⟨⟨a', c'⟩, hmember, heq⟩ := List.mem_map.mp hfallback
-        cases heq
-        exact hdifferent (w.fallbackRecordBlobsAgree a' bytes hroleBlob c'
-          (Array.mem_toList_iff.mp hmember))
+        obtain ⟨⟨a', c'⟩, hfb, heq⟩ := List.mem_map.mp hfallback
+        injection heq with haddr hpair
+        injection hpair with hraw hconst
+        subst a'; subst raw; subst c'
+        exact hdifferent (w.fallbackRecordBlobsAgree a bytes hroleBlob c
+          (Array.mem_toList_iff.mp hfb))
 
 end IxVM.Refinement.Assembly
