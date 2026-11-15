@@ -63,7 +63,7 @@ private theorem sub_one_bool_dichot {y r : SourceValue F}
     exact ⟨Or.inr op.symm, fun _ => rfl⟩
   · simp only [evalBinOp, sub_self, Except.ok.injEq] at op
     refine ⟨Or.inl op.symm, fun hr1 => ?_⟩
-    exact absurd (op.symm.trans hr1) field_zero_ne_one
+    exact absurd (op.trans hr1) field_zero_ne_one
 
 private theorem mul_bool_dichot {x y r : SourceValue F}
     (hx : x = .field 0 ∨ x = .field 1)
@@ -73,12 +73,12 @@ private theorem mul_bool_dichot {x y r : SourceValue F}
   rcases hx with rfl | rfl
   · rcases hy with rfl | rfl
     · simp only [evalBinOp, mul_zero, Except.ok.injEq] at op
-      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.symm.trans hr1) field_zero_ne_one⟩
+      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.trans hr1) field_zero_ne_one⟩
     · simp only [evalBinOp, zero_mul, Except.ok.injEq] at op
-      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.symm.trans hr1) field_zero_ne_one⟩
+      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.trans hr1) field_zero_ne_one⟩
   · rcases hy with rfl | rfl
     · simp only [evalBinOp, mul_zero, Except.ok.injEq] at op
-      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.symm.trans hr1) field_zero_ne_one⟩
+      exact ⟨Or.inl op.symm, fun hr1 => absurd (op.trans hr1) field_zero_ne_one⟩
     · simp only [evalBinOp, mul_one, Except.ok.injEq] at op
       exact ⟨Or.inr op.symm, fun _ => ⟨rfl, rfl⟩⟩
 
@@ -99,9 +99,10 @@ theorem loaded_recordAt_eq_of_exact_noCollision
     c₀ = c_ld := by
   have ⟨lc₀, hget₀, hlc₀⟩ : ∃ lc₀, E₀.consts.get? x = some lc₀ ∧ lc₀.get? = some c₀ := by
     unfold Ix.Cert.recordAt at hrec₀
+    rw [← Std.HashMap.get?_eq_getElem?] at hrec₀
     cases hg : E₀.consts.get? x with
-    | none => simp [hg] at hrec₀
-    | some lc₀ => exact ⟨lc₀, rfl, by simpa [hg] using hrec₀⟩
+    | none => rw [hg] at hrec₀; cases hrec₀
+    | some lc₀ => rw [hg] at hrec₀; exact ⟨lc₀, rfl, hrec₀⟩
   obtain ⟨c₀', hlc₀', hexact₀'⟩ := hexact₀ x lc₀ hget₀
   have hc_eq : c₀ = c₀' := Option.some.inj (hlc₀.symm.trans hlc₀')
   subst hc_eq
@@ -111,7 +112,7 @@ theorem loaded_recordAt_eq_of_exact_noCollision
     by_cases heq : lc₀.rawBytes = bytes
     · exact heq
     · exact absurd (.inl ⟨x, lc₀.rawBytes, bytes,
-        .inr (.inr ⟨hhash₀, hblake₀⟩), hhash_calls, heq, hblake⟩) hnoCol
+        .inr (.inr ⟨hhash₀, hblake₀⟩), hhash_calls, Ne.symm heq, hblake⟩) hnoCol
   rw [hraw_eq] at hexact₀'
   exact Except.ok.inj (hexact₀'.symm.trans hdec)
 
@@ -218,9 +219,9 @@ theorem iprj_store_eq_of_mutsMemberChecked
           simp only [Core.Specs.Callees.mutCtor] at hv67
           injection hv67 with _ hc _
           exact absurd hc (by decide)
-        | Indc _ _ hv112 hm1 _ =>
-          subst m199
-          rw [hv112]
+        | Indc _ _ _ he124 he150 _ =>
+          subst he150
+          rw [he124]
           exact ⟨TagN.u64Value i, _, b_arr, rfl, hrepi,
             Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
               (e1.trans (e2.trans (e3.trans (e4.trans e5)))) hb_ref, rfl⟩
@@ -511,12 +512,12 @@ theorem indBlockCtorIdx_of_exact_noCollision
     ct.cidx.toNat = j := by
   obtain ⟨cb₀, hrec₀, hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked blk hwk
   have hcb_eq₀ : cb₀ = cb := Option.some.inj (hrec₀.symm.trans hrec_blk)
-  subst hcb_eq₀
+  subst cb₀
   have hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t blk ms i := by
     rcases hchk_or with ⟨ms', hms'_eq, hmem_chk⟩ | hchk_blk
     · rw [hcb] at hms'_eq
       injection hms'_eq with hms'_eq'
-      subst hms'_eq'
+      subst ms'
       exact hmem_chk i (Array.getElem?_eq_some_iff.mp hms_i).1
     · obtain ⟨_, _, _, _, _, _, _, _, _, cs_ld, _, bytes_b, E_b,
         _, _, _, _, hhash_b, hblake_b, _, hL1_b, hsub_b, _, _, _, _⟩ :=
@@ -524,7 +525,7 @@ theorem indBlockCtorIdx_of_exact_noCollision
       obtain ⟨c_b, hdec_b, _, _, _, _, hraw_b⟩ := hL1_b
       have hcb_eq_b : cb = c_b := loaded_recordAt_eq_of_exact_noCollision
         hexact₀ hload₀ hnoCol hrec_blk hhash_b hsub_b hblake_b hdec_b
-      subst hcb_eq_b
+      subst c_b
       simp only [L1.RawCIRep, hcb] at hraw_b
   obtain ⟨hi_u64, hstore_iprj⟩ := iprj_store_eq_of_mutsMemberChecked hbound hnoCol hm_i hms_i
   have hchk_iprj : Claim.CheckedAtFull calls bAddr t (Core.iprjAddr blk i) := by
@@ -535,10 +536,10 @@ theorem indBlockCtorIdx_of_exact_noCollision
     checkedAtFull_loadedL1 hbound hchk_iprj
   obtain ⟨c_i, hdec_i, _, _, v', hld_v', hraw_i⟩ := hL1_i
   have hv_eq : v' = v := Except.ok.inj (hld_v'.symm.trans hld_v)
-  subst hv_eq
+  subst v'
   have hc_i_eq : c_i = ⟨.iPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩ :=
     hstore_iprj bytes_i c_i hblake_i hdec_i (.inr (.inr (Core.hashed_mono hsub_ld hhash_i)))
-  subst hc_i_eq
+  subst c_i
   have hi_toNat : i.toUInt64.toNat = i := Nat.mod_eq_of_lt hi_u64
   simp only [L1.RawCIRep, hi_toNat] at hraw_i
   obtain ⟨hi_lt, lcB, cb_ld, ms_ld, ind_ld, _, hget_lcB, _, _, hexact_lcB, _,
@@ -546,15 +547,15 @@ theorem indBlockCtorIdx_of_exact_noCollision
   obtain ⟨hhash_lcB, hblake_lcB⟩ := hload_ld.1 blk lcB hget_lcB
   have hcb_eq_ld : cb = cb_ld := loaded_recordAt_eq_of_exact_noCollision
     hexact₀ hload₀ hnoCol hrec_blk hhash_lcB hsub_ld hblake_lcB hexact_lcB
-  subst hcb_eq_ld
+  subst cb_ld
   rw [hcb] at hcb_ld
   injection hcb_ld with hms_ld_eq
-  subst hms_ld_eq
+  subst ms_ld
   have hms_list : ms.toList[i]? = some (.indc ind) := by simpa using hms_i
   rw [hms_list] at hms_ld
   injection hms_ld with hind_ld_eq
   injection hind_ld_eq with hind_ld_eq'
-  subst hind_ld_eq'
+  subst ind_ld
   have hind_safe : ind.isUnsafe = false := by
     have hinl : IxVM.Consistency.InLogic cb := by
       by_contra hnot
@@ -564,29 +565,13 @@ theorem indBlockCtorIdx_of_exact_noCollision
   obtain ⟨_, _, _, hnc_lt, _, tyPtr, blkPtr, b_arr, hb_eq, hbp_m, rfl, _⟩ := hraw_ind
   simp only [L1.repBoolField, hind_safe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   cases Obs.«KernelCheck::check_const».obs ev_chk with
-  | Axiom _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Ctor_n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Ctor_n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Ctor_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Rec_n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Rec_n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Rec_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
-    injection hv with _ htag _; exact absurd htag (by decide)
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv .. =>
+  | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
+  | .Axiom_other_other (hv37 := hv) ..
+  | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
+  | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
+  | .Ctor_n0_n0 (hv1884 := hv) .. | .Ctor_n0_other (hv1884 := hv) ..
+  | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) ..
+  | .Rec_n0 (hv2574 := hv) .. | .Rec_other (hv2574 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_other_other (hv1240 := hv_ind) (hne1870 := hne_u) .. =>
     injection hv_ind with _ _ hargs
@@ -776,7 +761,7 @@ theorem safe_refs_only_raw_spec
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
     | BVar _ ld hr hh' _ =>
-      exact ⟨Or.inr hr, by rw [hh']; exact Heap.Extends.refl h, fun _ _ _ hm => nomatch hm⟩
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
     | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -787,7 +772,7 @@ theorem safe_refs_only_raw_spec
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
     | Srt _ ld hr hh' _ =>
-      exact ⟨Or.inr hr, by rw [hh']; exact Heap.Extends.refl h, fun _ _ _ hm => nomatch hm⟩
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
     | BVar _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -798,7 +783,7 @@ theorem safe_refs_only_raw_spec
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
     | Lit _ ld hr hh' _ =>
-      exact ⟨Or.inr hr, by rw [hh']; exact Heap.Extends.refl h, fun _ _ _ hm => nomatch hm⟩
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -809,7 +794,7 @@ theorem safe_refs_only_raw_spec
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
     | Lit _ ld hr hh' _ =>
-      exact ⟨Or.inr hr, by rw [hh']; exact Heap.Extends.refl h, fun _ _ _ hm => nomatch hm⟩
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -853,6 +838,8 @@ theorem safe_refs_only_raw_spec
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra) ev79
       have hv_eq : v_ld = v63 := Except.ok.inj (hld_v.symm.trans ld73)
       subst hv_eq
+      rw [hd] at hblake_ld
+      rw [hblake_ld] at hraw_ld
       obtain ⟨hh', _, hy89, _, hinlogic⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev101
       subst hh'
       obtain ⟨hr_bool, hy0_of_r1⟩ := sub_one_bool_dichot hy89 op95
@@ -862,11 +849,10 @@ theorem safe_refs_only_raw_spec
       subst hi
       have href_arr : c.refs[rIdx.toNat]? = some a' := by simpa using href
       have ha_eq : a' = a := Option.some.inj (href_arr.symm.trans hc_ref)
-      subst ha_eq
-      rw [hd] at hblake_ld hraw_ld hinlogic
+      subst a'
       have hc_eq : c_a = c_ld := loaded_recordAt_eq_of_exact_noCollision
         hexact₀ hload₀ hnoCol hrec_a hhash_ld hsub77 hblake_ld hexact_ld
-      subst hc_eq
+      subst c_ld
       have hno_muts : ∀ ms, c_a.info ≠ .muts ms := by
         intro ms hms
         simp only [L1.RawCIRep, hms] at hraw_ld
@@ -1167,11 +1153,12 @@ theorem safe_refs_only_refOnly_resolve
     rcases hbnd with hle | heq
     · exact .inl hle
     · exact .inr ⟨heq, rfl⟩
-  have hspec := (safe_refs_only_raw_spec (bAddr := bAddr) (t := t)
+  intro i a hi hc_ref c_a hrec_a
+  rw [← List.take_length (l := c.sharing.toList)] at hi
+  exact (safe_refs_only_raw_spec (bAddr := bAddr) (t := t)
     hbound hload₀ hexact₀ hnoCol raw
-    c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2 rfl
-  rw [List.take_length] at hspec
-  exact hspec
+    c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2
+    rfl hi hc_ref c_a hrec_a
 
 /-! ## Section 3: Role-Prefix Order, Reachability & `preparePrelude` Splitting -/
 
@@ -1180,39 +1167,41 @@ private theorem idxOf_append_left [BEq α] [LawfulBEq α] :
   | [], _, _, ha => nomatch ha
   | x :: xs, ys, a, ha => by
     simp only [List.cons_append, List.idxOf_cons]
-    by_cases hxa : (x == a) = true
-    · simp [hxa]
-    · simp only [hxa, cond_false]
+    cases hxa : x == a with
+    | true => rfl
+    | false =>
       rcases List.mem_cons.mp ha with rfl | ha'
-      · exact absurd (beq_self_eq_true x) hxa
+      · exact absurd (beq_self_eq_true x) (by simp [hxa])
       · exact congrArg Nat.succ (idxOf_append_left ha')
 
-private theorem idxOf_lt_and_getElem [DecidableEq α] :
+private theorem idxOf_lt_and_getElem [BEq α] [LawfulBEq α] :
     ∀ {xs : List α} {a : α}, a ∈ xs → ∃ (hlt : xs.idxOf a < xs.length), xs[xs.idxOf a] = a
   | [], _, ha => nomatch ha
   | x :: xs, a, ha => by
     simp only [List.idxOf_cons]
-    by_cases hxa : (x == a) = true
-    · have h_eq : x = a := beq_iff_eq.mp hxa
+    cases hxa : x == a with
+    | true =>
+      have h_eq : x = a := beq_iff_eq.mp hxa
       subst h_eq
-      simp
-    · simp only [hxa, cond_false]
+      exact ⟨Nat.zero_lt_succ _, rfl⟩
+    | false =>
       rcases List.mem_cons.mp ha with rfl | ha'
-      · exact absurd (beq_self_eq_true x) hxa
+      · exact absurd (beq_self_eq_true x) (by simp [hxa])
       · obtain ⟨hlt, hget⟩ := idxOf_lt_and_getElem ha'
         exact ⟨Nat.succ_lt_succ hlt, hget⟩
 
-private theorem idxOf_getElem_of_nodup [DecidableEq α] :
+private theorem idxOf_getElem_of_nodup [BEq α] [LawfulBEq α] :
     ∀ {xs : List α}, xs.Nodup → ∀ (i : Nat) (hi : i < xs.length), xs.idxOf xs[i] = i
   | [], _, _, hi => nomatch hi
   | _ :: _, _, 0, _ => by simp
   | x :: xs, hnd, i + 1, hi => by
     rw [List.nodup_cons] at hnd
+    have hi' : i < xs.length := Nat.lt_of_succ_lt_succ hi
     simp only [List.getElem_cons_succ, List.idxOf_cons]
-    have hne : (x == xs[i]) = false :=
-      beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact List.getElem_mem _))
-    simp only [hne, cond_false]
-    exact congrArg Nat.succ (idxOf_getElem_of_nodup hnd.2 i (Nat.lt_of_succ_lt_succ hi))
+    have hne : (x == xs[i]'hi') = false :=
+      beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact List.getElem_mem hi'))
+    rw [hne]
+    exact congrArg Nat.succ (idxOf_getElem_of_nodup hnd.2 i hi')
 
 /-- **Unconditional role-prefix filter identity**: whenever `order` and `order_role` are `Nodup`,
 every element of `order_role` appears in `order`, `order` splits into
@@ -1229,6 +1218,7 @@ theorem order_filter_role_eq_of_subset
       order.idxOf a < order.idxOf b' → order_role.idxOf a < order_role.idxOf b') :
     order.filter (· ∈ order_role) = order_role := by
   let xs := order.filter (· ∈ order_role)
+  have hsplit_xs : order = xs ++ order.filter (· ∉ order_role) := hsplit
   have hnd_xs : xs.Nodup := hnd.filter _
   have hmem : ∀ a, a ∈ xs ↔ a ∈ order_role := fun a =>
     ⟨fun h => of_decide_eq_true (List.mem_filter.mp h).2,
@@ -1236,18 +1226,20 @@ theorem order_filter_role_eq_of_subset
   let f : Nat → Nat := fun i => if hi : i < xs.length then order_role.idxOf xs[i] else 0
   have hf_lt : ∀ i (hi : i < xs.length), f i < order_role.length := by
     intro i hi
-    simp only [f, hi, ↓reduceDIte]
+    dsimp only [f]
+    rw [dif_pos hi]
     exact (idxOf_lt_and_getElem ((hmem xs[i]).mp (List.getElem_mem hi))).1
   have hf_mono : ∀ i₁ i₂, i₁ < i₂ → (hi₂ : i₂ < xs.length) → f i₁ < f i₂ := by
     intro i₁ i₂ hlt hi₂
     have hi₁ : i₁ < xs.length := Nat.lt_trans hlt hi₂
-    simp only [f, hi₁, hi₂, ↓reduceDIte]
+    dsimp only [f]
+    rw [dif_pos hi₁, dif_pos hi₂]
     have hm₁ : xs[i₁] ∈ xs := List.getElem_mem hi₁
     have hm₂ : xs[i₂] ∈ xs := List.getElem_mem hi₂
     have hidx₁ : order.idxOf xs[i₁] = i₁ := by
-      rw [hsplit, idxOf_append_left hm₁, idxOf_getElem_of_nodup hnd_xs i₁ hi₁]
+      rw [hsplit_xs, idxOf_append_left hm₁, idxOf_getElem_of_nodup hnd_xs i₁ hi₁]
     have hidx₂ : order.idxOf xs[i₂] = i₂ := by
-      rw [hsplit, idxOf_append_left hm₂, idxOf_getElem_of_nodup hnd_xs i₂ hi₂]
+      rw [hsplit_xs, idxOf_append_left hm₂, idxOf_getElem_of_nodup hnd_xs i₂ hi₂]
     apply hmono xs[i₁] xs[i₂] hm₁ hm₂
     rw [hidx₁, hidx₂]
     exact hlt
@@ -1256,7 +1248,8 @@ theorem order_filter_role_eq_of_subset
     have hy_mem : order_role[j] ∈ xs := (hmem order_role[j]).mpr (List.getElem_mem hj)
     obtain ⟨hi, hget⟩ := idxOf_lt_and_getElem hy_mem
     refine ⟨xs.idxOf order_role[j], hi, ?_⟩
-    simp only [f, hi, ↓reduceDIte, hget]
+    dsimp only [f]
+    rw [dif_pos hi, hget]
     exact idxOf_getElem_of_nodup hnd_r j hj
   have hstep : ∀ j, j < order_role.length → j < xs.length ∧ f j = j := by
     intro j
@@ -1306,10 +1299,31 @@ theorem order_filter_role_eq_of_subset
   apply List.ext_getElem hlen_eq
   intro j hj₁ hj₂
   obtain ⟨_, hfj⟩ := hstep j hj₂
-  simp only [f, hj₁, ↓reduceDIte] at hfj
-  have hget := (idxOf_lt_and_getElem ((hmem xs[j]).mp (List.getElem_mem hj₁))).2
-  rw [← hget]
-  congr 1
+  dsimp only [f] at hfj
+  rw [dif_pos hj₁] at hfj
+  obtain ⟨hlt_idx, hget⟩ := idxOf_lt_and_getElem ((hmem xs[j]).mp (List.getElem_mem hj₁))
+  have heq_elem : order_role[order_role.idxOf xs[j]]'hlt_idx = order_role[j]'hj₂ := by
+    congr 1
+  exact (heq_elem.symm.trans hget).symm
+
+private theorem compilerTrust_false_of_groundRoles_mem {r s : Ix.Kernel.Role}
+    (hs : s ∈ Ix.Cert.groundRoles r) : IxVM.Refinement.compilerTrust r = false := by
+  unfold IxVM.Refinement.compilerTrust
+  split
+  · exact absurd hs (by decide)
+  · exact absurd hs (by decide)
+  · exact absurd hs (by decide)
+  · exact absurd hs (by decide)
+  · exact absurd hs (by decide)
+  · rfl
+
+private theorem contains_of_recordAt_some {E : Ixon.Env} {x : _root_.Address} {c : Ixon.Constant}
+    (hrec : Ix.Cert.recordAt E x = some c) : E.consts.contains x = true := by
+  unfold Ix.Cert.recordAt at hrec
+  rw [Std.HashMap.contains_eq_isSome_getElem?]
+  cases hg : E.consts[x]? with
+  | none => rw [hg] at hrec; cases hrec
+  | some _ => rfl
 
 /-- **Unconditional role reachability embedding**: when `E` agrees with `E_role` on `order_role`,
 every `UsedCompiledReachAt t E_role (BindingSeeds t)` node belongs to
@@ -1342,9 +1356,19 @@ theorem usedCompiledReach_role_subset
     · exact .inl hown
     · exact .inr ⟨href, (hagree y hy_mem).2⟩
   | @ground x y hrx hgrd ih =>
+    have hx_mem : x ∈ order_role := (hcomp_r x).mpr hrx
     have hy_mem : y ∈ order_role := (hcomp_r y).mpr (.ground hrx hgrd)
-    obtain ⟨op, hop, hop_addr, g, hg, hg_addr, _⟩ := hgrd
-    exact .ground ih ⟨op, hop, hop_addr, g, hg, hg_addr, (hagree y hy_mem).2⟩
+    obtain ⟨_, s, hs_addr, htrig⟩ := hgrd
+    refine .ground ih ⟨(hagree y hy_mem).2, s, hs_addr, ?_⟩
+    rcases htrig with ⟨r, p, hr_addr, hs_gr, hp_own⟩ | ⟨c, hrec_x, hs_lit⟩
+    · refine .inl ⟨r, p, hr_addr, hs_gr, ?_⟩
+      rcases hp_own with hp_eq | ⟨c, hrec_p, hown_p⟩
+      · exact .inl hp_eq
+      · have hct := compilerTrust_false_of_groundRoles_mem hs_gr
+        have hp_mem : p ∈ order_role := (hcomp_r p).mpr
+          (.seed (.inl ⟨r, hct, hr_addr⟩) (contains_of_recordAt_some hrec_p))
+        exact .inr ⟨c, (hagree p hp_mem).1.trans hrec_p, hown_p⟩
+    · exact .inr ⟨c, (hagree x hx_mem).1.trans hrec_x, hs_lit⟩
   | @recursor x y hrx hrec ih =>
     have hx_mem : x ∈ order_role := (hcomp_r x).mpr hrx
     have hy_mem : y ∈ order_role := (hcomp_r y).mpr (.recursor hrx hrec)
@@ -1365,9 +1389,9 @@ private theorem pickSpec_append_of_not_declares {md : Ix.Kernel.Mode}
     have hy : Ix.Kernel.Frontend.declares n y = false := hys y List.mem_cons_self
     have hrest := pickSpec_append_of_not_declares n [] ys
       (fun d hd => hys d (List.mem_cons_of_mem y hd))
-    simp only [List.nil_append, Ix.Kernel.Frontend.pickSpec, hy, Bool.false_eq_true, ↓reduceIte]
-    rw [hrest]
-    rfl
+    simp only [List.nil_append, Ix.Kernel.Frontend.pickSpec] at hrest
+    simp only [List.nil_append, Ix.Kernel.Frontend.pickSpec, hy, Bool.false_eq_true, ↓reduceIte,
+      hrest]
   | x :: xs, ys, hys => by
     simp only [List.cons_append, Ix.Kernel.Frontend.pickSpec]
     by_cases hx : Ix.Kernel.Frontend.declares n x = true
@@ -1409,6 +1433,7 @@ theorem frontOf_append_nonPrelude
     (Ix.Kernel.Frontend.frontOf #[] pre.ix.decls.toList (decls_role ++ decls_w)).2.toList =
       (Ix.Kernel.Frontend.frontOf #[] pre.ix.decls.toList decls_role).2.toList ++ decls_w.toList := by
   have hroles := (preludeFor_decls_roles hadm.preludeFor).2
+  have hba := (Ix.Kernel.Admission.admitBinding_ok_iff _ _ _).mp hadm.admitBinding
   have hnot : ∀ p ∈ pre.ix.decls.toList, ∀ d ∈ decls_w.toList,
       Ix.Kernel.Frontend.declares (Ix.Kernel.Frontend.preludeKey p) d = false := by
     intro p hp d hd
@@ -1431,7 +1456,7 @@ theorem frontOf_append_nonPrelude
       | true =>
         have hmem_d : (.role s : Ix.Kernel.Key .anon) ∈ d.names := List.mem_of_elem_eq_true hc
         obtain ⟨x, hx_eq, hx_not⟩ := hdecls_w d hd (.role s) hmem_d
-        exact absurd hx_eq.symm (keyOf_nonRole_ne_role hadm hadm.admitBinding hx_not hct)
+        exact absurd hx_eq.symm (keyOf_nonRole_ne_role hadm hba hx_not hct)
   obtain ⟨h1_aw, h2_aw⟩ := Ix.Kernel.Frontend.frontOf_toList
     pre.ix.decls.toList #[] (decls_role ++ decls_w)
   obtain ⟨h1_a, h2_a⟩ := Ix.Kernel.Frontend.frontOf_toList
@@ -1543,10 +1568,10 @@ structure SafeExprRefsGap : Prop where
             ∀ c_x,
               (Ix.Cert.recordAt E₀ x = some c_x ∨
                 (∃ owner ms i d_m,
+                  x = Core.dprjAddr owner i ∧ i < UInt64.size ∧
+                  c_x = ⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩ ∧
                   Claim.MutsMemberCheckedAtFull calls b.address t owner ms i ∧
-                  ms[i]? = some (.defn d_m) ∧
-                  x = Core.dprjAddr owner i ∧
-                  c_x = ⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩)) →
+                  ms[i]? = some (.defn d_m))) →
               Ix.Cert.ownerOf x c_x ∈ order_role) ∧
         ∃ st_r,
           StreamReadBare
