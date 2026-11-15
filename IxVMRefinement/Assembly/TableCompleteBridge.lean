@@ -66,7 +66,7 @@ private theorem list_find?_append_none :
     ∀ {xs ys : List (Ix.Kernel.ConstantInfo .anon)} {n : Ix.Kernel.Key .anon},
       (xs ++ ys).find? (·.name == n) = none →
       (∀ ci ∈ xs, ci.name ≠ n) ∧ ys.find? (·.name == n) = none
-  | [], _, _, h => ⟨fun _ hm => nomatch hm, h⟩
+  | [], _, _, h => ⟨fun _ hm => (nomatch hm), h⟩
   | x :: xs, ys, n, h => by
     simp only [List.cons_append, List.find?_cons] at h
     cases hxn : x.name == n with
@@ -396,7 +396,8 @@ private theorem recordsRead_decodedOf_aux (E : Ixon.Env) (keys : List _root_.Add
       rw [hg] at hread
       dsimp only [Option.map, Option.toList, List.nil_append] at hread
       have hrec_none : Ix.Cert.recordAt (normalizeRoleEnv E keys) a = none := by
-        simp [Ix.Cert.recordAt, normalizeRoleEnv, get?_normConstsOn, ha, hg]
+        simp only [Ix.Cert.recordAt, normalizeRoleEnv, get?_normConstsOn, ha, ↓reduceIte, hg]
+        rfl
       rw [hrec_none]
       simpa using recordsRead_decodedOf_aux E keys rest hsub' hread
     | some lc =>
@@ -478,17 +479,17 @@ theorem tableAdmitted_unpack_normalized
   obtain ⟨t, hadm, hlit, E_raw, limits, order_role, envA, hdraws, hseeds,
     t', pre, ev, ds, hadm', hclos, _, hpre, hprep, hacc_u, hthms, _, hspecs⟩ := hadmV
   have ht_eq : t' = t := Except.ok.inj (hadm'.symm.trans hadm)
-  subst ht_eq
+  rw [ht_eq] at hclos
   obtain ⟨hwit, huniq, hauth, t'', constants, st_role, decls_role,
     hadm'', hreads_rec, hstream, hev_eq, hkeeps, hds_eq⟩ := prepareWith_unpack hprep
   have ht''_eq : t'' = t := Except.ok.inj (hadm''.symm.trans hadm)
-  subst ht''_eq
+  rw [ht''_eq] at hstream hev_eq
   have hconst_eq : constants =
       Ix.Cert.Stream.decodedOf (normalizeRoleEnv E_raw order_role) order_role :=
     recordsRead_decodedOf_normalizeRoleEnv hreads_rec
-  subst hconst_eq
-  subst hev_eq
-  subst hds_eq
+  rw [hconst_eq] at hstream hev_eq
+  rw [hev_eq, hds_eq] at hacc_u
+  rw [hds_eq] at hthms hspecs
   have hrec_eq : Ix.Cert.recordsOf (normalizeRoleEnv E_raw order_role) order_role =
       Ix.Cert.recordsOf E_raw order_role :=
     normalizeRoleEnv_recordsOf E_raw order_role order_role
