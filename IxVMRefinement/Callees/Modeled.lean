@@ -424,11 +424,12 @@ theorem block_is_modeled_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
 
 /-- `KernelModeled::proj_ctor`: asserts `block_is_modeled(block) = 0` (`FewInductives`) and loads
 the constructor projection record `(i, 0, block)`. -/
-theorem proj_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+    {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.proj_ctor c args h r h' calls := by
-  intro bp i b hargs good hb
+  intro bp i b hargs allowed good hb
   subst hargs
   obtain ⟨v1, m2, cs12, cs26, ev14, ev28, hc52⟩ := Obs.«KernelModeled::proj_ctor».obs ev
   obtain ⟨v12, m15, cs23, ev25, heq40, -, hm2, hc45⟩ :=
@@ -440,14 +441,8 @@ theorem proj_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
     (by rw [hc52, hc45]; callees_lt) ev25
   have hfew : FewInductives c (ixAddr b) :=
     ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
-  have hgood2 : CoreGood c cs26 :=
-    good.sub (by rw [hc52]; intro z hz; simp [hz])
-  have hb' : RepAddr m2 b bp := Bytes.repAddressRef_heapMono₂ addrTy ev25.heap_extends hb
-  obtain ⟨ci, hfind, hci⟩ :=
-    ih.get (.callees .get_ci_cprj) (by rw [hc52]; callees_lt) ev28
-      bp i 0 b rfl (good.allowedTop (by simp_all)) hgood2 hb'
-  rw [ZMod.val_zero] at hfind
-  exact ⟨hfew, ci, hfind, hci⟩
+  exact ⟨hfew, (hc.loads.projTables bp (.field i) r h h' calls b i
+    ev allowed good.raw hb rfl).1⟩
 
 /-- `KernelModeled::defeq_list_ok`: pairwise `DefEq` on two represented term lists when the answer
 is nonzero. -/

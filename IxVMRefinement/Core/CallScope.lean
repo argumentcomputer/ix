@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.Good
+import IxVMRefinement.Obs.KernelModeled0
 
 /-! # Core facts restricted to selected observed calls
 
@@ -135,6 +136,52 @@ theorem EnvFacts.etaUseFacts {c : Ctx} (h : EnvFacts c)
   ⟨h.etaTowers T cvT caps hT heta, h.etaSort T cvT caps hT heta,
     h.etaType T kc cvT cvc caps nP nF hT heta hctor hC⟩
 
+/-- A selected metadata read of a zero-field constructor. It makes no assertion that the
+constructor is already installed in the semantic environment. -/
+structure ZeroFieldCtorLoad (c : ScopedCtx) (block : Bytes.Address) (ind : F) where
+  bp ptr : SourceValue F
+  before after : Heap F
+  calls : List (Call F)
+  observed : ObsFn W "Ingress::get_ci_cprj" [bp, .field ind, .field 0]
+    before ptr after calls
+  allowed : c.allowedTop "Ingress::get_ci_cprj" [bp, .field ind, .field 0] before
+  good : Good c.toCtx calls
+  blockRep : Bytes.RepAddressRef addrTy before block bp
+  zeroFields : ∃ nl ty blk idx cidx np u,
+    loadValue after ptr = .ok (.construct kciEnum "Ctor" [nl, ty, blk, idx, cidx, np, .field 0, u])
+
+/-- The actual nonrecursive-structure observation used by unit-like conversion. -/
+structure NonrecursiveLoad (c : ScopedCtx) (parent : Bytes.Address) where
+  ap : SourceValue F
+  before after : Heap F
+  calls : List (Call F)
+  observed : ObsFn W "KernelWhnf::struct_is_rec" [ap] before (.field 0) after calls
+  allowed : c.allowedTop "KernelWhnf::struct_is_rec" [ap] before
+  good : Good c.toCtx calls
+  parentRep : Bytes.RepAddressRef addrTy before parent ap
+
+private theorem ctorZero_of_rep {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty blk idx cidx np u : SourceValue F} {ci : Ix.Kernel.ConstantInfo .anon}
+    (r : CIRep κ h (.construct kciEnum "Ctor" [nl, ty, blk, idx, cidx, np, .field 0, u]) ci) :
+    ∃ cv nP, ci = .ctorInfo cv nP 0 := by
+  have castZero : ∀ n : Nat, n < 72057594037927936 →
+      (.field (0 : F) : SourceValue F) = .field (n : F) → n = 0 := by
+    intro n hn he
+    have hsmall : n < 18446744069414584321 := Nat.lt_trans hn (by decide)
+    have hv := congrArg (fun x : F => ZMod.val x) (Value.field.inj he)
+    simpa only [ZMod.val_zero, ZMod.val_natCast_of_lt hsmall] using hv.symm
+  generalize hv : (Value.construct kciEnum "Ctor"
+    [nl, ty, blk, idx, cidx, np, .field 0, u] : SourceValue F) = v at r
+  cases r
+  case ctor hval hnp hnf hcounts hkey =>
+    injection hv with _ _ hargs
+    simp only [List.cons.injEq, and_true] at hargs
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hargs
+    have hnF := castZero _ hcounts.2 hnf
+    cases hnF
+    exact ⟨_, _, rfl⟩
+  all_goals (injection hv with _ htag _; exact absurd htag (by decide))
+
 /-- Installed reads are required only at allowed top invocations. Raw record facts stay
 conditional on actual stored records, and native eta observations carry their own evidence. -/
 structure ScopedLoadFacts (c : ScopedCtx) : Prop where
@@ -146,7 +193,8 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
       (b : Bytes.Address),
     ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp →
-      ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci ∧
+      (∃ ci₀, CIPtrRep c.κ h' ptr ci₀) ∧
+      ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci →
         CIPtrRep c.κ h' ptr ci
   getIprj : ∀ (bp ptr : SourceValue F) (i : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
@@ -175,8 +223,11 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
       idx = .field i ∧ cm.info = .iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩
   projTables : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address) (i : F),
-    ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c.toCtx cs →
+    ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs →
+    c.allowedTop "KernelModeled::proj_ctor" [bp, ip] h → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
+    (∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
+      CIPtrRep c.κ h' ptr ci) ∧
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
@@ -231,6 +282,22 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) →
     FewInductives c.toCtx (ixAddr b) →
     c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc 0) →
+    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
+      (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
+        (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
+  /-- Unit-like conversion at an actual raw constructor observation. Producing this field
+  requires the staged former to carry its actual IxC capabilities; raw counts alone do not
+  justify a unit-like flag in an empty-capability stage. -/
+  unitLikeRaw : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (a : Bytes.Address) (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
+      (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon),
+    ObsFn W "Ingress::get_ci" [ap] h ptr h' cs → c.allowedTop "Ingress::get_ci" [ap] h →
+    Good c.toCtx cs → Bytes.RepAddressRef addrTy h a ap →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct"
+      [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h' b blk →
+    c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) → FewInductives c.toCtx (ixAddr b) →
+    ZeroFieldCtorLoad c b i → NonrecursiveLoad c a →
     caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
       (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
         (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
@@ -326,14 +393,41 @@ load evidence for a fresh declaration or establish its selected-call coverage. -
 theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx}
     (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadFacts c where
   getCI := fun addr ptr h₀ h₁ cs a ev _ hg ha => h.getCI addr ptr h₀ h₁ cs a ev hg ha
-  getCprj := fun bp ptr i j h₀ h₁ cs b ev _ hg hb => h.getCprj bp ptr i j h₀ h₁ cs b ev hg hb
+  getCprj := by
+    intro bp ptr i j h₀ h₁ cs b ev _ hg hb
+    obtain ⟨ci₀, hfind₀, hrep⟩ := h.getCprj bp ptr i j h₀ h₁ cs b ev hg hb
+    refine ⟨⟨ci₀, hrep⟩, fun ci hfind => ?_⟩
+    have heq := Option.some.inj (hfind₀.symm.trans hfind)
+    cases heq
+    exact hrep
   getIprj := fun bp ptr i h₀ h₁ cs b ev _ hg hb => h.getIprj bp ptr i h₀ h₁ cs b ev hg hb
   indRecord := h.indRecord
   inductRecord := fun addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev _ hg ha ld =>
     h.inductRecord addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev hg ha ld
-  projTables := h.projTables
+  projTables := by
+    intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip
+    subst ip
+    have htables := h.projTables bp (.field i) ptr h₀ h₁ cs b i ev hg hb rfl
+    obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
+      Obs.«KernelModeled::proj_ctor».obs ev
+    have hstored := h.getCprj bp ptr i 0 mid h₁ cs_load b ev_load
+      (hg.sub fun cl hcl => by simp [hcalls, hcl])
+      (Bytes.repAddressRef_heapMono₂ addrTy ev_assert.heap_extends hb)
+    exact ⟨by simpa only [ZMod.val_zero] using hstored, htables⟩
   projTablesAt := h.projTablesAt
   unitLike := h.unitLike
+  unitLikeRaw := by
+    intro ap ptr h₀ h₁ cs a nl ty u blk p i b cvT caps ev _ hg ha ld hb hfind hfew hz _
+    obtain ⟨ciC, hfindC, vC, hldC, hrepC⟩ := h.getCprj hz.bp hz.ptr i 0 hz.before hz.after
+      hz.calls b hz.observed hz.good hz.blockRep
+    obtain ⟨cnl, cty, cblk, cidx, ccidx, cnp, cu, hzero⟩ := hz.zeroFields
+    rw [hzero] at hldC
+    injection hldC with hvalue
+    subst vC
+    obtain ⟨cvC, nPc, rfl⟩ := ctorZero_of_rep hrepC
+    simp only [ZMod.val_zero] at hfindC
+    exact h.unitLike ap ptr h₀ h₁ cs a nl ty u blk p i b cvT caps cvC nPc
+      ev hg ha ld hb hfind hfew hfindC
   eta := by
     intro ac b sa i j cvc cvT caps cnP cnF us l bp ptr nl ty np u blk idx h₁ h₂ cs₁
       hC hname hnF ev hg hb ld hT hmodeled hpi hnz hrec haddr

@@ -411,8 +411,9 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     have e1 := ObsFn.heap_extends ev47
     have e2 := ObsFn.heap_extends ev179
     have e3 := ObsFn.heap_extends ev212
-    obtain ⟨ci0, hfind, v, hv, hci⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev47 blk i j b
+    have hctorLoad := ih.get (.callees .get_ci_cprj) (by lt_calls) ev47 blk i j b
       rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hb
+    obtain ⟨ci0, v, hv, hci⟩ := hctorLoad.1
     rw [ld41] at hv
     injection hv with hv
     subst hv

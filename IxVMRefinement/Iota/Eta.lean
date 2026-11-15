@@ -377,12 +377,13 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     have hcertT : Certs c.env d true (cvT.type.instantiateLevelParams cvT.levelParams ust) TA :=
       certs_lic_true hcertT0
     -- constructor load & projection address
-    obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev405
+    have hctorLoad := ih.get (.callees .get_ci_cprj) (by lt_calls) ev405
       blk i 0 b rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz])
       (Bytes.repAddressRef_heapMono₂ addrTy X303 hb)
-    rw [ZMod.val_zero, ← hctor, hcj] at hfindC
-    injection hfindC with hciC_eq
-    subst hciC_eq
+    have hstored := hcj
+    rw [hctor] at hstored
+    obtain ⟨vC, hldC, hciC⟩ := hctorLoad.2 (.ctorInfo cvj cnP cnF)
+      (by simpa only [ZMod.val_zero] using hstored)
     rw [ld399] at hldC
     injection hldC with hvC
     subst hvC

@@ -108,13 +108,14 @@ def get_ci : SpecFn := fun c args h r h' calls =>
     c.allowedTop "Ingress::get_ci" [ap] h → CoreGood c calls → RepAddr h a ap →
     ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' r ci
 
-/-- `Ingress::get_ci_cprj(block, i, j)`: the constant at the key of the constructor projection
-record `(i, j, block)` (`LoadFacts.getCprj`). -/
+/-- A constructor metadata load represents a decoded constant. If that constructor is
+already installed, the same pointer also represents its installed entry. -/
 def get_ci_cprj : SpecFn := fun c args h r h' calls =>
   ∀ bp (i j : F) (b : Bytes.Address), args = [bp, .field i, .field j] →
     c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → CoreGood c calls →
     RepAddr h b bp →
-      ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci ∧
+      (∃ ci₀, CIPtrRep c.κ h' r ci₀) ∧
+      ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci →
         CIPtrRep c.κ h' r ci
 
 /-- `Ingress::get_ci_iprj(block, i)`: the constant at the key of the inductive projection record
@@ -200,7 +201,8 @@ def block_is_modeled : SpecFn := fun c args h r h' calls =>
 has at most one inductive, and the result is the constant at the key of the constructor
 projection record `(i, 0, block)`. -/
 def proj_ctor : SpecFn := fun c args h r h' calls =>
-  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] → CoreGood c calls → RepAddr h b bp →
+  ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
+    c.allowedTop "KernelModeled::proj_ctor" [bp, .field i] h → CoreGood c calls → RepAddr h b bp →
     FewInductives c (ixAddr b) ∧
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
         CIPtrRep c.κ h' r ci

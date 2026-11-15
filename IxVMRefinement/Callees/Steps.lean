@@ -31,7 +31,7 @@ theorem callees_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
   | .bytes_to_addr, _, _, _, _, _, ev, _ => bytes_to_addr_step c ev
   | .block_is_multi, _, _, _, _, _, ev, ih => block_is_multi_step c ev ih
   | .block_is_modeled, _, _, _, _, _, ev, ih => block_is_modeled_step c ev ih
-  | .proj_ctor, _, _, _, _, _, ev, ih => proj_ctor_step c ev ih
+  | .proj_ctor, _, _, _, _, _, ev, ih => proj_ctor_step c hc ev ih
   | .defeq_list_ok, _, _, _, _, _, ev, ih => defeq_list_ok_step c ev ih
   | .fire_compare, _, _, _, _, _, ev, ih => fire_compare_step c ev ih
   | .fire_ok, _, _, _, _, _, ev, ih => fire_ok_step c ev ih

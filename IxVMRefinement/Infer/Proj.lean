@@ -739,9 +739,10 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
       x_after, x_ctx, cs150, m187, ev17, ld11, hm130, ev103, hm195, ev152, hc199⟩
   subst hc199 hm130 hm195
   have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
-  obtain ⟨ci, -, v, hld, hci⟩ := ih.get (.callees .get_ci_cprj)
+  have hctorLoad := ih.get (.callees .get_ci_cprj)
     (by simp only [List.length_cons, List.length_append] at hlt0; omega)
     ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) g15 hb
+  obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
   rw [ld11] at hld
   injection hld with hv
   subst hv
@@ -920,10 +921,12 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     ((NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj (hsnl.symm.trans hnlU))).symm
   -- 5. Load the structure's constructor via `proj_ctor` and projection table
   have g370 : CoreGood c cs370 := good.sub fun x hx => by simp [hx]
+  have allowed372 : c.allowedTop "KernelModeled::proj_ctor" [x_block_addr, x_ind_idx] m194 :=
+    good.allowedTop (by simp)
   have ev372' : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, .field iS] m194 p364 m357 cs370 :=
-    hidx_eq ▸ ev372
+    by have hobs := ev372; rw [hidx_eq] at hobs; exact hobs
   obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
-    x_block_addr iS bS rfl g370 hbS
+    x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372) g370 hbS
   rw [ld366] at hldC
   injection hldC with hvC
   subst hvC
@@ -937,8 +940,8 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have E357 : Heap.Extends h m357 := E194.trans e372
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
-    hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 g370.raw hbS hidx_eq 0 cvC nP nF hfindC
+    (hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
+      ev372 allowed372 g370.raw hbS hidx_eq).2 0 cvC nP nF hfindC
   obtain ⟨hteleC, hguard_eq⟩ :=
     hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
       ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl

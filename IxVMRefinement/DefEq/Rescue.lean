@@ -833,16 +833,26 @@ theorem is_unit_like_type_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
       natCast_inj_small (b := 1) (by omega) (by omega) (by rw [Nat.cast_one]; exact hnC1)
     subst hnC'
     have hb152 : RepAddr m152 b x_block := Bytes.repAddressRef_heapMono₂ addrTy e174 hb
-    obtain ⟨ciC, hfindC, vC, hvC, hrepC⟩ := ih.get (.callees .get_ci_cprj) (by lt_calls) ev225
-      x_block i 0 b rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hb152
-    rw [ld219] at hvC
-    injection hvC with hvC
-    subst hvC
-    obtain ⟨cvC, nPc, nF, rfl, -, -, hnf, -, hnF, -⟩ := ciRep_ctor_inv hrepC
-    have hnF0 : nF = 0 := natCast_inj_small (by omega) (by omega)
-      (by rw [Nat.cast_zero]; exact (Value.field.inj hnf).symm)
-    subst hnF0
-    simp only [ZMod.val_zero] at hfindC
+    have zeroCtor : ZeroFieldCtorLoad c b i :=
+      { bp := x_block
+        ptr := p217
+        before := m152
+        after := m210
+        calls := cs223
+        observed := ev225
+        allowed := good.allowedTop (by simp)
+        good := (good.sub fun x hx => by simp [hx]).raw
+        blockRep := hb152
+        zeroFields := ⟨w265, w266, w267, w268, w269, w270, w271, ld219⟩ }
+    have nonrecursive : NonrecursiveLoad c a :=
+      { ap := x_addr
+        before := m210
+        after := m327
+        calls := cs338
+        observed := ev340
+        allowed := good.allowedTop (by simp)
+        good := (good.sub fun x hx => by simp [hx]).raw
+        parentRep := Bytes.repAddressRef_heapMono₂ addrTy (e85.trans (e174.trans e225)) ha }
     -- the parameters
     have E327 : Heap.Extends m70 m327 := e174.trans (e225.trans e340)
     have E2 : Heap.Extends m2 m327 := e85.trans E327
@@ -856,9 +866,9 @@ theorem is_unit_like_type_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
     rw [posOf_instantiateLevelParams' hnd hlU] at hcerts
     -- the capabilities
     rw [Nat.cast_zero, Nat.cast_one] at ld79
-    obtain ⟨hul, hup, hbasis⟩ := hc.loads.unitLike x_addr p77 m2 m70 cs83 a _ x_ind_ty w110 x_block
-      (nP : F) i b cvT caps cvC nPc ev85 (good.sub fun x hx => by simp [hx]).raw ha ld79 hb hfind
-      hfew hfindC
+    obtain ⟨hul, hup, hbasis⟩ := hc.loads.unitLikeRaw x_addr p77 m2 m70 cs83 a _ x_ind_ty w110 x_block
+      (nP : F) i b cvT caps ev85 (good.allowedTop (by simp))
+      (good.sub fun x hx => by simp [hx]).raw ha ld79 hb hfind hfew zeroCtor nonrecursive
     rw [val_natCast_small (m := nP) (by omega)] at hup hbasis
     have hargs' : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr a)) us) As).getAppArgs = As := by
       rw [getAppArgs_mkAppN]; rfl
