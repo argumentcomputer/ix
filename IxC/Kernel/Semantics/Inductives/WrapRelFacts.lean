@@ -31,15 +31,6 @@ namespace Ix.Kernel.Semantics
 
 open Ix.Kernel (Key Expr Level LevelParam ConstantInfo ConstantVal Literal Env RecRule)
 
-/-- No `let` node (a free variable's type is not looked into). -/
-def letFree : Expr md → Bool
-  | .letE .. => false
-  | .app f a => letFree f && letFree a
-  | .lam t b _ => letFree t && letFree b
-  | .forallE t b _ => letFree t && letFree b
-  | .proj _ _ e => letFree e
-  | _ => true
-
 /-- A term whose instance has no `let` has none. -/
 theorem letFree_of_instantiate1 (v : Expr md) :
     ∀ (e : Expr md) (j : Nat), letFree (e.instantiate1 v j) = true → letFree e = true
