@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.CoherentStore
-import IxVMRefinement.Assembly.TableCompleteBridge
+import IxVMRefinement.Assembly.ReaderDecode
+import Ix.IxVM.Consistency.ReaderAdmission
 
 /-! # Executable construction of coherent reader admission
 
