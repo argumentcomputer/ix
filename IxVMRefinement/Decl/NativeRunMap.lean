@@ -86,7 +86,7 @@ theorem nativeRecRun {env : Env md} {p : NativeParts md} {cvTa cvRa : ConstantVa
 theorem annotList {env : Env md} {d : Nat} :
     ∀ {as bs : List (Expr md)}, Forall₂ (J.annot env d) as bs → Forall₂ (K.annot env d) as bs
   | _, _, .nil => .nil
-  | _, _, .cons h hs => .cons (M.annot h) (M.annotList hs)
+  | _, _, .cons h hs => .cons (M.annot h) (annotList hs)
 
 theorem recStored {env : Env md} {p : NativeParts md} {cvRg cvRa : ConstantVal md}
     {rhsG rhss : List (Expr md)} (h : RecStoredJ J env p cvRg rhsG cvRa rhss) :
@@ -138,7 +138,7 @@ theorem twinRules {env envSelf : Env md} {f : Key md → Key md} {recName : Key 
       Forall₂ (fun p r => TwinRuleJ J env envSelf f recName lps cvW mI rP p.1 p.2 r) pairs rules →
       Forall₂ (fun p r => TwinRuleJ K env envSelf f recName lps cvW mI rP p.1 p.2 r) pairs rules
   | _, _, .nil => .nil
-  | _, _, .cons h hs => .cons (M.twinRule h) (M.twinRules hs)
+  | _, _, .cons h hs => .cons (M.twinRule h) (twinRules hs)
 
 theorem twin {env env₂ : Env md} {block : List (ConstantInfo md)}
     (h : DeclRecTwinRunJ J env block env₂) : DeclRecTwinRunJ K env block env₂ := by
