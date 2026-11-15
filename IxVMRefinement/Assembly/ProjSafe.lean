@@ -1861,11 +1861,11 @@ private theorem validate_expr_well_scoped_go
       obtain ⟨a, b, ha, hb, hxa, hxb, hr_lt, hm_eq⟩ := L1.lt_fields_both_spec ev_lt
       have hP : (72057594037927936 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide
       have ha_eq : a = idx.toNat := by
-        have h2 := congrArg ZMod.val (Value.field.inj hxa)
+        have h2 := congrArg ZMod.val (Value.field.inj hxa).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt (Nat.lt_trans hidx hP)] at h2
       have hb_eq : b = d := by
-        have h2 := congrArg ZMod.val (Value.field.inj hxb)
+        have h2 := congrArg ZMod.val (Value.field.inj hxb).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt hd_lt32_or] at h2
       subst ha_eq; subst hb_eq
