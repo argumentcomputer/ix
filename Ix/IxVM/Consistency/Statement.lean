@@ -1,5 +1,6 @@
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.KernelLevels
+import Ix.IxVM.Consistency.ReaderAdmission
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Model.Fold
 import IxC.Kernel.Model.Denotes
@@ -13,7 +14,7 @@ import Aiur.Memory.Partition
 
 The consistency of what the deployed IxVM circuit accepts, reduced to one
 obligation per layer of the verifier. Claims outside `InScope` (assumed leaves,
-another role table or user axioms, `eval`) are not covered.
+user axioms, `eval`) are not covered.
 
 ## The statement (`CircuitConsistent`)
 
@@ -23,7 +24,8 @@ from `Ix.IxVM.Refinement.Statement`), for a
 public claim digest whose claim is `check` or `checkEnv` that validates its role
 table, with no user axioms and no assumed leaves (`InScope`), and every role table
 the reader reads it under (one the kernel admits with its bound constants checked
-in the reader's view: `ReaderTable`, `TableAdmitted`). Then either the run
+in a coherent store drawn from the reader's view: `ReaderTable`,
+`ReaderAdmissionWitness`). Then either the run
 hashed a BLAKE3 collision, exhibited from the
 trace (`View.HashedCollision`, reused), or there is an environment `env` that
 
@@ -224,11 +226,16 @@ def ClaimSeeds : Claim → View → List Address → Prop
   | _, _, _ => False
 
 /-- **The role table the reader reads a claim under**: a binding `b` at the
-claim's address, which the kernel admits with its bound constants checked in the
-reader's records (`TableAdmitted`; for the default table, over the committed
-`RoleData` records via `Ix.Cert.TableAdmission.tableAdmitted_of_check`). -/
+claim's address with a concrete accepted reader run over one coherent store drawn
+from the reader's view. The same witness contract applies to the default table. -/
 def ReaderTable (c : Claim) (V : View) (b : Binding) : Prop :=
-  (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧ TableAdmitted V b
+  (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧
+    Nonempty (ReaderAdmissionWitness V b)
+
+/-- Every coherent reader admission is also an abstract table admission. -/
+theorem ReaderTable.tableAdmitted {c : Claim} {V : View} {b : Binding}
+    (h : ReaderTable c V b) : TableAdmitted V b :=
+  h.2.elim fun w => w.tableAdmitted
 
 /-! ## The environment read from the records the run loaded -/
 

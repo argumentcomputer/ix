@@ -573,7 +573,7 @@ theorem l7_mkSeams_of_declsStrong
   · by_cases hcol : V.HashedCollision (bytes :: b.bytes :: IxVM.Consistency.committedImages) calls
     · exact Or.inl hcol
     · have hadmV : TableAdmittedComplete V b :=
-        tableAdmittedComplete_of_tableAdmitted hBoundGap hRT.2 hcol
+        tableAdmittedComplete_of_tableAdmitted hBoundGap hRT.tableAdmitted hcol
       have hRole : ConsistentReadRole.{u} V calls b seeds :=
         consistentReadRole_of_rolePrelude_declsStrong
           rolePreludeInputs
