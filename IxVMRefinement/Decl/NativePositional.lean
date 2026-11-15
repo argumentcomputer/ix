@@ -67,6 +67,47 @@ def rulesToNativePos : JudgementsMap rulesJ nativePosRulesJ where
 theorem judgeFrames_nativePosRulesJ (env : Env .anon) : JudgeFrames nativePosRulesJ env :=
   judgeFrames_posRulesJ env
 
+/-- Every represented universe permutation supplies the native sort certificate at an actual
+well-formed store, including the large recursor's leading elimination parameter. -/
+theorem nativePos_sortLift {env : Env .anon} {cv : ConstantVal .anon}
+    (scope : Open.StoreInv env)
+    (hp : cv.levelParams.Perm (List.range cv.levelParams.length)) :
+    PosSortLiftFor nativePosRulesJ env cv := by
+  intro t level hi hr
+  exact ⟨invPosOf cv.levelParams t, invPosLevel cv.levelParams level,
+    Or.inr ⟨StoredTypeLevels.of_store scope, posRulesJ_infer_of_pos hp hi⟩,
+    posRulesJ_sort_of_pos hp hr⟩
+
+theorem StoredTypeLevels.upgrade {name : KKey} {cv : ConstantVal .anon}
+    {caps : IndCaps .anon} {before after : Env .anon}
+    (change : CapsUpgradeAt name cv caps before after) (scope : StoredTypeLevels before) :
+    StoredTypeLevels after := by
+  intro n ci hf
+  by_cases hn : n = name
+  · subst n
+    rw [change.find_self_b] at hf
+    cases Option.some.inj hf
+    exact scope name (.indInfo cv {}) change.find_self_a
+  · rw [change.find_ne hn] at hf
+    exact scope n ci hf
+
+/-- Capability installation transports positional fronts at the same universe permutation. -/
+theorem CapsUpgradeAt.nativePos_constantValCheckJ {name : KKey} {cv : ConstantVal .anon}
+    {caps : IndCaps .anon} {before after : Env .anon}
+    (change : CapsUpgradeAt name cv caps before after) {raw checked : ConstantVal .anon}
+    (h : ConstantValCheckJ nativePosRulesJ before raw checked) :
+    ConstantValCheckJ nativePosRulesJ after raw checked := by
+  obtain ⟨ty, ⟨hfresh, hbasis, hshape, hnd, hlbd, hfv, hann, hlpd, hcr,
+    t, level, hi, hr⟩, heq⟩ := h
+  refine ⟨ty, ⟨?_, hbasis, hshape, hnd, hlbd, hfv, hann, hlpd, ?_, t, level, ?_, ?_⟩, heq⟩
+  · rwa [change.find_isNone_eq]
+  · rwa [change.constsResolve_eq]
+  · rcases hi with hi | ⟨scope, ps, hp, hi⟩
+    · exact Or.inl (change.upgradeInfer hi)
+    · exact Or.inr ⟨scope.upgrade change, ps, hp, change.upgradeInfer hi⟩
+  · obtain ⟨ps, hp, hr⟩ := hr
+    exact ⟨ps, hp, change.upgradeRed hr⟩
+
 /-- Native positional typing has the same semantic interpretation as the certified package. -/
 theorem judgeSound_nativePosRulesJ_of {V : Type u} [SetTheory V]
     {mode : CheckMode} {env : Env .anon} (m : EnvModelM V mode env) :

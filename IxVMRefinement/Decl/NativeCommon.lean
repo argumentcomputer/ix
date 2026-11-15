@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.Common
+import IxVMRefinement.Decl.JudgeMap
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Levels.Smart
 import IxC.Kernel.Semantics.Inductives.DeclNativeJ
@@ -998,6 +999,22 @@ def PosSortLift (env : Ix.Kernel.Env .anon) (cv' : ConstantVal .anon) : Prop :=
     Red env 0 sty₀ (.sort u₀) →
     ∃ sty u, Infer env .full 0 cv'.type sty ∧ Red env 0 sty (.sort u)
 
+/-- The same positional sort evidence interpreted by a certified judgement package. -/
+def PosSortLiftFor (J : Ix.Kernel.Semantics.Judgements .anon)
+    (env : Ix.Kernel.Env .anon) (cv' : ConstantVal .anon) : Prop :=
+  ∀ sty₀ u₀,
+    Infer env .full 0 (posOf cv'.levelParams cv'.type) sty₀ →
+    Red env 0 sty₀ (.sort u₀) →
+    ∃ sty u, J.infer env 0 cv'.type sty ∧ J.sort env 0 sty u
+
+theorem PosSortLiftFor.of_range {J : Ix.Kernel.Semantics.Judgements .anon}
+    (M : JudgementsMap rulesJ J) {env : Ix.Kernel.Env .anon}
+    {cv' : ConstantVal .anon} {n : Nat} (hlps : cv'.levelParams = List.range n) :
+    PosSortLiftFor J env cv' := by
+  intro sty₀ u₀ hinf hred
+  rw [hlps, posOf_range] at hinf
+  exact ⟨sty₀, u₀, M.infer hinf, M.sort hred⟩
+
 theorem PosSortLift.of_range {env : Ix.Kernel.Env .anon} {cv' : ConstantVal .anon} {n : Nat}
     (hlps : cv'.levelParams = List.range n) : PosSortLift env cv' := by
   intro sty₀ u₀ hinf hred
@@ -1007,7 +1024,8 @@ theorem PosSortLift.of_range {env : Ix.Kernel.Env .anon} {cv' : ConstantVal .ano
 /-- Refine `validate_expr_well_scoped` + `k_ensure_sort` on a `ValRepExact` constant `cv'` storing
 `cv` (`ValStored cv' cv`) to `ConstantValCheckJ rulesJ c.env cv cv'`, also returning the heap sort
 level `ℓ` and its semantic agreement `LvEq u₀ ℓ` with the sort `u₀` of `posOf cv'.levelParams cv'.type`. -/
-theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem constantValCheckJ_of_checked_mapped {J : Ix.Kernel.Semantics.Judgements .anon}
+    (M : JudgementsMap rulesJ J) (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
     {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
     {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
     (hvs : IxVM.Consistency.ValStored cv' cv)
@@ -1018,13 +1036,13 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
     (hbasis : Ix.Kernel.reservedBasisNames.contains cv.name = false)
     (hshape : cv.name.isProjFnShape = false)
     (hstore : Ix.Kernel.Open.StoreInv c.env)
-    (hpos : PosSortLift c.env cv')
+    (hpos : PosSortLiftFor J c.env cv')
     (ev_ws : ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h r₁ h₁ cs₁)
     (ext : Heap.Extends h h₂)
     (hrc : RCRep c.t c.lim h₂ rc) (hty : TypesRep c.κ Γ h₂ 0 types)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs₂)
     (ev_sort : ObsFn W "KernelInfer::k_ensure_sort" [rc, ty, types] h₂ r₂ h₃ cs₂) :
-    ConstantValCheckJ rulesJ c.env cv cv' ∧
+    ConstantValCheckJ J c.env cv cv' ∧
       ∃ sty₀ u₀ ℓ,
         Infer c.env .full 0 (posOf cv'.levelParams cv'.type) sty₀ ∧
         Red c.env 0 sty₀ (.sort u₀) ∧
@@ -1055,12 +1073,13 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
     rfl
   refine ⟨⟨cv'.type, ⟨Option.isNone_iff_eq_none.mpr hfresh, hbasis, hshape, hnd_cv,
     hlbd, hfv,
-    annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
+    M.annot (annot_of_annotates hvs.2.2 hfv hlbd 0), hlpd', hcr_pos,
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
 /-- A checked constant at an actual selected-call context. The sort derivation comes from
 the scoped registry; no unrestricted load or public S0.ctx witness is used. -/
-theorem constantValCheckJ_of_scoped {c : ScopedCtx}
+theorem constantValCheckJ_of_scoped_mapped {J : Ix.Kernel.Semantics.Judgements .anon}
+    (M : JudgementsMap rulesJ J) {c : ScopedCtx}
     {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
     {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
     (hvs : IxVM.Consistency.ValStored cv' cv)
@@ -1071,13 +1090,13 @@ theorem constantValCheckJ_of_scoped {c : ScopedCtx}
     (hbasis : Ix.Kernel.reservedBasisNames.contains cv.name = false)
     (hshape : cv.name.isProjFnShape = false)
     (hstore : Ix.Kernel.Open.StoreInv c.env)
-    (hpos : PosSortLift c.env cv')
+    (hpos : PosSortLiftFor J c.env cv')
     (ev_ws : ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h r₁ h₁ cs₁)
     (ext : Heap.Extends h h₂)
     (hrc : RCRep c.t c.lim h₂ rc) (hty : TypesRep c.κ Γ h₂ 0 types)
     (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs₂)
     (ev_sort : ObsFn W "KernelInfer::k_ensure_sort" [rc, ty, types] h₂ r₂ h₃ cs₂) :
-    ConstantValCheckJ rulesJ c.env cv cv' ∧
+    ConstantValCheckJ J c.env cv cv' ∧
       ∃ sty₀ u₀ ℓ,
         Infer c.env .full 0 (posOf cv'.levelParams cv'.type) sty₀ ∧
         Red c.env 0 sty₀ (.sort u₀) ∧
@@ -1108,9 +1127,61 @@ theorem constantValCheckJ_of_scoped {c : ScopedCtx}
     rfl
   refine ⟨⟨cv'.type, ⟨Option.isNone_iff_eq_none.mpr hfresh, hbasis, hshape, hnd_cv,
     hlbd, hfv,
-    annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
+    M.annot (annot_of_annotates hvs.2.2 hfv hlbd 0), hlpd', hcr_pos,
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
+
+/-- Compatibility with the raw rules judgement package. -/
+theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+    {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
+    {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
+    (hvs : IxVM.Consistency.ValStored cv' cv)
+    (hv : ValRepExact c.κ h nl ty cv')
+    (hlbd : cv.type.looseBVarsBounded 0 = true)
+    (hfv : cv.type.hasFvar = false)
+    (hfresh : c.env.find? cv.name = none)
+    (hbasis : Ix.Kernel.reservedBasisNames.contains cv.name = false)
+    (hshape : cv.name.isProjFnShape = false)
+    (hstore : Ix.Kernel.Open.StoreInv c.env)
+    (hpos : PosSortLift c.env cv')
+    (ev_ws : ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h r₁ h₁ cs₁)
+    (ext : Heap.Extends h h₂)
+    (hrc : RCRep c.t c.lim h₂ rc) (hty : TypesRep c.κ Γ h₂ 0 types)
+    (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs₂)
+    (ev_sort : ObsFn W "KernelInfer::k_ensure_sort" [rc, ty, types] h₂ r₂ h₃ cs₂) :
+    ConstantValCheckJ rulesJ c.env cv cv' ∧
+      ∃ sty₀ u₀ ℓ,
+        Infer c.env .full 0 (posOf cv'.levelParams cv'.type) sty₀ ∧
+        Red c.env 0 sty₀ (.sort u₀) ∧
+        RepKLevel h₃ ℓ r₂ ∧ LvEq u₀ ℓ := by
+  exact constantValCheckJ_of_checked_mapped (JudgementsMap.refl rulesJ) hCore
+    hvs hv hlbd hfv hfresh hbasis hshape hstore hpos ev_ws ext hrc hty hef hlf hgood ev_sort
+
+/-- Compatibility with the raw rules judgement package. -/
+theorem constantValCheckJ_of_scoped {c : ScopedCtx}
+    {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
+    {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
+    (hvs : IxVM.Consistency.ValStored cv' cv)
+    (hv : ValRepExact c.κ h nl ty cv')
+    (hlbd : cv.type.looseBVarsBounded 0 = true)
+    (hfv : cv.type.hasFvar = false)
+    (hfresh : c.env.find? cv.name = none)
+    (hbasis : Ix.Kernel.reservedBasisNames.contains cv.name = false)
+    (hshape : cv.name.isProjFnShape = false)
+    (hstore : Ix.Kernel.Open.StoreInv c.env)
+    (hpos : PosSortLift c.env cv')
+    (ev_ws : ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h r₁ h₁ cs₁)
+    (ext : Heap.Extends h h₂)
+    (hrc : RCRep c.t c.lim h₂ rc) (hty : TypesRep c.κ Γ h₂ 0 types)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs₂)
+    (ev_sort : ObsFn W "KernelInfer::k_ensure_sort" [rc, ty, types] h₂ r₂ h₃ cs₂) :
+    ConstantValCheckJ rulesJ c.env cv cv' ∧
+      ∃ sty₀ u₀ ℓ,
+        Infer c.env .full 0 (posOf cv'.levelParams cv'.type) sty₀ ∧
+        Red c.env 0 sty₀ (.sort u₀) ∧
+        RepKLevel h₃ ℓ r₂ ∧ LvEq u₀ ℓ := by
+  exact constantValCheckJ_of_scoped_mapped (JudgementsMap.refl rulesJ)
+    hvs hv hlbd hfv hfresh hbasis hshape hstore hpos ev_ws ext hrc hty hef hlf hgood ev_sort
 
 /-! ## Semantic level-list equivalence, `ExprSemEq`, and `WrapRelSem` -/
 

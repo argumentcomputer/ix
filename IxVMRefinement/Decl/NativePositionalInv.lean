@@ -105,7 +105,7 @@ theorem judgeInv_nativePosRulesJ : JudgeInv nativePosRulesJ where
   annot_noProjAt := by
     intro env e e' name i hann hinfer hnf hslot
     obtain ⟨t, hi⟩ := hinfer
-    rcases hi with hi | ⟨_, ps, hp, hi⟩
+    rcases hi with hi | ⟨_, ps, _, hi⟩
     · exact judgeInv_rulesJ.annot_noProjAt hann ⟨t, hi⟩ hnf hslot
     · have hnf' : e'.hasFvar = false :=
         Expr.not_hasFvar_of_fvarsBelow_zero

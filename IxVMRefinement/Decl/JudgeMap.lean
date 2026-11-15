@@ -23,6 +23,10 @@ structure JudgementsMap {md : Mode} (J K : Judgements md) : Prop where
 
 namespace JudgementsMap
 
+/-- Identity transport preserves every judgement. -/
+def refl {md : Mode} (J : Judgements md) : JudgementsMap J J :=
+  ⟨id, id, id, id, id⟩
+
 variable {md : Mode} {J K : Judgements md} (M : JudgementsMap J K)
 
 include M
