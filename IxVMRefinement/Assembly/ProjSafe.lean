@@ -273,7 +273,7 @@ private theorem getConstantInfo_proj_consumed {s s' : Ixon.GetState} {info : Ixo
           have hne5 : tag.value ≠ 5 := by intro he; rw [he] at hv; simp at hv
           have hne6 : tag.value ≠ 6 := by intro he; rw [he] at hv; simp at hv
           have hne7 : tag.value ≠ 7 := by intro he; rw [he] at hv; simp at hv
-          split <;> contradiction
+          split <;> first | contradiction | rfl
         rw [hbad] at hinfo
         exact (throw_ok_false hinfo).elim
     · simp only [hflag, Bool.false_eq_true, ↓reduceIte] at hinfo
@@ -368,7 +368,7 @@ theorem deConstantExact_proj_eq_serConstant {bytes : ByteArray} {c : Ixon.Consta
         obtain ⟨he, _⟩ := pure_ok_inv hp
         cases he
         rfl
-      subst hinfo_eq
+      subst info'
       obtain ⟨hwf_info, hc_info⟩ := getConstantInfo_proj_consumed hinfo hproj
       have hc_tail := getConstantAfterInfo_empty_consumed htail
       have hc_all := hc_info.trans hc_tail
@@ -439,6 +439,19 @@ theorem AuthenticExactStore.resolve_inj {store : Ix.Kernel.Reader.Store}
     obtain ⟨hbs, _⟩ := deConstantExact_proj_eq_serConstant hdec hemp hp
     rw [← hbs, hbl]
 
+private theorem list_find?_pred {α : Type} {p : α → Bool} :
+    ∀ {xs : List α} {x : α}, xs.find? p = some x → p x = true
+  | [], _, h => by cases h
+  | hd :: tl, x, h => by
+    simp only [List.find?] at h
+    cases hp : p hd
+    · rw [hp] at h
+      exact list_find?_pred h
+    · rw [hp] at h
+      injection h with hxeq
+      subst hxeq
+      exact hp
+
 /-- Characterization of `Core.keyOf t a` when `t.check = .ok ()`: role-bound iff `(r, a) ∈ t.bound`. -/
 theorem keyOf_eq_of_bound {t : Ix.Kernel.RoleTable} (hchk : t.check = .ok ())
     {r : Ix.Kernel.Role} {a : _root_.Address}
@@ -453,7 +466,8 @@ theorem keyOf_eq_of_bound {t : Ix.Kernel.RoleTable} (hchk : t.check = .ok ())
     rcases p with ⟨r', a'⟩
     have hp_mem : (r', a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_beq : (r', a').2 == a := Array.find?_some hfind
+    have hp_beq : (r', a').2 == a :=
+      list_find?_pred (xs := t.bound.toList) (by rwa [Array.find?_toList])
     have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     have hpair := Ix.Kernel.RoleTable.eq_of_nodup_map_snd
       (Ix.Kernel.RoleTable.check_nodup hchk).2 hmem hp_mem hp_eq.symm
@@ -471,7 +485,8 @@ theorem keyOf_eq_of_unbound {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     rcases p with ⟨r, a'⟩
     have hp_mem : (r, a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_beq : (r, a').2 == a := Array.find?_some hfind
+    have hp_beq : (r, a').2 == a :=
+      list_find?_pred (xs := t.bound.toList) (by rwa [Array.find?_toList])
     have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     subst hp_eq
     exact absurd hp_mem (hunb r)
@@ -491,7 +506,8 @@ theorem addressKey_keyOf {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTa
     rcases p with ⟨r, a'⟩
     have hp_mem : (r, a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_beq : (r, a').2 == a := Array.find?_some hfind
+    have hp_beq : (r, a').2 == a :=
+      list_find?_pred (xs := t.bound.toList) (by rwa [Array.find?_toList])
     have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     subst hp_eq
     exact Or.inr ⟨t, r, hofBytes,
@@ -717,7 +733,7 @@ theorem streamContext_memberKey_dprj {t : Ix.Kernel.RoleTable}
       rcases hpat with rfl
       obtain ⟨bytes, hbl, hdec⟩ := hauth a' c_proj hc'
       obtain ⟨hbs, _⟩ := deConstantExact_proj_eq_serConstant hdec rfl trivial
-      rw [← hbs] at hbl
+      rw [hbs] at hbl
       exact hbl.symm
   have hroles : cx.roles = Ix.Kernel.Reader.bindingsOf cx.store t := rfl
   cases hrole : cx.roles.names[Ix.Kernel.ConstRef.member owner i]? with
@@ -835,11 +851,70 @@ theorem dprj_store_eq_of_mutsMemberChecked
     · exact heq_b
     · have hi_val : ((i : F)).val = i :=
         ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-      obtain ⟨_, _, hhash_pa, mc', _, hget_pa, _, _⟩ := L1.projection_addr_spec hmem_pa hb_ref ev_pa
-      rw [hi_val] at hget_pa hhash_pa
+      obtain ⟨v1, m2, cs12, v31, m32, cs42, v198, m199, cs201,
+        m231, m244, m257, m270, v282, m283, cs293, m306, cs321,
+        ev14, ev44, sg206, hm239, hm252, hm265, hm278, hm314, ev295, ev323, hc332⟩ :=
+        «Ingress::projection_addr».obs ev_pa
+      obtain ⟨hm2, _, mc', hget_pa, hmc⟩ := L1.muts_member_at_spec hmem_pa ev14
+      subst m2
+      rw [hi_val] at hget_pa
       have hms_list : ms.toList[i]? = some (.defn d) := by simpa using hms
       rw [hms_list] at hget_pa
       cases hget_pa
+      obtain ⟨ni, hni, hxi, hv31, hm32⟩ := Lib.u64_from_field_spec ev44
+      subst m32
+      have hni_eq : ni = i := by
+        have hv := congrArg ZMod.val (Value.field.inj hxi).symm
+        rwa [ZMod.val_natCast_of_lt (Nat.lt_trans hni (by decide)), hi_val] at hv
+      subst ni
+      rw [hv31] at sg206
+      have e1 : Heap.Extends m199 m231 := by rw [hm239]; exact Heap.Extends.snoc _ _
+      have e2 : Heap.Extends m231 m244 := by rw [hm252]; exact Heap.Extends.snoc _ _
+      have e3 : Heap.Extends m244 m257 := by rw [hm265]; exact Heap.Extends.snoc _ _
+      have e4 : Heap.Extends m257 m270 := by rw [hm278]; exact Heap.Extends.snoc _ _
+      have e5 : Heap.Extends m270 m306 := by rw [hm314]; exact Heap.Extends.snoc _ _
+      have c1 : m306[m199.length]? = some (.construct Core.Specs.Callees.ixExprListEnum "Nil" []) :=
+        (e2.trans (e3.trans (e4.trans e5))).getElem?_eq (by rw [hm239]; simp)
+      have c2 : m306[m231.length]? = some (.construct Core.addrListEnum "Nil" []) :=
+        (e3.trans (e4.trans e5)).getElem?_eq (by rw [hm252]; simp)
+      have c3 : m306[m244.length]? = some (.construct Core.Specs.Callees.ixUnivListEnum "Nil" []) :=
+        (e4.trans e5).getElem?_eq (by rw [hm265]; simp)
+      have c4 : m306[m257.length]? = some (.construct Core.Specs.Callees.ixBinderListEnum "Nil" []) :=
+        e5.getElem?_eq (by rw [hm278]; simp)
+      have c5 : m306[m270.length]? = some (.construct Core.byteListEnum "Nil" []) := by
+        rw [hm314]; simp
+      have hrepi : Aiur.Library.RepU64 m306 i.toUInt64 (Core.TagN.u64Value i) := by
+        have e := Lib.repU64_ofNatLT m306 (m := i)
+          (Nat.lt_trans hi_len (Nat.lt_trans hlen (by decide)))
+        rwa [UInt64.ofNatLT_eq_ofNat] at e
+      obtain ⟨dv, rfl⟩ := hmc
+      have hinfo_rep :
+          Core.Specs.Callees.ProjInfoRep m306 (.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) v198 := by
+        cases sg206 with
+        | Defn _ _ hv1 hm1 _ =>
+          have E_ext : Heap.Extends _ m306 := by
+            rw [← hm1]; exact e1.trans (e2.trans (e3.trans (e4.trans e5)))
+          rw [hv1]
+          exact ⟨Core.TagN.u64Value i, _, b_arr, rfl, hrepi,
+            Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy E_ext hb_ref, rfl⟩
+        | Indc _ hv67 _ _ _ _ => simp [Core.Specs.Callees.mutCtor] at hv67
+        | Recr _ _ hv67 _ _ _ _ => simp [Core.Specs.Callees.mutCtor] at hv67
+      have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
+        (.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
+        ⟨_, _, _, _, _, rfl, hinfo_rep,
+          Aiur.Library.List.RepLinkedList.nil c1, Aiur.Library.List.RepLinkedList.nil c2,
+          Aiur.Library.List.RepLinkedList.nil c3, Aiur.Library.List.RepLinkedList.nil c4⟩
+        (Aiur.Library.List.RepLinkedList.nil c5)
+      rw [List.append_nil] at hbytes
+      have hstream : L1.Stream m283
+          (Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩).data.toList
+          v282 := hbytes
+      have hcall_b3 := (L1.bytes_to_addr_spec hstream ev323).2.2
+      have hcall_pa : (⟨"Blake3::hash", [v282], m283⟩ : Call F) ∈ cs_pa := by
+        rw [hc332]; simp [hcall_b3]
+      have hhash_pa :
+          Hashed cs_pa (Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩) :=
+        ⟨_, hcall_pa, rfl, v282, rfl, hstream⟩
       have hhashed_pa :
           Hashed calls (Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩) :=
         Core.hashed_mono hsub_pa hhash_pa
@@ -1132,7 +1207,8 @@ theorem reachRefs_subset_usedRefIdxs {c : Ixon.Constant} {e : Ixon.Expr}
       have hsz : (buildReachRefsTbl (c.sharing.toList.take (n + 1))).size = n + 1 := by
         unfold buildReachRefsTbl
         rw [buildReachRefsTbl_size]
-        simp [List.length_take, Nat.min_eq_left hn]
+        simp only [Array.size_empty, Nat.zero_add, List.length_take]
+        omega
       have hk_lt : k < n + 1 := by
         have := (Array.getElem?_eq_some_iff.mp hk).1
         omega
@@ -1695,8 +1771,7 @@ theorem validate_univ_params_seen_spec {h h' : Heap F} {u : Core.KLevel}
         have h2 := congrArg ZMod.val (Value.field.inj hxb).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at h2
-      subst ha_eq
-      rw [hb_eq] at hr_lt
+      rw [ha_eq, hb_eq] at hr_lt
       have hlt : i < nlvls := by
         by_cases hlt' : i < nlvls
         · exact hlt'
@@ -1704,7 +1779,7 @@ theorem validate_univ_params_seen_spec {h h' : Heap F} {u : Core.KLevel}
           rw [hr_lt] at heq
           have h01 := Value.field.inj heq
           exact absurd (congrArg ZMod.val h01) (by decide)
-      exact ⟨hh.trans hm_eq, by simp [Ix.Kernel.Level.allParamsDefined, List.mem_range, hlt]⟩
+      exact ⟨hh.trans hm_eq, by simp [Ix.Kernel.Level.allParamsDefined, List.mem_range]; exact hlt⟩
     | Zero ld _ _ _ | Succ _ _ ld _ _ | Max _ _ _ _ _ _ ld _ _ _
     | IMax _ _ _ _ _ _ ld _ _ _ =>
       exact (Core.load_cell_ne cell ld (by decide)).elim
