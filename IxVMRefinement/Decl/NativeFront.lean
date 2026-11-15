@@ -1235,16 +1235,16 @@ theorem former_is_tele_one_spec {κ : _root_.Address → KKey} {Γ : Nat → KEx
       obtain ⟨hh, bs, s, hst, hlen⟩ := former_is_tele_one_spec m (by omega) hb ev'
       exact ⟨hh, (T, bmeta ℓ) :: bs, s, by simp [Expr.stripPis, hst], by simp [hlen]⟩
 
-theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx} :
+theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       n < 549755813888 →
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
-      EnvFacts c →
-      LoadFacts c →
-      Good c cs →
+      CoreEnvFacts c.toCtx →
+      ScopedLoadFacts c →
+      CoreGood c cs →
       Tm c.κ d Γ h 0 E pe →
       ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
       ∃ ℓ : KLevel, RepKLevel h' ℓ r ∧
@@ -1253,8 +1253,8 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
     | .n0 (cs12 := cs12) (ev14 := ev_w) (ld64 := ld) (he78 := hr) (he79 := hh) (hc80 := hc) .. =>
       subst hc hr hh
-      have hg1 : Good c cs12 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := core_whnf hCore hrc hty hsc hef hlf hg1 ev_w hE
+      have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
+      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
       obtain ⟨u, rfl, ℓ, hℓ, huℓ⟩ := hE'.sort_of_load ld
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hst
@@ -1270,9 +1270,9 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     | .other (cs12 := cs12) (x_body := xbody) (cs124 := cs2) (m161 := m3) (ev14 := ev_w)
         (ld97 := ld) (op158 := op) (hm169 := hm3) (ev126 := ev_rec) (hc189 := hc) .. =>
       subst hc
-      have hg1 : Good c cs12 := hgood.sub (fun x hx => by simp [hx])
-      have hg2 : Good c cs2 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := core_whnf hCore hrc hty hsc hef hlf hg1 ev_w hE
+      have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
+      have hg2 : CoreGood c cs2 := hgood.sub (fun x hx => by simp [hx])
+      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
       obtain ⟨T, B, _, rfl, hT, hB, _⟩ := hE'.forallE_of_load ld
       have ext_w := ev_w.heap_extends
       obtain ⟨ext_push, hty', hsc'⟩ := push_binder_types hT (hty.mono ext_w) hsc
@@ -1280,7 +1280,7 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
       have hB_open : Tm c.κ (d + 1) (Ghost.extend Γ d T) m3 0 (B.instantiate1 (.fvar d T)) xbody :=
         (hB.open_body (Ghost.extend_at Γ d T) (Ghost.extend_below Γ d T)).mono ext_push
       rw [evalBinOp_sub_succ m op] at ev_rec
-      obtain ⟨ℓ, hℓ, htele⟩ := get_result_sort_level_spec hCore m (by omega)
+      obtain ⟨ℓ, hℓ, htele⟩ := get_result_sort_level_scoped_spec m (by omega)
         (hrc.mono (ext_w.trans ext_push)) hty' hsc' hef hlf hg2 hB_open ev_rec
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       cases E with
@@ -1293,6 +1293,24 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
         obtain ⟨bs₂, hst₂⟩ := stripPis_instantiate1_sort m (v := .fvar d T) (k := 0) hst₁
         exact htele bs₂ s hst₂
       | _ => simp [Expr.stripPis] at hst
+
+theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx} :
+    ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
+      {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      n < 549755813888 →
+      RCRep c.t c.lim h rc →
+      TypesRep c.κ Γ h d types →
+      GhostScoped Γ d →
+      EnvFacts c →
+      LoadFacts c →
+      Good c cs →
+      Tm c.κ d Γ h 0 E pe →
+      ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
+      ∃ ℓ : KLevel, RepKLevel h' ℓ r ∧
+        ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ := by
+  intro n d Γ E rc pe types r h h' cs hlt hrc hty hsc hef hlf hg hE ev
+  exact get_result_sort_level_scoped_spec (c := ScopedCtx.unrestricted c) n hlt hrc hty hsc
+    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) hg.unrestricted hE ev
 
 theorem mkAppN_not_forallE :
     ∀ (H : KExpr), (∀ d b m, H ≠ .forallE d b m) →
@@ -2166,8 +2184,7 @@ theorem instOpen_forallE_inv {vs : List KExpr}
     rw [heq] at hf
     exact nomatch hf
 
-private theorem check_param_agreement_go_spec (hCore : IxVM.Consistency.Core S₀)
-    {c : Ctx} :
+private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {tfvs_pre : List KExpr}
       {ta_open tb_raw : KExpr} {rc pta ptb types r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
@@ -2177,9 +2194,9 @@ private theorem check_param_agreement_go_spec (hCore : IxVM.Consistency.Core S�
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
-      EnvFacts c →
-      LoadFacts c →
-      Good c cs →
+      CoreEnvFacts c.toCtx →
+      ScopedLoadFacts c →
+      CoreGood c cs →
       Tm c.κ d Γ h 0 ta_open pta →
       Tm c.κ d Γ h 0 (instOpen tfvs_pre 0 tb_raw) ptb →
       ObsFn W "KernelCheck::check_param_agreement_go"
@@ -2212,10 +2229,10 @@ private theorem check_param_agreement_go_spec (hCore : IxVM.Consistency.Core S�
       obtain ⟨Da, Ba, ℓa, rfl, hDa, hBa, _⟩ := hta.forallE_of_load ld_a
       obtain ⟨Db, Bb, ℓb, heq_tb, hDb, hBb, _⟩ := htb.forallE_of_load ld_b
       obtain ⟨db_raw, bb_raw, rfl, hDb_eq, hBb_eq⟩ := instOpen_forallE_inv hvs_pre heq_tb
-      have hg_de : Good c cs_de := hgood.sub (fun x hx => by simp [hx])
-      have hg_go : Good c cs_go := hgood.sub (fun x hx => by simp [hx])
+      have hg_de : CoreGood c cs_de := hgood.sub (fun x hx => by simp [hx])
+      have hg_go : CoreGood c cs_go := hgood.sub (fun x hx => by simp [hx])
       have hde : DefEq c.env d Da Db :=
-        core_defeq hCore hrc hty hsc hef hlf hg_de ev_de hDa hDb
+        scoped_core_defeq hrc hty hsc hef hlf hg_de ev_de hDa hDb
       have ext_de := ev_de.heap_extends
       obtain ⟨ext_cons, hty', hsc'⟩ :=
         push_binder_types (hDa.mono ext_de) (hty.mono ext_de) hsc
@@ -2240,7 +2257,7 @@ private theorem check_param_agreement_go_spec (hCore : IxVM.Consistency.Core S�
         · simp only [List.mem_singleton] at hv
           exact ⟨d, Da, hv⟩
       obtain ⟨tfvs_suf, trest, cbs_suf, cbody, hop_suf, hst_suf, hdoms_suf⟩ :=
-        check_param_agreement_go_spec hCore m (by omega) hlen' hvs'
+        check_param_agreement_go_scoped_spec m (by omega) hlen' hvs'
           (hrc.mono ext_all) hty' hsc' hef hlf hg_go hBa_open hBb_open₀ ev_go
       refine ⟨fv :: tfvs_suf, trest, (db_raw, bmeta ℓb) :: cbs_suf, cbody, ?_, ?_, ?_⟩
       · simp [Ix.Kernel.openPisAtFvars, fv, hop_suf]
@@ -2262,6 +2279,34 @@ private theorem check_param_agreement_go_spec (hCore : IxVM.Consistency.Core S�
           exact hde'
 
 /-- `check_param_agreement` establishes `StructDomsShared c.env ta tb n`. -/
+theorem check_param_agreement_scoped_spec {c : ScopedCtx}
+    {Γ : Nat → KExpr} {ta tb : KExpr} {n : Nat}
+    {rc pta ptb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hn : n < 4294967296)
+    (hrc : RCRep c.t c.lim h rc)
+    (hef : CoreEnvFacts c.toCtx)
+    (hlf : ScopedLoadFacts c)
+    (hgood : CoreGood c cs)
+    (hta : Tm c.κ 0 Γ h 0 ta pta)
+    (htb : Tm c.κ 0 Γ h 0 tb ptb)
+    (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
+    StructDomsShared c.env ta tb n := by
+  match Obs.«KernelCheck::check_param_agreement».obs ev with
+  | .run (cs4 := cs_go) (m41 := m41) (hm49 := hm41) (ev6 := ev_go) (hc53 := hc) =>
+    subst hc
+    have ext : Heap.Extends h m41 := by rw [hm41]; exact Heap.Extends.snoc h _
+    have hty : TypesRep c.κ Γ m41 0 (.ptr (.enum kexprListEnum) h.length) := by
+      rw [hm41]; exact typesRep_alloc_nil c.κ Γ h
+    have hg_go : CoreGood c cs_go := hgood.sub (fun x hx => by simp [hx])
+    obtain ⟨tfvs, trest, cbs, cbody, hop, hst, hdoms⟩ :=
+      check_param_agreement_go_scoped_spec n (d := 0) (tfvs_pre := []) (tb_raw := tb)
+        (by omega) rfl (fun _ hv => nomatch hv) (hrc.mono ext) hty (ghostScoped_zero Γ)
+        hef hlf hg_go (hta.mono ext) (htb.mono ext) ev_go
+    refine ⟨tfvs, trest, hop, fun i hi => ?_⟩
+    obtain ⟨fv, hfv, hde⟩ := hdoms i hi
+    rw [Nat.zero_add, List.nil_append] at hde
+    exact ⟨cbs, cbody, fv, hst, hfv, hde⟩
+
 theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
     {Γ : Nat → KExpr} {ta tb : KExpr} {n : Nat}
     {rc pta ptb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -2274,21 +2319,8 @@ theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     (htb : Tm c.κ 0 Γ h 0 tb ptb)
     (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
     StructDomsShared c.env ta tb n := by
-  match Obs.«KernelCheck::check_param_agreement».obs ev with
-  | .run (cs4 := cs_go) (m41 := m41) (hm49 := hm41) (ev6 := ev_go) (hc53 := hc) =>
-    subst hc
-    have ext : Heap.Extends h m41 := by rw [hm41]; exact Heap.Extends.snoc h _
-    have hty : TypesRep c.κ Γ m41 0 (.ptr (.enum kexprListEnum) h.length) := by
-      rw [hm41]; exact typesRep_alloc_nil c.κ Γ h
-    have hg_go : Good c cs_go := hgood.sub (fun x hx => by simp [hx])
-    obtain ⟨tfvs, trest, cbs, cbody, hop, hst, hdoms⟩ :=
-      check_param_agreement_go_spec hCore n (d := 0) (tfvs_pre := []) (tb_raw := tb)
-        (by omega) rfl (fun _ hv => nomatch hv) (hrc.mono ext) hty (ghostScoped_zero Γ)
-        hef hlf hg_go (hta.mono ext) (htb.mono ext) ev_go
-    refine ⟨tfvs, trest, hop, fun i hi => ?_⟩
-    obtain ⟨fv, hfv, hde⟩ := hdoms i hi
-    rw [Nat.zero_add, List.nil_append] at hde
-    exact ⟨cbs, cbody, fv, hst, hfv, hde⟩
+  exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) hn hrc
+    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) hgood.unrestricted hta htb ev
 
 /-! ## Constructor residual opening and `check_field_universes` -/
 
@@ -2462,8 +2494,8 @@ private theorem check_field_universes_skip_params_spec {c : Ctx} :
         (fun x hx => by simp [hsub' x hx]), hrc', hty'', hsc'', hcrest, hnt', ev_in⟩
       simp [Ix.Kernel.openPisAtFvars, fv, hop']
 
-private theorem check_field_universes_inner_spec (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {T : KKey} {us : List KLevel}
+private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consistency.Levels)
+    {c : ScopedCtx} {T : KKey} {us : List KLevel}
     {resSort ind_lvl : KLevel} (hlveq : LvEq resSort ind_lvl) :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {crest : KExpr} {xFvs args : List KExpr}
       {rc pty pind types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -2471,9 +2503,9 @@ private theorem check_field_universes_inner_spec (hLevels : IxVM.Consistency.Lev
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
-      EnvFacts c →
-      LoadFacts c →
-      Good c cs →
+      CoreEnvFacts c.toCtx →
+      ScopedLoadFacts c →
+      CoreGood c cs →
       RepKLevel h ind_lvl pind →
       Tm c.κ d Γ h 0 crest pty →
       NoTopLetSpine m h pty →
@@ -2512,11 +2544,11 @@ private theorem check_field_universes_inner_spec (hLevels : IxVM.Consistency.Lev
       · exact nomatch hop
       · simp only [Option.some.injEq, Prod.mk.injEq] at hop
         obtain ⟨rfl, rfl⟩ := hop
-        have hg_es : Good c cs_es := hgood.sub (fun x hx => by simp [hx])
-        have hg_leq : Good c cs_leq := hgood.sub (fun x hx => by simp [hx])
-        have hg_in : Good c cs_in := hgood.sub (fun x hx => by simp [hx])
+        have hg_es : CoreGood c cs_es := hgood.sub (fun x hx => by simp [hx])
+        have hg_leq : CoreGood c cs_leq := hgood.sub (fun x hx => by simp [hx])
+        have hg_in : CoreGood c cs_in := hgood.sub (fun x hx => by simp [hx])
         obtain ⟨sdom, u₀, ℓ_dom, hinf_d, hred_d, hrep_dom, hlveq_dom⟩ :=
-          core_ensure_sort hCore hrc hty hsc hef hlf hg_es ev_es hD
+          scoped_core_ensure_sort hrc hty hsc hef hlf hg_es ev_es hD
         have e1 := ev_es.heap_extends
         have e2 := ev_leq.heap_extends
         have hleq_lvl := levels_leq_one hLevels ev_leq hg_leq.2 hrep_dom
@@ -2538,7 +2570,7 @@ private theorem check_field_universes_inner_spec (hLevels : IxVM.Consistency.Lev
         injection hxs_nt with hxb_nt _; subst hxb_nt
         have hnt_B : NoTopLetSpine m m154 xbody := hnt_B₀.mono ext_all
         obtain ⟨sorts', hlen', hsorts'⟩ :=
-          check_field_universes_inner_spec hLevels hCore hlveq m hop'
+          check_field_universes_inner_scoped_spec hLevels hlveq m hop'
             (hrc.mono ext_all) hty' hsc' hef hlf hg_in
             (repKLevel_heapMono₂ ext_all hpind) hB_open hnt_B ev_in
         refine ⟨u₀ :: sorts', by simp [hlen'], fun i hi => ?_⟩
@@ -2553,8 +2585,8 @@ private theorem check_field_universes_inner_spec (hLevels : IxVM.Consistency.Lev
 
 /-- `check_field_universes` establishes `FieldSortsJ rulesJ c.env (Level.isEquiv resSort .zero) false`
 for constructor fields `xFvs` at `large = false`. -/
-theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {T : KKey} {us : List KLevel}
+theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
+    {c : ScopedCtx} {T : KKey} {us : List KLevel}
     {resSort ind_lvl : KLevel} {nP nF : Nat} {Γ : Nat → KExpr}
     {cty stype_cty crest : KExpr} {fvsP xFvs idxArgs : List KExpr}
     {rc pcty pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -2567,9 +2599,9 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
     (hopAll : Ix.Kernel.openPisAtFvars (nP + nF) cty 0 =
       some (fvsP ++ xFvs, Expr.mkAppN (.const T us) (fvsP ++ idxArgs)))
     (hrc : RCRep c.t c.lim h rc)
-    (hef : EnvFacts c)
-    (hlf : LoadFacts c)
-    (hgood : Good c cs)
+    (hef : CoreEnvFacts c.toCtx)
+    (hlf : ScopedLoadFacts c)
+    (hgood : CoreGood c cs)
     (hpind : RepKLevel h ind_lvl pind)
     (hcty : Tm c.κ 0 Γ h 0 cty pcty)
     (hnt : NoTopLetSpine (nP + nF) h pcty)
@@ -2616,22 +2648,51 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
     have ext : Heap.Extends h m69 := by rw [hm69]; exact Heap.Extends.snoc h _
     have hty : TypesRep c.κ Γ m69 0 (.ptr (.enum kexprListEnum) h.length) := by
       rw [hm69]; exact typesRep_alloc_nil c.κ Γ h
-    have hg_sk : Good c cs_sk := hgood.sub (fun x hx => by simp [hx])
+    have hg_sk : CoreGood c cs_sk := hgood.sub (fun x hx => by simp [hx])
     obtain ⟨fvsP', crest', Γ', pcty', types', h₁, cs_in, hopP', ext', hsub',
         hrc', hty', hsc', hcrest', hnt', ev_in⟩ :=
-      check_field_universes_skip_params_spec nP (d := 0) (by omega)
+      check_field_universes_skip_params_spec (c := c.toCtx) nP (d := 0) (by omega)
         (hrc.mono ext) hty (ghostScoped_zero Γ) (hcty.mono ext) (hnt.mono ext) ev_sk
     rw [Nat.zero_add] at hty' hsc' hcrest'
     rw [hopP] at hopP'
     simp only [Option.some.injEq, Prod.mk.injEq] at hopP'
     obtain ⟨rfl, rfl⟩ := hopP'
     obtain ⟨sorts, hlen, hsorts⟩ :=
-      check_field_universes_inner_spec hLevels hCore hlveq nF hopF
+      check_field_universes_inner_scoped_spec hLevels hlveq nF hopF
         hrc' hty' hsc' hef hlf (hg_sk.sub hsub')
         (repKLevel_heapMono₂ (ext.trans ext') hpind) hcrest' hnt' ev_in
     refine ⟨sorts, hlen, fun i hi => ?_⟩
     obtain ⟨fv, ty, u, hfv, hu, hinf, hred, hleq⟩ := hsorts i hi
     exact ⟨fv, ty, u, hfv, hu, hinf, hred, (fun _ => hleq), (fun _ hlarge => nomatch hlarge)⟩
+
+theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
+    (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {T : KKey} {us : List KLevel}
+    {resSort ind_lvl : KLevel} {nP nF : Nat} {Γ : Nat → KExpr}
+    {cty stype_cty crest : KExpr} {fvsP xFvs idxArgs : List KExpr}
+    {rc pcty pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hnP : nP < 4294967296)
+    (hlveq : LvEq resSort ind_lvl)
+    (hinf_cty : Infer c.env .full 0 cty stype_cty)
+    (hopP : Ix.Kernel.openPisAtFvars nP cty 0 = some (fvsP, crest))
+    (hopF : Ix.Kernel.openPisAtFvars nF crest nP =
+      some (xFvs, Expr.mkAppN (.const T us) (fvsP ++ idxArgs)))
+    (hopAll : Ix.Kernel.openPisAtFvars (nP + nF) cty 0 =
+      some (fvsP ++ xFvs, Expr.mkAppN (.const T us) (fvsP ++ idxArgs)))
+    (hrc : RCRep c.t c.lim h rc)
+    (hef : EnvFacts c)
+    (hlf : LoadFacts c)
+    (hgood : Good c cs)
+    (hpind : RepKLevel h ind_lvl pind)
+    (hcty : Tm c.κ 0 Γ h 0 cty pcty)
+    (hnt : NoTopLetSpine (nP + nF) h pcty)
+    (ev : ObsFn W "KernelCheck::check_field_universes"
+      [rc, pcty, .field (nP : F), pind] h r h' cs) :
+    ∃ sorts : List KLevel,
+      FieldSortsJ rulesJ c.env (Level.isEquiv resSort .zero == some true) false resSort
+        nP xFvs idxArgs nF sorts := by
+  exact check_field_universes_scoped_spec hLevels (c := ScopedCtx.unrestricted c)
+    hnP hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
+    (ScopedLoadFacts.ofUnrestricted hef hlf) hgood.unrestricted hpind hcty hnt ev
 
 /-! ## Strict positivity (`check_positivity` → `recFieldKind ≠ .negative ∧ ≠ .unsupported`) -/
 
