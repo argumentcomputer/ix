@@ -18,6 +18,24 @@ variable {source target : Env .anon} (h : Agrees source target)
 include h
 
 /-- Accepted definitions retain their exact annotated value and reducibility hint. -/
+theorem checkedDefn_runStep {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env .anon}
+    {cv : ConstantVal .anon} {value : Expr .anon} {hint : ReducibilityHint}
+    (checked : checkDecl .verified (fueledOps .verified fuel) ev source
+      (.defnDecl cv value hint) = .ok referenceOut) :
+    ∃ targetOut, Agrees referenceOut targetOut ∧
+      IxVM.Consistency.InstallStep target (.defnDecl cv value hint) targetOut ∧
+      DeclDefnRun .verified fuel target cv value hint targetOut := by
+  obtain ⟨targetOut, agreement, run⟩ := h.declDefnRun (declDefnRun_of checked)
+  have rules := declDefnRun_rulesJ run
+  refine ⟨targetOut, agreement, ?_, run⟩
+  apply installStep_glue_defn rules
+  obtain ⟨ty, value', hcv, hv, rfl, _, _⟩ := run
+  obtain ⟨_, _, _, _, htb, htf, hat, _, _, _⟩ := hcv
+  obtain ⟨hvb, hvf, hav, _, _, _⟩ := hv
+  exact ⟨_, Env.find?_cons_self _ _, ⟨⟨rfl, rfl, annotateCore_to_annotates hat htf htb⟩,
+    annotateCore_to_annotates hav hvf hvb, rfl⟩⟩
+
+/-- Accepted definitions preserve the fold invariant using their actual checked run. -/
 theorem checkedDefn_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env .anon}
     {cv : ConstantVal .anon} {value : Expr .anon} {hint : ReducibilityHint}
     (checked : checkDecl .verified (fueledOps .verified fuel) ev source
@@ -26,15 +44,9 @@ theorem checkedDefn_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env
       IxVM.Consistency.InstallStep target (.defnDecl cv value hint) targetOut ∧
       DeclDefnRunJ rulesJ target cv value hint targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
-  obtain ⟨targetOut, agreement, run⟩ := h.declDefnRun (declDefnRun_of checked)
+  obtain ⟨out, agree, installed, run⟩ := h.checkedDefn_runStep checked
   have rules := declDefnRun_rulesJ run
-  refine ⟨targetOut, agreement, ?_, rules, foldInv_step_defn rules⟩
-  apply installStep_glue_defn rules
-  obtain ⟨ty, value', hcv, hv, rfl, _, _⟩ := run
-  obtain ⟨_, _, _, _, htb, htf, hat, _, _, _⟩ := hcv
-  obtain ⟨hvb, hvf, hav, _, _, _⟩ := hv
-  exact ⟨_, Env.find?_cons_self _ _, ⟨⟨rfl, rfl, annotateCore_to_annotates hat htf htb⟩,
-    annotateCore_to_annotates hav hvf hvb, rfl⟩⟩
+  exact ⟨out, agree, installed, rules, foldInv_step_defn rules⟩
 
 /-- Accepted opaque declarations keep their checked witness while installing the signature. -/
 theorem checkedOpaque_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env .anon}
