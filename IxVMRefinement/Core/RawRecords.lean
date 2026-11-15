@@ -13,6 +13,20 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 
+/-- Every raw `get_ci` invocation in this trace belongs to the selected record scope.
+Other calls retain ordinary weak goodness and need no semantic-load permission. -/
+def RawRecordCoverage (c : ScopedCtx) (calls : List (Call F)) : Prop :=
+  ∀ addr heap, (⟨"Ingress::get_ci", [addr], heap⟩ : Call F) ∈ calls →
+    c.allowedTop "Ingress::get_ci" [addr] heap
+
+theorem RawRecordCoverage.sub {c : ScopedCtx} {calls children : List (Call F)}
+    (covered : RawRecordCoverage c calls) (sub : ∀ cl ∈ children, cl ∈ calls) :
+    RawRecordCoverage c children :=
+  fun addr heap member => covered addr heap (sub _ member)
+
+theorem RawRecordCoverage.unrestricted (c : Ctx) (calls : List (Call F)) :
+    RawRecordCoverage (ScopedCtx.unrestricted c) calls := fun _ _ _ => trivial
+
 /-- Canonical record identities at selected successful inductive metadata queries. -/
 structure RawRecordFacts (c : ScopedCtx) : Prop where
   inductiveRead : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
