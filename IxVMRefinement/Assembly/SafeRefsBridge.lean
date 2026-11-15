@@ -1342,20 +1342,20 @@ private theorem idxOf_filter_lt_of_idxOf_lt [BEq α] [LawfulBEq α] :
       simp only [List.idxOf_cons] at hlt
       cases hxa : x == a with
       | true =>
-        simp only [hxa] at hlt ⊢
+        simp only [hxa, ↓reduceIte] at hlt ⊢
         cases hxb : x == b with
-        | true => simp only [hxb] at hlt; omega
-        | false => exact Nat.zero_lt_succ _
+        | true => simp only [hxb, ↓reduceIte] at hlt; omega
+        | false => simp only [Bool.false_eq_true, ↓reduceIte]; exact Nat.zero_lt_succ _
       | false =>
-        simp only [hxa] at hlt ⊢
+        simp only [hxa, Bool.false_eq_true, ↓reduceIte] at hlt ⊢
         have ha' : a ∈ xs.filter p := by
           rcases List.mem_cons.mp ha with h_ax | ha'
           · rw [h_ax] at hxa; exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
           · exact ha'
         cases hxb : x == b with
-        | true => simp only [hxb] at hlt; omega
+        | true => simp only [hxb, ↓reduceIte] at hlt; omega
         | false =>
-          simp only [hxb] at hlt ⊢
+          simp only [hxb, Bool.false_eq_true, ↓reduceIte] at hlt ⊢
           have hb' : b ∈ xs.filter p := by
             rcases List.mem_cons.mp hb with h_bx | hb'
             · rw [h_bx] at hxb; exact absurd (beq_self_eq_true x) (by rw [hxb]; decide)
@@ -1367,7 +1367,7 @@ private theorem idxOf_filter_lt_of_idxOf_lt [BEq α] [LawfulBEq α] :
         beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp ha).1))
       have hxb : (x == b) = false :=
         beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp hb).1))
-      simp only [List.idxOf_cons, hxa, hxb] at hlt
+      simp only [List.idxOf_cons, hxa, hxb, Bool.false_eq_true, ↓reduceIte] at hlt
       exact idxOf_filter_lt_of_idxOf_lt hnd.2 ha hb (Nat.lt_of_succ_lt_succ hlt)
 
 /-- **Unconditional pruned role-prefix identity**: even without `order_role ⊆ order` (e.g. when
