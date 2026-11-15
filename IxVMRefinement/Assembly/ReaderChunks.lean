@@ -7,6 +7,8 @@ namespace IxVM.Refinement.Assembly
 
 open Ix.Kernel
 
+universe u
+
 def declarationKeys (d : Declaration .anon) : List (Key .anon) :=
   (IxVM.Consistency.installs d).map (·.name)
 
@@ -242,5 +244,54 @@ theorem readerSelection_supported {env : Env .anon} {ds : List (Declaration .ano
       (Semantics.Env.find?_mem hf) (Semantics.Env.find?_name hf).symm
     subst ci
     exact ⟨.inr ⟨tbl, hf⟩, trivial, trivial⟩
+
+/-- The fixed basis names present in every prepared reader stream. -/
+def readerModelBasis : List (Key .anon) :=
+  [natZeroName, natSuccName, falseName, eqName, boolTrueName, boolFalseName]
+
+/-- Restrict the full checking model and arrange its selected constants in reader order.
+All term support is obtained from the reader declarations and their actual stored annotations. -/
+noncomputable def model_readerChunkEnv {W : Type u} [SetTheory W]
+    {env : Env .anon} {ds : List (Declaration .anon)}
+    (M : Model W env) (hnd : (env.consts.map (·.name)).Nodup) (hne : ds ≠ [])
+    (hcoverage : ∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+      ∃ ci ∈ env.consts, IxVM.Consistency.StoredAs ci ci₀)
+    (hreader : ∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+      SupportedConstant (readerSelectionKey env ds) ci₀)
+    (hbasis : ∀ k ∈ readerModelBasis, k ∈ publicReaderKeys ds)
+    (htables : Model.TableBodies env)
+    (hctor : ∀ T i entry, env.findProj? T i = some entry → readerSelectionKey env ds T →
+      readerSelectionKey env ds entry.ctor) : Model W (readerChunkEnv env ds) := by
+  have hsupported := readerSelection_supported hnd hcoverage hreader
+  have hbase : ∀ k ∈ readerModelBasis, readerSelectionKey env ds k :=
+    fun k hk => .inl (hbasis k hk)
+  have selected : Model W (selectEnv env (readerSelectionKey env ds)) :=
+    selectEnv_model_stored_tables M hnd (fun n tbl hf => .inr ⟨tbl, hf⟩)
+      ⟨hbase natZeroName (by decide), hbase natSuccName (by decide)⟩
+      hsupported (hbase falseName (by decide)) (hbase eqName (by decide))
+      ⟨hbase boolTrueName (by decide), hbase boolFalseName (by decide)⟩ hctor
+      (fun _ _ _ he hT => projection_body_supported htables
+        (fun ci hc hk => (hsupported ci hc hk).2.1) hctor he hT)
+  exact model_of_same_members selected (selectEnv_nodup hnd)
+    (readerChunkEnv_members_select hnd hne)
+
+/-- Reader chunks contain only their nonauxiliary declared constants and actual projection
+tables, so removing model-family auxiliaries leaves the constructed environment unchanged. -/
+theorem claimed_readerChunkEnv {env : Env .anon} {ds : List (Declaration .anon)}
+    (hne : ds ≠ [])
+    (hnonaux : ∀ k ∈ publicReaderKeys ds, ∀ base auxTag, k ≠ .aux base auxTag) :
+    IxVM.Consistency.claimedEnv (readerChunkEnv env ds) = readerChunkEnv env ds := by
+  change (⟨(readerChunkEnv env ds).consts.filter (fun ci => !IxVM.Consistency.isModelAux ci)⟩ :
+    Env .anon) = ⟨(readerChunkEnv env ds).consts⟩
+  congr 1
+  apply List.filter_eq_self.mpr
+  intro ci hci
+  obtain ⟨_, htable | hname⟩ := mem_readerChunkEnv hne |>.mp hci
+  · obtain ⟨tbl, rfl⟩ := htable
+    rfl
+  · cases hk : ci.name with
+    | id a => simp [IxVM.Consistency.isModelAux, hk]
+    | «role» r => simp [IxVM.Consistency.isModelAux, hk]
+    | aux base auxTag => exact (hnonaux ci.name hname base auxTag hk).elim
 
 end IxVM.Refinement.Assembly

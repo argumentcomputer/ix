@@ -149,8 +149,19 @@ theorem readRecord_muts_indc (cx : Ctx md) (st : State md) (owner : Address) (c 
     (targets : List Ixon.Inductive) (hne : targets ≠ [])
     (info : c.info = .muts (targets.map Ixon.MutConst.indc).toArray) :
     readRecord cx st owner c = readInductive cx st owner c (targets.map Ixon.MutConst.indc).toArray := by
+  have finish (rInd : Read md) :
+      finishInductiveRead cx owner (targets.map Ixon.MutConst.indc).toArray rInd = .ok rInd := by
+    apply finishInductiveRead_eq_of_no_recursors
+    intro m hm rc heq
+    simp only [List.mem_map] at hm
+    obtain ⟨ind, _, rfl⟩ := hm
+    cases heq
+  have finishFun : finishInductiveRead cx owner (targets.map Ixon.MutConst.indc).toArray =
+      (pure : Read md → ReadM (Read md)) := funext finish
   unfold readRecord
   rw [info]
+  dsimp only
+  rw [finishFun]
   obtain ⟨t, rest, rfl⟩ := List.exists_cons_of_ne_nil hne
   simp
 

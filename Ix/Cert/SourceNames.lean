@@ -386,8 +386,8 @@ theorem quotient_lower_ordinary {ixe : Ixon.Env} {roles : Std.HashMap Address Ro
     (fun _ _ => fiberAliasAt_not_aux)
     (convertedKeys_hints (convertedKeys_mono (convert_keys converted)
       (fun _ h => GroupKeyOf.not_derived h)) hints)
-  rcases lower_lowering names lowered with ⟨hg, hall⟩ | ⟨gens, d, hd, hg, hn⟩
+  rcases lower_lowering names lowered with ⟨hg, hall⟩ | ⟨gens, suffix, hd, hg, -, hn⟩
   · simpa only [hg, List.drop_zero] using hall
-  · simpa only [hd, hg, List.drop_left, List.mem_singleton, forall_eq] using hn
+  · simpa only [hd, hg, List.drop_left] using hn
 
 end Ix.Cert.SourceNames

@@ -1289,6 +1289,27 @@ def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Cons
     recs := recs.push (← readRecursor cx blockLps ref entry)
   lowerInductive st ⟨nPd, types, ctors, ctorNames, recs⟩
 
+/-- Indexed twins belonging to actual recursor members of this record. An arbitrary index
+entry at an inductive or definition position does not describe a recursor payload. -/
+def recordTwins (index : RecIndex) (owner : Address) (ms : Array Ixon.MutConst) :
+    Array (ConstRef Address × RecEntry) :=
+  (ms.toList.zipIdx.filterMap fun (m, j) =>
+    match m with
+    | .recr _ => (index.twins[ConstRef.member owner j]?).map fun entry =>
+        (ConstRef.member owner j, entry)
+    | _ => none).toArray
+
+/-- Read same-record twin recursors after the inductive family. Full and bare reading use
+this same payload coverage step; the inductive result's generated prefix and side data stay
+unchanged. -/
+def finishInductiveRead (cx : Ctx md) (owner : Address) (ms : Array Ixon.MutConst)
+    (rInd : Read md) : ReadM (Read md) := do
+  let twins := recordTwins cx.index owner ms
+  if twins.isEmpty then pure rInd
+  else
+    let rTwin ← lowerTwin cx twins
+    pure { rInd with decls := rInd.decls ++ rTwin.decls }
+
 /-- One primary or projection record: its declarations. The state is read,
 not changed; `State.commit` applies what the record taught. -/
 def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant) : ReadM (Read md) := do
@@ -1322,7 +1343,8 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
     if ms.any (fun | .indc _ => true | _ => false) then
       if ms.any (fun | .defn _ => true | _ => false) then
         malformed "a block mixes inductives and definitions"
-      readInductive cx st owner c ms
+      let rInd ← readInductive cx st owner c ms
+      finishInductiveRead cx owner ms rInd
     else if ms.all (fun | .recr _ => true | _ => false) then
       if (List.range ms.size).all (fun j => cx.index.recs.contains (.member owner j)) then
         pure {}
@@ -1412,15 +1434,7 @@ def readRecordBare (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Con
       if ms.any (fun | .defn _ => true | _ => false) then
         malformed "a block mixes inductives and definitions"
       let rInd ← readInductiveBare cx owner c ms
-      let mut twins : Array (ConstRef Address × RecEntry) := #[]
-      for j in (List.range ms.size).toArray do
-        let ref : ConstRef Address := .member owner j
-        if let some entry := cx.index.twins[ref]? then
-          twins := twins.push (ref, entry)
-      if twins.isEmpty then pure rInd
-      else
-        let rTwin ← lowerTwin cx twins
-        pure { rInd with decls := rInd.decls ++ rTwin.decls }
+      finishInductiveRead cx owner ms rInd
     else readRecord cx st owner c
   | _ => readRecord cx st owner c
 

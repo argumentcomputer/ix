@@ -4,6 +4,7 @@ import IxC.Kernel.Semantics.IndBlockRun
 public import IxC.Kernel.Model.ProjCons
 import IxC.Kernel.Model.Annot.BitLevels
 import IxC.Kernel.Model.Capstone
+import IxC.Kernel.Model.ThmVal
 public section
 
 /-!
@@ -55,7 +56,7 @@ twin).  The bottom fires at the *base* environment under
 `Rn := projModelName T i`; `projCons` then stores the entry, and
 `acvalWith_self` makes the base law's head the installed constant's
 leaf. -/
-theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
+theorem projFnExt (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
     {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
     {blockNames : List (Key md)} (mp : EnvModelM V μ env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
@@ -78,7 +79,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
       ProjPhaseInvS T ctorName nF env₁ mp₁.base2.cvalE ∧
       ProjPhaseAcval T ctorName nF env₁ mp₁.base2.acval ∧
       BlockInstalledTT blockNames env₁ mp₁.base2.cvalE ∧
-      BlockAcvalInstalled blockNames env₁ mp₁.base2.acval := by
+      BlockAcvalInstalled blockNames env₁ mp₁.base2.acval ∧ ModelExt mp mp₁ := by
   -- the kit, unpacked exactly as `projFnS` unpacks it (the two H1
   -- widenings' rows named rather than dropped)
   have hRid := hR
@@ -401,13 +402,110 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
     · rw [acvalWith_ne hn, mp.base2.acval_erase]
       exact (congrFun (cvalWith_ne hn) ψ).symm
   exact ⟨mp₁, hcval₁, by rw [hcval₁]; exact hinv₁,
-    hinvA₁, by rw [hcval₁]; exact hIB₁, hIA₁⟩
+    hinvA₁, by rw [hcval₁]; exact hIB₁, hIA₁,
+    (.refl : ModelExt mp mp).plain hacc hfresh⟩
+
+/-- One projection field installs with its phase invariants. -/
+theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {blockNames : List (Key md)} (mp : EnvModelM V μ env')
+    (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
+    (hinv : ProjPhaseInvS T ctorName nF env' mp.base2.cvalE)
+    (hinvA : ProjPhaseAcval T ctorName nF env' mp.base2.acval)
+    (hIB : BlockInstalledTT blockNames env' mp.base2.cvalE)
+    (hIA : BlockAcvalInstalled blockNames env' mp.base2.acval)
+    (hTblock : blockNames.contains T = true)
+    (hbshape : ∀ n, blockNames.contains n = true →
+      n.isProjFnShape = false)
+    (hpinsT : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+      Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT)
+    (hCblock : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+      capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true)
+    (hFields : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+      capsT.eta = true → capsT.etaFields = nF) :
+    ∃ mp₁ : EnvModelM V μ env₁,
+      mp₁.base2.cvalE = cvalWith mp.base2.cvalE (projFnName T i)
+        (fun ψ => mp.base2.cvalE (projModelName T i) ψ) ∧
+      ProjPhaseInvS T ctorName nF env₁ mp₁.base2.cvalE ∧
+      ProjPhaseAcval T ctorName nF env₁ mp₁.base2.acval ∧
+      BlockInstalledTT blockNames env₁ mp₁.base2.cvalE ∧
+      BlockAcvalInstalled blockNames env₁ mp₁.base2.acval := by
+  obtain ⟨mp₁, hcval, hp, ha, hb, hba, _⟩ :=
+    projFnExt hμ mp hR hinv hinvA hIB hIA hTblock hbshape hpinsT hCblock hFields
+  exact ⟨mp₁, hcval, hp, ha, hb, hba⟩
 
 set_option maxHeartbeats 1600000 in
 /-- **The projection-function fold, at both tiers** (`projInstallS`).
 The skip branch is a no-op; the block-level premises are re-established
 at each step exactly as in v1 (`EtaPins.step` plus "a projection name
 is never a block name"). -/
+theorem projInstallExt (hμ : μ.verifiedChecks = true) {F : Nat}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF : Nat}
+    {blockNames : List (Key md)}
+    (hTblock : blockNames.contains T = true)
+    (hbshape : ∀ n, blockNames.contains n = true →
+      n.isProjFnShape = false) :
+    ∀ (fields : List Nat) {env' : Env md} (mp : EnvModelM V μ env')
+      {env₄ : Env md},
+      ProjInstallRun μ F T ctorName lps nP nF env' fields env₄ →
+      ProjPhaseInvS T ctorName nF env' mp.base2.cvalE →
+      ProjPhaseAcval T ctorName nF env' mp.base2.acval →
+      BlockInstalledTT blockNames env' mp.base2.cvalE →
+      BlockAcvalInstalled blockNames env' mp.base2.acval →
+      (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+        Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT) →
+      (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+        capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true) →
+      (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
+        capsT.eta = true → capsT.etaFields = nF) →
+      ∃ mp₄ : EnvModelM V μ env₄,
+        ProjPhaseInvS T ctorName nF env₄ mp₄.base2.cvalE ∧
+        ProjPhaseAcval T ctorName nF env₄ mp₄.base2.acval ∧
+        BlockInstalledTT blockNames env₄ mp₄.base2.cvalE ∧
+        BlockAcvalInstalled blockNames env₄ mp₄.base2.acval ∧ ModelExt mp mp₄ := by
+  intro fields
+  induction fields with
+  | nil =>
+    intro env' mp env₄ h hinv hinvA hIB hIA hpinsT hCblock hFields
+    subst h
+    exact ⟨mp, hinv, hinvA, hIB, hIA, .refl⟩
+  | cons i rest ih =>
+    intro env' mp env₄ h hinv hinvA hIB hIA hpinsT hCblock hFields
+    obtain ⟨env'', hstep, hrec⟩ := h
+    rcases hstep with hR | ⟨hskip, rfl⟩
+    case inr =>
+      exact ih mp hrec hinv hinvA hIB hIA hpinsT hCblock hFields
+    -- the install branch
+    obtain ⟨mp₁, -, hinv₁, hinvA₁, hIB₁, hIA₁, hext₁⟩ :=
+      projFnExt hμ mp hR hinv hinvA hIB hIA hTblock hbshape hpinsT
+        hCblock hFields
+    -- the block-level premises, re-established (v1's argument)
+    obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
+      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, -, henv⟩ := hR
+    have hfresh : env'.find? (projFnName T i) = none :=
+      Option.isNone_iff_eq_none.mp hpnone
+    have hTne : T ≠ projFnName T i := by
+      intro hh
+      rw [hh, hfresh] at hTf
+      exact nomatch hTf
+    have hdown : ∀ (cvT : ConstantVal md) (capsT : IndCaps md),
+        env''.find? T = some (.indInfo cvT capsT) →
+        env'.find? T = some (.indInfo cvT capsT) := by
+      intro cvT capsT hf
+      rw [henv, Env.find?_cons,
+        if_neg (fun hh => hTne hh.symm)] at hf
+      exact hf
+    obtain ⟨mp₄, hp₄, ha₄, hb₄, hba₄, hext₄⟩ :=
+      ih mp₁ hrec hinv₁ hinvA₁ hIB₁ hIA₁
+      (fun cvT capsT hf => by
+        rw [henv]
+        exact Ix.Kernel.EtaPins.step (hpinsT cvT capsT (hdown cvT capsT hf))
+          hfresh)
+      (fun cvT capsT hf => hCblock cvT capsT (hdown cvT capsT hf))
+      (fun cvT capsT hf => hFields cvT capsT (hdown cvT capsT hf))
+    exact ⟨mp₄, hp₄, ha₄, hb₄, hba₄, hext₁.trans hext₄⟩
+
+/-- The projection-function fold retains the phase invariants at its final environment. -/
 theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
     {T ctorName : Key md} {lps : List LevelParam} {nP nF : Nat}
     {blockNames : List (Key md)}
@@ -432,44 +530,9 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
         ProjPhaseAcval T ctorName nF env₄ mp₄.base2.acval ∧
         BlockInstalledTT blockNames env₄ mp₄.base2.cvalE ∧
         BlockAcvalInstalled blockNames env₄ mp₄.base2.acval := by
-  intro fields
-  induction fields with
-  | nil =>
-    intro env' mp env₄ h hinv hinvA hIB hIA hpinsT hCblock hFields
-    subst h
-    exact ⟨mp, hinv, hinvA, hIB, hIA⟩
-  | cons i rest ih =>
-    intro env' mp env₄ h hinv hinvA hIB hIA hpinsT hCblock hFields
-    obtain ⟨env'', hstep, hrec⟩ := h
-    rcases hstep with hR | ⟨hskip, rfl⟩
-    case inr =>
-      exact ih mp hrec hinv hinvA hIB hIA hpinsT hCblock hFields
-    -- the install branch
-    obtain ⟨mp₁, -, hinv₁, hinvA₁, hIB₁, hIA₁⟩ :=
-      projFn hμ mp hR hinv hinvA hIB hIA hTblock hbshape hpinsT
-        hCblock hFields
-    -- the block-level premises, re-established (v1's argument)
-    obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
-      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, -, henv⟩ := hR
-    have hfresh : env'.find? (projFnName T i) = none :=
-      Option.isNone_iff_eq_none.mp hpnone
-    have hTne : T ≠ projFnName T i := by
-      intro hh
-      rw [hh, hfresh] at hTf
-      exact nomatch hTf
-    have hdown : ∀ (cvT : ConstantVal md) (capsT : IndCaps md),
-        env''.find? T = some (.indInfo cvT capsT) →
-        env'.find? T = some (.indInfo cvT capsT) := by
-      intro cvT capsT hf
-      rw [henv, Env.find?_cons,
-        if_neg (fun hh => hTne hh.symm)] at hf
-      exact hf
-    refine ih mp₁ hrec hinv₁ hinvA₁ hIB₁ hIA₁
-      (fun cvT capsT hf => by
-        rw [henv]
-        exact Ix.Kernel.EtaPins.step (hpinsT cvT capsT (hdown cvT capsT hf))
-          hfresh)
-      (fun cvT capsT hf => hCblock cvT capsT (hdown cvT capsT hf))
-      (fun cvT capsT hf => hFields cvT capsT (hdown cvT capsT hf))
+  intro fields env' mp env₄ run hinv hinvA hIB hIA hpinsT hCblock hFields
+  obtain ⟨mp₄, hp, ha, hb, hba, _⟩ :=
+    projInstallExt hμ hTblock hbshape fields mp run hinv hinvA hIB hIA hpinsT hCblock hFields
+  exact ⟨mp₄, hp, ha, hb, hba⟩
 
 end Ix.Kernel.Model

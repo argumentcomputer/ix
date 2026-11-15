@@ -2252,7 +2252,7 @@ theorem preludeFor_of_readerTable {clm : Ix.Claim} {V : View} {b : Ix.Kernel.Adm
     (hrt : IxVM.Consistency.ReaderTable clm V b)
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
     ∃ pre, Ix.Kernel.Reader.preludeFor (md := .anon) t = .ok pre :=
-  preludeFor_of_tableAdmitted hrt.2 hadm
+  preludeFor_of_tableAdmitted hrt.tableAdmitted hadm
 
 /-- Under `ReaderTable clm V b` and `admitBinding Address.admissionHash b = .ok t`,
 `LiteralSupportBound t` holds. -/
@@ -2261,7 +2261,7 @@ theorem literalSupportBound_of_readerTable {clm : Ix.Claim} {V : View}
     (hrt : IxVM.Consistency.ReaderTable clm V b)
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
     IxVM.Refinement.LiteralSupportBound t :=
-  literalSupportBound_of_tableAdmitted hrt.2 hadm
+  literalSupportBound_of_tableAdmitted hrt.tableAdmitted hadm
 
 /-! ## Collision-free agreement between `committedImages` / `pre` fallback and `LoadedBy calls E₀` -/
 
