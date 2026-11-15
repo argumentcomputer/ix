@@ -338,7 +338,7 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
       rcases hroutes with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · obtain ⟨caps₀, cs, mI₀, rP₀, rules₀, hblk_eq, hctors₀⟩ := nativeParts?_block_eq hdp
         obtain ⟨_, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
-          hp, hCtors, _, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
+          hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := hN
         obtain ⟨_, _, _, cvS, hchkT, hTa_cases, _, hFS, hp₁, henv₁⟩ := hInd
         have hcvS_name : cvS.name = p₀.cvT.name := by
           have hTa_name : cvTa.name = p₀.cvT.name := by
