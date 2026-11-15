@@ -1609,8 +1609,9 @@ theorem check_const_rec_paths {c : Ctx}
   cases Obs.«KernelCheck::check_const».obs ev with
   | Rec_n0 v1 m2 cs12 x_nlvls x_ty w2576 w2577 x_n_mot w2578 w2579 x_k_flag x_rec_uns
       x_rec_block w2580 v2636 m2637 cs2647 v2673 m2674 cs2684 m2705 v2717 m2718 cs2728
+      v_rules m_rules cs_rules
       v2747 m2748 cs2758 v2769 m2770 cs2780 m2792 cs2803 cs2848
-      ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev2760 ev2782 ev2805
+      ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev_rules ev2760 ev2782 ev2805
       heq2844 ev2850 hc2875 =>
     obtain ⟨_, hm2, _⟩ := is_unsafe_ci_rec ev14
     rw [hm2] at ev2649
@@ -1634,9 +1635,10 @@ theorem check_const_rec_paths {c : Ctx}
       rw [hm2713]; exact heap_extends_append m2637 _
     have e_sort := ObsFn.heap_extends ev2686
     have e_safe := ObsFn.heap_extends ev2730
+    have e_rules := ObsFn.heap_extends ev_rules
     have e_kinds := ObsFn.heap_extends ev2760
     have e_to_fam : Heap.Extends h m2748 :=
-      e_sc.trans (e_nil.trans (e_sort.trans (e_safe.trans e_kinds)))
+      e_sc.trans (e_nil.trans (e_sort.trans (e_safe.trans (e_rules.trans e_kinds))))
     have hg_sc : Good c cs2647 := hgood.sub (by rw [hc2875]; intro x hx; simp [hx])
     have hg_sort : Good c cs2684 := hgood.sub (by rw [hc2875]; intro x hx; simp [hx])
     have hg_fam : Good c cs2780 := hgood.sub (by rw [hc2875]; intro x hx; simp [hx])
@@ -1649,8 +1651,9 @@ theorem check_const_rec_paths {c : Ctx}
         ev2782 ev2805 ev2850 hg_fam hg_mod hg_sub⟩
   | Rec_other v1 m2 cs12 x_nlvls x_ty w2576 w2577 x_n_mot w2578 w2579 x_k_flag x_rec_uns
       x_rec_block w2580 v2636 m2637 cs2647 v2673 m2674 cs2684 m2705 v2717 m2718 cs2728
+      v_rules m_rules cs_rules
       v2747 m2748 cs2758 v2769 m2770 cs2780 v2791 m2792 cs2803 cs2937
-      ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev2760 ev2782 ev2805
+      ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev_rules ev2760 ev2782 ev2805
       hne2876 heq2906 heq2933 ev2939 hc2964 =>
     obtain ⟨_, hm2, _⟩ := is_unsafe_ci_rec ev14
     rw [hm2] at ev2649
@@ -1675,9 +1678,10 @@ theorem check_const_rec_paths {c : Ctx}
       rw [hm2713]; exact heap_extends_append m2637 _
     have e_sort := ObsFn.heap_extends ev2686
     have e_safe := ObsFn.heap_extends ev2730
+    have e_rules := ObsFn.heap_extends ev_rules
     have e_kinds := ObsFn.heap_extends ev2760
     have e_to_fam : Heap.Extends h m2748 :=
-      e_sc.trans (e_nil.trans (e_sort.trans (e_safe.trans e_kinds)))
+      e_sc.trans (e_nil.trans (e_sort.trans (e_safe.trans (e_rules.trans e_kinds))))
     have hg_sc : Good c cs2647 := hgood.sub (by rw [hc2964]; intro x hx; simp [hx])
     have hg_sort : Good c cs2684 := hgood.sub (by rw [hc2964]; intro x hx; simp [hx])
     have hg_fam : Good c cs2780 := hgood.sub (by rw [hc2964]; intro x hx; simp [hx])
