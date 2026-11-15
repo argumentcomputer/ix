@@ -441,8 +441,8 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     have hctor := hkeys (ixAddr a') cm _ us0 hmh0 hcm (hrec cm hcm) idx rl hrlidx
     simp only [val_toUInt64_toNat] at hctor
     have hctor' : rl.ctor = c.κ (ixAddr ca) := by
-      rw [hctor, ← hvj, ← hname]
-      exact find_name hcfind
+      have hlink := hname.symm.trans (find_name hcfind)
+      exact hctor.trans (by simpa only [← hvj, ScopedCtx.κ, Ctx.κ] using hlink)
     rw [← hctor'] at hcfind hred hM
     -- the shape checks: the major's arity and the constructor's level count
     have hMA2 : c.tml d Γ m212 MA x_margs := tml_mono (e86.trans Z212) hMA

@@ -139,8 +139,10 @@ theorem EnvFacts.etaUseFacts {c : Ctx} (h : EnvFacts c)
 /-- A selected metadata read of a zero-field constructor. It makes no assertion that the
 constructor is already installed in the semantic environment. -/
 structure ZeroFieldCtorLoad (c : ScopedCtx) (block : Bytes.Address) (ind : F) where
-  bp ptr : SourceValue F
-  before after : Heap F
+  bp : SourceValue F
+  ptr : SourceValue F
+  before : Heap F
+  after : Heap F
   calls : List (Call F)
   observed : ObsFn W "Ingress::get_ci_cprj" [bp, .field ind, .field 0]
     before ptr after calls
@@ -153,7 +155,8 @@ structure ZeroFieldCtorLoad (c : ScopedCtx) (block : Bytes.Address) (ind : F) wh
 /-- The actual nonrecursive-structure observation used by unit-like conversion. -/
 structure NonrecursiveLoad (c : ScopedCtx) (parent : Bytes.Address) where
   ap : SourceValue F
-  before after : Heap F
+  before : Heap F
+  after : Heap F
   calls : List (Call F)
   observed : ObsFn W "KernelWhnf::struct_is_rec" [ap] before (.field 0) after calls
   allowed : c.allowedTop "KernelWhnf::struct_is_rec" [ap] before
