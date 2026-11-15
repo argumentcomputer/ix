@@ -113,209 +113,7 @@ theorem natDivModNames_false_of_ne_nonTrustRole {k : KKey}
     Ix.Kernel.natDivModNames.contains k = false :=
   contains_false_of_all_nonCompilerTrust _ natDivModNames_all_nonCompilerTrust hne
 
-private theorem compilerTrust_false_of_inert_false (r : Ix.Kernel.Role)
-    (h : r.inert = false) : IxVM.Refinement.compilerTrust r = false := by
-  cases r <;> first | rfl | exact nomatch h
-
-/-! ## Level-Parameter and Term Representation Helpers -/
-
-private def propWhenDefined (lps : List LevelParam) : KExpr → Bool
-  | .bvar _ | .sort _ | .const _ _ | .lit _ => true
-  | .fvar _ ty => propWhenDefined lps ty
-  | .app f a => propWhenDefined lps f && propWhenDefined lps a
-  | .lam ty b m | .forallE ty b m =>
-    (propWhenDefined lps ty && propWhenDefined lps b) && m.pw.paramsDefined lps
-  | .letE ty v b _ =>
-    (propWhenDefined lps ty && propWhenDefined lps v) && propWhenDefined lps b
-  | .proj _ _ e => propWhenDefined lps e
-
-private theorem propWhenDefined_liftLooseBVars {lps : List LevelParam} (n : Nat) :
-    ∀ (e : KExpr) (c : Nat),
-      propWhenDefined lps e = true →
-      propWhenDefined lps (e.liftLooseBVars n c) = true
-  | .bvar _, _, _ => by
-    simp only [Expr.liftLooseBVars]
-    split <;> rfl
-  | .fvar _ _, _, h => h
-  | .sort _, _, _ => rfl
-  | .const _ _, _, _ => rfl
-  | .lit _, _, _ => rfl
-  | .app f a, c, h => by
-    simp only [propWhenDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, propWhenDefined, Bool.and_eq_true]
-    exact ⟨propWhenDefined_liftLooseBVars n f c h.1,
-      propWhenDefined_liftLooseBVars n a c h.2⟩
-  | .lam ty b _, c, h | .forallE ty b _, c, h => by
-    simp only [propWhenDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, propWhenDefined, Bool.and_eq_true]
-    exact ⟨⟨propWhenDefined_liftLooseBVars n ty c h.1.1,
-      propWhenDefined_liftLooseBVars n b (c + 1) h.1.2⟩, h.2⟩
-  | .letE ty v b _, c, h => by
-    simp only [propWhenDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, propWhenDefined, Bool.and_eq_true]
-    exact ⟨⟨propWhenDefined_liftLooseBVars n ty c h.1.1,
-      propWhenDefined_liftLooseBVars n v c h.1.2⟩,
-      propWhenDefined_liftLooseBVars n b (c + 1) h.2⟩
-  | .proj _ _ e, c, h => by
-    simp only [propWhenDefined] at h
-    simp only [Expr.liftLooseBVars, propWhenDefined]
-    exact propWhenDefined_liftLooseBVars n e c h
-
-private theorem propWhenDefined_instantiate1Lift {lps : List LevelParam} {v : KExpr}
-    (hv : propWhenDefined lps v = true) :
-    ∀ (b : KExpr) (j : Nat),
-      propWhenDefined lps b = true →
-      propWhenDefined lps (b.instantiate1Lift v j) = true
-  | .bvar _, j, _ => by
-    simp only [Expr.instantiate1Lift]
-    split
-    · exact propWhenDefined_liftLooseBVars j v 0 hv
-    · split <;> rfl
-  | .fvar _ _, _, hb => hb
-  | .sort _, _, _ => rfl
-  | .const _ _, _, _ => rfl
-  | .lit _, _, _ => rfl
-  | .app f a, j, hb => by
-    simp only [propWhenDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, propWhenDefined, Bool.and_eq_true]
-    exact ⟨propWhenDefined_instantiate1Lift hv f j hb.1,
-      propWhenDefined_instantiate1Lift hv a j hb.2⟩
-  | .lam ty b _, j, hb | .forallE ty b _, j, hb => by
-    simp only [propWhenDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, propWhenDefined, Bool.and_eq_true]
-    exact ⟨⟨propWhenDefined_instantiate1Lift hv ty j hb.1.1,
-      propWhenDefined_instantiate1Lift hv b (j + 1) hb.1.2⟩, hb.2⟩
-  | .letE ty val b _, j, hb => by
-    simp only [propWhenDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, propWhenDefined, Bool.and_eq_true]
-    exact ⟨⟨propWhenDefined_instantiate1Lift hv ty j hb.1.1,
-      propWhenDefined_instantiate1Lift hv val j hb.1.2⟩,
-      propWhenDefined_instantiate1Lift hv b (j + 1) hb.2⟩
-  | .proj _ _ e, j, hb => by
-    simp only [propWhenDefined] at hb
-    simp only [Expr.instantiate1Lift, propWhenDefined]
-    exact propWhenDefined_instantiate1Lift hv e j hb
-
-private theorem tm_propWhenDefined {lps : List LevelParam} {κ : _root_.Address → KKey}
-    {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
-    (hΓ : ∀ j, j < d → propWhenDefined lps (Γ j) = true)
-    (rep : Tm κ d Γ h k E p) :
-    propWhenDefined lps E = true := by
-  induction rep with
-  | bvarLocal => rfl
-  | @bvarFree k₀ _ i _ _ hk hd =>
-    exact hΓ (fvIdx d k₀ (ZMod.val i)) (by unfold fvIdx; omega)
-  | sort | const | litNat | litStr => rfl
-  | app _ _ _ ihf iha => simp only [propWhenDefined, ihf, iha]; rfl
-  | lam _ _ _ _ iht ihb | forallE _ _ _ _ iht ihb =>
-    simp only [propWhenDefined, iht, ihb, Ix.Kernel.PropWhen.paramsDefined]; rfl
-  | letE _ _ _ _ _ ihv ihb =>
-    exact propWhenDefined_instantiate1Lift ihv _ 0 ihb
-  | proj _ _ _ ihe => exact ihe
-
-private theorem allLevelParamsDefined_liftLooseBVars {lps : List LevelParam} (n : Nat) :
-    ∀ (e : KExpr) (c : Nat),
-      e.allLevelParamsDefined lps = true →
-      (e.liftLooseBVars n c).allLevelParamsDefined lps = true
-  | .bvar _, _, _ => by
-    simp only [Expr.liftLooseBVars]
-    split <;> rfl
-  | .fvar _ _, _, h => h
-  | .sort _, _, h => h
-  | .const _ _, _, h => h
-  | .lit _, _, _ => rfl
-  | .app f a, c, h => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨allLevelParamsDefined_liftLooseBVars n f c h.1,
-      allLevelParamsDefined_liftLooseBVars n a c h.2⟩
-  | .lam ty b _, c, h | .forallE ty b _, c, h => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨allLevelParamsDefined_liftLooseBVars n ty c h.1.1,
-      allLevelParamsDefined_liftLooseBVars n b (c + 1) h.1.2⟩, h.2⟩
-  | .letE ty v b _, c, h => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at h
-    simp only [Expr.liftLooseBVars, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨allLevelParamsDefined_liftLooseBVars n ty c h.1.1,
-      allLevelParamsDefined_liftLooseBVars n v c h.1.2⟩,
-      allLevelParamsDefined_liftLooseBVars n b (c + 1) h.2⟩
-  | .proj _ _ e, c, h => by
-    simp only [Expr.allLevelParamsDefined] at h
-    simp only [Expr.liftLooseBVars, Expr.allLevelParamsDefined]
-    exact allLevelParamsDefined_liftLooseBVars n e c h
-
-private theorem allLevelParamsDefined_instantiate1Lift {lps : List LevelParam} {v : KExpr}
-    (hv : v.allLevelParamsDefined lps = true) :
-    ∀ (b : KExpr) (j : Nat),
-      b.allLevelParamsDefined lps = true →
-      (b.instantiate1Lift v j).allLevelParamsDefined lps = true
-  | .bvar _, j, _ => by
-    simp only [Expr.instantiate1Lift]
-    split
-    · exact allLevelParamsDefined_liftLooseBVars j v 0 hv
-    · split <;> rfl
-  | .fvar _ _, _, hb => hb
-  | .sort _, _, hb => hb
-  | .const _ _, _, hb => hb
-  | .lit _, _, _ => rfl
-  | .app f a, j, hb => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨allLevelParamsDefined_instantiate1Lift hv f j hb.1,
-      allLevelParamsDefined_instantiate1Lift hv a j hb.2⟩
-  | .lam ty b _, j, hb | .forallE ty b _, j, hb => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨allLevelParamsDefined_instantiate1Lift hv ty j hb.1.1,
-      allLevelParamsDefined_instantiate1Lift hv b (j + 1) hb.1.2⟩, hb.2⟩
-  | .letE ty val b _, j, hb => by
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hb
-    simp only [Expr.instantiate1Lift, Expr.allLevelParamsDefined, Bool.and_eq_true]
-    exact ⟨⟨allLevelParamsDefined_instantiate1Lift hv ty j hb.1.1,
-      allLevelParamsDefined_instantiate1Lift hv val j hb.1.2⟩,
-      allLevelParamsDefined_instantiate1Lift hv b (j + 1) hb.2⟩
-  | .proj _ _ e, j, hb => by
-    simp only [Expr.allLevelParamsDefined] at hb
-    simp only [Expr.instantiate1Lift, Expr.allLevelParamsDefined]
-    exact allLevelParamsDefined_instantiate1Lift hv e j hb
-
-private theorem annotates_allLevelParamsDefined_of_pw {lps : List LevelParam} {e' e₀ : KExpr}
-    (hann : IxVM.Consistency.Annotates e' e₀)
-    (hpw : propWhenDefined lps e' = true)
-    (hdef : e₀.allLevelParamsDefined lps = true) :
-    e'.allLevelParamsDefined lps = true := by
-  induction hann with
-  | bvar | sort | const | lit => exact hdef
-  | fvar _ ih =>
-    simp only [propWhenDefined] at hpw
-    simp only [Expr.allLevelParamsDefined] at hdef ⊢
-    exact ih hpw hdef
-  | app _ _ ihf iha =>
-    simp only [propWhenDefined, Bool.and_eq_true] at hpw
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef ⊢
-    exact ⟨ihf hpw.1 hdef.1, iha hpw.2 hdef.2⟩
-  | lam _ _ ihty ihb | forallE _ _ ihty ihb =>
-    simp only [propWhenDefined, Bool.and_eq_true] at hpw
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef ⊢
-    exact ⟨⟨ihty hpw.1.1 hdef.1.1, ihb hpw.1.2 hdef.1.2⟩, hpw.2⟩
-  | proj _ ihe =>
-    simp only [propWhenDefined] at hpw
-    simp only [Expr.allLevelParamsDefined] at hdef ⊢
-    exact ihe hpw hdef
-  | letE _ ih =>
-    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    exact ih hpw (allLevelParamsDefined_instantiate1Lift hdef.1.2 _ 0 hdef.2)
-
-theorem tmC_allLevelParamsDefined {lps : List LevelParam} {κ : _root_.Address → KKey}
-    {h : Heap F} {e' e₀ : KExpr} {p : SourceValue F}
-    (rep : TmC κ h e' p)
-    (hann : IxVM.Consistency.Annotates e' e₀)
-    (hdef : e₀.allLevelParamsDefined lps = true) :
-    e'.allLevelParamsDefined lps = true :=
-  annotates_allLevelParamsDefined_of_pw hann
-    (tm_propWhenDefined (fun _ hlt => absurd hlt (Nat.not_lt_zero _)) (rep 0 (fun _ => .sort .zero)))
-    hdef
+/-! ## Closed Term Representation -/
 
 private theorem tm_noLetExpr {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
@@ -378,33 +176,33 @@ theorem checkedConstOrigin_step
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
   cases hchk with
   | @axiomDecl a _ _ nlvls ty₀ ty' lim _ _ _ m_ax _ x_rc _ x_addr _ v_ax _ cs_ax
-      hnot_role _ _ _ _ _ _ _ _ _ _ _ _ _ hrc_ax ha_ax ev_ax hne_ax _ hsub_ax =>
+      hnot_role _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrc_ax ha_ax ev_ax hne_ax _ hsub_ax =>
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
     by_cases hskip : cv₀.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv₀.name = true
-    · exact ⟨env, CleanInstallStep.empty (by simp [IxVM.Consistency.installs, hskip]),
-        fun _ _ h => h⟩
+    · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := if_pos hskip
+      exact ⟨env, CleanInstallStep.empty hempty, fun _ _ h => h⟩
     · obtain ⟨a', ha'_ref, heq_a⟩ := ha_ax
       let c : Ctx := ⟨E_core, env, t, some lim⟩
       have hgood_c : Good c calls := hgood
-      obtain ⟨ro, hro_addr, _, _⟩ :=
+      obtain ⟨ro, hro_addr, _, hrole⟩ :=
         axiom_standing_spec rolesSpec (hgood_c.sub hsub_ax) hctx.tableWf
           hrc_ax.toRCRep (rcFullRep_axiomsNil hrc_ax) ha'_ref ev_ax hne_ax
       have hk : keyOf t a = .role ro := by
         have hk0 := keyOf_of_addressOf hctx.tableWf hro_addr
         rwa [heq_a] at hk0
-      have hinert_false : ro.inert = false := by
-        cases hro_in : ro.inert with
-        | false => rfl
-        | true =>
-          exact False.elim (hskip (Or.inr (by
+      have hct : IxVM.Refinement.compilerTrust ro = false := by
+        rcases hrole with rfl | rfl | rfl | hinert
+        · rfl
+        · rfl
+        · rfl
+        · exact False.elim (hskip (Or.inr (by
             show IxVM.Consistency.inertKey (keyOf t a) = true
             rw [hk]
-            exact hro_in)))
-      exact False.elim
-        (hne_role a hnot_role ro (compilerTrust_false_of_inert_false ro hinert_false) hk)
+            exact hinert)))
+      exact False.elim (hne_role a hnot_role ro hct hk)
   | @defnDecl a nlvls ty₀ val₀ ty' val' hn lim m_pre1 m_es m_es' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_kc
-      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
       hm_es hty_tmc_es hrc_es ev_es _ hsub_es
       _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
@@ -433,10 +231,6 @@ theorem checkedConstOrigin_step
       rwa [posOf_range nlvls val'] at h
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
-    have hty'_def : ty'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hty_tmc_es' hty_ann hty_def
-    have hval'_def : val'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hval_tmc_kc' hval_ann hval_def
     obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
       core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
@@ -466,10 +260,10 @@ theorem checkedConstOrigin_step
         (fun hc => by rw [hnat_false] at hc; exact nomatch hc),
         (fun hc => by rw [hdm_false] at hc; exact nomatch hc)⟩
     exact FullDeclInv.step_of_foldInv_clean hclean
-      (foldInv_step_declRunJ (fun _ _ heq => nomatch heq) hdecl) V hInv
+      (foldInv_step_declRunJ (d := .defnDecl cv' val' hn) (fun _ _ heq => nomatch heq) hdecl) V hInv
   | @thmDecl a nlvls ty₀ val₀ ty' val' lim m_pre1 m_es m_es' m_le m_le' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_le cs_kc
-      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
       hm_es hty_tmc_es hrc_es ev_es _ hsub_es
       hm_le ev_le _ hsub_le
       _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
@@ -499,10 +293,6 @@ theorem checkedConstOrigin_step
       rwa [posOf_range nlvls val'] at h
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
-    have hty'_def : ty'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hty_tmc_es' hty_ann hty_def
-    have hval'_def : val'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hval_tmc_kc' hval_ann hval_def
     obtain ⟨stype, u, ℓ, hinf_ty, hred_ty, hℓ, hu⟩ :=
       core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
@@ -529,10 +319,10 @@ theorem checkedConstOrigin_step
         ⟨.thmInfo cv' val' :: env.consts⟩ :=
       ⟨ty', val', hcv_run, ⟨stype, u, hinf_ty, hred_ty, hisZero⟩, hv_run, rfl⟩
     exact FullDeclInv.step_of_foldInv_clean hclean
-      (foldInv_step_declRunJ (fun _ _ heq => nomatch heq) hdecl) V hInv
+      (foldInv_step_declRunJ (d := .thmDecl cv' val') (fun _ _ heq => nomatch heq) hdecl) V hInv
   | @opaqueDecl a nlvls ty₀ val₀ ty' val' lim m_pre1 m_es m_es' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_kc
-      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
       hm_es hty_tmc_es hrc_es ev_es _ hsub_es
       _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
@@ -561,10 +351,6 @@ theorem checkedConstOrigin_step
       rwa [posOf_range nlvls val'] at h
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
-    have hty'_def : ty'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hty_tmc_es' hty_ann hty_def
-    have hval'_def : val'.allLevelParamsDefined (List.range nlvls) = true :=
-      tmC_allLevelParamsDefined hval_tmc_kc' hval_ann hval_def
     obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
       core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
@@ -588,7 +374,7 @@ theorem checkedConstOrigin_step
         ⟨.axiomInfo cv' :: env.consts⟩ :=
       ⟨ty', val', hcv_run, hv_run, rfl⟩
     exact FullDeclInv.step_of_foldInv_clean hclean
-      (foldInv_step_declRunJ (fun _ _ heq => nomatch heq) hdecl) V hInv
+      (foldInv_step_declRunJ (d := .opaqueDecl cv' val') (fun _ _ heq => nomatch heq) hdecl) V hInv
 
 /-! ## Quotient, Basis, and Pinned Inductive Steps in `FullDeclInv` -/
 
@@ -612,7 +398,7 @@ theorem quotDecl_step_full {env : Env .anon} {k : QuotKind} {cv : ConstantVal .a
         ⟨BasisKind.quotK.declsA.reverse ++ env.consts⟩ := hrun
     exact ⟨⟨BasisKind.quotK.declsA.reverse ++ env.consts⟩, hclean,
       fun V _ hInv => FullDeclInv.step_of_foldInv_clean hclean
-        (foldInv_step_declRunJ (fun _ _ heq => nomatch heq) hdecl) V hInv⟩
+        (foldInv_step_declRunJ (d := .quotDecl .type cv) (fun _ _ heq => nomatch heq) hdecl) V hInv⟩
   | ctor => exact ⟨env, CleanInstallStep.empty rfl, fun _ _ h => h⟩
   | lift => exact ⟨env, CleanInstallStep.empty rfl, fun _ _ h => h⟩
   | ind => exact ⟨env, CleanInstallStep.empty rfl, fun _ _ h => h⟩
@@ -635,7 +421,7 @@ theorem basisDecl_step_full {env : Env .anon} {kind : BasisKind}
       ⟨kind.declsA.reverse ++ env.consts⟩ := hrun
   exact ⟨⟨kind.declsA.reverse ++ env.consts⟩, hclean,
     fun V _ hInv => FullDeclInv.step_of_foldInv_clean hclean
-      (foldInv_step_declRunJ (fun _ _ heq => nomatch heq) hdecl) V hInv⟩
+      (foldInv_step_declRunJ (d := .basisDecl kind) (fun _ _ heq => nomatch heq) hdecl) V hInv⟩
 
 /-- Step preservation for pinned `.indDecl block nP` (`basisPinHit block = some kind`) in
 `FullDeclInv`. -/
@@ -759,7 +545,7 @@ theorem dummyInstallStep {env : Env .anon} {d : Declaration .anon}
   · intro ci₀ hci₀
     refine ⟨zetaEraseCI ci₀, List.mem_map.mpr ⟨ci₀, hci₀, rfl⟩, storedAs_zetaEraseCI ?_⟩
     intro tbl rfl
-    exact nomatch hna (.projInfo tbl) hci₀
+    exact hna (.projInfo tbl) hci₀ tbl.structName .projTable rfl
   · intro ci hci
     obtain ⟨ci₀, hci₀, rfl⟩ := List.mem_map.mp hci
     exact Or.inl ⟨ci₀, hci₀, (zetaEraseCI_name ci₀).symm⟩

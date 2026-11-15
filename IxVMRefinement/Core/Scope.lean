@@ -1,4 +1,5 @@
-import IxVMRefinement.Core.Rep
+import IxVMRefinement.Core.Loaded
+import IxC.Kernel.Verify.InstLevels
 import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Obs.KernelCheck0
 import Ix.IxVM.Consistency.Statement
@@ -241,7 +242,7 @@ private theorem validate_univ_params_seen_aux :
           simpa [h1, h2] using hlt.mp rfl
         simp [Level.allParamsDefined, hplt])
 
-theorem validate_univ_params_seen_spec {u : KLevel} {nl : Nat} {pu r : SourceValue F}
+private theorem validate_univ_params_seen_spec {u : KLevel} {nl : Nat} {pu r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} (hnl : nl < 4294967296) (hu : RepKLevel h u pu)
     (ev : ObsFn W "KernelCheck::validate_univ_params_seen" [pu, .field (nl : F)] h r h' cs) :
     u.allParamsDefined (List.range nl) = true :=
@@ -339,5 +340,21 @@ theorem validatedAnnotation_allLevelParamsDefined
     e'.allLevelParamsDefined (List.range nl) = true :=
   annotates_allLevelParamsDefined_of_pw hann
     (validate_binder_params_aux _ _ _ _ _ _ ev rfl k nl e' p depth rfl hnl rep) hdef
+
+/-- Positional closed form of scope preservation, matching the reader conversion bridge. -/
+theorem validatedAnnotation_positional
+    {κ : _root_.Address → KKey} {nl : Nat} {e' e₀ : KExpr}
+    {p depth r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hnl : nl < 4294967296)
+    (rep : TmC κ h (posOf (List.range nl) e') p)
+    (hann : IxVM.Consistency.Annotates e' e₀)
+    (hdef : e₀.allLevelParamsDefined (List.range nl) = true)
+    (ev : ObsFn W "KernelCheck::validate_expr_well_scoped"
+      [p, depth, .field (nl : F)] h r h' cs) :
+    e'.allLevelParamsDefined (List.range nl) = true := by
+  have rep' : Tm κ 0 (fun _ => .sort .zero) h 0 e' p := by
+    simpa only [posOf, posLevels, List.length_range, Expr.instantiateLevelParams_self]
+      using rep 0 (fun _ => .sort .zero)
+  exact validatedAnnotation_allLevelParamsDefined hnl rep' hann hdef ev
 
 end IxVM.Refinement.Core.Scope
