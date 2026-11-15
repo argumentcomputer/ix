@@ -157,8 +157,8 @@ def model {env : Env md} (M : Model V env)
     by_cases changed : original = .indInfo cv caps
     · subst original
       refine ⟨A, ?_, ?_⟩
-      · simpa only [info, ↓reduceIte, denotes_eq] using typeRead φ ρ A ha
-      · simpa only [info, ↓reduceIte] using hm
+      · simpa only [info, ↓reduceIte, ConstantInfo.toConstantVal, denotes_eq] using typeRead φ ρ A ha
+      · simpa only [info, ↓reduceIte, ConstantInfo.name] using hm
     · refine ⟨A, ?_, ?_⟩
       · simpa only [info, ite_eq_right changed, denotes_eq] using ha
       · simpa only [info, ite_eq_right changed] using hm
@@ -204,7 +204,7 @@ def model {env : Env md} (M : Model V env)
     refine ⟨?_, ?_⟩
     · by_cases changed : original = .indInfo cv caps
       · subst original
-        simpa only [info, ↓reduceIte, denotes_eq] using typeGraded φ ρ
+        simpa only [info, ↓reduceIte, ConstantInfo.toConstantVal, denotes_eq] using typeGraded φ ρ
       · simpa only [info, ite_eq_right changed, denotes_eq] using gr.1
     · intro val value hint same
       have originalEq := info_eq_back cv caps type same (by intros; intro h; cases h)
@@ -220,7 +220,7 @@ def aliasModel {env : Env md} (M : Model V env)
   apply model cv caps _ M notEta notUnit noTable
   · intro φ ρ A read
     have aliasRead := M.defn_value alias cv.type hint (List.mem_of_find?_eq_some found) φ ρ
-    obtain rfl := Denotes.functional read aliasRead
+    obtain rfl := Denotes_functional read aliasRead
     have denoted := Denotes.const (cval := M.cval) (φ := φ) (ρ := ρ) found
       (show (alias.levelParams.map Level.param).length = alias.levelParams.length by simp)
     simpa only [ConstantInfo.toConstantVal, Level.substFn_param_self] using denoted

@@ -35,12 +35,4 @@ theorem restored_lookup {env : Env .anon} {checked raw : ConstantVal .anon}
   rw [← name, find, found]
   simp only [Option.map_some, info, ↓reduceIte]
 
-/-- Native eta/unit flags are both absent at an indexed former; the model adapter requires
-no assumption about constructor bodies when these flags and the table are absent. -/
-theorem restored_name (checked : ConstantVal .anon) (caps : IndCaps .anon) (alias : Key .anon)
-    (levels : List Level) :
-    (info checked caps (.const alias levels) (.indInfo checked caps)).name = checked.name := by
-  simp only [info_name]
-  rfl
-
 end IxVM.Refinement.Decl.NativeFormerRestore
