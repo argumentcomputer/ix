@@ -12,6 +12,7 @@ namespace IxVM.Refinement.Assembly
 
 open Ix.Kernel Ix.Kernel.Reader
 open Ix.CompileCert.Loop (except_bind_ok)
+open Ix.Cert.ReaderUnits (RolesKeyed)
 
 theorem convExpr_noFvar {md : Mode} {ecx : ECx md}
     {tbl : Array (ReadM (CExpr md))}
@@ -52,6 +53,7 @@ theorem convExpr_noFvar {md : Mode} {ecx : ECx md}
     obtain ⟨ev, hv, h⟩ := except_bind_ok.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst e
+    change ev.hasFvar = false
     exact convExpr_noFvar htbl v hv
   | .str i, e, h => by
     simp only [convExpr] at h
@@ -179,6 +181,9 @@ theorem lowerDefinition_without_rewrite {md : Mode}
     simp only [hsafety] at h ⊢
     cases kind <;> cases hrewrite : projRewrite source cv value <;>
       simp_all [pure, Except.pure]
+    all_goals
+      have hbad : (true : Bool) = false := h.2
+      cases hbad
 
 theorem readDefinition_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
     {source target : State md} {heights heights' : CName md → Nat}
@@ -198,11 +203,11 @@ theorem readDefinition_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKey
   obtain ⟨ty, hty, h⟩ := except_bind_ok.mp h
   obtain ⟨val, hval, h⟩ := except_bind_ok.mp h
   rw [hname]
-  simp only [bind, Except.bind]
+  dsimp only [bind, Except.bind]
   rw [hty]
-  simp only [bind, Except.bind]
+  dsimp only [bind, Except.bind]
   rw [hval]
-  simp only [bind, Except.bind]
+  dsimp only [bind, Except.bind]
   exact lowerDefinition_without_rewrite h hempty (memberReader_hintFor_eq hrk hself hh hval)
 
 private theorem fold_insert_agrees_at {md : Mode} {α β : Type}
@@ -247,7 +252,8 @@ private theorem generated_noteEntry_aux {md : Mode} {d : CDecl md}
       simp only [Ix.Cert.CtxAgree.noteEntries, List.mem_singleton] at he
       subst e
       exact List.mem_cons_self
-  exact List.all_eq_true.mp (Bool.and_eq_true.mp hg).2 e.1 hname
+  simp only [Declaration.isGenerated, Bool.and_eq_true] at hg
+  exact List.all_eq_true.mp hg.2 e.1 hname
 
 /-- Removing a generated declaration prefix preserves every public constant's height
 after committing the common bare suffix. No reader-state equality is assumed. -/
@@ -255,8 +261,8 @@ theorem commit_heights_after_generated_prefix {md : Mode}
     {source target : State md} {full bare : Read md} {generated : List (CDecl md)}
     (hdecls : full.decls.toList = generated ++ bare.decls.toList)
     (hgenerated : ∀ d ∈ generated, d.isGenerated = true)
-    (hheight : ∀ k, NonAuxKey k → target.heights[k]? = source.heights[k]?) :
-    ∀ k, NonAuxKey k → (target.commit bare).heights[k]? = (source.commit full).heights[k]? := by
+    (hheight : ∀ (k : CName md), NonAuxKey k → target.heights[k]? = source.heights[k]?) :
+    ∀ (k : CName md), NonAuxKey k → (target.commit bare).heights[k]? = (source.commit full).heights[k]? := by
   intro k hk
   rw [Ix.Cert.CtxAgree.commit_heights, Ix.Cert.CtxAgree.commit_heights, hdecls,
     List.flatMap_append, List.foldl_append]
