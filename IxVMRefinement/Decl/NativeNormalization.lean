@@ -1,0 +1,141 @@
+import IxC.Kernel.Inductives.SumInstall
+import IxC.Kernel.Verify.InferLeaves
+import IxC.Kernel.Verify.Rules.Bridge
+import IxC.Kernel.Verify.Inductives.SumInv
+
+/-! # Soundness of native constructor-domain normalization
+
+The positivity walk changes a domain by actual weak-head reductions and congruence under
+binders. Its opened variables are closed back without changing their annotations.
+-/
+
+namespace IxVM.Refinement.Decl
+
+open Ix.Kernel
+open Ix.Kernel.Rules (DefEq)
+
+/-- The actual positivity normalization preserves the input's scope and is definitionally equal to it. -/
+theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
+    {fuel : Nat} {T : Key md} {d steps : Nat} {e out : Expr md}
+    (run : normPosDom (fueledOps .verified fuel) env T d steps e = .ok out)
+    (scope : Expr.WScoped d e) (bounded : e.looseBVarsBounded 0 = true) :
+    Expr.WScoped d out ∧ out.looseBVarsBounded 0 = true ∧
+      (∀ leaf ∈ out.fvarLeaves, leaf ∈ e.fvarLeaves) ∧ DefEq env d e out := by
+  induction steps generalizing d e out with
+  | zero => cases run
+  | succ steps ih =>
+    simp only [normPosDom] at run
+    split at run
+    · have resultEq := Except.ok.inj run
+      subst out
+      exact ⟨scope, bounded, fun _ present => present, .refl⟩
+    · obtain ⟨w, reduced, rest⟩ := exceptBind_ok run
+      change Ix.Kernel.whnf .verified env fuel d e = .ok w at reduced
+      have wScope := whnf_WScoped wellFormed fuel reduced scope
+      have wBounded := (whnfPres_looseBVars wellFormed fuel).2 reduced bounded
+      have wLeaves := (whnfPres_fvarLeaves wellFormed fuel).2 reduced
+      have red := Ix.Kernel.Rules.whnf_bridge reduced
+      split at rest
+      · have resultEq := Except.ok.inj rest
+        subst out
+        exact ⟨wScope, wBounded, wLeaves, .redL red .refl⟩
+      · cases w with
+        | forallE dom body bm =>
+          dsimp only at rest wLeaves red
+          simp only [Expr.WScoped] at wScope
+          simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at wBounded
+          split at rest
+          · cases rest
+          · obtain ⟨bodyOut, recRun, resultEq⟩ := exceptBind_ok rest
+            have resultEq := Except.ok.inj resultEq
+            subst out
+            have openScope := wScope.1.instantiate1 0 wScope.2
+            have openBounded : (body.instantiate1 (.fvar d dom)).looseBVarsBounded 0 = true :=
+              looseBVarsBounded_instantiate1 _ 0 wBounded.2
+            obtain ⟨outScope, outBounded, outLeaves, outEq⟩ := ih recRun openScope openBounded
+            have leafCondition : Expr.LeafCond d dom (body.instantiate1 (.fvar d dom)) := by
+              intro leaf present sameIndex
+              rcases Expr.fvarLeaves_instantiate1 body 0 present with inBody | inVar
+              · have lt := Expr.fvarLeaves_lt_of_wscoped wScope.2 leaf inBody
+                omega
+              · simp only [Expr.fvarLeaves, List.mem_cons] at inVar
+                rcases inVar with rfl | inDom
+                · rfl
+                · have lt := Expr.fvarLeaves_lt_of_wscoped wScope.1 leaf inDom
+                  omega
+            have consistent := Expr.fvarConsistent_of_leafCond bodyOut
+              (fun leaf present => leafCondition leaf (outLeaves leaf present))
+            have roundTrip := abstract1_instantiate1 bodyOut 0 consistent outBounded
+            refine ⟨?_, ?_, ?_, .redL red (.forallE .refl ?_ rfl)⟩
+            · simp only [Expr.WScoped]
+              exact ⟨wScope.1, WScoped.abstract1 0 outScope⟩
+            · simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
+              exact ⟨wBounded.1, looseBVarsBounded_abstract1 bodyOut 0 outBounded⟩
+            · intro leaf present
+              simp only [Expr.fvarLeaves, List.mem_append] at present
+              apply wLeaves leaf
+              simp only [Expr.fvarLeaves, List.mem_append]
+              rcases present with inDom | inBody
+              · exact Or.inl inDom
+              · obtain ⟨inOutput, notFresh⟩ := Expr.fvarLeaves_abstract1_ne bodyOut 0 outScope leaf inBody
+                rcases Expr.fvarLeaves_instantiate1 body 0 (outLeaves leaf inOutput) with inRaw | inVar
+                · exact Or.inr inRaw
+                · simp only [Expr.fvarLeaves, List.mem_cons] at inVar
+                  rcases inVar with same | inDom
+                  · subst leaf
+                    exact (notFresh rfl).elim
+                  · exact Or.inl inDom
+            · rw [roundTrip]
+              exact outEq
+        | _ =>
+          have resultEq := Except.ok.inj rest
+          subst out
+          exact ⟨wScope, wBounded, wLeaves, .redL red .refl⟩
+
+/-- The field walk retains the original opened variables and certifies every changed domain at its actual depth. -/
+theorem normFieldDoms_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
+    {fuel : Nat} {T : Key md} {d count : Nat} {e residual : Expr md}
+    {binders : List (Expr md × BinderMeta)}
+    (run : normFieldDoms (fueledOps .verified fuel) env T d count e = .ok (binders, residual))
+    (scope : Expr.WScoped d e) (bounded : e.looseBVarsBounded 0 = true) :
+    ∃ originalFvars, openPisAtFvars count e d = some (originalFvars, residual) ∧
+      originalFvars.length = count ∧ binders.length = count ∧
+      ∀ j original normalized, originalFvars[j]? = some original → binders[j]? = some normalized →
+        Expr.WScoped (d + j) normalized.1 ∧ normalized.1.looseBVarsBounded 0 = true ∧
+          (∀ leaf ∈ normalized.1.fvarLeaves, leaf ∈ original.fvarTypeD.fvarLeaves) ∧
+          DefEq env (d + j) original.fvarTypeD normalized.1 := by
+  induction count generalizing d e binders residual with
+  | zero =>
+    have same := Except.ok.inj run
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
+    exact ⟨[], rfl, rfl, rfl, fun j _ _ missing _ => by cases j <;> cases missing⟩
+  | succ count ih =>
+    cases e with
+    | forallE dom body bm =>
+      simp only [normFieldDoms] at run
+      obtain ⟨dom', normalized, rest⟩ := exceptBind_ok run
+      obtain ⟨pair, recRun, result⟩ := exceptBind_ok rest
+      obtain ⟨tailBinders, tailResidual⟩ := pair
+      have same := Except.ok.inj result
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
+      simp only [Expr.WScoped] at scope
+      simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+      have domainFacts := normPosDom_sound wellFormed normalized scope.1 bounded.1
+      obtain ⟨fvars, opened, fvarCount, binderCount, tailFacts⟩ := ih recRun
+        (scope.1.instantiate1 0 scope.2) (looseBVarsBounded_instantiate1 _ 0 bounded.2)
+      refine ⟨.fvar d dom :: fvars, ?_, ?_, ?_, ?_⟩
+      · simp only [openPisAtFvars, opened]
+      · simp only [List.length_cons, fvarCount]
+      · simp only [List.length_cons, binderCount]
+      · intro j original output oldAt newAt
+        cases j with
+        | zero =>
+          obtain rfl := Option.some.inj oldAt
+          obtain rfl := Option.some.inj newAt
+          simpa only [Nat.add_zero, Expr.fvarTypeD] using domainFacts
+        | succ j =>
+          have tail := tailFacts j original output oldAt newAt
+          simpa only [Nat.add_succ, Nat.succ_add] using tail
+    | _ => cases run
+
+end IxVM.Refinement.Decl

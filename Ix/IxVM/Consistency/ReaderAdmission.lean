@@ -19,7 +19,7 @@ def ReaderCacheCoherent (E : Ixon.Env) : Prop :=
 
 /-- A concrete accepted reader run and its chosen store. The same store determines the
 closure, byte batch, decoded records, blobs, and permitted provenance. -/
-structure ReaderAdmissionWitness (V : IxVM.Refinement.View)
+structure ReaderAdmissionData (V : IxVM.Refinement.View)
     (b : Ix.Kernel.Admission.Binding) where
   table : Ix.Kernel.RoleTable
   env : Ixon.Env
@@ -72,14 +72,29 @@ structure ReaderAdmissionWitness (V : IxVM.Refinement.View)
     ∀ a ∈ order, ∀ lc, env.consts.get? a = some lc →
       ∀ bytes, (a, bytes) ∈ Ix.Cert.blobsOf env order → bytes = lc.rawBytes
 
+/-- Every selected record is physically held by this view. The same requirement applies
+to every binding. Unselected environment entries remain governed by `draws`. -/
+structure ReaderAdmissionWitness (V : IxVM.Refinement.View) (b : Ix.Kernel.Admission.Binding)
+    extends ReaderAdmissionData V b where
+  selectedRecordsInView :
+    ∀ a ∈ order, ∀ lc, env.consts.get? a = some lc →
+      ∃ lcV, V.env.consts.get? a = some lcV ∧ lcV.rawBytes = lc.rawBytes
+
 /-- Forget coherence and the concrete reader outputs to recover abstract admission. -/
-theorem ReaderAdmissionWitness.tableAdmitted
+theorem ReaderAdmissionData.tableAdmitted
     {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
-    (w : ReaderAdmissionWitness V b) : IxVM.Refinement.TableAdmitted V b := by
+    (w : ReaderAdmissionData V b) : IxVM.Refinement.TableAdmitted V b := by
   refine ⟨w.table, w.admitted, w.literalSupport,
     w.env, w.limits, w.order, w.checkedEnv, w.draws, w.seedsStored,
     w.table, w.prelude, _, _, w.admitted, w.closure, rfl,
     w.preludeRead, w.prepared, ?_, w.theorems, w.userAxioms, w.specifications⟩
   exact Ix.Kernel.Cached.acceptsRefUnder_strict.mpr w.accepted
+
+/-- Forget the selected-record provenance as well as the concrete reader guarantees. -/
+theorem ReaderAdmissionWitness.tableAdmitted
+    {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+    (w : ReaderAdmissionWitness V b) : IxVM.Refinement.TableAdmitted V b :=
+  w.toReaderAdmissionData.tableAdmitted
+
 
 end IxVM.Consistency
