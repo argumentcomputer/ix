@@ -44,23 +44,6 @@ theorem DeclInv.exists_envModel_thmVal {V : Type u} [Ix.Kernel.SetTheory V]
 
 /-! ## Context, key, and `LevelParam.nodup` helpers -/
 
-/-- Changing only the group limit `lim` of a `Ctx` preserves `LoadFacts`, since no field of
-`LoadFacts` reads `c.lim`. -/
-theorem _root_.IxVM.Refinement.Core.LoadFacts.withLim {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    {t : Ix.Kernel.RoleTable} {lim₁ lim₂ : Option Nat}
-    (h : LoadFacts ⟨E, env, t, lim₁⟩) : LoadFacts ⟨E, env, t, lim₂⟩ where
-  getCI := h.getCI
-  getCprj := h.getCprj
-  getIprj := h.getIprj
-  indRecord := h.indRecord
-  inductRecord := h.inductRecord
-  projTables := h.projTables
-  projTablesAt := h.projTablesAt
-  unitLike := h.unitLike
-  eta := h.eta
-  etaIota := h.etaIota
-  canonical := h.canonical
-
 /-- Keys assigned by `keyOf` are `.role` or `.id`, never projection-function/table `.aux` keys. -/
 theorem keyOf_isProjFnShape_false (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
     (keyOf t a).isProjFnShape = false := by
@@ -840,7 +823,7 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       RCRep t lim cl.heap rc → S0.addr cl.heap ap a → keyOf t a = ci₀.name →
       CIRep (keyOf t) cl.heap v ci → IxVM.Consistency.StoredAs ci ci₀ →
       ci₀ ∈ IxVM.Consistency.installs d →
-      (DeclStoreInv env → CtxRoleFacts ⟨E, env, t, lim⟩) ∧
+      (DeclStoreInv env → CtxRoleFacts ⟨E, env, t, lim⟩ ∧ LoadFacts ⟨E, env, t, lim⟩) ∧
       CISafe v ∧ RCAxiomsNil cl.heap rc ∧
       Ix.Kernel.reservedBasisNames.contains ci₀.name = false ∧
       ci₀.toConstantVal.type.looseBVarsBounded 0 = true ∧
@@ -936,8 +919,8 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
       dsimp only [ConstantInfo.toConstantVal] at hval
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.axiomInfo cv) hmem
       have hnoprj : cv.name.isProjFnShape = false := by
         have hk := keyOf_isProjFnShape_false t a
@@ -1027,8 +1010,8 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
       subst hsf0
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.defnInfo cv value hint) hmem
       have hnoprj : cv.name.isProjFnShape = false := by
         have hk := keyOf_isProjFnShape_false t a
@@ -1129,8 +1112,8 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
       rename_i nl ty val
       let c : Ctx := ⟨E, env, t, lim⟩
       have hgood_c : Good c calls := hgood
-      have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-      have hlf : LoadFacts c := hloads.withLim
+      have ⟨hR_c, hlf⟩ := hR_fn hS
+      have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
       have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.thmInfo cv value) hmem
       have hnoprj : cv.name.isProjFnShape = false := by
         have hk := keyOf_isProjFnShape_false t a
@@ -1231,8 +1214,8 @@ theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
     dsimp only [ConstantInfo.toConstantVal] at hval hV
     let c : Ctx := ⟨E, env, t, lim⟩
     have hgood_c : Good c calls := hgood
-    have hef : EnvFacts c := hS.toEnvFacts htwf (hR_fn hS)
-    have hlf : LoadFacts c := hloads.withLim
+    have ⟨hR_c, hlf⟩ := hR_fn hS
+    have hef : EnvFacts c := hS.toEnvFacts htwf hR_c
     have hfresh_cv : env.find? cv.name = none := hx.installsFresh (.axiomInfo cv) hmem
     have hnoprj : cv.name.isProjFnShape = false := by
       have hk := keyOf_isProjFnShape_false t a
