@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.VerifiedRunMap
 import IxVMRefinement.Decl.RoleAnnot
 import IxVMRefinement.Decl.DeclSpecs
 import IxVMRefinement.Assembly.RoleFacts
@@ -259,5 +260,55 @@ theorem checkedAxiom_fullStep {fuel : Nat} {ev : Evidences .anon} {env env₂ : 
     CleanInstallStep env (.axiomDecl cv) env₂ ∧
       ∀ (V : Type u) [SetTheory V], FullDeclInv V env → FullDeclInv V env₂ :=
   ⟨checkedAxiom_clean checked base, checkedAxiom_fullInv checked (checkedAxiom_clean checked base)⟩
+
+/-- A checked theorem has a rules-tier step storing its checked annotated value. The reference
+check's raw-value environment and both actual annotation runs are retained as witnesses. -/
+theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {env referenceOut : Env .anon}
+    {cv : ConstantVal .anon} {value : Core.KExpr}
+    (checked : checkDecl .verified (fueledOps .verified fuel) ev env
+      (.thmDecl cv value) = .ok referenceOut) :
+    ∃ ty value',
+      referenceOut = ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value :: env.consts⟩ ∧
+      annotateCore .verified env fuel 0 cv.type = .ok ty ∧
+      annotateCore .verified env fuel 0 value = .ok value' ∧
+      IxVM.Consistency.InstallStep env (.thmDecl cv value)
+        ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: env.consts⟩ ∧
+      ∀ (V : Type u) [SetTheory V], FoldInv V env →
+        FoldInv V ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: env.consts⟩ := by
+  obtain ⟨ty, value', hcv, hprop, hv, hout⟩ := declThmRun_of checked
+  have hrules : DeclThmRunJ rulesJ env cv value
+      ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: env.consts⟩ := by
+    obtain ⟨stype, level, hi, hs, hz⟩ := hprop
+    exact ⟨ty, value', constantValRun_rulesJ hcv,
+      ⟨stype, level, (verifiedRunMap fuel).infer hi, (verifiedRunMap fuel).sort hs,
+        (verifiedRunMap fuel).isZero hz⟩,
+      valueFrontRun_rulesJ hv, rfl⟩
+  obtain ⟨fresh, _, _, _, htb, htf, hat, _, _, _⟩ := hcv
+  obtain ⟨hvb, hvf, hav, _, _, _⟩ := hv
+  have installed : IxVM.Consistency.InstallStep env (.thmDecl cv value)
+      ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: env.consts⟩ := by
+    refine installStep_single (ci₀ := .thmInfo cv value) rfl ?_
+      (Option.isNone_iff_eq_none.mp fresh)
+    exact ⟨⟨rfl, rfl, annotateCore_to_annotates hat htf htb⟩,
+      annotateCore_to_annotates hav hvf hvb⟩
+  exact ⟨ty, value', hout, hat, hav, installed, foldInv_step_thm hrules⟩
+
+/-- At a base key, the checked theorem's annotated-value step also preserves the full invariant. -/
+theorem checkedThm_fullStep {fuel : Nat} {ev : Evidences .anon} {env referenceOut : Env .anon}
+    {cv : ConstantVal .anon} {value : Core.KExpr}
+    (checked : checkDecl .verified (fueledOps .verified fuel) ev env
+      (.thmDecl cv value) = .ok referenceOut)
+    (base : isBaseKey cv.name = true) :
+    ∃ env₂, CleanInstallStep env (.thmDecl cv value) env₂ ∧
+      ∀ (V : Type u) [SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
+  obtain ⟨ty, value', _, _, _, installed, preserved⟩ := checkedThm_step checked
+  have clean : CleanInstallStep env (.thmDecl cv value)
+      ⟨.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value' :: env.consts⟩ := by
+    apply CleanInstallStep.of_baseList
+      (new := [.thmInfo ⟨cv.name, cv.levelParams, ty⟩ value']) installed
+    intro ci hci
+    obtain rfl := List.mem_singleton.mp hci
+    exact base
+  exact ⟨_, clean, FullDeclInv.step_of_foldInv_clean clean preserved⟩
 
 end IxVM.Refinement.Decl
