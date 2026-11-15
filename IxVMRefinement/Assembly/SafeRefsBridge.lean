@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.RolePreludeBridge
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Assembly.RecordReadBare
 import IxC.Kernel.Verify.Frontend.Prepare
+import IxC.Ixon.Verify.ConstantBounds
 
 /-! # Safe-reference validation, constructor index checking, and role-prefix bridge (`SafeRefsBridge`)
 
@@ -1157,6 +1158,1503 @@ theorem safe_refs_only_refOnly_resolve
     c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2
     rfl hi hc_ref c_a hrec_a
 
+/-! ## Section 2B: Uniform Walked Block Safety & `SafeRefTargetChecked` -/
+
+/-- Exact twin of `iprj_store_eq_of_mutsMemberChecked` for `.recr` mutual members: any
+collision-free hashed or view-backed record at `Core.rprjAddr owner i` decodes to the canonical
+empty-table `.rPrj` constant. -/
+theorem rprj_store_eq_of_mutsMemberChecked
+    {calls : List (Call F)} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {bAddr owner : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {ms : Array Ixon.MutConst} {i : Nat} {rc : Ixon.Recursor}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hm : Claim.MutsMemberCheckedAtFull calls bAddr t owner ms i)
+    (hms : ms[i]? = some (.recr rc)) :
+    i < UInt64.size ∧
+    ∀ raw' c',
+      _root_.Address.blake3Pure raw' = Core.rprjAddr owner i →
+      Ixon.deConstantExact raw' = .ok c' →
+      (V.Preimage (Core.rprjAddr owner i) raw' ∨ raw' ∈ extra ∨ Hashed calls raw') →
+        c' = ⟨.rPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩ := by
+  have hchk : Claim.CheckedAtFull calls bAddr t (Core.rprjAddr owner i) := by
+    have h0 := mutsMemberCheckedAtFull_to_checkedAtFull hbound hm hms
+    simpa only [Core.Specs.Callees.memberProjInfo, Core.rprjAddr] using h0
+  obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _, bytes, E_ld,
+    _, _, _, _, hhash_ld, hblake_ld, _, hL1, hsub_ld, _, _, _, _⟩ :=
+    checkedAtFull_loadedL1 hbound hchk
+  obtain ⟨c_ld, hdec_ld, _, _, _, _, _⟩ := hL1
+  have hhashed_calls : Hashed calls bytes := Core.hashed_mono hsub_ld hhash_ld
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, cs_pa, _, _,
+    hmem_pa, hblk_pa, ev_pa, hcl_pa, hsub_pa, _, _, _, _, _, _, _, _, _⟩ := hm
+  obtain ⟨b_arr, hb_ref, rfl⟩ := hblk_pa
+  have hlen : ms.toList.length < 2 ^ 39 :=
+    RomBound.bounded_length_lt hbound hcl_pa (List.Mem.head _) hmem_pa
+  have hi_sz : i < ms.size := (Array.getElem?_eq_some_iff.mp hms).1
+  have hi_len : i < ms.toList.length := by simpa using hi_sz
+  have hi_lt : i < UInt64.size := by
+    have : (2 ^ 39 : Nat) < UInt64.size := by decide
+    omega
+  have hwf_rprj :
+      (⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF := by
+    rw [L1.emptyTablesConstant_wireWF]
+    show (Core.ixAddr b_arr).hash.size = 32
+    exact b_arr.size_toArray
+  have hser_rprj :
+      bytes = Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩ := by
+    by_cases heq_b : bytes = Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩
+    · exact heq_b
+    · have hi_val : ((i : F)).val = i :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      obtain ⟨v1, m2, cs12, v31, m32, cs42, v198, m199, cs201,
+        m231, m244, m257, m270, v282, m283, cs293, m306, cs321,
+        ev14, ev44, sg206, hm239, hm252, hm265, hm278, hm314, ev295, ev323, hc332⟩ :=
+        Obs.«Ingress::projection_addr».obs ev_pa
+      obtain ⟨hm2, _, mc', hget_pa, hmc⟩ := L1.muts_member_at_spec hmem_pa ev14
+      subst m2
+      rw [hi_val] at hget_pa
+      have hms_list : ms.toList[i]? = some (.recr rc) := by simpa using hms
+      rw [hms_list] at hget_pa
+      cases hget_pa
+      obtain ⟨ni, hni, hxi, hv31, hm32⟩ := Lib.u64_from_field_spec ev44
+      subst m32
+      have hni_eq : ni = i := by
+        have hv := congrArg ZMod.val (Value.field.inj hxi).symm
+        rwa [ZMod.val_natCast_of_lt (Nat.lt_trans hni (by decide)), hi_val] at hv
+      subst ni
+      rw [hv31] at sg206
+      have e1 : Heap.Extends m199 m231 := by rw [hm239]; exact Heap.Extends.snoc _ _
+      have e2 : Heap.Extends m231 m244 := by rw [hm252]; exact Heap.Extends.snoc _ _
+      have e3 : Heap.Extends m244 m257 := by rw [hm265]; exact Heap.Extends.snoc _ _
+      have e4 : Heap.Extends m257 m270 := by rw [hm278]; exact Heap.Extends.snoc _ _
+      have e5 : Heap.Extends m270 m306 := by rw [hm314]; exact Heap.Extends.snoc _ _
+      have c1 : m306[m199.length]? = some (.construct Core.Specs.Callees.ixExprListEnum "Nil" []) :=
+        (e2.trans (e3.trans (e4.trans e5))).getElem?_eq (by rw [hm239]; simp)
+      have c2 : m306[m231.length]? = some (.construct Core.addrListEnum "Nil" []) :=
+        (e3.trans (e4.trans e5)).getElem?_eq (by rw [hm252]; simp)
+      have c3 : m306[m244.length]? = some (.construct Core.Specs.Callees.ixUnivListEnum "Nil" []) :=
+        (e4.trans e5).getElem?_eq (by rw [hm265]; simp)
+      have c4 : m306[m257.length]? = some (.construct Core.Specs.Callees.ixBinderListEnum "Nil" []) :=
+        e5.getElem?_eq (by rw [hm278]; simp)
+      have c5 : m306[m270.length]? = some (.construct Core.byteListEnum "Nil" []) := by
+        rw [hm314]; simp
+      have hrepi : Aiur.Library.RepU64 m306 i.toUInt64 (TagN.u64Value i) := by
+        have e := Lib.repU64_ofNatLT m306 (m := i)
+          (Nat.lt_trans hi_len (Nat.lt_trans hlen (by decide)))
+        rwa [UInt64.ofNatLT_eq_ofNat] at e
+      obtain ⟨rv, rfl⟩ := hmc
+      have hinfo_rep :
+          Core.Specs.Callees.ProjInfoRep m306 (.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) v198 := by
+        cases sg206 with
+        | Defn _ hv67 _ _ _ =>
+          simp only [Core.Specs.Callees.mutCtor] at hv67
+          injection hv67 with _ hc _
+          exact absurd hc (by decide)
+        | Indc _ _ hv112 _ _ _ =>
+          simp only [Core.Specs.Callees.mutCtor] at hv112
+          injection hv112 with _ hc _
+          exact absurd hc (by decide)
+        | Recr _ _ _ _ he169 he195 _ =>
+          subst he195
+          rw [he169]
+          exact ⟨TagN.u64Value i, _, b_arr, rfl, hrepi,
+            Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
+              (e1.trans (e2.trans (e3.trans (e4.trans e5)))) hb_ref, rfl⟩
+      have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
+        (.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
+        ⟨_, _, _, _, _, rfl, hinfo_rep,
+          Aiur.RepLinkedList.nil c1, Aiur.RepLinkedList.nil c2,
+          Aiur.RepLinkedList.nil c3, Aiur.RepLinkedList.nil c4⟩
+        (Aiur.RepLinkedList.nil c5)
+      rw [List.append_nil] at hbytes
+      have hstream : L1.Stream m283
+          (Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩).data.toList
+          v282 := hbytes
+      have hcall_b3 := (L1.bytes_to_addr_spec hstream ev323).2.2
+      have hcall_pa : (⟨"Blake3::hash", [v282], m283⟩ : Call F) ∈ cs_pa := by
+        rw [hc332]; simp [hcall_b3]
+      have hhash_pa :
+          Hashed cs_pa (Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩) :=
+        ⟨_, hcall_pa, rfl, v282, rfl, hstream⟩
+      have hhashed_pa :
+          Hashed calls (Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩) :=
+        Core.hashed_mono hsub_pa hhash_pa
+      exact absurd (.inl ⟨Core.rprjAddr (Core.ixAddr b_arr) i,
+        Ixon.serConstant ⟨.rPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩,
+        bytes, .inr (.inr ⟨hhashed_pa, rfl⟩), hhashed_calls, heq_b, hblake_ld⟩) hnoCol
+  refine ⟨hi_lt, fun raw' c' hbl' hdec' hsrc' => ?_⟩
+  have hraw_eq : raw' = bytes := by
+    by_cases heq : raw' = bytes
+    · exact heq
+    · have hsrc_wit :
+          (V.Preimage (Core.rprjAddr (Core.ixAddr b_arr) i) raw' ∨
+            (raw' ∈ extra ∧ _root_.Address.blake3Pure raw' = Core.rprjAddr (Core.ixAddr b_arr) i) ∨
+            (Hashed calls raw' ∧ _root_.Address.blake3Pure raw' = Core.rprjAddr (Core.ixAddr b_arr) i)) := by
+        rcases hsrc' with hp | he | hh
+        · exact .inl hp
+        · exact .inr (.inl ⟨he, hbl'⟩)
+        · exact .inr (.inr ⟨hh, hbl'⟩)
+      exact absurd (.inl ⟨Core.rprjAddr (Core.ixAddr b_arr) i, raw', bytes,
+        hsrc_wit, hhashed_calls, Ne.symm heq, hblake_ld⟩) hnoCol
+  subst hraw_eq
+  rw [hser_rprj] at hdec'
+  have hrt := Ixon.Verify.deConstantExact_serConstant _ hwf_rprj
+  exact Except.ok.inj (hdec'.symm.trans hrt)
+
+/-- Unsafe flag weight (`0` or `1`) of a constructor in `KernelCheck::ctors_safety_counts`. -/
+private def ctorUnsafeBit (ct : Ixon.Constructor) : Nat :=
+  if ct.isUnsafe then 1 else 0
+
+/-- Unsafe weight of a mutual block member in `KernelCheck::muts_safety_counts`. -/
+private def mutUnsafeCount : Ixon.MutConst → Nat
+  | .defn d => if (Ix.Kernel.Reader.safetyDecline d).isNone then 0 else 1
+  | .indc ind => (if ind.isUnsafe then 1 else 0) + (ind.ctors.toList.map ctorUnsafeBit).sum
+  | .recr rc => if rc.isUnsafe then 1 else 0
+
+/-- Total member + constructor count of a mutual block member in `KernelCheck::muts_safety_counts`. -/
+private def mutConstCount : Ixon.MutConst → Nat
+  | .defn _ => 1
+  | .indc ind => 1 + ind.ctors.toList.length
+  | .recr _ => 1
+
+private theorem sum_ctorUnsafeBit_le_length :
+    ∀ (cs : List Ixon.Constructor), (cs.map ctorUnsafeBit).sum ≤ cs.length
+  | [] => Nat.le_refl 0
+  | ct :: rest => by
+    have hih := sum_ctorUnsafeBit_le_length rest
+    simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit]
+    cases ct.isUnsafe <;> omega
+
+private theorem sum_ctorUnsafeBit_eq_zero_iff :
+    ∀ (cs : List Ixon.Constructor),
+      (cs.map ctorUnsafeBit).sum = 0 ↔ ∀ ct ∈ cs, ct.isUnsafe = false
+  | [] => by simp
+  | ct :: rest => by
+    rw [List.map_cons, List.sum_cons, Nat.add_eq_zero_iff, sum_ctorUnsafeBit_eq_zero_iff rest]
+    constructor
+    · rintro ⟨hct, hrest⟩ c hc
+      rcases List.mem_cons.mp hc with rfl | hm
+      · cases h : ct.isUnsafe <;> simp [ctorUnsafeBit, h] at hct ⊢
+      · exact hrest c hm
+    · intro hall
+      refine ⟨?_, fun c hm => hall c (List.mem_cons_of_mem _ hm)⟩
+      have h0 := hall ct List.mem_cons_self
+      simp [ctorUnsafeBit, h0]
+
+private theorem sum_ctorUnsafeBit_lt_length_of_mem :
+    ∀ {cs : List Ixon.Constructor} {ct : Ixon.Constructor},
+      ct ∈ cs → ct.isUnsafe = false → (cs.map ctorUnsafeBit).sum < cs.length
+  | [], _, hm, _ => nomatch hm
+  | c :: rest, ct, hm, hsafe => by
+    simp only [List.map_cons, List.sum_cons, List.length_cons]
+    rcases List.mem_cons.mp hm with rfl | hmem
+    · have hle := sum_ctorUnsafeBit_le_length rest
+      simp [ctorUnsafeBit, hsafe]; omega
+    · have hlt := sum_ctorUnsafeBit_lt_length_of_mem hmem hsafe
+      simp only [ctorUnsafeBit]
+      cases c.isUnsafe <;> omega
+
+private theorem mutUnsafeCount_le_mutConstCount (m : Ixon.MutConst) :
+    mutUnsafeCount m ≤ mutConstCount m := by
+  cases m with
+  | defn d =>
+    simp only [mutUnsafeCount, mutConstCount]
+    cases (Ix.Kernel.Reader.safetyDecline d).isNone <;> omega
+  | indc ind =>
+    have hle := sum_ctorUnsafeBit_le_length ind.ctors.toList
+    simp only [mutUnsafeCount, mutConstCount]
+    cases ind.isUnsafe <;> omega
+  | recr rc =>
+    simp only [mutUnsafeCount, mutConstCount]
+    cases rc.isUnsafe <;> omega
+
+private theorem mutUnsafeCount_eq_zero_iff (m : Ixon.MutConst) :
+    mutUnsafeCount m = 0 ↔ IxVM.Consistency.InLogicMut m := by
+  cases m with
+  | defn d =>
+    simp only [mutUnsafeCount, IxVM.Consistency.InLogicMut]
+    cases h : Ix.Kernel.Reader.safetyDecline d <;> simp
+  | indc ind =>
+    simp only [mutUnsafeCount, IxVM.Consistency.InLogicMut, Nat.add_eq_zero_iff,
+      sum_ctorUnsafeBit_eq_zero_iff]
+    cases ind.isUnsafe <;> simp
+  | recr rc =>
+    simp only [mutUnsafeCount, IxVM.Consistency.InLogicMut]
+    cases rc.isUnsafe <;> simp
+
+private theorem sum_mutUnsafeCount_eq_zero_iff :
+    ∀ (ms : List Ixon.MutConst),
+      (ms.map mutUnsafeCount).sum = 0 ↔ ∀ m ∈ ms, IxVM.Consistency.InLogicMut m
+  | [] => by simp
+  | m :: rest => by
+    rw [List.map_cons, List.sum_cons, Nat.add_eq_zero_iff, mutUnsafeCount_eq_zero_iff,
+      sum_mutUnsafeCount_eq_zero_iff rest]
+    constructor
+    · rintro ⟨hm, hrest⟩ x hx
+      rcases List.mem_cons.mp hx with rfl | hmem
+      · exact hm
+      · exact hrest x hmem
+    · intro hall
+      exact ⟨hall m List.mem_cons_self, fun x hmem => hall x (List.mem_cons_of_mem _ hmem)⟩
+
+private theorem sum_mutUnsafeCount_lt_of_mem :
+    ∀ {ms : List Ixon.MutConst} {m : Ixon.MutConst},
+      m ∈ ms → mutUnsafeCount m < mutConstCount m →
+      (ms.map mutUnsafeCount).sum < (ms.map mutConstCount).sum
+  | [], _, hm, _ => nomatch hm
+  | x :: rest, m, hm, hlt => by
+    simp only [List.map_cons, List.sum_cons]
+    rcases List.mem_cons.mp hm with rfl | hmem
+    · have hle : (rest.map mutUnsafeCount).sum ≤ (rest.map mutConstCount).sum := by
+        clear hm hlt
+        induction rest with
+        | nil => exact Nat.le_refl 0
+        | cons y ys ih =>
+          have hy := mutUnsafeCount_le_mutConstCount y
+          simp only [List.map_cons, List.sum_cons]; omega
+      omega
+    · have hih := sum_mutUnsafeCount_lt_of_mem hmem hlt
+      have hx := mutUnsafeCount_le_mutConstCount x
+      omega
+
+private theorem sum_ctor_resourceSize_ge_length :
+    ∀ (cs : List Ixon.Constructor), cs.length ≤ (cs.map Ixon.Constructor.resourceSize).sum
+  | [] => Nat.le_refl 0
+  | ct :: rest => by
+    have hih := sum_ctor_resourceSize_ge_length rest
+    simp only [List.length_cons, List.map_cons, List.sum_cons, Ixon.Constructor.resourceSize]
+    omega
+
+private theorem mutConstCount_le_resourceSize (m : Ixon.MutConst) :
+    mutConstCount m ≤ m.resourceSize := by
+  cases m with
+  | defn d => simp [mutConstCount, Ixon.MutConst.resourceSize, Ixon.Definition.resourceSize]; omega
+  | indc ind =>
+    have hct := sum_ctor_resourceSize_ge_length ind.ctors.toList
+    simp only [mutConstCount, Ixon.MutConst.resourceSize, Ixon.Inductive.resourceSize]
+    omega
+  | recr rc => simp [mutConstCount, Ixon.MutConst.resourceSize, Ixon.Recursor.resourceSize]; omega
+
+private theorem sum_mutConstCount_le_resourceSum :
+    ∀ (ms : List Ixon.MutConst),
+      (ms.map mutConstCount).sum ≤ (ms.map Ixon.MutConst.resourceSize).sum
+  | [] => Nat.le_refl 0
+  | m :: rest => by
+    have hm := mutConstCount_le_resourceSize m
+    have hih := sum_mutConstCount_le_resourceSum rest
+    simp only [List.map_cons, List.sum_cons]; omega
+
+private theorem sum_mutConstCount_lt_bound {rawBytes : ByteArray} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst}
+    (hsz : rawBytes.size < 4294967296)
+    (hdeExact : Ixon.deConstantExact rawBytes = .ok cb)
+    (hms : cb.info = .muts ms) :
+    (ms.toList.map mutConstCount).sum < 8589934592 := by
+  have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound rawBytes cb hdeExact
+  have hsum := sum_mutConstCount_le_resourceSum ms.toList
+  have hinfo : (ms.toList.map Ixon.MutConst.resourceSize).sum ≤ cb.resourceSize := by
+    dsimp [Ixon.Constant.resourceSize]
+    rw [hms]
+    dsimp [Ixon.ConstantInfo.resourceSize]
+    omega
+  omega
+
+private theorem mul_sub_eq_zero_nat {u n : Nat} (hun : u ≤ n) (hn : n < 8589934592)
+    (h : ((u : F)) * (((n : F)) - ((u : F))) = 0) : u = 0 ∨ u = n := by
+  rcases mul_eq_zero.mp h with hu0 | hsub0
+  · refine .inl ?_
+    have heq : (u : F) = ((0 : Nat) : F) := by simpa using hu0
+    rw [ZMod.natCast_eq_natCast_iff',
+      Nat.mod_eq_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+      Nat.mod_eq_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at heq
+    exact heq
+  · refine .inr ?_
+    have heq : (n : F) = (u : F) := sub_eq_zero.mp hsub0
+    rw [ZMod.natCast_eq_natCast_iff',
+      Nat.mod_eq_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+      Nat.mod_eq_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at heq
+    exact heq.symm
+
+private theorem repBool_false_of_zero {b : Bool} {v : SourceValue F}
+    (hb : Claim.RepBool b v) (hv : v = .field 0) : b = false := by
+  cases b with
+  | false => rfl
+  | true => exact absurd (hb.symm.trans hv) (fun h => one_ne_zero (Value.field.inj h))
+
+private theorem repBool_true_of_ne_zero {b : Bool} {v : SourceValue F}
+    (hb : Claim.RepBool b v) (hv : v ≠ .field 0) : b = true := by
+  cases b with
+  | false => exact absurd hb hv
+  | true => rfl
+
+private theorem defn_is_unsafe_ci_count_spec {kind : Ix.DefKind} {safety : Ix.DefinitionSafety}
+    {x_kind x_safety r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hk : Claim.RepDefKind kind x_kind)
+    (hs : Claim.RepDefinitionSafety safety x_safety)
+    (ev : ObsFn Core.W "Ingress::defn_is_unsafe_ci" [x_kind, x_safety] h r h' cs) :
+    h' = h ∧
+      r = .field (((if (Ix.Kernel.Reader.safetyDeclineOf kind safety).isNone then 0 else 1 : Nat) : F)) := by
+  rcases Obs.«Ingress::defn_is_unsafe_ci».obs ev with
+    ⟨hv15, rfl, rfl, -⟩ |
+    ⟨_, hv25, hv41, rfl, rfl, -⟩ |
+    ⟨_, hv25, hne46, rfl, rfl, -⟩ |
+    ⟨_, _, hv58, hv74, rfl, rfl, -⟩ |
+    ⟨_, _, hv58, hne79, rfl, rfl, -⟩
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · rw [hk] at hv15; simp at hv15
+    · rw [hk] at hv15; simp at hv15
+    · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · rw [hk] at hv25; simp at hv25
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+      · rw [hs] at hv41; simp at hv41
+      · rw [hs] at hv41; simp at hv41
+    · rw [hk] at hv25; simp at hv25
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · rw [hk] at hv25; simp at hv25
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+      · exact absurd hs (hne46 [] rfl)
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+    · rw [hk] at hv25; simp at hv25
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+      · rw [hs] at hv74; simp at hv74
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+      · rw [hs] at hv74; simp at hv74
+    · rw [hk] at hv58; simp at hv58
+    · rw [hk] at hv58; simp at hv58
+  · cases kind <;> simp [Claim.RepDefKind] at hk
+    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+      · exact absurd hs (hne79 [] rfl)
+      · exact ⟨rfl, by simp [Ix.Kernel.Reader.safetyDeclineOf]⟩
+    · rw [hk] at hv58; simp at hv58
+    · rw [hk] at hv58; simp at hv58
+
+private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
+    ∀ {h h' : Heap F} {x_cs r : SourceValue F} {calls : List (Call F)} (u n : Nat),
+      Aiur.Library.List.RepList Obs.Names.«Lists::Node<Ixon::Constructor>»
+        Claim.RepConstructor h cs x_cs →
+      ObsFn Core.W "KernelCheck::ctors_safety_counts"
+        [x_cs, .field (u : F), .field (n : F)] h r h' calls →
+      h' = h ∧
+        r = .tuple [.field (((u + (cs.map ctorUnsafeBit).sum : Nat) : F)),
+                    .field (((n + cs.length : Nat) : F))] := by
+  induction cs with
+  | nil =>
+    intro h h' x_cs r calls u n rep ev
+    cases Obs.«KernelCheck::ctors_safety_counts».obs ev with
+    | Nil ld12 he24 he39 _ =>
+      exact ⟨he39, by simpa using he24⟩
+    | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
+      obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12
+      cases hbad
+  | cons ct rest ih =>
+    intro h h' x_cs r calls u n rep ev
+    cases Obs.«KernelCheck::ctors_safety_counts».obs ev with
+    | Nil ld12 _ _ _ =>
+      cases Lib.rep_nil_of_load rep ld12
+    | Cons x_rest x_is_unsafe _ _ _ _ _ _ v139 m140 _ _ v155 v156 ld12 sg147 op177 op193 ev153 _ =>
+      obtain ⟨ct', rest', heq, hct, hrest⟩ := Lib.rep_cons_of_load rep ld12
+      injection heq with h1 h2
+      subst ct' rest'
+      obtain ⟨uVal, _, _, hv, hu, _, _⟩ := hct
+      injection hv with _ _ hargs
+      simp only [List.cons.injEq] at hargs
+      have hu_eq : uVal = x_is_unsafe := hargs.1.symm
+      subst uVal
+      have hv156 : v156 = .field (((n + 1 : Nat) : F)) := by
+        simpa [Nat.cast_add] using L1.binop_add op193
+      subst v156
+      cases sg147 with
+      | n0 hv128 he129 he130 _ =>
+        subst he130 he129
+        have hfalse := repBool_false_of_zero hu hv128
+        have hv155 : v155 = .field (((u + 0 : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op177
+        subst v155
+        obtain ⟨hh', hr⟩ := ih (u + 0) (n + 1) hrest ev153
+        refine ⟨hh', ?_⟩
+        rw [hr]
+        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, hfalse]
+        congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
+      | other hne132 he136 he137 _ =>
+        subst he137 he136
+        have htrue := repBool_true_of_ne_zero hu hne132
+        have hv155 : v155 = .field (((u + 1 : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op177
+        subst v155
+        obtain ⟨hh', hr⟩ := ih (u + 1) (n + 1) hrest ev153
+        refine ⟨hh', ?_⟩
+        rw [hr]
+        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, htrue]
+        congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
+
+private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
+    ∀ {h h' : Heap F} {x_ms r : SourceValue F} {calls : List (Call F)} (u n : Nat),
+      Aiur.Library.List.RepList Obs.Names.«Lists::Node<Ixon::MutConst>»
+        Claim.RepMutConst h ms x_ms →
+      ObsFn Core.W "KernelCheck::muts_safety_counts"
+        [x_ms, .field (u : F), .field (n : F)] h r h' calls →
+      Heap.Extends h h' ∧
+        r = .tuple [.field (((u + (ms.map mutUnsafeCount).sum : Nat) : F)),
+                    .field (((n + (ms.map mutConstCount).sum : Nat) : F))] := by
+  induction ms with
+  | nil =>
+    intro h h' x_ms r calls u n rep ev
+    cases Obs.«KernelCheck::muts_safety_counts».obs ev with
+    | Nil ld12 he24 he39 _ =>
+      exact ⟨by rw [he39], by simpa using he24⟩
+    | Cons_Defn _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _
+    | Cons_Indc _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _
+    | Cons_Recr _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
+      obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12
+      cases hbad
+  | cons m rest ih =>
+    intro h h' x_ms r calls u n rep ev
+    cases Obs.«KernelCheck::muts_safety_counts».obs ev with
+    | Nil ld12 _ _ _ =>
+      cases Lib.rep_nil_of_load rep ld12
+    | Cons_Defn x_rest x_kind x_safety _ _ _ _ _ v136 v137 m146 y152 _ ld12 ev165 op158 op195 ev134 _ =>
+      obtain ⟨m', rest', heq, hm, hrest⟩ := Lib.rep_cons_of_load rep ld12
+      injection heq with h1 h2
+      subst m' rest'
+      cases m with
+      | indc _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | recr _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | defn d =>
+        obtain ⟨dv, hv_m, kVal, sVal, _, _, _, hv_d, hk, hs, _, _, _⟩ := hm
+        injection hv_m with _ _ hargs_m
+        simp only [List.cons.injEq, and_true] at hargs_m
+        rw [← hargs_m] at hv_d
+        injection hv_d with _ _ hargs_d
+        simp only [List.cons.injEq] at hargs_d
+        rcases hargs_d with ⟨rfl, rfl, _⟩
+        obtain ⟨hm146, hy152⟩ := defn_is_unsafe_ci_count_spec hk hs ev165
+        subst m146 hy152
+        have hv136 : v136 = .field (((u + mutUnsafeCount (.defn d) : Nat) : F)) := by
+          simpa [mutUnsafeCount, Ix.Kernel.Reader.safetyDecline, Nat.cast_add] using L1.binop_add op158
+        have hv137 : v137 = .field (((n + 1 : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op195
+        subst v136 v137
+        obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.defn d)) (n + 1) hrest ev134
+        refine ⟨hext, ?_⟩
+        rw [hr]
+        simp only [List.map_cons, List.sum_cons, mutConstCount]
+        congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
+    | Cons_Indc x_rest x_is_unsafe _ _ _ _ x_ctors v285 m286 _ m295 _ x_cu x_cn _ v350 v351 x365 x390
+        ld12 sg293 ev307 op380 op372 op405 op397 ev348 _ =>
+      obtain ⟨m', rest', heq, hm, hrest⟩ := Lib.rep_cons_of_load rep ld12
+      injection heq with h1 h2
+      subst m' rest'
+      cases m with
+      | defn _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | recr _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | indc ind =>
+        obtain ⟨iv, hv_m, uVal, _, ctorsPtr, hv_i, hu, _, hctors⟩ := hm
+        injection hv_m with _ _ hargs_m
+        simp only [List.cons.injEq, and_true] at hargs_m
+        rw [← hargs_m] at hv_i
+        injection hv_i with _ _ hargs_i
+        simp only [List.cons.injEq, and_true] at hargs_i
+        rcases hargs_i with ⟨rfl, _, _, _, _, rfl⟩
+        have hiu : m286 = h ∧ v285 = .field (((if ind.isUnsafe then 1 else 0 : Nat) : F)) := by
+          cases sg293 with
+          | n0 hv274 he275 he276 _ =>
+            have hf := repBool_false_of_zero hu hv274
+            exact ⟨he276, by simpa [hf] using he275⟩
+          | other hne278 he282 he283 _ =>
+            have ht := repBool_true_of_ne_zero hu hne278
+            exact ⟨he283, by simpa [ht] using he282⟩
+        obtain ⟨rfl, hv285⟩ := hiu
+        subst hv285
+        obtain ⟨rfl, hct_tup⟩ := ctors_safety_counts_spec ind.ctors.toList 0 0 hctors ev307
+        simp only [Nat.zero_add, Value.tuple.injEq, List.cons.injEq, and_true] at hct_tup
+        rcases hct_tup with ⟨rfl, rfl⟩
+        have hx365 : x365 = .field (((u + (if ind.isUnsafe then 1 else 0) : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op380
+        subst hx365
+        have hv350 : v350 = .field (((u + mutUnsafeCount (.indc ind) : Nat) : F)) := by
+          simpa [mutUnsafeCount, Nat.add_assoc, Nat.cast_add] using L1.binop_add op372
+        have hx390 : x390 = .field (((n + 1 : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op405
+        subst hx390
+        have hv351 : v351 = .field (((n + mutConstCount (.indc ind) : Nat) : F)) := by
+          simpa [mutConstCount, Nat.add_assoc, Nat.cast_add] using L1.binop_add op397
+        subst hv350 hv351
+        obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.indc ind)) (n + mutConstCount (.indc ind)) hrest ev348
+        refine ⟨hext, ?_⟩
+        rw [hr]
+        simp only [List.map_cons, List.sum_cons]
+        congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
+    | Cons_Recr x_rest _ x_is_unsafe _ _ _ _ _ _ _ v515 m516 _ _ v531 v532
+        ld12 sg523 op553 op569 ev529 _ =>
+      obtain ⟨m', rest', heq, hm, hrest⟩ := Lib.rep_cons_of_load rep ld12
+      injection heq with h1 h2
+      subst m' rest'
+      cases m with
+      | defn _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | indc _ => obtain ⟨_, hv, _⟩ := hm; simp at hv
+      | recr rc =>
+        obtain ⟨rv, hv_m, _, uVal, _, _, hv_r, _, hu, _, _⟩ := hm
+        injection hv_m with _ _ hargs_m
+        simp only [List.cons.injEq, and_true] at hargs_m
+        rw [← hargs_m] at hv_r
+        injection hv_r with _ _ hargs_r
+        simp only [List.cons.injEq] at hargs_r
+        rcases hargs_r with ⟨_, rfl, _⟩
+        have hru : m516 = h ∧ v515 = .field (((if rc.isUnsafe then 1 else 0 : Nat) : F)) := by
+          cases sg523 with
+          | n0 hv504 he505 he506 _ =>
+            have hf := repBool_false_of_zero hu hv504
+            exact ⟨he506, by simpa [hf] using he505⟩
+          | other hne508 he512 he513 _ =>
+            have ht := repBool_true_of_ne_zero hu hne508
+            exact ⟨he513, by simpa [ht] using he512⟩
+        obtain ⟨rfl, hv515⟩ := hru
+        subst hv515
+        have hv531 : v531 = .field (((u + mutUnsafeCount (.recr rc) : Nat) : F)) := by
+          simpa [mutUnsafeCount, Nat.cast_add] using L1.binop_add op553
+        have hv532 : v532 = .field (((n + 1 : Nat) : F)) := by
+          simpa [Nat.cast_add] using L1.binop_add op569
+        subst hv531 hv532
+        obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.recr rc)) (n + 1) hrest ev529
+        refine ⟨hext, ?_⟩
+        rw [hr]
+        simp only [List.map_cons, List.sum_cons, mutConstCount]
+        congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
+
+/-- `KernelCheck::check_block_member_kinds` enforces uniform safety across the entire mutual block:
+if any member has `mutUnsafeCount m < mutConstCount m` (e.g., any single safe definition,
+inductive, constructor, or recursor in the block), then every member of `ms` satisfies
+`InLogicMut`, hence `InLogic cb` holds. -/
+theorem check_block_member_kinds_inLogic
+    {calls : List (Call F)} {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {blk : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {x_block_addr r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (ha : Core.S0.addr h x_block_addr blk)
+    (ev : ObsFn Core.W "KernelCheck::check_block_member_kinds" [x_block_addr] h r h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
+    (hcb : cb.info = .muts ms)
+    (hlt_mem : ∃ m ∈ ms.toList, mutUnsafeCount m < mutConstCount m) :
+    IxVM.Consistency.InLogic cb := by
+  cases Obs.«KernelCheck::check_block_member_kinds».obs ev with
+  | other m2 cs12 x_info _ _ _ _ ev14 hne329 _ _ hc335 =>
+    obtain ⟨_, rawBytes, c_ld, _, hh_ld, hblk_ld, _, hexact_ld, hrep, _⟩ :=
+      Claim.load_verified_constant_de ha ev14
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc335]; simp [hcl])
+    have hcb_eq : cb = c_ld := loaded_recordAt_eq_of_exact_noCollision
+      hexact₀ hload₀ hnoCol hrec_blk hh_ld hsub12 hblk_ld hexact_ld
+    subst c_ld
+    obtain ⟨infoVal, _, _, _, _, hv_c, hinfo, _, _, _, _⟩ := hrep
+    injection hv_c with _ _ hargs
+    simp only [List.cons.injEq] at hargs
+    rw [← hargs.1, hcb] at hinfo
+    obtain ⟨mv, hmv, _⟩ := hinfo
+    exact absurd hmv (hne329 [mv] rfl)
+  | Muts m2 cs12 _ _ _ _ x_members _ m90 _ _ m132 _ _ _ _ x_n_unsafe x_n_all v234 y243 _ _ _ _
+      ev14 ev102 ev151 _ _ ev187 op258 op249 heq267 _ _ _ _ _ hc328 =>
+    obtain ⟨_, rawBytes, c_ld, hsz, hh_ld, hblk_ld, _, hexact_ld, hrep, _⟩ :=
+      Claim.load_verified_constant_de ha ev14
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc328]; simp [hcl])
+    have hcb_eq : cb = c_ld := loaded_recordAt_eq_of_exact_noCollision
+      hexact₀ hload₀ hnoCol hrec_blk hh_ld hsub12 hblk_ld hexact_ld
+    subst c_ld
+    obtain ⟨infoVal, _, _, _, _, hv_c, hinfo, _, _, _, _⟩ := hrep
+    injection hv_c with _ _ hargs
+    simp only [List.cons.injEq] at hargs
+    rw [← hargs.1, hcb] at hinfo
+    obtain ⟨mv, hmv, hms_rep⟩ := hinfo
+    injection hmv with _ _ hmv_args
+    simp only [List.cons.injEq, and_true] at hmv_args
+    subst hmv_args
+    have ext_m2_132 : Heap.Extends m2 m132 := ev102.heap_extends.trans ev151.heap_extends
+    have hms_rep132 :=
+      Aiur.Library.List.repList_heapMono₂ _ Claim.repMutConst_heapMono₂ ext_m2_132 hms_rep
+    obtain ⟨_, htup⟩ := muts_safety_counts_spec ms.toList 0 0 hms_rep132 ev187
+    simp only [Nat.zero_add, Value.tuple.injEq, List.cons.injEq, and_true] at htup
+    rcases htup with ⟨rfl, rfl⟩
+    have hy243 := L1.binop_sub op258
+    subst hy243
+    have hv234 := L1.binop_mul op249
+    have hmul0 :
+        (((ms.toList.map mutUnsafeCount).sum : F)) *
+          ((((ms.toList.map mutConstCount).sum : F)) - (((ms.toList.map mutUnsafeCount).sum : F))) = 0 :=
+      Value.field.inj (hv234.symm.trans heq267)
+    obtain ⟨m₀, hm₀, hlt₀⟩ := hlt_mem
+    have hlt_sum : (ms.toList.map mutUnsafeCount).sum < (ms.toList.map mutConstCount).sum :=
+      sum_mutUnsafeCount_lt_of_mem hm₀ hlt₀
+    have hbound_sum : (ms.toList.map mutConstCount).sum < 8589934592 :=
+      sum_mutConstCount_lt_bound hsz hexact_ld hcb
+    rcases mul_sub_eq_zero_nat (Nat.le_of_lt hlt_sum) hbound_sum hmul0 with hu0 | hun
+    · simp only [IxVM.Consistency.InLogic, hcb]
+      exact (sum_mutUnsafeCount_eq_zero_iff ms.toList).mp hu0
+    · omega
+
+private theorem bool_false_of_repBoolField_zero {b : Bool}
+    (h : L1.repBoolField b = .field 0) : b = false := by
+  cases b with
+  | false => rfl
+  | true => exact absurd h (fun heq => one_ne_zero (Value.field.inj heq))
+
+private theorem safetyDecline_eq_none_of_is_unsafe_ci_zero {d : Ixon.Definition}
+    {tyPtr valPtr hint : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
+      [L1.defnValShape d tyPtr valPtr hint] h (.field 0) h' cs) :
+    Ix.Kernel.Reader.safetyDecline d = none := by
+  cases hk : d.kind with
+  | thm => simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk]
+  | opaq =>
+    simp only [L1.defnValShape, hk] at ev
+    cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
+    | Opaque _ _ _ _ _ _ _ hv he _ _ =>
+      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
+      rcases hv with ⟨_, _, _, _, _, hu_eq⟩
+      have hf := bool_false_of_repBoolField_zero (hu_eq.trans he)
+      simpa [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] using hf
+    | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
+    | Thm _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
+    | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
+    | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
+      simp [Core.kciEnum] at hv
+  | defn =>
+    simp only [L1.defnValShape, hk] at ev
+    cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
+    | Defn_Safe _ _ _ _ _ hv _ _ _ =>
+      simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
+      rcases hv with ⟨_, _, _, _, _, hs_eq, _⟩
+      have hsafe : d.safety = .safe := by
+        cases hds : d.safety <;> rw [hds] at hs_eq <;> simp [L1.repDefSafetyVal] at hs_eq
+        rfl
+      simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk, hsafe]
+    | Defn_other _ _ _ _ _ _ _ _ he _ _ =>
+      exact absurd he.symm field_zero_ne_one
+    | Axiom _ _ _ hv | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
+    | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
+    | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
+      simp [Core.kciEnum] at hv
+
+/-- Observed `Ingress::get_ci` + `KernelCheck::is_unsafe_ci = .field 0` witness at target `a`. -/
+def SafeRefTargetChecked (calls : List (Call F)) (a : _root_.Address) : Prop :=
+  ∃ (b_arr : Aiur.Library.Bytes.Address) (x_caddr p_ci v_ci : SourceValue F)
+    (h₀ h₁ h₂ : Heap F) (cs_ci cs_u : List (Call F)),
+    Core.ixAddr b_arr = a ∧
+    Aiur.Library.Bytes.RepAddressRef Core.addrTy h₀ b_arr x_caddr ∧
+    ObsFn Core.W "Ingress::get_ci" [x_caddr] h₀ p_ci h₁ cs_ci ∧
+    (∀ cl ∈ cs_ci, cl ∈ calls) ∧
+    loadValue h₁ p_ci = .ok v_ci ∧
+    ObsFn Core.W "KernelCheck::is_unsafe_ci" [v_ci] h₁ (.field 0) h₂ cs_u
+
+/-- Extract `KernelCheck::check_block_member_kinds` on `blk` from an inductive member check
+`MutsMemberCheckedAtFull calls bAddr t blk ms i` with `ms[i]? = some (.indc ind)`. -/
+private theorem ind_block_checked_member_kinds
+    {calls : List (Call F)} {bAddr blk : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {i : Nat} {ind : Ixon.Inductive}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
+    (hcb : cb.info = .muts ms)
+    (hms_i : ms[i]? = some (.indc ind))
+    (hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t blk ms i) :
+    ∃ (x_blk r : SourceValue F) (h h' : Heap F) (cs : List (Call F)),
+      Core.S0.addr h x_blk blk ∧
+      ObsFn Core.W "KernelCheck::check_block_member_kinds" [x_blk] h r h' cs ∧
+      (∀ cl ∈ cs, cl ∈ calls) := by
+  obtain ⟨hi_u64, hstore_iprj⟩ := iprj_store_eq_of_mutsMemberChecked hbound hnoCol hm_i hms_i
+  have hchk_iprj : Claim.CheckedAtFull calls bAddr t (Core.iprjAddr blk i) := by
+    have h0 := mutsMemberCheckedAtFull_to_checkedAtFull hbound hm_i hms_i
+    simpa only [Core.Specs.Callees.memberProjInfo, Core.iprjAddr] using h0
+  obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes_i, E_ld,
+    _, _, _, _, hhash_i, hblake_i, hload_ld, hL1_i, hsub_ld, hld_v, ev_chk, _, hsub_chk⟩ :=
+    checkedAtFull_loadedL1 hbound hchk_iprj
+  obtain ⟨c_i, hdec_i, _, _, v', hld_v', hraw_i⟩ := hL1_i
+  have hv_eq : v' = v := Except.ok.inj (hld_v'.symm.trans hld_v)
+  subst v'
+  have hc_i_eq : c_i = ⟨.iPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩ :=
+    hstore_iprj bytes_i c_i hblake_i hdec_i (.inr (.inr (Core.hashed_mono hsub_ld hhash_i)))
+  subst c_i
+  have hi_toNat : i.toUInt64.toNat = i := Nat.mod_eq_of_lt hi_u64
+  simp only [L1.RawCIRep, hi_toNat] at hraw_i
+  obtain ⟨_, lcB, cb_ld, ms_ld, ind_ld, _, hget_lcB, _, _, hexact_lcB, _,
+    hcb_ld, hms_ld, _, hraw_ind⟩ := hraw_i
+  obtain ⟨hhash_lcB, hblake_lcB⟩ := hload_ld.1 blk lcB hget_lcB
+  have hcb_eq_ld : cb = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+    hexact₀ hload₀ hnoCol hrec_blk hhash_lcB hsub_ld hblake_lcB hexact_lcB
+  subst cb_ld
+  rw [hcb] at hcb_ld
+  injection hcb_ld with hms_ld_eq
+  subst ms_ld
+  obtain ⟨_, _, _, _, _, _, blkPtr, b_arr, hb_eq, hbp_m, rfl, _⟩ := hraw_ind
+  match Obs.«KernelCheck::check_const».obs ev_chk with
+  | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
+  | .Axiom_other_other (hv37 := hv) ..
+  | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
+  | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
+  | .Ctor_n0_n0 (hv1884 := hv) .. | .Ctor_n0_other (hv1884 := hv) ..
+  | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) ..
+  | .Rec_n0 (hv2574 := hv) .. | .Rec_other (hv2574 := hv) .. =>
+    injection hv with _ htag _; exact absurd htag (by decide)
+  | .Induct_n0 (x_ind_block := xblk) (m1354 := m1354) (m1376 := m1376)
+      (m1427 := m1427) (m1440 := m1440) (v1469 := r_mk) (m1470 := m_mk) (cs1480 := cs_mk)
+      (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
+      (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
+      (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
+      (ev1482 := ev_mk) (hc1634 := hc) ..
+  | .Induct_other_n0 (x_ind_block := xblk) (m1354 := m1354) (m1376 := m1376)
+      (m1427 := m1427) (m1440 := m1440) (v1469 := r_mk) (m1470 := m_mk) (cs1480 := cs_mk)
+      (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
+      (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
+      (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
+      (ev1482 := ev_mk) (hc1869 := hc) ..
+  | .Induct_other_other (x_ind_block := xblk) (m1354 := m1354) (m1376 := m1376)
+      (m1427 := m1427) (m1440 := m1440) (v1469 := r_mk) (m1470 := m_mk) (cs1480 := cs_mk)
+      (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
+      (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
+      (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
+      (ev1482 := ev_mk) (hc1878 := hc) .. =>
+    injection hv_ind with _ _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with hblk _
+    subst hblk
+    have e_1376 : Heap.Extends _ m1376 := by rw [hm1376]; exact Heap.Extends.snoc _ _
+    have e_1354 : Heap.Extends m1376 m1354 := by rw [hm1354]; exact Heap.Extends.snoc _ _
+    have e_1427 : Heap.Extends _ m1427 := by rw [hm1427]; exact Heap.Extends.snoc _ _
+    have hext : Heap.Extends m_chk m1440 :=
+      ev1.heap_extends.trans (ev2.heap_extends.trans
+        (e_1376.trans (e_1354.trans (ev3.heap_extends.trans
+          (e_1427.trans (ev4.heap_extends.trans ev5.heap_extends))))))
+    exact ⟨blkPtr, r_mk, m1440, m_mk, cs_mk,
+      ⟨b_arr, Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext hbp_m, hb_eq⟩,
+      ev_mk, fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl])⟩
+
+/-- Extract `KernelCheck::check_block_member_kinds` on `blk` from a recursor member check
+`MutsMemberCheckedAtFull calls bAddr t blk ms i` with `ms[i]? = some (.recr rc)`. -/
+private theorem rec_block_checked_member_kinds
+    {calls : List (Call F)} {bAddr blk : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {i : Nat} {rc_m : Ixon.Recursor}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
+    (hcb : cb.info = .muts ms)
+    (hms_i : ms[i]? = some (.recr rc_m))
+    (hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t blk ms i) :
+    ∃ (x_blk r : SourceValue F) (h h' : Heap F) (cs : List (Call F)),
+      Core.S0.addr h x_blk blk ∧
+      ObsFn Core.W "KernelCheck::check_block_member_kinds" [x_blk] h r h' cs ∧
+      (∀ cl ∈ cs, cl ∈ calls) := by
+  obtain ⟨hi_u64, hstore_rprj⟩ := rprj_store_eq_of_mutsMemberChecked hbound hnoCol hm_i hms_i
+  have hchk_rprj : Claim.CheckedAtFull calls bAddr t (Core.rprjAddr blk i) := by
+    have h0 := mutsMemberCheckedAtFull_to_checkedAtFull hbound hm_i hms_i
+    simpa only [Core.Specs.Callees.memberProjInfo, Core.rprjAddr] using h0
+  obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes_r, E_ld,
+    _, _, _, _, hhash_r, hblake_r, hload_ld, hL1_r, hsub_ld, hld_v, ev_chk, _, hsub_chk⟩ :=
+    checkedAtFull_loadedL1 hbound hchk_rprj
+  obtain ⟨c_r, hdec_r, _, _, v', hld_v', hraw_r⟩ := hL1_r
+  have hv_eq : v' = v := Except.ok.inj (hld_v'.symm.trans hld_v)
+  subst v'
+  have hc_r_eq : c_r = ⟨.rPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩ :=
+    hstore_rprj bytes_r c_r hblake_r hdec_r (.inr (.inr (Core.hashed_mono hsub_ld hhash_r)))
+  subst c_r
+  have hi_toNat : i.toUInt64.toNat = i := Nat.mod_eq_of_lt hi_u64
+  simp only [L1.RawCIRep, hi_toNat] at hraw_r
+  obtain ⟨_, lcB, cb_ld, ms_ld, _, _, hget_lcB, _, _, hexact_lcB, _,
+    hcb_ld, _, _, hraw_rc⟩ := hraw_r
+  obtain ⟨hhash_lcB, hblake_lcB⟩ := hload_ld.1 blk lcB hget_lcB
+  have hcb_eq_ld : cb = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+    hexact₀ hload₀ hnoCol hrec_blk hhash_lcB hsub_ld hblake_lcB hexact_lcB
+  subst cb_ld
+  rw [hcb] at hcb_ld
+  injection hcb_ld with hms_ld_eq
+  subst ms_ld
+  obtain ⟨_, _, _, _, _, _, _, _, blkPtr, b_arr, hb_eq, hbp_m, rfl, _, _⟩ := hraw_rc
+  match Obs.«KernelCheck::check_const».obs ev_chk with
+  | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
+  | .Axiom_other_other (hv37 := hv) ..
+  | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
+  | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
+  | .Induct_n0 (hv1240 := hv) .. | .Induct_other_n0 (hv1240 := hv) ..
+  | .Induct_other_other (hv1240 := hv) ..
+  | .Ctor_n0_n0 (hv1884 := hv) .. | .Ctor_n0_other (hv1884 := hv) ..
+  | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) .. =>
+    injection hv with _ htag _; exact absurd htag (by decide)
+  | .Rec_n0 (x_rec_block := xblk) (m2705 := m2705) (m2718 := m2718)
+      (v2747 := r_mk) (m2748 := m_mk) (cs2758 := cs_mk)
+      (ev14 := ev1) (hv2574 := hv_rec) (ev2649 := ev2)
+      (hm2713 := hm2705) (ev2686 := ev3) (ev2730 := ev4)
+      (ev2760 := ev_mk) (hc2875 := hc) ..
+  | .Rec_other (x_rec_block := xblk) (m2705 := m2705) (m2718 := m2718)
+      (v2747 := r_mk) (m2748 := m_mk) (cs2758 := cs_mk)
+      (ev14 := ev1) (hv2574 := hv_rec) (ev2649 := ev2)
+      (hm2713 := hm2705) (ev2686 := ev3) (ev2730 := ev4)
+      (ev2760 := ev_mk) (hc2964 := hc) .. =>
+    injection hv_rec with _ _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with hblk _
+    subst hblk
+    have e_2705 : Heap.Extends _ m2705 := by rw [hm2705]; exact Heap.Extends.snoc _ _
+    have hext : Heap.Extends m_chk m2718 :=
+      ev1.heap_extends.trans (ev2.heap_extends.trans
+        (e_2705.trans (ev3.heap_extends.trans ev4.heap_extends)))
+    exact ⟨blkPtr, r_mk, m2718, m_mk, cs_mk,
+      ⟨b_arr, Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext hbp_m, hb_eq⟩,
+      ev_mk, fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl])⟩
+
+/-- **Unconditional target resolution & safety for any walked `SafeRefTargetChecked` constant**
+across all 8 non-`muts` `ConstantInfo` variants (`defn`, `recr`, `axio`, `quot`, `dPrj`, `iPrj`,
+`rPrj`, `cPrj`). -/
+theorem safeRefTargetChecked_resolve_and_not_outside
+    {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+    {a : _root_.Address}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hload₀ : IxVM.Consistency.LoadedBy calls E₀)
+    (hexact₀ : L1.EnvDecoded E₀)
+    (hnoCol : ¬ V.HashedCollision extra calls)
+    (hchk_ref : SafeRefTargetChecked calls a)
+    (hwk_a : WkAll calls bAddr t E₀ a) :
+    ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
+      ∀ c_a, Ix.Cert.recordAt E₀ a = some c_a →
+        (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true := by
+  obtain ⟨b_arr, x_caddr, p_ci, v_ci, h₀, h₁, h₂, cs_ci, cs_u,
+    hb_eq, ra, ev_ci, hsub_ci, hld_pci, ev_u⟩ := hchk_ref
+  obtain ⟨c_a0, hrec_a0, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked a hwk_a
+  obtain ⟨_, bytes_ld, E_ld, hhash_ld, hblake_ld, hload_ld,
+    c_ld, hexact_ld, _, htv_ld, v_ld, hld_v, hraw_ld⟩ :=
+    L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub_ci) ra ev_ci
+  have hv_eq : v_ld = v_ci := Except.ok.inj (hld_v.symm.trans hld_pci)
+  subst hv_eq
+  rw [hb_eq] at hblake_ld
+  rw [hblake_ld] at hraw_ld
+  obtain ⟨_, _, _, _, hinlogic⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev_u
+  have hca_eq : c_a0 = c_ld := loaded_recordAt_eq_of_exact_noCollision
+    hexact₀ hload₀ hnoCol hrec_a0 hhash_ld hsub_ci hblake_ld hexact_ld
+  subst c_ld
+  have hno_muts : ∀ ms, c_a0.info ≠ .muts ms := by
+    intro ms hms
+    simp only [L1.RawCIRep, hms] at hraw_ld
+  have hres_and_safe :
+      ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
+      (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a0).isSome = true := by
+    cases hinfo : c_a0.info with
+    | muts ms => exact absurd hinfo (hno_muts ms)
+    | defn _ | recr _ | axio _ | quot _ =>
+      have hown : Ix.Cert.ownerOf a c_a0 = a := by simp [Ix.Cert.ownerOf, hinfo]
+      have hinl : IxVM.Consistency.InLogic c_a0 := hinlogic rfl hown
+      have hnot_out : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cb, hnot_cb⟩⟩
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hnot_c; exact hnot_c hinl
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx, hown] at hrec_cb
+          have hcb : cb_x = c_a0 := Option.some.inj (hrec_cb.symm.trans hrec_a0)
+          rw [hcb] at hnot_cb; exact hnot_cb hinl
+      exact ⟨hnot_out, by simp [Ix.Kernel.Reader.resolveSource, hinfo]⟩
+    | dPrj p =>
+      have hemp := emptyTables_of_constantTablesValid_prj htv_ld (.inl ⟨p, hinfo⟩)
+      simp only [L1.RawCIRep, hinfo] at hraw_ld
+      obtain ⟨_, lcB, cb_ld, ms_ld, d_ld, _, hget_B, _, _, hexact_B, _, hcb_ld, hms_ld, _, hraw_d⟩ := hraw_ld
+      obtain ⟨hhash_B, hblake_B⟩ := hload_ld.1 p.block lcB hget_B
+      have hp_ne : p.block ≠ a := by
+        intro hp_eq
+        rw [hp_eq] at hblake_B
+        have hcb_eq := loaded_recordAt_eq_of_exact_noCollision
+          hexact₀ hload₀ hnoCol hrec_a0 hhash_B hsub_ci hblake_B hexact_B
+        exact hno_muts ms_ld ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld)
+      have hedge : Core.S0.WalkEdge E₀ a p.block :=
+        ⟨c_a0, hrec_a0, .inl ⟨by simp [Ix.Cert.ownerOf, hinfo], hp_ne⟩⟩
+      obtain ⟨hwk_blk, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a p.block hwk_a hedge
+      obtain ⟨cb₀, hrec_cb₀, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked p.block hwk_blk
+      have hcb_eq : cb₀ = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+        hexact₀ hload₀ hnoCol hrec_cb₀ hhash_B hsub_ci hblake_B hexact_B
+      subst cb_ld
+      obtain ⟨_, _, _, _, rfl, _, _⟩ := hraw_d
+      have hsafe_d := safetyDecline_eq_none_of_is_unsafe_ci_zero ev_u
+      have hlt_d : mutUnsafeCount (.defn d_ld) < mutConstCount (.defn d_ld) := by
+        simp [mutUnsafeCount, mutConstCount, hsafe_d]
+      have hmk_dprj : ∃ (x_blk r : SourceValue F) (h h' : Heap F) (cs : List (Call F)),
+          Core.S0.addr h x_blk p.block ∧
+          ObsFn Core.W "KernelCheck::check_block_member_kinds" [x_blk] h r h' cs ∧
+          (∀ cl ∈ cs, cl ∈ calls) := by
+        cases Obs.«Ingress::get_ci».obs ev_ci with
+        | Defn _ cs12 _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ hc
+        | Axio _ cs12 _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ hc
+        | Quot _ cs12 _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ _ hc
+        | IPrj _ cs12 _ _ _ _ _ _ _ _ _ _ ev14 _ _ hc
+        | CPrj _ cs12 _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 _ _ _ hc
+        | RPrj _ cs12 _ _ _ _ _ _ _ _ _ _ ev14 _ _ hc
+        | Recr _ cs12 _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ _ _ hc =>
+          obtain ⟨_, _, c_x, _, hh_x, hbl_x, _, hex_x, hrep_x, _⟩ :=
+            Claim.load_verified_constant_de ⟨b_arr, ra, hb_eq⟩ ev14
+          have hsub12 : ∀ cl ∈ cs12, cl ∈ calls :=
+            fun cl hcl => hsub_ci cl (by rw [hc]; simp [hcl])
+          have hcx_eq : c_a0 = c_x := loaded_recordAt_eq_of_exact_noCollision
+            hexact₀ hload₀ hnoCol hrec_a0 hh_x hsub12 hbl_x hex_x
+          subst c_x
+          obtain ⟨infoVal, _, _, _, _, hv_c, hinfo_r, _, _, _, _⟩ := hrep_x
+          injection hv_c with _ _ hargs
+          simp only [List.cons.injEq] at hargs
+          rw [← hargs.1, hinfo] at hinfo_r
+          obtain ⟨_, hv_bad, _⟩ := hinfo_r
+          simp at hv_bad
+        | DPrj m2 cs12 _ _ _ _ x_idx x_block_addr cs648 ev14 ev650 hc675 =>
+          obtain ⟨_, _, c_x, _, hh_x, hbl_x, _, hex_x, hrep_x, _⟩ :=
+            Claim.load_verified_constant_de ⟨b_arr, ra, hb_eq⟩ ev14
+          have hsub12 : ∀ cl ∈ cs12, cl ∈ calls :=
+            fun cl hcl => hsub_ci cl (by rw [hc675]; simp [hcl])
+          have hcx_eq : c_a0 = c_x := loaded_recordAt_eq_of_exact_noCollision
+            hexact₀ hload₀ hnoCol hrec_a0 hh_x hsub12 hbl_x hex_x
+          subst c_x
+          obtain ⟨infoVal, _, _, _, _, hv_c, hinfo_r, _, _, _, _⟩ := hrep_x
+          injection hv_c with _ _ hargs
+          simp only [List.cons.injEq] at hargs
+          rw [← hargs.1, hinfo] at hinfo_r
+          obtain ⟨pv, hpv, blkPtr, hdp, hblk_addr⟩ := hinfo_r
+          injection hpv with _ _ hpv_args
+          simp only [List.cons.injEq, and_true] at hpv_args
+          rw [← hpv_args] at hdp
+          injection hdp with _ _ hdp_args
+          simp only [List.cons.injEq, and_true] at hdp_args
+          rcases hdp_args with ⟨_, rfl⟩
+          cases Obs.«Ingress::get_ci_dprj».obs ev650 with
+          | run v1 m2' cs12' _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_mk _ _ _ _ _ _ _ _ _ _ hc348 =>
+            exact ⟨blkPtr, v1, m2, m2', cs12', hblk_addr, ev_mk,
+              fun cl hcl => hsub_ci cl (by rw [hc675, hc348]; simp [hcl])⟩
+      obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ := hmk_dprj
+      have hinl_cb : IxVM.Consistency.InLogic cb₀ :=
+        check_block_member_kinds_inLogic hload₀ hexact₀ hnoCol ha_blk ev_mk hsub_mk
+          hrec_cb₀ hcb_ld ⟨.defn d_ld, List.mem_of_getElem? hms_ld, hlt_d⟩
+      have hnot_out : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hnot_c; exact hnot_c (by simp [IxVM.Consistency.InLogic, hinfo])
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hrec_cbx; simp only [Ix.Cert.ownerOf, hinfo] at hrec_cbx
+          have hcbx : cb_x = cb₀ := Option.some.inj (hrec_cbx.symm.trans hrec_cb₀)
+          rw [hcbx] at hnot_cbx; exact hnot_cbx hinl_cb
+      have hms_arr : ms_ld[p.idx.toNat]? = some (.defn d_ld) := by simpa using hms_ld
+      exact ⟨hnot_out, by simp [Ix.Kernel.Reader.resolveSource, hinfo, hemp, hrec_cb₀, hcb_ld, hms_arr]⟩
+    | iPrj p =>
+      have hemp := emptyTables_of_constantTablesValid_prj htv_ld (.inr (.inl ⟨p, hinfo⟩))
+      simp only [L1.RawCIRep, hinfo] at hraw_ld
+      obtain ⟨_, lcB, cb_ld, ms_ld, ind_ld, _, hget_B, _, _, hexact_B, _, hcb_ld, hms_ld, _, hraw_ind⟩ := hraw_ld
+      obtain ⟨hhash_B, hblake_B⟩ := hload_ld.1 p.block lcB hget_B
+      have hp_ne : p.block ≠ a := by
+        intro hp_eq
+        rw [hp_eq] at hblake_B
+        have hcb_eq := loaded_recordAt_eq_of_exact_noCollision
+          hexact₀ hload₀ hnoCol hrec_a0 hhash_B hsub_ci hblake_B hexact_B
+        exact hno_muts ms_ld ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld)
+      have hedge : Core.S0.WalkEdge E₀ a p.block :=
+        ⟨c_a0, hrec_a0, .inl ⟨by simp [Ix.Cert.ownerOf, hinfo], hp_ne⟩⟩
+      obtain ⟨hwk_blk, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a p.block hwk_a hedge
+      obtain ⟨cb₀, hrec_cb₀, hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked p.block hwk_blk
+      have hcb_eq : cb₀ = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+        hexact₀ hload₀ hnoCol hrec_cb₀ hhash_B hsub_ci hblake_B hexact_B
+      subst cb_ld
+      have hms_arr : ms_ld[p.idx.toNat]? = some (.indc ind_ld) := by simpa using hms_ld
+      have hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t p.block ms_ld p.idx.toNat := by
+        rcases hchk_or with ⟨ms', hms'_eq, hmem_chk⟩ | hchk_blk
+        · rw [hcb_ld] at hms'_eq; injection hms'_eq with hms'_eq'; subst ms'
+          exact hmem_chk _ (Array.getElem?_eq_some_iff.mp hms_arr).1
+        · obtain ⟨_, _, _, _, _, _, _, _, _, cs_b, _, bytes_b, _,
+            _, _, _, _, hhash_b, hblake_b, _, hL1_b, hsub_b, _, _, _, _⟩ :=
+            checkedAtFull_loadedL1 hbound hchk_blk
+          obtain ⟨c_b, hdec_b, _, _, _, _, hraw_b⟩ := hL1_b
+          have hcb_eq_b := loaded_recordAt_eq_of_exact_noCollision
+            hexact₀ hload₀ hnoCol hrec_cb₀ hhash_b hsub_b hblake_b hdec_b
+          subst c_b; simp only [L1.RawCIRep, hcb_ld] at hraw_b
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, rfl, _⟩ := hraw_ind
+      have hind_safe : ind_ld.isUnsafe = false := by
+        cases Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
+        | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv he _ _ =>
+          simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
+          rcases hv with ⟨_, _, _, _, _, _, _, hu_eq, _, _⟩
+          exact bool_false_of_repBoolField_zero (hu_eq.trans he)
+        | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
+        | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
+        | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
+          simp [Core.kciEnum] at hv
+      have hlt_ind : mutUnsafeCount (.indc ind_ld) < mutConstCount (.indc ind_ld) := by
+        have hle := sum_ctorUnsafeBit_le_length ind_ld.ctors.toList
+        simp only [mutUnsafeCount, mutConstCount, hind_safe]; omega
+      obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ :=
+        ind_block_checked_member_kinds hbound hload₀ hexact₀ hnoCol hrec_cb₀ hcb_ld hms_arr hm_i
+      have hinl_cb : IxVM.Consistency.InLogic cb₀ :=
+        check_block_member_kinds_inLogic hload₀ hexact₀ hnoCol ha_blk ev_mk hsub_mk
+          hrec_cb₀ hcb_ld ⟨.indc ind_ld, List.mem_of_getElem? hms_ld, hlt_ind⟩
+      have hnot_out : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hnot_c; exact hnot_c (by simp [IxVM.Consistency.InLogic, hinfo])
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hrec_cbx; simp only [Ix.Cert.ownerOf, hinfo] at hrec_cbx
+          have hcbx : cb_x = cb₀ := Option.some.inj (hrec_cbx.symm.trans hrec_cb₀)
+          rw [hcbx] at hnot_cbx; exact hnot_cbx hinl_cb
+      exact ⟨hnot_out, by simp [Ix.Kernel.Reader.resolveSource, hinfo, hemp, hrec_cb₀, hcb_ld, hms_arr]⟩
+    | rPrj p =>
+      have hemp := emptyTables_of_constantTablesValid_prj htv_ld (.inr (.inr (.inl ⟨p, hinfo⟩)))
+      simp only [L1.RawCIRep, hinfo] at hraw_ld
+      obtain ⟨_, lcB, cb_ld, ms_ld, rc_ld, _, hget_B, _, _, hexact_B, _, hcb_ld, hms_ld, _, hraw_rc⟩ := hraw_ld
+      obtain ⟨hhash_B, hblake_B⟩ := hload_ld.1 p.block lcB hget_B
+      have hp_ne : p.block ≠ a := by
+        intro hp_eq
+        rw [hp_eq] at hblake_B
+        have hcb_eq := loaded_recordAt_eq_of_exact_noCollision
+          hexact₀ hload₀ hnoCol hrec_a0 hhash_B hsub_ci hblake_B hexact_B
+        exact hno_muts ms_ld ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld)
+      have hedge : Core.S0.WalkEdge E₀ a p.block :=
+        ⟨c_a0, hrec_a0, .inl ⟨by simp [Ix.Cert.ownerOf, hinfo], hp_ne⟩⟩
+      obtain ⟨hwk_blk, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a p.block hwk_a hedge
+      obtain ⟨cb₀, hrec_cb₀, hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked p.block hwk_blk
+      have hcb_eq : cb₀ = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+        hexact₀ hload₀ hnoCol hrec_cb₀ hhash_B hsub_ci hblake_B hexact_B
+      subst cb_ld
+      have hms_arr : ms_ld[p.idx.toNat]? = some (.recr rc_ld) := by simpa using hms_ld
+      have hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t p.block ms_ld p.idx.toNat := by
+        rcases hchk_or with ⟨ms', hms'_eq, hmem_chk⟩ | hchk_blk
+        · rw [hcb_ld] at hms'_eq; injection hms'_eq with hms'_eq'; subst ms'
+          exact hmem_chk _ (Array.getElem?_eq_some_iff.mp hms_arr).1
+        · obtain ⟨_, _, _, _, _, _, _, _, _, cs_b, _, bytes_b, _,
+            _, _, _, _, hhash_b, hblake_b, _, hL1_b, hsub_b, _, _, _, _⟩ :=
+            checkedAtFull_loadedL1 hbound hchk_blk
+          obtain ⟨c_b, hdec_b, _, _, _, _, hraw_b⟩ := hL1_b
+          have hcb_eq_b := loaded_recordAt_eq_of_exact_noCollision
+            hexact₀ hload₀ hnoCol hrec_cb₀ hhash_b hsub_b hblake_b hdec_b
+          subst c_b; simp only [L1.RawCIRep, hcb_ld] at hraw_b
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := hraw_rc
+      have hrc_safe : rc_ld.isUnsafe = false := by
+        cases Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
+        | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv he _ _ =>
+          simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
+          rcases hv with ⟨_, _, _, _, _, _, _, _, _, _, hu_eq, _, _⟩
+          exact bool_false_of_repBoolField_zero (hu_eq.trans he)
+        | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
+        | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
+        | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
+          simp [Core.kciEnum] at hv
+      have hlt_rc : mutUnsafeCount (.recr rc_ld) < mutConstCount (.recr rc_ld) := by
+        simp [mutUnsafeCount, mutConstCount, hrc_safe]
+      obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ :=
+        rec_block_checked_member_kinds hbound hload₀ hexact₀ hnoCol hrec_cb₀ hcb_ld hms_arr hm_i
+      have hinl_cb : IxVM.Consistency.InLogic cb₀ :=
+        check_block_member_kinds_inLogic hload₀ hexact₀ hnoCol ha_blk ev_mk hsub_mk
+          hrec_cb₀ hcb_ld ⟨.recr rc_ld, List.mem_of_getElem? hms_ld, hlt_rc⟩
+      have hnot_out : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hnot_c; exact hnot_c (by simp [IxVM.Consistency.InLogic, hinfo])
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hrec_cbx; simp only [Ix.Cert.ownerOf, hinfo] at hrec_cbx
+          have hcbx : cb_x = cb₀ := Option.some.inj (hrec_cbx.symm.trans hrec_cb₀)
+          rw [hcbx] at hnot_cbx; exact hnot_cbx hinl_cb
+      exact ⟨hnot_out, by simp [Ix.Kernel.Reader.resolveSource, hinfo, hemp, hrec_cb₀, hcb_ld, hms_arr]⟩
+    | cPrj p =>
+      have hemp := emptyTables_of_constantTablesValid_prj htv_ld (.inr (.inr (.inr ⟨p, hinfo⟩)))
+      simp only [L1.RawCIRep, hinfo] at hraw_ld
+      obtain ⟨_, _, lcB, cb_ld, ms_ld, ind_ld, ct_ld, _,
+        hget_B, _, _, hexact_B, _, hcb_ld, hms_ld, hct_ld, _, hraw_ct⟩ := hraw_ld
+      obtain ⟨hhash_B, hblake_B⟩ := hload_ld.1 p.block lcB hget_B
+      have hp_ne : p.block ≠ a := by
+        intro hp_eq
+        rw [hp_eq] at hblake_B
+        have hcb_eq := loaded_recordAt_eq_of_exact_noCollision
+          hexact₀ hload₀ hnoCol hrec_a0 hhash_B hsub_ci hblake_B hexact_B
+        exact hno_muts ms_ld ((congrArg Ixon.Constant.info hcb_eq).trans hcb_ld)
+      have hedge : Core.S0.WalkEdge E₀ a p.block :=
+        ⟨c_a0, hrec_a0, .inl ⟨by simp [Ix.Cert.ownerOf, hinfo], hp_ne⟩⟩
+      obtain ⟨hwk_blk, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a p.block hwk_a hedge
+      obtain ⟨cb₀, hrec_cb₀, hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked p.block hwk_blk
+      have hcb_eq : cb₀ = cb_ld := loaded_recordAt_eq_of_exact_noCollision
+        hexact₀ hload₀ hnoCol hrec_cb₀ hhash_B hsub_ci hblake_B hexact_B
+      subst cb_ld
+      have hms_arr : ms_ld[p.idx.toNat]? = some (.indc ind_ld) := by simpa using hms_ld
+      have hct_arr : ind_ld.ctors[p.cidx.toNat]? = some ct_ld := by simpa using hct_ld
+      have hm_i : Claim.MutsMemberCheckedAtFull calls bAddr t p.block ms_ld p.idx.toNat := by
+        rcases hchk_or with ⟨ms', hms'_eq, hmem_chk⟩ | hchk_blk
+        · rw [hcb_ld] at hms'_eq; injection hms'_eq with hms'_eq'; subst ms'
+          exact hmem_chk _ (Array.getElem?_eq_some_iff.mp hms_arr).1
+        · obtain ⟨_, _, _, _, _, _, _, _, _, cs_b, _, bytes_b, _,
+            _, _, _, _, hhash_b, hblake_b, _, hL1_b, hsub_b, _, _, _, _⟩ :=
+            checkedAtFull_loadedL1 hbound hchk_blk
+          obtain ⟨c_b, hdec_b, _, _, _, _, hraw_b⟩ := hL1_b
+          have hcb_eq_b := loaded_recordAt_eq_of_exact_noCollision
+            hexact₀ hload₀ hnoCol hrec_cb₀ hhash_b hsub_b hblake_b hdec_b
+          subst c_b; simp only [L1.RawCIRep, hcb_ld] at hraw_b
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, rfl, _⟩ := hraw_ct
+      have hct_safe : ct_ld.isUnsafe = false := by
+        cases Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
+        | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv he _ _ =>
+          simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
+          rcases hv with ⟨_, _, _, _, _, _, _, _, _, hu_eq⟩
+          exact bool_false_of_repBoolField_zero (hu_eq.trans he)
+        | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
+        | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
+        | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
+          simp [Core.kciEnum] at hv
+      have hlt_ind : mutUnsafeCount (.indc ind_ld) < mutConstCount (.indc ind_ld) := by
+        have hlt_ct := sum_ctorUnsafeBit_lt_length_of_mem (List.mem_of_getElem? hct_ld) hct_safe
+        simp only [mutUnsafeCount, mutConstCount]
+        cases ind_ld.isUnsafe <;> omega
+      obtain ⟨x_blk, r_mk, h_mk, h'_mk, cs_mk, ha_blk, ev_mk, hsub_mk⟩ :=
+        ind_block_checked_member_kinds hbound hload₀ hexact₀ hnoCol hrec_cb₀ hcb_ld hms_arr hm_i
+      have hinl_cb : IxVM.Consistency.InLogic cb₀ :=
+        check_block_member_kinds_inLogic hload₀ hexact₀ hnoCol ha_blk ev_mk hsub_mk
+          hrec_cb₀ hcb_ld ⟨.indc ind_ld, List.mem_of_getElem? hms_ld, hlt_ind⟩
+      have hsafe_blk : ¬ IxVM.Consistency.OutsideLogicAt E₀ p.block := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
+        · have hcx : c_x = cb₀ := Option.some.inj (hrec_x.symm.trans hrec_cb₀)
+          rw [hcx] at hnot_c; exact hnot_c hinl_cb
+        · have hcx : c_x = cb₀ := Option.some.inj (hrec_x.symm.trans hrec_cb₀)
+          rw [hcx] at hrec_cbx; simp only [Ix.Cert.ownerOf, hcb_ld] at hrec_cbx
+          have hcbx : cb_x = cb₀ := Option.some.inj (hrec_cbx.symm.trans hrec_cb₀)
+          rw [hcbx] at hnot_cbx; exact hnot_cbx hinl_cb
+      have hcidx_eq_nat : ct_ld.cidx.toNat = p.cidx.toNat :=
+        indBlockCtorIdx_of_exact_noCollision hbound hload₀ hexact₀ hnoCol
+          hwk_blk hsafe_blk hrec_cb₀ hcb_ld hms_arr hct_arr
+      have hcidx_eq : ct_ld.cidx = p.cidx := UInt64.toNat_inj.mp hcidx_eq_nat
+      have hnot_out : ¬ IxVM.Consistency.OutsideLogicAt E₀ a := by
+        rintro ⟨c_x, hrec_x, hnot_c | ⟨cb_x, hrec_cbx, hnot_cbx⟩⟩
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hnot_c; exact hnot_c (by simp [IxVM.Consistency.InLogic, hinfo])
+        · have hcx : c_x = c_a0 := Option.some.inj (hrec_x.symm.trans hrec_a0)
+          rw [hcx] at hrec_cbx; simp only [Ix.Cert.ownerOf, hinfo] at hrec_cbx
+          have hcbx : cb_x = cb₀ := Option.some.inj (hrec_cbx.symm.trans hrec_cb₀)
+          rw [hcbx] at hnot_cbx; exact hnot_cbx hinl_cb
+      exact ⟨hnot_out,
+        by simp [Ix.Kernel.Reader.resolveSource, hinfo, hemp, hrec_cb₀,
+          hcb_ld, hms_arr, hct_arr, hcidx_eq, guard, pure]⟩
+  refine ⟨hres_and_safe.1, fun c_a hrec_a => ?_⟩
+  have heq : c_a = c_a0 := Option.some.inj (hrec_a.symm.trans hrec_a0)
+  rwa [heq]
+
+/-- Along any `L1.RawConvExpr` evaluated by `KernelCheck::safe_refs_only`, every `.ref`-only
+reachable constant index `i ∈ reachRefOnlyExpr ... e` with `c.refs[i]? = some a` satisfies
+`SafeRefTargetChecked calls a` unconditionally when `r = .field 1`. -/
+theorem safe_refs_only_raw_checked
+    {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)} {h₀ : Heap F}
+    {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h₀ bound e kp) :
+    ∀ (n : Nat) {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)},
+      n ≤ c.sharing.toList.length →
+      (bound ≤ n ∨ (bound = 4294967295 ∧ n = c.sharing.toList.length)) →
+      Heap.Extends h₀ h →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h r h' cs →
+      (r = .field 0 ∨ r = .field 1) ∧
+      Heap.Extends h h' ∧
+      (r = .field 1 →
+        ∀ {i : Nat} {a : _root_.Address},
+          i ∈ reachRefOnlyExpr (buildReachRefOnlyTbl (c.sharing.toList.take n)) e →
+          c.refs[i]? = some a →
+          SafeRefTargetChecked calls a) := by
+  induction raw with
+  | var _ cell =>
+    intro n h h' r cs _ _ hext _ ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | BVar _ ld hr hh' _ =>
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
+    | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | sort _ _ _ cell =>
+    intro n h h' r cs _ _ hext _ ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Srt _ ld hr hh' _ =>
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
+    | BVar _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | str _ _ _ _ _ _ _ cell | nat _ _ _ _ _ _ _ cell =>
+    intro n h h' r cs _ _ hext _ ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Lit _ ld hr hh' _ =>
+      exact ⟨Or.inr hr, by rw [hh'], fun _ _ _ hm => nomatch hm⟩
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | recur _ _ _ ra _ _ cell =>
+    intro n h h' r cs _ _ hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Const x_caddr _ v63 m64 p71 cs77 y89 _ ld ev79 ld73 ev101 op95 hc110 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨rfl, _⟩
+      have hsub77 : ∀ cl ∈ cs77, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc110]; simp [hcl])
+      obtain ⟨ext_ci, _, _, _, _, _, _, _, _, _, v_ld, hld_v, hraw_ld⟩ :=
+        L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub77)
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra) ev79
+      have hv_eq : v_ld = v63 := Except.ok.inj (hld_v.symm.trans ld73)
+      subst hv_eq
+      obtain ⟨hh', _, hy89, _, _⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev101
+      subst hh'
+      obtain ⟨hr_bool, _⟩ := sub_one_bool_dichot hy89 op95
+      exact ⟨hr_bool, ext_ci, fun _ _ _ hm => nomatch hm⟩
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | @ref bound addr rIdx uIdxs a' d ap lsp ls _ href hd ra _ _ cell =>
+    intro n h h' r cs _ _ hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Const x_caddr _ v63 m64 p71 cs77 y89 cs99 ld ev79 ld73 ev101 op95 hc110 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨rfl, _⟩
+      have hsub77 : ∀ cl ∈ cs77, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc110]; simp [hcl])
+      obtain ⟨ext_ci, _, _, _, _, _, _, _, _, _, v_ld, hld_v, hraw_ld⟩ :=
+        L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub77)
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra) ev79
+      have hv_eq : v_ld = v63 := Except.ok.inj (hld_v.symm.trans ld73)
+      subst hv_eq
+      obtain ⟨hh', _, hy89, _, _⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev101
+      subst hh'
+      obtain ⟨hr_bool, hy0_of_r1⟩ := sub_one_bool_dichot hy89 op95
+      refine ⟨hr_bool, ext_ci, fun hr1 {i a} hi hc_ref => ?_⟩
+      have hy0 : y89 = .field 0 := hy0_of_r1 hr1
+      subst hy0
+      simp only [reachRefOnlyExpr, List.mem_singleton] at hi
+      subst hi
+      have href_arr : c.refs[rIdx.toNat]? = some a' := by simpa using href
+      have ha_eq : a' = a := Option.some.inj (href_arr.symm.trans hc_ref)
+      exact ⟨d, ap, p71, v63, h, m64, m64, cs77, cs99,
+        hd.trans ha_eq, Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra,
+        ev79, hsub77, ld73, ev101⟩
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | prj _ _ _ _ _ _ cell ih =>
+    intro n h h' r cs hn hbnd hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Proj _ _ x_e1 cs409 ld ev411 hc420 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨_, _, rfl⟩
+      have hsub409 : ∀ cl ∈ cs409, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc420]; simp [hcl])
+      exact ih n hn hbnd hext hsub409 ev411
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
+    | Lit _ ld _ _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | app _ _ _ _ cell ih1 ih2 =>
+    intro n h h' r cs hn hbnd hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | App x_e1 x_e2 v137 m138 cs148 y156 cs167 ld ev150 ev169 op162 hc182 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨rfl, rfl⟩
+      have hsub148 : ∀ cl ∈ cs148, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc182]; simp [hcl])
+      have hsub167 : ∀ cl ∈ cs167, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc182]; simp [hcl])
+      obtain ⟨hb1, ext1, hres1⟩ := ih1 n hn hbnd hext hsub148 ev150
+      obtain ⟨hb2, ext2, hres2⟩ := ih2 n hn hbnd (hext.trans ext1) hsub167 ev169
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op162
+      refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
+      obtain ⟨hv1, hv2⟩ := hand hr1
+      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      rcases hi with hi1 | hi2
+      · exact hres1 hv1 hi1 hc_ref
+      · exact hres2 hv2 hi2 hc_ref
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | Lam _ _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | lam _ _ _ _ _ cell ih1 ih2 =>
+    intro n h h' r cs hn hbnd hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Lam _ x_e1 x_e2 v204 m205 cs215 y223 cs234 ld ev217 ev236 op229 hc250 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨_, rfl, rfl⟩
+      have hsub215 : ∀ cl ∈ cs215, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc250]; simp [hcl])
+      have hsub234 : ∀ cl ∈ cs234, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc250]; simp [hcl])
+      obtain ⟨hb1, ext1, hres1⟩ := ih1 n hn hbnd hext hsub215 ev217
+      obtain ⟨hb2, ext2, hres2⟩ := ih2 n hn hbnd (hext.trans ext1) hsub234 ev236
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op229
+      refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
+      obtain ⟨hv1, hv2⟩ := hand hr1
+      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      rcases hi with hi1 | hi2
+      · exact hres1 hv1 hi1 hc_ref
+      · exact hres2 hv2 hi2 hc_ref
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | all _ _ _ _ _ cell ih1 ih2 =>
+    intro n h h' r cs hn hbnd hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Forall _ x_e1 x_e2 v272 m273 cs283 y291 cs302 ld ev285 ev304 op297 hc318 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨_, rfl, rfl⟩
+      have hsub283 : ∀ cl ∈ cs283, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc318]; simp [hcl])
+      have hsub302 : ∀ cl ∈ cs302, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc318]; simp [hcl])
+      obtain ⟨hb1, ext1, hres1⟩ := ih1 n hn hbnd hext hsub283 ev285
+      obtain ⟨hb2, ext2, hres2⟩ := ih2 n hn hbnd (hext.trans ext1) hsub302 ev304
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op297
+      refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
+      obtain ⟨hv1, hv2⟩ := hand hr1
+      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      rcases hi with hi1 | hi2
+      · exact hres1 hv1 hi1 hc_ref
+      · exact hres2 hv2 hi2 hc_ref
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | letE _ _ _ _ _ _ _ cell ih1 ih2 ih3 =>
+    intro n h h' r cs hn hbnd hext hsub ev
+    have cell_h := hext.getElem?_eq cell
+    cases Obs.«KernelCheck::safe_refs_only».obs ev with
+    | Let x_e1 x_e2 x_e3 m343 cs353 x363 v364 m365 y371 cs382 y390 cs401
+        ld ev355 ev384 op377 ev403 op396 hc418 =>
+      have hxs := (Core.load_cell cell_h ld).2
+      simp only [List.cons.injEq, and_true] at hxs
+      rcases hxs with ⟨rfl, rfl, rfl⟩
+      have hsub353 : ∀ cl ∈ cs353, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc418]; simp [hcl])
+      have hsub382 : ∀ cl ∈ cs382, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc418]; simp [hcl])
+      have hsub401 : ∀ cl ∈ cs401, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc418]; simp [hcl])
+      obtain ⟨hb1, ext1, hres1⟩ := ih1 n hn hbnd hext hsub353 ev355
+      obtain ⟨hb2, ext2, hres2⟩ := ih2 n hn hbnd (hext.trans ext1) hsub382 ev384
+      obtain ⟨hb12, hand12⟩ := mul_bool_dichot hb1 hb2 op377
+      obtain ⟨hb3, ext3, hres3⟩ := ih3 n hn hbnd ((hext.trans ext1).trans ext2) hsub401 ev403
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb12 hb3 op396
+      refine ⟨hr_bool, (ext1.trans ext2).trans ext3, fun hr1 {i a} hi hc_ref => ?_⟩
+      obtain ⟨hv12, hv3⟩ := hand hr1
+      obtain ⟨hv1, hv2⟩ := hand12 hv12
+      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      rcases hi with (hi1 | hi2) | hi3
+      · exact hres1 hv1 hi1 hc_ref
+      · exact hres2 hv2 hi2 hc_ref
+      · exact hres3 hv3 hi3 hc_ref
+    | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
+    | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+      exact (Core.load_cell_ne cell_h ld (by decide)).elim
+  | @share bound idx s kp hidx hsh _ ihs =>
+    intro n h h' r cs _ hbnd hext hsub ev
+    have hidx_len : idx.toNat < c.sharing.toList.length :=
+      (List.getElem?_eq_some_iff.mp hsh).1
+    have hidx_n : idx.toNat < n := by
+      rcases hbnd with hle | ⟨_, hn_eq⟩ <;> omega
+    have hget := buildReachRefOnlyTbl_take_getElem? c.sharing.toList hidx_n hsh
+    obtain ⟨hb, ext, hres⟩ :=
+      ihs idx.toNat (Nat.le_of_lt hidx_len) (.inl (Nat.le_refl _)) hext hsub ev
+    refine ⟨hb, ext, fun hr1 {i a} hi hc_ref => ?_⟩
+    simp only [reachRefOnlyExpr, hget, Option.getD_some] at hi
+    exact hres hr1 hi hc_ref
+
+/-- Unconditional `.ref`-only target safety: every `i ∈ reachRefOnlyExpr ... e` on an expression
+accepted by `KernelCheck::safe_refs_only` satisfies `SafeRefTargetChecked calls a`. -/
+theorem safe_refs_only_refOnly_checked
+    {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
+    {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (hbound : IxVM.Consistency.Bounded calls)
+    (hbnd : bound ≤ c.sharing.toList.length ∨ bound = 4294967295)
+    (ev : ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
+    ∀ {i : Nat} {a : _root_.Address},
+      i ∈ reachRefOnlyExpr (buildReachRefOnlyTbl c.sharing.toList) e →
+      c.refs[i]? = some a →
+      SafeRefTargetChecked calls a := by
+  have hbnd' : bound ≤ c.sharing.toList.length ∨
+      (bound = 4294967295 ∧ c.sharing.toList.length = c.sharing.toList.length) := by
+    rcases hbnd with hle | heq
+    · exact .inl hle
+    · exact .inr ⟨heq, rfl⟩
+  intro i a hi hc_ref
+  rw [← List.take_length (l := c.sharing.toList)] at hi
+  exact (safe_refs_only_raw_checked hbound raw
+    c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2
+    rfl hi hc_ref
+
+/-- Exact circuit expression-safety premise corresponding to `KExprNode::Proj(taddr, _, e1)`
+checking `taddr` in `KernelCheck::safe_refs_only` (`.ref` nodes already satisfy
+`SafeRefTargetChecked` unconditionally by `safe_refs_only_refOnly_checked`), together with
+recursor `rules` / modeled `check_recs` safety. -/
+structure CircuitExprSafeRefs : Prop where
+  expr_refs_checked :
+    ∀ {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+      {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
+      {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
+      IxVM.Consistency.Bounded calls →
+      (bound ≤ c.sharing.toList.length ∨ bound = 4294967295) →
+      ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      ∀ {i : Nat} {a : _root_.Address},
+        i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
+        c.refs[i]? = some a →
+        SafeRefTargetChecked calls a
+
+/-- Full `SafeRefsInputs.safe_expr_refs_resolve` derived from `CircuitExprSafeRefs` and our
+unconditional `safeRefTargetChecked_resolve_and_not_outside` theorem. -/
+theorem safe_expr_refs_resolve_of_circuitExprSafeRefs
+    (hCircuit : CircuitExprSafeRefs) :
+    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+      {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
+      {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+      {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
+      {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
+      IxVM.Consistency.Bounded calls →
+      IxVM.Consistency.LoadedBy calls E₀ →
+      L1.EnvDecoded E₀ →
+      ¬ V.HashedCollision extra calls →
+      (bound ≤ c.sharing.toList.length ∨ bound = 4294967295) →
+      ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      ∀ {i : Nat} {a : _root_.Address},
+        i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
+        c.refs[i]? = some a →
+        WkAll calls bAddr t E₀ a →
+        ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
+          ∀ c_a, Ix.Cert.recordAt E₀ a = some c_a →
+            (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true := by
+  intro calls bAddr t E₀ V extra c recurAddrs blobs h h' cs bound e kp
+    hbound hload₀ hexact₀ hnoCol hbnd ev hsub raw i a hi hc_ref hwk_a
+  exact safeRefTargetChecked_resolve_and_not_outside hbound hload₀ hexact₀ hnoCol
+    (hCircuit.expr_refs_checked hbound hbnd ev hsub raw hi hc_ref) hwk_a
+
 /-! ## Section 3: Role-Prefix Order, Reachability & `preparePrelude` Splitting -/
 
 private theorem idxOf_append_left [BEq α] [LawfulBEq α] :
@@ -1597,39 +3095,12 @@ theorem preparePrelude_append_of_hoist_id
 
 /-! ## Section 4: Minimal Residual Isolation (`SafeExprRefsGap`, `safeRefsInputs`) -/
 
-/-- Minimal residual obligations on `SafeRefsInputs` beyond the unconditional theorems in
-Sections 1–3:
-1. **`safe_expr_refs_resolve`**:
-   - Circuit expression safety in `IxVM/IxVM/Source/KernelCheck.lean:49`:
-     `KExprNode::Proj(_, _, e1)` recurses only on `e1` without calling `get_ci`/`is_unsafe_ci` on
-     the projection type address `taddr` (`.prj idx _ inner`, whereas `reachRefsExpr` includes
-     `idx.toNat`).
-2. **`rolePrefixStreamReadBare_rest` & `indRecRecordReadBare`**:
-   - Separating `decls_role_full` (`StreamRead` / `prepareWith`) from `decls_role_bare`
-     (`StreamReadBare` / `prepareBare` on the pruned role prefix), together with bare `.recr` /
-     inductive `.muts` `L1.RecordReadsAs` lowering. -/
+/-- Minimal residual obligations on `SafeRefsInputs` beyond `CircuitExprSafeRefs` and the
+unconditional theorems in Sections 1–3:
+separating `decls_role_full` (`StreamRead` / `prepareWith`) from `decls_role_bare`
+(`StreamReadBare` / `prepareBare` on the pruned role prefix), together with bare `.recr` /
+inductive `.muts` `L1.RecordReadsAs` lowering. -/
 structure SafeExprRefsGap : Prop where
-  safe_expr_refs_resolve :
-    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
-      {E₀ : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
-      {c : Ixon.Constant} {recurAddrs : List _root_.Address}
-      {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
-      {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
-      IxVM.Consistency.Bounded calls →
-      IxVM.Consistency.LoadedBy calls E₀ →
-      L1.EnvDecoded E₀ →
-      ¬ V.HashedCollision extra calls →
-      (bound ≤ c.sharing.toList.length ∨ bound = 4294967295) →
-      ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h (.field 1) h' cs →
-      (∀ cl ∈ cs, cl ∈ calls) →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
-      ∀ {i : Nat} {a : _root_.Address},
-        i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
-        c.refs[i]? = some a →
-        WkAll calls bAddr t E₀ a →
-        ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧
-          ∀ c_a, Ix.Cert.recordAt E₀ a = some c_a →
-            (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true
   rolePrefixStreamReadBare_rest :
     ∀ {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
       {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
@@ -1765,9 +3236,10 @@ structure SafeExprRefsGap : Prop where
             ci₀ ∈ IxVM.Consistency.installs d ∧
             ci₀.name = Core.keyOf t x ∧
             L1.RecordReadsAs t E_core x c_x ci₀)
-/-- Assemble `SafeRefsInputs` from the unconditional theorems in Sections 1–3 and `SafeExprRefsGap`. -/
-theorem safeRefsInputs (hGap : SafeExprRefsGap) : SafeRefsInputs where
-  safe_expr_refs_resolve := hGap.safe_expr_refs_resolve
+/-- Assemble `SafeRefsInputs` from `CircuitExprSafeRefs`, the unconditional theorems in
+Sections 1–3, and `SafeExprRefsGap`. -/
+theorem safeRefsInputs (hCircuit : CircuitExprSafeRefs) (hGap : SafeExprRefsGap) : SafeRefsInputs where
+  safe_expr_refs_resolve := safe_expr_refs_resolve_of_circuitExprSafeRefs hCircuit
   rolePrefixStreamReadBare := by
     intro V extra calls b t E₀ E E_role E_core limits order order_role envA pre st_role decls_role
       seeds hadm hbound hload₀ hnoCol hexact_c hnoInt_c hrec_sub hblob_sub hagree hblob_r
