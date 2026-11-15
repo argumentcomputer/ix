@@ -649,9 +649,11 @@ theorem l7_of_declsStrong
   intro _h1 _hDecls hClaim d value heap calls ev hbound bytes c hde hpack hscope V seeds b hseeds hRT
   rcases hClaim d value heap calls ev hbound bytes c hde hpack hscope V seeds b hseeds hRT with
     hcol | ⟨t, E₀, hadm, hload, hseedOk, hwalk⟩
-  · exact Or.inl (ReaderFootprint.collision_into_readerImages hcol)
+  · exact Or.inl (ReaderFootprint.collision_into_readerImages
+      (V := V) (claimBytes := bytes) (bindingBytes := b.bytes) (calls := calls) hcol)
   · by_cases hcol : V.HashedCollision (bytes :: b.bytes :: IxVM.Consistency.committedImages) calls
-    · exact Or.inl (ReaderFootprint.collision_into_readerImages hcol)
+    · exact Or.inl (ReaderFootprint.collision_into_readerImages
+        (V := V) (claimBytes := bytes) (bindingBytes := b.bytes) (calls := calls) hcol)
     · exact Or.inr (consistentRead_of_declsStrong hStrong hBridge hbound hscope hseeds hRT
         hadm hload hseedOk hwalk
         (List.mem_cons_of_mem _ List.mem_cons_self)
