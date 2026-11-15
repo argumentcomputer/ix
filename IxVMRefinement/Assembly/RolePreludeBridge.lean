@@ -88,8 +88,9 @@ private theorem erase_len_succ {β : Type} [DecidableEq β] :
     by_cases h : y == x
     · simp [h]
     · simp only [h, Bool.false_eq_true, ↓reduceIte, List.length_cons]
-      rcases List.mem_cons.mp hx with rfl | hmem
-      · exact absurd (beq_self_eq_true y) h
+      rcases List.mem_cons.mp hx with hxy | hmem
+      · subst hxy
+        exact absurd (beq_self_eq_true _) h
       · exact congrArg (· + 1) (erase_len_succ hmem)
 
 private theorem mem_erase_of_ne {β : Type} [DecidableEq β] :
@@ -119,6 +120,7 @@ private theorem nodup_len_le_of_subset {β : Type} [DecidableEq β] :
       exact mem_erase_of_ne hne (hsub v (List.mem_cons_of_mem _ hv))
     have ih := nodup_len_le_of_subset hnd.2 hsub'
     have hlen := erase_len_succ hxW
+    rw [List.length_cons]
     omega
 
 private theorem filterMap_eq_len_all_some {α β : Type} :
@@ -126,14 +128,14 @@ private theorem filterMap_eq_len_all_some {α β : Type} :
       (l.filterMap g).length = l.length → ∀ u ∈ l, ∃ v, g u = some v
   | [], _, _, _, hu => nomatch hu
   | x :: xs, g, hlen, u, hu => by
-    simp only [List.filterMap_cons, List.length_cons] at hlen
+    rw [List.filterMap_cons, List.length_cons] at hlen
     cases hgx : g x with
     | none =>
-      rw [hgx] at hlen
+      simp only [hgx] at hlen
       have hle := filterMap_len_le g xs
       omega
     | some v =>
-      rw [hgx, List.length_cons] at hlen
+      simp only [hgx, List.length_cons] at hlen
       have hlen' : (xs.filterMap g).length = xs.length := by omega
       rcases List.mem_cons.mp hu with rfl | hmem
       · exact ⟨v, hgx⟩
@@ -160,10 +162,10 @@ private theorem pigeonhole_filterMap {α β : Type} [DecidableEq β]
   intro u hu
   obtain ⟨v, hgu⟩ := filterMap_eq_len_all_some heq u hu
   dsimp only [g] at hgu
-  cases hfu : f u with
-  | none => rw [hfu] at hgu; cases hgu
+  generalize hfu : f u = opt at hgu
+  cases opt with
+  | none => cases hgu
   | some v' =>
-    rw [hfu] at hgu
     by_cases hv' : v' ∈ V
     · simp only [hv', ↓reduceIte, Option.some.injEq] at hgu
       subst hgu
@@ -177,10 +179,10 @@ private def validPreRefs : List (ConstRef _root_.Address) :=
     match c.info with
     | .axio _ | .quot _ | .recr _ => [.member a 0]
     | .muts ms =>
-      (List.range ms.size).flatMap fun i =>
-        match ms[i]? with
+      (List.range ms.toList.length).flatMap fun i =>
+        match IxVM.Refinement.RoleVal.nth? ms.toList i with
         | some (.indc ind) =>
-          .member a i :: (List.range ind.ctors.size).map (fun j => .ctor a i j)
+          .member a i :: (List.range ind.ctors.toList.length).map (fun j => .ctor a i j)
         | _ => []
     | _ => []
 
@@ -230,7 +232,7 @@ private theorem committedPre_all_classified :
       preRowClassified a c) = true := by
   decide +kernel
 
-/-! ## Store & `memberKey` helpers on `contextOf t committedPrelude [] ev blobs` -/
+/-! ## Store & `memberKey` helpers on `contextOf t recs [] evs blobs` -/
 
 private theorem lookup_mem {α β : Type} [BEq α] [LawfulBEq α] :
     ∀ {l : List (α × β)} {a : α} {b : β}, l.lookup a = some b → (a, b) ∈ l
@@ -260,7 +262,7 @@ private theorem prelude_context_store_mem {t : Ix.Kernel.RoleTable}
     rw [h1] at hs
     injection hs with heq; subst heq
     rw [Ix.Cert.ReaderClosureKeys.recordMap_get] at h1
-    exact Array.mem_append_left _ (Array.mem_toList_iff.mpr (lookup_mem h1))
+    exact Array.mem_append_left _ (Array.mem_toList_iff.mp (lookup_mem h1))
   | none =>
     rw [h1] at hs
     cases h2 : (recordMap evs)[a]? with
@@ -268,7 +270,7 @@ private theorem prelude_context_store_mem {t : Ix.Kernel.RoleTable}
       rw [h2] at hs
       injection hs with heq; subst heq
       rw [Ix.Cert.ReaderClosureKeys.recordMap_get] at h2
-      exact Array.mem_append_right _ (Array.mem_toList_iff.mpr (lookup_mem h2))
+      exact Array.mem_append_right _ (Array.mem_toList_iff.mp (lookup_mem h2))
     | none =>
       rw [h2] at hs
       cases hs
@@ -328,13 +330,17 @@ private theorem memberKey_role_exact_of_no_reconstruct {cx : Ctx .anon}
           simp [hi, declined, throw, throwThe, MonadExceptOf.throw, pure, Except.pure] at h
 
 private theorem resolve_preStorePure_eq_context {t : Ix.Kernel.RoleTable}
-    {evs : Array (_root_.Address × Ixon.Constant)}
+    {recs evs : Array (_root_.Address × Ixon.Constant)}
     {blobs : List (_root_.Address × ByteArray)}
+    (hrecs_list : recs.toList = IxVM.Refinement.RoleVal.committedPreludeList)
     {a : _root_.Address} {c : Ixon.Constant}
     (hc : (a, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList) :
-    resolve (contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs).store a =
+    resolve (contextOf (md := .anon) t recs [] evs blobs).store a =
       resolve IxVM.Refinement.RoleVal.preStorePure a := by
-  let cx := contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs
+  let cx := contextOf (md := .anon) t recs [] evs blobs
+  have hnodup_recs : (recs.toList.map Prod.fst).Nodup := by
+    rw [hrecs_list]
+    exact IxVM.Refinement.RoleVal.committedPreAddrs_nodup
   have hstore_eq : ∀ {b : _root_.Address}, b ∈ IxVM.Refinement.RoleVal.committedPreAddrs →
       cx.store b = IxVM.Refinement.RoleVal.preStorePure b := by
     intro b hb
@@ -342,26 +348,29 @@ private theorem resolve_preStorePure_eq_context {t : Ix.Kernel.RoleTable}
     rcases cb with ⟨b', cb⟩
     dsimp only at hcb
     obtain ⟨hcb_mem, rfl⟩ := hcb
+    have hcb_recs : (b', cb) ∈ recs := by
+      apply Array.mem_toList_iff.mp
+      rwa [hrecs_list]
     have hcx_b : cx.store b' = some cb :=
-      Ix.Cert.ReaderClosureKeys.context_input t IxVM.Refinement.RoleVal.committedPrelude evs [] blobs
-        (fun _ => none) (fun _ _ => none)
-        IxVM.Refinement.RoleVal.committedPreAddrs_nodup
-        (Array.mem_toList_iff.mp hcb_mem)
+      Ix.Cert.ReaderClosureKeys.context_input t recs evs [] blobs
+        (fun _ => none) (fun _ _ => none) hnodup_recs hcb_recs
     have hpure_b : IxVM.Refinement.RoleVal.preStorePure b' = some cb := by
       rw [IxVM.Refinement.RoleVal.preStorePure_eq]
       exact Ix.Cert.ReaderClosureKeys.lookup_of_nodup
         IxVM.Refinement.RoleVal.committedPreAddrs_nodup hcb_mem
     rw [hcx_b, hpure_b]
-  have ha_in : a ∈ IxVM.Refinement.RoleVal.committedPreAddrs :=
-    List.mem_map.mpr ⟨(a, c), hc, rfl⟩
-  have hclosed := List.all_eq_true.mp IxVM.Refinement.RoleVal.preRefsAndProjClosed (a, c) hc
+  have hclosed_all : IxVM.Refinement.RoleVal.preRefsAndProjClosedBool = true :=
+    IxVM.Refinement.RoleVal.preRefsAndProjClosed
+  unfold IxVM.Refinement.RoleVal.preRefsAndProjClosedBool at hclosed_all
+  have hclosed := List.all_eq_true.mp hclosed_all (a, c) hc
   dsimp only at hclosed
-  have hproj_closed := (Bool.and_eq_true.mp hclosed).2
+  have hproj_closed := (Bool.and_eq_true_iff.mp hclosed).2
+  have hc_recs : (a, c) ∈ recs := by
+    apply Array.mem_toList_iff.mp
+    rwa [hrecs_list]
   have hcx_a : cx.store a = some c :=
-    Ix.Cert.ReaderClosureKeys.context_input t IxVM.Refinement.RoleVal.committedPrelude evs [] blobs
-      (fun _ => none) (fun _ _ => none)
-      IxVM.Refinement.RoleVal.committedPreAddrs_nodup
-      (Array.mem_toList_iff.mp hc)
+    Ix.Cert.ReaderClosureKeys.context_input t recs evs [] blobs
+      (fun _ => none) (fun _ _ => none) hnodup_recs hc_recs
   have hpure_a : IxVM.Refinement.RoleVal.preStorePure a = some c := by
     rw [IxVM.Refinement.RoleVal.preStorePure_eq]
     exact Ix.Cert.ReaderClosureKeys.lookup_of_nodup
@@ -386,40 +395,46 @@ private theorem mem_validPreRefs_indc {owner : _root_.Address} {c : Ixon.Constan
     (hmi : ms[i]? = some (.indc ind)) :
     ConstRef.member owner i ∈ validPreRefs ∧
       ∀ j < ind.ctors.size, ConstRef.ctor owner i j ∈ validPreRefs := by
-  have hi_lt : i < ms.size := by
+  have hi_lt : i < ms.toList.length := by
+    rw [Array.length_toList]
     by_contra hge
     rw [Array.getElem?_eq_none (Nat.le_of_not_lt hge)] at hmi
     cases hmi
+  have hnth : IxVM.Refinement.RoleVal.nth? ms.toList i = some (.indc ind) := by
+    rw [IxVM.Refinement.RoleVal.nth?_eq]
+    simpa using hmi
   refine ⟨?_, fun j hj => ?_⟩
   · unfold validPreRefs
     refine List.mem_flatMap.mpr ⟨(owner, c), hc, ?_⟩
     rw [hci]
     refine List.mem_flatMap.mpr ⟨i, List.mem_range.mpr hi_lt, ?_⟩
-    rw [hmi]
+    rw [hnth]
     exact List.mem_cons_self
-  · unfold validPreRefs
+  · have hj_lt : j < ind.ctors.toList.length := by rwa [Array.length_toList]
+    unfold validPreRefs
     refine List.mem_flatMap.mpr ⟨(owner, c), hc, ?_⟩
     rw [hci]
     refine List.mem_flatMap.mpr ⟨i, List.mem_range.mpr hi_lt, ?_⟩
-    rw [hmi]
-    exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨j, List.mem_range.mpr hj, rfl⟩)
+    rw [hnth]
+    exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨j, List.mem_range.mpr hj_lt, rfl⟩)
 
 private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
-    {evs : Array (_root_.Address × Ixon.Constant)}
+    {recs evs : Array (_root_.Address × Ixon.Constant)}
     {blobs : List (_root_.Address × ByteArray)}
+    (hrecs_list : recs.toList = IxVM.Refinement.RoleVal.committedPreludeList)
     (hev_defn : ∀ p ∈ evs.toList, ∃ d, p.2.info = .defn d)
     {st : State .anon} {owner : _root_.Address} {c : Ixon.Constant}
     {ms : Array Ixon.MutConst} {r : Read .anon}
     (hc : (owner, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList)
     (hci : c.info = .muts ms)
     (h : readInductive
-      (contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs)
+      (contextOf (md := .anon) t recs [] evs blobs)
       st owner c ms = .ok r) :
     ∃ gens d, r.decls.toList = gens ++ [d] ∧ r.generated = gens.length ∧
       ∀ k ∈ d.names, ∃ ref ∈ validPreRefs,
-        (contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs).memberKey ref =
+        (contextOf (md := .anon) t recs [] evs blobs).memberKey ref =
           .ok k := by
-  let cx := contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs
+  let cx := contextOf (md := .anon) t recs [] evs blobs
   change readInductive cx st owner c ms = .ok r at h
   unfold readInductive at h
   split at h
@@ -437,7 +452,7 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
                 | _ => none
             have hindcs_mem : ∀ x ∈ indcs.toList, ms[x.1]? = some (.indc x.2) := by
               intro x hx
-              obtain ⟨i, _, hfm⟩ := List.mem_filterMap.mp (by simpa [indcs] using hx)
+              obtain ⟨i, _, hfm⟩ := Array.mem_filterMap.mp (Array.mem_toList_iff.mp hx)
               cases hmi : ms[i]? with
               | none => simp [hmi] at hfm
               | some m =>
@@ -474,7 +489,6 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
                   (fun y hy t0 q hq => ?_) (fun e he => .inl he) hs1
                 have hy_lt : y.2 < x.2.ctors.size := by
                   have hz := Array.mk_mem_zipIdx_iff_getElem?.mp (Array.mem_def.mpr hy)
-                  rw [Nat.zero_add] at hz
                   by_contra hge
                   rw [Array.getElem?_eq_none (Nat.le_of_not_lt hge)] at hz
                   cases hz
@@ -493,7 +507,7 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
                     · exact (Ix.Cert.ReaderUnits.fail_bind hq).elim
                 · exact (Ix.Cert.ReaderUnits.fail_bind hq).elim)
               (fun e he => by simp at he) hcs
-            obtain ⟨recs, hrecs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+            obtain ⟨recs_arr, hrecs_arr, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
             have rk := Ix.Cert.ReaderUnits.forIn_pushes (fun s => s)
               (Ix.Cert.ReaderUnits.KeyedBy cx (· ∈ validPreRefs) (·.1.name)) _ _
               (fun x hx s r0 hf => by
@@ -505,12 +519,13 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
                     Ix.Cert.ReaderUnits.blockShapeOf_recs hshape (Array.mem_def.mpr hx)
                   obtain ⟨rOwner, rc, pos, recVal, href_eq, hrc_src, hrmem⟩ :=
                     Ix.Cert.ReaderClosureKeys.selected_origin t
-                      IxVM.Refinement.RoleVal.committedPrelude evs [] blobs
+                      recs evs [] blobs
                       (fun _ => none) (fun _ _ => none) hs_blk hx_recs
                   have hx_valid : x ∈ validPreRefs := by
                     rcases hrc_src with hrc_pre | ⟨hrc_ev, _⟩
-                    · have hrc_list : (rOwner, rc) ∈ IxVM.Refinement.RoleVal.committedPreludeList :=
-                        Array.mem_toList_iff.mpr hrc_pre
+                    · have hrc_list : (rOwner, rc) ∈ IxVM.Refinement.RoleVal.committedPreludeList := by
+                        rw [← hrecs_list]
+                        exact Array.mem_toList_iff.mpr hrc_pre
                       have hms_src := Ix.CompileCert.ReaderIndex.member_source rc pos recVal hrmem
                       cases hrci : rc.info with
                       | recr _ =>
@@ -540,7 +555,7 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
                   · exact .inl he
                   · exact .inr ⟨_, hx_valid, Ix.Cert.ReaderUnits.readRecursor_key hrv⟩
                 · exact (Ix.Cert.ReaderUnits.throw_ok hf).elim)
-              (fun e he => by simp at he) hrecs
+              (fun e he => by simp at he) hrecs_arr
             obtain ⟨gens, d, hd, hg, hnames⟩ := Ix.Cert.ReaderUnits.lowerInductive_decls h
             refine ⟨gens, d, hd, hg, fun k hk => ?_⟩
             rw [hnames] at hk
@@ -555,26 +570,27 @@ private theorem readInductive_validPreRefs {t : Ix.Kernel.RoleTable}
   · exact (Ix.Cert.ReaderUnits.throw_ok h).elim
 
 private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
-    {evs : Array (_root_.Address × Ixon.Constant)}
+    {recs evs : Array (_root_.Address × Ixon.Constant)}
     {blobs : List (_root_.Address × ByteArray)}
+    (hrecs_list : recs.toList = IxVM.Refinement.RoleVal.committedPreludeList)
     (hev_defn : ∀ p ∈ evs.toList, ∃ d, p.2.info = .defn d)
     {st' : State .anon} {decls : Array (CDecl .anon)}
     (hrr : readRecords
-      (contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs)
-      {} IxVM.Refinement.RoleVal.committedPrelude = .ok (st', decls))
+      (contextOf (md := .anon) t recs [] evs blobs)
+      {} recs = .ok (st', decls))
     {d : CDecl .anon} (hd : d ∈ decls.toList)
     {s : Role} (hs : Ix.Kernel.Key.role s ∈ d.names) :
     ∃ ref ∈ validPreRefs,
-      (contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs).memberKey ref =
+      (contextOf (md := .anon) t recs [] evs blobs).memberKey ref =
         .ok (.role s) := by
-  let cx := contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] evs blobs
   obtain ⟨rs, hall, flat⟩ := Ix.Cert.ReaderUnits.readRecords_lowerings hrr
   have hd' : d ∈ (rs.map fun r => r.decls.toList).flatten := by
     rw [← flat]; exact hd
   obtain ⟨l, hl, hdl⟩ := List.mem_flatten.mp hd'
   obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hl
   obtain ⟨⟨owner, c⟩, hc_mem, st₀, hread⟩ := Ix.Cert.FallbackStore.forall₂_mem_right hall r hr
-  have hc_list : (owner, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList := hc_mem
+  have hc_list : (owner, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList := by
+    rwa [← hrecs_list]
   have hsh_ok := List.all_eq_true.mp committedPre_shapes_ok (owner, c) hc_list
   have hgen := Ix.Cert.EvidenceTransfer.readRecord_generated hread
   cases hci : c.info with
@@ -598,7 +614,7 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
       obtain ⟨_, -, h0⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h0
       simp only [pure, Except.pure, Except.ok.injEq] at h0
       subst h0
-      simp only [List.toList_toArray, List.mem_singleton] at hdl
+      simp at hdl
       subst hdl
       simp only [Ix.Kernel.Declaration.names, List.mem_singleton] at hs
       subst hs
@@ -613,7 +629,7 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
     obtain ⟨_, -, h0⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h0
     simp only [pure, Except.pure, Except.ok.injEq] at h0
     subst h0
-    simp only [List.toList_toArray, List.mem_singleton] at hdl
+    simp at hdl
     subst hdl
     simp only [Ix.Kernel.Declaration.names, List.mem_singleton] at hs
     subst hs
@@ -629,7 +645,7 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
       subst h0; simp at hdl
     · split at h0
       · obtain ⟨x, hx, hk⟩ := (Ix.Cert.ReaderUnits.lowerTwin_spec h0).2 d hdl _ hs
-        simp only [List.toList_toArray, List.mem_singleton] at hx
+        simp at hx
         subst hx
         refine ⟨.member owner 0, ?_, hk⟩
         unfold validPreRefs
@@ -641,7 +657,8 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
     unfold readRecord at hread
     rw [hci] at hread
     simp only [hindc_any, hno_defn, ↓reduceIte, Bool.false_eq_true] at hread
-    obtain ⟨gens, d', hdecls, hg, hk_fn⟩ := readInductive_validPreRefs hev_defn hc_list hci hread
+    obtain ⟨gens, d', hdecls, hg, hk_fn⟩ :=
+      readInductive_validPreRefs hrecs_list hev_defn hc_list hci hread
     rw [hdecls] at hdl
     rcases List.mem_append.mp hdl with hgen_mem | hlast
     · exfalso
@@ -683,7 +700,7 @@ theorem prelude_in_bound_of_preludeFor
   obtain ⟨blobs, _, hr3⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hr2
   unfold readPrelude at hr3
   dsimp only at hr3
-  cases hrr : readRecords (contextOf t recs [] evs blobs) {} recs with
+  cases hrr : readRecords (contextOf (md := .anon) t recs [] evs blobs) {} recs with
   | error err => rcases err with ⟨_, _⟩; rw [hrr] at hr3; cases hr3
   | ok pair =>
     rcases pair with ⟨st', decls⟩
@@ -693,13 +710,15 @@ theorem prelude_in_bound_of_preludeFor
     have hrec_eq : recs = IxVM.Refinement.RoleVal.committedPrelude := by
       rw [IxVM.Refinement.RoleVal.preludeRecords_eq] at hrecs
       injection hrecs with h; exact h.symm
-    subst hrec_eq
-    obtain ⟨ev0, hev_ok, _, hev_defn⟩ := IxVM.Refinement.RoleVal.evidenceRecords_spec
+    have hrecs_list : recs.toList = IxVM.Refinement.RoleVal.committedPreludeList := by
+      rw [hrec_eq]; rfl
+    obtain ⟨ev0, hev_ok, _, hev_defn₀⟩ := IxVM.Refinement.RoleVal.evidenceRecords_spec
     have hev_eq : evs = ev0 := by
       rw [hev_ok] at hevs
       injection hevs with h; exact h.symm
-    subst hev_eq
-    let cx := contextOf (md := .anon) t IxVM.Refinement.RoleVal.committedPrelude [] ev0 blobs
+    have hevs_defn : ∀ p ∈ evs.toList, ∃ d, p.2.info = .defn d := by
+      rw [hev_eq]; exact hev_defn₀
+    let cx := contextOf (md := .anon) t recs [] evs blobs
     -- Surjectivity onto `preludeShape.flatten`
     have hsurj : ∀ s ∈ Ix.Kernel.preludeShape.flatten,
         ∃ ref ∈ validPreRefs,
@@ -716,8 +735,11 @@ theorem prelude_in_bound_of_preludeFor
       have hs_dn : Ix.Kernel.Key.role (md := .anon) s ∈ d.names := by
         rw [hdn]
         exact List.mem_map.mpr ⟨s, hs_rs, rfl⟩
-      obtain ⟨ref, href, hmk⟩ := emitted_role_in_validPreRefs hev_defn hrr hd hs_dn
+      obtain ⟨ref, href, hmk⟩ :=
+        emitted_role_in_validPreRefs hrecs_list hevs_defn hrr hd hs_dn
       refine ⟨ref, href, ?_⟩
+      change (match (contextOf (md := .anon) t recs [] evs blobs).memberKey ref with
+        | .ok (.role r) => some r | _ => none) = some s
       rw [hmk]
     have hall_refs := pigeonhole_filterMap (Nat.le_of_eq validPreRefs_len) preludeRoles_nodup hsurj
     -- Authentic store for `resolve_inj`
@@ -757,13 +779,15 @@ theorem prelude_in_bound_of_preludeFor
           memberKey_role_exact_of_no_reconstruct (fun _ => rfl) hmk
         obtain ⟨a_b, hab_mem, hres_b⟩ := Ix.Cert.ReaderKeys.bindings_role_origin cx.store t hrole_map
         have hres_x : resolve cx.store x = some ref' := by
-          rw [resolve_preStorePure_eq_context hx_mem]
+          change resolve (contextOf (md := .anon) t recs [] evs blobs).store x = some ref'
+          rw [resolve_preStorePure_eq_context hrecs_list hx_mem]
           exact hres_pure
         have hab_eq : a_b = x := Ix.Cert.ReadingKeys.resolve_inj hauth hres_b hres_x
         subst hab_eq
         exact ⟨s, hs_flat, prelude_role_not_compilerTrust s hs_flat, hab_mem⟩
-    have hc_list : (a, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList :=
-      Array.mem_toList_iff.mpr hmem
+    have hc_list : (a, c) ∈ IxVM.Refinement.RoleVal.committedPreludeList := by
+      rw [← hrecs_list]
+      exact Array.mem_toList_iff.mpr hmem
     cases hm : isMutsConst c with
     | false => exact .inl (hnon_muts hc_list hm)
     | true =>
@@ -779,7 +803,10 @@ theorem prelude_in_bound_of_preludeFor
         rw [IxVM.Refinement.RoleVal.beqAddrFast_eq, beq_self_eq_true] at hne_b
         cases hne_b
       rw [IxVM.Refinement.RoleVal.beqAddrFast_eq, beq_iff_eq] at hown_b
-      exact ⟨a', c', Array.mem_toList_iff.mp ha'_mem, hnon_muts ha'_mem hnm', hown_b, hne⟩
+      have ha'_recs : (a', c') ∈ recs := by
+        apply Array.mem_toList_iff.mp
+        rwa [hrecs_list]
+      exact ⟨a', c', ha'_recs, hnon_muts ha'_mem hnm', hown_b, hne⟩
 
 /-- Upgrade `prelude_in_bound_of_preludeFor` to `BindingSeeds t` under `t.check = .ok ()`. -/
 theorem prelude_in_bindingSeeds_of_check
@@ -803,7 +830,7 @@ theorem check_of_admitBinding {hash : ByteArray → _root_.Address}
     {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
     (hadm : Ix.Kernel.Admission.admitBinding hash b = .ok t) :
     t.check = .ok () :=
-  ((Ix.Kernel.Admission.admitBinding_ok_iff hash b t).mp hadm).2.2
+  ((Ix.Kernel.Admission.admitBinding_ok_iff hash b t).mp hadm).wellFormed
 
 /-- Upgrade `prelude_in_bound_of_preludeFor` to `BindingSeeds t` under `admitBinding`. -/
 theorem prelude_in_bindingSeeds_of_admitBinding
