@@ -1388,7 +1388,7 @@ theorem check_recs_spec
   intro raws
   induction raws with
   | nil =>
-    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ bytes_in h h' _
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ bytes_in h h' _
       _ _ _ _ hrecs_rep _ _ _ hstr _ ev
     cases Obs.«KernelModeled::check_recs».obs ev with
     | Nil _ he21 he22 _ =>
@@ -1414,13 +1414,17 @@ theorem check_recs_spec
         ld12 ld51 ev82 ld76 _ _ _ _ ev298 _ ev359 _ ev345 _ _ _ _ _ _ ev403 ev485
         ev523 hm587 ev560 ev604 ev701 _ ev658 op805 op797 ev744 _ ev856 hc969 =>
       have hsub80 : ∀ x ∈ cs80, x ∈ calls := fun x hx => by
-        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+        rw [hc969]
+        repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
       have hsub558 : ∀ x ∈ cs558, x ∈ calls := fun x hx => by
-        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+        rw [hc969]
+        repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
       have hsub742 : ∀ x ∈ cs742, x ∈ calls := fun x hx => by
-        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+        rw [hc969]
+        repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
       have hsub854 : ∀ x ∈ cs854, x ∈ calls := fun x hx => by
-        rw [hc969]; repeat first | exact mem_head_step hx | exact hx | apply mem_tail_step
+        rw [hc969]
+        repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
       obtain ⟨a_r', rRest, hr_eq, hr_head, hr_tail⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       obtain ⟨a_rm', rmRest, hrm_eq, hrm_head, hrm_tail⟩ := Lib.rep_cons_of_load hmd_rep ld51
       injection hr_eq with h1 h2; subst h1
@@ -2622,12 +2626,11 @@ theorem modeledBlockWitness_of_check_family
             by rw [List.getElem_map]; exact (hspec_info _ hs_mem).2.2.1,
             fun ext1 hsub1 hrep1 ev1 => ?_⟩
           rw [hκ_adv, List.getElem_map]
-          have hrep1' : Bytes.RepAddressRef addrTy _ rawSpecs[i].a_rec _ := by
-            dsimp only [recAs] at hrep1
-            rwa [List.getElem_map] at hrep1
+          dsimp only [recAs] at hrep1
+          rw [List.getElem_map] at hrep1
           exact (hspec_idx i hi_s).2
             (ext_840_978.trans (ext_1029.trans (ext_1083.trans ext1)))
-            (fun x hx => hsub1147 x (hsub1 x hx)) hrep1' ev1)
+            (fun x hx => hsub1147 x (hsub1 x hx)) hrep1 ev1)
         (addrSet_mono (ext_1029.trans ext_1083) haset_978)
         hren_adv_1083 ev1149
     have hmv_nonrec : ∀ c ∈ nonrecs,
