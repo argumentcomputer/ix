@@ -43,8 +43,9 @@ theorem admitted_keepsPrelude {V : IxVM.Refinement.View} {b : Ix.Kernel.Admissio
   dsimp only at hstream
   rw [w.read] at hstream
   split at hstream
-  · assumption
-  · simp [throw, throwThe, MonadExceptOf.throw] at hstream
+  · rename_i hkeeps
+    exact hkeeps
+  · cases hstream
 
 /-- Coherent admission constructs a bare role stream that actually keeps the prelude,
 with its own final state and its own declaration array. -/
