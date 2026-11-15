@@ -33,7 +33,7 @@ theorem Entry.inspect {md : Mode} {a b : Option (ConstantInfo md)} (h : Entry a 
     (hthm : ∀ cv v w, read₁ (some (.thmInfo cv v)) = read₂ (some (.thmInfo cv w))) :
     read₁ a = read₂ b := by
   cases h with
-  | same value => exact hrefl value
+  | same => exact hrefl _
   | thm cv v w => exact hthm cv v w
 
 namespace Agrees
@@ -166,6 +166,7 @@ theorem isUnitLikeTy (e : Expr md) :
       (fun c => match c with
         | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
         | _ => false) (by intros; rfl)
+    dsimp only
     rw [hi, hr]
   | _ => rfl
 
