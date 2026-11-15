@@ -15,8 +15,9 @@ open Ix.CompileCert.ReaderIndex
 open Ix.CompileCert.CanonUnivMeaning (StepHolds)
 
 def TwinSources (records : Array (_root_.Address × Ixon.Constant)) (index : RecIndex) : Prop :=
-  ∀ ref entry, index.twins[ref]? = some entry →
-    ∃ owner c j rc, ref = .member owner j ∧ (owner, c) ∈ records ∧
+  ∀ (ref : ConstRef _root_.Address) (entry : RecEntry), index.twins[ref]? = some entry →
+    ∃ (owner : _root_.Address) (c : Ixon.Constant) (j : Nat) (rc : Ixon.Recursor),
+      ref = ConstRef.member owner j ∧ (owner, c) ∈ records ∧
       (j, rc) ∈ recursorMembers c
 
 private theorem candidate_twinSources (store : Store)
@@ -39,6 +40,7 @@ private theorem candidate_twinSources (store : Store)
     · exact hbefore ref entry hget
   | add =>
     unfold added
+    dsimp only
     split <;> exact hbefore
 
 private theorem record_twinSources (store : Store)
