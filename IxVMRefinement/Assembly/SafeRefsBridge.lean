@@ -312,15 +312,15 @@ theorem check_inductive_shape_ctors_cidx
       ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
     have hnc_val : ((ind.ctors.size : F)).val = ind.ctors.size :=
       ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-    cases Obs.«KernelCheck::check_inductive_shape_ctors».obs ev with
-    | n0 op17 _ _ _ =>
+    match Obs.«KernelCheck::check_inductive_shape_ctors».obs ev with
+    | .n0 op17 _ _ _ =>
       simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op17
       have heq_f : (ind.ctors.size : F) = (k : F) := sub_eq_zero.mp op17
       have heq_n : ind.ctors.size = k := by
         have hv := congrArg ZMod.val heq_f
         rwa [hnc_val, hk_val] at hv
       omega
-    | other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
+    | .other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
         (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
         (m400 := m400) (m430 := m430) (m476 := m476) (m546 := m546)
         (m646 := m646) (m655 := m655) (cs695 := cs657) (v708 := v670)
@@ -430,15 +430,15 @@ theorem check_modeled_ctors_cidx
       ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
     have hnc_val : ((ind.ctors.size : F)).val = ind.ctors.size :=
       ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-    cases Obs.«KernelCheck::check_modeled_ctors».obs ev with
-    | n0 op17 _ _ _ =>
+    match Obs.«KernelCheck::check_modeled_ctors».obs ev with
+    | .n0 op17 _ _ _ =>
       simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op17
       have heq_f : (ind.ctors.size : F) = (k : F) := sub_eq_zero.mp op17
       have heq_n : ind.ctors.size = k := by
         have hv := congrArg ZMod.val heq_f
         rwa [hnc_val, hk_val] at hv
       omega
-    | other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
+    | .other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
         (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
         (m400 := m400) (m430 := m430) (cs540 := cs502) (v551 := v513)
         (ev49 := ev49) (ld43 := ld43) (ev154 := ev154) (heq233 := heq233)

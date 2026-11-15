@@ -904,7 +904,7 @@ theorem dprj_store_eq_of_mutsMemberChecked
           simp only [Core.Specs.Callees.mutCtor] at hv67
           injection hv67 with _ hc _
           exact absurd hc (by decide)
-      have hbytes := Core.put_constant_step ⟨{}, .empty, t, none⟩ ev295 _ _
+      have hbytes := Core.put_constant_step (Core.ScopedCtx.unrestricted ⟨{}, .empty, t, none⟩) ev295 _ _
         (.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩) [] rfl
         ⟨_, _, _, _, _, rfl, hinfo_rep,
           Aiur.RepLinkedList.nil c1, Aiur.RepLinkedList.nil c2,
