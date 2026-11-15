@@ -1417,7 +1417,7 @@ private theorem convExpr_ok_of_rawConvExpr
     (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
     ∀ {n : Nat},
       n ≤ sharing.length →
-      bound ≤ min n 4294967295 →
+      (bound ≤ n ∨ n = sharing.length) →
       (∀ idx ∈ reachRefsExpr (buildReachRefsTbl sharing) e,
         ∀ a, refs[idx]? = some a → ∃ k, ecx.cx.keyAt a = .ok k) →
       ∃ E_rd : Core.KExpr,
@@ -1562,7 +1562,7 @@ private theorem convExpr_ok_of_rawConvExpr
   | @share bnd idx s _ hidx hsh_get rs ih =>
     intro n hn hbnd hkeys
     have hi_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh_get).1
-    have hi_n : idx.toNat < n := by omega
+    have hi_n : idx.toNat < n := by rcases hbnd with hb | rfl <;> omega
     simp only [Ix.Kernel.Reader.convExpr]
     rw [L1.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get]
     have hreach_sub : ∀ j ∈ reachRefsExpr (buildReachRefsTbl sharing) s,
@@ -1600,7 +1600,7 @@ private theorem convExpr_ok_of_rawConvExpr
           simp [reachRefsExpr, hg1, hg2]
       rw [← hcongr rs (Nat.le_refl _)]
       exact hj
-    exact ih (Nat.le_of_lt hi_len) (Nat.le_min.mpr ⟨Nat.le_refl _, by omega⟩)
+    exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _))
       (fun j hj => hkeys j (hreach_sub j hj))
 
 /-- **`MemberReader.read` succeeds on any root `RawConvExpr`** once `cx.keyAt` succeeds on its
@@ -1622,9 +1622,12 @@ theorem memberReader_read_ok_of_rawConvExpr
   obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src param self
   unfold Ix.Kernel.Reader.MemberReader.read
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)]
-  exact convExpr_ok_of_rawConvExpr rfl (by simp [List.toArray_toList]) hself_ok hblob_ok raw
-    (Nat.le_refl _) (Nat.min_le_right _ _)
-    (fun idx hidx a ha => hkeys idx hidx a (by rwa [← Array.getElem?_toList] at ha))
+  exact convExpr_ok_of_rawConvExpr rfl (by simp) hself_ok hblob_ok raw
+    (Nat.le_refl _) (Or.inr rfl)
+    (fun idx hidx a ha => by
+      dsimp only at ha
+      rw [Array.getElem?_toList] at ha
+      exact hkeys idx hidx a ha)
 
 /-! ### `validate_univ_params_seen`, `validate_univ_params_list`, and `validate_expr_well_scoped` -/
 
@@ -1677,22 +1680,24 @@ theorem validate_univ_params_seen_spec {h h' : Heap F} {u : Core.KLevel}
     | Zero ld _ _ _ | Succ _ _ ld _ _ | Max _ _ _ _ _ _ ld _ _ _
     | Param _ _ _ _ ld _ _ _ _ _ =>
       exact (Core.load_cell_ne cell ld (by decide)).elim
-  | @param _ i hi cell =>
+  | @param i _ hi cell =>
     cases «KernelCheck::validate_univ_params_seen».obs ev with
     | Param _ _ _ _ ld ev_lt heq _ hh _ =>
       have hxs := (Core.load_cell cell ld).2
       simp only [List.cons.injEq, and_true] at hxs
       subst hxs
       obtain ⟨a, b, ha, hb, hxa, hxb, hr_lt, hm_eq⟩ := L1.lt_fields_both_spec ev_lt
-      have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
+      have hP : (72057594037927936 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide
       have ha_eq : a = i := by
         have h1 := Value.field.inj hxa
         have h2 := congrArg ZMod.val h1
-        rwa [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (Nat.lt_trans hi hP)] at h2
+        rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+          ZMod.val_natCast_of_lt (Nat.lt_trans hi hP)] at h2
       have hb_eq : b = nlvls := by
         have h1 := Value.field.inj hxb
         have h2 := congrArg ZMod.val h1
-        rwa [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h2
+        rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+          ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at h2
       subst ha_eq; subst hb_eq
       have hlt : i < nlvls := by
         by_cases hlt' : i < nlvls
@@ -1744,17 +1749,22 @@ inductive KExprReach (h₀ : Heap F) : SourceValue F → SourceValue F → Nat �
       q' ∈ RomBound.cellArgs v →
       KExprReach h₀ p q' (steps + 1)
 
-private theorem kexprReach_to_heapDescent {h₀ : Heap F} :
-    ∀ {p q : SourceValue F} {steps : Nat},
-      KExprReach h₀ p q steps →
-      ∀ {tailSteps : Nat},
-        RomBound.HeapDescent h₀ (.enum Core.kexprEnum) q tailSteps →
-        RomBound.HeapDescent h₀ (.enum Core.kexprEnum) p (steps + tailSteps)
-  | _, _, _, .refl _, _, htail => by simpa using htail
-  | _, _, _, .snoc hprev rfl hcell hty harg, tailSteps, htail => by
+private theorem kexprReach_to_heapDescent {h₀ : Heap F}
+    {p q : SourceValue F} {steps : Nat}
+    (hreach : KExprReach h₀ p q steps) :
+    ∀ {tailSteps : Nat},
+      RomBound.HeapDescent h₀ (.enum Core.kexprEnum) q tailSteps →
+      RomBound.HeapDescent h₀ (.enum Core.kexprEnum) p (steps + tailSteps) := by
+  induction hreach with
+  | refl =>
+    intro tailSteps htail
+    simpa using htail
+  | snoc _ hq hcell hty harg ih =>
+    intro tailSteps htail
+    subst hq
     have hd : RomBound.HeapDescent h₀ (.enum Core.kexprEnum) _ (tailSteps + 1) :=
       .down hcell hty harg htail
-    have hall := kexprReach_to_heapDescent hprev hd
+    have hall := ih hd
     simpa [Nat.add_assoc, Nat.add_comm 1 tailSteps] using hall
 
 private theorem kexprReach_steps_lt {calls : List (Call F)} {h₀ : Heap F}
@@ -1805,11 +1815,11 @@ private theorem convExpr_levels_allParamsDefined {ecx : Ix.Kernel.Reader.ECx .an
       subst hrd
       rw [ih hlrest hrest_rd]
 
+set_option maxHeartbeats 4800000 in
 /-- **Core specification of `KernelCheck::validate_expr_well_scoped`**: on any `RawConvExpr` on
 initial heap `h₀` converted by `convExpr` to `E_rd`, `validate_expr_well_scoped [kp, .field d, .field nlvls]`
 on any heap extension `h` of `h₀` yields `Heap.Extends h h'`, `E_rd.looseBVarsBounded d = true`,
 and `E_rd.allLevelParamsDefined (List.range nlvls) = true`. -/
-set_option maxHeartbeats 4800000 in
 private theorem validate_expr_well_scoped_go
     {calls : List (Call F)} {c₀ : Call F} {h₀ : Heap F} {root : SourceValue F}
     (hbound : IxVM.Consistency.Bounded calls)
@@ -1824,7 +1834,7 @@ private theorem validate_expr_well_scoped_go
     ∀ {n d steps : Nat} {E_rd : Core.KExpr} {h h' : Heap F} {r : SourceValue F}
       {cs : List (Call F)},
       n ≤ sharing.length →
-      bound ≤ min n 4294967295 →
+      (bound ≤ n ∨ n = sharing.length) →
       d ≤ steps →
       KExprReach h₀ root kp steps →
       Heap.Extends h₀ h →
@@ -1838,9 +1848,9 @@ private theorem validate_expr_well_scoped_go
   | @var _ addr idx hidx cell =>
     intro n d steps E_rd h h' r cs _ _ hd_le hreach hext hconv ev
     have hd_lt39 : steps < 2 ^ 39 :=
-      kexprReach_steps_lt hbound hc₀ hheap₀ harg₀ hreach rfl cell (by simp [Value.type])
-    have hd_lt32_or : d < U32.Goldilocks.modulus := by
-      unfold U32.Goldilocks.modulus; omega
+      kexprReach_steps_lt hbound hc₀ hheap₀ harg₀ hreach rfl cell (by simp)
+    have hd_lt32_or : d < Aiur.Library.U32.Goldilocks.modulus := by
+      unfold Aiur.Library.U32.Goldilocks.modulus; omega
     simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at hconv
     subst hconv
     have cell_h := hext.getElem?_eq cell
@@ -1849,13 +1859,15 @@ private theorem validate_expr_well_scoped_go
       have hxs := (Core.load_cell cell_h ld).2
       simp only [List.cons.injEq, and_true] at hxs; subst hxs
       obtain ⟨a, b, ha, hb, hxa, hxb, hr_lt, hm_eq⟩ := L1.lt_fields_both_spec ev_lt
-      have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
+      have hP : (72057594037927936 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide
       have ha_eq : a = idx.toNat := by
         have h2 := congrArg ZMod.val (Value.field.inj hxa)
-        rwa [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (Nat.lt_trans hidx hP)] at h2
+        rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+          ZMod.val_natCast_of_lt (Nat.lt_trans hidx hP)] at h2
       have hb_eq : b = d := by
         have h2 := congrArg ZMod.val (Value.field.inj hxb)
-        rwa [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt hd_lt32_or] at h2
+        rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
+          ZMod.val_natCast_of_lt hd_lt32_or] at h2
       subst ha_eq; subst hb_eq
       have hlt : idx.toNat < d := by
         by_cases hlt' : idx.toNat < d
@@ -1863,9 +1875,7 @@ private theorem validate_expr_well_scoped_go
         · simp [hlt'] at hr_lt
           rw [hr_lt] at heq
           exact absurd (congrArg ZMod.val (Value.field.inj heq)) (by decide)
-      rw [hh, hm_eq]
-      have hmkBvar : (Ix.Kernel.Expr.mkBvar idx.toNat : Core.KExpr) = .bvar idx.toNat := rfl
-      rw [hmkBvar]
+      rw [hh, hm_eq, Ix.Kernel.Expr.mkBvar_eq]
       exact ⟨Heap.Extends.refl _, by simp [Ix.Kernel.Expr.looseBVarsBounded, hlt], rfl⟩
     | Srt _ _ ld _ _ | Const _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _
     | App _ _ _ _ _ _ ld _ _ _ | Lam _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
@@ -1958,8 +1968,11 @@ private theorem validate_expr_well_scoped_go
       simp only [List.cons.injEq, and_true] at hxs
       obtain ⟨_, _, rfl⟩ := hxs
       have hreach1 : KExprReach h₀ root ip (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
-      exact ih hn hbnd (by omega) hreach1 hext hEin_rd ev1
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
+      obtain ⟨ext1, hl1, hd1⟩ := ih hn hbnd (by omega) hreach1 hext hEin_rd ev1
+      exact ⟨ext1,
+        by simp [Ix.Kernel.Expr.looseBVarsBounded, hl1],
+        by simp [Ix.Kernel.Expr.allLevelParamsDefined, hd1]⟩
     | BVar _ _ _ _ ld _ _ _ _ _ | Srt _ _ ld _ _ | Const _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _
     | App _ _ _ _ _ _ ld _ _ _ | Lam _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Forall _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
@@ -2008,9 +2021,9 @@ private theorem validate_expr_well_scoped_go
       simp only [List.cons.injEq, and_true] at hxs
       obtain ⟨rfl, rfl⟩ := hxs
       have hrf : KExprReach h₀ root fp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hra : KExprReach h₀ root ap (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       obtain ⟨ext1, hl1, hd1⟩ := ihf hn hbnd (by omega) hrf hext hEf ev1
       obtain ⟨ext2, hl2, hd2⟩ := iha hn hbnd (by omega) hra (hext.trans ext1) hEa ev2
       exact ⟨ext1.trans ext2,
@@ -2034,9 +2047,9 @@ private theorem validate_expr_well_scoped_go
       obtain ⟨rfl, rfl, rfl⟩ := hxs
       have ext_l := ev_l.heap_extends
       have hrt : KExprReach h₀ root tp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hrb : KExprReach h₀ root bp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hd1_eq : v_d1 = .field ((d + 1 : Nat) : F) := by
         simp only [evalBinOp, Except.ok.injEq] at hop
         rw [← hop]
@@ -2048,7 +2061,7 @@ private theorem validate_expr_well_scoped_go
       exact ⟨(ext_l.trans ext1).trans ext2,
         by simp [Ix.Kernel.Expr.looseBVarsBounded, hl1, hl2],
         by simp [Ix.Kernel.Expr.allLevelParamsDefined, hd1, hd2,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]⟩
+          Ix.Kernel.BinderMeta.leanNever]⟩
     | BVar _ _ _ _ ld _ _ _ _ _ | Srt _ _ ld _ _ | Const _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _
     | App _ _ _ _ _ _ ld _ _ _ | Forall _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Let _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
@@ -2067,9 +2080,9 @@ private theorem validate_expr_well_scoped_go
       obtain ⟨rfl, rfl, rfl⟩ := hxs
       have ext_l := ev_l.heap_extends
       have hrt : KExprReach h₀ root tp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hrb : KExprReach h₀ root bp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hd1_eq : v_d1 = .field ((d + 1 : Nat) : F) := by
         simp only [evalBinOp, Except.ok.injEq] at hop
         rw [← hop]
@@ -2081,7 +2094,7 @@ private theorem validate_expr_well_scoped_go
       exact ⟨(ext_l.trans ext1).trans ext2,
         by simp [Ix.Kernel.Expr.looseBVarsBounded, hl1, hl2],
         by simp [Ix.Kernel.Expr.allLevelParamsDefined, hd1, hd2,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]⟩
+          Ix.Kernel.BinderMeta.leanNever]⟩
     | BVar _ _ _ _ ld _ _ _ _ _ | Srt _ _ ld _ _ | Const _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _
     | App _ _ _ _ _ _ ld _ _ _ | Lam _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Let _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
@@ -2100,11 +2113,11 @@ private theorem validate_expr_well_scoped_go
       simp only [List.cons.injEq, and_true] at hxs
       obtain ⟨rfl, rfl, rfl⟩ := hxs
       have hrt : KExprReach h₀ root tp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hrv : KExprReach h₀ root vp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hrb : KExprReach h₀ root bp (steps + 1) :=
-        .snoc hreach rfl cell (by simp [Value.type]) (by simp [RomBound.cellArgs])
+        .snoc hreach rfl cell (by simp) (by simp [RomBound.cellArgs])
       have hd1_eq : v_d1 = .field ((d + 1 : Nat) : F) := by
         simp only [evalBinOp, Except.ok.injEq] at hop
         rw [← hop]
@@ -2124,10 +2137,10 @@ private theorem validate_expr_well_scoped_go
   | @share bnd idx s _ hidx hsh_get _ ih =>
     intro n d steps E_rd h h' r cs hn hbnd hd_le hreach hext hconv ev
     have hi_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh_get).1
-    have hi_n : idx.toNat < n := by omega
+    have hi_n : idx.toNat < n := by rcases hbnd with hb | rfl <;> omega
     simp only [Ix.Kernel.Reader.convExpr] at hconv
     rw [L1.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get] at hconv
-    exact ih (Nat.le_of_lt hi_len) (Nat.le_min.mpr ⟨Nat.le_refl _, by omega⟩)
+    exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _))
       hd_le hreach hext hconv ev
 
 /-- **Root specification of `KernelCheck::validate_expr_well_scoped`** at depth `0`: proves
@@ -2158,7 +2171,7 @@ theorem validate_expr_well_scoped_spec
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
   have raw_h := raw.mono hext (fun _ hm => hm)
   exact validate_expr_well_scoped_go hbound hcall rfl (List.Mem.head _)
-    (by simp [List.toArray_toList]) hnlvls raw_h (Nat.le_refl _) (Nat.min_le_right _ _)
+    (by simp) hnlvls raw_h (Nat.le_refl _) (Or.inr rfl)
     (Nat.le_refl 0) (.refl kp) (Heap.Extends.refl h) hread (by simpa using ev)
 
 /-- Unpacking `KernelCheck::assert_safety` when `self_unsafe = .field 0`: extracts the underlying
