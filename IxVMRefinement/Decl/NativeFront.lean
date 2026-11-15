@@ -3775,12 +3775,12 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
         (m356 := m356) (cs366 := cs_es) (m387 := m387)
         (m400 := m400) (m430 := m430) (cs440 := cs_pa)
         (m476 := m476) (cs486 := cs_rt) (m546 := m546) (cs556 := cs_fu)
-        (m646 := m646) (cs648 := cs_sg) (cs657 := cs_rec) (v670 := v670)
+        (m646 := m646) (cs648 := cs_sg) (cs695 := cs_rec) (v708 := v670)
         (ev49 := ev_cprj) (ld43 := ld_ctor) (ev154 := ev_aeq)
         (heq261 := heq_nl) (heq289 := heq_np)
         (ev331 := ev_ws) (hm395 := hm387) (ev368 := ev_es) (ev412 := ev_saf)
         (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (sg653 := sg_pos)
-        (op754 := op_add) (ev659 := ev_rec) (hc756 := hc) .. =>
+        (ev667 := ev_hash) (op792 := op_add) (ev697 := ev_rec) (hc794 := hc) .. =>
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
       have hc_nf_lt : c_j.2 < 2147483648 := hnF_lt c_j hc_mem
@@ -3893,7 +3893,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
               (hcty_raw_m34.mono e_from_m34_to_m546) hnp_ca hstR_c hstrip_c
               (Bytes.repAddressRef_heapMono₂ addrTy e_to_pos hbp) ev_pos,
               ev_pos.heap_extends⟩
-        have e_to_rec := e_to_pos.trans hpos_ext.2
+        have e_to_rec := (e_to_pos.trans hpos_ext.2).trans ev_hash.heap_extends
         rw [evalBinOp_add_nat j 1 op_add] at ev_rec
         obtain ⟨sortss_rest, hlen_rest, hrest_out⟩ :=
           check_inductive_shape_ctors_go hLevels hCore hlps hlps_lt hnP_lt hnIdx_lt hnCtors_lt

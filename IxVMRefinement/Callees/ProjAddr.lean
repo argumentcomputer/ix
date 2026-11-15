@@ -77,14 +77,17 @@ theorem bytes_to_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
     · exact L1.repAddress_iff.mpr rfl
   · rw [hd_eq, ProjAddrAux.blake3Pure_eq_ixAddr]
 
-/-- `KernelCheck::projection_addr_ctor`: builds, serializes, and hashes the constructor-projection
-record `(i, j, block)` (`cprjAddr`). -/
-theorem projection_addr_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelCheck::projection_addr_ctor" args h r h' calls) :
-    Specs.Callees.projection_addr_ctor c args h r h' calls := by
-  intro i j bp b hargs good hb
-  subst hargs
+/-- The constructor-address operation serializes the exact wrapper before hashing it. -/
+private theorem projection_addr_ctor_bytes (c : ScopedCtx) {i j : F}
+    {bp r : SourceValue F} {b : Bytes.Address} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelCheck::projection_addr_ctor" [.field i, .field j, bp] h r h' calls)
+    (hb : RepAddr h b bp) :
+    ∃ (hashPtr : SourceValue F) (hashHeap : Heap F) (hashCalls : List (Call F)),
+      RepBytes hashHeap
+        (Ixon.serConstant ⟨.cPrj ⟨(ZMod.val i).toUInt64, (ZMod.val j).toUInt64, ixAddr b⟩,
+          #[], #[], #[], #[]⟩).data.toList hashPtr ∧
+      ObsFn W "Blake3::bytes_to_addr" [hashPtr] hashHeap r h' hashCalls ∧
+      ∀ cl ∈ hashCalls, cl ∈ calls := by
   obtain ⟨v1, m2, cs12, v23, m24, cs34, m114, m127, m140, m153, v165, m166, cs176, m189, cs204,
     ev14, ev36, hm122, hm135, hm148, hm161, hm197, ev178, ev206, hc215⟩ :=
     Obs.«KernelCheck::projection_addr_ctor».obs ev
@@ -134,12 +137,37 @@ theorem projection_addr_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} 
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
-  have hgood_bta : CoreGood c cs204 :=
-    good.sub (by rw [hc215]; intro x hx; simp [hx])
-  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev206 v165 _ rfl hgood_bta hbytes
+  rw [List.append_nil] at hbytes
+  exact ⟨v165, m166, cs204, hbytes, ev206, by rw [hc215]; intro x hx; simp [hx]⟩
+
+/-- `KernelCheck::projection_addr_ctor`: builds, serializes, and hashes the constructor-projection
+record `(i, j, block)` (`cprjAddr`). -/
+theorem projection_addr_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelCheck::projection_addr_ctor" args h r h' calls) :
+    Specs.Callees.projection_addr_ctor c args h r h' calls := by
+  intro i j bp b hargs good hb
+  subst args
+  obtain ⟨hashPtr, hashHeap, hashCalls, hbytes, hhash, hsub⟩ :=
+    projection_addr_ctor_bytes c ev hb
+  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c hhash hashPtr _ rfl (good.sub hsub) hbytes
   refine ⟨a, ha, ?_⟩
-  rw [haddr, ProjAddrAux.bytes_mk_toList]
+  rw [haddr, Array.toArray_toList]
   rfl
+
+/-- The exact constructor wrapper is part of the actual hash trace, independently of
+semantic load facts or permissions for installed constants. -/
+theorem projection_addr_ctor_hashed (c : ScopedCtx) {i j : F}
+    {bp r : SourceValue F} {b : Bytes.Address} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelCheck::projection_addr_ctor" [.field i, .field j, bp] h r h' calls)
+    (hb : RepAddr h b bp) :
+    Hashed calls (Ixon.serConstant
+      ⟨.cPrj ⟨(ZMod.val i).toUInt64, (ZMod.val j).toUInt64, ixAddr b⟩, #[], #[], #[], #[]⟩) := by
+  obtain ⟨hashPtr, hashHeap, hashCalls, hbytes, hhash, hsub⟩ :=
+    projection_addr_ctor_bytes c ev hb
+  have hstream : L1.Stream hashHeap _ hashPtr := hbytes
+  have hcall := (L1.bytes_to_addr_spec hstream hhash).2.2
+  exact ⟨_, hsub _ hcall, rfl, hashPtr, rfl, hstream⟩
 
 namespace ProjAddrAux
 
