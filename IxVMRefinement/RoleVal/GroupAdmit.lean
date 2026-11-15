@@ -247,7 +247,6 @@ theorem check_evidence_nodup_and_eqns {t : Ix.Kernel.RoleTable} (hchk : t.check 
   | none =>
     simp only [hv, hbn, hfr, ↓reduceIte] at hchk
     obtain ⟨_, _, hchk2⟩ := RoleClosure.except_bind_ok hchk
-    dsimp only at hchk2
     by_cases hnd : (List.map (fun x => x.1) t.evidence.toList).Nodup
     case neg =>
       simp only [hnd, ↓reduceIte] at hchk2
@@ -650,7 +649,8 @@ private theorem decodeNatListExpr_sound :
           obtain ⟨vs, a, hvin⟩ := isFieldListCtor_sound hnil din
           obtain ⟨rfl, rfl, _⟩ := a.nil_inv
           subst hvin
-          exact ⟨Heap.Extends.snoc _ _, Lib.rep_store_nil _⟩
+          exact ⟨Heap.Extends.snoc _ _,
+            Lib.rep_store_nil (en := Obs.Names.«Lists::Node<Field>») (R := repRoleIdx) min⟩
         | cons _ _ =>
           cases hcons : isFieldListCtor "Cons" inner with
           | none => rw [hcons] at hd; cases hd
