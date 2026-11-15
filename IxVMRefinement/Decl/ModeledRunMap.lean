@@ -118,6 +118,6 @@ theorem indRecsRun {blockNames : List (Key md)} {env : Env md}
 theorem modeled {env env₂ : Env md} {block : List (ConstantInfo md)}
     (h : DeclIndRunJ J env block env₂) : DeclIndRunJ K env block env₂ := by
   obtain ⟨hshape, envM, hmembers, hrecs⟩ := h
-  exact ⟨hshape, envM, indMembersRun hmembers, M.indRecsRun hrecs⟩
+  exact ⟨hshape, envM, M.indMembersRun hmembers, M.indRecsRun hrecs⟩
 
 end IxVM.Refinement.Decl.JudgementsMap
