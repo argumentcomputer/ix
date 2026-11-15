@@ -315,4 +315,81 @@ theorem readRecord_defn_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKe
     simp only [readRecordBare, hinfo, readRecord, hdef', bind, Except.bind,
       pure, Except.pure]
 
+theorem commit_constTypes_after_generated_prefix {md : Mode}
+    {source target : State md} {full bare : Read md} {generated : List (CDecl md)}
+    (hdecls : full.decls.toList = generated ++ bare.decls.toList)
+    (hgenerated : ∀ d ∈ generated, d.isGenerated = true)
+    (htypes : ∀ (k : CName md), NonAuxKey k → target.constTypes[k]? = source.constTypes[k]?) :
+    ∀ (k : CName md), NonAuxKey k →
+      (target.commit bare).constTypes[k]? = (source.commit full).constTypes[k]? := by
+  intro k hk
+  rw [Ix.Cert.CtxAgree.commit_constTypes, Ix.Cert.CtxAgree.commit_constTypes, hdecls,
+    List.flatMap_append, List.foldl_append]
+  apply fold_insert_agrees_at Ix.Cert.CtxAgree.tyOf k
+  rw [fold_insert_unchanged_at Ix.Cert.CtxAgree.tyOf k _ _ ?_]
+  · exact htypes k hk
+  · intro e he pair hp heq
+    obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
+    have heaux := generated_noteEntry_aux (hgenerated d hd) he
+    simp only [Ix.Cert.CtxAgree.tyOf, Option.some.injEq] at hp
+    subst pair
+    dsimp only at heq
+    rw [heq, isAux_eq_false_iff.mpr hk] at heaux
+    cases heaux
+
+private theorem nonAux_isProjIota_false {md : Mode} {k : CName md} (hk : NonAuxKey k) :
+    k.isProjIota = false := by
+  cases k with
+  | id _ | role _ => rfl
+  | aux base auxTag => exact (hk base auxTag rfl).elim
+
+private theorem noteGenerated_projLevels_nonAux {md : Mode} (st : State md) (d : CDecl md)
+    {k : CName md} (hk : NonAuxKey k) : (st.noteGenerated d).projLevels[k]? = st.projLevels[k]? := by
+  rw [Ix.Cert.CtxAgree.noteGenerated_projLevels]
+  cases d <;> try rfl
+  case thmDecl cv value =>
+    by_cases hname : cv.name = k
+    · have hp : cv.name.isProjIota = false := by rw [hname]; exact nonAux_isProjIota_false hk
+      simp [Ix.Cert.CtxAgree.insOpt, Ix.Cert.CtxAgree.projLevelEntry, hp]
+    · cases hp : cv.name.isProjIota with
+      | false => simp [Ix.Cert.CtxAgree.insOpt, Ix.Cert.CtxAgree.projLevelEntry, hp]
+      | true =>
+        cases hl : Frontend.projIotaLevel cv.type <;>
+          simp [Ix.Cert.CtxAgree.insOpt, Ix.Cert.CtxAgree.projLevelEntry, hp, hl,
+            Std.HashMap.getElem?_insert, hname]
+
+/-- Generated projection-level writes only occur at auxiliary keys. -/
+theorem commit_projLevels_nonAux {md : Mode} (st : State md) (r : Read md)
+    {k : CName md} (hk : NonAuxKey k) : (st.commit r).projLevels[k]? = st.projLevels[k]? := by
+  rw [Ix.Cert.CtxAgree.commit_eq]
+  dsimp only
+  rw [Ix.Cert.CtxAgree.foldl_keep (fun s : State md => s.projLevels[k]?) _
+    (fun s x => by
+      split
+      · exact noteGenerated_projLevels_nonAux s x.1 hk
+      · rw [Ix.Cert.CtxAgree.note_projLevels])]
+  exact Ix.Cert.CtxAgree.commit_pre_keep (fun s : State md => s.projLevels[k]?) r st
+    (fun _ _ => rfl) (fun _ _ => rfl)
+
+/-- The complete reader lookup state agrees at public keys after omitting a generated
+prefix, provided the actual owner and block metadata is preserved. -/
+theorem commit_sameAt_after_generated_prefix {md : Mode}
+    {source target : State md} {full bare : Read md} {generated : List (CDecl md)}
+    (hdecls : full.decls.toList = generated ++ bare.decls.toList)
+    (hgenerated : ∀ d ∈ generated, d.isGenerated = true)
+    (howners : bare.owners = full.owners) (hblocks : bare.blocks = full.blocks)
+    (hstate : ∀ (k : CName md), NonAuxKey k → target.SameAt source k) :
+    ∀ (k : CName md), NonAuxKey k → (target.commit bare).SameAt (source.commit full) k := by
+  intro k hk
+  refine ⟨commit_constTypes_after_generated_prefix hdecls hgenerated (fun k hk => (hstate k hk).1) k hk,
+    commit_heights_after_generated_prefix hdecls hgenerated (fun k hk => (hstate k hk).2.1) k hk,
+    ?_, ?_, ?_⟩
+  · rw [Ix.Cert.CtxAgree.commit_indBlocks, Ix.Cert.CtxAgree.commit_indBlocks, hblocks]
+    exact fold_insert_agrees_at some k _ _ _ (hstate k hk).2.2.1
+  · rw [Ix.Cert.CtxAgree.commit_projOwners, Ix.Cert.CtxAgree.commit_projOwners]
+    simp only [Ix.Cert.CtxAgree.ownerEntries, howners]
+    exact fold_insert_agrees_at some k _ _ _ (hstate k hk).2.2.2.1
+  · rw [commit_projLevels_nonAux target bare hk, commit_projLevels_nonAux source full hk]
+    exact (hstate k hk).2.2.2.2
+
 end IxVM.Refinement.Assembly
