@@ -11,6 +11,12 @@ namespace Ix.Kernel.NativeTwin
 
 open Ix.Kernel.Semantics
 
+private theorem check_bind_ok {α β : Type} {x : CheckM md α} {f : α → CheckM md β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases hx : x with
+  | error reason => simp [hx, bind, Except.bind] at h
+  | ok a => exact ⟨a, rfl, by simpa only [hx, bind, Except.bind] using h⟩
+
 def Part.semantic (part : Part md) : TwinRecPart md := {
   cvW := part.raw
   cvW' := part.annotated
@@ -233,6 +239,62 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
           · rwa [hannotated]
       next hfree => cases h
   | _ => simp [checkHeader, throw, throwThe, MonadExceptOf.throw] at h
+
+def HeaderChecked (mode : CheckMode) (fuel : Nat) (env : Env md) (part : Part md) : Prop :=
+  ConstantValCheckJ (runJ mode fuel) env part.raw part.annotated ∧
+    letFree part.annotated.type = true ∧ CanonicalPart env part
+
+theorem checkHeaders_spec {mode : CheckMode} {fuel : Nat} {env : Env md} :
+    ∀ (block : List (ConstantInfo md)) {parts : List (Part md)},
+      checkHeaders (fueledOps mode fuel) env block = .ok parts →
+      block = parts.map (fun part => .recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) ∧
+        ∀ part ∈ parts, HeaderChecked mode fuel env part
+  | [], parts, h => by
+    have hp : parts = [] := (Except.ok.inj h).symm
+    subst parts
+    simp
+  | ci :: block, parts, h => by
+    rw [checkHeaders] at h
+    obtain ⟨part, hpart, h⟩ := check_bind_ok h
+    obtain ⟨rest, hrest, h⟩ := check_bind_ok h
+    have hout : part :: rest = parts := Except.ok.inj h
+    subst parts
+    obtain ⟨hci, hchecked⟩ := checkHeader_spec hpart
+    obtain ⟨hblock, htail⟩ := checkHeaders_spec block hrest
+    refine ⟨by rw [hci, hblock]; rfl, ?_⟩
+    intro found hfound
+    rcases List.mem_cons.mp hfound with rfl | hfound
+    · exact hchecked
+    · exact htail found hfound
+
+theorem prepare_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
+    {block : List (ConstantInfo md)} {parts : List (Part md)}
+    (h : prepare (fueledOps mode fuel) env block = .ok parts) :
+    parts ≠ [] ∧
+      block = parts.map (fun part => .recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) ∧
+      ((provision parts ++ models parts).map (·.name)).Nodup ∧
+      (∀ ci ∈ provision parts ++ models parts, env.find? ci.name = none) ∧
+      ∀ part ∈ parts, HeaderChecked mode fuel env part := by
+  by_cases hnil : block.isEmpty = true
+  · simp [prepare, hnil, throw, throwThe, MonadExceptOf.throw] at h
+  · simp only [prepare, hnil, ↓reduceIte, bind, Except.bind] at h
+    obtain ⟨found, hheaders, h⟩ := check_bind_ok h
+    split at h
+    next hdistinct =>
+      simp only [bind, Except.bind] at h
+      split at h
+      next hfresh =>
+        simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+        subst parts
+        obtain ⟨hblock, hparts⟩ := checkHeaders_spec block hheaders
+        refine ⟨?_, hblock, hdistinct, ?_, hparts⟩
+        · intro hempty
+          rw [hempty, List.map_nil] at hblock
+          exact hnil (by rw [hblock]; rfl)
+        · intro ci hci
+          exact Option.isNone_iff_eq_none.mp (List.all_eq_true.mp hfresh ci hci)
+      next hfresh => cases h
+    next hdistinct => cases h
 
 theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
     {part : Part md} {raw canonical checked : RecRule md}
