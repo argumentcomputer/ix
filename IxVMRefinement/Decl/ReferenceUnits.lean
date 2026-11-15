@@ -17,18 +17,19 @@ open Ix.Kernel
 theorem indDecl_installs_names (block : List (ConstantInfo .anon)) (nP : Nat) :
     (IxVM.Consistency.installs (.indDecl block nP)).map (·.name) =
       (Declaration.indDecl block nP).names := by
-  unfold IxVM.Consistency.installs
   cases pinned : basisPinHit block with
-  | none => rfl
+  | none => simp only [IxVM.Consistency.installs, pinned, Declaration.names]
   | some kind =>
     have rawNames : block.map (·.name) = kind.decls.map (·.name) := by
       unfold basisPinHit at pinned
       have selected := (Option.filter_eq_some_iff.mp pinned).1
-      exact (eq_of_beq (List.find?_some selected)).symm
+      have namesMatch := List.find?_some selected
+      exact (eq_of_beq namesMatch).symm
     have annotatedNames : (kind.declsA (md := .anon)).map (·.name) =
         (kind.decls (md := .anon)).map (·.name) := by
       cases kind <;> decide
-    exact annotatedNames.trans rawNames.symm
+    simpa only [IxVM.Consistency.installs, pinned, Declaration.names] using
+      annotatedNames.trans rawNames.symm
 
 private theorem unitSplit_append {md : Mode} :
     ∀ {unit generated : List (Declaration md)} {closer : Declaration md},
@@ -49,8 +50,8 @@ theorem unitShape_generated_bases {md : Mode} {unit generated : List (Declaratio
     {closer : Declaration md} (split : unitSplit unit = some (generated, closer))
     (shape : unitShapeOk unit = true) {d : Declaration md} (declared : d ∈ generated)
     {name : Key md} (named : name ∈ d.names) : name.base ∈ closer.names.map Key.base := by
-  have bases : (genBases unit).all (closerBases unit).contains = true :=
-    (Bool.and_eq_true.mp shape).2
+  simp only [unitShapeOk, Bool.and_eq_true] at shape
+  have bases : (genBases unit).all (closerBases unit).contains = true := shape.2
   have inGenerated : name.base ∈ genBases unit := by
     simp only [genBases, split]
     exact List.mem_map.mpr ⟨name, List.mem_flatMap.mpr ⟨d, declared, named⟩, rfl⟩
@@ -67,7 +68,7 @@ theorem ReferenceTrace.unit_roots {fuel : Nat} {env out : Env .anon}
     (underived : DeclNonAux (.indDecl block nP)) :
     ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true := by
   have unitsRun : checkUnitsGo {} (unitsOf ds) 0 = .ok () := by
-    simpa only [checkUnits, List.toArray_toList] using units
+    simpa only [checkUnits, List.toList_toArray] using units
   have shape := ((checkUnitsGo_ok_iff {} (unitsOf ds) 0).mp unitsRun).2.1 unit inUnits
   have closerMember : Declaration.indDecl block nP ∈ ds := by
     rw [← unitsOf_flatten ds]

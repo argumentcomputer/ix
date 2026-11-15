@@ -34,9 +34,9 @@ theorem normCtorVal_origin {md : Mode} {env : Env md} (wellFormed : EnvWF env)
           Rules.DefEq env (nP + j) original.fvarTypeD output.1) ∧
       (checked = initial ∨
         checkConstantVal (fueledOps .verified fuel) env
-          { raw with type := closeTelescope
+          { raw with type := (closeTelescope
             (List.zipWith (fun (x : Expr md) (b : Expr md × BinderMeta) => (x.fvarTypeD, b.2))
-              parameterVars parameterBinders ++ fieldBinders) 0 residual } = .ok checked) := by
+              parameterVars parameterBinders ++ fieldBinders) 0 residual) } = .ok checked) := by
   unfold normCtorVal at normalized
   obtain ⟨pair, stripped, rest⟩ := exceptBind_ok normalized
   obtain ⟨parameterBinders, closedResidual⟩ := pair
