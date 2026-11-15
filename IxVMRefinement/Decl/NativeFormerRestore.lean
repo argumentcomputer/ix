@@ -158,7 +158,7 @@ def model {env : Env md} (M : Model V env)
     · subst original
       refine ⟨A, ?_, ?_⟩
       · simpa only [info, ↓reduceIte, ConstantInfo.toConstantVal, denotes_eq] using typeRead φ ρ A ha
-      · simpa only [info, ↓reduceIte, ConstantInfo.name] using hm
+      · simpa only [info, ↓reduceIte, ConstantInfo.name, ConstantInfo.toConstantVal] using hm
     · refine ⟨A, ?_, ?_⟩
       · simpa only [info, ite_eq_right changed, denotes_eq] using ha
       · simpa only [info, ite_eq_right changed] using hm
