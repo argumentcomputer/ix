@@ -685,7 +685,7 @@ private theorem decodeNatListExpr_sound :
                   subst hvin
                   rw [Value.type]
                   obtain ⟨ext_t, hrep_t⟩ := decodeNatListExpr_sound fuel htail dt
-                  have hhead : repRoleIdx _ (ZMod.val x) (.field x) :=
+                  have hhead : repRoleIdx min (ZMod.val x) (.field x) :=
                     congrArg Value.field (natCast_val_eq x).symm
                   exact ⟨ext_t.trans (Heap.Extends.snoc _ _),
                     Lib.rep_store_cons repRoleIdx_heapMono₂ hhead hrep_t⟩
