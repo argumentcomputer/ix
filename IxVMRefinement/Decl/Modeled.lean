@@ -1394,9 +1394,15 @@ theorem check_recs_spec
     | Nil _ he21 he22 _ =>
       rw [he21, he22]
       exact ⟨[], bytes_in, rfl, rfl, rfl, .nil, (fun _ hm => nomatch hm), hstr, Heap.Extends.refl h⟩
-    | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | Cons _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _
+        _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _
+        ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       cases he
   | cons e₀ rawRest ih =>
@@ -1409,10 +1415,12 @@ theorem check_recs_spec
     | Cons x_r x_rest x_rm x_mrest m67 p74 cs80 x_nl x_ty x_rnp x_ni x_nmot x_nmin x_rules
         x_kf x_r_uns w107 w108 v285 m288 cs296 v332 m335 cs343 v346 v347 m349 cs357
         v390 m391 cs401 v405 v406 x420 x428 x436 v472 m473 cs483 v510 m511 cs521
-        v547 m548 cs558 m579 v591 m592 cs602 v645 m646 cs656 v662 m688 p693 cs699
+        v547 m548 cs558 m579
+        safeTyValue safeTyHeap safeTyCalls safeRulesValue safeRulesHeap safeRulesCalls
+        v591 m592 cs602 v645 m646 cs656 v662 m688 p693 cs699
         v731 m732 cs742 v749 x790 cs854 v866
         ld12 ld51 ev82 ld76 _ _ _ _ ev298 _ ev359 _ ev345 _ _ _ _ _ _ ev403 ev485
-        ev523 hm587 ev560 ev604 ev701 _ ev658 op805 op797 ev744 _ ev856 hc969 =>
+        ev523 hm587 ev560 evSafetyTy evSafetyRules ev604 ev701 _ ev658 op805 op797 ev744 _ ev856 hc969 =>
       have hsub80 : ∀ x ∈ cs80, x ∈ calls := fun x hx => by
         rw [hc969]
         repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
@@ -1461,11 +1469,12 @@ theorem check_recs_spec
         have e523 := ObsFn.heap_extends ev523
         have e_67_511 : Heap.Extends m67 m511 :=
           e298.trans (e359.trans (e345.trans (e403.trans (e485.trans e523))))
-        have e_511_579 : Heap.Extends m511 m579 := hm587 ▸ heap_extends_append m511 _
+        have e_511_579 : Heap.Extends m511 m579 := by
+          rw [hm587]; exact heap_extends_append m511 _
         have e_h_579 : Heap.Extends h m579 := e82.trans (e_67_511.trans e_511_579)
         have htypes579 : TypesRep c_pub.κ zg m579 0
             (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m511.length) :=
-          hm587 ▸ typesRep_alloc_nil c_pub.κ zg m511
+          by rw [hm587]; exact typesRep_alloc_nil c_pub.κ zg m511
         obtain ⟨stype0, _, _, hinf_ty0, _, _, _⟩ :=
           core_ensure_sort hCore (hrc.mono e_h_579) htypes579 (ghostScoped_zero zg)
             hef_pub hlf_pub (hg_pub.sub hsub558) ev560
@@ -1482,7 +1491,8 @@ theorem check_recs_spec
         have e701 := ObsFn.heap_extends ev701
         have e658 := ObsFn.heap_extends ev658
         have e_579_646 : Heap.Extends m579 m646 :=
-          e560.trans (e604.trans (e701.trans e658))
+          e560.trans (evSafetyTy.heap_extends.trans (evSafetyRules.heap_extends.trans
+            (e604.trans (e701.trans e658))))
         have e_67_646 : Heap.Extends m67 m646 := (e_67_511.trans e_511_579).trans e_579_646
         have e_h_646 : Heap.Extends h m646 := e82.trans e_67_646
         have hv749_eq : v749 = .field (e₀.rP : F) := by

@@ -3543,19 +3543,20 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) .. =>
       injection hv with _ htag _
       exact absurd htag (by decide)
-    | .Rec_other (v2769 := v2769) (m2748 := m2748) (m2770 := m2770) (v2791 := v2791)
-        (m2792 := m2792) (cs2780 := cs2780) (cs2803 := cs2803)
-        (ev2782 := ev2782) (ev2805 := ev2805) (hne2876 := hne2876) (hc2964 := hc) .. =>
+    | .Rec_other (v2798 := v2769) (m2777 := m2748) (m2799 := m2770) (v2820 := v2791)
+        (m2821 := m2792) (cs2809 := cs2780) (cs2832 := cs2803)
+        (ev2811 := ev2782) (ev2834 := ev2805) (hne2905 := hne2876) (hc2993 := hc) .. =>
       have hsub₁ : ∀ x ∈ cs2780, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       have hsub₂ : ∀ x ∈ cs2803, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       exact absurd (w.unmodeled_rec m2748 v2769 m2770 v2791 m2792 cs2780 cs2803
         ev2782 ev2805 hsub₁ hsub₂) hne2876
-    | .Rec_n0 (v1 := v1) (m2 := m2) (v2636 := v2636) (m2637 := m2637) (cs2647 := cs2647)
-        (v2673 := v2673) (m2674 := m2674) (cs2684 := cs2684) (m2705 := m2705)
-        (m2718 := m2718) (m2748 := m2748) (m2770 := m2770) (m2792 := m2792) (cs2848 := cs2848)
-        (ev14 := ev14) (hv2574 := hv2574) (ev2649 := ev2649) (hm2713 := hm2713)
-        (ev2686 := ev2686) (ev2730 := ev2730) (ev2760 := ev2760) (ev2782 := ev2782)
-        (ev2805 := ev2805) (ev2850 := ev2850) (hc2875 := hc) .. =>
+    | .Rec_n0 (v1 := v1) (m2 := m2) (v2635 := v2636) (m2636 := m2637) (cs2646 := cs2647)
+        (v2672 := v2673) (m2673 := m2674) (cs2683 := cs2684) (m2704 := m2705)
+        (m2717 := m2718) (m2777 := m2748) (m2799 := m2770) (m2821 := m2792) (cs2877 := cs2848)
+        (ev14 := ev14) (hv2574 := hv2574) (ev2648 := ev2649) (hm2712 := hm2713)
+        (ev2685 := ev2686) (ev2729 := ev2730) (ev2759 := ev_rules)
+        (ev2789 := ev2760) (ev2811 := ev2782)
+        (ev2834 := ev2805) (ev2879 := ev2850) (hc2904 := hc) .. =>
       injection hv2574 with _ _ hr_xs
       injection hr_xs with hr1 hr_xs; injection hr_xs with hr2 hr_xs
       injection hr_xs with hr3 hr_xs; injection hr_xs with hr4 hr_xs
@@ -3581,8 +3582,8 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
           hS_base₀.store hpos_lift_R ev2649 e_m2_to_2705
           (w.rcRep_rec.mono e_to_2705) hty_nil_es hef_rec w.lf_rec hg_rec_es ev2686
       have e_to_2792 := e_to_2705.trans (ev2686.heap_extends.trans
-        (ev2730.heap_extends.trans (ev2760.heap_extends.trans
-          (ev2782.heap_extends.trans ev2805.heap_extends))))
+        (ev2730.heap_extends.trans (ev_rules.heap_extends.trans
+          (ev2760.heap_extends.trans (ev2782.heap_extends.trans ev2805.heap_extends)))))
       have hg₁_2848 : Good c₁ cs2848 := w.good₁_rec.sub (fun x hx => by simp [hc, hx])
       have hg_rec_2848 : Good c_rec cs2848 := w.good_rec.sub (fun x hx => by simp [hc, hx])
       have hsub_2848 : ∀ x ∈ cs2848, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
