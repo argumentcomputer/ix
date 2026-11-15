@@ -193,4 +193,17 @@ theorem foldInv_step_auxDeclRunJ {env env₂ : Env .anon} {d : Declaration .anon
   fun _ _ h => ⟨Ix.Kernel.Model.foldRulesRoutes (.cons hd .nil) h.model,
     foldStoreInv_step_auxDeclRunJ h.store haux hd⟩
 
+/-- A complete auxiliary prefix preserves the fold invariant before the bare declaration. -/
+theorem foldInv_auxDeclsRunJ {env env₂ : Env .anon} {ds : List (Declaration .anon)}
+    (haux : ∀ d ∈ ds, ∀ ci ∈ IxVM.Consistency.installs d,
+      ∃ root tag, ci.name = .aux root tag)
+    (run : DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env₂) :
+    ∀ (V : Type u) [SetTheory V], FoldInv V env → FoldInv V env₂ := by
+  induction run with
+  | nil => exact fun _ _ h => h
+  | cons step _ ih =>
+    intro V _ h
+    apply ih (fun d hd => haux d (List.mem_cons_of_mem _ hd)) V
+    exact foldInv_step_auxDeclRunJ (haux _ List.mem_cons_self) step V h
+
 end IxVM.Refinement.Decl
