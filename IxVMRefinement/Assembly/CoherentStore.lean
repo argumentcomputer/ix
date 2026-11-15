@@ -1,3 +1,4 @@
+import Ix.Cert.TableAdmission
 import IxVMRefinement.L1.Records
 import Ix.IxVM.Refinement.Claim
 
@@ -9,6 +10,8 @@ caches, and every retained record has the input's bytes at the same address.
 -/
 
 namespace IxVM.Refinement.Assembly
+
+universe u
 
 /-- Retain exactly the records whose byte windows decode, caching the decoded value. -/
 def decodeReaderConsts : List (_root_.Address × Ixon.LazyConstant) →
@@ -78,5 +81,39 @@ theorem decodeReaderEnv_draws (E : Ixon.Env) : IxVM.Refinement.Draws (decodeRead
     exact .inl ⟨old, hsource, (L1.mkLazyConst_rawBytes _ _).symm⟩
   · intro a bytes hget
     exact hget
+
+/-- The executable table check uses this particular drawn store as its admission witness.
+There is no appeal to a different existential witness hidden inside `TableAdmitted`. -/
+theorem tableAdmitted_of_check_draws (W : Type u) [Ix.Kernel.SetTheory W]
+    {b : Ix.Kernel.Admission.Binding} {E : Ixon.Env} {V : IxVM.Refinement.View}
+    (hcheck : Ix.Cert.TableAdmission.check b E = true)
+    (hdraws : IxVM.Refinement.Draws E V.env) : IxVM.Refinement.TableAdmitted V b := by
+  unfold Ix.Cert.TableAdmission.check at hcheck
+  split at hcheck
+  · exact absurd hcheck Bool.false_ne_true
+  · rename_i t hadm
+    let order := (Ix.Cert.TableAdmission.candidate t E (Ix.Cert.artifactRecIndex E)).2
+    unfold Ix.Cert.TableAdmission.checkAt at hcheck
+    simp only [Bool.and_eq_true] at hcheck
+    obtain ⟨⟨⟨⟨⟨hlit, hseeds⟩, hord⟩, hclosed⟩, hreach⟩, hprepared⟩ := hcheck
+    have hS : ∀ a, a ∈ Ix.Cert.TableAdmission.seedList t ↔ IxVM.Refinement.BindingSeeds t a :=
+      fun _ => Ix.Cert.TableAdmission.mem_seedList
+    obtain ⟨pre, ev, ds, envA, hpre, hprep, haccepted, hthms, haxioms, hspecs⟩ :=
+      Ix.Cert.TableAdmission.preparedOk_sound W hprepared
+    refine ⟨t, hadm, Ix.Cert.TableAdmission.literalSupportBound_of hlit,
+      E, Ix.Cert.TableAdmission.admissionLimits, order, envA, hdraws, ?_,
+      t, pre, ev, ds, hadm,
+      Ix.Cert.TableAdmission.closureOrderAt_of_checks hS hord hclosed hreach,
+      rfl, hpre, hprep, haccepted, hthms, haxioms, hspecs⟩
+    intro a ha
+    exact List.all_eq_true.mp hseeds a (Ix.Cert.TableAdmission.mem_seedList.mpr ha)
+
+/-- Checking the freshly decoded view gives admission with no assumption on the view's caches.
+The checked store is the same coherent store used for dependency discovery and byte reading. -/
+theorem tableAdmitted_of_decodedCheck (W : Type u) [Ix.Kernel.SetTheory W]
+    {b : Ix.Kernel.Admission.Binding} {V : IxVM.Refinement.View}
+    (hcheck : Ix.Cert.TableAdmission.check b (decodeReaderEnv V.env) = true) :
+    IxVM.Refinement.TableAdmitted V b :=
+  tableAdmitted_of_check_draws W hcheck (decodeReaderEnv_draws V.env)
 
 end IxVM.Refinement.Assembly
