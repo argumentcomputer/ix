@@ -234,4 +234,73 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
       next hfree => cases h
   | _ => simp [checkHeader, throw, throwThe, MonadExceptOf.throw] at h
 
+theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {part : Part md} {raw canonical checked : RecRule md}
+    (h : checkRule (fueledOps mode fuel) env envSelf part raw canonical = .ok checked) :
+    raw.ctor = canonical.ctor ∧ raw.nfields = canonical.nfields ∧
+      raw.rhs.looseBVarsBounded 0 = true ∧ raw.rhs.hasFvar = false ∧
+      (runJ mode fuel).annot envSelf 0 raw.rhs checked.rhs ∧
+      checked.rhs.allLevelParamsDefined part.canonical.levelParams = true ∧
+      checked.rhs.constsResolve envSelf = true ∧ letFree checked.rhs = true ∧
+      ruleShape env part canonical = true ∧
+      checked = { canonical with rhs := checked.rhs,
+        eta := recRuleEtaOf env.find? part.raw.name canonical.ctor } := by
+  unfold checkRule at h
+  simp only [bind, Except.bind] at h
+  split at h
+  next hmeta =>
+    simp only [bind, Except.bind] at h
+    split at h
+    next hraw =>
+      simp only [bind, Except.bind] at h
+      cases hann : (fueledOps mode fuel).annotate envSelf 0 raw.rhs with
+      | error reason => rw [hann] at h; cases h
+      | ok rhs =>
+        rw [hann] at h
+        split at h
+        next hscope =>
+          simp only [bind, Except.bind] at h
+          split at h
+          next hshape =>
+            simp only [pure, Except.pure, Except.ok.injEq] at h
+            subst checked
+            simp only [Bool.and_eq_true, beq_iff_eq] at hmeta
+            simp only [Bool.and_eq_true, Bool.not_eq_true] at hraw
+            simp only [Bool.and_eq_true] at hscope
+            exact ⟨hmeta.1, hmeta.2, hraw.1, hraw.2, hann,
+              hscope.1.1, hscope.1.2, hscope.2, hshape, rfl⟩
+          next hshape => cases h
+        next hscope => cases h
+    next hraw => cases h
+  next hmeta => cases h
+
+/-- Once the finishing check supplies its common renaming, a successful rule run is the
+existing semantic twin-rule judgement with the canonical rule as generated RHS. -/
+theorem checkRule_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
+    {part : Part md} {raw canonical checked : RecRule md} {rename : Key md → Key md}
+    (h : checkRule (fueledOps mode fuel) env envSelf part raw canonical = .ok checked)
+    (hwrap : WrapRel env.find? (canonical.rhs.renameConsts rename) checked.rhs) :
+    TwinRuleJ (runJ mode fuel) env envSelf rename part.raw.name part.canonical.levelParams
+      part.annotated part.majorIndex part.rulePrefix raw checked canonical := by
+  obtain ⟨hctor, hfields, hbounded, hfvar, hann, hlevels, hresolve, hfree, hshape, hout⟩ :=
+    checkRule_spec h
+  have checkedCtor : checked.ctor = canonical.ctor := by rw [hout]
+  have checkedFields : checked.nfields = canonical.nfields := by rw [hout]
+  refine ⟨hctor.trans checkedCtor.symm, hfields.trans checkedFields.symm,
+    hbounded, hfvar, hann, hlevels, hresolve, hfree, checkedCtor, checkedFields,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, canonical.rhs, WrapRel.refl _ _, hwrap, .inl rfl⟩
+  · rw [hout]
+  · rw [hout]
+  · rw [hout]
+  · rw [hout]
+  · rw [hout]
+  · intro hfire cv nP nF hfind
+    have hfire' : canonical.fire = .plain := by simpa only [hout] using hfire
+    have hfind' : env.find? canonical.ctor = some (.ctorInfo cv nP nF) := by
+      simpa only [checkedCtor] using hfind
+    simpa only [hout] using ruleShape_plain hshape hfire' hfind'
+  · intro levels pins hfire
+    have hfire' : canonical.fire = .nested levels pins := by simpa only [hout] using hfire
+    exact ruleShape_nested hshape hfire'
+
 end Ix.Kernel.NativeTwin
