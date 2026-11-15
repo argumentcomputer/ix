@@ -848,7 +848,7 @@ theorem safe_refs_only_raw_spec
       subst hi
       have href_arr : c.refs[rIdx.toNat]? = some a' := by simpa using href
       have ha_eq : a' = a := Option.some.inj (href_arr.symm.trans hc_ref)
-      subst a'
+      rw [ha_eq] at hblake_ld hraw_ld hinlogic
       have hc_eq : c_a = c_ld := loaded_recordAt_eq_of_exact_noCollision
         hexact₀ hload₀ hnoCol hrec_a hhash_ld hsub77 hblake_ld hexact_ld
       rw [← hc_eq] at htv_ld hraw_ld hinlogic
@@ -1167,7 +1167,6 @@ private theorem idxOf_append_left [BEq α] [LawfulBEq α] :
     cases hxa : x == a with
     | true => rfl
     | false =>
-      simp only [cond_false]
       rcases List.mem_cons.mp ha with h_ax | ha'
       · rw [h_ax] at hxa
         exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
@@ -1179,9 +1178,8 @@ private theorem idxOf_lt_length [BEq α] [LawfulBEq α] :
   | x :: xs, a, ha => by
     simp only [List.idxOf_cons, List.length_cons]
     cases hxa : x == a with
-    | true => simp
+    | true => exact Nat.zero_lt_succ _
     | false =>
-      simp only [cond_false]
       rcases List.mem_cons.mp ha with h_ax | ha'
       · rw [h_ax] at hxa
         exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
@@ -1193,11 +1191,8 @@ private theorem getElem?_idxOf [BEq α] [LawfulBEq α] :
   | x :: xs, a, ha => by
     simp only [List.idxOf_cons]
     cases hxa : x == a with
-    | true =>
-      simp only [cond_true, List.getElem?_cons_zero]
-      exact congrArg some (beq_iff_eq.mp hxa)
+    | true => exact congrArg some (beq_iff_eq.mp hxa)
     | false =>
-      simp only [cond_false, List.getElem?_cons_succ]
       rcases List.mem_cons.mp ha with h_ax | ha'
       · rw [h_ax] at hxa
         exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
