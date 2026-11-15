@@ -24,10 +24,11 @@ theorem checkedDefn_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env
       (.defnDecl cv value hint) = .ok referenceOut) :
     ∃ targetOut, Agrees referenceOut targetOut ∧
       IxVM.Consistency.InstallStep target (.defnDecl cv value hint) targetOut ∧
+      DeclDefnRunJ rulesJ target cv value hint targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
   obtain ⟨targetOut, agreement, run⟩ := h.declDefnRun (declDefnRun_of checked)
   have rules := declDefnRun_rulesJ run
-  refine ⟨targetOut, agreement, ?_, foldInv_step_defn rules⟩
+  refine ⟨targetOut, agreement, ?_, rules, foldInv_step_defn rules⟩
   apply installStep_glue_defn rules
   obtain ⟨ty, value', hcv, hv, rfl, _, _⟩ := run
   obtain ⟨_, _, _, _, htb, htf, hat, _, _, _⟩ := hcv
@@ -42,10 +43,11 @@ theorem checkedOpaque_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : E
       (.opaqueDecl cv value) = .ok referenceOut) :
     ∃ targetOut, Agrees referenceOut targetOut ∧
       IxVM.Consistency.InstallStep target (.opaqueDecl cv value) targetOut ∧
+      DeclOpaqueRunJ rulesJ target cv value targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
   obtain ⟨targetOut, agreement, run⟩ := h.declOpaqueRun (declOpaqueRun_of checked)
   have rules := declOpaqueRun_rulesJ run
-  refine ⟨targetOut, agreement, ?_, foldInv_step_opaque rules⟩
+  refine ⟨targetOut, agreement, ?_, rules, foldInv_step_opaque rules⟩
   apply installStep_glue_opaque rules
   obtain ⟨ty, _, hcv, _, rfl⟩ := run
   obtain ⟨_, _, _, _, htb, htf, hat, _, _, _⟩ := hcv
@@ -58,10 +60,11 @@ theorem checkedAxiom_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : En
       (.axiomDecl cv) = .ok referenceOut) :
     ∃ targetOut, Agrees referenceOut targetOut ∧
       IxVM.Consistency.InstallStep target (.axiomDecl cv) targetOut ∧
+      DeclAxiomRunJ rulesJ target cv targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
   obtain ⟨targetOut, agreement, run⟩ := h.declAxiomRun (declAxiomRun_of checked)
   have rules := declAxiomRun_rulesJ run
-  refine ⟨targetOut, agreement, ?_, foldInv_step_axiom rules⟩
+  refine ⟨targetOut, agreement, ?_, rules, foldInv_step_axiom rules⟩
   apply installStep_glue_axiom rules
   intro changed
   rcases run with ⟨_, same⟩ | ⟨ty, hcv, rest⟩
@@ -78,6 +81,7 @@ theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env 
       (.thmDecl cv value) = .ok referenceOut) :
     ∃ targetOut, Agrees referenceOut targetOut ∧
       IxVM.Consistency.InstallStep target (.thmDecl cv value) targetOut ∧
+      DeclThmRunJ rulesJ target cv value targetOut ∧
       ∀ (V : Type u) [SetTheory V], FoldInv V target → FoldInv V targetOut := by
   obtain ⟨ty, value', hcv, hprop, hv, rfl⟩ := declThmRun_of checked
   obtain ⟨stype, level, hi, hs, hz⟩ := hprop
@@ -93,7 +97,7 @@ theorem checkedThm_step {fuel : Nat} {ev : Evidences .anon} {referenceOut : Env 
       ⟨stype, level, (verifiedRunMap fuel).infer targetInfer,
         (verifiedRunMap fuel).sort targetSort, (verifiedRunMap fuel).isZero hz⟩,
       valueFrontRun_rulesJ targetValue, rfl⟩
-  refine ⟨_, h.consThm _ _ _, ?_, foldInv_step_thm rules⟩
+  refine ⟨_, h.consThm _ _ _, ?_, rules, foldInv_step_thm rules⟩
   apply installStep_glue_thm rules
   obtain ⟨_, _, _, _, htb, htf, hat, _, _, _⟩ := targetCV
   obtain ⟨hvb, hvf, hav, _, _, _⟩ := targetValue
