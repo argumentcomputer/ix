@@ -166,7 +166,10 @@ theorem isUnitLikeTy (e : Expr md) :
       (fun c => match c with
         | some (.recInfo _ mI rP [r]) => mI == rP && r.nfields == 0
         | _ => false) (by intros; rfl)
-    exact congrArg₂ (fun left right : Bool => (name == punitName && left) && right) hi hr
+    have combine {a b c d : Bool} (hab : a = b) (hcd : c = d) :
+        (name == punitName && a) && c = (name == punitName && b) && d := by
+      cases hab; cases hcd; rfl
+    exact combine hi hr
   | _ => rfl
 
 theorem towerSlotsAll (T : Key md) (n : Nat) :
