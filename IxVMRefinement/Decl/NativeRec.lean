@@ -5195,14 +5195,15 @@ theorem projection_addr_ctor_spec {c : Ctx} {bp r : SourceValue F} {b : Bytes.Ad
     simp only [Specs.Callees.ProjInfoRep]
     exact ⟨TagN.u64Value n1, TagN.u64Value n2, bp, b, rfl, hrep1, hrep2,
       Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
-  have hbytes := put_constant_step c ev178 _ _
+  have hbytes := put_constant_step (ScopedCtx.unrestricted c) ev178 _ _
     (.cPrj ⟨idx.toUInt64, cidx.toUInt64, ixAddr b⟩) [] rfl
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
   have hgood_bta : Good c cs204 :=
     hgood.sub (by rw [hc215]; intro x hx; simp [hx])
-  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev206 v165 _ rfl hgood_bta hbytes
+  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step (ScopedCtx.unrestricted c)
+    ev206 v165 _ rfl (CoreGood.unrestricted hgood_bta) hbytes
   refine ⟨a, ha, ?_⟩
   rw [haddr, ProjAddrAux.bytes_mk_toList]
   rfl

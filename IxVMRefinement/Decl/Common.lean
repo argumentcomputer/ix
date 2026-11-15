@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.Seams
+import IxVMRefinement.Core.AllSteps
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Infer.Close
 import IxVMRefinement.Nat.Levels
@@ -53,6 +54,28 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
 /-! ## Store invariant and fold invariant -/
+
+/-- A reference prefix model already supplies the unchanged model-free store invariant.
+No global eta-table companion is required for this projection. -/
+theorem storeInv_of_envModelT {V : Type u} [Ix.Kernel.SetTheory V]
+    {μ : Ix.Kernel.CheckMode} {env : Ix.Kernel.Env .anon} (h : EnvModelT V μ env) :
+    Ix.Kernel.Open.StoreInv env := by
+  obtain ⟨⟨mp, _⟩, _⟩ := h
+  exact ⟨mp.base2.wf, mp.base2.rec_ctors, mp.base2.proj_ok⟩
+
+/-- Staging actual inductive capabilities preserves StoreInv once their parameter arities
+are checked. It does not assume that fresh constructors or projection tables are installed. -/
+theorem storeInv_consIndCaps {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon} (hS : Ix.Kernel.Open.StoreInv env)
+    (hfresh : env.find? cv.name = none)
+    (hty : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (hunit : caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true)
+    (heta : caps.eta = true → (cv.type.stripPis caps.etaParams).isSome = true) :
+    Ix.Kernel.Open.StoreInv ⟨.indInfo cv caps :: env.consts⟩ :=
+  Ix.Kernel.Model.storeInv_consTyped hS hfresh hty
+    (fun _ _ _ h => nomatch h) (fun _ _ _ _ h => nomatch h) (fun _ h => nomatch h)
+    (Ix.Kernel.IndCapsWF.of_caps hunit heta)
 
 /-- **Store-level companion invariants** carried alongside `EnvModelT` across declarations. -/
 structure DeclStoreInv (env : Ix.Kernel.Env .anon) : Prop where
@@ -1609,7 +1632,66 @@ theorem ghostScoped_zero (Γ : Nat → KExpr) : GhostScoped Γ 0 :=
 theorem heap_extends_append (h extra : Heap F) : Heap.Extends h (h ++ extra) :=
   ⟨extra, rfl⟩
 
-/-- Collision-free `whnf` from `Core S₀` under `Good`. -/
+/-- Actual scoped normalization uses the concrete registry at its selected context. -/
+theorem scoped_core_whnf {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' cs)
+    (hte : Tm c.κ d Γ h 0 te e) :
+    ∃ te', Tm c.κ d Γ h' 0 te' r ∧ Red c.env d te te' :=
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.whnf .whnf)
+    [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
+
+/-- Actual scoped definitional equality uses only the selected core calls. -/
+theorem scoped_core_defeq {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types a b : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {ta tb : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h (.field 1) h' cs)
+    (hta : Tm c.κ d Γ h 0 ta a) (htb : Tm c.κ d Γ h 0 tb b) : DefEq c.env d ta tb :=
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.defEq .k_is_def_eq)
+    [rc, a, b, types] h (.field 1) h' cs ev rc a b types rfl hgood hrc d Γ
+      ⟨hty, hsc⟩ ta tb hta htb NatAux.field_one_ne_zero
+
+/-- Actual scoped type inference uses the concrete registry, without a public `S0.ctx` witness. -/
+theorem scoped_core_infer {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelInfer::k_infer" [rc, e, types] h r h' cs)
+    (hte : Tm c.κ d Γ h 0 te e) :
+    ∃ tt, Tm c.κ d Γ h' 0 tt r ∧ Infer c.env .full d te tt :=
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_infer)
+    [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
+
+/-- The scoped sort checker retains its actual typing and semantic level certificate. -/
+theorem scoped_core_ensure_sort {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelInfer::k_ensure_sort" [rc, e, types] h r h' cs)
+    (hte : Tm c.κ d Γ h 0 te e) :
+    ∃ stype u ℓ, Infer c.env .full d te stype ∧ Red c.env d stype (.sort u) ∧
+      RepKLevel h' ℓ r ∧ LvEq u ℓ := by
+  obtain ⟨stype, u, hinf, hred, ℓ, hℓ, heq⟩ :=
+    Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_ensure_sort)
+      [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
+  exact ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩
+
+/-- Actual scoped checking retains the inferred type and checked definitional equality. -/
+theorem scoped_core_check {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types e x r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te tx : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelInfer::k_check" [rc, e, x, types] h r h' cs)
+    (hte : Tm c.κ d Γ h 0 te e) (htx : Tm c.κ d Γ h 0 tx x) :
+    ∃ tt, Infer c.env .full d te tt ∧ DefEq c.env d tt tx :=
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_check)
+    [rc, e, x, types] h r h' cs ev rc e x types rfl hgood hrc d Γ ⟨hty, hsc⟩ te tx hte htx
+
+/-- Legacy collision-free `whnf` compatibility through public `Core S₀`. Actual scoped
+declaration runs use `scoped_core_whnf`. -/
 theorem core_whnf (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)

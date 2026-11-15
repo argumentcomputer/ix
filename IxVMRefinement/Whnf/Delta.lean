@@ -212,10 +212,10 @@ theorem tag_eq {t t' : F} {x y : SourceValue F}
 
 /-! ## `projection_definition_info`, by its own induction -/
 
-theorem pdi_strong (c : Ctx) (N : Nat) :
+theorem pdi_strong (c : ScopedCtx) (N : Nat) :
     ∀ {val arity : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)},
       calls.length < N →
-      ObsFn W "KernelWhnf::projection_definition_info" [val, arity] h r h' calls → Good c calls →
+      ObsFn W "KernelWhnf::projection_definition_info" [val, arity] h r h' calls → CoreGood c calls →
       ∀ {d : Nat} {Γ : Nat → KExpr} {K : Nat} {V : KExpr}, arity = .field (K : F) →
         c.tmk d Γ K h V val →
       ∀ {xa sp xf xj : SourceValue F}, r = .tuple [.field 1, xa, sp, xf, xj] →
@@ -282,10 +282,10 @@ theorem pdi_strong (c : Ctx) (N : Nat) :
 
 /-- `projection_definition_info` at an arity below `2^32`: the counts as naturals, the
 projected bound variable read off the image. -/
-theorem pdi_top (c : Ctx) {val : SourceValue F} {a : F} {h h' : Heap F} {r : SourceValue F}
+theorem pdi_top (c : ScopedCtx) {val : SourceValue F} {a : F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::projection_definition_info" [val, .field a] h r h' calls)
-    (good : Good c calls) (ha : ZMod.val a < 4294967296) {d : Nat} {Γ : Nat → KExpr}
+    (good : CoreGood c calls) (ha : ZMod.val a < 4294967296) {d : Nat} {Γ : Nat → KExpr}
     {V : KExpr} (hV : c.tmk d Γ (ZMod.val a) h V val) {xa sp xf xj : SourceValue F}
     (hr : r = .tuple [.field 1, xa, sp, xf, xj]) :
     ∃ (n f j : F) (s : Bytes.Address) (m : Nat), xa = .field n ∧ xf = .field f ∧
@@ -418,7 +418,7 @@ end WhnfAux
 
 /-- `KernelWhnf::red_unfold`: a definition's (theorem's) value at levels of its count, tag `1`
 (`2`); its positional form instantiated positionally is the value at its own parameters. -/
-theorem red_unfold_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem red_unfold_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_unfold" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_unfold c args h r h' calls := by
@@ -482,7 +482,7 @@ theorem red_unfold_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::projection_definition_info`: tag `1` is `m` `λ`s over a projection of the bound
 variable `n - 1 - j`, at an arity below `2^32`. -/
-theorem projection_definition_info_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem projection_definition_info_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::projection_definition_info" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.projection_definition_info c args h r h' calls := by
@@ -500,11 +500,11 @@ theorem projection_definition_info_step (c : Ctx) {args : List (SourceValue F)} 
 
 /-- **`try_reduce_projection_definition`, at a level count below `2^32`**: `Red.delta`, the
 `never` β chain over the value's `λ`s, the projected argument substituted. -/
-theorem try_reduce_core (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_reduce_core (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_reduce_projection_definition" args h r h' calls)
     (ih : IH c calls) :
-    ∀ value nl lvls sp, args = [value, nl, lvls, sp] → Good c calls →
+    ∀ value nl lvls sp, args = [value, nl, lvls, sp] → CoreGood c calls →
       ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
         c.tmc h (posOf cv.levelParams V) value →
         cv.levelParams.Perm (List.range cv.levelParams.length) →
@@ -627,7 +627,7 @@ theorem try_reduce_core (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `KernelWhnf::try_reduce_projection_definition`: the projection-function shortcut
 (`try_reduce_core`). -/
-theorem try_reduce_projection_definition_step (c : Ctx) {args : List (SourceValue F)}
+theorem try_reduce_projection_definition_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_reduce_projection_definition" args h r h' calls)
     (ih : IH c calls) :

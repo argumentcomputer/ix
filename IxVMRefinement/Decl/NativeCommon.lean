@@ -1058,6 +1058,60 @@ theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : C
     annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
+/-- A checked constant at an actual selected-call context. The sort derivation comes from
+the scoped registry; no unrestricted load or public S0.ctx witness is used. -/
+theorem constantValCheckJ_of_scoped {c : ScopedCtx}
+    {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
+    {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
+    (hvs : IxVM.Consistency.ValStored cv' cv)
+    (hv : ValRepExact c.κ h nl ty cv')
+    (hlbd : cv.type.looseBVarsBounded 0 = true)
+    (hfv : cv.type.hasFvar = false)
+    (hfresh : c.env.find? cv.name = none)
+    (hbasis : Ix.Kernel.reservedBasisNames.contains cv.name = false)
+    (hshape : cv.name.isProjFnShape = false)
+    (hstore : Ix.Kernel.Open.StoreInv c.env)
+    (hpos : PosSortLift c.env cv')
+    (ev_ws : ObsFn W "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl] h r₁ h₁ cs₁)
+    (ext : Heap.Extends h h₂)
+    (hrc : RCRep c.t c.lim h₂ rc) (hty : TypesRep c.κ Γ h₂ 0 types)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs₂)
+    (ev_sort : ObsFn W "KernelInfer::k_ensure_sort" [rc, ty, types] h₂ r₂ h₃ cs₂) :
+    ConstantValCheckJ rulesJ c.env cv cv' ∧
+      ∃ sty₀ u₀ ℓ,
+        Infer c.env .full 0 (posOf cv'.levelParams cv'.type) sty₀ ∧
+        Red c.env 0 sty₀ (.sort u₀) ∧
+        RepKLevel h₃ ℓ r₂ ∧ LvEq u₀ ℓ := by
+  have hnd_cv' : cv'.levelParams.Nodup := hv.2.2.1.nodup_iff.mpr List.nodup_range
+  have hnd_cv : LevelParam.nodup cv.levelParams = true := by
+    rw [← hvs.2.1]
+    exact nat_levelParam_nodup_of_nodup hnd_cv'
+  have ev_ws' : ObsFn W "KernelCheck::validate_expr_well_scoped"
+      [ty, .field 0, .field (cv'.levelParams.length : F)] h r₁ h₁ cs₁ := by
+    rwa [← hv.1]
+  have hlpd_pos := validate_expr_well_scoped_spec hv.2.1 (hv.2.2.2 0 Γ) ev_ws'
+  have hlpd' := allLevelParamsDefined_of_posOf_perm hv.2.2.1 hlpd_pos
+  rw [hvs.2.1] at hlpd'
+  obtain ⟨sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩ :=
+    scoped_core_ensure_sort hrc hty (ghostScoped_zero Γ) hef hlf hgood ev_sort
+      (((hv.2.2.2 0 Γ).mono ext).toTm)
+  have hfv_pos : (posOf cv'.levelParams cv'.type).hasFvar = false := by
+    unfold posOf
+    rw [Ix.Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact annotates_hasFvar_false hvs.2.2 hfv
+  have hcr_pos := infer_constsResolve hinf₀ hstore hfv_pos
+  rw [constsResolve_posOf] at hcr_pos
+  obtain ⟨sty, u, hinf, hred⟩ := hpos sty₀ u₀ hinf₀ hred₀
+  have hcv_eq : cv' = { cv with type := cv'.type } := by
+    cases cv; cases cv'
+    cases hvs.1; cases hvs.2.1
+    rfl
+  refine ⟨⟨cv'.type, ⟨Option.isNone_iff_eq_none.mpr hfresh, hbasis, hshape, hnd_cv,
+    hlbd, hfv,
+    annot_of_annotates hvs.2.2 hfv hlbd 0, hlpd', hcr_pos,
+    ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
+
+
 /-! ## Semantic level-list equivalence, `ExprSemEq`, and `WrapRelSem` -/
 
 private theorem evalEqList_symm (φ : LevelParam → Nat) :

@@ -744,14 +744,15 @@ theorem compute_iprj_addr_spec {c : Ctx} {bp : SourceValue F} {b : Bytes.Address
         [.construct "Ixon::InductiveProj" "Mk" [TagN.u64Value n, bp]]) := by
     simp only [Specs.Callees.ProjInfoRep]
     exact ⟨TagN.u64Value n, bp, b, rfl, hrep, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
-  have hbytes := put_constant_step c ev148 _ _
+  have hbytes := put_constant_step (ScopedCtx.unrestricted c) ev148 _ _
     (.iPrj ⟨idx.toUInt64, ixAddr b⟩) [] rfl
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
   have hgood_bta : Good c cs174 :=
     hgood.sub (by rw [hc185]; intro x hx; simp [hx])
-  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev176 v135 _ rfl hgood_bta hbytes
+  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step (ScopedCtx.unrestricted c)
+    ev176 v135 _ rfl (CoreGood.unrestricted hgood_bta) hbytes
   refine ⟨a, ha, ?_⟩
   rw [haddr, ProjAddrAux.bytes_mk_toList]
   rfl
@@ -3218,6 +3219,26 @@ def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
           (.construct kciEnum "Ctor"
             [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0])
           (.ctorInfo cvCa₀ nP c.2)
+
+/-- A real constructor metadata observation supplies the scoped read result even while the
+constructor is fresh. This uses the raw declaration loader witness, not installed-load facts. -/
+theorem CtorLoadAt.fresh_read {c : ScopedCtx} {b₀ : Bytes.Address} {nP j : Nat}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr} {bp ptr : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (hload : CtorLoadAt c.t b₀ nP cs_root ctors ctorsA ctorRawTypes)
+    (hj : j < ctors.length) (hsub : ∀ cl ∈ cs, cl ∈ cs_root)
+    (hbp : Bytes.RepAddressRef addrTy h b₀ bp)
+    (ev : ObsFn W "Ingress::get_ci_cprj" [bp, .field 0, .field (j : F)] h ptr h' cs)
+    (hfresh : c.env.find? (c.κ (cprjAddr (ixAddr b₀) 0 (ZMod.val (j : F)))) = none) :
+    (∃ ci₀, CIPtrRep c.κ h' ptr ci₀) ∧
+    ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b₀) 0 (ZMod.val (j : F)))) = some ci →
+      CIPtrRep c.κ h' ptr ci := by
+  obtain ⟨ctor, cvCa, -, -, -, hraw⟩ := hload.2 j hj
+  obtain ⟨nl, ty, blk, np, nf, b_c, hld, -, -, -, hrep⟩ := hraw bp ptr h h' cs hsub hbp ev
+  refine ⟨⟨.ctorInfo cvCa nP ctor.2, _, hld, hrep.toCIRep⟩, fun ci hfind => ?_⟩
+  rw [hfresh] at hfind
+  exact nomatch hfind
 
 private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
     {b₀ a_t : Bytes.Address} {T : KKey} {nP : Nat} {ind_lvl : KLevel}

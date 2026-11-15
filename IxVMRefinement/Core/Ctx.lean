@@ -93,7 +93,7 @@ abbrev ScopedCtx.allowedTop (c : ScopedCtx) (fname : String)
 /-- The keying of addresses: the table's. -/
 abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
 
-abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := c.toCtx.κ
+abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := keyOf c.t
 
 /-! ## The role context -/
 
@@ -214,6 +214,11 @@ validation schedule the circuit's `role_group` renders) is below the context's l
 lookup of the circuit succeeds only for a role in force; during the validation of a group the
 roles of that group and later ones are bound but not in force (nor installed). -/
 def Ctx.inForce (c : Ctx) (r : Ix.Kernel.Role) : Prop :=
+  c.binds r ∧ ∀ n, c.lim = some n → Ix.SpecDigest.groupOf r < n
+
+abbrev ScopedCtx.binds (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop := (c.t.addressOf? r).isSome
+
+abbrev ScopedCtx.inForce (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop :=
   c.binds r ∧ ∀ n, c.lim = some n → Ix.SpecDigest.groupOf r < n
 
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that

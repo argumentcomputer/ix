@@ -142,7 +142,7 @@ theorem CIRep.recr_k {κ : _root_.Address → KKey} {h : Heap F}
 /-- **`KernelWhnf::k_synth_fab`**: the major's io type head-normalizes to its inductive (the major
 premise's head), the rule's constructor applied to the type's parameters is fabricated, and its
 type and the major's are propositions definitionally equal to each other: `Red.rescueK`. -/
-theorem k_synth_fab_step (c : Ctx) (hc : CoreFacts c)
+theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::k_synth_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.k_synth_fab c args h r h' calls := by
@@ -197,7 +197,8 @@ theorem k_synth_fab_step (c : Ctx) (hc : CoreFacts c)
     subst hiap
     -- the inductive's record, and the rule's constructor
     obtain ⟨cm, b, i, hcm, hb, hidx, hinfo⟩ := hc.loads.inductRecord x_ind_addr p189 m146 m181 cs195
-      ia _ _ _ _ _ _ x_ind_block x_ind_idx ev197 (good.sub fun z hz => by simp [hz])
+      ia _ _ _ _ _ _ x_ind_block x_ind_idx ev197 (good.allowedTop (by simp))
+      (good.sub fun z hz => by simp [hz]).raw
       (Bytes.repAddressRef_heapMono₂ addrTy e159 hia) ld191
     subst hidx
     obtain ⟨us0, hmh0⟩ := hmh
@@ -277,7 +278,7 @@ theorem k_synth_fab_step (c : Ctx) (hc : CoreFacts c)
 
 /-- **`KernelWhnf::try_k_synth_iota`**: at the one rule of a K recursor (index `0`), the K
 fabrication (`k_synth_fab`), then ι on it (`red_iota`). -/
-theorem try_k_synth_iota_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem try_k_synth_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_k_synth_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_k_synth_iota c args h r h' calls := by

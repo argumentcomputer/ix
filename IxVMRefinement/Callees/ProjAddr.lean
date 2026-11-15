@@ -7,7 +7,7 @@ import IxVMRefinement.Obs.KernelCheck9
 /-! # Projection-record addresses and BLAKE3 hashing
 
 Step lemmas for:
-* `Blake3::bytes_to_addr`: hashes a represented byte stream (`RepBytes`) under `Good` and stores
+* `Blake3::bytes_to_addr`: hashes a represented byte stream (`RepBytes`) under `CoreGood` and stores
   its 32-byte BLAKE3 digest (`Address.blake3Pure`);
 * `KernelCheck::projection_addr_ctor`: builds, serializes, and hashes the constructor-projection
   record `(i, j, block)` (`cprjAddr`);
@@ -37,12 +37,12 @@ theorem blake3Pure_eq_ixAddr (bytes : List UInt8) :
 
 end ProjAddrAux
 
-/-- `Blake3::bytes_to_addr`: hashes a represented byte list under `Good` and returns a pointer
+/-- `Blake3::bytes_to_addr`: hashes a represented byte list under `CoreGood` and returns a pointer
 to its 32-byte BLAKE3 digest. -/
-theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem bytes_to_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "Blake3::bytes_to_addr" args h r h' calls) :
-    ∀ bp (bytes : List UInt8), args = [bp] → Good c calls → RepBytes h bytes bp →
+    ∀ bp (bytes : List UInt8), args = [bp] → CoreGood c calls → RepBytes h bytes bp →
       ∃ a : Bytes.Address, RepAddr h' a r ∧ ixAddr a = Address.blake3Pure ⟨bytes.toArray⟩ := by
   intro bp bytes hargs good hbytes
   subst hargs
@@ -79,7 +79,7 @@ theorem bytes_to_addr_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
 
 /-- `KernelCheck::projection_addr_ctor`: builds, serializes, and hashes the constructor-projection
 record `(i, j, block)` (`cprjAddr`). -/
-theorem projection_addr_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem projection_addr_ctor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::projection_addr_ctor" args h r h' calls) :
     Specs.Callees.projection_addr_ctor c args h r h' calls := by
@@ -134,7 +134,7 @@ theorem projection_addr_ctor_step (c : Ctx) {args : List (SourceValue F)} {h h' 
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
-  have hgood_bta : Good c cs204 :=
+  have hgood_bta : CoreGood c cs204 :=
     good.sub (by rw [hc215]; intro x hx; simp [hx])
   obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev206 v165 _ rfl hgood_bta hbytes
   refine ⟨a, ha, ?_⟩
@@ -180,10 +180,10 @@ theorem muts_member_at_spec :
       simp only [List.length_cons] at hk hlen
       exact ih (Nat.lt_of_succ_lt_succ hk) (Nat.lt_trans (Nat.lt_succ_self _) hlen) hzs ev57
 
-theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Address}
+theorem projection_addr_spec (c : ScopedCtx) {ms : List Ixon.MutConst} {b : Bytes.Address}
     {i : Nat} {lp bp r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hi : i < ms.length) (hlen : ms.length < 2 ^ 39)
-    (good : Good c calls)
+    (good : CoreGood c calls)
     (hms : Specs.Callees.MembersRep h ms lp)
     (hb : RepAddr h b bp)
     (ev : ObsFn W "Ingress::projection_addr" [lp, bp, .field (i : F)] h r h' calls) :
@@ -276,7 +276,7 @@ theorem projection_addr_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Addr
     ⟨_, _, _, _, _, rfl, hseg.2, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
-  have hgood_bta : Good c cs321 :=
+  have hgood_bta : CoreGood c cs321 :=
     good.sub (by rw [hc332]; intro x hx; simp [hx])
   obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev323 v282 _ rfl hgood_bta hbytes
   refine ⟨a, ha, ?_⟩
@@ -312,12 +312,12 @@ theorem mapIdx_cons_eq {α β : Type} (f : Nat → α → β) (x : α) (xs : Lis
   | zero => simp [List.getElem?_mapIdx]
   | succ k => simp [List.getElem?_mapIdx]
 
-theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Bytes.Address}
+theorem build_recur_addrs_walk_spec (c : ScopedCtx) {ms : List Ixon.MutConst} {b : Bytes.Address}
     {lp bp : SourceValue F} (hlen : ms.length < 2 ^ 39) :
     ∀ (cur : List Ixon.MutConst) {i : Nat} {cur_p r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)},
       ms.drop i = cur →
-      Good c calls →
+      CoreGood c calls →
       Specs.Callees.MembersRep h ms lp →
       RepAddr h b bp →
       Specs.Callees.MembersRep h cur cur_p →
@@ -346,8 +346,8 @@ theorem build_recur_addrs_walk_spec (c : Ctx) {ms : List Ixon.MutConst} {b : Byt
       injection he with he1 he2
       subst he1 he2
       obtain ⟨hi, hmi, hdrop'⟩ := drop_succ_of_drop_cons ms i hdrop
-      have hgood1 : Good c cs66 := good.sub (by rw [hc145]; intro x hx; simp [hx])
-      have hgood2 : Good c cs102 := good.sub (by rw [hc145]; intro x hx; simp [hx])
+      have hgood1 : CoreGood c cs66 := good.sub (by rw [hc145]; intro x hx; simp [hx])
+      have hgood2 : CoreGood c cs102 := good.sub (by rw [hc145]; intro x hx; simp [hx])
       obtain ⟨a, ha, ha_addr⟩ := projection_addr_spec c hi hlen hgood1 hms hb ev68
       rw [hmi] at ha_addr
       have ext1 := ev68.heap_extends
@@ -380,7 +380,7 @@ end ProjAddrAux
 
 /-- `Ingress::build_recur_addrs`: builds, serializes, and hashes the projection records of a
 mutual block's members in order. -/
-theorem build_recur_addrs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem build_recur_addrs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "Ingress::build_recur_addrs" args h r h' calls) :
     Specs.Callees.build_recur_addrs c args h r h' calls := by
@@ -391,7 +391,7 @@ theorem build_recur_addrs_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     rw [hc38]; simp
   have hlen : ms.length < 2 ^ 39 :=
     RomBound.bounded_length_lt good.2 hcall (by simp) hms
-  have hgood4 : Good c cs4 := good.sub (by rw [hc38]; intro x hx; simp [hx])
+  have hgood4 : CoreGood c cs4 := good.sub (by rw [hc38]; intro x hx; simp [hx])
   have ev6' : ObsFn W "Ingress::build_recur_addrs_walk" [lp, bp, lp, .field ((0 : Nat) : F)]
       h r h' cs4 := by
     simpa using ev6

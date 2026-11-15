@@ -34,7 +34,7 @@ end NatAux
 /-! ## `klimbs_succ` -/
 
 /-- `klimbs_succ(n)`: `n + 1`, canonical on canonical input. -/
-theorem klimbs_succ_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_succ_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_succ" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_succ c args h r h' calls := by
@@ -89,7 +89,7 @@ theorem klimbs_succ_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 /-! ## `klimbs_add_carry`, `klimbs_add` -/
 
 /-- `klimbs_add_carry(a, b, carry)` with a carry bit: `a + b + carry`. -/
-theorem klimbs_add_carry_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_add_carry_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_add_carry" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_add_carry c args h r h' calls := by
@@ -156,7 +156,7 @@ theorem klimbs_add_carry_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     omega
 
 /-- `klimbs_add(a, b)`: `a + b`. -/
-theorem klimbs_add_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_add_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_add" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_add c args h r h' calls := by
@@ -172,7 +172,7 @@ theorem klimbs_add_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-- `klimbs_sub_borrow(a, b, borrow)` with a borrow bit: the borrow out, and the difference when
 it is `0`. -/
-theorem klimbs_sub_borrow_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_sub_borrow" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_sub_borrow c args h r h' calls := by
@@ -278,7 +278,7 @@ theorem klimbs_sub_borrow_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
 /-! ## `klimbs_normalize`, `klimbs_sub`, `klimbs_le`, `klimbs_dec`, `klimbs_is_zero` -/
 
 /-- `klimbs_normalize(n)`: the same value, canonical. -/
-theorem klimbs_normalize_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_normalize_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_normalize" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_normalize c args h r h' calls := by
@@ -332,7 +332,7 @@ theorem klimbs_normalize_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     · exact canon_cons_of_pos hc1 (by rw [limbsVal_cons]; omega)
 
 /-- `klimbs_sub(a, b)`: truncated subtraction, canonical. -/
-theorem klimbs_sub_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_sub_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_sub" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_sub c args h r h' calls := by
@@ -365,7 +365,7 @@ theorem klimbs_sub_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     · exact absurd (field_inj hbf).symm one_ne_zero
 
 /-- `klimbs_le(a, b)`: `1` exactly when `a ≤ b`. -/
-theorem klimbs_le_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_le_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_le" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_le c args h r h' calls := by
@@ -387,7 +387,7 @@ theorem klimbs_le_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     rw [ite_eq_right (by omega)]
 
 /-- `klimbs_dec(a)`: `a - 1`, canonical. -/
-theorem klimbs_dec_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_dec_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_dec" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_dec c args h r h' calls := by
@@ -402,7 +402,7 @@ theorem klimbs_dec_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     ⟨[w1], lrep_store_cons hr1 (lrep_store_nil h), by simp [limbsVal_cons, limbsVal_nil, hw1]⟩
 
 /-- `klimbs_is_zero(x)`: `1` exactly when the value is `0`. -/
-theorem klimbs_is_zero_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_is_zero_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_is_zero" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_is_zero c args h r h' calls := by
@@ -426,7 +426,7 @@ theorem klimbs_is_zero_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
 /-! ## `divmod_256`, `klimbs_shl_limbs` -/
 
 /-- `divmod_256(x, q)`: `(x mod 256, q + x div 256)`, at `x < 2^32`. -/
-theorem divmod_256_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem divmod_256_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::divmod_256" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.divmod_256 c args h r h' calls := by
@@ -467,7 +467,7 @@ theorem divmod_256_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     rw [hr, e1, e3]
 
 /-- `klimbs_shl_limbs(x, shift)`: `x * 2^(64 * shift)`. -/
-theorem klimbs_shl_limbs_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_shl_limbs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_shl_limbs" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_shl_limbs c args h r h' calls := by
@@ -537,7 +537,7 @@ theorem toNat_lt_two_pow (w : UInt64) : w.toNat < 2 ^ 64 := w.toNat_lt
 end NatAux
 
 /-- `klimbs_land(a, b)`: `Nat.land a b`. -/
-theorem klimbs_land_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_land_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_land" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_land c args h r h' calls := by
@@ -563,7 +563,7 @@ theorem klimbs_land_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact (land_split (toNat_lt_two_pow x) (toNat_lt_two_pow y)).symm
 
 /-- `klimbs_lor(a, b)`: `Nat.lor a b`. -/
-theorem klimbs_lor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_lor_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_lor" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_lor c args h r h' calls := by
@@ -591,7 +591,7 @@ theorem klimbs_lor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact (lor_split (toNat_lt_two_pow x) (toNat_lt_two_pow y)).symm
 
 /-- `klimbs_xor_op(a, b)`: `Nat.xor a b`. -/
-theorem klimbs_xor_op_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem klimbs_xor_op_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_xor_op" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_xor_op c args h r h' calls := by

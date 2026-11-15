@@ -72,20 +72,20 @@ result represents `Γ (d - 1 - i)` at depth `d` — the annotation of `BVar i`'s
 `.fvar (d - 1 - i) _`, which `Infer.fvar` returns — and `i < d` (`Infer.fvar`'s premise; the
 lookup fails beyond the segment). -/
 def types_lookup : SpecFn := fun c args h r h' calls =>
-  ∀ (types : SourceValue F) (i : F), args = [types, .field i] → Good c calls →
+  ∀ (types : SourceValue F) (i : F), args = [types, .field i] → CoreGood c calls →
     ∀ d Γ, c.types Γ h d types →
       ZMod.val i < d ∧ c.tm d Γ h' (Γ (fvIdx d 0 (ZMod.val i))) r
 
 /-- `const_num_lvls(ci)`: **the loaded constant's level count** (`Infer.const`'s arity
 premise `us.length = levelParams.length`). Allocates nothing. -/
 def const_num_lvls : SpecFn := fun c args h r h' calls =>
-  ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → Good c calls →
+  ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → CoreGood c calls →
     c.ci h v ci → r = .field (ci.toConstantVal.levelParams.length : F) ∧ h' = h
 
 /-- `const_type_of(ci)`: **the loaded constant's type**, a closed term with the constant's level
 parameters at positions (`posOf`; `Infer.const` instantiates it). Allocates nothing. -/
 def const_type_of : SpecFn := fun c args h r h' calls =>
-  ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → Good c calls →
+  ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → CoreGood c calls →
     c.ci h v ci →
       c.tmc h' (posOf ci.toConstantVal.levelParams ci.toConstantVal.type) r ∧ h' = h
 
@@ -93,7 +93,7 @@ def const_type_of : SpecFn := fun c args h r h' calls =>
 loose bound variable is inferred in the empty context (the spec holds at every depth for it), a
 term with some through `k_infer_rebase`. -/
 def k_infer : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d E T
 
@@ -103,7 +103,7 @@ the innermost `g` opened variables, which `e` does not mention, are dropped (`ex
 (`expr_lift`). Stated at the caller's depth; the proof moves the inner derivation up with
 `Transport.lift`. Holds for every `base` (it only trims the segment the inner run reads). -/
 def k_infer_rebase : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types base, args = [rc, e, types, base] → Good c calls → c.rc h rc →
+  ∀ rc e types base, args = [rc, e, types, base] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d E T
 
@@ -117,7 +117,7 @@ It reads `Infer.proj`'s table premises from the projection-table environment fac
 (to be added to `EnvFacts`) and `FireSem` from the stored guard form the circuit would compute,
 whose helper functions do not exist yet (no specs for them here). -/
 def k_infer_core : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d E T
 
@@ -125,7 +125,7 @@ def k_infer_core : SpecFn := fun c args h r h' calls =>
 image of `Let(ty, val, body)` is `instShift V 0 B` (`Tm.letE`); the circuit also checks the
 type's sort and the value against it, which no rule reads. -/
 def k_infer_let_start : SpecFn := fun c args h r h' calls =>
-  ∀ rc ty val body types, args = [rc, ty, val, body, types] → Good c calls → c.rc h rc →
+  ∀ rc ty val body types, args = [rc, ty, val, body, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ Ty V B, c.tm d Γ h Ty ty → c.tm d Γ h V val →
       c.tmk d Γ 1 h B body →
         ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d (instShift V 0 B) T
@@ -134,7 +134,7 @@ def k_infer_let_start : SpecFn := fun c args h r h' calls =>
 as many local binders as `subs_rev` has entries, instantiated with them, the head of
 `subs_rev` (the last argument consumed) for the innermost binder (`instantiateList`). -/
 def inst_subs : SpecFn := fun c args h r h' calls =>
-  ∀ e subs, args = [e, subs] → Good c calls →
+  ∀ e subs, args = [e, subs] → CoreGood c calls →
     ∀ d Γ Ss B, c.tml d Γ h Ss subs → c.tmk d Γ Ss.length h B e →
       c.tm d Γ h' (B.instantiateList Ss 0) r
 
@@ -144,7 +144,7 @@ has the type the loop returns (`Infer.app` once per argument, each argument chec
 domain by `k_check`; the head's type is head-normalized only when it is not syntactically a
 `∀`). -/
 def k_infer_app_spine_loop : SpecFn := fun c args h r h' calls =>
-  ∀ rc t sp subs types, args = [rc, t, sp, subs, types] → Good c calls → c.rc h rc →
+  ∀ rc t sp subs types, args = [rc, t, sp, subs, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ (Ss As : List KExpr) (B Fe : KExpr),
       c.tml d Γ h Ss subs → c.tmk d Γ Ss.length h B t → c.tml d Γ h As sp →
       Infer c.env .full d Fe (B.instantiateList Ss 0) →
@@ -154,13 +154,13 @@ def k_infer_app_spine_loop : SpecFn := fun c args h r h' calls =>
 `Nat` role (`role_addr`), the bound `String` role (`role_used_implicitly`). The support guards
 (`natLitSupported`, `strLitSupported`) come from `EnvFacts` and the table's bindings. -/
 def k_infer_lit : SpecFn := fun c args h r h' calls =>
-  ∀ rc lit, args = [rc, lit] → Good c calls → c.rc h rc → ∀ l, LitRep h lit l →
+  ∀ rc lit, args = [rc, lit] → CoreGood c calls → c.rc h rc → ∀ l, LitRep h lit l →
     ∀ d Γ, ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d (.lit l) T
 
 /-- `peel_params_subst(ty, args, n_params)`: **a constructor type with its first `n` binders
 instantiated by the structure's parameters**, syntactically (`instPis`). -/
 def peel_params_subst : SpecFn := fun c args h r h' calls =>
-  ∀ ty sp np, args = [ty, sp, np] → Good c calls → ∀ n : F, np = .field n →
+  ∀ ty sp np, args = [ty, sp, np] → CoreGood c calls → ∀ n : F, np = .field n →
     ∀ d Γ T As, c.tm d Γ h T ty → c.tml d Γ h As sp →
       ∃ T', c.tm d Γ h' T' r ∧ instPis (ZMod.val n) T As = some T'
 
@@ -170,7 +170,7 @@ decided both ways: the inductive's declared type head-reduces from depth `0` thr
 assignment (`level_equal(u, 0) = 1`), answer `0` that it is not (`level_may_be_nonzero(u) = 1`,
 the positive certificate the circuit asserts). The two answers are the only results. -/
 def is_inductive_prop : SpecFn := fun c args h r h' calls =>
-  ∀ rc ity ns, args = [rc, ity, ns] → Good c calls → c.rc h rc →
+  ∀ rc ity ns, args = [rc, ity, ns] → CoreGood c calls → c.rc h rc →
     ∀ n : F, ns = .field n → ∀ (I : KExpr), c.tmc h I ity →
       ∃ (k : Nat) (Γ' : Nat → KExpr) (u : KLevel), k ≤ ZMod.val n ∧
         PeelRed c.env Γ' 0 I k (.sort u) ∧
@@ -182,14 +182,14 @@ def is_inductive_prop : SpecFn := fun c args h r h' calls =>
 level is not zero at every assignment (it replaces a negative reading of
 `level_equal(l, 0) = 0`). Nothing is claimed for `0`. Allocates nothing. -/
 def level_may_be_nonzero : SpecFn := fun c args h r h' calls =>
-  ∀ (l : SourceValue F) (u : KLevel), args = [l] → Good c calls → LvRep h u l →
+  ∀ (l : SourceValue F) (u : KLevel), args = [l] → CoreGood c calls → LvRep h u l →
     h' = h ∧ (r = .field 1 → ¬ ∀ φ, Ix.Kernel.Level.eval φ u = 0)
 
 /-- `proj_shape_ok(n_indices, args, n_params, lvls, n_lvls)` (unit; its run is the check):
 **`Infer.proj`'s arity premises**: no indices, the scrutinee type's argument count is the
 parameter count, its level count is the structure's. -/
 def proj_shape_ok : SpecFn := fun c args h r h' calls =>
-  ∀ ni sp np lvls nl, args = [ni, sp, np, lvls, nl] → Good c calls →
+  ∀ ni sp np lvls nl, args = [ni, sp, np, lvls, nl] → CoreGood c calls →
     ∀ d Γ (As : List KExpr) (us : List KLevel), c.tml d Γ h As sp → LvListRep h us lvls →
       ni = .field 0 ∧ np = .field (As.length : F) ∧ nl = .field (us.length : F) ∧ h' = h
 
@@ -197,7 +197,7 @@ def proj_shape_ok : SpecFn := fun c args h r h' calls =>
 (`PeelRed`): the result is at depth `d + k`, `k ≤ n` (fewer when a head-normal form is not a
 `∀`), under a ghost context extending `Γ` with the opened binders' domains. -/
 def peel_n_alls_whnf : SpecFn := fun c args h r h' calls =>
-  ∀ rc e ns types, args = [rc, e, ns, types] → Good c calls → c.rc h rc →
+  ∀ rc e ns types, args = [rc, e, ns, types] → CoreGood c calls → c.rc h rc →
     ∀ n : F, ns = .field n → ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ (k : Nat) (Γ' : Nat → KExpr) (R : KExpr), k ≤ ZMod.val n ∧ (∀ j, j < d → Γ' j = Γ j) ∧
         c.tm (d + k) Γ' h' R r ∧ PeelRed c.env Γ' d E k R
@@ -208,7 +208,7 @@ instantiated by their projections of `val`. The counters are compared as field e
 claim is for `current ≤ target` (the callers start at `0`; past the target the loop would only
 stop after wrapping around the field). -/
 def peel_field_loop : SpecFn := fun c args h r h' calls =>
-  ∀ ty tg cu sa val, args = [ty, tg, cu, sa, val] → Good c calls →
+  ∀ ty tg cu sa val, args = [ty, tg, cu, sa, val] → CoreGood c calls →
     ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
       ZMod.val c0 ≤ ZMod.val t0 →
       ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
@@ -219,7 +219,7 @@ def peel_field_loop : SpecFn := fun c args h r h' calls =>
 /-- `k_infer_proj(rc, struct_addr, fidx, e1, types)`: **a projection's type**
 (`Infer.proj` at the full grade): the image of `Proj(s, i, e1)` is `.proj (κ s) i PE`. -/
 def k_infer_proj : SpecFn := fun c args h r h' calls =>
-  ∀ rc sa fi e1 types, args = [rc, sa, fi, e1, types] → Good c calls → c.rc h rc →
+  ∀ rc sa fi e1 types, args = [rc, sa, fi, e1, types] → CoreGood c calls → c.rc h rc →
     ∀ i : F, fi = .field i → ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) (PE : KExpr), RepAddr h a sa → c.tm d Γ h PE e1 →
         ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d (.proj (c.κ (ixAddr a)) (ZMod.val i) PE) T
@@ -227,14 +227,14 @@ def k_infer_proj : SpecFn := fun c args h r h' calls =>
 /-- `k_ensure_sort(rc, e, types)`: **`e` is a type**: its full-grade type head-reduces to a sort
 whose level the result represents (up to semantic equality). -/
 def k_ensure_sort : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ (T : KExpr) (u : KLevel), Infer c.env .full d E T ∧ Red c.env d T (.sort u) ∧ LvRep h' u r
 
 /-- `k_check(rc, e, expected, types)` (unit; its run is the check): **`e` has a full-grade type
 definitionally equal to `expected`** (`k_is_def_eq(…) = 1`). -/
 def k_check : SpecFn := fun c args h r h' calls =>
-  ∀ rc e x types, args = [rc, e, x, types] → Good c calls → c.rc h rc →
+  ∀ rc e x types, args = [rc, e, x, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E X, c.tm d Γ h E e → c.tm d Γ h X x →
       ∃ T, Infer c.env .full d E T ∧ DefEq c.env d T X
 
@@ -253,13 +253,13 @@ def io_const_type_of : SpecFn := const_type_of
 lane, which checks no domain sort at a `λ` and no argument certificate at a binder whose datum
 is `never` (`Infer.appSkip`). -/
 def k_infer_only : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .io d E T
 
 /-- `k_infer_only_core(rc, e, types)`: **one step of io-grade inference by the head node**. -/
 def k_infer_only_core : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .io d E T
 
@@ -268,7 +268,7 @@ type head-normalized to `∀ dom, cod` with the datum `bl`: the codomain instant
 argument, and `Infer.appSkip`'s or `Infer.app`'s argument premise (the datum is `never`, or the
 argument's io-grade type is definitionally equal to the domain). -/
 def io_app_cod : SpecFn := fun c args h r h' calls =>
-  ∀ rc dom cod bl a types, args = [rc, dom, cod, bl, a, types] → Good c calls → c.rc h rc →
+  ∀ rc dom cod bl a types, args = [rc, dom, cod, bl, a, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ (D C : KExpr) (ℓ : KLevel) (A : KExpr),
       c.tm d Γ h D dom → c.tmk d Γ 1 h C cod → RepKLevel h ℓ bl → c.tm d Γ h A a →
         c.tm d Γ h' (C.instantiate1 A) r ∧
@@ -277,7 +277,7 @@ def io_app_cod : SpecFn := fun c args h r h' calls =>
 /-- `forall_datum_ok(v, bl)` (unit): **`Infer.forallE`'s datum premise**: the binder's datum is
 the zero-ness of the body's sort `v` (`pw_eq(v, bl) = 1`). -/
 def forall_datum_ok : SpecFn := fun c args h r h' calls =>
-  ∀ v bl, args = [v, bl] → Good c calls →
+  ∀ v bl, args = [v, bl] → CoreGood c calls →
     ∀ (u ℓ : KLevel), LvRep h u v → RepKLevel h ℓ bl → u.zeronessOf = (bmeta ℓ).pw
 
 /-- `lam_datum_ok(rc, body, body_ty, bl, types2)` (unit): **`Infer.lam`'s datum premises**, at the
@@ -286,7 +286,7 @@ datum is the zero-ness of the sort of the body's type, at the io grade (`SortPw`
 is a `let` of a `λ` takes the second case; its image is a `λ`, and `Infer.lam`'s first premise
 then follows from the inner `λ`'s own check.) -/
 def lam_datum_ok : SpecFn := fun c args h r h' calls =>
-  ∀ rc body bt bl types, args = [rc, body, bt, bl, types] → Good c calls → c.rc h rc →
+  ∀ rc body bt bl types, args = [rc, body, bt, bl, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ (Bo Bt : KExpr) (ℓ : KLevel),
       c.tm d Γ h Bo body → c.tm d Γ h Bt bt → RepKLevel h ℓ bl →
         (∃ (T' B' : KExpr) (ℓ' : KLevel), Bo = .lam T' B' (bmeta ℓ') ∧ (bmeta ℓ).pw = (bmeta ℓ').pw) ∨
@@ -295,7 +295,7 @@ def lam_datum_ok : SpecFn := fun c args h r h' calls =>
 /-- `ensure_sort_only(rc, e, types)`: **`e` is a type, at the io grade**: its io-grade type
 (head-normalized when not syntactically a sort) is a sort whose level the result represents. -/
 def ensure_sort_only : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ (T : KExpr) (u : KLevel), Infer c.env .io d E T ∧ Red c.env d T (.sort u) ∧ LvRep h' u r
 
