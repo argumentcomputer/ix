@@ -189,9 +189,44 @@ private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
         env (.check ctx target none)
       return { c with exercises := some "KernelCheck::check_param_agreement" }
 
+/-- Checking the beta-erased argument of the second parameter requires the unit-like
+capability of `T A B`, whose only constructor has no fields. -/
+private def nativeUnitParameterCase : Tests.Ix.IxVM.Builder := fun _ => do
+  let family (a b : UInt64) : Ixon.Expr := .app (.app (.recur 0 #[]) (.var a)) (.var b)
+  let argumentType : Ixon.Expr :=
+    .all (.sort 1)
+      (.all (.all (family 1 0) (.sort 1))
+        (.all (family 2 1)
+          (.all (family 3 2)
+            (.all (.app (.var 2) (.var 1)) (.app (.var 3) (.var 1))))))
+  let argument : Ixon.Expr :=
+    .lam (.sort 1)
+      (.lam (.all (family 1 0) (.sort 1))
+        (.lam (family 2 1)
+          (.lam (family 3 2)
+            (.lam (.app (.var 2) (.var 1)) (.var 0)))))
+  let former : Ixon.Expr := .all (.sort 1) (.all (.sort 1) (.sort 1))
+  let domain : Ixon.Expr := .app (.lam argumentType (.sort 1)) argument
+  let ctor : Ixon.Constructor :=
+    ⟨false, 0, 0, 2, 0, .inherited, .all (.sort 1) (.all domain (family 1 0))⟩
+  let ind : Ixon.Inductive := ⟨false, 0, 2, 0, former, #[ctor]⟩
+  let block : Ixon.Constant :=
+    { info := .muts #[.indc ind]
+      sharing := #[], refs := #[], univs := #[.zero, .succ .zero]
+      binders := #[⟨false, 0, 0, Array.replicate 2 (.never {})⟩,
+        ⟨false, 1, 0, Array.replicate 15 (.never {})⟩] }
+  let base ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let (env, addr) := storeSafetyRecord base block
+  let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, addr⟩, #[], #[], #[], #[]⟩
+  let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, addr⟩, #[], #[], #[], #[]⟩
+  let ctx ← Ix.ClaimContext.ofDefaultTable
+  let c ← Tests.Ix.IxVM.Case.ofClaim "accept native parameter domain requiring unit-like conversion"
+    env (.check ctx target none)
+  return { c with exercises := some "KernelDefEq::is_unit_like_type" }
+
 /-- Focused reference-safety cases, usable with a verdict-only execution artifact. -/
 def runReferenceSafety : IO UInt32 :=
-  Tests.Ix.IxVM.runCases "ixvm-reference-safety" (ruleSafetyCases ++ nativeParameterCases)
+  Tests.Ix.IxVM.runCases "ixvm-reference-safety" (ruleSafetyCases ++ nativeParameterCases ++ #[nativeUnitParameterCase])
 
 /-- The walk edges of `env` from a constant in Lean's logic to one outside it,
 with the number of constants outside it. None means that an owned set without
@@ -345,7 +380,7 @@ def run : IO UInt32 := do
     let (_, witness) ← buildShardCheckEnvWitness env #[loopA, trustA] (assumeBinding := true)
     return { label := "accept the builder's shard over loop and Lean.trustCompiler", accept := true,
              witness }
-  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases ++ nativeParameterCases)
+  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases ++ nativeParameterCases ++ #[nativeUnitParameterCase])
 
 /-- The closure of what stays owned on a compiled corpus (`IX_SAFETY_IXE`, an
 `.ixe`): every walk edge from a constant in Lean's logic lands on one, so a
