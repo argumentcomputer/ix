@@ -502,29 +502,26 @@ theorem lowered_bases {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
       · exact .inr (.inl ⟨e, Array.mem_def.mpr he, rfl⟩)
       · exact .inr (.inr ⟨e, Array.mem_def.mpr he, rfl⟩)
   | definitions ms =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
   | «axiom» cv =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
   | quot kind cv =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
 
 /-- **Every read a trace keeps is part of a scheduled item's lowering.** -/
 theorem trace_reads {g : Graph} {start st : State .source} {xs : List Scheduled} {rs : List (Read .source)}
