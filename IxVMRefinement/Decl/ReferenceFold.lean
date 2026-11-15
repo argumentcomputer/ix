@@ -38,16 +38,16 @@ theorem checkedDecl_referenceModelStep {source target sourceOut : Env .anon}
       ∀ (V : Type u) [SetTheory V], EnvModelT V .verified target → EnvModelT V .verified targetOut := by
   cases d with
   | defnDecl cv value hint =>
-    obtain ⟨out, agree, _, run, _⟩ := agreement.checkedDefn_step checked
+    obtain ⟨out, agree, _, run, _⟩ := ThmBodyView.Agrees.checkedDefn_step.{u} agreement checked
     exact ⟨out, agree, reference_rules_step (d := .defnDecl cv value hint) run⟩
   | thmDecl cv value =>
-    obtain ⟨out, agree, _, run, _⟩ := agreement.checkedThm_step checked
+    obtain ⟨out, agree, _, run, _⟩ := ThmBodyView.Agrees.checkedThm_step.{u} agreement checked
     exact ⟨out, agree, reference_rules_step (d := .thmDecl cv value) run⟩
   | opaqueDecl cv value =>
-    obtain ⟨out, agree, _, run, _⟩ := agreement.checkedOpaque_step checked
+    obtain ⟨out, agree, _, run, _⟩ := ThmBodyView.Agrees.checkedOpaque_step.{u} agreement checked
     exact ⟨out, agree, reference_rules_step (d := .opaqueDecl cv value) run⟩
   | axiomDecl cv =>
-    obtain ⟨out, agree, _, run, _⟩ := agreement.checkedAxiom_step checked
+    obtain ⟨out, agree, _, run, _⟩ := ThmBodyView.Agrees.checkedAxiom_step.{u} agreement checked
     exact ⟨out, agree, reference_rules_step (d := .axiomDecl cv) run⟩
   | basisDecl kind => exact reference_basis_step agreement checked
   | indDecl block nP =>
