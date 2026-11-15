@@ -7,8 +7,8 @@ import IxC.Ixon.Verify.ConstantBounds
 
 /-! # Safe-reference validation, constructor index checking, and role-prefix bridge (`SafeRefsBridge`)
 
-Proves the standalone unconditional components of `SafeRefsInputs` and isolates the residual
-circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
+Proves expression target safety and standalone components of `SafeRefsInputs`; the remaining
+role and inductive reader construction obligations are isolated in `SafeExprRefsGap`:
 
 1. **Constructor index consistency (`iprj_store_eq_of_mutsMemberChecked`,
    `check_inductive_shape_ctors_cidx`, `check_modeled_ctors_cidx`,
@@ -21,8 +21,7 @@ circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
    `safe_refs_only_refOnly_resolve`)**:
    - Evaluates to `.field 0` or `.field 1` while monotonically extending the heap on any
      `L1.RawConvExpr`.
-   - Along `.ref`-only reachable reference indices (`reachRefOnlyExpr`, matching
-     `KernelCheck::safe_refs_only` where `KExprNode::Proj` recurses on `e1`), every referenced
+   - Along the `.ref` subcollection of reachable reference indices (`reachRefOnlyExpr`), every referenced
      constant in an exact-decoded collision-free store `E₀` satisfies `L1.ConstantTablesValid`
      and is never a `.muts` block; every standalone record (`ownerOf a c_a = a`) satisfies
      `¬ OutsideLogicAt E₀ a` and `(resolveSource (recordAt E₀) a c_a).isSome = true`; every
@@ -32,15 +31,14 @@ circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
      `(resolveSource (recordAt E₀) a c_a).isSome = true`.
 3. **Role-prefix order & `preparePrelude` splitting (`order_filter_role_eq_of_subset`,
    `usedCompiledReach_role_subset`, `frontOf_append_nonPrelude`,
-   `preparePrelude_append_of_hoist_empty`)**:
+   `preparePrelude_append_of_hoist_id`)**:
    - Unconditionally proves `order.filter (· ∈ order_role) = order_role` whenever `order_role`
      embeds into `order` with monotone indices, proves reachability embedding under
      `RecursorEdge` preservation, and proves `frontOf` suffix preservation for non-role walked
      declarations (`x ∉ order_role`).
 4. **Minimal residual isolation (`SafeExprRefsGap`, `safeRefsInputs`)**:
-   - Isolates the exact circuit and interface boundary obligations (`KExprNode::Proj` skipping
-     `taddr` in `KernelCheck::safe_refs_only`, `ProjSafe` signature omissions, and bare role/indRec
-     lowering) and discharges `SafeRefsInputs`. -/
+   - `circuitExprSafeRefs` proves checks for both constant and projection targets. The remaining
+     inputs concern bare role and inductive-record readings. -/
 
 set_option maxHeartbeats 1600000
 
@@ -654,8 +652,8 @@ theorem indBlockCtorIdx_of_exact_noCollision
 
 /-! ## Section 2: `KernelCheck::safe_refs_only` Unconditional Theorems -/
 
-/-- `.ref`-only reachable table indices in `e` through `sharing`, matching
-`KernelCheck::safe_refs_only` where `KExprNode::Proj(_, _, e1)` recurses on `e1`. -/
+/-- The subcollection of reachable table indices contributed by `.ref` nodes. Projection
+containers are additionally covered by `safe_refs_only_refs_checked`. -/
 def reachRefOnlyExpr (sh : Array (List Nat)) : Ixon.Expr → List Nat
   | .var _ | .sort _ | .recur _ _ | .str _ | .nat _ => []
   | .ref idx _ => [idx.toNat]
@@ -2740,10 +2738,8 @@ theorem safe_refs_only_refs_checked
     c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2
     rfl hi hc_ref
 
-/-- Exact circuit expression-safety premise corresponding to `KExprNode::Proj(taddr, _, e1)`
-checking `taddr` in `KernelCheck::safe_refs_only` (`.ref` nodes already satisfy
-`SafeRefTargetChecked` unconditionally by `safe_refs_only_refs_checked`), together with
-recursor `rules` / modeled `check_recs` safety. -/
+/-- Every reachable constant or projection-container reference has an observed target-safety
+check. `circuitExprSafeRefs` constructs this collection of facts from the implemented checker. -/
 structure CircuitExprSafeRefs : Prop where
   expr_refs_checked :
     ∀ {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
