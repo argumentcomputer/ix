@@ -16,7 +16,7 @@ def InstallChunk (d : Ix.Kernel.Declaration .anon)
     ∃ ci ∈ chunk, IxVM.Consistency.StoredAs ci ci₀) ∧
   (∀ ci ∈ chunk,
     (∃ ci₀ ∈ IxVM.Consistency.installs d, ci₀.name = ci.name) ∨
-      ∃ k tag, ci.name = .aux k tag)
+      ∃ k auxTag, ci.name = .aux k auxTag)
 
 /-- Append selected chunks to an existing installation. Freshness is required only against
 the starting environment; distinctness of all selected names supplies freshness thereafter. -/
@@ -44,10 +44,10 @@ theorem installs_append_chunks
       intro ci hci
       have hnone : chunk.find? (·.name == ci.name) = none := by
         apply List.find?_eq_none.mpr
-        intro head hhead
-        exact beq_false_of_ne (fun heq => hnd.2.2 head.name
+        intro head hhead hmatch
+        exact hnd.2.2 head.name
           (List.mem_map.mpr ⟨head, hhead, rfl⟩) ci.name
-          (List.mem_map.mpr ⟨ci, hci, rfl⟩) heq)
+          (List.mem_map.mpr ⟨ci, hci, rfl⟩) (eq_of_beq hmatch)
       change (chunk ++ env.consts).find? (·.name == ci.name) = none
       rw [List.find?_append, hnone]
       exact hfresh ci (List.mem_append_right _ hci)
