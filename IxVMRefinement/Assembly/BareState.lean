@@ -282,4 +282,37 @@ theorem commit_heights_after_generated_prefix {md : Mode}
       rw [heq, (isAux_eq_false_iff.mpr hk)] at heaux
       cases heaux
 
+/-- A singleton definition whose successful full read did not rewrite a projection has
+the same concrete bare output after generated prefixes have been removed from the state. -/
+theorem readRecord_defn_without_rewrite {md : Mode} {cx : Ctx md} (hrk : RolesKeyed cx)
+    {source target : State md} {owner : _root_.Address} {c : Ixon.Constant}
+    {defn : Ixon.Definition} {full : Read md}
+    (hinfo : c.info = .defn defn)
+    (h : readRecord cx source owner c = .ok full) (hzero : full.projRewrites = 0)
+    (hh : ∀ (k : CName md), NonAuxKey k → target.heights[k]? = source.heights[k]?)
+    (hempty : ∀ (k : CName md), target.projLevels[k]? = none) :
+    readRecordBare cx target owner c = .ok full := by
+  unfold readRecord at h
+  simp only [hinfo] at h
+  obtain ⟨⟨decl, rewrote⟩, hdef, h⟩ := except_bind_ok.mp h
+  simp only [pure, Except.pure, Except.ok.injEq] at h
+  subst full
+  cases rewrote with
+  | true => simp at hzero
+  | false =>
+    have hdef' := readDefinition_without_rewrite
+      (target := target) (heights' := fun k => target.heights.getD k 0) hrk
+      (by
+        intro i m k hs hm
+        split at hs
+        · injection hs with hs
+          rw [← hs] at hm
+          exact memberKey_nonAux hrk hm
+        · cases hs)
+      (by
+        intro k hk
+        simp only [Std.HashMap.getD_eq_getD_getElem?, hh k hk]) hempty hdef
+    simp only [readRecordBare, hinfo, readRecord, hdef', bind, Except.bind,
+      pure, Except.pure]
+
 end IxVM.Refinement.Assembly
