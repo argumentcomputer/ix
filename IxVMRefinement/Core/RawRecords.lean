@@ -15,7 +15,7 @@ open Aiur.Library
 
 /-- Canonical record identities at selected successful inductive metadata queries. -/
 structure RawRecordFacts (c : ScopedCtx) : Prop where
-  inductive : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+  inductiveRead : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address) (nl ty np ni nc u blk idx : SourceValue F),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
     c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs →
@@ -40,7 +40,7 @@ theorem RawRecordFacts.inductRecord {c : ScopedCtx} (facts : RawRecordFacts c)
       Ix.Cert.recordAt c.E (ixAddr a) = some cm ∧ Bytes.RepAddressRef addrTy h' b blk ∧
       idx = .field i ∧ cm.info = .iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩ := by
   obtain ⟨cm, _, _, _, b, i, hcm, hb, hi, hp, _⟩ :=
-    facts.inductive addr ptr h h' cs a nl ty np ni nc u blk idx ev allowed good ha loaded
+    facts.inductiveRead addr ptr h h' cs a nl ty np ni nc u blk idx ev allowed good ha loaded
   exact ⟨cm, b, i, hcm, hb, hi, hp⟩
 
 theorem RawRecordFacts.inductBlock {c : ScopedCtx} (facts : RawRecordFacts c)
@@ -56,7 +56,7 @@ theorem RawRecordFacts.inductBlock {c : ScopedCtx} (facts : RawRecordFacts c)
       Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts xs ∧
       xs[ZMod.val i]? = some (.indc ind) := by
   obtain ⟨_, cb, xs, ind, b', i', _, hb', hi, _, hcb, hxs, hind⟩ :=
-    facts.inductive addr ptr h h' cs a nl ty np ni nc u blk (.field i) ev allowed good ha loaded
+    facts.inductiveRead addr ptr h h' cs a nl ty np ni nc u blk (.field i) ev allowed good ha loaded
   have hbEq := addr_det hb hb'
   have hiEq := Value.field.inj hi
   cases hbEq
@@ -66,7 +66,7 @@ theorem RawRecordFacts.inductBlock {c : ScopedCtx} (facts : RawRecordFacts c)
 /-- The semantic core's load contract also supplies its raw query identities. -/
 theorem ScopedLoadFacts.rawRecords {c : ScopedCtx} (facts : ScopedLoadFacts c) :
     RawRecordFacts c where
-  inductive := by
+  inductiveRead := by
     intro addr ptr h h' cs a nl ty np ni nc u blk idx ev allowed good ha loaded
     obtain ⟨cm, b, i, hcm, hb, hi, hp⟩ :=
       facts.inductRecord addr ptr h h' cs a nl ty np ni nc u blk idx ev allowed good ha loaded

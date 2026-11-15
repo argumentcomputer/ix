@@ -69,7 +69,7 @@ theorem RawRecordQuery.allowed {base : Ctx} {queries : List (RawRecordQuery base
 
 /-- L1 constructs the raw record and parent identities for a selected canonical query.
 The queried constant need not be installed in the semantic environment. -/
-theorem RawRecordQuery.inductive {base : Ctx} (q : RawRecordQuery base.E)
+theorem RawRecordQuery.inductiveRead {base : Ctx} (q : RawRecordQuery base.E)
     {ptr : SourceValue F} {h' : Heap F} {calls : List (Call F)}
     {nl ty np ni nc u blk idx : SourceValue F}
     (observed : ObsFn Core.W "Ingress::get_ci" [q.addr] q.before ptr h' calls)
@@ -102,7 +102,7 @@ theorem RawRecordQuery.inductive {base : Ctx} (q : RawRecordQuery base.E)
 those invocations. This constructs no installed semantic lookup facts. -/
 theorem rawRecordFacts_of_queries (base : Ctx) (queries : List (RawRecordQuery base.E)) :
     RawRecordFacts (rawQueryCtx base queries) where
-  inductive := by
+  inductiveRead := by
     intro addr ptr h h' cs a nl ty np ni nc u blk idx observed allowed good ha loaded
     obtain ⟨q, _, same⟩ := allowed
     have heapEq : h = q.before := congrArg Call.heap same
@@ -112,7 +112,7 @@ theorem rawRecordFacts_of_queries (base : Ctx) (queries : List (RawRecordQuery b
     have addressEq : a = q.address :=
       Bytes.repAddressRef_inj U32.Goldilocks.compatible ha q.addressRep
     subst a
-    exact q.inductive observed good loaded
+    exact q.inductiveRead observed good loaded
 
 /-- An observed query of a known inductive projection and its canonical parent constructs
 a nonempty selected-query scope, even when both semantic names are still fresh. -/
