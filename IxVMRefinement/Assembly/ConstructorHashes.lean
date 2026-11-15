@@ -45,7 +45,7 @@ theorem native_constructor_hashed (ctx : Core.ScopedCtx)
       rw [hnv, hkv] at heq
       omega
     | .other (m646 := hashHeap) (m655 := nextHeap)
-        (cs665 := hashCalls) (cs695 := nextCalls) (v708 := nextIndex)
+        (cs665 := hashCalls) (v708 := nextIndex)
         (ev667 := hashRun) (op792 := add) (ev697 := nextRun) (hc794 := events) .. =>
       by_cases hkj : k = j
       · subst j
@@ -65,9 +65,7 @@ theorem native_constructor_hashed (ctx : Core.ScopedCtx)
         have hext := (ev.call_heap_bounds hmem).1
         have hnext : nextIndex = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at add
-          rw [← add]
-          push_cast
-          rfl
+          simpa only [Nat.cast_add, Nat.cast_one] using add.symm
         rw [hnext] at nextRun
         have hrest := ih (k + 1) (by omega) (by omega)
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext hb) nextRun
@@ -107,7 +105,7 @@ theorem modeled_constructor_hashed (ctx : Core.ScopedCtx)
       rw [hnv, hkv] at heq
       omega
     | .other (m430 := hashHeap) (m500 := nextHeap)
-        (cs510 := hashCalls) (cs540 := nextCalls) (v551 := nextIndex)
+        (cs510 := hashCalls) (v551 := nextIndex)
         (ev512 := hashRun) (op621 := add) (ev542 := nextRun) (hc623 := events) .. =>
       by_cases hkj : k = j
       · subst j
@@ -127,9 +125,7 @@ theorem modeled_constructor_hashed (ctx : Core.ScopedCtx)
         have hext := (ev.call_heap_bounds hmem).1
         have hnext : nextIndex = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at add
-          rw [← add]
-          push_cast
-          rfl
+          simpa only [Nat.cast_add, Nat.cast_one] using add.symm
         rw [hnext] at nextRun
         have hrest := ih (k + 1) (by omega) (by omega)
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext hb) nextRun
