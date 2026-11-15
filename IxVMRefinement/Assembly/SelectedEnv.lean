@@ -121,4 +121,63 @@ def model_of_same_members {W : Type u} [SetTheory W] {env env' : Env .anon}
     trivial trivial ⟨trivial, trivial⟩ (fun _ _ _ _ _ => trivial)
     (fun _ _ entry _ _ => refsIn_true entry.body)
 
+private theorem selected_findProj_info {env : Env .anon} {T : Key .anon}
+    {i : Nat} {entry : ProjEntry .anon} (h : env.findProj? T i = some entry) :
+    ∃ tbl : ProjTable .anon,
+      env.find? (projTableName T) = some (.projInfo tbl) ∧
+      i < tbl.numFields ∧ entry = tbl.entry i := by
+  unfold Env.findProj? at h
+  cases hfind : env.find? (projTableName T) with
+  | none => rw [hfind] at h; cases h
+  | some ci =>
+    rw [hfind] at h
+    cases ci with
+    | projInfo tbl =>
+      dsimp only at h
+      split at h
+      · rename_i hi
+        injection h with hentry
+        exact ⟨tbl, rfl, hi, hentry.symm⟩
+      · cases h
+    | _ => cases h
+
+/-- Projection bodies inherit support from the selected constructor's actual stored type.
+The equality to generated field bodies comes from the checking fold's `TableBodies` invariant. -/
+theorem projection_body_supported {env : Env .anon} {K : Key .anon → Prop}
+    (htables : Model.TableBodies env)
+    (htypes : ∀ ci ∈ env.consts, K ci.name → ci.toConstantVal.type.Supports K)
+    (hctor : ∀ T i entry, env.findProj? T i = some entry → K T → K entry.ctor)
+    {T : Key .anon} {i : Nat} {entry : ProjEntry .anon}
+    (hentry : env.findProj? T i = some entry) (hT : K T) : entry.body.Supports K := by
+  have hKctor := hctor T i entry hentry hT
+  obtain ⟨tbl, hfind, hi, rfl⟩ := selected_findProj_info hentry
+  change K tbl.ctor at hKctor
+  obtain ⟨cvC, hfind_ctor, hbodies, _⟩ := htables (projTableName T) tbl hfind
+  have hcty : cvC.type.Supports K := htypes (.ctorInfo cvC tbl.numParams tbl.numFields)
+    (Semantics.Env.find?_mem hfind_ctor) (by
+      rw [Semantics.Env.find?_name hfind_ctor]
+      exact hKctor)
+  obtain ⟨hsize, hall⟩ :=
+    supports_structProjBodies tbl.structName tbl.numParams tbl.numFields hcty hbodies
+  have hi' : i < tbl.bodies.size := by omega
+  change (tbl.bodies.getD i default).Supports K
+  unfold Array.getD
+  simp only [hi', ↓reduceDIte]
+  exact hall tbl.bodies[i] (Array.mem_toList_iff.mpr (Array.getElem_mem hi'))
+
+/-- Restrict using the full checking environment's table invariant; projection-body support
+is derived from selected constructor support, rather than supplied independently. -/
+noncomputable def selectEnv_model_of_tableBodies
+    {W : Type u} [SetTheory W] {env : Env .anon} {K : Key .anon → Prop}
+    (M : Model W env) (hkeepTables : ∀ T, K (projTableName T))
+    (hnat : K natZeroName ∧ K natSuccName)
+    (hsupported : ∀ ci ∈ env.consts, K ci.name → SupportedConstant K ci)
+    (hfalse : K falseName) (heq : K eqName) (hbool : K boolTrueName ∧ K boolFalseName)
+    (htables : Model.TableBodies env)
+    (hctor : ∀ T i entry, env.findProj? T i = some entry → K T → K entry.ctor) :
+    Model W (selectEnv env K) :=
+  selectEnv_model M hkeepTables hnat hsupported hfalse heq hbool hctor
+    (fun _ _ _ he hT => projection_body_supported htables
+      (fun ci hc hk => (hsupported ci hc hk).2.1) hctor he hT)
+
 end IxVM.Refinement.Assembly
