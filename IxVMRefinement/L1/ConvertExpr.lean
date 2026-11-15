@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.LoadedExact
 import IxVMRefinement.L1.Decode
 import IxVMRefinement.Obs.Convert
 import IxVMRefinement.Nat.Utf8
@@ -3892,11 +3893,11 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
     · exact hplt1
     · exact hplt_rest l hmem
 
-/-- **Master expression bridge (`RawConvExpr.toTm`)**: if `Reader.convExpr` succeeds on `e`
+/-- **Exact expression bridge (`RawConvExpr.toTmExact`)**: if `Reader.convExpr` succeeds on `e`
 producing `E_rd` with loose bound variables below `k` and level parameters in `ps`, then `kp`
-represents `Core.posOf ps E'` (`Tm κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
+represents `Core.posOf ps E'` (`Decl.TmExact κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
 satisfying `Annotates E' E_rd`. -/
-theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -3917,7 +3918,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
       E_rd.allLevelParamsDefined ps = true →
       ∃ E' : Core.KExpr,
         IxVM.Consistency.Annotates E' E_rd ∧
-        ∀ d Γ, Core.Tm κ d Γ h k (Core.posOf ps E') kp := by
+        ∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp := by
   induction raw with
   | @var bound addr idx hidx cell =>
     intro n k E_rd _ _ hconv hlbb _
@@ -3927,7 +3928,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
     refine ⟨.bvar idx.toNat, .bvar, fun d Γ => ?_⟩
     have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
-    have htm : Core.Tm κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
+    have htm : Decl.TmExact κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
         (.ptr (.enum Core.kexprEnum) addr) :=
       .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
     rwa [hval] at htm
@@ -3951,7 +3952,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     refine ⟨.sort (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u), .sort, fun d Γ => ?_⟩
     unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
     rw [hpos_eq]
-    exact .sort cell (rl.toRepKLevel hplt) (Core.LvEq.refl _)
+    exact .sort cell (rl.toRepKLevel hplt)
   | @ref bound addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
     intro n k E_rd _ _ hconv _ hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
@@ -3971,7 +3972,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
     unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
     rw [hpos_ls, ← hd]
-    exact .const cell ra (rls.toRepKLevelList hplt_ls) (Core.LvEqList.refl _)
+    exact .const cell ra (rls.toRepKLevelList hplt_ls)
   | @recur bound addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
     intro n k E_rd _ _ hconv _ hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
@@ -3990,7 +3991,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
       refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
       unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
       rw [hpos_ls, ← hd]
-      exact .const cell ra (rls.toRepKLevelList hplt_ls) (Core.LvEqList.refl _)
+      exact .const cell ra (rls.toRepKLevelList hplt_ls)
   | @prj bound addr tIdx fIdx inner a d ap ip htIdx hfIdx href hd ra _ cell ih =>
     intro n k E_rd hn_le hbnd_le hconv hlbb hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
@@ -4110,9 +4111,61 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
     exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
 
-/-- **Closed root bridge (`RawConvExpr.toTmC`)**: directly connects a root `RawConvExpr` and a
+theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → ecx.cx.blob a = some bs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        ∀ d Γ, Core.Tm κ d Γ h k (Core.posOf ps E') kp := by
+  intro n k E_rd hn hb hread hlbb hdef
+  obtain ⟨E', hA, hTm⟩ := raw.toTmExact hperm hps_lt hrefs hunivs hkeyAt hself hblob
+    hn hb hread hlbb hdef
+  exact ⟨E', hA, fun d Γ => (hTm d Γ).toTm⟩
+
+/-- **Exact closed root bridge (`RawConvExpr.toTmCExact`)**: directly connects a root `RawConvExpr` and a
 `MemberReader.read` evaluation of `e` (closed and with defined level parameters) to `Annotates`
-and `Core.TmC`. -/
+and `Decl.TmCExact`. -/
+theorem RawConvExpr.toTmCExact {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs)
+    {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
+    (raw : RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h 4294967295 e kp)
+    (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read e =
+      .ok E_rd)
+    (hlbb : E_rd.looseBVarsBounded 0 = true)
+    (hdef : E_rd.allLevelParamsDefined ps = true) :
+    ∃ E' : Core.KExpr,
+      IxVM.Consistency.Annotates E' E_rd ∧
+      Decl.TmCExact κ h (Core.posOf ps E') kp := by
+  obtain ⟨hecx, htbl⟩ := memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
+  unfold Ix.Kernel.Reader.MemberReader.read at hread
+  rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
+  exact raw.toTmExact hperm hps_lt rfl (by simp) hkeyAt hself hblob
+    (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
+
 theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
@@ -4132,10 +4185,7 @@ theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey}
     ∃ E' : Core.KExpr,
       IxVM.Consistency.Annotates E' E_rd ∧
       Core.TmC κ h (Core.posOf ps E') kp := by
-  obtain ⟨hecx, htbl⟩ := memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
-  unfold Ix.Kernel.Reader.MemberReader.read at hread
-  rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
-  exact raw.toTm hperm hps_lt rfl (by simp) hkeyAt hself hblob
-    (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
+  obtain ⟨E', hA, hTm⟩ := raw.toTmCExact hperm hps_lt hkeyAt hself hblob hread hlbb hdef
+  exact ⟨E', hA, hTm.toTmC⟩
 
 end IxVM.Refinement.L1
