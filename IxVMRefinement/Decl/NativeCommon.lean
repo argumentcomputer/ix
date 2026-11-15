@@ -1153,9 +1153,8 @@ theorem ExprSemEq.instantiate1Lift {v v' : KExpr} (hv : ExprSemEq v v') {b b' : 
 
 mutual
 
-/-- Circuit-exact semantic counterpart of `Ix.Kernel.Semantics.WrapRel`, relaxing `.sort` and
-`.const` levels to semantic equivalence (`LvEq` / `LvEqList`) as produced by `Tm` and
-`KernelSubst::expr_inst_levels`. -/
+/-- Circuit representation of `Ix.Kernel.Semantics.WrapRel`, using `LvEq` and `LvEqList`
+for the semantic level equivalence produced by `Tm` and `KernelSubst::expr_inst_levels`. -/
 inductive WrapRelSem (find? : KKey → Option (ConstantInfo .anon)) : KExpr → KExpr → Prop
   | bvar (i : Nat) : WrapRelSem find? (.bvar i) (.bvar i)
   | fvar {i : Nat} {t t' : KExpr} :

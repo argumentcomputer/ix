@@ -28,11 +28,13 @@ those wrappers.
   `λ x₁ … xₖ, x₁` with every λ's zero-ness datum `never` (`wrapperArity`), applied to exactly `k`
   arguments; consuming it leaves its first argument (`consumeWrapper`). No name is read. The datum
   makes each λ a function in the model, so its application to an argument in its domain reduces.
-* **Everything else is equal**: every binder's zero-ness datum (`pw`, which the model reads) is
-  equal; the rest of the binder and `let` metadata is free, and a `let` of the declared term is
+* **Levels and binder data.** Sort and constant levels agree under every valuation; every
+  binder's zero-ness datum (`pw`, which the model reads) is equal. The rest of the binder and
+  `let` metadata is free, and a `let` of the declared term is
   expanded (`WrapRel.zeta`), as the statement's `Annotates` expands it.
 
-`wrapRelOk` decides it, with a budget no derivation needs to exceed (`wrapRelOk_sound`).
+`wrapRelOk` is a sound incomplete recognizer: it requires syntactic level equality
+(`wrapRelOk_sound`).
 -/
 
 namespace Ix.Kernel.Semantics
@@ -71,7 +73,7 @@ def consumeWrapper (find? : Key md → Option (ConstantInfo md)) (t : Expr md) :
 
 mutual
 
-/-- **`g` is `d` with wrappers consumed at binder domains.** -/
+/-- **`g` and `d` have equivalent levels and wrappers consumed at binder domains.** -/
 inductive WrapRel (find? : Key md → Option (ConstantInfo md)) : Expr md → Expr md → Prop
   | bvar (i : Nat) : WrapRel find? (.bvar i) (.bvar i)
   | fvar {i : Nat} {t t' : Expr md} : WrapRel find? t t' → WrapRel find? (.fvar i t) (.fvar i t')
@@ -124,7 +126,7 @@ theorem WrapDom.refl (find? : Key md → Option (ConstantInfo md)) (e : Expr md)
     WrapDom find? e e :=
   .keep (WrapRel.refl find? e)
 
-/-! ## The decision -/
+/-! ## A syntactic recognizer -/
 
 /-- The number of nodes of a term. -/
 def exprSize : Expr md → Nat
@@ -171,8 +173,8 @@ def wrapDomB (find? : Key md → Option (ConstantInfo md)) : Nat → Expr md →
 
 end
 
-/-- **The decision**: `WrapRel` at a budget of twice the generated term's size, enough for every
-step of the walk and every consumption (each consumption leaves a strict subterm). -/
+/-- A sound incomplete recognizer for `WrapRel`, requiring syntactic level equality and using
+a budget based on both terms' sizes. -/
 def wrapRelOk (find? : Key md → Option (ConstantInfo md)) (g d : Expr md) : Bool :=
   wrapRelB find? (2 * (exprSize g + exprSize d) + 2) g d
 
@@ -216,7 +218,7 @@ theorem wrapDomB_sound (find? : Key md → Option (ConstantInfo md)) :
 
 end
 
-/-- **The decision is sound.** -/
+/-- **The recognizer is sound.** -/
 theorem wrapRelOk_sound {find? : Key md → Option (ConstantInfo md)} {g d : Expr md}
     (h : wrapRelOk find? g d = true) : WrapRel find? g d :=
   wrapRelB_sound find? _ g d h
