@@ -176,14 +176,12 @@ private theorem indMembersRunJ_consts_eq {J : Judgements .anon} {blockNames : Li
       obtain ⟨newM, heq, hnames⟩ := indMembersRunJ_consts_eq rest hrest
       refine ⟨newM ++ [.indInfo ⟨cvI.name, cvI.levelParams, type'⟩ caps], ?_, ?_⟩
       · simpa [List.append_assoc] using heq
-      · simp [List.reverse_cons, List.map_append, hnames, ConstantInfo.name,
-          ConstantInfo.toConstantVal]
+      · rw [List.map_append, List.reverse_cons, List.map_append, hnames]; rfl
     | ctorInfo cvC nP nF =>
       obtain ⟨newM, heq, hnames⟩ := indMembersRunJ_consts_eq rest hrest
       refine ⟨newM ++ [.ctorInfo ⟨cvC.name, cvC.levelParams, type'⟩ nP nF], ?_, ?_⟩
       · simpa [List.append_assoc] using heq
-      · simp [List.reverse_cons, List.map_append, hnames, ConstantInfo.name,
-          ConstantInfo.toConstantVal]
+      · rw [List.map_append, List.reverse_cons, List.map_append, hnames]; rfl
     | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _ | recInfo _ _ _ _ | projInfo _ =>
       exact hrest.elim
 
