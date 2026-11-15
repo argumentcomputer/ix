@@ -256,6 +256,93 @@ theorem twinRec_full_step (hCore : IxVM.Consistency.Core S₀)
   · obtain ⟨env₂, hclean⟩ := cleanInstallStep_of_checked_fresh hchk hna.2 hfresh
     exact ⟨env₂, hclean, fun _ _ h => absurd h.declInvM.inv.store hS⟩
 
+private theorem cleanInstallStep_of_twinRunJ {J : Judgements .anon}
+    {env env₂ : Env .anon} {block : List KConstantInfo} {nP : Nat}
+    (hna : DeclNonAux (.indDecl block nP))
+    (hinst : IxVM.Consistency.InstallStep env (.indDecl block nP) env₂)
+    (hrun : DeclRecTwinRunJ J env block env₂) :
+    CleanInstallStep env (.indDecl block nP) env₂ := by
+  have hbase : ∀ ci ∈ IxVM.Consistency.installs (.indDecl block nP), isBaseKey ci.name = true :=
+    fun ci hci => isBaseKey_of_nonAuxKey (hna.1 ci hci).1
+  have hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci₀.name = none := by
+    obtain ⟨new, _, _, hfr, hcov, _⟩ := id hinst
+    intro ci₀ hci₀
+    obtain ⟨ci, hci, hs⟩ := hcov ci₀ hci₀
+    rw [← hs.name_eq]
+    exact hfr ci hci
+  obtain ⟨ws, _, hws, hblock, henv₂, _, _, _, hmembers⟩ := id hrun
+  have hpin := basisPinHit_twinBlock_none hws hblock
+  have hinstBlock : IxVM.Consistency.installs (.indDecl block nP) = block := by
+    simp [IxVM.Consistency.installs, hpin]
+  have henv₂' : env₂ = ⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ := by
+    simpa only [List.append_assoc] using henv₂
+  rw [henv₂'] at hinst ⊢
+  apply CleanInstallStep.of_rootedList hinst hbase hfresh
+  intro ci hci
+  rcases List.mem_append.mp hci with hrec | hmod
+  · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hrec
+    refine Or.inl ⟨.recInfo w.cvW w.mI w.rP w.rulesW, ?_, (hmembers w hw).1.name_eq⟩
+    rw [hinstBlock, hblock]
+    exact List.mem_map.mpr ⟨w, hw, rfl⟩
+  · obtain ⟨w, hw, hmodel⟩ := List.mem_filterMap.mp hmod
+    unfold TwinRecPart.modelInfo? at hmodel
+    obtain ⟨⟨cvm, mval, hint⟩, _, rfl⟩ := Option.map_eq_some_iff.mp hmodel
+    refine Or.inr ⟨.recInfo w.cvW w.mI w.rP w.rulesW, ?_, .model, rfl⟩
+    rw [hinstBlock, hblock]
+    exact List.mem_map.mpr ⟨w, hw, rfl⟩
+
+/-- The sound positional twin judgement preserves the shared invariant directly. -/
+theorem fullDeclInv_step_twinPos {env env₂ : Env .anon} {block : List KConstantInfo} {nP : Nat}
+    (hna : DeclNonAux (.indDecl block nP))
+    (hinst : IxVM.Consistency.InstallStep env (.indDecl block nP) env₂)
+    (hrun : DeclRecTwinRunJ twinPosRulesJ env block env₂) :
+    ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
+  intro V _ h
+  have hext := Ix.Kernel.Semantics.declRecTwinRunJ_envExt hrun
+  have hclean := cleanInstallStep_of_twinRunJ hna hinst hrun
+  have heta := etaShape_step_noEta hext h.etaCtorStored h.etaShape
+    (Ix.Kernel.Model.twin_newSat (fun _ _ _ _ _ heq => nomatch heq)
+      (fun _ _ _ _ _ _ heq => nomatch heq) hrun)
+  exact ⟨⟨h.declInvM.inv.step_twin_pos hrun, hclean.auxSynced h.declInvM.auxSynced⟩,
+    strongEnvProps_step_noProj hext.find h.strongProps
+      (Ix.Kernel.Model.twin_newSat (fun _ _ _ _ heq => nomatch heq)
+        (fun _ _ _ _ _ heq => nomatch heq) hrun), heta.1, heta.2⟩
+
+/-- Positional twin checks supply the native seam directly from their checked level frame. -/
+theorem nativeIndStep_of_twinRec_pos (hCore : IxVM.Consistency.Core S₀)
+    {calls : List (Call F)} {env : Env .anon} {block : List KConstantInfo} {nP : Nat}
+    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hna : DeclNonAux (.indDecl block nP))
+    (hfresh : ∀ ci ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci.name = none)
+    (wb : TwinBlockWitness calls env block)
+    (hNative : NativeTwinInputs twinPosRulesJ env (mkTwinRecParts env wb.ds))
+    (hModeled : ModeledTwinInputs twinPosRulesJ env (mkTwinRecParts env wb.ds)) :
+    NativeIndStep.{u} calls env block nP := by
+  by_cases hS : DeclStoreInv env
+  · obtain ⟨hinst, hrun, _⟩ := twinRec_step_pos hCore nP hS wb hNative hModeled
+    have hclean := cleanInstallStep_of_twinRunJ hna hinst hrun
+    exact ⟨_, hclean, fun _ _ h => ⟨h.inv.step_twin_pos hrun, hclean.auxSynced h.auxSynced⟩⟩
+  · obtain ⟨env₂, hclean⟩ := cleanInstallStep_of_checked_fresh hchk hna.2 hfresh
+    exact ⟨env₂, hclean, fun _ _ h => absurd h.inv.store hS⟩
+
+/-- Positional twin checks preserve the full reader-fold invariant. -/
+theorem twinRec_full_step_pos (hCore : IxVM.Consistency.Core S₀)
+    {calls : List (Call F)} {env : Env .anon} {block : List KConstantInfo} {nP : Nat}
+    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hna : DeclNonAux (.indDecl block nP))
+    (hfresh : ∀ ci ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci.name = none)
+    (wb : TwinBlockWitness calls env block)
+    (hNative : NativeTwinInputs twinPosRulesJ env (mkTwinRecParts env wb.ds))
+    (hModeled : ModeledTwinInputs twinPosRulesJ env (mkTwinRecParts env wb.ds)) :
+    ∃ env₂, CleanInstallStep env (.indDecl block nP) env₂ ∧
+      ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
+  by_cases hS : DeclStoreInv env
+  · obtain ⟨hinst, hrun, _⟩ := twinRec_step_pos hCore nP hS wb hNative hModeled
+    exact ⟨_, cleanInstallStep_of_twinRunJ hna hinst hrun,
+      fullDeclInv_step_twinPos hna hinst hrun⟩
+  · obtain ⟨env₂, hclean⟩ := cleanInstallStep_of_checked_fresh hchk hna.2 hfresh
+    exact ⟨env₂, hclean, fun _ _ h => absurd h.declInvM.inv.store hS⟩
+
 /-- Equivalent universe levels are accepted by the semantic wrapper relation. -/
 theorem wrapRel_zero_max_zero (find? : KKey → Option KConstantInfo) :
     Ix.Kernel.Semantics.WrapRel find? (.sort .zero) (.sort (.max .zero .zero)) :=
