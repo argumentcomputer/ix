@@ -281,10 +281,9 @@ theorem TableAdmittedAt.order_agrees_with_fallback (hRP : RolePreludeInputs)
     {a : _root_.Address} {c_pre : Ixon.Constant}
     (ha : a ∈ order_role) (hmem : (a, c_pre) ∈ pre.records ++ pre.evidence) :
     Ix.Cert.recordAt E_role a = some c_pre := by
-  obtain ⟨lc, c, _, _, hrecAt, hblk_lc, _, _, hex_lc, hpreV⟩ := hadm.order_record_spec ha
-  obtain ⟨himg, hblk_pre, hwf_pre, _⟩ := hRP.serConstant_mem_committedImages hadm.preludeFor hmem
-  have hraw_eq := hadm.noCommittedCollision a lc.rawBytes (Ixon.serConstant c_pre)
-    hpreV himg hblk_lc hblk_pre
+  obtain ⟨lc, c, hget, _, hrecAt, _, _, _, hex_lc, _⟩ := hadm.order_record_spec ha
+  obtain ⟨_, _, hwf_pre, _⟩ := hRP.serConstant_mem_committedImages hadm.preludeFor hmem
+  have hraw_eq := hadm.fallbackRecordsAgree a ha lc hget c_pre hmem
   rw [hraw_eq, Ixon.Verify.deConstantExact_serConstant c_pre hwf_pre] at hex_lc
   injection hex_lc with hceq
   subst hceq
@@ -1304,8 +1303,7 @@ theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
         injection heq with hx_eq hrest
         injection hrest with hraw_eq _
         subst x'; subst raw
-        obtain ⟨himg, hbl_c, _, _⟩ :=
-          hRP.serConstant_mem_committedImages hadm.preludeFor (Array.mem_toList_iff.mp hm_fb)
-        exact hne (hadm.noCommittedCollision x d (Ixon.serConstant c') hpre_d himg hbl_d hbl_c)
+        exact hne (hadm.fallbackRecordBlobsAgree x d hm_blob c'
+          (Array.mem_toList_iff.mp hm_fb))
 
 end IxVM.Refinement.Assembly

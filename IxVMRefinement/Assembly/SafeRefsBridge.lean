@@ -7,8 +7,8 @@ import IxC.Ixon.Verify.ConstantBounds
 
 /-! # Safe-reference validation, constructor index checking, and role-prefix bridge (`SafeRefsBridge`)
 
-Proves the standalone unconditional components of `SafeRefsInputs` and isolates the residual
-circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
+Proves expression target safety and standalone components of `SafeRefsInputs`; the remaining
+role and inductive reader construction obligations are isolated in `SafeExprRefsGap`:
 
 1. **Constructor index consistency (`iprj_store_eq_of_mutsMemberChecked`,
    `check_inductive_shape_ctors_cidx`, `check_modeled_ctors_cidx`,
@@ -21,8 +21,7 @@ circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
    `safe_refs_only_refOnly_resolve`)**:
    - Evaluates to `.field 0` or `.field 1` while monotonically extending the heap on any
      `L1.RawConvExpr`.
-   - Along `.ref`-only reachable reference indices (`reachRefOnlyExpr`, matching
-     `KernelCheck::safe_refs_only` where `KExprNode::Proj` recurses on `e1`), every referenced
+   - Along the `.ref` subcollection of reachable reference indices (`reachRefOnlyExpr`), every referenced
      constant in an exact-decoded collision-free store `E₀` satisfies `L1.ConstantTablesValid`
      and is never a `.muts` block; every standalone record (`ownerOf a c_a = a`) satisfies
      `¬ OutsideLogicAt E₀ a` and `(resolveSource (recordAt E₀) a c_a).isSome = true`; every
@@ -32,15 +31,14 @@ circuit and interface boundary obligations on `ProjSafe` into `SafeExprRefsGap`:
      `(resolveSource (recordAt E₀) a c_a).isSome = true`.
 3. **Role-prefix order & `preparePrelude` splitting (`order_filter_role_eq_of_subset`,
    `usedCompiledReach_role_subset`, `frontOf_append_nonPrelude`,
-   `preparePrelude_append_of_hoist_empty`)**:
+   `preparePrelude_append_of_hoist_id`)**:
    - Unconditionally proves `order.filter (· ∈ order_role) = order_role` whenever `order_role`
      embeds into `order` with monotone indices, proves reachability embedding under
      `RecursorEdge` preservation, and proves `frontOf` suffix preservation for non-role walked
      declarations (`x ∉ order_role`).
 4. **Minimal residual isolation (`SafeExprRefsGap`, `safeRefsInputs`)**:
-   - Isolates the exact circuit and interface boundary obligations (`KExprNode::Proj` skipping
-     `taddr` in `KernelCheck::safe_refs_only`, `ProjSafe` signature omissions, and bare role/indRec
-     lowering) and discharges `SafeRefsInputs`. -/
+   - `circuitExprSafeRefs` proves checks for both constant and projection targets. The remaining
+     inputs concern bare role and inductive-record readings. -/
 
 set_option maxHeartbeats 1600000
 
@@ -654,8 +652,8 @@ theorem indBlockCtorIdx_of_exact_noCollision
 
 /-! ## Section 2: `KernelCheck::safe_refs_only` Unconditional Theorems -/
 
-/-- `.ref`-only reachable table indices in `e` through `sharing`, matching
-`KernelCheck::safe_refs_only` where `KExprNode::Proj(_, _, e1)` recurses on `e1`. -/
+/-- The subcollection of reachable table indices contributed by `.ref` nodes. Projection
+containers are additionally covered by `safe_refs_only_refs_checked`. -/
 def reachRefOnlyExpr (sh : Array (List Nat)) : Ixon.Expr → List Nat
   | .var _ | .sort _ | .recur _ _ | .str _ | .nat _ => []
   | .ref idx _ => [idx.toNat]
@@ -766,7 +764,7 @@ theorem safe_refs_only_raw_spec
     | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | sort _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -777,7 +775,7 @@ theorem safe_refs_only_raw_spec
     | BVar _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | str _ _ _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -788,7 +786,7 @@ theorem safe_refs_only_raw_spec
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Proj _ _ _ _ ld _ _ =>
+    | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | nat _ _ _ _ _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -799,7 +797,7 @@ theorem safe_refs_only_raw_spec
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Proj _ _ _ _ ld _ _ =>
+    | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | recur _ _ _ ra _ _ cell =>
     intro n h h' r cs _ _ hext hsub ev
@@ -822,7 +820,7 @@ theorem safe_refs_only_raw_spec
     | BVar _ ld _ _ _ | Srt _ ld _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | @ref bound addr rIdx uIdxs a' d ap lsp ls _ href hd ra _ _ cell =>
     intro n h h' r cs _ _ hext hsub ev
@@ -977,18 +975,31 @@ theorem safe_refs_only_raw_spec
     | BVar _ ld _ _ _ | Srt _ ld _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
-  | prj _ _ _ _ _ _ cell ih =>
+  | @prj bound addr tIdx fIdx inner a' d ap ip _ _ href hd ra _ cell ih =>
     intro n h h' r cs hn hbnd hext hsub ev
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
-    | Proj _ _ x_e1 cs409 ld ev411 hc420 =>
+    | Proj x_taddr _ x_e1 v405 m406 p413 cs419 x430 y431 m432 y439 cs449 cs463
+        ld ev421 ld415 ev451 op445 ev465 op437 hc474 =>
       have hxs := (Core.load_cell cell_h ld).2
       simp only [List.cons.injEq, and_true] at hxs
-      rcases hxs with ⟨_, _, rfl⟩
-      have hsub409 : ∀ cl ∈ cs409, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc420]; simp [hcl])
-      exact ih n hn hbnd hext hsub409 ev411
+      rcases hxs with ⟨rfl, _, rfl⟩
+      have hsub419 : ∀ cl ∈ cs419, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc474]; simp [hcl])
+      have hsub463 : ∀ cl ∈ cs463, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc474]; simp [hcl])
+      obtain ⟨ext_ci, _, _, _, _, _, _, _, _, _, v_ld, hld_v, hraw_ld⟩ :=
+        L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub419)
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra) ev421
+      have hv_eq : v_ld = v405 := Except.ok.inj (hld_v.symm.trans ld415)
+      rw [hv_eq] at hraw_ld
+      obtain ⟨hm432, _, hy439, _, _⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev451
+      have ext_target : Heap.Extends h m432 := by rw [hm432]; exact ext_ci
+      obtain ⟨hb_left, _⟩ := sub_one_bool_dichot hy439 op445
+      obtain ⟨hb_right, ext_inner, hres_inner⟩ :=
+        ih n hn hbnd (hext.trans ext_target) hsub463 ev465
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb_left hb_right op437
+      exact ⟨hr_bool, ext_target.trans ext_inner, fun hr1 => hres_inner (hand hr1).2⟩
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -1015,7 +1026,7 @@ theorem safe_refs_only_raw_spec
       · exact hres2 hy1 hia hc_ref c_a hrec_a
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Lam _ _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | lam _ _ _ cell iht ihb =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -1038,7 +1049,7 @@ theorem safe_refs_only_raw_spec
       · exact hres2 hy1 hib hc_ref c_a hrec_a
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | all _ _ _ cell iht ihb =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -1061,7 +1072,7 @@ theorem safe_refs_only_raw_spec
       · exact hres2 hy1 hib hc_ref c_a hrec_a
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | letE _ _ _ cell iht ihv ihb =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -1090,7 +1101,7 @@ theorem safe_refs_only_raw_spec
       · exact hres3 hy308 hib hc_ref c_a hrec_a
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | @share bound idx s kp hidx hsh _ ihs =>
     intro n h h' r cs _ hbnd hext hsub ev
@@ -2026,16 +2037,16 @@ private theorem rec_block_checked_member_kinds
   | .Ctor_n0_n0 (hv1884 := hv) .. | .Ctor_n0_other (hv1884 := hv) ..
   | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
-  | .Rec_n0 (x_rec_block := xblk) (m2637 := m2637) (m2705 := m2705) (m2718 := m2718)
-      (v2747 := r_mk) (m2748 := m_mk) (cs2758 := cs_mk)
-      (ev14 := ev1) (hv2574 := hv_rec) (ev2649 := ev2)
-      (hm2713 := hm2705) (ev2686 := ev3) (ev2730 := ev4)
-      (ev2760 := ev_mk) (hc2875 := hc) ..
-  | .Rec_other (x_rec_block := xblk) (m2637 := m2637) (m2705 := m2705) (m2718 := m2718)
-      (v2747 := r_mk) (m2748 := m_mk) (cs2758 := cs_mk)
-      (ev14 := ev1) (hv2574 := hv_rec) (ev2649 := ev2)
-      (hm2713 := hm2705) (ev2686 := ev3) (ev2730 := ev4)
-      (ev2760 := ev_mk) (hc2964 := hc) .. =>
+  | .Rec_n0 (x_rec_block := xblk) (m2636 := m2637) (m2704 := m2705) (m2747 := m2718)
+      (v2776 := r_mk) (m2777 := m_mk) (cs2787 := cs_mk)
+      (ev14 := ev1) (hv2574 := hv_rec) (ev2648 := ev2)
+      (hm2712 := hm2705) (ev2685 := ev3) (ev2729 := ev4) (ev2759 := ev_rules)
+      (ev2789 := ev_mk) (hc2904 := hc) ..
+  | .Rec_other (x_rec_block := xblk) (m2636 := m2637) (m2704 := m2705) (m2747 := m2718)
+      (v2776 := r_mk) (m2777 := m_mk) (cs2787 := cs_mk)
+      (ev14 := ev1) (hv2574 := hv_rec) (ev2648 := ev2)
+      (hm2712 := hm2705) (ev2685 := ev3) (ev2729 := ev4) (ev2759 := ev_rules)
+      (ev2789 := ev_mk) (hc2993 := hc) .. =>
     injection hv_rec with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
@@ -2046,7 +2057,7 @@ private theorem rec_block_checked_member_kinds
     have e_2705 : Heap.Extends m2637 m2705 := by rw [hm2705]; exact Heap.Extends.snoc _ _
     have hext : Heap.Extends m_chk m2718 :=
       ev1.heap_extends.trans (ev2.heap_extends.trans
-        (e_2705.trans (ev3.heap_extends.trans ev4.heap_extends)))
+        (e_2705.trans (ev3.heap_extends.trans (ev4.heap_extends.trans ev_rules.heap_extends))))
     exact ⟨blkPtr, r_mk, m2718, m_mk, cs_mk,
       ⟨b_arr, Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext hbp_m, hb_eq⟩,
       ev_mk, fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl])⟩
@@ -2384,8 +2395,54 @@ theorem safeRefTargetChecked_resolve_and_not_outside
   rw [heq]
   exact hres_and_safe.2
 
-/-- Along any `L1.RawConvExpr` evaluated by `KernelCheck::safe_refs_only`, every `.ref`-only
-reachable constant index `i ∈ reachRefOnlyExpr ... e` with `c.refs[i]? = some a` satisfies
+private theorem safeRefsTable_size :
+    ∀ (es : List Ixon.Expr) (acc : Array (List Nat)),
+      (es.foldl (fun a entry => a.push (reachRefsExpr a entry)) acc).size =
+        acc.size + es.length
+  | [], acc => by simp
+  | _ :: es, acc => by
+    simp only [List.foldl_cons, List.length_cons]
+    rw [safeRefsTable_size es]
+    simp [Array.size_push]
+    omega
+
+private theorem safeRefsTable_prefix :
+    ∀ (es : List Ixon.Expr) (acc : Array (List Nat)) (i : Nat),
+      i < acc.size →
+      (es.foldl (fun a entry => a.push (reachRefsExpr a entry)) acc)[i]? = acc[i]?
+  | [], _, _, _ => rfl
+  | _ :: es, acc, i, hi => by
+    simp only [List.foldl_cons]
+    rw [safeRefsTable_prefix es _ i (by simp; omega)]
+    have hne : i ≠ acc.size := by omega
+    simp [Array.getElem?_push, hne]
+
+private theorem safeRefsTable_take_getElem? (sharing : List Ixon.Expr)
+    {n i : Nat} {s : Ixon.Expr} (hi_n : i < n) (hsh : sharing[i]? = some s) :
+    (buildReachRefsTbl (sharing.take n))[i]? =
+      some (reachRefsExpr (buildReachRefsTbl (sharing.take i)) s) := by
+  have hi_len : i < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
+  have hsplit : sharing.take n =
+      sharing.take i ++ (s :: (sharing.drop (i + 1)).take (n - 1 - i)) := by
+    have h1 : sharing.take n = (sharing.take i ++ sharing.drop i).take n := by
+      rw [List.take_append_drop]
+    have hdrop : sharing.drop i = s :: sharing.drop (i + 1) := by
+      rw [List.drop_eq_getElem_cons hi_len]
+      have hs_eq : sharing[i] = s := Option.some.inj ((List.getElem?_eq_getElem hi_len).symm.trans hsh)
+      rw [hs_eq]
+    rw [h1, hdrop, List.take_append]
+    simp only [List.length_take, Nat.min_eq_left (Nat.le_of_lt hi_len)]
+    have hsub : n - i = (n - 1 - i) + 1 := by omega
+    rw [List.take_of_length_le (by simp; omega), hsub, List.take_succ_cons]
+  unfold buildReachRefsTbl
+  rw [hsplit, List.foldl_append, List.foldl_cons]
+  have hsz : ((sharing.take i).foldl (fun acc entry => acc.push (reachRefsExpr acc entry)) #[]).size = i := by
+    rw [safeRefsTable_size]; simp [Nat.min_eq_left (Nat.le_of_lt hi_len)]
+  rw [safeRefsTable_prefix _ _ i (by simp [hsz]), Array.getElem?_push]
+  simp [hsz]
+
+/-- Along any `L1.RawConvExpr` evaluated by `KernelCheck::safe_refs_only`, every constant and projection
+reachable constant index `i ∈ reachRefsExpr ... e` with `c.refs[i]? = some a` satisfies
 `SafeRefTargetChecked calls a` unconditionally when `r = .field 1`. -/
 theorem safe_refs_only_raw_checked
     {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
@@ -2403,7 +2460,7 @@ theorem safe_refs_only_raw_checked
       Heap.Extends h h' ∧
       (r = .field 1 →
         ∀ {i : Nat} {a : _root_.Address},
-          i ∈ reachRefOnlyExpr (buildReachRefOnlyTbl (c.sharing.toList.take n)) e →
+          i ∈ reachRefsExpr (buildReachRefsTbl (c.sharing.toList.take n)) e →
           c.refs[i]? = some a →
           SafeRefTargetChecked calls a) := by
   induction raw with
@@ -2416,7 +2473,7 @@ theorem safe_refs_only_raw_checked
     | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | sort _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -2427,7 +2484,7 @@ theorem safe_refs_only_raw_checked
     | BVar _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | str _ _ _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -2438,7 +2495,7 @@ theorem safe_refs_only_raw_checked
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Proj _ _ _ _ ld _ _ =>
+    | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | nat _ _ _ _ _ _ _ cell =>
     intro n h h' r cs _ _ hext _ ev
@@ -2449,7 +2506,7 @@ theorem safe_refs_only_raw_checked
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Proj _ _ _ _ ld _ _ =>
+    | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | recur _ _ _ ra _ _ cell =>
     intro n h h' r cs _ _ hext hsub ev
@@ -2472,7 +2529,7 @@ theorem safe_refs_only_raw_checked
     | BVar _ ld _ _ _ | Srt _ ld _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | @ref bound addr rIdx uIdxs a' d ap lsp ls _ href hd ra _ _ cell =>
     intro n h h' r cs _ _ hext hsub ev
@@ -2493,7 +2550,7 @@ theorem safe_refs_only_raw_checked
       refine ⟨hr_bool, by rw [hh']; exact ext_ci, fun hr1 {i a} hi hc_ref => ?_⟩
       have hy0 : y89 = .field 0 := hy0_of_r1 hr1
       rw [hy0] at ev101
-      simp only [reachRefOnlyExpr, List.mem_singleton] at hi
+      simp only [reachRefsExpr, List.mem_singleton] at hi
       subst hi
       have href_arr : c.refs[rIdx.toNat]? = some a' := by simpa using href
       have ha_eq : a' = a := Option.some.inj (href_arr.symm.trans hc_ref)
@@ -2503,18 +2560,42 @@ theorem safe_refs_only_raw_checked
     | BVar _ ld _ _ _ | Srt _ ld _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
-    | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
-  | prj _ _ _ _ _ _ cell ih =>
+  | @prj bound addr tIdx fIdx inner a' d ap ip _ _ href hd ra _ cell ih =>
     intro n h h' r cs hn hbnd hext hsub ev
     have cell_h := hext.getElem?_eq cell
     cases Obs.«KernelCheck::safe_refs_only».obs ev with
-    | Proj _ _ x_e1 cs409 ld ev411 hc420 =>
+    | Proj x_taddr _ x_e1 v405 m406 p413 cs419 x430 y431 m432 y439 cs449 cs463
+        ld ev421 ld415 ev451 op445 ev465 op437 hc474 =>
       have hxs := (Core.load_cell cell_h ld).2
       simp only [List.cons.injEq, and_true] at hxs
-      rcases hxs with ⟨_, _, rfl⟩
-      have hsub409 : ∀ cl ∈ cs409, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc420]; simp [hcl])
-      exact ih n hn hbnd hext hsub409 ev411
+      rcases hxs with ⟨rfl, _, rfl⟩
+      have hsub419 : ∀ cl ∈ cs419, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc474]; simp [hcl])
+      have hsub463 : ∀ cl ∈ cs463, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc474]; simp [hcl])
+      obtain ⟨ext_ci, _, _, _, _, _, _, _, _, _, v_ld, hld_v, hraw_ld⟩ :=
+        L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub419)
+          (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra) ev421
+      have hv_eq : v_ld = v405 := Except.ok.inj (hld_v.symm.trans ld415)
+      rw [hv_eq] at hraw_ld
+      obtain ⟨hm432, _, hy439, _, _⟩ := L1.is_unsafe_ci_raw_spec hraw_ld ev451
+      have ext_target : Heap.Extends h m432 := by rw [hm432]; exact ext_ci
+      obtain ⟨hb_left, hy0_of_left⟩ := sub_one_bool_dichot hy439 op445
+      obtain ⟨hb_right, ext_inner, hres_inner⟩ :=
+        ih n hn hbnd (hext.trans ext_target) hsub463 ev465
+      obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb_left hb_right op437
+      refine ⟨hr_bool, ext_target.trans ext_inner, fun hr1 {i a} hi hc_ref => ?_⟩
+      obtain ⟨hleft, hright⟩ := hand hr1
+      simp only [reachRefsExpr, List.mem_cons] at hi
+      rcases hi with rfl | hi_inner
+      · have hy0 := hy0_of_left hleft
+        rw [hy0] at ev451
+        have href_arr : c.refs[tIdx.toNat]? = some a' := by simpa using href
+        have ha_eq : a' = a := Option.some.inj (href_arr.symm.trans hc_ref)
+        exact ⟨d, ap, p413, v405, h, m406, m432, cs419, cs449,
+          hd.trans ha_eq, Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy hext ra,
+          ev421, hsub419, ld415, ev451⟩
+      · exact hres_inner hright hi_inner hc_ref
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
     | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _
@@ -2535,13 +2616,13 @@ theorem safe_refs_only_raw_checked
       obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op135
       refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
       obtain ⟨hv1, hv2⟩ := hand hr1
-      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      simp only [reachRefsExpr, List.mem_append] at hi
       rcases hi with hi1 | hi2
       · exact hres1 hv1 hi1 hc_ref
       · exact hres2 hv2 hi2 hc_ref
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Lam _ _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | lam _ _ _ cell ih1 ih2 =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -2558,13 +2639,13 @@ theorem safe_refs_only_raw_checked
       obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op195
       refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
       obtain ⟨hv1, hv2⟩ := hand hr1
-      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      simp only [reachRefsExpr, List.mem_append] at hi
       rcases hi with hi1 | hi2
       · exact hres1 hv1 hi1 hc_ref
       · exact hres2 hv2 hi2 hc_ref
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Forall _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | all _ _ _ cell ih1 ih2 =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -2581,13 +2662,13 @@ theorem safe_refs_only_raw_checked
       obtain ⟨hr_bool, hand⟩ := mul_bool_dichot hb1 hb2 op255
       refine ⟨hr_bool, ext1.trans ext2, fun hr1 {i a} hi hc_ref => ?_⟩
       obtain ⟨hv1, hv2⟩ := hand hr1
-      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      simp only [reachRefsExpr, List.mem_append] at hi
       rcases hi with hi1 | hi2
       · exact hres1 hv1 hi1 hc_ref
       · exact hres2 hv2 hi2 hc_ref
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Let _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | letE _ _ _ cell ih1 ih2 ih3 =>
     intro n h h' r cs hn hbnd hext hsub ev
@@ -2609,14 +2690,14 @@ theorem safe_refs_only_raw_checked
       refine ⟨hr_bool, (ext1.trans ext2).trans ext3, fun hr1 {i a} hi hc_ref => ?_⟩
       obtain ⟨hv12, hv3⟩ := hand hr1
       obtain ⟨hv1, hv2⟩ := hand12 hv12
-      simp only [reachRefOnlyExpr, List.mem_append] at hi
+      simp only [reachRefsExpr, List.mem_append] at hi
       rcases hi with (hi1 | hi2) | hi3
       · exact hres1 hv1 hi1 hc_ref
       · exact hres2 hv2 hi2 hc_ref
       · exact hres3 hv3 hi3 hc_ref
     | BVar _ ld _ _ _ | Srt _ ld _ _ _ | Const _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | App _ _ _ _ _ _ _ ld _ _ _ _ | Lam _ _ _ _ _ _ _ _ ld _ _ _ _
-    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ ld _ _ =>
+    | Forall _ _ _ _ _ _ _ _ ld _ _ _ _ | Lit _ ld _ _ _ | Proj _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _ =>
       exact (Core.load_cell_ne cell_h ld (by decide)).elim
   | @share bound idx s kp hidx hsh _ ihs =>
     intro n h h' r cs _ hbnd hext hsub ev
@@ -2624,16 +2705,16 @@ theorem safe_refs_only_raw_checked
       (List.getElem?_eq_some_iff.mp hsh).1
     have hidx_n : idx.toNat < n := by
       rcases hbnd with hle | ⟨_, hn_eq⟩ <;> omega
-    have hget := buildReachRefOnlyTbl_take_getElem? c.sharing.toList hidx_n hsh
+    have hget := safeRefsTable_take_getElem? c.sharing.toList hidx_n hsh
     obtain ⟨hb, ext, hres⟩ :=
       ihs idx.toNat (Nat.le_of_lt hidx_len) (.inl (Nat.le_refl _)) hext hsub ev
     refine ⟨hb, ext, fun hr1 {i a} hi hc_ref => ?_⟩
-    simp only [reachRefOnlyExpr, hget, Option.getD_some] at hi
+    simp only [reachRefsExpr, hget, Option.getD_some] at hi
     exact hres hr1 hi hc_ref
 
-/-- Unconditional `.ref`-only target safety: every `i ∈ reachRefOnlyExpr ... e` on an expression
+/-- Unconditional constant and projection target safety: every `i ∈ reachRefsExpr ... e` on an expression
 accepted by `KernelCheck::safe_refs_only` satisfies `SafeRefTargetChecked calls a`. -/
-theorem safe_refs_only_refOnly_checked
+theorem safe_refs_only_refs_checked
     {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h h' : Heap F} {cs : List (Call F)}
     {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
@@ -2643,7 +2724,7 @@ theorem safe_refs_only_refOnly_checked
     (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
     ∀ {i : Nat} {a : _root_.Address},
-      i ∈ reachRefOnlyExpr (buildReachRefOnlyTbl c.sharing.toList) e →
+      i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
       c.refs[i]? = some a →
       SafeRefTargetChecked calls a := by
   have hbnd' : bound ≤ c.sharing.toList.length ∨
@@ -2657,10 +2738,8 @@ theorem safe_refs_only_refOnly_checked
     c.sharing.toList.length (Nat.le_refl _) hbnd' (Heap.Extends.refl h) hsub ev).2.2
     rfl hi hc_ref
 
-/-- Exact circuit expression-safety premise corresponding to `KExprNode::Proj(taddr, _, e1)`
-checking `taddr` in `KernelCheck::safe_refs_only` (`.ref` nodes already satisfy
-`SafeRefTargetChecked` unconditionally by `safe_refs_only_refOnly_checked`), together with
-recursor `rules` / modeled `check_recs` safety. -/
+/-- Every reachable constant or projection-container reference has an observed target-safety
+check. `circuitExprSafeRefs` constructs this collection of facts from the implemented checker. -/
 structure CircuitExprSafeRefs : Prop where
   expr_refs_checked :
     ∀ {calls : List (Call F)} {c : Ixon.Constant} {recurAddrs : List _root_.Address}
@@ -2675,6 +2754,10 @@ structure CircuitExprSafeRefs : Prop where
         i ∈ reachRefsExpr (buildReachRefsTbl c.sharing.toList) e →
         c.refs[i]? = some a →
         SafeRefTargetChecked calls a
+
+/-- The implemented expression-safety check validates every constant and projection target. -/
+theorem circuitExprSafeRefs : CircuitExprSafeRefs where
+  expr_refs_checked := safe_refs_only_refs_checked
 
 /-- Full `SafeRefsInputs.safe_expr_refs_resolve` derived from `CircuitExprSafeRefs` and our
 unconditional `safeRefTargetChecked_resolve_and_not_outside` theorem. -/
@@ -3288,8 +3371,8 @@ structure SafeExprRefsGap : Prop where
             L1.RecordReadsAs t E_core x c_x ci₀)
 /-- Assemble `SafeRefsInputs` from `CircuitExprSafeRefs`, the unconditional theorems in
 Sections 1–3, and `SafeExprRefsGap`. -/
-theorem safeRefsInputs (hCircuit : CircuitExprSafeRefs) (hGap : SafeExprRefsGap) : SafeRefsInputs where
-  safe_expr_refs_resolve := safe_expr_refs_resolve_of_circuitExprSafeRefs hCircuit
+theorem safeRefsInputs (hGap : SafeExprRefsGap) : SafeRefsInputs where
+  safe_expr_refs_resolve := safe_expr_refs_resolve_of_circuitExprSafeRefs circuitExprSafeRefs
   rolePrefixStreamReadBare := by
     intro V extra calls b t E₀ E E_role E_core limits order order_role envA pre st_role decls_role
       seeds hadm hbound hload₀ hnoCol hexact_c hnoInt_c hrec_sub hblob_sub hagree hblob_r

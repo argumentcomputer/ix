@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.GroupedInstall
 import IxVMRefinement.Assembly.RolePreludeBridge
 import IxVMRefinement.Assembly.SafeRefsBridge
 import IxVMRefinement.Assembly.Bridge
@@ -34,7 +35,7 @@ Bridges the `IxVMRefinement.Assembly` role-aware verification chain to the publi
 
 4. **Custom-Table Companion, Minimal Boundary Isolation, and End-to-End Assembly**:
    * `CustomTableCompanion`: isolates the custom-table properties (`noProjRewrites`,
-     `singleRecBlock`, role collision-freeness against `committedImages` and internal blobs).
+     `singleRecBlock`, and local agreement of selected records and blobs with committed fallback).
    * `StatementBoundaryGap`, `tableAdmittedComplete_of_tableAdmitted`,
      `consistentRead_of_consistentReadRole`, `l7_mkSeams_of_declsStrong`, and
      `consistent_mkSeams_of_declsStrong`: wires `RolePreludeBridge.rolePreludeInputs`,
@@ -56,129 +57,6 @@ universe u
 (`Statement.lean`). -/
 theorem drawsRoleLocal_eq_drawsRole (E E₀ R : Ixon.Env) :
     DrawsRoleLocal E E₀ R = IxVM.Consistency.DrawsRole E E₀ R := rfl
-
-/-- Every constant declared by `d` has an `.aux` key (e.g. generated inductive model declarations
-in `prepareWith`). -/
-def DeclAllAux (d : Ix.Kernel.Declaration .anon) : Prop :=
-  ∀ ci₀ ∈ IxVM.Consistency.installs d, ∃ k t, ci₀.name = .aux k t
-
-private theorem list_find?_append_none :
-    ∀ {xs ys : List (Ix.Kernel.ConstantInfo .anon)} {n : Ix.Kernel.Key .anon},
-      (xs ++ ys).find? (·.name == n) = none →
-      (∀ ci ∈ xs, ci.name ≠ n) ∧ ys.find? (·.name == n) = none
-  | [], _, _, h => ⟨fun _ hm => (nomatch hm), h⟩
-  | x :: xs, ys, n, h => by
-    simp only [List.cons_append, List.find?_cons] at h
-    cases hxn : x.name == n with
-    | true => rw [hxn] at h; cases h
-    | false =>
-      rw [hxn] at h
-      obtain ⟨hxs, hys⟩ := list_find?_append_none h
-      refine ⟨fun ci hci => ?_, hys⟩
-      rcases List.mem_cons.mp hci with rfl | hci'
-      · exact fun heq => absurd (beq_iff_eq.mpr heq) (by rw [hxn]; decide)
-      · exact hxs ci hci'
-
-private theorem nodup_map_append {α β : Type _} {f : α → β} :
-    ∀ {xs ys : List α},
-      (xs.map f).Nodup → (ys.map f).Nodup →
-      (∀ x ∈ xs, ∀ y ∈ ys, f x ≠ f y) →
-      ((xs ++ ys).map f).Nodup
-  | [], _, _, hnd_y, _ => hnd_y
-  | x :: xs, ys, hnd_x, hnd_y, hdisj => by
-    simp only [List.cons_append, List.map_cons, List.nodup_cons] at hnd_x ⊢
-    refine ⟨fun hmem => ?_,
-      nodup_map_append hnd_x.2 hnd_y (fun x' hx' y hy => hdisj x' (List.mem_cons_of_mem x hx') y hy)⟩
-    rw [List.map_append, List.mem_append] at hmem
-    rcases hmem with hmem_x | hmem_y
-    · exact hnd_x.1 hmem_x
-    · obtain ⟨y, hy, hfy⟩ := List.mem_map.mp hmem_y
-      exact hdisj x List.mem_cons_self y hy hfy.symm
-
-/-- **Unconditional `.aux` absorption in `InstallStep`**: an auxiliary declaration `d_aux`
-installed immediately before `d` merges directly into `d`'s `InstallStep`, because
-`IxVM.Consistency.InstallStep` permits arbitrary `.aux`-named constants alongside `installs d`. -/
-theorem installStep_absorb_aux_left
-    {env₀ env₁ env₂ : Ix.Kernel.Env .anon}
-    {d_aux d : Ix.Kernel.Declaration .anon}
-    (haux : DeclAllAux d_aux)
-    (hstep₁ : IxVM.Consistency.InstallStep env₀ d_aux env₁)
-    (hstep₂ : IxVM.Consistency.InstallStep env₁ d env₂) :
-    IxVM.Consistency.InstallStep env₀ d env₂ := by
-  obtain ⟨new₁, rfl, hnd₁, hnone₁, _, hshape₁⟩ := hstep₁
-  obtain ⟨new₂, rfl, hnd₂, hnone₂, hinst₂, hshape₂⟩ := hstep₂
-  refine ⟨new₂ ++ new₁, congrArg Ix.Kernel.Env.mk (List.append_assoc new₂ new₁ env₀.consts).symm,
-    ?_, ?_, ?_, ?_⟩
-  · apply nodup_map_append hnd₂ hnd₁
-    intro ci₂ hci₂ ci₁ hci₁ heq
-    have hsplit := list_find?_append_none (hnone₂ ci₂ hci₂)
-    exact hsplit.1 ci₁ hci₁ heq.symm
-  · intro ci hci
-    rcases List.mem_append.mp hci with hci₂ | hci₁
-    · exact (list_find?_append_none (hnone₂ ci hci₂)).2
-    · exact hnone₁ ci hci₁
-  · intro ci₀ hci₀
-    obtain ⟨ci, hci, hst⟩ := hinst₂ ci₀ hci₀
-    exact ⟨ci, List.mem_append_left _ hci, hst⟩
-  · intro ci hci
-    rcases List.mem_append.mp hci with hci₂ | hci₁
-    · exact hshape₂ ci hci₂
-    · rcases hshape₁ ci hci₁ with ⟨ci₀, hci₀, hname⟩ | hkt
-      · obtain ⟨k, t, hk⟩ := haux ci₀ hci₀
-        exact Or.inr ⟨k, t, hname.symm.trans hk⟩
-      · exact Or.inr hkt
-
-private theorem snoc_inj {α : Type _} :
-    ∀ {xs ys : List α} {x y : α}, xs ++ [x] = ys ++ [y] → xs = ys ∧ x = y
-  | [], [], x, y, h => by
-    simp only [List.nil_append, List.cons.injEq, and_true] at h
-    exact ⟨rfl, h⟩
-  | [], y₀ :: ys, x, y, h => by
-    cases ys with
-    | nil => simp at h
-    | cons _ _ => simp at h
-  | x₀ :: xs, [], x, y, h => by
-    cases xs with
-    | nil => simp at h
-    | cons _ _ => simp at h
-  | x₀ :: xs, y₀ :: ys, x, y, h => by
-    simp only [List.cons_append, List.cons.injEq] at h
-    obtain ⟨hpre, hxy⟩ := snoc_inj h.2
-    exact ⟨congrArg₂ List.cons h.1 hpre, hxy⟩
-
-theorem installs_snoc_inv {ds : List (Ix.Kernel.Declaration .anon)}
-    {d : Ix.Kernel.Declaration .anon} {env₂ : Ix.Kernel.Env .anon}
-    (h : IxVM.Consistency.Installs (ds ++ [d]) env₂) :
-    ∃ env₁, IxVM.Consistency.Installs ds env₁ ∧ IxVM.Consistency.InstallStep env₁ d env₂ := by
-  generalize h_eq : ds ++ [d] = full at h
-  cases h with
-  | nil => simp at h_eq
-  | snoc hpre hstep =>
-    obtain ⟨rfl, rfl⟩ := snoc_inj h_eq
-    exact ⟨_, hpre, hstep⟩
-
-/-- **Unconditional `.aux`-block grouping for `Installs`**: any run of auxiliary model
-declarations `auxs` emitted immediately before a bare declaration `d` (such as
-`[aux₁, …, auxₖ, .indDecl …]` in `prepareWith`) collapses into `d`'s single `InstallStep`,
-yielding `IxVM.Consistency.Installs (ds ++ [d]) env₂`. -/
-theorem installs_absorb_aux_block :
-    ∀ (auxs : List (Ix.Kernel.Declaration .anon))
-      {ds : List (Ix.Kernel.Declaration .anon)}
-      {d : Ix.Kernel.Declaration .anon} {env₂ : Ix.Kernel.Env .anon},
-      (∀ d_a ∈ auxs, DeclAllAux d_a) →
-      IxVM.Consistency.Installs ((ds ++ auxs) ++ [d]) env₂ →
-      IxVM.Consistency.Installs (ds ++ [d]) env₂
-  | [], _, _, _, _, h => by simpa using h
-  | a :: rest, ds, d, env₂, haux, h => by
-    have h_assoc : ((ds ++ [a]) ++ rest) ++ [d] = (ds ++ (a :: rest)) ++ [d] := by
-      simp [List.append_assoc]
-    have h_mid : IxVM.Consistency.Installs ((ds ++ [a]) ++ [d]) env₂ :=
-      installs_absorb_aux_block rest
-        (fun d_a hd => haux d_a (List.mem_cons_of_mem a hd))
-        (by rw [h_assoc]; exact h)
-    obtain ⟨env₁, h₁, hstep_d⟩ := installs_snoc_inv h_mid
-    obtain ⟨env₀, h₀, hstep_a⟩ := installs_snoc_inv h₁
-    exact .snoc h₀ (installStep_absorb_aux_left (haux a List.mem_cons_self) hstep_a hstep_d)
 
 /-! ## Section 2: Unconditional Pruned Role-Prefix Downward Closure -/
 
@@ -263,6 +141,79 @@ theorem prepareWith_unpack
                 t, constants, st', decls, rfl,
                 (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hde,
                 hstream, hev_eq, hkeeps, rfl⟩
+
+/-- Canonical byte admission agrees with a cache-coherent store on the participating order.
+The store, its closure graph, and its blob selection are unchanged. -/
+theorem recordsRead_decodedOf_coherent
+    (E : Ixon.Env) {limits : Ix.Kernel.Admission.Limits} :
+    ∀ (order : List _root_.Address) {constants : List (_root_.Address × Ixon.Constant)},
+      (∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+        ∀ c, Ixon.deConstantExact lc.rawBytes = .ok c → lc.get? = some c) →
+      Ix.Kernel.Admission.RecordsRead limits (Ix.Cert.recordsOf E order) constants →
+      constants = Ix.Cert.Stream.decodedOf E order
+  | [], _, _, hread => by
+    change Ix.Kernel.Admission.RecordsRead limits [] _ at hread
+    cases hread
+    rfl
+  | a :: rest, _, hcoherent, hread => by
+    rw [Ix.Cert.Stream.recordsOf_cons] at hread
+    rw [Ix.Cert.Stream.decodedOf_cons]
+    cases hget : E.consts.get? a with
+    | none =>
+      rw [hget] at hread
+      dsimp only [Option.map, Option.toList, List.nil_append] at hread
+      have hrec : Ix.Cert.recordAt E a = none := by
+        simp only [Ix.Cert.recordAt, hget, Option.bind_none]
+      rw [hrec]
+      simpa using recordsRead_decodedOf_coherent E rest
+        (fun x hx => hcoherent x (List.mem_cons_of_mem a hx)) hread
+    | some lc =>
+      rw [hget] at hread
+      dsimp only [Option.map, Option.toList, List.cons_append, List.nil_append] at hread
+      cases hread with
+      | cons reads tail =>
+        rename_i c tail_constants
+        have hdec : Ixon.deConstantExact lc.rawBytes = .ok c := by
+          rw [← reads.encoded]
+          exact Ixon.Verify.deConstantExact_serConstant c reads.wire
+        have hrec : Ix.Cert.recordAt E a = some c := by
+          simp only [Ix.Cert.recordAt, hget, Option.bind_some]
+          exact hcoherent a List.mem_cons_self lc hget c hdec
+        rw [hrec]
+        dsimp only [Option.map, Option.toList, List.cons_append, List.nil_append]
+        exact congrArg ((a, c) :: ·) (recordsRead_decodedOf_coherent E rest
+          (fun x hx => hcoherent x (List.mem_cons_of_mem a hx)) tail)
+
+/-- A checked byte reading of a coherent witness is already a reading of that witness's
+decoded records. This needs neither a globally authentic view nor cache normalization. -/
+theorem prepareWith_unpack_coherent
+    {hash : ByteArray → _root_.Address} {b : Ix.Kernel.Admission.Binding}
+    {E : Ixon.Env} {order : List _root_.Address}
+    {pre : Ix.Kernel.Reader.Prelude .anon} {limits : Ix.Kernel.Admission.Limits}
+    {ev : Ix.Kernel.Evidences .anon} {ds : Array (Ix.Kernel.Declaration .anon)}
+    (hcoherent : ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
+      ∀ c, Ixon.deConstantExact lc.rawBytes = .ok c → lc.get? = some c)
+    (hprep : Ix.Kernel.Admission.prepareWith hash b pre limits
+      (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)) :
+    Ix.Kernel.Admission.WithinBatch limits (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    Ix.Kernel.Admission.UniqueKeys (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    Ix.Kernel.Admission.Authentic hash (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) ∧
+    ∃ t st' decls,
+      Ix.Kernel.Admission.admitBinding hash b = .ok t ∧
+      Ix.Kernel.Reader.StreamRead
+        (Ix.Kernel.Admission.streamContext hash t pre (Ix.Cert.Stream.decodedOf E order)
+          (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+        pre.state (Ix.Cert.Stream.decodedOf E order) st' decls ∧
+      ev = Ix.Kernel.Reader.evidenceOf
+        (Ix.Kernel.Admission.streamContext hash t pre (Ix.Cert.Stream.decodedOf E order)
+          (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)) st' t ∧
+      Ix.Kernel.Reader.State.keepsPrelude pre.state st' = true ∧
+      ds = Ix.Kernel.Frontend.preparePrelude pre.ix decls := by
+  obtain ⟨hbatch, hkeys, hauth, t, constants, st', decls, hadm, hread, hstream,
+    hevidence, hkeeps, hdecls⟩ := prepareWith_unpack hprep
+  have hdecoded := recordsRead_decodedOf_coherent E order hcoherent hread
+  subst constants
+  exact ⟨hbatch, hkeys, hauth, t, st', decls, hadm, hstream, hevidence, hkeeps, hdecls⟩
 
 /-- Re-materializes a `LazyConstant` from `Ixon.deConstantExact lc.rawBytes` whenever exact
 decoding succeeds, preserving `rawBytes` unconditionally. -/
@@ -539,20 +490,23 @@ theorem tableAdmitted_unpack_normalized
 on the committed default role table):
 1. `noProjRewrites`: direct projections only (`st_role.projRewrites = 0`),
 2. `singleRecBlock`: at most one external recursor block per mutual block in `artifactRecIndex`,
-3. `noCommittedCollision`: no BLAKE3 collision between `V.Preimage` and `committedImages`, and
-4. `noRoleInternalCollision`: no address collision between a role-closure record and blob. -/
-structure CustomTableCompanion (V : IxVM.Refinement.View)
+3. agreement of selected role records and blobs with committed fallback records, and
+4. `noRoleInternalCollision`: agreement of a role-closure record and blob at a shared address. -/
+structure CustomTableCompanion
     (E_role : Ixon.Env) (order_role : List _root_.Address)
-    (st_role : Ix.Kernel.Reader.State .anon) : Prop where
+    (st_role : Ix.Kernel.Reader.State .anon) (pre : Ix.Kernel.Reader.Prelude .anon) : Prop where
   noProjRewrites : st_role.projRewrites = 0
   singleRecBlock :
     ∀ a ∈ order_role, ∀ shape,
       (Ix.Cert.artifactRecIndex E_role).blocks[a]? = some shape →
       ∀ r₁ ∈ shape.recs, ∀ r₂ ∈ shape.recs,
         r₁.block ≠ a → r₂.block ≠ a → r₁.block = r₂.block
-  noCommittedCollision :
-    ∀ x held img, V.Preimage x held → img ∈ IxVM.Consistency.committedImages →
-      _root_.Address.blake3Pure held = x → _root_.Address.blake3Pure img = x → held = img
+  fallbackRecordsAgree :
+    ∀ a ∈ order_role, ∀ lc, E_role.consts.get? a = some lc →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → lc.rawBytes = Ixon.serConstant c
+  fallbackRecordBlobsAgree :
+    ∀ a bytes, (a, bytes) ∈ Ix.Cert.blobsOf E_role order_role →
+      ∀ c, (a, c) ∈ pre.records ++ pre.evidence → bytes = Ixon.serConstant c
   noRoleInternalCollision :
     ∀ x lc d, x ∈ order_role → E_role.consts.get? x = some lc →
       (x, d) ∈ Ix.Cert.blobsOf E_role order_role → d = lc.rawBytes
@@ -608,7 +562,6 @@ theorem consistentRead_of_consistentReadRole
 `RolePreludeBridge.rolePreludeInputs`, `SafeRefsBridge.safeRefsInputs`, and
 `Bridge.consistentReadRole_of_rolePrelude_declsStrong`. -/
 theorem l7_mkSeams_of_declsStrong
-    (hCircuit : CircuitExprSafeRefs)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
@@ -624,7 +577,7 @@ theorem l7_mkSeams_of_declsStrong
       have hRole : ConsistentReadRole.{u} V calls b seeds :=
         consistentReadRole_of_rolePrelude_declsStrong
           rolePreludeInputs
-          (safeRefsInputs hCircuit hSafeGap)
+          (safeRefsInputs hSafeGap)
           hStrong
           hbound hscope hseeds hRT hadmV hadm hload hseedOk hwalk
           (List.mem_cons_of_mem _ List.mem_cons_self)
@@ -635,12 +588,11 @@ theorem l7_mkSeams_of_declsStrong
 /-- **Circuit-level consistency (`IxVM.Consistency.CircuitConsistent`)** at `mkSeams DeclOrigin`
 from `DeclsStrong DeclOrigin`, wiring `L0`–`L7` through `ClaimsL1L6.consistent_of_decls_l7`. -/
 theorem consistent_mkSeams_of_declsStrong
-    (hCircuit : CircuitExprSafeRefs)
     (hSafeGap : SafeExprRefsGap)
     (hBoundGap : StatementBoundaryGap)
     (hStrong : DeclsStrong.{u} DeclOrigin) :
     IxVM.Consistency.CircuitConsistent.{u} :=
   consistent_of_decls_l7 DeclOrigin hStrong.toDecls
-    (l7_mkSeams_of_declsStrong hCircuit hSafeGap hBoundGap hStrong)
+    (l7_mkSeams_of_declsStrong hSafeGap hBoundGap hStrong)
 
 end IxVM.Refinement.Assembly
