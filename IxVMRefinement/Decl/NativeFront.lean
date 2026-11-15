@@ -1933,16 +1933,17 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
 `mkAppN (.const T (lps.map .param)) (structPsAt nF nP ++ es)` with `es.length = nIdx`,
 every `a ∈ es` free of `T`, raw residual witness on `raw_cty`, and
 `NoTopLetSpine (nP + nF) h' pcty`. -/
-theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPF_lt : nP + nF < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c b₀ T lps.length nP nIdx nCtors)
-    (hlf : LoadFacts c)
-    (hgood : Good c cs)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
     (hcty : RawTmExact c.κ 0 Γ h 0 raw_cty cty pcty)
     (hnp : noProjAt T cty = true)
     (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
@@ -1985,16 +1986,17 @@ theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
     have hsp_peel : NoTopLetSpine (nP + nF) m41 pcty :=
       peel_n_foralls_noTopLetSpine (nP + nF) (by omega) hcty ev_peel ext_sp hsp0
     obtain ⟨a_hd, us_hd, rfl, rfl, ha_hd, hus_hd⟩ := hH.const_of_load ld_hd
-    have hg_par : Good c cs_par := hgood.sub (fun x hx => by simp [hx])
+    have hg_par : Good c.toCtx cs_par := hgood.sub (fun x hx => by simp [hx])
+    have hs_par : RawRecordCoverage c cs_par := hscope.sub (fun x hx => by simp [hx])
     have hblk_41 := Bytes.repAddressRef_heapMono₂ addrTy ext_sp hblk
     have hpar_T : c.κ (ixAddr a_hd) = T := by
       match Obs.«KernelCheck::assert_return_head_is_parent».obs ev_par with
       | .run (m2 := mp2) (p9 := p9) (cs15 := csp1) (ev17 := ev_ci) (ld11 := ld_ind)
           (ev112 := ev_aeq) (heq135 := heq1) (hc168 := hcp) .. =>
         subst hcp
-        have hgp1 : Good c csp1 := hg_par.sub (fun x hx => by simp [hx])
+        have hgp1 : Good c.toCtx csp1 := hg_par.sub (fun x hx => by simp [hx])
         obtain ⟨cm, b', _, hcm, hb', rfl, hinfo⟩ :=
-          hlf.inductRecord xhda p9 m41 mp2 csp1 a_hd _ _ _ _ _ _ _ _ ev_ci hgp1 ha_hd ld_ind
+          hlf.inductRecord xhda p9 m41 mp2 csp1 a_hd _ _ _ _ _ _ _ _ ev_ci (hs_par _ _ (by simp)) hgp1 ha_hd ld_ind
         obtain ⟨hv_eq, _⟩ := Lib.address_eq_spec ev_aeq hb'
           (Bytes.repAddressRef_heapMono₂ addrTy ev_ci.heap_extends hblk_41)
         rw [heq1] at hv_eq
@@ -2054,8 +2056,9 @@ theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
     have hnp_drop : ∀ a ∈ As.drop nP, noProjAt T a = true :=
       fun a ha => hnp_As a (List.mem_of_mem_drop ha)
     rw [heq_any] at ev_any
-    have hg_any : Good c cs_any := hgood.sub (fun x hx => by simp [hx])
-    have hnoT_drop := list_any_mentions_block_zero_spec hpeer hlf hg_any
+    have hg_any : Good c.toCtx cs_any := hgood.sub (fun x hx => by simp [hx])
+    have hs_any : RawRecordCoverage c cs_any := hscope.sub (fun x hx => by simp [hx])
+    have hnoT_drop := list_any_mentions_block_zero_raw_spec hpeer hlf hg_any hs_any
       (repList_heapMono₂ kexprListEnum tmExact_heapMono₂ ext_bas hAs_drop)
       hnp_drop hbas_309 ev_any
     have ext_end : Heap.Extends m41 h' :=
@@ -2070,6 +2073,37 @@ theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
       exact hstrip
     · rw [List.length_drop, hAs_len]
       omega
+
+theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+    {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
+    {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hlps : lps = List.range lps.length)
+    (hlps_lt : lps.length < 4294967296)
+    (hnPF_lt : nP + nF < 4294967296)
+    (hnPI_lt : nP + nIdx < 4294967296)
+    (hpeer : OneTypePeerFacts c b₀ T lps.length nP nIdx nCtors)
+    (hlf : LoadFacts c)
+    (hgood : Good c cs)
+    (hcty : RawTmExact c.κ 0 Γ h 0 raw_cty cty pcty)
+    (hnp : noProjAt T cty = true)
+    (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
+    (ev : ObsFn W "KernelCheck::check_ctor_return_type"
+      [pcty, .field (nP : F), .field (nIdx : F), .field (nF : F),
+        .field (lps.length : F), pblk, .field 0] h r h' cs) :
+    NoTopLetSpine (nP + nF) h' pcty ∧
+    ∃ (rcbs : List (KExpr × Ix.Kernel.BinderMeta)) (rargs : List KExpr)
+      (cbs : List (KExpr × Ix.Kernel.BinderMeta)) (es : List KExpr),
+      raw_cty.stripPis (nP + nF) =
+        some (rcbs, Expr.mkAppN (.const T (lps.map .param)) rargs) ∧
+      rcbs.length = nP + nF ∧
+      cty.stripPis (nP + nF) =
+        some (cbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt nF nP ++ es)) ∧
+      cbs.length = nP + nF ∧
+      es.length = nIdx ∧
+      ∀ a ∈ es, a.mentionsConst T = false := by
+  exact check_ctor_return_type_raw_spec (c := ScopedCtx.unrestricted c)
+    hlps hlps_lt hnPF_lt hnPI_lt hpeer (RawRecordFacts.ofUnrestricted hlf)
+    hgood (RawRecordCoverage.unrestricted c cs) hcty hnp hblk ev
 
 /-! ## Parameter agreement (`check_param_agreement` and `StructDomsShared`) -/
 
