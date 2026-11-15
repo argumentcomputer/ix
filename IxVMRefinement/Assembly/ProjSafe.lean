@@ -438,7 +438,7 @@ theorem AuthenticExactStore.resolve_inj {store : Ix.Kernel.Reader.Store}
     obtain ⟨hbs, _⟩ := deConstantExact_proj_eq_serConstant hdec hemp hp
     rw [← hbs, hbl]
 
-private theorem list_find?_pred {α : Type} {p : α → Bool} :
+theorem list_find?_pred {α : Type} {p : α → Bool} :
     ∀ {xs : List α} {x : α}, xs.find? p = some x → p x = true
   | [], _, h => by cases h
   | hd :: tl, x, h => by
