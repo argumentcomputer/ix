@@ -2251,12 +2251,8 @@ theorem preludeFor_of_readerTable {clm : Ix.Claim} {V : View} {b : Ix.Kernel.Adm
     {t : Ix.Kernel.RoleTable}
     (hrt : IxVM.Consistency.ReaderTable clm V b)
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
-    ∃ pre, Ix.Kernel.Reader.preludeFor (md := .anon) t = .ok pre := by
-  rcases hrt.2 with hdef | htab
-  · have ht := admitBinding_committedDefault hdef hadm
-    subst ht
-    exact preludeFor_defaultRoleTable
-  · exact preludeFor_of_tableAdmitted htab hadm
+    ∃ pre, Ix.Kernel.Reader.preludeFor (md := .anon) t = .ok pre :=
+  preludeFor_of_tableAdmitted hrt.2 hadm
 
 /-- Under `ReaderTable clm V b` and `admitBinding Address.admissionHash b = .ok t`,
 `LiteralSupportBound t` holds. -/
@@ -2264,12 +2260,8 @@ theorem literalSupportBound_of_readerTable {clm : Ix.Claim} {V : View}
     {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
     (hrt : IxVM.Consistency.ReaderTable clm V b)
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t) :
-    IxVM.Refinement.LiteralSupportBound t := by
-  rcases hrt.2 with hdef | htab
-  · have ht := admitBinding_committedDefault hdef hadm
-    subst ht
-    exact committedDefaultRoleTable_literalSupportBound
-  · exact literalSupportBound_of_tableAdmitted htab hadm
+    IxVM.Refinement.LiteralSupportBound t :=
+  literalSupportBound_of_tableAdmitted hrt.2 hadm
 
 /-! ## Collision-free agreement between `committedImages` / `pre` fallback and `LoadedBy calls E₀` -/
 
