@@ -1342,20 +1342,20 @@ private theorem idxOf_filter_lt_of_idxOf_lt [BEq α] [LawfulBEq α] :
       simp only [List.idxOf_cons] at hlt
       cases hxa : x == a with
       | true =>
-        simp only [hxa, cond_true] at hlt ⊢
+        simp only [hxa] at hlt ⊢
         cases hxb : x == b with
-        | true => simp only [hxb, cond_true] at hlt; omega
-        | false => simp only [cond_false]; exact Nat.zero_lt_succ _
+        | true => simp only [hxb] at hlt; omega
+        | false => exact Nat.zero_lt_succ _
       | false =>
-        simp only [hxa, cond_false] at hlt ⊢
+        simp only [hxa] at hlt ⊢
         have ha' : a ∈ xs.filter p := by
           rcases List.mem_cons.mp ha with h_ax | ha'
           · rw [h_ax] at hxa; exact absurd (beq_self_eq_true x) (by rw [hxa]; decide)
           · exact ha'
         cases hxb : x == b with
-        | true => simp only [hxb, cond_true] at hlt; omega
+        | true => simp only [hxb] at hlt; omega
         | false =>
-          simp only [hxb, cond_false] at hlt ⊢
+          simp only [hxb] at hlt ⊢
           have hb' : b ∈ xs.filter p := by
             rcases List.mem_cons.mp hb with h_bx | hb'
             · rw [h_bx] at hxb; exact absurd (beq_self_eq_true x) (by rw [hxb]; decide)
@@ -1367,7 +1367,7 @@ private theorem idxOf_filter_lt_of_idxOf_lt [BEq α] [LawfulBEq α] :
         beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp ha).1))
       have hxb : (x == b) = false :=
         beq_false_of_ne (fun h => hnd.1 (by rw [h]; exact (List.mem_filter.mp hb).1))
-      simp only [List.idxOf_cons, hxa, hxb, cond_false] at hlt
+      simp only [List.idxOf_cons, hxa, hxb] at hlt
       exact idxOf_filter_lt_of_idxOf_lt hnd.2 ha hb (Nat.lt_of_succ_lt_succ hlt)
 
 /-- **Unconditional pruned role-prefix identity**: even without `order_role ⊆ order` (e.g. when
@@ -1419,13 +1419,13 @@ private theorem compilerTrust_false_of_groundRoles_mem {r s : Ix.Kernel.Role}
   split
   · have h : Ix.Cert.groundRoles .trustCompiler = [] := by decide
     rw [h] at hs; nomatch hs
-  · have h : Ix.Cert.groundRoles .lcProof = [] := by decide
+  · have h : Ix.Cert.groundRoles .reduceBool = [] := by decide
     rw [h] at hs; nomatch hs
-  · have h : Ix.Cert.groundRoles .lcUnreachable = [] := by decide
+  · have h : Ix.Cert.groundRoles .reduceNat = [] := by decide
     rw [h] at hs; nomatch hs
-  · have h : Ix.Cert.groundRoles .lcErased = [] := by decide
+  · have h : Ix.Cert.groundRoles .ofReduceBool = [] := by decide
     rw [h] at hs; nomatch hs
-  · have h : Ix.Cert.groundRoles .lcAny = [] := by decide
+  · have h : Ix.Cert.groundRoles .ofReduceNat = [] := by decide
     rw [h] at hs; nomatch hs
   · rfl
 
