@@ -99,7 +99,7 @@ theorem ReferenceTrace.raw_unit_roots {fuel : Nat} {env out : Env .anon}
     (underived : DeclNonAux (.indDecl block nP)) :
     ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true := by
   have mappedUnits : checkUnits (ds.map IxVM.Refinement.thmToOpaqueDefn).toArray = .ok () := by
-    rw [List.map_toArray, checkUnits_thmToOpaqueDefn]
+    rw [← List.map_toArray, checkUnits_thmToOpaqueDefn]
     exact units
   have mappedMember : unit.map IxVM.Refinement.thmToOpaqueDefn ∈
       unitsOf (ds.map IxVM.Refinement.thmToOpaqueDefn) := by

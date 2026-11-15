@@ -54,7 +54,7 @@ theorem normCtorVal_origin {md : Mode} {env : Env md} (wellFormed : EnvWF env)
   obtain ⟨fieldVars, fieldsOpen, fieldCount, binderCount, fieldFacts⟩ :=
     normFieldDoms_sound wellFormed fieldsRun residualScope residualBounded
   refine ⟨parameterBinders, closedResidual, parameterVars, openedResidual, fieldBinders,
-    residual, fieldVars, stripped, opened, fieldsRun, fieldsOpen, openPisAtFvars_length _ opened,
+    residual, fieldVars, stripped, opened, fieldsRun, fieldsOpen, Ix.Kernel.Verify.openPisAtFvars_length _ opened,
     fieldCount, binderCount, fieldFacts, ?_⟩
   dsimp only at rest
   split at rest
