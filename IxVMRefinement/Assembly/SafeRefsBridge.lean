@@ -1501,47 +1501,58 @@ private theorem defn_is_unsafe_ci_count_spec {kind : Ix.DefKind} {safety : Ix.De
     ⟨_, hv25, hne46, rfl, rfl, -⟩ |
     ⟨_, _, hv58, hv74, rfl, rfl, -⟩ |
     ⟨_, _, hv58, hne79, rfl, rfl, -⟩
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · rw [hk] at hv15; simp at hv15
-    · rw [hk] at hv15; simp at hv15
-    · refine ⟨rfl, ?_⟩
+  · cases kind with
+    | defn => simp [Claim.RepDefKind] at hk; rw [hk] at hv15; simp at hv15
+    | opaq => simp [Claim.RepDefKind] at hk; rw [hk] at hv15; simp at hv15
+    | thm =>
+      refine ⟨rfl, ?_⟩
       have hd : (Ix.Kernel.Reader.safetyDeclineOf .thm safety).isNone = true := by
         cases safety <;> decide
       rw [hd]; simp
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · rw [hk] at hv25; simp at hv25
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
-      · rw [hs] at hv41; simp at hv41
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .unsaf).isNone = false := by decide
+  · cases kind with
+    | defn => simp [Claim.RepDefKind] at hk; rw [hk] at hv25; simp at hv25
+    | thm => simp [Claim.RepDefKind] at hk; rw [hk] at hv25; simp at hv25
+    | opaq =>
+      cases safety with
+      | safe => simp [Claim.RepDefinitionSafety] at hs; rw [hs] at hv41; simp at hv41
+      | part => simp [Claim.RepDefinitionSafety] at hs; rw [hs] at hv41; simp at hv41
+      | unsaf =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .unsaf).isNone = false := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-      · rw [hs] at hv41; simp at hv41
-    · rw [hk] at hv25; simp at hv25
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · rw [hk] at hv25; simp at hv25
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .safe).isNone = true := by decide
+  · cases kind with
+    | defn => simp [Claim.RepDefKind] at hk; rw [hk] at hv25; simp at hv25
+    | thm => simp [Claim.RepDefKind] at hk; rw [hk] at hv25; simp at hv25
+    | opaq =>
+      cases safety with
+      | unsaf => simp [Claim.RepDefinitionSafety] at hs; exact absurd hs (hne46 [] rfl)
+      | safe =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .safe).isNone = true := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-      · exact absurd hs (hne46 [] rfl)
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .part).isNone = true := by decide
+      | part =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .opaq .part).isNone = true := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-    · rw [hk] at hv25; simp at hv25
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .safe).isNone = true := by decide
+  · cases kind with
+    | opaq => simp [Claim.RepDefKind] at hk; rw [hk] at hv58; simp at hv58
+    | thm => simp [Claim.RepDefKind] at hk; rw [hk] at hv58; simp at hv58
+    | defn =>
+      cases safety with
+      | unsaf => simp [Claim.RepDefinitionSafety] at hs; rw [hs] at hv74; simp at hv74
+      | part => simp [Claim.RepDefinitionSafety] at hs; rw [hs] at hv74; simp at hv74
+      | safe =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .safe).isNone = true := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-      · rw [hs] at hv74; simp at hv74
-      · rw [hs] at hv74; simp at hv74
-    · rw [hk] at hv58; simp at hv58
-    · rw [hk] at hv58; simp at hv58
-  · cases kind <;> simp [Claim.RepDefKind] at hk
-    · cases safety <;> simp [Claim.RepDefinitionSafety] at hs
-      · exact absurd hs (hne79 [] rfl)
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .unsaf).isNone = false := by decide
+  · cases kind with
+    | opaq => simp [Claim.RepDefKind] at hk; rw [hk] at hv58; simp at hv58
+    | thm => simp [Claim.RepDefKind] at hk; rw [hk] at hv58; simp at hv58
+    | defn =>
+      cases safety with
+      | safe => simp [Claim.RepDefinitionSafety] at hs; exact absurd hs (hne79 [] rfl)
+      | unsaf =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .unsaf).isNone = false := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-      · have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .part).isNone = false := by decide
+      | part =>
+        have hd : (Ix.Kernel.Reader.safetyDeclineOf .defn .part).isNone = false := by decide
         exact ⟨rfl, by rw [hd]; simp⟩
-    · rw [hk] at hv58; simp at hv58
-    · rw [hk] at hv58; simp at hv58
 
 private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
     ∀ {h h' : Heap F} {x_cs r : SourceValue F} {calls : List (Call F)} (u n : Nat),
@@ -1587,7 +1598,8 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
         obtain ⟨hh', hr⟩ := ih (u + 0) (n + 1) hrest ev153
         refine ⟨hh', ?_⟩
         rw [hr]
-        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, hfalse]
+        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, hfalse,
+          Bool.false_eq_true, ↓reduceIte]
         congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
       | other hne132 he136 he137 _ =>
         subst he137 he136
@@ -1598,7 +1610,7 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
         obtain ⟨hh', hr⟩ := ih (u + 1) (n + 1) hrest ev153
         refine ⟨hh', ?_⟩
         rw [hr]
-        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, htrue]
+        simp only [List.map_cons, List.sum_cons, List.length_cons, ctorUnsafeBit, htrue, ↓reduceIte]
         congr 2 <;> [skip; congr 1] <;> congr 1 <;> congr 1 <;> omega
 
 private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
@@ -1831,9 +1843,9 @@ private theorem safetyDecline_eq_none_of_is_unsafe_ci_zero {d : Ixon.Definition}
       rcases hv with ⟨_, _, _, _, _, hu_eq⟩
       have hf := bool_false_of_repBoolField_zero (hu_eq.trans he.symm)
       rw [Ix.Kernel.Reader.safetyDecline, hk]
-      cases d.safety with
+      cases hs : d.safety with
       | safe => decide
-      | unsaf => exact absurd hf (by decide)
+      | unsaf => rw [hs] at hf; exact absurd hf (by decide)
       | part => decide
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
     | Thm _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
