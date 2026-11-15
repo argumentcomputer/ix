@@ -119,9 +119,10 @@ theorem findProj (env : Env md) (T : Key md) (i : Nat) :
 
 variable {V : Type u} [SetTheory V]
 
-private theorem denotes_transfer {source target : Env md}
+/-- Denotations read constant level arities and projection entries, not stored constant types. -/
+theorem denotes_transfer {source target : Env md}
     (hcv : ∀ n ci, source.find? n = some ci →
-      ∃ other, target.find? n = some other ∧ other.toConstantVal = ci.toConstantVal)
+      ∃ other, target.find? n = some other ∧ other.toConstantVal.levelParams = ci.toConstantVal.levelParams)
     (hproj : ∀ T i, target.findProj? T i = source.findProj? T i)
     {cval : Key md → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
     {ρ : BVarIdx → V} {e : Expr md} {value : V}
@@ -151,14 +152,14 @@ theorem denotes_eq (env : Env md) (cval : Key md → (LevelParam → Nat) → V)
   · apply denotes_transfer
     · intro n ci found
       obtain ⟨original, ho, rfl⟩ := found_original selected found
-      exact ⟨original, ho, (info_cv selected original).symm⟩
+      exact ⟨original, ho, congrArg ConstantVal.levelParams (info_cv selected original).symm⟩
     · intro T i; exact (findProj selected env T i).symm
   · apply denotes_transfer
     · intro n ci found
-      exact ⟨info selected ci, by rw [find, found]; rfl, info_cv selected ci⟩
+      exact ⟨info selected ci, by rw [find, found]; rfl, congrArg ConstantVal.levelParams (info_cv selected ci)⟩
     · exact findProj selected env
 
-private theorem fits_transfer {source target : Env md}
+theorem fits_transfer {source target : Env md}
     {cval : Key md → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
     (hd : Denotes cval source φ = Denotes cval target φ)
     {ρ σ : BVarIdx → V} {ty rest : Expr md} {values : List V}
@@ -173,7 +174,7 @@ theorem fits_eq (env : Env md) (cval : Key md → (LevelParam → Nat) → V) (�
   exact propext ⟨fits_transfer (denotes_eq selected env cval φ),
     fits_transfer (denotes_eq selected env cval φ).symm⟩
 
-private theorem denotesList_transfer {source target : Env md}
+theorem denotesList_transfer {source target : Env md}
     {cval : Key md → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
     (hd : Denotes cval source φ = Denotes cval target φ)
     {ρ : BVarIdx → V} {es : List (Expr md)} {vs : List V}
