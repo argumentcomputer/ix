@@ -53,6 +53,12 @@ theorem structDoms {env : Env md} {off n : Nat} {fvs doms : List (Expr md)}
   obtain ⟨a, b, ha, hb, hde⟩ := h i hi
   exact ⟨a, b, ha, hb, M.defeq hde⟩
 
+theorem sharedStructDoms {env : Env md} {n : Nat} {fvs tfvs : List (Expr md)}
+    (h : SharedStructDomsJ J env fvs tfvs n) : SharedStructDomsJ K env fvs tfvs n := by
+  intro i hi
+  obtain ⟨a, b, a', ha, hb, heq, hde, hleaves⟩ := h i hi
+  exact ⟨a, b, a', ha, hb, heq, M.defeq hde, hleaves⟩
+
 theorem sumCtorRun {env₀ env : Env md} {T : Key md} {lps : List LevelParam}
     {nP nIdx nF : Nat} {s : Level} {isProp large : Bool}
     {cvC cvTa cvCa : ConstantVal md} {sorts : List Level}
@@ -61,7 +67,8 @@ theorem sumCtorRun {env₀ env : Env md} {T : Key md} {lps : List LevelParam}
   obtain ⟨⟨cv₀, hc, halt⟩, hres, fvsP, crest, tfvs, trest, xFvs, idxArgs,
     hopP, hopT, hdoms, hopF, hlen, hxres, hires, hsorts⟩ := h
   refine ⟨⟨cv₀, M.constantValCheck hc, ?_⟩, hres, fvsP, crest, tfvs, trest, xFvs, idxArgs,
-    hopP, hopT, M.structDoms hdoms, hopF, hlen, hxres, hires, M.fieldSorts hsorts⟩
+    hopP, hopT, hdoms.elim (fun hd => Or.inl (M.structDoms hd))
+      (fun hd => Or.inr (M.sharedStructDoms hd)), hopF, hlen, hxres, hires, M.fieldSorts hsorts⟩
   rcases halt with heq | ⟨ty, hc'⟩
   · exact Or.inl heq
   · exact Or.inr ⟨ty, M.constantValCheck hc'⟩

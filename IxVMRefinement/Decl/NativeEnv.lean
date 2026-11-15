@@ -1028,6 +1028,14 @@ theorem structDomsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
   obtain ⟨a, b, ha, hb, hde⟩ := hd i hi
   exact ⟨a, b, ha, hb, h.upgradeDefEq hde⟩
 
+theorem sharedStructDomsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
+    {fvs tfvs : List KExpr} {n : Nat}
+    (hd : Ix.Kernel.Semantics.SharedStructDomsJ rulesJ envₐ fvs tfvs n) :
+    Ix.Kernel.Semantics.SharedStructDomsJ rulesJ envᵦ fvs tfvs n := by
+  intro i hi
+  obtain ⟨a, b, a', ha, hb, heq, hde, hleaves⟩ := hd i hi
+  exact ⟨a, b, a', ha, hb, heq, h.upgradeDefEq hde, hleaves⟩
+
 theorem fieldSortsJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
     {isProp large : Bool} {s : KLevel} {nP : Nat} {fvs idxArgs : List KExpr}
     {n : Nat} {sorts : List KLevel}
@@ -1047,7 +1055,8 @@ theorem sumCtorRunJ (h : CapsUpgradeAt T cvS caps envₐ envᵦ)
     hopP, hopT, hdoms, hopF, hilen, hxres, hires, hfsorts⟩ := hc
   refine ⟨⟨cvCa₀, h.constantValCheckJ hc₀, ?_⟩, hres_sh,
     fvsP, crest, tfvs, trest, xFvs, idxArgs,
-    hopP, hopT, h.structDomsJ hdoms, hopF, hilen, ?_, ?_, h.fieldSortsJ hfsorts⟩
+    hopP, hopT, hdoms.elim (fun hd => Or.inl (h.structDomsJ hd))
+      (fun hd => Or.inr (h.sharedStructDomsJ hd)), hopF, hilen, ?_, ?_, h.fieldSortsJ hfsorts⟩
   · rcases halt with rfl | ⟨ty', hc'⟩
     · exact Or.inl rfl
     · exact Or.inr ⟨ty', h.constantValCheckJ hc'⟩

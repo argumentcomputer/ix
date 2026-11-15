@@ -115,6 +115,16 @@ def StructDomsJ (J : Judgements md) (env : Env md) (off : Nat) (fvs doms : List 
   ∀ i, i < n → ∃ a b, fvs[i]? = some a ∧ doms[i]? = some b ∧
     J.defeq env (off + i) (Expr.fvarTypeD a) b
 
+/-- Parameter comparisons in the former's variable annotations. Each checked constructor
+comparand has the original domain's structure and binder data, and its free-variable leaves
+come from the former's earlier variables. The model validates this certificate by the
+parameter-frame induction (`paramFramesShared`). -/
+def SharedStructDomsJ (J : Judgements md) (env : Env md) (fvs tfvs : List (Expr md))
+    (n : Nat) : Prop :=
+  ∀ i, i < n → ∃ a b a', fvs[i]? = some a ∧ tfvs[i]? = some b ∧
+    Expr.ErasedEq a.fvarTypeD a' ∧ J.defeq env i a' b.fvarTypeD ∧
+    ∀ l ∈ a'.fvarLeaves, ∃ v ∈ tfvs.take i, l ∈ v.fvarLeaves
+
 /-- **One constructor's stage** (`checkSumCtor`) over a package. The declared
 constructor is checked; the stored one is that constant, or (where the positivity
 normalisation rewrote a field's domain) a constant of the same name and level
@@ -136,7 +146,8 @@ def SumCtorRunJ (J : Judgements md) (env₀ env : Env md) (T : Key md)
     (xFvs : List (Expr md)) (idxArgs : List (Expr md)),
     openPisAtFvars nP cvCa.type 0 = some (fvsP, crest) ∧
     openPisAtFvars nP cvTa.type 0 = some (tfvs, trest) ∧
-    StructDomsJ J env 0 fvsP (tfvs.map Expr.fvarTypeD) nP ∧
+    (StructDomsJ J env 0 fvsP (tfvs.map Expr.fvarTypeD) nP ∨
+      SharedStructDomsJ J env fvsP tfvs nP) ∧
     openPisAtFvars nF crest nP
       = some (xFvs, Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ idxArgs)) ∧
     idxArgs.length = nIdx ∧
@@ -980,7 +991,7 @@ theorem sumCtorRunJ_of_run {env₀ env : Env md} {T : Key md} {lps : List LevelP
   obtain ⟨-, hres, fvsP, crest, tfvs, trest, xFvs, idxArgs, h1, h2, hdoms, h3, h4, h5, h6,
     hsorts⟩ := Ix.Kernel.checkSumCtor_shape h
   refine ⟨?_, hres, fvsP, crest, tfvs, trest, xFvs, idxArgs, h1, h2,
-    structDomsJ_of_run hdoms, h3, h4, h5, h6, fieldSortsJ_of_run hsorts⟩
+    Or.inl (structDomsJ_of_run hdoms), h3, h4, h5, h6, fieldSortsJ_of_run hsorts⟩
   -- the stage stores the normalised constant: the declared one checked, or the
   -- rebuilt one checked from scratch
   unfold Ix.Kernel.checkSumCtor at h

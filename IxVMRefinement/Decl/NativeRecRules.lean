@@ -3261,7 +3261,9 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
       ⟨⟨cA.1, hout.cvCheck, Or.inl rfl⟩,
         ⟨cbs, es, hstrip_c, hes_len⟩,
         fvsP, crest, tfvsP, trestP, xFvs, idxArgs,
-        hopP, hopT_P, hdoms_and_noT.1, hopF, hidx_len, hxFvs_res, hidx_res, hfsorts⟩
+        hopP, hopT_P, Or.inr (hout.domsShared.toSharedPins hopT_P hopP hst_Ta₀_P hst_c_P
+          (annotates_hasFvar_false hout.stored.2.2 (wf.fv_ctors c (List.mem_of_getElem? hc)))),
+        hopF, hidx_len, hxFvs_res, hidx_res, hfsorts⟩
     obtain ⟨sty_c, _, hinf_c, _⟩ := hout.inferSort
     have hfv_c : cA.1.type.hasFvar = false :=
       annotates_hasFvar_false hout.stored.2.2 (wf.fv_ctors c (List.mem_of_getElem? hc))
