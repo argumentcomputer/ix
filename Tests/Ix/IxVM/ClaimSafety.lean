@@ -189,6 +189,10 @@ private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
         else none)
     return { c with exercises := if betaDomain then none else some "KernelCheck::check_param_agreement" }
 
+/-- Focused reference-safety cases, usable with a verdict-only execution artifact. -/
+def runReferenceSafety : IO UInt32 :=
+  Tests.Ix.IxVM.runCases "ixvm-reference-safety" (ruleSafetyCases ++ nativeParameterCases)
+
 /-- The walk edges of `env` from a constant in Lean's logic to one outside it,
 with the number of constants outside it. None means that an owned set without
 the constants outside Lean's logic loses nothing its claim walk reaches. -/
