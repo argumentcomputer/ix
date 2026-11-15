@@ -25,6 +25,8 @@ namespace JudgementsMap
 
 variable {md : Mode} {J K : Judgements md} (M : JudgementsMap J K)
 
+include M
+
 theorem constantValRun {env : Env md} {cv : ConstantVal md} {ty : Expr md}
     (h : ConstantValRunJ J env cv ty) : ConstantValRunJ K env cv ty := by
   obtain ⟨hfresh, hres, hshape, hnd, hlbb, hnfv, hann, hdef, hresolve, stype, level, hi, hs⟩ := h
@@ -58,7 +60,7 @@ theorem iotaRuns {env : Env md} {d : Nat}
       rhsS rhsApplied alphaS lhsS) :
     IotaRunsJ K env d idxL idxR domL domR preL preR lamL lamR
       rhsS rhsApplied alphaS lhsS := by
-  obtain ⟨hidx, hdom, hpre, hlam, hrhs, tl, hil, hdl, tr, hir, hdr⟩ := h
+  obtain ⟨hidx, hdom, hpre, hlam, hrhs, ⟨tl, hil, hdl⟩, ⟨tr, hir, hdr⟩⟩ := h
   exact ⟨M.defEqList hidx, M.defEqList hdom, M.defEqList hpre, M.defEqList hlam,
     M.defeq hrhs, ⟨tl, M.infer hil, M.defeq hdl⟩, ⟨tr, M.infer hir, M.defeq hdr⟩⟩
 
