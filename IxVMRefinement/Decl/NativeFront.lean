@@ -522,6 +522,64 @@ theorem RawTmExact.toTmExact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat 
   | litStr cell rb hs => exact .litStr cell rb hs
   | proj cell ra _ ihe => exact .proj cell ra ihe
 
+/-- Exact conversion retains a raw heap syntax, including every let cell. -/
+theorem TmExact.raw {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
+    (rep : TmExact κ d Γ h k E p) : ∃ R, RawTmExact κ d Γ h k R E p := by
+  induction rep with
+  | bvarLocal cell hs hi => exact ⟨_, .bvarLocal cell hs hi⟩
+  | bvarFree cell hs hk hd => exact ⟨_, .bvarFree cell hs hk hd⟩
+  | sort cell rl => exact ⟨_, .sort cell rl⟩
+  | const cell ra rls => exact ⟨_, .const cell ra rls⟩
+  | app cell _ _ ihf iha =>
+    obtain ⟨_, hf⟩ := ihf
+    obtain ⟨_, ha⟩ := iha
+    exact ⟨_, .app cell hf ha⟩
+  | lam cell _ _ rl iht ihb =>
+    obtain ⟨_, ht⟩ := iht
+    obtain ⟨_, hb⟩ := ihb
+    exact ⟨_, .lam cell ht hb rl⟩
+  | forallE cell _ _ rl iht ihb =>
+    obtain ⟨_, ht⟩ := iht
+    obtain ⟨_, hb⟩ := ihb
+    exact ⟨_, .forallE cell ht hb rl⟩
+  | letE cell _ _ _ iht ihv ihb =>
+    obtain ⟨_, ht⟩ := iht
+    obtain ⟨_, hv⟩ := ihv
+    obtain ⟨_, hb⟩ := ihb
+    exact ⟨_, .letE cell ht hv hb⟩
+  | litNat cell rl hc => exact ⟨_, .litNat cell rl hc⟩
+  | litStr cell rb hs => exact ⟨_, .litStr cell rb hs⟩
+  | proj cell ra _ ihe =>
+    obtain ⟨_, he⟩ := ihe
+    exact ⟨_, .proj cell ra he⟩
+
+/-- A raw closed reading has no ghost variables, so the same syntax works under every
+opening depth and ghost context. Local binders keep their original indices. -/
+theorem RawTmExact.rebase_zero {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
+    (rep : RawTmExact κ 0 Γ h k R E p) (d' : Nat) (Γ' : Nat → KExpr) :
+    RawTmExact κ d' Γ' h k R E p := by
+  induction rep with
+  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
+  | bvarFree _ _ _ hd => omega
+  | sort cell rl => exact .sort cell rl
+  | const cell ra rls => exact .const cell ra rls
+  | app cell _ _ ihf iha => exact .app cell ihf iha
+  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
+  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
+  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
+  | litNat cell rl hc => exact .litNat cell rl hc
+  | litStr cell rb hs => exact .litStr cell rb hs
+  | proj cell ra _ ihe => exact .proj cell ra ihe
+
+/-- A freshly converted closed expression supplies one raw syntax for all native checks. -/
+theorem TmCExact.raw {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p : SourceValue F} (rep : TmCExact κ h E p) :
+    ∃ R, ∀ d Γ, RawTmExact κ d Γ h 0 R E p := by
+  obtain ⟨R, hR⟩ := (rep 0 (fun _ => default)).raw
+  exact ⟨R, fun d Γ => hR.rebase_zero d Γ⟩
+
 theorem RawTmExact.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h₁ h₂ : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (rep : RawTmExact κ d Γ h₁ k R E p) :
