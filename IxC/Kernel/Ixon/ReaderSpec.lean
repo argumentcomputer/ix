@@ -142,7 +142,8 @@ theorem finishInductiveRead_eq_of_no_recursors (cx : Ctx md) (owner : Address)
     (ms : Array Ixon.MutConst) (rInd : Read md)
     (h : ∀ m ∈ ms.toList, ∀ rc, m ≠ .recr rc) :
     finishInductiveRead cx owner ms rInd = .ok rInd := by
-  simp [finishInductiveRead, recordTwins_empty_of_no_recursors cx.index owner ms h]
+  simp [finishInductiveRead, recordTwins_empty_of_no_recursors cx.index owner ms h,
+    pure, Except.pure]
 
 @[simp] theorem finishInductiveRead_indcs (cx : Ctx md) (owner : Address)
     (inds : Array Ixon.Inductive) (rInd : Read md) :
@@ -160,6 +161,7 @@ theorem finishInductiveRead_spec {cx : Ctx md} {owner : Address}
     r = rInd ∨ ∃ rTwin, lowerTwin cx (recordTwins cx.index owner ms) = .ok rTwin ∧
       r = { rInd with decls := rInd.decls ++ rTwin.decls } := by
   unfold finishInductiveRead at h
+  dsimp only at h
   split at h
   · simp only [pure, Except.pure, Except.ok.injEq] at h
     exact .inl h.symm
