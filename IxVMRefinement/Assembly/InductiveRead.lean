@@ -63,4 +63,51 @@ theorem lowerInductive_full_bare {md : Mode} {st : State md}
     rw [hdecls, hcount]
     simpa using hd
 
+/-- The full inductive record reader and its bare counterpart share the same expression
+conversion. Removing generation preserves success and separates the generated prefix. -/
+theorem readInductive_full_bare {md : Mode} {cx : Ctx md} {st : State md}
+    {owner : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {full : Read md} (h : readInductive cx st owner c ms = .ok full) :
+    ∃ (generated : List (Declaration md)) (bare : Read md),
+      readInductiveBare cx owner c ms = .ok bare ∧
+      full.decls.toList = generated ++ bare.decls.toList ∧
+      full.generated = generated.length ∧ bare.generated = 0 ∧
+      (∀ d ∈ generated, d.isGenerated = true) := by
+  unfold readInductive at h
+  unfold readInductiveBare
+  split at h
+  · rename_i shape hshape
+    simp only [hshape]
+    dsimp only at h ⊢
+    rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsize, h⟩ | ⟨hsize, h⟩
+    · simp only [hsize, ↓reduceIte]
+      split at h
+      · rename_i first hfirst
+        simp only [hfirst]
+        dsimp only at h ⊢
+        rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hsafe, h⟩ | ⟨hsafe, h⟩
+        · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
+            bind, Except.bind] at h
+        · simp only [hsafe, ↓reduceIte]
+          rcases Ix.Cert.CtxAgree.ite_ok' h with ⟨hparams, h⟩ | ⟨hparams, h⟩
+          · simp only [hparams, ↓reduceIte]
+            obtain ⟨types, htypes, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+            rw [htypes]
+            dsimp only [bind, Except.bind]
+            obtain ⟨ctors, hctors, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+            rw [hctors]
+            dsimp only [bind, Except.bind]
+            obtain ⟨recs, hrecs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+            rw [hrecs]
+            dsimp only [bind, Except.bind]
+            exact lowerInductive_full_bare h
+          · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
+              bind, Except.bind] at h
+      · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
+          bind, Except.bind] at h
+    · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
+        bind, Except.bind] at h
+  · simp [declined, malformed, throw, throwThe, MonadExceptOf.throw,
+      bind, Except.bind] at h
+
 end IxVM.Refinement.Assembly
