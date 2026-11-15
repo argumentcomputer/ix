@@ -164,39 +164,23 @@ private theorem getConstructorProj_consumed {s s' : Ixon.GetState} {p : Ixon.Con
   obtain ⟨hwf, hc3⟩ := getAddress_consumed hblk
   exact ⟨hwf, (hc1.trans hc2).trans hc3⟩
 
-private theorem forIn_list_push_size_ge {α : Type} (getm : Ixon.GetM α) :
-    ∀ (xs : List Nat) (acc : Array α) {s s' : Ixon.GetState} {res : Array α},
-      forIn xs acc (fun _ a => do let v ← getm; pure (ForInStep.yield (a.push v))) s = .ok res s' →
-      acc.size + xs.length ≤ res.size
-  | [], acc, _, _, _, h => by
-    obtain ⟨rfl, _⟩ := pure_ok_inv h
-    omega
-  | _ :: tl, acc, _, _, _, h => by
-    rw [List.forIn_cons] at h
-    obtain ⟨step, s1, hstep, htl⟩ := bind_ok_inv h
-    obtain ⟨v, s2, _, hpure⟩ := bind_ok_inv hstep
-    obtain ⟨rfl, rfl⟩ := pure_ok_inv hpure
-    dsimp only at htl
-    have ih := forIn_list_push_size_ge getm tl (acc.push v) htl
-    rw [Array.size_push] at ih
-    simp only [List.length_cons]
-    omega
-
-private theorem forIn_push_empty_inv {α : Type} {getm : Ixon.GetM α} {count : Nat}
+private theorem getMany_empty_inv {α : Type} {getm : Ixon.GetM α} {count : Nat}
     {s s' : Ixon.GetState}
-    (h : forIn [:count] (#[] : Array α)
-      (fun _ a => do let v ← getm; pure (ForInStep.yield (a.push v))) s = .ok #[] s') :
+    (h : getMany getm count s = EStateM.Result.ok #[] s') :
     count = 0 ∧ s' = s := by
-  rw [Std.Legacy.Range.forIn_eq_forIn_range'] at h
-  have hsz_r : [:count].size = count := by simp [Std.Legacy.Range.size]
-  rw [hsz_r] at h
   cases count with
   | zero =>
+    have h0 : getMany getm 0 = pure #[] := by simp [getMany]
+    rw [h0] at h
     obtain ⟨_, hs⟩ := pure_ok_inv h
     exact ⟨rfl, hs⟩
   | succ n =>
-    have hge := forIn_list_push_size_ge getm (List.range' 0 (n + 1)) #[] h
-    simp at hge
+    rw [getMany_succ_head] at h
+    obtain ⟨v, _, _, h1⟩ := bind_ok_inv h
+    obtain ⟨vs, _, _, hpure⟩ := bind_ok_inv h1
+    obtain ⟨heq, _⟩ := pure_ok_inv hpure
+    have hsz := congrArg Array.size heq
+    simp at hsz
 
 private theorem getTag0_zero_consumed {s s' : Ixon.GetState} {t : Ixon.TagN}
     (ht : Ixon.getTagN 0 s = .ok t s') (hv : t.value.toNat = 0) :
@@ -270,7 +254,7 @@ private theorem getConstantInfo_proj_consumed {s s' : Ixon.GetState} {info : Ixo
         obtain ⟨hwf, hc_p⟩ := getDefinitionProj_consumed hp
         exact ⟨.dPrj hwf, hc_tag.trans hc_p⟩
       | n + 8 =>
-        have hbad : match tag.value with
+        have hbad : (match tag.value with
             | 0 => Ixon.ConstantInfo.defn <$> Ixon.getDefinition
             | 1 => Ixon.ConstantInfo.recr <$> Ixon.getRecursor
             | 2 => Ixon.ConstantInfo.axio <$> Ixon.getAxiom
@@ -279,7 +263,7 @@ private theorem getConstantInfo_proj_consumed {s s' : Ixon.GetState} {info : Ixo
             | 5 => Ixon.ConstantInfo.rPrj <$> Ixon.getRecursorProj
             | 6 => Ixon.ConstantInfo.iPrj <$> Ixon.getInductiveProj
             | 7 => Ixon.ConstantInfo.dPrj <$> Ixon.getDefinitionProj
-            | v => throw s!"getConstantInfo: invalid variant {v}" =
+            | v => throw s!"getConstantInfo: invalid variant {v}" : Ixon.GetM Ixon.ConstantInfo) =
             throw s!"getConstantInfo: invalid variant {tag.value}" := by
           have hne0 : tag.value ≠ 0 := by intro he; rw [he] at hv; simp at hv
           have hne1 : tag.value ≠ 1 := by intro he; rw [he] at hv; simp at hv
@@ -289,7 +273,7 @@ private theorem getConstantInfo_proj_consumed {s s' : Ixon.GetState} {info : Ixo
           have hne5 : tag.value ≠ 5 := by intro he; rw [he] at hv; simp at hv
           have hne6 : tag.value ≠ 6 := by intro he; rw [he] at hv; simp at hv
           have hne7 : tag.value ≠ 7 := by intro he; rw [he] at hv; simp at hv
-          split <;> contradiction <;> rfl
+          split <;> contradiction
         rw [hbad] at hinfo
         exact (throw_ok_false hinfo).elim
     · simp only [hflag, Bool.false_eq_true, ↓reduceIte] at hinfo
@@ -300,10 +284,10 @@ private theorem getBinders_empty_consumed {s s' : Ixon.GetState}
     Consumed s s' (bindersBytes #[]) := by
   unfold Ixon.getBinders at h
   obtain ⟨t, s1, ht, harr⟩ := bind_ok_inv h
-  unfold Ixon.getArray at harr
-  obtain ⟨arr, s2, hfor, hpure⟩ := bind_ok_inv harr
-  obtain ⟨rfl, rfl⟩ := pure_ok_inv hpure
-  obtain ⟨hz, rfl⟩ := forIn_push_empty_inv hfor
+  have harr_eq : Ixon.getArray Ixon.getBinderBlock t.value.toNat =
+      getMany Ixon.getBinderBlock t.value.toNat := rfl
+  rw [harr_eq] at harr
+  obtain ⟨hz, rfl⟩ := getMany_empty_inv harr
   have hc := getTag0_zero_consumed ht hz
   simpa [bindersBytes, listBytes, ByteArray.append_empty] using hc
 
@@ -312,27 +296,37 @@ private theorem getConstantAfterInfo_empty_consumed {info : Ixon.ConstantInfo}
     (h : getConstantAfterInfo info s = .ok ⟨info, #[], #[], #[], #[]⟩ s') :
     Consumed s s'
       (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ bindersBytes #[]) := by
-  unfold getConstantAfterInfo getMany at h
+  have heq1 : getConstantAfterInfo info = (do
+      let t ← Ixon.getTagN 0
+      let sh ← getMany Ixon.getExpr t.value.toNat
+      getConstantRefs info sh) := by
+    simp [getConstantAfterInfo, getMany]
+  rw [heq1] at h
   obtain ⟨tSh, s1, htSh, h⟩ := bind_ok_inv h
-  obtain ⟨sh_raw, s1', hforSh, h⟩ := bind_ok_inv h
-  obtain ⟨sh, s2, hpSh, h⟩ := bind_ok_inv h
-  obtain ⟨rfl, rfl⟩ := pure_ok_inv hpSh
-  unfold getConstantRefs getMany at h
+  obtain ⟨sh, s2, hforSh, h⟩ := bind_ok_inv h
+  have heq2 : getConstantRefs info sh = (do
+      let t ← Ixon.getTagN 0
+      let rf ← getMany Ixon.Serialize.get t.value.toNat
+      getConstantUnivs info sh rf) := by
+    simp [getConstantRefs, getMany]
+  rw [heq2] at h
   obtain ⟨tRf, s3, htRf, h⟩ := bind_ok_inv h
-  obtain ⟨rf_raw, s3', hforRf, h⟩ := bind_ok_inv h
-  obtain ⟨rf, s4, hpRf, h⟩ := bind_ok_inv h
-  obtain ⟨rfl, rfl⟩ := pure_ok_inv hpRf
-  unfold getConstantUnivs getMany at h
+  obtain ⟨rf, s4, hforRf, h⟩ := bind_ok_inv h
+  have heq3 : getConstantUnivs info sh rf = (do
+      let t ← Ixon.getTagN 0
+      let un ← getMany Ixon.getUniv t.value.toNat
+      let bnd ← Ixon.getBinders
+      return ⟨info, sh, rf, un, bnd⟩) := by
+    simp [getConstantUnivs, getMany]
+  rw [heq3] at h
   obtain ⟨tUn, s5, htUn, h⟩ := bind_ok_inv h
-  obtain ⟨un_raw, s5', hforUn, h⟩ := bind_ok_inv h
-  obtain ⟨un, s6, hpUn, h⟩ := bind_ok_inv h
-  obtain ⟨rfl, rfl⟩ := pure_ok_inv hpUn
+  obtain ⟨un, s6, hforUn, h⟩ := bind_ok_inv h
   obtain ⟨bnd, s7, hbnd, hpure⟩ := bind_ok_inv h
   obtain ⟨heq, rfl⟩ := pure_ok_inv hpure
   cases heq
-  obtain ⟨hzSh, rfl⟩ := forIn_push_empty_inv hforSh
-  obtain ⟨hzRf, rfl⟩ := forIn_push_empty_inv hforRf
-  obtain ⟨hzUn, rfl⟩ := forIn_push_empty_inv hforUn
+  obtain ⟨hzSh, rfl⟩ := getMany_empty_inv hforSh
+  obtain ⟨hzRf, rfl⟩ := getMany_empty_inv hforRf
+  obtain ⟨hzUn, rfl⟩ := getMany_empty_inv hforUn
   have hc1 := getTag0_zero_consumed htSh hzSh
   have hc2 := getTag0_zero_consumed htRf hzRf
   have hc3 := getTag0_zero_consumed htUn hzUn
@@ -348,6 +342,8 @@ theorem deConstantExact_proj_eq_serConstant {bytes : ByteArray} {c : Ixon.Consta
     (hproj : IsProjInfo c.info) :
     bytes = Ixon.serConstant c ∧ c.wireWF := by
   have hc_eq := Ix.Cert.ReadingKeys.empty_constant hemp
+  rcases c with ⟨info₀, _, _, _, _⟩
+  dsimp only at hc_eq hproj
   rw [hc_eq] at hdec ⊢
   unfold Ixon.deConstantExact Ixon.runGetExact at hdec
   split at hdec
@@ -355,10 +351,10 @@ theorem deConstantExact_proj_eq_serConstant {bytes : ByteArray} {c : Ixon.Consta
     split at hdec
     · rename_i hidx
       cases hdec
-      change Ixon.getConstant { bytes := bytes, idx := 0 } = .ok ⟨c.info, #[], #[], #[], #[]⟩ st at hrun
+      change Ixon.getConstant { bytes := bytes, idx := 0 } = .ok ⟨info₀, #[], #[], #[], #[]⟩ st at hrun
       rw [getConstant_eq] at hrun
       obtain ⟨info', s1, hinfo, htail⟩ := bind_ok_inv hrun
-      have hinfo_eq : info' = c.info := by
+      have hinfo_eq : info' = info₀ := by
         unfold getConstantAfterInfo at htail
         obtain ⟨_, _, _, h1⟩ := bind_ok_inv htail
         obtain ⟨_, _, _, h2⟩ := bind_ok_inv h1
@@ -376,32 +372,32 @@ theorem deConstantExact_proj_eq_serConstant {bytes : ByteArray} {c : Ixon.Consta
       obtain ⟨hwf_info, hc_info⟩ := getConstantInfo_proj_consumed hinfo hproj
       have hc_tail := getConstantAfterInfo_empty_consumed htail
       have hc_all := hc_info.trans hc_tail
-      have hwf_nonrec : NonrecursiveConstantWireWF ⟨c.info, #[], #[], #[], #[]⟩ :=
+      have hwf_nonrec : NonrecursiveConstantWireWF ⟨info₀, #[], #[], #[], #[]⟩ :=
         { info := hwf_info
-          sharingCount := by decide
+          sharingCount := by dsimp only [ArrayCountWF]; decide
           sharingEntries := fun _ hm => nomatch hm
-          refsCount := by decide
+          refsCount := by dsimp only [ArrayCountWF]; decide
           refsEntries := fun _ hm => nomatch hm
-          univsCount := by decide
+          univsCount := by dsimp only [ArrayCountWF]; decide
           univsEntries := fun _ hm => nomatch hm
-          binders := ⟨by decide, fun _ hm => nomatch hm⟩ }
-      have hser : Ixon.serConstant ⟨c.info, #[], #[], #[], #[]⟩ =
-          nonrecursiveConstantBytes ⟨c.info, #[], #[], #[], #[]⟩ := by
+          binders := Ixon.bindersWireWF_empty }
+      have hser : Ixon.serConstant ⟨info₀, #[], #[], #[], #[]⟩ =
+          nonrecursiveConstantBytes ⟨info₀, #[], #[], #[], #[]⟩ := by
         unfold Ixon.serConstant
         exact (putConstant_writes_nonrecursive _ hwf_nonrec).runPut
       have hbytes_eq :
-          nonrecursiveConstantBytes ⟨c.info, #[], #[], #[], #[]⟩ =
-            nonrecursiveInfoBytes c.info ++
+          nonrecursiveConstantBytes ⟨info₀, #[], #[], #[], #[]⟩ =
+            nonrecursiveInfoBytes info₀ ++
               (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ bindersBytes #[]) := by
         simp [nonrecursiveConstantBytes, listBytes, ByteArray.append_empty, ByteArray.append_assoc]
       obtain ⟨hst, hextr⟩ := hc_all
       subst hst
       simp only [Nat.zero_add] at hidx hextr
       have hbs : bytes =
-          nonrecursiveInfoBytes c.info ++
+          nonrecursiveInfoBytes info₀ ++
             (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ bindersBytes #[]) := by
         rw [← hextr, hidx, ByteArray.extract_zero_size]
-      have hwf_c : (⟨c.info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF := by
+      have hwf_c : (⟨info₀, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF := by
         rw [L1.emptyTablesConstant_wireWF]
         cases hwf_info with
         | defn _ _ => exact False.elim hproj
@@ -457,7 +453,8 @@ theorem keyOf_eq_of_bound {t : Ix.Kernel.RoleTable} (hchk : t.check = .ok ())
     rcases p with ⟨r', a'⟩
     have hp_mem : (r', a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_eq : a' = a := beq_iff_eq.mp (Array.find?_some hfind)
+    have hp_beq : (r', a').2 == a := Array.find?_some hfind
+    have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     have hpair := Ix.Kernel.RoleTable.eq_of_nodup_map_snd
       (Ix.Kernel.RoleTable.check_nodup hchk).2 hmem hp_mem hp_eq.symm
     injection hpair with hr_eq _
@@ -474,7 +471,8 @@ theorem keyOf_eq_of_unbound {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     rcases p with ⟨r, a'⟩
     have hp_mem : (r, a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_eq : a' = a := beq_iff_eq.mp (Array.find?_some hfind)
+    have hp_beq : (r, a').2 == a := Array.find?_some hfind
+    have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     subst hp_eq
     exact absurd hp_mem (hunb r)
 
@@ -493,7 +491,8 @@ theorem addressKey_keyOf {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTa
     rcases p with ⟨r, a'⟩
     have hp_mem : (r, a') ∈ t.bound.toList :=
       Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hfind)
-    have hp_eq : a' = a := beq_iff_eq.mp (Array.find?_some hfind)
+    have hp_beq : (r, a').2 == a := Array.find?_some hfind
+    have hp_eq : a' = a := beq_iff_eq.mp hp_beq
     subst hp_eq
     exact Or.inr ⟨t, r, hofBytes,
       Ix.Cert.ReadingKeys.addressOf_of_bound hba.wellFormed hp_mem, rfl⟩
@@ -626,8 +625,7 @@ theorem streamContext_memberKey_singleton {t : Ix.Kernel.RoleTable}
         rfl
       | none =>
         have hsing_at : Ix.Kernel.Reader.singletonAt cx.store (.member a 0) = some a := by
-          unfold Ix.Kernel.Reader.singletonAt
-          rw [hc]
+          simp only [Ix.Kernel.Reader.singletonAt, hc, bind, Option.bind]
           cases hinfo : c.info <;> simp [hinfo] at hsing ⊢
         rw [hsing_at]
         rfl
@@ -654,8 +652,8 @@ theorem projectionAddress_dprj {store : Ix.Kernel.Reader.Store}
     Ix.Kernel.Admission.projectionAddress _root_.Address.admissionHash store (.member owner i) =
       some (Core.dprjAddr owner i) := by
   have hi_toNat : i.toUInt64.toNat = i := UInt64.toNat_ofNat_of_lt hi
-  have hpr₀ := Ix.Kernel.Egress.ProjectionReads.definition (md := .anon) ⟨i.toUInt64, owner⟩
-  have hpr : Ix.Kernel.Egress.ProjectionReads (md := .anon)
+  have hpr₀ := Ix.Kernel.Egress.ProjectionReads.definition ⟨i.toUInt64, owner⟩
+  have hpr : Ix.Kernel.Egress.ProjectionReads
       ⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩ .definition (.member owner i) := by
     simpa only [hi_toNat] using hpr₀
   have hwp := Ix.Kernel.Egress.writeProjection_of_reading hpr
@@ -715,8 +713,8 @@ theorem streamContext_memberKey_dprj {t : Ix.Kernel.RoleTable}
       subst hcc
       exact absurd hinfo (hns ms)
     · simp only [Ix.Cert.ReadingKeys.projectionAt, Ix.Cert.ReadingKeys.memberAt,
-        hcb, hinfo, hms, Option.some.injEq] at hpat
-      subst hpat
+        bind, Option.bind, hcb, hinfo, hms, Option.some.injEq] at hpat
+      rcases hpat with rfl
       obtain ⟨bytes, hbl, hdec⟩ := hauth a' c_proj hc'
       obtain ⟨hbs, _⟩ := deConstantExact_proj_eq_serConstant hdec rfl trivial
       rw [← hbs] at hbl
@@ -789,11 +787,11 @@ theorem streamContext_memberKey_dprj {t : Ix.Kernel.RoleTable}
       rw [hv]
       rfl
 
+set_option maxHeartbeats 3200000 in
 /-- From `Claim.MutsMemberCheckedAtFull` at a definition member `ms[i]? = some (.defn d)`, under
 `Bounded calls` and `¬ V.HashedCollision extra calls`, `i < UInt64.size` and any record stored at
 `Core.dprjAddr owner i` from `V.Preimage`, `extra`, or `Hashed calls` must equal
 `⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩`. -/
-set_option maxHeartbeats 3200000 in
 theorem dprj_store_eq_of_mutsMemberChecked
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {owner : _root_.Address} {ms : Array Ixon.MutConst} {i : Nat} {d : Ixon.Definition}
@@ -815,7 +813,7 @@ theorem dprj_store_eq_of_mutsMemberChecked
     _, _, _, _, hhash_ld, hblake_ld, _, hL1, hsub_ld, _, _, _, _⟩ :=
     checkedAtFull_loadedL1 hbound hchk
   obtain ⟨c_ld, hdec_ld, _, _, _, _, _⟩ := hL1
-  have hhashed_calls : Hashed calls bytes := Claim.hashed_mono hsub_ld hhash_ld
+  have hhashed_calls : Hashed calls bytes := Core.hashed_mono hsub_ld hhash_ld
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, cs_pa, _, _,
     hmem_pa, hblk_pa, ev_pa, hcl_pa, hsub_pa, _, _, _, _, _, _, _, _, _⟩ := hm
   obtain ⟨b_arr, hb_ref, rfl⟩ := hblk_pa
@@ -829,7 +827,8 @@ theorem dprj_store_eq_of_mutsMemberChecked
   have hwf_dprj :
       (⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF := by
     rw [L1.emptyTablesConstant_wireWF]
-    simp [AddressWireWF, Core.ixAddr]
+    show (Core.ixAddr b_arr).hash.size = 32
+    exact b_arr.size_toArray
   have hser_dprj :
       bytes = Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩ := by
     by_cases heq_b : bytes = Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩
@@ -843,7 +842,7 @@ theorem dprj_store_eq_of_mutsMemberChecked
       cases hget_pa
       have hhashed_pa :
           Hashed calls (Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩) :=
-        Claim.hashed_mono hsub_pa hhash_pa
+        Core.hashed_mono hsub_pa hhash_pa
       exact absurd (.inl ⟨Core.dprjAddr (Core.ixAddr b_arr) i,
         Ixon.serConstant ⟨.dPrj ⟨i.toUInt64, Core.ixAddr b_arr⟩, #[], #[], #[], #[]⟩,
         bytes, .inr (.inr ⟨hhashed_pa, rfl⟩), hhashed_calls, heq_b, hblake_ld⟩) hnoCol
@@ -991,10 +990,10 @@ structure SafeRefsInputs : Prop where
       order.Nodup →
       (a, c) ∈ Ix.Cert.Stream.decodedOf E order →
       a ∉ order_role →
-      Claim.WalkedAt calls b.address t E₀ a →
+      WkAll calls b.address t E₀ a →
       ¬ IxVM.Consistency.OutsideLogicAt E₀ a →
       (∀ a' c', (a', c') ∈ Ix.Cert.Stream.decodedOf E order → a' ∉ order_role →
-        Claim.WalkedAt calls b.address t E₀ a' ∧ ¬ IxVM.Consistency.OutsideLogicAt E₀ a') →
+        WkAll calls b.address t E₀ a' ∧ ¬ IxVM.Consistency.OutsideLogicAt E₀ a') →
       (∀ k ∈ pre.state.keys, st.SameAt pre.state k) →
       ((∃ rc, c.info = .recr rc) ∨
         (∃ ms, c.info = .muts ms ∧ ¬ ms.all (fun | .defn _ => true | _ => false))) →
@@ -1133,7 +1132,7 @@ theorem reachRefs_subset_usedRefIdxs {c : Ixon.Constant} {e : Ixon.Expr}
       have hsz : (buildReachRefsTbl (c.sharing.toList.take (n + 1))).size = n + 1 := by
         unfold buildReachRefsTbl
         rw [buildReachRefsTbl_size]
-        simp [Nat.min_eq_left hn]
+        simp [List.length_take, Nat.min_eq_left hn]
       have hk_lt : k < n + 1 := by
         have := (Array.getElem?_eq_some_iff.mp hk).1
         omega
@@ -1147,17 +1146,16 @@ theorem reachRefs_subset_usedRefIdxs {c : Ixon.Constant} {e : Ixon.Expr}
       have hs_dir : ∀ y ∈ IxVM.Consistency.exprRefIdxs s, y ∈ IxVM.Consistency.usedRefIdxs c := by
         intro y hy
         unfold IxVM.Consistency.usedRefIdxs
-        rw [List.mem_eraseDup]
-        apply List.mem_flatMap.mpr
-        exact ⟨s, by rw [Array.toList_append]; exact List.mem_append_left _ hs_mem, hy⟩
+        exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs_mem, hy⟩)
       by_cases hkn : k < n
       · exact ih (by omega) k _ (buildReachRefsTbl_take_getElem? c.sharing.toList hkn hs) x hx
       · have hkeq : k = n := by omega
         subst hkeq
         exact exprDirectRefs_mem s _ (ih (by omega)) hs_dir hx
   intro j hj
-  exact exprDirectRefs_mem e _ (by
-    simpa [List.take_length] using hsh_ok c.sharing.toList.length (Nat.le_refl _)) hdir hj
+  have hfull := hsh_ok c.sharing.toList.length (Nat.le_refl _)
+  rw [List.take_length] at hfull
+  exact exprDirectRefs_mem e _ hfull hdir hj
 
 private theorem recurDeps_buildShared_getElem? (sharing : List Ixon.Expr) :
     ∀ (es : List Ixon.Expr) (acc : Array (Std.HashSet Nat)) (i : Nat) (_ : i < acc.size),
@@ -1277,7 +1275,9 @@ theorem recurDeps_empty_of_rawConvExpr {c : Ixon.Constant} {d : Ixon.Definition}
           (fun sh entry => sh.push (Ix.Kernel.Reader.recurDeps.go sh {} entry)) #[]
        Ix.Kernel.Reader.recurDeps.go shared
          (Ix.Kernel.Reader.recurDeps.go shared {} d.typ) d.value) := by
-    simp [Id.run, pure, Array.forIn_pure_yield_eq_foldl, ← Array.foldl_toList]
+    dsimp only [Id.run]
+    rw [← Array.forIn_toList, List.forIn_pure_yield_eq_foldl]
+    rfl
   unfold Ix.Kernel.Reader.recurDeps
   rw [hshared_eq]
   have h1 := recurDeps_go_empty_lazy hty _ {} (fun _ _ _ => rfl) (by simp)
@@ -1345,7 +1345,7 @@ private theorem defOrder_inner_all_empty (deps : Array (Std.HashSet Nat)) (n : N
           true := by
       rw [hdone_at_k, hempty k (by omega)]
       rfl
-    rw [if_pos hcond]
+    simp only [hcond, ↓reduceIte]
     refine Prod.ext ?_ (Prod.ext ?_ ?_)
     · rw [List.foldl_append, List.foldl_cons, List.foldl_nil]
     · apply Array.ext'; simp
@@ -1360,7 +1360,7 @@ private theorem forIn_id_ite_yield {α β : Type} (xs : List α) (init : β)
   | nil => rfl
   | cons hd tl ih =>
     simp only [List.forIn_cons, List.foldl_cons]
-    cases h : cond init hd <;> simp [h, ih]
+    cases cond init hd <;> simp [ih]
 
 /-- **`defOrder` succeeds with `Array.range deps.size`** whenever all dependency sets are empty. -/
 theorem defOrder_all_empty (deps : Array (Std.HashSet Nat))
@@ -1382,18 +1382,17 @@ theorem defOrder_all_empty (deps : Array (Std.HashSet Nat))
       simp [Array.toList_range]
     have hrange' : List.range' 0 (m + 1) = List.range (m + 1) :=
       List.range'_eq_map_range.trans (by simp)
+    have hrange1 : (0 :: List.range' (0 + 1) m) = List.range (m + 1) := by
+      rw [← List.range'_succ]
+      exact hrange'
     have hinner := defOrder_inner_all_empty deps (m + 1) hn.symm hempty (m + 1) (by omega)
-    rw [List.range'_succ, List.forIn_cons, hrange']
+    rw [List.range'_succ, List.forIn_cons, hrange1]
+    dsimp only
     rw [forIn_id_ite_yield (List.range (m + 1)) (Array.replicate (m + 1) false, #[], false)
       (fun s i => !s.1[i]! && (deps[i]!).toList.all (fun j => j == i || decide (j ≥ m + 1) || s.1[j]!))
       (fun s i => (s.1.set! i true, s.2.1.push i, true))]
     rw [hinner, hrange_eq]
-    rw [show ∀ {β γ : Type} (x : Id β) (g : β → Id γ), x >>= g = g x from fun _ _ => rfl]
-    dsimp only [pure]
-    have hsz_out : ((Array.range (m + 1)).size == m + 1) = true := by
-      simp [Array.size_range]
-    rw [if_pos hsz_out]
-    rfl
+    simp [Array.size_range, pure, bind]
 
 /-! ### `MemberReader.read` completeness from `RawConvExpr` -/
 
@@ -1549,7 +1548,7 @@ private theorem convExpr_ok_of_rawConvExpr
       hkeys idx (List.mem_append_right _ hidx))
     exact ⟨.forallE Et Eb Ix.Kernel.BinderMeta.leanNever,
       by simp [Ix.Kernel.Reader.convExpr, hEt, hEb, bind, Except.bind, pure, Except.pure]⟩
-  | letE _ _ _ _ iht ihv ihb =>
+  | @letE _ _ nd _ _ _ _ _ _ _ _ _ _ _ iht ihv ihb =>
     intro n hn hbnd hkeys
     obtain ⟨Et, hEt⟩ := iht hn hbnd (fun idx hidx =>
       hkeys idx (List.mem_append_left _ (List.mem_append_left _ hidx)))
@@ -1557,7 +1556,7 @@ private theorem convExpr_ok_of_rawConvExpr
       hkeys idx (List.mem_append_left _ (List.mem_append_right _ hidx)))
     obtain ⟨Eb, hEb⟩ := ihb hn hbnd (fun idx hidx =>
       hkeys idx (List.mem_append_right _ hidx))
-    exact ⟨.letE Et Ev Eb { nonDep := _ },
+    exact ⟨.letE Et Ev Eb { nonDep := nd },
       by simp [Ix.Kernel.Reader.convExpr, hEt, hEv, hEb, bind, Except.bind, pure, Except.pure]⟩
   | @share bnd idx s _ hidx hsh_get rs ih =>
     intro n hn hbnd hkeys
@@ -1622,7 +1621,7 @@ theorem memberReader_read_ok_of_rawConvExpr
   obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src param self
   unfold Ix.Kernel.Reader.MemberReader.read
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)]
-  exact convExpr_ok_of_rawConvExpr rfl (by simp) hself_ok hblob_ok raw
+  exact convExpr_ok_of_rawConvExpr (param := param) rfl (by simp) hself_ok hblob_ok raw
     (Nat.le_refl _) (Or.inr rfl)
     (fun idx hidx a ha => by
       dsimp only at ha
@@ -1689,16 +1688,15 @@ theorem validate_univ_params_seen_spec {h h' : Heap F} {u : Core.KLevel}
       obtain ⟨a, b, ha, hb, hxa, hxb, hr_lt, hm_eq⟩ := L1.lt_fields_both_spec ev_lt
       have hP : (72057594037927936 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide
       have ha_eq : a = i := by
-        have h1 := Value.field.inj hxa
-        have h2 := congrArg ZMod.val h1
+        have h2 := congrArg ZMod.val (Value.field.inj hxa).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt (Nat.lt_trans hi hP)] at h2
       have hb_eq : b = nlvls := by
-        have h1 := Value.field.inj hxb
-        have h2 := congrArg ZMod.val h1
+        have h2 := congrArg ZMod.val (Value.field.inj hxb).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at h2
-      subst ha_eq; subst hb_eq
+      subst ha_eq
+      rw [hb_eq] at hr_lt
       have hlt : i < nlvls := by
         by_cases hlt' : i < nlvls
         · exact hlt'
@@ -1868,7 +1866,8 @@ private theorem validate_expr_well_scoped_go
         have h2 := congrArg ZMod.val (Value.field.inj hxb).symm
         rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
           ZMod.val_natCast_of_lt hd_lt32_or] at h2
-      subst ha_eq; subst hb_eq
+      subst ha_eq
+      rw [hb_eq] at hr_lt
       have hlt : idx.toNat < d := by
         by_cases hlt' : idx.toNat < d
         · exact hlt'
@@ -1876,7 +1875,7 @@ private theorem validate_expr_well_scoped_go
           rw [hr_lt] at heq
           exact absurd (congrArg ZMod.val (Value.field.inj heq)) (by decide)
       rw [hh, hm_eq, Ix.Kernel.Expr.mkBvar_eq]
-      exact ⟨Heap.Extends.refl _, by simp [Ix.Kernel.Expr.looseBVarsBounded, hlt], rfl⟩
+      exact ⟨Heap.Extends.refl _, by simp [Ix.Kernel.Expr.looseBVarsBounded]; exact hlt, rfl⟩
     | Srt _ _ ld _ _ | Const _ _ _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ _ _
     | App _ _ _ _ _ _ ld _ _ _ | Lam _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
     | Forall _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _ | Let _ _ _ _ _ _ _ _ _ _ _ ld _ _ _ _ _
