@@ -3,6 +3,7 @@ import Ix.Cert.Stream
 import Ix.Cert.ReaderUnits
 import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
+import Ix.Cert.EvidenceTransfer
 import Ix.Cert.ReadingKeys
 import IxC.Ixon.Verify.BoundedConstant
 import IxC.Kernel.Model.Restrict
@@ -443,86 +444,18 @@ theorem readRecord_generated_zero_of_no_generated {md : Mode} {cx : Ctx md} {st 
     (h : readRecord cx st owner c = .ok r)
     (hno : ∀ d ∈ r.decls.toList, d.isGenerated = false) :
     r.generated = 0 := by
-  rcases Ix.Cert.ReaderUnits.readRecord_lowering h with ⟨hg, _⟩ | ⟨gens, d, hd, hg, _⟩
+  rcases Ix.Cert.ReaderUnits.readRecord_lowering h with ⟨hg, _⟩ | ⟨gens, suffix, hd, hg, _⟩
   · exact hg
-  ·-- In the inductive branch, `readRecord` ran `readInductive` → `lowerInductive`.
-    cases hinfo : c.info with
-    | muts ms =>
-      unfold readRecord at h
-      simp only [hinfo] at h
-      rcases ite_ok h with h | h
-      · rcases ite_ok h with h | h
-        · exact (fail_bind h).elim
-        · -- `h : readInductive cx st owner c ms = .ok r`
-          unfold readInductive at h
-          split at h
-          · dsimp only at h
-            rcases ite_ok h with h | h
-            · split at h
-              · rcases ite_ok h with h | h
-                · exact (fail_bind h).elim
-                · rcases ite_ok h with h | h
-                  · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-                    obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-                    obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-                    have hgen := Ix.Cert.SourceNames.lowerInductive_generated h
-                    cases gens with
-                    | nil => simpa using hg
-                    | cons g gs =>
-                      have htake : g ∈ r.decls.toList.take r.generated := by
-                        rw [hd, hg, List.take_left]
-                        exact List.mem_cons_self
-                      have ht := hgen g htake
-                      have hf := hno g (by rw [hd]; exact List.mem_append_left _ List.mem_cons_self)
-                      rw [ht] at hf
-                      cases hf
-                  · exact (fail_bind h).elim
-              · exact (throw_ok h).elim
-            · exact (fail_bind h).elim
-          · exact (throw_ok h).elim
-      · rcases ite_ok h with h | h
-        · rcases ite_ok h with h | h
-          · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-          · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-            exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
-        · rcases ite_ok h with h | h
-          · split at h
-            · exact (fail_bind h).elim
-            · split at h
-              · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-                simp only [pure, Except.pure, Except.ok.injEq] at h
-                subst h
-                rfl
-              · exact (throw_ok h).elim
-          · exact (throw_ok h).elim
-    | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
-      unfold readRecord at h; simp only [hinfo] at h
-      rcases ite_ok h with h | h
-      · exact (fail_bind h).elim
-      · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-    | defn _ =>
-      unfold readRecord at h; simp only [hinfo] at h
-      obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-      simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-    | recr _ =>
-      unfold readRecord at h; simp only [hinfo] at h
-      rcases ite_ok h with h | h
-      · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-      · split at h
-        · exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
-        · exact (throw_ok h).elim
-    | axio _ =>
-      unfold readRecord at h; simp only [hinfo] at h
-      rcases ite_ok h with h | h
-      · exact (fail_bind h).elim
-      · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-        obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-        simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
-    | quot _ =>
-      unfold readRecord at h; simp only [hinfo] at h
-      obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-      obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-      simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
+  · cases gens with
+    | nil => simpa using hg
+    | cons g gs =>
+      have htake : g ∈ r.decls.toList.take r.generated := by
+        rw [hd, hg, List.take_left]
+        exact List.mem_cons_self
+      have ht := Ix.Cert.EvidenceTransfer.readRecord_generated h g htake
+      have hf := hno g (by rw [hd]; exact List.mem_append_left _ List.mem_cons_self)
+      rw [ht] at hf
+      cases hf
 
 theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
     {owner : _root_.Address} {c : Ixon.Constant} {r : Read md}
@@ -536,16 +469,7 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
-        have hgInd := readInductiveBare_generated_zero hrInd
-        obtain ⟨twins, -, h⟩ := except_bind_ok.mp h
-        rcases ite_ok h with h | h
-        · simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          exact hgInd
-        · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-          simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          exact hgInd
+        exact (finishInductiveRead_data h).1.trans (readInductiveBare_generated_zero hrInd)
     · rename_i hind
       unfold readRecord at h
       simp only [hinfo] at h
@@ -1537,7 +1461,14 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
-      · exact readInductive_noGen_declNonAux hrk h hg
+      · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
+        have hgInd := (finishInductiveRead_data h).1.symm.trans hg
+        have hInd := readInductive_noGen_declNonAux hrk hrInd hgInd
+        rcases finishInductiveRead_spec h with rfl | ⟨rTwin, hrTwin, rfl⟩
+        · exact hInd
+        · intro d hd
+          rw [Array.toList_append, List.mem_append] at hd
+          exact hd.elim (hInd d) (lowerTwin_declNonAux hrk hrTwin d)
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; intro _ hd; simp at hd
@@ -1592,18 +1523,11 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
       · exact (fail_bind h).elim
       · obtain ⟨rInd, hrInd, h⟩ := except_bind_ok.mp h
         have hInd := readInductiveBare_declNonAux hrk hrInd
-        obtain ⟨twins, -, h⟩ := except_bind_ok.mp h
-        rcases ite_ok h with h | h
-        · simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          exact hInd
-        · obtain ⟨rTwin, hrTwin, h⟩ := except_bind_ok.mp h
-          have hTwin := lowerTwin_declNonAux hrk hrTwin
-          simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          intro d hd
+        rcases finishInductiveRead_spec h with rfl | ⟨rTwin, hrTwin, rfl⟩
+        · exact hInd
+        · intro d hd
           rw [Array.toList_append, List.mem_append] at hd
-          exact hd.elim (hInd d) (hTwin d)
+          exact hd.elim (hInd d) (lowerTwin_declNonAux hrk hrTwin d)
     · exact readRecord_noGen_declNonAux hrk hemp h hg
   | _ =>
     simp only [hinfo] at h
