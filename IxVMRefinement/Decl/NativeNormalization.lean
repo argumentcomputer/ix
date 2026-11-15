@@ -92,4 +92,50 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
           subst out
           exact ⟨wScope, wBounded, wLeaves, .redL red .refl⟩
 
+/-- The field walk retains the original opened variables and certifies every changed domain at its actual depth. -/
+theorem normFieldDoms_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
+    {fuel : Nat} {T : Key md} {d count : Nat} {e residual : Expr md}
+    {binders : List (Expr md × BinderMeta)}
+    (run : normFieldDoms (fueledOps .verified fuel) env T d count e = .ok (binders, residual))
+    (scope : Expr.WScoped d e) (bounded : e.looseBVarsBounded 0 = true) :
+    ∃ originalFvars, openPisAtFvars count e d = some (originalFvars, residual) ∧
+      originalFvars.length = count ∧ binders.length = count ∧
+      ∀ j original normalized, originalFvars[j]? = some original → binders[j]? = some normalized →
+        Expr.WScoped (d + j) normalized.1 ∧ normalized.1.looseBVarsBounded 0 = true ∧
+          (∀ leaf ∈ normalized.1.fvarLeaves, leaf ∈ original.fvarTypeD.fvarLeaves) ∧
+          DefEq env (d + j) original.fvarTypeD normalized.1 := by
+  induction count generalizing d e binders residual with
+  | zero =>
+    have same := Except.ok.inj run
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
+    exact ⟨[], rfl, rfl, rfl, fun j _ _ missing _ => by cases j <;> cases missing⟩
+  | succ count ih =>
+    cases e with
+    | forallE dom body bm =>
+      simp only [normFieldDoms] at run
+      obtain ⟨dom', normalized, rest⟩ := exceptBind_ok run
+      obtain ⟨pair, recRun, result⟩ := exceptBind_ok rest
+      obtain ⟨tailBinders, tailResidual⟩ := pair
+      have same := Except.ok.inj result
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
+      simp only [Expr.WScoped] at scope
+      simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+      have domainFacts := normPosDom_sound wellFormed normalized scope.1 bounded.1
+      obtain ⟨fvars, opened, fvarCount, binderCount, tailFacts⟩ := ih recRun
+        (scope.1.instantiate1 0 scope.2) (looseBVarsBounded_instantiate1 _ 0 bounded.2)
+      refine ⟨.fvar d dom :: fvars, ?_, ?_, ?_, ?_⟩
+      · simp only [openPisAtFvars, opened]
+      · simp only [List.length_cons, fvarCount]
+      · simp only [List.length_cons, binderCount]
+      · intro j original output oldAt newAt
+        cases j with
+        | zero =>
+          obtain rfl := Option.some.inj oldAt
+          obtain rfl := Option.some.inj newAt
+          simpa only [Nat.add_zero, Expr.fvarTypeD] using domainFacts
+        | succ j =>
+          have tail := tailFacts j original output oldAt newAt
+          simpa only [Nat.add_succ, Nat.succ_add] using tail
+    | _ => cases run
+
 end IxVM.Refinement.Decl
