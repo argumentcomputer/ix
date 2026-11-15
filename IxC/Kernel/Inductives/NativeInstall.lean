@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Inductives.SumInstall
 public import IxC.Kernel.Inductives.NativeParts
+public import IxC.Kernel.Inductives.Scope
 
 @[expose] public section
 
@@ -387,7 +388,7 @@ def Expr.mentionsFvarFast (q : Nat) (e : Expr md) : Bool :=
 
 /-- The kinds the recogniser computed, re-checked on the annotated
 constructor type OPENED at variables (`openPisAtFvars`, as the stage
-read it): an ordinary field's domain resolves in the pre-block
+read it): an ordinary field's domain, ignoring free-variable type annotations, resolves in the pre-block
 environment `env₀`; a recursive field's domain is the family at the
 opened parameter variables followed by `nIdx` index expressions
 resolving in `env₀`, and the variable occurs in no later field's
@@ -400,15 +401,15 @@ def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nI
   | some (fvsP, crest) =>
     match openPisAtFvars nF crest nP with
     | some (xFvs, xrest) =>
-      (xrest.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+      (xrest.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
       (List.range nF).all fun i =>
         match xFvs[i]?, ks.getD i .ordinary with
-        | some x, .ordinary => x.fvarTypeD.constsResolve env₀
+        | some x, .ordinary => x.fvarTypeD.constsResolveShallow env₀
         | some x, .recursive =>
           x.fvarTypeD.getAppFn == Expr.const T (lps.map .param) &&
           x.fvarTypeD.getAppArgs.take nP == fvsP &&
           x.fvarTypeD.getAppArgs.length == nP + nIdx &&
-          (x.fvarTypeD.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+          (x.fvarTypeD.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
           !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
           !xrest.mentionsFvar (nP + i)
         | some x, .reflexive =>
@@ -420,11 +421,11 @@ def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nI
           match openPisAtFvars (x.fvarTypeD.piBinders).1.length x.fvarTypeD (nP + i) with
           | some (afvs, body) =>
             afvs.length != 0 &&
-            afvs.all (fun a => a.fvarTypeD.constsResolve env₀) &&
+            afvs.all (fun a => a.fvarTypeD.constsResolveShallow env₀) &&
             body.getAppFn == Expr.const T (lps.map .param) &&
             body.getAppArgs.take nP == fvsP &&
             body.getAppArgs.length == nP + nIdx &&
-            (body.getAppArgs.drop nP).all (fun e => e.constsResolve env₀) &&
+            (body.getAppArgs.drop nP).all (fun e => e.constsResolveShallow env₀) &&
             !(xFvs.drop (i + 1)).any (fun y => y.fvarTypeD.mentionsFvar (nP + i)) &&
             !xrest.mentionsFvar (nP + i)
           | none => false
