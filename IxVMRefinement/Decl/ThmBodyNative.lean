@@ -182,7 +182,8 @@ theorem checkStructProjTable {T C : Key md} {lps : List LevelParam} {nP nF off :
     rfl
   refine ⟨_, h.cons _, ?_⟩
   simp only [Ix.Kernel.checkStructProjTable, hb, unwrapOr, Pure.pure, Except.pure,
-    Bind.bind, Except.bind, wellScoped', names', fresh', ↓reduceIte]
+    Bind.bind, Except.bind]
+  rw [ite_eq_left wellScoped', ite_eq_left names', ite_eq_left fresh']
 
 private theorem returnEnvironment {sourceOut : Env md}
     (checked : (pure source : CheckM md (Env md)) = .ok sourceOut) :
