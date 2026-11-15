@@ -40,7 +40,7 @@ def Part.semantic (part : Part md) : TwinRecPart md := {
 
 theorem majorAgrees_spec {majorIndex : Nat} {canonical annotated : Expr md}
     (h : majorAgrees majorIndex canonical annotated = true)
-    {bsW : List (Expr md)} {domW bodyW : Expr md} {bmW : BinderMeta}
+    {bsW : List (Expr md × BinderMeta)} {domW bodyW : Expr md} {bmW : BinderMeta}
     (hW : annotated.stripPis majorIndex = some (bsW, .forallE domW bodyW bmW)) :
     ∃ bsC domC bodyC bmC,
       canonical.stripPis majorIndex = some (bsC, .forallE domC bodyC bmC) ∧
@@ -87,8 +87,8 @@ theorem peerRename_spec (parts : List (Part md)) (key : Key md) :
   cases hfind : parts.find? (fun part => part.canonicalKey == key) with
   | none => exact .inl rfl
   | some part =>
-    obtain ⟨hmem, hkey⟩ := List.find?_some hfind
-    exact .inr ⟨part, hmem, (beq_iff_eq.mp hkey).symm, rfl⟩
+    exact .inr ⟨part, List.mem_of_find?_eq_some hfind,
+      (beq_iff_eq.mp (List.find?_some hfind)).symm, rfl⟩
 
 /-- A successful finishing check chooses one common rule renaming for the complete group. -/
 theorem finish_spec {env output : Env md} {parts : List (Part md)}
@@ -106,5 +106,132 @@ theorem finish_spec {env output : Env md} {parts : List (Part md)}
     · exact ⟨id, fun _ => .inl rfl, hid, rfl⟩
     · exact ⟨peerRename parts, peerRename_spec parts, hpeer, rfl⟩
   next hwrap => cases h
+
+def ModelSource (env : Env md) (part : Part md) : Prop :=
+  match part.model? with
+  | some (cv, value, hint) =>
+    env.find? (auxKey part.canonicalKey .model) = some (.defnInfo cv value hint)
+  | none =>
+    (∀ cv value hint, env.find? (auxKey part.canonicalKey .model) ≠ some (.defnInfo cv value hint)) ∧
+    (∀ bsW domW bodyW bmW,
+      part.annotated.type.stripPis part.majorIndex = some (bsW, .forallE domW bodyW bmW) →
+      ∃ bsC domC bodyC bmC,
+        part.canonical.type.stripPis part.majorIndex = some (bsC, .forallE domC bodyC bmC) ∧
+        domW.getAppFn = domC.getAppFn ∧ domW.getAppArgs = domC.getAppArgs)
+
+structure CanonicalPart (env : Env md) (part : Part md) : Prop where
+  stored : env.find? part.canonicalKey =
+    some (.recInfo part.canonical part.majorIndex part.rulePrefix part.canonicalRules)
+  levels : part.raw.levelParams = part.canonical.levelParams
+  ruleCount : part.rawRules.length = part.canonicalRules.length
+  typeWrap : WrapRel env.find? part.canonical.type part.annotated.type
+  model : ModelSource env part
+
+private theorem modelSource_of_guard (env : Env md) (part : Part md)
+    (hmodel : part.model? = match env.find? (auxKey part.canonicalKey .model) with
+      | some (.defnInfo cv value hint) => some (cv, value, hint)
+      | _ => none)
+    (hguard : (part.model?.isSome || majorAgrees part.majorIndex part.canonical.type part.annotated.type) = true) :
+    ModelSource env part := by
+  cases hfind : env.find? (auxKey part.canonicalKey .model) with
+  | none =>
+    simp only [hfind] at hmodel
+    simp only [hmodel, Option.isSome_none, Bool.false_or] at hguard
+    simp only [ModelSource, hmodel]
+    refine ⟨?_, fun _ _ _ _ h => majorAgrees_spec hguard h⟩
+    intro cv value hint
+    simp [hfind]
+  | some ci =>
+    cases ci with
+    | defnInfo cv value hint =>
+      simp only [hfind] at hmodel
+      simp only [ModelSource, hmodel]
+      exact hfind
+    | _ =>
+      simp only [hfind] at hmodel
+      simp only [hmodel, Option.isSome_none, Bool.false_or] at hguard
+      simp only [ModelSource, hmodel]
+      refine ⟨?_, fun _ _ _ _ h => majorAgrees_spec hguard h⟩
+      intro cv value hint
+      simp [hfind]
+
+theorem candidate_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)} {key : Key md} {part : Part md}
+    (h : candidate env.find? raw annotated mI rP rules key = some part) :
+    part.raw = raw ∧ part.annotated = annotated ∧ part.majorIndex = mI ∧
+      part.rulePrefix = rP ∧ part.rawRules = rules ∧ CanonicalPart env part := by
+  unfold candidate at h
+  split at h
+  next canonical mI' rP' canonicalRules hfind =>
+    simp only [bind, Option.bind, pure, Option.pure] at h
+    split at h
+    next hguard =>
+      simp only [bind, Option.bind, pure, Option.pure] at h
+      split at h
+      next hmodel =>
+        simp only [bind, Option.bind, pure, Option.pure, Option.some.injEq] at h
+        subst part
+        simp only [Bool.and_eq_true, beq_iff_eq] at hguard
+        obtain ⟨⟨⟨⟨hmI, hrP⟩, hlevels⟩, hcount⟩, hwrap⟩ := hguard
+        subst mI'; subst rP'
+        refine ⟨rfl, rfl, rfl, rfl, rfl, ⟨hfind, hlevels, hcount, wrapRelOk_sound hwrap, ?_⟩⟩
+        exact modelSource_of_guard env _ rfl hmodel
+      next hmodel => cases h
+    next hguard => cases h
+  next hfind => cases h
+
+theorem findCanonical_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)} {part : Part md} :
+    ∀ entries : List (ConstantInfo md),
+      findCanonical env.find? raw annotated mI rP rules entries = some part →
+      part.raw = raw ∧ part.annotated = annotated ∧ part.majorIndex = mI ∧
+        part.rulePrefix = rP ∧ part.rawRules = rules ∧ CanonicalPart env part
+  | [], h => by cases h
+  | ci :: entries, h => by
+    cases ci with
+    | recInfo cv majorIndex prefix canonicalRules =>
+      simp only [findCanonical] at h
+      cases hcandidate : candidate env.find? raw annotated mI rP rules cv.name with
+      | none =>
+        simp only [hcandidate, Option.orElse_none] at h
+        exact findCanonical_spec entries h
+      | some found =>
+        simp only [hcandidate, Option.orElse_some] at h
+        cases h
+        exact candidate_spec hcandidate
+    | _ => exact findCanonical_spec entries h
+
+/-- Successful executable header checks provide the actual declaration judgement and
+the stored canonical source used by the twin model theorem. -/
+theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
+    {ci : ConstantInfo md} {part : Part md}
+    (h : checkHeader (fueledOps mode fuel) env ci = .ok part) :
+    ci = .recInfo part.raw part.majorIndex part.rulePrefix part.rawRules ∧
+      ConstantValCheckJ (runJ mode fuel) env part.raw part.annotated ∧
+      letFree part.annotated.type = true ∧ CanonicalPart env part := by
+  cases ci with
+  | recInfo raw majorIndex prefix rules =>
+    unfold checkHeader at h
+    simp only [bind, Except.bind] at h
+    cases hchecked : checkConstantVal (fueledOps mode fuel) env raw with
+    | error reason => rw [hchecked] at h; cases h
+    | ok annotated =>
+      rw [hchecked] at h
+      split at h
+      next hfree =>
+        simp only [bind, Except.bind, pure, Except.pure] at h
+        cases hcanonical : findCanonical env.find? raw annotated majorIndex prefix rules env.consts with
+        | none => simp [hcanonical, throw, throwThe, MonadExceptOf.throw] at h
+        | some found =>
+          simp only [hcanonical, Except.ok.injEq] at h
+          subst part
+          obtain ⟨hraw, hannotated, hmajor, hprefix, hrules, hsource⟩ := findCanonical_spec env.consts hcanonical
+          refine ⟨?_, ?_, ?_, hsource⟩
+          · rw [hraw, hmajor, hprefix, hrules]
+          · rw [hraw, hannotated]
+            exact constantValCheckJ_of_run hchecked
+          · rwa [hannotated]
+      next hfree => cases h
+  | _ => simp [checkHeader, throw, throwThe, MonadExceptOf.throw] at h
 
 end Ix.Kernel.NativeTwin
