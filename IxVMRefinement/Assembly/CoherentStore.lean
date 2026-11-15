@@ -1,3 +1,4 @@
+import IxC.Ixon.Verify.Canonical
 import Ix.Cert.TableAdmission
 import IxVMRefinement.L1.Records
 import Ix.IxVM.Refinement.Claim
@@ -13,12 +14,23 @@ namespace IxVM.Refinement.Assembly
 
 universe u
 
-/-- Retain exactly the records whose byte windows decode, caching the decoded value. -/
+/-- Use the admission check's per-record byte and universe-expansion limits before caching. -/
+def decodeReaderConstant (bytes : ByteArray) : Except String Ixon.Constant :=
+  Ixon.Canonical.deConstant Ix.Cert.TableAdmission.admissionLimits.maxRecordBytes
+    Ix.Cert.TableAdmission.admissionLimits.maxRecordUnivNodes bytes
+
+theorem decodeReaderConstant_exact {bytes : ByteArray} {c : Ixon.Constant}
+    (h : decodeReaderConstant bytes = .ok c) : Ixon.deConstantExact bytes = .ok c := by
+  obtain ⟨_, hwire, hencoded⟩ := Ixon.Verify.Canonical.deConstant_spec _ _ _ _ h
+  rw [← hencoded]
+  exact Ixon.Verify.deConstantExact_serConstant c hwire
+
+/-- Retain the records whose byte windows pass bounded canonical decoding, caching the decoded value. -/
 def decodeReaderConsts : List (_root_.Address × Ixon.LazyConstant) →
     Std.HashMap _root_.Address Ixon.LazyConstant
   | [] => {}
   | (a, lc) :: rest =>
-    match Ixon.deConstantExact lc.rawBytes with
+    match decodeReaderConstant lc.rawBytes with
     | .ok c => (decodeReaderConsts rest).insert a (L1.mkLazyConst lc.rawBytes c)
     | .error _ => decodeReaderConsts rest
 
@@ -26,13 +38,13 @@ theorem decodeReaderConsts_get?_inv :
     ∀ (rows : List (_root_.Address × Ixon.LazyConstant))
       {a : _root_.Address} {lc' : Ixon.LazyConstant},
       (decodeReaderConsts rows).get? a = some lc' →
-      ∃ lc c, (a, lc) ∈ rows ∧ Ixon.deConstantExact lc.rawBytes = .ok c ∧
+      ∃ lc c, (a, lc) ∈ rows ∧ decodeReaderConstant lc.rawBytes = .ok c ∧
         lc' = L1.mkLazyConst lc.rawBytes c
   | [], _, _, h => by
     rw [decodeReaderConsts, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h
     cases h
   | (key, lc) :: rest, a, lc', h => by
-    cases hdec : Ixon.deConstantExact lc.rawBytes with
+    cases hdec : decodeReaderConstant lc.rawBytes with
     | error e =>
       simp only [decodeReaderConsts, hdec] at h
       obtain ⟨old, c, hm, hd, heq⟩ := decodeReaderConsts_get?_inv rest h
@@ -60,7 +72,7 @@ theorem decodeReaderEnv_exact (E : Ixon.Env) {a : _root_.Address} {lc : Ixon.Laz
     (hget : (decodeReaderEnv E).consts.get? a = some lc) :
     ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c := by
   obtain ⟨old, c, _, hdec, rfl⟩ := decodeReaderConsts_get?_inv E.consts.toList hget
-  exact ⟨c, L1.mkLazyConst_get? _ _, by simpa only [L1.mkLazyConst_rawBytes] using hdec⟩
+  exact ⟨c, L1.mkLazyConst_get? _ _, by simpa only [L1.mkLazyConst_rawBytes] using decodeReaderConstant_exact hdec⟩
 
 theorem decodeReaderEnv_coherent (E : Ixon.Env) {a : _root_.Address} {lc : Ixon.LazyConstant}
     (hget : (decodeReaderEnv E).consts.get? a = some lc) :
