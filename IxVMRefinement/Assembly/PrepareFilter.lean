@@ -91,4 +91,32 @@ theorem admitted_prepared_bare_covered
   intro _ _ heq
   cases heq
 
+/-- Removing generated declarations preserves any established uniqueness of the keys
+contributed by the full prepared declarations. This also accounts for hoisting order. -/
+theorem preparePrelude_filter_nodup {α : Type} (keys : Declaration md → List α)
+    {pre : PreludeIx md} {full bare : Array (Declaration md)}
+    (hpre : ∀ p ∈ pre.decls.toList, ∀ k ∈ p.names, NonAuxKey k)
+    (hfilter : full.toList.filter (fun d => !d.isGenerated) = bare.toList)
+    (hfull : ((preparePrelude pre full).toList.flatMap keys).Nodup) :
+    ((preparePrelude pre bare).toList.flatMap keys).Nodup := by
+  have perm (ds : Array (Declaration md)) : (preparePrelude pre ds).toList.Perm
+      ((frontSpec pre.decls.toList ds.toList).1 ++ (frontSpec pre.decls.toList ds.toList).2) := by
+    rw [preparePrelude_front, Array.toList_append]
+    have hh := List.Perm.append_left (frontOf #[] pre.decls.toList ds).1.toList
+      (hoistNatOpGround_perm (frontOf #[] pre.decls.toList ds).2)
+    obtain ⟨hfront, hrest⟩ := frontOf_toList pre.decls.toList #[] ds
+    rw [hfront, hrest] at hh
+    simpa [hfront] using hh
+  have hfront := frontSpec_filter (fun d => !d.isGenerated) pre.decls.toList full.toList
+    (fun p hp d hd => declared_prelude_notGenerated (hpre p hp) hd)
+  have hsub :
+      ((frontSpec pre.decls.toList bare.toList).1 ++
+        (frontSpec pre.decls.toList bare.toList).2).Sublist
+      ((frontSpec pre.decls.toList full.toList).1 ++
+        (frontSpec pre.decls.toList full.toList).2) := by
+    rw [← hfilter, hfront]
+    exact (List.Sublist.refl _).append List.filter_sublist
+  apply ((perm bare).flatMap keys).nodup_iff.mpr
+  exact (((perm full).flatMap keys).nodup_iff.mp hfull).sublist (hsub.flatMap keys)
+
 end IxVM.Refinement.Assembly
