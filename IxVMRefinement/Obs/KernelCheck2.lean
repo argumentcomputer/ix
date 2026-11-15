@@ -17,6 +17,100 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `KernelCheck::check_parent_inductive_shape`: one constructor per combination of selected arms. -/
+inductive «KernelCheck::check_parent_inductive_shape».Path (x_rc x_ind_ci : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Induct
+      (x_nlvls : SourceValue F) (x_ty : SourceValue F) (x_n_params : SourceValue F) (x_n_indices : SourceValue F) (x_num_ctors : SourceValue F) (x_is_unsafe : SourceValue F) (x_block_addr : SourceValue F) (x_ind_idx : SourceValue F) (cs60 : List (Call F))
+      (hv15 : x_ind_ci = (.construct "KernelTypes::KConstantInfo" "Induct" [x_nlvls, x_ty, x_n_params, x_n_indices, x_num_ctors, x_is_unsafe, x_block_addr, x_ind_idx]))
+      (ev62 : ObsFn W "KernelCheck::check_inductive_shape" [x_rc, x_ty, x_n_params, x_n_indices, x_num_ctors, x_nlvls, x_block_addr, x_ind_idx, x_is_unsafe] h r h' cs60)
+      (hc135 : calls = ((⟨"KernelCheck::check_inductive_shape", [x_rc, x_ty, x_n_params, x_n_indices, x_num_ctors, x_nlvls, x_block_addr, x_ind_idx, x_is_unsafe], h⟩ : Call F) :: cs60))
+  | other
+      (hne136 : ∀ vs : List (SourceValue F), vs.length = 8 → (x_ind_ci : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Induct" vs)
+      (he142 : r = (.tuple []))
+      (he143 : h' = h)
+      (hc144 : calls = [])
+
+/-- **Every observed derivation of `KernelCheck::check_parent_inductive_shape` takes one of its paths.** -/
+theorem «KernelCheck::check_parent_inductive_shape».obs {x_rc x_ind_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_parent_inductive_shape" [x_rc, x_ind_ci] h r h' calls) :
+    «KernelCheck::check_parent_inductive_shape».Path x_rc x_ind_ci h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_parent_inductive_shape.lookup
+    (by simp [IxVM.KernelCheck.check_parent_inductive_shape, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelCheck.check_parent_inductive_shape] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [Names.n11677430323439928978] at hv15
+    obtain ⟨x_nlvls, vs17, b18, b19, rfl, mt20, ml21, rfl⟩ := matchListWith_cons_inv ml16
+    obtain rfl := matchPattern_bind_inv mt20
+    obtain ⟨x_ty, vs22, b23, b24, rfl, mt25, ml26, rfl⟩ := matchListWith_cons_inv ml21
+    obtain rfl := matchPattern_bind_inv mt25
+    obtain ⟨x_n_params, vs27, b28, b29, rfl, mt30, ml31, rfl⟩ := matchListWith_cons_inv ml26
+    obtain rfl := matchPattern_bind_inv mt30
+    obtain ⟨x_n_indices, vs32, b33, b34, rfl, mt35, ml36, rfl⟩ := matchListWith_cons_inv ml31
+    obtain rfl := matchPattern_bind_inv mt35
+    obtain ⟨x_num_ctors, vs37, b38, b39, rfl, mt40, ml41, rfl⟩ := matchListWith_cons_inv ml36
+    obtain rfl := matchPattern_bind_inv mt40
+    obtain ⟨x_is_unsafe, vs42, b43, b44, rfl, mt45, ml46, rfl⟩ := matchListWith_cons_inv ml41
+    obtain rfl := matchPattern_bind_inv mt45
+    obtain ⟨x_block_addr, vs47, b48, b49, rfl, mt50, ml51, rfl⟩ := matchListWith_cons_inv ml46
+    obtain rfl := matchPattern_bind_inv mt50
+    obtain ⟨x_ind_idx, vs52, b53, b54, rfl, mt55, ml56, rfl⟩ := matchListWith_cons_inv ml51
+    obtain rfl := matchPattern_bind_inv mt55
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml56
+    obtain ⟨vs57, m58, c59, cs60, a61, ev62, rfl⟩ := d9.call_inv
+    rw [instanceName_plain_some] at ev62
+    obtain ⟨v63, vs72, m73, c74, c75, rfl, d76, a77, rfl⟩ := a61.cons_inv
+    obtain ⟨l78, rfl, rfl⟩ := d76.var_inv
+    simp at l78
+    subst l78
+    obtain ⟨v64, vs79, m80, c81, c82, rfl, d83, a84, rfl⟩ := a77.cons_inv
+    obtain ⟨l85, rfl, rfl⟩ := d83.var_inv
+    simp at l85
+    subst l85
+    obtain ⟨v65, vs86, m87, c88, c89, rfl, d90, a91, rfl⟩ := a84.cons_inv
+    obtain ⟨l92, rfl, rfl⟩ := d90.var_inv
+    simp at l92
+    subst l92
+    obtain ⟨v66, vs93, m94, c95, c96, rfl, d97, a98, rfl⟩ := a91.cons_inv
+    obtain ⟨l99, rfl, rfl⟩ := d97.var_inv
+    simp at l99
+    subst l99
+    obtain ⟨v67, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a98.cons_inv
+    obtain ⟨l106, rfl, rfl⟩ := d104.var_inv
+    simp at l106
+    subst l106
+    obtain ⟨v68, vs107, m108, c109, c110, rfl, d111, a112, rfl⟩ := a105.cons_inv
+    obtain ⟨l113, rfl, rfl⟩ := d111.var_inv
+    simp at l113
+    subst l113
+    obtain ⟨v69, vs114, m115, c116, c117, rfl, d118, a119, rfl⟩ := a112.cons_inv
+    obtain ⟨l120, rfl, rfl⟩ := d118.var_inv
+    simp at l120
+    subst l120
+    obtain ⟨v70, vs121, m122, c123, c124, rfl, d125, a126, rfl⟩ := a119.cons_inv
+    obtain ⟨l127, rfl, rfl⟩ := d125.var_inv
+    simp at l127
+    subst l127
+    obtain ⟨v71, vs128, m129, c130, c131, rfl, d132, a133, rfl⟩ := a126.cons_inv
+    obtain ⟨l134, rfl, rfl⟩ := d132.var_inv
+    simp at l134
+    subst l134
+    obtain ⟨rfl, rfl, rfl⟩ := a133.nil_inv
+    exact «KernelCheck::check_parent_inductive_shape».Path.Induct _ _ _ _ _ _ _ _ _ hv15 ev62 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne136 := matchPattern_construct_none (by trivial) nm12
+    simp only [Names.n11677430323439928978] at hne136
+    rcases selectArm_cons_inv sel13 with ⟨mt137, rfl⟩ | ⟨nm138, sel139⟩
+    · obtain rfl := matchPattern_wildcard_inv mt137
+      obtain ⟨vs140, a141, rfl⟩ := d9.tuple_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a141.nil_inv
+      exact «KernelCheck::check_parent_inductive_shape».Path.other hne136 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm138).elim
+
 /-- The evaluation paths of `KernelCheck::check_block_peer_param_agreement`: one constructor per combination of selected arms. -/
 inductive «KernelCheck::check_block_peer_param_agreement».Path (x_rc x_ind_ci x_addr : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
