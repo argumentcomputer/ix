@@ -105,6 +105,16 @@ theorem readerChunks_nodup {env : Env .anon} {ds : List (Declaration .anon)}
     obtain ⟨base, auxTag, haux⟩ := tableChunk_aux hci
     exact hnonaux cj.name (plainChunks_key hcj) base auxTag (hxy.symm.trans haux)
 
+private theorem plainChunks_spec (env : Env .anon) :
+    ∀ (ds : List (Declaration .anon)),
+      (∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+        ∃ ci ∈ env.consts, IxVM.Consistency.StoredAs ci ci₀) →
+      List.Forall₂ InstallChunk ds (ds.map (declarationChunk env))
+  | [], _ => .nil
+  | d :: ds, hcoverage =>
+    .cons (declarationChunk_spec (hcoverage d List.mem_cons_self))
+      (plainChunks_spec env ds (fun d' hd' => hcoverage d' (List.mem_cons_of_mem d hd')))
+
 theorem readerChunks_spec {env : Env .anon} {ds : List (Declaration .anon)}
     (hcoverage : ∀ d ∈ ds, ∀ ci₀ ∈ IxVM.Consistency.installs d,
       ∃ ci ∈ env.consts, IxVM.Consistency.StoredAs ci ci₀) :
@@ -121,14 +131,7 @@ theorem readerChunks_spec {env : Env .anon} {ds : List (Declaration .anon)}
       rcases List.mem_append.mp hci with htable | hdecl
       · exact .inr (tableChunk_aux htable)
       · exact hd.2 ci hdecl
-    · have htail : ∀ d' ∈ ds, InstallChunk d' (declarationChunk env d') :=
-        fun d' hd' => declarationChunk_spec (hcoverage d' (List.mem_cons_of_mem d hd'))
-      induction ds with
-      | nil => exact .nil
-      | cons d' ds ih =>
-        exact .cons (htail d' List.mem_cons_self)
-          (ih (fun d'' hd'' => hcoverage d'' (by simp [hd'']))
-            (fun d'' hd'' => htail d'' (List.mem_cons_of_mem d' hd'')))
+    · exact plainChunks_spec env ds (fun d' hd' => hcoverage d' (List.mem_cons_of_mem d hd'))
 
 /-- The final checked constants determine an actual reader-order installation. All projection
 tables are assigned to the first step as allowed auxiliary constants. -/
