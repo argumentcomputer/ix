@@ -1059,16 +1059,27 @@ theorem declNativeCoreJ {J : Judgements md}
     obtain ⟨hcb, hcbI, hD⟩ := hinv.2.2 j cAj hj
     exact ⟨ConstsBound.cons _ hcb, fun e he => ConstsBound.cons _ (hcbI e he),
       hD.cross (c₀ := .ctorInfo cA.1 p.nP cA.2) hfresh hTC hcross hcb hcbI mC hac⟩
-  have hidxRes₀ : ∀ j cA, ctorsA[j]? = some cA → ∀ e ∈ idxF j, e.constsResolve env = true := by
+  have hidxRes_I : ∀ j cA, ctorsA[j]? = some cA → ∀ e ∈ idxF j,
+      e.constsResolve ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩ = true := by
     intro j cA hj e he
-    have := (hcf j cA hj).opened.residRes
-    rw [← (hcf j cA hj).idxEq] at this
-    exact this e he
+    obtain ⟨c, -, -, -, -, -, -, sorts, -, hCtor⟩ := hrunOf j cA hj
+    obtain ⟨-, -, fvsP, crest, tfvs, trest, xFvs, idxArgs, hopP, -, -, hopF,
+      -, -, hresIdx, -⟩ := hCtor
+    obtain ⟨crest', hopP', hopF'⟩ := (hcf j cA hj).opens
+    obtain ⟨-, hcrest⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopP'))
+    rw [← hcrest] at hopF'
+    obtain ⟨-, hbody⟩ := Prod.mk.inj (Option.some.inj (hopF.symm.trans hopF'))
+    have hlenP := openPisAtFvars_length p.nP hopP
+    have hidx : idxF j = idxArgs := by
+      rw [(hcf j cA hj).idxEq, ← hbody, Expr.getAppArgs_mkAppN]
+      simp only [Expr.getAppArgs, List.nil_append]
+      simpa only [hlenP] using List.drop_left (l₁ := fvsP) (l₂ := idxArgs)
+    exact hresIdx e (by rwa [← hidx])
   have hinv₀ : Inv mpI.base2 := by
     refine ⟨hfT_I, hfreshFam₁, fun j cA hj => ?_⟩
     obtain ⟨-, -, -, -, -, htr, -, -, -, -⟩ := hrunOf j cA hj
     exact ⟨constsBound_of_constsResolve _ htr,
-      fun e he => constsBound_of_constsResolve _ (Expr.constsResolve_mono (hidxRes₀ j cA hj e he)),
+      fun e he => constsBound_of_constsResolve _ (hidxRes_I j cA hj e he),
       hcf j cA hj⟩
   obtain ⟨mpC, hE_C, hfT_C, hFD_C, hleafT_C, hconsAll, hinvC, hextC⟩ :=
     ctorsLoopGenJ (hfr _) hCtors hndA hlpsT
@@ -1088,7 +1099,7 @@ theorem declNativeCoreJ {J : Judgements md}
     (fun i cA hi _ => absurd hi (Nat.not_lt_zero _))
     (fun i cA _ hi => by
       obtain ⟨-, -, -, -, hfresh, htr, -, -, -, -⟩ := hrunOf i cA hi
-      exact ⟨hfresh, htr, fun e he => Expr.constsResolve_mono (hidxRes₀ i cA hi e he),
+      exact ⟨hfresh, htr, fun e he => hidxRes_I i cA hi e he,
         (hcf i cA hi).toCtorDataI⟩)
     hinv₀
   -- the recursor
