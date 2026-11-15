@@ -744,14 +744,15 @@ theorem compute_iprj_addr_spec {c : Ctx} {bp : SourceValue F} {b : Bytes.Address
         [.construct "Ixon::InductiveProj" "Mk" [TagN.u64Value n, bp]]) := by
     simp only [Specs.Callees.ProjInfoRep]
     exact ⟨TagN.u64Value n, bp, b, rfl, hrep, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
-  have hbytes := put_constant_step c ev148 _ _
+  have hbytes := put_constant_step (ScopedCtx.unrestricted c) ev148 _ _
     (.iPrj ⟨idx.toUInt64, ixAddr b⟩) [] rfl
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5)
   have hgood_bta : Good c cs174 :=
     hgood.sub (by rw [hc185]; intro x hx; simp [hx])
-  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step c ev176 v135 _ rfl hgood_bta hbytes
+  obtain ⟨a, ha, haddr⟩ := bytes_to_addr_step (ScopedCtx.unrestricted c)
+    ev176 v135 _ rfl (CoreGood.unrestricted hgood_bta) hbytes
   refine ⟨a, ha, ?_⟩
   rw [haddr, ProjAddrAux.bytes_mk_toList]
   rfl

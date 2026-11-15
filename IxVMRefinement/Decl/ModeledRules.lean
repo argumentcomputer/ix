@@ -2504,7 +2504,7 @@ theorem addr_set_member_one {c : Ctx} {advSet : Bytes.Address → Prop} {a : Byt
     (ev : ObsFn W "KernelClaim::addr_set_member" [t_addr, aset] h (.field 1) h' cs) :
     advSet a := by
   obtain ⟨cs4, ev_lkp, _⟩ := Obs.«KernelClaim::addr_set_member».obs ev
-  have hfn : Specs.Roles.rbtree_map_lookup_or_default_field c
+  have hfn : Specs.Roles.rbtree_map_lookup_or_default_field (ScopedCtx.unrestricted c)
       [t_addr, aset, .field 0] h (.field 1) h' cs4 :=
     hroles c hwf .rbtree_map_lookup_or_default_field _ _ _ _ _ ev_lkp
   rcases hfn t_addr aset (.field 0) rfl a ha (fun _ k _ => advSet k) haset with h01 | hadv
@@ -4046,7 +4046,7 @@ theorem check_rules_go_vm_spec
         have hcprj_spec := hcallees c_pub ⟨hef_pub, hlf_pub⟩ .projection_addr_ctor _ _ _ _ _ ev_cprj
         obtain ⟨a_cprj, ha_cprj, haddr_cprj⟩ :=
           hcprj_spec i_ind (j : F) iblock b_ind rfl
-            (hg_pub.sub fun _ hx => by simp [hx])
+            (CoreGood.unrestricted (hg_pub.sub fun _ hx => by simp [hx]))
             (Bytes.repAddressRef_heapMono₂ addrTy ext_ga hiblock)
         have hj_val : ZMod.val (j : F) = j := SubstAux.val_natCast (by simp at hj_lt; omega)
         rw [hj_val] at haddr_cprj
