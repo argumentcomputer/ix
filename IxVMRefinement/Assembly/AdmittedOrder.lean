@@ -43,6 +43,20 @@ private theorem le_sum_of_mem {xs : List Nat} {n : Nat} (h : n ∈ xs) : n ≤ x
     · omega
     · have := ih h; omega
 
+private theorem eraseDups_nodup : ∀ xs : List _root_.Address, xs.eraseDups.Nodup
+  | [] => by simp
+  | x :: xs => by
+    rw [List.eraseDups_cons, List.nodup_cons]
+    refine ⟨?_, eraseDups_nodup (xs.filter fun y => !(y == x))⟩
+    intro hx
+    have h := (List.mem_filter.mp (List.mem_eraseDups.mp hx)).2
+    simp at h
+termination_by xs => xs.length
+decreasing_by
+  have h := List.length_filter_le (fun y => !(y == x)) xs
+  simp only [List.length_cons]
+  omega
+
 private theorem idxOf_lt_of_pairwise {α : Type} [BEq α] [LawfulBEq α] {R : α → α → Prop} :
     ∀ {xs : List α} {a b : α}, xs.Pairwise R → a ∈ xs → b ∈ xs →
       (R a b → False) → a ≠ b → xs.idxOf b < xs.idxOf a
@@ -172,7 +186,7 @@ theorem admittedWalkOrder_spec {V : IxVM.Refinement.View} {b : Admission.Binding
   let allKeys := (w.order ++ trace.consts.keys).eraseDups
   let selected := allKeys.filter fun a => @decide (UsedCompiledReachAt w.table E seeds a)
     (Classical.propDecidable _)
-  have hallKeys : allKeys.Nodup := List.nodup_eraseDups _
+  have hallKeys : allKeys.Nodup := eraseDups_nodup _
   have hnd : selected.Nodup := hallKeys.filter _
   have members (a : _root_.Address) : a ∈ selected ↔ UsedCompiledReachAt w.table E seeds a := by
     simp only [selected, List.mem_filter, decide_eq_true_eq]
