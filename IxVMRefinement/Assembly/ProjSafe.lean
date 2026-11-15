@@ -972,6 +972,21 @@ def reachRefsExpr (sh : Array (List Nat)) : Ixon.Expr → List Nat
 def buildReachRefsTbl (sharing : List Ixon.Expr) : Array (List Nat) :=
   sharing.foldl (fun acc entry => acc.push (reachRefsExpr acc entry)) #[]
 
+/-- Either `(x, c_x)` is stored in `E` as a projection owned by `blk` (`x ≠ blk ∧ ownerOf x c_x = blk`),
+or `c_x` is the canonical empty-tables `.dPrj` / `.iPrj` / `.cPrj` projection record of a
+definition, inductive, or constructor member of a `.muts` block `cb` stored at `blk` in `E`. -/
+def OwnedOrProjOf (E : Ixon.Env) (blk x : _root_.Address) (c_x : Ixon.Constant) : Prop :=
+  (Ix.Cert.recordAt E x = some c_x ∧ x ≠ blk ∧ Ix.Cert.ownerOf x c_x = blk) ∨
+  ∃ cb ms (i : Nat),
+    Ix.Cert.recordAt E blk = some cb ∧ cb.info = .muts ms ∧ i < UInt64.size ∧
+    ((∃ d, ms[i]? = some (.defn d) ∧ x = Core.dprjAddr blk i ∧
+        c_x = ⟨.dPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩) ∨
+     (∃ ind, ms[i]? = some (.indc ind) ∧ x = Core.iprjAddr blk i ∧
+        c_x = ⟨.iPrj ⟨i.toUInt64, blk⟩, #[], #[], #[], #[]⟩) ∨
+     (∃ ind ct, ms[i]? = some (.indc ind) ∧ ct ∈ ind.ctors.toList ∧
+        x = Core.cprjAddr blk i ct.cidx.toNat ∧
+        c_x = ⟨.cPrj ⟨i.toUInt64, ct.cidx, blk⟩, #[], #[], #[], #[]⟩))
+
 /-- Cross-lane interface isolating `KernelCheck::safe_refs_only`, role-prefix bare stream transfer,
 and inductive/recursor `readRecordBare` completeness (keeping zero imports from `RoleVal/*` or
 `Decl/*`). -/
@@ -998,7 +1013,9 @@ structure SafeRefsInputs : Prop where
             (Ix.Kernel.Reader.resolveSource (Ix.Cert.recordAt E₀) a c_a).isSome = true
   /-- Role-prefix bare reading on `subEnvRole`: `order.filter (· ∈ order_role) = order_role`,
   `StreamReadBare` reads `decodedOf E order_role` to `decls_role` while preserving prelude keys,
-  and every non-block constant in `order_role` satisfies `L1.RecordReadsAs t E_core`. -/
+  installed names of `preparePrelude pre.ix decls_role` are `Nodup` and belong to `order_role`
+  (or projections owned by `order_role`), and every non-block constant in or owned by `order_role`
+  satisfies `L1.RecordReadsAs t E_core`. -/
   rolePrefixStreamReadBare :
     ∀ {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
       {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
@@ -1008,6 +1025,7 @@ structure SafeRefsInputs : Prop where
       {decls_role : Array (Ix.Kernel.Reader.CDecl .anon)}
       {seeds : List _root_.Address},
       TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role →
+      IxVM.Consistency.Bounded calls →
       IxVM.Consistency.LoadedBy calls E₀ →
       ¬ V.HashedCollision extra calls →
       L1.EnvDecoded E_core →
@@ -1031,33 +1049,55 @@ structure SafeRefsInputs : Prop where
           (∀ d ∈ decls_w.toList, ∀ n ∈ d.names, ∃ x, n = Core.keyOf t x ∧ x ∉ order_role) →
           (Ix.Kernel.Frontend.preparePrelude pre.ix (decls_role ++ decls_w)).toList =
             (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList ++ decls_w.toList) ∧
+        ((Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList.flatMap
+          (fun d => (IxVM.Consistency.installs d).map (·.name))).Nodup ∧
+        (∀ d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList,
+          ∀ ci₀ ∈ IxVM.Consistency.installs d,
+          ∀ x, ci₀.name = Core.keyOf t x →
+            x ∈ order_role ∨
+            ∀ c_x,
+              (Ix.Cert.recordAt E₀ x = some c_x ∨
+                (∃ owner ms (i : Nat) d_m,
+                  x = Core.dprjAddr owner i ∧ i < UInt64.size ∧
+                  c_x = ⟨.dPrj ⟨i.toUInt64, owner⟩, #[], #[], #[], #[]⟩ ∧
+                  Claim.MutsMemberCheckedAtFull calls b.address t owner ms i ∧
+                  ms[i]? = some (.defn d_m))) →
+              Ix.Cert.ownerOf x c_x ∈ order_role) ∧
         ∃ st_r,
           StreamReadBare
             (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
               (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
             pre.state (Ix.Cert.Stream.decodedOf E order_role) st_r decls_role ∧
           (∀ k ∈ pre.state.keys, st_r.SameAt pre.state k) ∧
-          (∀ x c_x, x ∈ order_role → Ix.Cert.recordAt E x = some c_x →
-            ((∃ d_x, c_x.info = .defn d_x) ∨ (∃ ax, c_x.info = .axio ax) ∨
-              (∃ qt, c_x.info = .quot qt) ∨ (∃ rc, c_x.info = .recr rc) ∨
-              Ix.Cert.ownerOf x c_x ≠ x) →
-            ∃ d ci₀,
-              d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList ∧
-              ci₀ ∈ IxVM.Consistency.installs d ∧
+          (∀ x c_x,
+            ((x ∈ order_role ∧ Ix.Cert.recordAt E x = some c_x ∧
+                ((∃ d_x, c_x.info = .defn d_x) ∨ (∃ ax, c_x.info = .axio ax) ∨
+                  (∃ qt, c_x.info = .quot qt) ∨ (∃ rc, c_x.info = .recr rc) ∨
+                  Ix.Cert.ownerOf x c_x ≠ x)) ∨
+              (∃ blk ∈ order_role, OwnedOrProjOf E blk x c_x)) →
+            ∃ ci₀,
               ci₀.name = Core.keyOf t x ∧
-              L1.RecordReadsAs t E_core x c_x ci₀)
+              L1.RecordReadsAs t E_core x c_x ci₀ ∧
+              (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
+                ∃ d,
+                  d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix decls_role).toList ∧
+                  ci₀ ∈ IxVM.Consistency.installs d))
   /-- Inductive and recursor record bare reading (`c.info = .recr _` or non-definition `.muts ms`)
   at a walked non-role address `a` in `streamContext`: `readRecordBare` succeeds, preserves prelude
-  keys, and supplies `L1.RecordReadsAs t E_core` for all emitted constants stored in `E`. -/
+  keys, emits fresh `Nodup` names disjoint from the already-read prefix, and supplies
+  `L1.RecordReadsAs t E_core` for all emitted constants stored in `E`. -/
   indRecRecordReadBare :
-    ∀ {calls : List (Call F)} {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
-      {E₀ E E_core : Ixon.Env} {V : IxVM.Refinement.View} {extra : List ByteArray}
-      {pre : Ix.Kernel.Reader.Prelude .anon} {order order_role : List _root_.Address}
-      {st : Ix.Kernel.Reader.State .anon} {prev_decls : List (Ix.Kernel.Declaration .anon)}
+    ∀ {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
+      {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
+      {E₀ E E_role E_core : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+      {order order_role : List _root_.Address} {envA : Ix.Kernel.Env .anon}
+      {pre : Ix.Kernel.Reader.Prelude .anon} {st_role st : Ix.Kernel.Reader.State .anon}
+      {decls_role prev_cDecls : Array (Ix.Kernel.Reader.CDecl .anon)}
+      {prev_recs suf_recs : List (_root_.Address × Ixon.Constant)}
+      {seeds : List _root_.Address}
       {a : _root_.Address} {c : Ixon.Constant},
+      TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role →
       IxVM.Consistency.Bounded calls →
-      Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t →
-      Ix.Kernel.Reader.preludeFor t = .ok pre →
       IxVM.Consistency.LoadedBy calls E₀ →
       ¬ V.HashedCollision extra calls →
       L1.EnvDecoded E_core →
@@ -1067,13 +1107,21 @@ structure SafeRefsInputs : Prop where
       AuthenticExactStore
         (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
           (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)).store →
-      order.Nodup →
-      (a, c) ∈ Ix.Cert.Stream.decodedOf E order →
+      IxVM.Consistency.UsedClosureOrderAt t E
+        (fun x => x ∈ seeds ∨ IxVM.Refinement.BindingSeeds t x) order →
+      Ix.Cert.Stream.decodedOf E order = prev_recs ++ (a, c) :: suf_recs →
+      StreamReadBare
+        (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
+          (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E))
+        pre.state prev_recs st prev_cDecls →
       a ∉ order_role →
+      Ix.Cert.recordAt E₀ a = some c →
       WkAll calls b.address t E₀ a →
       ¬ IxVM.Consistency.OutsideLogicAt E₀ a →
       (∀ a' c', (a', c') ∈ Ix.Cert.Stream.decodedOf E order → a' ∉ order_role →
-        WkAll calls b.address t E₀ a' ∧ ¬ IxVM.Consistency.OutsideLogicAt E₀ a') →
+        Ix.Cert.recordAt E₀ a' = some c' ∧
+        WkAll calls b.address t E₀ a' ∧
+        ¬ IxVM.Consistency.OutsideLogicAt E₀ a') →
       (∀ k ∈ pre.state.keys, st.SameAt pre.state k) →
       ((∃ rc, c.info = .recr rc) ∨
         (∃ ms, c.info = .muts ms ∧ ¬ ms.all (fun | .defn _ => true | _ => false))) →
@@ -1085,15 +1133,43 @@ structure SafeRefsInputs : Prop where
         (∀ k ∈ pre.state.keys, (st.commit r).SameAt pre.state k) ∧
         (∀ d ∈ r.decls.toList,
           (∃ block nP, d = .indDecl block nP) ∧
-          ∀ n ∈ d.names, ∃ x, n = Core.keyOf t x ∧ x ∉ order_role) ∧
+          ∀ n ∈ d.names, ∃ x,
+            n = Core.keyOf t x ∧
+            x ∉ order_role ∧
+            (∀ c', Ix.Cert.recordAt E₀ x = some c' →
+              (∃ rc, c'.info = .recr rc) ∨ (∃ p, c'.info = .iPrj p) ∨
+              (∃ p, c'.info = .cPrj p) ∨ (∃ p, c'.info = .rPrj p)) ∧
+            (∀ owner ms (i : Nat) d_m,
+              Claim.MutsMemberCheckedAtFull calls b.address t owner ms i →
+              ms[i]? = some (.defn d_m) →
+              x ≠ Core.dprjAddr owner i)) ∧
+        ((r.decls.toList.flatMap (fun d => (IxVM.Consistency.installs d).map (·.name))).Nodup) ∧
+        (∀ d ∈ r.decls.toList, ∀ ci₀ ∈ IxVM.Consistency.installs d,
+          ∀ d₀ ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix prev_cDecls).toList,
+          ∀ ci₁ ∈ IxVM.Consistency.installs d₀, ci₁.name ≠ ci₀.name) ∧
         (∀ x c_x,
           ((x = a ∧ c_x = c ∧ ∃ rc, c.info = .recr rc) ∨
-            (Ix.Cert.recordAt E x = some c_x ∧ x ≠ a ∧ Ix.Cert.ownerOf x c_x = a)) →
+            OwnedOrProjOf E a x c_x) →
           ∃ d ci₀,
-            d ∈ pre.ix.decls.toList ++ prev_decls ++ r.decls.toList ∧
+            d ∈ (Ix.Kernel.Frontend.preparePrelude pre.ix prev_cDecls).toList ++ r.decls.toList ∧
             ci₀ ∈ IxVM.Consistency.installs d ∧
             ci₀.name = Core.keyOf t x ∧
             L1.RecordReadsAs t E_core x c_x ci₀)
+  /-- Constructor index consistency on safe walked mutual inductive blocks: `ct.cidx.toNat = j`
+  for `ind.ctors[j]? = some ct`. -/
+  indBlockCtorIdx :
+    ∀ {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+      {E₀ : Ixon.Env} {blk : _root_.Address} {cb : Ixon.Constant}
+      {ms : Array Ixon.MutConst} {i j : Nat} {ind : Ixon.Inductive} {ct : Ixon.Constructor},
+      IxVM.Consistency.Bounded calls →
+      IxVM.Consistency.LoadedBy calls E₀ →
+      WkAll calls bAddr t E₀ blk →
+      ¬ IxVM.Consistency.OutsideLogicAt E₀ blk →
+      Ix.Cert.recordAt E₀ blk = some cb →
+      cb.info = .muts ms →
+      ms[i]? = some (.indc ind) →
+      ind.ctors[j]? = some ct →
+      ct.cidx.toNat = j
 
 private theorem buildReachRefsTbl_size :
     ∀ (es : List Ixon.Expr) (acc : Array (List Nat)),
@@ -1397,7 +1473,7 @@ private theorem defOrder_inner_all_empty (deps : Array (Std.HashSet Nat)) (n : N
         simp only [List.foldl_cons]
         obtain ⟨hsz, hget⟩ := ihx (arr.set! hd true)
         refine ⟨hsz.trans (by simp), fun x hx => ?_⟩
-        have hne_hd : hd ≠ x := fun heq => hx (heq ▸ List.mem_cons_self)
+        have hne_hd : hd ≠ x := fun heq => hx (by rw [← heq]; exact List.mem_cons_self)
         have hne_tl : x ∉ tl := fun hm => hx (List.mem_cons_of_mem _ hm)
         rw [hget x hne_tl]
         by_cases hhd_lt : hd < arr.size
