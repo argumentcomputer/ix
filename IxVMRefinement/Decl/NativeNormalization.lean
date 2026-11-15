@@ -24,7 +24,7 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
   induction steps generalizing d e out with
   | zero => cases run
   | succ steps ih =>
-    simp only [normPosDom, Bool.not_eq_true] at run
+    simp only [normPosDom] at run
     split at run
     · have resultEq := Except.ok.inj run
       subst out
@@ -35,7 +35,6 @@ theorem normPosDom_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
       have wBounded := (whnfPres_looseBVars wellFormed fuel).2 reduced bounded
       have wLeaves := (whnfPres_fvarLeaves wellFormed fuel).2 reduced
       have red := Ix.Kernel.Rules.whnf_bridge reduced
-      simp only [Bool.not_eq_true] at rest
       split at rest
       · have resultEq := Except.ok.inj rest
         subst out
