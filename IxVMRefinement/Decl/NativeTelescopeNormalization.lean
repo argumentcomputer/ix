@@ -32,7 +32,7 @@ theorem whnfTelescope_sound {md : Mode} {env : Env md} (wellFormed : EnvWF env)
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
       refine ⟨rfl, by simp only [closeTelescope, Expr.WScoped], rfl, ?_, .redL (Ix.Kernel.Rules.whnf_bridge reduced) .refl⟩
       intro leaf present
-      simpa only [closeTelescope, Expr.fvarLeaves, List.not_mem_nil] using present
+      simp only [closeTelescope, Expr.fvarLeaves, List.not_mem_nil] at present
     | _ => cases rest
   | succ count ih =>
     simp only [whnfTelescope] at run
