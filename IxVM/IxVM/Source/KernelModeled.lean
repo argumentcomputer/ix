@@ -1607,6 +1607,8 @@ def check_recs := aiur_fn⟦
               -- the raw type, as `check_const` checks a recursor reached directly
               KernelCheck::validate_expr_well_scoped(ty, 0, nl);
               KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
+              KernelCheck::assert_safety(0, ty);
+              KernelCheck::assert_safety_rules(0, rules);
               let parent = KernelCheck::rec_to_parent_addr(ty, rnp, nmot, nmin, ni);
               KernelCheck::check_recursor_canonical_at(rc, rci, r, (*(Ingress::get_ci(parent))),
                 parent, univ_offset, bnl);

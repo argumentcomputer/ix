@@ -89,6 +89,67 @@ def inertNames : List Lean.Name :=
 /-- The message `KernelClaim::assert_claimable` refuses an inert axiom with. -/
 def inertSeedMessage : String := "claim seed is an inert axiom"
 
+/-- Store a hand-built record at its content address, supplying a definition hint when needed. -/
+private def storeSafetyRecord (env : Ixon.Env) (c : Ixon.Constant) : Ixon.Env × Address :=
+  let a := Address.blake3 (Ixon.serConstant c)
+  let env := env.storeConst a c
+  let env := match c.info with
+    | .defn _ | .dPrj _ => { env with anonHints := env.anonHints.insert a .opaque }
+    | _ => env
+  (env, a)
+
+/-- A native recursor whose first rule has an unused let referencing a separate definition.
+The projection variant places that reference in the projection's type-address field. -/
+private def ruleSafetyFixture (unsafeDependency projection : Bool) :
+    Except String (Ixon.Env × Address × Address) := do
+  let env ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let table ← Ix.Kernel.Reader.defaultTable
+  let some original := table.addressOf? .natRec | throw "missing Nat.rec role"
+  let some c := env.getConst? original | throw "missing Nat.rec record"
+  let .recr recursor := c.info | throw "Nat.rec is not a standalone recursor"
+  let dependency : Ixon.Constant :=
+    ⟨.defn ⟨.defn, (if unsafeDependency then .unsaf else .safe), {}, 0, .sort 1, .sort 0⟩,
+      #[], #[], #[.zero, .succ .zero], #[]⟩
+  let (env, dependencyAddr) := storeSafetyRecord env dependency
+  let some rule := recursor.rules[0]? | throw "Nat.rec has no first rule"
+  let index := c.refs.size.toUInt64
+  let ty : Ixon.Expr := .sort c.univs.size.toUInt64
+  let value : Ixon.Expr := if projection then .prj index 0 ty else .ref index #[]
+  let rule := { rule with rhs := Ixon.Expr.leanLet false ty value rule.rhs }
+  let recursor := { recursor with rules := recursor.rules.set! 0 rule }
+  let c := { c with
+    info := .recr recursor
+    refs := c.refs.push dependencyAddr
+    univs := c.univs.push (.succ .zero) }
+  let (env, target) := storeSafetyRecord env c
+  return (env, target, dependencyAddr)
+
+/-- Safety is checked on raw rule expressions before canonical comparison erases dead lets. -/
+private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
+  #[fun _ => do
+      let (env, target, _) ← ruleSafetyFixture false false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let c ← Tests.Ix.IxVM.Case.ofClaim "accept a safe dependency in a dead recursor-rule let"
+        env (.check ctx target none)
+      return { c with exercises := some "KernelCheck::nat_check_rules" },
+    fun _ => do
+      let (env, target, _) ← ruleSafetyFixture true false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe dependency in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "safe constant references an unsafe constant"),
+    fun _ => do
+      let (env, target, _) ← ruleSafetyFixture true true
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe projection target in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "safe constant references an unsafe constant"),
+    fun _ => do
+      let (env, _, dependency) ← ruleSafetyFixture true false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse the unsafe rule dependency as a direct claim"
+        env (.check ctx dependency none) {} false (some seedMessage)]
+
 /-- The walk edges of `env` from a constant in Lean's logic to one outside it,
 with the number of constants outside it. None means that an owned set without
 the constants outside Lean's logic loses nothing its claim walk reaches. -/
@@ -241,7 +302,7 @@ def run : IO UInt32 := do
     let (_, witness) ← buildShardCheckEnvWitness env #[loopA, trustA] (assumeBinding := true)
     return { label := "accept the builder's shard over loop and Lean.trustCompiler", accept := true,
              witness }
-  Tests.Ix.IxVM.runCases "ixvm-claim-safety" cases
+  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases)
 
 /-- The closure of what stays owned on a compiled corpus (`IX_SAFETY_IXE`, an
 `.ixe`): every walk edge from a constant in Lean's logic lands on one, so a
