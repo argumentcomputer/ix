@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.ReaderFootprint
 import IxVMRefinement.Assembly.ReaderDecode
 import IxVMRefinement.Assembly.GroupedInstall
 import IxVMRefinement.Assembly.RolePreludeBridge
@@ -555,4 +556,3 @@ theorem consistent_mkSeams_of_declsStrong
     (l7_mkSeams_of_declsStrong hSafeGap hBoundGap hStrong)
 
 end IxVM.Refinement.Assembly
-import IxVMRefinement.Assembly.ReaderFootprint

@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.ReaderFootprint
 import IxVMRefinement.Assembly.ClaimsL1L6
 import IxVMRefinement.Assembly.PrefixLoad
 import Ix.IxVM.Consistency.Restrict
@@ -918,4 +919,3 @@ theorem consistentReadRole_of_declsStrong
   exact ⟨E₀, E, ev, ds, env, hload, hdraws, hreadIn, hinst, hseedStored, hmodels⟩
 
 end IxVM.Refinement.Assembly
-import IxVMRefinement.Assembly.ReaderFootprint
