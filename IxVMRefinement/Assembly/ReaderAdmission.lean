@@ -56,7 +56,7 @@ private theorem fallbackAgrees_records {E : Ixon.Env} {order : List _root_.Addre
     (hget : E.consts.get? a = some lc) {c : Ixon.Constant}
     (hc : (a, c) ∈ pre.records ++ pre.evidence) : lc.rawBytes = Ixon.serConstant c := by
   dsimp only [fallbackAgrees] at h
-  have hrow := List.all_eq_true.mp h (a, c) hc
+  have hrow := Array.all_eq_true_iff_forall_mem.mp h (a, c) hc
   have hselected := Ix.Cert.TableAdmission.contains_setOf.mpr ha
   simp only [hselected, ↓reduceIte, hget, Bool.and_eq_true] at hrow
   exact bytes_eq_of_beq hrow.1
@@ -67,7 +67,7 @@ private theorem fallbackAgrees_blobs {E : Ixon.Env} {order : List _root_.Address
     {c : Ixon.Constant} (hc : (a, c) ∈ pre.records ++ pre.evidence) :
     bytes = Ixon.serConstant c := by
   dsimp only [fallbackAgrees] at h
-  have hrow := List.all_eq_true.mp h (a, c) hc
+  have hrow := Array.all_eq_true_iff_forall_mem.mp h (a, c) hc
   have hselected := Ix.Cert.TableAdmission.contains_setOf.mpr
     (List.mem_map.mpr ⟨(a, bytes), hb, rfl⟩ : a ∈ (Ix.Cert.blobsOf E order).map Prod.fst)
   have hget := Ix.Cert.Stream.mem_blobsOf hb
