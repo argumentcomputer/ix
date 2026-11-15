@@ -81,7 +81,10 @@ theorem noNewProj_declNativeRunJ {J : Judgements .anon} {env env₂ : Env .anon}
     at hCtors hRec hTbl hpT
   have hX₁ : NoNewProjForOld env
       ⟨.indInfo cvTa (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩ :=
-    noNewProj_cons (.refl env) (by rw [hTn]; exact hTsh)
+    noNewProj_cons (.refl env) (by
+      change cvTa.name.isProjFnShape = false
+      rw [hTn]
+      exact hTsh)
   obtain ⟨hlen, _, hall⟩ := hCtors
   have hshC : ∀ c ∈ ctorsA, c.1.name.isProjFnShape = false := by
     intro c hc
@@ -118,7 +121,10 @@ theorem noNewProj_declNativeNoRecRunJ {J : Judgements .anon} {env env₂ : Env .
     at hCtors hTbl hpT
   have hX₁ : NoNewProjForOld env
       ⟨.indInfo cvTa (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩ :=
-    noNewProj_cons (.refl env) (by rw [hTn]; exact hTsh)
+    noNewProj_cons (.refl env) (by
+      change cvTa.name.isProjFnShape = false
+      rw [hTn]
+      exact hTsh)
   obtain ⟨hlen, _, hall⟩ := hCtors
   have hshC : ∀ c ∈ ctorsA, c.1.name.isProjFnShape = false := by
     intro c hc
