@@ -1524,21 +1524,24 @@ private theorem safe_rawConvExpr_ctx_ready
       unfold Ix.Kernel.Reader.resolveSource at hq ⊢
       cases hi_r : c_r.info with
       | defn _ | recr _ | axio _ | quot _ | muts _ =>
+        rw [hi_r] at hq
         dsimp only at hq ⊢
         exact hq
       | dPrj p | iPrj p | rPrj p | cPrj p =>
+        rw [hi_r] at hq
         dsimp only at hq ⊢
         have hblk_some : ∃ cb ms, Ix.Cert.recordAt E₀ p.block = some cb ∧ cb.info = .muts ms := by
-          cases hgb : Ix.Cert.recordAt E₀ p.block with
-          | none =>
-            cases Ix.Kernel.Reader.emptyTables c_r <;>
-              simp [hgb, guard, bind, Option.bind] at hq
-          | some cb =>
-            cases hcb_i : cb.info with
-            | muts ms => exact ⟨cb, ms, rfl, hcb_i⟩
-            | _ =>
-              cases Ix.Kernel.Reader.emptyTables c_r <;>
-                simp [hgb, hcb_i, guard, bind, Option.bind] at hq
+          cases hgb : Ix.Kernel.Reader.emptyTables c_r with
+          | false => rw [hgb] at hq; simp at hq
+          | true =>
+            rw [hgb] at hq
+            cases hrc : Ix.Cert.recordAt E₀ p.block with
+            | none => rw [hrc] at hq; simp at hq
+            | some cb =>
+              rw [hrc] at hq
+              cases hcb_i : cb.info with
+              | muts ms => exact ⟨cb, ms, rfl, hcb_i⟩
+              | _ => rw [hcb_i] at hq; simp at hq
         obtain ⟨cb, ms, hrec₀_blk, hcb_mut⟩ := hblk_some
         have hown_eq : Ix.Cert.ownerOf r c_r = p.block := by simp [Ix.Cert.ownerOf, hi_r]
         have hown_ne : Ix.Cert.ownerOf r c_r ≠ r := by
@@ -1629,8 +1632,11 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
   cases hk : d.kind with
   | defn =>
     have hs : d.safety = .safe := by
-      cases hds : d.safety <;>
-        simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk, hds] at hsafe ⊢
+      rw [Ix.Kernel.Reader.safetyDecline, hk] at hsafe
+      cases hds : d.safety with
+      | safe => rfl
+      | unsaf => rw [hds] at hsafe; exact absurd hsafe (by decide)
+      | part => rw [hds] at hsafe; exact absurd hsafe (by decide)
     simp only [L1.defnValShape, hk, hs] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
@@ -2131,15 +2137,15 @@ private theorem checkedDefnCore
         (cx.hint ref).getD (Ix.Kernel.Frontend.InModel.hintFor heights val₀)
       have hprw : Ix.Kernel.Reader.projRewrite st cv val₀ = none :=
         projRewrite_eq_none hproj_emp cv val₀
-      have hsdo : Ix.Kernel.Reader.safetyDeclineOf d.kind d.safety = none := by
-        simpa [Ix.Kernel.Reader.safetyDecline] using hsafe_decl
+      have hsdo : Ix.Kernel.Reader.safetyDeclineOf .defn d.safety = none := by
+        simpa [Ix.Kernel.Reader.safetyDecline, hk] using hsafe_decl
       have hrd_def :
           Ix.Kernel.Reader.readDefinition cx st heights ref (List.range d.lvls.toNat)
             (Ix.Kernel.Reader.MemberReader.mk' cx src id self) d =
             .ok (.defnDecl cv val₀ hn, false) := by
         unfold Ix.Kernel.Reader.readDefinition Ix.Kernel.Reader.lowerDefinition
-        rw [hmkey, hrd_ty, hrd_val]
-        simp only [bind, Except.bind, cv, hprw, hsdo, hk, Option.getD_none, Option.isSome_none,
+        rw [hmkey, hrd_ty, hrd_val, hk]
+        simp only [bind, Except.bind, cv, hprw, hsdo, Option.getD_none, Option.isSome_none,
           Bool.false_and, pure, Except.pure, hn]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.defnDecl cv val₀ hn) :=
         .defnDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
@@ -2147,7 +2153,7 @@ private theorem checkedDefnCore
           ext_373_508 hm516 (Core.TmC.mono ext_404_508 hty_tmc_404) hval_tmc_508
           (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc
       exact ⟨.defnDecl cv val₀ hn, .defnInfo cv val₀ hn, hn, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => by cases h, rfl⟩
+        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
   | thm =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
@@ -2266,15 +2272,15 @@ private theorem checkedDefnCore
       let cv : Ix.Kernel.ConstantVal .anon := ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩
       have hprw : Ix.Kernel.Reader.projRewrite st cv val₀ = none :=
         projRewrite_eq_none hproj_emp cv val₀
-      have hsdo : Ix.Kernel.Reader.safetyDeclineOf d.kind d.safety = none := by
-        simpa [Ix.Kernel.Reader.safetyDecline] using hsafe_decl
+      have hsdo : Ix.Kernel.Reader.safetyDeclineOf .thm d.safety = none := by
+        simpa [Ix.Kernel.Reader.safetyDecline, hk] using hsafe_decl
       have hrd_def :
           Ix.Kernel.Reader.readDefinition cx st heights ref (List.range d.lvls.toNat)
             (Ix.Kernel.Reader.MemberReader.mk' cx src id self) d =
             .ok (.thmDecl cv val₀, false) := by
         unfold Ix.Kernel.Reader.readDefinition Ix.Kernel.Reader.lowerDefinition
-        rw [hmkey, hrd_ty, hrd_val]
-        simp only [bind, Except.bind, cv, hprw, hsdo, hk, Option.getD_none, Option.isSome_none,
+        rw [hmkey, hrd_ty, hrd_val, hk]
+        simp only [bind, Except.bind, cv, hprw, hsdo, Option.getD_none, Option.isSome_none,
           Bool.false_and, pure, Except.pure]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.thmDecl cv val₀) :=
         .thmDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
@@ -2283,7 +2289,7 @@ private theorem checkedDefnCore
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
           (hrc_m.mono ext_m_807) ev780 hcl_kc hsub_kc
       exact ⟨.thmDecl cv val₀, .thmInfo cv val₀, .opaque, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => by cases h, rfl⟩
+        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
   | opaq =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
@@ -2396,15 +2402,15 @@ private theorem checkedDefnCore
       let cv : Ix.Kernel.ConstantVal .anon := ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩
       have hprw : Ix.Kernel.Reader.projRewrite st cv val₀ = none :=
         projRewrite_eq_none hproj_emp cv val₀
-      have hsdo : Ix.Kernel.Reader.safetyDeclineOf d.kind d.safety = none := by
-        simpa [Ix.Kernel.Reader.safetyDecline] using hsafe_decl
+      have hsdo : Ix.Kernel.Reader.safetyDeclineOf .opaq d.safety = none := by
+        simpa [Ix.Kernel.Reader.safetyDecline, hk] using hsafe_decl
       have hrd_def :
           Ix.Kernel.Reader.readDefinition cx st heights ref (List.range d.lvls.toNat)
             (Ix.Kernel.Reader.MemberReader.mk' cx src id self) d =
             .ok (.opaqueDecl cv val₀, false) := by
         unfold Ix.Kernel.Reader.readDefinition Ix.Kernel.Reader.lowerDefinition
-        rw [hmkey, hrd_ty, hrd_val]
-        simp only [bind, Except.bind, cv, hprw, hsdo, hk, Option.getD_none, Option.isSome_none,
+        rw [hmkey, hrd_ty, hrd_val, hk]
+        simp only [bind, Except.bind, cv, hprw, hsdo, Option.isSome_none,
           Bool.false_and, pure, Except.pure]
       have hcco : CheckedConstOrigin calls t b.address E_core order_role (.opaqueDecl cv val₀) :=
         .opaqueDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
@@ -2412,7 +2418,7 @@ private theorem checkedDefnCore
           ext_923_1058 hm1066 (Core.TmC.mono ext_954_1058 hty_tmc_954) hval_tmc_1058
           (hrc_m.mono ext_m_1058) ev1031 hcl_kc hsub_kc
       exact ⟨.opaqueDecl cv val₀, .axiomInfo cv, .opaque, hrd_def, hcco,
-        rfl, rfl, rfl, fun _ h => by cases h, rfl⟩
+        rfl, rfl, rfl, fun _ h => nomatch h, rfl⟩
 
 
 /-- No address `x ∉ order_role` can have `Core.keyOf t x = .role s` for a non-`compilerTrust` role `s`. -/
@@ -3183,16 +3189,24 @@ private theorem proj_ownerOf_ne_self
       simp [IsProjInfo, hc] at hprojInfo
     | dPrj p | iPrj p | rPrj p =>
       have hp : p.block = a := by simpa [Ix.Cert.ownerOf, hc] using heq
+      rw [hc] at hraw
       dsimp only at hraw
       rw [hp] at hraw
       obtain ⟨_, lcB, cb, ms, _, _, hgetB, _, _, hexB, _, hcb_info, _, _, _⟩ := hraw
       exact hblk_false lcB cb ms hgetB hexB hcb_info
     | cPrj p =>
       have hp : p.block = a := by simpa [Ix.Cert.ownerOf, hc] using heq
+      rw [hc] at hraw
       dsimp only at hraw
       rw [hp] at hraw
       obtain ⟨_, _, lcB, cb, ms, _, _, _, hgetB, _, _, hexB, _, hcb_info, _, _, _, _⟩ := hraw
       exact hblk_false lcB cb ms hgetB hexB hcb_info
+
+private theorem ownerOf_of_muts (x : _root_.Address) (cb : Ixon.Constant)
+    (ms : Array Ixon.MutConst) (h : cb.info = .muts ms) :
+    Ix.Cert.ownerOf x cb = x := by
+  unfold Ix.Cert.ownerOf
+  rw [h]
 
 /-- Every `WkSafe` projection record `(a, c)` (`ownerOf a c ≠ a`) has a `.muts` owner record in
 `E₀` that is itself `WkSafe` with strictly smaller `rankAll`. -/
@@ -3213,66 +3227,68 @@ private theorem wkSafe_owner_of_proj
       cb.info = .muts ms ∧
       WkSafe calls bAddr t E₀ (Ix.Cert.ownerOf a c) ∧
       rankAll calls bAddr t E₀ (Ix.Cert.ownerOf a c) < rankAll calls bAddr t E₀ a := by
-  obtain ⟨c', hrec₀', hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked a hwkSafe.1
-  have hc_eq : c' = c := Option.some.inj (hrec₀'.symm.trans hrec₀)
-  subst c'
-  have hchk : Claim.CheckedAtFull calls bAddr t a := by
-    rcases hchk_or with ⟨ms', hmuts, _⟩ | hchk
-    · simp [Ix.Cert.ownerOf, hmuts] at hproj
-    · exact hchk
-  obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
-    bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
-  obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
-  rw [hld] at hld'; injection hld' with hvv; subst v'
-  have hc_ld_eq : c_ld = c := by
-    unfold Ix.Cert.recordAt at hrec₀
-    cases hget₀ : E₀.consts.get? a with
-    | none => rw [hget₀] at hrec₀; cases hrec₀
-    | some lc₀ =>
-      rw [hget₀] at hrec₀
-      obtain ⟨hh₀, hbl₀⟩ := hload.1 a lc₀ hget₀
-      obtain ⟨c₀, hlc₀, hex₀⟩ := hexact₀ a lc₀ hget₀
-      have hraw_eq : bytes = lc₀.rawBytes := by
-        by_contra hne
-        exact hnoCol (Or.inl ⟨a, lc₀.rawBytes, bytes, Or.inr (Or.inr ⟨hh₀, hbl₀⟩),
-          Core.hashed_mono hsub_ld hhash_ld, hne, hblake_ld⟩)
-      rw [hraw_eq, hex₀] at hdec_ld
-      have hcc : c₀ = c_ld := Except.ok.inj hdec_ld
-      rw [hcc] at hlc₀
-      exact Option.some.inj (hlc₀.symm.trans hrec₀)
-  subst c_ld
-  rw [hblake_ld] at hraw
-  obtain ⟨lcB, cb, ms, hgetB_ld, _, _, hexB_ld, _, hcb_info⟩ := hraw.owner_recordAt hproj
-  have hedge_own : Core.S0.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
-    ⟨c, hrec₀, Or.inl ⟨rfl, hproj⟩⟩
-  obtain ⟨hwk_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a _ hwkSafe.1 hedge_own
-  obtain ⟨cb₀, hrec₀_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked _ hwk_own
-  have hcb₀_eq : cb₀ = cb := by
-    unfold Ix.Cert.recordAt at hrec₀_own
-    cases hget₀_b : E₀.consts.get? (Ix.Cert.ownerOf a c) with
-    | none => rw [hget₀_b] at hrec₀_own; cases hrec₀_own
-    | some lc₀_b =>
-      rw [hget₀_b] at hrec₀_own
-      obtain ⟨hh₀_b, hbl₀_b⟩ := hload.1 _ lc₀_b hget₀_b
-      obtain ⟨hhB, hblB⟩ := hload_ld.1 _ lcB hgetB_ld
-      obtain ⟨c₀_b, hlc₀_b, hex₀_b⟩ := hexact₀ _ lc₀_b hget₀_b
-      have hraw_eq : lcB.rawBytes = lc₀_b.rawBytes := by
-        by_contra hne
-        exact hnoCol (Or.inl ⟨Ix.Cert.ownerOf a c, lc₀_b.rawBytes, lcB.rawBytes,
-          Or.inr (Or.inr ⟨hh₀_b, hbl₀_b⟩),
-          Core.hashed_mono hsub_ld hhB, hne, hblB⟩)
-      rw [hraw_eq, hex₀_b] at hexB_ld
-      have hcc : c₀_b = cb := Except.ok.inj hexB_ld
-      rw [hcc] at hlc₀_b
-      exact Option.some.inj (hrec₀_own.symm.trans hlc₀_b)
-  subst cb₀
+  have hex_own : ∃ cb ms,
+      Ix.Cert.recordAt E₀ (Ix.Cert.ownerOf a c) = some cb ∧ cb.info = .muts ms := by
+    obtain ⟨c', hrec₀', hchk_or⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked a hwkSafe.1
+    have hc_eq : c' = c := Option.some.inj (hrec₀'.symm.trans hrec₀)
+    subst c'
+    have hchk : Claim.CheckedAtFull calls bAddr t a := by
+      rcases hchk_or with ⟨ms', hmuts, _⟩ | hchk
+      · simp [Ix.Cert.ownerOf, hmuts] at hproj
+      · exact hchk
+    obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
+      bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
+      hsub_ld, _, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+    obtain ⟨c_ld, hdec_ld, _, _, _, _, hraw⟩ := hL1
+    have hc_ld_eq : c_ld = c := by
+      unfold Ix.Cert.recordAt at hrec₀
+      cases hget₀ : E₀.consts.get? a with
+      | none => rw [hget₀] at hrec₀; cases hrec₀
+      | some lc₀ =>
+        rw [hget₀] at hrec₀
+        obtain ⟨hh₀, hbl₀⟩ := hload.1 a lc₀ hget₀
+        obtain ⟨c₀, hlc₀, hex₀⟩ := hexact₀ a lc₀ hget₀
+        have hraw_eq : bytes = lc₀.rawBytes := by
+          by_contra hne
+          exact hnoCol (Or.inl ⟨a, lc₀.rawBytes, bytes, Or.inr (Or.inr ⟨hh₀, hbl₀⟩),
+            Core.hashed_mono hsub_ld hhash_ld, hne, hblake_ld⟩)
+        rw [hraw_eq, hex₀] at hdec_ld
+        have hcc : c₀ = c_ld := Except.ok.inj hdec_ld
+        rw [hcc] at hlc₀
+        exact Option.some.inj (hlc₀.symm.trans hrec₀)
+    subst c_ld
+    rw [hblake_ld] at hraw
+    obtain ⟨lcB, cb, ms, hgetB_ld, _, _, hexB_ld, _, hcb_info⟩ := hraw.owner_recordAt hproj
+    have hedge_own : Core.S0.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
+      ⟨c, hrec₀, Or.inl ⟨rfl, hproj⟩⟩
+    obtain ⟨hwk_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a _ hwkSafe.1 hedge_own
+    obtain ⟨cb₀, hrec₀_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked _ hwk_own
+    have hcb₀_eq : cb₀ = cb := by
+      unfold Ix.Cert.recordAt at hrec₀_own
+      cases hget₀_b : E₀.consts.get? (Ix.Cert.ownerOf a c) with
+      | none => rw [hget₀_b] at hrec₀_own; cases hrec₀_own
+      | some lc₀_b =>
+        rw [hget₀_b] at hrec₀_own
+        obtain ⟨hh₀_b, hbl₀_b⟩ := hload.1 _ lc₀_b hget₀_b
+        obtain ⟨hhB, hblB⟩ := hload_ld.1 _ lcB hgetB_ld
+        obtain ⟨c₀_b, hlc₀_b, hex₀_b⟩ := hexact₀ _ lc₀_b hget₀_b
+        have hraw_eq : lcB.rawBytes = lc₀_b.rawBytes := by
+          by_contra hne
+          exact hnoCol (Or.inl ⟨Ix.Cert.ownerOf a c, lc₀_b.rawBytes, lcB.rawBytes,
+            Or.inr (Or.inr ⟨hh₀_b, hbl₀_b⟩),
+            Core.hashed_mono hsub_ld hhB, hne, hblB⟩)
+        rw [hraw_eq, hex₀_b] at hexB_ld
+        have hcc : c₀_b = cb := Except.ok.inj hexB_ld
+        rw [hcc] at hlc₀_b
+        exact Option.some.inj (hrec₀_own.symm.trans hlc₀_b)
+    subst cb₀
+    exact ⟨cb, ms, hrec₀_own, hcb_info⟩
+  obtain ⟨cb, ms, hrec₀_own, hcb_info⟩ := hex_own
   obtain ⟨hwkSafe_own, hrk_lt⟩ := wkSafe_owner_of_nonproj hwkSafe hrec₀ hproj
-    (fun cb' hrec' => by
-      rw [hrec₀_own] at hrec'
-      injection hrec' with heq
-      subst cb'
-      simp [Ix.Cert.ownerOf, hcb_info])
+    (fun cb' hrec' =>
+      (congrArg (Ix.Cert.ownerOf (Ix.Cert.ownerOf a c))
+        (Option.some.inj (hrec₀_own.symm.trans hrec'))).symm.trans
+        (ownerOf_of_muts (Ix.Cert.ownerOf a c) cb ms hcb_info))
   exact ⟨cb, ms, hrec₀_own, hcb_info, hwkSafe_own, hrk_lt⟩
 
 /-- Walked projection resolution helper: any walked safe record `(a, c)` with `ownerOf a c ≠ a`
@@ -3615,23 +3631,54 @@ private theorem readRecordBare_muts_defn
             (fun j => if j < ms.size then some (cx.memberKey (.member owner j)) else none))
           defs[i]! = .ok (decl, false) →
         f i s = .ok (.yield (updateBlockHeights s.1 decl, s.2.1.push decl, s.2.2))) := by
+  have hany_eq : ∀ p : Ixon.MutConst → Bool,
+      (∀ x, p x = match x with | .indc _ => true | _ => false) → ms.any p = false := by
+    intro p hp
+    have hpeq : p = (fun | .indc _ => true | _ => false) := funext fun x => by
+      rw [hp x]; cases x <;> rfl
+    rw [hpeq]
+    exact hany_indc
+  have hall_recr_eq : ∀ p : Ixon.MutConst → Bool,
+      (∀ x, p x = match x with | .recr _ => true | _ => false) → ms.all p = false := by
+    intro p hp
+    have hpeq : p = (fun | .recr _ => true | _ => false) := funext fun x => by
+      rw [hp x]; cases x <;> rfl
+    rw [hpeq]
+    exact hall_recr
+  have hall_defn_eq : ∀ p : Ixon.MutConst → Bool,
+      (∀ x, p x = match x with | .defn _ => true | _ => false) → ms.all p = true := by
+    intro p hp
+    have hpeq : p = (fun | .defn _ => true | _ => false) := funext fun x => by
+      rw [hp x]; cases x <;> rfl
+    rw [hpeq]
+    exact hall_defn
+  have hdefs_eq : ∀ p : Ixon.MutConst → Option Ixon.Definition,
+      (∀ x, p x = match x with | .defn d => some d | _ => none) → ms.filterMap p = defs := by
+    intro p hp
+    have hpeq : p = (fun | .defn d => some d | _ => none) := funext fun x => by
+      rw [hp x]; cases x <;> rfl
+    rw [hpeq]
+    exact hdefs
   have hb : Ix.Kernel.Reader.readRecordBare cx st owner c =
       Ix.Kernel.Reader.readRecord cx st owner c := by
     unfold Ix.Kernel.Reader.readRecordBare
     rw [hinfo]
     dsimp only
-    rw [hany_indc]
-    rfl
+    rw [hany_eq _ (fun x => by cases x <;> rfl)]
+    dsimp only [Bool.false_eq_true, ↓reduceIte]
   rw [hb]
   unfold Ix.Kernel.Reader.readRecord
   rw [hinfo]
   dsimp only
-  rw [hany_indc, hall_recr, hall_defn]
+  rw [hany_eq _ (fun x => by cases x <;> rfl),
+      hall_recr_eq _ (fun x => by cases x <;> rfl),
+      hall_defn_eq _ (fun x => by cases x <;> rfl)]
   dsimp only [Bool.false_eq_true, ↓reduceIte]
-  rw [hdefs, hsafe, hord]
+  rw [hdefs_eq _ (fun x => by cases x <;> rfl), hsafe, hord]
+  dsimp only
   refine ⟨_, rfl, ?_⟩
   intro i s decl hrd
-  dsimp only
+  dsimp only [bind, Except.bind, pure, Except.pure]
   rw [hrd]
   cases decl <;> rfl
 
@@ -3859,8 +3906,9 @@ private theorem checkedMutsDefn_block
       simpa using hlen.symm
     have hread : Ix.Kernel.Reader.readRecordBare cx st a c =
         .ok { decls := res.2.1, projRewrites := 0 } := by
-      rw [hread_eq, hfor, hres_rw]
-      rfl
+      rw [hread_eq, hfor]
+      dsimp only [bind, Except.bind, pure, Except.pure]
+      rw [hres_rw]
     have hflat :
         res.2.1.toList.flatMap (fun d => (IxVM.Consistency.installs d).map (·.name)) =
           (List.range ms.size).map (fun k => Core.keyOf t (Core.dprjAddr a k)) := by
@@ -4060,24 +4108,28 @@ private theorem pairwise_eq_filter_append {α : Type} (p₁ p₂ : α → Bool) 
       rw [hp₁x] at hp₂x
       simp [hp₁x, hp₂x, hfil₁, hfil₂]
 
-private theorem pairwise_of_idxOf_lt {α : Type} [DecidableEq α] {R : α → α → Prop} :
+private theorem pairwise_of_idxOf_lt {α : Type} [BEq α] [LawfulBEq α] {R : α → α → Prop} :
     ∀ {xs : List α} {a b : α},
       xs.Pairwise R → a ∈ xs → b ∈ xs → xs.idxOf a < xs.idxOf b → R a b
   | [], _, _, _, ha, _, _ => nomatch ha
   | x :: tl, a, b, hpw, ha, hb, hlt => by
     rw [List.pairwise_cons] at hpw
-    by_cases hbx : b = x
-    · subst b
+    by_cases hbx_b : (b == x) = true
+    · have hbx : b = x := beq_iff_eq.mp hbx_b
+      subst b
       rw [List.idxOf_cons_self] at hlt
       omega
-    · have hb_tl : b ∈ tl := by
+    · have hbx : b ≠ x := fun h => hbx_b (beq_iff_eq.mpr h)
+      have hb_tl : b ∈ tl := by
         rcases List.mem_cons.mp hb with rfl | htl
         · exact absurd rfl hbx
         · exact htl
-      by_cases hax : a = x
-      · subst a
+      by_cases hax_b : (a == x) = true
+      · have hax : a = x := beq_iff_eq.mp hax_b
+        subst a
         exact hpw.1 b hb_tl
-      · have ha_tl : a ∈ tl := by
+      · have hax : a ≠ x := fun h => hax_b (beq_iff_eq.mpr h)
+        have ha_tl : a ∈ tl := by
           rcases List.mem_cons.mp ha with rfl | htl
           · exact absurd rfl hax
           · exact htl
@@ -4136,14 +4188,14 @@ private theorem usedRef_mem_prev_of_nonRole
         have hrec_role_r : Ix.Cert.recordAt E_role r = some c_r := hagree.1.symm.trans hrecE_r
         have hreach_r := (hadm.closureOrder.complete r).mp hr_role
         have hreach_a : Ix.Cert.CompiledReachAt t E_role (IxVM.Refinement.BindingSeeds t) a :=
-          .step hreach_r ⟨c_r, hrec_role_r, Or.inl ⟨heq, hr_eq_a.symm⟩⟩
+          .step hreach_r ⟨c_r, hrec_role_r, Or.inl ⟨heq, fun h => hr_eq_a h.symm⟩⟩
         exact ha_not_role ((hadm.closureOrder.complete a).mpr hreach_a)
       · have hrec₀_r : Ix.Cert.recordAt E₀ r = some c_r := by
           rcases recordAt_subEnv_some_inv E₀ Keep (roleSuppOf E_role order_role) hrecE_r with
             hkp | ⟨_, _, hm_supp⟩
           · exact hkp.2
           · exact absurd (mem_roleSuppOf_iff.mp hm_supp).1 hr_role
-        have hedge_ra : Core.S0.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, hr_eq_a.symm⟩⟩
+        have hedge_ra : Core.S0.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, fun h => hr_eq_a h.symm⟩⟩
         obtain ⟨_, hlt_ar⟩ := (wkAll_closedSubwalk calls b.address t E₀).step r a hwk_r hedge_ra
         exact Nat.lt_asymm hlt_ra hlt_ar
   have href_blk : IxVM.Consistency.UsedRecordRef E a blk :=
@@ -4566,7 +4618,7 @@ theorem walkedStreamReadBare
               have hc_dprj := huniq_d lc₀_a.rawBytes c hbl₀_a hex₀_a
                 (Or.inr (Or.inr hh₀_a))
               rw [hc_dprj] at hkind
-              rcases hkind with ⟨_, hax⟩ | ⟨_, hdf⟩ <;> cases hax <;> cases hdf
+              rcases hkind with ⟨_, h1⟩ | ⟨_, h1⟩ <;> cases h1
           · have hx_eq := keyOf_injective hba.wellFormed (hname'.symm.trans heq_k)
             subst x'
             rcases hc_ind c hrec₀ with ⟨_, hi⟩ | ⟨_, hi⟩ | ⟨_, hi⟩ | ⟨_, hi⟩ <;>
@@ -4649,9 +4701,10 @@ theorem walkedStreamReadBare
                 omega
           refine ⟨{}, hread, hsame', by simp, by simp, by simp, by simp, by simp, ?_⟩
           intro x c_x hx_or
-          rcases hx_or with ⟨rfl, rfl, _⟩ | hown_p
-          · obtain ⟨ci₀, hname, hrra, hinst⟩ := hpref a c
-              (Or.inr ⟨Ix.Cert.ownerOf a c, hown_prev, Or.inl ⟨hrecE, hproj_a.symm, rfl⟩⟩)
+          rcases hx_or with ⟨hx_eq, hc_eq, _⟩ | hown_p
+          · subst x; subst c_x
+            obtain ⟨ci₀, hname, hrra, hinst⟩ := hpref a c
+              (Or.inr ⟨Ix.Cert.ownerOf a c, hown_prev, Or.inl ⟨hrecE, fun h => hproj_a h.symm, rfl⟩⟩)
             exact ⟨ci₀, hname, hrra, fun hin =>
               let ⟨d, hd, hci⟩ := hinst hin; ⟨d, List.mem_append_left _ hd, hci⟩⟩
           · obtain ⟨ms, hm, _⟩ := ownedOrProjOf_inv hSR hbound hadm hload hexact₀ hnoCol hord
@@ -5038,7 +5091,7 @@ theorem walkedStreamReadBare
     hstep_loop order_w [] st_r #[] rfl .nil hsame_role (by simp) (by simp)
       (by simpa using hnd_role)
       (by intro x c_x hx; rw [List.append_nil] at hx; rw [Array.toList_empty, List.append_nil]; exact hrole_rra x c_x hx)
-      (by intro ds_pre d ds_suf _ hsplit_ds _; simp only [Array.toList_empty, List.append_nil] at hsplit_ds;
+      (by intro ds_pre d ds_suf _ hsplit_ds _; rw [Array.toList_empty, List.append_nil] at hsplit_ds;
           exact Or.inl ⟨ds_suf, hsplit_ds⟩)
   let decls := decls_role ++ decls_w_final
   have hsr_total : StreamReadBare cx pre.state (Ix.Cert.Stream.decodedOf E order) st_final decls := by
