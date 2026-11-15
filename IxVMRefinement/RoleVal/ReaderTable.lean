@@ -152,9 +152,8 @@ private theorem option_guard_true {b : Bool} (hb : b = true) :
     (guard (b = true) : Option Unit) = some () := by
   subst hb; rfl
 
-private theorem match_id_pure_yield {α : Type} (x : α) :
-    (match (pure (ForInStep.yield x) : Id (ForInStep α)) with
-     | .yield b | .done b => b) = x :=
+private theorem id_pure {α : Type} (x : α) :
+    (pure x : Id α) = x :=
   rfl
 
 private theorem option_some_bind {α β : Type} (a : α) (f : α → Option β) :
@@ -577,7 +576,6 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
     rw [hah']
     dsimp only
     rw [option_guard_true hcond, option_some_bind]
-    dsimp only
     rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hcar']
     simp only [hlast, headRefChecked_sound store owner c ld hmaj,
       Functor.map, Option.map, bind, Option.bind, pure]
@@ -834,7 +832,8 @@ private theorem candidate_matches_of_pureCandStep {owner : _root_.Address} {c : 
                               (·.1 == motive) = false := by
                             rw [← Array.any_toList]; rfl
                           simp only [hany_empty, Bool.false_eq_true, ↓reduceIte]
-                          rw [match_id_pure_yield]
+                          rw [id_pure]
+                          dsimp only
                           refine ⟨?_, ?_, ?_⟩
                           · intro r
                             rw [Std.HashMap.getElem?_insert, List.lookup_cons]
@@ -1556,6 +1555,7 @@ private theorem pureReadRecursorKeyCounts_sound {blockLps : List Ix.Kernel.Level
               have hst_ro := defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hro)
               have hind_cx : inductiveAt (defCx ev).store (.member mb mi) = some major := by
                 unfold inductiveAt at hind ⊢
+                dsimp only at hind ⊢
                 rw [defCx_store_of_mem_pre ev (List.contains_iff_mem.mp hmb)]
                 exact hind
               subst hkeq hceq
