@@ -15,11 +15,11 @@ open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
 /-- The actual value/type checking evidence of a stored definition, at a later environment. -/
 def DefinitionTyping (env : Env .anon) (cv : ConstantVal .anon) (value : Expr .anon) : Prop :=
   value.hasFvar = false ∧ value.looseBVarsBounded 0 = true ∧
-    ∃ valueType typeType universe,
+    ∃ valueType typeType sortLevel,
       Ix.Kernel.Rules.Infer env .full 0 value valueType ∧
       Ix.Kernel.Rules.DefEq env 0 valueType cv.type ∧
       Ix.Kernel.Rules.Infer env .full 0 cv.type typeType ∧
-      Ix.Kernel.Rules.Red env 0 typeType (.sort universe)
+      Ix.Kernel.Rules.Red env 0 typeType (.sort sortLevel)
 
 def DefinitionsTyped (env : Env .anon) : Prop :=
   ∀ name cv value hint, env.find? name = some (.defnInfo cv value hint) → DefinitionTyping env cv value
@@ -57,7 +57,7 @@ private theorem basis_no_definitions {before after : Env .anon} {kind : BasisKin
   apply basis_newSat _ run
   intro ci member
   have shape := List.all_eq_true.mp (basis_not_definition kind) ci member
-  cases ci <;> first | trivial | cases shape
+  cases ci <;> trivial
 
 private theorem projections_no_definitions {fuel : Nat} {T ctor : Key .anon}
     {levels : List LevelParam} {nP nF : Nat} :
@@ -144,6 +144,12 @@ private theorem checkDecl_definition_old {fuel : Nat} {ev : Evidences .anon}
           exact modeled_no_definitions (declIndRun_of rest)
       · cases rest
 
+private theorem reverse_definition_entry {a b : Option (ConstantInfo .anon)}
+    (entry : ThmBodyView.Entry a b) : ThmBodyView.Entry b a := by
+  cases entry with
+  | same => exact .same _
+  | thm cv left right => exact .thm cv right left
+
 /-- Definition typing comes from each actual declaration check, and survives every replayed branch. -/
 theorem ReferenceReplay.definitionsTyped {fuel : Nat} {ev : Evidences .anon}
     {source target sourceOut targetOut : Env .anon} {ds : List (Declaration .anon)}
@@ -155,7 +161,7 @@ theorem ReferenceReplay.definitionsTyped {fuel : Nat} {ev : Evidences .anon}
     intro typed
     apply ih
     intro name cv value hint found
-    have sourceFound := (tail.startAgreement name).symm.find_nonThm found
+    have sourceFound := (reverse_definition_entry (tail.startAgreement name)).find_nonThm found
       (by intro _ _ impossible; cases impossible)
     have oldRow (old : source.find? name = some (.defnInfo cv value hint)) :
         DefinitionTyping targetNext cv value := by

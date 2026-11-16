@@ -9,7 +9,7 @@ the actual recheck of the rebuilt type are retained together, including their co
 
 namespace IxVM.Refinement.Decl
 
-open Ix.Kernel
+open Ix.Kernel Ix.Kernel.Semantics
 
 /-- The complete constructor stage retains the initial check and the exact normalization result. -/
 theorem checkSumCtor_initial_check {md : Mode} {before env : Env md} {T : Key md}
@@ -30,7 +30,6 @@ theorem checkSumCtor_initial_check {md : Mode} {before env : Env md} {T : Key md
     obtain ⟨types, _, run⟩ := exceptBind_ok run
     obtain ⟨_, _, run⟩ := exceptBind_ok run
     obtain ⟨fields, _, run⟩ := exceptBind_ok run
-    dsimp only at run
     split at run
     · split at run
       · split at run
