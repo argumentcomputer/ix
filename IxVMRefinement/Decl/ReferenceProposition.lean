@@ -29,7 +29,7 @@ theorem typeChecks_frame {md : Mode} {P : KeyScope md} {before after : Env md}
   have nextSort := (ops.ensureSort frame 0 st sortGood u sorted).2
   exact ⟨by simpa only [fueledOps_annotate, Expr.mapKeys_id] using nextAnnotation,
     by simpa only [fueledOps_inferType, Expr.mapKeys_id] using nextInference,
-    by simpa only [fueledOps_ensureSort, Expr.mapKeys_id] using nextSort⟩
+    by simpa only [fueledOps_ensureSort, Expr.mapKeys_id, id] using nextSort⟩
 
 /-- A final proposition check identifies the universe of the actual prefix check. -/
 theorem proposition_at_prefix {md : Mode} {P : KeyScope md} {before after : Env md}

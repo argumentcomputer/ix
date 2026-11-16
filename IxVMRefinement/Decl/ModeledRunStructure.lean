@@ -48,13 +48,13 @@ private theorem phases_structure {md : Mode} {J : Judgements md}
     (recRun : IndRecsRunJ J names middle recs out) :
     EnvExt env out ∧ NewSat env out NotThm := by
   have memberExt := indMembersRunJ_envExt memberRun
-  have memberNew := indMembersRunJ_newSat
+  have memberNew := indMembersRunJ_newSat (Q := NotThm)
     (fun _ _ _ impossible => nomatch impossible)
     (fun _ _ _ _ _ impossible => nomatch impossible) memberRun
   rcases recRun with ⟨_, rfl⟩ | ⟨_, _, envSelf, checked, provisioned, folded⟩
   · exact ⟨memberExt, memberNew⟩
   · exact ⟨indRecsFoldRunJ_envExt provisioned folded (fun _ => rfl) memberExt,
-      memberNew.trans (indRecsFoldRunJ_newSat
+      memberNew.trans (indRecsFoldRunJ_newSat (Q := NotThm)
         (fun _ _ _ _ _ _ impossible => nomatch impossible) folded)⟩
 
 /-- Both modeled branches extend lookups and tables and store no new theorems. -/
