@@ -86,10 +86,12 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
       have keyRead : cx.memberKey (.ctor (Core.ixAddr block) (ZMod.val i) index.val) =
           .ok rows[index.val].1.name := by simpa only [slotValue] using reader.1.1
       rw [slotValue]
-      exact Option.some.inj (keyRead.symm.trans (memberKeys index.val slotBound))
-    obtain ⟨checked⟩ := native_ctor_scope_reads countBound ind.ctors.size 0 (by omega)
-      blockRep subset loop index.val slotBound
-    simpa only [Nat.zero_add] using checked.load_contract paramsBound levelsBound source
+      exact Except.ok.inj (keyRead.symm.trans (memberKeys index.val slotBound))
+    have observed : Nonempty (CtorScopeRead block i (index.val : F) 0 params levels rootCalls) := by
+      simpa only [Nat.zero_add] using native_ctor_scope_reads countBound ind.ctors.size 0 (by omega)
+        blockRep subset loop index.val slotBound
+    obtain ⟨checked⟩ := observed
+    exact checked.load_contract paramsBound levelsBound source
       blockShape memberAt ctorAt reader nameKeyed good keyed selfKeyed blobReads
   choose cvOf rawOf contract using each
   let annotated := List.ofFn fun index : Fin rows.length => (cvOf index, rows[index.val].2.2)
