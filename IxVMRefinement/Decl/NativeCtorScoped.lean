@@ -168,7 +168,9 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
       let cC : ScopedCtx := { toCtx := cR.toCtx, allowed := allowed }
       have restAllowed : ∀ call ∈ nativeCtorCoreCalls restRuns, allowed call := by
         intro call member
-        exact covered call (by simp [nativeCtorCoreCalls, member])
+        apply covered call
+        simp only [nativeCtorCoreCalls, List.flatMap_cons, List.mem_append]
+        exact Or.inr (Or.inr (Or.inr member))
       obtain ⟨sortss_rest, hlen_rest, hrest_out⟩ := restSemantic allowed restAllowed loads
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
