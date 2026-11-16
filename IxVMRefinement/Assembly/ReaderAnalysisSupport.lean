@@ -1,5 +1,6 @@
 import Ix.IxVM.Consistency.Statement
 import Ix.Cert.RecursorIndex
+import IxC.Kernel.Ixon.ShapeSpec
 
 /-! # Reference support of the reader's recursor analysis
 
@@ -119,40 +120,67 @@ private theorem mapM_mono_on {α β : Type} {f g : α → Option β} {Q : β →
     simp only [List.mapM_cons, bind, Option.bind_eq_some_iff, pure, Option.some.injEq]
     exact ⟨y, first', tail, rest', rfl⟩
 
-/-- Analysis only queries supported telescope domains and their supported subdomains. -/
+theorem rawRefs_of_refsIn {P : Nat → Prop} {raw : Ixon.Expr} (supported : RefsIn P raw) :
+    Shape.RawRefs P raw := by
+  induction raw with
+  | ref i us | nat i | str i => exact supported _ (by simp [exprRefIdxs])
+  | prj i field value ih =>
+    exact ⟨supported _ (by simp [exprRefIdxs]),
+      ih (fun j present => supported j (by simp [exprRefIdxs, present]))⟩
+  | app fn arg ihf iha | lam fn arg ihf iha | all fn arg ihf iha =>
+    exact ⟨ihf (fun j present => supported j (by simp [exprRefIdxs, present])),
+      iha (fun j present => supported j (by simp [exprRefIdxs, present]))⟩
+  | letE nonDep mode type value body iht ihv ihb =>
+    exact ⟨iht (fun j present => supported j (by simp [exprRefIdxs, present])),
+      ihv (fun j present => supported j (by simp [exprRefIdxs, present])),
+      ihb (fun j present => supported j (by simp [exprRefIdxs, present]))⟩
+  | _ => trivial
+
+/-- Normalized analysis only queries heads supported by the raw type and sharing table. -/
 theorem analyseWith_mono_supported {P : Nat → Prop} {Q : ConstRef _root_.Address → Prop}
     {c : Ixon.Constant} {r : Ixon.Recursor} (shared : SharingRefsIn P c)
     (typeRefs : RefsIn P r.typ)
-    {h₁ h₂ : Ixon.Expr → Option (ConstRef _root_.Address)}
-    (heads : ∀ e, RefsIn P e → ∀ q, h₁ e = some q → h₂ e = some q ∧ Q q)
+    {h₁ h₂ : Shape.Head → Option (ConstRef _root_.Address)}
+    (heads : ∀ e, e.Refs P → ∀ q, h₁ e = some q → h₂ e = some q ∧ Q q)
     {x : Nat × Array (ConstRef _root_.Address) × ConstRef _root_.Address}
     (ran : analyseWith c r h₁ = some x) :
     analyseWith c r h₂ = some x ∧ (∀ q ∈ x.2.1, Q q) ∧ Q x.2.2 := by
   unfold analyseWith at ran ⊢
   simp only [bind, Option.bind_eq_some_iff, pure] at ran ⊢
-  obtain ⟨⟨domains, body⟩, telescope, k, head, u, guardRan, carriers, carrierRan,
-    last, lastFound, major, majorRan, returned⟩ := ran
-  have domainRefs := (stripAll_refs shared _ typeRefs telescope).1
+  obtain ⟨⟨motive, inputs, last⟩, analysed, carriers, carrierRan, major, majorRan, returned⟩ := ran
+  have supported := Shape.analyse_refs (P := P) (fun raw present => by
+    obtain ⟨i, found⟩ := Array.mem_iff_getElem?.mp present
+    exact rawRefs_of_refsIn (shared i raw found)) (rawRefs_of_refsIn typeRefs) analysed
   cases Option.some.inj returned
-  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map,
+  rw [Array.mapM_eq_mapM_toList, Option.map_eq_map,
     Option.map_eq_some_iff] at carrierRan
   obtain ⟨ys, ysRan, rfl⟩ := carrierRan
-  obtain ⟨ysRan', ysQ⟩ := mapM_mono_on _ ys (g := fun domain =>
-    (stripAllFull c spineFuel domain).fst.getLast?.bind h₂) (Q := Q)
-    (fun domain present q queried => by
-      have domainRef := domainRefs domain
-        (List.mem_of_mem_drop (List.mem_of_mem_take present))
-      obtain ⟨e, last, queried⟩ := Option.bind_eq_some_iff.mp queried
-      have supported := (stripAllFull_refs shared spineFuel domainRef).1 e
-        (List.mem_of_getLast? last)
-      obtain ⟨queried', property⟩ := heads e supported q queried
-      exact ⟨Option.bind_eq_some_iff.mpr ⟨e, last, queried'⟩, property⟩) ysRan
-  obtain ⟨majorRan', majorQ⟩ := heads last
-    (domainRefs last (List.mem_of_getLast? lastFound)) major majorRan
-  refine ⟨⟨(domains, body), telescope, k, head, u, guardRan, ys.toArray, ?_, last, lastFound,
-    major, majorRan', rfl⟩, fun q hq => ysQ q (by simpa using hq), majorQ⟩
-  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, ysRan']
+  obtain ⟨ysRan', ysQ⟩ := mapM_mono_on _ ys (g := h₂) (Q := Q)
+    (fun input present => heads input (supported.1 input (Array.mem_toList_iff.mp present))) ysRan
+  obtain ⟨majorRan', majorQ⟩ := heads last supported.2 major majorRan
+  refine ⟨⟨(motive, inputs, last), analysed, ys.toArray, ?_, major, majorRan', rfl⟩,
+    fun q hq => ysQ q (by simpa using hq), majorQ⟩
+  rw [Array.mapM_eq_mapM_toList, ysRan']
   rfl
+
+theorem resolveShapeHead_mono_supported {P : Nat → Prop} {D : _root_.Address → Prop}
+    {c : Ixon.Constant} {owner : _root_.Address} {s₁ s₂ : Store} (own : D owner)
+    (references : ∀ i, P i → ∀ a, c.refs[i]? = some a → ∀ q,
+      resolve s₁ a = some q → resolve s₂ a = some q ∧ D q.block)
+    {head : Shape.Head} (supported : head.Refs P) {q : ConstRef _root_.Address}
+    (ran : resolveShapeHead s₁ owner c head = some q) :
+    resolveShapeHead s₂ owner c head = some q ∧ D q.block := by
+  cases head with
+  | ref i =>
+    obtain ⟨a, found, resolved⟩ := Option.bind_eq_some_iff.mp ran
+    obtain ⟨resolved', ownerIn⟩ := references i supported a found q resolved
+    exact ⟨Option.bind_eq_some_iff.mpr ⟨a, found, resolved'⟩, ownerIn⟩
+  | recur i =>
+    refine ⟨ran, ?_⟩
+    have same : q.block = owner := by
+      simp only [resolveShapeHead] at ran
+      split at ran <;> split at ran <;> cases ran <;> rfl
+    rwa [same]
 
 /-- A head walk requires agreement only at the reference indices supported by its input. -/
 theorem headRef_mono_supported {P : Nat → Prop} {D : _root_.Address → Prop}
@@ -223,7 +251,7 @@ theorem analysis_transfer_used {s₁ s₂ : Store} {owner : _root_.Address}
   rw [analyse_eq] at analysis
   obtain ⟨analysis', supported, majorSupported⟩ := analyseWith_mono_supported
     (Q := fun q => D q.block) (sharing_used c) (recursor_type_used member)
-    (fun e h q ran => headRef_mono_supported (sharing_used c) own references h ran) analysis
+    (fun e h q ran => resolveShapeHead_mono_supported own references h ran) analysis
   have blockSupported : D block := by
     have h := supported _ (Array.mem_of_getElem? firstCarrier)
     simpa using h

@@ -201,4 +201,97 @@ theorem head_refs {P : Nat → Prop} {fuel : Nat} {expression : Term}
     trivial
   · cases ran
 
+private theorem mapM_all {α β : Type} {f : α → Option β} {Q : β → Prop} :
+    ∀ (inputs : List α) (outputs : List β),
+      (∀ input ∈ inputs, ∀ output, f input = some output → Q output) →
+      inputs.mapM f = some outputs → ∀ output ∈ outputs, Q output
+  | [], outputs, _, ran => by
+    simp only [List.mapM_nil, pure, Option.some.injEq] at ran
+    subst outputs
+    simp
+  | input :: rest, outputs, step, ran => by
+    simp only [List.mapM_cons, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at ran
+    obtain ⟨output, first, tail, later, rfl⟩ := ran
+    have firstQ := step input List.mem_cons_self output first
+    have tailQ := mapM_all rest tail
+      (fun item present => step item (List.mem_cons_of_mem _ present)) later
+    intro item present
+    exact (List.mem_cons.mp present).elim (fun same => by subst item; exact firstQ) (tailQ item)
+
+theorem telescope_refs {P : Nat → Prop} {constant : Ixon.Constant} {recursor : Ixon.Recursor}
+    (shared : ∀ raw ∈ constant.sharing, RawRefs P raw) (typeRefs : RawRefs P recursor.typ)
+    {fuel motive : Nat} {domains : List Term}
+    (ran : telescope fuel constant recursor = some (motive, domains)) :
+    ∀ domain ∈ domains, Refs P domain := by
+  unfold telescope at ran
+  simp only [bind, Option.bind_eq_some_iff, pure] at ran
+  obtain ⟨term, converted, ⟨types, body⟩, parsed, ran⟩ := ran
+  have domainsRef := (stripAll_refs _ (read_refs shared typeRefs converted) parsed).1
+  split at ran
+  · simp only [Option.bind_eq_some_iff] at ran
+    obtain ⟨u, _, returned⟩ := ran
+    cases Option.some.inj returned
+    exact domainsRef
+  · cases ran
+
+theorem telescope_motive_lt {constant : Ixon.Constant} {recursor : Ixon.Recursor}
+    {fuel motive : Nat} {domains : List Term}
+    (ran : telescope fuel constant recursor = some (motive, domains)) :
+    motive < recursor.motives.toNat := by
+  unfold telescope at ran
+  simp only [bind, Option.bind_eq_some_iff, pure] at ran
+  obtain ⟨term, _, ⟨types, body⟩, _, ran⟩ := ran
+  split at ran
+  · simp only [Option.bind_eq_some_iff] at ran
+    obtain ⟨u, valid, returned⟩ := ran
+    cases Option.some.inj returned
+    unfold guard at valid
+    split at valid
+    · rename_i condition
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at condition
+      omega
+    · cases valid
+  · cases ran
+
+/-- Every carrier queried by the general shape analysis is drawn from the raw
+type's and sharing table's reference support, including let-bound values. -/
+theorem analyse_refs {P : Nat → Prop} {constant : Ixon.Constant} {recursor : Ixon.Recursor}
+    (shared : ∀ raw ∈ constant.sharing, RawRefs P raw) (typeRefs : RawRefs P recursor.typ)
+    {fuel : Nat} {result : Nat × Array Head × Head}
+    (ran : analyse fuel constant recursor = some result) :
+    (∀ carrier ∈ result.2.1, carrier.Refs P) ∧ result.2.2.Refs P := by
+  unfold analyse at ran
+  simp only [bind, Option.bind_eq_some_iff, pure] at ran
+  obtain ⟨⟨motive, domains⟩, parsed, carriers, carrierRead, last, lastFound, major,
+    majorRead, returned⟩ := ran
+  cases Option.some.inj returned
+  have domainsRef := telescope_refs shared typeRefs parsed
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map,
+    Option.map_eq_some_iff] at carrierRead
+  obtain ⟨entries, entriesRead, rfl⟩ := carrierRead
+  have entriesRef := mapM_all _ entries (fun domain present carrier queried => by
+    have domainRef := domainsRef domain
+      (List.mem_of_mem_drop (List.mem_of_mem_take present))
+    obtain ⟨last, lastFound, headRead⟩ := Option.bind_eq_some_iff.mp queried
+    exact head_refs ((stripAllFull_refs fuel domainRef).1 last
+      (List.mem_of_getLast? lastFound)) headRead) entriesRead
+  exact ⟨fun carrier present => entriesRef carrier (by simpa using present),
+    head_refs (domainsRef last (List.mem_of_getLast? lastFound)) majorRead⟩
+
+theorem analyse_telescope {constant : Ixon.Constant} {recursor : Ixon.Recursor}
+    {fuel motive : Nat} {carriers : Array Head} {major : Head}
+    (ran : analyse fuel constant recursor = some (motive, carriers, major)) :
+    ∃ domains, telescope fuel constant recursor = some (motive, domains) := by
+  unfold analyse at ran
+  simp only [bind, Option.bind_eq_some_iff, pure, Option.some.injEq, Prod.mk.injEq] at ran
+  obtain ⟨⟨motive', domains⟩, parsed, carriers', _, last, _, major', _, rfl, rfl, rfl⟩ := ran
+  exact ⟨domains, parsed⟩
+
+theorem analyse_motive_lt {constant : Ixon.Constant} {recursor : Ixon.Recursor}
+    {fuel motive : Nat} {carriers : Array Head} {major : Head}
+    (ran : analyse fuel constant recursor = some (motive, carriers, major)) :
+    motive < recursor.motives.toNat :=
+  let ⟨_, parsed⟩ := analyse_telescope ran
+  telescope_motive_lt parsed
+
 end Ix.Kernel.Reader.Shape

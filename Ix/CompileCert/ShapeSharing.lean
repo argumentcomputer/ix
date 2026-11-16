@@ -106,4 +106,16 @@ theorem resultVar_expand (constant flat : Ixon.Constant) (empty : flat.sharing =
     Shape.resultVar fuel constant raw = Shape.resultVar fuel flat (substShares expand raw) := by
   simp only [Shape.resultVar, read_expand constant flat empty expand entries raw bounded]
 
+theorem analyse_expand (constant flat : Ixon.Constant) (empty : flat.sharing = #[])
+    (expand : Nat → Ixon.Expr)
+    (entries : ∀ i, i < constant.sharing.size →
+      expand i = substShares expand constant.sharing[i]! ∧
+        SharesIn (fun slot => slot < i) constant.sharing[i]!)
+    (recursor : Ixon.Recursor)
+    (bounded : SharesIn (fun i => i < constant.sharing.size) recursor.typ) (fuel : Nat) :
+    Shape.analyse fuel constant recursor =
+      Shape.analyse fuel flat { recursor with typ := substShares expand recursor.typ } := by
+  simp only [Shape.analyse, Shape.telescope,
+    read_expand constant flat empty expand entries recursor.typ bounded]
+
 end Ix.CompileCert.ShapeSharing

@@ -34,14 +34,16 @@ theorem convert_exists (context : ECx md) {actual : Array (ReadM (CExpr md))}
     obtain ⟨key, _, ran⟩ := bind_ok ran
     obtain ⟨subValue, subRead, _⟩ := bind_ok ran
     obtain ⟨shape, shapeRead⟩ := ih subRead
-    exact ⟨_, by simp [convert, shapeRead]⟩
+    exact ⟨.proj (refKey i.toNat) field.toNat shape, by simp [convert, shapeRead]⟩
   | app fn arg ihf iha | lam fn arg ihf iha | all fn arg ihf iha =>
     intro value ran
     obtain ⟨fnValue, fnRead, ran⟩ := bind_ok ran
     obtain ⟨argValue, argRead, _⟩ := bind_ok ran
     obtain ⟨fnShape, fnShapeRead⟩ := ihf fnRead
     obtain ⟨argShape, argShapeRead⟩ := iha argRead
-    exact ⟨_, by simp [convert, fnShapeRead, argShapeRead]⟩
+    refine ⟨_, ?_⟩
+    rw [convert, fnShapeRead, argShapeRead]
+    rfl
   | letE nonDep mode type val body _ ihv ihb =>
     intro value ran
     obtain ⟨typeValue, _, ran⟩ := bind_ok ran
@@ -49,7 +51,7 @@ theorem convert_exists (context : ECx md) {actual : Array (ReadM (CExpr md))}
     obtain ⟨bodyValue, bodyRead, _⟩ := bind_ok ran
     obtain ⟨valShape, valShapeRead⟩ := ihv valRead
     obtain ⟨bodyShape, bodyShapeRead⟩ := ihb bodyRead
-    exact ⟨_, by simp [convert, valShapeRead, bodyShapeRead]⟩
+    exact ⟨bodyShape.instantiate1Lift valShape, by simp [convert, valShapeRead, bodyShapeRead]⟩
   | share i =>
     intro value ran
     simp only [convExpr] at ran

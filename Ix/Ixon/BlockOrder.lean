@@ -43,15 +43,8 @@ def isRecursor : MutConst → Bool
 reader does (the first component of `Reader.analyseRecursor`): after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
-def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat := do
-  let nP := r.params.toNat
-  let nM := r.motives.toNat
-  let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
-  let (_, body) ← Reader.stripAll source depth r.typ
-  let k ← Reader.Shape.resultVar Reader.spineFuel source body
-  let pos := depth - 1 - k
-  guard (k < depth && nP ≤ pos && pos < nP + nM)
-  pure (pos - nP)
+def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat :=
+  (Reader.Shape.telescope Reader.spineFuel source r).map Prod.fst
 
 /-- The members from `position` on are recursors in motive order: the one at
 `position` eliminates motive `position`, of `size` motives. -/

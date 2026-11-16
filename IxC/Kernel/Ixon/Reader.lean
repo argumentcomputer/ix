@@ -309,6 +309,16 @@ def headRef (store : Store) (owner : Address) (c : Ixon.Constant) (e : Ixon.Expr
     | _ => if i == 0 then some (.member owner 0) else none
   | _ => none
 
+/-- Resolve a head found by symbolic shape analysis. This is the same reference
+lookup used by the raw head walk, performed only after sharing and let reduction. -/
+def resolveShapeHead (store : Store) (owner : Address) (c : Ixon.Constant) :
+    Shape.Head → Option (ConstRef Address)
+  | .ref i => do resolve store (← c.refs[i]?)
+  | .recur i =>
+    match c.info with
+    | .muts ms => if i < ms.size then some (.member owner i) else none
+    | _ => if i == 0 then some (.member owner 0) else none
+
 /-! ## The recursor index -/
 
 /-- What the reader knows about a recursor before reading its block. -/
@@ -342,20 +352,9 @@ structure RecIndex where
 carrier of every motive, and its major premise's carrier. -/
 def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
     (r : Ixon.Recursor) : Option (Nat × Array (ConstRef Address) × ConstRef Address) := do
-  let nP := r.params.toNat
-  let nM := r.motives.toNat
-  let nm := r.minors.toNat
-  let nI := r.indices.toNat
-  let depth := nP + nM + nm + nI + 1
-  let (doms, body) ← stripAll c depth r.typ
-  let k ← Shape.resultVar spineFuel c body
-  let pos := depth - 1 - k
-  guard (k < depth && nP ≤ pos && pos < nP + nM)
-  let carriers ← (doms.drop nP |>.take nM).toArray.mapM fun dom => do
-    let (bs, _) := stripAllFull c spineFuel dom
-    headRef store owner c (← bs.getLast?)
-  let major ← headRef store owner c (← doms.getLast?)
-  pure (pos - nP, carriers, major)
+  let (motive, carriers, major) ← Shape.analyse spineFuel c r
+  pure (motive, ← carriers.mapM (resolveShapeHead store owner c),
+    ← resolveShapeHead store owner c major)
 
 /-- Index every recursor of `records` by the block it eliminates and the motive
 it eliminates there. A recursor is keyed by its own record (`Ctx.memberKey`),

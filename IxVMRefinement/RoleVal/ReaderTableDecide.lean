@@ -231,20 +231,9 @@ def headRefChecked (store : Store) (owner : _root_.Address) (c : Ixon.Constant) 
 def analyseRecursorChecked (store : Store) (owner : _root_.Address) (c : Ixon.Constant)
     (r : Ixon.Recursor) :
     Option (Nat × List (ConstRef _root_.Address) × ConstRef _root_.Address) := do
-  let nP := r.params.toNat
-  let nM := r.motives.toNat
-  let nm := r.minors.toNat
-  let nI := r.indices.toNat
-  let depth := nP + nM + nm + nI + 1
-  let (doms, body) ← stripAllFast c depth r.typ
-  let k ← Shape.resultVar spineFuel c body
-  let pos := depth - 1 - k
-  if !(k < depth && nP ≤ pos && pos < nP + nM) then none else
-  let carriersL ← (doms.drop nP |>.take nM).mapM fun dom => do
-    let (bs, _) ← stripAllFullChecked c 64 dom
-    headRefChecked store owner c (← bs.getLast?)
-  let major ← headRefChecked store owner c (← doms.getLast?)
-  some (pos - nP, carriersL, major)
+  let (motive, carriers, major) ← Shape.analyse spineFuel c r
+  pure (motive, ← carriers.toList.mapM (resolveShapeHead store owner c),
+    ← resolveShapeHead store owner c major)
 
 def inductivesList (members : List Ixon.MutConst) : List (Nat × Ixon.Inductive) :=
   members.zipIdx.filterMap fun | (.indc ind, index) => some (index, ind) | _ => none

@@ -1,5 +1,6 @@
 import Ix.Ixon.BlockOrder
 import Ix.Ixon.Projection.Theorems
+import IxC.Kernel.Ixon.ShapeSpec
 
 namespace Ixon.BlockOrder
 
@@ -16,22 +17,11 @@ theorem recursorMotive_of_analyse {store owner c r m carriers major}
     (h : analyseRecursor store owner c r = some (m, carriers, major)) :
     recursorMotive c r = some m := by
   unfold analyseRecursor at h
-  unfold recursorMotive
-  cases hs : stripAll c
-      (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat + 1) r.typ with
-  | none => simp [hs] at h
-  | some p =>
-    obtain ⟨doms, body⟩ := p
-    cases hd : Shape.resultVar spineFuel c body with
-    | some k =>
-      simp only [hs, hd, Option.bind_eq_bind, Option.bind_some, Option.pure_def] at h ⊢
-      obtain ⟨u, hu, rest⟩ := Option.bind_eq_some_iff.mp h
-      rw [Option.bind_eq_some_iff]
-      refine ⟨u, hu, ?_⟩
-      simp only [Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at rest
-      obtain ⟨_, _, _, _, _, _, hm, _⟩ := rest
-      exact congrArg some hm
-    | none => simp [hs, hd] at h
+  simp only [bind, Option.bind_eq_some_iff, pure] at h
+  obtain ⟨⟨motive, heads, last⟩, analysed, values, _, target, _, returned⟩ := h
+  cases Option.some.inj returned
+  obtain ⟨domains, parsed⟩ := Shape.analyse_telescope analysed
+  simp only [recursorMotive, parsed, Option.map_some]
 
 /-- The members, from `start` on, are recursors in motive order: the one at
 position `start + j` eliminates motive `start + j` (`recursorMotive`, as the
