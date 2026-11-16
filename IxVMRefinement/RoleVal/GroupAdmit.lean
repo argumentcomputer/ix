@@ -879,7 +879,7 @@ theorem role_is_bound_uncond {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
     exact absurd he110 hr_ne
   | n0 v1 m2 cs12 x40 y41 m42 cs51 v55 m65 cs73 ev14 ev75 ev53 op97 op47 _ _ _ =>
     obtain ⟨res, hs, hres⟩ :=
-      role_bound_addr_or_zero_step c₀ ev14 tbl (roleNum ro) rfl byRole hby
+      role_bound_addr_or_zero_step (ScopedCtx.unrestricted c₀) ev14 tbl (roleNum ro) rfl byRole hby
     have htbl' := htbl
     obtain ⟨bp, byRole', byAddr, evMap, hload, hbyRoleAll, _, _⟩ := htbl'
     obtain ⟨bp', byAddr', evMap', hload'⟩ := hby
@@ -900,9 +900,9 @@ theorem role_is_bound_uncond {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
       rcases hres with hnone | ⟨_, ha_zero⟩
       · cases hnone
       have htbl_m2 : TableRep c₀.t m2 tbl := htbl.mono ev14.heap_extends
-      obtain ⟨rfl, hIdx⟩ := role_addr_index_step c₀ ev75 tbl rfl htbl_m2
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev75 tbl rfl htbl_m2
       have hlookup :=
-        rbtree_map_lookup_or_default_field_step c₀ ev53
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev53
           v1 v55 (.field 0) rfl Specs.Roles.zeroAddr ha_zero (IndexEntry c₀.t) hIdx
       obtain rfl := RolesAux.evalBinOp_add_field_inv op97
       obtain ⟨x, hx1, hx2⟩ := RolesAux.evalBinOp_sub_eq_zero_inv op47
@@ -932,7 +932,7 @@ theorem role_bound_addr_uncond {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
   have hby_m15 : Specs.Roles.ByRole m15 tbl byRole :=
     ⟨bp, byAddr, evMap, ext1.loadValue_eq hload⟩
   obtain ⟨res₂, hs₂, hres₂⟩ :=
-    role_bound_addr_or_zero_step c₀ ev54 tbl (roleNum ro) rfl byRole hby_m15
+    role_bound_addr_or_zero_step (ScopedCtx.unrestricted c₀) ev54 tbl (roleNum ro) rfl byRole hby_m15
   have hdet : res₁ = res₂ := RolesAux.roleMapSearch_det (RolesAux.roleMapSearch_mono ext1 hs₁) hs₂
   subst hdet
   refine ⟨ev.heap_extends, ?_⟩
@@ -1508,7 +1508,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
         by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩
     have htbl_m162 : TableRep c₀.t m162 x_tbl :=
       htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev174.heap_extends)))
-    obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step c₀ ev204 x_tbl ro rfl htbl_m162
+    obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
     obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
     obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
     obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
@@ -1573,7 +1573,7 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
         by rw [hc368]; simp, fun cl hm => by rw [hc368]; simp [hm]⟩
     have htbl_m210 : TableRep c₀.t m210 x_tbl :=
       htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
-    obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step c₀ ev252 x_tbl ro rfl htbl_m210
+    obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
     obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
     obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
     obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
@@ -1715,7 +1715,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev174
       have htbl_m162 : TableRep c₀.t m162 x_tbl :=
         htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev174.heap_extends)))
-      obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step c₀ ev204 x_tbl ro rfl htbl_m162
+      obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
       obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
       obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
       obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
@@ -1772,7 +1772,7 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev222
       have htbl_m210 : TableRep c₀.t m210 x_tbl :=
         htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
-      obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step c₀ ev252 x_tbl ro rfl htbl_m210
+      obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
       obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
       obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
       obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
@@ -2360,9 +2360,9 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
       injection hxs with hxt hxs1
       injection hxs1 with hxl
       subst hxt hxl
-      obtain ⟨rfl, hIdx⟩ := role_addr_index_step c₀ ev71 tbl rfl htbl
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev71 tbl rfl htbl
       have hlookup :=
-        rbtree_map_lookup_or_default_field_step c₀ ev49
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev49
           x_a v51 (.field 0) rfl a_bytes ha_rep (IndexEntry c₀.t) hIdx
       rcases hlookup with hv0 | ⟨ro, hv36, had⟩
       · exact absurd hv0 hne103
@@ -2402,9 +2402,9 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
       injection hv with _ _ hxs
       injection hxs with hxt
       subst hxt
-      obtain ⟨rfl, hIdx⟩ := role_addr_index_step c₀ ev270 tbl rfl htbl
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev270 tbl rfl htbl
       have hlookup :=
-        rbtree_map_lookup_or_default_field_step c₀ ev248
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev248
           x_a v250 (.field 0) rfl a_bytes ha_rep (IndexEntry c₀.t) hIdx
       rcases hlookup with hr0 | ⟨ro, hr_eq, had⟩
       · exact .inl hr0
