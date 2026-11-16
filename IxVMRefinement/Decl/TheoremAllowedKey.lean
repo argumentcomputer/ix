@@ -125,7 +125,7 @@ theorem ThmKind.allowed_from_final {P : KeyScope .anon} {before final after : En
     have pinned := List.all_eq_true.mp guarded.2 cv.name self
     have foundSelf : (Env.mk (.defnInfo { cv with type } value hint :: before.consts)).find? cv.name =
         some (.defnInfo { cv with type } value hint) := Env.find?_cons_self _ _
-    simp only [natOpStoredOk, foundSelf, ConstantInfo.toConstantVal, Bool.and_eq_true] at pinned
+    simp only [natOpStoredOk, foundSelf, Bool.and_eq_true] at pinned
     exact binary_type_not_prop (cv := { cv with type }) member natSupported.1.1 pinned.2
       inferred sorted prefixZero
   · intro same
