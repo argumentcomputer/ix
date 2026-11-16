@@ -400,8 +400,7 @@ of a projection of a constructor, and structure η). At a stored inductive `T` w
 projection table — the table `Denotes` reads `.proj T i e` through (`proj_table`: field `j`
 of a value is component `j + entry.off` of its pair chain) — at field `i`:
 
-* **the table is `T`'s**: `T` has the table's universe parameters and its type is
-  `∀ (params), Sort structSort`, at the table's parameter count and structure sort; the
+* **the table is `T`'s**: `T` has the table's universe parameters; the
   table's constructor `C` is stored as a constructor at the table's parameter and field
   counts and at `T`'s universe parameters, and its type is
   `∀ (params) (fields), T.{lps} params`: a constructor of `T` at `T`'s own parameters,
@@ -423,7 +422,6 @@ def ProjLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
   ∀ (T : Key md) (i : Nat) (entry : ProjEntry md) (cvT : ConstantVal md) (capsT : IndCaps md),
     env.findProj? T i = some entry → env.find? T = some (.indInfo cvT capsT) →
     cvT.levelParams = entry.levelParams ∧
-    (∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
     ∃ cvC : ConstantVal md,
       env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
       cvC.levelParams = entry.levelParams ∧

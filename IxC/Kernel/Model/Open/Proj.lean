@@ -174,7 +174,7 @@ theorem Red.proj_sound (hse : StoredEnv env) {d : Nat} {sn : Key md} {i : Nat} {
     | const hf _ => exact ⟨_, hf⟩
   obtain ⟨cvT, capsT, rfl, -⟩ := hTst ciT hfT
   -- the projection law's ι clause
-  obtain ⟨hlpsT, -, cvC', hfC', -, -, hlaw⟩ := M.proj_law sn i entry cvT capsT hP hfT
+  obtain ⟨hlpsT, cvC', hfC', -, -, hlaw⟩ := M.proj_law sn i entry cvT capsT hP hfT
   rw [hC] at hfC'
   obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC')
   have hFT : Denotes M.cval env φ ρ₀ (.const sn us) (M.cval sn
@@ -213,11 +213,13 @@ theorem DefEq.structEtaTy_sound (hse : StoredEnv env) {d : Nat} {a b ta tb : Exp
   obtain ⟨-, -, hTst, hCst⟩ := hse.tables T 0 e0 he0
   obtain ⟨cvT', capsT', hci, hetaT⟩ := hTst _ hT
   obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hci
-  obtain ⟨hec, -, -⟩ := hetaT heta
+  obtain ⟨hec, hparams, -⟩ := hetaT heta
   rw [hctor] at hec
   obtain rfl := Option.some.inj hec
   obtain ⟨rfl, rfl, -, -⟩ := hCst cvc cnP cnF hc
-  obtain ⟨hlpsT, ⟨bsT, hsT⟩, cvC', hfC', -, -, hlaw⟩ := M.proj_law T 0 e0 cvT caps he0 hT
+  obtain ⟨hlpsT, cvC', hfC', -, -, hlaw⟩ := M.proj_law T 0 e0 cvT caps he0 hT
+  have parameters := (hse.arities.1 T cvT caps hT).2 heta
+  rw [hparams] at parameters
   rw [hc] at hfC'
   obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC')
   have hoff : ∀ j ej, env.findProj? T j = some ej → ej.off = e0.off := by
@@ -264,7 +266,7 @@ theorem DefEq.structEtaTy_sound (hse : StoredEnv env) {d : Nat} {a b ta tb : Exp
   obtain ⟨σT, R, hfit⟩ := hwalk.fits hts (fun z hz => (hfpar z hz).2.1)
     (by
       rw [hlenp]
-      exact Expr.stripPis_instantiateLevelParams_isSome _ _ _ (by rw [hsT]; rfl))
+      exact Expr.stripPis_instantiateLevelParams_isSome _ _ _ parameters)
     htyF
   have htslen : ts.length = e0.numParams := by rw [← hts.length_eq, hlenp]
   -- `b` is the constructor at the parameters and its own fields

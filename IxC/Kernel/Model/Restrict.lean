@@ -325,12 +325,12 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
       rwa [show (ConstantInfo.indInfo cvT capsT).name = T from
         by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == T) hfT] at h
     have hKC := hctor T i entry hfP hKT
-    obtain ⟨hlpsT, hsortT, cvC, hfC, hlpsC, hresC, hlaws⟩ := M.proj_law T i entry cvT capsT
+    obtain ⟨hlpsT, cvC, hfC, hlpsC, hresC, hlaws⟩ := M.proj_law T i entry cvT capsT
       (by rw [← hproj]; exact hfP) (by rw [← hfind T hKT]; exact hfT)
     have hfC' : env'.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) := by
       rw [hfind _ hKC]; exact hfC
     have hmC := List.mem_of_find?_eq_some hfC'
-    refine ⟨hlpsT, hsortT, cvC, hfC', hlpsC, hresC, ?_⟩
+    refine ⟨hlpsT, cvC, hfC', hlpsC, hresC, ?_⟩
     intro us φ ρ Fd Kd hus hFd hKd
     obtain ⟨hι, hη⟩ := hlaws us φ ρ Fd Kd hus (Denotes.mono_env hfind' hproj' hlit hFd hKT)
       (Denotes.mono_env hfind' hproj' hlit hKd hKC)
