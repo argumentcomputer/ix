@@ -141,7 +141,7 @@ theorem analyseWith_mono_supported {P : Nat → Prop} {Q : ConstRef _root_.Addre
     {c : Ixon.Constant} {r : Ixon.Recursor} (shared : SharingRefsIn P c)
     (typeRefs : RefsIn P r.typ)
     {h₁ h₂ : Shape.Head → Option (ConstRef _root_.Address)}
-    (heads : ∀ e, e.Refs P → ∀ q, h₁ e = some q → h₂ e = some q ∧ Q q)
+    (heads : ∀ (e : Shape.Head), e.Refs P → ∀ q, h₁ e = some q → h₂ e = some q ∧ Q q)
     {x : Nat × Array (ConstRef _root_.Address) × ConstRef _root_.Address}
     (ran : analyseWith c r h₁ = some x) :
     analyseWith c r h₂ = some x ∧ (∀ q ∈ x.2.1, Q q) ∧ Q x.2.2 := by
