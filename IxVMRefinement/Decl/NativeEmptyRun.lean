@@ -45,7 +45,7 @@ theorem native_empty_sort_step {env : Env .anon} {cv annotated : ConstantVal .an
     DeclRunJ Model.rulesJ (IndRoutesJ Model.rulesJ env) env (.indDecl [.indInfo cv caps] 0)
       ⟨.indInfo annotated {} :: env.consts⟩ := by
   obtain ⟨parts, recognized, former, params, indices, empty⟩ :=
-    nativePartsNoRec_empty_sort (caps := caps) literal checked.not_reserved
+    nativePartsNoRec_empty_sort (caps := caps) literal checked.inv.2.1
   have annotatedLiteral : annotated.type = .sort level := by
     have annotation := stored.2.2
     rw [literal] at annotation
