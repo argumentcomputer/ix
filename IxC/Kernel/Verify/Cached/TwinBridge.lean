@@ -5,7 +5,7 @@ public import IxC.Kernel.Verify.Inductives.TwinFuel
 public import IxC.Kernel.Verify.Inductives.TwinWF
 public import IxC.Kernel.Verify.Inductives.TwinFallback
 public import IxC.Kernel.Verify.Cached.BridgeCS4
-public import IxC.Kernel.Verify.Cached.BridgeCSDecl
+public import IxC.Kernel.Verify.Cached.ModeledRun
 
 public section
 
