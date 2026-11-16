@@ -24,8 +24,8 @@ theorem selectedTheorems_iff {declarations : List (Declaration .anon)} {name : K
       simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at selected
       exact ⟨cv, value, member, selected⟩
     | _ => cases selected
-  · rintro ⟨cv, value, member, publicName, same⟩
-    exact ⟨.thmDecl cv value, member, by simp only [publicName, same, Bool.not_false, beq_self_eq_true]⟩
+  · rintro ⟨cv, value, member, publicName, rfl⟩
+    exact ⟨.thmDecl cv value, member, by simp only [publicName, Bool.not_false, beq_self_eq_true]⟩
 
 theorem thmToOpaqueDefn_of_public {cv : ConstantVal .anon} {value : Expr .anon}
     (publicName : cv.name.isAux = false) :
@@ -91,7 +91,7 @@ theorem simulation_of_rows (selected : Key .anon → Bool) {before final : Env .
       | false => rfl
       | true =>
         have noProjection := (allowed _ chosen).2.1
-        rw [projTableName_isProjFnShape] at noProjection
+        rw [Ix.Kernel.Semantics.projTableName_isProjFnShape] at noProjection
         cases noProjection
     rw [find_unselected selected final notSelected]
     exact extension.tables found
@@ -112,14 +112,14 @@ theorem thmTyped (selected : Key .anon → Bool) {env : Env .anon}
   cases original with
   | thmInfo oldCv oldValue =>
     obtain ⟨rfl, rfl⟩ := ConstantInfo.thmInfo.inj changed
-    exact typed_transfer simulation (typed name cv value originalFound)
+    exact typed_transfer simulation (typed _ _ _ originalFound)
   | defnInfo oldCv oldValue hint =>
     cases hint with
     | «opaque» =>
-      unfold info at changed
+      simp only [info] at changed
       split at changed
       · obtain ⟨rfl, rfl⟩ := ConstantInfo.thmInfo.inj changed
-        exact simulation.thmTyped name cv value originalFound found
+        exact simulation.thmTyped _ _ _ originalFound found
       · cases changed
     | «abbrev» | regular => cases changed
   | _ => cases changed
