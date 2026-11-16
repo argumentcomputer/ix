@@ -670,16 +670,43 @@ structure ThmSim (envA env : Ix.Kernel.Env .anon) : Prop where
     envA.find? T = some (.indInfo cv caps) →
     env.find? (Ix.Kernel.projTableName T) = envA.find? (Ix.Kernel.projTableName T)
 
-namespace ThmSim
+/-- The premises used when a stored theorem is unfolded. -/
+def ThmValueTyped (env : Ix.Kernel.Env .anon) (cv : Ix.Kernel.ConstantVal .anon)
+    (value : KExpr) : Prop :=
+  value.hasFvar = false ∧ value.looseBVarsBounded 0 = true ∧
+  ∃ vt s u, Ix.Kernel.Rules.Infer env .full 0 value vt ∧
+    Ix.Kernel.Rules.DefEq env 0 vt cv.type ∧
+    Ix.Kernel.Rules.Infer env .full 0 cv.type s ∧
+    Ix.Kernel.Rules.Red env 0 s (.sort u) ∧ ∀ φ, Ix.Kernel.Level.eval φ u = 0
 
-theorem of_envExt {envA env : Ix.Kernel.Env .anon}
-    (hthm : Ix.Kernel.Model.ThmTyped env)
-    (hext : Ix.Kernel.EnvExt envA env) : ThmSim envA env where
-  thmTyped := hthm
-  find_sim := fun hf => Or.inl (hext.find hf)
-  tables_eq := fun hT => hext.tables hT
+/-- Lookup simulation needs typing only for an opaque definition actually replaced by a theorem. -/
+structure ThmSimAt (envA env : Ix.Kernel.Env .anon) : Prop where
+  thmTyped : ∀ n cv value,
+    envA.find? n = some (.defnInfo cv value .opaque) →
+    env.find? n = some (.thmInfo cv value) → ThmValueTyped env cv value
+  find_sim : ∀ {k : KKey} {ciA : Ix.Kernel.ConstantInfo .anon},
+    envA.find? k = some ciA →
+    env.find? k = some ciA ∨
+      ∃ cv value,
+        ciA = .defnInfo cv value .opaque ∧
+        k ∉ Ix.Kernel.Rules.natBinOpNames ∧
+        k.isProjFnShape = false ∧
+        k ≠ Ix.Kernel.punitName ∧
+        k ≠ Ix.Kernel.punitRecName ∧
+        env.find? k = some (.thmInfo cv value)
+  tables_eq : ∀ {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon},
+    envA.find? T = some (.indInfo cv caps) →
+    env.find? (Ix.Kernel.projTableName T) = envA.find? (Ix.Kernel.projTableName T)
 
-theorem find_nonDefn {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem ThmSim.toAt {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env) :
+    ThmSimAt envA env where
+  thmTyped := fun n cv value _ found => h.thmTyped n cv value found
+  find_sim := h.find_sim
+  tables_eq := h.tables_eq
+
+namespace ThmSimAt
+
+theorem find_nonDefn {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {k : KKey} {ciA : Ix.Kernel.ConstantInfo .anon}
     (hf : envA.find? k = some ciA)
     (hnd : ∀ cv v, ciA ≠ .defnInfo cv v .opaque) :
@@ -688,7 +715,7 @@ theorem find_nonDefn {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   · exact hf'
   · exact absurd heq (hnd cv v)
 
-theorem find_projShape {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem find_projShape {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {k : KKey} {ciA : Ix.Kernel.ConstantInfo .anon}
     (hf : envA.find? k = some ciA) (hsh : k.isProjFnShape = true) :
     env.find? k = some ciA := by
@@ -696,7 +723,7 @@ theorem find_projShape {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   · exact hf'
   · rw [hsh] at hsh'; cases hsh'
 
-theorem findProj? {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem findProj? {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {sn : KKey} {i : Nat} {entry : Ix.Kernel.ProjEntry .anon}
     (hp : envA.findProj? sn i = some entry) :
     env.findProj? sn i = some entry := by
@@ -708,21 +735,21 @@ theorem findProj? {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
     rw [hf] at hp
     exact hp
 
-theorem findProj?_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem findProj?_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
     (hT : envA.find? T = some (.indInfo cv caps)) (j : Nat) :
     env.findProj? T j = envA.findProj? T j := by
   unfold Ix.Kernel.Env.findProj?
   rw [h.tables_eq hT]
 
-theorem towerSlotsAll_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem towerSlotsAll_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
     (hT : envA.find? T = some (.indInfo cv caps)) (nF : Nat) :
     Ix.Kernel.towerSlotsAll env T nF = Ix.Kernel.towerSlotsAll envA T nF := by
   unfold Ix.Kernel.towerSlotsAll
   simp only [h.findProj?_eq hT]
 
-theorem etaProjs_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem etaProjs_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
     (hT : envA.find? T = some (.indInfo cv caps))
     (us : List KLevel) (targs : List KExpr) (b : KExpr) (nF : Nat) :
@@ -730,7 +757,7 @@ theorem etaProjs_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   unfold Ix.Kernel.etaProjs
   rw [h.towerSlotsAll_eq hT]
 
-theorem etaFabArgsE_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem etaFabArgsE_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
     (hT : envA.find? T = some (.indInfo cv caps))
     (us : List KLevel) (targs : List KExpr) (b : KExpr) (nF : Nat) :
@@ -738,7 +765,7 @@ theorem etaFabArgsE_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   unfold Ix.Kernel.etaFabArgsE
   rw [h.etaProjs_eq hT]
 
-theorem recSlotsAll_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem recSlotsAll_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KKey} {nF : Nat}
     (hs : Ix.Kernel.recSlotsAll envA T nF = true) :
     Ix.Kernel.recSlotsAll env T nF = true := by
@@ -754,7 +781,7 @@ theorem recSlotsAll_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
     rw [hf] at hj'
     exact hj'
 
-theorem natLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem natLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     (hs : Ix.Kernel.natLitSupported envA = true) :
     Ix.Kernel.natLitSupported env = true := by
   unfold Ix.Kernel.natLitSupported at hs ⊢
@@ -782,7 +809,7 @@ theorem natLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA e
       rw [h.find_nonDefn hf (fun _ _ heq => nomatch heq)]
       exact h3
 
-private theorem strTyPred_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+private theorem strTyPred_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {k : KKey} {p : Option (Ix.Kernel.ConstantInfo .anon) → Bool}
     (hp_val : ∀ ci₁ ci₂ : Ix.Kernel.ConstantInfo .anon,
       ci₁.toConstantVal = ci₂.toConstantVal → p (some ci₁) = p (some ci₂))
@@ -797,7 +824,7 @@ private theorem strTyPred_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA
     · rw [hf']; exact hok
     · rw [hf', ← hp_val (.defnInfo cv val .opaque) (.thmInfo cv val) rfl]; exact hok
 
-theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     (hs : Ix.Kernel.strLitSupported envA = true) :
     Ix.Kernel.strLitSupported env = true := by
   unfold Ix.Kernel.strLitSupported at hs ⊢
@@ -812,7 +839,7 @@ theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA e
     strTyPred_mono h (fun _ _ he => by simp [Ix.Kernel.charTyOk, he]) rfl h6⟩,
     strTyPred_mono h (fun _ _ he => by simp [Ix.Kernel.charOfNatTyOk, he]) rfl h7⟩
 
-theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {c : KKey} (hc : c ∈ Ix.Kernel.Rules.natBinOpNames)
     (hs : Ix.Kernel.natOpStored envA c = true) :
     Ix.Kernel.natOpStored env c = true := by
@@ -824,7 +851,7 @@ theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
     · rw [hf']; rw [hf] at hs; exact hs
     · exact absurd hc hnot
 
-theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     (ht : Ix.Kernel.Rules.natAddTyOk (envA.find? Ix.Kernel.natAddName) = true) :
     Ix.Kernel.Rules.natAddTyOk (env.find? Ix.Kernel.natAddName) = true := by
   cases hf : envA.find? Ix.Kernel.natAddName with
@@ -836,7 +863,7 @@ theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
     · rw [hf']; rw [hf] at ht; exact ht
     · exact absurd hmem hnot
 
-theorem isUnitLikeTy_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem isUnitLikeTy_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {e : KExpr} (hs : Ix.Kernel.isUnitLikeTy envA e = true) :
     Ix.Kernel.isUnitLikeTy env e = true := by
   cases e with
@@ -859,7 +886,7 @@ theorem isUnitLikeTy_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
         · exact absurd rfl hne
   | _ => cases hs
 
-theorem headTypePW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem headTypePW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {e : KExpr} {n : Nat} {pw : Ix.Kernel.PropWhen}
     (hs : Ix.Kernel.headTypePW envA.find? e n = some pw) :
     Ix.Kernel.headTypePW env.find? e n = some pw := by
@@ -876,7 +903,7 @@ theorem headTypePW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   | fvar => exact hs
   | _ => cases hs
 
-theorem typeSortPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem typeSortPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {T : KExpr} {pw : Ix.Kernel.PropWhen}
     (hs : Ix.Kernel.typeSortPW envA.find? T = some pw) :
     Ix.Kernel.typeSortPW env.find? T = some pw := by
@@ -889,7 +916,7 @@ theorem typeSortPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   rw [Ix.Kernel.typeSortPW_other h1' h2'] at hs ⊢
   exact h.headTypePW_mono hs
 
-theorem headProofPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem headProofPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {e : KExpr} {pw : Ix.Kernel.PropWhen}
     (hs : Ix.Kernel.headProofPW envA.find? e = some pw) :
     Ix.Kernel.headProofPW env.find? e = some pw := by
@@ -920,7 +947,7 @@ theorem headProofPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
   | fvar _ _ => exact h.typeSortPW_mono hs
   | _ => exact hs
 
-theorem isProofFast_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem isProofFast_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {a : KExpr} (hs : Ix.Kernel.isProofFast envA.find? a = true) :
     Ix.Kernel.isProofFast env.find? a = true := by
   unfold Ix.Kernel.isProofFast at hs ⊢
@@ -959,7 +986,7 @@ private theorem red_mkAppN_fn {env : Ix.Kernel.Env .anon} {d : Nat} :
 
 /-- Unfolding in `envA` becomes either `Red.delta` (when still `.defnInfo` in `env`) or
 `Red.deltaThm` + spine `Red.appFn` (when `.thmInfo` in `env` under `ThmTyped env`). -/
-theorem delta_sim {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+theorem delta_sim {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
     {d : Nat} {e e' : KExpr}
     (hu : Ix.Kernel.unfoldDefinition envA e = some e') :
     Ix.Kernel.Rules.Red env d e e' := by
@@ -984,9 +1011,10 @@ theorem delta_sim {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
             rw [hf']
             dsimp only
             simp only [hlen, ↓reduceIte]
-          · injection heq with hcv_eq hval_eq _
+          · have sourceTheorem := hf.trans (congrArg some heq)
+            injection heq with hcv_eq hval_eq _
             subst hcv_eq hval_eq
-            obtain ⟨hvf, hvb, vt, s, u, hinf, hde, hinfT, hred, hz⟩ := h.thmTyped n cv value hf'
+            obtain ⟨hvf, hvb, vt, s, u, hinf, hde, hinfT, hred, hz⟩ := h.thmTyped n cv value sourceTheorem hf'
             have hhead_red : Ix.Kernel.Rules.Red env d (.const n us)
                 (value.instantiateLevelParams cv.levelParams us) :=
               .deltaThm hf' hlen hvf hvb hinf hde hinfT hred hz
@@ -1000,8 +1028,8 @@ theorem delta_sim {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
 
 mutual
 
-/-- Transfer `Rules.Red` from `envA` to `env` across `ThmSim`. -/
-theorem red {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.Red` from `envA` to `env` across `ThmSimAt`. -/
+theorem red {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {d : Nat} {e e' : KExpr},
       Ix.Kernel.Rules.Red envA d e e' → Ix.Kernel.Rules.Red env d e e'
   | _, _, _, .refl => .refl
@@ -1077,8 +1105,8 @@ theorem red {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
         exact ⟨e, hS.findProj? hfe, hct, hnP, hnF, hfire⟩)
       hfab hws hb hlv' (certs hS hcerts) (infer hS htf) (defEq hS hdt) (defEq hS hpi)
 
-/-- Transfer `Rules.DefEq` from `envA` to `env` across `ThmSim`. -/
-theorem defEq {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.DefEq` from `envA` to `env` across `ThmSimAt`. -/
+theorem defEq {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {d : Nat} {a b : KExpr},
       Ix.Kernel.Rules.DefEq envA d a b → Ix.Kernel.Rules.DefEq env d a b
   | _, _, _, .refl => .refl
@@ -1138,8 +1166,8 @@ theorem defEq {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
       (by rw [hS.towerSlotsAll_eq hind]; exact htow) (infer hS hta) (red hS hwta)
       (certs hS hcerts) (infer hS htb) (defEq hS hd') (defEqList hS hfields)
 
-/-- Transfer `Rules.Infer` from `envA` to `env` across `ThmSim`. -/
-theorem infer {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.Infer` from `envA` to `env` across `ThmSimAt`. -/
+theorem infer {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {g : Ix.Kernel.Rules.Grade} {d : Nat} {e t : KExpr},
       Ix.Kernel.Rules.Infer envA g d e t → Ix.Kernel.Rules.Infer env g d e t
   | _, _, _, _, .sort => .sort
@@ -1162,8 +1190,8 @@ theorem infer {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
   | _, _, _, _, .proj htpe hte hhead hent hlen hus hprop =>
     .proj (infer hS htpe) (red hS hte) hhead (hS.findProj? hent) hlen hus hprop
 
-/-- Transfer `Rules.Certs` from `envA` to `env` across `ThmSim`. -/
-theorem certs {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.Certs` from `envA` to `env` across `ThmSimAt`. -/
+theorem certs {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {d : Nat} {lic : Bool} {ty : KExpr} {args : List KExpr},
       Ix.Kernel.Rules.Certs envA d lic ty args →
       Ix.Kernel.Rules.Certs env d lic ty args
@@ -1171,16 +1199,16 @@ theorem certs {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
   | _, _, _, _, .skip hlic hnev hrest => .skip hlic hnev (certs hS hrest)
   | _, _, _, _, .cert hta hd' hrest => .cert (infer hS hta) (defEq hS hd') (certs hS hrest)
 
-/-- Transfer `Rules.DefEqList` from `envA` to `env` across `ThmSim`. -/
-theorem defEqList {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.DefEqList` from `envA` to `env` across `ThmSimAt`. -/
+theorem defEqList {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {d : Nat} {as bs : List KExpr},
       Ix.Kernel.Rules.DefEqList envA d as bs →
       Ix.Kernel.Rules.DefEqList env d as bs
   | _, _, _, .nil => .nil
   | _, _, _, .cons h hs => .cons (defEq hS h) (defEqList hS hs)
 
-/-- Transfer `Rules.EtaProjCerts` from `envA` to `env` across `ThmSim`. -/
-theorem etaProjCerts {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+/-- Transfer `Rules.EtaProjCerts` from `envA` to `env` across `ThmSimAt`. -/
+theorem etaProjCerts {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     ∀ {d : Nat} {T : KKey} {us' : List KLevel} {targs : List KExpr} {b : KExpr}
       {lpsT : List Ix.Kernel.LevelParam} {idxs : List Nat},
       Ix.Kernel.Rules.EtaProjCerts envA d T us' targs b lpsT idxs →
@@ -1191,6 +1219,157 @@ theorem etaProjCerts {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
       (certs hS hcerts) (etaProjCerts hS hrest)
 
 end
+
+end ThmSimAt
+
+namespace ThmSim
+
+theorem of_envExt {envA env : Ix.Kernel.Env .anon}
+    (hthm : Ix.Kernel.Model.ThmTyped env)
+    (hext : Ix.Kernel.EnvExt envA env) : ThmSim envA env where
+  thmTyped := hthm
+  find_sim := fun hf => Or.inl (hext.find hf)
+  tables_eq := fun hT => hext.tables hT
+
+theorem find_nonDefn {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {k : KKey} {ciA : Ix.Kernel.ConstantInfo .anon}
+    (hf : envA.find? k = some ciA)
+    (hnd : ∀ cv v, ciA ≠ .defnInfo cv v .opaque) :
+    env.find? k = some ciA := by
+  exact ThmSimAt.find_nonDefn h.toAt hf hnd
+
+theorem find_projShape {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {k : KKey} {ciA : Ix.Kernel.ConstantInfo .anon}
+    (hf : envA.find? k = some ciA) (hsh : k.isProjFnShape = true) :
+    env.find? k = some ciA := by
+  exact ThmSimAt.find_projShape h.toAt hf hsh
+
+theorem findProj? {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {sn : KKey} {i : Nat} {entry : Ix.Kernel.ProjEntry .anon}
+    (hp : envA.findProj? sn i = some entry) :
+    env.findProj? sn i = some entry := by
+  exact ThmSimAt.findProj? h.toAt hp
+
+theorem findProj?_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (hT : envA.find? T = some (.indInfo cv caps)) (j : Nat) :
+    env.findProj? T j = envA.findProj? T j := by
+  exact ThmSimAt.findProj?_eq h.toAt hT j
+
+theorem towerSlotsAll_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (hT : envA.find? T = some (.indInfo cv caps)) (nF : Nat) :
+    Ix.Kernel.towerSlotsAll env T nF = Ix.Kernel.towerSlotsAll envA T nF := by
+  exact ThmSimAt.towerSlotsAll_eq h.toAt hT nF
+
+theorem etaProjs_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (hT : envA.find? T = some (.indInfo cv caps))
+    (us : List KLevel) (targs : List KExpr) (b : KExpr) (nF : Nat) :
+    Ix.Kernel.etaProjs env T us targs b nF = Ix.Kernel.etaProjs envA T us targs b nF := by
+  exact ThmSimAt.etaProjs_eq h.toAt hT us targs b nF
+
+theorem etaFabArgsE_eq {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KKey} {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (hT : envA.find? T = some (.indInfo cv caps))
+    (us : List KLevel) (targs : List KExpr) (b : KExpr) (nF : Nat) :
+    Ix.Kernel.etaFabArgsE env T us targs b nF = Ix.Kernel.etaFabArgsE envA T us targs b nF := by
+  exact ThmSimAt.etaFabArgsE_eq h.toAt hT us targs b nF
+
+theorem recSlotsAll_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KKey} {nF : Nat}
+    (hs : Ix.Kernel.recSlotsAll envA T nF = true) :
+    Ix.Kernel.recSlotsAll env T nF = true := by
+  exact ThmSimAt.recSlotsAll_mono h.toAt hs
+
+theorem natLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    (hs : Ix.Kernel.natLitSupported envA = true) :
+    Ix.Kernel.natLitSupported env = true := by
+  exact ThmSimAt.natLitSupported_mono h.toAt hs
+
+theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    (hs : Ix.Kernel.strLitSupported envA = true) :
+    Ix.Kernel.strLitSupported env = true := by
+  exact ThmSimAt.strLitSupported_mono h.toAt hs
+
+theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {c : KKey} (hc : c ∈ Ix.Kernel.Rules.natBinOpNames)
+    (hs : Ix.Kernel.natOpStored envA c = true) :
+    Ix.Kernel.natOpStored env c = true := by
+  exact ThmSimAt.natOpStored_mono h.toAt hc hs
+
+theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    (ht : Ix.Kernel.Rules.natAddTyOk (envA.find? Ix.Kernel.natAddName) = true) :
+    Ix.Kernel.Rules.natAddTyOk (env.find? Ix.Kernel.natAddName) = true := by
+  exact ThmSimAt.natAddTyOk_mono h.toAt ht
+
+theorem isUnitLikeTy_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {e : KExpr} (hs : Ix.Kernel.isUnitLikeTy envA e = true) :
+    Ix.Kernel.isUnitLikeTy env e = true := by
+  exact ThmSimAt.isUnitLikeTy_mono h.toAt hs
+
+theorem headTypePW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {e : KExpr} {n : Nat} {pw : Ix.Kernel.PropWhen}
+    (hs : Ix.Kernel.headTypePW envA.find? e n = some pw) :
+    Ix.Kernel.headTypePW env.find? e n = some pw := by
+  exact ThmSimAt.headTypePW_mono h.toAt hs
+
+theorem typeSortPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {T : KExpr} {pw : Ix.Kernel.PropWhen}
+    (hs : Ix.Kernel.typeSortPW envA.find? T = some pw) :
+    Ix.Kernel.typeSortPW env.find? T = some pw := by
+  exact ThmSimAt.typeSortPW_mono h.toAt hs
+
+theorem headProofPW_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {e : KExpr} {pw : Ix.Kernel.PropWhen}
+    (hs : Ix.Kernel.headProofPW envA.find? e = some pw) :
+    Ix.Kernel.headProofPW env.find? e = some pw := by
+  exact ThmSimAt.headProofPW_mono h.toAt hs
+
+theorem isProofFast_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {a : KExpr} (hs : Ix.Kernel.isProofFast envA.find? a = true) :
+    Ix.Kernel.isProofFast env.find? a = true := by
+  exact ThmSimAt.isProofFast_mono h.toAt hs
+
+theorem delta_sim {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
+    {d : Nat} {e e' : KExpr}
+    (hu : Ix.Kernel.unfoldDefinition envA e = some e') :
+    Ix.Kernel.Rules.Red env d e e' := by
+  exact ThmSimAt.delta_sim h.toAt hu
+
+theorem red {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {d : Nat} {e e' : KExpr},
+      Ix.Kernel.Rules.Red envA d e e' → Ix.Kernel.Rules.Red env d e e' := by
+  exact @ThmSimAt.red envA env hS.toAt
+
+theorem defEq {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {d : Nat} {a b : KExpr},
+      Ix.Kernel.Rules.DefEq envA d a b → Ix.Kernel.Rules.DefEq env d a b := by
+  exact @ThmSimAt.defEq envA env hS.toAt
+
+theorem infer {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {g : Ix.Kernel.Rules.Grade} {d : Nat} {e t : KExpr},
+      Ix.Kernel.Rules.Infer envA g d e t → Ix.Kernel.Rules.Infer env g d e t := by
+  exact @ThmSimAt.infer envA env hS.toAt
+
+theorem certs {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {d : Nat} {lic : Bool} {ty : KExpr} {args : List KExpr},
+      Ix.Kernel.Rules.Certs envA d lic ty args →
+      Ix.Kernel.Rules.Certs env d lic ty args := by
+  exact @ThmSimAt.certs envA env hS.toAt
+
+theorem defEqList {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {d : Nat} {as bs : List KExpr},
+      Ix.Kernel.Rules.DefEqList envA d as bs →
+      Ix.Kernel.Rules.DefEqList env d as bs := by
+  exact @ThmSimAt.defEqList envA env hS.toAt
+
+theorem etaProjCerts {envA env : Ix.Kernel.Env .anon} (hS : ThmSim envA env) :
+    ∀ {d : Nat} {T : KKey} {us' : List KLevel} {targs : List KExpr} {b : KExpr}
+      {lpsT : List Ix.Kernel.LevelParam} {idxs : List Nat},
+      Ix.Kernel.Rules.EtaProjCerts envA d T us' targs b lpsT idxs →
+      Ix.Kernel.Rules.EtaProjCerts env d T us' targs b lpsT idxs := by
+  exact @ThmSimAt.etaProjCerts envA env hS.toAt
 
 end ThmSim
 

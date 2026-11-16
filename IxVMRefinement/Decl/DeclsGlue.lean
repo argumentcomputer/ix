@@ -673,14 +673,13 @@ private theorem nativeTable_newProj_ctor_nonAux {J : Judgements .anon}
 
 /-- `StrongEnvProps` preservation across any `DeclRunJ rulesJ (IndRoutesJ rulesJ env)` step when
 any unpinned `.indDecl` block has `NonAuxKey` member names (in particular under `DeclNonAux d`). -/
-theorem strongEnvProps_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
-    (hS : Ix.Kernel.Open.StoreInv env) (h : StrongEnvProps env)
+theorem strongEnvProps_declRunJ_generic {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
+    (h : StrongEnvProps env) (htb : Ix.Kernel.Model.TableBodies env₂)
     (hna : ∀ block nP, d = .indDecl block nP → Ix.Kernel.basisPinHit block = none →
       ∀ ci ∈ block, NonAuxKey ci.name)
-    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    (hrun : DeclRunJ J (IndRoutesJ J env) env d env₂) :
     StrongEnvProps env₂ := by
   have hext := Ix.Kernel.Model.declRunJ_envExt_routes hrun
-  have htb := Ix.Kernel.Model.tableBodies_declRunJ hS h.1 hrun
   cases d with
   | thmDecl cv value =>
     obtain ⟨type', value', hcv, -, -, rfl⟩ := hrun
@@ -710,7 +709,7 @@ theorem strongEnvProps_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declarat
       exact strongEnvProps_step_noProj hext.find h (Ix.Kernel.Model.basis_newSat_noProj hrun')
     | none =>
       have hblk_na := hna block nP rfl hpin
-      have hroutes : IndRoutesJ rulesJ env block nP env₂ := by simpa [DeclRunJ, hpin] using hrun
+      have hroutes : IndRoutesJ J env block nP env₂ := by simpa [DeclRunJ, hpin] using hrun
       rcases hroutes with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine strongEnvProps_step hext.find h htb fun n tbl hf hn => Or.inl ?_
         obtain ⟨_, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
@@ -748,6 +747,16 @@ theorem strongEnvProps_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declarat
       · exact strongEnvProps_step_noProj hext.find h
           (Ix.Kernel.Model.twin_newSat (fun _ _ _ _ heq => nomatch heq)
             (fun _ _ _ _ _ heq => nomatch heq) hT)
+
+/-- Raw derivations supply the table-body premise from their store invariant. -/
+theorem strongEnvProps_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
+    (hS : Ix.Kernel.Open.StoreInv env) (h : StrongEnvProps env)
+    (hna : ∀ block nP, d = .indDecl block nP → Ix.Kernel.basisPinHit block = none →
+      ∀ ci ∈ block, NonAuxKey ci.name)
+    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    StrongEnvProps env₂ := by
+  exact strongEnvProps_declRunJ_generic h
+    (Ix.Kernel.Model.tableBodies_declRunJ hS h.1 hrun) hna hrun
 
 /-! ## Section 2: `EtaShape` (`etaSort` unconditional + `etaType` on closed parameter spines) -/
 
@@ -928,17 +937,15 @@ private theorem nativeCapsAt_eta_full {p : InductiveShape .anon} {isRec : Bool}
     exact ⟨c, rfl, h.1.1, rfl, rfl, rfl, rfl⟩
   · exact nomatch h
 
-private theorem native_etaShape_new {env env₁ X env₂ : Ix.Kernel.Env .anon}
+private theorem native_etaShape_new {J : Judgements .anon} {env env₁ X env₂ : Ix.Kernel.Env .anon}
     {p₀ p : NativeParts .anon} {isRec : Bool} {cvTa : ConstantVal .anon} {p₁ : InductiveShape .anon}
     {kinds : List (List Ix.Kernel.RecFieldKind)} {ctorsA : List (ConstantVal .anon × Nat)}
     {sortss : List (List KLevel)}
-    (hS : Ix.Kernel.Open.StoreInv env)
     (hrc : Ix.Kernel.Model.NativeRecog p₀)
-    (hnd : (p₀.ctors.map (·.1.name)).Nodup)
-    (hInd : SumIndRunJ rulesJ env p₀.toInductiveShape (fun p₁ => Ix.Kernel.nativeCapsAt p₁ isRec)
+    (hInd : SumIndRunJ J env p₀.toInductiveShape (fun p₁ => Ix.Kernel.nativeCapsAt p₁ isRec)
       env₁ cvTa p₁)
     (hp : p = (p₀.complete p₁).withKinds kinds)
-    (hCtors : SumCtorsRunJ rulesJ env₁ env₁ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort
+    (hCtors : SumCtorsRunJ J env₁ env₁ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort
       p.isProp p.large cvTa p.ctors ctorsA sortss)
     (hX : NewSat env₁ X (fun x => ∀ cv caps, x ≠ .indInfo cv caps))
     (hCkeep : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), ctorsA[j]? = some cA →
@@ -958,9 +965,6 @@ private theorem native_etaShape_new {env env₁ X env₂ : Ix.Kernel.Env .anon}
         ∃ cbs, cvc.type.stripPis (nP + nF) = some (cbs,
           Ix.Kernel.Expr.mkAppN (.const T (cvc.levelParams.map .param))
             (Ix.Kernel.structPsAt nF nP)) := by
-  have hfr : ∀ e : Ix.Kernel.Env .anon, JudgeFrames rulesJ e :=
-    fun e => Ix.Kernel.Model.judgeFrames_rulesJ e
-  have _hF := Ix.Kernel.Model.nativeFront hfr hS hrc hnd hInd hp hCtors
   obtain ⟨cvTa₀, s, bs, cvS, hchk₀, hTa_cases, hstripT, hFS, hp₁, henv₁⟩ := hInd
   intro T cvT caps hf hn he
   have hT₁ : env₁.find? T = some (.indInfo cvT caps) := by
@@ -1060,14 +1064,13 @@ private theorem native_etaShape_new {env env₁ X env₂ : Ix.Kernel.Env .anon}
   · rw [hT₁] at hn; cases hn
 
 /-- Every `DeclRunJ rulesJ (IndRoutesJ rulesJ env)` step preserves `EtaCtorStored` and `EtaShape`. -/
-theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
+theorem etaShape_declRunJ_generic {J : Judgements .anon}
+    (hfr : ∀ e : Ix.Kernel.Env .anon, JudgeFrames J e) {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
     (hS : Ix.Kernel.Open.StoreInv env)
     (hcs : EtaCtorStored env) (h : EtaShape env)
-    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    (hrun : DeclRunJ J (IndRoutesJ J env) env d env₂) :
     EtaCtorStored env₂ ∧ EtaShape env₂ := by
   have hext := Ix.Kernel.Model.declRunJ_envExt_routes hrun
-  have hfr : ∀ e : Ix.Kernel.Env .anon, JudgeFrames rulesJ e :=
-    fun e => Ix.Kernel.Model.judgeFrames_rulesJ e
   have hbasis_step : ∀ {kind : BasisKind}, DeclBasisRun env kind env₂ →
       EtaCtorStored env₂ ∧ EtaShape env₂ := by
     intro kind hb
@@ -1133,8 +1136,8 @@ theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .a
             env₂.find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) :=
           fun j cA hj => Ix.Kernel.Model.nativeTable_keep hTbl
             (Ix.Kernel.Env.find?_cons_of_fresh hfreshR (hF.ctor j cA hj).1)
-        have hnew := native_etaShape_new hS (Ix.Kernel.Model.nativeRecog_of hdp)
-          hnd hInd hp hCtors hX hCkeep hTbl
+        have hnew := native_etaShape_new (Ix.Kernel.Model.nativeRecog_of hdp)
+          hInd hp hCtors hX hCkeep hTbl
         refine ⟨?_, etaShape_step hext h ?_ (fun T cvT caps hf hn he =>
           (hnew T cvT caps hf hn he).2)⟩
         · intro T cvT caps kc hf he hkc
@@ -1167,8 +1170,8 @@ theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .a
         have hCkeep : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), ctorsA[j]? = some cA →
             env₂.find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) :=
           fun j cA hj => Ix.Kernel.Model.nativeTable_keep hTbl (hF.ctor j cA hj).1
-        have hnew := native_etaShape_new hS (Ix.Kernel.Model.nativeRecog_noRec hdp)
-          hnd hInd hp hCtors hX hCkeep hTbl
+        have hnew := native_etaShape_new (Ix.Kernel.Model.nativeRecog_noRec hdp)
+          hInd hp hCtors hX hCkeep hTbl
         refine ⟨?_, etaShape_step hext h ?_ (fun T cvT caps hf hn he =>
           (hnew T cvT caps hf hn he).2)⟩
         · intro T cvT caps kc hf he hkc
@@ -1189,6 +1192,15 @@ theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .a
       · exact etaShape_step_noEta hext hcs h
           (Ix.Kernel.Model.twin_newSat (fun _ _ _ _ _ heq => nomatch heq)
             (fun _ _ _ _ _ _ heq => nomatch heq) hT)
+
+/-- Compatibility with the raw rules judgement package. -/
+theorem etaShape_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
+    (hS : Ix.Kernel.Open.StoreInv env)
+    (hcs : EtaCtorStored env) (h : EtaShape env)
+    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    EtaCtorStored env₂ ∧ EtaShape env₂ := by
+  exact etaShape_declRunJ_generic (fun e => Ix.Kernel.Model.judgeFrames_rulesJ e)
+    hS hcs h hrun
 
 /-! ### `.io`-grade `Infer` spine inversion for `etaType` on closed parameter arguments -/
 
