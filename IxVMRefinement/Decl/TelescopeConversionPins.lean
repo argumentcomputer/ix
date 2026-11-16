@@ -83,6 +83,6 @@ theorem forall_conversion_components {md : Mode} {env : Env md} {depth : Nat}
   | unitLikeTy typed reduced head _ _ _ _ _ _ _ =>
     exact (forall_type_not_const typed reduced head).elim
   | structEtaTy head _ _ _ _ _ _ _ _ _ _ _ _ _ => cases head
-termination_by converted
+termination_by structural converted
 
 end IxVM.Refinement.Decl
