@@ -260,6 +260,49 @@ theorem coreCompanions_of_empty {c : Ctx} (henv : ∀ k, c.env.find? k = none)
   recPlain := fun k cv mI rP rls rl cvj nP nF hf _ _ _ => (noFind henv hf).elim
   ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf _ _ _ => (noFind henv hf).elim
 
+/-- **A value constant keeps the companions**: storing, at a fresh key that is no projection
+table's, a constant that is neither a recursor nor a constructor (a definition, a theorem, an
+axiom) preserves `CoreCompanions`. The role fields are monotone along the extension; the
+recursor fields read only recursors and constructors, which are those of the prefix. -/
+theorem CoreCompanions.cons_value {c : Ctx} (h : CoreCompanions c) {ci : ConstantInfo .anon}
+    (hfresh : c.env.find? ci.name = none)
+    (hnt : ∀ T : KKey, ci.name ≠ Ix.Kernel.projTableName T)
+    (hrec : ∀ cv mI rP rls, ci ≠ .recInfo cv mI rP rls)
+    (hctor : ∀ cv nP nF, ci ≠ .ctorInfo cv nP nF) :
+    CoreCompanions ⟨c.E, ⟨ci :: c.env.consts⟩, c.t, c.lim⟩ := by
+  have hext : Ix.Kernel.EnvExt c.env ⟨ci :: c.env.consts⟩ :=
+    Ix.Kernel.EnvExt.cons hfresh (fun _ => hnt _)
+  have hold : ∀ {k : KKey} {x : ConstantInfo .anon},
+      (⟨ci :: c.env.consts⟩ : Ix.Kernel.Env .anon).find? k = some x → x ≠ ci →
+        c.env.find? k = some x := by
+    intro k x hf hne
+    rw [Ix.Kernel.Env.find?_cons] at hf
+    split at hf
+    · exact absurd (Option.some.inj hf).symm hne
+    · exact hf
+  exact
+    { natLit := fun h1 h2 h3 => hext.natLitSupported_mono (h.natLit h1 h2 h3)
+      strLit := fun h1 => hext.strLitSupported_mono (h.strLit h1)
+      natOps := fun r hr hm => hext.natOpStored_mono (h.natOps r hr hm)
+      natAdd := fun h1 => hext.opt_mono (p := Ix.Kernel.Rules.natAddTyOk) (h.natAdd h1) rfl
+      eqStored := fun h1 =>
+        let ⟨ci', hci'⟩ := h.eqStored h1
+        ⟨ci', hext.find hci'⟩
+      quotBasis := fun h1 ci' hm => hext.find (h.quotBasis h1 ci' hm)
+      recMajorRecord := fun k cv mI rP rls p us hf hne hdom =>
+        h.recMajorRecord k cv mI rP rls p us
+          (hold hf (fun e => hrec cv mI rP rls e.symm)) hne hdom
+      recRulesNodupAndProj := fun k cv mI rP rls hf =>
+        h.recRulesNodupAndProj k cv mI rP rls (hold hf (fun e => hrec cv mI rP rls e.symm))
+      recPlain := fun k cv mI rP rls rl cvj nP nF hf hrl hfire hc =>
+        h.recPlain k cv mI rP rls rl cvj nP nF
+          (hold hf (fun e => hrec cv mI rP rls e.symm)) hrl hfire
+          (hold hc (fun e => hctor cvj nP nF e.symm))
+      ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom =>
+        h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us
+          (hold hf (fun e => hrec cv mI rP rls e.symm)) hrl
+          (hold hc (fun e => hctor cvj nP nF e.symm)) hdom }
+
 /-- No role is in force at the group limit `0`. -/
 theorem not_inForce_of_lim_zero {c : Ctx} (hlim : c.lim = some 0) (r : Ix.Kernel.Role) :
     ¬ c.inForce r :=

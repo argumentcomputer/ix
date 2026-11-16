@@ -434,7 +434,9 @@ theorem checkedConstOrigin_step_scoped
     (hne_role : ∀ a, a ∉ order_role →
       ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false → keyOf t a ≠ .role r) :
     ∃ env₂, CleanInstallStep env d env₂ ∧
-      ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
+      (∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂) ∧
+      ∀ lim : Option Nat, CoreCompanions ⟨E_core, env, t, lim⟩ →
+        CoreCompanions ⟨E_core, env₂, t, lim⟩ := by
   have hbound : IxVM.Consistency.Bounded calls := hgood.2
   cases hchk with
   | @axiomDecl a _ _ nlvls ty₀ ty' lim _ _ _ m_ax _ x_rc _ x_addr _ v_ax _ cs_ax
@@ -442,7 +444,7 @@ theorem checkedConstOrigin_step_scoped
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
     by_cases hskip : cv₀.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv₀.name = true
     · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := ite_eq_left hskip
-      exact ⟨env, CleanInstallStep.empty hempty, fun _ _ h => h⟩
+      exact ⟨env, CleanInstallStep.empty hempty, fun _ _ h => h, fun _ h => h⟩
     · obtain ⟨a', ha'_ref, heq_a⟩ := ha_ax
       let c : Ctx := ⟨E_core, env, t, some lim⟩
       have hgood_c : Good c calls := hgood
@@ -476,7 +478,9 @@ theorem checkedConstOrigin_step_scoped
       ⟨⟨rfl, rfl, hty_ann⟩, hval_ann, rfl⟩
     have hclean : CleanInstallStep env (.defnDecl cv₀ val₀ hn) ⟨.defnInfo cv' val' hn :: env.consts⟩ :=
       CleanInstallStep.single rfl hstored hfresh_cv hbase
-    refine ⟨⟨.defnInfo cv' val' hn :: env.consts⟩, hclean, fun V _ hInv => ?_⟩
+    refine ⟨⟨.defnInfo cv' val' hn :: env.consts⟩, hclean, fun V _ hInv => ?_, fun lim hC =>
+      hC.cons_value (ci := .defnInfo cv' val' hn) hfresh_cv (fun _ => ne_projTableName_of_isBaseKey hbase)
+        (fun _ _ _ _ e => nomatch e) (fun _ _ _ e => nomatch e)⟩
     have hS : FoldStoreInv env := hInv.toFoldStoreInv
     let c : ScopedCtx :=
       { toCtx := ⟨E_core, env, t, some lim⟩, allowed := fun cl => cl ∈ calls }
@@ -540,7 +544,9 @@ theorem checkedConstOrigin_step_scoped
       ⟨⟨rfl, rfl, hty_ann⟩, hval_ann⟩
     have hclean : CleanInstallStep env (.thmDecl cv₀ val₀) ⟨.thmInfo cv' val' :: env.consts⟩ :=
       CleanInstallStep.single rfl hstored hfresh_cv hbase
-    refine ⟨⟨.thmInfo cv' val' :: env.consts⟩, hclean, fun V _ hInv => ?_⟩
+    refine ⟨⟨.thmInfo cv' val' :: env.consts⟩, hclean, fun V _ hInv => ?_, fun lim hC =>
+      hC.cons_value (ci := .thmInfo cv' val') hfresh_cv (fun _ => ne_projTableName_of_isBaseKey hbase)
+        (fun _ _ _ _ e => nomatch e) (fun _ _ _ e => nomatch e)⟩
     have hS : FoldStoreInv env := hInv.toFoldStoreInv
     let c : ScopedCtx :=
       { toCtx := ⟨E_core, env, t, some lim⟩, allowed := fun cl => cl ∈ calls }
@@ -600,7 +606,9 @@ theorem checkedConstOrigin_step_scoped
       ⟨⟨rfl, rfl, hty_ann⟩, trivial⟩
     have hclean : CleanInstallStep env (.opaqueDecl cv₀ val₀) ⟨.axiomInfo cv' :: env.consts⟩ :=
       CleanInstallStep.single rfl hstored hfresh_cv hbase
-    refine ⟨⟨.axiomInfo cv' :: env.consts⟩, hclean, fun V _ hInv => ?_⟩
+    refine ⟨⟨.axiomInfo cv' :: env.consts⟩, hclean, fun V _ hInv => ?_, fun lim hC =>
+      hC.cons_value (ci := .axiomInfo cv') hfresh_cv (fun _ => ne_projTableName_of_isBaseKey hbase)
+        (fun _ _ _ _ e => nomatch e) (fun _ _ _ e => nomatch e)⟩
     have hS : FoldStoreInv env := hInv.toFoldStoreInv
     let c : ScopedCtx :=
       { toCtx := ⟨E_core, env, t, some lim⟩, allowed := fun cl => cl ∈ calls }
@@ -644,7 +652,9 @@ theorem checkedConstOrigin_step_scoped
     exact FullDeclInv.step_of_foldInv_clean hclean
       (foldInv_step_declRunJ (d := .opaqueDecl cv' val') (fun _ _ heq => nomatch heq) hdecl) V hInv
 
-/-- The step as the public `InstallStep`, with the unified fold invariant. -/
+/-- The step as the public `InstallStep`: the declared constant is stored, the fold invariant
+and the companions of the core's environment facts are kept, and every stored key stays stored
+(so a scope resolved before the step is resolved after it, `ScopeResolved.mono`). -/
 theorem checkedConstOrigin_installStep_scoped
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address}
@@ -657,10 +667,13 @@ theorem checkedConstOrigin_installStep_scoped
     (hne_role : ∀ a, a ∉ order_role →
       ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false → keyOf t a ≠ .role r) :
     ∃ env₂, IxVM.Consistency.InstallStep env d env₂ ∧
-      ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂ := by
-  obtain ⟨env₂, hclean, hstep⟩ :=
+      (∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env → FullDeclInv V env₂) ∧
+      (∀ lim : Option Nat, CoreCompanions ⟨E_core, env, t, lim⟩ →
+        CoreCompanions ⟨E_core, env₂, t, lim⟩) ∧
+      ∀ k : KKey, (env.find? k).isSome = true → (env₂.find? k).isSome = true := by
+  obtain ⟨env₂, hclean, hstep, hcomp⟩ :=
     checkedConstOrigin_step_scoped hchk hctx hres hgood hfresh hne_role
-  exact ⟨env₂, hclean.step, hstep⟩
+  exact ⟨env₂, hclean.step, hstep, hcomp, hclean.monoSome⟩
 
 /-! ## Quotient, Basis, and Pinned Inductive Steps in `FullDeclInv` -/
 
