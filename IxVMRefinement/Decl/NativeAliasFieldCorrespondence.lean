@@ -42,8 +42,9 @@ theorem ReferenceReplay.constructor_beta_alias_correspondence {V : Type u} [SetT
       IxVM.Consistency.ValStored initial raw ∧
       openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual) ∧
       openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual) ∧
-      ∀ j original final, originalVars[j]? = some original → finalVars[j]? = some final →
-        ∀ inputDomain outputDomain betaDomain betaArgument beforeMeta afterMeta lambdaMeta,
+      ∀ (j : Nat) (original final : Expr .anon), originalVars[j]? = some original → finalVars[j]? = some final →
+        ∀ (inputDomain outputDomain betaDomain betaArgument : Expr .anon)
+          (beforeMeta afterMeta lambdaMeta : BinderMeta),
           original.fvarTypeD = .forallE inputDomain
             (.app (.lam betaDomain (.const name []) lambdaMeta) betaArgument) beforeMeta →
           final.fvarTypeD = .forallE outputDomain (.const bodyName bodyLevels) afterMeta →
