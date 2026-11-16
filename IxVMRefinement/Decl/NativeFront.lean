@@ -3843,6 +3843,24 @@ theorem CIRepExact.ctor_inv {κ : _root_.Address → KKey} {h : Heap F}
     injection hv with _ hc _
     exact absurd hc (by decide)
 
+/-- Exact constructor conversion retains both checked 56-bit header counts. -/
+theorem CIRepExact.ctor_count_bounds {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty blk ind cidx np nf u : SourceValue F}
+    {cv : ConstantVal .anon} {nP nF : Nat}
+    (represented : CIRepExact κ h
+      (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u]) (.ctorInfo cv nP nF)) :
+    nP < 72057594037927936 ∧ nF < 72057594037927936 := by
+  generalize valueEq : Value.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u] = value at represented
+  generalize infoEq : ConstantInfo.ctorInfo cv nP nF = info at represented
+  cases represented
+  case ctor _ _ _ counts _ =>
+    injection infoEq with _ paramsEq fieldsEq
+    rw [paramsEq, fieldsEq]
+    exact counts
+  all_goals
+    injection valueEq with _ tag _
+    exact absurd tag (by decide)
+
 private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Levels)
     (hCore : IxVM.Consistency.Core S₀) {c₁ : Ctx}
     {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}

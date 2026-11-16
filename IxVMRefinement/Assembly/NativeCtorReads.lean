@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Assembly.NativeCtorInputs
 import IxVMRefinement.Assembly.NativeReaderInputs
 import IxVMRefinement.Core.CallHeaps
@@ -182,6 +183,35 @@ theorem native_ctor_projection_hashes (context : Core.ScopedCtx)
       | zero => simpa only [Nat.add_zero] using current
       | succ offset =>
         simpa only [show start + 1 + offset = start + (offset + 1) by omega] using rest offset (by omega)
+
+/-- Every constructor's field count satisfies the converter's actual wire bound. The
+successful loop supplies a positive load at each family slot. -/
+theorem native_ctor_field_bounds {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {params indices levels : Nat} {rootCalls : List (Call F)}
+    {ctors ctorsA : List (Decl.KConstantVal × Nat)} {rawTypes : List Core.KExpr}
+    (family : Decl.CtorLoadAtIndex base.t block params i rootCalls ctors ctorsA rawTypes)
+    (countBound : ctors.length < 549755813888)
+    {rc former bp sortLevel result : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
+    (subset : ∀ call ∈ calls, call ∈ rootCalls)
+    (observed : ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
+      [rc, former, .field (params : F), .field (indices : F), .field (ctors.length : F),
+        .field (levels : F), bp, .field i, sortLevel, .field 0, .field 0] h result h' calls) :
+    ∀ ctor ∈ ctors, ctor.2 < 72057594037927936 := by
+  intro ctor member
+  obtain ⟨slot, slotBound, rfl⟩ := List.getElem_of_mem member
+  obtain ⟨loadedCtor, annotated, atSlot, _, _, load⟩ := family.2 slot slotBound
+  have same : loadedCtor = ctors[slot] :=
+    Option.some.inj (atSlot.symm.trans (List.getElem?_eq_getElem slotBound))
+  have scopeRead : Nonempty (CtorScopeRead block i (slot : F) 0 params levels rootCalls) := by
+    simpa only [Nat.zero_add] using native_ctor_scope_reads countBound ctors.length 0 (Nat.add_zero _)
+      blockRep subset observed slot slotBound
+  obtain ⟨checked⟩ := scopeRead
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, represented⟩ :=
+    load checked.blockArg checked.ptr checked.before checked.after checked.loadCalls
+      checked.loadSubset checked.blockRep checked.loaded
+  have bounded := (Decl.CIRepExact.ctor_count_bounds represented).2
+  simpa only [same] using bounded
 
 /-- A produced Source observation and the actual reader row construct one constructor's
 reload contract. The declared member name is fixed by the reader context's key agreement. -/
