@@ -7,7 +7,8 @@ import Ix.Address.Pure
 
 A Let inside the first motive can hide its last binder from syntactic family discovery.
 The native route must still reject a recursor whose actual parent belongs to a modeled
-block. Canonical mutual recursors and ordinary native recursors with Lets remain accepted.
+block. Canonical mutual recursors and plain native recursors remain accepted. A native
+recursor with a Let in its motive's domain or in its result is refused at its header.
 These fixtures construct authenticated Ixon records and execute the complete Aiur checker.
 -/
 
@@ -126,8 +127,10 @@ private def nativeCase (motiveLet resultLet : Bool) : Except String Case := do
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context address none)
   pure {
     label := s!"native recursor: motive Let={motiveLet}, result Let={resultLet}"
-    accept := true
-    exercises := some "KernelCheck::nat_rec_check"
+    accept := !motiveLet && !resultLet
+    rejectsWith := if motiveLet then some "recursor header: a let in a motive's domain"
+      else if resultLet then some "recursor header: a let in the result" else none
+    exercises := if motiveLet || resultLet then none else some "KernelCheck::nat_rec_check"
     witness := witness }
 
 def run : IO UInt32 :=

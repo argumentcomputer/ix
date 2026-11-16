@@ -50,6 +50,7 @@ import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.RecursorParentRoute
+import Tests.Ix.IxVM.GuardBatch
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
@@ -263,6 +264,9 @@ def registry : List Entry := [
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
+  -- The declaration checker's shape guards: one kind of member per inductive block, no later
+  -- use of a recursive field, a recursor header free of `let`.
+  .env "ixvm-guard-batch" (.ci .ixvm) Tests.Ix.IxVM.GuardBatch.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
@@ -396,6 +400,7 @@ def required : List (String × String) := [
   ("ixvm-pw-hints", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
   ("ixvm-recursor-parent-route", "ci:ixvm"),
+  ("ixvm-guard-batch", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
