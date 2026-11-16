@@ -2533,6 +2533,66 @@ def check_rec_major_plain := aiur_fn⟦
     }
 ⟧
 
+  -- ## The recursor's header, as plain syntax
+  --
+  -- A recursor's type is its parameters, its motives, its minor premises, its indices and
+  -- its major premise, each a syntactic ∀ binder, then its result. No motive's domain, no
+  -- index's domain, not the major premise's domain and not the result contains a `let`: the
+  -- family (the head of the last binder's domain of the first motive) and the major
+  -- premise's inductive are then read off the stored type without reducing anything.
+  -- Parameter domains and minor-premise domains may contain `let`s: a family's parameter
+  -- domains and its constructors' field domains carry theirs into them.
+
+  -- Whether `e` contains a `let`.
+
+def expr_has_let := aiur_fn⟦
+  fn expr_has_let(e: KernelTypes::KExpr) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Let(_, _, _) => {  1 } ,
+        KernelTypes::KExprNode::App(f, a) => {
+          match expr_has_let(f) { 1 => {  1 } , _ => {  expr_has_let(a) } , } } ,
+        KernelTypes::KExprNode::Lam(d, b, _) => {
+          match expr_has_let(d) { 1 => {  1 } , _ => {  expr_has_let(b) } , } } ,
+        KernelTypes::KExprNode::Forall(d, b, _) => {
+          match expr_has_let(d) { 1 => {  1 } , _ => {  expr_has_let(b) } , } } ,
+        KernelTypes::KExprNode::Proj(_, _, x) => {  expr_has_let(x) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- The first `n` binders of `e`, each a syntactic ∀: whether one of their domains contains
+  -- a `let`, and `e` under the `n` binders.
+
+def doms_have_let := aiur_fn⟦
+  fn doms_have_let(e: KernelTypes::KExpr, n: Field) -> (Field, KernelTypes::KExpr) {
+      match n {
+        0 => {  (0, e) } ,
+        _ => {
+          let KernelTypes::KExprNode::Forall(d, b, _) = (*(e));
+          let (hit, rest) = doms_have_let(b, n - 1);
+          match expr_has_let(d) {
+            1 => {  (1, rest) } ,
+            _ => {  (hit, rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_rec_header_lets := aiur_fn⟦
+  fn check_rec_header_lets(ty: KernelTypes::KExpr, n_p: Field, n_mot: Field, n_min: Field,
+                           n_i: Field) -> () {
+      let (mot_let, after_mot) = doms_have_let(peel_n_foralls(ty, n_p), n_mot);
+      assert_eq!(mot_let, 0, "recursor header: a let in a motive's domain");
+      let (idx_let, after_idx) = doms_have_let(peel_n_foralls(after_mot, n_min), n_i);
+      assert_eq!(idx_let, 0, "recursor header: a let in an index's domain");
+      let KernelTypes::KExprNode::Forall(major, concl, _) = (*(after_idx));
+      assert_eq!(expr_has_let(major), 0, "recursor header: a let in the major premise's domain");
+      assert_eq!(expr_has_let(concl), 0, "recursor header: a let in the result");
+      ()
+    }
+⟧
+
   -- The canonical recursor at a given elimination offset (the native route's, or a
   -- modeled block's family-wide one): the level link, the type up to definitional
   -- equality against the reconstruction, and every rule syntactically the
@@ -3468,6 +3528,10 @@ def check_recursor_member := aiur_fn⟦
                 "recursor k_flag disagrees with its inductive's K eligibility");
 
               check_parent_inductive_shape(rc, parent_ci);
+
+              -- the header as plain syntax: no `let` in a motive's, an index's or the
+              -- major premise's domain, nor in the result
+              check_rec_header_lets(ty, n_p, n_mot, n_min, n_i);
 
               check_recursor_canonical_full(rc, rec_ci, addr, parent_ci, parent_addr) } ,
           } } ,

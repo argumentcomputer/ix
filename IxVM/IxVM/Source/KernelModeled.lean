@@ -1612,6 +1612,8 @@ def check_recs := aiur_fn⟦
               let parent = KernelCheck::rec_to_parent_addr(ty, rnp, nmot, nmin, ni);
               KernelCheck::check_recursor_canonical_at(rc, rci, r, (*(Ingress::get_ci(parent))),
                 parent, univ_offset, bnl);
+              -- the header as plain syntax, as a native recursor's
+              KernelCheck::check_rec_header_lets(ty, rnp, nmot, nmin, ni);
               let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
               check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np,
                          univ_offset, bnl) } ,
