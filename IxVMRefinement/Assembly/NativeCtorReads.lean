@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.NativeCtorInputs
 import IxVMRefinement.Assembly.NativeReaderInputs
 import IxVMRefinement.Core.CallHeaps
+import IxVMRefinement.Callees.ProjAddr
 
 /-! # Constructor load and scope observations from the native loop
 
@@ -121,6 +122,64 @@ theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
       | succ offset =>
         have picked := rest offset (by omega)
         simpa only [show start + 1 + offset = start + (offset + 1) by omega] using picked
+
+/-- Every constructor-loop slot hashes its canonical projection bytes. This uses the actual
+serialization call and needs no installed-load facts or call permissions. -/
+theorem native_ctor_projection_hashes (context : Core.ScopedCtx)
+    {block : Bytes.Address} {indIndex safety : F} {params indices count levels : Nat}
+    (countBound : count < 549755813888) {rootCalls : List (Call F)} :
+    ∀ (remaining start : Nat) {rc former blockArg sortLevel result : SourceValue F}
+      {h h' : Heap F} {calls : List (Call F)},
+      remaining + start = count → Bytes.RepAddressRef Core.addrTy h block blockArg →
+      (∀ call ∈ calls, call ∈ rootCalls) →
+      ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
+        [rc, former, .field (params : F), .field (indices : F), .field (count : F),
+          .field (levels : F), blockArg, .field indIndex, sortLevel, .field safety, .field (start : F)]
+        h result h' calls →
+      ∀ offset < remaining, Hashed rootCalls
+        (Ixon.serConstant (IxVM.Consistency.constructorProjection (Core.ixAddr block)
+          (ZMod.val indIndex) (start + offset)))
+  | 0, _, _, _, _, _, _, _, _, _, _, _, _, _ => by intro offset bound; omega
+  | remaining + 1, start, rc, former, blockArg, sortLevel, result, h, h', calls,
+      total, blockRep, subset, evaluated => by
+    match Obs.«KernelCheck::check_inductive_shape_ctors».obs evaluated with
+    | .n0 (op17 := operation) .. =>
+      have zero : (.field ((0 : Nat) : F) : SourceValue F) = .field (((count - start : Nat) : F)) := by
+        simpa using Decl.evalBinOp_sub_nat (by omega : start ≤ count) operation
+      have equal := Decl.nat_eq_of_field_eq (by decide) (by omega) zero
+      omega
+    | .other (m646 := hashHeap) (m655 := nextHeap) (cs665 := hashCalls)
+        (cs695 := nextCalls) (v708 := nextIndex) (ev667 := hashed)
+        (op792 := addition) (ev697 := nextRun) (hc794 := allCalls) .. =>
+      have hashMember : (⟨"KernelCheck::projection_addr_ctor",
+          [.field indIndex, .field (start : F), blockArg], hashHeap⟩ : Call F) ∈ calls := by
+        rw [allCalls]; simp
+      have hashBlock := Bytes.repAddressRef_heapMono₂ Core.addrTy
+        (evaluated.call_heap_bounds hashMember).1 blockRep
+      have actualHash := Core.projection_addr_ctor_hashed context hashed hashBlock
+      have hashSubset : ∀ call ∈ hashCalls, call ∈ rootCalls :=
+        fun call member => subset call (by rw [allCalls]; simp [member])
+      have startValue : ZMod.val (start : F) = start :=
+        ZMod.val_natCast_of_lt (by have : (549755813888 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide; omega)
+      have current : Hashed rootCalls (Ixon.serConstant
+          (IxVM.Consistency.constructorProjection (Core.ixAddr block) (ZMod.val indIndex) start)) := by
+        simpa only [IxVM.Consistency.constructorProjection, startValue] using Core.hashed_mono hashSubset actualHash
+      have added := Decl.evalBinOp_add_nat start 1 addition
+      subst nextIndex
+      have nextMember : (⟨"KernelCheck::check_inductive_shape_ctors",
+          [rc, former, .field (params : F), .field (indices : F), .field (count : F),
+            .field (levels : F), blockArg, .field indIndex, sortLevel, .field safety,
+            .field ((start + 1 : Nat) : F)], nextHeap⟩ : Call F) ∈ calls := by
+        rw [allCalls]; simp
+      have nextBlock := Bytes.repAddressRef_heapMono₂ Core.addrTy
+        (evaluated.call_heap_bounds nextMember).1 blockRep
+      have rest := native_ctor_projection_hashes context countBound remaining (start + 1) (by omega)
+        nextBlock (fun call member => subset call (by rw [allCalls]; simp [member])) nextRun
+      intro offset bounded
+      cases offset with
+      | zero => simpa only [Nat.add_zero] using current
+      | succ offset =>
+        simpa only [show start + 1 + offset = start + (offset + 1) by omega] using rest offset (by omega)
 
 /-- A produced Source observation and the actual reader row construct one constructor's
 reload contract. The declared member name is fixed by the reader context's key agreement. -/
