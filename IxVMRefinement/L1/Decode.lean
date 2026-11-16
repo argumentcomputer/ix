@@ -1265,13 +1265,13 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
 hashes `bytes`, checks `Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr`, decodes `bytes` to `c`
 with zero trailing bytes (`Ixon.deConstantExact ⟨bytes.toArray⟩ = .ok c` and
 `Ixon.deConstant ⟨bytes.toArray⟩ = .ok c`), and returns a `RepConstant h' c r` value. -/
-theorem load_verified_constant_decode {ty : Aiur.Ty} {addr : Vector UInt8 32}
+theorem load_verified_constant_decode_bounded {ty : Aiur.Ty} {addr : Vector UInt8 32}
     {a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ha : Aiur.Library.Bytes.RepAddressRef ty h addr a)
     (ev : ObsFn W "Ingress::load_verified_constant" [a] h r h' cs) :
     Heap.Extends h h' ∧
     ∃ (bytes : List UInt8) (c : Ixon.Constant),
-      Hashed cs ⟨bytes.toArray⟩ ∧
+      bytes.length < 4294967296 ∧ Hashed cs ⟨bytes.toArray⟩ ∧
       Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr ∧
       Ixon.deConstantExact ⟨bytes.toArray⟩ = .ok c ∧
       Ixon.deConstant ⟨bytes.toArray⟩ = .ok c ∧
@@ -1281,8 +1281,8 @@ theorem load_verified_constant_decode {ty : Aiur.Ty} {addr : Vector UInt8 32}
       BinderBlocksParamsLt 4294967296 c.binders ∧
       ConstantTablesValid c ∧
       RepConstant h' c r := by
-  obtain ⟨bytes, inp, rest, m, cs', ext1, hst, hashed, haddr, hget, hrest, _⟩ :=
-    load_verified_constant_addr ha ev
+  obtain ⟨bytes, inp, rest, m, cs', length, ext1, hst, hashed, haddr, hget, hrest, _⟩ :=
+    load_verified_constant_addr_bounded ha ev
   have hst0 : Aiur.Library.Bytes.RepByteStream byteStreamEnum m (bytes.drop 0) inp := by
     simpa [Stream, byteStreamEnum] using hst
   obtain ⟨ext2, c, n, cVal, restPtr, hok, heq, hmax_lt, hlvls_lt, hbd_max, hbd32,
@@ -1307,8 +1307,28 @@ theorem load_verified_constant_decode {ty : Aiur.Ty} {addr : Vector UInt8 32}
   have hde : Ixon.deConstant ⟨bytes.toArray⟩ = .ok c := by
     unfold Ixon.deConstant Ixon.runGet EStateM.run
     rw [hok]
-  exact ⟨ext1.trans ext2, bytes, c, hashed, haddr, hexact, hde,
+  exact ⟨ext1.trans ext2, bytes, c, length, hashed, haddr, hexact, hde,
     hmax_lt, hlvls_lt, hbd_max, hbd32, htables, cRep⟩
+
+/-- Compatibility without the retained byte-stream size. -/
+theorem load_verified_constant_decode {ty : Aiur.Ty} {addr : Vector UInt8 32}
+    {a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ha : Aiur.Library.Bytes.RepAddressRef ty h addr a)
+    (ev : ObsFn W "Ingress::load_verified_constant" [a] h r h' cs) :
+    Heap.Extends h h' ∧
+    ∃ (bytes : List UInt8) (c : Ixon.Constant),
+      Hashed cs ⟨bytes.toArray⟩ ∧
+      Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr ∧
+      Ixon.deConstantExact ⟨bytes.toArray⟩ = .ok c ∧
+      Ixon.deConstant ⟨bytes.toArray⟩ = .ok c ∧
+      c.info.maxLvls < Ixon.maxLevelCount ∧
+      infoLvlsLt 4294967296 c.info ∧
+      BinderBlocksParamsLt c.info.maxLvls c.binders ∧
+      BinderBlocksParamsLt 4294967296 c.binders ∧
+      ConstantTablesValid c ∧
+      RepConstant h' c r := by
+  obtain ⟨extended, bytes, value, _, data⟩ := load_verified_constant_decode_bounded ha ev
+  exact ⟨extended, bytes, value, data⟩
 
 /-! ## Shallow constant shape bridge (`ConstShapeRep` and `LoadFacts.recordShape`) -/
 
