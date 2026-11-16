@@ -1564,7 +1564,7 @@ theorem binder_level_exact_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue 
     | ifAllZero m hrep =>
       simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv73
       rcases hv73 with ⟨rfl, _⟩
-      simpa only [binderLevel, List.toArray_toList] using params_level_exact_spec hrep hplt.2 ev91
+      simpa only [binderLevel, List.toList_toArray] using params_level_exact_spec hrep hplt.2 ev91
   · simp at heq139
   · simp at heq187
 
