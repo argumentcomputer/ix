@@ -675,6 +675,29 @@ theorem checkedConstOrigin_installStep_scoped
     checkedConstOrigin_step_scoped hchk hctx hres hgood hfresh hne_role
   exact ⟨env₂, hclean.step, hstep, hcomp, hclean.monoSome⟩
 
+/-- **The scoped step at the start of a fold.** At the empty environment, for decoded records and
+a table that binds no role, the context hypotheses of the scoped step hold outright
+(`prefixContextFacts_empty`), and the scope is resolved as soon as the selected calls load no
+constant (`ScopeResolved.of_no_loads`): what remains is the check evidence itself. So the
+hypotheses of `checkedConstOrigin_installStep_scoped` are jointly satisfiable by a declaration
+whose type and value name no constant. -/
+theorem checkedConstOrigin_installStep_empty
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {E_core : Ixon.Env} {order_role : List _root_.Address} {d : Declaration .anon}
+    (hchk : Assembly.CheckedConstOrigin calls t bAddr E_core order_role d)
+    (hdec : L1.EnvDecoded E_core) (htwf : t.wf = true) (hnb : ∀ r, t.addressOf? r = none)
+    (hno : ∀ cl ∈ calls, cl.name ≠ "Ingress::get_ci" ∧ cl.name ≠ "Ingress::get_ci_iprj" ∧
+      cl.name ≠ "Ingress::get_ci_cprj" ∧ cl.name ≠ "KernelModeled::proj_ctor")
+    (hgood : Good ⟨E_core, Ix.Kernel.Env.empty, t, none⟩ calls)
+    (hne_role : ∀ a, a ∉ order_role →
+      ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false → keyOf t a ≠ .role r) :
+    ∃ env₂, IxVM.Consistency.InstallStep Ix.Kernel.Env.empty d env₂ ∧
+      ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env₂ := by
+  obtain ⟨env₂, hstep, hinv, _, _⟩ :=
+    checkedConstOrigin_installStep_scoped hchk (prefixContextFacts_empty hdec htwf hnb)
+      (ScopeResolved.of_no_loads fun cl hcl => hno cl hcl) hgood (fun _ _ => rfl) hne_role
+  exact ⟨env₂, hstep, fun V _ => hinv V (FullDeclInv.empty V)⟩
+
 /-! ## Quotient, Basis, and Pinned Inductive Steps in `FullDeclInv` -/
 
 /-- Step preservation for `.quotDecl k cv` in `FullDeclInv`. -/
