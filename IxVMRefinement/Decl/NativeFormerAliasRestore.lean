@@ -89,8 +89,10 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
     simpa only [denotes_eq] using M.defn_value val value redHint present φ ρ
   · simpa only [IotaLaw, IotaRule, find_rec, find_ctor, denotes_eq, fits_eq, denotesList_eq] using M.iota_rule
   · intro T val flags found unit
-    rcases find_ind_origin cv caps replacement found with ⟨rfl, rfl, original⟩ | original
-    · intro us φ ρ σ ts R F x y arity count denoted fitted hx hy
+    rcases find_ind_origin cv caps replacement found with ⟨valueEq, flagsEq, original⟩ | original
+    · subst val
+      subst flags
+       intro us φ ρ σ ts R F x y arity count denoted fitted hx hy
       have oldDenoted : Denotes M.cval env φ ρ (.const T us) F := by
         simpa only [denotes_eq] using denoted
       obtain ⟨oldResidual, oldFit⟩ := fits_alias_replace (before := env) fitted
@@ -98,8 +100,10 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
       exact M.unit_like T cv caps original unit us φ ρ σ ts oldResidual F x y arity count oldDenoted oldFit hx hy
     · simpa only [denotes_eq, fits_eq] using M.unit_like T val flags original unit
   · intro T i entry val flags table found
-    rcases find_ind_origin cv caps replacement found with ⟨rfl, rfl, original⟩ | original
-    · have oldTable : env.findProj? T i = some entry := by simpa only [findProj] using table
+    rcases find_ind_origin cv caps replacement found with ⟨valueEq, flagsEq, original⟩ | original
+    · subst val
+      subst flags
+       have oldTable : env.findProj? T i = some entry := by simpa only [findProj] using table
       obtain ⟨levels, ctor, ctorFound, ctorLevels, ctorShape, laws⟩ :=
         M.proj_law T i entry cv caps oldTable original
       refine ⟨levels, ctor, (find_ctor cv caps replacement).mpr ctorFound, ctorLevels, ctorShape, ?_⟩
@@ -119,8 +123,10 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
         M.proj_law T i entry val flags (by simpa only [findProj] using table) original
   · simpa only [ProjTypeLaw, findProj, denotes_eq] using M.proj_type
   · intro T val flags C found eta
-    rcases find_ind_origin cv caps replacement found with ⟨rfl, rfl, original⟩ | original
-    · intro notReserved ctorName ctorNotReserved ctorPresent projections us φ ρ σ R values x arity count fitted member
+    rcases find_ind_origin cv caps replacement found with ⟨valueEq, flagsEq, original⟩ | original
+    · subst val
+      subst flags
+       intro notReserved ctorName ctorNotReserved ctorPresent projections us φ ρ σ R values x arity count fitted member
       have ctorOld : ∃ cvC nP nF, env.find? C = some (.ctorInfo cvC nP nF) := by
         simpa only [find_ctor] using ctorPresent
       have projectionsOld : ∀ j, j < caps.etaFields → ∃ val mI rP rules,
@@ -139,7 +145,7 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
     constructor
     · by_cases changed : original = .indInfo cv caps
       · subst original
-        simp only [info, ↓reduceIte, ConstantInfo.toConstantVal, replacement, GradedBy]
+        simp only [info, ↓reduceIte, ConstantInfo.toConstantVal, GradedBy]
       · simpa only [info, ite_eq_right changed, denotes_eq] using graded.1
     · intro val value redHint equal
       have originalEq := info_eq_back cv caps replacement equal (by intros; intro h; cases h)
