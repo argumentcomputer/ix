@@ -58,7 +58,7 @@ theorem nat_successor_motive_sort_levels {V : Type u} [SetTheory V] {md : Mode} 
   have openedFrame := Frame.open_body (d := depth) (bd := beforeOpen) (ty' := .const natName [])
     (Frame.of_not_hasFvar rfl rfl) (Expr.WScoped.of_not_hasFvar rfl) (by rfl)
     (Expr.LeavesBounded.of_not_hasFvar rfl)
-  have expressionFrame : Frame (depth + 2)
+  have expressionFrame : Frame (md := md) (depth + 2)
       (.app (natSortMotive sortLevel) (.app (.const natSuccName []) (.fvar depth (.const natName [])))) := by
     have lifted : Frame (depth + 2) (beforeOpen.instantiate1 (.fvar depth (.const natName []))) :=
       ⟨Expr.WScoped.mono (by omega) openedFrame.1, openedFrame.2⟩
