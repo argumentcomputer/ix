@@ -152,7 +152,7 @@ structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
 
 /-- The paired actual load/check witness constructs the former's annotation and prelude.
 Capability data is passed through the representation proof; no stage capability is inferred. -/
-theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root_.Address}
+theorem native_former_input_of_checked_at_of_blobAgreement {base : Core.Ctx} {bindingAddr : _root_.Address}
     {block : Bytes.Address} {index : UInt64} {slot : Nat} {calls : List (Call F)}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     (projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) slot))
@@ -172,8 +172,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
     (selfKeyed : ∀ slot address reading key,
       (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[slot]? = some address →
       self slot = some reading → reading = .ok key → key = base.κ address)
-    (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
-      cx.blob address = some bytes) :
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
     Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
   obtain ⟨limit, beforeLoad, checkHeap, afterCheck, rc, addr, ptr, value, result, loadCalls, checkCalls,
     _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, checkedMember, checkSubset⟩ := checked
@@ -207,7 +206,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   let prelude := localPrelude.mono checkSubset
   obtain ⟨annotated, tree, plan, stored, exactInput, built, planned, image,
     varsBounded, levelsDefined, noFvars⟩ :=
-    observed_native_former_input (base := base) (calls := calls) source blockShape memberAtField caps
+    observed_native_former_input_of_blobAgreement (base := base) (calls := calls) source blockShape memberAtField caps
       directLoad (good.sub directSubset) parentRep payload prelude.initialExtended good.2
       prelude.scopeRun prelude.scopeMember read keyed selfKeyed
       (fun address bytes hashed hashEq => blobReads address bytes (Core.hashed_mono directSubset hashed) hashEq)
@@ -227,7 +226,60 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
     tree := tree, plan := plan, built := built, planned := planned, image := image }⟩
 
 
+/-- Compatibility with full observed-blob membership. -/
+theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root_.Address}
+    {block : Bytes.Address} {index : UInt64} {slot : Nat} {calls : List (Call F)}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) slot))
+    (projectionShape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    (indexToSlot : index.toNat = slot)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members[slot]? = some (.indc ind))
+    (checked : Claim.CheckedAtFull calls bindingAddr base.t
+      (Core.iprjAddr (Core.ixAddr block) slot))
+    (good : Core.Good base calls)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
+    (selfKeyed : ∀ slot address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[slot]? = some address →
+      self slot = some reading → reading = .ok key → key = base.κ address)
+    (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
+      cx.blob address = some bytes) :
+    Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
+  exact native_former_input_of_checked_at_of_blobAgreement source projection projectionShape indexToSlot
+    blockShape memberAt checked good caps read keyed selfKeyed
+    (L1.HashedBlobReadAgreement.of_stored blobReads)
+
 /-- Compatibility at the decoded recursor-independent UInt64 member index. -/
+theorem native_former_input_of_checked_of_blobAgreement {base : Core.Ctx} {bindingAddr : _root_.Address}
+    {block : Bytes.Address} {index : UInt64} {calls : List (Call F)}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) index.toNat))
+    (projectionShape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members[index.toNat]? = some (.indc ind))
+    (checked : Claim.CheckedAtFull calls bindingAddr base.t
+      (Core.iprjAddr (Core.ixAddr block) index.toNat))
+    (good : Core.Good base calls)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
+    (selfKeyed : ∀ slot address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[slot]? = some address →
+      self slot = some reading → reading = .ok key → key = base.κ address)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    Nonempty (NativeFormerRunInput base block (index.toNat : F) source members ind rawType calls) := by
+  exact native_former_input_of_checked_at_of_blobAgreement (base := base) (index := index) (slot := index.toNat)
+    source projection projectionShape rfl blockShape memberAt checked good caps read keyed selfKeyed blobReads
+
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_input_of_checked {base : Core.Ctx} {bindingAddr : _root_.Address}
     {block : Bytes.Address} {index : UInt64} {calls : List (Call F)}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
@@ -250,8 +302,8 @@ theorem native_former_input_of_checked {base : Core.Ctx} {bindingAddr : _root_.A
     (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
       cx.blob address = some bytes) :
     Nonempty (NativeFormerRunInput base block (index.toNat : F) source members ind rawType calls) := by
-  exact native_former_input_of_checked_at (base := base) (index := index) (slot := index.toNat)
-    source projection projectionShape rfl blockShape memberAt checked good caps read keyed selfKeyed blobReads
+  exact native_former_input_of_checked_of_blobAgreement source projection projectionShape blockShape
+    memberAt checked good caps read keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- The walked member's actual list representation bounds its natural slot. -/
 theorem native_member_slot_bound {base : Core.Ctx} {bindingAddr : _root_.Address}
@@ -269,6 +321,35 @@ theorem native_member_slot_bound {base : Core.Ctx} {bindingAddr : _root_.Address
 
 /-- The actual walked inductive member constructs its former input without a supplied
 projection source, header representation, annotation or prelude witness. -/
+theorem native_former_input_of_member_of_blobAgreement {base : Core.Ctx} {bindingAddr : _root_.Address}
+    {block : Bytes.Address} {members : Array Ixon.MutConst} {slot : Nat} {ind : Ixon.Inductive}
+    {calls : List (Call F)}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members[slot]? = some (.indc ind))
+    (checked : Claim.MutsMemberCheckedAtFull calls bindingAddr base.t (Core.ixAddr block) members slot)
+    (good : Core.Good base calls) (coverage : L1.CanonicalHashCoverage base.E calls)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
+    (selfKeyed : ∀ index address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      self index = some reading → reading = .ok key → key = base.κ address)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
+  have slotBound := native_member_slot_bound (base := base) checked memberAt good.2
+  have indexNat : slot.toUInt64.toNat = slot :=
+    UInt64.toNat_ofNat_of_lt (Nat.lt_trans slotBound (by decide))
+  obtain ⟨projection, shape, full⟩ := native_member_checked_source (base := base) checked memberAt good coverage
+  have projectedInfo : projection.value.info = .iPrj ⟨slot.toUInt64, Core.ixAddr block⟩ :=
+    congrArg Ixon.Constant.info shape
+  exact native_former_input_of_checked_at_of_blobAgreement (base := base) (block := block)
+    (index := slot.toUInt64) (slot := slot) source projection projectedInfo indexNat
+    blockShape memberAt full good caps read keyed selfKeyed blobReads
+
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_input_of_member {base : Core.Ctx} {bindingAddr : _root_.Address}
     {block : Bytes.Address} {members : Array Ixon.MutConst} {slot : Nat} {ind : Ixon.Inductive}
     {calls : List (Call F)}
@@ -288,15 +369,8 @@ theorem native_former_input_of_member {base : Core.Ctx} {bindingAddr : _root_.Ad
     (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
       cx.blob address = some bytes) :
     Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
-  have slotBound := native_member_slot_bound (base := base) checked memberAt good.2
-  have indexNat : slot.toUInt64.toNat = slot :=
-    UInt64.toNat_ofNat_of_lt (Nat.lt_trans slotBound (by decide))
-  obtain ⟨projection, shape, full⟩ := native_member_checked_source (base := base) checked memberAt good coverage
-  have projectedInfo : projection.value.info = .iPrj ⟨slot.toUInt64, Core.ixAddr block⟩ :=
-    congrArg Ixon.Constant.info shape
-  exact native_former_input_of_checked_at (base := base) (block := block)
-    (index := slot.toUInt64) (slot := slot) source projection projectedInfo indexNat
-    blockShape memberAt full good caps read keyed selfKeyed blobReads
+  exact native_former_input_of_member_of_blobAgreement source blockShape memberAt checked good coverage
+    caps read keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- The constructed input checks the former at the actual role limit of its observed run. -/
 theorem NativeFormerRunInput.checked {base : Core.Ctx} {block : Bytes.Address} {i : F}

@@ -6,6 +6,31 @@ namespace IxVM.Refinement.Assembly
 
 open Ix.Kernel Ix.Kernel.Reader Ix.Kernel.Frontend
 
+private theorem pickSpec_input_member {md : Mode} (key : Option (Key md)) :
+    ∀ {input : List (Declaration md)} {decl : Declaration md}, decl ∈ input →
+      (pickSpec key input).1 = some decl ∨ decl ∈ (pickSpec key input).2
+  | [], _, member => by cases member
+  | first :: rest, decl, member => by
+    simp only [pickSpec]
+    split
+    · rcases List.mem_cons.mp member with rfl | later
+      · exact Or.inl rfl
+      · exact Or.inr later
+    · rcases List.mem_cons.mp member with rfl | later
+      · exact Or.inr List.mem_cons_self
+      · rcases pickSpec_input_member key later with selected | retained
+        · exact Or.inl selected
+        · exact Or.inr (List.mem_cons_of_mem _ retained)
+
+private theorem frontSpec_input_member {md : Mode} :
+    ∀ (prelude input : List (Declaration md)) {decl : Declaration md}, decl ∈ input →
+      decl ∈ (frontSpec prelude input).1 ++ (frontSpec prelude input).2
+  | [], _, _, member => member
+  | first :: rest, input, decl, member => by
+    rcases pickSpec_input_member (preludeKey first) member with selected | retained
+    · simp [frontSpec, selected]
+    · exact List.mem_cons_of_mem _ (frontSpec_input_member rest _ retained)
+
 private theorem pickSpec_filter (keep : Declaration md → Bool) (key : Option (Key md))
     (hkeep : ∀ d, declares key d = true → keep d = true) :
     ∀ ds : List (Declaration md),
@@ -60,6 +85,14 @@ private theorem preparePrelude_mem_spec (pre : PreludeIx md) (ds : Array (Declar
     rw [hfront, hrest] at hh
     simpa [hfront] using hh
   exact hperm.mem_iff
+
+/-- Prelude preparation selects the input's own declarations where present and only
+permutes the remaining input. Every input declaration is retained in the prepared stream. -/
+theorem preparePrelude_input_subset (pre : PreludeIx md) (input : Array (Declaration md)) :
+    ∀ decl ∈ input.toList, decl ∈ (preparePrelude pre input).toList := by
+  intro decl member
+  exact (preparePrelude_mem_spec pre input decl).mpr
+    (frontSpec_input_member pre.decls.toList input.toList member)
 
 /-- Filtering generated declarations leaves the prelude's selected copies unchanged;
 the later hoist only permutes declarations. Thus the full preparation covers the bare one. -/
