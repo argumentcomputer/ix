@@ -3303,7 +3303,7 @@ theorem nat_keyOf_injective {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     | none => rw [hq₂] at hk₂; cases hk₂; rfl
 
 /-- Direct constructor-projection record loader witness for `b₀` at constructor index `j`. -/
-def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
+def CtorLoadAtIndex (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat) (indIndex : F)
     (cs_root : List (Call F)) (ctors ctorsA : List (KConstantVal × Nat))
     (ctorRawTypes : List KExpr) : Prop :=
   ctorsA.length = ctors.length ∧
@@ -3314,18 +3314,24 @@ def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
     ∀ (bp ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)),
       (∀ x ∈ cs, x ∈ cs_root) →
       Bytes.RepAddressRef addrTy h b₀ bp →
-      ObsFn W "Ingress::get_ci_cprj" [bp, .field 0, .field (j : F)] h ptr h' cs →
+      ObsFn W "Ingress::get_ci_cprj" [bp, .field indIndex, .field (j : F)] h ptr h' cs →
       ∃ (nl cty cblk cnp cnf : SourceValue F) (b_c : Bytes.Address),
         loadValue h' ptr = .ok (.construct kciEnum "Ctor"
-          [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0]) ∧
+          [nl, cty, cblk, .field indIndex, .field (j : F), cnp, cnf, .field 0]) ∧
         Bytes.RepAddressRef addrTy h' b_c cblk ∧
         ixAddr b_c = ixAddr b₀ ∧
         (∀ d Γ, RawTmExact (keyOf t) d Γ h' 0
           (ctorRawTypes.getD j default) (posOf cvCa₀.levelParams cvCa₀.type) cty) ∧
         CIRepExact (keyOf t) h'
           (.construct kciEnum "Ctor"
-            [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0])
+            [nl, cty, cblk, .field indIndex, .field (j : F), cnp, cnf, .field 0])
           (.ctorInfo cvCa₀ nP c.2)
+
+/-- The historical member-zero constructor-load interface. -/
+def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
+    (cs_root : List (Call F)) (ctors ctorsA : List (KConstantVal × Nat))
+    (ctorRawTypes : List KExpr) : Prop :=
+  CtorLoadAtIndex t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes
 
 /-- A real constructor metadata observation supplies the scoped read result even while the
 constructor is fresh. This uses the raw declaration loader witness, not installed-load facts. -/
