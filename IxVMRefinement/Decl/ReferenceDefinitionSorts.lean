@@ -125,4 +125,41 @@ theorem DefinitionsTyped.beta_constant_alias_zero {V : Type u} [SetTheory V] {en
   rw [checkedEq]
   exact (DefinitionsTyped.constant_alias_sort model typed aliasFound bodyFound header bodyHeader).2
 
+
+/-- Two actual product checks determine the same binder datum across a constant-body beta
+redex followed by a checked constant alias. The alias front supplies the conversion that
+cannot be recovered from the two local product checks alone. -/
+theorem DefinitionsTyped.beta_constant_alias_binder_pw {V : Type u} [SetTheory V] {env : Env .anon}
+    (model : EnvModelM V .verified env) (typed : DefinitionsTyped env)
+    {name bodyName : Key .anon} {cv : ConstantVal .anon} {bodyCI : ConstantInfo .anon}
+    {bodyLevels : List Level} {hint : ReducibilityHint} {declared actual : Level}
+    {depth : Nat} {inputDomain outputDomain betaDomain betaArgument inputType outputType : Expr .anon}
+    {beforeMeta afterMeta lambdaMeta : BinderMeta}
+    (aliasFound : env.find? name = some (.defnInfo cv (.const bodyName bodyLevels) hint))
+    (noLevels : cv.levelParams = [])
+    (bodyFound : env.find? bodyName = some bodyCI)
+    (header : cv.type = .sort declared)
+    (bodyHeader : bodyCI.toConstantVal.type.instantiateLevelParams bodyCI.toConstantVal.levelParams bodyLevels =
+      .sort actual)
+    (beforeCheck : Ix.Kernel.Rules.Infer env .full depth
+      (.forallE inputDomain (.app (.lam betaDomain (.const name []) lambdaMeta) betaArgument) beforeMeta) inputType)
+    (afterCheck : Ix.Kernel.Rules.Infer env .full depth
+      (.forallE outputDomain (.const bodyName bodyLevels) afterMeta) outputType) :
+    beforeMeta.pw = afterMeta.pw := by
+  obtain ⟨_, _, _, beforeSort, _, _, beforeBody, beforeSorted, beforeZero, _⟩ :=
+    Ix.Kernel.Rules.Infer.forallE_inv beforeCheck
+  simp only [Expr.instantiate1] at beforeBody
+  have beforeAlias := DefinitionsTyped.beta_constant_alias_zero model typed aliasFound noLevels
+    bodyFound header bodyHeader beforeBody beforeSorted
+  obtain ⟨_, _, _, afterSort, _, _, afterBody, afterSorted, afterZero, _⟩ :=
+    Ix.Kernel.Rules.Infer.forallE_inv afterCheck
+  simp only [Expr.instantiate1] at afterBody
+  obtain ⟨foundBody, found, _, _, typeEq⟩ := Ix.Kernel.Rules.Infer.const_inv afterBody
+  have same : foundBody = bodyCI := Option.some.inj (found.symm.trans bodyFound)
+  subst foundBody
+  rw [typeEq, bodyHeader] at afterSorted
+  have afterEq := Ix.Kernel.Rules.Red.sort_eq afterSorted
+  rw [afterEq] at afterZero
+  exact beforeZero.symm.trans (beforeAlias.trans afterZero)
+
 end IxVM.Refinement.Decl
