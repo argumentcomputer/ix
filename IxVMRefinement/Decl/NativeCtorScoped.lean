@@ -40,6 +40,19 @@ def nativeCtorCoreCalls {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) : List (Call F) :=
   runs.flatMap (·.calls)
 
+/-- The exact finite scope produced by the selected typed observations. -/
+def nativeCtorCoreCtx (base : Ctx) {rootCalls : List (Call F)}
+    (runs : List (NativeCtorCoreRun rootCalls)) : ScopedCtx :=
+  { toCtx := base, allowed := fun call => call ∈ nativeCtorCoreCalls runs }
+
+/-- Each selected run has core coverage in the produced context. -/
+theorem NativeCtorCoreRun.coreGood {base : Ctx} {rootCalls : List (Call F)}
+    {runs : List (NativeCtorCoreRun rootCalls)} {run : NativeCtorCoreRun rootCalls}
+    (good : Good base rootCalls) (member : run ∈ runs) :
+    CoreGood (nativeCtorCoreCtx base runs) run.calls :=
+  CoreGood.ofRaw (good.sub run.subset)
+    (fun call inside => List.mem_flatMap.mpr ⟨run, member, inside⟩)
+
 /-- Every selected call belongs to the original successful traversal. -/
 theorem nativeCtorCoreCalls_subset {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) :
@@ -310,5 +323,59 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
           obtain ⟨c', cA', sorts', hc', hcA', hs', hout'⟩ := hrest_out t' (by omega)
           rw [show j + 1 + t' = j + (t' + 1) by omega] at hc' hcA' hout'
           exact ⟨c', cA', sorts', hc', hcA', hs', hout'⟩
+
+/-- The actual complete constructor traversal chooses its exact typed-call scope. No caller
+coverage predicate or unrestricted load contract is needed. -/
+theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
+    {cR : ScopedCtx} {indIndex : F}
+    {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
+    {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr}
+    (hlps : lps = List.range lps.length)
+    (hlps_lt : lps.length < 4294967296)
+    (hnP_lt : nP < 2147483648)
+    (hnIdx_lt : nIdx < 2147483648)
+    (hnCtors_lt : ctors.length < 4294967296)
+    (hnF_lt : ∀ c ∈ ctors, c.2 < 2147483648)
+    (hlveq : LvEq resSort ind_lvl)
+    (hcload : CtorLoadAtIndex cR.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
+    (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = lps)
+    (hlbd_ctors : ∀ c ∈ ctors, c.1.type.looseBVarsBounded 0 = true)
+    (hfv_ctors : ∀ c ∈ ctors, c.1.type.hasFvar = false)
+    (hfresh_ctors : ∀ c ∈ ctors, cR.env.find? c.1.name = none)
+    (hbasis_ctors : ∀ c ∈ ctors, Ix.Kernel.reservedBasisNames.contains c.1.name = false)
+    (hshape_ctors : ∀ c ∈ ctors, c.1.name.isProjFnShape = false)
+    (hno_proj_T : ∀ i, cR.env.findProj? T i = none)
+    (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
+    (hef₁ : CoreEnvFacts cR.toCtx)
+    (rawFacts : RawRecordFacts cR)
+    (hpeer₁ : OneTypePeerFacts cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex)
+    {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (subset : ∀ call ∈ cs, call ∈ cs_root)
+    (good : Good cR.toCtx cs) (rawCovered : RawRecordCoverage cR cs)
+    (roleContext : RCRep cR.t cR.lim h rc)
+    (formerRep : Tm cR.κ 0 (fun _ => default) h 0 ta pta)
+    (blockRep : Bytes.RepAddressRef addrTy h b₀ bp)
+    (sortRep : RepKLevel h ind_lvl pind)
+    (observed : ObsFn W "KernelCheck::check_inductive_shape_ctors"
+      [rc, pta, .field (nP : F), .field (nIdx : F), .field (ctors.length : F),
+        .field (lps.length : F), bp, .field indIndex, pind, .field 0, .field 0] h r h' cs) :
+    ∃ runs : List (NativeCtorCoreRun cs_root),
+      ScopedLoadFacts (nativeCtorCoreCtx cR.toCtx runs) →
+      ∃ sortss : List (List KLevel),
+        sortss.length = ctors.length ∧
+        ∀ j < ctors.length, ∃ c cA sorts,
+          ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧ sortss[j]? = some sorts ∧
+          NativeCtorOut cR.env T lps nP nIdx resSort ta
+            (ctorRawTypes.getD j default) c cA sorts := by
+  obtain ⟨runs, checked⟩ := native_ctor_scoped_runs hLevels hlps hlps_lt hnP_lt hnIdx_lt
+    hnCtors_lt hnF_lt hlveq hcload hlps_ctors hlbd_ctors hfv_ctors hfresh_ctors
+    hbasis_ctors hshape_ctors hno_proj_T hstore₁ hef₁ rawFacts hpeer₁ ctors.length 0
+    (Nat.add_zero _) subset good rawCovered roleContext formerRep blockRep sortRep observed
+  refine ⟨runs, fun loads => ?_⟩
+  simpa only [Nat.zero_add] using
+    checked (fun call => call ∈ nativeCtorCoreCalls runs) (fun _ member => member) loads
+
 
 end IxVM.Refinement.Decl
