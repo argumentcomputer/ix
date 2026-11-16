@@ -38,10 +38,11 @@ theorem NativeFormerRunInput.stored_reader_row {base : Core.Ctx} {block : Bytes.
   have memberAt : members[ZMod.val i]? = some (.indc ind) := by
     simpa only [Array.getElem?_toList] using input.memberAt
   have bound : ZMod.val i < UInt64.size := Nat.lt_trans (ZMod.val_lt i) (by decide)
+  have namedBase := streamContext_memberKey_member_of_local_resolution
+    (table := base.t) (owner := Core.ixAddr block) (i := ZMod.val i) (member := .indc ind)
+    context authentic checked stored input.blockShape memberAt bound boundResolved
   have named : cx.memberKey (.member (Core.ixAddr block) (ZMod.val i)) =
-      .ok (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) :=
-    streamContext_memberKey_member_of_local_resolution context authentic checked stored
-      input.blockShape memberAt bound boundResolved
+      .ok (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) := namedBase
   have rowName := Except.ok.inj (frame.1.symm.trans named)
   exact ⟨input.stored.1.trans rowName.symm, input.stored.2.1.trans frame.2.2.1.symm, input.stored.2.2⟩
 
@@ -58,7 +59,8 @@ theorem NativeCtorReaderFrame.name_of_local_resolution {cx : Ctx .anon} {owner :
     (boundResolved : ∀ role, (role, Core.cprjAddr owner slot.1 slot.2.2) ∈ table.bound.toList →
       resolve cx.store (Core.cprjAddr owner slot.1 slot.2.2) = some (.ctor owner slot.1 slot.2.2)) :
     row.1.name = Core.keyOf table (Core.cprjAddr owner slot.1 slot.2.2) := by
-  have named := streamContext_ctor_key_of_local_resolution context authentic checked memberBound ctorBound boundResolved
+  have named := streamContext_ctor_key_of_local_resolution (owner := owner) (i := slot.1) (j := slot.2.2)
+    context authentic checked memberBound ctorBound boundResolved
   exact Except.ok.inj (frame.1.symm.trans named)
 
 end IxVM.Refinement.Assembly
