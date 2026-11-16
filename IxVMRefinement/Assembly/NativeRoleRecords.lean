@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.AdmittedReaderStore
 import IxVMRefinement.Assembly.AdmittedKeys
 import IxVMRefinement.Assembly.RawQueryCoverage
+import Ix.Cert.RecursorIndex
 
 /-! # Actual role records for native naming
 
@@ -73,5 +74,57 @@ theorem admitted_role_reader_sub_core {V : IxVM.Refinement.View} {binding : Admi
     exact admittedCore_of_overlay witness
       (admittedOverlay_recordAt witness keepTrace loaded (walked_envDecoded phase) noCollision selected record)
   · exact admittedCore_fallback witness keepTrace claimBytes loaded (walked_envDecoded phase) noCollision fallback
+
+/-- An actual successful projection-record read has a resolving target in the same store. -/
+theorem readRecord_projection_resolves {cx : Ctx .anon} {state : State .anon}
+    {address : _root_.Address} {value : Ixon.Constant} {result : Read .anon}
+    (read : readRecord cx state address value = .ok result)
+    (projection : IsProjInfo value.info) (stored : cx.store address = some value) :
+    ∃ target, resolve cx.store address = some target := by
+  cases kind : value.info <;> simp only [IsProjInfo, kind] at projection
+  all_goals
+    simp only [readRecord, kind] at read
+    rcases Ix.Cert.CtxAgree.ite_ok' read with ⟨_, rejected⟩ | ⟨available, _⟩
+    · exact (Ix.Cert.ReaderUnits.throw_ok rejected).elim
+    · cases resolved : resolveSource cx.store address value with
+      | none => simp [resolved] at available
+      | some target =>
+        exact ⟨target, by simp only [resolve, stored, Option.bind_some, resolved]⟩
+
+/-- A selected admitted projection was actually read, so its target resolves in the original
+role reader context. This uses the real projection guard, not merely cached record presence. -/
+theorem admitted_projection_resolves {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : ReaderAdmissionWitness V binding) {address : _root_.Address} {value : Ixon.Constant}
+    (selected : address ∈ witness.order) (record : Ix.Cert.recordAt witness.env address = some value)
+    (projection : IsProjInfo value.info) :
+    ∃ target, resolve
+      (ReaderStoreTransfer.readerContext witness.table witness.prelude witness.env witness.order).store
+        address = some target := by
+  have decoded : (address, value) ∈ (Ix.Cert.Stream.decodedOf witness.env witness.order).toArray :=
+    Ix.Cert.RecursorIndex.mem_decoded.mpr ⟨selected, record⟩
+  obtain ⟨state, result, read, _⟩ := (readRecords_spec witness.read).mem (Array.mem_toList_iff.mpr decoded)
+  have stored :
+      (ReaderStoreTransfer.readerContext witness.table witness.prelude witness.env witness.order).store
+        address = some value :=
+    ReaderStoreTransfer.selected (table := witness.table) (prelude := witness.prelude) selected record
+  exact readRecord_projection_resolves read projection stored
+
+/-- Actual bound-address bytes and the admitted projection guard supply both exact record
+identity and original-context resolution for a non-trust bound projection. -/
+theorem admitted_bound_projection_resolves {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : ReaderAdmissionWitness V binding) {calls : List (Call F)} {extra : List ByteArray}
+    (noCollision : ¬ V.HashedCollision extra calls)
+    {role : Role} {address : _root_.Address} {bytes : ByteArray} {value : Ixon.Constant}
+    (bound : (role, address) ∈ witness.table.bound.toList)
+    (notTrust : IxVM.Refinement.compilerTrust role = false)
+    (hashed : Hashed calls bytes) (hashEq : Address.blake3Pure bytes = address)
+    (decoded : Ixon.deConstantExact bytes = .ok value) (projection : IsProjInfo value.info) :
+    address ∈ witness.order ∧ Ix.Cert.recordAt witness.env address = some value ∧
+      ∃ target, resolve
+        (ReaderStoreTransfer.readerContext witness.table witness.prelude witness.env witness.order).store
+          address = some target := by
+  obtain ⟨selected, record⟩ := admitted_bound_record_of_hashed witness noCollision bound notTrust hashed hashEq decoded
+  exact ⟨selected, record, admitted_projection_resolves witness selected record projection⟩
+
 
 end IxVM.Refinement.Assembly
