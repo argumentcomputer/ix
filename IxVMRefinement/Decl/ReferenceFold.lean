@@ -1,4 +1,4 @@
-import IxVMRefinement.Decl.ReferenceChecks
+import IxVMRefinement.Decl.ReferenceReplay
 import IxC.Kernel.Verify.Cached.Reference
 
 /-! # The complete accepted reference fold with checked theorem values
@@ -99,6 +99,24 @@ theorem checkedDecl_referenceModelStep {source target sourceOut : Env .anon}
   obtain ⟨out, agree, _, preserved⟩ := checkedDecl_referenceTraceStep agreement checked
   exact ⟨out, agree, preserved⟩
 
+/-- The actual source calls and annotated target steps remain paired throughout the fold. -/
+theorem checkedDecls_referenceReplay {fuel : Nat} {ev : Evidences .anon}
+    {source target sourceOut : Env .anon} (agreement : ThmBodyView.Agrees source target)
+    {declarations : List (Declaration .anon)}
+    (checked : declarations.foldlM (checkDecl .verified (fueledOps .verified fuel) ev) source = .ok sourceOut) :
+    ∃ targetOut, ReferenceReplay fuel ev source target declarations sourceOut targetOut := by
+  induction declarations generalizing source target with
+  | nil =>
+    have same : source = sourceOut := Except.ok.inj checked
+    subst sourceOut
+    exact ⟨target, .nil agreement⟩
+  | cons d rest ih =>
+    simp only [List.foldlM_cons] at checked
+    obtain ⟨sourceNext, head, tail⟩ := exceptBind_ok checked
+    obtain ⟨targetNext, nextAgreement, step⟩ := checkedDecl_referenceCheck agreement head
+    obtain ⟨targetOut, replay⟩ := ih nextAgreement tail
+    exact ⟨targetOut, .cons agreement head step replay⟩
+
 /-- The real checker fold retains its actual intermediate certificates and environments. -/
 theorem checkedDecls_referenceChecks {fuel : Nat} {ev : Evidences .anon}
     {source target sourceOut : Env .anon} (agreement : ThmBodyView.Agrees source target)
@@ -106,17 +124,8 @@ theorem checkedDecls_referenceChecks {fuel : Nat} {ev : Evidences .anon}
     (checked : declarations.foldlM (checkDecl .verified (fueledOps .verified fuel) ev) source = .ok sourceOut) :
     ∃ targetOut, ThmBodyView.Agrees sourceOut targetOut ∧
       CheckedReferenceTrace fuel target declarations targetOut := by
-  induction declarations generalizing source target with
-  | nil =>
-    have same : source = sourceOut := Except.ok.inj checked
-    subst sourceOut
-    exact ⟨target, agreement, .nil target⟩
-  | cons d rest ih =>
-    simp only [List.foldlM_cons] at checked
-    obtain ⟨sourceNext, head, tail⟩ := exceptBind_ok checked
-    obtain ⟨targetNext, nextAgreement, step⟩ := checkedDecl_referenceCheck agreement head
-    obtain ⟨targetOut, outAgreement, trace⟩ := ih nextAgreement tail
-    exact ⟨targetOut, outAgreement, .cons step trace⟩
+  obtain ⟨out, replay⟩ := checkedDecls_referenceReplay agreement checked
+  exact ⟨out, replay.endAgreement, replay.checked⟩
 
 /-- The real checker fold retains all intermediate storage steps in reference order. -/
 theorem checkedDecls_referenceTrace {fuel : Nat} {ev : Evidences .anon}
@@ -139,15 +148,22 @@ theorem checkedDecls_referenceModelStep {fuel : Nat} {ev : Evidences .anon}
   obtain ⟨out, agree, _, preserved⟩ := checkedDecls_referenceTrace agreement checked
   exact ⟨out, agree, preserved⟩
 
+/-- Reference acceptance constructs the paired source and annotated checking replay. -/
+theorem acceptsRef_referenceReplay {ev : Evidences .anon} {declarations : List (Declaration .anon)}
+    {reference : Env .anon} (accepted : Cached.AcceptsRef .verified ev declarations reference) :
+    ∃ fuel target, ReferenceReplay fuel ev Env.empty Env.empty declarations reference target := by
+  obtain ⟨fuel, checked⟩ := Cached.AcceptsRef.iff.mp accepted
+  have emptyAgreement : ThmBodyView.Agrees (Env.empty : Env .anon) Env.empty := fun _ => .same _
+  obtain ⟨target, replay⟩ := checkedDecls_referenceReplay emptyAgreement checked
+  exact ⟨fuel, target, replay⟩
+
 /-- Reference acceptance constructs a complete trace of actual checking certificates. -/
 theorem acceptsRef_referenceChecks {ev : Evidences .anon} {declarations : List (Declaration .anon)}
     {reference : Env .anon} (accepted : Cached.AcceptsRef .verified ev declarations reference) :
     ∃ fuel target, ThmBodyView.Agrees reference target ∧
       CheckedReferenceTrace fuel Env.empty declarations target := by
-  obtain ⟨fuel, checked⟩ := Cached.AcceptsRef.iff.mp accepted
-  have emptyAgreement : ThmBodyView.Agrees (Env.empty : Env .anon) Env.empty := fun _ => .same _
-  obtain ⟨target, agree, trace⟩ := checkedDecls_referenceChecks emptyAgreement checked
-  exact ⟨fuel, target, agree, trace⟩
+  obtain ⟨fuel, target, replay⟩ := acceptsRef_referenceReplay accepted
+  exact ⟨fuel, target, replay.endAgreement, replay.checked⟩
 
 /-- The accepted checking store has actual typed theorem rows and a model at every set theory. -/
 theorem acceptsRef_referenceTyped {ev : Evidences .anon} {declarations : List (Declaration .anon)}
