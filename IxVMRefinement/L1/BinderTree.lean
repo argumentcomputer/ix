@@ -488,6 +488,8 @@ theorem binder_table_data_bounded_spec {bound : Nat} {blocks : List Ixon.BinderB
   obtain ⟨extended, tree, built, rep⟩ := binder_table_data_spec blocksRep ev
   have all : tree.AllNodes (BinderNodeParamsLt bound) := built.all_nodes (by
     intro entry member
+    change entry ∈ blocks.map (fun block =>
+      (binderBlockKey block, BinderTreeData.leaf (binderBlockKey block) block.nodes.toList)) at member
     obtain ⟨block, member, rfl⟩ := List.mem_map.mp member
     exact bounds block member)
   exact ⟨extended, tree, built, rep, all, rep.toBounded all⟩
