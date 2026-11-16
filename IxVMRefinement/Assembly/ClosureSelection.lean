@@ -44,7 +44,7 @@ theorem readerClosureEnv_record_retained {table : Ix.Kernel.RoleTable} {env : Ix
     {seeds : _root_.Address → Prop} {address : _root_.Address}
     (reached : UsedCompiledReachAt table env seeds address) :
     Ix.Cert.recordAt (readerClosureEnv table env seeds) address = Ix.Cert.recordAt env address := by
-  rw [readerClosureEnv_recordAt, if_pos reached]
+  simp only [readerClosureEnv_recordAt, reached, ↓reduceIte]
 
 theorem readerClosureEnv_seed {table : Ix.Kernel.RoleTable} {env : Ixon.Env}
     {seeds : _root_.Address → Prop} {address : _root_.Address}
