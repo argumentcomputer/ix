@@ -139,12 +139,8 @@ theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {tab
       injection projected with valueEq
       subst value
       obtain ⟨bytes, hashed, decoded⟩ := authentic other projection found
-      have empty : emptyTables projection = true := by rfl
-      have isProjection : match projection.info with
-          | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ => True
-          | _ => False := by
-        cases member <;> trivial
-      have encoded := (deConstantExact_proj_eq_serConstant decoded empty isProjection).1
+      have projectionFacts := projectionAt_empty_and_proj projectionAt
+      have encoded := (deConstantExact_proj_eq_serConstant decoded projectionFacts.1 projectionFacts.2).1
       rw [encoded] at hashed
       exact hashed.symm
   have notSingleton : singletonAt cx.store (.member owner i) = none := by
