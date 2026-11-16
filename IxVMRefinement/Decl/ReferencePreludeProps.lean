@@ -49,11 +49,13 @@ private theorem and_type_not_prop {env : Env .anon} {fuel : Nat} {raw type st : 
   have typeShape := annotation_pin_shape shape rfl closed bounded annotated
   change type.erasePw = .forallE (.sort .zero)
     (.forallE (.sort .zero) (.sort .zero) _) _ at typeShape
-  obtain ⟨domain, body, outerMeta, rfl, domainShape, bodyShape⟩ := erasePwNames_forallE_invS typeShape
-  obtain rfl := erasePwNames_sort_invS domainShape
-  obtain ⟨domain, body, innerMeta, rfl, domainShape, bodyShape⟩ := erasePwNames_forallE_invS bodyShape
-  obtain rfl := erasePwNames_sort_invS domainShape
-  obtain rfl := erasePwNames_sort_invS bodyShape
+  obtain ⟨outerDomain, outerBody, outerMeta, rfl, outerDomainShape, outerBodyShape⟩ :=
+    erasePwNames_forallE_invS typeShape
+  obtain rfl := erasePwNames_sort_invS outerDomainShape
+  obtain ⟨innerDomain, innerBody, innerMeta, rfl, innerDomainShape, innerBodyShape⟩ :=
+    erasePwNames_forallE_invS outerBodyShape
+  obtain rfl := erasePwNames_sort_invS innerDomainShape
+  obtain rfl := erasePwNames_sort_invS innerBodyShape
   match fuel, inferred with
   | 0, inferred => rw [inferTypeCore_zero] at inferred; cases inferred
   | firstFuel + 1, inferred =>

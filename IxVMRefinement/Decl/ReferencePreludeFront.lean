@@ -87,4 +87,84 @@ theorem ReferenceReplay.prepared_front_no_theorem
         List.contains_nil, Bool.or_false, beq_iff_eq] at chosen
       exact congrArg some chosen
 
+private theorem frontSpec_length {md : Mode} :
+    ∀ (prelude input : List (Declaration md)), (frontSpec prelude input).1.length = prelude.length
+  | [], _ => rfl
+  | _ :: prelude, _ => by
+    simp only [frontSpec, List.length_cons, frontSpec_length]
+
+/-- The selected front has the required length and consists of complete singleton units. -/
+theorem prepared_front_properties {table : RoleTable} {pre : Prelude .anon}
+    (prepared : preludeFor table = .ok pre) (input : Array (Declaration .anon)) :
+    (frontOf #[] pre.ix.decls.toList input).1.toList.length = preludeSize ∧
+      ∀ d ∈ (frontOf #[] pre.ix.decls.toList input).1.toList, d.isGenerated = false := by
+  rw [(frontOf_toList pre.ix.decls.toList #[] input).1, Array.toList_empty, List.nil_append]
+  refine ⟨?_, ?_⟩
+  · rw [frontSpec_length, Array.length_toList, preludeFor_size prepared]
+  · intro d member
+    obtain ⟨p, inPrelude, relation⟩ := frontSpec_entry _ _ member
+    rcases relation with rfl | chosen
+    · exact IxVM.Refinement.Assembly.preludeFor_decls_not_generated prepared _ inPrelude
+    · have shape : p.names ∈ preludeShape.map (List.map Key.role) := by
+        rw [← preludeFor_shape prepared]
+        exact List.mem_map_of_mem inPrelude
+      unfold declares at chosen
+      cases name : preludeKey p with
+      | none => rw [name] at chosen; cases chosen
+      | some key =>
+        have heads := prelude_head_cases shape name
+        have notAux : key.isAux = false := by
+          simp only [List.mem_cons, List.not_mem_nil, or_false] at heads
+          rcases heads with h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
+        have named : key ∈ d.names := by
+          simpa only [name, Option.any_some, List.contains_iff_mem] using chosen
+        cases generated : d.isGenerated with
+        | false => rfl
+        | true =>
+          simp only [Declaration.isGenerated, Bool.and_eq_true] at generated
+          have auxiliary := List.all_eq_true.mp generated.2 key named
+          rw [notAux] at auxiliary
+          cases auxiliary
+
+/-- Every public theorem in the actual prepared stream closes a unit after the prelude. -/
+theorem ReferenceReplay.prepared_theorem_unit
+    {fuel : Nat} {ev : Evidences .anon} {sourceOut targetOut : Env .anon}
+    {table : RoleTable} {pre : Prelude .anon} (prepared : preludeFor table = .ok pre)
+    {input : Array (Declaration .anon)}
+    (replay : ReferenceReplay fuel ev Env.empty Env.empty
+      ((preparePrelude pre.ix input).toList.map IxVM.Refinement.thmToOpaqueDefn) sourceOut targetOut)
+    (propositions : IxVM.Refinement.TheoremsInProp sourceOut (preparePrelude pre.ix input).toList)
+    (anchors : IxVM.Refinement.AnchorsTyped (preparePrelude pre.ix input).toList)
+    {cv : ConstantVal .anon} {value : Expr .anon}
+    (member : Declaration.thmDecl cv value ∈ (preparePrelude pre.ix input).toList)
+    (publicName : cv.name.isAux = false) :
+    ∃ before after generated,
+      unitsOf (preparePrelude pre.ix input).toList =
+        before ++ (generated ++ [.thmDecl cv value]) :: after ∧
+      (∀ d ∈ generated, d.isGenerated = true) ∧
+      preludeSize ≤ before.flatten.length := by
+  let front := (frontOf #[] pre.ix.decls.toList input).1.toList
+  let body := (hoistNatOpGround (frontOf #[] pre.ix.decls.toList input).2).1.toList
+  have declarations : (preparePrelude pre.ix input).toList = front ++ body := by
+    rw [preparePrelude_front, Array.toList_append]
+  have notInFront := replay.prepared_front_no_theorem prepared propositions anchors cv value
+  have inBody : Declaration.thmDecl cv value ∈ body := by
+    rw [declarations, List.mem_append] at member
+    exact member.resolve_left notInFront
+  have notGenerated : (Declaration.thmDecl cv value).isGenerated = false := by
+    simp only [Declaration.isGenerated, Declaration.names, List.isEmpty_cons, Bool.not_false,
+      List.all_cons, List.all_nil, publicName, Bool.false_and, Bool.and_false]
+  obtain ⟨before, after, generated, split, allGenerated⟩ := unitsOf_closer inBody notGenerated
+  obtain ⟨frontLength, frontNotGenerated⟩ := prepared_front_properties prepared input
+  refine ⟨front.map (fun d => [d]) ++ before, after, generated, ?_, allGenerated, ?_⟩
+  · rw [declarations, unitsOf_append_front front body frontNotGenerated, split, List.append_assoc]
+  · have frontFlat : (front.map fun d => [d]).flatten = front := by
+      induction front with
+      | nil => rfl
+      | cons d rest ih => simp only [List.map_cons, List.flatten_cons, ih, List.singleton_append]
+    rw [List.flatten_append, frontFlat, List.length_append]
+    change preludeSize ≤ front.length + before.flatten.length
+    change front.length = preludeSize at frontLength
+    omega
+
 end IxVM.Refinement.Decl
