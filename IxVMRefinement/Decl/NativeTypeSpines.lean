@@ -26,9 +26,9 @@ private theorem telescope_sortOrPi {md : Mode} {type : Expr md} {count : Nat}
     cases type <;> first | rfl | simp [Expr.stripPis] at telescope
 
 private theorem inferred_app_type {md : Mode} {env : Env md} {grade : Grade} {depth : Nat}
-    {fn arg domain body type : Expr md} {meta : BinderMeta}
+    {fn arg domain body type : Expr md} {binderMeta : BinderMeta}
     (headType : ∀ inferred, Infer env grade depth fn inferred →
-      inferred = .forallE domain body meta)
+      inferred = .forallE domain body binderMeta)
     (run : Infer env grade depth (.app fn arg) type) : type = body.instantiate1 arg := by
   cases run with
   | app functionRead reduced _ _ =>
@@ -54,7 +54,8 @@ theorem infer_spine_sortOrPi {md : Mode} {env : Env md} {grade : Grade} {depth :
     cases arity with
     | zero => simp at within
     | succ arity =>
-      obtain ⟨domain, body, meta, rfl⟩ : ∃ domain body meta, type = .forallE domain body meta := by
+      obtain ⟨domain, body, binderMeta, rfl⟩ :
+          ∃ domain body binderMeta, type = .forallE domain body binderMeta := by
         cases type <;> first | exact ⟨_, _, _, rfl⟩ | simp [Expr.stripPis] at telescope
       simp only [Expr.stripPis, Option.map_eq_some_iff] at telescope
       obtain ⟨⟨tailBinders, residual⟩, tail, equal⟩ := telescope
