@@ -207,6 +207,23 @@ theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} {h : Heap F} {ps
     obtain ⟨rhs, hrhs, hnf, htm⟩ := hh
     exact .cons cell ⟨rhs, hrhs, hnf, htm.toTmC⟩ ih
 
+/-- The exact constructor representation retains its value's exact type field. -/
+theorem CIRepExact.ctor_valRep {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty blk ind cidx np nf safety : SourceValue F} {cv : ConstantVal .anon} {nP nF : Nat}
+    (represented : CIRepExact κ h (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, safety])
+      (.ctorInfo cv nP nF)) : ValRepExact κ h nl ty cv := by
+  generalize shape : (Value.construct kciEnum "Ctor"
+    [nl, ty, blk, ind, cidx, np, nf, safety] : SourceValue F) = value at represented
+  generalize kind : ConstantInfo.ctorInfo cv nP nF = info at represented
+  cases represented
+  case ctor exactValue _ _ _ _ =>
+    injection shape with _ _ fields
+    simp only [List.cons.injEq, and_true] at fields
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
+    obtain ⟨rfl, rfl, rfl⟩ := ConstantInfo.ctorInfo.inj kind
+    exact exactValue
+  all_goals (injection shape with _ tag _; exact absurd tag (by decide))
+
 theorem CIRepExact.toCIRep {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
     {ci : ConstantInfo .anon} (hci : CIRepExact κ h v ci) : CIRep κ h v ci := by
   cases hci with
