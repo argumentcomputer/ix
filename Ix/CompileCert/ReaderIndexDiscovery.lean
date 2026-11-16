@@ -190,7 +190,8 @@ private theorem list_hit (P Q : β → Prop) (items : List α) (target : α) (pr
       · exact ih later after valid restStep
     simpa only [List.forIn_cons, ran, pure, bind] using result
 
-private theorem array_hit (P Q : β → Prop) (items : Array α) (target : α) (present : target ∈ items)
+/-- A loop that preserves its invariant and a witnessed property retains the property after its target. -/
+theorem array_hit (P Q : β → Prop) (items : Array α) (target : α) (present : target ∈ items)
     (body : α → β → Id (ForInStep β)) (initial : β) (start : P initial)
     (step : ∀ item ∈ items, ∀ before, P before → ∃ after, body item before = .yield after ∧
       P after ∧ (Q before → Q after) ∧ (item = target → Q after)) :
