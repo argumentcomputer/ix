@@ -106,7 +106,7 @@ theorem admitted_native_reader_origin_or_unresolved_self {V : IxVM.Refinement.Vi
         some reading → reading = .ok key → key = (nativeOriginCtx witness trace env lim).κ address
   · exact .inl (admitted_native_reader_origin_in_context_of_selfReads witness keepTrace order phase loaded
       bounded env lim claimBytes noCollision source shape memberAt walked readerSource read selfKeyed)
-  · push_neg at selfKeyed
+  · push Not at selfKeyed
     obtain ⟨index, address, reading, key, used, addressAt, callback, succeeded, different⟩ := selfKeyed
     rcases admitted_reached_self_key_cases witness phase keepTrace order loaded readerSource shape
       used addressAt callback succeeded with exactKey | ⟨addressKey, role, bound, unresolved⟩
