@@ -3607,6 +3607,10 @@ def check_block_member_kinds := aiur_fn⟦
                 "mutual block mixes safe members with unsafe or partial ones");
               assert_eq!(has_defn * muts_has_kind(members, 2), 0,
                 "mutual block mixes a definition member with recursors");
+              -- an inductive block holds no recursor: a recursor of a native block is a
+              -- record of its own, and a modeled family's recursors are a block of recursors
+              assert_eq!(muts_has_kind(members, 0) * muts_has_kind(members, 2), 0,
+                "mutual block mixes inductives with recursors");
               () } ,
             _ => {  () } ,
           } } ,
