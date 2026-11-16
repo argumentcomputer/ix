@@ -14,7 +14,8 @@ private theorem zip_fvars_metadata {md : Mode} :
         List.zipWith (fun (x : Expr md) (binderMeta : BinderMeta) => (x.fvarTypeD, binderMeta)) fvars (binders.map Prod.snd)
   | [], _ => rfl
   | _ :: _, [] => rfl
-  | _ :: fvars, _ :: binders => by simp only [List.zipWith_cons_cons, List.map_cons, zip_fvars_metadata]
+  | x :: fvars, b :: binders =>
+    congrArg (List.cons (x.fvarTypeD, b.2)) (zip_fvars_metadata fvars binders)
 
 private theorem stripPis_metadata_inst {md : Mode} {v : Expr md} :
     ∀ {count : Nat} {e : Expr md} {binders : List (Expr md × BinderMeta)} {residual : Expr md}
@@ -109,9 +110,11 @@ theorem reclose_parameter_prefix {md : Mode} {env : Env md} :
           (fun leaf present => leafCondition leaf (tailLeaves leaf present))
         have roundTrip := abstract1_instantiate1 _ 0 consistent tailBounded
         dsimp only
-        simp only [List.zipWith_cons_cons, Expr.fvarTypeD, closeTelescope]
+        simp only [List.zipWith_cons_cons, closeTelescope,
+          show (Expr.fvar depth dom).fvarTypeD = dom from rfl]
         refine ⟨?_, ?_, ?_, ?_⟩
-        · exact ⟨scope.1, WScoped.abstract1 0 tailScope⟩
+        · simp only [Expr.WScoped]
+          exact ⟨scope.1, WScoped.abstract1 0 tailScope⟩
         · simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
           exact ⟨bounded.1, looseBVarsBounded_abstract1 _ 0 tailBounded⟩
         · intro leaf present
