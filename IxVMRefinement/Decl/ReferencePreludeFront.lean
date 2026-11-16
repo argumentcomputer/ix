@@ -82,7 +82,6 @@ theorem ReferenceReplay.prepared_front_no_theorem
     cases name : preludeKey p with
     | none => rw [name] at chosen; cases chosen
     | some key =>
-      rw [name]
       simp only [name, Option.any_some, Declaration.names, List.contains_cons,
         List.contains_nil, Bool.or_false, beq_iff_eq] at chosen
       exact congrArg some chosen
