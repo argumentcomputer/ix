@@ -880,6 +880,9 @@ def functionKeys : List Nat := [
     14327732526546015865971466101127624201987816567107896510182830428440,
     70206650213447367477045163398074665835504370419576173715633038034592994533492874892422960672394223560,
     3756060757397447386550994483442358032311148415241371700140337729793779544990384727,
+    809203341523328901671948369729054348452664148591383754710730,
+    207965258765843754899266813115614192868517684467339369959504167,
+    3926069072563840326087320890422575813714107258365172484253346293981652491317000523,
     1140239840321798475361665874901596510669508352506257696613440190034309537131665819311977683565800,
     1008832624690380490677990178159871358724637114966909707200098270504537414828172944109,
     3501227883237134282303611195986547850070083275880687410100679354703486,
@@ -6977,1082 +6980,1103 @@ theorem KernelCheck.check_rec_major_plain.lookup : program.sourceFunction? "Kern
     (List.getElem_mem (l := functions) (n := 865) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
+theorem KernelCheck.expr_has_let.lookup : program.sourceFunction? "KernelCheck::expr_has_let" =
+    some { types := [], params := KernelCheck.expr_has_let.params.map fun (n, t) => (n, (t.subst []).toCore),
+           body := KernelCheck.expr_has_let.body } :=
+  Program.sourceFunction?_of_mem (f := KernelCheck.expr_has_let) functionNames_nodup
+    (List.getElem_mem (l := functions) (n := 866) (by decide +kernel))
+    (head_ne_of_bytes (by decide +kernel)) rfl
+
+theorem KernelCheck.doms_have_let.lookup : program.sourceFunction? "KernelCheck::doms_have_let" =
+    some { types := [], params := KernelCheck.doms_have_let.params.map fun (n, t) => (n, (t.subst []).toCore),
+           body := KernelCheck.doms_have_let.body } :=
+  Program.sourceFunction?_of_mem (f := KernelCheck.doms_have_let) functionNames_nodup
+    (List.getElem_mem (l := functions) (n := 867) (by decide +kernel))
+    (head_ne_of_bytes (by decide +kernel)) rfl
+
+theorem KernelCheck.check_rec_header_lets.lookup : program.sourceFunction? "KernelCheck::check_rec_header_lets" =
+    some { types := [], params := KernelCheck.check_rec_header_lets.params.map fun (n, t) => (n, (t.subst []).toCore),
+           body := KernelCheck.check_rec_header_lets.body } :=
+  Program.sourceFunction?_of_mem (f := KernelCheck.check_rec_header_lets) functionNames_nodup
+    (List.getElem_mem (l := functions) (n := 868) (by decide +kernel))
+    (head_ne_of_bytes (by decide +kernel)) rfl
+
 theorem KernelCheck.check_recursor_canonical_at.lookup : program.sourceFunction? "KernelCheck::check_recursor_canonical_at" =
     some { types := [], params := KernelCheck.check_recursor_canonical_at.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_recursor_canonical_at.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_recursor_canonical_at) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 866) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 869) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.canonical_rules_at_pos.lookup : program.sourceFunction? "KernelCheck::canonical_rules_at_pos" =
     some { types := [], params := KernelCheck.canonical_rules_at_pos.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.canonical_rules_at_pos.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.canonical_rules_at_pos) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 867) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 870) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.ctors_before_pos.lookup : program.sourceFunction? "KernelCheck::ctors_before_pos" =
     some { types := [], params := KernelCheck.ctors_before_pos.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.ctors_before_pos.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.ctors_before_pos) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 868) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 871) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.populate_rules.lookup : program.sourceFunction? "KernelCheck::populate_rules" =
     some { types := [], params := KernelCheck.populate_rules.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.populate_rules.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.populate_rules) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 869) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 872) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.compare_rules.lookup : program.sourceFunction? "KernelCheck::compare_rules" =
     some { types := [], params := KernelCheck.compare_rules.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.compare_rules.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.compare_rules) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 870) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 873) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.apply_ihs_full.lookup : program.sourceFunction? "KernelCheck::apply_ihs_full" =
     some { types := [], params := KernelCheck.apply_ihs_full.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.apply_ihs_full.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.apply_ihs_full) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 871) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 874) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_rule_rhs.lookup : program.sourceFunction? "KernelCheck::build_rule_rhs" =
     some { types := [], params := KernelCheck.build_rule_rhs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_rule_rhs.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_rule_rhs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 872) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 875) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_peer_recs.lookup : program.sourceFunction? "KernelCheck::build_peer_recs" =
     some { types := [], params := KernelCheck.build_peer_recs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_peer_recs.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_peer_recs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 873) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 876) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.find_peer_recursor_with_spec.lookup : program.sourceFunction? "KernelCheck::find_peer_recursor_with_spec" =
     some { types := [], params := KernelCheck.find_peer_recursor_with_spec.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.find_peer_recursor_with_spec.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.find_peer_recursor_with_spec) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 874) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 877) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.find_peer_rec_spec_walk.lookup : program.sourceFunction? "KernelCheck::find_peer_rec_spec_walk" =
     some { types := [], params := KernelCheck.find_peer_rec_spec_walk.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.find_peer_rec_spec_walk.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.find_peer_rec_spec_walk) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 875) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 878) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_flat_own_params.lookup : program.sourceFunction? "KernelCheck::build_flat_own_params" =
     some { types := [], params := KernelCheck.build_flat_own_params.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_flat_own_params.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_flat_own_params) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 876) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 879) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.projection_addr_ctor.lookup : program.sourceFunction? "KernelCheck::projection_addr_ctor" =
     some { types := [], params := KernelCheck.projection_addr_ctor.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.projection_addr_ctor.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.projection_addr_ctor) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 877) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 880) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_minor_doms.lookup : program.sourceFunction? "KernelCheck::build_minor_doms" =
     some { types := [], params := KernelCheck.build_minor_doms.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_minor_doms.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_minor_doms) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 878) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 881) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_all_minors.lookup : program.sourceFunction? "KernelCheck::build_all_minors" =
     some { types := [], params := KernelCheck.build_all_minors.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_all_minors.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_all_minors) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 879) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 882) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_all_minors_walk.lookup : program.sourceFunction? "KernelCheck::build_all_minors_walk" =
     some { types := [], params := KernelCheck.build_all_minors_walk.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_all_minors_walk.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_all_minors_walk) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 880) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 883) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.ctor_subst_param_for.lookup : program.sourceFunction? "KernelCheck::ctor_subst_param_for" =
     some { types := [], params := KernelCheck.ctor_subst_param_for.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.ctor_subst_param_for.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.ctor_subst_param_for) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 881) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 884) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.count_foralls_body.lookup : program.sourceFunction? "KernelCheck::count_foralls_body" =
     some { types := [], params := KernelCheck.count_foralls_body.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.count_foralls_body.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.count_foralls_body) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 882) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 885) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.peel_ctor_params_subst.lookup : program.sourceFunction? "KernelCheck::peel_ctor_params_subst" =
     some { types := [], params := KernelCheck.peel_ctor_params_subst.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.peel_ctor_params_subst.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.peel_ctor_params_subst) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 883) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 886) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_minor_at_depth.lookup : program.sourceFunction? "KernelCheck::build_minor_at_depth" =
     some { types := [], params := KernelCheck.build_minor_at_depth.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_minor_at_depth.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_minor_at_depth) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 884) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 887) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.peel_leading_foralls.lookup : program.sourceFunction? "KernelCheck::peel_leading_foralls" =
     some { types := [], params := KernelCheck.peel_leading_foralls.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.peel_leading_foralls.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.peel_leading_foralls) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 885) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 888) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.peel_leading_foralls_acc.lookup : program.sourceFunction? "KernelCheck::peel_leading_foralls_acc" =
     some { types := [], params := KernelCheck.peel_leading_foralls_acc.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.peel_leading_foralls_acc.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.peel_leading_foralls_acc) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 886) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 889) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_apply_xs.lookup : program.sourceFunction? "KernelCheck::build_apply_xs" =
     some { types := [], params := KernelCheck.build_apply_xs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_apply_xs.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_apply_xs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 887) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 890) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_ih_doms.lookup : program.sourceFunction? "KernelCheck::build_ih_doms" =
     some { types := [], params := KernelCheck.build_ih_doms.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_ih_doms.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_ih_doms) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 888) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 891) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.list_lift_each.lookup : program.sourceFunction? "KernelCheck::list_lift_each" =
     some { types := [], params := KernelCheck.list_lift_each.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.list_lift_each.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.list_lift_each) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 889) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 892) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_apply_bvars_decreasing.lookup : program.sourceFunction? "KernelCheck::build_apply_bvars_decreasing" =
     some { types := [], params := KernelCheck.build_apply_bvars_decreasing.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_apply_bvars_decreasing.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_apply_bvars_decreasing) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 890) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 893) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_apply_field_bvars.lookup : program.sourceFunction? "KernelCheck::build_apply_field_bvars" =
     some { types := [], params := KernelCheck.build_apply_field_bvars.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_apply_field_bvars.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_apply_field_bvars) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 891) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 894) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_ctor_app_params.lookup : program.sourceFunction? "KernelCheck::build_ctor_app_params" =
     some { types := [], params := KernelCheck.build_ctor_app_params.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_ctor_app_params.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_ctor_app_params) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 892) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 895) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.whnf_tele.lookup : program.sourceFunction? "KernelCheck::whnf_tele" =
     some { types := [], params := KernelCheck.whnf_tele.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.whnf_tele.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.whnf_tele) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 893) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 896) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.is_rec_field_peel.lookup : program.sourceFunction? "KernelCheck::is_rec_field_peel" =
     some { types := [], params := KernelCheck.is_rec_field_peel.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.is_rec_field_peel.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.is_rec_field_peel) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 894) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 897) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.flat_find_matching.lookup : program.sourceFunction? "KernelCheck::flat_find_matching" =
     some { types := [], params := KernelCheck.flat_find_matching.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.flat_find_matching.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.flat_find_matching) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 895) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 898) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.spec_params_dom_prefix_match.lookup : program.sourceFunction? "KernelCheck::spec_params_dom_prefix_match" =
     some { types := [], params := KernelCheck.spec_params_dom_prefix_match.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.spec_params_dom_prefix_match.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.spec_params_dom_prefix_match) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 896) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 899) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.walk_fields_classify.lookup : program.sourceFunction? "KernelCheck::walk_fields_classify" =
     some { types := [], params := KernelCheck.walk_fields_classify.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.walk_fields_classify.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.walk_fields_classify) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 897) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 900) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_all_motives_walk.lookup : program.sourceFunction? "KernelCheck::build_all_motives_walk" =
     some { types := [], params := KernelCheck.build_all_motives_walk.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_all_motives_walk.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_all_motives_walk) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 898) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 901) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.check_recursor_member.lookup : program.sourceFunction? "KernelCheck::check_recursor_member" =
     some { types := [], params := KernelCheck.check_recursor_member.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_recursor_member.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_recursor_member) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 899) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 902) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.check_rec_major_spine.lookup : program.sourceFunction? "KernelCheck::check_rec_major_spine" =
     some { types := [], params := KernelCheck.check_rec_major_spine.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_rec_major_spine.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_rec_major_spine) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 900) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 903) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.apply_spine_expr.lookup : program.sourceFunction? "KernelCheck::apply_spine_expr" =
     some { types := [], params := KernelCheck.apply_spine_expr.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.apply_spine_expr.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.apply_spine_expr) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 901) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 904) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.build_rec_lvls_list.lookup : program.sourceFunction? "KernelCheck::build_rec_lvls_list" =
     some { types := [], params := KernelCheck.build_rec_lvls_list.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.build_rec_lvls_list.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.build_rec_lvls_list) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 902) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 905) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.check_rec_rules_wellscoped.lookup : program.sourceFunction? "KernelCheck::check_rec_rules_wellscoped" =
     some { types := [], params := KernelCheck.check_rec_rules_wellscoped.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_rec_rules_wellscoped.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_rec_rules_wellscoped) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 903) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 906) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.peel_n_lams_collect.lookup : program.sourceFunction? "KernelCheck::peel_n_lams_collect" =
     some { types := [], params := KernelCheck.peel_n_lams_collect.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.peel_n_lams_collect.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.peel_n_lams_collect) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 904) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 907) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.rule_lam_doms.lookup : program.sourceFunction? "KernelCheck::rule_lam_doms" =
     some { types := [], params := KernelCheck.rule_lam_doms.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.rule_lam_doms.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.rule_lam_doms) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 905) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 908) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.muts_has_kind.lookup : program.sourceFunction? "KernelCheck::muts_has_kind" =
     some { types := [], params := KernelCheck.muts_has_kind.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.muts_has_kind.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.muts_has_kind) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 906) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 909) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.check_block_member_kinds.lookup : program.sourceFunction? "KernelCheck::check_block_member_kinds" =
     some { types := [], params := KernelCheck.check_block_member_kinds.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_block_member_kinds.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_block_member_kinds) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 907) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 910) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.muts_safety_counts.lookup : program.sourceFunction? "KernelCheck::muts_safety_counts" =
     some { types := [], params := KernelCheck.muts_safety_counts.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.muts_safety_counts.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.muts_safety_counts) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 908) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 911) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.ctors_safety_counts.lookup : program.sourceFunction? "KernelCheck::ctors_safety_counts" =
     some { types := [], params := KernelCheck.ctors_safety_counts.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.ctors_safety_counts.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.ctors_safety_counts) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 909) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 912) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelCheck.check_const.lookup : program.sourceFunction? "KernelCheck::check_const" =
     some { types := [], params := KernelCheck.check_const.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelCheck.check_const.body } :=
   Program.sourceFunction?_of_mem (f := KernelCheck.check_const) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 910) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 913) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.muts_indc_count.lookup : program.sourceFunction? "KernelModeled::muts_indc_count" =
     some { types := [], params := KernelModeled.muts_indc_count.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.muts_indc_count.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.muts_indc_count) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 911) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 914) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.first_indc_pos.lookup : program.sourceFunction? "KernelModeled::first_indc_pos" =
     some { types := [], params := KernelModeled.first_indc_pos.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.first_indc_pos.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.first_indc_pos) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 912) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 915) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.block_is_modeled.lookup : program.sourceFunction? "KernelModeled::block_is_modeled" =
     some { types := [], params := KernelModeled.block_is_modeled.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.block_is_modeled.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.block_is_modeled) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 913) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 916) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.block_is_multi.lookup : program.sourceFunction? "KernelModeled::block_is_multi" =
     some { types := [], params := KernelModeled.block_is_multi.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.block_is_multi.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.block_is_multi) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 914) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 917) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.ctors_nested.lookup : program.sourceFunction? "KernelModeled::ctors_nested" =
     some { types := [], params := KernelModeled.ctors_nested.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.ctors_nested.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.ctors_nested) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 915) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 918) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.nested_scan.lookup : program.sourceFunction? "KernelModeled::nested_scan" =
     some { types := [], params := KernelModeled.nested_scan.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.nested_scan.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.nested_scan) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 916) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 919) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.nested_scan_list.lookup : program.sourceFunction? "KernelModeled::nested_scan_list" =
     some { types := [], params := KernelModeled.nested_scan_list.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.nested_scan_list.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.nested_scan_list) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 917) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 920) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.nested_mentions.lookup : program.sourceFunction? "KernelModeled::nested_mentions" =
     some { types := [], params := KernelModeled.nested_mentions.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.nested_mentions.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.nested_mentions) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 918) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 921) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.addr_is_inductive.lookup : program.sourceFunction? "KernelModeled::addr_is_inductive" =
     some { types := [], params := KernelModeled.addr_is_inductive.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.addr_is_inductive.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.addr_is_inductive) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 919) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 922) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rec_family_block.lookup : program.sourceFunction? "KernelModeled::rec_family_block" =
     some { types := [], params := KernelModeled.rec_family_block.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rec_family_block.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rec_family_block) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 920) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 923) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.last_binder_dom.lookup : program.sourceFunction? "KernelModeled::last_binder_dom" =
     some { types := [], params := KernelModeled.last_binder_dom.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.last_binder_dom.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.last_binder_dom) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 921) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 924) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.assert_proj_allowed.lookup : program.sourceFunction? "KernelModeled::assert_proj_allowed" =
     some { types := [], params := KernelModeled.assert_proj_allowed.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.assert_proj_allowed.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.assert_proj_allowed) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 922) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 925) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.proj_ctor.lookup : program.sourceFunction? "KernelModeled::proj_ctor" =
     some { types := [], params := KernelModeled.proj_ctor.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.proj_ctor.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.proj_ctor) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 923) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 926) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.ind_is_modeled.lookup : program.sourceFunction? "KernelModeled::ind_is_modeled" =
     some { types := [], params := KernelModeled.ind_is_modeled.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.ind_is_modeled.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.ind_is_modeled) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 924) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 927) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.fire_ok.lookup : program.sourceFunction? "KernelModeled::fire_ok" =
     some { types := [], params := KernelModeled.fire_ok.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.fire_ok.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.fire_ok) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 925) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 928) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.fire_compare.lookup : program.sourceFunction? "KernelModeled::fire_compare" =
     some { types := [], params := KernelModeled.fire_compare.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.fire_compare.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.fire_compare) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 926) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 929) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rec_comparands.lookup : program.sourceFunction? "KernelModeled::rec_comparands" =
     some { types := [], params := KernelModeled.rec_comparands.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rec_comparands.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rec_comparands) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 927) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 930) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.inst_pins.lookup : program.sourceFunction? "KernelModeled::inst_pins" =
     some { types := [], params := KernelModeled.inst_pins.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.inst_pins.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.inst_pins) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 928) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 931) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.level_list_equal.lookup : program.sourceFunction? "KernelModeled::level_list_equal" =
     some { types := [], params := KernelModeled.level_list_equal.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.level_list_equal.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.level_list_equal) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 929) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 932) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.defeq_list_ok.lookup : program.sourceFunction? "KernelModeled::defeq_list_ok" =
     some { types := [], params := KernelModeled.defeq_list_ok.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.defeq_list_ok.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.defeq_list_ok) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 930) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 933) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rec_major_pins.lookup : program.sourceFunction? "KernelModeled::rec_major_pins" =
     some { types := [], params := KernelModeled.rec_major_pins.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rec_major_pins.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rec_major_pins) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 931) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 934) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.assert_index_vars.lookup : program.sourceFunction? "KernelModeled::assert_index_vars" =
     some { types := [], params := KernelModeled.assert_index_vars.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.assert_index_vars.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.assert_index_vars) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 932) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 935) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.lower_pins.lookup : program.sourceFunction? "KernelModeled::lower_pins" =
     some { types := [], params := KernelModeled.lower_pins.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.lower_pins.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.lower_pins) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 933) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 936) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.read_payload.lookup : program.sourceFunction? "KernelModeled::read_payload" =
     some { types := [], params := KernelModeled.read_payload.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.read_payload.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.read_payload) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 934) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 937) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.get_count.lookup : program.sourceFunction? "KernelModeled::get_count" =
     some { types := [], params := KernelModeled.get_count.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.get_count.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.get_count) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 935) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 938) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.get_addrs.lookup : program.sourceFunction? "KernelModeled::get_addrs" =
     some { types := [], params := KernelModeled.get_addrs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.get_addrs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.get_addrs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 936) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 939) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.basis_role_allowed.lookup : program.sourceFunction? "KernelModeled::basis_role_allowed" =
     some { types := [], params := KernelModeled.basis_role_allowed.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.basis_role_allowed.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.basis_role_allowed) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 937) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 940) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_witnesses.lookup : program.sourceFunction? "KernelModeled::check_witnesses" =
     some { types := [], params := KernelModeled.check_witnesses.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_witnesses.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_witnesses) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 938) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 941) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_witness.lookup : program.sourceFunction? "KernelModeled::check_witness" =
     some { types := [], params := KernelModeled.check_witness.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_witness.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_witness) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 939) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 942) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.walk_from_block.lookup : program.sourceFunction? "KernelModeled::walk_from_block" =
     some { types := [], params := KernelModeled.walk_from_block.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.walk_from_block.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.walk_from_block) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 940) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 943) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.walk_path.lookup : program.sourceFunction? "KernelModeled::walk_path" =
     some { types := [], params := KernelModeled.walk_path.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.walk_path.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.walk_path) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 941) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 944) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.projection_block.lookup : program.sourceFunction? "KernelModeled::projection_block" =
     some { types := [], params := KernelModeled.projection_block.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.projection_block.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.projection_block) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 942) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 945) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_container_rec.lookup : program.sourceFunction? "KernelModeled::check_container_rec" =
     some { types := [], params := KernelModeled.check_container_rec.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_container_rec.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_container_rec) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 943) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 946) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.container_recs_refs.lookup : program.sourceFunction? "KernelModeled::container_recs_refs" =
     some { types := [], params := KernelModeled.container_recs_refs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.container_recs_refs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.container_recs_refs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 944) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 947) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.container_refs_check.lookup : program.sourceFunction? "KernelModeled::container_refs_check" =
     some { types := [], params := KernelModeled.container_refs_check.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.container_refs_check.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.container_refs_check) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 945) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 948) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.container_refs_ok.lookup : program.sourceFunction? "KernelModeled::container_refs_ok" =
     some { types := [], params := KernelModeled.container_refs_ok.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.container_refs_ok.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.container_refs_ok) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 946) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 949) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.projection_of_ref_block.lookup : program.sourceFunction? "KernelModeled::projection_of_ref_block" =
     some { types := [], params := KernelModeled.projection_of_ref_block.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.projection_of_ref_block.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.projection_of_ref_block) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 947) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 950) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.ref_projects_from.lookup : program.sourceFunction? "KernelModeled::ref_projects_from" =
     some { types := [], params := KernelModeled.ref_projects_from.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.ref_projects_from.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.ref_projects_from) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 948) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 951) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.is_projection_of.lookup : program.sourceFunction? "KernelModeled::is_projection_of" =
     some { types := [], params := KernelModeled.is_projection_of.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.is_projection_of.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.is_projection_of) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 949) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 952) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_advice_records.lookup : program.sourceFunction? "KernelModeled::check_advice_records" =
     some { types := [], params := KernelModeled.check_advice_records.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_advice_records.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_advice_records) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 950) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 953) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_advice_record.lookup : program.sourceFunction? "KernelModeled::check_advice_record" =
     some { types := [], params := KernelModeled.check_advice_record.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_advice_record.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_advice_record) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 951) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 954) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.muts_all_safe.lookup : program.sourceFunction? "KernelModeled::muts_all_safe" =
     some { types := [], params := KernelModeled.muts_all_safe.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.muts_all_safe.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.muts_all_safe) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 952) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 955) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.advice_refs_ok.lookup : program.sourceFunction? "KernelModeled::advice_refs_ok" =
     some { types := [], params := KernelModeled.advice_refs_ok.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.advice_refs_ok.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.advice_refs_ok) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 953) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 956) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.projection_of_advice.lookup : program.sourceFunction? "KernelModeled::projection_of_advice" =
     some { types := [], params := KernelModeled.projection_of_advice.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.projection_of_advice.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.projection_of_advice) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 954) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 957) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_modeled_block.lookup : program.sourceFunction? "KernelModeled::check_modeled_block" =
     some { types := [], params := KernelModeled.check_modeled_block.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_modeled_block.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_modeled_block) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 955) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 958) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_family.lookup : program.sourceFunction? "KernelModeled::check_family" =
     some { types := [], params := KernelModeled.check_family.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_family.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_family) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 956) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 959) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.block_elim.lookup : program.sourceFunction? "KernelModeled::block_elim" =
     some { types := [], params := KernelModeled.block_elim.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.block_elim.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.block_elim) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 957) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 960) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.peers_agree.lookup : program.sourceFunction? "KernelModeled::peers_agree" =
     some { types := [], params := KernelModeled.peers_agree.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.peers_agree.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.peers_agree) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 958) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 961) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_nested_aux.lookup : program.sourceFunction? "KernelModeled::check_nested_aux" =
     some { types := [], params := KernelModeled.check_nested_aux.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_nested_aux.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_nested_aux) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 959) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 962) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.flat_reals.lookup : program.sourceFunction? "KernelModeled::flat_reals" =
     some { types := [], params := KernelModeled.flat_reals.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.flat_reals.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.flat_reals) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 960) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 963) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.nested_walk.lookup : program.sourceFunction? "KernelModeled::nested_walk" =
     some { types := [], params := KernelModeled.nested_walk.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.nested_walk.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.nested_walk) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 961) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 964) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.ctors_scan.lookup : program.sourceFunction? "KernelModeled::ctors_scan" =
     some { types := [], params := KernelModeled.ctors_scan.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.ctors_scan.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.ctors_scan) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 962) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 965) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.inst_ctor_params.lookup : program.sourceFunction? "KernelModeled::inst_ctor_params" =
     some { types := [], params := KernelModeled.inst_ctor_params.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.inst_ctor_params.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.inst_ctor_params) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 963) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 966) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.occ_scan.lookup : program.sourceFunction? "KernelModeled::occ_scan" =
     some { types := [], params := KernelModeled.occ_scan.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.occ_scan.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.occ_scan) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 964) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 967) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.occ_scan_list.lookup : program.sourceFunction? "KernelModeled::occ_scan_list" =
     some { types := [], params := KernelModeled.occ_scan_list.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.occ_scan_list.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.occ_scan_list) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 965) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 968) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.occ_params_lower.lookup : program.sourceFunction? "KernelModeled::occ_params_lower" =
     some { types := [], params := KernelModeled.occ_params_lower.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.occ_params_lower.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.occ_params_lower) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 966) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 969) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.add_block_members.lookup : program.sourceFunction? "KernelModeled::add_block_members" =
     some { types := [], params := KernelModeled.add_block_members.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.add_block_members.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.add_block_members) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 967) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 970) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.aux_entry_in.lookup : program.sourceFunction? "KernelModeled::aux_entry_in" =
     some { types := [], params := KernelModeled.aux_entry_in.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.aux_entry_in.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.aux_entry_in) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 968) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 971) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.aux_count.lookup : program.sourceFunction? "KernelModeled::aux_count" =
     some { types := [], params := KernelModeled.aux_count.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.aux_count.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.aux_count) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 969) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 972) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.aux_all_in.lookup : program.sourceFunction? "KernelModeled::aux_all_in" =
     some { types := [], params := KernelModeled.aux_all_in.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.aux_all_in.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.aux_all_in) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 970) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 973) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.family_refs_ok.lookup : program.sourceFunction? "KernelModeled::family_refs_ok" =
     some { types := [], params := KernelModeled.family_refs_ok.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.family_refs_ok.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.family_refs_ok) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 971) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 974) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.family_refs_go.lookup : program.sourceFunction? "KernelModeled::family_refs_go" =
     some { types := [], params := KernelModeled.family_refs_go.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.family_refs_go.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.family_refs_go) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 972) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 975) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.used_ref_has.lookup : program.sourceFunction? "KernelModeled::used_ref_has" =
     some { types := [], params := KernelModeled.used_ref_has.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.used_ref_has.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.used_ref_has) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 973) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 976) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.block_nparams.lookup : program.sourceFunction? "KernelModeled::block_nparams" =
     some { types := [], params := KernelModeled.block_nparams.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.block_nparams.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.block_nparams) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 974) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 977) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.nparams_agree.lookup : program.sourceFunction? "KernelModeled::nparams_agree" =
     some { types := [], params := KernelModeled.nparams_agree.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.nparams_agree.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.nparams_agree) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 975) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 978) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.block_ctor_addrs.lookup : program.sourceFunction? "KernelModeled::block_ctor_addrs" =
     some { types := [], params := KernelModeled.block_ctor_addrs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.block_ctor_addrs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.block_ctor_addrs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 976) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 979) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.member_ctor_addrs.lookup : program.sourceFunction? "KernelModeled::member_ctor_addrs" =
     some { types := [], params := KernelModeled.member_ctor_addrs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.member_ctor_addrs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.member_ctor_addrs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 977) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 980) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.family_recs.lookup : program.sourceFunction? "KernelModeled::family_recs" =
     some { types := [], params := KernelModeled.family_recs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.family_recs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.family_recs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 978) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 981) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.muts_recr_count.lookup : program.sourceFunction? "KernelModeled::muts_recr_count" =
     some { types := [], params := KernelModeled.muts_recr_count.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.muts_recr_count.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.muts_recr_count) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 979) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 982) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.members_val.lookup : program.sourceFunction? "KernelModeled::members_val" =
     some { types := [], params := KernelModeled.members_val.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.members_val.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.members_val) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 980) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 983) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.member_val.lookup : program.sourceFunction? "KernelModeled::member_val" =
     some { types := [], params := KernelModeled.member_val.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.member_val.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.member_val) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 981) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 984) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.ci_lvls_type.lookup : program.sourceFunction? "KernelModeled::ci_lvls_type" =
     some { types := [], params := KernelModeled.ci_lvls_type.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.ci_lvls_type.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.ci_lvls_type) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 982) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 985) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rename.lookup : program.sourceFunction? "KernelModeled::rename" =
     some { types := [], params := KernelModeled.rename.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rename.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rename) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 983) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 986) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rename_addr.lookup : program.sourceFunction? "KernelModeled::rename_addr" =
     some { types := [], params := KernelModeled.rename_addr.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rename_addr.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rename_addr) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 984) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 987) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.rename_list.lookup : program.sourceFunction? "KernelModeled::rename_list" =
     some { types := [], params := KernelModeled.rename_list.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.rename_list.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.rename_list) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 985) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 988) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_recs.lookup : program.sourceFunction? "KernelModeled::check_recs" =
     some { types := [], params := KernelModeled.check_recs.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_recs.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_recs) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 986) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 989) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_rec_motive.lookup : program.sourceFunction? "KernelModeled::check_rec_motive" =
     some { types := [], params := KernelModeled.check_rec_motive.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_rec_motive.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_rec_motive) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 987) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 990) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_carriers.lookup : program.sourceFunction? "KernelModeled::check_carriers" =
     some { types := [], params := KernelModeled.check_carriers.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_carriers.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_carriers) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 988) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 991) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_carriers_go.lookup : program.sourceFunction? "KernelModeled::check_carriers_go" =
     some { types := [], params := KernelModeled.check_carriers_go.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_carriers_go.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_carriers_go) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 989) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 992) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_rules.lookup : program.sourceFunction? "KernelModeled::check_rules" =
     some { types := [], params := KernelModeled.check_rules.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_rules.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_rules) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 990) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 993) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_rules_go.lookup : program.sourceFunction? "KernelModeled::check_rules_go" =
     some { types := [], params := KernelModeled.check_rules_go.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_rules_go.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_rules_go) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 991) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 994) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.check_iota_rule.lookup : program.sourceFunction? "KernelModeled::check_iota_rule" =
     some { types := [], params := KernelModeled.check_iota_rule.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.check_iota_rule.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.check_iota_rule) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 992) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 995) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.peel_collect.lookup : program.sourceFunction? "KernelModeled::peel_collect" =
     some { types := [], params := KernelModeled.peel_collect.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.peel_collect.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.peel_collect) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 993) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 996) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.bvars_desc.lookup : program.sourceFunction? "KernelModeled::bvars_desc" =
     some { types := [], params := KernelModeled.bvars_desc.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.bvars_desc.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.bvars_desc) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 994) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 997) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.lift_list.lookup : program.sourceFunction? "KernelModeled::lift_list" =
     some { types := [], params := KernelModeled.lift_list.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.lift_list.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.lift_list) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 995) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 998) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.inst_params.lookup : program.sourceFunction? "KernelModeled::inst_params" =
     some { types := [], params := KernelModeled.inst_params.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.inst_params.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.inst_params) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 996) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 999) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.inst_params_typed.lookup : program.sourceFunction? "KernelModeled::inst_params_typed" =
     some { types := [], params := KernelModeled.inst_params_typed.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.inst_params_typed.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.inst_params_typed) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 997) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1000) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.defeq_tele.lookup : program.sourceFunction? "KernelModeled::defeq_tele" =
     some { types := [], params := KernelModeled.defeq_tele.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.defeq_tele.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.defeq_tele) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 998) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1001) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelModeled.defeq_lam_tele.lookup : program.sourceFunction? "KernelModeled::defeq_lam_tele" =
     some { types := [], params := KernelModeled.defeq_lam_tele.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelModeled.defeq_lam_tele.body } :=
   Program.sourceFunction?_of_mem (f := KernelModeled.defeq_lam_tele) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 999) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1002) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.check_owned.lookup : program.sourceFunction? "IxVMCompat::check_owned" =
     some { types := [], params := IxVMCompat.check_owned.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.check_owned.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.check_owned) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1000) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1003) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.io_get_info.lookup : program.sourceFunction? "IxVMCompat::io_get_info" =
     some { types := [], params := IxVMCompat.io_get_info.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.io_get_info.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.io_get_info) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1001) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1004) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.ordinary_div_mod.lookup : program.sourceFunction? "IxVMCompat::ordinary_div_mod" =
     some { types := [], params := IxVMCompat.ordinary_div_mod.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.ordinary_div_mod.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.ordinary_div_mod) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1002) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1005) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.divide_grow.lookup : program.sourceFunction? "IxVMCompat::divide_grow" =
     some { types := [], params := IxVMCompat.divide_grow.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.divide_grow.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.divide_grow) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1003) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1006) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.stream_equal.lookup : program.sourceFunction? "IxVMCompat::stream_equal" =
     some { types := [], params := IxVMCompat.stream_equal.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.stream_equal.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.stream_equal) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1004) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1007) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.default_binding_addr.lookup : program.sourceFunction? "IxVMCompat::default_binding_addr" =
     some { types := [], params := IxVMCompat.default_binding_addr.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.default_binding_addr.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.default_binding_addr) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1005) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1008) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem IxVMCompat.audit_div.lookup : program.sourceFunction? "IxVMCompat::audit_div" =
     some { types := [], params := IxVMCompat.audit_div.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := IxVMCompat.audit_div.body } :=
   Program.sourceFunction?_of_mem (f := IxVMCompat.audit_div) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1006) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1009) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.eval_nf.lookup : program.sourceFunction? "KernelEval::eval_nf" =
     some { types := [], params := KernelEval.eval_nf.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.eval_nf.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.eval_nf) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1007) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1010) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.eval_nf_spine.lookup : program.sourceFunction? "KernelEval::eval_nf_spine" =
     some { types := [], params := KernelEval.eval_nf_spine.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.eval_nf_spine.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.eval_nf_spine) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1008) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1011) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.eval_body.lookup : program.sourceFunction? "KernelEval::eval_body" =
     some { types := [], params := KernelEval.eval_body.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.eval_body.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.eval_body) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1009) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1012) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.eval_output.lookup : program.sourceFunction? "KernelEval::eval_output" =
     some { types := [], params := KernelEval.eval_output.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.eval_output.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.eval_output) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1010) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1013) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.run_eval.lookup : program.sourceFunction? "KernelEval::run_eval" =
     some { types := [], params := KernelEval.run_eval.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.run_eval.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.run_eval) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1011) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1014) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelEval.check_output.lookup : program.sourceFunction? "KernelEval::check_output" =
     some { types := [], params := KernelEval.check_output.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelEval.check_output.body } :=
   Program.sourceFunction?_of_mem (f := KernelEval.check_output) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1012) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1015) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.verify_serde.lookup : program.sourceFunction? "IxVM::verify_serde" =
     some { types := [], params := Entry.verify_serde.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.verify_serde.body } :=
   Program.sourceFunction?_of_mem (f := Entry.verify_serde) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1013) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1016) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.verify_constant.lookup : program.sourceFunction? "IxVM::verify_constant" =
     some { types := [], params := Entry.verify_constant.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.verify_constant.body } :=
   Program.sourceFunction?_of_mem (f := Entry.verify_constant) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1014) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1017) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.verify_transitive.lookup : program.sourceFunction? "IxVM::verify_transitive" =
     some { types := [], params := Entry.verify_transitive.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.verify_transitive.body } :=
   Program.sourceFunction?_of_mem (f := Entry.verify_transitive) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1015) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1018) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.check_primitives.lookup : program.sourceFunction? "IxVM::check_primitives" =
     some { types := [], params := Entry.check_primitives.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.check_primitives.body } :=
   Program.sourceFunction?_of_mem (f := Entry.check_primitives) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1016) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1019) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.verify_claim.lookup : program.sourceFunction? "IxVM::verify_claim" =
     some { types := [], params := Entry.verify_claim.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.verify_claim.body } :=
   Program.sourceFunction?_of_mem (f := Entry.verify_claim) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1017) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1020) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.verify_check_env.lookup : program.sourceFunction? "IxVM::verify_check_env" =
     some { types := [], params := Entry.verify_check_env.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.verify_check_env.body } :=
   Program.sourceFunction?_of_mem (f := Entry.verify_check_env) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1018) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1021) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem Entry.check_port_cases.lookup : program.sourceFunction? "IxVM::check_port_cases" =
     some { types := [], params := Entry.check_port_cases.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := Entry.check_port_cases.body } :=
   Program.sourceFunction?_of_mem (f := Entry.check_port_cases) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 1019) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 1022) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 end IxVM
