@@ -3242,6 +3242,113 @@ theorem convert_root_spec {e : Ixon.Expr}
         (hhp2.sub (by rw [hc201]; intro c hc; simp [hc])),
       hraw2.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm)⟩
 
+/-- A successful block conversion consumes the complete serialized annotation plan. -/
+theorem convert_block_trace_spec {e : Ixon.Expr} {bound : Nat}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {ns : List Ixon.BinderNode}
+    {ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hbound : bound < 4294967296)
+    (hpre : PreShareOk sharing bound e)
+    (hep : RepExpr h e ep)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData} (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (hnodes : RepList binderNodeListEnum RepBinderNode h ns nodesPtr)
+    (hplt : ∀ nd ∈ ns, BinderNodeParamsLt 4294967296 nd)
+    (ev : ObsFn W "Convert::convert_block"
+      [ep, shPtr, .field (bound : F), refsPtr, recPtr, univsPtr, tbl, nodesPtr] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawConvExpr refs recurAddrs univs sharing blobs h' bound e r ∧
+      ∃ plan, binderPlanStep tree sharing bound e ns = some (plan, []) ∧
+        HeapBinderLevels h' r plan := by
+  obtain ⟨m2, cs12, x_k, x_rest, ev14, exhausted, he108, he109, hc110⟩ :=
+    «Convert::convert_block».obs ev
+  subst he108 he109
+  obtain ⟨ext, kp, rest, remaining, blobs, htup, nodes, _, hhp, hraw, plan, planned, levels⟩ :=
+    convert_annotated_trace_spec hbound hpre hep hsh hrefs hrecs hunivs
+      represented htbl hnodes hplt ev14
+  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+  obtain ⟨rfl, rfl⟩ := htup
+  have empty : remaining = [] := by
+    apply repList_nil_of_load nodes
+    simpa only [binderNodeListEnum_eq] using exhausted
+  rw [empty] at planned
+  exact ⟨ext, blobs, hhp.sub (by rw [hc110]; intro c hc; simp [hc]), hraw, plan, planned, levels⟩
+
+/-- The root's heap trace is determined by its serialized expression and exact binder tree. -/
+theorem convert_root_trace_spec {e : Ixon.Expr}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
+    {ep shPtr refsPtr recPtr univsPtr tbl r : SourceValue F} {root : F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hep : RepExpr h e ep)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData} (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (ev : ObsFn W "Convert::convert_root"
+      [ep, shPtr, refsPtr, recPtr, univsPtr, tbl, .field root] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawConvExpr refs recurAddrs univs sharing blobs h' 4294967295 e r ∧
+      ∃ plan, binderRootPlan tree sharing root e = some plan ∧ HeapBinderLevels h' r plan := by
+  have hbnd : (4294967295 : Nat) < 4294967296 := by omega
+  rcases «Convert::convert_root».obs ev with
+    ⟨m2, cs12, x_k, ev14, he90, he91, hc92⟩ |
+    ⟨m2, cs12, x_k, x_b, cs100, v110, m160, cs168, ev14, nonzero, ev170, ev102, hc201⟩
+  · have ev14' : ObsFn W "Convert::convert_expr"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
+        h (.tuple [x_k, .field 0]) m2 cs12 := ev14
+    subst r h'
+    obtain ⟨ext, _, kp, b, blobs, hb, htup, hhp, code, levels, hraw⟩ :=
+      convert_expr_trace_spec hbnd hep hsh hrefs hrecs hunivs ev14'
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+    obtain ⟨rfl, hb0_eq⟩ := htup
+    have hb0 : b = 0 := by
+      rcases hb with rfl | rfl
+      · rfl
+      · simp at hb0_eq
+    have notNeeded : needsBinderAt sharing 4294967295 e = false := by
+      cases eq : needsBinderAt sharing 4294967295 e <;> simp_all [binderFlag]
+    exact ⟨ext, blobs, hhp.sub (by rw [hc92]; intro c hc; simp [hc]), hraw hb0,
+      [], by simp [binderRootPlan, notNeeded], levels⟩
+  · have ev14' : ObsFn W "Convert::convert_expr"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
+        h (.tuple [x_k, x_b]) m2 cs12 := ev14
+    obtain ⟨ext1, hpre, kp, bit, blobs1, _, result, hhp1, code, _, _⟩ :=
+      convert_expr_trace_spec hbnd hep hsh hrefs hrecs hunivs ev14'
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at result
+    obtain ⟨rfl, rfl⟩ := result
+    have needed : needsBinderAt sharing 4294967295 e = true := by
+      cases eq : needsBinderAt sharing 4294967295 e <;> simp_all [binderFlag]
+    obtain ⟨hm160, ns, hns, hplt⟩ := binder_nodes_spec (htbl.mono ext1) ev170
+    subst m160
+    obtain ⟨_, exactNodes, found, exactRep⟩ :=
+      binder_nodes_exact_spec (RepBinderTreeData.mono ext1 represented) ev170
+    have nodeEq := repBinderNodes_unique hns exactRep
+    cases nodeEq
+    have ev102' : ObsFn W "Convert::convert_block"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr, tbl, v110]
+        m2 r h' cs100 := ev102
+    obtain ⟨ext2, blobs2, hhp2, hraw2, plan, planned, levels⟩ :=
+      convert_block_trace_spec hbnd hpre (hep.mono ext1) (RepShareVec.mono ext1 hsh)
+        (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
+        (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
+        (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs)
+        (RepBinderTreeData.mono ext1 represented) (htbl.mono ext1) hns hplt ev102'
+    refine ⟨ext1.trans ext2, blobs1 ++ blobs2,
+      HashedPairs.append
+        (hhp1.sub (by rw [hc201]; intro c hc; simp [hc]))
+        (hhp2.sub (by rw [hc201]; intro c hc; simp [hc])),
+      hraw2.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm), plan, ?_, levels⟩
+    simp [binderRootPlan, needed, found, planned]
+
 /-! ## De Bruijn shifting / substitution congruence for `Annotates` -/
 
 private theorem liftLooseBVars_comm {md : Ix.Kernel.Mode} (a₁ a₂ : Nat) :
