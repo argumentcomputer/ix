@@ -112,7 +112,8 @@ theorem keyOf_cases (t : Ix.Kernel.RoleTable) (a : Address) :
     exact hall (r, a) (Array.mem_toList_iff.mp hr) (beq_self_eq_true a)
   | some p =>
     obtain ⟨r, a'⟩ := p
-    have hp : ((r, a').2 == a) = true := Array.find?_some h
+    have hp : ((r, a').2 == a) = true :=
+      Array.find?_some (p := fun x : Ix.Kernel.Role × Address => x.2 == a) h
     have ha : a' = a := beq_iff_eq.mp hp
     subst ha
     exact Or.inr ⟨r, Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some h), rfl⟩
@@ -124,13 +125,13 @@ private theorem snd_eq_of_nodup_fst {α β : Type} {l : List (α × β)}
   | nil => exact absurd h List.not_mem_nil
   | cons p l ih =>
     rw [List.map_cons, List.nodup_cons] at hn
-    rcases List.mem_cons.mp h with rfl | h
-    · rcases List.mem_cons.mp h' with e' | h'
-      · exact (Prod.mk.inj e').2.symm
-      · exact (hn.1 (List.mem_map.mpr ⟨(x, y'), h', rfl⟩)).elim
-    · rcases List.mem_cons.mp h' with rfl | h'
-      · exact (hn.1 (List.mem_map.mpr ⟨(x, y), h, rfl⟩)).elim
-      · exact ih hn.2 h h'
+    rcases List.mem_cons.mp h with e | h1
+    · rcases List.mem_cons.mp h' with e' | h2
+      · exact (Prod.mk.inj (e.trans e'.symm)).2
+      · exact (hn.1 (List.mem_map.mpr ⟨(x, y'), h2, by rw [← e]⟩)).elim
+    · rcases List.mem_cons.mp h' with e' | h2
+      · exact (hn.1 (List.mem_map.mpr ⟨(x, y), h1, by rw [← e']⟩)).elim
+      · exact ih hn.2 h1 h2
 
 /-- **Keys identify addresses**, under a table that binds no role twice (every admitted
 table: `Ix.Kernel.RoleTable.check`). -/
@@ -138,8 +139,7 @@ theorem keyOf_inj {t : Ix.Kernel.RoleTable} (hroles : (t.bound.toList.map (·.1)
     {a a' : Address} (h : keyOf t a = keyOf t a') : a = a' := by
   rcases keyOf_cases t a with ⟨ha, -⟩ | ⟨r, hr, ha⟩ <;>
     rcases keyOf_cases t a' with ⟨ha', -⟩ | ⟨r', hr', ha'⟩ <;> rw [ha, ha'] at h
-  · injection h with haa
-    exact haa
+  · exact Ix.Kernel.Key.id.inj h
   · cases h
   · cases h
   · injection h with hrr
@@ -375,7 +375,7 @@ def ReadsRecord (t : Ix.Kernel.RoleTable) (store : Ix.Kernel.Reader.Store)
   | .cPrj p =>
     ∃ cb ms ind ct, store p.block = some cb ∧ cb.info = .muts ms ∧
       ms[p.idx.toNat]? = some (.indc ind) ∧ ind.ctors[p.cidx.toNat]? = some ct ∧
-      ct.cidx = p.cidx ∧ c = constructorProjection p.block p.idx.toNat p.cidx.toNat ∧
+      ct.cidx.toNat = p.cidx.toNat ∧ c = constructorProjection p.block p.idx.toNat p.cidx.toNat ∧
       a = ctorAddr p.block p.idx.toNat p.cidx.toNat ∧ InLogic cb ∧
       CtorReads (exprReader t blob cb id (blockSelf t p.block ms)) (keyOf t a) ct ci₀
   | .rPrj p =>
@@ -540,7 +540,8 @@ theorem RecReads.same {t : Ix.Kernel.RoleTable} (hroles : (t.bound.toList.map (�
   obtain ⟨rfl, rfl, rfl⟩ := IndKeyAt.unique hroles hIM₁ hIM₂
   obtain rfl : ps₁ = ps₂ := hps₁.trans hps₂.symm
   obtain rfl := ok_inj hty₁ hty₂
-  obtain rfl := forall₂_unique (fun _ _ _ h h' => RuleReads.unique h h') hr₁ hr₂
+  obtain rfl := forall₂_unique (R := RuleReads _ _ _ _)
+    (fun _ _ _ h h' => RuleReads.unique h h') hr₁ hr₂
   exact e₁.trans e₂.symm
 
 /-- **`Reads` is a function of the table, the store and the address**, up to a definition's
@@ -692,7 +693,7 @@ private theorem seed_claimed {t : Ix.Kernel.RoleTable} {a' : Address}
   have hnaux : isModelAux ci = false := by
     unfold isModelAux
     rw [hname]
-    rcases keyOf_cases t a' with ⟨hk, -⟩ | ⟨r, -, hk⟩ <;> rw [hk] <;> rfl
+    rcases keyOf_cases t a' with ⟨hk, -⟩ | ⟨r, -, hk⟩ <;> rw [hk]
   exact ⟨List.mem_filter.mpr ⟨hmem0, by simp [hnaux]⟩, hna⟩
 
 /-! ## The conclusion without an admission premise -/
