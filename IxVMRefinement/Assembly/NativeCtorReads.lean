@@ -16,10 +16,23 @@ open IxVM (F)
 /-- The actual load, header guards, and scope check for one constructor slot. -/
 structure CtorScopeRead (block : Bytes.Address) (indIndex ctorIndex safety : F)
     (params levels : Nat) (calls : List (Call F)) where
-  blockArg ptr result : SourceValue F
-  before after scopeBefore scopeAfter : Heap F
-  loadCalls scopeCalls : List (Call F)
-  nl ty parent member slot numParams numFields unsafeFlag : SourceValue F
+  blockArg : SourceValue F
+  ptr : SourceValue F
+  result : SourceValue F
+  before : Heap F
+  after : Heap F
+  scopeBefore : Heap F
+  scopeAfter : Heap F
+  loadCalls : List (Call F)
+  scopeCalls : List (Call F)
+  nl : SourceValue F
+  ty : SourceValue F
+  parent : SourceValue F
+  member : SourceValue F
+  slot : SourceValue F
+  numParams : SourceValue F
+  numFields : SourceValue F
+  unsafeFlag : SourceValue F
   loaded : ObsFn Core.W "Ingress::get_ci_cprj" [blockArg, .field indIndex, .field ctorIndex]
     before ptr after loadCalls
   blockRep : Bytes.RepAddressRef Core.addrTy before block blockArg
@@ -31,7 +44,7 @@ structure CtorScopeRead (block : Bytes.Address) (indIndex ctorIndex safety : F)
   paramsChecked : numParams = .field (params : F)
   safetyChecked : unsafeFlag = .field safety
   extended : Heap.Extends after scopeBefore
-  scoped : ObsFn Core.W "KernelCheck::validate_expr_well_scoped"
+  scopeRun : ObsFn Core.W "KernelCheck::validate_expr_well_scoped"
     [ty, .field 0, nl] scopeBefore result scopeAfter scopeCalls
   loadSubset : ∀ call ∈ loadCalls, call ∈ calls
   scopeMember : (⟨"KernelCheck::validate_expr_well_scoped", [ty, .field 0, nl], scopeBefore⟩ : Call F) ∈ calls
@@ -70,7 +83,7 @@ theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
         (cs695 := nextCalls) (v708 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (ev154 := addressEq)
         (heq205 := memberChecked) (heq233 := slotChecked) (heq261 := levelsChecked)
-        (heq289 := paramsChecked) (heq317 := safetyChecked) (ev331 := scoped)
+        (heq289 := paramsChecked) (heq317 := safetyChecked) (ev331 := scopeRun)
         (op792 := addition) (ev697 := nextRun) (hc794 := allCalls) .. =>
       have added := Decl.evalBinOp_add_nat start 1 addition
       subst nextIndex
@@ -94,7 +107,7 @@ theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
         memberChecked := memberChecked, slotChecked := slotChecked
         levelsChecked := levelsChecked, paramsChecked := paramsChecked, safetyChecked := safetyChecked
         extended := addressEq.heap_extends
-        scoped := by simpa only [levelsChecked] using scoped
+        scopeRun := by simpa only [levelsChecked] using scopeRun
         loadSubset := fun call member => subset call (by rw [allCalls]; simp [member])
         scopeMember := by
           rw [levelsChecked]
