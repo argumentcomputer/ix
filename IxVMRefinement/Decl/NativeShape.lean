@@ -204,4 +204,70 @@ theorem native_shape_calls {rc typePtr blockArg index safety result : SourceValu
       ctorSubset := fun call member => subset call (by rw [allCalls]; simp [member]) }⟩
 
 
+/-- The shape stage allocates the empty type context before determining the result sort. -/
+theorem NativeShapeCalls.initial_to_sort {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
+    Heap.Extends initial shape.sortBefore := by
+  rw [shape.nilTypes]
+  exact Heap.Extends.snoc _ _
+
+theorem NativeShapeCalls.initial_to_guard {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
+    Heap.Extends initial shape.sortAfter :=
+  shape.initial_to_sort.trans shape.sortRun.heap_extends
+
+theorem NativeShapeCalls.initial_to_ctors {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
+    Heap.Extends initial shape.ctorBefore :=
+  shape.initial_to_guard.trans shape.guardRun.heap_extends
+
+/-- Only actual result-sort helper children belong to this semantic load scope. -/
+def nativeShapeSortCtx (base : Ctx) {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
+    ScopedCtx := { toCtx := base, allowed := fun call => call ∈ shape.sortCalls }
+
+/-- The actual result-sort call supplies the level used by the following constructor loop. -/
+theorem NativeShapeCalls.resultSort {base : Ctx} {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls)
+    {type : KExpr} (bound : params + indices < 18446744069414584321)
+    (roles : RCRep base.t base.lim initial rc)
+    (represented : Tm base.κ 0 (fun _ => default) initial 0 type typePtr)
+    (facts : CoreEnvFacts base) (good : Good base calls)
+    (loads : ScopedLoadFacts (nativeShapeSortCtx base shape)) :
+    ∃ level : KLevel, KernelLevels.RepKLevel shape.ctorBefore level shape.sortLevel ∧
+      ∀ binders sort, type.stripPis (params + indices) = some (binders, .sort sort) → LvEq sort level := by
+  have types : TypesRep base.κ (fun _ => default) shape.sortBefore 0
+      (.ptr (.enum kexprListEnum) initial.length) := by
+    rw [shape.nilTypes]
+    exact typesRep_alloc_nil base.κ (fun _ => default) initial
+  have covered : CoreGood (nativeShapeSortCtx base shape) shape.sortCalls :=
+    CoreGood.ofRaw (good.sub shape.sortSubset) (fun _ member => member)
+  obtain ⟨level, levelRep, sameSort⟩ := get_result_sort_level_scoped_bounded_spec
+    (c := nativeShapeSortCtx base shape) (params + indices) bound
+    (roles.mono shape.initial_to_sort) types (ghostScoped_zero _) facts loads covered
+    (represented.mono shape.initial_to_sort) shape.sortRun
+  exact ⟨level, KernelLevels.repKLevel_heapMono₂ shape.guardRun.heap_extends levelRep, sameSort⟩
+
+/-- The observed native guard supplies the shape needed to preserve the base facts at the
+actual capability record, including indexed aliases. -/
+theorem NativeShapeCalls.stageFacts {base : Ctx} {rc typePtr blockArg index safety : SourceValue F}
+    {count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    {parts : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety parts.nP parts.nIdx count levels initial calls)
+    {cv : ConstantVal .anon} (facts : CoreEnvFacts base) (fresh : base.env.find? cv.name = none)
+    (keyShape : cv.name.isProjFnShape = false)
+    (typeShape : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve base.env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (bound : parts.nP + parts.nIdx < 18446744069414584321)
+    (represented : TmExact base.κ 0 (fun _ => default) initial 0 cv.type typePtr) :
+    CoreEnvFacts { base with env := ⟨.indInfo cv (Ix.Kernel.nativeCapsAt parts isRec) :: base.env.consts⟩ } :=
+  coreEnvFacts_consNativeCapsAt_of_guard facts fresh keyShape typeShape bound
+    (represented.mono shape.initial_to_guard) shape.guardRun
+
+
 end IxVM.Refinement.Decl
