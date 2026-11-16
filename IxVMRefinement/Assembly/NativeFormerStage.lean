@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeOuter
+import IxVMRefinement.Decl.NativeNoRecRun
 
 /-! # Semantic former stages from actual native observations
 
@@ -135,6 +136,36 @@ theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.
     rfl
   · rw [typeEq]
     exact ⟨.sort (.succ level), .succ level, .sort, .refl⟩
+
+
+/-- The actual empty, binder-free family constructs its no-recursor semantic run directly.
+Recognition of the enclosing declaration as a no-recursor group remains a separate step. -/
+theorem NativeFormerRunInput.emptyNoRecRun_noBinders {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {calls : List (Call F)}
+    (input : NativeFormerRunInput base block i source members ind rawType calls)
+    (native : input.NativeCall)
+    (shape : Decl.NativeShapeCalls input.rc input.typePtr input.blockPtr (.field i)
+      (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.ctors.size ind.lvls.toNat
+      native.before calls)
+    {parts : Ix.Kernel.NativeParts .anon}
+    (former : parts.cvT =
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩)
+    (params : parts.nP = ind.params.toNat) (indices : parts.nIdx = ind.indices.toNat)
+    (ctorCount : parts.ctors.length = ind.ctors.size)
+    (noParams : ind.params.toNat = 0) (noIndices : ind.indices.toNat = 0)
+    (empty : ind.ctors.size = 0)
+    (fresh : base.env.find? (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = none)
+    (notBasis : Ix.Kernel.reservedBasisNames.contains
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false) :
+    Ix.Kernel.Semantics.DeclNativeNoRecRunJ Ix.Kernel.Model.rulesJ base.env parts
+      ⟨.indInfo input.annotated {} :: base.env.consts⟩ := by
+  obtain ⟨level, typeEq, _, checked⟩ := input.checked_noBinders native shape noParams noIndices fresh notBasis
+  have checked' : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ
+      base.env parts.cvT input.annotated := by simpa only [former] using checked
+  apply Decl.nativeNoRecRunJ_empty_of_checked checked'
+    (List.length_eq_zero_iff.mp (ctorCount.trans empty))
+  simp only [params, indices, noParams, noIndices, Nat.zero_add, Ix.Kernel.Expr.stripPis, typeEq]
 
 
 end IxVM.Refinement.Assembly
