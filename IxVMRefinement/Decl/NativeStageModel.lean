@@ -104,7 +104,8 @@ private theorem nativeFormer_modelJ {md : Mode} {J : Judgements md} {mode : Chec
       (fun _ => []) (fun _ _ _ => rfl) (fun _ _ impossible => nomatch impossible)
       (fun _ _ _ => ⟨(fun _ impossible => nomatch impossible), (fun _ impossible => nomatch impossible)⟩)
       (nativeCapsAt parts isRec) capsWF (fun next interpretation => by
-        have crossed := data.cross fresh (ConsCrossAt.ofNtc fun _ impossible => nomatch impossible)
+        have crossed := data.cross (c₀ := .indInfo checked (nativeCapsAt parts isRec))
+          fresh (ConsCrossAt.ofNtc fun _ impossible => nomatch impossible)
           bound next interpretation
         have leaf : ∀ assignment, next.acval parts.cvT.name assignment =
             sumTyAV (parts.resSort.eval assignment) (parameters assignment) [] := by
