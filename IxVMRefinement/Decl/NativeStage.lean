@@ -99,4 +99,36 @@ theorem coreEnvFacts_consNativeCapsAt {c : Ctx} {cv : ConstantVal .anon}
   coreEnvFacts_consInd facts fresh keyShape
     (storeInv_consNativeCapsAt facts.store fresh typeShape telescope)
 
+/-- Indexed native families have no eta or unit-like capability, so a checked declared
+former can be staged even when its type is an alias rather than a raw telescope. -/
+theorem storeInv_consNativeCapsAt_indexed {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon}
+    {p : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
+    (store : Ix.Kernel.Open.StoreInv env) (fresh : env.find? cv.name = none)
+    (typeShape : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (indexed : p.nIdx ≠ 0) :
+    Ix.Kernel.Open.StoreInv ⟨.indInfo cv (Ix.Kernel.nativeCapsAt p isRec) :: env.consts⟩ := by
+  apply storeInv_consIndCaps store fresh typeShape
+  all_goals
+    cases ctors : p.ctors with
+    | nil => simp [Ix.Kernel.nativeCapsAt, ctors]
+    | cons ctor rest =>
+      cases rest with
+      | nil => simp [Ix.Kernel.nativeCapsAt, ctors, indexed]
+      | cons next tail => simp [Ix.Kernel.nativeCapsAt, ctors]
+
+/-- Preserve the base scoped-core facts at the actual indexed native capabilities, with no
+raw telescope premise and no change to StoreInv. -/
+theorem coreEnvFacts_consNativeCapsAt_indexed {c : Ctx} {cv : ConstantVal .anon}
+    {p : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
+    (facts : CoreEnvFacts c) (fresh : c.env.find? cv.name = none)
+    (keyShape : cv.name.isProjFnShape = false)
+    (typeShape : cv.type.hasFvar = false ∧ cv.type.allLevelParamsDefined cv.levelParams = true ∧
+      cv.type.constsResolve c.env = true ∧ cv.type.looseBVarsBounded 0 = true)
+    (indexed : p.nIdx ≠ 0) :
+    CoreEnvFacts { c with env := ⟨.indInfo cv (Ix.Kernel.nativeCapsAt p isRec) :: c.env.consts⟩ } :=
+  coreEnvFacts_consInd facts fresh keyShape
+    (storeInv_consNativeCapsAt_indexed facts.store fresh typeShape indexed)
+
+
 end IxVM.Refinement.Decl

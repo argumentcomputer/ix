@@ -48,6 +48,56 @@ structure NativePreludeCalls (rc nl ty blockArg : SourceValue F) (initial : Heap
   mentionsSubset : ∀ call ∈ mentionsCalls, call ∈ rootCalls
   sortSubset : ∀ call ∈ sortCalls, call ∈ rootCalls
 
+/-- The allocated block list is reached before the raw occurrence check. -/
+theorem NativePreludeCalls.scope_to_mentions {rc nl ty blockArg : SourceValue F}
+    {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls) :
+    Heap.Extends prelude.scopeBefore prelude.mentionsBefore := by
+  have nilBlocks : Heap.Extends prelude.scopeAfter prelude.blocksNil := by
+    rw [prelude.nilBlocks]
+    exact Heap.Extends.snoc _ _
+  have consBlocks : Heap.Extends prelude.blocksNil prelude.mentionsBefore := by
+    rw [prelude.consBlocks]
+    exact Heap.Extends.snoc _ _
+  exact prelude.scopeRun.heap_extends.trans (nilBlocks.trans consBlocks)
+
+/-- The occurrence checker receives the actual singleton parent-block list. -/
+theorem NativePreludeCalls.blocksRep {rc nl ty blockArg : SourceValue F}
+    {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls)
+    {block : Bytes.Address} (represented : Bytes.RepAddressRef addrTy initial block blockArg) :
+    RepList addrListEnum (Bytes.RepAddressRef addrTy) prelude.mentionsBefore [block]
+      (.ptr (.enum addrListEnum) prelude.blocksNil.length) := by
+  have consExtended : Heap.Extends prelude.blocksNil prelude.mentionsBefore := by
+    rw [prelude.consBlocks]
+    exact Heap.Extends.snoc _ _
+  have nilCell : prelude.mentionsBefore[prelude.scopeAfter.length]? =
+      some (.construct addrListEnum "Nil" []) :=
+    consExtended.getElem?_eq (by rw [prelude.nilBlocks]; simp)
+  have consCell : prelude.mentionsBefore[prelude.blocksNil.length]? =
+      some (.construct addrListEnum "Cons"
+        [blockArg, .ptr (.enum addrListEnum) prelude.scopeAfter.length]) := by
+    rw [prelude.consBlocks]
+    simp
+  exact RepLinkedList.cons consCell
+    (Bytes.repAddressRef_heapMono₂ addrTy
+      (prelude.initialExtended.trans prelude.scope_to_mentions) represented)
+    (RepLinkedList.nil nilCell)
+
+/-- The observed occurrence guard excludes the native former from its checked declared type.
+Raw query facts and coverage are supplied by the actual root trace. -/
+theorem NativePreludeCalls.noSelf {raw : ScopedCtx} {rc nl ty blockArg : SourceValue F}
+    {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls)
+    {block : Bytes.Address} {T : KKey} {levels params indices ctors : Nat} {i : F} {type : KExpr}
+    (peer : OneTypePeerReads raw block T levels params indices ctors i)
+    (records : RawRecordFacts raw) (good : Good raw.toCtx calls)
+    (covered : RawRecordCoverage raw calls)
+    (represented : TmExact raw.κ 0 (fun _ => default) initial 0 type ty)
+    (noProjection : noProjAt T type = true)
+    (blockRep : Bytes.RepAddressRef addrTy initial block blockArg) : type.mentionsConst T = false :=
+  expr_mentions_block_zero_observed_spec peer records (good.sub prelude.mentionsSubset)
+    (covered.sub prelude.mentionsSubset)
+    (represented.mono (prelude.initialExtended.trans prelude.scope_to_mentions))
+    noProjection (prelude.blocksRep blockRep) prelude.mentionsRun
+
 /-- The actual allocations and calls connect the scope check to the sort check. -/
 theorem NativePreludeCalls.scope_to_sort {rc nl ty blockArg : SourceValue F}
     {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls) :
