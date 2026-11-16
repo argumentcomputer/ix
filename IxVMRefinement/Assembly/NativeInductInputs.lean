@@ -57,16 +57,22 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
     ∃ projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) slot),
       projection.value = ⟨.iPrj ⟨slot.toUInt64, Core.ixAddr block⟩, #[], #[], #[], #[]⟩ ∧
       Claim.CheckedAtFull calls bindingAddr base.t (Core.iprjAddr (Core.ixAddr block) slot) := by
-  have hashed := native_member_projection_hashed (base := base) checked memberAt good.2
-  have full : Claim.CheckedAtFull calls bindingAddr base.t (Core.iprjAddr (Core.ixAddr block) slot) :=
-    mutsMemberCheckedAtFull_to_checkedAtFull good.2 checked memberAt
+  have hashed := native_member_projection_hashed (base := base) (block := block)
+    (members := members) (slot := slot) (ind := ind) checked memberAt good.2
+  have fullGeneric := mutsMemberCheckedAtFull_to_checkedAtFull (addr := Core.ixAddr block)
+    (ms := members) (k := slot) (mc := .indc ind) good.2 checked memberAt
+  have full : Claim.CheckedAtFull calls bindingAddr base.t (Core.iprjAddr (Core.ixAddr block) slot) := by
+    simpa only [Core.Specs.Callees.memberProjInfo, Core.iprjAddr] using fullGeneric
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, addressRep, _, loaded, _, loadSubset, _, _, _, _⟩ := full
   obtain ⟨address, represented, addressEq⟩ := addressRep
   obtain ⟨_, _, _, verified, verifiedSubset⟩ := L1.get_ci_verified_subcall loaded
   obtain ⟨source⟩ := L1.canonicalRecordAt_of_verified coverage represented verified
     (fun call member => loadSubset call (verifiedSubset call member))
-  let projection := source.reindex addressEq.symm
-  have bytesEq := Core.load_escape projection.stored good.1 _ hashed rfl
+  let projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) slot) :=
+    source.reindex addressEq.symm
+  have bytesEq := Core.load_escape (E := base.E) (x := Core.iprjAddr (Core.ixAddr block) slot)
+    projection.stored good.1
+    (Ixon.serConstant ⟨.iPrj ⟨slot.toUInt64, Core.ixAddr block⟩, #[], #[], #[], #[]⟩) hashed rfl
   have decoded := projection.decoded
   rw [← bytesEq] at decoded
   have canonical := Ixon.Verify.deConstantExact_serConstant
