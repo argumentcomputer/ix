@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.DomainInstances
 import IxVMRefinement.Decl.NativeSortDomain
 import IxVMRefinement.Decl.NativeDomainMotive
 
@@ -47,34 +48,8 @@ theorem normCtorVal_aliasTail_checked_sorts {V : Type u} [SetTheory V] {env : En
       (∀ leftDomain leftBody leftMeta rightDomain rightBody rightMeta,
         original.fvarTypeD = .forallE leftDomain leftBody leftMeta →
         final.fvarTypeD = .forallE rightDomain rightBody rightMeta → leftMeta.pw = rightMeta.pw) := by
-  have finalShape := normCtorVal_aliasTail_domain aliasFound noLevels targetFound
-    normalized originalOpen finalOpen originalAt finalAt shape
-  obtain ⟨rawFinal, lastCheck⟩ : ∃ rawFinal,
-      checkConstantVal (fueledOps .verified fuel) env rawFinal = .ok checked := by
-    obtain ⟨rebuilt, _, same | lastCheck⟩ := normCtorVal_rebuild_trace normalized
-    · exact ⟨raw, by rw [same]; exact first⟩
-    · exact ⟨{ raw with type := rebuilt }, lastCheck⟩
-  obtain ⟨originalType, originalSort, originalInfer, originalSorted⟩ :=
-    checked_type_domain_checks first originalOpen (nP + slot) original originalAt
-  obtain ⟨finalType, finalSort, finalInfer, finalSorted⟩ :=
-    checked_type_domain_checks lastCheck finalOpen (nP + slot) final finalAt
-  have originalZero := shape.checked_zero model definitions aliasFound noLevels targetFound
-    aliasHeader targetHeader (Rules.inferTypeCore_bridge originalInfer)
-    (Rules.whnf_bridge (ensureSortCore_inv originalSorted))
-  have finalZero := finalShape.checked_zero model definitions aliasFound noLevels targetFound
-    aliasHeader targetHeader (Rules.inferTypeCore_bridge finalInfer)
-    (Rules.whnf_bridge (ensureSortCore_inv finalSorted))
-  have equal := originalZero.trans finalZero.symm
-  refine ⟨originalType, originalSort, finalType, finalSort,
-    originalInfer, originalSorted, finalInfer, finalSorted, originalZero, finalZero, equal, ?_⟩
-  intro leftDomain leftBody leftMeta rightDomain rightBody rightMeta leftShape rightShape
-  have leftData := inferred_product_sort_metadata
-    (Rules.inferTypeCore_bridge (by simpa only [leftShape] using originalInfer))
-    (Rules.whnf_bridge (ensureSortCore_inv originalSorted))
-  have rightData := inferred_product_sort_metadata
-    (Rules.inferTypeCore_bridge (by simpa only [rightShape] using finalInfer))
-    (Rules.whnf_bridge (ensureSortCore_inv finalSorted))
-  exact leftData.trans (equal.trans rightData.symm)
+  exact (AliasTail.invariant model definitions aliasFound noLevels targetFound aliasHeader targetHeader).checked_sorts
+    first normalized originalOpen finalOpen originalAt finalAt ⟨count, shape⟩
 
 /-- The accepted prefix supplies both the stage model and the actual alias-definition checks;
 no model, sort run, or PW correspondence at the final reader store is assumed. -/

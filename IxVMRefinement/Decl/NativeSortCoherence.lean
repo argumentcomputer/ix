@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.DomainInstances
 import IxVMRefinement.Decl.NativeSortDomain
 import IxVMRefinement.Decl.NativeStageModel
 
@@ -111,23 +112,11 @@ theorem normCtorVal_sortTail_checked_sorts {env : Env .anon} {fuel nP nF slot co
       ensureSortCore .verified env fuel (nP + slot) finalType = .ok finalSort ∧
       Level.zeronessOf originalSort = .never ∧ Level.zeronessOf finalSort = .never ∧
       Level.zeronessOf originalSort = Level.zeronessOf finalSort := by
-  have finalShape := normCtorVal_sortTail_domain normalized originalOpen finalOpen originalAt finalAt shape
-  obtain ⟨rawFinal, lastCheck⟩ : ∃ rawFinal,
-      checkConstantVal (fueledOps .verified fuel) env rawFinal = .ok checked := by
-    obtain ⟨rebuilt, _, same | lastCheck⟩ := normCtorVal_rebuild_trace normalized
-    · exact ⟨raw, by rw [same]; exact first⟩
-    · exact ⟨{ raw with type := rebuilt }, lastCheck⟩
-  obtain ⟨originalType, originalSort, originalInfer, originalSorted⟩ :=
-    checked_type_domain_checks first originalOpen (nP + slot) original originalAt
-  obtain ⟨finalType, finalSort, finalInfer, finalSorted⟩ :=
-    checked_type_domain_checks lastCheck finalOpen (nP + slot) final finalAt
-  have originalZero := shape.checked_zero (Rules.inferTypeCore_bridge originalInfer)
-    (Rules.whnf_bridge (ensureSortCore_inv originalSorted))
-  have finalZero := finalShape.checked_zero (Rules.inferTypeCore_bridge finalInfer)
-    (Rules.whnf_bridge (ensureSortCore_inv finalSorted))
-  exact ⟨originalType, originalSort, finalType, finalSort,
-    originalInfer, originalSorted, finalInfer, finalSorted, originalZero, finalZero,
-    originalZero.trans finalZero.symm⟩
+  obtain ⟨originalType, originalSort, finalType, finalSort, originalInfer, originalSorted,
+    finalInfer, finalSorted, originalZero, finalZero, equal, _⟩ :=
+    (SortTail.invariant env sortLevel).checked_sorts first normalized originalOpen finalOpen originalAt finalAt ⟨count, shape⟩
+  exact ⟨originalType, originalSort, finalType, finalSort, originalInfer, originalSorted,
+    finalInfer, finalSorted, originalZero, finalZero, equal⟩
 
 /-- The product-telescope generalization uses the same actual paired checks and rebuilt witness. -/
 theorem ReferenceReplay.native_constructor_sortTail_trace {V : Type u} [SetTheory V]
