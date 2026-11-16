@@ -178,8 +178,7 @@ theorem streamContext_memberKey_member_cases {cx : Ctx .anon} {table : RoleTable
     {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
     {i : Nat} {member : Ixon.MutConst}
     (stored : cx.store owner = some source) (shape : source.info = .muts members)
-    (memberAt : members[i]? = some member) (bound : i < UInt64.size)
- :
+    (memberAt : members[i]? = some member) (bound : i < UInt64.size) :
     cx.memberKey (.member owner i) =
       .ok (Core.keyOf table (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) ∨
       (cx.memberKey (.member owner i) =
@@ -243,8 +242,7 @@ theorem streamContext_block_self_key_cases {cx : Ctx .anon} {table : RoleTable}
     (addressAt : (L1.blockRecurAddrs owner members.toList)[index]? = some address)
     (callback : (if index < members.size then some (cx.memberKey (.member owner index)) else none) =
       some reading)
-    (read : reading = .ok key)
- :
+    (read : reading = .ok key) :
     key = Core.keyOf table address ∨
       (key = .id address ∧ ∃ role, (role, address) ∈ table.bound.toList ∧
         resolve cx.store address ≠ some (.member owner index)) := by
@@ -299,8 +297,7 @@ theorem streamContext_ctor_key_cases {cx : Ctx .anon} {table : RoleTable}
     {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
     (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
     (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
-    {owner : _root_.Address} {i j : Nat} (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
- :
+    {owner : _root_.Address} {i j : Nat} (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size) :
     cx.memberKey (.ctor owner i j) = .ok (Core.keyOf table (Core.cprjAddr owner i j)) ∨
       (cx.memberKey (.ctor owner i j) = .ok (.id (Core.cprjAddr owner i j)) ∧
         ∃ role, (role, Core.cprjAddr owner i j) ∈ table.bound.toList ∧
