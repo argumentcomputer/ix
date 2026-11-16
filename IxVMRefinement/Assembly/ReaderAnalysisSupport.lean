@@ -207,7 +207,6 @@ theorem recursor_type_used {c : Ixon.Constant} {j : Nat} {r : Ixon.Recursor}
     simp only [info] at source
     simp only [usedRefIdxs, info]
     apply List.mem_append_right
-    change i ∈ ms.toList.flatMap mutRefIdxs
     exact List.mem_flatMap.mpr ⟨.recr r, Array.mem_toList_iff.mpr
       (Array.mem_of_getElem? source), by simp [mutRefIdxs, present]⟩
   | _ => simp [info] at source
