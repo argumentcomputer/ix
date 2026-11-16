@@ -102,7 +102,7 @@ theorem admitted_native_raw_dispatch {V : IxVM.Refinement.View} {binding : Ix.Ke
     admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision
   have coverage := admitted_canonicalHashCoverage witness phase
   have checked := admitted_native_member_check witness env lim source shape memberAt walked good
-  exact ⟨native_member_slot_value checked memberAt bounded,
+  exact ⟨native_member_slot_value (base := nativeOriginCtx witness trace env lim) (block := block) checked memberAt bounded,
     native_member_shape_dispatch source shape memberAt checked good coverage⟩
 
 end IxVM.Refinement.Assembly
