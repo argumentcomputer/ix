@@ -1299,16 +1299,25 @@ def recordTwins (index : RecIndex) (owner : Address) (ms : Array Ixon.MutConst) 
         (ConstRef.member owner j, entry)
     | _ => none).toArray
 
-/-- Read same-record twin recursors after the inductive family. Full and bare reading use
-this same payload coverage step; the inductive result's generated prefix and side data stay
-unchanged. -/
+/-- Every actual recursor payload belongs to an indexed family or is a twin of one. -/
+def recordRecursorsIndexed (index : RecIndex) (owner : Address) (ms : Array Ixon.MutConst) : Bool :=
+  ms.toList.zipIdx.all fun (m, j) =>
+    match m with
+    | .recr _ => index.recs.contains (.member owner j) || index.twins.contains (.member owner j)
+    | _ => true
+
+/-- Check coverage of every recursor payload, then read same-record twins after the family.
+Full and bare reading share this step; successful generated prefixes and side data are retained. -/
 def finishInductiveRead (cx : Ctx md) (owner : Address) (ms : Array Ixon.MutConst)
     (rInd : Read md) : ReadM (Read md) := do
-  let twins := recordTwins cx.index owner ms
-  if twins.isEmpty then pure rInd
+  if recordRecursorsIndexed cx.index owner ms then
+    let twins := recordTwins cx.index owner ms
+    if twins.isEmpty then pure rInd
+    else
+      let rTwin ← lowerTwin cx twins
+      pure { rInd with decls := rInd.decls ++ rTwin.decls }
   else
-    let rTwin ← lowerTwin cx twins
-    pure { rInd with decls := rInd.decls ++ rTwin.decls }
+    declined "recursor cannot be assigned to an inductive family"
 
 /-- One primary or projection record: its declarations. The state is read,
 not changed; `State.commit` applies what the record taught. -/
