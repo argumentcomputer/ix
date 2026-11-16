@@ -22,11 +22,14 @@ theorem readRecord_inductive_recursors_covered {md : Mode} {cx : Ctx md} {st : S
     {j : Nat} {rc : Ixon.Recursor} (member : ms[j]? = some (.recr rc)) :
     cx.index.recs.contains (.member owner j) = true ∨
       cx.index.twins.contains (.member owner j) = true := by
-  simp only [readRecord, info, hasInductive, ↓reduceIte] at read
-  rcases ite_ok read with bad | read
-  · exact (fail_bind bad).elim
-  · obtain ⟨_, _, finish⟩ := except_bind_ok.mp read
-    exact finishInductiveRead_recursors_covered finish member
+  simp only [readRecord, info] at read
+  split at read
+  · rcases ite_ok read with bad | read
+    · exact (fail_bind bad).elim
+    · obtain ⟨_, _, finish⟩ := except_bind_ok.mp read
+      exact finishInductiveRead_recursors_covered finish member
+  · rename_i noInductive
+    exact (noInductive hasInductive).elim
 
 /-- Every selected admitted inductive record has complete recursor coverage in the actual
 index used for its accepted full read. No additional admission witness field is needed. -/
