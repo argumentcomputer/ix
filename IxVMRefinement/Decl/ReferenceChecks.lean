@@ -72,7 +72,7 @@ private theorem routed_modelExt {V : Type u} [SetTheory V] {env out : Env .anon}
       · exact nativeNoRecStep_rulesJ model theorems eta recognized native
       · exact twinStep_rulesJ model eta twin) run
 
-/-- Each actual checking step retains its model extension, model preservation. -/
+/-- Each actual checking step retains its model extension. -/
 theorem CheckedReferenceStep.modelExt {V : Type u} [SetTheory V]
     {fuel : Nat} {env out : Env .anon} {d : Declaration .anon}
     (step : CheckedReferenceStep fuel env d out)
