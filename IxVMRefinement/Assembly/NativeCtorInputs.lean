@@ -320,4 +320,81 @@ theorem observed_native_ctor_input {base : Core.Ctx}
       tag indexChecked extended bounded validated scopeMember read keyed selfKeyed blobReads
   exact ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, exactInfo, varsBound, paramsDefined, closed⟩
 
+/-- A later raw constructor query agrees with the annotation constructed by its actual
+scope-checked load, whether or not that constructor is installed in the semantic stage. -/
+theorem native_ctor_reload {base : Core.Ctx} {block : Bytes.Address} {i j : F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    (ctorAt : ind.ctors.toList[ZMod.val j]? = some ctor)
+    (ctorIndex : ctor.cidx.toNat = ZMod.val j)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) (ZMod.val j)),
+        List.range ctor.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      (((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) + 1 + j) ctor.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ctor.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ctor.lvls.toNat) = true)
+    {h h' : Heap F} {blockArg ptr : SourceValue F} {calls : List (Call F)}
+    (loaded : ObsFn Core.W "Ingress::get_ci_cprj" [blockArg, .field i, .field j] h ptr h' calls)
+    (goodLoad : Core.Good base calls)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block blockArg)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed calls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    Decl.CIPtrRepExact base.κ h' ptr (.ctorInfo cv ctor.params.toNat ctor.fields.toNat) := by
+  obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hashed, address, decoded, _,
+    srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree', plan', built', planned', levels⟩ :=
+    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
+  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hashed address
+  rw [bytesEq, source.decoded] at decoded
+  injection decoded with sourceEq
+  subst src
+  rw [blockShape] at srcShape
+  injection srcShape with membersEq
+  subst ms
+  rw [memberAt] at memberAt'
+  injection memberAt' with memberEq
+  injection memberEq with memberEq
+  subst member
+  rw [ctorAt] at ctorAt'
+  injection ctorAt' with ctorEq
+  subst ct
+  have treeEq := built.unique built'
+  cases treeEq
+  have planEq := Option.some.inj (planned.symm.trans planned')
+  cases planEq
+  obtain ⟨cv', stored', represented, image'⟩ := native_ctor_value_of_trace raw levels
+    read varsBounded levelsDefined keyed selfKeyed
+    (fun a bytes member => blobReads a bytes
+      (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
+  rw [ctorIndex] at stored'
+  have nameEq := stored'.1.trans stored.1.symm
+  have paramsEq := stored'.2.1.trans stored.2.1.symm
+  have typeEq := (L1.applyBinderTrace_unique image' image).1
+  have valueEq : cv' = cv := by
+    rcases cv' with ⟨name', params', type'⟩
+    rcases cv with ⟨name, params, type⟩
+    change name' = name at nameEq
+    change params' = params at paramsEq
+    change type' = type at typeEq
+    cases nameEq
+    cases paramsEq
+    cases typeEq
+    rfl
+  cases valueEq
+  exact ⟨_, valueAt, represented⟩
+
 end IxVM.Refinement.Assembly
