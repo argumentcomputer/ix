@@ -3871,6 +3871,34 @@ theorem CIRepExact.ctor_inv {κ : _root_.Address → KKey} {h : Heap F}
     injection hv with _ hc _
     exact absurd hc (by decide)
 
+/-- Exact constructor conversion fixes its key from the observed parent and member slots. -/
+theorem CIRepExact.ctor_name {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty parent np nf safety : SourceValue F} {i j : F}
+    {cv : ConstantVal .anon} {params fields : Nat} {block : Bytes.Address}
+    (represented : CIRepExact κ h
+      (.construct kciEnum "Ctor" [nl, ty, parent, .field i, .field j, np, nf, safety])
+      (.ctorInfo cv params fields))
+    (blockRep : Bytes.RepAddressRef addrTy h block parent) :
+    cv.name = κ (cprjAddr (ixAddr block) (ZMod.val i) (ZMod.val j)) := by
+  generalize shape : (Value.construct kciEnum "Ctor"
+    [nl, ty, parent, .field i, .field j, np, nf, safety] : SourceValue F) = value at represented
+  generalize kind : ConstantInfo.ctorInfo cv params fields = info at represented
+  cases represented
+  case ctor _ _ _ _ key =>
+    injection shape with _ _ values
+    simp only [List.cons.injEq, and_true] at values
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := values
+    obtain ⟨rfl, rfl, rfl⟩ := ConstantInfo.ctorInfo.inj kind
+    obtain ⟨actualBlock, actualIndex, actualSlot, parentRep, indexEq, slotEq, named⟩ := key
+    have blockEq := Bytes.repAddressRef_inj U32.Goldilocks.compatible parentRep blockRep
+    have indexEq := Value.field.inj indexEq
+    have slotEq := Value.field.inj slotEq
+    cases blockEq
+    cases indexEq
+    cases slotEq
+    exact named
+  all_goals (injection shape with _ tag _; exact absurd tag (by decide))
+
 /-- Exact constructor conversion retains both checked 56-bit header counts. -/
 theorem CIRepExact.ctor_count_bounds {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty blk ind cidx np nf u : SourceValue F}
