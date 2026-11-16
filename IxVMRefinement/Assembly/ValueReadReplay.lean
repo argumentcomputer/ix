@@ -168,9 +168,11 @@ theorem admitted_defn_replay {V : IxVM.Refinement.View} {b : Admission.Binding}
   | true => simp at zero
   | false =>
     obtain ⟨new, replay, same⟩ := admitted_readDefinition w keepTrace claimBytes loaded decoded
-      noCollision closure selected original info retained empty definitionRead
+      noCollision closure selected original info retained
+      (newHeights := fun key => target.heights.getD key 0) empty definitionRead
     refine ⟨{ decls := #[new] }, old, new, ?_, rfl, rfl, same, rfl, rfl⟩
     simp only [readRecordBare, info, readRecord]
+    simp only [singletonSelf] at replay
     rw [replay]
     rfl
 
