@@ -26,10 +26,10 @@ private theorem telescope_sortOrPi {md : Mode} {type : Expr md} {count : Nat}
     cases type <;> first | rfl | simp [Expr.stripPis] at telescope
 
 private theorem inferred_app_type {md : Mode} {env : Env md} {grade : Grade} {depth : Nat}
-    {fn arg domain body type : Expr md} {binderMeta : BinderMeta}
-    (headType : ∀ inferred, Infer env grade depth fn inferred →
+    {headTerm arg domain body type : Expr md} {binderMeta : BinderMeta}
+    (headType : ∀ inferred, Infer env grade depth headTerm inferred →
       inferred = .forallE domain body binderMeta)
-    (run : Infer env grade depth (.app fn arg) type) : type = body.instantiate1 arg := by
+    (run : Infer env grade depth (.app headTerm arg) type) : type = body.instantiate1 arg := by
   cases run with
   | app functionRead reduced _ _ =>
     obtain rfl := headType _ functionRead
@@ -42,15 +42,15 @@ private theorem inferred_app_type {md : Mode} {env : Env md} {grade : Grade} {de
 
 /-- A partially applied sort-valued telescope cannot infer a constant-headed type. -/
 theorem infer_spine_sortOrPi {md : Mode} {env : Env md} {grade : Grade} {depth : Nat} :
-    ∀ (args : List (Expr md)) {fn type result : Expr md} {arity : Nat}
+    ∀ (args : List (Expr md)) {headTerm type result : Expr md} {arity : Nat}
       {binders : List (Expr md × BinderMeta)} {level : Level},
-      (∀ inferred, Infer env grade depth fn inferred → inferred = type) →
+      (∀ inferred, Infer env grade depth headTerm inferred → inferred = type) →
       type.stripPis arity = some (binders, .sort level) → args.length ≤ arity →
-      Infer env grade depth (Expr.mkAppN fn args) result → isSortOrPi result = true
+      Infer env grade depth (Expr.mkAppN headTerm args) result → isSortOrPi result = true
   | [], _, _, _, _, _, _, unique, telescope, _, run => by
     rw [unique _ run]
     exact telescope_sortOrPi telescope
-  | arg :: rest, fn, type, result, arity, binders, level, unique, telescope, within, run => by
+  | arg :: rest, headTerm, type, result, arity, binders, level, unique, telescope, within, run => by
     cases arity with
     | zero => simp at within
     | succ arity =>
