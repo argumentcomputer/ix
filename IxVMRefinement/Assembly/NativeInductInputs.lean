@@ -96,10 +96,8 @@ private theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Add
     (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
   have fieldUInt : (ZMod.val i).toUInt64 = index :=
     (congrArg Nat.toUInt64 indexValue).trans slotUInt
-  refine ⟨source, ?_⟩
-  change projection.value.info = _
-  rw [fieldUInt]
-  exact shape
+  have infoEq := congrArg (fun member => Ixon.ConstantInfo.iPrj ⟨member, Core.ixAddr block⟩) fieldUInt
+  exact ⟨source, shape.trans infoEq.symm⟩
 
 /-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
 structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
