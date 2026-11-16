@@ -72,9 +72,14 @@ theorem RecursorReadInputs.run {md : Mode} {cx : Ctx md} {blockLps : List LevelP
   have rulesRun := ruleLoop_of_frames frames []
   simp only [bind, Except.bind, List.nil_append] at rulesRun
   rw [← Array.forIn_toList, rulesRun]
-  simp only [List.nil_append, bind, Except.bind, pure, Except.pure]
+  simp only [pure, Except.pure]
   rw [← levels, ← counts]
-  cases row with
-  | mk value rest => cases value; cases rest; rfl
+
+theorem readRecursor_iff_inputs {md : Mode} {cx : Ctx md} {blockLps : List LevelParam}
+    {ref : ConstRef _root_.Address} {entry : RecEntry}
+    {row : CVal md × RecCounts × List (RecRule md)} :
+    readRecursor cx blockLps ref entry = .ok row ↔
+      Nonempty (RecursorReadInputs cx blockLps ref entry row) :=
+  ⟨readRecursor_inputs, fun ⟨inputs⟩ => inputs.run⟩
 
 end IxVM.Refinement.Assembly
