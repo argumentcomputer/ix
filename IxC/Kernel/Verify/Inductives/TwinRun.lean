@@ -196,7 +196,7 @@ theorem candidate_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : 
         subst mI'; subst rP'
         refine ⟨rfl, rfl, rfl, rfl, rfl, ⟨hfind, hlevels, hcount, wrapRelOk_sound hwrap, ?_⟩⟩
         exact modelSource_of_guard env _ rfl hmodel
-      · simp only [hmodel, ↓reduceIte] at h
+      · simp only [hmodel] at h
         cases h
     next hguard => cases h
   next hfind => cases h
@@ -330,6 +330,7 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
       | error reason => rw [hann] at h; cases h
       | ok rhs =>
         rw [hann] at h
+        dsimp only at h
         split at h
         next hscope =>
           try simp only [bind, Except.bind] at h
@@ -342,10 +343,10 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
             simp only [Bool.and_eq_true] at hscope
             exact ⟨hmeta.1, hmeta.2, hraw.1, hraw.2, hann,
               hscope.1.1, hscope.1.2, hscope.2, hshape, rfl⟩
-          next hshape => cases h
-        next hscope => cases h
-    next hraw => cases h
-  next hmeta => cases h
+          next hshape => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+        next hscope => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+    next hraw => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  next hmeta => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
 
 /-- Once the finishing check supplies its common renaming, a successful rule run is the
 existing semantic twin-rule judgement with the canonical rule as generated RHS. -/
