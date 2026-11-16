@@ -89,8 +89,7 @@ theorem infer_beta_constant_sort {md : Mode} {env : Env md} {depth : Nat}
     functionInfer, reduced, _, _, result⟩ := Ix.Kernel.Rules.Infer.app_inv inferred
   cases functionInfer with
   | lam _ _ bodyInfer _ _ _ _ =>
-    have bodyInfer : Ix.Kernel.Rules.Infer env .full (depth + 1) (.const name levels) _ := by
-      simpa only [Expr.instantiate1] using bodyInfer
+    simp only [Expr.instantiate1] at bodyInfer
     obtain ⟨bodyCI, bodyFound, _, _, bodyType⟩ := Ix.Kernel.Rules.Infer.const_inv bodyInfer
     have same : bodyCI = ci := Option.some.inj (bodyFound.symm.trans found)
     subst bodyCI
@@ -117,10 +116,10 @@ theorem DefinitionsTyped.beta_constant_alias_zero {V : Type u} [SetTheory V] {en
       (.app (.lam domain (.const name []) binderMeta) argument) inferredType)
     (sorted : Ix.Kernel.Rules.Red env depth inferredType (.sort checkedSort)) :
     Level.zeronessOf checkedSort = Level.zeronessOf actual := by
-  have resultType := infer_beta_constant_sort aliasFound (by
+  have resultType := infer_beta_constant_sort (sortLevel := declared) aliasFound (by
     change cv.type.instantiateLevelParams cv.levelParams [] = _
-    rw [noLevels, Expr.instantiateLevelParams_self []]
-    exact header) inferred
+    rw [noLevels]
+    exact (Expr.instantiateLevelParams_self [] cv.type).trans header) inferred
   rw [resultType] at sorted
   have checkedEq := Ix.Kernel.Rules.Red.sort_eq sorted
   rw [checkedEq]
