@@ -209,8 +209,8 @@ theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} {h : Heap F} {ps
 
 /-- The exact constructor representation retains its value's exact type field. -/
 theorem CIRepExact.ctor_valRep {κ : _root_.Address → KKey} {h : Heap F}
-    {nl ty blk ind cidx np nf unsafe : SourceValue F} {cv : ConstantVal .anon} {nP nF : Nat}
-    (represented : CIRepExact κ h (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, unsafe])
+    {nl ty blk ind cidx np nf safety : SourceValue F} {cv : ConstantVal .anon} {nP nF : Nat}
+    (represented : CIRepExact κ h (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, safety])
       (.ctorInfo cv nP nF)) : ValRepExact κ h nl ty cv := by
   cases represented with
   | ctor value _ _ _ _ => exact value
