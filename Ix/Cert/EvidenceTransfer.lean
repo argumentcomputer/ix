@@ -639,7 +639,7 @@ theorem readRecord_generated {cx : Ctx md} {st : State md} {owner : Address} {c 
           subst h
           simp
         · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-          rw [(lowerTwin_spec h).1]
+          rw [(lowerTwins_spec h).1]
           simp
       · rcases ite_ok h with h | h
         · split at h

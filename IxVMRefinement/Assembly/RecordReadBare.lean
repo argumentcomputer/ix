@@ -412,6 +412,23 @@ private theorem lowerTwin_empty_sides {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Read
     subst h
     exact ⟨rfl, rfl⟩
 
+private theorem lowerTwins_empty_sides {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Reader.Ctx md}
+    {twins : Array (Ix.Kernel.ConstRef _root_.Address × Ix.Kernel.Reader.RecEntry)}
+    {r : Ix.Kernel.Reader.Read md} (h : Ix.Kernel.Reader.lowerTwins cx twins = .ok r) :
+    r.owners = [] ∧ r.blocks = [] := by
+  unfold Ix.Kernel.Reader.lowerTwins at h
+  split at h
+  · dsimp only at h
+    split at h
+    · exact lowerTwin_empty_sides h
+    · obtain ⟨_, _, returned⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at returned
+      subst r
+      exact ⟨rfl, rfl⟩
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst r
+    exact ⟨rfl, rfl⟩
+
 private theorem lowerInductive_sideNames_decls {md : Ix.Kernel.Mode}
     {st : Ix.Kernel.Reader.State md} {rb : Ix.Kernel.Reader.BlockRead md}
     {r : Ix.Kernel.Reader.Read md}
@@ -472,7 +489,7 @@ private theorem readRecord_sideNames_any {md : Ix.Kernel.Mode}
       · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact ⟨by simp, by simp⟩
         · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-          obtain ⟨ho, hb⟩ := lowerTwin_empty_sides h
+          obtain ⟨ho, hb⟩ := lowerTwins_empty_sides h
           exact ⟨by simp [ho], by simp [hb]⟩
       · rcases Ix.Cert.ReaderUnits.ite_ok h with h | h
         · split at h
