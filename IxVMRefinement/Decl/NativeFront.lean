@@ -3333,6 +3333,27 @@ def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
     (ctorRawTypes : List KExpr) : Prop :=
   CtorLoadAtIndex t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes
 
+/-- A produced indexed family supplies the raw constructor-load contract at every fresh slot. -/
+theorem CtorLoadAtIndex.fresh_read {c : ScopedCtx} {b₀ : Bytes.Address} {indIndex : F} {nP j : Nat}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr} {bp ptr : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (loaded : CtorLoadAtIndex c.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
+    (indexBound : j < ctors.length) (subset : ∀ call ∈ cs, call ∈ cs_root)
+    (blockRep : Bytes.RepAddressRef addrTy h b₀ bp)
+    (observed : ObsFn W "Ingress::get_ci_cprj" [bp, .field indIndex, .field (j : F)] h ptr h' cs)
+    (fresh : c.env.find? (c.κ (cprjAddr (ixAddr b₀) (ZMod.val indIndex) (ZMod.val (j : F)))) = none) :
+    (∃ ci, CIPtrRep c.κ h' ptr ci) ∧
+    ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b₀) (ZMod.val indIndex) (ZMod.val (j : F)))) = some ci →
+      CIPtrRep c.κ h' ptr ci := by
+  obtain ⟨ctor, cv, _, _, _, read⟩ := loaded.2 j indexBound
+  obtain ⟨nl, ty, parent, params, fields, _, valueAt, _, _, _, represented⟩ :=
+    read bp ptr h h' cs subset blockRep observed
+  refine ⟨⟨.ctorInfo cv nP ctor.2, _, valueAt, represented.toCIRep⟩, ?_⟩
+  intro ci found
+  rw [fresh] at found
+  cases found
+
 /-- A real constructor metadata observation supplies the scoped read result even while the
 constructor is fresh. This uses the raw declaration loader witness, not installed-load facts. -/
 theorem CtorLoadAt.fresh_read {c : ScopedCtx} {b₀ : Bytes.Address} {nP j : Nat}
