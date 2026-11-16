@@ -145,7 +145,9 @@ theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Byte
     frames ctors (indices.trans noIndices)
   have currentLookup : (input.stageCtx parts isRec).env.find? (base.κ (Core.ixAddr address)) =
       some (.indInfo input.annotated (Ix.Kernel.nativeCapsAt parts isRec)) := by
-    rw [current, ← input.stored.1]
+    have named : input.annotated.name = base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)) :=
+      input.stored.1
+    rw [current, ← named]
     exact Ix.Kernel.Env.find?_cons_self _ _
   have capsEq : Ix.Kernel.nativeCapsAt parts isRec = caps :=
     (Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj (currentLookup.symm.trans found))).2
