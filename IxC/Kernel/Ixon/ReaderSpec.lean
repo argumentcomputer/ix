@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.Reader
+import IxC.Kernel.Ixon.TwinGroupSpec
 import IxC.Kernel.Ingress.Records
 import Std.Data.HashSet.Lemmas
 
@@ -196,7 +196,7 @@ theorem finishInductiveRead_eq_of_no_recursors (cx : Ctx md) (owner : Address)
 theorem finishInductiveRead_spec {cx : Ctx md} {owner : Address}
     {ms : Array Ixon.MutConst} {rInd r : Read md}
     (h : finishInductiveRead cx owner ms rInd = .ok r) :
-    r = rInd ∨ ∃ rTwin, lowerTwin cx (recordTwins cx.index owner ms) = .ok rTwin ∧
+    r = rInd ∨ ∃ rTwin, lowerTwins cx (recordTwins cx.index owner ms) = .ok rTwin ∧
       r = { rInd with decls := rInd.decls ++ rTwin.decls } := by
   have covered := finishInductiveRead_covered h
   simp only [finishInductiveRead, covered, ↓reduceIte] at h

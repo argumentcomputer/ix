@@ -69,6 +69,15 @@ private theorem lowerTwin_publicValueTypes {md : Mode} {cx : Ctx md}
     intro _ member
     cases member
 
+private theorem lowerTwins_publicValueTypes {md : Mode} {cx : Ctx md}
+    {twins : Array (ConstRef _root_.Address × RecEntry)} {r : Read md}
+    (read : lowerTwins cx twins = .ok r) :
+    ∀ d ∈ r.decls.toList, d.isGenerated = false → ValueTypePublic d := by
+  intro d member nongenerated
+  obtain ⟨family, chunk, _, familyRead, declared⟩ :=
+    Ix.Cert.ReaderUnits.lowerTwins_decl_origin read d member
+  exact lowerTwin_publicValueTypes familyRead d declared nongenerated
+
 private theorem readInductive_publicValueTypes {md : Mode} {cx : Ctx md} {st : State md}
     {owner : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst} {r : Read md}
     (read : readInductive cx st owner c ms = .ok r) :
@@ -163,7 +172,7 @@ theorem readRecord_publicValueTypes {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
         · intro d member notGenerated
           rw [Array.toList_append, List.mem_append] at member
           exact member.elim (fun hd => indTypes d hd notGenerated)
-            (fun hd => lowerTwin_publicValueTypes twinRead d hd notGenerated)
+            (fun hd => lowerTwins_publicValueTypes twinRead d hd notGenerated)
     · rcases ite_ok read with read | read
       · rcases ite_ok read with read | read
         · simp only [pure, Except.pure, Except.ok.injEq] at read
@@ -171,7 +180,7 @@ theorem readRecord_publicValueTypes {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
           intro _ member
           cases member
         · obtain ⟨_, _, read⟩ := except_bind_ok.mp read
-          exact lowerTwin_publicValueTypes read
+          exact lowerTwins_publicValueTypes read
       · rcases ite_ok read with read | read
         · split at read
           · exact (fail_bind read).elim
