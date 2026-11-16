@@ -54,10 +54,10 @@ theorem natRec_named_result {md : Mode} {env : Env md} {depth : Nat} {elim : Lev
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid stepReduced rfl)
   exact ⟨by simpa [Expr.instantiate1] using finalTypeEq, motiveType, motiveChecked⟩
 
-/-- The first type check's own ensureSort run fixes the product returned by Nat.rec at zero,
-including named motives whose other branches return different types. -/
-theorem named_natRec_zero_product_metadata {V : Type u} [SetTheory V] {env : Env .anon}
-    (model : EnvModelM V .verified env) {fuel depth : Nat} {elim kindSort resultSort : Level}
+/-- Actual inference and reduction of the inferred type fix the product returned by Nat.rec
+at zero, including named motives whose other branches return different types. -/
+theorem named_natRec_zero_product_metadata_rules {V : Type u} [SetTheory V] {env : Env .anon}
+    (model : EnvModelM V .verified env) {depth : Nat} {elim kindSort resultSort : Level}
     {motiveName : Key .anon} {motiveLevels : List Level} {motiveCV : ConstantVal .anon}
     {motiveValue domain body step inferred : Expr .anon} {hint : ReducibilityHint}
     {motiveMeta productMeta : BinderMeta}
@@ -66,15 +66,13 @@ theorem named_natRec_zero_product_metadata {V : Type u} [SetTheory V] {env : Env
     (motiveFound : env.find? motiveName = some (.defnInfo motiveCV motiveValue hint))
     (motiveHeader : motiveCV.type.instantiateLevelParams motiveCV.levelParams motiveLevels =
       .forallE (.const natName []) (.sort kindSort) motiveMeta)
-    (inferredRun : inferTypeCore .verified env fuel depth
+    (typed : Rules.Infer env .full depth
       (.app (.app (.app (.app (.const natRecName [elim]) (.const motiveName motiveLevels))
-        (.forallE domain body productMeta)) step) (.const natZeroName [])) = .ok inferred)
-    (sortRun : ensureSortCore .verified env fuel depth inferred = .ok resultSort) :
+        (.forallE domain body productMeta)) step) (.const natZeroName [])) inferred)
+    (expectedReduced : Rules.Red env depth inferred (.sort resultSort)) :
     productMeta.pw = Level.zeronessOf resultSort := by
-  have typed := Rules.inferTypeCore_bridge inferredRun
   obtain ⟨resultType, motiveType, motiveTyped⟩ := natRec_named_result recFound typed
-  rw [resultType] at sortRun
-  have expectedReduced := Rules.whnf_bridge (ensureSortCore_inv sortRun)
+  rw [resultType] at expectedReduced
   obtain ⟨ci, found, _, arity, _⟩ := Rules.Infer.const_inv motiveTyped
   have same : ci = .defnInfo motiveCV motiveValue hint := Option.some.inj (found.symm.trans motiveFound)
   subst ci
@@ -92,6 +90,25 @@ theorem named_natRec_zero_product_metadata {V : Type u} [SetTheory V] {env : Env
   rw [productType] at compared
   have zero := closed_checked_sort_zero model (by rfl) (by rfl) expectedTyped expectedReduced compared
   exact metadata.symm.trans zero
+
+/-- The executable type and sort checks supply the rules-level named-motive result. -/
+theorem named_natRec_zero_product_metadata {V : Type u} [SetTheory V] {env : Env .anon}
+    (model : EnvModelM V .verified env) {fuel depth : Nat} {elim kindSort resultSort : Level}
+    {motiveName : Key .anon} {motiveLevels : List Level} {motiveCV : ConstantVal .anon}
+    {motiveValue domain body step inferred : Expr .anon} {hint : ReducibilityHint}
+    {motiveMeta productMeta : BinderMeta}
+    (zeroFound : env.find? natZeroName = some natZeroA)
+    (recFound : env.find? natRecName = some natRecA)
+    (motiveFound : env.find? motiveName = some (.defnInfo motiveCV motiveValue hint))
+    (motiveHeader : motiveCV.type.instantiateLevelParams motiveCV.levelParams motiveLevels =
+      .forallE (.const natName []) (.sort kindSort) motiveMeta)
+    (inferredRun : inferTypeCore .verified env fuel depth
+      (.app (.app (.app (.app (.const natRecName [elim]) (.const motiveName motiveLevels))
+        (.forallE domain body productMeta)) step) (.const natZeroName [])) = .ok inferred)
+    (sortRun : ensureSortCore .verified env fuel depth inferred = .ok resultSort) :
+    productMeta.pw = Level.zeronessOf resultSort :=
+  named_natRec_zero_product_metadata_rules model zeroFound recFound motiveFound motiveHeader
+    (Rules.inferTypeCore_bridge inferredRun) (Rules.whnf_bridge (ensureSortCore_inv sortRun))
 
 /-- The required model is produced by the actual accepted prefix; no final model or metadata
 correspondence is assumed by the caller. -/

@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.NativeCtorScope
+import IxVMRefinement.Assembly.NativeReadFamily
 import IxVMRefinement.Assembly.NativeOuter
 import IxVMRefinement.Assembly.NativeCtorNames
 import IxVMRefinement.Decl.NativeCtorRun
@@ -200,20 +200,8 @@ theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.C
             (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) (List.range ind.lvls.toNat)
             ind.params.toNat ind.indices.toNat sort (Ix.Kernel.Level.isEquiv sort .zero == some true)
             false input.annotated (rows.map (fun row => (row.1, row.2.2))) annotated sortss := by
-  have loop : ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
-      [input.rc, input.typePtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-        .field (ind.ctors.size : F), .field (ind.lvls.toNat : F), input.blockPtr, .field i,
-        shape.sortLevel, .field 0, .field 0] shape.ctorBefore shape.result shape.after shape.ctorCalls := by
-    simpa [safe, L1.repBoolField] using shape.ctorRun
-  have blockRep := Bytes.repAddressRef_heapMono₂ Core.addrTy
-    (native.initialToShape.trans shape.initial_to_ctors) input.blockRep
-  obtain ⟨annotated, rawTypes, family, rowProperties⟩ :=
-    native_ctor_load_family (base := base) source input.blockShape input.memberAt input.ctorCountBound
-      input.paramsBound input.levelsBound blockRep shape.ctorSubset loop frames memberKeys good keyed selfKeyed blobReads
-  have scopeRows := native_ctor_reader_scope (base := base) source input.blockShape input.memberAt input.ctorCountBound
-    blockRep shape.ctorSubset loop frames good keyed selfKeyed blobReads
-  have rowLength : rows.length = ind.ctors.size := by
-    simpa [nativeCtorSlots] using frames.length_eq.symm
+  obtain ⟨annotated, rawTypes, family, rowLength, rowProperties⟩ :=
+    input.constructorFamily native shape safe good frames memberKeys keyed selfKeyed blobReads
   have countEq : (rows.map (fun row => (row.1, row.2.2))).length = ind.ctors.size := by
     simpa only [List.length_map] using rowLength
   refine ⟨annotated, rawTypes, ?_⟩
@@ -221,13 +209,13 @@ theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.C
     freshFormer formerNotBasis noProjection formerLoads sortLoads family countEq
   · intro ctor member
     obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (rowProperties row inRows).2
+    exact (rowProperties row inRows).2.1
   · intro ctor member
     obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (scopeRows row inRows).1
+    exact (rowProperties row inRows).2.2.1
   · intro ctor member
     obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (scopeRows row inRows).2.2
+    exact (rowProperties row inRows).2.2.2.2
   · intro ctor member
     obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
     exact freshRows row inRows
