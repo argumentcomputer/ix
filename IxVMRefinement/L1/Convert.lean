@@ -371,6 +371,19 @@ theorem RawQuotValRep.mono {refs recurAddrs : List _root_.Address} {univs : List
   obtain ⟨hlvls, tyPtr, rfl, hty⟩ := raw
   exact ⟨hlvls, tyPtr, rfl, hty.mono ext hsub⟩
 
+/-- Exact binder levels at the type field of a converted constant-info value. Other fields
+remain governed by the accompanying raw constant representation. -/
+def CITypeBinderLevels (tag : String) (h : Heap F) (value : SourceValue F)
+    (plan : List Core.KLevel) : Prop :=
+  ∃ count typePtr fields, value = .construct Core.kciEnum tag (count :: typePtr :: fields) ∧
+    HeapBinderLevels h typePtr plan
+
+theorem CITypeBinderLevels.mono {tag : String} {h h' : Heap F} {value : SourceValue F}
+    {plan : List Core.KLevel} (extended : Heap.Extends h h')
+    (levels : CITypeBinderLevels tag h value plan) : CITypeBinderLevels tag h' value plan := by
+  obtain ⟨count, typePtr, fields, shape, trace⟩ := levels
+  exact ⟨count, typePtr, fields, shape, HeapBinderLevels.mono extended trace⟩
+
 /-- Raw converted `KConstantInfo` value for an `Ixon.Inductive` member at `(blkAddr, indIdx)`. -/
 def RawInductValRep (refs recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
     (sharing : List Ixon.Expr) (blobs : List (_root_.Address × ByteArray))
@@ -692,7 +705,7 @@ theorem convert_quotient_spec {q : Ixon.Quotient} {sharing : List Ixon.Expr}
 /-- `Convert::convert_inductive` specification under `Bounded calls` (used to bound
 `ind.ctors.size < 2^39 < 2^56` via `RomBound.bounded_length_lt` on the `Convert::count_ctors`
 subcall). -/
-theorem convert_inductive_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
+theorem convert_inductive_origin_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
     {sharing : List Ixon.Expr} {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
     {x_ind x_block_addr shPtr refsPtr recPtr univsPtr tbl x_base r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
@@ -710,7 +723,10 @@ theorem convert_inductive_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address}
       h r h' calls) :
     Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
       HashedPairs calls blobs ∧
-      RawInductValRep refs recurAddrs univs sharing blobs h' ind blkAddr indIdx r := by
+      RawInductValRep refs recurAddrs univs sharing blobs h' ind blkAddr indIdx r ∧
+      (∀ (tree : BinderTreeData) (root : F), RepBinderTreeData h tree tbl → x_base = .field root →
+        ∃ plan, binderRootPlan tree sharing root ind.typ = some plan ∧
+          CITypeBinderLevels "Induct" h' r plan) := by
   obtain ⟨typPtr, ctorsPtr, rfl, htyp, hctors⟩ := hind
   obtain ⟨x_is_unsafe, x_lvls, x_params, x_indices, x_typ, x_ctors,
       v47, m48, cs58, v120, v122, v123, v124,
@@ -743,13 +759,45 @@ theorem convert_inductive_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address}
   obtain ⟨hv124, hm197⟩ := count_ctors_spec hctors_m177 ev207
   rw [he237, hm197, hm177]; subst v124
   obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core (hblk.mono ext1)
-  refine ⟨ext1, blobs, hhp.sub (by rw [hc238]; intro c hc; simp [hc]),
-    hlvls32, hp56, hi56, hct_sz56, hindIdx, v47, x_block_addr, b, hb_eq, hb_rep, ?_, hraw_ty⟩
-  simp only [Array.length_toList] at he128
-  exact he128
+  refine ⟨ext1, blobs, hhp.sub (by rw [hc238]; intro c hc; simp [hc]), ?_, ?_⟩
+  · refine ⟨hlvls32, hp56, hi56, hct_sz56, hindIdx, v47, x_block_addr, b,
+      hb_eq, hb_rep, ?_, hraw_ty⟩
+    simpa only [Array.length_toList] using he128
+  · intro tree root represented base
+    have rootRun : ObsFn W "Convert::convert_root"
+        [typPtr, shPtr, refsPtr, recPtr, univsPtr, tbl, .field root] h v47 m48 cs58 := by
+      simpa only [base] using ev60
+    obtain ⟨_, _, _, _, plan, planned, levels⟩ :=
+      convert_root_trace_spec htyp hsh hrefs hrecs hunivs represented htbl rootRun
+    refine ⟨plan, planned, .field (ind.lvls.toNat : F), v47, _, ?_, levels⟩
+    simpa only [Array.length_toList] using he128
+
+/-- The original raw conversion interface, omitting the exact binder-plan evidence. -/
+theorem convert_inductive_spec {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
+    {sharing : List Ixon.Expr} {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {x_ind x_block_addr shPtr refsPtr recPtr univsPtr tbl x_base r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hbounded : IxVM.Consistency.Bounded calls)
+    (hind : RepInductive h ind x_ind)
+    (hblk : RepIxonAddressRef h blkAddr x_block_addr)
+    (hindIdx : indIdx < 72057594037927936)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (ev : ObsFn W "Convert::convert_inductive"
+      [x_ind, x_block_addr, .field (indIdx : F), shPtr, refsPtr, recPtr, univsPtr, tbl, x_base]
+      h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawInductValRep refs recurAddrs univs sharing blobs h' ind blkAddr indIdx r := by
+  obtain ⟨extended, blobs, hashed, raw, _⟩ := convert_inductive_origin_spec
+    hbounded hind hblk hindIdx hsh hrefs hrecs hunivs htbl ev
+  exact ⟨extended, blobs, hashed, raw⟩
 
 /-- `Convert::convert_constructor` specification. -/
-theorem convert_constructor_spec {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
+theorem convert_constructor_origin_spec {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
     {sharing : List Ixon.Expr} {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
     {x_c x_block_addr shPtr refsPtr recPtr univsPtr tbl x_base r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
@@ -766,7 +814,10 @@ theorem convert_constructor_spec {ct : Ixon.Constructor} {blkAddr : _root_.Addre
       h r h' calls) :
     Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
       HashedPairs calls blobs ∧
-      RawCtorValRep refs recurAddrs univs sharing blobs h' ct blkAddr indIdx r := by
+      RawCtorValRep refs recurAddrs univs sharing blobs h' ct blkAddr indIdx r ∧
+      (∀ (tree : BinderTreeData) (root : F), RepBinderTreeData h tree tbl → x_base = .field root →
+        ∃ plan, binderRootPlan tree sharing root ct.typ = some plan ∧
+          CITypeBinderLevels "Ctor" h' r plan) := by
   obtain ⟨modesPtr, typPtr, rfl, _, htyp⟩ := hct
   obtain ⟨x_is_unsafe, x_lvls, x_cidx, x_params, x_fields, w17, x_typ,
       v53, m54, cs64, v126, v130, v131, v132,
@@ -790,8 +841,39 @@ theorem convert_constructor_spec {ct : Ixon.Constructor} {blkAddr : _root_.Addre
     Lib.u64_to_field_spec (Deserialize.repU64_u64Value m54 ct.fields) ev227
   rw [he243, hm217]; subst v132
   obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core (hblk.mono ext1)
-  exact ⟨ext1, blobs, hhp.sub (by rw [hc244]; intro c hc; simp [hc]),
-    hlvls32, hcidx56, hp56, hf56, hindIdx, v53, x_block_addr, b, hb_eq, hb_rep, he134, hraw_ty⟩
+  refine ⟨ext1, blobs, hhp.sub (by rw [hc244]; intro c hc; simp [hc]), ?_, ?_⟩
+  · exact ⟨hlvls32, hcidx56, hp56, hf56, hindIdx, v53, x_block_addr, b,
+      hb_eq, hb_rep, he134, hraw_ty⟩
+  · intro tree root represented base
+    have rootRun : ObsFn W "Convert::convert_root"
+        [typPtr, shPtr, refsPtr, recPtr, univsPtr, tbl, .field root] h v53 m54 cs64 := by
+      simpa only [base] using ev66
+    obtain ⟨_, _, _, _, plan, planned, levels⟩ :=
+      convert_root_trace_spec htyp hsh hrefs hrecs hunivs represented htbl rootRun
+    exact ⟨plan, planned, .field (ct.lvls.toNat : F), v53, _, he134, levels⟩
+
+/-- The original raw conversion interface, omitting the exact binder-plan evidence. -/
+theorem convert_constructor_spec {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
+    {sharing : List Ixon.Expr} {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {x_c x_block_addr shPtr refsPtr recPtr univsPtr tbl x_base r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hct : RepConstructor h ct x_c)
+    (hblk : RepIxonAddressRef h blkAddr x_block_addr)
+    (hindIdx : indIdx < 72057594037927936)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (ev : ObsFn W "Convert::convert_constructor"
+      [x_c, x_block_addr, .field (indIdx : F), shPtr, refsPtr, recPtr, univsPtr, tbl, x_base]
+      h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawCtorValRep refs recurAddrs univs sharing blobs h' ct blkAddr indIdx r := by
+  obtain ⟨extended, blobs, hashed, raw, _⟩ := convert_constructor_origin_spec
+    hct hblk hindIdx hsh hrefs hrecs hunivs htbl ev
+  exact ⟨extended, blobs, hashed, raw⟩
 
 /-- `Convert::convert_rec_rules` specification. -/
 theorem convert_rec_rules_spec {rus : List Ixon.RecursorRule} :
