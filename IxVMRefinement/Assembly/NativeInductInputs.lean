@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.NativeFormerInputs
 import IxVMRefinement.Assembly.ClaimsL1L6
 import IxVMRefinement.Assembly.RawQueryCoverage
 import IxVMRefinement.Assembly.NativePeerInputs
@@ -72,5 +73,101 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
     (⟨.iPrj ⟨slot.toUInt64, Core.ixAddr block⟩, #[], #[], #[], #[]⟩ : Ixon.Constant)
     (L1.projConstant_wireWF_iPrj slot.toUInt64 block)
   exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), full⟩
+
+/-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
+structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (members : Array Ixon.MutConst) (ind : Ixon.Inductive) (rawType : Core.KExpr)
+    (calls : List (Call F)) where
+  limit : Nat
+  rc : SourceValue F
+  typePtr : SourceValue F
+  blockPtr : SourceValue F
+  heap : Heap F
+  annotated : Ix.Kernel.ConstantVal .anon
+  prelude : Decl.NativePreludeCalls rc (.field (ind.lvls.toNat : F)) typePtr blockPtr heap calls
+  roles : Core.RCRep base.t (some limit) heap rc
+  blockRep : Bytes.RepAddressRef Core.addrTy heap block blockPtr
+  stored : IxVM.Consistency.ValStored annotated
+    ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩
+  represented : Decl.ValRepExact base.κ heap (.field (ind.lvls.toNat : F)) typePtr annotated
+  varsBounded : rawType.looseBVarsBounded 0 = true
+  levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true
+  noFvars : rawType.hasFvar = false
+  tree : L1.BinderTreeData
+  plan : List Core.KLevel
+  built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree
+  planned : L1.binderRootPlan tree source.value.sharing.toList
+    ((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) ind.typ = some plan
+  image : L1.applyBinderTrace
+    (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+      some (annotated.type, [])
+
+/-- The paired actual load/check witness constructs the former's annotation and prelude.
+Capability data is passed through the representation proof; no stage capability is inferred. -/
+theorem native_former_input_of_checked {base : Core.Ctx} {bindingAddr : _root_.Address}
+    {block : Bytes.Address} {index : UInt64} {calls : List (Call F)}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) index.toNat))
+    (projectionShape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members[index.toNat]? = some (.indc ind))
+    (checked : Claim.CheckedAtFull calls bindingAddr base.t
+      (Core.iprjAddr (Core.ixAddr block) index.toNat))
+    (good : Core.Good base calls)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
+    (selfKeyed : ∀ slot address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[slot]? = some address →
+      self slot = some reading → reading = .ok key → key = base.κ address)
+    (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
+      cx.blob address = some bytes) :
+    Nonempty (NativeFormerRunInput base block (index.toNat : F) source members ind rawType calls) := by
+  obtain ⟨limit, beforeLoad, checkHeap, afterCheck, rc, addr, ptr, value, result, loadCalls, checkCalls,
+    _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, _, checkSubset⟩ := checked
+  obtain ⟨address, addressRep, addressEq⟩ := addressRep
+  let projectionAt := projection.reindex addressEq
+  have projectionAtShape : projectionAt.value.info = .iPrj ⟨index, Core.ixAddr block⟩ := projectionShape
+  obtain ⟨parent, parentArg, middle, inner, parentEq, indexBound, parentRep, directLoad, innerSubset, _⟩ :=
+    L1.get_ci_iPrj_subcall (base := base) projectionAt projectionAtShape addressRep
+      (good.sub loadSubset) loaded
+  have parentSame : parent = block := Decl.ixAddr_inj parentEq
+  subst parent
+  have indexValue : ZMod.val (index.toNat : F) = index.toNat :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
+  have memberAtField : members.toList[ZMod.val (index.toNat : F)]? = some (.indc ind) := by
+    rw [indexValue]
+    simpa only [Array.getElem?_toList] using memberAt
+  have directSubset : ∀ call ∈ inner, call ∈ calls :=
+    fun call member => loadSubset call (innerSubset call member)
+  obtain ⟨typePtr, blockPtr, actualBlock, payload, blockRep, blockEq⟩ :=
+    native_former_header_exact (base := base) source blockShape memberAtField
+      (good.sub directSubset) parentRep directLoad
+  have blockSame : actualBlock = block := Decl.ixAddr_inj blockEq
+  subst actualBlock
+  have valueEq := Except.ok.inj (valueAt.symm.trans payload)
+  subst value
+  obtain ⟨localPrelude⟩ := Decl.native_prelude_calls checkedRun
+  let prelude := localPrelude.mono checkSubset
+  obtain ⟨annotated, tree, plan, stored, exactInput, built, planned, image,
+    varsBounded, levelsDefined, noFvars⟩ :=
+    observed_native_former_input (base := base) (calls := calls) source blockShape memberAtField caps
+      directLoad (good.sub directSubset) parentRep payload prelude.initialExtended good.2
+      prelude.scopeRun prelude.scopeMember read keyed selfKeyed
+      (fun address bytes hashed hashEq => blobReads address bytes (Core.hashed_mono directSubset hashed) hashEq)
+  obtain ⟨exactValue, exactAt, exactInfo⟩ := exactInput
+  have sameValue := Except.ok.inj (exactAt.symm.trans payload)
+  subst exactValue
+  exact ⟨{
+    limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
+    annotated := annotated, prelude := prelude, roles := roles.toRCRep, blockRep := blockRep
+    stored := stored, represented := Decl.CIRepExact.induct_valRep exactInfo
+    varsBounded := varsBounded, levelsDefined := levelsDefined, noFvars := noFvars
+    tree := tree, plan := plan, built := built, planned := planned, image := image }⟩
+
 
 end IxVM.Refinement.Assembly
