@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.NativeCtorScope
+import IxVMRefinement.Assembly.NativeScopeInputs
 import IxVMRefinement.Assembly.NativeOuter
 
 /-! # Constructor load families before semantic checking
@@ -58,8 +58,8 @@ theorem NativeFormerRunInput.constructorFamily_of_blobAgreement {base : Core.Ctx
   obtain ⟨annotated, rawTypes, family, properties⟩ :=
     native_ctor_load_family_of_blobAgreement (base := base) source input.blockShape input.memberAt input.ctorCountBound
       input.paramsBound input.levelsBound blockRep shape.ctorSubset loop frames memberKeys good keyed selfKeyed blobReads
-  have scopes := native_ctor_reader_scope_of_blobAgreement (base := base) source input.blockShape input.memberAt input.ctorCountBound
-    blockRep shape.ctorSubset loop frames good keyed selfKeyed blobReads
+  have scopes := native_ctor_reader_scope_of_observations (base := base) source input.blockShape input.memberAt input.ctorCountBound
+    blockRep shape.ctorSubset loop frames good
   refine ⟨annotated, rawTypes, family, ?_, fun row member => ?_⟩
   · simpa [nativeCtorSlots] using frames.length_eq.symm
   · have scope := scopes row member
