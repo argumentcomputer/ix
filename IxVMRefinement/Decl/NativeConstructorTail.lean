@@ -156,7 +156,7 @@ theorem applicationShape_const_inv {md : Mode} {e : Expr md} {name : Key md} {le
   | const n us =>
     rw [head] at headShape
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj headShape)
-    exact head
+    rfl
   | _ => rw [head] at headShape; cases headShape
 
 theorem applicationShape_mkAppN {md : Mode} (functionExpr : Expr md) (arguments : List (Expr md)) :
