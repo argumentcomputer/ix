@@ -42,6 +42,91 @@ theorem CanonicalRecordAt.ofStoredCanonical {E : Ixon.Env} {order : List _root_.
     exact ⟨⟨entry, value, stored, record,
       deConstantExact_of_storedCanonical canonical member stored record⟩⟩
 
+/-- Collision freedom fixes a verified load to its known canonical record. -/
+theorem load_verified_constant_of_record {base : Ctx} {address : Bytes.Address}
+    (source : CanonicalRecordAt base.E (Core.ixAddr address))
+    {h h' : Heap F} {addr value : SourceValue F} {calls : List (Call F)}
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address addr)
+    (good : Core.Good base calls)
+    (loaded : ObsFn Core.W "Ingress::load_verified_constant" [addr] h value h' calls) :
+    Heap.Extends h h' ∧ RepConstant h' source.value value := by
+  obtain ⟨extended, bytes, decodedValue, hashed, addressEq, decoded, _, _, _, _, _, _, rep⟩ :=
+    load_verified_constant_decode addressRep loaded
+  have bytesEq := Core.load_escape source.stored good.1 ⟨bytes.toArray⟩ hashed addressEq
+  rw [bytesEq, source.decoded] at decoded
+  injection decoded with valueEq
+  subst decodedValue
+  exact ⟨extended, rep⟩
+
+/-- An actual load of a known inductive-projection record contains the corresponding direct
+former load, including its exact input heap and child-call coverage. -/
+theorem get_ci_iPrj_subcall {base : Ctx} {address : Bytes.Address}
+    (source : CanonicalRecordAt base.E (Core.ixAddr address))
+    {projection : Ixon.InductiveProj} (shape : source.value.info = .iPrj projection)
+    {h h' : Heap F} {addr result : SourceValue F} {calls : List (Call F)}
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address addr)
+    (good : Core.Good base calls)
+    (loaded : ObsFn Core.W "Ingress::get_ci" [addr] h result h' calls) :
+    ∃ (parent : Bytes.Address) (blockArg : SourceValue F) (middle : Heap F) (inner : List (Call F)),
+      Core.ixAddr parent = projection.block ∧ projection.idx.toNat < 72057594037927936 ∧
+      Bytes.RepAddressRef Core.addrTy middle parent blockArg ∧
+      ObsFn Core.W "Ingress::get_ci_iprj" [blockArg, .field (projection.idx.toNat : F)]
+        middle result h' inner ∧
+      (∀ call ∈ inner, call ∈ calls) ∧
+      (⟨"Ingress::get_ci_iprj", [blockArg, .field (projection.idx.toNat : F)], middle⟩ : Call F) ∈ calls := by
+  have header : ∀ {middle : Heap F} {cs : List (Call F)}
+      {info sharing refs univs binders : SourceValue F},
+      ObsFn Core.W "Ingress::load_verified_constant" [addr] h
+        (.construct "Ixon::Constant" "Mk" [info, sharing, refs, univs, binders]) middle cs →
+      (∀ call ∈ cs, call ∈ calls) → RepConstantInfo middle (.iPrj projection) info := by
+    intro middle cs info sharing refs univs binders observed subset
+    obtain ⟨_, infoVal, sh, rf, un, bd, fields, infoRep, _, _, _, _⟩ :=
+      load_verified_constant_of_record source addressRep (good.sub subset) observed
+    simp only [Value.construct.injEq, List.cons.injEq, and_true] at fields
+    obtain ⟨_, _, rfl, rfl, rfl, rfl, rfl⟩ := fields
+    rwa [shape] at infoRep
+  have wrong : ∀ {middle : Heap F} {tag : String} {fields : List (SourceValue F)},
+      tag ≠ "IPrj" → RepConstantInfo middle (.iPrj projection)
+        (.construct "Ixon::ConstantInfo" tag fields) → False := by
+    intro middle tag fields notIPrj represented
+    obtain ⟨_, tagEq, _⟩ := represented
+    exact notIPrj (Value.construct.inj tagEq).2.1
+  match Obs.«Ingress::get_ci».obs loaded with
+  | .Defn_n0 (ev14 := observed) (hc302 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .Defn_other (ev14 := observed) (hc423 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .Axio (ev14 := observed) (hc515 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .Quot (ev14 := observed) (hc606 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .DPrj (ev14 := observed) (hc675 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .CPrj (ev14 := observed) (hc851 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .RPrj (ev14 := observed) (hc929 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .Recr (ev14 := observed) (hc1071 := allCalls) .. =>
+    exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
+  | .IPrj (m2 := middle) (x_idx := idx) (x_block_addr := blockArg) (cs718 := inner)
+      (v722 := indexField) (m731 := afterIndex) (ev14 := observed) (ev741 := indexRun)
+      (ev720 := formerRun) (hc750 := allCalls) .. =>
+    have info := header observed (by rw [allCalls]; intro call member; simp [member])
+    obtain ⟨projectionValue, outerShape, parentPtr, projectionShape, parentRep⟩ := info
+    injection outerShape with _ _ outerFields
+    injection outerFields with projected _
+    subst projected
+    injection projectionShape with _ _ projectionFields
+    injection projectionFields with indexEq remaining
+    injection remaining with parentEq _
+    subst parentPtr idx
+    obtain ⟨indexBound, indexValue, indexHeap⟩ :=
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value middle projection.idx) indexRun
+    subst indexField afterIndex
+    obtain ⟨parent, parentAddress, represented⟩ := parentRep
+    exact ⟨parent, blockArg, middle, inner, parentAddress, indexBound, represented, formerRun,
+      by rw [allCalls]; intro call member; simp [member], by rw [allCalls]; simp⟩
+
 /-- One actual raw record invocation, with only its decoded-record coverage. -/
 structure RawRecordQuery (E : Ixon.Env) where
   addr : SourceValue F
