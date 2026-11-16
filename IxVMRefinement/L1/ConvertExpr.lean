@@ -1455,13 +1455,28 @@ theorem binder_nodes_spec {bound : Nat} {tree : SourceValue F} {h : Heap F}
       subst hm
       exact ihr ev276
 
-/-- `Convert::params_level` builds a `Max`-chain of `.param` nodes represented by `RepKLevel`. -/
-theorem params_level_spec {params : List UInt64} :
+/-- The exact max chain emitted for a serialized list of universe parameters.
+The empty case is unused by a successful `params_level` invocation. -/
+def paramsLevel : List UInt64 → Core.KLevel
+  | [] => .zero
+  | [p] => .param p.toNat
+  | p :: ps => .max (.param p.toNat) (paramsLevel ps)
+
+/-- The exact level emitted for a serialized binder node. Share and undecided nodes are
+rejected at a binder, so their total-function values are not used by successful runs. -/
+def binderLevel : Ixon.BinderNode → Core.KLevel
+  | .never _ => .succ .zero
+  | .zero _ => .zero
+  | .ifAllZero params _ => paramsLevel params.toList
+  | .share _ | .undecided _ => .zero
+
+/-- The parameter-level conversion preserves the exact serialized parameter sequence. -/
+theorem params_level_exact_spec {params : List UInt64} :
     ∀ {paramsPtr r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       RepList u64ListEnum RepU64 h params paramsPtr →
       (∀ p ∈ params, p.toNat < 4294967296) →
       ObsFn W "Convert::params_level" [paramsPtr] h r h' cs →
-      Heap.Extends h h' ∧ ∃ ℓ : Core.KLevel, KernelLevels.RepKLevel h' ℓ r := by
+      Heap.Extends h h' ∧ KernelLevels.RepKLevel h' (paramsLevel params) r := by
   induction params with
   | nil =>
     intro paramsPtr r h h' cs hps _ ev
@@ -1474,67 +1489,103 @@ theorem params_level_spec {params : List UInt64} :
     intro paramsPtr r h h' cs hps hplt ev
     rw [u64ListEnum_eq] at hps
     rcases «Convert::params_level».obs ev with
-      ⟨x_p, x_rest, m27, v41, m43, _, ld11, hm37, ev53, _, he82, he83, _⟩ |
-      ⟨x_p, x_rest, m27, v41, m43, _, _, v98, m107, _, ld11, hm37, ev53, _, _,
+      ⟨x_p, x_rest, m27, v41, m43, _, ld11, hm37, ev53, ld73, he82, he83, _⟩ |
+      ⟨x_p, x_rest, m27, v41, m43, _, _, v98, m107, _, ld11, hm37, ev53, ld73, hne85,
         he93, hm92, ev117, _⟩
-    · obtain ⟨p', rest', heq, hp, _⟩ := Core.RepList.cons_of_load hps ld11
-      cases heq
-      obtain ⟨_, hv41, hm43⟩ := Lib.u64_to_field_spec hp ev53
-      subst v41 m43; subst m27; subst r h'
-      exact ⟨Heap.Extends.snoc _ _, .param p.toNat,
-        .param (hplt p (by simp)) (by simp)⟩
     · obtain ⟨p', rest', heq, hp, hrest⟩ := Core.RepList.cons_of_load hps ld11
       cases heq
       obtain ⟨_, hv41, hm43⟩ := Lib.u64_to_field_spec hp ev53
       subst v41 m43
       have ext_lp : Heap.Extends h m27 := by rw [hm37]; exact Heap.Extends.snoc _ _
+      have restNil := Lib.rep_nil_of_load (repList_heapMono₂ _ repU64_heapMono₂ ext_lp hrest) ld73
+      subst rest
+      subst m27 r h'
+      exact ⟨Heap.Extends.snoc _ _, .param (hplt p (by simp)) (by simp)⟩
+    · obtain ⟨p', rest', heq, hp, hrest⟩ := Core.RepList.cons_of_load hps ld11
+      cases heq
+      obtain ⟨_, hv41, hm43⟩ := Lib.u64_to_field_spec hp ev53
+      subst v41 m43
+      have ext_lp : Heap.Extends h m27 := by rw [hm37]; exact Heap.Extends.snoc _ _
+      have restNonempty : rest ≠ [] := by
+        intro empty
+        rw [empty] at hrest
+        cases hrest with
+        | nil cell =>
+          have hv := Except.ok.inj ((Lib.load_enum_cell (ext_lp.getElem?_eq cell)).symm.trans ld73)
+          exact hne85 [] rfl hv.symm
+      have chain : paramsLevel (p :: rest) = .max (.param p.toNat) (paramsLevel rest) := by
+        cases rest with
+        | nil => exact False.elim (restNonempty rfl)
+        | cons q qs => rfl
       have hlp : KernelLevels.RepKLevel m27 (.param p.toNat)
           (.ptr (.enum Core.klevelEnum) h.length) := by
         rw [hm37]; exact .param (hplt p (by simp)) (by simp)
       rw [← u64ListEnum_eq] at hrest
-      obtain ⟨ext_rec, ℓ_rest, hℓ_rest⟩ :=
+      obtain ⟨ext_rec, hℓ_rest⟩ :=
         ih (repList_heapMono₂ _ repU64_heapMono₂ ext_lp hrest)
           (fun q hq => hplt q (List.mem_cons_of_mem _ hq)) ev117
       subst r h'
       have ext_max := Heap.Extends.snoc m107
         (.construct Core.klevelEnum "Max" [.ptr (.enum Core.klevelEnum) h.length, v98])
-      exact ⟨(ext_lp.trans ext_rec).trans ext_max, .max (.param p.toNat) ℓ_rest,
+      rw [chain]
+      exact ⟨(ext_lp.trans ext_rec).trans ext_max,
         .max (by simp) (hlp.mono (ext_rec.trans ext_max)) (hℓ_rest.mono ext_max)⟩
 
-/-- `Convert::binder_level` converts a `RepBinderNode` (with parameters `< 2^32`) into a
-`KernelLevels.RepKLevel` value. -/
-theorem binder_level_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue F}
+/-- The binder-level conversion is determined by its serialized binder node. -/
+theorem binder_level_exact_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hnd : RepBinderNode h nd nodeVal)
     (hplt : BinderNodeParamsLt 4294967296 nd)
     (ev : ObsFn W "Convert::binder_level" [nodeVal] h r h' cs) :
-    Heap.Extends h h' ∧ ∃ ℓ : Core.KLevel, KernelLevels.RepKLevel h' ℓ r := by
+    Heap.Extends h h' ∧ KernelLevels.RepKLevel h' (binderLevel nd) r := by
   rcases «Convert::binder_level».obs ev with
     ⟨w17, m33, hv15, he27, hm26, hm41, _⟩ |
     ⟨w53, _, hv51, he63, hm62, _⟩ |
     ⟨x_params, w75, _, _, _, hv73, ev91, _⟩ |
     ⟨_, _, _, _, _, heq139, _, _, _⟩ |
     ⟨_, _, _, _, _, _, heq187, _, _, _⟩
-  · subst he27 hm26 hm41
-    have ext1 := Heap.Extends.snoc h (.construct Core.klevelEnum "Zero" [])
-    have ext2 := Heap.Extends.snoc (h ++ [.construct Core.klevelEnum "Zero" []])
-      (.construct Core.klevelEnum "Succ" [.ptr (.enum Core.klevelEnum) h.length])
-    have hz : KernelLevels.RepKLevel (h ++ [.construct Core.klevelEnum "Zero" []]) .zero
-        (.ptr (.enum Core.klevelEnum) h.length) := .zero (by simp)
-    exact ⟨ext1.trans ext2, .succ .zero, .succ (by simp) (hz.mono ext2)⟩
-  · subst he63 hm62
-    exact ⟨Heap.Extends.snoc _ _, .zero, .zero (by simp)⟩
   · cases hnd with
-    | never _ => simp at hv73
-    | zero _ => simp at hv73
-    | share _ => simp at hv73
-    | undecided _ => simp at hv73
+    | never m =>
+      subst he27 hm26 hm41
+      have ext1 := Heap.Extends.snoc h (.construct Core.klevelEnum "Zero" [])
+      have ext2 := Heap.Extends.snoc (h ++ [.construct Core.klevelEnum "Zero" []])
+        (.construct Core.klevelEnum "Succ" [.ptr (.enum Core.klevelEnum) h.length])
+      have hz : KernelLevels.RepKLevel (h ++ [.construct Core.klevelEnum "Zero" []]) .zero
+          (.ptr (.enum Core.klevelEnum) h.length) := .zero (by simp)
+      exact ⟨ext1.trans ext2, .succ (by simp) (hz.mono ext2)⟩
+    | zero _ | ifAllZero _ _ | share _ | undecided _ => simp at hv15
+  · cases hnd with
+    | zero m =>
+      subst he63 hm62
+      exact ⟨Heap.Extends.snoc _ _, .zero (by simp)⟩
+    | never _ | ifAllZero _ _ | share _ | undecided _ => simp at hv51
+  · cases hnd with
+    | never _ | zero _ | share _ | undecided _ => simp at hv73
     | ifAllZero m hrep =>
       simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv73
       rcases hv73 with ⟨rfl, _⟩
-      exact params_level_spec hrep hplt.2 ev91
+      simpa only [binderLevel, List.toList_toArray] using params_level_exact_spec hrep hplt.2 ev91
   · simp at heq139
   · simp at heq187
+
+theorem params_level_spec {params : List UInt64} :
+    ∀ {paramsPtr r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      RepList u64ListEnum RepU64 h params paramsPtr →
+      (∀ p ∈ params, p.toNat < 4294967296) →
+      ObsFn W "Convert::params_level" [paramsPtr] h r h' cs →
+      Heap.Extends h h' ∧ ∃ ℓ : Core.KLevel, KernelLevels.RepKLevel h' ℓ r := by
+  intro paramsPtr r h h' cs hps hplt ev
+  obtain ⟨ext, rep⟩ := params_level_exact_spec hps hplt ev
+  exact ⟨ext, paramsLevel params, rep⟩
+
+theorem binder_level_spec {nd : Ixon.BinderNode} {nodeVal r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (hnd : RepBinderNode h nd nodeVal)
+    (hplt : BinderNodeParamsLt 4294967296 nd)
+    (ev : ObsFn W "Convert::binder_level" [nodeVal] h r h' cs) :
+    Heap.Extends h h' ∧ ∃ ℓ : Core.KLevel, KernelLevels.RepKLevel h' ℓ r := by
+  obtain ⟨ext, rep⟩ := binder_level_exact_spec hnd hplt ev
+  exact ⟨ext, binderLevel nd, rep⟩
 
 /-! ## Manual `ObsExpr` path inversion for `Convert::convert_annotated` -/
 
