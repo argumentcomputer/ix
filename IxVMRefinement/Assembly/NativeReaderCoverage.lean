@@ -68,7 +68,7 @@ theorem readInductive_native_member_names {cx : Ctx .anon} {state : State .anon}
     have same : key = row.1.name := Except.ok.inj (keyed.symm.trans former.1)
     apply covered
     rw [same]
-    simp [Ix.Cert.CtxAgree.indDeclOf, Declaration.names, types, ConstantInfo.name]
+    simp [Ix.Cert.CtxAgree.indDeclOf, Declaration.names, types, ConstantInfo.name, ConstantInfo.toConstantVal]
   · intro slot ctor key ctorAt keyed
     have slotMember : (member, ctor, slot) ∈ nativeCtorSlots [(member, ind)] := by
       simp only [nativeCtorSlots, List.flatMap_cons, List.flatMap_nil, List.append_nil]
@@ -81,7 +81,7 @@ theorem readInductive_native_member_names {cx : Ctx .anon} {state : State .anon}
     have named : ctorRow.1.name ∈ block.ctors.toList.map (fun entry => entry.1.name) :=
       List.mem_map_of_mem ctorPresent
     simpa only [Ix.Cert.CtxAgree.indDeclOf, Declaration.names, List.map_append, List.map_map,
-      ConstantInfo.name, ConstantInfo.toConstantVal, List.mem_append] using
+      ConstantInfo.name, ConstantInfo.toConstantVal, Function.comp_def, List.mem_append, or_assoc] using
       (Or.inr (Or.inl named) :
         ctorRow.1.name ∈ block.types.toList.map (fun entry => entry.1.name) ∨
           ctorRow.1.name ∈ block.ctors.toList.map (fun entry => entry.1.name) ∨

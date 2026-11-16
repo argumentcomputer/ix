@@ -233,7 +233,7 @@ theorem streamContext_ctor_key_of_local_resolution {cx : Ctx .anon} {table : Rol
       exact hashed.symm
   have reconstructed : cx.reconstruct (.ctor owner i j) = some (Core.cprjAddr owner i j) := by
     rw [context]
-    exact projectionAddress_cprj owner i j memberBound ctorBound
+    exact projectionAddress_cprj (store := cx.store) owner i j memberBound ctorBound
   exact streamContext_memberKey_of_local_resolution context authentic checked unique rfl
     reconstructed boundResolved
 
