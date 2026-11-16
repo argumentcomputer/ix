@@ -147,7 +147,7 @@ theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.C
     (input : NativeFormerRunInput base block i source members ind rawType calls)
     (native : input.NativeCall)
     (shape : Decl.NativeShapeCalls input.rc input.typePtr input.blockPtr (.field i)
-      (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.(rows.map (fun row => (row.1, row.2.2))).size ind.lvls.toNat
+      (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.ctors.size ind.lvls.toNat
       native.before calls)
     {parts : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
     (params : parts.nP = ind.params.toNat) (indices : parts.nIdx = ind.indices.toNat)
@@ -169,7 +169,7 @@ theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.C
       (NativeCtorReaderCheckedFrame cx (Core.ixAddr block)
         (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self))
       (nativeCtorSlots [(ZMod.val i, ind)]) rows)
-    (memberKeys : ∀ slot < ind.(rows.map (fun row => (row.1, row.2.2))).size,
+    (memberKeys : ∀ slot < ind.ctors.size,
       cx.memberKey (.ctor (Core.ixAddr block) (ZMod.val i) slot) =
         .ok (base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) slot)))
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
