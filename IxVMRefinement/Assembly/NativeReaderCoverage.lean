@@ -122,4 +122,41 @@ theorem readRecord_native_member_names {cx : Ctx .anon} {state : State .anon}
         fun slot ctor key found keyed => (names.2 slot ctor key found keyed).mono retained⟩
   · exact (absent hasInductive).elim
 
+/-- The actual record stream retains the native member names proved by its selected read. -/
+theorem StreamRead.native_member_names {cx : Ctx .anon} {start finish : State .anon}
+    {records : List (_root_.Address × Ixon.Constant)} {output : Array (Declaration .anon)}
+    (stream : StreamRead cx start records finish output)
+    {scanned : Array (_root_.Address × Ixon.Constant)}
+    (indexBuilt : cx.index = buildIndex cx.store scanned)
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {member : Nat} {ind : Ixon.Inductive}
+    (present : (owner, source) ∈ records)
+    (stored : cx.store owner = some source) (kind : source.info = .muts members)
+    (memberAt : members[member]? = some (.indc ind))
+    (one : Ix.CompileCert.ReaderIndex.inductives members = #[(member, ind)]) :
+    (∀ key, cx.memberKey (.member owner member) = .ok key →
+      ReaderInductiveKey output.toList key) ∧
+    (∀ slot ctor key, ind.ctors[slot]? = some ctor →
+      cx.memberKey (.ctor owner member slot) = .ok key →
+      ReaderInductiveKey output.toList key) := by
+  obtain ⟨state, result, read, contained⟩ := stream.mem present
+  have covered := readRecord_native_member_names indexBuilt stored kind memberAt one read
+  have included : ∀ declaration ∈ result.decls.toList, declaration ∈ output.toList := by
+    intro declaration member
+    exact Array.mem_toList_iff.mpr (contained declaration (Array.mem_toList_iff.mp member))
+  exact ⟨fun key keyed => (covered.1 key keyed).mono included,
+    fun slot ctor key found keyed => (covered.2 slot ctor key found keyed).mono included⟩
+
+/-- Preparation retains the input declaration, and even a pinned inductive installs all
+of its declared names. This is the membership certificate consumed by reference storage. -/
+theorem ReaderInductiveKey.prepared_installed {input : Array (Declaration .anon)} {key : Key .anon}
+    (prelude : Frontend.PreludeIx .anon) (covered : ReaderInductiveKey input.toList key) :
+    ∃ declaration ∈ (Frontend.preparePrelude prelude input).toList,
+      ∃ constant ∈ IxVM.Consistency.installs declaration, constant.name = key := by
+  obtain ⟨block, params, member, named⟩ := covered
+  rw [indDecl_names_installs block params] at named
+  obtain ⟨constant, installed, name⟩ := List.mem_map.mp named
+  exact ⟨.indDecl block params, preparePrelude_input_subset prelude input _ member,
+    constant, installed, name⟩
+
 end IxVM.Refinement.Assembly
