@@ -60,6 +60,37 @@ theorem admittedReaderStore_sub_core {V : IxVM.Refinement.View} {b : Admission.B
     exact admittedCore_of_overlay w hrecord
   · exact admittedCore_fallback w keepTrace claimBytes hload hdecoded hno fallback
 
+/-- Every constant returned by the actual reader store has authenticated bytes and an
+exact decode. This holds for any selected reading order, including the pruned order. -/
+theorem admittedReaderStore_authentic {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
+    (keepTrace : _root_.Address → Prop) (order : List _root_.Address)
+    (hload : IxVM.Consistency.LoadedBy calls trace) (hdecoded : L1.EnvDecoded trace) :
+    AuthenticExactStore
+      (Admission.streamContext _root_.Address.admissionHash w.table w.prelude
+        (Ix.Cert.Stream.decodedOf (admittedOverlay w trace keepTrace) order)
+        (Ix.Cert.blobsOf (admittedOverlay w trace keepTrace) order)
+        (Ix.Cert.hintsOf (admittedOverlay w trace keepTrace))).store := by
+  intro a c hstore
+  rcases streamContext_store_mem hstore with input | fallback
+  · obtain ⟨a', _, hmap⟩ := List.mem_filterMap.mp input
+    obtain ⟨c', hrecord, heq⟩ := Option.map_eq_some_iff.mp hmap
+    cases heq
+    unfold Ix.Cert.recordAt at hrecord
+    cases hget : (admittedOverlay w trace keepTrace).consts.get? a with
+    | none => rw [hget] at hrecord; cases hrecord
+    | some lc =>
+      simp only [hget, Option.bind_some] at hrecord
+      obtain ⟨hhash, decoded, hcache, hexact⟩ :=
+        (admittedOverlay_authentic_exact w keepTrace hload hdecoded).1 a lc hget
+      have hsame : decoded = c := Option.some.inj (hcache.symm.trans hrecord)
+      rw [hsame] at hexact
+      exact ⟨lc.rawBytes, hhash, hexact⟩
+  · obtain ⟨hhash, hwire⟩ := Ix.Cert.FallbackStore.fallback_authentic
+      rolePreludeInputs.fallbackHashed w.preludeRead fallback
+    rw [_root_.Address.admissionHash_eq] at hhash
+    exact ⟨Ixon.serConstant c, hhash.symm, Ixon.Verify.deConstantExact_serConstant c hwire⟩
+
 /-- A selected record's actual decoded projection image cannot disagree with a traced
 record at the reconstructed address. -/
 theorem admitted_projection_trace_agrees {V : IxVM.Refinement.View} {b : Admission.Binding}
