@@ -10,8 +10,9 @@ Three guards narrow what the declaration checker accepts to shapes the certified
 writes. Each has cases that must now be refused and cases that must stay accepted.
 
 * **One kind of member per inductive block.** A block that holds both an inductive and a
-  recursor is refused, claimed at either member. The same family as an inductive block and
-  a recursor record of its own is accepted.
+  recursor is refused at its inductive, whether the claim walks the block or assumes it
+  and so checks the inductive alone. The same family as an inductive block and a recursor
+  record of its own is accepted.
 * **No later use of a recursive field.** A constructor whose later field names an earlier
   recursive field is refused when its type is claimed without its recursor, and when its
   recursor is claimed. Recursive and reflexive fields that nothing later uses are accepted.
@@ -116,8 +117,12 @@ private def emptyRecursor (carrier : Ixon.Expr) : Ixon.Recursor :=
   { k := false, isUnsafe := false, lvls := 1, params := 0, indices := 0, motives := 1, minors := 0,
     typ := .all (.all carrier (.sort 1)) (.all carrier (.app (.var 1) (.var 0))), rules := #[] }
 
-/-- The family and its recursor in one block, claimed at member `member`. -/
-private def mixedCase (guards : Bool) (member : UInt64) : Except String Case := do
+/-- The family and its recursor in one block, claimed at the inductive. With `assumed` the
+block is an assumption of the claim, so the claim walk checks the inductive alone: without
+the guard that check passes. Otherwise the walk goes on into the block and, without the
+guard, stops at the recursor member, whose type the program reads with no member of its
+block in scope. -/
+private def mixedCase (guards assumed : Bool) : Except String Case := do
   let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
   let block ← IxVM.RecordSections.withSection env
     ⟨.muts #[.indc emptyFamily, .recr (emptyRecursor (.recur 0 #[]))], #[], #[],
@@ -128,10 +133,15 @@ private def mixedCase (guards : Bool) (member : UInt64) : Except String Case := 
   let env := ((env.storeConst blockAddress block).storeConst (address type) type).storeConst
     (address recursor) recursor
   let context ← Ix.ClaimContext.ofEnv env
-  let target := if member == 0 then address type else address recursor
-  let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context target none)
-  return refused guards mixedMessage none {
-    label := s!"an inductive and its recursor in one block, claimed at member {member}"
+  let tree? := if assumed then Ix.AssumptionTree.canonical #[blockAddress] else none
+  let trees : Std.HashMap _root_.Address Ix.AssumptionTree := match tree? with
+    | some tree => ({} : Std.HashMap _root_.Address Ix.AssumptionTree).insert tree.root tree
+    | none => {}
+  let witness ← IxVM.ClaimHarness.buildClaimWitness env
+    (.check context (address type) (tree?.map (·.root))) trees
+  return refused guards mixedMessage (if assumed then none else some "let pattern mismatch") {
+    label := if assumed then "an inductive and its recursor in one block, the block assumed"
+      else "an inductive and its recursor in one block, the block walked"
     accept := true
     witness := witness }
 
@@ -282,7 +292,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     return 1
   let env ← loadSharedIxonEnv compiledNames.toArray leanEnv
   let built : Array Builder := #[
-    fun _ => mixedCase guards 0, fun _ => mixedCase guards 1, fun _ => separateCase,
+    fun _ => mixedCase guards false, fun _ => mixedCase guards true, fun _ => separateCase,
     fun _ => nativeHeaderCase guards .nowhere, fun _ => nativeHeaderCase guards .motive,
     fun _ => nativeHeaderCase guards .index, fun _ => nativeHeaderCase guards .major,
     fun _ => nativeHeaderCase guards .result,
