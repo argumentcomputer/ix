@@ -63,13 +63,13 @@ private theorem opened_leaf_lookup {count : Nat} {e residual fv : Expr .anon} {f
 
 /-- Actual checked domains in one canonical opener frame. -/
 structure CheckedFVarFrame (env : Env .anon) (fuel : Nat) (fvars : List (Expr .anon)) : Prop where
-  indexed : ∀ slot fv, fvars[slot]? = some fv → fv = .fvar slot fv.fvarTypeD
-  domainScope : ∀ slot fv, fvars[slot]? = some fv →
+  indexed : ∀ (slot : Nat) (fv : Expr .anon), fvars[slot]? = some fv → fv = .fvar slot fv.fvarTypeD
+  domainScope : ∀ (slot : Nat) (fv : Expr .anon), fvars[slot]? = some fv →
     Expr.WScoped slot fv.fvarTypeD ∧ fv.fvarTypeD.looseBVarsBounded 0 = true
-  domainChecks : ∀ slot fv, fvars[slot]? = some fv → ∃ inferred level,
+  domainChecks : ∀ (slot : Nat) (fv : Expr .anon), fvars[slot]? = some fv → ∃ inferred level,
     inferTypeCore .verified env fuel slot fv.fvarTypeD = .ok inferred ∧
       ensureSortCore .verified env fuel slot inferred = .ok level
-  leaves : ∀ slot fv, fvars[slot]? = some fv → ∀ leaf ∈ fv.fvarTypeD.fvarLeaves,
+  leaves : ∀ (slot : Nat) (fv : Expr .anon), fvars[slot]? = some fv → ∀ (leaf : Nat × Expr .anon), leaf ∈ fv.fvarTypeD.fvarLeaves →
     fvars[leaf.1]? = some (.fvar leaf.1 leaf.2) ∧ leaf.1 < slot
 
 /-- The old and new frames retain separate actual type annotations and checking derivations. -/
