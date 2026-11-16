@@ -30,7 +30,7 @@ private theorem stripLams_instantiate_result {md : Mode} (value : Expr md) :
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
       obtain ⟨openedTail, opened⟩ := stripLams_instantiate_result value (cut + 1) bodyStrip
       refine ⟨(domain.instantiate1 value cut, bm) :: openedTail, ?_⟩
-      simpa only [Expr.instantiate1, Expr.stripLams, opened, Option.map_some, Nat.add_succ, Nat.succ_add]
+      simp only [Expr.instantiate1, Expr.stripLams, opened, Option.map_some, Nat.add_succ, Nat.succ_add]
     | _ => cases stripped
 
 private theorem stripPis_abstract_result {md : Mode} (index : Nat) :
@@ -49,7 +49,7 @@ private theorem stripPis_abstract_result {md : Mode} (index : Nat) :
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj same
       obtain ⟨closedTail, closed⟩ := stripPis_abstract_result index (cut + 1) bodyStrip
       refine ⟨(domain.abstract1 index cut, bm) :: closedTail, ?_⟩
-      simpa only [Expr.abstract1, Expr.stripPis, closed, Option.map_some, Nat.add_succ, Nat.succ_add]
+      simp only [Expr.abstract1, Expr.stripPis, closed, Option.map_some, Nat.add_succ, Nat.succ_add]
     | _ => cases stripped
 
 /-- Inference of a lambda telescope returning a product records that product's datum in the
