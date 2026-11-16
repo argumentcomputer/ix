@@ -20,7 +20,7 @@ open IxVM (F)
 open IxVM.Refinement.Core (KKey KExpr)
 
 /-- The actual constructor type needs self-name agreement only at reached recursive leaves; its raw syntax and exact binder traces are retained together. -/
-theorem native_ctor_value_with_raw_trace_of_selfReads {κ : _root_.Address → KKey}
+theorem native_ctor_value_with_raw_trace_of_selfReads {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -89,7 +89,7 @@ theorem native_ctor_value_with_raw_trace_of_selfReads {κ : _root_.Address → K
   · simpa only [List.append_nil] using rawReadTrace plan trace []
 
 /-- The serialized type trace chooses the exact value of a fresh constructor read. -/
-theorem native_ctor_value_with_raw_trace_of_blobAgreement {κ : _root_.Address → KKey}
+theorem native_ctor_value_with_raw_trace_of_blobAgreement {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -121,7 +121,7 @@ theorem native_ctor_value_with_raw_trace_of_blobAgreement {κ : _root_.Address �
     (fun i a m k _ => selfKeyed i a m k) blobReads
 
 /-- Compatibility with full observed-blob membership. -/
-theorem native_ctor_value_with_raw_trace {κ : _root_.Address → KKey}
+theorem native_ctor_value_with_raw_trace {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -152,7 +152,7 @@ theorem native_ctor_value_with_raw_trace {κ : _root_.Address → KKey}
   exact native_ctor_value_with_raw_trace_of_blobAgreement raw levels read varsBounded levelsDefined keyed selfKeyed (L1.BlobReadAgreement.of_mem blobReads)
 
 /-- Exact constructor value agreement, with the paired raw-syntax evidence omitted. -/
-theorem native_ctor_value_of_trace_of_blobAgreement {κ : _root_.Address → KKey}
+theorem native_ctor_value_of_trace_of_blobAgreement {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -179,7 +179,7 @@ theorem native_ctor_value_of_trace_of_blobAgreement {κ : _root_.Address → KKe
   exact ⟨cv, stored, represented, image⟩
 
 /-- Compatibility with full observed-blob membership. -/
-theorem native_ctor_value_of_trace {κ : _root_.Address → KKey}
+theorem native_ctor_value_of_trace {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -205,7 +205,7 @@ theorem native_ctor_value_of_trace {κ : _root_.Address → KKey}
 
 /-- An actual validation call establishes the raw reader bounds, then exact conversion
 produces the annotation and its raw heap syntax. -/
-theorem validated_native_type_input_of_blobAgreement {κ : _root_.Address → KKey}
+theorem validated_native_type_input_of_blobAgreement {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {calls cs : List (Call F)} {h₀ h h' : Heap F}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
@@ -246,7 +246,7 @@ theorem validated_native_type_input_of_blobAgreement {κ : _root_.Address → KK
     memberReader_read_noFvar read⟩
 
 /-- Compatibility with full observed-blob membership. -/
-theorem validated_native_type_input {κ : _root_.Address → KKey}
+theorem validated_native_type_input {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {calls cs : List (Call F)} {h₀ h h' : Heap F}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
@@ -274,7 +274,7 @@ theorem validated_native_type_input {κ : _root_.Address → KKey}
 
 /-- Conversion plus the constructor's actual scope check supplies its exact constant value
 and raw type. The result is local to this read and does not require semantic installation. -/
-theorem validated_native_ctor_input_of_blobAgreement {κ : _root_.Address → KKey}
+theorem validated_native_ctor_input_of_blobAgreement {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {calls cs : List (Call F)} {h₀ h h' : Heap F}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
@@ -337,7 +337,7 @@ theorem validated_native_ctor_input_of_blobAgreement {κ : _root_.Address → KK
   simp only [cv, indexValue, ctorIndexValue, blockEq]
 
 /-- Compatibility with full observed-blob membership. -/
-theorem validated_native_ctor_input {κ : _root_.Address → KKey}
+theorem validated_native_ctor_input {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {calls cs : List (Call F)} {h₀ h h' : Heap F}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}

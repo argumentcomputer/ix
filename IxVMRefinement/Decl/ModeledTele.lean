@@ -1146,7 +1146,8 @@ private theorem tmExact_store_letE {κ : _root_.Address → KKey} {d : Nat} {Γ 
   .letE (by simp) (rt.mono ext) (rv.mono ext) (rb.mono ext)
 
 private theorem tmExact_store_proj {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {a : Bytes.Address} {i : F} {E : KExpr} {ap ep : SourceValue F}
+    {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))] {i : F} {E : KExpr}
+    {ap ep : SourceValue F}
     (ra : Bytes.RepAddressRef addrTy h a ap) (re : TmExact κ d Γ h k E ep) :
     TmExact κ d Γ (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]]) k
       (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) h.length) :=
@@ -1169,6 +1170,7 @@ private theorem tmExact_copy_const {κ : _root_.Address → KKey} {d d' : Nat} {
     TmExact κ d' Γ' (h ++ [.construct kexprEnum "Const" [ap, lsp]]) k' E
       (.ptr (.enum kexprEnum) h.length) := by
   obtain ⟨a, ls, rfl, ra, rls⟩ := hE.const_of_load ld
+  haveI : Resolved _ := ⟨hE.toTm.const_key_ne⟩
   have ext : Heap.Extends h (h ++ [.construct kexprEnum "Const" [ap, lsp]]) := Heap.Extends.snoc _ _
   exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext)
 
@@ -1709,6 +1711,7 @@ private theorem expr_lower_local_exact_aux (κ : _root_.Address → KKey) (rp : 
         | .Const (ld12 := ld) (he101 := hr) (hm100 := hm) .. =>
           subst hr hm
           obtain ⟨a, ls, rfl, ra, rls⟩ := hE.const_of_load ld
+          haveI : Resolved _ := ⟨hE.toTm.const_key_ne⟩
           exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy (Heap.Extends.snoc _ _) ra)
             (rls.mono (Heap.Extends.snoc _ _))
         | .Lit (ld12 := ld) (he549 := hr) (hm548 := hm) .. =>
@@ -2067,7 +2070,7 @@ theorem rename_addr_spec {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → K
   exact ⟨⟨renameBytesAddr a srcAs dstAs, hr, hmap a⟩, rfl⟩
 
 /-- Exact VM refinement of `KernelModeled::rename`: renames constants and structure keys by `f`. -/
-theorem rename_exact {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
+theorem rename_exact {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ₂ a)] {f : KKey → KKey}
     {Γ₁ Γ₂ : Nat → KExpr} :
     ∀ {e src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {k : Nat} {E : KExpr},
       ObsFn W "KernelModeled::rename" [e, src, dst] h r h' cs →
@@ -2175,7 +2178,7 @@ theorem rename_exact {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
   exact hmain _ _ _ _ _ _ ev rfl e src dst k E rfl hE rm
 
 /-- `Tm` counterpart of `rename_exact` (used on `cty_l` after `expr_inst_levels`). -/
-theorem rename_tm {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
+theorem rename_tm {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ₂ a)] {f : KKey → KKey}
     {Γ₁ Γ₂ : Nat → KExpr} :
     ∀ {e src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {k : Nat} {E : KExpr},
       ObsFn W "KernelModeled::rename" [e, src, dst] h r h' cs →

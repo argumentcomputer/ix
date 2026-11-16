@@ -1587,7 +1587,7 @@ private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} {d :
       exact False.elim (load_cell_ne cell (loadValue_enum_cell cell') (by decide))
   | _, _, _, _, .bvarFree _ _ _ _, _, _ => rfl
   | _, _, _, _, .sort _ _ _, _, _ => rfl
-  | _, _, _, _, .const _ _ _ _, _, _ => rfl
+  | _, _, _, _, .const (res := _) _ _ _ _, _, _ => rfl
   | _, _, _, _, .litNat _ _ _, _, _ => rfl
   | _, _, _, _, .litStr _ _ _, _, _ => rfl
   | m, k, _, _, .app cell hf ha, hidx, hjk => by
@@ -1643,7 +1643,7 @@ private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} {d :
     | bvar cell' _ | sort cell' | const cell' | lit cell' | app cell' _ _
     | lam cell' _ _ | forallE cell' _ _ | proj cell' _ =>
       exact False.elim (load_cell_ne cell (loadValue_enum_cell cell') (by decide))
-  | m, k, _, _, .proj cell _ he, hidx, hjk => by
+  | m, k, _, _, .proj (res := _) cell _ he, hidx, hjk => by
     cases hidx with
     | proj cell' hie =>
       obtain ⟨_, hxs⟩ := load_cell cell (loadValue_enum_cell cell')
@@ -4458,6 +4458,7 @@ inductive RawTm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h
       (rl : RepKLevel h l lp) (eq : LvEq u l) :
       RawTm κ d Γ h k (.sort u) (.sort u) (.ptr (.enum kexprEnum) addr)
   | const {k addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls us : List KLevel}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (rls : RepKLevelList h ls lsp)
       (eq : LvEqList us ls) :
@@ -4499,6 +4500,7 @@ inductive RawTm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       RawTm κ d Γ h k (.lit (.strVal s)) (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {Re E : KExpr}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : RawTm κ d Γ h k Re E ep) :
       RawTm κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) Re)
@@ -6486,7 +6488,7 @@ theorem posOf_structMinorTyR (rlps : List LevelParam) (C : KKey) (lps : List Lev
   rfl
 
 /-- `KernelCheck::nat_minor_ty` builds `cMinorTy C clvls nP nF o ℓ.zeronessOf Ecty recIdx`. -/
-theorem nat_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+theorem nat_minor_ty_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
     {T C : KKey} {bC : Bytes.Address} {clvls : List KLevel} {nP nF o : Nat} {ℓ : KLevel}
     {Rcty Ecty : KExpr} {rus eus : List KLevel} {rargs eargs : List KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)} {recIdx : List Nat}
