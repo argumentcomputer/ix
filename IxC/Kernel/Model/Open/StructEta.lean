@@ -150,7 +150,7 @@ theorem DefEq.structEta_sound (hse : StoredEnv env) {d : Nat} {a b tb wtb : Expr
     obtain ⟨hec, hpar, hfld⟩ := hetaT heta
     rw [hctor] at hec
     obtain rfl := Option.some.inj hec
-    obtain ⟨hlpsT, -, _cvC, -, -, -, hlaw⟩ := M.proj_law T 0 e0 cvT caps he0 hT
+    obtain ⟨hlpsT, _cvC, -, -, -, hlaw⟩ := M.proj_law T 0 e0 cvT caps he0 hT
     have hoff : ∀ j ej, env.findProj? T j = some ej → ej.off = e0.off := by
       intro j ej hej
       obtain ⟨t1, h1, -, rfl⟩ := Env.findProj?_some hej

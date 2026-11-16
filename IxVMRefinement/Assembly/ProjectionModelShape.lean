@@ -2,9 +2,9 @@ import Ix.IxVM.Consistency.Statement
 
 /-! # Structural requirements of modeled projections
 
-Fields beyond the two bare-pair projections require a stored projection table. The public
-model's table law requires a literal former telescope, even when its declared type is
-definitionally equal to that telescope. These lemmas isolate the shape requirement.
+Fields beyond the two bare-pair projections require a stored projection table. The former
+shape condition below records the earlier literal-telescope requirement separately from
+the public model, permitting the old incompatibility to be stated with its exact premise.
 -/
 
 namespace IxVM.Refinement.Assembly
@@ -14,6 +14,12 @@ open Ix.Kernel
 universe u
 
 variable {V : Type u} [SetTheory V]
+
+/-- The literal former shape previously demanded by the public projection law. -/
+def FormerProjectionShape {md : Mode} (env : Env md) : Prop :=
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md) (cv : ConstantVal md) (caps : IndCaps md),
+    env.findProj? T i = some entry → env.find? T = some (.indInfo cv caps) →
+    ∃ binders, cv.type.stripPis entry.numParams = some (binders, .sort entry.structSort)
 
 /-- A denoted projection beyond the bare-pair fields has an actual table entry. -/
 theorem projection_table_of_denotes {md : Mode}
@@ -27,8 +33,9 @@ theorem projection_table_of_denotes {md : Mode}
   | proj_fst _ _ => omega
   | proj_snd _ _ => omega
 
-/-- The public model forces the stored former telescope at every denoted later field. -/
+/-- The separate literal-shape condition applies at every denoted later field. -/
 theorem model_projection_former_telescope {md : Mode} {env : Env md} (model : Model V env)
+    (shapes : FormerProjectionShape env)
     {T : Key md} {cv : ConstantVal md} {caps : IndCaps md}
     (former : env.find? T = some (.indInfo cv caps))
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {i : Nat} {value : Expr md} {result : V}
@@ -36,19 +43,19 @@ theorem model_projection_former_telescope {md : Mode} {env : Env md} (model : Mo
     ∃ entry binders, env.findProj? T i = some entry ∧
       cv.type.stripPis entry.numParams = some (binders, .sort entry.structSort) := by
   obtain ⟨entry, found⟩ := projection_table_of_denotes beyondPair denoted
-  obtain ⟨binders, telescope⟩ := (model.proj_law T i entry cv caps found former).2.1
+  obtain ⟨binders, telescope⟩ := shapes T i entry cv caps found former
   exact ⟨entry, binders, found, telescope⟩
 
-/-- A former stored at a constant alias cannot coexist with a denoted later-field projection
-in the current public model, regardless of the alias's reduction behavior. -/
+/-- A constant alias cannot meet the separate literal-shape condition at a denoted later field. -/
 theorem model_alias_former_no_projection {md : Mode} {env : Env md} (model : Model V env)
+    (shapes : FormerProjectionShape env)
     {T aliasKey : Key md} {levels : List Level} {cv : ConstantVal md} {caps : IndCaps md}
     (former : env.find? T = some (.indInfo cv caps)) (typeAlias : cv.type = .const aliasKey levels)
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {i : Nat} {value : Expr md} {result : V}
     (beyondPair : 2 ≤ i) : ¬ Denotes model.cval env φ ρ (.proj T i value) result := by
   intro denoted
   obtain ⟨entry, binders, _, telescope⟩ :=
-    model_projection_former_telescope model former beyondPair denoted
+    model_projection_former_telescope model shapes former beyondPair denoted
   rw [typeAlias] at telescope
   cases count : entry.numParams with
   | zero => rw [count] at telescope; cases telescope
@@ -72,6 +79,7 @@ theorem model_lam_body_denotes {md : Mode} {env : Env md} (model : Model V env)
 /-- Storage correspondence preserves a constant alias literally; annotation cannot replace
 it by its normalized telescope. -/
 theorem stored_alias_former_no_projection {env : Env .anon} (model : Model V env)
+    (shapes : FormerProjectionShape env)
     {T aliasKey : Key .anon} {levels : List Level} {cv raw : ConstantVal .anon} {caps : IndCaps .anon}
     (former : env.find? T = some (.indInfo cv caps))
     (stored : IxVM.Consistency.ValStored cv raw) (typeAlias : raw.type = .const aliasKey levels)
@@ -79,11 +87,11 @@ theorem stored_alias_former_no_projection {env : Env .anon} (model : Model V env
     (beyondPair : 2 ≤ i) : ¬ Denotes model.cval env φ ρ (.proj T i value) result := by
   have annotated := stored.2.2
   rw [typeAlias] at annotated
-  exact model_alias_former_no_projection model former annotated.const_inv beyondPair
+  exact model_alias_former_no_projection model shapes former annotated.const_inv beyondPair
 
-/-- A reader-shaped definition exposing such a projection cannot have the current public
-model when the former is stored as its declared alias. -/
+/-- A reader-shaped alias projection cannot have both a model and the separate literal-shape condition. -/
 theorem no_model_of_stored_alias_projection {env : Env .anon}
+    (shapes : FormerProjectionShape env)
     {T aliasKey : Key .anon} {levels : List Level} {cvT rawT : ConstantVal .anon}
     {caps : IndCaps .anon}
     (former : env.find? T = some (.indInfo cvT caps))
@@ -96,7 +104,7 @@ theorem no_model_of_stored_alias_projection {env : Env .anon}
   rintro ⟨model⟩
   cases storedValue with
   | proj _ =>
-    exact stored_alias_former_no_projection model former storedFormer typeAlias beyondPair
+    exact stored_alias_former_no_projection model shapes former storedFormer typeAlias beyondPair
       (model.defn_value cv _ hint present (fun _ => 0) (fun _ => SetTheory.empty))
 
 end IxVM.Refinement.Assembly
