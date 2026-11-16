@@ -17,7 +17,9 @@ private theorem IdentityRef.reference_scoped {domainSort : Level} {reference e :
     (origin : IdentityRef domainSort reference e) (bounded : Expr.WScoped depth e) : Expr.WScoped depth reference := by
   cases origin with
   | reference => exact bounded
-  | beta => exact (show _ ∧ _ from bounded).2
+  | beta =>
+    simp only [Expr.WScoped] at bounded
+    exact bounded.2
 
 /-- The final variable/redex shape is derived from the exact rebuild and final annotation.
 Only the selected original use is identified by the caller. -/
@@ -41,7 +43,8 @@ theorem constructor_rebuild_identity_domain {env : Env .anon} {fuel nP nF slot t
   have referenceScope := origin.reference_scoped
     (frames.original.domainScope (nP + slot) originalUse originalUseAt).1
   rw [argumentIndex] at referenceScope
-  have earlier : target < nP + slot := (show _ ∧ _ from referenceScope).1
+  simp only [Expr.WScoped] at referenceScope
+  have earlier : target < nP + slot := referenceScope.1
   rcases lastBranch with same | checkedAgain
   · rw [same] at finalOpen
     obtain ⟨sameVars, _⟩ := Prod.mk.inj (Option.some.inj (originalOpen.symm.trans finalOpen))
