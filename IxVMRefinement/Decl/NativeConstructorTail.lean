@@ -138,4 +138,33 @@ theorem ConstructorRebuildRun.tailShape {md : Mode} {env : Env md} {fuel nP nF :
   simp only [List.length_append, List.length_zipWith, parameterCount, binderCount, fieldCount, Nat.min_self] at reclosed
   exact reclosed.trans originalTail.symm
 
+
+/-- The tail shape of a successful opening is the shape of its actual open result. -/
+theorem telescopeTailShape_of_open {md : Mode} {count depth : Nat} {e body : Expr md}
+    {fvars : List (Expr md)} (opened : openPisAtFvars count e depth = some (fvars, body)) :
+    telescopeTailShape count e = some (applicationShape body) := by
+  simpa only [Nat.add_zero, telescopeTailShape] using opened_tailShape opened 0
+
+/-- A constant application shape exposes the real head and argument count. -/
+theorem applicationShape_const_inv {md : Mode} {e : Expr md} {name : Key md} {levels : List Level} {count : Nat}
+    (shape : applicationShape e = (some (name, levels), count)) :
+    e.getAppFn = .const name levels ∧ e.getAppArgs.length = count := by
+  rw [applicationShape_eq] at shape
+  obtain ⟨headShape, length⟩ := Prod.mk.inj shape
+  refine ⟨?_, length⟩
+  cases head : e.getAppFn with
+  | const n us =>
+    rw [head] at headShape
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj headShape)
+    exact head
+  | _ => rw [head] at headShape; cases headShape
+
+theorem applicationShape_mkAppN {md : Mode} (functionExpr : Expr md) (arguments : List (Expr md)) :
+    applicationShape (Expr.mkAppN functionExpr arguments) =
+      ((applicationShape functionExpr).1, (applicationShape functionExpr).2 + arguments.length) := by
+  induction arguments generalizing functionExpr with
+  | nil => simp only [Expr.mkAppN, List.length_nil, Nat.add_zero, Prod.eta]
+  | cons argument arguments ih =>
+    simp only [Expr.mkAppN, ih, applicationShape, List.length_cons, Nat.add_assoc, Nat.add_comm 1]
+
 end IxVM.Refinement.Decl
