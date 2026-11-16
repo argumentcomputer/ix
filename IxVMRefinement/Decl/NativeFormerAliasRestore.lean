@@ -87,9 +87,6 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
     have same := info_eq_back cv caps replacement equal (by intros; intro h; cases h)
     subst original
     simpa only [denotes_eq] using M.defn_value val value redHint present φ ρ
-  · intro name ci found φ ψ agree
-    obtain ⟨original, originalFound, rfl⟩ := found_original cv caps replacement found
-    exact M.cval_params name original originalFound φ ψ (by simpa only [info_levels] using agree)
   · simpa only [IotaLaw, IotaRule, find_rec, find_ctor, denotes_eq, fits_eq, denotesList_eq] using M.iota_rule
   · intro T val flags found unit
     rcases find_ind_origin cv caps replacement found with ⟨rfl, rfl, original⟩ | original
@@ -147,6 +144,10 @@ def aliasModelWithTables {V : Type u} [SetTheory V]
     · intro val value redHint equal
       have originalEq := info_eq_back cv caps replacement equal (by intros; intro h; cases h)
       simpa only [denotes_eq] using graded.2 val value redHint originalEq
+
+  · intro name ci found φ ψ agree
+    obtain ⟨original, originalFound, rfl⟩ := found_original cv caps replacement found
+    exact M.cval_params name original originalFound φ ψ (by simpa only [info_levels] using agree)
 
 theorem aliasModelWithTables_cval {V : Type u} [SetTheory V]
     (cv : ConstantVal md) (caps : IndCaps md) {env : Env md} (M : Model V env)
