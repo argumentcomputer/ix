@@ -52,7 +52,7 @@ structure CtorScopeRead (block : Bytes.Address) (indIndex ctorIndex safety : F)
 /-- Every slot covered by a successful native constructor loop has an actual guarded load
 and scope check. The natural index is kept below the checked constructor-count bound. -/
 theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
-    {params indices count levels : Nat} (countBound : count < 4294967296)
+    {params indices count levels : Nat} (countBound : count < 549755813888)
     {rootCalls : List (Call F)} :
     ∀ (remaining start : Nat) {rc former blockArg sortLevel result : SourceValue F}
       {h h' : Heap F} {calls : List (Call F)},
@@ -65,7 +65,9 @@ theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
         h result h' calls →
       ∀ offset < remaining, Nonempty (CtorScopeRead block indIndex ((start + offset : Nat) : F)
         safety params levels rootCalls)
-  | 0, _, _, _, _, _, _, _, _, _, _, _, _, _, offset, bound => by omega
+  | 0, _, _, _, _, _, _, _, _, _, _, _, _, _ => by
+    intro offset bound
+    omega
   | remaining + 1, start, rc, former, blockArg, sortLevel, result, h, h', calls,
       total, blockRep, subset, evaluated => by
     match Obs.«KernelCheck::check_inductive_shape_ctors».obs evaluated with
