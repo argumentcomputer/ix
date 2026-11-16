@@ -37,26 +37,30 @@ theorem DefinitionsTyped.polymorphic_alias_family {V : Type u} [SetTheory V] {en
         (bodyLevels.map (Level.subst aliasCV.levelParams useLevels)) targetSort)) where
   row := by
     intro name levels member
-    rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · refine ⟨.defnInfo aliasCV (.const targetName bodyLevels) hint,
+    rcases member with ⟨nameEq, levelsEq⟩ | ⟨nameEq, levelsEq⟩
+    · subst name levels
+      refine ⟨.defnInfo aliasCV (.const targetName bodyLevels) hint,
         Level.subst aliasCV.levelParams useLevels declared, aliasFound, ?_, ?_⟩
       · change aliasCV.type.instantiateLevelParams aliasCV.levelParams useLevels = _
         rw [aliasHeader]
         rfl
       · exact definitions.polymorphic_alias_zero model aliasFound targetFound aliasHeader targetHeader useLevels
-    · refine ⟨.indInfo targetCV caps, _, targetFound, ?_, rfl⟩
+    · subst name levels
+      refine ⟨.indInfo targetCV caps, _, targetFound, ?_, rfl⟩
       change targetCV.type.instantiateLevelParams targetCV.levelParams _ = _
       rw [targetHeader]
       rfl
   delta := by
     intro name levels out member unfolded
-    rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · rw [constant_alias_unfoldAt aliasFound] at unfolded
+    rcases member with ⟨nameEq, levelsEq⟩ | ⟨nameEq, levelsEq⟩
+    · subst name levels
+      rw [constant_alias_unfoldAt aliasFound] at unfolded
       split at unfolded
       · obtain rfl := Option.some.inj unfolded
         exact ⟨targetName, _, rfl, .inr ⟨rfl, rfl⟩⟩
       · cases unfolded
-    · simp only [unfoldDefinition, Expr.getAppFn, targetFound] at unfolded
+    · subst name levels
+      simp only [unfoldDefinition, Expr.getAppFn, targetFound] at unfolded
       cases unfolded
 
 /-- The actual reference prefix and native stage produce the polymorphic origin invariant
