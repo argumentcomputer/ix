@@ -98,7 +98,8 @@ theorem normPosDom_semantics {V : Type u} [SetTheory V] {md : Mode} {env : Env m
               ih recursive openFrame openContext bodyRead bodyGraded
             obtain ⟨_, outputBounded, outputLeaves, _⟩ :=
               normPosDom_sound model.base2.wf recursive openFrame.1 openFrame.2.1
-            have scopes : Expr.WScoped depth dom ∧ Expr.WScoped depth body := wFrame.1
+            have scopes : Expr.WScoped depth dom ∧ Expr.WScoped depth body := by
+              simpa only [Expr.WScoped] using wFrame.1
             have roundTrip := reclose_from_leaves scopes.1 scopes.2 outputBounded outputLeaves
             refine ⟨.pi 0 (pwBit φ bm.pw) domainReading bodyOutput, ?_,
               graded_pi_replace_body wGraded outputGraded outputEqual, ?_⟩
@@ -161,7 +162,8 @@ theorem normFieldDoms_semantics {V : Type u} [SetTheory V] {md : Mode} {env : En
         ih recursive openFrame openContext bodyRead bodyGraded
       obtain ⟨_, _, outputBounded, outputLeaves, _⟩ :=
         normFieldDoms_reclose model.base2.wf recursive openFrame.1 openFrame.2.1
-      have scopes : Expr.WScoped depth dom ∧ Expr.WScoped depth body := frame.1
+      have scopes : Expr.WScoped depth dom ∧ Expr.WScoped depth body := by
+        simpa only [Expr.WScoped] using frame.1
       have roundTrip := reclose_from_leaves scopes.1 scopes.2 outputBounded outputLeaves
       have sameOpenerRead : denoteMeta model.base2.acval env φ (depth + 1)
           (((closeTelescope tailBinders (depth + 1) tailResidual).abstract1 depth).instantiate1
