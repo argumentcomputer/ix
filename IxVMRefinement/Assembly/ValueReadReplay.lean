@@ -28,6 +28,12 @@ theorem ValueDeclAgree.names {md : Mode} {old new : CDecl md}
     (h : ValueDeclAgree old new) : new.names = old.names := by
   cases h <;> rfl
 
+private def valueDecl {md : Mode} (cv : CVal md) (value : CExpr md)
+    (hint : Option ReducibilityHint) (heights : CName md → Nat) : Ix.DefKind → CDecl md
+  | .defn => .defnDecl cv value (hint.getD (Frontend.InModel.hintFor heights value))
+  | .thm => .thmDecl cv value
+  | .opaq => .opaqueDecl cv value
+
 /-- Empty projection levels replay the raw value at any actual target heights and hint. -/
 theorem lowerDefinition_replay_values {md : Mode}
     {oldHint newHint : Option ReducibilityHint} {source target : State md}
@@ -44,10 +50,8 @@ theorem lowerDefinition_replay_values {md : Mode}
     simp only [safe, pure, Except.pure] at read
     have declared := congrArg Prod.fst (Except.ok.inj read)
     have flag := congrArg Prod.snd (Except.ok.inj read)
-    let result : CDecl md := match kind with
-      | .defn => .defnDecl cv value (newHint.getD (Frontend.InModel.hintFor newHeights value))
-      | .thm => .thmDecl cv value
-      | .opaq => .opaqueDecl cv value
+    dsimp only at declared flag
+    let result := valueDecl cv value newHint newHeights kind
     have output : lowerDefinition newHint target newHeights cv value kind safety = .ok (result, false) := by
       unfold lowerDefinition
       rw [projRewrite_eq_none empty cv value]
@@ -56,7 +60,7 @@ theorem lowerDefinition_replay_values {md : Mode}
     refine ⟨result, output, ?_⟩
     rw [← declared]
     clear read declared
-    cases kind <;> cases rewritten : projRewrite source cv value <;> simp_all [result]
+    cases kind <;> cases rewritten : projRewrite source cv value <;> simp_all [result, valueDecl]
     all_goals constructor
 
 /-- The new definition read preserves the actual parsed header/value and exposes only a

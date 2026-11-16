@@ -42,7 +42,7 @@ theorem constant_type_cannot_peel_to_forall
       (.construct "KernelTypes::KExprNode" "Forall" [domain, body, mark])) : False := by
   obtain ⟨_, _, _, initial⟩ := peel_to_forall_requires_forall observed loaded
   rw [constant] at initial
-  cases initial
+  simp at initial
 
 /-- Successful family discovery exposes the actual recursor load and a literal initial
 forall in its declared type. The selected load's child calls are part of the observation. -/
@@ -55,6 +55,7 @@ theorem rec_family_block_type_forall {address result : SourceValue F} {heap fina
         (.construct "KernelTypes::KConstantInfo" "Rec" (levels :: type :: parameters :: rest)) ∧
       loadValue loadedHeap type = .ok
         (.construct "KernelTypes::KExprNode" "Forall" [domain, body, mark]) ∧
+      (⟨"Ingress::get_ci", [address], heap⟩ : Call F) ∈ calls ∧
       (∀ call ∈ loadCalls, call ∈ calls) := by
   match Obs.«KernelModeled::rec_family_block».obs observed with
   | .run (m2 := loadedHeap) (p10 := pointer) (cs16 := loadCalls)
@@ -66,9 +67,10 @@ theorem rec_family_block_type_forall {address result : SourceValue F} {heap fina
     obtain ⟨domain, body, mark, initial⟩ := peel_to_forall_requires_forall peel head
     refine ⟨loadedHeap, pointer, loadCalls, levels, type, parameters,
       [indices, motives, minors, rules, kFlag, unsafeFlag, block, position],
-      domain, body, mark, load, recursor, initial, ?_⟩
-    intro call member
-    rw [children]
-    simp [member]
+      domain, body, mark, load, recursor, initial, ?_, ?_⟩
+    · rw [children]; simp
+    · intro call member
+      rw [children]
+      simp [member]
 
 end IxVM.Refinement.Assembly
