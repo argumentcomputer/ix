@@ -92,8 +92,9 @@ theorem RepBinderTreeData.mono {h h' : Heap F} {tree : BinderTreeData} {ptr : So
     RepBinderTreeData h' tree ptr := by
   induction rep with
   | empty cell => exact .empty (extended.getElem?_eq cell)
-  | leaf cell values => exact .leaf (extended.getElem?_eq cell)
-      (repList_heapMono₂ _ repBinderNode_heapMono₂ extended values)
+  | leaf cell values =>
+      exact .leaf (extended.getElem?_eq cell)
+        (repList_heapMono₂ _ repBinderNode_heapMono₂ extended values)
   | node cell _ _ left right => exact .node (extended.getElem?_eq cell) left right
 
 /-- A successful lookup returns the exact node list specified by the represented tree. -/
