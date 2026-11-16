@@ -143,16 +143,16 @@ universe u
 /-- The original parameter prefix lifts the semantics of its actual field normalization.
 The statement retains the pre-reannotation telescope and its original binder metadata. -/
 theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mode}
-    {env : Env md} (model : EnvModelM V .verified env) {fuel fieldCount : Nat} {T : Key md} :
-    ∀ {count depth : Nat} {e openedBody closedBody residual : Expr md}
-      {parameterVars : List (Expr md)} {parameters fields : List (Expr md × BinderMeta)},
-      e.stripPis count = some (parameters, closedBody) →
-      openPisAtFvars count e depth = some (parameterVars, openedBody) →
-      normFieldDoms (fueledOps .verified fuel) env T (depth + count) fieldCount openedBody =
-        .ok (fields, residual) →
-      Frame depth e → ∀ {φ : LevelParam → Nat} {context : List AnnotTerm} {reading : AnnotTerm},
-      CtxOk model.base2 φ depth context e →
-      denoteMeta model.base2.acval env φ depth e = some reading → Graded V context reading →
+    {env : Env md} (model : EnvModelM V .verified env) {fuel fieldCount : Nat} 
+    {T : Key md} {count depth : Nat} {e openedBody closedBody residual : Expr md}
+    {parameterVars : List (Expr md)} {parameters fields : List (Expr md × BinderMeta)}
+    (stripped : e.stripPis count = some (parameters, closedBody))
+    (opened : openPisAtFvars count e depth = some (parameterVars, openedBody))
+    (fieldRun : normFieldDoms (fueledOps .verified fuel) env T (depth + count) fieldCount openedBody =
+      .ok (fields, residual))
+    (frame : Frame depth e) {φ : LevelParam → Nat} {context : List AnnotTerm} {reading : AnnotTerm}
+    (aligned : CtxOk model.base2 φ depth context e)
+    (read : denoteMeta model.base2.acval env φ depth e = some reading) (graded : Graded V context reading) :
       let rebuilt := closeTelescope
         (List.zipWith (fun (x : Expr md) (b : Expr md × BinderMeta) => (x.fvarTypeD, b.2))
           parameterVars parameters ++ fields) depth residual
@@ -160,9 +160,7 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
         (∀ leaf ∈ rebuilt.fvarLeaves, leaf ∈ e.fvarLeaves) ∧
         ∃ output, denoteMeta model.base2.acval env φ depth rebuilt = some output ∧
           Graded V context output ∧
-          ∀ ρ : Nat → V, Sat V context ρ → interp V ρ reading = interp V ρ output
-  | count, depth, e, openedBody, closedBody, residual, parameterVars, parameters, fields,
-      stripped, opened, fieldRun, frame, φ, context, reading, aligned, read, graded => by
+          ∀ ρ : Nat → V, Sat V context ρ → interp V ρ reading = interp V ρ output := by
     have openedScope := (openPisAtFvars_WScoped count e depth opened frame.1).2
     have openedBounded := (openPisAtFvars_bounded count opened frame.2.1).1
     obtain ⟨_, fieldScope, fieldBounded, fieldLeaves, fieldEq⟩ :=
@@ -172,7 +170,7 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
     let pbs := List.zipWith (fun (x : Expr md) (b : Expr md × BinderMeta) => (x.fvarTypeD, b.2))
       parameterVars parameters
     have pbsCount : pbs.length = count := by
-      simp only [pbs, List.length_zipWith, openPisAtFvars_length _ opened,
+      simp only [pbs, List.length_zipWith, Ix.Kernel.Verify.openPisAtFvars_length _ opened,
         Expr.stripPis_length _ stripped, Nat.min_self]
     have reclosed : closeTelescope (pbs ++ fields) depth residual =
         closeTelescope pbs depth (closeTelescope fields (depth + count) residual) := by
@@ -184,8 +182,9 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
     | zero =>
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj stripped)
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj opened)
-      exact normFieldDoms_semantics model (by simpa only [Nat.add_zero] using fieldRun)
+      have semantic := normFieldDoms_semantics model (by simpa only [Nat.add_zero] using fieldRun)
         frame aligned read graded
+      simpa only [List.zipWith_nil_left, List.nil_append] using semantic
     | succ count =>
       cases e with
       | forallE dom body bm =>
@@ -230,7 +229,8 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
             (fun leaf present => leafCondition leaf (tailLeaves leaf present))
           have roundTrip := abstract1_instantiate1 _ 0 consistent tailBounded
           refine ⟨.pi 0 (pwBit φ bm.pw) domainReading output, ?_, ?_, ?_⟩
-          · simp only [List.zipWith_cons_cons, List.cons_append, closeTelescope, Expr.fvarTypeD]
+          · simp only [List.zipWith_cons_cons, List.cons_append, closeTelescope,
+              show (Expr.fvar depth dom).fvarTypeD = dom from rfl]
             rw [denoteMeta_forallE, domainRead, roundTrip, outputRead]
             rfl
           · intro ρ satisfied
