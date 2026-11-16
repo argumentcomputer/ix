@@ -90,4 +90,38 @@ theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Ke
   have member := admitted_native_member_check witness env lim source shape memberAt walked good
   exact native_former_input_of_member source shape memberAt member good coverage caps read keyed selfKeyed blobReads
 
+/-- A retained canonical source at a walked owner is the same literal record as in the trace. -/
+theorem admitted_walked_source_record {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {trace : Ixon.Env} {calls : List (Call F)} {bindingAddr : _root_.Address}
+    (env : Ix.Kernel.Env .anon) (lim : Option Nat) {address : _root_.Address}
+    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E address)
+    (walked : WkAll calls bindingAddr witness.table trace address) :
+    Ix.Cert.recordAt trace address = some source.value := by
+  obtain ⟨value, stored, _⟩ := (wkAll_closedSubwalk calls bindingAddr witness.table trace).checked address walked
+  have retained := admittedCore_trace_recordAt witness stored
+  have same := Option.some.inj (retained.symm.trans source.recordAt)
+  rwa [same] at stored
+
+/-- Safety of a walked owner supplies the actual inductive safety bit used by the native
+constructor loop. No additional reader or source rejection is introduced. -/
+theorem admitted_native_ind_safe {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {trace : Ixon.Env} {calls : List (Call F)} {bindingAddr : _root_.Address}
+    (env : Ix.Kernel.Env .anon) (lim : Option Nat)
+    {block : Bytes.Address} {members : Array Ixon.MutConst} {slot : Nat} {ind : Ixon.Inductive}
+    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
+    (safe : WkSafe calls bindingAddr witness.table trace (Core.ixAddr block)) :
+    ind.isUnsafe = false := by
+  have stored := admitted_walked_source_record witness env lim source safe.1
+  have inLogic : IxVM.Consistency.InLogic source.value := by
+    by_contra outside
+    exact safe.2 ⟨source.value, stored, .inl outside⟩
+  rw [IxVM.Consistency.InLogic, shape] at inLogic
+  have member : Ixon.MutConst.indc ind ∈ members.toList :=
+    List.mem_of_getElem? (by simpa only [Array.getElem?_toList] using memberAt)
+  exact (inLogic _ member).1
+
+
 end IxVM.Refinement.Assembly
