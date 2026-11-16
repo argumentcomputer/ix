@@ -22,8 +22,8 @@ theorem converted_sort_levels {V : Type u} [SetTheory V] {md : Mode} {env : Env 
     (φ : LevelParam → Nat) : left.eval φ = right.eval φ := by
   have leftFrame : Frame 0 (Expr.sort left : Expr md) := .of_not_hasFvar rfl rfl
   have rightFrame : Frame 0 (Expr.sort right : Expr md) := .of_not_hasFvar rfl rfl
-  have leftContext : CtxOk model.base2 φ 0 [] (.sort left) := CtxOk.nil rfl
-  have rightContext : CtxOk model.base2 φ 0 [] (.sort right) := CtxOk.nil rfl
+  have leftContext : CtxOk model.base2 φ 0 [] (.sort left) := CtxOk.nil (Expr.fvarLeaves_eq_nil_of_not_hasFvar rfl)
+  have rightContext : CtxOk model.base2 φ 0 [] (.sort right) := CtxOk.nil (Expr.fvarLeaves_eq_nil_of_not_hasFvar rfl)
   have equal := Ix.Kernel.Model.Rules.defeq_sound (φ := φ)
     (fun ψ => Ix.Kernel.Model.Rules.RulesInputs.ofSem model ψ) converted
     leftFrame rightFrame leftContext rightContext (denoteMeta_sort _ _ _) (denoteMeta_sort _ _ _)
