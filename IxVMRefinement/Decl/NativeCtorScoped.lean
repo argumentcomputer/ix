@@ -88,7 +88,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
     (hef₁ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerReads cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex) :
+    (hpeer₁ : OneTypePeerReads cR b₀ T lps.length nP nIdx ctors.length indIndex) :
     ∀ (m j : Nat) {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       m + j = ctors.length →
       (∀ x ∈ cs, x ∈ cs_root) →
@@ -350,7 +350,7 @@ theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
     (hef₁ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerReads cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex)
+    (hpeer₁ : OneTypePeerReads cR b₀ T lps.length nP nIdx ctors.length indIndex)
     {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (subset : ∀ call ∈ cs, call ∈ cs_root)
     (good : Good cR.toCtx cs) (rawCovered : RawRecordCoverage cR cs)

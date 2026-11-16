@@ -1628,7 +1628,7 @@ at `a` returns a pointer loading `.construct kciEnum "Induct" [...]`, the loaded
 is `.iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr b⟩` AND the derivation hashed and decoded its parent
 block `cb` at `Core.ixAddr b` with `cb.info = .muts xs` and `xs[(ZMod.val i).toUInt64.toNat]? =
 some (.indc ind)`. -/
-theorem inductRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
+theorem inductRecord_raw_tables_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {a : Bytes.Address}
     {nl ty np ni nc u blk idx : SourceValue F}
     (ev : ObsFn W "Ingress::get_ci" [addr] h ptr h' cs)
@@ -1652,8 +1652,8 @@ theorem inductRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
       ZMod.val i < 2 ^ 56 ∧
       cm.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr b⟩ ∧
       cb.info = .muts xs ∧
-      xs[ZMod.val i]? = some (.indc ind) := by
-  obtain ⟨_, rawBytes, cm, _, hhA, haA, hexA, hdeA, _, _, hres⟩ :=
+      xs[ZMod.val i]? = some (.indc ind) ∧ ConstantTablesValid cm := by
+  obtain ⟨_, rawBytes, cm, _, hhA, haA, hexA, hdeA, tables, _, hres⟩ :=
     get_ci_spec hbounded ha ev
   unfold GetCIRawResult at hres
   cases hinfo : cm.info with
@@ -1716,11 +1716,45 @@ theorem inductRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
     have hpow56 : (72057594037927936 : Nat) = 2 ^ 56 := by decide
     refine ⟨rawBytes, blkBytes, cm, cb, xs, ind, b, i,
       hhA, haA, hexA, hdeA, hhB, ?_, hexB, hdeB, hb_rep, hidx_eq.symm,
-      by rw [hval_i, ← hpow56]; exact hidx56, ?_, hcb, ?_⟩
+      by rw [hval_i, ← hpow56]; exact hidx56, ?_, hcb, ?_, tables⟩
     · rw [hb_eq]; exact haB
     · rw [← hp_eq]; exact hinfo
     · rw [hval_i]
       simpa only [Array.getElem?_toList] using hxs
+
+/-- Compatibility without the retained projection-table guard. -/
+theorem inductRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)} {a : Bytes.Address}
+    {nl ty np ni nc u blk idx : SourceValue F}
+    (ev : ObsFn W "Ingress::get_ci" [addr] h ptr h' cs)
+    (hbounded : IxVM.Consistency.Bounded cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a addr)
+    (hld_ind : loadValue h' ptr =
+      .ok (.construct Core.kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx])) :
+    ∃ (rawBytes blkBytes : ByteArray) (cm cb : Ixon.Constant)
+      (xs : Array Ixon.MutConst) (ind : Ixon.Inductive)
+      (b : Bytes.Address) (i : F),
+      Hashed cs rawBytes ∧
+      Address.blake3Pure rawBytes = Core.ixAddr a ∧
+      Ixon.deConstantExact rawBytes = .ok cm ∧
+      Ixon.deConstant rawBytes = .ok cm ∧
+      Hashed cs blkBytes ∧
+      Address.blake3Pure blkBytes = Core.ixAddr b ∧
+      Ixon.deConstantExact blkBytes = .ok cb ∧
+      Ixon.deConstant blkBytes = .ok cb ∧
+      Bytes.RepAddressRef Core.addrTy h' b blk ∧
+      idx = .field i ∧
+      ZMod.val i < 2 ^ 56 ∧
+      cm.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr b⟩ ∧
+      cb.info = .muts xs ∧
+      xs[ZMod.val i]? = some (.indc ind) := by
+  obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b, i, hashed, address, decoded, decoded',
+    blockHashed, blockAddress, blockDecoded, blockDecoded', parentRep, indexEq,
+    indexBound, projection, block, member, _⟩ :=
+    inductRecord_raw_tables_of_get_ci ev hbounded ha hld_ind
+  exact ⟨rawBytes, blkBytes, cm, cb, xs, ind, b, i, hashed, address, decoded, decoded',
+    blockHashed, blockAddress, blockDecoded, blockDecoded', parentRep, indexEq,
+    indexBound, projection, block, member⟩
 
 /-- Strengthened `LoadFacts.inductRecord` companion (`Core/Good.lean:134-140` + coordinator ruling):
 under `Good c cs`, `EnvDecoded c.E`, and presence of `ixAddr a` and parent block `ixAddr b` in

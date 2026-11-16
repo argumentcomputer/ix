@@ -831,15 +831,15 @@ structure OneTypePeerFacts (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
     cm.info = .iPrj ⟨idx, ixAddr b₀⟩ →
     c.κ (ixAddr a) = T
 
-/-- Raw peer correspondence only for a projection whose decoded parent actually contains
-the referenced inductive member. Successful metadata reads supply that member lookup. -/
-structure OneTypePeerReads (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
+/-- Raw peer correspondence only at successful observed metadata reads. The actual read
+provides its decoded parent member and the checked empty projection tables. -/
+structure OneTypePeerReads (c : ScopedCtx) (b₀ : Bytes.Address) (T : KKey)
     (nl nP nIdx nCtors : Nat) (indIndex : F := 0) : Prop where
   self_key : T = c.κ (iprjAddr (ixAddr b₀) (ZMod.val indIndex))
   self_ind : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
-    Good c cs →
+    Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h a addr →
     c.κ (ixAddr a) = T →
     ∃ (ty u blk : SourceValue F) (b' : Bytes.Address),
@@ -848,22 +848,32 @@ structure OneTypePeerReads (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
           u, blk, .field indIndex]) ∧
       Bytes.RepAddressRef addrTy h' b' blk ∧
       ixAddr b' = ixAddr b₀
-  peer_only_self : ∀ (a : Bytes.Address) (cm cb : Ixon.Constant)
-      (xs : Array Ixon.MutConst) (ind : Ixon.Inductive) (idx : F),
-    Ix.Cert.recordAt c.E (ixAddr a) = some cm →
-    cm.info = .iPrj ⟨(ZMod.val idx).toUInt64, ixAddr b₀⟩ →
-    Ix.Cert.recordAt c.E (ixAddr b₀) = some cb → cb.info = .muts xs →
-    xs[ZMod.val idx]? = some (.indc ind) → c.κ (ixAddr a) = T
+  peer_only_self : ∀ {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+      {a : Bytes.Address} {nl ty np ni nc u blk idx : SourceValue F} {b : Bytes.Address},
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+    c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs →
+    Bytes.RepAddressRef addrTy h a addr →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) →
+    Bytes.RepAddressRef addrTy h' b blk → ixAddr b = ixAddr b₀ → c.κ (ixAddr a) = T
 
 /-- The historical whole-record invariant implies the query-specific peer facts. -/
-theorem OneTypePeerFacts.toReads {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
+theorem OneTypePeerFacts.toReads {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {indIndex : F}
-    (facts : OneTypePeerFacts c b₀ T nl nP nIdx nCtors indIndex) :
+    (facts : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (records : RawRecordFacts c) :
     OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex where
   self_key := facts.self_key
   self_ind := facts.self_ind
-  peer_only_self := fun a cm _ _ _ idx record shape _ _ _ =>
-    facts.peer_only_self a cm (ZMod.val idx).toUInt64 record shape
+  peer_only_self := by
+    intro addr ptr h h' cs a nl ty np ni nc u blk idx b observed allowed good ha loaded hb parentEq
+    obtain ⟨cm, b', i, record, hb', rfl, shape⟩ :=
+      records.inductRecord addr ptr h h' cs a nl ty np ni nc u blk idx
+        observed allowed good ha loaded
+    have parentSame := congrArg ixAddr
+      (Bytes.repAddressRef_inj U32.Goldilocks.compatible hb' hb)
+    rw [parentSame, parentEq] at shape
+    exact facts.peer_only_self a cm (ZMod.val i).toUInt64 record shape
+
 
 theorem ixAddr_inj {a₁ a₂ : Bytes.Address} (h : ixAddr a₁ = ixAddr a₂) : a₁ = a₂ :=
   Vector.toArray_inj.mp (congrArg (fun x : _root_.Address => x.hash.data) h)
@@ -972,7 +982,7 @@ theorem addr_list_contains_singleton_spec {b₀ b' : Bytes.Address} {bas tgt r :
 
 theorem caddr_is_peer_singleton_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerReads c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -992,7 +1002,7 @@ theorem caddr_is_peer_singleton_observed_spec {c : ScopedCtx} {indIndex : F} {b�
     obtain ⟨_, hres⟩ := addr_list_contains_singleton_spec hbas' hb' ev_in
     rcases hres with ⟨hr1, heq⟩ | ⟨hr0, hne⟩
     · rw [heq] at hinfo hcb
-      exact Or.inl ⟨hr1, hpeer.peer_only_self a cm cb xs ind idx hcm hinfo hcb hxs hind⟩
+      exact Or.inl ⟨hr1, hpeer.peer_only_self ev_ci (hscope _ _ (by simp)) hg1 hca ld hb' heq⟩
     · refine Or.inr ⟨hr0, fun hT => ?_⟩
       obtain ⟨_, _, blk', b'', ld', hb'', hix⟩ := hpeer.self_ind ca p9 h m2 cs15 a ev_ci hg1 hca hT
       rw [ld] at ld'
@@ -1021,12 +1031,12 @@ theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ a 
     (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
     (ev : ObsFn W "KernelCheck::caddr_is_peer" [ca, bas] h r h' cs) :
     (r = .field 1 ∧ c.κ (ixAddr a) = T) ∨ (r = .field 0 ∧ c.κ (ixAddr a) ≠ T) := by
-  exact caddr_is_peer_singleton_observed_spec hpeer.toReads hlf hgood hscope hca hbas ev
+  exact caddr_is_peer_singleton_observed_spec (hpeer.toReads hlf) hlf hgood hscope hca hbas ev
 
 theorem expr_mentions_block_zero_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
     {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerReads c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1152,12 +1162,12 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ :
     (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
     (ev : ObsFn W "KernelCheck::expr_mentions_block" [pe, bas] h (.field 0) h' cs) :
     E.mentionsConst T = false := by
-  exact expr_mentions_block_zero_observed_spec hpeer.toReads hlf hgood hscope hE hnp hbas ev
+  exact expr_mentions_block_zero_observed_spec (hpeer.toReads hlf) hlf hgood hscope hE hnp hbas ev
 
 theorem list_any_mentions_block_zero_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      OneTypePeerReads c.toCtx b₀ T nl nP nIdx nCtors indIndex →
+      OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex →
       RawRecordFacts c →
       Good c.toCtx cs →
       RawRecordCoverage c cs →
@@ -1212,7 +1222,7 @@ theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b�
       ObsFn W "KernelCheck::list_any_mentions_block" [pes, bas] h (.field 0) h' cs →
       ∀ e ∈ Es, e.mentionsConst T = false := by
   intro Es pes bas h h' cs hpeer hlf good covered represented noProj blocks observed
-  exact list_any_mentions_block_zero_observed_spec hpeer.toReads hlf good covered
+  exact list_any_mentions_block_zero_observed_spec (hpeer.toReads hlf) hlf good covered
     represented noProj blocks observed
 
 theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKey}
@@ -1853,7 +1863,7 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
     (hlps_lt : lps.length < 4294967296)
     (hnPF_lt : nP + nF < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerReads c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1915,7 +1925,7 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
         rw [heq1] at hv_eq
         by_cases hb_eq : b' = b₀
         · subst hb_eq
-          exact hpeer.peer_only_self a_hd cm cb xs ind idx hcm hinfo hcb hxs hind
+          exact hpeer.peer_only_self ev_ci (hs_par _ _ (by simp)) hgp1 ha_hd ld_ind hb' rfl
         · simp [hb_eq] at hv_eq
     have ext_par := ev_par.heap_extends
     have hbnd_lvls : IxVM.Consistency.Bounded cs_lvls :=
@@ -2870,7 +2880,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b�
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
     (hdepth_lt : nP + o + k < 9223372036854775808)
-    (hpeer : OneTypePeerReads c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -2958,7 +2968,7 @@ private theorem check_positivity_aug_raw_go {c : ScopedCtx} {indIndex : F} {b₀
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerReads c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     {R E : KExpr} {k : Nat} {pdom bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ext₀ : Heap.Extends h₀ h)
@@ -3124,7 +3134,7 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerReads c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c) :
     ∀ (m o : Nat) {R E : KExpr} {rbs bs : List (KExpr × Ix.Kernel.BinderMeta)}
       {rbody body : KExpr} {pty bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -3281,7 +3291,7 @@ theorem check_positivity_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : By
     (hlps_lt : lps.length < 4294967296)
     (hnP_lt : nP < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerReads c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
