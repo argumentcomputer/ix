@@ -74,7 +74,8 @@ theorem NativeCtorOut.unused_recursive_last {env : Env .anon} {T : Core.KKey}
     {levels : List LevelParam} {parameters : Nat} {sortLevel : Core.KLevel}
     {former raw : Core.KExpr} {ctor annotated : KConstantVal × Nat} {sorts : List Core.KLevel}
     (checked : NativeCtorOut env T levels parameters 0 sortLevel former raw ctor annotated sorts)
-    (binders : List (Core.KExpr × BinderMeta))
+    {binders : List (Core.KExpr × BinderMeta)} {body : Core.KExpr}
+    (_telescope : annotated.1.type.stripPis (parameters + annotated.2) = some (binders, body))
     (earlier : ∀ index, index + 1 < annotated.2 →
       (binders.getD (parameters + index) default).1.mentionsConst T = false) :
     ∀ index < annotated.2,
