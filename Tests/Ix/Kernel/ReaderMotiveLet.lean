@@ -72,7 +72,7 @@ def correctLevels (wrapped shared : Bool) : Except String Bool := do
   let records ← input wrapped shared false false true
   let cx := contextOf table records [] (pre.records ++ pre.evidence) pre.blobs (fun _ => none)
     (Admission.projectionAddress _root_.Address.blake3Pure)
-  let (owner, _) := records.back!
+  let some (owner, _) := records[records.size - 1]? | pure false
   let some entry := cx.index.recs[ConstRef.member owner 0]? | pure false
   unless entry.large do return false
   let .ok (_, declarations) := readRecords cx pre.state records | pure false
