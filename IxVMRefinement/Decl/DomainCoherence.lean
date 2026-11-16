@@ -44,8 +44,8 @@ theorem DomainSortLaw.checked_pair {env : Env .anon} {P : Expr .anon → Prop} {
 
 /-- A sufficient syntax-only specialization. The actual evaluator is used for computational
 closure; reannotation may change all metadata and earlier free-variable type annotations. -/
-structure SyntacticDomainInvariant (env : Env .anon) (P : Expr .anon → Prop) (datum : PropWhen)
-    extends DomainSortLaw env P datum : Prop where
+structure SyntacticDomainInvariant (env : Env .anon) (P : Expr .anon → Prop) (datum : PropWhen) : Prop
+    extends DomainSortLaw env P datum where
   abstracts : ∀ e index cut, P e → P (e.abstract1 index cut)
   instantiates : ∀ e value cut, P e → P (e.instantiate1 value cut)
   annotates : ∀ {e out}, P e → IxVM.Consistency.Annotates out e → P out
