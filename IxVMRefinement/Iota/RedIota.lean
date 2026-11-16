@@ -401,7 +401,7 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     obtain ⟨rfl, rfl⟩ := tuple2_inj he1
     obtain ⟨ca, usj, rfl, hca, husj⟩ := hH.const_of_load ld51
     obtain ⟨cci, hcfind, cv0, hcld, hcci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev86 x_caddr
-      ca rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hca
+      ca rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun z hz => by simp [hz]) hca
     rw [ld80] at hcld
     injection hcld with hcv
     subst hcv
@@ -411,7 +411,7 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     obtain ⟨hcnl, hcnlb, -, hcty⟩ := hvalj
     subst hcnl
     -- the guard: the constructor's inductive projection is the major premise's head
-    obtain ⟨a', ha', -, hrec⟩ := ih.get (.defEq .compute_iprj_addr) (by lt_calls) ev180 x_cblock
+    obtain ⟨a', ha', haeq, hrec⟩ := ih.get (.defEq .compute_iprj_addr) (by lt_calls) ev180 x_cblock
       (.field i) rfl (good.sub fun z hz => by simp [hz]) b i hb rfl
     obtain ⟨hae, -⟩ := Lib.address_eq_spec ev166 ha'
       (Bytes.repAddressRef_heapMono₂ addrTy (X70.trans e180) hp)
@@ -435,14 +435,19 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
       rw [hj, Nat.zero_add, NatAux.val_natCast (n := idx) (by omega)]
     -- the rule is the major's constructor's
     obtain ⟨us0, hmh0⟩ := hmh
+    have hlink := hname.symm.trans (find_name hcfind)
+    have hresc : c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)) ≠ unresolvedKey := by
+      rw [hlink]; exact hc.res_of_find hcfind
+    have hresp : c.κ (ixAddr a') ≠ unresolvedKey := by
+      rw [haeq]; exact hc.loads.ctorIndRes _ _ _ hresc
+    rw [c.key_eq hresp] at hmh0
     obtain ⟨cm, hcm⟩ := hc.env.recMajorRecord k cv mI rP rls (ixAddr a') us0 hfind
       (List.ne_nil_of_mem hrl) hmh0
     obtain ⟨hnd, hfire, hkeys⟩ := hc.env.recRules k cv mI rP rls hfind
     have hctor := hkeys (ixAddr a') cm _ us0 hmh0 hcm (hrec cm hcm) idx rl hrlidx
     simp only [val_toUInt64_toNat] at hctor
-    have hctor' : rl.ctor = c.κ (ixAddr ca) := by
-      have hlink := hname.symm.trans (find_name hcfind)
-      exact hctor.trans (by simpa only [← hvj, ScopedCtx.κ, Ctx.κ] using hlink)
+    have hctor' : rl.ctor = c.κ (ixAddr ca) :=
+      hctor.trans (by rw [← hvj]; exact (c.key_eq hresc).symm.trans hlink)
     rw [← hctor'] at hcfind hred hM
     -- the shape checks: the major's arity and the constructor's level count
     have hMA2 : c.tml d Γ m212 MA x_margs := tml_mono (e86.trans Z212) hMA

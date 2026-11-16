@@ -62,6 +62,10 @@ def keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) : KKey :=
   | some (r, _) => .role r
   | none => .id a
 
+/-- Every key of a role table's keying resolves: it is a role key or an input key. -/
+instance (t : Ix.Kernel.RoleTable) (a : _root_.Address) : Resolved (keyOf t a) :=
+  ⟨by unfold keyOf; split <;> exact nofun⟩
+
 /-! ## The context -/
 
 /-- **The context of a run of the core**: the records the environment was read from, the
@@ -74,10 +78,17 @@ structure Ctx where
   t : Ix.Kernel.RoleTable
   lim : Option Nat := none
 
-/-- A core run selects the exact function, arguments, and input heap of its allowed calls.
+/-- A core run selects the exact function, arguments, and input heap of its allowed calls, and
+keys the terms it handles by `key`: the table's keying on the addresses the context knows
+resolve, `unresolvedKey` on every other (`key_spec`). By default every address resolves and
+`key` is the table's keying. A term is represented under `key` only when the keys of all its
+constant and projection nodes resolve (`Tm.const`, `Tm.proj`), so the installed-lookup claims of
+the loads can be conditional on resolution and still be read at every load the core makes.
 The underlying context remains available to raw declaration and record traversal. -/
 structure ScopedCtx extends Ctx where
   allowed : Call F → Prop
+  key : _root_.Address → KKey := keyOf t
+  key_spec : ∀ a, key a = keyOf t a ∨ key a = unresolvedKey := by intro a; exact Or.inl rfl
 
 /-- Explicit compatibility with the historical unrestricted context. Actual declaration
 origins supply their own selected-call predicate. -/
@@ -93,7 +104,92 @@ abbrev ScopedCtx.allowedTop (c : ScopedCtx) (fname : String)
 /-- The keying of addresses: the table's. -/
 abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
 
-abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := keyOf c.t
+/-- The keying of the terms a scoped run handles (`ScopedCtx.key`). -/
+abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := c.key
+
+/-- A resolved key of a scoped context is the table's. -/
+theorem ScopedCtx.key_eq (c : ScopedCtx) {a : _root_.Address} (h : c.κ a ≠ unresolvedKey) :
+    c.κ a = keyOf c.t a :=
+  (c.key_spec a).resolve_right h
+
+/-- A resolved address, as the instance the term seam reads. -/
+theorem ScopedCtx.resolved (c : ScopedCtx) {a : _root_.Address} (h : c.κ a ≠ unresolvedKey) :
+    Resolved (c.κ a) := ⟨h⟩
+
+/-- **The context keys every address by the table**: no address is unresolved. The contexts of
+the native fragments are of this kind; their loads are constrained by scope membership. -/
+class ScopedCtx.TableKeyed (c : ScopedCtx) : Prop where
+  key_eq : c.key = keyOf c.t
+
+instance (c : Ctx) (allowed : Call F → Prop) :
+    ScopedCtx.TableKeyed { toCtx := c, allowed := allowed } := ⟨rfl⟩
+
+instance (c : Ctx) : (ScopedCtx.unrestricted c).TableKeyed := ⟨rfl⟩
+
+/-- The keying of a table-keyed context is the table's. -/
+theorem ScopedCtx.κ_eq (c : ScopedCtx) [h : c.TableKeyed] : c.κ = keyOf c.t := h.key_eq
+
+/-- A table-keyed context with another scope is the plain context of its base and that scope. -/
+theorem ScopedCtx.withAllowed_eq (c : ScopedCtx) [h : c.TableKeyed] (allowed : Call F → Prop) :
+    ({ c with allowed := allowed } : ScopedCtx) = { toCtx := c.toCtx, allowed := allowed } := by
+  obtain ⟨c₀, al, key, ks⟩ := c
+  have hk : key = keyOf c₀.t := h.key_eq
+  subst hk
+  rfl
+
+/-- Narrowing the scope of a table-keyed context keeps its keying. -/
+theorem ScopedCtx.TableKeyed.withAllowed {c : ScopedCtx} (h : c.TableKeyed)
+    (allowed : Call F → Prop) : ScopedCtx.TableKeyed { c with allowed := allowed } :=
+  ⟨h.key_eq⟩
+
+open Classical in
+/-- **The keying that knows the addresses `res` resolve**: the table's on them, `unresolvedKey`
+elsewhere. -/
+noncomputable def resKey (t : Ix.Kernel.RoleTable) (res : _root_.Address → Prop)
+    (a : _root_.Address) : KKey :=
+  if res a then keyOf t a else unresolvedKey
+
+theorem resKey_of_res {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : res a) : resKey t res a = keyOf t a := by
+  simp [resKey, h]
+
+theorem resKey_of_not_res {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : ¬ res a) : resKey t res a = unresolvedKey := by
+  simp [resKey, h]
+
+theorem res_of_resKey_ne {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : resKey t res a ≠ unresolvedKey) : res a := by
+  by_contra hn
+  exact h (resKey_of_not_res hn)
+
+theorem resKey_spec (t : Ix.Kernel.RoleTable) (res : _root_.Address → Prop)
+    (a : _root_.Address) : resKey t res a = keyOf t a ∨ resKey t res a = unresolvedKey := by
+  by_cases h : res a
+  · exact .inl (resKey_of_res h)
+  · exact .inr (resKey_of_not_res h)
+
+/-- **The context of a prefix**: the addresses that resolve are those whose key the environment
+stores, and no call is excluded. A term is represented under it only when every constant it
+names is stored. -/
+noncomputable def Ctx.stored (c : Ctx) : ScopedCtx :=
+  { toCtx := c, allowed := fun _ => True,
+    key := resKey c.t (fun a => ∃ ci, c.env.find? (keyOf c.t a) = some ci),
+    key_spec := resKey_spec _ _ }
+
+theorem Ctx.stored_toCtx (c : Ctx) : c.stored.toCtx = c := rfl
+
+theorem Ctx.stored_κ (c : Ctx) :
+    c.stored.κ = resKey c.t (fun a => ∃ ci, c.env.find? (keyOf c.t a) = some ci) := rfl
+
+theorem Ctx.stored_key_ne {c : Ctx} {a : _root_.Address}
+    (h : c.stored.κ a ≠ unresolvedKey) : ∃ ci, c.env.find? (keyOf c.t a) = some ci := by
+  rw [Ctx.stored_κ] at h
+  exact res_of_resKey_ne h
+
+theorem Ctx.stored_key_of_find {c : Ctx} {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (keyOf c.t a) = some ci) : c.stored.κ a = keyOf c.t a := by
+  rw [Ctx.stored_κ]
+  exact resKey_of_res ⟨ci, h⟩
 
 /-! ## The role context -/
 

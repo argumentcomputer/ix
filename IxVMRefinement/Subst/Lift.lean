@@ -161,6 +161,7 @@ theorem g_expr_lift_walk (κ : _root_.Address → KKey) {args : List (SourceValu
     subst hc hr hm
     intro s₁ s₂ hsum d Γ E hE
     obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
+    have : Resolved _ := ⟨hE.proj_key_ne⟩
     exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
       (ih.get .expr_lift lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) hs s₁ s₂ hsum d Γ Es hes)
 
@@ -318,6 +319,7 @@ theorem g_expr_lower_walk (κ : _root_.Address → KKey) {args : List (SourceVal
     subst hc hr hm
     intro s₁ s₂ hsum hs₁ d Γ E hs₂ hE hn
     obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
+    have : Resolved _ := ⟨hE.proj_key_ne⟩
     exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
       (ih.get .expr_lower lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) s₁ s₂ hsum hs₁
         d Γ Es hs₂ hes (idxAll_proj_inv hn ld))

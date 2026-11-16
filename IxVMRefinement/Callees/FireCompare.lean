@@ -64,7 +64,7 @@ theorem last_binder_dom_spec (c : ScopedCtx) :
       obtain ⟨T0, B0, ℓ, rfl, hT0, -, -⟩ := hE.forallE_of_load ld12
       exact ⟨rfl, 0, T0, rfl, by simpa using hT0⟩
 
-theorem rec_family_block_spec (c : ScopedCtx) {x_rec_addr r : SourceValue F} {h h' : Heap F}
+theorem rec_family_block_spec (c : ScopedCtx) (hc : ScopedCoreFacts c) {x_rec_addr r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {a : Bytes.Address} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
     (ev : ObsFn W "KernelModeled::rec_family_block" [x_rec_addr] h r h' calls)
@@ -83,7 +83,7 @@ theorem rec_family_block_spec (c : ScopedCtx) {x_rec_addr r : SourceValue F} {h 
   subst he331 he332
   have hgood1 : CoreGood c cs16 := good.sub (by rw [hc333]; intro z hz; simp [hz])
   obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev18 x_rec_addr a rfl (good.allowedTop (by simp_all)) hgood1 ha
+    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev18 x_rec_addr a rfl (good.allowedTop (by simp_all)) (by resolve_key) hgood1 ha
   rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
   rw [ld12] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
   obtain ⟨p, _, _, _, hv, rfl, -, -, -, -, -, -, -⟩ := FireAux.ciRep_rec_inv hci
@@ -115,7 +115,7 @@ theorem rec_family_block_spec (c : ScopedCtx) {x_rec_addr r : SourceValue F} {h 
   obtain ⟨us, hfn_dom, -⟩ := FireAux.const_of_posOf hfnPos
   have hgood3 : CoreGood c cs266 := good.sub (by rw [hc333]; intro z hz; simp [hz])
   obtain ⟨ci_ind, hfind_ind, v_ind, hld_ind, hci_ind⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev268 x_t0 a_t0 rfl (good.allowedTop (by simp_all))
+    ih.get (.callees .get_ci) (by rw [hc333]; callees_lt) ev268 x_t0 a_t0 rfl (good.allowedTop (by simp_all)) (by resolve_key)
       hgood3 ha_t0
   rw [ld262] at hld_ind; injection hld_ind with hv_ind; subst hv_ind
   obtain ⟨cvI, capsI, -, -, -, b, i_idx, rfl, -, -, -, -, -, -, hb, rfl, hname⟩ :=
@@ -357,7 +357,7 @@ theorem rec_major_pins_spec (c : ScopedCtx) {ps : List Ix.Kernel.LevelParam}
   subst hargsPos_eq
   have hgood2 : CoreGood c cs155 := good.sub (by rw [hc424]; intro z hz; simp [hz])
   obtain ⟨ci_i, _, v_i, hld_i, hci_i⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc424]; callees_lt) ev157 x_iaddr a_i rfl (good.allowedTop (by simp_all))
+    ih.get (.callees .get_ci) (by rw [hc424]; callees_lt) ev157 x_iaddr a_i rfl (good.allowedTop (by simp_all)) (by resolve_key)
       hgood2 ha_i
   rw [ld151] at hld_i; injection hld_i with hv_i; subst hv_i
   obtain ⟨_, _, nP, nI, _, _, _, rfl, rfl, hni_eq, -, hnP_lt, hnI_lt, -, -, -, -⟩ :=
@@ -434,7 +434,7 @@ theorem rec_major_pins_spec (c : ScopedCtx) {ps : List Ix.Kernel.LevelParam}
   exact ⟨x_iaddr, x_ilvls, v358, lvls, pins, rfl,
     by rw [hpins_len]; exact hnP_lt, hnested, hlsPos.mono ext_all, hpins_375⟩
 
-theorem rec_comparands_spec (c : ScopedCtx) {x_raddr r : SourceValue F} {h h' : Heap F}
+theorem rec_comparands_spec (c : ScopedCtx) (hc : ScopedCoreFacts c) {x_raddr r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {a : Bytes.Address} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
     (ev : ObsFn W "KernelModeled::rec_comparands" [x_raddr] h r h' calls)
@@ -457,7 +457,7 @@ theorem rec_comparands_spec (c : ScopedCtx) {x_raddr r : SourceValue F} {h h' : 
   subst he174 he221
   have hgood1 : CoreGood c cs16 := good.sub (by rw [hc222]; intro z hz; simp [hz])
   obtain ⟨ci', hfind', v_ci, hld_ci, hci⟩ :=
-    ih.get (.callees .get_ci) (by rw [hc222]; callees_lt) ev18 x_raddr a rfl (good.allowedTop (by simp_all)) hgood1 ha
+    ih.get (.callees .get_ci) (by rw [hc222]; callees_lt) ev18 x_raddr a rfl (good.allowedTop (by simp_all)) (by resolve_key) hgood1 ha
   rw [hfind] at hfind'; injection hfind' with hci_eq; subst hci_eq
   rw [ld12] at hld_ci; injection hld_ci with hv_ci; subst hv_ci
   obtain ⟨p, i_f, m_f, mi_f, hv, rfl, rfl, rfl, rfl, hrP_F, hmI_F, hle, hmI_lt⟩ :=
@@ -615,7 +615,7 @@ end FireCompareAux
 
 /-- `KernelModeled::fire_compare`: modeled recursor firing comparison (`FamilyFew` when
 `block_is_modeled = 0`, or `FireCompared` against `Tier.nestedPins`). -/
-theorem fire_compare_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem fire_compare_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::fire_compare" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.fire_compare c args h r h' calls := by
@@ -640,7 +640,7 @@ theorem fire_compare_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : 
     subst ap
     have hgood1 : CoreGood c cs56 := good.sub (by rw [hc73]; intro z hz; simp [hz])
     obtain ⟨b, np, k, mdom, dom, i, us_dom, hb, hpi1, hpi2, hfn_dom⟩ :=
-      FireCompareAux.rec_family_block_spec c ev58 hgood1
+      FireCompareAux.rec_family_block_spec c hc ev58 hgood1
         (ih.mono (by rw [hc73]; callees_lt)) ha hfind
     have hgood2 : CoreGood c cs43 := good.sub (by rw [hc73]; intro z hz; simp [hz])
     have hbim := ih.get (.callees .block_is_modeled) (by rw [hc73]; callees_lt) ev45
@@ -661,7 +661,7 @@ theorem fire_compare_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : 
     have hgood_rc : CoreGood c cs89 := good.sub (by rw [hc414]; intro z hz; simp [hz])
     obtain ⟨x_iaddr', x_ilvls', x_pins', lvls, pins, htuple_rc, hperm, hplen, hrP_lt,
         hnested, hilvls_79, hpins_79⟩ :=
-      FireCompareAux.rec_comparands_spec c ev91 hgood_rc
+      FireCompareAux.rec_comparands_spec c hc ev91 hgood_rc
         (ih.mono (by rw [hc414]; callees_lt))
         (Bytes.repAddressRef_heapMono₂ addrTy ext_32 ha) hfind
     injection htuple_rc with h1

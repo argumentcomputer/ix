@@ -109,6 +109,17 @@ theorem natPrimOp_role {r r' : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimO
   rw [h'] at this
   exact (Option.some.inj this).symm
 
+/-- A `Nat` operation is no inert axiom. -/
+theorem natPrimOp_not_inert {r : Ix.Kernel.Role} {o : Nat}
+    (h : Specs.Nat.natPrimOp r = some o) : r.inert = false := by
+  cases r <;> first | rfl | (simp [Specs.Nat.natPrimOp] at h)
+
+/-- The address of a `Nat` operation in force resolves. -/
+theorem natOpAt_res {c : ScopedCtx} (hc : ScopedCoreFacts c) {a : Bytes.Address} {o : Nat}
+    (h : Specs.Nat.NatOpAt c a o) : c.κ (ixAddr a) ≠ unresolvedKey := by
+  obtain ⟨r, hr, hb, hf⟩ := h
+  exact hc.res_of_role hb hf (natPrimOp_not_inert hr)
+
 /-- **A binary `Nat` operation** (a code from `3` on) is one of the fourteen the kernel
 accelerates. -/
 theorem natBinOp_mem {ro : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimOp ro = some o)
@@ -209,7 +220,8 @@ theorem kl_length {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExp
 
 /-- **A `Const` node over a fresh empty level list**, at a represented address. -/
 theorem tm_const_nil {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
-    {a : Bytes.Address} {ap : SourceValue F} (ra : RepAddr h a ap) :
+    {a : Bytes.Address} {ap : SourceValue F} (ra : RepAddr h a ap)
+    (hres : κ (ixAddr a) ≠ unresolvedKey) :
     Tm κ d Γ ((h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) ++
         [.construct "KernelTypes::KExprNode" "Const"
           [ap, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») h.length]]) 0
@@ -217,6 +229,7 @@ theorem tm_const_nil {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExp
       (.ptr (.enum "KernelTypes::KExprNode")
         (h ++ [(.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [] :
           SourceValue F)]).length) := by
+  have : Resolved (κ (ixAddr a)) := ⟨hres⟩
   have e : Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» =
       IxVM.Refinement.KernelLevels.klevelListEnum := klevelListEnum_eq
   have ext2 := ext_snoc (Heap.Extends.snoc h
@@ -500,7 +513,7 @@ theorem try_extract_nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
       rw [ite_eq_right hne] at hy
       exact right_ne_zero_of_mul_eq_one huw (field_inj hy)
     obtain ⟨haddr, hforce⟩ := hrole (fun e0 => left_ne_zero_of_mul_eq_one huw (field_inj e0))
-    have hk : c.κ (ixAddr ad) = .role .natZero := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr ad) = .role .natZero := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hr'] at hr
     obtain rfl := tag_snd hr
     subst m195
@@ -547,7 +560,7 @@ theorem try_extract_nat_app_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args 
       rw [ite_eq_right hne] at hy
       exact right_ne_zero_of_mul_eq_one huw (field_inj hy)
     obtain ⟨haddr, hforce⟩ := hrole (fun e0 => left_ne_zero_of_mul_eq_one huw (field_inj e0))
-    have hk : c.κ (ixAddr ad) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr ad) = .role .natSucc := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     obtain ⟨n, hn, hred⟩ := ih.get (.nat .try_extract_nat) (by nat_lt_calls) ev114 rc a rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ A (Tm.mono e1 hA) x_pred rfl
     have hs := (ih.get (.nat .klimbs_succ) (by nat_lt_calls) ev171 x_pred rfl
@@ -870,7 +883,7 @@ theorem try_match_nat_add_strong (c : ScopedCtx) (hc : ScopedCoreFacts c) {args 
     subst m64
     obtain ⟨haddr, hforce⟩ := ih.get (.roles .role_is) (by nat_lt_calls) ev45 rc x_caddr ad .natAdd
       rfl (good.sub fun x hx => by simp [hx]) hrc rad hne
-    have hk : c.κ (ixAddr ad) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr ad) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     have e1 := ObsFn.heap_extends ev45
     have hAs1 : c.tml d Γ m32 As sp := TmL.mono e1 hAs
     obtain ⟨rfl, hm2⟩ := kl_length ev139 hAs1
@@ -960,9 +973,9 @@ theorem mk_nat_offset_stuck_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args 
       rw [ite_eq_left h0] at hz
       exact hne hz
     obtain ⟨rfl, hm1⟩ := ih.get (.roles .role_nat_add) (by nat_lt_calls) ev122 rfl
-    obtain ⟨ad, rad, haddr, -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev101 rc .natAdd rfl
+    obtain ⟨ad, rad, haddr, hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev101 rc .natAdd rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono (e15.trans e122) hrc)
-    have hk : c.κ (ixAddr ad) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr ad) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     have eB : Heap.Extends h m74 := (((e15.trans e122).trans e101).trans x132).trans x84
     have hlit := ih.get (.nat .mk_nat_lit) (by nat_lt_calls) ev193 np rfl
       (good.sub fun x hx => by simp [hx]) n (repLimbsC_mono (eB.trans x162) hn)
@@ -970,7 +983,7 @@ theorem mk_nat_offset_stuck_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args 
     subst m74
     subst m154
     subst m137
-    have hconst := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad
+    have hconst := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad (by resolve_key)
     rw [hk] at hconst
     have happ1 := Tm.store_app hconst (Tm.mono eB hB)
     have happ2 := Tm.store_app (Tm.mono e193 happ1) (hlit d Γ)
@@ -988,7 +1001,7 @@ theorem mk_nat_binop_stuck_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::mk_nat_binop_stuck" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.mk_nat_binop_stuck c args h r h' calls := by
-  intro ap b np post hargs good a d Γ B n Ps ha hB hn hPs
+  intro ap b np post hargs good a d Γ B n Ps ha hres hB hn hPs
   subst hargs
   obtain ⟨m2, m26, m39, v54, m56, m85, cs93, cs107, hm12, hm34, hm49, hm64, ev95, ev109, hcalls⟩ :=
     Obs.«KernelNatPrim::mk_nat_binop_stuck».obs ev
@@ -1004,7 +1017,7 @@ theorem mk_nat_binop_stuck_step (c : ScopedCtx) {args : List (SourceValue F)} {h
   subst m2
   subst m56
   subst m39
-  have hconst := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) ha
+  have hconst := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) ha hres
   have happ1 := Tm.store_app hconst (Tm.mono (x34.trans x12) hB)
   have happ2 := Tm.store_app (Tm.mono e95 happ1) (hlit d Γ)
   exact ih.get (.nat .np_apply_spine) (by nat_lt_calls) ev109 _ post rfl
@@ -1046,9 +1059,9 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
       (good.sub fun x hx => by simp [hx]) (n - 1) (RepLimbsC.toRepLimbs hs)
     have e0 := (((x91.trans x12).trans e121).trans e108).trans e187
     obtain ⟨rfl, -⟩ := ih.get (.roles .role_nat_succ) (by nat_lt_calls) ev187 rfl
-    obtain ⟨ad, rad, haddr, -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev166 rc .natSucc
+    obtain ⟨ad, rad, haddr, hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev166 rc .natSucc
       rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc)
-    have hks : c.κ (ixAddr ad) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    have hks : c.κ (ixAddr ad) = .role .natSucc := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev215 v95 rfl
       (good.sub fun x hx => by simp [hx]) (n - 1)
       (RepLimbsC.toRepLimbs (repLimbsC_mono (((e187.trans e166).trans x197).trans x149) hnm))
@@ -1059,7 +1072,7 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
     have eB := (((e0.trans e166).trans x197).trans x149).trans e215
     subst m189
     subst m139
-    have hsucc := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad
+    have hsucc := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad (by resolve_key)
     rw [hks] at hsucc
     subst r
     subst h'
@@ -1093,9 +1106,9 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
       (good.sub fun x hx => by simp [hx]) (n - 1) (RepLimbsC.toRepLimbs hs)
     have e0 := (((x91.trans x12).trans e121).trans e108).trans e187
     obtain ⟨rfl, -⟩ := ih.get (.roles .role_nat_succ) (by nat_lt_calls) ev187 rfl
-    obtain ⟨ad, rad, haddr, -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev166 rc .natSucc
+    obtain ⟨ad, rad, haddr, hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev166 rc .natSucc
       rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc)
-    have hks : c.κ (ixAddr ad) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    have hks : c.κ (ixAddr ad) = .role .natSucc := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev215 v95 rfl
       (good.sub fun x hx => by simp [hx]) (n - 1)
       (RepLimbsC.toRepLimbs (repLimbsC_mono (((e187.trans e166).trans x197).trans x149) hnm))
@@ -1105,9 +1118,9 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
       exact hne hz
     have e202 := (((e0.trans e166).trans x197).trans x149).trans e215
     obtain ⟨rfl, -⟩ := ih.get (.roles .role_nat_add) (by nat_lt_calls) ev306 rfl
-    obtain ⟨aa, raa, haddr', -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev285 rc .natAdd
+    obtain ⟨aa, raa, haddr', hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev285 rc .natAdd
       rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono (e202.trans e306) hrc)
-    have hka : c.κ (ixAddr aa) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr'
+    have hka : c.κ (ixAddr aa) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr')
     have eL := (((((((e187.trans e166).trans x197).trans x149).trans e215).trans e306).trans
       e285).trans x316).trans x268
     have eB := ((((e202.trans e306).trans e285).trans x316).trans x268).trans x331
@@ -1115,11 +1128,11 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
       x379).trans x364
     subst m189
     subst m139
-    have hsucc := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad
+    have hsucc := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) rad (by resolve_key)
     rw [hks] at hsucc
     subst m308
     subst m258
-    have hadd := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) raa
+    have hadd := tm_const_nil (κ := c.κ) (d := d) (Γ := Γ) raa (by resolve_key)
     rw [hka] at hadd
     have hlitn := tm_store_lit (κ := c.κ) (d := d) (Γ := Γ) hnm eL
     subst m321
@@ -1220,7 +1233,7 @@ theorem try_nat_offset_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {a
     obtain ⟨ro, hro, haddr, hforce⟩ := hop
     rw [hvo] at hro
     obtain rfl := natPrimOp_role (r' := .natAdd) hro (by decide)
-    have hk : c.κ (ixAddr a) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     refine red_mkAppN₂ Ps ?_
     by_cases hn0 : n = 0
@@ -1235,7 +1248,8 @@ theorem try_nat_offset_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {a
     have e2 : (A₀ :: A₁ :: Ps).drop (ZMod.val (2 : F)) = Ps := by rw [val_two]; rfl
     rw [e2] at hpost
     have hstk := ih.get (.nat .mk_nat_binop_stuck) hlt evb ap a0 nb post rfl (good.sub hsub)
-      a d Γ A₀ n Ps (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hA₀)
+      a d Γ A₀ n Ps (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (natOpAt_res hc hop)
+      (Tm.mono ext hA₀)
       (repLimbsC_mono ext hn) (TmL.mono ext hpost)
     rw [hr'] at hr
     obtain rfl := tag_snd hr
@@ -1293,7 +1307,9 @@ theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {ar
     obtain rfl := tag_snd hr
     subst h'
     refine ⟨_, hsp, ?_⟩
-    have hk : c.κ (ixAddr a) = .role ro := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role ro :=
+      (c.key_eq (hc.res_of_role haddr hforce (natPrimOp_not_inert hro))).trans
+        (keyOf_of_addressOf hc.env.tableWf haddr)
     have hmem := natBinOp_mem hro hcode.1
     rw [hk]
     exact red_mkAppN₂ Ps (.natOp hmem (hc.env.natOps ro hforce hmem) hred₁ rfl hred₂ rfl hE)
@@ -1365,7 +1381,7 @@ theorem try_nat_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : L
     obtain ⟨ro, hro, haddr, hforce⟩ := hop
     rw [hvo] at hro
     obtain rfl := natPrimOp_role (r' := .natSucc) hro (by decide)
-    have hk : c.κ (ixAddr a) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natSucc := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     exact red_mkAppN₁ Ps
       (.natSucc (natLit_of_natBlock hc hforce (by decide) (by decide) (by decide)) hred rfl)

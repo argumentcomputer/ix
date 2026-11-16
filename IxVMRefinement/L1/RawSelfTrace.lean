@@ -16,7 +16,7 @@ open Ix.Kernel.Reader
 
 /-- The reached self-read bridge preserves the raw syntax, semantic annotation and both
 serialized binder traces of the existing exact conversion theorem. -/
-theorem RawConvExpr.toRawTmCExactTrace_of_selfReads {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmCExactTrace_of_selfReads {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (permutation : ps.Perm (List.range ps.length)) (paramsBound : ps.length < 4294967296)
     {cx : Ctx .anon} {source : Ixon.Constant}
@@ -59,7 +59,7 @@ theorem RawConvExpr.toRawTmCExactTrace_of_selfReads {κ : _root_.Address → Cor
 
 /-- The semantic annotation trace needs the same reached self reads, with its chosen
 annotation kept identical to the raw-trace witness. -/
-theorem RawConvExpr.toTmCExactTrace_of_selfReads {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExactTrace_of_selfReads {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (permutation : ps.Perm (List.range ps.length)) (paramsBound : ps.length < 4294967296)
     {cx : Ctx .anon} {source : Ixon.Constant}

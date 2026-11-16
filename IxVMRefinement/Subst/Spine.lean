@@ -177,6 +177,7 @@ theorem g_expr_inst_levels_walk (κ : _root_.Address → KKey) {args : List (Sou
   | .Const (ld12 := ld) (ev137 := e1) (he113 := hr) (hm112 := hm) (hc154 := hc) .. =>
     subst hc hr hm
     obtain ⟨a, us', rfl, ra, ls', rls, hus'⟩ := Tm.const_of_load hE ld
+    have : Resolved _ := ⟨hE.const_key_ne⟩
     obtain ⟨-, rls'', ext⟩ := IxVM.Refinement.Levels.levelListInst_obs e1 (bounded_sub sub_calls bd) rls hls
     exact tm_store_const (Bytes.repAddressRef_heapMono₂ addrTy ext ra) rls''
       (lvEqList_subst hus' hul)
@@ -241,6 +242,7 @@ theorem g_expr_inst_levels_walk (κ : _root_.Address → KKey) {args : List (Sou
   | .Proj (ld12 := ld) (he648 := hr) (hm647 := hm) (ev680 := e1) (hc697 := hc) .. =>
     subst hc hr hm
     obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
+    have : Resolved _ := ⟨hE.proj_key_ne⟩
     exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
       (ih.get .expr_inst_levels lt_calls e1 _ _ rfl (bounded_sub sub_calls bd) Γ k Es us hes
         ⟨ls, hls, hul⟩)

@@ -266,7 +266,7 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     subst hTT
     have hciI' := hciI
     obtain ⟨cvT, caps, nPT, nIT, nCT, rfl, ⟨hinl, hinl_lt, hiperm, hity⟩, rfl, rfl, rfl, hnPT,
-      -, -, b, i, hb, rfl, -⟩ := WhnfAux.ind_inv hciI
+      -, -, b, i, hb, rfl, hnameT⟩ := WhnfAux.ind_inv hciI
     rw [hfindI] at hT'
     obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hT')
     subst hinl
@@ -378,7 +378,8 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       certs_lic_true hcertT0
     -- constructor load & projection address
     have hctorLoad := ih.get (.callees .get_ci_cprj) (by lt_calls) ev405
-      blk i 0 b rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz])
+      blk i 0 b rfl (good.allowedTop (by simp_all)) (hc.res_of_ind hfindI hnameT)
+      (good.sub fun z hz => by simp [hz])
       (Bytes.repAddressRef_heapMono₂ addrTy X303 hb)
     have hstored := hcj
     rw [hctor] at hstored
@@ -394,12 +395,15 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       i 0 blk b rfl (good.sub fun z hz => by simp [hz])
       (Bytes.repAddressRef_heapMono₂ addrTy X389 hb)
     have hκ : rl.ctor = c.κ (ixAddr cpa) := by rw [hctor, hcpaa, ZMod.val_zero]
+    have hrescpa : c.κ (ixAddr cpa) ≠ unresolvedKey := by
+      rw [hcpaa, ZMod.val_zero]; exact hc.res_of_find hstored
     -- fabrication: Const, apply_spine, apply_n_projs, collect_spine
     have hcell535 : m535[m482.length]? =
         some (.construct kexprEnum "Const" [v481, x_tus]) := by
       rw [hm543]; simp
     have hhead : c.tmk d Γ 0 m535 (.const rl.ctor ust) (.ptr (.enum kexprEnum) m482.length) := by
       obtain ⟨ls', hls', hlseq'⟩ := LvListRep.mono Y535 hust
+      have : Resolved (c.κ (ixAddr cpa)) := ⟨hrescpa⟩
       rw [hκ]
       exact .const hcell535 (Bytes.repAddressRef_heapMono₂ addrTy e535 hcpa) hls' hlseq'
     have hs535 : SpineHead m535 (.ptr (.enum kexprEnum) m482.length)
@@ -412,6 +416,7 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     obtain ⟨m, hm_eq, hFAB0⟩ := ih.get (.whnf .apply_n_projs) (by lt_calls) ev583
       v518 par major (.field (cnF : F)) (.field 0) rfl (good.sub fun z hz => by simp [hz])
       d Γ _ p M (cnF : F) 0 happTA (Bytes.repAddressRef_heapMono₂ addrTy X519 hp)
+      (hc.res_of_find hfindI)
       (Tm.mono X519 hM) rfl rfl
     have hs571 := apply_n_projs_head cs581.length (Nat.le_refl _) ev583 hs519
     obtain ⟨hdF, spF, HF, FAs, heF, hHF, hFAs, hFAB_eq⟩ := ih.get (.subst .collect_spine)
@@ -595,7 +600,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     -- parent address & MajorHead
     obtain ⟨tw, rfl⟩ := se_parent_addr_tag_field cs190.length (Nat.le_refl _) ev192
     have htw_ne : tw ≠ 0 := fun h0 => by subst h0; exact hnt0 x_parent rfl
-    obtain ⟨p, us_p, hp, hpi_pos⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev192
+    obtain ⟨p, us_p, hp, hpi_pos, hresp⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev192
       rt (.field (mI : F)) rfl (good.sub fun z hz => by simp [hz]) 0 Γ 0 _ (mI : F)
       (hval.2.2.2 0 Γ) rfl tw x_parent rfl htw_ne
     have hmIv : ZMod.val (mI : F) = mI := NatAux.val_natCast (by omega)
@@ -622,7 +627,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     have X466 : Heap.Extends h m466 := e192.trans (e295.trans Y466)
     have X564 : Heap.Extends h m564 := X466.trans e577
     obtain ⟨ici, hfindI, vI, hldI, hciI⟩ := ih.get (.callees .get_ci) (by lt_calls) ev295
-      x_parent p rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hp
+      x_parent p rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun z hz => by simp [hz]) hp
     rw [ld289] at hldI
     injection hldI with hvI
     subst hvI
@@ -639,7 +644,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     -- inductRecord & recRules
     obtain ⟨cm, b0, i0, hcm, hb0, hidx0, hinfo⟩ := hc.loads.inductRecord
       x_parent p287 m179 m279 cs293 p x_ind_nl x_ind_ty (.field (nPT : F)) (.field (nIT : F))
-      (.field (nCT : F)) w310 x_block (.field i) ev295 (good.allowedTop (by simp))
+      (.field (nCT : F)) w310 x_block (.field i) ev295 (good.allowedTop (by simp)) (by resolve_key)
       (good.sub fun z hz => by simp [hz]).raw hp ld289
     injection hidx0 with hi0
     subst hi0
@@ -648,10 +653,15 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     obtain ⟨-, hfire, hkeys⟩ := hc.env.recRules k cv mI rP [rl] hfind
     have hrl : rl ∈ [rl] := List.mem_singleton_self rl
     obtain ⟨-, cvj, cnF, hcj⟩ := hfire rl hrl
-    have hctor := hkeys (ixAddr p) cm _ us_m hmh0 hcm hinfo 0 rl rfl
+    have hresp : c.κ (ixAddr p) ≠ unresolvedKey := hc.res_of_find hfindI
+    have hmh0k := hmh0
+    rw [c.key_eq hresp] at hmh0k
+    have hctor := hkeys (ixAddr p) cm _ us_m hmh0k hcm hinfo 0 rl rfl
     simp only [val_toUInt64_toNat] at hctor
-    have hctorScoped : rl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) := by
-      simpa only [ScopedCtx.κ, Ctx.κ] using hctor
+    have hresc : c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) ≠ unresolvedKey :=
+      hc.loads.storedRes _ _ ((congrArg (fun k => c.env.find? k) hctor).symm.trans hcj)
+    have hctorScoped : rl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) :=
+      hctor.trans (c.key_eq hresc).symm
     obtain ⟨tus, htus⟩ :=
       hc.env.ruleCtorHead k cv mI rP [rl] rl cvj rl.ctorParams cnF (c.κ (ixAddr p)) us_m
         hfind hrl hcj hmh0
@@ -671,7 +681,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
         have hgood101 : CoreGood c cs101_sr := hgood420.sub fun z hz => by rw [hc168_sr]; simp [hz]
         obtain ⟨cm_sr, b_sr, _, hcm_sr, hb_sr, -, hinfo_sr⟩ := hc.loads.inductRecord
           x_parent p9_sr m352 m2_sr cs15_sr p w42 w43 w44 w45 w46 w47 x_block_sr w48
-          ev17_sr (hgood420.allowedTop (by rw [hc168_sr]; simp)) hgood15.raw
+          ev17_sr (hgood420.allowedTop (by rw [hc168_sr]; simp)) (by resolve_key) hgood15.raw
           (Bytes.repAddressRef_heapMono₂ addrTy Y352 hp) ld11_sr
         rw [hcm] at hcm_sr
         injection hcm_sr with hcm_eq
@@ -766,7 +776,9 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     obtain ⟨a_rec, hcv_key⟩ := recr_key hci
     have hk_name : cv.name = k := WhnfAux.name_of_find hfind
     have hk_nproj : Ix.Kernel.Key.isProjFnShape k = false := by
-      rw [← hk_name, hcv_key]; exact isProjFnShape_keyOf c.t a_rec
+      have hres_rec : c.κ a_rec ≠ unresolvedKey :=
+        hc.res_of_find (a := a_rec) (by rw [← hcv_key, hk_name]; exact hfind)
+      rw [← hk_name, hcv_key, c.key_eq hres_rec]; exact isProjFnShape_keyOf c.t a_rec
     have hrleta : rl.eta = true := by
       rw [hc.env.recEta k cv mI rP rl hfind]
       simp [Ix.Kernel.recRuleEtaOf, hcj, htus, hfindI, heta, hetaCtor_rl, hk_nproj, hlp_eq]
@@ -890,7 +902,7 @@ theorem red_rec_step (c : ScopedCtx)
       have X52 : Heap.Extends h m52 := e23.trans e65
       obtain ⟨tw, rfl⟩ := se_parent_addr_tag_field cs63.length (Nat.le_refl _) ev65
       have htw_ne : tw ≠ 0 := fun h0 => by subst h0; exact hnt0 x_rec_parent rfl
-      obtain ⟨p, us_p, hp, hpi_pos⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev65
+      obtain ⟨p, us_p, hp, hpi_pos, hresp⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev65
         rt (.field (mI : F)) rfl (good.sub fun z hz => by simp [hz]) 0 Γ 0 _ (mI : F)
         (Tm.mono e23 (hrt 0 Γ)) rfl tw x_rec_parent rfl htw_ne
       rw [NatAux.val_natCast (n := mI) (by omega), Option.map_eq_some_iff] at hpi_pos

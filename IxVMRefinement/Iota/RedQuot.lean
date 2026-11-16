@@ -280,8 +280,9 @@ theorem quot_lift_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : 
     Red c.env d (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr a)) us) As)
       (Ix.Kernel.Expr.mkAppN (.app a3 q2) (As.drop 6)) := by
   have hwf := hc.env.tableWf
-  have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
-  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
+  have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf haddr)
+  have hmkin : c.inForce .quotMk := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf hmk)
   have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
   have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
     hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
@@ -395,8 +396,9 @@ theorem quot_ind_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : B
     Red c.env d (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr a)) us) As)
       (Ix.Kernel.Expr.mkAppN (.app a3 q2) (As.drop 5)) := by
   have hwf := hc.env.tableWf
-  have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := keyOf_of_addressOf hwf haddr
-  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
+  have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf haddr)
+  have hmkin : c.inForce .quotMk := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
+  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf hmk)
   have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
   have hfI : c.env.find? Ix.Kernel.quotIndName = some Ix.Kernel.quotIndA :=
     hc.env.quotBasis hq Ix.Kernel.quotIndA (by simp [Ix.Kernel.BasisKind.declsA])
@@ -930,7 +932,7 @@ private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls 
   · subst he81
     obtain ⟨hil1, v, hv, hvnz⟩ := hsg1 hv79
     rcases hrole with ⟨-, haddr, hin, hRA6, hus2⟩ | ⟨hil0, -⟩
-    · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
+    · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf haddr)
       have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
       have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
         hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
@@ -959,8 +961,10 @@ private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls 
     have E242 := E88.trans e252
     have E220 := E242.trans e230
     have E276 := E220.trans e286
+    have hresa : c.κ (ixAddr a) ≠ unresolvedKey := by
+      rcases hrole with ⟨-, hb, hf, -⟩ | ⟨-, hb, hf, -⟩ <;> exact hc.res_of_role hb hf (by decide)
     obtain ⟨ci0, hfind0, v0, hv0, hrep0⟩ := ih.get (.callees .get_ci)
-      (by simp only [List.length_cons, List.length_append] at hle; omega) ev155 addr a rfl (good.allowedTop (by simp_all))
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev155 addr a rfl (good.allowedTop (by simp_all)) hresa
       (good.sub fun z hz => hsub z (by simp [hz])) ha
     rw [ld149] at hv0
     injection hv0 with hv0
@@ -976,14 +980,14 @@ private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls 
         true := halpd0
     have huslen0 : us.length = ci0.toConstantVal.levelParams.length := by
       rcases hrole with ⟨-, haddr, hin, -, hus2⟩ | ⟨-, haddr, hin, -, hus1⟩
-      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := keyOf_of_addressOf hwf haddr
+      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotLiftName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf haddr)
         have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
         have hfL : c.env.find? Ix.Kernel.quotLiftName = some Ix.Kernel.quotLiftA :=
           hc.env.quotBasis hq Ix.Kernel.quotLiftA (by simp [Ix.Kernel.BasisKind.declsA])
         rw [hka, hfL] at hfind0
         obtain rfl := Option.some.inj hfind0
         exact hus2
-      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := keyOf_of_addressOf hwf haddr
+      · have hka : c.κ (ixAddr a) = Ix.Kernel.quotIndName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf haddr)
         have hq : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hin (.inl (by decide))
         have hfI : c.env.find? Ix.Kernel.quotIndName = some Ix.Kernel.quotIndA :=
           hc.env.quotBasis hq Ix.Kernel.quotIndA (by simp [Ix.Kernel.BasisKind.declsA])
@@ -1038,7 +1042,7 @@ theorem quot_certs_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (S
     ha hus hRA hb hmus hMA hrole hmk hmkin hMA3 hr
   subst hargs
   have hwf := hc.env.tableWf
-  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := keyOf_of_addressOf hwf hmk
+  have hkb : c.κ (ixAddr b) = Ix.Kernel.quotMkName := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hwf hmk)
   have hqM : c.inForce .quot := ScopedCtx.inForce_of_block_or_dep hwf hmkin (.inl (by decide))
   have hfM : c.env.find? Ix.Kernel.quotMkName = some Ix.Kernel.quotMkA :=
     hc.env.quotBasis hqM Ix.Kernel.quotMkA (by simp [Ix.Kernel.BasisKind.declsA])
@@ -1105,7 +1109,7 @@ theorem quot_certs_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (S
     · simp at hm0
     · have hm0eq : m0' = m0 := by simpa using hm0
       subst hm0eq
-      obtain ⟨ciM, hfindM, vM, hvM, hrepM⟩ := ih.get (.callees .get_ci) (by lt_calls) ev453 mk b rfl (good.allowedTop (by simp_all))
+      obtain ⟨ciM, hfindM, vM, hvM, hrepM⟩ := ih.get (.callees .get_ci) (by lt_calls) ev453 mk b rfl (good.allowedTop (by simp_all)) (by resolve_key)
         (good.sub fun z hz => by simp [hz]) (Bytes.repAddressRef_heapMono₂ addrTy E341 hb)
       rw [ld447] at hvM
       injection hvM with hvM

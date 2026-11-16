@@ -161,7 +161,7 @@ theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       cs243 ld12 ev137 ld131 ev159 ev181 heq217 ev231 ev245 hc262 =>
     subst hc262
     obtain ⟨a, us, rfl, ha, ls, hls, hus⟩ := hE.const_of_load ld12
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld131] at hld
     injection hld with hv
@@ -313,7 +313,7 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       cs234 ld12 ev137 ld131 ev159 ev192 heq208 ev222 ev236 hc253 =>
     subst hc253
     obtain ⟨a, us, rfl, ha, ls, hls, hus⟩ := hE.const_of_load ld12
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev137 x_addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld131] at hld
     injection hld with hv
@@ -445,7 +445,7 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       (good.sub fun x hx => by simp [hx]) hrc
     rcases hE.lit_of_load ld12 with ⟨lp, limbs, hx, -, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
     · rw [he1034]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm1082 hm1033 d Γ,
+      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm1082 hm1033 d Γ,
         .natLit (PrimNat.natLit_of_natBlock hc hf (by decide) (by decide) (by decide))⟩
     · injection hx with _ h2
       exact absurd h2 (by decide)
@@ -460,7 +460,7 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     · injection hx with _ h2
       exact absurd h2 (by decide)
     · rw [he1104]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
+      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
   case Proj x_struct_addr x_fidx x_e1 v1180 m1181 cs1191 v1218 m1219 cs1229 m1257 cs1268
       x_head x_args x_head_addr x_lvls v1335 m1338 cs1346 m1373 p1380 cs1386
       x_ind_nlvls x_ind_ty x_n_params x_n_indices x_num_ctors w1413 x_block_addr x_ind_idx

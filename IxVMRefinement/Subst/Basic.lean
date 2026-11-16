@@ -736,7 +736,8 @@ theorem tm_store_letE {h : Heap F} {k : Nat} {T V B : KExpr} {tp vp bp : SourceV
   have ext := Heap.Extends.snoc h (.construct kexprEnum "Let" [tp, vp, bp])
   exact .letE store_get (rt.mono ext) (rv.mono ext) (rb.mono ext)
 
-theorem tm_store_proj {h : Heap F} {k : Nat} {a : Bytes.Address} {i : F} {E : KExpr}
+theorem tm_store_proj {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))] {i : F}
+    {E : KExpr}
     {ap ep : SourceValue F} (ra : Bytes.RepAddressRef addrTy h a ap) (re : Tm κ d Γ h k E ep) :
     Tm κ d Γ (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]]) k
       (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) h.length) := by
@@ -748,7 +749,8 @@ theorem tm_store_sort {h : Heap F} {k : Nat} {u l : KLevel} {lp : SourceValue F}
     Tm κ d Γ (h ++ [.construct kexprEnum "Srt" [lp]]) k (.sort u) (.ptr (.enum kexprEnum) h.length) :=
   .sort store_get (rl.mono (Heap.Extends.snoc _ _)) hu
 
-theorem tm_store_const {h : Heap F} {k : Nat} {a : Bytes.Address} {ls us : List KLevel}
+theorem tm_store_const {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))]
+    {ls us : List KLevel}
     {ap lsp : SourceValue F} (ra : Bytes.RepAddressRef addrTy h a ap)
     (rls : RepKLevelList h ls lsp) (hus : LvEqList us ls) :
     Tm κ d Γ (h ++ [.construct kexprEnum "Const" [ap, lsp]]) k (.const (κ (ixAddr a)) us)
@@ -771,6 +773,7 @@ theorem tm_copy_const {d' : Nat} {Γ' : Nat → KExpr} {h m : Heap F} {k k' : Na
     Tm κ d' Γ' (m ++ [.construct kexprEnum "Const" [x, y]]) k' E
       (.ptr (.enum kexprEnum) m.length) := by
   obtain ⟨a, us, rfl, ra, ls, rls, hus⟩ := Tm.const_of_load rep ld
+  have : Resolved (κ (ixAddr a)) := ⟨rep.const_key_ne⟩
   exact tm_store_const (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext) hus
 
 /-- A copied `Lit` node is represented at every reading. -/

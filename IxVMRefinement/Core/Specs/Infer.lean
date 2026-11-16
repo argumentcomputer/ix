@@ -212,7 +212,7 @@ def peel_field_loop : SpecFn := fun c args h r h' calls =>
     ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
       ZMod.val c0 ≤ ZMod.val t0 →
       ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
-        c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
+        c.tm d Γ h T ty → RepAddr h a sa → c.κ (ixAddr a) ≠ unresolvedKey → c.tm d Γ h PE val →
           ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
             fieldTypeAt (c.κ (ixAddr a)) PE n (ZMod.val c0) T = some FT
 

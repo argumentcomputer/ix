@@ -76,6 +76,8 @@ theorem canonicalRecordAt_of_verified {env : Ixon.Env} {rootCalls calls : List (
 def traceRecordCtx (base : Ctx) (calls : List (Call F)) : ScopedCtx :=
   { toCtx := base, allowed := fun call => call ∈ calls }
 
+instance (base : Ctx) (calls : List (Call F)) : (traceRecordCtx base calls).TableKeyed := ⟨rfl⟩
+
 /-- Any actual subtrace has raw query coverage in its root-call scope. -/
 theorem traceRecordCtx_coverage (base : Ctx) {rootCalls calls : List (Call F)}
     (subset : ∀ call ∈ calls, call ∈ rootCalls) :

@@ -117,6 +117,7 @@ theorem NativeFormerRunInput.constructorStage (hLevels : IxVM.Consistency.Levels
     exact Decl.nat_keyOf_isProjFnShape_false base.t _
   have fieldBounds := native_ctor_field_bounds (base := base) family countBound blockRep shape.ctorSubset loop
   let raw := L1.traceRecordCtx stage calls
+  have rawKeyed : raw.TableKeyed := ⟨rfl⟩
   have records := L1.rawRecordFacts_of_hashed_trace (base := stage) observedRoot stageGood coverage
   have rawCovered := L1.traceRecordCtx_coverage stage shape.ctorSubset
   have peer := native_peer_reads (raw := raw) source projection projectionShape input.blockShape

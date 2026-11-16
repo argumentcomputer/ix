@@ -282,7 +282,8 @@ literal, applied to `post`: `mkAppN (op base (lit n)) post`, the operation at it
 and an empty level list. -/
 def mk_nat_binop_stuck : SpecFn := fun c args h r h' calls =>
   ∀ ap b np post, args = [ap, b, np, post] → CoreGood c calls →
-    ∀ a d Γ B n Ps, RepAddr h a ap → c.tm d Γ h B b → RepLimbsC h n np → c.tml d Γ h Ps post →
+    ∀ a d Γ B n Ps, RepAddr h a ap → c.κ (ixAddr a) ≠ unresolvedKey → c.tm d Γ h B b →
+      RepLimbsC h n np → c.tml d Γ h Ps post →
       c.tm d Γ h' (mkAppN (.app (.app (.const (c.κ (ixAddr a)) []) B) (natLit n)) Ps) r
 
 /-- `build_succ_offset(rc, base, lit)`: `Nat.succ (base + (lit - 1))` in the offset rules'

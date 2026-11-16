@@ -473,14 +473,14 @@ theorem is_nat_zero_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (
     obtain ⟨a, us, rfl, ha, hus⟩ := hE.const_of_load ld12
     obtain ⟨rfl, rfl⟩ := ih.get (.roles .role_nat_zero) (by lt_calls) ev127 rfl
     obtain ⟨hx85, hy86⟩ := mul_field_ne_zero op92 hr
-    obtain ⟨haddr, -⟩ := ih.get (.roles .role_is) (by lt_calls) ev98 rc x_caddr a .natZero rfl
+    obtain ⟨haddr, hfr⟩ := ih.get (.roles .role_is) (by lt_calls) ev98 rc x_caddr a .natZero rfl
       (good.sub fun x hx => by simp [hx]) hrc ha hx85
     have e1 := ObsFn.heap_extends ev98
     obtain ⟨hy, -⟩ := ih.get (.nat .lvls_empty) (by lt_calls) ev133 x_clvls rfl
       (good.sub fun x hx => by simp [hx]) us (LvListRep.mono e1 hus)
     have hus0 : us = [] := of_ite_field_ne_zero hy hy86
     subst hus0
-    have hk : c.κ (ixAddr a) = .role .natZero := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natZero := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     exact .inr rfl
   · exact absurd he147 hr
@@ -533,7 +533,7 @@ theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
       (good.sub fun x hx => by simp [hx]) us (LvListRep.mono e199 hus)
     have hus0 : us = [] := of_ite_field_ne_zero hy hy187
     subst hus0
-    have hk : c.κ (ixAddr a) = .role .natSucc := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natSucc := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     have e261 := ObsFn.heap_extends ev261
     have e330 := ObsFn.heap_extends ev330
@@ -566,7 +566,7 @@ theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
     have e441 := ObsFn.heap_extends ev441
     have e534 := ObsFn.heap_extends ev534
     have e604 := ObsFn.heap_extends ev604
-    have hk : c.κ (ixAddr a) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     rcases (Tm.mono e441 hEa).lit_of_load ld486 with
       ⟨lp, limbs, hx, hrl, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
@@ -595,7 +595,7 @@ theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
       rfl (good.sub fun x hx => by simp [hx]) hrc ha field_one_ne_zero
     have e441 := ObsFn.heap_extends ev441
     have e534 := ObsFn.heap_extends ev534
-    have hk : c.κ (ixAddr a) = .role .natAdd := keyOf_of_addressOf hc.env.tableWf haddr
+    have hk : c.κ (ixAddr a) = .role .natAdd := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
     rw [hk]
     rcases (Tm.mono e441 hEa).lit_of_load ld486 with
       ⟨lp, limbs, hx, hrl, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩

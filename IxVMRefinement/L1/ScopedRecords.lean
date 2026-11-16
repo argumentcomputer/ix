@@ -156,6 +156,9 @@ def RawRecordQuery.top {E : Ixon.Env} (q : RawRecordQuery E) : Call F :=
 def rawQueryCtx (base : Ctx) (queries : List (RawRecordQuery base.E)) : ScopedCtx :=
   { toCtx := base, allowed := fun call => ∃ q ∈ queries, call = q.top }
 
+instance (base : Ctx) (queries : List (RawRecordQuery base.E)) :
+    (rawQueryCtx base queries).TableKeyed := ⟨rfl⟩
+
 theorem RawRecordQuery.allowed {base : Ctx} {queries : List (RawRecordQuery base.E)}
     {q : RawRecordQuery base.E} (member : q ∈ queries) :
     (rawQueryCtx base queries).allowedTop "Ingress::get_ci" [q.addr] q.before :=

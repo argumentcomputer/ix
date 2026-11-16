@@ -139,8 +139,8 @@ theorem fieldsClean_mono {h₁ h₂ : Heap F} {p : Nat} {ms : List Bytes.Address
 
 theorem membersClean_mono {c : ScopedCtx} {h₁ h₂ : Heap F} {ms membs : List Bytes.Address}
     (ext : Heap.Extends h₁ h₂) (mc : MembersClean c h₁ ms membs) : MembersClean c h₂ ms membs := by
-  intro m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
-  obtain ⟨cicon, w, nl, ty, rest, hf, hci, hw, hfc⟩ := mc m hm cm cb p xs ind h1 h2 h3 h4 h5 t ht
+  intro m hm cm cb p xs ind h1 h2 h3 h4 h5 h6 t ht
+  obtain ⟨cicon, w, nl, ty, rest, hf, hci, hw, hfc⟩ := mc m hm cm cb p xs ind h1 h2 h3 h4 h5 h6 t ht
   exact ⟨cicon, w, nl, ty, rest, fun ci hfind => CIRep.mono ext (hf ci hfind),
     CIRep.mono ext hci, hw, fieldsClean_mono ext hfc⟩
 
@@ -389,7 +389,7 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_scan_ctors" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_scan_ctors c args h r h' calls := by
-  intro blk idx nc np xs ci hargs good b i n p j ms hb hi hn hp hms hj hr
+  intro blk idx nc np xs ci hargs good b i n p j ms hb hi hn hp hms hj hres hr
   subst hargs hi hn hp hj
   rcases Obs.«KernelWhnf::struct_scan_ctors».obs ev with
     ⟨op17, he24, he25, hc26⟩ |
@@ -413,7 +413,7 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     have e2 := ObsFn.heap_extends ev179
     have e3 := ObsFn.heap_extends ev212
     have hctorLoad := ih.get (.callees .get_ci_cprj) (by lt_calls) ev47 blk i j b
-      rfl (good.allowedTop (by simp_all)) (good.sub fun z hz => by simp [hz]) hb
+      rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun z hz => by simp [hz]) hb
     obtain ⟨ci0, v, hv, hci⟩ := hctorLoad.1
     rw [ld41] at hv
     injection hv with hv
@@ -427,7 +427,7 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
       ⟨0, fun _ => T, 0 + ds1.length, E1, hE1⟩ hne203
     have hrec := ih.get (.whnf .struct_scan_ctors) (by lt_calls) ev212 blk (.field i) (.field n)
       (.field p) xs (.field (j + 1)) rfl (good.sub fun z hz => by simp [hz]) b i n p (j + 1) ms
-      (se_addrRep_mono (e1.trans e2) hb) rfl rfl rfl (se_addrs_mono (e1.trans e2) hms) rfl hr
+      (se_addrRep_mono (e1.trans e2) hb) rfl rfl rfl (se_addrs_mono (e1.trans e2) hms) rfl hres hr
     intro t ht
     rcases Nat.eq_zero_or_pos t with rfl | htpos
     · refine ⟨ci0, _, w88, x_cty, [w89, w90, w91, w92, w93, w94], ?_,
@@ -486,7 +486,7 @@ theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     have hrest := ih.get (.whnf .struct_scan_members) (by lt_calls) ev194 x_rest xs rfl
       (good.sub fun z hz => by simp [hz]) ms' membs (se_addrs_mono (e1.trans e2) hms')
       (se_addrs_mono (e1.trans e2) hmembs) hr
-    intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
+    intro m hm cm cb pp ys ind h1 h2 h3 h4 h5 hres5
     rcases List.mem_cons.mp hm with rfl | hm'
     · obtain ⟨nl, ty, u, blk, b, hl, hb, hbb, hidx, hsize⟩ := hc.loads.indRecord x_m p49 h m41
         cs55 m cm cb pp ys ind ev57 (good.sub fun z hz => by simp [hz]).raw ha h1 h2 h3 h4 h5
@@ -501,7 +501,7 @@ theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
         (.field (pp.idx.toNat : F)) (.field (ind.ctors.size : F)) (.field (ind.params.toNat : F))
         xs (.field 0) rfl (good.sub fun z hz => by simp [hz]) b (pp.idx.toNat : F)
         (ind.ctors.size : F) (ind.params.toNat : F) 0 membs hb rfl rfl rfl
-        (se_addrs_mono e1 hmembs) rfl hne185
+        (se_addrs_mono e1 hmembs) rfl (by rw [hbb, NatAux.val_natCast hidx']; exact hres5) hne185
       intro t ht
       have ht' : t < ZMod.val ((ind.ctors.size : F) - 0) := by
         rw [sub_zero, NatAux.val_natCast hsize']
@@ -511,21 +511,21 @@ theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
         fieldsClean_le (se_val_natCast_le _) (fieldsClean_mono e3 hfc)⟩
       rw [zero_add, NatAux.val_natCast (n := t) (by omega), NatAux.val_natCast hidx', hbb] at hf
       exact fun ci hfind => CIRep.mono e3 (hf ci hfind)
-    · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5
+    · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5 hres5
   · obtain ⟨a, ms', rfl, ha, hms'⟩ := RepList.cons_of_load hms ld12
     subst hc238
     have e1 := ObsFn.heap_extends ev57
     have hrest := ih.get (.whnf .struct_scan_members) (by lt_calls) ev221 x_rest xs rfl
       (good.sub fun z hz => by simp [hz]) ms' membs (se_addrs_mono e1 hms')
       (se_addrs_mono e1 hmembs) hr
-    intro m hm cm cb pp ys ind h1 h2 h3 h4 h5
+    intro m hm cm cb pp ys ind h1 h2 h3 h4 h5 hres5
     rcases List.mem_cons.mp hm with rfl | hm'
     · obtain ⟨nl, ty, u, blk, b, hl, -, -, -, -⟩ := hc.loads.indRecord x_m p49 h m41 cs55 m cm cb
         pp ys ind ev57 (good.sub fun z hz => by simp [hz]).raw ha h1 h2 h3 h4 h5
       rw [ld51] at hl
       injection hl with hl
       exact (hne212 _ (by rfl) hl).elim
-    · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5
+    · exact hrest m hm' cm cb pp ys ind h1 h2 h3 h4 h5 hres5
 
 /-! ## `struct_block_member_addrs` -/
 
@@ -612,7 +612,7 @@ theorem struct_is_rec_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_is_rec" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_is_rec c args h r h' calls := by
-  intro par hargs good p hp hr
+  intro par hargs good p hp hres hr
   subst hargs
   rcases Obs.«KernelWhnf::struct_is_rec».obs ev with
     ⟨m2, p9, cs15, w42, w43, w44, w45, w46, w47, x_block, w48, m90, cs101, v116, m117, cs127,
@@ -623,7 +623,7 @@ theorem struct_is_rec_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
   · subst hc168
     have e1 := ObsFn.heap_extends ev17
     have e2 := ObsFn.heap_extends ev103
-    obtain ⟨ci, -, v, hv, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev17 par p rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, -, v, hv, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev17 par p rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun z hz => by simp [hz]) hp
     rw [ld11] at hv
     injection hv with hv
