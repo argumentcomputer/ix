@@ -148,7 +148,7 @@ theorem readInductiveBare_native_frames_with_params {cx : Ctx .anon} {owner : _r
             have agree := paramsAgree
             simp only [Array.all_eq_true, beq_iff_eq] at agree
             obtain ⟨position, bound, rfl⟩ := List.getElem_of_mem inEntries
-            exact paramsEq.trans (by simpa using agree position (by simpa using bound))
+            exact paramsEq.trans (by simpa [indcs] using agree position (by simpa [indcs] using bound))
           · exact (fail_bind read).elim
       · exact (throw_ok read).elim
     · exact (fail_bind read).elim
