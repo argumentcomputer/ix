@@ -73,34 +73,42 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
     (h : checkModeled mode (fueledOps mode fuel) env block = .ok output) :
     usesStoredRecursors env.find? block = false := by
   unfold usesStoredRecursors
+  have tag : (fun | .recInfo .. => true | _ => false : ConstantInfo md → Bool) =
+      ConstantInfo.isRecInfo := by
+    funext ci
+    cases ci <;> rfl
+  rw [tag]
   by_cases hempty : block.isEmpty = true
   · simp only [hempty, Bool.not_true, Bool.false_and]
-  · by_cases hall : block.all (fun | .recInfo .. => true | _ => false) = true
-    · have recs : block.filter (fun | .recInfo .. => true | _ => false) = block :=
+  · by_cases hall : block.all ConstantInfo.isRecInfo = true
+    · have recs : block.filter ConstantInfo.isRecInfo = block :=
         List.filter_eq_self.mpr (List.all_eq_true.mp hall)
-      have nonrecs : block.filter (fun | .recInfo .. => false | _ => true) = [] := by
+      have nonrecs : block.filter (fun ci => !ci.isRecInfo) = [] := by
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
         cases ci <;> simp_all
-      have inductives : block.filter (fun | .indInfo .. => true | _ => false) = [] := by
+      have inductives : block.filter (fun ci => match ci with
+          | .indInfo _ _ => true | _ => false) = [] := by
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
         cases ci <;> simp_all
-      have constructors : block.filter (fun | .ctorInfo .. => true | _ => false) = [] := by
+      have constructors : block.filter (fun ci => match ci with
+          | .ctorInfo _ _ _ => true | _ => false) = [] := by
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
         cases ci <;> simp_all
       have hsuffix : @decide _ (blockRecSuffixDec block) = true := by
         simp only [decide_eq_true_eq]
-        rw [nonrecs, recs]
+        rw [recsFilterNeg, recsFilterPos, nonrecs, recs]
         rfl
       unfold checkModeled at h
       simp only [hsuffix, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
       rw [inductives, constructors] at h
-      simp only [nonrecs, recs, List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
+      simp only [recsFilterNeg, recsFilterPos, nonrecs, recs, List.foldlM_nil,
+        bind, Except.bind, pure, Except.pure] at h
       have models := indRecs_models h
       have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
           | some (.defnInfo ..) => true | _ => false) = true := by
@@ -109,7 +117,7 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         obtain ⟨cv, value, hint, hmodel⟩ := models ci hci
         rw [hmodel]
       simp only [present, Bool.not_true, Bool.and_false]
-    · have hfalse : block.all (fun | .recInfo .. => true | _ => false) = false :=
+    · have hfalse : block.all ConstantInfo.isRecInfo = false :=
         Bool.eq_false_iff.mpr hall
       simp only [hfalse, Bool.and_false, Bool.false_and]
 
