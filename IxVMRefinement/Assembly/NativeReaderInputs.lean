@@ -27,16 +27,22 @@ def NativeCtorReaderFrame (cx : Ctx .anon) (owner : _root_.Address) (mr : Member
   row.1.levelParams = List.range slot.2.1.lvls.toNat ∧
   row.2.1 = slot.2.1.params.toNat ∧ row.2.2 = slot.2.1.fields.toNat
 
+/-- The same row frame with the slot and safety guards retained from the reader. -/
+def NativeCtorReaderCheckedFrame (cx : Ctx .anon) (owner : _root_.Address) (mr : MemberReader .anon)
+    (slot : NativeCtorSlot) (row : NativeCtorRow) : Prop :=
+  NativeCtorReaderFrame cx owner mr slot row ∧ slot.2.1.cidx.toNat = slot.2.2 ∧
+    slot.2.1.isUnsafe = false
+
 /-- The bare reader's constructor rows agree position by position with the source slots it
 actually visits. The resulting block is the one passed to the real lowering function. -/
-theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
+theorem readInductiveBare_checked_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
     {source : Ixon.Constant} {members : Array Ixon.MutConst} {result : Read .anon}
     (read : readInductiveBare cx owner source members = .ok result) :
     ∃ (shape : BlockShape) (block : BlockRead .anon),
       blockShapeOf cx.index owner members = some shape ∧
       lowerInductiveBare block = .ok result ∧
       List.Forall₂
-        (NativeCtorReaderFrame cx owner (MemberReader.mk' cx source id
+        (NativeCtorReaderCheckedFrame cx owner (MemberReader.mk' cx source id
           (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
         (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
           | some (.indc ind) => some (i, ind)
@@ -54,7 +60,7 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
       | _ => none
     let mr := MemberReader.mk' cx source id
       (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)
-    let frame := NativeCtorReaderFrame cx owner mr
+    let frame := NativeCtorReaderCheckedFrame cx owner mr
     rcases ite_ok read with read | read
     · split at read
       · rcases ite_ok read with read | read
@@ -84,8 +90,8 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
                   _ ind.ctors.zipIdx ?_ (by simpa using held) innerRun
                 intro preSlots slot suffix current step _ prefixHeld stepped
                 rcases slot with ⟨ctor, position⟩
-                rcases ite_ok stepped with stepped | stepped
-                · rcases ite_ok stepped with stepped | stepped
+                rcases Ix.Cert.CtxAgree.ite_ok' stepped with ⟨indexChecked, stepped⟩ | ⟨_, stepped⟩
+                · rcases Ix.Cert.CtxAgree.ite_ok' stepped with ⟨_, stepped⟩ | ⟨safetyChecked, stepped⟩
                   · exact (fail_bind stepped).elim
                   · obtain ⟨key, keyRead, stepped⟩ := except_bind_ok.mp stepped
                     obtain ⟨type, typeRead, stepped⟩ := except_bind_ok.mp stepped
@@ -95,7 +101,8 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
                       refine ⟨_, rfl, ?_⟩
                       have one : frame (member, ctor, position)
                           (⟨key, List.range ctor.lvls.toNat, type⟩, ctor.params.toNat, ctor.fields.toNat) :=
-                        ⟨keyRead, typeRead, rfl, rfl, rfl⟩
+                        ⟨⟨keyRead, typeRead, rfl, rfl, rfl⟩,
+                          by simpa using indexChecked, by simpa using safetyChecked⟩
                       simpa only [Array.toList_push, List.map_append, List.map_singleton, List.append_assoc]
                         using forall₂_append prefixHeld (.cons one .nil)
                     · exact (fail_bind stepped).elim
@@ -106,6 +113,22 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
           · exact (fail_bind read).elim
       · exact (throw_ok read).elim
     · exact (fail_bind read).elim
+
+/-- The constructor row frames, omitting the additional checked slot and safety facts. -/
+theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
+    {source : Ixon.Constant} {members : Array Ixon.MutConst} {result : Read .anon}
+    (read : readInductiveBare cx owner source members = .ok result) :
+    ∃ (shape : BlockShape) (block : BlockRead .anon),
+      blockShapeOf cx.index owner members = some shape ∧
+      lowerInductiveBare block = .ok result ∧
+      List.Forall₂
+        (NativeCtorReaderFrame cx owner (MemberReader.mk' cx source id
+          (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+        (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
+          | some (.indc ind) => some (i, ind)
+          | _ => none)).toList) block.ctors.toList := by
+  obtain ⟨shape, block, shapeRead, lowered, frames⟩ := readInductiveBare_checked_ctor_frames read
+  exact ⟨shape, block, shapeRead, lowered, frames.imp (fun _ _ frame => frame.1)⟩
 
 /-- Full inductive reading exposes the same constructor frames through its proved bare
 reading, after separating the actual generated declaration prefix. -/
@@ -125,6 +148,25 @@ theorem readInductive_ctor_frames {cx : Ctx .anon} {state : State .anon}
           | _ => none)).toList) block.ctors.toList := by
   obtain ⟨generated, bare, bareRead, declarations, _, _, _⟩ := readInductive_full_bare read
   obtain ⟨shape, block, shapeRead, lowered, frames⟩ := readInductiveBare_ctor_frames bareRead
+  exact ⟨generated, bare, shape, block, declarations, shapeRead, lowered, frames⟩
+
+/-- Full reading also preserves the actual constructor slot and safety guards. -/
+theorem readInductive_checked_ctor_frames {cx : Ctx .anon} {state : State .anon}
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {result : Read .anon} (read : readInductive cx state owner source members = .ok result) :
+    ∃ (generated : List (Ix.Kernel.Declaration .anon)) (bare : Read .anon)
+      (shape : BlockShape) (block : BlockRead .anon),
+      result.decls.toList = generated ++ bare.decls.toList ∧
+      blockShapeOf cx.index owner members = some shape ∧
+      lowerInductiveBare block = .ok bare ∧
+      List.Forall₂
+        (NativeCtorReaderCheckedFrame cx owner (MemberReader.mk' cx source id
+          (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+        (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
+          | some (.indc ind) => some (i, ind)
+          | _ => none)).toList) block.ctors.toList := by
+  obtain ⟨generated, bare, bareRead, declarations, _, _, _⟩ := readInductive_full_bare read
+  obtain ⟨shape, block, shapeRead, lowered, frames⟩ := readInductiveBare_checked_ctor_frames bareRead
   exact ⟨generated, bare, shape, block, declarations, shapeRead, lowered, frames⟩
 
 end IxVM.Refinement.Assembly
