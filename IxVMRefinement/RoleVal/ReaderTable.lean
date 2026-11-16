@@ -546,6 +546,7 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
   cases Option.some.inj returned
   simp only [analyseRecursor, analysed, bind, Option.bind, Array.mapM_eq_mapM_toList,
     valuesRead, targetRead, Option.map_some, pure]
+  rfl
 
 private theorem inductivesList_eq (members : Array Ixon.MutConst) :
     (inductivesList members.toList).toArray = Ix.CompileCert.ReaderIndex.inductives members := by
