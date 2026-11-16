@@ -45,7 +45,7 @@ theorem native_ctor_query_shape {base : Core.Ctx} {block : Bytes.Address} {i ind
   have indexEq : index = i :=
     (ZMod.natCast_zmod_val index).symm.trans
       ((congrArg (fun n : Nat => (n : F)) (congrArg Prod.fst entryEq)).trans (ZMod.natCast_zmod_val i))
-  have indEq := congrArg Prod.snd entryEq
+  have indEq : actual = ind := congrArg Prod.snd entryEq
   subst actual
   exact ⟨indexEq, by simpa only [Array.length_toList] using (List.getElem?_eq_some_iff.mp atCtor).1⟩
 
