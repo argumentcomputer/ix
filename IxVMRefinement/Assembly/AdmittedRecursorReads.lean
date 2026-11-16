@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.RecursorReadFrames
+import IxVMRefinement.Assembly.RecursorCanonicalRead
 import Ix.IxVM.Consistency.ReaderAdmission
 import Ix.Cert.RecursorIndex
 
@@ -87,6 +87,31 @@ theorem admitted_inductive_twin_inputs {V : IxVM.Refinement.View} {binding : Adm
   obtain ⟨_, _, read, _⟩ := (readRecords_spec witness.read).mem (Array.mem_toList_iff.mpr decoded)
   obtain ⟨blockLps, row, rowRead⟩ :=
     readRecord_inductive_twin_read read info hasInductive member indexed
+  exact ⟨blockLps, row, rowRead, readRecursor_inputs rowRead⟩
+
+/-- Every canonical entry assigned to an actually selected inductive family is read by
+that family's accepted run, even when its payload lies in a separate record. -/
+theorem admitted_inductive_canonical_inputs {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    (selected : owner ∈ witness.order) (record : Ix.Cert.recordAt witness.env owner = some source)
+    (info : source.info = .muts members)
+    (hasInductive : members.any (fun | .indc _ => true | _ => false) = true)
+    {ref : ConstRef _root_.Address} {entry : RecEntry}
+    (indexed : (Admission.streamContext _root_.Address.admissionHash witness.table witness.prelude
+      (Ix.Cert.Stream.decodedOf witness.env witness.order) (Ix.Cert.blobsOf witness.env witness.order)
+      (Ix.Cert.hintsOf witness.env)).index.recs[ref]? = some entry)
+    (family : entry.block = owner) :
+    let cx := Admission.streamContext _root_.Address.admissionHash witness.table witness.prelude
+      (Ix.Cert.Stream.decodedOf witness.env witness.order) (Ix.Cert.blobsOf witness.env witness.order)
+      (Ix.Cert.hintsOf witness.env)
+    ∃ blockLps row, readRecursor cx blockLps ref entry = .ok row ∧
+      Nonempty (RecursorReadInputs cx blockLps ref entry row) := by
+  have decoded : (owner, source) ∈ (Ix.Cert.Stream.decodedOf witness.env witness.order).toArray :=
+    Ix.Cert.RecursorIndex.mem_decoded.mpr ⟨selected, record⟩
+  obtain ⟨_, _, read, _⟩ := (readRecords_spec witness.read).mem (Array.mem_toList_iff.mpr decoded)
+  obtain ⟨blockLps, row, rowRead⟩ :=
+    readRecord_inductive_canonical_read (records := _) rfl read info hasInductive indexed family
   exact ⟨blockLps, row, rowRead, readRecursor_inputs rowRead⟩
 
 end IxVM.Refinement.Assembly
