@@ -203,4 +203,39 @@ theorem streamContext_block_self_key_at {cx : Ctx .anon} {table : RoleTable}
   exact Except.ok.inj (called.symm.trans named)
 
 
+/-- A constructor's implicit member key requires resolution only at that constructor's
+own role-bound projection address. -/
+theorem streamContext_ctor_key_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {owner : _root_.Address} {i j : Nat} (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
+    (boundResolved : ∀ role, (role, Core.cprjAddr owner i j) ∈ table.bound.toList →
+      resolve cx.store (Core.cprjAddr owner i j) = some (.ctor owner i j)) :
+    cx.memberKey (.ctor owner i j) = .ok (Core.keyOf table (Core.cprjAddr owner i j)) := by
+  let projection : Ixon.Constant := ⟨.cPrj ⟨i.toUInt64, j.toUInt64, owner⟩, #[], #[], #[], #[]⟩
+  have unique : ∀ other, resolve cx.store other = some (.ctor owner i j) →
+      other = Core.cprjAddr owner i j := by
+    intro other resolved
+    unfold resolve at resolved
+    obtain ⟨value, found, sourceRead⟩ := Option.bind_eq_some_iff.mp resolved
+    rcases Ix.Cert.ReadingKeys.resolveSource_cases sourceRead with ⟨impossible, _⟩ | projected
+    · cases impossible
+    · have projectedAt : Ix.Cert.ReadingKeys.projectionAt cx.store (.ctor owner i j) = some projection := rfl
+      rw [projectedAt] at projected
+      injection projected with valueEq
+      subst value
+      obtain ⟨bytes, hashed, decoded⟩ := authentic other projection found
+      have shape := projectionAt_empty_and_proj projectedAt
+      have encoded := (deConstantExact_proj_eq_serConstant decoded shape.1 shape.2).1
+      rw [encoded] at hashed
+      exact hashed.symm
+  have reconstructed : cx.reconstruct (.ctor owner i j) = some (Core.cprjAddr owner i j) := by
+    rw [context]
+    exact projectionAddress_cprj owner i j memberBound ctorBound
+  exact streamContext_memberKey_of_local_resolution context authentic checked unique rfl
+    reconstructed boundResolved
+
+
 end IxVM.Refinement.Assembly
