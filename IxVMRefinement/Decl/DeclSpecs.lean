@@ -291,11 +291,10 @@ private theorem checkNativeTable_env_cases {p : NativeParts .anon}
           · injection hTbl with heq
             exact Or.inl heq.symm
 
-/-- Every `DeclRunJ rulesJ (IndRoutesJ rulesJ env)` step on a `DeclNonAux` declaration preserves
-`AuxRootSynced`. -/
-theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .anon}
+/-- Auxiliary-root synchronization depends only on names and installation shape, at any judgement package. -/
+theorem auxRootSynced_step_declRunJ_generic {J : Judgements .anon} {env env₂ : Env .anon} {d : Declaration .anon}
     (haux : AuxRootSynced env) (hna : DeclNonAux d)
-    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    (hrun : DeclRunJ J (IndRoutesJ J env) env d env₂) :
     AuxRootSynced env₂ := by
   cases d with
   | defnDecl cv value hint =>
@@ -343,7 +342,7 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
         have hm : ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP) := by
           simpa [IxVM.Consistency.installs, hpin] using hci₀
         exact isBaseKey_of_nonAuxKey (hna.1 ci₀ hm).1
-      have hroutes : IndRoutesJ rulesJ env block nP env₂ := by simpa [DeclRunJ, hpin] using hrun
+      have hroutes : IndRoutesJ J env block nP env₂ := by simpa [DeclRunJ, hpin] using hrun
       rcases hroutes with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · obtain ⟨caps₀, cs, mI₀, rP₀, rules₀, hblk_eq, hctors₀⟩ := nativeParts?_block_eq hdp
         obtain ⟨_, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, _, _, _, hInd,
@@ -442,7 +441,7 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
         rcases hrecs with ⟨_, rfl⟩ | ⟨_, _, envSelf, checked, hprov, hfold⟩
         · exact hauxM
         · have hfold' :
-              IndRecsFoldRunJ rulesJ (block.map (·.name)) envM envSelf ⟨[] ++ envM.consts⟩
+              IndRecsFoldRunJ J (block.map (·.name)) envM envSelf ⟨[] ++ envM.consts⟩
                 checked env₂ := hfold
           obtain ⟨newR, hout, hnamesR⟩ := indRecsFoldRunJ_consts_eq checked hfold'
           simp only [List.append_nil] at hout
@@ -556,6 +555,13 @@ theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .a
               ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW' ∈ twinRecs ws ++ twinModels ws :=
             List.mem_append_left _ (List.mem_map.mpr ⟨w, hw, rfl⟩)
           exact env_find?_isSome_of_mem_prefix hc_mem
+
+/-- Rules-tier declaration steps preserve auxiliary-root synchronization. -/
+theorem auxRootSynced_step_declRunJ {env env₂ : Env .anon} {d : Declaration .anon}
+    (haux : AuxRootSynced env) (hna : DeclNonAux d)
+    (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    AuxRootSynced env₂ :=
+  auxRootSynced_step_declRunJ_generic haux hna hrun
 
 /-- Uniform one-step preservation of `FullDeclInv` along `DeclRunJ rulesJ (IndRoutesJ rulesJ env)`
 on any `DeclNonAux` declaration. -/
