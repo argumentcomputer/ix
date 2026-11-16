@@ -70,4 +70,77 @@ theorem native_former_value_of_trace {κ : _root_.Address → KKey}
   · simp only [cv, indexValue, parentEq]
   · simpa only [cv, List.append_nil] using readTrace plan trace []
 
+/-- One actual former load and its scope check construct the exact annotation and its
+serialized origin. No semantic lookup of that former is required. -/
+theorem observed_native_former_input {base : Core.Ctx}
+    {calls loadCalls scopeCalls : List (Call F)} {h₀ h₁ h₂ h₃ : Heap F}
+    {block : Bytes.Address} {i : F} {blockArg ptr result : SourceValue F}
+    {nl ty np ni nc safe parent memberIndex : SourceValue F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci_iprj" [blockArg, .field i]
+      h₀ ptr h₁ loadCalls)
+    (goodLoad : Core.Good base loadCalls)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h₀ block blockArg)
+    (tag : loadValue h₁ ptr = .ok (.construct Core.kciEnum "Induct"
+      [nl, ty, np, ni, nc, safe, parent, memberIndex]))
+    (extended : Heap.Extends h₁ h₂)
+    (bounded : IxVM.Consistency.Bounded calls)
+    (validated : ObsFn Core.W "KernelCheck::validate_expr_well_scoped"
+      [ty, .field 0, nl] h₂ result h₃ scopeCalls)
+    (scopeMember : (⟨"KernelCheck::validate_expr_well_scoped",
+      [ty, .field 0, nl], h₂⟩ : Call F) ∈ calls)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed loadCalls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    ∃ (cv : Ix.Kernel.ConstantVal .anon) (tree : L1.BinderTreeData) (plan : List Core.KLevel),
+      IxVM.Consistency.ValStored cv
+        ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩ ∧
+      Decl.CIPtrRepExact base.κ h₁ ptr (.indInfo cv caps) ∧
+      L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree ∧
+      L1.binderRootPlan tree source.value.sharing.toList
+        ((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) ind.typ = some plan ∧
+      L1.applyBinderTrace
+        (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+          some (cv.type, []) ∧
+      rawType.looseBVarsBounded 0 = true ∧
+      rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧ rawType.hasFvar = false := by
+  obtain ⟨_, _, bytes, src, ms, member, blobs, value, hashed, address, decoded, _,
+    srcShape, memberAt', hashedBlobs, valueAt, raw, tree, plan, built, planned, levels⟩ :=
+    L1.get_ci_iprj_origin_spec goodLoad.2 blockRep loaded
+  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hashed address
+  rw [bytesEq, source.decoded] at decoded
+  injection decoded with sourceEq
+  subst src
+  rw [blockShape] at srcShape
+  injection srcShape with membersEq
+  subst ms
+  rw [memberAt] at memberAt'
+  injection memberAt' with memberEq
+  injection memberEq with memberEq
+  subst member
+  have originalRaw := raw
+  obtain ⟨levelBound, _, _, _, _, typePtr, parentPtr, _, _, _, valueEq, rawTypeRep⟩ := raw
+  subst value
+  have fieldsEq := Except.ok.inj (tag.symm.trans valueAt)
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fieldsEq
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fieldsEq
+  obtain ⟨_, varsBounded, levelsDefined⟩ :=
+    validate_expr_well_scoped_spec bounded levelBound rawTypeRep extended read validated scopeMember
+  obtain ⟨cv, stored, represented, image⟩ := native_former_value_of_trace caps originalRaw levels
+    read varsBounded levelsDefined keyed selfKeyed
+    (fun a bytes member => blobReads a bytes
+      (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
+  exact ⟨cv, tree, plan, stored, ⟨_, valueAt, represented⟩, built, planned, image,
+    varsBounded, levelsDefined, memberReader_read_noFvar read⟩
+
 end IxVM.Refinement.Assembly
