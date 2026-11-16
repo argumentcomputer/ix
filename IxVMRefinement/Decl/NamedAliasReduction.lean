@@ -108,7 +108,8 @@ private theorem AliasLeaf.unfolded {md : Mode} {env : Env md}
   | named =>
     have step : unfoldDefinition env (.const aliasName []) = some (.const targetName targetLevels) := by
       simp only [unfoldDefinition, Expr.getAppFn, aliasFound, noLevels, List.length_nil,
-        ↓reduceIte, Expr.getAppArgs, Expr.mkAppN, Expr.instantiateLevelParams_self]
+        ↓reduceIte, Expr.getAppArgs, Expr.mkAppN]
+      exact congrArg some (Expr.instantiateLevelParams_self [] (.const targetName targetLevels))
     rw [step] at unfolded
     obtain rfl := Option.some.inj unfolded
     exact .target
