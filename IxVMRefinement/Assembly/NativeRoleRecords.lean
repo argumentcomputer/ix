@@ -147,4 +147,24 @@ theorem admitted_bound_projection_owner_selected {V : IxVM.Refinement.View} {bin
     exact .step ((witness.closure.complete address).mp selected) ⟨value, record, .inl ⟨ownerEq, same⟩⟩
 
 
+/-- For an owner outside the admitted role closure, any binding of its actual hashed
+projection must be one of the explicitly excluded compiler-trust roles. -/
+theorem new_owner_projection_bound_is_compilerTrust {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : ReaderAdmissionWitness V binding) {calls : List (Call F)} {extra : List ByteArray}
+    (noCollision : ¬ V.HashedCollision extra calls)
+    {role : Role} {address : _root_.Address} {bytes : ByteArray} {value : Ixon.Constant}
+    {layout : Egress.ProjectionLayout} {target : ConstRef _root_.Address}
+    (newOwner : target.block ∉ witness.order)
+    (bound : (role, address) ∈ witness.table.bound.toList)
+    (hashed : Hashed calls bytes) (hashEq : Address.blake3Pure bytes = address)
+    (decoded : Ixon.deConstantExact bytes = .ok value)
+    (projection : Egress.ProjectionReads value layout target) :
+    IxVM.Refinement.compilerTrust role = true := by
+  cases trusted : IxVM.Refinement.compilerTrust role with
+  | true => rfl
+  | false =>
+    exact (newOwner (admitted_bound_projection_owner_selected witness noCollision bound trusted
+      hashed hashEq decoded projection)).elim
+
+
 end IxVM.Refinement.Assembly

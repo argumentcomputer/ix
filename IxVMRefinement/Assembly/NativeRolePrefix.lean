@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeReaderCoverage
+import IxVMRefinement.Assembly.NativeRoleKeys
 import IxVMRefinement.Assembly.AdmittedKeys
 import IxVMRefinement.Decl.ReferenceReplay
 import Ix.Cert.RecursorIndex
@@ -73,5 +74,39 @@ theorem present_not_fresh_of_extension {roleEnv env : Env .anon} {key : Key .ano
   obtain ⟨constant, found⟩ := Option.isSome_iff_exists.mp present
   rw [extended.find found]
   exact Option.some_ne_none constant
+
+/-- An actual hashed non-trust bound former/constructor projection has its core name in the
+checked role prefix, using the real owner read and prepared declaration coverage. -/
+theorem admitted_bound_native_name_present {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {fuel : Nat} {start roleEnv : Env .anon}
+    (trace : Decl.ReferenceTrace fuel start
+      ((Frontend.preparePrelude witness.prelude.ix witness.fullDecls).toList.map
+        IxVM.Refinement.thmToOpaqueDefn) roleEnv)
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {member : Nat} {ind : Ixon.Inductive}
+    (selected : owner ∈ witness.order) (record : Ix.Cert.recordAt witness.env owner = some source)
+    (kind : source.info = .muts members) (memberAt : members[member]? = some (.indc ind))
+    (one : Ix.CompileCert.ReaderIndex.inductives members = #[(member, ind)])
+    {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {extra : List ByteArray}
+    (noCollision : ¬ V.HashedCollision extra calls)
+    {role : Role} {address : _root_.Address} {bytes : ByteArray} {value : Ixon.Constant}
+    {layout : Egress.ProjectionLayout} {target : ConstRef _root_.Address}
+    (bound : (role, address) ∈ witness.table.bound.toList)
+    (notTrust : IxVM.Refinement.compilerTrust role = false)
+    (hashed : Hashed calls bytes) (hashEq : Address.blake3Pure bytes = address)
+    (decoded : Ixon.deConstantExact bytes = .ok value)
+    (projection : Egress.ProjectionReads value layout target)
+    (nativeTarget : target = .member owner member ∨
+      ∃ slot ctor, target = .ctor owner member slot ∧ ind.ctors[slot]? = some ctor) :
+    (roleEnv.find? (Core.keyOf witness.table address)).isSome = true := by
+  have named := admitted_bound_projection_key witness noCollision bound notTrust hashed hashEq decoded projection
+  have present := admitted_native_role_prefix_names witness trace selected record kind memberAt one
+  rcases nativeTarget with same | ⟨slot, ctor, same, found⟩
+  · rw [same] at named
+    exact present.1 _ named
+  · rw [same] at named
+    exact present.2 slot ctor _ found named
+
 
 end IxVM.Refinement.Assembly
