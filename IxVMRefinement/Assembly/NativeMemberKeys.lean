@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeReaderKeys
+import IxVMRefinement.L1.Ingress
 
 /-! # Local naming conditions for actual block members
 
@@ -161,5 +162,45 @@ theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {tab
     | recr value => exact projectionAddress_rprj stored' shape memberAt bound
   exact streamContext_memberKey_of_local_resolution context authentic checked unique notSingleton
     reconstructed boundResolved
+
+/-- One recursive-reference occurrence needs the key of its own selected member. The
+occurrence supplies its projected address and wire index; only that bound projection needs
+resolution in the reader store. -/
+theorem streamContext_block_self_key_at {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    (stored : cx.store owner = some source) (shape : source.info = .muts members)
+    {index : Nat} {address : _root_.Address} {reading : ReadM (Key .anon)} {key : Key .anon}
+    (bound : index < UInt64.size)
+    (addressAt : (L1.blockRecurAddrs owner members.toList)[index]? = some address)
+    (callback : (if index < members.size then some (cx.memberKey (.member owner index)) else none) =
+      some reading)
+    (read : reading = .ok key)
+    (boundResolved : ∀ role, (role, address) ∈ table.bound.toList →
+      resolve cx.store address = some (.member owner index)) :
+    key = Core.keyOf table address := by
+  have inside : index < members.size := by
+    have present := (List.getElem?_eq_some_iff.mp addressAt).1
+    simpa [L1.blockRecurAddrs_eq_mapIdx] using present
+  have memberAt : members[index]? = some members[index] := Array.getElem?_eq_getElem inside
+  have projected : (L1.blockRecurAddrs owner members.toList)[index]? =
+      some (Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index])) := by
+    rw [L1.blockRecurAddrs_eq_mapIdx]
+    rw [List.getElem?_eq_getElem (by simpa using inside), List.getElem_mapIdx]
+    simp only [Array.getElem_toList]
+  have addressEq : address = Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index]) :=
+    Option.some.inj (addressAt.symm.trans projected)
+  have called : cx.memberKey (.member owner index) = .ok key := by
+    have callbackEq : cx.memberKey (.member owner index) = reading := by
+      simpa only [inside, ↓reduceIte, Option.some.injEq] using callback
+    exact callbackEq.trans read
+  have named := streamContext_memberKey_member_of_local_resolution context authentic checked
+    stored shape memberAt bound (by rwa [← addressEq])
+  rw [← addressEq] at named
+  exact Except.ok.inj (called.symm.trans named)
+
 
 end IxVM.Refinement.Assembly
