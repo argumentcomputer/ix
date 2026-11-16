@@ -15,7 +15,7 @@ open IxVM (F)
 def needsBinderAt (sharing : List Ixon.Expr) (bound : Nat) (expr : Ixon.Expr) : Bool :=
   match expr with
   | .lam _ _ | .all _ _ => true
-  | .app fn arg => needsBinderAt sharing bound fn || needsBinderAt sharing bound arg
+  | .app func arg => needsBinderAt sharing bound func || needsBinderAt sharing bound arg
   | .prj _ _ inner => needsBinderAt sharing bound inner
   | .letE _ _ ty value body =>
     (needsBinderAt sharing bound ty || needsBinderAt sharing bound value) || needsBinderAt sharing bound body
@@ -27,7 +27,9 @@ def needsBinderAt (sharing : List Ixon.Expr) (bound : Nat) (expr : Ixon.Expr) : 
     else false
   | _ => false
 termination_by (bound, sizeOf expr)
-decreasing_by all_goals simp_wf; omega
+decreasing_by
+  all_goals simp_wf
+  all_goals omega
 
 def binderFlag (needed : Bool) : Nat := if needed then 1 else 0
 
@@ -55,7 +57,14 @@ theorem binderFlag_three_nonzero {first second third : Bool} {a b c : Nat}
     (added₁ : evalBinOp .add (.field (a : F)) (.field (b : F)) = .ok middle)
     (added₂ : evalBinOp .add middle (.field (c : F)) = .ok value)
     (nonzero : value ≠ .field 0) : 1 = binderFlag ((first || second) || third) := by
-  cases first <;> cases second <;> cases third <;> simp_all [binderFlag, evalBinOp]
+  subst a b c
+  cases first <;> cases second <;> cases third
+  all_goals first
+    | rfl
+    | (simp only [binderFlag, Nat.cast_zero, evalBinOp, zero_add, Except.ok.injEq] at added₁
+       subst middle
+       simp only [binderFlag, Nat.cast_zero, evalBinOp, zero_add, Except.ok.injEq] at added₂
+       exact False.elim (nonzero added₂.symm))
 
 theorem binderFlag_nonzero {needed : Bool} {bit : Nat}
     (code : bit = binderFlag needed) (nonzero : (.field (bit : F) : SourceValue F) ≠ .field 0) :
