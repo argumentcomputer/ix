@@ -73,7 +73,7 @@ theorem selected_usedClosureOrder {table : Ix.Kernel.RoleTable} {env : Ixon.Env}
     rw [mem_pruneClosureOrder]
     exact ⟨And.right, fun reached => ⟨selected_reach_in_all_order allRecords reached, reached⟩⟩
   · exact (allRecords.ordered.filter _).imp
-      (fun _ _ ordered edge => ordered (usedRecordRef_selected edge))
+      (fun ordered edge => ordered (usedRecordRef_selected edge))
 
 /-- The admitted/walked union supplies the finite all-record order used above. -/
 theorem admitted_selected_usedClosureOrder {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
