@@ -34,8 +34,7 @@ theorem preludeFor_readRecords {table : RoleTable} {prelude : Prelude .anon}
   | error error =>
     obtain ⟨error, index⟩ := error
     rw [checked] at read
-    dsimp only at read
-    exact (Ix.Cert.ReaderUnits.throw_ok read).elim
+    cases read
   | ok output =>
     obtain ⟨state, declarations⟩ := output
     rw [checked] at read
