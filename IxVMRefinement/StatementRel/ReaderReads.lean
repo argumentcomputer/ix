@@ -593,7 +593,7 @@ theorem recReads_of_inputs {t : RoleTable} (checked : t.check = .ok ()) {cx : Ct
   unfold RecReads
   refine ⟨tyP, ty, kF, kM, B, inputs.majorOwner, i, inputs.majorSlot, ind, inputs.major,
     recLps entry.large blockLps, rules, hP, hF, hIF, hM, hIM, ?_, hty, hcount.symm, hrules, ?_⟩
-  · rw [hlps, hlarge]
+  · exact congrArg₂ recLps hlarge hlps
   · show Ix.Kernel.ConstantInfo.recInfo
         (⟨name, recLps entry.large blockLps, ty⟩ : CVal .anon)
         (counts.params + counts.motives + counts.minors + counts.indices)
