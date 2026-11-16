@@ -3852,7 +3852,7 @@ theorem BlobReadAgreement.of_mem {blob : _root_.Address → Option ByteArray}
 producing `E_rd` with loose bound variables below `k` and level parameters in `ps`, then `kp`
 represents `Core.posOf ps E'` (`Decl.TmExact κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
 satisfying `Annotates E' E_rd`. -/
-theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4181,7 +4181,7 @@ theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → 
     exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
 
 /-- Compatibility with a blob store containing every observed pair. -/
-theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4213,7 +4213,7 @@ theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
     (BlobReadAgreement.of_mem hblob)
 
 /-- The exact semantic reader bridge also follows from the paired raw reading. -/
-theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4244,7 +4244,7 @@ theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
   exact ⟨annotated, annotation, fun d Γ => (represented d Γ).toTmExact, trace⟩
 
 /-- Exact semantic trace under agreement at the reader's successful literal lookups. -/
-theorem RawConvExpr.toTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4275,7 +4275,7 @@ theorem RawConvExpr.toTmExactTrace_of_blobAgreement {κ : _root_.Address → Cor
   exact ⟨annotated, annotation, fun d Γ => (represented d Γ).toTmExact, trace⟩
 
 /-- The original exact expression bridge, with annotation-trace evidence omitted. -/
-theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4332,7 +4332,7 @@ theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolv
 /-- **Exact closed root bridge (`RawConvExpr.toTmCExact`)**: directly connects a root `RawConvExpr` and a
 `MemberReader.read` evaluation of `e` (closed and with defined level parameters) to `Annotates`
 and `Decl.TmCExact`. -/
-theorem RawConvExpr.toTmCExact {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExact {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -4380,7 +4380,7 @@ theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey} [∀ a, Core.Resol
   exact ⟨E', hA, hTm.toTmC⟩
 
 /-- Exact reader representation under agreement at successful literal lookups. -/
-theorem RawConvExpr.toTmExact_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmExact_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4408,7 +4408,7 @@ theorem RawConvExpr.toTmExact_of_blobAgreement {κ : _root_.Address → Core.KKe
   exact ⟨annotated, annotates, termRep⟩
 
 /-- Exact reader representation under agreement at successful literal lookups. -/
-theorem RawConvExpr.toTmCExact_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExact_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}

@@ -13,7 +13,7 @@ open IxVM (F)
 open IxVM.Refinement.Deserialize
 
 /-- The closed reader bridge also retains the exact annotation selected by the heap trace. -/
-theorem RawConvExpr.toTmCExactTrace {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExactTrace {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -42,7 +42,7 @@ theorem RawConvExpr.toTmCExactTrace {κ : _root_.Address → Core.KKey}
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
 /-- The closed root retains both its raw syntax and its semantic annotation. -/
-theorem RawConvExpr.toRawTmCExactTrace {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmCExactTrace {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -74,7 +74,7 @@ theorem RawConvExpr.toRawTmCExactTrace {κ : _root_.Address → Core.KKey}
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
 /-- The closed exact trace uses blob agreement at successful reader lookups. -/
-theorem RawConvExpr.toTmCExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -103,7 +103,7 @@ theorem RawConvExpr.toTmCExactTrace_of_blobAgreement {κ : _root_.Address → Co
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
 /-- The closed exact trace uses blob agreement at successful reader lookups. -/
-theorem RawConvExpr.toRawTmCExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmCExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -135,7 +135,7 @@ theorem RawConvExpr.toRawTmCExactTrace_of_blobAgreement {κ : _root_.Address →
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
 /-- Two conversions of one reader root and serialized plan admit one common exact annotation. -/
-theorem same_annotation_of_root_plans {κ : _root_.Address → Core.KKey}
+theorem same_annotation_of_root_plans {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -175,7 +175,7 @@ theorem same_annotation_of_root_plans {κ : _root_.Address → Core.KKey}
 
 /-- Actual table construction and root conversion in two heaps produce a common exact
 reader annotation. Literal agreement is required only for hashes in those root traces. -/
-theorem observed_roots_same_annotation {κ : _root_.Address → Core.KKey}
+theorem observed_roots_same_annotation {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
