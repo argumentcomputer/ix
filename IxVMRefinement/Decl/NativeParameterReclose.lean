@@ -167,7 +167,7 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
     have openedBounded := (openPisAtFvars_bounded count opened frame.2.1).1
     obtain ⟨_, fieldScope, fieldBounded, fieldLeaves, fieldEq⟩ :=
       normFieldDoms_reclose model.base2.wf fieldRun openedScope openedBounded
-    have syntax := reclose_parameter_prefix stripped opened frame.1 frame.2.1
+    have scopingFacts := reclose_parameter_prefix stripped opened frame.1 frame.2.1
       fieldScope fieldBounded fieldLeaves fieldEq
     let pbs := List.zipWith (fun (x : Expr md) (b : Expr md × BinderMeta) => (x.fvarTypeD, b.2))
       parameterVars parameters
@@ -177,9 +177,9 @@ theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mo
     have reclosed : closeTelescope (pbs ++ fields) depth residual =
         closeTelescope pbs depth (closeTelescope fields (depth + count) residual) := by
       rw [closeTelescope_append, pbsCount]
-    change Expr.WScoped depth (closeTelescope pbs depth (closeTelescope fields (depth + count) residual)) ∧ _ at syntax
-    rw [← reclosed] at syntax
-    refine ⟨syntax.1, syntax.2.1, syntax.2.2.1, ?_⟩
+    change Expr.WScoped depth (closeTelescope pbs depth (closeTelescope fields (depth + count) residual)) ∧ _ at scopingFacts
+    rw [← reclosed] at scopingFacts
+    refine ⟨scopingFacts.1, scopingFacts.2.1, scopingFacts.2.2.1, ?_⟩
     cases count with
     | zero =>
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj stripped)
