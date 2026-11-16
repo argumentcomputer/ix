@@ -1,5 +1,4 @@
 import IxC.Kernel.Ixon.Shape
-import Std.Data.Array.Lemmas
 
 /-! # Reference support of symbolic reader shapes -/
 

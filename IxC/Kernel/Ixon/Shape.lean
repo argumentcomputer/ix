@@ -69,6 +69,12 @@ def appHead : Nat → Term → Term
   | n + 1, .app fn _ => appHead n fn
   | _ + 1, expression => expression
 
+/-- The bound variable at a result head after sharing and let substitution.
+This view does not consult the store or change telescope/carrier eligibility. -/
+def resultVar (fuel : Nat) (constant : Ixon.Constant) (expression : Ixon.Expr) : Option Nat := do
+  let .bvar index := appHead fuel (← read constant expression) | none
+  pure index
+
 inductive Head where
   | ref (index : Nat)
   | recur (index : Nat)

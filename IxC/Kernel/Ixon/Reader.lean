@@ -6,6 +6,7 @@ public import IxC.Address.Core
 public import IxC.Ixon.Types
 public import IxC.Kernel.Ref
 public import IxC.Kernel.Ixon.RoleTable
+public import IxC.Kernel.Ixon.Shape
 public import IxC.Kernel.Ingress.Records
 
 /-! # Ixon records as kernel declarations
@@ -347,9 +348,9 @@ def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
   let nI := r.indices.toNat
   let depth := nP + nM + nm + nI + 1
   let (doms, body) ← stripAll c depth r.typ
-  let .var k := appHead c spineFuel body | none
-  let pos := depth - 1 - k.toNat
-  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
+  let k ← Shape.resultVar spineFuel c body
+  let pos := depth - 1 - k
+  guard (k < depth && nP ≤ pos && pos < nP + nM)
   let carriers ← (doms.drop nP |>.take nM).toArray.mapM fun dom => do
     let (bs, _) := stripAllFull c spineFuel dom
     headRef store owner c (← bs.getLast?)

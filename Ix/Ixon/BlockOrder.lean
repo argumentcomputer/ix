@@ -48,9 +48,9 @@ def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat := 
   let nM := r.motives.toNat
   let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
   let (_, body) ← Reader.stripAll source depth r.typ
-  let .var k := Reader.appHead source Reader.spineFuel body | none
-  let pos := depth - 1 - k.toNat
-  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
+  let k ← Reader.Shape.resultVar Reader.spineFuel source body
+  let pos := depth - 1 - k
+  guard (k < depth && nP ≤ pos && pos < nP + nM)
   pure (pos - nP)
 
 /-- The members from `position` on are recursors in motive order: the one at
