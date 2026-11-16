@@ -98,4 +98,34 @@ theorem admitted_fallback_rec_inputs {V : IxVM.Refinement.View} {binding : Admis
     simp only [recursorMembers, info, Array.not_mem_empty] at member)
   exact prelude_rec_inputs witness.preludeRead inPrelude member
 
+/-- Admission constructs the exact raw payload's complete reading inputs, in either its
+actual full-stream context or the actual committed-prelude context. Later context transport
+remains a separate obligation; no successful-reading premise is added to the witness. -/
+theorem admitted_rec_inputs {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {owner : _root_.Address} {source : Ixon.Constant}
+    (selected : owner ∈ witness.order) (record : Ix.Cert.recordAt witness.env owner = some source)
+    {slot : Nat} {recursor : Ixon.Recursor} (member : (slot, recursor) ∈ recursorMembers source) :
+    ∃ (cx : Ctx .anon) entry blockLps row
+      (inputs : RecursorReadInputs cx blockLps (.member owner slot) entry row),
+      (cx = ReaderStoreTransfer.readerContext witness.table witness.prelude witness.env witness.order ∨
+        cx = nativePreludeReaderCtx witness.table witness.prelude) ∧
+      inputs.record = source ∧ inputs.recursor = recursor ∧
+      (cx.index.recs[ConstRef.member owner slot]? = some entry ∨
+        cx.index.twins[ConstRef.member owner slot]? = some entry) ∧
+      readRecursor cx blockLps (.member owner slot) entry = .ok row := by
+  rcases admitted_rec_input_origin witness selected record member with fallback | original
+  · obtain ⟨entry, blockLps, row, indexed, read, ⟨inputs⟩⟩ :=
+      admitted_fallback_rec_inputs witness fallback member
+    have stored : (nativePreludeReaderCtx witness.table witness.prelude).store owner = some source := by
+      rw [nativePreludeReaderCtx_store]
+      exact ReaderStoreTransfer.fallback_of_mem witness.preludeRead fallback
+    obtain ⟨sameRecord, sameRecursor⟩ := inputs.same_payload stored member
+    exact ⟨_, entry, blockLps, row, inputs, .inr rfl, sameRecord, sameRecursor, indexed, read⟩
+  · obtain ⟨entry, blockLps, row, indexed, read, ⟨inputs⟩⟩ := original
+    have stored := ReaderStoreTransfer.selected
+      (table := witness.table) (prelude := witness.prelude) selected record
+    obtain ⟨sameRecord, sameRecursor⟩ := inputs.same_payload stored member
+    exact ⟨_, entry, blockLps, row, inputs, .inl rfl, sameRecord, sameRecursor, indexed, read⟩
+
 end IxVM.Refinement.Assembly

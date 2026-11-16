@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.ReadBare
 import Ix.Cert.CtxAgree
 import Ix.CompileCert.Loop
+import Ix.CompileCert.ReaderIndex
 
 /-! # Inputs retained by an actual recursor reading
 
@@ -146,5 +147,23 @@ theorem RecursorReadInputs.payload {md : Mode} {cx : Ctx md} {blockLps : List Le
     (inputs : RecursorReadInputs cx blockLps ref entry row) :
     (inputs.slot, inputs.recursor) ∈ recursorMembers inputs.record :=
   Array.mem_of_find?_eq_some inputs.selected
+
+/-- The retained payload is the given stored member, not an independently chosen raw
+record or recursor with a coincidentally matching output. -/
+theorem RecursorReadInputs.same_payload {md : Mode} {cx : Ctx md} {blockLps : List LevelParam}
+    {owner : _root_.Address} {slot : Nat} {entry : RecEntry}
+    {row : CVal md × RecCounts × List (RecRule md)}
+    (inputs : RecursorReadInputs cx blockLps (.member owner slot) entry row)
+    {source : Ixon.Constant} {recursor : Ixon.Recursor}
+    (stored : cx.store owner = some source) (member : (slot, recursor) ∈ recursorMembers source) :
+    inputs.record = source ∧ inputs.recursor = recursor := by
+  have positions := ConstRef.member.inj inputs.reference
+  have actualStored := inputs.stored
+  rw [← positions.1] at actualStored
+  have sameRecord : inputs.record = source := Option.some.inj (actualStored.symm.trans stored)
+  have actualMember := inputs.payload
+  rw [← positions.2, sameRecord] at actualMember
+  exact ⟨sameRecord, Ix.CompileCert.ReaderIndex.member_unique source slot inputs.recursor recursor
+    actualMember member⟩
 
 end IxVM.Refinement.Assembly
