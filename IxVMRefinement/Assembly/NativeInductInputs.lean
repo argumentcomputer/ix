@@ -86,6 +86,8 @@ structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     (members : Array Ixon.MutConst) (ind : Ixon.Inductive) (rawType : Core.KExpr)
     (calls : List (Call F)) where
+  projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))
+  projectionShape : projection.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩
   blockShape : source.value.info = .muts members
   memberAt : members.toList[ZMod.val i]? = some (.indc ind)
   levelsBound : ind.lvls.toNat < 4294967296
@@ -169,6 +171,19 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   rw [indexToSlot] at directLoad indexBound
   have indexValue : ZMod.val (slot : F) = slot :=
     ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
+  let projectionAtField := projection.reindex
+    (congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue)
+  have indexRoundtrip : index.toNat.toUInt64 = index :=
+    UInt64.toNat_inj.mp (UInt64.toNat_ofNat_of_lt index.toNat_lt)
+  have slotUInt : slot.toUInt64 = index :=
+    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
+  have fieldUInt : (ZMod.val (slot : F)).toUInt64 = index :=
+    (congrArg Nat.toUInt64 indexValue).trans slotUInt
+  have projectionAtFieldShape : projectionAtField.value.info =
+      .iPrj ⟨(ZMod.val (slot : F)).toUInt64, Core.ixAddr block⟩ := by
+    change projection.value.info = _
+    rw [fieldUInt]
+    exact projectionShape
   have memberAtField : members.toList[ZMod.val (slot : F)]? = some (.indc ind) := by
     rw [indexValue]
     simpa only [Array.getElem?_toList] using memberAt
@@ -196,6 +211,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   have sameValue := Except.ok.inj (exactAt.symm.trans payload)
   subst exactValue
   exact ⟨{
+    projection := projectionAtField, projectionShape := projectionAtFieldShape
     blockShape := blockShape, memberAt := memberAtField, levelsBound := levelsBound
     paramsBound := paramsBound, indicesBound := indicesBound, ctorCountBound := ctorCountBound
     limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
