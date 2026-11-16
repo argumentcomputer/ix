@@ -1400,9 +1400,9 @@ theorem check_recs_spec
         _ _ _ _
         _ _ _ _ _ _
         _ _ _ _ _ _ _ _ _ _
-        _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _
         ld12 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hrecs_rep ld12
       cases he
   | cons e₀ rawRest ih =>
@@ -1417,10 +1417,10 @@ theorem check_recs_spec
         v390 m391 cs401 v405 v406 x420 x428 x436 v472 m473 cs483 v510 m511 cs521
         v547 m548 cs558 m579
         safeTyValue safeTyHeap safeTyCalls safeRulesValue safeRulesHeap safeRulesCalls
-        v591 m592 cs602 v645 m646 cs656 v662 m688 p693 cs699
+        v591 m592 cs602 v645 _ cs656 v662 m688 p693 cs699 _ m646 _
         v731 m732 cs742 v749 x790 cs854 v866
         ld12 ld51 ev82 ld76 _ _ _ _ ev298 _ ev359 _ ev345 _ _ _ _ _ _ ev403 ev485
-        ev523 hm587 ev560 evSafetyTy evSafetyRules ev604 ev701 _ ev658 op805 op797 ev744 _ ev856 hc969 =>
+        ev523 hm587 ev560 evSafetyTy evSafetyRules ev604 ev701 _ ev658 evHeader op805 op797 ev744 _ ev856 hc969 =>
       have hsub80 : ∀ x ∈ cs80, x ∈ calls := fun x hx => by
         rw [hc969]
         repeat first | exact mem_head_step hx | exact hx | apply List.mem_cons_of_mem | apply mem_tail_step
@@ -1492,7 +1492,7 @@ theorem check_recs_spec
         have e658 := ObsFn.heap_extends ev658
         have e_579_646 : Heap.Extends m579 m646 :=
           e560.trans (evSafetyTy.heap_extends.trans (evSafetyRules.heap_extends.trans
-            (e604.trans (e701.trans e658))))
+            (e604.trans (e701.trans (e658.trans evHeader.heap_extends)))))
         have e_67_646 : Heap.Extends m67 m646 := (e_67_511.trans e_511_579).trans e_579_646
         have e_h_646 : Heap.Extends h m646 := e82.trans e_67_646
         have hv749_eq : v749 = .field (e₀.rP : F) := by

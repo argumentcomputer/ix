@@ -1856,7 +1856,8 @@ theorem check_block_member_kinds_inLogic
     obtain ⟨mv, hmv, _⟩ := hinfo
     exact absurd hmv (hne329 [mv] rfl)
   | Muts m2 cs12 _ _ _ _ x_members _ m90 _ _ m132 _ _ _ _ x_n_unsafe x_n_all v234 y243 _ _ _ _
-      ev14 ev102 ev151 _ _ ev187 op258 op249 heq267 _ _ _ _ _ hc328 =>
+      _ _ _ _ _ _ _
+      ev14 ev102 ev151 _ _ ev187 op258 op249 heq267 _ _ _ _ _ _ _ _ _ hc328 =>
     obtain ⟨_, rawBytes, c_ld, hsz, hh_ld, hblk_ld, _, hexact_ld, hrep, _⟩ :=
       Claim.load_verified_constant_de ha ev14
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc328]; simp [hcl])

@@ -3240,7 +3240,7 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
   | m + 1, o, R, E, rbs, bs, rbody, body, pty, bas, r, h, h', cs,
       hstR, hst, ext₀, hd, hgood, hscope, hRaw₀, hnp, hbas, ev, i, hi => by
     match Obs.«KernelCheck::check_positivity_fields».obs ev with
-    | .other (ld12 := ld) (hne113 := hne) .. =>
+    | .other (ld12 := ld) (hne218 := hne) .. =>
       cases R with
       | forallE rd rb rm =>
         exact ((hRaw₀.mono ext₀).not_forallE_of_load ld hne rd rb rm rfl).elim
@@ -3248,8 +3248,8 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
       | lit _ | proj _ _ _ =>
         simp [Expr.stripPis] at hstR
     | .Forall (x_dom := xdom) (x_body := xbody) (w20 := w20) (m37 := m37)
-        (cs47 := cs_aug) (cs77 := cs_rec) (v82 := v82) (ld12 := ld)
-        (ev49 := ev_aug) (op110 := op_add) (ev79 := ev_rec) (hc112 := hc) .. =>
+        (cs47 := cs_aug) (m171 := m171) (cs182 := cs_rec) (v187 := v82) (ld12 := ld)
+        (ev49 := ev_aug) (sg178 := sg) (op215 := op_add) (ev184 := ev_rec) (hc217 := hc) .. =>
       cases hRaw₀ with
       | @forallE _ _ tp₀ bp₀ _ rdom rbo dom bo ℓ cell₀ rdom₀ rbody₀ _ =>
         obtain ⟨-, hxs⟩ := load_cell (ext₀.getElem?_eq cell₀) ld
@@ -3285,7 +3285,14 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
           · exact hpos_dom
           · exact ⟨by decide, by decide⟩
         | succ i' =>
-          have e1 := ev_aug.heap_extends
+          -- the scan for later uses of the field, between its domain's check and the
+          -- remaining fields, only extends the heap
+          have e_scan : Heap.Extends m37 m171 := by
+            cases sg with
+            | n0 _ _ ev_m _ he _ => rw [he]; exact ev_m.heap_extends
+            | other _ _ _ _ _ _ ev_m _ ev_b _ _ he _ =>
+              rw [he]; exact ev_m.heap_extends.trans ev_b.heap_extends
+          have e1 := ev_aug.heap_extends.trans e_scan
           have hg_rec : Good c.toCtx cs_rec := hgood.sub (fun x hx => by simp [hc, hx])
           have scope_hg_rec : RawRecordCoverage c cs_rec := hscope.sub (fun x hx => by simp [hc, hx])
           have hv82 : v82 = .field ((nP + (o + 1) : Nat) : F) :=
