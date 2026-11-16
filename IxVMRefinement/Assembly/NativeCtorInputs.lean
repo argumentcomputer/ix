@@ -19,6 +19,74 @@ open IxVM (F)
 open IxVM.Refinement.Core (KKey KExpr)
 
 /-- The serialized type trace chooses the exact value of a fresh constructor read. -/
+theorem native_ctor_value_with_raw_trace {κ : _root_.Address → KKey}
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    {h : Heap F} {ctor : Ixon.Constructor} {block : _root_.Address} {index : Nat}
+    {value : SourceValue F} {plan : List Core.KLevel} {rawType : KExpr}
+    (raw : L1.RawCtorValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h ctor block index value)
+    (levels : L1.CITypeBinderLevels "Ctor" h value plan)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read ctor.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ctor.lvls.toNat) = true)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (selfKeyed : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (blobReads : ∀ a bytes, (a, bytes) ∈ blobs → cx.blob a = some bytes) :
+    ∃ (cv : Ix.Kernel.ConstantVal .anon) (rawSyntax : KExpr),
+      IxVM.Consistency.ValStored cv
+        ⟨κ (Core.cprjAddr block index ctor.cidx.toNat), List.range ctor.lvls.toNat, rawType⟩ ∧
+      Decl.CIRepExact κ h value (.ctorInfo cv ctor.params.toNat ctor.fields.toNat) ∧
+      (∀ (nl ty parent member ctorIndex params fields safety : SourceValue F),
+        value = .construct Core.kciEnum "Ctor" [nl, ty, parent, member, ctorIndex, params, fields, safety] →
+        ∀ d Γ, Decl.RawTmExact κ d Γ h 0 rawSyntax cv.type ty) ∧
+      L1.applyBinderTrace
+        (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+          some (cv.type, []) ∧
+      L1.applyRawBinderTrace
+        (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+          some (rawSyntax, []) := by
+  obtain ⟨levelBound, ctorIndexBound, paramsBound, fieldsBound, indexBound,
+    typePtr, blockPtr, parent, parentEq, parentRep, rfl, rawTypeRep⟩ := raw
+  obtain ⟨count, observedType, fields, shape, trace⟩ := levels
+  simp only [Value.construct.injEq, List.cons.injEq, true_and] at shape
+  obtain ⟨rfl, rfl, rfl⟩ := shape
+  have positionalRead :
+      (Ix.Kernel.Reader.MemberReader.mk' cx src
+        (Ix.Kernel.Reader.recParam (List.range ctor.lvls.toNat)) self).read ctor.typ = .ok rawType := by
+    rw [recParam_range]
+    exact read
+  obtain ⟨rawSyntax, annotated, annotation, rawRepresented, readTrace, rawReadTrace⟩ :=
+    rawTypeRep.toRawTmCExactTrace
+    (ps := List.range ctor.lvls.toNat) (by simp)
+    (by simpa only [List.length_range] using levelBound)
+    keyed selfKeyed blobReads positionalRead varsBounded levelsDefined
+  let cv : Ix.Kernel.ConstantVal .anon :=
+    ⟨κ (Core.cprjAddr block index ctor.cidx.toNat), List.range ctor.lvls.toNat, annotated⟩
+  have valueRep : Decl.ValRepExact κ h (.field (ctor.lvls.toNat : F)) typePtr cv := by
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · simp [cv]
+    · simpa only [cv, List.length_range] using levelBound
+    · simp only [cv, List.length_range]
+      exact .refl _
+    · exact fun d Γ => (rawRepresented d Γ).toTmExact
+  have indexValue : ZMod.val (index : F) = index :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
+  have ctorIndexValue : ZMod.val (ctor.cidx.toNat : F) = ctor.cidx.toNat :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans ctorIndexBound (by decide))
+  refine ⟨cv, rawSyntax, ⟨rfl, rfl, annotation⟩,
+    .ctor valueRep rfl rfl ⟨paramsBound, fieldsBound⟩
+      ⟨parent, (index : F), (ctor.cidx.toNat : F), parentRep, rfl, rfl, ?_⟩, ?_, ?_, ?_⟩
+  · simp only [cv, indexValue, ctorIndexValue, parentEq]
+  · intro nl ty parent member ctorIndex params fields safety shape d Γ
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at shape
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := shape
+    simpa only [cv, Decl.posOf_range] using rawRepresented d Γ
+  · simpa only [cv, List.append_nil] using readTrace plan trace []
+  · simpa only [List.append_nil] using rawReadTrace plan trace []
+
+/-- Exact constructor value agreement, with the paired raw-syntax evidence omitted. -/
 theorem native_ctor_value_of_trace {κ : _root_.Address → KKey}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
@@ -41,38 +109,9 @@ theorem native_ctor_value_of_trace {κ : _root_.Address → KKey}
       L1.applyBinderTrace
         (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
           some (cv.type, []) := by
-  obtain ⟨levelBound, ctorIndexBound, paramsBound, fieldsBound, indexBound,
-    typePtr, blockPtr, parent, parentEq, parentRep, rfl, rawTypeRep⟩ := raw
-  obtain ⟨count, observedType, fields, shape, trace⟩ := levels
-  simp only [Value.construct.injEq, List.cons.injEq, true_and] at shape
-  obtain ⟨rfl, rfl, rfl⟩ := shape
-  have positionalRead :
-      (Ix.Kernel.Reader.MemberReader.mk' cx src
-        (Ix.Kernel.Reader.recParam (List.range ctor.lvls.toNat)) self).read ctor.typ = .ok rawType := by
-    rw [recParam_range]
-    exact read
-  obtain ⟨annotated, annotation, represented, readTrace⟩ := rawTypeRep.toTmCExactTrace
-    (ps := List.range ctor.lvls.toNat) (by simp)
-    (by simpa only [List.length_range] using levelBound)
-    keyed selfKeyed blobReads positionalRead varsBounded levelsDefined
-  let cv : Ix.Kernel.ConstantVal .anon :=
-    ⟨κ (Core.cprjAddr block index ctor.cidx.toNat), List.range ctor.lvls.toNat, annotated⟩
-  have valueRep : Decl.ValRepExact κ h (.field (ctor.lvls.toNat : F)) typePtr cv := by
-    refine ⟨?_, ?_, ?_, ?_⟩
-    · simp [cv]
-    · simpa only [cv, List.length_range] using levelBound
-    · simp only [cv, List.length_range]
-      exact .refl _
-    · exact represented
-  have indexValue : ZMod.val (index : F) = index :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
-  have ctorIndexValue : ZMod.val (ctor.cidx.toNat : F) = ctor.cidx.toNat :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans ctorIndexBound (by decide))
-  refine ⟨cv, ⟨rfl, rfl, annotation⟩,
-    .ctor valueRep rfl rfl ⟨paramsBound, fieldsBound⟩
-      ⟨parent, (index : F), (ctor.cidx.toNat : F), parentRep, rfl, rfl, ?_⟩, ?_⟩
-  · simp only [cv, indexValue, ctorIndexValue, parentEq]
-  · simpa only [cv, List.append_nil] using readTrace plan trace []
+  obtain ⟨cv, _, stored, represented, _, image, _⟩ := native_ctor_value_with_raw_trace
+    raw levels read varsBounded levelsDefined keyed selfKeyed blobReads
+  exact ⟨cv, stored, represented, image⟩
 
 /-- An actual validation call establishes the raw reader bounds, then exact conversion
 produces the annotation and its raw heap syntax. -/
