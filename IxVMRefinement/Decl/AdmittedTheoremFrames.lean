@@ -26,7 +26,7 @@ theorem ReferenceReplay.admitted_theorem_frame {S : Type u} [SetTheory S]
     {cv : ConstantVal .anon} {value : Expr .anon}
     (member : Declaration.thmDecl cv value ∈ (Frontend.preparePrelude w.prelude.ix w.fullDecls).toList)
     (publicName : cv.name.isAux = false) :
-    ∃ before after sourceBefore targetBefore sourceAfter targetAfter (P : KeyScope .anon),
+    ∃ before after sourceBefore targetBefore sourceAfter targetAfter, ∃ P : KeyScope .anon,
       (Frontend.preparePrelude w.prelude.ix w.fullDecls).toList.map IxVM.Refinement.thmToOpaqueDefn =
         before ++ .defnDecl cv value .opaque :: after ∧
       ReferenceReplay fuel ev Env.empty Env.empty before sourceBefore targetBefore ∧
