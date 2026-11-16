@@ -3,7 +3,9 @@ module
 public import IxC.Kernel.Cached.TwinC
 public import IxC.Kernel.Verify.Inductives.TwinFuel
 public import IxC.Kernel.Verify.Inductives.TwinWF
+public import IxC.Kernel.Verify.Inductives.TwinFallback
 public import IxC.Kernel.Verify.Cached.BridgeCS4
+public import IxC.Kernel.Verify.Cached.ModeledRun
 
 public section
 
@@ -203,5 +205,43 @@ theorem checkTwinS_run {env : Env md} (hmode : mode.verifiedChecks = true)
   · rw [mkFEnv_env, ← NativeTwin.check_datF]
     unfold NativeTwin.check
     exact atF_bind_intro hheaderRun (atF_bind_intro hruleRun hfinishRun)
+
+/-- The cached choice preserves modeled successes and refines the structural pure
+choice. A failed attempt cannot smuggle a provisional environment into the fallback. -/
+theorem checkTwinOrModeledS_run {env : Env md} (hmode : mode.verifiedChecks = true)
+    (henv : EnvWF env) {state : CState md} (hs : CSOKF state)
+    {block : List (ConstantInfo md)} {output : FEnv md} {final : CState md}
+    (h : checkTwinOrModeledS mode (mkFEnv env) block state = .ok (output, final)) :
+    CSOKF final ∧ output = mkFEnv output.env ∧
+      ∃ fuel, (if NativeTwin.usesStoredRecursors env.find? block then
+        NativeTwin.check (fueledOps mode fuel) env block
+        else checkModeled mode (fueledOps mode fuel) env block) = .ok output.env := by
+  unfold checkTwinOrModeledS at h
+  have lookup : (mkFEnv env).find? = env.find? := by
+    funext name
+    simp only [mkFEnv_find?]
+  rw [lookup] at h
+  by_cases selected : NativeTwin.usesStoredRecursors env.find? block = true
+  · rw [if_pos selected] at h
+    cases htwin : checkTwinS mode (mkFEnv env) block state with
+    | ok result =>
+      rw [htwin] at h
+      have hresult : result = (output, final) := Except.ok.inj h
+      rw [hresult] at htwin
+      obtain ⟨hstate, houtput, fuel, hrun⟩ := checkTwinS_run hmode henv hs htwin
+      exact ⟨hstate, houtput, fuel, by rw [if_pos selected]; exact hrun⟩
+    | error reason =>
+      rw [htwin] at h
+      obtain ⟨_, restarted, hflush, hmodeled⟩ := bindC_ok h
+      rw [flushC_run] at hflush
+      have hrestart : state.flushed = restarted := congrArg Prod.snd (Except.ok.inj hflush)
+      subst restarted
+      obtain ⟨_, _, fuel, hrun⟩ := checkIndDeclSF_run hmode henv hs.flushed hmodeled
+      have incompatible := NativeTwin.modeled_not_usesStoredRecursors hrun
+      rw [selected] at incompatible
+      cases incompatible
+  · rw [if_neg selected] at h
+    obtain ⟨hstate, houtput, fuel, hrun⟩ := checkIndDeclSF_run hmode henv hs h
+    exact ⟨hstate, houtput, fuel, by rw [if_neg selected]; exact hrun⟩
 
 end Ix.Kernel.Cached

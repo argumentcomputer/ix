@@ -303,11 +303,51 @@ def applyBinderTrace (metadata : Core.KLevel → Ix.Kernel.BinderMeta) :
     let (inner', remaining) ← applyBinderTrace metadata inner levels
     return (.proj name index inner', remaining)
 
+/-- Apply the same trace while retaining let cells and their converted type fields. -/
+def applyRawBinderTrace (metadata : Core.KLevel → Ix.Kernel.BinderMeta) :
+    Core.KExpr → List Core.KLevel → Option (Core.KExpr × List Core.KLevel)
+  | .bvar index, levels => some (.bvar index, levels)
+  | .fvar index ty, levels => do
+    let (ty', remaining) ← applyRawBinderTrace metadata ty levels
+    return (.fvar index ty', remaining)
+  | .sort level, levels => some (.sort level, levels)
+  | .const name args, levels => some (.const name args, levels)
+  | .lit value, levels => some (.lit value, levels)
+  | .app func arg, levels => do
+    let (func', afterFunc) ← applyRawBinderTrace metadata func levels
+    let (arg', afterArg) ← applyRawBinderTrace metadata arg afterFunc
+    return (.app func' arg', afterArg)
+  | .lam dom body _, levels => do
+    let level :: remaining := levels | none
+    let (dom', afterDom) ← applyRawBinderTrace metadata dom remaining
+    let (body', afterBody) ← applyRawBinderTrace metadata body afterDom
+    return (.lam dom' body' (metadata level), afterBody)
+  | .forallE dom body _, levels => do
+    let level :: remaining := levels | none
+    let (dom', afterDom) ← applyRawBinderTrace metadata dom remaining
+    let (body', afterBody) ← applyRawBinderTrace metadata body afterDom
+    return (.forallE dom' body' (metadata level), afterBody)
+  | .letE ty value body _, levels => do
+    let (ty', afterType) ← applyRawBinderTrace metadata ty levels
+    let (value', afterValue) ← applyRawBinderTrace metadata value afterType
+    let (body', afterBody) ← applyRawBinderTrace metadata body afterValue
+    return (.letE ty' value' body' default, afterBody)
+  | .proj name index inner, levels => do
+    let (inner', remaining) ← applyRawBinderTrace metadata inner levels
+    return (.proj name index inner', remaining)
+
 /-- Applying one fixed trace cannot choose different annotations. -/
 theorem applyBinderTrace_unique {metadata : Core.KLevel → Ix.Kernel.BinderMeta}
     {expr left right : Core.KExpr} {levels leftRest rightRest : List Core.KLevel}
     (first : applyBinderTrace metadata expr levels = some (left, leftRest))
     (second : applyBinderTrace metadata expr levels = some (right, rightRest)) :
+    left = right ∧ leftRest = rightRest :=
+  Prod.mk.inj (Option.some.inj (first.symm.trans second))
+
+theorem applyRawBinderTrace_unique {metadata : Core.KLevel → Ix.Kernel.BinderMeta}
+    {expr left right : Core.KExpr} {levels leftRest rightRest : List Core.KLevel}
+    (first : applyRawBinderTrace metadata expr levels = some (left, leftRest))
+    (second : applyRawBinderTrace metadata expr levels = some (right, rightRest)) :
     left = right ∧ leftRest = rightRest :=
   Prod.mk.inj (Option.some.inj (first.symm.trans second))
 
