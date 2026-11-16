@@ -98,11 +98,11 @@ theorem run_eq (store : Store) (records : Array (Address × Ixon.Constant)) :
     dsimp only [guarded]
     cases empty : (recursorMembers record.2).isEmpty with
     | true =>
-      rw [if_pos empty]
+      simp only [↓reduceIte]
       have absent : recursorMembers record.2 = #[] := Array.isEmpty_iff.mp empty
       rw [recordStep, absent]
       rfl
-    | false => simp only [empty, Bool.false_eq_true, ↓reduceIte]
+    | false => simp only [Bool.false_eq_true, ↓reduceIte]
   unfold run
   rw [← guarded_eq]
   rfl
