@@ -52,8 +52,12 @@ theorem checkMotives_cons (owner : Address) (source : Ixon.Constant) (size posit
           throw (.motiveOrder owner position motive)
       | _ => throw (.malformed "expected a recursor")
       checkMotives owner source size (position + 1) rest) := by
-  rw [checkMotives, checkMotivesPrepared, checkMotives_prepared]
-  rfl
+  cases member with
+  | recr recursor =>
+    rw [checkMotives, checkMotivesPrepared, checkMotives_prepared]
+    rfl
+  | defn _ => rfl
+  | indc _ => rfl
 
 theorem motivesFrom_cons (source : Ixon.Constant) (size start : Nat)
     (member : Ixon.MutConst) (rest : List Ixon.MutConst) :
