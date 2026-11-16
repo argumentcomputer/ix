@@ -110,7 +110,7 @@ theorem basisRun_eq : DeclBasisRun (Env.empty : Env .anon) .eqK basisEnv1 := by
       (eqRecA : ConstantInfo .anon).name).isNone = true :=
     role_fresh [.eqRefl, .eq] .eqRec rfl (by decide)
   unfold DeclBasisRun
-  refine ⟨fun h => nomatch h, ?_⟩
+  refine ⟨(fun h => nomatch h), ?_⟩
   exact And.intro h1 (And.intro h2 (And.intro h3 rfl))
 
 theorem basisRun_nat : DeclBasisRun basisEnv1 .natK basisEnv2 := by
@@ -126,7 +126,7 @@ theorem basisRun_nat : DeclBasisRun basisEnv1 .natK basisEnv2 := by
       (natRecA : ConstantInfo .anon).name).isNone = true :=
     role_fresh (.natSucc :: .natZero :: .nat :: roles1) .natRec rfl (by decide)
   unfold DeclBasisRun
-  refine ⟨fun h => nomatch h, ?_⟩
+  refine ⟨(fun h => nomatch h), ?_⟩
   exact And.intro h1 (And.intro h2 (And.intro h3 (And.intro h4 rfl)))
 
 theorem basisRun_punit : DeclBasisRun basisEnv2 .punitK basisEnv3 := by
@@ -139,7 +139,7 @@ theorem basisRun_punit : DeclBasisRun basisEnv2 .punitK basisEnv3 := by
       (punitRecA : ConstantInfo .anon).name).isNone = true :=
     role_fresh (.punitUnit :: .punit :: roles2) .punitRec rfl (by decide)
   unfold DeclBasisRun
-  refine ⟨fun h => nomatch h, ?_⟩
+  refine ⟨(fun h => nomatch h), ?_⟩
   exact And.intro h1 (And.intro h2 (And.intro h3 rfl))
 
 theorem basisRun_empty : DeclBasisRun basisEnv3 .emptyK basisEnv4 := by
@@ -149,7 +149,7 @@ theorem basisRun_empty : DeclBasisRun basisEnv3 .emptyK basisEnv4 := by
       (emptyRecA : ConstantInfo .anon).name).isNone = true :=
     role_fresh (.empty :: roles3) .emptyRec rfl (by decide)
   unfold DeclBasisRun
-  refine ⟨fun h => nomatch h, ?_⟩
+  refine ⟨(fun h => nomatch h), ?_⟩
   exact And.intro h1 (And.intro h2 rfl)
 
 theorem basisRun_false : DeclBasisRun basisEnv4 .falseK basisEnv5 := by
@@ -159,7 +159,7 @@ theorem basisRun_false : DeclBasisRun basisEnv4 .falseK basisEnv5 := by
       (falseRecA : ConstantInfo .anon).name).isNone = true :=
     role_fresh (.false :: roles4) .falseRec rfl (by decide)
   unfold DeclBasisRun
-  refine ⟨fun h => nomatch h, ?_⟩
+  refine ⟨(fun h => nomatch h), ?_⟩
   exact And.intro h1 (And.intro h2 rfl)
 
 /-- `Eq` is in the environment the quotient package is installed over. -/
