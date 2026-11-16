@@ -93,7 +93,8 @@ private theorem DomainAt.opened {md : Mode} {P : Expr md → Prop}
           exact ih tail (bodyShape.instantiate1 preserves (.fvar depth domain) 0) atSlot
     | _ => cases shape
 
-private theorem normFieldDoms_count {md : Mode} {env : Env md} {fuel : Nat} {T : Key md} :
+/-- The actual field walk returns one binder for each consumed field. -/
+theorem normFieldDoms_count {md : Mode} {env : Env md} {fuel : Nat} {T : Key md} :
     ∀ {count depth : Nat} {e residual : Expr md} {fields : List (Expr md × BinderMeta)},
       normFieldDoms (fueledOps .verified fuel) env T depth count e = .ok (fields, residual) →
       fields.length = count := by
@@ -199,23 +200,22 @@ private theorem closedReference_step (depth slot target : Nat) (type : Expr .ano
       closedReference depth (slot + 1) target type := by
   by_cases nextBound : depth + 1 ≤ target
   · have currentBound : depth ≤ target := by omega
-    simp only [closedReference, if_pos nextBound, if_pos currentBound, Expr.abstract1]
+    simp only [closedReference, ite_eq_left nextBound, ite_eq_left currentBound, Expr.abstract1]
     congr 1
     omega
   · by_cases currentBound : depth ≤ target
     · have same : target = depth := by omega
       subst target
-      have position : depth + (slot + 1) - 1 - depth = slot := by omega
-      simp [closedReference, Expr.abstract1, position]
+      simp [closedReference, Expr.abstract1]
     · have different : target ≠ depth := by omega
-      simp only [closedReference, if_neg nextBound, if_neg currentBound, Expr.abstract1, if_neg different]
+      simp only [closedReference, ite_eq_right nextBound, ite_eq_right currentBound, Expr.abstract1, ite_eq_right different]
 
 private theorem DomainAt.close_reference {domainSort : Level} :
     ∀ (binders : List (Expr .anon × BinderMeta)) {slot : Nat} {entry : Expr .anon × BinderMeta},
       binders[slot]? = some entry → ∀ depth target type body,
       target < depth + slot → IdentityRef domainSort (.fvar target type) entry.1 →
       DomainAt (IdentityRef domainSort (closedReference depth slot target type)) slot
-        (closeTelescope binders depth body) := by
+        (Ix.Kernel.closeTelescope binders depth body) := by
   intro binders
   induction binders with
   | nil => intro slot entry absent; cases slot <;> cases absent
@@ -226,8 +226,8 @@ private theorem DomainAt.close_reference {domainSort : Level} :
       have same : current = entry := Option.some.inj atSlot
       subst entry
       have outside : ¬ depth ≤ target := by omega
-      simpa only [closedReference, if_neg outside] using DomainAt.here (body :=
-        (closeTelescope binders (depth + 1) body).abstract1 depth 0) (bm := current.2) origin
+      simpa only [closedReference, ite_eq_right outside] using DomainAt.here (body :=
+        (Ix.Kernel.closeTelescope binders (depth + 1) body).abstract1 depth 0) (bm := current.2) origin
     | succ slot =>
       have tail := ih atSlot (depth + 1) target type body (by omega) origin
       refine .next (tail.abstract1_map depth 0 ?_)
@@ -286,7 +286,7 @@ private theorem DomainAt.open_reference {domainSort : Level} :
                   (body.instantiate1 (.fvar depth domain)) := by
                 refine bodyShape.instantiate1_map (.fvar depth domain) 0 ?_
                 intro expression origin
-                simpa only [Nat.zero_add, Expr.instantiate1, if_neg unequal, if_neg notGreater] using
+                simpa only [Nat.zero_add, Expr.instantiate1, ite_eq_right unequal, ite_eq_right notGreater] using
                   origin.instantiate1 (.fvar depth domain) slot
               obtain ⟨reference, atReference, origin⟩ := ih tail (by omega) openedShape atUse
               exact ⟨reference, atReference, origin⟩
