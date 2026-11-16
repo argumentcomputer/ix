@@ -4379,4 +4379,59 @@ theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey}
   obtain ⟨E', hA, hTm⟩ := raw.toTmCExact hperm hps_lt hkeyAt hself hblob hread hlbb hdef
   exact ⟨E', hA, hTm.toTmC⟩
 
+/-- Exact reader representation under agreement at successful literal lookups. -/
+theorem RawConvExpr.toTmExact_of_blobAgreement {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : BlobReadAgreement ecx.cx.blob blobs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        ∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp := by
+  intro n k E_rd hn hb hread hlbb hdef
+  obtain ⟨annotated, annotates, termRep, _⟩ := raw.toTmExactTrace_of_blobAgreement
+    hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
+  exact ⟨annotated, annotates, termRep⟩
+
+/-- Exact reader representation under agreement at successful literal lookups. -/
+theorem RawConvExpr.toTmCExact_of_blobAgreement {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : BlobReadAgreement cx.blob blobs)
+    {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
+    (raw : RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h 4294967295 e kp)
+    (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read e =
+      .ok E_rd)
+    (hlbb : E_rd.looseBVarsBounded 0 = true)
+    (hdef : E_rd.allLevelParamsDefined ps = true) :
+    ∃ E' : Core.KExpr,
+      IxVM.Consistency.Annotates E' E_rd ∧
+      Decl.TmCExact κ h (Core.posOf ps E') kp := by
+  obtain ⟨hecx, htbl⟩ := memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
+  unfold Ix.Kernel.Reader.MemberReader.read at hread
+  rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
+  exact raw.toTmExact_of_blobAgreement hperm hps_lt rfl (by simp) hkeyAt hself hblob
+    (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
+
+
 end IxVM.Refinement.L1
