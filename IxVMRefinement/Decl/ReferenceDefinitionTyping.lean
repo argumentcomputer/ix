@@ -189,4 +189,30 @@ theorem ReferenceReplay.definitionsTyped_from_empty {fuel : Nat} {ev : Evidences
     DefinitionsTyped targetOut :=
   replay.definitionsTyped (by intro name cv value hint found; cases found)
 
+/-- The actual former-install stage preserves the checking evidence of every earlier definition. -/
+theorem DefinitionsTyped.checkSumInd {before after : Env .anon} (typed : DefinitionsTyped before)
+    {fuel : Nat} {p completed : InductiveShape .anon} {checked : ConstantVal .anon}
+    {capsOf : InductiveShape .anon → IndCaps .anon}
+    (run : checkSumInd (fueledOps .verified fuel) before p capsOf = .ok (after, checked, completed)) :
+    DefinitionsTyped after := by
+  obtain ⟨raw, _, _, _, header, _, output, _⟩ := checkSumInd_shape run
+  obtain ⟨type, checkedHeader, rfl⟩ := constantValCheckJ_of_run header
+  have extension : EnvExt before after := by
+    rw [output]
+    exact envExt_of_constantValRunJ checkedHeader rfl
+  intro name cv value hint found
+  rw [output, Env.find?_cons] at found
+  split at found
+  · cases found
+  · exact (typed name cv value hint found).weaken extension
+
+/-- Constructor normalization receives definition checks from its real reference prefix. -/
+theorem ReferenceReplay.constructor_definitionsTyped {fuel : Nat} {ev : Evidences .anon}
+    {sourceOut targetOut after : Env .anon} {declarations : List (Declaration .anon)}
+    (replay : ReferenceReplay fuel ev Env.empty Env.empty declarations sourceOut targetOut)
+    {constructorFuel : Nat} {p completed : InductiveShape .anon} {checked : ConstantVal .anon}
+    {capsOf : InductiveShape .anon → IndCaps .anon}
+    (run : checkSumInd (fueledOps .verified constructorFuel) targetOut p capsOf = .ok (after, checked, completed)) :
+    DefinitionsTyped after := replay.definitionsTyped_from_empty.checkSumInd run
+
 end IxVM.Refinement.Decl
