@@ -47,7 +47,7 @@ private theorem coreEnvFacts_consInd {c : Ctx} {cv : ConstantVal .anon}
     natLit := fun hn hz hs => extended.natLitSupported_mono (facts.natLit hn hz hs)
     strLit := fun hs => extended.strLitSupported_mono (facts.strLit hs)
     natOps := fun role force operation => extended.natOpStored_mono (facts.natOps role force operation)
-    natAdd := fun force => extended.opt_mono (p := Ix.Kernel.natAddTyOk) (facts.natAdd force) rfl
+    natAdd := fun force => extended.opt_mono (p := Ix.Kernel.Rules.natAddTyOk) (facts.natAdd force) rfl
     eqStored := ?_
     recRules := ?_
     recPlain := ?_
