@@ -81,13 +81,34 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
     (L1.projConstant_wireWF_iPrj slot.toUInt64 block)
   exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), fullProof⟩
 
+/-- Reindex the exact projection evidence at the field encoding of its natural member slot. -/
+private theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Address}
+    {slot : Nat} {index : UInt64} {i : F}
+    (projection : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) slot))
+    (shape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    (indexToSlot : index.toNat = slot) (indexValue : ZMod.val i = slot) :
+    ∃ source : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)),
+      source.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩ := by
+  let source := projection.reindex (congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue)
+  have indexRoundtrip : index.toNat.toUInt64 = index :=
+    UInt64.toNat_inj.mp (UInt64.toNat_ofNat_of_lt index.toNat_lt)
+  have slotUInt : slot.toUInt64 = index :=
+    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
+  have fieldUInt : (ZMod.val i).toUInt64 = index :=
+    (congrArg Nat.toUInt64 indexValue).trans slotUInt
+  refine ⟨source, ?_⟩
+  change projection.value.info = _
+  rw [fieldUInt]
+  exact shape
+
 /-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
 structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     (members : Array Ixon.MutConst) (ind : Ixon.Inductive) (rawType : Core.KExpr)
     (calls : List (Call F)) where
-  projection : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))
-  projectionShape : projection.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩
+  projectionSource : ∃ projection : L1.CanonicalRecordAt base.E
+    (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)),
+    projection.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩
   blockShape : source.value.info = .muts members
   memberAt : members.toList[ZMod.val i]? = some (.indc ind)
   levelsBound : ind.lvls.toNat < 4294967296
@@ -171,19 +192,6 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   rw [indexToSlot] at directLoad indexBound
   have indexValue : ZMod.val (slot : F) = slot :=
     ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
-  let projectionAtField := projection.reindex
-    (congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue)
-  have indexRoundtrip : index.toNat.toUInt64 = index :=
-    UInt64.toNat_inj.mp (UInt64.toNat_ofNat_of_lt index.toNat_lt)
-  have slotUInt : slot.toUInt64 = index :=
-    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
-  have fieldUInt : (ZMod.val (slot : F)).toUInt64 = index :=
-    (congrArg Nat.toUInt64 indexValue).trans slotUInt
-  have projectionAtFieldShape : projectionAtField.value.info =
-      .iPrj ⟨(ZMod.val (slot : F)).toUInt64, Core.ixAddr block⟩ := by
-    change projection.value.info = _
-    rw [fieldUInt]
-    exact projectionShape
   have memberAtField : members.toList[ZMod.val (slot : F)]? = some (.indc ind) := by
     rw [indexValue]
     simpa only [Array.getElem?_toList] using memberAt
@@ -211,7 +219,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   have sameValue := Except.ok.inj (exactAt.symm.trans payload)
   subst exactValue
   exact ⟨{
-    projection := projectionAtField, projectionShape := projectionAtFieldShape
+    projectionSource := canonicalProjection_at_field projection projectionShape indexToSlot indexValue
     blockShape := blockShape, memberAt := memberAtField, levelsBound := levelsBound
     paramsBound := paramsBound, indicesBound := indicesBound, ctorCountBound := ctorCountBound
     limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
