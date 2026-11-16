@@ -88,11 +88,7 @@ theorem readInductive_one_family_frames {cx : Ctx .anon} {state : State .anon}
     readInductive_checked_ctor_frames read
   have order := native_reader_one_order indexBuilt stored kind one shapeRun
   refine ⟨generated, bare, block, declarations, lowered, ?_⟩
-  have selected : (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
-      | some (.indc found) => some (i, found)
-      | _ => none)).toList = [(member, ind)] := by
-    rw [order, Array.toList_filterMap]
-    simp only [List.filterMap_cons, List.filterMap_nil, memberAt]
-  simpa only [selected] using frames
+  rw [order, Array.toList_filterMap] at frames
+  simpa only [List.filterMap_cons, List.filterMap_nil, memberAt] using frames
 
 end IxVM.Refinement.Assembly
