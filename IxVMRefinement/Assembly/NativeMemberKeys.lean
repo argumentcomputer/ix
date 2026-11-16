@@ -12,6 +12,78 @@ namespace IxVM.Refinement.Assembly
 
 open Ix.Kernel Ix.Kernel.Reader
 
+/-- A successful canonical member read has the core key, or falls back to the address key
+at a particular bound projection that does not resolve in this selected store. -/
+theorem streamContext_memberKey_cases {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {ref : ConstRef _root_.Address} {address : _root_.Address}
+    (unique : ∀ other, resolve cx.store other = some ref → other = address)
+    (notSingleton : singletonAt cx.store ref = none)
+    (reconstructed : cx.reconstruct ref = some address) :
+    cx.memberKey ref = .ok (Core.keyOf table address) ∨
+      (cx.memberKey ref = .ok (.id address) ∧ ∃ role,
+        (role, address) ∈ table.bound.toList ∧ resolve cx.store address ≠ some ref) := by
+  classical
+  subst cx
+  let cx := Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint
+  have roles : cx.roles = bindingsOf cx.store table := rfl
+  change cx.memberKey ref = _ ∨ (cx.memberKey ref = _ ∧ _)
+  cases roleAt : cx.roles.names[ref]? with
+  | some key =>
+    obtain ⟨role, rfl⟩ := Ix.Cert.ReaderUnits.bindingsOf_keyed cx.store table ref key (by rwa [← roles])
+    obtain ⟨other, bound, resolved⟩ := Ix.Cert.ReaderKeys.bindings_role_origin cx.store table (by rwa [← roles])
+    have same := unique other resolved
+    subst other
+    left
+    rw [keyOf_eq_of_bound checked bound]
+    unfold Ctx.memberKey
+    rw [roleAt]
+    rfl
+  | none =>
+    have addressOf : cx.addressOf ref = .ok address := by
+      unfold Ctx.addressOf
+      cases cached : cx.keys.address[ref]? with
+      | some other =>
+        rw [unique other (cx.keys.address_sound ref other cached)]
+        rfl
+      | none =>
+        rw [notSingleton, reconstructed]
+        rfl
+    cases cached : cx.keys.byAddress[address]? with
+    | some key =>
+      have lookup : cx.keyAt address = .ok key := by
+        unfold Ctx.keyAt
+        rw [cached]
+        rfl
+      have keyEq := streamContext_keyAt_ok_inv authentic checked lookup
+      left
+      unfold Ctx.memberKey
+      rw [roleAt, addressOf]
+      simp only [bind, Except.bind]
+      rw [cached, keyEq]
+      rfl
+    | none =>
+      have read : cx.memberKey ref = .ok (.id address) := by
+        unfold Ctx.memberKey
+        rw [roleAt, addressOf]
+        simp only [bind, Except.bind]
+        rw [cached]
+        rfl
+      by_cases bound : ∃ role, (role, address) ∈ table.bound.toList
+      · obtain ⟨role, bound⟩ := bound
+        refine .inr ⟨read, role, bound, ?_⟩
+        intro resolved
+        have named := Ix.Cert.ReadingKeys.bindings_bound checked bound resolved unique
+        rw [← roles, roleAt] at named
+        cases named
+      · left
+        have unbound : ∀ role, (role, address) ∉ table.bound.toList :=
+          fun role member => bound ⟨role, member⟩
+        rwa [keyOf_eq_of_unbound unbound]
+
 /-- A reconstructed member has the core key when its own bound projection resolves.
 No coverage of other bound addresses is assumed. -/
 theorem streamContext_memberKey_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
@@ -26,48 +98,10 @@ theorem streamContext_memberKey_of_local_resolution {cx : Ctx .anon} {table : Ro
     (boundResolved : ∀ role, (role, address) ∈ table.bound.toList →
       resolve cx.store address = some ref) :
     cx.memberKey ref = .ok (Core.keyOf table address) := by
-  subst cx
-  let cx := Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint
-  have roles : cx.roles = bindingsOf cx.store table := rfl
-  change cx.memberKey ref = _
-  cases roleAt : cx.roles.names[ref]? with
-  | some key =>
-    obtain ⟨role, rfl⟩ := Ix.Cert.ReaderUnits.bindingsOf_keyed cx.store table ref key (by rwa [← roles])
-    obtain ⟨other, bound, resolved⟩ := Ix.Cert.ReaderKeys.bindings_role_origin cx.store table (by rwa [← roles])
-    have same := unique other resolved
-    subst other
-    rw [keyOf_eq_of_bound checked bound]
-    unfold Ctx.memberKey
-    rw [roleAt]
-    rfl
-  | none =>
-    have unbound : ∀ role, (role, address) ∉ table.bound.toList := by
-      intro role member
-      have named := Ix.Cert.ReadingKeys.bindings_bound checked member (boundResolved role member) unique
-      rw [← roles, roleAt] at named
-      cases named
-    have addressOf : cx.addressOf ref = .ok address := by
-      unfold Ctx.addressOf
-      cases cached : cx.keys.address[ref]? with
-      | some other =>
-        rw [unique other (cx.keys.address_sound ref other cached)]
-        rfl
-      | none =>
-        rw [notSingleton, reconstructed]
-        rfl
-    unfold Ctx.memberKey
-    rw [roleAt, addressOf]
-    simp only [bind, Except.bind]
-    cases cached : cx.keys.byAddress[address]? with
-    | none => exact congrArg Except.ok (keyOf_eq_of_unbound unbound).symm
-    | some key =>
-      have lookup : cx.keyAt address = .ok key := by
-        unfold Ctx.keyAt
-        rw [cached]
-        rfl
-      have keyEq := streamContext_keyAt_ok_inv authentic checked lookup
-      rw [keyEq]
-      rfl
+  rcases streamContext_memberKey_cases context authentic checked unique notSingleton reconstructed with
+    exactKey | ⟨_, role, bound, unresolved⟩
+  · exact exactKey
+  · exact (unresolved (boundResolved role bound)).elim
 
 /-- The inductive member's reconstruction is its canonical projection address. -/
 theorem projectionAddress_iprj {store : Store} {owner : _root_.Address}
