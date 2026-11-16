@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.NativeCtorReads
 import IxVMRefinement.Assembly.NativePeerInputs
 import IxVMRefinement.Decl.NativeCtorScoped
 
@@ -82,5 +83,70 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
     fresh notBasis notProjection noFormerProjection envFacts.store envFacts rawFacts peer'
     subset good covered roleContext formerRep blockRep sortRep
     (by simpa only [List.length_range] using observed)
+
+/-- Actual former and constructor loads supply every numeric count bound needed by the
+scoped constructor proof. -/
+theorem native_ctor_scoped_of_observed_bounds (hLevels : IxVM.Consistency.Levels)
+    {base : Core.Ctx} {block : Bytes.Address} {i : F} {T : KKey}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (former : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members[ZMod.val i]? = some (.indc ind))
+    (one : Ix.CompileCert.ReaderIndex.inductives members = #[(ZMod.val i, ind)])
+    (tableWf : base.t.wf = true)
+    (key : T = base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    {rootCalls : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {rawTypes : List KExpr} {ta : KExpr} {resSort indLevel : KLevel}
+    (family : Decl.CtorLoadAtIndex base.t block ind.params.toNat i rootCalls ctors ctorsA rawTypes)
+    (countEq : ctors.length = ind.ctors.size)
+    {formerBlockArg formerPtr : SourceValue F} {formerHeap formerAfter : Heap F}
+    {formerCalls : List (Call F)}
+    (formerGood : Core.Good base formerCalls)
+    (formerBlockRep : Bytes.RepAddressRef Core.addrTy formerHeap block formerBlockArg)
+    (formerLoad : ObsFn Core.W "Ingress::get_ci_iprj" [formerBlockArg, .field i]
+      formerHeap formerPtr formerAfter formerCalls)
+    (sortEq : Core.LvEq resSort indLevel)
+    (levels : ∀ ctor ∈ ctors, ctor.1.levelParams = List.range ind.lvls.toNat)
+    (varsBounded : ∀ ctor ∈ ctors, ctor.1.type.looseBVarsBounded 0 = true)
+    (noFvars : ∀ ctor ∈ ctors, ctor.1.type.hasFvar = false)
+    (fresh : ∀ ctor ∈ ctors, base.env.find? ctor.1.name = none)
+    (notBasis : ∀ ctor ∈ ctors, Ix.Kernel.reservedBasisNames.contains ctor.1.name = false)
+    (notProjection : ∀ ctor ∈ ctors, ctor.1.name.isProjFnShape = false)
+    (noFormerProjection : ∀ field, base.env.findProj? T field = none)
+    (envFacts : Core.CoreEnvFacts base)
+    {rc pta bp pind result : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (subset : ∀ call ∈ calls, call ∈ rootCalls)
+    (good : Core.Good base calls)
+    (known : L1.CanonicalQueryCoverage base.E calls)
+    (roleContext : Core.RCRep base.t base.lim h rc)
+    (formerRep : Core.Tm base.κ 0 (fun _ => default) h 0 ta pta)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
+    (sortRep : RepKLevel h indLevel pind)
+    (observed : ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
+      [rc, pta, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
+        .field (ctors.length : F), .field (ind.lvls.toNat : F), bp, .field i, pind, .field 0, .field 0]
+      h result h' calls) :
+    ∃ runs : List (Decl.NativeCtorCoreRun rootCalls),
+      Core.ScopedLoadFacts (Decl.nativeCtorCoreCtx base runs) →
+      ∃ sortss : List (List KLevel),
+        sortss.length = ctors.length ∧
+        ∀ slot < ctors.length, ∃ ctor annotated sorts,
+          ctors[slot]? = some ctor ∧ ctorsA[slot]? = some annotated ∧ sortss[slot]? = some sorts ∧
+          Decl.NativeCtorOut base.env T (List.range ind.lvls.toNat) ind.params.toNat
+            ind.indices.toNat resSort ta (rawTypes.getD slot default) ctor annotated sorts := by
+  obtain ⟨levelsBound, paramsBound, indicesBound, sourceCountBound⟩ :=
+    L1.get_ci_iprj_header_bounds (base := base) source blockShape
+      (by simpa only [Array.getElem?_toList] using memberAt) formerGood formerBlockRep formerLoad
+  have countBound : ctors.length < 549755813888 := by
+    rw [countEq]
+    exact sourceCountBound
+  have fieldsBound := native_ctor_field_bounds (base := base) family countBound blockRep subset observed
+  exact native_ctor_scoped_of_records hLevels source former formerShape blockShape memberAt one
+    tableWf key family countEq levelsBound paramsBound indicesBound countBound fieldsBound sortEq
+    levels varsBounded noFvars fresh notBasis notProjection noFormerProjection envFacts
+    subset good known roleContext formerRep blockRep sortRep observed
+
 
 end IxVM.Refinement.Assembly
