@@ -27,7 +27,7 @@ theorem readRecord_twin_read {md : Mode} {cx : Ctx md} {state : State md}
     simp only [info] at payload
     obtain ⟨rfl, rfl⟩ := payload
     simp only [readRecord, info, notCanonical, Bool.false_eq_true, ↓reduceIte, indexed] at read
-    exact lowerTwin_rec_read read (by simp)
+    exact lowerTwin_rec_read (selected := (.member owner 0, entry)) read (by simp)
   | muts members =>
     simp only [info] at payload
     by_cases hasInductive : members.any (fun | .indc _ => true | _ => false) = true
@@ -61,7 +61,8 @@ theorem readRecord_twin_read {md : Mode} {cx : Ctx md} {state : State md}
                     have valueEq : chosen = value := Option.some.inj (lookup.symm.trans found)
                     subst chosen
                     exact Array.mem_push.mpr (.inr rfl)
-                · have absent : cx.index.twins[ConstRef.member owner k]? = none := by assumption
+                · have absent : ∀ value, cx.index.twins[ConstRef.member owner k]? = some value → False := by
+                    assumption
                   split at step
                   · simp only [pure, Except.pure, Except.ok.injEq] at step
                     subst out
@@ -71,8 +72,7 @@ theorem readRecord_twin_read {md : Mode} {cx : Ctx md} {state : State md}
                     · exact previous query old chosen lookup
                     · have same : query = k := List.mem_singleton.mp fresh
                       subst query
-                      rw [absent] at lookup
-                      cases lookup
+                      exact (absent chosen lookup).elim
                   · exact (fail_bind step).elim)
               (by simp) loop
             have inTwins := retained slot (by
