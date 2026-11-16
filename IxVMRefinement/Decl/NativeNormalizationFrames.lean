@@ -28,7 +28,7 @@ inductive TelescopeFrames (V : Type u) [SetTheory V] :
       TelescopeFrames V context (count + 1) (.pi leftLevel leftBit leftDomain leftBody)
         (.pi rightLevel rightBit rightDomain rightBody)
 
-private theorem sat_append_congr {V : Type u} [SetTheory V]
+theorem sat_append_congr {V : Type u} [SetTheory V]
     {left right : List AnnotTerm}
     (same : ∀ ρ : Nat → V, Sat V left ρ ↔ Sat V right ρ) :
     ∀ front ρ, Sat V (front ++ left) ρ ↔ Sat V (front ++ right) ρ := by
