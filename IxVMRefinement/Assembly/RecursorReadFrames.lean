@@ -105,7 +105,6 @@ theorem lowerTwin_rec_frames {md : Mode} {cx : Ctx md}
       (fun selected row => readRecursor cx blockLps selected.1 selected.2 = .ok row)
       twins.toList rows := by
   simp only [lowerTwin, firstRun] at read
-  dsimp only at read
   rcases ite_ok read with read | read
   · split at read
     · split at read
@@ -133,5 +132,69 @@ theorem lowerTwin_rec_frames {md : Mode} {cx : Ctx md}
       · exact (throw_ok read).elim
     · exact (throw_ok read).elim
   · exact (fail_bind read).elim
+
+private theorem paired_member {α β : Type} {relation : α → β → Prop}
+    {left : List α} {right : List β} (paired : List.Forall₂ relation left right)
+    {entry : α} (member : entry ∈ left) : ∃ row ∈ right, relation entry row := by
+  induction paired with
+  | nil => cases member
+  | cons head rest ih =>
+    rcases List.mem_cons.mp member with rfl | later
+    · exact ⟨_, List.mem_cons_self, head⟩
+    · obtain ⟨row, present, frame⟩ := ih later
+      exact ⟨row, List.mem_cons_of_mem _ present, frame⟩
+
+theorem lowerTwin_rec_read {md : Mode} {cx : Ctx md}
+    {twins : Array (ConstRef _root_.Address × RecEntry)} {result : Read md}
+    (read : lowerTwin cx twins = .ok result) {selected : ConstRef _root_.Address × RecEntry}
+    (member : selected ∈ twins) :
+    ∃ blockLps row, readRecursor cx blockLps selected.1 selected.2 = .ok row := by
+  cases firstRun : twins[0]? with
+  | none =>
+    have empty := Array.getElem?_eq_none_iff.mp firstRun
+    obtain ⟨index, bound, _⟩ := Array.mem_iff_getElem.mp member
+    omega
+  | some first =>
+    rcases first with ⟨firstRef, firstEntry⟩
+    obtain ⟨blockLps, rows, paired⟩ := lowerTwin_rec_frames firstRun read
+    obtain ⟨row, _, rowRead⟩ := paired_member paired (Array.mem_toList_iff.mpr member)
+    exact ⟨blockLps, row, rowRead⟩
+
+/-- Family partitioning retains a successful payload read for every original twin. -/
+theorem lowerTwins_rec_read {md : Mode} {cx : Ctx md}
+    {twins : Array (ConstRef _root_.Address × RecEntry)} {result : Read md}
+    (read : lowerTwins cx twins = .ok result) {selected : ConstRef _root_.Address × RecEntry}
+    (member : selected ∈ twins) :
+    ∃ blockLps row, readRecursor cx blockLps selected.1 selected.2 = .ok row := by
+  cases firstRun : twins[0]? with
+  | none =>
+    have empty := Array.getElem?_eq_none_iff.mp firstRun
+    obtain ⟨index, bound, _⟩ := Array.mem_iff_getElem.mp member
+    omega
+  | some first =>
+    rcases first with ⟨firstRef, firstEntry⟩
+    simp only [lowerTwins, firstRun] at read
+    split at read
+    · exact lowerTwin_rec_read read member
+    · obtain ⟨decls, loop, _⟩ := except_bind_ok.mp read
+      have runs : ∀ family ∈ (groupTwins twins).toList, ∃ chunk, lowerTwin cx family = .ok chunk := by
+        apply Ix.CompileCert.Loop.forIn_inv_array
+          (fun processed (_ : Array (Declaration md)) =>
+            ∀ family ∈ processed, ∃ chunk, lowerTwin cx family = .ok chunk)
+          _ (groupTwins twins) ?_ (by simp) loop
+        intro processed family suffix current out _ held ran
+        obtain ⟨chunk, chunkRead, returned⟩ := except_bind_ok.mp ran
+        simp only [pure, Except.pure, Except.ok.injEq] at returned
+        subst out
+        refine ⟨_, rfl, ?_⟩
+        intro next present
+        rcases List.mem_append.mp present with old | added
+        · exact held next old
+        · have same : next = family := List.mem_singleton.mp added
+          subst next
+          exact ⟨chunk, chunkRead⟩
+      obtain ⟨family, inGroups, inFamily⟩ := groupTwins_coverage member
+      obtain ⟨chunk, chunkRead⟩ := runs family (Array.mem_toList_iff.mpr inGroups)
+      exact lowerTwin_rec_read chunkRead inFamily
 
 end IxVM.Refinement.Assembly
