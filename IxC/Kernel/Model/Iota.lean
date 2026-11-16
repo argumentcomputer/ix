@@ -997,14 +997,14 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
   intro T i entry cvT capsT hfP hfT
   have hcl := m.base2.cval_closedL
   obtain ⟨hsn, -, hi, -, -, cvC, hfC, hlpsC, -, -⟩ := m.tower_ok (fun _ => 0) T i entry hfP
-  obtain ⟨-, -, -, ⟨cvT', capsT', hfT', hlpsT, bsT, hsortT⟩, ⟨cvC', hfC', -, bsC, hresC⟩⟩ :=
+  obtain ⟨-, -, -, ⟨cvT', capsT', hfT', hlpsT, -, -⟩, ⟨cvC', hfC', -, bsC, hresC⟩⟩ :=
     m.base2.proj_ok.towerHead hfP
   rw [hsn, hfT] at hfT'
   obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj hfT')
   rw [hfC] at hfC'
   obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC')
   rw [hsn] at hresC
-  refine ⟨hlpsT, ⟨bsT, hsortT⟩, cvC, hfC, hlpsC, ⟨bsC, hresC⟩, ?_⟩
+  refine ⟨hlpsT, cvC, hfC, hlpsC, ⟨bsC, hresC⟩, ?_⟩
   intro us φ ρ F K hus hF hK
   obtain ⟨-, -, -, -, -, cvC₀, hfC₀, -, hlaw, heta⟩ := m.tower_ok φ T i entry hfP
   rw [hfC] at hfC₀
