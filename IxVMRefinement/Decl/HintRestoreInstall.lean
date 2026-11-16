@@ -20,10 +20,9 @@ theorem storedAs {ci raw : ConstantInfo .anon} (stored : StoredAs ci raw) :
       obtain ⟨hcv, hvalue, rfl⟩ := stored
       have name : cv.name = cv₀.name := hcv.1
       refine ⟨hcv, hvalue, ?_⟩
-      change (chosen cv.name).getD hint = (chosen cv₀.name).getD hint
       rw [name]
     | _ => exact stored.2.elim
-  | _ => cases raw <;> first | exact stored | exact stored.2.elim
+  | _ => cases raw <;> exact stored
 
 /-- The actual reader hint replaces the old hint while retaining the checked type and value. -/
 theorem storedDefinition {ci : ConstantInfo .anon} {cv : ConstantVal .anon} {value : Expr .anon}
