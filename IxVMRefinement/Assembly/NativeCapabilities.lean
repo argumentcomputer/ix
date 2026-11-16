@@ -132,14 +132,16 @@ theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Byte
     Decl.nat_eq_of_field_eq_bounded (Nat.lt_trans input.ctorCountBound (by decide)) (by decide) countEq
   have pEq : ind.params.toNat = ZMod.val p := by
     have fieldValues := congrArg ZMod.val (Value.field.inj paramsEq)
-    simpa only [ZMod.val_natCast_of_lt (Nat.lt_trans input.paramsBound (by decide))] using fieldValues
+    have canonicalBound : ind.params.toNat < 18446744069414584321 :=
+      Nat.lt_trans input.paramsBound (by decide)
+    simpa only [ZMod.val_natCast_of_lt canonicalBound] using fieldValues
   have jEq : i = j := Value.field.inj indexEq
   subst j
   have parentSame : actualParent = parent :=
     Bytes.repAddressRef_inj U32.Goldilocks.compatible (by simpa only [ptrEq] using actualRep) parentRep
   have parentBlock : parent = block := Decl.ixAddr_inj (by rw [← parentSame]; exact actualParentEq)
-  subst parent
-  have capability := native_unitLikeCaps_of_reader source input.blockShape input.memberAt zero oneCtor
+  rw [parentBlock] at zero
+  have capability := native_unitLikeCaps_of_reader (block := block) source input.blockShape input.memberAt zero oneCtor
     frames ctors (indices.trans noIndices)
   have currentLookup : (input.stageCtx parts isRec).env.find? (base.κ (Core.ixAddr address)) =
       some (.indInfo input.annotated (Ix.Kernel.nativeCapsAt parts isRec)) := by
