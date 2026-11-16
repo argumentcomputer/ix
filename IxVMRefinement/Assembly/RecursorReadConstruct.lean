@@ -69,7 +69,9 @@ theorem RecursorReadInputs.run {md : Mode} {cx : Ctx md} {blockLps : List LevelP
   simp only [bind, Except.bind]
   rw [majorStored]
   simp only [ruleCount, beq_self_eq_true, ↓reduceIte, majorReference]
-  rw [← Array.forIn_toList, ruleLoop_of_frames frames]
+  have rulesRun := ruleLoop_of_frames frames []
+  simp only [bind, Except.bind, List.nil_append] at rulesRun
+  rw [← Array.forIn_toList, rulesRun]
   simp only [List.nil_append, bind, Except.bind, pure, Except.pure]
   rw [← levels, ← counts]
   cases row with
