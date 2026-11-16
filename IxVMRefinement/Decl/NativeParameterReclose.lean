@@ -143,7 +143,7 @@ universe u
 /-- The original parameter prefix lifts the semantics of its actual field normalization.
 The statement retains the pre-reannotation telescope and its original binder metadata. -/
 theorem normalize_parameter_fields_semantics {V : Type u} [SetTheory V] {md : Mode}
-    {env : Env md} (model : EnvModelM V .verified env) {fuel fieldCount : Nat} 
+    {env : Env md} (model : EnvModelM V .verified env) {fuel fieldCount : Nat}
     {T : Key md} {count depth : Nat} {e openedBody closedBody residual : Expr md}
     {parameterVars : List (Expr md)} {parameters fields : List (Expr md × BinderMeta)}
     (stripped : e.stripPis count = some (parameters, closedBody))
