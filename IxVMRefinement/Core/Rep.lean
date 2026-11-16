@@ -543,4 +543,132 @@ theorem TmL.store_cons {h : Heap F} {E : KExpr} {Es : List KExpr} {ep lp : Sourc
 
 end Store
 
+/-! ## Resolved images -/
+
+/-- **No constant or projection node of the term carries the unresolved key** (the types of
+opened variables are not read). The image of a represented term is such a term
+(`Tm.keysResolved`), so a load site reads the resolution of the constant in its hand from the
+term it is loading for. -/
+def KeysResolved : KExpr → Prop
+  | .const k _ => k ≠ unresolvedKey
+  | .app f a => KeysResolved f ∧ KeysResolved a
+  | .lam t b _ => KeysResolved t ∧ KeysResolved b
+  | .forallE t b _ => KeysResolved t ∧ KeysResolved b
+  | .letE t v b _ => KeysResolved t ∧ KeysResolved v ∧ KeysResolved b
+  | .proj s _ e => s ≠ unresolvedKey ∧ KeysResolved e
+  | .bvar _ | .fvar _ _ | .sort _ | .lit _ => True
+
+theorem keysResolved_lift (n : Nat) (e : KExpr) :
+    ∀ c, KeysResolved e → KeysResolved (e.liftLooseBVars n c) := by
+  induction e with
+  | bvar i =>
+    intro c _
+    simp only [Ix.Kernel.Expr.liftLooseBVars]
+    split <;> simp only [KeysResolved]
+  | sort _ | const _ _ | lit _ | fvar _ _ _ =>
+    intro c hr
+    simpa only [Ix.Kernel.Expr.liftLooseBVars] using hr
+  | app f a ihf iha =>
+    intro c hr
+    simp only [Ix.Kernel.Expr.liftLooseBVars, KeysResolved] at hr ⊢
+    exact ⟨ihf c hr.1, iha c hr.2⟩
+  | lam ty body bm iht ihb | forallE ty body bm iht ihb =>
+    intro c hr
+    simp only [Ix.Kernel.Expr.liftLooseBVars, KeysResolved] at hr ⊢
+    exact ⟨iht c hr.1, ihb (c + 1) hr.2⟩
+  | letE ty val body bm iht ihv ihb =>
+    intro c hr
+    simp only [Ix.Kernel.Expr.liftLooseBVars, KeysResolved] at hr ⊢
+    exact ⟨iht c hr.1, ihv c hr.2.1, ihb (c + 1) hr.2.2⟩
+  | proj name i inner ih =>
+    intro c hr
+    simp only [Ix.Kernel.Expr.liftLooseBVars, KeysResolved] at hr ⊢
+    exact ⟨hr.1, ih c hr.2⟩
+
+theorem keysResolved_instShift {V : KExpr} (hV : KeysResolved V) (B : KExpr) :
+    ∀ j, KeysResolved B → KeysResolved (instShift V j B) := by
+  induction B with
+  | bvar i =>
+    intro j _
+    simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]
+    split
+    · exact keysResolved_lift _ _ _ hV
+    · split <;> simp only [KeysResolved]
+  | sort _ | const _ _ | lit _ | fvar _ _ _ =>
+    intro j hr
+    simpa only [instShift, Ix.Kernel.Expr.instantiate1Lift] using hr
+  | app f a ihf iha =>
+    intro j hr
+    simp only [instShift, Ix.Kernel.Expr.instantiate1Lift, KeysResolved] at hr ⊢
+    exact ⟨ihf j hr.1, iha j hr.2⟩
+  | lam ty body bm iht ihb | forallE ty body bm iht ihb =>
+    intro j hr
+    simp only [instShift, Ix.Kernel.Expr.instantiate1Lift, KeysResolved] at hr ⊢
+    exact ⟨iht j hr.1, ihb (j + 1) hr.2⟩
+  | letE ty val body bm iht ihv ihb =>
+    intro j hr
+    simp only [instShift, Ix.Kernel.Expr.instantiate1Lift, KeysResolved] at hr ⊢
+    exact ⟨iht j hr.1, ihv j hr.2.1, ihb (j + 1) hr.2.2⟩
+  | proj name i inner ih =>
+    intro j hr
+    simp only [instShift, Ix.Kernel.Expr.instantiate1Lift, KeysResolved] at hr ⊢
+    exact ⟨hr.1, ih j hr.2⟩
+
+/-- The head of an application spine with resolved keys has resolved keys. -/
+theorem keysResolved_mkAppN_head : ∀ (zs : List KExpr) (f : KExpr),
+    KeysResolved (Ix.Kernel.Expr.mkAppN f zs) → KeysResolved f
+  | [], _, hr => hr
+  | z :: zs, f, hr => by
+    have h1 : KeysResolved (.app f z) := keysResolved_mkAppN_head zs (.app f z) hr
+    simp only [KeysResolved] at h1
+    exact h1.1
+
+/-- **The image of a represented term has resolved keys.** -/
+theorem Tm.keysResolved {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p) : KeysResolved E := by
+  induction rep with
+  | bvarLocal => simp only [KeysResolved]
+  | bvarFree => simp only [KeysResolved]
+  | sort => simp only [KeysResolved]
+  | const =>
+    simp only [KeysResolved]
+    exact Resolved.ne
+  | app _ _ _ ihf iha =>
+    simp only [KeysResolved]
+    exact ⟨ihf, iha⟩
+  | lam _ _ _ _ iht ihb =>
+    simp only [KeysResolved]
+    exact ⟨iht, ihb⟩
+  | forallE _ _ _ _ iht ihb =>
+    simp only [KeysResolved]
+    exact ⟨iht, ihb⟩
+  | letE _ _ _ _ _ ihv ihb => exact keysResolved_instShift ihv _ 0 ihb
+  | litNat => simp only [KeysResolved]
+  | litStr => simp only [KeysResolved]
+  | proj _ _ _ ihe =>
+    simp only [KeysResolved]
+    exact ⟨Resolved.ne, ihe⟩
+
+/-- A represented constant's key resolves. -/
+theorem Tm.const_key_ne {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {key : KKey} {us : List KLevel} {p : SourceValue F}
+    (rep : Tm κ d Γ h k (.const key us) p) : key ≠ unresolvedKey := by
+  have hr := rep.keysResolved
+  simpa only [KeysResolved] using hr
+
+/-- A represented projection's structure key resolves. -/
+theorem Tm.proj_key_ne {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {key : KKey} {i : Nat} {E : KExpr} {p : SourceValue F}
+    (rep : Tm κ d Γ h k (.proj key i E) p) : key ≠ unresolvedKey := by
+  have hr := rep.keysResolved
+  simp only [KeysResolved] at hr
+  exact hr.1
+
+/-- The head constant of a represented application spine resolves. -/
+theorem Tm.head_key_ne {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {key : KKey} {us : List KLevel} {zs : List KExpr} {p : SourceValue F}
+    (rep : Tm κ d Γ h k (Ix.Kernel.Expr.mkAppN (.const key us) zs) p) : key ≠ unresolvedKey := by
+  have hr := keysResolved_mkAppN_head zs _ rep.keysResolved
+  simpa only [KeysResolved] using hr
+
 end IxVM.Refinement.Core

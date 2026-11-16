@@ -773,6 +773,7 @@ theorem tm_copy_const {d' : Nat} {Γ' : Nat → KExpr} {h m : Heap F} {k k' : Na
     Tm κ d' Γ' (m ++ [.construct kexprEnum "Const" [x, y]]) k' E
       (.ptr (.enum kexprEnum) m.length) := by
   obtain ⟨a, us, rfl, ra, ls, rls, hus⟩ := Tm.const_of_load rep ld
+  haveI : Resolved (κ (ixAddr a)) := ⟨rep.const_key_ne⟩
   exact tm_store_const (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext) hus
 
 /-- A copied `Lit` node is represented at every reading. -/
