@@ -113,7 +113,6 @@ theorem finishInductiveRead_full_bare {md : Mode} {cx : Ctx md}
   have covered := finishInductiveRead_covered h
   unfold finishInductiveRead at h ⊢
   simp only [covered, ↓reduceIte] at h ⊢
-  dsimp only at h ⊢
   split at h
   · rename_i hempty
     simp only [pure, Except.pure, Except.ok.injEq] at h

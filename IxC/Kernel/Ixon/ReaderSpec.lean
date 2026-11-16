@@ -156,7 +156,7 @@ theorem recordRecursorsIndexed_member {index : RecIndex} {owner : Address}
   have hposition : (.recr rc, j) ∈ ms.toList.zipIdx :=
     List.mem_zipIdx_iff_getElem?.mpr (by simpa using member)
   have h := List.all_eq_true.mp covered (.recr rc, j) hposition
-  exact Bool.or_eq_true.mp h
+  simpa only [Bool.or_eq_true] using h
 
 theorem finishInductiveRead_covered {cx : Ctx md} {owner : Address}
     {ms : Array Ixon.MutConst} {rInd r : Read md}
@@ -200,7 +200,6 @@ theorem finishInductiveRead_spec {cx : Ctx md} {owner : Address}
       r = { rInd with decls := rInd.decls ++ rTwin.decls } := by
   have covered := finishInductiveRead_covered h
   simp only [finishInductiveRead, covered, ↓reduceIte] at h
-  dsimp only at h
   split at h
   · simp only [pure, Except.pure, Except.ok.injEq] at h
     exact .inl h.symm
