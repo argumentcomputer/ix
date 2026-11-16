@@ -217,7 +217,10 @@ theorem checkTwinOrModeledS_run {env : Env md} (hmode : mode.verifiedChecks = tr
         NativeTwin.check (fueledOps mode fuel) env block
         else checkModeled mode (fueledOps mode fuel) env block) = .ok output.env := by
   unfold checkTwinOrModeledS at h
-  simp only [mkFEnv_find?] at h
+  have lookup : (mkFEnv env).find? = env.find? := by
+    funext name
+    simp only [mkFEnv_find?]
+  rw [lookup] at h
   by_cases selected : NativeTwin.usesStoredRecursors env.find? block = true
   · rw [if_pos selected] at h
     cases htwin : checkTwinS mode (mkFEnv env) block state with
