@@ -122,4 +122,47 @@ theorem HeapBinderLevels.mono {h h' : Heap F} {ptr : SourceValue F} {plan : List
   | letE cell _ _ _ ty value body => exact .letE (extended.getElem?_eq cell) ty value body
   | proj cell _ value => exact .proj (extended.getElem?_eq cell) value
 
+/-- Apply a positional binder trace to the reader expression. The metadata mapping permits
+both range parameters and inverse positional naming. Let components are traversed before
+zeta expansion, matching conversion's annotation order. -/
+def applyBinderTrace (metadata : Core.KLevel → Ix.Kernel.BinderMeta) :
+    Core.KExpr → List Core.KLevel → Option (Core.KExpr × List Core.KLevel)
+  | .bvar index, levels => some (.bvar index, levels)
+  | .fvar index ty, levels => do
+    let (ty', remaining) ← applyBinderTrace metadata ty levels
+    return (.fvar index ty', remaining)
+  | .sort level, levels => some (.sort level, levels)
+  | .const name args, levels => some (.const name args, levels)
+  | .lit value, levels => some (.lit value, levels)
+  | .app func arg, levels => do
+    let (func', afterFunc) ← applyBinderTrace metadata func levels
+    let (arg', afterArg) ← applyBinderTrace metadata arg afterFunc
+    return (.app func' arg', afterArg)
+  | .lam dom body _, levels => do
+    let level :: remaining := levels | none
+    let (dom', afterDom) ← applyBinderTrace metadata dom remaining
+    let (body', afterBody) ← applyBinderTrace metadata body afterDom
+    return (.lam dom' body' (metadata level), afterBody)
+  | .forallE dom body _, levels => do
+    let level :: remaining := levels | none
+    let (dom', afterDom) ← applyBinderTrace metadata dom remaining
+    let (body', afterBody) ← applyBinderTrace metadata body afterDom
+    return (.forallE dom' body' (metadata level), afterBody)
+  | .letE ty value body _, levels => do
+    let (_, afterType) ← applyBinderTrace metadata ty levels
+    let (value', afterValue) ← applyBinderTrace metadata value afterType
+    let (body', afterBody) ← applyBinderTrace metadata body afterValue
+    return (body'.instantiate1Lift value' 0, afterBody)
+  | .proj name index inner, levels => do
+    let (inner', remaining) ← applyBinderTrace metadata inner levels
+    return (.proj name index inner', remaining)
+
+/-- Applying one fixed trace cannot choose different annotations. -/
+theorem applyBinderTrace_unique {metadata : Core.KLevel → Ix.Kernel.BinderMeta}
+    {expr left right : Core.KExpr} {levels leftRest rightRest : List Core.KLevel}
+    (first : applyBinderTrace metadata expr levels = some (left, leftRest))
+    (second : applyBinderTrace metadata expr levels = some (right, rightRest)) :
+    left = right ∧ leftRest = rightRest :=
+  Prod.mk.inj (Option.some.inj (first.symm.trans second))
+
 end IxVM.Refinement.L1
