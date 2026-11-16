@@ -40,7 +40,7 @@ theorem convert_inductive_header_bounds {ind : Ixon.Inductive}
       rw [allCalls]; simp
     have present := ctors.mono repConstructor_heapMono₂ (converted.call_heap_bounds member).1
     have count := RomBound.bounded_length_lt bounded member (by simp) present
-    exact ⟨levels, params, indices, by simpa only [Array.length_toList] using count⟩
+    exact ⟨levels, params, indices, by simpa using count⟩
 
 /-- The actual former projection load provides all native header bounds for its canonical
 member; no separately supplied count certificate is needed. -/

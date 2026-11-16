@@ -160,7 +160,9 @@ theorem native_ctor_projection_hashes (context : Core.ScopedCtx)
       have hashSubset : ∀ call ∈ hashCalls, call ∈ rootCalls :=
         fun call member => subset call (by rw [allCalls]; simp [member])
       have startValue : ZMod.val (start : F) = start :=
-        ZMod.val_natCast_of_lt (by have : (549755813888 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide; omega)
+        ZMod.val_natCast_of_lt (by
+          have bound : (549755813888 : Nat) < Aiur.Library.U32.Goldilocks.modulus := by decide
+          omega)
       have current : Hashed rootCalls (Ixon.serConstant
           (IxVM.Consistency.constructorProjection (Core.ixAddr block) (ZMod.val indIndex) start)) := by
         simpa only [IxVM.Consistency.constructorProjection, startValue] using Core.hashed_mono hashSubset actualHash
