@@ -1,5 +1,5 @@
 import Ix.IxVM.Consistency.Statement
-import Ix.Cert.RecursorIndexFacts
+import Ix.Cert.RecursorIndex
 
 /-! # Reference support of the reader's recursor analysis
 
@@ -236,5 +236,31 @@ theorem analysis_transfer_used {s₁ s₂ : Store} {owner : _root_.Address}
   exact ⟨recursorAnalysis_spec.mpr ⟨by rw [analyse_eq]; exact analysis', firstIndex,
     blockRecord, members, slot, first, firstCarrier, records _ _ blockSupported blockFound,
     blockInfo, firstInductive, valid⟩, supported, majorSupported⟩
+
+/-- A block reached by the syntactic analysis is the record's own block or the owner of
+an actually resolved used reference. -/
+def UsedOwner (s : Store) (owner : _root_.Address) (c : Ixon.Constant)
+    (target : _root_.Address) : Prop :=
+  target = owner ∨ ∃ i ∈ usedRefIdxs c, ∃ a, c.refs[i]? = some a ∧
+    ∃ value, s a = some value ∧ Ix.Cert.ownerOf a value = target
+
+theorem analysis_used_owners {s : Store} {owner : _root_.Address}
+    {c : Ixon.Constant} {j : Nat} {r : Ixon.Recursor}
+    (member : (j, r) ∈ recursorMembers c)
+    {y : _root_.Address × Nat × Array (ConstRef _root_.Address) × ConstRef _root_.Address}
+    (ran : recursorAnalysis? s owner c r = some y) :
+    UsedOwner s owner c y.1 ∧
+      (∀ q ∈ y.2.2.1, UsedOwner s owner c q.block) ∧ UsedOwner s owner c y.2.2.2.block := by
+  have transported := analysis_transfer_used (s₂ := s) member
+    (D := UsedOwner s owner c) (.inl rfl)
+    (fun i used a reference q resolved => by
+      obtain ⟨value, found, source⟩ := Option.bind_eq_some_iff.mp resolved
+      exact ⟨resolved, .inr ⟨i, used, a, reference, value, found,
+        (Ix.Cert.RecursorIndex.resolveSource_block source).symm⟩⟩)
+    (fun _ _ _ found => found) ran
+  obtain ⟨analysis, firstIndex, blockRecord, members, slot, first, firstCarrier, rest⟩ :=
+    recursorAnalysis_spec.mp ran
+  have firstSupported := transported.2.1 _ (Array.mem_of_getElem? firstCarrier)
+  exact ⟨firstSupported, transported.2⟩
 
 end IxVM.Refinement.Assembly.ReaderAnalysis
