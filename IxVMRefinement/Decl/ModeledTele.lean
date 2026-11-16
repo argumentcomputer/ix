@@ -1418,6 +1418,7 @@ private theorem expr_lift_open_exact_aux (κ : _root_.Address → KKey) :
         | .Proj (ld12 := ld) (he593 := hr) (hm592 := hm) (ev625 := e1) (hc650 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
+          haveI : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c d Γ Es rfl hs hes)
@@ -1782,6 +1783,7 @@ private theorem expr_lower_local_exact_aux (κ : _root_.Address → KKey) (rp : 
         | .Proj (ld12 := ld) (he588 := hr) (hm587 := hm) (ev620 := e1) (hc645 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
+          haveI : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c Es rfl hes (SubstAux.idxAll_proj_inv hn ld))
@@ -1991,7 +1993,7 @@ def RenameMap (κ₁ κ₂ : _root_.Address → KKey) (f : KKey → KKey)
     srcAs.length = dstAs.length ∧
     ∀ a : Bytes.Address, κ₂ (ixAddr (renameBytesAddr a srcAs dstAs)) = f (κ₁ (ixAddr a))
 
-theorem RenameMap.mono {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
+theorem RenameMap.mono {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ₂ a)] {f : KKey → KKey}
     {h₁ h₂ : Heap F} {src dst : SourceValue F} (ext : Heap.Extends h₁ h₂)
     (rm : RenameMap κ₁ κ₂ f h₁ src dst) : RenameMap κ₁ κ₂ f h₂ src dst := by
   obtain ⟨srcAs, dstAs, hsrc, hdst, hlen, hmap⟩ := rm
@@ -2059,7 +2061,7 @@ private theorem rename_addr_go {srcAs : List Bytes.Address} :
         simp only [renameBytesAddr, ite_eq_right has]
         exact ih hlen' ev_rec ha hss_rep hts_rep
 
-theorem rename_addr_spec {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
+theorem rename_addr_spec {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ₂ a)] {f : KKey → KKey}
     {a : Bytes.Address} {ap src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W "KernelModeled::rename_addr" [ap, src, dst] h r h' cs)
     (ha : Bytes.RepAddressRef addrTy h a ap)
@@ -2285,7 +2287,7 @@ theorem rename_tm {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ�
   intro e src dst r h h' cs k E ev hE rm
   exact hmain _ _ _ _ _ _ ev rfl e src dst k E rfl hE rm
 
-theorem rename_list_exact {κ₁ κ₂ : _root_.Address → KKey} {f : KKey → KKey}
+theorem rename_list_exact {κ₁ κ₂ : _root_.Address → KKey} [∀ a, Resolved (κ₂ a)] {f : KKey → KKey}
     {Γ₁ Γ₂ : Nat → KExpr} {k : Nat} {Es : List KExpr} :
     ∀ {es src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       ObsFn W "KernelModeled::rename_list" [es, src, dst] h r h' cs →
