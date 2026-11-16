@@ -78,6 +78,7 @@ theorem nativeRun_metadata {P : KeyScope .anon} {fuel : Nat} {before after : Env
     former, completed, ctors, _, _, _, _, _, _, _, _, _, table⟩ := run
   have formerData := checkSumInd_post (ops := fueledOps .verified fuel) before
     p₀.toInductiveShape (fun shape => nativeCapsAt shape isRec) _ former
+  dsimp only at formerData
   obtain ⟨formerEnv, _, sameFormer, sameCtors, _, _⟩ := formerData
   have finalFormer : p.cvT = p₀.cvT := by
     rw [completed]
@@ -143,9 +144,11 @@ theorem modeledRun_metadata {P : KeyScope .anon} {fuel : Nat} {before after : En
   rcases branch with ⟨cvT, capsT, cvC, nP, nF, _, ctors, middle, beforeProjections,
       members, recs, _, _, projections⟩ | ⟨_, middle, members, recs⟩
   · have ctorMember : ConstantInfo.ctorInfo cvC nP nF ∈ block := by
-      apply (List.mem_filter.mp ?_).1
-      rw [ctors]
-      exact List.mem_cons_self
+      have filtered : ConstantInfo.ctorInfo cvC nP nF ∈
+          block.filter (fun ci => match ci with | .ctorInfo _ _ _ => true | _ => false) := by
+        rw [ctors]
+        exact List.mem_cons_self
+      exact (List.mem_filter.mp filtered).1
     have capKeys : (indBlockCaps .verified before cvT cvC nP nF).Good P := by
       intro name member
       have same : cvC.name = name := Option.some.inj member
@@ -199,19 +202,19 @@ theorem checkedDecl_metadata {P : KeyScope .anon} (prelude : P.Pre)
     have rest := (checkIndShape_bind_ok checked).2
     cases pinned : basisPinHit block with
     | some kind =>
-      rw [pinned] at rest
+      simp only [pinned] at rest
       exact basis_metadata prelude (declBasisRunOf rest)
     | none =>
-      rw [pinned] at rest
+      simp only [pinned] at rest
       split at rest
       · cases native : nativeParts? nP block with
         | some parts =>
-          rw [native] at rest
+          simp only [native] at rest
           have named := nativeParts?_names native
           exact nativeRun_metadata (keys _ named.1)
             (fun c member => keys _ (named.2.2 c member)) (declNativeRun_of rest)
         | none =>
-          rw [native] at rest
+          simp only [native] at rest
           exact modeledRun_metadata
             (fun ci member => keys _ (List.mem_map_of_mem member)) (declIndRun_of rest)
       · cases rest
@@ -245,16 +248,18 @@ theorem checkedDecls_metadata (fuel : Nat) (ev : Evidences .anon) :
       exact (added name ci found).elim (old name ci) id
     simpa only [List.flatMap_cons, List.append_assoc] using ih (known ++ d.names) next tail
 
+private theorem metadata_entry_reverse {a b : Option (ConstantInfo .anon)}
+    (entry : ThmBodyView.Entry a b) : ThmBodyView.Entry b a := by
+  cases entry with
+  | same => exact .same _
+  | thm cv old new => exact .thm cv new old
+
 /-- Opaque theorem-body replacement does not change metadata support. -/
 theorem ThmBodyView.Agrees.metadata {P : KeyScope .anon} {source target : Env .anon}
     (agreement : ThmBodyView.Agrees source target) (supported : MetadataIn P source) :
     MetadataIn P target := by
   intro name ci found
-  have reverse : ThmBodyView.Agrees target source := by
-    intro key
-    cases agreement key with
-    | same => exact .same _
-    | thm cv old new => exact .thm cv new old
+  have reverse : ThmBodyView.Agrees target source := fun key => metadata_entry_reverse (agreement key)
   cases ci with
   | indInfo cv caps =>
     exact supported name _ (reverse.find_nonThm found (by intros; intro h; cases h))
