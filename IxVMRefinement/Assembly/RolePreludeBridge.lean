@@ -817,10 +817,10 @@ theorem prelude_in_bound_or_mutual
     | false => exact .inl (hnon_muts hc_list hm)
     | true =>
       right
-      have mutual : ∃ ms, c.info = .muts ms := by
+      have mutualRecord : ∃ ms, c.info = .muts ms := by
         cases info : c.info <;> simp [isMutsConst, info] at hm
         exact ⟨_, info⟩
-      obtain ⟨ms, info⟩ := mutual
+      obtain ⟨ms, info⟩ := mutualRecord
       refine ⟨ms, info, ?_⟩
       have hcls := List.all_eq_true.mp committedPre_all_classified (a, c) hc_list
       simp only [preRowClassified, hm, ↓reduceIte, List.any_eq_true] at hcls
