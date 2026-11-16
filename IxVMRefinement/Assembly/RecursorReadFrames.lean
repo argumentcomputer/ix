@@ -46,16 +46,8 @@ theorem readInductiveBare_rec_frames {md : Mode} {cx : Ctx md} {owner : _root_.A
     rw [shapeRun] at read
     dsimp only at read
     rcases ite_ok read with read | read
-    · cases firstRun : (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
-        | some (.indc ind) => some (i, ind)
-        | _ => none))[0]? with
-      | none =>
-        rw [firstRun] at read
-        exact (throw_ok read).elim
-      | some firstPair =>
-        rcases firstPair with ⟨firstSlot, first⟩
-        rw [firstRun] at read
-        dsimp only at read
+    · split at read
+      · rename_i firstSlot first firstRun
         rcases ite_ok read with read | read
         · exact (fail_bind read).elim
         · rcases ite_ok read with read | read
@@ -77,8 +69,9 @@ theorem readInductiveBare_rec_frames {md : Mode} {cx : Ctx md} {owner : _root_.A
                 simp only [pure, Except.pure, Except.ok.injEq] at returned
                 subst out
                 exact ⟨row, rfl, entry, indexed, rowRead⟩
-            exact ⟨shape, firstSlot, first, _, shapeRun, firstRun, rfl, read, frames⟩
+            exact ⟨shape, firstSlot, first, _, rfl, firstRun, rfl, read, frames⟩
           · exact (fail_bind read).elim
+      · exact (throw_ok read).elim
     · exact (fail_bind read).elim
 
 theorem readInductive_rec_frames {md : Mode} {cx : Ctx md} {state : State md}
