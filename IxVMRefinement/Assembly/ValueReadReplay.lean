@@ -61,7 +61,10 @@ theorem lowerDefinition_replay_values {md : Mode}
     rw [← declared]
     clear read declared
     cases kind <;> cases rewritten : projRewrite source cv value <;> simp_all [result, valueDecl]
-    all_goals constructor
+    all_goals first
+      | constructor
+      | have impossible : (true : Bool) = false := flag
+        cases impossible
 
 /-- The new definition read preserves the actual parsed header/value and exposes only a
 possible hint change. Its member key, type reading and value reading are all constructed. -/
