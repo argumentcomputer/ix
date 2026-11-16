@@ -41,8 +41,7 @@ theorem RecEntryAt.unique {store : Store} {owner : _root_.Address}
   dsimp only at sameInd largeEq largeEq'
   subst ind'
   have sameLarge := largeEq.trans largeEq'.symm
-  subst large'
-  rfl
+  exact congrArg (fun flag => (⟨block, motive, major, flag⟩ : RecEntry)) sameLarge
 
 /-- A computed canonical or twin hit at an actual input member determines its complete
 entry, including the parent-dependent large-elimination flag. -/

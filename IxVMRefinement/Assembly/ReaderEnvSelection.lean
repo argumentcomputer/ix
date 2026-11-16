@@ -38,7 +38,7 @@ theorem selectReaderRecords_origin {env : Ixon.Env} {keep : _root_.Address → B
   rw [selectReaderRecords_get] at found
   cases kept : keep address with
   | false => simp only [kept, Bool.false_eq_true, ↓reduceIte] at found; cases found
-  | true => exact ⟨kept, by simpa only [kept, ↓reduceIte] using found⟩
+  | true => exact ⟨rfl, by simpa only [kept, ↓reduceIte] using found⟩
 
 theorem selectReaderRecords_recordAt (env : Ixon.Env) (keep : _root_.Address → Bool)
     (address : _root_.Address) :
@@ -104,10 +104,11 @@ theorem selectReaderRecords_blobs (env : Ixon.Env) (keep : _root_.Address → Bo
     | nil => intro _ _; rfl
     | cons address rest ih =>
       intro held seen
-      simp only [List.foldl_cons, selectReaderRecords_recordAt, held address List.mem_cons_self, ↓reduceIte]
+      simp only [List.foldl_cons]
+      rw [selectReaderRecords_recordAt env keep address, held address List.mem_cons_self]
+      dsimp only
       exact ih (fun a ha => held a (List.mem_cons_of_mem _ ha)) _
-  unfold Ix.Cert.blobsOf
-  rw [folded order kept]
-  rfl
+  exact congrArg (fun used : Std.HashSet _root_.Address =>
+    env.blobs.toList.filter (fun row => used.contains row.1)) (folded order kept {})
 
 end IxVM.Refinement.Assembly
