@@ -40,7 +40,7 @@ theorem prepared_quot_of_preludeFor {table : RoleTable} {prelude : Prelude .anon
     exact List.mem_map.mpr ⟨[.quot], by decide, rfl⟩
   obtain ⟨declaration, declared, names⟩ := List.mem_map.mp named
   apply prepared_prelude_head prelude.ix input declared
-  simpa only [Frontend.preludeKey, names, List.head?_cons]
+  simp only [Frontend.preludeKey, names, List.head?_cons]
 
 /-- The actual admission check retains each declared non-sorry name in its reference
 store. Quotient side records are covered by the quotient type in this same preparation. -/
