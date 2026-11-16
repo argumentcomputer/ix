@@ -47,6 +47,7 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
   refine ⟨ty, L1.repBoolField ind.isUnsafe, parentPtr, parent, ?_, parentRep, parentEq⟩
   simpa only [ZMod.natCast_zmod_val] using valueAt.trans (congrArg Except.ok valueShape)
 
+set_option maxHeartbeats 800000 in
 /-- The actual one-family block and canonical former projection supply raw peer facts at
 its real member index. Projection identities use the successful read's decoder guard. -/
 theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
