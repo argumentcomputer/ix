@@ -13,7 +13,6 @@ namespace IxVM.Refinement.L1
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 open Ix.Kernel.Reader
-open Ix.CompileCert.Loop (except_bind_ok)
 
 /-- A recursive-reference index reached by this expression, following its actual sharing table. -/
 inductive RecurUsed (sharing : List Ixon.Expr) : Nat → Ixon.Expr → Prop where
@@ -109,10 +108,10 @@ theorem RawConvExpr.memberReader_self_mono
       intro agrees n result _ _ success
       simp only [convExpr] at success ⊢
       cases selfRead : ecx₁.self index.toNat with
-      | none => simp [selfRead, malformed, throw, Except.error] at success
+      | none => simp [selfRead, malformed, throw] at success
       | some computation =>
         simp only [selfRead] at success
-        obtain ⟨key, computed, success⟩ := except_bind_ok.mp success
+        obtain ⟨key, computed, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
         have original : self₁ index.toNat = some (.ok key) := by
           change self₁ index.toNat = some computation at selfRead
           rwa [computed] at selfRead
@@ -122,41 +121,41 @@ theorem RawConvExpr.memberReader_self_mono
     | prj _ _ _ _ _ _ _ ih =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
-      obtain ⟨key, keyRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨inner, innerRead, success⟩ := except_bind_ok.mp success
+      obtain ⟨key, keyRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨inner, innerRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
       have transferred := ih (fun index used => agrees index (.prj used)) within enough innerRead
       rw [show ecx₂.keyAt _ = .ok key from keyRead, transferred]
       exact success
     | app _ _ _ fnPart arg =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
-      obtain ⟨fnExpr, fnRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨argExpr, argRead, success⟩ := except_bind_ok.mp success
+      obtain ⟨fnExpr, fnRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨argExpr, argRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
       rw [fnPart (fun index used => agrees index (.appFn used)) within enough fnRead,
         arg (fun index used => agrees index (.appArg used)) within enough argRead]
       exact success
     | lam _ _ _ _ domain body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
-      obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
+      obtain ⟨typeExpr, typeRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨bodyExpr, bodyRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
       rw [domain (fun index used => agrees index (.lamType used)) within enough typeRead,
         body (fun index used => agrees index (.lamBody used)) within enough bodyRead]
       exact success
     | all _ _ _ _ domain body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
-      obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
+      obtain ⟨typeExpr, typeRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨bodyExpr, bodyRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
       rw [domain (fun index used => agrees index (.allType used)) within enough typeRead,
         body (fun index used => agrees index (.allBody used)) within enough bodyRead]
       exact success
     | letE _ _ _ _ domain value body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
-      obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨valueExpr, valueRead, success⟩ := except_bind_ok.mp success
-      obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
+      obtain ⟨typeExpr, typeRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨valueExpr, valueRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
+      obtain ⟨bodyExpr, bodyRead, success⟩ := Ix.CompileCert.Loop.except_bind_ok.mp success
       rw [domain (fun index used => agrees index (.letType used)) within enough typeRead,
         value (fun index used => agrees index (.letValue used)) within enough valueRead,
         body (fun index used => agrees index (.letBody used)) within enough bodyRead]
