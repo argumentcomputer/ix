@@ -59,13 +59,13 @@ theorem unitShape_generated_bases {md : Mode} {unit generated : List (Declaratio
   simpa only [closerBases, split, List.contains_iff_mem] using covered
 
 /-- A generated declaration's owner root is actually present after its checked unit. -/
-theorem ReferenceTrace.unit_roots {fuel : Nat} {env out : Env .anon}
+theorem ReferenceTrace.unit_name_roots {fuel : Nat} {env out : Env .anon}
     {ds unit generated : List (Declaration .anon)} {block : List (ConstantInfo .anon)} {nP : Nat}
     (trace : ReferenceTrace fuel env ds out)
     (units : checkUnits ds.toArray = .ok ())
     (inUnits : unit ∈ unitsOf ds)
     (split : unitSplit unit = some (generated, .indDecl block nP))
-    (underived : DeclNonAux (.indDecl block nP)) :
+    (underived : ∀ name ∈ (Declaration.indDecl block nP).names, NonAuxKey name) :
     ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true := by
   have unitsRun : checkUnitsGo {} (unitsOf ds) 0 = .ok () := by
     simpa only [checkUnits, List.toList_toArray] using units
@@ -79,24 +79,23 @@ theorem ReferenceTrace.unit_roots {fuel : Nat} {env out : Env .anon}
   intro d declared name named
   have covered := unitShape_generated_bases split shape declared named
   obtain ⟨owner, ownerMember, sameBase⟩ := List.mem_map.mp covered
+  have ownerBase : owner.base = owner := base_of_isBaseKey (isBaseKey_of_nonAuxKey (underived owner ownerMember))
   rw [← indDecl_installs_names] at ownerMember
   obtain ⟨ci₀, installed, sameName⟩ := List.mem_map.mp ownerMember
-  have baseName : ci₀.name.base = ci₀.name :=
-    base_of_isBaseKey (isBaseKey_of_nonAuxKey (underived.1 ci₀ installed).1)
   have rootName : name.base = ci₀.name := by
-    rw [← sameBase, ← sameName, baseName]
+    rw [← sameBase, ownerBase, ← sameName]
   rw [rootName]
   exact trace.declared closerMember installed
 
 
 /-- The reader's generated roots are present in the accepted reference theorem-storage view. -/
-theorem ReferenceTrace.raw_unit_roots {fuel : Nat} {env out : Env .anon}
+theorem ReferenceTrace.raw_unit_name_roots {fuel : Nat} {env out : Env .anon}
     {ds unit generated : List (Declaration .anon)} {block : List (ConstantInfo .anon)} {nP : Nat}
     (trace : ReferenceTrace fuel env (ds.map IxVM.Refinement.thmToOpaqueDefn) out)
     (units : checkUnits ds.toArray = .ok ())
     (inUnits : unit ∈ unitsOf ds)
     (split : unitSplit unit = some (generated, .indDecl block nP))
-    (underived : DeclNonAux (.indDecl block nP)) :
+    (underived : ∀ name ∈ (Declaration.indDecl block nP).names, NonAuxKey name) :
     ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true := by
   have mappedUnits : checkUnits (ds.map IxVM.Refinement.thmToOpaqueDefn).toArray = .ok () := by
     rw [← List.map_toArray, checkUnits_thmToOpaqueDefn]
@@ -109,9 +108,39 @@ theorem ReferenceTrace.raw_unit_roots {fuel : Nat} {env out : Env .anon}
       some (generated.map IxVM.Refinement.thmToOpaqueDefn, .indDecl block nP) := by
     rw [unitSplit_thmToOpaqueDefn, split]
     rfl
-  have roots := trace.unit_roots mappedUnits mappedMember mappedSplit underived
+  have roots := trace.unit_name_roots mappedUnits mappedMember mappedSplit underived
   intro d hd name hn
   exact roots (IxVM.Refinement.thmToOpaqueDefn d) (List.mem_map_of_mem hd) name
     (by rw [thmToOpaqueDefn_names]; exact hn)
+
+private theorem closer_names_nonAux {block : List (ConstantInfo .anon)} {nP : Nat}
+    (underived : DeclNonAux (.indDecl block nP)) :
+    ∀ name ∈ (Declaration.indDecl block nP).names, NonAuxKey name := by
+  intro name named
+  rw [← indDecl_installs_names] at named
+  obtain ⟨ci, installed, rfl⟩ := List.mem_map.mp named
+  exact (underived.1 ci installed).1
+
+/-- The structural bare-reader declaration invariant supplies the closer's underived names. -/
+theorem ReferenceTrace.unit_roots {fuel : Nat} {env out : Env .anon}
+    {ds unit generated : List (Declaration .anon)} {block : List (ConstantInfo .anon)} {nP : Nat}
+    (trace : ReferenceTrace fuel env ds out)
+    (units : checkUnits ds.toArray = .ok ())
+    (inUnits : unit ∈ unitsOf ds)
+    (split : unitSplit unit = some (generated, .indDecl block nP))
+    (underived : DeclNonAux (.indDecl block nP)) :
+    ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true :=
+  trace.unit_name_roots units inUnits split (closer_names_nonAux underived)
+
+/-- Reader declarations retain their owner roots through reference theorem storage. -/
+theorem ReferenceTrace.raw_unit_roots {fuel : Nat} {env out : Env .anon}
+    {ds unit generated : List (Declaration .anon)} {block : List (ConstantInfo .anon)} {nP : Nat}
+    (trace : ReferenceTrace fuel env (ds.map IxVM.Refinement.thmToOpaqueDefn) out)
+    (units : checkUnits ds.toArray = .ok ())
+    (inUnits : unit ∈ unitsOf ds)
+    (split : unitSplit unit = some (generated, .indDecl block nP))
+    (underived : DeclNonAux (.indDecl block nP)) :
+    ∀ d ∈ generated, ∀ name ∈ d.names, (out.find? name.base).isSome = true :=
+  trace.raw_unit_name_roots units inUnits split (closer_names_nonAux underived)
 
 end IxVM.Refinement.Decl
