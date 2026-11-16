@@ -20,7 +20,7 @@ def needsBinderAt (sharing : List Ixon.Expr) (bound : Nat) (expr : Ixon.Expr) : 
   | .letE _ _ ty value body =>
     (needsBinderAt sharing bound ty || needsBinderAt sharing bound value) || needsBinderAt sharing bound body
   | .share index =>
-    if hindex : index.toNat < bound then
+    if _hindex : index.toNat < bound then
       match sharing[index.toNat]? with
       | some entry => needsBinderAt sharing index.toNat entry
       | none => false
@@ -61,9 +61,9 @@ theorem binderFlag_three_nonzero {first second third : Bool} {a b c : Nat}
   cases first <;> cases second <;> cases third
   all_goals first
     | rfl
-    | (simp only [binderFlag, Nat.cast_zero, evalBinOp, zero_add, Except.ok.injEq] at added₁
+    | (simp only [binderFlag, evalBinOp, Except.ok.injEq] at added₁
        subst middle
-       simp only [binderFlag, Nat.cast_zero, evalBinOp, zero_add, Except.ok.injEq] at added₂
+       simp only [binderFlag, evalBinOp, Except.ok.injEq] at added₂
        exact False.elim (nonzero added₂.symm))
 
 theorem binderFlag_nonzero {needed : Bool} {bit : Nat}

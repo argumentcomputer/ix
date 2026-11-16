@@ -42,7 +42,7 @@ def binderPlanStep (tree : BinderTreeData) (sharing : List Ixon.Expr) (bound : N
     return ((typePlan ++ valuePlan) ++ bodyPlan, afterBody)
   | .prj _ _ inner => binderPlanStep tree sharing bound inner nodes
   | .share index => do
-    if hindex : index.toNat < bound then
+    if _hindex : index.toNat < bound then
       let body ← sharing[index.toNat]?
       let .share variant :: rest := nodes | none
       let entryNodes ← tree.lookup (1, (index.toNat : F), (variant.toNat : F))
