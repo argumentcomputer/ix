@@ -109,8 +109,7 @@ theorem lowerTwin_rec_frames {md : Mode} {cx : Ctx md}
   · split at read
     · split at read
       · split at read
-        · dsimp only at read
-          rcases ite_ok read with read | read
+        · rcases ite_ok read with read | read
           · split at read
             · rename_i firstSlot first selectedFirst
               rcases ite_ok read with read | read
