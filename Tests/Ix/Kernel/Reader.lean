@@ -1,6 +1,7 @@
 import IxC.Kernel.Admission.Theorems
 import IxC.Fixtures.Authentic
 import Ix.Address.Admission
+import Tests.Ix.Kernel.ReaderTwinFamilies
 
 /-! # Ixon records through the verified checker
 
