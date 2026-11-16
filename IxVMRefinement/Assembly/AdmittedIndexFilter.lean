@@ -83,7 +83,7 @@ theorem input_indexed_family {store : Store} {input fallback : Array (_root_.Add
     (indexed : inputIndexed store
       (input.foldl (fun known (key, _) => known.insert key) ({} : Std.HashSet _root_.Address))
       fallback owner constant = true)
-    (notFallback : (owner, constant) ∉ fallback)
+    (notFallback : fallback.contains (owner, constant) = false)
     {j : Nat} {recursor : Ixon.Recursor} (member : (j, recursor) ∈ recursorMembers constant)
     {motive : Nat} {carriers : Array (ConstRef _root_.Address)} {major : ConstRef _root_.Address}
     (analysis : analyseRecursor store owner constant recursor = some (motive, carriers, major))
@@ -98,7 +98,7 @@ theorem input_indexed_family {store : Store} {input fallback : Array (_root_.Add
     dsimp only at same
     subst key
     exact ⟨value, Array.mem_toList_iff.mp row⟩
-  · exact (notFallback (Array.contains_iff_mem.mp fallback)).elim
+  · rw [notFallback] at fallback; cases fallback
 
 /-- The selected admitted record really passed the whole-record input filter. -/
 theorem admitted_input_indexed {V : IxVM.Refinement.View} {binding : Admission.Binding}
