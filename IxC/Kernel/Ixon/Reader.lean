@@ -1239,6 +1239,35 @@ def lowerTwin (cx : Ctx md) (twins : Array (ConstRef Address × RecEntry)) : Rea
     declined s!"recursor block declares {k} twice"
   pure { decls := #[.indDecl recInfos nPd] }
 
+/-- Accumulate each family's references in reverse order, and new families in reverse
+first-seen order. Lists keep each update constant-time apart from the hash lookup. -/
+def twinGroupStep
+    (state : Std.HashMap Address (List (ConstRef Address × RecEntry)) × List Address)
+    (entry : ConstRef Address × RecEntry) :
+    Std.HashMap Address (List (ConstRef Address × RecEntry)) × List Address :=
+  match state.1[entry.2.block]? with
+  | none => (state.1.insert entry.2.block [entry], entry.2.block :: state.2)
+  | some previous => (state.1.insert entry.2.block (entry :: previous), state.2)
+
+/-- Partition twins in expected linear time: families retain first-seen order and each
+family retains its references' original order. No reference is filtered out. -/
+def groupTwins (twins : Array (ConstRef Address × RecEntry)) :
+    Array (Array (ConstRef Address × RecEntry)) :=
+  let state := twins.foldl twinGroupStep ({}, [])
+  state.2.reverse.toArray.map fun block => (state.1.getD block []).reverse.toArray
+
+/-- Read twins by their actual family. The common one-family case uses the existing
+reader unchanged; a multi-family record emits each family's declarations in order. -/
+def lowerTwins (cx : Ctx md) (twins : Array (ConstRef Address × RecEntry)) : ReadM (Read md) := do
+  let some (_, first) := twins[0]? | pure {}
+  if twins.all (·.2.block == first.block) then lowerTwin cx twins
+  else
+    let mut decls := #[]
+    for family in groupTwins twins do
+      let read ← lowerTwin cx family
+      decls := decls ++ read.decls
+    pure { decls }
+
 /-- An inductive block with its recursors, read from its records and lowered
 by `lowerInductive`; a block of one inductive that no recursor of the input
 eliminates, without one (`blockShapeOf`). -/
@@ -1314,7 +1343,7 @@ def finishInductiveRead (cx : Ctx md) (owner : Address) (ms : Array Ixon.MutCons
     let twins := recordTwins cx.index owner ms
     if twins.isEmpty then pure rInd
     else
-      let rTwin ← lowerTwin cx twins
+      let rTwin ← lowerTwins cx twins
       pure { rInd with decls := rInd.decls ++ rTwin.decls }
   else
     declined "recursor cannot be assigned to an inductive family"
@@ -1365,7 +1394,7 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
             twins := twins.push (ref, entry)
           else unless cx.index.recs.contains ref do
             declined "recursor whose inductive block is not in the input"
-        lowerTwin cx twins
+        lowerTwins cx twins
     else if ms.all (fun | .defn _ => true | _ => false) then
       let defs : Array Ixon.Definition := ms.filterMap fun | .defn d => some d | _ => none
       -- the safety policy first, member by member: a `partial` block (the

@@ -441,172 +441,6 @@ theorem mkAppN_append_singleton (H : KExpr) :
   | [], _ => rfl
   | x :: xs, a => mkAppN_append_singleton (.app H x) xs a
 
-/-- Pairwise heap representation relating a `SourceValue F` pointer simultaneously to its
-raw heap syntax `R : KExpr` (preserving `"Let"` cells as `.letE RT RV RB default`) and its
-ζ-expanded kernel term `E : KExpr` (`TmExact`). Every constructor of `RawTmExact` has a
-distinct head constructor in `R`, so structural case analysis on `R` determines the exact
-heap cell tag without `instShift` ambiguity. -/
-inductive RawTmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : Heap F) :
-    Nat → KExpr → KExpr → SourceValue F → Prop where
-  | bvarLocal {k addr : Nat} {i : F}
-      (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hsmall : ZMod.val i < 9223372036854775808) (hi : ZMod.val i < k) :
-      RawTmExact κ d Γ h k (.bvar (ZMod.val i)) (.bvar (ZMod.val i)) (.ptr (.enum kexprEnum) addr)
-  | bvarFree {k addr : Nat} {i : F}
-      (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hsmall : ZMod.val i < 9223372036854775808) (hk : k ≤ ZMod.val i)
-      (hd : ZMod.val i - k < d) :
-      RawTmExact κ d Γ h k
-        (.fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i))))
-        (.fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i))))
-        (.ptr (.enum kexprEnum) addr)
-  | sort {k addr : Nat} {lp : SourceValue F} {l : KLevel}
-      (cell : h[addr]? = some (.construct kexprEnum "Srt" [lp]))
-      (rl : RepKLevel h l lp) :
-      RawTmExact κ d Γ h k (.sort l) (.sort l) (.ptr (.enum kexprEnum) addr)
-  | const {k addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
-      (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
-      (ra : Bytes.RepAddressRef addrTy h a ap) (rls : RepKLevelList h ls lsp) :
-      RawTmExact κ d Γ h k (.const (κ (ixAddr a)) ls) (.const (κ (ixAddr a)) ls)
-        (.ptr (.enum kexprEnum) addr)
-  | app {k addr : Nat} {fp ap : SourceValue F} {Rf Ra Ef Ea : KExpr}
-      (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
-      (rf : RawTmExact κ d Γ h k Rf Ef fp) (ra : RawTmExact κ d Γ h k Ra Ea ap) :
-      RawTmExact κ d Γ h k (.app Rf Ra) (.app Ef Ea) (.ptr (.enum kexprEnum) addr)
-  | lam {k addr : Nat} {tp bp lp : SourceValue F} {RT RB T B : KExpr} {ℓ : KLevel}
-      (cell : h[addr]? = some (.construct kexprEnum "Lam" [tp, bp, lp]))
-      (rt : RawTmExact κ d Γ h k RT T tp) (rb : RawTmExact κ d Γ h (k + 1) RB B bp)
-      (rl : RepKLevel h ℓ lp) :
-      RawTmExact κ d Γ h k (.lam RT RB (bmeta ℓ)) (.lam T B (bmeta ℓ))
-        (.ptr (.enum kexprEnum) addr)
-  | forallE {k addr : Nat} {tp bp lp : SourceValue F} {RT RB T B : KExpr} {ℓ : KLevel}
-      (cell : h[addr]? = some (.construct kexprEnum "Forall" [tp, bp, lp]))
-      (rt : RawTmExact κ d Γ h k RT T tp) (rb : RawTmExact κ d Γ h (k + 1) RB B bp)
-      (rl : RepKLevel h ℓ lp) :
-      RawTmExact κ d Γ h k (.forallE RT RB (bmeta ℓ)) (.forallE T B (bmeta ℓ))
-        (.ptr (.enum kexprEnum) addr)
-  | letE {k addr : Nat} {tp vp bp : SourceValue F} {RT RV RB T V B : KExpr}
-      (cell : h[addr]? = some (.construct kexprEnum "Let" [tp, vp, bp]))
-      (rt : RawTmExact κ d Γ h k RT T tp) (rv : RawTmExact κ d Γ h k RV V vp)
-      (rb : RawTmExact κ d Γ h (k + 1) RB B bp) :
-      RawTmExact κ d Γ h k (.letE RT RV RB default) (instShift V 0 B)
-        (.ptr (.enum kexprEnum) addr)
-  | litNat {k addr : Nat} {lp : SourceValue F} {limbs : List UInt64}
-      (cell : h[addr]? = some (.construct kexprEnum "Lit" [.construct klitEnum "Nat" [lp]]))
-      (rl : RepList limbListEnum RepU64 h limbs lp) (hc : limbs.getLast? ≠ some 0) :
-      RawTmExact κ d Γ h k (.lit (.natVal (limbsVal limbs))) (.lit (.natVal (limbsVal limbs)))
-        (.ptr (.enum kexprEnum) addr)
-  | litStr {k addr : Nat} {bp : SourceValue F} {bytes : List UInt8} {s : String}
-      (cell : h[addr]? = some (.construct kexprEnum "Lit" [.construct klitEnum "Str" [bp]]))
-      (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
-      RawTmExact κ d Γ h k (.lit (.strVal s)) (.lit (.strVal s))
-        (.ptr (.enum kexprEnum) addr)
-  | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {RE E : KExpr}
-      (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
-      (ra : Bytes.RepAddressRef addrTy h a ap) (re : RawTmExact κ d Γ h k RE E ep) :
-      RawTmExact κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) RE)
-        (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)
-
-theorem RawTmExact.toTmExact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
-    (rep : RawTmExact κ d Γ h k R E p) : TmExact κ d Γ h k E p := by
-  induction rep with
-  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
-  | bvarFree cell hs hk hd => exact .bvarFree cell hs hk hd
-  | sort cell rl => exact .sort cell rl
-  | const cell ra rls => exact .const cell ra rls
-  | app cell _ _ ihf iha => exact .app cell ihf iha
-  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
-  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
-  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
-  | litNat cell rl hc => exact .litNat cell rl hc
-  | litStr cell rb hs => exact .litStr cell rb hs
-  | proj cell ra _ ihe => exact .proj cell ra ihe
-
-/-- Exact conversion retains a raw heap syntax, including every let cell. -/
-theorem TmExact.raw {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
-    (rep : TmExact κ d Γ h k E p) : ∃ R, RawTmExact κ d Γ h k R E p := by
-  induction rep with
-  | bvarLocal cell hs hi => exact ⟨_, .bvarLocal cell hs hi⟩
-  | bvarFree cell hs hk hd => exact ⟨_, .bvarFree cell hs hk hd⟩
-  | sort cell rl => exact ⟨_, .sort cell rl⟩
-  | const cell ra rls => exact ⟨_, .const cell ra rls⟩
-  | app cell _ _ ihf iha =>
-    obtain ⟨_, hf⟩ := ihf
-    obtain ⟨_, ha⟩ := iha
-    exact ⟨_, .app cell hf ha⟩
-  | lam cell _ _ rl iht ihb =>
-    obtain ⟨_, ht⟩ := iht
-    obtain ⟨_, hb⟩ := ihb
-    exact ⟨_, .lam cell ht hb rl⟩
-  | forallE cell _ _ rl iht ihb =>
-    obtain ⟨_, ht⟩ := iht
-    obtain ⟨_, hb⟩ := ihb
-    exact ⟨_, .forallE cell ht hb rl⟩
-  | letE cell _ _ _ iht ihv ihb =>
-    obtain ⟨_, ht⟩ := iht
-    obtain ⟨_, hv⟩ := ihv
-    obtain ⟨_, hb⟩ := ihb
-    exact ⟨_, .letE cell ht hv hb⟩
-  | litNat cell rl hc => exact ⟨_, .litNat cell rl hc⟩
-  | litStr cell rb hs => exact ⟨_, .litStr cell rb hs⟩
-  | proj cell ra _ ihe =>
-    obtain ⟨_, he⟩ := ihe
-    exact ⟨_, .proj cell ra he⟩
-
-/-- A raw closed reading has no ghost variables, so the same syntax works under every
-opening depth and ghost context. Local binders keep their original indices. -/
-theorem RawTmExact.rebase_zero {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
-    (rep : RawTmExact κ 0 Γ h k R E p) (d' : Nat) (Γ' : Nat → KExpr) :
-    RawTmExact κ d' Γ' h k R E p := by
-  induction rep with
-  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
-  | bvarFree _ _ _ hd => omega
-  | sort cell rl => exact .sort cell rl
-  | const cell ra rls => exact .const cell ra rls
-  | app cell _ _ ihf iha => exact .app cell ihf iha
-  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
-  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
-  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
-  | litNat cell rl hc => exact .litNat cell rl hc
-  | litStr cell rb hs => exact .litStr cell rb hs
-  | proj cell ra _ ihe => exact .proj cell ra ihe
-
-/-- A freshly converted closed expression supplies one raw syntax for all native checks. -/
-theorem TmCExact.raw {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
-    {p : SourceValue F} (rep : TmCExact κ h E p) :
-    ∃ R, ∀ d Γ, RawTmExact κ d Γ h 0 R E p := by
-  obtain ⟨R, hR⟩ := (rep 0 (fun _ => default)).raw
-  exact ⟨R, fun d Γ => hR.rebase_zero d Γ⟩
-
-theorem RawTmExact.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h₁ h₂ : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
-    (ext : Heap.Extends h₁ h₂) (rep : RawTmExact κ d Γ h₁ k R E p) :
-    RawTmExact κ d Γ h₂ k R E p := by
-  induction rep with
-  | bvarLocal cell hs hi => exact .bvarLocal (ext.getElem?_eq cell) hs hi
-  | bvarFree cell hs hk hd => exact .bvarFree (ext.getElem?_eq cell) hs hk hd
-  | sort cell rl => exact .sort (ext.getElem?_eq cell) (repKLevel_heapMono₂ ext rl)
-  | const cell ra rls =>
-    exact .const (ext.getElem?_eq cell)
-      (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext)
-  | app cell _ _ ihf iha => exact .app (ext.getElem?_eq cell) ihf iha
-  | lam cell _ _ rl iht ihb =>
-    exact .lam (ext.getElem?_eq cell) iht ihb (repKLevel_heapMono₂ ext rl)
-  | forallE cell _ _ rl iht ihb =>
-    exact .forallE (ext.getElem?_eq cell) iht ihb (repKLevel_heapMono₂ ext rl)
-  | letE cell _ _ _ iht ihv ihb => exact .letE (ext.getElem?_eq cell) iht ihv ihb
-  | litNat cell rl hc =>
-    exact .litNat (ext.getElem?_eq cell)
-      (repList_heapMono₂ limbListEnum repU64_heapMono₂ ext rl) hc
-  | litStr cell rb hs =>
-    exact .litStr (ext.getElem?_eq cell)
-      (Bytes.repByteStream_heapMono₂ byteListEnum ext rb) hs
-  | proj cell ra _ ihe =>
-    exact .proj (ext.getElem?_eq cell) (Bytes.repAddressRef_heapMono₂ addrTy ext ra) ihe
-
 theorem RawTmExact.forallE_of_load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p tp bp lp : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
@@ -978,8 +812,8 @@ theorem mentionsConst_instantiate1Lift_false {T : KKey} {v : KExpr} :
 /-- Record-load correspondence for the single inductive member `T` of a one-type block `b₀`
 at context `c`. -/
 structure OneTypePeerFacts (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
-    (nl nP nIdx nCtors : Nat) : Prop where
-  self_key : T = c.κ (iprjAddr (ixAddr b₀) 0)
+    (nl nP nIdx nCtors : Nat) (indIndex : F := 0) : Prop where
+  self_key : T = c.κ (iprjAddr (ixAddr b₀) (ZMod.val indIndex))
   self_ind : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
@@ -989,13 +823,57 @@ structure OneTypePeerFacts (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
     ∃ (ty u blk : SourceValue F) (b' : Bytes.Address),
       loadValue h' ptr = .ok (.construct kciEnum "Induct"
         [.field (nl : F), ty, .field (nP : F), .field (nIdx : F), .field (nCtors : F),
-          u, blk, .field 0]) ∧
+          u, blk, .field indIndex]) ∧
       Bytes.RepAddressRef addrTy h' b' blk ∧
       ixAddr b' = ixAddr b₀
   peer_only_self : ∀ (a : Bytes.Address) (cm : Ixon.Constant) (idx : UInt64),
     Ix.Cert.recordAt c.E (ixAddr a) = some cm →
     cm.info = .iPrj ⟨idx, ixAddr b₀⟩ →
     c.κ (ixAddr a) = T
+
+/-- Raw peer correspondence only at successful observed metadata reads. The actual read
+provides its decoded parent member and the checked empty projection tables. -/
+structure OneTypePeerReads (c : ScopedCtx) (b₀ : Bytes.Address) (T : KKey)
+    (nl nP nIdx nCtors : Nat) (indIndex : F := 0) : Prop where
+  self_key : T = c.κ (iprjAddr (ixAddr b₀) (ZMod.val indIndex))
+  self_ind : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (a : Bytes.Address),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+    Good c.toCtx cs →
+    Bytes.RepAddressRef addrTy h a addr →
+    c.κ (ixAddr a) = T →
+    ∃ (ty u blk : SourceValue F) (b' : Bytes.Address),
+      loadValue h' ptr = .ok (.construct kciEnum "Induct"
+        [.field (nl : F), ty, .field (nP : F), .field (nIdx : F), .field (nCtors : F),
+          u, blk, .field indIndex]) ∧
+      Bytes.RepAddressRef addrTy h' b' blk ∧
+      ixAddr b' = ixAddr b₀
+  peer_only_self : ∀ {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+      {a : Bytes.Address} {nl ty np ni nc u blk idx : SourceValue F} {b : Bytes.Address},
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+    c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs →
+    Bytes.RepAddressRef addrTy h a addr →
+    loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) →
+    Bytes.RepAddressRef addrTy h' b blk → ixAddr b = ixAddr b₀ → c.κ (ixAddr a) = T
+
+/-- The historical whole-record invariant implies the query-specific peer facts. -/
+theorem OneTypePeerFacts.toReads {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {indIndex : F}
+    (facts : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (records : RawRecordFacts c) :
+    OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex where
+  self_key := facts.self_key
+  self_ind := facts.self_ind
+  peer_only_self := by
+    intro addr ptr h h' cs a nl ty np ni nc u blk idx b observed allowed good ha loaded hb parentEq
+    obtain ⟨cm, b', i, record, hb', rfl, shape⟩ :=
+      records.inductRecord addr ptr h h' cs a nl ty np ni nc u blk idx
+        observed allowed good ha loaded
+    have parentSame := congrArg ixAddr
+      (Bytes.repAddressRef_inj U32.Goldilocks.compatible hb' hb)
+    rw [parentSame, parentEq] at shape
+    exact facts.peer_only_self a cm (ZMod.val i).toUInt64 record shape
+
 
 theorem ixAddr_inj {a₁ a₂ : Bytes.Address} (h : ixAddr a₁ = ixAddr a₂) : a₁ = a₂ :=
   Vector.toArray_inj.mp (congrArg (fun x : _root_.Address => x.hash.data) h)
@@ -1102,9 +980,9 @@ theorem addr_list_contains_singleton_spec {b₀ b' : Bytes.Address} {bas tgt r :
         | .Cons_n1 (ld12 := ld') .. | .Cons_other (ld12 := ld') .. =>
           exact (load_cell_ne cell_nil ld' (by decide)).elim
 
-theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address} {T : KKey}
+theorem caddr_is_peer_singleton_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hpeer : OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1117,14 +995,14 @@ theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address
       (ld11 := ld) (ev94 := ev_in) (hc111 := hc) .. =>
     subst hc
     have hg1 : Good c.toCtx cs15 := hgood.sub (fun x hx => by simp [hx])
-    obtain ⟨cm, b', idx, hcm, hb', rfl, hinfo⟩ :=
-      hlf.inductRecord ca p9 h m2 cs15 a _ _ _ _ _ _ _ _ ev_ci (hscope _ _ (by simp)) hg1 hca ld
+    obtain ⟨cm, cb, xs, ind, b', idx, hcm, hb', rfl, hinfo, hcb, hxs, hind⟩ :=
+      hlf.inductiveRead ca p9 h m2 cs15 a _ _ _ _ _ _ _ _ ev_ci (hscope _ _ (by simp)) hg1 hca ld
     have hbas' := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
       ev_ci.heap_extends hbas
     obtain ⟨_, hres⟩ := addr_list_contains_singleton_spec hbas' hb' ev_in
     rcases hres with ⟨hr1, heq⟩ | ⟨hr0, hne⟩
-    · rw [heq] at hinfo
-      exact Or.inl ⟨hr1, hpeer.peer_only_self a cm _ hcm hinfo⟩
+    · rw [heq] at hinfo hcb
+      exact Or.inl ⟨hr1, hpeer.peer_only_self ev_ci (hscope _ _ (by simp)) hg1 hca ld hb' heq⟩
     · refine Or.inr ⟨hr0, fun hT => ?_⟩
       obtain ⟨_, _, blk', b'', ld', hb'', hix⟩ := hpeer.self_ind ca p9 h m2 cs15 a ev_ci hg1 hca hT
       rw [ld] at ld'
@@ -1142,10 +1020,23 @@ theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address
     injection ld' with hv1
     exact hne_ind [_, ty', _, _, _, u', blk', _] rfl hv1
 
-theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+/-- Compatibility with the historical whole-record peer invariant. -/
+theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
+    (hca : Bytes.RepAddressRef addrTy h a ca)
+    (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
+    (ev : ObsFn W "KernelCheck::caddr_is_peer" [ca, bas] h r h' cs) :
+    (r = .field 1 ∧ c.κ (ixAddr a) = T) ∨ (r = .field 0 ∧ c.κ (ixAddr a) ≠ T) := by
+  exact caddr_is_peer_singleton_observed_spec (hpeer.toReads hlf) hlf hgood hscope hca hbas ev
+
+theorem expr_mentions_block_zero_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
     {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hpeer : OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1170,7 +1061,7 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
       obtain ⟨a, ls, rfl, ha, _⟩ := hE.const_of_load ld
       have hg1 : Good c.toCtx cs66 := hgood.sub (fun x hx => by simp [hx])
       have hs1 : RawRecordCoverage c cs66 := hscope.sub (fun x hx => by simp [hx])
-      rcases caddr_is_peer_singleton_raw_spec hpeer hlf hg1 hs1 ha hbas ev_peer with
+      rcases caddr_is_peer_singleton_observed_spec hpeer hlf hg1 hs1 ha hbas ev_peer with
         ⟨h01, _⟩ | ⟨_, hne⟩
       · exact nomatch h01
       · simp [Expr.mentionsConst, hne]
@@ -1187,8 +1078,8 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
         have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
         have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
         have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
-        have hmf := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 hf hnp.1 hbas ev1
-        have hma := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (ha.mono ev1.heap_extends) hnp.2
+        have hmf := expr_mentions_block_zero_observed_spec hpeer hlf hg1 hs1 hf hnp.1 hbas ev1
+        have hma := expr_mentions_block_zero_observed_spec hpeer hlf hg2 hs2 (ha.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmf, hma]
@@ -1203,8 +1094,8 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
         have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
         have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
         have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
-        have hmt := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
-        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
+        have hmt := expr_mentions_block_zero_observed_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
+        have hmb := expr_mentions_block_zero_observed_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmt, hmb]
@@ -1219,8 +1110,8 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
         have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
         have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hc, hx])
         have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hc, hx])
-        have hmt := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
-        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
+        have hmt := expr_mentions_block_zero_observed_spec hpeer hlf hg1 hs1 ht hnp.1 hbas ev1
+        have hmb := expr_mentions_block_zero_observed_spec hpeer hlf hg2 hs2 (hb.mono ev1.heap_extends) hnp.2
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
             ev1.heap_extends hbas) ev2
         simp [Expr.mentionsConst, hmt, hmb]
@@ -1240,9 +1131,9 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
           ev1.heap_extends hbas
         have hbas2 := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
           ext12 hbas
-        have hmb := expr_mentions_block_zero_raw_spec hpeer hlf hg3 hs3 (hb.mono ext12) hnp_b hbas2 ev3
+        have hmb := expr_mentions_block_zero_observed_spec hpeer hlf hg3 hs3 (hb.mono ext12) hnp_b hbas2 ev3
         exact mentionsConst_instantiate1Lift_false hmb fun hloose =>
-          expr_mentions_block_zero_raw_spec hpeer hlf hg2 hs2 (hv.mono ev1.heap_extends)
+          expr_mentions_block_zero_observed_spec hpeer hlf hg2 hs2 (hv.mono ev1.heap_extends)
             (hnp_v hloose) hbas1 ev2
       · exact absurd hv2_1 hne2
     | .Proj (cs516 := cs1) (ld12 := ld) (ev518 := ev1) (hc535 := hc) .. =>
@@ -1250,7 +1141,7 @@ theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address}
       simp only [noProjAt, Bool.and_eq_true, Bool.not_eq_true'] at hnp
       have hg1 : Good c.toCtx cs1 := hgood.sub (fun x hx => by simp [hc, hx])
       have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hc, hx])
-      have hm1 := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 he1 hnp.2 hbas ev1
+      have hm1 := expr_mentions_block_zero_observed_spec hpeer hlf hg1 hs1 he1 hnp.2 hbas ev1
       simp [Expr.mentionsConst, hnp.1, hm1]
 termination_by cs.length
 decreasing_by
@@ -1258,10 +1149,25 @@ decreasing_by
     simp only [hc, List.length_cons, List.length_append]
     omega
 
-theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+/-- Compatibility with the historical whole-record peer invariant. -/
+theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
+    {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
+    (hE : TmExact c.κ 0 Γ h k E pe)
+    (hnp : noProjAt T E = true)
+    (hbas : RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas)
+    (ev : ObsFn W "KernelCheck::expr_mentions_block" [pe, bas] h (.field 0) h' cs) :
+    E.mentionsConst T = false := by
+  exact expr_mentions_block_zero_observed_spec (hpeer.toReads hlf) hlf hgood hscope hE hnp hbas ev
+
+theorem list_any_mentions_block_zero_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors →
+      OneTypePeerReads c b₀ T nl nP nIdx nCtors indIndex →
       RawRecordFacts c →
       Good c.toCtx cs →
       RawRecordCoverage c cs →
@@ -1289,9 +1195,9 @@ theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Addr
         have hs1 : RawRecordCoverage c cs1 := hscope.sub (fun x hx => by simp [hx])
         have hg2 : Good c.toCtx cs2 := hgood.sub (fun x hx => by simp [hx])
         have hs2 : RawRecordCoverage c cs2 := hscope.sub (fun x hx => by simp [hx])
-        have hm_hd := expr_mentions_block_zero_raw_spec hpeer hlf hg1 hs1 he
+        have hm_hd := expr_mentions_block_zero_observed_spec hpeer hlf hg1 hs1 he
           (hnp _ List.mem_cons_self) hbas ev1
-        have hm_tl := list_any_mentions_block_zero_raw_spec hpeer hlf hg2 hs2
+        have hm_tl := list_any_mentions_block_zero_observed_spec hpeer hlf hg2 hs2
           (repList_heapMono₂ kexprListEnum tmExact_heapMono₂ ev1.heap_extends hes)
           (fun x hx => hnp x (List.mem_cons_of_mem _ hx))
           (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
@@ -1301,6 +1207,23 @@ theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Addr
         · exact hm_hd
         · exact hm_tl x hxtl
       · exact absurd hv1 hne1
+
+/-- Compatibility with the historical whole-record peer invariant. -/
+theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
+    {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
+    ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex →
+      RawRecordFacts c →
+      Good c.toCtx cs →
+      RawRecordCoverage c cs →
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact c.κ 0 Γ h₀ k X p₀) h Es pes →
+      (∀ e ∈ Es, noProjAt T e = true) →
+      RepList addrListEnum (Bytes.RepAddressRef addrTy) h [b₀] bas →
+      ObsFn W "KernelCheck::list_any_mentions_block" [pes, bas] h (.field 0) h' cs →
+      ∀ e ∈ Es, e.mentionsConst T = false := by
+  intro Es pes bas h h' cs hpeer hlf good covered represented noProj blocks observed
+  exact list_any_mentions_block_zero_observed_spec (hpeer.toReads hlf) hlf good covered
+    represented noProj blocks observed
 
 theorem caddr_is_peer_singleton_spec {c : Ctx} {b₀ a : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -1708,6 +1631,24 @@ theorem evalBinOp_sub_nat {a b : Nat} (hle : b ≤ a) {v : SourceValue F}
   rw [← hv]
   simp [Nat.cast_sub hle]
 
+theorem kdrop_exact_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {xs : List KExpr} {l r : SourceValue F} {cnt : Nat} {h h' : Heap F} {cs : List (Call F)}
+    (hcnt : cnt < 18446744069414584321)
+    (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (cnt : F)] h r h' cs)
+    (hl : RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h xs l) :
+    cnt ≤ xs.length ∧
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h (xs.drop cnt) r ∧
+      h' = h := by
+  have hval : ZMod.val (cnt : F) = cnt :=
+    ZMod.val_natCast_of_lt hcnt
+  have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
+    (R := fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) cnt hval
+    (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
+    (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl)
+  rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol, hval] at hres
+  exact hres
+
+/-- Compatibility with the historical count bound. -/
 theorem kdrop_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
     {xs : List KExpr} {l r : SourceValue F} {cnt : Nat} {h h' : Heap F} {cs : List (Call F)}
     (hcnt : cnt < 4294967296)
@@ -1716,14 +1657,7 @@ theorem kdrop_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr
     cnt ≤ xs.length ∧
       RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h (xs.drop cnt) r ∧
       h' = h := by
-  have hval : ZMod.val (cnt : F) = cnt :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hcnt (by decide))
-  have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
-    (R := fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) cnt hval
-    (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
-    (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl)
-  rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol, hval] at hres
-  exact hres
+  exact kdrop_exact_bounded (by omega) ev hl
 
 theorem klength_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
     {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -1738,8 +1672,8 @@ theorem klength_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KEx
     rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl
   exact Lib.Lists.length_spec ev' hl'
 
-theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {nP nF k_loc : Nat} (hlt : nP + nF < 549755813888) :
+theorem assert_first_args_are_param_bvars_bounded_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {nP nF k_loc : Nat} (hlt : nP + nF < 18446744069414584321) :
     ∀ (rem i : Nat) {args : List KExpr} {pargs r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       rem = nP - i →
@@ -1763,7 +1697,7 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
       have hsub := evalBinOp_sub_nat hle op
       have h0 : (.field (((nP - i : Nat) : F)) : SourceValue F) = .field ((0 : Nat) : F) :=
         hsub.symm
-      have heq := nat_eq_of_field_eq (by omega) (by decide) h0
+      have heq := nat_eq_of_field_eq_bounded (by omega) (by decide) h0
       omega
     | .other (x_arg := xarg) (x_rest := xrest) (x_j := xj) (ld44 := ld_cons) (ld73 := ld_bv)
         (op135 := op_add) (op127 := op_sub1) (op119 := op_sub2) (heq139 := heq_j)
@@ -1780,13 +1714,13 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
             simpa using hjf
           have h1 : ZMod.val jf < 18446744069414584321 := Nat.lt_trans hsmall (by decide)
           have h2 : nF + nP - 1 - i < 18446744069414584321 :=
-            Nat.lt_trans (by omega : nF + nP - 1 - i < 549755813888) (by decide)
+            by omega
           have hz1 : ZMod.val ((ZMod.val jf : Nat) : F) = ZMod.val jf := ZMod.val_natCast_of_lt h1
           have hz2 : ZMod.val ((nF + nP - 1 - i : Nat) : F) = nF + nP - 1 - i :=
             ZMod.val_natCast_of_lt h2
           rw [← hz1, hcast, hz2]
         rw [evalBinOp_add_one i op_inc] at ev_rec
-        obtain ⟨hh_rec, htake⟩ := assert_first_args_are_param_bvars_go hlt rem (i + 1)
+        obtain ⟨hh_rec, htake⟩ := assert_first_args_are_param_bvars_bounded_go hlt rem (i + 1)
           (by omega) (by omega) hrest ev_rec
         refine ⟨hh.trans hh_rec, ?_⟩
         rw [List.take_succ_cons, hj_val, htake, List.range_succ_eq_map]
@@ -1797,6 +1731,20 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
         congr 1
         omega
       · omega
+
+/-- Compatibility with the historical count bound. -/
+theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {nP nF k_loc : Nat} (hlt : nP + nF < 549755813888) :
+    ∀ (rem i : Nat) {args : List KExpr} {pargs r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      rem = nP - i →
+      i ≤ nP →
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact κ 0 Γ h₀ k_loc X p₀) h args pargs →
+      ObsFn W "KernelCheck::assert_first_args_are_param_bvars"
+        [pargs, .field (nP : F), .field (nF : F), .field (i : F)] h r h' cs →
+      h' = h ∧ args.take rem = (List.range rem).map (fun m => Expr.bvar (nF + nP - 1 - (i + m))) := by
+  intro rem i args pargs r h h' cs remaining before represented observed
+  exact assert_first_args_are_param_bvars_bounded_go (by omega) rem i remaining before represented observed
 
 /-- Exact heap-cell witness that `p` starts with `m` literal `"Forall"` cells followed by a
 non-`"Forall"` `"KernelTypes::KExprNode"` cell (established by `peel_n_foralls` + `collect_spine`
@@ -1869,10 +1817,10 @@ theorem collect_spine_const_noTopLetSpine {κ : _root_.Address → KKey} {d : Na
     | litStr cell _ _ | proj cell _ _ =>
       exact (load_cell_ne cell ld_hd (by decide)).elim
 
-theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+theorem peel_n_foralls_raw_bounded_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      n < 4294967296 →
+      n < 18446744069414584321 →
       RawTmExact κ d Γ h k R E pe →
       ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (n : F)] h r h' cs →
       h' = h ∧ ∃ rbs rbody bs body,
@@ -1889,21 +1837,37 @@ theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : N
   | m + 1, k, R, E, pe, r, h, h', cs, hlt, hRaw, ev => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, xb, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · obtain ⟨RT, RB, T, B, ℓ, rfl, rfl, _, hb, _⟩ := hRaw.forallE_of_load ld
       rw [evalBinOp_sub_succ m op] at ev_rec
       obtain ⟨hh, rbs, rbody, bs, body, hstR, hstE, hrlen, hblen, hbody⟩ :=
-        peel_n_foralls_raw_spec m (by omega) hb ev_rec
+        peel_n_foralls_raw_bounded_spec m (by omega) hb ev_rec
       refine ⟨hh, (RT, bmeta ℓ) :: rbs, rbody, (T, bmeta ℓ) :: bs, body,
         by simp [Expr.stripPis, hstR], by simp [Expr.stripPis, hstE],
         by simp [hrlen], by simp [hblen], ?_⟩
       rw [show k + (m + 1) = k + 1 + m by omega]
       exact hbody
 
-theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+/-- Compatibility with the historical count bound. -/
+theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      n < 4294967296 →
+      RawTmExact κ d Γ h k R E pe →
+      ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (n : F)] h r h' cs →
+      h' = h ∧ ∃ rbs rbody bs body,
+        R.stripPis n = some (rbs, rbody) ∧
+        E.stripPis n = some (bs, body) ∧
+        rbs.length = n ∧
+        bs.length = n ∧
+        RawTmExact κ d Γ h (k + n) rbody body r := by
+  intro n k R E pe r h h' cs bound represented observed
+  exact peel_n_foralls_raw_bounded_spec n (by omega) represented observed
+
+theorem peel_n_foralls_noTopLetSpine_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (m : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      m < 4294967296 →
+      m < 18446744069414584321 →
       RawTmExact κ d Γ h k R E pe →
       ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (m : F)] h r h' cs →
       ∀ {h₂ : Heap F}, Heap.Extends h' h₂ → NoTopLetSpine 0 h₂ r → NoTopLetSpine m h₂ pe
@@ -1915,7 +1879,7 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
   | m + 1, k, R, E, pe, r, h, h', cs, hlt, hRaw, ev, h₂, ext₂, hs => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, xb, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · rw [evalBinOp_sub_succ m op] at ev_rec
       cases hRaw with
       | forallE cell _ hb _ =>
@@ -1923,24 +1887,35 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
         injection hxs with _ hxs; injection hxs with hbp _; subst hbp
         have hex : Heap.Extends h h₂ := ev_rec.heap_extends.trans ext₂
         exact .succ (hex.getElem?_eq cell)
-          (peel_n_foralls_noTopLetSpine m (by omega) hb ev_rec ext₂ hs)
+          (peel_n_foralls_noTopLetSpine_bounded m (by omega) hb ev_rec ext₂ hs)
       | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _
       | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _
       | litStr cell _ _ | proj cell _ _ =>
         exact (load_cell_ne cell ld (by decide)).elim
 
+/-- Compatibility with the historical count bound. -/
+theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (m : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      m < 4294967296 →
+      RawTmExact κ d Γ h k R E pe →
+      ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (m : F)] h r h' cs →
+      ∀ {h₂ : Heap F}, Heap.Extends h' h₂ → NoTopLetSpine 0 h₂ r → NoTopLetSpine m h₂ pe := by
+  intro m k R E pe r h h' cs bound represented observed h₂ extended spine
+  exact peel_n_foralls_noTopLetSpine_bounded m (by omega) represented observed extended spine
+
 /-- `check_ctor_return_type` refines to the exact constructor residual shape
 `mkAppN (.const T (lps.map .param)) (structPsAt nF nP ++ es)` with `es.length = nIdx`,
 every `a ∈ es` free of `T`, raw residual witness on `raw_cty`, and
 `NoTopLetSpine (nP + nF) h' pcty`. -/
-theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPF_lt : nP + nF < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hnPF_lt : nP + nF < 144115188075855872)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1949,7 +1924,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
     (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
     (ev : ObsFn W "KernelCheck::check_ctor_return_type"
       [pcty, .field (nP : F), .field (nIdx : F), .field (nF : F),
-        .field (lps.length : F), pblk, .field 0] h r h' cs) :
+        .field (lps.length : F), pblk, .field indIndex] h r h' cs) :
     NoTopLetSpine (nP + nF) h' pcty ∧
     ∃ (rcbs : List (KExpr × Ix.Kernel.BinderMeta)) (rargs : List KExpr)
       (cbs : List (KExpr × Ix.Kernel.BinderMeta)) (es : List KExpr),
@@ -1975,7 +1950,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
     subst hc hh'
     rw [evalBinOp_add_nat nP nF op_pf] at ev_peel
     obtain ⟨hm2, rcbs, rbody, cbs, body, hstR, hstrip, hrcbs_len, hcbs_len, hbody⟩ :=
-      peel_n_foralls_raw_spec (nP + nF) (by omega) hcty ev_peel
+      peel_n_foralls_raw_bounded_spec (nP + nF) (by omega) hcty ev_peel
     subst hm2
     rw [Nat.zero_add] at hbody
     obtain ⟨hd, sp, RH, H, RAs, As, htup, hH, _, hAs, rfl, rfl⟩ :=
@@ -1984,7 +1959,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
     have ext_sp := ev_sp.heap_extends
     have hsp0 : NoTopLetSpine 0 m41 v1 := collect_spine_const_noTopLetSpine hbody ev_sp ld_hd
     have hsp_peel : NoTopLetSpine (nP + nF) m41 pcty :=
-      peel_n_foralls_noTopLetSpine (nP + nF) (by omega) hcty ev_peel ext_sp hsp0
+      peel_n_foralls_noTopLetSpine_bounded (nP + nF) (by omega) hcty ev_peel ext_sp hsp0
     obtain ⟨a_hd, us_hd, rfl, rfl, ha_hd, hus_hd⟩ := hH.const_of_load ld_hd
     have hg_par : Good c.toCtx cs_par := hgood.sub (fun x hx => by simp [hx])
     have hs_par : RawRecordCoverage c cs_par := hscope.sub (fun x hx => by simp [hx])
@@ -1995,14 +1970,14 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
           (ev112 := ev_aeq) (heq135 := heq1) (hc168 := hcp) .. =>
         subst hcp
         have hgp1 : Good c.toCtx csp1 := hg_par.sub (fun x hx => by simp [hx])
-        obtain ⟨cm, b', _, hcm, hb', rfl, hinfo⟩ :=
-          hlf.inductRecord xhda p9 m41 mp2 csp1 a_hd _ _ _ _ _ _ _ _ ev_ci (hs_par _ _ (by simp)) hgp1 ha_hd ld_ind
+        obtain ⟨cm, cb, xs, ind, b', idx, hcm, hb', rfl, hinfo, hcb, hxs, hind⟩ :=
+          hlf.inductiveRead xhda p9 m41 mp2 csp1 a_hd _ _ _ _ _ _ _ _ ev_ci (hs_par _ _ (by simp)) hgp1 ha_hd ld_ind
         obtain ⟨hv_eq, _⟩ := Lib.address_eq_spec ev_aeq hb'
           (Bytes.repAddressRef_heapMono₂ addrTy ev_ci.heap_extends hblk_41)
         rw [heq1] at hv_eq
         by_cases hb_eq : b' = b₀
         · subst hb_eq
-          exact hpeer.peer_only_self a_hd cm _ hcm hinfo
+          exact hpeer.peer_only_self ev_ci (hs_par _ _ (by simp)) hgp1 ha_hd ld_ind hb' rfl
         · simp [hb_eq] at hv_eq
     have ext_par := ev_par.heap_extends
     have hbnd_lvls : IxVM.Consistency.Bounded cs_lvls :=
@@ -2025,14 +2000,14 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
         List.mem_cons_self
         (by rw [hm147]; exact hAs_109)
     have hAs_len : As.length = nP + nIdx :=
-      nat_eq_of_field_eq hAs_lt (by omega) heq_len
-    obtain ⟨hm234, hAs_take⟩ := assert_first_args_are_param_bvars_go (nP := nP) (nF := nF)
+      nat_eq_of_field_eq_bounded (by omega) (by omega) heq_len
+    obtain ⟨hm234, hAs_take⟩ := assert_first_args_are_param_bvars_bounded_go (nP := nP) (nF := nF)
       (by omega) nP 0 (by omega) (Nat.zero_le nP) hAs_109 ev_bvars
     rw [hm234] at ev_drop
     have hAs_take' : As.take nP = Ix.Kernel.structPsAt nF nP := by
       rw [hAs_take]
       simp [Ix.Kernel.structPsAt, Nat.add_comm nF nP]
-    obtain ⟨_, hAs_drop, hm279⟩ := kdrop_exact (by omega : nP < 4294967296) ev_drop hAs_109
+    obtain ⟨_, hAs_drop, hm279⟩ := kdrop_exact_bounded (by omega) ev_drop hAs_109
     rw [hm279] at hm333 hm309
     have ext_nil : Heap.Extends m109 m333 := by rw [hm333]; exact Heap.Extends.snoc _ _
     have ext_cons : Heap.Extends m333 m309 := by rw [hm309]; exact Heap.Extends.snoc _ _
@@ -2058,7 +2033,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
     rw [heq_any] at ev_any
     have hg_any : Good c.toCtx cs_any := hgood.sub (fun x hx => by simp [hx])
     have hs_any : RawRecordCoverage c cs_any := hscope.sub (fun x hx => by simp [hx])
-    have hnoT_drop := list_any_mentions_block_zero_raw_spec hpeer hlf hg_any hs_any
+    have hnoT_drop := list_any_mentions_block_zero_observed_spec hpeer hlf hg_any hs_any
       (repList_heapMono₂ kexprListEnum tmExact_heapMono₂ ext_bas hAs_drop)
       hnp_drop hbas_309 ev_any
     have ext_end : Heap.Extends m41 h' :=
@@ -2073,6 +2048,38 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
       exact hstrip
     · rw [List.length_drop, hAs_len]
       omega
+
+/-- Compatibility with the historical whole-record peer invariant. -/
+theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
+    {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
+    {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hlps : lps = List.range lps.length)
+    (hlps_lt : lps.length < 4294967296)
+    (hnPF_lt : nP + nF < 4294967296)
+    (hnPI_lt : nP + nIdx < 4294967296)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
+    (hcty : RawTmExact c.κ 0 Γ h 0 raw_cty cty pcty)
+    (hnp : noProjAt T cty = true)
+    (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
+    (ev : ObsFn W "KernelCheck::check_ctor_return_type"
+      [pcty, .field (nP : F), .field (nIdx : F), .field (nF : F),
+        .field (lps.length : F), pblk, .field indIndex] h r h' cs) :
+    NoTopLetSpine (nP + nF) h' pcty ∧
+    ∃ (rcbs : List (KExpr × Ix.Kernel.BinderMeta)) (rargs : List KExpr)
+      (cbs : List (KExpr × Ix.Kernel.BinderMeta)) (es : List KExpr),
+      raw_cty.stripPis (nP + nF) =
+        some (rcbs, Expr.mkAppN (.const T (lps.map .param)) rargs) ∧
+      rcbs.length = nP + nF ∧
+      cty.stripPis (nP + nF) =
+        some (cbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt nF nP ++ es)) ∧
+      cbs.length = nP + nF ∧
+      es.length = nIdx ∧
+      ∀ a ∈ es, a.mentionsConst T = false := by
+  exact check_ctor_return_type_observed_spec hlps hlps_lt (by omega) (by omega) (hpeer.toReads hlf)
+    hlf hgood hscope hcty hnp hblk ev
 
 theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
@@ -2360,7 +2367,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {tfvs_pre : List KExpr}
       {ta_open tb_raw : KExpr} {rc pta ptb types r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      d + m < 4294967296 →
+      d + m < 144115188075855872 →
       tfvs_pre.length = d →
       (∀ v ∈ tfvs_pre, ∃ q ty, v = .fvar q ty) →
       RCRep c.t c.lim h rc →
@@ -2391,7 +2398,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
       hdm, hlen, hvs_pre, hrc, hty, hsc, hef, hlf, hgood, hta, htb, ev => by
     match Obs.«KernelCheck::check_param_agreement_go».obs ev with
     | .n0 (hv14 := hv0) .. =>
-      exact absurd hv0 (succ_field_ne_zero (by omega))
+      exact absurd hv0 (succ_field_ne_zero_bounded (by omega))
     | .other (x_da := xda) (x_ba := xba) (w43 := w43) (x_db := xdb) (x_bb := xbb)
         (w78 := w78) (v94 := v94) (m95 := m95) (cs105 := cs_de) (m168 := m168)
         (cs201 := cs_go) (v207 := v207) (ld35 := ld_a) (ld70 := ld_b)
@@ -2454,7 +2461,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
 theorem check_param_agreement_scoped_spec {c : ScopedCtx}
     {Γ : Nat → KExpr} {ta tb : KExpr} {n : Nat}
     {rc pta ptb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hn : n < 4294967296)
+    (hn : n < 144115188075855872)
     (hrc : RCRep c.t c.lim h rc)
     (hef : CoreEnvFacts c.toCtx)
     (hlf : ScopedLoadFacts c)
@@ -2491,7 +2498,7 @@ theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     (htb : Tm c.κ 0 Γ h 0 tb ptb)
     (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
     StructDomsShared c.env ta tb n := by
-  exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) hn hrc
+  exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) (by omega) hrc
     hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hta htb ev
 
 /-! ## Constructor residual opening and `check_field_universes` -/
@@ -2605,7 +2612,7 @@ private theorem check_field_universes_skip_params_spec {c : Ctx} :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {nF : Nat}
       {cty_open : KExpr} {rc pcty pind types r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      d + m < 4294967296 →
+      d + m < 144115188075855872 →
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
@@ -2640,7 +2647,7 @@ private theorem check_field_universes_skip_params_spec {c : Ctx} :
       hdm, hrc, hty, hsc, hcty, hnt, ev => by
     match Obs.«KernelCheck::check_field_universes_skip_params».obs ev with
     | .n0 (hv14 := hv0) .. =>
-      exact absurd hv0 (succ_field_ne_zero (by omega))
+      exact absurd hv0 (succ_field_ne_zero_bounded (by omega))
     | .other (x_dom := xdom) (x_body := xbody) (w77 := w77) (cs96 := cs96)
         (v101 := v101) (m141 := m141) (ld69 := ld) (op131 := op_sub)
         (hm149 := hm141) (ev98 := ev_rec) (hc169 := hc) .. =>
@@ -2762,7 +2769,7 @@ theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
     {resSort ind_lvl : KLevel} {nP nF : Nat} {Γ : Nat → KExpr}
     {cty stype_cty crest : KExpr} {fvsP xFvs idxArgs : List KExpr}
     {rc pcty pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hnP : nP < 4294967296)
+    (hnP : nP < 144115188075855872)
     (hlveq : LvEq resSort ind_lvl)
     (hinf_cty : Infer c.env .full 0 cty stype_cty)
     (hopP : Ix.Kernel.openPisAtFvars nP cty 0 = some (fvsP, crest))
@@ -2863,13 +2870,13 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
       FieldSortsJ rulesJ c.env (Level.isEquiv resSort .zero == some true) false resSort
         nP xFvs idxArgs nF sorts := by
   exact check_field_universes_scoped_spec hLevels (c := ScopedCtx.unrestricted c)
-    hnP hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
+    (by omega) hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
     (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hpind hcty hnt ev
 
 /-! ## Strict positivity (`check_positivity` → `recFieldKind ≠ .negative ∧ ≠ .unsupported`) -/
 
 private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {nP depth : Nat} (hnP_lt : nP < 4294967296) (hnP_le : nP ≤ depth)
+    {nP depth : Nat} (hnP_lt : nP < 144115188075855872) (hnP_le : nP ≤ depth)
     (hdepth_lt : depth < 9223372036854775808) :
     ∀ (m i : Nat) {args : List KExpr} {pargs r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
@@ -2892,7 +2899,7 @@ private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : N
       have hsub : (.field ((0 : Nat) : F) : SourceValue F) =
           .field (((nP - i : Nat) : F)) := by
         simpa using evalBinOp_sub_nat (by omega : i ≤ nP) op
-      have heq := nat_eq_of_field_eq (by decide) (by omega) hsub
+      have heq := nat_eq_of_field_eq_bounded (by decide) (by omega) hsub
       omega
     | .other (x_arg := xarg) (x_rest := xrest) (x_j := xj)
         (ld44 := ld_cons) (ld73 := ld_bvar) (op127 := op_d1)
@@ -2917,15 +2924,15 @@ private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : N
         omega
       · omega
 
-private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address} {T : KKey}
+private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors o k : Nat} {Γ : Nat → KExpr}
     {us : List KLevel} {args : List KExpr} {E : KExpr}
     {pca pus pargs bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hdepth_lt : nP + o + k < 9223372036854775808)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -2979,7 +2986,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Add
         (by simp [hc]) (by simp) hargs_m2
     rw [evalBinOp_add_nat nP nIdx op_add, hvlen] at heq_len
     have hlen_eq : args.length = nP + nIdx :=
-      nat_eq_of_field_eq hargs_lt (by omega) heq_len
+      nat_eq_of_field_eq_bounded (by omega) (by omega) heq_len
     have htake :=
       assert_occ_param_bvars_go (κ := c.κ) (Γ := Γ) (nP := nP) (depth := nP + o + k)
         (by omega) (by omega) hdepth_lt nP 0 (by omega) hargs_m2 ev_bvars
@@ -2993,7 +3000,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Add
       omega
     have e3 := ev_bvars.heap_extends
     have hargs_m175 := repList_heapMono₂ kexprListEnum tmExact_heapMono₂ e3 hargs_m2
-    obtain ⟨_, hdrop_rep, hm247⟩ := kdrop_exact (by omega : nP < 4294967296) ev_drop hargs_m175
+    obtain ⟨_, hdrop_rep, hm247⟩ := kdrop_exact_bounded (by omega) ev_drop hargs_m175
     subst hm247
     rw [hvany] at ev_any
     have hbas_m175 := repList_heapMono₂ addrListEnum
@@ -3001,19 +3008,19 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Add
     have hdrop_np : ∀ x ∈ args.drop nP, noProjAt T x = true :=
       fun x hx => hargs_np x (List.mem_of_mem_drop hx)
     have hdrop_noT :=
-      list_any_mentions_block_zero_raw_spec hpeer hlf hg_any scope_hg_any hdrop_rep hdrop_np hbas_m175 ev_any
+      list_any_mentions_block_zero_observed_spec hpeer hlf hg_any scope_hg_any hdrop_rep hdrop_np hbas_m175 ev_any
     unfold Ix.Kernel.recFamOk
     rw [hfn, hus_lps, hga, hlen_eq, htake_ps]
     simp only [beq_self_eq_true, Bool.true_and, List.all_eq_true]
     intro x hx
     simp [hdrop_noT x hx]
 
-private theorem check_positivity_aug_raw_go {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+private theorem check_positivity_aug_raw_go {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors o : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     {R E : KExpr} {k : Nat} {pdom bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ext₀ : Heap.Extends h₀ h)
@@ -3035,7 +3042,7 @@ private theorem check_positivity_aug_raw_go {c : ScopedCtx} {b₀ : Bytes.Addres
     have hg1 : Good c.toCtx cs13 := hgood.sub (fun x hx => by simp [hc, hx])
     have scope_hg1 : RawRecordCoverage c cs13 := hscope.sub (fun x hx => by simp [hc, hx])
     have hnoT : E.mentionsConst T = false :=
-      expr_mentions_block_zero_raw_spec hpeer hlf hg1 scope_hg1 hE hnp hbas ev_mb
+      expr_mentions_block_zero_observed_spec hpeer hlf hg1 scope_hg1 hE hnp hbas ev_mb
     refine ⟨?_, Or.inl hnoT⟩
     cases E with
     | forallE d b m =>
@@ -3081,7 +3088,7 @@ private theorem check_positivity_aug_raw_go {c : ScopedCtx} {b₀ : Bytes.Addres
       have hbas_m2 := repList_heapMono₂ addrListEnum
         (Bytes.repAddressRef_heapMono₂ addrTy) e1 hbas
       have hidom_noT : idom.mentionsConst T = false :=
-        expr_mentions_block_zero_raw_spec hpeer hlf hg_idom scope_hg_idom
+        expr_mentions_block_zero_observed_spec hpeer hlf hg_idom scope_hg_idom
           (rdom₀.toTmExact.mono (ext₀.trans e1)) hnp.1 hbas_m2 ev_idom
       have hv136 : v136 = .field ((nP + o + (k + 1) : Nat) : F) :=
         evalBinOp_add_one (nP + o + k) op_add
@@ -3132,7 +3139,7 @@ private theorem check_positivity_aug_raw_go {c : ScopedCtx} {b₀ : Bytes.Addres
     have scope_hg_va : RawRecordCoverage c cs_va := hscope.sub (fun x hx => by simp [hc, hx])
     have hbas_m172 := repList_heapMono₂ addrListEnum
       (Bytes.repAddressRef_heapMono₂ addrTy) (e1.trans e2) hbas
-    rcases caddr_is_peer_singleton_raw_spec hpeer hlf hg_peer scope_hg_peer hca hbas_m172 ev_peer with
+    rcases caddr_is_peer_singleton_observed_spec hpeer hlf hg_peer scope_hg_peer hca hbas_m172 ev_peer with
       ⟨_, hT_eq⟩ | ⟨h10, _⟩
     · have e3 := ev_peer.heap_extends
       have hdepth_lt : nP + o + k < 9223372036854775808 := by
@@ -3174,12 +3181,12 @@ decreasing_by
   simp [hc]
   omega
 
-private theorem check_positivity_fields_raw_go {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c) :
     ∀ (m o : Nat) {R E : KExpr} {rbs bs : List (KExpr × Ix.Kernel.BinderMeta)}
       {rbody body : KExpr} {pty bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -3278,7 +3285,7 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {b₀ : Bytes.Add
 private theorem peel_n_foralls_raw_h0 :
     ∀ (m : Nat) {κ : _root_.Address → KKey} {T : KKey} {Γ : Nat → KExpr} {h₀ h h' : Heap F}
       {k : Nat} {R E : KExpr} {pe r : SourceValue F} {cs : List (Call F)},
-      m < 4294967296 →
+      m < 144115188075855872 →
       Heap.Extends h₀ h →
       (∀ n, RomBound.HeapDescent h₀ (.enum kexprEnum) pe n → k + n < 9223372036854775808) →
       RawTmExact κ 0 Γ h₀ k R E pe →
@@ -3299,7 +3306,7 @@ private theorem peel_n_foralls_raw_h0 :
   | m + 1, κ, T, Γ, h₀, h, h', k, R, E, pe, r, cs, hlt, ext₀, hd, hRaw₀, hnp, ev => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, x_body, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · cases hRaw₀ with
       | @forallE _ _ _ bp₀ _ rdom rbo dom bo ℓ cell₀ _ rbody₀ _ =>
         obtain ⟨-, hxs⟩ := load_cell (ext₀.getElem?_eq cell₀) ld
@@ -3328,15 +3335,15 @@ private theorem peel_n_foralls_raw_h0 :
 /-- `check_positivity` establishes `recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1`
 is neither `.negative` nor `.unsupported` AND yields `RawRecSpine` (or `mentionsConst T = false`)
 for all `i < nF`. -/
-theorem check_positivity_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem check_positivity_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr}
     {raw_cty rbody cty cbody : KExpr} {rcbs cbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnP_lt : nP < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hnP_lt : nP < 144115188075855872)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
+    (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -3422,6 +3429,34 @@ theorem check_positivity_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KK
     rw [hget, hrget]
     simpa using hfields i hi
 
+/-- Compatibility with the historical whole-record peer invariant. -/
+theorem check_positivity_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
+    {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr}
+    {raw_cty rbody cty cbody : KExpr} {rcbs cbs : List (KExpr × Ix.Kernel.BinderMeta)}
+    {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hlps : lps = List.range lps.length)
+    (hlps_lt : lps.length < 4294967296)
+    (hnP_lt : nP < 4294967296)
+    (hnPI_lt : nP + nIdx < 4294967296)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
+    (hlf : RawRecordFacts c)
+    (hgood : Good c.toCtx cs)
+    (hscope : RawRecordCoverage c cs)
+    (hcty : RawTmExact c.κ 0 Γ h 0 raw_cty cty pcty)
+    (hnp : noProjAt T cty = true)
+    (hstR : raw_cty.stripPis (nP + nF) = some (rcbs, rbody))
+    (hstrip : cty.stripPis (nP + nF) = some (cbs, cbody))
+    (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
+    (ev : ObsFn W "KernelCheck::check_positivity"
+      [pcty, .field (nP : F), pblk] h r h' cs) :
+    ∀ i < nF,
+      (Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .negative ∧
+       Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
+      ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
+       RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1) := by
+  exact check_positivity_observed_spec hlps hlps_lt (by omega) (by omega) (hpeer.toReads hlf)
+    hlf hgood hscope hcty hnp hstR hstrip hblk ev
+
 theorem check_positivity_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr}
     {raw_cty rbody cty cbody : KExpr} {rcbs cbs : List (KExpr × Ix.Kernel.BinderMeta)}
@@ -3469,7 +3504,7 @@ theorem nat_keyOf_injective {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     | none => rw [hq₂] at hk₂; cases hk₂; rfl
 
 /-- Direct constructor-projection record loader witness for `b₀` at constructor index `j`. -/
-def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
+def CtorLoadAtIndex (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat) (indIndex : F)
     (cs_root : List (Call F)) (ctors ctorsA : List (KConstantVal × Nat))
     (ctorRawTypes : List KExpr) : Prop :=
   ctorsA.length = ctors.length ∧
@@ -3480,18 +3515,45 @@ def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
     ∀ (bp ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)),
       (∀ x ∈ cs, x ∈ cs_root) →
       Bytes.RepAddressRef addrTy h b₀ bp →
-      ObsFn W "Ingress::get_ci_cprj" [bp, .field 0, .field (j : F)] h ptr h' cs →
+      ObsFn W "Ingress::get_ci_cprj" [bp, .field indIndex, .field (j : F)] h ptr h' cs →
       ∃ (nl cty cblk cnp cnf : SourceValue F) (b_c : Bytes.Address),
         loadValue h' ptr = .ok (.construct kciEnum "Ctor"
-          [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0]) ∧
+          [nl, cty, cblk, .field indIndex, .field (j : F), cnp, cnf, .field 0]) ∧
         Bytes.RepAddressRef addrTy h' b_c cblk ∧
         ixAddr b_c = ixAddr b₀ ∧
         (∀ d Γ, RawTmExact (keyOf t) d Γ h' 0
           (ctorRawTypes.getD j default) (posOf cvCa₀.levelParams cvCa₀.type) cty) ∧
         CIRepExact (keyOf t) h'
           (.construct kciEnum "Ctor"
-            [nl, cty, cblk, .field 0, .field (j : F), cnp, cnf, .field 0])
+            [nl, cty, cblk, .field indIndex, .field (j : F), cnp, cnf, .field 0])
           (.ctorInfo cvCa₀ nP c.2)
+
+/-- The historical member-zero constructor-load interface. -/
+def CtorLoadAt (t : Ix.Kernel.RoleTable) (b₀ : Bytes.Address) (nP : Nat)
+    (cs_root : List (Call F)) (ctors ctorsA : List (KConstantVal × Nat))
+    (ctorRawTypes : List KExpr) : Prop :=
+  CtorLoadAtIndex t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes
+
+/-- A produced indexed family supplies the raw constructor-load contract at every fresh slot. -/
+theorem CtorLoadAtIndex.fresh_read {c : ScopedCtx} {b₀ : Bytes.Address} {indIndex : F} {nP j : Nat}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr} {bp ptr : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (loaded : CtorLoadAtIndex c.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
+    (indexBound : j < ctors.length) (subset : ∀ call ∈ cs, call ∈ cs_root)
+    (blockRep : Bytes.RepAddressRef addrTy h b₀ bp)
+    (observed : ObsFn W "Ingress::get_ci_cprj" [bp, .field indIndex, .field (j : F)] h ptr h' cs)
+    (fresh : c.env.find? (c.κ (cprjAddr (ixAddr b₀) (ZMod.val indIndex) (ZMod.val (j : F)))) = none) :
+    (∃ ci, CIPtrRep c.κ h' ptr ci) ∧
+    ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b₀) (ZMod.val indIndex) (ZMod.val (j : F)))) = some ci →
+      CIPtrRep c.κ h' ptr ci := by
+  obtain ⟨ctor, cv, _, _, _, read⟩ := loaded.2 j indexBound
+  obtain ⟨nl, ty, parent, params, fields, _, valueAt, _, _, _, represented⟩ :=
+    read bp ptr h h' cs subset blockRep observed
+  refine ⟨⟨.ctorInfo cv nP ctor.2, _, valueAt, represented.toCIRep⟩, ?_⟩
+  intro ci found
+  rw [fresh] at found
+  cases found
 
 /-- A real constructor metadata observation supplies the scoped read result even while the
 constructor is fresh. This uses the raw declaration loader witness, not installed-load facts. -/
@@ -3780,6 +3842,24 @@ theorem CIRepExact.ctor_inv {κ : _root_.Address → KKey} {h : Heap F}
   all_goals
     injection hv with _ hc _
     exact absurd hc (by decide)
+
+/-- Exact constructor conversion retains both checked 56-bit header counts. -/
+theorem CIRepExact.ctor_count_bounds {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty blk ind cidx np nf u : SourceValue F}
+    {cv : ConstantVal .anon} {nP nF : Nat}
+    (represented : CIRepExact κ h
+      (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u]) (.ctorInfo cv nP nF)) :
+    nP < 72057594037927936 ∧ nF < 72057594037927936 := by
+  generalize valueEq : Value.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u] = value at represented
+  generalize infoEq : ConstantInfo.ctorInfo cv nP nF = info at represented
+  cases represented
+  case ctor _ _ _ counts _ =>
+    injection infoEq with _ paramsEq fieldsEq
+    rw [paramsEq, fieldsEq]
+    exact counts
+  all_goals
+    injection valueEq with _ tag _
+    exact absurd tag (by decide)
 
 private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Levels)
     (hCore : IxVM.Consistency.Core S₀) {c₁ : Ctx}

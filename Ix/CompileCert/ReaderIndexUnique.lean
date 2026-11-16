@@ -1,12 +1,11 @@
 import Ix.CompileCert.ReaderIndex
 
-/-! # The reader's recursor index files every recursor, at one recursor per motive
+/-! # Canonical recursor filing when each motive has one candidate
 
-The reader's recursor index (`Ix.Kernel.Reader.buildIndex`) files a recursor member of its
-records under its own reference when its analysis names a block whose inductives its carriers
-order, at a motive of that block not yet taken (`candidate`). A second recursor of a block's
-motive is not filed, and its record then declines. This module states the converse the
-consistency statement needs:
+The reader's recursor index (`Ix.Kernel.Reader.buildIndex`) files an eligible member in the
+canonical map when its block's motive is available (`candidate`). Later eligible references
+for the same motive are filed in the twin map and read from their own records. This module
+proves canonical coverage under the additional one-candidate-per-motive condition:
 
 * `Accepted store records ref block motive`: `ref` is a recursor member of a scanned record whose
   analysis passes every guard of `candidate` except the per-motive one, at `block`'s `motive`;

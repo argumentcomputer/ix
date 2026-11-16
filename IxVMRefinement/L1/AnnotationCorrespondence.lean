@@ -41,6 +41,38 @@ theorem RawConvExpr.toTmCExactTrace {κ : _root_.Address → Core.KKey}
   exact raw.toTmExactTrace hperm hps_lt rfl (by simp) hkeyAt hself hblob
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
+/-- The closed root retains both its raw syntax and its semantic annotation. -/
+theorem RawConvExpr.toRawTmCExactTrace {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    (hkeyAt : ∀ a k, cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs)
+    {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
+    (raw : RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      h 4294967295 e kp)
+    (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read e =
+      .ok E_rd)
+    (hlbb : E_rd.looseBVarsBounded 0 = true)
+    (hdef : E_rd.allLevelParamsDefined ps = true) :
+    ∃ R' E' : Core.KExpr,
+      IxVM.Consistency.Annotates E' E_rd ∧
+      (∀ d Γ, Decl.RawTmExact κ d Γ h 0 (Core.posOf ps R') (Core.posOf ps E') kp) ∧
+      (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+        ∀ tail, applyBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+          E_rd (plan ++ tail) = some (E', tail)) ∧
+      (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+        ∀ tail, applyRawBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+          E_rd (plan ++ tail) = some (R', tail)) := by
+  obtain ⟨hecx, htbl⟩ := memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
+  unfold Ix.Kernel.Reader.MemberReader.read at hread
+  rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
+  exact raw.toRawTmExactTrace hperm hps_lt rfl (by simp) hkeyAt hself hblob
+    (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
+
 /-- Two conversions of one reader root and serialized plan admit one common exact annotation. -/
 theorem same_annotation_of_root_plans {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}

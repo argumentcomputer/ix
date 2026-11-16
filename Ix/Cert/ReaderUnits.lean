@@ -285,6 +285,74 @@ theorem lowerTwin_spec {cx : Ctx md} {twins : Array (ConstRef Address × RecEntr
     subst h
     exact ⟨rfl, fun d hd => by simp at hd⟩
 
+/-- Reading a partitioned twin array generates no auxiliaries and names only its actual
+input references, across every emitted family declaration. -/
+theorem lowerTwins_spec {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwins cx twins = .ok r) :
+    r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names,
+      ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k := by
+  unfold lowerTwins at h
+  split at h
+  · dsimp only at h
+    split at h
+    · exact lowerTwin_spec h
+    · obtain ⟨decls, loop, returned⟩ := except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at returned
+      subst r
+      have declared := forIn_pushes (fun s => s)
+        (fun d => ∀ k ∈ d.names, ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k) _ _
+        (fun family familyIn acc result step => by
+          obtain ⟨chunk, read, step⟩ := except_bind_ok.mp step
+          simp only [pure, Except.pure, Except.ok.injEq] at step
+          subst result
+          refine ⟨_, rfl, fun d member => ?_⟩
+          rcases Array.mem_append.mp member with old | added
+          · exact .inl old
+          · refine .inr fun k hk => ?_
+            obtain ⟨entry, present, keyed⟩ := (lowerTwin_spec read).2 d
+              (Array.mem_toList_iff.mpr added) k hk
+            exact ⟨entry, Array.mem_toList_iff.mpr
+              (groupTwins_member (Array.mem_toList_iff.mp familyIn)
+                (Array.mem_toList_iff.mp present)), keyed⟩)
+        (fun d absent => by simp at absent) loop
+      exact ⟨rfl, fun d member => declared d (Array.mem_toList_iff.mp member)⟩
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst r
+    exact ⟨rfl, fun d absent => by simp at absent⟩
+
+/-- Every declaration emitted by the partitioned reader is emitted by one successful
+ordinary family reading whose payloads come from the original array. -/
+theorem lowerTwins_decl_origin {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwins cx twins = .ok r) :
+    ∀ d ∈ r.decls.toList, ∃ family chunk,
+      (∀ entry ∈ family, entry ∈ twins) ∧ lowerTwin cx family = .ok chunk ∧ d ∈ chunk.decls.toList := by
+  unfold lowerTwins at h
+  split at h
+  · dsimp only at h
+    split at h
+    · exact fun d member => ⟨twins, r, fun _ h => h, h, member⟩
+    · obtain ⟨decls, loop, returned⟩ := except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at returned
+      subst r
+      have declared := forIn_pushes (fun s => s)
+        (fun d => ∃ family chunk, (∀ entry ∈ family, entry ∈ twins) ∧
+          lowerTwin cx family = .ok chunk ∧ d ∈ chunk.decls.toList) _ _
+        (fun family familyIn acc result step => by
+          obtain ⟨chunk, read, step⟩ := except_bind_ok.mp step
+          simp only [pure, Except.pure, Except.ok.injEq] at step
+          subst result
+          refine ⟨_, rfl, fun d member => ?_⟩
+          rcases Array.mem_append.mp member with old | added
+          · exact .inl old
+          · exact .inr ⟨family, chunk,
+              fun entry member => groupTwins_member (Array.mem_toList_iff.mp familyIn) member,
+              read, Array.mem_toList_iff.mpr added⟩)
+        (fun d absent => by simp at absent) loop
+      exact fun d member => declared d (Array.mem_toList_iff.mp member)
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst r
+    exact fun d absent => by simp at absent
+
 /-- A recursor of the shape a block reads at (`blockShapeOf`) is one the index
 files for the block: the default shape of a block no recursor eliminates has
 none. -/
@@ -454,7 +522,7 @@ theorem finishInductiveRead_lowering {cx : Ctx md} {owner : Address}
   · exact hInd
   · apply LoweringBy.append hInd
     intro d hd k hk
-    obtain ⟨entry, hentry, hkey⟩ := (lowerTwin_spec hTwin).2 d hd k hk
+    obtain ⟨entry, hentry, hkey⟩ := (lowerTwins_spec hTwin).2 d hd k hk
     exact ⟨entry.1, .inl (recordTwins_member_block (Array.mem_toList_iff.mp hentry)), hkey⟩
 
 /-- **Every record's lowering has its shape**, whatever the record. -/
@@ -541,7 +609,7 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
                   exact ⟨_, rfl, fun e he => .inl he⟩
                 · exact (fail_bind hq).elim)
             (fun e he => by simp at he) htw
-          obtain ⟨hg, hk⟩ := lowerTwin_spec h
+          obtain ⟨hg, hk⟩ := lowerTwins_spec h
           refine .inl ⟨hg, fun d hd k hk' => ?_⟩
           obtain ⟨x, hx, hkx⟩ := hk d hd k hk'
           exact ⟨x.1, .inl (twk x (Array.mem_def.mpr hx)), hkx⟩

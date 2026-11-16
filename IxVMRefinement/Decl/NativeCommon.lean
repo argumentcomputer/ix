@@ -1692,6 +1692,22 @@ theorem kexpr_struct_eq_tm_one {κ : _root_.Address → KKey} {d : Nat} {Γ : Na
 
 /-! ## Shared `KernelCheck` telescope and parameter-level specs -/
 
+/-- Natural fields are injective throughout the field's canonical range. -/
+theorem nat_eq_of_field_eq_bounded {a b : Nat}
+    (ha : a < 18446744069414584321) (hb : b < 18446744069414584321)
+    (same : (.field (a : F) : SourceValue F) = .field (b : F)) : a = b := by
+  have equal := congrArg ZMod.val (Value.field.inj same)
+  rw [ZMod.val_natCast_of_lt ha, ZMod.val_natCast_of_lt hb] at equal
+  exact equal
+
+/-- A positive canonical natural field cannot be zero. -/
+theorem succ_field_ne_zero_bounded {m : Nat} (bound : m + 1 < 18446744069414584321) :
+    (.field ((m + 1 : Nat) : F) : SourceValue F) ≠ .field 0 := by
+  intro zero
+  have same : (.field ((m + 1 : Nat) : F) : SourceValue F) = .field ((0 : Nat) : F) := zero
+  have impossible := nat_eq_of_field_eq_bounded bound (by decide) same
+  omega
+
 theorem nat_eq_of_field_eq {a b : Nat} (ha : a < 549755813888) (hb : b < 549755813888)
     (heq : (.field (a : F) : SourceValue F) = .field (b : F)) : a = b := by
   have hf : (a : F) = (b : F) := Value.field.inj heq

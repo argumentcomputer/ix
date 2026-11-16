@@ -480,7 +480,7 @@ theorem readRecordBare_generated_zero {md : Mode} {cx : Ctx md} {st : State md}
         · rcases ite_ok h with h | h
           · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
           · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-            exact (Ix.Cert.ReaderUnits.lowerTwin_spec h).1
+            exact (Ix.Cert.ReaderUnits.lowerTwins_spec h).1
         · rcases ite_ok h with h | h
           · split at h
             · exact (fail_bind h).elim
@@ -1098,6 +1098,16 @@ theorem lowerTwin_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
     intro _ hd
     simp at hd
 
+/-- Every family emitted by partitioned twin reading keeps the ordinary reader's
+non-auxiliary declaration invariant. -/
+theorem lowerTwins_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx)
+    {twins : Array (ConstRef _root_.Address × RecEntry)} {r : Read .anon}
+    (h : lowerTwins cx twins = .ok r) :
+    ∀ d ∈ r.decls.toList, DeclNonAux d := by
+  intro d member
+  obtain ⟨family, chunk, _, read, declared⟩ := Ix.Cert.ReaderUnits.lowerTwins_decl_origin h d member
+  exact lowerTwin_declNonAux hrk read d declared
+
 /-- Non-aux invariant on a parsed `BlockRead .anon`. -/
 def BlockReadNonAux (rb : BlockRead .anon) : Prop :=
   (∀ e ∈ rb.types.toList, NonAuxKey e.1.name ∧ e.1.type.RefsIn NonAuxKey) ∧
@@ -1468,12 +1478,12 @@ theorem readRecord_noGen_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
         · exact hInd
         · intro d hd
           rw [Array.toList_append, List.mem_append] at hd
-          exact hd.elim (hInd d) (lowerTwin_declNonAux hrk hrTwin d)
+          exact hd.elim (hInd d) (lowerTwins_declNonAux hrk hrTwin d)
     · rcases ite_ok h with h | h
       · rcases ite_ok h with h | h
         · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; intro _ hd; simp at hd
         · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
-          exact lowerTwin_declNonAux hrk h
+          exact lowerTwins_declNonAux hrk h
       · rcases ite_ok h with h | h
         · split at h
           · exact (fail_bind h).elim
@@ -1527,7 +1537,7 @@ theorem readRecordBare_declNonAux {cx : Ctx .anon} (hrk : RolesKeyed cx) {st : S
         · exact hInd
         · intro d hd
           rw [Array.toList_append, List.mem_append] at hd
-          exact hd.elim (hInd d) (lowerTwin_declNonAux hrk hrTwin d)
+          exact hd.elim (hInd d) (lowerTwins_declNonAux hrk hrTwin d)
     · exact readRecord_noGen_declNonAux hrk hemp h hg
   | _ =>
     simp only [hinfo] at h
