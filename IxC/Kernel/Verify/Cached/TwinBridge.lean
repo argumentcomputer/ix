@@ -3,7 +3,7 @@ module
 public import IxC.Kernel.Cached.TwinC
 public import IxC.Kernel.Verify.Inductives.TwinFuel
 public import IxC.Kernel.Verify.Inductives.TwinWF
-public import IxC.Kernel.Verify.Cached.BridgeCS1
+public import IxC.Kernel.Verify.Cached.BridgeCS4
 
 public section
 
@@ -27,10 +27,10 @@ theorem twinHeaderS_sim {env : Env md} (hmode : mode.verifiedChecks = true)
     refine SimC.bind (checkConstantValS_sim hmode henv hs) (fun next checked checked' hnext hchecked => ?_)
     obtain ⟨rfl, _⟩ := hchecked
     by_cases hfree : letFree checked.type = true
-    · simp only [if_pos hfree, pure_bind]
+    · simp only [if_pos hfree]
       cases hcanonical : NativeTwin.findCanonical env.find? cv checked mI rP rules env.consts with
-      | none => simp only [hcanonical]; exact SimC.throw
-      | some part => simp only [hcanonical]; exact SimC.pure hnext rfl
+      | none => exact SimC.throw
+      | some part => exact SimC.pure hnext rfl
     · simp only [if_neg hfree]
       exact SimC.throw_bind
   | _ => exact SimC.throw
@@ -61,16 +61,15 @@ theorem twinPrepareS_sim {env : Env md} (hmode : mode.verifiedChecks = true)
   by_cases hempty : block.isEmpty = true
   · simp only [if_pos hempty]
     exact SimC.throw_bind
-  · simp only [if_neg hempty, pure_bind]
+  · simp only [if_neg hempty]
     refine SimC.bind (twinHeadersS_sim hmode henv block hs)
       (fun next parts parts' hnext hparts => ?_)
     obtain rfl : parts = parts' := hparts
-    dsimp only
     by_cases hdistinct : ((NativeTwin.provision parts ++ NativeTwin.models parts).map (·.name)).Nodup
-    · simp only [if_pos hdistinct, pure_bind]
+    · simp only [if_pos hdistinct]
       by_cases hfresh : (NativeTwin.provision parts ++ NativeTwin.models parts).all
           (fun ci => (env.find? ci.name).isNone) = true
-      · simp only [if_pos hfresh, pure_bind]
+      · simp only [if_pos hfresh]
         exact SimC.pure hnext rfl
       · simp only [if_neg hfresh]
         exact SimC.throw_bind
@@ -86,9 +85,9 @@ theorem twinRuleS_sim {checking : Env md} (hmode : mode.verifiedChecks = true)
   unfold NativeTwin.checkRule
   dsimp only [sharedOpsC]
   by_cases hmeta : (raw.ctor == canonical.ctor && raw.nfields == canonical.nfields) = true
-  · simp only [if_pos hmeta, pure_bind]
+  · simp only [if_pos hmeta]
     by_cases hraw : (raw.rhs.looseBVarsBounded 0 && !raw.rhs.hasFvar) = true
-    · simp only [if_pos hraw, pure_bind]
+    · simp only [if_pos hraw]
       have hfree : raw.rhs.hasFvar = false := by
         have h := (Bool.and_eq_true_iff.mp hraw).2
         simpa only [Bool.not_eq_true'] using h
@@ -97,9 +96,9 @@ theorem twinRuleS_sim {checking : Env md} (hmode : mode.verifiedChecks = true)
       obtain ⟨rfl, _⟩ := hrhs
       by_cases hscope : (rhs.allLevelParamsDefined part.canonical.levelParams &&
           rhs.constsResolve checking && letFree rhs) = true
-      · simp only [if_pos hscope, pure_bind]
+      · simp only [if_pos hscope]
         by_cases hshape : NativeTwin.ruleShape base part canonical = true
-        · simp only [if_pos hshape, pure_bind]
+        · simp only [if_pos hshape]
           exact SimC.pure hnext rfl
         · simp only [if_neg hshape]
           exact SimC.throw_bind
@@ -153,9 +152,56 @@ theorem twinFinishS_sim {checking : Env md} {state : CState md}
   unfold NativeTwin.finish
   by_cases hwrap : (NativeTwin.rulesWrap base id parts ||
       NativeTwin.rulesWrap base (NativeTwin.peerRename parts) parts) = true
-  · simp only [if_pos hwrap, pure_bind]
+  · simp only [if_pos hwrap]
     exact SimC.pure hs rfl
   · simp only [if_neg hwrap]
     exact SimC.throw_bind
+
+/-- The complete cached twin driver refines a pure run at one common fuel. Its header
+and rule phases use their own actual environment indices, with a flush at each transition. -/
+theorem checkTwinS_run {env : Env md} (hmode : mode.verifiedChecks = true)
+    (henv : EnvWF env) {state : CState md} (hs : CSOKF state)
+    {block : List (ConstantInfo md)} {output : FEnv md} {final : CState md}
+    (h : checkTwinS mode (mkFEnv env) block state = .ok (output, final)) :
+    CSOKF final ∧ output = mkFEnv output.env ∧
+      ∃ fuel, NativeTwin.check (fueledOps mode fuel) env block = .ok output.env := by
+  unfold checkTwinS at h
+  simp only [mkFEnv_env] at h
+  obtain ⟨_, start, hflush, h⟩ := bindC_ok h
+  rw [flushC_run] at hflush
+  have hstart : state.flushed = start := congrArg Prod.snd (Except.ok.inj hflush)
+  subst start
+  obtain ⟨parts, headersState, hprepare, h⟩ := bindC_ok h
+  obtain ⟨hheaders, parts', hparts, headerFuel, hheaderRun⟩ :=
+    twinPrepareS_sim hmode henv (flushC_csok hs) block parts headersState hprepare
+  obtain rfl : parts = parts' := hparts
+  have hpureHeader : NativeTwin.prepare (fueledOps mode headerFuel) env block = .ok parts := by
+    simpa only [NativeTwin.prepare_datF] using hheaderRun
+  have hself := NativeTwin.prepare_self_wf henv hpureHeader
+  obtain ⟨_, rulesStart, hflush, h⟩ := bindC_ok h
+  rw [flushC_run] at hflush
+  have hrulesStart : headersState.flushed = rulesStart := congrArg Prod.snd (Except.ok.inj hflush)
+  subst rulesStart
+  obtain ⟨checked, rulesState, hrules, h⟩ := bindC_ok h
+  obtain ⟨hcheckedState, checked', hchecked, ruleFuel, hruleRun⟩ :=
+    twinPartsRulesS_sim hmode hself env parts (flushC_csok hheaders.residue)
+      checked rulesState hrules
+  obtain rfl : checked = checked' := hchecked
+  obtain ⟨result, finishState, hfinish, h⟩ := bindC_ok h
+  obtain ⟨hfinishState, result', hresult, finishFuel, hfinishRun⟩ :=
+    twinFinishS_sim hcheckedState env checked result finishState hfinish
+  obtain rfl : result = result' := hresult
+  obtain ⟨_, last, hflush, h⟩ := bindC_ok h
+  rw [flushC_run] at hflush
+  have hlast : finishState.flushed = last := congrArg Prod.snd (Except.ok.inj hflush)
+  subst last
+  obtain ⟨houtput, hfinal⟩ := pureC_ok h
+  subst output
+  subst final
+  refine ⟨hfinishState.residue.flushed, ?_, max headerFuel (max ruleFuel finishFuel), ?_⟩
+  · rw [mkFEnv_env]
+  · rw [mkFEnv_env, ← NativeTwin.check_datF]
+    unfold NativeTwin.check
+    exact atF_bind_intro hheaderRun (atF_bind_intro hruleRun hfinishRun)
 
 end Ix.Kernel.Cached
