@@ -541,45 +541,12 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
     (h : analyseRecursorChecked store owner c r = some (motive, carriersL, major)) :
     analyseRecursor store owner c r = some (motive, carriersL.toArray, major) := by
   unfold analyseRecursorChecked at h
-  dsimp only at h
-  obtain ⟨⟨doms, body⟩, hsa0, h⟩ := option_bind_eq_some h
-  rw [stripAllFast_eq] at hsa0
-  dsimp only at h
-  obtain ⟨bhd, hah, h⟩ := option_bind_eq_some h
-  have hah' := appHeadChecked_sound c 64 spineFuel body (by decide) hah
-  cases bhd with
-  | var k =>
-    dsimp only at h
-    obtain ⟨hcond, h⟩ := ite_not_eq_some h
-    obtain ⟨csL, hcar, h⟩ := option_bind_eq_some h
-    obtain ⟨ld, hlast, h⟩ := option_bind_eq_some h
-    obtain ⟨maj, hmaj, h⟩ := option_bind_eq_some h
-    injection h with htuple
-    rcases Prod.mk.inj htuple with ⟨rfl, hcm⟩
-    rcases Prod.mk.inj hcm with ⟨rfl, rfl⟩
-    have hcar' : ((doms.drop r.params.toNat).take r.motives.toNat).mapM
-        (fun dom => do
-          let (bs, _) := stripAllFull c spineFuel dom
-          headRef store owner c (← bs.getLast?)) = some csL := by
-      refine mapM_option_imp (fun dom cr hd => ?_) _ hcar
-      obtain ⟨⟨bs, _⟩, hsf, hd⟩ := option_bind_eq_some hd
-      dsimp only at hd
-      obtain ⟨lb, hlb, hd⟩ := option_bind_eq_some hd
-      rw [stripAllFullChecked_sound c 64 spineFuel dom (by decide) hsf]
-      dsimp only
-      rw [hlb, option_some_bind]
-      exact headRefChecked_sound store owner c lb hd
-    unfold analyseRecursor
-    dsimp only
-    rw [hsa0, option_some_bind]
-    dsimp only
-    rw [hah']
-    dsimp only
-    rw [option_guard_true hcond, option_some_bind]
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hcar']
-    simp only [hlast, headRefChecked_sound store owner c ld hmaj,
-      Functor.map, Option.map, bind, Option.bind, pure]
-  | _ => cases h
+  simp only [bind, Option.bind_eq_some_iff, pure] at h
+  obtain ⟨⟨motive', heads, last⟩, analysed, values, valuesRead, target, targetRead, returned⟩ := h
+  cases Option.some.inj returned
+  simp only [analyseRecursor, analysed, bind, Option.bind, Array.mapM_eq_mapM_toList,
+    valuesRead, targetRead, Option.map_some, pure]
+  rfl
 
 private theorem inductivesList_eq (members : Array Ixon.MutConst) :
     (inductivesList members.toList).toArray = Ix.CompileCert.ReaderIndex.inductives members := by
@@ -635,9 +602,20 @@ private theorem headRef_defCx_eq_pure {owner : _root_.Address} {c : Ixon.Constan
 private theorem analyseRecursor_defCx_eq_pure {owner : _root_.Address} {c : Ixon.Constant}
     (hrefs : c.refs.toList.all committedPreAddrs.contains = true) (r : Ixon.Recursor) :
     analyseRecursor (defCx ev).store owner c r = analyseRecursor preStorePure owner c r := by
-  unfold analyseRecursor
-  have hh := headRef_defCx_eq_pure ev (owner := owner) hrefs
-  simp only [hh]
+  have heads : resolveShapeHead (defCx ev).store owner c = resolveShapeHead preStorePure owner c := by
+    funext head
+    cases head with
+    | recur i => rfl
+    | ref i =>
+      simp only [resolveShapeHead]
+      cases found : c.refs[i]? with
+      | none => rfl
+      | some a =>
+        have present : a ∈ c.refs.toList := Array.mem_toList_iff.mpr (Array.mem_of_getElem? found)
+        have committed : a ∈ committedPreAddrs := List.contains_iff_mem.mp
+          (List.all_eq_true.mp hrefs a present)
+        exact resolve_defCx_of_mem_pre ev committed
+  simp only [analyseRecursor, heads]
 
 private theorem foldl_insert_contains :
     ∀ (l : List (_root_.Address × Ixon.Constant)) (pre : List _root_.Address)
@@ -686,7 +664,7 @@ private theorem filter_committedPrelude_inputIndexed :
   have hpure := List.all_eq_true.mp hpure0 (a, c) hmem'
   dsimp only at hpure
   rw [recursorMembersFast_eq, List.all_eq_true] at hpure
-  unfold inputIndexed
+  rw [inputIndexed_eq]
   rw [Bool.or_eq_true]
   left
   rw [Array.all_eq_true_iff_forall_mem]

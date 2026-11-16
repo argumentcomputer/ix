@@ -125,8 +125,11 @@ supplies brings its own recursors; a fallback recursor filed under it would
 read the input's block with a record the input does not hold, so the block
 declines without its recursor instead. -/
 def fallbackIndexed (store : Store) (known : Std.HashSet Address) (a : Address) (c : Ixon.Constant) : Bool :=
-  (recursorMembers c).all fun (_, r) =>
-    match analyseRecursor store a c r with
+  let members := recursorMembers c
+  if members.isEmpty then true else
+  let table := Shape.sharing c.sharing
+  members.all fun (_, r) =>
+    match analyseRecursorPrepared store a c table r with
     | some (_, carriers, _) =>
       match carriers[0]? with
       | some (ConstRef.member b _) => !known.contains b
@@ -144,14 +147,50 @@ reading already covers, may stand there. Any other such record is left out of
 the index, and declines as a recursor without its block (`readRecord`). -/
 def inputIndexed (store : Store) (known : Std.HashSet Address)
     (fallback : Array (Address × Ixon.Constant)) (a : Address) (c : Ixon.Constant) : Bool :=
-  (recursorMembers c).all (fun (_, r) =>
-    match analyseRecursor store a c r with
+  let members := recursorMembers c
+  if members.isEmpty then true else
+  let table := Shape.sharing c.sharing
+  members.all (fun (_, r) =>
+    match analyseRecursorPrepared store a c table r with
     | some (_, carriers, _) =>
       match carriers[0]? with
       | some (ConstRef.member b _) => known.contains b
       | _ => true
     | none => true) ||
   fallback.contains (a, c)
+
+theorem fallbackIndexed_eq (store : Store) (known : Std.HashSet Address) (a : Address) (c : Ixon.Constant) :
+    fallbackIndexed store known a c = (recursorMembers c).all (fun (_, r) =>
+      match analyseRecursor store a c r with
+      | some (_, carriers, _) =>
+        match carriers[0]? with
+        | some (ConstRef.member b _) => !known.contains b
+        | _ => true
+      | none => true) := by
+  cases empty : (recursorMembers c).isEmpty with
+  | true =>
+    have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
+    simp only [fallbackIndexed, absent, Array.isEmpty_empty, ↓reduceIte, Array.all_empty]
+  | false =>
+    simp only [fallbackIndexed, empty, Bool.false_eq_true, ↓reduceIte,
+      analyseRecursor, analyseRecursorPrepared, Shape.analyse]
+
+theorem inputIndexed_eq (store : Store) (known : Std.HashSet Address)
+    (fallback : Array (Address × Ixon.Constant)) (a : Address) (c : Ixon.Constant) :
+    inputIndexed store known fallback a c = ((recursorMembers c).all (fun (_, r) =>
+      match analyseRecursor store a c r with
+      | some (_, carriers, _) =>
+        match carriers[0]? with
+        | some (ConstRef.member b _) => known.contains b
+        | _ => true
+      | none => true) || fallback.contains (a, c)) := by
+  cases empty : (recursorMembers c).isEmpty with
+  | true =>
+    have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
+    simp only [inputIndexed, absent, Array.isEmpty_empty, ↓reduceIte, Array.all_empty, Bool.true_or]
+  | false =>
+    simp only [inputIndexed, empty, Bool.false_eq_true, ↓reduceIte,
+      analyseRecursor, analyseRecursorPrepared, Shape.analyse]
 
 /-- **The records the recursor index scans**: the input's, less those with a
 recursor member analysed into a block only the fallback supplies
