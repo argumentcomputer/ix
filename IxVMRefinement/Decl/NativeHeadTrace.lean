@@ -18,7 +18,7 @@ theorem primitive_dispatch_zero_of_cons
     {rc address levels headLevel tail spine types result : SourceValue F}
     {heap final : Heap F} {calls : List (Call F)}
     (levelList : loadValue heap levels = .ok
-      (.construct IxVM.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons" [headLevel, tail]))
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons" [headLevel, tail]))
     (observed : ObsFn W "KernelWhnf::try_prim_dispatch"
       [rc, address, levels, spine, types] heap result final calls) :
     ∃ value, result = .tuple [.field 0, value] := by
@@ -113,7 +113,7 @@ theorem whnf_const_head_polymorphic_inductive
     (observed : ObsFn W "KernelWhnf::whnf_const_head"
       [rc, address, levels, head, spine, types] heap result final calls)
     (levelList : loadValue heap levels = .ok
-      (.construct IxVM.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons" [headLevel, tail]))
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Cons" [headLevel, tail]))
     (inductiveLoads : ∀ before pointer after children,
       (⟨"Ingress::get_ci", [address], before⟩ : Call F) ∈ calls →
       (∀ call ∈ children, call ∈ calls) →
