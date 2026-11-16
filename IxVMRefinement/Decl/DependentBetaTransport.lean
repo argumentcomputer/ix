@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.DependentBetaShape
 import IxVMRefinement.Decl.DomainTransport
+import IxVMRefinement.Decl.DomainCoherence
 
 /-! # Producing the final reference for a checked dependent-beta field
 
@@ -20,6 +21,43 @@ private theorem IdentityRef.reference_scoped {domainSort : Level} {reference e :
   | beta =>
     simp only [Expr.WScoped] at bounded
     exact bounded.2
+
+private theorem identity_ref_checked_zero {env : Env .anon} {depth index : Nat}
+    {reference e inferred : Expr .anon} {kind domainSort resultSort : Level}
+    (indexed : reference = .fvar index reference.fvarTypeD)
+    (kindOrigin : SortFunction kind 0 reference.fvarTypeD)
+    (origin : IdentityRef domainSort reference e) (typed : Rules.Infer env .full depth e inferred)
+    (sorted : Rules.Red env depth inferred (.sort resultSort)) :
+    Level.zeronessOf resultSort = Level.zeronessOf kind := by
+  cases origin with
+  | reference =>
+    have typeEq : inferred = reference.fvarTypeD := by
+      rw [indexed] at typed
+      exact Rules.Infer.fvar_inv typed
+    rw [typeEq] at sorted
+    rw [← (kindOrigin.reduced sorted).sort_level]
+  | beta =>
+    obtain ⟨typeEq, argumentType, argumentTyped, compared⟩ := infer_identity_application typed
+    have argumentEq : argumentType = reference.fvarTypeD := by
+      rw [indexed] at argumentTyped
+      exact Rules.Infer.fvar_inv argumentTyped
+    rw [argumentEq] at compared
+    rw [typeEq] at sorted
+    rw [Rules.Red.sort_eq sorted]
+    exact sort_function_zero (.symm compared) kindOrigin
+
+/-- The checked old/new variable relation constructs a general sort law without satisfying
+the syntax-only invariant's arbitrary-substitution interface. -/
+theorem SortKindPair.identity_sort_law {env : Env .anon} {fuel index : Nat}
+    {original final : Expr .anon} {kind domainSort : Level}
+    (pair : SortKindPair env fuel index original final kind) :
+    DomainSortLaw env (fun e => IdentityRef domainSort original e ∨ IdentityRef domainSort final e)
+      (Level.zeronessOf kind) where
+  checked := by
+    intro depth e inferred level origin typed sorted
+    rcases origin with originalOrigin | finalOrigin
+    · exact identity_ref_checked_zero pair.originalIndex pair.originalKind originalOrigin typed sorted
+    · exact identity_ref_checked_zero pair.finalIndex pair.finalKind finalOrigin typed sorted
 
 /-- The final variable/redex shape is derived from the exact rebuild and final annotation.
 Only the selected original use is identified by the caller. -/
@@ -123,14 +161,54 @@ theorem CheckedFramePair.identity_normalized_sorts {env : Env .anon} {fuel nP nF
     frames.final.domainChecks (nP + useSlot) finalUse finalUseAt
   have beforeTyped := Rules.inferTypeCore_bridge inputTyped
   rw [oldShape] at beforeTyped
-  have equal := pair.identity_result beforeTyped (Rules.whnf_bridge (ensureSortCore_inv inputSorted))
-    afterShape (Rules.inferTypeCore_bridge outputTyped) (Rules.whnf_bridge (ensureSortCore_inv outputSorted))
+  have pairChecks := pair.identity_sort_law.checked_pair (.inl IdentityRef.beta) (.inr afterShape)
+    beforeTyped (Rules.whnf_bridge (ensureSortCore_inv inputSorted))
+    (Rules.inferTypeCore_bridge outputTyped) (Rules.whnf_bridge (ensureSortCore_inv outputSorted))
   obtain ⟨_, argumentType, argumentTyped, compared⟩ := infer_identity_application beforeTyped
   have typeEq : argumentType = originalArgument.fvarTypeD := by
     rw [pair.originalIndex] at argumentTyped
     exact Rules.Infer.fvar_inv argumentTyped
   rw [typeEq] at compared
   exact ⟨inputType, inputSort, outputType, outputSort, inputTyped, inputSorted,
-    outputTyped, outputSorted, afterShape, compared, equal⟩
+    outputTyped, outputSorted, afterShape, compared, pairChecks.2.2.1⟩
+
+/-- The actual constructor check produces the frame relation and exact witness consumed by
+the dependent-beta case. The conclusion selects only original shapes, not a final use shape. -/
+theorem checkSumCtor_identity_transport {before env : Env .anon} (wellFormed : EnvWF env)
+    {T : Key .anon} {levels : List LevelParam} {nP nI nF fuel : Nat}
+    {sortLevel : Level} {isProp large : Bool} {raw former checked : ConstantVal .anon} {sorts : List Level}
+    (run : checkSumCtor (fueledOps .verified fuel) before env T levels nP nI sortLevel isProp large
+      raw nF former = .ok (checked, sorts)) :
+    ∃ initial rebuilt originalVars originalResidual finalVars finalResidual,
+      checkConstantVal (fueledOps .verified fuel) env raw = .ok initial ∧
+      normCtorVal (fueledOps .verified fuel) env T nP nF raw initial = .ok checked ∧
+      ConstructorRebuildRun env fuel T nP nF initial.type rebuilt ∧
+      (checked = initial ∨ checkConstantVal (fueledOps .verified fuel) env { raw with type := rebuilt } = .ok checked) ∧
+      openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual) ∧
+      openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual) ∧
+      CheckedFramePair env fuel (nP + nF) originalVars finalVars ∧
+      ∀ kindSlot useSlot originalArgument finalArgument originalUse finalUse kind domainSort metadata,
+        originalVars[nP + kindSlot]? = some originalArgument →
+        finalVars[nP + kindSlot]? = some finalArgument →
+        originalVars[nP + useSlot]? = some originalUse →
+        finalVars[nP + useSlot]? = some finalUse →
+        SortFunction kind 0 originalArgument.fvarTypeD →
+        originalUse.fvarTypeD = .app (.lam (.sort domainSort) (.bvar 0) metadata) originalArgument →
+        ∃ inputType inputSort outputType outputSort,
+          inferTypeCore .verified env fuel (nP + useSlot) originalUse.fvarTypeD = .ok inputType ∧
+          ensureSortCore .verified env fuel (nP + useSlot) inputType = .ok inputSort ∧
+          inferTypeCore .verified env fuel (nP + useSlot) finalUse.fvarTypeD = .ok outputType ∧
+          ensureSortCore .verified env fuel (nP + useSlot) outputType = .ok outputSort ∧
+          IdentityRef domainSort finalArgument finalUse.fvarTypeD ∧
+          Rules.DefEq env (nP + useSlot) originalArgument.fvarTypeD (.sort domainSort) ∧
+          Level.zeronessOf inputSort = Level.zeronessOf outputSort := by
+  obtain ⟨initial, rebuilt, originalVars, originalResidual, finalVars, finalResidual,
+    first, normalized, rebuild, lastBranch, originalOpen, finalOpen, frames⟩ := checkSumCtor_frame_trace wellFormed run
+  refine ⟨initial, rebuilt, originalVars, originalResidual, finalVars, finalResidual,
+    first, normalized, rebuild, lastBranch, originalOpen, finalOpen, frames, ?_⟩
+  intro kindSlot useSlot originalArgument finalArgument originalUse finalUse kind domainSort metadata
+    originalArgumentAt finalArgumentAt originalUseAt finalUseAt kindOrigin oldShape
+  exact frames.identity_normalized_sorts normalized rebuild lastBranch originalOpen finalOpen
+    originalArgumentAt finalArgumentAt originalUseAt finalUseAt kindOrigin oldShape
 
 end IxVM.Refinement.Decl
