@@ -32,7 +32,9 @@ private theorem committed_prelude_owner_member {a : _root_.Address} {c : Ixon.Co
     (member : (a, c) ∈ RoleVal.committedPreludeList) :
     ∃ ownerRecord, (Ix.Cert.ownerOf a c, ownerRecord) ∈ RoleVal.committedPreludeList := by
   have checked := List.all_eq_true.mp RoleVal.preRefsAndProjClosed (a, c) member
-  have projection := (Bool.and_eq_true.mp checked).2
+  dsimp only at checked
+  simp only [Bool.and_eq_true] at checked
+  have projection := checked.2
   have ownerMember : Ix.Cert.ownerOf a c ∈ RoleVal.committedPreAddrs := by
     cases info : c.info with
     | dPrj p | iPrj p | rPrj p | cPrj p =>
@@ -79,6 +81,7 @@ theorem fallback_owner_stored {table : RoleTable} {prelude : Prelude .anon}
     simpa only [RoleVal.committedPrelude, List.toList_toArray] using ownerMember
   · rw [evEq] at inEvidence
     obtain ⟨definition, info⟩ := definitions (a, c) inEvidence
+    dsimp only at info
     exact ⟨c, by simpa only [Ix.Cert.ownerOf, info] using found⟩
 
 end IxVM.Refinement.Assembly
