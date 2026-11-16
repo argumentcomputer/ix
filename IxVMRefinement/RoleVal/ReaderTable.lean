@@ -545,41 +545,37 @@ private theorem analyseRecursorChecked_sound (store : Store) (owner : _root_.Add
   obtain ⟨⟨doms, body⟩, hsa0, h⟩ := option_bind_eq_some h
   rw [stripAllFast_eq] at hsa0
   dsimp only at h
-  obtain ⟨bhd, hah, h⟩ := option_bind_eq_some h
-  have hah' := appHeadChecked_sound c 64 spineFuel body (by decide) hah
-  cases bhd with
-  | var k =>
-    dsimp only at h
-    obtain ⟨hcond, h⟩ := ite_not_eq_some h
-    obtain ⟨csL, hcar, h⟩ := option_bind_eq_some h
-    obtain ⟨ld, hlast, h⟩ := option_bind_eq_some h
-    obtain ⟨maj, hmaj, h⟩ := option_bind_eq_some h
-    injection h with htuple
-    rcases Prod.mk.inj htuple with ⟨rfl, hcm⟩
-    rcases Prod.mk.inj hcm with ⟨rfl, rfl⟩
-    have hcar' : ((doms.drop r.params.toNat).take r.motives.toNat).mapM
-        (fun dom => do
-          let (bs, _) := stripAllFull c spineFuel dom
-          headRef store owner c (← bs.getLast?)) = some csL := by
-      refine mapM_option_imp (fun dom cr hd => ?_) _ hcar
-      obtain ⟨⟨bs, _⟩, hsf, hd⟩ := option_bind_eq_some hd
-      dsimp only at hd
-      obtain ⟨lb, hlb, hd⟩ := option_bind_eq_some hd
-      rw [stripAllFullChecked_sound c 64 spineFuel dom (by decide) hsf]
-      dsimp only
-      rw [hlb, option_some_bind]
-      exact headRefChecked_sound store owner c lb hd
-    unfold analyseRecursor
+  obtain ⟨k, hah, h⟩ := option_bind_eq_some h
+  dsimp only at h
+  obtain ⟨hcond, h⟩ := ite_not_eq_some h
+  obtain ⟨csL, hcar, h⟩ := option_bind_eq_some h
+  obtain ⟨ld, hlast, h⟩ := option_bind_eq_some h
+  obtain ⟨maj, hmaj, h⟩ := option_bind_eq_some h
+  injection h with htuple
+  rcases Prod.mk.inj htuple with ⟨rfl, hcm⟩
+  rcases Prod.mk.inj hcm with ⟨rfl, rfl⟩
+  have hcar' : ((doms.drop r.params.toNat).take r.motives.toNat).mapM
+      (fun dom => do
+        let (bs, _) := stripAllFull c spineFuel dom
+        headRef store owner c (← bs.getLast?)) = some csL := by
+    refine mapM_option_imp (fun dom cr hd => ?_) _ hcar
+    obtain ⟨⟨bs, _⟩, hsf, hd⟩ := option_bind_eq_some hd
+    dsimp only at hd
+    obtain ⟨lb, hlb, hd⟩ := option_bind_eq_some hd
+    rw [stripAllFullChecked_sound c 64 spineFuel dom (by decide) hsf]
     dsimp only
-    rw [hsa0, option_some_bind]
-    dsimp only
-    rw [hah']
-    dsimp only
-    rw [option_guard_true hcond, option_some_bind]
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hcar']
-    simp only [hlast, headRefChecked_sound store owner c ld hmaj,
-      Functor.map, Option.map, bind, Option.bind, pure]
-  | _ => cases h
+    rw [hlb, option_some_bind]
+    exact headRefChecked_sound store owner c lb hd
+  unfold analyseRecursor
+  dsimp only
+  rw [hsa0, option_some_bind]
+  dsimp only
+  rw [hah, option_some_bind]
+  dsimp only
+  rw [option_guard_true hcond, option_some_bind]
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hcar']
+  simp only [hlast, headRefChecked_sound store owner c ld hmaj,
+    Functor.map, Option.map, bind, Option.bind, pure]
 
 private theorem inductivesList_eq (members : Array Ixon.MutConst) :
     (inductivesList members.toList).toArray = Ix.CompileCert.ReaderIndex.inductives members := by

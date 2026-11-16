@@ -237,9 +237,9 @@ def analyseRecursorChecked (store : Store) (owner : _root_.Address) (c : Ixon.Co
   let nI := r.indices.toNat
   let depth := nP + nM + nm + nI + 1
   let (doms, body) ← stripAllFast c depth r.typ
-  let .var k ← appHeadChecked c 64 body | none
-  let pos := depth - 1 - k.toNat
-  if !(k.toNat < depth && nP ≤ pos && pos < nP + nM) then none else
+  let k ← Shape.resultVar spineFuel c body
+  let pos := depth - 1 - k
+  if !(k < depth && nP ≤ pos && pos < nP + nM) then none else
   let carriersL ← (doms.drop nP |>.take nM).mapM fun dom => do
     let (bs, _) ← stripAllFullChecked c 64 dom
     headRefChecked store owner c (← bs.getLast?)

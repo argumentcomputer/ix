@@ -1,4 +1,4 @@
-import Ix.CompileCert.SharingRoots
+import Ix.CompileCert.ShapeSharing
 
 /-! # The certified reader's syntactic walks through sharing encodings
 
@@ -351,8 +351,7 @@ theorem analyse_expand (store : Store) (owner : Address) (constant flat : Ixon.C
     simp only [parsed, Option.map_some] at telescope
     have fits := enough (types.map (substShares expand)) (substShares expand body) telescope.symm
     have scopes := stripAll_bounded constant expand entries (depth recursor) recursor.typ bounded (types, body) parsed
-    have headMeaning := appHead_expand constant flat empty expand entries spineFuel body scopes.2
-    have inline := appHead_inline constant expand entries spineFuel body scopes.2 fits.1
+    have headMeaning := ShapeSharing.resultVar_expand constant flat empty expand entries body scopes.2 spineFuel
     have major := lastHead_expand store owner constant flat empty refs self expand entries types scopes.1
       (fun type last => fits.2.1 _ (by rw [List.getLast?_map, last]; rfl))
     have motives := carriers_expand store owner constant flat empty refs self expand entries
@@ -365,10 +364,9 @@ theorem analyse_expand (store : Store) (owner : Address) (constant flat : Ixon.C
     dsimp only [depth] at parsed telescope
     simp only [analyseRecursor, parsed, ← telescope, expandTele, bind, Option.bind,
       ← headMeaning]
-    cases head : appHead constant spineFuel body with
-    | share index => simp only [head, InlineHead] at inline
-    | var index =>
-      simp only [substShares, List.map_drop, List.map_take] at motives ⊢
+    cases head : Shape.resultVar spineFuel constant body with
+    | some index =>
+      simp only [List.map_drop, List.map_take] at motives ⊢
       unfold carrier lastHead at motives
       unfold lastHead at major
       simp only [bind, Option.bind] at motives major
@@ -378,7 +376,7 @@ theorem analyse_expand (store : Store) (owner : Address) (constant flat : Ixon.C
       | some type =>
         simp only [List.getLast?_map, last, Option.map_some] at major ⊢
         rw [major]
-    | _ => rfl
+    | none => rfl
 
 open Ix.CompileM in
 /-- **The actual sharing builder preserves standalone recursor analysis.**

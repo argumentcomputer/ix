@@ -130,35 +130,29 @@ theorem analyseWith_mono_supported {P : Nat → Prop} {Q : ConstRef _root_.Addre
     analyseWith c r h₂ = some x ∧ (∀ q ∈ x.2.1, Q q) ∧ Q x.2.2 := by
   unfold analyseWith at ran ⊢
   simp only [bind, Option.bind_eq_some_iff, pure] at ran ⊢
-  obtain ⟨⟨domains, body⟩, telescope, ran⟩ := ran
+  obtain ⟨⟨domains, body⟩, telescope, k, head, u, guardRan, carriers, carrierRan,
+    last, lastFound, major, majorRan, returned⟩ := ran
   have domainRefs := (stripAll_refs shared _ typeRefs telescope).1
-  split at ran
-  · rename_i k head
-    simp only [Option.bind_eq_some_iff] at ran
-    obtain ⟨u, guardRan, carriers, carrierRan, last, lastFound, major, majorRan, returned⟩ := ran
-    cases Option.some.inj returned
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map,
-      Option.map_eq_some_iff] at carrierRan
-    obtain ⟨ys, ysRan, rfl⟩ := carrierRan
-    obtain ⟨ysRan', ysQ⟩ := mapM_mono_on _ ys (g := fun domain =>
-      (stripAllFull c spineFuel domain).fst.getLast?.bind h₂) (Q := Q)
-      (fun domain present q queried => by
-        have domainRef := domainRefs domain
-          (List.mem_of_mem_drop (List.mem_of_mem_take present))
-        obtain ⟨e, last, queried⟩ := Option.bind_eq_some_iff.mp queried
-        have supported := (stripAllFull_refs shared spineFuel domainRef).1 e
-          (List.mem_of_getLast? last)
-        obtain ⟨queried', property⟩ := heads e supported q queried
-        exact ⟨Option.bind_eq_some_iff.mpr ⟨e, last, queried'⟩, property⟩) ysRan
-    obtain ⟨majorRan', majorQ⟩ := heads last
-      (domainRefs last (List.mem_of_getLast? lastFound)) major majorRan
-    refine ⟨⟨(domains, body), telescope, ?_⟩,
-      fun q hq => ysQ q (by simpa using hq), majorQ⟩
-    simp only [head, Option.bind_eq_some_iff]
-    refine ⟨u, guardRan, ys.toArray, ?_, last, lastFound, major, majorRan', rfl⟩
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, ysRan']
-    rfl
-  · cases ran
+  cases Option.some.inj returned
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map,
+    Option.map_eq_some_iff] at carrierRan
+  obtain ⟨ys, ysRan, rfl⟩ := carrierRan
+  obtain ⟨ysRan', ysQ⟩ := mapM_mono_on _ ys (g := fun domain =>
+    (stripAllFull c spineFuel domain).fst.getLast?.bind h₂) (Q := Q)
+    (fun domain present q queried => by
+      have domainRef := domainRefs domain
+        (List.mem_of_mem_drop (List.mem_of_mem_take present))
+      obtain ⟨e, last, queried⟩ := Option.bind_eq_some_iff.mp queried
+      have supported := (stripAllFull_refs shared spineFuel domainRef).1 e
+        (List.mem_of_getLast? last)
+      obtain ⟨queried', property⟩ := heads e supported q queried
+      exact ⟨Option.bind_eq_some_iff.mpr ⟨e, last, queried'⟩, property⟩) ysRan
+  obtain ⟨majorRan', majorQ⟩ := heads last
+    (domainRefs last (List.mem_of_getLast? lastFound)) major majorRan
+  refine ⟨⟨(domains, body), telescope, k, head, u, guardRan, ys.toArray, ?_, last, lastFound,
+    major, majorRan', rfl⟩, fun q hq => ysQ q (by simpa using hq), majorQ⟩
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, ysRan']
+  rfl
 
 /-- A head walk requires agreement only at the reference indices supported by its input. -/
 theorem headRef_mono_supported {P : Nat → Prop} {D : _root_.Address → Prop}
