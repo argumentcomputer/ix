@@ -57,6 +57,52 @@ decreasing_by
   all_goals simp_wf
   all_goals omega
 
+theorem binderPlanStep_app {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {func arg : Ixon.Expr} {nodes middle remaining : List Ixon.BinderNode}
+    {funcPlan argPlan : List Core.KLevel}
+    (function : (if needsBinderAt sharing bound func then binderPlanStep tree sharing bound func nodes
+      else some ([], nodes)) = some (funcPlan, middle))
+    (argument : (if needsBinderAt sharing bound arg then binderPlanStep tree sharing bound arg middle
+      else some ([], middle)) = some (argPlan, remaining)) :
+    binderPlanStep tree sharing bound (.app func arg) nodes = some (funcPlan ++ argPlan, remaining) := by
+  split at function <;> split at argument <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_lam {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {dom body : Ixon.Expr} {node : Ixon.BinderNode} {nodes middle remaining : List Ixon.BinderNode}
+    {domPlan bodyPlan : List Core.KLevel}
+    (domain : (if needsBinderAt sharing bound dom then binderPlanStep tree sharing bound dom nodes
+      else some ([], nodes)) = some (domPlan, middle))
+    (range : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body middle
+      else some ([], middle)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.lam dom body) (node :: nodes) =
+      some (binderLevel node :: (domPlan ++ bodyPlan), remaining) := by
+  split at domain <;> split at range <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_all {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {dom body : Ixon.Expr} {node : Ixon.BinderNode} {nodes middle remaining : List Ixon.BinderNode}
+    {domPlan bodyPlan : List Core.KLevel}
+    (domain : (if needsBinderAt sharing bound dom then binderPlanStep tree sharing bound dom nodes
+      else some ([], nodes)) = some (domPlan, middle))
+    (range : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body middle
+      else some ([], middle)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.all dom body) (node :: nodes) =
+      some (binderLevel node :: (domPlan ++ bodyPlan), remaining) := by
+  split at domain <;> split at range <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_let {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {nondependent : Bool} {mode : Ixon.LetMode} {ty value body : Ixon.Expr}
+    {nodes afterType afterValue remaining : List Ixon.BinderNode}
+    {typePlan valuePlan bodyPlan : List Core.KLevel}
+    (type : (if needsBinderAt sharing bound ty then binderPlanStep tree sharing bound ty nodes
+      else some ([], nodes)) = some (typePlan, afterType))
+    (value : (if needsBinderAt sharing bound value then binderPlanStep tree sharing bound value afterType
+      else some ([], afterType)) = some (valuePlan, afterValue))
+    (body : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body afterValue
+      else some ([], afterValue)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.letE nondependent mode ty value body) nodes =
+      some ((typePlan ++ valuePlan) ++ bodyPlan, remaining) := by
+  split at type <;> split at value <;> split at body <;> simp_all [binderPlanStep]
+
 /-- Root conversion uses either no annotation block, or the complete root block at variant0. -/
 def binderRootPlan (tree : BinderTreeData) (sharing : List Ixon.Expr) (root : F)
     (expr : Ixon.Expr) : Option (List Core.KLevel) := do

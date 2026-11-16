@@ -2736,7 +2736,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           trace_f2 tree (RepBinderTreeData.mono ext12 represented)
         obtain ⟨argPlan, argStep, argLevels⟩ :=
           trace_a2 tree (RepBinderTreeData.mono ext13 represented)
-        exact ⟨funcPlan ++ argPlan, by split at funcStep <;> split at argStep <;> simp_all [binderPlanStep],
+        exact ⟨funcPlan ++ argPlan, binderPlanStep_app funcStep argStep,
           .app (by simp) (HeapBinderLevels.mono (ext4.trans ext_fin) funcLevels)
             (HeapBinderLevels.mono ext_fin argLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
@@ -2809,7 +2809,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_lam domStep bodyStep,
           .lam (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2883,7 +2883,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_all domStep bodyStep,
           .forallE (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2973,7 +2973,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext15 represented)
         exact ⟨(typePlan ++ valuePlan) ++ bodyPlan,
-          by split at typeStep <;> split at valueStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_let typeStep valueStep bodyStep,
           .letE (by simp) (HeapBinderLevels.mono ((ext5.trans ext6).trans ext_fin) typeLevels)
             (HeapBinderLevels.mono (ext6.trans ext_fin) valueLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
