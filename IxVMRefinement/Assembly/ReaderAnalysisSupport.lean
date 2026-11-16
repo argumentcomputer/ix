@@ -123,11 +123,11 @@ private theorem mapM_mono_on {α β : Type} {f g : α → Option β} {Q : β →
 theorem rawRefs_of_refsIn {P : Nat → Prop} {raw : Ixon.Expr} (supported : RefsIn P raw) :
     Shape.RawRefs P raw := by
   induction raw with
-  | ref i us | nat i | str i => exact supported _ (by simp [exprRefIdxs])
+  | ref i us => exact supported _ (by simp [exprRefIdxs])
   | prj i field value ih =>
     exact ⟨supported _ (by simp [exprRefIdxs]),
       ih (fun j present => supported j (by simp [exprRefIdxs, present]))⟩
-  | app fn arg ihf iha | lam fn arg ihf iha | all fn arg ihf iha =>
+  | app function arg ihf iha | lam function arg ihf iha | all function arg ihf iha =>
     exact ⟨ihf (fun j present => supported j (by simp [exprRefIdxs, present])),
       iha (fun j present => supported j (by simp [exprRefIdxs, present]))⟩
   | letE nonDep mode type value body iht ihv ihb =>

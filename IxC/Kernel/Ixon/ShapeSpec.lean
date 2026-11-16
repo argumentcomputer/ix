@@ -5,7 +5,7 @@ import IxC.Kernel.Ixon.Shape
 namespace Ix.Kernel.Reader.Shape
 
 def RawRefs (P : Nat → Prop) : Ixon.Expr → Prop
-  | .ref i _ | .nat i | .str i => P i.toNat
+  | .ref i _ => P i.toNat
   | .prj i _ value => P i.toNat ∧ RawRefs P value
   | .app fn arg | .lam fn arg | .all fn arg => RawRefs P fn ∧ RawRefs P arg
   | .letE _ _ type value body => RawRefs P type ∧ RawRefs P value ∧ RawRefs P body
