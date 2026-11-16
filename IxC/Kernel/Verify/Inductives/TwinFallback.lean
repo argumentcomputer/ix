@@ -93,21 +93,22 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
         cases ci <;> simp_all
+      have hsuffix : @decide _ (blockRecSuffixDec block) = true := by
+        simp only [decide_eq_true_eq]
+        rw [nonrecs, recs]
+        rfl
       unfold checkModeled at h
-      split at h
-      next hsuffix =>
-        simp only [bind, Except.bind, pure, Except.pure] at h
-        rw [inductives, constructors] at h
-        simp only [nonrecs, recs, List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
-        have models := indRecs_models h
-        have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
-            | some (.defnInfo ..) => true | _ => false) = true := by
-          apply List.all_eq_true.mpr
-          intro ci hci
-          obtain ⟨cv, value, hint, hmodel⟩ := models ci hci
-          rw [hmodel]
-        simp only [present, Bool.not_true, Bool.and_false]
-      next hsuffix => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+      simp only [hsuffix, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
+      rw [inductives, constructors] at h
+      simp only [nonrecs, recs, List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
+      have models := indRecs_models h
+      have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
+          | some (.defnInfo ..) => true | _ => false) = true := by
+        apply List.all_eq_true.mpr
+        intro ci hci
+        obtain ⟨cv, value, hint, hmodel⟩ := models ci hci
+        rw [hmodel]
+      simp only [present, Bool.not_true, Bool.and_false]
     · have hfalse : block.all (fun | .recInfo .. => true | _ => false) = false :=
         Bool.eq_false_iff.mpr hall
       simp only [hfalse, Bool.and_false, Bool.false_and]
