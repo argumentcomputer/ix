@@ -21,6 +21,18 @@ private theorem singleton_frame {α β : Type} {relation : α → β → Prop}
     cases rest
     exact ⟨_, rfl, frame⟩
 
+private theorem forall₂_right_member {α β : Type} {relation : α → β → Prop}
+    {entries : List α} {rows : List β} (frames : List.Forall₂ relation entries rows)
+    {row : β} (member : row ∈ rows) : ∃ entry, entry ∈ entries ∧ relation entry row := by
+  induction frames with
+  | nil => cases member
+  | cons frame rest ih =>
+    rcases List.mem_cons.mp member with rfl | later
+    · exact ⟨_, List.mem_cons_self, frame⟩
+    · obtain ⟨entry, inside, related⟩ := ih later
+      exact ⟨entry, List.mem_cons_of_mem _ inside, related⟩
+
+
 abbrev NativeFormerRow := Ix.Kernel.ConstantVal .anon × Nat × Nat
 
 /-- The actual former row before lowering, including its original expression read. -/
@@ -32,7 +44,7 @@ def NativeFormerReaderFrame (cx : Ctx .anon) (owner : _root_.Address) (mr : Memb
   row.2.1 = entry.2.params.toNat ∧ row.2.2 = entry.2.indices.toNat
 
 /-- Successful bare reading retains former and constructor rows in the same actual block. -/
-theorem readInductiveBare_native_frames {cx : Ctx .anon} {owner : _root_.Address}
+theorem readInductiveBare_native_frames_with_params {cx : Ctx .anon} {owner : _root_.Address}
     {source : Ixon.Constant} {members : Array Ixon.MutConst} {result : Read .anon}
     (read : readInductiveBare cx owner source members = .ok result) :
     ∃ (shape : BlockShape) (block : BlockRead .anon),
@@ -49,7 +61,8 @@ theorem readInductiveBare_native_frames {cx : Ctx .anon} {owner : _root_.Address
           (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
         (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
           | some (.indc ind) => some (i, ind)
-          | _ => none)).toList) block.ctors.toList := by
+          | _ => none)).toList) block.ctors.toList ∧
+      (∀ row ∈ block.types.toList, row.2.1 = block.numParams) := by
   cases shapeRun : blockShapeOf cx.index owner members with
   | none =>
     simp only [readInductiveBare, shapeRun] at read
@@ -69,7 +82,7 @@ theorem readInductiveBare_native_frames {cx : Ctx .anon} {owner : _root_.Address
     · split at read
       · rcases ite_ok read with read | read
         · exact (fail_bind read).elim
-        · rcases ite_ok read with read | read
+        · rcases Ix.Cert.CtxAgree.ite_ok' read with ⟨paramsAgree, read⟩ | ⟨_, read⟩
           · obtain ⟨types, typeRun, read⟩ := except_bind_ok.mp read
             have frames : List.Forall₂ frame indcs.toList types.toList := by
               apply forIn_inv_array
@@ -128,10 +141,38 @@ theorem readInductiveBare_native_frames {cx : Ctx .anon} {owner : _root_.Address
                 · exact (fail_bind stepped).elim
               simpa [nativeCtorSlots] using innerFrames
             obtain ⟨recs, _, read⟩ := except_bind_ok.mp read
-            exact ⟨shape, _, rfl, read, frames, ctorFrames⟩
+            refine ⟨shape, _, rfl, read, frames, ctorFrames, ?_⟩
+            intro row inRows
+            obtain ⟨entry, inEntries, frameAt⟩ := forall₂_right_member frames inRows
+            have paramsEq : row.2.1 = entry.2.params.toNat := frameAt.2.2.2.1
+            have agree := paramsAgree
+            simp only [Array.all_eq_true, beq_iff_eq] at agree
+            exact paramsEq.trans (agree entry (by simpa using inEntries))
           · exact (fail_bind read).elim
       · exact (throw_ok read).elim
     · exact (fail_bind read).elim
+
+/-- Preserve the joint former and constructor frame interface. -/
+theorem readInductiveBare_native_frames {cx : Ctx .anon} {owner : _root_.Address}
+    {source : Ixon.Constant} {members : Array Ixon.MutConst} {result : Read .anon}
+    (read : readInductiveBare cx owner source members = .ok result) :
+    ∃ (shape : BlockShape) (block : BlockRead .anon),
+      blockShapeOf cx.index owner members = some shape ∧
+      lowerInductiveBare block = .ok result ∧
+      List.Forall₂
+        (NativeFormerReaderFrame cx owner (MemberReader.mk' cx source id
+          (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+        ((shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
+          | some (.indc ind) => some (i, ind)
+          | _ => none)).toList) block.types.toList ∧
+      List.Forall₂
+        (NativeCtorReaderCheckedFrame cx owner (MemberReader.mk' cx source id
+          (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+        (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
+          | some (.indc ind) => some (i, ind)
+          | _ => none)).toList) block.ctors.toList := by
+  obtain ⟨shape, block, shapeRead, lowered, formers, ctors, _⟩ := readInductiveBare_native_frames_with_params read
+  exact ⟨shape, block, shapeRead, lowered, formers, ctors⟩
 
 /-- Compatibility projection retaining the actual former rows. -/
 theorem readInductiveBare_former_frames {cx : Ctx .anon} {owner : _root_.Address}
@@ -261,6 +302,51 @@ theorem readInductive_one_native_frames {cx : Ctx .anon} {state : State .anon}
     simpa only [List.filterMap_cons, List.filterMap_nil, memberAt] using ctors
   obtain ⟨row, rowsEq, frame⟩ := singleton_frame formers'
   exact ⟨generated, bare, block, row, declarations, lowered, rowsEq, frame, ctors'⟩
+
+
+/-- The same actual singleton block also retains the reader's checked declaration-level
+parameter count, alongside both former and constructor frames. -/
+theorem readInductive_one_native_frames_with_params {cx : Ctx .anon} {state : State .anon}
+    {records : Array (_root_.Address × Ixon.Constant)}
+    (indexBuilt : cx.index = buildIndex cx.store records)
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {member : Nat} {ind : Ixon.Inductive} {result : Read .anon}
+    (stored : cx.store owner = some source) (kind : source.info = .muts members)
+    (memberAt : members[member]? = some (.indc ind))
+    (one : Ix.CompileCert.ReaderIndex.inductives members = #[(member, ind)])
+    (read : readInductive cx state owner source members = .ok result) :
+    ∃ (generated : List (Ix.Kernel.Declaration .anon)) (bare : Read .anon)
+      (block : BlockRead .anon) (row : NativeFormerRow),
+      result.decls.toList = generated ++ bare.decls.toList ∧
+      lowerInductiveBare block = .ok bare ∧ block.types.toList = [row] ∧
+      NativeFormerReaderFrame cx owner (MemberReader.mk' cx source id
+        (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none))
+        (member, ind) row ∧
+      List.Forall₂
+        (NativeCtorReaderCheckedFrame cx owner (MemberReader.mk' cx source id
+          (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+        (nativeCtorSlots [(member, ind)]) block.ctors.toList ∧
+      block.numParams = ind.params.toNat := by
+  obtain ⟨generated, bare, bareRead, declarations, _, _, _⟩ := readInductive_full_bare read
+  obtain ⟨shape, block, shapeRun, lowered, formers, ctors, parameters⟩ :=
+    readInductiveBare_native_frames_with_params bareRead
+  have order := native_reader_one_order indexBuilt stored kind one shapeRun
+  have formers' : List.Forall₂
+      (NativeFormerReaderFrame cx owner (MemberReader.mk' cx source id
+        (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+      [(member, ind)] block.types.toList := by
+    rw [order, Array.toList_filterMap] at formers
+    simpa only [List.filterMap_cons, List.filterMap_nil, memberAt] using formers
+  have ctors' : List.Forall₂
+      (NativeCtorReaderCheckedFrame cx owner (MemberReader.mk' cx source id
+        (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
+      (nativeCtorSlots [(member, ind)]) block.ctors.toList := by
+    rw [order, Array.toList_filterMap] at ctors
+    simpa only [List.filterMap_cons, List.filterMap_nil, memberAt] using ctors
+  obtain ⟨row, rowsEq, frame⟩ := singleton_frame formers'
+  have paramEq := parameters row (by rw [rowsEq]; exact List.mem_cons_self)
+  exact ⟨generated, bare, block, row, declarations, lowered, rowsEq, frame, ctors',
+    paramEq.symm.trans frame.2.2.2.1⟩
 
 
 end IxVM.Refinement.Assembly
