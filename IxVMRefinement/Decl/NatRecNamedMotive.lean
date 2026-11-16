@@ -47,12 +47,12 @@ theorem natRec_named_result {md : Mode} {env : Env md} {depth : Nat} {elim : Lev
   simp only [Expr.instantiate1, ↓reduceIte] at motiveReduced
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid motiveReduced rfl)
   rw [baseTypeEq] at baseReduced
-  simp only [Expr.instantiate1, ↓reduceIte] at baseReduced
+  simp only [Expr.instantiate1] at baseReduced
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid baseReduced rfl)
   rw [stepTypeEq] at stepReduced
-  simp only [Expr.instantiate1, ↓reduceIte] at stepReduced
+  simp only [Expr.instantiate1] at stepReduced
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid stepReduced rfl)
-  exact ⟨by simpa only [Expr.instantiate1, ↓reduceIte] using finalTypeEq, motiveType, motiveChecked⟩
+  exact ⟨by simpa [Expr.instantiate1] using finalTypeEq, motiveType, motiveChecked⟩
 
 /-- The first type check's own ensureSort run fixes the product returned by Nat.rec at zero,
 including named motives whose other branches return different types. -/
