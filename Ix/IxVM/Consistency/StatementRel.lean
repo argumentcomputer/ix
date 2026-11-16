@@ -13,9 +13,14 @@ changes.
 stream that the statement leaves existential. The conclusions here ask instead that every
 constant of the claimed environment be accounted for one by one, as what a single record
 declares (`Reads`), the record being bytes the run hashed. No record stream, order or
-declaration list appears. Two variants are stated; they share `Reads`.
+declaration list appears. Three forms are stated; they share `Reads`.
 
-* **Without an admission premise** (`ConsistentReadP`, `ConsistencySpecP`,
+* **Against a valid role table** (`Ix.IxVM.Consistency.TableValid`: `TableWitness`,
+  `TypingSpecOn`, `BindingSpecOn`, `binding_discharge`). The premise is semantic validity of
+  the table: an authentic store of records, an environment of their readings with a model,
+  and no run of any checker. The claimed environment extends that environment by what the
+  run's own records declare. A `binding` claim is to produce the premise.
+* **Without a premise on the table's constants** (`ConsistentReadP`, `ConsistencySpecP`,
   `CircuitConsistentP`). The premise on the role table is its admission as a table
   (`Ix.Kernel.Admission.admitBinding`: its hash, canonical decoding and well-formedness) and
   `LiteralSupportBound`, both properties of the table's bytes. Every constant of the claimed
@@ -24,6 +29,10 @@ declaration list appears. Two variants are stated; they share `Reads`.
   (`PinnedAs`). A role-bound constant is a record like any other. No run of the kernel's
   checker, installer or stream reader is in the premise or the conclusion; the kernel's
   library supplies the model (`Ix.Kernel.Model`), expression decoding and the pinned basis.
+  This form asks the run itself to validate every role its environment relies on. It holds
+  only of a circuit that does: one that validates a role when a native rule first uses it
+  leaves the `False` role, a stored string literal's support and a merely referenced
+  operation unvalidated, and this form is then false.
 * **Over an admission witness** (`ConsistentReadRel`, `ConsistencySpecRel`,
   `CircuitConsistentRel`). The premise holds a run of the kernel over the role table's
   closure (`ReaderAdmissionWitness`), and the statement is for every witness. The claimed
@@ -678,7 +687,7 @@ def BindingAt (c : Claim) (b : Binding) : Prop :=
 
 /-- A claimed constant at the key of a constant address is not a model-family constant, and
 its key is not derived. -/
-private theorem seed_claimed {t : Ix.Kernel.RoleTable} {a' : Address}
+theorem seed_claimed {t : Ix.Kernel.RoleTable} {a' : Address}
     {env : Ix.Kernel.Env .anon} {ci : Ix.Kernel.ConstantInfo .anon}
     (hfind : env.find? (keyOf t a') = some ci) :
     ci ∈ (claimedEnv env).consts ∧ ∀ k d, ci.name ≠ .aux k d := by
