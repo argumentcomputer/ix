@@ -217,10 +217,10 @@ theorem DefinitionsTyped.sumIndRunJ {J : Judgements .anon} {before after : Env .
     rcases storage with same | ⟨declared, _, _⟩
     · exact ⟨raw, by rw [same]; exact header⟩
     · exact ⟨p.cvT, declared⟩
-  have fresh : before.find? stored.name = none := by rw [storedCheck.name_eq]; exact storedCheck.fresh
-  have keyShape : stored.name.isProjFnShape = false := by rw [storedCheck.name_eq]; exact storedCheck.shape
-  have extension : EnvExt before ⟨.indInfo stored (capsOf (p.withSort level)) :: before.consts⟩ :=
-    envExt_cons_nonProj fresh (ne_projTableName_of_isProjFnShape_false keyShape)
+  have extension : EnvExt before ⟨.indInfo stored (capsOf (p.withSort level)) :: before.consts⟩ := by
+    obtain ⟨type, front, same⟩ := storedCheck
+    rw [same]
+    exact envExt_of_constantValRunJ front rfl
   intro name cv value hint found
   rw [Env.find?_cons] at found
   split at found
