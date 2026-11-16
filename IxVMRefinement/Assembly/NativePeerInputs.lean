@@ -65,7 +65,8 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
   ·
     intro addr ptr h h' calls a loaded good addressRep sameKey
     have addressEq : Core.ixAddr a = Core.iprjAddr (Core.ixAddr block) (ZMod.val i) :=
-      Decl.nat_keyOf_injective tableWf sameKey
+      Decl.nat_keyOf_injective (t := raw.t) tableWf
+        (a₁ := Core.ixAddr a) (a₂ := Core.iprjAddr (Core.ixAddr block) (ZMod.val i)) sameKey
     have formerAt : L1.CanonicalRecordAt raw.E (Core.ixAddr a) :=
       { entry := former.entry, value := former.value
         stored := (congrArg (fun address => raw.E.consts.get? address) addressEq).trans former.stored
