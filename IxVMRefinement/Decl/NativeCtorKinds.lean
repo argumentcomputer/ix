@@ -109,7 +109,7 @@ theorem native_ctor_outputs_classified_single_field {env : Ix.Kernel.Env .anon}
     refine ⟨by simp [kinds], fun slot inside _ => ?_⟩
     have specification := Classical.choose_spec (classified ⟨slot, inside⟩)
     have selected : kinds[slot] = Classical.choose (classified ⟨slot, inside⟩) := by simp [kinds]
-    simpa only [selected] using specification
+    simpa [selected] using specification
   exact ⟨kinds, classifyFixKinds_and_nativeFieldsOk allKinds⟩
 
 end IxVM.Refinement.Decl
