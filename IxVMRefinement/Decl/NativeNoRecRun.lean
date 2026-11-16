@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.NativeCommon
+import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Decl.NativeRunMap
 
 /-! # Semantic no-recursor runs from checked native stages
