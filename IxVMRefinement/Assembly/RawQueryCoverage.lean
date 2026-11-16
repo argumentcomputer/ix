@@ -63,6 +63,15 @@ theorem walked_envDecoded {calls : List (Call F)} {table : Ix.Kernel.RoleTable}
   obtain ⟨_, value, cached, _, exactRead⟩ := exactRecords address entry stored
   exact ⟨value, cached, exactRead⟩
 
+/-- Every actual trace record is retained by the complete admitted metadata overlay. -/
+theorem admittedCore_trace_recordAt {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {trace : Ixon.Env} {address : _root_.Address} {value : Ixon.Constant}
+    (record : Ix.Cert.recordAt trace address = some value) :
+    Ix.Cert.recordAt (admittedCore witness trace (fun _ => True)) address = some value := by
+  change Ix.Cert.recordAt (subEnv trace _ _) address = some value
+  exact recordAt_subEnv_of_keep trace _ _ (.inl (.inr trivial)) record
+
 /-- Keeping the actual trace in the admitted overlay preserves complete raw hash coverage. -/
 theorem admitted_canonicalHashCoverage {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
@@ -72,8 +81,7 @@ theorem admitted_canonicalHashCoverage {V : IxVM.Refinement.View} {binding : Ix.
   apply canonicalHashCoverage_frame (walked_canonicalHashCoverage walked)
     (admittedCore_decoded witness (fun _ => True) (walked_envDecoded walked))
   intro address value record
-  change Ix.Cert.recordAt (subEnv trace _ _) address = some value
-  exact recordAt_subEnv_of_keep trace _ _ (.inl (.inr trivial)) record
+  exact admittedCore_trace_recordAt witness record
 
 /-- Construct raw query facts from the actual root observation, claim-phase witness and
 admitted reader data. Only the public collision alternative and existing memory bound are used. -/
