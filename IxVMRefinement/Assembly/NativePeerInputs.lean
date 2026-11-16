@@ -25,7 +25,7 @@ private def canonicalRecordAt_reindex {env : Ixon.Env} {a b : _root_.Address}
   decoded := source.decoded
 
 /-- A successful direct former read has the exact header of its canonical member. -/
-theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address} {i : F}
+theorem native_former_header_exact {base : Core.Ctx} {block : Bytes.Address} {i : F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -33,10 +33,10 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
     {bp ptr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : Core.Good base calls) (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
     (loaded : ObsFn Core.W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' calls) :
-    ∃ (ty unsafeFlag parentPtr : SourceValue F) (parent : Bytes.Address),
+    ∃ (ty parentPtr : SourceValue F) (parent : Bytes.Address),
       loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
         [.field (ind.lvls.toNat : F), ty, .field (ind.params.toNat : F),
-          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), unsafeFlag, parentPtr, .field i]) ∧
+          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe, parentPtr, .field i]) ∧
       Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
   obtain ⟨_, _, bytes, src, ms, member, _, value, hashed, address, decoded, _,
     shape, atMember, _, valueAt, raw⟩ := L1.get_ci_iprj_spec good.2 blockRep loaded
@@ -52,8 +52,26 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
   injection memberEq with memberEq
   subst member
   obtain ⟨_, _, _, _, _, ty, parentPtr, parent, parentEq, parentRep, valueShape, _⟩ := raw
-  refine ⟨ty, L1.repBoolField ind.isUnsafe, parentPtr, parent, ?_, parentRep, parentEq⟩
+  refine ⟨ty, parentPtr, parent, ?_, parentRep, parentEq⟩
   simpa only [ZMod.natCast_zmod_val] using valueAt.trans (congrArg Except.ok valueShape)
+
+/-- Compatibility with an existential safety field. -/
+theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    {bp ptr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (good : Core.Good base calls) (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
+    (loaded : ObsFn Core.W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' calls) :
+    ∃ (ty unsafeFlag parentPtr : SourceValue F) (parent : Bytes.Address),
+      loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+        [.field (ind.lvls.toNat : F), ty, .field (ind.params.toNat : F),
+          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), unsafeFlag, parentPtr, .field i]) ∧
+      Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
+  obtain ⟨ty, parentPtr, parent, loadedValue, parentRep, parentEq⟩ :=
+    native_former_header_exact source blockShape memberAt good blockRep loaded
+  exact ⟨ty, L1.repBoolField ind.isUnsafe, parentPtr, parent, loadedValue, parentRep, parentEq⟩
 
 /-- The actual one-family block and canonical former projection supply raw peer facts at
 its real member index. Projection identities use the successful read's decoder guard. -/
