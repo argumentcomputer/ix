@@ -4302,7 +4302,7 @@ theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
     hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
   exact ⟨annotated, annotates, termRep⟩
 
-theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -4357,7 +4357,7 @@ theorem RawConvExpr.toTmCExact {κ : _root_.Address → Core.KKey}
   exact raw.toTmExact hperm hps_lt rfl (by simp) hkeyAt hself hblob
     (Nat.le_refl _) (Nat.min_le_right _ _) hread hlbb hdef
 
-theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmC {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
