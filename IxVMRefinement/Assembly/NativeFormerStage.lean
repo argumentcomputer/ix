@@ -102,7 +102,7 @@ theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.
     (notBasis : Ix.Kernel.reservedBasisNames.contains
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false) :
     ∃ level,
-      input.annotated.type = .sort level ∧ rawType = .sort level ∧
+      input.annotated.type = .sort level ∧
       Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ base.env
         ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩
         input.annotated := by
@@ -112,11 +112,9 @@ theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.
     have zeroStrip : some ([], input.annotated.type) = some (binders, .sort level) := by
       simpa only [noParams, noIndices, Nat.zero_add, Ix.Kernel.Expr.stripPis] using telescope
     exact (Prod.mk.inj (Option.some.inj zeroStrip)).2
-  have rawEq : rawType = .sort level := by
-    have annotation := input.stored.2.2
-    rw [typeEq] at annotation
-    cases annotation
-    rfl
+  have levelsDefined := Core.Scope.validatedAnnotation_allLevelParamsDefined input.levelsBound
+    (input.exactType.toTm.mono input.prelude.initialExtended) input.stored.2.2 input.levelsDefined
+    input.prelude.scopeRun
   have valueEq : input.annotated =
       ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat,
         input.annotated.type⟩ := by
@@ -126,12 +124,11 @@ theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.
     cases named
     cases levels
     rfl
-  refine ⟨level, typeEq, rawEq, input.annotated.type,
+  refine ⟨level, typeEq, input.annotated.type,
     ⟨Option.isNone_iff_eq_none.mpr fresh, notBasis, Decl.nat_keyOf_isProjFnShape_false base.t _,
       Decl.levelParam_nodup_of_nodup List.nodup_range, input.varsBounded, input.noFvars,
       Decl.annot_of_annotates input.stored.2.2 input.noFvars input.varsBounded 0, ?_, ?_, ?_⟩, valueEq⟩
-  · rw [typeEq, ← rawEq]
-    exact input.levelsDefined
+  · exact levelsDefined
   · rw [typeEq]
     rfl
   · rw [typeEq]
@@ -160,7 +157,7 @@ theorem NativeFormerRunInput.emptyNoRecRun_noBinders {base : Core.Ctx} {block : 
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false) :
     Ix.Kernel.Semantics.DeclNativeNoRecRunJ Ix.Kernel.Model.rulesJ base.env parts
       ⟨.indInfo input.annotated {} :: base.env.consts⟩ := by
-  obtain ⟨level, typeEq, _, checked⟩ := input.checked_noBinders native shape noParams noIndices fresh notBasis
+  obtain ⟨level, typeEq, checked⟩ := input.checked_noBinders native shape noParams noIndices fresh notBasis
   have checked' : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ
       base.env parts.cvT input.annotated := by simpa only [former] using checked
   apply Decl.nativeNoRecRunJ_empty_of_checked checked'
