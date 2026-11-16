@@ -44,7 +44,7 @@ theorem DefinitionsTyped.polymorphic_alias_zero {V : Type u} [SetTheory V] {env 
   obtain ⟨_, _, _, _, _, bodyTyped, _, _, _⟩ := definitions aliasName aliasCV _ hint aliasFound
   obtain ⟨bodyCI, bodyFound, _, bodyArity, _⟩ := Rules.Infer.const_inv bodyTyped
   obtain rfl := Option.some.inj (bodyFound.symm.trans targetFound)
-  have scoped : targetSort.allParamsDefined targetCV.levelParams = true := by
+  have covered : targetSort.allParamsDefined targetCV.levelParams = true := by
     have bounds := (model.base2.wf _ (List.mem_of_find?_eq_some targetFound)).2.1
     change targetCV.type.allLevelParamsDefined targetCV.levelParams = true at bounds
     rw [targetHeader] at bounds
@@ -55,7 +55,7 @@ theorem DefinitionsTyped.polymorphic_alias_zero {V : Type u} [SetTheory V] {env 
     aliasHeader targetInstance).2
   have instantiated := congrArg (Level.substPW aliasCV.levelParams useLevels) original
   rw [← Level.zeronessOf_subst, ← Level.zeronessOf_subst] at instantiated
-  rw [Level.subst_subst bodyArity scoped] at instantiated
+  rw [Level.subst_subst bodyArity covered] at instantiated
   exact instantiated
 
 end IxVM.Refinement.Decl
