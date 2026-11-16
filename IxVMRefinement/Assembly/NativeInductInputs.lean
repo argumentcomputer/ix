@@ -81,17 +81,57 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
     (L1.projConstant_wireWF_iPrj slot.toUInt64 block)
   exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), fullProof⟩
 
+/-- Reindex the exact projection evidence at the field encoding of its natural member slot. -/
+private theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Address}
+    {slot : Nat} {index : UInt64} {i : F}
+    (projection : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) slot))
+    (shape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    (indexToSlot : index.toNat = slot) (indexValue : ZMod.val i = slot) :
+    ∃ source : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)),
+      source.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩ := by
+  cases indexValue
+  have indexRoundtrip : index.toNat.toUInt64 = index :=
+    UInt64.toNat_inj.mp (UInt64.toNat_ofNat_of_lt index.toNat_lt)
+  have fieldUInt : (ZMod.val i).toUInt64 = index :=
+    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
+  have infoEq := congrArg (fun member => Ixon.ConstantInfo.iPrj ⟨member, Core.ixAddr block⟩) fieldUInt
+  exact ⟨projection, shape.trans infoEq.symm⟩
+
 /-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
 structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     (members : Array Ixon.MutConst) (ind : Ixon.Inductive) (rawType : Core.KExpr)
     (calls : List (Call F)) where
+  projectionSource : ∃ projection : L1.CanonicalRecordAt base.E
+    (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)),
+    projection.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩
+  blockShape : source.value.info = .muts members
+  memberAt : members.toList[ZMod.val i]? = some (.indc ind)
+  levelsBound : ind.lvls.toNat < 4294967296
+  paramsBound : ind.params.toNat < 72057594037927936
+  indicesBound : ind.indices.toNat < 72057594037927936
+  ctorCountBound : ind.ctors.size < 549755813888
   limit : Nat
   rc : SourceValue F
   typePtr : SourceValue F
   blockPtr : SourceValue F
   heap : Heap F
   annotated : Ix.Kernel.ConstantVal .anon
+  addressPtr : SourceValue F
+  checkResult : SourceValue F
+  checkAfter : Heap F
+  checkCalls : List (Call F)
+  checkedRun : ObsFn Core.W "KernelCheck::check_const"
+    [rc, .construct Core.kciEnum "Induct"
+      [.field (ind.lvls.toNat : F), typePtr, .field (ind.params.toNat : F),
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+        blockPtr, .field i], addressPtr] heap checkResult checkAfter checkCalls
+  checkMember : (⟨"KernelCheck::check_const",
+    [rc, .construct Core.kciEnum "Induct"
+      [.field (ind.lvls.toNat : F), typePtr, .field (ind.params.toNat : F),
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+        blockPtr, .field i], addressPtr], heap⟩ : Call F) ∈ calls
+  checkSubset : ∀ call ∈ checkCalls, call ∈ calls
   prelude : Decl.NativePreludeCalls rc (.field (ind.lvls.toNat : F)) typePtr blockPtr heap calls
   roles : Core.RCRep base.t (some limit) heap rc
   blockRep : Bytes.RepAddressRef Core.addrTy heap block blockPtr
@@ -136,7 +176,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
       cx.blob address = some bytes) :
     Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
   obtain ⟨limit, beforeLoad, checkHeap, afterCheck, rc, addr, ptr, value, result, loadCalls, checkCalls,
-    _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, _, checkSubset⟩ := checked
+    _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, checkedMember, checkSubset⟩ := checked
   obtain ⟨address, addressRep, addressEq⟩ := addressRep
   let projectionAt := projection.reindex addressEq
   have projectionAtShape : projectionAt.value.info = .iPrj ⟨index, Core.ixAddr block⟩ := projectionShape
@@ -153,6 +193,9 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
     simpa only [Array.getElem?_toList] using memberAt
   have directSubset : ∀ call ∈ inner, call ∈ calls :=
     fun call member => loadSubset call (innerSubset call member)
+  obtain ⟨levelsBound, paramsBound, indicesBound, ctorCountBound⟩ :=
+    L1.get_ci_iprj_header_bounds (base := base) source blockShape memberAtField
+      (good.sub directSubset) parentRep directLoad
   obtain ⟨typePtr, blockPtr, actualBlock, payload, blockRep, blockEq⟩ :=
     native_former_header_exact (base := base) source blockShape memberAtField
       (good.sub directSubset) parentRep directLoad
@@ -172,8 +215,13 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   have sameValue := Except.ok.inj (exactAt.symm.trans payload)
   subst exactValue
   exact ⟨{
+    projectionSource := canonicalProjection_at_field projection projectionShape indexToSlot indexValue
+    blockShape := blockShape, memberAt := memberAtField, levelsBound := levelsBound
+    paramsBound := paramsBound, indicesBound := indicesBound, ctorCountBound := ctorCountBound
     limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
-    annotated := annotated, prelude := prelude, roles := roles.toRCRep, blockRep := blockRep
+    annotated := annotated, addressPtr := addr, checkResult := result, checkAfter := afterCheck
+    checkCalls := checkCalls, checkedRun := checkedRun, checkMember := checkedMember, checkSubset := checkSubset
+    prelude := prelude, roles := roles.toRCRep, blockRep := blockRep
     stored := stored, represented := Decl.CIRepExact.induct_valRep exactInfo
     varsBounded := varsBounded, levelsDefined := levelsDefined, noFvars := noFvars
     tree := tree, plan := plan, built := built, planned := planned, image := image }⟩
