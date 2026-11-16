@@ -48,25 +48,28 @@ private theorem forall_not_proof {md : Mode} {env : Env md} {depth : Nat}
 
 /-- Product conversion retains an actual opened-body derivation at one of its original domains.
 No arbitrary conversion transitivity or free-variable type replacement is used. -/
-theorem forall_conversion_components {md : Mode} {env : Env md} {depth : Nat}
-    {leftDomain leftBody rightDomain rightBody : Expr md} {leftMeta rightMeta : BinderMeta}
-    (converted : DefEq env depth (.forallE leftDomain leftBody leftMeta)
-      (.forallE rightDomain rightBody rightMeta)) :
+private theorem forall_conversion_components_aux {md : Mode} {env : Env md} {depth : Nat}
+    {left right : Expr md} (converted : DefEq env depth left right) :
+    ∀ {leftDomain leftBody rightDomain rightBody : Expr md} {leftMeta rightMeta : BinderMeta},
+    left = .forallE leftDomain leftBody leftMeta → right = .forallE rightDomain rightBody rightMeta →
     DefEq env depth leftDomain rightDomain ∧ leftMeta.pw = rightMeta.pw ∧
       (DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth leftDomain))
           (rightBody.instantiate1 (.fvar depth leftDomain)) ∨
         DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth rightDomain))
           (rightBody.instantiate1 (.fvar depth rightDomain))) := by
+  intro leftDomain leftBody rightDomain rightBody leftMeta rightMeta leftEq rightEq
+  subst left
+  subst right
   cases converted with
   | refl => exact ⟨.refl, rfl, .inl .refl⟩
   | symm reversed =>
-    obtain ⟨domain, metadata, leftOpened | rightOpened⟩ := forall_conversion_components reversed
+    obtain ⟨domain, metadata, leftOpened | rightOpened⟩ := forall_conversion_components_aux reversed rfl rfl
     · exact ⟨.symm domain, metadata.symm, .inr (.symm leftOpened)⟩
     · exact ⟨.symm domain, metadata.symm, .inl (.symm rightOpened)⟩
   | redL reduced further =>
     have same := Red.rigid reduced rfl
     cases same
-    exact forall_conversion_components further
+    exact forall_conversion_components_aux further rfl rfl
   | natOffset _ _ offset _ _ => cases offset
   | forallE domain body metadata => exact ⟨domain, metadata, .inr body⟩
   | proofFast first _ =>
@@ -84,5 +87,18 @@ theorem forall_conversion_components {md : Mode} {env : Env md} {depth : Nat}
     exact (forall_type_not_const typed reduced head).elim
   | structEtaTy head _ _ _ _ _ _ _ _ _ _ _ _ _ => cases head
 termination_by structural converted
+
+
+/-- Product conversion retains its checked domain and one actual opened-body comparison. -/
+theorem forall_conversion_components {md : Mode} {env : Env md} {depth : Nat}
+    {leftDomain leftBody rightDomain rightBody : Expr md} {leftMeta rightMeta : BinderMeta}
+    (converted : DefEq env depth (.forallE leftDomain leftBody leftMeta)
+      (.forallE rightDomain rightBody rightMeta)) :
+    DefEq env depth leftDomain rightDomain ∧ leftMeta.pw = rightMeta.pw ∧
+      (DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth leftDomain))
+          (rightBody.instantiate1 (.fvar depth leftDomain)) ∨
+        DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth rightDomain))
+          (rightBody.instantiate1 (.fvar depth rightDomain))) :=
+  forall_conversion_components_aux converted rfl rfl
 
 end IxVM.Refinement.Decl
