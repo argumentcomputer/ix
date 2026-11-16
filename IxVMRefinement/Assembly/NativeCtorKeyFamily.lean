@@ -101,6 +101,6 @@ theorem native_ctor_member_keys {base : Core.Ctx} {cx : Ix.Kernel.Reader.Ctx .an
       .ok (base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) j)) := by
   exact native_ctor_member_keys_of_local_bound context authentic tableChecked transport decoded source
     parentStored blockShape memberAt frames countBound good blockRep subset loop
-    (fun j _ role bound => boundStored role _ bound)
+    (fun j _ role bound => boundStored role (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) j) bound)
 
 end IxVM.Refinement.Assembly
