@@ -84,7 +84,7 @@ theorem NativeFormerRunInput.constructorStage (hLevels : IxVM.Consistency.Levels
       [input.rc, input.typePtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
         .field (ctors.length : F), .field (ind.lvls.toNat : F), input.blockPtr, .field i,
         shape.sortLevel, .field 0, .field 0] shape.ctorBefore shape.result shape.after shape.ctorCalls := by
-    simpa only [countEq, safe, L1.repBoolField] using shape.ctorRun
+    simpa [countEq, safe, L1.repBoolField] using shape.ctorRun
   have extended := native.initialToShape.trans shape.initial_to_ctors
   have blockRep := Bytes.repAddressRef_heapMono₂ Core.addrTy extended input.blockRep
   obtain ⟨projection, projectionShape⟩ := input.projectionSource
@@ -131,7 +131,8 @@ theorem NativeFormerRunInput.constructorStage (hLevels : IxVM.Consistency.Levels
     input.paramsBound input.indicesBound countBound fieldBounds (fun _ => rfl)
     family levels varsBounded closed freshStage ctorsNotBasis ctorNameShape noProjectionStage
     stageFacts.store stageFacts records peer' shape.ctorSubset (stageGood.sub shape.ctorSubset) rawCovered
-    (input.roles.mono extended) (input.exactType.toTm.mono extended) blockRep sortRep loop
+    (input.roles.mono extended) (input.exactType.toTm.mono extended) blockRep sortRep
+    (by simpa only [List.length_range] using loop)
   refine ⟨sort, sortRep, sortEq, runs, fun ctorLoads => ?_⟩
   obtain ⟨sortss, length, outputs⟩ := constructorChecks ctorLoads
   exact ⟨sortss, length, outputs,
