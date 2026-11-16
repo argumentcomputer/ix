@@ -16,6 +16,14 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
 
+private def canonicalRecordAt_reindex {env : Ixon.Env} {a b : _root_.Address}
+    (source : L1.CanonicalRecordAt env a) (same : b = a) : L1.CanonicalRecordAt env b where
+  entry := source.entry
+  value := source.value
+  stored := (congrArg (fun address => env.consts.get? address) same).trans source.stored
+  cached := source.cached
+  decoded := source.decoded
+
 /-- A successful direct former read has the exact header of its canonical member. -/
 theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address} {i : F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
@@ -67,10 +75,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
     have addressEq : Core.ixAddr a = Core.iprjAddr (Core.ixAddr block) (ZMod.val i) :=
       Decl.nat_keyOf_injective (t := raw.t) tableWf
         (a₁ := Core.ixAddr a) (a₂ := Core.iprjAddr (Core.ixAddr block) (ZMod.val i)) sameKey
-    have formerAt : L1.CanonicalRecordAt raw.E (Core.ixAddr a) :=
-      { entry := former.entry, value := former.value
-        stored := (congrArg (fun address => raw.E.consts.get? address) addressEq).trans former.stored
-        cached := former.cached, decoded := former.decoded }
+    let formerAt := canonicalRecordAt_reindex (b := Core.ixAddr a) former addressEq
     have projection : formerAt.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩ := by
       change former.value.info = _
       exact formerShape
