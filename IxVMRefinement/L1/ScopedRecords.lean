@@ -124,7 +124,7 @@ theorem get_ci_iPrj_subcall {base : Ctx} {address : Bytes.Address}
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value middle projection.idx) indexRun
     subst indexField afterIndex
     obtain ⟨parent, parentAddress, represented⟩ := parentRep
-    exact ⟨parent, blockArg, middle, inner, parentAddress, indexBound, represented, formerRun,
+    exact ⟨parent, blockArg, middle, inner, parentAddress.symm, indexBound, represented, formerRun,
       by rw [allCalls]; intro call member; simp [member], by rw [allCalls]; simp⟩
 
 /-- One actual raw record invocation, with only its decoded-record coverage. -/
