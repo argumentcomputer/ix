@@ -532,6 +532,107 @@ theorem ObsFn.strong_induction
           ih n' args' b' v' a' cs' (by omega) ev')
   exact fun n args b v a cs ev => key _ n args b v a cs (Nat.le_refl _) ev
 
+/-! ## Recovering the observed subcalls -/
+
+/-- Every recorded call retains a successful observed invocation, with its own child calls
+contained in the enclosing trace. -/
+def CallsObserved (world : World F) (calls : List (Call F)) : Prop :=
+  ∀ call ∈ calls, ∃ result after children,
+    ObsFn world call.name call.args call.heap result after children ∧
+    ∀ child ∈ children, child ∈ calls
+
+theorem CallsObserved.append {left right : List (Call F)}
+    (hl : CallsObserved world left) (hr : CallsObserved world right) :
+    CallsObserved world (left ++ right) := by
+  intro call member
+  rcases List.mem_append.mp member with member | member
+  · obtain ⟨result, after, children, observed, covered⟩ := hl call member
+    exact ⟨result, after, children, observed,
+      fun child hc => List.mem_append_left _ (covered child hc)⟩
+  · obtain ⟨result, after, children, observed, covered⟩ := hr call member
+    exact ⟨result, after, children, observed,
+      fun child hc => List.mem_append_right _ (covered child hc)⟩
+
+theorem ObsFn.calls_observed {name : String} {args : List (SourceValue F)}
+    (observed : ObsFn world name args before result after calls) : CallsObserved world calls := by
+  induction observed using ObsFn.rec
+    (motive_1 := fun _ _ _ _ _ _ cs _ => CallsObserved world cs)
+    (motive_2 := fun _ _ _ _ _ _ cs _ => CallsObserved world cs)
+    (motive_4 := fun _ _ _ _ _ _ _ cs _ => CallsObserved world cs)
+    (motive_5 := fun _ _ _ _ _ _ _ cs _ => CallsObserved world cs) with
+  | literal | var | nil => intro call member; cases member
+  | block _ ih
+  | blockExit _ ih
+  | global _ _ _ ih
+  | tuple _ ih
+  | array _ ih
+  | «repeat» _ ih
+  | index _ _ ih
+  | slice _ _ ih
+  | builtin _ _ ih
+  | update _ _ ih
+  | record _ ih
+  | member _ _ ih
+  | construct _ ih
+  | constructAs _ ih
+  | project _ _ ih
+  | load _ _ ih
+  | hint _ _ ih
+  | neg _ _ ih
+  | intro _ _ ih
+  | returned _ _ ih
+  | exit _ ih
+  | exitPayload _ ih
+  | fromBlock _ _ ih
+  | fromGlobal _ _ _ ih
+  | fromTuple _ ih
+  | fromArray _ ih
+  | fromRepeat _ ih
+  | fromIndex _ ih
+  | fromSlice _ ih
+  | fromBuiltin _ ih
+  | fromUpdate _ ih
+  | fromRecord _ ih
+  | fromMember _ ih
+  | fromConstruct _ ih
+  | fromConstructAs _ ih
+  | fromProject _ ih
+  | fromLetValue _ ih
+  | fromStore _ ih
+  | fromLoad _ ih
+  | fromHint _ ih
+  | fromNeg _ ih
+  | binaryLeft _ ih
+  | fromCall _ ih
+  | fromMatchValue _ ih
+  | head _ ih
+  | store _ ih => exact ih
+  | letValue _ _ _ ih₁ ih₂
+  | binary _ _ _ ih₁ ih₂
+  | matchValue _ _ _ ih₁ ih₂
+  | cons _ _ ih₁ ih₂
+  | letBody _ _ _ ih₁ ih₂
+  | binaryRight _ _ ih₁ ih₂
+  | matchBody _ _ _ ih₁ ih₂
+  | tail _ _ ih₁ ih₂ => exact ih₁.append ih₂
+  | call _ callee ih₁ ih₂ =>
+    apply ih₁.append
+    intro call member
+    rcases List.mem_cons.mp member with rfl | member
+    · exact ⟨_, _, _, callee, fun child hc => List.mem_cons_of_mem _ hc⟩
+    · obtain ⟨result, after, children, observed, covered⟩ := ih₂ call member
+      exact ⟨result, after, children, observed,
+        fun child hc => List.mem_cons_of_mem _ (covered child hc)⟩
+
+/-- Recover an actual sub-observation at the exact function, arguments, and input heap of a
+recorded call. Its child-call coverage lets a caller restrict weak trace goodness. -/
+theorem ObsFn.call_observed {name : String} {args : List (SourceValue F)}
+    (observed : ObsFn world name args before result after calls) {call : Call F}
+    (member : call ∈ calls) :
+    ∃ value heap children, ObsFn world call.name call.args call.heap value heap children ∧
+      ∀ child ∈ children, child ∈ calls :=
+  observed.calls_observed call member
+
 /-! ## The heap only grows -/
 
 theorem ObsExpr.heap_extends {expr : Expr F}
