@@ -52,6 +52,7 @@ theorem fallback_nonself_prelude {table : RoleTable} {prelude : Prelude .anon}
     have evEq : prelude.evidence = evidence := Except.ok.inj (evRecords.symm.trans evRead)
     rw [evEq] at inEvidence
     obtain ⟨definition, info⟩ := definitions (a, c) inEvidence
+    dsimp only at info
     exact (nonself (by simp only [Ix.Cert.ownerOf, info])).elim
 
 /-- A resolving fallback projection is already a selected admission row. -/
