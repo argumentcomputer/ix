@@ -88,7 +88,9 @@ theorem native_former_reload_staged {base : Core.Ctx} {block : Bytes.Address} {i
   have represented := native_former_reload (base := base) source blockShape memberAt stored built planned image
     read varsBounded levelsDefined caps loaded goodLoad blockRep keyed selfKeyed blobReads
   refine ⟨.indInfo cv caps, ?_, represented.toCIPtrRep⟩
-  rw [Ix.Kernel.Env.find?_cons, if_pos stored.1]
+  rw [Ix.Kernel.Env.find?_cons]
+  apply ite_eq_left
+  exact stored.1
 
 /-- The actual repeated former reading supplies the semantic load result in its installed stage. -/
 theorem native_former_getCI_reload_staged {base : Core.Ctx} {block address : Bytes.Address}
@@ -139,6 +141,8 @@ theorem native_former_getCI_reload_staged {base : Core.Ctx} {block address : Byt
     congrArg base.κ ((congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue).trans atProjection.symm)
   have nameEq : cv.name = base.κ (Core.ixAddr address) := stored.1.trans keyEq
   refine ⟨.indInfo cv caps, ?_, represented.toCIPtrRep⟩
-  rw [Ix.Kernel.Env.find?_cons, if_pos nameEq]
+  rw [Ix.Kernel.Env.find?_cons]
+  apply ite_eq_left
+  exact nameEq
 
 end IxVM.Refinement.Assembly
