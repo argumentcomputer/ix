@@ -53,7 +53,7 @@ theorem nat_successor_motive_sort_levels {V : Type u} [SetTheory V] {md : Mode} 
   have openedContext := CtxOk.open bodyContext natContext (natRead depth) natGraded
   have expressionContext : CtxOk model.base2 φ (depth + 2) (.sort 0 :: natReading :: tailContext)
       (.app (natSortMotive sortLevel) (.app (.const natSuccName []) (.fvar depth (.const natName [])))) := by
-    simpa only [beforeOpen, natSortMotive, Expr.instantiate1] using
+    simpa only [beforeOpen, natSortMotive, Expr.instantiate1, ↓reduceIte] using
       (CtxOk.weakenTop (Ba := .sort 0) openedContext)
   have openedFrame := Frame.open_body (d := depth) (bd := beforeOpen) (ty' := .const natName [])
     (Frame.of_not_hasFvar rfl rfl) (Expr.WScoped.of_not_hasFvar rfl) (by rfl)
@@ -62,7 +62,7 @@ theorem nat_successor_motive_sort_levels {V : Type u} [SetTheory V] {md : Mode} 
       (.app (natSortMotive sortLevel) (.app (.const natSuccName []) (.fvar depth (.const natName [])))) := by
     have lifted : Frame (depth + 2) (beforeOpen.instantiate1 (.fvar depth (.const natName []))) :=
       ⟨Expr.WScoped.mono (by omega) openedFrame.1, openedFrame.2⟩
-    simpa only [beforeOpen, natSortMotive, Expr.instantiate1] using lifted
+    simpa only [beforeOpen, natSortMotive, Expr.instantiate1, ↓reduceIte] using lifted
   have tailSatisfied : Sat V tailContext tailValues := by
     intro i entry atIndex
     obtain ⟨_, rfl⟩ := List.mem_replicate.mp (List.mem_of_getElem? atIndex)
