@@ -53,7 +53,7 @@ theorem checked_named_natRec_domain_metadata_rules {V : Type u} [SetTheory V] {e
     checked_type_domain_checksJ judgeInv_rulesJ header opened slot domainVar atSlot
   refine ⟨inferred, resultSort, typed, sorted, ?_⟩
   exact named_natRec_zero_product_metadata_rules model zeroFound recFound motiveFound motiveHeader
-    (by simpa only [domainShape] using typed) sorted
+    (by simpa only [rulesJ, domainShape] using typed) sorted
 
 /-- The actual constructor normalization retains one rebuilt witness and derives each
 original/final domain's checks. The named-motive and final-product data use these same checks;
