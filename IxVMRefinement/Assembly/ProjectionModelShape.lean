@@ -50,7 +50,9 @@ theorem model_alias_former_no_projection {md : Mode} {env : Env md} (model : Mod
   obtain ⟨entry, binders, _, telescope⟩ :=
     model_projection_former_telescope model former beyondPair denoted
   rw [typeAlias] at telescope
-  cases entry.numParams <;> simp [Expr.stripPis] at telescope
+  cases count : entry.numParams with
+  | zero => rw [count] at telescope; cases telescope
+  | succ n => rw [count] at telescope; cases telescope
 
 /-- A model reads a lambda body at some input whenever a stored constant inhabits its domain. -/
 theorem model_lam_body_denotes {md : Mode} {env : Env md} (model : Model V env)
