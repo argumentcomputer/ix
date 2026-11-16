@@ -19,21 +19,25 @@ universe u
 def natSortMotive {md : Mode} (sortLevel : Level) : Expr md :=
   .lam (.const natName []) (.sort sortLevel) default
 
+/-- The constant universe motive has its checked product type at every depth. -/
+theorem natSortMotive_typed {md : Mode} {env : Env md} {depth : Nat} {sortLevel : Level}
+    (natFound : env.find? natName = some natA) :
+    Rules.Infer env .full depth (natSortMotive sortLevel)
+      (.forallE (.const natName []) (.sort (.succ sortLevel)) default) := by
+  have natTyped : Rules.Infer env .full depth (.const natName []) (.sort (.succ .zero)) :=
+    Rules.Infer.const natFound rfl rfl
+  refine Rules.Infer.lam (fun _ => natTyped) (fun _ => .refl) .sort ?_ (fun _ => .sort) (fun _ => .refl) ?_
+  · intro pw impossible
+    cases impossible
+  · intro _
+    rfl
+
 private theorem nat_motive_zero_typed {md : Mode} {env : Env md} {depth : Nat} {sortLevel : Level}
     (natFound : env.find? natName = some natA) (zeroFound : env.find? natZeroName = some natZeroA) :
     Rules.Infer env .full depth (.app (natSortMotive sortLevel) (.const natZeroName [])) (.sort (.succ sortLevel)) := by
-  have natTyped : Rules.Infer env .full depth (.const natName []) (.sort (.succ .zero)) :=
-    Rules.Infer.const natFound rfl rfl
   have zeroTyped : Rules.Infer env .full depth (.const natZeroName []) (.const natName []) :=
     Rules.Infer.const zeroFound rfl rfl
-  have motiveTyped : Rules.Infer env .full depth (natSortMotive sortLevel)
-      (.forallE (.const natName []) (.sort (.succ sortLevel)) default) := by
-    refine Rules.Infer.lam (fun _ => natTyped) (fun _ => .refl) .sort ?_ (fun _ => .sort) (fun _ => .refl) ?_
-    · intro pw impossible
-      cases impossible
-    · intro _
-      rfl
-  exact Rules.Infer.app motiveTyped .refl zeroTyped .refl
+  exact Rules.Infer.app (natSortMotive_typed natFound) .refl zeroTyped .refl
 
 private theorem nat_rec_first_two {md : Mode} (elim : Level) :
     ∃ motiveDomain motiveMeta baseMeta rest,
