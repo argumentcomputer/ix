@@ -106,7 +106,6 @@ theorem selectReaderRecords_blobs (env : Ixon.Env) (keep : _root_.Address → Bo
       intro held seen
       simp only [List.foldl_cons]
       rw [selectReaderRecords_recordAt env keep address, held address List.mem_cons_self]
-      dsimp only
       exact ih (fun a ha => held a (List.mem_cons_of_mem _ ha)) _
   exact congrArg (fun used : Std.HashSet _root_.Address =>
     env.blobs.toList.filter (fun row => used.contains row.1)) (folded order kept {})
