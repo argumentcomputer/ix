@@ -41,7 +41,7 @@ theorem native_former_value_of_trace {κ : _root_.Address → KKey}
   obtain ⟨levelBound, paramsBound, indicesBound, ctorBound, indexBound,
     typePtr, blockPtr, parent, parentEq, parentRep, rfl, rawTypeRep⟩ := raw
   obtain ⟨count, observedType, fields, shape, trace⟩ := levels
-  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at shape
+  simp only [Value.construct.injEq, List.cons.injEq, true_and] at shape
   obtain ⟨rfl, rfl, rfl⟩ := shape
   have positionalRead :
       (Ix.Kernel.Reader.MemberReader.mk' cx src
@@ -54,7 +54,7 @@ theorem native_former_value_of_trace {κ : _root_.Address → KKey}
     keyed selfKeyed blobReads positionalRead varsBounded levelsDefined
   let cv : Ix.Kernel.ConstantVal .anon :=
     ⟨κ (Core.iprjAddr block index), List.range ind.lvls.toNat, annotated⟩
-  have valueRep : Decl.ValRepExact κ h (.field (ind.lvls.toNat : F)) observedType cv := by
+  have valueRep : Decl.ValRepExact κ h (.field (ind.lvls.toNat : F)) typePtr cv := by
     refine ⟨?_, ?_, ?_, ?_⟩
     · simp [cv]
     · simpa only [cv, List.length_range] using levelBound
