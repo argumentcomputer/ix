@@ -51,7 +51,9 @@ theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
     have length := RomBound.bounded_length_lt good.2 countCall (by simp) rep
     have filtered := Nat.lt_of_le_of_lt (List.length_filter_le Core.isIndc members.toList) length
     obtain ⟨countedEq, _⟩ := Core.ModeledAux.muts_indc_count_spec rep counted
-    have zero := (Core.ModeledAux.natCast_inj_lt (by decide) filtered (Value.field.inj countedEq)).symm
+    have zero : (members.toList.filter Core.isIndc).length = 0 :=
+      (Core.ModeledAux.natCast_inj_lt (a := 0) (by decide) filtered
+        (by simpa using Value.field.inj countedEq)).symm
     omega
   | .Muts_n1 (m2 := middle) (x_members := ptr) (ev14 := loaded) (ev103 := counted)
       (hc241 := allCalls) .. =>
@@ -75,13 +77,13 @@ theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
     exact (Core.ModeledAux.infoShape_not_muts infoRep notMuts members shape).elim
 
 private theorem native_inductives_count (members : List Ixon.MutConst) (start : Nat) :
-    ((members.zipIdx start).filterMap (fun item => match item.1 with
-      | .indc ind => some (item.2, ind)
+    ((members.zipIdx start).filterMap (fun
+      | (.indc ind, index) => some (index, ind)
       | _ => none)).length = (members.filter Core.isIndc).length := by
   induction members generalizing start with
   | nil => simp
   | cons head tail ih =>
-    cases head <;> simp [List.zipIdx_cons, Core.isIndc, ih]
+    cases head <;> simp [List.zipIdx_cons, List.filter_cons, Core.isIndc, ih]
 
 /-- The actual count bound and a present member identify the unique indexed inductive. -/
 theorem native_inductives_singleton {members : Array Ixon.MutConst} {index : Nat} {ind : Ixon.Inductive}
