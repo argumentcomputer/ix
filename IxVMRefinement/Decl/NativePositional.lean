@@ -40,7 +40,7 @@ private theorem raw_infer_pos {env : Env .anon} {d : Nat} {e t : KExpr}
     show posOf [] t = t from posOf_range 0 t]; exact h⟩
 
 /-- The guarded native package is interpreted by the already certified positional package. -/
-def nativePosToPos : JudgementsMap nativePosRulesJ posRulesJ where
+theorem nativePosToPos : JudgementsMap nativePosRulesJ posRulesJ where
   annot := id
   infer := fun h => h.elim raw_infer_pos And.right
   defeq := id
@@ -48,7 +48,7 @@ def nativePosToPos : JudgementsMap nativePosRulesJ posRulesJ where
   isZero := id
 
 /-- Existing raw certificates embed without changing any expression or environment. -/
-def rulesToNativePos : JudgementsMap rulesJ nativePosRulesJ where
+theorem rulesToNativePos : JudgementsMap rulesJ nativePosRulesJ where
   annot := id
   infer := Or.inl
   defeq := by
@@ -65,7 +65,8 @@ def rulesToNativePos : JudgementsMap rulesJ nativePosRulesJ where
   isZero := id
 
 theorem judgeFrames_nativePosRulesJ (env : Env .anon) : JudgeFrames nativePosRulesJ env :=
-  judgeFrames_posRulesJ env
+  let h := judgeFrames_posRulesJ env
+  ⟨h.annot_syntax, h.annot_wscoped, h.annot_bounded, h.annot_leaves⟩
 
 /-- Every represented universe permutation supplies the native sort certificate at an actual
 well-formed store, including the large recursor's leading elimination parameter. -/
@@ -146,7 +147,7 @@ theorem sortClaim_nativePosRulesJ_of {V : Type u} [SetTheory V]
   have hCp := ctxOk_posOf hp (hC.of_subset hsub)
   have htap : denoteMeta m.base2.acval env (posVal ps φ) d (posOf ps t) = some ta := by
     rw [denoteMeta_posOf m.base2 hp]; exact hta
-  have red := Rules.red_sound (fun ψ => Rules.RulesInputs.ofSem m ψ) hr
+  have red := Rules.red_sound (φ := posVal ps φ) (fun ψ => Rules.RulesInputs.ofSem m ψ) hr
   obtain ⟨_, _, sa, hsa, _, heq⟩ := red ⟨hwtp, hbtp, hLtp⟩ hCp htap hgT
   rw [denoteMeta_sortQ] at hsa
   obtain rfl := Option.some.inj hsa
