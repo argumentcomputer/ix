@@ -169,9 +169,8 @@ theorem resolve_member_address_eq {store : Store} (authentic : AuthenticExactSto
     rw [encoded] at hashed
     exact hashed.symm
 
-/-- An actual mutual member needs resolution only at its own role-bound projection.
-This covers the inductive and recursor keys used by native recursive references. -/
-theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
+/-- An actual mutual member reads at its canonical key or exposes exactly one unresolved role binding. -/
+theorem streamContext_memberKey_member_cases {cx : Ctx .anon} {table : RoleTable}
     {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
     {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
     (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
@@ -180,12 +179,14 @@ theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {tab
     {i : Nat} {member : Ixon.MutConst}
     (stored : cx.store owner = some source) (shape : source.info = .muts members)
     (memberAt : members[i]? = some member) (bound : i < UInt64.size)
-    (boundResolved : ∀ role,
-      (role, Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) ∈ table.bound.toList →
-      resolve cx.store (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) =
-        some (.member owner i)) :
+ :
     cx.memberKey (.member owner i) =
-      .ok (Core.keyOf table (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) := by
+      .ok (Core.keyOf table (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) ∨
+      (cx.memberKey (.member owner i) =
+        .ok (.id (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) ∧
+        ∃ role, (role, Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) ∈ table.bound.toList ∧
+          resolve cx.store (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) ≠
+            some (.member owner i)) := by
   have unique : ∀ other, resolve cx.store other = some (.member owner i) →
       other = Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member) :=
     fun _ resolved => resolve_member_address_eq authentic stored shape memberAt resolved
@@ -205,8 +206,68 @@ theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {tab
     | defn value => exact projectionAddress_dprj stored' shape memberAt bound
     | indc value => exact projectionAddress_iprj stored' shape memberAt bound
     | recr value => exact projectionAddress_rprj stored' shape memberAt bound
-  exact streamContext_memberKey_of_local_resolution context authentic checked unique notSingleton
-    reconstructed boundResolved
+  exact streamContext_memberKey_cases context authentic checked unique notSingleton reconstructed
+
+/-- An actual mutual member needs resolution only at its own role-bound projection.
+This covers the inductive and recursor keys used by native recursive references. -/
+theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {i : Nat} {member : Ixon.MutConst}
+    (stored : cx.store owner = some source) (shape : source.info = .muts members)
+    (memberAt : members[i]? = some member) (bound : i < UInt64.size)
+    (boundResolved : ∀ role,
+      (role, Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) ∈ table.bound.toList →
+      resolve cx.store (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member)) =
+        some (.member owner i)) :
+    cx.memberKey (.member owner i) =
+      .ok (Core.keyOf table (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) := by
+  rcases streamContext_memberKey_member_cases context authentic checked stored shape memberAt bound with
+    exactKey | ⟨_, role, bound, unresolved⟩
+  · exact exactKey
+  · exact (unresolved (boundResolved role bound)).elim
+
+/-- One actual recursive-reference callback either agrees with its core key or returns the canonical address key with an unresolved local role binding. -/
+theorem streamContext_block_self_key_cases {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {owner : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    (stored : cx.store owner = some source) (shape : source.info = .muts members)
+    {index : Nat} {address : _root_.Address} {reading : ReadM (Key .anon)} {key : Key .anon}
+    (bound : index < UInt64.size)
+    (addressAt : (L1.blockRecurAddrs owner members.toList)[index]? = some address)
+    (callback : (if index < members.size then some (cx.memberKey (.member owner index)) else none) =
+      some reading)
+    (read : reading = .ok key)
+ :
+    key = Core.keyOf table address ∨
+      (key = .id address ∧ ∃ role, (role, address) ∈ table.bound.toList ∧
+        resolve cx.store address ≠ some (.member owner index)) := by
+  have inside : index < members.size := by
+    have present := (List.getElem?_eq_some_iff.mp addressAt).1
+    simpa [L1.blockRecurAddrs_eq_mapIdx] using present
+  have memberAt : members[index]? = some members[index] := Array.getElem?_eq_getElem inside
+  have projected : (L1.blockRecurAddrs owner members.toList)[index]? =
+      some (Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index])) := by
+    rw [L1.blockRecurAddrs_eq_mapIdx]
+    rw [List.getElem?_eq_getElem (by simpa using inside), List.getElem_mapIdx]
+    simp only [Array.getElem_toList]
+  have addressEq : address = Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index]) :=
+    Option.some.inj (addressAt.symm.trans projected)
+  have called : cx.memberKey (.member owner index) = .ok key := by
+    have callbackEq : cx.memberKey (.member owner index) = reading := by
+      simpa only [inside, ↓reduceIte, Option.some.injEq] using callback
+    exact callbackEq.trans read
+  have named := streamContext_memberKey_member_cases context authentic checked stored shape memberAt bound
+  rw [← addressEq] at named
+  rcases named with exactKey | ⟨addressKey, role, bound, unresolved⟩
+  · exact .inl (Except.ok.inj (called.symm.trans exactKey))
+  · exact .inr ⟨Except.ok.inj (called.symm.trans addressKey), role, bound, unresolved⟩
 
 /-- One recursive-reference occurrence needs the key of its own selected member. The
 occurrence supplies its projected address and wire index; only that bound projection needs
@@ -227,38 +288,23 @@ theorem streamContext_block_self_key_at {cx : Ctx .anon} {table : RoleTable}
     (boundResolved : ∀ role, (role, address) ∈ table.bound.toList →
       resolve cx.store address = some (.member owner index)) :
     key = Core.keyOf table address := by
-  have inside : index < members.size := by
-    have present := (List.getElem?_eq_some_iff.mp addressAt).1
-    simpa [L1.blockRecurAddrs_eq_mapIdx] using present
-  have memberAt : members[index]? = some members[index] := Array.getElem?_eq_getElem inside
-  have projected : (L1.blockRecurAddrs owner members.toList)[index]? =
-      some (Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index])) := by
-    rw [L1.blockRecurAddrs_eq_mapIdx]
-    rw [List.getElem?_eq_getElem (by simpa using inside), List.getElem_mapIdx]
-    simp only [Array.getElem_toList]
-  have addressEq : address = Core.projAddr (Core.Specs.Callees.memberProjInfo owner index members[index]) :=
-    Option.some.inj (addressAt.symm.trans projected)
-  have called : cx.memberKey (.member owner index) = .ok key := by
-    have callbackEq : cx.memberKey (.member owner index) = reading := by
-      simpa only [inside, ↓reduceIte, Option.some.injEq] using callback
-    exact callbackEq.trans read
-  have named := streamContext_memberKey_member_of_local_resolution context authentic checked
-    stored shape memberAt bound (by rwa [← addressEq])
-  rw [← addressEq] at named
-  exact Except.ok.inj (called.symm.trans named)
+  rcases streamContext_block_self_key_cases context authentic checked stored shape bound addressAt callback read with
+    exactKey | ⟨_, role, bound, unresolved⟩
+  · exact exactKey
+  · exact (unresolved (boundResolved role bound)).elim
 
-
-/-- A constructor's implicit member key requires resolution only at that constructor's
-own role-bound projection address. -/
-theorem streamContext_ctor_key_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
+/-- A constructor key read either agrees with its core key or exposes its one unresolved bound projection. -/
+theorem streamContext_ctor_key_cases {cx : Ctx .anon} {table : RoleTable}
     {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
     {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
     (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
     (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
     {owner : _root_.Address} {i j : Nat} (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
-    (boundResolved : ∀ role, (role, Core.cprjAddr owner i j) ∈ table.bound.toList →
-      resolve cx.store (Core.cprjAddr owner i j) = some (.ctor owner i j)) :
-    cx.memberKey (.ctor owner i j) = .ok (Core.keyOf table (Core.cprjAddr owner i j)) := by
+ :
+    cx.memberKey (.ctor owner i j) = .ok (Core.keyOf table (Core.cprjAddr owner i j)) ∨
+      (cx.memberKey (.ctor owner i j) = .ok (.id (Core.cprjAddr owner i j)) ∧
+        ∃ role, (role, Core.cprjAddr owner i j) ∈ table.bound.toList ∧
+          resolve cx.store (Core.cprjAddr owner i j) ≠ some (.ctor owner i j)) := by
   let projection : Ixon.Constant := ⟨.cPrj ⟨i.toUInt64, j.toUInt64, owner⟩, #[], #[], #[], #[]⟩
   have unique : ∀ other, resolve cx.store other = some (.ctor owner i j) →
       other = Core.cprjAddr owner i j := by
@@ -279,8 +325,22 @@ theorem streamContext_ctor_key_of_local_resolution {cx : Ctx .anon} {table : Rol
   have reconstructed : cx.reconstruct (.ctor owner i j) = some (Core.cprjAddr owner i j) := by
     rw [context]
     exact projectionAddress_cprj (store := cx.store) owner i j memberBound ctorBound
-  exact streamContext_memberKey_of_local_resolution context authentic checked unique rfl
-    reconstructed boundResolved
+  exact streamContext_memberKey_cases context authentic checked unique rfl reconstructed
 
+/-- A constructor's implicit member key requires resolution only at that constructor's
+own role-bound projection address. -/
+theorem streamContext_ctor_key_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
+    {prelude : Prelude .anon} {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
+    (context : cx = Admission.streamContext _root_.Address.admissionHash table prelude constants blobs hint)
+    (authentic : AuthenticExactStore cx.store) (checked : table.check = .ok ())
+    {owner : _root_.Address} {i j : Nat} (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
+    (boundResolved : ∀ role, (role, Core.cprjAddr owner i j) ∈ table.bound.toList →
+      resolve cx.store (Core.cprjAddr owner i j) = some (.ctor owner i j)) :
+    cx.memberKey (.ctor owner i j) = .ok (Core.keyOf table (Core.cprjAddr owner i j)) := by
+  rcases streamContext_ctor_key_cases context authentic checked memberBound ctorBound with
+    exactKey | ⟨_, role, bound, unresolved⟩
+  · exact exactKey
+  · exact (unresolved (boundResolved role bound)).elim
 
 end IxVM.Refinement.Assembly
