@@ -50,7 +50,7 @@ theorem whnf_const_head_inductive_spine
       ObsFn W "KernelWhnf::apply_spine" [head, spine] middle result final children ∧
       (⟨"KernelWhnf::apply_spine", [head, spine], middle⟩ : Call F) ∈ calls ∧
       (∀ call ∈ children, call ∈ calls) := by
-  have incompatible {before pointer after : _} {children : List (Call F)}
+  have incompatible {before after : Heap F} {pointer : SourceValue F} {children : List (Call F)}
       {tag : String} {fields : List (SourceValue F)}
       (different : tag ≠ "Induct")
       (member : (⟨"Ingress::get_ci", [address], before⟩ : Call F) ∈ calls)
