@@ -214,4 +214,49 @@ theorem native_former_reload {base : Core.Ctx} {block : Bytes.Address} {i : F}
   cases valueEq
   exact ⟨_, valueAt, represented⟩
 
+/-- The outer constant loader preserves the same former annotation by its observed
+inductive-projection dispatch. Its child load uses only the hashes in that actual subtrace. -/
+theorem native_former_getCI_reload {base : Core.Ctx} {block address : Bytes.Address}
+    {index : UInt64}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projectionSource : L1.CanonicalRecordAt base.E (Core.ixAddr address))
+    (projectionShape : projectionSource.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val (index.toNat : F)]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val (index.toNat : F))),
+        List.range ind.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      ((L1.mutsRootOffset members.toList (ZMod.val (index.toNat : F)) : Nat) : F) ind.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    {h h' : Heap F} {addr ptr : SourceValue F} {calls : List (Call F)}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' calls)
+    (goodLoad : Core.Good base calls)
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address addr)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed calls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    Decl.CIPtrRepExact base.κ h' ptr (.indInfo cv caps) := by
+  obtain ⟨parent, blockArg, middle, inner, parentEq, _, parentRep, formerRun, subset, _⟩ :=
+    L1.get_ci_iPrj_subcall projectionSource projectionShape addressRep goodLoad loaded
+  have parentEq : parent = block := Decl.ixAddr_inj parentEq
+  subst parent
+  exact native_former_reload source blockShape memberAt stored built planned image read
+    varsBounded levelsDefined caps formerRun (goodLoad.sub subset) parentRep keyed selfKeyed
+    (fun a bytes hashed hashEq => blobReads a bytes (Core.hashed_mono subset hashed) hashEq)
+
 end IxVM.Refinement.Assembly
