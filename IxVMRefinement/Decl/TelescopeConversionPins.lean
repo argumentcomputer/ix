@@ -46,7 +46,7 @@ private theorem forall_not_proof {md : Mode} {env : Env md} {depth : Nat}
   simp only [Level.eval] at impossible
   omega
 
-/-- Product conversion retains an actual opened-body derivation at one of its original domains.
+/- Product conversion retains an actual opened-body derivation at one of its original domains.
 No arbitrary conversion transitivity or free-variable type replacement is used. -/
 mutual
 
