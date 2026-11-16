@@ -93,7 +93,7 @@ theorem peerRename_spec (parts : List (Part md)) (key : Key md) :
   cases hfind : parts.find? (fun part => part.canonicalKey == key) with
   | none => exact .inl rfl
   | some part =>
-    have hkey : (part.canonicalKey == key) = true := List.find?_some hfind
+    have hkey := List.find?_some hfind
     exact .inr ⟨part, List.mem_of_find?_eq_some hfind,
       (beq_iff_eq.mp hkey).symm, rfl⟩
 
@@ -105,7 +105,7 @@ theorem finish_spec {env output : Env md} {parts : List (Part md)}
       rulesWrap env rename parts = true ∧
       output = ⟨recursors parts ++ models parts ++ env.consts⟩ := by
   unfold finish at h
-  simp only [bind, Except.bind, pure, Except.pure] at h
+  try simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
   next hwrap =>
     cases h
@@ -173,7 +173,7 @@ theorem candidate_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : 
     simp only [bind, Option.bind, pure] at h
     split at h
     next hguard =>
-      dsimp only [bind, Option.bind, pure] at h
+      try dsimp only [bind, Option.bind, pure] at h
       split at h
       next hmodel =>
         simp only [bind, Option.bind, pure, Option.some.injEq] at h
@@ -200,10 +200,10 @@ theorem findCanonical_spec {env : Env md} {raw annotated : ConstantVal md} {mI r
       simp only [findCanonical] at h
       cases hcandidate : candidate env.find? raw annotated mI rP rules cv.name with
       | none =>
-        simp only [hcandidate, Option.orElse_none] at h
+        simp only [hcandidate] at h
         exact findCanonical_spec entries h
       | some found =>
-        simp only [hcandidate, Option.orElse_some] at h
+        simp only [hcandidate] at h
         cases h
         exact candidate_spec hcandidate
     | _ => exact findCanonical_spec entries h
@@ -219,26 +219,21 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
   cases ci with
   | recInfo raw majorIndex rulePrefixValue rules =>
     unfold checkHeader at h
-    simp only [bind, Except.bind] at h
-    cases hchecked : checkConstantVal (fueledOps mode fuel) env raw with
-    | error reason => rw [hchecked] at h; cases h
-    | ok annotated =>
-      rw [hchecked] at h
-      split at h
-      next hfree =>
-        simp only [bind, Except.bind, pure, Except.pure] at h
-        cases hcanonical : findCanonical env.find? raw annotated majorIndex rulePrefixValue rules env.consts with
-        | none => simp [hcanonical, throw, throwThe, MonadExceptOf.throw] at h
-        | some found =>
-          simp only [hcanonical, Except.ok.injEq] at h
-          subst part
-          obtain ⟨hraw, hannotated, hmajor, hprefix, hrules, hsource⟩ := findCanonical_spec env.consts hcanonical
-          refine ⟨?_, ?_, ?_, hsource⟩
-          · rw [hraw, hmajor, hprefix, hrules]
-          · rw [hraw, hannotated]
-            exact constantValCheckJ_of_run hchecked
-          · rwa [hannotated]
-      next hfree => cases h
+    obtain ⟨annotated, hchecked, h⟩ := check_bind_ok h
+    by_cases hfree : letFree annotated.type = true
+    · simp only [hfree, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
+      cases hcanonical : findCanonical env.find? raw annotated majorIndex rulePrefixValue rules env.consts with
+      | none => simp [hcanonical, throw, throwThe, MonadExceptOf.throw] at h
+      | some found =>
+        simp only [hcanonical, pure, Except.pure, Except.ok.injEq] at h
+        subst part
+        obtain ⟨hraw, hannotated, hmajor, hprefix, hrules, hsource⟩ := findCanonical_spec env.consts hcanonical
+        refine ⟨?_, ?_, ?_, hsource⟩
+        · rw [hraw, hmajor, hprefix, hrules]
+        · rw [hraw, hannotated]
+          exact constantValCheckJ_of_run hchecked
+        · rwa [hannotated]
+    · simp [hfree, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   | _ => simp [checkHeader, throw, throwThe, MonadExceptOf.throw] at h
 
 def HeaderChecked (mode : CheckMode) (fuel : Nat) (env : Env md) (part : Part md) : Prop :=
@@ -282,7 +277,7 @@ theorem prepare_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
     obtain ⟨found, hheaders, h⟩ := check_bind_ok h
     split at h
     next hdistinct =>
-      dsimp only [bind, Except.bind] at h
+      try dsimp only [bind, Except.bind] at h
       split at h
       next hfresh =>
         simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
@@ -310,20 +305,21 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
         rhs := checked.rhs
         eta := recRuleEtaOf env.find? part.raw.name canonical.ctor } := by
   unfold checkRule at h
-  simp only [bind, Except.bind] at h
+  try simp only [bind, Except.bind] at h
   split at h
   next hmeta =>
-    simp only [bind, Except.bind] at h
+    try simp only [bind, Except.bind] at h
     split at h
     next hraw =>
-      simp only [bind, Except.bind] at h
+      try simp only [bind, Except.bind] at h
       cases hann : (fueledOps mode fuel).annotate envSelf 0 raw.rhs with
       | error reason => rw [hann] at h; cases h
       | ok rhs =>
         rw [hann] at h
+        try simp only [bind, Except.bind] at h
         split at h
         next hscope =>
-          simp only [bind, Except.bind] at h
+          try simp only [bind, Except.bind] at h
           split at h
           next hshape =>
             simp only [pure, Except.pure, Except.ok.injEq] at h
@@ -348,14 +344,16 @@ theorem checkRule_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
       part.annotated part.majorIndex part.rulePrefix raw checked canonical := by
   obtain ⟨hctor, hfields, hbounded, hfvar, hann, hlevels, hresolve, hfree, hshape, hout⟩ :=
     checkRule_spec h
-  have checkedCtor : checked.ctor = canonical.ctor := congrArg RecRule.ctor hout
-  have checkedFields : checked.nfields = canonical.nfields := congrArg RecRule.nfields hout
-  have checkedParams : checked.ctorParams = canonical.ctorParams := congrArg RecRule.ctorParams hout
-  have checkedFire : checked.fire = canonical.fire := congrArg RecRule.fire hout
+  have checkedCtor : checked.ctor = canonical.ctor := by simpa only using congrArg RecRule.ctor hout
+  have checkedFields : checked.nfields = canonical.nfields := by simpa only using congrArg RecRule.nfields hout
+  have checkedParams : checked.ctorParams = canonical.ctorParams := by simpa only using congrArg RecRule.ctorParams hout
+  have checkedFire : checked.fire = canonical.fire := by simpa only using congrArg RecRule.fire hout
   refine ⟨hctor.trans checkedCtor.symm, hfields.trans checkedFields.symm,
     hbounded, hfvar, hann, hlevels, hresolve, hfree, checkedCtor, checkedFields,
-    checkedParams, checkedFire, congrArg RecRule.k hout, congrArg RecRule.paramsBlind hout,
+    checkedParams, checkedFire, ?_, ?_,
     congrArg RecRule.eta hout, ?_, ?_, canonical.rhs, WrapRel.refl _ _, hwrap, .inl rfl⟩
+  · simpa only using congrArg RecRule.k hout
+  · simpa only using congrArg RecRule.paramsBlind hout
   · intro hfire cv nP nF hfind
     have hfire' : canonical.fire = .plain := checkedFire.symm.trans hfire
     have hfind' : env.find? canonical.ctor = some (.ctorInfo cv nP nF) := by
@@ -447,7 +445,10 @@ theorem checkedParts_member {mode : CheckMode} {fuel : Nat} {env envSelf : Env m
 theorem models_of_headers {parts checked : List (Part md)}
     (h : parts.map Part.header = checked.map Part.header) : models parts = models checked := by
   have h' := congrArg models h
-  simpa only [models, List.filterMap_map, modelInfo?, Part.header, Function.comp_def] using h'
+  have same : (modelInfo? ∘ Part.header : Part md → Option (ConstantInfo md)) = modelInfo? := by
+    funext part
+    rfl
+  simpa only [models, List.filterMap_map, same] using h'
 
 theorem provision_of_headers {parts checked : List (Part md)}
     (h : parts.map Part.header = checked.map Part.header) : provision parts = provision checked := by
@@ -464,14 +465,22 @@ theorem declared_of_headers {parts checked : List (Part md)}
 
 theorem CanonicalPart.of_headers {env : Env md} {before after : Part md}
     (h : before.header = after.header) (source : CanonicalPart env before) : CanonicalPart env after := by
-  have hraw : before.raw = after.raw := congrArg Part.raw h
-  have hannotated : before.annotated = after.annotated := congrArg Part.annotated h
-  have hcanonical : before.canonical = after.canonical := congrArg Part.canonical h
-  have hkey : before.canonicalKey = after.canonicalKey := congrArg Part.canonicalKey h
-  have hmajor : before.majorIndex = after.majorIndex := congrArg Part.majorIndex h
-  have hprefix : before.rulePrefix = after.rulePrefix := congrArg Part.rulePrefix h
-  have hrawRules : before.rawRules = after.rawRules := congrArg Part.rawRules h
-  have hcanonicalRules : before.canonicalRules = after.canonicalRules := congrArg Part.canonicalRules h
+  have hraw : before.raw = after.raw := by
+    simpa only [Part.header] using congrArg Part.raw h
+  have hannotated : before.annotated = after.annotated := by
+    simpa only [Part.header] using congrArg Part.annotated h
+  have hcanonical : before.canonical = after.canonical := by
+    simpa only [Part.header] using congrArg Part.canonical h
+  have hkey : before.canonicalKey = after.canonicalKey := by
+    simpa only [Part.header] using congrArg Part.canonicalKey h
+  have hmajor : before.majorIndex = after.majorIndex := by
+    simpa only [Part.header] using congrArg Part.majorIndex h
+  have hprefix : before.rulePrefix = after.rulePrefix := by
+    simpa only [Part.header] using congrArg Part.rulePrefix h
+  have hrawRules : before.rawRules = after.rawRules := by
+    simpa only [Part.header] using congrArg Part.rawRules h
+  have hcanonicalRules : before.canonicalRules = after.canonicalRules := by
+    simpa only [Part.header] using congrArg Part.canonicalRules h
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · rw [← hkey, ← hcanonical, ← hmajor, ← hprefix, ← hcanonicalRules]
     exact source.stored
@@ -489,8 +498,10 @@ theorem HeaderChecked.of_headers {mode : CheckMode} {fuel : Nat} {env : Env md}
     {before after : Part md} (h : before.header = after.header)
     (checked : HeaderChecked mode fuel env before) : HeaderChecked mode fuel env after := by
   obtain ⟨hcv, hfree, hsource⟩ := checked
-  have hraw : before.raw = after.raw := congrArg Part.raw h
-  have hannotated : before.annotated = after.annotated := congrArg Part.annotated h
+  have hraw : before.raw = after.raw := by
+    simpa only [Part.header] using congrArg Part.raw h
+  have hannotated : before.annotated = after.annotated := by
+    simpa only [Part.header] using congrArg Part.annotated h
   refine ⟨?_, ?_, hsource.of_headers h⟩
   · rwa [← hraw, ← hannotated]
   · rwa [← hannotated]
@@ -512,8 +523,10 @@ theorem RulesChecked.run_after {mode : CheckMode} {fuel : Nat} {env envSelf : En
     {before after : Part md} (h : RulesChecked mode fuel env envSelf before after) :
     checkRules (fueledOps mode fuel) env envSelf after after.rawRules after.canonicalRules =
       .ok after.checkedRules := by
-  have hraw : before.rawRules = after.rawRules := congrArg Part.rawRules h.headers
-  have hcanonical : before.canonicalRules = after.canonicalRules := congrArg Part.canonicalRules h.headers
+  have hraw : before.rawRules = after.rawRules := by
+    simpa only [Part.header] using congrArg Part.rawRules h.headers
+  have hcanonical : before.canonicalRules = after.canonicalRules := by
+    simpa only [Part.header] using congrArg Part.canonicalRules h.headers
   calc
     checkRules (fueledOps mode fuel) env envSelf after after.rawRules after.canonicalRules =
         checkRules (fueledOps mode fuel) env envSelf after.header after.rawRules after.canonicalRules :=
