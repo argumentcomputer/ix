@@ -4027,7 +4027,7 @@ theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → 
         rw [← Array.getElem?_toList, hrefs, href]
       rw [href_arr] at hb_at
       cases found : ecx.cx.blob a with
-      | none => simp [found] at hb_at
+      | none => simp [found, Ix.Kernel.Reader.malformed, throw, Except.error] at hb_at
       | some bytes =>
         have same : bytes = ⟨bs.toArray⟩ := (hblob a ⟨bs.toArray⟩ hmem bytes found).symm
         rw [same] at found
@@ -4057,7 +4057,7 @@ theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → 
         rw [← Array.getElem?_toList, hrefs, href]
       rw [href_arr] at hn_at
       cases found : ecx.cx.blob a with
-      | none => simp [found, bind, Except.bind] at hn_at
+      | none => simp [found, Ix.Kernel.Reader.malformed, throw, Except.error, bind, Except.bind] at hn_at
       | some bytes =>
         have same : bytes = ⟨bs.toArray⟩ := (hblob a ⟨bs.toArray⟩ hmem bytes found).symm
         rw [same] at found
