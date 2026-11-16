@@ -104,7 +104,7 @@ theorem get_ci_iPrj_subcall {base : Ctx} {address : Bytes.Address}
     exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
   | .CPrj (ev14 := observed) (hc851 := allCalls) .. =>
     exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
-  | .RPrj (ev14 := observed) (hc929 := allCalls) .. =>
+  | .RPrj (ev14 := observed) (hc926 := allCalls) .. =>
     exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
   | .Recr (ev14 := observed) (hc1071 := allCalls) .. =>
     exact (wrong (by decide) (header observed (by rw [allCalls]; intro call member; simp [member]))).elim
