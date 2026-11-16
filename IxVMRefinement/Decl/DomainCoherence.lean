@@ -135,4 +135,46 @@ theorem SyntacticDomainInvariant.checked_sorts {env : Env .anon} {P : Expr .anon
       (Rules.whnf_bridge (ensureSortCore_inv originalSorted)) (Rules.inferTypeCore_bridge finalInfer)
       (Rules.whnf_bridge (ensureSortCore_inv finalSorted))⟩
 
+/-- One exact rebuild and its actual paired domain checks, with the produced zero-ness/PW
+agreement. This result can also be constructed by a future typed frame-transport proof. -/
+def ConstructorCoherenceTrace (env : Env .anon) (fuel : Nat) (T : Key .anon)
+    (params fields : Nat) (raw checked : ConstantVal .anon) (P : Expr .anon → Prop) (datum : PropWhen) : Prop :=
+  ∃ initial rebuilt originalVars originalResidual finalVars finalResidual,
+    checkConstantVal (fueledOps .verified fuel) env raw = .ok initial ∧
+    normCtorVal (fueledOps .verified fuel) env T params fields raw initial = .ok checked ∧
+    ConstructorRebuildRun env fuel T params fields initial.type rebuilt ∧
+    (checked = initial ∨
+      checkConstantVal (fueledOps .verified fuel) env { raw with type := rebuilt } = .ok checked) ∧
+    openPisAtFvars (params + fields) initial.type 0 = some (originalVars, originalResidual) ∧
+    openPisAtFvars (params + fields) checked.type 0 = some (finalVars, finalResidual) ∧
+    originalVars.length = params + fields ∧ finalVars.length = params + fields ∧
+    ∀ slot original final, originalVars[params + slot]? = some original →
+      finalVars[params + slot]? = some final → P original.fvarTypeD →
+      ∃ originalType originalSort finalType finalSort,
+        inferTypeCore .verified env fuel (params + slot) original.fvarTypeD = .ok originalType ∧
+        ensureSortCore .verified env fuel (params + slot) originalType = .ok originalSort ∧
+        inferTypeCore .verified env fuel (params + slot) final.fvarTypeD = .ok finalType ∧
+        ensureSortCore .verified env fuel (params + slot) finalType = .ok finalSort ∧
+        Level.zeronessOf originalSort = datum ∧ Level.zeronessOf finalSort = datum ∧
+        Level.zeronessOf originalSort = Level.zeronessOf finalSort ∧
+        (∀ leftDomain leftBody leftMeta rightDomain rightBody rightMeta,
+          original.fvarTypeD = .forallE leftDomain leftBody leftMeta →
+          final.fvarTypeD = .forallE rightDomain rightBody rightMeta → leftMeta.pw = rightMeta.pw)
+
+/-- A constructed syntax instance supplies the complete trace from the actual constructor run. -/
+theorem SyntacticDomainInvariant.trace {env : Env .anon} {P : Expr .anon → Prop} {datum : PropWhen}
+    (invariant : SyntacticDomainInvariant env P datum) (wellFormed : EnvWF env)
+    {before : Env .anon} {T : Key .anon} {levels : List LevelParam} {params indices fields fuel : Nat}
+    {sortLevel : Level} {isProp large : Bool} {raw former checked : ConstantVal .anon} {sorts : List Level}
+    (run : checkSumCtor (fueledOps .verified fuel) before env T levels params indices sortLevel isProp large
+      raw fields former = .ok (checked, sorts)) :
+    ConstructorCoherenceTrace env fuel T params fields raw checked P datum := by
+  obtain ⟨initial, rebuilt, originalVars, originalResidual, finalVars, finalResidual,
+    first, normalization, rebuild, lastBranch, originalOpen, finalOpen,
+    originalCount, finalCount, _⟩ := checkSumCtor_rebuild_domain_checks wellFormed run
+  refine ⟨initial, rebuilt, originalVars, originalResidual, finalVars, finalResidual,
+    first, normalization, rebuild, lastBranch, originalOpen, finalOpen, originalCount, finalCount, ?_⟩
+  intro slot original final originalAt finalAt origin
+  exact invariant.checked_sorts first normalization originalOpen finalOpen originalAt finalAt origin
+
 end IxVM.Refinement.Decl
