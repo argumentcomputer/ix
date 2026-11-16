@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.NativeCommon
+import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Decl.NativeRunMap
 
 /-! # Semantic no-recursor runs from checked native stages
@@ -46,6 +47,41 @@ theorem nativeNoRecRunJ_of_pass {md : Mode} {mode : CheckMode} {fuel : Nat}
     exact hCtors
   · rw [hp]
     exact hK
+
+/-- A checked telescope former with no constructors supplies the complete no-recursor run.
+No constructor-scope load facts, field dependency certificate, or projection table is needed. -/
+theorem nativeNoRecRunJ_empty_of_checked {env : Env .anon} {p₀ : NativeParts .anon}
+    {former : ConstantVal .anon} {binders : List (Expr .anon × BinderMeta)} {level : Level}
+    (checked : ConstantValCheckJ Model.rulesJ env p₀.cvT former)
+    (empty : p₀.ctors = [])
+    (telescope : former.type.stripPis (p₀.nP + p₀.nIdx) = some (binders, .sort level)) :
+    DeclNativeNoRecRunJ Model.rulesJ env p₀ ⟨.indInfo former {} :: env.consts⟩ := by
+  let completed := p₀.toInductiveShape.withSort level
+  let parts := (p₀.complete completed).withKinds []
+  let stage : Env .anon := ⟨.indInfo former {} :: env.consts⟩
+  have fresh : env.find? former.name = none := by rw [checked.name_eq]; exact checked.fresh
+  have shape : former.name.isProjFnShape = false := by rw [checked.name_eq]; exact checked.shape
+  have extended : EnvExt env stage :=
+    envExt_cons_nonProj fresh (ne_projTableName_of_isProjFnShape_false shape)
+  obtain ⟨openedVars, indexSorts, opened, sorted⟩ :=
+    index_fieldSortsJ_of_former checked telescope extended
+  have stageCaps : nativeCapsAt completed false = {} := by simp [completed, nativeCapsAt, empty]
+  have indRun : SumIndRunJ Model.rulesJ env p₀.toInductiveShape
+      (fun current => nativeCapsAt current false) stage former completed := by
+    refine ⟨former, level, binders, former, checked, .inl rfl, telescope, .inl rfl, rfl, ?_⟩
+    simp only [stageCaps, stage]
+  have classification := classifyFixKinds_and_nativeFieldsOk
+    (env := env) (T := parts.cvT.name) (lps := parts.cvT.levelParams)
+    (nP := parts.nP) (nIdx := parts.nIdx) List.Forall₂.nil
+  refine ⟨by simp [empty], false, stage, former, completed, parts, [], [], [],
+    openedVars, .sort level, indexSorts, indRun, rfl, ?_, classification.1, ?_,
+    opened, sorted, classification.2, rfl, .inr rfl⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · simp [parts, completed, empty]
+    · simp [parts, completed, empty]
+    · intro slot ctor stored atCtor _
+      simp [parts, completed, empty] at atCtor
+  · simp [parts, completed, nativeCaps, nativeCapsAt, empty]
 
 /-- No-recursor semantic runs preserve the reference model without a global eta-table
 companion invariant. -/
