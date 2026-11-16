@@ -34,14 +34,14 @@ private theorem reduce_sort_function {md : Mode} {env : Env md} :
     intro count sortLevel shape
     cases shape with
     | app functionShape => exact .app functionShape
-  | _, _, .app (.lam domain body bm) argument, _, .betaGate _ => by
+  | _, .app (.lam domain body bm) argument, _, .betaGate _ => by
     refine ⟨?_⟩
     intro count sortLevel shape
     cases shape with
     | app functionShape =>
       cases functionShape with
       | lam bodyShape => exact bodyShape.instantiate1 argument 0
-  | _, _, .app (.lam domain body bm) argument, _, .beta _ _ => by
+  | _, .app (.lam domain body bm) argument, _, .beta _ _ => by
     refine ⟨?_⟩
     intro count sortLevel shape
     cases shape with
