@@ -25,7 +25,7 @@ theorem selectedTheorems_iff {declarations : List (Declaration .anon)} {name : K
       exact ⟨cv, value, member, selected⟩
     | _ => cases selected
   · rintro ⟨cv, value, member, publicName, rfl⟩
-    exact ⟨.thmDecl cv value, member, by simp only [publicName, Bool.not_false, beq_self_eq_true]⟩
+    exact ⟨.thmDecl cv value, member, by simp only [publicName, Bool.not_false, beq_self_eq_true, Bool.true_and]⟩
 
 theorem thmToOpaqueDefn_of_public {cv : ConstantVal .anon} {value : Expr .anon}
     (publicName : cv.name.isAux = false) :
