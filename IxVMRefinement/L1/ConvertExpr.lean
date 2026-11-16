@@ -2736,7 +2736,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           trace_f2 tree (RepBinderTreeData.mono ext12 represented)
         obtain ⟨argPlan, argStep, argLevels⟩ :=
           trace_a2 tree (RepBinderTreeData.mono ext13 represented)
-        exact ⟨funcPlan ++ argPlan, by simp [binderPlanStep, funcStep, argStep],
+        exact ⟨funcPlan ++ argPlan, by split at funcStep <;> split at argStep <;> simp_all [binderPlanStep],
           .app (by simp) (HeapBinderLevels.mono (ext4.trans ext_fin) funcLevels)
             (HeapBinderLevels.mono ext_fin argLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
@@ -2809,7 +2809,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by simp [binderPlanStep, domStep, bodyStep],
+          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
           .lam (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2883,7 +2883,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by simp [binderPlanStep, domStep, bodyStep],
+          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
           .forallE (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2973,7 +2973,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext15 represented)
         exact ⟨(typePlan ++ valuePlan) ++ bodyPlan,
-          by simp [binderPlanStep, typeStep, valueStep, bodyStep],
+          by split at typeStep <;> split at valueStep <;> split at bodyStep <;> simp_all [binderPlanStep],
           .letE (by simp) (HeapBinderLevels.mono ((ext5.trans ext6).trans ext_fin) typeLevels)
             (HeapBinderLevels.mono (ext6.trans ext_fin) valueLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -3078,7 +3078,7 @@ private theorem convert_annotated_go (fuel : Nat) :
               hhp_s.sub (by rw [hcs, hc_cb]; intro c hc; simp [hc]),
               .share hidx_lt hsh_get hraw_s, ?_⟩
             intro tree represented
-            obtain ⟨_, exactNodes, found, exactRep⟩ := binder_nodes_exact_spec represented ev_bn
+            obtain ⟨_, exactNodes, found, exactRep⟩ := binder_nodes_exact_spec (query := (1, (idx.toNat : F), (var0.toNat : F))) represented ev_bn
             have nodeEq := repBinderNodes_unique hns_entry exactRep
             cases nodeEq
             obtain ⟨plan, planned, levels⟩ := trace_s tree represented
@@ -3330,7 +3330,7 @@ theorem convert_root_trace_spec {e : Ixon.Expr}
     obtain ⟨hm160, ns, hns, hplt⟩ := binder_nodes_spec (htbl.mono ext1) ev170
     subst m160
     obtain ⟨_, exactNodes, found, exactRep⟩ :=
-      binder_nodes_exact_spec (RepBinderTreeData.mono ext1 represented) ev170
+      binder_nodes_exact_spec (query := (0, root, 0)) (RepBinderTreeData.mono ext1 represented) ev170
     have nodeEq := repBinderNodes_unique hns exactRep
     cases nodeEq
     have ev102' : ObsFn W "Convert::convert_block"
