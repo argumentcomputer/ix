@@ -68,13 +68,13 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
       Decl.nat_keyOf_injective tableWf sameKey
     have formerAt : L1.CanonicalRecordAt raw.E (Core.ixAddr a) :=
       { entry := former.entry, value := former.value
-        stored := by rw [addressEq]; exact former.stored
+        stored := (congrArg (fun address => raw.E.consts.get? address) addressEq).trans former.stored
         cached := former.cached, decoded := former.decoded }
     have projection : formerAt.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩ := by
       change former.value.info = _
       exact formerShape
     obtain ⟨parent, blockArg, middle, inner, parentEq, _, parentRep, observed, subset, _⟩ :=
-      L1.get_ci_iPrj_subcall formerAt projection addressRep good loaded
+      L1.get_ci_iPrj_subcall (base := raw.toCtx) formerAt projection addressRep good loaded
     have parentSame : parent = block := Decl.ixAddr_inj parentEq
     subst parent
     have index64 : ZMod.val i < UInt64.size :=
@@ -83,7 +83,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
       rw [UInt64.toNat_ofNat_of_lt index64]
       exact ZMod.natCast_zmod_val i
     rw [castIndex] at observed
-    exact native_former_header_of_record source blockShape
+    exact native_former_header_of_record (base := raw.toCtx) source blockShape
       (by simpa only [Array.getElem?_toList] using memberAt) (good.sub subset) parentRep observed
   peer_only_self := by
     intro addr ptr h h' calls a nl ty np ni nc u blk idx parent loaded _ good addressRep
@@ -121,7 +121,6 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
     have projectionAddress : Core.ixAddr a = Core.iprjAddr (Core.ixAddr parent) (ZMod.val actualIndex) := by
       rw [encoded, constantShape] at address
       exact address.symm
-    rw [parentEq, sameIndex] at projectionAddress
-    exact congrArg raw.κ projectionAddress
+    exact congrArg raw.κ (projectionAddress.trans (congrArg₂ Core.iprjAddr parentEq sameIndex))
 
 end IxVM.Refinement.Assembly
