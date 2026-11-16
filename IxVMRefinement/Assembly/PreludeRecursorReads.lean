@@ -106,7 +106,8 @@ theorem admitted_rec_inputs {V : IxVM.Refinement.View} {binding : Admission.Bind
     {owner : _root_.Address} {source : Ixon.Constant}
     (selected : owner ∈ witness.order) (record : Ix.Cert.recordAt witness.env owner = some source)
     {slot : Nat} {recursor : Ixon.Recursor} (member : (slot, recursor) ∈ recursorMembers source) :
-    ∃ (cx : Ctx .anon) entry blockLps row
+    ∃ (cx : Ctx .anon) (entry : RecEntry) (blockLps : List LevelParam)
+      (row : CVal .anon × RecCounts × List (RecRule .anon))
       (inputs : RecursorReadInputs cx blockLps (.member owner slot) entry row),
       (cx = ReaderStoreTransfer.readerContext witness.table witness.prelude witness.env witness.order ∨
         cx = nativePreludeReaderCtx witness.table witness.prelude) ∧
