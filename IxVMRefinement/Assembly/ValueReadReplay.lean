@@ -122,4 +122,84 @@ theorem admitted_readDefinition {V : IxVM.Refinement.View} {b : Admission.Bindin
   rw [typeRead', valueRead']
   exact newRead
 
+/-- Each record of a full stream with zero rewrites was itself read without rewriting. -/
+theorem streamRead_member_no_rewrite {md : Mode} {cx : Ctx md} {source final : State md}
+    {records : List (_root_.Address × Ixon.Constant)} {decls : Array (CDecl md)}
+    (stream : StreamRead cx source records final decls) (zero : final.projRewrites = 0)
+    {owner : _root_.Address} {record : Ixon.Constant} (member : (owner, record) ∈ records) :
+    ∃ state full, readRecord cx state owner record = .ok full ∧ full.projRewrites = 0 ∧
+      ∀ decl ∈ full.decls, decl ∈ decls := by
+  induction stream with
+  | nil => cases member
+  | @cons state _ address constant full rest tail read later ih =>
+    rcases List.mem_cons.mp member with same | member
+    · cases same
+      have counter := streamRead_projRewrites_le later
+      rw [commit_projRewrites, zero] at counter
+      exact ⟨state, full, read, by omega, fun decl present => Array.mem_append_left _ present⟩
+    · obtain ⟨state', full', read', noRewrite, declared⟩ := ih zero member
+      exact ⟨state', full', read', noRewrite,
+        fun decl present => Array.mem_append_right _ (declared decl present)⟩
+
+theorem admitted_defn_replay {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
+    (keepTrace : _root_.Address → Prop) (claimBytes : ByteArray) {order : List _root_.Address}
+    (loaded : LoadedBy calls trace) (decoded : L1.EnvDecoded trace)
+    (noCollision : ¬ V.HashedCollision (claimBytes :: b.bytes :: readerImages V) calls)
+    {seeds : _root_.Address → Prop}
+    (closure : UsedClosureOrderAt w.table (admittedOverlay w trace keepTrace) seeds order)
+    {owner : _root_.Address} {record : Ixon.Constant} {definition : Ixon.Definition}
+    (selected : owner ∈ w.order) (original : Ix.Cert.recordAt w.env owner = some record)
+    (info : record.info = .defn definition) (retained : owner ∈ order)
+    {source target : State .anon} (empty : ∀ k : CName .anon, target.projLevels[k]? = none)
+    {full : Read .anon}
+    (read : readRecord (readerContext w.table w.prelude w.env w.order) source owner record = .ok full)
+    (zero : full.projRewrites = 0) :
+    ∃ bare old new,
+      readRecordBare (readerContext w.table w.prelude (admittedOverlay w trace keepTrace) order)
+        target owner record = .ok bare ∧
+      full.decls = #[old] ∧ bare.decls = #[new] ∧ ValueDeclAgree old new ∧
+      bare.generated = 0 ∧ bare.projRewrites = 0 := by
+  simp only [readRecord, info] at read
+  obtain ⟨⟨old, rewrote⟩, definitionRead, returned⟩ := except_bind_ok.mp read
+  simp only [pure, Except.pure, Except.ok.injEq] at returned
+  subst full
+  cases rewrote with
+  | true => simp at zero
+  | false =>
+    obtain ⟨new, replay, same⟩ := admitted_readDefinition w keepTrace claimBytes loaded decoded
+      noCollision closure selected original info retained empty definitionRead
+    refine ⟨{ decls := #[new] }, old, new, ?_, rfl, rfl, same, rfl, rfl⟩
+    simp only [readRecordBare, info, readRecord]
+    rw [replay]
+    rfl
+
+/-- Every retained admitted singleton definition has an actual bare reading at the new
+state. The old declaration and its membership in the original full output are recovered
+from the admitted run, rather than supplied by the caller. -/
+theorem admitted_defn_record {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
+    (keepTrace : _root_.Address → Prop) (claimBytes : ByteArray) {order : List _root_.Address}
+    (loaded : LoadedBy calls trace) (decoded : L1.EnvDecoded trace)
+    (noCollision : ¬ V.HashedCollision (claimBytes :: b.bytes :: readerImages V) calls)
+    {seeds : _root_.Address → Prop}
+    (closure : UsedClosureOrderAt w.table (admittedOverlay w trace keepTrace) seeds order)
+    {owner : _root_.Address} {record : Ixon.Constant} {definition : Ixon.Definition}
+    (selected : owner ∈ w.order) (original : Ix.Cert.recordAt w.env owner = some record)
+    (info : record.info = .defn definition) (retained : owner ∈ order)
+    (target : State .anon) (empty : ∀ k : CName .anon, target.projLevels[k]? = none) :
+    ∃ bare old new,
+      readRecordBare (readerContext w.table w.prelude (admittedOverlay w trace keepTrace) order)
+        target owner record = .ok bare ∧
+      old ∈ w.fullDecls ∧ bare.decls = #[new] ∧ ValueDeclAgree old new ∧
+      bare.generated = 0 ∧ bare.projRewrites = 0 := by
+  have present := Ix.Cert.RecursorIndex.mem_decoded.mpr ⟨selected, original⟩
+  obtain ⟨source, full, read, zero, declared⟩ := streamRead_member_no_rewrite
+    (readRecords_spec w.read) w.noProjRewrites (Array.mem_toList_iff.mpr present)
+  obtain ⟨bare, old, new, replay, oldDecl, newDecl, same, generated, noRewrite⟩ :=
+    admitted_defn_replay w keepTrace claimBytes loaded decoded noCollision closure
+      selected original info retained empty read zero
+  exact ⟨bare, old, new, replay, declared old (by rw [oldDecl]; simp),
+    newDecl, same, generated, noRewrite⟩
+
 end IxVM.Refinement.Assembly.ReaderStoreTransfer
