@@ -103,6 +103,38 @@ theorem projectionAddress_rprj {store : Store} {owner : _root_.Address}
   simp [stored, shape, member, written, Except.toOption, _root_.Address.admissionHash_eq,
     Core.rprjAddr, Core.projAddr]
 
+/-- An authentic resolved mutual member has the canonical address of its member projection.
+This uses only the actual parent lookup and projection decoding, without assuming that the
+projection was retained in any other reader context. -/
+theorem resolve_member_address_eq {store : Store} (authentic : AuthenticExactStore store)
+    {owner address : _root_.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {i : Nat} {member : Ixon.MutConst}
+    (stored : store owner = some source) (shape : source.info = .muts members)
+    (memberAt : members[i]? = some member)
+    (resolved : resolve store address = some (.member owner i)) :
+    address = Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member) := by
+  let projection : Ixon.Constant :=
+    ⟨Core.Specs.Callees.memberProjInfo owner i member, #[], #[], #[], #[]⟩
+  have projectionAt : Ix.Cert.ReadingKeys.projectionAt store (.member owner i) = some projection := by
+    cases member <;> simp [Ix.Cert.ReadingKeys.projectionAt, Ix.Cert.ReadingKeys.memberAt,
+      stored, shape, memberAt, projection, Core.Specs.Callees.memberProjInfo]
+  unfold resolve at resolved
+  obtain ⟨value, found, sourceRead⟩ := Option.bind_eq_some_iff.mp resolved
+  rcases Ix.Cert.ReadingKeys.resolveSource_cases sourceRead with ⟨sameRef, notBlock⟩ | projected
+  · injection sameRef with ownerEq _
+    subst address
+    have sameValue := Option.some.inj (found.symm.trans stored)
+    subst value
+    exact (notBlock members shape).elim
+  · rw [projectionAt] at projected
+    injection projected with valueEq
+    subst value
+    obtain ⟨bytes, hashed, decoded⟩ := authentic address projection found
+    have projectionFacts := projectionAt_empty_and_proj projectionAt
+    have encoded := (deConstantExact_proj_eq_serConstant decoded projectionFacts.1 projectionFacts.2).1
+    rw [encoded] at hashed
+    exact hashed.symm
+
 /-- An actual mutual member needs resolution only at its own role-bound projection.
 This covers the inductive and recursor keys used by native recursive references. -/
 theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {table : RoleTable}
@@ -120,30 +152,9 @@ theorem streamContext_memberKey_member_of_local_resolution {cx : Ctx .anon} {tab
         some (.member owner i)) :
     cx.memberKey (.member owner i) =
       .ok (Core.keyOf table (Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member))) := by
-  let projection : Ixon.Constant :=
-    ⟨Core.Specs.Callees.memberProjInfo owner i member, #[], #[], #[], #[]⟩
-  have projectionAt : Ix.Cert.ReadingKeys.projectionAt cx.store (.member owner i) = some projection := by
-    cases member <;> simp [Ix.Cert.ReadingKeys.projectionAt, Ix.Cert.ReadingKeys.memberAt,
-      stored, shape, memberAt, projection, Core.Specs.Callees.memberProjInfo]
   have unique : ∀ other, resolve cx.store other = some (.member owner i) →
-      other = Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member) := by
-    intro other resolved
-    unfold resolve at resolved
-    obtain ⟨value, found, sourceRead⟩ := Option.bind_eq_some_iff.mp resolved
-    rcases Ix.Cert.ReadingKeys.resolveSource_cases sourceRead with ⟨sameRef, notBlock⟩ | projected
-    · injection sameRef with ownerEq _
-      subst other
-      have sameValue := Option.some.inj (found.symm.trans stored)
-      subst value
-      exact (notBlock members shape).elim
-    · rw [projectionAt] at projected
-      injection projected with valueEq
-      subst value
-      obtain ⟨bytes, hashed, decoded⟩ := authentic other projection found
-      have projectionFacts := projectionAt_empty_and_proj projectionAt
-      have encoded := (deConstantExact_proj_eq_serConstant decoded projectionFacts.1 projectionFacts.2).1
-      rw [encoded] at hashed
-      exact hashed.symm
+      other = Core.projAddr (Core.Specs.Callees.memberProjInfo owner i member) :=
+    fun _ resolved => resolve_member_address_eq authentic stored shape memberAt resolved
   have notSingleton : singletonAt cx.store (.member owner i) = none := by
     cases i with
     | zero => simp [singletonAt, stored, shape]
