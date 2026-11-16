@@ -56,7 +56,7 @@ theorem checked_type_reading {V : Type u} [SetTheory V] {md : Mode} {env : Env m
   obtain ⟨type, header, equal⟩ := constantValCheckJ_of_run run
   obtain ⟨_, _, _, _, _, _, _, _, _, st, _, inferred, _⟩ := header
   have checkedInfer : inferTypeCore .verified env fuel 0 checked.type = .ok st := by
-    simpa only [equal] using inferred
+    simpa only [equal, runJ] using inferred
   have judge := judgeSound_runJ rfl model fuel
   obtain ⟨reading, read⟩ := judge.accepted φ checkedInfer scope bounded leaves
   obtain ⟨_, _, graded, _, _⟩ := inferRowJ judge checkedInfer scope bounded leaves aligned read
@@ -98,10 +98,10 @@ theorem normCtorVal_field_frames {V : Type u} [SetTheory V] {md : Mode} {env : E
   have wholeAt : (parameterVars ++ fieldVars)[nP + j]? = some original := by
     rw [List.getElem?_append_right (by omega), parameterCount, Nat.add_sub_cancel_left]
     exact originalAt
-  have variable := oldFrame.var (nP + j) original wholeAt
+  have openerFacts := oldFrame.var (nP + j) original wholeAt
   have inputFrame : Frame (nP + j) original.fvarTypeD :=
-    ⟨variable.2.1, variable.2.2.1, variable.2.2.2.1⟩
-  have aligned := oldFrame.ctx (by omega) variable.2.1 variable.2.2.2.2
+    ⟨openerFacts.2.1, openerFacts.2.2.1, openerFacts.2.2.2.1⟩
+  have aligned := oldFrame.ctx (by omega) openerFacts.2.1 openerFacts.2.2.2.2
   exact normPosDom_semantics model (calls j original output originalAt outputAt) inputFrame aligned
     (oldFrame.doms (nP + j) original wholeAt) (oldFrame.okΓ (nP + j) (by omega))
 
