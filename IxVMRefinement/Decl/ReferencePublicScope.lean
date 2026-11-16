@@ -26,7 +26,7 @@ theorem public_resolves_eq {before after : Env .anon}
   | const name levels =>
     intro publicKey
     have notAux : name.isAux = false := by
-      simpa only [Expr.constsResolveBy, Bool.not_eq_true] using publicKey
+      simpa only [Expr.constsResolveBy, Bool.not_eq_true'] using publicKey
     simp only [Expr.constsResolve, same name (isAux_eq_false_iff.mp notAux)]
   | app f a ihf iha =>
     intro publicKeys
@@ -42,7 +42,7 @@ theorem public_resolves_eq {before after : Env .anon}
     simp only [Expr.constsResolve, iht publicKeys.1.1, ihv publicKeys.1.2, ihb publicKeys.2]
   | proj name i inner ih =>
     intro publicKeys
-    simp only [Expr.constsResolveBy, Bool.and_eq_true, Bool.not_eq_true] at publicKeys
+    simp only [Expr.constsResolveBy, Bool.and_eq_true, Bool.not_eq_true'] at publicKeys
     simp only [Expr.constsResolve, same name (isAux_eq_false_iff.mp publicKeys.1), ih publicKeys.2]
   | lit literal =>
     intro _
