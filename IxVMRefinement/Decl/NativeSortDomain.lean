@@ -1,4 +1,4 @@
-import IxVMRefinement.Decl.SortFunctionTransport
+import IxVMRefinement.Decl.SortTailTransport
 import IxVMRefinement.Decl.NativeConstructorFieldChecks
 import IxVMRefinement.Decl.NativeConstructorFieldFrames
 
@@ -114,17 +114,21 @@ private theorem normFieldDoms_count {md : Mode} {env : Env md} {fuel : Nat} {T :
       simpa only [List.length_cons] using congrArg Nat.succ (ih recursive)
     | _ => cases run
 
-/-- A selected original field retains the sort-returning fragment through the exact rebuild
-and its actual final annotation, even when earlier free-variable annotations change. -/
-theorem normCtorVal_sortFunction_domain {env : Env .anon} {fuel nP nF slot : Nat} {T : Key .anon}
+private theorem normCtorVal_domain_predicate {env : Env .anon} {fuel nP nF slot : Nat} {T : Key .anon}
+    {P : Expr .anon → Prop}
+    (abstracts : ∀ e index cut, P e → P (e.abstract1 index cut))
+    (instantiates : ∀ e value cut, P e → P (e.instantiate1 value cut))
+    (annotates : ∀ {e out}, P e → IxVM.Consistency.Annotates out e → P out)
+    (normalizes : ∀ {depth steps e out}, P e →
+      normPosDom (fueledOps .verified fuel) env T depth steps e = .ok out → P out)
     {raw initial checked : ConstantVal .anon} {originalVars finalVars : List (Expr .anon)}
-    {originalResidual finalResidual original final : Expr .anon} {sortLevel : Level}
+    {originalResidual finalResidual original final : Expr .anon}
     (normalized : normCtorVal (fueledOps .verified fuel) env T nP nF raw initial = .ok checked)
     (originalOpen : openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual))
     (finalOpen : openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual))
     (originalAt : originalVars[nP + slot]? = some original)
     (finalAt : finalVars[nP + slot]? = some final)
-    (shape : SortFunction sortLevel 0 original.fvarTypeD) : SortFunction sortLevel 0 final.fvarTypeD := by
+    (shape : P original.fvarTypeD) : P final.fvarTypeD := by
   obtain ⟨rebuilt, rebuild, lastBranch⟩ := normCtorVal_rebuild_trace normalized
   rcases lastBranch with same | checkedAgain
   · rw [same] at finalOpen
@@ -148,7 +152,7 @@ theorem normCtorVal_sortFunction_domain {env : Env .anon} {fuel nP nF slot : Nat
       rw [normFieldDoms_count fieldRun]
       omega
     have outputAt : fields[slot]? = some fields[slot] := List.getElem?_eq_getElem inside
-    have outputShape := shape.normalized (calls slot original fields[slot] originalFieldAt outputAt)
+    have outputShape := normalizes shape (calls slot original fields[slot] originalFieldAt outputAt)
     let parameterBinders := List.zipWith
       (fun (x : Expr .anon) (b : Expr .anon × BinderMeta) => (x.fvarTypeD, b.2)) parameterVars parameters
     have parameterBinderCount : parameterBinders.length = nP := by
@@ -156,12 +160,43 @@ theorem normCtorVal_sortFunction_domain {env : Env .anon} {fuel nP nF slot : Nat
     have outputWholeAt : (parameterBinders ++ fields)[nP + slot]? = some fields[slot] := by
       rw [List.getElem?_append_right (by omega), parameterBinderCount, Nat.add_sub_cancel_left]
       exact outputAt
-    have closedShape : DomainAt (SortFunction sortLevel 0) (nP + slot) rebuilt := by
+    have closedShape : DomainAt P (nP + slot) rebuilt := by
       rw [rebuiltEq]
-      exact DomainAt.closeTelescope (fun _ index cut h => h.abstract1 index cut)
+      exact DomainAt.closeTelescope abstracts
         (parameterBinders ++ fields) outputWholeAt outputShape 0 residual
     have annotation := (NativeFormerRestore.initiallyStored checkedAgain).2.2
-    have annotatedShape := closedShape.annotated (fun h ann => h.annotated ann) annotation
-    exact annotatedShape.opened (fun _ value cut h => h.instantiate1 value cut) finalOpen finalAt
+    have annotatedShape := closedShape.annotated annotates annotation
+    exact annotatedShape.opened instantiates finalOpen finalAt
+
+/-- A selected original field retains the sort-returning fragment through the exact rebuild
+and its actual final annotation, even when earlier free-variable annotations change. -/
+theorem normCtorVal_sortFunction_domain {env : Env .anon} {fuel nP nF slot : Nat} {T : Key .anon}
+    {raw initial checked : ConstantVal .anon} {originalVars finalVars : List (Expr .anon)}
+    {originalResidual finalResidual original final : Expr .anon} {sortLevel : Level}
+    (normalized : normCtorVal (fueledOps .verified fuel) env T nP nF raw initial = .ok checked)
+    (originalOpen : openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual))
+    (finalOpen : openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual))
+    (originalAt : originalVars[nP + slot]? = some original)
+    (finalAt : finalVars[nP + slot]? = some final)
+    (shape : SortFunction sortLevel 0 original.fvarTypeD) : SortFunction sortLevel 0 final.fvarTypeD :=
+  normCtorVal_domain_predicate (P := SortFunction sortLevel 0)
+    (fun _ index cut h => h.abstract1 index cut) (fun _ value cut h => h.instantiate1 value cut)
+    (fun h ann => h.annotated ann) (fun h run => h.normalized run)
+    normalized originalOpen finalOpen originalAt finalAt shape
+
+/-- Product telescopes ending in the fragment retain their shape through the same exact trace. -/
+theorem normCtorVal_sortTail_domain {env : Env .anon} {fuel nP nF slot count : Nat} {T : Key .anon}
+    {raw initial checked : ConstantVal .anon} {originalVars finalVars : List (Expr .anon)}
+    {originalResidual finalResidual original final : Expr .anon} {sortLevel : Level}
+    (normalized : normCtorVal (fueledOps .verified fuel) env T nP nF raw initial = .ok checked)
+    (originalOpen : openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual))
+    (finalOpen : openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual))
+    (originalAt : originalVars[nP + slot]? = some original)
+    (finalAt : finalVars[nP + slot]? = some final)
+    (shape : SortTail sortLevel count original.fvarTypeD) : SortTail sortLevel count final.fvarTypeD :=
+  normCtorVal_domain_predicate (P := SortTail sortLevel count)
+    (fun _ index cut h => h.abstract1 index cut) (fun _ value cut h => h.instantiate1 value cut)
+    (fun h ann => h.annotated ann) (fun h run => h.normalized run)
+    normalized originalOpen finalOpen originalAt finalAt shape
 
 end IxVM.Refinement.Decl
