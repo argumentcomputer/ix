@@ -812,8 +812,8 @@ theorem mentionsConst_instantiate1Lift_false {T : KKey} {v : KExpr} :
 /-- Record-load correspondence for the single inductive member `T` of a one-type block `b₀`
 at context `c`. -/
 structure OneTypePeerFacts (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
-    (nl nP nIdx nCtors : Nat) : Prop where
-  self_key : T = c.κ (iprjAddr (ixAddr b₀) 0)
+    (nl nP nIdx nCtors : Nat) (indIndex : F := 0) : Prop where
+  self_key : T = c.κ (iprjAddr (ixAddr b₀) (ZMod.val indIndex))
   self_ind : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
@@ -823,7 +823,7 @@ structure OneTypePeerFacts (c : Ctx) (b₀ : Bytes.Address) (T : KKey)
     ∃ (ty u blk : SourceValue F) (b' : Bytes.Address),
       loadValue h' ptr = .ok (.construct kciEnum "Induct"
         [.field (nl : F), ty, .field (nP : F), .field (nIdx : F), .field (nCtors : F),
-          u, blk, .field 0]) ∧
+          u, blk, .field indIndex]) ∧
       Bytes.RepAddressRef addrTy h' b' blk ∧
       ixAddr b' = ixAddr b₀
   peer_only_self : ∀ (a : Bytes.Address) (cm : Ixon.Constant) (idx : UInt64),
@@ -936,9 +936,9 @@ theorem addr_list_contains_singleton_spec {b₀ b' : Bytes.Address} {bas tgt r :
         | .Cons_n1 (ld12 := ld') .. | .Cons_other (ld12 := ld') .. =>
           exact (load_cell_ne cell_nil ld' (by decide)).elim
 
-theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address} {T : KKey}
+theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {ca bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -976,10 +976,10 @@ theorem caddr_is_peer_singleton_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address
     injection ld' with hv1
     exact hne_ind [_, ty', _, _, _, u', blk', _] rfl hv1
 
-theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem expr_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr}
     {k : Nat} {E : KExpr} {pe bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1092,10 +1092,10 @@ decreasing_by
     simp only [hc, List.length_cons, List.length_append]
     omega
 
-theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem list_any_mentions_block_zero_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {nl nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Es : List KExpr} {pes bas : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors →
+      OneTypePeerFacts c.toCtx b₀ T nl nP nIdx nCtors indIndex →
       RawRecordFacts c →
       Good c.toCtx cs →
       RawRecordCoverage c cs →
@@ -1767,14 +1767,14 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
 `mkAppN (.const T (lps.map .param)) (structPsAt nF nP ++ es)` with `es.length = nIdx`,
 every `a ∈ es` free of `T`, raw residual witness on `raw_cty`, and
 `NoTopLetSpine (nP + nF) h' pcty`. -/
-theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr} {raw_cty cty : KExpr}
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPF_lt : nP + nF < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -1783,7 +1783,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {
     (hblk : Bytes.RepAddressRef addrTy h b₀ pblk)
     (ev : ObsFn W "KernelCheck::check_ctor_return_type"
       [pcty, .field (nP : F), .field (nIdx : F), .field (nF : F),
-        .field (lps.length : F), pblk, .field 0] h r h' cs) :
+        .field (lps.length : F), pblk, .field indIndex] h r h' cs) :
     NoTopLetSpine (nP + nF) h' pcty ∧
     ∃ (rcbs : List (KExpr × Ix.Kernel.BinderMeta)) (rargs : List KExpr)
       (cbs : List (KExpr × Ix.Kernel.BinderMeta)) (es : List KExpr),
@@ -2751,7 +2751,7 @@ private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : N
         omega
       · omega
 
-private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Address} {T : KKey}
+private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ a : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors o k : Nat} {Γ : Nat → KExpr}
     {us : List KLevel} {args : List KExpr} {E : KExpr}
     {pca pus pargs bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -2759,7 +2759,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Add
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
     (hdepth_lt : nP + o + k < 9223372036854775808)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
@@ -2842,12 +2842,12 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {b₀ a : Bytes.Add
     intro x hx
     simp [hdrop_noT x hx]
 
-private theorem check_positivity_aug_raw_go {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+private theorem check_positivity_aug_raw_go {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors o : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     {R E : KExpr} {k : Nat} {pdom bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ext₀ : Heap.Extends h₀ h)
@@ -3008,12 +3008,12 @@ decreasing_by
   simp [hc]
   omega
 
-private theorem check_positivity_fields_raw_go {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c) :
     ∀ (m o : Nat) {R E : KExpr} {rbs bs : List (KExpr × Ix.Kernel.BinderMeta)}
       {rbody body : KExpr} {pty bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -3162,7 +3162,7 @@ private theorem peel_n_foralls_raw_h0 :
 /-- `check_positivity` establishes `recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1`
 is neither `.negative` nor `.unsupported` AND yields `RawRecSpine` (or `mentionsConst T = false`)
 for all `i < nF`. -/
-theorem check_positivity_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KKey}
+theorem check_positivity_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.Address} {T : KKey}
     {lps : List LevelParam} {nP nIdx nF nCtors : Nat} {Γ : Nat → KExpr}
     {raw_cty rbody cty cbody : KExpr} {rcbs cbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -3170,7 +3170,7 @@ theorem check_positivity_raw_spec {c : ScopedCtx} {b₀ : Bytes.Address} {T : KK
     (hlps_lt : lps.length < 4294967296)
     (hnP_lt : nP < 4294967296)
     (hnPI_lt : nP + nIdx < 4294967296)
-    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors)
+    (hpeer : OneTypePeerFacts c.toCtx b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
     (hscope : RawRecordCoverage c cs)
