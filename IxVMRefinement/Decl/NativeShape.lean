@@ -81,6 +81,28 @@ structure NativeInductShapeCall (rc typePtr blockArg index safety : SourceValue 
   initialToMode : Heap.Extends initial modeBefore
   initialToShape : Heap.Extends initial before
 
+/-- Frame the actual native dispatch in its enclosing root trace. -/
+def NativeInductShapeCall.mono {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls rootCalls : List (Call F)}
+    (native : NativeInductShapeCall rc typePtr blockArg index safety params indices count levels initial calls)
+    (included : ∀ call ∈ calls, call ∈ rootCalls) :
+    NativeInductShapeCall rc typePtr blockArg index safety params indices count levels initial rootCalls where
+  modeBefore := native.modeBefore
+  modeAfter := native.modeAfter
+  modeCalls := native.modeCalls
+  modeRun := native.modeRun
+  modeMember := included _ native.modeMember
+  modeSubset := fun call member => included call (native.modeSubset call member)
+  before := native.before
+  result := native.result
+  after := native.after
+  calls := native.calls
+  observed := native.observed
+  member := included _ native.member
+  subset := fun call member => included call (native.subset call member)
+  initialToMode := native.initialToMode
+  initialToShape := native.initialToShape
+
 /-- An actual nonzero modeled verdict is retained for the other declaration route. -/
 def ModeledInductCall (blockArg : SourceValue F) (initial : Heap F) (calls : List (Call F)) : Prop :=
   ∃ before result after children,
