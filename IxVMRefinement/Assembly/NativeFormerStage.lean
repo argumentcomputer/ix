@@ -86,4 +86,55 @@ theorem NativeFormerRunInput.formerStage_noIndices {base : Core.Ctx} {block : By
       telescope', .inl rfl, rfl, rfl⟩
   · exact Decl.index_fieldSortsJ_of_former checked telescope' extended
 
+/-- With no parameter or index binders, the existing shape guard forces a literal sort.
+Its stored annotation and scope evidence construct the check without semantic load facts. -/
+theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {calls : List (Call F)}
+    (input : NativeFormerRunInput base block i source members ind rawType calls)
+    (native : input.NativeCall)
+    (shape : Decl.NativeShapeCalls input.rc input.typePtr input.blockPtr (.field i)
+      (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.ctors.size ind.lvls.toNat
+      native.before calls)
+    (noParams : ind.params.toNat = 0) (noIndices : ind.indices.toNat = 0)
+    (fresh : base.env.find? (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = none)
+    (notBasis : Ix.Kernel.reservedBasisNames.contains
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false) :
+    ∃ level,
+      input.annotated.type = .sort level ∧ rawType = .sort level ∧
+      Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ base.env
+        ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩
+        input.annotated := by
+  obtain ⟨binders, level, telescope, _⟩ :=
+    (input.telescopeOrIndexed native shape).resolve_right (fun nonzero => nonzero noIndices)
+  have typeEq : input.annotated.type = .sort level := by
+    have zeroStrip : some ([], input.annotated.type) = some (binders, .sort level) := by
+      simpa only [noParams, noIndices, Nat.zero_add, Ix.Kernel.Expr.stripPis] using telescope
+    exact (Prod.mk.inj (Option.some.inj zeroStrip)).2
+  have rawEq : rawType = .sort level := by
+    have annotation := input.stored.2.2
+    rw [typeEq] at annotation
+    cases annotation
+    rfl
+  have valueEq : input.annotated =
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat,
+        input.annotated.type⟩ := by
+    have named := input.stored.1
+    have levels := input.stored.2.1
+    cases input.annotated
+    cases named
+    cases levels
+    rfl
+  refine ⟨level, typeEq, rawEq, input.annotated.type,
+    ⟨Option.isNone_iff_eq_none.mpr fresh, notBasis, Decl.nat_keyOf_isProjFnShape_false base.t _,
+      Decl.levelParam_nodup_of_nodup List.nodup_range, input.varsBounded, input.noFvars,
+      Decl.annot_of_annotates input.stored.2.2 input.noFvars input.varsBounded 0, ?_, ?_, ?_⟩, valueEq⟩
+  · rw [typeEq, ← rawEq]
+    exact input.levelsDefined
+  · rw [typeEq]
+    rfl
+  · rw [typeEq]
+    exact ⟨.sort (.succ level), .succ level, .sort, .refl⟩
+
+
 end IxVM.Refinement.Assembly
