@@ -39,9 +39,7 @@ private theorem committed_prelude_owner_member {a : _root_.Address} {c : Ixon.Co
     cases info : c.info with
     | dPrj p | iPrj p | rPrj p | cPrj p =>
       simp only [Ix.Cert.ownerOf, info]
-      rw [info] at projection
-      rw [RoleVal.containsAddrFast_eq, List.contains_iff_mem] at projection
-      exact projection
+      simpa only [info, RoleVal.containsAddrFast_eq, List.contains_iff_mem] using projection
     | defn _ | recr _ | axio _ | quot _ | muts _ =>
       simp only [Ix.Cert.ownerOf, info]
       exact List.mem_map.mpr ⟨(a, c), member, rfl⟩
