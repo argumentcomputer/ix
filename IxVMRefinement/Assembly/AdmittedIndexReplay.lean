@@ -94,7 +94,7 @@ theorem admitted_input_indexed_pruned {V : IxVM.Refinement.View} {b : Admission.
     inputIndexed (store w.table w.prelude (admittedOverlay w trace keepTrace) order)
       known (w.prelude.records ++ w.prelude.evidence) owner constant = true := by
   by_cases fallback : (w.prelude.records ++ w.prelude.evidence).contains (owner, constant) = true
-  · simp only [inputIndexed, fallback, Bool.or_true]
+  · simp only [inputIndexed_eq, fallback, Bool.or_true]
   · have notFallback : (w.prelude.records ++ w.prelude.evidence).contains (owner, constant) = false :=
       Bool.eq_false_iff.mpr fallback
     apply Bool.or_eq_true_iff.mpr

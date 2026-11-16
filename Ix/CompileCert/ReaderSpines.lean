@@ -394,7 +394,7 @@ theorem build_analyse (store : Store) (owner : Address) (limits : Ix.Sharing.Exa
       fits
     refine ⟨target, rfl, ?_⟩
     rw [analysed]
-    unfold analyseRecursor Shape.analyse Shape.telescope
+    unfold analyseRecursor Shape.analyse Shape.analysePrepared Shape.telescopePrepared
     simp only [params, motives, minors, indices, typeEq]
   | _ => cases erased
 

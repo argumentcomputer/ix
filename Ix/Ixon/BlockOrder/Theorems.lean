@@ -36,6 +36,25 @@ every member declares one motive per member of the block. -/
 def MotiveOrdered (source : Ixon.Constant) (members : Array Ixon.MutConst) : Prop :=
   MotivesFrom source members.size 0 members.toList
 
+theorem checkMotives_prepared (owner : Address) (source : Ixon.Constant) (size position : Nat)
+    (members : List MutConst) :
+    checkMotivesPrepared owner (Reader.Shape.sharing source.sharing) size position members =
+      checkMotives owner source size position members := by
+  cases members <;> rfl
+
+theorem checkMotives_cons (owner : Address) (source : Ixon.Constant) (size position : Nat)
+    (member : MutConst) (rest : List MutConst) :
+    checkMotives owner source size position (member :: rest) = (do
+      match member with
+      | .recr r =>
+        let motive := recursorMotive source r
+        unless r.motives.toNat == size && motive == some position do
+          throw (.motiveOrder owner position motive)
+      | _ => throw (.malformed "expected a recursor")
+      checkMotives owner source size (position + 1) rest) := by
+  rw [checkMotives, checkMotivesPrepared, checkMotives_prepared]
+  rfl
+
 theorem motivesFrom_cons (source : Ixon.Constant) (size start : Nat)
     (member : Ixon.MutConst) (rest : List Ixon.MutConst) :
     MotivesFrom source size start (member :: rest) ↔
@@ -63,15 +82,15 @@ theorem checkMotives_ok_iff (owner : Address) (source : Ixon.Constant) (size : N
     cases member with
     | recr r =>
       by_cases ok : r.motives.toNat = size ∧ recursorMotive source r = some start
-      · simp [checkMotives, ok]
+      · simp [checkMotives_cons, ok]
       · have bad : (r.motives.toNat == size && recursorMotive source r == some start) = false := by
           simpa [Bool.and_eq_true, beq_iff_eq] using ok
-        simp only [checkMotives, bad]
+        simp only [checkMotives_cons, bad]
         simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind]
         intro hm hmot
         exact absurd ⟨hm, hmot⟩ ok
     | defn _ | indc _ =>
-      simp [checkMotives, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
+      simp [checkMotives_cons, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
 
 theorem checkMotiveOrder_ok_iff (owner : Address) (source : Ixon.Constant)
     (members : Array Ixon.MutConst) :

@@ -87,26 +87,34 @@ def head (fuel : Nat) (expression : Term) : Option Head :=
   | _ => none
 
 /-- The normalized telescope and the motive eliminated by its result. -/
-def telescope (fuel : Nat) (constant : Ixon.Constant) (recursor : Ixon.Recursor) :
+def telescopePrepared (fuel : Nat) (table : Array (Option Term)) (recursor : Ixon.Recursor) :
     Option (Nat × List Term) := do
   let nP := recursor.params.toNat
   let nM := recursor.motives.toNat
   let depth := nP + nM + recursor.minors.toNat + recursor.indices.toNat + 1
-  let (domains, body) ← stripAll depth (← read constant recursor.typ)
+  let (domains, body) ← stripAll depth (← convert table recursor.typ)
   let .bvar k := appHead fuel body | none
   let pos := depth - 1 - k
   guard (k < depth && nP ≤ pos && pos < nP + nM)
   pure (pos - nP, domains)
 
+def telescope (fuel : Nat) (constant : Ixon.Constant) (recursor : Ixon.Recursor) :
+    Option (Nat × List Term) :=
+  telescopePrepared fuel (sharing constant.sharing) recursor
+
 /-- The motive position and carrier heads, before any store lookup. The caller
 supplies the existing spine bound separately from this structural conversion. -/
-def analyse (fuel : Nat) (constant : Ixon.Constant) (recursor : Ixon.Recursor) :
+def analysePrepared (fuel : Nat) (table : Array (Option Term)) (recursor : Ixon.Recursor) :
     Option (Nat × Array Head × Head) := do
-  let (motive, domains) ← telescope fuel constant recursor
+  let (motive, domains) ← telescopePrepared fuel table recursor
   let carriers ← (domains.drop recursor.params.toNat |>.take recursor.motives.toNat).toArray.mapM fun domain => do
     let (types, _) := stripAllFull fuel domain
     head fuel (← types.getLast?)
   let major ← head fuel (← domains.getLast?)
   pure (motive, carriers, major)
+
+def analyse (fuel : Nat) (constant : Ixon.Constant) (recursor : Ixon.Recursor) :
+    Option (Nat × Array Head × Head) :=
+  analysePrepared fuel (sharing constant.sharing) recursor
 
 end Ix.Kernel.Reader.Shape

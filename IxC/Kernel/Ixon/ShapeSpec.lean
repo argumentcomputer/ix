@@ -223,7 +223,7 @@ theorem telescope_refs {P : Nat → Prop} {constant : Ixon.Constant} {recursor :
     {fuel motive : Nat} {domains : List Term}
     (ran : telescope fuel constant recursor = some (motive, domains)) :
     ∀ domain ∈ domains, Refs P domain := by
-  unfold telescope at ran
+  unfold telescope telescopePrepared at ran
   simp only [bind, Option.bind_eq_some_iff, pure] at ran
   obtain ⟨term, converted, ⟨types, body⟩, parsed, ran⟩ := ran
   have domainsRef := (stripAll_refs _ (read_refs shared typeRefs converted) parsed).1
@@ -238,7 +238,7 @@ theorem telescope_motive_lt {constant : Ixon.Constant} {recursor : Ixon.Recursor
     {fuel motive : Nat} {domains : List Term}
     (ran : telescope fuel constant recursor = some (motive, domains)) :
     motive < recursor.motives.toNat := by
-  unfold telescope at ran
+  unfold telescope telescopePrepared at ran
   simp only [bind, Option.bind_eq_some_iff, pure] at ran
   obtain ⟨term, _, ⟨types, body⟩, _, ran⟩ := ran
   split at ran
@@ -260,7 +260,7 @@ theorem analyse_refs {P : Nat → Prop} {constant : Ixon.Constant} {recursor : I
     {fuel : Nat} {result : Nat × Array Head × Head}
     (ran : analyse fuel constant recursor = some result) :
     (∀ carrier ∈ result.2.1, carrier.Refs P) ∧ result.2.2.Refs P := by
-  unfold analyse at ran
+  unfold analyse analysePrepared at ran
   simp only [bind, Option.bind_eq_some_iff, pure] at ran
   obtain ⟨⟨motive, domains⟩, parsed, carriers, carrierRead, last, lastFound, major,
     majorRead, returned⟩ := ran
@@ -282,7 +282,7 @@ theorem analyse_telescope {constant : Ixon.Constant} {recursor : Ixon.Recursor}
     {fuel motive : Nat} {carriers : Array Head} {major : Head}
     (ran : analyse fuel constant recursor = some (motive, carriers, major)) :
     ∃ domains, telescope fuel constant recursor = some (motive, domains) := by
-  unfold analyse at ran
+  unfold analyse analysePrepared at ran
   simp only [bind, Option.bind_eq_some_iff, pure, Option.some.injEq, Prod.mk.injEq] at ran
   obtain ⟨⟨motive', domains⟩, parsed, carriers', _, last, _, major', _, rfl, rfl, rfl⟩ := ran
   exact ⟨domains, parsed⟩

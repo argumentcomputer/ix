@@ -99,7 +99,7 @@ theorem order_scanned {a : Address} {c : Ixon.Constant} (ha : a ∈ order) (hc :
     (a, c) ∈ scannedOf ixe t preA order := by
   simp only [scannedOf, indexedRecords, Array.mem_append, Array.mem_filter]
   refine .inl ⟨mem_decoded.mpr ⟨ha, hc⟩, ?_⟩
-  unfold inputIndexed
+  rw [inputIndexed_eq]
   rw [Bool.or_eq_true]
   refine .inl (Array.all_eq_true'.mpr fun ⟨j, r⟩ hm => ?_)
   dsimp only
@@ -158,7 +158,7 @@ theorem scanned_cases {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ scannedO
     | none => rfl
     | some cb =>
       exfalso
-      unfold fallbackIndexed at hfb
+      rw [fallbackIndexed_eq] at hfb
       have hall := Array.all_eq_true'.mp hfb (j, r) hm
       simp only [ha, hcs] at hall
       have hk := known_contains (records := (Stream.decodedOf ixe order).toArray) (mem_decoded.mpr ⟨hb, hrb⟩)

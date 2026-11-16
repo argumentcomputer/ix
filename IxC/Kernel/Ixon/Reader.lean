@@ -350,6 +350,13 @@ structure RecIndex where
 
 /-- One recursor's analysis: normalize syntactic sharing and lets, then resolve
 its motive carriers and major carrier through the actual reference table and store. -/
+def analyseRecursorPrepared (store : Store) (owner : Address) (c : Ixon.Constant)
+    (table : Array (Option Shape.Term))
+    (r : Ixon.Recursor) : Option (Nat × Array (ConstRef Address) × ConstRef Address) := do
+  let (motive, carriers, major) ← Shape.analysePrepared spineFuel table r
+  pure (motive, ← carriers.mapM (resolveShapeHead store owner c),
+    ← resolveShapeHead store owner c major)
+
 def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
     (r : Ixon.Recursor) : Option (Nat × Array (ConstRef Address) × ConstRef Address) := do
   let (motive, carriers, major) ← Shape.analyse spineFuel c r
@@ -364,11 +371,14 @@ def buildIndex (store : Store) (records : Array (Address × Ixon.Constant)) : Re
   let mut idx : RecIndex := {}
   let mut found : Std.HashMap Address (Array (Nat × ConstRef Address)) := {}
   for (owner, c) in records do
-    for (j, r) in recursorMembers c do
+    let members := recursorMembers c
+    if members.isEmpty then continue
+    let table := Shape.sharing c.sharing
+    for (j, r) in members do
       let ref : ConstRef Address := .member owner j
       if idx.recs.contains ref then continue
       let some ((m, carriers, major) : Nat × Array (ConstRef Address) × ConstRef Address) :=
-        analyseRecursor store owner c r | continue
+        analyseRecursorPrepared store owner c table r | continue
       let some (ConstRef.member b i0) := carriers[0]? | continue
       let some blockRecord := store b | continue
       let .muts ms := blockRecord.info | continue

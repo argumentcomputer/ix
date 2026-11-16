@@ -664,7 +664,7 @@ private theorem filter_committedPrelude_inputIndexed :
   have hpure := List.all_eq_true.mp hpure0 (a, c) hmem'
   dsimp only at hpure
   rw [recursorMembersFast_eq, List.all_eq_true] at hpure
-  unfold inputIndexed
+  rw [inputIndexed_eq]
   rw [Bool.or_eq_true]
   left
   rw [Array.all_eq_true_iff_forall_mem]

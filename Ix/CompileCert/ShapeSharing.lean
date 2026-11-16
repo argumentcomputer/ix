@@ -115,7 +115,8 @@ theorem analyse_expand (constant flat : Ixon.Constant) (empty : flat.sharing = #
     (bounded : SharesIn (fun i => i < constant.sharing.size) recursor.typ) (fuel : Nat) :
     Shape.analyse fuel constant recursor =
       Shape.analyse fuel flat { recursor with typ := substShares expand recursor.typ } := by
-  simp only [Shape.analyse, Shape.telescope,
-    read_expand constant flat empty expand entries recursor.typ bounded]
+  have converted := read_expand constant flat empty expand entries recursor.typ bounded
+  unfold Shape.read at converted
+  simp only [Shape.analyse, Shape.analysePrepared, Shape.telescopePrepared, converted]
 
 end Ix.CompileCert.ShapeSharing
