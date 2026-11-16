@@ -4,7 +4,7 @@ public import IxC.Kernel.Verify.Inductives.TwinRun
 public import IxC.Kernel.Verify.Extend.Modeled
 public import IxC.Kernel.Verify.ExceptBind
 
-public section
+@[expose] public section
 
 /-! # Existing modeled acceptance is outside the stored-twin dispatch -/
 
