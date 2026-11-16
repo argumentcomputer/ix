@@ -15,7 +15,7 @@ open Ix.Kernel
 /-- No let occurs on the product-body or application-function spine. -/
 def constructorSpineClean {md : Mode} : Expr md → Bool
   | .forallE _ body _ => constructorSpineClean body
-  | .app fn _ => constructorSpineClean fn
+  | .app functionExpr _ => constructorSpineClean functionExpr
   | .letE .. => false
   | _ => true
 
@@ -23,8 +23,8 @@ private theorem spineClean_instantiate {md : Mode} (index : Nat) (type : Expr md
     ∀ (e : Expr md) (cut : Nat),
       constructorSpineClean (e.instantiate1 (.fvar index type) cut) = constructorSpineClean e
   | .bvar _, _ => by simp only [Expr.instantiate1]; split <;> first | rfl | (split <;> rfl)
-  | .app fn argument, cut => by
-    simp only [Expr.instantiate1, constructorSpineClean, spineClean_instantiate index type fn cut]
+  | .app functionExpr argument, cut => by
+    simp only [Expr.instantiate1, constructorSpineClean, spineClean_instantiate index type functionExpr cut]
   | .forallE domain body bm, cut => by
     simp only [Expr.instantiate1, constructorSpineClean, spineClean_instantiate index type body (cut + 1)]
   | .fvar .., _ | .sort .., _ | .const .., _ | .lam .., _ | .letE .., _ | .lit .., _ | .proj .., _ => rfl
@@ -32,8 +32,8 @@ private theorem spineClean_instantiate {md : Mode} (index : Nat) (type : Expr md
 private theorem spineClean_abstract {md : Mode} (index : Nat) :
     ∀ (e : Expr md) (cut : Nat), constructorSpineClean (e.abstract1 index cut) = constructorSpineClean e
   | .fvar .., _ => by simp only [Expr.abstract1]; split <;> rfl
-  | .app fn argument, cut => by
-    simp only [Expr.abstract1, constructorSpineClean, spineClean_abstract index fn cut]
+  | .app functionExpr argument, cut => by
+    simp only [Expr.abstract1, constructorSpineClean, spineClean_abstract index functionExpr cut]
   | .forallE domain body bm, cut => by
     simp only [Expr.abstract1, constructorSpineClean, spineClean_abstract index body (cut + 1)]
   | .bvar .., _ | .sort .., _ | .const .., _ | .lam .., _ | .letE .., _ | .lit .., _ | .proj .., _ => rfl
