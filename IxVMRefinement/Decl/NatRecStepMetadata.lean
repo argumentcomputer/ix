@@ -51,7 +51,7 @@ theorem natRec_step_comparison {md : Mode} {env : Env md} {depth : Nat} {elim so
   simp only [natSortMotive, Expr.instantiate1, ↓reduceIte] at motiveReduced
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid motiveReduced rfl)
   rw [baseTypeEq] at baseReduced
-  simp only [natSortMotive, Expr.instantiate1, ↓reduceIte] at baseReduced
+  simp only [Expr.instantiate1] at baseReduced
   obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (Rules.Red.rigid baseReduced rfl)
   exact ⟨stepType, outerMeta, innerMeta, stepTyped, compared⟩
 
