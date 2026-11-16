@@ -92,9 +92,15 @@ theorem native_inductives_singleton {members : Array Ixon.MutConst} {index : Nat
     Ix.CompileCert.ReaderIndex.inductives members = #[(index, ind)] := by
   have length : (Ix.CompileCert.ReaderIndex.inductives members).size =
       (members.toList.filter Core.isIndc).length := by
-    rw [← Array.length_toList]
-    simpa only [Ix.CompileCert.ReaderIndex.inductives, Array.toList_filterMap, Array.toList_zipIdx]
-      using native_inductives_count members.toList 0
+    rw [← Array.length_toList, Ix.CompileCert.ReaderIndex.inductives,
+      Array.toList_filterMap, Array.toList_zipIdx]
+    refine Eq.trans ?_ (native_inductives_count members.toList 0)
+    apply congrArg List.length
+    apply congrArg (fun project : Ixon.MutConst × Nat → Option (Nat × Ixon.Inductive) =>
+      List.filterMap project members.toList.zipIdx)
+    funext item
+    rcases item with ⟨value, index⟩
+    cases value <;> rfl
   have present : (index, ind) ∈ Ix.CompileCert.ReaderIndex.inductives members := by
     apply Array.mem_filterMap.mpr
     exact ⟨(.indc ind, index), Array.mk_mem_zipIdx_iff_getElem?.mpr memberAt, rfl⟩
