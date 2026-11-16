@@ -1,4 +1,4 @@
-import IxVMRefinement.L1.ConvertExpr
+import IxVMRefinement.L1.BinderData
 
 /-! # Exact binder-tree contents and lookup
 
@@ -490,8 +490,9 @@ theorem binder_table_data_bounded_spec {bound : Nat} {blocks : List Ixon.BinderB
     intro entry member
     change entry ∈ blocks.map (fun block =>
       (binderBlockKey block, BinderTreeData.leaf (binderBlockKey block) block.nodes.toList)) at member
-    obtain ⟨block, member, rfl⟩ := List.mem_map.mp member
-    exact bounds block member)
+    obtain ⟨block, blockMember, equal⟩ := List.mem_map.mp member
+    cases equal
+    exact bounds block blockMember)
   exact ⟨extended, tree, built, rep, all, rep.toBounded all⟩
 
 end IxVM.Refinement.L1
