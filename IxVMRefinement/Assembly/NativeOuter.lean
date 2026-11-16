@@ -30,8 +30,9 @@ theorem NativeFormerRunInput.dispatch {base : Core.Ctx} {block : Bytes.Address} 
       Nonempty (Decl.NativeShapeCalls input.rc input.typePtr input.blockPtr (.field i)
         (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.ctors.size ind.lvls.toNat
         native.before calls)) ∨ Decl.ModeledInductCall input.blockPtr input.heap calls := by
-  rcases Decl.native_induct_dispatch input.checkedRun with ⟨native⟩ | modeled
-  · let framed := native.mono input.checkSubset
+  rcases Decl.native_induct_dispatch input.checkedRun with native | modeled
+  · obtain ⟨native⟩ := native
+    let framed := native.mono input.checkSubset
     exact .inl ⟨framed, Decl.native_shape_calls framed.observed framed.subset⟩
   · obtain ⟨before, result, after, children, observed, nonzero, extended, member, included⟩ := modeled
     exact .inr ⟨before, result, after, children, observed, nonzero, extended,
