@@ -27,9 +27,9 @@ theorem projectionAddress_cprj {store : Ix.Kernel.Reader.Store}
   unfold Ix.Kernel.Admission.projectionAddress
   simp [written, Except.toOption, _root_.Address.admissionHash_eq, Core.cprjAddr, Core.projAddr]
 
+set_option maxHeartbeats 800000 in
 /-- The authentic reader context and Source role table agree on a known constructor's name.
 The actual projection-hash observation supplies the stored-projection agreement premise. -/
-set_option maxHeartbeats 800000 in
 theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
     {pre : Ix.Kernel.Reader.Prelude .anon}
     {constants : List (_root_.Address × Ixon.Constant)}
