@@ -75,7 +75,7 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
   have peer' : Decl.OneTypePeerReads raw block
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
       (List.range ind.lvls.toNat).length ind.params.toNat ind.indices.toNat ctors.length i := by
-    simpa only [List.length_range, countEq] using peer
+    simpa only [List.length_range, countEq, raw, L1.rawQueryCtx, Core.ScopedCtx.κ, Core.Ctx.κ] using peer
   exact Decl.native_ctor_scoped hLevels (cR := raw) (indIndex := i)
     (by simp) (by simpa only [List.length_range] using levelsBound)
     paramsBound indicesBound countBound fieldsBound sortEq family levels varsBounded noFvars
