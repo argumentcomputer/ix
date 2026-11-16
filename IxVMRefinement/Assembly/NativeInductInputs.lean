@@ -63,6 +63,7 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
     (ms := members) (k := slot) (mc := .indc ind) good.2 checked memberAt
   have full : Claim.CheckedAtFull calls bindingAddr base.t (Core.iprjAddr (Core.ixAddr block) slot) := by
     simpa only [Core.Specs.Callees.memberProjInfo, Core.iprjAddr] using fullGeneric
+  have fullProof := full
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, addressRep, _, loaded, _, loadSubset, _, _, _, _⟩ := full
   obtain ⟨address, represented, addressEq⟩ := addressRep
   obtain ⟨_, _, _, verified, verifiedSubset⟩ := L1.get_ci_verified_subcall loaded
@@ -78,7 +79,7 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
   have canonical := Ixon.Verify.deConstantExact_serConstant
     (⟨.iPrj ⟨slot.toUInt64, Core.ixAddr block⟩, #[], #[], #[], #[]⟩ : Ixon.Constant)
     (L1.projConstant_wireWF_iPrj slot.toUInt64 block)
-  exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), full⟩
+  exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), fullProof⟩
 
 /-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
 structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
