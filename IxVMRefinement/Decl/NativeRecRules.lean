@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.NativeRecCheck
 import IxVMRefinement.Decl.NativeFront
+import IxVMRefinement.Decl.NativePositionalInv
 import IxVMRefinement.Callees.Loads
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Callees.Modeled
@@ -2290,6 +2291,20 @@ structure NativeWithRecWitness (calls : List (Call F)) (env : Ix.Kernel.Env .ano
     ⟨E_rec, Ix.Kernel.consSumCtors p₀.nP front.ctorsA ⟨.indInfo front.cvTa₀ {} :: env.consts⟩,
       front.t, front.lim₀⟩ cs_rec
 
+/-- Native block evidence independent of the judgement package used for its recursor type. -/
+structure NativeWithRecData (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
+    (block : List KConstantInfo) (p₀ : Ix.Kernel.NativeParts .anon) where
+  witness : NativeWithRecWitness calls env block p₀
+  unused_later :
+    ∀ cA ∈ witness.front.ctorsA, ∀ cbs body,
+      cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+      ∀ i < cA.2,
+        (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+         Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+        Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false
+
 /-- Hypothesis bundle for native one-type inductive blocks with recursor,
 collecting the shared front-end parameter/positivity obligations and `PosSortLift`. -/
 structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
@@ -3116,19 +3131,30 @@ private theorem sumSplit_map_ctor_append :
     simp only [List.map_cons, List.cons_append, Ix.Kernel.sumSplit,
       sumSplit_map_ctor_append xs cvR mI rP rls, Option.map_some]
 
-/-- **Deliverable 1 (`L5` Native One-Type Inductive Block with Recursor)**:
-Refines an unpinned `.indDecl block nPd` with `Ix.Kernel.nativeParts? nPd block = some p₀` to
-`InstallStep env (.indDecl block nPd) env₂` and `DeclNativeRunJ rulesJ env p₀ env₂`. -/
-theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+/-- Assemble an unpinned native block over a judgement map, retaining every installed
+constant and supplying the recursor sort front at its actual checking environment. -/
+theorem nativeWithRec_step_mapped {J : Judgements .anon}
+    (M : JudgementsMap rulesJ J)
+    (upgrade : ∀ {T : KKey} {cvS : KConstantVal} {caps : Ix.Kernel.IndCaps .anon}
+      {before after : Ix.Kernel.Env .anon} {cv cv' : KConstantVal},
+      CapsUpgradeAt T cvS caps before after →
+      ConstantValCheckJ J before cv cv' → ConstantValCheckJ J after cv cv')
+    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
     (hparts : Ix.Kernel.nativeParts? nPd block = some p₀)
     (hS : DeclStoreInv env)
-    (extra : NativeWithRecExtra calls env block p₀) :
+    (extra : NativeWithRecData calls env block p₀)
+    (largeLift : p₀.large = true →
+      Ix.Kernel.Open.StoreInv (Ix.Kernel.consSumCtors p₀.nP extra.witness.front.ctorsA
+        ⟨.indInfo extra.witness.front.cvTa₀ {} :: env.consts⟩) →
+      PosSortLiftFor J
+        (Ix.Kernel.consSumCtors p₀.nP extra.witness.front.ctorsA
+          ⟨.indInfo extra.witness.front.cvTa₀ {} :: env.consts⟩) extra.witness.cvRa₀) :
     ∃ env₂,
       IxVM.Consistency.InstallStep env (.indDecl block nPd) env₂ ∧
-      DeclNativeRunJ rulesJ env p₀ env₂ := by
+      DeclNativeRunJ J env p₀ env₂ := by
   obtain ⟨caps₀_p, cs_p, mI_p, rP_p, rules_p, hblk_p, hnP_eq, hctors_p, hrhss_p,
     hbasis_T, hbasis_R, hcs_p, _⟩ := nativeParts?_withRec_inv hparts
   let w := extra.witness
@@ -3444,13 +3470,13 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     exact w.fresh_R
   have hshape_R : p₀.cvR.name.isProjFnShape = false := by
     rw [w.R_rprj]; exact nat_keyOf_isProjFnShape_false wf.t _
-  have hpos_lift_R : PosSortLift env_base₀ w.cvRa₀ := by
+  have hpos_lift_R : PosSortLiftFor J env_base₀ w.cvRa₀ := by
     cases hlg : p₀.large with
     | false =>
       have hrng : w.cvRa₀.levelParams = List.range k := by simpa [hlg] using hlps_Ra₀
-      exact PosSortLift.of_range hrng
+      exact PosSortLiftFor.of_range M hrng
     | true =>
-      exact extra.pos_sort_lift hlg
+      exact largeLift hlg hS_base₀.store
   have hT_ind_base₀ : ∃ cv caps, env_base₀.find? p₀.cvT.name = some (.indInfo cv caps) := by
     have hT_ne_ctorsA₀ : ∀ cA ∈ wf.ctorsA, cA.1.name ≠ p₀.cvT.name := by
       intro cA hcA heq
@@ -3463,7 +3489,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     exact Ix.Kernel.Env.find?_cons_self (.indInfo wf.cvTa₀ {}) env
   -- Invert `Obs.«KernelCheck::check_const».obs w.ev_rec`
   have hrec_pass :
-      ConstantValCheckJ rulesJ env_base₀ p₀.cvR w.cvRa₀ ∧
+      ConstantValCheckJ J env_base₀ p₀.cvR w.cvRa₀ ∧
       w.rec_np = p₀.nP ∧
       w.rec_ni = p₀.nIdx ∧
       w.rec_nm = 1 ∧
@@ -3541,7 +3567,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
         rw [hm2713]; exact typesRep_alloc_nil c_rec.κ (fun _ => default) m2637
       have hg_rec_es : Good c_rec cs2684 := w.good_rec.sub (fun x hx => by simp [hc, hx])
       obtain ⟨hcvR_chk₀, _, _, _, _, _, _, _⟩ :=
-        constantValCheckJ_of_checked hCore (c := c_rec) (Γ := fun _ => default)
+        constantValCheckJ_of_checked_mapped M hCore (c := c_rec) (Γ := fun _ => default)
           w.valStored_R hv_R_m2 w.lbd_R w.fv_R hfresh_R_base₀ w.basis_R hshape_R
           hS_base₀.store hpos_lift_R ev2649 e_m2_to_2705
           (w.rcRep_rec.mono e_to_2705) hty_nil_es hef_rec w.lf_rec hg_rec_es ev2686
@@ -3700,8 +3726,8 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     envExt_cons_nonProj hfresh_Ta₀ (ne_projTableName_of_isProjFnShape_false hshape_Ta₀)
   obtain ⟨tfvs_all, isorts, hop_all, hisorts⟩ :=
     index_fieldSortsJ_of_former fout.cvT_check hst_Ta₀ hext_env₁
-  have hcvR_chk : ConstantValCheckJ rulesJ env_base p.cvR w.cvRa₀ :=
-    hup_base.constantValCheckJ hcvR_chk₀
+  have hcvR_chk : ConstantValCheckJ J env_base p.cvR w.cvRa₀ :=
+    upgrade hup_base hcvR_chk₀
   have hwrap_ty : WrapRelSem env_base.find? recTy w.cvRa₀.type :=
     hwrap_ty₀.congr_defn hup_base.defnInfo_iff
   -- Establish `GenScoped` on `wf.cvTa₀.type`, constructor types, and `recTy` in `env_base` / `env_rec₀`
@@ -4007,16 +4033,16 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     have hpT : p.cvT.levelParams = p₀.cvT.levelParams := rfl
     rw [hpT, wf.lps_T]
     exact hmaj_lvls₀ bs dom B bm hs
-  have hRecRun : NativeRecRunJ rulesJ env_base p wf.cvTa₀ wf.ctorsA cvRg rhsG :=
+  have hRecRun : NativeRecRunJ J env_base p wf.cvTa₀ wf.ctorsA cvRg rhsG :=
     ⟨hlps_ok, hpinned, w.cvRa₀, recTy, hcvR_chk, hrecTy_p,
       hsc_recTy.2.1, hsc_recTy.2.2.1, hsc_recTy.1, hsc_recTy.2.2.2.1,
-      hdefeq_recTy, hchk_rules, rfl⟩
-  have hRecStored : RecStoredJ rulesJ env_base p cvRg rhsG w.cvRa₀ rhssA :=
+      M.defeq hdefeq_recTy, hchk_rules, rfl⟩
+  have hRecStored : RecStoredJ J env_base p cvRg rhsG w.cvRa₀ rhssA :=
     Or.inr ⟨w.cvRa₀, hcvR_chk, hcvRa₀_eta,
       hwrap_ty.toWrapRel,
-      toSemanticsForall₂ hwrap_rhss, hlf_rhssA, toSemanticsForall₂ hannot_rhss, hlf_Ra₀,
+      toSemanticsForall₂ hwrap_rhss, hlf_rhssA, M.annotList (toSemanticsForall₂ hannot_rhss), hlf_Ra₀,
       hrhssA_lpd, hmaj_lvls_p⟩
-  have hNativeRec : NativeRecJ rulesJ env_base p wf.cvTa₀ wf.ctorsA w.cvRa₀ rhssA :=
+  have hNativeRec : NativeRecJ J env_base p wf.cvTa₀ wf.ctorsA w.cvRa₀ rhssA :=
     ⟨cvRg, rhsG, hRecRun, hRecStored⟩
   -- Run `checkNativeTable_ok` on `env_rec`
   let rules_sum :=
@@ -4108,17 +4134,17 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
     exact wf.fresh_projTbl
   obtain ⟨env₂, htable_ok, henv₂_cases⟩ :=
     checkNativeTable_ok hT_in_rec hc_wf_rec hfn_fresh_rec htbl_fresh_rec
-  -- Assemble `DeclNativeRunJ rulesJ env p₀ env₂`
-  have hNativeRun : DeclNativeRunJ rulesJ env p₀ env₂ := by
+  -- Assemble `DeclNativeRunJ J env p₀ env₂`
+  have hNativeRun : DeclNativeRunJ J env p₀ env₂ := by
     refine ⟨wf.ctors_nodup, isRec, env₁, wf.cvTa₀, p₁, p, wf.ctorsA, sortss, kinds,
       w.cvRa₀, rhssA, tfvs_all, .sort s₀, isorts,
-      ⟨wf.cvTa₀, s₀, bsT, wf.cvTa₀, fout.cvT_check, Or.inl rfl, hst_Ta₀,
+      ⟨wf.cvTa₀, s₀, bsT, wf.cvTa₀, M.constantValCheck fout.cvT_check, Or.inl rfl, hst_Ta₀,
         Or.inl rfl, rfl, rfl⟩,
-      rfl, hsum_ctors₁, ?_, rfl, ?_, ?_, ?_, ?_, hNativeRec, htable_ok, ?_⟩
+      rfl, M.sumCtorsRun hsum_ctors₁, ?_, rfl, ?_, ?_, ?_, ?_, hNativeRec, htable_ok, ?_⟩
     · simpa [p, p₁] using hclassify
     · simpa [p, p₁] using hlg_guard
     · simpa [p, p₁] using hop_all
-    · simpa [p, p₁] using hisorts
+    · simpa [p, p₁] using M.fieldSorts hisorts
     · simpa [p, p₁] using hfields_ok
     · refine Or.inl ⟨caps, ?_⟩
       have hpT : p.cvT.name = wf.cvTa₀.name := wf.valStored_T.1.symm
@@ -4237,6 +4263,37 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
   have hinst : IxVM.Consistency.InstallStep env (.indDecl block nPd) env₂ :=
     installStep_of_perm_and_optTable hpin hnd_block hfresh_block hstored_block hperm henv₂_step
   exact ⟨env₂, hinst, hNativeRun⟩
+
+/-- Compatibility with the original raw recursor sort certificate. -/
+theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
+    {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    (hpin : Ix.Kernel.basisPinHit block = none)
+    (hparts : Ix.Kernel.nativeParts? nPd block = some p₀)
+    (hS : DeclStoreInv env)
+    (extra : NativeWithRecExtra calls env block p₀) :
+    ∃ env₂,
+      IxVM.Consistency.InstallStep env (.indDecl block nPd) env₂ ∧
+      DeclNativeRunJ rulesJ env p₀ env₂ := by
+  exact nativeWithRec_step_mapped (JudgementsMap.refl rulesJ)
+    (fun change h => change.constantValCheckJ h) hLevels hCore hpin hparts hS
+    ⟨extra.witness, extra.unused_later⟩ (fun hlarge _ => extra.pos_sort_lift hlarge)
+
+/-- The native recursor front uses its actual positional typing certificate, without a
+syntactic universe-transport premise. -/
+theorem nativeWithRec_step_pos (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
+    {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    (hpin : Ix.Kernel.basisPinHit block = none)
+    (hparts : Ix.Kernel.nativeParts? nPd block = some p₀)
+    (hS : DeclStoreInv env)
+    (extra : NativeWithRecData calls env block p₀) :
+    ∃ env₂,
+      IxVM.Consistency.InstallStep env (.indDecl block nPd) env₂ ∧
+      DeclNativeRunJ nativePosRulesJ env p₀ env₂ := by
+  exact nativeWithRec_step_mapped rulesToNativePos
+    (fun change h => change.nativePos_constantValCheckJ h) hLevels hCore hpin hparts hS extra
+    (fun _ scope => nativePos_sortLift scope extra.witness.valRep_R.2.2.1)
 
 /-- `DeclInv`-preserving wrapper for Deliverable 1 (`nativeWithRec_step`). -/
 theorem nativeWithRec_declInv_step (hLevels : IxVM.Consistency.Levels)
