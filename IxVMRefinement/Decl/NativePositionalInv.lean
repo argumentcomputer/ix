@@ -30,7 +30,7 @@ private theorem full_spine_head {env : Env .anon} {d : Nat} :
 private theorem projSlots_inst (env : Env .anon) (ks : List LevelParam) (us : List Level)
     (e : KExpr) :
     Expr.ProjSlotsOk env (e.instantiateLevelParams ks us) ↔ Expr.ProjSlotsOk env e := by
-  induction e <;> simp_all [Expr.ProjSlotsOk, Expr.instantiateLevelParams]
+  induction e <;> simp_all [Expr.instantiateLevelParams]
 
 /-- The native package has all structural inversions required by the existing native model.
 Stored universe scope is used exactly when commuting a stored telescope with a permutation. -/
@@ -75,7 +75,7 @@ theorem judgeInv_nativePosRulesJ : JudgeInv nativePosRulesJ where
     · have hinfer : Infer env .full d
           (Expr.mkAppN (.const name (levels.map (Level.subst ps (posLevels ps))))
             (args.map (posOf ps))) (posOf ps t) := by
-        simpa only [posOf, Expr.instantiateLevelParams_mkAppN,
+        simpa only [posOf, Ix.Kernel.instantiateLevelParams_mkAppN,
           Expr.instantiateLevelParams] using h
       obtain ⟨_, hhead⟩ := full_spine_head _ hinfer
       obtain ⟨ci', hfind, _, hlength, _⟩ := Rules.Infer.const_inv hhead
@@ -84,7 +84,9 @@ theorem judgeInv_nativePosRulesJ : JudgeInv nativePosRulesJ where
       have hlength' : levels.length = ci.toConstantVal.levelParams.length := by
         simpa only [List.length_map] using hlength
       have has := Expr.stripPis_instantiateLevelParams_isSome ps (posLevels ps)
-        args.length (by rw [hs]; rfl)
+        args.length
+        (e := ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams levels)
+        (by rw [hs]; rfl)
       obtain ⟨⟨pbs, residual⟩, hstrip⟩ := Option.isSome_iff_exists.mp has
       have hres := (Expr.stripPis_instantiateLevelParams_eq ps (posLevels ps)
         args.length hs hstrip).1
