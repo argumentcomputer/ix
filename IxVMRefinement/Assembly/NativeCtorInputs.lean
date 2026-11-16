@@ -222,6 +222,97 @@ theorem validated_native_ctor_input {κ : _root_.Address → KKey}
 /-- A concrete constructor load, canonical parent record, and the following scope check
 produce the annotated constructor input for that invocation. Hash coverage is restricted to
 this actual load's trace. -/
+theorem observed_native_ctor_input_raw_origin {base : Core.Ctx}
+    {calls loadCalls scopeCalls : List (Call F)} {h₀ h₁ h₂ h₃ : Heap F}
+    {block : Bytes.Address} {i j : F} {blockArg ptr result : SourceValue F}
+    {nl ty blk indIdx ctorIdx np nf safe : SourceValue F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    (ctorAt : ind.ctors.toList[ZMod.val j]? = some ctor)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (loaded : ObsFn Core.W "Ingress::get_ci_cprj" [blockArg, .field i, .field j]
+      h₀ ptr h₁ loadCalls)
+    (goodLoad : Core.Good base loadCalls)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h₀ block blockArg)
+    (tag : loadValue h₁ ptr = .ok (.construct Core.kciEnum "Ctor"
+      [nl, ty, blk, indIdx, ctorIdx, np, nf, safe]))
+    (indexChecked : ctorIdx = .field j)
+    (extended : Heap.Extends h₁ h₂)
+    (bounded : IxVM.Consistency.Bounded calls)
+    (validated : ObsFn Core.W "KernelCheck::validate_expr_well_scoped"
+      [ty, .field 0, nl] h₂ result h₃ scopeCalls)
+    (scopeMember : (⟨"KernelCheck::validate_expr_well_scoped",
+      [ty, .field 0, nl], h₂⟩ : Call F) ∈ calls)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ctor.typ = .ok rawType)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed loadCalls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    ∃ (annotated : Ix.Kernel.ConstantVal .anon) (rawSyntax : Core.KExpr),
+      IxVM.Consistency.ValStored annotated
+        ⟨base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) (ZMod.val j)),
+          List.range ctor.lvls.toNat, rawType⟩ ∧
+      Decl.ValRepExact base.κ h₁ nl ty annotated ∧
+      (∀ d Γ, Decl.RawTmExact base.κ d Γ h₁ 0 rawSyntax annotated.type ty) ∧
+      Decl.CIPtrRepExact base.κ h₁ ptr (.ctorInfo annotated ctor.params.toNat ctor.fields.toNat) ∧
+      rawType.looseBVarsBounded 0 = true ∧
+      rawType.allLevelParamsDefined (List.range ctor.lvls.toNat) = true ∧ rawType.hasFvar = false ∧
+      ∃ (tree : L1.BinderTreeData) (plan : List Core.KLevel),
+        L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree ∧
+        L1.binderRootPlan tree source.value.sharing.toList
+          (((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) + 1 + j) ctor.typ = some plan ∧
+        L1.applyBinderTrace
+          (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+            some (annotated.type, []) ∧ ctor.cidx.toNat = ZMod.val j ∧
+        L1.applyRawBinderTrace
+          (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+            some (rawSyntax, []) := by
+  obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hh, ha, decoded, _,
+    srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree, plan, built, planned, levels⟩ :=
+    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
+  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hh ha
+  rw [bytesEq, source.decoded] at decoded
+  injection decoded with sourceEq
+  subst src
+  rw [blockShape] at srcShape
+  injection srcShape with membersEq
+  subst ms
+  rw [memberAt] at memberAt'
+  injection memberAt' with memberEq
+  injection memberEq with memberEq
+  subst member
+  rw [ctorAt] at ctorAt'
+  injection ctorAt' with ctorEq
+  subst ct
+  have originalRaw := raw
+  obtain ⟨levelBound, ctorIndexBound, _, _, _, typePtr, parentPtr, parent, _, _, valueEq, rawTy⟩ := raw
+  subst value
+  have fieldsEq := Except.ok.inj (tag.symm.trans valueAt)
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fieldsEq
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fieldsEq
+  have ctorIndex : ctor.cidx.toNat = ZMod.val j := by
+    have equal := congrArg (fun x : F => ZMod.val x) (Value.field.inj indexChecked)
+    rwa [ZMod.val_natCast_of_lt (Nat.lt_trans ctorIndexBound (by decide))] at equal
+  obtain ⟨_, varsBound, paramsDefined⟩ :=
+    validate_expr_well_scoped_spec bounded levelBound rawTy extended read validated scopeMember
+  obtain ⟨annotated, rawSyntax, stored, exactInfo, rawAt, image, rawImage⟩ :=
+    native_ctor_value_with_raw_trace originalRaw levels read varsBound paramsDefined keyed selfKeyed
+      (fun a bytes member =>
+        blobReads a bytes (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
+  have exactValue := exactInfo.ctor_valRep
+  have rawTypeRep : ∀ d Γ, Decl.RawTmExact base.κ d Γ h₁ 0 rawSyntax annotated.type ty :=
+    rawAt _ _ _ _ _ _ _ _ rfl
+  rw [ctorIndex] at stored
+  exact ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, ⟨_, valueAt, exactInfo⟩,
+    varsBound, paramsDefined, memberReader_read_noFvar read,
+    tree, plan, built, planned, image, ctorIndex, rawImage⟩
+
+/-- The constructor annotation origin, with its additional raw-syntax image omitted. -/
 theorem observed_native_ctor_input_origin {base : Core.Ctx}
     {calls loadCalls scopeCalls : List (Call F)} {h₀ h₁ h₂ h₃ : Heap F}
     {block : Bytes.Address} {i j : F} {blockArg ptr result : SourceValue F}
@@ -269,48 +360,12 @@ theorem observed_native_ctor_input_origin {base : Core.Ctx}
         L1.applyBinderTrace
           (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
             some (annotated.type, []) ∧ ctor.cidx.toNat = ZMod.val j := by
-  obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hh, ha, decoded, _,
-    srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree, plan, built, planned, levels⟩ :=
-    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
-  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hh ha
-  rw [bytesEq, source.decoded] at decoded
-  injection decoded with sourceEq
-  subst src
-  rw [blockShape] at srcShape
-  injection srcShape with membersEq
-  subst ms
-  rw [memberAt] at memberAt'
-  injection memberAt' with memberEq
-  injection memberEq with memberEq
-  subst member
-  rw [ctorAt] at ctorAt'
-  injection ctorAt' with ctorEq
-  subst ct
-  have originalRaw := raw
-  obtain ⟨levelBound, ctorIndexBound, _, _, _, typePtr, parentPtr, parent, _, _, valueEq, rawTy⟩ := raw
-  subst value
-  have fieldsEq := Except.ok.inj (tag.symm.trans valueAt)
-  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fieldsEq
-  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fieldsEq
-  have ctorIndex : ctor.cidx.toNat = ZMod.val j := by
-    have equal := congrArg (fun x : F => ZMod.val x) (Value.field.inj indexChecked)
-    rwa [ZMod.val_natCast_of_lt (Nat.lt_trans ctorIndexBound (by decide))] at equal
-  obtain ⟨_, varsBound, paramsDefined⟩ :=
-    validate_expr_well_scoped_spec bounded levelBound rawTy extended read validated scopeMember
-  obtain ⟨annotated, stored, exactInfo, image⟩ :=
-    native_ctor_value_of_trace originalRaw levels read varsBound paramsDefined keyed selfKeyed
-      (fun a bytes member =>
-        blobReads a bytes (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
-  have exactValue := exactInfo.ctor_valRep
-  have exactType : Decl.TmCExact base.κ h₁ annotated.type ty := by
-    have represented := exactValue.2.2.2
-    rw [stored.2.1] at represented
-    simpa only [Decl.posOf_range] using represented
-  obtain ⟨rawSyntax, rawTypeRep⟩ := exactType.raw
-  rw [ctorIndex] at stored
-  exact ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, ⟨_, valueAt, exactInfo⟩,
-    varsBound, paramsDefined, memberReader_read_noFvar read,
-    tree, plan, built, planned, image, ctorIndex⟩
+  obtain ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, exactInfo,
+    varsBound, paramsDefined, closed, tree, plan, built, planned, image, index, _⟩ :=
+    observed_native_ctor_input_raw_origin source blockShape memberAt ctorAt loaded goodLoad blockRep
+      tag indexChecked extended bounded validated scopeMember read keyed selfKeyed blobReads
+  exact ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, exactInfo,
+    varsBound, paramsDefined, closed, tree, plan, built, planned, image, index⟩
 
 /-- The original per-read constructor interface, omitting its retained annotation origin. -/
 theorem observed_native_ctor_input {base : Core.Ctx}
