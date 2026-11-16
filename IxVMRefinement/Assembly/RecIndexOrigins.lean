@@ -124,7 +124,7 @@ theorem contextOf_member_analysis {md : Mode} (table : RoleTable) (prelude : Pre
         cx.index.twins[ConstRef.member owner j]? = some entry) :
     let cx := contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
       prelude.blobs hint reconstruct
-    ∃ carriers, recursorAnalysis? cx.store owner constant recursor =
+    ∃ carriers, Ix.Cert.recursorAnalysis? cx.store owner constant recursor =
       some (entry.block, entry.motive, carriers, entry.major) := by
   let cx := contextOf (md := md) table records blobs (prelude.records ++ prelude.evidence)
     prelude.blobs hint reconstruct
