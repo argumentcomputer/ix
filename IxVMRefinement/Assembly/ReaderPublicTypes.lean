@@ -54,7 +54,7 @@ private theorem lowerTwin_publicValueTypes {md : Mode} {cx : Ctx md}
                         · simp only [pure, Except.pure, Except.ok.injEq] at read
                           subst read
                           intro d member _
-                          simp only [Array.toList_singleton, List.mem_singleton] at member
+                          simp at member
                           subst d
                           trivial
                   · exact (fail_bind read).elim
@@ -116,7 +116,7 @@ theorem readRecord_publicValueTypes {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
     simp only [pure, Except.pure, Except.ok.injEq] at read
     subst read
     intro d member _
-    simp only [Array.toList_singleton, List.mem_singleton] at member
+    simp at member
     subst d
     exact readDefinition_publicType hrk selfPublic definition
   | recr _ =>
@@ -138,7 +138,7 @@ theorem readRecord_publicValueTypes {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
       simp only [pure, Except.pure, Except.ok.injEq] at read
       subst read
       intro d member _
-      simp only [Array.toList_singleton, List.mem_singleton] at member
+      simp at member
       subst d
       trivial
   | quot q =>
@@ -148,7 +148,7 @@ theorem readRecord_publicValueTypes {cx : Ctx .anon} (hrk : RolesKeyed cx) {st :
     simp only [pure, Except.pure, Except.ok.injEq] at read
     subst read
     intro d member _
-    simp only [Array.toList_singleton, List.mem_singleton] at member
+    simp at member
     subst d
     trivial
   | muts ms =>
@@ -228,7 +228,7 @@ theorem preludeFor_publicValueTypes {table : RoleTable} {pre : Prelude .anon}
   obtain ⟨records, extra, extraBlobs, read⟩ := preludeRead_unpack (preludeFor_checks prepared).1
   have keyed : RolesKeyed (contextOf (md := .anon) table records [] extra extraBlobs) :=
     contextOf_rolesKeyed (md := .anon) table records [] extra extraBlobs _ _
-  exact (readRecords_spec read).publicValueTypes keyed
+  exact StreamRead.publicValueTypes keyed (readRecords_spec read)
 
 /-- Prelude selection and ground hoisting preserve the actual raw header property. -/
 theorem preparePrelude_publicValueTypes {pre : Frontend.PreludeIx .anon}
@@ -252,6 +252,6 @@ theorem admitted_publicValueTypes {V : IxVM.Refinement.View} {b : Admission.Bind
   have keyed := streamContext_rolesKeyed _root_.Address.admissionHash w.table w.prelude
     (Ix.Cert.Stream.decodedOf w.env w.order) (Ix.Cert.blobsOf w.env w.order) (Ix.Cert.hintsOf w.env)
   exact preparePrelude_publicValueTypes (preludeFor_publicValueTypes w.preludeRead)
-    ((readRecords_spec w.read).publicValueTypes keyed)
+    (StreamRead.publicValueTypes keyed (readRecords_spec w.read))
 
 end IxVM.Refinement.Assembly
