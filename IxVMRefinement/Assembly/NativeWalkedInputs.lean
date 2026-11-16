@@ -30,7 +30,7 @@ theorem checkedAtFull_not_muts {base : Core.Ctx} {bindingAddr address : _root_.A
   injection decoded with sameValue
   subst value
   have sourceShape : sourceAt.value.info = .muts members := shape
-  simpa only [L1.GetCIRawResult, sourceShape] using result
+  simp only [L1.GetCIRawResult, sourceShape] at result
 
 /-- A walked mutual-block owner supplies the actual check of each present inductive member. -/
 theorem admitted_native_member_check {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
