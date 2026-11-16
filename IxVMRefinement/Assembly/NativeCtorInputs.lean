@@ -5,7 +5,7 @@ import IxVMRefinement.Decl.NativeLoads
 /-! # Native constructor inputs from actual conversion and scope checks
 
 The scope validator supplies the reader type's bounds before conversion is strengthened to
-an exact representation. The annotation and raw rawSyntax belong to this observed read; no
+an exact representation. The annotation and raw syntax belong to this observed read; no
 agreement with another load or installed constructor is assumed.
 -/
 
@@ -14,10 +14,10 @@ namespace IxVM.Refinement.Assembly
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
-open IxVM.Refinement.Core (KKey KExpr KConstantVal)
+open IxVM.Refinement.Core (KKey KExpr)
 
 /-- An actual validation call establishes the raw reader bounds, then exact conversion
-produces the annotation and its raw heap rawSyntax. -/
+produces the annotation and its raw heap syntax. -/
 theorem validated_native_type_input {κ : _root_.Address → KKey}
     {calls cs : List (Call F)} {h₀ h h' : Heap F}
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -82,7 +82,7 @@ theorem validated_native_ctor_input {κ : _root_.Address → KKey}
     (keyed : ∀ a k, cx.keyAt a = .ok k → k = κ a)
     (selfKeyed : ∀ i a m k, recurAddrs[i]? = some a → self i = some m → m = .ok k → k = κ a)
     (blobReads : ∀ a bytes, (a, bytes) ∈ blobs → cx.blob a = some bytes) :
-    ∃ (annotated : KConstantVal) (rawSyntax : KExpr),
+    ∃ (annotated : (Ix.Kernel.ConstantVal .anon)) (rawSyntax : KExpr),
       IxVM.Consistency.ValStored annotated
         ⟨κ (Core.cprjAddr block index ctor.cidx.toNat), List.range ctor.lvls.toNat, rawType⟩ ∧
       Decl.ValRepExact κ h₀ (.field (ctor.lvls.toNat : F)) tyPtr annotated ∧
@@ -98,13 +98,14 @@ theorem validated_native_ctor_input {κ : _root_.Address → KKey}
     ty, blk, b, blockEq, blockRep, valueEq, rawTy⟩ := raw
   injection valueEq with _ _ fieldsEq
   simp only [List.cons.injEq, true_and, and_true] at fieldsEq
-  obtain ⟨rfl, rfl⟩ := fieldsEq
+  obtain ⟨typeEq, blockPointerEq⟩ := fieldsEq
+  subst ty blk
   obtain ⟨type, rawSyntax, annotation, exactRep, rawRep, varsBound, paramsDefined, closed⟩ :=
     validated_native_type_input bounded levelsBound rawTy extended read validated member
       keyed selfKeyed blobReads
-  let cv : KConstantVal :=
+  let cv : (Ix.Kernel.ConstantVal .anon) :=
     ⟨κ (Core.cprjAddr block index ctor.cidx.toNat), List.range ctor.lvls.toNat, type⟩
-  have valueRep : Decl.ValRepExact κ h₀ (.field (ctor.lvls.toNat : F)) ty cv := by
+  have valueRep : Decl.ValRepExact κ h₀ (.field (ctor.lvls.toNat : F)) tyPtr cv := by
     refine ⟨?_, ?_, ?_, ?_⟩
     · simp [cv]
     · simpa only [cv, List.length_range] using levelsBound
