@@ -174,9 +174,11 @@ theorem lowerTwins_of_lowerTwin {md : Mode} {cx : Ctx md}
   unfold lowerTwins
   cases first : twins[0]? with
   | none =>
+    rw [first] at read
     exact read
   | some pair =>
     obtain ⟨ref, entry⟩ := pair
+    rw [first] at read
     dsimp only at read ⊢
     split at read
     · rename_i sameFamily
