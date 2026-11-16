@@ -60,16 +60,16 @@ private theorem forall_conversion_components_aux {md : Mode} {env : Env md} :
         DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth rightDomain))
           (rightBody.instantiate1 (.fvar depth rightDomain)))
   | _, _, _, .refl => by
-    intro ld lb rd rb lm rm le re
+    intro le re
     obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (le.symm.trans re)
     exact ⟨.refl, rfl, .inl .refl⟩
   | _, _, _, .symm reversed => by
-    intro ld lb rd rb lm rm le re
+    intro le re
     obtain ⟨domain, metadata, leftOpened | rightOpened⟩ := forall_conversion_components_aux reversed re le
     · exact ⟨.symm domain, metadata.symm, .inr (.symm leftOpened)⟩
     · exact ⟨.symm domain, metadata.symm, .inl (.symm rightOpened)⟩
   | _, _, _, .redL reduced further => by
-    intro ld lb rd rb lm rm le re
+    intro le re
     have same := Red.rigid reduced (by rw [le]; rfl)
     exact forall_conversion_components_aux further (same.trans le) re
   | _, _, _, .sort _ => by intros; contradiction
@@ -78,11 +78,11 @@ private theorem forall_conversion_components_aux {md : Mode} {env : Env md} :
   | _, _, _, .natZero => by intros; contradiction
   | _, _, _, .natSucc _ => by intros; contradiction
   | _, _, _, .natOffset _ _ offset _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at offset
     cases offset
   | _, _, _, .forallE domain body metadata => by
-    intro ld lb rd rb lm rm le re
+    intro le re
     obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj le
     obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj re
     exact ⟨domain, metadata, .inr body⟩
@@ -91,36 +91,36 @@ private theorem forall_conversion_components_aux {md : Mode} {env : Env md} :
   | _, _, _, .proj _ => by intros; contradiction
   | _, _, _, .eta _ _ _ _ _ => by intros; contradiction
   | _, _, _, .proofFast first _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at first
     simp only [isProofFast, proofPW, Expr.getAppFn, headProofPW, PropWhen.isProp_never] at first
     cases first
   | _, _, _, .proofIrrel typed typedAgain sorted zero _ _ _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at typed
     exact (forall_not_proof typed typedAgain sorted zero).elim
   | _, _, _, .unitLike typed reduced unit _ _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at typed
     exact (forall_type_not_unit typed reduced unit).elim
   | _, _, _, .structEta _ _ head _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at head
     cases head
   | _, _, _, .structUnit typed reduced head _ _ _ _ _ _ _ _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at typed
     exact (forall_type_not_const typed reduced head).elim
   | _, _, _, .proofIrrelTy typed typedAgain sorted zero _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at typed
     exact (forall_not_proof typed typedAgain sorted zero).elim
   | _, _, _, .unitLikeTy typed reduced head _ _ _ _ _ _ _ => by
-    intro ld lb rd rb lm rm le _
+    intro le _
     rw [le] at typed
     exact (forall_type_not_const typed reduced head).elim
   | _, _, _, .structEtaTy head _ _ _ _ _ _ _ _ _ _ _ _ _ => by
-    intro ld lb rd rb lm rm _ re
+    intro _ re
     rw [re] at head
     cases head
 
