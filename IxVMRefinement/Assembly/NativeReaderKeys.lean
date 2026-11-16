@@ -8,6 +8,10 @@ member key with the key used by the Source role table. No semantic-store premise
 
 namespace IxVM.Refinement.Assembly
 
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library
+open IxVM (F)
+
 /-- A constructor projection is reconstructed at its canonical address. -/
 theorem projectionAddress_cprj {store : Ix.Kernel.Reader.Store}
     (owner : _root_.Address) (i j : Nat) (hi : i < UInt64.size) (hj : j < UInt64.size) :
@@ -25,6 +29,7 @@ theorem projectionAddress_cprj {store : Ix.Kernel.Reader.Store}
 
 /-- The authentic reader context and Source role table agree on a known constructor's name.
 The actual projection-hash observation supplies the stored-projection agreement premise. -/
+set_option maxHeartbeats 800000 in
 theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
     {pre : Ix.Kernel.Reader.Prelude .anon}
     {constants : List (_root_.Address × Ixon.Constant)}
@@ -140,5 +145,61 @@ theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
         simpa [Ix.Kernel.Reader.keyOfAddress, hres_d, hrole, Ix.Kernel.Mode.addressId?] using hsnd.symm
       rw [hv]
       rfl
+
+/-- A constructor projection hashed by the actual run fixes any stored record at that address. -/
+theorem constructor_projection_store_eq {env : Ixon.Env} {calls : List (Call F)}
+    {block : Bytes.Address} {i j : Nat} {constant : Ixon.Constant}
+    (decoded : L1.EnvDecoded env)
+    (noCollision : ¬ View.HashedCollision { env := env } [] calls)
+    (hashed : Hashed calls (Ixon.serConstant (IxVM.Consistency.constructorProjection (Core.ixAddr block) i j)))
+    (found : Ix.Cert.recordAt env (Core.cprjAddr (Core.ixAddr block) i j) = some constant) :
+    constant = IxVM.Consistency.constructorProjection (Core.ixAddr block) i j := by
+  unfold Ix.Cert.recordAt at found
+  cases stored : env.consts.get? (Core.cprjAddr (Core.ixAddr block) i j) with
+  | none => rw [stored] at found; cases found
+  | some entry =>
+    rw [stored] at found
+    obtain ⟨decodedValue, cached, parsed⟩ := decoded _ entry stored
+    have same := Option.some.inj (cached.symm.trans found)
+    subst decodedValue
+    have bytes := Core.load_escape stored noCollision _ hashed rfl
+    rw [← bytes] at parsed
+    have canonical := Ixon.Verify.deConstantExact_serConstant
+      (IxVM.Consistency.constructorProjection (Core.ixAddr block) i j)
+      (L1.projConstant_wireWF_cPrj i.toUInt64 j.toUInt64 block)
+    exact Except.ok.inj (parsed.symm.trans canonical)
+
+/-- Actual projection hashes discharge the stored-projection premise in constructor keying.
+The reader's lookups are transported to the same decoded store used by the collision escape. -/
+theorem streamContext_memberKey_cprj_of_hash {t : Ix.Kernel.RoleTable}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
+    {constants : List (_root_.Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef _root_.Address → Option Ix.Kernel.ReducibilityHint}
+    (authentic : AuthenticExactStore
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store)
+    (tableChecked : t.check = .ok ())
+    {block : Bytes.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {i j : Nat} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (parent : (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+      (Core.ixAddr block) = some source)
+    (shape : source.info = .muts members) (memberAt : members[i]? = some (.indc ind))
+    (ctorAt : ind.ctors[j]? = some ctor) (ctorIndex : ctor.cidx.toNat = j)
+    (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
+    (boundStored : ∀ role address, (role, address) ∈ t.bound.toList →
+      ∃ value, (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        address = some value)
+    {env : Ixon.Env} {calls : List (Call F)}
+    (decoded : L1.EnvDecoded env)
+    (noCollision : ¬ View.HashedCollision { env := env } [] calls)
+    (hash : Hashed calls (Ixon.serConstant (IxVM.Consistency.constructorProjection (Core.ixAddr block) i j)))
+    (transport : ∀ address value,
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        address = some value → Ix.Cert.recordAt env address = some value) :
+    (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).memberKey
+      (.ctor (Core.ixAddr block) i j) = .ok (Core.keyOf t (Core.cprjAddr (Core.ixAddr block) i j)) := by
+  apply streamContext_memberKey_cprj authentic tableChecked parent shape memberAt ctorAt ctorIndex
+    memberBound ctorBound boundStored
+  intro value stored
+  exact constructor_projection_store_eq decoded noCollision hash (transport _ _ stored)
 
 end IxVM.Refinement.Assembly
