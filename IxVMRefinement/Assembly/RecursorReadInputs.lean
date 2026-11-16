@@ -69,6 +69,7 @@ theorem readRecursor_inputs {md : Mode} {cx : Ctx md} {blockLps : List LevelPara
     exact (throw_ok read).elim
   | member owner slot =>
     unfold readRecursor at read
+    dsimp only at read
     cases stored : cx.store owner with
     | none =>
       rw [stored] at read
@@ -114,10 +115,10 @@ theorem readRecursor_inputs {md : Mode} {cx : Ctx md} {blockLps : List LevelPara
                 have frames : List.Forall₂ (RecursorRuleReadFrame cx reader majorOwner majorSlot)
                     recursor.rules.zipIdx.toList rules := by
                   apply forIn_inv_array
-                    (fun prefix current =>
-                      List.Forall₂ (RecursorRuleReadFrame cx reader majorOwner majorSlot) prefix current)
+                    (fun processed current =>
+                      List.Forall₂ (RecursorRuleReadFrame cx reader majorOwner majorSlot) processed current)
                     _ recursor.rules.zipIdx ?_ (.nil) rulesRead
-                  intro prefix source suffix current out _ held ran
+                  intro processed source suffix current out _ held ran
                   rcases source with ⟨raw, position⟩
                   obtain ⟨ctor, ctorRead, ran⟩ := except_bind_ok.mp ran
                   obtain ⟨rhs, rhsRead, ran⟩ := except_bind_ok.mp ran
