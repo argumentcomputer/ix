@@ -191,6 +191,7 @@ theorem native_member_slot_bound {base : Core.Ctx} {bindingAddr : _root_.Address
     simpa only [Array.length_toList] using (Array.getElem?_eq_some_iff.mp memberAt).1
   exact Nat.lt_trans index length
 
+set_option maxRecDepth 4096 in
 /-- The actual walked inductive member constructs its former input without a supplied
 projection source, header representation, annotation or prelude witness. -/
 theorem native_former_input_of_member {base : Core.Ctx} {bindingAddr : _root_.Address}
@@ -226,7 +227,8 @@ theorem native_former_input_of_member {base : Core.Ctx} {bindingAddr : _root_.Ad
       (Core.iprjAddr (Core.ixAddr block) slot.toUInt64.toNat) :=
     (congrArg (fun index => Claim.CheckedAtFull calls bindingAddr base.t
       (Core.iprjAddr (Core.ixAddr block) index)) indexNat).mpr full
-  have produced := native_former_input_of_checked (base := base) source indexedProjection projectedInfo
+  have produced := native_former_input_of_checked (base := base) (block := block) (index := slot.toUInt64)
+    source indexedProjection projectedInfo
     blockShape indexedMember indexedFull good caps read keyed selfKeyed blobReads
   simpa only [indexNat] using produced
 
