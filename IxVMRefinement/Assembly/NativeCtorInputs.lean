@@ -492,6 +492,109 @@ theorem native_ctor_reload {base : Core.Ctx} {block : Bytes.Address} {i j : F}
   exact ⟨_, valueAt, represented⟩
 
 /-- Repeated constructor loads also retain the same raw syntax, including let cells. -/
+theorem native_ctor_raw_reload_with_shape {base : Core.Ctx} {block : Bytes.Address} {i j : F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    (ctorAt : ind.ctors.toList[ZMod.val j]? = some ctor)
+    (ctorIndex : ctor.cidx.toNat = ZMod.val j)
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType rawSyntax : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) (ZMod.val j)),
+        List.range ctor.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      (((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) + 1 + j) ctor.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (rawImage : L1.applyRawBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ctor.lvls.toNat) level)) rawType plan =
+        some (rawSyntax, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ctor.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ctor.lvls.toNat) = true)
+    {h h' : Heap F} {blockArg ptr : SourceValue F} {calls : List (Call F)}
+    (loaded : ObsFn Core.W "Ingress::get_ci_cprj" [blockArg, .field i, .field j] h ptr h' calls)
+    (goodLoad : Core.Good base calls)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block blockArg)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed calls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    ∃ value, loadValue h' ptr = .ok value ∧
+      Decl.CIRepExact base.κ h' value (.ctorInfo cv ctor.params.toNat ctor.fields.toNat) ∧
+      (∀ (nl ty parent member ctorIndex params fields safety : SourceValue F),
+        value = .construct Core.kciEnum "Ctor" [nl, ty, parent, member, ctorIndex, params, fields, safety] →
+        ∀ d Γ, Decl.RawTmExact base.κ d Γ h' 0 rawSyntax cv.type ty) ∧
+      ctor.params.toNat < 72057594037927936 ∧ ctor.fields.toNat < 72057594037927936 ∧
+      ∃ (typePtr parentPtr : SourceValue F) (parent : Bytes.Address),
+        value = .construct Core.kciEnum "Ctor"
+          [.field (ctor.lvls.toNat : F), typePtr, parentPtr, .field i, .field j,
+            .field (ctor.params.toNat : F), .field (ctor.fields.toNat : F), L1.repBoolField ctor.isUnsafe] ∧
+        Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
+  obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hashed, address, decoded, _,
+    srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree', plan', built', planned', levels⟩ :=
+    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
+  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hashed address
+  rw [bytesEq, source.decoded] at decoded
+  injection decoded with sourceEq
+  subst src
+  rw [blockShape] at srcShape
+  injection srcShape with membersEq
+  subst ms
+  rw [memberAt] at memberAt'
+  injection memberAt' with memberEq
+  injection memberEq with memberEq
+  subst member
+  rw [ctorAt] at ctorAt'
+  injection ctorAt' with ctorEq
+  subst ct
+  have metadata : ctor.params.toNat < 72057594037927936 ∧
+      ctor.fields.toNat < 72057594037927936 ∧
+      ∃ (typePtr parentPtr : SourceValue F) (parent : Bytes.Address),
+        value = .construct Core.kciEnum "Ctor"
+          [.field (ctor.lvls.toNat : F), typePtr, parentPtr, .field i, .field j,
+            .field (ctor.params.toNat : F), .field (ctor.fields.toNat : F), L1.repBoolField ctor.isUnsafe] ∧
+        Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
+    obtain ⟨_, _, paramsBound, fieldsBound, _, typePtr, parentPtr, parent,
+      parentEq, parentRep, valueShape, _⟩ := raw
+    exact ⟨paramsBound, fieldsBound, typePtr, parentPtr, parent,
+      by simpa only [ctorIndex, ZMod.natCast_zmod_val] using valueShape, parentRep, parentEq⟩
+  have treeEq := built.unique built'
+  cases treeEq
+  have planEq := Option.some.inj (planned.symm.trans planned')
+  cases planEq
+  obtain ⟨cv', rawSyntax', stored', represented, rawAt, image', rawImage'⟩ :=
+    native_ctor_value_with_raw_trace raw levels
+    read varsBounded levelsDefined keyed selfKeyed
+    (fun a bytes member => blobReads a bytes
+      (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
+  rw [ctorIndex] at stored'
+  have nameEq := stored'.1.trans stored.1.symm
+  have paramsEq := stored'.2.1.trans stored.2.1.symm
+  have typeEq := (L1.applyBinderTrace_unique image' image).1
+  have valueEq : cv' = cv := by
+    rcases cv' with ⟨name', params', type'⟩
+    rcases cv with ⟨name, params, type⟩
+    change name' = name at nameEq
+    change params' = params at paramsEq
+    change type' = type at typeEq
+    cases nameEq
+    cases paramsEq
+    cases typeEq
+    rfl
+  cases valueEq
+  have rawEq := (L1.applyRawBinderTrace_unique rawImage' rawImage).1
+  cases rawEq
+  exact ⟨_, valueAt, represented, rawAt, metadata⟩
+
+/-- The paired constructor reload interface, omitting the retained metadata shape. -/
 theorem native_ctor_raw_reload {base : Core.Ctx} {block : Bytes.Address} {i j : F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
@@ -532,49 +635,9 @@ theorem native_ctor_raw_reload {base : Core.Ctx} {block : Bytes.Address} {i j : 
       (∀ (nl ty parent member ctorIndex params fields safety : SourceValue F),
         value = .construct Core.kciEnum "Ctor" [nl, ty, parent, member, ctorIndex, params, fields, safety] →
         ∀ d Γ, Decl.RawTmExact base.κ d Γ h' 0 rawSyntax cv.type ty) := by
-  obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hashed, address, decoded, _,
-    srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree', plan', built', planned', levels⟩ :=
-    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
-  have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hashed address
-  rw [bytesEq, source.decoded] at decoded
-  injection decoded with sourceEq
-  subst src
-  rw [blockShape] at srcShape
-  injection srcShape with membersEq
-  subst ms
-  rw [memberAt] at memberAt'
-  injection memberAt' with memberEq
-  injection memberEq with memberEq
-  subst member
-  rw [ctorAt] at ctorAt'
-  injection ctorAt' with ctorEq
-  subst ct
-  have treeEq := built.unique built'
-  cases treeEq
-  have planEq := Option.some.inj (planned.symm.trans planned')
-  cases planEq
-  obtain ⟨cv', rawSyntax', stored', represented, rawAt, image', rawImage'⟩ :=
-    native_ctor_value_with_raw_trace raw levels
-    read varsBounded levelsDefined keyed selfKeyed
-    (fun a bytes member => blobReads a bytes
-      (hashedBlobs (a, bytes) member).1 (hashedBlobs (a, bytes) member).2)
-  rw [ctorIndex] at stored'
-  have nameEq := stored'.1.trans stored.1.symm
-  have paramsEq := stored'.2.1.trans stored.2.1.symm
-  have typeEq := (L1.applyBinderTrace_unique image' image).1
-  have valueEq : cv' = cv := by
-    rcases cv' with ⟨name', params', type'⟩
-    rcases cv with ⟨name, params, type⟩
-    change name' = name at nameEq
-    change params' = params at paramsEq
-    change type' = type at typeEq
-    cases nameEq
-    cases paramsEq
-    cases typeEq
-    rfl
-  cases valueEq
-  have rawEq := (L1.applyRawBinderTrace_unique rawImage' rawImage).1
-  cases rawEq
-  exact ⟨_, valueAt, represented, rawAt⟩
+  obtain ⟨value, loadedValue, represented, rawAt, _⟩ := native_ctor_raw_reload_with_shape
+    source blockShape memberAt ctorAt ctorIndex stored built planned image rawImage read
+    varsBounded levelsDefined loaded goodLoad blockRep keyed selfKeyed blobReads
+  exact ⟨value, loadedValue, represented, rawAt⟩
 
 end IxVM.Refinement.Assembly
