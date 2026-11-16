@@ -75,7 +75,8 @@ theorem judgeInv_nativePosRulesJ : JudgeInv nativePosRulesJ where
     · have hinfer : Infer env .full d
           (Expr.mkAppN (.const name (levels.map (Level.subst ps (posLevels ps))))
             (args.map (posOf ps))) (posOf ps t) := by
-        simpa only [posOf, Ix.Kernel.instantiateLevelParams_mkAppN,
+        unfold posOf at h ⊢
+        simpa only [Ix.Kernel.instantiateLevelParams_mkAppN,
           Expr.instantiateLevelParams] using h
       obtain ⟨_, hhead⟩ := full_spine_head _ hinfer
       obtain ⟨ci', hfind, _, hlength, _⟩ := Rules.Infer.const_inv hhead
