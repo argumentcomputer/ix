@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.NativeCtorNames
 import IxVMRefinement.Assembly.NativeOuter
+import IxVMRefinement.Decl.NativeCtorScoped
 
 /-! # Fresh constructor loads in the actual native stage
 
@@ -126,7 +127,7 @@ theorem NativeFormerRunInput.getCprj_current {base : Core.Ctx} {block : Bytes.Ad
     have sameAddress := congrArg₂ (fun address index => Core.cprjAddr address (ZMod.val i) index)
       parentEq (congrArg ZMod.val (ZMod.natCast_zmod_val slot))
     exact storedAs.1.symm.trans (ctorName.trans (congrArg base.κ sameAddress))
-  have freshStage := input.ctorFreshStage native shape family count safe rootGood tableWf fresh
+  have freshStage := input.ctorFreshStage (parts := parts) (isRec := isRec) native shape family count safe rootGood tableWf fresh
     ctor (List.mem_of_getElem? ctorAt)
   refine ⟨⟨.ctorInfo stored ind.params.toNat ctor.2, _, payload, represented.toCIRep⟩, ?_⟩
   intro ci found
