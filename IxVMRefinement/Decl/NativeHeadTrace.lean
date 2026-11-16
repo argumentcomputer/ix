@@ -23,8 +23,14 @@ theorem primitive_dispatch_zero_of_cons
       [rc, address, levels, spine, types] heap result final calls) :
     ∃ value, result = .tuple [.field 0, value] := by
   cases Obs.«KernelWhnf::try_prim_dispatch».obs observed with
-  | Nil_n1 _ _ _ _ empty _ _ _ => rw [levelList] at empty; cases empty
-  | Nil_other _ _ _ _ _ empty _ _ _ _ _ _ => rw [levelList] at empty; cases empty
+  | Nil_n1 _ _ _ _ empty _ _ _ =>
+    rw [levelList] at empty
+    have lengths := congrArg List.length (Value.construct.inj (Except.ok.inj empty)).2.2
+    simp at lengths
+  | Nil_other _ _ _ _ _ empty _ _ _ _ _ _ =>
+    rw [levelList] at empty
+    have lengths := congrArg List.length (Value.construct.inj (Except.ok.inj empty)).2.2
+    simp at lengths
   | other _ _ _ _ answer _ _ _ => exact ⟨_, answer⟩
 
 /-- If the actual primitive call declines and the selected metadata load is inductive,
