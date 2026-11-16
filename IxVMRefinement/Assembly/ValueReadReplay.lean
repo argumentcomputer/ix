@@ -37,15 +37,27 @@ theorem lowerDefinition_replay_values {md : Mode}
     (empty : ∀ k : CName md, target.projLevels[k]? = none) :
     ∃ new, lowerDefinition newHint target newHeights cv value kind safety = .ok (new, false) ∧
       ValueDeclAgree old new := by
-  unfold lowerDefinition at read ⊢
-  rw [projRewrite_eq_none empty cv value]
+  unfold lowerDefinition at read
   cases safe : safetyDeclineOf kind safety with
   | some reason => simp [safe, declined, throw, throwThe, MonadExceptOf.throw] at read
   | none =>
-    simp only [safe] at read ⊢
-    cases kind <;> cases rewritten : projRewrite source cv value <;>
-      simp_all [pure, Except.pure]
-    all_goals first | exact .defn .. | exact .thm .. | exact .opaqueVal ..
+    simp only [safe, pure, Except.pure] at read
+    have declared := congrArg Prod.fst (Except.ok.inj read)
+    have flag := congrArg Prod.snd (Except.ok.inj read)
+    let result : CDecl md := match kind with
+      | .defn => .defnDecl cv value (newHint.getD (Frontend.InModel.hintFor newHeights value))
+      | .thm => .thmDecl cv value
+      | .opaq => .opaqueDecl cv value
+    have output : lowerDefinition newHint target newHeights cv value kind safety = .ok (result, false) := by
+      unfold lowerDefinition
+      rw [projRewrite_eq_none empty cv value]
+      simp only [safe]
+      cases kind <;> rfl
+    refine ⟨result, output, ?_⟩
+    rw [← declared]
+    clear read declared
+    cases kind <;> cases rewritten : projRewrite source cv value <;> simp_all [result]
+    all_goals constructor
 
 /-- The new definition read preserves the actual parsed header/value and exposes only a
 possible hint change. Its member key, type reading and value reading are all constructed. -/
