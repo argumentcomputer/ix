@@ -532,12 +532,25 @@ def check_positivity_aug := aiur_fn⟦
     }
 ⟧
 
+  -- Each field's domain is positive (`check_positivity_aug`), and a field whose domain
+  -- mentions the block is used by no later field's domain and not by the constructor's
+  -- result: the scan `nat_rec_idx` runs when the recursor is checked (the kernel's
+  -- `structUsedLater`, `recCtorKinds`), here for every constructor of a native block,
+  -- whether or not its recursor is ever checked.
+
 def check_positivity_fields := aiur_fn⟦
   fn check_positivity_fields(ty: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
                                     depth: Field) -> () {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
           check_positivity_aug(dom, block_addrs, depth);
+          match expr_mentions_block(dom, block_addrs) {
+            0 => {  () } ,
+            _ => {
+              assert_eq!(KernelSubst::expr_has_bvar_at(body, 0), 0,
+                "a later field or the constructor's result mentions a recursive field");
+              () } ,
+          };
           check_positivity_fields(body, block_addrs, depth + 1) } ,
         _ => {  () } ,
       }
