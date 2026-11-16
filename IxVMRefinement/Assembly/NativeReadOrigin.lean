@@ -106,6 +106,7 @@ theorem admitted_native_reader_dispatch_with_ctor_frames {V : IxVM.Refinement.Vi
               (fun index => if index < members.size then
                 some (cx.memberKey (.member (Core.ixAddr block) index)) else none)))
           (nativeCtorSlots [(slot, ind)]) readerBlock.ctors.toList ∧
+        readerBlock.numParams = ind.params.toNat ∧
         ∃ input : NativeFormerRunInput (nativeOriginCtx witness trace env lim) block (slot : F)
             source members ind row.1.type calls,
           ∃ native : input.NativeCall,
@@ -119,13 +120,13 @@ theorem admitted_native_reader_dispatch_with_ctor_frames {V : IxVM.Refinement.Vi
       source shape memberAt walked
   refine ⟨slotValue, ?_⟩
   rcases branch with ⟨one, _⟩ | modeled
-  · obtain ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, ctorFrames⟩ :=
-      readInductive_one_native_frames indexBuilt readerSource shape memberAt one read
+  · obtain ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, ctorFrames, paramCount⟩ :=
+      readInductive_one_native_frames_with_params indexBuilt readerSource shape memberAt one read
     obtain ⟨input⟩ := admitted_native_former_input witness phase loaded bounded env lim claimBytes noCollision
       source shape memberAt walked {} frame.2.1 keyed selfKeyed blobReads
     rcases input.dispatch with native | modeled
     · obtain ⟨native, shapeCalls⟩ := native
-      exact .inl ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, ctorFrames,
+      exact .inl ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, ctorFrames, paramCount,
         input, native, shapeCalls⟩
     · exact .inr ⟨input.blockPtr, input.heap, input.blockRep, modeled⟩
   · exact .inr ⟨blockPtr, heap, blockRep, modeled⟩
@@ -179,7 +180,7 @@ theorem admitted_native_reader_dispatch {V : IxVM.Refinement.View} {binding : Ix
     env lim claimBytes noCollision source shape memberAt walked indexBuilt readerSource read keyed selfKeyed blobReads
   refine ⟨slotValue, ?_⟩
   rcases branch with native | modeled
-  · obtain ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, _, input, native, shapeCalls⟩ := native
+  · obtain ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, _, _, input, native, shapeCalls⟩ := native
     exact .inl ⟨generated, bare, readerBlock, row, declarations, lowered, types, frame, input, native, shapeCalls⟩
   · exact .inr modeled
 
