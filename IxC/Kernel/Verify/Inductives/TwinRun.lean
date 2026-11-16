@@ -3,7 +3,7 @@ module
 public import IxC.Kernel.Inductives.TwinInstall
 public import IxC.Kernel.Semantics.Inductives.DeclRecTwinJ
 
-public section
+@[expose] public section
 
 /-! # Facts from the executable stored-recursor twin checks -/
 
@@ -93,8 +93,9 @@ theorem peerRename_spec (parts : List (Part md)) (key : Key md) :
   cases hfind : parts.find? (fun part => part.canonicalKey == key) with
   | none => exact .inl rfl
   | some part =>
+    have hkey : (part.canonicalKey == key) = true := List.find?_some hfind
     exact .inr ⟨part, List.mem_of_find?_eq_some hfind,
-      (beq_iff_eq.mp (List.find?_some hfind)).symm, rfl⟩
+      (beq_iff_eq.mp hkey).symm, rfl⟩
 
 /-- A successful finishing check chooses one common rule renaming for the complete group. -/
 theorem finish_spec {env output : Env md} {parts : List (Part md)}
@@ -108,7 +109,7 @@ theorem finish_spec {env output : Env md} {parts : List (Part md)}
   split at h
   next hwrap =>
     cases h
-    rcases Bool.or_eq_true.mp hwrap with hid | hpeer
+    rcases Bool.or_eq_true_iff.mp hwrap with hid | hpeer
     · exact ⟨id, fun _ => .inl rfl, hid, rfl⟩
     · exact ⟨peerRename parts, peerRename_spec parts, hpeer, rfl⟩
   next hwrap => cases h
@@ -169,13 +170,13 @@ theorem candidate_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : 
   unfold candidate at h
   split at h
   next canonical mI' rP' canonicalRules hfind =>
-    simp only [bind, Option.bind, pure, Option.pure] at h
+    simp only [bind, Option.bind, pure] at h
     split at h
     next hguard =>
-      simp only [bind, Option.bind, pure, Option.pure] at h
+      dsimp only [bind, Option.bind, pure] at h
       split at h
       next hmodel =>
-        simp only [bind, Option.bind, pure, Option.pure, Option.some.injEq] at h
+        simp only [bind, Option.bind, pure, Option.some.injEq] at h
         subst part
         simp only [Bool.and_eq_true, beq_iff_eq] at hguard
         obtain ⟨⟨⟨⟨hmI, hrP⟩, hlevels⟩, hcount⟩, hwrap⟩ := hguard
@@ -195,7 +196,7 @@ theorem findCanonical_spec {env : Env md} {raw annotated : ConstantVal md} {mI r
   | [], h => by cases h
   | ci :: entries, h => by
     cases ci with
-    | recInfo cv majorIndex prefix canonicalRules =>
+    | recInfo cv majorIndex rulePrefixValue canonicalRules =>
       simp only [findCanonical] at h
       cases hcandidate : candidate env.find? raw annotated mI rP rules cv.name with
       | none =>
@@ -216,7 +217,7 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
       ConstantValCheckJ (runJ mode fuel) env part.raw part.annotated ∧
       letFree part.annotated.type = true ∧ CanonicalPart env part := by
   cases ci with
-  | recInfo raw majorIndex prefix rules =>
+  | recInfo raw majorIndex rulePrefixValue rules =>
     unfold checkHeader at h
     simp only [bind, Except.bind] at h
     cases hchecked : checkConstantVal (fueledOps mode fuel) env raw with
@@ -226,7 +227,7 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
       split at h
       next hfree =>
         simp only [bind, Except.bind, pure, Except.pure] at h
-        cases hcanonical : findCanonical env.find? raw annotated majorIndex prefix rules env.consts with
+        cases hcanonical : findCanonical env.find? raw annotated majorIndex rulePrefixValue rules env.consts with
         | none => simp [hcanonical, throw, throwThe, MonadExceptOf.throw] at h
         | some found =>
           simp only [hcanonical, Except.ok.injEq] at h
@@ -276,12 +277,12 @@ theorem prepare_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
       (∀ ci ∈ provision parts ++ models parts, env.find? ci.name = none) ∧
       ∀ part ∈ parts, HeaderChecked mode fuel env part := by
   by_cases hnil : block.isEmpty = true
-  · simp [prepare, hnil, throw, throwThe, MonadExceptOf.throw] at h
-  · simp only [prepare, hnil, ↓reduceIte, bind, Except.bind] at h
+  · simp [prepare, hnil, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  · simp only [prepare, hnil, bind, Except.bind] at h
     obtain ⟨found, hheaders, h⟩ := check_bind_ok h
     split at h
     next hdistinct =>
-      simp only [bind, Except.bind] at h
+      dsimp only [bind, Except.bind] at h
       split at h
       next hfresh =>
         simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
@@ -305,7 +306,8 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
       checked.rhs.allLevelParamsDefined part.canonical.levelParams = true ∧
       checked.rhs.constsResolve envSelf = true ∧ letFree checked.rhs = true ∧
       ruleShape env part canonical = true ∧
-      checked = { canonical with rhs := checked.rhs,
+      checked = { canonical with
+        rhs := checked.rhs
         eta := recRuleEtaOf env.find? part.raw.name canonical.ctor } := by
   unfold checkRule at h
   simp only [bind, Except.bind] at h
@@ -346,23 +348,22 @@ theorem checkRule_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
       part.annotated part.majorIndex part.rulePrefix raw checked canonical := by
   obtain ⟨hctor, hfields, hbounded, hfvar, hann, hlevels, hresolve, hfree, hshape, hout⟩ :=
     checkRule_spec h
-  have checkedCtor : checked.ctor = canonical.ctor := by rw [hout]
-  have checkedFields : checked.nfields = canonical.nfields := by rw [hout]
+  have checkedCtor : checked.ctor = canonical.ctor := congrArg RecRule.ctor hout
+  have checkedFields : checked.nfields = canonical.nfields := congrArg RecRule.nfields hout
+  have checkedParams : checked.ctorParams = canonical.ctorParams := congrArg RecRule.ctorParams hout
+  have checkedFire : checked.fire = canonical.fire := congrArg RecRule.fire hout
   refine ⟨hctor.trans checkedCtor.symm, hfields.trans checkedFields.symm,
     hbounded, hfvar, hann, hlevels, hresolve, hfree, checkedCtor, checkedFields,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, canonical.rhs, WrapRel.refl _ _, hwrap, .inl rfl⟩
-  · rw [hout]
-  · rw [hout]
-  · rw [hout]
-  · rw [hout]
-  · rw [hout]
+    checkedParams, checkedFire, congrArg RecRule.k hout, congrArg RecRule.paramsBlind hout,
+    congrArg RecRule.eta hout, ?_, ?_, canonical.rhs, WrapRel.refl _ _, hwrap, .inl rfl⟩
   · intro hfire cv nP nF hfind
-    have hfire' : canonical.fire = .plain := by simpa only [hout] using hfire
+    have hfire' : canonical.fire = .plain := checkedFire.symm.trans hfire
     have hfind' : env.find? canonical.ctor = some (.ctorInfo cv nP nF) := by
       simpa only [checkedCtor] using hfind
-    simpa only [hout] using ruleShape_plain hshape hfire' hfind'
+    rw [checkedParams]
+    exact ruleShape_plain hshape hfire' hfind'
   · intro levels pins hfire
-    have hfire' : canonical.fire = .nested levels pins := by simpa only [hout] using hfire
+    have hfire' : canonical.fire = .nested levels pins := checkedFire.symm.trans hfire
     exact ruleShape_nested hshape hfire'
 
 theorem checkRules_twin {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
@@ -420,7 +421,7 @@ theorem checkPartsRules_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env 
 theorem RulesChecked.headers {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
     {before after : Part md} (h : RulesChecked mode fuel env envSelf before after) :
     before.header = after.header := by
-  rw [h.shape]
+  simpa only [Part.header] using (congrArg Part.header h.shape).symm
 
 theorem checkedParts_headers {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
     {parts checked : List (Part md)}
@@ -446,12 +447,12 @@ theorem checkedParts_member {mode : CheckMode} {fuel : Nat} {env envSelf : Env m
 theorem models_of_headers {parts checked : List (Part md)}
     (h : parts.map Part.header = checked.map Part.header) : models parts = models checked := by
   have h' := congrArg models h
-  simpa only [models, List.filterMap_map, modelInfo?, Part.header, Function.comp_apply] using h'
+  simpa only [models, List.filterMap_map, modelInfo?, Part.header, Function.comp_def] using h'
 
 theorem provision_of_headers {parts checked : List (Part md)}
     (h : parts.map Part.header = checked.map Part.header) : provision parts = provision checked := by
   have h' := congrArg provision h
-  simpa only [provision, List.map_map, Part.header, Function.comp_apply] using h'
+  simpa only [provision, List.map_map, Part.header, Function.comp_def] using h'
 
 theorem declared_of_headers {parts checked : List (Part md)}
     (h : parts.map Part.header = checked.map Part.header) :
@@ -459,7 +460,7 @@ theorem declared_of_headers {parts checked : List (Part md)}
       checked.map (fun part => ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) := by
   have h' := congrArg (List.map fun part =>
     ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) h
-  simpa only [List.map_map, Part.header, Function.comp_apply] using h'
+  simpa only [List.map_map, Part.header, Function.comp_def] using h'
 
 theorem HeaderChecked.of_headers {mode : CheckMode} {fuel : Nat} {env : Env md}
     {before after : Part md} (h : before.header = after.header)
@@ -520,16 +521,17 @@ theorem check_semantic {mode : CheckMode} {fuel : Nat} {env output : Env md}
       ((provision parts ++ models parts).map (·.name)) := by
     have hrec : (recursors checked).map (·.name) = (provision checked).map (·.name) := by
       simp only [recursors, provision, List.map_map]
+      rfl
     rw [List.map_append, List.map_append, hrec, ← hprovision, ← hmodels]
   have hself : selfEnv env parts =
       ⟨twinProv (checked.map Part.semantic) ++ (twinModels (checked.map Part.semantic) ++ env.consts)⟩ := by
-    simp only [selfEnv, semantic_provision, semantic_models, hmodels, hprovision]
+    simp only [selfEnv, semantic_provision, semantic_models, hmodels, hprovision, List.append_assoc]
   refine ⟨checked.map Part.semantic, rename, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro hempty
     exact hnonempty (List.map_eq_nil_iff.mp hempty)
-  · simpa only [List.map_map, Part.semantic, Function.comp_apply] using
+  · simpa only [List.map_map, Part.semantic, Function.comp_def] using
       hblock.trans (declared_of_headers heq)
-  · simpa only [semantic_recursors, semantic_models] using houtput
+  · simpa only [semantic_recursors, semantic_models, List.append_assoc] using houtput
   · simp only [semantic_recursors, semantic_models, hnames]
     exact hdistinct
   · intro ci hci
@@ -544,8 +546,8 @@ theorem check_semantic {mode : CheckMode} {fuel : Nat} {env output : Env md}
     rcases hrename key with fixed | ⟨part, hpart, hkey, hrenamed⟩
     · exact .inl fixed
     · exact .inr ⟨part.semantic, List.mem_map.mpr ⟨part, hpart, rfl⟩, hkey, hrenamed⟩
-  · intro part hpart
-    obtain ⟨part, hpart, rfl⟩ := List.mem_map.mp hpart
+  · intro semantic hsemantic
+    obtain ⟨part, hpart, rfl⟩ := List.mem_map.mp hsemantic
     obtain ⟨original, horiginal, hrun⟩ := checkedParts_member hparts part hpart
     obtain ⟨hheader, hfree, hcanonical⟩ :=
       HeaderChecked.of_headers hrun.headers (hheaders original horiginal)
