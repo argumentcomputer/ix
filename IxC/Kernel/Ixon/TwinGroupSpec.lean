@@ -179,7 +179,6 @@ theorem lowerTwins_of_lowerTwin {md : Mode} {cx : Ctx md}
   | some pair =>
     obtain ⟨ref, entry⟩ := pair
     rw [first] at read
-    dsimp only at read ⊢
     split at read
     · rename_i sameFamily
       simp only [sameFamily, ↓reduceIte]
