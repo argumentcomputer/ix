@@ -127,4 +127,24 @@ theorem admitted_bound_projection_resolves {V : IxVM.Refinement.View} {binding :
   exact ⟨selected, record, admitted_projection_resolves witness selected record projection⟩
 
 
+/-- A non-trust bound projection selects its owning block in the admitted role closure.
+This follows from the actual projected record and the ordinary owner edge. -/
+theorem admitted_bound_projection_owner_selected {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : ReaderAdmissionWitness V binding) {calls : List (Call F)} {extra : List ByteArray}
+    (noCollision : ¬ V.HashedCollision extra calls)
+    {role : Role} {address : _root_.Address} {bytes : ByteArray} {value : Ixon.Constant}
+    {layout : Egress.ProjectionLayout} {target : ConstRef _root_.Address}
+    (bound : (role, address) ∈ witness.table.bound.toList)
+    (notTrust : IxVM.Refinement.compilerTrust role = false)
+    (hashed : Hashed calls bytes) (hashEq : Address.blake3Pure bytes = address)
+    (decoded : Ixon.deConstantExact bytes = .ok value)
+    (projection : Egress.ProjectionReads value layout target) : target.block ∈ witness.order := by
+  obtain ⟨selected, record⟩ := admitted_bound_record_of_hashed witness noCollision bound notTrust hashed hashEq decoded
+  have ownerEq : Ix.Cert.ownerOf address value = target.block := by cases projection <;> rfl
+  by_cases same : target.block = address
+  · rwa [same]
+  · apply (witness.closure.complete target.block).mpr
+    exact .step ((witness.closure.complete address).mp selected) ⟨value, record, .inl ⟨ownerEq, same⟩⟩
+
+
 end IxVM.Refinement.Assembly
