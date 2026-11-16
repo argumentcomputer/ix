@@ -420,4 +420,76 @@ theorem binder_nodes_same_blocks {blocks : List Ixon.BinderBlock} {query : Binde
   subst nodesB
   exact ⟨nodesA, valuesA, valuesB⟩
 
+/-- A property of every serialized node retained by a tree. -/
+def BinderTreeData.AllNodes (property : Ixon.BinderNode → Prop) : BinderTreeData → Prop
+  | .empty => True
+  | .leaf _ nodes => ∀ node ∈ nodes, property node
+  | .node _ left right => left.AllNodes property ∧ right.AllNodes property
+
+theorem BinderTreeData.lookup_all {property : Ixon.BinderNode → Prop}
+    {tree : BinderTreeData} {query : BinderKey} {nodes : List Ixon.BinderNode}
+    (all : tree.AllNodes property) (found : tree.lookup query = some nodes) :
+    ∀ node ∈ nodes, property node := by
+  induction tree with
+  | empty => cases found
+  | leaf key values =>
+    simp only [lookup] at found
+    split at found
+    · injection found with same
+      subst nodes
+      exact all
+    · cases found
+  | node key left right ihLeft ihRight =>
+    simp only [lookup] at found
+    split at found
+    · exact ihLeft all.1 found
+    · split at found
+      · exact ihRight all.2 found
+      · cases found
+
+private theorem binderPairsData_all (property : Ixon.BinderNode → Prop) :
+    ∀ entries : List BinderTreeEntryData,
+      (∀ entry ∈ entries, entry.2.AllNodes property) →
+      ∀ entry ∈ binderPairsData entries, entry.2.AllNodes property
+  | [], _, _, member => nomatch member
+  | [first], all, entry, member => all entry member
+  | first :: second :: rest, all, entry, member => by
+    rcases List.mem_cons.mp member with rfl | member
+    · exact ⟨all first List.mem_cons_self, all second (by simp)⟩
+    · exact binderPairsData_all property rest
+        (fun entry member => all entry (by simp [member])) entry member
+
+theorem BinderTreeBuilt.all_nodes {property : Ixon.BinderNode → Prop}
+    {entries : List BinderTreeEntryData} {tree : BinderTreeData}
+    (built : BinderTreeBuilt entries tree) (all : ∀ entry ∈ entries, entry.2.AllNodes property) :
+    tree.AllNodes property := by
+  induction built with
+  | empty => trivial
+  | single entry => exact all entry List.mem_cons_self
+  | pair built ih => exact ih (binderPairsData_all property _ all)
+
+theorem RepBinderTreeData.toBounded {bound : Nat} {h : Heap F} {tree : BinderTreeData}
+    {ptr : SourceValue F} (rep : RepBinderTreeData h tree ptr)
+    (all : tree.AllNodes (BinderNodeParamsLt bound)) : RepBinderTree bound h ptr := by
+  induction rep with
+  | empty cell => exact .empty cell
+  | leaf cell values => exact .leaf cell values all
+  | node cell _ _ ihLeft ihRight => exact .node cell (ihLeft all.1) (ihRight all.2)
+
+/-- Exact table contents preserve the decoder's existing parameter bounds. -/
+theorem binder_table_data_bounded_spec {bound : Nat} {blocks : List Ixon.BinderBlock}
+    {ptr result : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (blocksRep : RepList binderBlockListEnum RepBinderBlock h blocks ptr)
+    (bounds : ∀ block ∈ blocks, ∀ node ∈ block.nodes.toList, BinderNodeParamsLt bound node)
+    (ev : ObsFn W "Convert::binder_table" [ptr] h result h' calls) :
+    Heap.Extends h h' ∧ ∃ tree, BinderTreeBuilt (binderLeavesData blocks) tree ∧
+      RepBinderTreeData h' tree result ∧ tree.AllNodes (BinderNodeParamsLt bound) ∧
+      RepBinderTree bound h' result := by
+  obtain ⟨extended, tree, built, rep⟩ := binder_table_data_spec blocksRep ev
+  have all : tree.AllNodes (BinderNodeParamsLt bound) := built.all_nodes (by
+    intro entry member
+    obtain ⟨block, member, rfl⟩ := List.mem_map.mp member
+    exact bounds block member)
+  exact ⟨extended, tree, built, rep, all, rep.toBounded all⟩
+
 end IxVM.Refinement.L1
