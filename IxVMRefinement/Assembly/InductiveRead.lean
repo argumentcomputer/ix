@@ -110,7 +110,9 @@ theorem finishInductiveRead_full_bare {md : Mode} {cx : Ctx md}
     ∃ bare, finishInductiveRead cx owner ms bareInd = .ok bare ∧
       full.decls.toList = generated ++ bare.decls.toList ∧
       full.generated = generated.length ∧ bare.generated = 0 := by
+  have covered := finishInductiveRead_covered h
   unfold finishInductiveRead at h ⊢
+  simp only [covered, ↓reduceIte] at h ⊢
   dsimp only at h ⊢
   split at h
   · rename_i hempty
