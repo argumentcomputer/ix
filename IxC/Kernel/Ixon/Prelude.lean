@@ -167,24 +167,30 @@ theorem fallbackIndexed_eq (store : Store) (known : Std.HashSet Address) (a : Ad
         | some (ConstRef.member b _) => !known.contains b
         | _ => true
       | none => true) := by
-  by_cases empty : (recursorMembers c).isEmpty = true
-  · have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
+  cases empty : (recursorMembers c).isEmpty with
+  | true =>
+    have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
     simp only [fallbackIndexed, absent, Array.isEmpty_empty, ↓reduceIte, Array.all_empty]
-  · simp only [fallbackIndexed, empty, ↓reduceIte, analyseRecursor, analyseRecursorPrepared, Shape.analyse]
+  | false =>
+    simp only [fallbackIndexed, empty, Bool.false_eq_true, ↓reduceIte,
+      analyseRecursor, analyseRecursorPrepared, Shape.analyse]
 
 theorem inputIndexed_eq (store : Store) (known : Std.HashSet Address)
     (fallback : Array (Address × Ixon.Constant)) (a : Address) (c : Ixon.Constant) :
-    inputIndexed store known fallback a c = (recursorMembers c).all (fun (_, r) =>
+    inputIndexed store known fallback a c = ((recursorMembers c).all (fun (_, r) =>
       match analyseRecursor store a c r with
       | some (_, carriers, _) =>
         match carriers[0]? with
         | some (ConstRef.member b _) => known.contains b
         | _ => true
-      | none => true) || fallback.contains (a, c) := by
-  by_cases empty : (recursorMembers c).isEmpty = true
-  · have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
+      | none => true) || fallback.contains (a, c)) := by
+  cases empty : (recursorMembers c).isEmpty with
+  | true =>
+    have absent : recursorMembers c = #[] := Array.isEmpty_iff.mp empty
     simp only [inputIndexed, absent, Array.isEmpty_empty, ↓reduceIte, Array.all_empty, Bool.true_or]
-  · simp only [inputIndexed, empty, ↓reduceIte, analyseRecursor, analyseRecursorPrepared, Shape.analyse]
+  | false =>
+    simp only [inputIndexed, empty, Bool.false_eq_true, ↓reduceIte,
+      analyseRecursor, analyseRecursorPrepared, Shape.analyse]
 
 /-- **The records the recursor index scans**: the input's, less those with a
 recursor member analysed into a block only the fallback supplies
