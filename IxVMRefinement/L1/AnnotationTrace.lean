@@ -344,4 +344,11 @@ theorem applyBinderTrace_unique {metadata : Core.KLevel → Ix.Kernel.BinderMeta
     left = right ∧ leftRest = rightRest :=
   Prod.mk.inj (Option.some.inj (first.symm.trans second))
 
+theorem applyRawBinderTrace_unique {metadata : Core.KLevel → Ix.Kernel.BinderMeta}
+    {expr left right : Core.KExpr} {levels leftRest rightRest : List Core.KLevel}
+    (first : applyRawBinderTrace metadata expr levels = some (left, leftRest))
+    (second : applyRawBinderTrace metadata expr levels = some (right, rightRest)) :
+    left = right ∧ leftRest = rightRest :=
+  Prod.mk.inj (Option.some.inj (first.symm.trans second))
+
 end IxVM.Refinement.L1
