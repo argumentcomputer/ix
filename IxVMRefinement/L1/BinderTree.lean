@@ -495,4 +495,43 @@ theorem binder_table_data_bounded_spec {bound : Nat} {blocks : List Ixon.BinderB
     exact bounds block blockMember)
   exact ⟨extended, tree, built, rep, all, rep.toBounded all⟩
 
+/-- The first binder reached by two equal table queries has the same exact level in both
+conversions. Bounds come from the serialized blocks' existing decoder invariant. -/
+theorem binder_head_level_same_blocks {blocks : List Ixon.BinderBlock} {query : BinderKey}
+    {blocks₁ blocks₂ tree₁ tree₂ nodes₁ nodes₂ node₁ node₂ tail₁ tail₂ level₁ level₂ : SourceValue F}
+    {h₁ h₂ h₁' h₂' h₁'' h₂'' h₁''' h₂''' : Heap F}
+    {calls₁ calls₂ lookups₁ lookups₂ levels₁ levels₂ : List (Call F)}
+    (blocksRep₁ : RepList binderBlockListEnum RepBinderBlock h₁ blocks blocks₁)
+    (blocksRep₂ : RepList binderBlockListEnum RepBinderBlock h₂ blocks blocks₂)
+    (bounds : ∀ block ∈ blocks, ∀ node ∈ block.nodes.toList, BinderNodeParamsLt 4294967296 node)
+    (built₁ : ObsFn W "Convert::binder_table" [blocks₁] h₁ tree₁ h₁' calls₁)
+    (built₂ : ObsFn W "Convert::binder_table" [blocks₂] h₂ tree₂ h₂' calls₂)
+    (lookup₁ : ObsFn W "Convert::binder_nodes"
+      [tree₁, .field query.1, .field query.2.1, .field query.2.2] h₁' nodes₁ h₁'' lookups₁)
+    (lookup₂ : ObsFn W "Convert::binder_nodes"
+      [tree₂, .field query.1, .field query.2.1, .field query.2.2] h₂' nodes₂ h₂'' lookups₂)
+    (head₁ : loadValue h₁'' nodes₁ = .ok (.construct binderNodeListEnum "Cons" [node₁, tail₁]))
+    (head₂ : loadValue h₂'' nodes₂ = .ok (.construct binderNodeListEnum "Cons" [node₂, tail₂]))
+    (levelRead₁ : ObsFn W "Convert::binder_level" [node₁] h₁'' level₁ h₁''' levels₁)
+    (levelRead₂ : ObsFn W "Convert::binder_level" [node₂] h₂'' level₂ h₂''' levels₂) :
+    ∃ level : Core.KLevel, KernelLevels.RepKLevel h₁''' level level₁ ∧
+      KernelLevels.RepKLevel h₂''' level level₂ := by
+  obtain ⟨_, treeA, dataA, repA, allA, _⟩ := binder_table_data_bounded_spec blocksRep₁ bounds built₁
+  obtain ⟨_, treeB, dataB, repB⟩ := binder_table_data_spec blocksRep₂ built₂
+  obtain rfl := dataA.unique dataB
+  obtain ⟨rfl, nodesA, foundA, valuesA⟩ := binder_nodes_exact_spec repA lookup₁
+  obtain ⟨rfl, nodesB, foundB, valuesB⟩ := binder_nodes_exact_spec repB lookup₂
+  rw [foundA] at foundB
+  injection foundB with same
+  subst nodesB
+  have nodeBounds := BinderTreeData.lookup_all allA foundA
+  obtain ⟨node, rest, shape, nodeRep₁, _⟩ := Core.RepList.cons_of_load valuesA head₁
+  cases shape
+  obtain ⟨node', rest', shape, nodeRep₂, _⟩ := Core.RepList.cons_of_load valuesB head₂
+  injection shape with sameNode sameRest
+  subst node' rest'
+  have bound := nodeBounds node List.mem_cons_self
+  exact ⟨binderLevel node, (binder_level_exact_spec nodeRep₁ bound levelRead₁).2,
+    (binder_level_exact_spec nodeRep₂ bound levelRead₂).2⟩
+
 end IxVM.Refinement.L1
