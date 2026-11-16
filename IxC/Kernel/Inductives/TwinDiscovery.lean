@@ -45,7 +45,7 @@ theorem nativeCandidate_spec {find? : Key md → Option (ConstantInfo md)}
     | none =>
       simp only [hc, bind, Option.bind, hm, Option.isNone_none, ↓reduceIte, Option.some.injEq] at h
       subst part
-      exact ⟨hc, hm⟩
+      exact ⟨rfl, hm⟩
     | some value => simp [hc, hm, bind, Option.bind] at h
 
 theorem findNativeCanonical_append (find? : Key md → Option (ConstantInfo md))
