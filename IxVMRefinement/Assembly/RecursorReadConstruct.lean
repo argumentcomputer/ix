@@ -28,8 +28,9 @@ private theorem ruleLoop_of_frames {md : Mode} {cx : Ctx md} {reader : MemberRea
     intro acc
     rw [List.forIn_cons]
     simp only [frame.1, frame.2.1, bind, Except.bind, pure, Except.pure]
-    rw [← frame.2.2, ih]
-    simp only [List.append_assoc, List.singleton_append]
+    rw [← frame.2.2]
+    simpa only [bind, Except.bind, pure, Except.pure, List.append_assoc, List.singleton_append]
+      using ih (acc ++ [rule])
 
 /-- Concrete payload inputs reconstruct the same successful reader result. -/
 theorem RecursorReadInputs.run {md : Mode} {cx : Ctx md} {blockLps : List LevelParam}
@@ -54,7 +55,8 @@ theorem RecursorReadInputs.run {md : Mode} {cx : Ctx md} {blockLps : List LevelP
     unless major.ctors.size == recursor.rules.size do
       malformed s!"recursor {row.1.name} has {recursor.rules.size} rules for {major.ctors.size} constructors"
     let .member majorOwner majorSlot := entry.major | malformed "recursor major is a constructor"
-    let rules ← forIn recursor.rules.zipIdx ([] : List (RecRule md)) (fun source current => do
+    let rules ← forIn recursor.rules.zipIdx ([] : List (RecRule md))
+        (fun (source : Ixon.RecursorRule × Nat) (current : List (RecRule md)) => do
       let ctor ← cx.memberKey (.ctor majorOwner majorSlot source.2)
       let rhs ← (MemberReader.mk' cx record (recParam (recLps entry.large blockLps))
         (recursorReaderSelf cx record owner row.1.name)).read source.1.rhs
