@@ -268,4 +268,12 @@ theorem annotateCore_to_annotates {env : Env .anon} {fuel : Nat} {e e' : KExpr}
   (annotateCore_shape_aux fuel e h (Expr.WScoped.of_not_hasFvar hfv) hb
     (fvarTypesNormalized_closed hfv)).1
 
+
+/-- The actual projection annotation validates and retains the reader's structure name. -/
+theorem annotateCore_project_shape {env : Env .anon} {fuel d : Nat}
+    {sn : Key .anon} {i : Nat} {e e' : KExpr}
+    (run : annotateCore .verified env (fuel + 1) d (.proj sn i e) = .ok e') :
+    ∃ inner, annotateCore .verified env fuel d e = .ok inner ∧ e' = .proj sn i inner :=
+  annotateCore_proj_shape run
+
 end IxVM.Refinement.Decl
