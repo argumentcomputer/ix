@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Assembly.NativeBlockShape
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.L1.NativeBounds

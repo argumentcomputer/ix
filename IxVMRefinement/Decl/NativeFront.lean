@@ -2026,7 +2026,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : B
       cbs.length = nP + nF ∧
       es.length = nIdx ∧
       ∀ a ∈ es, a.mentionsConst T = false := by
-  exact check_ctor_return_type_observed_spec hlps hlps_lt hnPF_lt hnPI_lt hpeer.toReads
+  exact check_ctor_return_type_observed_spec hlps hlps_lt hnPF_lt hnPI_lt (hpeer.toReads hlf)
     hlf hgood hscope hcty hnp hblk ev
 
 theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
@@ -3402,7 +3402,7 @@ theorem check_positivity_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.A
        Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
       ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
        RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1) := by
-  exact check_positivity_observed_spec hlps hlps_lt hnP_lt hnPI_lt hpeer.toReads
+  exact check_positivity_observed_spec hlps hlps_lt hnP_lt hnPI_lt (hpeer.toReads hlf)
     hlf hgood hscope hcty hnp hstR hstrip hblk ev
 
 theorem check_positivity_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
