@@ -231,7 +231,7 @@ theorem binder_leaves_data_spec {blocks : List Ixon.BinderBlock} :
       have leaf : RepBinderTreeData m166 (.leaf (binderBlockKey block) block.nodes.toList)
           (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm174]
-        exact .leaf (by simp [binderBlockKey]; exact ⟨rfl, rfl, rfl⟩)
+        exact .leaf (by simp [binderBlockKey])
           (repList_heapMono₂ _ repBinderNode_heapMono₂ (Heap.Extends.snoc _ _) nodesRep)
       rw [← binderBlockListEnum_eq] at restRep
       obtain ⟨extRest, tailRep⟩ := ih
@@ -294,7 +294,7 @@ private theorem binder_pairs_data_go (fuel : Nat) :
       have node : RepBinderTreeData m194 (.node second.1 first.2 second.2)
           (.ptr (.enum binderTreeEnum) h.length) := by
         rw [hm202]
-        exact .node (by simp; exact ⟨rfl, rfl, rfl⟩)
+        exact .node (by simp)
           (firstTree.mono (Heap.Extends.snoc _ _)) (secondTree.mono (Heap.Extends.snoc _ _))
       simp only [List.length_cons] at lengthBound
       obtain ⟨extRest, tailResult⟩ := ih (by omega)
@@ -389,7 +389,7 @@ theorem binder_table_data_spec {blocks : List Ixon.BinderBlock} {ptr result : So
     (ev : ObsFn W "Convert::binder_table" [ptr] h result h' calls) :
     Heap.Extends h h' ∧ ∃ tree, BinderTreeBuilt (binderLeavesData blocks) tree ∧
       RepBinderTreeData h' tree result := by
-  obtain ⟨cs4, v7, m9, _, treeRun, leavesRun, _⟩ := «Convert::binder_table».obs ev
+  obtain ⟨cs4, v7, m9, _, leavesRun, treeRun, _⟩ := «Convert::binder_table».obs ev
   obtain ⟨extLeaves, leaves⟩ := binder_leaves_data_spec blocksRep leavesRun
   obtain ⟨extTree, tree, built, treeRep⟩ :=
     binder_tree_of_data_go cs4.length (Nat.le_refl _) leaves treeRun
