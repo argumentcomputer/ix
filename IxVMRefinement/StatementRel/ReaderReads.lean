@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeFormerReader
+import IxVMRefinement.Assembly.RecursorReadInputs
 import IxVMRefinement.L1.ConvertExpr
 import Ix.IxVM.Consistency.ReadsKeys
 
@@ -519,5 +520,84 @@ theorem reads_of_readInductiveBare {t : RoleTable} (checked : t.check = .ok ())
       exact ⟨ty, hty, rfl⟩
     exact ReadsIn.of_ctor (hboundI _ _ hm) (hboundJ _ _ _ _ hm hct) hstore hinfo hm hct hcidx
       hlogic hproj hr
+
+/-! ## Recursors -/
+
+/-- **What ties the reader's index entry for a recursor to the plain syntax of its type.**
+The reader files a recursor under a block and a major premise it finds by a symbolic analysis
+of the record (`Ix.Kernel.Reader.buildIndex`, over sharing and `let`). `Reads` finds them on
+the converted type, with no reduction (`familyKey`, `majorKey`). This states that the two
+agree for one recursor: the entry's major premise is the inductive heading the major
+premise's domain, the block's level parameters are those of the inductive heading the first
+motive, and the entry is a large eliminator exactly when the record has one level more. -/
+def EntrySyntax (t : RoleTable) (cx : Ctx .anon) (blockLps : List LevelParam) (entry : RecEntry)
+    (record : Ixon.Constant) (rc : Ixon.Recursor)
+    (self' : Nat → Option (ReadM (CName .anon))) (majorOwner : _root_.Address)
+    (majorSlot : Nat) (major : Ixon.Inductive) : Prop :=
+  ∃ (tyP : CExpr .anon) (kF kM : CName .anon) (B : _root_.Address) (i : Nat)
+    (ind : Ixon.Inductive),
+    (exprReader t cx.blob record id self').read rc.typ = .ok tyP ∧
+    familyKey rc tyP = some kF ∧ IndKeyAt t cx.store kF B i ind ∧
+    majorKey rc tyP = some kM ∧ IndKeyAt t cx.store kM majorOwner majorSlot major ∧
+    blockLps = List.range ind.lvls.toNat ∧
+    entry.large = decide (rc.lvls.toNat = ind.lvls.toNat + 1)
+
+/-- **A recursor the reader reads**: its row (name, level parameters, type, counts, rules) is
+what `RecReads` declares for the recursor payload, given that the reader's index entry agrees
+with the type's plain syntax (`EntrySyntax`). -/
+theorem recReads_of_inputs {t : RoleTable} (checked : t.check = .ok ()) {cx : Ctx .anon}
+    {blockLps : List LevelParam} {ref : ConstRef _root_.Address} {entry : RecEntry}
+    {row : CVal .anon × RecCounts × List (RecRule .anon)}
+    (hkeys : ∀ x k, cx.keyAt x = .ok k → k = keyOf t x)
+    (inputs : RecursorReadInputs cx blockLps ref entry row)
+    {self' : Nat → Option (ReadM (CName .anon))}
+    (hself : ∀ (i : Nat) (k : CName .anon),
+      recursorReaderSelf cx inputs.record inputs.owner row.1.name i = some (Except.ok k) →
+        self' i = some (Except.ok k))
+    (hctor : ∀ (j : Nat) (k : CName .anon),
+      cx.memberKey (.ctor inputs.majorOwner inputs.majorSlot j) = .ok k →
+        k = keyOf t (ctorAddr inputs.majorOwner inputs.majorSlot j))
+    (hsyn : EntrySyntax t cx blockLps entry inputs.record inputs.recursor self'
+      inputs.majorOwner inputs.majorSlot inputs.major) :
+    RecReads t cx.store cx.blob inputs.record self' row.1.name inputs.recursor
+      (.recInfo row.1
+        (row.2.1.params + row.2.1.motives + row.2.1.minors + row.2.1.indices)
+        (row.2.1.params + row.2.1.motives + row.2.1.minors) row.2.2) := by
+  obtain ⟨tyP, kF, kM, B, i, ind, hP, hF, hIF, hM, hIM, hlps, hlarge⟩ := hsyn
+  have hty := read_reads checked hkeys hself inputs.typeRead
+  have hrules : List.Forall₂
+      (RuleReads t (exprReader t cx.blob inputs.record
+        (recParam (recLps entry.large blockLps)) self') inputs.majorOwner inputs.majorSlot)
+      inputs.recursor.rules.toList.zipIdx row.2.2 := by
+    have hframes := inputs.rules
+    rw [Array.toList_zipIdx] at hframes
+    refine hframes.imp (fun ru rl frame => ?_)
+    obtain ⟨hc, hrhs, hrl⟩ := frame
+    unfold RuleReads
+    refine ⟨rl.rhs, read_reads checked hkeys hself hrhs, ?_⟩
+    rw [← hctor _ _ hc]
+    exact hrl
+  have hcount := inputs.ruleCount
+  have hp := congrArg RecCounts.params inputs.counts
+  have hmo := congrArg RecCounts.motives inputs.counts
+  have hmi := congrArg RecCounts.minors inputs.counts
+  have hix := congrArg RecCounts.indices inputs.counts
+  have hlv := inputs.levels
+  obtain ⟨⟨name, lps, ty⟩, counts, rules⟩ := row
+  have hlv' : lps = recLps entry.large blockLps := hlv
+  have hp' : counts.params = inputs.recursor.params.toNat := hp
+  have hmo' : counts.motives = inputs.recursor.motives.toNat := hmo
+  have hmi' : counts.minors = inputs.recursor.minors.toNat := hmi
+  have hix' : counts.indices = inputs.recursor.indices.toNat := hix
+  subst hlv'
+  unfold RecReads
+  refine ⟨tyP, ty, kF, kM, B, inputs.majorOwner, i, inputs.majorSlot, ind, inputs.major,
+    recLps entry.large blockLps, rules, hP, hF, hIF, hM, hIM, ?_, hty, hcount.symm, hrules, ?_⟩
+  · rw [hlps, hlarge]
+  · show Ix.Kernel.ConstantInfo.recInfo
+        (⟨name, recLps entry.large blockLps, ty⟩ : CVal .anon)
+        (counts.params + counts.motives + counts.minors + counts.indices)
+        (counts.params + counts.motives + counts.minors) rules = _
+    rw [hp', hmo', hmi', hix']
 
 end IxVM.Refinement.ReaderReads
