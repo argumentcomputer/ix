@@ -2736,7 +2736,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           trace_f2 tree (RepBinderTreeData.mono ext12 represented)
         obtain ⟨argPlan, argStep, argLevels⟩ :=
           trace_a2 tree (RepBinderTreeData.mono ext13 represented)
-        exact ⟨funcPlan ++ argPlan, by split at funcStep <;> split at argStep <;> simp_all [binderPlanStep],
+        exact ⟨funcPlan ++ argPlan, binderPlanStep_app funcStep argStep,
           .app (by simp) (HeapBinderLevels.mono (ext4.trans ext_fin) funcLevels)
             (HeapBinderLevels.mono ext_fin argLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
@@ -2809,7 +2809,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_lam domStep bodyStep,
           .lam (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2883,7 +2883,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext14 represented)
         exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
-          by split at domStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_all domStep bodyStep,
           .forallE (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -2973,7 +2973,7 @@ private theorem convert_annotated_go (fuel : Nat) :
         obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
           trace_b2 tree (RepBinderTreeData.mono ext15 represented)
         exact ⟨(typePlan ++ valuePlan) ++ bodyPlan,
-          by split at typeStep <;> split at valueStep <;> split at bodyStep <;> simp_all [binderPlanStep],
+          binderPlanStep_let typeStep valueStep bodyStep,
           .letE (by simp) (HeapBinderLevels.mono ((ext5.trans ext6).trans ext_fin) typeLevels)
             (HeapBinderLevels.mono (ext6.trans ext_fin) valueLevels)
             (HeapBinderLevels.mono ext_fin bodyLevels)⟩
@@ -3837,6 +3837,277 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
 producing `E_rd` with loose bound variables below `k` and level parameters in `ps`, then `kp`
 represents `Core.posOf ps E'` (`Decl.TmExact κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
 satisfying `Annotates E' E_rd`. -/
+theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → ecx.cx.blob a = some bs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        (∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp) ∧
+        (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+          ∀ tail, applyBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+            E_rd (plan ++ tail) = some (E', tail)) := by
+  induction raw with
+  | @var bound addr idx hidx cell =>
+    intro n k E_rd _ _ hconv hlbb _
+    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq,
+      Ix.Kernel.Expr.mkBvar_eq] at hconv
+    subst hconv
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
+    refine ⟨.bvar idx.toNat, .bvar, ?_, ?_⟩
+    · intro d Γ
+      have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
+      have htm : Decl.TmExact κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
+          (.ptr (.enum Core.kexprEnum) addr) :=
+        .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
+      rwa [hval] at htm
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @sort bound addr uIdx u lp huIdx hu rl cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨u_rd, hu_rd, hret⟩ := except_bind_eq_ok hconv
+    injection hret with hE; subst hE
+    have hu_eq : u_rd = Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u := by
+      unfold Ix.Kernel.Reader.ECx.level at hu_rd
+      rw [hunivs] at hu_rd
+      have hget : (univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))[uIdx.toNat]? =
+          some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
+        simp [hu]
+      rw [hget] at hu_rd
+      injection hu_rd with hu_eq'
+      exact hu_eq'.symm
+    subst hu_eq
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
+    refine ⟨.sort (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u), .sort, ?_, ?_⟩
+    · intro d Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [hpos_eq]
+      exact .sort cell (rl.toRepKLevel hplt)
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @ref bound addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    have hk_eq : k_rd = κ a := by
+      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
+      have href_arr : ecx.src.refs[rIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hk_rd
+      exact hkeyAt a k_rd hk_rd
+    subst hk_eq
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨hpos_ls, hplt_ls⟩ :=
+      levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
+    refine ⟨.const (κ a) ls_rd, .const, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [hpos_ls, ← hd]
+      exact .const cell ra (rls.toRepKLevelList hplt_ls)
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @recur bound addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    cases hself_opt : ecx.self rIdx.toNat with
+    | none => simp [hself_opt, Ix.Kernel.Reader.malformed, throw, Except.error] at hconv
+    | some m_self =>
+      simp only [hself_opt] at hconv
+      obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
+      injection hret with hE; subst hE
+      have hk_eq : k_rd = κ a := hself rIdx.toNat a m_self k_rd hrec hself_opt hk_rd
+      subst hk_eq
+      simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+      obtain ⟨hpos_ls, hplt_ls⟩ :=
+        levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
+      refine ⟨.const (κ a) ls_rd, .const, ?_, ?_⟩
+      · intro d0 Γ
+        unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+        rw [hpos_ls, ← hd]
+        exact .const cell ra (rls.toRepKLevelList hplt_ls)
+      · intro plan levels tail
+        have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+        cases empty
+        rfl
+  | @prj bound addr tIdx fIdx inner a d ap ip htIdx hfIdx href hd ra _ cell ih =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ein_rd, hEin_rd, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    have hk_eq : k_rd = κ a := by
+      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
+      have href_arr : ecx.src.refs[tIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hk_rd
+      exact hkeyAt a k_rd hk_rd
+    subst hk_eq
+    simp only [Ix.Kernel.Expr.looseBVarsBounded] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨Ein', hA_in, hTm_in, trace_in⟩ := ih hn_le hbnd_le hEin_rd hlbb hdef
+    refine ⟨.proj (κ a) fIdx.toNat Ein', .proj hA_in, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := val_cast_u56 hfIdx
+      rw [← hd, ← hf_val]
+      exact .proj cell ra (hTm_in d0 Γ)
+    · intro plan levels tail
+      have innerLevels := HeapBinderLevels.proj_inv cell levels
+      simp [applyBinderTrace, trace_in plan innerLevels tail]
+  | @str bound addr bIdx a bs s bp hbIdx href hmem rbs hs cell =>
+    intro n k E_rd _ _ hconv _ _
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨b_arr, hb_at, hrest⟩ := except_bind_eq_ok hconv
+    have hb_eq : b_arr = ⟨bs.toArray⟩ := by
+      unfold Ix.Kernel.Reader.ECx.blobAt at hb_at
+      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hb_at
+      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
+      exact hb_at.symm
+    subst hb_eq
+    have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
+    rw [hs_utf8] at hrest
+    injection hrest with hE; subst hE
+    refine ⟨.lit (.strVal s), .lit, (fun d0 Γ => .litStr cell rbs hs), ?_⟩
+    intro plan levels tail
+    have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+    cases empty
+    rfl
+  | @nat bound addr bIdx a bs limbs lp hbIdx href hmem hcanon rlimbs hlast hval cell =>
+    intro n k E_rd _ _ hconv _ _
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨n_rd, hn_at, hret⟩ := except_bind_eq_ok hconv
+    injection hret with hE; subst hE
+    have hn_eq : n_rd = Core.limbsVal limbs := by
+      unfold Ix.Kernel.Reader.ECx.natAt Ix.Kernel.Reader.ECx.blobAt at hn_at
+      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hn_at
+      simp only [bind, Except.bind, hblob a ⟨bs.toArray⟩ hmem, hcanon, ↓reduceIte,
+        pure, Except.pure, Except.ok.injEq] at hn_at
+      exact hn_at.symm.trans hval.symm
+    subst hn_eq
+    refine ⟨.lit (.natVal (Core.limbsVal limbs)), .lit,
+      (fun d0 Γ => .litNat cell rlimbs hlast), ?_⟩
+    intro plan levels tail
+    have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+    cases empty
+    rfl
+  | @app bound addr f arg fp ap _ _ cell ihf iha =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Ef_rd, hEf, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ea_rd, hEa, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Ef', hAf, hTmf, trace_f⟩ := ihf hn_le hbnd_le hEf hlbb.1 hdef.1
+    obtain ⟨Ea', hAa, hTma, trace_a⟩ := iha hn_le hbnd_le hEa hlbb.2 hdef.2
+    refine ⟨.app Ef' Ea', .app hAf hAa, (fun d0 Γ => .app cell (hTmf d0 Γ) (hTma d0 Γ)), ?_⟩
+    intro plan levels tail
+    obtain ⟨funcPlan, argPlan, rfl, funcLevels, argLevels⟩ := HeapBinderLevels.app_inv cell levels
+    simp [applyBinderTrace, List.append_assoc,
+      trace_f funcPlan funcLevels (argPlan ++ tail), trace_a argPlan argLevels tail]
+  | @lam bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', hAt, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
+    refine ⟨.lam Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .lam hAt hAb, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [substPW_posLevels_bmeta hperm ℓ]
+      exact .lam cell (hTmt d0 Γ) (hTmb d0 Γ) rl
+    · intro plan levels tail
+      obtain ⟨domPlan, bodyPlan, rfl, domLevels, bodyLevels⟩ := HeapBinderLevels.lam_inv cell rl levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t domPlan domLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @all bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', hAt, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
+    refine ⟨.forallE Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .forallE hAt hAb, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [substPW_posLevels_bmeta hperm ℓ]
+      exact .forallE cell (hTmt d0 Γ) (hTmb d0 Γ) rl
+    · intro plan levels tail
+      obtain ⟨domPlan, bodyPlan, rfl, domLevels, bodyLevels⟩ := HeapBinderLevels.forall_inv cell rl levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t domPlan domLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @letE bound addr nd md ty val body tp vp bp _ _ _ cell iht ihv ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ev_rd, hEv, hbind3⟩ := except_bind_eq_ok hbind2
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind3
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', _, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1.1 hdef.1.1
+    obtain ⟨Ev', hAv, hTmv, trace_v⟩ := ihv hn_le hbnd_le hEv hlbb.1.2 hdef.1.2
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.2
+    refine ⟨Eb'.instantiate1Lift Ev' 0,
+      .letE (annotates_instantiate1Lift hAb hAv 0), ?_, ?_⟩
+    · intro d0 Γ
+      have hilp : Core.posOf ps (Eb'.instantiate1Lift Ev' 0) =
+          Core.instShift (Core.posOf ps Ev') 0 (Core.posOf ps Eb') :=
+        Core.SubstAux.ilp_instShift ps (Core.posLevels ps) Ev' Eb' 0
+      rw [hilp]
+      exact .letE cell (hTmt d0 Γ) (hTmv d0 Γ) (hTmb d0 Γ)
+    · intro plan levels tail
+      obtain ⟨typePlan, valuePlan, bodyPlan, rfl, typeLevels, valueLevels, bodyLevels⟩ :=
+        HeapBinderLevels.let_inv cell levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t typePlan typeLevels (valuePlan ++ (bodyPlan ++ tail)),
+        trace_v valuePlan valueLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @share bound idx s kp hidx hsh _ ih =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    have hidx_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
+    have hidx_n : idx.toNat < n := by omega
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
+    exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
+
+/-- The original exact expression bridge, with annotation-trace evidence omitted. -/
 theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
@@ -3859,197 +4130,10 @@ theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
       ∃ E' : Core.KExpr,
         IxVM.Consistency.Annotates E' E_rd ∧
         ∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp := by
-  induction raw with
-  | @var bound addr idx hidx cell =>
-    intro n k E_rd _ _ hconv hlbb _
-    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq,
-      Ix.Kernel.Expr.mkBvar_eq] at hconv
-    subst hconv
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
-    refine ⟨.bvar idx.toNat, .bvar, fun d Γ => ?_⟩
-    have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
-    have htm : Decl.TmExact κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
-        (.ptr (.enum Core.kexprEnum) addr) :=
-      .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
-    rwa [hval] at htm
-  | @sort bound addr uIdx u lp huIdx hu rl cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨u_rd, hu_rd, hret⟩ := except_bind_eq_ok hconv
-    injection hret with hE; subst hE
-    have hu_eq : u_rd = Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u := by
-      unfold Ix.Kernel.Reader.ECx.level at hu_rd
-      rw [hunivs] at hu_rd
-      have hget : (univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))[uIdx.toNat]? =
-          some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
-        simp [hu]
-      rw [hget] at hu_rd
-      injection hu_rd with hu_eq'
-      exact hu_eq'.symm
-    subst hu_eq
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
-    refine ⟨.sort (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u), .sort, fun d Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [hpos_eq]
-    exact .sort cell (rl.toRepKLevel hplt)
-  | @ref bound addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    have hk_eq : k_rd = κ a := by
-      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
-      have href_arr : ecx.src.refs[rIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hk_rd
-      exact hkeyAt a k_rd hk_rd
-    subst hk_eq
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨hpos_ls, hplt_ls⟩ :=
-      levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
-    refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [hpos_ls, ← hd]
-    exact .const cell ra (rls.toRepKLevelList hplt_ls)
-  | @recur bound addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hself_opt : ecx.self rIdx.toNat with
-    | none => simp [hself_opt, Ix.Kernel.Reader.malformed, throw, Except.error] at hconv
-    | some m_self =>
-      simp only [hself_opt] at hconv
-      obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
-      injection hret with hE; subst hE
-      have hk_eq : k_rd = κ a := hself rIdx.toNat a m_self k_rd hrec hself_opt hk_rd
-      subst hk_eq
-      simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-      obtain ⟨hpos_ls, hplt_ls⟩ :=
-        levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
-      refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
-      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-      rw [hpos_ls, ← hd]
-      exact .const cell ra (rls.toRepKLevelList hplt_ls)
-  | @prj bound addr tIdx fIdx inner a d ap ip htIdx hfIdx href hd ra _ cell ih =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ein_rd, hEin_rd, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    have hk_eq : k_rd = κ a := by
-      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
-      have href_arr : ecx.src.refs[tIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hk_rd
-      exact hkeyAt a k_rd hk_rd
-    subst hk_eq
-    simp only [Ix.Kernel.Expr.looseBVarsBounded] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨Ein', hA_in, hTm_in⟩ := ih hn_le hbnd_le hEin_rd hlbb hdef
-    refine ⟨.proj (κ a) fIdx.toNat Ein', .proj hA_in, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := val_cast_u56 hfIdx
-    rw [← hd, ← hf_val]
-    exact .proj cell ra (hTm_in d0 Γ)
-  | @str bound addr bIdx a bs s bp hbIdx href hmem rbs hs cell =>
-    intro n k E_rd _ _ hconv _ _
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨b_arr, hb_at, hrest⟩ := except_bind_eq_ok hconv
-    have hb_eq : b_arr = ⟨bs.toArray⟩ := by
-      unfold Ix.Kernel.Reader.ECx.blobAt at hb_at
-      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hb_at
-      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
-      exact hb_at.symm
-    subst hb_eq
-    have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
-    rw [hs_utf8] at hrest
-    injection hrest with hE; subst hE
-    exact ⟨.lit (.strVal s), .lit, fun d0 Γ => .litStr cell rbs hs⟩
-  | @nat bound addr bIdx a bs limbs lp hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    intro n k E_rd _ _ hconv _ _
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨n_rd, hn_at, hret⟩ := except_bind_eq_ok hconv
-    injection hret with hE; subst hE
-    have hn_eq : n_rd = Core.limbsVal limbs := by
-      unfold Ix.Kernel.Reader.ECx.natAt Ix.Kernel.Reader.ECx.blobAt at hn_at
-      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hn_at
-      simp only [bind, Except.bind, hblob a ⟨bs.toArray⟩ hmem, hcanon, ↓reduceIte,
-        pure, Except.pure, Except.ok.injEq] at hn_at
-      exact hn_at.symm.trans hval.symm
-    subst hn_eq
-    exact ⟨.lit (.natVal (Core.limbsVal limbs)), .lit,
-      fun d0 Γ => .litNat cell rlimbs hlast⟩
-  | @app bound addr f arg fp ap _ _ cell ihf iha =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Ef_rd, hEf, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ea_rd, hEa, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Ef', hAf, hTmf⟩ := ihf hn_le hbnd_le hEf hlbb.1 hdef.1
-    obtain ⟨Ea', hAa, hTma⟩ := iha hn_le hbnd_le hEa hlbb.2 hdef.2
-    exact ⟨.app Ef' Ea', .app hAf hAa, fun d0 Γ => .app cell (hTmf d0 Γ) (hTma d0 Γ)⟩
-  | @lam bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', hAt, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
-    refine ⟨.lam Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .lam hAt hAb, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [substPW_posLevels_bmeta hperm ℓ]
-    exact .lam cell (hTmt d0 Γ) (hTmb d0 Γ) rl
-  | @all bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', hAt, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
-    refine ⟨.forallE Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .forallE hAt hAb, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [substPW_posLevels_bmeta hperm ℓ]
-    exact .forallE cell (hTmt d0 Γ) (hTmb d0 Γ) rl
-  | @letE bound addr nd md ty val body tp vp bp _ _ _ cell iht ihv ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ev_rd, hEv, hbind3⟩ := except_bind_eq_ok hbind2
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind3
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', _, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1.1 hdef.1.1
-    obtain ⟨Ev', hAv, hTmv⟩ := ihv hn_le hbnd_le hEv hlbb.1.2 hdef.1.2
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.2
-    refine ⟨Eb'.instantiate1Lift Ev' 0,
-      .letE (annotates_instantiate1Lift hAb hAv 0), fun d0 Γ => ?_⟩
-    have hilp : Core.posOf ps (Eb'.instantiate1Lift Ev' 0) =
-        Core.instShift (Core.posOf ps Ev') 0 (Core.posOf ps Eb') :=
-      Core.SubstAux.ilp_instShift ps (Core.posLevels ps) Ev' Eb' 0
-    rw [hilp]
-    exact .letE cell (hTmt d0 Γ) (hTmv d0 Γ) (hTmb d0 Γ)
-  | @share bound idx s kp hidx hsh _ ih =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    have hidx_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
-    have hidx_n : idx.toNat < n := by omega
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
-    exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
+  intro n k E_rd hn hb hread hlbb hdef
+  obtain ⟨annotated, annotates, termRep, _⟩ := raw.toTmExactTrace
+    hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
+  exact ⟨annotated, annotates, termRep⟩
 
 theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
