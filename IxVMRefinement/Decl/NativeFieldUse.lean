@@ -68,4 +68,27 @@ theorem NativeCtorOut.unused_single_field {env : Env .anon} {T : Core.KKey}
   intro index present
   exact checked.unused_last noIndices (by omega)
 
+/-- If every earlier field is free of the family, any recursive or reflexive field is
+last. Its unused-later condition therefore follows from the actual checked return spine. -/
+theorem NativeCtorOut.unused_recursive_last {env : Env .anon} {T : Core.KKey}
+    {levels : List LevelParam} {parameters : Nat} {sortLevel : Core.KLevel}
+    {former raw : Core.KExpr} {ctor annotated : KConstantVal × Nat} {sorts : List Core.KLevel}
+    (checked : NativeCtorOut env T levels parameters 0 sortLevel former raw ctor annotated sorts)
+    {binders : List (Core.KExpr × BinderMeta)} {body : Core.KExpr}
+    (_telescope : annotated.1.type.stripPis (parameters + annotated.2) = some (binders, body))
+    (earlier : ∀ index, index + 1 < annotated.2 →
+      (binders.getD (parameters + index) default).1.mentionsConst T = false) :
+    ∀ index < annotated.2,
+      (recFieldKind T levels parameters 0 index
+          (binders.getD (parameters + index) default).1 = .recursive ∨
+        recFieldKind T levels parameters 0 index
+          (binders.getD (parameters + index) default).1 = .reflexive) →
+      structUsedLater annotated.1.type parameters index = false := by
+  intro index present recursive
+  by_cases last : index + 1 = annotated.2
+  · exact checked.unused_last rfl last
+  · have free := earlier index (by omega)
+    simp only [recFieldKind, free, Bool.false_eq_true, ↓reduceIte] at recursive
+    rcases recursive with impossible | impossible <;> cases impossible
+
 end IxVM.Refinement.Decl
