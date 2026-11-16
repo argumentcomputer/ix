@@ -116,7 +116,7 @@ theorem admitted_input_indexed_pruned {V : IxVM.Refinement.View} {b : Admission.
       closure selected record retained member analysis
     have rawTransferred := (Ix.Cert.RecursorIndex.recursorAnalysis_spec.mp transferred).1
     dsimp only
-    rw [rawTransferred, firstCarrier]
+    simp only [rawTransferred, firstCarrier]
     exact familyKnown
 
 /-- Rebuilding the actual pruned context indexes every retained admitted recursor payload,
