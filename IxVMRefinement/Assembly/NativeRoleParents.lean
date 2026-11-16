@@ -30,7 +30,7 @@ theorem resolveSource_projection_parent {store : Store} {address : _root_.Addres
     obtain ⟨parent, stored, rest⟩ := Option.bind_eq_some_iff.mp resolved
     refine ⟨parent, ?_⟩
     cases parentKind : parent.info with
-    | muts members => exact ⟨members, by simpa only [Ix.Cert.ownerOf, kind] using stored, parentKind⟩
+    | muts members => exact ⟨members, by simpa only [Ix.Cert.ownerOf, kind] using stored, rfl⟩
     | _ => simp [parentKind] at rest
 
 /-- The committed evidence entries are definitions, so a fallback mutual record belongs
