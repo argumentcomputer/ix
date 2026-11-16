@@ -14,7 +14,7 @@ open IxVM (F)
 
 /-- The constructor rows of one native family have a complete indexed load contract. All
 annotations and raw types are chosen from the actual guarded reads produced by the loop. -/
-theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F}
+theorem native_ctor_load_family_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rootCalls loopCalls : List (Call F)}
     {rc former bp sortLevel result : SourceValue F} {h h' : Heap F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
@@ -42,8 +42,7 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
     (selfKeyed : ∀ k a m name,
       (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
-    (blobReads : ∀ a bytes, Hashed rootCalls bytes → Address.blake3Pure bytes = a →
-      cx.blob a = some bytes) :
+    (blobReads : L1.HashedBlobReadAgreement cx.blob rootCalls) :
     ∃ (annotated : List (Ix.Kernel.ConstantVal .anon × Nat)) (rawTypes : List Core.KExpr),
       Decl.CtorLoadAtIndex base.t block params i rootCalls
         (rows.map (fun row => (row.1, row.2.2))) annotated rawTypes ∧
@@ -91,7 +90,7 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
       simpa only [Nat.zero_add] using native_ctor_scope_reads countBound ind.ctors.size 0 (by omega)
         blockRep subset loop index.val slotBound
     obtain ⟨checked⟩ := observed
-    exact checked.load_contract paramsBound levelsBound source
+    exact checked.load_contract_of_blobAgreement paramsBound levelsBound source
       blockShape memberAt ctorAt reader nameKeyed good keyed selfKeyed blobReads
   choose cvOf rawOf contract using each
   let annotated := List.ofFn fun index : Fin rows.length => (cvOf index, rows[index.val].2.2)
@@ -114,5 +113,44 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
   · intro row member
     obtain ⟨j, bound, rfl⟩ := List.getElem_of_mem member
     exact ⟨(contract ⟨j, bound⟩).2.1, (contract ⟨j, bound⟩).2.2.1⟩
+
+/-- Compatibility with full observed-blob membership. -/
+theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {params indices levels : Nat} {rootCalls loopCalls : List (Call F)}
+    {rc former bp sortLevel result : SourceValue F} {h h' : Heap F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    (countBound : ind.ctors.size < 549755813888)
+    (paramsBound : params < 72057594037927936) (levelsBound : levels < 4294967296)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
+    (subset : ∀ call ∈ loopCalls, call ∈ rootCalls)
+    (loop : ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
+      [rc, former, .field (params : F), .field (indices : F), .field (ind.ctors.size : F),
+        .field (levels : F), bp, .field i, sortLevel, .field 0, .field 0] h result h' loopCalls)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {rows : List NativeCtorRow}
+    (frames : List.Forall₂
+      (NativeCtorReaderCheckedFrame cx (Core.ixAddr block)
+        (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self))
+      (nativeCtorSlots [(ZMod.val i, ind)]) rows)
+    (memberKeys : ∀ j < ind.ctors.size,
+      cx.memberKey (.ctor (Core.ixAddr block) (ZMod.val i) j) =
+        .ok (base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) j)))
+    (good : Core.Good base rootCalls)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : ∀ a bytes, Hashed rootCalls bytes → Address.blake3Pure bytes = a →
+      cx.blob a = some bytes) :
+    ∃ (annotated : List (Ix.Kernel.ConstantVal .anon × Nat)) (rawTypes : List Core.KExpr),
+      Decl.CtorLoadAtIndex base.t block params i rootCalls
+        (rows.map (fun row => (row.1, row.2.2))) annotated rawTypes ∧
+      (∀ row ∈ rows, row.2.1 = params ∧ row.1.levelParams = List.range levels) := by
+  exact native_ctor_load_family_of_blobAgreement source blockShape memberAt countBound paramsBound
+    levelsBound blockRep subset loop frames memberKeys good keyed selfKeyed
+    (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 end IxVM.Refinement.Assembly
