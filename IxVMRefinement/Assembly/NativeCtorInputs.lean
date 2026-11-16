@@ -135,7 +135,6 @@ theorem observed_native_ctor_input {base : Core.Ctx}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
     (ctorAt : ind.ctors.toList[ZMod.val j]? = some ctor)
-    (ctorIndex : ctor.cidx.toNat = ZMod.val j)
     {cx : Ix.Kernel.Reader.Ctx .anon}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
     (loaded : ObsFn Core.W "Ingress::get_ci_cprj" [blockArg, .field i, .field j]
@@ -144,6 +143,7 @@ theorem observed_native_ctor_input {base : Core.Ctx}
     (blockRep : Bytes.RepAddressRef Core.addrTy h₀ block blockArg)
     (tag : loadValue h₁ ptr = .ok (.construct Core.kciEnum "Ctor"
       [nl, ty, blk, indIdx, ctorIdx, np, nf, safe]))
+    (indexChecked : ctorIdx = .field j)
     (extended : Heap.Extends h₁ h₂)
     (bounded : IxVM.Consistency.Bounded calls)
     (validated : ObsFn Core.W "KernelCheck::validate_expr_well_scoped"
@@ -184,11 +184,14 @@ theorem observed_native_ctor_input {base : Core.Ctx}
   injection ctorAt' with ctorEq
   subst ct
   have originalRaw := raw
-  obtain ⟨_, _, _, _, _, typePtr, parentPtr, parent, _, _, valueEq, _⟩ := raw
+  obtain ⟨_, ctorIndexBound, _, _, _, typePtr, parentPtr, parent, _, _, valueEq, _⟩ := raw
   subst value
   have fieldsEq := Except.ok.inj (tag.symm.trans valueAt)
   simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fieldsEq
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fieldsEq
+  have ctorIndex : ctor.cidx.toNat = ZMod.val j := by
+    have equal := congrArg (fun x : F => ZMod.val x) (Value.field.inj indexChecked)
+    rwa [ZMod.val_natCast_of_lt (Nat.lt_trans ctorIndexBound (by decide))] at equal
   obtain ⟨annotated, rawSyntax, stored, exactValue, rawTypeRep, exactInfo,
     varsBound, paramsDefined, closed⟩ :=
     validated_native_ctor_input bounded originalRaw extended read validated scopeMember
