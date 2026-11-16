@@ -57,7 +57,7 @@ theorem admitted_plain_replay {V : IxVM.Refinement.View} {b : Admission.Binding}
     simp only [readRecord, info] at read
     simp only [readRecordBare, info, readRecord]
     cases unsafeFlag : ax.isUnsafe with
-    | true => simp [unsafeFlag, declined, throw, throwThe, MonadExceptOf.throw] at read
+    | true => simp [unsafeFlag, declined, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at read
     | false =>
       simp only [unsafeFlag, Bool.false_eq_true, ↓reduceIte] at read ⊢
       obtain ⟨name, nameRead, read⟩ := except_bind_ok.mp read
