@@ -44,9 +44,44 @@ structure NativePreludeCalls (rc nl ty blockArg : SourceValue F) (initial : Heap
   nilTypes : sortBefore = mentionsAfter ++ [.construct kexprListEnum "Nil" []]
   sortRun : ObsFn W "KernelInfer::k_ensure_sort"
     [rc, ty, .ptr (.enum kexprListEnum) mentionsAfter.length] sortBefore sortResult sortAfter sortCalls
+  scopeMember : (⟨"KernelCheck::validate_expr_well_scoped", [ty, .field 0, nl], scopeBefore⟩ : Call F) ∈ rootCalls
+  mentionsMember : (⟨"KernelCheck::expr_mentions_block",
+    [ty, .ptr (.enum addrListEnum) blocksNil.length], mentionsBefore⟩ : Call F) ∈ rootCalls
+  sortMember : (⟨"KernelInfer::k_ensure_sort",
+    [rc, ty, .ptr (.enum kexprListEnum) mentionsAfter.length], sortBefore⟩ : Call F) ∈ rootCalls
   scopeSubset : ∀ call ∈ scopeCalls, call ∈ rootCalls
   mentionsSubset : ∀ call ∈ mentionsCalls, call ∈ rootCalls
   sortSubset : ∀ call ∈ sortCalls, call ∈ rootCalls
+
+/-- Preserve the exact observed prelude while locating it in a larger actual trace. -/
+def NativePreludeCalls.mono {rc nl ty blockArg : SourceValue F} {initial : Heap F}
+    {calls rootCalls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls)
+    (subset : ∀ call ∈ calls, call ∈ rootCalls) : NativePreludeCalls rc nl ty blockArg initial rootCalls where
+  scopeBefore := prelude.scopeBefore
+  scopeResult := prelude.scopeResult
+  scopeAfter := prelude.scopeAfter
+  scopeCalls := prelude.scopeCalls
+  blocksNil := prelude.blocksNil
+  mentionsBefore := prelude.mentionsBefore
+  mentionsAfter := prelude.mentionsAfter
+  mentionsCalls := prelude.mentionsCalls
+  sortBefore := prelude.sortBefore
+  sortResult := prelude.sortResult
+  sortAfter := prelude.sortAfter
+  sortCalls := prelude.sortCalls
+  initialExtended := prelude.initialExtended
+  scopeRun := prelude.scopeRun
+  nilBlocks := prelude.nilBlocks
+  consBlocks := prelude.consBlocks
+  mentionsRun := prelude.mentionsRun
+  nilTypes := prelude.nilTypes
+  sortRun := prelude.sortRun
+  scopeMember := subset _ prelude.scopeMember
+  mentionsMember := subset _ prelude.mentionsMember
+  sortMember := subset _ prelude.sortMember
+  scopeSubset := fun call member => subset call (prelude.scopeSubset call member)
+  mentionsSubset := fun call member => subset call (prelude.mentionsSubset call member)
+  sortSubset := fun call member => subset call (prelude.sortSubset call member)
 
 /-- The allocated block list is reached before the raw occurrence check. -/
 theorem NativePreludeCalls.scope_to_mentions {rc nl ty blockArg : SourceValue F}
@@ -182,6 +217,9 @@ theorem native_prelude_calls {rc nl ty np ni nc unsafeFlag blockArg index addr r
       initialExtended := unsafeRun.heap_extends
       scopeRun := scopeRun, nilBlocks := nilBlocks, consBlocks := consBlocks
       mentionsRun := mentionsRun, nilTypes := nilTypes, sortRun := sortRun
+      scopeMember := by rw [allCalls]; simp
+      mentionsMember := by rw [allCalls]; simp
+      sortMember := by rw [allCalls]; simp
       scopeSubset := by intro call member; rw [allCalls]; simp [member]
       mentionsSubset := by intro call member; rw [allCalls]; simp [member]
       sortSubset := by intro call member; rw [allCalls]; simp [member] }⟩
