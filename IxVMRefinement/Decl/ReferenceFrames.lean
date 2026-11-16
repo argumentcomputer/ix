@@ -72,14 +72,14 @@ private theorem target_lookup_eq {source target sourceOut targetOut : Env .anon}
     (same : sourceOut.find? key = source.find? key) :
     targetOut.find? key = target.find? key := by
   cases found : target.find? key with
-  | some ci => exact (extension.find found).trans found.symm
+  | some ci => exact extension.find found
   | none =>
     have sourceNone : source.find? key = none :=
       Option.isNone_iff_eq_none.mp (by rw [before.isNone, found]; rfl)
     have finalNone : sourceOut.find? key = none := same.trans sourceNone
     have targetNone : targetOut.find? key = none :=
       Option.isNone_iff_eq_none.mp (by rw [← after.isNone, finalNone]; rfl)
-    exact targetNone.trans found.symm
+    exact targetNone
 
 /-- A complete-unit prefix produces its actual frame against the final checked environment. -/
 theorem ReferenceReplay.unit_frame {V : Type u} [SetTheory V]
@@ -119,10 +119,10 @@ private theorem middle_lookup_eq {before middle after : Env .anon}
     {key : Key .anon} (finalEq : after.find? key = before.find? key) :
     middle.find? key = before.find? key := by
   cases found : before.find? key with
-  | some ci => exact (first.find found).trans found.symm
+  | some ci => exact first.find found
   | none =>
     cases current : middle.find? key with
-    | none => exact current.trans found.symm
+    | none => rfl
     | some ci =>
       have final := rest.find current
       rw [finalEq, found] at final
