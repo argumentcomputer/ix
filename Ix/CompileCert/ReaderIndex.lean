@@ -16,7 +16,7 @@ states the builder as its two loops (`run`,
   against the block's record (`buildIndex_shapes`), so a compiled
   standalone inductive family is indexed at member 0 exactly
   (`buildIndex_singleton_order`, `compiled_order`);
-* every indexed recursor comes from a scanned record whose analysis gave
+* every canonical recursor comes from a scanned record whose analysis gave
   its entry (`buildIndex_valid`'s provenance) and every recursor in a block
   shape is indexed at that block (grouping); with records coherent with
   the store, the reader's own lookups succeed (`entry_lookup`,
@@ -45,9 +45,8 @@ def orderValid (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive)) (order
   order.size == indcs.size && order[0]? == some firstIndex &&
     order.all (fun index => indcs.any (·.1 == index)) && order.toList.eraseDups.length == indcs.size
 
-/-- One recursor member of one record: indexed under its own reference
-when its analysis names a block whose inductives it orders, and its motive
-is not yet taken there. -/
+/-- A successfully analysed member is filed under its own reference: canonical when its
+block's motive is available, or in the twin map when that motive already has a representative. -/
 def candidate (store : Store) (owner : Address) (constant : Ixon.Constant) (member : Nat × Ixon.Recursor)
     (before : BuildState) : Id (ForInStep BuildState) := do
   let (position, recursor) := member

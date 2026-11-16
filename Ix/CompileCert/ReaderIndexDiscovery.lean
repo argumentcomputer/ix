@@ -1,6 +1,6 @@
 import Ix.CompileCert.ReaderIndex
 
-/-! # The reader's recursor index: coverage and one recursor per motive
+/-! # Canonical recursor coverage and uniqueness per motive
 
 The stream facts `stream_covers` and `published_stream_order` use admission's
 store coherence and the compile driver's publication. Over records coherent
@@ -11,7 +11,7 @@ with the store:
   motive is in the block's shape (`buildIndex_covers`), the eligible one
   itself if no other eligible recursor has its role
   (`buildIndex_unique_reference`);
-* the index holds at most one recursor per block and motive
+* the canonical map holds at most one recursor per block and motive
   (`buildIndex_role_unique`). -/
 
 namespace Ix.CompileCert.ReaderIndexDiscovery
