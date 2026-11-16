@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.SortBetaReduction
 import IxC.Kernel.Verify.PropRead
+import IxC.Kernel.Verify.PropWhen
 
 /-! # Actual comparison of a sort with a constant-sort beta redex
 
