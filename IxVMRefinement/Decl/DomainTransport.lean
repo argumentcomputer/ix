@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.NativeConstructorFieldChecks
 import IxVMRefinement.Decl.NativeConstructorFieldFrames
+import IxVMRefinement.Decl.IdentityRefShape
 
 /-! # Transport of a produced domain property through an exact rebuild
 
@@ -92,7 +93,8 @@ private theorem DomainAt.opened {md : Mode} {P : Expr md → Prop}
           exact ih tail (bodyShape.instantiate1 preserves (.fvar depth domain) 0) atSlot
     | _ => cases shape
 
-private theorem normFieldDoms_count {md : Mode} {env : Env md} {fuel : Nat} {T : Key md} :
+/-- The actual field walk returns one binder for each consumed field. -/
+theorem normFieldDoms_count {md : Mode} {env : Env md} {fuel : Nat} {T : Key md} :
     ∀ {count depth : Nat} {e residual : Expr md} {fields : List (Expr md × BinderMeta)},
       normFieldDoms (fueledOps .verified fuel) env T depth count e = .ok (fields, residual) →
       fields.length = count := by
@@ -167,5 +169,144 @@ theorem normCtorVal_domain_predicate {env : Env .anon} {fuel nP nF slot : Nat} {
     have annotation := (NativeFormerRestore.initiallyStored checkedAgain).2.2
     have annotatedShape := closedShape.annotated annotates annotation
     exact annotatedShape.opened instantiates finalOpen finalAt
+
+private theorem DomainAt.abstract1_map {P Q : Expr .anon → Prop} {slot : Nat} {e : Expr .anon}
+    (shape : DomainAt P slot e) (index cut : Nat)
+    (mapping : ∀ expression, P expression → Q (expression.abstract1 index (cut + slot))) :
+    DomainAt Q slot (e.abstract1 index cut) := by
+  induction shape generalizing cut with
+  | here origin => exact .here (by simpa only [Nat.add_zero] using mapping _ origin)
+  | next _ ih =>
+    refine .next (ih (cut + 1) ?_)
+    intro expression origin
+    simpa only [Nat.add_succ, Nat.succ_add] using mapping expression origin
+
+private theorem DomainAt.instantiate1_map {P Q : Expr .anon → Prop} {slot : Nat} {e : Expr .anon}
+    (shape : DomainAt P slot e) (value : Expr .anon) (cut : Nat)
+    (mapping : ∀ expression, P expression → Q (expression.instantiate1 value (cut + slot))) :
+    DomainAt Q slot (e.instantiate1 value cut) := by
+  induction shape generalizing cut with
+  | here origin => exact .here (by simpa only [Nat.add_zero] using mapping _ origin)
+  | next _ ih =>
+    refine .next (ih (cut + 1) ?_)
+    intro expression origin
+    simpa only [Nat.add_succ, Nat.succ_add] using mapping expression origin
+
+private def closedReference (depth slot target : Nat) (type : Expr .anon) : Expr .anon :=
+  if depth ≤ target then .bvar (depth + slot - 1 - target) else .fvar target type
+
+private theorem closedReference_step (depth slot target : Nat) (type : Expr .anon) :
+    (closedReference (depth + 1) slot target type).abstract1 depth slot =
+      closedReference depth (slot + 1) target type := by
+  by_cases nextBound : depth + 1 ≤ target
+  · have currentBound : depth ≤ target := by omega
+    simp only [closedReference, ite_eq_left nextBound, ite_eq_left currentBound, Expr.abstract1]
+    congr 1
+    omega
+  · by_cases currentBound : depth ≤ target
+    · have same : target = depth := by omega
+      subst target
+      simp [closedReference, Expr.abstract1]
+    · have different : target ≠ depth := by omega
+      simp only [closedReference, ite_eq_right nextBound, ite_eq_right currentBound, Expr.abstract1, ite_eq_right different]
+
+private theorem DomainAt.close_reference {domainSort : Level} :
+    ∀ (binders : List (Expr .anon × BinderMeta)) {slot : Nat} {entry : Expr .anon × BinderMeta},
+      binders[slot]? = some entry → ∀ depth target type body,
+      target < depth + slot → IdentityRef domainSort (.fvar target type) entry.1 →
+      DomainAt (IdentityRef domainSort (closedReference depth slot target type)) slot
+        (Ix.Kernel.closeTelescope binders depth body) := by
+  intro binders
+  induction binders with
+  | nil => intro slot entry absent; cases slot <;> cases absent
+  | cons current binders ih =>
+    obtain ⟨currentDomain, currentMeta⟩ := current
+    intro slot entry atSlot depth target type body earlier origin
+    cases slot with
+    | zero =>
+      have same : (currentDomain, currentMeta) = entry := Option.some.inj atSlot
+      subst entry
+      have outside : ¬ depth ≤ target := by omega
+      simpa only [closedReference, ite_eq_right outside, Ix.Kernel.closeTelescope] using DomainAt.here (body :=
+        (Ix.Kernel.closeTelescope binders (depth + 1) body).abstract1 depth 0) (bm := currentMeta) origin
+    | succ slot =>
+      have tail := ih atSlot (depth + 1) target type body (by omega) origin
+      refine .next (tail.abstract1_map depth 0 ?_)
+      intro expression expressionOrigin
+      have mapped := expressionOrigin.abstract1 depth slot
+      rw [closedReference_step] at mapped
+      simpa only [Nat.zero_add] using mapped
+
+private theorem DomainAt.open_reference {domainSort : Level} :
+    ∀ {count depth slot target : Nat} {e residual use : Expr .anon} {fvars : List (Expr .anon)},
+      openPisAtFvars count e depth = some (fvars, residual) → target < slot →
+      DomainAt (IdentityRef domainSort (.bvar (slot - 1 - target))) slot e →
+      fvars[slot]? = some use → ∃ reference,
+        fvars[target]? = some reference ∧ IdentityRef domainSort reference use.fvarTypeD := by
+  intro count
+  induction count with
+  | zero =>
+    intro depth slot target e residual use fvars opened _ _ atUse
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj opened)
+    cases slot <;> cases atUse
+  | succ count ih =>
+    intro depth slot target e residual use fvars opened earlier shape atUse
+    cases slot with
+    | zero => omega
+    | succ slot =>
+      cases e with
+      | forallE domain body metadata =>
+        cases shape with
+        | next bodyShape =>
+          simp only [openPisAtFvars] at opened
+          cases tail : openPisAtFvars count (body.instantiate1 (.fvar depth domain)) (depth + 1) with
+          | none => rw [tail] at opened; cases opened
+          | some pair =>
+            obtain ⟨tailVars, tailResidual⟩ := pair
+            rw [tail] at opened
+            obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj opened)
+            cases target with
+            | zero =>
+              have position : slot + 1 - 1 - 0 = slot := by omega
+              rw [position] at bodyShape
+              have openedShape : DomainAt (IdentityRef domainSort (.fvar depth domain)) slot
+                  (body.instantiate1 (.fvar depth domain)) := by
+                refine bodyShape.instantiate1_map (.fvar depth domain) 0 ?_
+                intro expression origin
+                simpa only [Nat.zero_add, Expr.instantiate1, ↓reduceIte] using
+                  origin.instantiate1 (.fvar depth domain) slot
+              refine ⟨.fvar depth domain, rfl, ?_⟩
+              exact openedShape.opened (fun _ value cut origin => by
+                simpa only [Expr.instantiate1] using origin.instantiate1 value cut) tail atUse
+            | succ target =>
+              have position : slot + 1 - 1 - (target + 1) = slot - 1 - target := by omega
+              rw [position] at bodyShape
+              have unequal : slot - 1 - target ≠ slot := by omega
+              have notGreater : ¬ slot - 1 - target > slot := by omega
+              have openedShape : DomainAt (IdentityRef domainSort (.bvar (slot - 1 - target))) slot
+                  (body.instantiate1 (.fvar depth domain)) := by
+                refine bodyShape.instantiate1_map (.fvar depth domain) 0 ?_
+                intro expression origin
+                simpa only [Nat.zero_add, Expr.instantiate1, ite_eq_right unequal, ite_eq_right notGreater] using
+                  origin.instantiate1 (.fvar depth domain) slot
+              obtain ⟨reference, atReference, origin⟩ := ih tail (by omega) openedShape atUse
+              exact ⟨reference, atReference, origin⟩
+      | _ => cases shape
+
+/-- Closing an earlier reference, annotating the whole telescope and reopening it selects
+the matching final opener. Its type annotation is the final frame's actual one. -/
+theorem reclosed_identity_domain {domainSort : Level} {binders : List (Expr .anon × BinderMeta)}
+    {slot target count : Nat} {entry : Expr .anon × BinderMeta} {type body finalType residual use : Expr .anon}
+    {finalVars : List (Expr .anon)} (atSlot : binders[slot]? = some entry) (earlier : target < slot)
+    (origin : IdentityRef domainSort (.fvar target type) entry.1)
+    (annotation : IxVM.Consistency.Annotates finalType (closeTelescope binders 0 body))
+    (opened : openPisAtFvars count finalType 0 = some (finalVars, residual))
+    (atUse : finalVars[slot]? = some use) :
+    ∃ reference, finalVars[target]? = some reference ∧ IdentityRef domainSort reference use.fvarTypeD := by
+  have closed : DomainAt (IdentityRef domainSort (.bvar (slot - 1 - target))) slot
+      (closeTelescope binders 0 body) := by
+    simpa [closedReference] using DomainAt.close_reference binders atSlot 0 target type body (by omega) origin
+  have annotated := closed.annotated (fun h ann => h.annotated_bvar ann) annotation
+  exact annotated.open_reference opened earlier atUse
 
 end IxVM.Refinement.Decl
