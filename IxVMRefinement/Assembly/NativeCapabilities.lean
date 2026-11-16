@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.NativePeerInputs
 import IxVMRefinement.Assembly.NativeReaderInputs
+import IxVMRefinement.Assembly.NativeOuter
 
 /-! # Native capability data from actual metadata queries
 
@@ -75,5 +76,79 @@ theorem native_unitLikeCaps_of_reader {context : Core.ScopedCtx} {block : Bytes.
     cases rest
     have fieldEq := frame.1.2.2.2.2
     simp [Ix.Kernel.nativeCapsAt, ctors, noIndices, fieldEq, zeroFields]
+
+/-- A selected semantic stage keeps the exact native environment and caller scope. -/
+abbrev NativeFormerRunInput.scopedStageCtx {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {calls : List (Call F)}
+    (input : NativeFormerRunInput base block i source members ind rawType calls)
+    (parts : Ix.Kernel.InductiveShape .anon) (isRec : Bool) (allowed : Call F → Prop) : Core.ScopedCtx :=
+  { toCtx := input.stageCtx parts isRec, allowed := allowed }
+
+/-- The current former's unit-like load obligation follows from actual raw metadata and
+reader frames at its native capabilities. The constructor may still be fresh in this stage. -/
+theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {rootCalls : List (Call F)}
+    (input : NativeFormerRunInput base block i source members ind rawType rootCalls)
+    (native : input.NativeCall) (rootGood : Core.Good base rootCalls) (tableWf : base.t.wf = true)
+    {parts : Ix.Kernel.InductiveShape .anon} {isRec : Bool} {allowed : Call F → Prop}
+    (params : parts.nP = ind.params.toNat) (indices : parts.nIdx = ind.indices.toNat)
+    {cx : Ix.Kernel.Reader.Ctx .anon} {mr : Ix.Kernel.Reader.MemberReader .anon}
+    {rows : List NativeCtorRow}
+    (frames : List.Forall₂ (NativeCtorReaderCheckedFrame cx (Core.ixAddr block) mr)
+      (nativeCtorSlots [(ZMod.val i, ind)]) rows)
+    (ctors : parts.ctors = rows.map (fun row => (row.1, row.2.2)))
+    (notBasis : Ix.Kernel.reservedBasisNames.contains
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false)
+    {ap ptr nl ty safety parentPtr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    {address parent : Bytes.Address} {p j : F}
+    {stored : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (loaded : ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' calls)
+    (good : Core.Good (input.stageCtx parts isRec) calls)
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address ap)
+    (current : base.κ (Core.ixAddr address) = base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (payload : loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+      [nl, ty, .field p, .field 0, .field 1, safety, parentPtr, .field j]))
+    (parentRep : Bytes.RepAddressRef Core.addrTy h' parent parentPtr)
+    (found : (input.stageCtx parts isRec).env.find? (base.κ (Core.ixAddr address)) = some (.indInfo stored caps))
+    (zero : Core.ZeroFieldCtorLoad (input.scopedStageCtx parts isRec allowed) parent j) :
+    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
+      (Ix.Kernel.reservedBasisNames.contains (base.κ (Core.ixAddr address)) = false ∨
+        (ZMod.val p = 0 ∧ ∀ us,
+          Ix.Kernel.isUnitLikeTy (input.stageCtx parts isRec).env (.const (base.κ (Core.ixAddr address)) us) = true)) := by
+  let context := input.scopedStageCtx parts isRec allowed
+  obtain ⟨projection, projectionShape⟩ := input.projectionSource
+  have peers := native_peer_reads (raw := context) source projection projectionShape input.blockShape
+    (by simpa only [Array.getElem?_toList] using input.memberAt) (input.oneFamily native rootGood) tableWf
+  obtain ⟨actualType, actualSafety, actualPtr, actualParent, actualPayload, actualRep, actualParentEq⟩ :=
+    peers.self_ind ap ptr h h' calls address loaded good addressRep current
+  have same := Except.ok.inj (actualPayload.symm.trans payload)
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at same
+  obtain ⟨_, _, paramsEq, indicesEq, countEq, _, ptrEq, indexEq⟩ := same
+  have noIndices : ind.indices.toNat = 0 :=
+    Decl.nat_eq_of_field_eq_bounded (Nat.lt_trans input.indicesBound (by decide)) (by decide) indicesEq
+  have oneCtor : ind.ctors.size = 1 :=
+    Decl.nat_eq_of_field_eq_bounded (Nat.lt_trans input.ctorCountBound (by decide)) (by decide) countEq
+  have pEq : ind.params.toNat = ZMod.val p := by
+    have fieldValues := congrArg ZMod.val (Value.field.inj paramsEq)
+    simpa only [ZMod.val_natCast_of_lt (Nat.lt_trans input.paramsBound (by decide))] using fieldValues
+  have jEq : i = j := Value.field.inj indexEq
+  subst j
+  have parentSame : actualParent = parent :=
+    Bytes.repAddressRef_inj U32.Goldilocks.compatible (by simpa only [ptrEq] using actualRep) parentRep
+  have parentBlock : parent = block := Decl.ixAddr_inj (by rw [← parentSame]; exact actualParentEq)
+  subst parent
+  have capability := native_unitLikeCaps_of_reader source input.blockShape input.memberAt zero oneCtor
+    frames ctors (indices.trans noIndices)
+  have currentLookup : (input.stageCtx parts isRec).env.find? (base.κ (Core.ixAddr address)) =
+      some (.indInfo input.annotated (Ix.Kernel.nativeCapsAt parts isRec)) := by
+    rw [current, ← input.stored.1]
+    exact Ix.Kernel.Env.find?_cons_self _ _
+  have capsEq : Ix.Kernel.nativeCapsAt parts isRec = caps :=
+    (Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj (currentLookup.symm.trans found))).2
+  rw [← capsEq]
+  exact ⟨capability.1, capability.2.trans (params.trans pEq), .inl (by rwa [current])⟩
+
 
 end IxVM.Refinement.Assembly
