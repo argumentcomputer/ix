@@ -66,8 +66,7 @@ theorem native_unitLikeCaps_of_reader {context : Core.ScopedCtx} {block : Bytes.
       (Ix.Kernel.nativeCapsAt parts isRec).unitParams = parts.nP := by
   obtain ⟨ctor, atCtor, zeroFields⟩ := native_zero_field_metadata source blockShape memberAt zero
   obtain ⟨actual, ctorArray⟩ := Ix.CompileCert.ReaderIndex.array_one ind.ctors oneCtor
-  have same : actual = ctor := by simpa only [ctorArray, Array.toList_toArray, List.getElem?_cons_zero,
-    Option.some.injEq] using atCtor
+  have same : actual = ctor := by simpa [ctorArray] using atCtor
   subst actual
   have frames' : List.Forall₂ (NativeCtorReaderCheckedFrame cx (Core.ixAddr block) mr)
       [(ZMod.val i, ctor, 0)] rows := by simpa [nativeCtorSlots, ctorArray] using frames

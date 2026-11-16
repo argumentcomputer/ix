@@ -26,10 +26,12 @@ theorem nativePartsNoRec_empty_sort {cv : ConstantVal .anon} {caps : IndCaps .an
       parts.cvT = cv ∧ parts.nP = 0 ∧ parts.nIdx = 0 ∧ parts.ctors = [] := by
   have stubNotBasis : reservedBasisNames.contains (auxKey cv.name .recursor) = false :=
     reservedBasisNames_contains_auxKey _ _
+  have notMember : cv.name ∉ reservedBasisNames := by simpa using notBasis
+  have stubNotMember : auxKey cv.name .recursor ∉ reservedBasisNames := by simpa using stubNotBasis
   cases levelShape : cv.levelParams with
   | nil =>
     simp [nativePartsNoRec?, nativeParts?, nativeShape?, nativeRecStub, sumSplit,
-      nativeCounts?, literal, Expr.piBinders, notBasis, stubNotBasis, levelShape, Expr.stripPis]
+      nativeCounts?, literal, Expr.piBinders, notMember, stubNotMember, levelShape, Expr.stripPis]
   | cons head tail =>
     have tailNe : (tail == head :: tail) = false := by
       apply beq_eq_false_iff_ne.mpr
@@ -37,7 +39,7 @@ theorem nativePartsNoRec_empty_sort {cv : ConstantVal .anon} {caps : IndCaps .an
       have length := congrArg List.length same
       simp at length
     simp [nativePartsNoRec?, nativeParts?, nativeShape?, nativeRecStub, sumSplit,
-      nativeCounts?, literal, Expr.piBinders, notBasis, stubNotBasis, levelShape, tailNe, Expr.stripPis]
+      nativeCounts?, literal, Expr.piBinders, notMember, stubNotMember, levelShape, tailNe, Expr.stripPis]
 
 /-- A singleton former cannot be any of the complete reserved basis blocks. -/
 theorem basisPinHit_single_former (cv : ConstantVal .anon) (caps : IndCaps .anon) :
@@ -48,11 +50,11 @@ theorem basisPinHit_single_former (cv : ConstantVal .anon) (caps : IndCaps .anon
     apply beq_eq_false_iff_ne.mpr
     intro same
     have count := congrArg List.length same
-    simp only [List.mem_cons, List.mem_singleton] at member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
     rcases member with rfl | rfl | rfl | rfl | rfl <;>
       simp [BasisKind.decls, eqBasis, natBasis, punitBasis, emptyBasis, falseBasis] at count
   unfold basisPinHit
-  rw [List.find?_eq_none.mpr noMatch]
+  rw [List.find?_eq_none.mpr (fun kind member => by rw [noMatch kind member]; decide)]
   rfl
 
 /-- A literal-sort empty family has a reader-shaped installation and semantic native run.
