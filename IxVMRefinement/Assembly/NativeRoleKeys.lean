@@ -43,10 +43,10 @@ theorem admitted_bound_projection_target {V : IxVM.Refinement.View} {binding : A
     exact direct
   have same : actual = target := by
     cases projection with
-    | definition p => exact Ix.Cert.DefinitionSegments.resolveSource_dPrj rfl sourceRead
-    | inductive p => exact Ix.Cert.InductiveSegments.resolveSource_iPrj rfl sourceRead
-    | recursor p => exact Ix.Cert.InductiveSegments.resolveSource_rPrj rfl sourceRead
-    | constructor p => exact Ix.Cert.InductiveSegments.resolveSource_cPrj rfl sourceRead
+    | «definition» p => exact Ix.Cert.DefinitionSegments.resolveSource_dPrj rfl sourceRead
+    | «inductive» p => exact Ix.Cert.InductiveSegments.resolveSource_iPrj rfl sourceRead
+    | «recursor» p => exact Ix.Cert.InductiveSegments.resolveSource_rPrj rfl sourceRead
+    | «constructor» p => exact Ix.Cert.InductiveSegments.resolveSource_cPrj rfl sourceRead
   rwa [same] at resolved
 
 /-- A real non-trust bound projection gets its actual core key in the original admitted
