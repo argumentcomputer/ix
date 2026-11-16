@@ -11,10 +11,10 @@ open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
 private theorem binary_name_facts {name : Key .anon} (member : name ∈ Rules.natBinOpNames) :
     name ≠ natPredName ∧ name ≠ natName ∧ name ≠ boolName ∧ name ∈ natOpDeps name ∧
       (natOpNames.contains name = true ∨ natDivModNames.contains name = true) := by
-  simp only [Rules.natBinOpNames, natDivModNames, List.append_cons, List.nil_append,
+  simp only [Rules.natBinOpNames, natDivModNames, List.mem_append,
     List.mem_cons, List.not_mem_nil, or_false] at member
-  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-    rfl | rfl | rfl | rfl | rfl | rfl
+  rcases member with (rfl | rfl | rfl | rfl | rfl | rfl) |
+    (rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl)
   all_goals decide
 
 private theorem definition_lookup_other {before : Env .anon} {cv : ConstantVal .anon}
@@ -77,7 +77,7 @@ private theorem binary_type_not_prop {before : Env .anon} {cv : ConstantVal .ano
       match innerFuel, lastInferred with
       | 0, lastInferred => rw [inferTypeCore_zero] at lastInferred; cases lastInferred
       | lastFuel + 1, lastInferred =>
-        obtain ⟨actual, actualFound, _, _, lastTypeEq⟩ := inferTypeCore_const_inv_full lastInferred
+        obtain ⟨actual, actualFound, _, _, lastTypeEq⟩ := Rules.inferTypeCore_const_inv_full lastInferred
         have same : actual = ci := Option.some.inj (actualFound.symm.trans found)
         rw [same, levels, typeEq] at lastTypeEq
         change lastType = .sort (.succ .zero) at lastTypeEq
@@ -123,8 +123,11 @@ theorem ThmKind.allowed_from_final {P : KeyScope .anon} {before final after : En
     have natSupported := guarded.1
     simp only [natOpGuard, Bool.and_eq_true] at natSupported
     have pinned := List.all_eq_true.mp guarded.2 cv.name self
-    simp only [natOpStoredOk, Env.find?_cons_self, ConstantInfo.toConstantVal, Bool.and_eq_true] at pinned
-    exact binary_type_not_prop member natSupported.1.1 pinned.2 inferred sorted prefixZero
+    have foundSelf : (Env.mk (.defnInfo { cv with type } value hint :: before.consts)).find? cv.name =
+        some (.defnInfo { cv with type } value hint) := Env.find?_cons_self _ _
+    simp only [natOpStoredOk, foundSelf, ConstantInfo.toConstantVal, Bool.and_eq_true] at pinned
+    exact binary_type_not_prop (cv := { cv with type }) member natSupported.1.1 pinned.2
+      inferred sorted prefixZero
   · intro same
     rw [same] at reserved
     cases reserved
