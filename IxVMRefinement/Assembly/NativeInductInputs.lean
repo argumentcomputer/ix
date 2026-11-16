@@ -92,6 +92,21 @@ structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
   blockPtr : SourceValue F
   heap : Heap F
   annotated : Ix.Kernel.ConstantVal .anon
+  addressPtr : SourceValue F
+  checkResult : SourceValue F
+  checkAfter : Heap F
+  checkCalls : List (Call F)
+  checkedRun : ObsFn Core.W "KernelCheck::check_const"
+    [rc, .construct Core.kciEnum "Induct"
+      [.field (ind.lvls.toNat : F), typePtr, .field (ind.params.toNat : F),
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+        blockPtr, .field i], addressPtr] heap checkResult checkAfter checkCalls
+  checkMember : (⟨"KernelCheck::check_const",
+    [rc, .construct Core.kciEnum "Induct"
+      [.field (ind.lvls.toNat : F), typePtr, .field (ind.params.toNat : F),
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+        blockPtr, .field i], addressPtr], heap⟩ : Call F) ∈ calls
+  checkSubset : ∀ call ∈ checkCalls, call ∈ calls
   prelude : Decl.NativePreludeCalls rc (.field (ind.lvls.toNat : F)) typePtr blockPtr heap calls
   roles : Core.RCRep base.t (some limit) heap rc
   blockRep : Bytes.RepAddressRef Core.addrTy heap block blockPtr
@@ -136,7 +151,7 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
       cx.blob address = some bytes) :
     Nonempty (NativeFormerRunInput base block (slot : F) source members ind rawType calls) := by
   obtain ⟨limit, beforeLoad, checkHeap, afterCheck, rc, addr, ptr, value, result, loadCalls, checkCalls,
-    _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, _, checkSubset⟩ := checked
+    _, roles, addressRep, _, loaded, _, loadSubset, valueAt, checkedRun, checkedMember, checkSubset⟩ := checked
   obtain ⟨address, addressRep, addressEq⟩ := addressRep
   let projectionAt := projection.reindex addressEq
   have projectionAtShape : projectionAt.value.info = .iPrj ⟨index, Core.ixAddr block⟩ := projectionShape
@@ -173,7 +188,9 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   subst exactValue
   exact ⟨{
     limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
-    annotated := annotated, prelude := prelude, roles := roles.toRCRep, blockRep := blockRep
+    annotated := annotated, addressPtr := addr, checkResult := result, checkAfter := afterCheck
+    checkCalls := checkCalls, checkedRun := checkedRun, checkMember := checkedMember, checkSubset := checkSubset
+    prelude := prelude, roles := roles.toRCRep, blockRep := blockRep
     stored := stored, represented := Decl.CIRepExact.induct_valRep exactInfo
     varsBounded := varsBounded, levelsDefined := levelsDefined, noFvars := noFvars
     tree := tree, plan := plan, built := built, planned := planned, image := image }⟩
