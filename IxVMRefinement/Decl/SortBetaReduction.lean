@@ -104,19 +104,22 @@ private theorem reduction_special_heads {md : Mode} {env : Env md} :
       (∀ {sortLevel : Level}, SortBeta sortLevel left → SortBeta sortLevel right)
   | _, _, _, .refl => ⟨fun _ => rfl, fun shape => shape⟩
   | _, _, _, .trans first second => by
+    have firstFacts := reduction_special_heads first
+    have secondFacts := reduction_special_heads second
     constructor
     · intro domain body bm shape
-      have firstEq := (reduction_special_heads first).1 shape
-      exact ((reduction_special_heads second).1 (firstEq.trans shape)).trans firstEq
+      have firstEq := firstFacts.1 shape
+      exact (secondFacts.1 (firstEq.trans shape)).trans firstEq
     · intro sortLevel shape
-      exact (reduction_special_heads second).2 ((reduction_special_heads first).2 shape)
+      exact secondFacts.2 (firstFacts.2 shape)
   | _, _, _, .appFn functionReduced => by
+    have functionFacts := reduction_special_heads functionReduced
     constructor
     · intros; contradiction
     · intro sortLevel shape
       cases shape with
       | beta =>
-        have same := (reduction_special_heads functionReduced).1 rfl
+        have same := functionFacts.1 rfl
         rw [same]
         exact .beta
   | _, _, _, .appArg _ => by
