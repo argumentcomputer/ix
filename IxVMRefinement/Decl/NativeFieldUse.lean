@@ -30,8 +30,8 @@ theorem structPsAt_unused_below {md : Mode} {fields parameters index : Nat}
   intro arg member
   obtain ⟨position, bound, rfl⟩ := List.mem_map.mp member
   have positionBound := List.mem_range.mp bound
-  have different : fields + parameters - 1 - position ≠ index := by omega
-  simp only [Expr.hasLooseBVar, beq_eq_false_iff_ne.mpr different]
+  simp only [Expr.hasLooseBVar]
+  exact beq_eq_false_iff_ne.mpr (by omega)
 
 /-- A non-indexed constructor's last field is absent from its checked return spine. -/
 theorem structUsedLater_last_noIndices {md : Mode} {type : Expr md}
