@@ -86,6 +86,12 @@ structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     (members : Array Ixon.MutConst) (ind : Ixon.Inductive) (rawType : Core.KExpr)
     (calls : List (Call F)) where
+  blockShape : source.value.info = .muts members
+  memberAt : members.toList[ZMod.val i]? = some (.indc ind)
+  levelsBound : ind.lvls.toNat < 4294967296
+  paramsBound : ind.params.toNat < 72057594037927936
+  indicesBound : ind.indices.toNat < 72057594037927936
+  ctorCountBound : ind.ctors.size < 549755813888
   limit : Nat
   rc : SourceValue F
   typePtr : SourceValue F
@@ -168,6 +174,9 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
     simpa only [Array.getElem?_toList] using memberAt
   have directSubset : ∀ call ∈ inner, call ∈ calls :=
     fun call member => loadSubset call (innerSubset call member)
+  obtain ⟨levelsBound, paramsBound, indicesBound, ctorCountBound⟩ :=
+    L1.get_ci_iprj_header_bounds (base := base) source blockShape memberAtField
+      (good.sub directSubset) parentRep directLoad
   obtain ⟨typePtr, blockPtr, actualBlock, payload, blockRep, blockEq⟩ :=
     native_former_header_exact (base := base) source blockShape memberAtField
       (good.sub directSubset) parentRep directLoad
@@ -187,6 +196,8 @@ theorem native_former_input_of_checked_at {base : Core.Ctx} {bindingAddr : _root
   have sameValue := Except.ok.inj (exactAt.symm.trans payload)
   subst exactValue
   exact ⟨{
+    blockShape := blockShape, memberAt := memberAtField, levelsBound := levelsBound
+    paramsBound := paramsBound, indicesBound := indicesBound, ctorCountBound := ctorCountBound
     limit := limit, rc := rc, typePtr := typePtr, blockPtr := blockPtr, heap := checkHeap
     annotated := annotated, addressPtr := addr, checkResult := result, checkAfter := afterCheck
     checkCalls := checkCalls, checkedRun := checkedRun, checkMember := checkedMember, checkSubset := checkSubset
