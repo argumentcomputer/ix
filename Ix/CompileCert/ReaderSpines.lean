@@ -2,20 +2,16 @@ import Ix.CompileCert.ShapeSharing
 
 /-! # The certified reader's syntactic walks through sharing encodings
 
-Before it converts a record, the certified reader inspects a few syntactic
-positions of a recursor's type to index it (`Ix.Kernel.Reader.analyseRecursor`,
-used by `buildIndex`): it follows top-level `share` indirections
-(`unshare`), strips a bounded number of `∀` binders (`stripAll`,
-`stripAllFull`), and finds application heads (`appHead`, `headRef`). These
-walks run on the shared record the compiler emits. This module proves that
-each walk commutes with the sharing expansion (`substShares`), including
-failure, whenever the walked expressions' sharing references point back
-into the table and the inspected application spines fit the reader's fuel
-(`spineFuel`); and that the actual sharing builder therefore preserves the
-whole recursor analysis (`build_analyse`), through the generic root
-write-back inversion (`SharingRoots.withRoots_inv`) and the canonical
-sharing's meaning. The reader's walks are those of the donor's reader,
-unchanged. `ReaderSpines`. -/
+The raw spine views follow top-level sharing (`unshare`), strip binders
+(`stripAll`, `stripAllFull`), and find application heads (`appHead`, `headRef`).
+These views commute with sharing expansion when the entries point backwards
+and the inspected application spines fit their explicit fuel.
+
+The index additionally consumes lets through the symbolic `Shape` pass.
+`ShapeSharing` proves that this pass commutes with canonical sharing, so the
+actual sharing builder preserves the full recursor analysis (`build_analyse`).
+The existing caller-facing bound remains in that theorem's signature; the
+symbolic-sharing equality itself holds at every choice of spine fuel. -/
 
 namespace Ix.CompileCert.ReaderSpines
 

@@ -56,7 +56,7 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
 
 * **Recursors** have keys of their own, their own records' addresses (a
   `recr` singleton's, or an `rPrj`'s). The motive a recursor eliminates is
-  read off its type (the head of its result), and an inductive block lists
+  read off its type after sharing and let substitution (the head of its result), and an inductive block lists
   its recursors in motive order; the stream check of a recursor's index
   count pairs it with the type of its motive (`RecCounts.motive`).
 * **Role keys** (`Bindings.names`): every reference the input's role table
@@ -249,9 +249,9 @@ def recursorMembers (c : Ixon.Constant) : Array (Nat × Ixon.Recursor) :=
 
 /-! ## Spines of Ixon expressions
 
-The recursor analysis reads a few syntactic positions of a recursor's type
-before any conversion: through `share` indirections, a bounded number of
-binders, an application head. -/
+Raw spine views support the compiler's expression-reading proofs. The index
+uses `Shape` to consume sharing and lets before finding telescope and carrier
+heads, then resolves those heads in the actual store. -/
 
 /-- Follow top-level `share` indirections (at most the table's size). -/
 def unshare (c : Ixon.Constant) (e : Ixon.Expr) : Ixon.Expr :=
@@ -293,8 +293,8 @@ def appHead (c : Ixon.Constant) : Nat → Ixon.Expr → Ixon.Expr
     | .app f _ => appHead c n f
     | e => e
 
-/-- The spine bound of the syntactic walks: a binder or argument count of a
-real declaration is far below it. -/
+/-- The shared bound for application and motive-telescope walks. A spine
+which needs more steps can cause analysis to decline. -/
 def spineFuel : Nat := 1 <<< 20
 
 /-- The constant at the head of `e`, as a reference: through `refs`, or a
@@ -348,8 +348,8 @@ structure RecIndex where
   twins : Std.HashMap (ConstRef Address) RecEntry := {}
   deriving Inhabited
 
-/-- One recursor's analysis: its motive (from its type's result head), the
-carrier of every motive, and its major premise's carrier. -/
+/-- One recursor's analysis: normalize syntactic sharing and lets, then resolve
+its motive carriers and major carrier through the actual reference table and store. -/
 def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
     (r : Ixon.Recursor) : Option (Nat × Array (ConstRef Address) × ConstRef Address) := do
   let (motive, carriers, major) ← Shape.analyse spineFuel c r

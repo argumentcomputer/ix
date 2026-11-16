@@ -4,9 +4,9 @@ import IxC.Kernel.Ixon.ShapeSpec
 
 /-! # Reference support of the reader's recursor analysis
 
-The syntactic telescope and head walks use only references in the recursor type or its
-sharing table. Analysis therefore transfers using agreement on those references, without
-requiring agreement at unused reference-table entries.
+Symbolic telescope normalization and head walks use only references in the recursor type
+or its sharing table, including let-bound values. Analysis therefore transfers using
+agreement on those references, without requiring agreement at unused reference-table entries.
 -/
 
 namespace IxVM.Refinement.Assembly.ReaderAnalysis

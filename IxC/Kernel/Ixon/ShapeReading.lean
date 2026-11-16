@@ -35,15 +35,27 @@ theorem convert_exists (context : ECx md) {actual : Array (ReadM (CExpr md))}
     obtain ⟨subValue, subRead, _⟩ := bind_ok ran
     obtain ⟨shape, shapeRead⟩ := ih subRead
     exact ⟨.proj (refKey i.toNat) field.toNat shape, by simp [convert, shapeRead]⟩
-  | app fn arg ihf iha | lam fn arg ihf iha | all fn arg ihf iha =>
+  | app fn arg ihf iha =>
     intro value ran
     obtain ⟨fnValue, fnRead, ran⟩ := bind_ok ran
     obtain ⟨argValue, argRead, _⟩ := bind_ok ran
     obtain ⟨fnShape, fnShapeRead⟩ := ihf fnRead
     obtain ⟨argShape, argShapeRead⟩ := iha argRead
-    refine ⟨_, ?_⟩
-    rw [convert, fnShapeRead, argShapeRead]
-    rfl
+    exact ⟨.app fnShape argShape, by simp [convert, fnShapeRead, argShapeRead]⟩
+  | lam fn arg ihf iha =>
+    intro value ran
+    obtain ⟨fnValue, fnRead, ran⟩ := bind_ok ran
+    obtain ⟨argValue, argRead, _⟩ := bind_ok ran
+    obtain ⟨fnShape, fnShapeRead⟩ := ihf fnRead
+    obtain ⟨argShape, argShapeRead⟩ := iha argRead
+    exact ⟨.lam fnShape argShape BinderMeta.leanNever, by simp [convert, fnShapeRead, argShapeRead]⟩
+  | all fn arg ihf iha =>
+    intro value ran
+    obtain ⟨fnValue, fnRead, ran⟩ := bind_ok ran
+    obtain ⟨argValue, argRead, _⟩ := bind_ok ran
+    obtain ⟨fnShape, fnShapeRead⟩ := ihf fnRead
+    obtain ⟨argShape, argShapeRead⟩ := iha argRead
+    exact ⟨.forallE fnShape argShape BinderMeta.leanNever, by simp [convert, fnShapeRead, argShapeRead]⟩
   | letE nonDep mode type val body _ ihv ihb =>
     intro value ran
     obtain ⟨typeValue, _, ran⟩ := bind_ok ran

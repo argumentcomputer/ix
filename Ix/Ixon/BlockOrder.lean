@@ -40,7 +40,8 @@ def isRecursor : MutConst → Bool
   | _ => false
 
 /-- The motive a recursor eliminates, read off its type exactly as the Ixon
-reader does (the first component of `Reader.analyseRecursor`): after
+reader does (the first component of `Reader.analyseRecursor`): after sharing
+and let substitution, and after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
 def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat :=
