@@ -13,12 +13,13 @@ namespace IxVM.Refinement.Assembly.ReaderAnalysis
 open Ix.Kernel Ix.Kernel.Reader
 open IxVM.Consistency (exprRefIdxs usedRefIdxs mutRefIdxs)
 open Ix.Cert.RecursorIndex (analyseWith analyse_eq recursorAnalysis_spec)
+open Ix.Cert (recursorAnalysis?)
 
 def RefsIn (P : Nat → Prop) (e : Ixon.Expr) : Prop :=
   ∀ i ∈ exprRefIdxs e, P i
 
 def SharingRefsIn (P : Nat → Prop) (c : Ixon.Constant) : Prop :=
-  ∀ i e, c.sharing[i]? = some e → RefsIn P e
+  ∀ (i : Nat) (e : Ixon.Expr), c.sharing[i]? = some e → RefsIn P e
 
 theorem refsIn_all {P : Nat → Prop} {ty body : Ixon.Expr} (h : RefsIn P (.all ty body)) :
     RefsIn P ty ∧ RefsIn P body := by
@@ -81,7 +82,7 @@ theorem stripAll_refs {P : Nat → Prop} {c : Ixon.Constant} (shared : SharingRe
       obtain ⟨tailRefs, lastRefs⟩ := ih (refsIn_all exposed).2 walked
       exact ⟨fun d hd => (List.mem_cons.mp hd).elim
         (fun same => by subst d; exact (refsIn_all exposed).1) (tailRefs d), lastRefs⟩
-    | _ => simp only [head] at ran
+    | _ => simp [head] at ran
 
 theorem stripAllFull_refs {P : Nat → Prop} {c : Ixon.Constant} (shared : SharingRefsIn P c)
     (fuel : Nat) {e : Ixon.Expr} (h : RefsIn P e) :
@@ -204,6 +205,7 @@ theorem recursor_type_used {c : Ixon.Constant} {j : Nat} {r : Ixon.Recursor}
     simp [usedRefIdxs, info, present]
   | muts ms =>
     simp only [info] at source
+    simp only [usedRefIdxs, info]
     apply List.mem_append_right
     change i ∈ ms.toList.flatMap mutRefIdxs
     exact List.mem_flatMap.mpr ⟨.recr r, Array.mem_toList_iff.mpr
