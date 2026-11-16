@@ -406,6 +406,37 @@ def twoRecTwinBadK : Ixon.Constant :=
   | .error (.read _ (.malformed _)) => true
   | _ => false
 
+/-! A mixed record has its own checked family and a second recursor aimed at another family.
+Omitting that other family must not silently omit the second payload. Supplying it keeps the
+existing safe cross-family reading and exposes the declaration's safety check. -/
+
+def emptyFamily : Ixon.Inductive :=
+  { isUnsafe := false, lvls := 0, params := 0, indices := 0, typ := sort 0, ctors := #[] }
+
+def crossFamilyRec (carrier : E) (unsafeFlag : Bool) : Ixon.Recursor :=
+  { k := false, isUnsafe := unsafeFlag, lvls := 1, params := 0, indices := 0,
+    motives := 1, minors := 0,
+    typ := all (all carrier (sort 1)) (all carrier (.app (var 1) (var 0))), rules := #[] }
+
+def crossFamilyFixture (unsafeFlag : Bool) : List (Address × Ixon.Constant) :=
+  [(address 150, const (.muts #[.indc emptyFamily]) [] [.succ (.succ one)]),
+   (address 151, iPrj (address 150)),
+   (address 152, const (.muts #[.indc emptyFamily,
+      .recr (crossFamilyRec (recur 0) false), .recr (crossFamilyRec (ref 0) unsafeFlag)])
+      [address 151] [one, .var 0])]
+
+def crossFamilyRead (unsafeFlag includeFamily : Bool) : Bool :=
+  let r := rekeyed (crossFamilyFixture unsafeFlag)
+  let records := if includeFamily then r.records
+    else r.records.filter fun (a, _) => a == r.rename (address 152)
+  (readStream hash (renameTable r builtinTable) builtinPre records r.blobs).isOk
+
+#guard !crossFamilyRead false false
+#guard !crossFamilyRead true false
+#guard crossFamilyRead false true
+#guard !crossFamilyRead true true
+#guard accepts (crossFamilyFixture false)
+
 /-! ## A structure with a projection function
 
 `structure P where x : Nat; y : Nat`, `P.x := fun self => self.1` (an Ixon

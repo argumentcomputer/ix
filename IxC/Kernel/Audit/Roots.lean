@@ -775,7 +775,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- and `readRecord`'s twin `.recr` and `.muts` arms) add 24 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2450 compiled functions; inherited externs 90, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2454 compiled functions; inherited externs 90, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -817,7 +817,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 7086 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkConstants]: 7090 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -884,7 +884,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- add 24 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7196 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 7200 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -926,7 +926,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6909 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6913 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

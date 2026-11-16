@@ -176,4 +176,14 @@ theorem annotateCore_idempotent {md : Mode} {mode : CheckMode} {env : Env md}
         he', ht, hw, hhead, hentry, hparams, Bind.bind, Except.bind, Pure.pure, Except.pure,
         ↓reduceIte]
 
+
+/-- Reopening the actual annotated binder body restores its checked open expression. -/
+theorem annotateCore_reclose {md : Mode} {mode : CheckMode} {env : Env md}
+    {fuel d : Nat} {ty body out : Expr md}
+    (tyScope : Expr.WScoped d ty) (bodyScope : Expr.WScoped d body)
+    (bodyBounded : body.looseBVarsBounded 1 = true)
+    (run : annotateCore mode env fuel (d + 1) (body.instantiate1 (.fvar d ty)) = .ok out) :
+    (out.abstract1 d).instantiate1 (.fvar d ty) = out :=
+  annotation_reclose tyScope bodyScope bodyBounded run
+
 end IxVM.Refinement.Decl
