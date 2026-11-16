@@ -2968,13 +2968,14 @@ theorem check_recursor_member_spec
   dsimp only [rlps, elim, ctors4]
   match Obs.«KernelCheck::check_recursor_member».obs ev with
   | .run (v72 := v72) (m73 := m73) (cs83 := cs83) (m127 := m127) (p134 := p134) (cs140 := cs140)
-      (v209 := v209) (m210 := m210) (m219 := m219) (m227 := m227)
-      (v329 := v329) (m332 := m332) (m360 := m360) (m425 := m425)
-      (m624 := m624) (m633 := m633) (m699 := m699) (cs731 := cs731)
+      (v249 := v209) (m250 := m210) (m259 := m219) (m267 := m227)
+      (v369 := v329) (m372 := m332) (m400 := m360) (m465 := m425)
+      (m664 := m624) (m673 := m633) (m739 := m699) (cs771 := cs731)
       (hv15 := hv15) (ev85 := ev85) (ev142 := ev142) (ld136 := ld136)
-      (ev238 := ev238) (ev252 := ev252) (ev274 := ev274) (heq317 := heq317)
-      (ev342 := ev342) (heq358 := heq358) (ev372 := ev372) (ev437 := ev437)
-      (sg631 := sg631) (ev645 := ev645) (ev711 := ev711) (ev733 := ev733) (hc774 := hc) .. =>
+      (ev233 := parentRoute)
+      (ev278 := ev238) (ev292 := ev252) (ev314 := ev274) (heq357 := heq317)
+      (ev382 := ev342) (heq398 := heq358) (ev412 := ev372) (ev477 := ev437)
+      (sg671 := sg631) (ev685 := ev645) (ev751 := ev711) (ev773 := ev733) (hc814 := hc) .. =>
     injection hv15 with _ _ hr_xs
     injection hr_xs with hr1 hr_xs; injection hr_xs with hr2 hr_xs
     injection hr_xs with hr3 hr_xs; injection hr_xs with hr4 hr_xs
@@ -2999,7 +3000,8 @@ theorem check_recursor_member_spec
     injection hp_xs with hp7 hp_xs; injection hp_xs with hp8 _
     subst hp1 hp2 hp3 hp4 hp5 hp6 hp7 hp8
     have e_73_127 := ev142.heap_extends
-    have e_127_210 := ev238.heap_extends.trans (ev252.heap_extends.trans ev274.heap_extends)
+    have e_127_210 := parentRoute.heap_extends.trans
+      (ev238.heap_extends.trans (ev252.heap_extends.trans ev274.heap_extends))
     have e_h_210 := ev85.heap_extends.trans (e_73_127.trans e_127_210)
     -- `Lists::length<KRecRule>` pins `rls.length = ctors.length`
     obtain ⟨hv329_eq, hm332_eq⟩ := rules_length_spec ev342 (hrules.mono e_h_210)
