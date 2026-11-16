@@ -113,7 +113,7 @@ theorem native_rec_parent_observed
       (w167 := parentType) (x_parent_np := parentParams) (x_parent_ni := parentIndices)
       (x_num_ctors := constructors) (w168 := parentUnsafe) (x_parent_block_addr := parentBlock)
       (x_parent_ind_idx := parentIndex) (hv15 := input) (ev85 := scan) (ev142 := load)
-      (ld136 := parentInfo) (hc774 := children) .. =>
+      (ld136 := parentInfo) (hc814 := children) .. =>
     injection input with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
@@ -124,5 +124,45 @@ theorem native_rec_parent_observed
     · intro call member
       rw [children]
       rcases List.mem_append.mp member with inScan | inLoad <;> simp_all
+
+/-- Native recursor checking tests the block of the actual major-premise parent. The
+zero verdict and all of the selected call's children belong to the same observation. -/
+theorem native_rec_actual_parent_route
+    {rc address levels type parameters indices motives minors rules k unsafeFlag block position result : SourceValue F}
+    {heap final : Heap F} {calls : List (Call F)}
+    (observed : ObsFn W "KernelCheck::check_recursor_member"
+      [rc, .construct "KernelTypes::KConstantInfo" "Rec"
+        [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position], address]
+      heap result final calls) :
+    ∃ parent scanHeap pointer loadedHeap scanCalls loadCalls routedHeap routeCalls
+        parentLevels parentType parentParams parentIndices constructors parentUnsafe parentBlock parentIndex,
+      ObsFn W "KernelCheck::rec_to_parent_addr" [type, parameters, motives, minors, indices]
+        heap parent scanHeap scanCalls ∧
+      ObsFn W "Ingress::get_ci" [parent] scanHeap pointer loadedHeap loadCalls ∧
+      loadValue loadedHeap pointer = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
+        [parentLevels, parentType, parentParams, parentIndices, constructors, parentUnsafe, parentBlock, parentIndex]) ∧
+      ObsFn W "KernelModeled::block_is_modeled" [parentBlock]
+        loadedHeap (.field 0) routedHeap routeCalls ∧
+      (⟨"KernelModeled::block_is_modeled", [parentBlock], loadedHeap⟩ : Call F) ∈ calls ∧
+      (∀ call ∈ routeCalls, call ∈ calls) := by
+  match Obs.«KernelCheck::check_recursor_member».obs observed with
+  | .run (v72 := parent) (m73 := scanHeap) (p134 := pointer) (m127 := loadedHeap)
+      (cs83 := scanCalls) (cs140 := loadCalls) (x__parent_nlvls := parentLevels)
+      (w167 := parentType) (x_parent_np := parentParams) (x_parent_ni := parentIndices)
+      (x_num_ctors := constructors) (w168 := parentUnsafe) (x_parent_block_addr := parentBlock)
+      (x_parent_ind_idx := parentIndex) (m223 := routedHeap) (cs231 := routeCalls)
+      (hv15 := input) (ev85 := scan) (ev142 := load) (ld136 := parentInfo)
+      (ev233 := route) (heq248 := native)
+      (hc814 := children) .. =>
+    injection input with _ _ fields
+    simp only [List.cons.injEq, and_true] at fields
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
+    rw [native] at route
+    refine ⟨parent, scanHeap, pointer, loadedHeap, scanCalls, loadCalls, routedHeap, routeCalls,
+      parentLevels, parentType, parentParams, parentIndices, constructors, parentUnsafe,
+      parentBlock, parentIndex, scan, load, parentInfo, route, ?_, ?_⟩
+    · rw [children]; simp
+    · intro call member
+      rw [children]; simp [member]
 
 end IxVM.Refinement.Assembly
