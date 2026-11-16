@@ -92,7 +92,7 @@ theorem native_prelude_calls {rc nl ty np ni nc unsafeFlag blockArg index addr r
   | .Opaque (hv825 := shape) ..
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
-    exact (absurd tag (by decide)).elim
+    exact absurd tag (by decide)
   | .Ctor_n0_n0 (hne1879 := notInduct) ..
   | .Ctor_n0_other (hne1879 := notInduct) ..
   | .Ctor_other_n0 (hne1879 := notInduct) ..
