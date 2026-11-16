@@ -208,4 +208,14 @@ theorem RawConvExpr.toTmCExact_of_selfReads {κ : _root_.Address → Core.KKey}
     simpa only [canonicalSelf, found, Option.map_some, Option.some.injEq] using selected.symm
   exact Except.ok.inj (succeeded.symm.trans same)
 
+
+/-- A reached recursive reference retains its serialized UInt64 index bound. -/
+theorem RecurUsed.index_lt {sharing : List Ixon.Expr} {index : Nat} {expression : Ixon.Expr}
+    (used : RecurUsed sharing index expression) : index < UInt64.size := by
+  induction used with
+  | @recur index _ => exact index.toNat_lt
+  | prj _ ih | appFn _ ih | appArg _ ih | lamType _ ih | lamBody _ ih |
+      allType _ ih | allBody _ ih | letType _ ih | letValue _ ih | letBody _ ih => exact ih
+  | share _ _ ih => exact ih
+
 end IxVM.Refinement.L1
