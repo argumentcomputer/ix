@@ -185,23 +185,23 @@ private theorem ctorZero_of_rep {κ : _root_.Address → KKey} {h : Heap F}
     exact ⟨_, _, rfl⟩
   all_goals (injection hv with _ htag _; exact absurd htag (by decide))
 
-/-- Installed reads are required only at allowed top invocations. Raw record facts stay
+/-- Installed reads require allowed top invocations and coverage of their children. Raw record facts stay
 conditional on actual stored records, and native eta observations carry their own evidence. -/
 structure ScopedLoadFacts (c : ScopedCtx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
-    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs →
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h → CoreGood c cs →
     Bytes.RepAddressRef addrTy h a addr →
       ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' ptr ci
   getCprj : ∀ (bp ptr : SourceValue F) (i j : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
-    ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → Good c.toCtx cs →
+    ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → CoreGood c cs →
     Bytes.RepAddressRef addrTy h b bp →
       (∃ ci₀, CIPtrRep c.κ h' ptr ci₀) ∧
       ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci →
         CIPtrRep c.κ h' ptr ci
   getIprj : ∀ (bp ptr : SourceValue F) (i : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
-    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h → Good c.toCtx cs →
+    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h → CoreGood c cs →
     Bytes.RepAddressRef addrTy h b bp →
       ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
   indRecord : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
@@ -395,15 +395,15 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
 load evidence for a fresh declaration or establish its selected-call coverage. -/
 theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx}
     (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadFacts c where
-  getCI := fun addr ptr h₀ h₁ cs a ev _ hg ha => h.getCI addr ptr h₀ h₁ cs a ev hg ha
+  getCI := fun addr ptr h₀ h₁ cs a ev _ hg ha => h.getCI addr ptr h₀ h₁ cs a ev hg.raw ha
   getCprj := by
     intro bp ptr i j h₀ h₁ cs b ev _ hg hb
-    obtain ⟨ci₀, hfind₀, hrep⟩ := h.getCprj bp ptr i j h₀ h₁ cs b ev hg hb
+    obtain ⟨ci₀, hfind₀, hrep⟩ := h.getCprj bp ptr i j h₀ h₁ cs b ev hg.raw hb
     refine ⟨⟨ci₀, hrep⟩, fun ci hfind => ?_⟩
     have heq := Option.some.inj (hfind₀.symm.trans hfind)
     cases heq
     exact hrep
-  getIprj := fun bp ptr i h₀ h₁ cs b ev _ hg hb => h.getIprj bp ptr i h₀ h₁ cs b ev hg hb
+  getIprj := fun bp ptr i h₀ h₁ cs b ev _ hg hb => h.getIprj bp ptr i h₀ h₁ cs b ev hg.raw hb
   indRecord := h.indRecord
   inductRecord := fun addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev _ hg ha ld =>
     h.inductRecord addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev hg ha ld

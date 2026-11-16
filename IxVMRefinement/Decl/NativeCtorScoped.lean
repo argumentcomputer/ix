@@ -13,7 +13,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList repKLevel_heapMono₂)
+open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList repKLevel_heapMonoâ)
 open Ix.Kernel (ConstantInfo ConstantVal Declaration Expr Level LevelParam)
 open Ix.Kernel.Rules (Red DefEq Infer)
 open Ix.Kernel.Semantics (ConstantValCheckJ FieldSortsJ)
@@ -29,105 +29,136 @@ structure NativeCtorCoreRun (rootCalls : List (Call F)) where
   result : SourceValue F
   after : Heap F
   calls : List (Call F)
-  kind : name = "KernelInfer::k_ensure_sort" ∨
-    name = "KernelCheck::check_param_agreement" ∨ name = "KernelCheck::check_field_universes"
+  kind : name = "KernelInfer::k_ensure_sort" â¨
+    name = "KernelCheck::check_param_agreement" â¨ name = "KernelCheck::check_field_universes"
   observed : ObsFn W name args before result after calls
-  member : (⟨name, args, before⟩ : Call F) ∈ rootCalls
-  subset : ∀ call ∈ calls, call ∈ rootCalls
+  member : (â¨name, args, beforeâ© : Call F) â rootCalls
+  subset : â call â calls, call â rootCalls
 
 /-- The selected scope contains the children of the actual typed runs. -/
 def nativeCtorCoreCalls {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) : List (Call F) :=
-  runs.flatMap (·.calls)
+  runs.flatMap (Â·.calls)
 
 /-- The exact finite scope produced by the selected typed observations. -/
 def nativeCtorCoreCtx (base : Ctx) {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) : ScopedCtx :=
-  { toCtx := base, allowed := fun call => call ∈ nativeCtorCoreCalls runs }
+  { toCtx := base, allowed := fun call => call â nativeCtorCoreCalls runs }
 
 /-- Each selected run has core coverage in the produced context. -/
 theorem NativeCtorCoreRun.coreGood {base : Ctx} {rootCalls : List (Call F)}
     {runs : List (NativeCtorCoreRun rootCalls)} {run : NativeCtorCoreRun rootCalls}
-    (good : Good base rootCalls) (member : run ∈ runs) :
+    (good : Good base rootCalls) (member : run â runs) :
     CoreGood (nativeCtorCoreCtx base runs) run.calls :=
   CoreGood.ofRaw (good.sub run.subset)
-    (fun _call inside => List.mem_flatMap.mpr ⟨run, member, inside⟩)
+    (fun _call inside => List.mem_flatMap.mpr â¨run, member, insideâ©)
 
 /-- Every selected call belongs to the original successful traversal. -/
 theorem nativeCtorCoreCalls_subset {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) :
-    ∀ call ∈ nativeCtorCoreCalls runs, call ∈ rootCalls := by
+    â call â nativeCtorCoreCalls runs, call â rootCalls := by
   intro call member
-  obtain ⟨run, _, inside⟩ := List.mem_flatMap.mp member
+  obtain â¨run, _, insideâ© := List.mem_flatMap.mp member
   exact run.subset call inside
+
+/-- Child coverage in the produced scope locates every read back in the actual root trace. -/
+theorem nativeCtorCoreCtx_child_subset {base : Ctx} {rootCalls calls : List (Call F)}
+    {runs : List (NativeCtorCoreRun rootCalls)}
+    (good : CoreGood (nativeCtorCoreCtx base runs) calls) :
+    ∀ call ∈ calls, call ∈ rootCalls :=
+  fun call member => nativeCtorCoreCalls_subset runs call (good.allAllowed call member)
+
+/-- A fresh constructor read in the actual typed scope is supplied by the produced raw
+family. Both the permitted top invocation and coverage of its children remain explicit. -/
+theorem CtorLoadAtIndex.scoped_fresh_read {base : Ctx} {block : Bytes.Address}
+    {indIndex : F} {params slot : Nat} {rootCalls : List (Call F)}
+    {runs : List (NativeCtorCoreRun rootCalls)}
+    {ctors ctorsA : List (KConstantVal × Nat)} {rawTypes : List KExpr}
+    {bp ptr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (family : CtorLoadAtIndex base.t block params indIndex rootCalls ctors ctorsA rawTypes)
+    (slotBound : slot < ctors.length)
+    (_allowed : (nativeCtorCoreCtx base runs).allowedTop "Ingress::get_ci_cprj"
+      [bp, .field indIndex, .field (slot : F)] h)
+    (good : CoreGood (nativeCtorCoreCtx base runs) calls)
+    (blockRep : Bytes.RepAddressRef addrTy h block bp)
+    (observed : ObsFn W "Ingress::get_ci_cprj" [bp, .field indIndex, .field (slot : F)]
+      h ptr h' calls)
+    (fresh : base.env.find? (base.κ
+      (cprjAddr (ixAddr block) (ZMod.val indIndex) (ZMod.val (slot : F)))) = none) :
+    (∃ ci, CIPtrRep base.κ h' ptr ci) ∧
+      ∀ ci, base.env.find? (base.κ
+        (cprjAddr (ixAddr block) (ZMod.val indIndex) (ZMod.val (slot : F)))) = some ci →
+        CIPtrRep base.κ h' ptr ci :=
+  family.fresh_read (c := nativeCtorCoreCtx base runs) slotBound
+    (nativeCtorCoreCtx_child_subset good) blockRep observed fresh
 
 /-- Build the finite typed-call scope while refining the actual constructor loop. The
 remaining load premise is explicitly restricted to that scope by the caller; base semantic
 facts and raw metadata facts retain their separate obligations. -/
 theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
     {cR : ScopedCtx} {indIndex : F}
-    {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
+    {bâ : Bytes.Address} {T : KKey} {lps : List LevelParam}
     {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
-    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal Ã Nat)}
     {ctorRawTypes : List KExpr}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnP_lt : nP < 2147483648)
     (hnIdx_lt : nIdx < 2147483648)
     (hnCtors_lt : ctors.length < 4294967296)
-    (hnF_lt : ∀ c ∈ ctors, c.2 < 2147483648)
+    (hnF_lt : â c â ctors, c.2 < 2147483648)
     (hlveq : LvEq resSort ind_lvl)
-    (hcload : CtorLoadAtIndex cR.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
-    (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = lps)
-    (hlbd_ctors : ∀ c ∈ ctors, c.1.type.looseBVarsBounded 0 = true)
-    (hfv_ctors : ∀ c ∈ ctors, c.1.type.hasFvar = false)
-    (hfresh_ctors : ∀ c ∈ ctors, cR.env.find? c.1.name = none)
-    (hbasis_ctors : ∀ c ∈ ctors, Ix.Kernel.reservedBasisNames.contains c.1.name = false)
-    (hshape_ctors : ∀ c ∈ ctors, c.1.name.isProjFnShape = false)
-    (hno_proj_T : ∀ i, cR.env.findProj? T i = none)
-    (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
-    (hef₁ : CoreEnvFacts cR.toCtx)
+    (hcload : CtorLoadAtIndex cR.t bâ nP indIndex cs_root ctors ctorsA ctorRawTypes)
+    (hlps_ctors : â c â ctors, c.1.levelParams = lps)
+    (hlbd_ctors : â c â ctors, c.1.type.looseBVarsBounded 0 = true)
+    (hfv_ctors : â c â ctors, c.1.type.hasFvar = false)
+    (hfresh_ctors : â c â ctors, cR.env.find? c.1.name = none)
+    (hbasis_ctors : â c â ctors, Ix.Kernel.reservedBasisNames.contains c.1.name = false)
+    (hshape_ctors : â c â ctors, c.1.name.isProjFnShape = false)
+    (hno_proj_T : â i, cR.env.findProj? T i = none)
+    (hstoreâ : Ix.Kernel.Open.StoreInv cR.env)
+    (hefâ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerReads cR b₀ T lps.length nP nIdx ctors.length indIndex) :
-    ∀ (m j : Nat) {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      m + j = ctors.length →
-      (∀ x ∈ cs, x ∈ cs_root) →
-      Good cR.toCtx cs →
-      RawRecordCoverage cR cs →
-      RCRep cR.t cR.lim h rc →
-      Tm cR.κ 0 (fun _ => default) h 0 ta pta →
-      Bytes.RepAddressRef addrTy h b₀ bp →
-      RepKLevel h ind_lvl pind →
+    (hpeerâ : OneTypePeerReads cR bâ T lps.length nP nIdx ctors.length indIndex) :
+    â (m j : Nat) {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      m + j = ctors.length â
+      (â x â cs, x â cs_root) â
+      Good cR.toCtx cs â
+      RawRecordCoverage cR cs â
+      RCRep cR.t cR.lim h rc â
+      Tm cR.Îº 0 (fun _ => default) h 0 ta pta â
+      Bytes.RepAddressRef addrTy h bâ bp â
+      RepKLevel h ind_lvl pind â
       ObsFn W "KernelCheck::check_inductive_shape_ctors"
         [rc, pta, .field (nP : F), .field (nIdx : F), .field (ctors.length : F),
-          .field (lps.length : F), bp, .field indIndex, pind, .field 0, .field (j : F)] h r h' cs →
-      ∃ runs : List (NativeCtorCoreRun cs_root),
-        ∀ allowed : Call F → Prop,
-          (∀ call ∈ nativeCtorCoreCalls runs, allowed call) →
-          ScopedLoadFacts { toCtx := cR.toCtx, allowed := allowed } →
-      ∃ sortss_suf : List (List KLevel),
-        sortss_suf.length = m ∧
-        ∀ t_idx < m, ∃ c cA sorts,
-          ctors[j + t_idx]? = some c ∧
-          ctorsA[j + t_idx]? = some cA ∧
-          sortss_suf[t_idx]? = some sorts ∧
+          .field (lps.length : F), bp, .field indIndex, pind, .field 0, .field (j : F)] h r h' cs â
+      â runs : List (NativeCtorCoreRun cs_root),
+        â allowed : Call F â Prop,
+          (â call â nativeCtorCoreCalls runs, allowed call) â
+          ScopedLoadFacts { toCtx := cR.toCtx, allowed := allowed } â
+      â sortss_suf : List (List KLevel),
+        sortss_suf.length = m â§
+        â t_idx < m, â c cA sorts,
+          ctors[j + t_idx]? = some c â§
+          ctorsA[j + t_idx]? = some cA â§
+          sortss_suf[t_idx]? = some sorts â§
           NativeCtorOut cR.env T lps nP nIdx resSort ta
             (ctorRawTypes.getD (j + t_idx) default) c cA sorts
   | 0, j, _, _, _, _, _, _, _, _, hmj, _, _, _, _, _, _, _, ev => by
-    match Obs.«KernelCheck::check_inductive_shape_ctors».obs ev with
+    match Obs.Â«KernelCheck::check_inductive_shape_ctorsÂ».obs ev with
     | .n0 .. =>
-      exact ⟨[], fun _ _ _ => ⟨[], rfl, fun _ ht => absurd ht (Nat.not_lt_zero _)⟩⟩
+      exact â¨[], fun _ _ _ => â¨[], rfl, fun _ ht => absurd ht (Nat.not_lt_zero _)â©â©
     | .other (op17 := op) (hne29 := hne) .. =>
       have hj_eq : j = ctors.length := by omega
       cases hj_eq.symm
       rw [evalBinOp_sub_nat (Nat.le_refl ctors.length) op, Nat.sub_self] at hne
       exact absurd rfl hne
   | m + 1, j, rc, pta, bp, pind, r, h, h', cs, hmj, hsub, hgood, rawCovered, hrc, hta, hbp, hpind, ev => by
-    match Obs.«KernelCheck::check_inductive_shape_ctors».obs ev with
+    match Obs.Â«KernelCheck::check_inductive_shape_ctorsÂ».obs ev with
     | .n0 (op17 := op) .. =>
       have hsub_op : (.field ((0 : Nat) : F) : SourceValue F) =
           .field (((ctors.length - j : Nat) : F)) := by
-        simpa using evalBinOp_sub_nat (by omega : j ≤ ctors.length) op
+        simpa using evalBinOp_sub_nat (by omega : j â¤ ctors.length) op
       have hj_eq := nat_eq_of_field_eq (by decide) (by omega) hsub_op
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs_cprj)
@@ -145,22 +176,22 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         (op792 := op_add) (ev697 := ev_rec) (hc794 := hc) .. =>
       have indexEq := evalBinOp_add_nat j 1 op_add
       subst v670
-      have recurseMember : (⟨"KernelCheck::check_inductive_shape_ctors",
+      have recurseMember : (â¨"KernelCheck::check_inductive_shape_ctors",
           [rc, pta, .field (nP : F), .field (nIdx : F), .field (ctors.length : F),
             .field (lps.length : F), bp, .field indIndex, pind, .field 0,
-            .field ((j + 1 : Nat) : F)], m655⟩ : Call F) ∈ cs := by
+            .field ((j + 1 : Nat) : F)], m655â© : Call F) â cs := by
         simp [hc]
       have e_to_rec := (ev.call_heap_bounds recurseMember).1
       have hg_rec : Good cR.toCtx cs_rec := hgood.sub (fun x hx => by simp [hc, hx])
-      obtain ⟨restRuns, restSemantic⟩ :=
+      obtain â¨restRuns, restSemanticâ© :=
         native_ctor_scoped_runs hLevels hlps hlps_lt hnP_lt hnIdx_lt hnCtors_lt
           hnF_lt hlveq hcload hlps_ctors hlbd_ctors hfv_ctors hfresh_ctors hbasis_ctors
-          hshape_ctors hno_proj_T hstore₁ hef₁ rawFacts hpeer₁
+          hshape_ctors hno_proj_T hstoreâ hefâ rawFacts hpeerâ
           m (j + 1) (by omega) (fun x hx => hsub x (by simp [hc, hx])) hg_rec
           (rawCovered.sub (fun x hx => by simp [hc, hx]))
           (hrc.mono e_to_rec) (hta.mono e_to_rec)
-          (Bytes.repAddressRef_heapMono₂ addrTy e_to_rec hbp)
-          (repKLevel_heapMono₂ e_to_rec hpind) ev_rec
+          (Bytes.repAddressRef_heapMonoâ addrTy e_to_rec hbp)
+          (repKLevel_heapMonoâ e_to_rec hpind) ev_rec
       let sortRun : NativeCtorCoreRun cs_root := {
         name := _, args := _, before := _, result := _, after := _, calls := cs_es
         kind := Or.inl rfl, observed := ev_es
@@ -176,20 +207,20 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         kind := Or.inr (Or.inr rfl), observed := ev_fu
         member := hsub _ (by simp [hc])
         subset := fun call member => hsub call (by simp [hc, member]) }
-      refine ⟨sortRun :: paramRun :: fieldRun :: restRuns, ?_⟩
+      refine â¨sortRun :: paramRun :: fieldRun :: restRuns, ?_â©
       intro allowed covered loads
       let cC : ScopedCtx := { toCtx := cR.toCtx, allowed := allowed }
-      have restAllowed : ∀ call ∈ nativeCtorCoreCalls restRuns, allowed call := by
+      have restAllowed : â call â nativeCtorCoreCalls restRuns, allowed call := by
         intro call member
         apply covered call
         simp only [nativeCtorCoreCalls, List.flatMap_cons, List.mem_append]
         exact Or.inr (Or.inr (Or.inr member))
-      obtain ⟨sortss_rest, hlen_rest, hrest_out⟩ := restSemantic allowed restAllowed loads
-      obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
-      have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
+      obtain â¨sortss_rest, hlen_rest, hrest_outâ© := restSemantic allowed restAllowed loads
+      obtain â¨c_j, cvCaâ, hc_j, hcA_j, hvs_j, hload_jâ© := hcload.2 j (by omega)
+      have hc_mem : c_j â ctors := List.mem_of_getElem? hc_j
       have hc_nf_lt : c_j.2 < 2147483648 := hnF_lt c_j hc_mem
-      have hsub_cprj : ∀ x ∈ cs_cprj, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
-      obtain ⟨nl', cty', cblk', cnp', cnf', _, ld_c', _, _, hraw_rep, hci_rep⟩ :=
+      have hsub_cprj : â x â cs_cprj, x â cs_root := fun x hx => hsub x (by simp [hc, hx])
+      obtain â¨nl', cty', cblk', cnp', cnf', _, ld_c', _, _, hraw_rep, hci_repâ© :=
         hload_j bp p41 h m34 cs_cprj hsub_cprj hbp ev_cprj
       rw [ld_c'] at ld_ctor
       injection ld_ctor with hval; injection hval with _ _ h1
@@ -198,8 +229,8 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
       injection h1 with hcnf_eq _
       cases hnl_eq.symm; cases hcty_eq.symm; cases hcblk_eq.symm
       cases hcnp_eq.symm; cases hcnf_eq.symm
-      obtain ⟨hv_rep, hnp_f, hnf_f⟩ := CIRepExact.ctor_inv hci_rep
-      · subst heq_nl heq_np
+      obtain â¨hv_rep, hnp_f, hnf_fâ© := CIRepExact.ctor_inv hci_rep
+      Â· subst heq_nl heq_np
         have e_cprj := ev_cprj.heap_extends
         have e_aeq := ev_aeq.heap_extends
         have e_ws := ev_ws.heap_extends
@@ -215,62 +246,62 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         have hg_fu : CoreGood cC cs_fu :=
           CoreGood.ofRaw (hgood.sub (fun x hx => by simp [hc, hx]))
             (fun call member => covered call (by simp [nativeCtorCoreCalls, fieldRun, member]))
-        have hlps_cj : cvCa₀.levelParams = List.range lps.length := by
+        have hlps_cj : cvCaâ.levelParams = List.range lps.length := by
           rw [hvs_j.2.1, hlps_ctors c_j hc_mem]
           exact hlps
-        have hpos_lift : PosSortLift cR.env cvCa₀ := PosSortLift.of_range hlps_cj
-        have hv_m144 : ValRepExact cR.κ m144 (.field (lps.length : F)) xcty cvCa₀ :=
-          ⟨hv_rep.1, hv_rep.2.1, hv_rep.2.2.1, hv_rep.2.2.2.mono e_aeq⟩
-        have hty_nil : TypesRep cR.κ (fun _ => default) m387 0
+        have hpos_lift : PosSortLift cR.env cvCaâ := PosSortLift.of_range hlps_cj
+        have hv_m144 : ValRepExact cR.Îº m144 (.field (lps.length : F)) xcty cvCaâ :=
+          â¨hv_rep.1, hv_rep.2.1, hv_rep.2.2.1, hv_rep.2.2.2.mono e_aeqâ©
+        have hty_nil : TypesRep cR.Îº (fun _ => default) m387 0
             (.ptr (.enum kexprListEnum) m319.length) := by
-          rw [hm387]; exact typesRep_alloc_nil cR.κ (fun _ => default) m319
-        obtain ⟨hcvC_chk, sty₀, u₀, _, hinf₀, hred₀, _, _⟩ :=
-          constantValCheckJ_of_scoped (c := cC) (Γ := fun _ => default) hvs_j hv_m144
+          rw [hm387]; exact typesRep_alloc_nil cR.Îº (fun _ => default) m319
+        obtain â¨hcvC_chk, styâ, uâ, _, hinfâ, hredâ, _, _â© :=
+          constantValCheckJ_of_scoped (c := cC) (Î := fun _ => default) hvs_j hv_m144
             (hlbd_ctors c_j hc_mem) (hfv_ctors c_j hc_mem)
             (hfresh_ctors c_j hc_mem) (hbasis_ctors c_j hc_mem) (hshape_ctors c_j hc_mem)
-            hstore₁ hpos_lift ev_ws (e_ws.trans e_nil)
-            (hrc.mono e_to_es) hty_nil hef₁ loads hg_es ev_es
-        rw [hlps_cj, posOf_range] at hinf₀
-        have hfv_ca : cvCa₀.type.hasFvar = false :=
+            hstoreâ hpos_lift ev_ws (e_ws.trans e_nil)
+            (hrc.mono e_to_es) hty_nil hefâ loads hg_es ev_es
+        rw [hlps_cj, posOf_range] at hinfâ
+        have hfv_ca : cvCaâ.type.hasFvar = false :=
           annotates_hasFvar_false hvs_j.2.2 (hfv_ctors c_j hc_mem)
-        have hnp_ca : noProjAt T cvCa₀.type = true :=
-          noProjAt_of_infer_full hno_proj_T hinf₀ hfv_ca
+        have hnp_ca : noProjAt T cvCaâ.type = true :=
+          noProjAt_of_infer_full hno_proj_T hinfâ hfv_ca
         have e_es := ev_es.heap_extends
         have e_saf := ev_saf.heap_extends
         have e_to_pa := e_to_es.trans (e_es.trans e_saf)
         have hcty_raw_m34 :
-            RawTmExact cR.κ 0 (fun _ => default) m34 0
-              (ctorRawTypes.getD j default) cvCa₀.type xcty := by
+            RawTmExact cR.Îº 0 (fun _ => default) m34 0
+              (ctorRawTypes.getD j default) cvCaâ.type xcty := by
           have h0 := hraw_rep 0 (fun _ => default)
           rwa [hlps_cj, posOf_range] at h0
-        have hcty_exact_m34 : TmExact cR.κ 0 (fun _ => default) m34 0 cvCa₀.type xcty :=
+        have hcty_exact_m34 : TmExact cR.Îº 0 (fun _ => default) m34 0 cvCaâ.type xcty :=
           hcty_raw_m34.toTmExact
-        have hcty_pa : Tm cR.κ 0 (fun _ => default) m400 0 cvCa₀.type xcty :=
+        have hcty_pa : Tm cR.Îº 0 (fun _ => default) m400 0 cvCaâ.type xcty :=
           (hcty_exact_m34.mono (e_aeq.trans (e_ws.trans (e_nil.trans (e_es.trans e_saf))))).toTm
-        have hdoms_sh : StructDomsShared cR.env ta cvCa₀.type nP :=
-          check_param_agreement_scoped_spec (c := cC) (by omega) (hrc.mono e_to_pa) hef₁ loads hg_pa
+        have hdoms_sh : StructDomsShared cR.env ta cvCaâ.type nP :=
+          check_param_agreement_scoped_spec (c := cC) (by omega) (hrc.mono e_to_pa) hefâ loads hg_pa
             (hta.mono e_to_pa) hcty_pa ev_pa
         have e_pa := ev_pa.heap_extends
         have e_from_m34_to_m430 :=
           e_aeq.trans (e_ws.trans (e_nil.trans (e_es.trans (e_saf.trans e_pa))))
         have e_to_rt := e_cprj.trans e_from_m34_to_m430
         rw [hnf_f] at ev_rt
-        obtain ⟨hnt_476, rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
-            hes_len, hes_noT⟩ :=
-          check_ctor_return_type_observed_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_rt
+        obtain â¨hnt_476, rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
+            hes_len, hes_noTâ© :=
+          check_ctor_return_type_observed_spec hlps hlps_lt (by omega) (by omega) hpeerâ rawFacts hg_rt
             (rawCovered.sub (fun x hx => by simp [hc, hx]))
             (hcty_raw_m34.mono e_from_m34_to_m430) hnp_ca
-            (Bytes.repAddressRef_heapMono₂ addrTy e_to_rt hbp) ev_rt
-        obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hopAll, hidx_len⟩ :=
+            (Bytes.repAddressRef_heapMonoâ addrTy e_to_rt hbp) ev_rt
+        obtain â¨fvsP, crest, xFvs, idxArgs, hopP, hopF, hopAll, hidx_lenâ© :=
           ctor_openPis_residual hstrip_c hes_len
-        have hres_ca : cvCa₀.type.constsResolve cR.env = true := by
-          obtain ⟨ty', ⟨_, _, _, _, _, _, _, _, hcr, _⟩, hcv⟩ := hcvC_chk
-          have hty_eq : cvCa₀.type = ty' := by rw [hcv]
+        have hres_ca : cvCaâ.type.constsResolve cR.env = true := by
+          obtain â¨ty', â¨_, _, _, _, _, _, _, _, hcr, _â©, hcvâ© := hcvC_chk
+          have hty_eq : cvCaâ.type = ty' := by rw [hcv]
           rwa [hty_eq]
-        obtain ⟨hfvs_res, happ_res⟩ := openPisAtFvars_constsResolve (nP + c_j.2) hres_ca hopAll
-        have hxFvs_res : ∀ x ∈ xFvs, x.fvarTypeD.constsResolve cR.env = true :=
+        obtain â¨hfvs_res, happ_resâ© := openPisAtFvars_constsResolve (nP + c_j.2) hres_ca hopAll
+        have hxFvs_res : â x â xFvs, x.fvarTypeD.constsResolve cR.env = true :=
           fun x hx => hfvs_res x (List.mem_append_right _ hx)
-        have hidx_res : ∀ e ∈ idxArgs, e.constsResolve cR.env = true := by
+        have hidx_res : â e â idxArgs, e.constsResolve cR.env = true := by
           intro e he
           have hga_res := (constsResolve_getApp happ_res).2
           rw [getAppArgs_mkAppN_const] at hga_res
@@ -278,104 +309,104 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         have e_rt := ev_rt.heap_extends
         have e_from_m34_to_m476 := e_from_m34_to_m430.trans e_rt
         have e_to_fu := e_cprj.trans e_from_m34_to_m476
-        obtain ⟨sorts_j, hfsorts_j⟩ :=
-          check_field_universes_scoped_spec hLevels (c := cC) (by omega) hlveq hinf₀ hopP hopF hopAll
-            (hrc.mono e_to_fu) hef₁ loads hg_fu
-            (repKLevel_heapMono₂ e_to_fu hpind)
+        obtain â¨sorts_j, hfsorts_jâ© :=
+          check_field_universes_scoped_spec hLevels (c := cC) (by omega) hlveq hinfâ hopP hopF hopAll
+            (hrc.mono e_to_fu) hefâ loads hg_fu
+            (repKLevel_heapMonoâ e_to_fu hpind)
             (hcty_exact_m34.mono e_from_m34_to_m476).toTm hnt_476 ev_fu
         have e_fu := ev_fu.heap_extends
         have e_from_m34_to_m546 := e_from_m34_to_m476.trans e_fu
         have e_to_pos := e_cprj.trans e_from_m34_to_m546
         have hpos_ext :
-            (∀ i < c_j.2,
-              (Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .negative ∧
-               Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
-              ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
-               RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
+            (â i < c_j.2,
+              (Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 â  .negative â§
+               Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 â  .unsupported) â§
+              ((cbs.getD (nP + i) default).1.mentionsConst T = false â¨
+               RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) â§
             Heap.Extends m546 m646 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>
             have hg_pos : Good cR.toCtx cs_pos :=
               hgood.sub (fun x hx => by simp [hc, hc_sg, hx])
-            exact ⟨check_positivity_observed_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_pos
+            exact â¨check_positivity_observed_spec hlps hlps_lt (by omega) (by omega) hpeerâ rawFacts hg_pos
               (rawCovered.sub (fun x hx => by simp [hc, hc_sg, hx]))
               (hcty_raw_m34.mono e_from_m34_to_m546) hnp_ca hstR_c hstrip_c
-              (Bytes.repAddressRef_heapMono₂ addrTy e_to_pos hbp) ev_pos,
-              ev_pos.heap_extends⟩
-        refine ⟨sorts_j :: sortss_rest, by simp [hlen_rest], fun t_idx ht => ?_⟩
+              (Bytes.repAddressRef_heapMonoâ addrTy e_to_pos hbp) ev_pos,
+              ev_pos.heap_extendsâ©
+        refine â¨sorts_j :: sortss_rest, by simp [hlen_rest], fun t_idx ht => ?_â©
         cases t_idx with
         | zero =>
           rw [Nat.add_zero]
-          exact ⟨c_j, (cvCa₀, c_j.2), sorts_j, hc_j, hcA_j, rfl,
+          exact â¨c_j, (cvCaâ, c_j.2), sorts_j, hc_j, hcA_j, rfl,
             { nF_eq := rfl
               stored := hvs_j
               cvCheck := hcvC_chk
               noProj := hnp_ca
-              inferSort := ⟨sty₀, u₀, hinf₀, hred₀⟩
-              residual := ⟨rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
+              inferSort := â¨styâ, uâ, hinfâ, hredââ©
+              residual := â¨rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
                 hes_len, hes_noT, (fun i hi => (hpos_ext.1 i hi).1),
-                (fun i hi => (hpos_ext.1 i hi).2)⟩
+                (fun i hi => (hpos_ext.1 i hi).2)â©
               domsShared := hdoms_sh
-              opened := ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hidx_len,
-                hxFvs_res, hidx_res, hfsorts_j⟩ }⟩
+              opened := â¨fvsP, crest, xFvs, idxArgs, hopP, hopF, hidx_len,
+                hxFvs_res, hidx_res, hfsorts_jâ© }â©
         | succ t' =>
-          obtain ⟨c', cA', sorts', hc', hcA', hs', hout'⟩ := hrest_out t' (by omega)
+          obtain â¨c', cA', sorts', hc', hcA', hs', hout'â© := hrest_out t' (by omega)
           rw [show j + 1 + t' = j + (t' + 1) by omega] at hc' hcA' hout'
-          exact ⟨c', cA', sorts', hc', hcA', hs', hout'⟩
+          exact â¨c', cA', sorts', hc', hcA', hs', hout'â©
 
 /-- The actual complete constructor traversal chooses its exact typed-call scope. No caller
 coverage predicate or unrestricted load contract is needed. -/
 theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     {cR : ScopedCtx} {indIndex : F}
-    {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
+    {bâ : Bytes.Address} {T : KKey} {lps : List LevelParam}
     {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
-    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal Ã Nat)}
     {ctorRawTypes : List KExpr}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
     (hnP_lt : nP < 2147483648)
     (hnIdx_lt : nIdx < 2147483648)
     (hnCtors_lt : ctors.length < 4294967296)
-    (hnF_lt : ∀ c ∈ ctors, c.2 < 2147483648)
+    (hnF_lt : â c â ctors, c.2 < 2147483648)
     (hlveq : LvEq resSort ind_lvl)
-    (hcload : CtorLoadAtIndex cR.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
-    (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = lps)
-    (hlbd_ctors : ∀ c ∈ ctors, c.1.type.looseBVarsBounded 0 = true)
-    (hfv_ctors : ∀ c ∈ ctors, c.1.type.hasFvar = false)
-    (hfresh_ctors : ∀ c ∈ ctors, cR.env.find? c.1.name = none)
-    (hbasis_ctors : ∀ c ∈ ctors, Ix.Kernel.reservedBasisNames.contains c.1.name = false)
-    (hshape_ctors : ∀ c ∈ ctors, c.1.name.isProjFnShape = false)
-    (hno_proj_T : ∀ i, cR.env.findProj? T i = none)
-    (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
-    (hef₁ : CoreEnvFacts cR.toCtx)
+    (hcload : CtorLoadAtIndex cR.t bâ nP indIndex cs_root ctors ctorsA ctorRawTypes)
+    (hlps_ctors : â c â ctors, c.1.levelParams = lps)
+    (hlbd_ctors : â c â ctors, c.1.type.looseBVarsBounded 0 = true)
+    (hfv_ctors : â c â ctors, c.1.type.hasFvar = false)
+    (hfresh_ctors : â c â ctors, cR.env.find? c.1.name = none)
+    (hbasis_ctors : â c â ctors, Ix.Kernel.reservedBasisNames.contains c.1.name = false)
+    (hshape_ctors : â c â ctors, c.1.name.isProjFnShape = false)
+    (hno_proj_T : â i, cR.env.findProj? T i = none)
+    (hstoreâ : Ix.Kernel.Open.StoreInv cR.env)
+    (hefâ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerReads cR b₀ T lps.length nP nIdx ctors.length indIndex)
+    (hpeerâ : OneTypePeerReads cR bâ T lps.length nP nIdx ctors.length indIndex)
     {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (subset : ∀ call ∈ cs, call ∈ cs_root)
+    (subset : â call â cs, call â cs_root)
     (good : Good cR.toCtx cs) (rawCovered : RawRecordCoverage cR cs)
     (roleContext : RCRep cR.t cR.lim h rc)
-    (formerRep : Tm cR.κ 0 (fun _ => default) h 0 ta pta)
-    (blockRep : Bytes.RepAddressRef addrTy h b₀ bp)
+    (formerRep : Tm cR.Îº 0 (fun _ => default) h 0 ta pta)
+    (blockRep : Bytes.RepAddressRef addrTy h bâ bp)
     (sortRep : RepKLevel h ind_lvl pind)
     (observed : ObsFn W "KernelCheck::check_inductive_shape_ctors"
       [rc, pta, .field (nP : F), .field (nIdx : F), .field (ctors.length : F),
         .field (lps.length : F), bp, .field indIndex, pind, .field 0, .field 0] h r h' cs) :
-    ∃ runs : List (NativeCtorCoreRun cs_root),
-      ScopedLoadFacts (nativeCtorCoreCtx cR.toCtx runs) →
-      ∃ sortss : List (List KLevel),
-        sortss.length = ctors.length ∧
-        ∀ j < ctors.length, ∃ c cA sorts,
-          ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧ sortss[j]? = some sorts ∧
+    â runs : List (NativeCtorCoreRun cs_root),
+      ScopedLoadFacts (nativeCtorCoreCtx cR.toCtx runs) â
+      â sortss : List (List KLevel),
+        sortss.length = ctors.length â§
+        â j < ctors.length, â c cA sorts,
+          ctors[j]? = some c â§ ctorsA[j]? = some cA â§ sortss[j]? = some sorts â§
           NativeCtorOut cR.env T lps nP nIdx resSort ta
             (ctorRawTypes.getD j default) c cA sorts := by
-  obtain ⟨runs, checked⟩ := native_ctor_scoped_runs hLevels hlps hlps_lt hnP_lt hnIdx_lt
+  obtain â¨runs, checkedâ© := native_ctor_scoped_runs hLevels hlps hlps_lt hnP_lt hnIdx_lt
     hnCtors_lt hnF_lt hlveq hcload hlps_ctors hlbd_ctors hfv_ctors hfresh_ctors
-    hbasis_ctors hshape_ctors hno_proj_T hstore₁ hef₁ rawFacts hpeer₁ ctors.length 0
+    hbasis_ctors hshape_ctors hno_proj_T hstoreâ hefâ rawFacts hpeerâ ctors.length 0
     (Nat.add_zero _) subset good rawCovered roleContext formerRep blockRep sortRep observed
-  refine ⟨runs, fun loads => ?_⟩
+  refine â¨runs, fun loads => ?_â©
   simpa only [Nat.zero_add] using
-    checked (fun call => call ∈ nativeCtorCoreCalls runs) (fun _ member => member) loads
+    checked (fun call => call â nativeCtorCoreCalls runs) (fun _ member => member) loads
 
 
 end IxVM.Refinement.Decl
