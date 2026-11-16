@@ -462,12 +462,38 @@ theorem declared_of_headers {parts checked : List (Part md)}
     ConstantInfo.recInfo part.raw part.majorIndex part.rulePrefix part.rawRules) h
   simpa only [List.map_map, Part.header, Function.comp_def] using h'
 
+theorem CanonicalPart.of_headers {env : Env md} {before after : Part md}
+    (h : before.header = after.header) (source : CanonicalPart env before) : CanonicalPart env after := by
+  have hraw : before.raw = after.raw := congrArg Part.raw h
+  have hannotated : before.annotated = after.annotated := congrArg Part.annotated h
+  have hcanonical : before.canonical = after.canonical := congrArg Part.canonical h
+  have hkey : before.canonicalKey = after.canonicalKey := congrArg Part.canonicalKey h
+  have hmajor : before.majorIndex = after.majorIndex := congrArg Part.majorIndex h
+  have hprefix : before.rulePrefix = after.rulePrefix := congrArg Part.rulePrefix h
+  have hrawRules : before.rawRules = after.rawRules := congrArg Part.rawRules h
+  have hcanonicalRules : before.canonicalRules = after.canonicalRules := congrArg Part.canonicalRules h
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · rw [← hkey, ← hcanonical, ← hmajor, ← hprefix, ← hcanonicalRules]
+    exact source.stored
+  · rw [← hraw, ← hcanonical]
+    exact source.levels
+  · rw [← hrawRules, ← hcanonicalRules]
+    exact source.ruleCount
+  · rw [← hcanonical, ← hannotated]
+    exact source.typeWrap
+  · have hm : ModelSource env before.header := source.model
+    rw [h] at hm
+    exact hm
+
 theorem HeaderChecked.of_headers {mode : CheckMode} {fuel : Nat} {env : Env md}
     {before after : Part md} (h : before.header = after.header)
     (checked : HeaderChecked mode fuel env before) : HeaderChecked mode fuel env after := by
-  change HeaderChecked mode fuel env before.header at checked
-  rw [h] at checked
-  exact checked
+  obtain ⟨hcv, hfree, hsource⟩ := checked
+  have hraw : before.raw = after.raw := congrArg Part.raw h
+  have hannotated : before.annotated = after.annotated := congrArg Part.annotated h
+  refine ⟨?_, ?_, hsource.of_headers h⟩
+  · rwa [← hraw, ← hannotated]
+  · rwa [← hannotated]
 
 theorem checkRule_header (ops : CheckerOps md (CheckM md)) (env envSelf : Env md)
     (part : Part md) (raw canonical : RecRule md) :
