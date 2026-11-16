@@ -1,4 +1,5 @@
 import IxVMRefinement.L1.ConvertExpr
+import Ix.CompileCert.Loop
 
 /-! # Self callbacks reached by an actual raw expression
 
@@ -18,18 +19,18 @@ open Ix.CompileCert.Loop (except_bind_ok)
 inductive RecurUsed (sharing : List Ixon.Expr) : Nat → Ixon.Expr → Prop where
   | recur {index : UInt64} {levels : Array UInt64} : RecurUsed sharing index.toNat (.recur index levels)
   | prj {index field inner i} : RecurUsed sharing i inner → RecurUsed sharing i (.prj index field inner)
-  | appFn {fn arg i} : RecurUsed sharing i fn → RecurUsed sharing i (.app fn arg)
-  | appArg {fn arg i} : RecurUsed sharing i arg → RecurUsed sharing i (.app fn arg)
-  | lamType {type body i} : RecurUsed sharing i type → RecurUsed sharing i (.lam type body)
-  | lamBody {type body i} : RecurUsed sharing i body → RecurUsed sharing i (.lam type body)
-  | allType {type body i} : RecurUsed sharing i type → RecurUsed sharing i (.all type body)
-  | allBody {type body i} : RecurUsed sharing i body → RecurUsed sharing i (.all type body)
-  | letType {nondep mode type value body i} :
-      RecurUsed sharing i type → RecurUsed sharing i (.letE nondep mode type value body)
-  | letValue {nondep mode type value body i} :
-      RecurUsed sharing i value → RecurUsed sharing i (.letE nondep mode type value body)
-  | letBody {nondep mode type value body i} :
-      RecurUsed sharing i body → RecurUsed sharing i (.letE nondep mode type value body)
+  | appFn {fnPart arg i} : RecurUsed sharing i fnPart → RecurUsed sharing i (.app fnPart arg)
+  | appArg {fnPart arg i} : RecurUsed sharing i arg → RecurUsed sharing i (.app fnPart arg)
+  | lamType {domain body i} : RecurUsed sharing i domain → RecurUsed sharing i (.lam domain body)
+  | lamBody {domain body i} : RecurUsed sharing i body → RecurUsed sharing i (.lam domain body)
+  | allType {domain body i} : RecurUsed sharing i domain → RecurUsed sharing i (.all domain body)
+  | allBody {domain body i} : RecurUsed sharing i body → RecurUsed sharing i (.all domain body)
+  | letType {nondep mode domain value body i} :
+      RecurUsed sharing i domain → RecurUsed sharing i (.letE nondep mode domain value body)
+  | letValue {nondep mode domain value body i} :
+      RecurUsed sharing i value → RecurUsed sharing i (.letE nondep mode domain value body)
+  | letBody {nondep mode domain value body i} :
+      RecurUsed sharing i body → RecurUsed sharing i (.letE nondep mode domain value body)
   | share {index : UInt64} {source : Ixon.Expr} {i : Nat} : sharing[index.toNat]? = some source →
       RecurUsed sharing i source → RecurUsed sharing i (.share index)
 
@@ -40,28 +41,28 @@ theorem RawConvExpr.recur_used_address {refs recurAddrs : List _root_.Address}
     (raw : RawConvExpr refs recurAddrs univs sharing blobs heap bound expression pointer) :
     ∀ {index}, RecurUsed sharing index expression → ∃ address, recurAddrs[index]? = some address := by
   induction raw with
-  | var .. | sort .. | ref .. | str .. | nat .. => intro index used; cases used
+  | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _ => intro index used; cases used
   | recur _ found _ _ _ _ _ => intro index used; cases used; exact ⟨_, found⟩
   | prj _ _ _ _ _ _ _ ih => intro index used; cases used with | prj used => exact ih used
-  | app _ _ _ fn arg =>
+  | app _ _ _ fnPart arg =>
     intro index used
     cases used with
-    | appFn used => exact fn used
+    | appFn used => exact fnPart used
     | appArg used => exact arg used
-  | lam _ _ _ _ type body =>
+  | lam _ _ _ _ domain body =>
     intro index used
     cases used with
-    | lamType used => exact type used
+    | lamType used => exact domain used
     | lamBody used => exact body used
-  | all _ _ _ _ type body =>
+  | all _ _ _ _ domain body =>
     intro index used
     cases used with
-    | allType used => exact type used
+    | allType used => exact domain used
     | allBody used => exact body used
-  | letE _ _ _ _ type value body =>
+  | letE _ _ _ _ domain value body =>
     intro index used
     cases used with
-    | letType used => exact type used
+    | letType used => exact domain used
     | letValue used => exact value used
     | letBody used => exact body used
   | share _ found _ ih =>
@@ -103,7 +104,7 @@ theorem RawConvExpr.memberReader_self_mono
         convExpr ecx₂ (buildShareTbl ecx₂ (source.sharing.toList.take n)) expression = .ok result := by
     intro bound expression pointer converted
     induction converted with
-    | var .. | sort .. | ref .. | str .. | nat .. => intro _ _ _ _ _ success; exact success
+    | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _ => intro _ _ _ _ _ success; exact success
     | @recur _ _ index levels _ _ _ _ _ _ _ _ _ _ _ _ =>
       intro agrees n result _ _ success
       simp only [convExpr] at success ⊢
@@ -126,37 +127,37 @@ theorem RawConvExpr.memberReader_self_mono
       have transferred := ih (fun index used => agrees index (.prj used)) within enough innerRead
       rw [show ecx₂.keyAt _ = .ok key from keyRead, transferred]
       exact success
-    | app _ _ _ fn arg =>
+    | app _ _ _ fnPart arg =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
       obtain ⟨fnExpr, fnRead, success⟩ := except_bind_ok.mp success
       obtain ⟨argExpr, argRead, success⟩ := except_bind_ok.mp success
-      rw [fn (fun index used => agrees index (.appFn used)) within enough fnRead,
+      rw [fnPart (fun index used => agrees index (.appFn used)) within enough fnRead,
         arg (fun index used => agrees index (.appArg used)) within enough argRead]
       exact success
-    | lam _ _ _ _ type body =>
+    | lam _ _ _ _ domain body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
       obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
       obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
-      rw [type (fun index used => agrees index (.lamType used)) within enough typeRead,
+      rw [domain (fun index used => agrees index (.lamType used)) within enough typeRead,
         body (fun index used => agrees index (.lamBody used)) within enough bodyRead]
       exact success
-    | all _ _ _ _ type body =>
+    | all _ _ _ _ domain body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
       obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
       obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
-      rw [type (fun index used => agrees index (.allType used)) within enough typeRead,
+      rw [domain (fun index used => agrees index (.allType used)) within enough typeRead,
         body (fun index used => agrees index (.allBody used)) within enough bodyRead]
       exact success
-    | letE _ _ _ _ type value body =>
+    | letE _ _ _ _ domain value body =>
       intro agrees n result within enough success
       simp only [convExpr] at success ⊢
       obtain ⟨typeExpr, typeRead, success⟩ := except_bind_ok.mp success
       obtain ⟨valueExpr, valueRead, success⟩ := except_bind_ok.mp success
       obtain ⟨bodyExpr, bodyRead, success⟩ := except_bind_ok.mp success
-      rw [type (fun index used => agrees index (.letType used)) within enough typeRead,
+      rw [domain (fun index used => agrees index (.letType used)) within enough typeRead,
         value (fun index used => agrees index (.letValue used)) within enough valueRead,
         body (fun index used => agrees index (.letBody used)) within enough bodyRead]
       exact success
@@ -189,7 +190,7 @@ theorem RawConvExpr.toTmCExact_of_selfReads {κ : _root_.Address → Core.KKey}
       self index = some computation → computation = .ok key → key = κ address)
     (blob : BlobReadAgreement cx.blob blobs)
     (read : (MemberReader.mk' cx source (recParam ps) self).read expression = .ok readExpr)
-    (variables : readExpr.looseBVarsBounded 0 = true)
+    (varsBounded : readExpr.looseBVarsBounded 0 = true)
     (levels : readExpr.allLevelParamsDefined ps = true) :
     ∃ annotated : Core.KExpr, IxVM.Consistency.Annotates annotated readExpr ∧
       Decl.TmCExact κ heap (Core.posOf ps annotated) pointer := by
@@ -202,7 +203,7 @@ theorem RawConvExpr.toTmCExact_of_selfReads {κ : _root_.Address → Core.KKey}
     have named := selfReads index address (.ok key) key used found succeeded rfl
     simp only [canonicalSelf, found, Option.map_some, named]
   apply raw.toTmCExact_of_blobAgreement permutation paramsBound keyAt (self := canonicalSelf) _ blob
-    canonicalRead variables levels
+    canonicalRead varsBounded levels
   intro index address computation key found selected succeeded
   have same : computation = .ok (κ address) := by
     simpa only [canonicalSelf, found, Option.map_some, Option.some.injEq] using selected.symm
