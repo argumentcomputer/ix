@@ -82,7 +82,7 @@ theorem native_member_checked_source {base : Core.Ctx} {bindingAddr : _root_.Add
   exact ⟨projection, Except.ok.inj (decoded.symm.trans canonical), fullProof⟩
 
 /-- Reindex the exact projection evidence at the field encoding of its natural member slot. -/
-private theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Address}
+theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Address}
     {slot : Nat} {index : UInt64} {i : F}
     (projection : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) slot))
     (shape : projection.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
