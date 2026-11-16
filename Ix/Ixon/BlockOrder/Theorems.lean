@@ -22,8 +22,8 @@ theorem recursorMotive_of_analyse {store owner c r m carriers major}
   | none => simp [hs] at h
   | some p =>
     obtain ⟨doms, body⟩ := p
-    cases hd : appHead c spineFuel body with
-    | var k =>
+    cases hd : Shape.resultVar spineFuel c body with
+    | some k =>
       simp only [hs, hd, Option.bind_eq_bind, Option.bind_some, Option.pure_def] at h ⊢
       obtain ⟨u, hu, rest⟩ := Option.bind_eq_some_iff.mp h
       rw [Option.bind_eq_some_iff]
@@ -31,7 +31,7 @@ theorem recursorMotive_of_analyse {store owner c r m carriers major}
       simp only [Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at rest
       obtain ⟨_, _, _, _, _, _, hm, _⟩ := rest
       exact congrArg some hm
-    | _ => simp [hs, hd] at h
+    | none => simp [hs, hd] at h
 
 /-- The members, from `start` on, are recursors in motive order: the one at
 position `start + j` eliminates motive `start + j` (`recursorMotive`, as the

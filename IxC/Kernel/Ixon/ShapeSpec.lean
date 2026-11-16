@@ -62,7 +62,7 @@ theorem refs_subst {P : Nat → Prop} {value : Term} (hv : Refs P value) :
   | .proj _ _ sub, depth, ⟨hk, hs⟩ => ⟨hk, refs_subst hv sub depth hs⟩
 
 def TableRefs (P : Nat → Prop) (table : Array (Option Term)) : Prop :=
-  ∀ i value, table[i]? = some (some value) → Refs P value
+  ∀ (i : Nat) (value : Term), table[i]? = some (some value) → Refs P value
 
 theorem convert_refs {P : Nat → Prop} {table : Array (Option Term)}
     (entries : TableRefs P table) :

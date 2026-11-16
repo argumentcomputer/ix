@@ -43,9 +43,9 @@ def analyseWith (c : Ixon.Constant) (r : Ixon.Recursor) (head : Ixon.Expr → Op
   let nI := r.indices.toNat
   let depth := nP + nM + nm + nI + 1
   let (doms, body) ← stripAll c depth r.typ
-  let .var k := appHead c spineFuel body | none
-  let pos := depth - 1 - k.toNat
-  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
+  let k ← Shape.resultVar spineFuel c body
+  let pos := depth - 1 - k
+  guard (k < depth && nP ≤ pos && pos < nP + nM)
   let carriers ← (doms.drop nP |>.take nM).toArray.mapM fun dom => do
     let (bs, _) := stripAllFull c spineFuel dom
     head (← bs.getLast?)
@@ -84,25 +84,19 @@ theorem analyseWith_mono {c : Ixon.Constant} {r : Ixon.Recursor} {h₁ h₂ : Ix
     analyseWith c r h₂ = some x ∧ (∀ y ∈ x.2.1, P y) ∧ P x.2.2 := by
   unfold analyseWith at hx ⊢
   simp only [bind, Option.bind_eq_some_iff, pure] at hx ⊢
-  obtain ⟨⟨doms, body⟩, hs, hx⟩ := hx
-  split at hx
-  · rename_i k hk
-    simp only [Option.bind_eq_some_iff] at hx
-    obtain ⟨u, hg, carriers, hc, l, hl, major, hm, hx⟩ := hx
-    cases Option.some.inj hx
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map, Option.map_eq_some_iff] at hc
-    obtain ⟨ys, hys, rfl⟩ := hc
-    obtain ⟨hys₂, pys⟩ := list_mapM_mono (P := P)
-      (f₂ := fun dom => (stripAllFull c spineFuel dom).fst.getLast?.bind fun e => h₂ e) (fun dom b hb => by
-        obtain ⟨e, he, hb⟩ := Option.bind_eq_some_iff.mp hb
-        exact ⟨Option.bind_eq_some_iff.mpr ⟨e, he, (hh e b hb).1⟩, (hh e b hb).2⟩) _ ys hys
-    obtain ⟨hm₂, pm⟩ := hh l major hm
-    refine ⟨⟨(doms, body), hs, ?_⟩, fun y hy => pys y (by simpa using hy), pm⟩
-    simp only [hk, Option.bind_eq_some_iff]
-    refine ⟨u, hg, ys.toArray, ?_, l, hl, major, hm₂, rfl⟩
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hys₂]
-    rfl
-  · cases hx
+  obtain ⟨⟨doms, body⟩, hs, k, hk, u, hg, carriers, hc, l, hl, major, hm, hx⟩ := hx
+  cases Option.some.inj hx
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map, Option.map_eq_some_iff] at hc
+  obtain ⟨ys, hys, rfl⟩ := hc
+  obtain ⟨hys₂, pys⟩ := list_mapM_mono (P := P)
+    (f₂ := fun dom => (stripAllFull c spineFuel dom).fst.getLast?.bind fun e => h₂ e) (fun dom b hb => by
+      obtain ⟨e, he, hb⟩ := Option.bind_eq_some_iff.mp hb
+      exact ⟨Option.bind_eq_some_iff.mpr ⟨e, he, (hh e b hb).1⟩, (hh e b hb).2⟩) _ ys hys
+  obtain ⟨hm₂, pm⟩ := hh l major hm
+  refine ⟨⟨(doms, body), hs, k, hk, u, hg, ys.toArray, ?_, l, hl, major, hm₂, rfl⟩,
+    fun y hy => pys y (by simpa using hy), pm⟩
+  rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hys₂]
+  rfl
 
 /-- **The analysis the index files by, unfolded**: the analysis, the first carrier a member of
 the block, the block a record of inductives, the carrier order valid. -/

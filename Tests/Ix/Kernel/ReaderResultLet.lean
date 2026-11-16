@@ -9,8 +9,14 @@ namespace Tests.Ix.Kernel.ReaderResultLet
 open _root_.Ix.Kernel _root_.Ix.Kernel.Reader
 
 private def family : Ixon.Constant :=
-  ⟨.muts #[.indc { isUnsafe := false, lvls := 0, params := 0, indices := 0,
-    typ := .sort 0, ctors := #[] }], #[], #[], #[.succ (.succ (.succ .zero))], #[]⟩
+  let ind : Ixon.Inductive := {
+    isUnsafe := false
+    lvls := 0
+    params := 0
+    indices := 0
+    typ := .sort 0
+    ctors := #[] }
+  ⟨.muts #[.indc ind], #[], #[], #[.succ (.succ (.succ .zero))], #[]⟩
 
 private def address (c : Ixon.Constant) : _root_.Address := _root_.Address.blake3Pure (Ixon.serConstant c)
 
@@ -26,10 +32,19 @@ private def input (wrapped shared : Bool) (badK unsafeFlag : Bool) :
     else .app (.var 1) (.var 0)
   let type : Ixon.Expr :=
     .all (.all (.ref 0 #[]) (.sort 1)) (.all (.ref 0 #[]) (if shared then .share 0 else result))
+  let raw : Ixon.Recursor := {
+    k := badK
+    isUnsafe := unsafeFlag
+    lvls := 1
+    params := 0
+    indices := 0
+    motives := 1
+    minors := 0
+    typ := type
+    rules := #[] }
   let recursor : Ixon.Constant :=
-    ⟨.recr { k := badK, isUnsafe := unsafeFlag, lvls := 1, params := 0, indices := 0,
-      motives := 1, minors := 0, typ := type, rules := #[] },
-      if shared then #[result] else #[], #[address projection, nat, zero], #[.succ .zero, .var 0], #[]⟩
+    ⟨.recr raw, if shared then #[result] else #[],
+      #[address projection, nat, zero], #[.succ .zero, .var 0], #[]⟩
   pure #[(address family, family), (address projection, projection), (address recursor, recursor)]
 
 def check (wrapped shared : Bool) (badK unsafeFlag : Bool := false) : Except String (Bool × Bool × Bool) := do
