@@ -220,14 +220,15 @@ private theorem DomainAt.close_reference {domainSort : Level} :
   induction binders with
   | nil => intro slot entry absent; cases slot <;> cases absent
   | cons current binders ih =>
+    obtain ⟨currentDomain, currentMeta⟩ := current
     intro slot entry atSlot depth target type body earlier origin
     cases slot with
     | zero =>
-      have same : current = entry := Option.some.inj atSlot
+      have same : (currentDomain, currentMeta) = entry := Option.some.inj atSlot
       subst entry
       have outside : ¬ depth ≤ target := by omega
-      simpa only [closedReference, ite_eq_right outside] using DomainAt.here (body :=
-        (Ix.Kernel.closeTelescope binders (depth + 1) body).abstract1 depth 0) (bm := current.2) origin
+      simpa only [closedReference, ite_eq_right outside, Ix.Kernel.closeTelescope] using DomainAt.here (body :=
+        (Ix.Kernel.closeTelescope binders (depth + 1) body).abstract1 depth 0) (bm := currentMeta) origin
     | succ slot =>
       have tail := ih atSlot (depth + 1) target type body (by omega) origin
       refine .next (tail.abstract1_map depth 0 ?_)
