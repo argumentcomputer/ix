@@ -242,7 +242,8 @@ an actually resolved used reference. -/
 def UsedOwner (s : Store) (owner : _root_.Address) (c : Ixon.Constant)
     (target : _root_.Address) : Prop :=
   target = owner ∨ ∃ i ∈ usedRefIdxs c, ∃ a, c.refs[i]? = some a ∧
-    ∃ value, s a = some value ∧ Ix.Cert.ownerOf a value = target
+    ∃ value, s a = some value ∧ (resolveSource s a value).isSome ∧
+      Ix.Cert.ownerOf a value = target
 
 theorem analysis_used_owners {s : Store} {owner : _root_.Address}
     {c : Ixon.Constant} {j : Nat} {r : Ixon.Recursor}
@@ -256,7 +257,7 @@ theorem analysis_used_owners {s : Store} {owner : _root_.Address}
     (fun i used a reference q resolved => by
       obtain ⟨value, found, source⟩ := Option.bind_eq_some_iff.mp resolved
       exact ⟨resolved, .inr ⟨i, used, a, reference, value, found,
-        (Ix.Cert.RecursorIndex.resolveSource_block source).symm⟩⟩)
+        by rw [source]; rfl, (Ix.Cert.RecursorIndex.resolveSource_block source).symm⟩⟩)
     (fun _ _ _ found => found) ran
   obtain ⟨analysis, firstIndex, blockRecord, members, slot, first, firstCarrier, rest⟩ :=
     recursorAnalysis_spec.mp ran

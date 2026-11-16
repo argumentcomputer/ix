@@ -52,7 +52,7 @@ theorem admitted_used_owner {V : IxVM.Refinement.View} {b : Admission.Binding}
 
 /-- Every actual selected admission recursor retains its exact successful filing analysis
 in the used-reference reader store. This asserts analysis survival, not identical index order. -/
-theorem admitted_analysis_survives {V : IxVM.Refinement.View} {b : Admission.Binding}
+theorem admitted_analysis_transfer {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
     (keepTrace : _root_.Address → Prop) (claimBytes : ByteArray) {order : List _root_.Address}
     (loaded : LoadedBy calls trace) (decoded : L1.EnvDecoded trace)
@@ -62,18 +62,13 @@ theorem admitted_analysis_survives {V : IxVM.Refinement.View} {b : Admission.Bin
     {owner : _root_.Address} {constant : Ixon.Constant}
     (selected : owner ∈ w.order) (record : Ix.Cert.recordAt w.env owner = some constant)
     (retained : owner ∈ order) {j : Nat} {rc : Ixon.Recursor}
-    (member : (j, rc) ∈ recursorMembers constant) :
-    let original := Admission.streamContext _root_.Address.admissionHash w.table w.prelude
-      (Ix.Cert.Stream.decodedOf w.env w.order) (Ix.Cert.blobsOf w.env w.order)
-      (Ix.Cert.hintsOf w.env)
-    ∃ entry carriers,
-      (original.index.recs[ConstRef.member owner j]? = some entry ∨
-        original.index.twins[ConstRef.member owner j]? = some entry) ∧
-      Ix.Cert.recursorAnalysis?
-        (store w.table w.prelude (admittedOverlay w trace keepTrace) order) owner constant rc =
-        some (entry.block, entry.motive, carriers, entry.major) := by
-  obtain ⟨entry, carriers, indexed, analysis⟩ := admitted_rec_analysis w selected record member
-  refine ⟨entry, carriers, indexed, ?_⟩
+    (member : (j, rc) ∈ recursorMembers constant)
+    {result : _root_.Address × Nat × Array (ConstRef _root_.Address) × ConstRef _root_.Address}
+    (analysis : Ix.Cert.recursorAnalysis? (store w.table w.prelude w.env w.order)
+      owner constant rc = some result) :
+    Ix.Cert.recursorAnalysis?
+      (store w.table w.prelude (admittedOverlay w trace keepTrace) order) owner constant rc =
+      some result := by
   have stored := admittedOverlay_recordAt w keepTrace loaded decoded noCollision selected record
   let D := fun a => ∀ bc, store w.table w.prelude w.env w.order a = some bc →
     store w.table w.prelude (admittedOverlay w trace keepTrace) order a = some bc
@@ -96,5 +91,31 @@ theorem admitted_analysis_survives {V : IxVM.Refinement.View} {b : Admission.Bin
     exact ownerKept
   exact (ReaderAnalysis.analysis_transfer_used member own references
     (fun _ bc kept found => kept bc found) analysis).1
+
+/-- Admission supplies the old analysis, so a selected retained recursor has a successful
+analysis in the pruned reader without an additional caller-supplied analysis premise. -/
+theorem admitted_analysis_survives {V : IxVM.Refinement.View} {b : Admission.Binding}
+    (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
+    (keepTrace : _root_.Address → Prop) (claimBytes : ByteArray) {order : List _root_.Address}
+    (loaded : LoadedBy calls trace) (decoded : L1.EnvDecoded trace)
+    (noCollision : ¬ V.HashedCollision (claimBytes :: b.bytes :: readerImages V) calls)
+    {seeds : _root_.Address → Prop}
+    (closure : UsedClosureOrderAt w.table (admittedOverlay w trace keepTrace) seeds order)
+    {owner : _root_.Address} {constant : Ixon.Constant}
+    (selected : owner ∈ w.order) (record : Ix.Cert.recordAt w.env owner = some constant)
+    (retained : owner ∈ order) {j : Nat} {rc : Ixon.Recursor}
+    (member : (j, rc) ∈ recursorMembers constant) :
+    let original := Admission.streamContext _root_.Address.admissionHash w.table w.prelude
+      (Ix.Cert.Stream.decodedOf w.env w.order) (Ix.Cert.blobsOf w.env w.order)
+      (Ix.Cert.hintsOf w.env)
+    ∃ entry carriers,
+      (original.index.recs[ConstRef.member owner j]? = some entry ∨
+        original.index.twins[ConstRef.member owner j]? = some entry) ∧
+      Ix.Cert.recursorAnalysis?
+        (store w.table w.prelude (admittedOverlay w trace keepTrace) order) owner constant rc =
+        some (entry.block, entry.motive, carriers, entry.major) := by
+  obtain ⟨entry, carriers, indexed, analysis⟩ := admitted_rec_analysis w selected record member
+  exact ⟨entry, carriers, indexed, admitted_analysis_transfer w keepTrace claimBytes loaded decoded
+    noCollision closure selected record retained member analysis⟩
 
 end IxVM.Refinement.Assembly.ReaderStoreTransfer

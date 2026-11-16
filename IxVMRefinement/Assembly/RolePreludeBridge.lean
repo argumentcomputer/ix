@@ -700,14 +700,14 @@ private theorem emitted_role_in_validPreRefs {t : Ix.Kernel.RoleTable}
 /-- For **any** role table `t` (even unchecked) with `preludeFor t = .ok pre`, every record `(a, c)`
 in `pre.records` either has `(r, a) ∈ t.bound.toList` for a non-`compilerTrust` prelude role `r`,
 or is a `.muts` block owned by a projection record `(a', c') ∈ pre.records` with that property. -/
-theorem prelude_in_bound_of_preludeFor
+theorem prelude_in_bound_or_mutual
     {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     (hpre : preludeFor t = .ok pre)
     {a : _root_.Address} {c : Ixon.Constant}
     (hmem : (a, c) ∈ pre.records) :
     (∃ r ∈ Ix.Kernel.preludeShape.flatten,
       IxVM.Refinement.compilerTrust r = false ∧ (r, a) ∈ t.bound.toList) ∨
-    ∃ a' c', (a', c') ∈ pre.records ∧
+    ∃ ms, c.info = .muts ms ∧ ∃ a' c', (a', c') ∈ pre.records ∧
       (∃ r ∈ Ix.Kernel.preludeShape.flatten,
         IxVM.Refinement.compilerTrust r = false ∧ (r, a') ∈ t.bound.toList) ∧
       Ix.Cert.ownerOf a' c' = a ∧ a ≠ a' := by
@@ -817,6 +817,11 @@ theorem prelude_in_bound_of_preludeFor
     | false => exact .inl (hnon_muts hc_list hm)
     | true =>
       right
+      have mutualRecord : ∃ ms, c.info = .muts ms := by
+        cases info : c.info <;> simp [isMutsConst, info] at hm
+        exact ⟨_, rfl⟩
+      obtain ⟨ms, info⟩ := mutualRecord
+      refine ⟨ms, info, ?_⟩
       have hcls := List.all_eq_true.mp committedPre_all_classified (a, c) hc_list
       simp only [preRowClassified, hm, ↓reduceIte, List.any_eq_true] at hcls
       obtain ⟨⟨a', c'⟩, ha'_mem, hcond⟩ := hcls
@@ -832,6 +837,34 @@ theorem prelude_in_bound_of_preludeFor
         apply Array.mem_toList_iff.mp
         rwa [hrecs_list]
       exact ⟨a', c', ha'_recs, hnon_muts ha'_mem hnm', hown_b, hne⟩
+
+/-- Forget the mutual-block evidence while retaining the original prelude coverage API. -/
+theorem prelude_in_bound_of_preludeFor
+    {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
+    (hpre : preludeFor t = .ok pre)
+    {a : _root_.Address} {c : Ixon.Constant}
+    (hmem : (a, c) ∈ pre.records) :
+    (∃ r ∈ Ix.Kernel.preludeShape.flatten,
+      IxVM.Refinement.compilerTrust r = false ∧ (r, a) ∈ t.bound.toList) ∨
+    ∃ a' c', (a', c') ∈ pre.records ∧
+      (∃ r ∈ Ix.Kernel.preludeShape.flatten,
+        IxVM.Refinement.compilerTrust r = false ∧ (r, a') ∈ t.bound.toList) ∧
+      Ix.Cert.ownerOf a' c' = a ∧ a ≠ a' := by
+  rcases prelude_in_bound_or_mutual hpre hmem with bound | ⟨_, _, owner⟩
+  · exact .inl bound
+  · exact .inr owner
+
+/-- Every prelude record outside a mutual block is bound directly, including projections. -/
+theorem prelude_nonmutual_bound
+    {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
+    (hpre : preludeFor t = .ok pre)
+    {a : _root_.Address} {c : Ixon.Constant}
+    (hmem : (a, c) ∈ pre.records) (nonmutual : ∀ ms, c.info ≠ .muts ms) :
+    ∃ r ∈ Ix.Kernel.preludeShape.flatten,
+      IxVM.Refinement.compilerTrust r = false ∧ (r, a) ∈ t.bound.toList := by
+  rcases prelude_in_bound_or_mutual hpre hmem with bound | ⟨ms, info, _⟩
+  · exact bound
+  · exact (nonmutual ms info).elim
 
 /-- Upgrade `prelude_in_bound_of_preludeFor` to `BindingSeeds t` under `t.check = .ok ()`. -/
 theorem prelude_in_bindingSeeds_of_check
