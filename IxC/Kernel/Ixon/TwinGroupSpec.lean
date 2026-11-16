@@ -169,20 +169,14 @@ theorem groupTwins_homogeneous {twins : Array (ConstRef Address × RecEntry)}
 theorem lowerTwins_of_lowerTwin {md : Mode} {cx : Ctx md}
     {twins : Array (ConstRef Address × RecEntry)} {r : Read md}
     (read : lowerTwin cx twins = .ok r) : lowerTwins cx twins = .ok r := by
-  have original := read
-  unfold lowerTwin at read
-  unfold lowerTwins
   cases first : twins[0]? with
   | none =>
-    rw [first] at read
-    exact read
+    simpa only [lowerTwin, lowerTwins, first] using read
   | some pair =>
     obtain ⟨ref, entry⟩ := pair
-    rw [first] at read
-    split at read
-    · rename_i sameFamily
-      simp only [sameFamily, ↓reduceIte]
-      exact original
-    · simp [malformed, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at read
+    by_cases sameFamily : twins.all (·.2.block == entry.block) = true
+    · simpa only [lowerTwins, first, sameFamily, ↓reduceIte] using read
+    · simp [lowerTwin, first, sameFamily, malformed, throw, throwThe, MonadExceptOf.throw,
+        bind, Except.bind] at read
 
 end Ix.Kernel.Reader
