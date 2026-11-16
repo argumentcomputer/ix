@@ -1631,6 +1631,24 @@ theorem evalBinOp_sub_nat {a b : Nat} (hle : b ≤ a) {v : SourceValue F}
   rw [← hv]
   simp [Nat.cast_sub hle]
 
+theorem kdrop_exact_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {xs : List KExpr} {l r : SourceValue F} {cnt : Nat} {h h' : Heap F} {cs : List (Call F)}
+    (hcnt : cnt < 18446744069414584321)
+    (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (cnt : F)] h r h' cs)
+    (hl : RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h xs l) :
+    cnt ≤ xs.length ∧
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h (xs.drop cnt) r ∧
+      h' = h := by
+  have hval : ZMod.val (cnt : F) = cnt :=
+    ZMod.val_natCast_of_lt hcnt
+  have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
+    (R := fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) cnt hval
+    (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
+    (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl)
+  rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol, hval] at hres
+  exact hres
+
+/-- Compatibility with the historical count bound. -/
 theorem kdrop_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
     {xs : List KExpr} {l r : SourceValue F} {cnt : Nat} {h h' : Heap F} {cs : List (Call F)}
     (hcnt : cnt < 4294967296)
@@ -1639,14 +1657,7 @@ theorem kdrop_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr
     cnt ≤ xs.length ∧
       RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h (xs.drop cnt) r ∧
       h' = h := by
-  have hval : ZMod.val (cnt : F) = cnt :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hcnt (by decide))
-  have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
-    (R := fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) cnt hval
-    (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
-    (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl)
-  rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol, hval] at hres
-  exact hres
+  exact kdrop_exact_bounded (by omega) ev hl
 
 theorem klength_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
     {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -1661,8 +1672,8 @@ theorem klength_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KEx
     rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hl
   exact Lib.Lists.length_spec ev' hl'
 
-theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {nP nF k_loc : Nat} (hlt : nP + nF < 549755813888) :
+theorem assert_first_args_are_param_bvars_bounded_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {nP nF k_loc : Nat} (hlt : nP + nF < 18446744069414584321) :
     ∀ (rem i : Nat) {args : List KExpr} {pargs r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       rem = nP - i →
@@ -1686,7 +1697,7 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
       have hsub := evalBinOp_sub_nat hle op
       have h0 : (.field (((nP - i : Nat) : F)) : SourceValue F) = .field ((0 : Nat) : F) :=
         hsub.symm
-      have heq := nat_eq_of_field_eq (by omega) (by decide) h0
+      have heq := nat_eq_of_field_eq_bounded (by omega) (by decide) h0
       omega
     | .other (x_arg := xarg) (x_rest := xrest) (x_j := xj) (ld44 := ld_cons) (ld73 := ld_bv)
         (op135 := op_add) (op127 := op_sub1) (op119 := op_sub2) (heq139 := heq_j)
@@ -1703,13 +1714,13 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
             simpa using hjf
           have h1 : ZMod.val jf < 18446744069414584321 := Nat.lt_trans hsmall (by decide)
           have h2 : nF + nP - 1 - i < 18446744069414584321 :=
-            Nat.lt_trans (by omega : nF + nP - 1 - i < 549755813888) (by decide)
+            by omega
           have hz1 : ZMod.val ((ZMod.val jf : Nat) : F) = ZMod.val jf := ZMod.val_natCast_of_lt h1
           have hz2 : ZMod.val ((nF + nP - 1 - i : Nat) : F) = nF + nP - 1 - i :=
             ZMod.val_natCast_of_lt h2
           rw [← hz1, hcast, hz2]
         rw [evalBinOp_add_one i op_inc] at ev_rec
-        obtain ⟨hh_rec, htake⟩ := assert_first_args_are_param_bvars_go hlt rem (i + 1)
+        obtain ⟨hh_rec, htake⟩ := assert_first_args_are_param_bvars_bounded_go hlt rem (i + 1)
           (by omega) (by omega) hrest ev_rec
         refine ⟨hh.trans hh_rec, ?_⟩
         rw [List.take_succ_cons, hj_val, htake, List.range_succ_eq_map]
@@ -1720,6 +1731,20 @@ theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ 
         congr 1
         omega
       · omega
+
+/-- Compatibility with the historical count bound. -/
+theorem assert_first_args_are_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {nP nF k_loc : Nat} (hlt : nP + nF < 549755813888) :
+    ∀ (rem i : Nat) {args : List KExpr} {pargs r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      rem = nP - i →
+      i ≤ nP →
+      RepList kexprListEnum (fun h₀ X p₀ => TmExact κ 0 Γ h₀ k_loc X p₀) h args pargs →
+      ObsFn W "KernelCheck::assert_first_args_are_param_bvars"
+        [pargs, .field (nP : F), .field (nF : F), .field (i : F)] h r h' cs →
+      h' = h ∧ args.take rem = (List.range rem).map (fun m => Expr.bvar (nF + nP - 1 - (i + m))) := by
+  intro rem i args pargs r h h' cs remaining before represented observed
+  exact assert_first_args_are_param_bvars_bounded_go (by omega) rem i remaining before represented observed
 
 /-- Exact heap-cell witness that `p` starts with `m` literal `"Forall"` cells followed by a
 non-`"Forall"` `"KernelTypes::KExprNode"` cell (established by `peel_n_foralls` + `collect_spine`
@@ -1792,10 +1817,10 @@ theorem collect_spine_const_noTopLetSpine {κ : _root_.Address → KKey} {d : Na
     | litStr cell _ _ | proj cell _ _ =>
       exact (load_cell_ne cell ld_hd (by decide)).elim
 
-theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+theorem peel_n_foralls_raw_bounded_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      n < 4294967296 →
+      n < 18446744069414584321 →
       RawTmExact κ d Γ h k R E pe →
       ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (n : F)] h r h' cs →
       h' = h ∧ ∃ rbs rbody bs body,
@@ -1812,21 +1837,37 @@ theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : N
   | m + 1, k, R, E, pe, r, h, h', cs, hlt, hRaw, ev => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, xb, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · obtain ⟨RT, RB, T, B, ℓ, rfl, rfl, _, hb, _⟩ := hRaw.forallE_of_load ld
       rw [evalBinOp_sub_succ m op] at ev_rec
       obtain ⟨hh, rbs, rbody, bs, body, hstR, hstE, hrlen, hblen, hbody⟩ :=
-        peel_n_foralls_raw_spec m (by omega) hb ev_rec
+        peel_n_foralls_raw_bounded_spec m (by omega) hb ev_rec
       refine ⟨hh, (RT, bmeta ℓ) :: rbs, rbody, (T, bmeta ℓ) :: bs, body,
         by simp [Expr.stripPis, hstR], by simp [Expr.stripPis, hstE],
         by simp [hrlen], by simp [hblen], ?_⟩
       rw [show k + (m + 1) = k + 1 + m by omega]
       exact hbody
 
-theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+/-- Compatibility with the historical count bound. -/
+theorem peel_n_foralls_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      n < 4294967296 →
+      RawTmExact κ d Γ h k R E pe →
+      ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (n : F)] h r h' cs →
+      h' = h ∧ ∃ rbs rbody bs body,
+        R.stripPis n = some (rbs, rbody) ∧
+        E.stripPis n = some (bs, body) ∧
+        rbs.length = n ∧
+        bs.length = n ∧
+        RawTmExact κ d Γ h (k + n) rbody body r := by
+  intro n k R E pe r h h' cs bound represented observed
+  exact peel_n_foralls_raw_bounded_spec n (by omega) represented observed
+
+theorem peel_n_foralls_noTopLetSpine_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (m : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      m < 4294967296 →
+      m < 18446744069414584321 →
       RawTmExact κ d Γ h k R E pe →
       ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (m : F)] h r h' cs →
       ∀ {h₂ : Heap F}, Heap.Extends h' h₂ → NoTopLetSpine 0 h₂ r → NoTopLetSpine m h₂ pe
@@ -1838,7 +1879,7 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
   | m + 1, k, R, E, pe, r, h, h', cs, hlt, hRaw, ev, h₂, ext₂, hs => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, xb, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · rw [evalBinOp_sub_succ m op] at ev_rec
       cases hRaw with
       | forallE cell _ hb _ =>
@@ -1846,11 +1887,22 @@ theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {�
         injection hxs with _ hxs; injection hxs with hbp _; subst hbp
         have hex : Heap.Extends h h₂ := ev_rec.heap_extends.trans ext₂
         exact .succ (hex.getElem?_eq cell)
-          (peel_n_foralls_noTopLetSpine m (by omega) hb ev_rec ext₂ hs)
+          (peel_n_foralls_noTopLetSpine_bounded m (by omega) hb ev_rec ext₂ hs)
       | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _
       | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _
       | litStr cell _ _ | proj cell _ _ =>
         exact (load_cell_ne cell ld (by decide)).elim
+
+/-- Compatibility with the historical count bound. -/
+theorem peel_n_foralls_noTopLetSpine {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (m : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      m < 4294967296 →
+      RawTmExact κ d Γ h k R E pe →
+      ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (m : F)] h r h' cs →
+      ∀ {h₂ : Heap F}, Heap.Extends h' h₂ → NoTopLetSpine 0 h₂ r → NoTopLetSpine m h₂ pe := by
+  intro m k R E pe r h h' cs bound represented observed h₂ extended spine
+  exact peel_n_foralls_noTopLetSpine_bounded m (by omega) represented observed extended spine
 
 /-- `check_ctor_return_type` refines to the exact constructor residual shape
 `mkAppN (.const T (lps.map .param)) (structPsAt nF nP ++ es)` with `es.length = nIdx`,
