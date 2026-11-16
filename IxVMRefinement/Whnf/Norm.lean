@@ -140,7 +140,7 @@ theorem whnf_nd_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     subst hc535
     obtain ⟨s, i, S, rfl, rfl, hs, hS⟩ := hH.proj_of_load ld12
     exact ih.get (.whnf .whnf_nd_proj_head) (by lt_calls) ev486 rc x_sa (.field i) x_inner sp types
-      rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl hS hAs
+      rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key) hS hAs
   · -- any other head: stuck
     subst hc562
     have happ := ih.get (.whnf .apply_spine) (by lt_calls) ev545 hd sp rfl
@@ -288,7 +288,7 @@ theorem whnf_struct_core_proj_step (c : ScopedCtx) {args : List (SourceValue F)}
     have e0 := ObsFn.heap_extends ev14
     obtain ⟨E, hE, hredp⟩ := ih.get (.whnf .red_proj) (by lt_calls) ev53 rc sa (.field i) v1 types
       rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) s i
-      S' (Bytes.repAddressRef_heapMono₂ addrTy e0 hs) rfl hS' x_field rfl
+      S' (Bytes.repAddressRef_heapMono₂ addrTy e0 hs) rfl (by resolve_key) hS' x_field rfl
     have ext := e0.trans (ObsFn.heap_extends ev53)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_struct_core_spine) (by lt_calls) ev117 rc
       x_field sp types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
@@ -333,9 +333,11 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
         (∀ x ∈ cs12, x ∈ calls) ∧ (∀ x ∈ cs50, x ∈ calls) ∧ (∀ x ∈ cs234, x ∈ calls)))
     (hrc : c.rc h rc) {d : Nat} {Γ : Nat → KExpr} (htypes : c.types Γ h d types)
     {s : Bytes.Address} {S : KExpr} {As : List KExpr} (hs : RepAddr h s sa)
+    (hres : c.κ (ixAddr s) ≠ unresolvedKey)
     (hS : c.tm d Γ h S inner) (hAs : c.tml d Γ h As sp) :
     ∃ E', c.tm d Γ h' E' r ∧
       Red c.env d (Specs.Whnf.mkAppN (.proj (c.κ (ixAddr s)) (ZMod.val i) S) As) E' := by
+  have : Resolved (c.κ (ixAddr s)) := ⟨hres⟩
   rcases path with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, l1, l2, l3,
       l4, s1, s2, s3, s4⟩ |
@@ -351,7 +353,7 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
     have ext := e0.trans (ObsFn.heap_extends ev52)
     obtain ⟨E, hE, hredp⟩ := ih.get (.whnf .red_proj) l3 ev91 rc sa (.field i) v39 types rfl
       (good.sub s3) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) s i S2
-      (Bytes.repAddressRef_heapMono₂ addrTy ext hs) rfl hS2 x_field rfl
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hs) rfl hres hS2 x_field rfl
     have ext' := ext.trans (ObsFn.heap_extends ev91)
     have hk : Specs.Whnf.SpineSpec c [rc, x_field, sp, types] m78 r h' cs153 := by
       have := ih.get (.whnf cont) l4 ev155
@@ -382,9 +384,9 @@ theorem whnf_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_proj_head c args h r h' calls := by
-  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hS hAs
+  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hS hAs
   subst hargs hfidx
-  refine proj_head_step c .whnf .whnf_with_spine rfl rfl ih good ?_ hrc htypes hs hS hAs
+  refine proj_head_step c .whnf .whnf_with_spine rfl rfl ih good ?_ hrc htypes hs hres hS hAs
   rcases Obs.«KernelWhnf::whnf_proj_head».obs ev with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, hc188⟩ |
     ⟨v1, m2, cs12, v39, m40, cs50, v77, m78, cs89, m193, cs234, ev14, ev52, ev91, hm203, ev236,
@@ -404,9 +406,9 @@ theorem whnf_nd_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_proj_head c args h r h' calls := by
-  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hS hAs
+  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hS hAs
   subst hargs hfidx
-  refine proj_head_step c .whnf_nd .whnf_nd_with_spine rfl rfl ih good ?_ hrc htypes hs hS hAs
+  refine proj_head_step c .whnf_nd .whnf_nd_with_spine rfl rfl ih good ?_ hrc htypes hs hres hS hAs
   rcases Obs.«KernelWhnf::whnf_nd_proj_head».obs ev with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, hc188⟩ |
     ⟨v1, m2, cs12, v39, m40, cs50, v77, m78, cs89, m193, cs234, ev14, ev52, ev91, hm203, ev236,

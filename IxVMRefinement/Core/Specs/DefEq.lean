@@ -356,7 +356,8 @@ definitionally equal to the argument of `s_args` at `nparams + j`** (`S` the key
 `nfields` (the caller starts at `0`). -/
 def compare_struct_fields : SpecFn := fun c args h r _ calls =>
   ∀ rc sp np nf t sargs ip types, args = [rc, sp, np, nf, t, sargs, ip, types] → CoreGood c calls →
-    c.rc h rc → ∀ (sa : Bytes.Address) (p n i : F), RepAddr h sa sp → np = .field p →
+    c.rc h rc → ∀ (sa : Bytes.Address) (p n i : F), RepAddr h sa sp →
+    c.κ (ixAddr sa) ≠ unresolvedKey → np = .field p →
     nf = .field n → ip = .field i → ZMod.val i ≤ ZMod.val n →
     ∀ d Γ, c.types Γ h d types → ∀ T Ss, c.tm d Γ h T t → c.tml d Γ h Ss sargs → r ≠ .field 0 →
       ∀ j, ZMod.val i ≤ j → j < ZMod.val n →

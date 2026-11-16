@@ -105,14 +105,16 @@ def FireCompared (c : ScopedCtx) (d : Nat) (cv : Ix.Kernel.ConstantVal .anon) (m
 /-- `Ingress::get_ci(addr)`: the constant at the address's key (`LoadFacts.getCI`). -/
 def get_ci : SpecFn := fun c args h r h' calls =>
   ∀ ap (a : Bytes.Address), args = [ap] →
-    c.allowedTop "Ingress::get_ci" [ap] h → CoreGood c calls → RepAddr h a ap →
+    c.allowedTop "Ingress::get_ci" [ap] h → c.κ (ixAddr a) ≠ unresolvedKey → CoreGood c calls →
+    RepAddr h a ap →
     ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' r ci
 
 /-- A constructor metadata load represents a decoded constant. If that constructor is
 already installed, the same pointer also represents its installed entry. -/
 def get_ci_cprj : SpecFn := fun c args h r h' calls =>
   ∀ bp (i j : F) (b : Bytes.Address), args = [bp, .field i, .field j] →
-    c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → CoreGood c calls →
+    c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h →
+    c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey → CoreGood c calls →
     RepAddr h b bp →
       (∃ ci₀, CIPtrRep c.κ h' r ci₀) ∧
       ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci →
@@ -122,7 +124,8 @@ def get_ci_cprj : SpecFn := fun c args h r h' calls =>
 `(i, block)` (`LoadFacts.getIprj`). -/
 def get_ci_iprj : SpecFn := fun c args h r h' calls =>
   ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
-    c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h → CoreGood c calls → RepAddr h b bp →
+    c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h →
+    c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey → CoreGood c calls → RepAddr h b bp →
     ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' r ci
 
 /-- `Ingress::load_verified_constant(addr)`: the derivation hashed bytes whose BLAKE3 address is
@@ -202,7 +205,8 @@ has at most one inductive, and the result is the constant at the key of the cons
 projection record `(i, 0, block)`. -/
 def proj_ctor : SpecFn := fun c args h r h' calls =>
   ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
-    c.allowedTop "KernelModeled::proj_ctor" [bp, .field i] h → CoreGood c calls → RepAddr h b bp →
+    c.allowedTop "KernelModeled::proj_ctor" [bp, .field i] h →
+    c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey → CoreGood c calls → RepAddr h b bp →
     FewInductives c (ixAddr b) ∧
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
         CIPtrRep c.κ h' r ci

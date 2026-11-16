@@ -261,7 +261,7 @@ theorem whnf_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     subst hc535
     obtain ⟨s, i, S, rfl, rfl, hs, hS⟩ := hH.proj_of_load ld12
     exact ih.get (.whnf .whnf_proj_head) (by lt_calls) ev486 rc x_sa (.field i) x_inner sp types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl hS hAs
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key) hS hAs
   · -- any other head: stuck
     subst hc562
     have happ := ih.get (.whnf .apply_spine) (by lt_calls) ev545 hd sp rfl
@@ -546,7 +546,7 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     have e1 := ObsFn.heap_extends ev155
     have e2 := ObsFn.heap_extends ev221
     have ext := e0.trans e1
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy e0 ha)
     rw [ld149] at hld
     injection hld with hv
@@ -567,7 +567,7 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     have e2 := ObsFn.heap_extends ev221
     have e3 := ObsFn.heap_extends ev330
     have ext := e0.trans e1
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy e0 ha)
     rw [ld149] at hld
     injection hld with hv
@@ -622,7 +622,7 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
       ld149 ev721 ev849 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld
@@ -643,7 +643,7 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
       ev721 he894 he895 hc =>
     subst hc he894 he895
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld
@@ -660,7 +660,7 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
       ld149 ev721 ev920 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev155)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev155 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx])
       (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha)
     rw [ld149] at hld

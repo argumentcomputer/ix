@@ -129,14 +129,15 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     { getCI := ?_, getCprj := ?_, getIprj := ?_, indRecord := ?_, inductRecord := ?_,
       projTables := ?_, projTablesAt := ?_, unitLike := ?_, unitLikeRaw := ?_, eta := ?_,
       etaIota := ?_, recordShape := ?_, inductBlock := ?_, projTablesGuard := ?_,
-      canonical := ?_ }
-  · intro addr ptr h h' cs a ev hall hg ha
+      canonical := ?_, storedRes := fun _ _ _ => Resolved.ne, findRes := fun _ _ _ => Resolved.ne,
+      ctorIndRes := fun _ _ _ _ => Resolved.ne, roleRes := fun _ _ _ _ _ => Resolved.ne }
+  · intro addr ptr h h' cs a ev hall _ hg ha
     obtain ⟨ci, hci⟩ := hres.getCI addr h a hall ha
     exact (noFind henv hci).elim
-  · intro bp ptr i j h h' cs b ev hall hg hb
+  · intro bp ptr i j h h' cs b ev hall _ hg hb
     obtain ⟨ci, hci⟩ := hres.getCprj bp i j h b hall hb
     exact (noFind henv hci).elim
-  · intro bp ptr i h h' cs b ev hall hg hb
+  · intro bp ptr i h h' cs b ev hall _ hg hb
     obtain ⟨ci, hci⟩ := hres.getIprj bp i h b hall hb
     exact (noFind henv hci).elim
   · intro addr ptr h h' cs a cm cb p xs ind ev hg ha hcm hcm_info hcb hcb_info hxs
@@ -145,7 +146,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     have hg' : Good c cs := hg
     exact L1.indRecord_of_deConstantExact (c := c) (decoded_of_recordAt hdec hcm')
       (decoded_of_recordAt hdec hcb') ev hg' ha hcm' hcm_info hcb' hcb_info hxs
-  · intro addr ptr h h' cs a nl ty np ni nc u blk idx ev hall hg ha hld
+  · intro addr ptr h h' cs a nl ty np ni nc u blk idx ev hall _ hg ha hld
     obtain ⟨ci, hci⟩ := hres.getCI addr h a hall ha
     exact (noFind henv hci).elim
   · intro bp ip ptr h h' cs b i ev hall hg hb hip
@@ -156,7 +157,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     exact (noFind henv hctor).elim
   · intro ap ptr h h' cs a nl ty u blk p i b cvT caps cvC nPc _ _ _ _ _ hfind
     exact (noFind henv hfind).elim
-  · intro ap ptr h h' cs a nl ty u blk p i b cvT caps _ _ _ _ _ _ hfind
+  · intro ap ptr h h' cs a nl ty u blk p i b cvT caps _ _ _ _ _ _ _ hfind
     exact (noFind henv hfind).elim
   · intro ac b sa i j cvc cvT caps cnP cnF us l bp ptr nl ty np u blk idx h1 h2 cs1 hC
     exact (noFind henv hC).elim
@@ -170,7 +171,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     rw [hlc₀] at hlc
     cases hlc
     exact hde₀
-  · intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hall hg ha hld hblk
+  · intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hall _ hg ha hld hblk
     obtain ⟨ci, hci⟩ := hres.getCI addr h a hall ha
     exact (noFind henv hci).elim
   · intro bp ip ptr h h' cs b i _ _ _ _ j cvC nP nF tbl hctor

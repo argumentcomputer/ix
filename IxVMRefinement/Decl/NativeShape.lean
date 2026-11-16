@@ -252,6 +252,11 @@ def nativeShapeSortCtx (base : Ctx) {rc typePtr blockArg index safety : SourceVa
     (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
     ScopedCtx := { toCtx := base, allowed := fun call => call ∈ shape.sortCalls }
 
+instance (base : Ctx) {rc typePtr blockArg index safety : SourceValue F}
+    {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
+    (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
+    (nativeShapeSortCtx base shape).TableKeyed := ⟨rfl⟩
+
 /-- The actual result-sort call supplies the level used by the following constructor loop. -/
 theorem NativeShapeCalls.resultSort {base : Ctx} {rc typePtr blockArg index safety : SourceValue F}
     {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}

@@ -212,7 +212,7 @@ theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (
       (good.sub fun x hx => by simp [hx]) hrc
     rcases hl with ⟨lp, n, hlit, -, rfl⟩ | ⟨bp, bytes, s, hlit, -, -, rfl⟩
     · rw [he27]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm75 hm26 d Γ,
+      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm75 hm26 d Γ,
         .natLit (PrimNat.natLit_of_natBlock hc hf (by decide) (by decide) (by decide))⟩
     · rw [hv15] at hlit
       injection hlit with _ h2
@@ -227,7 +227,7 @@ theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (
       injection hlit with _ h2
       exact absurd h2 (by decide)
     · rw [he97]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb hm145 hm96 d Γ, .strLit (hc.env.strLit hf)⟩
+      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm145 hm96 d Γ, .strLit (hc.env.strLit hf)⟩
 
 /-! ## One inference, then a normalization, a conversion or a cut -/
 

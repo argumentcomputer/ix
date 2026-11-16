@@ -470,7 +470,8 @@ theorem peel_field_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_field_loop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_field_loop c args h r h' calls := by
-  intro ty tg cu sa val hargs good t0 c0 htg hcu hle d Γ T a PE hT ha hPE
+  intro ty tg cu sa val hargs good t0 c0 htg hcu hle d Γ T a PE hT ha hres hPE
+  have : Resolved (c.κ (ixAddr a)) := ⟨hres⟩
   subst hargs htg hcu
   rcases Obs.«KernelInfer::peel_field_loop».obs ev with
     ⟨x_dom, x_body, w20, ld12, op52, he60, he61, hc62⟩ |
@@ -502,7 +503,7 @@ theorem peel_field_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     simp only [ZMod.val_zero] at hinst
     obtain ⟨n, FT, hn, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls) ev148
       _ _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) t0 (c0 + 1) rfl rfl (by omega) d Γ _ a
-      PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hPE)
+      PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) hres (Tm.mono ext hPE)
     rw [hc1] at hfield
     refine ⟨n + 1, FT, by omega, hFT, ?_⟩
     exact hfield
@@ -562,7 +563,8 @@ theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {addr ptr nl ty ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
     {s b : Bytes.Address} {nPS nP : Nat} {i : F}
     (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
-    (allowed : c.allowedTop "Ingress::get_ci" [addr] h1) (good : CoreGood c cs)
+    (allowed : c.allowedTop "Ingress::get_ci" [addr] h1) (res : c.κ (ixAddr s) ≠ unresolvedKey)
+    (good : CoreGood c cs)
     (hs : Bytes.RepAddressRef addrTy h1 s addr)
     (ld : loadValue h2 ptr = .ok (.construct kciEnum "Induct"
       [nl, ty, .field (nPS : F), ni, nc, u, blk, .field i]))
@@ -573,14 +575,14 @@ theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
     nPS = nP := by
   obtain ⟨cm, b', i', hcm, hb', hi', hinfo⟩ :=
     hc.loads.inductRecord addr ptr h1 h2 cs s nl ty (.field (nPS : F)) ni nc u blk (.field i)
-      ev allowed good.raw hs ld
+      ev allowed res good.raw hs ld
   have hi_eq : i' = i := (NatAux.field_inj hi').symm
   subst i'
   have hb_eq : b' = b := IxVMRep.repAddressRef_det U32.Goldilocks.compatible hb' hb
   subst b'
   obtain ⟨cb, xs, ind, hcb, hmuts, hindc⟩ :=
     hc.loads.inductBlock addr ptr h1 h2 cs s b nl ty (.field (nPS : F)) ni nc u blk i
-      ev allowed good.raw hs ld hb
+      ev allowed res good.raw hs ld hb
   have hidx : ((ZMod.val i).toUInt64).toNat = ZMod.val i := val_toUInt64_toNat i
   obtain ⟨nl', ty', u', blk', b'', hld', -, -, -, -⟩ :=
     hc.loads.indRecord addr ptr h1 h2 cs s cm cb ⟨(ZMod.val i).toUInt64, ixAddr b⟩ xs ind
@@ -731,7 +733,8 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
     (ev : ObsFn W "KernelInfer::proj_guard" [x_rc, x_block, x_idx, x_fidx] h r h' calls)
     {b : Bytes.Address} {i f : F} (hrc : c.rc h x_rc)
     (hb : Bytes.RepAddressRef addrTy h b x_block) (hi : x_idx = .field i)
-    (hf : x_fidx = .field f) :
+    (hf : x_fidx = .field f)
+    (hres : c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey) :
     ∃ g : KLevel, RepKLevel h' g r := by
   subst hi hf
   rcases Obs.«KernelInfer::proj_guard».obs ev with
@@ -741,7 +744,7 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
   have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
   have hctorLoad := ih.get (.callees .get_ci_cprj)
     (by simp only [List.length_cons, List.length_append] at hlt0; omega)
-    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) g15 hb
+    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) (by resolve_key) g15 hb
   obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
   rw [ld11] at hld
   injection hld with hv
@@ -891,7 +894,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hs159 : Bytes.RepAddressRef addrTy m159 s x_head_addr :=
     Bytes.repAddressRef_heapMono₂ addrTy e169 hha
   obtain ⟨ciS, hfindS, vS, hldS, hciS⟩ := ih.get (.callees .get_ci) (by lt_calls) ev209
-    x_head_addr s rfl (good.allowedTop (by simp_all)) g207 hs159
+    x_head_addr s rfl (good.allowedTop (by simp_all)) (by resolve_key) g207 hs159
   rw [ld203] at hldS
   injection hldS with hvS
   subst hvS
@@ -926,7 +929,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have ev372' : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, .field iS] m194 p364 m357 cs370 :=
     by have hobs := ev372; rw [hidx_eq] at hobs; exact hobs
   obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
-    x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372) g370 hbS
+    x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372) (by resolve_key) g370 hbS
   rw [ld366] at hldC
   injection hldC with hvC
   subst hvC
@@ -941,7 +944,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
     (hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 allowed372 g370.raw hbS hidx_eq).2 0 cvC nP nF hfindC
+      ev372 allowed372 g370.raw hbS hidx_eq (by resolve_key)).2 0 cvC nP nF hfindC
   obtain ⟨hteleC, hguard_eq⟩ :=
     hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
       ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
@@ -951,7 +954,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     rw [← hp_eq, ← hidx_eq]
     exact ld203
   have hnPS_eq : nPS = nP :=
-    ProjAux.ind_params_eq c hc ev209 (good.allowedTop (by simp_all)) g207
+    ProjAux.ind_params_eq c hc ev209 (good.allowedTop (by simp_all)) (by resolve_key) g207
       hs159 ld203' hbS hnPS hnP hnP_ind
   rw [hnPS_eq] at hp_eq hArgs_nPS
   -- 6. Level instantiation, parameter substitution, and field peeling
@@ -971,7 +974,8 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   obtain ⟨nf_step, FT, hnf_step, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls)
     ev560 v509 (.field fi) (.field 0) x_struct_addr x_e1 rfl
     (good.sub fun x hx => by simp [hx]) fi 0 rfl rfl (by rw [ZMod.val_zero]; exact Nat.zero_le _)
-    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (Tm.mono E510 hPE)
+    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (by resolve_key)
+    (Tm.mono E510 hPE)
   rw [ZMod.val_zero, Nat.zero_add] at hnf_step
   subst nf_step
   rw [ZMod.val_zero] at hfield
@@ -996,7 +1000,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hbS548 : Bytes.RepAddressRef addrTy m548 bS x_block_addr :=
     Bytes.repAddressRef_heapMono₂ addrTy e194_548 hbS
   obtain ⟨g_lvl, hg_lvl⟩ := ProjAux.proj_guard_rep c ih (by lt_calls) g626 ev628
-    hrc548 hbS548 hidx_eq rfl
+    hrc548 hbS548 hidx_eq rfl (by resolve_key)
   have e628 := ObsFn.heap_extends ev628
   have E618 : Heap.Extends h m618 := E548.trans e628
   have ev628' : ObsFn W "KernelInfer::proj_guard"

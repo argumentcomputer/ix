@@ -280,6 +280,21 @@ theorem pdi_strong (c : ScopedCtx) (N : Nat) :
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he271)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he321)).1).elim
 
+/-- The body under a value's leading `λ`s keeps its keys resolved. -/
+theorem keysResolved_stripLams {m : Nat} {V W : KExpr} (h : KeysResolved V)
+    (hs : Specs.Whnf.stripLams m V = some W) : KeysResolved W := by
+  induction m generalizing V with
+  | zero =>
+    simp only [Specs.Whnf.stripLams, Option.some.injEq] at hs
+    subst hs
+    exact h
+  | succ m ih =>
+    cases V with
+    | lam t b bi =>
+      simp only [KeysResolved] at h
+      exact ih h.2 (by simpa only [Specs.Whnf.stripLams] using hs)
+    | _ => simp [Specs.Whnf.stripLams] at hs
+
 /-- `projection_definition_info` at an arity below `2^32`: the counts as naturals, the
 projected bound variable read off the image. -/
 theorem pdi_top (c : ScopedCtx) {val : SourceValue F} {a : F} {h h' : Heap F} {r : SourceValue F}
@@ -587,6 +602,9 @@ theorem try_reduce_core (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
     have ext238 := (ext165.trans e220).trans esn
     obtain ⟨-, hdrop, -⟩ := PrimNat.kl_drop ev289 (tml_mono ext238 hAs)
     have e289 := ObsFn.heap_extends ev289
+    have hress := WhnfAux.keysResolved_stripLams (Tm.keysResolved (hP d Γ)) hstrip
+    simp only [KeysResolved] at hress
+    have : Resolved (c.κ (ixAddr s)) := ⟨hress.1⟩
     have hcell : Tm c.κ d Γ m238 0 (.proj (c.κ (ixAddr s)) (ZMod.val f) A)
         (.ptr (.enum kexprEnum) m208.length) := by
       subst hm248
