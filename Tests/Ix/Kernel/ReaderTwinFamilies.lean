@@ -11,7 +11,7 @@ inductive and the recursor-only path must read those payloads against their own 
 
 namespace Tests.Ix.Kernel.ReaderTwinFamilies
 
-open Ix.Kernel Ix.Kernel.Reader
+open _root_.Ix.Kernel _root_.Ix.Kernel.Reader
 
 private def emptyFamily : Ixon.Inductive :=
   { isUnsafe := false, lvls := 0, params := 0, indices := 0, typ := .sort 0, ctors := #[] }
