@@ -769,7 +769,10 @@ theorem convert_inductive_origin_spec {ind : Ixon.Inductive} {blkAddr : _root_.A
       simpa only [base] using ev60
     obtain ⟨_, _, _, _, plan, planned, levels⟩ :=
       convert_root_trace_spec htyp hsh hrefs hrecs hunivs represented htbl rootRun
-    refine ⟨plan, planned, .field (ind.lvls.toNat : F), v47, _, ?_, levels⟩
+    refine ⟨plan, planned, .field (ind.lvls.toNat : F), v47,
+      [.field (ind.params.toNat : F), .field (ind.indices.toNat : F),
+        .field (ind.ctors.size : F), repBoolField ind.isUnsafe, x_block_addr, .field (indIdx : F)],
+      ?_, levels⟩
     simpa only [Array.length_toList] using he128
 
 /-- The original raw conversion interface, omitting the exact binder-plan evidence. -/
