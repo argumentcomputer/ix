@@ -61,7 +61,8 @@ theorem native_ctors_not_former {base : Core.Ctx} {block : Bytes.Address} {i : F
         .field (levels : F), bp, .field i, sortLevel, .field 0, .field 0] h result h' calls) :
     ∀ ctor ∈ ctors, ctor.1.name ≠ base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)) := by
   intro ctor member sameKey
-  obtain ⟨slot, slotBound, atSlot⟩ := List.mem_iff_getElem?.mp member
+  obtain ⟨slot, slotBound, rfl⟩ := List.getElem_of_mem member
+  have atSlot : ctors[slot]? = some ctors[slot] := List.getElem?_eq_getElem slotBound
   have nameEq := native_ctor_slot_name (base := base) family countBound blockRep subset observed slotBound atSlot
   have addressEq := Decl.nat_keyOf_injective (t := base.t) tableWf
     (a₁ := Core.cprjAddr (Core.ixAddr block) (ZMod.val i) slot)
