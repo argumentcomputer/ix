@@ -15,6 +15,63 @@ open IxVM (F)
 open IxVM.Refinement.Deserialize
 open IxVM.Refinement.Obs
 
+/-- A mode's serialized field identifies its exact mode. -/
+theorem allMode_field_inj {left right : Ixon.AllMode}
+    (same : (left.toCode.toNat : F) = (right.toCode.toNat : F)) : left = right := by
+  have leftBound := left.toCode.toNat_lt
+  have rightBound := right.toCode.toNat_lt
+  have codes : left.toCode = right.toCode := UInt8.ext
+    ((natCast_eq_iff (by omega) (by omega)).mp same)
+  have decoded := congrArg Ixon.AllMode.ofCode? codes
+  simpa using decoded
+
+/-- Decoding a represented binder node is independent of its derivation. -/
+theorem repBinderNode_unique {h : Heap F} {left right : Ixon.BinderNode}
+    {leftValue rightValue : SourceValue F}
+    (first : RepBinderNode h left leftValue) (second : RepBinderNode h right rightValue)
+    (same : leftValue = rightValue) : left = right := by
+  cases first with
+  | never mode =>
+    cases second with
+    | never other =>
+      exact congrArg Ixon.BinderNode.never (allMode_field_inj (by simpa using same))
+    | zero _ | ifAllZero _ _ | share _ | undecided _ => simp at same
+  | zero mode =>
+    cases second with
+    | zero other =>
+      exact congrArg Ixon.BinderNode.zero (allMode_field_inj (by simpa using same))
+    | never _ | ifAllZero _ _ | share _ | undecided _ => simp at same
+  | ifAllZero mode params =>
+    cases second with
+    | ifAllZero other otherParams =>
+      have fields := same
+      simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+      obtain ⟨rfl, modeEq⟩ := fields
+      have modes := allMode_field_inj (Value.field.inj modeEq)
+      cases modes
+      have lists := repList_u64_unique params otherParams
+      cases lists
+      rfl
+    | never _ | zero _ | share _ | undecided _ => simp at same
+  | share variant =>
+    cases second with
+    | share other =>
+      apply congrArg Ixon.BinderNode.share
+      apply u64Value_inj
+      simpa only [Value.construct.injEq, List.cons.injEq, true_and, and_true] using same
+    | never _ | zero _ | ifAllZero _ _ | undecided _ => simp at same
+  | undecided mode =>
+    cases second with
+    | undecided other =>
+      exact congrArg Ixon.BinderNode.undecided (allMode_field_inj (by simpa using same))
+    | never _ | zero _ | ifAllZero _ _ | share _ => simp at same
+
+theorem repBinderNodes_unique {h : Heap F} {left right : List Ixon.BinderNode}
+    {ptr : SourceValue F}
+    (first : RepList binderNodeListEnum RepBinderNode h left ptr)
+    (second : RepList binderNodeListEnum RepBinderNode h right ptr) : left = right :=
+  repList_inj (fun a b => repBinderNode_unique a b rfl) first second
+
 abbrev BinderKey := F × F × F
 
 def binderKeyCompare (a b : BinderKey) : F :=
@@ -494,5 +551,44 @@ theorem binder_table_data_bounded_spec {bound : Nat} {blocks : List Ixon.BinderB
     cases equal
     exact bounds block blockMember)
   exact ⟨extended, tree, built, rep, all, rep.toBounded all⟩
+
+/-- The first binder reached by two equal table queries has the same exact level in both
+conversions. Bounds come from the serialized blocks' existing decoder invariant. -/
+theorem binder_head_level_same_blocks {blocks : List Ixon.BinderBlock} {query : BinderKey}
+    {blocks₁ blocks₂ tree₁ tree₂ nodes₁ nodes₂ node₁ node₂ tail₁ tail₂ level₁ level₂ : SourceValue F}
+    {h₁ h₂ h₁' h₂' h₁'' h₂'' h₁''' h₂''' : Heap F}
+    {calls₁ calls₂ lookups₁ lookups₂ levels₁ levels₂ : List (Call F)}
+    (blocksRep₁ : RepList binderBlockListEnum RepBinderBlock h₁ blocks blocks₁)
+    (blocksRep₂ : RepList binderBlockListEnum RepBinderBlock h₂ blocks blocks₂)
+    (bounds : ∀ block ∈ blocks, ∀ node ∈ block.nodes.toList, BinderNodeParamsLt 4294967296 node)
+    (built₁ : ObsFn W "Convert::binder_table" [blocks₁] h₁ tree₁ h₁' calls₁)
+    (built₂ : ObsFn W "Convert::binder_table" [blocks₂] h₂ tree₂ h₂' calls₂)
+    (lookup₁ : ObsFn W "Convert::binder_nodes"
+      [tree₁, .field query.1, .field query.2.1, .field query.2.2] h₁' nodes₁ h₁'' lookups₁)
+    (lookup₂ : ObsFn W "Convert::binder_nodes"
+      [tree₂, .field query.1, .field query.2.1, .field query.2.2] h₂' nodes₂ h₂'' lookups₂)
+    (head₁ : loadValue h₁'' nodes₁ = .ok (.construct binderNodeListEnum "Cons" [node₁, tail₁]))
+    (head₂ : loadValue h₂'' nodes₂ = .ok (.construct binderNodeListEnum "Cons" [node₂, tail₂]))
+    (levelRead₁ : ObsFn W "Convert::binder_level" [node₁] h₁'' level₁ h₁''' levels₁)
+    (levelRead₂ : ObsFn W "Convert::binder_level" [node₂] h₂'' level₂ h₂''' levels₂) :
+    ∃ level : Core.KLevel, KernelLevels.RepKLevel h₁''' level level₁ ∧
+      KernelLevels.RepKLevel h₂''' level level₂ := by
+  obtain ⟨_, treeA, dataA, repA, allA, _⟩ := binder_table_data_bounded_spec blocksRep₁ bounds built₁
+  obtain ⟨_, treeB, dataB, repB⟩ := binder_table_data_spec blocksRep₂ built₂
+  obtain rfl := dataA.unique dataB
+  obtain ⟨rfl, nodesA, foundA, valuesA⟩ := binder_nodes_exact_spec repA lookup₁
+  obtain ⟨rfl, nodesB, foundB, valuesB⟩ := binder_nodes_exact_spec repB lookup₂
+  rw [foundA] at foundB
+  injection foundB with same
+  subst nodesB
+  have nodeBounds := BinderTreeData.lookup_all allA foundA
+  obtain ⟨node, rest, shape, nodeRep₁, _⟩ := Core.RepList.cons_of_load valuesA head₁
+  cases shape
+  obtain ⟨node', rest', shape, nodeRep₂, _⟩ := Core.RepList.cons_of_load valuesB head₂
+  injection shape with sameNode sameRest
+  subst node' rest'
+  have bound := nodeBounds node List.mem_cons_self
+  exact ⟨binderLevel node, (binder_level_exact_spec nodeRep₁ bound levelRead₁).2,
+    (binder_level_exact_spec nodeRep₂ bound levelRead₂).2⟩
 
 end IxVM.Refinement.L1
