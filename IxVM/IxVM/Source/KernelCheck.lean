@@ -3424,6 +3424,9 @@ def check_recursor_member := aiur_fn⟦
                                    num_ctors, _,
                                    parent_block_addr, parent_ind_idx) => {
 
+              assert_eq!(KernelModeled::block_is_modeled(parent_block_addr), 0,
+                "native recursor: the major premise belongs to a modeled block");
+
               let is_aux = is_muts_block(rec_block_addr) *
                 is_muts_block(parent_block_addr) *
                 (1 - Bytes::address_eq(rec_block_addr, parent_block_addr));

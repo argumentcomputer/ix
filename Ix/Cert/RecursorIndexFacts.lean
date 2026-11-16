@@ -3,6 +3,7 @@ import Ix.Cert.InductiveCompile
 import Ix.Cert.GraphWalk
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.Canon.QSortSorted
+import IxC.Kernel.Ixon.ShapeSpec
 
 /-! # The recursor index over a store: facts independent of the closure
 
@@ -34,26 +35,14 @@ open Ix.CompileCert.ReaderIndex (inductives orderFor orderValid From Coherent)
 
 /-! ## The analysis reads the store through references -/
 
-/-- `analyseRecursor` with the reference lookup it makes (`headRef`) abstracted. -/
-def analyseWith (c : Ixon.Constant) (r : Ixon.Recursor) (head : Ixon.Expr → Option (ConstRef Address)) :
+/-- `analyseRecursor` with its lookup of normalized carrier heads abstracted. -/
+def analyseWith (c : Ixon.Constant) (r : Ixon.Recursor) (head : Shape.Head → Option (ConstRef Address)) :
     Option (Nat × Array (ConstRef Address) × ConstRef Address) := do
-  let nP := r.params.toNat
-  let nM := r.motives.toNat
-  let nm := r.minors.toNat
-  let nI := r.indices.toNat
-  let depth := nP + nM + nm + nI + 1
-  let (doms, body) ← stripAll c depth r.typ
-  let .var k := appHead c spineFuel body | none
-  let pos := depth - 1 - k.toNat
-  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
-  let carriers ← (doms.drop nP |>.take nM).toArray.mapM fun dom => do
-    let (bs, _) := stripAllFull c spineFuel dom
-    head (← bs.getLast?)
-  let major ← head (← doms.getLast?)
-  pure (pos - nP, carriers, major)
+  let (motive, carriers, major) ← Shape.analyse spineFuel c r
+  pure (motive, ← carriers.mapM head, ← head major)
 
 theorem analyse_eq (store : Store) (owner : Address) (c : Ixon.Constant) (r : Ixon.Recursor) :
-    analyseRecursor store owner c r = analyseWith c r (headRef store owner c) := rfl
+    analyseRecursor store owner c r = analyseWith c r (resolveShapeHead store owner c) := rfl
 
 theorem list_mapM_mono {α β : Type} {f₁ f₂ : α → Option β} {P : β → Prop}
     (hf : ∀ a b, f₁ a = some b → f₂ a = some b ∧ P b) :
@@ -78,31 +67,22 @@ theorem list_mapM_mono {α β : Type} {f₁ f₂ : α → Option β} {P : β →
 /-- **The analysis is monotone in its reference lookup**: a lookup that answers alike wherever
 the first answers, with answers satisfying `P`, gives the same analysis, whose carriers and
 major premise satisfy `P`. -/
-theorem analyseWith_mono {c : Ixon.Constant} {r : Ixon.Recursor} {h₁ h₂ : Ixon.Expr → Option (ConstRef Address)}
+theorem analyseWith_mono {c : Ixon.Constant} {r : Ixon.Recursor} {h₁ h₂ : Shape.Head → Option (ConstRef Address)}
     {P : ConstRef Address → Prop} (hh : ∀ e q, h₁ e = some q → h₂ e = some q ∧ P q)
     {x : Nat × Array (ConstRef Address) × ConstRef Address} (hx : analyseWith c r h₁ = some x) :
     analyseWith c r h₂ = some x ∧ (∀ y ∈ x.2.1, P y) ∧ P x.2.2 := by
   unfold analyseWith at hx ⊢
   simp only [bind, Option.bind_eq_some_iff, pure] at hx ⊢
-  obtain ⟨⟨doms, body⟩, hs, hx⟩ := hx
-  split at hx
-  · rename_i k hk
-    simp only [Option.bind_eq_some_iff] at hx
-    obtain ⟨u, hg, carriers, hc, l, hl, major, hm, hx⟩ := hx
-    cases Option.some.inj hx
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, Option.map_eq_map, Option.map_eq_some_iff] at hc
-    obtain ⟨ys, hys, rfl⟩ := hc
-    obtain ⟨hys₂, pys⟩ := list_mapM_mono (P := P)
-      (f₂ := fun dom => (stripAllFull c spineFuel dom).fst.getLast?.bind fun e => h₂ e) (fun dom b hb => by
-        obtain ⟨e, he, hb⟩ := Option.bind_eq_some_iff.mp hb
-        exact ⟨Option.bind_eq_some_iff.mpr ⟨e, he, (hh e b hb).1⟩, (hh e b hb).2⟩) _ ys hys
-    obtain ⟨hm₂, pm⟩ := hh l major hm
-    refine ⟨⟨(doms, body), hs, ?_⟩, fun y hy => pys y (by simpa using hy), pm⟩
-    simp only [hk, Option.bind_eq_some_iff]
-    refine ⟨u, hg, ys.toArray, ?_, l, hl, major, hm₂, rfl⟩
-    rw [Array.mapM_eq_mapM_toList, List.toList_toArray, hys₂]
-    rfl
-  · cases hx
+  obtain ⟨⟨motive, heads, last⟩, hs, carriers, hc, major, hm, hx⟩ := hx
+  cases Option.some.inj hx
+  rw [Array.mapM_eq_mapM_toList, Option.map_eq_map, Option.map_eq_some_iff] at hc
+  obtain ⟨ys, hys, rfl⟩ := hc
+  obtain ⟨hys₂, pys⟩ := list_mapM_mono (P := P) hh _ ys hys
+  obtain ⟨hm₂, pm⟩ := hh last major hm
+  refine ⟨⟨(motive, heads, last), hs, ys.toArray, ?_, major, hm₂, rfl⟩,
+    fun y hy => pys y (by simpa using hy), pm⟩
+  rw [Array.mapM_eq_mapM_toList, hys₂]
+  rfl
 
 /-- **The analysis the index files by, unfolded**: the analysis, the first carrier a member of
 the block, the block a record of inductives, the carrier order valid. -/
@@ -150,7 +130,8 @@ theorem recursorAnalysis_spec {store : Store} {owner : Address} {c : Ixon.Consta
 /-- **The filing analysis transfers between stores** that answer the analysis's reference
 lookups alike (with answers in `D`), and agree on the records `D` holds. -/
 theorem recursorAnalysis_transfer {s₁ s₂ : Store} {owner : Address} {c : Ixon.Constant} {r : Ixon.Recursor}
-    {D : Address → Prop} (hh : ∀ e q, headRef s₁ owner c e = some q → headRef s₂ owner c e = some q ∧ D q.block)
+    {D : Address → Prop} (hh : ∀ e q, resolveShapeHead s₁ owner c e = some q →
+      resolveShapeHead s₂ owner c e = some q ∧ D q.block)
     (hD : ∀ a bc, D a → s₁ a = some bc → s₂ a = some bc)
     {y : Address × Nat × Array (ConstRef Address) × ConstRef Address}
     (h : recursorAnalysis? s₁ owner c r = some y) :
@@ -752,19 +733,9 @@ theorem analyse_motive_lt {store : Store} {owner : Address} {c : Ixon.Constant} 
   rw [analyse_eq] at h
   unfold analyseWith at h
   simp only [bind, Option.bind_eq_some_iff, pure] at h
-  obtain ⟨⟨doms, body⟩, -, h⟩ := h
-  split at h
-  · simp only [Option.bind_eq_some_iff] at h
-    obtain ⟨u, hg, carriers, hc, l, hl, major, hm, hx⟩ := h
-    simp only [Option.some.injEq, Prod.mk.injEq] at hx
-    obtain ⟨rfl, -, -⟩ := hx
-    unfold guard at hg
-    split at hg
-    · rename_i hc
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-      omega
-    · cases hg
-  · cases h
+  obtain ⟨⟨motive, heads, last⟩, hs, carriers, _, major, _, hx⟩ := h
+  cases Option.some.inj hx
+  exact Shape.analyse_motive_lt hs
 
 /-! ## The artifact's stored records -/
 

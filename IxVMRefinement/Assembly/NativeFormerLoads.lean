@@ -59,6 +59,45 @@ theorem native_former_projection_address {base : Core.Ctx} {address : Bytes.Addr
   exact ⟨result.1, atProjection.trans (congrArg Core.projAddr infoEq)⟩
 
 /-- The actual repeated former reading supplies the semantic load result in its installed stage. -/
+theorem native_former_reload_staged_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      ((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) ind.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    {h h' : Heap F} {blockArg ptr : SourceValue F} {calls : List (Call F)}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci_iprj" [blockArg, .field i] h ptr h' calls)
+    (goodLoad : Core.Good base calls)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block blockArg)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
+  have represented := native_former_reload_of_blobAgreement (base := base) source blockShape memberAt stored built planned image
+    read varsBounded levelsDefined caps loaded goodLoad blockRep keyed selfKeyed blobReads
+  refine ⟨.indInfo cv caps, ?_, represented.toCIPtrRep⟩
+  rw [Ix.Kernel.Env.find?_cons]
+  apply ite_eq_left
+  exact stored.1
+
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_reload_staged {base : Core.Ctx} {block : Bytes.Address} {i : F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
@@ -91,14 +130,63 @@ theorem native_former_reload_staged {base : Core.Ctx} {block : Bytes.Address} {i
       cx.blob a = some bytes) :
     ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
-  have represented := native_former_reload (base := base) source blockShape memberAt stored built planned image
-    read varsBounded levelsDefined caps loaded goodLoad blockRep keyed selfKeyed blobReads
+  exact native_former_reload_staged_of_blobAgreement source blockShape memberAt stored built planned
+    image read varsBounded levelsDefined caps loaded goodLoad blockRep keyed selfKeyed
+    (L1.HashedBlobReadAgreement.of_stored blobReads)
+
+/-- The actual repeated former reading supplies the semantic load result in its installed stage. -/
+theorem native_former_getCI_reload_staged_of_blobAgreement {base : Core.Ctx} {block address : Bytes.Address}
+    {index : UInt64}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projectionSource : L1.CanonicalRecordAt base.E (Core.ixAddr address))
+    (projectionShape : projectionSource.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val (index.toNat : F)]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val (index.toNat : F))),
+        List.range ind.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      ((L1.mutsRootOffset members.toList (ZMod.val (index.toNat : F)) : Nat) : F) ind.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    {h h' : Heap F} {addr ptr : SourceValue F} {calls : List (Call F)}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' calls)
+    (goodLoad : Core.Good base calls)
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address addr)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
+      (base.κ (Core.ixAddr address)) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
+  have represented := native_former_getCI_reload_of_blobAgreement (base := base) source projectionSource projectionShape
+    blockShape memberAt stored built planned image read varsBounded levelsDefined caps
+    loaded goodLoad addressRep keyed selfKeyed blobReads
+  obtain ⟨indexBound, atProjection⟩ := native_former_projection_address (base := base)
+    projectionSource projectionShape loaded goodLoad addressRep
+  have indexValue : ZMod.val (index.toNat : F) = index.toNat :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
+  have keyEq : base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val (index.toNat : F))) =
+      base.κ (Core.ixAddr address) :=
+    congrArg base.κ ((congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue).trans atProjection.symm)
+  have nameEq : cv.name = base.κ (Core.ixAddr address) := stored.1.trans keyEq
   refine ⟨.indInfo cv caps, ?_, represented.toCIPtrRep⟩
   rw [Ix.Kernel.Env.find?_cons]
   apply ite_eq_left
-  exact stored.1
+  exact nameEq
 
-/-- The actual repeated former reading supplies the semantic load result in its installed stage. -/
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_getCI_reload_staged {base : Core.Ctx} {block address : Bytes.Address}
     {index : UInt64}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
@@ -135,23 +223,52 @@ theorem native_former_getCI_reload_staged {base : Core.Ctx} {block address : Byt
       cx.blob a = some bytes) :
     ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
       (base.κ (Core.ixAddr address)) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
-  have represented := native_former_getCI_reload (base := base) source projectionSource projectionShape
-    blockShape memberAt stored built planned image read varsBounded levelsDefined caps
-    loaded goodLoad addressRep keyed selfKeyed blobReads
-  obtain ⟨indexBound, atProjection⟩ := native_former_projection_address (base := base)
-    projectionSource projectionShape loaded goodLoad addressRep
-  have indexValue : ZMod.val (index.toNat : F) = index.toNat :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans indexBound (by decide))
-  have keyEq : base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val (index.toNat : F))) =
-      base.κ (Core.ixAddr address) :=
-    congrArg base.κ ((congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue).trans atProjection.symm)
-  have nameEq : cv.name = base.κ (Core.ixAddr address) := stored.1.trans keyEq
-  refine ⟨.indInfo cv caps, ?_, represented.toCIPtrRep⟩
-  rw [Ix.Kernel.Env.find?_cons]
-  apply ite_eq_left
-  exact nameEq
+  exact native_former_getCI_reload_staged_of_blobAgreement source projectionSource projectionShape
+    blockShape memberAt stored built planned image read varsBounded levelsDefined caps loaded goodLoad
+    addressRep keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- Selected child coverage supplies the actual-root blob coverage for the installed former read. -/
+theorem native_former_reload_scoped_staged_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      ((L1.mutsRootOffset members.toList (ZMod.val i) : Nat) : F) ind.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    {h h' : Heap F} {blockArg ptr : SourceValue F} {calls : List (Call F)}
+    {rootCalls : List (Call F)} (runs : List (Decl.NativeCtorCoreRun rootCalls))
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci_iprj" [blockArg, .field i] h ptr h' calls)
+    (goodLoad : Core.CoreGood (Decl.nativeCtorCoreCtx (nativeFormerCtx base cv caps) runs) calls)
+    (_allowed : (Decl.nativeCtorCoreCtx (nativeFormerCtx base cv caps) runs).allowedTop
+      "Ingress::get_ci_iprj" [blockArg, .field i] h)
+    (blockRep : Bytes.RepAddressRef Core.addrTy h block blockArg)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob rootCalls) :
+    ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
+  have goodBase : Core.Good base calls := goodLoad.raw
+  have covered := Decl.nativeCtorCoreCtx_child_subset goodLoad
+  exact native_former_reload_staged_of_blobAgreement (base := base) source blockShape memberAt stored built planned image
+    read varsBounded levelsDefined caps loaded goodBase blockRep keyed selfKeyed
+    (fun a bytes hashed hashEq => blobReads a bytes (Core.hashed_mono covered hashed) hashEq)
+
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_reload_scoped_staged {base : Core.Ctx} {block : Bytes.Address} {i : F}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
@@ -187,13 +304,58 @@ theorem native_former_reload_scoped_staged {base : Core.Ctx} {block : Bytes.Addr
       cx.blob a = some bytes) :
     ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
-  have goodBase : Core.Good base calls := goodLoad.raw
-  have covered := Decl.nativeCtorCoreCtx_child_subset goodLoad
-  exact native_former_reload_staged (base := base) source blockShape memberAt stored built planned image
-    read varsBounded levelsDefined caps loaded goodBase blockRep keyed selfKeyed
-    (fun a bytes hashed hashEq => blobReads a bytes (Core.hashed_mono covered hashed) hashEq)
+  exact native_former_reload_scoped_staged_of_blobAgreement source blockShape memberAt stored built
+    planned image read varsBounded levelsDefined runs caps loaded goodLoad _allowed blockRep keyed
+    selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- Selected child coverage supplies the actual-root blob coverage for the installed former read. -/
+theorem native_former_getCI_reload_scoped_staged_of_blobAgreement {base : Core.Ctx} {block address : Bytes.Address}
+    {index : UInt64}
+    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (projectionSource : L1.CanonicalRecordAt base.E (Core.ixAddr address))
+    (projectionShape : projectionSource.value.info = .iPrj ⟨index, Core.ixAddr block⟩)
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (blockShape : source.value.info = .muts members)
+    (memberAt : members.toList[ZMod.val (index.toNat : F)]? = some (.indc ind))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {rawType : KExpr}
+    {cv : Ix.Kernel.ConstantVal .anon} {tree : L1.BinderTreeData} {plan : List Core.KLevel}
+    (stored : IxVM.Consistency.ValStored cv
+      ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val (index.toNat : F))),
+        List.range ind.lvls.toNat, rawType⟩)
+    (built : L1.BinderTreeBuilt (L1.binderLeavesData source.value.binders.toList) tree)
+    (planned : L1.binderRootPlan tree source.value.sharing.toList
+      ((L1.mutsRootOffset members.toList (ZMod.val (index.toNat : F)) : Nat) : F) ind.typ = some plan)
+    (image : L1.applyBinderTrace
+      (fun level => Core.bmeta (L1.invPosLevel (List.range ind.lvls.toNat) level)) rawType plan =
+        some (cv.type, []))
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (varsBounded : rawType.looseBVarsBounded 0 = true)
+    (levelsDefined : rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    {h h' : Heap F} {addr ptr : SourceValue F} {calls : List (Call F)}
+    {rootCalls : List (Call F)} (runs : List (Decl.NativeCtorCoreRun rootCalls))
+    (caps : Ix.Kernel.IndCaps .anon)
+    (loaded : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' calls)
+    (goodLoad : Core.CoreGood (Decl.nativeCtorCoreCtx (nativeFormerCtx base cv caps) runs) calls)
+    (_allowed : (Decl.nativeCtorCoreCtx (nativeFormerCtx base cv caps) runs).allowedTop
+      "Ingress::get_ci" [addr] h)
+    (addressRep : Bytes.RepAddressRef Core.addrTy h address addr)
+    (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
+    (selfKeyed : ∀ k a m name,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      self k = some m → m = .ok name → name = base.κ a)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob rootCalls) :
+    ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
+      (base.κ (Core.ixAddr address)) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
+  have goodBase : Core.Good base calls := goodLoad.raw
+  have covered := Decl.nativeCtorCoreCtx_child_subset goodLoad
+  exact native_former_getCI_reload_staged_of_blobAgreement (base := base) source projectionSource projectionShape
+    blockShape memberAt stored built planned image read varsBounded levelsDefined caps
+    loaded goodBase addressRep keyed selfKeyed
+    (fun a bytes hashed hashEq => blobReads a bytes (Core.hashed_mono covered hashed) hashEq)
+
+
+/-- Compatibility with full observed-blob membership. -/
 theorem native_former_getCI_reload_scoped_staged {base : Core.Ctx} {block address : Bytes.Address}
     {index : UInt64}
     (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
@@ -233,12 +395,8 @@ theorem native_former_getCI_reload_scoped_staged {base : Core.Ctx} {block addres
       cx.blob a = some bytes) :
     ∃ ci, (⟨.indInfo cv caps :: base.env.consts⟩ : Ix.Kernel.Env .anon).find?
       (base.κ (Core.ixAddr address)) = some ci ∧ Core.CIPtrRep base.κ h' ptr ci := by
-  have goodBase : Core.Good base calls := goodLoad.raw
-  have covered := Decl.nativeCtorCoreCtx_child_subset goodLoad
-  exact native_former_getCI_reload_staged (base := base) source projectionSource projectionShape
-    blockShape memberAt stored built planned image read varsBounded levelsDefined caps
-    loaded goodBase addressRep keyed selfKeyed
-    (fun a bytes hashed hashEq => blobReads a bytes (Core.hashed_mono covered hashed) hashEq)
-
+  exact native_former_getCI_reload_scoped_staged_of_blobAgreement source projectionSource projectionShape
+    blockShape memberAt stored built planned image read varsBounded levelsDefined runs caps loaded
+    goodLoad _allowed addressRep keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 end IxVM.Refinement.Assembly

@@ -58,6 +58,38 @@ theorem admitted_native_member_check {V : IxVM.Refinement.View} {binding : Ix.Ke
 /-- Actual claim/admission data and a walked owner construct its former input. All annotation,
 projection, prelude and memory-bound witnesses are produced by the observed run. Reader key,
 self-reference and blob interpretation framing remain explicit. -/
+theorem admitted_native_former_input_of_blobAgreement {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
+    (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
+    {trace : Ixon.Env} {calls : List (Call F)} {seeds : List _root_.Address}
+    (phase : Claim.WalkedL6 calls witness.table trace seeds)
+    (loaded : IxVM.Consistency.LoadedBy calls trace) (bounded : IxVM.Consistency.Bounded calls)
+    (env : Ix.Kernel.Env .anon) (lim : Option Nat) (claimBytes : ByteArray)
+    (noCollision : ¬ V.HashedCollision
+      (claimBytes :: binding.bytes :: IxVM.Consistency.readerImages V) calls)
+    {bindingAddr : _root_.Address} {block : Bytes.Address} {members : Array Ixon.MutConst}
+    {slot : Nat} {ind : Ixon.Inductive}
+    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
+    (walked : WkAll calls bindingAddr witness.table trace (Core.ixAddr block))
+    {cx : Ix.Kernel.Reader.Ctx .anon}
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)} {rawType : Core.KExpr}
+    (caps : Ix.Kernel.IndCaps .anon)
+    (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
+    (selfKeyed : ∀ index address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      self index = some reading → reading = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    Nonempty (NativeFormerRunInput (nativeOriginCtx witness trace env lim) block (slot : F)
+      source members ind rawType calls) := by
+  have good : Core.Good (nativeOriginCtx witness trace env lim) calls :=
+    admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision
+  have coverage : L1.CanonicalHashCoverage (nativeOriginCtx witness trace env lim).E calls :=
+    admitted_canonicalHashCoverage witness phase
+  have member := admitted_native_member_check witness env lim source shape memberAt walked good
+  exact native_former_input_of_member_of_blobAgreement source shape memberAt member good coverage caps read keyed selfKeyed blobReads
+
+/-- Compatibility with full observed-blob membership. -/
 theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {trace : Ixon.Env} {calls : List (Call F)} {seeds : List _root_.Address}
@@ -83,12 +115,9 @@ theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Ke
       cx.blob address = some bytes) :
     Nonempty (NativeFormerRunInput (nativeOriginCtx witness trace env lim) block (slot : F)
       source members ind rawType calls) := by
-  have good : Core.Good (nativeOriginCtx witness trace env lim) calls :=
-    admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision
-  have coverage : L1.CanonicalHashCoverage (nativeOriginCtx witness trace env lim).E calls :=
-    admitted_canonicalHashCoverage witness phase
-  have member := admitted_native_member_check witness env lim source shape memberAt walked good
-  exact native_former_input_of_member source shape memberAt member good coverage caps read keyed selfKeyed blobReads
+  exact admitted_native_former_input_of_blobAgreement witness phase loaded bounded env lim claimBytes
+    noCollision source shape memberAt walked caps read keyed selfKeyed
+    (L1.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- A retained canonical source at a walked owner is the same literal record as in the trace. -/
 theorem admitted_walked_source_record {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}

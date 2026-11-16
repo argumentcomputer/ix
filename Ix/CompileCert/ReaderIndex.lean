@@ -89,7 +89,23 @@ def run (store : Store) (records : Array (Address × Ixon.Constant)) : RecIndex 
   forIn (m := Id) collected.2.toList collected.1 completeStep
 
 theorem run_eq (store : Store) (records : Array (Address × Ixon.Constant)) :
-    run store records = buildIndex store records := rfl
+    run store records = buildIndex store records := by
+  let guarded := fun (record : Address × Ixon.Constant) (before : BuildState) =>
+    if (recursorMembers record.2).isEmpty then ForInStep.yield before
+    else recordStep store record before
+  have guarded_eq : guarded = recordStep store := by
+    funext record before
+    dsimp only [guarded]
+    cases empty : (recursorMembers record.2).isEmpty with
+    | true =>
+      simp only [↓reduceIte]
+      have absent : recursorMembers record.2 = #[] := Array.isEmpty_iff.mp empty
+      rw [recordStep, absent]
+      rfl
+    | false => simp only [Bool.false_eq_true, ↓reduceIte]
+  unfold run
+  rw [← guarded_eq]
+  rfl
 
 /-! ## One candidate step -/
 

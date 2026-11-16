@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.NativeCtorScope
+import IxVMRefinement.Assembly.NativeReadFamily
 import IxVMRefinement.Assembly.NativeOuter
 import IxVMRefinement.Assembly.NativeCtorNames
 import IxVMRefinement.Decl.NativeCtorRun
@@ -141,6 +141,89 @@ theorem NativeFormerRunInput.constructorStage (hLevels : IxVM.Consistency.Levels
 
 /-- Actual reader frames and conversion checks construct the constructor family and all
 raw type-scope data before the scoped semantic stage is applied. -/
+theorem NativeFormerRunInput.constructorStage_of_reader_frames_of_blobAgreement (hLevels : IxVM.Consistency.Levels) {base : Core.Ctx} {block : Bytes.Address} {i : F}
+    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : KExpr} {calls : List (Call F)}
+    (input : NativeFormerRunInput base block i source members ind rawType calls)
+    (native : input.NativeCall)
+    (shape : Decl.NativeShapeCalls input.rc input.typePtr input.blockPtr (.field i)
+      (L1.repBoolField ind.isUnsafe) ind.params.toNat ind.indices.toNat ind.ctors.size ind.lvls.toNat
+      native.before calls)
+    {parts : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
+    (params : parts.nP = ind.params.toNat) (indices : parts.nIdx = ind.indices.toNat)
+    (safe : ind.isUnsafe = false)
+    {rootName : String} {rootArgs : List (SourceValue F)} {before after : Heap F} {result : SourceValue F}
+    (observedRoot : ObsFn Core.W rootName rootArgs before result after calls)
+    (good : Core.Good base calls) (coverage : L1.CanonicalHashCoverage base.E calls)
+    (facts : Core.CoreEnvFacts { base with lim := some input.limit })
+    (freshFormer : base.env.find? (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = none)
+    (formerNotBasis : Ix.Kernel.reservedBasisNames.contains
+      (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) = false)
+    (noProjection : ∀ field, base.env.findProj? (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) field = none)
+    (formerLoads : Core.ScopedLoadFacts
+      (Decl.nativeFormerCheckCtx { base with lim := some input.limit } input.prelude))
+    (sortLoads : Core.ScopedLoadFacts (Decl.nativeShapeSortCtx (input.stageCtx parts isRec) shape))
+    {cx : Ix.Kernel.Reader.Ctx .anon} {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
+    {rows : List NativeCtorRow}
+    (frames : List.Forall₂
+      (NativeCtorReaderCheckedFrame cx (Core.ixAddr block)
+        (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self))
+      (nativeCtorSlots [(ZMod.val i, ind)]) rows)
+    (memberKeys : ∀ slot < ind.ctors.size,
+      cx.memberKey (.ctor (Core.ixAddr block) (ZMod.val i) slot) =
+        .ok (base.κ (Core.cprjAddr (Core.ixAddr block) (ZMod.val i) slot)))
+    (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
+    (selfKeyed : ∀ index address reading key,
+      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      self index = some reading → reading = .ok key → key = base.κ address)
+    (blobReads : L1.HashedBlobReadAgreement cx.blob calls)
+    (freshRows : ∀ row ∈ rows, base.env.find? row.1.name = none)
+    (rowsNotBasis : ∀ row ∈ rows, Ix.Kernel.reservedBasisNames.contains row.1.name = false) :
+    ∃ (annotated : List (KConstantVal × Nat)) (rawTypes : List KExpr),
+    ∃ sort : KLevel,
+      KernelLevels.RepKLevel shape.ctorBefore sort shape.sortLevel ∧
+      (∀ binders level, input.annotated.type.stripPis (ind.params.toNat + ind.indices.toNat) =
+        some (binders, .sort level) → Core.LvEq level sort) ∧
+      ∃ runs : List (Decl.NativeCtorCoreRun calls),
+        Core.ScopedLoadFacts (Decl.nativeCtorCoreCtx (input.stageCtx parts isRec) runs) →
+        ∃ sortss : List (List KLevel),
+          sortss.length = (rows.map (fun row => (row.1, row.2.2))).length ∧
+          (∀ slot < (rows.map (fun row => (row.1, row.2.2))).length, ∃ ctor stored sorts,
+            (rows.map (fun row => (row.1, row.2.2)))[slot]? = some ctor ∧ annotated[slot]? = some stored ∧ sortss[slot]? = some sorts ∧
+            Decl.NativeCtorOut (input.stageCtx parts isRec).env
+              (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) (List.range ind.lvls.toNat)
+              ind.params.toNat ind.indices.toNat sort input.annotated.type
+              (rawTypes.getD slot default) ctor stored sorts) ∧
+          Ix.Kernel.Semantics.SumCtorsRunJ Ix.Kernel.Model.rulesJ
+            (input.stageCtx parts isRec).env (input.stageCtx parts isRec).env
+            (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) (List.range ind.lvls.toNat)
+            ind.params.toNat ind.indices.toNat sort (Ix.Kernel.Level.isEquiv sort .zero == some true)
+            false input.annotated (rows.map (fun row => (row.1, row.2.2))) annotated sortss := by
+  obtain ⟨annotated, rawTypes, family, rowLength, rowProperties⟩ :=
+    input.constructorFamily_of_blobAgreement native shape safe good frames memberKeys keyed selfKeyed blobReads
+  have countEq : (rows.map (fun row => (row.1, row.2.2))).length = ind.ctors.size := by
+    simpa only [List.length_map] using rowLength
+  refine ⟨annotated, rawTypes, ?_⟩
+  apply input.constructorStage hLevels native shape params indices safe observedRoot good coverage facts
+    freshFormer formerNotBasis noProjection formerLoads sortLoads family countEq
+  · intro ctor member
+    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
+    exact (rowProperties row inRows).2.1
+  · intro ctor member
+    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
+    exact (rowProperties row inRows).2.2.1
+  · intro ctor member
+    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
+    exact (rowProperties row inRows).2.2.2.2
+  · intro ctor member
+    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
+    exact freshRows row inRows
+  · intro ctor member
+    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
+    exact rowsNotBasis row inRows
+
+
+/-- Compatibility with full observed-blob membership. -/
 theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.Consistency.Levels) {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : KExpr} {calls : List (Call F)}
@@ -200,40 +283,9 @@ theorem NativeFormerRunInput.constructorStage_of_reader_frames (hLevels : IxVM.C
             (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i))) (List.range ind.lvls.toNat)
             ind.params.toNat ind.indices.toNat sort (Ix.Kernel.Level.isEquiv sort .zero == some true)
             false input.annotated (rows.map (fun row => (row.1, row.2.2))) annotated sortss := by
-  have loop : ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
-      [input.rc, input.typePtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-        .field (ind.ctors.size : F), .field (ind.lvls.toNat : F), input.blockPtr, .field i,
-        shape.sortLevel, .field 0, .field 0] shape.ctorBefore shape.result shape.after shape.ctorCalls := by
-    simpa [safe, L1.repBoolField] using shape.ctorRun
-  have blockRep := Bytes.repAddressRef_heapMono₂ Core.addrTy
-    (native.initialToShape.trans shape.initial_to_ctors) input.blockRep
-  obtain ⟨annotated, rawTypes, family, rowProperties⟩ :=
-    native_ctor_load_family (base := base) source input.blockShape input.memberAt input.ctorCountBound
-      input.paramsBound input.levelsBound blockRep shape.ctorSubset loop frames memberKeys good keyed selfKeyed blobReads
-  have scopeRows := native_ctor_reader_scope (base := base) source input.blockShape input.memberAt input.ctorCountBound
-    blockRep shape.ctorSubset loop frames good keyed selfKeyed blobReads
-  have rowLength : rows.length = ind.ctors.size := by
-    simpa [nativeCtorSlots] using frames.length_eq.symm
-  have countEq : (rows.map (fun row => (row.1, row.2.2))).length = ind.ctors.size := by
-    simpa only [List.length_map] using rowLength
-  refine ⟨annotated, rawTypes, ?_⟩
-  apply input.constructorStage hLevels native shape params indices safe observedRoot good coverage facts
-    freshFormer formerNotBasis noProjection formerLoads sortLoads family countEq
-  · intro ctor member
-    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (rowProperties row inRows).2
-  · intro ctor member
-    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (scopeRows row inRows).1
-  · intro ctor member
-    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact (scopeRows row inRows).2.2
-  · intro ctor member
-    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact freshRows row inRows
-  · intro ctor member
-    obtain ⟨row, inRows, rfl⟩ := List.mem_map.mp member
-    exact rowsNotBasis row inRows
-
+  exact NativeFormerRunInput.constructorStage_of_reader_frames_of_blobAgreement hLevels input native
+    shape params indices safe observedRoot good coverage facts freshFormer formerNotBasis noProjection
+    formerLoads sortLoads frames memberKeys keyed selfKeyed
+    (L1.HashedBlobReadAgreement.of_stored blobReads) freshRows rowsNotBasis
 
 end IxVM.Refinement.Assembly

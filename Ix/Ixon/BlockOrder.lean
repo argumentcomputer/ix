@@ -40,32 +40,32 @@ def isRecursor : MutConst → Bool
   | _ => false
 
 /-- The motive a recursor eliminates, read off its type exactly as the Ixon
-reader does (the first component of `Reader.analyseRecursor`): after
+reader does (the first component of `Reader.analyseRecursor`): after sharing
+and let substitution, and after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
-def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat := do
-  let nP := r.params.toNat
-  let nM := r.motives.toNat
-  let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
-  let (_, body) ← Reader.stripAll source depth r.typ
-  let .var k := Reader.appHead source Reader.spineFuel body | none
-  let pos := depth - 1 - k.toNat
-  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
-  pure (pos - nP)
+def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat :=
+  (Reader.Shape.telescope Reader.spineFuel source r).map Prod.fst
 
 /-- The members from `position` on are recursors in motive order: the one at
 `position` eliminates motive `position`, of `size` motives. -/
-def checkMotives (owner : Address) (source : Ixon.Constant) (size : Nat) :
+def checkMotivesPrepared (owner : Address) (table : Array (Option Reader.Shape.Term)) (size : Nat) :
     Nat → List MutConst → Except Error Unit
   | _, [] => .ok ()
   | position, member :: rest => do
     match member with
     | .recr r =>
-      let motive := recursorMotive source r
+      let motive := (Reader.Shape.telescopePrepared Reader.spineFuel table r).map Prod.fst
       unless r.motives.toNat == size && motive == some position do
         throw (.motiveOrder owner position motive)
     | _ => throw (.malformed "expected a recursor")
-    checkMotives owner source size (position + 1) rest
+    checkMotivesPrepared owner table size (position + 1) rest
+
+def checkMotives (owner : Address) (source : Ixon.Constant) (size position : Nat)
+    (members : List MutConst) : Except Error Unit :=
+  match members with
+  | [] => .ok ()
+  | _ :: _ => checkMotivesPrepared owner (Reader.Shape.sharing source.sharing) size position members
 
 /-- One record's order check: a recursor block in motive order, nothing
 else. -/
