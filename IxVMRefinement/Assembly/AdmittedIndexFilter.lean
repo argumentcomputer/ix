@@ -89,7 +89,7 @@ theorem input_indexed_family {store : Store} {input fallback : Array (_root_.Add
     (analysis : analyseRecursor store owner constant recursor = some (motive, carriers, major))
     {family : _root_.Address} {first : Nat} (carrier : carriers[0]? = some (.member family first)) :
     ∃ familyRecord, (family, familyRecord) ∈ input := by
-  unfold inputIndexed at indexed
+  rw [inputIndexed_eq] at indexed
   rcases Bool.or_eq_true_iff.mp indexed with all | fallback
   · have known := Array.all_eq_true_iff_forall_mem.mp all (j, recursor) member
     simp only [analysis, carrier] at known

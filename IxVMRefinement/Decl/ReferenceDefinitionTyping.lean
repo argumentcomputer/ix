@@ -206,6 +206,27 @@ theorem DefinitionsTyped.checkSumInd {before after : Env .anon} (typed : Definit
   · cases found
   · exact (typed name cv value hint found).weaken extension
 
+/-- The semantic former stage also preserves the actual checks of prior definitions. Its
+fresh, non-projection name supplies the required environment extension in either storage arm. -/
+theorem DefinitionsTyped.sumIndRunJ {J : Judgements .anon} {before after : Env .anon}
+    (typed : DefinitionsTyped before) {p completed : InductiveShape .anon} {checked : ConstantVal .anon}
+    {capsOf : InductiveShape .anon → IndCaps .anon}
+    (run : SumIndRunJ J before p capsOf after checked completed) : DefinitionsTyped after := by
+  obtain ⟨raw, level, _, _, header, rfl, ⟨stored, rfl, storage⟩, _⟩ := run.shape
+  obtain ⟨rawStored, storedCheck⟩ : ∃ rawStored, ConstantValCheckJ J before rawStored stored := by
+    rcases storage with same | ⟨declared, _, _⟩
+    · exact ⟨raw, by rw [same]; exact header⟩
+    · exact ⟨p.cvT, declared⟩
+  have extension : EnvExt before ⟨.indInfo stored (capsOf (p.withSort level)) :: before.consts⟩ := by
+    obtain ⟨type, front, same⟩ := storedCheck
+    rw [same]
+    exact envExt_of_constantValRunJ front rfl
+  intro name cv value hint found
+  rw [Env.find?_cons] at found
+  split at found
+  · cases found
+  · exact (typed name cv value hint found).weaken extension
+
 /-- Constructor normalization receives definition checks from its real reference prefix. -/
 theorem ReferenceReplay.constructor_definitionsTyped {fuel : Nat} {ev : Evidences .anon}
     {sourceOut targetOut after : Env .anon} {declarations : List (Declaration .anon)}

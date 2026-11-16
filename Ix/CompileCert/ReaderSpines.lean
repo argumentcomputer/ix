@@ -1,21 +1,17 @@
-import Ix.CompileCert.SharingRoots
+import Ix.CompileCert.ShapeSharing
 
 /-! # The certified reader's syntactic walks through sharing encodings
 
-Before it converts a record, the certified reader inspects a few syntactic
-positions of a recursor's type to index it (`Ix.Kernel.Reader.analyseRecursor`,
-used by `buildIndex`): it follows top-level `share` indirections
-(`unshare`), strips a bounded number of `∀` binders (`stripAll`,
-`stripAllFull`), and finds application heads (`appHead`, `headRef`). These
-walks run on the shared record the compiler emits. This module proves that
-each walk commutes with the sharing expansion (`substShares`), including
-failure, whenever the walked expressions' sharing references point back
-into the table and the inspected application spines fit the reader's fuel
-(`spineFuel`); and that the actual sharing builder therefore preserves the
-whole recursor analysis (`build_analyse`), through the generic root
-write-back inversion (`SharingRoots.withRoots_inv`) and the canonical
-sharing's meaning. The reader's walks are those of the donor's reader,
-unchanged. `ReaderSpines`. -/
+The raw spine views follow top-level sharing (`unshare`), strip binders
+(`stripAll`, `stripAllFull`), and find application heads (`appHead`, `headRef`).
+These views commute with sharing expansion when the entries point backwards
+and the inspected application spines fit their explicit fuel.
+
+The index additionally consumes lets through the symbolic `Shape` pass.
+`ShapeSharing` proves that this pass commutes with canonical sharing, so the
+actual sharing builder preserves the full recursor analysis (`build_analyse`).
+The existing caller-facing bound remains in that theorem's signature; the
+symbolic-sharing equality itself holds at every choice of spine fuel. -/
 
 namespace Ix.CompileCert.ReaderSpines
 
@@ -334,51 +330,20 @@ def AnalysisBounds (flat : Ixon.Constant) (recursor : Ixon.Recursor) : Prop :=
 with expansion when its inspected application spines fit the actual bound. -/
 theorem analyse_expand (store : Store) (owner : Address) (constant flat : Ixon.Constant)
     (empty : flat.sharing = #[]) (refs : constant.refs = flat.refs)
-    (self : ∀ index, selfRef constant owner index = selfRef flat owner index)
+    (self : ∀ index, resolveShapeHead store owner constant (.recur index) =
+      resolveShapeHead store owner flat (.recur index))
     (expand : Nat → Ixon.Expr) (entries : Entries constant expand) (recursor : Ixon.Recursor)
     (bounded : SharesIn (fun slot => slot < constant.sharing.size) recursor.typ)
-    (enough : AnalysisBounds flat { recursor with typ := substShares expand recursor.typ }) :
+    (_enough : AnalysisBounds flat { recursor with typ := substShares expand recursor.typ }) :
     analyseRecursor store owner constant recursor =
       analyseRecursor store owner flat { recursor with typ := substShares expand recursor.typ } := by
-  have telescope := stripAll_expand constant flat empty expand entries (depth recursor) recursor.typ bounded
-  cases parsed : stripAll constant (depth recursor) recursor.typ with
-  | none =>
-    simp only [parsed, Option.map_none] at telescope
-    dsimp only [depth] at parsed telescope
-    simp only [analyseRecursor, parsed, ← telescope, bind, Option.bind]
-  | some result =>
-    rcases result with ⟨types, body⟩
-    simp only [parsed, Option.map_some] at telescope
-    have fits := enough (types.map (substShares expand)) (substShares expand body) telescope.symm
-    have scopes := stripAll_bounded constant expand entries (depth recursor) recursor.typ bounded (types, body) parsed
-    have headMeaning := appHead_expand constant flat empty expand entries spineFuel body scopes.2
-    have inline := appHead_inline constant expand entries spineFuel body scopes.2 fits.1
-    have major := lastHead_expand store owner constant flat empty refs self expand entries types scopes.1
-      (fun type last => fits.2.1 _ (by rw [List.getLast?_map, last]; rfl))
-    have motives := carriers_expand store owner constant flat empty refs self expand entries
-      ((types.drop recursor.params.toNat).take recursor.motives.toNat)
-      (fun domain present => scopes.1 domain (List.mem_of_mem_drop (List.mem_of_mem_take present))) (by
-        intro domain present type inType
-        apply fits.2.2 (substShares expand domain) _ type inType
-        rw [← List.map_drop, ← List.map_take]
-        exact List.mem_map.mpr ⟨domain, present, rfl⟩)
-    dsimp only [depth] at parsed telescope
-    simp only [analyseRecursor, parsed, ← telescope, expandTele, bind, Option.bind,
-      ← headMeaning]
-    cases head : appHead constant spineFuel body with
-    | share index => simp only [head, InlineHead] at inline
-    | var index =>
-      simp only [substShares, List.map_drop, List.map_take] at motives ⊢
-      unfold carrier lastHead at motives
-      unfold lastHead at major
-      simp only [bind, Option.bind] at motives major
-      rw [motives]
-      cases last : types.getLast? with
-      | none => simp only [List.getLast?_map, last, Option.map_none]
-      | some type =>
-        simp only [List.getLast?_map, last, Option.map_some] at major ⊢
-        rw [major]
-    | _ => rfl
+  have heads : resolveShapeHead store owner constant = resolveShapeHead store owner flat := by
+    funext head
+    cases head with
+    | ref i => simp only [resolveShapeHead, refs]
+    | recur i => exact self i
+  simp only [analyseRecursor, ShapeSharing.analyse_expand constant flat empty expand entries recursor bounded,
+    heads]
 
 open Ix.CompileM in
 /-- **The actual sharing builder preserves standalone recursor analysis.**
@@ -429,7 +394,7 @@ theorem build_analyse (store : Store) (owner : Address) (limits : Ix.Sharing.Exa
       fits
     refine ⟨target, rfl, ?_⟩
     rw [analysed]
-    unfold analyseRecursor
+    unfold analyseRecursor Shape.analyse Shape.analysePrepared Shape.telescopePrepared
     simp only [params, motives, minors, indices, typeEq]
   | _ => cases erased
 

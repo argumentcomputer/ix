@@ -130,6 +130,8 @@ theorem buildIndex_muts (store : Store) (records : Array (Address × Ixon.Consta
   · intro x _ s hs
     rcases x with ⟨owner, c⟩
     dsimp only
+    split
+    · exact hs
     refine forIn_array_bind (Filed store)
       (fun (st : ForInStep (RecIndex × Std.HashMap Address (Array (Nat × Ix.Kernel.ConstRef Address)))) =>
         Filed store st.value) _ _ ?_ ?_ _ hs

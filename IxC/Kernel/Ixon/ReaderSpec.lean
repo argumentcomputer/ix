@@ -34,6 +34,12 @@ namespace Ix.Kernel.Reader
 
 open Ix.Kernel (ConstRef)
 
+/-- Reusing a record's symbolic table computes the same public analysis. -/
+theorem analyseRecursor_prepared (store : Store) (owner : Address) (constant : Ixon.Constant)
+    (recursor : Ixon.Recursor) :
+    analyseRecursorPrepared store owner constant (Shape.sharing constant.sharing) recursor =
+      analyseRecursor store owner constant recursor := rfl
+
 /-! ## The stream -/
 
 /-- The declarations `readRecords` produces, record by record: each record is
