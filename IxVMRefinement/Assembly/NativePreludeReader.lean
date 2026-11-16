@@ -29,8 +29,12 @@ theorem preludeFor_readRecords {table : RoleTable} {prelude : Prelude .anon}
   obtain ⟨evidence, _, read⟩ := except_bind_ok.mp read
   obtain ⟨blobs, _, read⟩ := except_bind_ok.mp read
   unfold readPrelude at read
+  dsimp only at read
   cases checked : readRecords (contextOf table records [] evidence blobs) {} records with
-  | error error => simp [checked, throw, Except.error] at read
+  | error error =>
+    obtain ⟨error, index⟩ := error
+    rw [checked] at read
+    exact (Ix.Cert.ReaderUnits.throw_ok read).elim
   | ok output =>
     obtain ⟨state, declarations⟩ := output
     rw [checked] at read
