@@ -73,4 +73,57 @@ theorem DefinitionsTyped.forall_alias_zero {V : Type u} [SetTheory V] {env : Env
   rw [typeEq, header] at converted
   exact (converted_sort_zero model converted).symm.trans bodyZero
 
+
+/-- The actual inference of a constant-body beta redex returns that constant's declared sort.
+This inversion does not infer a type-preservation principle for arbitrary substitutions. -/
+theorem infer_beta_constant_sort {md : Mode} {env : Env md} {depth : Nat}
+    {name : Key md} {levels : List Level} {ci : ConstantInfo md} {domain argument inferredType : Expr md}
+    {binderMeta : BinderMeta} {sortLevel : Level}
+    (found : env.find? name = some ci)
+    (header : ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams levels =
+      .sort sortLevel)
+    (inferred : Ix.Kernel.Rules.Infer env .full depth
+      (.app (.lam domain (.const name levels) binderMeta) argument) inferredType) :
+    inferredType = .sort sortLevel := by
+  obtain ⟨functionType, parameterType, resultBody, resultMeta, argumentType,
+    functionInfer, reduced, _, _, result⟩ := Ix.Kernel.Rules.Infer.app_inv inferred
+  cases functionInfer with
+  | lam _ _ bodyInfer _ _ _ _ =>
+    have bodyInfer : Ix.Kernel.Rules.Infer env .full (depth + 1) (.const name levels) _ := by
+      simpa only [Expr.instantiate1] using bodyInfer
+    obtain ⟨bodyCI, bodyFound, _, _, bodyType⟩ := Ix.Kernel.Rules.Infer.const_inv bodyInfer
+    have same : bodyCI = ci := Option.some.inj (bodyFound.symm.trans found)
+    subst bodyCI
+    rw [bodyType, header] at reduced
+    have fixed := Ix.Kernel.Rules.Red.rigid reduced rfl
+    obtain ⟨rfl, resultBodyEq, rfl⟩ := Expr.forallE.inj fixed
+    rw [resultBodyEq] at result
+    simpa only [Expr.abstract1, Expr.instantiate1] using result
+
+/-- The checked alias's conversion supplies the sort agreement after the beta/delta pattern
+that erases an inductive occurrence from a field domain. -/
+theorem DefinitionsTyped.beta_constant_alias_zero {V : Type u} [SetTheory V] {env : Env .anon}
+    (model : EnvModelM V .verified env) (typed : DefinitionsTyped env)
+    {name bodyName : Key .anon} {cv : ConstantVal .anon} {bodyCI : ConstantInfo .anon}
+    {bodyLevels : List Level} {hint : ReducibilityHint} {declared actual checkedSort : Level}
+    {depth : Nat} {domain argument inferredType : Expr .anon} {binderMeta : BinderMeta}
+    (aliasFound : env.find? name = some (.defnInfo cv (.const bodyName bodyLevels) hint))
+    (noLevels : cv.levelParams = [])
+    (bodyFound : env.find? bodyName = some bodyCI)
+    (header : cv.type = .sort declared)
+    (bodyHeader : bodyCI.toConstantVal.type.instantiateLevelParams bodyCI.toConstantVal.levelParams bodyLevels =
+      .sort actual)
+    (inferred : Ix.Kernel.Rules.Infer env .full depth
+      (.app (.lam domain (.const name []) binderMeta) argument) inferredType)
+    (sorted : Ix.Kernel.Rules.Red env depth inferredType (.sort checkedSort)) :
+    Level.zeronessOf checkedSort = Level.zeronessOf actual := by
+  have resultType := infer_beta_constant_sort aliasFound (by
+    change cv.type.instantiateLevelParams cv.levelParams [] = _
+    rw [noLevels, Expr.instantiateLevelParams_self []]
+    exact header) inferred
+  rw [resultType] at sorted
+  have checkedEq := Ix.Kernel.Rules.Red.sort_eq sorted
+  rw [checkedEq]
+  exact (DefinitionsTyped.constant_alias_sort model typed aliasFound bodyFound header bodyHeader).2
+
 end IxVM.Refinement.Decl
