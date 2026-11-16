@@ -61,9 +61,8 @@ theorem native_reader_one_order {cx : Ctx .anon} {records : Array (_root_.Addres
           simp only [unindexedShape, Option.some.injEq] at shapeRun
           subst shape
           rw [Ix.CompileCert.ReaderIndex.singleton_inductives] at one
-          have pair : (0, first) = (member, ind) := by
-            apply Option.some.inj
-            simpa using congrArg (fun values : Array (Nat × Ixon.Inductive) => values[0]?) one
+          have pair : (0, first) = (member, ind) :=
+            (List.cons.inj (congrArg Array.toList one)).1
           have position := congrArg Prod.fst pair
           cases position
           rfl
@@ -89,6 +88,11 @@ theorem readInductive_one_family_frames {cx : Ctx .anon} {state : State .anon}
     readInductive_checked_ctor_frames read
   have order := native_reader_one_order indexBuilt stored kind one shapeRun
   refine ⟨generated, bare, block, declarations, lowered, ?_⟩
-  simpa only [order, Array.filterMap_singleton, memberAt, Array.toList_singleton] using frames
+  have selected : (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
+      | some (.indc found) => some (i, found)
+      | _ => none)).toList = [(member, ind)] := by
+    rw [order, Array.toList_filterMap]
+    simp only [List.filterMap_cons, List.filterMap_nil, memberAt]
+  simpa only [selected] using frames
 
 end IxVM.Refinement.Assembly

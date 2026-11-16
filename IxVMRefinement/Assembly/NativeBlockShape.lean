@@ -48,7 +48,7 @@ theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
     have rep := memberRep loaded (by rw [allCalls]; intro call member; simp [member])
     have countCall : (⟨"KernelModeled::muts_indc_count", [ptr], middle⟩ : Call F) ∈ calls := by
       rw [allCalls]; simp
-    have length := Core.RomBound.bounded_length_lt good.2 countCall (by simp) rep
+    have length := RomBound.bounded_length_lt good.2 countCall (by simp) rep
     have filtered := Nat.lt_of_le_of_lt (List.length_filter_le Core.isIndc members.toList) length
     obtain ⟨countedEq, _⟩ := Core.ModeledAux.muts_indc_count_spec rep counted
     have zero := (Core.ModeledAux.natCast_inj_lt (by decide) filtered (Value.field.inj countedEq)).symm
@@ -58,7 +58,7 @@ theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
     have rep := memberRep loaded (by rw [allCalls]; intro call member; simp [member])
     have countCall : (⟨"KernelModeled::muts_indc_count", [ptr], middle⟩ : Call F) ∈ calls := by
       rw [allCalls]; simp
-    have length := Core.RomBound.bounded_length_lt good.2 countCall (by simp) rep
+    have length := RomBound.bounded_length_lt good.2 countCall (by simp) rep
     have filtered := Nat.lt_of_le_of_lt (List.length_filter_le Core.isIndc members.toList) length
     obtain ⟨countedEq, _⟩ := Core.ModeledAux.muts_indc_count_spec rep counted
     have one := (Core.ModeledAux.natCast_inj_lt (a := 1) (by decide) filtered
