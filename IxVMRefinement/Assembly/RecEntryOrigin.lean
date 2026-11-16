@@ -38,6 +38,7 @@ theorem RecEntryAt.unique {store : Store} {owner : _root_.Address}
   have sameMembers := Ixon.ConstantInfo.muts.inj (kind.symm.trans kind')
   subst members'
   have sameInd := congrArg Prod.snd (Option.some.inj (found.symm.trans found'))
+  dsimp only at sameInd largeEq largeEq'
   subst ind'
   have sameLarge := largeEq.trans largeEq'.symm
   subst large'
