@@ -20,7 +20,7 @@ def needsBinderAt (sharing : List Ixon.Expr) (bound : Nat) (expr : Ixon.Expr) : 
   | .letE _ _ ty value body =>
     (needsBinderAt sharing bound ty || needsBinderAt sharing bound value) || needsBinderAt sharing bound body
   | .share index =>
-    if index.toNat < bound then
+    if hindex : index.toNat < bound then
       match sharing[index.toNat]? with
       | some entry => needsBinderAt sharing index.toNat entry
       | none => false
