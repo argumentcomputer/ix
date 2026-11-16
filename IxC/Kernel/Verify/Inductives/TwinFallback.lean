@@ -87,19 +87,19 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
-        cases ci <;> simp_all
+        cases ci <;> simp_all [ConstantInfo.isRecInfo]
       have inductives : block.filter (fun ci => match ci with
           | .indInfo _ _ => true | _ => false) = [] := by
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
-        cases ci <;> simp_all
+        cases ci <;> simp_all [ConstantInfo.isRecInfo]
       have constructors : block.filter (fun ci => match ci with
           | .ctorInfo _ _ _ => true | _ => false) = [] := by
         apply List.filter_eq_nil_iff.mpr
         intro ci hci
         have hc := List.all_eq_true.mp hall ci hci
-        cases ci <;> simp_all
+        cases ci <;> simp_all [ConstantInfo.isRecInfo]
       have hsuffix : @decide _ (blockRecSuffixDec block) = true := by
         simp only [decide_eq_true_eq]
         erw [recsFilterNeg, recsFilterPos, nonrecs, recs]
@@ -108,7 +108,7 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
       simp only [hsuffix, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
       erw [inductives, constructors] at h
       erw [recsFilterNeg, recsFilterPos, nonrecs, recs] at h
-      simp only [List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
+      simp only [List.foldlM_nil, pure, Except.pure] at h
       have models := indRecs_models h
       have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
           | some (.defnInfo ..) => true | _ => false) = true := by
