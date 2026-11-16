@@ -41,13 +41,13 @@ theorem DeclStoreInv.step_nativeJ {J : Judgements .anon}
       hp, hCtors, _, _, _, _, _, _, hRec, hTbl, _⟩ := run
     have front := nativeFront frames h.store recog hnd hInd hp hCtors
     obtain ⟨hnR, _, hfR, _⟩ := hRec.recursor
-    have hfreshR : (consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by
+    have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by
       rw [hnR]; exact hfR
     obtain ⟨_, _, _, _, _, _, ⟨_, henv₁, _⟩, _, _⟩ := hInd.shape
     have noTables : NewSat env ⟨.recInfo cvRa p.majorIdx p.rulePrefix
-        (sumRules (consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP
+        (sumRules (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP
           p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
-        :: (consSumCtors p.nP ctorsA env₁).consts⟩ NotProj := by
+        :: (Ix.Kernel.consSumCtors p.nP ctorsA env₁).consts⟩ NotProj := by
       subst henv₁
       exact (NewSat.cons (fun _ heq => nomatch heq)).trans
         ((consSumCtors_newSat (fun _ _ _ _ heq => nomatch heq)).trans
