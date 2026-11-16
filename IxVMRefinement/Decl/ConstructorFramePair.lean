@@ -99,6 +99,8 @@ theorem checkedFVarFrame_of_check {env : Env .anon} {fuel count : Nat} {raw chec
     have inVar : leaf ∈ fv.fvarLeaves := by
       obtain ⟨type, same⟩ := openPisAtFvars_index count checked.type 0 opened slot fv atSlot
       rw [same] at inType ⊢
+      simp only [Expr.fvarTypeD] at inType
+      rw [Expr.fvarLeaves]
       exact List.mem_cons_of_mem _ inType
     exact ⟨opened_leaf_lookup opened closed (List.mem_of_getElem? atSlot) inVar,
       by simpa only [Nat.zero_add] using Expr.fvarLeaves_lt_of_wscoped scope leaf inType⟩
