@@ -1842,7 +1842,7 @@ private theorem mutShape_heapMono₂ : HeapMono₂ Core.Specs.Callees.MutShape :
 
 /-- `Ingress::projection_addr` computes the projection-record address of member `idx.val` of `ms`
 at block `b` (and checks `idx.val < 2^56`). -/
-theorem projection_addr_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx : F}
+theorem projection_addr_hashed_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx : F}
     {x_members x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hms : Core.Specs.Callees.MembersRep h ms x_members)
     (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
@@ -1852,10 +1852,12 @@ theorem projection_addr_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx 
         ms[idx.val]? = some mc ∧
         Bytes.RepAddressRef Core.addrTy h' a r ∧
         Core.ixAddr a =
-          Core.projAddr (Core.Specs.Callees.memberProjInfo (Core.ixAddr b) idx.val mc) := by
+          Core.projAddr (Core.Specs.Callees.memberProjInfo (Core.ixAddr b) idx.val mc) ∧
+        Hashed calls (Ixon.serConstant
+          ⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b) idx.val mc, #[], #[], #[], #[]⟩) := by
   obtain ⟨v1, m2, cs12, v31, m32, cs42, v198, m199, cs201,
       m231, m244, m257, m270, v282, m283, cs293, m306, cs321,
-      ev14, ev44, sg206, hm239, hm252, hm265, hm278, hm314, ev295, ev323, _⟩ :=
+      ev14, ev44, sg206, hm239, hm252, hm265, hm278, hm314, ev295, ev323, allCalls⟩ :=
     «Ingress::projection_addr».obs ev
   obtain ⟨hm2, hidx_len, mc, hget, hmc⟩ := muts_member_at_spec hms ev14
   subst m2
@@ -1935,7 +1937,28 @@ theorem projection_addr_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx 
   have hlen_ser := serConstant_proj_length_lt hinfo
   obtain ⟨e_b2a, a, ha_rep, ha_eq⟩ := bytes_to_addr_native_spec hlen_ser s_put ev323
   rw [byteArray_of_toList] at ha_eq
-  exact ⟨(e15.trans e_put).trans e_b2a, hidx56, hidx_len, mc, a, hget, ha_rep, ha_eq⟩
+  have stream : Stream m283 _ v282 := s_put
+  have hashMember := (bytes_to_addr_spec stream ev323).2.2
+  have hashed : Hashed calls (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩) :=
+    ⟨_, by rw [allCalls]; simp [hashMember], rfl, v282, rfl, stream⟩
+  exact ⟨(e15.trans e_put).trans e_b2a, hidx56, hidx_len, mc, a, hget, ha_rep, ha_eq, hashed⟩
+
+
+/-- Compatibility without retaining the projection hash observation. -/
+theorem projection_addr_spec {ms : List Ixon.MutConst} {b : Bytes.Address} {idx : F}
+    {x_members x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hms : Core.Specs.Callees.MembersRep h ms x_members)
+    (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
+    (ev : ObsFn W "Ingress::projection_addr" [x_members, x_block_addr, .field idx] h r h' calls) :
+    Heap.Extends h h' ∧ idx.val < 72057594037927936 ∧ idx.val < ms.length ∧
+      ∃ (mc : Ixon.MutConst) (a : Bytes.Address),
+        ms[idx.val]? = some mc ∧
+        Bytes.RepAddressRef Core.addrTy h' a r ∧
+        Core.ixAddr a =
+          Core.projAddr (Core.Specs.Callees.memberProjInfo (Core.ixAddr b) idx.val mc) := by
+  obtain ⟨extended, indexBound, memberBound, member, address, found, represented, hashEq, _⟩ :=
+    projection_addr_hashed_spec hms hb ev
+  exact ⟨extended, indexBound, memberBound, member, address, found, represented, hashEq⟩
 
 /-- Projection addresses of a suffix `cur` starting at index `k` of block `b`. -/
 def blockRecurAddrsAux (b : _root_.Address) : Nat → List Ixon.MutConst → List _root_.Address
