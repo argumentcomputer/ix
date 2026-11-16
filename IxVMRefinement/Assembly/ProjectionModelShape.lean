@@ -42,8 +42,8 @@ theorem model_projection_former_telescope {md : Mode} {env : Env md} (model : Mo
 /-- A former stored at a constant alias cannot coexist with a denoted later-field projection
 in the current public model, regardless of the alias's reduction behavior. -/
 theorem model_alias_former_no_projection {md : Mode} {env : Env md} (model : Model V env)
-    {T alias : Key md} {levels : List Level} {cv : ConstantVal md} {caps : IndCaps md}
-    (former : env.find? T = some (.indInfo cv caps)) (typeAlias : cv.type = .const alias levels)
+    {T aliasKey : Key md} {levels : List Level} {cv : ConstantVal md} {caps : IndCaps md}
+    (former : env.find? T = some (.indInfo cv caps)) (typeAlias : cv.type = .const aliasKey levels)
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {i : Nat} {value : Expr md} {result : V}
     (beyondPair : 2 ≤ i) : ¬ Denotes model.cval env φ ρ (.proj T i value) result := by
   intro denoted
@@ -55,9 +55,9 @@ theorem model_alias_former_no_projection {md : Mode} {env : Env md} (model : Mod
 /-- A model reads a lambda body at some input whenever a stored constant inhabits its domain. -/
 theorem model_lam_body_denotes {md : Mode} {env : Env md} (model : Model V env)
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {domain body : Expr md}
-    {meta : BinderMeta} {result : V} {inhabitant : ConstantInfo md}
+    {binderMeta : BinderMeta} {result : V} {inhabitant : ConstantInfo md}
     (present : inhabitant ∈ env.consts) (typeEq : inhabitant.toConstantVal.type = domain)
-    (denoted : Denotes model.cval env φ ρ (.lam domain body meta) result) :
+    (denoted : Denotes model.cval env φ ρ (.lam domain body binderMeta) result) :
     ∃ input output, Denotes model.cval env φ (push input ρ) body output := by
   cases denoted with
   | lam domainRead bodyRead _ =>
@@ -70,13 +70,31 @@ theorem model_lam_body_denotes {md : Mode} {env : Env md} (model : Model V env)
 /-- Storage correspondence preserves a constant alias literally; annotation cannot replace
 it by its normalized telescope. -/
 theorem stored_alias_former_no_projection {env : Env .anon} (model : Model V env)
-    {T alias : Key .anon} {levels : List Level} {cv raw : ConstantVal .anon} {caps : IndCaps .anon}
+    {T aliasKey : Key .anon} {levels : List Level} {cv raw : ConstantVal .anon} {caps : IndCaps .anon}
     (former : env.find? T = some (.indInfo cv caps))
-    (stored : IxVM.Consistency.ValStored cv raw) (typeAlias : raw.type = .const alias levels)
+    (stored : IxVM.Consistency.ValStored cv raw) (typeAlias : raw.type = .const aliasKey levels)
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {i : Nat} {value : Expr .anon} {result : V}
     (beyondPair : 2 ≤ i) : ¬ Denotes model.cval env φ ρ (.proj T i value) result := by
   have annotated := stored.2.2
   rw [typeAlias] at annotated
   exact model_alias_former_no_projection model former annotated.const_inv beyondPair
+
+/-- A reader-shaped definition exposing such a projection cannot have the current public
+model when the former is stored as its declared alias. -/
+theorem no_model_of_stored_alias_projection {env : Env .anon}
+    {T aliasKey : Key .anon} {levels : List Level} {cvT rawT : ConstantVal .anon}
+    {caps : IndCaps .anon}
+    (former : env.find? T = some (.indInfo cvT caps))
+    (storedFormer : IxVM.Consistency.ValStored cvT rawT)
+    (typeAlias : rawT.type = .const aliasKey levels)
+    {cv : ConstantVal .anon} {body value : Expr .anon} {hint : ReducibilityHint} {i : Nat}
+    (present : ConstantInfo.defnInfo cv body hint ∈ env.consts)
+    (storedValue : IxVM.Consistency.Annotates body (.proj T i value)) (beyondPair : 2 ≤ i) :
+    ¬ Nonempty (Model V env) := by
+  rintro ⟨model⟩
+  cases storedValue with
+  | proj _ =>
+    exact stored_alias_former_no_projection model former storedFormer typeAlias beyondPair
+      (model.defn_value cv _ hint present (fun _ => 0) (fun _ => SetTheory.empty))
 
 end IxVM.Refinement.Assembly
