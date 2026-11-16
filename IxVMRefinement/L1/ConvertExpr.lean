@@ -3833,11 +3833,26 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
     · exact hplt1
     · exact hplt_rest l hmem
 
+/-- Observed literal bytes agree whenever the successful reader looks up the same address.
+The reader supplies lookup existence; unused observed pairs need not be in its blob store. -/
+def BlobReadAgreement (blob : _root_.Address → Option ByteArray)
+    (blobs : List (_root_.Address × ByteArray)) : Prop :=
+  ∀ address observed, (address, observed) ∈ blobs →
+    ∀ declared, blob address = some declared → observed = declared
+
+/-- A store containing every observed blob satisfies conditional agreement. -/
+theorem BlobReadAgreement.of_mem {blob : _root_.Address → Option ByteArray}
+    {blobs : List (_root_.Address × ByteArray)}
+    (stored : ∀ address bytes, (address, bytes) ∈ blobs → blob address = some bytes) :
+    BlobReadAgreement blob blobs := by
+  intro address observed member declared found
+  exact Option.some.inj ((stored address observed member).symm.trans found)
+
 /-- **Exact expression bridge (`RawConvExpr.toTmExact`)**: if `Reader.convExpr` succeeds on `e`
 producing `E_rd` with loose bound variables below `k` and level parameters in `ps`, then `kp`
 represents `Core.posOf ps E'` (`Decl.TmExact κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
 satisfying `Annotates E' E_rd`. -/
-theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toRawTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
@@ -3847,7 +3862,7 @@ theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
     (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
     (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
     (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
-    (hblob : ∀ a bs, (a, bs) ∈ blobs → ecx.cx.blob a = some bs)
+    (hblob : BlobReadAgreement ecx.cx.blob blobs)
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
     (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
     ∀ {n k : Nat} {E_rd : Core.KExpr},
@@ -4011,8 +4026,13 @@ theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
       have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
         rw [← Array.getElem?_toList, hrefs, href]
       rw [href_arr] at hb_at
-      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
-      exact hb_at.symm
+      cases found : ecx.cx.blob a with
+      | none => simp [found, Ix.Kernel.Reader.malformed, throw, Except.error] at hb_at
+      | some bytes =>
+        have same : bytes = ⟨bs.toArray⟩ := (hblob a ⟨bs.toArray⟩ hmem bytes found).symm
+        rw [same] at found
+        simp only [found, pure, Except.pure, Except.ok.injEq] at hb_at
+        exact hb_at.symm
     subst hb_eq
     have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
     rw [hs_utf8] at hrest
@@ -4036,9 +4056,14 @@ theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
       have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
         rw [← Array.getElem?_toList, hrefs, href]
       rw [href_arr] at hn_at
-      simp only [bind, Except.bind, hblob a ⟨bs.toArray⟩ hmem, hcanon, ↓reduceIte,
-        pure, Except.pure, Except.ok.injEq] at hn_at
-      exact hn_at.symm.trans hval.symm
+      cases found : ecx.cx.blob a with
+      | none => simp [found, Ix.Kernel.Reader.malformed, throw, Except.error, bind, Except.bind] at hn_at
+      | some bytes =>
+        have same : bytes = ⟨bs.toArray⟩ := (hblob a ⟨bs.toArray⟩ hmem bytes found).symm
+        rw [same] at found
+        simp only [bind, Except.bind, found, hcanon, ↓reduceIte,
+          pure, Except.pure, Except.ok.injEq] at hn_at
+        exact hn_at.symm.trans hval.symm
     subst hn_eq
     refine ⟨.lit (.natVal (Core.limbsVal limbs)), .lit (.natVal (Core.limbsVal limbs)), .lit,
       (fun d0 Γ => .litNat cell rlimbs hlast), ?_, ?_⟩
@@ -4155,6 +4180,38 @@ theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
     rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
     exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
 
+/-- Compatibility with a blob store containing every observed pair. -/
+theorem RawConvExpr.toRawTmExactTrace {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → ecx.cx.blob a = some bs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ R' E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        (∀ d Γ, Decl.RawTmExact κ d Γ h k (Core.posOf ps R') (Core.posOf ps E') kp) ∧
+        (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+          ∀ tail, applyBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+            E_rd (plan ++ tail) = some (E', tail)) ∧
+        (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+          ∀ tail, applyRawBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+            E_rd (plan ++ tail) = some (R', tail)) := by
+  exact raw.toRawTmExactTrace_of_blobAgreement hperm hps_lt hrefs hunivs hkeyAt hself
+    (BlobReadAgreement.of_mem hblob)
+
 /-- The exact semantic reader bridge also follows from the paired raw reading. -/
 theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
@@ -4183,6 +4240,37 @@ theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
             E_rd (plan ++ tail) = some (E', tail)) := by
   intro n k E_rd hn hb hread hlbb hdef
   obtain ⟨_, annotated, annotation, represented, trace, _⟩ := raw.toRawTmExactTrace
+    hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
+  exact ⟨annotated, annotation, fun d Γ => (represented d Γ).toTmExact, trace⟩
+
+/-- Exact semantic trace under agreement at the reader's successful literal lookups. -/
+theorem RawConvExpr.toTmExactTrace_of_blobAgreement {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : BlobReadAgreement ecx.cx.blob blobs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        (∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp) ∧
+        (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+          ∀ tail, applyBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+            E_rd (plan ++ tail) = some (E', tail)) := by
+  intro n k E_rd hn hb hread hlbb hdef
+  obtain ⟨_, annotated, annotation, represented, trace, _⟩ := raw.toRawTmExactTrace_of_blobAgreement
     hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
   exact ⟨annotated, annotation, fun d Γ => (represented d Γ).toTmExact, trace⟩
 
