@@ -14,7 +14,7 @@ open IxVM.Refinement.Core
 
 private theorem fvar_resolves_iff {env : Env .anon} (e : KExpr) :
     FvarConstsResolve env e ↔ ∀ leaf ∈ e.fvarLeaves, leaf.2.constsResolve env = true := by
-  induction e <;> simp_all [FvarConstsResolve, Expr.fvarLeaves, List.forall_mem_append]
+  induction e <;> simp_all [FvarConstsResolve, Expr.fvarLeaves, or_imp, forall_and]
 
 private theorem fvar_resolves_of_resolved {env : Env .anon} {e : KExpr}
     (resolved : e.constsResolve env = true) : FvarConstsResolve env e := by
@@ -41,8 +41,25 @@ private theorem resolved_before_instantiate {env : Env .anon} {value : KExpr} :
     ∀ (e : KExpr) (cut : Nat), (e.instantiate1 value cut).constsResolve env = true →
       e.constsResolve env = true := by
   intro e
-  induction e <;> intro cut resolved <;>
-    simp_all [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true]
+  induction e with
+  | bvar _ => intro _ _; rfl
+  | sort _ | const _ _ | lit _ | fvar _ _ _ => intro _ resolved; exact resolved
+  | app f a ihf iha =>
+    intro cut resolved
+    simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true] at resolved ⊢
+    exact ⟨ihf cut resolved.1, iha cut resolved.2⟩
+  | lam ty body bm iht ihb | forallE ty body bm iht ihb =>
+    intro cut resolved
+    simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true] at resolved ⊢
+    exact ⟨iht cut resolved.1, ihb (cut + 1) resolved.2⟩
+  | letE ty val body bm iht ihv ihb =>
+    intro cut resolved
+    simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true] at resolved ⊢
+    exact ⟨⟨iht cut resolved.1.1, ihv cut resolved.1.2⟩, ihb (cut + 1) resolved.2⟩
+  | proj name i inner ih =>
+    intro cut resolved
+    simp only [Expr.instantiate1, Expr.constsResolve, Bool.and_eq_true] at resolved ⊢
+    exact ⟨resolved.1, ih cut resolved.2⟩
 
 /-- A successful annotation with resolved output has a resolved original input. -/
 theorem annotateCore_input_resolves {env : Env .anon} (store : Ix.Kernel.Open.StoreInv env)
