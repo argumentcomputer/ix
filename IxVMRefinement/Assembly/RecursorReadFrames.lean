@@ -94,4 +94,44 @@ theorem readInductive_rec_frames {md : Mode} {cx : Ctx md} {state : State md}
   exact ⟨generated, bare, shape, firstSlot, first, block, declarations, selected,
     firstRun, params, lower, frames⟩
 
+/-- Every twin in a nonempty successful family read supplies its own actual recursor run.
+The local motive position is retained in its own entry; no global-order equality is used. -/
+theorem lowerTwin_rec_frames {md : Mode} {cx : Ctx md}
+    {twins : Array (ConstRef _root_.Address × RecEntry)} {firstRef : ConstRef _root_.Address}
+    {firstEntry : RecEntry} {result : Read md}
+    (firstRun : twins[0]? = some (firstRef, firstEntry))
+    (read : lowerTwin cx twins = .ok result) :
+    ∃ blockLps rows, List.Forall₂
+      (fun selected row => readRecursor cx blockLps selected.1 selected.2 = .ok row)
+      twins.toList rows := by
+  simp only [lowerTwin, firstRun] at read
+  dsimp only at read
+  rcases ite_ok read with read | read
+  · split at read
+    · split at read
+      · split at read
+        · dsimp only at read
+          rcases ite_ok read with read | read
+          · split at read
+            · rename_i firstSlot first selectedFirst
+              rcases ite_ok read with read | read
+              · exact (fail_bind read).elim
+              · rcases ite_ok read with read | read
+                · obtain ⟨_, _, read⟩ := except_bind_ok.mp read
+                  obtain ⟨rows, rowsRead, _⟩ := except_bind_ok.mp read
+                  refine ⟨List.range first.lvls.toNat, rows.toList, ?_⟩
+                  apply forIn_push_array twins _ _ ?_ rowsRead
+                  intro selected current out ran
+                  obtain ⟨row, rowRead, returned⟩ := except_bind_ok.mp ran
+                  simp only [pure, Except.pure, Except.ok.injEq] at returned
+                  subst out
+                  exact ⟨row, rfl, rowRead⟩
+                · exact (fail_bind read).elim
+            · exact (throw_ok read).elim
+          · exact (fail_bind read).elim
+        · exact (throw_ok read).elim
+      · exact (throw_ok read).elim
+    · exact (throw_ok read).elim
+  · exact (fail_bind read).elim
+
 end IxVM.Refinement.Assembly
