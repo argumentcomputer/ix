@@ -16,7 +16,7 @@ private theorem ruleLoop_of_frames {md : Mode} {cx : Ctx md} {reader : MemberRea
     {sources : List (Ixon.RecursorRule × Nat)} {rules : List (RecRule md)}
     (frames : List.Forall₂ (RecursorRuleReadFrame cx reader majorOwner majorSlot) sources rules) :
     ∀ acc : List (RecRule md),
-      forIn sources acc (fun source current => do
+      forIn sources acc (fun (source : Ixon.RecursorRule × Nat) (current : List (RecRule md)) => do
         let ctor ← cx.memberKey (.ctor majorOwner majorSlot source.2)
         let rhs ← reader.read source.1.rhs
         pure (.yield (current ++
@@ -43,8 +43,7 @@ theorem RecursorReadInputs.run {md : Mode} {cx : Ctx md} {blockLps : List LevelP
   subst ref
   unfold readRecursor
   dsimp only
-  rw [stored, selected]
-  simp only [safe, Bool.false_eq_true, ↓reduceIte]
+  simp only [stored, selected, safe, Bool.false_eq_true, ↓reduceIte]
   rw [named]
   simp only [bind, Except.bind]
   change (do
