@@ -997,7 +997,7 @@ theorem checkNativeRules_ok_go {envR : Ix.Kernel.Env .anon} {rlps lps : List Lev
 
 /-! ## Section 2: Native Recursor Circuit Specifications (`nat_none_mention`..`nat_ih_apps`) -/
 
-theorem kexpr_list_concat_spec' {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem kexpr_list_concat_spec' {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {xs ys : List KExpr} {l₁ l₂ r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::concat<&KernelTypes::KExprNode>» [l₁, l₂] h r h' cs)
     (h₁ : RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h xs l₁)
@@ -1016,7 +1016,7 @@ theorem kexpr_list_concat_spec' {κ : _root_.Address → KKey} [∀ a, Resolved 
     (fun _ _ _ _ ext r => Tm.mono ext r) ev' h₁' h₂'
   rwa [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hres
 
-theorem kexpr_list_drop_spec' {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem kexpr_list_drop_spec' {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k n : Nat} {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hn : n < 4294967296)
     (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (n : F)] h r h' cs)
@@ -1033,7 +1033,7 @@ theorem kexpr_list_drop_spec' {κ : _root_.Address → KKey} [∀ a, Resolved (�
   exact hres
 
 /-- `KernelCheck::nat_none_mention` returning `.field 1` leaves the heap unchanged. -/
-theorem nat_none_mention_one_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {bT : Bytes.Address} :
+theorem nat_none_mention_one_spec {κ : _root_.Address → KKey} {bT : Bytes.Address} :
     ∀ {d : Nat} {Γ : Nat → KExpr} {k : Nat} {es : List KExpr}
       {pes pt : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h es pes →
@@ -1069,7 +1069,7 @@ theorem nat_none_mention_one_spec {κ : _root_.Address → KKey} [∀ a, Resolve
 
 /-- `KernelCheck::nat_rec_idx` builds `recIdxFrom ecbs T nP nF i` and certifies that no recursive
 field index in that suffix is mentioned in the remainder of the constructor telescope. -/
-theorem nat_rec_idx_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_rec_idx_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {T : KKey} {bT : Bytes.Address} {nP nIdx nF : Nat}
     {Rcty Ecty rbody ebody : KExpr} {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     (hT : κ (ixAddr bT) = T)
@@ -1226,7 +1226,7 @@ theorem nat_rec_idx_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
 
 /-- An observed recursive-index scan supplies the unused-later condition directly for every
 field whose unopened domain mentions the former. This extraction precedes field classification. -/
-theorem nat_rec_idx_unused_later {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_rec_idx_unused_later {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {T : KKey} {bT : Bytes.Address} {nP nIdx nF : Nat}
     {Rcty Ecty rbody ebody : KExpr} {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty pt plps r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -1273,7 +1273,7 @@ def NatCtorLoad (κ : _root_.Address → KKey) (b₀ : Bytes.Address) (k : Nat)
         RawTm κ 0 (fun _ => default) m2 0
           (posOf (List.range k) info.2.2.1) (posOf (List.range k) info.2.2.2.1) x_cty0
 
-theorem NatCtorLoad.mono_calls {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {b₀ : Bytes.Address} {k : Nat}
+theorem NatCtorLoad.mono_calls {κ : _root_.Address → KKey} {b₀ : Bytes.Address} {k : Nat}
     {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)} {x_block : SourceValue F}
     {cs₁ cs₂ : List (Call F)} (hsub : ∀ x ∈ cs₁, x ∈ cs₂)
     (h : NatCtorLoad κ b₀ k ctors_info x_block cs₂) :
@@ -1322,7 +1322,7 @@ theorem clvls_eq_subst_params (k : Nat) (large : Bool) :
 /-- `KernelCheck::nat_ctor` loads constructor `j`, instantiates its universe parameters to the
 recursor's frame `rlps`, verifies its return spine mentions `T` nowhere in its indices, and
 computes its recursive field indices `recIdx` along with `structUsedLater = false` on each. -/
-theorem nat_ctor_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
+theorem nat_ctor_spec {κ : _root_.Address → KKey}
     {T : KKey} {b₀ bT : Bytes.Address} {k nP nIdx num_ctors j : Nat} {large : Bool}
     {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)}
     {info : KKey × Nat × KExpr × KExpr × List Nat}
@@ -1776,7 +1776,7 @@ theorem nat_minors_spec {c : Ctx}
 /-- When raw former term `R` is already a syntactic `rem`-binder `∀`-telescope
 (`R.stripPis rem = some _`), `KernelCheck::nat_former_tele` takes only the `Forall` spine without
 invoking `whnf` and returns a pointer representing the exact same `RawTm` pair `(R, E)`. -/
-theorem nat_former_tele_syntactic_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr} :
+theorem nat_former_tele_syntactic_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr} :
     ∀ (rem : Nat) {k : Nat} {R E rbody : KExpr} {rbs : List (KExpr × Ix.Kernel.BinderMeta)}
       {x_rc x_ty x_types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       rem < 4294967296 →

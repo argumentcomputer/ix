@@ -1086,7 +1086,7 @@ private theorem instantiate1Lift_abstract1 (v : KExpr) (d k : Nat) :
     simpa [Expr.instantiate1Lift, Expr.abstract1] using instantiate1Lift_abstract1 v d k e j
 
 /-- Close one opened variable at `d` back into local binder `k`. -/
-theorem tm_close {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ Γ' : Nat → KExpr} {h : Heap F}
+theorem tm_close {κ : _root_.Address → KKey} {d : Nat} {Γ Γ' : Nat → KExpr} {h : Heap F}
     (hΓ : ∀ j, j < d → Γ' j = Γ j) {k : Nat} {E : KExpr} {p : SourceValue F}
     (rep : Tm κ (d + 1) Γ h k E p) :
     Tm κ d Γ' h (k + 1) (E.abstract1 d k) p := by
@@ -1180,7 +1180,7 @@ private theorem fvarIdxLt_instantiate1Lift {d : Nat} {v : KExpr} (hv : fvarIdxLt
     simp only [fvarIdxLt] at h
     simpa [Expr.instantiate1Lift, fvarIdxLt] using fvarIdxLt_instantiate1Lift hv e j h
 
-theorem tm_fvarIdxLt {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+theorem tm_fvarIdxLt {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p) :
     fvarIdxLt d E = true := by
   induction rep with
@@ -1243,7 +1243,7 @@ private def closeDummies : Nat → Nat → Nat → KExpr → KExpr
   | 0, _, _, e => e
   | m + 1, d, c', e => (closeDummies m (d + 1) c' e).abstract1 d (c' + m)
 
-private theorem tm_openDummies {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F} :
+private theorem tm_openDummies {κ : _root_.Address → KKey} {h : Heap F} :
     ∀ (m d c : Nat) {E : KExpr} {p : SourceValue F},
       Tm κ d (fun _ => .sort .zero) h (c + m) E p →
       Tm κ (d + m) (fun _ => .sort .zero) h c (openDummies m d c E) p
@@ -1254,7 +1254,7 @@ private theorem tm_openDummies {κ : _root_.Address → KKey} [∀ a, Resolved (
     have ih := tm_openDummies m (d + 1) c hop
     rwa [show d + 1 + m = d + (m + 1) by omega] at ih
 
-private theorem tm_closeDummies {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F} :
+private theorem tm_closeDummies {κ : _root_.Address → KKey} {h : Heap F} :
     ∀ (m d c' : Nat) {E : KExpr} {p : SourceValue F},
       Tm κ (d + m) (fun _ => .sort .zero) h c' E p →
       Tm κ d (fun _ => .sort .zero) h (c' + m) (closeDummies m d c' E) p
@@ -1448,7 +1448,7 @@ private theorem closeDummies_openDummies (shift : Nat) :
 
 /-- `KernelSubst::expr_lift(pe, shift, cut)` on a `Tm` term at `d = 0` and local binder depth
 `k ≥ cut` produces `E.liftLooseBVars shift cut` at local binder depth `k + shift`. -/
-theorem expr_lift_local_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem expr_lift_local_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k shift cut : Nat} {E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hcut_le : cut ≤ k)
     (hshift_lt : shift < 4611686018427387904)
@@ -1566,7 +1566,7 @@ private theorem hasLooseBVar_instantiate1Lift_false (v : KExpr) :
     simpa [Expr.instantiate1Lift, Expr.hasLooseBVar] using
       hasLooseBVar_instantiate1Lift_false v e j i hji hv hb
 
-private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat}
+private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} {d : Nat}
     {Γ : Nat → KExpr} {h : Heap F} (j : Nat) :
     ∀ {m k : Nat} {E : KExpr} {pe : SourceValue F},
       Tm κ d Γ h k E pe →
@@ -1656,7 +1656,7 @@ private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} [∀
 
 /-- `KernelSubst::expr_has_bvar_at(pe, j)` returning `.field 0` on `Tm` at local depth `k > j`
 certifies `E.hasLooseBVar j = false` and leaves the heap unchanged. -/
-theorem expr_has_bvar_at_zero_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem expr_has_bvar_at_zero_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k j : Nat} {E : KExpr} {pe : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hjk : j < k) (hj_lt : j < 4294967296)
     (hbnd : IxVM.Consistency.Bounded cs)
@@ -1672,7 +1672,7 @@ theorem expr_has_bvar_at_zero_spec {κ : _root_.Address → KKey} [∀ a, Resolv
 
 /-! ## Section 3: `lam_first_arity`, `consume_wrapper`, and `wrap_rel` specs -/
 
-private theorem tm_lam_descent {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+private theorem tm_lam_descent {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {E : KExpr} {p w20 xb xm : SourceValue F} {steps : Nat}
     (hE : Tm κ d Γ h k E p)
     (ld : loadValue h p = .ok (.construct kexprEnum "Lam" [w20, xb, xm]))
@@ -1689,7 +1689,7 @@ private theorem tm_lam_descent {κ : _root_.Address → KKey} [∀ a, Resolved (
   | litStr cell _ _ | proj cell _ _ =>
     exact False.elim (load_cell_ne cell ld (by decide))
 
-private theorem tm_ptr_descent_zero {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+private theorem tm_ptr_descent_zero {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
     (hE : Tm κ d Γ h k E p) :
     RomBound.HeapDescent h (.enum kexprEnum) p 0 := by
@@ -1699,7 +1699,7 @@ private theorem tm_ptr_descent_zero {κ : _root_.Address → KKey} [∀ a, Resol
   | litNat cell _ _ | litStr cell _ _ | proj cell _ _ =>
     exact .here cell (by simp [Value.type])
 
-private theorem lam_first_arity_go {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ : Nat → KExpr} :
+private theorem lam_first_arity_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr} :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W fname args h r h' cs → fname = "KernelCheck::lam_first_arity" →
@@ -2145,7 +2145,7 @@ private theorem args_contain_bvar_01 {a t : SourceValue F} {h : Heap F} {r : Sou
         exact ih_i _ _ _ _ _ _ (by rec_lt_calls) ev_r rfl _ _ rfl)
     _ _ _ _ _ _ ev rfl a t rfl
 
-private theorem args_contain_bvar_one_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat}
+private theorem args_contain_bvar_one_spec {κ : _root_.Address → KKey} {d : Nat}
     {Γ : Nat → KExpr} {h : Heap F} :
     ∀ {args : List KExpr} {pargs : SourceValue F} {target : Nat} {h' : Heap F} {cs : List (Call F)},
       target < d →
@@ -2182,7 +2182,7 @@ private theorem args_contain_bvar_one_spec {κ : _root_.Address → KKey} [∀ a
       obtain ⟨hmem, hh⟩ := args_contain_bvar_one_spec ht1 ht2 hrest ev126
       exact ⟨List.mem_cons_of_mem _ hmem, hh⟩
 
-private theorem all_bvars_in_args_one_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat}
+private theorem all_bvars_in_args_one_spec {κ : _root_.Address → KKey} {d : Nat}
     {Γ : Nat → KExpr} {args : List KExpr} :
     ∀ {targets : List Nat} {pbvars pargs : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       (∀ tgt ∈ targets, tgt < d ∧ tgt < 549755813888) →
@@ -4426,7 +4426,7 @@ theorem structRecRhsR_exists (T : KKey) (lps : List LevelParam) (elim : LevelPar
 
 /-! ## Section 5a: `RawTm` and Native Recursor Generator Circuit Specifications -/
 
-theorem tm_bvarLocal_nat {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem tm_bvarLocal_nat {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k addr n : Nat}
     (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field (n : F)]))
     (hsm : n < 4294967296) (hlt : n < k) :
@@ -4507,7 +4507,7 @@ inductive RawTm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h
         (.proj (κ (ixAddr a)) (ZMod.val i) E)
         (.ptr (.enum kexprEnum) addr)
 
-theorem RawTmExact.toRawTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.toRawTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p) : RawTm κ d Γ h k R E p := by
   induction rep with
@@ -4523,7 +4523,7 @@ theorem RawTmExact.toRawTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a
   | litStr cell rb hs => exact .litStr cell rb hs
   | proj cell ra _ ihe => exact .proj cell ra ihe
 
-theorem RawTm.toTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
     (rep : RawTm κ d Γ h k R E p) : Tm κ d Γ h k E p := by
   induction rep with
@@ -4539,7 +4539,7 @@ theorem RawTm.toTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : 
   | litStr cell rb hs => exact .litStr cell rb hs
   | proj cell ra _ ihe => exact .proj cell ra ihe
 
-theorem RawTm.mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h h' : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
     (ext : Heap.Extends h h') (rep : RawTm κ d Γ h k R E p) : RawTm κ d Γ h' k R E p := by
   induction rep with
@@ -4564,7 +4564,7 @@ theorem RawTm.mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : 
   | proj cell ra _ ihe =>
     exact .proj (ext.getElem?_eq cell) (Bytes.repAddressRef_heapMono₂ addrTy ext ra) ihe
 
-theorem RawTm.load {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p v : SourceValue F}
     (rep : RawTm κ d Γ h k R E p) (ld : loadValue h p = .ok v) :
     ∃ addr, p = .ptr (.enum kexprEnum) addr ∧ h[addr]? = some v := by
@@ -4799,7 +4799,7 @@ theorem expr_inst_levels_rawTm_aux (κ : _root_.Address → KKey) :
       | litNat cell _ _ | litStr cell _ _ =>
         exact (load_cell_ne cell ld (by decide)).elim
 
-theorem expr_inst_levels_rawTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ : Nat → KExpr}
+theorem expr_inst_levels_rawTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
     {e params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     {k : Nat} {R E : KExpr} {us : List KLevel}
     (bd : IxVM.Consistency.Bounded cs)
@@ -4811,7 +4811,7 @@ theorem expr_inst_levels_rawTm {κ : _root_.Address → KKey} [∀ a, Resolved (
       (E.instantiateLevelParams (List.range us.length) us) r :=
   expr_inst_levels_rawTm_aux κ cs.length false (Nat.le_refl _) bd ev hRE hus
 
-theorem tmRepList_mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+theorem tmRepList_mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
     {h h' : Heap F} {es : List KExpr} {p : SourceValue F}
     (ext : Heap.Extends h h')
     (rep : RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h es p) :
@@ -4826,7 +4826,7 @@ theorem fieldRepList_mono {h h' : Heap F} {is : List Nat} {p : SourceValue F}
   repList_heapMono₂ (R := fun _ (idx : Nat) v => v = .field (idx : F)) fieldListEnum
     (fun _ _ _ _ _ r => r) ext rep
 
-theorem RawTm.forallE_of_load' {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.forallE_of_load' {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {pe pt pb pm : SourceValue F}
     (rep : RawTm κ d Γ h k R E pe)
     (ld : loadValue h pe = .ok (.construct kexprEnum "Forall" [pt, pb, pm])) :
@@ -4848,7 +4848,7 @@ private theorem mkAppN_snoc :
   | [], _, _ => rfl
   | _ :: as, f, a => mkAppN_snoc as (.app f _) a
 
-theorem peel_n_foralls_rawTm_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+theorem peel_n_foralls_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       n < 4294967296 →
@@ -4878,7 +4878,7 @@ theorem peel_n_foralls_rawTm_spec {κ : _root_.Address → KKey} [∀ a, Resolve
         by simp [Expr.stripPis, hsR], by simp [Expr.stripPis, hsE], ?_⟩
       rwa [show k + (m + 1) = k + 1 + m by omega]
 
-private theorem rawTm_not_app_load_ne {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+private theorem rawTm_not_app_load_ne {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {R E : KExpr} {pe : SourceValue F} {h : Heap F} {vs : List (SourceValue F)}
     (hRE : RawTm κ d Γ h k R E pe) (hna : ∀ f a, R ≠ .app f a)
     (ld : loadValue h pe = .ok (.construct kexprEnum "App" vs)) : False := by
@@ -4889,7 +4889,7 @@ private theorem rawTm_not_app_load_ne {κ : _root_.Address → KKey} [∀ a, Res
   | litStr cell _ _ | proj cell _ _ =>
     exact load_cell_ne cell ld (by decide)
 
-theorem collect_spine_rawTm_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem collect_spine_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hRE : RawTm κ d Γ h k R E pe)
     (ev : ObsFn W "KernelTypes::collect_spine" [pe] h r h' cs) :
@@ -4953,12 +4953,12 @@ theorem rawRecSpine_ilp {T : KKey} (ks : List LevelParam) (us : List KLevel) :
     exact .app
   | _, _, .forallE hrb => .forallE (rawRecSpine_ilp ks us hrb)
 
-theorem RawTm.const_left_inv {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.const_left_inv {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {nm : KKey} {us : List KLevel} {E : KExpr} {p : SourceValue F}
     (rep : RawTm κ d Γ h k (.const nm us) E p) : E = .const nm us := by
   cases rep; rfl
 
-theorem RawTm.forallE_of_load {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.forallE_of_load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {pe pt pb pm : SourceValue F}
     (rep : RawTm κ d Γ h k R E pe)
     (ld : loadValue h pe = .ok (.construct kexprEnum "Forall" [pt, pb, pm])) :
@@ -4975,7 +4975,7 @@ theorem RawTm.forallE_of_load {κ : _root_.Address → KKey} [∀ a, Resolved (�
   | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell ld (by decide)).elim
 
-theorem RawTm.not_forallE_of_load {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem RawTm.not_forallE_of_load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {pe v1 : SourceValue F}
     (rep : RawTm κ d Γ h k R E pe)
     (ld : loadValue h pe = .ok v1)
@@ -5212,7 +5212,7 @@ theorem projection_addr_ctor_spec {c : Ctx} {bp r : SourceValue F} {b : Bytes.Ad
 
 /-! ### `nat_*` expression generator specifications (`nat_ps_at` through `nat_minor_ty`) -/
 
-private theorem kexpr_list_concat_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+private theorem kexpr_list_concat_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {xs ys : List KExpr} {l₁ l₂ r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::concat<&KernelTypes::KExprNode>» [l₁, l₂] h r h' cs)
     (h₁ : RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h xs l₁)
@@ -5231,7 +5231,7 @@ private theorem kexpr_list_concat_spec {κ : _root_.Address → KKey} [∀ a, Re
     (fun _ _ _ _ ext r => Tm.mono ext r) ev' h₁' h₂'
   rwa [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hres
 
-private theorem kexpr_list_drop_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+private theorem kexpr_list_drop_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k n : Nat} {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hn : n < 4294967296)
     (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (n : F)] h r h' cs)
@@ -5248,7 +5248,7 @@ private theorem kexpr_list_drop_spec {κ : _root_.Address → KKey} [∀ a, Reso
   exact hres
 
 /-- `KernelCheck::nat_ps_at(o, n)` builds `Ix.Kernel.structPsAt o n`. -/
-theorem nat_ps_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+theorem nat_ps_at_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (n o k : Nat) {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       o + n ≤ k → k < 4294967296 →
       ObsFn W "KernelCheck::nat_ps_at" [.field (o : F), .field (n : F)] h r h' cs →
@@ -5292,7 +5292,7 @@ theorem nat_ps_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {
         (tmRepList_mono ext_end htl)
 
 /-- `KernelCheck::nat_app_n(f, args)` builds `Expr.mkAppN F Args`. -/
-theorem nat_app_n_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
+theorem nat_app_n_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Args : List KExpr} {Ef : KExpr} {pf pargs r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       Tm κ d Γ h k Ef pf →
@@ -5333,7 +5333,7 @@ private theorem mentionsConst_mkAppN_of_head {T : KKey} :
     mentionsConst_mkAppN_of_head as (by simp [Ix.Kernel.Expr.mentionsConst, hf])
 
 /-- `KernelCheck::nat_mentions` always returns `.field 0` or `.field 1` without modifying the heap. -/
-theorem nat_mentions_ret_bit {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {bT : Bytes.Address} :
+theorem nat_mentions_ret_bit {κ : _root_.Address → KKey} {bT : Bytes.Address} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {k : Nat} {E : KExpr} {pe pt r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       cs.length ≤ n →
@@ -5442,7 +5442,7 @@ private theorem field0_of_bit_ne1 {v : SourceValue F}
   · exact absurd rfl hne
 
 /-- `KernelCheck::nat_mentions(e, t) = .field 0` certifies `E.mentionsConst T = false`. -/
-theorem nat_mentions_zero_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {T : KKey} {bT : Bytes.Address}
+theorem nat_mentions_zero_spec {κ : _root_.Address → KKey} {T : KKey} {bT : Bytes.Address}
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT) :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {k : Nat} {E : KExpr} {pe pt : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
@@ -5569,7 +5569,7 @@ theorem nat_mentions_zero_spec {κ : _root_.Address → KKey} [∀ a, Resolved (
 
 /-- Whenever `KernelCheck::nat_positivity` returns `r ≠ .field 3`, it returns `.field 1` or `.field 2`
 (hence `r ≠ .field 0`) and `E` mentions `T`. -/
-theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {T : KKey} {bT : Bytes.Address}
+theorem nat_positivity_ok_spec {κ : _root_.Address → KKey} {T : KKey} {bT : Bytes.Address}
     (hT : κ (ixAddr bT) = T) :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {k : Nat} {R E : KExpr}
       {pe pt plps pnp pni po pk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -5659,7 +5659,7 @@ inductive TeleRep (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
       (hbs : TeleRep κ d Γ h (k + 1) bs rest) :
       TeleRep κ d Γ h k ((T, bmeta ℓ) :: bs) (.ptr (.enum teleListEnum) addr)
 
-theorem TeleRep.mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem TeleRep.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h h' : Heap F} {k : Nat} {bs : List (KExpr × Ix.Kernel.BinderMeta)} {p : SourceValue F}
     (ext : Heap.Extends h h') (rep : TeleRep κ d Γ h k bs p) : TeleRep κ d Γ h' k bs p := by
   induction rep with
@@ -5667,7 +5667,7 @@ theorem TeleRep.mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d 
   | cons cell ht hl _ ih =>
     exact .cons (ext.getElem?_eq cell) (ht.mono ext) (repKLevel_heapMono₂ ext hl) ih
 
-theorem TeleRep.toRepListTrue {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem TeleRep.toRepListTrue {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {bs : List (KExpr × Ix.Kernel.BinderMeta)} {p : SourceValue F}
     (rep : TeleRep κ d Γ h k bs p) :
     RepList teleListEnum (fun _ _ _ => True) h bs p := by
@@ -5675,7 +5675,7 @@ theorem TeleRep.toRepListTrue {κ : _root_.Address → KKey} [∀ a, Resolved (�
   | nil cell => exact .nil cell
   | cons cell _ _ _ ih => exact .cons cell trivial ih
 
-theorem tele_length_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem tele_length_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {bs : List (KExpr × Ix.Kernel.BinderMeta)} {p r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>»
@@ -5712,7 +5712,7 @@ theorem field_list_length_spec {R : Heap F → Nat → SourceValue F → Prop}
 /-! ### `nat_replace_pis`, `nat_pi_binders`, `nat_mk_binders`, `nat_field_dom` -/
 
 /-- `KernelCheck::nat_replace_pis` computes `Expr.replacePisPw` (`lam = 0`) or `Expr.pisToLamsPw` (`lam ≠ 0`). -/
-theorem nat_replace_pis_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+theorem nat_replace_pis_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (cnt : Nat) {k : Nat} {ℓ : KLevel} {tele body : KExpr}
       {ppw ptele pb plam r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       cnt < 4294967296 →
@@ -5772,7 +5772,7 @@ theorem nat_replace_pis_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ
 
 /-- On a strictly-positive recursive field domain (`RawRecSpine`), `KernelCheck::nat_pi_binders`
 peels `E.piBinders = (bs, efb)` and returns a `TeleRep` for `bs` together with a `RawTm` on `efb`. -/
-theorem nat_pi_binders_rawRecSpine_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem nat_pi_binders_rawRecSpine_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {T : KKey} :
     ∀ {R E : KExpr}, RawRecSpine T R E →
       ∀ {k : Nat} {pe pbs plast : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -5831,7 +5831,7 @@ theorem nat_pi_binders_rawRecSpine_spec {κ : _root_.Address → KKey} [∀ a, R
       exact (hRaw.not_forallE_of_load ld hne rd rb m rfl).elim
 
 /-- `KernelCheck::nat_mk_binders` wraps `bs` as `Expr.mkPisOf` (`lam = 0`) or `Expr.mkLamsOf` (`lam ≠ 0`). -/
-theorem nat_mk_binders_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+theorem nat_mk_binders_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ {bs : List (KExpr × Ix.Kernel.BinderMeta)} {k : Nat} {body : KExpr}
       {pbs pbody plam r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       TeleRep κ d Γ h k bs pbs →
@@ -5924,7 +5924,7 @@ theorem stripPis_at_lt :
 
 /-- `KernelCheck::nat_field_dom(cty, np, i)` returns the `i`-th field domain `(bs.getD (nP + i) default).1`
 at local binder depth `k + (nP + i)`, preserving `RawTm` without modifying the heap. -/
-theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k nP nF i : Nat} {Rcty Ecty rbody ebody : KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -5957,7 +5957,7 @@ theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} [∀ a, Resolved
 
 /-- `KernelCheck::nat_idx_at` computes `Ix.Kernel.structIdxAt nF o i l m E`, moving local binder
 depth from `k_base + i + m` to `k_base + o + nF + l + m`. -/
-theorem nat_idx_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k_base nF o i l m : Nat} {E : KExpr} {pe r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hi : i ≤ nF)
@@ -5985,7 +5985,7 @@ theorem nat_idx_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] 
   have h2 := expr_lift_local_spec (by omega) (by omega) (by omega) hbnd2 h1' ev6
   rwa [show k_base + o + nF + l + m = (k_base + nF + l + m) + o by omega]
 
-theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k_base nF o i l m : Nat} (hi : i ≤ nF) (hlt : k_base + o + nF + l + m < 4294967296) :
     ∀ {es : List KExpr} {pes r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       IxVM.Consistency.Bounded cs →
@@ -6029,7 +6029,7 @@ theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ 
       exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
         (tmRepList_mono ext_end htl)
 
-theorem nat_map_lift_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_map_lift_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k shift cut : Nat} (hcut_le : cut ≤ k)
     (hshift_lt : shift < 4611686018427387904) (hcut_lt : cut < 4294967296) :
     ∀ {es : List KExpr} {pes r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -6073,7 +6073,7 @@ theorem nat_map_lift_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)
       exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
         (tmRepList_mono ext_end htl)
 
-theorem nat_tele_at_go {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_tele_at_go {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k_base nF o i l : Nat} {ℓ : KLevel} (hi : i ≤ nF) :
     ∀ {tele_rem : List (KExpr × Ix.Kernel.BinderMeta)} (m : Nat)
       {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -6151,7 +6151,7 @@ theorem nat_tele_at_go {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {
           htl_ext
 
 /-- `KernelCheck::nat_tele_at` at `k = 0` computes `Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele`. -/
-theorem nat_tele_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_tele_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k_base nF o i l : Nat} {ℓ : KLevel} {tele : List (KExpr × Ix.Kernel.BinderMeta)}
     {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hi : i ≤ nF)
@@ -6173,7 +6173,7 @@ theorem nat_tele_at_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
 
 /-- `KernelCheck::nat_field_tele(cty, np, i)` on a strictly-positive recursive field `i < nF`
 returns `(structFieldTeleOf Ecty nP nF i, structFieldIdxOf Ecty nP nF i)`. -/
-theorem nat_field_tele_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem nat_field_tele_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {T : KKey} {k nP nF i : Nat} {Rcty Ecty rbody ebody : KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -6265,7 +6265,7 @@ theorem structPsAt_zero_eq_structTeleVars (m : Nat) :
   simp [Ix.Kernel.structPsAt, Ix.Kernel.structTeleVars]
 
 /-- `KernelCheck::nat_ih_pis` builds `Ix.Kernel.structIhPis` on `Ecty`. -/
-theorem nat_ih_pis_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
+theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {T : KKey} {nP nF o : Nat} {ℓ : KLevel} {Rcty Ecty rbody ebody : KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     (ho : 1 ≤ o)

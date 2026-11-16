@@ -797,7 +797,7 @@ inductive ForallDomHeadLvls (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat �
       (hrest : ForallDomHeadLvls κ d Γ h T a ls m (k + 1) xb) :
       ForallDomHeadLvls κ d Γ h T a ls (m + 1) k (.ptr (.enum kexprEnum) addr)
 
-theorem ForallDomHeadLvls.mono {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+theorem ForallDomHeadLvls.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h₁ h₂ : Heap F} {T : KKey} {a : Bytes.Address} {ls : List KLevel}
     {m k : Nat} {p : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (hp : ForallDomHeadLvls κ d Γ h₁ T a ls m k p) :
@@ -838,7 +838,7 @@ private theorem getAppFn_mkAppN_eq : ∀ (As : List KExpr) (f : KExpr),
     rw [getAppFn_mkAppN_eq As (.app f a)]
     rfl
 
-private theorem nat_app_n_head {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
+private theorem nat_app_n_head {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat} :
     ∀ {Args : List KExpr} {a : Bytes.Address} {ls : List KLevel} {pf pargs r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       AppHeadConstLvls h a ls pf →
@@ -871,7 +871,7 @@ private theorem nat_app_n_head {κ : _root_.Address → KKey} [∀ a, Resolved (
       exact ih happ (tmRepList_mono ext50 has) ev46
 
 private theorem forallDomHeadLvls_replace_pis
-    {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+    {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {T : KKey} {a : Bytes.Address} {ls : List KLevel} {m : Nat} :
     ∀ (cnt : Nat) {k : Nat} {tele : KExpr} {ppw ptele pb r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
@@ -1924,7 +1924,7 @@ theorem CapsUpgradeAt.defnInfo_iff {T : KKey} {cvS : KConstantVal}
     simp
   · rw [hup.find_ne hkeq]
 
-theorem RulesRepExact.toRepListTrue {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+theorem RulesRepExact.toRepListTrue {κ : _root_.Address → KKey} {h : Heap F}
     {ps : List LevelParam} {j : Nat} {v : SourceValue F} {rls : List (RecRule .anon)}
     (hr : RulesRepExact κ h ps j v rls) :
     RepList krrListEnum (fun _ _ _ => True) h rls v := by
@@ -1932,7 +1932,7 @@ theorem RulesRepExact.toRepListTrue {κ : _root_.Address → KKey} [∀ a, Resol
   | nil cell => exact .nil cell
   | cons cell _ _ ih => exact .cons cell trivial ih
 
-theorem rules_length_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {ps : List LevelParam}
+theorem rules_length_spec {κ : _root_.Address → KKey} {ps : List LevelParam}
     {j : Nat} {rls : List (RecRule .anon)} {p r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<KernelTypes::KRecRule>» [p] h r h' cs)
@@ -1950,7 +1950,7 @@ theorem rules_length_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)
     exact hr.toRepListTrue
   exact Lib.Lists.length_spec ev' hl'
 
-theorem CIRepExact.ctor_key_and_nf {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+theorem CIRepExact.ctor_key_and_nf {κ : _root_.Address → KKey} {h : Heap F}
     {nl ty blk np nf u : SourceValue F} {b₀ b_c : Bytes.Address}
     {cv : KConstantVal} {nP nF j : Nat}
     (hj_lt : j < 2147483648)
@@ -2632,7 +2632,7 @@ theorem check_recursor_canonical_full_spec
     rw [h21_eq] at hnf_idx
     exact ⟨hnf_idx, rhsG, hrhsG, hwrap_rhs⟩
 
-private theorem check_rec_rules_wellscoped_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
+private theorem check_rec_rules_wellscoped_spec {κ : _root_.Address → KKey}
     {rlps : List LevelParam} (hnl : rlps.length < 4294967296)
     (hperm : rlps.Perm (List.range rlps.length)) :
     ∀ {j : Nat} {x_rules x_depth r : SourceValue F} {rls : List (RecRule .anon)}
@@ -2671,7 +2671,7 @@ private theorem check_rec_rules_wellscoped_spec {κ : _root_.Address → KKey} [
       · exact hlpd_rl
       · exact ih_rest rl' hmem'
 
-private theorem collect_spine_exact_head {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+private theorem collect_spine_exact_head {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W fname args h r h' cs → fname = "KernelTypes::collect_spine" →
@@ -2729,7 +2729,7 @@ private theorem collect_spine_exact_head {κ : _root_.Address → KKey} [∀ a, 
               .app ((e1.heap_extends.trans (e2.heap_extends.trans ext₂)).getElem?_eq cell)
                 (by rw [hxf]; exact hwrap h₂ a ls (e2.heap_extends.trans ext₂) hh)⟩)
 
-private theorem peel_n_foralls_exact {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} :
+private theorem peel_n_foralls_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (m : Nat) {n : F} {x_e r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
       {k : Nat} {T : KExpr},
       ZMod.val n = m →
@@ -2785,7 +2785,7 @@ private theorem getAppFn_instantiateLevelParams (ks : List LevelParam) (us : Lis
   | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ => rfl
   | .app f _ => getAppFn_instantiateLevelParams ks us f
 
-private theorem rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
+private theorem rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
     {np nm nmi ni : Nat} {E : KExpr} {x_ty r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hsum_lt : np + nm + nmi + ni < 4294967296)
