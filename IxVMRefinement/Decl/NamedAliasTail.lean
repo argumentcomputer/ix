@@ -113,7 +113,7 @@ theorem AliasTail.normalized {md : Mode} {env : Env md} {fuel steps depth count 
     · obtain rfl := (Except.ok.inj run).symm
       exact shape
     · obtain ⟨head, reduced, rest⟩ := exceptBind_ok run
-      change whnf .verified env fuel depth e = .ok head at reduced
+      change Ix.Kernel.whnf .verified env fuel depth e = .ok head at reduced
       have headShape := shape.whnf aliasFound noLevels targetFound reduced
       split at rest
       · obtain rfl := (Except.ok.inj rest).symm
