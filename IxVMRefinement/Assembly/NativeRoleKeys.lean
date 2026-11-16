@@ -36,7 +36,11 @@ theorem admitted_bound_projection_target {V : IxVM.Refinement.View} {binding : A
   have stored : cx.store address = some value :=
     ReaderStoreTransfer.selected (table := witness.table) (prelude := witness.prelude) selected record
   have sourceRead : resolveSource cx.store address value = some actual := by
-    simpa only [resolve, stored, Option.bind_some] using resolved
+    have direct := resolved
+    change resolve cx.store address = some actual at direct
+    unfold resolve at direct
+    rw [stored] at direct
+    exact direct
   have same : actual = target := by
     cases projection with
     | definition p => exact Ix.Cert.DefinitionSegments.resolveSource_dPrj rfl sourceRead

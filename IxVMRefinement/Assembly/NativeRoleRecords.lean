@@ -89,7 +89,10 @@ theorem readRecord_projection_resolves {cx : Ctx .anon} {state : State .anon}
     · cases resolved : resolveSource cx.store address value with
       | none => simp [resolved] at available
       | some target =>
-        exact ⟨target, by simp only [resolve, stored, Option.bind_some, resolved]⟩
+        refine ⟨target, ?_⟩
+        unfold resolve
+        rw [stored]
+        exact resolved
 
 /-- A selected admitted projection was actually read, so its target resolves in the original
 role reader context. This uses the real projection guard, not merely cached record presence. -/
