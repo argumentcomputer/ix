@@ -343,10 +343,10 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
             simp only [Bool.and_eq_true] at hscope
             exact ⟨hmeta.1, hmeta.2, hraw.1, hraw.2, hann,
               hscope.1.1, hscope.1.2, hscope.2, hshape, rfl⟩
-          next hshape => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
-        next hscope => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
-    next hraw => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
-  next hmeta => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+          next hshape => simp [throw, throwThe, MonadExceptOf.throw] at h
+        next hscope => simp [throw, throwThe, MonadExceptOf.throw] at h
+    next hraw => simp [throw, throwThe, MonadExceptOf.throw] at h
+  next hmeta => simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- Once the finishing check supplies its common renaming, a successful rule run is the
 existing semantic twin-rule judgement with the canonical rule as generated RHS. -/

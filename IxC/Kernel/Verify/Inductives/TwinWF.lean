@@ -41,9 +41,9 @@ private theorem present_append (env : Env md) (added : List (ConstantInfo md))
     (name : Key md) (h : (env.find? name).isSome = true) :
     ((⟨added ++ env.consts⟩ : Env md).find? name).isSome = true := by
   simp only [Env.find?, List.find?_append]
-  cases ha : added.find? (·.name == name) <;> simp only [ha, Option.orElse_none, Option.orElse_some]
-  · exact h
-  · rfl
+  cases added.find? (·.name == name) with
+  | none => exact h
+  | some _ => rfl
 
 private theorem wf_append {env : Env md} (hbase : EnvWF env)
     (added : List (ConstantInfo md)) (hadded : ∀ ci ∈ added, ConstWF env ci) :
