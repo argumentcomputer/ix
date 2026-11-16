@@ -1170,7 +1170,7 @@ private theorem tmExact_copy_const {κ : _root_.Address → KKey} {d d' : Nat} {
     TmExact κ d' Γ' (h ++ [.construct kexprEnum "Const" [ap, lsp]]) k' E
       (.ptr (.enum kexprEnum) h.length) := by
   obtain ⟨a, ls, rfl, ra, rls⟩ := hE.const_of_load ld
-  haveI : Resolved _ := ⟨hE.toTm.const_key_ne⟩
+  have : Resolved _ := ⟨hE.toTm.const_key_ne⟩
   have ext : Heap.Extends h (h ++ [.construct kexprEnum "Const" [ap, lsp]]) := Heap.Extends.snoc _ _
   exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy ext ra) (rls.mono ext)
 
@@ -1418,7 +1418,7 @@ private theorem expr_lift_open_exact_aux (κ : _root_.Address → KKey) :
         | .Proj (ld12 := ld) (he593 := hr) (hm592 := hm) (ev625 := e1) (hc650 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
-          haveI : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
+          have : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c d Γ Es rfl hs hes)
@@ -1712,7 +1712,7 @@ private theorem expr_lower_local_exact_aux (κ : _root_.Address → KKey) (rp : 
         | .Const (ld12 := ld) (he101 := hr) (hm100 := hm) .. =>
           subst hr hm
           obtain ⟨a, ls, rfl, ra, rls⟩ := hE.const_of_load ld
-          haveI : Resolved _ := ⟨hE.toTm.const_key_ne⟩
+          have : Resolved _ := ⟨hE.toTm.const_key_ne⟩
           exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy (Heap.Extends.snoc _ _) ra)
             (rls.mono (Heap.Extends.snoc _ _))
         | .Lit (ld12 := ld) (he549 := hr) (hm548 := hm) .. =>
@@ -1783,7 +1783,7 @@ private theorem expr_lower_local_exact_aux (κ : _root_.Address → KKey) (rp : 
         | .Proj (ld12 := ld) (he588 := hr) (hm587 := hm) (ev620 := e1) (hc645 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
-          haveI : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
+          have : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c Es rfl hes (SubstAux.idxAll_proj_inv hn ld))
