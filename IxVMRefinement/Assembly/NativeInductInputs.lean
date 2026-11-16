@@ -89,15 +89,13 @@ private theorem canonicalProjection_at_field {env : Ixon.Env} {block : Bytes.Add
     (indexToSlot : index.toNat = slot) (indexValue : ZMod.val i = slot) :
     ∃ source : L1.CanonicalRecordAt env (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)),
       source.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩ := by
-  let source := projection.reindex (congrArg (Core.iprjAddr (Core.ixAddr block)) indexValue)
+  cases indexValue
   have indexRoundtrip : index.toNat.toUInt64 = index :=
     UInt64.toNat_inj.mp (UInt64.toNat_ofNat_of_lt index.toNat_lt)
-  have slotUInt : slot.toUInt64 = index :=
-    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
   have fieldUInt : (ZMod.val i).toUInt64 = index :=
-    (congrArg Nat.toUInt64 indexValue).trans slotUInt
+    (congrArg Nat.toUInt64 indexToSlot).symm.trans indexRoundtrip
   have infoEq := congrArg (fun member => Ixon.ConstantInfo.iPrj ⟨member, Core.ixAddr block⟩) fieldUInt
-  exact ⟨source, shape.trans infoEq.symm⟩
+  exact ⟨projection, shape.trans infoEq.symm⟩
 
 /-- A former value and its actual check prelude, retaining the annotation's conversion origin. -/
 structure NativeFormerRunInput (base : Core.Ctx) (block : Bytes.Address) (i : F)
