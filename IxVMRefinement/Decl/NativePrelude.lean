@@ -224,6 +224,25 @@ theorem native_prelude_calls {rc nl ty np ni nc unsafeFlag blockArg index addr r
       mentionsSubset := by intro call member; rw [allCalls]; simp [member]
       sortSubset := by intro call member; rw [allCalls]; simp [member] }⟩
 
+/-- The exact former representation retains the type field used by its prelude. -/
+theorem CIRepExact.induct_valRep {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty np ni nc safety parent index : SourceValue F} {cv : ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon}
+    (represented : CIRepExact κ h
+      (.construct kciEnum "Induct" [nl, ty, np, ni, nc, safety, parent, index]) (.indInfo cv caps)) :
+    ValRepExact κ h nl ty cv := by
+  generalize shape : (Value.construct kciEnum "Induct"
+    [nl, ty, np, ni, nc, safety, parent, index] : SourceValue F) = value at represented
+  generalize kind : Ix.Kernel.ConstantInfo.indInfo cv caps = info at represented
+  cases represented
+  case induct exactValue _ _ =>
+    injection shape with _ _ fields
+    simp only [List.cons.injEq, and_true] at fields
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
+    obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj kind
+    exact exactValue
+  all_goals (injection shape with _ tag _; exact absurd tag (by decide))
+
 /-- The observed former sort check yields its constant check in the precise selected scope.
 The declared level positions and annotation come from the actual record reader/converter. -/
 theorem NativePreludeCalls.checked {base : Ctx} {rc nl ty blockArg : SourceValue F}
