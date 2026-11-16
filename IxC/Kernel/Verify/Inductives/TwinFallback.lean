@@ -59,7 +59,7 @@ private theorem indRecs_models {mode : CheckMode} {fuel : Nat} {env output : Env
     intro ci hci
     cases hci
   · unfold checkIndRecs at h
-    simp only [hempty, ↓reduceIte] at h
+    simp only [hempty] at h
     by_cases heq : env.find? eqName = some eqA
     · simp only [if_pos heq, bind, Except.bind, pure, Except.pure] at h
       obtain ⟨result, hprovision, _⟩ := exceptBind_ok h
@@ -94,10 +94,11 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         have hc := List.all_eq_true.mp hall ci hci
         cases ci <;> simp_all
       unfold checkModeled at h
-      simp only [recs, nonrecs, inductives, constructors, List.foldlM_nil] at h
       split at h
       next hsuffix =>
         simp only [bind, Except.bind, pure, Except.pure] at h
+        rw [inductives, constructors] at h
+        simp only [nonrecs, recs, List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
         have models := indRecs_models h
         have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
             | some (.defnInfo ..) => true | _ => false) = true := by
@@ -107,6 +108,8 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
           rw [hmodel]
         simp only [present, Bool.not_true, Bool.and_false]
       next hsuffix => simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
-    · simp only [hall, Bool.false_eq_true, ↓reduceIte, Bool.and_false, Bool.false_and]
+    · have hfalse : block.all (fun | .recInfo .. => true | _ => false) = false :=
+        Bool.eq_false_iff.mpr hall
+      simp only [hfalse, Bool.and_false, Bool.false_and]
 
 end Ix.Kernel.NativeTwin

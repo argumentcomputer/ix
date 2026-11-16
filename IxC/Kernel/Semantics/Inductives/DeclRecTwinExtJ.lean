@@ -9,7 +9,25 @@ public import IxC.Kernel.Semantics.DeclExt
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Env Expr Key ConstantVal ConstantInfo EnvExt EtaFamiliesClosed projTableName)
+open Ix.Kernel (Env Expr Key ConstantVal ConstantInfo IndCaps EnvExt EtaFamiliesClosed projTableName)
+
+/-- A fresh cons over an extension of `env` is an extension of `env` when it is not
+the table of a structure stored in `env`. -/
+theorem EnvExt.cons_over {env X : Env md} {c : ConstantInfo md} (hX : EnvExt env X)
+    (hfresh : X.find? c.name = none)
+    (hnt : ∀ {T : Key md} {cv : ConstantVal md} {caps : IndCaps md},
+      env.find? T = some (.indInfo cv caps) → c.name ≠ projTableName T) :
+    EnvExt env ⟨c :: X.consts⟩ where
+  find := fun {k} {c'} h => by
+    have h' := hX.find h
+    have hne : c.name ≠ k := fun e => by
+      rw [e, h'] at hfresh
+      exact nomatch hfresh
+    rw [EnvExt.find?_cons_ne hne]
+    exact h'
+  tables := fun hT => by
+    rw [EnvExt.find?_cons_ne (hnt hT)]
+    exact hX.tables hT
 
 /-- A name that passes the front door's shape test is no projection table. -/
 theorem ne_projTableName_of_shape {n : Key md} (h : n.isProjFnShape = false) (T : Key md) :

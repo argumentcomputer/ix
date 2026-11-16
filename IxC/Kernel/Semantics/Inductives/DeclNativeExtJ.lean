@@ -229,24 +229,6 @@ theorem declNativeNoRecRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
 
 /-! ## The extension -/
 
-/-- A fresh cons over an extension of `env` is an extension of `env` when it is not
-the table of a structure stored in `env`. -/
-theorem EnvExt.cons_over {env X : Env md} {c : ConstantInfo md} (hX : EnvExt env X)
-    (hfresh : X.find? c.name = none)
-    (hnt : ∀ {T : Key md} {cv : ConstantVal md} {caps : IndCaps md},
-      env.find? T = some (.indInfo cv caps) → c.name ≠ projTableName T) :
-    EnvExt env ⟨c :: X.consts⟩ where
-  find := fun {k} {c'} h => by
-    have h' := hX.find h
-    have hne : c.name ≠ k := fun e => by
-      rw [e, h'] at hfresh
-      exact nomatch hfresh
-    rw [EnvExt.find?_cons_ne hne]
-    exact h'
-  tables := fun hT => by
-    rw [EnvExt.find?_cons_ne (hnt hT)]
-    exact hX.tables hT
-
 /-- The constructors' conses extend, over an extension, when each is fresh there
 and none is a projection table. -/
 theorem EnvExt.consSumCtors_over {env : Env md} {nP : Nat} :
