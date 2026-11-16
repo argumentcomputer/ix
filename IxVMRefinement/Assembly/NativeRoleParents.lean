@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeRoleKeys
+import IxVMRefinement.Assembly.NativeRolePrefix
 import IxVMRefinement.Assembly.AdmittedFallbackRecords
 
 /-! # Actual parent records of bound projections
@@ -91,5 +92,47 @@ theorem admitted_bound_projection_parent {V : IxVM.Refinement.View} {binding : A
     subst actualAddress actualValue
     exact .inl ⟨parentSelected, parentRecord⟩
   · exact .inr (fallback_muts_in_prelude witness.preludeRead fallback parentKind)
+
+/-- Actual bound native projection data yields checked-prefix name presence, or identifies
+its exact committed-prelude parent. The selected-parent premise is constructed from the
+projection read and its agreement with the trace's canonical parent. -/
+theorem admitted_bound_native_name_present_or_prelude {V : IxVM.Refinement.View} {binding : Admission.Binding}
+    (witness : ReaderAdmissionWitness V binding) {calls : List (Call F)} {trace : Ixon.Env}
+    {seeds : List _root_.Address} (phase : Claim.WalkedL6 calls witness.table trace seeds)
+    (claimBytes : ByteArray) (loaded : LoadedBy calls trace)
+    (noCollision : ¬ V.HashedCollision (claimBytes :: binding.bytes :: readerImages V) calls)
+    {fuel : Nat} {start roleEnv : Env .anon}
+    (reference : Decl.ReferenceTrace fuel start
+      ((Frontend.preparePrelude witness.prelude.ix witness.fullDecls).toList.map
+        IxVM.Refinement.thmToOpaqueDefn) roleEnv)
+    {owner : _root_.Address}
+    (source : L1.CanonicalRecordAt (admittedCore witness trace (fun _ => True)) owner)
+    {members : Array Ixon.MutConst} {member : Nat} {ind : Ixon.Inductive}
+    (kind : source.value.info = .muts members) (memberAt : members[member]? = some (.indc ind))
+    (one : Ix.CompileCert.ReaderIndex.inductives members = #[(member, ind)])
+    {role : Role} {address : _root_.Address} {bytes : ByteArray} {value : Ixon.Constant}
+    {layout : Egress.ProjectionLayout} {target : ConstRef _root_.Address}
+    (bound : (role, address) ∈ witness.table.bound.toList)
+    (notTrust : IxVM.Refinement.compilerTrust role = false)
+    (hashed : Hashed calls bytes) (hashEq : Address.blake3Pure bytes = address)
+    (decoded : Ixon.deConstantExact bytes = .ok value)
+    (projection : Egress.ProjectionReads value layout target)
+    (nativeTarget : target = .member owner member ∨
+      ∃ slot ctor, target = .ctor owner member slot ∧ ind.ctors[slot]? = some ctor) :
+    (roleEnv.find? (Core.keyOf witness.table address)).isSome = true ∨
+      (owner, source.value) ∈ witness.prelude.records := by
+  have targetOwner : target.block = owner := by
+    rcases nativeTarget with rfl | ⟨_, _, rfl, _⟩ <;> rfl
+  obtain ⟨parent, _, parentAt, _, origin⟩ :=
+    admitted_bound_projection_parent witness noCollision bound notTrust hashed hashEq decoded projection
+  rw [targetOwner] at parentAt origin
+  have parentCore := admitted_role_reader_sub_core witness phase (fun _ => True) claimBytes loaded noCollision parentAt
+  have parentEq : parent = source.value := Option.some.inj (parentCore.symm.trans source.recordAt)
+  subst parent
+  rcases origin with ⟨selected, record⟩ | fallback
+  · exact .inl (admitted_bound_native_name_present witness reference selected record kind memberAt one
+      noCollision bound notTrust hashed hashEq decoded projection nativeTarget)
+  · exact .inr fallback
+
 
 end IxVM.Refinement.Assembly
