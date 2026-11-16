@@ -62,6 +62,10 @@ def keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) : KKey :=
   | some (r, _) => .role r
   | none => .id a
 
+/-- Every key of a role table's keying resolves: it is a role key or an input key. -/
+instance (t : Ix.Kernel.RoleTable) (a : _root_.Address) : Resolved (keyOf t a) :=
+  ⟨by unfold keyOf; split <;> exact nofun⟩
+
 /-! ## The context -/
 
 /-- **The context of a run of the core**: the records the environment was read from, the

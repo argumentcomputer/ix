@@ -197,6 +197,19 @@ abbrev instShift (v : KExpr) (j : Nat) (e : KExpr) : KExpr := Ix.Kernel.Expr.ins
 /-- The opened variable a free `BVar i` at local depth `k` and opening depth `d` stands for. -/
 abbrev fvIdx (d k i : Nat) : Nat := d - 1 - (i - k)
 
+/-! ## Resolved keys -/
+
+/-- **The unresolved key**: a key no environment stores and no role table's keying returns (the
+projection table of a projection table). A keying that knows which addresses resolve
+(`ScopedCtx.κ`) sends every other address here. -/
+def unresolvedKey : KKey := .aux (.aux (.role default) .projTable) .projTable
+
+/-- **The key resolves**: it is not `unresolvedKey`. A `Const` or `Proj` node is represented
+only when the key of its address resolves. Under a role table's own keying every key does
+(`Ctx.lean`), so there the premise is no restriction. -/
+class Resolved (k : KKey) : Prop where
+  ne : k ≠ unresolvedKey
+
 /-! ## The relation -/
 
 /-- **The term seam**: at local binder depth `k`, the heap value `p` represents the kernel term
@@ -216,6 +229,7 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
       (rl : RepKLevel h l lp) (hu : LvEq u l) :
       Tm κ d Γ h k (.sort u) (.ptr (.enum kexprEnum) addr)
   | const {k addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls us : List KLevel}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (rls : RepKLevelList h ls lsp)
       (hus : LvEqList us ls) :
@@ -245,6 +259,7 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       Tm κ d Γ h k (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {E : KExpr}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : Tm κ d Γ h k E ep) :
       Tm κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)

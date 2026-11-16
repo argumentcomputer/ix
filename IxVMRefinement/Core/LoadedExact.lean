@@ -78,7 +78,8 @@ inductive TmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
 def TmCExact (κ : _root_.Address → KKey) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
   ∀ d Γ, TmExact κ d Γ h 0 E p
 
-theorem TmExact.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+theorem TmExact.toTm {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : TmExact κ d Γ h k E p) :
     Tm κ d Γ h k E p := by
   induction rep with
@@ -94,7 +95,8 @@ theorem TmExact.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExp
   | litStr cell rb hs => exact .litStr cell rb hs
   | proj cell ra _ ihe => exact .proj cell ra ihe
 
-theorem TmCExact.toTmC {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr} {p : SourceValue F}
+theorem TmCExact.toTmC {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F} {E : KExpr}
+    {p : SourceValue F}
     (rep : TmCExact κ h E p) : TmC κ h E p :=
   fun d Γ => (rep d Γ).toTm
 
