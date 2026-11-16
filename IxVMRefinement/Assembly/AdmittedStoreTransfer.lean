@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.AdmittedReaderStore
 import IxVMRefinement.Assembly.ReaderSupport
 import Ix.Cert.EvidenceTransfer
+import Ix.Cert.RecursorIndex
 
 /-! # Lookup transport into the selected admitted reader store
 
@@ -38,7 +39,8 @@ theorem selected {table : RoleTable} {prelude : Prelude .anon} {env : Ixon.Env}
     (present : a ∈ order) (record : Ix.Cert.recordAt env a = some c) :
     store table prelude env order a = some c := by
   rw [lookup]
-  simp only [present, ↓reduceIte, record, Option.orElse_some]
+  simp only [present, ↓reduceIte, record]
+  rfl
 
 theorem fallback_of_mem {table : RoleTable} {prelude : Prelude .anon}
     (prepared : preludeFor table = .ok prelude) {a : _root_.Address} {c : Ixon.Constant}
@@ -104,12 +106,14 @@ theorem admitted_fallback {V : IxVM.Refinement.View} {b : Admission.Binding}
   by_cases present : a ∈ order
   · simp only [present, ↓reduceIte]
     cases input : Ix.Cert.recordAt (admittedOverlay w trace keepTrace) a with
-    | none => simp only [Option.orElse_none, found]
+    | none => rw [found]; rfl
     | some value =>
       have inputCore := admittedCore_of_overlay w input
       have same := Option.some.inj (inputCore.symm.trans fallbackCore)
-      simp only [Option.orElse_some, same]
-  · simp only [present, ↓reduceIte, Option.orElse_none, found]
+      rw [same]
+      rfl
+  · simp only [present, ↓reduceIte, found]
+    rfl
 
 /-- At an address selected by the new reading, every old admitted-store answer survives. -/
 theorem admitted_selected {V : IxVM.Refinement.View} {b : Admission.Binding}
