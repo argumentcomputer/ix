@@ -60,9 +60,9 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
     (one : Ix.CompileCert.ReaderIndex.inductives members = #[(ZMod.val i, ind)])
     (tableWf : raw.t.wf = true) :
     Decl.OneTypePeerReads raw block (raw.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
-      ind.lvls.toNat ind.params.toNat ind.indices.toNat ind.ctors.size i where
-  self_key := rfl
-  self_ind := by
+      ind.lvls.toNat ind.params.toNat ind.indices.toNat ind.ctors.size i := by
+  refine ⟨rfl, ?_, ?_⟩
+  ·
     intro addr ptr h h' calls a loaded good addressRep sameKey
     have addressEq : Core.ixAddr a = Core.iprjAddr (Core.ixAddr block) (ZMod.val i) :=
       Decl.nat_keyOf_injective tableWf sameKey
@@ -85,7 +85,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
     rw [castIndex] at observed
     exact native_former_header_of_record (base := raw.toCtx) source blockShape
       (by simpa only [Array.getElem?_toList] using memberAt) (good.sub subset) parentRep observed
-  peer_only_self := by
+  ·
     intro addr ptr h h' calls a nl ty np ni nc u blk idx parent loaded _ good addressRep
       payload parentRep parentEq
     obtain ⟨bytes, blockBytes, cm, cb, xs, actual, parent', actualIndex, hashed, address,
