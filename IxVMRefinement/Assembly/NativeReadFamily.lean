@@ -63,6 +63,8 @@ theorem NativeFormerRunInput.constructorFamily {base : Core.Ctx} {block : Bytes.
     blockRep shape.ctorSubset loop frames good keyed selfKeyed blobReads
   refine ⟨annotated, rawTypes, family, ?_, fun row member => ?_⟩
   · simpa [nativeCtorSlots] using frames.length_eq.symm
-  · exact ⟨(properties row member).1, (properties row member).2, scopes row member⟩
+  · have scope := scopes row member
+    rw [(properties row member).2] at scope
+    exact ⟨(properties row member).1, (properties row member).2, scope⟩
 
 end IxVM.Refinement.Assembly
