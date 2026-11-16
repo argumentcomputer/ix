@@ -102,7 +102,7 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
                 · exact (fail_bind stepped).elim
               simpa [nativeCtorSlots] using innerFrames
             obtain ⟨recs, _, read⟩ := except_bind_ok.mp read
-            exact ⟨shape, _, shapeRun, read, frames⟩
+            exact ⟨shape, _, rfl, read, frames⟩
           · exact (fail_bind read).elim
       · exact (throw_ok read).elim
     · exact (fail_bind read).elim
