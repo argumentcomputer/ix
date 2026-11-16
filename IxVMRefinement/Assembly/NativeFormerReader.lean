@@ -151,7 +151,7 @@ theorem readInductiveBare_native_frames_with_params {cx : Ctx .anon} {owner : _r
             have arrayBound : position < indcs.size := by
               simpa only [Array.length_toList] using bound
             have checked := agree position arrayBound
-            exact paramsEq.trans (by simpa only [Array.getElem_toList] using checked)
+            exact paramsEq.trans (by simpa only [indcs, Array.getElem_toList] using checked)
           · exact (fail_bind read).elim
       · exact (throw_ok read).elim
     · exact (fail_bind read).elim
