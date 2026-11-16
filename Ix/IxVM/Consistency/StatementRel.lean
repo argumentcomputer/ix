@@ -15,11 +15,13 @@ constant of the claimed environment be accounted for one by one, as what a singl
 declares (`Reads`), the record being bytes the run hashed. No record stream, order or
 declaration list appears. Three forms are stated; they share `Reads`.
 
-* **Against a valid role table** (`Ix.IxVM.Consistency.TableValid`: `TableWitness`,
-  `TypingSpecOn`, `BindingSpecOn`, `binding_discharge`). The premise is semantic validity of
-  the table: an authentic store of records, an environment of their readings with a model,
-  and no run of any checker. The claimed environment extends that environment by what the
-  run's own records declare. A `binding` claim is to produce the premise.
+* **Against a valid role table** (`Ix.IxVM.Consistency.TableValid`: `ComposedSpec`, from
+  `BindingSpecOn` and `TypingSpecOn` by `binding_discharge`). The premise of the typing half
+  is semantic validity of the whole table (`TableShape`): an authentic store of records, an
+  environment of their readings with a model, the prelude roles bound at the committed
+  records, and no run of any checker. The claimed environment extends that environment by
+  what the run's own records declare. A `binding` claim produces the premise, and the public
+  statement is about the two runs together.
 * **Without a premise on the table's constants** (`ConsistentReadP`, `ConsistencySpecP`,
   `CircuitConsistentP`). The premise on the role table is its admission as a table
   (`Ix.Kernel.Admission.admitBinding`: its hash, canonical decoding and well-formedness) and
@@ -76,6 +78,16 @@ of a block member or constructor. The record is the *exact decoding of the store
   has another shape has no reading. Rule `k` names constructor `k` of the major premise's
   inductive, with the record's field count and right-hand side; the rule count is that
   inductive's constructor count.
+
+  This reading is the declared constant only for a recursor the circuit accepts under a
+  guard it must have: no `let` anywhere in the first motive's type, between its binders
+  included, nor in the major premise's domain. The circuit finds the family by the same
+  plain walk (`rec_family_block`, `last_binder_dom`) and then compares types after expanding
+  the declared side's `let`s. A first motive of type `∀ i : Idx, let z := v; ∀ t : I ps i,
+  Sort u` has `Idx` as its last binder's domain in the plain walk; without the guard such a
+  record could be accepted with a family that is not the recursor's, and the level
+  parameters `RecReads` gives it, taken from that family, would be wrong. A statement with
+  `Reads` in its conclusion holds only of a circuit with this guard.
 * **Safety.** Only records in Lean's logic are read (`InLogic`, of the record or its block).
 * **What `Reads` leaves open**: a definition's reducibility hint and an inductive type's
   capability record. `Reads` is otherwise a function of the table, the store and the address
@@ -84,9 +96,10 @@ of a block member or constructor. The record is the *exact decoding of the store
   replaces a definition's value depending on the reader's state: `Reads` declares the
   record's own value. And the kernel's substitution of its pinned basis blocks
   (`Ix.Kernel.basisPinHit`), which compares a whole block: a member of such a block reads as
-  the record declares it. Every table the admission accepts binds the pinned roles at the
-  committed prelude records, so the pinned constants are constants of the admitted
-  environment. A quotient record declares the kernel's pinned quotient constant of its kind,
+  the record declares it. Every table the kernel's stream admission accepts
+  (`Ix.Kernel.Reader.preludeFor`) binds the prelude roles at the committed prelude records,
+  so the pinned constants are constants of the environment it admits. A quotient record
+  declares the kernel's pinned quotient constant of its kind,
   when it matches that pin (`QuotReads`).
 -/
 
