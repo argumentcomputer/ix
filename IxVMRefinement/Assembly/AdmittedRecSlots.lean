@@ -35,49 +35,51 @@ theorem readRecord_recursors_covered {md : Mode} {cx : Ctx md} {st : State md}
     simp only [info] at source
     by_cases hasInductive : ms.any (fun | .indc _ => true | _ => false) = true
     · exact readRecord_inductive_recursors_covered read info hasInductive source
-    · simp only [readRecord, info, hasInductive, ↓reduceIte] at read
+    · simp only [readRecord, info] at read
       split at read
+      · exact (hasInductive (by assumption)).elim
       · split at read
-        · rename_i allCanonical
-          exact .inl (List.all_eq_true.mp allCanonical j
-            (List.mem_range.mpr (Array.getElem?_eq_some_iff.mp source).1))
-        · obtain ⟨twins, loop, _⟩ := except_bind_ok.mp read
-          have covered := forIn_inv_array
-            (fun prefix (_ : Array (ConstRef _root_.Address × RecEntry)) =>
-              ∀ k ∈ prefix, cx.index.recs.contains (.member owner k) = true ∨
-                cx.index.twins.contains (.member owner k) = true) _ _
-            (fun prefix k suffix acc result _ previous step => by
-              have extend (current : cx.index.recs.contains (.member owner k) = true ∨
-                  cx.index.twins.contains (.member owner k) = true) :
-                  ∀ q ∈ prefix ++ [k], cx.index.recs.contains (.member owner q) = true ∨
-                    cx.index.twins.contains (.member owner q) = true := by
-                intro q hq
-                rcases List.mem_append.mp hq with old | fresh
-                · exact previous q old
-                · have same : q = k := by simpa using fresh
-                  simpa only [same] using current
-              split at step
-              · rename_i entry found
-                simp only [pure, Except.pure, Except.ok.injEq] at step
-                subst result
-                exact ⟨_, rfl, extend (.inr (by
-                  rw [Std.HashMap.contains_eq_isSome_getElem?, found]; rfl))⟩
-              · split at step
-                · rename_i canonical
+        · split at read
+          · rename_i allCanonical
+            exact .inl (List.all_eq_true.mp allCanonical j
+              (List.mem_range.mpr (Array.getElem?_eq_some_iff.mp source).1))
+          · obtain ⟨twins, loop, _⟩ := except_bind_ok.mp read
+            have covered := forIn_inv_array
+              (fun processed (_ : Array (ConstRef _root_.Address × RecEntry)) =>
+                ∀ k ∈ processed, cx.index.recs.contains (.member owner k) = true ∨
+                  cx.index.twins.contains (.member owner k) = true) _ _
+              (fun processed k suffix acc result _ previous step => by
+                have extend (current : cx.index.recs.contains (.member owner k) = true ∨
+                    cx.index.twins.contains (.member owner k) = true) :
+                    ∀ q ∈ processed ++ [k], cx.index.recs.contains (.member owner q) = true ∨
+                      cx.index.twins.contains (.member owner q) = true := by
+                  intro q hq
+                  rcases List.mem_append.mp hq with old | fresh
+                  · exact previous q old
+                  · have same : q = k := by simpa using fresh
+                    simpa only [same] using current
+                split at step
+                · rename_i entry found
                   simp only [pure, Except.pure, Except.ok.injEq] at step
                   subst result
-                  exact ⟨_, rfl, extend (.inl canonical)⟩
-                · exact (fail_bind step).elim)
-            (by simp) loop
-          exact covered j (by
-            simp only [List.toList_toArray, List.mem_range]
-            exact (Array.getElem?_eq_some_iff.mp source).1)
-      · split at read
-        · rename_i allDefinitions
-          have invalid := Array.all_eq_true.mp allDefinitions (.recr rc)
-            (Array.mem_of_getElem? source)
-          cases invalid
-        · exact (throw_ok read).elim
+                  exact ⟨_, rfl, extend (.inr (by
+                    rw [Std.HashMap.contains_eq_isSome_getElem?, found]; rfl))⟩
+                · split at step
+                  · rename_i canonical
+                    simp only [pure, Except.pure, Except.ok.injEq] at step
+                    subst result
+                    exact ⟨_, rfl, extend (.inl canonical)⟩
+                  · exact (fail_bind step).elim)
+              (by simp) loop
+            exact covered j (by
+              simp only [List.toList_toArray, List.mem_range]
+              exact (Array.getElem?_eq_some_iff.mp source).1)
+        · split at read
+          · rename_i allDefinitions
+            have invalid := Array.all_eq_true.mp allDefinitions (.recr rc)
+              (Array.mem_of_getElem? source)
+            cases invalid
+          · exact (throw_ok read).elim
   | _ => simp [info] at source
 
 /-- The complete payload coverage of a selected record follows from the actual admitted
