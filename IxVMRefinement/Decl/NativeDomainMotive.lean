@@ -31,9 +31,9 @@ The caller identifies the named-motive expression, without supplying a separate 
 theorem checked_named_natRec_domain_metadata_rules {V : Type u} [SetTheory V] {env : Env .anon}
     (model : EnvModelM V .verified env) {raw checked : ConstantVal .anon}
     (header : ConstantValCheckJ rulesJ env raw checked)
-    {count slot : Nat} {variables : List (Expr .anon)} {residual domainVar : Expr .anon}
-    (opened : openPisAtFvars count checked.type 0 = some (variables, residual))
-    (atSlot : variables[slot]? = some domainVar)
+    {count slot : Nat} {openedVars : List (Expr .anon)} {residual domainVar : Expr .anon}
+    (opened : openPisAtFvars count checked.type 0 = some (openedVars, residual))
+    (atSlot : openedVars[slot]? = some domainVar)
     {elim kindSort : Level} {motiveName : Key .anon} {motiveLevels : List Level}
     {motiveCV : ConstantVal .anon} {motiveValue domain body step : Expr .anon}
     {hint : ReducibilityHint} {motiveMeta productMeta : BinderMeta}
