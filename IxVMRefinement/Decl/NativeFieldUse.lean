@@ -53,7 +53,7 @@ theorem NativeCtorOut.unused_last {env : Env .anon} {T : Core.KKey}
     (noIndices : indices = 0) {index : Nat} (last : index + 1 = annotated.2) :
     structUsedLater annotated.1.type parameters index = false := by
   obtain ⟨_, _, binders, arguments, _, _, telescope, _, argumentCount, _⟩ := checked.residual
-  have empty : arguments = [] := List.length_eq_zero.mp (argumentCount.trans noIndices)
+  have empty : arguments = [] := List.length_eq_zero_iff.mp (argumentCount.trans noIndices)
   rw [empty, List.append_nil] at telescope
   exact structUsedLater_last_noIndices telescope (last.trans checked.nF_eq)
 
