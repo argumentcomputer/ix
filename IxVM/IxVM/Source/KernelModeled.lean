@@ -1739,11 +1739,14 @@ def check_iota_rule := aiur_fn⟦
       let mi = rp + ni;
       let d = rp + cnf;
       assert_eq!(Lists::length(pins), cnp, "major premise parameter count");
-      -- the stored rule: closed, a λ-telescope over the prefix and the fields, typable
+      -- the stored rule: closed, a λ-telescope over the prefix and the fields, and typable
+      -- once renamed to the model: no member of the block or of the family record is left
+      -- in it, so no rule of the family being checked fires while it is typed
       KernelCheck::validate_expr_well_scoped(rhs, 0, nl);
       let (_, peeled, _) = KernelCheck::peel_n_lams_collect(rhs, d, 0, (&(Lists::Node::Nil)));
       assert_eq!(peeled, d, "rule shape mismatch");
-      KernelInfer::k_infer(rc, rhs, (&(Lists::Node::Nil)));
+      let rhs_m = rename(rhs, src, dst);
+      KernelInfer::k_infer(rc, rhs_m, (&(Lists::Node::Nil)));
       -- the theorem: an advice theorem at the recursor's levels
       assert_eq!(KernelClaim::addr_set_member(t, aset), 1, "iota theorem is not advice");
       match (*(Ingress::get_ci(t))) {
@@ -1795,16 +1798,18 @@ def check_iota_rule := aiur_fn⟦
               assert_eq!(defeq_list_ok(rc, Lists::take(Lists::drop(largs, rp), ni), Lists::drop(cargs, cnp), ctx), 1,
                 "iota statement index mismatch");
               -- the statement's domains: the renamed recursor's prefix, the constructor's fields
-              defeq_tele(rc, tty, rename(ty_r, src, dst), rp, (&(Lists::Node::Nil)));
+              let ty_m = rename(ty_r, src, dst);
+              defeq_tele(rc, tty, ty_m, rp, (&(Lists::Node::Nil)));
               defeq_tele(rc, KernelCheck::peel_n_foralls(tty, rp), crest, cnf, Lists::drop(ctx, cnf));
-              -- the public side: the comparands inhabit the constructor's parameter domains,
-              -- and the rule's λ-domains are the recursor's prefix and the fields
-              let (_, ctx_p) = peel_collect(ty_r, rp, (&(Lists::Node::Nil)));
-              let crest_p = inst_params_typed(rc, cty_l, pins, ctx_p);
-              let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs, ty_r, rp, (&(Lists::Node::Nil)));
+              -- the rule's side, renamed like the statement's: the comparands inhabit the
+              -- constructor's parameter domains, and the rule's λ-domains are the recursor's
+              -- prefix and the fields
+              let (_, ctx_p) = peel_collect(ty_m, rp, (&(Lists::Node::Nil)));
+              let crest_p = inst_params_typed(rc, rename(cty_l, src, dst), pins_ren, ctx_p);
+              let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs_m, ty_m, rp, (&(Lists::Node::Nil)));
               let (_, _) = defeq_lam_tele(rc, rhs_rp, crest_p, cnf, lctx);
               -- the right side: the rule applied to the opened variables
-              let rhs_app = KernelWhnf::apply_spine(rename(rhs, src, dst), bvars_desc(d, d));
+              let rhs_app = KernelWhnf::apply_spine(rhs_m, bvars_desc(d, d));
               assert_eq!(KernelDefEq::k_is_def_eq(rc, rhs_s, rhs_app, ctx), 1, "iota statement mismatch");
               -- both sides inhabit the equation's type slot, the slot the equation's sort
               let tl = KernelInfer::k_infer(rc, lhs, ctx);
