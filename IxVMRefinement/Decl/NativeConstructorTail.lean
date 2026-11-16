@@ -79,7 +79,7 @@ private theorem opened_tailShape {md : Mode} :
         telescopeTailShape (count + rest) e = telescopeTailShape rest body
   | 0, _, _, _, _, opened, rest => by
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj opened)
-    rfl
+    simp only [Nat.zero_add]
   | count + 1, depth, e, _, _, opened, rest => by
     cases e with
     | forallE domain body bm =>
