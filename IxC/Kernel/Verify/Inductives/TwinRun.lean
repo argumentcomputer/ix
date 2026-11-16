@@ -173,17 +173,31 @@ theorem candidate_spec {env : Env md} {raw annotated : ConstantVal md} {mI rP : 
     simp only [bind, Option.bind, pure] at h
     split at h
     next hguard =>
-      try dsimp only [bind, Option.bind, pure] at h
-      split at h
-      next hmodel =>
-        simp only [bind, Option.bind, pure, Option.some.injEq] at h
+      let modelChoice := match env.find? (auxKey key .model) with
+        | some (.defnInfo cv value hint) => some (cv, value, hint)
+        | _ => none
+      let chosen : Part md := {
+        raw := raw
+        annotated := annotated
+        canonical := canonical
+        canonicalKey := key
+        majorIndex := mI
+        rulePrefix := rP
+        rawRules := rules
+        canonicalRules := canonicalRules
+        model? := modelChoice }
+      change (if modelChoice.isSome || majorAgrees mI canonical.type annotated.type
+        then some chosen else none) = some part at h
+      by_cases hmodel : (modelChoice.isSome || majorAgrees mI canonical.type annotated.type) = true
+      · simp only [hmodel, ↓reduceIte, Option.some.injEq] at h
         subst part
         simp only [Bool.and_eq_true, beq_iff_eq] at hguard
         obtain ⟨⟨⟨⟨hmI, hrP⟩, hlevels⟩, hcount⟩, hwrap⟩ := hguard
         subst mI'; subst rP'
         refine ⟨rfl, rfl, rfl, rfl, rfl, ⟨hfind, hlevels, hcount, wrapRelOk_sound hwrap, ?_⟩⟩
         exact modelSource_of_guard env _ rfl hmodel
-      next hmodel => cases h
+      · simp only [hmodel, ↓reduceIte] at h
+        cases h
     next hguard => cases h
   next hfind => cases h
 
@@ -221,11 +235,11 @@ theorem checkHeader_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
     unfold checkHeader at h
     obtain ⟨annotated, hchecked, h⟩ := check_bind_ok h
     by_cases hfree : letFree annotated.type = true
-    · simp only [hfree, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
+    · simp only [hfree, ↓reduceIte, pure, Except.pure] at h
       cases hcanonical : findCanonical env.find? raw annotated majorIndex rulePrefixValue rules env.consts with
       | none => simp [hcanonical, throw, throwThe, MonadExceptOf.throw] at h
       | some found =>
-        simp only [hcanonical, pure, Except.pure, Except.ok.injEq] at h
+        simp only [hcanonical, Except.ok.injEq] at h
         subst part
         obtain ⟨hraw, hannotated, hmajor, hprefix, hrules, hsource⟩ := findCanonical_spec env.consts hcanonical
         refine ⟨?_, ?_, ?_, hsource⟩
@@ -280,7 +294,7 @@ theorem prepare_spec {mode : CheckMode} {fuel : Nat} {env : Env md}
       try dsimp only [bind, Except.bind] at h
       split at h
       next hfresh =>
-        simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+        simp only [pure, Except.pure, Except.ok.injEq] at h
         subst parts
         obtain ⟨hblock, hparts⟩ := checkHeaders_spec block hheaders
         refine ⟨?_, hblock, hdistinct, ?_, hparts⟩
@@ -316,7 +330,6 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
       | error reason => rw [hann] at h; cases h
       | ok rhs =>
         rw [hann] at h
-        try simp only [bind, Except.bind] at h
         split at h
         next hscope =>
           try simp only [bind, Except.bind] at h
@@ -325,7 +338,7 @@ theorem checkRule_spec {mode : CheckMode} {fuel : Nat} {env envSelf : Env md}
             simp only [pure, Except.pure, Except.ok.injEq] at h
             subst checked
             simp only [Bool.and_eq_true, beq_iff_eq] at hmeta
-            simp only [Bool.and_eq_true, Bool.not_eq_true] at hraw
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at hraw
             simp only [Bool.and_eq_true] at hscope
             exact ⟨hmeta.1, hmeta.2, hraw.1, hraw.2, hann,
               hscope.1.1, hscope.1.2, hscope.2, hshape, rfl⟩
