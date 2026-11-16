@@ -214,8 +214,16 @@ theorem RecurUsed.index_lt {sharing : List Ixon.Expr} {index : Nat} {expression 
     (used : RecurUsed sharing index expression) : index < UInt64.size := by
   induction used with
   | @recur index _ => exact index.toNat_lt
-  | prj _ ih | appFn _ ih | appArg _ ih | lamType _ ih | lamBody _ ih |
-      allType _ ih | allBody _ ih | letType _ ih | letValue _ ih | letBody _ ih => exact ih
+  | prj _ ih => exact ih
+  | appFn _ ih => exact ih
+  | appArg _ ih => exact ih
+  | lamType _ ih => exact ih
+  | lamBody _ ih => exact ih
+  | allType _ ih => exact ih
+  | allBody _ ih => exact ih
+  | letType _ ih => exact ih
+  | letValue _ ih => exact ih
+  | letBody _ ih => exact ih
   | share _ _ ih => exact ih
 
 end IxVM.Refinement.L1
