@@ -12,7 +12,8 @@ namespace IxVM.Refinement.Assembly
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
-open IxVM.Refinement.Core (KKey KExpr KLevel KConstantVal)
+open IxVM.Refinement.Core (KKey KExpr KLevel)
+open IxVM.Refinement.Decl (KConstantVal)
 open IxVM.Refinement.KernelLevels (RepKLevel)
 
 /-- Compose canonical query coverage with the actual indexed constructor traversal. Raw
