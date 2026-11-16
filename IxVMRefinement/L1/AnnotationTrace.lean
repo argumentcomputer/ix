@@ -93,15 +93,15 @@ theorem binderPlanStep_let {tree : BinderTreeData} {sharing : List Ixon.Expr} {b
     {nondependent : Bool} {mode : Ixon.LetMode} {ty value body : Ixon.Expr}
     {nodes afterType afterValue remaining : List Ixon.BinderNode}
     {typePlan valuePlan bodyPlan : List Core.KLevel}
-    (type : (if needsBinderAt sharing bound ty then binderPlanStep tree sharing bound ty nodes
+    (typeStep : (if needsBinderAt sharing bound ty then binderPlanStep tree sharing bound ty nodes
       else some ([], nodes)) = some (typePlan, afterType))
-    (value : (if needsBinderAt sharing bound value then binderPlanStep tree sharing bound value afterType
+    (valueStep : (if needsBinderAt sharing bound value then binderPlanStep tree sharing bound value afterType
       else some ([], afterType)) = some (valuePlan, afterValue))
-    (body : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body afterValue
+    (bodyStep : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body afterValue
       else some ([], afterValue)) = some (bodyPlan, remaining)) :
     binderPlanStep tree sharing bound (.letE nondependent mode ty value body) nodes =
       some ((typePlan ++ valuePlan) ++ bodyPlan, remaining) := by
-  split at type <;> split at value <;> split at body <;> simp_all [binderPlanStep]
+  split at typeStep <;> split at valueStep <;> split at bodyStep <;> simp_all [binderPlanStep]
 
 /-- Root conversion uses either no annotation block, or the complete root block at variant0. -/
 def binderRootPlan (tree : BinderTreeData) (sharing : List Ixon.Expr) (root : F)
