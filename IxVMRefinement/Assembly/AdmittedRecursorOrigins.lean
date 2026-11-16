@@ -24,7 +24,8 @@ theorem admitted_fallback_contains_exact {V : IxVM.Refinement.View} {binding : A
     (owner, source) ∈ witness.prelude.records ++ witness.prelude.evidence := by
   obtain ⟨⟨address, value⟩, present, compared⟩ := Array.contains_iff_exists_mem_beq.mp contained
   change ((owner == address) && (source == value)) = true at compared
-  have sameAddress : owner = address := beq_iff_eq.mp (Bool.and_eq_true.mp compared).1
+  simp only [Bool.and_eq_true] at compared
+  have sameAddress : owner = address := beq_iff_eq.mp compared.1
   subst address
   obtain ⟨entry, stored, decoded⟩ := ReaderFootprint.coherent_recordAt_exact witness.coherent record
   have bytes := witness.fallbackRecordsAgree owner selected entry stored value present
