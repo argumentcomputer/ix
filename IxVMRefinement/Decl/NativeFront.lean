@@ -1380,8 +1380,8 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
       ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
       ∃ ℓ : KLevel, RepKLevel h' ℓ r ∧
         ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ := by
-  intro n d Γ E rc pe types r h h' cs bound roles typesRep scoped facts loads good represented observed
-  exact get_result_sort_level_scoped_bounded_spec n (by omega) roles typesRep scoped facts loads good represented observed
+  intro n d Γ E rc pe types r h h' cs bound roles typesRep scopeProof facts loads good represented observed
+  exact get_result_sort_level_scoped_bounded_spec n (by omega) roles typesRep scopeProof facts loads good represented observed
 
 theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
