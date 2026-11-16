@@ -48,9 +48,10 @@ private theorem twinGroupStep_inv {seen : List Twin} {state : GroupState}
       rw [Std.HashMap.getElem?_insert]
       by_cases same : entry.2.block = block
       · subst block
-        simp [twinRows, rowsEmpty]
+        have empty : seen.filter (fun other => other.2.block == entry.2.block) = [] := rowsEmpty
+        simp [twinRows, empty]
       · have distinct := beq_eq_false_iff_ne.mpr same
-        simp only [distinct, ↓reduceIte]
+        simp only [distinct]
         simpa only [twinRows, List.filter_cons, distinct, Bool.false_eq_true, ↓reduceIte]
           using valid.1 block
     · intro block
@@ -77,7 +78,7 @@ private theorem twinGroupStep_inv {seen : List Twin} {state : GroupState}
       · subst block
         simp [twinRows, previousRows]
       · have distinct := beq_eq_false_iff_ne.mpr same
-        simp only [distinct, ↓reduceIte]
+        simp only [distinct]
         simpa only [twinRows, List.filter_cons, distinct, Bool.false_eq_true, ↓reduceIte]
           using valid.1 block
     · intro block
@@ -107,7 +108,7 @@ theorem groupTwins_families (twins : Array (ConstRef Address × RecEntry)) :
   let state := twins.toList.foldl twinGroupStep ({}, [])
   have valid : GroupInv twins.toList.reverse state := by
     simpa only [List.append_nil] using twinGroupFold_inv twins.toList groupInv_empty
-  refine ⟨state.2.reverse, valid.2.1.reverse, ?_, ?_⟩
+  refine ⟨state.2.reverse, (List.reverse_perm state.2).nodup_iff.mpr valid.2.1, ?_, ?_⟩
   · intro block
     rw [List.mem_reverse, valid.2.2 block]
     simp only [twinRows, List.filter_reverse, ne_eq, List.reverse_eq_nil_iff]
@@ -144,7 +145,8 @@ theorem groupTwins_coverage {twins : Array (ConstRef Address × RecEntry)}
     intro empty
     rw [empty] at filtered
     cases filtered
-  refine ⟨_, ?_, by simpa only [List.mem_toArray] using filtered⟩
+  refine ⟨(twins.toList.filter fun other => other.2.block == entry.2.block).toArray,
+    ?_, by simpa only [List.mem_toArray] using filtered⟩
   apply Array.mem_toList_iff.mp
   rw [groups]
   exact List.mem_map.mpr ⟨entry.2.block, (present _).mpr nonempty, rfl⟩
@@ -172,11 +174,9 @@ theorem lowerTwins_of_lowerTwin {md : Mode} {cx : Ctx md}
   unfold lowerTwins
   cases first : twins[0]? with
   | none =>
-    rw [first] at read ⊢
     exact read
   | some pair =>
     obtain ⟨ref, entry⟩ := pair
-    rw [first] at read ⊢
     dsimp only at read ⊢
     split at read
     · rename_i sameFamily
