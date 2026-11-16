@@ -141,7 +141,7 @@ theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Byte
     Bytes.repAddressRef_inj U32.Goldilocks.compatible (by simpa only [ptrEq] using actualRep) parentRep
   have parentBlock : parent = block := Decl.ixAddr_inj (by rw [← parentSame]; exact actualParentEq)
   rw [parentBlock] at zero
-  have capability := native_unitLikeCaps_of_reader (block := block) source input.blockShape input.memberAt zero oneCtor
+  have capability := native_unitLikeCaps_of_reader (block := block) (isRec := isRec) source input.blockShape input.memberAt zero oneCtor
     frames ctors (indices.trans noIndices)
   have currentLookup : (input.stageCtx parts isRec).env.find? (base.κ (Core.ixAddr address)) =
       some (.indInfo input.annotated (Ix.Kernel.nativeCapsAt parts isRec)) := by

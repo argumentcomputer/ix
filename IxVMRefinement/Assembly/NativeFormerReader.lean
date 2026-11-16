@@ -13,6 +13,14 @@ open Ix.Kernel.Reader
 open Ix.CompileCert.Loop (except_bind_ok forIn_inv_array forall₂_append)
 open Ix.Cert.ReaderUnits (ite_ok fail_bind throw_ok)
 
+private theorem singleton_frame {α β : Type} {relation : α → β → Prop}
+    {entry : α} {rows : List β} (frames : List.Forall₂ relation [entry] rows) :
+    ∃ row, rows = [row] ∧ relation entry row := by
+  cases frames with
+  | cons frame rest =>
+    cases rest
+    exact ⟨_, rfl, frame⟩
+
 abbrev NativeFormerRow := Ix.Kernel.ConstantVal .anon × Nat × Nat
 
 /-- The actual former row before lowering, including its original expression read. -/
@@ -124,9 +132,7 @@ theorem readInductive_one_former_frame {cx : Ctx .anon} {state : State .anon}
       [(member, ind)] block.types.toList := by
     rw [order, Array.toList_filterMap] at frames
     simpa only [List.filterMap_cons, List.filterMap_nil, memberAt] using frames
-  cases frames' with
-  | cons frame rest =>
-    cases rest
-    exact ⟨generated, bare, block, _, declarations, lowered, rfl, frame⟩
+  obtain ⟨row, rowsEq, frame⟩ := singleton_frame frames'
+  exact ⟨generated, bare, block, row, declarations, lowered, rowsEq, frame⟩
 
 end IxVM.Refinement.Assembly
