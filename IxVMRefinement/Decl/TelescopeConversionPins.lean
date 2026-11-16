@@ -48,45 +48,105 @@ private theorem forall_not_proof {md : Mode} {env : Env md} {depth : Nat}
 
 /-- Product conversion retains an actual opened-body derivation at one of its original domains.
 No arbitrary conversion transitivity or free-variable type replacement is used. -/
-private theorem forall_conversion_components_aux {md : Mode} {env : Env md} {depth : Nat}
-    {left right : Expr md} (converted : DefEq env depth left right) :
+mutual
+
+private theorem forall_conversion_components_aux {md : Mode} {env : Env md} :
+    ∀ {depth : Nat} {left right : Expr md}, DefEq env depth left right →
     ∀ {leftDomain leftBody rightDomain rightBody : Expr md} {leftMeta rightMeta : BinderMeta},
     left = .forallE leftDomain leftBody leftMeta → right = .forallE rightDomain rightBody rightMeta →
     DefEq env depth leftDomain rightDomain ∧ leftMeta.pw = rightMeta.pw ∧
       (DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth leftDomain))
           (rightBody.instantiate1 (.fvar depth leftDomain)) ∨
         DefEq env (depth + 1) (leftBody.instantiate1 (.fvar depth rightDomain))
-          (rightBody.instantiate1 (.fvar depth rightDomain))) := by
-  intro leftDomain leftBody rightDomain rightBody leftMeta rightMeta leftEq rightEq
-  subst left
-  subst right
-  cases converted with
-  | refl => exact ⟨.refl, rfl, .inl .refl⟩
-  | symm reversed =>
-    obtain ⟨domain, metadata, leftOpened | rightOpened⟩ := forall_conversion_components_aux reversed rfl rfl
+          (rightBody.instantiate1 (.fvar depth rightDomain)))
+  | _, _, _, .refl => by
+    intro ld lb rd rb lm rm le re
+    obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (le.symm.trans re)
+    exact ⟨.refl, rfl, .inl .refl⟩
+  | _, _, _, .symm reversed => by
+    intro ld lb rd rb lm rm le re
+    obtain ⟨domain, metadata, leftOpened | rightOpened⟩ := forall_conversion_components_aux reversed re le
     · exact ⟨.symm domain, metadata.symm, .inr (.symm leftOpened)⟩
     · exact ⟨.symm domain, metadata.symm, .inl (.symm rightOpened)⟩
-  | redL reduced further =>
-    have same := Red.rigid reduced rfl
-    cases same
-    exact forall_conversion_components_aux further rfl rfl
-  | natOffset _ _ offset _ _ => cases offset
-  | forallE domain body metadata => exact ⟨domain, metadata, .inr body⟩
-  | proofFast first _ =>
+  | _, _, _, .redL reduced further => by
+    intro ld lb rd rb lm rm le re
+    have same := Red.rigid reduced (by rw [le]; rfl)
+    exact forall_conversion_components_aux further (same.trans le) re
+  | _, _, _, .sort _ => by intros; contradiction
+  | _, _, _, .fvar => by intros; contradiction
+  | _, _, _, .const _ => by intros; contradiction
+  | _, _, _, .natZero => by intros; contradiction
+  | _, _, _, .natSucc _ => by intros; contradiction
+  | _, _, _, .natOffset _ _ offset _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at offset
+    cases offset
+  | _, _, _, .forallE domain body metadata => by
+    intro ld lb rd rb lm rm le re
+    obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj le
+    obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj re
+    exact ⟨domain, metadata, .inr body⟩
+  | _, _, _, .lam _ _ _ => by intros; contradiction
+  | _, _, _, .app _ _ => by intros; contradiction
+  | _, _, _, .proj _ => by intros; contradiction
+  | _, _, _, .eta _ _ _ _ _ => by intros; contradiction
+  | _, _, _, .proofFast first _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at first
     simp only [isProofFast, proofPW, Expr.getAppFn, headProofPW, PropWhen.isProp_never] at first
     cases first
-  | proofIrrel typed typedAgain sorted zero _ _ _ _ =>
+  | _, _, _, .proofIrrel typed typedAgain sorted zero _ _ _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at typed
     exact (forall_not_proof typed typedAgain sorted zero).elim
-  | unitLike typed reduced unit _ _ _ => exact (forall_type_not_unit typed reduced unit).elim
-  | structEta _ _ head _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => cases head
-  | structUnit typed reduced head _ _ _ _ _ _ _ _ _ =>
+  | _, _, _, .unitLike typed reduced unit _ _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at typed
+    exact (forall_type_not_unit typed reduced unit).elim
+  | _, _, _, .structEta _ _ head _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at head
+    cases head
+  | _, _, _, .structUnit typed reduced head _ _ _ _ _ _ _ _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at typed
     exact (forall_type_not_const typed reduced head).elim
-  | proofIrrelTy typed typedAgain sorted zero _ _ =>
+  | _, _, _, .proofIrrelTy typed typedAgain sorted zero _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at typed
     exact (forall_not_proof typed typedAgain sorted zero).elim
-  | unitLikeTy typed reduced head _ _ _ _ _ _ _ =>
+  | _, _, _, .unitLikeTy typed reduced head _ _ _ _ _ _ _ => by
+    intro ld lb rd rb lm rm le _
+    rw [le] at typed
     exact (forall_type_not_const typed reduced head).elim
-  | structEtaTy head _ _ _ _ _ _ _ _ _ _ _ _ _ => cases head
-termination_by structural converted
+  | _, _, _, .structEtaTy head _ _ _ _ _ _ _ _ _ _ _ _ _ => by
+    intro ld lb rd rb lm rm _ re
+    rw [re] at head
+    cases head
+
+private theorem forall_conversion_red {md : Mode} {env : Env md} :
+    ∀ {d : Nat} {a b : Expr md}, Red env d a b → True
+  | _, _, _, _ => trivial
+
+private theorem forall_conversion_infer {md : Mode} {env : Env md} :
+    ∀ {grade : Grade} {d : Nat} {e t : Expr md}, Infer env grade d e t → True
+  | _, _, _, _, _ => trivial
+
+private theorem forall_conversion_certs {md : Mode} {env : Env md} :
+    ∀ {d : Nat} {licensed : Bool} {ty : Expr md} {args : List (Expr md)}, Certs env d licensed ty args → True
+  | _, _, _, _, _ => trivial
+
+private theorem forall_conversion_list {md : Mode} {env : Env md} :
+    ∀ {d : Nat} {left right : List (Expr md)}, DefEqList env d left right → True
+  | _, _, _, _ => trivial
+
+private theorem forall_conversion_eta {md : Mode} {env : Env md} :
+    ∀ {d : Nat} {T : Key md} {us : List Level} {args : List (Expr md)} {body : Expr md}
+      {levels : List LevelParam} {indices : List Nat}, EtaProjCerts env d T us args body levels indices → True
+  | _, _, _, _, _, _, _, _ => trivial
+
+end
+
 
 
 /-- Product conversion retains its checked domain and one actual opened-body comparison. -/
