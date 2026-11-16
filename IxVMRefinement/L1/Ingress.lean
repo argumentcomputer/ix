@@ -1940,7 +1940,7 @@ theorem projection_addr_hashed_spec {ms : List Ixon.MutConst} {b : Bytes.Address
   have stream : Stream m283 _ v282 := s_put
   have hashMember := (bytes_to_addr_spec stream ev323).2.2
   have hashed : Hashed calls (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩) :=
-    ⟨_, by rw [allCalls]; simp [hashMember], rfl, v282, rfl, stream⟩
+    ⟨⟨"Blake3::hash", [v282], m283⟩, by rw [allCalls]; simp [hashMember], rfl, v282, rfl, stream⟩
   exact ⟨(e15.trans e_put).trans e_b2a, hidx56, hidx_len, mc, a, hget, ha_rep, ha_eq, hashed⟩
 
 
