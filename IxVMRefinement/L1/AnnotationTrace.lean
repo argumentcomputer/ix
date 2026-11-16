@@ -57,6 +57,52 @@ decreasing_by
   all_goals simp_wf
   all_goals omega
 
+theorem binderPlanStep_app {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {func arg : Ixon.Expr} {nodes middle remaining : List Ixon.BinderNode}
+    {funcPlan argPlan : List Core.KLevel}
+    (function : (if needsBinderAt sharing bound func then binderPlanStep tree sharing bound func nodes
+      else some ([], nodes)) = some (funcPlan, middle))
+    (argument : (if needsBinderAt sharing bound arg then binderPlanStep tree sharing bound arg middle
+      else some ([], middle)) = some (argPlan, remaining)) :
+    binderPlanStep tree sharing bound (.app func arg) nodes = some (funcPlan ++ argPlan, remaining) := by
+  split at function <;> split at argument <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_lam {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {dom body : Ixon.Expr} {node : Ixon.BinderNode} {nodes middle remaining : List Ixon.BinderNode}
+    {domPlan bodyPlan : List Core.KLevel}
+    (domain : (if needsBinderAt sharing bound dom then binderPlanStep tree sharing bound dom nodes
+      else some ([], nodes)) = some (domPlan, middle))
+    (range : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body middle
+      else some ([], middle)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.lam dom body) (node :: nodes) =
+      some (binderLevel node :: (domPlan ++ bodyPlan), remaining) := by
+  split at domain <;> split at range <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_all {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {dom body : Ixon.Expr} {node : Ixon.BinderNode} {nodes middle remaining : List Ixon.BinderNode}
+    {domPlan bodyPlan : List Core.KLevel}
+    (domain : (if needsBinderAt sharing bound dom then binderPlanStep tree sharing bound dom nodes
+      else some ([], nodes)) = some (domPlan, middle))
+    (range : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body middle
+      else some ([], middle)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.all dom body) (node :: nodes) =
+      some (binderLevel node :: (domPlan ++ bodyPlan), remaining) := by
+  split at domain <;> split at range <;> simp_all [binderPlanStep]
+
+theorem binderPlanStep_let {tree : BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+    {nondependent : Bool} {mode : Ixon.LetMode} {ty value body : Ixon.Expr}
+    {nodes afterType afterValue remaining : List Ixon.BinderNode}
+    {typePlan valuePlan bodyPlan : List Core.KLevel}
+    (typeStep : (if needsBinderAt sharing bound ty then binderPlanStep tree sharing bound ty nodes
+      else some ([], nodes)) = some (typePlan, afterType))
+    (valueStep : (if needsBinderAt sharing bound value then binderPlanStep tree sharing bound value afterType
+      else some ([], afterType)) = some (valuePlan, afterValue))
+    (bodyStep : (if needsBinderAt sharing bound body then binderPlanStep tree sharing bound body afterValue
+      else some ([], afterValue)) = some (bodyPlan, remaining)) :
+    binderPlanStep tree sharing bound (.letE nondependent mode ty value body) nodes =
+      some ((typePlan ++ valuePlan) ++ bodyPlan, remaining) := by
+  split at typeStep <;> split at valueStep <;> split at bodyStep <;> simp_all [binderPlanStep]
+
 /-- Root conversion uses either no annotation block, or the complete root block at variant0. -/
 def binderRootPlan (tree : BinderTreeData) (sharing : List Ixon.Expr) (root : F)
     (expr : Ixon.Expr) : Option (List Core.KLevel) := do
@@ -121,6 +167,106 @@ theorem HeapBinderLevels.mono {h h' : Heap F} {ptr : SourceValue F} {plan : List
   | forallE cell level _ _ dom body => exact .forallE (extended.getElem?_eq cell) (level.mono extended) dom body
   | letE cell _ _ _ ty value body => exact .letE (extended.getElem?_eq cell) ty value body
   | proj cell _ value => exact .proj (extended.getElem?_eq cell) value
+
+/-- A heap leaf contributes no binder annotations. -/
+theorem HeapBinderLevels.leaf_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {ctor : String} {fields : List (SourceValue F)}
+    (leaf : ctor = "BVar" ∨ ctor = "Srt" ∨ ctor = "Const" ∨ ctor = "Lit")
+    (cell : h[addr]? = some (.construct Core.kexprEnum ctor fields))
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) : plan = [] := by
+  rcases leaf with rfl | rfl | rfl | rfl
+  all_goals cases levels <;> simp_all
+
+theorem HeapBinderLevels.app_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {func arg : SourceValue F}
+    (cell : h[addr]? = some (.construct Core.kexprEnum "App" [func, arg]))
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) :
+    ∃ funcPlan argPlan, plan = funcPlan ++ argPlan ∧
+      HeapBinderLevels h func funcPlan ∧ HeapBinderLevels h arg argPlan := by
+  cases levels with
+  | app observed function argument =>
+    have fields := Option.some.inj (cell.symm.trans observed)
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+    obtain ⟨rfl, rfl⟩ := fields
+    exact ⟨_, _, rfl, function, argument⟩
+  | bvar observed | sort observed | const observed | lit observed
+  | lam observed _ _ _ | forallE observed _ _ _ | letE observed _ _ _ | proj observed _ =>
+    rw [cell] at observed
+    simp at observed
+
+theorem HeapBinderLevels.lam_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {dom body levelPtr : SourceValue F} {level : Core.KLevel}
+    (cell : h[addr]? = some (.construct Core.kexprEnum "Lam" [dom, body, levelPtr]))
+    (levelRep : KernelLevels.RepKLevel h level levelPtr)
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) :
+    ∃ domPlan bodyPlan, plan = level :: (domPlan ++ bodyPlan) ∧
+      HeapBinderLevels h dom domPlan ∧ HeapBinderLevels h body bodyPlan := by
+  cases levels with
+  | lam observed actual domain range =>
+    have fields := Option.some.inj (cell.symm.trans observed)
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+    obtain ⟨rfl, rfl, rfl⟩ := fields
+    have same := actual.det levelRep
+    cases same
+    exact ⟨_, _, rfl, domain, range⟩
+  | bvar observed | sort observed | const observed | lit observed | app observed _ _
+  | forallE observed _ _ _ | letE observed _ _ _ | proj observed _ =>
+    rw [cell] at observed
+    simp at observed
+
+theorem HeapBinderLevels.forall_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {dom body levelPtr : SourceValue F} {level : Core.KLevel}
+    (cell : h[addr]? = some (.construct Core.kexprEnum "Forall" [dom, body, levelPtr]))
+    (levelRep : KernelLevels.RepKLevel h level levelPtr)
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) :
+    ∃ domPlan bodyPlan, plan = level :: (domPlan ++ bodyPlan) ∧
+      HeapBinderLevels h dom domPlan ∧ HeapBinderLevels h body bodyPlan := by
+  cases levels with
+  | forallE observed actual domain range =>
+    have fields := Option.some.inj (cell.symm.trans observed)
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+    obtain ⟨rfl, rfl, rfl⟩ := fields
+    have same := actual.det levelRep
+    cases same
+    exact ⟨_, _, rfl, domain, range⟩
+  | bvar observed | sort observed | const observed | lit observed | app observed _ _
+  | lam observed _ _ _ | letE observed _ _ _ | proj observed _ =>
+    rw [cell] at observed
+    simp at observed
+
+theorem HeapBinderLevels.let_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {ty value body : SourceValue F}
+    (cell : h[addr]? = some (.construct Core.kexprEnum "Let" [ty, value, body]))
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) :
+    ∃ typePlan valuePlan bodyPlan, plan = (typePlan ++ valuePlan) ++ bodyPlan ∧
+      HeapBinderLevels h ty typePlan ∧ HeapBinderLevels h value valuePlan ∧
+      HeapBinderLevels h body bodyPlan := by
+  cases levels with
+  | letE observed type value body =>
+    have fields := Option.some.inj (cell.symm.trans observed)
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+    obtain ⟨rfl, rfl, rfl⟩ := fields
+    exact ⟨_, _, _, rfl, type, value, body⟩
+  | bvar observed | sort observed | const observed | lit observed | app observed _ _
+  | lam observed _ _ _ | forallE observed _ _ _ | proj observed _ =>
+    rw [cell] at observed
+    simp at observed
+
+theorem HeapBinderLevels.proj_inv {h : Heap F} {addr : Nat} {plan : List Core.KLevel}
+    {name index inner : SourceValue F}
+    (cell : h[addr]? = some (.construct Core.kexprEnum "Proj" [name, index, inner]))
+    (levels : HeapBinderLevels h (.ptr (.enum Core.kexprEnum) addr) plan) :
+    HeapBinderLevels h inner plan := by
+  cases levels with
+  | proj observed value =>
+    have fields := Option.some.inj (cell.symm.trans observed)
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+    obtain ⟨rfl, rfl, rfl⟩ := fields
+    exact value
+  | bvar observed | sort observed | const observed | lit observed | app observed _ _
+  | lam observed _ _ _ | forallE observed _ _ _ | letE observed _ _ _ =>
+    rw [cell] at observed
+    simp at observed
 
 /-- Apply a positional binder trace to the reader expression. The metadata mapping permits
 both range parameters and inverse positional naming. Let components are traversed before

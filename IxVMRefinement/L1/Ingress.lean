@@ -2451,7 +2451,7 @@ theorem get_ci_dprj_spec {b : Bytes.Address} {idx : Nat}
 
 /-- `Ingress::get_ci_iprj` specification under `Bounded calls` (handling both direct calls from
 `Core` and subcalls from `Ingress::get_ci`). -/
-theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
+theorem get_ci_iprj_origin_spec {b : Bytes.Address} {idx : F}
     {x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hbounded : IxVM.Consistency.Bounded calls)
     (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
@@ -2468,7 +2468,11 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
         HashedPairs calls blobs ∧
         loadValue h' r = .ok v ∧
         RawInductValRep cb.refs.toList (blockRecurAddrs (Core.ixAddr b) ms.toList)
-          cb.univs.toList cb.sharing.toList blobs h' ind (Core.ixAddr b) idx.val v := by
+          cb.univs.toList cb.sharing.toList blobs h' ind (Core.ixAddr b) idx.val v ∧
+        ∃ (tree : BinderTreeData) (plan : List Core.KLevel),
+          BinderTreeBuilt (binderLeavesData cb.binders.toList) tree ∧
+          binderRootPlan tree cb.sharing.toList ((mutsRootOffset ms.toList idx.val : Nat) : F) ind.typ = some plan ∧
+          CITypeBinderLevels "Induct" h' v plan := by
   obtain ⟨m2, cs12, x_sharing, x_refs, x_univs, x_binders, x_members,
       m86, cs96, x_ind, v136, m137, cs147, v166, m167, cs174,
       v184, v185, m236, cs244, m256, cs264,
@@ -2501,9 +2505,9 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
   obtain ⟨ind, rfl, hind_rep⟩ := hindc
   have hb2 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext1 hb
   obtain ⟨ext2, hrecs⟩ := build_recur_addrs_ixon_spec hms hb2 ev149
-  obtain ⟨ext3, htbl⟩ := binder_table_spec (hbd.mono repBinderBlock_heapMono₂ ext2) hbd32 ev246
+  obtain ⟨ext3, tree, built, represented, _, htbl⟩ := binder_table_data_bounded_spec (hbd.mono repBinderBlock_heapMono₂ ext2) hbd32 ev246
   have ext23 := ext2.trans ext3
-  obtain ⟨_, _, hm256⟩ := muts_root_offset_spec (hms.mono repMutConst_heapMono₂ ext23) ev266
+  obtain ⟨_, baseEq, hm256⟩ := muts_root_offset_spec (hms.mono repMutConst_heapMono₂ ext23) ev266
   subst m256
   have hbounded174 : IxVM.Consistency.Bounded cs174 :=
     RomBound.bounded_mono hbounded (by rw [hc283]; intro c hc; simp [hc])
@@ -2511,8 +2515,8 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
       [x_ind, x_block_addr, .field ((idx.val : Nat) : F), x_sharing, x_refs, v136,
        x_univs, v184, v185] m236 v166 m167 cs174 := by
     rwa [ZMod.natCast_zmod_val idx]
-  obtain ⟨ext4, blobs, hhp, hraw⟩ :=
-    convert_inductive_spec hbounded174
+  obtain ⟨ext4, blobs, hhp, hraw, origin⟩ :=
+    convert_inductive_origin_spec hbounded174
       (hind_rep.mono ext23)
       ((core_to_repIxonAddressRef hb2).mono ext23)
       hidx56
@@ -2521,6 +2525,7 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
       (hrecs.mono repIxonAddressRef_heapMono₂ ext3)
       (hun.mono repUnivPtr_heapMono₂ ext23)
       htbl ev176'
+  obtain ⟨plan, planned, levels⟩ := origin tree ((mutsRootOffset ms.toList idx.val : Nat) : F) represented baseEq
   rw [he170, hm169]
   have ext_snoc := Heap.Extends.snoc m167 v166
   refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), hidx56,
@@ -2529,11 +2534,36 @@ theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get,
     hhp.sub (by rw [hc283]; intro c hc; simp [hc]),
     loadValue_snoc m167 v166,
-    hraw.mono ext_snoc (fun _ hm => hm)⟩
+    hraw.mono ext_snoc (fun _ hm => hm), tree, plan, built, planned, CITypeBinderLevels.mono ext_snoc levels⟩
+
+/-- The original projection-load result, omitting the retained annotation origin. -/
+theorem get_ci_iprj_spec {b : Bytes.Address} {idx : F}
+    {x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hbounded : IxVM.Consistency.Bounded calls)
+    (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
+    (ev : ObsFn W "Ingress::get_ci_iprj" [x_block_addr, .field idx] h r h' calls) :
+    Heap.Extends h h' ∧ idx.val < 72057594037927936 ∧
+      ∃ (blkBytes : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
+        (ind : Ixon.Inductive) (blobs : List (_root_.Address × ByteArray)) (v : SourceValue F),
+        Hashed calls blkBytes ∧
+        Address.blake3Pure blkBytes = Core.ixAddr b ∧
+        Ixon.deConstantExact blkBytes = .ok cb ∧
+        Ixon.deConstant blkBytes = .ok cb ∧
+        cb.info = .muts ms ∧
+        ms.toList[idx.val]? = some (.indc ind) ∧
+        HashedPairs calls blobs ∧
+        loadValue h' r = .ok v ∧
+        RawInductValRep cb.refs.toList (blockRecurAddrs (Core.ixAddr b) ms.toList)
+          cb.univs.toList cb.sharing.toList blobs h' ind (Core.ixAddr b) idx.val v := by
+  obtain ⟨extended, indexBound, bytes, source, members, ind, blobs, value,
+    hashed, address, decoded, decoded', shape, member, hashedBlobs, loaded, raw, _⟩ :=
+    get_ci_iprj_origin_spec hbounded hb ev
+  exact ⟨extended, indexBound, bytes, source, members, ind, blobs, value,
+    hashed, address, decoded, decoded', shape, member, hashedBlobs, loaded, raw⟩
 
 /-- `Ingress::get_ci_cprj` specification under `Bounded calls` (handling both direct calls from
 `Core` and subcalls from `Ingress::get_ci`). -/
-theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
+theorem get_ci_cprj_origin_spec {b : Bytes.Address} {idx cidx : F}
     {x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hbounded : IxVM.Consistency.Bounded calls)
     (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
@@ -2552,7 +2582,11 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
         HashedPairs calls blobs ∧
         loadValue h' r = .ok v ∧
         RawCtorValRep cb.refs.toList (blockRecurAddrs (Core.ixAddr b) ms.toList)
-          cb.univs.toList cb.sharing.toList blobs h' ct (Core.ixAddr b) idx.val v := by
+          cb.univs.toList cb.sharing.toList blobs h' ct (Core.ixAddr b) idx.val v ∧
+        ∃ (tree : BinderTreeData) (plan : List Core.KLevel),
+          BinderTreeBuilt (binderLeavesData cb.binders.toList) tree ∧
+          binderRootPlan tree cb.sharing.toList (((mutsRootOffset ms.toList idx.val : Nat) : F) + 1 + cidx) ct.typ = some plan ∧
+          CITypeBinderLevels "Ctor" h' v plan := by
   obtain ⟨m2, cs12, x_sharing, x_refs, x_univs, x_binders, x_members,
       m86, cs96, w152, w153, w154, w155, w156, x_ctors,
       v187, m188, cs198, v217, m218, cs228, v247, m248, cs255,
@@ -2598,16 +2632,16 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
   have hcidx56 : cidx.val < 72057594037927936 := by omega
   have hb2 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext1 hb
   obtain ⟨ext2, hrecs⟩ := build_recur_addrs_ixon_spec hms hb2 ev230
-  obtain ⟨ext3, htbl⟩ := binder_table_spec (hbd.mono repBinderBlock_heapMono₂ ext2) hbd32 ev327
+  obtain ⟨ext3, tree, built, represented, _, htbl⟩ := binder_table_data_bounded_spec (hbd.mono repBinderBlock_heapMono₂ ext2) hbd32 ev327
   have ext23 := ext2.trans ext3
-  obtain ⟨_, _, hm352⟩ := muts_root_offset_spec (hms.mono repMutConst_heapMono₂ ext23) ev363
+  obtain ⟨_, baseEq, hm352⟩ := muts_root_offset_spec (hms.mono repMutConst_heapMono₂ ext23) ev363
   subst m352
   have ev257' : ObsFn W "Convert::convert_constructor"
       [v187, x_block_addr, .field ((idx.val : Nat) : F), x_sharing, x_refs, v217,
        x_univs, v265, v266] m317 v247 m248 cs255 := by
     rwa [ZMod.natCast_zmod_val idx]
-  obtain ⟨ext4, blobs, hhp, hraw⟩ :=
-    convert_constructor_spec
+  obtain ⟨ext4, blobs, hhp, hraw, origin⟩ :=
+    convert_constructor_origin_spec
       (hct_rep.mono ext23)
       ((core_to_repIxonAddressRef hb2).mono ext23)
       hidx56
@@ -2616,6 +2650,13 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
       (hrecs.mono repIxonAddressRef_heapMono₂ ext3)
       (hun.mono repUnivPtr_heapMono₂ ext23)
       htbl ev257'
+  have baseValue : v266 = .field (((mutsRootOffset ms.toList idx.val : Nat) : F) + 1 + cidx) := by
+    rw [baseEq] at op357
+    simp only [evalBinOp, Except.ok.injEq] at op357
+    rw [← op357] at op349
+    simpa only [evalBinOp, Except.ok.injEq] using op349.symm
+  obtain ⟨plan, planned, levels⟩ := origin tree
+    (((mutsRootOffset ms.toList idx.val : Nat) : F) + 1 + cidx) represented baseValue
   rw [he251, hm250]
   have ext_snoc := Heap.Extends.snoc m248 v247
   refine ⟨(((ext1.trans ext23).trans ext4).trans ext_snoc), hidx56, hcidx56,
@@ -2624,7 +2665,34 @@ theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
     haddr_blk, hexact_blk, hde_blk, hcb_info, hmc_get, hct_get,
     hhp.sub (by rw [hc381]; intro c hc; simp [hc]),
     loadValue_snoc m248 v247,
-    hraw.mono ext_snoc (fun _ hm => hm)⟩
+    hraw.mono ext_snoc (fun _ hm => hm), tree, plan, built, planned, CITypeBinderLevels.mono ext_snoc levels⟩
+
+/-- The original projection-load result, omitting the retained annotation origin. -/
+theorem get_ci_cprj_spec {b : Bytes.Address} {idx cidx : F}
+    {x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hbounded : IxVM.Consistency.Bounded calls)
+    (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
+    (ev : ObsFn W "Ingress::get_ci_cprj" [x_block_addr, .field idx, .field cidx] h r h' calls) :
+    Heap.Extends h h' ∧ idx.val < 72057594037927936 ∧ cidx.val < 72057594037927936 ∧
+      ∃ (blkBytes : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
+        (ind : Ixon.Inductive) (ct : Ixon.Constructor)
+        (blobs : List (_root_.Address × ByteArray)) (v : SourceValue F),
+        Hashed calls blkBytes ∧
+        Address.blake3Pure blkBytes = Core.ixAddr b ∧
+        Ixon.deConstantExact blkBytes = .ok cb ∧
+        Ixon.deConstant blkBytes = .ok cb ∧
+        cb.info = .muts ms ∧
+        ms.toList[idx.val]? = some (.indc ind) ∧
+        ind.ctors.toList[cidx.val]? = some ct ∧
+        HashedPairs calls blobs ∧
+        loadValue h' r = .ok v ∧
+        RawCtorValRep cb.refs.toList (blockRecurAddrs (Core.ixAddr b) ms.toList)
+          cb.univs.toList cb.sharing.toList blobs h' ct (Core.ixAddr b) idx.val v := by
+  obtain ⟨extended, indexBound, ctorBound, bytes, source, members, ind, ctor, blobs, value,
+    hashed, address, decoded, decoded', shape, member, constructor, hashedBlobs, loaded, raw, _⟩ :=
+    get_ci_cprj_origin_spec hbounded hb ev
+  exact ⟨extended, indexBound, ctorBound, bytes, source, members, ind, ctor, blobs, value,
+    hashed, address, decoded, decoded', shape, member, constructor, hashedBlobs, loaded, raw⟩
 
 /-- `Ingress::get_ci_rprj` specification under `Bounded calls`. -/
 theorem get_ci_rprj_spec {b : Bytes.Address} {idx : F}

@@ -2591,7 +2591,10 @@ private theorem convert_annotated_go (fuel : Nat) :
         RepList binderNodeListEnum RepBinderNode h' ns' nodesOut ∧
         (∀ nd ∈ ns', BinderNodeParamsLt 4294967296 nd) ∧
         HashedPairs calls blobs ∧
-        RawConvExpr refs recurAddrs univs sharing blobs h' bound e kp := by
+        RawConvExpr refs recurAddrs univs sharing blobs h' bound e kp ∧
+        (∀ (tree : BinderTreeData), RepBinderTreeData h tree tbl →
+          ∃ plan, binderPlanStep tree sharing bound e ns = some (plan, ns') ∧
+            HeapBinderLevels h' kp plan) := by
   induction fuel with
   | zero =>
     intro e bound refs recurAddrs univs sharing ns ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r
@@ -2614,6 +2617,8 @@ private theorem convert_annotated_go (fuel : Nat) :
         RepList binderNodeListEnum RepBinderNode m_in ns_in nin →
         (∀ nd ∈ ns_in, BinderNodeParamsLt 4294967296 nd) →
         (bf = 0 ∨ bf = 1) →
+        bf = binderFlag (needsBinderAt sharing bound sub) →
+        HeapBinderLevels m_in kf [] →
         (bf = 0 → RawConvExpr refs recurAddrs univs sharing blobs_ce m_in bound sub kf) →
         AnnotBranch subPtr shPtr (.field (bound : F)) refsPtr recPtr univsPtr tbl
           kf (.field (bf : F)) nin m_in kp2 nout m_out cs_br →
@@ -2622,10 +2627,14 @@ private theorem convert_annotated_go (fuel : Nat) :
           RepList binderNodeListEnum RepBinderNode m_out ns_out nout ∧
           (∀ nd ∈ ns_out, BinderNodeParamsLt 4294967296 nd) ∧
           HashedPairs cs_br blobs_br ∧
-          RawConvExpr refs recurAddrs univs sharing (blobs_ce ++ blobs_br) m_out bound sub kp2 := by
+          RawConvExpr refs recurAddrs univs sharing (blobs_ce ++ blobs_br) m_out bound sub kp2 ∧
+          (∀ (tree : BinderTreeData), RepBinderTreeData m_in tree tbl →
+            ∃ plan, (if needsBinderAt sharing bound sub then
+              binderPlanStep tree sharing bound sub ns_in else some ([], ns_in)) =
+                some (plan, ns_out) ∧ HeapBinderLevels m_out kp2 plan) := by
       intro sub subPtr kf kp2 nin nout bf ns_in blobs_ce m_in m_out cs_br
         hlen_br hpre_sub hsub_rep hsh_m hrefs_m hrecs_m hunivs_m htbl_m hnin hplt_in
-        hbf hraw_ce br
+        hbf hcode_ce hlevels_ce hraw_ce br
       cases br with
       | n0 hbf_eq hkp2 hnout hm hcs_br =>
         subst kp2 nout m_out cs_br
@@ -2633,19 +2642,28 @@ private theorem convert_annotated_go (fuel : Nat) :
           rcases hbf with rfl | rfl
           · rfl
           · simp only [Nat.cast_one, Value.field.injEq, one_ne_zero] at hbf_eq
-        exact ⟨Heap.Extends.refl _, ns_in, [], hnin, hplt_in, .nil,
-          (hraw_ce hbf0).mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_left _ hm)⟩
-      | other cs_rec _ ev_rec hcs_br =>
+        refine ⟨Heap.Extends.refl _, ns_in, [], hnin, hplt_in, .nil,
+          (hraw_ce hbf0).mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_left _ hm), ?_⟩
+        intro tree _
+        have notNeeded : needsBinderAt sharing bound sub = false := by
+          cases eq : needsBinderAt sharing bound sub <;> simp_all [binderFlag]
+        exact ⟨[], by simp [notNeeded], hlevels_ce⟩
+      | other cs_rec nonzero ev_rec hcs_br =>
         have hlen_rec : cs_rec.length ≤ fuel := by
           rw [hcs_br] at hlen_br; simp only [List.length_cons] at hlen_br; omega
-        obtain ⟨ext_r, kp2', nout', ns_out, blobs_r, htup, hnout, hplt_out, hhp_r, hraw_r⟩ :=
+        obtain ⟨ext_r, kp2', nout', ns_out, blobs_r, htup, hnout, hplt_out, hhp_r, hraw_r, trace_r⟩ :=
           ih hlen_rec hbound hpre_sub hsub_rep hsh_m hrefs_m hrecs_m hunivs_m htbl_m
             hnin hplt_in ev_rec
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
         obtain ⟨rfl, rfl⟩ := htup
-        exact ⟨ext_r, ns_out, blobs_r, hnout, hplt_out,
+        refine ⟨ext_r, ns_out, blobs_r, hnout, hplt_out,
           hhp_r.sub (by rw [hcs_br]; intro c hc; simp [hc]),
-          hraw_r.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm)⟩
+          hraw_r.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm), ?_⟩
+        intro tree represented
+        have needed : needsBinderAt sharing bound sub = true := by
+          cases eq : needsBinderAt sharing bound sub <;> simp_all [binderFlag]
+        obtain ⟨plan, planned, levels⟩ := trace_r tree represented
+        exact ⟨plan, by simpa [needed] using planned, levels⟩
     rcases convert_annotated_obs ev with
       ⟨x_f, x_a, x_kf, x_bf, x_ka, x_ba, x_kf2, x_n1, x_ka2, x_n2, m1, m2, m3, m4,
         cs1, cs2, cs3, cs4, ld_e, ev_f, ev_a, br_f, br_a, hr, hh', hcs⟩ |
@@ -2668,11 +2686,11 @@ private theorem convert_annotated_go (fuel : Nat) :
       | app cell fnRep argRep =>
         have hxs := (Core.load_cell cell ld_e).2
         simp only [List.cons.injEq, and_true] at hxs; obtain ⟨rfl, rfl⟩ := hxs
-        obtain ⟨ext1, hpre_f, kf, bf, blobs_f, hbf, hrf, hhp_f, hraw_f⟩ :=
-          convert_expr_spec hbound fnRep hsh hrefs hrecs hunivs ev_f
+        obtain ⟨ext1, hpre_f, kf, bf, blobs_f, hbf, hrf, hhp_f, hneed_f, hlevels_f, hraw_f⟩ :=
+          convert_expr_trace_spec hbound fnRep hsh hrefs hrecs hunivs ev_f
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrf; obtain ⟨rfl, rfl⟩ := hrf
-        obtain ⟨ext2, hpre_a, ka, ba, blobs_a, hba, hra, hhp_a, hraw_a⟩ :=
-          convert_expr_spec hbound (argRep.mono ext1) (RepShareVec.mono ext1 hsh)
+        obtain ⟨ext2, hpre_a, ka, ba, blobs_a, hba, hra, hhp_a, hneed_a, hlevels_a, hraw_a⟩ :=
+          convert_expr_trace_spec hbound (argRep.mono ext1) (RepShareVec.mono ext1 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev_a
@@ -2682,22 +2700,22 @@ private theorem convert_annotated_go (fuel : Nat) :
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
         have hcs4 : cs4.length ≤ fuel + 1 := by
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
-        obtain ⟨ext3, ns1, blobs_bf, hns1, hplt1, hhp_bf, hraw_f2⟩ :=
+        obtain ⟨ext3, ns1, blobs_bf, hns1, hplt1, hhp_bf, hraw_f2, trace_f2⟩ :=
           branch_spec hcs3 hpre_f (fnRep.mono ext12) (RepShareVec.mono ext12 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs)
             (htbl.mono ext12)
             (repList_heapMono₂ _ repBinderNode_heapMono₂ ext12 hnodes) hplt
-            hbf (fun h0 => (hraw_f h0).mono ext2 (fun _ hm => hm)) br_f
+            hbf hneed_f (HeapBinderLevels.mono ext2 hlevels_f) (fun h0 => (hraw_f h0).mono ext2 (fun _ hm => hm)) br_f
         have ext13 := ext12.trans ext3
-        obtain ⟨ext4, ns2, blobs_ba, hns2, hplt2, hhp_ba, hraw_a2⟩ :=
+        obtain ⟨ext4, ns2, blobs_ba, hns2, hplt2, hhp_ba, hraw_a2, trace_a2⟩ :=
           branch_spec hcs4 hpre_a (argRep.mono ext13) (RepShareVec.mono ext13 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext13 hunivs)
             (htbl.mono ext13) hns1 hplt1
-            hba (fun h0 => (hraw_a h0).mono ext3 (fun _ hm => hm)) br_a
+            hba hneed_a (HeapBinderLevels.mono ext3 hlevels_a) (fun h0 => (hraw_a h0).mono ext3 (fun _ hm => hm)) br_a
         subst r h'
         have ext_fin := Heap.Extends.snoc m4 (.construct Core.kexprEnum "App" [x_kf2, x_ka2])
         let allBlobs := (blobs_f ++ blobs_bf) ++ (blobs_a ++ blobs_ba)
@@ -2709,10 +2727,18 @@ private theorem convert_annotated_go (fuel : Nat) :
             (HashedPairs.append
               (hhp_a.sub (by rw [hcs]; intro c hc; simp [hc]))
               (hhp_ba.sub (by rw [hcs]; intro c hc; simp [hc])))
-        exact ⟨(ext13.trans ext4).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
+        refine ⟨(ext13.trans ext4).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
           repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns2, hplt2, hhp_all,
           .app (hraw_f2.mono (ext4.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
-            (hraw_a2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
+            (hraw_a2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp), ?_⟩
+        intro tree represented
+        obtain ⟨funcPlan, funcStep, funcLevels⟩ :=
+          trace_f2 tree (RepBinderTreeData.mono ext12 represented)
+        obtain ⟨argPlan, argStep, argLevels⟩ :=
+          trace_a2 tree (RepBinderTreeData.mono ext13 represented)
+        exact ⟨funcPlan ++ argPlan, binderPlanStep_app funcStep argStep,
+          .app (by simp) (HeapBinderLevels.mono (ext4.trans ext_fin) funcLevels)
+            (HeapBinderLevels.mono ext_fin argLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -2725,16 +2751,16 @@ private theorem convert_annotated_go (fuel : Nat) :
         rw [binderNodeListEnum_eq] at hnodes'
         obtain ⟨nd0, ns0, rfl, hnd0, hns0⟩ := Core.RepList.cons_of_load hnodes' ld_nodes
         rw [← binderNodeListEnum_eq] at hns0
-        obtain ⟨ext1, ℓ, hℓ⟩ := binder_level_spec hnd0 (hplt nd0 (by simp)) ev_l
-        obtain ⟨ext2, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hraw_t⟩ :=
-          convert_expr_spec hbound (tyRep.mono ext1) (RepShareVec.mono ext1 hsh)
+        obtain ⟨ext1, hℓ⟩ := binder_level_exact_spec hnd0 (hplt nd0 (by simp)) ev_l
+        obtain ⟨ext2, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hneed_t, hlevels_t, hraw_t⟩ :=
+          convert_expr_trace_spec hbound (tyRep.mono ext1) (RepShareVec.mono ext1 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev_t
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrt; obtain ⟨rfl, rfl⟩ := hrt
         have ext12 := ext1.trans ext2
-        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hraw_b⟩ :=
-          convert_expr_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
+        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hneed_b, hlevels_b, hraw_b⟩ :=
+          convert_expr_trace_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs) ev_b
@@ -2744,7 +2770,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
         have hcs5 : cs5.length ≤ fuel + 1 := by
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
-        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2⟩ :=
+        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2, trace_t2⟩ :=
           branch_spec hcs4 hpre_t (tyRep.mono ext13) (RepShareVec.mono ext13 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrecs)
@@ -2752,15 +2778,15 @@ private theorem convert_annotated_go (fuel : Nat) :
             (htbl.mono ext13)
             (repList_heapMono₂ _ repBinderNode_heapMono₂ ext13 hns0)
             (fun nd hnd => hplt nd (List.mem_cons_of_mem _ hnd))
-            hbt (fun h0 => (hraw_t h0).mono ext3 (fun _ hm => hm)) br_t
+            hbt hneed_t (HeapBinderLevels.mono ext3 hlevels_t) (fun h0 => (hraw_t h0).mono ext3 (fun _ hm => hm)) br_t
         have ext14 := ext13.trans ext4
-        obtain ⟨ext5, ns2, blobs_bb, hns2, hplt2, hhp_bb, hraw_b2⟩ :=
+        obtain ⟨ext5, ns2, blobs_bb, hns2, hplt2, hhp_bb, hraw_b2, trace_b2⟩ :=
           branch_spec hcs5 hpre_b (bodyRep.mono ext14) (RepShareVec.mono ext14 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext14 hunivs)
             (htbl.mono ext14) hns1 hplt1
-            hbb (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
+            hbb hneed_b (HeapBinderLevels.mono ext4 hlevels_b) (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
         subst r h'
         have ext_fin := Heap.Extends.snoc m5 (.construct Core.kexprEnum "Lam" [x_kt2, x_kb2, x_l])
         let allBlobs := (blobs_t ++ blobs_bt) ++ (blobs_b ++ blobs_bb)
@@ -2772,11 +2798,21 @@ private theorem convert_annotated_go (fuel : Nat) :
             (HashedPairs.append
               (hhp_b.sub (by rw [hcs]; intro c hc; simp [hc]))
               (hhp_bb.sub (by rw [hcs]; intro c hc; simp [hc])))
-        exact ⟨(ext14.trans ext5).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
+        refine ⟨(ext14.trans ext5).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
           repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns2, hplt2, hhp_all,
           .lam (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (hraw_t2.mono (ext5.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
-            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
+            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp), ?_⟩
+        intro tree represented
+        obtain ⟨domPlan, domStep, domLevels⟩ :=
+          trace_t2 tree (RepBinderTreeData.mono ext13 represented)
+        obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
+          trace_b2 tree (RepBinderTreeData.mono ext14 represented)
+        exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
+          binderPlanStep_lam domStep bodyStep,
+          .lam (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
+            (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
+            (HeapBinderLevels.mono ext_fin bodyLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -2789,16 +2825,16 @@ private theorem convert_annotated_go (fuel : Nat) :
         rw [binderNodeListEnum_eq] at hnodes'
         obtain ⟨nd0, ns0, rfl, hnd0, hns0⟩ := Core.RepList.cons_of_load hnodes' ld_nodes
         rw [← binderNodeListEnum_eq] at hns0
-        obtain ⟨ext1, ℓ, hℓ⟩ := binder_level_spec hnd0 (hplt nd0 (by simp)) ev_l
-        obtain ⟨ext2, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hraw_t⟩ :=
-          convert_expr_spec hbound (tyRep.mono ext1) (RepShareVec.mono ext1 hsh)
+        obtain ⟨ext1, hℓ⟩ := binder_level_exact_spec hnd0 (hplt nd0 (by simp)) ev_l
+        obtain ⟨ext2, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hneed_t, hlevels_t, hraw_t⟩ :=
+          convert_expr_trace_spec hbound (tyRep.mono ext1) (RepShareVec.mono ext1 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev_t
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrt; obtain ⟨rfl, rfl⟩ := hrt
         have ext12 := ext1.trans ext2
-        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hraw_b⟩ :=
-          convert_expr_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
+        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hneed_b, hlevels_b, hraw_b⟩ :=
+          convert_expr_trace_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs) ev_b
@@ -2808,7 +2844,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
         have hcs5 : cs5.length ≤ fuel + 1 := by
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
-        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2⟩ :=
+        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2, trace_t2⟩ :=
           branch_spec hcs4 hpre_t (tyRep.mono ext13) (RepShareVec.mono ext13 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrecs)
@@ -2816,15 +2852,15 @@ private theorem convert_annotated_go (fuel : Nat) :
             (htbl.mono ext13)
             (repList_heapMono₂ _ repBinderNode_heapMono₂ ext13 hns0)
             (fun nd hnd => hplt nd (List.mem_cons_of_mem _ hnd))
-            hbt (fun h0 => (hraw_t h0).mono ext3 (fun _ hm => hm)) br_t
+            hbt hneed_t (HeapBinderLevels.mono ext3 hlevels_t) (fun h0 => (hraw_t h0).mono ext3 (fun _ hm => hm)) br_t
         have ext14 := ext13.trans ext4
-        obtain ⟨ext5, ns2, blobs_bb, hns2, hplt2, hhp_bb, hraw_b2⟩ :=
+        obtain ⟨ext5, ns2, blobs_bb, hns2, hplt2, hhp_bb, hraw_b2, trace_b2⟩ :=
           branch_spec hcs5 hpre_b (bodyRep.mono ext14) (RepShareVec.mono ext14 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext14 hunivs)
             (htbl.mono ext14) hns1 hplt1
-            hbb (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
+            hbb hneed_b (HeapBinderLevels.mono ext4 hlevels_b) (fun h0 => (hraw_b h0).mono ext4 (fun _ hm => hm)) br_b
         subst r h'
         have ext_fin := Heap.Extends.snoc m5 (.construct Core.kexprEnum "Forall" [x_kt2, x_kb2, x_l])
         let allBlobs := (blobs_t ++ blobs_bt) ++ (blobs_b ++ blobs_bb)
@@ -2836,11 +2872,21 @@ private theorem convert_annotated_go (fuel : Nat) :
             (HashedPairs.append
               (hhp_b.sub (by rw [hcs]; intro c hc; simp [hc]))
               (hhp_bb.sub (by rw [hcs]; intro c hc; simp [hc])))
-        exact ⟨(ext14.trans ext5).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
+        refine ⟨(ext14.trans ext5).trans ext_fin, _, x_n2, ns2, allBlobs, rfl,
           repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns2, hplt2, hhp_all,
           .all (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
             (hraw_t2.mono (ext5.trans ext_fin) (fun _ hm => List.mem_append_left _ hm))
-            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
+            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp), ?_⟩
+        intro tree represented
+        obtain ⟨domPlan, domStep, domLevels⟩ :=
+          trace_t2 tree (RepBinderTreeData.mono ext13 represented)
+        obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
+          trace_b2 tree (RepBinderTreeData.mono ext14 represented)
+        exact ⟨binderLevel nd0 :: (domPlan ++ bodyPlan),
+          binderPlanStep_all domStep bodyStep,
+          .forallE (by simp) (hℓ.mono ((((ext2.trans ext3).trans ext4).trans ext5).trans ext_fin))
+            (HeapBinderLevels.mono (ext5.trans ext_fin) domLevels)
+            (HeapBinderLevels.mono ext_fin bodyLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -2849,18 +2895,18 @@ private theorem convert_annotated_go (fuel : Nat) :
       | letE cell tyRep valRep bodyRep =>
         have hxs := (Core.load_cell cell ld_e).2
         simp only [List.cons.injEq, and_true] at hxs; rcases hxs with ⟨_, rfl, rfl, rfl⟩
-        obtain ⟨ext1, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hraw_t⟩ :=
-          convert_expr_spec hbound tyRep hsh hrefs hrecs hunivs ev_t
+        obtain ⟨ext1, hpre_t, kt, bt, blobs_t, hbt, hrt, hhp_t, hneed_t, hlevels_t, hraw_t⟩ :=
+          convert_expr_trace_spec hbound tyRep hsh hrefs hrecs hunivs ev_t
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrt; obtain ⟨rfl, rfl⟩ := hrt
-        obtain ⟨ext2, hpre_v, kv, bv, blobs_v, hbv, hrv, hhp_v, hraw_v⟩ :=
-          convert_expr_spec hbound (valRep.mono ext1) (RepShareVec.mono ext1 hsh)
+        obtain ⟨ext2, hpre_v, kv, bv, blobs_v, hbv, hrv, hhp_v, hneed_v, hlevels_v, hraw_v⟩ :=
+          convert_expr_trace_spec hbound (valRep.mono ext1) (RepShareVec.mono ext1 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs) ev_v
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hrv; obtain ⟨rfl, rfl⟩ := hrv
         have ext12 := ext1.trans ext2
-        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hraw_b⟩ :=
-          convert_expr_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
+        obtain ⟨ext3, hpre_b, kb, bb, blobs_b, hbb, hrb, hhp_b, hneed_b, hlevels_b, hraw_b⟩ :=
+          convert_expr_trace_spec hbound (bodyRep.mono ext12) (RepShareVec.mono ext12 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext12 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext12 hunivs) ev_b
@@ -2872,30 +2918,30 @@ private theorem convert_annotated_go (fuel : Nat) :
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
         have hcs6 : cs6.length ≤ fuel + 1 := by
           rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
-        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2⟩ :=
+        obtain ⟨ext4, ns1, blobs_bt, hns1, hplt1, hhp_bt, hraw_t2, trace_t2⟩ :=
           branch_spec hcs4 hpre_t (tyRep.mono ext13) (RepShareVec.mono ext13 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext13 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext13 hunivs)
             (htbl.mono ext13)
             (repList_heapMono₂ _ repBinderNode_heapMono₂ ext13 hnodes) hplt
-            hbt (fun h0 => (hraw_t h0).mono (ext2.trans ext3) (fun _ hm => hm)) br_t
+            hbt hneed_t (HeapBinderLevels.mono (ext2.trans ext3) hlevels_t) (fun h0 => (hraw_t h0).mono (ext2.trans ext3) (fun _ hm => hm)) br_t
         have ext14 := ext13.trans ext4
-        obtain ⟨ext5, ns2, blobs_bv, hns2, hplt2, hhp_bv, hraw_v2⟩ :=
+        obtain ⟨ext5, ns2, blobs_bv, hns2, hplt2, hhp_bv, hraw_v2, trace_v2⟩ :=
           branch_spec hcs5 hpre_v (valRep.mono ext14) (RepShareVec.mono ext14 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext14 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext14 hunivs)
             (htbl.mono ext14) hns1 hplt1
-            hbv (fun h0 => (hraw_v h0).mono (ext3.trans ext4) (fun _ hm => hm)) br_v
+            hbv hneed_v (HeapBinderLevels.mono (ext3.trans ext4) hlevels_v) (fun h0 => (hraw_v h0).mono (ext3.trans ext4) (fun _ hm => hm)) br_v
         have ext15 := ext14.trans ext5
-        obtain ⟨ext6, ns3, blobs_bb, hns3, hplt3, hhp_bb, hraw_b2⟩ :=
+        obtain ⟨ext6, ns3, blobs_bb, hns3, hplt3, hhp_bb, hraw_b2, trace_b2⟩ :=
           branch_spec hcs6 hpre_b (bodyRep.mono ext15) (RepShareVec.mono ext15 hsh)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext15 hrefs)
             (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext15 hrecs)
             (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext15 hunivs)
             (htbl.mono ext15) hns2 hplt2
-            hbb (fun h0 => (hraw_b h0).mono (ext4.trans ext5) (fun _ hm => hm)) br_b
+            hbb hneed_b (HeapBinderLevels.mono (ext4.trans ext5) hlevels_b) (fun h0 => (hraw_b h0).mono (ext4.trans ext5) (fun _ hm => hm)) br_b
         subst r h'
         have ext_fin := Heap.Extends.snoc m6 (.construct Core.kexprEnum "Let" [x_kt2, x_kv2, x_kb2])
         let allBlobs := ((blobs_t ++ blobs_bt) ++ (blobs_v ++ blobs_bv)) ++ (blobs_b ++ blobs_bb)
@@ -2911,14 +2957,26 @@ private theorem convert_annotated_go (fuel : Nat) :
             (HashedPairs.append
               (hhp_b.sub (by rw [hcs]; intro c hc; simp [hc]))
               (hhp_bb.sub (by rw [hcs]; intro c hc; simp [hc])))
-        exact ⟨(ext15.trans ext6).trans ext_fin, _, x_n3, ns3, allBlobs, rfl,
+        refine ⟨(ext15.trans ext6).trans ext_fin, _, x_n3, ns3, allBlobs, rfl,
           repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns3, hplt3, hhp_all,
           .letE
             (hraw_t2.mono ((ext5.trans ext6).trans ext_fin)
               (fun _ hm => List.mem_append_left _ (List.mem_append_left _ hm)))
             (hraw_v2.mono (ext6.trans ext_fin)
               (fun _ hm => List.mem_append_left _ (List.mem_append_right _ hm)))
-            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp)⟩
+            (hraw_b2.mono ext_fin (fun _ hm => List.mem_append_right _ hm)) (by simp), ?_⟩
+        intro tree represented
+        obtain ⟨typePlan, typeStep, typeLevels⟩ :=
+          trace_t2 tree (RepBinderTreeData.mono ext13 represented)
+        obtain ⟨valuePlan, valueStep, valueLevels⟩ :=
+          trace_v2 tree (RepBinderTreeData.mono ext14 represented)
+        obtain ⟨bodyPlan, bodyStep, bodyLevels⟩ :=
+          trace_b2 tree (RepBinderTreeData.mono ext15 represented)
+        exact ⟨(typePlan ++ valuePlan) ++ bodyPlan,
+          binderPlanStep_let typeStep valueStep bodyStep,
+          .letE (by simp) (HeapBinderLevels.mono ((ext5.trans ext6).trans ext_fin) typeLevels)
+            (HeapBinderLevels.mono (ext6.trans ext_fin) valueLevels)
+            (HeapBinderLevels.mono ext_fin bodyLevels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | share cell =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -2936,7 +2994,7 @@ private theorem convert_annotated_go (fuel : Nat) :
           subst m2
           have hcs3 : cs3.length ≤ fuel := by
             rw [hcs] at hfuel; simp only [List.length_cons, List.length_append] at hfuel; omega
-          obtain ⟨ext3, ki', n1', ns1, blobs_in, htup, hns1, hplt1, hhp_in, hraw_in⟩ :=
+          obtain ⟨ext3, ki', n1', ns1, blobs_in, htup, hns1, hplt1, hhp_in, hraw_in, trace_in⟩ :=
             ih hcs3 hbound hpre_in valRep hsh hrefs hrecs hunivs htbl hnodes hplt ev_in
           simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
           obtain ⟨hki_eq, hn1_eq⟩ := htup; subst x_ki x_n1
@@ -2945,12 +3003,16 @@ private theorem convert_annotated_go (fuel : Nat) :
           subst v_fidx m4; subst r h'
           have ext_fin := Heap.Extends.snoc m3
             (.construct Core.kexprEnum "Proj" [x_taddr, .field (fIdx.toNat : F), ki'])
-          exact ⟨ext3.trans ext_fin, _, n1', ns1, blobs_in, rfl,
+          refine ⟨ext3.trans ext_fin, _, n1', ns1, blobs_in, rfl,
             repList_heapMono₂ _ repBinderNode_heapMono₂ ext_fin hns1, hplt1,
             hhp_in.sub (by rw [hcs]; intro c hc; simp [hc]),
             .prj ht_lt hf_lt href_get hd_eq
               (Bytes.repAddressRef_heapMono₂ _ (ext3.trans ext_fin) ha_rep)
-              (hraw_in.mono ext_fin (fun _ hm => hm)) (by simp)⟩
+              (hraw_in.mono ext_fin (fun _ hm => hm)) (by simp), ?_⟩
+          intro tree represented
+          obtain ⟨plan, planned, levels⟩ := trace_in tree represented
+          exact ⟨plan, by simpa only [binderPlanStep] using planned,
+            .proj (by simp <;> repeat' constructor) (HeapBinderLevels.mono ext_fin levels)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -2995,23 +3057,33 @@ private theorem convert_annotated_go (fuel : Nat) :
             subst v_var m3
             obtain ⟨hm4, ns_entry, hns_entry, hplt_entry⟩ := binder_nodes_spec htbl ev_bn
             subst m4
-            obtain ⟨m_cb, cs_ca, x_k_cb, x_rest_cb, ev_ca, _, he_k, he_h, hc_cb⟩ :=
+            obtain ⟨m_cb, cs_ca, x_k_cb, x_rest_cb, ev_ca, ld_rest, he_k, he_h, hc_cb⟩ :=
               «Convert::convert_block».obs ev_cb
             subst x_k m5; subst r h'
             have hcs_ca : cs_ca.length ≤ fuel := by
               rw [hcs, hc_cb] at hfuel
               simp only [List.length_cons, List.length_append] at hfuel
               omega
-            obtain ⟨ext_ca, kp_s, _, _, blobs_s, htup_s, _, _, hhp_s, hraw_s⟩ :=
+            obtain ⟨ext_ca, kp_s, rest_s, ns_after, blobs_s, htup_s, hns_after, _, hhp_s, hraw_s, trace_s⟩ :=
               ih hcs_ca (by omega) hpre_s hs_rep hsh hrefs hrecs hunivs htbl
                 hns_entry hplt_entry ev_ca
             simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_s
-            obtain ⟨hkp_eq, _⟩ := htup_s; subst x_k_cb
-            exact ⟨ext_ca, kp_s, x_n1, ns1, blobs_s, rfl,
+            obtain ⟨hkp_eq, hrest_eq⟩ := htup_s; subst x_k_cb x_rest_cb
+            have ns_exhausted : ns_after = [] := by
+              apply repList_nil_of_load hns_after
+              simpa only [binderNodeListEnum_eq] using ld_rest
+            refine ⟨ext_ca, kp_s, x_n1, ns1, blobs_s, rfl,
               repList_heapMono₂ _ repBinderNode_heapMono₂ ext_ca hns1,
               (fun nd hnd => hplt nd (List.mem_cons_of_mem _ hnd)),
               hhp_s.sub (by rw [hcs, hc_cb]; intro c hc; simp [hc]),
-              .share hidx_lt hsh_get hraw_s⟩
+              .share hidx_lt hsh_get hraw_s, ?_⟩
+            intro tree represented
+            obtain ⟨_, exactNodes, found, exactRep⟩ := binder_nodes_exact_spec (query := (1, (idx.toNat : F), (var0.toNat : F))) represented ev_bn
+            have nodeEq := repBinderNodes_unique hns_entry exactRep
+            cases nodeEq
+            obtain ⟨plan, planned, levels⟩ := trace_s tree represented
+            rw [ns_exhausted] at planned
+            exact ⟨plan, by simp [binderPlanStep, hidx_lt, hsh_get, found, planned], levels⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ =>
         exact (Core.load_cell_ne cell ld_e (by decide)).elim
@@ -3042,9 +3114,46 @@ theorem convert_annotated_spec {e : Ixon.Expr} {bound : Nat}
       RepList binderNodeListEnum RepBinderNode h' ns' nodesOut ∧
       (∀ nd ∈ ns', BinderNodeParamsLt 4294967296 nd) ∧
       HashedPairs calls blobs ∧
-      RawConvExpr refs recurAddrs univs sharing blobs h' bound e kp :=
-  convert_annotated_go calls.length (Nat.le_refl _) hbound hpre hep hsh hrefs hrecs hunivs
-    htbl hnodes hplt ev
+      RawConvExpr refs recurAddrs univs sharing blobs h' bound e kp := by
+  obtain ⟨extended, kp, nodesOut, remaining, blobs, result, nodes, bounds, hashes, raw, _⟩ :=
+    convert_annotated_go calls.length (Nat.le_refl _) hbound hpre hep hsh hrefs hrecs hunivs
+      htbl hnodes hplt ev
+  exact ⟨extended, kp, nodesOut, remaining, blobs, result, nodes, bounds, hashes, raw⟩
+
+/-- Annotated conversion retains the exact node-consumption plan of its represented table. -/
+theorem convert_annotated_trace_spec {e : Ixon.Expr} {bound : Nat}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {ns : List Ixon.BinderNode}
+    {ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hbound : bound < 4294967296)
+    (hpre : PreShareOk sharing bound e)
+    (hep : RepExpr h e ep)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData}
+    (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (hnodes : RepList binderNodeListEnum RepBinderNode h ns nodesPtr)
+    (hplt : ∀ nd ∈ ns, BinderNodeParamsLt 4294967296 nd)
+    (ev : ObsFn W "Convert::convert_annotated"
+      [ep, shPtr, .field (bound : F), refsPtr, recPtr, univsPtr, tbl, nodesPtr] h r h' calls) :
+    Heap.Extends h h' ∧
+    ∃ (kp nodesOut : SourceValue F) (ns' : List Ixon.BinderNode)
+      (blobs : List (_root_.Address × ByteArray)),
+      r = .tuple [kp, nodesOut] ∧
+      RepList binderNodeListEnum RepBinderNode h' ns' nodesOut ∧
+      (∀ nd ∈ ns', BinderNodeParamsLt 4294967296 nd) ∧
+      HashedPairs calls blobs ∧
+      RawConvExpr refs recurAddrs univs sharing blobs h' bound e kp ∧
+      ∃ plan, binderPlanStep tree sharing bound e ns = some (plan, ns') ∧
+        HeapBinderLevels h' kp plan := by
+  obtain ⟨extended, kp, nodesOut, remaining, blobs, result, nodes, bounds, hashes, raw, trace⟩ :=
+    convert_annotated_go calls.length (Nat.le_refl _) hbound hpre hep hsh hrefs hrecs hunivs
+      htbl hnodes hplt ev
+  exact ⟨extended, kp, nodesOut, remaining, blobs, result, nodes, bounds, hashes, raw, trace tree represented⟩
 
 /-- `Convert::convert_block` converts a block's expression and checks that all its binder nodes
 were consumed. -/
@@ -3132,6 +3241,113 @@ theorem convert_root_spec {e : Ixon.Expr}
         (hhp1.sub (by rw [hc201]; intro c hc; simp [hc]))
         (hhp2.sub (by rw [hc201]; intro c hc; simp [hc])),
       hraw2.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm)⟩
+
+/-- A successful block conversion consumes the complete serialized annotation plan. -/
+theorem convert_block_trace_spec {e : Ixon.Expr} {bound : Nat}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {ns : List Ixon.BinderNode}
+    {ep shPtr refsPtr recPtr univsPtr tbl nodesPtr r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hbound : bound < 4294967296)
+    (hpre : PreShareOk sharing bound e)
+    (hep : RepExpr h e ep)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData} (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (hnodes : RepList binderNodeListEnum RepBinderNode h ns nodesPtr)
+    (hplt : ∀ nd ∈ ns, BinderNodeParamsLt 4294967296 nd)
+    (ev : ObsFn W "Convert::convert_block"
+      [ep, shPtr, .field (bound : F), refsPtr, recPtr, univsPtr, tbl, nodesPtr] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawConvExpr refs recurAddrs univs sharing blobs h' bound e r ∧
+      ∃ plan, binderPlanStep tree sharing bound e ns = some (plan, []) ∧
+        HeapBinderLevels h' r plan := by
+  obtain ⟨m2, cs12, x_k, x_rest, ev14, exhausted, he108, he109, hc110⟩ :=
+    «Convert::convert_block».obs ev
+  subst he108 he109
+  obtain ⟨ext, kp, rest, remaining, blobs, htup, nodes, _, hhp, hraw, plan, planned, levels⟩ :=
+    convert_annotated_trace_spec hbound hpre hep hsh hrefs hrecs hunivs
+      represented htbl hnodes hplt ev14
+  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+  obtain ⟨rfl, rfl⟩ := htup
+  have empty : remaining = [] := by
+    apply repList_nil_of_load nodes
+    simpa only [binderNodeListEnum_eq] using exhausted
+  rw [empty] at planned
+  exact ⟨ext, blobs, hhp.sub (by rw [hc110]; intro c hc; simp [hc]), hraw, plan, planned, levels⟩
+
+/-- The root's heap trace is determined by its serialized expression and exact binder tree. -/
+theorem convert_root_trace_spec {e : Ixon.Expr}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
+    {ep shPtr refsPtr recPtr univsPtr tbl r : SourceValue F} {root : F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hep : RepExpr h e ep)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData} (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (ev : ObsFn W "Convert::convert_root"
+      [ep, shPtr, refsPtr, recPtr, univsPtr, tbl, .field root] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      RawConvExpr refs recurAddrs univs sharing blobs h' 4294967295 e r ∧
+      ∃ plan, binderRootPlan tree sharing root e = some plan ∧ HeapBinderLevels h' r plan := by
+  have hbnd : (4294967295 : Nat) < 4294967296 := by omega
+  rcases «Convert::convert_root».obs ev with
+    ⟨m2, cs12, x_k, ev14, he90, he91, hc92⟩ |
+    ⟨m2, cs12, x_k, x_b, cs100, v110, m160, cs168, ev14, nonzero, ev170, ev102, hc201⟩
+  · have ev14' : ObsFn W "Convert::convert_expr"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
+        h (.tuple [x_k, .field 0]) m2 cs12 := ev14
+    subst r h'
+    obtain ⟨ext, _, kp, b, blobs, hb, htup, hhp, code, levels, hraw⟩ :=
+      convert_expr_trace_spec hbnd hep hsh hrefs hrecs hunivs ev14'
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+    obtain ⟨rfl, hb0_eq⟩ := htup
+    have hb0 : b = 0 := by
+      rcases hb with rfl | rfl
+      · rfl
+      · simp at hb0_eq
+    have notNeeded : needsBinderAt sharing 4294967295 e = false := by
+      cases eq : needsBinderAt sharing 4294967295 e <;> simp_all [binderFlag]
+    exact ⟨ext, blobs, hhp.sub (by rw [hc92]; intro c hc; simp [hc]), hraw hb0,
+      [], by simp [binderRootPlan, notNeeded], levels⟩
+  · have ev14' : ObsFn W "Convert::convert_expr"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr]
+        h (.tuple [x_k, x_b]) m2 cs12 := ev14
+    obtain ⟨ext1, hpre, kp, bit, blobs1, _, result, hhp1, code, _, _⟩ :=
+      convert_expr_trace_spec hbnd hep hsh hrefs hrecs hunivs ev14'
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at result
+    obtain ⟨rfl, rfl⟩ := result
+    have needed : needsBinderAt sharing 4294967295 e = true := by
+      cases eq : needsBinderAt sharing 4294967295 e <;> simp_all [binderFlag]
+    obtain ⟨hm160, ns, hns, hplt⟩ := binder_nodes_spec (htbl.mono ext1) ev170
+    subst m160
+    obtain ⟨_, exactNodes, found, exactRep⟩ :=
+      binder_nodes_exact_spec (query := (0, root, 0)) (RepBinderTreeData.mono ext1 represented) ev170
+    have nodeEq := repBinderNodes_unique hns exactRep
+    cases nodeEq
+    have ev102' : ObsFn W "Convert::convert_block"
+        [ep, shPtr, .field ((4294967295 : Nat) : F), refsPtr, recPtr, univsPtr, tbl, v110]
+        m2 r h' cs100 := ev102
+    obtain ⟨ext2, blobs2, hhp2, hraw2, plan, planned, levels⟩ :=
+      convert_block_trace_spec hbnd hpre (hep.mono ext1) (RepShareVec.mono ext1 hsh)
+        (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrefs)
+        (repList_heapMono₂ _ repIxonAddressRef_heapMono₂ ext1 hrecs)
+        (repList_heapMono₂ _ repUnivPtr_heapMono₂ ext1 hunivs)
+        (RepBinderTreeData.mono ext1 represented) (htbl.mono ext1) hns hplt ev102'
+    refine ⟨ext1.trans ext2, blobs1 ++ blobs2,
+      HashedPairs.append
+        (hhp1.sub (by rw [hc201]; intro c hc; simp [hc]))
+        (hhp2.sub (by rw [hc201]; intro c hc; simp [hc])),
+      hraw2.mono (Heap.Extends.refl _) (fun _ hm => List.mem_append_right _ hm), plan, ?_, levels⟩
+    simp [binderRootPlan, needed, found, planned]
 
 /-! ## De Bruijn shifting / substitution congruence for `Annotates` -/
 
@@ -3621,6 +3837,277 @@ private theorem levels_conv_bridge {ps : List Ix.Kernel.LevelParam}
 producing `E_rd` with loose bound variables below `k` and level parameters in `ps`, then `kp`
 represents `Core.posOf ps E'` (`Decl.TmExact κ d Γ h k (Core.posOf ps E') kp`) for an expression `E'`
 satisfying `Annotates E' E_rd`. -/
+theorem RawConvExpr.toTmExactTrace {κ : _root_.Address → Core.KKey}
+    {ps : List Ix.Kernel.LevelParam}
+    (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {ecx : Ix.Kernel.Reader.ECx .anon}
+    (hrefs : ecx.src.refs.toList = refs)
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))
+    (hkeyAt : ∀ a k, ecx.cx.keyAt a = .ok k → k = κ a)
+    (hself : ∀ i a m k, recurAddrs[i]? = some a → ecx.self i = some m → m = .ok k → k = κ a)
+    (hblob : ∀ a bs, (a, bs) ∈ blobs → ecx.cx.blob a = some bs)
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
+    (raw : RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    ∀ {n k : Nat} {E_rd : Core.KExpr},
+      n ≤ sharing.length →
+      min bound sharing.length ≤ n →
+      Ix.Kernel.Reader.convExpr ecx (buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      E_rd.looseBVarsBounded k = true →
+      E_rd.allLevelParamsDefined ps = true →
+      ∃ E' : Core.KExpr,
+        IxVM.Consistency.Annotates E' E_rd ∧
+        (∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp) ∧
+        (∀ (plan : List Core.KLevel), HeapBinderLevels h kp plan →
+          ∀ tail, applyBinderTrace (fun level => Core.bmeta (invPosLevel ps level))
+            E_rd (plan ++ tail) = some (E', tail)) := by
+  induction raw with
+  | @var bound addr idx hidx cell =>
+    intro n k E_rd _ _ hconv hlbb _
+    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq,
+      Ix.Kernel.Expr.mkBvar_eq] at hconv
+    subst hconv
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
+    refine ⟨.bvar idx.toNat, .bvar, ?_, ?_⟩
+    · intro d Γ
+      have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
+      have htm : Decl.TmExact κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
+          (.ptr (.enum Core.kexprEnum) addr) :=
+        .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
+      rwa [hval] at htm
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @sort bound addr uIdx u lp huIdx hu rl cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨u_rd, hu_rd, hret⟩ := except_bind_eq_ok hconv
+    injection hret with hE; subst hE
+    have hu_eq : u_rd = Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u := by
+      unfold Ix.Kernel.Reader.ECx.level at hu_rd
+      rw [hunivs] at hu_rd
+      have hget : (univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))[uIdx.toNat]? =
+          some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
+        simp [hu]
+      rw [hget] at hu_rd
+      injection hu_rd with hu_eq'
+      exact hu_eq'.symm
+    subst hu_eq
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
+    refine ⟨.sort (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u), .sort, ?_, ?_⟩
+    · intro d Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [hpos_eq]
+      exact .sort cell (rl.toRepKLevel hplt)
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @ref bound addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    have hk_eq : k_rd = κ a := by
+      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
+      have href_arr : ecx.src.refs[rIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hk_rd
+      exact hkeyAt a k_rd hk_rd
+    subst hk_eq
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨hpos_ls, hplt_ls⟩ :=
+      levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
+    refine ⟨.const (κ a) ls_rd, .const, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [hpos_ls, ← hd]
+      exact .const cell ra (rls.toRepKLevelList hplt_ls)
+    · intro plan levels tail
+      have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+      cases empty
+      rfl
+  | @recur bound addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
+    intro n k E_rd _ _ hconv _ hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    cases hself_opt : ecx.self rIdx.toNat with
+    | none => simp [hself_opt, Ix.Kernel.Reader.malformed, throw, Except.error] at hconv
+    | some m_self =>
+      simp only [hself_opt] at hconv
+      obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
+      injection hret with hE; subst hE
+      have hk_eq : k_rd = κ a := hself rIdx.toNat a m_self k_rd hrec hself_opt hk_rd
+      subst hk_eq
+      simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+      obtain ⟨hpos_ls, hplt_ls⟩ :=
+        levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
+      refine ⟨.const (κ a) ls_rd, .const, ?_, ?_⟩
+      · intro d0 Γ
+        unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+        rw [hpos_ls, ← hd]
+        exact .const cell ra (rls.toRepKLevelList hplt_ls)
+      · intro plan levels tail
+        have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+        cases empty
+        rfl
+  | @prj bound addr tIdx fIdx inner a d ap ip htIdx hfIdx href hd ra _ cell ih =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ein_rd, hEin_rd, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    have hk_eq : k_rd = κ a := by
+      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
+      have href_arr : ecx.src.refs[tIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hk_rd
+      exact hkeyAt a k_rd hk_rd
+    subst hk_eq
+    simp only [Ix.Kernel.Expr.looseBVarsBounded] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
+    obtain ⟨Ein', hA_in, hTm_in, trace_in⟩ := ih hn_le hbnd_le hEin_rd hlbb hdef
+    refine ⟨.proj (κ a) fIdx.toNat Ein', .proj hA_in, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := val_cast_u56 hfIdx
+      rw [← hd, ← hf_val]
+      exact .proj cell ra (hTm_in d0 Γ)
+    · intro plan levels tail
+      have innerLevels := HeapBinderLevels.proj_inv cell levels
+      simp [applyBinderTrace, trace_in plan innerLevels tail]
+  | @str bound addr bIdx a bs s bp hbIdx href hmem rbs hs cell =>
+    intro n k E_rd _ _ hconv _ _
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨b_arr, hb_at, hrest⟩ := except_bind_eq_ok hconv
+    have hb_eq : b_arr = ⟨bs.toArray⟩ := by
+      unfold Ix.Kernel.Reader.ECx.blobAt at hb_at
+      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hb_at
+      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
+      exact hb_at.symm
+    subst hb_eq
+    have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
+    rw [hs_utf8] at hrest
+    injection hrest with hE; subst hE
+    refine ⟨.lit (.strVal s), .lit, (fun d0 Γ => .litStr cell rbs hs), ?_⟩
+    intro plan levels tail
+    have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+    cases empty
+    rfl
+  | @nat bound addr bIdx a bs limbs lp hbIdx href hmem hcanon rlimbs hlast hval cell =>
+    intro n k E_rd _ _ hconv _ _
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨n_rd, hn_at, hret⟩ := except_bind_eq_ok hconv
+    injection hret with hE; subst hE
+    have hn_eq : n_rd = Core.limbsVal limbs := by
+      unfold Ix.Kernel.Reader.ECx.natAt Ix.Kernel.Reader.ECx.blobAt at hn_at
+      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
+        rw [← Array.getElem?_toList, hrefs, href]
+      rw [href_arr] at hn_at
+      simp only [bind, Except.bind, hblob a ⟨bs.toArray⟩ hmem, hcanon, ↓reduceIte,
+        pure, Except.pure, Except.ok.injEq] at hn_at
+      exact hn_at.symm.trans hval.symm
+    subst hn_eq
+    refine ⟨.lit (.natVal (Core.limbsVal limbs)), .lit,
+      (fun d0 Γ => .litNat cell rlimbs hlast), ?_⟩
+    intro plan levels tail
+    have empty := HeapBinderLevels.leaf_inv (by simp) cell levels
+    cases empty
+    rfl
+  | @app bound addr f arg fp ap _ _ cell ihf iha =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Ef_rd, hEf, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ea_rd, hEa, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Ef', hAf, hTmf, trace_f⟩ := ihf hn_le hbnd_le hEf hlbb.1 hdef.1
+    obtain ⟨Ea', hAa, hTma, trace_a⟩ := iha hn_le hbnd_le hEa hlbb.2 hdef.2
+    refine ⟨.app Ef' Ea', .app hAf hAa, (fun d0 Γ => .app cell (hTmf d0 Γ) (hTma d0 Γ)), ?_⟩
+    intro plan levels tail
+    obtain ⟨funcPlan, argPlan, rfl, funcLevels, argLevels⟩ := HeapBinderLevels.app_inv cell levels
+    simp [applyBinderTrace, List.append_assoc,
+      trace_f funcPlan funcLevels (argPlan ++ tail), trace_a argPlan argLevels tail]
+  | @lam bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', hAt, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
+    refine ⟨.lam Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .lam hAt hAb, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [substPW_posLevels_bmeta hperm ℓ]
+      exact .lam cell (hTmt d0 Γ) (hTmb d0 Γ) rl
+    · intro plan levels tail
+      obtain ⟨domPlan, bodyPlan, rfl, domLevels, bodyLevels⟩ := HeapBinderLevels.lam_inv cell rl levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t domPlan domLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @all bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', hAt, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
+    refine ⟨.forallE Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .forallE hAt hAb, ?_, ?_⟩
+    · intro d0 Γ
+      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
+      rw [substPW_posLevels_bmeta hperm ℓ]
+      exact .forallE cell (hTmt d0 Γ) (hTmb d0 Γ) rl
+    · intro plan levels tail
+      obtain ⟨domPlan, bodyPlan, rfl, domLevels, bodyLevels⟩ := HeapBinderLevels.forall_inv cell rl levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t domPlan domLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @letE bound addr nd md ty val body tp vp bp _ _ _ cell iht ihv ihb =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
+    obtain ⟨Ev_rd, hEv, hbind3⟩ := except_bind_eq_ok hbind2
+    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind3
+    injection hret with hE; subst hE
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
+    obtain ⟨Et', _, hTmt, trace_t⟩ := iht hn_le hbnd_le hEt hlbb.1.1 hdef.1.1
+    obtain ⟨Ev', hAv, hTmv, trace_v⟩ := ihv hn_le hbnd_le hEv hlbb.1.2 hdef.1.2
+    obtain ⟨Eb', hAb, hTmb, trace_b⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.2
+    refine ⟨Eb'.instantiate1Lift Ev' 0,
+      .letE (annotates_instantiate1Lift hAb hAv 0), ?_, ?_⟩
+    · intro d0 Γ
+      have hilp : Core.posOf ps (Eb'.instantiate1Lift Ev' 0) =
+          Core.instShift (Core.posOf ps Ev') 0 (Core.posOf ps Eb') :=
+        Core.SubstAux.ilp_instShift ps (Core.posLevels ps) Ev' Eb' 0
+      rw [hilp]
+      exact .letE cell (hTmt d0 Γ) (hTmv d0 Γ) (hTmb d0 Γ)
+    · intro plan levels tail
+      obtain ⟨typePlan, valuePlan, bodyPlan, rfl, typeLevels, valueLevels, bodyLevels⟩ :=
+        HeapBinderLevels.let_inv cell levels
+      simp [applyBinderTrace, List.append_assoc,
+        trace_t typePlan typeLevels (valuePlan ++ (bodyPlan ++ tail)),
+        trace_v valuePlan valueLevels (bodyPlan ++ tail), trace_b bodyPlan bodyLevels tail]
+  | @share bound idx s kp hidx hsh _ ih =>
+    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
+    have hidx_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
+    have hidx_n : idx.toNat < n := by omega
+    simp only [Ix.Kernel.Reader.convExpr] at hconv
+    rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
+    exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
+
+/-- The original exact expression bridge, with annotation-trace evidence omitted. -/
 theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
@@ -3643,197 +4130,10 @@ theorem RawConvExpr.toTmExact {κ : _root_.Address → Core.KKey}
       ∃ E' : Core.KExpr,
         IxVM.Consistency.Annotates E' E_rd ∧
         ∀ d Γ, Decl.TmExact κ d Γ h k (Core.posOf ps E') kp := by
-  induction raw with
-  | @var bound addr idx hidx cell =>
-    intro n k E_rd _ _ hconv hlbb _
-    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq,
-      Ix.Kernel.Expr.mkBvar_eq] at hconv
-    subst hconv
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] at hlbb
-    refine ⟨.bvar idx.toNat, .bvar, fun d Γ => ?_⟩
-    have hval : ZMod.val (idx.toNat : F) = idx.toNat := val_cast_u56 hidx
-    have htm : Decl.TmExact κ d Γ h k (.bvar (ZMod.val (idx.toNat : F)))
-        (.ptr (.enum Core.kexprEnum) addr) :=
-      .bvarLocal cell (by rw [hval]; omega) (by rw [hval]; exact hlbb)
-    rwa [hval] at htm
-  | @sort bound addr uIdx u lp huIdx hu rl cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨u_rd, hu_rd, hret⟩ := except_bind_eq_ok hconv
-    injection hret with hE; subst hE
-    have hu_eq : u_rd = Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u := by
-      unfold Ix.Kernel.Reader.ECx.level at hu_rd
-      rw [hunivs] at hu_rd
-      have hget : (univs.toArray.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)))[uIdx.toNat]? =
-          some (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) := by
-        simp [hu]
-      rw [hget] at hu_rd
-      injection hu_rd with hu_eq'
-      exact hu_eq'.symm
-    subst hu_eq
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨hpos_eq, hplt⟩ := convUniv_posOf_eq hperm hps_lt hdef
-    refine ⟨.sort (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u), .sort, fun d Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [hpos_eq]
-    exact .sort cell (rl.toRepKLevel hplt)
-  | @ref bound addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    have hk_eq : k_rd = κ a := by
-      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
-      have href_arr : ecx.src.refs[rIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hk_rd
-      exact hkeyAt a k_rd hk_rd
-    subst hk_eq
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨hpos_ls, hplt_ls⟩ :=
-      levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
-    refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [hpos_ls, ← hd]
-    exact .const cell ra (rls.toRepKLevelList hplt_ls)
-  | @recur bound addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
-    intro n k E_rd _ _ hconv _ hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hself_opt : ecx.self rIdx.toNat with
-    | none => simp [hself_opt, Ix.Kernel.Reader.malformed, throw, Except.error] at hconv
-    | some m_self =>
-      simp only [hself_opt] at hconv
-      obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok hbind2
-      injection hret with hE; subst hE
-      have hk_eq : k_rd = κ a := hself rIdx.toNat a m_self k_rd hrec hself_opt hk_rd
-      subst hk_eq
-      simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-      obtain ⟨hpos_ls, hplt_ls⟩ :=
-        levels_conv_bridge hperm hps_lt hunivs hls hls_rd hdef
-      refine ⟨.const (κ a) ls_rd, .const, fun d0 Γ => ?_⟩
-      unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-      rw [hpos_ls, ← hd]
-      exact .const cell ra (rls.toRepKLevelList hplt_ls)
-  | @prj bound addr tIdx fIdx inner a d ap ip htIdx hfIdx href hd ra _ cell ih =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨k_rd, hk_rd, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ein_rd, hEin_rd, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    have hk_eq : k_rd = κ a := by
-      unfold Ix.Kernel.Reader.ECx.keyAt at hk_rd
-      have href_arr : ecx.src.refs[tIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hk_rd
-      exact hkeyAt a k_rd hk_rd
-    subst hk_eq
-    simp only [Ix.Kernel.Expr.looseBVarsBounded] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined] at hdef
-    obtain ⟨Ein', hA_in, hTm_in⟩ := ih hn_le hbnd_le hEin_rd hlbb hdef
-    refine ⟨.proj (κ a) fIdx.toNat Ein', .proj hA_in, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    have hf_val : ZMod.val (fIdx.toNat : F) = fIdx.toNat := val_cast_u56 hfIdx
-    rw [← hd, ← hf_val]
-    exact .proj cell ra (hTm_in d0 Γ)
-  | @str bound addr bIdx a bs s bp hbIdx href hmem rbs hs cell =>
-    intro n k E_rd _ _ hconv _ _
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨b_arr, hb_at, hrest⟩ := except_bind_eq_ok hconv
-    have hb_eq : b_arr = ⟨bs.toArray⟩ := by
-      unfold Ix.Kernel.Reader.ECx.blobAt at hb_at
-      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hb_at
-      simp only [hblob a ⟨bs.toArray⟩ hmem, pure, Except.pure, Except.ok.injEq] at hb_at
-      exact hb_at.symm
-    subst hb_eq
-    have hs_utf8 : String.fromUTF8? ⟨bs.toArray⟩ = some s := hs
-    rw [hs_utf8] at hrest
-    injection hrest with hE; subst hE
-    exact ⟨.lit (.strVal s), .lit, fun d0 Γ => .litStr cell rbs hs⟩
-  | @nat bound addr bIdx a bs limbs lp hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    intro n k E_rd _ _ hconv _ _
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨n_rd, hn_at, hret⟩ := except_bind_eq_ok hconv
-    injection hret with hE; subst hE
-    have hn_eq : n_rd = Core.limbsVal limbs := by
-      unfold Ix.Kernel.Reader.ECx.natAt Ix.Kernel.Reader.ECx.blobAt at hn_at
-      have href_arr : ecx.src.refs[bIdx.toNat]? = some a := by
-        rw [← Array.getElem?_toList, hrefs, href]
-      rw [href_arr] at hn_at
-      simp only [bind, Except.bind, hblob a ⟨bs.toArray⟩ hmem, hcanon, ↓reduceIte,
-        pure, Except.pure, Except.ok.injEq] at hn_at
-      exact hn_at.symm.trans hval.symm
-    subst hn_eq
-    exact ⟨.lit (.natVal (Core.limbsVal limbs)), .lit,
-      fun d0 Γ => .litNat cell rlimbs hlast⟩
-  | @app bound addr f arg fp ap _ _ cell ihf iha =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Ef_rd, hEf, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ea_rd, hEa, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Ef', hAf, hTmf⟩ := ihf hn_le hbnd_le hEf hlbb.1 hdef.1
-    obtain ⟨Ea', hAa, hTma⟩ := iha hn_le hbnd_le hEa hlbb.2 hdef.2
-    exact ⟨.app Ef' Ea', .app hAf hAa, fun d0 Γ => .app cell (hTmf d0 Γ) (hTma d0 Γ)⟩
-  | @lam bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', hAt, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
-    refine ⟨.lam Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .lam hAt hAb, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [substPW_posLevels_bmeta hperm ℓ]
-    exact .lam cell (hTmt d0 Γ) (hTmb d0 Γ) rl
-  | @all bound addr ty body tp bp lp ℓ rl _ _ cell iht ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind2
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', hAt, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1 hdef.1.1
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.1.2
-    refine ⟨.forallE Et' Eb' (Core.bmeta (invPosLevel ps ℓ)), .forallE hAt hAb, fun d0 Γ => ?_⟩
-    unfold Core.posOf Ix.Kernel.Expr.instantiateLevelParams
-    rw [substPW_posLevels_bmeta hperm ℓ]
-    exact .forallE cell (hTmt d0 Γ) (hTmb d0 Γ) rl
-  | @letE bound addr nd md ty val body tp vp bp _ _ _ cell iht ihv ihb =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    obtain ⟨Et_rd, hEt, hbind2⟩ := except_bind_eq_ok hconv
-    obtain ⟨Ev_rd, hEv, hbind3⟩ := except_bind_eq_ok hbind2
-    obtain ⟨Eb_rd, hEb, hret⟩ := except_bind_eq_ok hbind3
-    injection hret with hE; subst hE
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
-    simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at hdef
-    obtain ⟨Et', _, hTmt⟩ := iht hn_le hbnd_le hEt hlbb.1.1 hdef.1.1
-    obtain ⟨Ev', hAv, hTmv⟩ := ihv hn_le hbnd_le hEv hlbb.1.2 hdef.1.2
-    obtain ⟨Eb', hAb, hTmb⟩ := ihb hn_le hbnd_le hEb hlbb.2 hdef.2
-    refine ⟨Eb'.instantiate1Lift Ev' 0,
-      .letE (annotates_instantiate1Lift hAb hAv 0), fun d0 Γ => ?_⟩
-    have hilp : Core.posOf ps (Eb'.instantiate1Lift Ev' 0) =
-        Core.instShift (Core.posOf ps Ev') 0 (Core.posOf ps Eb') :=
-      Core.SubstAux.ilp_instShift ps (Core.posLevels ps) Ev' Eb' 0
-    rw [hilp]
-    exact .letE cell (hTmt d0 Γ) (hTmv d0 Γ) (hTmb d0 Γ)
-  | @share bound idx s kp hidx hsh _ ih =>
-    intro n k E_rd hn_le hbnd_le hconv hlbb hdef
-    have hidx_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh).1
-    have hidx_n : idx.toNat < n := by omega
-    simp only [Ix.Kernel.Reader.convExpr] at hconv
-    rw [buildShareTbl_take_getElem? ecx sharing hidx_n hsh] at hconv
-    exact ih (Nat.le_of_lt hidx_len) (Nat.min_le_left _ _) hconv hlbb hdef
+  intro n k E_rd hn hb hread hlbb hdef
+  obtain ⟨annotated, annotates, termRep, _⟩ := raw.toTmExactTrace
+    hperm hps_lt hrefs hunivs hkeyAt hself hblob hn hb hread hlbb hdef
+  exact ⟨annotated, annotates, termRep⟩
 
 theorem RawConvExpr.toTm {κ : _root_.Address → Core.KKey}
     {ps : List Ix.Kernel.LevelParam}
