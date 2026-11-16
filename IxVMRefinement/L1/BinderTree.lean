@@ -15,6 +15,63 @@ open IxVM (F)
 open IxVM.Refinement.Deserialize
 open IxVM.Refinement.Obs
 
+/-- A mode's serialized field identifies its exact mode. -/
+theorem allMode_field_inj {left right : Ixon.AllMode}
+    (same : (left.toCode.toNat : F) = (right.toCode.toNat : F)) : left = right := by
+  have leftBound := left.toCode.toNat_lt
+  have rightBound := right.toCode.toNat_lt
+  have codes : left.toCode = right.toCode := UInt8.ext
+    ((natCast_eq_iff (by omega) (by omega)).mp same)
+  have decoded := congrArg Ixon.AllMode.ofCode? codes
+  simpa using decoded
+
+/-- Decoding a represented binder node is independent of its derivation. -/
+theorem repBinderNode_unique {h : Heap F} {left right : Ixon.BinderNode}
+    {leftValue rightValue : SourceValue F}
+    (first : RepBinderNode h left leftValue) (second : RepBinderNode h right rightValue)
+    (same : leftValue = rightValue) : left = right := by
+  cases first with
+  | never mode =>
+    cases second with
+    | never other =>
+      exact congrArg Ixon.BinderNode.never (allMode_field_inj (by simpa using same))
+    | zero _ | ifAllZero _ _ | share _ | undecided _ => simp at same
+  | zero mode =>
+    cases second with
+    | zero other =>
+      exact congrArg Ixon.BinderNode.zero (allMode_field_inj (by simpa using same))
+    | never _ | ifAllZero _ _ | share _ | undecided _ => simp at same
+  | ifAllZero mode params =>
+    cases second with
+    | ifAllZero other otherParams =>
+      have fields := same
+      simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at fields
+      obtain ⟨rfl, modeEq⟩ := fields
+      have modes := allMode_field_inj (Value.field.inj modeEq)
+      cases modes
+      have lists := repList_u64_unique params otherParams
+      cases lists
+      rfl
+    | never _ | zero _ | share _ | undecided _ => simp at same
+  | share variant =>
+    cases second with
+    | share other =>
+      apply congrArg Ixon.BinderNode.share
+      apply u64Value_inj
+      simpa only [Value.construct.injEq, List.cons.injEq, true_and, and_true] using same
+    | never _ | zero _ | ifAllZero _ _ | undecided _ => simp at same
+  | undecided mode =>
+    cases second with
+    | undecided other =>
+      exact congrArg Ixon.BinderNode.undecided (allMode_field_inj (by simpa using same))
+    | never _ | zero _ | ifAllZero _ _ | share _ => simp at same
+
+theorem repBinderNodes_unique {h : Heap F} {left right : List Ixon.BinderNode}
+    {ptr : SourceValue F}
+    (first : RepList binderNodeListEnum RepBinderNode h left ptr)
+    (second : RepList binderNodeListEnum RepBinderNode h right ptr) : left = right :=
+  repList_inj (fun a b => repBinderNode_unique a b rfl) first second
+
 abbrev BinderKey := F × F × F
 
 def binderKeyCompare (a b : BinderKey) : F :=
