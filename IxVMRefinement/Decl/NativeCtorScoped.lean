@@ -103,10 +103,10 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
     {ctorRawTypes : List KExpr}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors.length < 4294967296)
-    (hnF_lt : ∀ c ∈ ctors, c.2 < 2147483648)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors.length < 549755813888)
+    (hnF_lt : ∀ c ∈ ctors, c.2 < 72057594037927936)
     (hlveq : LvEq resSort ind_lvl)
     (hcload : CtorLoadAtIndex cR.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
     (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = lps)
@@ -218,7 +218,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
       obtain ⟨sortss_rest, hlen_rest, hrest_out⟩ := restSemantic allowed restAllowed loads
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
-      have hc_nf_lt : c_j.2 < 2147483648 := hnF_lt c_j hc_mem
+      have hc_nf_lt : c_j.2 < 72057594037927936 := hnF_lt c_j hc_mem
       have hsub_cprj : ∀ x ∈ cs_cprj, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
       obtain ⟨nl', cty', cblk', cnp', cnf', _, ld_c', _, _, hraw_rep, hci_rep⟩ :=
         hload_j bp p41 h m34 cs_cprj hsub_cprj hbp ev_cprj
@@ -365,10 +365,10 @@ theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     {ctorRawTypes : List KExpr}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors.length < 4294967296)
-    (hnF_lt : ∀ c ∈ ctors, c.2 < 2147483648)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors.length < 549755813888)
+    (hnF_lt : ∀ c ∈ ctors, c.2 < 72057594037927936)
     (hlveq : LvEq resSort ind_lvl)
     (hcload : CtorLoadAtIndex cR.t b₀ nP indIndex cs_root ctors ctorsA ctorRawTypes)
     (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = lps)

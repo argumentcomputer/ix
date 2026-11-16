@@ -1913,8 +1913,8 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPF_lt : nP + nF < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnPF_lt : nP + nF < 144115188075855872)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
@@ -1950,7 +1950,7 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
     subst hc hh'
     rw [evalBinOp_add_nat nP nF op_pf] at ev_peel
     obtain ⟨hm2, rcbs, rbody, cbs, body, hstR, hstrip, hrcbs_len, hcbs_len, hbody⟩ :=
-      peel_n_foralls_raw_spec (nP + nF) (by omega) hcty ev_peel
+      peel_n_foralls_raw_bounded_spec (nP + nF) (by omega) hcty ev_peel
     subst hm2
     rw [Nat.zero_add] at hbody
     obtain ⟨hd, sp, RH, H, RAs, As, htup, hH, _, hAs, rfl, rfl⟩ :=
@@ -1959,7 +1959,7 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
     have ext_sp := ev_sp.heap_extends
     have hsp0 : NoTopLetSpine 0 m41 v1 := collect_spine_const_noTopLetSpine hbody ev_sp ld_hd
     have hsp_peel : NoTopLetSpine (nP + nF) m41 pcty :=
-      peel_n_foralls_noTopLetSpine (nP + nF) (by omega) hcty ev_peel ext_sp hsp0
+      peel_n_foralls_noTopLetSpine_bounded (nP + nF) (by omega) hcty ev_peel ext_sp hsp0
     obtain ⟨a_hd, us_hd, rfl, rfl, ha_hd, hus_hd⟩ := hH.const_of_load ld_hd
     have hg_par : Good c.toCtx cs_par := hgood.sub (fun x hx => by simp [hx])
     have hs_par : RawRecordCoverage c cs_par := hscope.sub (fun x hx => by simp [hx])
@@ -2000,14 +2000,14 @@ theorem check_ctor_return_type_observed_spec {c : ScopedCtx} {indIndex : F} {b�
         List.mem_cons_self
         (by rw [hm147]; exact hAs_109)
     have hAs_len : As.length = nP + nIdx :=
-      nat_eq_of_field_eq hAs_lt (by omega) heq_len
-    obtain ⟨hm234, hAs_take⟩ := assert_first_args_are_param_bvars_go (nP := nP) (nF := nF)
+      nat_eq_of_field_eq_bounded (by omega) (by omega) heq_len
+    obtain ⟨hm234, hAs_take⟩ := assert_first_args_are_param_bvars_bounded_go (nP := nP) (nF := nF)
       (by omega) nP 0 (by omega) (Nat.zero_le nP) hAs_109 ev_bvars
     rw [hm234] at ev_drop
     have hAs_take' : As.take nP = Ix.Kernel.structPsAt nF nP := by
       rw [hAs_take]
       simp [Ix.Kernel.structPsAt, Nat.add_comm nF nP]
-    obtain ⟨_, hAs_drop, hm279⟩ := kdrop_exact (by omega : nP < 4294967296) ev_drop hAs_109
+    obtain ⟨_, hAs_drop, hm279⟩ := kdrop_exact_bounded (by omega) ev_drop hAs_109
     rw [hm279] at hm333 hm309
     have ext_nil : Heap.Extends m109 m333 := by rw [hm333]; exact Heap.Extends.snoc _ _
     have ext_cons : Heap.Extends m333 m309 := by rw [hm309]; exact Heap.Extends.snoc _ _
@@ -2078,7 +2078,7 @@ theorem check_ctor_return_type_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : B
       cbs.length = nP + nF ∧
       es.length = nIdx ∧
       ∀ a ∈ es, a.mentionsConst T = false := by
-  exact check_ctor_return_type_observed_spec hlps hlps_lt hnPF_lt hnPI_lt (hpeer.toReads hlf)
+  exact check_ctor_return_type_observed_spec hlps hlps_lt (by omega) (by omega) (hpeer.toReads hlf)
     hlf hgood hscope hcty hnp hblk ev
 
 theorem check_ctor_return_type_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
@@ -2367,7 +2367,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {tfvs_pre : List KExpr}
       {ta_open tb_raw : KExpr} {rc pta ptb types r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      d + m < 4294967296 →
+      d + m < 144115188075855872 →
       tfvs_pre.length = d →
       (∀ v ∈ tfvs_pre, ∃ q ty, v = .fvar q ty) →
       RCRep c.t c.lim h rc →
@@ -2398,7 +2398,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
       hdm, hlen, hvs_pre, hrc, hty, hsc, hef, hlf, hgood, hta, htb, ev => by
     match Obs.«KernelCheck::check_param_agreement_go».obs ev with
     | .n0 (hv14 := hv0) .. =>
-      exact absurd hv0 (succ_field_ne_zero (by omega))
+      exact absurd hv0 (succ_field_ne_zero_bounded (by omega))
     | .other (x_da := xda) (x_ba := xba) (w43 := w43) (x_db := xdb) (x_bb := xbb)
         (w78 := w78) (v94 := v94) (m95 := m95) (cs105 := cs_de) (m168 := m168)
         (cs201 := cs_go) (v207 := v207) (ld35 := ld_a) (ld70 := ld_b)
@@ -2461,7 +2461,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} :
 theorem check_param_agreement_scoped_spec {c : ScopedCtx}
     {Γ : Nat → KExpr} {ta tb : KExpr} {n : Nat}
     {rc pta ptb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hn : n < 4294967296)
+    (hn : n < 144115188075855872)
     (hrc : RCRep c.t c.lim h rc)
     (hef : CoreEnvFacts c.toCtx)
     (hlf : ScopedLoadFacts c)
@@ -2498,7 +2498,7 @@ theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     (htb : Tm c.κ 0 Γ h 0 tb ptb)
     (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
     StructDomsShared c.env ta tb n := by
-  exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) hn hrc
+  exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) (by omega) hrc
     hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hta htb ev
 
 /-! ## Constructor residual opening and `check_field_universes` -/
@@ -2612,7 +2612,7 @@ private theorem check_field_universes_skip_params_spec {c : Ctx} :
     ∀ (m : Nat) {d : Nat} {Γ : Nat → KExpr} {nF : Nat}
       {cty_open : KExpr} {rc pcty pind types r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      d + m < 4294967296 →
+      d + m < 144115188075855872 →
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
@@ -2647,7 +2647,7 @@ private theorem check_field_universes_skip_params_spec {c : Ctx} :
       hdm, hrc, hty, hsc, hcty, hnt, ev => by
     match Obs.«KernelCheck::check_field_universes_skip_params».obs ev with
     | .n0 (hv14 := hv0) .. =>
-      exact absurd hv0 (succ_field_ne_zero (by omega))
+      exact absurd hv0 (succ_field_ne_zero_bounded (by omega))
     | .other (x_dom := xdom) (x_body := xbody) (w77 := w77) (cs96 := cs96)
         (v101 := v101) (m141 := m141) (ld69 := ld) (op131 := op_sub)
         (hm149 := hm141) (ev98 := ev_rec) (hc169 := hc) .. =>
@@ -2769,7 +2769,7 @@ theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
     {resSort ind_lvl : KLevel} {nP nF : Nat} {Γ : Nat → KExpr}
     {cty stype_cty crest : KExpr} {fvsP xFvs idxArgs : List KExpr}
     {rc pcty pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hnP : nP < 4294967296)
+    (hnP : nP < 144115188075855872)
     (hlveq : LvEq resSort ind_lvl)
     (hinf_cty : Infer c.env .full 0 cty stype_cty)
     (hopP : Ix.Kernel.openPisAtFvars nP cty 0 = some (fvsP, crest))
@@ -2870,13 +2870,13 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
       FieldSortsJ rulesJ c.env (Level.isEquiv resSort .zero == some true) false resSort
         nP xFvs idxArgs nF sorts := by
   exact check_field_universes_scoped_spec hLevels (c := ScopedCtx.unrestricted c)
-    hnP hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
+    (by omega) hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
     (ScopedLoadFacts.ofUnrestricted hef hlf) (CoreGood.unrestricted hgood) hpind hcty hnt ev
 
 /-! ## Strict positivity (`check_positivity` → `recFieldKind ≠ .negative ∧ ≠ .unsupported`) -/
 
 private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {nP depth : Nat} (hnP_lt : nP < 4294967296) (hnP_le : nP ≤ depth)
+    {nP depth : Nat} (hnP_lt : nP < 144115188075855872) (hnP_le : nP ≤ depth)
     (hdepth_lt : depth < 9223372036854775808) :
     ∀ (m i : Nat) {args : List KExpr} {pargs r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
@@ -2899,7 +2899,7 @@ private theorem assert_occ_param_bvars_go {κ : _root_.Address → KKey} {Γ : N
       have hsub : (.field ((0 : Nat) : F) : SourceValue F) =
           .field (((nP - i : Nat) : F)) := by
         simpa using evalBinOp_sub_nat (by omega : i ≤ nP) op
-      have heq := nat_eq_of_field_eq (by decide) (by omega) hsub
+      have heq := nat_eq_of_field_eq_bounded (by decide) (by omega) hsub
       omega
     | .other (x_arg := xarg) (x_rest := xrest) (x_j := xj)
         (ld44 := ld_cons) (ld73 := ld_bvar) (op127 := op_d1)
@@ -2930,7 +2930,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b�
     {pca pus pargs bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hdepth_lt : nP + o + k < 9223372036854775808)
     (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
@@ -2986,7 +2986,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b�
         (by simp [hc]) (by simp) hargs_m2
     rw [evalBinOp_add_nat nP nIdx op_add, hvlen] at heq_len
     have hlen_eq : args.length = nP + nIdx :=
-      nat_eq_of_field_eq hargs_lt (by omega) heq_len
+      nat_eq_of_field_eq_bounded (by omega) (by omega) heq_len
     have htake :=
       assert_occ_param_bvars_go (κ := c.κ) (Γ := Γ) (nP := nP) (depth := nP + o + k)
         (by omega) (by omega) hdepth_lt nP 0 (by omega) hargs_m2 ev_bvars
@@ -3000,7 +3000,7 @@ private theorem check_valid_ind_app_raw_spec {c : ScopedCtx} {indIndex : F} {b�
       omega
     have e3 := ev_bvars.heap_extends
     have hargs_m175 := repList_heapMono₂ kexprListEnum tmExact_heapMono₂ e3 hargs_m2
-    obtain ⟨_, hdrop_rep, hm247⟩ := kdrop_exact (by omega : nP < 4294967296) ev_drop hargs_m175
+    obtain ⟨_, hdrop_rep, hm247⟩ := kdrop_exact_bounded (by omega) ev_drop hargs_m175
     subst hm247
     rw [hvany] at ev_any
     have hbas_m175 := repList_heapMono₂ addrListEnum
@@ -3019,7 +3019,7 @@ private theorem check_positivity_aug_raw_go {c : ScopedCtx} {indIndex : F} {b₀
     {lps : List LevelParam} {nP nIdx nCtors o : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     {R E : KExpr} {k : Nat} {pdom bas r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -3185,7 +3185,7 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
     {lps : List LevelParam} {nP nIdx nCtors : Nat} {Γ : Nat → KExpr} {h₀ : Heap F}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c) :
     ∀ (m o : Nat) {R E : KExpr} {rbs bs : List (KExpr × Ix.Kernel.BinderMeta)}
@@ -3285,7 +3285,7 @@ private theorem check_positivity_fields_raw_go {c : ScopedCtx} {indIndex : F} {b
 private theorem peel_n_foralls_raw_h0 :
     ∀ (m : Nat) {κ : _root_.Address → KKey} {T : KKey} {Γ : Nat → KExpr} {h₀ h h' : Heap F}
       {k : Nat} {R E : KExpr} {pe r : SourceValue F} {cs : List (Call F)},
-      m < 4294967296 →
+      m < 144115188075855872 →
       Heap.Extends h₀ h →
       (∀ n, RomBound.HeapDescent h₀ (.enum kexprEnum) pe n → k + n < 9223372036854775808) →
       RawTmExact κ 0 Γ h₀ k R E pe →
@@ -3306,7 +3306,7 @@ private theorem peel_n_foralls_raw_h0 :
   | m + 1, κ, T, Γ, h₀, h, h', k, R, E, pe, r, cs, hlt, ext₀, hd, hRaw₀, hnp, ev => by
     rcases Obs.«KernelCheck::peel_n_foralls».obs ev with
       ⟨hv, _, _, _⟩ | ⟨_, x_body, _, _, _, _, ld, op, ev_rec, _⟩
-    · exact absurd hv (succ_field_ne_zero (by omega))
+    · exact absurd hv (succ_field_ne_zero_bounded (by omega))
     · cases hRaw₀ with
       | @forallE _ _ _ bp₀ _ rdom rbo dom bo ℓ cell₀ _ rbody₀ _ =>
         obtain ⟨-, hxs⟩ := load_cell (ext₀.getElem?_eq cell₀) ld
@@ -3341,8 +3341,8 @@ theorem check_positivity_observed_spec {c : ScopedCtx} {indIndex : F} {b₀ : By
     {pcty pblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlps : lps = List.range lps.length)
     (hlps_lt : lps.length < 4294967296)
-    (hnP_lt : nP < 4294967296)
-    (hnPI_lt : nP + nIdx < 4294967296)
+    (hnP_lt : nP < 144115188075855872)
+    (hnPI_lt : nP + nIdx < 144115188075855872)
     (hpeer : OneTypePeerReads c b₀ T lps.length nP nIdx nCtors indIndex)
     (hlf : RawRecordFacts c)
     (hgood : Good c.toCtx cs)
@@ -3454,7 +3454,7 @@ theorem check_positivity_raw_spec {c : ScopedCtx} {indIndex : F} {b₀ : Bytes.A
        Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
       ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
        RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1) := by
-  exact check_positivity_observed_spec hlps hlps_lt hnP_lt hnPI_lt (hpeer.toReads hlf)
+  exact check_positivity_observed_spec hlps hlps_lt (by omega) (by omega) (hpeer.toReads hlf)
     hlf hgood hscope hcty hnp hstR hstrip hblk ev
 
 theorem check_positivity_spec {c : Ctx} {b₀ : Bytes.Address} {T : KKey}
