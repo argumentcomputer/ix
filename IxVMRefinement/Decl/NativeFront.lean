@@ -1271,9 +1271,9 @@ theorem list_any_mentions_block_zero_spec {c : Ctx} {b₀ : Bytes.Address} {T : 
 /-! ## Former checks (`former_is_tele`, `get_result_sort_level`, `nat_pi_binders`,
 `dom_zero_ok`, `ctor_zero_ok`, `ctor_zero_all`, `former_decl_ok`) -/
 
-theorem former_is_tele_one_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} :
+theorem former_is_tele_one_bounded_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} :
     ∀ (n : Nat) {k : Nat} {E : KExpr} {pe : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      n < 549755813888 →
+      n < 18446744069414584321 →
       TmExact κ 0 Γ h k E pe →
       ObsFn W "KernelCheck::former_is_tele" [pe, .field (n : F)] h (.field 1) h' cs →
       h' = h ∧ ∃ bs s, E.stripPis n = some (bs, .sort s) ∧ bs.length = n
@@ -1288,18 +1288,28 @@ theorem former_is_tele_one_spec {κ : _root_.Address → KKey} {Γ : Nat → KEx
   | m + 1, k, E, pe, h, h', cs, hlt, hE, ev => by
     match Obs.«KernelCheck::former_is_tele».obs ev with
     | .n0_Srt (hv14 := hv) .. | .n0_other (hv14 := hv) .. =>
-      exact absurd hv (succ_field_ne_zero hlt)
+      exact absurd hv (succ_field_ne_zero_bounded hlt)
     | .other_other (he125 := hr) .. => exact nomatch hr
     | .other_Forall (ld65 := ld) (op118 := op) (ev95 := ev') .. =>
       obtain ⟨T, B, ℓ, rfl, _, hb, _⟩ := hE.forallE_of_load ld
       rw [evalBinOp_sub_succ m op] at ev'
-      obtain ⟨hh, bs, s, hst, hlen⟩ := former_is_tele_one_spec m (by omega) hb ev'
+      obtain ⟨hh, bs, s, hst, hlen⟩ := former_is_tele_one_bounded_spec m (by omega) hb ev'
       exact ⟨hh, (T, bmeta ℓ) :: bs, s, by simp [Expr.stripPis, hst], by simp [hlen]⟩
 
-theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
+/-- Compatibility with the historical count bound. -/
+theorem former_is_tele_one_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} :
+    ∀ (n : Nat) {k : Nat} {E : KExpr} {pe : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      n < 549755813888 →
+      TmExact κ 0 Γ h k E pe →
+      ObsFn W "KernelCheck::former_is_tele" [pe, .field (n : F)] h (.field 1) h' cs →
+      h' = h ∧ ∃ bs s, E.stripPis n = some (bs, .sort s) ∧ bs.length = n := by
+  intro n k E pe h h' cs bound represented observed
+  exact former_is_tele_one_bounded_spec n (by omega) represented observed
+
+theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      n < 549755813888 →
+      n < 18446744069414584321 →
       RCRep c.t c.lim h rc →
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
@@ -1327,7 +1337,7 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
     | .other (hne82 := hne) .. => exact absurd rfl hne
   | m + 1, d, Γ, E, rc, pe, types, r, h, h', cs, hlt, hrc, hty, hsc, hef, hlf, hgood, hE, ev => by
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
-    | .n0 (hv52 := hv) .. => exact absurd hv (succ_field_ne_zero hlt)
+    | .n0 (hv52 := hv) .. => exact absurd hv (succ_field_ne_zero_bounded hlt)
     | .other (cs12 := cs12) (x_body := xbody) (cs124 := cs2) (m161 := m3) (ev14 := ev_w)
         (ld97 := ld) (op158 := op) (hm169 := hm3) (ev126 := ev_rec) (hc189 := hc) .. =>
       subst hc
@@ -1341,7 +1351,7 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
       have hB_open : Tm c.κ (d + 1) (Ghost.extend Γ d T) m3 0 (B.instantiate1 (.fvar d T)) xbody :=
         (hB.open_body (Ghost.extend_at Γ d T) (Ghost.extend_below Γ d T)).mono ext_push
       rw [evalBinOp_sub_succ m op] at ev_rec
-      obtain ⟨ℓ, hℓ, htele⟩ := get_result_sort_level_scoped_spec m (by omega)
+      obtain ⟨ℓ, hℓ, htele⟩ := get_result_sort_level_scoped_bounded_spec m (by omega)
         (hrc.mono (ext_w.trans ext_push)) hty' hsc' hef hlf hg2 hB_open ev_rec
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       cases E with
@@ -1354,6 +1364,24 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
         obtain ⟨bs₂, hst₂⟩ := stripPis_instantiate1_sort m (v := .fvar d T) (k := 0) hst₁
         exact htele bs₂ s hst₂
       | _ => simp [Expr.stripPis] at hst
+
+/-- Compatibility with the historical count bound. -/
+theorem get_result_sort_level_scoped_spec {c : ScopedCtx} :
+    ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
+      {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      n < 549755813888 →
+      RCRep c.t c.lim h rc →
+      TypesRep c.κ Γ h d types →
+      GhostScoped Γ d →
+      CoreEnvFacts c.toCtx →
+      ScopedLoadFacts c →
+      CoreGood c cs →
+      Tm c.κ d Γ h 0 E pe →
+      ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
+      ∃ ℓ : KLevel, RepKLevel h' ℓ r ∧
+        ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ := by
+  intro n d Γ E rc pe types r h h' cs bound roles typesRep scopeProof facts loads good represented observed
+  exact get_result_sort_level_scoped_bounded_spec n (by omega) roles typesRep scopeProof facts loads good represented observed
 
 theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
@@ -3842,6 +3870,34 @@ theorem CIRepExact.ctor_inv {κ : _root_.Address → KKey} {h : Heap F}
   all_goals
     injection hv with _ hc _
     exact absurd hc (by decide)
+
+/-- Exact constructor conversion fixes its key from the observed parent and member slots. -/
+theorem CIRepExact.ctor_name {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty parent np nf safety : SourceValue F} {i j : F}
+    {cv : ConstantVal .anon} {params fields : Nat} {block : Bytes.Address}
+    (represented : CIRepExact κ h
+      (.construct kciEnum "Ctor" [nl, ty, parent, .field i, .field j, np, nf, safety])
+      (.ctorInfo cv params fields))
+    (blockRep : Bytes.RepAddressRef addrTy h block parent) :
+    cv.name = κ (cprjAddr (ixAddr block) (ZMod.val i) (ZMod.val j)) := by
+  generalize shape : (Value.construct kciEnum "Ctor"
+    [nl, ty, parent, .field i, .field j, np, nf, safety] : SourceValue F) = value at represented
+  generalize kind : ConstantInfo.ctorInfo cv params fields = info at represented
+  cases represented
+  case ctor _ _ _ _ key =>
+    injection shape with _ _ values
+    simp only [List.cons.injEq, and_true] at values
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := values
+    obtain ⟨rfl, rfl, rfl⟩ := ConstantInfo.ctorInfo.inj kind
+    obtain ⟨actualBlock, actualIndex, actualSlot, parentRep, indexEq, slotEq, named⟩ := key
+    have blockEq := Bytes.repAddressRef_inj U32.Goldilocks.compatible parentRep blockRep
+    have indexEq := Value.field.inj indexEq
+    have slotEq := Value.field.inj slotEq
+    cases blockEq
+    cases indexEq
+    cases slotEq
+    exact named
+  all_goals (injection shape with _ tag _; exact absurd tag (by decide))
 
 /-- Exact constructor conversion retains both checked 56-bit header counts. -/
 theorem CIRepExact.ctor_count_bounds {κ : _root_.Address → KKey} {h : Heap F}

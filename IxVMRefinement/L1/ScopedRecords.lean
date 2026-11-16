@@ -30,6 +30,15 @@ theorem CanonicalRecordAt.recordAt {E : Ixon.Env} {a : _root_.Address}
   rw [r.stored]
   exact r.cached
 
+/-- Reindex a canonical record along an address equality without expanding address hashes. -/
+def CanonicalRecordAt.reindex {E : Ixon.Env} {a b : _root_.Address}
+    (source : CanonicalRecordAt E a) (same : b = a) : CanonicalRecordAt E b where
+  entry := source.entry
+  value := source.value
+  stored := (congrArg (fun address => E.consts.get? address) same).trans source.stored
+  cached := source.cached
+  decoded := source.decoded
+
 theorem CanonicalRecordAt.ofStoredCanonical {E : Ixon.Env} {order : List _root_.Address}
     {a : _root_.Address} {value : Ixon.Constant}
     (canonical : Ix.Cert.Stream.StoredCanonical E order) (member : a ∈ order)

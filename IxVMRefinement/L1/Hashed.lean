@@ -157,12 +157,12 @@ theorem load_verified_constant_spec {a raw r : SourceValue F} {h h' : Heap F}
 
 /-- **`load_verified_constant` on a represented address**: the address is `Address.blake3Pure`
 of bytes the derivation hashed, and the result is what `get_constant` read from them. -/
-theorem load_verified_constant_addr {ty : Aiur.Ty} {addr : Vector UInt8 32}
+theorem load_verified_constant_addr_bounded {ty : Aiur.Ty} {addr : Vector UInt8 32}
     {a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ha : Aiur.Library.Bytes.RepAddressRef ty h addr a)
     (ev : ObsFn W "Ingress::load_verified_constant" [a] h r h' cs) :
     ∃ (bytes : List UInt8) (inp rest : SourceValue F) (m : Heap F) (cs' : List (Call F)),
-      Heap.Extends h m ∧ Stream m bytes inp ∧ Hashed cs ⟨bytes.toArray⟩ ∧
+      bytes.length < 4294967296 ∧ Heap.Extends h m ∧ Stream m bytes inp ∧ Hashed cs ⟨bytes.toArray⟩ ∧
       Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr ∧
       ObsFn W "IxonDeserialize::get_constant" [inp] m (.tuple [r, rest]) h' cs' ∧
       loadValue h' rest = .ok (.construct Names.«Lists::Node<Field>» "Nil" []) ∧
@@ -174,9 +174,23 @@ theorem load_verified_constant_addr {ty : Aiur.Ty} {addr : Vector UInt8 32}
     have e := load_of_cell cell ld11
     subst e
     exact ld11
-  obtain ⟨bytes, inp, rest, m, cs', -, ext, hst, hashed, hproj, hget, hrest, hmem⟩ :=
+  obtain ⟨bytes, inp, rest, m, cs', length, ext, hst, hashed, hproj, hget, hrest, hmem⟩ :=
     load_verified_constant_spec ld ev
-  refine ⟨bytes, inp, rest, m, cs', ext, hst, hashed, ?_, hget, hrest, hmem⟩
+  refine ⟨bytes, inp, rest, m, cs', length, ext, hst, hashed, ?_, hget, hrest, hmem⟩
   rw [blake3Pure_eq, digest_eq_of_proj hv hproj]
+
+/-- Compatibility without the retained byte-stream size. -/
+theorem load_verified_constant_addr {ty : Aiur.Ty} {addr : Vector UInt8 32}
+    {a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ha : Aiur.Library.Bytes.RepAddressRef ty h addr a)
+    (ev : ObsFn W "Ingress::load_verified_constant" [a] h r h' cs) :
+    ∃ (bytes : List UInt8) (inp rest : SourceValue F) (m : Heap F) (cs' : List (Call F)),
+      Heap.Extends h m ∧ Stream m bytes inp ∧ Hashed cs ⟨bytes.toArray⟩ ∧
+      Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr addr ∧
+      ObsFn W "IxonDeserialize::get_constant" [inp] m (.tuple [r, rest]) h' cs' ∧
+      loadValue h' rest = .ok (.construct Names.«Lists::Node<Field>» "Nil" []) ∧
+      (⟨"IxonDeserialize::get_constant", [inp], m⟩ : Call F) ∈ cs := by
+  obtain ⟨bytes, inp, rest, middle, children, _, data⟩ := load_verified_constant_addr_bounded ha ev
+  exact ⟨bytes, inp, rest, middle, children, data⟩
 
 end IxVM.Refinement.L1
