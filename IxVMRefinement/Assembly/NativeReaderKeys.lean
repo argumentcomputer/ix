@@ -30,7 +30,7 @@ theorem projectionAddress_cprj {store : Ix.Kernel.Reader.Store}
 set_option maxHeartbeats 800000 in
 /-- The authentic reader context and Source role table agree on a known constructor's name.
 The actual projection-hash observation supplies the stored-projection agreement premise. -/
-theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
+theorem streamContext_memberKey_cprj_of_local_bound {t : Ix.Kernel.RoleTable}
     {pre : Ix.Kernel.Reader.Prelude .anon}
     {constants : List (_root_.Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs}
@@ -46,9 +46,9 @@ theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
     (hms : ms[i]? = some (.indc ind))
     (hct : ind.ctors[j]? = some ctor) (hindex : ctor.cidx.toNat = j)
     (hi : i < UInt64.size) (hj : j < UInt64.size)
-    (hbound_stored : ∀ r a_b, (r, a_b) ∈ t.bound.toList →
+    (hbound_stored : ∀ r, (r, Core.cprjAddr owner i j) ∈ t.bound.toList →
       ∃ c_b, (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
-        a_b = some c_b)
+        (Core.cprjAddr owner i j) = some c_b)
     (hcprj_eq : ∀ c',
       (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
         (Core.cprjAddr owner i j) = some c' →
@@ -97,7 +97,7 @@ theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
   | none =>
     have hunb : ∀ r, (r, Core.cprjAddr owner i j) ∉ t.bound.toList := by
       intro r hm
-      obtain ⟨c_b, hc_b⟩ := hbound_stored r (Core.cprjAddr owner i j) hm
+      obtain ⟨c_b, hc_b⟩ := hbound_stored r hm
       have hc_eq := hcprj_eq c_b hc_b
       subst hc_eq
       have hres_b := hres_proj hc_b
@@ -146,6 +146,35 @@ theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
       rw [hv]
       rfl
 
+/-- Compatibility with coverage of all bound projection addresses. -/
+theorem streamContext_memberKey_cprj {t : Ix.Kernel.RoleTable}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
+    {constants : List (_root_.Address × Ixon.Constant)}
+    {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef _root_.Address → Option Ix.Kernel.ReducibilityHint}
+    (hauth : AuthenticExactStore
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store)
+    (hchk : t.check = .ok ())
+    {owner : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {i j : Nat} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (hcb : (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+      owner = some cb)
+    (hinfo : cb.info = .muts ms)
+    (hms : ms[i]? = some (.indc ind))
+    (hct : ind.ctors[j]? = some ctor) (hindex : ctor.cidx.toNat = j)
+    (hi : i < UInt64.size) (hj : j < UInt64.size)
+    (hbound_stored : ∀ r a_b, (r, a_b) ∈ t.bound.toList →
+      ∃ c_b, (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        a_b = some c_b)
+    (hcprj_eq : ∀ c',
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        (Core.cprjAddr owner i j) = some c' →
+      c' = ⟨.cPrj ⟨i.toUInt64, j.toUInt64, owner⟩, #[], #[], #[], #[]⟩) :
+    (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).memberKey
+      (.ctor owner i j) = .ok (Core.keyOf t (Core.cprjAddr owner i j)) := by
+  exact streamContext_memberKey_cprj_of_local_bound hauth hchk hcb hinfo hms hct hindex hi hj
+    (fun role bound => hbound_stored role _ bound) hcprj_eq
+
 /-- A constructor projection hashed by the actual run fixes any stored record at that address. -/
 theorem constructor_projection_store_eq {env : Ixon.Env} {calls : List (Call F)}
     {block : Bytes.Address} {i j : Nat} {constant : Ixon.Constant}
@@ -171,6 +200,38 @@ theorem constructor_projection_store_eq {env : Ixon.Env} {calls : List (Call F)}
 
 /-- Actual projection hashes discharge the stored-projection premise in constructor keying.
 The reader's lookups are transported to the same decoded store used by the collision escape. -/
+theorem streamContext_memberKey_cprj_of_hash_local_bound {t : Ix.Kernel.RoleTable}
+    {pre : Ix.Kernel.Reader.Prelude .anon}
+    {constants : List (_root_.Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef _root_.Address → Option Ix.Kernel.ReducibilityHint}
+    (authentic : AuthenticExactStore
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store)
+    (tableChecked : t.check = .ok ())
+    {block : Bytes.Address} {source : Ixon.Constant} {members : Array Ixon.MutConst}
+    {i j : Nat} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
+    (parent : (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+      (Core.ixAddr block) = some source)
+    (shape : source.info = .muts members) (memberAt : members[i]? = some (.indc ind))
+    (ctorAt : ind.ctors[j]? = some ctor) (ctorIndex : ctor.cidx.toNat = j)
+    (memberBound : i < UInt64.size) (ctorBound : j < UInt64.size)
+    (boundStored : ∀ role, (role, Core.cprjAddr (Core.ixAddr block) i j) ∈ t.bound.toList →
+      ∃ value, (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        (Core.cprjAddr (Core.ixAddr block) i j) = some value)
+    {env : Ixon.Env} {calls : List (Call F)}
+    (decoded : L1.EnvDecoded env)
+    (noCollision : ¬ View.HashedCollision { env := env } [] calls)
+    (hash : Hashed calls (Ixon.serConstant (IxVM.Consistency.constructorProjection (Core.ixAddr block) i j)))
+    (transport : ∀ address value,
+      (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).store
+        address = some value → Ix.Cert.recordAt env address = some value) :
+    (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).memberKey
+      (.ctor (Core.ixAddr block) i j) = .ok (Core.keyOf t (Core.cprjAddr (Core.ixAddr block) i j)) := by
+  apply streamContext_memberKey_cprj_of_local_bound authentic tableChecked parent shape memberAt ctorAt ctorIndex
+    memberBound ctorBound boundStored
+  intro value stored
+  exact constructor_projection_store_eq decoded noCollision hash (transport _ _ stored)
+
+/-- Compatibility with coverage of all bound addresses. -/
 theorem streamContext_memberKey_cprj_of_hash {t : Ix.Kernel.RoleTable}
     {pre : Ix.Kernel.Reader.Prelude .anon}
     {constants : List (_root_.Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
@@ -197,9 +258,8 @@ theorem streamContext_memberKey_cprj_of_hash {t : Ix.Kernel.RoleTable}
         address = some value → Ix.Cert.recordAt env address = some value) :
     (Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre constants blobs hint).memberKey
       (.ctor (Core.ixAddr block) i j) = .ok (Core.keyOf t (Core.cprjAddr (Core.ixAddr block) i j)) := by
-  apply streamContext_memberKey_cprj authentic tableChecked parent shape memberAt ctorAt ctorIndex
-    memberBound ctorBound boundStored
-  intro value stored
-  exact constructor_projection_store_eq decoded noCollision hash (transport _ _ stored)
+  exact streamContext_memberKey_cprj_of_hash_local_bound authentic tableChecked parent shape memberAt
+    ctorAt ctorIndex memberBound ctorBound (fun role bound => boundStored role _ bound)
+    decoded noCollision hash transport
 
 end IxVM.Refinement.Assembly
