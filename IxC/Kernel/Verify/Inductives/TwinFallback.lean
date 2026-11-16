@@ -77,7 +77,7 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
       ConstantInfo.isRecInfo := by
     funext ci
     cases ci <;> rfl
-  rw [tag]
+  erw [tag]
   by_cases hempty : block.isEmpty = true
   · simp only [hempty, Bool.not_true, Bool.false_and]
   · by_cases hall : block.all ConstantInfo.isRecInfo = true
@@ -102,13 +102,13 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         cases ci <;> simp_all
       have hsuffix : @decide _ (blockRecSuffixDec block) = true := by
         simp only [decide_eq_true_eq]
-        rw [recsFilterNeg, recsFilterPos, nonrecs, recs]
+        erw [recsFilterNeg, recsFilterPos, nonrecs, recs]
         rfl
       unfold checkModeled at h
       simp only [hsuffix, ↓reduceIte, bind, Except.bind, pure, Except.pure] at h
-      rw [inductives, constructors] at h
-      simp only [recsFilterNeg, recsFilterPos, nonrecs, recs, List.foldlM_nil,
-        bind, Except.bind, pure, Except.pure] at h
+      erw [inductives, constructors] at h
+      erw [recsFilterNeg, recsFilterPos, nonrecs, recs] at h
+      simp only [List.foldlM_nil, bind, Except.bind, pure, Except.pure] at h
       have models := indRecs_models h
       have present : block.all (fun ci => match env.find? (auxKey ci.name .model) with
           | some (.defnInfo ..) => true | _ => false) = true := by
@@ -116,7 +116,8 @@ theorem modeled_not_usesStoredRecursors {mode : CheckMode} {fuel : Nat} {env out
         intro ci hci
         obtain ⟨cv, value, hint, hmodel⟩ := models ci hci
         rw [hmodel]
-      simp only [present, Bool.not_true, Bool.and_false]
+      erw [present]
+      simp only [Bool.not_true, Bool.and_false]
     · have hfalse : block.all ConstantInfo.isRecInfo = false :=
         Bool.eq_false_iff.mpr hall
       simp only [hfalse, Bool.and_false, Bool.false_and]
