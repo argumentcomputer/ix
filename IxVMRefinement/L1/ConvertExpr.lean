@@ -2014,7 +2014,7 @@ private theorem convert_expr_go (fuel : Nat) :
       cases hep with
       | lam cell _ _ =>
         subst m1268; subst r h'
-        exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp), fun h0 => nomatch h0⟩
+        exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp <;> repeat' constructor), fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
@@ -2022,7 +2022,7 @@ private theorem convert_expr_go (fuel : Nat) :
       cases hep with
       | all cell _ _ =>
         subst m1320; subst r h'
-        exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp), fun h0 => nomatch h0⟩
+        exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp <;> repeat' constructor), fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
@@ -2080,7 +2080,7 @@ private theorem convert_expr_go (fuel : Nat) :
         subst m74; subst r h'
         have ext_fin := Heap.Extends.snoc m88 (.construct Core.kexprEnum "Srt" [v86])
         exact ⟨ext1.trans ext_fin, .sort, _, 0, [], .inl rfl, rfl, .nil,
-          (by simp [needsBinderAt, binderFlag]), .sort (by simp), fun _ => .sort hlt hu_get (rl.mono ext_fin) (by simp)⟩
+          (by simp [needsBinderAt, binderFlag]), .sort (by simp <;> repeat' constructor), fun _ => .sort hlt hu_get (rl.mono ext_fin) (by simp)⟩
       | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
@@ -2092,7 +2092,7 @@ private theorem convert_expr_go (fuel : Nat) :
         obtain ⟨hlt, hv145, hm147⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h idx) ev157
         subst v145 m147; subst m133; subst r h'
         exact ⟨Heap.Extends.snoc _ _, .var, _, 0, [], .inl rfl, rfl, .nil,
-          (by simp [needsBinderAt, binderFlag]), .bvar (by simp), fun _ => .var hlt (by simp)⟩
+          (by simp [needsBinderAt, binderFlag]), .bvar (by simp <;> repeat' constructor), fun _ => .var hlt (by simp)⟩
       | sort cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
@@ -2109,7 +2109,7 @@ private theorem convert_expr_go (fuel : Nat) :
         subst m270; subst r h'
         have ext_fin := Heap.Extends.snoc m235 (.construct Core.kexprEnum "Const" [v191, v234])
         exact ⟨ext1.trans ext_fin, .ref, _, 0, [], .inl rfl, rfl, .nil,
-          (by simp [needsBinderAt, binderFlag]), .const (by simp), fun _ => .ref hlt href_get hd_eq
+          (by simp [needsBinderAt, binderFlag]), .const (by simp <;> repeat' constructor), fun _ => .ref hlt href_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ (ext1.trans ext_fin) ha_rep)
             hls (rls.mono ext_fin) (by simp)⟩
       | sort cell | var cell | recur cell _ | prj cell _ | str cell | nat cell
@@ -2128,7 +2128,7 @@ private theorem convert_expr_go (fuel : Nat) :
         subst m402; subst r h'
         have ext_fin := Heap.Extends.snoc m367 (.construct Core.kexprEnum "Const" [v323, v366])
         exact ⟨ext1.trans ext_fin, .recur, _, 0, [], .inl rfl, rfl, .nil,
-          (by simp [needsBinderAt, binderFlag]), .const (by simp), fun _ => .recur hlt hrec_get hd_eq
+          (by simp [needsBinderAt, binderFlag]), .const (by simp <;> repeat' constructor), fun _ => .recur hlt hrec_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ (ext1.trans ext_fin) ha_rep)
             hls (rls.mono ext_fin) (by simp)⟩
       | sort cell | var cell | ref cell _ | prj cell _ | str cell | nat cell
@@ -2166,7 +2166,7 @@ private theorem convert_expr_go (fuel : Nat) :
           hhp_in.sub (by rw [hc654]; intro c hc; simp [hc])
         exact ⟨ext1.trans ext_fin, .prj hpre_in, _, 0, blobs_in, .inl rfl, rfl, hhp',
           (by simpa only [needsBinderAt] using hb0.symm.trans hneed_in),
-          .proj (by simp) (HeapBinderLevels.mono ext_fin hlevels_in), fun _ => .prj ht_lt hf_lt href_get hd_eq
+          .proj (by simp <;> repeat' constructor) (HeapBinderLevels.mono ext_fin hlevels_in), fun _ => .prj ht_lt hf_lt href_get hd_eq
             (Bytes.repAddressRef_heapMono₂ _ ext_fin ha_rep)
             ((hraw_in hb0).mono ext_fin (fun _ h => h)) (by simp)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | str cell | nat cell
@@ -2217,7 +2217,7 @@ private theorem convert_expr_go (fuel : Nat) :
           simp only [List.mem_singleton] at hp; subst hp
           exact ⟨hhashed_calls, hblake.trans hd_eq⟩
         exact ⟨ext_blob.trans ext_fin, .str, _, 0, [(a, ⟨bs.toArray⟩)], .inl rfl, rfl, hhp,
-          (by simp [needsBinderAt, binderFlag]), .lit (by simp), fun _ => .str hb_lt href_get (by simp)
+          (by simp [needsBinderAt, binderFlag]), .lit (by simp <;> repeat' constructor), fun _ => .str hb_lt href_get (by simp)
             (Bytes.repByteStream_heapMono₂ _ ext_fin hst') hs (by simp)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | nat cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
@@ -2250,7 +2250,7 @@ private theorem convert_expr_go (fuel : Nat) :
           exact ⟨hhashed_calls, hblake.trans hd_eq⟩
         exact ⟨(ext_blob.trans ext_limbs).trans ext_fin, .nat, _, 0, [(a, ⟨bs.toArray⟩)],
           .inl rfl, rfl, hhp,
-          (by simp [needsBinderAt, binderFlag]), .lit (by simp), fun _ => .nat hb_lt href_get (by simp) hcanon
+          (by simp [needsBinderAt, binderFlag]), .lit (by simp <;> repeat' constructor), fun _ => .nat hb_lt href_get (by simp) hcanon
             (repList_heapMono₂ _ repU64_heapMono₂ ext_fin rlimbs) hlast hval (by simp)⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell
       | app cell _ _ | lam cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
@@ -2330,7 +2330,7 @@ private theorem convert_expr_go (fuel : Nat) :
       cases hep with
       | lam cell _ _ =>
         subst m1268; subst r h'
-        exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp), fun h0 => nomatch h0⟩
+        exact ⟨Heap.Extends.snoc _ _, .lam, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp <;> repeat' constructor), fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | all cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
@@ -2338,7 +2338,7 @@ private theorem convert_expr_go (fuel : Nat) :
       cases hep with
       | all cell _ _ =>
         subst m1320; subst r h'
-        exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp), fun h0 => nomatch h0⟩
+        exact ⟨Heap.Extends.snoc _ _, .all, _, 1, [], .inr rfl, rfl, .nil, (by simp [needsBinderAt, binderFlag]), .bvar (by simp <;> repeat' constructor), fun h0 => nomatch h0⟩
       | sort cell | var cell | ref cell _ | recur cell _ | prj cell _ | str cell | nat cell
       | app cell _ _ | lam cell _ _ | letE cell _ _ _ | share cell =>
         exact (Core.load_cell_ne cell ld12 (by decide)).elim
