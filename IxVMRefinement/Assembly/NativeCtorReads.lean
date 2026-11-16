@@ -162,6 +162,7 @@ theorem CtorScopeRead.load_contract {base : Core.Ctx} {block : Bytes.Address} {i
               .field (params : F), .field (row.2.2 : F), .field 0])
             (.ctorInfo annotated params row.2.2) := by
   obtain ⟨frame, _, safe⟩ := reader
+  change ctor.isUnsafe = false at safe
   obtain ⟨annotated, rawSyntax, stored, exactValue, _, _, varsBounded, levelsDefined, _,
     tree, plan, built, planned, image, ctorIndex, rawImage⟩ :=
     observed_native_ctor_input_raw_origin source blockShape memberAt ctorAt checked.loaded
@@ -201,8 +202,7 @@ theorem CtorScopeRead.load_contract {base : Core.Ctx} {block : Bytes.Address} {i
   have shape : value = .construct Core.kciEnum "Ctor"
       [.field (levels : F), typePtr, parentPtr, .field i, .field j,
         .field (params : F), .field (row.2.2 : F), .field 0] := by
-    simpa only [levelCount, paramCount, fieldsCount, safe, L1.repBoolField, Bool.false_eq_true,
-      ↓reduceIte, Nat.cast_zero] using valueShape
+    simpa [levelCount, paramCount, fieldsCount, safe, L1.repBoolField] using valueShape
   refine ⟨typePtr, parentPtr, parent, valueAt.trans (congrArg Except.ok shape), parentRep, parentEq, ?_, ?_⟩
   · intro d Γ
     simpa only [stored.2.1, Decl.posOf_range] using rawAt _ _ _ _ _ _ _ _ shape d Γ
