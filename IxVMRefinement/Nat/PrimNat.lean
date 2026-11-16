@@ -209,7 +209,7 @@ theorem kl_length {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {As : List KExp
 
 /-- **A `Const` node over a fresh empty level list**, at a represented address. -/
 theorem tm_const_nil {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
-    {a : Bytes.Address} {ap : SourceValue F} (ra : RepAddr h a ap) :
+    {a : Bytes.Address} [Resolved (κ (ixAddr a))] {ap : SourceValue F} (ra : RepAddr h a ap) :
     Tm κ d Γ ((h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) ++
         [.construct "KernelTypes::KExprNode" "Const"
           [ap, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») h.length]]) 0

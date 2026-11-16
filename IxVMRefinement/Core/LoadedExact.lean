@@ -196,11 +196,13 @@ inductive CIRepExact (κ : _root_.Address → KKey) (h : Heap F) :
       CIRepExact κ h (.construct kciEnum "Rec"
         [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx]) (.recInfo cv mI rP rls)
 
-theorem ValRepExact.toValRep {κ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
+theorem ValRepExact.toValRep {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+    {nl ty : SourceValue F}
     {cv : ConstantVal .anon} (hv : ValRepExact κ h nl ty cv) : ValRep κ h nl ty cv :=
   ⟨hv.1, hv.2.1, hv.2.2.1, hv.2.2.2.toTmC⟩
 
-theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} {h : Heap F} {ps : List LevelParam}
+theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+    {ps : List LevelParam}
     {j : Nat} {v : SourceValue F} {rls : List (RecRule .anon)}
     (hr : RulesRepExact κ h ps j v rls) : RulesRep κ h ps j v rls := by
   induction hr with
@@ -226,7 +228,8 @@ theorem CIRepExact.ctor_valRep {κ : _root_.Address → KKey} {h : Heap F}
     exact exactValue
   all_goals (injection shape with _ tag _; exact absurd tag (by decide))
 
-theorem CIRepExact.toCIRep {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
+theorem CIRepExact.toCIRep {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+    {v : SourceValue F}
     {ci : ConstantInfo .anon} (hci : CIRepExact κ h v ci) : CIRep κ h v ci := by
   cases hci with
   | axio hv => exact .axio hv.toValRep
@@ -243,7 +246,8 @@ def CIPtrRepExact (κ : _root_.Address → KKey) (h : Heap F) (p : SourceValue F
     (ci : ConstantInfo .anon) : Prop :=
   ∃ v, loadValue h p = .ok v ∧ CIRepExact κ h v ci
 
-theorem CIPtrRepExact.toCIPtrRep {κ : _root_.Address → KKey} {h : Heap F} {p : SourceValue F}
+theorem CIPtrRepExact.toCIPtrRep {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {h : Heap F}
+    {p : SourceValue F}
     {ci : ConstantInfo .anon} (r : CIPtrRepExact κ h p ci) : CIPtrRep κ h p ci :=
   let ⟨v, hl, hr⟩ := r; ⟨v, hl, hr.toCIRep⟩
 
@@ -290,7 +294,7 @@ theorem CIPtrRepExact.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {
 /-! ## Cell-load inversions for `TmExact` -/
 
 section TmExactInversion
-variable {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
+variable {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
   {E : KExpr} {p : SourceValue F}
 
 theorem TmExact.bvar_of_load {x : SourceValue F} (rep : TmExact κ d Γ h k E p)
