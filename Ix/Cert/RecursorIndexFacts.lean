@@ -746,19 +746,15 @@ theorem analyse_motive_lt {store : Store} {owner : Address} {c : Ixon.Constant} 
   rw [analyse_eq] at h
   unfold analyseWith at h
   simp only [bind, Option.bind_eq_some_iff, pure] at h
-  obtain ⟨⟨doms, body⟩, -, h⟩ := h
-  split at h
-  · simp only [Option.bind_eq_some_iff] at h
-    obtain ⟨u, hg, carriers, hc, l, hl, major, hm, hx⟩ := h
-    simp only [Option.some.injEq, Prod.mk.injEq] at hx
-    obtain ⟨rfl, -, -⟩ := hx
-    unfold guard at hg
-    split at hg
-    · rename_i hc
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-      omega
-    · cases hg
-  · cases h
+  obtain ⟨⟨doms, body⟩, -, k, -, u, hg, carriers, hc, l, hl, major, hm, hx⟩ := h
+  simp only [Option.some.injEq, Prod.mk.injEq] at hx
+  obtain ⟨rfl, -, -⟩ := hx
+  unfold guard at hg
+  split at hg
+  · rename_i hc
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    omega
+  · cases hg
 
 /-! ## The artifact's stored records -/
 

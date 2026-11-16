@@ -50,4 +50,21 @@ private def shared := recursor (.share 2)
   #[.app (.var 2) (.var 1), .leanLet true ty (.nat 0) (.share 0), .share 1]) shared ==
   some (0, #[.ref 0], .ref 0)
 
+private def indexedMotive (wrapped : Bool) : Ixon.Recursor :=
+  let tail : Ixon.Expr := if wrapped then
+    .leanLet true (.ref 1 #[]) (.ref 2 #[])
+      (.all (.app (.ref 0 #[]) (.var 1)) (.sort 1))
+    else .all (.app (.ref 0 #[]) (.var 0)) (.sort 1)
+  { plain with
+    indices := 1
+    typ := .all (.all (.ref 1 #[]) tail)
+      (.all (.ref 1 #[]) (.all (.app (.ref 0 #[]) (.var 0))
+        (.app (.app (.var 2) (.var 1)) (.var 0)))) }
+
+-- The general shape view also exposes a carrier hidden under a motive let.
+#guard analyse 20 (record (indexedMotive false)) (indexedMotive false) ==
+  some (0, #[.ref 0], .ref 0)
+#guard analyse 20 (record (indexedMotive true)) (indexedMotive true) ==
+  some (0, #[.ref 0], .ref 0)
+
 end Tests.Ix.Kernel.ReaderShape
