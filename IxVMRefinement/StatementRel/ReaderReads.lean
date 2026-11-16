@@ -66,9 +66,11 @@ private theorem ecx_natAt_eq (hblob : cx₁.blob = cx₂.blob) (i : UInt64) :
 /-- **One expression, in a context that answers at least as much.** -/
 theorem convExpr_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
     (hblob : cx₁.blob = cx₂.blob)
-    (hself : ∀ i k, self₁ i = some (.ok k) → self₂ i = some (.ok k))
+    (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
+      self₂ i = some (Except.ok k))
     {tbl₁ tbl₂ : Array (ReadM (CExpr .anon))}
-    (htbl : ∀ i v, tbl₁[i]? = some (.ok v) → tbl₂[i]? = some (.ok v)) :
+    (htbl : ∀ (i : Nat) (v : CExpr .anon), tbl₁[i]? = some (Except.ok v) →
+      tbl₂[i]? = some (Except.ok v)) :
     ∀ (e : Ixon.Expr) (v : CExpr .anon),
       convExpr (⟨cx₁, src, univs, self₁⟩ : ECx .anon) tbl₁ e = .ok v →
       convExpr (⟨cx₂, src, univs, self₂⟩ : ECx .anon) tbl₂ e = .ok v := by
@@ -162,14 +164,17 @@ theorem convExpr_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .
 /-- The sharing table, entry by entry. -/
 theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
     (hblob : cx₁.blob = cx₂.blob)
-    (hself : ∀ i k, self₁ i = some (.ok k) → self₂ i = some (.ok k)) :
+    (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
+      self₂ i = some (Except.ok k)) :
     ∀ (es : List Ixon.Expr) (acc₁ acc₂ : Array (ReadM (CExpr .anon))),
       acc₁.size = acc₂.size →
-      (∀ i v, acc₁[i]? = some (.ok v) → acc₂[i]? = some (.ok v)) →
-      ∀ i v,
-        (L1.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? = some (.ok v) →
+      (∀ (i : Nat) (v : CExpr .anon), acc₁[i]? = some (Except.ok v) →
+        acc₂[i]? = some (Except.ok v)) →
+      ∀ (i : Nat) (v : CExpr .anon),
+        (L1.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? =
+          some (Except.ok v) →
         (L1.buildShareTblGo (⟨cx₂, src, univs, self₂⟩ : ECx .anon) acc₂ es)[i]? =
-          some (.ok v) := by
+          some (Except.ok v) := by
   intro es
   induction es with
   | nil =>
@@ -183,11 +188,11 @@ theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyA
     · intro i v hi
       rw [Array.getElem?_push] at hi ⊢
       by_cases hsize : i = acc₁.size
-      · rw [if_pos hsize] at hi
-        rw [if_pos (hsize.trans hsz),
+      · rw [ite_eq_left hsize] at hi
+        rw [ite_eq_left (hsize.trans hsz),
           convExpr_le hkey hblob hself hacc e v (Option.some.inj hi)]
-      · rw [if_neg hsize] at hi
-        rw [if_neg (fun h => hsize (h.trans hsz.symm))]
+      · rw [ite_eq_right hsize] at hi
+        rw [ite_eq_right (fun h => hsize (h.trans hsz.symm))]
         exact hacc i v hi
 
 end Transfer
@@ -199,7 +204,8 @@ theorem read_le {cx₁ cx₂ : Ctx .anon} {src : Ixon.Constant}
     {self₁ self₂ : Nat → Option (ReadM (CName .anon))}
     (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
     (hblob : cx₁.blob = cx₂.blob)
-    (hself : ∀ i k, self₁ i = some (.ok k) → self₂ i = some (.ok k))
+    (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
+      self₂ i = some (Except.ok k))
     {param : Nat → LevelParam} {e : Ixon.Expr} {v : CExpr .anon}
     (h : (MemberReader.mk' cx₁ src param self₁).read e = .ok v) :
     (MemberReader.mk' cx₂ src param self₂).read e = .ok v := by
@@ -217,11 +223,12 @@ the reading context of `Reads`**, over the reader's own blobs. -/
 theorem read_reads {t : RoleTable} (checked : t.check = .ok ()) {cx : Ctx .anon}
     (hkeys : ∀ a k, cx.keyAt a = .ok k → k = keyOf t a) {src : Ixon.Constant}
     {param : Nat → LevelParam} {self self' : Nat → Option (ReadM (CName .anon))}
-    (hself : ∀ i k, self i = some (.ok k) → self' i = some (.ok k))
+    (hself : ∀ (i : Nat) (k : CName .anon), self i = some (Except.ok k) →
+      self' i = some (Except.ok k))
     {e : Ixon.Expr} {v : CExpr .anon}
     (h : (MemberReader.mk' cx src param self).read e = .ok v) :
     (exprReader t cx.blob src param self').read e = .ok v :=
-  read_le (cx₂ := readCtx t cx.blob)
+  read_le (cx₁ := cx) (cx₂ := readCtx t cx.blob)
     (fun a k hk => by rw [hkeys a k hk]; exact readCtx_keyAt checked cx.blob a) rfl hself h
 
 /-! ## Standalone records -/
@@ -279,17 +286,17 @@ theorem reads_of_readRecord_defn {t : RoleTable} (checked : t.check = .ok ()) {c
   rw [hdecls] at hdecl'
   have hdd : decl' = decl := by simpa using hdecl'
   subst hdd
-  have hself : ∀ i k,
+  have hself : ∀ (i : Nat) (k : CName .anon),
       (if (i == 0) = true then some (cx.memberKey (.member a 0)) else none) =
         some (Except.ok k) → soloSelf t a i = some (Except.ok k) := by
     intro i k hi
     unfold soloSelf
     by_cases h0 : (i == 0) = true
-    · rw [if_pos h0] at hi ⊢
+    · rw [ite_eq_left h0] at hi ⊢
       have hk := hname k (Option.some.inj hi)
       subst hk
       rfl
-    · rw [if_neg h0] at hi
+    · rw [ite_eq_right h0] at hi
       cases hi
   cases hread with
   | axio info _ _ _ =>
@@ -370,9 +377,9 @@ theorem reads_of_readRecord_axio {t : RoleTable} (checked : t.check = .ok ()) {c
     have hty := read_reads checked hkeys (self' := fun _ => none)
       (fun i k hi => by cases hi) type
     by_cases hq : keyOf t a = Ix.Kernel.quotSoundName ∨ inertKey (keyOf t a) = true
-    · simp only [installs, if_pos hq] at hci
+    · simp only [installs, ite_eq_left hq] at hci
       cases hci
-    · simp only [installs, if_neg hq] at hci
+    · simp only [installs, ite_eq_right hq] at hci
       have hci' := List.mem_singleton.mp hci
       have hinert : inertKey (keyOf t a) = false := by
         cases hb : inertKey (keyOf t a) with
@@ -405,14 +412,15 @@ theorem reads_of_readInductiveBare {t : RoleTable} (checked : t.check = .ok ())
     {cx : Ctx .anon} {owner : _root_.Address} {source : Ixon.Constant}
     {members : Array Ixon.MutConst} {result : Read .anon}
     (hkeys : ∀ x k, cx.keyAt x = .ok k → k = keyOf t x)
-    (hmember : ∀ i m k, members[i]? = some m → cx.memberKey (.member owner i) = .ok k →
-      k = keyOf t (memberAddr owner i m))
-    (hctor : ∀ i j k, cx.memberKey (.ctor owner i j) = .ok k → k = keyOf t (ctorAddr owner i j))
+    (hmember : ∀ (i : Nat) (m : Ixon.MutConst) (k : CName .anon), members[i]? = some m →
+      cx.memberKey (.member owner i) = .ok k → k = keyOf t (memberAddr owner i m))
+    (hctor : ∀ (i j : Nat) (k : CName .anon), cx.memberKey (.ctor owner i j) = .ok k →
+      k = keyOf t (ctorAddr owner i j))
     (hstore : cx.store owner = some source) (hinfo : source.info = .muts members)
     (hlogic : InLogic source)
-    (hboundI : ∀ i m, members[i]? = some m → i < UInt64.size)
-    (hboundJ : ∀ i ind j ct, members[i]? = some (.indc ind) → ind.ctors[j]? = some ct →
-      j < UInt64.size)
+    (hboundI : ∀ (i : Nat) (m : Ixon.MutConst), members[i]? = some m → i < UInt64.size)
+    (hboundJ : ∀ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
+      members[i]? = some (Ixon.MutConst.indc ind) → ind.ctors[j]? = some ct → j < UInt64.size)
     (read : readInductiveBare cx owner source members = .ok result) :
     ∃ (types ctors : List (ConstantVal .anon × Nat × Nat)) (recs : List (ConstantInfo .anon))
       (nP : Nat),
@@ -428,19 +436,19 @@ theorem reads_of_readInductiveBare {t : RoleTable} (checked : t.check = .ok ())
             (.ctorInfo row.1 row.2.1 row.2.2))) := by
   obtain ⟨shape, block, -, lowered, formers, ctorFrames⟩ := readInductiveBare_native_frames read
   obtain ⟨-, hdecls, -⟩ := lowerInductiveBare_spec lowered
-  have hself : ∀ i k,
+  have hself : ∀ (i : Nat) (k : CName .anon),
       (if i < members.size then some (cx.memberKey (.member owner i)) else none) =
         some (Except.ok k) → blockSelf t owner members i = some (Except.ok k) := by
     intro i k hi
     by_cases hlt : i < members.size
-    · rw [if_pos hlt] at hi
+    · rw [ite_eq_left hlt] at hi
       have hm : members[i]? = some members[i] := by simp
       have hk := hmember i _ k hm (Option.some.inj hi)
       subst hk
       unfold blockSelf
       rw [hm]
       rfl
-    · rw [if_neg hlt] at hi
+    · rw [ite_eq_right hlt] at hi
       cases hi
   have hentry : ∀ entry : Nat × Ixon.Inductive,
       entry ∈ (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
@@ -449,7 +457,6 @@ theorem reads_of_readInductiveBare {t : RoleTable} (checked : t.check = .ok ())
     intro entry hmem
     rw [Array.toList_filterMap] at hmem
     obtain ⟨i, -, hi⟩ := List.mem_filterMap.mp hmem
-    dsimp only at hi
     cases hm : members[i]? with
     | none =>
       rw [hm] at hi
