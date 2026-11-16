@@ -55,7 +55,6 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
   refine ⟨ty, L1.repBoolField ind.isUnsafe, parentPtr, parent, ?_, parentRep, parentEq⟩
   simpa only [ZMod.natCast_zmod_val] using valueAt.trans (congrArg Except.ok valueShape)
 
-set_option maxHeartbeats 800000 in
 /-- The actual one-family block and canonical former projection supply raw peer facts at
 its real member index. Projection identities use the successful read's decoder guard. -/
 theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
@@ -85,9 +84,10 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
     subst parent
     have index64 : ZMod.val i < UInt64.size :=
       Nat.lt_trans (ZMod.val_lt i) (by decide)
-    have castIndex : (((ZMod.val i).toUInt64.toNat : Nat) : F) = i := by
-      rw [UInt64.toNat_ofNat_of_lt index64]
-      exact ZMod.natCast_zmod_val i
+    have readIndex : (ZMod.val i).toUInt64.toNat = ZMod.val i :=
+      UInt64.toNat_ofNat_of_lt index64
+    have castIndex : (((ZMod.val i).toUInt64.toNat : Nat) : F) = i :=
+      (congrArg (fun n : Nat => (n : F)) readIndex).trans (ZMod.natCast_zmod_val i)
     rw [castIndex] at observed
     exact native_former_header_of_record (base := raw.toCtx) source blockShape
       (by simpa only [Array.getElem?_toList] using memberAt) (good.sub subset) parentRep observed
