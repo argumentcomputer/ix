@@ -66,11 +66,11 @@ theorem admitted_native_role_prefix_names {V : IxVM.Refinement.View} {binding : 
     fun slot ctor key found named => (names.2 slot ctor key found named).reference_present witness.prelude.ix trace⟩
 
 /-- Name presence in the actual role prefix excludes freshness in an environment extending it. -/
-theorem present_not_fresh_of_extension {prefix env : Env .anon} {key : Key .anon}
-    (present : (prefix.find? key).isSome = true) (extends : EnvExt prefix env) :
+theorem present_not_fresh_of_extension {roleEnv env : Env .anon} {key : Key .anon}
+    (present : (roleEnv.find? key).isSome = true) (extended : EnvExt roleEnv env) :
     env.find? key ≠ none := by
   obtain ⟨constant, found⟩ := Option.isSome_iff_exists.mp present
-  rw [extends.find found]
+  rw [extended.find found]
   exact Option.some_ne_none
 
 end IxVM.Refinement.Assembly
