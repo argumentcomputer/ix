@@ -80,9 +80,7 @@ theorem nativeNoRecRunJ_empty_of_checked {env : Env .anon} {p₀ : NativeParts .
     · simp [parts, completed, empty]
     · simp [parts, completed, empty]
     · intro slot ctor stored atCtor _
-      have impossible : ([] : List (ConstantVal .anon × Nat))[slot]? = some ctor := by
-        simpa [parts, completed, empty] using atCtor
-      simp at impossible
+      simp [parts, completed, empty] at atCtor
   · simp [parts, completed, nativeCaps, nativeCapsAt, empty]
 
 /-- No-recursor semantic runs preserve the reference model without a global eta-table

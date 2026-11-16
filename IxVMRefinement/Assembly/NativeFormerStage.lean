@@ -118,15 +118,12 @@ theorem NativeFormerRunInput.checked_noBinders {base : Core.Ctx} {block : Bytes.
   have valueEq : input.annotated =
       ⟨base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)), List.range ind.lvls.toNat,
         input.annotated.type⟩ := by
-    have named := input.stored.1
-    have levels := input.stored.2.1
-    cases input.annotated
-    cases named
-    cases levels
-    rfl
+    calc
+      input.annotated = ⟨input.annotated.name, input.annotated.levelParams, input.annotated.type⟩ := rfl
+      _ = _ := by rw [input.stored.1, input.stored.2.1]
   refine ⟨level, typeEq, input.annotated.type,
     ⟨Option.isNone_iff_eq_none.mpr fresh, notBasis, Decl.nat_keyOf_isProjFnShape_false base.t _,
-      Decl.levelParam_nodup_of_nodup List.nodup_range, input.varsBounded, input.noFvars,
+      Decl.nat_levelParam_nodup_of_nodup List.nodup_range, input.varsBounded, input.noFvars,
       Decl.annot_of_annotates input.stored.2.2 input.noFvars input.varsBounded 0, ?_, ?_, ?_⟩, valueEq⟩
   · exact levelsDefined
   · rw [typeEq]
@@ -160,7 +157,7 @@ theorem NativeFormerRunInput.emptyNoRecRun_noBinders {base : Core.Ctx} {block : 
   obtain ⟨level, typeEq, checked⟩ := input.checked_noBinders native shape noParams noIndices fresh notBasis
   have checked' : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ
       base.env parts.cvT input.annotated := by simpa only [former] using checked
-  apply Decl.nativeNoRecRunJ_empty_of_checked checked'
+  apply Decl.nativeNoRecRunJ_empty_of_checked (binders := []) (level := level) checked'
     (List.length_eq_zero_iff.mp (ctorCount.trans empty))
   simp only [params, indices, noParams, noIndices, Nat.zero_add, Ix.Kernel.Expr.stripPis, typeEq]
 
