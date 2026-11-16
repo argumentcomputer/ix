@@ -61,7 +61,8 @@ theorem admitted_native_role_prefix_names {V : IxVM.Refinement.View} {binding : 
   have built : ∃ scanned : Array (_root_.Address × Ixon.Constant), cx.index = buildIndex cx.store scanned :=
     ⟨_, rfl⟩
   obtain ⟨scanned, indexBuilt⟩ := built
-  have names := stream.native_member_names indexBuilt present stored kind memberAt one
+  have names := IxVM.Refinement.Assembly.StreamRead.native_member_names
+    stream indexBuilt present stored kind memberAt one
   exact ⟨fun key named => (names.1 key named).reference_present witness.prelude.ix trace,
     fun slot ctor key found named => (names.2 slot ctor key found named).reference_present witness.prelude.ix trace⟩
 
@@ -71,6 +72,6 @@ theorem present_not_fresh_of_extension {roleEnv env : Env .anon} {key : Key .ano
     env.find? key ≠ none := by
   obtain ⟨constant, found⟩ := Option.isSome_iff_exists.mp present
   rw [extended.find found]
-  exact Option.some_ne_none
+  exact Option.some_ne_none constant
 
 end IxVM.Refinement.Assembly
