@@ -10,6 +10,7 @@ including the environment extension and index-sort evidence used by the subseque
 namespace IxVM.Refinement.Assembly
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library
 open IxVM (F)
 
 /-- The actual former guard distinguishes a checked telescope from the indexed alias case. -/
@@ -59,12 +60,12 @@ theorem NativeFormerRunInput.formerStage_noIndices {base : Core.Ctx} {block : By
         (fun completed => Ix.Kernel.nativeCapsAt completed isRec)
         (input.stageCtx (parts.withSort level) isRec).env input.annotated (parts.withSort level) ∧
       Ix.Kernel.EnvExt base.env (input.stageCtx (parts.withSort level) isRec).env ∧
-      ∃ variables sorts,
+      ∃ openedVars sorts,
         Ix.Kernel.openPisAtFvars (parts.nP + parts.nIdx) input.annotated.type 0 =
-          some (variables, .sort level) ∧
+          some (openedVars, .sort level) ∧
         Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ
           (input.stageCtx (parts.withSort level) isRec).env true false level parts.nP
-          (variables.drop parts.nP) [] parts.nIdx sorts := by
+          (openedVars.drop parts.nP) [] parts.nIdx sorts := by
   obtain ⟨binders, level, telescope, _⟩ :=
     (input.telescopeOrIndexed native shape).resolve_right (fun nonzero => nonzero noIndices)
   have telescope' : input.annotated.type.stripPis (parts.nP + parts.nIdx) =
