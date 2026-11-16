@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.SortTailTransport
+import IxVMRefinement.Decl.NamedAliasTail
 import IxVMRefinement.Decl.NativeConstructorFieldChecks
 import IxVMRefinement.Decl.NativeConstructorFieldFrames
 
@@ -197,6 +198,27 @@ theorem normCtorVal_sortTail_domain {env : Env .anon} {fuel nP nF slot count : N
   normCtorVal_domain_predicate (P := SortTail sortLevel count)
     (fun _ index cut h => h.abstract1 index cut) (fun _ value cut h => h.instantiate1 value cut)
     (fun h ann => h.annotated ann) (fun h run => h.normalized run)
+    normalized originalOpen finalOpen originalAt finalAt shape
+
+/-- The actual named-alias tail is preserved through the same complete rebuild and annotation. -/
+theorem normCtorVal_aliasTail_domain {env : Env .anon} {fuel nP nF slot count : Nat}
+    {T aliasName targetName : Key .anon} {targetLevels : List Level}
+    {aliasCV targetCV : ConstantVal .anon} {hint : ReducibilityHint} {caps : IndCaps .anon}
+    (aliasFound : env.find? aliasName = some (.defnInfo aliasCV (.const targetName targetLevels) hint))
+    (noLevels : aliasCV.levelParams = [])
+    (targetFound : env.find? targetName = some (.indInfo targetCV caps))
+    {raw initial checked : ConstantVal .anon} {originalVars finalVars : List (Expr .anon)}
+    {originalResidual finalResidual original final : Expr .anon}
+    (normalized : normCtorVal (fueledOps .verified fuel) env T nP nF raw initial = .ok checked)
+    (originalOpen : openPisAtFvars (nP + nF) initial.type 0 = some (originalVars, originalResidual))
+    (finalOpen : openPisAtFvars (nP + nF) checked.type 0 = some (finalVars, finalResidual))
+    (originalAt : originalVars[nP + slot]? = some original)
+    (finalAt : finalVars[nP + slot]? = some final)
+    (shape : AliasTail aliasName targetName targetLevels count original.fvarTypeD) :
+    AliasTail aliasName targetName targetLevels count final.fvarTypeD :=
+  normCtorVal_domain_predicate (P := AliasTail aliasName targetName targetLevels count)
+    (fun _ index cut h => h.abstract1 index cut) (fun _ value cut h => h.instantiate1 value cut)
+    (fun h ann => h.annotated ann) (fun h run => h.normalized aliasFound noLevels targetFound run)
     normalized originalOpen finalOpen originalAt finalAt shape
 
 end IxVM.Refinement.Decl
