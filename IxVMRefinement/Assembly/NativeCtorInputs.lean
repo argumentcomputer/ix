@@ -155,7 +155,7 @@ theorem observed_native_ctor_input {base : Core.Ctx}
     (selfKeyed : ∀ k a m name,
       (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
-    (blobReads : ∀ a bytes, L1.Hashed loadCalls bytes → Address.blake3Pure bytes = a →
+    (blobReads : ∀ a bytes, Hashed loadCalls bytes → Address.blake3Pure bytes = a →
       cx.blob a = some bytes) :
     ∃ (annotated : Ix.Kernel.ConstantVal .anon) (rawSyntax : Core.KExpr),
       IxVM.Consistency.ValStored annotated
