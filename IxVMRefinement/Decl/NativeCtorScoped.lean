@@ -51,7 +51,7 @@ theorem NativeCtorCoreRun.coreGood {base : Ctx} {rootCalls : List (Call F)}
     (good : Good base rootCalls) (member : run ∈ runs) :
     CoreGood (nativeCtorCoreCtx base runs) run.calls :=
   CoreGood.ofRaw (good.sub run.subset)
-    (fun call inside => List.mem_flatMap.mpr ⟨run, member, inside⟩)
+    (fun _call inside => List.mem_flatMap.mpr ⟨run, member, inside⟩)
 
 /-- Every selected call belongs to the original successful traversal. -/
 theorem nativeCtorCoreCalls_subset {rootCalls : List (Call F)}
@@ -88,7 +88,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
     (hef₁ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerFacts cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex) :
+    (hpeer₁ : OneTypePeerReads cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex) :
     ∀ (m j : Nat) {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       m + j = ctors.length →
       (∀ x ∈ cs, x ∈ cs_root) →
@@ -257,7 +257,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         rw [hnf_f] at ev_rt
         obtain ⟨hnt_476, rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
             hes_len, hes_noT⟩ :=
-          check_ctor_return_type_raw_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_rt
+          check_ctor_return_type_observed_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_rt
             (rawCovered.sub (fun x hx => by simp [hc, hx]))
             (hcty_raw_m34.mono e_from_m34_to_m430) hnp_ca
             (Bytes.repAddressRef_heapMono₂ addrTy e_to_rt hbp) ev_rt
@@ -298,7 +298,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
           | n0 cs_pos _ ev_pos hc_sg =>
             have hg_pos : Good cR.toCtx cs_pos :=
               hgood.sub (fun x hx => by simp [hc, hc_sg, hx])
-            exact ⟨check_positivity_raw_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_pos
+            exact ⟨check_positivity_observed_spec hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts hg_pos
               (rawCovered.sub (fun x hx => by simp [hc, hc_sg, hx]))
               (hcty_raw_m34.mono e_from_m34_to_m546) hnp_ca hstR_c hstrip_c
               (Bytes.repAddressRef_heapMono₂ addrTy e_to_pos hbp) ev_pos,
@@ -350,7 +350,7 @@ theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cR.env)
     (hef₁ : CoreEnvFacts cR.toCtx)
     (rawFacts : RawRecordFacts cR)
-    (hpeer₁ : OneTypePeerFacts cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex)
+    (hpeer₁ : OneTypePeerReads cR.toCtx b₀ T lps.length nP nIdx ctors.length indIndex)
     {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (subset : ∀ call ∈ cs, call ∈ cs_root)
     (good : Good cR.toCtx cs) (rawCovered : RawRecordCoverage cR cs)
