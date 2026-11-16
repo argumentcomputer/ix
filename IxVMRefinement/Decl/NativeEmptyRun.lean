@@ -11,6 +11,11 @@ namespace IxVM.Refinement.Decl
 
 open Ix.Kernel Ix.Kernel.Semantics
 
+private theorem annotates_sort_inv {type : Expr .anon} {level : Level}
+    (annotation : IxVM.Consistency.Annotates type (.sort level)) : type = .sort level := by
+  cases annotation
+  rfl
+
 /-- The no-recursor recognizer accepts an empty family at a literal sort and retains its
 actual former. The recursor stub contributes no index count. -/
 theorem nativePartsNoRec_empty_sort {cv : ConstantVal .anon} {caps : IndCaps .anon} {level : Level}
@@ -19,19 +24,36 @@ theorem nativePartsNoRec_empty_sort {cv : ConstantVal .anon} {caps : IndCaps .an
     ∃ parts,
       nativePartsNoRec? 0 [.indInfo cv caps] = some parts ∧
       parts.cvT = cv ∧ parts.nP = 0 ∧ parts.nIdx = 0 ∧ parts.ctors = [] := by
-  have counts : nativeCounts? 0 cv [] 0 0 = some (0, 0) := by
-    simp [nativeCounts?, literal, Expr.piBinders]
   have stubNotBasis : reservedBasisNames.contains (auxKey cv.name .recursor) = false :=
     reservedBasisNames_contains_auxKey _ _
-  simp only [nativePartsNoRec?, List.all_nil, Bool.true_eq_true, ↓reduceIte,
-    List.nil_append, nativeParts?, nativeShape?, nativeRecStub, sumSplit, counts,
-    notBasis, stubNotBasis, Bool.false_beq_false, Bool.true_and]
-  split <;> exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
+  cases levelShape : cv.levelParams with
+  | nil =>
+    simp [nativePartsNoRec?, nativeParts?, nativeShape?, nativeRecStub, sumSplit,
+      nativeCounts?, literal, Expr.piBinders, notBasis, stubNotBasis, levelShape, Expr.stripPis]
+  | cons head tail =>
+    have tailNe : (tail == head :: tail) = false := by
+      apply beq_eq_false_iff_ne.mpr
+      intro same
+      have length := congrArg List.length same
+      simp at length
+    simp [nativePartsNoRec?, nativeParts?, nativeShape?, nativeRecStub, sumSplit,
+      nativeCounts?, literal, Expr.piBinders, notBasis, stubNotBasis, levelShape, tailNe, Expr.stripPis]
 
 /-- A singleton former cannot be any of the complete reserved basis blocks. -/
 theorem basisPinHit_single_former (cv : ConstantVal .anon) (caps : IndCaps .anon) :
     basisPinHit [.indInfo cv caps] = none := by
-  simp [basisPinHit, BasisKind.decls, List.find?]
+  have noMatch : ∀ kind ∈ [BasisKind.eqK, .natK, .punitK, .emptyK, .falseK],
+      (kind.decls.map (·.name) == ([.indInfo cv caps] : List (ConstantInfo .anon)).map (·.name)) = false := by
+    intro kind member
+    apply beq_eq_false_iff_ne.mpr
+    intro same
+    have count := congrArg List.length same
+    simp only [List.mem_cons, List.mem_singleton] at member
+    rcases member with rfl | rfl | rfl | rfl | rfl <;>
+      simp [BasisKind.decls, eqBasis, natBasis, punitBasis, emptyBasis, falseBasis] at count
+  unfold basisPinHit
+  rw [List.find?_eq_none.mpr noMatch]
+  rfl
 
 /-- A literal-sort empty family has a reader-shaped installation and semantic native run.
 The checked former supplies every typing obligation; no compatibility load facts are used. -/
@@ -49,8 +71,7 @@ theorem native_empty_sort_step {env : Env .anon} {cv annotated : ConstantVal .an
   have annotatedLiteral : annotated.type = .sort level := by
     have annotation := stored.2.2
     rw [literal] at annotation
-    cases annotation
-    rfl
+    exact annotates_sort_inv annotation
   have checked' : ConstantValCheckJ Model.rulesJ env parts.cvT annotated := by
     simpa only [former] using checked
   have run := nativeNoRecRunJ_empty_of_checked (binders := []) (level := level)
