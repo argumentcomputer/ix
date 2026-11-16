@@ -120,6 +120,36 @@ theorem readerClosureOrder_records (table : Ix.Kernel.RoleTable) (env : Ixon.Env
   intro address member
   simpa only [@decide_eq_true_eq _ (Classical.propDecidable _)] using readerClosureOrder_kept member
 
+theorem readerClosureOrder_decoded (table : Ix.Kernel.RoleTable) (env : Ixon.Env)
+    (keepSeeds readSeeds : _root_.Address → Prop) (allOrder : List _root_.Address) :
+    let order := readerClosureOrder table env keepSeeds readSeeds allOrder
+    Ix.Cert.Stream.decodedOf (readerClosureEnv table env keepSeeds) order =
+      Ix.Cert.Stream.decodedOf env order := by
+  apply selectReaderRecords_decoded
+  intro address member
+  simpa only [@decide_eq_true_eq _ (Classical.propDecidable _)] using readerClosureOrder_kept member
+
+theorem readerClosureOrder_blobs (table : Ix.Kernel.RoleTable) (env : Ixon.Env)
+    (keepSeeds readSeeds : _root_.Address → Prop) (allOrder : List _root_.Address) :
+    let order := readerClosureOrder table env keepSeeds readSeeds allOrder
+    Ix.Cert.blobsOf (readerClosureEnv table env keepSeeds) order = Ix.Cert.blobsOf env order := by
+  apply selectReaderRecords_blobs
+  intro address member
+  simpa only [@decide_eq_true_eq _ (Classical.propDecidable _)] using readerClosureOrder_kept member
+
+/-- Physical selection preserves the context of the same new reading order, apart from
+its reducibility hints. Hints can change when omitted projection records are removed. -/
+theorem readerClosureOrder_context (table : Ix.Kernel.RoleTable) (prelude : Ix.Kernel.Reader.Prelude .anon)
+    (env : Ixon.Env) (keepSeeds readSeeds : _root_.Address → Prop) (allOrder : List _root_.Address) :
+    let order := readerClosureOrder table env keepSeeds readSeeds allOrder
+    ReaderStoreTransfer.readerContext table prelude (readerClosureEnv table env keepSeeds) order =
+      { ReaderStoreTransfer.readerContext table prelude env order with
+        hint := Ix.Cert.hintsOf (readerClosureEnv table env keepSeeds) } := by
+  dsimp only
+  unfold ReaderStoreTransfer.readerContext
+  rw [readerClosureOrder_decoded, readerClosureOrder_blobs]
+  rfl
+
 /-- The concrete admitted/walked union supplies the all-record order, so choosing the
 physical closure and its public reading order adds no ordering premise. -/
 theorem admitted_readerClosureOrder {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
