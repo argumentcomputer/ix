@@ -38,7 +38,7 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
       List.Forall₂
         (NativeCtorReaderFrame cx owner (MemberReader.mk' cx source id
           (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
-        (nativeCtorSlots (shape.order.filterMap (fun i => match members[i]? with
+        (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
           | some (.indc ind) => some (i, ind)
           | _ => none)).toList) block.ctors.toList := by
   cases shapeRun : blockShapeOf cx.index owner members with
@@ -49,7 +49,7 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
     unfold readInductiveBare at read
     rw [shapeRun] at read
     dsimp only at read
-    let indcs := shape.order.filterMap fun i => match members[i]? with
+    let indcs := shape.order.filterMap fun i => match (members[i]? : Option Ixon.MutConst) with
       | some (.indc ind) => some (i, ind)
       | _ => none
     let mr := MemberReader.mk' cx source id
@@ -77,12 +77,12 @@ theorem readInductiveBare_ctor_frames {cx : Ctx .anon} {owner : _root_.Address}
                   (nativeCtorSlots pre ++ ind.ctors.zipIdx.toList.map (fun slot => (member, slot.1, slot.2)))
                   inside.1.toList := by
                 apply forIn_inv_array
-                  (fun prefix (current : Array NativeCtorRow × List (Ix.Kernel.Key .anon)) =>
+                  (fun preSlots (current : Array NativeCtorRow × List (Ix.Kernel.Key .anon)) =>
                     List.Forall₂ frame
-                      (nativeCtorSlots pre ++ prefix.map (fun slot => (member, slot.1, slot.2)))
+                      (nativeCtorSlots pre ++ preSlots.map (fun slot => (member, slot.1, slot.2)))
                       current.1.toList)
                   _ ind.ctors.zipIdx ?_ (by simpa using held) innerRun
-                intro prefix slot suffix current step _ prefixHeld stepped
+                intro preSlots slot suffix current step _ prefixHeld stepped
                 rcases slot with ⟨ctor, position⟩
                 rcases ite_ok stepped with stepped | stepped
                 · rcases ite_ok stepped with stepped | stepped
@@ -120,7 +120,7 @@ theorem readInductive_ctor_frames {cx : Ctx .anon} {state : State .anon}
       List.Forall₂
         (NativeCtorReaderFrame cx owner (MemberReader.mk' cx source id
           (fun i => if i < members.size then some (cx.memberKey (.member owner i)) else none)))
-        (nativeCtorSlots (shape.order.filterMap (fun i => match members[i]? with
+        (nativeCtorSlots (shape.order.filterMap (fun i => match (members[i]? : Option Ixon.MutConst) with
           | some (.indc ind) => some (i, ind)
           | _ => none)).toList) block.ctors.toList := by
   obtain ⟨generated, bare, bareRead, declarations, _, _, _⟩ := readInductive_full_bare read
