@@ -140,4 +140,65 @@ theorem rawRecordFacts_singleton {base : Ctx} {order : List _root_.Address}
         exact ⟨parent⟩ }
   exact ⟨q, rfl, rawRecordFacts_of_queries base [q]⟩
 
+/-- Decoded coverage of the raw queries in one actual trace. This mentions only input heaps,
+source records, and their serialized projection parents. -/
+def CanonicalQueryCoverage (E : Ixon.Env) (calls : List (Call F)) : Prop :=
+  ∀ addr heap, (⟨"Ingress::get_ci", [addr], heap⟩ : Call F) ∈ calls →
+    ∃ (a : Bytes.Address) (source : CanonicalRecordAt E (Core.ixAddr a)),
+      Bytes.RepAddressRef Core.addrTy heap a addr ∧
+      ∀ p, source.value.info = .iPrj p → Nonempty (CanonicalRecordAt E p.block)
+
+private theorem queryList_of_cover (base : Ctx) :
+    ∀ calls : List (Call F),
+      (∀ addr heap, (⟨"Ingress::get_ci", [addr], heap⟩ : Call F) ∈ calls →
+        ∃ q : RawRecordQuery base.E, q.top = ⟨"Ingress::get_ci", [addr], heap⟩) →
+      ∃ queries : List (RawRecordQuery base.E),
+        Core.RawRecordCoverage (rawQueryCtx base queries) calls
+  | [], _ => ⟨[], fun _ _ member => nomatch member⟩
+  | call :: calls, covered => by
+    classical
+    obtain ⟨queries, rest⟩ := queryList_of_cover base calls
+      (fun addr heap member => covered addr heap (List.mem_cons_of_mem call member))
+    by_cases isQuery : ∃ addr heap, call = (⟨"Ingress::get_ci", [addr], heap⟩ : Call F)
+    · obtain ⟨addr₀, heap₀, rfl⟩ := isQuery
+      obtain ⟨q, same⟩ := covered addr₀ heap₀ List.mem_cons_self
+      refine ⟨q :: queries, fun addr heap member => ?_⟩
+      rcases List.mem_cons.mp member with equal | member
+      · exact ⟨q, List.mem_cons_self, equal.trans same.symm⟩
+      · obtain ⟨q', hq', same'⟩ := rest addr heap member
+        exact ⟨q', List.mem_cons_of_mem q hq', same'⟩
+    · refine ⟨queries, fun addr heap member => ?_⟩
+      rcases List.mem_cons.mp member with equal | member
+      · exact False.elim (isQuery ⟨addr, heap, equal.symm⟩)
+      · exact rest addr heap member
+
+/-- Recover all selected raw queries from their actual sub-observations, then construct both
+the raw record facts and coverage of this trace's raw invocations. -/
+theorem rawRecordFacts_of_trace {base : Ctx} {name : String} {args : List (SourceValue F)}
+    {h h' : Heap F} {result : SourceValue F} {calls : List (Call F)}
+    (observed : ObsFn Core.W name args h result h' calls)
+    (known : CanonicalQueryCoverage base.E calls) :
+    ∃ queries : List (RawRecordQuery base.E),
+      RawRecordFacts (rawQueryCtx base queries) ∧
+      Core.RawRecordCoverage (rawQueryCtx base queries) calls := by
+  have each : ∀ addr heap, (⟨"Ingress::get_ci", [addr], heap⟩ : Call F) ∈ calls →
+      ∃ q : RawRecordQuery base.E, q.top = ⟨"Ingress::get_ci", [addr], heap⟩ := by
+    intro addr heap member
+    obtain ⟨value, after, children, obs, _⟩ := observed.call_observed member
+    obtain ⟨a, source, ha, parents⟩ := known addr heap member
+    let q : RawRecordQuery base.E :=
+      { addr := addr
+        result := value
+        before := heap
+        after := after
+        calls := children
+        address := a
+        observed := obs
+        addressRep := ha
+        source := source
+        parents := parents }
+    exact ⟨q, rfl⟩
+  obtain ⟨queries, covered⟩ := queryList_of_cover base calls each
+  exact ⟨queries, rawRecordFacts_of_queries base queries, covered⟩
+
 end IxVM.Refinement.L1

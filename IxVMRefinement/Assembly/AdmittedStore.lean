@@ -27,7 +27,7 @@ private theorem lookup_mem {α β : Type} [BEq α] [LawfulBEq α] :
       rw [hkey] at h
       exact List.mem_cons_of_mem _ (lookup_mem h)
 
-private theorem streamContext_store_mem {hash : ByteArray → _root_.Address} {table : RoleTable}
+theorem streamContext_store_mem {hash : ByteArray → _root_.Address} {table : RoleTable}
     {prelude : Prelude .anon} {records : List (_root_.Address × Ixon.Constant)}
     {blobs : Ingress.Blobs} {hint : ConstRef _root_.Address → Option ReducibilityHint}
     {a : _root_.Address} {c : Ixon.Constant}
