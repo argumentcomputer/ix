@@ -16,13 +16,13 @@ open IxVM.Consistency (InstallStep)
 open IxVM.Refinement.Assembly (DeclAllAux)
 
 private theorem generated_names_aux {d : Declaration .anon} (generated : d.isGenerated = true) :
-    ∀ name ∈ d.names, ∃ base tag, name = .aux base tag := by
+    ∀ name ∈ d.names, ∃ base derived, name = .aux base derived := by
   simp only [Declaration.isGenerated, Bool.and_eq_true] at generated
   intro name member
   have auxiliary := List.all_eq_true.mp generated.2 name member
   cases name with
   | id _ | role _ => cases auxiliary
-  | aux base tag => exact ⟨base, tag, rfl⟩
+  | aux base derived => exact ⟨base, derived, rfl⟩
 
 /-- Successful generated declarations have only auxiliary public-install entries. -/
 theorem checked_generated_allAux {fuel : Nat} {ev : Evidences .anon}
@@ -63,7 +63,7 @@ theorem checked_generated_allAux {fuel : Nat} {ev : Evidences .anon}
           of_decide_eq_true pin
         have sameName := congrArg ConstantVal.name equal
         change cv.name = quotName at sameName
-        obtain ⟨base, tag, auxiliary⟩ := names cv.name List.mem_cons_self
+        obtain ⟨base, derived, auxiliary⟩ := names cv.name List.mem_cons_self
         rw [sameName] at auxiliary
         cases auxiliary
       · cases checked
@@ -72,15 +72,15 @@ theorem checked_generated_allAux {fuel : Nat} {ev : Evidences .anon}
 theorem ReferenceStep.aux_prefix {fuel : Nat} {before after : Env .anon} {d : Declaration .anon}
     (step : ReferenceStep fuel before d after) (auxiliary : DeclAllAux d) :
     ∃ added, after = ⟨added ++ before.consts⟩ ∧
-      ∀ ci ∈ added, ∃ base tag, ci.name = .aux base tag := by
+      ∀ ci ∈ added, ∃ base derived, ci.name = .aux base derived := by
   cases step with
   | stored installed =>
     obtain ⟨added, equation, _, _, _, shape⟩ := installed
     refine ⟨added, equation, ?_⟩
     intro ci member
     rcases shape ci member with ⟨raw, declared, same⟩ | auxiliaryName
-    · obtain ⟨base, tag, rawAux⟩ := auxiliary raw declared
-      exact ⟨base, tag, same.symm.trans rawAux⟩
+    · obtain ⟨base, derived, rawAux⟩ := auxiliary raw declared
+      exact ⟨base, derived, same.symm.trans rawAux⟩
     · exact auxiliaryName
   | native notPinned recognized run =>
     obtain ⟨added, chain, shape, _⟩ :=
@@ -88,9 +88,9 @@ theorem ReferenceStep.aux_prefix {fuel : Nat} {before after : Env .anon} {d : De
     refine ⟨added, chain.eq, ?_⟩
     intro ci member
     rcases shape ci member with ⟨raw, declared, same⟩ | auxiliaryName
-    · obtain ⟨base, tag, rawAux⟩ := auxiliary raw
+    · obtain ⟨base, derived, rawAux⟩ := auxiliary raw
         (by simpa only [IxVM.Consistency.installs, notPinned] using declared)
-      exact ⟨base, tag, same.symm.trans rawAux⟩
+      exact ⟨base, derived, same.symm.trans rawAux⟩
     · exact auxiliaryName
 
 theorem ReferenceStep.find_nonAux {fuel : Nat} {before after : Env .anon} {d : Declaration .anon}
@@ -101,8 +101,8 @@ theorem ReferenceStep.find_nonAux {fuel : Nat} {before after : Env .anon} {d : D
   rw [equation]
   apply EnvExt.find?_append_of_fresh
   intro ci member same
-  obtain ⟨base, tag, auxiliaryName⟩ := names ci member
-  exact publicName base tag (same.symm.trans auxiliaryName)
+  obtain ⟨base, derived, auxiliaryName⟩ := names ci member
+  exact publicName base derived (same.symm.trans auxiliaryName)
 
 /-- Every actual generated replay preserves all non-auxiliary lookups. -/
 theorem ReferenceReplay.generated_nonAux {fuel : Nat} {ev : Evidences .anon}

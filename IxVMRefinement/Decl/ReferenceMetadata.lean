@@ -144,10 +144,9 @@ theorem modeledRun_metadata {P : KeyScope .anon} {fuel : Nat} {before after : En
   rcases branch with ⟨cvT, capsT, cvC, nP, nF, _, ctors, middle, beforeProjections,
       members, recs, _, _, projections⟩ | ⟨_, middle, members, recs⟩
   · have ctorMember : ConstantInfo.ctorInfo cvC nP nF ∈ block := by
-      have filtered : ConstantInfo.ctorInfo cvC nP nF ∈
-          block.filter (fun ci => match ci with | .ctorInfo _ _ _ => true | _ => false) := by
-        rw [ctors]
-        exact List.mem_cons_self
+      have filtered : ConstantInfo.ctorInfo cvC nP nF ∈ [ConstantInfo.ctorInfo cvC nP nF] :=
+        List.mem_cons_self
+      rw [← ctors] at filtered
       exact (List.mem_filter.mp filtered).1
     have capKeys : (indBlockCaps .verified before cvT cvC nP nF).Good P := by
       intro name member
