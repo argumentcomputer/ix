@@ -733,8 +733,11 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     let parity ← natBlobParity leanEnv
     oracles.set (difficult ++ generated ++ command ++ parity)
     let labels ← r.labels.get
+    -- a pin of a case the program refuses while it refuses the recursors of mutual and
+    -- nested families is kept for when it no longer does
     for (name, _) in evalFftCosts do
-      unless labels.contains s!"eval accepts {name}" do
+      unless labels.contains s!"eval accepts {name}" ||
+          (modeledRecursorsRefused && labels.contains s!"eval rejects {name}") do
         r.fail s!"unused evaluation FFT pin: {name}"
   let lean ← lspecIO (.ofList [("ixvm-eval oracles", [← oracles.get])]) []
   return if code == 0 && lean == 0 then 0 else 1
