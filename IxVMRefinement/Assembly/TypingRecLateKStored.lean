@@ -25,6 +25,7 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unreachableTactic false
 set_option linter.unusedTactic false
+set_option linter.unnecessarySeqFocus false
 
 namespace IxVM.Refinement.Typing
 
@@ -77,7 +78,7 @@ theorem level_isEquiv_zero_of_eval {u : Ix.Kernel.Level}
     Ix.Kernel.Level.isEquiv u .zero = some true := by
   have hs : Ix.Kernel.Level.simplify u = Ix.Kernel.Level.simplify .zero := by
     rw [level_simplify_eq_zero_of_eval u h] <;> rfl
-  rw [Ix.Kernel.Level.isEquiv_eq_withoutPtr, if_pos hs] <;> rfl
+  rw [Ix.Kernel.Level.isEquiv_eq_withoutPtr, ite_eq_left hs] <;> rfl
 
 /-! ## The stored K bit -/
 
