@@ -134,7 +134,8 @@ theorem memberAddr_mem_blockRecurAddrs {B : _root_.Address} {ms : Array Ixon.Mut
     rw [Array.getElem?_toList]
     exact hm
   have h2 : (L1.blockRecurAddrs B ms.toList)[k]? = some (memberAddr B k m) := by
-    rw [L1.blockRecurAddrs_eq_mapIdx, List.getElem?_mapIdx, h1, memberAddr_eq_projAddr] <;> rfl
+    rw [L1.blockRecurAddrs_eq_mapIdx, List.getElem?_mapIdx, h1, memberAddr_eq_projAddr]
+    rfl
   exact List.mem_of_getElem? h2
 
 /-- `BlockStored` in terms of the members: the key of every member's constant address is
