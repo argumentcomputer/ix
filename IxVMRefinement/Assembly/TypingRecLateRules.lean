@@ -393,7 +393,7 @@ theorem ruleCell_load {h : Heap F} {addr : Nat} {a₁ a₂ a₃ rest x₁ x₂ x
   have ld' : loadValue h (.ptr (.enum Core.krrListEnum) addr) =
       .ok (.construct Core.krrListEnum "Cons"
         [.construct Core.krrEnum "Mk" [x₁, x₂, x₃], xr]) := ld
-  obtain ⟨-, hxs⟩ := load_cell cell ld'
+  obtain ⟨-, hxs⟩ := Core.load_cell cell ld'
   simp only [List.cons.injEq, and_true] at hxs
   obtain ⟨hmk, hrest⟩ := hxs
   injection hmk with _ _ hargs
@@ -407,7 +407,7 @@ theorem ruleCell_not_nil {h : Heap F} {addr : Nat} {xs : List (SourceValue F)}
       .ok (.construct Obs.Names.«Lists::Node<KernelTypes::KRecRule>» "Nil" [])) : False := by
   have ld' : loadValue h (.ptr (.enum Core.krrListEnum) addr) =
       .ok (.construct Core.krrListEnum "Nil" []) := ld
-  exact load_cell_ne cell ld' (by decide)
+  exact Core.load_cell_ne cell ld' (by decide)
 
 /-- **`nat_check_rules`, rule by rule**: on a converted rule list from position `j`, under a
 scoped context that allows every call, rule `k`'s field count is the field count of any
