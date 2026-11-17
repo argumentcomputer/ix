@@ -204,7 +204,7 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
       rw [← hkEq, hnf'] at hz
       have hz' : ((.field (cA.2 : F)) : SourceValue F) = .field 0 := by
         by_contra hne
-        rw [if_neg hne] at hz
+        rw [ite_eq_right hne] at hz
         exact absurd hz (by simp [L1.repBoolField])
       exact field_nat_eq_zero (by omega) hz'
     exact ⟨hrules.trans hsize, hlenA, hfields, eval_eq_zero_of_posOf hperm hsort0⟩
