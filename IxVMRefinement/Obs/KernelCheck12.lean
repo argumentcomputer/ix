@@ -1619,7 +1619,7 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                     subst l2902
                     obtain ⟨rfl, rfl, rfl⟩ := a2901.nil_inv
                     try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hne264 hne521 hne820 hne1071 hne1235 hne1883 hne2532 hv2537 ev2611 hm2675 ev2648 ev2692 ev2722 ev2752 ev2774 ev2796 heq2831 heq2872 ev2878 ⊢
-                    exact «KernelCheck::check_const».Path.Rec_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1883 hne2532 hv2537 ev2611 hm2675 ev2648 ev2692 ev2722 ev2752 ev2774 ev2796 heq2831 heq2872 ev2878 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    exact «KernelCheck::check_const».Path.Rec_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1883 hne2532 hv2537 ev2611 hm2675 ev2648 ev2692 ev2722 ev2752 ev2774 ev2796 rfl heq2872 ev2878 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                   · have hne2904 := MatchesConst.none_inv (MatchesConst.literal 0) nm2843
                     rcases selectArm_cons_inv sel2844 with ⟨mt2905, rfl⟩ | ⟨nm2906, sel2907⟩
                     · obtain rfl := matchPattern_wildcard_inv mt2905
