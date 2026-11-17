@@ -39,6 +39,8 @@ open IxVM.Refinement.Decl.Point
 
 universe u
 
+set_option linter.unusedVariables false
+
 /-- **The carried clause** (the conjunction `NativeBlockX` names on the native route). -/
 abbrev PointX (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
   ((LateRegistry.{u} t E env ∧ HashKeyed t env) ∧ Decl.AuxRootSynced env) ∧ LvClauses env
@@ -118,7 +120,7 @@ theorem PointReads.newName {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _root_.
   · obtain ⟨i, ind, ty₀, ty', caps, hm, rfl, -⟩ := hR.formerOf f hf
     exact Or.inl ⟨i, ind, hm, rfl⟩
   · obtain ⟨i, ind, j, ct, cty₀, cty', hm, hct, rfl, -⟩ := hR.ctorOf c hc
-    exact Or.inr ⟨i, ind, j, hm, (List.getElem?_eq_some_iff.mp hct).1, rfl⟩
+    exact Or.inr ⟨i, ind, j, hm, (Array.getElem?_eq_some_iff.mp hct).1, rfl⟩
 
 end
 

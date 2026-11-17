@@ -31,6 +31,8 @@ open IxVM.Refinement.Decl.Point
 
 universe u
 
+set_option linter.unusedVariables false
+
 section
 
 variable {env : Ix.Kernel.Env .anon} {block : List (ConstantInfo .anon)} {formers : List FormerRec}
