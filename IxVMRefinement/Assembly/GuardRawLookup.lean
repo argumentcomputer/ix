@@ -175,7 +175,7 @@ theorem readRoot_mono {blob blob' : Blobs}
 or closed-term premise. This is the data producer needed for arbitrary classifier loads. -/
 theorem readRoot_of_rawConv {blob : Blobs} {root : Root}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
-    {h : Aiur.Generic.Heap IxVM.F} {kp : Aiur.Generic.SourceValue IxVM.F}
+    {h : Aiur.Heap IxVM.F} {kp : Aiur.SourceValue IxVM.F}
     (raw : L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
       root.source.sharing.toList blobs h 4294967295 root.expression kp)
     (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, root.self i = some m ∧ m = .ok k)
