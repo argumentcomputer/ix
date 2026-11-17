@@ -512,3 +512,271 @@ theorem ctor_open_residual {ty : KExpr} {nP nF : Nat}
   rw [hopF, hbody]
 
 end IxVM.Refinement.Decl
+
+namespace IxVM.Refinement.Typing
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
+open IxVM (F)
+open IxVM.Consistency
+open Ix.Kernel (ConstantInfo ConstantVal)
+open Ix.Kernel.Semantics (NativeFam NativeFamStored FieldSortsJ)
+open Ix.Kernel.Model (rulesJ)
+
+universe u
+
+set_option maxHeartbeats 3200000
+set_option maxRecDepth 100000
+set_option linter.unusedVariables false
+
+/-! ## The field sorts at the arm -/
+
+/-- **The field sorts of the late relation at the tied parent**: at a large eliminator of a
+propositional family, every stored constructor (there is at most one, by the elimination
+restriction) opened at its parameters and fields has its fields' sorts, each a proposition at
+every assignment or an index argument of the residual, at the step's environment. From the
+canonical comparison's `is_large_eliminator` run: its arm that walks the constructor loaded by
+`get_ci_cprj(block, idx, 0)` (the stored constructor under the prefix keying, read at positions
+that are its own level parameters, the registry's `L1`), the scoped walk, and the stored
+constructor's opened residual. -/
+theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
+    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
+    {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
+    {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
+    (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
+    (htie : RecMajorTie t E₀ A c rc P)
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
+    (hind : ms[ip.idx.toNat]? = some (.indc ind))
+    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam) :
+    decide (rc.lvls.toNat = ind.lvls.toNat + 1) = true → fam.p.isProp = true →
+      ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
+        ∃ (fvsP : List Core.KExpr) (crest : Core.KExpr) (xFvs : List Core.KExpr)
+          (xrest : Core.KExpr) (sorts : List Core.KLevel),
+          Ix.Kernel.openPisAtFvars fam.p.nP cA.1.type 0 = some (fvsP, crest) ∧
+          Ix.Kernel.openPisAtFvars cA.2 crest fam.p.nP = some (xFvs, xrest) ∧
+          FieldSortsJ rulesJ env true true fam.p.resSort fam.p.nP xFvs
+            (xrest.getAppArgs.drop fam.p.nP) cA.2 sorts := by
+  intro hlarge hprop j cA hcA
+  have hlarge' : rc.lvls.toNat = ind.lvls.toNat + 1 := of_decide_eq_true hlarge
+  obtain ⟨hat, hname, cb', ms', ind', hcb', hms', hind', hnP, hnI, hlenC, hnames⟩ := hm
+  have hcbE : cb' = cb := Option.some.inj (hcb'.symm.trans hcb)
+  subst hcbE
+  have hmsE : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
+  subst hmsE
+  have hindE : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hind))
+  subst hindE
+  -- the result sort is zero, so there is one constructor
+  have hiso : Ix.Kernel.Level.isEquiv fam.p.resSort .zero = some true := by
+    have h := hat.isProp
+    rw [hprop] at h
+    simpa using h.symm
+  have hz : ∀ φ, Ix.Kernel.Level.eval φ fam.p.resSort = 0 := fun φ =>
+    (Ix.Kernel.Level.isEquiv_sound hiso φ).trans rfl
+  have helim := rec_elim_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie
+    hcb' hms' hind' hat hname hnP hnI hlenC hlarge
+  have hlen2 : fam.ctorsA.length < 2 := by
+    rcases helim with h | h
+    · exact absurd (hz (fun _ => 0)) (h (fun _ => 0))
+    · exact h
+  have hjlt : j < fam.ctorsA.length := (List.getElem?_eq_some_iff.mp hcA).1
+  have hj : j = 0 := by omega
+  subst hj
+  have hsz1 : ind.ctors.size = 1 := by omega
+  -- the stored constructor, opened
+  obtain ⟨hfindC, hlpsC, cbs, es, hresC, -⟩ := hat.stored.ctor 0 cA hcA
+  obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hlenP⟩ := Decl.ctor_open_residual hresC
+  have hga : (Ix.Kernel.Expr.mkAppN (.const fam.p.cvT.name (fam.p.cvT.levelParams.map .param))
+      (fvsP ++ idxArgs)).getAppArgs = fvsP ++ idxArgs := by
+    rw [Decl.nat_getAppArgs_mkAppN]
+    rfl
+  have hdrop : (fvsP ++ idxArgs).drop fam.p.nP = idxArgs := by
+    rw [← hlenP]
+    exact List.drop_left
+  by_cases h0 : cA.2 = 0
+  · refine ⟨fvsP, crest, xFvs, _, [], hopP, hopF, by simp [h0], fun i hi => ?_⟩
+    exact absurd hi (by omega)
+  -- the circuit's walk
+  obtain ⟨-, hL1⟩ := hat.logic_lvls ht hname hcm hcmi hcb' hms' hind'
+  obtain ⟨rcv, apv, parentV, tyPtr, rulesPtr, blkPtr, tyPtrP, unsP, blkPtrP, kTarget, result,
+    pointer, bA, bR, bT, bP, blobs, tree, scanHeap, loadedHeap, kHeap, kAfter, canonHeap, final,
+    loadCalls, kCalls, canonCalls, hrc, hbA, hbA', hbR, hbR', hbT, hbT', hbP, hbP', hblob, rty,
+    hrulesTr, hrules_lt, hidx56, hlvR, hlvP, hpP, hiP, hcP, eSL, evLoad, hsLoad, hldP, eK, evK,
+    hsK, hkEq, eC, evCanon, hsCanon⟩ :=
+    rec_arm_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb' hms' hind'
+  subst hlim
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
+  -- the parent's type, as the stored former's
+  have hformer : env.find? (Core.keyOf t P) =
+      some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
+    rw [LoadedReads.keyOf_eq, ← hname]
+    exact hat.stored.former
+  have hκP : cS.κ P = Core.keyOf t P :=
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
+  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := (hst.good env (some n)).sub hsLoad
+  obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
+    (by rw [hbT', hκP]; exact Core.Resolved.ne)
+    (Core.CoreGood.ofRaw hgL (fun _ _ => trivial)) hbT
+  rw [hbT', hκP] at hfind
+  have hci : ci = .indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p) :=
+    Option.some.inj (hfind.symm.trans hformer)
+  subst hci
+  obtain ⟨v, hv, hrep⟩ := hptr
+  rw [hldP] at hv
+  injection hv with hv
+  subst hv
+  obtain ⟨cv, caps, hcv, hval⟩ := ciRep_induct_fields hrep
+  obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
+  subst hcvEq
+  obtain ⟨-, -, hperm, htm⟩ := hval
+  obtain ⟨bs, hsort⟩ := hat.sort
+  rw [hat.tele, hnP, hnI] at hsort
+  have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
+      (ind.params.toNat + ind.indices.toNat) =
+      some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
+        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
+    ⟨_, by
+      unfold Core.posOf
+      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
+      rfl⟩
+  obtain ⟨bs', hpos⟩ := hpos
+  -- the canonical comparison
+  have hgC : Core.Good ⟨E, env, t, some n⟩ canonCalls := (hst.good env (some n)).sub hsCanon
+  have hsub : ∀ {cs : List (Call F)}, (∀ x ∈ cs, x ∈ canonCalls) → Core.CoreGood cS cs :=
+    fun h => Core.CoreGood.ofRaw (hgC.sub h) (fun _ _ => trivial)
+  match Obs.«KernelCheck::check_recursor_canonical_full».obs evCanon with
+  | .other (hne568 := hne) .. =>
+    exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Induct (m272 := m272) (m329 := m329) (m281 := m281) (m389 := m389) (v280 := resLvl)
+      (v296 := nsum) (v341 := univ) (v271 := single) (cs291 := cs291) (sg279 := seg)
+      (op325 := hsumOp) (hm337 := hm337) (ev293 := sortRun) (ev399 := soloRun)
+      (ev354 := largeRun) (ev518 := natRun) (hc567 := children) (hv86 := parentShape) .. =>
+    injection parentShape with _ _ parentFields
+    simp only [List.cons.injEq, and_true] at parentFields
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := parentFields
+    match seg with
+    | .other (hne203 := hne) .. =>
+      exact absurd (by rw [hsz1]; simp) hne
+    | .n1 (v143 := v143) (m144 := m144) (p151 := p151) (cs157 := cs157) (ev159 := cprjRun)
+        (ld153 := ldC) (he187 := hsingle) (he201 := hh) (hc202 := hcs) .. =>
+      -- the loaded constructor is the stored one
+      have hfindK := hfindC
+      rw [hnames 0 cA hcA, ← LoadedReads.keyOf_eq] at hfindK
+      have hκC : cS.κ (Core.cprjAddr ip.block ip.idx.toNat 0) =
+          Core.keyOf t (Core.cprjAddr ip.block ip.idx.toNat 0) :=
+        Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hfindK
+      have hidx : ZMod.val ((ip.idx.toNat : Nat) : F) = ip.idx.toNat :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      have hfindC' : cS.env.find? (cS.κ (Core.cprjAddr (Core.ixAddr bP)
+          (ZMod.val ((ip.idx.toNat : Nat) : F)) (ZMod.val (0 : F)))) =
+          some (.ctorInfo cA.1 fam.p.nP cA.2) := by
+        rw [hbP', hidx, ZMod.val_zero, hκC]
+        exact hfindK
+      obtain ⟨-, hctor⟩ := Core.get_ci_cprj_step cS hcS cprjRun _
+        ((ip.idx.toNat : Nat) : F) (0 : F) bP rfl trivial (Or.inr ⟨_, _, _, _, hfindC'⟩)
+        (hsub (fun x hx => by rw [children, hcs]; simp [hx]))
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy eC hbP)
+      obtain ⟨w, hw, hrepC⟩ := hctor _ _ _ hfindC'
+      rw [ldC] at hw
+      injection hw with hw
+      rw [← hw] at hrepC
+      -- heaps
+      have e1 : Heap.Extends canonHeap m272 := by
+        rw [hh]
+        exact cprjRun.heap_extends
+      have e2 : Heap.Extends canonHeap m329 := e1.trans (ext_of_eq_snoc hm337)
+      -- the result level is the family's sort
+      have hnsum : nsum = .field ((ind.params.toNat + ind.indices.toNat : Nat) : F) :=
+        Decl.evalBinOp_add_nat _ _ hsumOp
+      rw [hnsum] at sortRun
+      have htys : Core.TypesRep cS.κ (fun _ => default) m329 0
+          (.ptr (.enum Core.kexprListEnum) m272.length) := by
+        rw [hm337]
+        exact Decl.typesRep_alloc_nil _ _ _
+      obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec
+        (ind.params.toNat + ind.indices.toNat) (by omega)
+        (((hrc.mono eC).toRCRep).mono e2) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
+        (hsub (fun x hx => by rw [children]; simp [hx]))
+        ((htm.mono (eC.trans e2)) 0 (fun _ => default)) sortRun
+      have hsℓ := hlv bs' _ hpos
+      have huniv : univ = .field 1 := by
+        rw [evalBinOp_add_inv (nat_rec_check_levels natRun), hlarge']
+        congr 1
+        push_cast
+        ring
+      rw [huniv] at largeRun
+      have hℓ' : IxVM.Refinement.KernelLevels.RepKLevel m389 ℓ resLvl :=
+        IxVM.Refinement.KernelLevels.repKLevel_heapMono₂ soloRun.heap_extends hℓ
+      match Obs.«KernelCheck::is_large_eliminator».obs largeRun with
+      | .n1 (ev15 := e15) .. =>
+        exfalso
+        obtain ⟨hr1, -⟩ := IxVM.Refinement.Levels.levelIsNotZero_step e15 resLvl rfl ℓ hℓ'
+        have hnz : ℓ.isNeverZero = true := by
+          cases hz' : ℓ.isNeverZero
+          · rw [hz'] at hr1
+            exact absurd (Value.field.inj hr1) one_ne_zero
+          · rfl
+        have hne := eval_ne_zero_of_posOf hperm (fun φ => by
+          rw [hsℓ φ]
+          exact Ix.Kernel.Level.isNeverZero_sound φ ℓ hnz)
+        exact hne (fun _ => 0) (hz _)
+      | .other_n0 (he49 := he) .. => exact absurd (Value.field.inj he) one_ne_zero
+      | .other_other_n0 (hv69 := hv) .. =>
+        exfalso
+        have := field_nat_eq_zero (by omega) hv
+        omega
+      | .other_other_n1_n0 (he118 := he) .. => exact absurd (Value.field.inj he) one_ne_zero
+      | .other_other_n1_other_other (he264 := he) .. =>
+        exact absurd (Value.field.inj he) one_ne_zero
+      | .other_other_other (he272 := he) .. => exact absurd (Value.field.inj he) one_ne_zero
+      | .other_other_n1_other_Ctor_n0 (hv92 := hv92) .. =>
+        exfalso
+        rw [hsingle] at hv92
+        injection hv92 with hl
+        simp only [List.cons.injEq, and_true] at hl
+        obtain ⟨-, hvC⟩ := hl
+        rw [hvC] at hrepC
+        obtain ⟨cv', nP', nF', hciC, -, -, hnf', -⟩ := Core.CIRep.ctor_fields hrepC
+        obtain ⟨-, -, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hciC
+        exact h0 (field_nat_eq_zero (by omega) hnf'.symm)
+      | .other_other_n1_other_Ctor_other (v1 := v1) (m2 := m2) (cs13 := cs13)
+          (x_ctor_ty := xcty) (x_n_params := xnp) (x_n_fields := xnf) (cs210 := cs210)
+          (m247 := m247) (ev15 := e15) (hv92 := hv92) (hm255 := hm255) (ev212 := walkRun)
+          (hc259 := hcl) .. =>
+        rw [hsingle] at hv92
+        injection hv92 with hl
+        simp only [List.cons.injEq, and_true] at hl
+        obtain ⟨-, hvC⟩ := hl
+        rw [hvC] at hrepC
+        obtain ⟨cv', nP', nF', hciC, hvr, hnp', hnf', ⟨hnP56, hnF56⟩, -⟩ :=
+          Core.CIRep.ctor_fields hrepC
+        obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hciC
+        obtain ⟨-, -, -, htmC⟩ := hvr
+        rw [hlpsC, hL1, Decl.posOf_range] at htmC
+        subst hnp' hnf'
+        have e247 : Heap.Extends m144 m247 := by
+          rw [← hh]
+          exact (ext_of_eq_snoc hm337).trans (sortRun.heap_extends.trans
+            (soloRun.heap_extends.trans (e15.heap_extends.trans (ext_of_eq_snoc hm255))))
+        have hrcv : Core.RCRep cS.t cS.lim m247 rcv :=
+          ((hrc.mono eC).toRCRep).mono (e1.trans (by rw [hh]; exact e247))
+        have htypes : Core.TypesRep cS.κ (fun _ => default) m247 0
+            (.ptr (.enum Core.kexprListEnum) m2.length) := by
+          rw [hm255]
+          exact Decl.typesRep_alloc_nil _ _ _
+        obtain ⟨sorts, hfs⟩ := Decl.scoped_large_prop_ctor_go (fvsP := fun _ => True)
+          (crest := fun _ => True) hcS (by omega : fam.p.nP + cA.2 < 144115188075855872)
+          (Decl.fvar_not_in_fvsP hopP (by omega)) hopF fam.p.nP 0 (by omega) hopP
+          (hsub (fun x hx => by rw [children, hcl]; simp [hx])) hrcv htypes
+          (Decl.ghostScoped_zero _) ((htmC.mono e247) 0 (fun _ => default)) walkRun
+        refine ⟨fvsP, crest, xFvs, _, sorts, hopP, hopF, ?_⟩
+        rw [hga, hdrop]
+        exact Decl.fieldSortsJ_isProp_true_set_sort hfs
+
+end IxVM.Refinement.Typing
