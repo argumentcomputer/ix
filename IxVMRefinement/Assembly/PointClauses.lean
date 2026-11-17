@@ -39,7 +39,7 @@ variable {env : Ix.Kernel.Env .anon} {block : List (ConstantInfo .anon)} {former
 /-! ## The registry -/
 
 /-- **The install extends every model it is given**, so it keeps every registry. -/
-theorem PointBlock.envModelN (hb : PointBlock env block formers ctors) (V : Type u)
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.envModelN (hb : PointBlock env block formers ctors) (V : Type u)
     [Ix.Kernel.SetTheory V] {R : NativeFam .anon → Prop}
     (h : EnvModelN V .verified env R) : EnvModelN V .verified (installed env formers ctors) R :=
   EnvModelN.step V h fun mp hT hE => by
@@ -58,7 +58,7 @@ theorem PointBlock.envModelN (hb : PointBlock env block formers ctors) (V : Type
 
 /-- **The install keeps the registry of native families, with no new entry**, where no former's
 record names a block the circuit treats as native. -/
-theorem PointBlock.lateRegistry {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.lateRegistry {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     (hb : PointBlock env block formers ctors) (hreg : LateRegistry.{u} t E env)
     (hnat : ∀ (P : _root_.Address) (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
       (∃ f ∈ formers, f.cv.name = keyOf t P) → Ix.Cert.recordAt E P = some cm →
@@ -83,7 +83,7 @@ theorem PointBlock.lateRegistry {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 /-! ## Keys -/
 
 /-- **The new names are keys of 32-byte addresses**, so the store clause is kept. -/
-theorem PointBlock.hashKeyed {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.hashKeyed {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
     (hb : PointBlock env block formers ctors) (h : HashKeyed t env)
     (hsz : ∀ x ∈ newConsts formers ctors,
       ∃ a : _root_.Address, x.name = Core.keyOf t a ∧ a.hash.size = 32) :
@@ -123,7 +123,7 @@ theorem storeArR_pointRun {F : List (Ix.Kernel.Key .anon)} :
     exact storeArR_pointRun rest hrest h'
 
 /-- **The install stores no theorem.** -/
-theorem PointBlock.newSat_notThm (hb : PointBlock env block formers ctors) :
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.newSat_notThm (hb : PointBlock env block formers ctors) :
     Ix.Kernel.Model.NewSat env (installed env formers ctors) Ix.Kernel.Model.NotThm := by
   intro n x hf
   rcases hb.find_cases hf with h | ⟨f, -, rfl⟩ | ⟨c, -, rfl⟩
@@ -132,7 +132,7 @@ theorem PointBlock.newSat_notThm (hb : PointBlock env block formers ctors) :
   · exact Or.inr (fun _ _ hh => nomatch hh)
 
 /-- **The install keeps the level clauses.** -/
-theorem PointBlock.lvClauses (hb : PointBlock env block formers ctors) (h : LvClauses env) :
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.lvClauses (hb : PointBlock env block formers ctors) (h : LvClauses env) :
     LvClauses (installed env formers ctors) :=
   ⟨Ix.Kernel.Model.ThmLevels.step_noThm h.1 hb.newSat_notThm,
     storeArR_pointRun _ hb.run h.2⟩
@@ -140,7 +140,7 @@ theorem PointBlock.lvClauses (hb : PointBlock env block formers ctors) (h : LvCl
 /-! ## The prefix invariant -/
 
 /-- A new name is no unresolved key: it is an input key. -/
-theorem PointBlock.new_resolved (hb : PointBlock env block formers ctors) :
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.new_resolved (hb : PointBlock env block formers ctors) :
     ∀ cn ∈ newConsts formers ctors, cn.name ≠ Core.unresolvedKey := by
   intro cn hcn
   obtain ⟨a, ha⟩ := hb.new_id hcn
@@ -150,7 +150,7 @@ theorem PointBlock.new_resolved (hb : PointBlock env block formers ctors) :
 
 /-- **The prefix invariant at the installed environment**, from the prefix's, at any store and
 limit, given the load facts that reach the new constants. -/
-theorem PointBlock.prefixInv {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.prefixInv {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     (hb : PointBlock env block formers ctors) (hinv : Decl.PrefixInv.{u} E t lim env)
     (hnew : NewLoads (appCtx ⟨E, env, t, lim⟩ (newConsts formers ctors)).stored
       (newConsts formers ctors)) :

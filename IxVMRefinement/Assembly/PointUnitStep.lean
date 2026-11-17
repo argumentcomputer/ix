@@ -81,7 +81,7 @@ variable {env : Ix.Kernel.Env .anon} {block : List (ConstantInfo .anon)} {former
   {ctors : List CtorRec}
 
 /-- A former the formers list holds is found at its key after the install. -/
-theorem PointBlock.find_pointFormer (hb : PointBlock env block formers ctors)
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.find_pointFormer (hb : PointBlock env block formers ctors)
     {t : Ix.Kernel.RoleTable} {B : _root_.Address} {i : Nat} {ind : Ixon.Inductive}
     {ty₀ ty' : Ix.Kernel.Expr .anon} {caps : IndCaps .anon}
     (hf : pointFormer t B i ind ty₀ caps ty' ∈ formers) :
@@ -93,7 +93,7 @@ theorem PointBlock.find_pointFormer (hb : PointBlock env block formers ctors)
   exact h
 
 /-- A constructor the constructors list holds is found at its key after the install. -/
-theorem PointBlock.find_pointCtor (hb : PointBlock env block formers ctors)
+theorem _root_.IxVM.Refinement.Decl.Point.PointBlock.find_pointCtor (hb : PointBlock env block formers ctors)
     {t : Ix.Kernel.RoleTable} {B : _root_.Address} {i j : Nat} {ct : Ixon.Constructor}
     {cty₀ cty' : Ix.Kernel.Expr .anon} (hc : pointCtor t B i j ct cty₀ cty' ∈ ctors) :
     (⟨newConsts formers ctors ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
