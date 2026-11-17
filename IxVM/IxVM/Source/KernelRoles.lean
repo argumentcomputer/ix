@@ -59,7 +59,9 @@ def load_role_table := aiur_fn⟦
       let (evidence, _next, s) = read_role_evidence(s, UInt8::to_field(m), 0);
       evidence_roles_have_equations(evidence);
       let Lists::Node::Nil = (*(s));
-      (&(RoleTableNode::Mk(binding, by_role, by_addr, evidence)))
+      let tbl = (&(RoleTableNode::Mk(binding, by_role, by_addr, evidence)));
+      assert_basis_pinned(tbl, 0);
+      tbl
     }
 ⟧
 
@@ -111,6 +113,26 @@ def basis_pin := aiur_fn⟦
     }
 ⟧
 
+
+  -- Every pinned role from `r` on that the table binds is bound at its pin.
+
+def assert_basis_pinned := aiur_fn⟦
+  fn assert_basis_pinned(tbl: RoleTable, r: Field) -> () {
+      match r - (KernelRoleSpec::role_quot_sound() + 1) {
+        0 => {  () } ,
+        _ => {
+          let (pinned, want) = basis_pin(r);
+          match pinned * role_is_bound(tbl, r) {
+            1 => {
+              assert_eq!(Bytes::address_eq(role_bound_addr_or_zero(tbl, r), want), 1,
+                "role table: a basis role is not bound at its committed record");
+              () } ,
+            _ => {  () } ,
+          };
+          assert_basis_pinned(tbl, r + 1) } ,
+      }
+    }
+⟧
 
   -- A recursor whose family is one of the basis families (`Nat`, `Eq`, `PUnit`, `Empty`,
   -- `False`: roles 0, 8, 11, 14, 16, the families whose meaning the certified kernel fixes by
