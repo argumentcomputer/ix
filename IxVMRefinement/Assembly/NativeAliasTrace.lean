@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeAliasRecPrefix
+import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.LateRegistry
 import IxC.Kernel.Model.HeadDeltaBeta
 
@@ -171,5 +172,25 @@ theorem FormerTraceAt.result_eq {env : Env .anon} {fam : NativeFam .anon} {s : L
     (h : FormerTraceAt env fam)
     (htrace : Decl.SortTrace env (fam.p.nP + fam.p.nIdx) fam.cvS.type s) : s = fam.p.resSort :=
   htrace.unique (fun _ _ hf => hf) h.result
+
+/-- The proposed entry is inhabited with genuinely different stored and built former types.
+This is an interface witness, not a complete checked block: the residual beta redex is retained
+in the declared former and normalized in the built telescope. -/
+theorem formerTraceAt_distinct_formers_inhabited (p : NativeParts .anon) :
+    ∃ fam : NativeFam .anon, FormerTraceAt Env.empty fam ∧ fam.cvTa ≠ fam.cvS := by
+  let residual : Expr .anon :=
+    .app (.lam (.sort (.succ .zero)) (.bvar 0) .leanNever) (.sort .zero)
+  let E : Expr .anon := .forallE (.sort .zero) residual .leanNever
+  let A : Expr .anon := .forallE (.sort .zero) (.sort .zero) .leanNever
+  let cvS : ConstantVal .anon := { p.cvT with type := E }
+  let cvTa : ConstantVal .anon := { p.cvT with type := A }
+  let p' : NativeParts .anon := { p with nP := 0, nIdx := 1, resSort := .zero }
+  have ht : HeadDeltaBeta.Trace Env.empty residual (.sort .zero) := .cons .beta .refl
+  refine ⟨⟨p', cvS, cvTa, []⟩,
+    ⟨⟨rfl, rfl⟩, .step .refl (.done ht), .step .refl (.done ht)⟩, ?_⟩
+  intro heq
+  have hty : A = E := congrArg ConstantVal.type heq
+  have hb := (Expr.forallE.inj hty).2.1
+  simp only [residual, reduceCtorEq] at hb
 
 end IxVM.Refinement.Typing
