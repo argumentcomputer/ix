@@ -27,18 +27,6 @@ theorem RCLimRep.axiomsNil {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
   · exact ⟨_, hl, Or.inl ⟨tbl, .field (n : F), rfl⟩⟩
   · exact ⟨_, hl, Or.inr ⟨tbl, rfl⟩⟩
 
-/-- Address-index lookup at a validating or assumed full table. -/
-theorem role_index_of_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
-    {lim : Option Nat} {rc ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a)
-    (ev : ObsFn W "KernelRoles::role_index_of" [rc, ap] h r h' cs) :
-    h' = h ∧ ((r = .field 0 ∧ ∀ ro, t.addressOf? ro ≠ some a) ∨
-      ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ t.addressOf? ro = some a) := by
-  obtain ⟨_, _, _, _, _, _, _, ev41, ev28, ev6, -⟩ := Obs.«KernelRoles::role_index_of».obs ev
-  obtain ⟨rfl, htbl⟩ := role_ctx_table_lim_spec hrc ev41
-  obtain ⟨rfl, rfl, hr⟩ := addr_index_lookup htbl ha ev28 ev6
-  exact ⟨rfl, hr⟩
-
 /-- A successful role test binds the address to that role, at either optional limit. -/
 theorem role_is_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {ro : Ix.Kernel.Role} {rc ap : SourceValue F}
@@ -71,7 +59,7 @@ theorem axiom_standing_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
     obtain ⟨rfl, rfl, -⟩ := addr_index_lookup htbl ha ev58 ev36
     obtain ⟨rfl, rfl, -⟩ := Decl.role_ctx_axioms_nil hrc.axiomsNil ev114
     change ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [.field]).symbol
-      [ap, .construct addrMapEnum "Nil" [], .field 0] h r h' _ at ev92
+      [ap, .construct addrMapEnum "Nil" [], .field 0] _ r _ _ at ev92
     match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev92 with
     | .Nil (he18 := he) .. => exact (hne he).elim
     | .Node_n1 (hv26 := hv) .. => simp [addrMapEnum] at hv
