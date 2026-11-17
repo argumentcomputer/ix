@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.LevelClauses
-import IxC.Kernel.Model.StoreArNative
+import IxC.Kernel.Model.StoreArLate
 
 /-! # The arity clause beside the model invariant
 
@@ -13,6 +13,7 @@ the recursor step's level transport reads beside the prefix invariant:
 * along a value step: `keepsValuesJ_storeArR`, `keepsValuesKeyed_storeArR`,
   `keepsValuesJ_lvClauses`, `keepsValuesKeyed_lvClauses`;
 * along a native block's install: `NativeNoRecFacts.storeArR`, `NativeNoRecFacts.lvClauses`;
+* along the late recursor's step at a registered family: `storeArR_lateRec`, `lvClauses_lateRec`;
 * the declaration front's check at any permutation of the positions from the prefix invariant
   and `LvClauses`: `constantValCheckJ_of_prefix_lv`.
 -/
@@ -171,6 +172,25 @@ theorem NativeNoRecFacts.lvClauses {env env₂ : Ix.Kernel.Env .anon}
     {fam : Ix.Kernel.Semantics.NativeFam .anon} (hpin : Ix.Kernel.basisPinHit blk = none)
     (h : NativeNoRecFacts env env₂ blk nP p₀ fam) (hX : LvClauses env) : LvClauses env₂ :=
   ⟨h.thmLevels hpin hX.1, h.storeArR hX.2⟩
+
+/-- **The late recursor's step keeps `StoreArR`** at a registered family: the registry has the
+family's telescope constant as its stored former and the former at the family's level parameters
+(`LateFamAt.tele`, `LateFamAt.lps`), which the generated recursor is built from
+(`Ix.Kernel.Model.storeArR_nativeRecLate`). -/
+theorem storeArR_lateRec {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env env₂ : Ix.Kernel.Env .anon}
+    {fam : Ix.Kernel.Semantics.NativeFam .anon} {cvR : ConstantVal .anon} {mI rP : Nat}
+    {rules : List (Ix.Kernel.RecRule .anon)} (hfam : LateFamAt t E env fam) (hA : StoreArR env)
+    (hrun : Ix.Kernel.Semantics.DeclNativeRecLateRunJ Ix.Kernel.Model.rulesJ env fam cvR mI rP
+      rules env₂) : StoreArR env₂ :=
+  Ix.Kernel.Model.storeArR_nativeRecLate hA hfam.tele hfam.lps hrun
+
+/-- **The late recursor's step keeps `LvClauses`** at a registered family. -/
+theorem lvClauses_lateRec {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env env₂ : Ix.Kernel.Env .anon}
+    {fam : Ix.Kernel.Semantics.NativeFam .anon} {cvR : ConstantVal .anon} {mI rP : Nat}
+    {rules : List (Ix.Kernel.RecRule .anon)} (hfam : LateFamAt t E env fam) (hX : LvClauses env)
+    (hrun : Ix.Kernel.Semantics.DeclNativeRecLateRunJ Ix.Kernel.Model.rulesJ env fam cvR mI rP
+      rules env₂) : LvClauses env₂ :=
+  ⟨thmLevels_lateRec hX.1 hrun, storeArR_lateRec hfam hX.2 hrun⟩
 
 /-! ## The final form -/
 
