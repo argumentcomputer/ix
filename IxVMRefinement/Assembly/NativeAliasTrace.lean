@@ -148,4 +148,28 @@ theorem FormerTraceAt.storeArR_late {env env' : Env .anon} {fam : NativeFam .ano
     (hrun : DeclNativeRecLateRunJ rulesJ env fam cvR mI rP rules env') : StoreArR env' :=
   storeArR_nativeRecLateTa ha h.arity hlps hrun
 
+/-- The actual alias former check already supplies the arity field of the proposed entry. -/
+theorem aliasTele_arRes {env : Env .anon} {cvT cvS cvTa : ConstantVal .anon}
+    {n : Nat} {s : Level} (h : AliasTele env cvT cvS cvTa n s) : ArRes env cvTa.type := by
+  obtain ⟨⟨ty, hcheck⟩, -, -⟩ := h
+  exact arRes_of_cvCheck hcheck
+
+/-- A separately built telescope feeds the existing late model step once its actual binder
+trace is retained. The generated and stored recursor are unchanged. -/
+theorem FormerTraceAt.recCheck {env : Env .anon} {fam : NativeFam .anon}
+    {J : Judgements .anon} {cvR cvTb cvRa : ConstantVal .anon}
+    {elim : LevelParam} {large : Bool} {rhs₀ rhss : List (Expr .anon)}
+    (h : FormerTraceAt env fam)
+    (htrace : Decl.BinderTrace env (fam.p.nP + fam.p.nIdx) fam.cvS.type cvTb.type)
+    (hrun : NativeRecJ J env (fam.recParts cvR elim large rhs₀) cvTb fam.ctorsA cvRa rhss) :
+    NativeRecJ J env (fam.recParts cvR elim large rhs₀) fam.cvTa fam.ctorsA cvRa rhss := by
+  have hp := htrace.prefixEq (fun _ _ hf => hf) h.binders
+  exact Decl.NativeRecJ.of_prefix hp hrun
+
+/-- The independently observed result-sort walk has the registered result level. -/
+theorem FormerTraceAt.result_eq {env : Env .anon} {fam : NativeFam .anon} {s : Level}
+    (h : FormerTraceAt env fam)
+    (htrace : Decl.SortTrace env (fam.p.nP + fam.p.nIdx) fam.cvS.type s) : s = fam.p.resSort :=
+  htrace.unique (fun _ _ hf => hf) h.result
+
 end IxVM.Refinement.Typing
