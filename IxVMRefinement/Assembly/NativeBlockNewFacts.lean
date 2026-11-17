@@ -674,7 +674,7 @@ theorem BlockInstall.newUnitLike (hI : BlockInstall c new B cb ind caps) :
   have hκa := appCtx_key_of_find hfA
   rw [hκa, hfA] at hfT
   injection hfT with hfT
-  injection hfT with -, hcaps
+  injection hfT with hcv hcaps
   subst hcaps
   obtain ⟨hpv, hiv, hsz⟩ := hI.formerLoad ev good ha hld hxa
   have hi0' : ind.indices.toNat = 0 := by rw [← hiv, ZMod.val_zero]
@@ -682,7 +682,7 @@ theorem BlockInstall.newUnitLike (hI : BlockInstall c new B cb ind caps) :
   obtain ⟨ct, cty, cty', hct, -, -, -, -, -, hfC₀⟩ := hI.ctor 0 (by omega)
   rw [hbB, hi0, appCtx_key_of_find hfC₀, hfC₀] at hfC
   injection hfC with hfC
-  injection hfC with -, -, hnf
+  injection hfC with hcvC hnpC hnf
   obtain ⟨hu1, hu2⟩ := hI.unit hi0' hsz (fun ct' h' => by
     rw [hct] at h'
     rw [← Option.some.inj h']
@@ -731,7 +731,7 @@ theorem BlockInstall.newUnitLikeRaw (hI : BlockInstall c new B cb ind caps) :
       (blockSelf c.t (Core.ixAddr b) #[.indc ind])).read ct.typ = .ok cty := by
     rw [hbB]
     exact hty
-  obtain ⟨-, -, -, -, -, hld₀, -, -, -, -, hf56, -⟩ := LoadedReads.ctor_load_canon hI.check
+  obtain ⟨tyPtr, blkPtr, bz, tyA, RA, hld₀, -, -, -, -, hf56, -⟩ := LoadedReads.ctor_load_canon hI.check
     hz.good.1 hz.good.2 hz.blockRep hz.observed hblock' hI.muts hmem
     (by rw [ZMod.val_zero]; exact hct) (by rw [ZMod.val_zero]; exact hcidx) hty' hlbb hdef
   obtain ⟨nl', ty'', blk', idx', cidx', np', u', hz0⟩ := hz.zeroFields
