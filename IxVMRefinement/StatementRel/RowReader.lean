@@ -619,6 +619,29 @@ theorem rowOk_spec (S : RowStore t) (env : Env .anon) {a : _root_.Address}
       have h1 : (storedAsCheck 256 ci r.1).isSome = true := h
       exact ⟨ci, r.1, rfl, r.2, storedAs_of_check h1⟩
 
+/-- A row that passes `rowOk` reads as the constant `readRow` computes, and the constant the
+environment holds at its key stores that constant. -/
+theorem rowOk_reading (S : RowStore t) (env : Env .anon) {a : _root_.Address}
+    {c : Ixon.Constant} {hrow : (a, c) ∈ S.rows} (h : rowOk S env a c hrow = true) :
+    ∃ r : Reading S a, readRow S a c hrow = some r ∧
+      ∃ ci, env.find? (keyOf t a) = some ci ∧ StoredAs ci r.1 := by
+  unfold rowOk at h
+  cases hr : readRow S a c hrow with
+  | none =>
+    rw [hr] at h
+    have h' : false = true := h
+    cases h'
+  | some r =>
+    cases hp : env.find? (keyOf t a) with
+    | none =>
+      rw [hr, hp] at h
+      have h' : false = true := h
+      cases h'
+    | some ci =>
+      rw [hr, hp] at h
+      have h1 : (storedAsCheck 256 ci r.1).isSome = true := h
+      exact ⟨r, rfl, ci, rfl, storedAs_of_check h1⟩
+
 /-- **Every address of the store with a reading has a reading the environment stores**, if
 every row that is not a block passes `rowOk`. -/
 theorem reads_stored (S : RowStore t) (env : Env .anon)
