@@ -364,7 +364,7 @@ theorem reads_ctor (S : RowStore t) {a : _root_.Address} {c : Ixon.Constant}
     (Exists.intro cb (Exists.intro ms (Exists.intro ind (Exists.intro ct
       (And.intro (S.holds (p.block, cb) hB) (And.intro hms (And.intro hm (And.intro hct
         (And.intro hcx (And.intro hc (And.intro ha (And.intro (inLogic_muts hms hlogic)
-          (Exists.intro ty (And.intro hty rfl)))))))))))))
+          (Exists.intro ty (And.intro hty rfl))))))))))))))
 
 /-- **What a constructor's projection row declares.** -/
 def readCtor (S : RowStore t) (a : _root_.Address) (c : Ixon.Constant)
