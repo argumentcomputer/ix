@@ -680,7 +680,24 @@ theorem NotBlockIn.mono {cs₁ cs₂ : List (Call F)} {b : _root_.Address}
   obtain ⟨raw, c, hh, hb, hd, hn⟩ := h
   exact ⟨raw, c, hashed_mono hsub hh, hb, hd, hn⟩
 
-/-- **A record the walk checked under the context at `lim`**, tagged with its depth. -/
+/-- The outer walk executed the source-conditioned reference guard on this very record.
+The represented record is retained so that repeated loads can be tied through the run store. -/
+def RecordRefsIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
+    (lim : Option Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
+  ∃ (h h' : Heap F) (rc ap cp r : SourceValue F) (cs : List (Call F)),
+    RCLimRep t bAddr lim h rc ∧ S0.addr h ap a ∧ L1.RepConstant h c cp ∧
+    ObsFn Obs.W "KernelClaim::assert_safe_record_refs" [rc, ap, cp] h r h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+/-- Guard observations are retained when a subwalk is included in the enclosing run. -/
+theorem RecordRefsIn.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {bAddr a : _root_.Address} {lim : Option Nat} {c : Ixon.Constant}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hg : RecordRefsIn cs₁ t bAddr lim a c) :
+    RecordRefsIn cs₂ t bAddr lim a c := by
+  obtain ⟨h, h', rc, ap, cp, r, cs, hrc, ha, hc, ev, hs⟩ := hg
+  exact ⟨h, h', rc, ap, cp, r, cs, hrc, ha, hc, ev, fun cl hcl => hsub cl (hs cl hcl)⟩
+
+/-- A record checked and guarded by the walk at its context limit, tagged with its depth. -/
 structure TopRec (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (lim : Option Nat) where
   addr : _root_.Address
@@ -696,6 +713,7 @@ structure TopRec (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
     (∃ ms, c.info = .muts ms ∧
       ∀ (k : Nat), k < ms.size → MemberCheckedLimAt calls bAddr t addr ms k lim) ∨
     CheckedLimAt calls bAddr t addr lim
+  hguard : RecordRefsIn calls t bAddr lim addr c
 
 /-- Lift a `TopRec` along call-list inclusion (preserving `depth`). -/
 def TopRec.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
@@ -713,6 +731,7 @@ def TopRec.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address} {t : Ix.K
   hchecked := r.hchecked.elim
     (fun ⟨ms, hms, hk⟩ => .inl ⟨ms, hms, fun k hlt => (hk k hlt).mono hsub⟩)
     (fun hc => .inr (hc.mono hsub))
+  hguard := r.hguard.mono hsub
 
 @[simp]
 theorem map_addr_topRec_mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
