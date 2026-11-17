@@ -105,16 +105,16 @@ theorem SpineSort.infer {env : Env md} {e : Expr md} {n : Nat} {v : Level}
       cases h1 with
       | forallE hb =>
         have he := Red.rigid hred rfl
-        injection he with _ hbody _
-        rw [← hbody]
+        obtain ⟨-, hbody, -⟩ := Expr.forallE.inj he
+        rw [hbody]
         exact hb.instantiate1 _ 0
     | appSkip hIf hred _ =>
       have h1 := ih hIf
       cases h1 with
       | forallE hb =>
         have he := Red.rigid hred rfl
-        injection he with _ hbody _
-        rw [← hbody]
+        obtain ⟨-, hbody, -⟩ := Expr.forallE.inj he
+        rw [hbody]
         exact hb.instantiate1 _ 0
 
 /-! ## The class -/
