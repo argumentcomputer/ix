@@ -206,7 +206,6 @@ theorem alias_sort_inhabited (n : Key md) (d : Nat) :
     constructor
     · decide +kernel
     · rw [Level.substPW_eq_self (by simp [BinderMeta.leanNever])]
-      rfl
   simpa [Expr.instantiate1] using
     (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by simp [mb, BinderMeta.leanNever]))
 
