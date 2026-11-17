@@ -468,7 +468,7 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       x_ctor_nlvls x_ctor_ty w1584 w1585 w1586 w1587 w1588 w1589
       v1658 m1659 cs1669 v1688 m1689 cs1699 v1726 m1727 cs1737 v1779 m1780 cs1790
       v1793 v1795 m1797 cs1805 m1848 cs1856
-      ld12 ev1193 ev1231 ev1270 ld1306 ev1348 heq1371 ev1388 ld1382 _ ev1494 ev1551 ld1545
+      ld12 ev1193 ev1231 ev1270 ld1306 ev1348 heq1371 ev1388 ld1382 heq1480 ev1494 ev1551 ld1545
       heq1657 ev1671 ev1701 ev1739 ev1807 ev1858 ev1792 he1884 he1885 hc1886 =>
     obtain ⟨a, i, PE, rfl, rfl, ha, hPE⟩ := hE.proj_of_load ld12
     have hlt1191 : cs1191.length < calls.length := by rw [hc1886]; lt_calls
@@ -476,7 +476,7 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     have hlt1699 : cs1699.length < calls.length := by rw [hc1886]; lt_calls
     have g1699 : CoreGood c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
     refine infer_proj_common c hc ih good hrc rfl htypes ha hPE hc1886 ?_ ev1231 ev1270 ld1306
-      ev1348 heq1371 ev1388 ld1382 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
+      ev1348 heq1371 ev1388 ld1382 heq1480 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
       ev1792 he1884 he1885
     · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer_only) hlt1191 ev1193 rc x_e1 types rfl
         g1191 hrc d Γ htypes PE hPE

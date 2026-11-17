@@ -211,4 +211,128 @@ theorem CIPtrRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {p :
   obtain ⟨v, hld, hrep⟩ := rep
   exact ⟨v, hld, hrep.rekey name (agree v hld)⟩
 
+/-! ## A keying that keeps every resolved key
+
+The cells of a represented term resolve, so a keying that agrees with the first wherever the first
+resolves represents the same term: no condition on the heap is needed. -/
+
+/-- A represented term under a keying that keeps every resolved key. -/
+theorem Tm.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ₁ d Γ h k E p)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : Tm κ₂ d Γ h k E p := by
+  induction rep with
+  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
+  | bvarFree cell hs hk hd => exact .bvarFree cell hs hk hd
+  | sort cell rl hu => exact .sort cell rl hu
+  | @const k addr ap lsp a ls us res cell ra rls hus =>
+    have e := keep (ixAddr a) res.ne
+    have : Resolved (κ₂ (ixAddr a)) := ⟨by rw [e]; exact res.ne⟩
+    rw [← e]
+    exact .const cell ra rls hus
+  | app cell _ _ ihf iha => exact .app cell ihf iha
+  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
+  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
+  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
+  | litNat cell rl hc => exact .litNat cell rl hc
+  | litStr cell rb hs => exact .litStr cell rb hs
+  | @proj k addr ap ep a i E res cell ra _ ih =>
+    have e := keep (ixAddr a) res.ne
+    have : Resolved (κ₂ (ixAddr a)) := ⟨by rw [e]; exact res.ne⟩
+    rw [← e]
+    exact .proj cell ra ih
+
+theorem TmC.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p : SourceValue F} (rep : TmC κ₁ h E p)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : TmC κ₂ h E p :=
+  fun d Γ => (rep d Γ).rekey_mono keep
+
+theorem ValRep.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
+    {cv : Ix.Kernel.ConstantVal .anon} (rep : ValRep κ₁ h nl ty cv)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : ValRep κ₂ h nl ty cv :=
+  ⟨rep.1, rep.2.1, rep.2.2.1, TmC.rekey_mono rep.2.2.2 keep⟩
+
+theorem RulesRep.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F}
+    {ps : List Ix.Kernel.LevelParam} {j : Nat} {p : SourceValue F}
+    {rls : List (Ix.Kernel.RecRule .anon)} (rep : RulesRep κ₁ h ps j p rls)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : RulesRep κ₂ h ps j p rls := by
+  induction rep with
+  | nil cell => exact .nil cell
+  | cons cell hr _ ih =>
+    obtain ⟨rhs, rfl, hnf, hrhs⟩ := hr
+    exact .cons cell ⟨rhs, rfl, hnf, TmC.rekey_mono hrhs keep⟩ ih
+
+/-- **A loaded constant under a keying that keeps every resolved key**, when its own name
+resolves. -/
+theorem CIRep.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
+    {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIRep κ₁ h v ci)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x)
+    (hne : ci.toConstantVal.name ≠ unresolvedKey) : CIRep κ₂ h v ci := by
+  have nm : ∀ x, ci.toConstantVal.name = κ₁ x → ci.toConstantVal.name = κ₂ x :=
+    fun x e => e.trans (keep x fun e' => hne (e.trans e')).symm
+  cases rep with
+  | axio hv => exact .axio (hv.rekey_mono keep)
+  | opaq hv => exact .opaq (hv.rekey_mono keep)
+  | defn hv hV => exact .defn (hv.rekey_mono keep) (TmC.rekey_mono hV keep)
+  | thm hv hV => exact .thm (hv.rekey_mono keep) (TmC.rekey_mono hV keep)
+  | quot hv hk => exact .quot (hv.rekey_mono keep) hk
+  | induct hv hcounts hkey =>
+    obtain ⟨b, i, hb, hidx, hname⟩ := hkey
+    exact .induct (hv.rekey_mono keep) hcounts ⟨b, i, hb, hidx, nm _ hname⟩
+  | ctor hv hnp hnf hcounts hkey =>
+    obtain ⟨b, i, j, hb, hind, hcidx, hname⟩ := hkey
+    exact .ctor (hv.rekey_mono keep) hnp hnf hcounts ⟨b, i, j, hb, hind, hcidx, nm _ hname⟩
+  | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules hk hkey =>
+    obtain ⟨b, i, hb, hidx, hname⟩ := hkey
+    exact .recr (hv.rekey_mono keep) hnp hni hnm hnmi hrP hmI hcounts (hrules.rekey_mono keep) hk
+      ⟨b, i, hb, hidx, hname.imp (nm _) (nm _)⟩
+
+/-- **A loaded value represents some constant under a keying that keeps every resolved key**:
+the same constant, named by the second keying. -/
+theorem CIRep.rekey_exists {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
+    {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIRep κ₁ h v ci)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : ∃ ci', CIRep κ₂ h v ci' := by
+  cases rep with
+  | @axio nl ty u cv hv => exact ⟨.axiomInfo cv, .axio (hv.rekey_mono keep)⟩
+  | @opaq nl ty val u cv hv => exact ⟨.axiomInfo cv, .opaq (hv.rekey_mono keep)⟩
+  | @defn nl ty val sf hint cv V hn hv hV =>
+    exact ⟨.defnInfo cv V hn, .defn (hv.rekey_mono keep) (TmC.rekey_mono hV keep)⟩
+  | @thm nl ty val cv V hv hV =>
+    exact ⟨.thmInfo cv V, .thm (hv.rekey_mono keep) (TmC.rekey_mono hV keep)⟩
+  | @quot nl ty kind ci hv hk => exact ⟨ci, .quot (hv.rekey_mono keep) hk⟩
+  | @induct nl ty np ni nc u blk idx cv caps hv hcounts hkey =>
+    obtain ⟨b, i, hb, hidx, -⟩ := hkey
+    have hv' : ValRep κ₂ h nl ty ⟨κ₂ (iprjAddr (ixAddr b) (ZMod.val i)), cv.levelParams, cv.type⟩ :=
+      (hv.rekey_mono keep)
+    exact ⟨.indInfo ⟨κ₂ (iprjAddr (ixAddr b) (ZMod.val i)), cv.levelParams, cv.type⟩ caps,
+      .induct hv' hcounts ⟨b, i, hb, hidx, rfl⟩⟩
+  | @ctor nl ty blk ind cidx np nf u cv nP nF hv hnp hnf hcounts hkey =>
+    obtain ⟨b, i, j, hb, hind, hcidx, -⟩ := hkey
+    have hv' : ValRep κ₂ h nl ty
+        ⟨κ₂ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)), cv.levelParams, cv.type⟩ :=
+      (hv.rekey_mono keep)
+    exact ⟨.ctorInfo ⟨κ₂ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)), cv.levelParams, cv.type⟩
+        nP nF, .ctor hv' hnp hnf hcounts ⟨b, i, j, hb, hind, hcidx, rfl⟩⟩
+  | @recr nl ty np ni nm nmi rules k u blk idx cv mI rP rls p i m mi hv hnp hni hnm hnmi hrP hmI
+      hcounts hrules hk hkey =>
+    obtain ⟨b, i', hb, hidx, -⟩ := hkey
+    have hv' : ValRep κ₂ h nl ty ⟨κ₂ (ixAddr b), cv.levelParams, cv.type⟩ := (hv.rekey_mono keep)
+    have hr' : RulesRep κ₂ h (⟨κ₂ (ixAddr b), cv.levelParams, cv.type⟩ :
+        Ix.Kernel.ConstantVal .anon).levelParams 0 rules rls := hrules.rekey_mono keep
+    exact ⟨.recInfo ⟨κ₂ (ixAddr b), cv.levelParams, cv.type⟩ mI rP rls,
+      .recr hv' hnp hni hnm hnmi hrP hmI hcounts hr' hk ⟨b, i', hb, hidx, .inl rfl⟩⟩
+
+theorem CIPtrRep.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {p : SourceValue F}
+    {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIPtrRep κ₁ h p ci)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) (hne : ci.name ≠ unresolvedKey) :
+    CIPtrRep κ₂ h p ci := by
+  obtain ⟨v, hld, hrep⟩ := rep
+  exact ⟨v, hld, hrep.rekey_mono keep hne⟩
+
+theorem CIPtrRep.rekey_exists {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {p : SourceValue F}
+    {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIPtrRep κ₁ h p ci)
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) : ∃ ci', CIPtrRep κ₂ h p ci' := by
+  obtain ⟨v, hld, hrep⟩ := rep
+  obtain ⟨ci', hrep'⟩ := hrep.rekey_exists keep
+  exact ⟨ci', v, hld, hrep'⟩
+
 end IxVM.Refinement.Core

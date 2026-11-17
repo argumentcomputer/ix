@@ -1011,7 +1011,8 @@ theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Lis
     -- the loaded inductive
     have hb165 : RepAddr m165 b x_ind_block_addr := Bytes.repAddressRef_heapMono₂ addrTy e176 hb
     obtain ⟨ciT, hfindT, vT, hvT, hrepT⟩ := ih.get (.callees .get_ci_iprj) (by lt_calls) ev215
-      x_ind_block_addr i b rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) hb165
+      x_ind_block_addr i b rfl (good.allowedTop (by simp_all))
+      (ScopedCtx.famAt_of_ctor hfindC hcname) (good.sub fun x hx => by simp [hx]) hb165
     rw [ld209] at hvT
     injection hvT with hvT
     subst hvT
