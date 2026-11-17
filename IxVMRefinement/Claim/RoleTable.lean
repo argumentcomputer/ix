@@ -48,13 +48,20 @@ theorem hashed_mono {cs₁ cs₂ : List (Call F)} (hsub : ∀ c ∈ cs₁, c ∈
 theorem hashedCollision_mono {V : View} {extra : List ByteArray} {cs₁ cs₂ : List (Call F)}
     (hsub : ∀ c ∈ cs₁, c ∈ cs₂) (hc : V.HashedCollision extra cs₁) :
     V.HashedCollision extra cs₂ := by
-  rcases hc with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
+  rcases hc with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ |
+    ⟨x, held, image, blk, cb, ms, hsrc, hb, hdec, hms, himg, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
   · refine .inl ⟨x, held, bytes, ?_, hashed_mono hsub hh, hne, hblk⟩
     rcases hsrc with hp | hex | ⟨hh0, hb0⟩
     · exact .inl hp
     · exact .inr (.inl hex)
     · exact .inr (.inr ⟨hashed_mono hsub hh0, hb0⟩)
-  · refine .inr ⟨bytes, ?_, hpad⟩
+  · refine .inr (.inl ⟨x, held, image, blk, cb, ms, ?_, hashed_mono hsub hb, hdec, hms, himg,
+      hne, hblk⟩)
+    rcases hsrc with hp | hex | ⟨hh0, hb0⟩
+    · exact .inl hp
+    · exact .inr (.inl hex)
+    · exact .inr (.inr ⟨hashed_mono hsub hh0, hb0⟩)
+  · refine .inr (.inr ⟨bytes, ?_, hpad⟩)
     rcases hsrc with hp | hh
     · exact .inl hp
     · exact .inr (hashed_mono hsub hh)

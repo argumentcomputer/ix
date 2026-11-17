@@ -13,8 +13,7 @@ appears in the premise or the conclusion.
 `ComposedSpec callsA callsB dA dB` is the public statement, about a typing run and a
 `binding` run of the circuit together. For an accepted `binding spec a` claim and an accepted
 `check` or `checkEnv` claim in scope whose context names the table address `a`: the two runs
-together hashed a collision, or a block one of them hashed has a projection image that collides
-with a byte string in hand (`ProjImageCollision`), or
+together hashed a collision, or
 
 * the table bytes the binding run hashed at `a` admit as a table `t` (`admitBinding`), and
   `t` binds every role (`AllBound`) and binds the prelude roles at the committed records
@@ -82,10 +81,10 @@ stored under its own hash (the table as the view's `roleBinding`): a run that ha
 bytes at that address then hashed a collision with the view. Over a view stored under its
 own hashes the alternative is a BLAKE3 collision between a byte string a run hashed and one in
 hand: held by the view under its hash, one of the two claims' byte strings or the committed
-images, or hashed by a run; or a preimage of the zero address a run hashed or the view holds;
-or a BLAKE3 collision between a byte string in hand and a projection image of a block a run
-hashed, the projection record of an inductive member or a constructor of that block at any
-index (`ComposedSpec.selfHashed`).
+images, or hashed by a run; or the same with a projection image of a block a run hashed (the
+projection record of an inductive member or a constructor of the block, at any index) in place
+of the byte string the run hashed; or a preimage of the zero address a run hashed or the view
+holds (`ComposedSpec.selfHashed`).
 
 ## Corollaries
 
@@ -527,22 +526,16 @@ committed one is a collision with these. -/
 def committedFootprint : List ByteArray :=
   committedImages ++ committedProjImages
 
-/-- **A collision the run hashed one side of**, with the view's data or `extra`
+/-- **A collision the run hashed or computed one side of**, with the view's data or `extra`
 (`View.HashedCollision`), or with a record or blob of the store `R`: a byte string the run
-hashed that differs from what `R` holds at its hash. -/
+hashed that differs from what `R` holds at its hash, or a projection image of a block the run
+hashed (`HashedBlockProjImage`) that differs from what `R` holds at its hash. -/
 def CollisionWith (V : View) (extra : List ByteArray) (R : Ixon.Env)
     (calls : List (Call IxVM.F)) : Prop :=
   V.HashedCollision extra calls ∨
-  ∃ (x : Address) (held bytes : ByteArray),
+  (∃ (x : Address) (held bytes : ByteArray),
     ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨ R.blobs.get? x = some held) ∧
-    Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
-
-/-- **A projection-image collision**, with the view's data or `extra` (`ProjImageCollision`),
-or with a record or blob of the store `R`: a projection image of a block the run hashed
-(`HashedBlockProjImage`) that differs from what `R` holds at its hash. -/
-def ProjImageCollisionWith (V : View) (extra : List ByteArray) (R : Ixon.Env)
-    (calls : List (Call IxVM.F)) : Prop :=
-  ProjImageCollision V extra calls ∨
+    Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
   ∃ (x : Address) (held image : ByteArray),
     ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨ R.blobs.get? x = some held) ∧
     HashedBlockProjImage calls image ∧ image ≠ held ∧ Address.blake3Pure image = x
@@ -560,9 +553,9 @@ def InScopeTyping : Claim → Prop
 docstring): for every claim byte string whose digest packs to `d` and decodes to a typing
 claim in scope, every reader's view of its seeds, every byte string that admits as a table
 `t` at the address the claim's context names, and every witness that `t` is valid on every
-group: the run hashed a collision (with the claim's bytes, the table's, the committed images,
-the view's data or the witness's store), a block it hashed has a projection image that
-collides with one of those (`ProjImageCollisionWith`), or `ConsistentReadOver`. -/
+group: the run hashed a collision, or computed one side of it from a block it hashed (with the
+claim's bytes, the table's, the committed images, the view's data or the witness's store), or
+`ConsistentReadOver`. -/
 def TypingSpecOn
     (Facts : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop)
     (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
@@ -574,13 +567,12 @@ def TypingSpecOn
           ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon),
             TableWitness.{u} Facts t (fun _ => True) R envT →
               CollisionWith V (bytes :: tb :: committedFootprint) R calls ∨
-                ProjImageCollisionWith V (bytes :: tb :: committedFootprint) R calls ∨
                 ConsistentReadOver.{u} calls t R envT seeds
 
 /-- **What a `binding` derivation establishes** (the other half): for every claim byte string
 whose digest packs to `d` and decodes to `binding spec a`, and every view: the run hashed a
-collision (with the claim's bytes, the committed images or the view's data), a block it hashed
-has a projection image that collides with one of those (`ProjImageCollision`), or it hashed
+collision, or computed one side of it from a block it hashed (with the claim's bytes, the
+committed images or the view's data), or it hashed
 table bytes that admit as a table `t` at `a`, `t` binds every role, and `t` is valid on
 every group, witnessed over records the run loaded. -/
 def BindingSpecOn
@@ -589,7 +581,6 @@ def BindingSpecOn
   ∀ (bytes : ByteArray) (spec a : Address), Claim.de bytes = .ok (.binding spec a) →
     packDigest (Address.blake3Pure bytes) = d → ∀ V : View,
       V.HashedCollision (bytes :: committedFootprint) calls ∨
-      ProjImageCollision V (bytes :: committedFootprint) calls ∨
         ∃ (tb : ByteArray) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
           (env : Ix.Kernel.Env .anon),
           Hashed calls tb ∧
@@ -605,13 +596,12 @@ def CircuitConsistentOn : Prop :=
 /-- **What a typing derivation and a `binding` derivation establish together** (the public
 statement; see the module docstring). For a `binding spec a` claim behind `dB` and a typing
 claim in scope behind `dA` whose context names the table address `a`, and every reader's view
-of the seeds: the two runs hashed a collision (with either claim's bytes, the committed
-images or the view's data), a block one of them hashed has a projection image that collides
-with one of those (`ProjImageCollision`), or the binding run hashed table bytes that admit as
-a table `t` at `a` binding every role, `t`'s validity on every group is witnessed by an
-environment `envT` over records the binding run loaded (`TableShape`: prelude pinned, pinned
-basis blocks whole, a model), and the typing run's environment extends `envT`, covers the
-seeds and has a model (`ConsistentReadOver`). -/
+of the seeds: the two runs hashed a collision, or computed one side of it from a block one of
+them hashed (with either claim's bytes, the committed images or the view's data), or the
+binding run hashed table bytes that admit as a table `t` at `a` binding every role, `t`'s
+validity on every group is witnessed by an environment `envT` over records the binding run
+loaded (`TableShape`: prelude pinned, pinned basis blocks whole, a model), and the typing run's
+environment extends `envT`, covers the seeds and has a model (`ConsistentReadOver`). -/
 def ComposedSpec (callsA callsB : List (Call IxVM.F)) (dA dB : Digest) : Prop :=
   ∀ (bytesB : ByteArray) (spec a : Address), Claim.de bytesB = .ok (.binding spec a) →
     packDigest (Address.blake3Pure bytesB) = dB →
@@ -620,7 +610,6 @@ def ComposedSpec (callsA callsB : List (Call IxVM.F)) (dA dB : Digest) : Prop :=
       ∀ ctx, cA.context? = some ctx → ctx.binding = a →
         ∀ (V : View) (seeds : List Address), ClaimSeeds cA V seeds →
           V.HashedCollision (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-          ProjImageCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
             ∃ (tb : ByteArray) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
               (envT : Ix.Kernel.Env .anon),
               Hashed callsB tb ∧
@@ -644,39 +633,27 @@ theorem hashedCollision_mono {V : View} {extra extra' : List ByteArray}
     (hc : ∀ c ∈ calls, c ∈ calls') (h : V.HashedCollision extra calls) :
     V.HashedCollision extra' calls' := by
   unfold View.HashedCollision at h ⊢
-  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, hb, hp⟩
-  · refine Or.inl ⟨x, held, bytes, ?_, hashed_mono hc hh, hne, hx⟩
+  have hanchor : ∀ {x : Address} {held : ByteArray},
+      (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+        (Hashed calls held ∧ Address.blake3Pure held = x)) →
+      (V.Preimage x held ∨ (held ∈ extra' ∧ Address.blake3Pure held = x) ∨
+        (Hashed calls' held ∧ Address.blake3Pure held = x)) := by
+    intro x held hheld
     rcases hheld with hpre | ⟨hmem, hx'⟩ | ⟨hh', hx'⟩
     · exact Or.inl hpre
     · rcases he held hmem with h1 | h2
       · exact Or.inr (Or.inl ⟨h1, hx'⟩)
       · exact Or.inr (Or.inr ⟨h2, hx'⟩)
     · exact Or.inr (Or.inr ⟨hashed_mono hc hh', hx'⟩)
-  · refine Or.inr ⟨bytes, ?_, hp⟩
+  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ |
+    ⟨x, held, image, blk, cb, ms, hheld, hblk, hdec, hms, himg, hne, hx⟩ | ⟨bytes, hb, hp⟩
+  · exact Or.inl ⟨x, held, bytes, hanchor hheld, hashed_mono hc hh, hne, hx⟩
+  · exact Or.inr (Or.inl ⟨x, held, image, blk, cb, ms, hanchor hheld, hashed_mono hc hblk, hdec,
+      hms, himg, hne, hx⟩)
+  · refine Or.inr (Or.inr ⟨bytes, ?_, hp⟩)
     rcases hb with hpre | hh
     · exact Or.inl hpre
     · exact Or.inr (hashed_mono hc hh)
-
-/-- A projection image of a block a part of the calls hashed is one of the whole. -/
-theorem hashedBlockProjImage_mono {calls calls' : List (Call IxVM.F)}
-    (hc : ∀ c ∈ calls, c ∈ calls') {image : ByteArray} (h : HashedBlockProjImage calls image) :
-    HashedBlockProjImage calls' image := by
-  obtain ⟨blk, cb, ms, hh, hex, hms, himg⟩ := h
-  exact ⟨blk, cb, ms, hashed_mono hc hh, hex, hms, himg⟩
-
-/-- The projection-image alternative is monotone, as `hashedCollision_mono`. -/
-theorem projImageCollision_mono {V : View} {extra extra' : List ByteArray}
-    {calls calls' : List (Call IxVM.F)} (he : ∀ x ∈ extra, x ∈ extra' ∨ Hashed calls' x)
-    (hc : ∀ c ∈ calls, c ∈ calls') (h : ProjImageCollision V extra calls) :
-    ProjImageCollision V extra' calls' := by
-  obtain ⟨x, held, image, hheld, himg, hne, hx⟩ := h
-  refine ⟨x, held, image, ?_, hashedBlockProjImage_mono hc himg, hne, hx⟩
-  rcases hheld with hpre | ⟨hmem, hx'⟩ | ⟨hh', hx'⟩
-  · exact Or.inl hpre
-  · rcases he held hmem with h1 | h2
-    · exact Or.inr (Or.inl ⟨h1, hx'⟩)
-    · exact Or.inr (Or.inr ⟨h2, hx'⟩)
-  · exact Or.inr (Or.inr ⟨hashed_mono hc hh', hx'⟩)
 
 /-- **A binding run discharges a typing run's premise**: the two halves give the composed
 statement, for any `Facts`. -/
@@ -689,13 +666,9 @@ theorem binding_discharge
   intro bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs
   have hcA : ∀ c ∈ callsA, c ∈ callsA ++ callsB := fun c h => List.mem_append.mpr (Or.inl h)
   have hcB : ∀ c ∈ callsB, c ∈ callsA ++ callsB := fun c h => List.mem_append.mpr (Or.inr h)
-  have heB : ∀ x ∈ bytesB :: committedFootprint,
-      x ∈ bytesA :: bytesB :: committedFootprint ∨ Hashed (callsA ++ callsB) x :=
-    fun x h => Or.inl (List.mem_cons_of_mem _ h)
-  rcases hB bytesB spec a deB dgB V with
-    hcol | hpcol | ⟨tb, t, R, envT, htb, ht, hall, hload, hw⟩
-  · exact Or.inl (hashedCollision_mono heB hcB hcol)
-  · exact Or.inr (Or.inl (projImageCollision_mono heB hcB hpcol))
+  rcases hB bytesB spec a deB dgB V with hcol | ⟨tb, t, R, envT, htb, ht, hall, hload, hw⟩
+  · refine Or.inl (hashedCollision_mono (fun x h => ?_) hcB hcol)
+    exact Or.inl (List.mem_cons_of_mem _ h)
   · have ht' : Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨ctx.binding, tb⟩ =
         .ok t := by
       rw [hba]
@@ -710,31 +683,32 @@ theorem binding_discharge
           rw [h2]
           exact hashed_mono hcB htb
         · exact Or.inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h3))
-    have hR : ∀ {x : Address} {held : ByteArray},
-        ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨ R.blobs.get? x = some held) →
+    rcases hA bytesA cA deA dgA hsc V seeds hs ctx hctx tb t ht' R envT hw with hcol | hok
+    · have hR : ∀ {x : Address} {held : ByteArray},
+          ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨
+            R.blobs.get? x = some held) →
           Hashed callsB held ∧ Address.blake3Pure held = x := by
-      intro x held hheld
-      obtain ⟨hrec, hblob⟩ := hload
-      rcases hheld with ⟨lc, hl, hlc⟩ | hbl
-      · rw [← hlc]
-        exact hrec x lc hl
-      · exact hblob x held hbl
-    rcases hA bytesA cA deA dgA hsc V seeds hs ctx hctx tb t ht' R envT hw with
-      hcol | hpcol | hok
-    · rcases hcol with hcol | ⟨x, held, bytes, hheld, hh, hne, hx⟩
+        intro x held hheld
+        obtain ⟨hrec, hblob⟩ := hload
+        rcases hheld with ⟨lc, hl, hlc⟩ | hbl
+        · rw [← hlc]
+          exact hrec x lc hl
+        · exact hblob x held hbl
+      rcases hcol with hcol | ⟨x, held, bytes, hheld, hh, hne, hx⟩ |
+        ⟨x, held, image, hheld, ⟨blk, cb, ms, hblk, hdec, hms, himg⟩, hne, hx⟩
       · exact Or.inl (hashedCollision_mono heA hcA hcol)
       · have hR' := hR hheld
         refine Or.inl ?_
         unfold View.HashedCollision
         exact Or.inl ⟨x, held, bytes, Or.inr (Or.inr ⟨hashed_mono hcB hR'.1, hR'.2⟩),
           hashed_mono hcA hh, hne, hx⟩
-    · rcases hpcol with hpcol | ⟨x, held, image, hheld, himg, hne, hx⟩
-      · exact Or.inr (Or.inl (projImageCollision_mono heA hcA hpcol))
       · have hR' := hR hheld
-        exact Or.inr (Or.inl ⟨x, held, image,
-          Or.inr (Or.inr ⟨hashed_mono hcB hR'.1, hR'.2⟩),
-          hashedBlockProjImage_mono hcA himg, hne, hx⟩)
-    · exact Or.inr (Or.inr ⟨tb, t, R, envT, htb, ht, hall, hload, hw.shape, hok⟩)
+        refine Or.inl ?_
+        unfold View.HashedCollision
+        exact Or.inr (Or.inl ⟨x, held, image, blk, cb, ms,
+          Or.inr (Or.inr ⟨hashed_mono hcB hR'.1, hR'.2⟩), hashed_mono hcA hblk, hdec, hms, himg,
+          hne, hx⟩)
+    · exact Or.inr ⟨tb, t, R, envT, htb, ht, hall, hload, hw.shape, hok⟩
 
 /-! ## The circuit-level statements -/
 
@@ -756,7 +730,6 @@ def BindingShapeSpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
   ∀ (bytes : ByteArray) (spec a : Address), Claim.de bytes = .ok (.binding spec a) →
     packDigest (Address.blake3Pure bytes) = d → ∀ V : View,
       V.HashedCollision (bytes :: committedFootprint) calls ∨
-      ProjImageCollision V (bytes :: committedFootprint) calls ∨
         ∃ (tb : ByteArray) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
           (env : Ix.Kernel.Env .anon),
           Hashed calls tb ∧
@@ -770,10 +743,9 @@ theorem BindingSpecOn.shape
     BindingShapeSpec.{u} calls d := by
   unfold BindingShapeSpec
   intro bytes spec a hde hd V
-  rcases h bytes spec a hde hd V with hcol | hpcol | ⟨tb, t, R, env, h1, h2, h3, h4, hw⟩
+  rcases h bytes spec a hde hd V with hcol | ⟨tb, t, R, env, h1, h2, h3, h4, hw⟩
   · exact Or.inl hcol
-  · exact Or.inr (Or.inl hpcol)
-  · exact Or.inr (Or.inr ⟨tb, t, R, env, h1, h2, h3, h4, hw.shape⟩)
+  · exact Or.inr ⟨tb, t, R, env, h1, h2, h3, h4, hw.shape⟩
 
 /-- **The two-run statement of the circuit** (the public circuit-level statement): for every
 accepted proof of a digest `dB` and every accepted proof of a digest `dA`, `ComposedSpec` of
@@ -908,7 +880,6 @@ theorem ComposedSpec.apply (h : ComposedSpec.{u} callsA callsB dA dB)
     (dgA : packDigest (Address.blake3Pure bytesA) = dA) (hsc : InScopeTyping cA)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds) :
     V.HashedCollision (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-      ProjImageCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
         callsB a :=
   h bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs
@@ -916,8 +887,7 @@ theorem ComposedSpec.apply (h : ComposedSpec.{u} callsA callsB dA dB)
 /-- **The composed statement over a view stored under its own hashes**: a BLAKE3 collision
 between a byte string a run hashed and one held by the view under its hash, one of the two
 claims' byte strings or the committed images, or hashed by a run (or a preimage of the zero
-address a run hashed or the view holds), a BLAKE3 collision between such a byte string in hand
-and a projection image of a block a run hashed, or the composed conclusion. -/
+address a run hashed or the view holds), or the composed conclusion. -/
 theorem ComposedSpec.selfHashed (h : ComposedSpec.{u} callsA callsB dA dB)
     (deB : Claim.de bytesB = .ok (.binding spec a))
     (dgB : packDigest (Address.blake3Pure bytesB) = dB) (deA : Claim.de bytesA = .ok cA)
@@ -925,11 +895,10 @@ theorem ComposedSpec.selfHashed (h : ComposedSpec.{u} callsA callsB dA dB)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds)
     (hV : SelfHashed V) :
     GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-      GenuineProjImageCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
         callsB a :=
-  (h.apply deB dgB deA dgA hsc hctx hba hs).imp (hashedCollision_genuine hV)
-    (Or.imp_left (projImageCollision_genuine hV))
+  (h.apply deB dgB deA dgA hsc hctx hba hs).elim
+    (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 
 /-- **No covered seed is stored with type `False`**, of the composed statement. Relative to
 the existence of a set theory `W`. -/
@@ -940,13 +909,12 @@ theorem ComposedSpec.seeds_not_false (W : Type u) [Ix.Kernel.SetTheory W]
     (dgA : packDigest (Address.blake3Pure bytesA) = dA) (hsc : InScopeTyping cA)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds) :
     V.HashedCollision (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-      ProjImageCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R _ => SeedsNotFalse callsA t R seeds) callsB a :=
-  (h.apply deB dgB deA dgA hsc hctx hba hs).imp_right <| Or.imp_right fun hok =>
-    ComposedWith.imp
+  (h.apply deB dgB deA dgA hsc hctx hba hs).elim Or.inl fun hok =>
+    Or.inr (ComposedWith.imp
       (P := fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
       (Q := fun t R _ => SeedsNotFalse callsA t R seeds)
-      (fun _ _ _ hr => ConsistentReadOver.seeds_not_false W hr) hok
+      (fun _ _ _ hr => ConsistentReadOver.seeds_not_false W hr) hok)
 
 /-- **Every covered seed's stored type is inhabited in every model of the claimed
 environment**, of the composed statement. -/
@@ -956,13 +924,12 @@ theorem ComposedSpec.seeds_inhabited (h : ComposedSpec.{u} callsA callsB dA dB)
     (dgA : packDigest (Address.blake3Pure bytesA) = dA) (hsc : InScopeTyping cA)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds) :
     V.HashedCollision (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-      ProjImageCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R _ => SeedsInhabited.{u} callsA t R seeds) callsB a :=
-  (h.apply deB dgB deA dgA hsc hctx hba hs).imp_right <| Or.imp_right fun hok =>
-    ComposedWith.imp
+  (h.apply deB dgB deA dgA hsc hctx hba hs).elim Or.inl fun hok =>
+    Or.inr (ComposedWith.imp
       (P := fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
       (Q := fun t R _ => SeedsInhabited.{u} callsA t R seeds)
-      (fun _ _ _ hr => ConsistentReadOver.seeds_inhabited hr) hok
+      (fun _ _ _ hr => ConsistentReadOver.seeds_inhabited hr) hok)
 
 end Composed
 

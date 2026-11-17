@@ -802,7 +802,7 @@ theorem typing_skeleton
   intro bytes c hde hdig hscope V seeds hseeds ctx hctx tb t hadm R envT hW
   by_cases hnc : CollisionWith V (bytes :: tb :: committedFootprint) R calls
   · exact Or.inl hnc
-  · refine Or.inr (Or.inr ?_)
+  · refine Or.inr ?_
     have ht : t.check = .ok () :=
       ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ t).mp hadm).wellFormed
     have hextra : ∀ x ∈ committedFootprint, x ∈ bytes :: tb :: committedFootprint :=

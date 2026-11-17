@@ -29,13 +29,17 @@ With it the block of each field is a block of the basis store, and:
 * `ctorIndRes`: the record at the constructor's address names the block, whose member is a
   stored inductive.
 
-`basis_loads` is the load contract, `basis_facts` is `Facts` on the six basis groups, and
-`def_step_at_basis_of_projections` is the step of the definition record at the pins, each with
-the predicate as its one hypothesis beyond the store and limit conditions.
+`basis_loads` is the load contract, with the predicate as its one hypothesis beyond the store
+and limit conditions.
 
 `ProjectionCollision` and `hashedBlockProjectionsHeld_of_noProjectionCollision` give the
 predicate from a collision clause: a record the store holds differs from, and has the same
-hash as, the canonical projection record of a block the calls hashed, at some index.
+hash as, the canonical projection record of a block the calls hashed, at some index. The
+clause is a case of `View.HashedCollision` (`hashedCollision_of_projectionCollision`), which the
+runs `Core.HashedBlockAt` ranges over exclude, so every store whose records decode satisfies
+the predicate (`hashedBlockProjectionsHeld_of_decoded`). Hence `basis_facts` (`Facts` on the six
+basis groups) and `def_step_at_basis_of_projections` (the step of the definition record at the
+pins) take no projection hypothesis.
 -/
 
 universe u
@@ -741,49 +745,6 @@ theorem basis_loads (hlim : LimWithin (fun g => g < 6) ctab lim) :
 
 end
 
-/-! ## `Facts` and the definition step at the basis -/
-
-/-- **`Facts` on the six basis groups at the environment of the pins**, for the stores of the
-basis records whose projections at hashed blocks are those projections. -/
-theorem basis_facts
-    (hP : ∀ E, RecordsFor StoreInhabit.basisStore E → HashedBlockProjectionsHeld E) :
-    Facts.{u} ctab (fun g => g < 6) StoreInhabit.basisStore basisEnv :=
-  basis_facts_of_loads fun E hE _ hlim => basis_loads hE (hP E hE) hlim
-
-/-- A limit at most six is within the six basis groups. -/
-theorem limWithin_six {n : Nat} (hn : n ≤ 6) : LimWithin (fun g => g < 6) ctab (some n) :=
-  fun _ _ hr => Nat.lt_of_lt_of_le (hr n rfl) hn
-
-section
-open IxVM.Consistency
-open IxVM.Refinement.RoleVal IxVM.Refinement.DefInhabit
-
-/-- **The step of the real definition record at the environment of the pins**, with the prefix
-invariant there given by `basis_loads`: what remains is the run, the store of the step holding
-the basis records, the limit within the six basis groups, and the predicate. -/
-theorem def_step_at_basis_of_projections {X : Ix.Kernel.Env .anon → Prop} (hX : KeepsValues X)
-    {calls : List (Call F)} {E₀ E : Ixon.Env} {bAddr : _root_.Address} {n : Nat}
-    (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls committedDefaultRoleTable E₀ E)
-    (hc : recordOf E₀ defAddr = some defRecord)
-    (hchk : CheckedAtFullAt calls bAddr committedDefaultRoleTable defAddr n)
-    (hnat : NeedOk E₀ natAddr) (hzero : NeedOk E₀ zeroAddr)
-    (hE : RecordsFor StoreInhabit.basisStore E) (hlim : LimWithin (fun g => g < 6) ctab (some n))
-    (hP : HashedBlockProjectionsHeld E) (hXb : X TableInhabit.basisEnv) :
-    ∃ new : List (Ix.Kernel.ConstantInfo .anon),
-      (new.map (·.name)).Nodup ∧ (∀ ci ∈ new, TableInhabit.basisEnv.find? ci.name = none) ∧
-      Decl.PrefixInv.{u} E committedDefaultRoleTable (some n)
-        ⟨new ++ TableInhabit.basisEnv.consts⟩ ∧
-      X ⟨new ++ TableInhabit.basisEnv.consts⟩ ∧
-      (∀ x, ConstAddrOf defAddr defRecord x →
-        ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf committedDefaultRoleTable x ∧
-          Reads committedDefaultRoleTable E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
-      ∀ ci ∈ new, (∃ x, ConstAddrOf defAddr defRecord x ∧
-        ci.name = keyOf committedDefaultRoleTable x) ∨ ∃ k s, ci.name = .aux k s :=
-  def_step_at_basis hX hS hst hc hchk hnat hzero
-    (basis_prefixInv_of_loads hE hlim (basis_loads hE hP hlim)) hXb
-
-end
-
 /-! ## The predicate from a collision clause -/
 
 private theorem blake3Pure_hash_size' (b : ByteArray) :
@@ -871,67 +832,68 @@ theorem hashedBlockProjectionsHeld_of_noProjectionCollision {E : Ixon.Env}
   rintro b ⟨cs, blk, cb, ms, hnc, -, hh, hex, hms, rfl⟩
   exact projectionsHeldAt_of_noProjectionCollision hdec (hnp cs hnc) hh hex hms
 
-/-! ## The collision clause and the public projection-image alternative -/
-
-section
-open IxVM.Consistency
-
-/-- **The collision clause is an instance of the public alternative**: a record the view holds
-at the hash of a projection image of a block the calls hashed, with other bytes, is a
-`ProjImageCollision` with the view's data. So the negation of the public alternative gives the
-negation of the clause. -/
-theorem projImageCollision_of_projectionCollision {V : View} {calls : List (Call F)}
+/-- **The collision clause is a case of the collision alternative**: a record the view holds at
+the hash of a projection image of a block the calls hashed, with other bytes, is the second case
+of `View.HashedCollision`. -/
+theorem hashedCollision_of_projectionCollision {V : View} {calls : List (Call F)}
     {extra : List ByteArray} (h : ProjectionCollision V calls) :
-    ProjImageCollision V extra calls := by
+    V.HashedCollision extra calls := by
   obtain ⟨blk, cb, ms, info, x, held, hh, hex, hms, hinfo, hheld, hx, hne⟩ := h
-  refine ⟨x, held, Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩, Or.inl (Or.inl hheld),
-    ⟨blk, cb, ms, hh, hex, hms, ?_⟩, fun he => hne he.symm, hx⟩
+  refine Or.inr (Or.inl ⟨x, held, Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩, blk, cb, ms,
+    Or.inl (Or.inl hheld), hh, hex, hms, ?_, fun he => hne he.symm, hx⟩)
   rcases hinfo with ⟨i, rfl⟩ | ⟨i, j, rfl⟩
   · exact Or.inl ⟨i, rfl⟩
   · exact Or.inr ⟨i, j, rfl⟩
 
-/-- **The typing statement's alternative excludes the collision clause at the store a typing
-run is read against**: with no projection-image collision in the sense of the typing half
-(`ProjImageCollisionWith`, compared with the committed images), the run's calls hash no
-`ProjectionCollision` with a store that merges the run's records, the witness's and the
-committed prelude rows (`Merged`). -/
-theorem Merged.noProjectionCollision {E₀ R E : Ixon.Env} {calls : List (Call F)} {V : View}
-    {extra : List ByteArray} (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
-    (hextra : ∀ x ∈ committedFootprint, x ∈ extra)
-    (hnp : ¬ ProjImageCollisionWith V extra R calls) :
-    ¬ ProjectionCollision { env := E } calls := by
-  intro h
-  obtain ⟨blk, cb, ms, info, x, held, hh, hex, hms, hinfo, hheld, hx, hne⟩ := h
-  have himg : HashedBlockProjImage calls (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩) := by
-    refine ⟨blk, cb, ms, hh, hex, hms, ?_⟩
-    rcases hinfo with ⟨i, rfl⟩ | ⟨i, j, rfl⟩
-    · exact Or.inl ⟨i, rfl⟩
-    · exact Or.inr ⟨i, j, rfl⟩
-  have hne' : Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ ≠ held := fun he => hne he.symm
-  apply hnp
-  rcases hM.preimage hload (Or.inl hheld) with hrun | hR | ⟨p, hp, hp1, hp2⟩
-  · exact Or.inl ⟨x, held, _, Or.inr (Or.inr hrun), himg, hne', hx⟩
-  · exact Or.inr ⟨x, held, _, hR, himg, hne', hx⟩
-  · have hhash : Address.blake3Pure p.2 = p.1 := ClosedFacts.committedRows_hashed p hp
-    have hmem : held ∈ extra := by
-      rw [← hp2]
-      exact hextra _ (committedRows_footprint hp)
-    have hheld_x : Address.blake3Pure held = x := by
-      rw [← hp2, hhash, hp1]
-    exact Or.inl ⟨x, held, _, Or.inr (Or.inl ⟨hmem, hheld_x⟩), himg, hne', hx⟩
+/-- **A store whose records decode holds the projections of every hashed block**: the runs
+`Core.HashedBlockAt` ranges over hash no collision with the store, and the collision clause is a
+case of the collision alternative. -/
+theorem hashedBlockProjectionsHeld_of_decoded {E : Ixon.Env} (hdec : L1.EnvDecoded E) :
+    HashedBlockProjectionsHeld E :=
+  hashedBlockProjectionsHeld_of_noProjectionCollision hdec
+    fun _ hnc hpc => hnc (hashedCollision_of_projectionCollision hpc)
 
-/-- **`Facts` at the basis from the public alternative**: if no calls that hash no collision
-with a store of the basis records hash a projection-image collision with it
-(`ProjImageCollision`, the case of the public alternative), `Facts` holds on the six basis
-groups at the environment of the pins. The hypothesis is about every run and every such store;
-`Facts` quantifies over every run that is `Core.Good` for the store, and `Core.Good` excludes
-only `View.HashedCollision`. -/
-theorem basis_facts_of_noProjImageCollision
-    (h : ∀ E, RecordsFor StoreInhabit.basisStore E → ∀ cs : List (Call F),
-      ¬ View.HashedCollision { env := E } [] cs → ¬ ProjImageCollision { env := E } [] cs) :
-    Facts.{u} ctab (fun g => g < 6) StoreInhabit.basisStore basisEnv :=
-  basis_facts fun E hE => hashedBlockProjectionsHeld_of_noProjectionCollision hE.1
-    fun cs hnc hpc => h E hE cs hnc (projImageCollision_of_projectionCollision hpc)
+/-! ## `Facts` and the definition step at the basis -/
+
+/-- **`Facts` on the six basis groups at the environment of the pins**, with no hypothesis: every
+store of the basis records decodes its records, so it holds the projections of every block a run
+that is `Core.Good` for it hashed (`hashedBlockProjectionsHeld_of_decoded`). -/
+theorem basis_facts : Facts.{u} ctab (fun g => g < 6) StoreInhabit.basisStore basisEnv :=
+  basis_facts_of_loads fun E hE _ hlim =>
+    basis_loads hE (hashedBlockProjectionsHeld_of_decoded hE.1) hlim
+
+/-- A limit at most six is within the six basis groups. -/
+theorem limWithin_six {n : Nat} (hn : n ≤ 6) : LimWithin (fun g => g < 6) ctab (some n) :=
+  fun _ _ hr => Nat.lt_of_lt_of_le (hr n rfl) hn
+
+section
+open IxVM.Consistency
+open IxVM.Refinement.RoleVal IxVM.Refinement.DefInhabit
+
+/-- **The step of the real definition record at the environment of the pins**, with the prefix
+invariant there given by `basis_loads`: what remains is the run, the store of the step holding
+the basis records, and the limit within the six basis groups. -/
+theorem def_step_at_basis_of_projections {X : Ix.Kernel.Env .anon → Prop} (hX : KeepsValues X)
+    {calls : List (Call F)} {E₀ E : Ixon.Env} {bAddr : _root_.Address} {n : Nat}
+    (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls committedDefaultRoleTable E₀ E)
+    (hc : recordOf E₀ defAddr = some defRecord)
+    (hchk : CheckedAtFullAt calls bAddr committedDefaultRoleTable defAddr n)
+    (hnat : NeedOk E₀ natAddr) (hzero : NeedOk E₀ zeroAddr)
+    (hE : RecordsFor StoreInhabit.basisStore E) (hlim : LimWithin (fun g => g < 6) ctab (some n))
+    (hXb : X TableInhabit.basisEnv) :
+    ∃ new : List (Ix.Kernel.ConstantInfo .anon),
+      (new.map (·.name)).Nodup ∧ (∀ ci ∈ new, TableInhabit.basisEnv.find? ci.name = none) ∧
+      Decl.PrefixInv.{u} E committedDefaultRoleTable (some n)
+        ⟨new ++ TableInhabit.basisEnv.consts⟩ ∧
+      X ⟨new ++ TableInhabit.basisEnv.consts⟩ ∧
+      (∀ x, ConstAddrOf defAddr defRecord x →
+        ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf committedDefaultRoleTable x ∧
+          Reads committedDefaultRoleTable E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
+      ∀ ci ∈ new, (∃ x, ConstAddrOf defAddr defRecord x ∧
+        ci.name = keyOf committedDefaultRoleTable x) ∨ ∃ k s, ci.name = .aux k s :=
+  def_step_at_basis hX hS hst hc hchk hnat hzero
+    (basis_prefixInv_of_loads hE hlim
+      (basis_loads hE (hashedBlockProjectionsHeld_of_decoded hE.1) hlim)) hXb
 
 end
 

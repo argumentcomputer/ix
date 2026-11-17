@@ -12,8 +12,8 @@ The fields of the load contract there are proved in `TypingBasisLoads`, `TypingB
 (`getCI` at all nineteen pins) and `TypingBasisUnit`, except six (`getCprj`, `getIprj`, `eta`,
 `ctorIndRes`, `projTables`, `projTablesAt`), which relate a block a run hashed to a stored
 constant through the address of one of its projection records. `TypingBasisProj` proves those
-six from one hypothesis about the store (`HashedBlockProjectionsHeld`) and assembles the
-contract (`basis_loads`) and `Facts` (`basis_facts`).
+six from one property of the store (`HashedBlockProjectionsHeld`, which every store whose
+records decode has) and assembles the contract (`basis_loads`) and `Facts` (`basis_facts`).
 -/
 
 universe u
