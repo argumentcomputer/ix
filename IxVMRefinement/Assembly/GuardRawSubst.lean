@@ -75,19 +75,23 @@ theorem RawTmExact.raw_bounded_of_idx {κ : _root_.Address → KKey} {Γ : Nat �
   | app cell _ _ left right =>
     intro m bound indices
     obtain ⟨func, arg⟩ := SubstAux.idxAll_app_inv indices (loadValue_enum_cell cell)
-    exact Bool.and_eq_true.mpr ⟨left func, right arg⟩
+    simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
+    exact ⟨left func, right arg⟩
   | lam cell _ _ _ dom body =>
     intro m bound indices
     obtain ⟨domain, tail⟩ := SubstAux.idxAll_lam_inv indices (loadValue_enum_cell cell)
-    exact Bool.and_eq_true.mpr ⟨dom domain, by simpa only [Nat.add_assoc] using body tail⟩
+    simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
+    exact ⟨dom domain, by simpa only [Nat.add_assoc] using body tail⟩
   | forallE cell _ _ _ dom body =>
     intro m bound indices
     obtain ⟨domain, tail⟩ := SubstAux.idxAll_forallE_inv indices (loadValue_enum_cell cell)
-    exact Bool.and_eq_true.mpr ⟨dom domain, by simpa only [Nat.add_assoc] using body tail⟩
+    simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
+    exact ⟨dom domain, by simpa only [Nat.add_assoc] using body tail⟩
   | letE cell _ _ _ type value body =>
     intro m bound indices
     obtain ⟨typeIndices, valueIndices, tail⟩ := SubstAux.idxAll_letE_inv indices (loadValue_enum_cell cell)
-    exact Bool.and_eq_true.mpr ⟨Bool.and_eq_true.mpr ⟨type typeIndices, value valueIndices⟩,
+    simp only [Expr.looseBVarsBounded, Bool.and_eq_true]
+    exact ⟨⟨type typeIndices, value valueIndices⟩,
       by simpa only [Nat.add_assoc] using body tail⟩
   | proj cell address _ inner =>
     intro m bound indices
