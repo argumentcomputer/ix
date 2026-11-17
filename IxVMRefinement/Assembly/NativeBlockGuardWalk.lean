@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockGuardSyn
+import IxVMRefinement.Obs.KernelGuard
 import IxVMRefinement.Assembly.NativeBlockStage
 import IxVMRefinement.Assembly.NativeBlockNewFacts
 import IxVMRefinement.Infer.Proj
@@ -322,6 +323,24 @@ raw at local depth `kr` (`R`), with `K = fidx` fields left, the walk computes th
 derivation of the `j`-th domain IxC's `openPisAtFvars` opens from `E` at `d`, and `flags[j]` is
 set wherever the raw body after the `j`-th binder of `R` has a loose occurrence of its
 variable. The walk starts at a `Forall` cell. -/
+/-- The explicit classifier comparison keeps the ordinary sort inference and its level. -/
+theorem checked_sort_scoped (c : ScopedCtx) (hc : ScopedCoreFacts c)
+    {d : Nat} {Γ : Nat → KExpr} {E : KExpr} {rc e ctx r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hrc : c.rc h rc) (htypes : c.types Γ h d ctx) (good : CoreGood c calls)
+    (ev : ObsFn W "KernelGuard::checked_sort" [rc, e, ctx] h r h' calls)
+    (hE : c.tm d Γ h E e) :
+    ∃ stype u level, Infer c.env .full d E stype ∧ Red c.env d stype (.sort u) ∧
+      RepKLevel h' level r ∧ LvEq u level := by
+  obtain ⟨actual, m1, cs1, expected, m2, cs2, answer, m3, cs3, signature, m4, cs4,
+    ev1, ev2, ev4, ev3, _, hr, hh, hcs⟩ := Obs.«KernelGuard::checked_sort».obs ev
+  subst hr hh hcs
+  have g1 : CoreGood c cs1 := good.sub fun x hx => by simp [hx]
+  obtain ⟨stype, u, level, hi, hred, hl, heq⟩ :=
+    Decl.scoped_core_ensure_sort hrc htypes.1 htypes.2 hc.env hc.loads g1 ev1 hE
+  exact ⟨stype, u, level, hi, hred,
+    hl.mono (ev2.heap_extends.trans (ev4.heap_extends.trans ev3.heap_extends)), heq⟩
+
 theorem walk_open (c : ScopedCtx) (hc : ScopedCoreFacts c) (Γ0 : Nat → KExpr) :
     ∀ (K : Nat) {x_rc x_ty x_ctx x_deps r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)} (k : F), ZMod.val k = K → CoreGood c calls →
@@ -461,6 +480,145 @@ theorem walk_open (c : ScopedCtx) (hc : ScopedCoreFacts c) (Γ0 : Nat → KExpr)
           exact hbflag hfl
         | succ j => exact hflag j (by omega) hfl bs' rest hst'
 
+theorem walk_open_checked (c : ScopedCtx) (hc : ScopedCoreFacts c) (Γ0 : Nat → KExpr) :
+    ∀ (K : Nat) {x_rc x_ty x_ctx x_deps r : SourceValue F} {h h' : Heap F}
+      {calls : List (Call F)} (k : F), ZMod.val k = K → CoreGood c calls →
+      ObsFn W "KernelGuard::proj_walk_checked" [x_rc, x_ty, x_ctx, .field k, x_deps] h r h' calls →
+      ∀ (d : Nat) (Γ : Nat → KExpr) (E : KExpr) (kr : Nat) (R : KExpr) (ls : List KLevel),
+        c.rc h x_rc → c.types Γ h d x_ctx → c.tm d Γ h E x_ty → Tm c.κ 0 Γ0 h kr R x_ty →
+        RepKLevelList h ls x_deps →
+        (∃ x y z, loadValue h x_ty = .ok (.construct "KernelTypes::KExprNode" "Forall" [x, y, z])) ∧
+        ∃ (lus : List KLevel) (flags : List Bool), lus.length = K + 1 ∧ flags.length = K ∧
+          RepKLevel h' ((ls ++ selDeps lus flags).foldl (fun a b => Ix.Kernel.Level.max a b)
+            (lus.getD K .zero)) r ∧
+          (∀ (n : Nat) (xFvs : List KExpr) (body : KExpr), K + 1 ≤ n →
+            Ix.Kernel.openPisAtFvars n E d = some (xFvs, body) →
+            ∀ j, j ≤ K → ∃ (x T : KExpr) (u : KLevel), xFvs[j]? = some x ∧
+              Infer c.env .full (d + j) x.fvarTypeD T ∧ Red c.env (d + j) T (.sort u) ∧
+              LvEq u (lus.getD j .zero)) ∧
+          (∀ j, j < K → flags.getD j false = false →
+            ∀ (bs : List (KExpr × Ix.Kernel.BinderMeta)) (rest : KExpr),
+              R.stripPis (j + 1) = some (bs, rest) → rest.hasLooseBVar 0 = false) := by
+  intro K
+  induction K with
+  | zero =>
+    intro x_rc x_ty x_ctx x_deps r h h' calls k hk good ev d Γ E kr R ls hrc htypes hE hR hls
+    have hk0 : k = 0 := (ZMod.val_eq_zero k).mp hk
+    subst hk0
+    rcases Obs.«KernelGuard::proj_walk_checked».obs ev with
+      ⟨x_dom, x_body, w16, v32, m33, cs43, cs87, ld11, ev45, _, ev89, hc106⟩ |
+      ⟨x_dom, x_body, w16, v32, m33, cs43, v176, m177, cs179, cs188, v194, m211,
+        ld11, ev45, hne107, sg184, hm219, op252, ev190, hc261⟩
+    · subst hc106
+      obtain ⟨D, B, ℓ0, rfl, hD, -, -⟩ := hE.forallE_of_load ld11
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
+      obtain ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩ :=
+        checked_sort_scoped c hc hrc htypes g43 ev45 hD
+      have e45 := ObsFn.heap_extends ev45
+      refine ⟨⟨_, _, _, ld11⟩, [ℓ], [], rfl, rfl, ?_, ?_, ?_⟩
+      · have hf := fold_eq ev89 hℓ (RepKLevelList.mono hls e45)
+        have e1 : selDeps [ℓ] [] = [] := rfl
+        have e2 : ([ℓ] : List KLevel).getD 0 .zero = ℓ := rfl
+        rw [e1, e2, List.append_nil]
+        exact hf
+      · intro n xFvs body hn hop j hj
+        have hj0 : j = 0 := by omega
+        subst hj0
+        obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+        obtain ⟨fvs, rfl, -⟩ := openPisAtFvars_succ_forallE hop
+        exact ⟨.fvar d D, stype, u, rfl, hinf, hred, heq⟩
+      · intro j hj
+        exact absurd hj (Nat.not_lt_zero j)
+    · exact absurd rfl hne107
+  | succ K ih =>
+    intro x_rc x_ty x_ctx x_deps r h h' calls k hk good ev d Γ E kr R ls hrc htypes hE hR hls
+    have hk0 : k ≠ 0 := by
+      intro e
+      rw [e, ZMod.val_zero] at hk
+      omega
+    rcases Obs.«KernelGuard::proj_walk_checked».obs ev with
+      ⟨x_dom, x_body, w16, v32, m33, cs43, cs87, ld11, ev45, hv83, ev89, hc106⟩ |
+      ⟨x_dom, x_body, w16, v32, m33, cs43, v176, m177, cs179, cs188, v194, m211,
+        ld11, ev45, hne107, sg184, hm219, op252, ev190, hc261⟩
+    · exact absurd (Value.field.inj hv83) hk0
+    · subst hc261
+      obtain ⟨D, B, ℓ0, rfl, hD, hB, -⟩ := hE.forallE_of_load ld11
+      obtain ⟨RD, RB, ℓr, rfl, -, hRB, -⟩ := hR.forallE_of_load ld11
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
+      obtain ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩ :=
+        checked_sort_scoped c hc hrc htypes g43 ev45 hD
+      have e45 := ObsFn.heap_extends ev45
+      -- the flag of this field and the levels kept so far
+      obtain ⟨b, ls', hls177, e33_177, hb, hbflag⟩ : ∃ (b : Bool) (ls' : List KLevel),
+          RepKLevelList m177 ls' v176 ∧ Heap.Extends m33 m177 ∧
+          ls' = ls ++ (if b then [ℓ] else []) ∧ (b = false → RB.hasLooseBVar 0 = false) := by
+        rcases sg184 with
+          ⟨m112, cs123, cs148, ev125, ev150, hc167⟩ |
+          ⟨v111, m112, cs123, ev125, hne168, he173, he174, hc175⟩
+        · have e125 := ObsFn.heap_extends ev125
+          have e150 := ObsFn.heap_extends ev150
+          refine ⟨true, ls ++ [ℓ],
+            ProjAux.lv_snoc ev150 (RepKLevelList.mono (RepKLevelList.mono hls e45) e125)
+              (hℓ.mono e125),
+            e125.trans e150, ?_, fun hf => by cases hf⟩
+          first | rfl | simp
+        · subst he173 he174 hc175
+          have e125 := ObsFn.heap_extends ev125
+          have g123 : CoreGood c cs123 := good.sub fun x hx => by simp [hx]
+          obtain ⟨-, h01, -⟩ := SubstAux.gall c.κ .expr_has_bvar_at _ _ _ _ _ ev125 x_body 0 rfl
+            g123.bounded
+          have hv0 : v111 = .field 0 := h01.resolve_right hne168
+          subst hv0
+          have hno := (Decl.expr_has_bvar_at_zero_spec (k := kr + 1) (j := 0) (by omega)
+            (by decide) g123.bounded (Tm.mono e45 hRB) (by rw [Nat.cast_zero]; exact ev125)).1
+          refine ⟨false, ls, RepKLevelList.mono (RepKLevelList.mono hls e45) e125, e125, ?_,
+            fun _ => hno⟩
+          first | rfl | simp
+      subst hm219
+      have hv194 : v194 = .field (k - 1) := NatAux.sub_ok op252
+      subst hv194
+      have hkv : ZMod.val (k - 1) = K := by
+        have := NatAux.val_sub_one hk0
+        omega
+      have e211 := Heap.Extends.snoc m177 (.construct kexprListEnum "Cons" [x_dom, x_ctx])
+      have E177 : Heap.Extends h m177 := e45.trans e33_177
+      have E211 : Heap.Extends h _ := E177.trans e211
+      have htypes211 := ProjAux.types_extend (types_mono E177 htypes) (Tm.mono E177 hD)
+      have hbody211 := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)
+        (Tm.mono E211 hB)
+      have g188 : CoreGood c cs188 := good.sub fun x hx => by simp [hx]
+      obtain ⟨-, lus', flags', hlen1, hlen2, hfold, hpos, hflag⟩ :=
+        ih (k - 1) hkv g188 ev190 (d + 1) _ _ (kr + 1) RB ls' (RCRep.mono E211 hrc)
+          htypes211 hbody211 (Tm.mono E211 hRB) (RepKLevelList.mono hls177 e211)
+      refine ⟨⟨_, _, _, ld11⟩, ℓ :: lus', b :: flags', by simp [hlen1], by simp [hlen2], ?_, ?_,
+        ?_⟩
+      · have e1 : ls ++ selDeps (ℓ :: lus') (b :: flags') = ls' ++ selDeps lus' flags' := by
+          show ls ++ ((if b then [ℓ] else []) ++ selDeps lus' flags') = ls' ++ selDeps lus' flags'
+          rw [hb, List.append_assoc]
+        rw [e1]
+        exact hfold
+      · intro n xFvs body hn hop j hj
+        obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+        obtain ⟨fvs, rfl, hop'⟩ := openPisAtFvars_succ_forallE hop
+        cases j with
+        | zero => exact ⟨.fvar d D, stype, u, rfl, hinf, hred, heq⟩
+        | succ j =>
+          obtain ⟨x, T, u', hx, hi, hr, hq⟩ := hpos n' fvs body (by omega) hop' j (by omega)
+          refine ⟨x, T, u', hx, ?_, ?_, hq⟩
+          · rw [show d + (j + 1) = d + 1 + j by omega]
+            exact hi
+          · rw [show d + (j + 1) = d + 1 + j by omega]
+            exact hr
+      · intro j hj hfl bs rest hst
+        obtain ⟨bs', hst'⟩ := stripPis_succ_forallE hst
+        cases j with
+        | zero =>
+          have h0 : (some ([], RB) : Option (List (KExpr × Ix.Kernel.BinderMeta) × KExpr)) =
+              some (bs', rest) := hst'
+          obtain ⟨-, rfl⟩ := Prod.mk.inj (Option.some.inj h0)
+          exact hbflag hfl
+        | succ j => exact hflag j (by omega) hfl bs' rest hst'
+
 /-! ## The guard -/
 
 /-- **The projection guard, functionally**, at a scoped context with its core facts: when the
@@ -497,86 +655,173 @@ theorem proj_guard_open (c : ScopedCtx) (hc : ScopedCoreFacts c)
       lus.length = ZMod.val f + 1 ∧ flags.length = ZMod.val f := by
   rcases Obs.«KernelInfer::proj_guard».obs ev with
     ⟨m2, p9, cs15, w44, x_cty, w45, w46, w47, x_np, w48, w49, m91, cs101, m122,
-      x_after, x_ctx, cs150, m187, ev17, ld11, hm130, ev103, hm195, ev152, hc199⟩
-  subst hc199 hm130 hm195
-  -- the loaded constructor
-  obtain ⟨v, hldv, hci⟩ := hload p9 m2 cs15 ev17 (fun x hx => by simp [hx])
-  rw [ld11] at hldv
-  injection hldv with hv
-  subst hv
-  obtain ⟨cv, nP', nF', hci_eq, hval, hnp_eq, -, hnP_lt, -, -⟩ := WhnfAux.ctor_inv hci
-  injection hci_eq with hcv hnP hnF
-  subst hcv hnP hnF hnp_eq
-  let Γ0 : Nat → KExpr := fun _ => .sort .zero
-  have hT0 : Tm c.κ 0 Γ0 m2 0 T x_cty := by
-    have h1 : Tm c.κ 0 Γ0 m2 0 (posOf (List.range k) T) x_cty := hval.2.2.2 0 Γ0
-    rwa [Decl.posOf_range] at h1
-  -- the parameter peel
-  have e17 := ObsFn.heap_extends ev17
-  have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
-  have hnil_ctx : c.types Γ0 (m2 ++ [.construct kexprListEnum "Nil" []]) 0
-      (.ptr (.enum kexprListEnum) m2.length) :=
-    ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
-  have hT122 := Tm.mono e122 hT0
-  have hnPv : ZMod.val (nP : F) = nP := ZMod.val_natCast_of_lt (Nat.lt_trans hnP_lt (by decide))
-  obtain ⟨m', Γ', E', R', fvs, bs, hm'le, htypesP, hEP, hRP, hopP, hstP, hstop⟩ :=
-    peel_open c Γ0 nP (nP : F) hnPv ev103 0 Γ0 T 0 T hnil_ctx hT122 hT122
-  rw [Nat.zero_add] at htypesP hEP hRP
-  -- the field walk
-  have e103 := ObsFn.heap_extends ev103
-  have e187 := Heap.Extends.snoc m91
-    (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
-  have hnil_deps : RepKLevelList
-      (m91 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
-      (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m91.length) := by
-    rw [klevel_node_eq']
-    exact .nil List.getElem?_concat_length
-  have E187 : Heap.Extends h _ := e17.trans (e122.trans (e103.trans e187))
-  have g150 : CoreGood c cs150 := good.sub fun x hx => by simp [hx]
-  obtain ⟨⟨xa, ya, za, hldF⟩, lus, flags, hlen1, hlen2, hfold, hpos, hflag⟩ :=
-    walk_open c hc Γ0 (ZMod.val f) f rfl g150 ev152 m' Γ' E' m' R' []
-      (RCRep.mono E187 hrc) (types_mono e187 htypesP) (Tm.mono e187 hEP) (Tm.mono e187 hRP)
-      hnil_deps
-  -- the peel passed every parameter: the walk starts at a `Forall` cell
-  have hm'eq : nP = m' := by
-    by_contra hne
-    obtain ⟨vv, hldv', hnf⟩ := hstop (by omega)
-    have hl := L1.loadValue_extend e187 hldv'
-    rw [hl] at hldF
-    injection hldF with hvv
-    exact hnf [xa, ya, za] rfl hvv
-  subst hm'eq
-  have hgEq : g = ([] ++ selDeps lus flags).foldl (fun a b => Ix.Kernel.Level.max a b)
-      (lus.getD (ZMod.val f) .zero) := hg.det hfold
-  refine ⟨lus, flags, ?_, ?_, ?_, hlen1, hlen2⟩
-  · rw [hgEq, List.nil_append]
-    have hfr := foldl_range_selDeps flags lus (lus.getD (ZMod.val f) .zero)
-    rw [hlen2] at hfr
-    exact hfr.symm
-  · intro fvsP crest xFvs body hP hF j hj
-    have hcr : E' = crest := (Prod.mk.inj (Option.some.inj (hopP.symm.trans hP))).2
-    subst hcr
-    exact hpos nF xFvs body (by omega) hF j hj
-  · intro j hj
-    cases hfl : flags.getD j false with
-    | true => intro _; rfl
-    | false =>
-      intro hU
-      exfalso
-      have hno : Ix.Kernel.structUsedLater T nP j = false := by
-        cases hs : T.stripPis (nP + j + 1) with
-        | none => simp only [Ix.Kernel.structUsedLater, hs]
-        | some p =>
-          obtain ⟨bsU, rest⟩ := p
-          simp only [Ix.Kernel.structUsedLater, hs]
-          rw [show nP + j + 1 = nP + (j + 1) by omega] at hs
-          obtain ⟨bU₁, midU, bU₂, hUP, hUmid, -, -⟩ := Decl.stripPis_split nP (j + 1) hs
-          have hmid : midU = R' := (Prod.mk.inj (Option.some.inj (hUP.symm.trans hstP))).2
-          subst hmid
-          rw [Ix.Kernel.Expr.hasLooseBVarB_eq]
-          exact hflag j hj hfl bU₂ rest hUmid
-      rw [hno] at hU
-      exact Bool.false_ne_true hU
+      x_after, x_ctx, m148, p155, cs161, w183, x_ind_ty, x_ind_np, x_ind_ni, w184, w185,
+      w186, w187, m229, cs240, v245, csTail, mFinal, ev17, ld11, hm130, ev103, ev163,
+      ld157, op273, ev242, hmFinal, evTail, hcs⟩ |
+    ⟨m2, p9, cs15, w44, x_cty, w45, w46, w47, x_np, w48, w49, m91, cs101, m122,
+      x_after, x_ctx, m148, p155, cs161, w183, x_ind_ty, x_ind_np, x_ind_ni, w184, w185,
+      w186, w187, v228, m229, cs240, v245, csTail, mFinal, ev17, ld11, hm130, ev103,
+      ev163, ld157, op273, ev242, hne, hmFinal, evTail, hcs⟩
+  · subst hcs hm130 hmFinal
+    -- the loaded constructor
+    obtain ⟨v, hldv, hci⟩ := hload p9 m2 cs15 ev17 (fun x hx => by simp [hx])
+    rw [ld11] at hldv
+    injection hldv with hv
+    subst hv
+    obtain ⟨cv, nP', nF', hci_eq, hval, hnp_eq, -, hnP_lt, -, -⟩ := WhnfAux.ctor_inv hci
+    injection hci_eq with hcv hnP hnF
+    subst hcv hnP hnF hnp_eq
+    let Γ0 : Nat → KExpr := fun _ => .sort .zero
+    have hT0 : Tm c.κ 0 Γ0 m2 0 T x_cty := by
+      have h1 : Tm c.κ 0 Γ0 m2 0 (posOf (List.range k) T) x_cty := hval.2.2.2 0 Γ0
+      rwa [Decl.posOf_range] at h1
+    -- the parameter peel
+    have e17 := ObsFn.heap_extends ev17
+    have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
+    have hnil_ctx : c.types Γ0 (m2 ++ [.construct kexprListEnum "Nil" []]) 0
+        (.ptr (.enum kexprListEnum) m2.length) :=
+      ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
+    have hT122 := Tm.mono e122 hT0
+    have hnPv : ZMod.val (nP : F) = nP := ZMod.val_natCast_of_lt (Nat.lt_trans hnP_lt (by decide))
+    obtain ⟨m', Γ', E', R', fvs, bs, hm'le, htypesP, hEP, hRP, hopP, hstP, hstop⟩ :=
+      peel_open c Γ0 nP (nP : F) hnPv ev103 0 Γ0 T 0 T hnil_ctx hT122 hT122
+    rw [Nat.zero_add] at htypesP hEP hRP
+    -- the field walk
+    have e103 := ObsFn.heap_extends ev103
+    have eRest := ev163.heap_extends.trans ev242.heap_extends
+    have e187 := Heap.Extends.snoc m229
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
+    have hnil_deps : RepKLevelList
+        (m229 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m229.length) := by
+      rw [klevel_node_eq']
+      exact .nil List.getElem?_concat_length
+    have E187 : Heap.Extends h _ := e17.trans (e122.trans (e103.trans (eRest.trans e187)))
+    have g150 : CoreGood c csTail := good.sub fun x hx => by simp [hx]
+    obtain ⟨⟨xa, ya, za, hldF⟩, lus, flags, hlen1, hlen2, hfold, hpos, hflag⟩ :=
+      walk_open_checked c hc Γ0 (ZMod.val f) f rfl g150 evTail m' Γ' E' m' R' []
+        (RCRep.mono E187 hrc) (types_mono (eRest.trans e187) htypesP) (Tm.mono (eRest.trans e187) hEP) (Tm.mono (eRest.trans e187) hRP)
+        hnil_deps
+    -- the peel passed every parameter: the walk starts at a `Forall` cell
+    have hm'eq : nP = m' := by
+      by_contra hne
+      obtain ⟨vv, hldv', hnf⟩ := hstop (by omega)
+      have hl := L1.loadValue_extend (eRest.trans e187) hldv'
+      rw [hl] at hldF
+      injection hldF with hvv
+      exact hnf [xa, ya, za] rfl hvv
+    subst hm'eq
+    have hgEq : g = ([] ++ selDeps lus flags).foldl (fun a b => Ix.Kernel.Level.max a b)
+        (lus.getD (ZMod.val f) .zero) := hg.det hfold
+    refine ⟨lus, flags, ?_, ?_, ?_, hlen1, hlen2⟩
+    · rw [hgEq, List.nil_append]
+      have hfr := foldl_range_selDeps flags lus (lus.getD (ZMod.val f) .zero)
+      rw [hlen2] at hfr
+      exact hfr.symm
+    · intro fvsP crest xFvs body hP hF j hj
+      have hcr : E' = crest := (Prod.mk.inj (Option.some.inj (hopP.symm.trans hP))).2
+      subst hcr
+      exact hpos nF xFvs body (by omega) hF j hj
+    · intro j hj
+      cases hfl : flags.getD j false with
+      | true => intro _; rfl
+      | false =>
+        intro hU
+        exfalso
+        have hno : Ix.Kernel.structUsedLater T nP j = false := by
+          cases hs : T.stripPis (nP + j + 1) with
+          | none => simp only [Ix.Kernel.structUsedLater, hs]
+          | some p =>
+            obtain ⟨bsU, rest⟩ := p
+            simp only [Ix.Kernel.structUsedLater, hs]
+            rw [show nP + j + 1 = nP + (j + 1) by omega] at hs
+            obtain ⟨bU₁, midU, bU₂, hUP, hUmid, -, -⟩ := Decl.stripPis_split nP (j + 1) hs
+            have hmid : midU = R' := (Prod.mk.inj (Option.some.inj (hUP.symm.trans hstP))).2
+            subst hmid
+            rw [Ix.Kernel.Expr.hasLooseBVarB_eq]
+            exact hflag j hj hfl bU₂ rest hUmid
+        rw [hno] at hU
+        exact Bool.false_ne_true hU
+  · subst hcs hm130 hmFinal
+    -- the loaded constructor
+    obtain ⟨v, hldv, hci⟩ := hload p9 m2 cs15 ev17 (fun x hx => by simp [hx])
+    rw [ld11] at hldv
+    injection hldv with hv
+    subst hv
+    obtain ⟨cv, nP', nF', hci_eq, hval, hnp_eq, -, hnP_lt, -, -⟩ := WhnfAux.ctor_inv hci
+    injection hci_eq with hcv hnP hnF
+    subst hcv hnP hnF hnp_eq
+    let Γ0 : Nat → KExpr := fun _ => .sort .zero
+    have hT0 : Tm c.κ 0 Γ0 m2 0 T x_cty := by
+      have h1 : Tm c.κ 0 Γ0 m2 0 (posOf (List.range k) T) x_cty := hval.2.2.2 0 Γ0
+      rwa [Decl.posOf_range] at h1
+    -- the parameter peel
+    have e17 := ObsFn.heap_extends ev17
+    have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
+    have hnil_ctx : c.types Γ0 (m2 ++ [.construct kexprListEnum "Nil" []]) 0
+        (.ptr (.enum kexprListEnum) m2.length) :=
+      ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
+    have hT122 := Tm.mono e122 hT0
+    have hnPv : ZMod.val (nP : F) = nP := ZMod.val_natCast_of_lt (Nat.lt_trans hnP_lt (by decide))
+    obtain ⟨m', Γ', E', R', fvs, bs, hm'le, htypesP, hEP, hRP, hopP, hstP, hstop⟩ :=
+      peel_open c Γ0 nP (nP : F) hnPv ev103 0 Γ0 T 0 T hnil_ctx hT122 hT122
+    rw [Nat.zero_add] at htypesP hEP hRP
+    -- the field walk
+    have e103 := ObsFn.heap_extends ev103
+    have eRest := ev163.heap_extends.trans ev242.heap_extends
+    have e187 := Heap.Extends.snoc m229
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
+    have hnil_deps : RepKLevelList
+        (m229 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m229.length) := by
+      rw [klevel_node_eq']
+      exact .nil List.getElem?_concat_length
+    have E187 : Heap.Extends h _ := e17.trans (e122.trans (e103.trans (eRest.trans e187)))
+    have g150 : CoreGood c csTail := good.sub fun x hx => by simp [hx]
+    obtain ⟨⟨xa, ya, za, hldF⟩, lus, flags, hlen1, hlen2, hfold, hpos, hflag⟩ :=
+      walk_open c hc Γ0 (ZMod.val f) f rfl g150 evTail m' Γ' E' m' R' []
+        (RCRep.mono E187 hrc) (types_mono (eRest.trans e187) htypesP) (Tm.mono (eRest.trans e187) hEP) (Tm.mono (eRest.trans e187) hRP)
+        hnil_deps
+    -- the peel passed every parameter: the walk starts at a `Forall` cell
+    have hm'eq : nP = m' := by
+      by_contra hne
+      obtain ⟨vv, hldv', hnf⟩ := hstop (by omega)
+      have hl := L1.loadValue_extend (eRest.trans e187) hldv'
+      rw [hl] at hldF
+      injection hldF with hvv
+      exact hnf [xa, ya, za] rfl hvv
+    subst hm'eq
+    have hgEq : g = ([] ++ selDeps lus flags).foldl (fun a b => Ix.Kernel.Level.max a b)
+        (lus.getD (ZMod.val f) .zero) := hg.det hfold
+    refine ⟨lus, flags, ?_, ?_, ?_, hlen1, hlen2⟩
+    · rw [hgEq, List.nil_append]
+      have hfr := foldl_range_selDeps flags lus (lus.getD (ZMod.val f) .zero)
+      rw [hlen2] at hfr
+      exact hfr.symm
+    · intro fvsP crest xFvs body hP hF j hj
+      have hcr : E' = crest := (Prod.mk.inj (Option.some.inj (hopP.symm.trans hP))).2
+      subst hcr
+      exact hpos nF xFvs body (by omega) hF j hj
+    · intro j hj
+      cases hfl : flags.getD j false with
+      | true => intro _; rfl
+      | false =>
+        intro hU
+        exfalso
+        have hno : Ix.Kernel.structUsedLater T nP j = false := by
+          cases hs : T.stripPis (nP + j + 1) with
+          | none => simp only [Ix.Kernel.structUsedLater, hs]
+          | some p =>
+            obtain ⟨bsU, rest⟩ := p
+            simp only [Ix.Kernel.structUsedLater, hs]
+            rw [show nP + j + 1 = nP + (j + 1) by omega] at hs
+            obtain ⟨bU₁, midU, bU₂, hUP, hUmid, -, -⟩ := Decl.stripPis_split nP (j + 1) hs
+            have hmid : midU = R' := (Prod.mk.inj (Option.some.inj (hUP.symm.trans hstP))).2
+            subst hmid
+            rw [Ix.Kernel.Expr.hasLooseBVarB_eq]
+            exact hflag j hj hfl bU₂ rest hUmid
+        rw [hno] at hU
+        exact Bool.false_ne_true hU
 
 end IxVM.Refinement.Core.GuardWalk
 
