@@ -155,6 +155,33 @@ theorem sortSignature_mono {a b : Lookup md} (hext : a.Extends b)
   intro t r h
   exact bind_preserved (fun t' h => head_mono hext fuel t t' h) (fun _ _ h => h) h
 
+/-- Two successful classifications agree when their positive declaration answers embed in one
+common lookup. The two source computations may use unrelated validation limits. -/
+theorem sortSignature_agree {a b common : Lookup md}
+    (ha : a.Extends common) (hb : b.Extends common)
+    {fuel : Nat} {ctx : List (Expr md)} {e : Expr md} {s t : Level}
+    (hs : sortSignature a fuel ctx e = some s)
+    (ht : sortSignature b fuel ctx e = some t) : s = t :=
+  Option.some.inj ((sortSignature_mono ha hs).symm.trans (sortSignature_mono hb ht))
+
+/-- Explicit installation and use comparisons to one stable classifier result imply the
+projection guard's required zero transfer, after arbitrary universe substitution. No typing
+uniqueness or equality of the two source role contexts is assumed. -/
+theorem checked_zero_transfer {a b common : Lookup md}
+    (ha : a.Extends common) (hb : b.Extends common)
+    {fuel : Nat} {ctx : List (Expr md)} {e : Expr md} {s t stored used : Level}
+    (hs : sortSignature a fuel ctx e = some s)
+    (ht : sortSignature b fuel ctx e = some t)
+    (hstore : ∀ φ, Level.eval φ (Level.guardSignatureLevel stored) = Level.eval φ s)
+    (huse : ∀ φ, Level.eval φ (Level.guardSignatureLevel used) = Level.eval φ t)
+    (ks : List LevelParam) (us : List Level) (φ : LevelParam → Nat)
+    (hz : Level.eval φ (Level.subst ks us used) = 0) :
+    Level.eval φ (Level.subst ks us stored) = 0 := by
+  have hst : s = t := sortSignature_agree ha hb hs ht
+  subst hst
+  exact (Level.guardSignatureLevel_subst_zero_iff
+    (fun ψ => (huse ψ).trans (hstore ψ).symm) ks us φ).mp hz
+
 /-- A sort is a concrete member of the classifier's domain, in every lookup and context. -/
 theorem sortSignature_sort (look : Lookup md) (ctx : List (Expr md)) (u : Level) :
     sortSignature look 1 ctx (.sort u) = some (.succ .zero) := rfl
