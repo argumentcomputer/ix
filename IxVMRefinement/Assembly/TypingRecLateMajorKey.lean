@@ -500,7 +500,8 @@ theorem rec_major_key_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   -- the route's scan on it
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
     nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
-    lenCalls, kCalls, canonCalls, evScan, -⟩ := native_rec_member_full evM
+    lenCalls, kCalls, canonCalls, _canonResult, _canonFinal, evScan, -⟩ :=
+    native_rec_member_full evM
   obtain ⟨rbs, Rd, Rb, mR, a, us, hstrip, hhead⟩ := rec_to_parent_addr_rawTm_major hrawM evScan
   have hsum : ZMod.val ((rc.params.toNat : F) + (rc.motives.toNat : F) + (rc.minors.toNat : F) +
       (rc.indices.toNat : F)) =
