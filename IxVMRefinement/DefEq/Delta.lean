@@ -436,6 +436,7 @@ theorem try_unfold_proj_app_step (c : ScopedCtx) {args : List (SourceValue F)} {
     obtain ⟨rfl, rfl⟩ := tuple2_inj he1
     obtain ⟨a, i, Es, rfl, rfl, ha, hEs⟩ := hH.proj_of_load ld51
     have : Resolved _ := ⟨hH.proj_key_ne⟩
+    have : ProjPermitted _ _ := hH.proj_permitted ld51 ha
     obtain ⟨Es2, hEs2, hred⟩ := ih.get (.defEq .delta_unfold) (by lt_calls) ev203 x_inner rfl
       (good.sub fun x hx => by simp [hx]) d Γ Es (Tm.mono (e1.trans e2) hEs) x_inner2 rfl
     have hm : m231 = m190 ++ [.construct kexprEnum "Proj" [x_struct_addr, .field i, x_inner2]] :=

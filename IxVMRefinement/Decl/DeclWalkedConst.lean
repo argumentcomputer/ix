@@ -1088,33 +1088,36 @@ def RunTerm (calls : List (Call F)) (h : Heap F) (p : SourceValue F) : Prop :=
   (∃ rc val types, (⟨"KernelInfer::k_check", [rc, val, p, types], h⟩ : Call F) ∈ calls)
 
 /-- **The evidence under another keying**: one that agrees with the first on the cell addresses of
-the heap terms the typed runs of `calls` take. -/
+the heap terms the typed runs of `calls` take, and permits a projection at the structures of
+their `Proj` cells. -/
 theorem CheckedConstOriginAt.rekey {κ₁ κ₂ : _root_.Address → Core.KKey} {lim : Nat}
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {d d' : Declaration .anon}
     (h : CheckedConstOriginAt κ₁ lim calls t bAddr E_core order_role d d')
     (agree : ∀ (hp : Heap F) (p : SourceValue F) (a : Bytes.Address), RunTerm calls hp p →
-      AddrIn hp p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) :
+      AddrIn hp p a → κ₂ (ixAddr a) = κ₁ (ixAddr a))
+    (perm : ∀ (hp : Heap F) (p : SourceValue F) (a : Bytes.Address), RunTerm calls hp p →
+      ProjIn hp p a → ProjPermitted κ₂ (ixAddr a)) :
     CheckedConstOriginAt κ₂ lim calls t bAddr E_core order_role d d' := by
   cases h with
   | axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es hty_tmc hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax =>
     exact .axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es 
-      (Core.TmC.rekey hty_tmc fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax
+      (Core.TmC.rekey hty_tmc (fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) (fun a m _ => perm _ _ a (Or.inl ⟨_, _, hcl_es⟩) m)) hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax
   | defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
     exact .defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
-      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
-      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
-      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+      (Core.TmC.rekey hty_tmc_es (fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) (fun a m _ => perm _ _ a (Or.inl ⟨_, _, hcl_es⟩) m)) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m)) 
+      (Core.TmC.rekey hval_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m)) hrc_kc ev_kc hcl_kc hsub_kc
   | thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
     exact .thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
-      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc 
-      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
-      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+      (Core.TmC.rekey hty_tmc_es (fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) (fun a m _ => perm _ _ a (Or.inl ⟨_, _, hcl_es⟩) m)) hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m)) 
+      (Core.TmC.rekey hval_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m)) hrc_kc ev_kc hcl_kc hsub_kc
   | opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
     exact .opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
-      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
-      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
-      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+      (Core.TmC.rekey hty_tmc_es (fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) (fun a m _ => perm _ _ a (Or.inl ⟨_, _, hcl_es⟩) m)) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m)) 
+      (Core.TmC.rekey hval_tmc_kc (fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) (fun a m _ => perm _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m)) hrc_kc ev_kc hcl_kc hsub_kc
 
 /-- **The evidence at a prefix, from the table-keyed evidence**: when every cell address of the
 heap terms the typed runs take is stored. The table-keyed evidence is what the record layer
@@ -1129,9 +1132,11 @@ theorem CheckedConstOriginAt.stored_of_table {calls : List (Call F)} {t : Ix.Ker
     ∃ lim d', CheckedConstOriginAt (Ctx.stored ⟨E_core, env, t, some lim⟩).κ lim calls t bAddr
       E_core order_role d d' := by
   obtain ⟨lim, d', h'⟩ := CheckedConstOriginAt.ofTable h
-  refine ⟨lim, d', h'.rekey fun hp p a hr m => ?_⟩
-  obtain ⟨ci, hci⟩ := hcells hp p a hr m
-  exact Ctx.stored_key_of_find (c := ⟨E_core, env, t, some lim⟩) hci
+  refine ⟨lim, d', h'.rekey (fun hp p a hr m => ?_) (fun hp p a hr m => ?_)⟩
+  · obtain ⟨ci, hci⟩ := hcells hp p a hr m
+    exact Ctx.stored_key_of_find (c := ⟨E_core, env, t, some lim⟩) hci
+  · obtain ⟨ci, hci⟩ := hcells hp p a hr m.addrIn
+    exact Ctx.stored_projPermitted_of_find (c := ⟨E_core, env, t, some lim⟩) hci
 
 /-- **A key a walked declaration may be stored at**: no reserved basis name, no accelerated `Nat`
 operation's key and no division certificate's name. These are the three lists the declaration

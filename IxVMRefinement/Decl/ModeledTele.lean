@@ -1146,7 +1146,8 @@ private theorem tmExact_store_letE {κ : _root_.Address → KKey} {d : Nat} {Γ 
   .letE (by simp) (rt.mono ext) (rv.mono ext) (rb.mono ext)
 
 private theorem tmExact_store_proj {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))] {i : F} {E : KExpr}
+    {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))]
+    [ProjPermitted κ (ixAddr a)] {i : F} {E : KExpr}
     {ap ep : SourceValue F}
     (ra : Bytes.RepAddressRef addrTy h a ap) (re : TmExact κ d Γ h k E ep) :
     TmExact κ d Γ (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]]) k
@@ -1419,6 +1420,7 @@ private theorem expr_lift_open_exact_aux (κ : _root_.Address → KKey) :
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
           have : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
+          have : ProjPermitted _ _ := hE.toTm.proj_permitted ld ra
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c d Γ Es rfl hs hes)
@@ -1784,6 +1786,7 @@ private theorem expr_lower_local_exact_aux (κ : _root_.Address → KKey) (rp : 
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
           have : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
+          have : ProjPermitted _ _ := hE.toTm.proj_permitted ld ra
           exact tmExact_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
             ((ih _ _ _ _ _ _ tele_lt_calls e1 (bounded_sub tele_sub_calls bd)).1
               rfl _ s c Es rfl hes (SubstAux.idxAll_proj_inv hn ld))

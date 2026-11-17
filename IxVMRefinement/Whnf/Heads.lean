@@ -403,8 +403,9 @@ theorem apply_n_projs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::apply_n_projs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.apply_n_projs c args h r h' calls := by
-  intro hd par major nf i hargs good d Γ H p M n j hH hp hres hM hn hi
+  intro hd par major nf i hargs good d Γ H p M n j hH hp hres hperm hM hn hi
   have : Resolved (c.κ (ixAddr p)) := ⟨hres⟩
+  have : ProjPermitted c.κ (ixAddr p) := hperm
   subst hargs hn hi
   rcases Obs.«KernelWhnf::apply_n_projs».obs ev with
     ⟨op17, he25, he26, hc27⟩ |
@@ -429,7 +430,7 @@ theorem apply_n_projs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
     have ext := e1.trans e2
     obtain ⟨m', hm', hrep⟩ := ih.get (.whnf .apply_n_projs) (by lt_calls) ev76 _ par major _ _ rfl
       (good.sub fun x hx => by simp [hx]) d Γ _ p M n (j + 1) happ
-      (Bytes.repAddressRef_heapMono₂ addrTy ext hp) hres (Tm.mono ext hM) rfl rfl
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hp) hres hperm (Tm.mono ext hM) rfl rfl
     refine ⟨m' + 1, by rw [← hm']; push_cast; ring, ?_⟩
     rw [WhnfAux.projs_succ]
     exact hrep

@@ -470,8 +470,9 @@ theorem peel_field_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_field_loop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_field_loop c args h r h' calls := by
-  intro ty tg cu sa val hargs good t0 c0 htg hcu hle d Γ T a PE hT ha hres hPE
+  intro ty tg cu sa val hargs good t0 c0 htg hcu hle d Γ T a PE hT ha hres hperm hPE
   have : Resolved (c.κ (ixAddr a)) := ⟨hres⟩
+  have : ProjPermitted c.κ (ixAddr a) := hperm
   subst hargs htg hcu
   rcases Obs.«KernelInfer::peel_field_loop».obs ev with
     ⟨x_dom, x_body, w20, ld12, op52, he60, he61, hc62⟩ |
@@ -503,7 +504,7 @@ theorem peel_field_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     simp only [ZMod.val_zero] at hinst
     obtain ⟨n, FT, hn, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls) ev148
       _ _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) t0 (c0 + 1) rfl rfl (by omega) d Γ _ a
-      PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) hres (Tm.mono ext hPE)
+      PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) hres hperm (Tm.mono ext hPE)
     rw [hc1] at hfield
     refine ⟨n + 1, FT, by omega, hFT, ?_⟩
     exact hfield
@@ -804,7 +805,8 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {x_rc x_struct_addr x_fidx x_e1 x_types r : SourceValue F} {h h' : Heap F}
     {d : Nat} {Γ : Nat → KExpr} {s : Bytes.Address} {fi : F} {PE : KExpr}
     (hrc : c.rc h x_rc) (hfi : x_fidx = .field fi) (htypes : c.types Γ h d x_types)
-    (hs : Bytes.RepAddressRef addrTy h s x_struct_addr) (hPE : c.tm d Γ h PE x_e1)
+    (hs : Bytes.RepAddressRef addrTy h s x_struct_addr)
+    (hperm : ProjPermitted c.κ (ixAddr s)) (hPE : c.tm d Γ h PE x_e1)
     {c0 c_peel : Call F}
     {v1 : SourceValue F} {m2 : Heap F} {cs12 : List (Call F)}
     {v39 : SourceValue F} {m40 : Heap F} {cs50 : List (Call F)}
@@ -923,6 +925,16 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     ((NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj (hp_eq.symm.trans hnpA))).symm
   have hus_nlS : us.length = cvS.levelParams.length :=
     ((NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj (hsnl.symm.trans hnlU))).symm
+  -- the projected structure is the member the load names, so a projection is permitted there
+  have hkS0 : c.κ (ixAddr s) = c.κ (iprjAddr (ixAddr bS) (ZMod.val iS)) :=
+    (WhnfAux.name_of_find hfindS).symm.trans hnameS
+  have hresS : c.κ (ixAddr s) ≠ unresolvedKey := hc.res_of_find hfindS
+  have hsaddr : ixAddr s = iprjAddr (ixAddr bS) (ZMod.val iS) :=
+    keyOf_inj hc.env.tableWf (((c.key_eq hresS).symm.trans hkS0).trans
+      (c.key_eq (by rw [← hkS0]; exact hresS)))
+  have hpermS : ProjPermitted c.κ (iprjAddr (ixAddr bS) (ZMod.val iS)) := by
+    rw [← hsaddr]
+    exact hperm
   -- 5. Load the structure's constructor via `proj_ctor` and projection table
   have g370 : CoreGood c cs370 := good.sub fun x hx => by simp [hx]
   have allowed372 : c.allowedTop "KernelModeled::proj_ctor" [x_block_addr, x_ind_idx] m194 :=
@@ -931,7 +943,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     by have hobs := ev372; rw [hidx_eq] at hobs; exact hobs
   obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
     x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372)
-    (ScopedCtx.famAt_of_ind hfindS hnameS) g370 hbS
+    (ScopedCtx.famAt_of_ind hfindS hnameS) hpermS g370 hbS
   rw [ld366] at hldC
   injection hldC with hvC
   subst hvC
@@ -946,7 +958,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
     (hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 allowed372 g370.raw hbS hidx_eq (ScopedCtx.famAt_of_ind hfindS hnameS)).2
+      ev372 allowed372 g370.raw hbS hidx_eq (ScopedCtx.famAt_of_ind hfindS hnameS) hpermS).2
       x_head_addr p201 x_ind_nlvls x_ind_ty x_n_params w234 x_block_addr m159 m194 cs207 s
       ev209 g207.raw hs159 (by rw [← hni0, ← heq301, ← hidx_eq]; exact ld203) hbS
       0 cvC nP nF
@@ -980,7 +992,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   obtain ⟨nf_step, FT, hnf_step, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls)
     ev560 v509 (.field fi) (.field 0) x_struct_addr x_e1 rfl
     (good.sub fun x hx => by simp [hx]) fi 0 rfl rfl (by rw [ZMod.val_zero]; exact Nat.zero_le _)
-    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (by resolve_key)
+    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (by resolve_key) hperm
     (Tm.mono E510 hPE)
   rw [ZMod.val_zero, Nat.zero_add] at hnf_step
   subst nf_step
@@ -1074,7 +1086,7 @@ theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_proj c args h r h' calls := by
-  intro rc sa fi e1 types hargs good hrc i hfi d Γ htypes a PE ha hPE
+  intro rc sa fi e1 types hargs good hrc i hfi d Γ htypes a PE ha hperm hPE
   subst hargs
   rcases Obs.«KernelInfer::k_infer_proj».obs ev with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_head, x_args, x_head_addr, x_lvls,
@@ -1089,7 +1101,7 @@ theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have g12 : CoreGood c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
   have hlt520 : cs520.length < calls.length := by rw [hc716]; lt_calls
   have g520 : CoreGood c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
-  refine infer_proj_common c hc ih good hrc hfi htypes ha hPE hc716 ?_ ev52 ev91 ld127
+  refine infer_proj_common c hc ih good hrc hfi htypes ha hperm hPE hc716 ?_ ev52 ev91 ld127
     ev169 heq192 ev209 ld203 heq301 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
     he714 he715
   · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer) hlt12 ev14 rc e1 types rfl g12

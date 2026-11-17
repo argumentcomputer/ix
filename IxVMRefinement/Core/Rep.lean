@@ -210,6 +210,65 @@ only when the key of its address resolves. Under a role table's own keying every
 class Resolved (k : KKey) : Prop where
   ne : k ≠ unresolvedKey
 
+/-! ## Where a projection is permitted
+
+A keying carries a second bit for each address, the *projection permission*, and carries it at
+the address's marker. `projMarker` and `ProjPermitted` are the whole encoding: every other
+statement speaks of `ProjPermitted` (and, where it must say an address is one a record can have,
+of `IsProjMarker`). A keying that held the two bits as separate components would change these
+definitions and the lemmas beside them, and nothing else. -/
+
+/-- **The marker of an address**: its bytes followed by 33 zero bytes. A record's address has 32
+bytes (`ixAddr_size`; the hash's output), a marker has more, so no record's address is a marker
+(`not_isProjMarker_of_size`). A marker is only ever the argument of a keying: no store, heap or
+environment is read at one. -/
+def projMarker (a : _root_.Address) : _root_.Address :=
+  ⟨⟨⟨a.hash.data.toList ++ List.replicate 33 0⟩⟩⟩
+
+/-- **A projection is permitted at the address** under the keying: the second bit the keying
+carries for the address, read as the resolution of the address's marker. A `Proj` node is
+represented only where a projection is permitted at its structure's address (`Tm.proj`). A role
+table's own keying permits it everywhere; a prefix's keying permits it at the stored addresses;
+the keying of a stage permits it at the addresses the prefix under the stage stores, so not at a
+constant the stage adds (`Ctx.lean`). -/
+class ProjPermitted (κ : _root_.Address → KKey) (a : _root_.Address) : Prop where
+  ne : κ (projMarker a) ≠ unresolvedKey
+
+/-- A keying under which every key resolves permits every projection. -/
+instance (κ : _root_.Address → KKey) [h : ∀ a, Resolved (κ a)] (a : _root_.Address) :
+    ProjPermitted κ a :=
+  ⟨(h (projMarker a)).ne⟩
+
+/-- A keying that keeps every resolved key of another permits the projections the other
+permits. -/
+theorem ProjPermitted.of_keep {κ₁ κ₂ : _root_.Address → KKey}
+    (keep : ∀ x, κ₁ x ≠ unresolvedKey → κ₂ x = κ₁ x) {a : _root_.Address}
+    (h : ProjPermitted κ₁ a) : ProjPermitted κ₂ a :=
+  ⟨by rw [keep _ h.ne]; exact h.ne⟩
+
+/-- Two addresses with one marker are one address. -/
+theorem projMarker_injective {a b : _root_.Address} (h : projMarker a = projMarker b) : a = b := by
+  obtain ⟨⟨⟨la⟩⟩⟩ := a
+  obtain ⟨⟨⟨lb⟩⟩⟩ := b
+  have h1 : la ++ List.replicate 33 (0 : UInt8) = lb ++ List.replicate 33 0 :=
+    congrArg (fun x : _root_.Address => x.hash.data.toList) h
+  have h2 : la = lb := List.append_cancel_right h1
+  subst h2
+  rfl
+
+/-- **The address is a marker.** -/
+def IsProjMarker (a : _root_.Address) : Prop := ∃ y, a = projMarker y
+
+/-- **No address of 32 bytes is a marker.** -/
+theorem not_isProjMarker_of_size {a : _root_.Address} (h : a.hash.size = 32) :
+    ¬ IsProjMarker a := by
+  rintro ⟨y, rfl⟩
+  obtain ⟨⟨⟨ly⟩⟩⟩ := y
+  have hs : (projMarker ⟨⟨⟨ly⟩⟩⟩).hash.size = ly.length + 33 := by
+    show (ly ++ List.replicate 33 (0 : UInt8)).length = ly.length + 33
+    simp
+  omega
+
 /-! ## The relation -/
 
 /-- **The term seam**: at local binder depth `k`, the heap value `p` represents the kernel term
@@ -259,10 +318,19 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       Tm κ d Γ h k (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {E : KExpr}
-      [res : Resolved (κ (ixAddr a))]
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : Tm κ d Γ h k E ep) :
       Tm κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)
+
+/-- The view's address of an IxVM address has 32 bytes. -/
+theorem ixAddr_size (a : Bytes.Address) : (ixAddr a).hash.size = 32 := by
+  obtain ⟨arr, hsz⟩ := a
+  exact hsz
+
+/-- The view's address of an IxVM address is no marker. -/
+theorem ixAddr_not_marker (a : Bytes.Address) : ¬ IsProjMarker (ixAddr a) :=
+  not_isProjMarker_of_size (ixAddr_size a)
 
 section
 variable (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr)
@@ -487,6 +555,23 @@ theorem Tm.proj_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz
     subst hx hz; exact ⟨_, _, _, hy.symm, rfl, ra, re⟩
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _ =>
+    exact (load_cell_ne cell hl (by decide)).elim
+
+/-- **A projection is permitted at the structure of a represented `Proj` node**: the premise
+the node was represented with, read at the address its cell holds. -/
+theorem Tm.proj_permitted {x y z : SourceValue F} {a : Bytes.Address} (rep : Tm κ d Γ h k E p)
+    (hl : loadValue h p = .ok (.construct kexprEnum "Proj" [x, y, z]))
+    (ha : Bytes.RepAddressRef addrTy h a x) : ProjPermitted κ (ixAddr a) := by
+  cases rep with
+  | @proj _ _ _ _ a' _ _ _ perm cell ra re =>
+    obtain ⟨-, hxs⟩ := load_cell cell hl
+    injection hxs with hx
+    subst hx
+    have e : a' = a := Bytes.repAddressRef_inj U32.Goldilocks.compatible ra ha
+    rw [← e]
+    exact perm
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim

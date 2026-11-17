@@ -55,7 +55,8 @@ private theorem repKLevel_store_zero (h : Heap F) :
 
 /-- A `Proj` cell of a represented address and term, stored at the end of the heap. -/
 private theorem tm_store_proj {c : ScopedCtx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
-    {a : Bytes.Address} [Resolved (c.κ (ixAddr a))] {i : F} {E : KExpr} {ap ep : SourceValue F}
+    {a : Bytes.Address} [Resolved (c.κ (ixAddr a))] [ProjPermitted c.κ (ixAddr a)] {i : F} {E : KExpr}
+    {ap ep : SourceValue F}
     (ha : RepAddr h a ap)
     (hE : c.tmk d Γ k h E ep) :
     c.tmk d Γ k (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]])
@@ -249,6 +250,13 @@ private theorem ciRep_ctor_inv {κ : _root_.Address → KKey} {h : Heap F}
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hl
     exact ⟨_, _, _, rfl, hvr, hnp, hnf, hcounts.1, hcounts.2, hkey⟩
   all_goals (injection hv with _ hc _; exact absurd hc (by decide))
+
+/-- A stored constant's name is the key it is found at. -/
+private theorem stored_name_of_find {env : Ix.Kernel.Env .anon} {k : KKey}
+    {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
+  unfold Ix.Kernel.Env.find? at h
+  have := List.find?_some h
+  simpa using this
 
 private theorem bytes_mk_toList (x : ByteArray) :
     (⟨(x.data.toList ++ []).toArray⟩ : ByteArray) = x := by
@@ -489,9 +497,11 @@ theorem compare_struct_fields_step (c : ScopedCtx) {args : List (SourceValue F)}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compare_struct_fields" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compare_struct_fields c args h r h' calls := by
-  intro rc sp np nf t sargs ip types hargs good hrc sa p n i hsa hres hnp hnf hip hin d Γ htypes T Ss
+  intro rc sp np nf t sargs ip types hargs good hrc sa p n i hsa hres hperm hnp hnf hip hin d Γ htypes T
+    Ss
     hT hSs hr
   have : Resolved (c.κ (ixAddr sa)) := ⟨hres⟩
+  have : ProjPermitted c.κ (ixAddr sa) := hperm
   subst hargs hnp hnf hip
   rcases Obs.«KernelDefEq::compare_struct_fields».obs ev with
     ⟨op17, he24, he25, hc26⟩ |
@@ -531,7 +541,7 @@ theorem compare_struct_fields_step (c : ScopedCtx) {args : List (SourceValue F)}
     have E := e0.trans (ObsFn.heap_extends ev123)
     have hrec := ih.get (.defEq .compare_struct_fields) (by lt_calls) ev172 rc sp _ _ t sargs _
       types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E hrc) sa p n (i + 1)
-      (Bytes.repAddressRef_heapMono₂ addrTy E hsa) hres rfl rfl rfl (by omega) d Γ
+      (Bytes.repAddressRef_heapMono₂ addrTy E hsa) hres hperm rfl rfl rfl (by omega) d Γ
       (types_mono E htypes) T Ss (Tm.mono E hT) (tml_mono E hSs) hr
     intro j hij hjn
     rcases Nat.eq_or_lt_of_le hij with rfl | hj
@@ -1096,7 +1106,9 @@ theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Lis
       (cnP : F) (cnF : F) 0
       (Bytes.repAddressRef_heapMono₂ addrTy
         (e512.trans (e600.trans (e546.trans (e648.trans (e686.trans e725))))) hsa)
-      (by rw [hsaddr]; exact hc.res_of_find hfindT) rfl rfl rfl (by simp) d Γ (types_mono E712 htypes) T Ss (Tm.mono E712 hT)
+      (by rw [hsaddr]; exact hc.res_of_find hfindT)
+      (by rw [hsaddr]; exact hc.perm_of_ctor hfindT (stored_name_of_find hfindT) hfindC hcname)
+      rfl rfl rfl (by simp) d Γ (types_mono E712 htypes) T Ss (Tm.mono E712 hT)
       (tml_mono E70_712 hSs70) hr
     -- the install facts
     obtain ⟨⟨heta, hctor, hetaF, -, -⟩, hetaUse⟩ := hc.loads.eta ac b sa i (ZMod.val j) cvc cvT caps cnP cnF
