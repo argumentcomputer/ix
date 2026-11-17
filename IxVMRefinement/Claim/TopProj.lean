@@ -598,10 +598,10 @@ theorem check_const_induct_ctors_hashed (ctx : Core.ScopedCtx)
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) ..
-  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) ..
+  | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (m2 := m2) (m1283 := m1283) (m1333 := m1333) (m1354 := m1354)
       (m1376 := m1376) (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
@@ -640,13 +640,14 @@ theorem check_const_induct_ctors_hashed (ctx : Core.ScopedCtx)
       exact Core.hashed_mono (fun cl hcl => hsub_sh cl (hsub_l cl hcl)) hashed
   | .Induct_other_n0 (m2 := m2) (m1283 := m1283) (m1333 := m1333) (m1354 := m1354)
       (m1376 := m1376) (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1653 := m1653) (m1701 := m1701) (m1745 := m1745) (m1793 := m1793)
-      (cs1816 := cs_mc)
+      (m1492 := m1492) (m1701 := m1653) (m1749 := m1701) (m1793 := m1745) (m1841 := m1793)
+      (cs1864 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1793) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1926 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_role)
+      (ev1711 := ev_fa) (ev1759 := ev_tele)
+      (hm1849 := hm1793) (ev1805 := ev_rsl) (ev1866 := ev_mc) (hc1974 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp hargs; injection hargs with hni hargs
@@ -662,8 +663,9 @@ theorem check_const_induct_ctors_hashed (ctx : Core.ScopedCtx)
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
-                (e_1793.trans ev_rsl.heap_extends))))))))))))
+              (ev_role.heap_extends.trans
+                (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+                  (e_1793.trans ev_rsl.heap_extends)))))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ cs := fun cl hcl => by rw [hc]; simp [hcl]
     have hbp := Bytes.repAddressRef_heapMono₂ Core.addrTy e_to hb
     have hashed := Assembly.modeled_constructor_hashed ctx hn hi hj n 0
@@ -671,13 +673,14 @@ theorem check_const_induct_ctors_hashed (ctx : Core.ScopedCtx)
     exact Core.hashed_mono hsub_mc hashed
   | .Induct_other_other (m2 := m2) (m1283 := m1283) (m1333 := m1333) (m1354 := m1354)
       (m1376 := m1376) (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1653 := m1653) (m1701 := m1701) (m1745 := m1745) (m1793 := m1793)
-      (cs1816 := cs_mc)
+      (m1492 := m1492) (m1701 := m1653) (m1749 := m1701) (m1793 := m1745) (m1841 := m1793)
+      (cs1864 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1793) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1935 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_role)
+      (ev1711 := ev_fa) (ev1759 := ev_tele)
+      (hm1849 := hm1793) (ev1805 := ev_rsl) (ev1866 := ev_mc) (hc1983 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp hargs; injection hargs with hni hargs
@@ -693,8 +696,9 @@ theorem check_const_induct_ctors_hashed (ctx : Core.ScopedCtx)
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
-                (e_1793.trans ev_rsl.heap_extends))))))))))))
+              (ev_role.heap_extends.trans
+                (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+                  (e_1793.trans ev_rsl.heap_extends)))))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ cs := fun cl hcl => by rw [hc]; simp [hcl]
     have hbp := Bytes.repAddressRef_heapMono₂ Core.addrTy e_to hb
     have hashed := Assembly.modeled_constructor_hashed ctx hn hi hj n 0

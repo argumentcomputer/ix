@@ -788,8 +788,10 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
   | .Induct_n0 (x_ind_block := block) (m1470 := before) (m1492 := after)
       (cs1503 := children) (hv1240 := shape) (ev1505 := check) (hc1634 := events) .. =>
     have hb : iblk = block := by
-      simpa using congrArg (fun xs : List (SourceValue F) => xs[6]?)
+      have hx := congrArg (fun xs : List (SourceValue F) => xs[6]?)
         (Value.construct.inj shape).2.2
+      simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hx
+      exact hx
     subst block
     have hm : (⟨"KernelModeled::block_is_modeled", [iblk], before⟩ : Call F) ∈ calls := by
       rw [events]; simp
@@ -799,8 +801,10 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
       (v1491 := result) (cs1503 := children) (hv1240 := shape) (ev1505 := check)
       (hne1635 := nonnative) (hc1974 := events) .. =>
     have hb : iblk = block := by
-      simpa using congrArg (fun xs : List (SourceValue F) => xs[6]?)
+      have hx := congrArg (fun xs : List (SourceValue F) => xs[6]?)
         (Value.construct.inj shape).2.2
+      simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hx
+      exact hx
     subst block
     have hm : (⟨"KernelModeled::block_is_modeled", [iblk], before⟩ : Call F) ∈ calls := by
       rw [events]; simp
