@@ -4,6 +4,7 @@ import IxC.Kernel.Verify.Cached.NormalizeRef
 import IxVMRefinement.StatementRel.LoadedReadsCanon
 import IxVMRefinement.Assembly.TypingStore
 import IxVMRefinement.Assembly.TypingDefnStep
+import IxVMRefinement.Assembly.BareState
 
 /-! # The guard classifier's address-keyed raw-record dictionary
 
@@ -108,6 +109,15 @@ lets remain explicit, so this data reader requires no typing or closedness hypot
 def readRoot (blob : Blobs) (root : Root) : Option (Expr .anon) :=
   ((exprReader addressTable blob root.source id root.self).read root.expression).toOption.map
     Expr.eraseMeta
+
+/-- A literal sort root reads directly, without a binder plan or a typing hypothesis. -/
+theorem readRoot_sort {blob : Blobs} {root : Root} {i : UInt64} {u : Ixon.Univ}
+    (he : root.expression = .sort i) (hu : root.source.univs[i.toNat]? = some u) :
+    readRoot blob root = some (.sort (Ix.Kernel.Reader.convUniv id u)) := by
+  have hecx := (L1.memberReader_mk'_eq (readCtx addressTable blob) root.source id root.self).1
+  unfold readRoot exprReader Ix.Kernel.Reader.MemberReader.read
+  rw [hecx, he]
+  simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu, Expr.eraseMeta]
 
 /-- The richer annotated reading is retained separately for consumers that need binder data. -/
 noncomputable def readAnnotatedRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
@@ -309,18 +319,30 @@ def sortDefinitionRecords (a : _root_.Address) : Records :=
 theorem sortDefinition_type (a : _root_.Address) :
     (lookup (sortDefinitionRecords a) (fun _ => none)).typeOf (.id a) [] =
       some (.sort (.succ .zero)) := by
-  change answer (fun _ => none) (typeRoot (sortDefinitionRecords a) a) [] = some (.sort (.succ .zero))
-  unfold typeRoot sortDefinitionRecords
-  rw [ite_eq_left rfl]
+  let root : Root := ⟨sortDefinition, soloSelf addressTable a, 0, 0, .sort 1⟩
+  have hr : typeRoot (sortDefinitionRecords a) a = some root := by
+    simp [typeRoot, sortDefinitionRecords, sortDefinition, root]
+  have hd : readRoot (fun _ => none) root = some (.sort (.succ .zero)) :=
+    readRoot_sort (u := .succ .zero) rfl (by rfl)
+  change answer (fun _ => none) (typeRoot (sortDefinitionRecords a) a) [] = _
+  rw [hr]
+  simp only [answer, Option.bind_some]
+  rw [ite_eq_left (by rfl), hd]
   rfl
 
 /-- The same dictionary reads its definition value, independently of any model. -/
 theorem sortDefinition_value (a : _root_.Address) :
     (lookup (sortDefinitionRecords a) (fun _ => none)).valueOf (.id a) [] =
       some (.sort .zero) := by
-  change answer (fun _ => none) (valueRoot (sortDefinitionRecords a) a) [] = some (.sort .zero)
-  unfold valueRoot sortDefinitionRecords
-  rw [ite_eq_left rfl]
+  let root : Root := ⟨sortDefinition, soloSelf addressTable a, 1, 0, .sort 0⟩
+  have hr : valueRoot (sortDefinitionRecords a) a = some root := by
+    simp [valueRoot, sortDefinitionRecords, sortDefinition, root]
+  have hd : readRoot (fun _ => none) root = some (.sort .zero) :=
+    readRoot_sort (u := .zero) rfl (by rfl)
+  change answer (fun _ => none) (valueRoot (sortDefinitionRecords a) a) [] = _
+  rw [hr]
+  simp only [answer, Option.bind_some]
+  rw [ite_eq_left (by rfl), hd]
   rfl
 
 
