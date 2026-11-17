@@ -202,6 +202,7 @@ theorem alias_sort_inhabited (n : Key md) (d : Nat) :
   have hdef : unfoldDefinition env (.const n []) = some (.lam ty (.bvar 0) mb) := by
     simp [env, ty, mb, unfoldDefinition, Env.find?, ConstantInfo.name, ConstantInfo.toConstantVal,
       Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN, Expr.instantiateLevelParams]
+    constructor <;> decide +kernel
   simpa [Expr.instantiate1] using
     (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by simp [mb, BinderMeta.leanNever]))
 
