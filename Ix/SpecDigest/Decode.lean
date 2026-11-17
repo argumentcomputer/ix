@@ -212,9 +212,10 @@ def getCommitted : Ixon.GetM Committed := do
     rows := rows.push (← getRow i)
   let groups ← getList (getList getRole)
   let firstWellFounded ← getNat
+  let firstLiteral ← getNat
   let firstEquation ← getNat
   return { specVersion, encodingVersion, rows := rows.toList,
-           schedule := { groups, firstWellFounded, firstEquation } }
+           schedule := { groups, firstWellFounded, firstLiteral, firstEquation } }
 
 /-- **The committed data, read back from `bytes`**: refused unless `bytes` is
 exactly one encoding and the data read re-encode to `bytes` (`encode`). -/

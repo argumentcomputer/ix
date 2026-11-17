@@ -5,7 +5,7 @@ import IxC.Kernel.Semantics.Inductives.DeclNative
 /-! # An inhabitant of the table-validity shape with the `Bool` group
 
 `tableShape_bool`: the default table is valid, in the public sense of `TableShape`, on the
-basis and quotient groups and the `Bool` group (group 11), with the store of their 29
+basis and quotient groups and the `Bool` group (group 6), with the store of their 29
 committed records and the environment that IxC's own executable check of the `Bool` block
 installs at the basis environment.
 
@@ -256,10 +256,10 @@ theorem basis_roles : (List.range 6).all (fun g => (roleGroup g).all roleRowOk) 
 
 /-- **Every role of the `Bool` group is bound at the address of a row that is not a block,
 keyed by the role** (decided). -/
-theorem bool_roles : (roleGroup 11).all roleRowOk = true := by
+theorem bool_roles : (roleGroup 6).all roleRowOk = true := by
   decide +kernel
 
-theorem roleRowOk_of {g : Nat} (hg : g < 6 ∨ g = 11) {r : Role} (hr : r ∈ roleGroup g) :
+theorem roleRowOk_of {g : Nat} (hg : g < 6 ∨ g = 6) {r : Role} (hr : r ∈ roleGroup g) :
     roleRowOk r = true := by
   rcases hg with hg | hg
   · have h0 : (roleGroup g).all roleRowOk = true :=
@@ -271,7 +271,7 @@ theorem roleRowOk_of {g : Nat} (hg : g < 6 ∨ g = 11) {r : Role} (hr : r ∈ ro
 /-- **At every role of the seven groups the environment keeps what the role's record
 declares** (`KeptIn`): the record at the role's address reads, and the constant at the
 role's key stores the reading. -/
-theorem role_keptIn {g : Nat} (hg : g < 6 ∨ g = 11) {r : Role} (hr : r ∈ roleGroup g) :
+theorem role_keptIn {g : Nat} (hg : g < 6 ∨ g = 6) {r : Role} (hr : r ∈ roleGroup g) :
     ∃ a ci, committedDefaultRoleTable.addressOf? r = some a ∧
       boolEnv.find? (Key.role r) = some ci ∧
       KeptIn committedDefaultRoleTable (recordOf boolStore) (fun x => boolStore.blobs.get? x)
@@ -312,8 +312,8 @@ theorem role_keptIn {g : Nat} (hg : g < 6 ∨ g = 11) {r : Role} (hr : r ∈ rol
     unfold KeptIn
     exact ⟨axiom_clause a, ci₀, hread, hst⟩
 
-/-- The `Bool` roles are the roles of group 11 (decided). -/
-theorem boolRoles_group : boolRoles.all (fun r => (roleGroup 11).contains r) = true := by
+/-- The `Bool` roles are the roles of group 6 (decided). -/
+theorem boolRoles_group : boolRoles.all (fun r => (roleGroup 6).contains r) = true := by
   decide +kernel
 
 /-- The constants the run installs are kept at the `Bool` roles. -/
@@ -324,7 +324,7 @@ theorem installed_keptIn {ci : ConstantInfo .anon} (h : ci ∈ boolEnv.consts.ta
     rw [← boolEnv_take]
     exact List.mem_map.mpr ⟨ci, h, rfl⟩
   obtain ⟨r, hr, hname⟩ := List.mem_map.mp hn
-  have hg : r ∈ roleGroup 11 :=
+  have hg : r ∈ roleGroup 6 :=
     List.mem_of_elem_eq_true (List.all_eq_true.mp boolRoles_group r hr)
   obtain ⟨a, ci', -, hfind, hkept⟩ := role_keptIn (Or.inr rfl) hg
   have hci : ci ∈ boolEnv.consts := List.mem_of_mem_take h
@@ -341,16 +341,16 @@ theorem installed_keptIn {ci : ConstantInfo .anon} (h : ci ∈ boolEnv.consts.ta
 the `Bool` group**, with the store of their 29 committed records and the environment IxC's
 native check of the `Bool` block installs at the basis environment. -/
 theorem tableShape_bool :
-    TableShape.{u} committedDefaultRoleTable (fun g => g < 6 ∨ g = 11) boolStore boolEnv := {
+    TableShape.{u} committedDefaultRoleTable (fun g => g < 6 ∨ g = 6) boolStore boolEnv := {
   needsClosed := fun g hg r hr => by
-    have hg' : g < 6 ∨ g = 11 := hg
+    have hg' : g < 6 ∨ g = 6 := hg
     rcases hg' with hg' | hg'
     · have h1 : (groupNeeded g).all (fun r => decide (Ix.SpecDigest.groupOf r < 6)) = true :=
         List.all_eq_true.mp groups_closed g (List.mem_range.mpr hg')
-      show Ix.SpecDigest.groupOf r < 6 ∨ Ix.SpecDigest.groupOf r = 11
+      show Ix.SpecDigest.groupOf r < 6 ∨ Ix.SpecDigest.groupOf r = 6
       exact Or.inl (of_decide_eq_true (List.all_eq_true.mp h1 r hr))
-    · have h11 : groupNeeded 11 = [] := by decide +kernel
-      rw [hg', h11] at hr
+    · have h6 : groupNeeded 6 = [] := by decide +kernel
+      rw [hg', h6] at hr
       cases hr
   bound := fun _ _ r _ => defaultTable_allBound r
   prelude := preludePinned_default

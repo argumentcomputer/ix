@@ -11,21 +11,26 @@ IxVM validates a binding's roles group by group
 (`Role.block`), and every role a group needs (`Role.deps`) is in an earlier
 group. A group is validated under a context that admits only groups before
 it, so a native rule never takes part in its own validation. The order and
-its two boundaries decide which native rules each validation may use, so the
+its three boundaries decide which native rules each validation may use, so the
 specification digest commits to them (`Ix.SpecDigest.specBytes`), and the
 rendered circuit (`IxVM.RoleSpecGen`) reads them from here.
 
 The axioms come before the well-founded operations, whose certificates use
 `propext`. The tail comes last: the well-founded operations' groups, the
-groups of the definitions specified by their equations, and the groups that
-need them. The well-founded groups occupy a contiguous block before the first
-equation group. The circuit validates that block under the groups before it
-(`first_well_founded_group`), and later groups under the prefix before the
-equation groups (`first_equation_group`). Thus the well-founded operations
-cannot validate each other through native rules, while later checks can use
-them after admission. Equation definitions cannot validate each other through
-their native rules. `Schedule.ofGroups` checks the order and computes both
-boundaries. -/
+literal support's groups, the groups of the definitions specified by their
+equations, and the groups that need them. The well-founded groups occupy a
+contiguous block, and the literal support's groups (`literalSupport`: `Char`,
+`String`, `List`, `Char.ofNat`, `String.ofList`) the contiguous block after it,
+before the first equation group. The circuit validates the well-founded block
+under the groups before it (`first_well_founded_group`), the literal block
+under the groups before it (`first_literal_group`), and later groups under the
+prefix before the equation groups (`first_equation_group`). Thus the
+well-founded operations cannot validate each other through native rules; the
+literal support is validated with every operation in force and none of its own
+roles, so a string literal has no type in any validation before it; later
+checks can use all of them after admission. Equation definitions cannot
+validate each other through their native rules. `Schedule.ofGroups` checks the
+order and computes the three boundaries. -/
 
 namespace Ix.SpecDigest
 
@@ -33,12 +38,12 @@ open Ix.Kernel
 
 /-- The groups, by their first role, in validation order. -/
 def groupOrder : List Role :=
-  [.nat, .eq, .punit, .empty, .false, .quot, .char, .string, .list, .charOfNat,
-   .stringOfList, .bool, .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq,
-   .natBle, .true, .and, .iff, .nonempty, .propext, .choice, .sorryAx,
-   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat,
+  [.nat, .eq, .punit, .empty, .false, .quot, .bool, .natPred, .natAdd, .natSub,
+   .natMul, .natPow, .natBeq, .natBle, .true, .and, .iff, .nonempty, .propext, .choice,
+   .sorryAx, .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat,
    .notProp, .decidable, .natLe, .int, .intLe, .bitVec, .byteArray,
    .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
+   .char, .string, .list, .charOfNat, .stringOfList,
    .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse, .natDecEq, .natDecLe, .natDecLt,
    .intNegOfNat, .intSubNatNat, .intNeg, .intAdd, .intSub, .intMul, .intNatAbs, .intEdiv,
    .intEmod, .intPow, .bitVecToNat, .bitVecUlt, .stringDecEq, .stringToByteArray,
@@ -73,9 +78,17 @@ def isEquationDef (r : Role) : Bool :=
 /-- A group of well-founded operations. -/
 def wellFounded (g : List Role) : Bool := g.any isWellFoundedOp
 
+/-- The literal support: the roles whose groups give a string literal its type
+and its expansion. -/
+def literalSupport : List Role := [.char, .string, .list, .charOfNat, .stringOfList]
+
+/-- A group of the literal support. -/
+def literalGroup (g : List Role) : Bool := g.any literalSupport.contains
+
 /-- A group that must follow the initial structural prefix: a well-founded
-operation's, or a definition's specified by its equations. -/
-def tailOnly (g : List Role) : Bool := wellFounded g || g.any isEquationDef
+operation's, a literal support's, or a definition's specified by its
+equations. -/
+def tailOnly (g : List Role) : Bool := wellFounded g || literalGroup g || g.any isEquationDef
 
 /-- The order covers every role once, each group is a block, and every role a
 group needs is in an earlier group. A role is named by its index: `specBytes`
@@ -106,38 +119,53 @@ def firstWellFoundedGroup (orderedGroups : List (List Role) := groups) : Except 
       throw s!"role group {i}: the tail must be exactly the groups that need it"
   pure first
 
-/-- The first equation group follows a nonempty contiguous block containing
-every well-founded group. This preserves the well-founded validation context
-and excludes equation definitions' native rules from later validation.
-Coverage and dependency order are checked separately (`checkOrder`). -/
-def firstEquationGroup (orderedGroups : List (List Role) := groups) : Except String Nat := do
+/-- The first literal-support group and the first equation group: a nonempty
+contiguous block of every well-founded group, then a nonempty contiguous block
+of every literal-support group, then the equation groups. This preserves the
+well-founded and the literal validation contexts and excludes equation
+definitions' native rules from earlier validation. Coverage and dependency
+order are checked separately (`checkOrder`). -/
+def tailBoundaries (orderedGroups : List (List Role) := groups) : Except String (Nat × Nat) := do
   let some firstWf := orderedGroups.findIdx? wellFounded
     | throw "no well-founded operation's group"
+  let some firstLiteral := orderedGroups.findIdx? literalGroup
+    | throw "no literal-support group"
   let some firstEquation := orderedGroups.findIdx? (·.any isEquationDef)
     | throw "no definition-equation group"
-  unless firstWf < firstEquation do
-    throw "equation groups must follow the well-founded validation block"
+  unless firstWf < firstLiteral ∧ firstLiteral < firstEquation do
+    throw "the literal-support groups must follow the well-founded block and precede the equation groups"
   for (group, index) in orderedGroups.zipIdx do
-    unless wellFounded group == decide (firstWf ≤ index ∧ index < firstEquation) do
-      throw s!"role group {index}: well-founded groups must form the block before the equation groups"
-  return firstEquation
+    unless wellFounded group == decide (firstWf ≤ index ∧ index < firstLiteral) do
+      throw s!"role group {index}: well-founded groups must form the block before the literal support"
+    unless literalGroup group == decide (firstLiteral ≤ index ∧ index < firstEquation) do
+      throw s!"role group {index}: literal-support groups must form the block before the equation groups"
+  return (firstLiteral, firstEquation)
 
-/-- **A validation schedule**: the groups in validation order and the two
+/-- The first literal-support group (`tailBoundaries`). -/
+def firstLiteralGroup (orderedGroups : List (List Role) := groups) : Except String Nat :=
+  return (← tailBoundaries orderedGroups).1
+
+/-- The first equation group (`tailBoundaries`). -/
+def firstEquationGroup (orderedGroups : List (List Role) := groups) : Except String Nat :=
+  return (← tailBoundaries orderedGroups).2
+
+/-- **A validation schedule**: the groups in validation order and the three
 boundaries the circuit validates them under (`first_well_founded_group`,
-`first_equation_group`). -/
+`first_literal_group`, `first_equation_group`). -/
 structure Schedule where
   groups : List (List Role)
   firstWellFounded : Nat
+  firstLiteral : Nat
   firstEquation : Nat
   deriving BEq, Inhabited
 
 /-- The schedule of `orderedGroups`, with its boundaries, once the order is
-checked (`checkOrder`, `firstWellFoundedGroup`, `firstEquationGroup`). -/
+checked (`checkOrder`, `firstWellFoundedGroup`, `tailBoundaries`). -/
 def Schedule.ofGroups (orderedGroups : List (List Role)) : Except String Schedule := do
   checkOrder orderedGroups
   let firstWellFounded ← firstWellFoundedGroup orderedGroups
-  let firstEquation ← firstEquationGroup orderedGroups
-  return { groups := orderedGroups, firstWellFounded, firstEquation }
+  let (firstLiteral, firstEquation) ← tailBoundaries orderedGroups
+  return { groups := orderedGroups, firstWellFounded, firstLiteral, firstEquation }
 
 /-- A schedule is valid when its boundaries are its order's own. -/
 def Schedule.check (s : Schedule) : Except String Unit := do

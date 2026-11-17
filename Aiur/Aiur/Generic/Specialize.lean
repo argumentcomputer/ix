@@ -65,8 +65,10 @@ structure Specialized [DecidableEq F] (s : Source F) (entries : List String) whe
   loweringReady : LoweringReady s program
   typedLowering : TypedLowering s program
 
+/-- Fuel for the collectors: the number of function instances specialization may produce, and the
+depth of enum instantiation. Exhausting either is an error, never a different program. -/
 structure Limits where
-  instances : Nat := 1024
+  instances : Nat := 2048
   enumDepth : Nat := 1024
   deriving Repr
 

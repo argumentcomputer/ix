@@ -163,7 +163,8 @@ theorem native_rec_member_full
       (parentLevels parentType parentParams parentIndices constructors parentUnsafe parentBlock
         parentIndex : SourceValue F)
       (lenHeap lenAfter kHeap kAfter canonHeap : Heap F) (len kTarget : SourceValue F)
-      (lenCalls kCalls canonCalls : List (Call F)),
+      (lenCalls kCalls canonCalls : List (Call F)) (canonResult : SourceValue F)
+      (canonFinal : Heap F),
       ObsFn Obs.W "KernelCheck::rec_to_parent_addr" [type, parameters, motives, minors, indices]
         heap parent scanHeap scanCalls ∧
       (∀ cl ∈ scanCalls, cl ∈ calls) ∧
@@ -193,7 +194,7 @@ theorem native_rec_member_full
             position], address,
           .construct "KernelTypes::KConstantInfo" "Induct"
             [parentLevels, parentType, parentParams, parentIndices, constructors, parentUnsafe,
-              parentBlock, parentIndex], parent] canonHeap result final canonCalls ∧
+              parentBlock, parentIndex], parent] canonHeap canonResult canonFinal canonCalls ∧
       (∀ cl ∈ canonCalls, cl ∈ calls) := by
   match Obs.«KernelCheck::check_recursor_member».obs observed with
   | .run (v72 := parent) (m73 := scanHeap) (p134 := pointer) (m127 := loadedHeap)
@@ -203,13 +204,13 @@ theorem native_rec_member_full
       (x_parent_ind_idx := parentIndex) (m223 := routedHeap) (cs231 := routeCalls)
       (m250 := lenHeap) (v369 := len) (m372 := lenAfter) (cs380 := lenCalls)
       (m664 := kHeap) (v672 := kTarget) (m673 := kAfter) (cs683 := kCalls)
-      (m769 := canonHeap) (cs825 := canonCalls)
+      (m769 := canonHeap) (cs833 := canonCalls) (v822 := canonResult) (m823 := canonFinal)
       (hv15 := input) (ev85 := scan) (ev142 := load) (ld136 := parentInfo)
       (ev233 := route) (heq248 := native) (ev278 := muts₁) (ev292 := muts₂) (ev314 := sameBlock)
       (heq357 := notAux) (ev382 := lenRun) (heq398 := lenEq) (ev412 := peelRun)
       (ev477 := scopeRun) (sg671 := seg) (ev685 := kRun) (heq737 := kEq)
-      (ev751 := shapeRun) (ev781 := letsRun) (ev827 := canonRun)
-      (hc868 := children) .. =>
+      (ev751 := shapeRun) (ev781 := letsRun) (ev835 := canonRun)
+      (hc898 := children) .. =>
     injection input with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
@@ -229,7 +230,8 @@ theorem native_rec_member_full
       refine ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls,
         routeCalls, parentLevels, parentType, parentParams, parentIndices, constructors,
         parentUnsafe, parentBlock, parentIndex, lenHeap, lenAfter, kHeap, kAfter, canonHeap,
-        len, kTarget, lenCalls, kCalls, canonCalls, scan, ?_, load, ?_, parentInfo, route, ?_,
+        len, kTarget, lenCalls, kCalls, canonCalls, canonResult, canonFinal, scan, ?_, load, ?_,
+        parentInfo, route, ?_,
         npEq, niEq, eLen, lenRun, ?_, lenEq, eK, kRun, ?_, kEq, eC, canonRun, ?_⟩
       · intro call member; rw [children]; simp [member]
       · intro call member; rw [children]; simp [member]

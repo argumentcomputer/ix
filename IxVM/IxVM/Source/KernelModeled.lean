@@ -2,7 +2,7 @@ import Aiur.Modules.Function
 
 /-! # IxVM module `KernelModeled`
 
-The modeled route for inductive declarations: IxVM checks the recursors of a mutual or
+The modeled route for inductive declarations: IxVM checks a mutual or
 nested block the way the certified kernel's modeled install does
 (`IxC/Kernel/Inductives/Modeled.lean`, `checkModeled`), against a model of the block
 that the prover supplies as advice.
@@ -15,15 +15,6 @@ that the prover supplies as advice.
   address (`read_payload`), and lists the model's records, which are ordinary Ixon
   records loaded from channel 2 under their content address (hash-checked like any
   record). Nothing about it is trusted: `check_family` validates it in full.
-* **When.** The family is checked where one of its recursors is checked
-  (`KernelCheck::check_const`, the recursor arm). A block's types and constructors are
-  checked on their own for their declared shape only: with no recursor of the block
-  checked, nothing reads a rule of it, and the use sites below grant it no projection,
-  structure eta or unit-like conversion.
-* **Independence.** The family is checked in the basis role context
-  (`KernelRoles::family_ctx`), and every record its advice names is advice, a basis role's
-  or in the block's own dependency closure, so the check of a family's model never
-  reaches the family's block.
 * **Coherence.** A hint is unconstrained at each call, so two checks of one block may see
   two payloads. A block's types, constructors and its *whole* recursor family record
   are therefore validated together against one payload (`check_family(block, rec_block)`),
@@ -523,8 +514,7 @@ def get_addrs := aiur_fn⟦
   -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient (`Quot`,
   -- `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`: function extensionality, along
   -- which the model of a block with a nested occurrence under a binder transports, is a
-  -- theorem from them). No other axiom, and no other role: `String` and `Char`, like any
-  -- other constant a model names, are witnessed by a path from the block.
+  -- theorem from them), `String`, `Char`. No other axiom.
 
 def basis_role_allowed := aiur_fn⟦
   fn basis_role_allowed(r: Field) -> Field {
@@ -544,6 +534,8 @@ def basis_role_allowed := aiur_fn⟦
         34 => {  1 } ,
         35 => {  1 } ,
         36 => {  1 } ,
+        37 => {  1 } ,
+        39 => {  1 } ,
         _ => {  0 } ,
       }
     }
@@ -926,26 +918,13 @@ def projection_of_advice := aiur_fn⟦
 
   -- ## The family: members against their models
 
-  -- The family a block's payload names, checked as `check_family_in` checks it. No caller:
-  -- a block's types and constructors are checked on their own for their declared shape
-  -- only, and the family where a recursor of it is checked, in the basis role context.
+  -- A type or constructor of a modeled block: validated with the recursor family its
+  -- payload names.
 
 def check_modeled_block := aiur_fn⟦
   fn check_modeled_block(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef) -> () {
       let (rb, _) = IxonDeserialize::get_address(read_payload(block));
-      check_family_in(rc, block, rb)
-    }
-⟧
-
-  -- The family where one of its recursors is checked: the whole family check, in the basis
-  -- role context (`KernelRoles::family_ctx`) whatever context the recursor is checked in.
-  -- The family's model and rules are then checked with no literal support, operation or
-  -- equation role in force, so they depend on no record that could reach the family's own
-  -- block.
-
-def check_family := aiur_fn⟦
-  fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
-      check_family_in(KernelRoles::family_ctx(rc), block, rec_block)
+      check_family(rc, block, rb)
     }
 ⟧
 
@@ -953,8 +932,8 @@ def check_family := aiur_fn⟦
   -- constructor and recursor against its model (`checkMemberVal`), and every rule
   -- against its `iota_j` theorem (`checkIotaRule`).
 
-def check_family_in := aiur_fn⟦
-  fn check_family_in(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
+def check_family := aiur_fn⟦
+  fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
       -- No model advice under user axioms: the claim's axioms tree is empty, so every axiom
       -- this claim checks, the advice's and the block closure's, is standard or inert, and
       -- no accepted constant uses an inert one. The role binding binds Lean's compiler-trust
@@ -1011,7 +990,7 @@ def check_family_in := aiur_fn⟦
               -- the block's members, and witnessed members of its closure
               family_refs_ok(rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
-                                  n_recs, 0, np, univ_offset, bnl);
+                                  n_recs, 0, np, univ_offset, bnl, rec_addrs);
               let Lists::Node::Nil = (*(s9));
               () } ,
           } } ,
@@ -1605,7 +1584,8 @@ def check_recs := aiur_fn⟦
                 recs: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream,
-                n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field) -> Bytes::Stream {
+                n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field,
+                fam: Lists::List<Bytes::AddressRef>) -> Bytes::Stream {
       match (*(recs)) {
         Lists::Node::Nil => {  s } ,
         Lists::Node::Cons(r, rest) => {
@@ -1627,6 +1607,14 @@ def check_recs := aiur_fn⟦
               check_carriers(ty, rnp, type_addrs);
               -- the raw type, as `check_const` checks a recursor reached directly
               KernelCheck::validate_expr_well_scoped(ty, 0, nl);
+              -- and it names no member of its own family record, so that every constant it
+              -- names is the block's or stored before the family. No stored record reaches
+              -- this: `get_ci` above reads a recursor's type with no recursive reference in scope
+              -- (a `Rec` node does not convert), and a `Ref` to a member of the same family
+              -- record would name an address computed from the record itself. Kept as the
+              -- condition the refinement states.
+              assert_eq!(expr_mentions_addrs(ty, fam), 0,
+                "a modeled recursor's type mentions its own family");
               KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
               KernelCheck::assert_safety(0, ty);
               KernelCheck::assert_safety_rules(0, rules);
@@ -1637,8 +1625,48 @@ def check_recs := aiur_fn⟦
               KernelCheck::check_rec_header_lets(ty, rnp, nmot, nmin, ni);
               let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
               check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np,
-                         univ_offset, bnl) } ,
+                         univ_offset, bnl, fam) } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Whether `e` names one of `addrs`, as a constant or as a projection's structure.
+
+def expr_mentions_addrs := aiur_fn⟦
+  fn expr_mentions_addrs(e: KernelTypes::KExpr, addrs: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Const(c, _) => {  KernelCheck::addr_list_contains(addrs, c) } ,
+        KernelTypes::KExprNode::App(f, x) => {
+          match expr_mentions_addrs(f, addrs) {
+            0 => {  expr_mentions_addrs(x, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(t, b, _) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {  expr_mentions_addrs(b, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(t, b, _) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {  expr_mentions_addrs(b, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(t, v, b) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {
+              match expr_mentions_addrs(v, addrs) {
+                0 => {  expr_mentions_addrs(b, addrs) } ,
+                _ => {  1 } ,
+              } } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(s, _, x) => {
+          match KernelCheck::addr_list_contains(addrs, s) {
+            0 => {  expr_mentions_addrs(x, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        _ => {  0 } ,
       }
     }
 ⟧
@@ -1739,11 +1767,14 @@ def check_iota_rule := aiur_fn⟦
       let mi = rp + ni;
       let d = rp + cnf;
       assert_eq!(Lists::length(pins), cnp, "major premise parameter count");
-      -- the stored rule: closed, a λ-telescope over the prefix and the fields, typable
+      -- the stored rule: closed, a λ-telescope over the prefix and the fields, and typable
+      -- once renamed to the model: no member of the block or of the family record is left
+      -- in it, so no rule of the family being checked fires while it is typed
       KernelCheck::validate_expr_well_scoped(rhs, 0, nl);
       let (_, peeled, _) = KernelCheck::peel_n_lams_collect(rhs, d, 0, (&(Lists::Node::Nil)));
       assert_eq!(peeled, d, "rule shape mismatch");
-      KernelInfer::k_infer(rc, rhs, (&(Lists::Node::Nil)));
+      let rhs_m = rename(rhs, src, dst);
+      KernelInfer::k_infer(rc, rhs_m, (&(Lists::Node::Nil)));
       -- the theorem: an advice theorem at the recursor's levels
       assert_eq!(KernelClaim::addr_set_member(t, aset), 1, "iota theorem is not advice");
       match (*(Ingress::get_ci(t))) {
@@ -1795,16 +1826,18 @@ def check_iota_rule := aiur_fn⟦
               assert_eq!(defeq_list_ok(rc, Lists::take(Lists::drop(largs, rp), ni), Lists::drop(cargs, cnp), ctx), 1,
                 "iota statement index mismatch");
               -- the statement's domains: the renamed recursor's prefix, the constructor's fields
-              defeq_tele(rc, tty, rename(ty_r, src, dst), rp, (&(Lists::Node::Nil)));
+              let ty_m = rename(ty_r, src, dst);
+              defeq_tele(rc, tty, ty_m, rp, (&(Lists::Node::Nil)));
               defeq_tele(rc, KernelCheck::peel_n_foralls(tty, rp), crest, cnf, Lists::drop(ctx, cnf));
-              -- the public side: the comparands inhabit the constructor's parameter domains,
-              -- and the rule's λ-domains are the recursor's prefix and the fields
-              let (_, ctx_p) = peel_collect(ty_r, rp, (&(Lists::Node::Nil)));
-              let crest_p = inst_params_typed(rc, cty_l, pins, ctx_p);
-              let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs, ty_r, rp, (&(Lists::Node::Nil)));
+              -- the rule's side, renamed like the statement's: the comparands inhabit the
+              -- constructor's parameter domains, and the rule's λ-domains are the recursor's
+              -- prefix and the fields
+              let (_, ctx_p) = peel_collect(ty_m, rp, (&(Lists::Node::Nil)));
+              let crest_p = inst_params_typed(rc, rename(cty_l, src, dst), pins_ren, ctx_p);
+              let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs_m, ty_m, rp, (&(Lists::Node::Nil)));
               let (_, _) = defeq_lam_tele(rc, rhs_rp, crest_p, cnf, lctx);
               -- the right side: the rule applied to the opened variables
-              let rhs_app = KernelWhnf::apply_spine(rename(rhs, src, dst), bvars_desc(d, d));
+              let rhs_app = KernelWhnf::apply_spine(rhs_m, bvars_desc(d, d));
               assert_eq!(KernelDefEq::k_is_def_eq(rc, rhs_s, rhs_app, ctx), 1, "iota statement mismatch");
               -- both sides inhabit the equation's type slot, the slot the equation's sort
               let tl = KernelInfer::k_infer(rc, lhs, ctx);

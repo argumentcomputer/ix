@@ -378,9 +378,10 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1888 := hv) .. | .Ctor_n0_other (hv1888 := hv) ..
-  | .Ctor_other (hv1888 := hv) ..
-  | .Rec_n0 (hv2537 := hv) .. | .Rec_other (hv2537 := hv) .. =>
+  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
+  | .Ctor_other_n0 (hv1941 := hv) ..
+  | .Ctor_other_other (hv1941 := hv) ..
+  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
@@ -420,24 +421,30 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
       have hbp := Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_63 hbp_m
       exact native_ctor_slots hnc ind.ctors.size 0 (by omega) rfl rfl hsub_ctors hbp ev137 j
         (Nat.zero_le _) hj
-  | .Induct_other (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
+  | .Induct_other_other (hv1240 := hv_ind) (hne1927 := hne_u) .. =>
+    injection hv_ind with _ _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with _ hargs
+    injection hargs with _ hargs; injection hargs with hiu _
+    exact absurd hiu.symm hne_u
+  | .Induct_other_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
-      (x_ind_is_unsafe := xiu) (x_ind_block := xblk) (x_ind_idx := xidx)
+      (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
       (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
       (m1492 := m1492) (m1701 := m1653) (m1745 := m1688) (m1793 := m1736)
-      (cs1808 := cs_mc)
+      (cs1816 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
       (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1736) (ev1757 := ev_rsl) (ev1810 := ev_mc) (hc1882 := hc) .. =>
+      (hm1801 := hm1736) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1926 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp' hargs; injection hargs with hni' hargs
-    injection hargs with hnc' hargs; injection hargs with hiu hargs
+    injection hargs with hnc' hargs; injection hargs with _ hargs
     injection hargs with hblk hargs; injection hargs with hidx _
-    subst hnl hty hnp' hni' hnc' hiu hblk hidx
+    subst hnl hty hnp' hni' hnc' hblk hidx
     have e_1376 : Heap.Extends m1283 m1376 := by rw [hm1376]; exact Heap.Extends.snoc m1283 _
     have e_1354 : Heap.Extends m1376 m1354 := by rw [hm1354]; exact Heap.Extends.snoc m1376 _
     have e_1427 : Heap.Extends m1333 m1427 := by rw [hm1427]; exact Heap.Extends.snoc m1333 _

@@ -70,22 +70,24 @@ theorem check_const_rec_arm
   | .Opaque (hv825 := shape) ..
   | .Quot (hv1076 := shape) ..
   | .Induct_n0 (hv1240 := shape) ..
-  | .Induct_other (hv1240 := shape) ..
-  | .Ctor_n0_n0 (hv1888 := shape) ..
-  | .Ctor_n0_other (hv1888 := shape) ..
-  | .Ctor_other (hv1888 := shape) .. =>
+  | .Induct_other_n0 (hv1240 := shape) ..
+  | .Induct_other_other (hv1240 := shape) ..
+  | .Ctor_n0_n0 (hv1941 := shape) ..
+  | .Ctor_n0_other (hv1941 := shape) ..
+  | .Ctor_other_n0 (hv1941 := shape) ..
+  | .Ctor_other_other (hv1941 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Rec_other (heq2831 := native) (hne2904 := modeled) .. =>
+  | .Rec_other (heq2925 := native) (hne2998 := modeled) .. =>
     exact absurd native modeled
-  | .Rec_n0 (m2 := scopeBefore) (m2599 := scopeAfter) (m2667 := sortBefore)
-      (m2636 := sortAfter) (v2635 := sortResult) (cs2646 := sortCalls)
-      (m2680 := safeAfter) (m2710 := rulesAfter) (m2740 := kindsAfter)
-      (m2762 := familyAfter) (m2784 := memberHeap)
-      (ev14 := unsafeRun) (hv2537 := shape) (ev2611 := scopeRun) (hm2675 := nilSort)
-      (ev2648 := sortRun) (ev2692 := safeRun) (ev2722 := rulesRun) (ev2752 := kindsRun)
-      (ev2774 := familyRun) (ev2796 := modeledRun) (heq2872 := oneMotive)
-      (ev2878 := memberRun) (hc2903 := allCalls) .. =>
+  | .Rec_n0 (m2 := scopeBefore) (m2693 := scopeAfter) (m2761 := sortBefore)
+      (m2730 := sortAfter) (v2729 := sortResult) (cs2740 := sortCalls)
+      (m2774 := safeAfter) (m2804 := rulesAfter) (m2834 := kindsAfter)
+      (m2856 := familyAfter) (m2878 := memberHeap)
+      (ev14 := unsafeRun) (hv2631 := shape) (ev2705 := scopeRun) (hm2769 := nilSort)
+      (ev2742 := sortRun) (ev2786 := safeRun) (ev2816 := rulesRun) (ev2846 := kindsRun)
+      (ev2868 := familyRun) (ev2890 := modeledRun) (heq2966 := oneMotive)
+      (ev2972 := memberRun) (hc2997 := allCalls) .. =>
     injection shape with _ _ entries
     simp only [List.cons.injEq, and_true] at entries
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := entries
