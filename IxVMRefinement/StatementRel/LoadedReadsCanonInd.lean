@@ -194,17 +194,23 @@ theorem tmC_stored_of_used {E₀ : Ixon.Env} {t : Ix.Kernel.RoleTable}
     (hrecur : ∀ x ∈ recurAddrs, ∃ ci, env.find? (Core.keyOf t x) = some ci)
     (rep : Core.TmC (Core.keyOf t) h X p) :
     Core.TmC (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ h X p := by
-  refine raw.tmC_rekey rep fun x hu => ?_
-  rcases hu with ⟨i, hi | ⟨s, hs, his⟩, hr⟩ | hr
-  · obtain ⟨ci, hci⟩ := hstored i (he i hi) x hr
-    exact Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
-  · have hmem : i ∈ usedRefIdxs c := by
-      unfold usedRefIdxs
-      exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
-    obtain ⟨ci, hci⟩ := hstored i hmem x hr
-    exact Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
-  · obtain ⟨ci, hci⟩ := hrecur x hr
-    exact Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+  have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList e x →
+      ∃ ci, env.find? (Core.keyOf t x) = some ci := by
+    intro x hu
+    obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
+    · exact hstored i (he i hi) x hr
+    · have hmem : i ∈ usedRefIdxs c := by
+        unfold usedRefIdxs
+        exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
+      exact hstored i hmem x hr
+  refine raw.tmC_rekey rep (fun x hu => ?_) (fun x hu => ?_)
+  · rcases hu with hu | hr
+    · obtain ⟨ci, hci⟩ := used x hu
+      exact Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+    · obtain ⟨ci, hci⟩ := hrecur x hr
+      exact Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+  · obtain ⟨ci, hci⟩ := used x hu
+    exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E₀, env, t, lim⟩) hci
 
 /-! ## The canonical inductive type -/
 
