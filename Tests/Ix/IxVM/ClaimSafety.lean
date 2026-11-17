@@ -124,14 +124,16 @@ private def ruleSafetyFixture (unsafeDependency projection : Bool) :
   let (env, target) := storeSafetyRecord env c
   return (env, target, dependencyAddr)
 
-/-- Safety is checked on raw rule expressions before canonical comparison erases dead lets. -/
+/-- Safety is checked on the stored rule expressions, before they are compared with the generated
+rules. A rule under a `let` that the generated rule does not have is then refused by that
+comparison, whatever the `let` names. -/
 private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
   #[fun _ => do
       let (env, target, _) ← ruleSafetyFixture false false
       let ctx ← Ix.ClaimContext.ofDefaultTable
-      let c ← Tests.Ix.IxVM.Case.ofClaim "accept a safe dependency in a dead recursor-rule let"
-        env (.check ctx target none)
-      return { c with exercises := some "KernelCheck::nat_check_rules" },
+      Tests.Ix.IxVM.Case.ofClaim "refuse a safe dependency in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "native recursor: a stored rule is not the generated one up to consumed wrappers"),
     fun _ => do
       let (env, target, _) ← ruleSafetyFixture true false
       let ctx ← Ix.ClaimContext.ofDefaultTable

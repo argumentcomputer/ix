@@ -6,7 +6,7 @@ import Ix.Address.Pure
 
 /-! # The declaration checker's shape guards
 
-Three guards narrow what the declaration checker accepts to shapes the certified compiler
+Four guards narrow what the declaration checker accepts to shapes the certified compiler
 writes. Each has cases that must now be refused and cases that must stay accepted.
 
 * **One kind of member per inductive block.** A block that holds both an inductive and a
@@ -20,10 +20,15 @@ writes. Each has cases that must now be refused and cases that must stay accepte
   the major premise's domain or the result is refused, on the native route and on the
   modeled route. A `let` in a parameter's or a minor premise's domain is accepted, and so
   is a type-annotation wrapper that the stored recursor dropped from a minor premise.
+* **A stored `let` is the generated one.** A recursor whose type has a `let` where the
+  generated recursor has none is refused (a rule under such a `let` is refused in
+  `ixvm-claim-safety`). A `let` the family carries into its recursor, in a parameter's or
+  a field's domain, is in both and is accepted.
 
 `IX_GUARD_BATCH_BEFORE`, when set, expects the verdicts of a program without the guards:
 each refused shape was accepted, or refused by a later check, which the case names. It
-shows that every refusal here is the guard's own. -/
+shows that every refusal here is the guard's own. Set to `lets`, it expects the verdicts of
+a program with the first three guards and without the fourth. -/
 
 namespace Tests.Ix.IxVM.GuardBatch
 
@@ -284,8 +289,56 @@ private def modeledHeaderCase (guards wrapped : Bool) : Except String Case := do
 
 /-! ## The suite -/
 
+/-! ## A `let` the stored recursor has and the generated one has not -/
+
+/-- The recursor of a family `T : Nat → Nat → Sort 3` with one parameter and no constructor,
+`(p : Nat) → (motive : (i : Nat) → T p i → Sort u) → (i : Nat) → (t : T p i) → motive i t`.
+When `dead`, the stored parameter domain is `let z : Nat := Nat.zero; Nat`: the generated
+recursor takes the family's own parameter domain, `Nat`, which has no `let`. Without the
+structural comparison of `let`s (`lets = false`) the stored `let` was expanded and the
+record accepted. -/
+private def parameterLetCase (lets dead : Bool) : Except String Case := do
+  let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
+  let table ← defaultTable
+  let some nat := table.addressOf? .nat | throw "missing Nat"
+  let some zero := table.addressOf? .natZero | throw "missing Nat.zero"
+  let family : Ixon.Inductive := {
+    isUnsafe := false, lvls := 0, params := 1, indices := 1,
+    typ := .all (.ref 0 #[]) (.all (.ref 0 #[]) (.sort 0)), ctors := #[] }
+  let block ← IxVM.RecordSections.withSection env
+    ⟨.muts #[.indc family], #[], #[nat], #[.succ (.succ (.succ .zero))], #[]⟩
+  let blockAddress := address block
+  let type : Ixon.Constant := ⟨.iPrj ⟨0, blockAddress⟩, #[], #[], #[], #[]⟩
+  let env := (env.storeConst blockAddress block).storeConst (address type) type
+  let natE : Ixon.Expr := .ref 1 #[]
+  let carrier (p i : Ixon.Expr) : Ixon.Expr := .app (.app (.ref 0 #[]) p) i
+  let parameter : Ixon.Expr := if dead then .leanLet true natE (.ref 2 #[]) natE else natE
+  let typ : Ixon.Expr := .all parameter
+    (.all (.all natE (.all (carrier (.var 1) (.var 0)) (.sort 1)))
+      (.all natE (.all (carrier (.var 2) (.var 0)) (.app (.app (.var 2) (.var 1)) (.var 0)))))
+  let recursor : Ixon.Recursor :=
+    { k := false, isUnsafe := false, lvls := 1, params := 1, indices := 1, motives := 1,
+      minors := 0, typ := typ, rules := #[] }
+  let record ← IxVM.RecordSections.withSection env
+    ⟨.recr recursor, #[], #[address type, nat, zero], #[.succ .zero, .var 0], #[]⟩
+  let env := env.storeConst (address record) record
+  let context ← Ix.ClaimContext.ofEnv env
+  let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address record) none)
+  let c : Case := {
+    label := if dead then "native recursor: a let in a parameter's domain that its family does not have"
+      else "native recursor: a parameter, no let"
+    accept := true
+    exercises := if dead then none else some "KernelCheck::nat_rec_check"
+    witness := witness }
+  return if dead then
+    refused lets "native recursor: the stored type is not the generated one up to consumed wrappers"
+      none c
+  else c
+
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
-  let guards := (← IO.getEnv "IX_GUARD_BATCH_BEFORE").isNone
+  let before ← IO.getEnv "IX_GUARD_BATCH_BEFORE"
+  let guards := before.isNone || before == some "lets"
+  let lets := before.isNone
   let missing := compiledNames.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-guard-batch] not in the environment: {missing}"
@@ -296,7 +349,8 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     fun _ => nativeHeaderCase guards .nowhere, fun _ => nativeHeaderCase guards .motive,
     fun _ => nativeHeaderCase guards .index, fun _ => nativeHeaderCase guards .major,
     fun _ => nativeHeaderCase guards .result,
-    fun _ => modeledHeaderCase guards false, fun _ => modeledHeaderCase guards true]
+    fun _ => modeledHeaderCase guards false, fun _ => modeledHeaderCase guards true,
+    fun _ => parameterLetCase lets false, fun _ => parameterLetCase lets true]
   runCases "ixvm-guard-batch" (compiledCases guards env ++ built) (jobs := 4)
 
 end Tests.Ix.IxVM.GuardBatch
