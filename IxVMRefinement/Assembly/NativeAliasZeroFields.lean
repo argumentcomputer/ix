@@ -125,6 +125,77 @@ theorem ctor_zero_all_from_fields {t : Ix.Kernel.RoleTable}
           (repKLevel_heapMono₂ (e1.trans e2) hpind) ev_rec
           k (by omega) hkt cA hcA
 
+theorem former_decl_ok_observed_from_fields {c : Ctx}
+    {b₀ : Bytes.Address} {T : KKey} {nP nIdx : Nat} {ty : KExpr} {ind_lvl : KLevel}
+    {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
+    {ctorRawTypes : List KExpr}
+    {pty bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hwf : c.t.wf = true)
+    (hnPI_lt : nP + nIdx < 18446744069414584321)
+    (hnCtors_lt : ctors.length < 549755813888)
+    (hroot : IxVM.Consistency.Bounded cs_root)
+    (hT_iprj : T = c.κ (iprjAddr (ixAddr b₀) 0))
+    (hlps_ctors : ∀ cb ∈ ctors, cb.1.levelParams = List.range cb.1.levelParams.length)
+    (hcload : StagedCtorLoads (keyOf c.t) c.t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes)
+    (hctor_sp : ∀ k < ctors.length, ∀ c cvCa₀,
+      ctors[k]? = some c →
+      ctorsA[k]? = some (cvCa₀, c.2) →
+      ∃ rcbs rargs cbs eargs us₀,
+        (ctorRawTypes.getD k default).stripPis (nP + c.2) =
+          some (rcbs, Expr.mkAppN (.const T us₀) rargs) ∧
+        cvCa₀.type.stripPis (nP + c.2) =
+          some (cbs, Expr.mkAppN (.const T us₀) eargs) ∧
+        ∀ idx, nP ≤ idx → idx < nP + c.2,
+          famHead T (cbs.getD idx default).1 = false ∨
+          RawRecSpine T (rcbs.getD idx default).1 (cbs.getD idx default).1)
+    (hsub : ∀ x ∈ cs, x ∈ cs_root)
+    (hgood : Good c cs)
+    (hty : TmExact c.κ 0 (fun _ => default) h 0 ty pty)
+    (hbp : Bytes.RepAddressRef addrTy h b₀ bp)
+    (hpind : RepKLevel h ind_lvl pind)
+    (ev : ObsFn W "KernelCheck::former_decl_ok"
+      [pty, .field (nP : F), .field (nIdx : F), .field (ctors.length : F),
+        bp, .field 0, pind] h r h' cs) :
+    (∃ testAfter testCalls, ObsFn W "KernelCheck::former_is_tele"
+      [pty, .field ((nP + nIdx : Nat) : F)] h (.field 1) testAfter testCalls) ∨
+    (nIdx ≠ 0 ∧ ∀ k < ctorsA.length, ∀ cA, ctorsA[k]? = some cA →
+      ctorZeroOk T ind_lvl.zeronessOf cA.1.type = true) := by
+  match Obs.«KernelCheck::former_decl_ok».obs ev with
+  | .n1 (m2 := testAfter) (cs13 := testCalls) (v17 := v17) (op38 := op_add) (ev15 := ev_tele) .. =>
+    have hv17 : v17 = .field ((nP + nIdx : Nat) : F) := evalBinOp_add_nat nP nIdx op_add
+    rw [hv17] at ev_tele
+    exact Or.inl ⟨testAfter, testCalls, ev_tele⟩
+  | .other (m2 := m2) (v65 := v65) (m68 := m68)
+      (cs97 := cs_cz) (v104 := v104) (m134 := m134) (cs142 := cs_ip)
+      (ev15 := ev_tele) (ev78 := ev_iz) (heq93 := hv65)
+      (ev144 := ev_iprj) (ev99 := ev_cz) (hc168 := hc) .. =>
+    subst hv65
+    obtain ⟨hiz, _⟩ := Lib.is_zero_spec ev_iz
+    have hnIdx_ne : nIdx ≠ 0 := by
+      intro h0
+      subst h0
+      simp at hiz
+    have e1 := ev_tele.heap_extends
+    have e2 := ev_iz.heap_extends
+    have hg_ip : Good c cs_ip := hgood.sub (fun x hx => by simp [hc, hx])
+    obtain ⟨a_t, ha_t, hix_t⟩ :=
+      compute_iprj_addr_spec (idx := 0) (by omega)
+        (Bytes.repAddressRef_heapMono₂ addrTy (e1.trans e2) hbp) hg_ip ev_iprj
+    have e3 := ev_iprj.heap_extends
+    have hT_at : T = keyOf c.t (ixAddr a_t) := by
+      rw [hT_iprj, hix_t]
+    have hsub_cz : ∀ x ∈ cs_cz, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
+    have hcz := ctor_zero_all_from_fields hwf hlps_ctors hT_at hcload hctor_sp (by omega) hroot hnCtors_lt
+      ctors.length 0 (by omega) hsub_cz
+      (Bytes.repAddressRef_heapMono₂ addrTy (e1.trans (e2.trans e3)) hbp)
+      ha_t
+      (repKLevel_heapMono₂ (e1.trans (e2.trans e3)) hpind) ev_cz
+    exact Or.inr ⟨hnIdx_ne, fun k hk cA hcA =>
+      hcz k (Nat.zero_le k) (by rw [← hcload.1]; exact hk) cA hcA⟩
+
+
+
+/-- The semantic shape-or-zero result follows from the actual guard alternative. -/
 theorem former_decl_ok_from_fields {c : Ctx}
     {b₀ : Bytes.Address} {T : KKey} {nP nIdx : Nat} {ty : KExpr} {ind_lvl : KLevel}
     {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
@@ -159,40 +230,11 @@ theorem former_decl_ok_from_fields {c : Ctx}
     (∃ bs s, ty.stripPis (nP + nIdx) = some (bs, .sort s) ∧ bs.length = nP + nIdx) ∨
     (nIdx ≠ 0 ∧ ∀ k < ctorsA.length, ∀ cA, ctorsA[k]? = some cA →
       ctorZeroOk T ind_lvl.zeronessOf cA.1.type = true) := by
-  match Obs.«KernelCheck::former_decl_ok».obs ev with
-  | .n1 (v17 := v17) (op38 := op_add) (ev15 := ev_tele) .. =>
-    have hv17 : v17 = .field ((nP + nIdx : Nat) : F) := evalBinOp_add_nat nP nIdx op_add
-    rw [hv17] at ev_tele
-    obtain ⟨_, bs, s, hst, hlen⟩ := former_is_tele_one_bounded_spec (nP + nIdx) (by omega) hty ev_tele
-    exact Or.inl ⟨bs, s, hst, hlen⟩
-  | .other (m2 := m2) (v65 := v65) (m68 := m68)
-      (cs97 := cs_cz) (v104 := v104) (m134 := m134) (cs142 := cs_ip)
-      (ev15 := ev_tele) (ev78 := ev_iz) (heq93 := hv65)
-      (ev144 := ev_iprj) (ev99 := ev_cz) (hc168 := hc) .. =>
-    subst hv65
-    obtain ⟨hiz, _⟩ := Lib.is_zero_spec ev_iz
-    have hnIdx_ne : nIdx ≠ 0 := by
-      intro h0
-      subst h0
-      simp at hiz
-    have e1 := ev_tele.heap_extends
-    have e2 := ev_iz.heap_extends
-    have hg_ip : Good c cs_ip := hgood.sub (fun x hx => by simp [hc, hx])
-    obtain ⟨a_t, ha_t, hix_t⟩ :=
-      compute_iprj_addr_spec (idx := 0) (by omega)
-        (Bytes.repAddressRef_heapMono₂ addrTy (e1.trans e2) hbp) hg_ip ev_iprj
-    have e3 := ev_iprj.heap_extends
-    have hT_at : T = keyOf c.t (ixAddr a_t) := by
-      rw [hT_iprj, hix_t]
-    have hsub_cz : ∀ x ∈ cs_cz, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
-    have hcz := ctor_zero_all_from_fields hwf hlps_ctors hT_at hcload hctor_sp (by omega) hroot hnCtors_lt
-      ctors.length 0 (by omega) hsub_cz
-      (Bytes.repAddressRef_heapMono₂ addrTy (e1.trans (e2.trans e3)) hbp)
-      ha_t
-      (repKLevel_heapMono₂ (e1.trans (e2.trans e3)) hpind) ev_cz
-    exact Or.inr ⟨hnIdx_ne, fun k hk cA hcA =>
-      hcz k (Nat.zero_le k) (by rw [← hcload.1]; exact hk) cA hcA⟩
-
-
+  rcases former_decl_ok_observed_from_fields hwf hnPI_lt hnCtors_lt hroot hT_iprj
+    hlps_ctors hcload hctor_sp hsub hgood hty hbp hpind ev with htele | hzero
+  · obtain ⟨testAfter, testCalls, htest⟩ := htele
+    obtain ⟨-, bs, s, hs, hl⟩ := former_is_tele_one_bounded_spec (nP + nIdx) hnPI_lt hty htest
+    exact Or.inl ⟨bs, s, hs, hl⟩
+  · exact Or.inr hzero
 
 end IxVM.Refinement.Decl
