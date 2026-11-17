@@ -218,7 +218,7 @@ theorem RecordRefsIn.safe {calls : List (Call F)} {E₀ : Ixon.Env}
     have howner := recordOf_hashed hS hH (hashed_mono hs hh) hsz hd he
     rw [hb] at howner
     exact (hn (himp ((hsafe c hc).2 cb howner))).elim
-  | .n0_n0 (cs13 := csSrc) (cs124 := csLoop) (x_refs := refsPtr) (ev15 := ev15)
+  | .n0_n0 (m147 := idxHeap) (cs13 := csSrc) (cs124 := csLoop) (x_refs := refsPtr) (ev15 := ev15)
       (ev55 := ev55) (ev42 := ev42) (hv90 := hv90) (ev157 := ev157) (ev126 := ev126)
       (hc179 := hcs) .. =>
     have hsSrc : ∀ cl ∈ csSrc, cl ∈ calls :=
@@ -230,7 +230,7 @@ theorem RecordRefsIn.safe {calls : List (Call F)} {E₀ : Ixon.Env}
     have hrefsSmall := refs_small_of_decoded hsz he
     have extBefore := ev15.heap_extends.trans (ev55.heap_extends.trans ev42.heap_extends)
     obtain ⟨extIdx, hidx⟩ := const_idxs_of_spec (hcp.mono extBefore) ev157
-    have hRefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem _ c.refs.toList refsPtr := by
+    have hRefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem idxHeap c.refs.toList refsPtr := by
       obtain ⟨_, _, rp, _, _, heq, _, _, hrf, _, _⟩ := hcp
       have heq' := heq.symm.trans hv90
       simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq'
