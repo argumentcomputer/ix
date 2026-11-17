@@ -171,7 +171,7 @@ theorem TopWalkCore.need_of_safe_edges
     {a : _root_.Address} {c : Ixon.Constant}
     (ha : Top a) (hc : recordOf E₀ a = some c) (hk : Typing.UnitKind c) (hl : InLogic c) :
     ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
-      inertKey (keyOf t x) = false → ¬ Typing.Covered t x → Typing.NeedOk E₀ x := by
+      inertKey (IxVM.Consistency.keyOf t x) = false → ¬ Typing.Covered t x → Typing.NeedOk E₀ x := by
   intro i hi x hx _ hn
   exact hW.needOk_of_safe_edges hedge ha hc hk hl (Typing.usedRef_of_idx hc hi hx) hn
 
