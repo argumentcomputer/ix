@@ -846,4 +846,42 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   rw [List.getD_eq_getElem?_getD, hb0, Option.getD_some]
   exact hdoms
 
+/-- **The circuit's `is_rec` verdict other than `1` gives IxC's recursion flag `false`**: for
+the classified kinds of stored constructors each of which is the canonical annotation of a
+constructor slot's reading (as the named install stores them), at the family's key and the
+record's parameter count. -/
+theorem nativeIsRec_false_of_struct_is_rec {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
+    {E : Ixon.Env} (hdec : L1.EnvDecoded E) {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    (hinv : Decl.PrefixInv E t lim env) (hkeys : HashKeyed t env)
+    {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
+    (hproj : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
+    (hstored : Decl.UsedRefsStored t env cb)
+    (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
+    {sp v : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {sa : Bytes.Address}
+    (ev : ObsFn Core.W "KernelWhnf::struct_is_rec" [sp] h v h' cs) (hv : v ≠ .field 1)
+    (good : Core.Good ⟨E, env, t, lim⟩ cs)
+    (hsa : Bytes.RepAddressRef Core.addrTy h sa sp) (hsaB : Core.ixAddr sa = Core.iprjAddr B 0)
+    {T : Core.KKey} (hT : T = Core.keyOf t (Core.iprjAddr B 0)) {lps : List Ix.Kernel.LevelParam}
+    {nP nIdx : Nat} (hnP : nP = ind.params.toNat) {ctorsA : List (ConstantVal .anon × Nat)}
+    {kinds : List (List Ix.Kernel.RecFieldKind)}
+    (hk : Ix.Kernel.classifyFixKinds (m := Ix.Kernel.CheckM .anon) T lps nP nIdx ctorsA =
+      .ok kinds)
+    (hctorsA : ∀ cA ∈ ctorsA, ∃ (j : Nat) (ct : Ixon.Constructor) (cty : Ix.Kernel.Expr .anon),
+      ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧
+      (exprReader t (fun x => E.blobs.get? x) cb id
+        (blockSelf t B #[.indc ind])).read ct.typ = .ok cty ∧
+      cty.looseBVarsBounded 0 = true ∧
+      cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
+      LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+        (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
+          ((j : Nat) : F)) ct.typ cty = some cA.1.type) :
+    Ix.Kernel.nativeIsRec kinds = false := by
+  subst hT hnP
+  refine nativeIsRec_false_of_doms hk (fun cA hcA cbs body hs i hi => ?_)
+  obtain ⟨j, ct, cty, h1, h2, h3, h4, h5, h6⟩ := hctorsA cA hcA
+  exact struct_is_rec_doms ht hdec hinv hkeys hblock hmuts hproj hstored hfresh ev hv good hsa
+    hsaB h1 h2 h3 h4 h5 h6 _ cbs body hs (ind.params.toNat + i) (Nat.le_add_right _ _)
+    (by omega)
+
 end IxVM.Refinement.Typing
