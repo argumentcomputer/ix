@@ -393,8 +393,8 @@ theorem GetCIHead.of_plain {calls : List (Call F)} {h : Heap F} {info : Ixon.Con
       ∃ rc, info = .recr rc) :
     GetCIHead calls h info r := by
   rcases hplain with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
-    exact ⟨fun _ e => nomatch e, fun _ _ e => nomatch e, fun _ _ e => nomatch e,
-      fun _ _ _ e => nomatch e, fun _ _ e => nomatch e⟩
+    exact ⟨(fun _ e => nomatch e), (fun _ _ e => nomatch e), (fun _ _ e => nomatch e),
+      (fun _ _ _ e => nomatch e), (fun _ _ e => nomatch e)⟩
 
 /-- **`Ingress::get_ci`, without a bound on the run**: the run hashed fewer than `2^32` bytes at
 the address that decode exactly, with valid tables, to a record `c`, and `GetCIHead` holds of
@@ -479,8 +479,8 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
-      ⟨fun _ e => nomatch hci.symm.trans e, ?_, fun _ _ e => nomatch hci.symm.trans e,
-        fun _ _ _ e => nomatch hci.symm.trans e, fun _ _ e => nomatch hci.symm.trans e⟩⟩
+      ⟨(fun _ e => nomatch hci.symm.trans e), ?_, (fun _ _ e => nomatch hci.symm.trans e),
+        (fun _ _ _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e)⟩⟩
     intro idx' blk' e
     have e' := hci.symm.trans e
     cases e'
@@ -508,8 +508,8 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     have hb_rep' := Bytes.repAddressRef_heapMono₂ Core.addrTy ev720.heap_extends hb_rep
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
-      ⟨fun _ e => nomatch hci.symm.trans e, fun _ _ e => nomatch hci.symm.trans e, ?_,
-        fun _ _ _ e => nomatch hci.symm.trans e, fun _ _ e => nomatch hci.symm.trans e⟩⟩
+      ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e), ?_,
+        (fun _ _ _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e)⟩⟩
     intro idx' blk' e
     have e' := hci.symm.trans e
     cases e'
@@ -542,8 +542,8 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
-      ⟨fun _ e => nomatch hci.symm.trans e, fun _ _ e => nomatch hci.symm.trans e,
-        fun _ _ e => nomatch hci.symm.trans e, ?_, fun _ _ e => nomatch hci.symm.trans e⟩⟩
+      ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e),
+        (fun _ _ e => nomatch hci.symm.trans e), ?_, (fun _ _ e => nomatch hci.symm.trans e)⟩⟩
     intro idx' cidx' blk' e
     have e' := hci.symm.trans e
     cases e'
@@ -570,8 +570,8 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
-      ⟨fun _ e => nomatch hci.symm.trans e, fun _ _ e => nomatch hci.symm.trans e,
-        fun _ _ e => nomatch hci.symm.trans e, fun _ _ _ e => nomatch hci.symm.trans e, ?_⟩⟩
+      ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e),
+        (fun _ _ e => nomatch hci.symm.trans e), (fun _ _ _ e => nomatch hci.symm.trans e), ?_⟩⟩
     intro idx' blk' e
     have e' := hci.symm.trans e
     cases e'
