@@ -228,13 +228,14 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     · rw [hty'']
       exact hcr'
   -- the dispatch is native
-  rcases Decl.native_induct_dispatch ev_chk with ⟨native⟩ | modeled
+  rcases Decl.native_induct_dispatch ev_chk with hnative | modeled
   rotate_left
   · exfalso
     obtain ⟨before, result, after, children, obs, hne, hext, -, hsubc⟩ := modeled
     exact hne (hnat blkPtr result before after children b obs
       (fun cl hcl => hsub_chk cl (hsubc cl hcl))
       (Bytes.repAddressRef_heapMono₂ Core.addrTy hext hb_rep) hb_eq)
+  obtain ⟨native⟩ := hnative
   obtain ⟨shape⟩ := Decl.native_shape_calls native.observed native.subset
   have e_sort : Heap.Extends m_chk native.before := native.initialToShape
   have e_ctor : Heap.Extends m_chk shape.ctorBefore :=
