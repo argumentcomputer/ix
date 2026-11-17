@@ -86,7 +86,7 @@ theorem TmCExact.rekey {κ₁ κ₂ : _root_.Address → Core.KKey} {h : Heap F}
     (perm : ∀ a, Core.ProjIn h p a → Core.ProjPermitted κ₁ (Core.ixAddr a) →
       Core.ProjPermitted κ₂ (Core.ixAddr a)) :
     Decl.TmCExact κ₂ h E p :=
-  fun d Γ => (rep d Γ).rekey agree perm
+  fun d Γ => TmExact.rekey (rep d Γ) agree perm
 
 end IxVM.Refinement.Typing
 
@@ -173,7 +173,9 @@ theorem peer_zero_not_former (hdec : L1.EnvDecoded c.E)
       Ixon.deConstantExact lc.rawBytes = .ok (memberProjection B 0 (.indc ind)) := by
     rw [hx]
     exact decoded_at_of_recordOf hproj
-  have h0 : (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = 0 := by decide
+  have h0 : (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = 0 := by
+    show ((0 : Nat).toUInt64).toNat = 0
+    decide
   have hmem0 : (#[.indc ind] : Array Ixon.MutConst)[
       (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat]? = some (.indc ind) := by
     rw [h0]
