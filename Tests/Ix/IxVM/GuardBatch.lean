@@ -161,11 +161,14 @@ private def mixedCase (guards assumed : Bool) : Except String Case := do
     accept := true
     witness := witness }
 
-/-- The same family as an inductive block and a recursor record of its own. -/
-private def separateCase : Except String Case := do
+/-- The same family as an inductive block and a recursor record of its own. With `basis` the
+family lives in `Type`: its block is then `Empty`'s, whose committed recursor this record is
+not, and it is refused; in `Type 1` it is a family of its own. -/
+private def separateCase (basis : Bool) : Except String Case := do
   let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
+  let sort : Ixon.Univ := if basis then .succ .zero else .succ (.succ .zero)
   let block ← IxVM.RecordSections.withSection env
-    ⟨.muts #[.indc emptyFamily], #[], #[], #[.succ .zero], #[]⟩
+    ⟨.muts #[.indc emptyFamily], #[], #[], #[sort], #[]⟩
   let blockAddress := address block
   let type : Ixon.Constant := ⟨.iPrj ⟨0, blockAddress⟩, #[], #[], #[], #[]⟩
   let env := (env.storeConst blockAddress block).storeConst (address type) type
@@ -174,6 +177,12 @@ private def separateCase : Except String Case := do
   let env := env.storeConst (address recursor) recursor
   let context ← Ix.ClaimContext.ofEnv env
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address recursor) none)
+  if basis then
+    return {
+      label := "an inductive block and its recursor's own record, the block Empty's"
+      accept := false
+      rejectsWith := some "a recursor of a basis family is not the family's committed recursor"
+      witness := witness }
   return {
     label := "an inductive block and its recursor's own record"
     accept := true
@@ -443,7 +452,8 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     return 1
   let env ← loadSharedIxonEnv compiledNames.toArray leanEnv
   let built : Array Builder := #[
-    fun _ => mixedCase guards false, fun _ => mixedCase guards true, fun _ => separateCase,
+    fun _ => mixedCase guards false, fun _ => mixedCase guards true,
+    fun _ => separateCase false, fun _ => separateCase true,
     fun _ => nativeHeaderCase guards .nowhere, fun _ => nativeHeaderCase guards .motive,
     fun _ => nativeHeaderCase guards .index, fun _ => nativeHeaderCase guards .major,
     fun _ => nativeHeaderCase guards .result,
