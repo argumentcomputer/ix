@@ -235,4 +235,51 @@ theorem nat_former_tele_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         tailRep (rawLevel.mono allExtended)
       exact ⟨outBound, _, outRep, .step headTrace tailTrace⟩
 
+/-- Actual result-sort extraction records the same raw binder heads and its exact terminal
+sort level. This replaces a semantic representation-equivalence guess with observed data. -/
+theorem get_result_sort_level_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
+    {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)} :
+    ∀ n {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
+      {rc p types r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      n < 18446744069414584321 → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
+      Tm c.κ d Γ h 0 E p → RawExprRep rawKey h k R p →
+      ObsFn W "KernelCheck::get_result_sort_level" [rc, p, .field (n : F), types] h r h' calls →
+      ∃ level, RepKLevel h' level r ∧ RawSortTrace (RawDeltaAt c rawKey rootCalls) n R level
+  | 0, d, k, Γ, R, E, rc, p, types, r, h, h', calls,
+      _, good, subset, scopedRep, physical, observed => by
+    match Obs.«KernelCheck::get_result_sort_level».obs observed with
+    | .n0 (cs12 := heads) (ev14 := headCall) (ld55 := loaded)
+        (he69 := result) (he70 := heap) (hc71 := events) .. =>
+      have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
+      obtain ⟨headBound, headRaw, headRep, headTrace⟩ := Core.GuardData.head_raw_trace rawKey facts
+        (good.sub headInside) (fun call member => subset call (headInside call member)) scopedRep physical headCall
+      obtain ⟨semantic, raw⟩ := headRep
+      obtain ⟨level, rfl, rfl, levelRep⟩ := raw.raw_sort_view loaded
+      subst result heap
+      exact ⟨level, levelRep, .done headTrace⟩
+    | .other (hne73 := nonzero) .. => exact (nonzero rfl).elim
+  | n + 1, d, k, Γ, R, E, rc, p, types, r, h, h', calls,
+      bound, good, subset, scopedRep, physical, observed => by
+    match Obs.«KernelCheck::get_result_sort_level».obs observed with
+    | .n0 (hv43 := zero) .. => exact (succ_field_ne_zero_bounded bound zero).elim
+    | .other (m2 := headHeap) (cs12 := heads) (x_body := body) (cs115 := children)
+        (m152 := pushed) (ev14 := headCall) (ld88 := loaded) (op149 := subtracted)
+        (hm160 := push) (ev117 := child) (hc180 := events) .. =>
+      have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
+      have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
+      obtain ⟨headBound, headRaw, headRep, headTrace⟩ := Core.GuardData.head_raw_trace rawKey facts
+        (good.sub headInside) (fun call member => subset call (headInside call member)) scopedRep physical headCall
+      obtain ⟨headSemantic, headScoped, _⟩ := Core.GuardData.head_rep facts (good.sub headInside) scopedRep headCall
+      obtain ⟨semantic, raw⟩ := headRep
+      obtain ⟨RD, RB, ED, EB, u, rfl, rfl, _, rawBody, _⟩ := raw.raw_forallE_view loaded
+      obtain ⟨D, B, _, rfl, _, scopedBody, _⟩ := headScoped.forallE_of_load loaded
+      have extension : Heap.Extends headHeap pushed := by rw [push]; exact Heap.Extends.snoc _ _
+      have opened := (scopedBody.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)).mono extension
+      rw [evalBinOp_sub_succ n subtracted] at child
+      obtain ⟨level, levelRep, trace⟩ := get_result_sort_level_raw rawKey facts n (by omega)
+        (good.sub childInside) (fun call member => subset call (childInside call member)) opened
+        ⟨_, rawBody.mono extension⟩ child
+      exact ⟨level, levelRep, .step headTrace trace⟩
+
+
 end IxVM.Refinement.Decl
