@@ -42,7 +42,7 @@ variable {c : Core.Ctx} {new : List (ConstantInfo .anon)} {B : _root_.Address}
 constant witnesses at a block a run hashed is a member of the installed block. -/
 def PointFamNew (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address)
     (ms : Array Ixon.MutConst) : Prop :=
-  ∀ (b : _root_.Address) (i : Nat), Core.HashedBlockAt c.E b →
+  ∀ (b : _root_.Address) (i : Nat), Core.HashedBlockAt c.E b → i < UInt64.size →
     FamNew (appCtx c new).stored new b i → b = B ∧ ∃ ind, ms[i]? = some (.indc ind)
 
 /-- The record at the installed block, as the store's decoding. -/
@@ -123,7 +123,7 @@ theorem PointInstall.newProjTables (hI : PointInstall c new B cb ms) (hmod : Mod
   exfalso
   subst hip
   have hbh := L1.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
-  obtain ⟨hbB, -⟩ := hfam _ _ hbh hfam'
+  obtain ⟨hbB, -⟩ := hfam _ _ hbh (val_lt_uint64 _) hfam'
   have hn := nativeAt_of_projCtor (c := appCtx c new) ev good hb
   rw [hbB] at hn
   exact hmod hn
@@ -164,7 +164,7 @@ theorem PointInstall.newProjTablesAt (hI : PointInstall c new B cb ms) (hmod : M
     j cvC nP nF hctor hm hnF
   exfalso
   have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) hgG evG hs hld hblk
-  obtain ⟨hbB, -⟩ := hfam _ _ hbh (Or.inr ⟨j, cvC, nP, nF, hctor, hm⟩)
+  obtain ⟨hbB, -⟩ := hfam _ _ hbh (val_lt_uint64 _) (Or.inr ⟨j, cvC, nP, nF, hctor, hm⟩)
   have hn := nativeAt_of_obs (c := appCtx c new) evM hgM hb
   rw [hbB] at hn
   exact hmod hn
@@ -201,7 +201,7 @@ theorem PointInstall.newUnitLike (hI : PointInstall c new B cb ms) (hshape : Poi
       rw [← hx]
       exact hfT
     · exact Or.inr ⟨0, cvC, nPc, 0, hfC, hm⟩
-  obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh hfamAt
+  obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh (val_lt_uint64 _) hfamAt
   rcases hshape with h2 | ⟨ind, hms, hN⟩
   · exact few_not_multi (c := appCtx c new) ⟨cb, ms, hI.recordAt, hI.muts, h2⟩ (by rw [← hbB]; exact hfew)
   · subst hms
@@ -244,7 +244,7 @@ theorem PointInstall.newUnitLikeRaw (hI : PointInstall c new B cb ms)
     refine Or.inl ⟨cvT, caps', ?_, hm⟩
     rw [← hx]
     exact hfT
-  obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh hfamAt
+  obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh (val_lt_uint64 _) hfamAt
   rcases hshape with h2 | ⟨ind, hms, hN⟩
   · exact few_not_multi (c := appCtx c new) ⟨cb, ms, hI.recordAt, hI.muts, h2⟩ (by rw [← hbB]; exact hfew)
   · subst hms
@@ -277,7 +277,7 @@ theorem PointInstall.blockEta (hI : PointInstall c new B cb ms)
         rw [← hname, hn]
         exact hC
       · exact Or.inl ⟨cvT, caps, hT, hm⟩
-    obtain ⟨hbB, -⟩ := hfam _ _ hbh hfamAt
+    obtain ⟨hbB, -⟩ := hfam _ _ hbh (val_lt_uint64 _) hfamAt
     obtain ⟨bq, h3, h4, cs3, evM, hgM, hbq⟩ := hmodeled
     have hn := nativeAt_of_obs (c := appCtx c new) evM hgM hbq
     rw [hbB] at hn
@@ -294,7 +294,7 @@ theorem PointInstall.blockEta (hI : PointInstall c new B cb ms)
         rw [← hx]
         exact hT
       · exact Or.inr ⟨0, cvc, cnP, cnF, hC, hm⟩
-    obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh hfamAt
+    obtain ⟨hbB, ind₀, hmem⟩ := hfam _ _ hbh (val_lt_uint64 _) hfamAt
     rcases hshape with h2 | ⟨ind, hms, hN⟩
     · obtain ⟨bq, h3, h4, cs3, evM, hgM, hbq⟩ := hmulti
       exact multi_not_zero hinv ⟨cb, ms, hI.recordAt, hI.muts, h2⟩ evM hgM.1 hgM.2 hbq hbB

@@ -75,33 +75,48 @@ def pointCtor (t : Ix.Kernel.RoleTable) (B : _root_.Address) (i j : Nat) (ct : I
   ⟨⟨Core.keyOf t (Core.cprjAddr B i j), List.range ct.lvls.toNat, cty₀⟩, ct.params.toNat,
     ct.fields.toNat, cty'⟩
 
+/-- **The reading of member `i`'s type over `E`, and its canonical annotation.** -/
+def FormerRead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
+    (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (i : Nat) (ind : Ixon.Inductive)
+    (ty₀ ty' : Ix.Kernel.Expr .anon) : Prop :=
+  blockRead t E B cb ms ind.typ = .ok ty₀ ∧ ty₀.looseBVarsBounded 0 = true ∧
+    ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
+    LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+      ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty'
+
+/-- **The reading of constructor `j` of member `i` over `E`, and its canonical annotation**; the
+constructor's stored index is its position. -/
+def CtorRead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
+    (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (i j : Nat) (ct : Ixon.Constructor)
+    (cty₀ cty' : Ix.Kernel.Expr .anon) : Prop :=
+  ct.cidx.toNat = j ∧ blockRead t E B cb ms ct.typ = .ok cty₀ ∧
+    cty₀.looseBVarsBounded 0 = true ∧
+    cty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
+    LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+      (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty₀ =
+      some cty'
+
 /-- **The formers and constructors are the block's**, each the reading of its record over `E`
 with the canonical annotation of that reading: every former is member `i`'s and every member
-has one; every constructor is constructor `j` of member `i` and every constructor slot has
-one. -/
+has its own among them; every constructor is constructor `j` of member `i` and every constructor
+slot has its own among them. -/
 structure PointReads (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (formers : List FormerRec)
     (ctors : List CtorRec) : Prop where
   formerOf : ∀ f ∈ formers, ∃ (i : Nat) (ind : Ixon.Inductive) (ty₀ ty' : Ix.Kernel.Expr .anon)
       (caps : IndCaps .anon),
     ms[i]? = some (.indc ind) ∧ f = pointFormer t B i ind ty₀ caps ty' ∧
-    blockRead t E B cb ms ind.typ = .ok ty₀ ∧ ty₀.looseBVarsBounded 0 = true ∧
-    ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
-    LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty'
+    FormerRead t E B cb ms i ind ty₀ ty'
   formerAt : ∀ i ind, ms[i]? = some (.indc ind) →
-    ∃ f ∈ formers, f.cv.name = Core.keyOf t (Core.iprjAddr B i)
+    ∃ (ty₀ ty' : Ix.Kernel.Expr .anon) (caps : IndCaps .anon),
+      pointFormer t B i ind ty₀ caps ty' ∈ formers ∧ FormerRead t E B cb ms i ind ty₀ ty'
   ctorOf : ∀ c ∈ ctors, ∃ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor)
       (cty₀ cty' : Ix.Kernel.Expr .anon),
-    ms[i]? = some (.indc ind) ∧ ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧
-    c = pointCtor t B i j ct cty₀ cty' ∧
-    blockRead t E B cb ms ct.typ = .ok cty₀ ∧ cty₀.looseBVarsBounded 0 = true ∧
-    cty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
-    LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty₀ =
-      some cty'
+    ms[i]? = some (.indc ind) ∧ ind.ctors[j]? = some ct ∧
+    c = pointCtor t B i j ct cty₀ cty' ∧ CtorRead t E B cb ms i j ct cty₀ cty'
   ctorAt : ∀ i ind j, ms[i]? = some (.indc ind) → j < ind.ctors.size →
-    ∃ c ∈ ctors, c.cv.name = Core.keyOf t (Core.cprjAddr B i j)
+    ∃ (ct : Ixon.Constructor) (cty₀ cty' : Ix.Kernel.Expr .anon), ind.ctors[j]? = some ct ∧
+      pointCtor t B i j ct cty₀ cty' ∈ ctors ∧ CtorRead t E B cb ms i j ct cty₀ cty'
 
 /-! ## The install, as the store reads it -/
 
