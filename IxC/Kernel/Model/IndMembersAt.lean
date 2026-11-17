@@ -331,7 +331,7 @@ theorem indMemberAt (mp : EnvModelM V μ env) {c₀ : ConstantInfo md}
 /-- **The model-free conclusions of a block-member install** (`memberInstallInv` at the model
 key `g`, at the empty capability record): the extended store's `EnvWF`, the block invariant, the
 η-family closure off the block, and `BlockNoEta`. -/
-theorem memberInstallInvAt {μ : CheckMode} {J : Judgements md}
+theorem memberInstallInvAt {J : Judgements md}
     {blockNames : List (Key md)} {env : Env md} {cval : TConstVal md}
     (hwfE : EnvWF env)
     {cv cvA : ConstantVal md} {c₀ : ConstantInfo md}
