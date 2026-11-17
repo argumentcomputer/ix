@@ -149,7 +149,7 @@ private def certificateCase (guarded : Bool) (mode : Nat) : Except String Case :
       let (env, b) := put env { c with info := .muts ms }
       pure (put env ⟨.dPrj ⟨0, b⟩, #[], #[], #[], #[]⟩)
   let table := { table with evidence := table.evidence.map fun (role, es) =>
-    (role, if role == r then es.set! index (.proof replacement) else es) }
+    (role, if role == r then (es : Array (Ix.Kernel.Evidence Address)).set! index (.proof replacement) else es) }
   table.check
   let env ← withRoleTable env table.toBytes
   let label := match mode with
