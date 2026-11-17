@@ -89,6 +89,6 @@ theorem CheckedSortAt.raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resol
     (good.sub included) included types represented rawCtx physical observed
   have same := level.det rawLevel
   subst same
-  exact ⟨context, input, rawSignature, before, p, ctx, extension, rawCtx, physical, trace, zero⟩
+  exact ⟨context, input, signature, before, p, ctx, extension, rawCtx, physical, trace, zero⟩
 
 end IxVM.Refinement.Core.GuardData
