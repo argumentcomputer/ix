@@ -252,7 +252,7 @@ theorem PointInstall.newUnitLikeRaw (hI : PointInstall c new B cb ms)
     have hxa : Core.ixAddr a = Core.iprjAddr B 0 := by rw [hx, hbB, hi0]
     obtain ⟨-, hsz⟩ := hI.counts_one rfl ev good ha hld hxa
     rw [ZMod.val_one] at hsz
-    have hv := hN.rec hsz.symm hnr.ap _ hnr.before hnr.after hnr.calls a hnr.observed
+    have hv := hN.recursive hsz.symm hnr.ap _ hnr.before hnr.after hnr.calls a hnr.observed
       hnr.good.1 hnr.good.2 hnr.parentRep hxa
     exact absurd (Value.field.inj hv) (by decide)
 
@@ -304,7 +304,7 @@ theorem PointInstall.blockEta (hI : PointInstall c new B cb ms)
       obtain ⟨-, hsz⟩ := hI.counts_one rfl ev hg hpa hld hxa
       rw [ZMod.val_one] at hsz
       obtain ⟨sp, v, h5, h6, cs5, evR, hne, hgR, hpR⟩ := hrec
-      exact hne (hN.rec hsz.symm sp v h5 h6 cs5 pa evR hgR.1 hgR.2 hpR hxa)
+      exact hne (hN.recursive hsz.symm sp v h5 h6 cs5 pa evR hgR.1 hgR.2 hpR hxa)
 
 end
 

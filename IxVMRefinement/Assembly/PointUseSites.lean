@@ -117,13 +117,13 @@ producer in the tree; module docstring). The block at `B` has the one member `in
 * `noUnit`: the member is no structure whose one constructor has no field (a nested occurrence
   is in a field: the constructor's return type names the block only at its head, and its index
   arguments not at all, `check_ctor_return_type`);
-* `rec`: where the member has one constructor, no good run answers `struct_is_rec ≠ 1` at the
+* `recursive`: where the member has one constructor, no good run answers `struct_is_rec ≠ 1` at the
   member's address (the field with the nested occurrence mentions the member). -/
 structure NestedGate (E : Ixon.Env) (B : _root_.Address) (ind : Ixon.Inductive) : Prop where
   modeled : ModeledAt E B
   noUnit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
     ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0
-  rec : ind.ctors.size = 1 →
+  recursive : ind.ctors.size = 1 →
     ∀ (sp v : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (s : Bytes.Address),
       ObsFn Core.W "KernelWhnf::struct_is_rec" [sp] h v h' cs →
       ¬ View.HashedCollision { env := E } [] cs → Bounded cs →
