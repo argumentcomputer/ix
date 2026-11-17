@@ -589,7 +589,8 @@ theorem red_lamTele_apply {env : Env .anon} {d : Nat} {w : Expr .anon}
         (Expr.mkAppN ((lamTele w b).instantiate1 a) as) :=
       red_mkAppN as (Red.betaGate hgate)
     rw [lamTele_instantiate1 hwi a b 0 hsh'] at hstep
-    have hrest := red_lamTele_apply hwi as (b.instantiate1 a)
+    have hrest : Red env d (Expr.mkAppN (lamTele w (b.instantiate1 a)) as) w :=
+      red_lamTele_apply hwi as (b.instantiate1 a)
       (by rw [piArity_instantiate1 a b 0 hsh']; exact hn')
       (resultSort_instantiate1 a b 0 l hr') (PwAll.instantiate1 a b 0 hsh' hp'.2)
     exact Red.trans hstep hrest
@@ -609,8 +610,7 @@ theorem red_shadow_apply {env : Env .anon} {d : Nat} {T : Key .anon} {cv : Const
   have hunf : Ix.Kernel.unfoldDefinition env e = some (Expr.mkAppN
       ((lamTele (.const Ix.Kernel.punitName [l]) cv.type).instantiateLevelParams
         cv.levelParams us) e.getAppArgs) := by
-    simp only [Ix.Kernel.unfoldDefinition, hhead, hf]
-    rw [if_pos hus]
+    simp only [Ix.Kernel.unfoldDefinition, hhead, hf, hus, ↓reduceIte]
   have hsh : Shape cv.type := shape_of_resultSort _ l hr
   rw [lamTele_instantiateLevelParams _ _ _ _ hsh] at hunf
   have hbeta := red_lamTele_apply (env := env) (d := d)
