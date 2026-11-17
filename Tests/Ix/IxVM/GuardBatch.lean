@@ -20,10 +20,11 @@ writes. Each has cases that must now be refused and cases that must stay accepte
   the major premise's domain or the result is refused, on the native route and on the
   modeled route. A `let` in a parameter's or a minor premise's domain is accepted, and so
   is a type-annotation wrapper that the stored recursor dropped from a minor premise.
-* **Mutual and nested families.** A family's types and constructors are checked on their
-  declared shape, with no model, whether the family is claimed or reached by reference; the
-  shape is the stored type's, so a type declared at a definition is refused. A projection at
-  such a family is refused, and so is any of its recursors.
+* **Mutual and nested families.** A family's types and constructors are checked with the
+  whole family against its model, whether the family is claimed or reached by reference, so
+  with no model they are refused; the stored type must be a telescope of binders into a
+  sort, so a type declared at a definition is refused first. A projection at such a family
+  is refused, and so is any of its recursors.
 * **A stored `let` is the generated one.** A recursor whose type has a `let` where the
   generated recursor has none is refused (a rule under such a `let` is refused in
   `ixvm-claim-safety`). A `let` the family carries into its recursor, in a parameter's or
@@ -36,7 +37,9 @@ a program with the first three guards and without the fourth; set to `shape`, of
 four guards that still checks a family at its types; set to `telescope`, of one that checks
 a family's types on their declared shape and reads that shape after head normalization; set
 to `recursors`, of one that reads it off the stored type and still checks a family at its
-recursors. -/
+recursors; set to `declared`, of one that also refuses those recursors but checks a family's
+types on their declared shape only. Unset, it expects the program that checks a family at its
+types again, keeps the stored type's telescope, and refuses the family's recursors. -/
 
 namespace Tests.Ix.IxVM.GuardBatch
 
@@ -389,11 +392,11 @@ private def declaredFormerCase (shape telescope declared : Bool) : Except String
     accept := true
     witness := witness }
   -- with the model channel empty (`bare`), the family check stops at the missing hint
-  return if !shape then
-    { c with accept := false, rejectsWith := some "missing hint data" }
-  else if telescope && declared then
+  return if telescope && declared then
     { c with accept := false
              rejectsWith := some "a mutual or nested inductive's type is not a telescope of binders into a sort" }
+  else if !shape then
+    { c with accept := false, rejectsWith := some "missing hint data" }
   else c
 
 /-- A mutual or nested family is checked on its declared shape, with no model: claimed as the
@@ -423,15 +426,17 @@ private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builde
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   -- the program under test: every guard (unset), or one of the earlier states
   let before ← IO.getEnv "IX_GUARD_BATCH_BEFORE"
-  let state := match before with
-    | none => if modeledRecursorsRefused then 5 else 4
-    | some "recursors" => 4 | some "telescope" => 3 | some "shape" => 2
-    | some "lets" => 1 | some _ => 0
-  let guards := decide (state ≥ 1)
-  let lets := decide (state ≥ 2)
-  let shape := decide (state ≥ 3)
-  let telescope := decide (state ≥ 4)
-  let recursors := decide (state ≥ 5)
+  -- guards, the fourth guard, a family's types on their declared shape only, the stored
+  -- type's telescope, a family's recursors refused
+  let (guards, lets, shape, telescope, recursors) : Bool × Bool × Bool × Bool × Bool :=
+    match before with
+    | none => (true, true, false, true, modeledRecursorsRefused)
+    | some "declared" => (true, true, true, true, true)
+    | some "recursors" => (true, true, true, true, false)
+    | some "telescope" => (true, true, true, false, false)
+    | some "shape" => (true, true, false, false, false)
+    | some "lets" => (true, false, false, false, false)
+    | some _ => (false, false, false, false, false)
   let missing := compiledNames.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-guard-batch] not in the environment: {missing}"
