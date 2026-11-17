@@ -148,4 +148,24 @@ theorem NativeNoRecFacts.shape {env env₂ : Ix.Kernel.Env .anon}
       · exact Or.inr (Or.inr ⟨tbl, rfl⟩)
       · exact hmem ci hold
 
+/-! ## The η type for open parameter spines (a hypothesis of the block step) -/
+
+/-- **The η type for open parameter spines**: a constructor stored with the type
+`∀ params fields, T params` (distinct level parameters) has, at every depth and every argument
+spine, an inferred type that reduces to the family at the spine's parameters.
+`Decl.etaType_of_closed` is this at closed parameters and under the whole environment's
+`EtaShape`. The block step takes it for a structure-like block only (the fields `eta`, `etaIota`
+of the load contract and `EtaStable` at the new environment, at the new family). -/
+def EtaTypeOpen : Prop :=
+  ∀ (env : Ix.Kernel.Env .anon) (T kc : KKey) (cvc : Ix.Kernel.ConstantVal .anon)
+    (nP nF : Nat) (cbs : List (Core.KExpr × Ix.Kernel.BinderMeta)),
+    env.find? kc = some (.ctorInfo cvc nP nF) → cvc.levelParams.Nodup →
+    cvc.type.stripPis (nP + nF) =
+      some (cbs, Ix.Kernel.Expr.mkAppN (.const T (cvc.levelParams.map .param))
+        (Ix.Kernel.structPsAt nF nP)) →
+    ∀ (d : Nat) (us : List Core.KLevel) (args : List Core.KExpr) (ty : Core.KExpr),
+      args.length = nP + nF →
+      Ix.Kernel.Rules.Infer env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) args) ty →
+      Ix.Kernel.Rules.Red env d ty (Ix.Kernel.Expr.mkAppN (.const T us) (args.take nP))
+
 end IxVM.Refinement.Typing
