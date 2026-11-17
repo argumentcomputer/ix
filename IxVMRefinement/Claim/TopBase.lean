@@ -685,7 +685,7 @@ The represented record is retained so that repeated loads can be tied through th
 def RecordRefsIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
     (lim : Option Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
   ∃ (h h' : Heap F) (rc ap cp r : SourceValue F) (cs : List (Call F)),
-    RCLimRep t bAddr lim h rc ∧ S0.addr h ap a ∧ L1.RepConstant h c cp ∧
+    RCLimRep t bAddr lim h rc ∧ S0.addr h ap a ∧ RepConstant h c cp ∧
     ObsFn Obs.W "KernelClaim::assert_safe_record_refs" [rc, ap, cp] h r h' cs ∧
     ∀ cl ∈ cs, cl ∈ calls
 
