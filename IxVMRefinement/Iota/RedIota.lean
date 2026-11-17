@@ -439,7 +439,7 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     have hresc : c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)) ≠ unresolvedKey := by
       rw [hlink]; exact hc.res_of_find hcfind
     have hresp : c.κ (ixAddr a') ≠ unresolvedKey := by
-      rw [haeq]; exact hc.loads.ctorIndRes _ _ _ hresc
+      rw [haeq]; exact hc.res_of_ctor hcfind hname
     rw [c.key_eq hresp] at hmh0
     obtain ⟨cm, hcm⟩ := hc.env.recMajorRecord k cv mI rP rls (ixAddr a') us0 hfind
       (List.ne_nil_of_mem hrl) hmh0

@@ -797,10 +797,11 @@ def MembersClean (c : ScopedCtx) (h : Heap F) (ms membs : List Bytes.Address) : 
     Ix.Cert.recordAt c.E (ixAddr m) = some cm → cm.info = .iPrj p →
     Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs →
     xs[p.idx.toNat]? = some (.indc ind) →
-    c.κ (iprjAddr p.block p.idx.toNat) ≠ unresolvedKey →
+    c.FamAt p.block p.idx.toNat →
     ∀ t < ind.ctors.size, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl ty : SourceValue F)
         (rest : List (SourceValue F)),
-      (∀ ci, c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some ci → c.ci h w ci) ∧
+      (∀ cv nP nF, c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some (.ctorInfo cv nP nF) →
+        c.ci h w (.ctorInfo cv nP nF)) ∧
       c.ci h w cicon ∧
       w = .construct kciEnum "Ctor" (nl :: ty :: rest) ∧ FieldsClean h ind.params.toNat membs ty
 
@@ -848,12 +849,13 @@ def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → CoreGood c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
       np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j →
-      c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey → r ≠ .field 1 →
+      c.FamAt (ixAddr b) (ZMod.val i) → r ≠ .field 1 →
       ∀ t < ZMod.val (n - j),
         ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
           (rest : List (SourceValue F)),
-          (∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
-            some ci → c.ci h' w ci) ∧
+          (∀ cv nP nF,
+            c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
+              some (.ctorInfo cv nP nF) → c.ci h' w (.ctorInfo cv nP nF)) ∧
           c.ci h' w cicon ∧ w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧
           FieldsClean h' (ZMod.val p) ms ty'
 

@@ -734,7 +734,7 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
     {b : Bytes.Address} {i f : F} (hrc : c.rc h x_rc)
     (hb : Bytes.RepAddressRef addrTy h b x_block) (hi : x_idx = .field i)
     (hf : x_fidx = .field f)
-    (hres : c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ≠ unresolvedKey) :
+    (hres : c.FamAt (ixAddr b) (ZMod.val i)) :
     ∃ g : KLevel, RepKLevel h' g r := by
   subst hi hf
   rcases Obs.«KernelInfer::proj_guard».obs ev with
@@ -744,7 +744,7 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
   have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
   have hctorLoad := ih.get (.callees .get_ci_cprj)
     (by simp only [List.length_cons, List.length_append] at hlt0; omega)
-    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) (by resolve_key) g15 hb
+    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) hres g15 hb
   obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
   rw [ld11] at hld
   injection hld with hv
@@ -846,6 +846,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     (ev209 : ObsFn W "Ingress::get_ci" [x_head_addr] m159 p201 m194 cs207)
     (ld203 : loadValue m194 p201 = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
       [x_ind_nlvls, x_ind_ty, x_n_params, x_n_indices, x_num_ctors, w234, x_block_addr, x_ind_idx]))
+    (heq301 : x_num_ctors = .field 1)
     (ev315 : ObsFn W "KernelInfer::proj_shape_ok"
       [x_n_indices, x_args, x_n_params, x_lvls, x_ind_nlvls] m194 v302 m303 cs313)
     (ev372 : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, x_ind_idx] m303 p364 m357 cs370)
@@ -929,7 +930,8 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have ev372' : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, .field iS] m194 p364 m357 cs370 :=
     by have hobs := ev372; rw [hidx_eq] at hobs; exact hobs
   obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
-    x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372) (by resolve_key) g370 hbS
+    x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372)
+    (ScopedCtx.famAt_of_ind hfindS hnameS) g370 hbS
   rw [ld366] at hldC
   injection hldC with hvC
   subst hvC
@@ -944,7 +946,11 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
     (hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
-      ev372 allowed372 g370.raw hbS hidx_eq (by resolve_key)).2 0 cvC nP nF hfindC
+      ev372 allowed372 g370.raw hbS hidx_eq (ScopedCtx.famAt_of_ind hfindS hnameS)).2
+      x_head_addr p201 x_ind_nlvls x_ind_ty x_n_params w234 x_block_addr m159 m194 cs207 s
+      ev209 g207.raw hs159 (by rw [← hni0, ← heq301, ← hidx_eq]; exact ld203) hbS
+      0 cvC nP nF
+      hfindC
   obtain ⟨hteleC, hguard_eq⟩ :=
     hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
       ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
@@ -1000,7 +1006,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hbS548 : Bytes.RepAddressRef addrTy m548 bS x_block_addr :=
     Bytes.repAddressRef_heapMono₂ addrTy e194_548 hbS
   obtain ⟨g_lvl, hg_lvl⟩ := ProjAux.proj_guard_rep c ih (by lt_calls) g626 ev628
-    hrc548 hbS548 hidx_eq rfl (by resolve_key)
+    hrc548 hbS548 hidx_eq rfl (ScopedCtx.famAt_of_ind hfindS hnameS)
   have e628 := ObsFn.heap_extends ev628
   have E618 : Heap.Extends h m618 := E548.trans e628
   have ev628' : ObsFn W "KernelInfer::proj_guard"
@@ -1077,14 +1083,14 @@ theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       x_ctor_nlvls, x_ctor_ty, w405, w406, w407, w408, w409, w410, v479, m480, cs490,
       v509, m510, cs520, v547, m548, cs558, v600, m601, cs611, v614, v616, m618, cs626,
       m669, cs677, v682,
-      ev14, ev52, ev91, ld127, ev169, heq192, ev209, ld203, _, ev315, ev372, ld366, heq478,
+      ev14, ev52, ev91, ld127, ev169, heq192, ev209, ld203, heq301, ev315, ev372, ld366, heq478,
       ev492, ev522, ev560, ev628, op710, ev679, ev613, he714, he715, hc716⟩
   have hlt12 : cs12.length < calls.length := by rw [hc716]; lt_calls
   have g12 : CoreGood c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
   have hlt520 : cs520.length < calls.length := by rw [hc716]; lt_calls
   have g520 : CoreGood c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
   refine infer_proj_common c hc ih good hrc hfi htypes ha hPE hc716 ?_ ev52 ev91 ld127
-    ev169 heq192 ev209 ld203 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
+    ev169 heq192 ev209 ld203 heq301 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
     he714 he715
   · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer) hlt12 ev14 rc e1 types rfl g12
       hrc d Γ htypes PE hPE

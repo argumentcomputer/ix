@@ -130,7 +130,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
       projTables := ?_, projTablesAt := ?_, unitLike := ?_, unitLikeRaw := ?_, eta := ?_,
       etaIota := ?_, recordShape := ?_, inductBlock := ?_, projTablesGuard := ?_,
       canonical := ?_, storedRes := fun _ _ _ => Resolved.ne, findRes := fun _ _ _ => Resolved.ne,
-      ctorIndRes := fun _ _ _ _ => Resolved.ne, roleRes := fun _ _ _ _ _ => Resolved.ne }
+      ctorIndRes := fun _ _ _ _ _ _ _ => Resolved.ne, roleRes := fun _ _ _ _ _ => Resolved.ne }
   · intro addr ptr h h' cs a ev hall _ hg ha
     obtain ⟨ci, hci⟩ := hres.getCI addr h a hall ha
     exact (noFind henv hci).elim

@@ -107,6 +107,14 @@ abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
 /-- The keying of the terms a scoped run handles (`ScopedCtx.key`). -/
 abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := c.key
 
+/-- **A family is stored at member `i` of block `b`**: the inductive at the key of its projection
+record, or one of its constructors. The evidence a run has in hand when it loads a member of the
+block: it names the kind of the stored constant, so a constant of another kind at the same key
+is no evidence. -/
+def ScopedCtx.FamAt (c : ScopedCtx) (b : _root_.Address) (i : Nat) : Prop :=
+  (∃ cv caps, c.env.find? (c.κ (iprjAddr b i)) = some (.indInfo cv caps)) ∨
+    ∃ j cv nP nF, c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF)
+
 /-- A resolved key of a scoped context is the table's. -/
 theorem ScopedCtx.key_eq (c : ScopedCtx) {a : _root_.Address} (h : c.κ a ≠ unresolvedKey) :
     c.κ a = keyOf c.t a :=
