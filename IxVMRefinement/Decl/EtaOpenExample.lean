@@ -85,7 +85,7 @@ theorem not_etaStable :
 
 /-- The stored family has its shape. -/
 theorem etaShape : EtaShape boxEnv := by
-  intro T cvT caps hT heta
+  intro T cvT caps hT _heta
   have hname := List.find?_some hT
   rcases mem_boxEnv hT with h | h
   · exact nomatch h

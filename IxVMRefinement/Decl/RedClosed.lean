@@ -2,6 +2,7 @@ import IxC.Kernel.Rules.Inversion
 import IxC.Kernel.Verify.Shift
 import IxC.Kernel.Verify.Subst
 import IxC.Kernel.Verify.EnvWF
+import IxC.Kernel.Verify.InferLemmas
 
 /-! # Reduction keeps a term free of loose bound variables
 
@@ -154,12 +155,10 @@ theorem lbb_of_instantiate1 {v e : Expr md} {k : Nat}
   | bvar i =>
     simp only [Expr.looseBVarsBounded, decide_eq_true_eq]
     simp only [Expr.instantiate1] at h
-    by_cases h1 : i = k
+    split at h
     · omega
-    · rw [if_neg h1] at h
-      by_cases h2 : i > k
-      · rw [if_pos h2] at h
-        simp only [Expr.looseBVarsBounded, decide_eq_true_eq] at h
+    · split at h
+      · simp only [Expr.looseBVarsBounded, decide_eq_true_eq] at h
         omega
       · omega
   | app f a ihf iha =>
@@ -198,9 +197,7 @@ theorem lbb_strLitToConstructor (s : String) :
 
 theorem lbb_natOpResult {c : Key md} {a b : Nat} {r : Expr md} (h : natOpResult c a b = some r) :
     r.looseBVarsBounded 0 = true := by
-  unfold natOpResult at h
-  repeat' split at h
-  all_goals (cases h <;> rfl)
+  rcases natOpResult_shape h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
 
 theorem lbb_unfoldDefinition {env : Env md} (hS : BClosedStore env) {e e' : Expr md}
     (hu : unfoldDefinition env e = some e') (he : e.looseBVarsBounded 0 = true) :
