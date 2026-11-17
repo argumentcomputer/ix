@@ -17,7 +17,9 @@
   `Ix.SpecDigest.specDigest`), and the default role table's binding hash
   (`IxVMCompat::default_binding_addr`, equal to
   `Ix.Kernel.Reader.defaultTableAddress`), which only the benchmark and debug
-  entry points read. An address literal reappearing fails, as does another
+  entry points read; and, in the basis pin (`KernelRoles::basis_pin`), one
+  literal for each of the 26 basis roles it pins, equal to the default role
+  table's binding of that role. An address literal reappearing fails, as does another
   function reading the default binding, or the scanner finding neither literal
   (a change in the sources' shape). A literal that reappears is reported with
   the primitive it encodes, if any, from `Ix.PrimAddrs`.
@@ -43,6 +45,20 @@ each must hold:
 def expectedAddressLiterals : List (String × Except String Address) := [
   ("KernelRoleSpec::spec_digest", Ix.SpecDigest.specDigest),
   ("IxVMCompat::default_binding_addr", Ix.Kernel.Reader.defaultTableAddress)]
+
+/-- The roles the basis pin (`KernelRoles::basis_pin`) holds an address for, by their index
+in `Role.all`: `Nat`… (0-3), `Bool`… (4-7), `Eq`… (8-10), `PUnit`… (11-13), `Empty`…
+(14-15), `False`… (16-17), `And`… (20-22), the quotient package (32-36). -/
+def basisPinnedRoles : List Nat :=
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 32, 33, 34, 35, 36]
+
+/-- The basis pin's addresses: the default role table's bindings of those roles. -/
+def basisPinAddresses : Except String (List Address) := do
+  let table ← Ix.Kernel.Reader.defaultTable
+  basisPinnedRoles.mapM fun i => do
+    let some r := Ix.Kernel.Role.all[i]? | throw s!"no role {i}"
+    let some (_, a) := table.bound.find? (·.1 == r) | throw s!"role {i} is not bound"
+    pure a
 
 /-- The entry points allowed to read the default binding: none is the claim
 entry point. -/
@@ -70,8 +86,15 @@ def problems (fns : Array Tests.Ix.IxVM.Sources.Function) : Array String := Id.r
       unless bytes.isSome && bytes == expected.toOption do
         out := out.push s!"{name} holds {xs}, not {expected.toOption}"
     | none =>
-      let named := ((bytes.bind fun a => canonical[a]?).map fun n => s!", the address of {n}").getD ""
-      out := out.push s!"{name} holds a literal of {xs.size} items{named}"
+      if name == "KernelRoles::basis_pin" then
+        unless (bytes.map fun a => (basisPinAddresses.toOption.getD []).contains a).getD false do
+          out := out.push s!"{name} holds {xs}, not a default binding of a pinned basis role"
+      else
+        let named := ((bytes.bind fun a => canonical[a]?).map fun n => s!", the address of {n}").getD ""
+        out := out.push s!"{name} holds a literal of {xs.size} items{named}"
+  let pins := found.filter (·.1 == "KernelRoles::basis_pin")
+  unless pins.size == basisPinnedRoles.length do
+    out := out.push s!"KernelRoles::basis_pin holds {pins.size} address literals, not {basisPinnedRoles.length}"
   for (name, _) in expectedAddressLiterals do
     unless found.any (·.1 == name) do
       out := out.push s!"no literal found in {name}: the scanner no longer reads the sources"
@@ -82,8 +105,8 @@ def problems (fns : Array Tests.Ix.IxVM.Sources.Function) : Array String := Id.r
   return out
 
 def literalGuard : TestSeq :=
-  .individualIO "the IxVM program's only address literals are the specification digest and \
-      the debug entry points' default binding" none (do
+  .individualIO "the IxVM program's only address literals are the specification digest, \
+      the debug entry points' default binding and the basis pin's default bindings" none (do
     let found := problems (Tests.Ix.IxVM.Sources.functions (← Tests.Ix.IxVM.programSources))
     let ok := found.isEmpty
     return (ok, if ok then 1 else 0, 1,

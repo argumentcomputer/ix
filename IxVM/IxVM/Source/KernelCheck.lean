@@ -3591,7 +3591,10 @@ def check_recursor_member := aiur_fn⟦
               -- major premise's domain, nor in the result
               check_rec_header_lets(ty, n_p, n_mot, n_min, n_i);
 
-              check_recursor_canonical_full(rc, rec_ci, addr, parent_ci, parent_addr) } ,
+              check_recursor_canonical_full(rc, rec_ci, addr, parent_ci, parent_addr);
+
+              -- a basis family has one recursor record, the committed one
+              KernelRoles::basis_rec_at_pin(parent_addr, addr) } ,
           } } ,
       }
     }
