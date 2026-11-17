@@ -113,7 +113,8 @@ theorem recLps_perm (large : Bool) (k : Nat) :
     show (List.range k).Perm (List.range (List.range k).length)
     simp only [List.length_range, List.Perm.refl]
   | true =>
-    show (k :: List.range k).Perm (List.range (k :: List.range k).length)
+    show ((List.range k).length :: List.range k).Perm
+      (List.range ((List.range k).length :: List.range k).length)
     rw [List.length_cons, List.length_range, List.range_succ]
     exact (List.perm_append_singleton k (List.range k)).symm
 
