@@ -39,6 +39,7 @@ theorem find_peer_standalone_spec {c : ScopedCtx} (hlf : ScopedLoadFacts c)
     rw [hcst] at hinfo
     rcases hinfo with ⟨x, hx⟩
     injection hx with _ hname _
-    exact absurd hname (by decide)
+    have hname' : ("Muts" : String) = "Recr" := hname
+    exact absurd hname' (by decide)
 
 end IxVM.Refinement.Decl
