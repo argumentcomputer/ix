@@ -135,4 +135,37 @@ theorem RawTmExact.raw_det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
     | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ =>
       have := cell_eq cell cell'; simp at this
 
+/-- Interpret retained raw lets. Free-variable annotations are already semantic annotations
+and remain unchanged; all other recursive term positions follow the raw heap constructors. -/
+def rawMeaning : KExpr → KExpr
+  | .bvar i => .bvar i
+  | .fvar i type => .fvar i type
+  | .sort u => .sort u
+  | .const key levels => .const key levels
+  | .app func arg => .app (rawMeaning func) (rawMeaning arg)
+  | .lam dom body metadata => .lam (rawMeaning dom) (rawMeaning body) metadata
+  | .forallE dom body metadata => .forallE (rawMeaning dom) (rawMeaning body) metadata
+  | .letE _ value body _ => instShift (rawMeaning value) 0 (rawMeaning body)
+  | .lit value => .lit value
+  | .proj key index inner => .proj key index (rawMeaning inner)
+
+/-- The semantic expression is determined by the retained raw expression alone. -/
+theorem RawTmExact.meaning {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
+    (represented : RawTmExact κ d Γ h k R E p) : E = rawMeaning R := by
+  induction represented with
+  | bvarLocal | bvarFree | sort | const | litNat | litStr => rfl
+  | app _ _ _ func arg => exact congrArg₂ Ix.Kernel.Expr.app func arg
+  | lam _ _ _ _ dom body => simp only [rawMeaning, dom, body]
+  | forallE _ _ _ _ dom body => simp only [rawMeaning, dom, body]
+  | letE _ _ _ _ _ value body => simp only [rawMeaning, value, body]
+  | proj _ _ _ inner => simp only [rawMeaning, inner]
+
+/-- A common exact raw reading gives identical semantic terms even across distinct heaps,
+keyings, ghost contexts and local bounds. The raw expression itself carries their common data. -/
+theorem RawTmExact.semantic_det {κ κ' : _root_.Address → KKey} {d d' k k' : Nat}
+    {Γ Γ' : Nat → KExpr} {h h' : Heap F} {R E E' : KExpr} {p p' : SourceValue F}
+    (first : RawTmExact κ d Γ h k R E p) (second : RawTmExact κ' d' Γ' h' k' R E' p') :
+    E = E' := first.meaning.trans second.meaning.symm
+
 end IxVM.Refinement.Decl
