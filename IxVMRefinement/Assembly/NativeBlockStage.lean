@@ -702,8 +702,10 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     have hone : ind.ctors.size = 1 :=
       Decl.nat_eq_of_field_eq_bounded (Nat.lt_trans hc56 (by decide)) (by decide) hcEq
     have hpv : ind.params.toNat = ZMod.val p := by
+      have canonicalBound : ind.params.toNat < 18446744069414584321 :=
+        Nat.lt_trans hp56 (by decide)
       have fieldValues := congrArg ZMod.val (Value.field.inj hpEq)
-      simpa only [ZMod.val_natCast_of_lt (Nat.lt_trans hp56 (by decide))] using fieldValues
+      simpa only [ZMod.val_natCast_of_lt canonicalBound] using fieldValues
     have hi0 : ZMod.val i = 0 := by
       have fieldValues := congrArg ZMod.val (Value.field.inj hidxEq)
       simp only [h0, h0', Nat.cast_zero, ZMod.val_zero] at fieldValues
