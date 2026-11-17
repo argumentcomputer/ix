@@ -457,12 +457,112 @@ def walk_ctx := aiur_fn⟦
             0 => {  rc } ,
             _ => {
               let g = KernelRoleSpec::role_group(r1 - 1);
+              assert_op_reached_in_order(r1 - 1, g, limit);
               match UInt32::less_than_fields(g, limit) * role_admission_checks(r1 - 1) {
                 0 => {  rc } ,
                 _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil))) } ,
               } } ,
           } } ,
         RoleCtxNode::Assumed(_, _) => {  rc } ,
+      }
+    }
+⟧
+
+  -- A validation below the well-founded block never reaches an operation whose group is not
+  -- below its limit: every group there needs only earlier operations, so such a reference is
+  -- out of order (an operation's own record reached through a reference included). Inside
+  -- the block every group is validated at one limit, so the context does not say which group
+  -- is validated; there `op_order_scan` makes the check against the group's needs.
+
+def assert_op_reached_in_order := aiur_fn⟦
+  fn assert_op_reached_in_order(r: Field, g: Field, limit: Field) -> () {
+      match KernelRoleSpec::role_spec_kind(r) {
+        2 => {
+          match UInt32::less_than_fields(limit, KernelRoleSpec::first_well_founded_group()) {
+            1 => {
+              assert_eq!(UInt32::less_than_fields(g, limit), 1,
+                "an operation is reached before its group is validated");
+              () } ,
+            _ => {  () } ,
+          } } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+  -- Inside the well-founded block: what `a` references, up to the records whose roles are in
+  -- force (each checked in its own group's validation, under the same rule), reaches an
+  -- operation only if that operation's group is below `limit` or among `needs`, the needs of
+  -- the group being validated. A referenced operation is not entered: its own validation
+  -- scanned its closure.
+
+def op_order_scan := aiur_fn⟦
+  fn op_order_scan(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
+      let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+      match r1 {
+        0 => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+        _ => {
+          let r = r1 - 1;
+          let in_force = UInt32::less_than_fields(KernelRoleSpec::role_group(r), limit);
+          match KernelRoleSpec::role_spec_kind(r) {
+            2 => {
+              let ok = match in_force {
+                1 => {  1 } ,
+                _ => {  KernelClaim::g_list_has(needs, r) } ,
+              };
+              assert_eq!(ok, 1, "an operation reaches an operation its group does not need");
+              () } ,
+            _ => {
+              match in_force {
+                1 => {  () } ,
+                _ => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The references of `a`'s record, as the walk follows them: a projection's block, and every
+  -- reference the record uses (`KernelClaim::const_idxs_of`).
+
+def op_order_scan_refs := aiur_fn⟦
+  fn op_order_scan_refs(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
+      let c = Ingress::load_verified_constant(a);
+      match c {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
+          match info {
+            Ixon::ConstantInfo::IPrj(p) => {
+              match p { Ixon::InductiveProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::CPrj(p) => {
+              match p { Ixon::ConstructorProj::Mk(_, _, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::RPrj(p) => {
+              match p { Ixon::RecursorProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::DPrj(p) => {
+              match p { Ixon::DefinitionProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            _ => {  () } ,
+          };
+          op_order_scan_list(tbl, limit, needs, refs, KernelClaim::const_idxs_of(c), 0) } ,
+      }
+    }
+⟧
+
+def op_group_needs := aiur_fn⟦
+  fn op_group_needs(r: Field) -> Lists::List<Field> {
+      KernelRoleSpec::group_needs(KernelRoleSpec::role_group(r))
+    }
+⟧
+
+def op_order_scan_list := aiur_fn⟦
+  fn op_order_scan_list(tbl: RoleTable, limit: Field, needs: Lists::List<Field>,
+                        refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) {
+            1 => {  op_order_scan(tbl, limit, needs, b) } ,
+            _ => {  () } ,
+          };
+          op_order_scan_list(tbl, limit, needs, rest, used, i + 1) } ,
       }
     }
 ⟧
@@ -733,6 +833,11 @@ def validate_op := aiur_fn⟦
           };
           assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r));
           KernelClaim::run_check_transitive(rc, a);
+          -- inside the well-founded block, the operations the record reaches are in order
+          match KernelRoleSpec::op_evidence_is_proof(r) {
+            1 => {  op_order_scan_refs(tbl, role_ctx_limit(rc), op_group_needs(r), a) } ,
+            _ => {  () } ,
+          };
           let ev = role_evidence(tbl, r);
           assert_eq!(Lists::length(ev), KernelRoleSpec::op_equation_count(r),
             "an operation's evidence does not match its equations");
