@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Decl.ModeledInstall
 import IxVMRefinement.Obs.RBTreeMap
 import IxVMRefinement.Obs.KernelCheck
@@ -783,79 +784,42 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
         v_bm ≠ .field 0 ∧
         (∀ x ∈ cs_bm, x ∈ calls))) := by
   refine ⟨Or.inr trivial, ?_⟩
-  cases Obs.«KernelCheck::check_const».obs ev with
-  | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
-    injection hv37 with _ htag _; exact absurd htag (by decide)
-  | Axiom_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
-    injection hv37 with _ htag _; exact absurd htag (by decide)
-  | Axiom_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ _ _ _ =>
-    injection hv37 with _ htag _; exact absurd htag (by decide)
-  | Defn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv269 _ _ _ _ _ _ _ _ _ =>
-    injection hv269 with _ htag _; exact absurd htag (by decide)
-  | Thm _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv526 _ _ _ _ _ _ _ _ _ _ _ _ =>
-    injection hv526 with _ htag _; exact absurd htag (by decide)
-  | Opaque _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv825 _ _ _ _ _ _ _ _ _ =>
-    injection hv825 with _ htag _; exact absurd htag (by decide)
-  | Quot _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv1076 _ _ _ _ _ _ =>
-    injection hv1076 with _ htag _; exact absurd htag (by decide)
-  | Induct_n0 v1 m2 cs12 x_nlvls x_ty x_n_params x_n_indices x_num_ctors x_ind_is_unsafe
-      x_ind_block x_ind_idx v1282 m1283 cs1293 v1330 m1333 cs1341 m1354 m1376 v1395 m1396 cs1406
-      m1427 v1439 m1440 cs1450 v1469 m1470 cs1480 m1492 cs1503 _ _ _ _
-      ev14 _ _ _ _ _ hv1240 ev1295 hm1362 hm1384 ev1343 _ hm1435 ev1408 ev1452 ev1482 ev1505
-      _ _ hc1634 =>
-    injection hv1240 with _ _ hargs
-    injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
-    injection h3 with _ h4; injection h4 with _ h5; injection h5 with _ h6
-    injection h6 with hblk _
-    subst hblk hc1634
-    have e1 := ObsFn.heap_extends ev14
-    have e2 := ObsFn.heap_extends ev1295
-    have e3 : Heap.Extends m1283 m1354 :=
-      hm1362 ▸ hm1384 ▸ (heap_extends_append m1283 _).trans (heap_extends_append _ _)
-    have e4 := ObsFn.heap_extends ev1343
-    have e5 : Heap.Extends m1333 m1427 := hm1435 ▸ heap_extends_append m1333 _
-    have e6 := ObsFn.heap_extends ev1408
-    have e7 := ObsFn.heap_extends ev1452
-    have e8 := ObsFn.heap_extends ev1482
-    exact Or.inl ⟨m1470, m1492, cs1503,
-      e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans e8)))))),
-      ev1505, fun x hx => by simp [hx]⟩
-  | Induct_other_other _ _ _ _ _ _ _ _ x_ind_is_unsafe _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ hv1240 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne1927 _ _ _ =>
-    injection hv1240 with _ _ hargs
-    injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
-    injection h3 with _ h4; injection h4 with _ h5; injection h5 with hu _
-    exact absurd hu.symm hne1927
-  | Induct_other_n0 v1 m2 cs12 x_nlvls x_ty x_n_params x_n_indices x_num_ctors
-      x_ind_block x_ind_idx v1282 m1283 cs1293 v1330 m1333 cs1341 m1354 m1376 v1395 m1396 cs1406
-      m1427 v1439 m1440 cs1450 v1469 m1470 cs1480 v1491 m1492 cs1503 _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _
-      ev14 _ _ _ _ _ hv1240 ev1295 hm1362 hm1384 ev1343 _ hm1435 ev1408 ev1452 ev1482 ev1505
-      hne1635 _ _ _ _ _ _ _ _ _ _ hc1926 =>
-    injection hv1240 with _ _ hargs
-    injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
-    injection h3 with _ h4; injection h4 with _ h5; injection h5 with _ h6
-    injection h6 with hblk _
-    subst hblk hc1926
-    have e1 := ObsFn.heap_extends ev14
-    have e2 := ObsFn.heap_extends ev1295
-    have e3 : Heap.Extends m1283 m1354 :=
-      hm1362 ▸ hm1384 ▸ (heap_extends_append m1283 _).trans (heap_extends_append _ _)
-    have e4 := ObsFn.heap_extends ev1343
-    have e5 : Heap.Extends m1333 m1427 := hm1435 ▸ heap_extends_append m1333 _
-    have e6 := ObsFn.heap_extends ev1408
-    have e7 := ObsFn.heap_extends ev1452
-    have e8 := ObsFn.heap_extends ev1482
-    exact Or.inr ⟨m1470, m1492, v1491, cs1503,
-      e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans e8)))))),
-      ev1505, hne1635, fun x hx => by simp [hx]⟩
-  | _ =>
-    exfalso
-    exact ‹∀ vs : List (SourceValue F), vs.length = 8 →
-      Value.construct kciEnum "Induct" [nl, ty, np, ni, nct, .field 0, iblk, iidx] ≠
-        .construct "KernelTypes::KConstantInfo" "Induct" vs›
-      [nl, ty, np, ni, nct, .field 0, iblk, iidx] rfl rfl
+  match Obs.«KernelCheck::check_const».obs ev with
+  | .Induct_n0 (x_ind_block := block) (m1470 := before) (m1492 := after)
+      (cs1503 := children) (hv1240 := shape) (ev1505 := check) (hc1634 := events) .. =>
+    have hb : iblk = block := by
+      simpa using congrArg (fun xs : List (SourceValue F) => xs[6]?)
+        (Value.construct.inj shape).2.2
+    subst block
+    have hm : (⟨"KernelModeled::block_is_modeled", [iblk], before⟩ : Call F) ∈ calls := by
+      rw [events]; simp
+    exact Or.inl ⟨before, after, children, (ev.call_heap_bounds hm).1, check,
+      fun cl hc => by rw [events]; simp [hc]⟩
+  | .Induct_other_n0 (x_ind_block := block) (m1470 := before) (m1492 := after)
+      (v1491 := result) (cs1503 := children) (hv1240 := shape) (ev1505 := check)
+      (hne1635 := nonnative) (hc1974 := events) .. =>
+    have hb : iblk = block := by
+      simpa using congrArg (fun xs : List (SourceValue F) => xs[6]?)
+        (Value.construct.inj shape).2.2
+    subst block
+    have hm : (⟨"KernelModeled::block_is_modeled", [iblk], before⟩ : Call F) ∈ calls := by
+      rw [events]; simp
+    exact Or.inr ⟨before, after, result, children, (ev.call_heap_bounds hm).1, check,
+      nonnative, fun cl hc => by rw [events]; simp [hc]⟩
+  | .Induct_other_other (hv1240 := shape) (hne1975 := unsafeFlag) .. =>
+    have hu := congrArg (fun xs : List (SourceValue F) => xs[5]?)
+      (Value.construct.inj shape).2.2
+    simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hu
+    exact (unsafeFlag hu.symm).elim
+  | .Axiom_n1 (hv37 := shape) .. | .Axiom_other_n0 (hv37 := shape) ..
+  | .Axiom_other_other (hv37 := shape) ..
+  | .Defn (hv269 := shape) .. | .Thm (hv526 := shape) ..
+  | .Opaque (hv825 := shape) .. | .Quot (hv1076 := shape) ..
+  | .Ctor_n0_n0 (hv1989 := shape) .. | .Ctor_n0_other (hv1989 := shape) ..
+  | .Ctor_other_n0 (hv1989 := shape) .. | .Ctor_other_other (hv1989 := shape) ..
+  | .Rec_n0 (hv2727 := shape) .. | .Rec_other (hv2727 := shape) .. =>
+    injection shape with _ tag _
+    exact absurd tag (by decide)
 
 /-- Inversion of `KernelModeled::check_modeled_block`: extracts `read_payload`, `get_address`, and
 `KernelModeled::check_family`. -/
