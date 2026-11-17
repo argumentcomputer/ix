@@ -47,7 +47,7 @@ theorem guardSignature_spec (l : Level) (φ : LevelParam → Nat) :
     cases ha : guardSignature a with
     | none =>
       simp only [ha] at ia
-      simp only [guardSignature, ha, Option.bind_none]
+      simp only [guardSignature, ha]
       intro h
       exact ia (Nat.max_eq_zero_iff.mp h).1
     | some sa =>
@@ -55,13 +55,13 @@ theorem guardSignature_spec (l : Level) (φ : LevelParam → Nat) :
       cases hb : guardSignature b with
       | none =>
         simp only [hb] at ib
-        simp only [guardSignature, ha, hb, Option.bind_some, Option.bind_none]
+        simp only [guardSignature, ha, hb]
         intro h
         exact ib (Nat.max_eq_zero_iff.mp h).2
       | some sb =>
         simp only [hb] at ib
-        simp only [guardSignature, ha, hb, Option.bind_some]
-        change max (eval φ a) (eval φ b) = 0 ↔ max (eval φ sa) (eval φ sb) = 0
+        simp only [guardSignature, ha, hb]
+        change Nat.max (eval φ a) (eval φ b) = 0 ↔ Nat.max (eval φ sa) (eval φ sb) = 0
         rw [Nat.max_eq_zero_iff, Nat.max_eq_zero_iff, ia, ib]
   | imax a b _ ib =>
     have hz := Rules.evalImax_eq_zero_iff φ a b
