@@ -65,7 +65,8 @@ theorem TopWalkCore.restrictReach
     seedNotInert := hW.seedNotInert
     checked := fun a ha => hW.checked a (hW.reach_subset ha)
     refsNotInert := fun a x ha hu => hW.refsNotInert a x (hW.reach_subset ha) hu
-    refsNotBlock := fun a x ha hu hn => hW.refsNotBlock a x (hW.reach_subset ha) hu hn }
+    refsNotBlock := fun a x ha hu hn => hW.refsNotBlock a x (hW.reach_subset ha) hu hn
+    safeRefs := fun a x ha hs hu hn => hW.safeRefs a x (hW.reach_subset ha) hs hu hn }
   · intro a x ha hu
     by_cases hc : Typing.Covered t x
     · exact Or.inr hc
