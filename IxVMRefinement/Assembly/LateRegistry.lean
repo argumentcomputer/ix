@@ -72,7 +72,7 @@ def NativeAt (E : Ixon.Env) (b : _root_.Address) : Prop :=
 /-- **A registered family as the store `E` and the table `t` read it.** The family is stored
 (`NativeFamStored`); the telescope constant is the stored former; the former's level
 parameters, its telescope into the family's sort, the sort's `Prop` flag and the fields' kinds
-are the family's; and the former's key is the key of an address `P` whose record in `E` is the
+are the family's; the constructors' names are distinct; and the former's key is the key of an address `P` whose record in `E` is the
 inductive projection of member `i` of a block `B` that `E` holds, with the family's parameter
 and index counts, as many constructors as the family, and constructor `j` at the key of the
 constructor projection address `(B, i, j)`. -/
@@ -85,6 +85,7 @@ structure LateFamAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.En
   isProp : fam.p.isProp = (Ix.Kernel.Level.isEquiv fam.p.resSort .zero == some true)
   kinds : Ix.Kernel.classifyFixKinds (m := Ix.Kernel.CheckM .anon) fam.p.cvT.name
     fam.p.cvT.levelParams fam.p.nP fam.p.nIdx fam.ctorsA = .ok fam.p.kinds
+  nodup : (fam.ctorsA.map (·.1.name)).Nodup
   record : ∃ (P : _root_.Address) (cm : Ixon.Constant) (ip : Ixon.InductiveProj)
       (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
     fam.p.cvT.name = keyOf t P ∧ Ix.Cert.recordAt E P = some cm ∧ cm.info = .iPrj ip ∧
