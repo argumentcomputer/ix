@@ -733,8 +733,9 @@ theorem pointBlock_step (hb : PointBlock env block formers ctors) (nP : Nat)
       (∀ (E : Ixon.Env) (t : RoleTable) (lim : Option Nat),
         CoreCompanions ⟨E, env, t, lim⟩ → CoreCompanions ⟨E, env₂, t, lim⟩) ∧
       ∀ k, (env.find? k).isSome = true → (env₂.find? k).isSome = true :=
-  ⟨installed env formers ctors, (pointBlock_install hb nP).1, (pointBlock_install hb nP).2.2.1,
-    fun E t lim h => hb.coreCompanions hS E t lim h, (pointBlock_install hb nP).2.2.2⟩
+  ⟨installed env formers ctors, hb.installStep nP, (pointBlock_install.{u} hb nP).2.2.1,
+    fun E t lim h => hb.coreCompanions hS E t lim h,
+    fun k hk => isSome_of_envExt hb.envExt hk⟩
 
 /-- No added constant is a model family's: the claimed environment keeps them all. -/
 theorem PointBlock.not_modelAux (hb : PointBlock env block formers ctors)
