@@ -135,7 +135,7 @@ theorem pointFormerSlot_eq {i : Nat} {f : FormerRec}
     rcases m with d | ind | rc
     · simp [pointFormerSlot, hm] at h
     · simp only [pointFormerSlot, hm, Option.some.injEq] at h
-      exact ⟨ind, hm, h.symm⟩
+      exact ⟨ind, rfl, h.symm⟩
     · simp [pointFormerSlot, hm] at h
 
 theorem mem_pointFormerList {f : FormerRec} :
@@ -161,7 +161,7 @@ theorem pointCtorSlot_eq {i : Nat} {ind : Ixon.Inductive} {j : Nat} {c : CtorRec
   | none => simp [pointCtorSlot, hct] at h
   | some ct =>
     simp only [pointCtorSlot, hct, Option.some.injEq] at h
-    exact ⟨ct, hct, h.symm⟩
+    exact ⟨ct, rfl, h.symm⟩
 
 theorem pointMemberCtors_of_mem {i : Nat} {ind : Ixon.Inductive}
     (hm : ms[i]? = some (.indc ind)) :
@@ -187,7 +187,7 @@ theorem mem_pointMemberCtors {i : Nat} {c : CtorRec} :
       · rw [pointMemberCtors_of_mem hm, List.mem_filterMap] at hc
         obtain ⟨j, -, hj⟩ := hc
         obtain ⟨ct, hct, rfl⟩ := pointCtorSlot_eq hj
-        exact ⟨ind, j, ct, hm, hct, rfl⟩
+        exact ⟨ind, j, ct, rfl, hct, rfl⟩
       · simp [pointMemberCtors, hm] at hc
   · rintro ⟨ind, j, ct, hm, hct, rfl⟩
     rw [pointMemberCtors_of_mem hm, List.mem_filterMap]
@@ -406,7 +406,8 @@ theorem pointStage_find_none {env : Ix.Kernel.Env .anon} {formers : List FormerR
   | none => rfl
   | some x =>
     exfalso
-    rcases find?_append_cases (env := env) ((formers.map (·.stored)).reverse) hf with hm | ho
+    rcases find?_append_cases (env := env) ((formers.map FormerRec.stored).reverse) hf with
+      hm | ho
     · obtain ⟨f, hf', rfl⟩ := List.mem_map.mp (List.mem_reverse.mp hm)
       exact hnot f hf' (Ix.Kernel.Semantics.Env.find?_name hf)
     · rw [henv] at ho
@@ -601,7 +602,7 @@ theorem pointEvidenceK_of_members (ht : t.check = .ok ()) (hS : LoadedReads.RunS
     · exfalso
       rcases hsa with ⟨d, hd⟩ | ⟨rc, hd⟩ | ⟨ax, hd⟩ | ⟨q, hd⟩ <;>
         (rw [hrec.muts] at hd; cases hd)
-    · have hms : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hrec.muts)
+    · have hms : ms = ms' := Ixon.ConstantInfo.muts.inj (hrec.muts.symm.trans hms')
       subst hms
       obtain ⟨ind, rfl⟩ := hrec.inds i m hm
       rcases hx with rfl | ⟨ind', j, hind, hj, rfl⟩
