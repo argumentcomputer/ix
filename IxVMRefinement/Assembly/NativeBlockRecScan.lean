@@ -749,7 +749,7 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   have hjF : ZMod.val ((j : Nat) : F) = j :=
     ZMod.val_natCast_of_lt (Nat.lt_trans (Nat.lt_trans hjlt hc56) (by decide))
   obtain ⟨tyPtr, blkPtr', b'', ty'', R', hldc, -, -, -, -, -, hcanon', -, -, -, htm⟩ :=
-    LoadedReads.ctor_load_canon ht gc.1 gc.2 hb'1 evc' hblock' hmuts (by simp)
+    LoadedReads.ctor_load_canon (ind := ind) ht gc.1 gc.2 hb'1 evc' hblock' hmuts (by simp)
       (by rw [hjF]; exact hct) (by rw [hjF]; exact hcidx) hty' hlbb hdef
   rw [ZMod.val_zero] at hcanon'
   have hty'' : ty'' = cty' := Option.some.inj (hcanon'.symm.trans hcanon)
@@ -791,9 +791,9 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   have hfc' := hfc ⟨0, fun _ => .sort .zero, 0, _, (htmS 0 _).toTm⟩
   rw [ZMod.val_natCast_of_lt (Nat.lt_trans hp56 (by decide))] at hfc'
   obtain ⟨ds, q, hch, hq, hcl⟩ := hfc'
-  have hE3 : Tm (Decl.ctorStage ⟨E, env, t, lim⟩ cvF ({} : IndCaps .anon)).κ 0
+  have hE3 : Core.Tm (Decl.ctorStage ⟨E, env, t, lim⟩ cvF ({} : IndCaps .anon)).κ 0
       (fun _ => .sort .zero) h3 0 (Core.posOf (List.range ct.lvls.toNat) ty'') tyPtr :=
-    Tm.mono eh2 (htmS 0 _).toTm
+    Core.Tm.mono eh2 (htmS 0 _).toTm
   -- a constant at the former's key is the member; no projection is permitted there
   have hxk : ∀ a : Bytes.Address,
       (Decl.ctorStage ⟨E, env, t, lim⟩ cvF ({} : IndCaps .anon)).κ (Core.ixAddr a) =
@@ -832,7 +832,8 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
       (Core.posLevels (List.range ct.lvls.toNat)) n (by rw [hs]; rfl))
   obtain ⟨-, hbsE⟩ := Ix.Kernel.Expr.stripPis_instantiateLevelParams_eq (List.range ct.lvls.toNat)
     (Core.posLevels (List.range ct.lvls.toNat)) n hs hsE
-  have hdoms := Core.tm_fieldsClean_doms (fun _ => rfl) hc hp hch hq ind.params.toNat hcl hE3
+  have hdoms := Core.tm_fieldsClean_doms (d := 0) (Γ := fun _ => .sort .zero) (fun _ => rfl)
+    hc hp hch hq ind.params.toNat hcl hE3
     n bsE bodyE hsE i hi hin
   have hlen : bs.length = n := Ix.Kernel.Expr.stripPis_length n hs
   have hlenE : bsE.length = n := Ix.Kernel.Expr.stripPis_length n hsE
