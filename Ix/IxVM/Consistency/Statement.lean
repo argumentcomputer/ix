@@ -402,7 +402,11 @@ def ValStored (cv cv₀ : Ix.Kernel.ConstantVal .anon) : Prop :=
 /-- **A recursor rule stored as declared**: the same constructor and field count,
 and an annotation of its right-hand side. The rule's other fields are what the
 kernel computes at install (the constructor's parameter count, how the rule
-fires, its K, η and parameter bits); no law of `Ix.Kernel.Model` reads them. -/
+fires, its K, η and parameter bits). One law of `Ix.Kernel.Model` reads them: the
+ι law (`IotaRule`) has one more premise, that the parameters agree, at a rule that
+compares parameters (`RecRule.compareParams`, from how the rule fires and its
+parameter bit). So their values make that law weaker or stronger by one premise;
+no other law reads them. -/
 def RuleStored (rl rl₀ : Ix.Kernel.RecRule .anon) : Prop :=
   rl.ctor = rl₀.ctor ∧ rl.nfields = rl₀.nfields ∧ Annotates rl.rhs rl₀.rhs
 
