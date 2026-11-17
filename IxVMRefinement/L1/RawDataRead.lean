@@ -20,7 +20,7 @@ private theorem except_bind_eq_ok {ε α β : Type} {m : Except ε α} {f : α �
   | ok a => exact ⟨a, rfl, h⟩
 
 private theorem val_cast_u56 {n : Nat} (h : n < 72057594037927936) :
-    (n : F).val = n := ZMod.val_natCast_of_lt (by omega)
+    (n : F).val = n := ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega)
 
 private theorem levels_read {ecx : Ix.Kernel.Reader.ECx .anon} {univs : List Ixon.Univ}
     (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv id))

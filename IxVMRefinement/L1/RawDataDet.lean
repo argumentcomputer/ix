@@ -50,7 +50,7 @@ theorem RawKLevel.det {h : Heap F} {u v : KLevel} {p : SourceValue F}
       have equal := cell_eq cell other
       simp only [Value.construct.injEq, List.cons.injEq, Value.field.injEq, and_true, true_and] at equal
       have indices := congrArg ZMod.val equal
-      rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at indices
+      rw [ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega), ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega)] at indices
       cases indices
       rfl
     | zero other | succ other _ | max other _ _ | imax other _ _ =>
