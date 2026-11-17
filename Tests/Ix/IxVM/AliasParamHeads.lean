@@ -1,4 +1,5 @@
 import Aiur.Modules.Function
+import Aiur.Library.U32.Hints
 import Tests.Ix.IxVM.AliasFormers
 import IxVM.Source
 import Aiur.Generic.Runtime
@@ -104,7 +105,7 @@ private def probeRun (src : Aiur.Generic.Source IxVM.F) (name : String)
     (ptr : Nat) (heap : Heap IxVM.F) : Except String (SourceValue IxVM.F) := do
   let args := if name == "KernelCheck::ctor_zero_ok" then [ep ptr, ap, lp 0] else [ep ptr, ap]
   let (types, locals, body) ← (src.world.prepare name args).mapError reprStr
-  let (r, _) ← (SourceSemantics.evalFunctionWith src.world SourceSemantics.unavailable types locals
+  let (r, _) ← (SourceSemantics.evalFunctionWith src.world (src.checkedHints (Aiur.Library.U32.hints ZMod.val)) types locals
     5000 body heap).mapError reprStr
   return r
 
@@ -119,7 +120,10 @@ private def headProbeChecks : IO Bool := do
   IO.println s!"proposed head check beta-erased bare: {reprStr bare}"
   IO.println s!"proposed head check beta-erased eta: {reprStr eta}"
   IO.println s!"current zero check beta-erased bare/eta: {reprStr bareZero}; {reprStr etaZero}"
-  return !raw.isOk && bare.isOk && eta.isOk && bareZero.isOk && etaZero.isOk
+  let expected := match raw with
+    | .error msg => (msg.splitOn "an alias constructor parameter is headed by its family").length > 1
+    | .ok _ => false
+  return expected && bare.isOk && eta.isOk && bareZero.isOk && etaZero.isOk
 
 private def kernelZero (correct : Bool) : Bool :=
   let T : Ix.Kernel.Key .anon := .role .false
