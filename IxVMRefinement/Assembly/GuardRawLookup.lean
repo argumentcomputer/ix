@@ -1,4 +1,5 @@
 import IxC.Kernel.Model.GuardClassifier
+import IxC.Kernel.Model.GuardClassifierErase
 import IxC.Kernel.Verify.Cached.NormalizeRef
 import IxVMRefinement.StatementRel.LoadedReadsCanon
 import IxVMRefinement.Assembly.TypingStore
@@ -257,6 +258,21 @@ theorem ofStore_extends_of_bytes {E E' : Ixon.Env}
     (hb : ∀ a bytes, E.blobs.get? a = some bytes → E'.blobs.get? a = some bytes) :
     (ofStore E).Extends (ofStore E') :=
   lookup_extends (records_of_bytes hraw) hb
+
+/-- Every raw root answer is in the chosen metadata-free canonical syntax. -/
+theorem readRoot_erased {blob : Blobs} {root : Root} {e : Expr .anon}
+    (h : readRoot blob root = some e) : e.eraseMeta = e := by
+  obtain ⟨v, _, heq⟩ := Option.map_eq_some_iff.mp h
+  subst heq
+  exact Expr.eraseMeta_idem v
+
+/-- The raw reader introduces no free-variable annotations. Its variables are de Bruijn indices. -/
+theorem readRoot_noFvar {blob : Blobs} {root : Root} {e : Expr .anon}
+    (h : readRoot blob root = some e) : e.hasFvar = false := by
+  obtain ⟨v, hv, heq⟩ := Option.map_eq_some_iff.mp h
+  subst heq
+  rw [Ix.Kernel.GuardClassifier.eraseMeta_hasFvar]
+  exact Assembly.memberReader_read_noFvar (Typing.toOption_eq_some hv)
 
 /-- The witness-store interface itself supplies a raw dictionary extension, at every limit. -/
 theorem ofStore_extends_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E) :

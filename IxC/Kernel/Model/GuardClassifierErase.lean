@@ -54,4 +54,17 @@ theorem eraseMeta_instantiate1Lift (e v : Expr md) :
     intro depth; simp only [Expr.instantiate1Lift, Expr.eraseMeta, iht, ihv, ihb]
   | proj s i e ih => intro depth; simp only [Expr.instantiate1Lift, Expr.eraseMeta, ih]
 
+/-- Erasing metadata commutes with raw positional universe instantiation. The default binder
+annotation is parameter-free, so its substitution remains default. -/
+theorem eraseMeta_instantiateLevelParams (e : Expr md) (ks : List LevelParam) (us : List Level) :
+    (e.instantiateLevelParams ks us).eraseMeta = e.eraseMeta.instantiateLevelParams ks us := by
+  have hdefault : Level.substPW ks us (default : BinderMeta).pw = (default : BinderMeta).pw :=
+    Level.substPW_eq_self (by change PropWhen.never.hasParams = false; exact PropWhen.hasParams_never)
+  induction e <;> simp_all only [Expr.instantiateLevelParams, Expr.eraseMeta]
+
+/-- Metadata erasure does not introduce or remove free variables. -/
+theorem eraseMeta_hasFvar (e : Expr md) : e.eraseMeta.hasFvar = e.hasFvar := by
+  induction e <;> simp_all only [Expr.eraseMeta, Expr.hasFvar]
+
+
 end Ix.Kernel.GuardClassifier
