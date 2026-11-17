@@ -37,6 +37,7 @@ theorem definition_value_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
       c.env.find? (c.κ (ixAddr a)) = some (.defnInfo cv V hint) ∧
       ps.length = cv.levelParams.length ∧
       ObsFn W "Ingress::get_ci" [ap] h ptr loaded loadCalls ∧
+      (⟨"Ingress::get_ci", [ap], h⟩ : Call F) ∈ cs ∧
       loadValue loaded ptr = .ok (.construct kciEnum "Defn" [nl, ty, value, flag, hintPtr]) ∧
       RawExprRep c.κ loaded 0 R value ∧ Heap.Extends loaded beforeInst ∧
       ObsFn W "KernelGuard::expr_inst_raw" [value, params] beforeInst r h' instCalls ∧
@@ -70,7 +71,7 @@ theorem definition_value_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have arityExact : ps.length = cv.levelParams.length :=
       (NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj arity)
     exact ⟨cv, V, R, hint, ptr, nl, ty, value, flag, hintPtr, loaded, beforeInst,
-      loadCalls, instCalls, found, arityExact, load, shape, raw, length.heap_extends,
+      loadCalls, instCalls, found, arityExact, load, (by rw [events]; simp), shape, raw, length.heap_extends,
       inst, loadInside, instInside,
       (raw.mono length.heap_extends).instLevels
         (psLoaded.mono length.heap_extends) inst⟩
@@ -87,7 +88,8 @@ theorem declared_type_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
       (ptr value typePtr : SourceValue F) (loaded beforeType beforeInst : Heap F)
       (loadCalls typeCalls instCalls : List (Call F)),
       c.env.find? (c.κ (ixAddr a)) = some ci ∧ ps.length = ci.toConstantVal.levelParams.length ∧
-      ObsFn W "Ingress::get_ci" [ap] h ptr loaded loadCalls ∧ loadValue loaded ptr = .ok value ∧
+      ObsFn W "Ingress::get_ci" [ap] h ptr loaded loadCalls ∧
+      (⟨"Ingress::get_ci", [ap], h⟩ : Call F) ∈ cs ∧ loadValue loaded ptr = .ok value ∧
       ObsFn W "KernelInfer::const_type_of" [value] beforeType typePtr beforeInst typeCalls ∧
       RawExprRep c.κ beforeInst 0 R typePtr ∧ Heap.Extends loaded beforeInst ∧
       ObsFn W "KernelGuard::expr_inst_raw" [typePtr, params] beforeInst r h' instCalls ∧
@@ -135,7 +137,7 @@ theorem declared_type_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
     obtain ⟨R, raw⟩ := RawExprRep.ofTm (typeRep 0 (fun _ => default))
     have extension := beforeExtension.trans getType.heap_extends
     exact ⟨ci, R, ptr, value, typePtr, loaded, beforeType, beforeInst, loadCalls, typeCalls,
-      instCalls, found, arityExact, load, shape, getType, raw, extension, inst,
+      instCalls, found, arityExact, load, (by rw [events]; simp), shape, getType, raw, extension, inst,
       loadInside, typeInside, instInside, raw.instLevels (psLoaded.mono extension) inst⟩
 
 end IxVM.Refinement.Core.GuardData
