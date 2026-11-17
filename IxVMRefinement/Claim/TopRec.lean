@@ -127,32 +127,32 @@ theorem get_ci_recr_value {a : Bytes.Address} {x_addr r : SourceValue F} {h h' :
               position]) := by
   match Obs.«Ingress::get_ci».obs ev with
   | .Defn_n0 (ev14 := ev14) (hc302 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .Defn_other (ev14 := ev14) (hc423 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .Axio (ev14 := ev14) (hc515 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .Quot (ev14 := ev14) (hc606 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .DPrj (ev14 := ev14) (hc675 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .IPrj (ev14 := ev14) (hc750 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .CPrj (ev14 := ev14) (hc851 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .RPrj (ev14 := ev14) (hc926 := hc) .. =>
-    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hh, hba, hx, htag⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     exact ⟨raw, c, hh, hba, hx, fun rc hrc => absurd (htag rc hrc) (by decide)⟩
   | .Recr (m978 := m978) (v977 := v977) (ev14 := ev14) (he981 := hr) (hm980 := hh)
       (ev987 := conv) (hc1071 := hc) .. =>
-    obtain ⟨raw, c, hhash, hba, hx, -⟩ := lvc_tag ha ev14 (by rw [hc]; intro x hx; simp [hx])
+    obtain ⟨raw, c, hhash, hba, hx, -⟩ := lvc_tag (calls := calls) ha ev14 (by rw [hc]; intro x hx; simp [hx])
     refine ⟨raw, c, hhash, hba, hx, fun rc hrc => ?_⟩
     match Obs.«Convert::convert_recursor».obs conv with
     | .run (he237 := hv) .. =>
@@ -361,7 +361,7 @@ theorem block_is_modeled_zero_count {fb : SourceValue F} {h h' : Heap F}
   have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes₀ cb hx₀
   have hsize := muts_size_le hinfo₀
   have hfle := List.length_filter_le Specs.Callees.isIndc ms.toList
-  rw [Array.length_toList] at hfle
+  have hlen : ms.toList.length = ms.size := Array.length_toList
   have h39 : (549755813888 : Nat) ≤ 2 ^ 39 := by norm_num
   have hflen : (ms.toList.filter Specs.Callees.isIndc).length < 2 ^ 39 := by omega
   have hmemf : Ixon.MutConst.indc ind ∈ ms.toList.filter Specs.Callees.isIndc :=
