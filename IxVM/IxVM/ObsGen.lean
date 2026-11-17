@@ -428,6 +428,14 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
   let kept := p.facts.filter fun (_, _, _, subj) => match subj with
     | some v => match v.resolve p.subst with | .v _ => true | _ => false
     | none => true
+  -- an equation whose two sides are one term under the path's substitution (an assertion
+  -- on a value that a later arm fixed): the normalization below rewrites its hypothesis to
+  -- `True`, so the field is proved by `rfl`
+  let kept := kept.map fun (n, f, pr, subj) => match f with
+    | [.s "(", .t a, .s " : SourceValue F) = ", .t b] =>
+      if p.stored && a.resolve p.subst == b.resolve p.subst then (n, f, "rfl", subj)
+      else (n, f, pr, subj)
+    | _ => (n, f, pr, subj)
   let p := { p with facts := kept.push (hcName, [.s s!"calls = {callsT}"],
     s!"(by first | rfl | simp only [{", ".intercalate lemmas.eraseDups}])", none) }
   let binders := p.binders.toList.filter fun (n, _) => (p.subst.lookup n).isNone
