@@ -37,12 +37,16 @@ set_option linter.unnecessarySimpa false
 
 /-! ## Validation limit, schedule groups, and reachability -/
 
-/-- Exact group validation limit computed by `KernelRoles::group_validation_limit(g)`. -/
+/-- Exact group validation limit computed by `KernelRoles::group_validation_limit(g)`: a group
+before the well-founded block at its own index, the well-founded block at its first group (33),
+the literal support at its first group (41), and every later group at the first equation group
+(46). -/
 def groupValLimit (g : Nat) : Nat :=
-  if g < 38 then g else if g < 46 then 38 else 46
+  if g < 33 then g else if g < 41 then 33 else if g < 46 then 41 else 46
 
 theorem groupValLimit_le (g : Nat) : groupValLimit g ≤ 46 := by
   unfold groupValLimit
+  split <;> try omega
   split <;> try omega
   split <;> omega
 
@@ -52,6 +56,16 @@ theorem groupValLimit_lt_u32 (g : Nat) : groupValLimit g < 4294967296 :=
 private theorem natCast_val_eq (x : F) : ((ZMod.val x : Nat) : F) = x := by
   apply ZMod.val_injective
   exact RolesAux.val_natCast (ZMod.val_lt x)
+
+/-- `UInt32::less_than_fields(.field g, .field c)` against a schedule constant `c < 2^32`: the
+answer is `1` exactly when `g.val < c`. -/
+private theorem lt_const_iff {gf b : F} {c : Nat} (hb : ZMod.val b = c) {r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "UInt32::less_than_fields" [.field gf, .field b] h r h' cs) :
+    (r = .field 1 ↔ gf.val < c) ∧ h' = h := by
+  obtain ⟨_, _, hiff, _, hh⟩ := Lib.less_than_fields_field ev
+  rw [hb] at hiff
+  exact ⟨hiff, hh⟩
 
 /-- **`KernelRoles::group_validation_limit(x_g)`**: forces `x_g = .field (g : F)` with `g < 2^32`
 and returns `.field (groupValLimit g : F)` without modifying the heap. -/
@@ -63,55 +77,73 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
   rcases Obs.«KernelRoles::group_validation_limit».obs ev with
     ⟨v1, m2, _, m16, _, ev14, ev29, rfl, rfl, -⟩ |
     ⟨v1, m2, _, v15, m16, _, v58, m59, _, m73, _, ev14, ev29, hne, ev71, ev86, rfl, rfl, -⟩ |
-    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, ev14, ev29, hne1, ev71, ev86, hne2, rfl, rfl, -⟩
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, v115, m116, _, m130, _, ev14, ev29, hne1,
+      ev71, ev86, hne2, ev128, ev143, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, v115, m116, _, v129, m130, _, ev14, ev29,
+      hne1, ev71, ev86, hne2, ev128, ev143, hne3, rfl, rfl, -⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
     subst hbf_eq
-    have h38 : ZMod.val (38 : F) = 38 := RolesAux.val_natCast (by decide)
-    have hlt38 : gf.val < 38 := by
-      by_cases hc : gf.val < 38
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hlt33 : gf.val < 33 := by
+      by_cases hc : gf.val < 33
       · exact hc
-      · simp only [h38, hc, ↓reduceIte] at hr29
+      · simp only [h33, hc, ↓reduceIte] at hr29
         exact absurd (Value.field.inj hr29) one_ne_zero
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    simp only [hlt38, ↓reduceIte, natCast_val_eq]
+    simp only [hlt33, ↓reduceIte, natCast_val_eq]
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
     subst hbf_eq
-    have h38 : ZMod.val (38 : F) = 38 := RolesAux.val_natCast (by decide)
-    have hge38 : ¬ gf.val < 38 := fun hc => by
-      simp only [h38, hc, ↓reduceIte] at hr29
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
       exact hne hr29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
-    obtain ⟨_, _, hlt46_iff, _, rfl⟩ := Lib.less_than_fields_field ev86
-    have h46 : ZMod.val (46 : F) = 46 := RolesAux.val_natCast (by decide)
-    have hlt46 : gf.val < 46 := by
-      have h := hlt46_iff.mp rfl
-      rwa [h46] at h
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, -⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hlt41 : gf.val < 41 := h41.mp rfl
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    simp only [hge38, hlt46, ↓reduceIte]
+    simp only [hge33, hlt41, ↓reduceIte]
     rfl
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
     injection hbf with hbf_eq
     subst hbf_eq
-    have h38 : ZMod.val (38 : F) = 38 := RolesAux.val_natCast (by decide)
-    have hge38 : ¬ gf.val < 38 := fun hc => by
-      simp only [h38, hc, ↓reduceIte] at hr29
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
       exact hne1 hr29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
-    obtain ⟨_, _, hlt46_iff, _, rfl⟩ := Lib.less_than_fields_field ev86
-    have h46 : ZMod.val (46 : F) = 46 := RolesAux.val_natCast (by decide)
-    have hge46 : ¬ gf.val < 46 := fun hc => by
-      have hc' : gf.val < ZMod.val (46 : F) := by rwa [h46]
-      exact hne2 (hlt46_iff.mpr hc')
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hge41 : ¬ gf.val < 41 := fun hc => hne2 (h41.mpr hc)
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨h46, -⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
+    have hlt46 : gf.val < 46 := h46.mp rfl
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
-    simp only [hge38, hge46, ↓reduceIte]
+    simp only [hge33, hge41, hlt46, ↓reduceIte]
+    rfl
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
+    injection hbf with hbf_eq
+    subst hbf_eq
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
+      exact hne1 hr29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hge41 : ¬ gf.val < 41 := fun hc => hne2 (h41.mpr hc)
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨h46, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
+    have hge46 : ¬ gf.val < 46 := fun hc => hne3 (h46.mpr hc)
+    refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
+    unfold groupValLimit
+    simp only [hge33, hge41, hge46, ↓reduceIte]
     rfl
 
 theorem group_validation_limit_of_nat {g : Nat} (hg : g < 4294967296)

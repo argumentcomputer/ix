@@ -1193,22 +1193,34 @@ theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
   rcases Obs.«KernelRoles::group_validation_limit».obs ev with
     ⟨v1, m2, _, m16, _, ev14, ev29, rfl, rfl, -⟩ |
     ⟨v1, m2, _, _, m16, _, v58, m59, _, m73, _, ev14, ev29, _, ev71, ev86, rfl, rfl, -⟩ |
-    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, ev14, ev29, _, ev71, ev86, _, rfl, rfl, -⟩
+    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, v115, m116, _, m130, _, ev14, ev29, _, ev71,
+      ev86, _, ev128, ev143, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, v115, m116, _, _, m130, _, ev14, ev29, _, ev71,
+      ev86, _, ev128, ev143, _, rfl, rfl, -⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev29
-    have hlt38 : g.val < 38 := by
-      have h38 : (38 : F).val = 38 := ZMod.val_natCast_of_lt (by decide)
-      simpa [h38] using hlt_iff.mp rfl
+    have hlt33 : g.val < 33 := by
+      have h33 : (33 : F).val = 33 := ZMod.val_natCast_of_lt (by decide)
+      simpa [h33] using hlt_iff.mp rfl
     exact ⟨rfl, g.val, by omega, by simp⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
-    exact ⟨rfl, 38, by omega, rfl⟩
+    exact ⟨rfl, 33, by omega, rfl⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev143
+    exact ⟨rfl, 41, by omega, rfl⟩
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev143
     exact ⟨rfl, 46, by omega, rfl⟩
 
 theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Nat}
@@ -1221,10 +1233,10 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
   rcases Obs.«KernelRoles::walk_ctx».obs ev with
     ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
     ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
+      _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
     ⟨x_tbl, x_limit, w20, v36, m37, cs47, v51, m61, cs69, v108, m109, cs119, v122, v138,
-      m139, x147, y148, m149, cs158, cs180, v183, v220, m230, cs238,
-      ld12, _, _, _, _, _, ev160, _, _, _, _, rfl, rfl, ev240, -⟩ |
+      m139, cs149, v152, v184, m185, x193, y194, m195, cs204, cs226, v229, v266, m276, cs284,
+      ld12, _, _, _, _, _, _, _, ev206, _, _, _, _, rfl, rfl, ev286, -⟩ |
     ⟨_, _, ld12, -⟩
   · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
   · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
@@ -1233,10 +1245,10 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at htbl
-    obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev160
-    obtain ⟨_, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
+    obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev206
+    obtain ⟨_, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev286
     exact ⟨ext, lim', by omega, x_tbl,
-      loadValue_snoc_construct m230 rcEnum "Mk"
+      loadValue_snoc_construct m276 rcEnum "Mk"
         [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
       htbl.mono ext⟩
   · rw [hl_rc] at ld12
