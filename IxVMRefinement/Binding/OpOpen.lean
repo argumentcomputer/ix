@@ -3,6 +3,7 @@ import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Obs.KernelSubst1
 import IxVMRefinement.Obs.KernelRoles3
 import IxC.Kernel.Verify.BridgeWfImp
+import IxVMRefinement.Decl.ModeledRules
 
 /-! # Opening an operation's equation sides and replacing the operation by its value
 
@@ -23,6 +24,13 @@ operation's rendered equation sides:
 * `op_equation_side_spec`: the two together, on a rendered side `λ (x y : Nat), L` with
   `open₂ L = l` for a side `l` of `natOpEquations 0 c`: the result represents
   `Expr.substConst0 c val l` at depth 2 under the ghost context of two `Nat` variables.
+* `open_foralls_spec`: **`KernelRoles::open_foralls(e, acc)`** on a `∀`-telescope whose first
+  `n` binders the kernel opens (`openPisAtFvars`) along `Forall` cells (`ForallSpine`, kept by
+  `subst_const`: `subst_const_forallSpine`) gives the body at depth `d + n` and the context
+  list extended by the binder types, innermost first.
+* `apply_bvars_desc_spec`, `mkAppN_fvars_divModCertApplied`: **`apply_spine(p,
+  bvars_desc(d, d))`** represents the term applied to the opened variables `0, …, d - 1`, which
+  for a certificate is `divModCertApplied`.
 -/
 
 namespace IxVM.Refinement.Binding.OpOpen
@@ -34,6 +42,8 @@ open Ix.Kernel (Expr)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 local macro "lt_calls" : term =>
   `(by simp only [List.length_cons, List.length_append, List.length_nil] <;> omega)
@@ -508,5 +518,217 @@ theorem op_equation_side_spec {κ : _root_.Address → KKey} {h h₁ h₂ : Heap
     · exact (natOpEquations_sides_binderFree heq).2
   rw [hc, substConstAll_eq_substConst0 c val l hbf] at hr
   exact ⟨hr, htypes.mono ext₂, ghostScoped_natTy 2, ext₁.trans ext₂⟩
+
+/-! ## `KernelRoles::open_foralls` -/
+
+/-- **The first `n` cells of the `∀`-spine of `e` are `Forall` cells.** The term relation reads a
+`Let` cell as its ζ-reduct, which may be a `∀`; `open_foralls` stops at such a cell. This
+predicate states that it does not stop within the first `n` binders. -/
+inductive ForallSpine (h : Heap F) : Nat → SourceValue F → Prop where
+  | zero (e : SourceValue F) : ForallSpine h 0 e
+  | succ {n : Nat} {e t b l : SourceValue F}
+      (ld : loadValue h e = .ok (.construct kexprEnum "Forall" [t, b, l]))
+      (rest : ForallSpine h n b) : ForallSpine h (n + 1) e
+
+theorem ForallSpine.mono {h₁ h₂ : Heap F} {n : Nat} {e : SourceValue F}
+    (ext : Heap.Extends h₁ h₂) (sp : ForallSpine h₁ n e) : ForallSpine h₂ n e := by
+  induction sp with
+  | zero e => exact .zero e
+  | succ ld _ ih => exact .succ (ext.loadValue_eq ld) ih
+
+private theorem load_ctor_ne {h : Heap F} {p : SourceValue F} {c c' : String}
+    {xs ys : List (SourceValue F)}
+    (l1 : loadValue h p = .ok (.construct kexprEnum c xs))
+    (l2 : loadValue h p = .ok (.construct kexprEnum c' ys)) (hne : c ≠ c') : False := by
+  rw [l1] at l2
+  injection l2 with l2
+  injection l2 with _ hc
+  exact hne hc
+
+private theorem load_ctor_eq {h : Heap F} {p v1 : SourceValue F} {c : String}
+    {xs : List (SourceValue F)}
+    (l1 : loadValue h p = .ok (.construct kexprEnum c xs)) (l2 : loadValue h p = .ok v1) :
+    v1 = .construct kexprEnum c xs := by
+  rw [l1] at l2
+  injection l2 with l2
+  exact l2.symm
+
+/-- **`subst_const` keeps a `Forall` spine**: it rebuilds a `Forall` cell as a `Forall` cell. -/
+theorem subst_const_forallSpine :
+    ∀ (n : Nat) {e a v r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      ForallSpine h n e → ObsFn W "KernelSubst::subst_const" [e, a, v] h r h' cs →
+      ForallSpine h' n r := by
+  intro n
+  induction n with
+  | zero => intro e a v r h h' cs _ _; exact .zero r
+  | succ n ih =>
+    intro e a v r h h' cs sp ev
+    cases sp with
+    | succ ld rest =>
+      match Obs.«KernelSubst::subst_const».obs ev with
+      | .Forall (x_bl := xbl) (v389 := w1) (v390 := w2) (ld12 := l2) (he385 := hr)
+          (hm384 := hm) (ev403 := e1) (ev439 := e2) .. =>
+        have ext3 := ext_snoc hm
+        have l' : loadValue h' r = .ok (.construct kexprEnum "Forall" [w1, w2, xbl]) := by
+          rw [hm, hr]; exact loadValue_enum_cell (by simp)
+        have hc := load_ctor_eq ld l2
+        injection hc with _ _ hxs
+        injection hxs with _ hxs
+        injection hxs with hb
+        subst hb
+        have sp' := ih (rest.mono e1.heap_extends) e2
+        exact .succ l' (sp'.mono ext3)
+      | .Const_n1_Nil (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .Const_n1_Cons (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .Const_other (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .App (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .Lam (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .Let (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .Proj (ld12 := l2) .. => exact (load_ctor_ne ld l2 (by decide)).elim
+      | .other (ld12 := l2) (hne472 := n4) .. => exact (n4 _ rfl (load_ctor_eq ld l2)).elim
+
+/-- One binder of `Ix.Kernel.openPisAtFvars`. -/
+theorem openPisAtFvars_succ_inv {n d : Nat} {E body : KExpr} {fvs : List KExpr}
+    (hop : Ix.Kernel.openPisAtFvars (n + 1) E d = some (fvs, body)) :
+    ∃ T B m fvs', E = .forallE T B m ∧ fvs = .fvar d T :: fvs' ∧
+      Ix.Kernel.openPisAtFvars n (B.instantiate1 (.fvar d T)) (d + 1) = some (fvs', body) := by
+  match E, hop with
+  | .forallE T B m, hop =>
+    simp only [Ix.Kernel.openPisAtFvars] at hop
+    cases hq : Ix.Kernel.openPisAtFvars n (B.instantiate1 (.fvar d T)) (d + 1) with
+    | none => rw [hq] at hop; cases hop
+    | some q =>
+      rw [hq] at hop
+      obtain ⟨fvs', body'⟩ := q
+      simp only [Option.some.injEq, Prod.mk.injEq] at hop
+      obtain ⟨rfl, rfl⟩ := hop
+      exact ⟨T, B, m, fvs', rfl, rfl, hq⟩
+  | .bvar _, hop => cases hop
+  | .fvar _ _, hop => cases hop
+  | .sort _, hop => cases hop
+  | .const _ _, hop => cases hop
+  | .app _ _, hop => cases hop
+  | .lam _ _ _, hop => cases hop
+  | .letE _ _ _ _, hop => cases hop
+  | .lit _, hop => cases hop
+  | .proj _ _ _, hop => cases hop
+
+/-- **`KernelRoles::open_foralls(e, acc)`**: on a term `E` represented at opening depth `d` whose
+first `n` binders the kernel opens at the variables `d, …, d + n - 1` typed by the ghost context
+(`openPisAtFvars`), to a body that is not a `∀`, along a spine of `Forall` cells, and on a
+context list `acc` ending at `d`, the result is the body represented at depth `d + n` and the
+context list extended by the `n` binder types, innermost first. -/
+theorem open_foralls_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} :
+    ∀ (n : Nat) {d : Nat} {E body : KExpr} {fvs : List KExpr} {e acc r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
+      Ix.Kernel.openPisAtFvars n E d = some (fvs, body) →
+      fvs = (List.range n).map (fun j => .fvar (d + j) (Γ (d + j))) →
+      (∀ T B m, body ≠ .forallE T B m) →
+      ForallSpine h n e → Tm κ d Γ h 0 E e → TypesRep κ Γ h d acc →
+      ObsFn W "KernelRoles::open_foralls" [e, acc] h r h' cs →
+      ∃ bodyp typesp, r = .tuple [bodyp, typesp] ∧ Tm κ (d + n) Γ h' 0 body bodyp ∧
+        TypesRep κ Γ h' (d + n) typesp ∧ Heap.Extends h h' := by
+  intro n
+  induction n with
+  | zero =>
+    intro d E body fvs e acc r h h' cs hop hfvs hnf sp hE hacc ev
+    simp only [Ix.Kernel.openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
+    obtain ⟨-, rfl⟩ := hop
+    match Obs.«KernelRoles::open_foralls».obs ev with
+    | .Forall (ld12 := ld) .. =>
+      obtain ⟨T, B, ℓ, hEq, -⟩ := hE.forallE_of_load ld
+      exact (hnf _ _ _ hEq).elim
+    | .other (he89 := hr) (he104 := hh) .. =>
+      subst hr hh
+      exact ⟨e, acc, rfl, hE, hacc, Heap.Extends.refl _⟩
+  | succ n ih =>
+    intro d E body fvs e acc r h h' cs hop hfvs hnf sp hE hacc ev
+    obtain ⟨T, B, m, fvs', rfl, rfl, hop'⟩ := openPisAtFvars_succ_inv hop
+    rw [List.range_succ_eq_map, List.map_cons, List.map_map] at hfvs
+    injection hfvs with hhd hrest
+    injection hhd with _ hT
+    have hT' : Γ d = T := hT.symm
+    have hfvs' : fvs' = (List.range n).map (fun j => .fvar (d + 1 + j) (Γ (d + 1 + j))) := by
+      rw [hrest]
+      apply List.map_congr_left
+      intro j _
+      have e' : d + (j + 1) = d + 1 + j := by omega
+      simp only [Function.comp_apply, Nat.succ_eq_add_one, e']
+    cases sp with
+    | succ ld rest =>
+      match Obs.«KernelRoles::open_foralls».obs ev with
+      | .Forall (x_t := xt) (m52 := m52) (ld12 := l2) (hm60 := hm) (ev41 := er) .. =>
+        have hcell := load_ctor_eq ld l2
+        injection hcell with _ _ hxs
+        injection hxs with ht hxs
+        injection hxs with hb
+        subst ht hb
+        have ext := ext_snoc hm
+        obtain ⟨T₀, B₀, ℓ, hEq, htT, hbB, -⟩ := hE.forallE_of_load ld
+        injection hEq with e1 e2 e3
+        subst e1 e2
+        have rt : Tm κ d Γ (h ++ [.construct kexprListEnum "Cons" [xt, acc]]) 0 (Γ d) xt := by
+          rw [hT']; exact htT.mono (Heap.Extends.snoc _ _)
+        have hacc' : TypesRep κ Γ m52 (d + 1) (.ptr (.enum kexprListEnum) h.length) := by
+          rw [hm]
+          exact .cons (by simp) rt (hacc.mono (Heap.Extends.snoc _ _))
+        have hbody := (hbB.open (d := d) (Γ' := Γ) hT' (fun _ _ => rfl) 0 rfl).mono ext
+        obtain ⟨bodyp, typesp, hr, hb, ht, hx⟩ :=
+          ih hop' hfvs' hnf (rest.mono ext) hbody hacc' er
+        have e' : d + 1 + n = d + (n + 1) := by omega
+        rw [e'] at hb ht
+        exact ⟨bodyp, typesp, hr, hb, ht, ext.trans hx⟩
+      | .other (ld12 := l2) (hne81 := n4) .. => exact (n4 _ rfl (load_ctor_eq ld l2)).elim
+
+/-! ## The applied certificate proof -/
+
+theorem repList_imp {α : Type} {en : String} {R S : Heap F → α → SourceValue F → Prop}
+    (hRS : ∀ h x v, R h x v → S h x v) {h : Heap F} {xs : List α} {p : SourceValue F}
+    (rep : RepList en R h xs p) : RepList en S h xs p := by
+  induction rep with
+  | nil cell => exact .nil cell
+  | cons cell hx _ ih => exact .cons cell (hRS _ _ _ hx) ih
+
+/-- **`apply_spine(p, bvars_desc(d, d))`**: the term `p` represents, applied to the `d` opened
+variables in order (`BVar(d - 1)` … `BVar(0)` at depth `d`, the variables `0, …, d - 1`). -/
+theorem apply_bvars_desc_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {d : Nat} {top : F}
+    {P : KExpr} {p sp r : SourceValue F} {h h₁ h₂ : Heap F} {cs₁ cs₂ : List (Call F)}
+    (htop : ZMod.val top = d) (hd : d < 4611686018427387904) (hP : Tm κ d Γ h 0 P p)
+    (ev₁ : ObsFn W "KernelModeled::bvars_desc" [.field top, .field top] h sp h₁ cs₁)
+    (ev₂ : ObsFn W "KernelWhnf::apply_spine" [p, sp] h₁ r h₂ cs₂) :
+    Tm κ d Γ h₂ 0 (Expr.mkAppN P ((List.range d).map fun m => .fvar m (Γ m))) r ∧
+      Heap.Extends h h₂ := by
+  have hsp := Decl.bvars_desc_exact_wide (κ := κ) (Γ := Γ) (d := d) (Nat.le_refl _)
+    (Nat.le_of_eq htop) hd ev₁
+  simp only [htop, Nat.sub_self, Nat.zero_add] at hsp
+  have hsp' : RepList kexprListEnum (fun h A p => Tm κ d Γ h 0 A p) h₁
+      ((List.range d).map fun m => .fvar m (Γ m)) sp :=
+    repList_imp (fun _ _ _ x => Decl.TmExact.toTm x) hsp
+  exact ⟨Decl.apply_spine_tm ev₂ (hP.mono ev₁.heap_extends) hsp',
+    ev₁.heap_extends.trans ev₂.heap_extends⟩
+
+/-- **The variables applied are the certificate's**: under a ghost context giving `x`, `y` the
+type `Nat` and the hypotheses their statements, the proof applied to the `2 + n` opened
+variables is `divModCertApplied`. -/
+theorem mkAppN_fvars_divModCertApplied {Γ : Nat → KExpr} {P : KExpr} {hyps : List KExpr}
+    (h0 : Γ 0 = natTy) (h1 : Γ 1 = natTy)
+    (hh : ∀ i (hi : i < hyps.length), Γ (2 + i) = hyps[i])
+    (hlen : hyps.length = 1 ∨ hyps.length = 2) :
+    Expr.mkAppN P ((List.range (2 + hyps.length)).map fun m => .fvar m (Γ m)) =
+      Ix.Kernel.divModCertApplied P hyps := by
+  match hyps, hh, hlen with
+  | [a], hh, _ =>
+    have ha : Γ 2 = a := hh 0 (by simp)
+    show Expr.mkAppN P [.fvar 0 (Γ 0), .fvar 1 (Γ 1), .fvar 2 (Γ 2)] = _
+    rw [h0, h1, ha]
+    rfl
+  | [a, b], hh, _ =>
+    have ha : Γ 2 = a := hh 0 (by simp)
+    have hb : Γ 3 = b := hh 1 (by simp)
+    show Expr.mkAppN P [.fvar 0 (Γ 0), .fvar 1 (Γ 1), .fvar 2 (Γ 2), .fvar 3 (Γ 3)] = _
+    rw [h0, h1, ha, hb]
+    rfl
+  | [], _, hlen => simp only [List.length_nil] at hlen; omega
+  | _ :: _ :: _ :: _, _, hlen => simp only [List.length_cons] at hlen; omega
 
 end IxVM.Refinement.Binding.OpOpen
