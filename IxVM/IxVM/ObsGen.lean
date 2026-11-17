@@ -937,7 +937,8 @@ end
 
 /-- Functions the refinement proofs need whose paths multiply: generated under
 larger caps, at a larger module cost. -/
-def generous : List String := ["KernelWhnf::whnf_nd_const_head"]
+def generous : List String :=
+  ["KernelWhnf::whnf_nd_const_head", "KernelRoles::basis_pin"]
 
 /-- The path inductive and the inversion theorem of one function, in one pass: the unchanged
 `«f».Path` and `«f».obs`, or (`x`) the extended `«f».PathX` and `«f».obsx`, whose constructors

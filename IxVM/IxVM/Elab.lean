@@ -10,6 +10,7 @@ import IxVM.Source.KernelTypes
 import IxVM.Source.KernelLevels
 import IxVM.Source.KernelRoles
 import IxVM.Source.KernelInfer
+import IxVM.Source.KernelGuard
 import IxVM.Source.KernelClaim
 import IxVM.Source.IxByteStream
 import IxVM.Source.IxonSerialize
@@ -39,7 +40,7 @@ open Aiur
 /-- Explicit composition order, stable across import ordering. -/
 def moduleNames : List Name := [
   `IxVM.RBTreeMap, `IxVM.Ixon, `IxVM.KernelTypes, `IxVM.KernelLevels, `IxVM.KernelRoles,
-  `IxVM.KernelInfer, `IxVM.KernelClaim, `IxVM.IxByteStream, `IxVM.IxonSerialize,
+  `IxVM.KernelInfer, `IxVM.KernelGuard, `IxVM.KernelClaim, `IxVM.IxByteStream, `IxVM.IxonSerialize,
   `IxVM.IxonDeserialize, `IxVM.KernelKlimbs, `IxVM.KernelNatPrim, `IxVM.Convert,
   `IxVM.Ingress, `IxVM.KernelSubst, `IxVM.KernelRoleSpec, `IxVM.KernelWhnf,
   `IxVM.KernelInferOnly, `IxVM.KernelDefEq, `IxVM.KernelCheck, `IxVM.KernelModeled, `IxVM.IxVMCompat,
