@@ -101,6 +101,63 @@ theorem LateRegistry.nativeNoRec {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   obtain ⟨Reg, hR⟩ := h
   exact ⟨_, hR.nativeNoRec hfacts hext hat⟩
 
+/-- **The install extends the prefix** (IxC: the former and the constructors are fresh, the
+table is the new structure's). -/
+theorem NativeNoRecFacts.envExt {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : NativeFam .anon} (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
+    Ix.Kernel.EnvExt env env₂ :=
+  Ix.Kernel.Semantics.declNativeNoRecRunJ_envExt h.runJ
+
+/-- **A native block's install keeps the registry clause**, given that its family is read off
+the store at the new environment. -/
+theorem LateRegistry.nativeNoRec' {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env env₂ : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)} {nP : Nat}
+    {p₀ : Ix.Kernel.NativeParts .anon} {fam : NativeFam .anon} (h : LateRegistry.{u} t E env)
+    (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam) (hat : LateFamAt t E env₂ fam) :
+    LateRegistry.{u} t E env₂ :=
+  h.nativeNoRec hfacts hfacts.envExt hat
+
+/-! ## The invariant after the install, from its load contract and η stability -/
+
+/-- **The prefix invariant after a native block's install**, given its two clauses that read the
+new family (the load contract at the new environment and η stability) and that every key stored
+new resolves. Every other clause is the declaration layer's step, the table, or kept by
+constants that are no recursor. -/
+theorem PrefixInv.nativeNoRec {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {env env₂ : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)} {nP : Nat}
+    {p₀ : Ix.Kernel.NativeParts .anon} {fam : NativeFam .anon}
+    (h : Decl.PrefixInv.{u} E t lim env) (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam)
+    (hpin : Ix.Kernel.basisPinHit blk = none) (hna : Decl.DeclNonAux (.indDecl blk nP))
+    (hres : ∀ (k : Core.KKey) (ci : ConstantInfo .anon), env₂.find? k = some ci →
+      env.find? k = none → k ≠ Core.unresolvedKey)
+    (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
+    (heta : Decl.EtaStable env₂) :
+    Decl.PrefixInv.{u} E t lim env₂ := by
+  have hext : Ix.Kernel.EnvExt env env₂ := hfacts.envExt
+  have hunres : env₂.find? Core.unresolvedKey = none := by
+    cases hf : env₂.find? Core.unresolvedKey with
+    | none => rfl
+    | some ci => exact absurd rfl (hres _ ci hf h.unresolved)
+  have hnaKeys : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci =>
+    (hna.1 ci (by simpa [IxVM.Consistency.installs, hpin] using hci)).1
+  have hdecl := hfacts.fullDeclInv hpin hna
+  have hstore := hfacts.foldStoreInv hpin hnaKeys h.store
+  obtain ⟨new, rfl, hkind⟩ := hfacts.shape
+  have hnorec : ∀ ci ∈ new, ∀ cv mI rP rls, ci ≠ .recInfo cv mI rP rls := by
+    intro ci hci cv mI rP rls he
+    rcases hkind ci hci with ⟨cv', caps, h'⟩ | ⟨cv', nP', nF, h'⟩ | ⟨tbl, h'⟩ <;>
+      (rw [h'] at he; cases he)
+  exact
+    { decl := fun V _ => hdecl V (h.decl V)
+      store := hstore
+      unresolved := hunres
+      tableWf := h.tableWf
+      companions := CoreCompanions.append_noRec (c := ⟨E, env, t, lim⟩) h.companions
+        h.store.store hext hnorec
+      loads := hloads
+      etaStable := heta }
+
 /-! ## The store clause beside the registry -/
 
 /-- **The extra clause is kept by storing a value constant at the key of a 32-byte address**,
