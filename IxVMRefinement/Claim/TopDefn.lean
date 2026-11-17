@@ -129,7 +129,7 @@ inductive CheckedDefnAtLim (κ : _root_.Address → Core.KKey) (lim : Option Nat
         (.defnDecl ⟨Core.keyOf t a, List.range nlvls, ty'⟩ val' hn)
 
 /-- A definition installs using the observed limit; its invariant transports on reload. -/
-theorem walkedDefn_step_lim
+theorem walkedDefn_step_lim_run
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {lim : Option Nat}
     {env : Env .anon} {d d' : Declaration .anon}
@@ -139,6 +139,8 @@ theorem walkedDefn_step_lim
     (hgood : Good ⟨E_core, env, t, none⟩ calls)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
     (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name) :
+    (∃ d₀, DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d₀
+      ⟨IxVM.Consistency.installs d' ++ env.consts⟩) ∧
     CleanInstallStep env d ⟨IxVM.Consistency.installs d' ++ env.consts⟩ ∧
       ∀ (E' : Ixon.Env) (lim' : Option Nat),
         (∀ cn ∈ IxVM.Consistency.installs d', ReloadsAs E' t ⟨cn :: env.consts⟩ cn) →
@@ -204,13 +206,31 @@ theorem walkedDefn_step_lim
       ⟨ty', val', hcv_run, hv_run, rfl,
         (fun hc => by rw [hnat_false] at hc; exact nomatch hc),
         (fun hc => by rw [hdm_false] at hc; exact nomatch hc)⟩
-    exact ⟨hclean, fun E' lim' hrel hinv' => hinv'.cons_value (cn := .defnInfo cv' val' hn) (a₀ := a) rfl hfresh_cv
+    exact ⟨⟨.defnDecl cv' val' hn, hdecl⟩, hclean, fun E' lim' hrel hinv' => hinv'.cons_value (cn := .defnInfo cv' val' hn) (a₀ := a) rfl hfresh_cv
       (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
       (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
       (FullDeclInv.step_of_foldInv_clean hclean
         (foldInv_step_declRunJ (d := .defnDecl cv' val' hn) (fun _ _ heq => nomatch heq) hdecl))
       (foldStoreInv_step_declRunJ (d := .defnDecl cv' val' hn) hinv.store (fun _ _ heq => nomatch heq) hdecl)
       (hrel _ (List.mem_singleton.mpr rfl))⟩
+
+/-- The invariant-only projection of the definition's checked declaration step. -/
+theorem walkedDefn_step_lim
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {E_core : Ixon.Env} {order_role : List _root_.Address} {lim : Option Nat}
+    {env : Env .anon} {d d' : Declaration .anon}
+    (hinv : PrefixInv.{u} E_core t lim env)
+    (hchk : CheckedDefnAtLim (Ctx.stored ⟨E_core, env, t, lim⟩).κ lim calls t bAddr
+      E_core order_role d d')
+    (hgood : Good ⟨E_core, env, t, none⟩ calls)
+    (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
+    (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name) :
+    CleanInstallStep env d ⟨IxVM.Consistency.installs d' ++ env.consts⟩ ∧
+      ∀ (E' : Ixon.Env) (lim' : Option Nat),
+        (∀ cn ∈ IxVM.Consistency.installs d', ReloadsAs E' t ⟨cn :: env.consts⟩ cn) →
+        PrefixInv.{u} E' t lim' env →
+          PrefixInv.{u} E' t lim' ⟨IxVM.Consistency.installs d' ++ env.consts⟩ :=
+  (walkedDefn_step_lim_run hinv hchk hgood hfresh hkey).2
 
 end IxVM.Refinement.Decl
 
