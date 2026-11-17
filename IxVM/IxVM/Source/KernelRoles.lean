@@ -978,7 +978,9 @@ def walk_refs_except := aiur_fn⟦
             1 => {
               assert_ref_allowed(rc, b);
               match walk_covered(rc, b) {
-                0 => {  KernelClaim::run_check_transitive(walk_ctx(rc, b), b) } ,
+                0 => {
+                  KernelClaim::assert_not_block_ref(b);
+                  KernelClaim::run_check_transitive(walk_ctx(rc, b), b) } ,
                 _ => {  () } ,
               } } ,
             _ => {  () } ,

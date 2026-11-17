@@ -242,6 +242,25 @@ def run_check_transitive := aiur_fn⟦
     }
 ⟧
 
+  -- A used reference never names a block record (`Muts`): a projection reaches its block
+  -- through its own record, and a block is walked only as a claim's seed or a projection's
+  -- block. Checked where a walk loads the referenced record anyway.
+
+def assert_not_block_ref := aiur_fn⟦
+  fn assert_not_block_ref(a: Bytes::AddressRef) -> () {
+      let c = Ingress::load_verified_constant(a);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Muts(_) => {
+              assert_eq!(0, 1, "a reference names a block record");
+              () } ,
+            _ => {  () } ,
+          } } ,
+      }
+    }
+⟧
+
 def walk_refs_transitive := aiur_fn⟦
   fn walk_refs_transitive(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>, consts: Lists::List<Field>, i: Field) -> () {
       match (*(refs)) {
@@ -251,7 +270,9 @@ def walk_refs_transitive := aiur_fn⟦
             1 => {
               KernelRoles::assert_ref_allowed(rc, a);
               match KernelRoles::walk_covered(rc, a) {
-                0 => {  run_check_transitive(KernelRoles::walk_ctx(rc, a), a) } ,
+                0 => {
+                  assert_not_block_ref(a);
+                  run_check_transitive(KernelRoles::walk_ctx(rc, a), a) } ,
                 _ => {  () } ,
               } } ,
             _ => {  () } ,
@@ -419,7 +440,13 @@ def env_walk_refs := aiur_fn⟦
             1 => {
               KernelRoles::assert_ref_allowed(rc, a);
               match KernelRoles::walk_covered(rc, a) {
-                0 => {  env_walk(KernelRoles::walk_ctx(rc, a), a, owned, asm, strict) } ,
+                0 => {
+                  -- an assumed constant is not loaded
+                  match addr_set_member(a, asm) {
+                    1 => {  () } ,
+                    _ => {  assert_not_block_ref(a) } ,
+                  };
+                  env_walk(KernelRoles::walk_ctx(rc, a), a, owned, asm, strict) } ,
                 _ => {  () } ,
               } } ,
             _ => {  () } ,
@@ -717,6 +744,7 @@ def env_walk_refs_all := aiur_fn⟦
 
               match KernelRoles::walk_covered(rc, a) {
                 0 => {
+                  assert_not_block_ref(a);
                   let wc = KernelRoles::walk_ctx(rc, a);
                   match KernelRoles::role_ctx_limit(wc) - KernelRoles::role_ctx_limit(rc) {
                     0 => {  IxVMCompat::check_owned((*(KernelRoles::role_ctx_binding(rc))), KernelRoles::role_ctx_validator(rc),
