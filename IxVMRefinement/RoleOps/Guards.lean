@@ -197,15 +197,15 @@ theorem natOpCod_opCod {env : Env .anon} {c : KKey}
   · obtain ⟨ci, hf, hlp, hty⟩ := hbool hc
     have hcb : (c = natBeqName || c = natBleName) = true := by
       rcases hc with h | h <;> simp [h]
-    have hop : opCod c = boolName := if_pos hc
-    rw [if_pos hcb, hop, hf]
+    have hop : opCod c = boolName := ite_eq_left hc
+    rw [ite_eq_left hcb, hop, hf]
     simp [hlp, hty]
   · have hcb : ¬ ((c = natBeqName || c = natBleName) = true) := by
       intro h
       simp only [Bool.or_eq_true, decide_eq_true_eq] at h
       exact hc h
-    have hop : opCod c = natName := if_neg hc
-    rw [if_neg hcb, hop]
+    have hop : opCod c = natName := ite_eq_right hc
+    rw [ite_eq_right hcb, hop]
     simp
 
 /-- The pinned type, from its syntactic shape and the stored shape of `Bool`. -/
@@ -215,39 +215,39 @@ theorem natOpTyPinned_of_shape {env : Env .anon} {c : KKey} {ty : KExpr}
   unfold OpTyShape at hsh
   unfold Ix.Kernel.natOpTyPinned
   by_cases hp : c = natPredName
-  · rw [if_pos hp] at hsh
+  · rw [ite_eq_left hp] at hsh
     obtain ⟨mb, rfl⟩ := hsh
-    rw [if_pos hp]
+    rw [ite_eq_left hp]
     have hne : ¬ (c = natBeqName ∨ c = natBleName) := by
       rw [hp]; decide
-    have hop : opCod c = natName := if_neg hne
+    have hop : opCod c = natName := ite_eq_right hne
     have hcod := natOpCod_opCod (env := env) (c := c) hbool
     rw [hop] at hcod
     simp [hcod]
-  · rw [if_neg hp] at hsh
+  · rw [ite_eq_right hp] at hsh
     obtain ⟨mb₁, mb₂, rfl⟩ := hsh
-    rw [if_neg hp]
+    rw [ite_eq_right hp]
     simp [natOpCod_opCod hbool]
 
 theorem natOpCod_mono {env env' : Env .anon} (h : EnvExt env env') {c : KKey} {e : KExpr}
     (hc : natOpCod env c e = true) : natOpCod env' c e = true := by
   unfold Ix.Kernel.natOpCod at hc ⊢
   by_cases hcb : (c = natBeqName || c = natBleName) = true
-  · rw [if_pos hcb] at hc ⊢
+  · rw [ite_eq_left hcb] at hc ⊢
     simp only [Bool.and_eq_true] at hc ⊢
     refine ⟨hc.1, ?_⟩
     have h2 := hc.2
     cases hf : env.find? boolName with
     | none => rw [hf] at h2; exact nomatch h2
     | some ci => rw [h.find hf]; rw [hf] at h2; exact h2
-  · rw [if_neg hcb] at hc ⊢
+  · rw [ite_eq_right hcb] at hc ⊢
     exact hc
 
 theorem natOpTyPinned_mono {env env' : Env .anon} (h : EnvExt env env') {c : KKey} {ty : KExpr}
     (hp : natOpTyPinned env c ty = true) : natOpTyPinned env' c ty = true := by
   unfold Ix.Kernel.natOpTyPinned at hp ⊢
   by_cases hc : c = natPredName
-  · rw [if_pos hc] at hp ⊢
+  · rw [ite_eq_left hc] at hp ⊢
     cases ty with
     | forallE dom body mb =>
       have hp' : (dom == .const natName [] && natOpCod env c body) = true := hp
@@ -255,7 +255,7 @@ theorem natOpTyPinned_mono {env env' : Env .anon} (h : EnvExt env env') {c : KKe
       simp only [Bool.and_eq_true] at hp' ⊢
       exact ⟨hp'.1, natOpCod_mono h hp'.2⟩
     | _ => exact nomatch hp
-  · rw [if_neg hc] at hp ⊢
+  · rw [ite_eq_right hc] at hp ⊢
     cases ty with
     | forallE dom b mb =>
       cases b with
