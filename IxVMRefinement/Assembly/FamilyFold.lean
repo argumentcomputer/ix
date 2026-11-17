@@ -355,13 +355,13 @@ theorem needs_earlier_fam (hG : TopGraph t E₀ seeds Top rank)
   have hAn := (hus A).mp hA
   rcases hneed with ⟨hu | ⟨rb, hrb, hur⟩, hok⟩ | ⟨a, ca, ha, hca, hxa⟩
   · rcases hG.closed A x hAn.1 hu with ⟨hTx, hrk⟩ | hcov
-    · rcases earlier_of_top (X := X) (R := R) (E := E) (lim := lim) (fam := fam) (adv := adv)
+    · rcases earlier_of_top.{u} (X := X) (R := R) (E := E) (lim := lim) (fam := fam) (adv := adv)
         hG hus hTx hrk hok with h | h
       · exact Or.inl h
       · exact Or.inr (Or.inr h)
     · exact Or.inl (covered_stored hshape htwf hcov)
   · rcases hF.famClosed A rb x hrb hur with ⟨hTx, hrk⟩ | hcov | ⟨cb, hcb, hxB⟩ | ⟨crb, hcrb, hxr⟩
-    · rcases earlier_of_top (X := X) (R := R) (E := E) (lim := lim) (fam := fam) (adv := adv)
+    · rcases earlier_of_top.{u} (X := X) (R := R) (E := E) (lim := lim) (fam := fam) (adv := adv)
         hG hus hTx hrk hok with h | h
       · exact Or.inl h
       · exact Or.inr (Or.inr h)
@@ -573,8 +573,9 @@ theorem fold_steps_fam (hG : TopGraph t E₀ seeds Top rank)
         · exfalso
           obtain ⟨hTa, hrk, hloga⟩ := hF.advEarlier A a ha
           have haU : a ∈ us := (hus a).mpr ⟨hTa, ca, hca, hloga ca hca, x, hxa, hstT⟩
-          have hAa : a = A := owns_apart_fam (X := X) (R := R) (E := E) (lim := lim) hG hF hus
-            a haU A hA x ⟨ca, hca, Or.inl hxa⟩ hown
+          have hAa : a = A :=
+            owns_apart_fam.{u} (X := X) (R := R) (E := E) (lim := lim) hG hF hus
+              a haU A hA x ⟨ca, hca, Or.inl hxa⟩ hown
           rw [hAa] at hrk
           exact Nat.lt_irrefl _ hrk
     have hfresh : ∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none :=
