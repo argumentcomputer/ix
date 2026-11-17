@@ -78,8 +78,8 @@ def block : List (ConstantInfo .source) :=
     .indInfo ⟨kB, [], type1⟩ {},
     .ctorInfo ⟨ka, [], cnst kA⟩ 0 0,
     .ctorInfo ⟨kb, [], cnst kB⟩ 0 0,
-    .recInfo ⟨kRA, [uN], tyRA⟩ 4 4 [rule ka 0 (ruleLams (bv 1))],
-    .recInfo ⟨kRB, [uN], tyRB⟩ 4 4 [rule kb 0 (ruleLams (bv 0))] ]
+    .recInfo ⟨kRA, [BasisDSL.uN], tyRA⟩ 4 4 [rule ka 0 (ruleLams (bv 1))],
+    .recInfo ⟨kRB, [BasisDSL.uN], tyRB⟩ 4 4 [rule kb 0 (ruleLams (bv 0))] ]
 
 /-! ## The model advice -/
 
@@ -120,10 +120,10 @@ def advDecls : List (Declaration .source) :=
     .defnDecl ⟨mdl kB, [], type1⟩ punitOne (.regular 0),
     .defnDecl ⟨mdl ka, [], cnst (mdl kA)⟩ unitOne (.regular 0),
     .defnDecl ⟨mdl kb, [], cnst (mdl kB)⟩ unitOne (.regular 0),
-    .defnDecl ⟨mdl kRA, [uN], tyRA.renameConsts ren⟩ (recModel tyRA 4 2) (.regular 1),
-    .defnDecl ⟨mdl kRB, [uN], tyRB.renameConsts ren⟩ (recModel tyRB 3 1) (.regular 1),
-    .thmDecl ⟨iota0 kRA, [uN], iotaStmt kRA ka 3 1⟩ (iotaProof ka 3 1),
-    .thmDecl ⟨iota0 kRB, [uN], iotaStmt kRB kb 2 0⟩ (iotaProof kb 2 0) ]
+    .defnDecl ⟨mdl kRA, [BasisDSL.uN], tyRA.renameConsts ren⟩ (recModel tyRA 4 2) (.regular 1),
+    .defnDecl ⟨mdl kRB, [BasisDSL.uN], tyRB.renameConsts ren⟩ (recModel tyRB 3 1) (.regular 1),
+    .thmDecl ⟨iota0 kRA, [BasisDSL.uN], iotaStmt kRA ka 3 1⟩ (iotaProof ka 3 1),
+    .thmDecl ⟨iota0 kRB, [BasisDSL.uN], iotaStmt kRB kb 2 0⟩ (iotaProof kb 2 0) ]
 
 /-- The value of a run, or `d` if it failed. -/
 def okOr {ε : Type _} {α : Type _} (r : Except ε α) (d : α) : α :=
