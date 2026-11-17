@@ -479,8 +479,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
       ∃ sty u, Ix.Kernel.Rules.Infer env .full 0 ty' sty ∧
         Ix.Kernel.Rules.Red env 0 sty (.sort u) := by
   have hbound : Bounded calls := (hst.good env none).2
-  have hchkA := mutsMemberAt_checkedAt hbound hchk
-    (rfl : (#[.indc ind] : Array Ixon.MutConst)[0]? = some (.indc ind))
+  have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk (by rfl)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre,
     ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchkA
   obtain ⟨a, ha, hax⟩ := ha_pre
@@ -583,7 +582,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     obtain ⟨ci, hci⟩ := used _ (rty.projIn_used a' hp)
     exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
   have htmP : Decl.TmCExact κP m_chk (Core.posOf (List.range ind.lvls.toNat) ty') tyPtr :=
-    htmT.rekey hagreeP hpermP
+    TmCExact.rekey htmT hagreeP hpermP
   have hvP : Decl.ValRepExact κP m_chk (.field (ind.lvls.toNat : F)) tyPtr
       ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ :=
     ⟨by simp, by simpa using hlvls, by simp, htmP⟩
@@ -592,6 +591,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
   obtain ⟨checked, sty, u, ℓ, inferred, reduced, -, -⟩ :=
     Decl.constantValCheckJ_of_scoped (c := Core.Ctx.stored ⟨E, env, t, some n⟩)
       (cv := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩)
+      (cv' := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩)
       ⟨rfl, rfl, hannT⟩ (hvP.mono prelude.initialExtended) hty_lbb hfv hfresh hfree.1
       (Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)) hinv.store.store
       (Decl.PosSortLift.of_range rfl) prelude.scopeRun prelude.scope_to_sort
