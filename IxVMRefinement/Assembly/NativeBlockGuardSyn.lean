@@ -101,7 +101,7 @@ theorem eval_guardFold_eq_zero (ψ : Ix.Kernel.LevelParam → Nat) (P : Nat → 
     rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
     have ih := eval_guardFold_eq_zero ψ P L init k
     by_cases hk : P k = true
-    · rw [if_pos hk]
+    · rw [ite_eq_left hk]
       simp only [Ix.Kernel.Level.eval]
       rw [Nat.max_eq_zero_iff, ih]
       constructor
@@ -112,7 +112,7 @@ theorem eval_guardFold_eq_zero (ψ : Ix.Kernel.LevelParam → Nat) (P : Nat → 
         · exact h3
       · rintro ⟨h1, h2⟩
         exact ⟨⟨h1, fun j hj hp => h2 j (Nat.lt_succ_of_lt hj) hp⟩, h2 k (Nat.lt_succ_self k) hk⟩
-    · rw [if_neg hk, ih]
+    · rw [ite_eq_right hk, ih]
       constructor
       · rintro ⟨h1, h2⟩
         refine ⟨h1, fun j hj hp => ?_⟩
@@ -225,7 +225,7 @@ theorem blockGuard_of_install_syn {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} 
       have hk : k = Core.keyOf t (Core.iprjAddr B 0) := h.symm
       rw [hk, hfreshT] at hf
       cases hf
-    rw [if_neg hne]
+    rw [ite_eq_right hne]
     exact hf
   unfold BlockGuard
   intro i hi j cvC nP nF tbl hC hTb hz f rc bp' rg hg hg' csg g us b hf hus ev good hrc hb hbB
@@ -238,7 +238,6 @@ theorem blockGuard_of_install_syn {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} 
     have h := hTb.symm.trans hfind₀
     injection h with h
     injection h with h
-    exact h
   rw [htbl] at hus ⊢
   show Ix.Kernel.Level.eval φ
     (Ix.Kernel.Level.subst tbl₀.levelParams us (tbl₀.guards.getD (ZMod.val f) .zero)) = 0
