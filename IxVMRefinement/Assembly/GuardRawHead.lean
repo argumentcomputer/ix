@@ -163,7 +163,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         (ld60 := loaded) (ev238 := functionCall) (ld232 := lambda) (ev302 := inst)
         (ev288 := child) (hc341 := events) .. =>
       obtain ⟨RF, RA, EF, EA, rfl, rfl, rawFunc, rawArg⟩ := raw.raw_app_view loaded
-      obtain ⟨F, A, rfl, scopedFunc, scopedArg⟩ := scopedRep.app_of_load loaded
+      obtain ⟨functionTerm, argumentTerm, rfl, scopedFunc, scopedArg⟩ := scopedRep.app_of_load loaded
       have firstInside : ∀ call ∈ first, call ∈ calls := by intro call member; rw [events]; simp [member]
       have instInside : ∀ call ∈ instCalls, call ∈ calls := by intro call member; rw [events]; simp [member]
       have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
@@ -187,7 +187,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         argRep (bounded_sub instInside good.2) inst
       simp only [ZMod.val_zero, Nat.add_zero] at rawBeta
       have semanticBeta := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ inst _ _ (0 : F) rfl
-        (bounded_sub instInside good.2) d Γ B A
+        (bounded_sub instInside good.2) d Γ B argumentTerm
         (by simpa only [ZMod.val_zero, Nat.zero_add] using bodyScoped)
         (scopedArg.mono functionCall.heap_extends)
       simp only [ZMod.val_zero] at semanticBeta
