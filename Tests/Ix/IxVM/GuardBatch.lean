@@ -388,8 +388,9 @@ private def declaredFormerCase (shape telescope declared : Bool) : Except String
       else "a two-type family of syntactic telescopes, no model"
     accept := true
     witness := witness }
+  -- with the model channel empty (`bare`), the family check stops at the missing hint
   return if !shape then
-    { c with accept := false, rejectsWith := some "no model advice for a mutual or nested block" }
+    { c with accept := false, rejectsWith := some "missing hint data" }
   else if telescope && declared then
     { c with accept := false
              rejectsWith := some "a mutual or nested inductive's type is not a telescope of binders into a sort" }
@@ -402,7 +403,8 @@ the whole family at its types (no model, no acceptance); `recursors = false` one
 checks a family at its recursors (here: asks for the model). -/
 private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builder :=
   let env := bare env
-  let noModel := "no model advice for a mutual or nested block"
+  -- with the model channel empty, a family check stops at the missing hint
+  let noModel := "missing hint data"
   let declared (n : String) (what : String) : Builder := fun u => do
     let c ← kernelCheckCase env (defs n) true u
     let c := { c with label := s!"{c.label}, no model ({what})" }
