@@ -603,6 +603,159 @@ theorem BlockInstall.newCtorIndRes (hI : BlockInstall c new B cb ind caps) :
   rw [appCtx_key_of_find hfT]
   exact Core.Resolved.ne
 
+
+/-- The record's counts read off the field elements of a load (each below `2 ^ 56`). -/
+theorem field_count_eq {n : Nat} {x : F} (hn : n < 72057594037927936)
+    (h : (Value.field (n : F) : SourceValue F) = .field x) : ZMod.val x = n := by
+  injection h with e
+  rw [← e]
+  exact ZMod.val_natCast_of_lt (Nat.lt_trans hn (by decide))
+
+/-- **The loaded inductive is the new former, with the record's counts**, where its member is the
+new block's member `0`. -/
+theorem BlockInstall.formerLoad (hI : BlockInstall c new B cb ind caps)
+    {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    {nl ty u blk : SourceValue F} {p m i : F}
+    (ev : ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' cs) (good : Core.Good (appCtx c new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a ap)
+    (hld : loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+      [nl, ty, .field p, .field m, .field 1, u, blk, .field i]))
+    (hxa : Core.ixAddr a = Core.iprjAddr B 0) :
+    ZMod.val p = ind.params.toNat ∧ ZMod.val m = ind.indices.toNat ∧ ind.ctors.size = 1 := by
+  obtain ⟨tyPtr, blkPtr, hld₀, hp56, hi56, hc56⟩ := former_get_ci_value good.1 good.2 ha ev
+    (by rw [hxa]; exact hI.formerRec) hI.block hI.muts
+  rw [hld₀] at hld
+  have hv := Except.ok.inj hld
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
+  obtain ⟨-, -, hp, hm, hn, -⟩ := hv
+  refine ⟨field_count_eq hp56 hp, field_count_eq hi56 hm, ?_⟩
+  have e := field_count_eq hc56 hn
+  rw [ZMod.val_one] at e
+  exact e.symm
+
+/-- **`NewLoads.unitLike`.** -/
+theorem BlockInstall.newUnitLike (hI : BlockInstall c new B cb ind caps) :
+    ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
+      (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
+      (cvT : ConstantVal .anon) (caps' : IndCaps .anon) (cvC : ConstantVal .anon) (nPc : Nat),
+      ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' cs → Core.Good (appCtx c new) cs →
+      Bytes.RepAddressRef Core.addrTy h a ap →
+      loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+        [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
+      Bytes.RepAddressRef Core.addrTy h' b blk →
+      (appCtx c new).env.find? ((appCtx c new).stored.κ (Core.ixAddr a)) =
+        some (.indInfo cvT caps') →
+      Core.FewInductives (appCtx c new) (Core.ixAddr b) →
+      (appCtx c new).env.find? ((appCtx c new).stored.κ
+        (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc 0) →
+      (ConstantInfo.indInfo cvT caps' ∈ new ∨ ConstantInfo.ctorInfo cvC nPc 0 ∈ new) →
+      caps'.unitlike = true ∧ caps'.unitParams = ZMod.val p ∧
+        (Ix.Kernel.reservedBasisNames.contains ((appCtx c new).stored.κ (Core.ixAddr a)) = false ∨
+          (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy (appCtx c new).env
+            (.const ((appCtx c new).stored.κ (Core.ixAddr a)) us) = true)) := by
+  intro ap ptr h h' cs a nl ty u blk p i b cvT caps' cvC nPc ev good ha hld hb hfT hfew hfC hm
+  have hx := get_ci_induct_addr ev good.2 ha hld hb
+  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
+  have hBi : Core.ixAddr b = B ∧ ZMod.val i = 0 := by
+    rcases hm with hm | hm
+    · obtain ⟨hk, -⟩ := hI.newInd hfT hm
+      exact iprj_key_block hI.wf hI.decoded hI.held hI.formerRec hbh (val_lt_uint64 i)
+        (by rw [← hx]; exact hk)
+    · obtain ⟨j', hj', hk⟩ := hI.newCtor hfC hm
+      obtain ⟨hbB, hi0, -⟩ := cprj_key_block hI.wf hI.decoded hI.held (hI.ctorRec j' hj') hbh hk
+      exact ⟨hbB, toUInt64_zero_of_lt (val_lt_uint64 i) hi0⟩
+  obtain ⟨hbB, hi0⟩ := hBi
+  have hxa : Core.ixAddr a = Core.iprjAddr B 0 := by rw [hx, hbB, hi0]
+  obtain ⟨ty₀, ty', -, -, -, -, hfT₀⟩ := hI.former
+  have hfA : (appCtx c new).env.find? (Core.keyOf c.t (Core.ixAddr a)) =
+      some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps) := by
+    rw [hxa]
+    exact hfT₀
+  have hκa := appCtx_key_of_find hfA
+  rw [hκa, hfA] at hfT
+  injection hfT with hfT
+  injection hfT with -, hcaps
+  subst hcaps
+  obtain ⟨hpv, hiv, hsz⟩ := hI.formerLoad ev good ha hld hxa
+  have hi0' : ind.indices.toNat = 0 := by rw [← hiv, ZMod.val_zero]
+  -- constructor `0` has no field
+  obtain ⟨ct, cty, cty', hct, -, -, -, -, -, hfC₀⟩ := hI.ctor 0 (by omega)
+  rw [hbB, hi0, appCtx_key_of_find hfC₀, hfC₀] at hfC
+  injection hfC with hfC
+  injection hfC with -, -, hnf
+  obtain ⟨hu1, hu2⟩ := hI.unit hi0' hsz (fun ct' h' => by
+    rw [hct] at h'
+    rw [← Option.some.inj h']
+    exact hnf)
+  refine ⟨hu1, hu2.trans hpv.symm, Or.inl ?_⟩
+  rw [hκa, hxa]
+  exact hI.free
+
+/-- **`NewLoads.unitLikeRaw`.** -/
+theorem BlockInstall.newUnitLikeRaw (hI : BlockInstall c new B cb ind caps) :
+    ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
+      (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
+      (cvT : ConstantVal .anon) (caps' : IndCaps .anon),
+      ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' cs → Core.Good (appCtx c new) cs →
+      Bytes.RepAddressRef Core.addrTy h a ap →
+      loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+        [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
+      Bytes.RepAddressRef Core.addrTy h' b blk →
+      (appCtx c new).env.find? ((appCtx c new).stored.κ (Core.ixAddr a)) =
+        some (.indInfo cvT caps') →
+      ConstantInfo.indInfo cvT caps' ∈ new → Core.FewInductives (appCtx c new) (Core.ixAddr b) →
+      Core.ZeroFieldCtorLoad (appCtx c new).stored b i → Core.NonrecursiveLoad (appCtx c new).stored a →
+      caps'.unitlike = true ∧ caps'.unitParams = ZMod.val p ∧
+        (Ix.Kernel.reservedBasisNames.contains ((appCtx c new).stored.κ (Core.ixAddr a)) = false ∨
+          (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy (appCtx c new).env
+            (.const ((appCtx c new).stored.κ (Core.ixAddr a)) us) = true)) := by
+  intro ap ptr h h' cs a nl ty u blk p i b cvT caps' ev good ha hld hb hfT hm hfew hz hn
+  have hx := get_ci_induct_addr ev good.2 ha hld hb
+  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
+  obtain ⟨hk, ty', hcv, hcaps⟩ := hI.newInd hfT hm
+  subst hcaps
+  have hxa : Core.ixAddr a = Core.iprjAddr B 0 := Core.keyOf_inj hI.wf hk
+  obtain ⟨hbB, hi0⟩ := iprj_key_block hI.wf hI.decoded hI.held hI.formerRec hbh (val_lt_uint64 i)
+    (by rw [← hx]; exact hk)
+  obtain ⟨hpv, hiv, hsz⟩ := hI.formerLoad ev good ha hld hxa
+  have hi0' : ind.indices.toNat = 0 := by rw [← hiv, ZMod.val_zero]
+  -- constructor `0` has no field: the load of the zero-field observation is the record's
+  obtain ⟨ct, cty, cty', hct, hcidx, hty, hlbb, hdef, -, -⟩ := hI.ctor 0 (by omega)
+  have hblock' : recordOf c.E (Core.ixAddr b) = some cb := by
+    rw [hbB]
+    exact hI.block
+  have hmem : (#[.indc ind] : Array Ixon.MutConst)[ZMod.val i]? = some (.indc ind) := by
+    rw [hi0]
+    rfl
+  have hty' : (exprReader c.t (fun x => c.E.blobs.get? x) cb id
+      (blockSelf c.t (Core.ixAddr b) #[.indc ind])).read ct.typ = .ok cty := by
+    rw [hbB]
+    exact hty
+  obtain ⟨-, -, -, -, -, hld₀, -, -, -, -, hf56, -⟩ := LoadedReads.ctor_load_canon hI.check
+    hz.good.1 hz.good.2 hz.blockRep hz.observed hblock' hI.muts hmem
+    (by rw [ZMod.val_zero]; exact hct) (by rw [ZMod.val_zero]; exact hcidx) hty' hlbb hdef
+  obtain ⟨nl', ty'', blk', idx', cidx', np', u', hz0⟩ := hz.zeroFields
+  rw [hld₀] at hz0
+  have hv := Except.ok.inj hz0
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
+  obtain ⟨-, -, -, -, -, -, hnf, -⟩ := hv
+  have hnf' : ct.fields.toNat = 0 := by
+    have e := field_count_eq hf56 hnf
+    rw [ZMod.val_zero] at e
+    exact e.symm
+  obtain ⟨hu1, hu2⟩ := hI.unit hi0' hsz (fun ct' h' => by
+    rw [hct] at h'
+    rw [← Option.some.inj h']
+    exact hnf')
+  obtain ⟨ty₀, ty'', -, -, -, -, hfT₀⟩ := hI.former
+  have hfA : (appCtx c new).env.find? (Core.keyOf c.t (Core.ixAddr a)) =
+      some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty''⟩ caps) := by
+    rw [hxa]
+    exact hfT₀
+  refine ⟨hu1, hu2.trans hpv.symm, Or.inl ?_⟩
+  rw [appCtx_key_of_find hfA, hxa]
+  exact hI.free
+
 end
 
 end IxVM.Refinement.Typing
