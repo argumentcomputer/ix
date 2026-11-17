@@ -781,6 +781,39 @@ def validate_anchor := aiur_fn⟦
         21 => {  assert_type_pinned(ty, spec) } ,
         22 => {  assert_type_pinned(ty, spec) } ,
         _ => {  assert_type_meets(rc, ty, spec) } ,
+      };
+      -- the record itself, with its closure, in this group's validation context: the anchor's
+      -- own role is not in force here, every role the record may use is
+      match anchor_walked(r) {
+        1 => {  KernelClaim::run_check_transitive(rc, role_bound_addr(tbl, r)) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+  -- The anchors whose records role validation checks with their closures, each in its own
+  -- group: `Bool`, `Bool.false`, `Bool.true`, `Bool.rec` (4-7), `And`, `And.intro`, `And.rec`
+  -- (20-22), and the literal support `List`, `List.nil`, `List.cons` (29-31), `String`,
+  -- `String.ofList`, `Char`, `Char.ofNat` (37-40).
+
+def anchor_walked := aiur_fn⟦
+  fn anchor_walked(r: Field) -> Field {
+      match r {
+        4 => {  1 } ,
+        5 => {  1 } ,
+        6 => {  1 } ,
+        7 => {  1 } ,
+        20 => {  1 } ,
+        21 => {  1 } ,
+        22 => {  1 } ,
+        29 => {  1 } ,
+        30 => {  1 } ,
+        31 => {  1 } ,
+        37 => {  1 } ,
+        38 => {  1 } ,
+        39 => {  1 } ,
+        40 => {  1 } ,
+        _ => {  0 } ,
       }
     }
 ⟧
