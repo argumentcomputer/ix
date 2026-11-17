@@ -777,7 +777,9 @@ def ConsistencySpecP (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
             V.HashedCollision (bytes :: b.bytes :: derivedProjImages V) calls ∨
               ConsistentReadP.{u} calls t seeds
 
-/-- **The deployed IxVM circuit accepts only claims whose claimed environment has a model**,
+/-- Superseded by the composed headline (`CircuitComposed`); not the claimed theorem.
+
+**The deployed IxVM circuit accepts only claims whose claimed environment has a model**,
 each claimed constant kept as its own record declares it, with no premise beyond the role
 table's admission as a table: `CircuitSound` of `ConsistencySpecP`. -/
 def CircuitConsistentP : Prop := CircuitSound ConsistencySpecP.{u}

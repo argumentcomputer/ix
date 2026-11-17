@@ -541,7 +541,9 @@ def DrawsRole (E E₀ R : Ixon.Env) : Prop :=
     E₀.blobs.get? a = some bytes ∨
     (E₀.blobs.contains a = false ∧ R.blobs.get? a = some bytes))
 
-/-- **The consistency conclusion**: an environment read from the records the run
+/-- Superseded by the composed headline (`CircuitComposed`); not the claimed theorem.
+
+**The consistency conclusion**: an environment read from the records the run
 loaded (supplemented at unwalked addresses from the admitted role table's view `V`),
 under the role table `b`, from the claim's seeds, installing every
 declaration as declared (`Installs`) and storing every claimed constant, whose
