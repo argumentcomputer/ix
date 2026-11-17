@@ -87,8 +87,8 @@ theorem signature_pair_spec_aux :
           | some sv =>
             refine ⟨.ptr (.enum KernelLevels.klevelEnum) m1.length, ?_, ?_⟩
             · simp [Level.guardSignature, hgu, hgv]
-            · have haRep : RepKLevel m0 su _ := by simpa [Level.guardSignatureLevel, hgu] using hsa
-              have hbRep : RepKLevel m1 sv _ := by simpa [Level.guardSignatureLevel, hgv] using hsb
+            · have haRep : RepKLevel m0 su sa := by simpa [Level.guardSignatureLevel, hgu] using hsa
+              have hbRep : RepKLevel m1 sv sb := by simpa [Level.guardSignatureLevel, hgv] using hsb
               simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using
                 (RepKLevel.max List.getElem?_concat_length
                   (haRep.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))

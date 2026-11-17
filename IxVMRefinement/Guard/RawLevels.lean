@@ -129,7 +129,8 @@ theorem levels_inst_raw_spec {p pp r : SourceValue F} {h h' : Heap F} {cs : List
       rcases List.mem_cons.mp hl' with rfl | hmem
       · exact hpl
       · exact hpls l' hmem
-    · exact .cons List.getElem?_concat_length
+    · rw [← Levels.klevelList_names]
+      exact .cons List.getElem?_concat_length
         (hrl.mono (evr.heap_extends.trans (Heap.Extends.snoc _ _)))
         (RepKLevelList.mono hrls (Heap.Extends.snoc _ _))
 termination_by cs.length
