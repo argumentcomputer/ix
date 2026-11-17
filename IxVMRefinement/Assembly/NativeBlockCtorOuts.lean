@@ -61,7 +61,7 @@ theorem nIdx_of_tele {nPd : Nat} {blk : List (ConstantInfo .anon)}
   rw [hbs, hlen₂] at hlen₁
   omega
 
-/-- **The constructor stage of a native block, from its walked check** (T7a with the telescope
+/-- **The constructor stage of a native block, from its walked check** (with the telescope
 and projection-name inputs): the former checked at the prefix as `cvS`, a telescope ending in the
 block's sort, and at every recursion flag the constructors' outputs at the constructor stage,
 with IxC's later-use condition on the annotated constructors. -/
