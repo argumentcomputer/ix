@@ -106,7 +106,7 @@ theorem RawConvExpr.toRawData {κ : _root_.Address → KKey}
     intro n reader _ _ read
     simp only [Ix.Kernel.Reader.convExpr] at read
     cases selfRead : ecx.self idx.toNat with
-    | none => simp [selfRead, Ix.Kernel.Reader.malformed, throw, Except.error] at read
+    | none => simp [selfRead, Ix.Kernel.Reader.malformed, throw] at read
     | some action =>
       simp only [selfRead] at read
       obtain ⟨key, keyRead, later⟩ := except_bind_eq_ok read
@@ -142,9 +142,8 @@ theorem RawConvExpr.toRawData {κ : _root_.Address → KKey}
       unfold Ix.Kernel.Reader.ECx.blobAt at blobRead
       have stored : ecx.src.refs[idx.toNat]? = some a := by
         rw [← Array.getElem?_toList, hrefs, refRead]
-      rw [stored, blobAgreement a _ member] at blobRead
-      injection blobRead with equal
-      exact equal.symm
+      simp only [stored, blobAgreement a _ member, pure, Except.pure, Except.ok.injEq] at blobRead
+      exact blobRead.symm
     subst sameBlob
     have stringRead : String.fromUTF8? ⟨bytes.toArray⟩ = some string := stringBytes
     rw [stringRead] at result
@@ -159,8 +158,7 @@ theorem RawConvExpr.toRawData {κ : _root_.Address → KKey}
       unfold Ix.Kernel.Reader.ECx.natAt Ix.Kernel.Reader.ECx.blobAt at numberRead
       have stored : ecx.src.refs[idx.toNat]? = some a := by
         rw [← Array.getElem?_toList, hrefs, refRead]
-      rw [stored, blobAgreement a _ member] at numberRead
-      simp only [bind, Except.bind, canonical, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at numberRead
+      simp only [stored, blobAgreement a _ member, bind, Except.bind, canonical, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at numberRead
       exact numberRead.symm.trans value.symm
     subst numberEq
     exact .litNat cell represented
