@@ -6,6 +6,7 @@ public import IxC.Kernel.Model.Inductives.FixData
 public import IxC.Kernel.Model.Inductives.StructData
 public import IxC.Kernel.Model.ThmVal
 public import IxC.Kernel.Semantics.Tower.TowerIntro
+public import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateJ
 import IxC.Kernel.Verify.Inductives.FixRec
 public section
 
@@ -343,20 +344,10 @@ theorem FixCtorDataI.small {env : Env md} {m : EnvModel V env} {env₀ : Env md}
       xFvs xrest Eiss tss :=
   h.withSrcs h.srcLen h.srcBnd h.srcIdx (fun hl => absurd hl Bool.false_ne_true)
 
-/-! ## The family's data -/
+/-! ## The family's data
 
-/-- **A native family's summary**: the completed record (its recursor fields are not
-read), the stored former, the telescope constant the stages read, and the stored
-constructors in order, each with its field count. -/
-structure NativeFam (md : Ix.Kernel.Mode) where
-  /-- the completed record; `cvR`, `elim`, `large`, `rhss` and `recPinned` are not read -/
-  p : NativeParts md
-  /-- the stored former -/
-  cvS : ConstantVal md
-  /-- the telescope constant -/
-  cvTa : ConstantVal md
-  /-- the stored constructors, in order -/
-  ctorsA : List (ConstantVal md × Nat)
+The family's summary `NativeFam` is a judgement-level datum
+(`Semantics/Inductives/DeclNativeRecLateJ.lean`). -/
 
 /-- **The data of a stored native family at a model**: what the recursor's stage
 (`stageFixRecJ`) reads of the family, with the constructors' data at the small
