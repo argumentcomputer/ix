@@ -116,7 +116,7 @@ theorem raw_inst1_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     subst i
     have rawLift := argument.lift
       (bounded_sub (fun _ member => by rw [events]; simp [member]) bounded) (by omega) lifted
-    simpa only [Expr.instantiate1Lift, ite_true, ZMod.val_zero] using rawLift.weaken (by omega)
+    simpa only [Expr.instantiate1Lift, ite_true, ZMod.val_zero] using rawLift.weaken (k' := n + depth.val + 1) (by omega)
   | .n0_other (ev15 := comparison) (op74 := subtracted) (hne111 := different)
       (he119 := result) (hm118 := heap) (op137 := lowered) .. =>
     obtain ⟨i', depth', hi, hd, _, _, verdict, unchanged⟩ := SubstAux.ltf comparison
