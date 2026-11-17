@@ -636,7 +636,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
           | .other (ev56 := ev56) (hne342 := hne342) (he349 := he349) .. =>
             -- the reference is not used
             obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            exact .inr ⟨by rw [he349]; exact Heap.Extends.refl _, [],
+            exact .inr ⟨by subst he349; exact Heap.Extends.refl _, [],
               fun hi_in => absurd (hiff.mpr hi_in) hne342, by simp [TopRecsClosed], by simp⟩
         rcases hseg with hcoll | ⟨ext1, recs₁, hmem₁, hcl₁, hdep₁⟩
         · exact .inl hcoll
