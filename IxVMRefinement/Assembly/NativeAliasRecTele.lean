@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeAliasTeleWalk
+import IxVMRefinement.Obs.KernelCheck6
 
 /-! # The head-normalized telescope of an actual late recursor check
 
