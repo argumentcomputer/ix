@@ -331,10 +331,10 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           refine ⟨⟨ci, ?_, hrep.rekey_mono keep (stored_name_ne h₁ hf)⟩, ?_⟩
           · rw [keep _ (h₁.findRes _ _ hf)]
             exact hext.find hf
-          · intro sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hctor'
+          · intro sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hctor' hbind
             obtain ⟨hc₁, ek⟩ := ctorOld hctor'
             obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
-              htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁
+              htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁ hbind
             have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _ hc₁)
             refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
             · rw [ei]
@@ -348,11 +348,11 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
               exact ⟨hext.findProj? hp, hth.mono (fun _ _ _ hfind => hext.find hfind)⟩
       projTablesAt := by
         intro bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG hs hld hblk
-          j cvC nP nF hctor'
+          j cvC nP nF hctor' hnF
         obtain ⟨hc₁, ek⟩ := ctorOld hctor'
         obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
           h₁.projTablesAt bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG
-            hs hld hblk j cvC nP nF hc₁
+            hs hld hblk j cvC nP nF hc₁ hnF
         have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _ hc₁)
         refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
         · rw [ei]

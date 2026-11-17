@@ -216,6 +216,40 @@ theorem counter_eq {t0 c0 : F}
     (op : evalBinOp .sub (.field t0 : SourceValue F) (.field c0) = .ok (.field 0)) : t0 = c0 :=
   sub_eq_zero.mp (NatAux.field_inj (NatAux.sub_ok op)).symm
 
+/-- A field type at index `f` is read off a binder. -/
+theorem forall_of_fieldTypeAt {S : KKey} {PE : KExpr} :
+    ∀ {f k : Nat} {T FT : KExpr}, Specs.Infer.fieldTypeAt S PE f k T = some FT →
+      ∃ dom body m, T = .forallE dom body m := by
+  intro f k T FT h
+  cases f <;> cases T <;> first
+    | exact ⟨_, _, _, rfl⟩
+    | simp [Specs.Infer.fieldTypeAt] at h
+
+/-- A telescope whose first `n` binders instantiated leave a binder is a binder. -/
+theorem forall_of_instPis {n : Nat} {T T' : KExpr} {as : List KExpr}
+    (h : Specs.Infer.instPis n T as = some T') (hT' : ∃ dom body m, T' = .forallE dom body m) :
+    ∃ dom body m, T = .forallE dom body m := by
+  cases n with
+  | zero =>
+    simp only [Specs.Infer.instPis, Option.some.injEq] at h
+    subst h
+    exact hT'
+  | succ n =>
+    cases T <;> first
+      | exact ⟨_, _, _, rfl⟩
+      | simp [Specs.Infer.instPis] at h
+
+/-- **A constructor type whose instantiated parameters leave a field binder has a binder.** -/
+theorem stripPis_one_of_peel {ks : List Ix.Kernel.LevelParam} {us : List KLevel}
+    {cty T_after FT PE : KExpr} {S : KKey} {n f : Nat} {as : List KExpr}
+    (hpis : Specs.Infer.instPis n (cty.instantiateLevelParams ks us) as = some T_after)
+    (hf : Specs.Infer.fieldTypeAt S PE f 0 T_after = some FT) :
+    (cty.stripPis 1).isSome = true := by
+  obtain ⟨dom, body, m, he⟩ := forall_of_instPis hpis (forall_of_fieldTypeAt hf)
+  cases cty <;> first
+    | rfl
+    | simp [Ix.Kernel.Expr.instantiateLevelParams] at he
+
 end ProjAux
 
 /-! ## `peel_params_subst` -/
@@ -955,6 +989,33 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have husC : us.length = cvC.levelParams.length := hus_nlS.trans hlpCS.symm
   have e372 := ObsFn.heap_extends ev372
   have E357 : Heap.Extends h m357 := E194.trans e372
+  -- 6. Level instantiation, parameter substitution, and field peeling. Done before the
+  -- projection table is read: the peeled field shows the constructor's type has a binder,
+  -- which the table clause takes.
+  have hls357 : RepKLevelList m357 ls x_lvls := RepKLevelList.mono hls194 e372
+  have hinst0 := ih.get (.subst .expr_inst_levels) (by lt_calls) ev492 x_ctor_ty x_lvls rfl
+    (good.sub fun x hx => by simp [hx]) Γ 0 (posOf cvC.levelParams cvC.type) us
+    (hcty 0 Γ) ⟨ls, hls357, hEq⟩
+  rw [WhnfAux.posOf_ilp_perm hcperm husC] at hinst0
+  have hinstd : c.tm d Γ m480 (cvC.type.instantiateLevelParams cvC.levelParams us) v479 :=
+    Tm.of_depth_zero hinst0 d
+  have e492 := ObsFn.heap_extends ev492
+  have E480 : Heap.Extends h m480 := E357.trans e492
+  have hArgs480 : c.tml d Γ m480 Args x_args := tml_mono (e372.trans e492) hArgs194
+  obtain ⟨T_after, hT_after, hpis, e522⟩ := hpeel (nPS : F) _ Args hp_eq hinstd hArgs480
+  rw [NatAux.val_natCast (n := nPS) (by omega)] at hpis
+  have E510 : Heap.Extends h m510 := E480.trans e522
+  obtain ⟨nf_step, FT, hnf_step, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls)
+    ev560 v509 (.field fi) (.field 0) x_struct_addr x_e1 rfl
+    (good.sub fun x hx => by simp [hx]) fi 0 rfl rfl (by rw [ZMod.val_zero]; exact Nat.zero_le _)
+    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (by resolve_key) hperm
+    (Tm.mono E510 hPE)
+  rw [ZMod.val_zero, Nat.zero_add] at hnf_step
+  subst nf_step
+  rw [ZMod.val_zero] at hfield
+  have e560 := ObsFn.heap_extends ev560
+  have hbindC : (cvC.type.stripPis 1).isSome = true := ProjAux.stripPis_one_of_peel hpis hfield
+  -- 6b. The projection table
   obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, hnP_ind, hent, hbodies, -,
     bsC, bodyC, hstripC, -⟩ :=
     (hc.loads.projTables x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
@@ -962,7 +1023,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
       x_head_addr p201 x_ind_nlvls x_ind_ty x_n_params w234 x_block_addr m159 m194 cs207 s
       ev209 g207.raw hs159 (by rw [← hni0, ← heq301, ← hidx_eq]; exact ld203) hbS
       0 cvC nP nF
-      hfindC
+      hfindC hbindC
   obtain ⟨hteleC, hguard_eq⟩ :=
     hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
       ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
@@ -974,30 +1035,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hnPS_eq : nPS = nP :=
     ProjAux.ind_params_eq c hc ev209 (good.allowedTop (by simp_all)) (by resolve_key) g207
       hs159 ld203' hbS hnPS hnP hnP_ind
-  rw [hnPS_eq] at hp_eq hArgs_nPS
-  -- 6. Level instantiation, parameter substitution, and field peeling
-  have hls357 : RepKLevelList m357 ls x_lvls := RepKLevelList.mono hls194 e372
-  have hinst0 := ih.get (.subst .expr_inst_levels) (by lt_calls) ev492 x_ctor_ty x_lvls rfl
-    (good.sub fun x hx => by simp [hx]) Γ 0 (posOf cvC.levelParams cvC.type) us
-    (hcty 0 Γ) ⟨ls, hls357, hEq⟩
-  rw [WhnfAux.posOf_ilp_perm hcperm husC] at hinst0
-  have hinstd : c.tm d Γ m480 (cvC.type.instantiateLevelParams cvC.levelParams us) v479 :=
-    Tm.of_depth_zero hinst0 d
-  have e492 := ObsFn.heap_extends ev492
-  have E480 : Heap.Extends h m480 := E357.trans e492
-  have hArgs480 : c.tml d Γ m480 Args x_args := tml_mono (e372.trans e492) hArgs194
-  obtain ⟨T_after, hT_after, hpis, e522⟩ := hpeel (nP : F) _ Args hp_eq hinstd hArgs480
-  rw [NatAux.val_natCast (n := nP) (by omega)] at hpis
-  have E510 : Heap.Extends h m510 := E480.trans e522
-  obtain ⟨nf_step, FT, hnf_step, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls)
-    ev560 v509 (.field fi) (.field 0) x_struct_addr x_e1 rfl
-    (good.sub fun x hx => by simp [hx]) fi 0 rfl rfl (by rw [ZMod.val_zero]; exact Nat.zero_le _)
-    d Γ T_after s PE hT_after (Bytes.repAddressRef_heapMono₂ addrTy E510 hs) (by resolve_key) hperm
-    (Tm.mono E510 hPE)
-  rw [ZMod.val_zero, Nat.zero_add] at hnf_step
-  subst nf_step
-  rw [ZMod.val_zero] at hfield
-  have e560 := ObsFn.heap_extends ev560
+  rw [hnPS_eq] at hp_eq hArgs_nPS hpis
   have E548 : Heap.Extends h m548 := E510.trans e560
   -- 7. Field index in range and projected type agreement
   have hltF : ZMod.val fi < nF := ProjBody.lt_of_ctorTeleOk_instPis_fieldTypeAt

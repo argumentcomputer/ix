@@ -289,7 +289,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
         cs159 bS s iS ev565 (good.sub fun x hx => by simp [hx]).raw
         (Bytes.repAddressRef_heapMono₂ addrTy ext490' hbS) ev161
         (good.sub fun x hx => by simp [hx]).raw (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs) ld155
-        hbS (ZMod.val jC) cvC nP nF hfindC'
+        hbS (ZMod.val jC) cvC nP nF hfindC' (Nat.lt_of_le_of_lt (Nat.zero_le _) hltF)
     obtain ⟨hfp, -, -, -, ⟨cvT, capsT, hT, hlT, bsT, hsT⟩, -⟩ := hent (ZMod.val fi) hltF
     have hT' := hT
     rw [show (tbl.entry (ZMod.val fi)).structName = c.κ (ixAddr s) from hsn.trans hkS.symm,

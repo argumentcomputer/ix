@@ -258,6 +258,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     Bytes.RepAddressRef addrTy h2 b blk →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      (cvC.type.stripPis 1).isSome = true →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
         c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) ∧
@@ -284,6 +285,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     Bytes.RepAddressRef addrTy h2 b blk →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      0 < nF →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
         c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) ∧
@@ -469,8 +471,11 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
       (hg.sub fun cl hcl => by simp [hcalls, hcl])
       (Bytes.repAddressRef_heapMono₂ addrTy ev_assert.heap_extends hb)
     exact ⟨by simpa only [ZMod.val_zero] using hstored,
-      fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => htables⟩
-  projTablesAt := h.projTablesAt
+      fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ j cvC nP nF hc _ => htables j cvC nP nF hc⟩
+  projTablesAt := fun bp sap ptr nl ty np u blk h₀ h₁ h1 h2 cs cs1 b s i evM gM hb evG gG hs hld
+      hblk j cvC nP nF hc _ =>
+    h.projTablesAt bp sap ptr nl ty np u blk h₀ h₁ h1 h2 cs cs1 b s i evM gM hb evG gG hs hld hblk
+      j cvC nP nF hc
   unitLike := h.unitLike
   unitLikeRaw := by
     intro ap ptr h₀ h₁ cs a nl ty u blk p i b cvT caps ev _ _ hg ha ld hb hfind hfew hz _
