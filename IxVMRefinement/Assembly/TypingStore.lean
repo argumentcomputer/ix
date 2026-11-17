@@ -187,9 +187,9 @@ private theorem insert_isSome {β : Type} (m : Std.HashMap _root_.Address β)
     ((m.insert k w).get? a).isSome = true := by
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert]
   by_cases hk : (k == a) = true
-  · rw [if_pos hk]
+  · rw [ite_eq_left hk]
     rfl
-  · rw [if_neg hk]
+  · rw [ite_eq_right hk]
     rcases h with h | h
     · exact absurd (beq_iff_eq.mpr h) hk
     · rw [← Std.HashMap.get?_eq_getElem?]
@@ -206,12 +206,12 @@ theorem overlay_get?_inv {β : Type} (base : Std.HashMap _root_.Address β) :
       exact h
     rw [Std.HashMap.getElem?_insert] at h'
     by_cases hk : (k == a) = true
-    · rw [if_pos hk] at h'
+    · rw [ite_eq_left hk] at h'
       have ha : k = a := beq_iff_eq.mp hk
       have hv : w = v := Option.some.inj h'
       rw [← ha, ← hv]
       exact Or.inl (List.mem_cons.mpr (Or.inl rfl))
-    · rw [if_neg hk, ← Std.HashMap.get?_eq_getElem?] at h'
+    · rw [ite_eq_right hk, ← Std.HashMap.get?_eq_getElem?] at h'
       rcases overlay_get?_inv base ps h' with h1 | h1
       · exact Or.inl (List.mem_cons_of_mem _ h1)
       · exact Or.inr h1

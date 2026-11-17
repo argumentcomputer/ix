@@ -124,7 +124,7 @@ theorem quotPin_name (k : Ix.QuotKind) :
         (·.name) =
       some ((Ix.Kernel.BasisKind.quotK.decls (md := .anon)).getD (quotSlot k).slot
         (.axiomInfo default)).toConstantVal.name := by
-  cases k <;> first | rfl | decide
+  cases k <;> rfl
 
 theorem quotReads_name {mr : Ix.Kernel.Reader.MemberReader .anon} {name : Ix.Kernel.Key .anon}
     {q : Ixon.Quotient} {ci₀ : ConstantInfo .anon} (h : QuotReads mr name q ci₀) :
