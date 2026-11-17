@@ -68,7 +68,7 @@ theorem nativeAtFacts_of_alias_stage {env : Env .anon} {blk : List KConstantInfo
          Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
-    ∃ env₂ fam, NativeAtFacts env env₂ blk nP nIdx p₀ fam := by
+    ∃ env₂ p, NativeAtFacts env env₂ blk nP nIdx p₀ ⟨p, cvS, cvTa, ctorsA⟩ := by
   obtain ⟨caps₀, hblk, hnP_eq, hlarge, hbasis_T, hctor_basis, -⟩ :=
     Typing.nativePartsAt?_inv hp₀
   obtain ⟨⟨teleType, teleCheck⟩, ⟨bsT, hstT⟩, teleEq⟩ := htele
@@ -304,7 +304,7 @@ theorem nativeAtFacts_of_alias_stage {env : Env .anon} {blk : List KConstantInfo
     exact htbl
   obtain ⟨env₂, htable_ok, -⟩ :=
     checkNativeTable_ok (sortss := sortss) hT_in_base hc_wf_base hfn_fresh_base htbl_fresh_base
-  refine ⟨env₂, ⟨p, cvS, cvTa, ctorsA⟩, hp₀, hnd, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss,
+  refine ⟨env₂, p, hp₀, hnd, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss,
     kinds, tfvs_all, .sort s, isorts, rfl, ?_, rfl, hsum_ctors, ?_, rfl, ?_, ?_, ?_,
     ?_, htable_ok⟩
   · exact Typing.sumIndRunJ_of_alias hcheckT ⟨⟨teleType, teleCheck⟩, ⟨bsT, hstT⟩, teleEq⟩ hindexed

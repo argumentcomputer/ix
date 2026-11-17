@@ -65,7 +65,8 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
          Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
-    ∃ env₂ fam, NativeAtFacts env env₂ blk ind.params.toNat ind.indices.toNat p₀ fam := by
+    ∃ env₂ p, NativeAtFacts env env₂ blk ind.params.toNat ind.indices.toNat p₀
+      ⟨p, cvS, cvTa, ctorsA⟩ := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape ht hbound hS hrec hchk hblk
@@ -165,10 +166,10 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, checked, tele, named, _, _, count,
     parameters, outputs, _, zero, unused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
       hnat hblk recognised indices hn hinv hstored hP hkeys hfresh hfree hcov haux
-  obtain ⟨env₂, fam, installed⟩ := nativeAtFacts_of_alias_outs ht hS hst hrec hchk hblk
+  obtain ⟨env₂, parts, installed⟩ := nativeAtFacts_of_alias_outs ht hS hst hrec hchk hblk
     recognised constructorNames (by rwa [indices]) shape prefixExtension distinct hinv hfresh haux
     checked tele parameters zero named count outputs unused
-  exact ⟨p₀, env₂, fam, installed⟩
+  exact ⟨p₀, env₂, ⟨parts, cvS, cvTa, ctorsA⟩, installed⟩
 
 
 end IxVM.Refinement.Typing
