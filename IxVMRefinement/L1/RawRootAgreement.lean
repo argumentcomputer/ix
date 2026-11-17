@@ -44,7 +44,7 @@ private theorem traceBlobLookup_of_mem :
       simp [traceBlobLookup, equal]
     · have tail : (query, bytes) ∈ rest := by
         rcases List.mem_cons.mp member with equal | tail
-        · exact (same (congrArg Prod.fst equal)).elim
+        · exact (same (congrArg Prod.fst equal).symm).elim
         · exact tail
       have consistentTail : ∀ address first second,
           (address, first) ∈ rest → (address, second) ∈ rest → first = second :=
