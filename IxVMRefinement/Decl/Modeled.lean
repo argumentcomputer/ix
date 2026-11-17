@@ -821,7 +821,7 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
       e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans e8)))))),
       ev1505, fun x hx => by simp [hx]⟩
   | Induct_other_other _ _ _ _ _ _ _ _ x_ind_is_unsafe _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ hv1240 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne1927 _ _ _ =>
     injection hv1240 with _ _ hargs
     injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
