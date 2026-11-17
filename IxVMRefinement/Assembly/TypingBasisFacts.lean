@@ -8,12 +8,12 @@ Every field of `Decl.PrefixInv` at the environment of the pins other than `loads
 assemble them: the invariant, and `Facts` on the six basis groups, follow from the load
 contract at the prefix context alone.
 
-The load contract there is not proved. Its fields proved at the environment of the pins are in
-`TypingBasisLoads`, `TypingBasisCanon` (`getCI` at all nineteen pins) and `TypingBasisUnit`.
-The fields that remain (`getCprj`, `getIprj`, `eta`, `ctorIndRes`, `projTables`,
-`projTablesAt`) relate a block given only by a call argument, or by no run at all, to a stored
-constant through the address of one of its projection records; they need that two distinct
-projection records do not share an address with a record the store holds.
+The fields of the load contract there are proved in `TypingBasisLoads`, `TypingBasisCanon`
+(`getCI` at all nineteen pins) and `TypingBasisUnit`, except six (`getCprj`, `getIprj`, `eta`,
+`ctorIndRes`, `projTables`, `projTablesAt`), which relate a block a run hashed to a stored
+constant through the address of one of its projection records. `TypingBasisProj` proves those
+six from one hypothesis about the store (`HashedBlockProjectionsHeld`) and assembles the
+contract (`basis_loads`) and `Facts` (`basis_facts`).
 -/
 
 universe u
