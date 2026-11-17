@@ -796,17 +796,21 @@ theorem nativePartsNoRec?_isSome {nP : Nat} {cvT : ConstantVal .anon}
     unfold Ix.Kernel.nativeCounts?
     rw [hpb]
     simp [hlen, hle]
-  unfold Ix.Kernel.Semantics.nativePartsNoRec?
-  rw [if_pos hall]
+  simp only [Ix.Kernel.Semantics.nativePartsNoRec?]
+  split
+  case isFalse hneg =>
+    exfalso
+    apply hneg
+    rw [List.all_eq_true]
+    intro c hc
+    obtain ⟨cv, nF, rfl, -, -⟩ := hcs c hc
+    rfl
   unfold Ix.Kernel.nativeParts?
   suffices h : ∃ q, Ix.Kernel.nativeShape? nP
       (.indInfo cvT caps :: (cs ++ [Ix.Kernel.Semantics.nativeRecStub cvT])) = some q by
     obtain ⟨q, hq⟩ := h
     exact ⟨_, by rw [hq]; rfl⟩
-  unfold Ix.Kernel.nativeShape?
-  simp only [Ix.Kernel.Semantics.nativeRecStub] at ⊢
-  rw [hsp]
-  simp only [hcnt]
+  simp only [Ix.Kernel.nativeShape?, Ix.Kernel.Semantics.nativeRecStub, hsp, hcnt]
   split
   · split <;> exact ⟨_, rfl⟩
   · rename_i hneg
@@ -852,7 +856,8 @@ theorem nativeParts_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
     intro j c hc
     rw [← hlen]
     exact (List.getElem?_eq_some_iff.mp hc).1
-  obtain ⟨p₀, hp₀⟩ := nativePartsNoRec?_isSome (caps := caps) (cs := cs) hts
+  obtain ⟨p₀, hp₀⟩ := nativePartsNoRec?_isSome (caps := caps) (cs := cs)
+    (cvT := ⟨keyOf t (memberAddr B 0 (.indc ind)), List.range ind.lvls.toNat, ty₀⟩) hts
     (Nat.le_add_right _ _) hfreeF.1 (by
       intro c hc
       obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hc
