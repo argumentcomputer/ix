@@ -694,4 +694,35 @@ theorem sort_of_endsHead {env : Env .anon} {T : Key .anon} {us : List Level}
       (by rw [piArity_instantiate1 _ b 0 hsh']; exact hn')
       (EndsHead.instantiate1 _ b 0 he') hb hv1
 
+/-- A telescope into `Sort l` is its own `∀`-telescope over `Sort l`. -/
+theorem piTele_sort_self :
+    ∀ (e : Expr .anon) (l : Level), e.resultSort = some l → piTele (.sort l) e = e
+  | .forallE ty b m, l, h => by
+    rw [piTele_forallE, piTele_sort_self b l h]
+  | .sort u, l, h => by
+    obtain rfl : u = l := Option.some.inj h
+    rfl
+  | .bvar _, _, h | .fvar _ _, _, h | .const _ _, _, h | .app _ _, _, h | .lam _ _ _, _, h
+  | .letE _ _ _ _, _, h | .lit _, _, h | .proj _ _ _, _, h => nomatch h
+
+/-- **The sort of a typed telescope into a sort is never zero.** -/
+theorem sort_of_resultSort {env : Env .anon} {l : Level} :
+    ∀ (n : Nat) (e : Expr .anon) (d : Nat) (s : Expr .anon) (v : Level), e.piArity = n →
+      e.resultSort = some l → Infer env .full d e s → Red env d s (.sort v) →
+      Level.zeronessOf v = PropWhen.never
+  | 0, e, d, s, v, hn, hr, h, hs => by
+    obtain rfl := eq_sort_of_resultSort hn hr
+    obtain rfl := Infer.sort_inv h
+    obtain rfl := Red.sort_eq hs
+    rfl
+  | n + 1, e, d, s, v, hn, hr, h, hs => by
+    obtain ⟨ty, b, m, rfl, hn'⟩ := exists_forallE_of_piArity_succ hn
+    have hr' : b.resultSort = some l := hr
+    have hsh' : Shape b := shape_of_resultSort b l hr'
+    obtain ⟨s1, u, bs, v1, -, -, hb, hv1, -, rfl⟩ := Infer.forallE_inv h
+    obtain rfl : v = .imax u v1 := Red.sort_eq hs
+    exact sort_of_resultSort n (b.instantiate1 (.fvar d ty)) (d + 1) bs v1
+      (by rw [piArity_instantiate1 _ b 0 hsh']; exact hn')
+      (resultSort_instantiate1 _ b 0 l hr') hb hv1
+
 end IxVM.Refinement.Decl.Point
