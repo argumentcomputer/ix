@@ -38,7 +38,7 @@ role's identity, and the order it validates the roles in:
   kind if it is a quotient primitive (`quotKind`), and the native rule IxVM
   fires on its constant (`nativeOp`);
 - the validation schedule (`Schedule.current`): the groups in validation
-  order, each as its roles, and the two boundaries the circuit validates them
+  order, each as its roles, and the three boundaries the circuit validates them
   under (`Ix/SpecDigest/Schedule.lean`).
 
 `specVersion` versions the specifications, which role tables are made for
@@ -63,7 +63,8 @@ closedness it relies on. Level parameters are positions; a binder's data is its
     index     := N0(the role's index in `Role.all`)
     name      := N0(#parts) str*                             `Role.leanName`, outermost first
     str       := N0(#bytes) byte*                            UTF-8
-    schedule  := N0(#groups) (N0(#roles) index*)* N0(firstWellFounded) N0(firstEquation)
+    schedule  := N0(#groups) (N0(#roles) index*)* N0(firstWellFounded) N0(firstLiteral)
+                 N0(firstEquation)
     spec      := 00 N0(#decls) info*                         block
                | 01 N0(levels) expr                          anchor
                | 02 expr N0(#eqs) (N0(#hyps) expr* expr expr)*   ops
@@ -91,8 +92,10 @@ open Ix.Kernel
 /-- **The version of this encoding.** Version 1, which had no such field,
 encoded the specifications alone. Version 2 adds this field, each role's
 name, inertness, quotient kind and native rule, and the validation schedule.
-Version 3 drops the binder and let contracts: kernel terms carry no modes. -/
-def encodingVersion : Nat := 3
+Version 3 drops the binder and let contracts: kernel terms carry no modes.
+Version 4 moves the literal support after the well-founded operations and adds
+the schedule's third boundary, the first literal-support group. -/
+def encodingVersion : Nat := 4
 
 /-! ## What the circuit reads off a role's identity -/
 
@@ -359,6 +362,7 @@ def row (i : Nat) (w : Row) : EncM Unit := do
 def schedule (s : Schedule) : EncM Unit := do
   list s.groups fun g => list g index
   nat s.firstWellFounded
+  nat s.firstLiteral
   nat s.firstEquation
 
 /-- **The canonical bytes of `c`.** -/

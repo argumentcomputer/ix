@@ -417,10 +417,15 @@ def group_validation_limit := aiur_fn⟦
       match UInt32::less_than_fields(g, first_wf) {
         1 => {  g } ,
         _ => {
-          let first_equation = KernelRoleSpec::first_equation_group();
-          match UInt32::less_than_fields(g, first_equation) {
+          let first_literal = KernelRoleSpec::first_literal_group();
+          match UInt32::less_than_fields(g, first_literal) {
             1 => {  first_wf } ,
-            _ => {  first_equation } ,
+            _ => {
+              let first_equation = KernelRoleSpec::first_equation_group();
+              match UInt32::less_than_fields(g, first_equation) {
+                1 => {  first_literal } ,
+                _ => {  first_equation } ,
+              } } ,
           } } ,
       }
     }
