@@ -379,7 +379,7 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     have hpeer := Assembly.native_peer_reads (raw := L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk)
       (block := b) (i := 0) srcB' srcF
       (by rw [hsrcF, ZMod.val_zero, hb_eq]; rfl) (by rw [hsrcB']; exact hrec.muts) hmem0
-      (Assembly.native_inductives_singleton (by simp [Core.isIndc]) hmem0) htwf
+      (Assembly.native_inductives_singleton (Nat.le_of_eq rfl) hmem0) htwf
     have hT : (L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk).κ
         (Core.iprjAddr (Core.ixAddr b) (ZMod.val (0 : F))) = p₀.cvT.name := by
       rw [hcvT, ZMod.val_zero, hb_eq]
@@ -437,8 +437,16 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
         rw [hc]
         rfl
       obtain ⟨ct, hct, -, -, -, -, hc2, -⟩ := hctor 0 c hc0
-      have hu := Decl.nativeCapsAt_unitlike (p₁ := p₀.toInductiveShape.withSort p₀.resSort)
-        (isRec := isRec) (c := c) hc (hnIdx.trans h0) (by rw [hc2]; exact hf ct hct)
+      have hcP : (p₀.toInductiveShape.withSort p₀.resSort).ctors = [c] := hc
+      have hnP0 : (p₀.toInductiveShape.withSort p₀.resSort).nIdx = 0 := hnIdx.trans h0
+      have hnF0 : c.2 = 0 := by
+        rw [hc2]
+        exact hf ct hct
+      have hu : (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec).unitlike =
+            true ∧
+          (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec).unitParams =
+            (p₀.toInductiveShape.withSort p₀.resSort).nP := by
+        simp [Ix.Kernel.nativeCapsAt, hcP, hnP0, hnF0]
       exact ⟨hu.1, hu.2.trans hnP⟩
     have hcore := ctorStageCoreFacts_of_block (p := p₀.toInductiveShape.withSort p₀.resSort)
       (isRec := isRec) ht hinv hst.decoded hP hkeys hblockE hrec.muts hprojE
@@ -574,7 +582,8 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
       have hord : Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
           (cbs'.getD (p₀.nP + i) default).1 = .ordinary := by
         unfold Ix.Kernel.recFieldKind
-        simp [hm]
+        rw [hm]
+        simp
       rcases hkind with h | h <;> rw [hord] at h <;> cases h
   have hjs : j < ind.ctors.size := by
     rw [← hlenP]
