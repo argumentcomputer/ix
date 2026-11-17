@@ -354,6 +354,20 @@ theorem store_hashed : EnvSelfHashed basisStore := by
     rw [hn] at h
     cases h
 
+/-- The zero address is not an address of the store (decided). -/
+theorem zero_absent :
+    (basisEntries.map Prod.fst).contains Ix.HostAdmission.Merkle.padding = false := by
+  decide +kernel
+
+theorem store_zeroFree :
+    basisStore.consts.get? Ix.HostAdmission.Merkle.padding = none ∧
+      basisStore.blobs.get? Ix.HostAdmission.Merkle.padding = none := by
+  constructor
+  · show (Std.HashMap.ofList basisEntries).get? Ix.HostAdmission.Merkle.padding = none
+    rw [Std.HashMap.get?_eq_getElem?]
+    exact Std.HashMap.getElem?_ofList_of_contains_eq_false zero_absent
+  · exact emptyMap_get? Ix.HostAdmission.Merkle.padding
+
 theorem store_committed : AgreesCommitted basisStore := by
   unfold AgreesCommitted
   intro p hp lc h
@@ -458,6 +472,7 @@ theorem tableShape_store :
   hashed := store_hashed
   usedClosed := store_usedClosed
   committed := store_committed
+  zeroFree := store_zeroFree
   kept := fun _ _ _ hg hr _ _ => by
     obtain ⟨ci, hfind, hpin⟩ := basisEnv_find (groupRole_basis hg hr)
     exact ⟨ci, hfind, Or.inl hpin⟩
