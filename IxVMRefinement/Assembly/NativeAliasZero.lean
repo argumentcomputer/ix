@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.NativeFront
+import IxVMRefinement.Assembly.NativeBlockCtorRuns
 
 /-! # The observed alias-former zero check at the bounded-run limits
 
@@ -148,7 +149,7 @@ theorem ctor_zero_all_bounded_head {t : Ix.Kernel.RoleTable}
     (hwf : t.wf = true)
     (hlps_ctors : ∀ c ∈ ctors, c.1.levelParams = List.range c.1.levelParams.length)
     (hT_eq : T = keyOf t (ixAddr a_t))
-    (hcload : CtorLoadAt t b₀ nP cs_root ctors ctorsA ctorRawTypes)
+    (hcload : StagedCtorLoads (keyOf t) t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes)
     (hctor_sp : ∀ k < ctors.length, ∀ c cvCa₀,
       ctors[k]? = some c →
       ctorsA[k]? = some (cvCa₀, c.2) →
@@ -235,7 +236,7 @@ theorem former_decl_ok_bounded_head {c : Ctx}
     (hnCtors_lt : ctors.length < 549755813888)
     (hT_iprj : T = c.κ (iprjAddr (ixAddr b₀) 0))
     (hlps_ctors : ∀ cb ∈ ctors, cb.1.levelParams = List.range cb.1.levelParams.length)
-    (hcload : CtorLoadAt c.t b₀ nP cs_root ctors ctorsA ctorRawTypes)
+    (hcload : StagedCtorLoads (keyOf c.t) c.t b₀ nP 0 cs_root ctors ctorsA ctorRawTypes)
     (hctor_sp : ∀ k < ctors.length, ∀ c cvCa₀,
       ctors[k]? = some c →
       ctorsA[k]? = some (cvCa₀, c.2) →

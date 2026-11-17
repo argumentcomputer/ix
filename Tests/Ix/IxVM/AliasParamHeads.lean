@@ -43,7 +43,8 @@ partial def headClass (env : Ixon.Env) (cap fuel : Nat) (lg : WLog) (e : RE) :
   | .const a us =>
     let some (value, nl) ← defnInfo env a cap | throw "head-class: not a definition"
     unless us.size == nl do throw "head-class: universe count mismatch"
-    let lg := { lg with deltas := lg.deltas.push a,
+    let lg := { lg with
+      deltas := lg.deltas.push a
       projDefs := if projShape 0 value then lg.projDefs.push a else lg.projDefs }
     headClass env cap (fuel - 1) lg (value.instLevels us)
   | .app f a =>

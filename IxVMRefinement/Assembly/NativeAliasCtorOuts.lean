@@ -140,7 +140,7 @@ def AliasGuardAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env
   ∃ (b : Bytes.Address) (root guardCalls : List (Call F)) (h h' : Heap F)
     (tyPtr blkPtr levelPtr result : SourceValue F) (level : Ix.Kernel.Level),
     Core.ixAddr b = B ∧ p₀.cvT.name = Core.keyOf t (Core.iprjAddr B 0) ∧
-    Decl.CtorLoadAt t b p₀.nP root p₀.ctors ctorsA rawTypes ∧
+    Decl.StagedCtorLoads (Core.keyOf t) t b p₀.nP 0 root p₀.ctors ctorsA rawTypes ∧
     (∀ c ∈ p₀.ctors, c.1.levelParams = List.range c.1.levelParams.length) ∧
     (∀ cl ∈ root, cl ∈ calls) ∧ Core.Good ⟨E, env, t, some n⟩ root ∧
     (∀ cl ∈ guardCalls, cl ∈ root) ∧
