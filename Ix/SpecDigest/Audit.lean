@@ -25,15 +25,17 @@ encoding was 17727 bytes, with digest
 adds 1700 bytes, with digest
 e6f717602b5c3d293803bcc6165dddcbf2c6163b49bc4e5704505cf286856fa9 (19730 bytes).
 Version 3 drops the binder and let contracts from the encoding (kernel terms
-carry no modes): 1384 bytes fewer. -/
+carry no modes): 1384 bytes fewer. Version 4 moves the literal support after the
+well-founded operations and commits to the schedule's third boundary, the first
+literal-support group: one byte more. -/
 
-/-- info: "18337 bytes" -/
+/-- info: "18338 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "088184d44ce34e7c7aed3488d63e4108df6f7190ce6c0499aaeb2e491458ddaa" -/
+/-- info: "7c894b82b6b983c8119be4fa70f256df2c76ca8bcbd00fd32756c524618ddea2" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a
@@ -72,10 +74,10 @@ def mutants : Except String (List (String × Bool × Bool)) := do
 
 end Ix.SpecDigest.Audit
 
-/-- info: "77 groups; well-founded from 38, equations from 46" -/
+/-- info: "77 groups; well-founded from 33, literal support from 41, equations from 46" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.Schedule.current with
-  | .ok s => s!"{s.groups.length} groups; well-founded from {s.firstWellFounded}, equations from {s.firstEquation}"
+  | .ok s => s!"{s.groups.length} groups; well-founded from {s.firstWellFounded}, literal support from {s.firstLiteral}, equations from {s.firstEquation}"
   | .error e => s!"error: {e}"
 
 /-- info: [("first two groups swapped", true, true), ("well-founded boundary moved", false, true),

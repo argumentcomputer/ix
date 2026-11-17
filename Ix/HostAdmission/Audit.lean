@@ -63,8 +63,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and every ruling are unchanged.
+-- The schedule's third boundary (the first literal-support group, `tailBoundaries`) adds 12
+-- compiled functions; measured with the same roots and rulings, the closure was already 7826
+-- with csimp 29 at the commit before it.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7778 compiled functions; inherited externs 126, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7838 compiled functions; inherited externs 126, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]
