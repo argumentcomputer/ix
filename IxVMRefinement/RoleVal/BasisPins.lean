@@ -425,15 +425,16 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
   | nil => simp [pinFlagArm] at ht
   | cons arm rest ih =>
     rcases arm with ⟨pat, expr⟩
-    cases pat <;> try simp [pinFlagArm] at ht
+    cases pat <;> try (solve | simp [pinFlagArm] at ht)
     case literal c =>
-      cases expr <;> try simp [pinFlagArm] at ht
+      cases expr <;> try (solve | simp [pinFlagArm] at ht)
       case tuple es =>
         cases es with
         | nil => simp [pinFlagArm] at ht
         | cons e es =>
-          cases e <;> try simp [pinFlagArm] at ht
+          cases e <;> try (solve | simp [pinFlagArm] at ht)
           case literal tag =>
+            simp only [pinFlagArm] at ht
             by_cases he : (ZMod.val x == ZMod.val c) = true
             · rw [ite_eq_left he] at ht
               by_cases htag : (tag == 1) = true
@@ -455,13 +456,14 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
                   (MatchesConst.some_inv (MatchesConst.literal c) hm).1)).elim
               · exact ih ht hs'
     case wildcard =>
-      cases expr <;> try simp [pinFlagArm] at ht
+      cases expr <;> try (solve | simp [pinFlagArm] at ht)
       case tuple es =>
         cases es with
         | nil => simp [pinFlagArm] at ht
         | cons e es =>
-          cases e <;> try simp [pinFlagArm] at ht
+          cases e <;> try (solve | simp [pinFlagArm] at ht)
           case literal tag =>
+            simp only [pinFlagArm] at ht
             by_cases htag : (tag == 1) = true
             · rw [ite_eq_left htag] at ht
               injection ht with htail
