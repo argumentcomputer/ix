@@ -252,6 +252,7 @@ theorem certFacts_of_certsJ {env : Env .anon} {c : KKey} {val : KExpr} :
     unfold Ix.Kernel.divModCertGuard at hg
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at hg
     obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, -⟩, -⟩ := hg
+    rw [List.map_cons]
     exact .cons ⟨h1, h2, h3, h4, ⟨_, _, hann, hinf, hde⟩⟩ ih
 
 /-- **The kernel's record of a well-founded operation gives the interface.** -/
