@@ -1375,8 +1375,8 @@ theorem not_quot_of_nonRole_checked
     obtain ⟨_, _, _, tyPtr, rfl, _⟩ := hraw
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm | Opaque
-    | Induct_n0 | Induct_other_n0 | Induct_other_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
+    | Induct_n0 | Induct_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
     | Rec_n0 | Rec_other =>
       simp_all [Core.kciEnum]
     | Quot _ m2 _ _ _ x_kind _ m1094 _ _ m1131 _ m1162 _ m1175 _ _
@@ -1833,8 +1833,8 @@ private theorem checkedAxiom_of_checkedAtFull
   obtain ⟨blobs, hb_ld, hnlvls, tyPtr, rfl, raw_ty⟩ := hraw
   cases «KernelCheck::check_const».obs ev_chk with
   | Defn | Thm | Opaque | Quot
-  | Induct_n0 | Induct_other_n0 | Induct_other_other
-  | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
+  | Induct_n0 | Induct_other
+  | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
   | Rec_n0 | Rec_other =>
     simp_all [Core.kciEnum]
   | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 _ _ _ _ _ _ _ _ =>
@@ -2071,8 +2071,8 @@ private theorem checkedDefnCore
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other
     | Thm | Opaque | Quot
-    | Induct_n0 | Induct_other_n0 | Induct_other_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
+    | Induct_n0 | Induct_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Defn v1 m2 cs12 x_nlvls x_ty x_val _ _ _ m299 cs309 _ m336 cs346 v372 m373 cs383 m404
@@ -2208,8 +2208,8 @@ private theorem checkedDefnCore
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
-    | Induct_n0 | Induct_other_n0 | Induct_other_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
+    | Induct_n0 | Induct_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
@@ -2352,8 +2352,8 @@ private theorem checkedDefnCore
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
-    | Induct_n0 | Induct_other_n0 | Induct_other_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
+    | Induct_n0 | Induct_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954

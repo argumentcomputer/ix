@@ -131,17 +131,14 @@ theorem native_induct_dispatch {rc typePtr blockArg index safety addr result : S
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Ctor_n0_n0 (hne1879 := notInduct) ..
-  | .Ctor_n0_other (hne1879 := notInduct) ..
-  | .Ctor_other_n0 (hne1879 := notInduct) ..
-  | .Ctor_other_other (hne1879 := notInduct) ..
-  | .Rec_n0 (hne1879 := notInduct) ..
-  | .Rec_other (hne1879 := notInduct) .. =>
+  | .Ctor_n0_n0 (hne1883 := notInduct) ..
+  | .Ctor_n0_other (hne1883 := notInduct) ..
+  | .Ctor_other (hne1883 := notInduct) ..
+  | .Rec_n0 (hne1883 := notInduct) ..
+  | .Rec_other (hne1883 := notInduct) .. =>
     exact (notInduct [_, _, _, _, _, _, _, _] rfl rfl).elim
-  | .Induct_other_n0 (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
-      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1869 := allCalls) ..
-  | .Induct_other_other (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
-      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1878 := allCalls) .. =>
+  | .Induct_other (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
+      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1882 := allCalls) .. =>
     injection fields with _ _ fields
     injection fields with _ fields
     injection fields with _ fields
@@ -187,11 +184,15 @@ structure NativeShapeCalls (rc typePtr blockArg index safety : SourceValue F)
     [rc, typePtr, .field ((params + indices : Nat) : F), .ptr (.enum kexprListEnum) initial.length]
     sortBefore sortLevel sortAfter sortCalls
   guardResult : SourceValue F
-  ctorBefore : Heap F
+  guardAfter : Heap F
   guardCalls : List (Call F)
   guardRun : ObsFn W "KernelCheck::former_decl_ok"
     [typePtr, .field (params : F), .field (indices : F), .field (count : F), blockArg, index, sortLevel]
-    sortAfter guardResult ctorBefore guardCalls
+    sortAfter guardResult guardAfter guardCalls
+  /-- The constructor loop starts after the telescope of a former declared at a definition has
+  been typed (`KernelCheck::former_tele_typed`); only the heap growth of that call is kept. -/
+  ctorBefore : Heap F
+  guardToCtors : Heap.Extends guardAfter ctorBefore
   result : SourceValue F
   after : Heap F
   ctorCalls : List (Call F)
@@ -212,13 +213,15 @@ theorem native_shape_calls {rc typePtr blockArg index safety result : SourceValu
     Nonempty (NativeShapeCalls rc typePtr blockArg index safety params indices count levels h rootCalls) := by
   match Obs.«KernelCheck::check_inductive_shape».obs observed with
   | .run (v1 := level) (m2 := sortAfter) (cs12 := sortCalls) (m50 := sortBefore)
-      (v62 := guardResult) (m63 := ctorBefore) (cs73 := guardCalls) (cs135 := ctorCalls)
-      (op46 := sum) (hm58 := nilTypes) (ev14 := sortRun) (ev75 := guardRun)
-      (ev137 := ctorRun) (hc225 := allCalls) =>
+      (v62 := guardResult) (m63 := guardAfter) (m133 := ctorBefore) (cs73 := guardCalls)
+      (cs198 := ctorCalls)
+      (op46 := sum) (hm58 := nilTypes) (ev14 := sortRun) (ev75 := guardRun) (ev145 := teleRun)
+      (ev200 := ctorRun) (hc288 := allCalls) .. =>
     rw [evalBinOp_add_nat params indices sum] at sortRun
     exact ⟨{
       sortBefore := sortBefore, sortAfter := sortAfter, sortLevel := level, sortCalls := sortCalls
-      nilTypes := nilTypes, sortRun := sortRun, guardResult := guardResult, ctorBefore := ctorBefore
+      nilTypes := nilTypes, sortRun := sortRun, guardResult := guardResult, guardAfter := guardAfter
+      ctorBefore := ctorBefore, guardToCtors := teleRun.heap_extends
       guardCalls := guardCalls, guardRun := guardRun, result := result, after := h', ctorCalls := ctorCalls
       ctorRun := ctorRun
       sortSubset := fun call member => subset call (by rw [allCalls]; simp [member])
@@ -244,7 +247,7 @@ theorem NativeShapeCalls.initial_to_ctors {rc typePtr blockArg index safety : So
     {params indices count levels : Nat} {initial : Heap F} {calls : List (Call F)}
     (shape : NativeShapeCalls rc typePtr blockArg index safety params indices count levels initial calls) :
     Heap.Extends initial shape.ctorBefore :=
-  shape.initial_to_guard.trans shape.guardRun.heap_extends
+  shape.initial_to_guard.trans (shape.guardRun.heap_extends.trans shape.guardToCtors)
 
 /-- Only actual result-sort helper children belong to this semantic load scope. -/
 def nativeShapeSortCtx (base : Ctx) {rc typePtr blockArg index safety : SourceValue F}
@@ -273,7 +276,8 @@ theorem NativeShapeCalls.resultSort {base : Ctx} {rc typePtr blockArg index safe
     (c := nativeShapeSortCtx base shape) (params + indices) bound
     (roles.mono shape.initial_to_sort) types (ghostScoped_zero _) facts loads covered
     (represented.mono shape.initial_to_sort) shape.sortRun
-  exact ⟨level, KernelLevels.repKLevel_heapMono₂ shape.guardRun.heap_extends levelRep, sameSort⟩
+  exact ⟨level, KernelLevels.repKLevel_heapMono₂
+    (shape.guardRun.heap_extends.trans shape.guardToCtors) levelRep, sameSort⟩
 
 /-- The observed native guard supplies the shape needed to preserve the base facts at the
 actual capability record, including indexed aliases. -/

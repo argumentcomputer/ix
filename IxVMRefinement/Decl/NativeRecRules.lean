@@ -3543,26 +3543,25 @@ theorem nativeWithRec_step_mapped {J : Judgements .anon}
     | .Axiom_other_other (hv37 := hv) ..
     | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) .. | .Opaque (hv825 := hv) ..
     | .Quot (hv1076 := hv) ..
-    | .Induct_n0 (hv1240 := hv) .. | .Induct_other_n0 (hv1240 := hv) ..
-    | .Induct_other_other (hv1240 := hv) ..
-    | .Ctor_n0_n0 (hv1884 := hv) .. | .Ctor_n0_other (hv1884 := hv) ..
-    | .Ctor_other_n0 (hv1884 := hv) .. | .Ctor_other_other (hv1884 := hv) .. =>
+    | .Induct_n0 (hv1240 := hv) .. | .Induct_other (hv1240 := hv) ..
+    | .Ctor_n0_n0 (hv1888 := hv) .. | .Ctor_n0_other (hv1888 := hv) ..
+    | .Ctor_other (hv1888 := hv) .. =>
       injection hv with _ htag _
       exact absurd htag (by decide)
-    | .Rec_other (v2798 := v2769) (m2777 := m2748) (m2799 := m2770) (v2820 := v2791)
-        (m2821 := m2792) (cs2809 := cs2780) (cs2832 := cs2803)
-        (ev2811 := ev2782) (ev2834 := ev2805) (hne2905 := hne2876) (hc2993 := hc) .. =>
+    | .Rec_other (v2761 := v2769) (m2740 := m2748) (m2762 := m2770) (v2783 := v2791)
+        (m2784 := m2792) (cs2772 := cs2780) (cs2794 := cs2803)
+        (ev2774 := ev2782) (ev2796 := ev2805) (hne2904 := hne2876) (hc2992 := hc) .. =>
       have hsub₁ : ∀ x ∈ cs2780, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       have hsub₂ : ∀ x ∈ cs2803, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       exact absurd (w.unmodeled_rec m2748 v2769 m2770 v2791 m2792 cs2780 cs2803
         ev2782 ev2805 hsub₁ hsub₂) hne2876
-    | .Rec_n0 (v1 := v1) (m2 := m2) (v2635 := v2636) (m2636 := m2637) (cs2646 := cs2647)
-        (v2672 := v2673) (m2673 := m2674) (cs2683 := cs2684) (m2704 := m2705)
-        (m2717 := m2718) (m2777 := m2748) (m2799 := m2770) (m2821 := m2792) (cs2877 := cs2848)
-        (ev14 := ev14) (hv2574 := hv2574) (ev2648 := ev2649) (hm2712 := hm2713)
-        (ev2685 := ev2686) (ev2729 := ev2730) (ev2759 := ev_rules)
-        (ev2789 := ev2760) (ev2811 := ev2782)
-        (ev2834 := ev2805) (ev2879 := ev2850) (hc2904 := hc) .. =>
+    | .Rec_n0 (v1 := v1) (m2 := m2) (v2598 := v2636) (m2599 := m2637) (cs2609 := cs2647)
+        (v2635 := v2673) (m2636 := m2674) (cs2646 := cs2684) (m2667 := m2705)
+        (m2680 := m2718) (m2740 := m2748) (m2762 := m2770) (m2784 := m2792) (cs2876 := cs2848)
+        (ev14 := ev14) (hv2537 := hv2574) (ev2611 := ev2649) (hm2675 := hm2713)
+        (ev2648 := ev2686) (ev2692 := ev2730) (ev2722 := ev_rules)
+        (ev2752 := ev2760) (ev2774 := ev2782)
+        (ev2796 := ev2805) (ev2878 := ev2850) (hc2903 := hc) .. =>
       injection hv2574 with _ _ hr_xs
       injection hr_xs with hr1 hr_xs; injection hr_xs with hr2 hr_xs
       injection hr_xs with hr3 hr_xs; injection hr_xs with hr4 hr_xs

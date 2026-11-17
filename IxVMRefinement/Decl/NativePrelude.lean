@@ -178,28 +178,22 @@ theorem native_prelude_calls {rc nl ty np ni nc unsafeFlag blockArg index addr r
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Ctor_n0_n0 (hne1879 := notInduct) ..
-  | .Ctor_n0_other (hne1879 := notInduct) ..
-  | .Ctor_other_n0 (hne1879 := notInduct) ..
-  | .Ctor_other_other (hne1879 := notInduct) ..
-  | .Rec_n0 (hne1879 := notInduct) ..
-  | .Rec_other (hne1879 := notInduct) .. =>
+  | .Ctor_n0_n0 (hne1883 := notInduct) ..
+  | .Ctor_n0_other (hne1883 := notInduct) ..
+  | .Ctor_other (hne1883 := notInduct) ..
+  | .Rec_n0 (hne1883 := notInduct) ..
+  | .Rec_other (hne1883 := notInduct) .. =>
     exact (notInduct [nl, ty, np, ni, nc, unsafeFlag, blockArg, index] rfl rfl).elim
   | .Induct_n0 (m2 := scopeBefore) (m1283 := scopeAfter) (m1333 := mentionsAfter)
       (m1354 := mentionsBefore) (m1376 := blocksNil) (m1396 := sortAfter) (m1427 := sortBefore)
       (ev14 := unsafeRun) (hv1240 := shape) (ev1295 := scopeRun)
       (hm1362 := consBlocks) (hm1384 := nilBlocks) (ev1343 := mentionsRun)
       (heq1394 := noMention) (hm1435 := nilTypes) (ev1408 := sortRun) (hc1634 := allCalls) ..
-  | .Induct_other_n0 (m2 := scopeBefore) (m1283 := scopeAfter) (m1333 := mentionsAfter)
+  | .Induct_other (m2 := scopeBefore) (m1283 := scopeAfter) (m1333 := mentionsAfter)
       (m1354 := mentionsBefore) (m1376 := blocksNil) (m1396 := sortAfter) (m1427 := sortBefore)
       (ev14 := unsafeRun) (hv1240 := shape) (ev1295 := scopeRun)
       (hm1362 := consBlocks) (hm1384 := nilBlocks) (ev1343 := mentionsRun)
-      (heq1394 := noMention) (hm1435 := nilTypes) (ev1408 := sortRun) (hc1869 := allCalls) ..
-  | .Induct_other_other (m2 := scopeBefore) (m1283 := scopeAfter) (m1333 := mentionsAfter)
-      (m1354 := mentionsBefore) (m1376 := blocksNil) (m1396 := sortAfter) (m1427 := sortBefore)
-      (ev14 := unsafeRun) (hv1240 := shape) (ev1295 := scopeRun)
-      (hm1362 := consBlocks) (hm1384 := nilBlocks) (ev1343 := mentionsRun)
-      (heq1394 := noMention) (hm1435 := nilTypes) (ev1408 := sortRun) (hc1878 := allCalls) .. =>
+      (heq1394 := noMention) (hm1435 := nilTypes) (ev1408 := sortRun) (hc1882 := allCalls) .. =>
     injection shape with _ _ entries
     injection entries with levelEq entries
     injection entries with typeEq entries

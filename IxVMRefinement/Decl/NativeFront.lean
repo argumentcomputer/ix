@@ -4263,29 +4263,20 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
   | .Thm (hv526 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Opaque (hv825 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Quot (hv1076 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
-  | .Ctor_n0_n0 (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_n0_other (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_other_n0 (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_other_other (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_n0 (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_other (hne1879 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Induct_other_n0 (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1869 := hc) .. =>
+  | .Ctor_n0_n0 (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_n0 (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Induct_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1882 := hc) .. =>
     injection hv_ind with _ _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
     injection hxs with hblk_eq _
     subst hblk_eq
     exact absurd (w.unmodeled _ _ _ _ ev_mod (fun x hx => by simp [hc, hx])) hne_mod
-  | .Induct_other_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1878 := hc) .. =>
-    injection hv_ind with _ _ hxs
-    injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
-    injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
-    injection hxs with hblk_eq _
-    subst hblk_eq
-    exact absurd (w.unmodeled _ _ _ _ ev_mod (fun x hx => by simp [hc, hx])) hne_mod
-  | .Induct_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
+  | .Induct_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
       (x_ind_is_unsafe := xiu) (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (cs1293 := cs_ws) (v1330 := v_emb) (m1333 := m1333)
@@ -4377,9 +4368,9 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     have hg₁_sh : Good c₁ cs_sh := w.good₁.sub hsub_sh
     match Obs.«KernelCheck::check_inductive_shape».obs ev_sh with
     | .run (v1 := v_ind_lvl) (m2 := m2_sh) (cs12 := cs_grs) (v17 := v_pi)
-        (m50 := m50_sh) (m63 := m63_sh) (cs73 := cs_fdo) (cs135 := cs_ctors)
-        (op46 := op_pi) (hm58 := hm50_sh) (ev14 := ev_grs) (ev75 := ev_fdo)
-        (ev137 := ev_ctors) (hc225 := hc_sh) .. =>
+        (m50 := m50_sh) (m63 := m63_sh) (cs73 := cs_fdo) (cs198 := cs_ctors)
+        (op46 := op_pi) (hm58 := hm50_sh) (ev14 := ev_grs) (ev75 := ev_fdo) (ev145 := ev_tele_sh)
+        (ev200 := ev_ctors) (hc288 := hc_sh) .. =>
       rw [evalBinOp_add_nat p₀.nP p₀.nIdx op_pi] at ev_grs
       have e_50 : Heap.Extends m1492 m50_sh := by rw [hm50_sh]; exact Heap.Extends.snoc m1492 _
       have e_to_50 := e_to_sh.trans e_50
@@ -4400,7 +4391,8 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
           (w.rcRep₀.mono e_to_50) hty_nil_grs (ghostScoped_zero _) hef₁ w.lf₁ hg₁_grs
           (hpty_exact₁.mono e_to_50).toTm ev_grs
       have e_grs := ev_grs.heap_extends
-      have e_fdo := ev_fdo.heap_extends
+      -- the constructor loop starts after the former's telescope has been typed
+      have e_fdo := ev_fdo.heap_extends.trans ev_tele_sh.heap_extends
       have e_to_m2_sh := e_to_50.trans e_grs
       have e_to_m63_sh := e_to_m2_sh.trans e_fdo
       have hfresh_ctors₁ : ∀ c ∈ p₀.ctors, c₁.env.find? c.1.name = none := by

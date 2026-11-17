@@ -155,7 +155,7 @@ theorem NativeFormerRunInput.stageFacts {base : Core.Ctx} {block : Bytes.Address
   have guard : ObsFn Core.W "KernelCheck::former_decl_ok"
       [input.typePtr, .field (parts.nP : F), .field (parts.nIdx : F), .field (ind.ctors.size : F),
         input.blockPtr, .field i, shape.sortLevel]
-      shape.sortAfter shape.guardResult shape.ctorBefore shape.guardCalls := by
+      shape.sortAfter shape.guardResult shape.guardAfter shape.guardCalls := by
     simpa only [params, indices] using shape.guardRun
   exact Decl.coreEnvFacts_consNativeCapsAt_of_guard
     (c := { base with lim := some input.limit }) (shape := parts) (isRec := isRec)

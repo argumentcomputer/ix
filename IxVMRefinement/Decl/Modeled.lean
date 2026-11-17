@@ -17,9 +17,9 @@ Completes the modeled-inductive slice (`L5-M`) and joins it with `L5-V` (`Value.
    `KernelModeled::get_addrs`, `Lists::length<&[Field; 32]>`, `Lists::concat<&[Field; 32]>`,
    proves `ixAddr_injective` and `keyOf_injective`, and builds `RenameMap` for the 3-way
    concatenated `(types ++ ctors ++ recs) → (type_models ++ ctor_models ++ rec_models)` table.
-3. **`KernelCheck::check_const` & `KernelModeled::check_family` component specs**:
+3. **`KernelCheck::check_const` & `KernelModeled::check_family_in` component specs**:
    - `check_const_ind_inv`, `check_const_ctor_inv`, `check_const_rec_inv` (splitting safe unpinned
-     inductive members cleanly into native `block_is_modeled = 0` vs modeled `check_modeled_block`),
+     inductive members cleanly into native `block_is_modeled = 0` vs modeled `block_is_modeled ≠ 0`),
    - `check_modeled_block_inv`, `check_family_seg1_inv`,
    - `check_advice_records_spec` (stepping `(env, seen)` along `advice` via `AdviceStepOracle` +
      `rbtree_map_insert_field_addrMapAll`),
@@ -29,7 +29,7 @@ Completes the modeled-inductive slice (`L5-M`) and joins it with `L5-V` (`Value.
    - `check_recs_spec` (refining `KernelModeled::check_recs` across the recursor list via
      `validate_expr_well_scoped_spec`, `core_ensure_sort`, and `check_rules_vm_spec`).
 4. **End-to-end `ModeledBlockWitness` assembly & `modeledIndDecl_step`**: walks
-   `Obs.«KernelModeled::check_family».obs` end-to-end to construct `ModeledBlockWitness.{u}` and
+   `Obs.«KernelModeled::check_family_in».obs` end-to-end to construct `ModeledBlockWitness.{u}` and
    feeds it into `modeledBlock_install_step`.
 5. **Top-level `Decls S₀` & `L5 S₀` theorems (`l5_decls_S₀`, `l5_S₀`)**: uses `DeclInvM` as the
    witness invariant `Inv`, combining `valueOrPinnedDecl_step_M`, `modeledIndDecl_step`, and
@@ -762,9 +762,10 @@ theorem renameKeyList_getElem_of_nodup :
 
 /-! ## Section 3: VM Specs for `check_const`, `check_advice_records`, `members_val`, & `check_recs` -/
 
-/-- Inversion of `KernelCheck::check_const` on a safe `"Induct"` constant: splits cleanly into the
-native route (`block_is_modeled = 0`) vs the modeled route (`check_modeled_block`), while also
-providing `validate_expr_well_scoped` + `k_ensure_sort` on `ty`. -/
+/-- Inversion of `KernelCheck::check_const` on a safe `"Induct"` constant: the native route
+(`block_is_modeled = 0`) or the modeled route (`block_is_modeled ≠ 0`). The modeled route of the
+inductive arm checks the declared shape only: it no longer runs `check_modeled_block`, so this
+inversion yields no family check for a modeled block. -/
 theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::check_const"
@@ -779,10 +780,11 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
         Heap.Extends h m_bm1 ∧
         ObsFn W "KernelModeled::block_is_modeled" [iblk] m_bm1 (.field 0) m_bm2 cs_bm ∧
         (∀ x ∈ cs_bm, x ∈ calls)) ∨
-      (∃ (m_mb : Heap F) (cs_mb : List (Call F)),
-        Heap.Extends h m_mb ∧
-        ObsFn W "KernelModeled::check_modeled_block" [rc, iblk] m_mb r h' cs_mb ∧
-        (∀ x ∈ cs_mb, x ∈ calls))) := by
+      (∃ (m_bm1 m_bm2 : Heap F) (v_bm : SourceValue F) (cs_bm : List (Call F)),
+        Heap.Extends h m_bm1 ∧
+        ObsFn W "KernelModeled::block_is_modeled" [iblk] m_bm1 v_bm m_bm2 cs_bm ∧
+        v_bm ≠ .field 0 ∧
+        (∀ x ∈ cs_bm, x ∈ calls))) := by
   refine ⟨Or.inr trivial, ?_⟩
   cases Obs.«KernelCheck::check_const».obs ev with
   | Axiom_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv37 _ _ _ _ _ _ _ =>
@@ -821,17 +823,16 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
     exact Or.inl ⟨m1470, m1492, cs1503,
       e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans e8)))))),
       ev1505, fun x hx => by simp [hx]⟩
-  | Induct_other_n0 v1 m2 cs12 x_nlvls x_ty x_n_params x_n_indices x_num_ctors
+  | Induct_other v1 m2 cs12 x_nlvls x_ty x_n_params x_n_indices x_num_ctors x_ind_is_unsafe
       x_ind_block x_ind_idx v1282 m1283 cs1293 v1330 m1333 cs1341 m1354 m1376 v1395 m1396 cs1406
-      m1427 v1439 m1440 cs1450 v1469 m1470 cs1480 v1491 m1492 cs1503 v1650 m1653 cs1661
-      v1687 m1688 cs1698 v1703 m1736 v1748 m1749 cs1759 cs1850
+      m1427 v1439 m1440 cs1450 v1469 m1470 cs1480 v1491 m1492 cs1503 _ _ _ _ _ _ _ _ _ _ _ _ _
       ev14 _ _ _ _ _ hv1240 ev1295 hm1362 hm1384 ev1343 _ hm1435 ev1408 ev1452 ev1482 ev1505
-      _ ev1663 _ _ hm1744 ev1700 ev1761 ev1852 hc1869 =>
+      hne1635 _ _ _ _ _ _ _ _ _ hc1825 =>
     injection hv1240 with _ _ hargs
     injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
     injection h3 with _ h4; injection h4 with _ h5; injection h5 with _ h6
     injection h6 with hblk _
-    subst hblk hc1869
+    subst hblk hc1825
     have e1 := ObsFn.heap_extends ev14
     have e2 := ObsFn.heap_extends ev1295
     have e3 : Heap.Extends m1283 m1354 :=
@@ -841,21 +842,9 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
     have e6 := ObsFn.heap_extends ev1408
     have e7 := ObsFn.heap_extends ev1452
     have e8 := ObsFn.heap_extends ev1482
-    have e9 := ObsFn.heap_extends ev1505
-    have e10 := ObsFn.heap_extends ev1663
-    have e11 : Heap.Extends m1653 m1736 := hm1744 ▸ heap_extends_append m1653 _
-    have e12 := ObsFn.heap_extends ev1700
-    have e13 := ObsFn.heap_extends ev1761
-    exact Or.inr ⟨m1749, cs1850,
-      e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans
-        (e8.trans (e9.trans (e10.trans (e11.trans (e12.trans e13))))))))))),
-      ev1852, fun x hx => by simp [hx]⟩
-  | Induct_other_other _ _ _ _ _ _ _ _ x_ind_is_unsafe _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv1240 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne1870 _ _ _ =>
-    injection hv1240 with _ _ hargs
-    injection hargs with _ h1; injection h1 with _ h2; injection h2 with _ h3
-    injection h3 with _ h4; injection h4 with _ h5; injection h5 with hu _
-    exact absurd hu.symm hne1870
+    exact Or.inr ⟨m1470, m1492, v1491, cs1503,
+      e1.trans (e2.trans (e3.trans (e4.trans (e5.trans (e6.trans (e7.trans e8)))))),
+      ev1505, hne1635, fun x hx => by simp [hx]⟩
   | _ =>
     exfalso
     exact ‹∀ vs : List (SourceValue F), vs.length = 8 →
@@ -864,7 +853,7 @@ theorem check_const_ind_inv {rc nl ty np ni nct iblk iidx ap r : SourceValue F}
       [nl, ty, np, ni, nct, .field 0, iblk, iidx] rfl rfl
 
 /-- Inversion of `KernelModeled::check_modeled_block`: extracts `read_payload`, `get_address`, and
-`KernelModeled::check_family`. -/
+`KernelModeled::check_family_in`. -/
 theorem check_modeled_block_inv {rc iblk r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::check_modeled_block" [rc, iblk] h r h' calls) :
@@ -872,7 +861,7 @@ theorem check_modeled_block_inv {rc iblk r : SourceValue F} {h h' : Heap F}
       (cs_pay cs_ga cs_fam : List (Call F)),
       ObsFn W "KernelModeled::read_payload" [iblk] h v_pay m_pay cs_pay ∧
       ObsFn W "IxonDeserialize::get_address" [v_pay] m_pay (.tuple [x_rb, w_rem]) m_ga cs_ga ∧
-      ObsFn W "KernelModeled::check_family" [rc, iblk, x_rb] m_ga r h' cs_fam ∧
+      ObsFn W "KernelModeled::check_family_in" [rc, iblk, x_rb] m_ga r h' cs_fam ∧
       Heap.Extends h m_ga ∧
       (∀ x ∈ cs_fam, x ∈ calls) := by
   cases Obs.«KernelModeled::check_modeled_block».obs ev with
@@ -882,11 +871,11 @@ theorem check_modeled_block_inv {rc iblk r : SourceValue F} {h h' : Heap F}
       (ObsFn.heap_extends ev27).trans (ObsFn.heap_extends ev14),
       fun x hx => by simp [hx]⟩
 
-/-- Inversion of `KernelModeled::check_family`'s initial segment `Seg1` (asserting empty user
+/-- Inversion of `KernelModeled::check_family_in`'s initial segment `Seg1` (asserting empty user
 axioms in `rc`). -/
 theorem check_family_seg1_inv {rc iblk rblk v104 : SourceValue F} {h m105 : Heap F}
     {cs107 : List (Call F)}
-    (sg : Obs.«KernelModeled::check_family».Seg1 rc iblk rblk h v104 m105 cs107) :
+    (sg : Obs.«KernelModeled::check_family_in».Seg1 rc iblk rblk h v104 m105 cs107) :
     Heap.Extends h m105 := by
   cases sg with
   | Nil _ _ ev15 _ he33 _ => exact he33 ▸ ObsFn.heap_extends ev15
@@ -2327,7 +2316,7 @@ theorem modeledBlockWitness_of_check_family
       ev_pay0, ev_ga0, ev_fam, ext_mb_ga, hsub_fam0⟩ :=
     check_modeled_block_inv ev_mb
   have hsub_fam : ∀ x ∈ cs_fam, x ∈ calls := fun x hx => hsub_mb x (hsub_fam0 x hx)
-  cases Obs.«KernelModeled::check_family».obs ev_fam with
+  cases Obs.«KernelModeled::check_family_in».obs ev_fam with
   | run v104 m105 cs107 v113 m114 cs124 m136 cs146 x_rb x_s1 v181 m184 cs192
       m219 cs229 x_n_a x_s2 m254 cs264 x_advice x_s3 m297 cs307 x_n_w x_s4
       m332 cs342 x_outside x_s5 v390 m391 cs401 v422 m423 cs433 v452 m453 cs463
@@ -3059,8 +3048,14 @@ theorem modeledBlockWitness_of_check_family
 
 /-- Loader (L1), role/callee (L6), and assembly (L7) witness for a modeled inductive declaration
 `.indDecl block₀ nP`: exhibits a checked safe `"Induct"` member whose `KernelCheck::check_const`
-derivation does not take the native `block_is_modeled = 0` branch and carries
-`ModeledFamilyBridge`. -/
+derivation does not take the native `block_is_modeled = 0` branch, together with a
+`check_modeled_block` observation and its `ModeledFamilyBridge`.
+
+The inductive arm of `check_const` no longer runs the family check on a modeled block (it checks
+the declared shape only), so the observation is part of the seam, not derived from the member's
+check. `check_modeled_block` has no caller in the program, so no run supplies one: this seam is
+not inhabited for a modeled block, and the legacy step below no longer covers modeled inductives.
+The route is superseded; the family check is reached from the recursor arm only. -/
 structure DeclModeledExtraFacts (calls : List (Call F)) (env : Env .anon)
     (block₀ : List (ConstantInfo .anon)) (nP : Nat) : Prop where
   installsNodup : ((IxVM.Consistency.installs (.indDecl block₀ nP)).map (·.name)).Nodup
@@ -3080,15 +3075,16 @@ structure DeclModeledExtraFacts (calls : List (Call F)) (env : Env .anon)
       (∀ (m_bm1 m_bm2 : Heap F) (cs_bm : List (Call F)),
         Heap.Extends cl.heap m_bm1 → (∀ x ∈ cs_bm, x ∈ calls) →
         ¬ ObsFn W "KernelModeled::block_is_modeled" [iblk] m_bm1 (.field 0) m_bm2 cs_bm) ∧
-      ∀ (m_mb : Heap F) (cs_mb : List (Call F)),
-        Heap.Extends cl.heap m_mb →
-        ObsFn W "KernelModeled::check_modeled_block" [rc, iblk] m_mb r_cl h'_cl cs_mb →
-        (∀ x ∈ cs_mb, x ∈ calls) →
+      ∃ (m_mb : Heap F) (r_mb : SourceValue F) (h'_mb : Heap F) (cs_mb : List (Call F)),
+        Heap.Extends cl.heap m_mb ∧
+        ObsFn W "KernelModeled::check_modeled_block" [rc, iblk] m_mb r_mb h'_mb cs_mb ∧
+        (∀ x ∈ cs_mb, x ∈ calls) ∧
         ModeledFamilyBridge.{u} calls env block₀ nP E t lim rc iblk m_mb cs_mb
 
-/-- **Modeled Inductive Declaration Step Theorem (`L5-M`)**: combines `check_const_ind_inv`,
-`modeledBlockWitness_of_check_family`, and `modeledBlock_install_step` to step `DeclInvM` across a
-modeled `.indDecl block₀ nP`. -/
+/-- **Modeled Inductive Declaration Step Theorem (`L5-M`)**: combines the seam's
+`check_modeled_block` observation, `modeledBlockWitness_of_check_family` and
+`modeledBlock_install_step` to step `DeclInvM` across a modeled `.indDecl block₀ nP`. Legacy: see
+`DeclModeledExtraFacts`. -/
 theorem modeledIndDecl_step (hCore : IxVM.Consistency.Core S₀)
     {calls : List (Call F)} {env : Env .anon}
     {block₀ : List (ConstantInfo .anon)} {nP : Nat}
@@ -3097,17 +3093,12 @@ theorem modeledIndDecl_step (hCore : IxVM.Consistency.Core S₀)
     ∃ env₂, CleanInstallStep env (.indDecl block₀ nP) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInvM V env → DeclInvM V env₂ := by
   obtain ⟨E, t, lim, cl, rc, nl, ty, np, ni, nct, iblk, iidx, ap, r_cl, h'_cl, subcalls,
-      htwf, _, hrc, ev_chk, hsub, hnot_native, hbridge_fn⟩ :=
+      htwf, _, hrc, ev_chk, hsub, hnot_native, m_mb, r_mb, h'_mb, cs_mb, ext_mb, ev_mb,
+      hsub_mb', bridge⟩ :=
     hx.modeledWitness
-  rcases (check_const_ind_inv ev_chk).2 with
-    ⟨m_bm1, m_bm2, cs_bm, ext_bm, ev_bm, hsub_bm⟩ | ⟨m_mb, cs_mb, ext_mb, ev_mb, hsub_mb⟩
-  · exact absurd ev_bm
-      (hnot_native m_bm1 m_bm2 cs_bm ext_bm (fun x hx => hsub x (hsub_bm x hx)))
-  · have hsub_mb' : ∀ x ∈ cs_mb, x ∈ calls := fun x hx => hsub x (hsub_mb x hx)
-    have bridge := hbridge_fn m_mb cs_mb ext_mb ev_mb hsub_mb'
-    exact modeledBlock_install_step hchk hx.installsNodup hx.installsFresh
-      (modeledBlockWitness_of_check_family hCore htwf (hrc.mono ext_mb) hsub_mb'
-        hx.installsFresh ev_mb bridge)
+  exact modeledBlock_install_step hchk hx.installsNodup hx.installsFresh
+    (modeledBlockWitness_of_check_family hCore htwf (hrc.mono ext_mb) hsub_mb'
+      hx.installsFresh ev_mb bridge)
 
 /-- Parallel native-inductive seam (`L5-N`, `block_is_modeled = 0`). -/
 def NativeIndStep (calls : List (Call F)) (env : Env .anon)

@@ -1612,7 +1612,7 @@ theorem check_const_rec_paths {c : Ctx}
       v_rules m_rules cs_rules
       v2747 m2748 cs2758 v2769 m2770 cs2780 m2792 cs2803 cs2848
       ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev_rules ev2760 ev2782 ev2805
-      heq2844 ev2850 hc2875 =>
+      _ heq2844 ev2850 hc2875 =>
     obtain ⟨_, hm2, _⟩ := is_unsafe_ci_rec ev14
     rw [hm2] at ev2649
     injection hv2574 with _ _ hargs
@@ -1654,7 +1654,7 @@ theorem check_const_rec_paths {c : Ctx}
       v_rules m_rules cs_rules
       v2747 m2748 cs2758 v2769 m2770 cs2780 v2791 m2792 cs2803 cs2937
       ev14 _ _ _ _ _ _ _ hv2574 ev2649 hm2713 ev2686 ev2730 ev_rules ev2760 ev2782 ev2805
-      hne2876 heq2906 heq2933 ev2939 hc2964 =>
+      _ hne2876 heq2906 heq2933 ev2939 hc2964 =>
     obtain ⟨_, hm2, _⟩ := is_unsafe_ci_rec ev14
     rw [hm2] at ev2649
     injection hv2574 with _ _ hargs
