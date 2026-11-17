@@ -20,7 +20,8 @@ open IxVM.Refinement.KernelLevels (RepKLevel)
 /-- Evidence for one actually checked domain, including the physical classifier input. -/
 def CheckedSortAt (c : ScopedCtx) (start : Heap F) (calls : List (Call F))
     (depth : Nat) (domain : KExpr) (sort : KLevel) : Prop :=
-  ∃ type signature (Γ : Nat → KExpr) input context predicted before after inner,
+  ∃ (type : KExpr) (signature : KLevel) (Γ : Nat → KExpr)
+    (input context predicted : SourceValue F) (before after : Heap F) (inner : List (Call F)),
     Infer c.env .full depth domain type ∧ Red c.env depth type (.sort sort) ∧
     Heap.Extends start before ∧ c.types Γ before depth context ∧
     Tm c.κ depth Γ before 0 domain input ∧
@@ -34,9 +35,9 @@ theorem CheckedSortAt.weaken {c : ScopedCtx} {start earlier : Heap F}
     (extension : Heap.Extends earlier start) (included : ∀ cl ∈ calls, cl ∈ outer) :
     CheckedSortAt c earlier outer depth domain sort := by
   obtain ⟨type, signature, Γ, input, context, predicted, before, after, inner,
-    infer, reduce, extends, types, represented, observed, level, members, zero⟩ := checked
+    infer, reduce, extension, types, represented, observed, level, members, zero⟩ := checked
   exact ⟨type, signature, Γ, input, context, predicted, before, after, inner,
-    infer, reduce, extension.trans extends, types, represented, observed, level,
+    infer, reduce, extension.trans extension, types, represented, observed, level,
     fun cl member => included cl (members cl member), zero⟩
 
 /-- Actual assertion evidence retains the classifier's represented physical input. -/
@@ -47,10 +48,10 @@ theorem checked_sort_at {c : ScopedCtx} (hc : ScopedCoreFacts c)
     (ev : ObsFn W "KernelGuard::checked_sort" [rc, p, ctx] h r h' cs) :
     ∃ u, CheckedSortAt c h cs d E u := by
   obtain ⟨type, u, actual, signature, predicted, before, after, inner,
-    infer, reduce, _, _, extends, observed, level, members, zero⟩ :=
+    infer, reduce, _, _, extension, observed, level, members, zero⟩ :=
       checked_sort_zero_iff hc hg hrc hctx hE ev
   exact ⟨u, type, signature, Γ, p, ctx, predicted, before, after, inner,
-    infer, reduce, extends, types_mono extends hctx, hE.mono extends,
+    infer, reduce, extension, types_mono extension hctx, hE.mono extension,
     observed, level, members, zero⟩
 
 /-- With parameters already peeled, the actual installation loop chooses one sort per field
@@ -79,7 +80,7 @@ theorem check_fields_open {c : ScopedCtx} (hc : ScopedCoreFacts c) :
         (cs80 := first) (cs110 := rest) (v116 := remaining) (m154 := nextHeap)
         (ld48 := loaded) (ev82 := checked) (op151 := subtracted) (hm162 := allocated)
         (ev112 := walked) (hc182 := events) .. =>
-      obtain ⟨D, B, meta, rfl, hD, hB, _⟩ := hE.forallE_of_load loaded
+      obtain ⟨D, B, metadata, rfl, hD, hB, _⟩ := hE.forallE_of_load loaded
       simp only [Ix.Kernel.openPisAtFvars] at hop
       rcases opened : Ix.Kernel.openPisAtFvars n (B.instantiate1 (.fvar d D)) (d + 1) with
         _ | ⟨fvs', body'⟩ <;> rw [opened] at hop
