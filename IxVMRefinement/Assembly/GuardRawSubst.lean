@@ -24,6 +24,49 @@ def RawExprRep (κ : _root_.Address → KKey) (h : Heap F) (k : Nat) (R : KExpr)
     (p : SourceValue F) : Prop :=
   ∃ E, RawTmExact κ 0 (fun _ => default) h k R E p
 
+/-- A successful scoped reading supplies an exact physical raw expression. No equality with
+the original semantic expression is claimed: its universe syntax may have been weakened. -/
+theorem RawExprRep.ofTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
+    (represented : Tm κ 0 Γ h k E p) : ∃ R, RawExprRep κ h k R p := by
+  induction represented with
+  | bvarLocal cell small inside => exact ⟨_, _, .bvarLocal cell small inside⟩
+  | bvarFree _ _ _ impossible => omega
+  | sort cell level _ => exact ⟨_, _, .sort cell level⟩
+  | const cell address levels _ => exact ⟨_, _, .const cell address levels⟩
+  | app cell _ _ left right =>
+    obtain ⟨RF, EF, func⟩ := left
+    obtain ⟨RA, EA, arg⟩ := right
+    exact ⟨_, _, .app cell func arg⟩
+  | lam cell _ _ level dom body =>
+    obtain ⟨RD, ED, domain⟩ := dom
+    obtain ⟨RB, EB, tail⟩ := body
+    exact ⟨_, _, .lam cell domain tail level⟩
+  | forallE cell _ _ level dom body =>
+    obtain ⟨RD, ED, domain⟩ := dom
+    obtain ⟨RB, EB, tail⟩ := body
+    exact ⟨_, _, .forallE cell domain tail level⟩
+  | letE cell _ _ _ type value body =>
+    obtain ⟨RT, ET, typeRep⟩ := type
+    obtain ⟨RV, EV, valueRep⟩ := value
+    obtain ⟨RB, EB, tail⟩ := body
+    exact ⟨_, _, .letE cell typeRep valueRep tail⟩
+  | litNat cell limbs canonical => exact ⟨_, _, .litNat cell limbs canonical⟩
+  | litStr cell bytes string => exact ⟨_, _, .litStr cell bytes string⟩
+  | proj cell address _ inner =>
+    obtain ⟨RI, EI, rep⟩ := inner
+    exact ⟨_, _, .proj cell address rep⟩
+
+/-- The actual raw universe operation preserves this physical syntax with exact metadata. -/
+theorem RawExprRep.instLevels {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
+    {R : KExpr} {p params r : SourceValue F} {levels : List Ix.Kernel.Level}
+    {calls : List (Call F)} (represented : RawExprRep κ h k R p)
+    (parameters : RepKLevelList h levels params)
+    (observed : ObsFn W "KernelGuard::expr_inst_raw" [p, params] h r h' calls) :
+    RawExprRep κ h' k (R.instantiateLevelParams (List.range levels.length) levels) r := by
+  obtain ⟨E, rep⟩ := represented
+  exact ⟨_, expr_inst_raw_exact rep parameters observed⟩
+
 /-- Enlarging the ambient variable bound preserves both exact readings. -/
 theorem RawTmExact.weaken_bound {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
