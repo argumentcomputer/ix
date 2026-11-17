@@ -169,4 +169,143 @@ theorem valueRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     rw [L1.RawCIRep, info] at raw
     exact raw.elim
 
+/-- Actual raw payload agreement and the actual universe count identify a delta lookup answer. -/
+theorem value_lookup_exact {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
+    {c : Ixon.Constant} {v nl ty value flag hint : SourceValue F}
+    {Γ : Nat → Core.KExpr} {k : Nat} {R semantic : Core.KExpr} {ps : List Core.KLevel}
+    (record : recordOf E a = some c)
+    (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
+    (raw : L1.RawCIRep E h a c v)
+    (physical : Decl.RawTmExact (Core.keyOf addressTable) 0 Γ h k R semantic value)
+    (arity : nl = .field (ps.length : F)) (small : ps.length < 549755813888) :
+    L1.EnvInternalCollision E ∨
+      (ofStore E).valueOf (.id a) ps =
+        some (R.instantiateLevelParams (List.range ps.length) ps).eraseMeta := by
+  rcases valueRoot_converted record shape raw with collision | ⟨root, selected, bound, count, converted⟩
+  · exact Or.inl collision
+  · have countEq := congrArg ZMod.val (Value.field.inj (arity.symm.trans count))
+    rw [ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega),
+      ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega)] at countEq
+    refine Or.inr ?_
+    change answer (fun x => E.blobs.get? x) (valueRoot (recordOf E) a) ps = _
+    rw [selected]
+    exact answer_exact (converted.exact physical) countEq
+
+/-- The two raw payload fields used by declared-type classification. -/
+def typeFields : SourceValue F → Option (SourceValue F × SourceValue F)
+  | .construct _ _ (count :: type :: _) => some (count, type)
+  | _ => none
+
+/-- Every actual raw constant kind supplies its selected type root, exact physical type pointer
+and universe count. The recursor type uses its actual empty recur table. -/
+theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
+    {c : Ixon.Constant} {v : SourceValue F}
+    (record : recordOf E a = some c) (raw : L1.RawCIRep E h a c v) :
+    L1.EnvInternalCollision E ∨ ∃ root p,
+      typeRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
+      typeFields v = some (.field (root.levels : F), p) ∧
+      RootConverted (fun x => E.blobs.get? x) root h p := by
+  cases info : c.info with
+  | defn d =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨blobs, stored, bound, tp, vp, hint, shape, converted, _⟩ := raw
+    rcases stored with stored | collision
+    · let root : Root := ⟨c, soloSelf addressTable a, 0, d.lvls.toNat, d.typ⟩
+      refine Or.inr ⟨root, tp, by simp [typeRoot, record, info, root], bound, ?_, ?_⟩
+      · cases kind : d.kind <;> simp [typeFields, shape, L1.defnValShape, kind, root]
+      · exact ⟨_, blobs, converted, solo_self_complete a d, solo_self_keyed a d,
+          fun x bytes member => (stored x bytes member).1⟩
+    · exact Or.inl collision
+  | axio ax =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨blobs, stored, bound, tp, shape, converted⟩ := raw
+    rcases stored with stored | collision
+    · let root : Root := ⟨c, fun _ => none, 0, ax.lvls.toNat, ax.typ⟩
+      refine Or.inr ⟨root, tp, by simp [typeRoot, record, info, root], bound,
+        by rw [shape]; rfl, ?_⟩
+      exact ⟨[], blobs, converted, (fun i x impossible => by simp at impossible),
+        (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
+    · exact Or.inl collision
+  | quot q =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨blobs, stored, bound, tp, shape, converted⟩ := raw
+    rcases stored with stored | collision
+    · let root : Root := ⟨c, fun _ => none, 0, q.lvls.toNat, q.typ⟩
+      refine Or.inr ⟨root, tp, by simp [typeRoot, record, info, root], bound,
+        by rw [shape]; rfl, ?_⟩
+      exact ⟨[], blobs, converted, (fun i x impossible => by simp at impossible),
+        (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
+    · exact Or.inl collision
+  | recr rc =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨blobs, stored, bound, _, _, _, _, _, tp, _, _, _, _, _, shape, converted, _⟩ := raw
+    rcases stored with stored | collision
+    · let root : Root := ⟨c, soloSelf addressTable a, 0, rc.lvls.toNat, rc.typ⟩
+      refine Or.inr ⟨root, tp, by simp [typeRoot, record, info, root], bound,
+        by rw [shape]; rfl, ?_⟩
+      exact ⟨[], blobs, converted, (fun i x impossible => by simp at impossible),
+        (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
+    · exact Or.inl collision
+  | dPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, lc, cb, ms, d, blobs, getOwner, _, _, decoded, _, members, member, stored,
+      bound, tp, vp, hint, shape, converted, _⟩ := raw
+    have owner := Typing.recordOf_of_get getOwner decoded
+    have member' : ms[p.idx.toNat]? = some (.defn d) := by simpa only [Array.getElem?_toList] using member
+    rcases stored with stored | collision
+    · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
+          L1.mutsRootOffset ms.toList p.idx.toNat, d.lvls.toNat, d.typ⟩
+      refine Or.inr ⟨root, tp, ?_, bound, ?_, ?_⟩
+      · simp [typeRoot, record, info, memberRoot, owner, members, member', definitionType, root]
+      · cases kind : d.kind <;> simp [typeFields, shape, L1.defnValShape, kind, root]
+      · exact ⟨_, blobs, converted, member_self_complete p.block ms d, member_self_keyed p.block ms d,
+          fun x bytes belongs => (stored x bytes belongs).1⟩
+    · exact Or.inl collision
+  | iPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, lc, cb, ms, ind, blobs, getOwner, _, _, decoded, _, members, member, stored,
+      bound, _, _, _, _, tp, _, _, _, _, shape, converted⟩ := raw
+    have owner := Typing.recordOf_of_get getOwner decoded
+    have member' : ms[p.idx.toNat]? = some (.indc ind) := by simpa only [Array.getElem?_toList] using member
+    rcases stored with stored | collision
+    · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
+          L1.mutsRootOffset ms.toList p.idx.toNat, ind.lvls.toNat, ind.typ⟩
+      refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
+      · simp [typeRoot, record, info, memberRoot, owner, members, member', inductiveType, root]
+      · exact ⟨_, blobs, converted, LoadedReads.blockSelf_ok addressTable p.block ms,
+          LoadedReads.blockSelf_key addressTable p.block ms, fun x bytes belongs => (stored x bytes belongs).1⟩
+    · exact Or.inl collision
+  | cPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, lc, cb, ms, ind, ct, blobs, getOwner, _, _, decoded, _, members, member, ctor, stored,
+      bound, _, _, _, _, tp, _, _, _, _, shape, converted⟩ := raw
+    have owner := Typing.recordOf_of_get getOwner decoded
+    have member' : ms[p.idx.toNat]? = some (.indc ind) := by simpa only [Array.getElem?_toList] using member
+    have ctor' : ind.ctors[p.cidx.toNat]? = some ct := by simpa only [Array.getElem?_toList] using ctor
+    rcases stored with stored | collision
+    · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
+          L1.mutsRootOffset ms.toList p.idx.toNat + (1 + p.cidx.toNat), ct.lvls.toNat, ct.typ⟩
+      refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
+      · simp [typeRoot, record, info, memberRoot, owner, members, member', constructorType, ctor', root]
+      · exact ⟨_, blobs, converted, LoadedReads.blockSelf_ok addressTable p.block ms,
+          LoadedReads.blockSelf_key addressTable p.block ms, fun x bytes belongs => (stored x bytes belongs).1⟩
+    · exact Or.inl collision
+  | rPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, lc, cb, ms, rc, blobs, getOwner, _, _, decoded, _, members, member, stored,
+      bound, _, _, _, _, _, tp, _, _, _, _, _, shape, converted, _⟩ := raw
+    have owner := Typing.recordOf_of_get getOwner decoded
+    have member' : ms[p.idx.toNat]? = some (.recr rc) := by simpa only [Array.getElem?_toList] using member
+    rcases stored with stored | collision
+    · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
+          L1.mutsRootOffset ms.toList p.idx.toNat, rc.lvls.toNat, rc.typ⟩
+      refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
+      · simp [typeRoot, record, info, memberRoot, owner, members, member', recursorType, root]
+      · exact ⟨[], blobs, converted, (fun i x impossible => by simp at impossible),
+          (fun i x m key impossible => by simp at impossible), fun x bytes belongs => (stored x bytes belongs).1⟩
+    · exact Or.inl collision
+  | muts ms =>
+    rw [L1.RawCIRep, info] at raw
+    exact raw.elim
+
 end IxVM.Refinement.GuardRaw
