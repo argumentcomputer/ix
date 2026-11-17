@@ -647,6 +647,49 @@ def dom_zero_ok := aiur_fn⟦
     }
 ⟧
 
+  -- The telescope a former declared at a definition is read at, as a type in its own right:
+  -- its binders' domains are types in the growing context and it ends in the family's sort.
+  -- The declared type was typed and is convertible with it by construction; the telescope
+  -- itself is what the kernel checks from scratch for such a family, and what the family's
+  -- recursor is generated from. A former that is syntactically its telescope was typed as
+  -- declared.
+
+def former_tele_typed := aiur_fn⟦
+  fn former_tele_typed(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, k: Field, num_lvls: Field,
+                       s: KernelTypes::KLevel) -> () {
+      match former_is_tele(ty, k) {
+        1 => {  () } ,
+        _ => {
+          let tele = former_tele_at(rc, ty, k, (&(Lists::Node::Nil)), s);
+          validate_expr_well_scoped(tele, 0, num_lvls);
+          KernelInfer::k_ensure_sort(rc, tele, (&(Lists::Node::Nil)));
+          () } ,
+      }
+    }
+⟧
+
+  -- The former's telescope as `nat_former_tele` reads it (syntactic ∀s, head-normalized
+  -- before a binder that is not one), ending in the sort `s`.
+
+def former_tele_at := aiur_fn⟦
+  fn former_tele_at(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, k: Field,
+                    types: Lists::List<KernelTypes::KExpr>, s: KernelTypes::KLevel) -> KernelTypes::KExpr {
+      match k {
+        0 => {  (&(KernelTypes::KExprNode::Srt(s))) } ,
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(d, b, m) => {
+              (&(KernelTypes::KExprNode::Forall(d,
+                former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
+            _ => {
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              (&(KernelTypes::KExprNode::Forall(d,
+                former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
+          } } ,
+      }
+    }
+⟧
+
 def check_inductive_shape := aiur_fn⟦
   fn check_inductive_shape(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n_params: Field, n_indices: Field,
                                   num_ctors: Field, num_lvls: Field,
@@ -655,6 +698,7 @@ def check_inductive_shape := aiur_fn⟦
       let ind_level = get_result_sort_level(rc, ty, n_params + n_indices,
                                                  (&(Lists::Node::Nil)));
       former_decl_ok(ty, n_params, n_indices, num_ctors, block_addr, ind_idx, ind_level);
+      former_tele_typed(rc, ty, n_params + n_indices, num_lvls, ind_level);
       check_inductive_shape_ctors(rc, ty, n_params, n_indices, num_ctors,
                                        num_lvls, block_addr, ind_idx,
                                        ind_level, is_unsafe, 0)
