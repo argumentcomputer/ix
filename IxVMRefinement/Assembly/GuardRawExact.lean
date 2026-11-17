@@ -44,7 +44,7 @@ private theorem raw_bmeta_subst (params : List Level) (u : Level) :
   unfold bmeta
   rw [Level.zeronessOf_subst]
 
-private theorem raw_forallE_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_forallE_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p tp bp lp : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (ld : loadValue h p = .ok (.construct kexprEnum "Forall" [tp, bp, lp])) :
@@ -65,7 +65,7 @@ private theorem raw_forallE_view {κ : _root_.Address → KKey} {d : Nat} {Γ : 
   | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell ld (by decide)).elim
 
-private theorem raw_app_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_app_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p fp ap : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (ld : loadValue h p = .ok (.construct kexprEnum "App" [fp, ap])) :
@@ -85,7 +85,7 @@ private theorem raw_app_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat 
   | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell ld (by decide)).elim
 
-private theorem raw_const_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_const_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p ap lsp : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (ld : loadValue h p = .ok (.construct kexprEnum "Const" [ap, lsp])) :
@@ -105,7 +105,7 @@ private theorem raw_const_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Na
   | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell ld (by decide)).elim
 
-private theorem raw_sort_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_sort_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p level : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Srt" [level])) :
@@ -120,7 +120,7 @@ private theorem raw_sort_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_lam_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_lam_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p dom body level : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Lam" [dom, body, level])) :
@@ -137,7 +137,7 @@ private theorem raw_lam_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat 
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_let_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_let_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p ty val body : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Let" [ty, val, body])) :
@@ -154,7 +154,7 @@ private theorem raw_let_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat 
   | lam cell _ _ _ | forallE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_proj_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_proj_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p ap i inner : SourceValue F}
     (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Proj" [ap, i, inner])) :
@@ -229,14 +229,14 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
         rw [rawEq, semEq]
         exact hE
       | .Srt (ld12 := loaded) (he46 := hr) (hm45 := hh) (ev62 := child) .. =>
-        obtain ⟨u, rfl, rfl, represented⟩ := raw_sort_view hE loaded
+        obtain ⟨u, rfl, rfl, represented⟩ := RawTmExact.raw_sort_view hE loaded
         have exactLevel := (Guard.level_inst_raw_spec child represented hp).2
         rw [Guard.rawSubst_eq] at exactLevel
         subst hr hh
         exact .sort (by simp) (exactLevel.mono (Heap.Extends.snoc _ _))
       | .Const (ld12 := loaded) (he101 := hr) (hm100 := hh) (ev125 := child) .. =>
         have semantic := hE.toTmExact.toTm
-        obtain ⟨a, levels, rfl, rfl, address, represented⟩ := raw_const_view hE loaded
+        obtain ⟨a, levels, rfl, rfl, address, represented⟩ := RawTmExact.raw_const_view hE loaded
         have : Resolved (κ (ixAddr a)) := ⟨semantic.const_key_ne⟩
         have exactLevels := (Guard.levels_inst_raw_spec child represented hp).2
         have substitution : Guard.rawSubst ps = Level.subst (List.range ps.length) ps :=
@@ -248,7 +248,7 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
           (exactLevels.mono (Heap.Extends.snoc _ _))
       | .App (cs179 := first) (cs207 := second) (ld12 := loaded) (he164 := hr) (hm163 := hh)
           (ev181 := e1) (ev209 := e2) (hc226 := hc) .. =>
-        obtain ⟨Rf, Ra, Ef, Ea, rfl, rfl, hf, ha⟩ := raw_app_view hE loaded
+        obtain ⟨Rf, Ra, Ef, Ea, rfl, rfl, hf, ha⟩ := RawTmExact.raw_app_view hE loaded
         have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have sf := ih first.length h1 false (Nat.le_refl _) hf hp e1
@@ -259,7 +259,7 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
           (sa.mono (Heap.Extends.snoc _ _))
       | .Lam (cs269 := first) (cs297 := second) (ld12 := loaded) (he253 := hr) (hm252 := hh)
           (ev271 := e1) (ev299 := e2) (ev327 := e3) (hc344 := hc) .. =>
-        obtain ⟨RT, RB, T, B, u, rfl, rfl, hT, hB, level⟩ := raw_lam_view hE loaded
+        obtain ⟨RT, RB, T, B, u, rfl, rfl, hT, hB, level⟩ := RawTmExact.raw_lam_view hE loaded
         have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have st := ih first.length h1 false (Nat.le_refl _) hT hp e1
@@ -274,7 +274,7 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
           (sb.mono (e3.heap_extends.trans (Heap.Extends.snoc _ _))) (exactLevel.mono (Heap.Extends.snoc _ _))
       | .Forall (cs387 := first) (cs415 := second) (ld12 := loaded) (he371 := hr) (hm370 := hh)
           (ev389 := e1) (ev417 := e2) (ev445 := e3) (hc462 := hc) .. =>
-        obtain ⟨RT, RB, T, B, u, rfl, rfl, hT, hB, level⟩ := raw_forallE_view hE loaded
+        obtain ⟨RT, RB, T, B, u, rfl, rfl, hT, hB, level⟩ := RawTmExact.raw_forallE_view hE loaded
         have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have st := ih first.length h1 false (Nat.le_refl _) hT hp e1
@@ -289,7 +289,7 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
           (sb.mono (e3.heap_extends.trans (Heap.Extends.snoc _ _))) (exactLevel.mono (Heap.Extends.snoc _ _))
       | .Let (cs505 := first) (cs533 := second) (cs561 := third) (ld12 := loaded)
           (he489 := hr) (hm488 := hh) (ev507 := e1) (ev535 := e2) (ev563 := e3) (hc580 := hc) .. =>
-        obtain ⟨RT, RV, RB, T, V, B, rfl, rfl, hT, hV, hB⟩ := raw_let_view hE loaded
+        obtain ⟨RT, RV, RB, T, V, B, rfl, rfl, hT, hV, hB⟩ := RawTmExact.raw_let_view hE loaded
         have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
         have h3 : third.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
@@ -306,7 +306,7 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
       | .Proj (cs654 := children) (ld12 := loaded) (he624 := hr) (hm623 := hh)
           (ev656 := child) (hc673 := hc) .. =>
         have semantic := hE.toTmExact.toTm
-        obtain ⟨a, index, RI, I, rfl, rfl, rfl, address, inner⟩ := raw_proj_view hE loaded
+        obtain ⟨a, index, RI, I, rfl, rfl, rfl, address, inner⟩ := RawTmExact.raw_proj_view hE loaded
         have : Resolved (κ (ixAddr a)) := ⟨semantic.proj_key_ne⟩
         have : ProjPermitted κ (ixAddr a) := semantic.proj_permitted loaded address
         have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons] at hlen; omega
