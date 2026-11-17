@@ -83,7 +83,7 @@ def makeCase (variant : Nat) : Except String Case := do
     (env.storeConst addr record, addr)
   let context ← Ix.ClaimContext.ofEnv env
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context address none)
-  pure {
+  let c : Case := {
     label := if variant == 0 then "canonical two-family recursors" else
       if variant == 1 then "plain standalone one-motive recursor of modeled parent" else
       "motive-Let standalone one-motive recursor of modeled parent"
@@ -92,6 +92,9 @@ def makeCase (variant : Nat) : Except String Case := do
       some "model advice: the payload names another recursor family" else
       some "native recursor: the major premise belongs to a modeled block"
     witness := witness }
+  -- the canonical family and the plain standalone recursor are recursors of a mutual family:
+  -- the program refuses them before it reads a model, while it refuses such recursors
+  pure (if variant ≤ 1 then c.throughModeledRecursor else c)
 
 private def nativeType (motiveLet resultLet : Bool) : Ixon.Expr :=
   let nat : Ixon.Expr := .ref 1 #[]

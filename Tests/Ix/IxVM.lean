@@ -146,6 +146,19 @@ def entryCheckEntries : List (String × Nat) := [
   ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 602_012_061),
   ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 906_314_709)]
 
+/-- Whether `name` is a recursor with two or more motives: a recursor of a mutual or nested
+family, which the program refuses while `modeledRecursorsRefused`. -/
+def isModeledRecursor (env : Lean.Environment) (name : Lean.Name) : Bool :=
+  match env.find? name with
+  | some (.recInfo rv) => rv.numMotives > 1
+  | _ => false
+
+/-- A pinned check case as the program in force decides it: refused when it claims a recursor
+of a mutual or nested family that the program refuses, else accepted at its FFT pin. -/
+def pinnedCheck (env : Lean.Environment) (name : Lean.Name) (cost : Nat) (c : Case) : Case :=
+  if modeledRecursorsRefused && isModeledRecursor env name then c.throughModeledRecursor
+  else { c with expectedFftCost := some cost }
+
 /-- A `Check` claim on `name` over `ixonEnv`. -/
 def kernelCheckCase (ixonEnv : Ixon.Env) (name : Lean.Name) (assumeBinding : Bool) :
     Builder := fun _ => do
@@ -223,10 +236,10 @@ def kernelChecks (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[ixvm-kernel-checks] compiled the closures in {(← IO.monoMsNow) - started} ms"
   let assumed := kernelCheckEntries.map fun (n, cost) => fun u => do
     let c ← kernelCheckCase ixonEnv (nameOfString n) true u
-    return { c with expectedFftCost := some cost }
+    return pinnedCheck env (nameOfString n) cost c
   let validating := validatingCheckEntries.map fun (n, cost) => fun u => do
     let c ← kernelCheckCase ixonEnv (nameOfString n) false u
-    return { c with expectedFftCost := some cost }
+    return pinnedCheck env (nameOfString n) cost c
   let binding : Builder := fun _ => do
     let ctx ← Ix.ClaimContext.ofEnv ixonEnv
     let c ← Case.ofClaim "binding claim for the default table" ixonEnv (.binding ctx.spec ctx.binding)
@@ -236,7 +249,7 @@ def kernelChecks (env : Lean.Environment) : IO UInt32 := do
   let fixEnv ← loadSharedIxonEnv (entryCheckEntries.map (nameOfString ∘ Prod.fst)).toArray fenv
   let entry := entryCheckEntries.map fun (n, cost) => fun u => do
     let c ← kernelCheckCase fixEnv (nameOfString n) true u
-    return { c with expectedFftCost := some cost }
+    return pinnedCheck fenv (nameOfString n) cost c
   runCases "ixvm-kernel-checks" (assumed ++ validating ++ entry ++ [binding, shard]).toArray
 
 end Tests.Ix.IxVM

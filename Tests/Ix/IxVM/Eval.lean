@@ -512,6 +512,11 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
         ``Fixtures.openOffset, ``Fixtures.openZero])
   let base := Ix.Commit.mkCompileEnv phases
   let env := phases.compileEnv
+  -- the fixtures over the nested family `Rose` reach its recursor, which the program refuses
+  -- while `modeledRecursorsRefused`
+  let throughRose (name : Lean.Name) : Option String :=
+    if modeledRecursorsRefused && (name == ``Fixtures.nestedTree || name == ``Fixtures.wellFoundedTree)
+    then some modeledRecursorRefusal else none
   let mut seq : TestSeq := .done
   for name in numeric.map Prod.fst ++ neutral do
     let some (.defnInfo info) := leanEnv.find? name
@@ -522,11 +527,11 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
         (expected == .lit (.natVal n))
     let input ← lookupAddr env name
     let (fixture, obj) ← compiledOutput base env info.levelParams info.type expected
-    r.build <| execute s!"Lean differential: {name}" (← witness fixture input obj)
+    r.build <| execute s!"Lean differential: {name}" (← witness fixture input obj) (throughRose name)
     if let some (_, n) := numeric.find? (fun p => p.1 == name) then
       let (fixture, wrong) ← natOutput env (n + 1)
       r.build <| execute s!"incorrect result: {name}"
-        (← witness fixture input wrong) (some "result does not match")
+        (← witness fixture input wrong) (throughRose name <|> some "result does not match")
   -- The elaborator deliberately wraps this accessibility proof in opaqueId.
   -- A kernel-reduction claim must respect that boundary, even though native
   -- compilation can execute the function by erasing proofs.
@@ -536,7 +541,8 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
   seq := seq ++ test "generated WF fixture contains the opaqueId dependency"
     ((closureFrom env input).contains opaqueId)
   r.build <| execute "opaque accessibility proof blocks kernel evaluation"
-    (← witness fixture input output) (some "result does not match")
+    (← witness fixture input output)
+    (throughRose ``Fixtures.wellFoundedTree <|> some "result does not match")
   -- This explicit proof does expose constructors to Acc.rec. Meta keeps its
   -- theorem heads opaque, so pin the independent triangular-number answer.
   let input ← lookupAddr env ``Fixtures.wellFoundedSum
