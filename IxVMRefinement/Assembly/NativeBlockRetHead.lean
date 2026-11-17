@@ -240,7 +240,8 @@ theorem BlockRawRetHead.ctorRetHeadAt {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     (hR : BlockRawRetHead t E B ind cb) {b₀ : Bytes.Address} (hb₀ : Core.ixAddr b₀ = B)
     {idx nP : Nat} (hidx : idx = 0) (hnP : nP = ind.params.toNat)
     {ctors_info : List (Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat)}
-    (hinfo : ∀ j info, ctors_info[j]? = some info →
+    (hinfo : ∀ (j : Nat) (info : Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat),
+      ctors_info[j]? = some info →
       ∃ ct : Ixon.Constructor, ind.ctors[j]? = some ct ∧ info.2.1 = ct.fields.toNat)
     (x_block : SourceValue F) {calls_bound : List (Call F)}
     (hnc : ¬ View.HashedCollision { env := E } [] calls_bound) (hbound : Bounded calls_bound) :
@@ -347,7 +348,8 @@ theorem FamRetHead.ctorRetHeadAt_of_record {t : Ix.Kernel.RoleTable} {E : Ixon.E
     (hnP : fam.p.nP = ind.params.toNat)
     {b₀ : Bytes.Address} (hb₀ : Core.ixAddr b₀ = ip.block)
     {ctors_info : List (Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat)}
-    (hinfo : ∀ j info, ctors_info[j]? = some info →
+    (hinfo : ∀ (j : Nat) (info : Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat),
+      ctors_info[j]? = some info →
       ∃ ct : Ixon.Constructor, ind.ctors[j]? = some ct ∧ info.2.1 = ct.fields.toNat)
     (x_block : SourceValue F) {calls_bound : List (Call F)}
     (hnc : ¬ View.HashedCollision { env := E } [] calls_bound) (hbound : Bounded calls_bound) :
