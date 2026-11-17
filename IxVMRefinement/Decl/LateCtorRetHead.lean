@@ -136,6 +136,7 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
   | none => rw [hgetB] at hrecB; cases hrecB
   | some lc =>
     rw [hgetB] at hrecB
+    change (Ixon.deConstantExact lc.rawBytes).toOption = some cb at hrecB
     have hdec : Ixon.deConstantExact lc.rawBytes = .ok cb := by
       cases hd : Ixon.deConstantExact lc.rawBytes with
       | error e => rw [hd] at hrecB; cases hrecB
