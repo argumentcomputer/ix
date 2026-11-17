@@ -8,6 +8,7 @@ public import IxC.Kernel.Model.Inductives.FixZeroField
 public import IxC.Kernel.Semantics.Inductives.DeclNative
 public import IxC.Kernel.Model.Inductives.NativeJudge
 public import IxC.Kernel.Model.ThmVal
+public import IxC.Kernel.Model.Inductives.NativeFam
 import IxC.Kernel.Verify.Inductives.FixParts
 public section
 
@@ -88,7 +89,10 @@ environment (`DeclNativeRunJ`) or the table over the constructors' environment
 (`DeclNativeNoRecRunJ`). The stages read the record through the package's
 soundness (`JudgeSound`), its inversions (`JudgeInv`) and its sort claims
 (`SortClaimJ`); the new model extends the old one wherever the stored theorem
-values are read (`ThmValOk`). -/
+values are read (`ThmValOk`), and there the family is well-formed at the new model
+(`NativeFamOk`, at the completed record, the stored former, the telescope constant and
+the stored constructors), in both tails: the data the recursor's stage reads, at the
+small eliminator, so that the stage applies to the family at a later environment. -/
 theorem declNativeCoreJ {J : Judgements md}
     (hfr : ∀ e : Env md, JudgeFrames J e)
     (hJ : ∀ {e : Env md} (m : EnvModelM V μ e), JudgeSound J m.base2)
@@ -127,7 +131,10 @@ theorem declNativeCoreJ {J : Judgements md}
             :: (Ix.Kernel.consSumCtors p.nP ctorsA env₁).consts⟩ = .ok env₂) ∨
       Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
         (Ix.Kernel.consSumCtors p.nP ctorsA env₁) = .ok env₂) :
-    ∃ mp₂ : EnvModelM V μ env₂, ThmValOk mp → ModelExt mp mp₂ := by
+    ∃ mp₂ : EnvModelM V μ env₂, ThmValOk mp →
+      ModelExt mp mp₂ ∧
+      ∀ (cvS : ConstantVal md) (caps : IndCaps md),
+        env₁ = ⟨.indInfo cvS caps :: env.consts⟩ → NativeFamOk mp₂ ⟨p, cvS, cvTa, ctorsA⟩ := by
   subst hp
   obtain ⟨hshape, -⟩ := Ix.Kernel.nativeParts?_inv hdp
   obtain ⟨-, hClps₀, hresT₀, -⟩ := Ix.Kernel.nativeShape?_inv hshape
@@ -1216,6 +1223,44 @@ theorem declNativeCoreJ {J : Judgements md}
       rw [hFssD ψ j cA hjA] at hsp
       have hf := (hframes j cA hjA).2 ψ ρp (((hframes j cA hjA).1 ψ ρp).mp hρp)
       exact ((hf.2.2 bs hsp).1 E hE).2
+  -- the family's data at the constructors' environment, at the small eliminator: what
+  -- the recursor's stage reads of the family, kept along every later model extension
+  have hfamC : NativeFamAt mpC p cvS cvTa ctorsA env bsT ppsAll uAV Fss₀ idxF dsF esF srcsF ksF
+      fvsPF xFvsF xrestF eissF tssF :=
+    { resT := hresT
+      lenA := hlenA
+      lenK := hlenK'
+      ks := hks
+      stripT := hstripT
+      lpsT := hlpsT
+      lpsS := hSl.trans hlpsT
+      lpsA := hlpsA
+      uParams := hUparams
+      boundT := Option.isSome_iff_exists.mpr ⟨_, hfT_C⟩
+      boundC := fun cA hcA => by
+        obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
+        exact Option.isSome_iff_exists.mpr ⟨_, (hcf_C j cA hj).1⟩
+      projT := (noProjFresh_of_check hI hccvT).mono fun n hn =>
+        find?_none_of_cons (Ix.Kernel.consSumCtors_find?_none hn)
+      projC := fun cA hcA => by
+        obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
+        obtain ⟨_, _, hCtor⟩ := hrunOf' j cA hj
+        obtain ⟨_, hck⟩ := hCtor.check
+        exact (noProjFresh_of_check hI hck).mono fun n hn =>
+          Ix.Kernel.consSumCtors_find?_none hn
+      resC := fun cA hcA => by
+        obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
+        exact (mpC.base2.wf _ (List.mem_of_find?_eq_some (hcf_C j cA hj).1)).2.2.1
+      idxRes := hidxRes_C
+      former := hFD_C
+      ctor := fun j cA hj => (hcf_C j cA hj).2.2.small
+      leafT := hleafT_C'
+      leafC := hleafC_C
+      paramsIff := fun j cA hj => (hframes j cA hj).1
+      frames := hframesR
+      fieldsBound := fun hpr j cA hj ψ ρ hρ => by
+        obtain ⟨_, -, -, -, hb⟩ := hsortsOf j cA hj
+        exact (hb ψ ρ hρ).1 hpr }
   rcases htail with ⟨cvRa, rhss, hwl, hRec, hTbl⟩ | hTbl
   · -- the recursor's stage
     -- the recursor's LEVEL PARAMETERS are the RECURSOR STAGE's pins
@@ -1312,23 +1357,38 @@ theorem declNativeCoreJ {J : Judgements md}
         ⟨.indInfo cvS (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRa.name = none := by
       obtain ⟨hRn, -, hRf, -⟩ := hRec.recursor
       rw [hRn]; exact hRf
-    refine ⟨mp₂, fun hthm => ((ModelExt.plain .refl hacIS hTfreshS).trans hextC).trans
-      ((ModelExt.plain .refl hac₃ hRfresh).trans (hext₂ fun cv v hm i => ?_))⟩
-    rcases List.mem_cons.mp (thmInfo_mem_consSumCtors hm) with h0 | h0
-    · exact nomatch h0
-    · exact Ix.Kernel.Expr.noProjAt_of_constsResolve hTfresh' _ (hthm.resolve cv v h0)
-  
+    refine ⟨mp₂, fun hthm => ?_⟩
+    have hextC₂ : ModelExt mpC mp₂ :=
+      (ModelExt.plain .refl hac₃ hRfresh).trans (hext₂ fun cv v hm _ => by
+        rcases List.mem_cons.mp (thmInfo_mem_consSumCtors hm) with h0 | h0
+        · exact nomatch h0
+        · exact Ix.Kernel.Expr.noProjAt_of_constsResolve hTfresh' _ (hthm.resolve cv v h0))
+    -- the family's data cross the recursor's cons and the table's
+    refine ⟨((ModelExt.plain .refl hacIS hTfreshS).trans hextC).trans hextC₂,
+      fun cvS' _ heq => ?_⟩
+    obtain rfl : cvS = cvS' :=
+      (ConstantInfo.indInfo.inj (List.cons.inj (congrArg Ix.Kernel.Env.consts heq)).1).1
+    exact (congrArg (fun q => NativeFamOk mp₂ ⟨q, cvS, cvTa, ctorsA⟩) hp).mpr
+      (hfamC.ext hextC₂).ok
+
   · -- no recursor: the table over the constructors' environment
     obtain ⟨mp₂, hext₂⟩ := declNativeTableNoRecJ hI rfl rfl hTbl mpC hProp hClps hresT
       (by rw [← hTname₀]; exact hpshapeT)
       mp.base2.wf hlenA hnFc hrunOf hfT_C hSalt hlpsT hTfresh'
       (by rw [hTtype]; exact htrT) hFD_C ⟨_, hstripT⟩ hcf_C hleafT_C' hleafC_C hframes hsortsOf
       (fun ψ ρp h => ⟨(hframesR ψ ρp h).1, (hframesR ψ ρp h).2.1⟩)
-    refine ⟨mp₂, fun hthm => ((ModelExt.plain .refl hacIS hTfreshS).trans hextC).trans
-      (hext₂ fun cv v hm i => ?_)⟩
-    rcases List.mem_cons.mp (thmInfo_mem_consSumCtors hm) with h0 | h0
-    · exact nomatch h0
-    · exact Ix.Kernel.Expr.noProjAt_of_constsResolve hTfresh' _ (hthm.resolve cv v h0)
+    refine ⟨mp₂, fun hthm => ?_⟩
+    have hextC₂ : ModelExt mpC mp₂ := hext₂ fun cv v hm _ => by
+      rcases List.mem_cons.mp (thmInfo_mem_consSumCtors hm) with h0 | h0
+      · exact nomatch h0
+      · exact Ix.Kernel.Expr.noProjAt_of_constsResolve hTfresh' _ (hthm.resolve cv v h0)
+    -- the family's data cross the table's cons
+    refine ⟨((ModelExt.plain .refl hacIS hTfreshS).trans hextC).trans hextC₂,
+      fun cvS' _ heq => ?_⟩
+    obtain rfl : cvS = cvS' :=
+      (ConstantInfo.indInfo.inj (List.cons.inj (congrArg Ix.Kernel.Env.consts heq)).1).1
+    exact (congrArg (fun q => NativeFamOk mp₂ ⟨q, cvS, cvTa, ctorsA⟩) hp).mpr
+      (hfamC.ext hextC₂).ok
 
 /-- **The P carrier survives a direct recursive install**, over a judgement package
 (`declNativeCoreJ` with the recursor's tail). -/
@@ -1343,8 +1403,9 @@ theorem declNativeJ {J : Judgements md}
     ∃ mp₂ : EnvModelM V μ env₂, ThmValOk mp → ModelExt mp mp₂ := by
   obtain ⟨hnd₀, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     hInd, hp, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, hRec, hTbl, hFR⟩ := h
-  exact declNativeCoreJ hfr hJ hI hS mp hE hdp hnd₀ hInd hp hCtors hK hcaps hopT2 hsorts hFOk hFR
-    (Or.inl ⟨cvRa, rhss, hwl, hRec, hTbl⟩)
+  obtain ⟨mp₂, hext⟩ := declNativeCoreJ hfr hJ hI hS mp hE hdp hnd₀ hInd hp hCtors hK hcaps
+    hopT2 hsorts hFOk hFR (Or.inl ⟨cvRa, rhss, hwl, hRec, hTbl⟩)
+  exact ⟨mp₂, fun hthm => (hext hthm).1⟩
 
 /-- **The P carrier survives a direct install without a recursor record**, over a
 judgement package (`declNativeCoreJ` with the table over the constructors). The
@@ -1368,8 +1429,9 @@ theorem declNativeNoRecJ {J : Judgements md}
       · exact ⟨_, hdp⟩
       · exact nomatch hdp
     · exact nomatch hdp
-  exact declNativeCoreJ hfr hJ hI hS mp hE hdp' hnd₀ hInd hp hCtors hK hcaps hopT2 hsorts hFOk hFR
-    (Or.inr hTbl)
+  obtain ⟨mp₂, hext⟩ := declNativeCoreJ hfr hJ hI hS mp hE hdp' hnd₀ hInd hp hCtors hK hcaps
+    hopT2 hsorts hFOk hFR (Or.inr hTbl)
+  exact ⟨mp₂, fun hthm => (hext hthm).1⟩
 
 /-- The P carrier survives a direct recursive install: `declNativeJ` at the kernel's
 runs. -/
