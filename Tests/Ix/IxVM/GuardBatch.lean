@@ -259,7 +259,7 @@ private def modeledType (member : UInt64) (wrapped : Bool) : Ixon.Expr :=
 
 /-- A modeled family's recursors, the first with a `let` in its index's domain when
 `wrapped`, claimed with the model advice generated for that family record. -/
-private def modeledHeaderCase (guards recursors wrapped : Bool) : Except String Case := do
+private def modeledHeaderCase (guards recursorsRefused wrapped : Bool) : Except String Case := do
   let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
   let table ← defaultTable
   let some nat := table.addressOf? .nat | throw "missing Nat"
@@ -293,7 +293,7 @@ private def modeledHeaderCase (guards recursors wrapped : Bool) : Except String 
     accept := true
     witness := witness }
   -- a program that refuses the recursors of such a family refuses the block of them first
-  return if recursors then
+  return if recursorsRefused then
     { c with accept := false, rejectsWith := some modeledRecursorRefusal }
   else if wrapped then
     refused guards "recursor header: a let in an index's domain" none c
