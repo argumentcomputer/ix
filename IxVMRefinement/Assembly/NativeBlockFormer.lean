@@ -601,4 +601,18 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
   rw [Decl.posOf_range] at inferred
   exact ⟨ty', hcT, hannT, checked, sty, u, inferred, reduced⟩
 
+/-- **IxC's former stage at a syntactic telescope**: the checked former is the telescope constant
+and the stored former; the record is completed with the sort the telescope ends in, and the
+former is stored at the capability record of that completed record. -/
+theorem sumIndRunJ_of_former {env : Ix.Kernel.Env .anon} {p : Ix.Kernel.InductiveShape .anon}
+    {cv' : Ix.Kernel.ConstantVal .anon} {isRec : Bool}
+    {bs : List (Core.KExpr × Ix.Kernel.BinderMeta)} {s : Core.KLevel}
+    (hchk : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p.cvT cv')
+    (htele : cv'.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s)) :
+    Ix.Kernel.Semantics.SumIndRunJ Ix.Kernel.Model.rulesJ env p
+      (fun p₁ => Ix.Kernel.nativeCapsAt p₁ isRec)
+      ⟨.indInfo cv' (Ix.Kernel.nativeCapsAt (p.withSort s) isRec) :: env.consts⟩ cv'
+      (p.withSort s) :=
+  ⟨cv', s, bs, cv', hchk, Or.inl rfl, htele, Or.inl rfl, rfl, rfl⟩
+
 end IxVM.Refinement.Typing
