@@ -125,4 +125,48 @@ theorem valueRoot_converted_dprj {E : Ixon.Env} {h : Heap F} {a : _root_.Address
         fun x bytes belongs => (stored x bytes belongs).1⟩
   · exact Or.inl collision
 
+/-- The actual Defn runtime tag rules out every non-definition record kind, so the selected
+value root producer covers every raw constant load accepted by the classifier's delta branch. -/
+theorem valueRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
+    {c : Ixon.Constant} {v nl ty value flag hint : SourceValue F}
+    (record : recordOf E a = some c)
+    (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
+    (raw : L1.RawCIRep E h a c v) :
+    L1.EnvInternalCollision E ∨ ∃ root,
+      valueRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
+      nl = .field (root.levels : F) ∧ RootConverted (fun x => E.blobs.get? x) root h value := by
+  cases info : c.info with
+  | defn d => exact valueRoot_converted_defn record info shape raw
+  | dPrj p => exact valueRoot_converted_dprj record info shape raw
+  | axio ax =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, observedShape, _⟩ := raw
+    simp [shape] at observedShape
+  | quot q =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, observedShape, _⟩ := raw
+    simp [shape] at observedShape
+  | recr rc =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, observedShape, _, _⟩ := raw
+    simp [shape] at observedShape
+  | iPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _,
+      _, _, _, _, _, _, _, _, _, _, observedShape, _⟩ := raw
+    simp [shape] at observedShape
+  | cPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+      _, _, _, _, _, _, _, _, _, _, observedShape, _⟩ := raw
+    simp [shape] at observedShape
+  | rPrj p =>
+    rw [L1.RawCIRep, info] at raw
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _,
+      _, _, _, _, _, _, _, _, _, _, _, _, observedShape, _, _⟩ := raw
+    simp [shape] at observedShape
+  | muts ms =>
+    rw [L1.RawCIRep, info] at raw
+    exact raw.elim
+
 end IxVM.Refinement.GuardRaw
