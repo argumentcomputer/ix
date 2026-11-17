@@ -36,7 +36,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .nat := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [238, 93, 66, 79, 111, 187, 84, 16,
@@ -50,7 +50,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .natZero := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [9, 133, 26, 4, 34, 161, 136, 34,
@@ -64,7 +64,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .natSucc := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [117, 124, 169, 221, 187, 253, 252, 185,
@@ -78,7 +78,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .natRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [163, 125, 40, 162, 42, 2, 205, 51,
@@ -92,7 +92,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .bool := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [119, 219, 130, 215, 5, 42, 96, 110,
@@ -106,7 +106,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .boolFalse := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [165, 252, 133, 109, 230, 53, 207, 196,
@@ -120,7 +120,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .boolTrue := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [239, 21, 100, 99, 165, 39, 191, 210,
@@ -134,7 +134,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .boolRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [105, 227, 8, 65, 57, 249, 243, 250,
@@ -148,7 +148,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .eq := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [157, 60, 123, 207, 204, 143, 31, 22,
@@ -162,7 +162,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .eqRefl := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [84, 176, 61, 237, 207, 208, 182, 145,
@@ -176,7 +176,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .eqRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [11, 185, 20, 221, 56, 223, 206, 142,
@@ -190,7 +190,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .punit := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [31, 36, 179, 69, 4, 94, 131, 3,
@@ -204,7 +204,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .punitUnit := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [165, 137, 154, 97, 138, 94, 199, 185,
@@ -218,7 +218,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .punitRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [87, 47, 254, 188, 254, 189, 72, 56,
@@ -232,7 +232,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .empty := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [200, 113, 200, 114, 197, 245, 219, 243,
@@ -246,7 +246,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .emptyRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [57, 63, 142, 173, 104, 3, 131, 19,
@@ -260,7 +260,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .false := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [206, 119, 72, 125, 84, 147, 216, 231,
@@ -274,7 +274,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .falseRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [12, 157, 146, 76, 234, 173, 212, 107,
@@ -288,7 +288,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .and := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [79, 73, 42, 148, 176, 248, 146, 206,
@@ -302,7 +302,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .andIntro := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [151, 147, 60, 16, 155, 196, 138, 178,
@@ -316,7 +316,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .andRec := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [244, 229, 147, 204, 38, 9, 152, 78,
@@ -330,7 +330,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .quot := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [200, 123, 41, 147, 28, 228, 224, 2,
@@ -344,7 +344,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .quotMk := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [179, 142, 110, 198, 61, 58, 198, 202,
@@ -358,7 +358,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .quotLift := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [171, 187, 156, 7, 178, 196, 102, 237,
@@ -372,7 +372,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .quotInd := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [44, 5, 242, 131, 164, 80, 160, 87,
@@ -386,7 +386,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hr : ro = .quotSound := RolesAux.roleNum_inj (Value.field.inj hi)
     subst ro
     have hp' : ptr = .ptr addrTy h.length := by
-      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and] using hp
+      simpa only [Value.tuple.injEq, List.cons.injEq, and_true, true_and, Core.addrTy, List.replicate_succ, List.replicate_zero] using hp
     subst ptr
     let bs : List UInt8 :=
       [132, 246, 186, 212, 18, 241, 180, 234,
