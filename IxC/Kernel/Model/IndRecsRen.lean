@@ -45,6 +45,13 @@ universe w
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode}
 
+/-- **One recursor's fired rows, at a fixed carrier**: `RecLawsAt` (`Model/IndRecs.lean`),
+restated with its body exposed. -/
+@[expose] def RecLawsRen {env : Env md} (m : EnvModel V env) (cv : ConstantVal md)
+    (mI rP : Nat) (rules : List (RecRule md)) : Prop :=
+  ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
+    ∀ φ : LevelParam → Nat, RecRuleLaw m φ cv.name cv mI rP rl
+
 set_option maxHeartbeats 1600000 in
 /-- **The provisioning and the install fold, run together at the reading**, over the renamed
 record (`indRecsFold` with `iotaRulesRen`). -/
@@ -63,7 +70,7 @@ theorem indRecsFoldRen {J K : Judgements md}
         (rules : List (RecRule md)),
         envF.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
-        RecLawsAt mp.base2 cv mI rP rules) →
+        RecLawsRen mp.base2 cv mI rP rules) →
       (∀ ci ∈ recs, blockNames.contains ci.name = true) →
       ProvisionRecsRunJ K blockNames envP recs envSelf checked →
       IndRecsFoldRenRunJ J blockNames envBase envSelf
@@ -72,7 +79,7 @@ theorem indRecsFoldRen {J K : Judgements md}
         (rules : List (RecRule md)),
         env₃.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
-        RecLawsAt mp.base2 cv mI rP rules := by
+        RecLawsRen mp.base2 cv mI rP rules := by
   intro recs
   induction recs with
   | nil =>
@@ -93,7 +100,7 @@ theorem indRecsFoldRen {J K : Judgements md}
     have hbnA : blockNames.contains cvA.name = true := by
       rw [hnameA]; exact hbn ci₀ List.mem_cons_self
     -- this recursor's rules, fired from their renamed typings
-    have hfacts : RecLawsAt mp.base2 cvA mI rP rules' :=
+    have hfacts : RecLawsRen mp.base2 cvA mI rP rules' :=
       fun rl hrl hfire φ =>
         iotaRulesRen mp hJ rfl hroT (blockRen_idem hns) hIS hupB hbnA hselfA
           heqfB 0 rules rules' hiot rl hrl hfire φ
