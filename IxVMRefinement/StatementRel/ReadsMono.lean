@@ -32,7 +32,7 @@ theorem exprReader_mono (hb : ∀ x b, blob x = some b → blob' x = some b)
     (h : (exprReader t blob src param self).read e = .ok v) :
     (exprReader t blob' src param self).read e = .ok v :=
   read_le (cx₁ := readCtx t blob) (cx₂ := readCtx t blob')
-    (fun a k hk => (readCtx_keyAt_blob t blob blob' a).symm.trans hk) hb
+    (fun a _ hk => (readCtx_keyAt_blob t blob blob' a).symm.trans hk) hb
     (fun _ _ hs => hs) h
 
 private theorem forall₂_imp {α β : Type} {R S : α → β → Prop} (H : ∀ a b, R a b → S a b) :
