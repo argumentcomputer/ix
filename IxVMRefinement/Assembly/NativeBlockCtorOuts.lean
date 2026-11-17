@@ -228,6 +228,10 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     · rw [hty'']
       exact hcr'
   -- the dispatch is native
+  have hsafeF : L1.repBoolField ind.isUnsafe = .field 0 := by
+    rw [hinlogic.1]
+    rfl
+  rw [hsafeF, Nat.cast_zero] at ev_chk
   rcases Decl.native_induct_dispatch ev_chk with hnative | modeled
   rotate_left
   · exfalso
@@ -240,11 +244,7 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have e_sort : Heap.Extends m_chk native.before := native.initialToShape
   have e_ctor : Heap.Extends m_chk shape.ctorBefore :=
     native.initialToShape.trans shape.initial_to_ctors
-  have hsafeF : L1.repBoolField ind.isUnsafe = .field 0 := by
-    rw [hinlogic.1]
-    rfl
   have ctorRun₀ := shape.ctorRun
-  rw [hsafeF, Nat.cast_zero] at ctorRun₀
   have hbRepCtor : Bytes.RepAddressRef Core.addrTy shape.ctorBefore b blkPtr :=
     Bytes.repAddressRef_heapMono₂ Core.addrTy e_ctor hb_rep
   have hblockB : recordOf E (Core.ixAddr b) = some cb := by
@@ -393,8 +393,17 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have hlpsL : ind.lvls.toNat = p₀.cvT.levelParams.length := by
     rw [hcvT]
     simp
-  have ctorRun := ctorRun₀
-  rw [← hnP, ← hnIdx, ← hlenP, hlpsL] at ctorRun
+  have hrun_at : ∀ a₁ a₂ a₃ a₄ : Nat, a₁ = ind.params.toNat → a₂ = ind.indices.toNat →
+      a₃ = ind.ctors.size → a₄ = ind.lvls.toNat →
+      ObsFn Core.W "KernelCheck::check_inductive_shape_ctors"
+        [rc, tyPtr, .field (a₁ : F), .field (a₂ : F), .field (a₃ : F), .field (a₄ : F), blkPtr,
+          .field 0, shape.sortLevel, .field 0, .field 0]
+        shape.ctorBefore shape.result shape.after shape.ctorCalls := by
+    intro a₁ a₂ a₃ a₄ h₁ h₂ h₃ h₄
+    subst h₁ h₂ h₃ h₄
+    exact ctorRun₀
+  have ctorRun := hrun_at p₀.nP p₀.nIdx p₀.ctors.length p₀.cvT.levelParams.length hnP hnIdx
+    hlenP hlpsL.symm
   have h256 : (2 : Nat) ^ 56 = 72057594037927936 := by norm_num
   have houts : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
       sortss.length = p₀.ctors.length ∧
