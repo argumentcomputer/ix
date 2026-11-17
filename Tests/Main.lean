@@ -52,6 +52,8 @@ import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.SafeReferences
 import Tests.Ix.IxVM.RecursorParentRoute
 import Tests.Ix.IxVM.GuardBatch
+import Tests.Ix.IxVM.RecGen
+import Tests.Ix.IxVM.GuardCorpus
 import Tests.Ix.IxVM.AliasFormers
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
@@ -273,6 +275,8 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-guard-batch" (.ci .ixvm) Tests.Ix.IxVM.GuardBatch.run,
+  .env "ixvm-recgen" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: native recursor corpus controls") Tests.Ix.IxVM.RecGen.run,
+  .env "ixvm-guard-corpus" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: declaration controls; optional IX_GUARD_CORPUS_ADDRESS_FILE") Tests.Ix.IxVM.GuardCorpus.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   .runner "ixvm-alias-formers" (.manual "formers that are not a telescope into a sort, walked as the native check walks them, of IX_ALIAS_IXE; IX_ALIAS_OUT") Tests.Ix.IxVM.AliasFormers.run,
   -- The binder data a witness carries for the conversion: hand-made records
