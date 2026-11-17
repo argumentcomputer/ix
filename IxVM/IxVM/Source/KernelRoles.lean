@@ -892,7 +892,7 @@ def validate_op := aiur_fn⟦
   fn validate_op(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
       match ci {
-        KernelTypes::KConstantInfo::Defn(_, ty, _, safety, _) => {
+        KernelTypes::KConstantInfo::Defn(_, ty, val, safety, _) => {
           match safety {
             Ixon::DefinitionSafety::Safe => {  () } ,
             _ => {
@@ -909,14 +909,18 @@ def validate_op := aiur_fn⟦
           let ev = role_evidence(tbl, r);
           assert_eq!(Lists::length(ev), KernelRoleSpec::op_equation_count(r),
             "an operation's evidence does not match its equations");
-          validate_op_equations(rc, tbl, r, ev, 0) } ,
+          validate_op_equations(rc, tbl, r, a, val, ev, 0) } ,
       }
     }
 ⟧
 
+  -- An operation's equations hold for its value: each side opened under two `Nat` variables
+  -- (`x` is `BVar(1)`, `y` is `BVar(0)`), with every occurrence of the operation replaced by its
+  -- record's value `val` (closed), so that nothing here needs the operation stored.
+
 def validate_op_equations := aiur_fn⟦
-  fn validate_op_equations(rc: RoleCtx, tbl: RoleTable, r: Field,
-        ev: Lists::List<RoleEvidence>, k: Field) -> () {
+  fn validate_op_equations(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
+        val: KernelTypes::KExpr, ev: Lists::List<RoleEvidence>, k: Field) -> () {
       match (*(ev)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(e, rest) => {
@@ -924,8 +928,10 @@ def validate_op_equations := aiur_fn⟦
             0 => {
               match e {
                 RoleEvidence::Defeq => {
-                  assert_eq!(KernelDefEq::k_is_def_eq(rc, KernelRoleSpec::op_equation_lhs(tbl, r, k),
-                      KernelRoleSpec::op_equation_rhs(tbl, r, k), (&(Lists::Node::Nil))), 1,
+                  let (lhs, types) = open_two_lams(KernelRoleSpec::op_equation_lhs(tbl, r, k));
+                  let (rhs, _) = open_two_lams(KernelRoleSpec::op_equation_rhs(tbl, r, k));
+                  assert_eq!(KernelDefEq::k_is_def_eq(rc, KernelSubst::subst_const(lhs, a, val),
+                      KernelSubst::subst_const(rhs, a, val), types), 1,
                     "an operation's equation does not hold by definition");
                   () } ,
                 RoleEvidence::Proof(_) => {
@@ -946,7 +952,22 @@ def validate_op_equations := aiur_fn⟦
                   } } ,
               } } ,
           };
-          validate_op_equations(rc, tbl, r, rest, k + 1) } ,
+          validate_op_equations(rc, tbl, r, a, val, rest, k + 1) } ,
+      }
+    }
+⟧
+
+  -- A rendered equation side `fun (x : Nat) (y : Nat) => body`: the body, open at depth 2, and
+  -- the two binders' types, innermost first.
+
+def open_two_lams := aiur_fn⟦
+  fn open_two_lams(e: KernelTypes::KExpr) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::Lam(t1, inner, _) => {
+          match (*(inner)) {
+            KernelTypes::KExprNode::Lam(t2, body, _) => {
+              (body, (&(Lists::Node::Cons(t2, (&(Lists::Node::Cons(t1, (&(Lists::Node::Nil))))))))) } ,
+          } } ,
       }
     }
 ⟧

@@ -509,6 +509,40 @@ def expr_inst_many_let := aiur_fn⟦
     }
 ⟧
 
+  -- `e` with every `Const(a, Nil)` replaced by `v`, at every position: binder domains, `let`
+  -- types and values, projection arguments. `v` is closed, so it is shared under binders as it
+  -- is. An occurrence of `a` with universe levels is refused: no cell naming `a` remains.
+
+def subst_const := aiur_fn⟦
+  fn subst_const(e: KernelTypes::KExpr, a: Bytes::AddressRef, v: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(e)) {
+        KernelTypes::KExprNode::Const(c, ls) => {
+          match Bytes::address_eq(c, a) {
+            1 => {
+              match (*(ls)) {
+                Lists::Node::Nil => {  v } ,
+                Lists::Node::Cons(_, _) => {
+                  assert_eq!(0, 1, "an operation occurs with universe levels");
+                  e } ,
+              } } ,
+            _ => {  e } ,
+          } } ,
+        KernelTypes::KExprNode::App(f, x) => {
+          (&(KernelTypes::KExprNode::App(subst_const(f, a, v), subst_const(x, a, v)))) } ,
+        KernelTypes::KExprNode::Lam(t, b, bl) => {
+          (&(KernelTypes::KExprNode::Lam(subst_const(t, a, v), subst_const(b, a, v), bl))) } ,
+        KernelTypes::KExprNode::Forall(t, b, bl) => {
+          (&(KernelTypes::KExprNode::Forall(subst_const(t, a, v), subst_const(b, a, v), bl))) } ,
+        KernelTypes::KExprNode::Let(t, x, b) => {
+          (&(KernelTypes::KExprNode::Let(subst_const(t, a, v), subst_const(x, a, v),
+                                          subst_const(b, a, v)))) } ,
+        KernelTypes::KExprNode::Proj(s, i, x) => {
+          (&(KernelTypes::KExprNode::Proj(s, i, subst_const(x, a, v)))) } ,
+        _ => {  e } ,
+      }
+    }
+⟧
+
 end
 
 end IxVM
