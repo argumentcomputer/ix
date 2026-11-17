@@ -123,6 +123,7 @@ theorem lateFamAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : 
     · rw [hpT, ← hO.caps_eq]
       exact hO.formerFind
     · intro j cA hcA
+      replace hcA : ctorsA[j]? = some cA := hcA
       have hjc : j < p.ctors.length := by
         have := (List.getElem?_eq_some_iff.mp hcA).1
         omega
