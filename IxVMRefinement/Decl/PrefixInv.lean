@@ -3,6 +3,7 @@ import IxVMRefinement.Decl.PrefixLoads
 import IxVMRefinement.Core.Rekey
 import IxVMRefinement.Whnf.Proj
 import IxVMRefinement.L1.Cells
+import IxVMRefinement.L1.HashedBlock
 
 /-! # The standing invariant of a prefix
 
@@ -234,8 +235,8 @@ theorem storedLoads_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
       canonical := h₀.canonical
       storedRes := fun a ci hf => (nof hf).elim
       findRes := fun a ci hf => (nof hf).elim
-      ctorIndRes := fun b i j cv nP nF hf => (nof hf).elim
-      ctorIndPerm := fun a b i j cvT caps cv nP nF hf _ _ => (nof hf).elim
+      ctorIndRes := fun b i j cv nP nF _ hf => (nof hf).elim
+      ctorIndPerm := fun a b i j cvT caps cv nP nF _ hf _ _ => (nof hf).elim
       roleRes := fun r a hf _ _ => (hnf r hf).elim }
 
 /-! ## The load contract after a value constant -/
@@ -274,13 +275,13 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
     rcases hfam with ⟨cv, caps, hf⟩ | ⟨j, cv, nP, nF, hf⟩
     · exact Or.inl ⟨cv, caps, (old hf (fun e => hind cv caps e.symm)).1⟩
     · exact Or.inr ⟨j, cv, nP, nF, (old hf (fun e => hctor cv nP nF e.symm)).1⟩
-  have famPerm : ∀ {b : _root_.Address} {i : Nat}, c.stored.FamAt b i →
+  have famPerm : ∀ {b : _root_.Address} {i : Nat}, HashedBlockAt c.E b → c.stored.FamAt b i →
       ProjPermitted c.stored.κ (iprjAddr b i) := by
-    intro b i hfam
+    intro b i hbh hfam
     have hr : c.stored.κ (iprjAddr b i) ≠ unresolvedKey := by
       rcases hfam with ⟨cv, caps, hf⟩ | ⟨j, cv, nP, nF, hf⟩
       · exact h₁.findRes _ _ hf
-      · exact h₁.ctorIndRes _ _ _ _ _ _ hf
+      · exact h₁.ctorIndRes _ _ _ _ _ _ hbh hf
     obtain ⟨ci, hci⟩ := Ctx.stored_key_ne hr (iprjAddr_not_marker _ _)
     exact Ctx.stored_projPermitted_of_find hci
   have good₁ : ∀ {cs : List (Call F)}, CoreGood (consCtx c cn).stored cs → CoreGood c.stored cs :=
@@ -334,7 +335,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         intro bp ip ptr h h' cs b i ev _ good hb hip hfam _
         obtain ⟨⟨ci, hf, hrep⟩, htab⟩ :=
           h₁.projTables bp ip ptr h h' cs b i ev trivial good hb hip (fam hfam)
-            (famPerm (fam hfam))
+            (famPerm (L1.hashedBlockAt_of_proj_ctor good ev hb hip) (fam hfam))
         refine ⟨⟨ci, ?_, hrep.rekey_mono keep (stored_name_ne h₁ hf)⟩, ?_⟩
         · rw [keep _ (h₁.findRes _ _ hf)]
           exact hext.find hf
@@ -342,7 +343,8 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           obtain ⟨hc₁, ek⟩ := old hctor' (fun e => hctor cvC nP nF e.symm)
           obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
             htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁ hbind
-          have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _ hc₁)
+          have ei := keep _
+            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
           refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
           · rw [ei]
             exact hext.find ht1
@@ -360,7 +362,8 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
           h₁.projTablesAt bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG
             hs hld hblk j cvC nP nF hc₁ hnF
-        have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _ hc₁)
+        have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _
+          (L1.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
         refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
         · rw [ei]
           exact hext.find ht1
@@ -431,7 +434,8 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
       projTablesGuard := by
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         obtain ⟨hc₁, -⟩ := old hctor' (fun e => hctor cvC nP nF e.symm)
-        have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _ hc₁)
+        have ei := keep _
+          (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
         rw [ei] at htbl
         exact h₁.projTablesGuard bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
           (consCtx_find_old htbl (fun e => hproj tbl e.symm))
@@ -448,13 +452,13 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         · rw [(old hf e).2]
           exact h₁.findRes a ci (old hf e).1
       ctorIndRes := by
-        intro b i j cv nP nF hf
+        intro b i j cv nP nF hbh hf
         obtain ⟨hf₁, -⟩ := old hf (fun e => hctor cv nP nF e.symm)
-        have hr := h₁.ctorIndRes b i j cv nP nF hf₁
+        have hr := h₁.ctorIndRes b i j cv nP nF hbh hf₁
         rw [keep _ hr]
         exact hr
       ctorIndPerm := by
-        intro a b i j cvT caps cv nP nF hf _ _
+        intro a b i j cvT caps cv nP nF _ hf _ _
         obtain ⟨hf₁, -⟩ := old hf (fun e => hind cvT caps e.symm)
         have e₁ : c.stored.κ a = keyOf c.t a := c.stored.key_eq (h₁.findRes a _ hf₁)
         rw [e₁] at hf₁
@@ -598,12 +602,12 @@ theorem PrefixInv.scopedCoreFacts {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim 
 table's keying. -/
 theorem PrefixInv.ctor_ind_stored {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} (h : PrefixInv.{u} E t lim env) {b : _root_.Address} {i j : Nat}
-    {cv : ConstantVal .anon} {nP nF : Nat}
+    {cv : ConstantVal .anon} {nP nF : Nat} (hb : HashedBlockAt E b)
     (hf : env.find? (keyOf t (cprjAddr b i j)) = some (.ctorInfo cv nP nF)) :
     ∃ ci, env.find? (keyOf t (iprjAddr b i)) = some ci := by
   have hk : (Ctx.stored ⟨E, env, t, lim⟩).κ (cprjAddr b i j) = keyOf t (cprjAddr b i j) :=
     Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hf
-  have hr := h.loads.ctorIndRes b i j cv nP nF (by rw [hk]; exact hf)
+  have hr := h.loads.ctorIndRes b i j cv nP nF hb (by rw [hk]; exact hf)
   exact Ctx.stored_key_ne hr (iprjAddr_not_marker _ _)
 
 /-- **A value constant keeps the invariant.** Storing a definition, a theorem or an axiom `cn` at

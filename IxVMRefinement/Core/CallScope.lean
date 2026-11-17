@@ -197,6 +197,20 @@ def fabricatedRole : Ix.Kernel.Role → Bool
   | .charOfNat | .stringOfList | .quotMk | .quotLift | .quotInd => true
   | _ => false
 
+/-- **`b` is the address of a block record a run hashed**: bounded calls that hash no collision
+with the store `E` hash bytes that decode exactly to a `muts` record, and `b` is their hash. -/
+def HashedBlockAt (E : Ixon.Env) (b : _root_.Address) : Prop :=
+  ∃ (cs : List (Call F)) (blk : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+    ¬ View.HashedCollision { env := E } [] cs ∧ IxVM.Consistency.Bounded cs ∧
+    Hashed cs blk ∧ Ixon.deConstantExact blk = .ok cb ∧ cb.info = .muts ms ∧
+    Address.blake3Pure blk = b
+
+theorem HashedBlockAt.of_good {c : Ctx} {cs : List (Call F)} (hg : Good c cs) {blk : ByteArray}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} (hh : Hashed cs blk)
+    (hex : Ixon.deConstantExact blk = .ok cb) (hms : cb.info = .muts ms) {b : _root_.Address}
+    (hb : Address.blake3Pure blk = b) : HashedBlockAt c.E b :=
+  ⟨cs, blk, cb, ms, hg.1, hg.2, hh, hex, hms, hb⟩
+
 /-- Installed reads require allowed top invocations and coverage of their children. Raw record facts stay
 conditional on actual stored records, and native eta observations carry their own evidence. -/
 structure ScopedLoadFacts (c : ScopedCtx) : Prop where
@@ -425,14 +439,17 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
   /-- What the environment stores under the context's keying is not at the unresolved key. -/
   findRes : ∀ (a : _root_.Address) (ci : Ix.Kernel.ConstantInfo .anon),
     c.env.find? (c.κ a) = some ci → c.κ a ≠ unresolvedKey
-  /-- The inductive of a stored constructor resolves. -/
+  /-- The inductive of a stored constructor resolves, at the address of a block record a run
+  hashed. -/
   ctorIndRes : ∀ (b : _root_.Address) (i j : Nat) (cv : Ix.Kernel.ConstantVal .anon)
-      (nP nF : Nat), c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
+      (nP nF : Nat), HashedBlockAt c.E b →
+    c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
     c.κ (iprjAddr b i) ≠ unresolvedKey
   /-- The inductive of a stored constructor permits projection, at the address it is stored
-  under. -/
+  under, for a block record a run hashed. -/
   ctorIndPerm : ∀ (a b : _root_.Address) (i j : Nat) (cvT : Ix.Kernel.ConstantVal .anon)
       (caps : Ix.Kernel.IndCaps .anon) (cv : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+    HashedBlockAt c.E b →
     c.env.find? (c.κ a) = some (.indInfo cvT caps) → cvT.name = c.κ (iprjAddr b i) →
     c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) → ProjPermitted c.κ a
   /-- A role in force whose constant the checker builds or loads by role resolves
@@ -508,8 +525,8 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
   canonical := h.canonical
   storedRes := fun _ _ _ => Resolved.ne
   findRes := fun _ _ _ => Resolved.ne
-  ctorIndRes := fun _ _ _ _ _ _ _ => Resolved.ne
-  ctorIndPerm := fun _ _ _ _ _ _ _ _ _ _ _ _ => inferInstance
+  ctorIndRes := fun _ _ _ _ _ _ _ _ => Resolved.ne
+  ctorIndPerm := fun _ _ _ _ _ _ _ _ _ _ _ _ _ => inferInstance
   roleRes := fun _ _ _ _ _ => Resolved.ne }
 
 /-- Context evidence for actual scoped registry runs. -/
@@ -561,9 +578,10 @@ theorem ScopedCoreFacts.res_of_ind {c : ScopedCtx} (hc : ScopedCoreFacts c)
 theorem ScopedCoreFacts.res_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
     {a b : _root_.Address} {i j : Nat} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
     (hfind : c.env.find? (c.κ a) = some (.ctorInfo cv nP nF))
-    (hname : cv.name = c.κ (cprjAddr b i j)) : c.κ (iprjAddr b i) ≠ unresolvedKey := by
+    (hname : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    c.κ (iprjAddr b i) ≠ unresolvedKey := by
   have h1 : cv.name = c.κ a := find?_name_eq hfind
-  refine hc.loads.ctorIndRes b i j cv nP nF ?_
+  refine hc.loads.ctorIndRes b i j cv nP nF hb ?_
   rw [← hname, h1]
   exact hfind
 
@@ -596,9 +614,10 @@ theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
     (hfindI : c.env.find? (c.κ a) = some (.indInfo cvT caps))
     (hnameI : cvT.name = c.κ (iprjAddr b i))
     (hfindC : c.env.find? (c.κ ac) = some (.ctorInfo cv nP nF))
-    (hnameC : cv.name = c.κ (cprjAddr b i j)) : ProjPermitted c.κ a := by
+    (hnameC : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    ProjPermitted c.κ a := by
   have h1 : cv.name = c.κ ac := find?_name_eq hfindC
-  refine hc.loads.ctorIndPerm a b i j cvT caps cv nP nF hfindI hnameI ?_
+  refine hc.loads.ctorIndPerm a b i j cvT caps cv nP nF hb hfindI hnameI ?_
   rw [← hnameC, h1]
   exact hfindC
 
@@ -618,7 +637,8 @@ macro "resolve_key" : tactic => `(tactic| first
     | exact Tm.proj_key_ne (by assumption)
     | exact ScopedCoreFacts.res_of_find (by assumption) (by assumption)
     | exact ScopedCoreFacts.res_of_ind (by assumption) (by assumption) (by assumption)
-    | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption))
+    | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption)
+        (by assumption))
   | exact ScopedCoreFacts.res_of_role (by with_reducible assumption)
       (by with_reducible assumption) (by with_reducible assumption) (by decide))
 

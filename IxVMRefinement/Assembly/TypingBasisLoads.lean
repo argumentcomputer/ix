@@ -92,12 +92,12 @@ theorem basis_findRes : ∀ (a : _root_.Address) (ci : Ix.Kernel.ConstantInfo .a
 
 theorem basis_ctorIndPerm : ∀ (a b : _root_.Address) (i j : Nat)
     (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon)
-    (cv : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+    (cv : Ix.Kernel.ConstantVal .anon) (nP nF : Nat), HashedBlockAt (bctx E lim).stored.E b →
     (bctx E lim).stored.env.find? ((bctx E lim).stored.κ a) = some (.indInfo cvT caps) →
     cvT.name = (bctx E lim).stored.κ (iprjAddr b i) →
     (bctx E lim).stored.env.find? ((bctx E lim).stored.κ (cprjAddr b i j)) =
       some (.ctorInfo cv nP nF) → ProjPermitted (bctx E lim).stored.κ a := by
-  intro a b i j cvT caps cv nP nF hf _ _
+  intro a b i j cvT caps cv nP nF _ hf _ _
   have hr := basis_findRes E lim a _ hf
   have e : (bctx E lim).stored.κ a = keyOf ctab a := (bctx E lim).stored.key_eq hr
   rw [e] at hf

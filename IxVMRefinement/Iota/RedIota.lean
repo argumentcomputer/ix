@@ -1,6 +1,7 @@
 import IxVMRefinement.Iota.Major
 import IxVMRefinement.Iota.RecKernel
 import IxVMRefinement.Core.RomBound
+import IxVMRefinement.L1.HashedBlock
 
 /-! # `red_iota`: `Red.iota` on a prepared major
 
@@ -438,8 +439,10 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     have hlink := hname.symm.trans (find_name hcfind)
     have hresc : c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j)) ≠ unresolvedKey := by
       rw [hlink]; exact hc.res_of_find hcfind
+    have hblkH : HashedBlockAt c.E (ixAddr b) :=
+      L1.hashedBlockAt_of_get_ci_ctor (good.sub fun z hz => by simp [hz]).raw ev86 hca ld80 hb
     have hresp : c.κ (ixAddr a') ≠ unresolvedKey := by
-      rw [haeq]; exact hc.res_of_ctor hcfind hname
+      rw [haeq]; exact hc.res_of_ctor hcfind hname hblkH
     rw [c.key_eq hresp] at hmh0
     obtain ⟨cm, hcm⟩ := hc.env.recMajorRecord k cv mI rP rls (ixAddr a') us0 hfind
       (List.ne_nil_of_mem hrl) hmh0
