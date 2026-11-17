@@ -182,6 +182,82 @@ theorem checked_zero_transfer {a b common : Lookup md}
   exact (Level.guardSignatureLevel_subst_zero_iff
     (fun ψ => (huse ψ).trans (hstore ψ).symm) ks us φ).mp hz
 
+/-- Extra depth cannot change a successful head result. -/
+theorem head_succ (look : Lookup md) :
+    ∀ fuel e r, head look fuel e = some r → head look (fuel + 1) e = some r := by
+  intro fuel
+  induction fuel with
+  | zero => intro e r h; cases h
+  | succ fuel ih =>
+    intro e r h
+    cases e <;> simp only [head] at h ⊢
+    case const k us =>
+      exact bind_preserved (fun _ h => h) (fun e r h => ih e r h) h
+    case app f arg =>
+      refine bind_preserved (fun e h => ih f e h) ?_ h
+      intro e r h
+      cases e <;> first | exact ih _ _ h | exact h
+    case letE ty value body mb => exact ih _ _ h
+    all_goals exact h
+
+/-- Extra depth cannot change a successful structural type result. -/
+theorem infer_succ (look : Lookup md) :
+    ∀ fuel ctx e r, infer look fuel ctx e = some r → infer look (fuel + 1) ctx e = some r := by
+  intro fuel
+  induction fuel with
+  | zero => intro ctx e r h; cases h
+  | succ fuel ih =>
+    intro ctx e r h
+    cases e <;> simp only [infer] at h ⊢
+    case app f arg =>
+      refine bind_preserved (fun e h => ih ctx f e h) ?_ h
+      intro e r h
+      exact bind_preserved (fun e' h => head_succ look fuel e e' h) (fun _ _ h => h) h
+    case forallE ty body mb =>
+      refine bind_preserved (fun e h => ih (ty :: ctx) body e h) ?_ h
+      intro e r h
+      exact bind_preserved (fun e' h => head_succ look fuel e e' h) (fun _ _ h => h) h
+    case lam ty body mb =>
+      exact bind_preserved (fun e h => ih (ty :: ctx) body e h) (fun _ _ h => h) h
+    case letE ty value body mb => exact ih ctx _ r h
+    all_goals exact h
+
+/-- Canonical reading may erase a let node. A successful classifier remains successful at
+its erased reading with the original depth budget. -/
+theorem infer_eraseLet (look : Lookup md) {fuel : Nat} {ctx : List (Expr md)}
+    {ty value body r : Expr md} {lm : LetMeta}
+    (h : infer look fuel ctx (.letE ty value body lm) = some r) :
+    infer look fuel ctx (body.instantiate1 value) = some r := by
+  cases fuel with
+  | zero => cases h
+  | succ fuel => exact infer_succ look fuel ctx _ r h
+
+/-- The same canonical-let transport for head exposure. -/
+theorem head_eraseLet (look : Lookup md) {fuel : Nat}
+    {ty value body r : Expr md} {lm : LetMeta}
+    (h : head look fuel (.letE ty value body lm) = some r) :
+    head look fuel (body.instantiate1 value) = some r := by
+  cases fuel with
+  | zero => cases h
+  | succ fuel => exact head_succ look fuel _ r h
+
+/-- The minimal directed guard contract uses zero-set comparisons, so the typed level may
+be a semantically equivalent reading of the runtime level returned by ordinary inference. -/
+theorem checked_zero_transfer_of_zero_iff {a b common : Lookup md}
+    (ha : a.Extends common) (hb : b.Extends common)
+    {fuel : Nat} {ctx : List (Expr md)} {e : Expr md} {s t stored used : Level}
+    (hs : sortSignature a fuel ctx e = some s)
+    (ht : sortSignature b fuel ctx e = some t)
+    (hstore : ∀ φ, Level.eval φ stored = 0 ↔ Level.eval φ s = 0)
+    (huse : ∀ φ, Level.eval φ used = 0 ↔ Level.eval φ t = 0)
+    (ks : List LevelParam) (us : List Level) (φ : LevelParam → Nat)
+    (hz : Level.eval φ (Level.subst ks us used) = 0) :
+    Level.eval φ (Level.subst ks us stored) = 0 := by
+  have hst : s = t := sortSignature_agree ha hb hs ht
+  subst hst
+  rw [Level.eval_subst] at hz ⊢
+  exact (hstore _).mpr ((huse _).mp hz)
+
 /-- A sort is a concrete member of the classifier's domain, in every lookup and context. -/
 theorem sortSignature_sort (look : Lookup md) (ctx : List (Expr md)) (u : Level) :
     sortSignature look 1 ctx (.sort u) = some (.succ .zero) := rfl
