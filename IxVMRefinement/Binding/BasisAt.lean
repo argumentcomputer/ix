@@ -350,4 +350,15 @@ theorem basisBase_at_true {Run : Ix.Kernel.RoleTable → BRun → (Nat → Ixon.
     BasisBase.{u} (fun _ _ _ _ => True) Run :=
   basisBase_at hrun (fun _ _ _ _ _ => trivial) (fun _ _ _ _ => trivial)
 
+/-- **The run hypothesis of `basisBase_at` is satisfiable**: it holds of the runs at the
+default table whose store after the basis groups is the basis store. -/
+theorem basisBase_at_default :
+    BasisBase.{u} (fun _ _ _ _ => True) (fun t _ Rs => t = ctab ∧ Rs 6 = basisStore) :=
+  basisBase_at_true fun t _ Rs hr => by
+    obtain ⟨ht, hR⟩ := hr
+    subst ht
+    rw [hR]
+    exact ⟨RoleVal.committedDefaultRoleTable_check, StoreInhabit.preludePinned_default,
+      fun _ => rfl, fun _ => rfl⟩
+
 end IxVM.Refinement.Binding
