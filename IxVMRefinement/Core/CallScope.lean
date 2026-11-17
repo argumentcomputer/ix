@@ -246,6 +246,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     c.allowedTop "KernelModeled::proj_ctor" [bp, ip] h → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
     c.FamAt (ixAddr b) (ZMod.val i) →
+    ProjPermitted c.κ (iprjAddr (ixAddr b) (ZMod.val i)) →
     (∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
       CIPtrRep c.κ h' ptr ci) ∧
     ∀ (sap sptr nl ty np u blk : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F))
@@ -426,6 +427,12 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
   ctorIndRes : ∀ (b : _root_.Address) (i j : Nat) (cv : Ix.Kernel.ConstantVal .anon)
       (nP nF : Nat), c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
     c.κ (iprjAddr b i) ≠ unresolvedKey
+  /-- The inductive of a stored constructor permits projection, at the address it is stored
+  under. -/
+  ctorIndPerm : ∀ (a b : _root_.Address) (i j : Nat) (cvT : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (cv : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+    c.env.find? (c.κ a) = some (.indInfo cvT caps) → cvT.name = c.κ (iprjAddr b i) →
+    c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) → ProjPermitted c.κ a
   /-- A role in force whose constant the checker builds or loads by role resolves
   (`fabricatedRole`). Other roles in force need not be stored. -/
   roleRes : ∀ (r : Ix.Kernel.Role) (a : _root_.Address), c.inForce r →
@@ -453,7 +460,7 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
   inductRecord := fun addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev _ _ hg ha ld =>
     h.inductRecord addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev hg ha ld
   projTables := by
-    intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip _
+    intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip _ _
     subst ip
     have htables := h.projTables bp (.field i) ptr h₀ h₁ cs b i ev hg hb rfl
     obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
@@ -497,6 +504,7 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
   storedRes := fun _ _ _ => Resolved.ne
   findRes := fun _ _ _ => Resolved.ne
   ctorIndRes := fun _ _ _ _ _ _ _ => Resolved.ne
+  ctorIndPerm := fun _ _ _ _ _ _ _ _ _ _ _ _ => inferInstance
   roleRes := fun _ _ _ _ _ => Resolved.ne }
 
 /-- Context evidence for actual scoped registry runs. -/
@@ -573,6 +581,21 @@ theorem ScopedCtx.famAt_of_ctor {c : ScopedCtx} {a b : _root_.Address} {i j : Na
   refine Or.inr ⟨j, cv, nP, nF, ?_⟩
   rw [← hname, h1]
   exact hfind
+
+/-- **The inductive of a stored constructor permits projection**, at the address it is stored
+under: the permission a step needs for the `Proj` cells it builds at a structure it has the
+constructor of. -/
+theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a ac b : _root_.Address} {i j : Nat} {cvT : Ix.Kernel.ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfindI : c.env.find? (c.κ a) = some (.indInfo cvT caps))
+    (hnameI : cvT.name = c.κ (iprjAddr b i))
+    (hfindC : c.env.find? (c.κ ac) = some (.ctorInfo cv nP nF))
+    (hnameC : cv.name = c.κ (cprjAddr b i j)) : ProjPermitted c.κ a := by
+  have h1 : cv.name = c.κ ac := find?_name_eq hfindC
+  refine hc.loads.ctorIndPerm a b i j cvT caps cv nP nF hfindI hnameI ?_
+  rw [← hnameC, h1]
+  exact hfindC
 
 /-- The address a role in force is bound to resolves. -/
 theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)

@@ -261,7 +261,8 @@ theorem whnf_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     subst hc535
     obtain ⟨s, i, S, rfl, rfl, hs, hS⟩ := hH.proj_of_load ld12
     exact ih.get (.whnf .whnf_proj_head) (by lt_calls) ev486 rc x_sa (.field i) x_inner sp types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key) hS hAs
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key)
+      (hH.proj_permitted ld12 hs) hS hAs
   · -- any other head: stuck
     subst hc562
     have happ := ih.get (.whnf .apply_spine) (by lt_calls) ev545 hd sp rfl

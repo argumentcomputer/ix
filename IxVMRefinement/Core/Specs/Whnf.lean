@@ -660,7 +660,7 @@ def ProjHeadSpec : SpecFn := fun c args h r h' calls =>
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (s : Bytes.Address) (i : F) S As, RepAddr h s sa → fidx = .field i →
-        c.κ (ixAddr s) ≠ unresolvedKey →
+        c.κ (ixAddr s) ≠ unresolvedKey → ProjPermitted c.κ (ixAddr s) →
         c.tm d Γ h S inner → c.tml d Γ h As sp →
         ∃ E', c.tm d Γ h' E' r ∧
           Red c.env d (mkAppN (.proj (c.κ (ixAddr s)) (ZMod.val i) S) As) E'
@@ -709,7 +709,7 @@ def se_parent_addr : SpecFn := fun c args h r h' calls =>
 def apply_n_projs : SpecFn := fun c args h r h' calls =>
   ∀ hd par major nf i, args = [hd, par, major, nf, i] → CoreGood c calls →
     ∀ d Γ H (p : Bytes.Address) M (n j : F), c.tm d Γ h H hd → RepAddr h p par →
-      c.κ (ixAddr p) ≠ unresolvedKey →
+      c.κ (ixAddr p) ≠ unresolvedKey → ProjPermitted c.κ (ixAddr p) →
       c.tm d Γ h M major → nf = .field n → i = .field j →
       ∃ m : Nat, j + (m : F) = n ∧
         c.tm d Γ h' (mkAppN H ((List.range m).map fun t =>

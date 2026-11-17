@@ -53,6 +53,21 @@ def rprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
 def dprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
   projAddr (.dPrj ⟨i.toUInt64, b⟩)
 
+/-- The address of a projection record has 32 bytes: it is a hash. -/
+theorem projAddr_size (info : Ixon.ConstantInfo) : (projAddr info).hash.size = 32 :=
+  (Blake3.Pure.hash _).property
+
+/-- The address of a projection record is no marker. -/
+theorem projAddr_not_marker (info : Ixon.ConstantInfo) : ¬ IsProjMarker (projAddr info) :=
+  not_isProjMarker_of_size (projAddr_size info)
+
+theorem iprjAddr_not_marker (b : _root_.Address) (i : Nat) : ¬ IsProjMarker (iprjAddr b i) :=
+  projAddr_not_marker _
+
+theorem cprjAddr_not_marker (b : _root_.Address) (i j : Nat) :
+    ¬ IsProjMarker (cprjAddr b i j) :=
+  projAddr_not_marker _
+
 /-- The positional levels `param 0, …, param (n-1)` for the parameters `ps`. -/
 def posLevels (ps : List Ix.Kernel.LevelParam) : List KLevel :=
   (List.range ps.length).map Ix.Kernel.Level.param

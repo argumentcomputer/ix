@@ -260,6 +260,7 @@ theorem g_expr_inst1_walk (κ : _root_.Address → KKey) {args : List (SourceVal
     subst hc hr hm
     obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
     have : Resolved _ := ⟨hE.proj_key_ne⟩
+    have : ProjPermitted _ _ := hE.proj_permitted ld ra
     exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
       (ih.get .expr_inst1 lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Es A hes hA)
 
@@ -450,6 +451,7 @@ theorem g_expr_inst_many_walk (κ : _root_.Address → KKey) {args : List (Sourc
     subst hc hr hm
     obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
     have : Resolved _ := ⟨hE.proj_key_ne⟩
+    have : ProjPermitted _ _ := hE.proj_permitted ld ra
     rw [iL_proj]
     exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
       (ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Es As hes hAs)
