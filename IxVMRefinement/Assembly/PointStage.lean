@@ -641,8 +641,9 @@ theorem PointStageInput.formersLoads (hP : PointStageInput E env t B cb ms forme
     (hext : Ix.Kernel.EnvExt env (Decl.Point.stage env formers)) (hgate : PointShape E B ms) :
     FormersLoads ⟨E, env, t, lim⟩ (pointNew formers) := by
   have htwf := hP.wf
-  refine { getCI := ?_, getIprj := ?_, getCprj := ?_, inductRecord := ?_, inductBlock := ?_,
-    unitLikeRaw := ?_ }
+  refine
+    { getCI := ?_, getIprj := ?_, getCprj := ?_, inductRecord := ?_, inductBlock := ?_,
+      unitLikeRaw := ?_ }
   · intro addr ptr h h' cs a ev good ha cv caps hmem hkey
     obtain ⟨k, ind, ty₀, ty', hk, hlt, hy, hread⟩ := hP.newMem hmem
     obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hy
