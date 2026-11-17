@@ -145,7 +145,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         beforeInst, loadCalls, instCalls, found, arity, load, member, node, rawOrigin, extension,
         inst, loadSubset, _, valueRep⟩ := definition_value_keyed_raw_origin rawKey facts
           (good.sub loadInside) addressRep scoped.const_key_ne paramsRep valueCall
-      obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep facts (good.sub loadInside)
+      obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep (d := d) (Γ := Γ) facts (good.sub loadInside)
         addressRep scoped.const_key_ne paramsRep valueCall
       have shorter : children.length < fuel := by
         rw [events] at length; simp only [List.length_cons, List.length_append] at length; omega
