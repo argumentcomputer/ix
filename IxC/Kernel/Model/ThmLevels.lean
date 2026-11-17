@@ -30,7 +30,9 @@ theorem StoreAr.empty : StoreAr (md := md) Env.empty where
   thm := fun h => by simp [Env.find?, Env.empty] at h
   rhs := fun h => by simp [Env.find?, Env.empty] at h
   proj := fun h => by simp [Env.findProj?, Env.find?, Env.empty] at h
-  bool := fun _ _ _ h => by simp [Env.find?, Env.empty] at h
+  bool := by
+    intro c hst hcb n ci hn hf
+    simp [Env.find?, Env.empty] at hf
 
 /-- **A step that stores no theorem keeps `ThmLevels`.** -/
 theorem ThmLevels.step_noThm {env env₂ : Env md} (h : ThmLevels env)
