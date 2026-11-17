@@ -49,14 +49,17 @@ import Tests.Ix.IxVM.UserAxioms
 import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
+import Tests.Ix.IxVM.SafeReferences
 import Tests.Ix.IxVM.RecursorParentRoute
 import Tests.Ix.IxVM.GuardBatch
+import Tests.Ix.IxVM.AliasFormers
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
 import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.IxVM.FieldReduction
+import Tests.Ix.IxVM.RoleMemberCensus
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -263,11 +266,15 @@ def registry : List Entry := [
   -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
+  .runner "ixvm-safe-references" (.ci .ixvm) Tests.Ix.IxVM.SafeReferences.run,
+  .runner "ixvm-unsafe-origin-walks" (.manual "IX_AIUR_WALK_ARTIFACT: a verify_transitive artifact") Tests.Ix.IxVM.SafeReferences.runUnsafeOrigins,
+  .runner "ixvm-export-safe-walk" (.manual "IX_AIUR_WALK_ARTIFACT: write a compiled direct-walk test package") Tests.Ix.IxVM.SafeReferences.exportWalkArtifact,
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-guard-batch" (.ci .ixvm) Tests.Ix.IxVM.GuardBatch.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
+  .runner "ixvm-alias-formers" (.manual "formers that are not a telescope into a sort, walked as the native check walks them, of IX_ALIAS_IXE; IX_ALIAS_OUT") Tests.Ix.IxVM.AliasFormers.run,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
   .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
@@ -277,6 +284,7 @@ def registry : List Entry := [
   .env "ixvm-fixture" (.manual "rebuild the dev fixture IxVM/IxVM/fixtures/nat-add-comm.ixf; IX_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
   .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxC's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
   .runner "prim-addrs-artifact" (.manual "every Ix.PrimAddrs address is the record a compiled artifact publishes under its Lean name; IX_PRIM_IXE") Tests.Ix.Kernel.PrimAddrs.artifact,
+  .runner "ixvm-role-member-census" (.manual "IX_ROLE_IXE: the record at every address the default role table binds, its block and the block's route, and the bound addresses that are constant addresses of an inductive block") Tests.Ix.IxVM.RoleMemberCensus.run,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).

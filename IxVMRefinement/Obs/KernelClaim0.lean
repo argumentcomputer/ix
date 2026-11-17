@@ -1641,12 +1641,13 @@ theorem «KernelClaim::run_check_transitive».seg1 {e0_info e1_refs e2_c e3_rc e
 inductive «KernelClaim::run_check_transitive».Path (x_rc x_addr : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (m2 : Heap F) (cs12 : List (Call F)) (x_info : SourceValue F) (w39 : SourceValue F) (x_refs : SourceValue F) (w40 : SourceValue F) (w41 : SourceValue F) (v539 : SourceValue F) (m540 : Heap F) (cs542 : List (Call F)) (cs551 : List (Call F)) (v556 : SourceValue F) (m573 : Heap F) (cs581 : List (Call F))
+      (m2 : Heap F) (cs12 : List (Call F)) (x_info : SourceValue F) (w39 : SourceValue F) (x_refs : SourceValue F) (w40 : SourceValue F) (w41 : SourceValue F) (v539 : SourceValue F) (m540 : Heap F) (cs542 : List (Call F)) (v548 : SourceValue F) (m549 : Heap F) (cs559 : List (Call F)) (cs589 : List (Call F)) (v594 : SourceValue F) (m611 : Heap F) (cs619 : List (Call F))
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_addr] h (.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41]) m2 cs12)
       (sg547 : «KernelClaim::run_check_transitive».Seg1 x_info x_refs (.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41]) x_rc x_addr m2 v539 m540 cs542)
-      (ev583 : ObsFn W "KernelClaim::const_idxs_of" [(.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])] m540 v556 m573 cs581)
-      (ev553 : ObsFn W "KernelClaim::walk_refs_transitive" [x_rc, x_refs, v556, (.field 0)] m573 r h' cs551)
-      (hc598 : calls = ((⟨"Ingress::load_verified_constant", [x_addr], h⟩ : Call F) :: (cs12 ++ (cs542 ++ ((⟨"KernelClaim::const_idxs_of", [(.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])], m540⟩ : Call F) :: (cs581 ++ ((⟨"KernelClaim::walk_refs_transitive", [x_rc, x_refs, v556, (.field 0)], m573⟩ : Call F) :: cs551)))))))
+      (ev561 : ObsFn W "KernelClaim::assert_safe_record_refs" [x_rc, x_addr, (.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])] m540 v548 m549 cs559)
+      (ev621 : ObsFn W "KernelClaim::const_idxs_of" [(.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])] m549 v594 m611 cs619)
+      (ev591 : ObsFn W "KernelClaim::walk_refs_transitive" [x_rc, x_refs, v594, (.field 0)] m611 r h' cs589)
+      (hc636 : calls = ((⟨"Ingress::load_verified_constant", [x_addr], h⟩ : Call F) :: (cs12 ++ (cs542 ++ ((⟨"KernelClaim::assert_safe_record_refs", [x_rc, x_addr, (.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])], m540⟩ : Call F) :: (cs559 ++ ((⟨"KernelClaim::const_idxs_of", [(.construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41])], m549⟩ : Call F) :: (cs619 ++ ((⟨"KernelClaim::walk_refs_transitive", [x_rc, x_refs, v594, (.field 0)], m611⟩ : Call F) :: cs589)))))))))
 
 /-- **Every observed derivation of `KernelClaim::run_check_transitive` takes one of its paths.** -/
 theorem «KernelClaim::run_check_transitive».obs {x_rc x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1687,30 +1688,47 @@ theorem «KernelClaim::run_check_transitive».obs {x_rc x_addr : SourceValue F} 
     have sg547 := «KernelClaim::run_check_transitive».seg1 d544
     clear d544
     obtain rfl := matchPattern_wildcard_inv mt545
-    obtain ⟨vs548, m549, c550, cs551, a552, ev553, rfl⟩ := d546.call_inv
-    rw [instanceName_plain_some] at ev553
-    obtain ⟨v554, vs558, m559, c560, c561, rfl, d562, a563, rfl⟩ := a552.cons_inv
-    obtain ⟨l564, rfl, rfl⟩ := d562.var_inv
-    simp at l564
-    subst l564
-    obtain ⟨v555, vs565, m566, c567, c568, rfl, d569, a570, rfl⟩ := a563.cons_inv
+    obtain ⟨v548, m549, bs550, c551, c552, d553, mt554, d555, rfl⟩ := d546.letValue_inv
+    obtain ⟨vs556, m557, c558, cs559, a560, ev561, rfl⟩ := d553.call_inv
+    rw [instanceName_plain_some] at ev561
+    obtain ⟨v562, vs565, m566, c567, c568, rfl, d569, a570, rfl⟩ := a560.cons_inv
     obtain ⟨l571, rfl, rfl⟩ := d569.var_inv
     simp at l571
     subst l571
-    obtain ⟨v556, vs572, m573, c574, c575, rfl, d576, a577, rfl⟩ := a570.cons_inv
-    obtain ⟨vs578, m579, c580, cs581, a582, ev583, rfl⟩ := d576.call_inv
-    rw [instanceName_plain_some] at ev583
-    obtain ⟨v584, vs585, m586, c587, c588, rfl, d589, a590, rfl⟩ := a582.cons_inv
-    obtain ⟨l591, rfl, rfl⟩ := d589.var_inv
-    simp at l591
-    subst l591
-    obtain ⟨rfl, rfl, rfl⟩ := a590.nil_inv
-    obtain ⟨v557, vs592, m593, c594, c595, rfl, d596, a597, rfl⟩ := a577.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d596.literal_inv
-    obtain ⟨rfl, rfl, rfl⟩ := a597.nil_inv
-    exact «KernelClaim::run_check_transitive».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 sg547 ev583 ev553 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne599 := matchPattern_construct_none (by trivial) nm34
-    simp only [Names.n1557030883061810801] at hne599
+    obtain ⟨v563, vs572, m573, c574, c575, rfl, d576, a577, rfl⟩ := a570.cons_inv
+    obtain ⟨l578, rfl, rfl⟩ := d576.var_inv
+    simp at l578
+    subst l578
+    obtain ⟨v564, vs579, m580, c581, c582, rfl, d583, a584, rfl⟩ := a577.cons_inv
+    obtain ⟨l585, rfl, rfl⟩ := d583.var_inv
+    simp at l585
+    subst l585
+    obtain ⟨rfl, rfl, rfl⟩ := a584.nil_inv
+    obtain rfl := matchPattern_wildcard_inv mt554
+    obtain ⟨vs586, m587, c588, cs589, a590, ev591, rfl⟩ := d555.call_inv
+    rw [instanceName_plain_some] at ev591
+    obtain ⟨v592, vs596, m597, c598, c599, rfl, d600, a601, rfl⟩ := a590.cons_inv
+    obtain ⟨l602, rfl, rfl⟩ := d600.var_inv
+    simp at l602
+    subst l602
+    obtain ⟨v593, vs603, m604, c605, c606, rfl, d607, a608, rfl⟩ := a601.cons_inv
+    obtain ⟨l609, rfl, rfl⟩ := d607.var_inv
+    simp at l609
+    subst l609
+    obtain ⟨v594, vs610, m611, c612, c613, rfl, d614, a615, rfl⟩ := a608.cons_inv
+    obtain ⟨vs616, m617, c618, cs619, a620, ev621, rfl⟩ := d614.call_inv
+    rw [instanceName_plain_some] at ev621
+    obtain ⟨v622, vs623, m624, c625, c626, rfl, d627, a628, rfl⟩ := a620.cons_inv
+    obtain ⟨l629, rfl, rfl⟩ := d627.var_inv
+    simp at l629
+    subst l629
+    obtain ⟨rfl, rfl, rfl⟩ := a628.nil_inv
+    obtain ⟨v595, vs630, m631, c632, c633, rfl, d634, a635, rfl⟩ := a615.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d634.literal_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a635.nil_inv
+    exact «KernelClaim::run_check_transitive».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 sg547 ev561 ev621 ev591 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne637 := matchPattern_construct_none (by trivial) nm34
+    simp only [Names.n1557030883061810801] at hne637
     exact (selectArm_nil_inv sel35).elim
 
 /-- The evaluation paths of `KernelClaim::assert_not_block_ref`: one constructor per combination of selected arms. -/

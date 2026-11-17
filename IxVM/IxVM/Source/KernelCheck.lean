@@ -299,7 +299,7 @@ def has_n_leading_foralls := aiur_fn⟦
 def get_result_sort_level := aiur_fn⟦
   fn get_result_sort_level(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, n: Field,
                                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KLevel {
-      let w = KernelWhnf::whnf(rc, ind_ty, types);
+      let w = KernelGuard::head(ind_ty, 10000);
       match n {
         0 => {
           match (*(w)) {
@@ -600,13 +600,49 @@ def former_is_tele := aiur_fn⟦
     }
 ⟧
 
+  -- Only the head of a parameter domain matters here. In particular, a family occurring in
+  -- an erased argument or below a lambda is permitted. Lets are read by substitution, as in
+  -- the kernel reading of the record.
+
+def assert_alias_parameter_head := aiur_fn⟦
+  fn assert_alias_parameter_head(e: KernelTypes::KExpr, t: Bytes::AddressRef) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(_, b, _) => { assert_alias_parameter_head(b, t) },
+        KernelTypes::KExprNode::App(f, _) => { assert_alias_parameter_head(f, t) },
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          assert_alias_parameter_head(KernelSubst::expr_inst1(b, v, 0), t)
+        },
+        KernelTypes::KExprNode::Const(a, _) => {
+          assert_eq!(Bytes::address_eq(a, t), 0,
+            "an alias constructor parameter is headed by its family");
+          ()
+        },
+        _ => { () },
+      }
+    }
+⟧
+
+def assert_alias_parameter_heads := aiur_fn⟦
+  fn assert_alias_parameter_heads(ty: KernelTypes::KExpr, n: Field, t: Bytes::AddressRef) -> () {
+      match n {
+        0 => { () },
+        _ => {
+          let KernelTypes::KExprNode::Forall(d, b, _) = (*(ty));
+          assert_alias_parameter_head(d, t);
+          assert_alias_parameter_heads(b, n - 1, t)
+        },
+      }
+    }
+⟧
+
 def ctor_zero_all := aiur_fn⟦
   fn ctor_zero_all(block_addr: Bytes::AddressRef, ind_idx: Field, n: Field, j: Field, t: Bytes::AddressRef,
                    res: KernelTypes::KLevel) -> () {
       match n - j {
         0 => {  () } ,
         _ => {
-          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          assert_alias_parameter_heads(cty, np, t);
           ctor_zero_ok(cty, t, res);
           ctor_zero_all(block_addr, ind_idx, n, j + 1, t, res) } ,
       }
@@ -649,7 +685,7 @@ def dom_zero_ok := aiur_fn⟦
 
   -- The telescope a former declared at a definition is read at, as a type in its own right:
   -- its binders' domains are types in the growing context and it ends in the family's sort.
-  -- The declared type was typed and is convertible with it by construction; the telescope
+  -- The declared type was typed; conversion with its telescope is checked here. The telescope
   -- itself is what the kernel checks from scratch for such a family, and what the family's
   -- recursor is generated from. A former that is syntactically its telescope was typed as
   -- declared.
@@ -663,6 +699,9 @@ def former_tele_typed := aiur_fn⟦
           let tele = former_tele_at(rc, ty, k, (&(Lists::Node::Nil)), s);
           validate_expr_well_scoped(tele, 0, num_lvls);
           KernelInfer::k_ensure_sort(rc, tele, (&(Lists::Node::Nil)));
+          let conv = KernelDefEq::k_is_def_eq(rc, ty, tele, (&(Lists::Node::Nil)));
+          assert_eq!(conv, 1,
+            "a former declared at a definition is not convertible with its telescope");
           () } ,
       }
     }
@@ -682,7 +721,7 @@ def former_tele_at := aiur_fn⟦
               (&(KernelTypes::KExprNode::Forall(d,
                 former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
             _ => {
-              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelGuard::head(ty, 10000)));
               (&(KernelTypes::KExprNode::Forall(d,
                 former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
           } } ,
@@ -738,6 +777,7 @@ def check_inductive_shape_ctors := aiur_fn⟦
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
               check_field_universes(rc, cty, c_np, ind_level);
+              KernelGuard::check_prop_fields(rc, ind_level, num_ctors, n_indices, cty, c_np, c_nf);
 
               match is_unsafe {
                 0 => {  check_positivity(cty, c_np, block_addr) } ,
@@ -786,7 +826,9 @@ def check_modeled_ctors := aiur_fn⟦
               assert_safety(is_unsafe, cty);
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
-              projection_addr_ctor(ind_idx, cidx, block_addr);
+              let ctor_addr = projection_addr_ctor(ind_idx, cidx, block_addr);
+              assert_eq!(KernelRoles::role_index_of(rc, ctor_addr), 0,
+                "a modeled constructor is bound to a role");
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, num_lvls,
                                   block_addr, ind_idx, is_unsafe, cidx + 1) } ,
           } } ,
@@ -2274,7 +2316,7 @@ def nat_former_tele := aiur_fn⟦
               (&(KernelTypes::KExprNode::Forall(d,
                 nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
             _ => {
-              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelGuard::head(ty, 10000)));
               (&(KernelTypes::KExprNode::Forall(d,
                 nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
           } } ,
@@ -3886,6 +3928,8 @@ def check_const := aiur_fn⟦
               -- with nothing to reduce in between (a former declared at a definition,
               -- `T : MyType` with `MyType := Type`, is refused here; the native route reads one
               -- after head normalization).
+              assert_eq!(KernelRoles::role_index_of(rc, addr), 0,
+                "a modeled inductive is bound to a role");
               assert_eq!(has_n_leading_foralls(ty, n_params), 1,
                 "a modeled inductive's parameters are not syntactic binders");
               assert_eq!(former_is_tele(ty, n_params + n_indices), 1,
@@ -3928,6 +3972,8 @@ def check_const := aiur_fn⟦
                     _ => {  () } ,
                   } } ,
                 _ => {
+                  assert_eq!(KernelRoles::role_index_of(rc, addr), 0,
+                    "a modeled constructor is bound to a role");
                   match ind_is_unsafe {
                     0 => {  KernelModeled::check_modeled_block(rc, block_addr) } ,
                     _ => {  () } ,
@@ -3944,8 +3990,8 @@ def check_const := aiur_fn⟦
           let modeled = KernelModeled::block_is_modeled(family);
           -- A recursor of a mutual or nested family is refused: the family check below is not
           -- part of what the program is proved to establish. Every route to a recursor passes
-          -- here (a constant by its address, a member of a block, a container recursor that
-          -- a family's advice names), so with this assertion no accepted run checks a family.
+          -- here (a constant by its address, a member of a block, or a container recursor
+          -- named by family advice). Modeled block arms still check their families.
           assert_eq!(modeled, 0, "a recursor of a mutual or nested family is refused");
           match modeled {
             0 => {
