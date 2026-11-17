@@ -591,12 +591,15 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   -- the stored constructor, opened
   obtain ⟨hfindC, hlpsC, cbs, es, hresC, -⟩ := hat.stored.ctor 0 cA hcA
   obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hlenP⟩ := Decl.ctor_open_residual hresC
-  have hga : (Ix.Kernel.Expr.mkAppN (.const fam.p.cvT.name (fam.p.cvT.levelParams.map .param))
-      (fvsP ++ idxArgs)).getAppArgs = fvsP ++ idxArgs := by
-    rw [Decl.nat_getAppArgs_mkAppN]
-    rfl
-  have hdrop : (fvsP ++ idxArgs).drop fam.p.nP = idxArgs := by
-    rw [← hlenP]
+  have hxa : ∀ us : List Ix.Kernel.Level,
+      ((Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.const fam.p.cvT.name us) (fvsP ++ idxArgs) :
+        Core.KExpr).getAppArgs).drop fam.p.nP = idxArgs := by
+    intro us
+    have hga : ((Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.const fam.p.cvT.name us)
+        (fvsP ++ idxArgs) : Core.KExpr).getAppArgs) = fvsP ++ idxArgs := by
+      rw [Decl.nat_getAppArgs_mkAppN]
+      rfl
+    rw [hga, ← hlenP]
     exact List.drop_left
   by_cases h0 : cA.2 = 0
   · refine ⟨fvsP, crest, xFvs, _, [], hopP, hopF, by simp [h0], fun i hi => ?_⟩
@@ -662,7 +665,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := parentFields
     match seg with
     | .other (hne203 := hne) .. =>
-      exact absurd (by rw [hsz1]; simp) hne
+      exact absurd (by simp [hsz1]) hne
     | .n1 (v143 := v143) (m144 := m144) (p151 := p151) (cs157 := cs157) (ev159 := cprjRun)
         (ld153 := ldC) (he187 := hsingle) (he201 := hh) (hc202 := hcs) .. =>
       -- the loaded constructor is the stored one
@@ -742,7 +745,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
         simp only [List.cons.injEq, and_true] at hl
         obtain ⟨-, hvC⟩ := hl
         rw [hvC] at hrepC
-        obtain ⟨cv', nP', nF', hciC, -, -, hnf', -⟩ := Core.CIRep.ctor_fields hrepC
+        obtain ⟨cv', nP', nF', hciC, -, -, hnf', ⟨-, hnF56⟩, -⟩ := Core.CIRep.ctor_fields hrepC
         obtain ⟨-, -, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hciC
         exact h0 (field_nat_eq_zero (by omega) hnf'.symm)
       | .other_other_n1_other_Ctor_other (v1 := v1) (m2 := m2) (cs13 := cs13)
@@ -776,7 +779,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
           (hsub (fun x hx => by rw [children, hcl]; simp [hx])) hrcv htypes
           (Decl.ghostScoped_zero _) ((htmC.mono e247) 0 (fun _ => default)) walkRun
         refine ⟨fvsP, crest, xFvs, _, sorts, hopP, hopF, ?_⟩
-        rw [hga, hdrop]
+        rw [hxa]
         exact Decl.fieldSortsJ_isProp_true_set_sort hfs
 
 end IxVM.Refinement.Typing
