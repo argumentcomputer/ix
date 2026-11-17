@@ -131,7 +131,7 @@ variable {c : Core.Ctx} {new : List (ConstantInfo .anon)} {B : _root_.Address}
 /-- **Every index up to a member's is a member's**, an inductive: the block's members are all
 inductive types. -/
 theorem PointInstall.member_le (hI : PointInstall c new B cb ms) {k : Nat} {m : Ixon.MutConst}
-    (hk : ms[k]? = some m) {i : Nat} (hle : i ≤ k) : ∃ ind, ms[i]? = some (.indc ind) := by
+    (hk : ms[k]? = some m) {i : Nat} (hle : i ≤ k) : ∃ ind : Ixon.Inductive, ms[i]? = some (.indc ind) := by
   have hlt : i < ms.size := Nat.lt_of_le_of_lt hle (Array.getElem?_eq_some_iff.mp hk).1
   obtain ⟨ind, hind⟩ := hI.inds i _ (Array.getElem?_eq_getElem hlt)
   exact ⟨ind, by rw [Array.getElem?_eq_getElem hlt, hind]⟩
@@ -190,7 +190,7 @@ so the family at `i` and at `i + 2 ^ 64` are witnessed by the same constants. -/
 theorem PointInstall.famNew (hI : PointInstall c new B cb ms) {b : _root_.Address} {i : Nat}
     (hbh : Core.HashedBlockAt c.E b) (hi : i < UInt64.size)
     (hfam : FamNew (appCtx c new).stored new b i) :
-    b = B ∧ ∃ ind, ms[i]? = some (.indc ind) := by
+    b = B ∧ ∃ ind : Ixon.Inductive, ms[i]? = some (.indc ind) := by
   rcases hfam with ⟨cv, caps', hf, hm⟩ | ⟨j, cv, nP, nF, hf, hm⟩
   · obtain ⟨k, ind, hk, hkey, -⟩ := hI.newInd hf hm
     obtain ⟨hbB, hik⟩ :=
@@ -545,7 +545,7 @@ install (`Decl.Point.PointBlock.auxRootSynced`), and the formers' keys are fresh
 (`Decl.Point.PointBlock.freshF`). -/
 theorem PointInstall.newProjTablesGuard (hI : PointInstall c new B cb ms)
     (haux : Decl.AuxRootSynced c.env)
-    (hfresh : ∀ k ind, ms[k]? = some (.indc ind) →
+    (hfresh : ∀ (k : Nat) (ind : Ixon.Inductive), ms[k]? = some (.indc ind) →
       c.env.find? (Core.keyOf c.t (Core.iprjAddr B k)) = none) :
     ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address) (i : F),
       ObsFn Core.W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs →
