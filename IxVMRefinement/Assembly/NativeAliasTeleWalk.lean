@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.PrefixEq
 import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Assembly.TypingRecLateElim
 import IxVMRefinement.Infer.Close
@@ -431,13 +432,6 @@ theorem TeleShape.stripPis_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : 
     obtain ⟨T, B, ℓ, rfl, -, hB, -⟩ := hE.forallE_of_load hl
     obtain ⟨bs, l, hst, hl'⟩ := TeleShape.stripPis_exact n hr hB
     exact ⟨(T, bmeta ℓ) :: bs, l, by simp [Expr.stripPis, hst], hl'⟩
-
-/-- The first `m` binders of two terms are syntactic `∀`s with the same domains and binder
-data. -/
-def PrefixEq : Nat → KExpr → KExpr → Prop
-  | 0, _, _ => True
-  | m + 1, .forallE T B bm, .forallE T' B' bm' => T = T' ∧ bm = bm' ∧ PrefixEq m B B'
-  | _ + 1, _, _ => False
 
 /-- **Two exact readings of spines that share their first `m` cells** have the same first `m`
 binders. -/
