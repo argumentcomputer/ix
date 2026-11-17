@@ -40,7 +40,7 @@ theorem checkNativeTable_cases {p : Ix.Kernel.NativeParts .anon}
   · split at h
     · rename_i hidx
       obtain ⟨bodies, -, -, -, -, rfl⟩ := Ix.Kernel.checkStructProjTable_inv h
-      exact Or.inr ⟨by first | rfl | simp_all, by simpa using hidx, _, rfl, rfl, rfl⟩
+      exact Or.inr ⟨rfl, by simpa using hidx, _, rfl, rfl, rfl⟩
     · injection h with hX
       exact Or.inl hX.symm
   · injection h with hX
