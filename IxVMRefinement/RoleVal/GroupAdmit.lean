@@ -1246,9 +1246,11 @@ theorem walk_refs_except_walks {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root_.A
         | n1_n0 m43 x51 y52 m53 cs62 y82 cs92 v115 m116 cs126 m146 cs157 v180 m181 cs191
             cs205 v208 m211 cs219 ev64 ev94 _ _ ev128 ev159 ev193 ev221 ev207 hc245 =>
           obtain ⟨hh53, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           have e1 : Heap.Extends h m181 :=
             ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
           obtain ⟨e2, lim', hrc'⟩ := walk_ctx_rcRep (hrc.mono e1) ev221
@@ -1259,16 +1261,20 @@ theorem walk_refs_except_walks {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root_.A
         | n1_other m43 x51 y52 m53 cs62 y82 cs92 v115 m116 cs126 v145 m146 cs157
             ev64 ev94 _ _ ev128 ev159 hne246 _ _ _ =>
           obtain ⟨hh53, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           obtain ⟨hv, _⟩ := walk_covered_mk (hrc.mono ev128.heap_extends) ev159
           exact absurd hv hne246
         | other v42 m43 x51 y52 m53 cs62 y82 cs92 ev64 ev94 op88 op58 hne255 _ he262 _ =>
           obtain ⟨hh53, hiff⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           refine ⟨by rw [he262], fun hin hne => ?_⟩
           exfalso
           have hba : ¬ b₀ = a₀ := fun e => hne (by rw [← hbix, ← haix, e])
@@ -1341,9 +1347,11 @@ theorem walk_refs_except_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Ad
         | n1_n0 m43 x51 y52 m53 cs62 y82 cs92 v115 m116 cs126 m146 cs157 v180 m181 cs191
             cs205 v208 m211 cs219 ev64 ev94 _ _ ev128 ev159 ev193 ev221 ev207 hc245 =>
           obtain ⟨hh53, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           have e1 : Heap.Extends h m181 :=
             ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
           obtain ⟨e2, lim', hrc'⟩ := Claim.walk_ctx_spec (hrc.mono e1) ev221
@@ -1357,16 +1365,20 @@ theorem walk_refs_except_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Ad
         | n1_other m43 x51 y52 m53 cs62 y82 cs92 v115 m116 cs126 v145 m146 cs157
             ev64 ev94 _ _ ev128 ev159 hne246 _ _ _ =>
           obtain ⟨hh53, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           obtain ⟨hv, _⟩ := Claim.walk_covered_spec (hrc.mono ev128.heap_extends) ev159
           exact absurd hv hne246
         | other v42 m43 x51 y52 m53 cs62 y82 cs92 ev64 ev94 op88 op58 hne255 _ he262 _ =>
           obtain ⟨hh53, hiff⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          subst m53
+          have hh53' : h = m53 := hh53.symm
+          subst hh53'
           obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
-          subst m43
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
           refine ⟨by rw [he262], [], by simp [Claim.RecsClosed], fun hin hne => ?_⟩
           exfalso
           have hba : ¬ b₀ = a₀ := fun e => hne (by rw [← hbix, ← haix, e])
