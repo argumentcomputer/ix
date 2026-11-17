@@ -2,8 +2,7 @@ import IxVMRefinement.Infer.Basic
 import IxVMRefinement.Infer.Close
 import IxVMRefinement.Infer.ProjBody
 import IxVMRefinement.Whnf.Proj
-import IxVMRefinement.Obs.KernelCheck1
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # Step lemmas of the projection helpers of `KernelInfer` and `KernelInferOnly`
 
 The helpers `k_infer_proj` and the io lane's projection arm call, against their registered specs,

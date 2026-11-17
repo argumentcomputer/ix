@@ -3,9 +3,6 @@ import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.KernelRoles0
-import IxVMRefinement.Obs.KernelRoles1
-import IxVMRefinement.Obs.KernelRoles2
 import IxVMRefinement.Obs.RBTreeMap0
 import Mathlib.Tactic.IntervalCases
 

@@ -1,6 +1,5 @@
 import IxVMRefinement.Assembly.NativeAliasTeleWalk
-import IxVMRefinement.Obs.KernelCheck6
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # The head-normalized telescope of an actual late recursor check
 
 `nat_former_tele_open_spec` handles both the syntactic and head-normalizing paths of
