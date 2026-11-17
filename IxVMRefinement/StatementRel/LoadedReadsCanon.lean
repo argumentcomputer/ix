@@ -53,7 +53,7 @@ theorem canonTree_eq {blocks : List Ixon.BinderBlock} {tree : L1.BinderTreeData}
     (built : L1.BinderTreeBuilt (L1.binderLeavesData blocks) tree) : canonTree blocks = tree := by
   have h : ∃ tree, L1.BinderTreeBuilt (L1.binderLeavesData blocks) tree := ⟨tree, built⟩
   unfold canonTree
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact (Classical.choose_spec h).unique built
 
 /-- **The canonical annotation of a reading.** `E_rd` is the reading of the expression `e` of
@@ -226,8 +226,8 @@ theorem usedRefsStored_cons {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon
   intro i hi x hx
   obtain ⟨ci, hci⟩ := h i hi x hx
   by_cases hk : cn.name = Core.keyOf t x
-  · exact ⟨cn, by rw [Ix.Kernel.Env.find?_cons, if_pos hk]⟩
-  · exact ⟨ci, by rw [Ix.Kernel.Env.find?_cons, if_neg hk]; exact hci⟩
+  · exact ⟨cn, by rw [Ix.Kernel.Env.find?_cons, ite_eq_left hk]⟩
+  · exact ⟨ci, by rw [Ix.Kernel.Env.find?_cons, ite_eq_right hk]; exact hci⟩
 
 /-! ## A standalone definition, theorem or opaque record -/
 
