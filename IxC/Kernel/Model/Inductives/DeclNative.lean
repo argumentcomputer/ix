@@ -1368,8 +1368,7 @@ theorem declNativeCoreJ {J : Judgements md}
       fun cvS' _ heq => ?_⟩
     obtain rfl : cvS = cvS' :=
       (ConstantInfo.indInfo.inj (List.cons.inj (congrArg Ix.Kernel.Env.consts heq)).1).1
-    exact (congrArg (fun q => NativeFamOk mp₂ ⟨q, cvS, cvTa, ctorsA⟩) hp).mpr
-      (hfamC.ext hextC₂).ok
+    exact (hfamC.ext hextC₂).ok
 
   · -- no recursor: the table over the constructors' environment
     obtain ⟨mp₂, hext₂⟩ := declNativeTableNoRecJ hI rfl rfl hTbl mpC hProp hClps hresT
@@ -1387,8 +1386,7 @@ theorem declNativeCoreJ {J : Judgements md}
       fun cvS' _ heq => ?_⟩
     obtain rfl : cvS = cvS' :=
       (ConstantInfo.indInfo.inj (List.cons.inj (congrArg Ix.Kernel.Env.consts heq)).1).1
-    exact (congrArg (fun q => NativeFamOk mp₂ ⟨q, cvS, cvTa, ctorsA⟩) hp).mpr
-      (hfamC.ext hextC₂).ok
+    exact (hfamC.ext hextC₂).ok
 
 /-- **The P carrier survives a direct recursive install**, over a judgement package
 (`declNativeCoreJ` with the recursor's tail). -/
