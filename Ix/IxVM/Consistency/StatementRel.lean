@@ -1009,12 +1009,14 @@ theorem selfHashed_of_authentic {V : View} (h : V.Authentic) : SelfHashed V := b
   exact And.intro (fun a lc hl => (hrec a lc hl).1) (And.intro hblob hrole)
 
 /-- **A BLAKE3 collision the run hashed one side of**: a byte string the run hashed and a
-different byte string with the same pure BLAKE3 hash; or a preimage of the zero address that
-the run hashed or the view holds at that address. Every case is about bytes the run hashed
-or the view holds. -/
-def GenuineCollision (V : View) (calls : List (Call IxVM.F)) : Prop :=
-  (∃ held bytes : ByteArray, Hashed calls bytes ∧ bytes ≠ held ∧
-    Address.blake3Pure bytes = Address.blake3Pure held) ∨
+different byte string with the same pure BLAKE3 hash that the view holds under that hash, that
+is one of `extra`, or that the run hashed too; or a preimage of the zero address that the run
+hashed or the view holds at that address. Every case is about bytes the run hashed and bytes
+the view holds, `extra` lists or the run hashed. -/
+def GenuineCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) : Prop :=
+  (∃ held bytes : ByteArray,
+    (V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨ Hashed calls held) ∧
+    Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = Address.blake3Pure held) ∨
   ∃ bytes : ByteArray,
     (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ Hashed calls bytes) ∧
       Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
@@ -1023,10 +1025,11 @@ def GenuineCollision (V : View) (calls : List (Call IxVM.F)) : Prop :=
 `View.HashedCollision` counts a byte string the view holds at an address as a preimage of
 that address whatever its hash; when the view's data is stored under its own hashes, the
 alternative exhibits two different byte strings with one BLAKE3 hash, one of them hashed by
-the run, or a preimage of the zero address. -/
+the run and the other held by the view under that hash, one of `extra`, or hashed by the run;
+or a preimage of the zero address. -/
 theorem hashedCollision_genuine {V : View} (hV : SelfHashed V) {extra : List ByteArray}
     {calls : List (Call IxVM.F)} (h : V.HashedCollision extra calls) :
-    GenuineCollision V calls := by
+    GenuineCollision V extra calls := by
   obtain ⟨hrec, hblob, hrole⟩ := hV
   unfold GenuineCollision
   rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, hb, hp⟩
@@ -1041,23 +1044,35 @@ theorem hashedCollision_genuine {V : View} (hV : SelfHashed V) {extra : List Byt
         · exact hx'
       · exact hx'
       · exact hx'
-    exact Or.inl ⟨held, bytes, hh, hne, hx.trans hx'.symm⟩
+    have hanchor : V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨
+        Hashed calls held := by
+      rcases hheld with hpre | ⟨hmem, -⟩ | ⟨hh', -⟩
+      · rw [hx']
+        exact Or.inl hpre
+      · exact Or.inr (Or.inl hmem)
+      · exact Or.inr (Or.inr hh')
+    exact Or.inl ⟨held, bytes, hanchor, hh, hne, hx.trans hx'.symm⟩
   · exact Or.inr ⟨bytes, hb, hp⟩
 
-/-- **The statement over a view stored under its own hashes**: a collision the run hashed
-one side of, or `ConsistentReadRel`. -/
+/-- **The statement over a view stored under its own hashes**: a collision between a byte
+string the run hashed and one in hand (held by the view under its hash, one of the claim's
+bytes, the table's bytes and the reader's images, or hashed by the run), or
+`ConsistentReadRel`. -/
 theorem ConsistencySpecRel.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (h : ConsistencySpecRel.{u} calls d) {bytes : ByteArray} {c : Claim}
     (hde : Claim.de bytes = .ok c) (hd : packDigest (Address.blake3Pure bytes) = d)
     (hc : InScope c) {V : View} {seeds : List Address} {b : Binding}
     (hs : ClaimSeeds c V seeds) (hb : BindingAt c b) (w : ReaderAdmissionWitness V b)
     (hV : SelfHashed V) :
-    GenuineCollision V calls ∨ ConsistentReadRel.{u} V calls b w seeds :=
+    GenuineCollision V (bytes :: b.bytes :: readerImages V) calls ∨
+      ConsistentReadRel.{u} V calls b w seeds :=
   (h bytes c hde hd hc V seeds b hs hb w).elim
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 
 /-- **The statement with no admission premise, over a view stored under its own hashes**: a
-collision the run hashed one side of, or `ConsistentReadP`. -/
+collision between a byte string the run hashed and one in hand (held by the view under its
+hash, one of the claim's bytes, the table's bytes and the derived projection images, or hashed
+by the run), or `ConsistentReadP`. -/
 theorem ConsistencySpecP.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (h : ConsistencySpecP.{u} calls d) {bytes : ByteArray} {c : Claim}
     (hde : Claim.de bytes = .ok c) (hd : packDigest (Address.blake3Pure bytes) = d)
@@ -1065,7 +1080,8 @@ theorem ConsistencySpecP.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (hs : ClaimSeeds c V seeds) (hb : BindingAt c b) {t : Ix.Kernel.RoleTable}
     (ht : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hl : LiteralSupportBound t) (hV : SelfHashed V) :
-    GenuineCollision V calls ∨ ConsistentReadP.{u} calls t seeds :=
+    GenuineCollision V (bytes :: b.bytes :: derivedProjImages V) calls ∨
+      ConsistentReadP.{u} calls t seeds :=
   (h bytes c hde hd hc V seeds b hs hb t ht hl).elim
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 

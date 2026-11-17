@@ -79,8 +79,10 @@ a run hashed there, and the table is the one the binding run hashed at `a`. A co
 wants the conclusion to be about a record, blob or table they hold puts it in the view,
 stored under its own hash (the table as the view's `roleBinding`): a run that hashed other
 bytes at that address then hashed a collision with the view. Over a view stored under its
-own hashes the alternative is a BLAKE3 collision one side of which a run hashed, or a
-preimage of the zero address a run hashed or the view holds (`ComposedSpec.selfHashed`).
+own hashes the alternative is a BLAKE3 collision between a byte string a run hashed and one in
+hand: held by the view under its hash, one of the two claims' byte strings or the committed
+images, or hashed by a run; or a preimage of the zero address a run hashed or the view holds
+(`ComposedSpec.selfHashed`).
 
 ## Corollaries
 
@@ -846,15 +848,16 @@ theorem ComposedSpec.apply (h : ComposedSpec.{u} callsA callsB dA dB)
   h bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs
 
 /-- **The composed statement over a view stored under its own hashes**: a BLAKE3 collision
-one side of which a run hashed (or a preimage of the zero address a run hashed or the view
-holds), or the composed conclusion. -/
+between a byte string a run hashed and one held by the view under its hash, one of the two
+claims' byte strings or the committed images, or hashed by a run (or a preimage of the zero
+address a run hashed or the view holds), or the composed conclusion. -/
 theorem ComposedSpec.selfHashed (h : ComposedSpec.{u} callsA callsB dA dB)
     (deB : Claim.de bytesB = .ok (.binding spec a))
     (dgB : packDigest (Address.blake3Pure bytesB) = dB) (deA : Claim.de bytesA = .ok cA)
     (dgA : packDigest (Address.blake3Pure bytesA) = dA) (hsc : InScopeTyping cA)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds)
     (hV : SelfHashed V) :
-    GenuineCollision V (callsA ++ callsB) ∨
+    GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
         callsB a :=
   (h.apply deB dgB deA dgA hsc hctx hba hs).elim
