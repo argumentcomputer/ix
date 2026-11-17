@@ -118,6 +118,7 @@ theorem readRoot_sort {blob : Blobs} {root : Root} {i : UInt64} {u : Ixon.Univ}
   unfold readRoot exprReader Ix.Kernel.Reader.MemberReader.read
   rw [hecx, he]
   simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu, Expr.eraseMeta]
+  exact ⟨.sort (Ix.Kernel.Reader.convUniv id u), rfl, rfl⟩
 
 /-- The richer annotated reading is retained separately for consumers that need binder data. -/
 noncomputable def readAnnotatedRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
@@ -326,8 +327,9 @@ theorem sortDefinition_type (a : _root_.Address) :
     readRoot_sort (u := .succ .zero) rfl (by rfl)
   change answer (fun _ => none) (typeRoot (sortDefinitionRecords a) a) [] = _
   rw [hr]
-  simp only [answer, Option.bind_some]
-  rw [ite_eq_left (by rfl), hd]
+  change (readRoot (fun _ => none) root).map
+    (fun e => e.instantiateLevelParams [] []) = _
+  rw [hd]
   rfl
 
 /-- The same dictionary reads its definition value, independently of any model. -/
@@ -341,8 +343,9 @@ theorem sortDefinition_value (a : _root_.Address) :
     readRoot_sort (u := .zero) rfl (by rfl)
   change answer (fun _ => none) (valueRoot (sortDefinitionRecords a) a) [] = _
   rw [hr]
-  simp only [answer, Option.bind_some]
-  rw [ite_eq_left (by rfl), hd]
+  change (readRoot (fun _ => none) root).map
+    (fun e => e.instantiateLevelParams [] []) = _
+  rw [hd]
   rfl
 
 
