@@ -271,169 +271,6 @@ theorem convert_axiom_trace_spec {ax : Ixon.Axiom} {sharing : List Ixon.Expr}
 
 /-! ## The loads with their plans -/
 
-private theorem val_cast_u56_tr {n : Nat} (h : n < 72057594037927936) :
-    ZMod.val (n : F) = n := by
-  have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
-  exact ZMod.val_cast_of_lt (Nat.lt_trans h hP)
-
-private theorem repIxonAddressRef_to_core_tr {h : Heap F} {a : _root_.Address}
-    {ptr : SourceValue F} (rep : RepIxonAddressRef h a ptr) :
-    ∃ b : Bytes.Address, Core.ixAddr b = a ∧ Bytes.RepAddressRef Core.addrTy h b ptr := by
-  obtain ⟨b, rfl, hb⟩ := rep
-  exact ⟨b, rfl, hb⟩
-
-private theorem hashed_sub_tr {calls₁ calls₂ : List (Call F)} {b : ByteArray}
-    (h : Hashed calls₁ b) (hsub : ∀ x ∈ calls₁, x ∈ calls₂) : Hashed calls₂ b :=
-  Core.hashed_mono hsub h
-
-private theorem core_to_repIxonAddressRef_tr {h : Heap F} {b : Bytes.Address}
-    {ptr : SourceValue F} (hb : Bytes.RepAddressRef Core.addrTy h b ptr) :
-    RepIxonAddressRef h (Core.ixAddr b) ptr :=
-  ⟨b, rfl, hb⟩
-
-private theorem repConstantInfo_muts_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {x_members : SourceValue F}
-    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Muts" [x_members])) :
-    ∃ ms : Array Ixon.MutConst,
-      info = .muts ms ∧ RepList mutConstListEnum RepMutConst h ms.toList x_members := by
-  cases info with
-  | muts ms =>
-    obtain ⟨msPtr, hmk, hms⟩ := hinfo
-    injection hmk with _ _ hls
-    injection hls with hptr _
-    subst hptr
-    exact ⟨ms, rfl, hms⟩
-  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_defn_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {dv : SourceValue F}
-    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Defn" [dv])) :
-    ∃ d : Ixon.Definition, info = .defn d ∧ RepDefinition h d dv := by
-  cases info with
-  | defn d =>
-    obtain ⟨dv', hmk, hdv⟩ := hinfo
-    injection hmk with _ _ hls
-    injection hls with heq _
-    subst heq
-    exact ⟨d, rfl, hdv⟩
-  | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_axio_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {av : SourceValue F}
-    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Axio" [av])) :
-    ∃ ax : Ixon.Axiom, info = .axio ax ∧ RepAxiom h ax av := by
-  cases info with
-  | axio ax =>
-    obtain ⟨av', hmk, hav⟩ := hinfo
-    injection hmk with _ _ hls
-    injection hls with heq _
-    subst heq
-    exact ⟨ax, rfl, hav⟩
-  | defn _ | recr _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_quot_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {qv : SourceValue F}
-    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Quot" [qv])) :
-    ∃ q : Ixon.Quotient, info = .quot q ∧ RepQuotient h q qv := by
-  cases info with
-  | quot q =>
-    obtain ⟨qv', hmk, hqv⟩ := hinfo
-    injection hmk with _ _ hls
-    injection hls with heq _
-    subst heq
-    exact ⟨q, rfl, hqv⟩
-  | defn _ | recr _ | axio _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_recr_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {rv : SourceValue F}
-    (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Recr" [rv])) :
-    ∃ rc : Ixon.Recursor, info = .recr rc ∧ RepRecursor h rc rv := by
-  cases info with
-  | recr rc =>
-    obtain ⟨rv', hmk, hrv⟩ := hinfo
-    injection hmk with _ _ hls
-    injection hls with heq _
-    subst heq
-    exact ⟨rc, rfl, hrv⟩
-  | defn _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_dPrj_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {x_idx x_block_addr : SourceValue F}
-    (hinfo : RepConstantInfo h info
-      (.construct "Ixon::ConstantInfo" "DPrj"
-        [.construct "Ixon::DefinitionProj" "Mk" [x_idx, x_block_addr]])) :
-    ∃ p : Ixon.DefinitionProj, info = .dPrj p ∧
-      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
-  cases info with
-  | dPrj p =>
-    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
-    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
-    injection hmk2 with _ _ hls2
-    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
-    exact ⟨p, rfl, hidx, hblk⟩
-  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_iPrj_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {x_idx x_block_addr : SourceValue F}
-    (hinfo : RepConstantInfo h info
-      (.construct "Ixon::ConstantInfo" "IPrj"
-        [.construct "Ixon::InductiveProj" "Mk" [x_idx, x_block_addr]])) :
-    ∃ p : Ixon.InductiveProj, info = .iPrj p ∧
-      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
-  cases info with
-  | iPrj p =>
-    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
-    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
-    injection hmk2 with _ _ hls2
-    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
-    exact ⟨p, rfl, hidx, hblk⟩
-  | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_cPrj_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {x_idx x_cidx x_block_addr : SourceValue F}
-    (hinfo : RepConstantInfo h info
-      (.construct "Ixon::ConstantInfo" "CPrj"
-        [.construct "Ixon::ConstructorProj" "Mk" [x_idx, x_cidx, x_block_addr]])) :
-    ∃ p : Ixon.ConstructorProj, info = .cPrj p ∧
-      x_idx = u64Value p.idx.toNat ∧ x_cidx = u64Value p.cidx.toNat ∧
-      RepIxonAddressRef h p.block x_block_addr := by
-  cases info with
-  | cPrj p =>
-    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
-    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
-    injection hmk2 with _ _ hls2
-    injection hls2 with hidx hls3
-    injection hls3 with hcidx hls4
-    injection hls4 with hbp _
-    subst hbp
-    exact ⟨p, rfl, hidx, hcidx, hblk⟩
-  | defn _ | recr _ | axio _ | quot _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
-private theorem repConstantInfo_rPrj_inv_tr {h : Heap F} {info : Ixon.ConstantInfo}
-    {x_idx x_block_addr : SourceValue F}
-    (hinfo : RepConstantInfo h info
-      (.construct "Ixon::ConstantInfo" "RPrj"
-        [.construct "Ixon::RecursorProj" "Mk" [x_idx, x_block_addr]])) :
-    ∃ p : Ixon.RecursorProj, info = .rPrj p ∧
-      x_idx = u64Value p.idx.toNat ∧ RepIxonAddressRef h p.block x_block_addr := by
-  cases info with
-  | rPrj p =>
-    obtain ⟨pv, hmk1, blkPtr, hmk2, hblk⟩ := hinfo
-    injection hmk1 with _ _ hls1; injection hls1 with hpv _; subst hpv
-    injection hmk2 with _ _ hls2
-    injection hls2 with hidx hls3; injection hls3 with hbp _; subst hbp
-    exact ⟨p, rfl, hidx, hblk⟩
-  | defn _ | recr _ | axio _ | quot _ | cPrj _ | iPrj _ | dPrj _ | muts _ =>
-    obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
-
 /-- **`Ingress::get_ci_dprj` with the binder plans of the member's roots.** The parent block
 `cb` at `ixAddr b` is loaded, member `idx` is a definition `d`, and `d` is converted in the
 binder tree built from the block's binder blocks, at the member's root offset in the block. -/
@@ -474,7 +311,7 @@ theorem get_ci_dprj_trace_spec {b : Bytes.Address} {idx : Nat}
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv_tr hinfo
+  obtain ⟨ms, hcb_info, hms⟩ := repConstantInfo_muts_inv hinfo
   rw [← Names.«WordLists::lookup_u64<Ixon::MutConst>».symbol] at ev120
   have hms_inst : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
       RepMutConst m24 ms.toList x_members := by
@@ -507,7 +344,7 @@ theorem get_ci_dprj_trace_spec {b : Bytes.Address} {idx : Nat}
   obtain ⟨_, hbase, hm308⟩ :=
     muts_root_offset_spec (hms.mono repMutConst_heapMono₂ ext24) ev318
   subst m308
-  rw [val_cast_u56_tr hidx56] at hbase
+  rw [val_cast_u56_ing hidx56] at hbase
   subst v244
   obtain ⟨ext5, blobs, hhp, htrace⟩ :=
     convert_definition_trace_spec
@@ -521,7 +358,7 @@ theorem get_ci_dprj_trace_spec {b : Bytes.Address} {idx : Nat}
   have ext_snoc := Heap.Extends.snoc m227 v226
   have ext_all := (((ext0.trans ext1).trans ext24).trans ext5).trans ext_snoc
   refine ⟨ext_all, hidx56, ⟨blkList.toArray⟩, cb, ms, d, blobs, tree, v226,
-    hashed_sub_tr hhash_blk (by rw [hc348]; intro c hc; simp [hc]),
+    hashed_sub hhash_blk (by rw [hc348]; intro c hc; simp [hc]),
     haddr_blk, hexact_blk, hcb_info, hmc_get,
     hhp.sub (by rw [hc348]; intro c hc; simp [hc]),
     built, loadValue_snoc m227 v226,
@@ -618,7 +455,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
     let dv := Value.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w139, w140, w141, w142]
-    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv_tr hinfo
+    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv hinfo
     have ⟨_, _, hd_mk, _, _⟩ := hd_rep
     have hks : x_kind = repDefKindVal d.kind ∧ x_safety = repDefSafetyVal d.safety := by
       simp only [dv, Value.construct.injEq, List.cons.injEq, and_true] at hd_mk
@@ -653,7 +490,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he219, hm218]
     have ext_snoc := Heap.Extends.snoc m216 v215
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc302]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc302]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
     exact ⟨blobs, tree, v215, hhp.sub (by rw [hc302]; intro x hx; simp [hx]), built,
@@ -666,7 +503,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
     let dv := Value.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w139, w140, w141, w142]
-    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv_tr hinfo
+    obtain ⟨d, hc_info, hd_rep⟩ := repConstantInfo_defn_inv hinfo
     have ⟨_, _, hd_mk, _, _⟩ := hd_rep
     have hks : x_kind = repDefKindVal d.kind ∧ x_safety = repDefSafetyVal d.safety := by
       simp only [dv, Value.construct.injEq, List.cons.injEq, and_true] at hd_mk
@@ -688,7 +525,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
         (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m86.length) := by
       rw [hm332]; exact Lib.rep_store_nil m86
     have ha324 : RepIxonAddressRef m324 (Core.ixAddr a) x_addr :=
-      (core_to_repIxonAddressRef_tr ha).mono ((ext1.trans ext2).trans ext3a)
+      (core_to_repIxonAddressRef ha).mono ((ext1.trans ext2).trans ext3a)
     have hrecs : RepList addressListEnum RepIxonAddressRef m116
         (defnRecurAddrs d (Core.ixAddr a))
         (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m324.length) := by
@@ -710,7 +547,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he340, hm339]
     have ext_snoc := Heap.Extends.snoc m337 v336
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc423]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc423]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
     exact ⟨blobs, tree, v336, hhp.sub (by rw [hc423]; intro x hx; simp [hx]), built,
@@ -722,7 +559,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    obtain ⟨ax, hc_info, hax_rep⟩ := repConstantInfo_axio_inv_tr hinfo
+    obtain ⟨ax, hc_info, hax_rep⟩ := repConstantInfo_axio_inv hinfo
     have ext2 : Heap.Extends m2 m476 := by rw [hm484]; exact Heap.Extends.snoc m2 _
     have hrecs : RepList addressListEnum RepIxonAddressRef m476 []
         (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m2.length) := by
@@ -742,7 +579,7 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rw [he441, hm440]
     have ext_snoc := Heap.Extends.snoc m438 v437
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc515]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc515]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
     exact ⟨blobs, tree, v437, hhp.sub (by rw [hc515]; intro x hx; simp [hx]), built,
@@ -754,9 +591,9 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    obtain ⟨q, hc_info, hq_rep⟩ := repConstantInfo_quot_inv_tr hinfo
+    obtain ⟨q, hc_info, hq_rep⟩ := repConstantInfo_quot_inv hinfo
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc606]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc606]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
   · -- `DPrj`
@@ -766,18 +603,18 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_dPrj_inv_tr hinfo
-    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_tr hblk_ix
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_dPrj_inv hinfo
+    obtain ⟨b, hb_eq, hb_rep⟩ := repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨ext2, hidx56, blkBytes, cb, ms, d, blobs, tree, v,
         hhash_blk, haddr_blk, hexact_blk, hcb_info, hmc_get, hhp, built, hld, htrace⟩ :=
       get_ci_dprj_trace_spec p.idx.toNat_lt hx_idx hb_rep ev650
     rw [hb_eq] at haddr_blk htrace
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc675]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc675]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
     exact ⟨hidx56, blkBytes, cb, ms, d, blobs, tree, v,
-      hashed_sub_tr hhash_blk (by rw [hc675]; intro x hx; simp [hx]),
+      hashed_sub hhash_blk (by rw [hc675]; intro x hx; simp [hx]),
       haddr_blk, hexact_blk, hcb_info, hmc_get,
       hhp.sub (by rw [hc675]; intro x hx; simp [hx]), built, hld, htrace⟩
   · -- `IPrj`
@@ -787,9 +624,9 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_iPrj_inv_tr hinfo
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_iPrj_inv hinfo
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc750]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc750]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
   · -- `CPrj`
@@ -799,9 +636,9 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, hc_info, hx_idx, hx_cidx, hblk_ix⟩ := repConstantInfo_cPrj_inv_tr hinfo
+    obtain ⟨p, hc_info, hx_idx, hx_cidx, hblk_ix⟩ := repConstantInfo_cPrj_inv hinfo
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc851]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc851]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
   · -- `RPrj`
@@ -811,9 +648,9 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_rPrj_inv_tr hinfo
+    obtain ⟨p, hc_info, hx_idx, hblk_ix⟩ := repConstantInfo_rPrj_inv hinfo
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc926]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc926]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
   · -- `Recr`
@@ -823,9 +660,9 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
-    obtain ⟨rc, hc_info, hrc_rep⟩ := repConstantInfo_recr_inv_tr hinfo
+    obtain ⟨rc, hc_info, hrc_rep⟩ := repConstantInfo_recr_inv hinfo
     refine ⟨⟨rawList.toArray⟩, c,
-      hashed_sub_tr hhash (by rw [hc1071]; intro x hx; simp [hx]),
+      hashed_sub hhash (by rw [hc1071]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
 
