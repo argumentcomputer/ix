@@ -31,7 +31,8 @@ theorem definition_value_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
   | .run (cs15 := loads) (ev17 := load) (ld11 := ld) (ev81 := len)
       (ev103 := inst) (hc120 := allCalls) .. =>
     have hsub : ∀ cl ∈ loads, cl ∈ cs := by intro cl hm; rw [allCalls]; simp [hm]
-    have hallow := hg.allAllowed _ (by rw [allCalls]; simp)
+    have hallow : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
+      hg.allAllowed _ (by rw [allCalls]; simp)
     obtain ⟨ci, -, ptr⟩ := get_ci_step c hc load ap a rfl hallow hr (hg.sub hsub) ha
     obtain ⟨v, hv, hci⟩ := ptr
     rw [ld] at hv
@@ -46,16 +47,17 @@ private theorem const_type_rep {κ : _root_.Address → KKey} {ci : Ix.Kernel.Co
     (hci : CIRep κ h v ci)
     (ev : ObsFn W "KernelInfer::const_type_of" [v] h r h' cs) :
     TmC κ h' (posOf ci.toConstantVal.levelParams ci.toConstantVal.type) r := by
-  rcases Obs.«KernelInfer::const_type_of».obs ev with
-    ⟨_, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
-  all_goals (rw [he, hh]; exact hci.ty_of_eq hv)
+  match Obs.«KernelInfer::const_type_of».obs ev with
+  | .Axiom (hv15 := hv) (he35 := he) (he36 := hh) ..
+  | .Defn (hv43 := hv) (he75 := he) (he76 := hh) ..
+  | .Thm (hv83 := hv) (he103 := he) (he104 := hh) ..
+  | .Opaque (hv111 := hv) (he137 := he) (he138 := hh) ..
+  | .Quot (hv145 := hv) (he165 := he) (he166 := hh) ..
+  | .Induct (hv173 := hv) (he223 := he) (he224 := hh) ..
+  | .Ctor (hv231 := hv) (he281 := he) (he282 := hh) ..
+  | .Rec (hv289 := hv) (he357 := he) (he358 := hh) .. =>
+    rw [he, hh]
+    exact hci.ty_of_eq hv
 
 /-- The declared-type branch has the same weak representation guarantee. -/
 theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
@@ -69,7 +71,8 @@ theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
   | .run (cs15 := loads) (ev17 := load) (ld11 := ld) (ev50 := len) (ev70 := num)
       (ev99 := ty) (ev85 := inst) (hc115 := allCalls) .. =>
     have hsub : ∀ cl ∈ loads, cl ∈ cs := by intro cl hm; rw [allCalls]; simp [hm]
-    have hallow := hg.allAllowed _ (by rw [allCalls]; simp)
+    have hallow : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
+      hg.allAllowed _ (by rw [allCalls]; simp)
     obtain ⟨ci, -, ptr⟩ := get_ci_step c hc load ap a rfl hallow hr (hg.sub hsub) ha
     obtain ⟨v, hv, hci⟩ := ptr
     rw [ld] at hv
