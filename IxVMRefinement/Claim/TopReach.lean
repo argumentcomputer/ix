@@ -8,10 +8,10 @@ edge, with the original rank. It supplies explicit origins independently of how 
 walk spec represents its record list. In particular a reached non-block record is a seed
 or a used reference, so the existing refusal facts show that it is not an inert axiom.
 
-The safety lemmas below isolate the actual source-guard obligation: an edge from a source
-whose record and owner are in logic has a target whose record and owner are in logic. They
-do not infer that obligation from a bare `TopWalkCore`, which records checks but not the new
-guard observations. `claimPhase_typing_reachable` is the concrete origin-producing walk export.
+The safety lemmas below consume the conditional clause retained by `TopWalkCore`: an edge
+from a source whose record and owner are in logic has a target whose record and owner are
+in logic. That clause is produced from the actual guard observations.
+`claimPhase_typing_reachable` is the concrete origin-producing walk export.
 -/
 
 namespace IxVM.Refinement.Claim
@@ -131,7 +131,7 @@ variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTab
   {Top : _root_.Address → Prop} {rank : _root_.Address → Nat}
 
 /-- Safety propagates from seeds through the actual guarded edges. Owner edges use the
-already-proved block provenance. The edge premise is to be produced from guard observations. -/
+already-proved block provenance. The edge premise is supplied by the walk's guard clause. -/
 theorem TopWalkCore.reach_safe
     (hW : TopWalkCore calls bAddr t seeds E₀ lim Top rank)
     (hedge : ∀ a x, Top a → SourceSafe E₀ a → Typing.UsedRef E₀ a x →

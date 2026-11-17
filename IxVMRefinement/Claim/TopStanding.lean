@@ -7,7 +7,7 @@ The role lookups below use the full table representation at the actual optional 
 They require neither a prefix model nor an unrestricted core-load contract. The checked
 record producer uses the run store to identify the loader's bytes, then extracts the
 axiom-standing or quotient-role observation. Reachable non-block origins exclude inert
-axioms. Only the edge-safety producer remains external when assembling the reachable graph.
+axioms. The reachable graph consumes the edge-safety clause produced by the guarded walk.
 -/
 
 set_option maxHeartbeats 3200000
