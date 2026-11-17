@@ -9,7 +9,7 @@ existentially because raw head computation does not need a licensed reduction ju
 namespace IxVM.Refinement.Decl
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open Aiur.Library
+open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 open IxVM.Refinement.Core.Specs.Subst (IdxAll IdxLt)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
@@ -291,7 +291,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
           obtain ⟨_, fields⟩ := load_cell cell loaded
           injection fields with same
           subst same
-          exact ⟨_, .litNat (by simp) (limbs.mono (Heap.Extends.snoc _ _)) canonical⟩
+          exact ⟨_, .litNat (by simp) (repList_heapMono₂ limbListEnum repU64_heapMono₂ (Heap.Extends.snoc _ _) limbs) canonical⟩
         | litStr cell bytes string =>
           obtain ⟨_, fields⟩ := load_cell cell loaded
           injection fields with same
@@ -315,7 +315,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
         subst result heap
         exact ⟨_, .app (by simp) (hf.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _)))
           (ha.mono (Heap.Extends.snoc _ _))⟩
-      | .Lam (cs269 := first) (cs305 := second) (ld12 := loaded) (he253 := result) (hm252 := heap)
+      | .Lam (v258 := bodyOut) (cs269 := first) (cs305 := second) (ld12 := loaded) (he253 := result) (hm252 := heap)
           (ev271 := e1) (op338 := added) (ev307 := e2) (hc347 := events) .. =>
         obtain ⟨RD, RB, ED, EB, u, rfl, rfl, dom, body, level⟩ := rep.raw_lam_view loaded
         rw [SubstAux.add_ok added] at e2
@@ -329,10 +329,10 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
           shiftBound (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
         subst result heap
-        refine ⟨_, .lam (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
+        refine ⟨_, .lam (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
         simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
-      | .Forall (cs390 := first) (cs426 := second) (ld12 := loaded) (he374 := result) (hm373 := heap)
+      | .Forall (v379 := bodyOut) (cs390 := first) (cs426 := second) (ld12 := loaded) (he374 := result) (hm373 := heap)
           (ev392 := e1) (op459 := added) (ev428 := e2) (hc468 := events) .. =>
         obtain ⟨RD, RB, ED, EB, u, rfl, rfl, dom, body, level⟩ := rep.raw_forallE_view loaded
         rw [SubstAux.add_ok added] at e2
@@ -346,13 +346,13 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
           shiftBound (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
         subst result heap
-        refine ⟨_, .forallE (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
+        refine ⟨_, .forallE (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
         simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
       | .Let (ld12 := loaded) (ev496 := helper) (hc537 := events) .. =>
         obtain ⟨RT, RV, RB, ET, EV, EB, rfl, rfl, type, value, body⟩ := rep.raw_let_view loaded
         match Obs.«KernelSubst::expr_lift_let».obs helper with
-        | .run (cs21 := first) (cs57 := second) (cs93 := third) (he5 := result) (hm4 := heap)
+        | .run (v11 := bodyOut) (cs21 := first) (cs57 := second) (cs93 := third) (he5 := result) (hm4 := heap)
             (ev23 := e1) (ev59 := e2) (op126 := added) (ev95 := e3) (hc128 := nested) .. =>
           rw [SubstAux.add_ok added] at e3
           have short1 : first.length < fuel := by rw [events, nested] at length; simp only [List.length_cons, List.length_append] at length; omega
@@ -370,7 +370,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
             ⟨_, body.mono (e1.heap_extends.trans e2.heap_extends)⟩ e3
           rw [SubstAux.val_succ32 cutoffSmall] at hb
           subst result heap
-          refine ⟨_, .letE (by simp)
+          refine ⟨_, .letE (bp := bodyOut) (by simp)
             (ht.mono (e2.heap_extends.trans (e3.heap_extends.trans (Heap.Extends.snoc _ _))))
             (hv.mono (e3.heap_extends.trans (Heap.Extends.snoc _ _))) ?_⟩
           simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
