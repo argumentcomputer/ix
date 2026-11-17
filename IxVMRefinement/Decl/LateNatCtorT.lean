@@ -234,6 +234,73 @@ theorem natT_rawTm_retHead {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
       obtain ⟨rbs, c, us, ras, hs⟩ := natT_rawTm_retHead n hrest hb
       exact ⟨(Rt, mR) :: rbs, c, us, ras, by simp [Expr.stripPis, hs]⟩
 
+private theorem natT_appHeadConst_const {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {c : KKey} {us : List KLevel} :
+    ∀ {k : Nat} {E : KExpr} {p : SourceValue F},
+      RawTm κ d Γ h k (.const c us) E p → NatAppHeadConstT h p := by
+  intro k E p hR
+  cases hR with
+  | const cell _ _ _ => exact .const cell
+
+private theorem natT_appHeadConst_app {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} :
+    ∀ (ras : List KExpr) {f : KExpr},
+      (∀ {k : Nat} {E : KExpr} {p : SourceValue F},
+        RawTm κ d Γ h k f E p → NatAppHeadConstT h p) →
+      ∀ {k : Nat} {E : KExpr} {p : SourceValue F},
+        RawTm κ d Γ h k (Expr.mkAppN f ras) E p → NatAppHeadConstT h p
+  | [], f, hf => by
+    intro k E p hR
+    exact hf hR
+  | a :: ras, f, hf => by
+    intro k E p hR
+    refine natT_appHeadConst_app ras (f := .app f a) ?_ hR
+    intro k' E' p' hR'
+    cases hR' with
+    | app cell rf _ => exact .app cell (hf rf)
+
+/-- A raw reading that strips `n` binders down to an application spine over a constant is, in
+the heap, of shape `NatRetHeadT h n`. -/
+theorem natT_retHead_of_rawTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} :
+    ∀ (n : Nat) {k : Nat} {R E : KExpr} {p : SourceValue F}
+      {rbs : List (KExpr × Ix.Kernel.BinderMeta)} {c : KKey} {us : List KLevel}
+      {ras : List KExpr},
+      RawTm κ d Γ h k R E p →
+      R.stripPis n = some (rbs, Expr.mkAppN (.const c us) ras) →
+      NatRetHeadT h n p
+  | 0, k, R, E, p, rbs, c, us, ras, hR, hs => by
+    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨_, rfl⟩ := hs
+    exact .zero (natT_appHeadConst_app ras (fun hR' => natT_appHeadConst_const hR') hR)
+  | n + 1, k, R, E, p, rbs, c, us, ras, hR, hs => by
+    cases R with
+    | forallE Rt Rb m =>
+      rw [Expr.stripPis, Option.map_eq_some_iff] at hs
+      obtain ⟨⟨rbs', rbody'⟩, hs', hp⟩ := hs
+      simp only [Prod.mk.injEq] at hp
+      obtain ⟨_, rfl⟩ := hp
+      cases hR with
+      | forallE cell _ rb _ => exact .succ cell (natT_retHead_of_rawTm n rb hs')
+    | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _ | letE _ _ _ _
+    | lit _ | proj _ _ _ => simp [Expr.stripPis] at hs
+
+/-- The raw load witness and the raw well-formedness facts give the return-position shape: the
+stored-type statements below specialize to the raw-reading ones. -/
+theorem NatCtorRetHeadT.of_natCtorLoadI {κ : _root_.Address → KKey} {T : KKey}
+    {b₀ : Bytes.Address} {idx k nP nIdx num_ctors : Nat} {large : Bool}
+    {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)} {x_block : SourceValue F}
+    {cs : List (Call F)}
+    (hload : NatCtorLoadI κ b₀ idx k ctors_info x_block cs)
+    (hwf_all : ∀ info ∈ ctors_info, NatCtorInfoWf T k large nP nIdx num_ctors info) :
+    NatCtorRetHeadT b₀ idx nP ctors_info x_block cs := by
+  intro j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
+  obtain ⟨_, _, hRaw⟩ :=
+    hload j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
+  obtain ⟨rcbs, rus, rargs, hsR⟩ := (hwf_all info (List.mem_of_getElem? hinfo)).strip_R
+  rw [posOf_range] at hRaw
+  exact natT_retHead_of_rawTm _ hRaw hsR
+
 /-! ## Raw readings that keep the stored binder data -/
 
 /-- At every binder the raw reading `R` shares with the stored reading `E` (each `∀` whose
