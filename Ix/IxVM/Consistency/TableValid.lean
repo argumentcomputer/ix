@@ -79,8 +79,10 @@ a run hashed there, and the table is the one the binding run hashed at `a`. A co
 wants the conclusion to be about a record, blob or table they hold puts it in the view,
 stored under its own hash (the table as the view's `roleBinding`): a run that hashed other
 bytes at that address then hashed a collision with the view. Over a view stored under its
-own hashes the alternative is a BLAKE3 collision one side of which a run hashed, or a
-preimage of the zero address a run hashed or the view holds (`ComposedSpec.selfHashed`).
+own hashes the alternative is a BLAKE3 collision between a byte string a run hashed and one in
+hand: held by the view under its hash, one of the two claims' byte strings or the committed
+images, or hashed by a run; or a preimage of the zero address a run hashed or the view holds
+(`ComposedSpec.selfHashed`).
 
 ## Corollaries
 
@@ -105,7 +107,12 @@ a `SetTheory`: the first takes one, the second speaks of every model in every on
   constant references, and validate an operation on its value (for `Facts`: the shapes and
   equations the native rules rely on);
 * refuse a recursor with a `let` in its first motive's type or its major premise's domain
-  (`Reads` at a recursor; see the `Reads` documentation).
+  (`Reads` at a recursor; see the `Reads` documentation);
+* walk, in a `binding` run, what the records of the two standard axioms reference: `kept`
+  keeps both records, so `UsedClosed` asks for every record they reference;
+* refuse a claim whose closure holds a recursor of a mutual or nested family. The proof of
+  the typing half relies on this refusal until it has a route for such recursors; the
+  statements do not mention it.
 
 ## What the statements do not cover
 
@@ -115,8 +122,11 @@ an arbitrary set with its constructors' values, and a structure whose projection
 in the environment has projections with no law. Nothing requires either to be present beyond
 the pinned basis blocks, `And` and `Bool`.
 
-Claims with user axioms, assumed leaves, a literal class, `eval`. That the role addresses are
-a given toolchain's constants.
+Claims with user axioms, assumed leaves, a literal class, `eval`. Conditional claims, that is
+claims with an assumption tree, the form a large library takes when it is checked in parts.
+Proofs consumed through aggregation: an aggregate's verifier would have to pin this circuit
+and match the table address, and nothing here states that. That the role addresses are a
+given toolchain's constants.
 -/
 
 universe u
@@ -846,15 +856,16 @@ theorem ComposedSpec.apply (h : ComposedSpec.{u} callsA callsB dA dB)
   h bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs
 
 /-- **The composed statement over a view stored under its own hashes**: a BLAKE3 collision
-one side of which a run hashed (or a preimage of the zero address a run hashed or the view
-holds), or the composed conclusion. -/
+between a byte string a run hashed and one held by the view under its hash, one of the two
+claims' byte strings or the committed images, or hashed by a run (or a preimage of the zero
+address a run hashed or the view holds), or the composed conclusion. -/
 theorem ComposedSpec.selfHashed (h : ComposedSpec.{u} callsA callsB dA dB)
     (deB : Claim.de bytesB = .ok (.binding spec a))
     (dgB : packDigest (Address.blake3Pure bytesB) = dB) (deA : Claim.de bytesA = .ok cA)
     (dgA : packDigest (Address.blake3Pure bytesA) = dA) (hsc : InScopeTyping cA)
     (hctx : cA.context? = some ctx) (hba : ctx.binding = a) (hs : ClaimSeeds cA V seeds)
     (hV : SelfHashed V) :
-    GenuineCollision V (callsA ++ callsB) ∨
+    GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
       ComposedWith.{u} (fun t R envT => ConsistentReadOver.{u} callsA t R envT seeds)
         callsB a :=
   (h.apply deB dgB deA dgA hsc hctx hba hs).elim
