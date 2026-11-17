@@ -326,7 +326,7 @@ theorem formerAliasTeleC_of_member {env : Ix.Kernel.Env .anon} (hconv : FormerTe
         (Decl.typesRep_alloc_nil κP (fun _ => default) m2) (Decl.ghostScoped_zero _) hef hlf
         (hgS cs56 (fun x hx => hteleSub x (by rw [hcT]; simp [hx])))
         ((htmP 0 (fun _ => default)).toTm.mono e_m2)
-        (hℓ.mono (sortRun.heap_extends.trans (guardRun.heap_extends.trans
+        (hℓ.mono ((guardRun.heap_extends.trans
           (evIs.heap_extends.trans (Heap.Extends.snoc _ _))))) evAt
       obtain ⟨E', hE'⟩ := Decl.Tm.exactify hR
       have e_ws : Heap.Extends m46 (m106 ++ [.construct Core.kexprListEnum "Nil" []]) :=
