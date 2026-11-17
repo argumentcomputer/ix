@@ -78,8 +78,8 @@ theorem natPred_opChecked :
     ∃ ty val : Expr .anon, predEnv = RoleOps.installed basisEnv (.role .natPred) ty val predHint ∧
       RoleOps.OpChecked basisEnv (.role .natPred) predTy predVal ty val := by
   have hc : (Key.role .natPred : Key .anon) ∈ natOpNames := by decide
-  obtain ⟨ty, val, -, henv, hpre, hk⟩ := IxVM.Refinement.RoleOps.structOp_of_verifiedRun (cv := predCv) hc
-    predDeclRun
+  obtain ⟨ty, val, -, henv, hpre, hk⟩ :=
+    IxVM.Refinement.RoleOps.structOp_of_verifiedRun (cv := predCv) hc predDeclRun
   exact ⟨ty, val, henv, .struct hc hpre hk⟩
 
 end IxVM.Refinement.Binding.OpInhabit
