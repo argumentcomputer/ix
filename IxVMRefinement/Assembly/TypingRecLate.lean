@@ -74,8 +74,8 @@ theorem LateRegistryWith.at_parent {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   obtain ⟨fam, hReg, hname⟩ := h.complete P cm ip cv caps hf hres hcm hinfo hnat
   have hat := h.fams fam hReg
-  obtain ⟨P', cm', ip', cb, ms, ind, hn', hcm', hinfo', hcb, hms, hind, hp, hi, hlen, hctors⟩ :=
-    hat.record
+  obtain ⟨P', cm', ip', cb, ms, ind, hn', hcm', hinfo', hcb, hms, hind, hp, hi, hlen, hctors,
+    -, -⟩ := hat.record
   have hPP : P' = P := keyOf_inj hroles (hn'.symm.trans hname)
   rw [hPP, hcm] at hcm'
   have hcc : cm' = cm := (Option.some.inj hcm').symm
@@ -96,6 +96,50 @@ def MatchedAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .ano
       fam.ctorsA.length = ind.ctors.size ∧
       ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
         cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)
+
+/-- **The block's logic and the family's level parameters, read at a record of the family's
+name**: the registered family's own record is this one (keys identify addresses, one store), so
+its block is in Lean's logic and its level parameters are the positions below the member's level
+count. -/
+theorem LateFamAt.logic_lvls {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon} (hat : LateFamAt t E env fam)
+    (ht : t.check = .ok ()) {P : _root_.Address} {cm : Ixon.Constant} {ip : Ixon.InductiveProj}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (hname : fam.p.cvT.name = keyOf t P) (hcm : Ix.Cert.recordAt E P = some cm)
+    (hinfo : cm.info = .iPrj ip) (hcb : Ix.Cert.recordAt E ip.block = some cb)
+    (hms : cb.info = .muts ms) (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
+    InLogic cb ∧ fam.p.cvT.levelParams = List.range ind.lvls.toNat := by
+  have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
+  obtain ⟨P', cm', ip', cb', ms', ind', hn', hcm', hinfo', hcb', hms', hind', -, -, -, -,
+    hlog, hlps⟩ := hat.record
+  have hPP : P' = P := keyOf_inj hroles (hn'.symm.trans hname)
+  rw [hPP, hcm] at hcm'
+  have hcc : cm' = cm := (Option.some.inj hcm').symm
+  rw [hcc, hinfo] at hinfo'
+  have hii : ip' = ip := (Ixon.ConstantInfo.iPrj.inj hinfo').symm
+  rw [hii, hcb] at hcb'
+  have hbb : cb' = cb := (Option.some.inj hcb').symm
+  rw [hbb, hms] at hms'
+  injection hms' with hmm
+  rw [← hmm, hii, hind] at hind'
+  injection hind' with h1
+  injection h1 with hdd
+  rw [hbb] at hlog
+  rw [← hdd] at hlps
+  exact ⟨hlog, hlps⟩
+
+/-- **The block's logic and the family's level parameters at the matched parent.** -/
+theorem MatchedAt.logic_lvls {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {P : _root_.Address} {ip : Ixon.InductiveProj}
+    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam) (ht : t.check = .ok ())
+    {cm : Ixon.Constant} (hcm : Ix.Cert.recordAt E P = some cm) (hinfo : cm.info = .iPrj ip) :
+    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
+      Ix.Cert.recordAt E ip.block = some cb ∧ cb.info = .muts ms ∧
+      ms[ip.idx.toNat]? = some (.indc ind) ∧
+      InLogic cb ∧ fam.p.cvT.levelParams = List.range ind.lvls.toNat := by
+  obtain ⟨hat, hname, cb, ms, ind, hcb, hms, hind, -⟩ := hm
+  exact ⟨cb, ms, ind, hcb, hms, hind,
+    hat.logic_lvls ht hname hcm hinfo hcb hms hind⟩
 
 /-! ## The head of the late step -/
 
