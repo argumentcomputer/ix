@@ -445,7 +445,7 @@ theorem scoped_large_prop_ctor_go {c : ScopedCtx} (hc : ScopedCoreFacts c)
 /-! ## A stored constructor, opened -/
 
 /-- **An opening of `n + m` binders is the two openings in turn.** -/
-theorem openPisAtFvars_split : ∀ (n : Nat) {m : Nat} {e : KExpr} {d : Nat}
+theorem openPisAtFvars_split_some : ∀ (n : Nat) {m : Nat} {e : KExpr} {d : Nat}
     {fvs : List KExpr} {o : KExpr},
     Ix.Kernel.openPisAtFvars (n + m) e d = some (fvs, o) →
     ∃ fvs₁ o₁ fvs₂, Ix.Kernel.openPisAtFvars n e d = some (fvs₁, o₁) ∧
@@ -458,7 +458,7 @@ theorem openPisAtFvars_split : ∀ (n : Nat) {m : Nat} {e : KExpr} {d : Nat}
     match e, h with
     | .forallE dom body bi, h =>
       obtain ⟨fvs_tl, rfl, htl⟩ := openPisAtFvars_succ_forallE h
-      obtain ⟨fvs₁, o₁, fvs₂, h₁, h₂, rfl⟩ := openPisAtFvars_split n htl
+      obtain ⟨fvs₁, o₁, fvs₂, h₁, h₂, rfl⟩ := openPisAtFvars_split_some n htl
       refine ⟨.fvar d dom :: fvs₁, o₁, fvs₂, ?_, ?_, rfl⟩
       · simp only [Ix.Kernel.openPisAtFvars, h₁]
       · rw [show d + (n + 1) = d + 1 + n by omega]
@@ -489,7 +489,7 @@ theorem ctor_open_residual {ty : KExpr} {nP nF : Nat}
     rw [List.getElem?_eq_getElem hjlt] at hfj
     rw [Option.some.inj hfj]
     rfl
-  obtain ⟨fvsP, crest, xFvs, hopP, hopF, rfl⟩ := openPisAtFvars_split nP hop
+  obtain ⟨fvsP, crest, xFvs, hopP, hopF, rfl⟩ := openPisAtFvars_split_some nP hop
   have hlenP : fvsP.length = nP := Ix.Kernel.Model.openPisAtFvars_length nP hopP
   have hps : (Ix.Kernel.structPsAt nF nP).map
       (fun x => Expr.instSeq (fvsP ++ xFvs) (nP + nF - 1) x) = fvsP := by
