@@ -481,9 +481,10 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (hst : StepStore calls t E₀ E) (hinv : Decl.PrefixInv.{u} E t (some n) env)
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts ms)
     (hmem : ms[i]? = some (.indc ind))
-    (hproj : ∀ k ind', ms[k]? = some (.indc ind') →
+    (hproj : ∀ (k : Nat) (ind' : Ixon.Inductive), ms[k]? = some (.indc ind') →
       recordOf E (Core.iprjAddr B k) = some (memberProjection B k (.indc ind')))
-    (hinds : ∀ k m, ms[k]? = some m → ∃ ind', m = .indc ind')
+    (hinds : ∀ (k : Nat) (m : Ixon.MutConst), ms[k]? = some m →
+      ∃ ind' : Ixon.Inductive, m = .indc ind')
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B ms i n)
     (hmod : ModeledAt E B)
     {ty₀ : Ix.Kernel.Expr .anon} (hty : blockRead t E B cb ms ind.typ = .ok ty₀)
@@ -491,7 +492,7 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (hty_def : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
     (hfv : ty₀.hasFvar = false)
     (hstored : Decl.UsedRefsStored t env cb)
-    (hfresh : ∀ k ind', ms[k]? = some (.indc ind') →
+    (hfresh : ∀ (k : Nat) (ind' : Ixon.Inductive), ms[k]? = some (.indc ind') →
       env.find? (Core.keyOf t (Core.iprjAddr B k)) = none)
     (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B i))) :
     ∃ ty' : Ix.Kernel.Expr .anon,
