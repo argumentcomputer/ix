@@ -149,7 +149,7 @@ top-level role context, with their ranks (module docstring). -/
 structure TopGraph (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (seeds : List _root_.Address)
     (Top : _root_.Address → Prop) (rank : _root_.Address → Nat) : Prop where
   /-- The seeds are top-walked. -/
-  seeds : ∀ a ∈ seeds, Top a
+  seedsTop : ∀ a ∈ seeds, Top a
   /-- A top-walked address holds a record. -/
   record : ∀ a, Top a → ∃ c, recordOf E₀ a = some c
   /-- A used reference is top-walked at a smaller rank, or covered. -/
@@ -343,7 +343,7 @@ def IsAnchor (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E₀ : Ixon
 theorem exists_list_of_records (E₀ : Ixon.Env) (P : _root_.Address → Prop)
     (h : ∀ a, P a → ∃ c, recordOf E₀ a = some c) :
     ∃ us : List _root_.Address, ∀ a, a ∈ us ↔ P a := by
-  haveI : DecidablePred P := fun a => Classical.propDecidable (P a)
+  have : DecidablePred P := fun a => Classical.propDecidable (P a)
   refine ⟨(E₀.consts.toList.map (·.1)).filter (fun a => decide (P a)), fun a => ?_⟩
   rw [List.mem_filter]
   constructor
@@ -722,7 +722,7 @@ theorem typing_skeleton_core {V : View} {extra : List ByteArray}
   refine ⟨E₀, env, hload, hFI.nodup, hextT, hFI.prov, ?_,
     claimedEnv_models_of_prefixInv hFI.inv hFI.nodup hFI.prov⟩
   intro a ha a' hsc
-  have hTa := hG.seeds a ha
+  have hTa := hG.seedsTop a ha
   obtain ⟨c, hc⟩ := hG.record a hTa
   obtain ⟨hlogc, hlogB⟩ := hG.seedLogic a ha c hc
   have hpost : ∀ (A : _root_.Address) (cA : Ixon.Constant) (y : _root_.Address), A ∈ us →
