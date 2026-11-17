@@ -434,11 +434,10 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
         | cons e es =>
           cases e <;> try simp [pinFlagArm] at ht
           case literal tag =>
-            simp only [pinFlagArm] at ht
             by_cases he : (ZMod.val x == ZMod.val c) = true
-            · rw [if_pos he] at ht
+            · rw [ite_eq_left he] at ht
               by_cases htag : (tag == 1) = true
-              · rw [if_pos htag] at ht
+              · rw [ite_eq_left htag] at ht
                 injection ht with htail
                 subst tail
                 have hx : x = c := ZMod.val_injective _ (beq_iff_eq.mp he)
@@ -447,9 +446,9 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
                 rcases selectArm_cons_inv hs with ⟨hm, rfl⟩ | ⟨hn, _⟩
                 · exact ⟨(MatchesConst.some_inv (MatchesConst.literal x) hm).2, rfl⟩
                 · exact (MatchesConst.none_inv (MatchesConst.literal x) hn rfl).elim
-              · rw [if_neg htag] at ht
+              · rw [ite_eq_right htag] at ht
                 cases ht
-            · rw [if_neg he] at ht
+            · rw [ite_eq_right he] at ht
               have hne : x ≠ c := fun hxc => he (beq_iff_eq.mpr (congrArg ZMod.val hxc))
               rcases selectArm_cons_inv hs with ⟨hm, _⟩ | ⟨_, hs'⟩
               · exact (hne (Value.field.inj
@@ -463,9 +462,8 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
         | cons e es =>
           cases e <;> try simp [pinFlagArm] at ht
           case literal tag =>
-            simp only [pinFlagArm] at ht
             by_cases htag : (tag == 1) = true
-            · rw [if_pos htag] at ht
+            · rw [ite_eq_left htag] at ht
               injection ht with htail
               subst tail
               have ht1 : tag = 1 := beq_iff_eq.mp htag
@@ -473,7 +471,7 @@ private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Exp
               rcases selectArm_cons_inv hs with ⟨hm, rfl⟩ | ⟨hn, _⟩
               · exact ⟨matchPattern_wildcard_inv hm, rfl⟩
               · exact (matchPattern_wildcard_none hn).elim
-            · rw [if_neg htag] at ht
+            · rw [ite_eq_right htag] at ht
               cases ht
 
 private theorem pinFlagArm_prelude (ro : Ix.Kernel.Role)
