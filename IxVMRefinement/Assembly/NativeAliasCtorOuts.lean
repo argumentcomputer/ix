@@ -166,7 +166,6 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
-    (hconv : FormerTeleConv)
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
@@ -204,6 +203,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
            Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
              (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
           Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
+  have hconv : FormerTeleConv := formerTeleConv_of_program
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
@@ -983,7 +983,7 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
              (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
           Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheck, htele, hnS, hnT, hlT, hlen,
-    hparam, houts, hguard, -, hunused⟩ := aliasOuts_of_member_checked hconv ht hS hst hrec hchk
+    hparam, houts, hguard, -, hunused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
       hnat hblk hp₀ hnIdx hn hinv hstored hP hkeys hfresh hfree hcov haux
   exact ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheck, htele, hnS, hnT, hlT, hlen,
     hparam, houts, hguard, hunused⟩
