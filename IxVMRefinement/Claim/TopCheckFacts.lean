@@ -419,10 +419,10 @@ private theorem tc_get_ci_iprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
         | .Axiom_other_other (hv37 := hv) ..
         | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
         | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-        | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-        | .Ctor_other_n0 (hv1941 := hv) ..
-        | .Ctor_other_other (hv1941 := hv) ..
-        | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+        | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+        | .Ctor_other_n0 (hv1989 := hv) ..
+        | .Ctor_other_other (hv1989 := hv) ..
+        | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
           injection hv with _ htag _
           exact absurd htag (by decide)
         | .Induct_n0 (x_ind_block := xblk) (m1283 := m1283) (m1333 := m1333)
@@ -438,14 +438,14 @@ private theorem tc_get_ci_iprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
             (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
             (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
             (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
-            (ev1482 := ev_mk) (hc1926 := hc') ..
+            (ev1482 := ev_mk) (hc1974 := hc') ..
         | .Induct_other_other (x_ind_block := xblk) (m1283 := m1283) (m1333 := m1333)
             (m1354 := m1354) (m1376 := m1376)
             (m1427 := m1427) (m1440 := m1440) (v1469 := r_mk) (m1470 := m_mk) (cs1480 := cs_mk)
             (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
             (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
             (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
-            (ev1482 := ev_mk) (hc1935 := hc') .. =>
+            (ev1482 := ev_mk) (hc1983 := hc') .. =>
           injection hv_ind with _ _ hargs
           injection hargs with _ hargs; injection hargs with _ hargs
           injection hargs with _ hargs; injection hargs with _ hargs
@@ -537,21 +537,21 @@ private theorem tc_get_ci_rprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
         | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
         | .Induct_n0 (hv1240 := hv) .. | .Induct_other_n0 (hv1240 := hv) ..
         | .Induct_other_other (hv1240 := hv) ..
-        | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-        | .Ctor_other_n0 (hv1941 := hv) ..
-        | .Ctor_other_other (hv1941 := hv) .. =>
+        | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+        | .Ctor_other_n0 (hv1989 := hv) ..
+        | .Ctor_other_other (hv1989 := hv) .. =>
           injection hv with _ htag _
           exact absurd htag (by decide)
-        | .Rec_n0 (x_rec_block := xblk) (m2693 := m2637) (m2761 := m2705) (m2804 := m2718)
-            (v2833 := r_mk) (m2834 := m_mk) (cs2844 := cs_mk)
-            (ev14 := ev1) (hv2631 := hv_rec) (ev2705 := ev2)
-            (hm2769 := hm2705) (ev2742 := ev3) (ev2786 := ev4) (ev2816 := ev_rules)
-            (ev2846 := ev_mk) (hc2997 := hc') ..
-        | .Rec_other (x_rec_block := xblk) (m2693 := m2637) (m2761 := m2705) (m2804 := m2718)
-            (v2833 := r_mk) (m2834 := m_mk) (cs2844 := cs_mk)
-            (ev14 := ev1) (hv2631 := hv_rec) (ev2705 := ev2)
-            (hm2769 := hm2705) (ev2742 := ev3) (ev2786 := ev4) (ev2816 := ev_rules)
-            (ev2846 := ev_mk) (hc3086 := hc') .. =>
+        | .Rec_n0 (x_rec_block := xblk) (m2789 := m2637) (m2857 := m2705) (m2900 := m2718)
+            (v2929 := r_mk) (m2930 := m_mk) (cs2940 := cs_mk)
+            (ev14 := ev1) (hv2727 := hv_rec) (ev2801 := ev2)
+            (hm2865 := hm2705) (ev2838 := ev3) (ev2882 := ev4) (ev2912 := ev_rules)
+            (ev2942 := ev_mk) (hc3093 := hc') ..
+        | .Rec_other (x_rec_block := xblk) (m2789 := m2637) (m2857 := m2705) (m2900 := m2718)
+            (v2929 := r_mk) (m2930 := m_mk) (cs2940 := cs_mk)
+            (ev14 := ev1) (hv2727 := hv_rec) (ev2801 := ev2)
+            (hm2865 := hm2705) (ev2838 := ev3) (ev2882 := ev4) (ev2912 := ev_rules)
+            (ev2942 := ev_mk) (hc3182 := hc') .. =>
           injection hv_rec with _ _ hargs
           injection hargs with _ hargs; injection hargs with _ hargs
           injection hargs with _ hargs; injection hargs with _ hargs

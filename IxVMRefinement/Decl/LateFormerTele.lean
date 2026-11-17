@@ -1,15 +1,17 @@
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Core.Certs
+import IxVMRefinement.Assembly.GuardHeadRep
 
 /-! # The former's telescope in the native recursor comparison
 
 `KernelCheck::nat_former_tele(rc, ty, k, types)` rebuilds the first `k` binders of the parent's
 type as literal `Forall` nodes: at a `Forall` node it keeps the domain and recurses into the
-body; at any other node it takes the weak head normal form, which must be a `Forall`. The
-legacy specification (`nat_former_tele_syntactic_spec`) covers only a heap term whose first `k`
-nodes are already `Forall`s. A stored former's type is a `∀`-telescope after its `let`s are
-reduced, but its record may hold a `let` in the telescope; there the circuit calls `whnf`, whose
-result reduces from a `∀` and so is that `∀` (`Red.forallE_eq`).
+body; at any other node it takes the classifier head (`KernelGuard::head`), which must be a
+`Forall`. The legacy specification (`nat_former_tele_syntactic_spec`) covers only a heap term
+whose first `k` nodes are already `Forall`s. A stored former's type is a `∀`-telescope after its
+`let`s are reduced, but its record may hold a `let` in the telescope; there the circuit calls the
+head operation, which returns a term already headed by a `∀` unchanged
+(`Core.GuardData.head_rep`).
 
 `scoped_nat_former_tele_spec`: under the scoped core facts, at any depth, for a term whose first
 `k` binders are `∀`s (`stripPis`), the result represents the same term. -/
@@ -26,7 +28,7 @@ set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
 /-- **`nat_former_tele` keeps the term**: at depth `d` with the context `types`, a term whose
-first `k` binders are `∀`s is represented by the result, with every `whnf` step it takes on a
+first `k` binders are `∀`s is represented by the result, with every head step it takes on a
 non-`Forall` node read through the scoped core. -/
 theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     ∀ (k : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
@@ -79,13 +81,12 @@ theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       refine ⟨e_all, ?_⟩
       exact .forallE (by simp) (hT.mono e_all) (hclose.mono e_out) (repKLevel_heapMono₂ e_all hℓ)
     | .other_other (m162 := m162) (p169 := p169) (cs175 := cs175) (x_d := x_d) (x_b := x_b)
-        (x_m := x_m) (v229 := v229) (m239 := m239) (cs247 := cs247) (v252 := v252)
-        (ld171 := ld171) (ev177 := ev_whnf) (he224 := hr) (hm223 := hh') (op281 := op281)
-        (hm292 := hm284) (ev249 := ev_rec) (hc319 := hcs) .. =>
+        (x_m := x_m) (v220 := v229) (m230 := m239) (cs238 := cs247) (v243 := v252)
+        (ld171 := ld171) (ev177 := ev_whnf) (he215 := hr) (hm214 := hh') (op272 := op281)
+        (hm283 := hm284) (ev240 := ev_rec) (hc310 := hcs) .. =>
       have hgood_w : CoreGood c cs175 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
-      obtain ⟨te', hte', hred⟩ :=
-        scoped_core_whnf hrc hty hsc hc.env hc.loads hgood_w ev_whnf hE
-      have hte_eq := Red.forallE_eq hred
+      obtain ⟨te', hte', hrigid⟩ := Core.GuardData.head_rep hc hgood_w hE ev_whnf
+      have hte_eq := hrigid rfl
       subst hte_eq
       have e_w := ev_whnf.heap_extends
       obtain ⟨T', B', ℓ, hEq, hT, hB, hℓ⟩ := hte'.forallE_of_load ld171

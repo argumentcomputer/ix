@@ -148,10 +148,10 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) ..
-  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) ..
+  | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (m2 := m2) (x_ind_block := xblk)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
@@ -178,7 +178,7 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
     have hbp := Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_1470 hbp_m
     exact absurd rfl (hmod _ _ _ _ _ b ev_mod
       (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl])) hbp hb_eq)
-  | .Induct_other_other (hv1240 := hv_ind) (hne1927 := hne_u) .. =>
+  | .Induct_other_other (hv1240 := hv_ind) (hne1975 := hne_u) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
@@ -187,14 +187,15 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
   | .Induct_other_n0 (m2 := m2) (x_ind_block := xblk)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
       (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1701 := m1701) (m1745 := m1745) (m1793 := m1793)
-      (m1806 := m1806) (cs1907 := cs_mb)
+      (m1492 := m1492) (m1749 := m1701) (m1793 := m1745) (m1841 := m1793)
+      (m1854 := m1806) (cs1955 := cs_mb)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1793) (ev1757 := ev_rsl) (ev1818 := ev_mc) (ev1909 := ev_mb)
-      (hc1926 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_role)
+      (ev1711 := ev_fa) (ev1759 := ev_tele)
+      (hm1849 := hm1793) (ev1805 := ev_rsl) (ev1866 := ev_mc) (ev1957 := ev_mb)
+      (hc1974 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
@@ -210,8 +211,9 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
-                (e_1793.trans (ev_rsl.heap_extends.trans ev_mc.heap_extends)))))))))))))
+              (ev_role.heap_extends.trans
+                (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+                  (e_1793.trans (ev_rsl.heap_extends.trans ev_mc.heap_extends))))))))))))))
     have hsub_mb : ∀ cl ∈ cs_mb, cl ∈ calls := fun cl hcl =>
       hsub_chk cl (by rw [hc]; simp [hcl])
     obtain ⟨x_rb, rb, m, cs_fam, e_m, hrb, ev_fam, hcl_fam, hsub_fam⟩ :=
