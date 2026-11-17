@@ -2,7 +2,7 @@ import Aiur.Modules.Function
 
 /-! # IxVM module `KernelModeled`
 
-The modeled route for inductive declarations: IxVM checks the recursors of a mutual or
+The modeled route for inductive declarations: IxVM checks a mutual or
 nested block the way the certified kernel's modeled install does
 (`IxC/Kernel/Inductives/Modeled.lean`, `checkModeled`), against a model of the block
 that the prover supplies as advice.
@@ -15,15 +15,6 @@ that the prover supplies as advice.
   address (`read_payload`), and lists the model's records, which are ordinary Ixon
   records loaded from channel 2 under their content address (hash-checked like any
   record). Nothing about it is trusted: `check_family` validates it in full.
-* **When.** The family is checked where one of its recursors is checked
-  (`KernelCheck::check_const`, the recursor arm). A block's types and constructors are
-  checked on their own for their declared shape only: with no recursor of the block
-  checked, nothing reads a rule of it, and the use sites below grant it no projection,
-  structure eta or unit-like conversion.
-* **Independence.** The family is checked in the basis role context
-  (`KernelRoles::family_ctx`), and every record its advice names is advice, a basis role's
-  or in the block's own dependency closure, so the check of a family's model never
-  reaches the family's block.
 * **Coherence.** A hint is unconstrained at each call, so two checks of one block may see
   two payloads. A block's types, constructors and its *whole* recursor family record
   are therefore validated together against one payload (`check_family(block, rec_block)`),
@@ -523,8 +514,7 @@ def get_addrs := aiur_fn⟦
   -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient (`Quot`,
   -- `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`: function extensionality, along
   -- which the model of a block with a nested occurrence under a binder transports, is a
-  -- theorem from them). No other axiom, and no other role: `String` and `Char`, like any
-  -- other constant a model names, are witnessed by a path from the block.
+  -- theorem from them), `String`, `Char`. No other axiom.
 
 def basis_role_allowed := aiur_fn⟦
   fn basis_role_allowed(r: Field) -> Field {
@@ -544,6 +534,8 @@ def basis_role_allowed := aiur_fn⟦
         34 => {  1 } ,
         35 => {  1 } ,
         36 => {  1 } ,
+        37 => {  1 } ,
+        39 => {  1 } ,
         _ => {  0 } ,
       }
     }
@@ -926,26 +918,13 @@ def projection_of_advice := aiur_fn⟦
 
   -- ## The family: members against their models
 
-  -- The family a block's payload names, checked as `check_family_in` checks it. No caller:
-  -- a block's types and constructors are checked on their own for their declared shape
-  -- only, and the family where a recursor of it is checked, in the basis role context.
+  -- A type or constructor of a modeled block: validated with the recursor family its
+  -- payload names.
 
 def check_modeled_block := aiur_fn⟦
   fn check_modeled_block(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef) -> () {
       let (rb, _) = IxonDeserialize::get_address(read_payload(block));
-      check_family_in(rc, block, rb)
-    }
-⟧
-
-  -- The family where one of its recursors is checked: the whole family check, in the basis
-  -- role context (`KernelRoles::family_ctx`) whatever context the recursor is checked in.
-  -- The family's model and rules are then checked with no literal support, operation or
-  -- equation role in force, so they depend on no record that could reach the family's own
-  -- block.
-
-def check_family := aiur_fn⟦
-  fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
-      check_family_in(KernelRoles::family_ctx(rc), block, rec_block)
+      check_family(rc, block, rb)
     }
 ⟧
 
@@ -953,8 +932,8 @@ def check_family := aiur_fn⟦
   -- constructor and recursor against its model (`checkMemberVal`), and every rule
   -- against its `iota_j` theorem (`checkIotaRule`).
 
-def check_family_in := aiur_fn⟦
-  fn check_family_in(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
+def check_family := aiur_fn⟦
+  fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
       -- No model advice under user axioms: the claim's axioms tree is empty, so every axiom
       -- this claim checks, the advice's and the block closure's, is standard or inert, and
       -- no accepted constant uses an inert one. The role binding binds Lean's compiler-trust
