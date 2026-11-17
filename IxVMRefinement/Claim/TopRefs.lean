@@ -32,7 +32,7 @@ private theorem sub_one_roleNum' {ro : Ix.Kernel.Role} {v : SourceValue F}
   exact op.symm
 
 theorem field_eq_of_sub_zero {a b : F}
-    (op : evalBinOp .sub (.field a) (.field b) = .ok (.field 0)) : a = b := by
+    (op : evalBinOp .sub (.field a : SourceValue F) (.field b) = .ok (.field 0)) : a = b := by
   simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op
   exact sub_eq_zero.mp op
 
