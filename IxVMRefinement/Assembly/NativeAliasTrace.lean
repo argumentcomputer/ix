@@ -105,7 +105,7 @@ theorem binderTrace_distinct_residual_inhabited (env : Env .anon) :
     .step .refl (.done ht)⟩
   intro heq
   have hb := (Expr.forallE.inj heq).2.1
-  cases hb
+  simp only [residual, reduceCtorEq] at hb
 
 end IxVM.Refinement.Decl
 
