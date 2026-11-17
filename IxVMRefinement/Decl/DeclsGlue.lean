@@ -1771,6 +1771,7 @@ structure FoldEnvCompanions (c : Ctx) : Prop where
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
     c.env.find? kc = some (.ctorInfo cvc nP nF) →
     ∀ (d : Nat) (us : List KLevel) (Ss : List KExpr) (ta : KExpr), Ss.length = nP + nF →
+      (∀ s ∈ Ss.take nP, s.looseBVarsBounded 0 = true) →
       Infer c.env .io d (Expr.mkAppN (.const kc us) Ss) ta →
       Red c.env d ta (Expr.mkAppN (.const T us) (Ss.take nP))
 

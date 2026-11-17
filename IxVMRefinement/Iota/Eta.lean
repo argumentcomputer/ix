@@ -493,7 +493,8 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       rw [hargsTW, Ix.Kernel.etaFabArgsE, Ix.Kernel.etaProjs, ite_eq_left htower, hetaF, hFAs_eq]
     obtain ⟨tf, hinfFAB⟩ := infer_io_of_certs _ _ _
       (Infer.const (ci := .ctorInfo cvj cnP m) hcj rfl hustlenC) hcertFAB
-    have hredFAB := hetaUse.type d ust FAs tf hFAslen hinfFAB
+    have hredFAB := hetaUse.type d ust FAs tf hFAslen
+      (fun s hs => TmL.looseBVarsBounded hFAs s (List.mem_of_mem_take hs)) hinfFAB
     have htakeFAs : FAs.take cnP = TA := by
       rw [hFAs_eq, List.take_left' (by omega)]
     have hdropFAs : FAs.drop cnP =

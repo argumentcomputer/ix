@@ -140,6 +140,19 @@ theorem Tm.looseBVarsBounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat 
   | litStr => simp [Expr.looseBVarsBounded]
   | proj _ _ _ ihe => simpa [Expr.looseBVarsBounded] using ihe
 
+/-- **A list of top-level terms has no loose bound variable** (a free de Bruijn index of the
+circuit is an opened variable, `Tm.bvarFree`). -/
+theorem TmL.looseBVarsBounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {Es : List KExpr} {p : SourceValue F} (rep : TmL κ d Γ h Es p) :
+    ∀ E ∈ Es, E.looseBVarsBounded 0 = true := by
+  induction rep with
+  | nil _ => intro E hE; simp at hE
+  | cons _ rh _ ih =>
+    intro E hE
+    rcases List.mem_cons.mp hE with rfl | hE
+    · exact Tm.looseBVarsBounded rh
+    · exact ih E hE
+
 /-! ## Opening a binder -/
 
 /-- **Opening a binder**: a term represented at local depth `k + 1` is represented, at opening

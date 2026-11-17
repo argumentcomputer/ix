@@ -133,15 +133,17 @@ end
 /-! ## η typing in every extension -/
 
 /-- **η typing is stable**: for an η-capable family the environment stores, with its
-constructor, the typing clause of `EtaUseFacts` holds in every extension of the environment. The
-clause is an inversion on the constructor's stored type, which an extension keeps. -/
+constructor, the typing clause of `EtaUseFacts` holds in every extension of the environment, at
+parameters with no loose bound variable. The clause is an inversion on the constructor's stored
+type, which an extension keeps (`Decl.etaStable_of_etaShape`); at a loose parameter it is false
+(`Decl.etaType_open_false`). -/
 def EtaStable (env : Ix.Kernel.Env .anon) : Prop :=
   ∀ (T kc : KKey) (cvT cvc : ConstantVal .anon) (caps : IndCaps .anon) (nP nF : Nat),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
     env.find? kc = some (.ctorInfo cvc nP nF) →
     ∀ env' : Ix.Kernel.Env .anon, Ix.Kernel.EnvExt env env' →
       ∀ (d : Nat) (us : List KLevel) (args : List KExpr) (ty : KExpr),
-        args.length = nP + nF →
+        args.length = nP + nF → (∀ s ∈ args.take nP, s.looseBVarsBounded 0 = true) →
         Ix.Kernel.Rules.Infer env' .io d (Ix.Kernel.Expr.mkAppN (.const kc us) args) ty →
           Ix.Kernel.Rules.Red env' d ty (Ix.Kernel.Expr.mkAppN (.const T us) (args.take nP))
 

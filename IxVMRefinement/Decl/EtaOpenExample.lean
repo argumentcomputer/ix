@@ -7,11 +7,11 @@ with its constructor (the keys are placeholders: two role keys of no other use h
 environment:
 
 * the typing clause at every spine, read off the stored constructor, fails
-  (`not_etaTypeOpen`), and so do `EtaStable` and the typing clause of `EtaUseFacts` as stated
-  (`not_etaStable`): `Box.mk (bvar 0) (sort 0)` infers `Box (sort 0)`, which does not reduce to
-  `Box (bvar 0)`;
+  (`not_etaTypeOpen`), and so do the typing clause and its stability without the closedness
+  premise (`not_etaClauseOpen`): `Box.mk (bvar 0) (sort 0)` infers `Box (sort 0)`, which does
+  not reduce to `Box (bvar 0)`;
 * the stored family has its shape (`etaShape`), so the closed form holds at every extension
-  (`etaStableC`), and its conclusion is reached at a closed spine (`closed_instance`).
+  (`etaStable`), and its conclusion is reached at a closed spine (`closed_instance`).
 -/
 
 namespace IxVM.Refinement.Decl.EtaOpenExample
@@ -78,10 +78,10 @@ theorem not_etaTypeOpen : ¬ EtaTypeOpenStmt := by
   exact hnot (h boxEnv boxKey mkKey mkCV 1 1 _ find_mk List.nodup_nil mk_strip 0 [] args ty hlen
     hinf)
 
-/-- **`EtaStable` and the typing clause of `EtaUseFacts` fail here.** -/
-theorem not_etaStable :
-    ¬ EtaStable boxEnv ∧ ¬ EtaUseFacts boxEnv boxKey mkKey boxCV boxCaps 1 1 :=
-  not_etaStable_of_param bclosed find_box rfl rfl find_mk rfl mk_strip (us := []) rfl mk_never
+/-- **The typing clause without the closedness premise, and its stability, fail here.** -/
+theorem not_etaClauseOpen :
+    ¬ EtaClauseOpen boxEnv boxKey mkKey 1 1 ∧ ¬ EtaStableOpen boxEnv :=
+  not_etaClauseOpen_of_param bclosed find_box rfl rfl find_mk rfl mk_strip (us := []) rfl mk_never
     (Nat.le_refl 1) (Nat.le_refl 2)
 
 /-- The stored family has its shape. -/
@@ -102,7 +102,7 @@ theorem etaShape : EtaShape boxEnv := by
     cases hC
     exact ⟨List.nodup_nil, rfl, rfl, rfl, _, mk_strip⟩
 
-theorem etaStableC : EtaStableC boxEnv := etaStableC_of_etaShape etaShape
+theorem etaStable : EtaStable boxEnv := etaStable_of_etaShape etaShape
 
 /-- **The closed form's conclusion is reached**: `Box.mk (sort 0) x : Box (sort 0)` for an opened
 variable `x : sort 0`. -/
@@ -117,7 +117,7 @@ theorem closed_instance :
     intro b hb
     obtain ⟨b₀, hb₀, rfl⟩ := List.mem_map.mp hb
     exact mk_never b₀ hb₀)
-  exact ⟨_, hinf, etaStableC boxKey mkKey boxCV mkCV boxCaps 1 1 find_box rfl rfl find_mk boxEnv
+  exact ⟨_, hinf, etaStable boxKey mkKey boxCV mkCV boxCaps 1 1 find_box rfl rfl find_mk boxEnv
     (Ix.Kernel.EnvExt.refl _) 1 [] _ _ rfl (by simp [Expr.looseBVarsBounded]) hinf⟩
 
 end IxVM.Refinement.Decl.EtaOpenExample

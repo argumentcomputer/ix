@@ -148,14 +148,20 @@ theorem NativeNoRecFacts.shape {env env₂ : Ix.Kernel.Env .anon}
       · exact Or.inr (Or.inr ⟨tbl, rfl⟩)
       · exact hmem ci hold
 
-/-! ## The η type for open parameter spines (a hypothesis of the block step) -/
+/-! ## The η type for open parameter spines (refuted) -/
 
 /-- **The η type for open parameter spines**: a constructor stored with the type
 `∀ params fields, T params` (distinct level parameters) has, at every depth and every argument
 spine, an inferred type that reduces to the family at the spine's parameters.
 `Decl.etaType_of_closed` is this at closed parameters and under the whole environment's
-`EtaShape`. The block step takes it for a structure-like block only (the fields `eta`, `etaIota`
-of the load contract and `EtaStable` at the new environment, at the new family). -/
+`EtaShape`.
+
+**Refuted** (`Typing.not_etaTypeOpen`, `Assembly/NativeBlockEta.lean`): `Expr.instantiate1` does not
+lift, so at a constructor whose binders are never zero a parameter with a loose bound variable is
+captured by the binders after it, and the inferred type does not reduce to the family at that
+parameter. The fields `eta`, `etaIota` and `EtaStable` now take parameters with no loose bound
+variable, and hold after the install from the fold invariant alone
+(`NativeNoRecFacts.etaStable`, `NativeNoRecFacts.etaUseFacts`). -/
 def EtaTypeOpen : Prop :=
   ∀ (env : Ix.Kernel.Env .anon) (T kc : KKey) (cvc : Ix.Kernel.ConstantVal .anon)
     (nP nF : Nat) (cbs : List (Core.KExpr × Ix.Kernel.BinderMeta)),

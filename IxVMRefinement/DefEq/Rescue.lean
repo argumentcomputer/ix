@@ -1125,7 +1125,8 @@ theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Lis
       hsaddr
     have htower := hetaUse.towers
     rw [hetaF] at htower
-    have hred := hetaUse.type d us Ss TS hSlen hinfS
+    have hred := hetaUse.type d us Ss TS hSlen
+      (fun s hs => TmL.looseBVarsBounded hSs70 s (List.mem_of_mem_take hs)) hinfS
     -- the rule
     have hargs' : (Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr ac)) us) Ss).getAppArgs = Ss := by
       rw [getAppArgs_mkAppN]; rfl

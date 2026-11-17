@@ -271,9 +271,9 @@ theorem basis_etaIota :
   cases hpC
   subst hm
   refine ⟨⟨rfl, rfl, rfl, rfl, ZMod.val_zero.symm, rfl⟩, ⟨rfl, ⟨[], _, rfl, rfl⟩, ?_⟩⟩
-  intro d us' args ty' hlen hinf
+  intro d us' args ty' hlen hcl hinf
   exact hη rfl rfl basisEnv_find_punitUnit basisEnv (Ix.Kernel.EnvExt.refl _) d us' args ty' hlen
-    hinf
+    hcl hinf
 
 end
 
