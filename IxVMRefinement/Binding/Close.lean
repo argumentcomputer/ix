@@ -34,8 +34,7 @@ open IxVM.Refinement.Typing
 /-! ## The top limit, by block -/
 
 theorem topLim_le33 {n : Nat} (h : n ≤ 33) : topLim n = some n := by
-  unfold topLim
-  rw [if_pos h]
+  simp only [topLim, h, ↓reduceIte]
 
 theorem topLim_wfBlock {n : Nat} (h1 : 33 ≤ n) (h2 : n ≤ 40) : topLim n = some 33 := by
   unfold topLim
