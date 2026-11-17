@@ -1198,7 +1198,7 @@ private theorem except_guard {x y y' v : SourceValue F} {p : Prop} [Decidable p]
     (op2 : evalBinOp .mul x y' = .ok v)
     (hx : x = .field 1) (hp : ¬ p) : v = .field 1 := by
   subst hy hx
-  rw [if_neg hp] at op1
+  simp only [hp, ↓reduceIte] at op1
   simp only [evalBinOp, Except.ok.injEq] at op1
   subst op1
   simp only [evalBinOp, Except.ok.injEq] at op2

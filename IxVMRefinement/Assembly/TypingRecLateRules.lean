@@ -252,7 +252,7 @@ theorem rec_canon_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     hextM.trans (evScan.heap_extends.trans evLoad.heap_extends)
   have extA : Heap.Extends h_pre loadedHeap := ev_ld.heap_extends.trans extL
   exact ⟨_, _, _, _, _, _, _, _, _, _, _, a', bR, a, bP, blobs, tree,
-    loadedHeap, kHeap, kAfter, canonHeap, h'_chk, kCalls, canonCalls,
+    loadedHeap, kHeap, kAfter, canonHeap, canonFinal, kCalls, canonCalls,
     hrcM.mono extL,
     Bytes.repAddressRef_heapMono₂ Core.addrTy extA ha'_ref, rfl,
     Bytes.repAddressRef_heapMono₂ Core.addrTy extL hblkR, hbR,
