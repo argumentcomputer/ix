@@ -936,6 +936,7 @@ def validate_standard_axiom := aiur_fn⟦
           let c = Ingress::load_verified_constant(role_bound_addr(tbl, r));
           match c {
             Ixon::Constant::Mk(_, _, refs, _, _) => {
+              KernelClaim::assert_safe_record_refs(rc, role_bound_addr(tbl, r), c);
               KernelClaim::walk_refs_transitive(rc, refs, KernelClaim::const_idxs_of(c), 0) } ,
           } } ,
       }
@@ -967,6 +968,16 @@ def role_evidence := aiur_fn⟦
 def validate_op := aiur_fn⟦
   fn validate_op(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
+      let record = Ingress::load_verified_constant(a);
+      match record {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Defn(_) => {  () } ,
+            _ => {
+              assert_eq!(0, 1, "a bound operation is not a standalone definition");
+              () } ,
+          } } ,
+      };
       match ci {
         KernelTypes::KConstantInfo::Defn(_, ty, val, safety, _) => {
           match safety {
@@ -1020,6 +1031,25 @@ def validate_op_equations := aiur_fn⟦
                   assert_eq!(0, 1, "a well-founded operation's evidence must be proofs");
                   () } ,
                 RoleEvidence::Proof(thm) => {
+                  let tc = Ingress::load_verified_constant(thm);
+                  match tc {
+                    Ixon::Constant::Mk(info, _, _, _, _) => {
+                      match info {
+                        Ixon::ConstantInfo::Defn(d) => {
+                          match d {
+                            Ixon::Definition::Mk(kind, _, _, _, _, _) => {
+                              match kind {
+                                Ixon::DefKind::Theorem => { () } ,
+                                _ => {
+                                  assert_eq!(0, 1, "an operation certificate is not a standalone theorem");
+                                  () } ,
+                              } } ,
+                          } } ,
+                        _ => {
+                          assert_eq!(0, 1, "an operation certificate is not a standalone theorem");
+                          () } ,
+                      } } ,
+                  };
                   match (*(Ingress::get_ci(thm))) {
                     KernelTypes::KConstantInfo::Thm(nlvls, _, pval) => {
                       assert_eq!(nlvls, 0, "certificate theorem has universe parameters");
@@ -1029,10 +1059,10 @@ def validate_op_equations := aiur_fn⟦
                       KernelCheck::validate_expr_well_scoped(p, 0, 0);
                       -- what the proof names, the theorem's references but the operation, checked
                       -- with their closures; none of them reaches the operation (the order rule)
-                      let tc = Ingress::load_verified_constant(thm);
                       match tc {
                         Ixon::Constant::Mk(_, _, refs, _, _) => {
                           let used = KernelClaim::const_idxs_of(tc);
+                          KernelClaim::assert_safe_refs_except(rc, refs, used, a);
                           walk_refs_except(rc, refs, used, 0, a);
                           op_order_scan_except(tbl, role_ctx_limit(rc), op_group_needs(r), refs, used, 0, a) } ,
                       };

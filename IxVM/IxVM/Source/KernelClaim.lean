@@ -237,6 +237,7 @@ def run_check_transitive := aiur_fn⟦
               } } ,
             _ => {  run_check(rc, addr) } ,
           };
+          assert_safe_record_refs(rc, addr, c);
           walk_refs_transitive(rc, refs, const_idxs_of(c), 0) } ,
       }
     }
@@ -423,6 +424,7 @@ def env_walk := aiur_fn⟦
                   } } ,
                 _ => {  run_check(rc, addr) } ,
               };
+              assert_safe_record_refs_under(rc, addr, c, asm);
               env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, next_strict) } ,
           } } ,
       }
@@ -559,6 +561,104 @@ def record_unsafe := aiur_fn⟦
       }
     }
 ⟧
+
+  -- A projection's owner participates in its safety policy. For an ordinary record,
+  -- the owner is the record itself.
+
+def record_owner := aiur_fn⟦
+  fn record_owner(addr: Bytes::AddressRef, c: Ixon::Constant) -> Bytes::AddressRef {
+      match c {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::DPrj(p) => {
+              match p { Ixon::DefinitionProj::Mk(_, b) => { b } , } } ,
+            Ixon::ConstantInfo::IPrj(p) => {
+              match p { Ixon::InductiveProj::Mk(_, b) => { b } , } } ,
+            Ixon::ConstantInfo::CPrj(p) => {
+              match p { Ixon::ConstructorProj::Mk(_, _, b) => { b } , } } ,
+            Ixon::ConstantInfo::RPrj(p) => {
+              match p { Ixon::RecursorProj::Mk(_, b) => { b } , } } ,
+            _ => { addr } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Check exactly the used references the walk can load, including those appearing
+  -- only in the sharing table. Covered and explicitly excluded references stay unloaded.
+  -- The caller establishes that these dependencies are used by an in-logic source.
+
+def assert_safe_used_refs := aiur_fn⟦
+  fn assert_safe_used_refs(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
+        used: Lists::List<Field>, i: Field, excluded: RBTreeMap::RBTreeMap<Field>) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => { () } ,
+        Lists::Node::Cons(a, rest) => {
+          match g_list_has(used, i) {
+            1 => {
+              match addr_set_member(a, excluded) {
+                1 => { () } ,
+                _ => {
+                  KernelRoles::assert_ref_allowed(rc, a);
+                  match KernelRoles::walk_covered(rc, a) {
+                    0 => {
+                      let c = Ingress::load_verified_constant(a);
+                      let owner = record_owner(a, c);
+                      assert_eq!(record_unsafe(a), 0,
+                        "safe walked source references an unsafe or partial record");
+                      assert_eq!(record_unsafe(owner), 0,
+                        "safe walked source references an unsafe or partial owner");
+                      () } ,
+                    _ => { () } ,
+                  } } ,
+              } } ,
+            _ => { () } ,
+          };
+          assert_safe_used_refs(rc, rest, used, i + 1, excluded) } ,
+      }
+    }
+⟧
+
+  -- Unsafe-origin walks retain their existing behavior. Both the source record and
+  -- its owner must be in logic before their traversed dependencies acquire this guard.
+
+def assert_safe_record_refs_under := aiur_fn⟦
+  fn assert_safe_record_refs_under(rc: KernelRoles::RoleCtx, source_addr: Bytes::AddressRef,
+        c: Ixon::Constant, excluded: RBTreeMap::RBTreeMap<Field>) -> () {
+      match record_unsafe(source_addr) {
+        0 => {
+          match record_unsafe(record_owner(source_addr, c)) {
+            0 => {
+              match c {
+                Ixon::Constant::Mk(_, _, refs, _, _) => {
+                  assert_safe_used_refs(rc, refs, const_idxs_of(c), 0, excluded) } ,
+              } } ,
+            _ => { () } ,
+          } } ,
+        _ => { () } ,
+      }
+    }
+⟧
+
+def assert_safe_record_refs := aiur_fn⟦
+  fn assert_safe_record_refs(rc: KernelRoles::RoleCtx, source_addr: Bytes::AddressRef,
+        c: Ixon::Constant) -> () {
+      assert_safe_record_refs_under(rc, source_addr, c, RBTreeMap::RBTreeMap::Nil)
+    }
+⟧
+
+  -- An operation certificate is checked as logical evidence after substituting the
+  -- operation's value. Its traversed dependencies are safe independently of record flags;
+  -- the operation itself is excluded exactly as in the certificate's reference walk.
+
+def assert_safe_refs_except := aiur_fn⟦
+  fn assert_safe_refs_except(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
+        used: Lists::List<Field>, skip_addr: Bytes::AddressRef) -> () {
+      let excluded = RBTreeMap::rbtree_map_insert(skip_addr, 1, RBTreeMap::RBTreeMap::Nil);
+      assert_safe_used_refs(rc, refs, used, 0, excluded)
+    }
+⟧
+
 
 def assert_claimable := aiur_fn⟦
   fn assert_claimable(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
@@ -728,6 +828,7 @@ def env_walk_all := aiur_fn⟦
               } } ,
             _ => {  run_check(rc, addr) } ,
           };
+          assert_safe_record_refs(rc, addr, c);
           env_walk_refs_all(rc, refs, const_idxs_of(c), 0) } ,
       }
     }
