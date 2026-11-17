@@ -875,11 +875,23 @@ mutual
       | .construct t c ps =>
         let (lit, lem) ← ctorName t
         let vs ← fresh "vs"; let hv ← fresh "hv"; let ml ← fresh "ml"
-        let subs ← subBinders ps
-        let ls ← unifyPat V (.ctor lit c (subs.map .v)) hv
-        let (mls, bs) ← listInv ps subs ml heap
-        return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_construct_inv {mt}",
-          s!"rw [{lem}] at {hv}"] ++ ls ++ mls, bs)
+        match ← resolveT V with
+        | .ctor knownType knownCtor us =>
+          unless knownType == lit && knownCtor == c do
+            throw "concrete constructor pattern mismatch"
+          unless us.length == ps.length do throw "constructor pattern length"
+          let fields ← fresh "hfields"
+          let (mls, bs) ← listInvConcrete ps us ml heap
+          return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_construct_inv {mt}",
+            s!"rw [{lem}] at {hv}",
+            s!"have {fields} := (Value.construct.inj {hv}).2.2",
+            s!"subst {vs}"] ++ mls, bs)
+        | _ =>
+          let subs ← subBinders ps
+          let ls ← unifyPat V (.ctor lit c (subs.map .v)) hv
+          let (mls, bs) ← listInv ps subs ml heap
+          return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_construct_inv {mt}",
+            s!"rw [{lem}] at {hv}"] ++ ls ++ mls, bs)
       | .tuple ps | .array ps =>
         let kind := match p with | .tuple _ => "tuple" | _ => "array"
         match ← resolveT V with
