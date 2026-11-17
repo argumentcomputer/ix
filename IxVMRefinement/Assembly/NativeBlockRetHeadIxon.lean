@@ -83,7 +83,6 @@ private theorem retHeadIxon_cell_tag {h : Heap F} {addr : Nat} {t₁ t₂ : Stri
   rw [c₁] at c₂
   injection c₂ with c₂
   injection c₂ with _ e _
-  exact e
 
 private theorem retHeadIxon_cell_args {h : Heap F} {addr : Nat} {t₁ t₂ : String}
     {xs ys : List (SourceValue F)}
@@ -92,7 +91,6 @@ private theorem retHeadIxon_cell_args {h : Heap F} {addr : Nat} {t₁ t₂ : Str
   rw [c₁] at c₂
   injection c₂ with c₂
   injection c₂ with _ _ e
-  exact e
 
 private theorem retHeadIxon_appHead_tag {h : Heap F} {addr : Nat} {t : String}
     {xs : List (SourceValue F)} (cell : h[addr]? = some (.construct Core.kexprEnum t xs))
